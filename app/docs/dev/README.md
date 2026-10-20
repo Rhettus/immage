@@ -18,6 +18,8 @@ the headless darktable engine. The photographer's guide is
 - [benchmarking/](../../../benchmarking/README.md): the performance suite.
 - [Pinning darktable](darktable-pin.md): which darktable commit Immage
   builds, moving it, and what breaks when it moves.
+- [Releasing](releasing.md): cutting a release, from the version bump to
+  publishing the draft, and the updater's signing key.
 - [darktable/dev-doc/](../../../darktable/dev-doc/README.md): darktable's
   own developer docs, for anything the engine calls into darktable for.
 
