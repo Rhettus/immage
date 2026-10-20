@@ -743,6 +743,61 @@ async fn perf_report_write(state: State<'_, AppState>, name: String, report: Val
     Ok(path.to_string_lossy().into_owned())
 }
 
+// the system's own id for this machine, hashed: reports get passed around
+// to compare machines, and the raw hardware UUID need not go with them.
+// benchmarking/bench.py (machine_id) hashes it the same way, so engine runs
+// and GUI reports from one machine match
+fn machine_id() -> Option<String> {
+    use sha2::{Digest, Sha256};
+    let run = |prog: &str, args: &[&str]| {
+        let mut cmd = std::process::Command::new(prog);
+        cmd.args(args);
+        no_console(&mut cmd);
+        cmd.output().ok().map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+    };
+    let raw = if cfg!(target_os = "macos") {
+        // "IOPlatformUUID" = "XXXXXXXX-..."
+        run("ioreg", &["-rd1", "-c", "IOPlatformExpertDevice"])?.lines()
+            .find(|l| l.contains("\"IOPlatformUUID\""))
+            .and_then(|l| l.rsplit('"').nth(1).map(str::to_string))
+    } else if cfg!(windows) {
+        // "    MachineGuid    REG_SZ    xxxxxxxx-..."
+        run("reg", &["query", r"HKLM\SOFTWARE\Microsoft\Cryptography", "/v", "MachineGuid"])?.lines()
+            .find(|l| l.contains("MachineGuid"))
+            .and_then(|l| l.split_whitespace().last().map(str::to_string))
+    } else {
+        ["/etc/machine-id", "/var/lib/dbus/machine-id"].iter().find_map(|p| std::fs::read_to_string(p).ok())
+    }?;
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    let hash = Sha256::digest(format!("immage-bench:{raw}"));
+    Some(hash.iter().take(6).map(|b| format!("{b:02x}")).collect())
+}
+
+// the machine a GUI benchmark ran on: a stable id to group reports by, and
+// what it is
+#[tauri::command]
+async fn perf_machine() -> Result<Value, String> {
+    use sysinfo::{CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};
+    tauri::async_runtime::spawn_blocking(|| {
+        let sys = System::new_with_specifics(RefreshKind::nothing().with_cpu(CpuRefreshKind::nothing())
+                                                 .with_memory(MemoryRefreshKind::nothing().with_ram()));
+        json!({
+            "id": machine_id(),
+            "host": System::host_name().map(|h| h.split('.').next().unwrap_or_default().to_string()),
+            "os": System::long_os_version(),
+            "arch": System::cpu_arch(),
+            "cpu": sys.cpus().first().map(|c| c.brand().trim().to_string()),
+            "cores": sys.cpus().len(),
+            "memoryGb": (sys.total_memory() as f64 / (1u64 << 30) as f64).round(),
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
 // import a folder's images into the engine's in-memory library, and with
 // `recursive` its subfolders' too; darktable decides what is an image. the
 // files go in batches, each reported as a "folder-progress" event with its
@@ -1783,7 +1838,7 @@ fn main() {
             ai_model_ensure, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, list_subfolders, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
             immich_export_check, immich_search, immich_browse_check, immich_libraries, immich_suggestions, immich_people, immich_tags,
             immich_thumb, immich_resolve, launch_file, path_exists, path_kind, trash_files, create_virtual_copy, remove_virtual_copy, preview_fullscreen, about, licenses, engine_quit, keywords, keywords_set, ai_accel,
-            perf_set, perf_modules, perf_report_write,
+            perf_set, perf_modules, perf_report_write, perf_machine,
             plugins::plugin_find_apps, plugins::plugin_launch, plugins::plugin_watch, plugins::plugin_cancel,
             plugins::plugin_returns, plugins::plugin_return_applied
         ])
@@ -1830,6 +1885,15 @@ fn preview_fullscreen(app: AppHandle, on: bool) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn machine_id_is_stable() {
+        let id = machine_id().expect("no machine id");
+        assert_eq!(id.len(), 12);
+        assert!(id.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_eq!(machine_id().as_deref(), Some(id.as_str()));
+        println!("machine id {id}");
+    }
 
     #[test]
     fn model_release_for_a_version() {

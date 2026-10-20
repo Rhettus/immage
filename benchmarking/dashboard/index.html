@@ -110,7 +110,10 @@ const hover = (el, html) => { el.addEventListener("mousemove", (e) => { tip.inne
   el.addEventListener("mouseleave", () => tip.style.display = "none"); };
 
 // ---------------------------------------------------------------- state
-const state = { tab: "overview", run: D.runs.length - 1, mode: null, image: "all", compareWith: null, gui: D.gui.length - 1, step: null };
+const state = { tab: "overview", run: D.runs.length - 1, mode: null, image: "all", compareWith: null, gui: D.gui.length - 1, step: null, machine: null };
+// GUI reports from before 0.32.0 carry no machine
+const machineOf = (g) => g.machine?.id ?? "unknown";
+const machineName = (g) => g.machine ? `${g.machine.host ?? "?"} · ${g.machine.cpu ?? "?"}` : "unknown machine";
 const run = () => D.runs[state.run];
 const modes = () => run() ? run().env.modes : [];
 const images = () => run() ? run().corpus.map((c) => c.name) : [];
@@ -401,7 +404,12 @@ const views = {
     const colors = ["var(--other)", CAT[4], CAT[7], CAT[0], CAT[6], CAT[2], "var(--other)", CAT[5], CAT[3], CAT[3], CAT[1], CAT[3]];
     const groups = [["waiting (queue, lock, probe)", "var(--other)"], ["set_params", CAT[4]], ["darktable pipeline", CAT[0]], ["transport (write, read, IPC)", CAT[6]], ["page (handoff, draw, paint)", CAT[3]], ["histogram", CAT[1]]];
     const rows = g.summary.map((x) => ({ label: `${x.label} (${x.frames})`, parts: x.stages }));
-    const sel = h("select", { onchange: (e) => { state.gui = +e.target.value; render(); } }, D.gui.map((x, i) => h("option", i === state.gui ? { value: i, selected: "" } : { value: i }, x.id)));
+    state.machine ??= machineOf(g);
+    const machines = [...new Map(D.gui.map((x) => [machineOf(x), machineName(x)])).entries()];
+    const msel = h("select", { onchange: (e) => { state.machine = e.target.value; state.gui = D.gui.findLastIndex((x) => machineOf(x) === state.machine); render(); } },
+      machines.map(([id, name]) => h("option", id === state.machine ? { value: id, selected: "" } : { value: id }, id === "unknown" ? name : `${name} (${id})`)));
+    const mine = D.gui.map((x, i) => [x, i]).filter(([x]) => machineOf(x) === state.machine);
+    const sel = h("select", { onchange: (e) => { state.gui = +e.target.value; render(); } }, mine.map(([x, i]) => h("option", i === state.gui ? { value: i, selected: "" } : { value: i }, x.id)));
     const sampleRows = g.samples.slice(-300);
     const pts = h("div", {});
     const W = 1000, H = 220, svg = s("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%" });
@@ -413,8 +421,8 @@ const views = {
       svg.append(c); hover(c, `<b>${x.label ?? ""}</b><br>${x.kind}${x.draft ? " (draft)" : ""} ${x.width}×${x.height}<br>${fmt(x.total)} ms, ${x.edits} moves`); });
     svg.append(s("text", { x: 40, y: 216 }, "time through the run →"));
     return [
-      card("GUI benchmark", `Photo ${g.photo}, viewer ${g.viewport.width}×${g.viewport.height} at ${g.viewport.dpr}×, drag drafts ${g.dragDrafts ? "on" : "off"}${g.transport ? `, frames by ${g.transport === "shared" ? "shared memory" : "invoke"}` : ""}, ${g.seconds?.toFixed?.(0) ?? "?"} s. Median per step, slider move to pixels on screen.`,
-        h("label", {}, "report ", sel), legend(groups), stacked(rows, STAGES, colors, { label: 230 })),
+      card("GUI benchmark", `${machineName(g)}${g.machine?.os ? `, ${g.machine.os}` : ""}. Photo ${g.photo}, viewer ${g.viewport.width}×${g.viewport.height} at ${g.viewport.dpr}×, drag drafts ${g.dragDrafts ? "on" : "off"}${g.transport ? `, frames by ${g.transport === "shared" ? "shared memory" : "invoke"}` : ""}, ${g.seconds?.toFixed?.(0) ?? "?"} s. Median per step, slider move to pixels on screen.`,
+        h("label", {}, "machine ", msel), " ", h("label", {}, "report ", sel), legend(groups), stacked(rows, STAGES, colors, { label: 230 })),
       card("Every frame", "Each frame's total, input to paint, through the run. Small dots are drafts.", legend([["edit", kinds.edit], ["view (zoom, release)", kinds.view], ["idle base", kinds.base]]), svg),
     ];
   },

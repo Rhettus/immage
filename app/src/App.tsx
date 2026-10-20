@@ -3201,8 +3201,9 @@ export default function App() {
     const { w, h } = viewport();
     const at = new Date();
     const report = {
-      immage: "gui-benchmark", version: 1, at: at.toISOString(),
+      immage: "gui-benchmark", version: 2, at: at.toISOString(),
       app: await invoke<{ app: string; darktable: string }>("about").catch(() => null),
+      machine: await invoke<Record<string, unknown>>("perf_machine").catch(() => null),
       photo: (currentRef.current?.path ?? "").split(/[\\/]/).pop(),
       viewport: { width: w, height: h, dpr: window.devicePixelRatio || 1 }, dragDrafts: drafts, preview,
       transport: frameTransport(), seconds: (performance.now() - t0) / 1000, displayLongFrames: perf.longFrames, summary, samples,

@@ -160,7 +160,12 @@ write, read, probe, ipc, handoff, draw, histogram and paint. Each report also
 carries a per-step summary. From 0.25.0 a report's `transport` says how
 frames reached the page: `invoke` (in `render`'s reply) or `shared` (a
 WebView2 shared buffer, Windows only). With `shared`, ipc also covers
-posting the frame and the page's copy out of the buffer.
+posting the frame and the page's copy out of the buffer. From 0.32.0 a
+report's `machine` names the computer it ran on: host, OS, CPU, cores,
+memory, and `id`, a hash of the system's own machine id (macOS
+IOPlatformUUID, Windows MachineGuid, Linux /etc/machine-id). Engine runs
+carry the same hash as `env.machine_id`. The dashboard's GUI tab can
+pick one machine's reports.
 
 ## For the next session (Claude included)
 

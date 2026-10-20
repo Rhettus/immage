@@ -219,6 +219,8 @@ def summary(runs, guis):
     if guis:
         g = guis[-1]
         L += ["", f"## GUI benchmark `{g['id']}`", "",
+              (f"Machine {m.get('host') or '?'}, {m.get('cpu') or '?'} (id {m.get('id') or '?'}). "
+               if (m := g.get("machine")) else "") +
               f"Photo {g.get('photo')}, viewer {g['viewport']['width']}×{g['viewport']['height']} "
               f"(dpr {g['viewport']['dpr']}), drag drafts {'on' if g.get('dragDrafts') else 'off'}"
               + (f", Preview {g['preview']}" if g.get("preview") else "")

@@ -842,6 +842,33 @@ def sha256(path):
     return h.hexdigest()
 
 
+# the system's own id for this machine, hashed as the app's machine_id()
+# (app/src-tauri/src/main.rs) hashes it, so a run and the GUI reports from
+# one machine carry the same id
+def machine_id():
+    raw = ""
+    try:
+        if platform.system() == "Darwin":
+            out = subprocess.run(["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"], capture_output=True, text=True,
+                                 timeout=10).stdout
+            line = next((l for l in out.splitlines() if '"IOPlatformUUID"' in l), "")
+            raw = line.rsplit('"', 2)[1] if line.count('"') >= 4 else ""
+        elif platform.system() == "Windows":
+            out = subprocess.run(["reg", "query", r"HKLM\SOFTWARE\Microsoft\Cryptography", "/v", "MachineGuid"],
+                                 capture_output=True, text=True, timeout=10).stdout
+            line = next((l for l in out.splitlines() if "MachineGuid" in l), "")
+            raw = line.split()[-1] if line.split() else ""
+        else:
+            for p in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
+                if os.path.exists(p):
+                    raw = open(p).read()
+                    break
+    except Exception:
+        pass
+    raw = raw.strip()
+    return hashlib.sha256(f"immage-bench:{raw}".encode()).hexdigest()[:12] if raw else None
+
+
 def git(*a):
     try:
         return subprocess.run(["git", "-C", REPO, *a], capture_output=True, text=True, timeout=10).stdout.strip()
@@ -867,7 +894,7 @@ def environment(args, binary):
                 sysinfo[key] = v
     return {
         "schema": SCHEMA, "at": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
-        "host": platform.node().split(".")[0], "os": f"{platform.system()} {platform.release()}",
+        "host": platform.node().split(".")[0], "machine_id": machine_id(), "os": f"{platform.system()} {platform.release()}",
         "machine": platform.machine(), "python": platform.python_version(), "sysinfo": sysinfo,
         "git": {"sha": git("rev-parse", "--short", "HEAD"), "branch": git("rev-parse", "--abbrev-ref", "HEAD"),
                 "dirty": bool(git("status", "--porcelain", "--untracked-files=no"))},
