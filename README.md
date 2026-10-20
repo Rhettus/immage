@@ -237,7 +237,9 @@ go into the photo's XMP sidecar, as for any other photo.
 ## Opening a photo from another program
 
 Another program can hand Immage a photo to edit. Immage shows the
-photo's folder and opens the photo, ready for editing:
+photo's folder and opens the photo, ready for editing. Dragging a photo
+from Finder or Explorer onto the window does the same; dragging a folder
+there adds it under Folders and shows its photos in the grid.
 
 ```sh
 open -a Immage /path/to/photo.arw                    # macOS, running or not

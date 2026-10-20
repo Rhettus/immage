@@ -7,6 +7,7 @@ import { listen } from "@tauri-apps/api/event";
 import { ask, open, save } from "@tauri-apps/plugin-dialog";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { BANDS, choiceOn, choiceShows, controlById, GUIDE_IDS, guidesOf, isModuleSetting, MAX_GUIDES, UPRIGHT_GUIDED,
          UPRIGHT_MODES, uprightAspect, mapOf, mapsFor, moduleName, mapsWith, panels, pointsOf, pointValues, profileLabel, turnRect, type Control, type ControlPreset, type CurveChannel, type Values,
          type Panel, type Section, type Turn } from "./manifest";
@@ -2351,6 +2352,36 @@ export default function App() {
   const openLaunchedRef = useRef(openLaunched);
   openLaunchedRef.current = openLaunched;
 
+  // files dragged onto the window from Finder or Explorer: folders join the
+  // library and the first shows as a grid; otherwise the first photo opens,
+  // as one handed over does. the import screen is left alone
+  const [dropping, setDropping] = useState(false);
+  const dropped = async (paths: string[]) => {
+    const kinds = await Promise.all(paths.map((path) => invoke<string | null>("path_kind", { path })));
+    const dirs = paths.filter((_, i) => kinds[i] === "dir");
+    if (dirs.length) {
+      for (const d of dirs) addPathToLibrary(d);
+      void showFolder(dirs[0]);
+      setGrid(true);
+      return;
+    }
+    const file = paths.find((_, i) => kinds[i] === "file");
+    if (!file) return;
+    setGrid(false);
+    await openLaunched(file);
+  };
+  const droppedRef = useRef(dropped);
+  droppedRef.current = dropped;
+  useEffect(() => {
+    const off = getCurrentWebview().onDragDropEvent(({ payload }) => {
+      if (importOpenRef.current) { setDropping(false); return; }
+      if (payload.type === "enter" || payload.type === "over") setDropping(true);
+      else setDropping(false);
+      if (payload.type === "drop" && payload.paths.length) void droppedRef.current(payload.paths);
+    });
+    return () => { void off.then((f) => f()); };
+  }, []);
+
   // at start, a photo handed over, or else the folder and image open when
   // the app last closed; later, a photo handed to the running app
   const started = useRef(false);
@@ -4666,6 +4697,7 @@ export default function App() {
                   onOpenSettings={openImmichPrefs} />
     )}
     {touring && <Tour onClose={endTour} />}
+    {dropping && <div className="drop-target"><span>drop a photo to edit it, or a folder to add it</span></div>}
     {copying && <CopyDialog onCopy={copySettings} onClose={() => setCopying(false)} />}
     {denoising && <DenoiseDialog thumb={navThumb} center={viewCenter()} prepare={denoiseModel}
                                  onRun={(a) => void runDenoise(a)} onClose={() => setDenoising(false)} />}

@@ -113,6 +113,7 @@ are `localStorage` keys named `immage.*`.
 | crop and turns | `enterCrop`, `leaveCrop`, `turn` (`Session.turned`) |
 | `runGuiBenchmark` | the GUI benchmark in Preferences |
 | keyboard | one `keydown` handler for every shortcut |
+| `openLaunched`, `dropped` | a photo handed over (`launch-file`), or photos and folders dragged onto the window (`onDragDropEvent`, `path_kind`) |
 
 ### Session and engine bridge
 
@@ -205,7 +206,7 @@ Commands by what they reach:
 |---|---|
 | The open photo, through the engine | `open_image`, `get_params`, `set_params`, `render`, `cancel_base`, `preview`, `save`, `before_view`, `history`, `masks`, `mask_shapes`, `combine`, `mask_delete`, `mask_rename`, `mask_map`, `range_map`, `sample`, `zones`, `tone_key`, `agx_auto`, `spots`, `spots_enable`, `spot_source`, `look_apply`, `look_amount`, `ai_object`, `ai_mask`, `ai_depth`, `ai_denoise`, `ai_denoise_preview` |
 | The library, through the engine | `open_folder` (engine `import` in batches of 24), `thumb`, `meta`, `meta_set`, `keywords`, `keywords_set`, `create_virtual_copy`, `remove_virtual_copy`, `trash_files`, `export_images`, `export_preview`, `fonts`, `ai_accel`, `about` |
-| Files only | `list_subfolders`, `path_exists`, `export_existing`, `presets_load`, `presets_save`, `export_presets_load`, `export_presets_save`, `preset_file_read`, `preset_file_write`, `looks_list`, `sample_folder`, `launch_file` |
+| Files only | `list_subfolders`, `path_exists`, `path_kind`, `export_existing`, `presets_load`, `presets_save`, `export_presets_load`, `export_presets_save`, `preset_file_read`, `preset_file_write`, `looks_list`, `sample_folder`, `launch_file` |
 | AI models (download, then the engine's `version`) | `ai_model_ensure` |
 | Immich (HTTP) | `immich_albums`, `immich_create_album`, `immich_export_check`, `immich_browse_check`, `immich_search`, `immich_libraries`, `immich_suggestions`, `immich_people`, `immich_tags`, `immich_thumb`, `immich_resolve` |
 | Plugins | `plugin_find_apps`, `plugin_launch`, `plugin_watch`, `plugin_cancel`, `plugin_returns`, `plugin_return_applied` |

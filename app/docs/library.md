@@ -14,6 +14,8 @@ and smart collections don't exist; [Immich](immich.md) can do that job.
 Open the **Folders** card in the **Library** panel.
 
 - **+ Add folder…** adds a folder to the list and opens it in Grid view.
+  Dragging a folder from Finder or Explorer onto Immage's window does the
+  same.
 - Click a folder in the tree to open it. The arrow beside it shows its
   subfolders.
 - **Include subfolders** shows the photos in a folder's subfolders too.
@@ -160,6 +162,7 @@ Another application, or Terminal, can hand Immage a photo:
 open -a Immage /path/to/photo.arw
 ```
 
-Immage shows the photo's folder and opens the photo. Dropping a photo on
-Immage's Dock icon should work the same way.
+Immage shows the photo's folder and opens the photo. Dragging a photo from
+Finder or Explorer onto Immage's window does the same, and so should
+dropping it on Immage's Dock icon.
 <!-- check: dropping a file on the Dock icon, and whether Immage appears in Finder's Open With menu -->
