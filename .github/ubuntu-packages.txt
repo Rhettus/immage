@@ -17,6 +17,7 @@ ccache
 git
 pkg-config
 patchelf
+libfuse2
 file
 gettext
 intltool
@@ -53,10 +54,13 @@ libopenjp2-7-dev
 libavif-dev
 libjxl-dev
 libopenexr-dev
+libimath-dev
 
 # libheif and exiv2
 libde265-dev
 libaom-dev
+# libaom-dev's cmake config names /usr/bin/aomdec, which libheif's FindAOM checks for
+aom-tools
 libopenh264-dev
 libsharpyuv-dev
 libinih-dev
