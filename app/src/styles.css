@@ -1087,11 +1087,14 @@ input.switch:disabled { cursor: default; opacity: 0.4; }
 /* under a revealed floating side panel (41), over the photo */
 .strip-slot.grid { position: absolute; left: 0; right: 0; top: 0; z-index: 25; grid-template-rows: 1fr; }
 .strip-slot.grid > div { height: 100%; }
+/* as many columns as fit at 230px, widened to fill the row, so no strip of
+   dead space is left at its end */
 .filmstrip.grid {
-  flex: 1; height: auto; flex-wrap: wrap; align-content: flex-start; gap: 6px;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  flex: 1; height: auto; align-content: start; gap: 6px;
   margin: 0 8px; padding: 10px; overflow-x: hidden; overflow-y: auto; background: #161616;
 }
-.filmstrip.grid.empty { align-content: center; justify-content: center; }
+.filmstrip.grid.empty { display: flex; align-items: center; justify-content: center; }
 .grid-empty { color: var(--text-3); font-size: var(--fs-body); }
 .strip-slot.floating.revealed {
   transform: none; visibility: visible;

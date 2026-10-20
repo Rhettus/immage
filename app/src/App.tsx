@@ -5029,8 +5029,9 @@ function Filmstrip({ images, partners, pending, empty, current, loader, height, 
     root.querySelectorAll<HTMLElement>(".thumb[data-imgid]").forEach((el) => seen.observe(el));
     return () => seen.disconnect();
   }, [images, loader, grid]);
-  // a grid's cells are a fixed size; the strip's follow its height
-  const cell = grid ? { width: 230, height: 200 } : { width: Math.round((height - 12) * 1.15) };
+  // a grid's cells are a fixed height, and share each row's width
+  // (styles.css, .filmstrip.grid); the strip's follow its height
+  const cell = grid ? { height: 200 } : { width: Math.round((height - 12) * 1.15) };
   // an empty grid still covers the photo, and says why it is empty
   if (!images.length && !pending.length) {
     return grid ? <div className="filmstrip grid empty" onContextMenu={onBackMenu}><div className="grid-empty">{empty}</div></div>
