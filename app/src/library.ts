@@ -38,10 +38,11 @@ export const LABEL_COLORS = ["#e5484d", "#f5c518", "#46a758", "#3e7bfa", "#9b5de
 // with `recursive`, the photos of its subfolders too, as Lightroom's
 // Include Photos from Subfolders. `onBatch` hears each batch as the engine
 // reads it, with how far it has got, and once before the first with every
-// file to be read (`files`, in the order they will come). opening another folder stops this one,
-// which then rejects with "superseded"
+// file to be read (`files`, in the order they will come). `skip` lists
+// subfolders taken off the folder tree, left out of `recursive`. opening
+// another folder stops this one, which then rejects with "superseded"
 let folderToken = 0;
-export async function openFolder(path: string, recursive = false,
+export async function openFolder(path: string, recursive = false, skip: string[] = [],
                                  onBatch?: (images: ImageEntry[], done: number, total: number, files?: string[]) => void,
 ): Promise<ImageEntry[]> {
   const token = ++folderToken;
@@ -51,7 +52,7 @@ export async function openFolder(path: string, recursive = false,
     if (p.token === token) onBatch?.(p.images, p.done, p.total, p.files);
   });
   try {
-    const reply = await invoke<{ images: ImageEntry[] }>("open_folder", { path, recursive, token });
+    const reply = await invoke<{ images: ImageEntry[] }>("open_folder", { path, recursive, skip, token });
     return reply.images;
   } finally {
     off();

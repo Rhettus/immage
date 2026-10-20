@@ -15,6 +15,7 @@ use cache::Caches;
 use engine::{BaseCancel, Engine, Timing};
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Mutex, MutexGuard};
@@ -806,19 +807,22 @@ async fn perf_machine() -> Result<Value, String> {
 // (AppState::engine_background), so a click waits for one batch at most.
 // a first event, before any is read, lists every file, so the client can
 // lay out a cell for each. a newer call (another `token`)
-// stops this one. returns every image: ratings, labels and EXIF summary
+// stops this one. returns every image: ratings, labels and EXIF summary.
+// `skip` names subfolders taken off the folder tree, which `recursive`
+// leaves out with their own subfolders
 #[tauri::command]
 async fn open_folder(app: AppHandle, state: State<'_, AppState>, path: String, recursive: Option<bool>,
-                     token: u64) -> Result<Value, String> {
+                     skip: Option<Vec<String>>, token: u64) -> Result<Value, String> {
     state.folder_token.store(token, Ordering::SeqCst);
     let dir = PathBuf::from(&path);
     if !dir.is_dir() {
         return Err(format!("folder not found: {path}"));
     }
     let recursive = recursive.unwrap_or(false);
+    let skip: HashSet<PathBuf> = skip.unwrap_or_default().into_iter().map(PathBuf::from).collect();
     let mut files = tauri::async_runtime::spawn_blocking(move || {
         let mut out = Vec::new();
-        folder_files(&dir, recursive, &mut out);
+        folder_files(&dir, recursive, &skip, &mut out);
         out
     })
     .await
@@ -863,8 +867,8 @@ const IMPORT_TARGET: Duration = Duration::from_millis(150);
 
 // the files of `dir` by name, then with `recursive` each subfolder's in
 // turn, as darktable's own folder import orders them. dot files, sidecars
-// and packages are left out
-fn folder_files(dir: &Path, recursive: bool, out: &mut Vec<PathBuf>) {
+// and packages are left out, and so are the subfolders in `skip`
+fn folder_files(dir: &Path, recursive: bool, skip: &HashSet<PathBuf>, out: &mut Vec<PathBuf>) {
     let Ok(rd) = std::fs::read_dir(dir) else { return };
     let (mut files, mut dirs) = (Vec::new(), Vec::new());
     for e in rd.flatten() {
@@ -874,7 +878,7 @@ fn folder_files(dir: &Path, recursive: bool, out: &mut Vec<PathBuf>) {
         }
         let p = e.path();
         if p.is_dir() {
-            if recursive && !is_package(&p) {
+            if recursive && !skip.contains(&p) && !is_package(&p) {
                 dirs.push((name, p));
             }
         } else if !name.ends_with(".xmp") {
@@ -885,7 +889,7 @@ fn folder_files(dir: &Path, recursive: bool, out: &mut Vec<PathBuf>) {
     dirs.sort();
     out.extend(files.into_iter().map(|(_, p)| p));
     for (_, d) in dirs {
-        folder_files(&d, true, out);
+        folder_files(&d, true, skip, out);
     }
 }
 
@@ -1915,7 +1919,7 @@ mod tests {
             std::fs::write(&p, "").unwrap();
         }
         let mut got = Vec::new();
-        folder_files(&dir, true, &mut got);
+        folder_files(&dir, true, &HashSet::new(), &mut got);
         let names: Vec<String> = got.iter().map(|p| p.strip_prefix(&dir).unwrap().to_string_lossy().into_owned()).collect();
         let _ = std::fs::remove_dir_all(&dir);
         // macOS knows .photoslibrary for a package; elsewhere it is a folder

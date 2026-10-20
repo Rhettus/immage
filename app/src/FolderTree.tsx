@@ -10,16 +10,17 @@ import { baseName } from "./paths";
 
 type SubFolder = { name: string; path: string; has_children: boolean };
 
-export function FolderTree({ roots, current, photo, expanded, refresh, icon, onToggle, onOpen, onRemove }: {
+export function FolderTree({ roots, current, photo, expanded, hidden, refresh, icon, onToggle, onOpen, onRemove }: {
   roots: string[];
   current: string | null;
   photo: string | null;                // the open photo's folder: scrolled to, and marked when not `current`
   expanded: Set<string>;
+  hidden: Set<string>;                 // subfolders taken off the tree
   refresh: number;                     // bumped to read every open folder again
   icon: React.ReactNode;
   onToggle: (path: string) => void;
   onOpen: (path: string) => void;
-  onRemove: (root: string) => void;
+  onRemove: (path: string) => void;
 }) {
   const [children, setChildren] = useState<Map<string, SubFolder[]>>(new Map());
   // the open folders' subfolders, read when a folder opens or on refresh
@@ -47,9 +48,9 @@ export function FolderTree({ roots, current, photo, expanded, refresh, icon, onT
     el.scrollIntoView({ block: "nearest" });
   };
 
-  const row = (path: string, name: string, depth: number, hasChildren: boolean, root: boolean): React.ReactNode => {
+  const row = (path: string, name: string, depth: number, hasChildren: boolean): React.ReactNode => {
     const open = expanded.has(path);
-    const kids = open ? children.get(path) : undefined;
+    const kids = open ? children.get(path)?.filter((k) => !hidden.has(k.path)) : undefined;
     const holdsPhoto = path === photo && path !== current;
     return (
       <li key={path}>
@@ -64,13 +65,11 @@ export function FolderTree({ roots, current, photo, expanded, refresh, icon, onT
           </button>
           {icon}<span className="name">{name}</span>
           {holdsPhoto && <span className="photo-dot" title="the open photo is in this folder" />}
-          {root && (
-            <button className="remove" title="remove from the list"
-                    onClick={(e) => { e.stopPropagation(); onRemove(path); }}>×</button>
-          )}
+          <button className="remove" title="remove from the list"
+                  onClick={(e) => { e.stopPropagation(); onRemove(path); }}>×</button>
         </div>
         {kids && kids.length > 0 && (
-          <ul>{kids.map((k) => row(k.path, k.name, depth + 1, k.has_children, false))}</ul>
+          <ul>{kids.map((k) => row(k.path, k.name, depth + 1, k.has_children))}</ul>
         )}
       </li>
     );
@@ -79,7 +78,7 @@ export function FolderTree({ roots, current, photo, expanded, refresh, icon, onT
   // a root's twisty shows until it is known to have no subfolders
   return (
     <ul className="folders">
-      {roots.map((r) => row(r, baseName(r), 0, children.get(r)?.length !== 0, true))}
+      {roots.map((r) => row(r, baseName(r), 0, children.get(r)?.length !== 0))}
     </ul>
   );
 }

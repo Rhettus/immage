@@ -135,6 +135,17 @@ export default function App() {
   const expandedRef = useRef(expanded);
   expandedRef.current = expanded;
   const [folderRefresh, setFolderRefresh] = useState(0);
+  // subfolders taken off the tree; adding one again brings it back
+  const [hidden, setHidden] = useState<Set<string>>(() => new Set(loadLibrary().hidden));
+  const hiddenRef = useRef(hidden);
+  hiddenRef.current = hidden;
+  const unhide = (dir: string) => {
+    const next = new Set([...hiddenRef.current].filter((h) => !within(dir, h)));
+    if (next.size === hiddenRef.current.size) return;
+    hiddenRef.current = next;
+    setHidden(next);
+    saveLibrary({ hidden: [...next] });
+  };
   const setExpandedTo = (next: Set<string>) => {
     setExpanded(next);
     saveLibrary({ expanded: [...next] });
@@ -2180,7 +2191,7 @@ export default function App() {
     let files: string[] = [];
     try {
       setReading({ done: 0, total: 0, files });
-      const list = await openFolder(dir, includeSubRef.current, (batch, done, total, all) => {
+      const list = await openFolder(dir, includeSubRef.current, [...hiddenRef.current], (batch, done, total, all) => {
         // an Immich search took the filmstrip while this was read
         if (immichRef.current) return;
         if (all) {
@@ -2283,20 +2294,35 @@ export default function App() {
     const next = folders.includes(dir) ? folders : [...folders, dir];
     setFolders(next);
     saveLibrary({ folders: next });
+    unhide(dir);
     void showFolder(dir);
     setGrid(true);
   };
 
+  // a listed folder leaves the list; a subfolder is hidden from the tree
   const removeFolder = (dir: string) => {
-    const next = folders.filter((f) => f !== dir);
-    setFolders(next);
-    saveLibrary({ folders: next, ...(dir === folder ? { current: null } : {}) });
+    const current = dir === folder ? { current: null } : {};
+    if (folders.includes(dir)) {
+      const next = folders.filter((f) => f !== dir);
+      const nextHidden = new Set([...hidden].filter((h) => !within(h, dir)));
+      setFolders(next);
+      setHidden(nextHidden);
+      saveLibrary({ folders: next, hidden: [...nextHidden], ...current });
+    } else {
+      const nextHidden = new Set(hidden).add(dir);
+      hiddenRef.current = nextHidden;
+      setHidden(nextHidden);
+      saveLibrary({ hidden: [...nextHidden], ...current });
+      // the grid showing it among a parent's photos reads that parent again
+      if (folder && folder !== dir && includeSub && within(dir, folder) && !immich) void showFolder(folder, true);
+    }
     setExpandedTo(new Set([...expanded].filter((p) => !within(p, dir))));
   };
 
   // a folder into the library: inside a listed folder, the tree opens down
   // to it; otherwise it is listed itself. its subfolders are read again
   const addPathToLibrary = (dir: string) => {
+    unhide(dir);
     const root = foldersRef.current.find((r) => within(dir, r));
     if (!root) {
       const next = [...foldersRef.current, dir];
@@ -4009,7 +4035,7 @@ export default function App() {
                   if (folder) void showFolder(folder);
                 }} />
               </label>
-              <FolderTree roots={folders} current={immich ? null : folder} photo={photoDir} expanded={expanded}
+              <FolderTree roots={folders} current={immich ? null : folder} photo={photoDir} expanded={expanded} hidden={hidden}
                           refresh={folderRefresh}
                           icon={<FolderIcon />} onOpen={(d) => { void showFolder(d); setGrid(true); }} onRemove={removeFolder}
                           onToggle={(d) => {
@@ -4716,13 +4742,13 @@ type Opened = { path: string; imgid: number | null };
 // the folders added to the library panel, and the folder and image open
 // last, with its version; remembered between launches
 type Library = { folders: string[]; current: string | null; image: string | null; expanded: string[];
-                 sampled?: boolean; version?: number };
+                 hidden: string[]; sampled?: boolean; version?: number };
 function loadLibrary(): Library {
   try {
-    return { folders: [], current: null, image: null, expanded: [],
+    return { folders: [], current: null, image: null, expanded: [], hidden: [],
              ...JSON.parse(localStorage.getItem("immage.library") ?? "{}") };
   } catch {
-    return { folders: [], current: null, image: null, expanded: [] };
+    return { folders: [], current: null, image: null, expanded: [], hidden: [] };
   }
 }
 

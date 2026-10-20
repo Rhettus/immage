@@ -18,6 +18,10 @@ Open the **Folders** card in the **Library** panel.
   same.
 - Click a folder in the tree to open it. The arrow beside it shows its
   subfolders.
+- Hover a folder and click **×** to take it off the list, whether it is
+  one you added or a subfolder inside one. A subfolder taken off the list
+  is left out of **Include subfolders** too. Its files stay where they
+  are; adding or dragging the folder in again brings it back.
 - **Include subfolders** shows the photos in a folder's subfolders too.
   It is off unless you
   turn it on.
