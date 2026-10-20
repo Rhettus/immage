@@ -42,8 +42,11 @@ case "$(uname -s)" in
     sh app/scripts/build_dmg.sh
     ;;
   Linux)
+    # generic x86-64, not darktable's default -march=native: that is the
+    # build machine's CPU, and the AppImage dies with an illegal instruction
+    # on one without all its extensions (cmake/march-mtune.cmake)
     if [ ! -f build/build.ninja ]; then
-      cmake -S darktable -B build -G Ninja $engine_flags -DIMMAGE_ROOT="$root"
+      cmake -S darktable -B build -G Ninja $engine_flags -DBINARY_PACKAGE_BUILD=ON -DIMMAGE_ROOT="$root"
     fi
     sh app/scripts/build_appimage.sh
     ;;
