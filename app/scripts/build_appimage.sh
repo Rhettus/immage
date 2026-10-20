@@ -24,5 +24,8 @@ echo "== bundling the engine into the app's resources"
 python3 -I app/scripts/bundle_engine.py
 
 echo "== app"
-(cd app && npm run tauri build)
+# IMMAGE_TAURI_CONFIG is the release build's addition
+# (.github/workflows/build.yml): the updater's signature next to the AppImage
+rm -f app/src-tauri/target/release/bundle/appimage/*.AppImage*
+(cd app && npm run tauri build -- ${IMMAGE_TAURI_CONFIG:+--config "$IMMAGE_TAURI_CONFIG"})
 ls -l app/src-tauri/target/release/bundle/appimage/*.AppImage

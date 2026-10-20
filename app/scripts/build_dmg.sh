@@ -23,17 +23,15 @@ echo "== bundling the engine into the app's resources"
 python3 -I app/scripts/bundle_engine.py
 
 echo "== app"
-# tauri's own dmg step scripts Finder and fails without that permission;
-# only the .app it builds first is needed, so its exit status is not
+# only the .app: tauri's own dmg step scripts Finder, which fails without
+# that permission, so the disk image is made below. IMMAGE_TAURI_CONFIG is
+# the release build's addition (.github/workflows/build.yml), which also
+# writes the updater's .app.tar.gz and its signature
 conf=app/src-tauri/tauri.conf.json
 product=$(sed -n 's/.*"productName": *"\([^"]*\)".*/\1/p' "$conf" | head -1)
 app="app/src-tauri/target/release/bundle/macos/$product.app"
-rm -rf "$app"
-(cd app && npm run tauri build) || true
-if [ ! -d "$app" ]; then
-  echo "the app did not build: see the output above" >&2
-  exit 1
-fi
+rm -rf "$app" "$app.tar.gz" "$app.tar.gz.sig"
+(cd app && npm run tauri build -- ${IMMAGE_TAURI_CONFIG:+--config "$IMMAGE_TAURI_CONFIG"})
 
 echo "== disk image"
 version=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$conf" | head -1)
