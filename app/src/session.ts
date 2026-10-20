@@ -410,11 +410,13 @@ export class Session {
     void this.pump();
   }
 
+  // every map of the control: Highlights and Shadows have one per module the
+  // photo's tool can be on, and pump() sends only the chosen one
   setLocal(name: string, id: string, v: number) {
-    const map = localMaps.find((m) => m.controls.includes(id));
-    if (!map) return;
+    const ops = localMaps.filter((m) => m.controls.includes(id)).map((m) => m.op);
+    if (!ops.length) return;
     this.masks = this.masks.map((m) => (m.name === name ? { ...m, values: { ...m.values, [id]: v } } : m));
-    this.markLocal(name, [map.op]);
+    this.markLocal(name, ops);
   }
 
   setInvert(name: string, invert: boolean) {

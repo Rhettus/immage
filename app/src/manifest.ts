@@ -1600,9 +1600,10 @@ export const localMaps: ModuleMap[] = [
     },
   },
   exposureMap(false, "l_exposure", "l_blacks", () => ({ exposure: 0, black: 0 })),
-  // Whites as the highlights' gain: the tone mapper, which carries the
-  // global Whites, cannot run under a mask. Hue turns every hue by up to
-  // ±30 degrees
+  // Whites as the highlights' brilliance: the tone mapper, which carries
+  // the global Whites, cannot run under a mask, and the highlights' gain
+  // (highlights_Y) is Color Grading's. Hue turns every hue by up to ±30
+  // degrees
   // l_fulcrum, the contrast's pivot in EV from middle gray, has no slider:
   // a zone mask sets it to its zones' middle (ZoneSystem.tsx)
   // some 30 ms a mask's draft frame, so its masks share instances
@@ -1610,7 +1611,7 @@ export const localMaps: ModuleMap[] = [
     ...withFulcrum(linear("colorbalancergb", false, [
       { id: "l_contrast", field: "contrast", scale: 0.01, base: 0 },
       { id: "l_saturation", field: "saturation_global", scale: 0.01, base: 0 },
-      { id: "l_whites", field: "highlights_Y", scale: 0.004, base: 0 },
+      { id: "l_whites", field: "brilliance_highlights", scale: 0.004, base: 0 },
       { id: "l_hue", field: "hue_angle", scale: 0.3, base: 0 },
       ...gradingFields("l_cg"),
     ])),
