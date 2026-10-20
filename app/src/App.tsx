@@ -4204,13 +4204,6 @@ export default function App() {
               <Splitter axis="y" value={layout.stripHeight} min={90} max={300} invert hidden={!layout.strip}
                         onChange={(v) => setLayout((l) => ({ ...l, stripHeight: v }))} />
             )}
-            {(shown.length > 0 || pending.length > 0 || grid) && (
-              <button className="grid-toggle" title={grid ? "back to the filmstrip (G, Esc)" : "grid view (G)"}
-                      onClick={() => setGrid(!grid)}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"
-                     strokeLinejoin="round"><path d={grid ? "m6 9 6 6 6-6" : "m6 15 6-6 6 6"} /></svg>
-              </button>
-            )}
             <Filmstrip images={shown} partners={partners} pending={pending}
                        empty={immich ? (immich.busy ? "searching Immich…" : "no photos in Immich match the search")
                               : reading ? "reading the folder…"
@@ -4226,6 +4219,7 @@ export default function App() {
           </div>
         </div>
         <Toolbar filter={filter} kinds={kindCounts} remote={!!immich} layout={layout} ref={toolbar} pin={pinButton("strip")}
+                 grid={grid} onGrid={shown.length > 0 || pending.length > 0 || grid ? () => setGrid(!grid) : undefined}
                  zoomBar={<ZoomBar disabled={!current} register={(f) => { zoomShow.current = f; }}
                                    onZoom={(z) => setZoom(z)}
                                    onToggle={() => setZoom(zoomRef.current === "fit" ? 1 : "fit")}
@@ -4807,8 +4801,10 @@ const passes = (i: ImageEntry, f: Filter) =>
 
 // the bar under the filmstrip: rate and reject the open image, filter the
 // folder, and show or hide the side panels and the filmstrip
-function Toolbar({ filter: f, kinds, layout, zoomBar, onFilter, onLayout, ref, pin, remote }: {
+function Toolbar({ filter: f, kinds, layout, zoomBar, onFilter, onLayout, ref, pin, remote, grid, onGrid }: {
   ref: React.RefObject<HTMLDivElement | null>;
+  grid: boolean;
+  onGrid?: () => void;                      // none while there are no photos to show
   pin: React.ReactNode;
   remote: boolean;                          // Immich results, which carry no reject flag or labels
   filter: Filter; layout: Layout; zoomBar: React.ReactNode;
@@ -4892,6 +4888,12 @@ function Toolbar({ filter: f, kinds, layout, zoomBar, onFilter, onLayout, ref, p
 
       {zoomBar}
       <div className="tool-group">
+        {/* named, not an icon alone: new users missed the arrow it replaces, and G with it */}
+        <button className={`tool grid-toggle${grid ? " on" : ""}`} disabled={!onGrid}
+                title={grid ? "back to the filmstrip (G, Esc)" : "grid view (G)"} onClick={onGrid}>
+          <GridIcon />Grid
+        </button>
+        <span className="sep" />
         <button className={`tool${layout.left ? " on" : ""}`} title="library panel"
                 onClick={() => onLayout("left")}><PanelIcon side="left" /></button>
         <button className={`tool${layout.strip ? " on" : ""}`} title="filmstrip"
@@ -4902,6 +4904,15 @@ function Toolbar({ filter: f, kinds, layout, zoomBar, onFilter, onLayout, ref, p
         {pin}
       </div>
     </div>
+  );
+}
+
+function GridIcon() {
+  return (
+    <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
+      <rect x="4" y="4" width="6" height="6" rx="1" /><rect x="14" y="4" width="6" height="6" rx="1" />
+      <rect x="4" y="14" width="6" height="6" rx="1" /><rect x="14" y="14" width="6" height="6" rx="1" />
+    </svg>
   );
 }
 

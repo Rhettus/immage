@@ -48,7 +48,8 @@ carries it, so its lighttable shows the same photos as altered. Photos
 opened in Immage before version 0.23.2 count their New Photos settings as
 an edit until you reset them.
 
-Press G, or the grid button, for **Grid** view: the whole folder at once.
+Press G, or **Grid** in the toolbar under the filmstrip, for **Grid** view:
+the whole folder at once.
 Double-click a photo to open it and go back to the filmstrip. G or Esc also
 goes back.
 

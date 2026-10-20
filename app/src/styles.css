@@ -1076,19 +1076,20 @@ input.switch:disabled { cursor: default; opacity: 0.4; }
 .strip-slot.floating .filmstrip { box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.55); }
 /* Lightroom's Grid: the filmstrip over the editing area, in rows */
 .strip-slot > div { position: relative; }
-.grid-toggle {
-  position: absolute; top: 0; left: 50%; z-index: 2; transform: translateX(-50%);
-  display: flex; align-items: center; justify-content: center; width: 36px; height: 14px; padding: 0;
-  background: #262626; border: none; border-radius: 0 0 6px 6px; color: var(--text-2); cursor: pointer;
+.toolbar .tool.grid-toggle {
+  width: auto; gap: 6px; padding: 0 10px 0 8px; background: #2a2a2a; color: var(--text);
+  font: inherit; font-size: var(--fs-small); font-weight: 500;
 }
-.grid-toggle:hover { color: var(--text); background: #303030; }
-.grid-toggle svg { width: 13px; height: 13px; }
+.toolbar .tool.grid-toggle .icon { width: 15px; height: 15px; }
+.toolbar .tool.grid-toggle.on { background: #3a3a3a; }
+.toolbar .tool.grid-toggle:hover:not(:disabled) { background: #353535; }
+.toolbar .tool.grid-toggle:disabled { background: none; }
 /* under a revealed floating side panel (41), over the photo */
 .strip-slot.grid { position: absolute; left: 0; right: 0; top: 0; z-index: 25; grid-template-rows: 1fr; }
 .strip-slot.grid > div { height: 100%; }
 .filmstrip.grid {
   flex: 1; height: auto; flex-wrap: wrap; align-content: flex-start; gap: 6px;
-  margin: 0 8px; padding: 18px 10px 10px; overflow-x: hidden; overflow-y: auto; background: #161616;
+  margin: 0 8px; padding: 10px; overflow-x: hidden; overflow-y: auto; background: #161616;
 }
 .filmstrip.grid.empty { align-content: center; justify-content: center; }
 .grid-empty { color: var(--text-3); font-size: var(--fs-body); }
