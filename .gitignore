@@ -1,0 +1,28 @@
+# the build tree: darktable, the engine, install trees and disk images
+/build/
+
+# the Immporter source, its own repo, fetched at the commit app/immporter.rev
+# pins (app/scripts/fetch_immporter.sh)
+/immporter/
+
+# your own notes, plans and findings
+/notes/
+/workspace/
+
+# personal, per-checkout agent instructions
+AGENTS.local.md
+CLAUDE.local.md
+
+# benchmark runs, and what report.py writes from them
+benchmarking/results/
+benchmarking/SUMMARY.md
+benchmarking/dashboard/data.js
+benchmarking/__pycache__/
+
+# Obsidian vault settings, from opening a docs folder in Obsidian
+.obsidian/
+
+.DS_Store
+*.code-workspace
+.idea/
+.vscode/

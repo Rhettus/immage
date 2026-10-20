@@ -1,0 +1,12 @@
+{
+ "note": "a box over something neutral in each corpus photo that has one, [x0, y0, x1, y1] as fractions of the developed image. awb.py scores each white balance by how far the box's linear color sits from gray",
+ "boxes": {
+  "DSC07636.ARW": {"box": [0.44, 0.42, 0.56, 0.47], "what": "sunlit snow on the mountain"},
+  "DSC07779.ARW": {"box": [0.62, 0.62, 0.80, 0.78], "what": "sea spray"},
+  "P1030105.RW2": {"box": [0.88, 0.14, 0.95, 0.36], "what": "white wall, right edge"},
+  "P9302109.ORF": {"box": [0.458, 0.22, 0.478, 0.60], "what": "white frame of the large window"},
+  "P9302114.ORF": {"box": [0.54, 0.87, 0.62, 0.97], "what": "white crock, lit side; mixed indoor light"},
+  "PB230032.ORF": {"box": [0.38, 0.605, 0.52, 0.635], "what": "the junco's white belly"},
+  "P9302203.ORF": {"box": [0.82, 0.85, 0.95, 0.97], "what": "white surf"}
+ }
+}

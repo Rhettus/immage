@@ -1,0 +1,17 @@
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index e2da2f9136..50069e10e5 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -1229,6 +1229,12 @@ if(USE_MCP)
+   add_subdirectory(mcp)
+ endif()
+ 
++# Immage's headless engine, built from outside this tree: IMMAGE_ROOT is
++# set by Immage's scripts/build.sh
++if(IMMAGE_ROOT)
++  add_subdirectory("${IMMAGE_ROOT}/engine" engine)
++endif()
++
+ # have a command line utility to generate all the thumbnails
+ add_subdirectory(generate-cache)
+ 

@@ -1,0 +1,53 @@
+[package]
+name = "immage"
+version = "0.31.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+# engine_background() waits without holding a thread; Tauri brings tokio in already
+tokio = { version = "1", features = ["time"] }
+# the SD card importer, cloned into the repo's immporter/ (app/scripts/fetch_immporter.sh)
+tauri-plugin-immporter = { path = "../../immporter/src-tauri/plugin" }
+# exports uploaded to Immich (immich_upload.rs); the same version the importer uses
+reqwest = { version = "0.13", features = ["blocking", "json", "multipart"] }
+# capture times with the local offset Immich requires (already in the tree, via the importer)
+chrono = "0.4"
+# model download checksums (already in the tree, via tauri)
+sha2 = "0.10"
+# deleted photos go to the system's Trash / Recycle Bin
+trash = "5"
+# the thumbnail cache (cache.rs): JPEG encoding, and the disk's free space;
+# the versions the importer uses (already in the tree)
+image = { version = "0.25.10", default-features = false, features = ["jpeg"] }
+sysinfo = "0.39.6"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# the main dispatch queue, to act after tao's own work there (preview_fullscreen;
+# already in the tree, via tao)
+[target.'cfg(target_os = "macos")'.dependencies]
+dispatch2 = "0.3"
+# NSWorkspace, to tell a package (Photos Library, .lrlibrary) from a folder as
+# Finder does (already in the tree, via tao)
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSWorkspace"] }
+
+# WebView2's shared buffers, for frames (main.rs, shared_frame); the versions
+# wry uses (already in the tree, via tauri)
+[target.'cfg(windows)'.dependencies]
+webview2-com = "0.39"
+windows = "0.62"
+
+[dev-dependencies]
+mockito = "1.7.2"
+
+# the importer's decoding and hashing crawl unoptimized; keep dependencies fast in dev
+[profile.dev.package."*"]
+opt-level = 3

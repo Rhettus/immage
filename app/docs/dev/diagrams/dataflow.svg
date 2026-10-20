@@ -1,0 +1,210 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-300 -20 2708 1296" width="2708" height="1296" font-family="-apple-system, Helvetica, Arial, sans-serif">
+<defs><marker id="h" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#343a40"/></marker></defs>
+<rect x="-300" y="-20" width="2708" height="1296" fill="#ffffff"/>
+<rect x="-280" y="60" width="2668" height="140" rx="12" fill="#dbe4ff" fill-opacity="0.6" stroke="#1971c2" stroke-width="1"/>
+<text x="-266.0" y="78.0" font-size="17" fill="#1971c2" text-anchor="start" dominant-baseline="middle" font-weight="600">WebView: React front end (app/src)</text>
+<rect x="-280" y="250" width="2668" height="140" rx="12" fill="#fff4e6" fill-opacity="0.6" stroke="#e8590c" stroke-width="1"/>
+<text x="-266.0" y="268.0" font-size="17" fill="#e8590c" text-anchor="start" dominant-baseline="middle" font-weight="600">Tauri core: Rust (app/src-tauri/src)</text>
+<rect x="-280" y="440" width="2668" height="330" rx="12" fill="#e5dbff" fill-opacity="0.6" stroke="#6741d9" stroke-width="1"/>
+<text x="-266.0" y="458.0" font-size="17" fill="#6741d9" text-anchor="start" dominant-baseline="middle" font-weight="600">darktable-engine: one child process (engine/main.c)</text>
+<rect x="-280" y="820" width="2668" height="140" rx="12" fill="#d3f9d8" fill-opacity="0.6" stroke="#2f9e44" stroke-width="1"/>
+<text x="-266.0" y="838.0" font-size="17" fill="#2f9e44" text-anchor="start" dominant-baseline="middle" font-weight="600">darktable core (libdarktable)</text>
+<rect x="-280" y="1010" width="2668" height="140" rx="12" fill="#e3fafc" fill-opacity="0.6" stroke="#0c8599" stroke-width="1"/>
+<text x="-266.0" y="1028.0" font-size="17" fill="#0c8599" text-anchor="start" dominant-baseline="middle" font-weight="600">Storage and outside Immage</text>
+<polyline points="268.0,137.0 340.0,137.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="568.0,137.0 640.0,137.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="40.0,137.0 -32.0,137.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="1054.0,179.0 1054.0,214.0 534.0,214.0 533.8,285.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="408.4,179.0 408.4,285.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="499.6,285.0 499.6,179.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="1654.0,179.0 1654.0,232.0 557.0,232.0 556.6,285.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="1954.0,179.0 1954.0,250.0 511.0,250.0 511.0,285.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="568.0,327.0 640.0,327.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="868.0,327.0 940.0,327.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="1054.0,369.0 1054.0,475.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)" marker-start="url(#h)"/>
+<polyline points="940.0,517.0 868.0,517.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="1168.0,517.0 1840.0,517.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="754.0,559.0 754.0,615.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="640.0,517.0 568.0,657.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="1054.0,559.0 1054.0,615.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="1099.6,559.0 1308.4,615.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="1156.6,559.0 1608.4,615.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="754.0,699.0 454.0,855.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="674.2,699.0 233.8,855.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="568.0,897.0 640.0,897.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="1054.0,699.0 1054.0,855.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="1354.0,699.0 1354.0,855.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="1654.0,699.0 1654.0,855.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="1954.0,559.0 1954.0,855.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="1954.0,939.0 1954.0,1045.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)" marker-start="url(#h)"/>
+<polyline points="1654.0,939.0 1654.0,1045.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="40.0,327.0 -32.0,327.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="1540.0,327.0 1468.0,327.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="2068.0,327.0 2140.0,327.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="868.0,682.2 904.0,682.0 904.0,1087.0 568.0,1087.0" fill="none" stroke="#343a40" stroke-width="1.6" stroke-dasharray="7 5" marker-end="url(#h)"/>
+<text x="-190.0" y="14.0" font-size="28" fill="#1e1e1e" text-anchor="start" dominant-baseline="middle" font-weight="600">Immage: data flow between the code blocks</text>
+<rect x="-260" y="95" width="228" height="84" rx="10" fill="#c3fae8" stroke="#0c8599" stroke-width="2"/>
+<text x="-146.0" y="128.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">localStorage</text>
+<text x="-146.0" y="145.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">immage.* prefs</text>
+<rect x="40" y="95" width="228" height="84" rx="10" fill="#a5d8ff" stroke="#1971c2" stroke-width="2"/>
+<text x="154.0" y="128.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">App.tsx</text>
+<text x="154.0" y="145.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">viewer · panels · undo</text>
+<rect x="340" y="95" width="228" height="84" rx="10" fill="#a5d8ff" stroke="#1971c2" stroke-width="2"/>
+<text x="454.0" y="128.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">session.ts · Session</text>
+<text x="454.0" y="145.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">pump · masks · save</text>
+<rect x="640" y="95" width="228" height="84" rx="10" fill="#a5d8ff" stroke="#1971c2" stroke-width="2"/>
+<text x="754.0" y="128.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">manifest.ts</text>
+<text x="754.0" y="145.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">controls ↔ module params</text>
+<rect x="940" y="95" width="228" height="84" rx="10" fill="#a5d8ff" stroke="#1971c2" stroke-width="2"/>
+<text x="1054.0" y="128.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">perf.ts · PerfHud</text>
+<text x="1054.0" y="145.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">timings by stage</text>
+<rect x="1540" y="95" width="228" height="84" rx="10" fill="#a5d8ff" stroke="#1971c2" stroke-width="2"/>
+<text x="1654.0" y="128.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">library.ts</text>
+<text x="1654.0" y="145.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">folders · thumbnails</text>
+<rect x="1840" y="95" width="228" height="84" rx="10" fill="#a5d8ff" stroke="#1971c2" stroke-width="2"/>
+<text x="1954.0" y="128.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">ExportDialog.tsx</text>
+<text x="1954.0" y="145.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">settings · preview</text>
+<rect x="-260" y="285" width="228" height="84" rx="10" fill="#e9ecef" stroke="#495057" stroke-width="2"/>
+<text x="-146.0" y="318.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">External apps</text>
+<text x="-146.0" y="335.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">(DxO PureRAW)</text>
+<rect x="40" y="285" width="228" height="84" rx="10" fill="#ffd8a8" stroke="#e8590c" stroke-width="2"/>
+<text x="154.0" y="318.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">plugins.rs</text>
+<text x="154.0" y="335.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">Edit In · watcher</text>
+<rect x="340" y="285" width="228" height="84" rx="10" fill="#ffd8a8" stroke="#e8590c" stroke-width="2"/>
+<text x="454.0" y="318.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">main.rs commands</text>
+<text x="454.0" y="335.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">invoke handlers</text>
+<rect x="640" y="285" width="228" height="84" rx="10" fill="#ffd8a8" stroke="#e8590c" stroke-width="2"/>
+<text x="754.0" y="318.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">AppState</text>
+<text x="754.0" y="335.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">Mutex&lt;Engine&gt;</text>
+<rect x="940" y="285" width="228" height="84" rx="10" fill="#ffd8a8" stroke="#e8590c" stroke-width="2"/>
+<text x="1054.0" y="318.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">engine.rs</text>
+<text x="1054.0" y="335.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">child process · stderr</text>
+<rect x="1240" y="285" width="228" height="84" rx="10" fill="#e9ecef" stroke="#495057" stroke-width="2"/>
+<text x="1354.0" y="327.0" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">SD cards</text>
+<rect x="1540" y="285" width="228" height="84" rx="10" fill="#ffd8a8" stroke="#e8590c" stroke-width="2"/>
+<text x="1654.0" y="318.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">immporter plugin</text>
+<text x="1654.0" y="335.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">import · Immich key</text>
+<rect x="1840" y="285" width="228" height="84" rx="10" fill="#ffd8a8" stroke="#e8590c" stroke-width="2"/>
+<text x="1954.0" y="318.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">immich_*.rs</text>
+<text x="1954.0" y="335.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">search · upload</text>
+<rect x="2140" y="285" width="228" height="84" rx="10" fill="#e9ecef" stroke="#495057" stroke-width="2"/>
+<text x="2254.0" y="327.0" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">Immich server</text>
+<rect x="640" y="475" width="228" height="84" rx="10" fill="#d0bfff" stroke="#6741d9" stroke-width="2"/>
+<text x="754.0" y="508.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">session _s</text>
+<text x="754.0" y="525.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">image · develop · pipes</text>
+<rect x="940" y="475" width="228" height="84" rx="10" fill="#d0bfff" stroke="#6741d9" stroke-width="2"/>
+<text x="1054.0" y="508.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">_handle()</text>
+<text x="1054.0" y="525.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">one command per line</text>
+<rect x="1840" y="475" width="228" height="84" rx="10" fill="#d0bfff" stroke="#6741d9" stroke-width="2"/>
+<text x="1954.0" y="508.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">library commands</text>
+<text x="1954.0" y="525.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">folder · thumb · meta</text>
+<rect x="340" y="615" width="228" height="84" rx="10" fill="#d0bfff" stroke="#6741d9" stroke-width="2"/>
+<text x="454.0" y="648.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">ppipe</text>
+<text x="454.0" y="665.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">previews · AI input</text>
+<rect x="640" y="615" width="228" height="84" rx="10" fill="#d0bfff" stroke="#6741d9" stroke-width="2"/>
+<text x="754.0" y="648.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">pipe (main)</text>
+<text x="754.0" y="665.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">every frame</text>
+<rect x="940" y="615" width="228" height="84" rx="10" fill="#d0bfff" stroke="#6741d9" stroke-width="2"/>
+<text x="1054.0" y="648.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">masks · spots · looks</text>
+<text x="1054.0" y="665.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">zones · ranges</text>
+<rect x="1240" y="615" width="228" height="84" rx="10" fill="#d0bfff" stroke="#6741d9" stroke-width="2"/>
+<text x="1354.0" y="648.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">export</text>
+<text x="1354.0" y="665.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">frame · AI upscale</text>
+<rect x="1540" y="615" width="228" height="84" rx="10" fill="#d0bfff" stroke="#6741d9" stroke-width="2"/>
+<text x="1654.0" y="648.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">AI features</text>
+<text x="1654.0" y="665.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">masks · depth · denoise</text>
+<rect x="40" y="855" width="228" height="84" rx="10" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2"/>
+<text x="154.0" y="888.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">mipmap_cache</text>
+<text x="154.0" y="905.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">FULL · F mip · thumbs</text>
+<rect x="340" y="855" width="228" height="84" rx="10" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2"/>
+<text x="454.0" y="888.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">pixelpipe_hb.c</text>
+<text x="454.0" y="905.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">+ pipe cache</text>
+<rect x="640" y="855" width="228" height="84" rx="10" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2"/>
+<text x="754.0" y="888.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">iop modules</text>
+<text x="754.0" y="905.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">exposure · agx · ...</text>
+<rect x="940" y="855" width="228" height="84" rx="10" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2"/>
+<text x="1054.0" y="888.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">develop.c · masks</text>
+<text x="1054.0" y="905.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">history · module list</text>
+<rect x="1240" y="855" width="228" height="84" rx="10" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2"/>
+<text x="1354.0" y="888.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">styles.c · imageio</text>
+<text x="1354.0" y="905.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">looks · formats</text>
+<rect x="1540" y="855" width="228" height="84" rx="10" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2"/>
+<text x="1654.0" y="888.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">AI backend</text>
+<text x="1654.0" y="905.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">ONNX Runtime</text>
+<rect x="1840" y="855" width="228" height="84" rx="10" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2"/>
+<text x="1954.0" y="888.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">image · film · DB</text>
+<text x="1954.0" y="905.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">:memory: library</text>
+<rect x="340" y="1045" width="228" height="84" rx="10" fill="#c3fae8" stroke="#0c8599" stroke-width="2"/>
+<text x="454.0" y="1069.5" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">runtime folder</text>
+<text x="454.0" y="1087.0" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">frame.rgba · presets</text>
+<text x="454.0" y="1104.5" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">config · cache · log</text>
+<rect x="1540" y="1045" width="228" height="84" rx="10" fill="#c3fae8" stroke="#0c8599" stroke-width="2"/>
+<text x="1654.0" y="1087.0" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">AI models · caches</text>
+<rect x="1840" y="1045" width="228" height="84" rx="10" fill="#c3fae8" stroke="#0c8599" stroke-width="2"/>
+<text x="1954.0" y="1078.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">photos +</text>
+<text x="1954.0" y="1095.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">XMP sidecars</text>
+<text x="-260.0" y="1218.0" font-size="14" fill="#495057" text-anchor="start" dominant-baseline="middle" font-weight="normal">frame.rgba is written by the engine and read back by Rust while it still holds the engine; every engine call waits on the one Mutex&lt;Engine&gt;.</text>
+<text x="-260.0" y="1244.0" font-size="14" fill="#495057" text-anchor="start" dominant-baseline="middle" font-weight="normal">On Windows the frame goes to the page in a WebView2 shared buffer (sharedFrames.ts) and render replies with the header alone.</text>
+<rect x="282.5" y="127.5" width="43.0" height="19" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="304.0" y="137.0" font-size="12" fill="#495057" text-anchor="middle" dominant-baseline="middle" font-weight="normal">set()</text>
+<rect x="585.8" y="127.5" width="36.4" height="19" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="604.0" y="137.0" font-size="12" fill="#495057" text-anchor="middle" dominant-baseline="middle" font-weight="normal">maps</text>
+<rect x="-17.5" y="127.5" width="43.0" height="19" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="4.0" y="137.0" font-size="12" fill="#495057" text-anchor="middle" dominant-baseline="middle" font-weight="normal">prefs</text>
+<rect x="769.2" y="204.5" width="49.6" height="19" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="794.0" y="214.0" font-size="12" fill="#495057" text-anchor="middle" dominant-baseline="middle" font-weight="normal">perf_*</text>
+<rect x="340.7" y="222.5" width="135.4" height="19" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="408.4" y="232.0" font-size="12" fill="#495057" text-anchor="middle" dominant-baseline="middle" font-weight="normal">set_params · render</text>
+<rect x="412.1" y="222.5" width="175.0" height="19" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="499.6" y="232.0" font-size="12" fill="#495057" text-anchor="middle" dominant-baseline="middle" font-weight="normal">Frame: 48 B header + RGBA</text>
+<rect x="1037.8" y="222.5" width="135.4" height="19" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="1105.5" y="232.0" font-size="12" fill="#495057" text-anchor="middle" dominant-baseline="middle" font-weight="normal">open_folder · thumb</text>
+<rect x="1184.6" y="240.5" width="95.8" height="19" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="1232.5" y="250.0" font-size="12" fill="#495057" text-anchor="middle" dominant-baseline="middle" font-weight="normal">export_images</text>
+<rect x="585.8" y="317.5" width="36.4" height="19" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="604.0" y="327.0" font-size="12" fill="#495057" text-anchor="middle" dominant-baseline="middle" font-weight="normal">lock</text>
+<rect x="875.9" y="317.5" width="56.2" height="19" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="904.0" y="327.0" font-size="12" fill="#495057" text-anchor="middle" dominant-baseline="middle" font-weight="normal">request</text>
+<rect x="956.6" y="412.5" width="194.8" height="19" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="1054.0" y="422.0" font-size="12" fill="#495057" text-anchor="middle" dominant-baseline="middle" font-weight="normal">JSON lines: stdin ↓ stdout ↑</text>
+<rect x="885.8" y="507.5" width="36.4" height="19" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="904.0" y="517.0" font-size="12" fill="#495057" text-anchor="middle" dominant-baseline="middle" font-weight="normal">edit</text>
+<rect x="1423.1" y="507.5" width="161.8" height="19" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="1504.0" y="517.0" font-size="12" fill="#495057" text-anchor="middle" dominant-baseline="middle" font-weight="normal">folder · import · thumb</text>
+<rect x="729.2" y="577.5" width="49.6" height="19" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="754.0" y="587.0" font-size="12" fill="#495057" text-anchor="middle" dominant-baseline="middle" font-weight="normal">render</text>
+<rect x="575.9" y="577.5" width="56.2" height="19" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="604.0" y="587.0" font-size="12" fill="#495057" text-anchor="middle" dominant-baseline="middle" font-weight="normal">preview</text>
+<rect x="986.3" y="577.5" width="135.4" height="19" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="1054.0" y="587.0" font-size="12" fill="#495057" text-anchor="middle" dominant-baseline="middle" font-weight="normal">mask · spots · look</text>
+<rect x="1179.2" y="577.5" width="49.6" height="19" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="1204.0" y="587.0" font-size="12" fill="#495057" text-anchor="middle" dominant-baseline="middle" font-weight="normal">export</text>
+<rect x="1364.3" y="577.5" width="36.4" height="19" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="1382.5" y="587.0" font-size="12" fill="#495057" text-anchor="middle" dominant-baseline="middle" font-weight="normal">ai_*</text>
+<rect x="575.9" y="767.5" width="56.2" height="19" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="604.0" y="777.0" font-size="12" fill="#495057" text-anchor="middle" dominant-baseline="middle" font-weight="normal">process</text>
+<rect x="422.6" y="767.5" width="62.8" height="19" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="454.0" y="777.0" font-size="12" fill="#495057" text-anchor="middle" dominant-baseline="middle" font-weight="normal">FULL raw</text>
+<rect x="575.9" y="887.5" width="56.2" height="19" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="604.0" y="897.0" font-size="12" fill="#495057" text-anchor="middle" dominant-baseline="middle" font-weight="normal">process</text>
+<rect x="999.5" y="767.5" width="109.0" height="19" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="1054.0" y="777.0" font-size="12" fill="#495057" text-anchor="middle" dominant-baseline="middle" font-weight="normal">history · masks</text>
+<rect x="1316.0" y="767.5" width="76.0" height="19" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="1354.0" y="777.0" font-size="12" fill="#495057" text-anchor="middle" dominant-baseline="middle" font-weight="normal">temp style</text>
+<rect x="1629.2" y="767.5" width="49.6" height="19" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="1654.0" y="777.0" font-size="12" fill="#495057" text-anchor="middle" dominant-baseline="middle" font-weight="normal">models</text>
+<rect x="1906.1" y="697.5" width="95.8" height="19" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="1954.0" y="707.0" font-size="12" fill="#495057" text-anchor="middle" dominant-baseline="middle" font-weight="normal">import · meta</text>
+<rect x="1883.0" y="982.5" width="142.0" height="19" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="1954.0" y="992.0" font-size="12" fill="#495057" text-anchor="middle" dominant-baseline="middle" font-weight="normal">read · write sidecar</text>
+<rect x="1609.4" y="982.5" width="89.2" height="19" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="1654.0" y="992.0" font-size="12" fill="#495057" text-anchor="middle" dominant-baseline="middle" font-weight="normal">load · cache</text>
+<rect x="-20.8" y="317.5" width="49.6" height="19" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="4.0" y="327.0" font-size="12" fill="#495057" text-anchor="middle" dominant-baseline="middle" font-weight="normal">launch</text>
+<rect x="1485.8" y="317.5" width="36.4" height="19" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="1504.0" y="327.0" font-size="12" fill="#495057" text-anchor="middle" dominant-baseline="middle" font-weight="normal">copy</text>
+<rect x="2085.8" y="317.5" width="36.4" height="19" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="2104.0" y="327.0" font-size="12" fill="#495057" text-anchor="middle" dominant-baseline="middle" font-weight="normal">HTTP</text>
+<rect x="698.0" y="1077.5" width="76.0" height="19" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="736.0" y="1087.0" font-size="12" fill="#495057" text-anchor="middle" dominant-baseline="middle" font-weight="normal">frame.rgba</text>
+</svg>

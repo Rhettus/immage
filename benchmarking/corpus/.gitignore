@@ -1,0 +1,4 @@
+# your benchmark photos, and the corpus.json bench.py writes about them,
+# stay out of git
+*
+!.gitignore

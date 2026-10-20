@@ -1,0 +1,11 @@
+lensfun (https://lensfun.github.io/), bundled for its lens correction
+database. Homebrew's package carries no license file, so these are kept
+here.
+
+The library is licensed under the GNU Lesser General Public License,
+version 3 (lgpl-3.0.txt here, which adds to the GNU General Public License,
+version 3, in Immage's LICENSE). The lens database is licensed under the
+Creative Commons Attribution-ShareAlike 3.0 license,
+https://creativecommons.org/licenses/by-sa/3.0/
+
+Source: https://github.com/lensfun/lensfun

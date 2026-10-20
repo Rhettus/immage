@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Immage Benchmarks</title>
+<!-- offline: no network, everything inline; the data is data.js, written by benchmarking/report.py -->
+<style>
+:root {
+  --bg: #f6f6f4; --surface: #ffffff; --ink: #1d1d1f; --ink-2: #55565b; --ink-3: #8a8b90; --line: #e2e2df;
+  --grid: #ececea; --accent: #2a6fdb;
+  --c1: #2a6fdb; --c2: #d9822b; --c3: #23946a; --c4: #b9509a; --c5: #6b5bd2; --c6: #8a7a1f; --c7: #2b97a8; --c8: #c4523d;
+  --other: #b8b8b4; --good: #23946a; --bad: #c4423d;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141416; --surface: #1d1d20; --ink: #ececee; --ink-2: #a6a7ad; --ink-3: #74757b; --line: #303035;
+    --grid: #29292d; --accent: #6aa3ff;
+    --c1: #5c97f5; --c2: #eb9a4d; --c3: #46b78a; --c4: #d77abb; --c5: #9586f0; --c6: #c2b046; --c7: #4fbccd; --c8: #e2735f;
+    --other: #5a5a60; --good: #46b78a; --bad: #e2655f;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141416; --surface: #1d1d20; --ink: #ececee; --ink-2: #a6a7ad; --ink-3: #74757b; --line: #303035;
+  --grid: #29292d; --accent: #6aa3ff;
+  --c1: #5c97f5; --c2: #eb9a4d; --c3: #46b78a; --c4: #d77abb; --c5: #9586f0; --c6: #c2b046; --c7: #4fbccd; --c8: #e2735f;
+  --other: #5a5a60; --good: #46b78a; --bad: #e2655f;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+header { padding: 20px 24px 8px; display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: baseline; }
+header h1 { margin: 0; font-size: 20px; font-weight: 650; }
+header .meta { color: var(--ink-2); font-size: 13px; }
+nav { display: flex; gap: 2px; padding: 0 24px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+nav button { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--ink-2); padding: 10px 12px; font: inherit; cursor: pointer; white-space: nowrap; }
+nav button.on { color: var(--ink); border-bottom-color: var(--accent); }
+.filters { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 12px 24px; align-items: center; }
+.filters label { color: var(--ink-2); font-size: 13px; display: flex; gap: 6px; align-items: center; }
+select, .seg button { font: inherit; font-size: 13px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
+.seg { display: inline-flex; } .seg button { border-radius: 0; cursor: pointer; } .seg button:first-child { border-radius: 6px 0 0 6px; }
+.seg button:last-child { border-radius: 0 6px 6px 0; } .seg button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+main { padding: 0 24px 40px; max-width: 1400px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; margin: 12px 0; }
+.card h2 { margin: 0 0 4px; font-size: 15px; font-weight: 650; }
+.card p.note { margin: 0 0 12px; color: var(--ink-2); font-size: 13px; max-width: 900px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.tile .k { color: var(--ink-2); font-size: 12px; } .tile .v { font-size: 26px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.tile .s { color: var(--ink-3); font-size: 12px; font-variant-numeric: tabular-nums; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); }
+th { color: var(--ink-2); font-weight: 600; } td.n, th.n { text-align: right; }
+.faster { color: var(--good); } .slower { color: var(--bad); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--ink-2); margin: 6px 0; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+svg text { fill: var(--ink-2); font-size: 11px; font-family: inherit; }
+svg .val { fill: var(--ink); font-variant-numeric: tabular-nums; }
+svg .axis { stroke: var(--line); } svg .gridl { stroke: var(--grid); }
+svg .hit:hover + .bar, svg .bar:hover { opacity: .8; }
+#tip { position: fixed; pointer-events: none; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 6px 9px; font-size: 12px; box-shadow: 0 4px 14px rgba(0,0,0,.18); display: none; z-index: 10; max-width: 340px; }
+.scroll { overflow-x: auto; }
+.empty { color: var(--ink-3); padding: 20px 0; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; } @media (max-width: 900px) { .two { grid-template-columns: 1fr; } }
+code { font-size: 12px; background: var(--grid); padding: 1px 4px; border-radius: 4px; }
+@media (max-width: 600px) { header, nav, .filters, main { padding-left: 16px; padding-right: 16px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Immage Benchmarks</h1>
+  <span class="meta" id="meta"></span>
+  <span style="flex:1"></span>
+  <span class="seg" id="theme"><button data-t="">Auto</button><button data-t="light">Light</button><button data-t="dark">Dark</button></span>
+</header>
+<nav id="tabs"></nav>
+<div class="filters" id="filters"></div>
+<main id="main"></main>
+<div id="tip"></div>
+<script src="data.js"></script>
+<script>
+"use strict";
+const D = window.BENCH || { runs: [], gui: [] };
+const $ = (s) => document.querySelector(s);
+const h = (tag, attrs = {}, ...kids) => {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) if (k === "html") e.innerHTML = v; else if (k.startsWith("on")) e.addEventListener(k.slice(2), v); else e.setAttribute(k, v);
+  for (const k of kids.flat()) if (k != null) e.append(k instanceof Node ? k : String(k));
+  return e;
+};
+const NS = "http://www.w3.org/2000/svg";
+const s = (tag, attrs = {}, text) => { const e = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); if (text != null) e.textContent = text; return e; };
+const med = (xs) => { xs = xs.filter((x) => x != null && !isNaN(x)).sort((a, b) => a - b); if (!xs.length) return null; const m = xs.length >> 1; return xs.length % 2 ? xs[m] : (xs[m - 1] + xs[m]) / 2; };
+const fmt = (v) => v == null ? "–" : v >= 100 ? Math.round(v).toLocaleString() : v.toFixed(1);
+const CAT = ["--c1", "--c2", "--c3", "--c4", "--c5", "--c6", "--c7", "--c8"].map((v) => `var(${v})`);
+const MODE_NAME = { cpu: "CPU", opencl: "OpenCL (GPU)" };
+const MODE_COLOR = { cpu: CAT[0], opencl: CAT[1] };
+
+// the theme switch, remembered per browser
+const setTheme = (t) => { if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
+  document.querySelectorAll("#theme button").forEach((b) => b.classList.toggle("on", b.dataset.t === t)); try { localStorage.setItem("bench.theme", t); } catch {} };
+document.querySelectorAll("#theme button").forEach((b) => b.onclick = () => setTheme(b.dataset.t));
+try { setTheme(localStorage.getItem("bench.theme") || ""); } catch { setTheme(""); }
+
+// tooltip
+const tip = $("#tip");
+const hover = (el, html) => { el.addEventListener("mousemove", (e) => { tip.innerHTML = html; tip.style.display = "block";
+  const x = Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8); tip.style.left = x + "px"; tip.style.top = (e.clientY + 14) + "px"; });
+  el.addEventListener("mouseleave", () => tip.style.display = "none"); };
+
+// ---------------------------------------------------------------- state
+const state = { tab: "overview", run: D.runs.length - 1, mode: null, image: "all", compareWith: null, gui: D.gui.length - 1, step: null };
+const run = () => D.runs[state.run];
+const modes = () => run() ? run().env.modes : [];
+const images = () => run() ? run().corpus.map((c) => c.name) : [];
+const metric = (r) => (r.scenario === "modules" ? r.own_ms : r.wall_ms)?.p50 ?? null;
+const recs = (pred, r = run()) => r ? r.records.filter((x) => (state.image === "all" || x.image === state.image) && pred(x)) : [];
+// one value per step: the photo's, or the median across photos
+const value = (pred, r) => med(recs(pred, r).map(metric));
+
+// ---------------------------------------------------------------- charts
+function hbars(rows, { series, unit = "ms", width = 900, label = 210, rowH = 22 }) {
+  // rows: [{label, values: [v per series], tips: [html]}], series: [{name, color}]
+  const n = series.length, max = Math.max(1, ...rows.flatMap((r) => r.values.filter((v) => v != null)));
+  const bh = Math.max(6, Math.floor((rowH - 6) / n)), H = rows.length * rowH + 26, W = width, plot = W - label - 70;
+  const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", role: "img" });
+  const ticks = niceTicks(max);
+  for (const t of ticks) { const x = label + (t / ticks[ticks.length - 1]) * plot;
+    svg.append(s("line", { x1: x, x2: x, y1: 0, y2: H - 20, class: "gridl" }), s("text", { x, y: H - 6, "text-anchor": "middle" }, t + (t === ticks[ticks.length - 1] ? " " + unit : ""))); }
+  const top = ticks[ticks.length - 1];
+  rows.forEach((r, i) => {
+    const y0 = i * rowH + 3;
+    svg.append(s("text", { x: label - 8, y: y0 + rowH / 2, "text-anchor": "end", "dominant-baseline": "middle" }, r.label));
+    r.values.forEach((v, k) => {
+      if (v == null) return;
+      const w = Math.max(2, (v / top) * plot), y = y0 + k * (bh + 2);
+      const bar = s("rect", { x: label, y, width: w, height: bh, rx: 2, fill: series[k].color, class: "bar" });
+      const hit = s("rect", { x: label, y: y0, width: plot, height: rowH, fill: "transparent", class: "hit" });
+      svg.append(bar);
+      if (n === 1 || k === n - 1) svg.append(s("text", { x: label + w + 5, y: y + bh / 2, "dominant-baseline": "middle", class: "val" }, fmt(v)));
+      hover(bar, `<b>${r.label}</b><br>${series[k].name}: ${fmt(v)} ${unit}` + (r.tips?.[k] ? "<br>" + r.tips[k] : ""));
+    });
+  });
+  return svg;
+}
+
+function stacked(rows, keys, colors, { unit = "ms", width = 900, label = 210, rowH = 24, total = true } = {}) {
+  // rows: [{label, parts: {key: v}}]
+  const sums = rows.map((r) => keys.reduce((a, k) => a + (r.parts[k] || 0), 0));
+  const max = Math.max(1, ...sums), ticks = niceTicks(max), top = ticks[ticks.length - 1];
+  const H = rows.length * rowH + 26, W = width, plot = W - label - 70;
+  const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", role: "img" });
+  for (const t of ticks) { const x = label + (t / top) * plot; svg.append(s("line", { x1: x, x2: x, y1: 0, y2: H - 20, class: "gridl" }), s("text", { x, y: H - 6, "text-anchor": "middle" }, t + (t === top ? " " + unit : ""))); }
+  rows.forEach((r, i) => {
+    const y = i * rowH + 4, bh = rowH - 8;
+    svg.append(s("text", { x: label - 8, y: y + bh / 2, "text-anchor": "end", "dominant-baseline": "middle" }, r.label));
+    let x = label;
+    keys.forEach((k, j) => {
+      const v = r.parts[k] || 0; if (v <= 0) return;
+      const w = (v / top) * plot;
+      const rect = s("rect", { x, y, width: Math.max(0.5, w - (w > 3 ? 2 : 0)), height: bh, rx: 1.5, fill: colors[j], class: "bar" });
+      svg.append(rect);
+      hover(rect, `<b>${r.label}</b><br>${k}: ${fmt(v)} ${unit} (${Math.round(100 * v / sums[i])}%)`);
+      x += w;
+    });
+    if (total) svg.append(s("text", { x: x + 5, y: y + bh / 2, "dominant-baseline": "middle", class: "val" }, fmt(sums[i])));
+  });
+  return svg;
+}
+
+function lines(seriesList, xLabels, { unit = "ms", width = 900, height = 260 } = {}) {
+  const W = width, H = height, L = 56, B = 40, plotW = W - L - 20, plotH = H - B - 14;
+  const all = seriesList.flatMap((sr) => sr.values.filter((v) => v != null));
+  const ticks = niceTicks(Math.max(1, ...all)), top = ticks[ticks.length - 1];
+  const X = (i) => L + (xLabels.length < 2 ? plotW / 2 : (i / (xLabels.length - 1)) * plotW), Y = (v) => 14 + plotH - (v / top) * plotH;
+  const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", role: "img" });
+  for (const t of ticks) svg.append(s("line", { x1: L, x2: W - 20, y1: Y(t), y2: Y(t), class: "gridl" }), s("text", { x: L - 6, y: Y(t), "text-anchor": "end", "dominant-baseline": "middle" }, t));
+  svg.append(s("text", { x: 4, y: 10 }, unit));
+  xLabels.forEach((l, i) => svg.append(s("text", { x: X(i), y: H - 22, "text-anchor": "middle" }, l)));
+  seriesList.forEach((sr) => {
+    const pts = sr.values.map((v, i) => v == null ? null : [X(i), Y(v)]);
+    const d = pts.reduce((a, p, i) => p ? a + (a && pts[i - 1] ? "L" : "M") + p[0] + "," + p[1] : a, "");
+    svg.append(s("path", { d, fill: "none", stroke: sr.color, "stroke-width": 2 }));
+    pts.forEach((p, i) => { if (!p) return; const c = s("circle", { cx: p[0], cy: p[1], r: 4, fill: sr.color, stroke: "var(--surface)", "stroke-width": 2 });
+      svg.append(c); hover(c, `<b>${sr.name}</b><br>${xLabels[i]}: ${fmt(sr.values[i])} ${unit}`); });
+  });
+  return svg;
+}
+
+function niceTicks(max) {
+  const step0 = max / 4, mag = 10 ** Math.floor(Math.log10(step0)), step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((x) => x >= step0);
+  const out = []; for (let v = 0; v <= max + step * 0.999; v += step) out.push(+v.toFixed(6)); return out.length > 1 ? out : [0, step];
+}
+const legend = (items) => h("div", { class: "legend" }, items.map(([name, color]) => h("span", {}, h("i", { style: `background:${color}` }), name)));
+const card = (title, note, ...kids) => h("div", { class: "card" }, h("h2", {}, title), note ? h("p", { class: "note", html: note }) : null, ...kids);
+const table = (head, rows, numeric = []) => h("div", { class: "scroll" }, h("table", {},
+  h("thead", {}, h("tr", {}, head.map((x, i) => h("th", { class: numeric.includes(i) ? "n" : "" }, x)))),
+  h("tbody", {}, rows.map((r) => h("tr", {}, r.map((x, i) => x instanceof Node ? h("td", { class: numeric.includes(i) ? "n" : "" }, x) : h("td", { class: numeric.includes(i) ? "n" : "" }, x)))))));
+
+// ---------------------------------------------------------------- the latency diagram
+// the path of one slider move, each hop with its measured time: from the
+// latest GUI report when there is one (every stage), else from the engine run
+function pathDiagram(stages, source) {
+  const hops = [
+    ["Slider", "React + Session.pump", "queue", "waiting for the frame before"],
+    ["Session.pump", "Rust (Tauri)", "set", "set_params, one per module"],
+    ["Rust", "engine lock", "lock", "behind another command"],
+    ["engine", "darktable pixelpipe", "pipeline", "modules from the changed one on"],
+    ["pixelpipe", "frame.rgba", "write", "swizzle + file write + reply"],
+    ["frame.rgba", "Rust", "read", "read back into memory"],
+    ["Rust", "WebView", "ipc", "binary IPC to the page"],
+    ["WebView", "canvas", "handoff + draw", "putImageData"],
+    ["canvas", "histogram", "histogram", "computed on the main thread"],
+    ["histogram", "screen", "paint", "next animation frame"],
+  ];
+  const val = (k) => k.split(" + ").reduce((a, x) => a + (stages[x] ?? 0), 0);
+  const known = (k) => k.split(" + ").some((x) => stages[x] != null);
+  const W = 1000, rowH = 34, H = hops.length * rowH + 40;
+  const total = hops.reduce((a, [, , k]) => a + (known(k) ? val(k) : 0), 0) || 1;
+  const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", role: "img", "aria-label": "latency of one slider move by stage" });
+  const lanes = [["GUI (WebView)", 0, 1, 7, 8, 9], ["Rust", 1, 2, 5, 6], ["Engine (darktable)", 3, 4]];
+  const laneOf = (i) => (i === 0 || i >= 7) ? 0 : (i === 3 || i === 4) ? 2 : 1;
+  const laneX = [70, 250, 430], laneColor = [CAT[3], CAT[1], CAT[0]];
+  lanes.forEach(([name], j) => { svg.append(s("text", { x: laneX[j], y: 14, "font-weight": 600 }, name)); });
+  let acc = 0;
+  hops.forEach(([from, to, k, what], i) => {
+    const y = 26 + i * rowH, lane = laneOf(i), v = val(k), has = known(k);
+    svg.append(s("rect", { x: laneX[lane] - 6, y: y + 4, width: 160, height: rowH - 8, rx: 5, fill: "none", stroke: laneColor[lane], "stroke-width": 1.5 }));
+    svg.append(s("text", { x: laneX[lane], y: y + rowH / 2 + 1, "dominant-baseline": "middle", class: "val" }, k));
+    svg.append(s("text", { x: 620, y: y + rowH / 2 - 6, "dominant-baseline": "middle" }, `${from} → ${to}`));
+    svg.append(s("text", { x: 620, y: y + rowH / 2 + 8, "dominant-baseline": "middle", fill: "var(--ink-3)" }, what));
+    const bx = 860, bw = 120 * (has ? v / total : 0);
+    svg.append(s("rect", { x: bx, y: y + 10, width: Math.max(has ? 1 : 0, bw), height: rowH - 20, rx: 2, fill: laneColor[lane] }));
+    svg.append(s("text", { x: bx - 6, y: y + rowH / 2 + 1, "text-anchor": "end", "dominant-baseline": "middle", class: "val" }, has ? fmt(v) + " ms" : "not measured"));
+    if (i < hops.length - 1) { const nl = laneOf(i + 1); svg.append(s("line", { x1: laneX[lane] + 74, y1: y + rowH - 4, x2: laneX[nl] + 74, y2: y + rowH + 4, stroke: "var(--ink-3)", "stroke-width": 1 })); }
+    acc += has ? v : 0;
+  });
+  svg.append(s("text", { x: 620, y: H - 6 }, `total ${fmt(acc)} ms · ${source}`));
+  return svg;
+}
+
+// a drag, then release, then the idle base: the engine's timeline, to scale
+function dragTimeline(r, mode) {
+  const g = (step) => value((x) => x.mode === mode && x.scenario === "roi" && x.step === step, r);
+  const draft = g("draft (while dragging)"), full = g("full (release)"), base = g("base (idle)"), next = g("full (next edit)");
+  if (draft == null) return h("p", { class: "empty" }, "no drag scenario in this run");
+  // the app: drafts back to back while moving (each waits for the last),
+  // release asks for a full frame, the base after 2000 ms of quiet
+  const ev = [];
+  let t = 0;
+  for (let i = 0; i < 4; i++) { ev.push(["draft frame", t, draft, CAT[0]]); t += draft; }
+  ev.push(["full frame on release", t, full, CAT[1]]); t += full;
+  const quiet = 2000; ev.push(["quiet (scheduleBase)", t, quiet, "var(--other)"]); t += quiet;
+  ev.push(["idle base 3072 px", t, base, CAT[2]]); t += base;
+  ev.push(["next edit's frame", t, next, CAT[3]]); t += next;
+  const W = 1000, H = 120, L = 10, plot = W - 20, X = (v) => L + (v / t) * plot;
+  const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", role: "img" });
+  ev.forEach(([name, a, d, c], i) => {
+    const rect = s("rect", { x: X(a), y: 20, width: Math.max(1, X(a + d) - X(a) - 2), height: 36, rx: 3, fill: c });
+    svg.append(rect); hover(rect, `<b>${name}</b><br>${fmt(d)} ms, from ${fmt(a)} ms`);
+    if (X(a + d) - X(a) > 60) svg.append(s("text", { x: X(a) + 4, y: 74, class: "val" }, `${name} ${fmt(d)}`));
+  });
+  const ticks = niceTicks(t); ticks.forEach((v) => { if (v <= t) { svg.append(s("line", { x1: X(v), x2: X(v), y1: 60, y2: 96, class: "gridl" }), s("text", { x: X(v), y: 110, "text-anchor": "middle" }, v + " ms")); } });
+  return svg;
+}
+
+// ---------------------------------------------------------------- views
+const views = {
+  overview() {
+    const r = run(), out = [];
+    const tiles = h("div", { class: "tiles" });
+    for (const m of modes()) {
+      const sl = recs((x) => x.mode === m && x.scenario === "sliders" && x.size === "full").map(metric);
+      const dr = recs((x) => x.mode === m && x.scenario === "sliders" && x.size === "draft").map(metric);
+      const items = [
+        ["slider frame (full)", med(sl), `draft ${fmt(med(dr))} ms`],
+        ["release after drag", value((x) => x.mode === m && x.step === "full (release)"), "full frame"],
+        ["idle base render", value((x) => x.mode === m && x.step === "base (idle)"), "3072 px"],
+        ["open → first frame", value((x) => x.mode === m && x.step === "first frame"), ""],
+        ["zoom to 100%", value((x) => x.mode === m && x.step === "100% (first)"), `pan ${fmt(value((x) => x.mode === m && x.step === "100% pan"))} ms`],
+        ["export, full size", value((x) => x.mode === m && x.scenario === "export"), "JPEG q90"],
+      ];
+      for (const [k, v, sub] of items) tiles.append(h("div", { class: "tile" }, h("div", { class: "k" }, `${MODE_NAME[m]} · ${k}`), h("div", { class: "v" }, fmt(v), h("span", { style: "font-size:13px;color:var(--ink-3)" }, " ms")), h("div", { class: "s" }, sub)));
+    }
+    out.push(tiles);
+    const g = D.gui[state.gui];
+    let stages, source;
+    if (g) {
+      const drag = g.summary.filter((x) => x.label.endsWith(" drag"));
+      stages = Object.fromEntries(Object.keys(drag[0]?.stages ?? {}).map((k) => [k, med(drag.map((x) => x.stages[k]))]));
+      source = `GUI report ${g.id}, median of drag frames`;
+    } else {
+      const m = state.mode || modes()[0];
+      const sl = recs((x) => x.mode === m && x.scenario === "sliders" && x.size === "full");
+      stages = { pipeline: med(sl.map((x) => x.process_ms?.p50)), write: med(sl.map((x) => x.write_ms?.p50)), set: med(sl.map((x) => x.set_ms?.p50)) };
+      source = `engine run only (${MODE_NAME[m]}); run the GUI benchmark for the other stages`;
+    }
+    out.push(card("Where a slider move's time goes", "Each hop of one edit, from the slider to pixels on screen. The bar is its share of the total.", pathDiagram(stages, source)));
+    const m = state.mode || modes()[0];
+    out.push(card("A drag, its release, and the idle base", `The engine's work on the ${MODE_NAME[m]} path, to scale: drafts while the slider moves, a full frame on release, then 2 s of quiet before the app asks for the 3072 px base. The engine takes one request at a time, so a slider moved during the base waits for it.`, dragTimeline(r, m)));
+    return out;
+  },
+
+  sliders() {
+    const out = [];
+    const ctrls = [...new Set(recs((x) => x.scenario === "sliders").map((x) => x.control))];
+    const series = modes().flatMap((m) => [{ name: `${MODE_NAME[m]} full`, color: MODE_COLOR[m], m, size: "full" }]);
+    if (state.size === "draft") series.forEach((sr) => { sr.size = "draft"; sr.name = sr.name.replace("full", "draft"); });
+    const rows = ctrls.map((c) => ({ label: c, values: series.map((sr) => value((x) => x.mode === sr.m && x.control === c && x.size === sr.size)) }));
+    rows.sort((a, b) => (b.values[0] ?? 0) - (a.values[0] ?? 0));
+    out.push(card("One frame per slider move", "Set the control and render the frame, as the app does for every move. Wall time of the engine requests; median across samples (and photos). Toggle full-size frames or the half-size drafts shown while dragging.",
+      h("div", {}, h("span", { class: "seg" }, ["full", "draft"].map((z) => h("button", { class: (state.size || "full") === z ? "on" : "", onclick: () => { state.size = z; render(); } }, z)))),
+      legend(series.map((x) => [x.name, x.color])), hbars(rows, { series })));
+    // what one control's frame is made of
+    const m = state.mode || modes()[0];
+    const pick = state.step && ctrls.includes(state.step) ? state.step : rows[0]?.label;
+    const rs = recs((x) => x.mode === m && x.scenario === "sliders" && x.control === pick && x.size === (state.size || "full"));
+    const parts = {}; for (const r of rs) for (const [k, v] of Object.entries(r.modules_ms)) (parts[k] ??= []).push(v);
+    const pm = Object.fromEntries(Object.entries(parts).map(([k, v]) => [k, med(v)]));
+    const keys = Object.keys(pm).sort((a, b) => pm[b] - pm[a]);
+    const sel = h("select", { onchange: (e) => { state.step = e.target.value; render(); } }, ctrls.map((c) => h("option", c === pick ? { selected: "" } : {}, c)));
+    out.push(card("What that frame is made of", `darktable's per-module times (-d perf) for one control's frame, ${MODE_NAME[m]}. Only modules from the changed one onwards run; the rest come from the pipe cache.`,
+      h("label", {}, "control ", sel),
+      hbars(keys.map((k) => ({ label: k, values: [pm[k]] })), { series: [{ name: "ms", color: MODE_COLOR[m] }] })));
+    return out;
+  },
+
+  modules() {
+    const out = [];
+    for (const m of modes()) {
+      const per = {};
+      for (const r of recs((x) => x.mode === m && x.scenario === "sliders" && x.size === "full")) for (const [k, v] of Object.entries(r.modules_ms)) (per[k] ??= []).push(v);
+      const rows = Object.entries(per).map(([k, v]) => ({ label: k, values: [med(v)], tips: [`recomputed in ${v.length} slider frames`] })).sort((a, b) => b.values[0] - a.values[0]);
+      out.push(card(`Module cost when recomputed: ${MODE_NAME[m]}`, "Median ms of each module (and colorspace conversion) whenever a full-size slider frame ran it. Modules late in the pipe run on almost every edit; early ones only when something before them changes.",
+        hbars(rows, { series: [{ name: MODE_NAME[m], color: MODE_COLOR[m] }] })));
+    }
+    return out;
+  },
+
+  gpu() {
+    if (modes().length < 2) return [card("CPU vs OpenCL", null, h("p", { class: "empty" }, "this run has one mode only; run bench.py with --opencl both"))];
+    const steps = [...new Set(recs((x) => x.scenario !== "modules" && x.scenario !== "overhead").map((x) => x.scenario + " · " + x.step))];
+    const rows = steps.map((st) => { const [sc, ...rest] = st.split(" · "); const step = rest.join(" · ");
+      return { label: st, values: ["cpu", "opencl"].map((m) => value((x) => x.mode === m && x.scenario === sc && x.step === step)) }; });
+    const ratio = rows.filter((r) => r.values[0] && r.values[1]).map((r) => ({ label: r.label, values: [r.values[1] / r.values[0]] }));
+    const faster = ratio.filter((r) => r.values[0] < 0.9).length, slower = ratio.filter((r) => r.values[0] > 1.1).length;
+    const gpuMods = run().env.opencl?.modules_on_gpu ?? [];
+    const per = {};
+    for (const m of ["cpu", "opencl"]) for (const r of recs((x) => x.mode === m && x.scenario === "sliders" && x.size === "full")) for (const [k, v] of Object.entries(r.modules_ms)) ((per[k] ??= {})[m] ??= []).push(v);
+    const modRows = Object.entries(per).map(([k, v]) => ({ label: k, values: [med(v.cpu ?? []), med(v.opencl ?? [])] })).sort((a, b) => (b.values[0] ?? 0) - (a.values[0] ?? 0));
+    return [
+      card("CPU vs OpenCL, step by step", `OpenCL was faster on ${faster} steps and slower on ${slower} (10% either way). Wall time per step.`,
+        legend([["CPU", MODE_COLOR.cpu], ["OpenCL (GPU)", MODE_COLOR.opencl]]), hbars(rows, { series: [{ name: "CPU", color: MODE_COLOR.cpu }, { name: "OpenCL", color: MODE_COLOR.opencl }], label: 300 })),
+      card("Per module, CPU vs OpenCL", "Median ms per module in full-size slider frames. On the GPU a module's time includes copying its input over when the cached input lives in host memory.",
+        legend([["CPU", MODE_COLOR.cpu], ["OpenCL (GPU)", MODE_COLOR.opencl]]), hbars(modRows, { series: [{ name: "CPU", color: MODE_COLOR.cpu }, { name: "OpenCL", color: MODE_COLOR.opencl }] })),
+      card("The device", `Modules that ran on the GPU: ${gpuMods.join(", ") || "none"}.`, h("pre", { style: "font-size:12px;white-space:pre-wrap;color:var(--ink-2)" }, (run().env.opencl?.report ?? []).join("\n"))),
+    ];
+  },
+
+  alternatives() {
+    const out = [];
+    for (const m of modes()) {
+      const rs = recs((x) => x.mode === m && x.scenario === "modules");
+      const jobs = [...new Set(rs.map((x) => x.job))];
+      const rows = [];
+      for (const j of jobs) {
+        const cands = [...new Set(rs.filter((x) => x.job === j).map((x) => x.candidate))];
+        const base = med(rs.filter((x) => x.job === j && x.immage).map(metric));
+        for (const c of cands) {
+          const v = med(rs.filter((x) => x.job === j && x.candidate === c).map(metric));
+          const imm = rs.find((x) => x.job === j && x.candidate === c)?.immage;
+          const mps = med(rs.filter((x) => x.job === j && x.candidate === c).map((x) => x.mpix_per_s));
+          rows.push([j, imm ? h("b", {}, c + " ✓") : c, fmt(v), mps == null ? "–" : fmt(mps), imm || !base || v == null ? "" : (v / base).toFixed(2) + "×"]);
+        }
+      }
+      out.push(card(`Immage's modules and their alternatives: ${MODE_NAME[m]}`, "Each candidate alone on top of the photo's stack, the pipe cache off so every repeat runs it; its own -d perf time per full-size frame (2560 px). ✓ marks what Immage uses. Alternatives run at darktable's default settings, so they are not tuned to look the same: this is cost, not quality.",
+        table(["job", "module", "ms", "Mpx/s", "vs Immage's"], rows, [2, 3, 4])));
+    }
+    return out;
+  },
+
+  drag() {
+    const out = [];
+    for (const m of modes()) {
+      const steps = recs((x) => x.mode === m && (x.scenario === "roi" || x.scenario === "zoom" || x.scenario === "preview" || x.scenario === "open"));
+      const names = [...new Set(steps.map((x) => x.scenario + " · " + x.step))];
+      const rows = names.map((n) => { const [sc, ...rest] = n.split(" · "); const st = rest.join(" · ");
+        const rr = steps.filter((x) => x.scenario === sc && x.step === st);
+        return { label: n, values: [med(rr.map(metric))], tips: [`${fmt(med(rr.map((x) => x.recomputed?.p50)))} modules recomputed`] }; });
+      out.push(card(`Views, zoom and the drag cycle: ${MODE_NAME[m]}`, "Any change of frame size, zoom or pan is a new region for the pipe cache, so the whole pipe reruns from the raw: a draft and the full frame after it do not share work, and neither does the idle base.",
+        hbars(rows, { series: [{ name: MODE_NAME[m], color: MODE_COLOR[m] }], label: 260 }), dragTimeline(run(), m)));
+    }
+    return out;
+  },
+
+  gui() {
+    if (!D.gui.length) return [card("GUI benchmark", "No GUI reports yet. In Immage: Preferences → General → Performance → GUI benchmark → Run, with a photo open. Reports land in <code>benchmarking/results/gui/</code>; then run <code>python3 -I benchmarking/report.py</code>.")];
+    const g = D.gui[state.gui];
+    const STAGES = ["queue", "set", "lock", "pipeline", "write", "read", "probe", "ipc", "handoff", "draw", "histogram", "paint"];
+    const colors = ["var(--other)", CAT[4], CAT[7], CAT[0], CAT[6], CAT[2], "var(--other)", CAT[5], CAT[3], CAT[3], CAT[1], CAT[3]];
+    const groups = [["waiting (queue, lock, probe)", "var(--other)"], ["set_params", CAT[4]], ["darktable pipeline", CAT[0]], ["transport (write, read, IPC)", CAT[6]], ["page (handoff, draw, paint)", CAT[3]], ["histogram", CAT[1]]];
+    const rows = g.summary.map((x) => ({ label: `${x.label} (${x.frames})`, parts: x.stages }));
+    const sel = h("select", { onchange: (e) => { state.gui = +e.target.value; render(); } }, D.gui.map((x, i) => h("option", i === state.gui ? { value: i, selected: "" } : { value: i }, x.id)));
+    const sampleRows = g.samples.slice(-300);
+    const pts = h("div", {});
+    const W = 1000, H = 220, svg = s("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%" });
+    const max = Math.max(1, ...sampleRows.map((x) => x.total)), ticks = niceTicks(max), top = ticks[ticks.length - 1];
+    const t0 = sampleRows[0]?.at ?? 0, t1 = sampleRows[sampleRows.length - 1]?.at ?? 1;
+    ticks.forEach((t) => svg.append(s("line", { x1: 40, x2: W, y1: 200 - (t / top) * 186, y2: 200 - (t / top) * 186, class: "gridl" }), s("text", { x: 34, y: 200 - (t / top) * 186, "text-anchor": "end", "dominant-baseline": "middle" }, t)));
+    const kinds = { edit: CAT[0], view: CAT[1], base: CAT[2] };
+    sampleRows.forEach((x) => { const c = s("circle", { cx: 40 + ((x.at - t0) / Math.max(1, t1 - t0)) * (W - 50), cy: 200 - (x.total / top) * 186, r: x.draft ? 3 : 4.5, fill: kinds[x.kind] ?? CAT[3], "fill-opacity": .85 });
+      svg.append(c); hover(c, `<b>${x.label ?? ""}</b><br>${x.kind}${x.draft ? " (draft)" : ""} ${x.width}×${x.height}<br>${fmt(x.total)} ms, ${x.edits} moves`); });
+    svg.append(s("text", { x: 40, y: 216 }, "time through the run →"));
+    return [
+      card("GUI benchmark", `Photo ${g.photo}, viewer ${g.viewport.width}×${g.viewport.height} at ${g.viewport.dpr}×, drag drafts ${g.dragDrafts ? "on" : "off"}${g.transport ? `, frames by ${g.transport === "shared" ? "shared memory" : "invoke"}` : ""}, ${g.seconds?.toFixed?.(0) ?? "?"} s. Median per step, slider move to pixels on screen.`,
+        h("label", {}, "report ", sel), legend(groups), stacked(rows, STAGES, colors, { label: 230 })),
+      card("Every frame", "Each frame's total, input to paint, through the run. Small dots are drafts.", legend([["edit", kinds.edit], ["view (zoom, release)", kinds.view], ["idle base", kinds.base]]), svg),
+    ];
+  },
+
+  trends() {
+    if (D.runs.length < 2) return [card("Trends", null, h("p", { class: "empty" }, "one run so far: trends appear from the second run on"))];
+    const runsSame = D.runs.filter((r) => sameCorpus(r, run()));
+    const labels = runsSame.map((r) => r.id.slice(0, 16));
+    const kpis = [["slider (full)", (x) => x.scenario === "sliders" && x.size === "full"], ["slider (draft)", (x) => x.scenario === "sliders" && x.size === "draft"],
+                  ["release", (x) => x.step === "full (release)"], ["idle base", (x) => x.step === "base (idle)"], ["first frame", (x) => x.step === "first frame"], ["export", (x) => x.scenario === "export"]];
+    return modes().map((m) => card(`Trends: ${MODE_NAME[m]}`, `Runs over the same photos as the selected run (${runsSame.length}). Median across photos.`,
+      legend(kpis.map(([k], i) => [k, CAT[i]])),
+      lines(kpis.map(([k, f], i) => ({ name: k, color: CAT[i], values: runsSame.map((r) => med(r.records.filter((x) => x.mode === m && f(x) && (state.image === "all" || x.image === state.image)).map(metric))) })), labels)));
+  },
+
+  compare() {
+    const r = run();
+    const others = D.runs.map((x, i) => [x, i]).filter(([x, i]) => i !== state.run);
+    if (!others.length) return [card("Compare runs", null, h("p", { class: "empty" }, "only one run recorded"))];
+    if (state.compareWith == null || state.compareWith === state.run) state.compareWith = (others.filter(([x]) => sameCorpus(x, r)).pop() ?? others[others.length - 1])[1];
+    const o = D.runs[state.compareWith];
+    const sel = h("select", { onchange: (e) => { state.compareWith = +e.target.value; render(); } }, others.map(([x, i]) => h("option", i === state.compareWith ? { value: i, selected: "" } : { value: i }, x.id + (sameCorpus(x, r) ? "" : " (other photos)"))));
+    const key = (x) => [x.mode, x.image, x.scenario, x.step].join("|");
+    const before = new Map(o.records.map((x) => [key(x), metric(x)]));
+    const rows = r.records.filter((x) => state.image === "all" || x.image === state.image).map((x) => { const a = before.get(key(x)), b = metric(x); return a == null || b == null ? null : [x, a, b, 100 * (b - a) / a]; }).filter(Boolean);
+    rows.sort((p, q) => q[3] - p[3]);
+    const verdict = (a, b, p) => Math.abs(p) > 10 && Math.abs(b - a) > 2 ? (b > a ? "slower" : "faster") : "";
+    return [card("Compare runs", `Selected run against another. Changes over 10% and 2 ms are marked.${sameCorpus(o, r) ? "" : " <b>These runs used different photos.</b>"}`,
+      h("label", {}, "before ", sel),
+      table(["mode", "photo", "scenario", "step", "before ms", "after ms", "change"], rows.map(([x, a, b, p]) => [x.mode, x.image, x.scenario, x.step, fmt(a), fmt(b), h("span", { class: verdict(a, b, p) }, (p >= 0 ? "+" : "") + p.toFixed(0) + "%")]), [4, 5, 6]))];
+  },
+};
+const sameCorpus = (a, b) => JSON.stringify(a.corpus.map((c) => c.sha256).sort()) === JSON.stringify(b.corpus.map((c) => c.sha256).sort());
+
+const TABS = [["overview", "Overview"], ["sliders", "Sliders"], ["modules", "Modules"], ["gpu", "CPU vs GPU"], ["alternatives", "Alternatives"], ["drag", "Drag & zoom"], ["gui", "GUI"], ["trends", "Trends"], ["compare", "Compare"]];
+
+function render() {
+  const tabs = $("#tabs"); tabs.replaceChildren(...TABS.map(([id, name]) => h("button", { class: state.tab === id ? "on" : "", onclick: () => { state.tab = id; state.step = null; render(); } }, name)));
+  const main = $("#main");
+  if (!D.runs.length) { main.replaceChildren(card("No runs yet", "Run <code>python3 -I benchmarking/bench.py</code>, then <code>python3 -I benchmarking/report.py</code>, and reload.")); return; }
+  const r = run();
+  $("#meta").textContent = `${r.env.sysinfo?.["machdep.cpu.brand_string"] ?? r.env.machine} · ${r.env.at} · git ${r.env.git.sha} · data ${D.generated}`;
+  if (!modes().includes(state.mode)) state.mode = modes()[0];
+  if (state.image !== "all" && !images().includes(state.image)) state.image = "all";
+  const f = $("#filters");
+  f.replaceChildren(
+    h("label", {}, "run", h("select", { onchange: (e) => { state.run = +e.target.value; render(); } }, D.runs.map((x, i) => h("option", i === state.run ? { value: i, selected: "" } : { value: i }, `${x.id}${x.env.note ? " · " + x.env.note : ""}`)))),
+    h("label", {}, "photo", h("select", { onchange: (e) => { state.image = e.target.value; render(); } }, ["all", ...images()].map((x) => h("option", x === state.image ? { selected: "" } : {}, x === "all" ? "all (median)" : x)))),
+    modes().length > 1 ? h("label", {}, "detail for", h("span", { class: "seg" }, modes().map((m) => h("button", { class: state.mode === m ? "on" : "", onclick: () => { state.mode = m; render(); } }, MODE_NAME[m])))) : null,
+  );
+  main.replaceChildren(...views[state.tab]());
+}
+render();
+</script>
+</body>
+</html>

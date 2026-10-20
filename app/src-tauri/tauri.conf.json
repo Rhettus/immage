@@ -1,0 +1,68 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Immage",
+  "version": "0.31.0",
+  "identifier": "app.immage",
+  "build": {
+    "devUrl": "http://localhost:1430",
+    "frontendDist": "../dist",
+    "beforeDevCommand": "node scripts/notices.mjs && npm run dev",
+    "beforeBuildCommand": "node scripts/notices.mjs && npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Immage",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 900,
+        "minHeight": 600,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "visible": false
+      },
+      {
+        "label": "splash",
+        "url": "splash.html",
+        "title": "Immage",
+        "width": 640,
+        "height": 427,
+        "center": true,
+        "resizable": false,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "app",
+      "dmg"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "resources/darktable/": "darktable/",
+      "resources/notices.txt": "notices.txt",
+      "../looks/": "looks/",
+      "../sample/": "sample/",
+      "../../LICENSE": "LICENSE"
+    },
+    "license": "GPL-3.0-or-later",
+    "macOS": {
+      "signingIdentity": "-",
+      "minimumSystemVersion": "13.0"
+    }
+  }
+}

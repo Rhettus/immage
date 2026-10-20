@@ -1,0 +1,4 @@
+[submodule "darktable"]
+	path = darktable
+	url = https://github.com/darktable-org/darktable.git
+	ignore = dirty

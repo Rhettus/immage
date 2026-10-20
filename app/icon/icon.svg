@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<defs>
+  <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2c2c33"/><stop offset="1" stop-color="#121215"/></linearGradient>
+  <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0.10"/><stop offset="0.5" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  <linearGradient id="hue" gradientUnits="userSpaceOnUse" x1="196" y1="830" x2="830" y2="196"><stop offset="0" stop-color="#ff9a3c"/><stop offset="1" stop-color="#ff5f6d"/></linearGradient>
+  <clipPath id="tile"><rect x="100" y="100" width="824" height="824" rx="186"/></clipPath>
+</defs>
+<rect x="100" y="100" width="824" height="824" rx="186" fill="url(#bg)"/>
+<rect x="100" y="100" width="824" height="824" rx="186" fill="url(#sheen)"/>
+<g clip-path="url(#tile)" stroke="#fff" stroke-opacity="0.07" stroke-width="4"><line x1="306" y1="100" x2="306" y2="924"/><line x1="100" y1="306" x2="924" y2="306"/><line x1="512" y1="100" x2="512" y2="924"/><line x1="100" y1="512" x2="924" y2="512"/><line x1="718" y1="100" x2="718" y2="924"/><line x1="100" y1="718" x2="924" y2="718"/><line x1="190" y1="834" x2="834" y2="190" stroke-dasharray="14 18"/></g>
+<path d="M 196 828 C 226 826 236 800 236 680 V 576 A 56 56 0 0 1 348 576 V 700 V 546 A 56 56 0 0 1 460 546 V 700 V 516 A 56 56 0 0 1 572 516 V 700 V 486 A 56 56 0 0 1 684 486 V 690 C 684 770 780 750 794 590 S 830 250 830 196" fill="none" stroke="url(#hue)" stroke-width="70" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
