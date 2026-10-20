@@ -315,7 +315,8 @@ print(f"licenses for {counted} packages; no license file: {', '.join(bare) or 'n
 if LINUX:
     bundled = ours + [t for _, t in copied.values()]
     left = [(f, n + " => " + (p or "not found")) for f in bundled for n, p in needed(f)
-            if p is None or not (p.startswith(dst + "/") or SYSTEM_LIBS.fullmatch(n))]
+            # the system ones first: ldd prints the loader without a "=>"
+            if not SYSTEM_LIBS.fullmatch(n) and (p is None or not p.startswith(dst + "/"))]
 else:
     left = [(f, r) for f in ours + list(copied.values()) for r in links(f) if r.startswith(EXTERNAL)]
 size = sum(os.path.getsize(os.path.join(r, f)) for r, _, fs in os.walk(dst) for f in fs)
