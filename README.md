@@ -14,8 +14,9 @@ Staying out of the pipeline is what keeps Immage compatible with
 darktable: darktable of the same version opens an Immage edit and renders
 it the same, and every improvement to darktable's engine reaches Immage.
 
-It is a personal, non-commercial project, built for macOS first, with
-Windows and Linux among its aims.
+It is a personal, non-commercial project, with builds for macOS, Windows
+and Linux on the [Releases](https://github.com/Rhettus/immage/releases)
+page.
 
 Importing is done by **Immporter**, the companion tool that copies photos
 off a card, built into Immage as its import screen. Asset management comes
@@ -252,19 +253,40 @@ cannot share the first one's engine.
 
 ## Platforms
 
-macOS (Apple silicon) is the platform Immage is developed and packaged
-on today. Windows builds too: [app/WINDOWS.md](app/WINDOWS.md) walks
-through it, with darktable's MSYS2 toolchain on a Windows machine (a
-Windows on ARM virtual machine works). Linux is a goal. darktable, Tauri
-and ONNX Runtime run on all three, so the engine and the app carry over.
-On macOS, `app/scripts/bundle_engine.py` gathers Homebrew's libraries,
-and `app/scripts/build_dmg.sh` makes a disk image.
+Each release has builds for:
 
-## Building (macOS, for now)
+- **macOS**: Apple silicon, macOS 15 or newer, as a `.dmg`
+- **Windows**: x64, Windows 10 or 11 (and Windows on ARM through its x64
+  emulation), as an NSIS installer (`-setup.exe`) or an `.msi`
+- **Linux**: x86-64, as an AppImage, on any distribution with glibc 2.35
+  or newer (Ubuntu 22.04 and later)
 
-You need darktable's build dependencies from Homebrew (see
-[darktable's README](darktable/README.md)), plus json-glib, Rust,
-Node.js and the Tauri CLI.
+The builds are not signed with a developer certificate yet; the release
+page says how to open them the first time. After that, Immage updates
+itself: it checks for a new release once a day and installs it when asked
+(Preferences › About › Updates).
+
+macOS is where Immage is developed. All three are built by GitHub Actions
+([.github/workflows/build.yml](.github/workflows/build.yml)) on every
+change, and a `v*` tag makes a draft release
+([release.yml](.github/workflows/release.yml)). Each build bundles the
+engine with the libraries it links: from Homebrew on macOS, MSYS2 on
+Windows and Ubuntu on Linux (`app/scripts/bundle_engine.py`,
+`app/scripts/bundle_engine_windows.sh`).
+
+## Building
+
+`scripts/build.sh` is the one entry point on every platform; what each
+needs installed first is below, and the CI workflow
+([build.yml](.github/workflows/build.yml)) does the same steps on a clean
+machine. A release's `immage-<version>-source.tar.gz` builds the same way
+as a clone.
+
+### macOS
+
+You need darktable's build dependencies from Homebrew (the engine's are in
+[.github/Brewfile](.github/Brewfile): `brew bundle install --file
+.github/Brewfile`), plus the Xcode command line tools, Rust and Node.js.
 
 ```sh
 git clone https://github.com/Rhettus/immage.git && cd immage
@@ -283,6 +305,40 @@ cmake --build build
 # from app/src-tauri/target, which grows by gigabytes a day
 app/scripts/prune_target.sh      # -n to list first; [days], default 3
 ```
+
+### Windows
+
+[app/WINDOWS.md](app/WINDOWS.md) walks through it: darktable's MSYS2
+toolchain for the engine (`scripts/build.sh` in the MSYS2 UCRT64 shell),
+then `npm run tauri build` in PowerShell with the MSVC Rust toolchain. It
+makes the `.msi` and the NSIS installer in
+`app/src-tauri/target/release/bundle/`. A Windows on ARM virtual machine
+works, building under x64 emulation.
+
+### Linux
+
+On Ubuntu 22.04, the system the AppImage is built on (newer releases
+should work, but are not tested):
+
+```sh
+# gcc 12, and darktable's AppImage PPAs for newer image format libraries
+sudo apt-get install gcc-12 g++-12
+sudo add-apt-repository ppa:savoury1/graphics
+sudo add-apt-repository ppa:savoury1/ffmpeg4
+sudo add-apt-repository ppa:savoury1/display
+sudo apt-get update
+sudo apt-get install $(grep -v '^#' .github/ubuntu-packages.txt)
+
+# libheif and exiv2, which 22.04 has too old, into /usr/local
+app/scripts/build_linux_deps.sh
+
+# plus Rust and Node.js; then the AppImage, in
+# app/src-tauri/target/release/bundle/appimage/
+(cd app && npm ci)
+CC=gcc-12 CXX=g++-12 scripts/build.sh
+```
+
+### AI models
 
 AI masks need their ONNX models in `build/ai-models/` (for development)
 or the app's data folder, and the engine started with `--models <dir>`;
@@ -360,8 +416,9 @@ Immage stands on the work of these projects:
   start (`app/sample/`). CC0.
 - [**Poppins**](https://fonts.google.com/specimen/Poppins) via
   [Fontsource](https://fontsource.org/): the interface typeface. OFL-1.1.
-- [**Homebrew**](https://brew.sh/) on the Mac and
-  [**MSYS2**](https://www.msys2.org/) on Windows: the libraries darktable
+- [**Homebrew**](https://brew.sh/) on the Mac,
+  [**MSYS2**](https://www.msys2.org/) on Windows and
+  [**Ubuntu**](https://ubuntu.com/) on Linux: the libraries darktable
   links against, which the app bundles with their license texts
   (`app/scripts/bundle_engine.py`, `app/scripts/bundle_engine_windows.sh`).
 
@@ -371,3 +428,11 @@ GPL-3.0-or-later, as darktable. Bundled third-party content keeps its own
 license, listed above and in its folder. Preferences › About lists every
 library bundled with the engine and every Rust crate and npm package built
 into the app, with its license and text (`app/scripts/notices.mjs`).
+
+Each release attaches its source: Immage, with darktable and Immporter at
+the commits it was built from. The libraries bundled from Homebrew, MSYS2
+and Ubuntu are listed in Preferences › About with the version shipped
+and where their source is published. For at least three years after a
+release, anyone may also ask for the complete source of any GPL or LGPL
+library in its binaries, at the version shipped, free of charge: open an
+issue at [github.com/Rhettus/immage/issues](https://github.com/Rhettus/immage/issues).
