@@ -128,10 +128,12 @@ jobs:
             mingw-w64-ucrt-x86_64-openexr mingw-w64-ucrt-x86_64-openjpeg2 mingw-w64-ucrt-x86_64-potrace
             mingw-w64-ucrt-x86_64-pugixml mingw-w64-ucrt-x86_64-sqlite3 mingw-w64-ucrt-x86_64-zlib
             mingw-w64-ucrt-x86_64-json-glib
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # restore and save as separate steps: actions/cache only saves when the
+      # job succeeds, and a failed engine build is when the cache helps most
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .ccache
-          key: ccache-windows-x64-${{ github.run_id }}
+          key: ccache-windows-x64-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: ccache-windows-x64-
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -148,7 +150,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: ccache -s
+        if: always()
         shell: msys2 {0}
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: always()
+        with:
+          path: .ccache
+          key: ccache-windows-x64-${{ github.run_id }}-${{ github.run_attempt }}
       - name: the app and its installers
         run: |
           cd immporter; npm ci
