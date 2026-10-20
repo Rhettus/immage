@@ -26,12 +26,14 @@ Install, choosing the x64 download wherever there is a choice:
 5. **Node.js LTS** (nodejs.org, the x64 `.msi`)
 
 Then, in the **MSYS2 UCRT64** shell (not "MSYS2 MSYS"), darktable's
-libraries, the list darktable's own Windows CI installs plus `json-glib`
-for the engine:
+libraries: the list darktable's own Windows CI installs, without those of
+the features the engine build turns off (G'MIC, GraphicsMagick, OpenCV,
+maps, cameras, ...), plus `json-glib` for the engine. The CI build
+(`.github/workflows/build.yml`) installs the same:
 
 ```sh
 pacman -Syu        # again if it closes the shell half way
-pacman -S --needed git intltool po4a mingw-w64-ucrt-x86_64-{cc,cmake,ninja,nsis,libxslt,python-jsonschema,curl,drmingw,exiv2,gcc-libs,gettext,gmic,graphicsmagick,gtk3,icu,imath,iso-codes,lcms2,lensfun,libarchive,libavif,libgphoto2,libheif,libjpeg-turbo,libjxl,libpng,libraw,librsvg,libsecret,libtiff,libwebp,libxml2,omp,opencv,openexr,openjpeg2,osm-gps-map,portmidi,potrace,pugixml,SDL2,sqlite3,zlib,json-glib}
+pacman -S --needed git intltool po4a mingw-w64-ucrt-x86_64-{cc,cmake,ninja,libxslt,python-jsonschema,curl,drmingw,exiv2,gcc-libs,gettext,gtk3,imath,iso-codes,lcms2,lensfun,libarchive,libavif,libheif,libjpeg-turbo,libjxl,libpng,libraw,librsvg,libtiff,libwebp,libxml2,omp,openexr,openjpeg2,potrace,pugixml,sqlite3,zlib,json-glib}
 ```
 
 And the code, also in the UCRT64 shell. A short path such as `C:\src`
