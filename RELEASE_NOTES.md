@@ -3,6 +3,29 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
+## 0.32.0
+
+Bug fixes
+
+- a mask's Highlights, Shadows and Whites sliders now change the photo;
+  in 0.31.0 they moved but did nothing
+- a mask's Color Grading highlights luminance no longer shows up as its
+  Whites when the photo is opened again
+
+Improvements
+
+- drag a photo onto the window to open it, or a folder to add it to
+  Folders
+- subfolders in the folder tree can be hidden, and stay out of Include
+  subfolders
+- undo, redo, before/after and compare move from over the photo into the
+  toolbar, beside a new Grid button
+- the grid's columns widen to fill the row, and the grid makes room for a
+  side panel shown over it rather than hiding under it
+- the canvas color is picked from swatches in Preferences
+- a progress bar while the engine starts, which can take 20-30 seconds on
+  a slower computer or the first start after an update
+
 ## 0.31.0
 
 The first public release of Immage, with builds for macOS (Apple Silicon),
