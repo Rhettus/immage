@@ -64,13 +64,20 @@ def is_elf(path):
         return f.read(4) == b"\x7fELF"
 
 def needed(path):
-    # every library the file loads, directly or not, where the loader finds
-    # it now: (soname, path), the path None when it is not found
+    # the libraries the file links against itself (its DT_NEEDED), with where
+    # the loader finds each now: (soname, path), the path None when it is not
+    # found. ldd also lists what those load in turn, which is left out: what a
+    # SYSTEM_LIBS library needs comes from the host along with it, since the
+    # loader searches that library's paths, not ours
+    direct = run("patchelf", "--print-needed", path).split()
     out = subprocess.run(["ldd", path], capture_output=True, text=True).stdout
+    found = {}
     for line in out.splitlines():
         m = re.match(r"\s*(\S+) => (?:not found|(\S+) \(0x)", line)
         if m:
-            yield m.group(1), m.group(2)
+            found[m.group(1)] = m.group(2)
+    for name in direct:
+        yield name, found.get(name)
 
 shutil.rmtree(dst, ignore_errors=True)
 os.makedirs(os.path.join(dst, "bin"))
@@ -96,17 +103,18 @@ if LINUX:
     ours = [os.path.join(root, f) for root, _, files in os.walk(dst) for f in files
             if is_elf(os.path.join(root, f))]
     # by soname, the name the loader looks for: the library it found and its
-    # bundled copy. ldd lists what a file loads through the libraries it
-    # loads too, so one pass over our own files finds them all
+    # bundled copy. each copy's own links are followed in turn
     copied = {}
-    for f in ours:
-        for name, path in needed(f):
+    queue = list(ours)
+    while queue:
+        for name, path in needed(queue.pop()):
             if path is None or SYSTEM_LIBS.fullmatch(name) or path.startswith(dst + "/") or name in copied:
                 continue
             target = os.path.join(deps_dir, name)
             shutil.copy2(os.path.realpath(path), target)
             os.chmod(target, 0o755)
             copied[name] = (path, target)
+            queue.append(target)
     # our files keep their own $ORIGIN entries (the engine's ../lib/darktable)
     for f in ours:
         rel = os.path.relpath(deps_dir, os.path.dirname(f))
