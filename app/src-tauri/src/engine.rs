@@ -243,12 +243,17 @@ impl Engine {
             Err(reply["error"].as_str().unwrap_or("engine request failed").to_string())
         }
     }
+
+    // the engine saves the open photo and exits; requests after it fail
+    pub fn quit(&mut self) {
+        let _ = self.request(json!({ "cmd": "quit" }));
+        let _ = self.child.wait();
+    }
 }
 
 impl Drop for Engine {
     fn drop(&mut self) {
-        let _ = self.request(json!({ "cmd": "quit" }));
-        let _ = self.child.wait();
+        self.quit();
     }
 }
 

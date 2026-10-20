@@ -1698,6 +1698,14 @@ fn licenses(app: AppHandle) -> Result<Value, String> {
     }))
 }
 
+// before an update is installed: the installer replaces the engine's files,
+// which Windows will not do while they are in use
+#[tauri::command]
+async fn engine_quit(state: State<'_, AppState>) -> Result<(), String> {
+    state.engine().quit();
+    Ok(())
+}
+
 #[tauri::command]
 fn launch_file(launch: State<'_, Launch>) -> Option<String> {
     launch.0.lock().unwrap().take()
@@ -1712,6 +1720,8 @@ fn main() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         // its own catalog, thumbnails and Immich key, apart from the standalone importer's
         .plugin(tauri_plugin_immporter::init(tauri_plugin_immporter::Config {
             data_subdir: Some("immporter".into()),
@@ -1765,7 +1775,7 @@ fn main() {
             mask_shapes, combine, masks, mask_delete, mask_rename, history, sample, tone_key, agx_auto, upright, points, range_map, zones, mask_map, ai_object,
             ai_model_ensure, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, list_subfolders, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
             immich_export_check, immich_search, immich_browse_check, immich_libraries, immich_suggestions, immich_people, immich_tags,
-            immich_thumb, immich_resolve, launch_file, path_exists, trash_files, create_virtual_copy, remove_virtual_copy, preview_fullscreen, about, licenses, keywords, keywords_set, ai_accel,
+            immich_thumb, immich_resolve, launch_file, path_exists, trash_files, create_virtual_copy, remove_virtual_copy, preview_fullscreen, about, licenses, engine_quit, keywords, keywords_set, ai_accel,
             perf_set, perf_modules, perf_report_write,
             plugins::plugin_find_apps, plugins::plugin_launch, plugins::plugin_watch, plugins::plugin_cancel,
             plugins::plugin_returns, plugins::plugin_return_applied

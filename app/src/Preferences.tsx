@@ -19,6 +19,7 @@ import { DEFAULT_PRESET_ID, type Preset } from "./Presets";
 import { setTourSeen, tourSeen } from "./Tour";
 import { OVERLAY_COLORS, type Rgb } from "./masks";
 import { loadSharedFrames, sharedFramesAvailable, storeSharedFrames } from "./sharedFrames";
+import { checkForUpdate, lastChecked, loadAutoCheck, storeAutoCheck, useUpdate, type UpdateState } from "./updates";
 
 // the profile a new raw gets (manifest.ts, PROFILE_GROUPS): AgX's default unless set
 const PROFILE_KEY = "immage.newPhotosProfile";
@@ -234,6 +235,19 @@ function darktableUrl(version?: string) {
   const release = /^(\d+\.\d+\.\d+)$/.exec(version?.replace(/-dirty$/, "") ?? "");
   return release ? `${DARKTABLE_URL}/tree/release-${release[1]}` : DARKTABLE_URL;
 }
+// what the last check found, for About's row
+function updateHint(state: UpdateState, app?: string): string {
+  switch (state.kind) {
+    case "checking": return "checking…";
+    case "current": return `Immage ${app ?? ""} is the newest version`;
+    case "available": case "downloading": case "installing": return `Immage ${state.update.version} is available`;
+    case "failed": return state.update ? `Immage ${state.update.version} is available` : `the check failed: ${state.message}`;
+    default: {
+      const last = lastChecked();
+      return last ? `last checked ${new Date(last).toLocaleString()}` : "not checked yet";
+    }
+  }
+}
 type Licenses = { gpl: string | null; libraries: string | null; librariesPath: string | null; notices: string | null };
 
 // a license text over Preferences, taking Escape before Preferences does
@@ -310,6 +324,8 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   // it, else the first, as the engine resolves "auto"
   const accelProvider = accel?.find((p) => p.id === accelChoice.provider) ?? accel?.[0];
   const [about, setAbout] = useState<{ app: string; darktable: string } | null>(null);
+  const update = useUpdate();
+  const [autoUpdate, setAutoUpdate] = useState(loadAutoCheck);
   useEffect(() => { invoke<{ app: string; darktable: string }>("about").then(setAbout).catch(() => {}); }, []);
   const [licenses, setLicenses] = useState<Licenses | null>(null);
   useEffect(() => { invoke<Licenses>("licenses").then(setLicenses).catch(() => {}); }, []);
@@ -539,6 +555,15 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                       General Public License for more details.
                     </p>
                   </div>
+                </PrefCard>
+                <PrefCard title="Updates">
+                  <PrefRow label="Check automatically" hint="once a day, from Immage's releases on GitHub">
+                    <PrefSwitch checked={autoUpdate} onChange={(on) => { setAutoUpdate(on); storeAutoCheck(on); }} />
+                  </PrefRow>
+                  <PrefRow label="Check for updates" hint={updateHint(update, about?.app)}>
+                    <button className="btn" disabled={update.kind === "checking" || update.kind === "downloading" || update.kind === "installing"}
+                            onClick={() => void checkForUpdate(true)}>Check Now</button>
+                  </PrefRow>
                 </PrefCard>
                 <PrefCard title="License and Source">
                   <PrefRow label="License" hint="GNU General Public License, version 3 or later">

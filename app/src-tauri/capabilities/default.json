@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "the main window: core APIs, dragging the window by its title strip, the folder picker, and the importer",
+  "description": "the main window: core APIs, dragging the window by its title strip, the folder picker, the importer, and checking for, installing and relaunching into an update",
   "windows": [
     "main"
   ],
@@ -11,6 +11,8 @@
     "dialog:default",
     "opener:default",
     "opener:allow-reveal-item-in-dir",
-    "immporter:default"
+    "immporter:default",
+    "updater:default",
+    "process:allow-restart"
   ]
 }

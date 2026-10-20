@@ -101,3 +101,18 @@ The server, API key, duplicate checking and path map. See
 
 Applications a photo can be sent to with right-click › **Edit In**. See
 [Edit In](edit-in.md).
+
+## About
+
+Versions, the license, and where the source is. Under **Updates**:
+
+- **Check automatically**: once a day, Immage asks its releases on GitHub
+  whether a newer version is out, and sends nothing else. On by default.
+- **Check Now**: asks at once, and says what it found.
+
+A newer version shows as a card in the bottom-left corner, with its
+release notes. **Install and Relaunch** downloads it, saves the photo you
+are editing, and opens the new version where you were. **Later** puts the
+card away until Immage next starts; **Skip This Version** waits for the
+one after. Updates are signed, and one whose signature does not match is
+not installed.

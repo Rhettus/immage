@@ -36,6 +36,8 @@ import { ExportDialog, FILE_MANAGER } from "./ExportDialog";
 import { CopyDialog, loadCopyGroups, makeClip, type Clip } from "./CopySettings";
 import { DenoiseDialog } from "./DenoiseDialog";
 import { Tour, tourSeen } from "./Tour";
+import { UpdateBanner } from "./UpdateBanner";
+import { autoCheck } from "./updates";
 import { Chevron, Collapse } from "./Collapse";
 import { loadAutoHide, loadAutoToneNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadNewPhotosProfile, loadOverlayColor, loadPins, maskOverlayRgb, loadPreview, loadSliderScroll, loadSliderScrollStep,
          loadStackPairs,
@@ -411,6 +413,13 @@ export default function App() {
   const looksRef = useRef<Look[]>([]);
   const [look, setLookState] = useState<string | null>(null);
   const [lookAmount, setLookAmount] = useState(100);
+  // the daily update check: once the splash has made way and the first
+  // photos are coming in, and again each hour for an app left open for days
+  useEffect(() => {
+    const first = window.setTimeout(autoCheck, 10_000);
+    const hourly = window.setInterval(autoCheck, 3600_000);
+    return () => { window.clearTimeout(first); window.clearInterval(hourly); };
+  }, []);
   useEffect(() => {
     loadPresets().then(setPresets).catch((e) => setStatus(`presets: ${e}`));
     loadLooks().then((l) => { looksRef.current = l; setLooks(l); }).catch((e) => setStatus(`looks: ${e}`));
@@ -4636,6 +4645,12 @@ export default function App() {
                          } : null}
                          onClose={() => setPrefsOpen(false)} />
     )}
+    <UpdateBanner prepare={async () => {
+      // the edit saved now, then the engine stopped, before the installer
+      // replaces its files
+      await session.current?.close();
+      await invoke("engine_quit");
+    }} />
     {newPreset && (
       <NewPresetDialog values={values} groups={[...new Set(presets.map((p) => p.group))].sort()}
                        forNewPhotos={newPreset === "newPhotos"}

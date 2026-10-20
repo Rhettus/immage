@@ -64,5 +64,16 @@
       "signingIdentity": "-",
       "minimumSystemVersion": "15.0"
     }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDBCMUE3MTkwRjJGODRDQTQKUldTa1RQanlrSEVhQ3dUWXY5V1FCYTVRZDdpWi9vTXBwNUZLOWppQ2c4QytML3I4RUlxT0x1SmsK",
+      "endpoints": [
+        "https://github.com/Rhettus/immage/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }
