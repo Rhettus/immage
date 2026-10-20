@@ -108,7 +108,7 @@ Everything else in this repository is Immage's own.
   engine. It replaces darktable's lighttable and darkroom with:
   - the familiar panels: Basic, Tone Curve (parametric, point, R/G/B),
     HSL / Color, B&W Mix, Color Grading wheels, Detail, Lens Corrections,
-    Transform, Effects and Calibration, each mapped onto darktable modules
+    Transform and Effects, each mapped onto darktable modules
     (`app/src/manifest.ts` holds the mapping)
   - masks: brush, linear and radial gradients, color, luminance and depth
     ranges, and AI selection of an object, the subject, the background,
@@ -173,9 +173,6 @@ photo that already uses one of a tool's modules keeps it.
 | **Effects** | |
 | Post-Crop Vignetting | vignetting (`vignette`) |
 | Grain | grain (`grain`) |
-| **Calibration** | |
-| Red, Green, Blue Primary | color calibration (`channelmixerrgb`) |
-| Shadows Tint | a second instance of color balance rgb (`colorbalancergb`) |
 | **Crop tool** | |
 | Crop and aspect | crop (`crop`) |
 | Angle and Straighten | rotate and perspective (`ashift`) |

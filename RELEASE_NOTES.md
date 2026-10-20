@@ -10,7 +10,7 @@ Windows and Linux.
 
 - the panels of a mainstream raw editor on darktable's engine: Basic, Tone
   Curve, HSL / Color, B&W Mix, Color Grading, Detail, Lens Corrections,
-  Transform, Effects and Calibration
+  Transform and Effects
 - masks: brush, linear and radial gradients, color, luminance and depth
   ranges, and AI selection of the subject, the sky, people and more
 - Heal and Clone spots, presets, film looks, export to a folder or an
