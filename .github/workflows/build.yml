@@ -70,9 +70,15 @@ jobs:
       # unsound crates (all from tauri and gtk-rs) are only reported
       - name: cargo audit
         working-directory: app/src-tauri
+        # the release binary: `cargo install` compiles for 5 minutes, and the
+        # rust cache does not save it again on an exact hit
         run: |
-          cargo install cargo-audit --version 0.22.2 --locked
-          cargo audit
+          v=0.22.2 t=x86_64-unknown-linux-gnu
+          curl -fsSL -o "$RUNNER_TEMP/cargo-audit.tgz" \
+            "https://github.com/rustsec/rustsec/releases/download/cargo-audit%2Fv$v/cargo-audit-$t-v$v.tgz"
+          echo "ab28a1bdb54db4d5d8ad5981cf1f959410370b3d28250dbd35f6a44248620e39  $RUNNER_TEMP/cargo-audit.tgz" | sha256sum -c
+          tar -xzf "$RUNNER_TEMP/cargo-audit.tgz" -C "$RUNNER_TEMP" --strip-components 1 "cargo-audit-$t-v$v/cargo-audit"
+          "$RUNNER_TEMP/cargo-audit" audit
 
   macos:
     runs-on: macos-15
