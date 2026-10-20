@@ -4012,20 +4012,6 @@ export default function App() {
               onPointerDownCapture={onStraightenDown}
               onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
               onPointerLeave={leaveProbe}>
-          {/* the view's tools, over the photo's corner so it has the column's
-              height; a click on them is theirs, not the viewer's zoom */}
-          <div className="view-tools float" onPointerDown={(e) => e.stopPropagation()}>
-            <button className="tool" title={keys("undo (⌘Z)")} disabled={!current} onClick={() => stepHistory(true)}>
-              <UndoIcon /></button>
-            <button className="tool" title={keys("redo (⇧⌘Z)")} disabled={!current} onClick={() => stepHistory(false)}>
-              <UndoIcon redo /></button>
-            <button className={`tool${baMode !== "off" || before ? " on" : ""}`} disabled={!current || cropping}
-                    title={`before / after: ${baMode === "off" ? "off" : BA_NAMES[baMode].toLowerCase()}, click for the next view (Y)   full before: \\`}
-                    onClick={cycleBaMode}><BeforeAfterIcon /></button>
-            <button className={`tool${compare !== null ? " on" : ""}`} disabled={!current || cropping}
-                    title="compare with another photo (C): click one in the filmstrip, or step with ← →"
-                    onClick={toggleCompare}><CompareIcon /></button>
-          </div>
           <div ref={pane} className={`after-pane${baMode === "side" ? " half" : compare !== null ? " half-left" : ""}`}>
             <canvas ref={baseCanvas} className={`layer base${current ? "" : " empty"}`} />
             <canvas ref={clipBase} className={`layer clip${current && (clipShown.low || clipShown.high) ? "" : " empty"}`} />
@@ -4219,6 +4205,19 @@ export default function App() {
           </div>
         </div>
         <Toolbar filter={filter} kinds={kindCounts} remote={!!immich} layout={layout} ref={toolbar} pin={pinButton("strip")}
+                 viewTools={<>
+                   <button className="tool" title={keys("undo (⌘Z)")} disabled={!current} onClick={() => stepHistory(true)}>
+                     <UndoIcon /></button>
+                   <button className="tool" title={keys("redo (⇧⌘Z)")} disabled={!current} onClick={() => stepHistory(false)}>
+                     <UndoIcon redo /></button>
+                   <span className="sep" />
+                   <button className={`tool view${baMode !== "off" || before ? " on" : ""}`} disabled={!current || cropping}
+                           title={`before / after: ${baMode === "off" ? "off" : BA_NAMES[baMode].toLowerCase()}, click for the next view (Y)   full before: \\`}
+                           onClick={cycleBaMode}><BeforeAfterIcon /></button>
+                   <button className={`tool view${compare !== null ? " on" : ""}`} disabled={!current || cropping}
+                           title="compare with another photo (C): click one in the filmstrip, or step with ← →"
+                           onClick={toggleCompare}><CompareIcon /></button>
+                 </>}
                  grid={grid} onGrid={shown.length > 0 || pending.length > 0 || grid ? () => setGrid(!grid) : undefined}
                  zoomBar={<ZoomBar disabled={!current} register={(f) => { zoomShow.current = f; }}
                                    onZoom={(z) => setZoom(z)}
@@ -4801,8 +4800,9 @@ const passes = (i: ImageEntry, f: Filter) =>
 
 // the bar under the filmstrip: rate and reject the open image, filter the
 // folder, and show or hide the side panels and the filmstrip
-function Toolbar({ filter: f, kinds, layout, zoomBar, onFilter, onLayout, ref, pin, remote, grid, onGrid }: {
+function Toolbar({ filter: f, kinds, layout, zoomBar, viewTools, onFilter, onLayout, ref, pin, remote, grid, onGrid }: {
   ref: React.RefObject<HTMLDivElement | null>;
+  viewTools: React.ReactNode;               // undo, redo, before/after, compare
   grid: boolean;
   onGrid?: () => void;                      // none while there are no photos to show
   pin: React.ReactNode;
@@ -4887,7 +4887,11 @@ function Toolbar({ filter: f, kinds, layout, zoomBar, onFilter, onLayout, ref, p
       </div>
 
       {zoomBar}
-      <div className="tool-group">
+      {/* down here rather than over the photo, where they covered the crop
+          handles and whatever was being edited in that corner */}
+      <div className="tool-group view-tools">
+        {viewTools}
+        <span className="sep" />
         {/* named, not an icon alone: new users missed the arrow it replaces, and G with it */}
         <button className={`tool grid-toggle${grid ? " on" : ""}`} disabled={!onGrid}
                 title={grid ? "back to the filmstrip (G, Esc)" : "grid view (G)"} onClick={onGrid}>

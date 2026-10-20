@@ -70,7 +70,7 @@ the exposure and lens, and nothing.
 
 - \ shows the photo as it was before your edits, with a **Before** badge.
   Press it again to come back.
-- Y, or the before / after button at the top of the photo, steps through
+- Y, or the before / after button in the toolbar, steps through
   **Side by side**, **Split left / right**, **Split top / bottom** and
   **Hold for before**, then off. In the split views, drag the divider.
   With **Hold for before**, press and hold on the photo.
@@ -142,5 +142,5 @@ Library panel, the filmstrip and the Adjustments panel.
 ## Undo and redo
 
 ⌘Z undoes any edit and ⇧⌘Z redoes it. The undo and redo buttons also sit
-at the top corner of the photo. See [History, undo and copying
+in the toolbar under the filmstrip. See [History, undo and copying
 settings](history-and-sync.md).
