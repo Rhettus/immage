@@ -3,17 +3,22 @@
 # Copyright (C) 2026 the Immage authors
 
 # copy an installed darktable engine (cmake --install build --prefix
-# build/install) into the app's resources and make it self-contained: every
-# Homebrew library it loads is copied into lib/darktable/deps and referenced
-# relative to the file that loads it, then everything is signed ad hoc, which
-# Apple silicon requires after install_name_tool has edited a binary
+# build/install) into the app's resources and make it self-contained.
+# on macOS every Homebrew library it loads is copied into
+# lib/darktable/deps and referenced relative to the file that loads it, then
+# everything is signed ad hoc, which Apple silicon requires after
+# install_name_tool has edited a binary. on Linux the libraries go to the
+# same folder and every file's rpath points there, except the core ones
+# every distribution has and must supply itself (SYSTEM_LIBS)
 import glob, json, os, re, shutil, subprocess, sys, tarfile
 
 repo = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 src = os.path.join(repo, "build", "install")
 dst = os.path.join(repo, "app", "src-tauri", "resources", "darktable")
 deps_dir = os.path.join(dst, "lib", "darktable", "deps")
+LINUX = sys.platform.startswith("linux")
 EXTERNAL = ("/opt/homebrew/", "/usr/local/")
+LICENSE_NAMES = ("LICENSE", "LICENCE", "COPYING", "COPYRIGHT", "NOTICE", "GPL", "LGPL", "MIT", "BSD", "APACHE")
 
 def run(*args):
     return subprocess.run(args, check=True, capture_output=True, text=True).stdout
@@ -42,82 +47,212 @@ def resolve(ref, loader):
                 return os.path.realpath(cand)
     return None
 
+# what an AppImage must take from the system it runs on: glibc, the C++
+# runtime (a host library the engine loads, such as an OpenCL driver, may
+# need a newer one than the build system's), the graphics drivers, X11, and
+# the font stack, whose configuration is the host's. the same split as
+# AppImage's own excludelist
+SYSTEM_LIBS = re.compile(r"(ld-linux.*|linux-vdso.*"
+                         r"|lib(c|m|mvec|dl|pthread|rt|resolv|util|nsl|anl|BrokenLocale|thread_db|crypt)"
+                         r"|libstdc\+\+|libgcc_s"
+                         r"|lib(GL|GLX|GLdispatch|EGL|OpenGL|GLESv2|gbm|drm|vulkan|OpenCL)"
+                         r"|libX11|libX11-xcb|libxcb.*|libfontconfig|libfreetype|libharfbuzz|libexpat)"
+                         r"\.so(\.[0-9.]+)?")
+
+def is_elf(path):
+    with open(path, "rb") as f:
+        return f.read(4) == b"\x7fELF"
+
+def needed(path):
+    # every library the file loads, directly or not, where the loader finds
+    # it now: (soname, path), the path None when it is not found
+    out = subprocess.run(["ldd", path], capture_output=True, text=True).stdout
+    for line in out.splitlines():
+        m = re.match(r"\s*(\S+) => (?:not found|(\S+) \(0x)", line)
+        if m:
+            yield m.group(1), m.group(2)
+
 shutil.rmtree(dst, ignore_errors=True)
 os.makedirs(os.path.join(dst, "bin"))
 shutil.copy2(os.path.join(src, "bin", "darktable-engine"), os.path.join(dst, "bin"))
 shutil.copytree(os.path.join(src, "lib", "darktable"), os.path.join(dst, "lib", "darktable"), symlinks=False)
 shutil.copytree(os.path.join(src, "share", "darktable"), os.path.join(dst, "share", "darktable"))
 # darktable on macOS loads lensfun's database only from share/lensfun beside
-# its own data (iop/lens.cc), so the bundle carries Homebrew's copy
-lensfun = os.path.realpath("/opt/homebrew/share/lensfun")
+# its own data (iop/lens.cc), so the bundle carries Homebrew's copy. on
+# Linux that is where it looks when the system has no database of its own;
+# the copy is the latest lensfun-update-data fetched, if it was run
+if LINUX:
+    lensfun_pkg = "/usr/share/lensfun"
+    lensfun = next((d for d in ("/var/lib/lensfun-updates", lensfun_pkg)
+                    if os.path.isdir(os.path.join(d, "version_1"))), lensfun_pkg)
+else:
+    lensfun = os.path.realpath("/opt/homebrew/share/lensfun")
 if not os.path.isdir(os.path.join(lensfun, "version_1")):
     sys.exit(f"no lensfun database at {lensfun}")
 shutil.copytree(lensfun, os.path.join(dst, "share", "lensfun"))
 os.makedirs(deps_dir, exist_ok=True)
 
-ours = [os.path.join(root, f) for root, _, files in os.walk(dst) for f in files
-        if is_macho(os.path.join(root, f))]
-copied = {}  # realpath of a Homebrew library -> its bundled copy
-queue = list(ours)
-while queue:
-    f = queue.pop()
-    os.chmod(f, 0o755)
-    for ref in links(f):
-        real = resolve(ref, copied.get(f, f))
-        if real is None:
-            continue
-        if real not in copied:
-            target = os.path.join(deps_dir, os.path.basename(real))
-            shutil.copy2(real, target)
+if LINUX:
+    ours = [os.path.join(root, f) for root, _, files in os.walk(dst) for f in files
+            if is_elf(os.path.join(root, f))]
+    # by soname, the name the loader looks for: the library it found and its
+    # bundled copy. ldd lists what a file loads through the libraries it
+    # loads too, so one pass over our own files finds them all
+    copied = {}
+    for f in ours:
+        for name, path in needed(f):
+            if path is None or SYSTEM_LIBS.fullmatch(name) or path.startswith(dst + "/") or name in copied:
+                continue
+            target = os.path.join(deps_dir, name)
+            shutil.copy2(os.path.realpath(path), target)
             os.chmod(target, 0o755)
-            copied[real] = target
-            queue.append(target)
+            copied[name] = (path, target)
+    # our files keep their own $ORIGIN entries (the engine's ../lib/darktable)
+    for f in ours:
         rel = os.path.relpath(deps_dir, os.path.dirname(f))
-        run("install_name_tool", "-change", ref,
-            f"@loader_path/{rel}/{os.path.basename(real)}", f)
+        old = run("patchelf", "--print-rpath", f).strip()
+        keep = [p for p in old.split(":") if p.startswith("$ORIGIN")]
+        run("patchelf", "--set-rpath", ":".join(keep + [f"$ORIGIN/{rel}"]), f)
+    for _, target in copied.values():
+        run("patchelf", "--set-rpath", "$ORIGIN", target)
+else:
+    ours = [os.path.join(root, f) for root, _, files in os.walk(dst) for f in files
+            if is_macho(os.path.join(root, f))]
+    copied = {}  # realpath of a Homebrew library -> its bundled copy
+    queue = list(ours)
+    while queue:
+        f = queue.pop()
+        os.chmod(f, 0o755)
+        for ref in links(f):
+            real = resolve(ref, copied.get(f, f))
+            if real is None:
+                continue
+            if real not in copied:
+                target = os.path.join(deps_dir, os.path.basename(real))
+                shutil.copy2(real, target)
+                os.chmod(target, 0o755)
+                copied[real] = target
+                queue.append(target)
+            rel = os.path.relpath(deps_dir, os.path.dirname(f))
+            run("install_name_tool", "-change", ref,
+                f"@loader_path/{rel}/{os.path.basename(real)}", f)
 
-for real, target in copied.items():
-    run("install_name_tool", "-id", f"@rpath/{os.path.basename(target)}", target)
+    for real, target in copied.items():
+        run("install_name_tool", "-id", f"@rpath/{os.path.basename(target)}", target)
 
-for f in ours + list(copied.values()):
-    run("codesign", "--force", "--sign", "-", f)
+    for f in ours + list(copied.values()):
+        run("codesign", "--force", "--sign", "-", f)
 
-# the licenses of the Homebrew packages bundled above, which the GPL and
-# LGPL require to travel with the binaries: each keg's own license files,
-# and an index with every package's license and where its source is, from
-# the SPDX record Homebrew keeps in the keg
-LICENSE_NAMES = ("LICENSE", "LICENCE", "COPYING", "COPYRIGHT", "NOTICE", "GPL", "LGPL", "MIT", "BSD", "APACHE")
-CELLAR = os.path.realpath("/opt/homebrew/Cellar") + "/"
-kegs = sorted({"/".join(p[len(CELLAR):].split("/")[:2])
-               for p in list(copied) + [lensfun] if p.startswith(CELLAR)})
+# the licenses of the packages bundled above, which the GPL and LGPL
+# require to travel with the binaries, and an index with every package's
+# license and where its source is
 lic_dir = os.path.join(dst, "share", "licenses")
 os.makedirs(lic_dir, exist_ok=True)
 index, bare = [], []
-for keg in kegs:
-    name, version = keg.split("/")
-    root = os.path.join(CELLAR, keg)
-    texts = [f for f in sorted(os.listdir(root)) if os.path.isfile(os.path.join(root, f))
-             and f.upper().startswith(LICENSE_NAMES)]
-    for f in texts:
+
+def dpkg_owner(path):
+    # merged /usr: dpkg may know a library under /lib or under /usr/lib
+    cands = []
+    for p in (path, os.path.realpath(path)):
+        cands += [p, p[4:] if p.startswith("/usr/") else "/usr" + p]
+    for p in cands:
+        r = subprocess.run(["dpkg", "-S", p], capture_output=True, text=True)
+        if r.returncode == 0:
+            return r.stdout.split(":")[0].split(",")[0].strip()
+    return None
+
+def dep5_license(text):
+    # the license of a machine-readable debian/copyright's "Files: *"
+    if text.startswith("Format:"):
+        for stanza in text.split("\n\n"):
+            if re.search(r"^Files:\s*\*\s*$", stanza, re.M):
+                m = re.search(r"^License:\s*(.+)$", stanza, re.M)
+                if m:
+                    return m.group(1).strip()
+    return "see the copyright file"
+
+if LINUX:
+    # what build_linux_deps.sh built and installed itself, by file
+    local = {}
+    for meta in glob.glob("/usr/local/share/immage-deps/*/"):
+        with open(os.path.join(meta, "files")) as f:
+            for line in f:
+                local[line.strip()] = meta
+    pkgs, local_used = set(), set()
+    for name, (path, _) in copied.items():
+        meta = local.get(path) or local.get(os.path.realpath(path))
+        if meta:
+            local_used.add(meta)
+            continue
+        pkg = dpkg_owner(path)
+        if pkg:
+            pkgs.add(pkg)
+        else:
+            bare.append(name)
+            index.append(f"{name}\n  license: unknown, from {os.path.realpath(path)}\n")
+    lensfun_file = next(iter(sorted(glob.glob(os.path.join(lensfun_pkg, "version_1", "*.xml")))), None)
+    if lensfun_file and dpkg_owner(lensfun_file):
+        pkgs.add(dpkg_owner(lensfun_file))
+    for meta in sorted(local_used):
+        with open(os.path.join(meta, "info")) as f:
+            head, license, source = f.read().splitlines()[:3]
+        name = head.split()[0]
+        texts = [t for t in sorted(os.listdir(meta)) if t not in ("info", "files")]
         os.makedirs(os.path.join(lic_dir, name), exist_ok=True)
-        shutil.copy2(os.path.join(root, f), os.path.join(lic_dir, name, f))
-    # texts kept in app/licenses for a keg that ships none (lensfun)
-    extra = os.path.join(repo, "app", "licenses", name)
-    if os.path.isdir(extra):
-        shutil.copytree(extra, os.path.join(lic_dir, name), dirs_exist_ok=True)
-        texts += sorted(os.listdir(extra))
-    license, source = "unknown", ""
-    try:
-        with open(os.path.join(root, "sbom.spdx.json")) as f:
-            pkg = next(p for p in json.load(f)["packages"] if p["name"] == name)
-        license = pkg.get("licenseConcluded") or license
-        source = pkg.get("downloadLocation") or ""
-    except (OSError, ValueError, StopIteration, KeyError):
-        pass
-    if not texts:
-        bare.append(name)
-    index.append(f"{name} {version}\n  license: {license}\n  source: {source}\n"
-                 + (f"  texts: {', '.join(f'{name}/{t}' for t in texts)}\n" if texts else ""))
+        for t in texts:
+            shutil.copy2(os.path.join(meta, t), os.path.join(lic_dir, name, t))
+        index.append(f"{head}, built from source\n  {license}\n  {source}\n"
+                     f"  texts: {', '.join(f'{name}/{t}' for t in texts)}\n")
+    for pkg in sorted(pkgs):
+        version, homepage, srcpkg = run("dpkg-query", "-W", "-f", "${Version}\t${Homepage}\t${source:Package}",
+                                        pkg).split("\t")
+        copyright = os.path.join("/usr/share/doc", pkg, "copyright")
+        license, texts = "unknown", ""
+        if os.path.isfile(copyright):
+            with open(copyright, errors="replace") as f:
+                license = dep5_license(f.read())
+            os.makedirs(os.path.join(lic_dir, pkg), exist_ok=True)
+            shutil.copy2(copyright, os.path.join(lic_dir, pkg, "copyright"))
+            texts = f"  texts: {pkg}/copyright\n"
+        else:
+            bare.append(pkg)
+        index.append(f"{pkg} {version}\n  license: {license}\n"
+                     f"  source: {homepage or 'none given'} (source package {srcpkg} {version})\n" + texts)
+    with open("/etc/os-release") as f:
+        distro = re.search(r'^PRETTY_NAME="?([^"\n]*)', f.read(), re.M).group(1)
+    packages_heading = f"From {distro}'s packages:"
+    counted = len(pkgs) + len(local_used)
+else:
+    CELLAR = os.path.realpath("/opt/homebrew/Cellar") + "/"
+    kegs = sorted({"/".join(p[len(CELLAR):].split("/")[:2])
+                   for p in list(copied) + [lensfun] if p.startswith(CELLAR)})
+    for keg in kegs:
+        name, version = keg.split("/")
+        root = os.path.join(CELLAR, keg)
+        texts = [f for f in sorted(os.listdir(root)) if os.path.isfile(os.path.join(root, f))
+                 and f.upper().startswith(LICENSE_NAMES)]
+        for f in texts:
+            os.makedirs(os.path.join(lic_dir, name), exist_ok=True)
+            shutil.copy2(os.path.join(root, f), os.path.join(lic_dir, name, f))
+        # texts kept in app/licenses for a keg that ships none (lensfun)
+        extra = os.path.join(repo, "app", "licenses", name)
+        if os.path.isdir(extra):
+            shutil.copytree(extra, os.path.join(lic_dir, name), dirs_exist_ok=True)
+            texts += sorted(os.listdir(extra))
+        license, source = "unknown", ""
+        try:
+            with open(os.path.join(root, "sbom.spdx.json")) as f:
+                pkg = next(p for p in json.load(f)["packages"] if p["name"] == name)
+            license = pkg.get("licenseConcluded") or license
+            source = pkg.get("downloadLocation") or ""
+        except (OSError, ValueError, StopIteration, KeyError):
+            pass
+        if not texts:
+            bare.append(name)
+        index.append(f"{name} {version}\n  license: {license}\n  source: {source}\n"
+                     + (f"  texts: {', '.join(f'{name}/{t}' for t in texts)}\n" if texts else ""))
+    packages_heading = "From Homebrew:"
+    counted = len(kegs)
 
 # libraries that come from elsewhere: those darktable compiles in from
 # src/external, and ONNX Runtime, from the archive darktable's build
@@ -166,10 +301,15 @@ with open(os.path.join(lic_dir, "INDEX.txt"), "w") as f:
             "version 3 or later, as Immage is.\n\n"
             f"darktable\n  license: GPL-3.0-or-later\n  source: {dt_source}\n\n"
             "Compiled into darktable, or bundled beside it:\n\n" + "\n".join(own)
-            + "\nFrom Homebrew:\n\n" + "\n".join(index))
-print(f"licenses for {len(kegs)} packages; no license file in the keg: {', '.join(bare) or 'none'}")
+            + f"\n{packages_heading}\n\n" + "\n".join(index))
+print(f"licenses for {counted} packages; no license file: {', '.join(bare) or 'none'}")
 
-left = [(f, r) for f in ours + list(copied.values()) for r in links(f) if r.startswith(EXTERNAL)]
+if LINUX:
+    bundled = ours + [t for _, t in copied.values()]
+    left = [(f, n + " => " + (p or "not found")) for f in bundled for n, p in needed(f)
+            if p is None or not (p.startswith(dst + "/") or SYSTEM_LIBS.fullmatch(n))]
+else:
+    left = [(f, r) for f in ours + list(copied.values()) for r in links(f) if r.startswith(EXTERNAL)]
 size = sum(os.path.getsize(os.path.join(r, f)) for r, _, fs in os.walk(dst) for f in fs)
 print(f"bundled {len(copied)} libraries, {size / 1e6:.0f} MB; unresolved external refs: {len(left)}")
 for f, r in left[:10]:
