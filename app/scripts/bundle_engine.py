@@ -84,6 +84,13 @@ os.makedirs(os.path.join(dst, "bin"))
 shutil.copy2(os.path.join(src, "bin", "darktable-engine"), os.path.join(dst, "bin"))
 shutil.copytree(os.path.join(src, "lib", "darktable"), os.path.join(dst, "lib", "darktable"), symlinks=False)
 shutil.copytree(os.path.join(src, "share", "darktable"), os.path.join(dst, "share", "darktable"))
+# darktable installs libonnxruntime.so with its .so.1 and .so.1.x.y symlinks
+# (src/ai/CMakeLists.txt:91), which the copy above turns into three copies of
+# the 22 MB library. nothing links it: the engine opens libonnxruntime.so by
+# name (ORT_LIBRARY_PATH, backend_onnx.c:1196), so that one is kept
+if LINUX:
+    for f in glob.glob(os.path.join(dst, "lib", "darktable", "libonnxruntime.so.*")):
+        os.remove(f)
 # darktable on macOS loads lensfun's database only from share/lensfun beside
 # its own data (iop/lens.cc), so the bundle carries Homebrew's copy. on
 # Linux that is where it looks when the system has no database of its own;
