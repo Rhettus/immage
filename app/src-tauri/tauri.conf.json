@@ -62,7 +62,7 @@
     "license": "GPL-3.0-or-later",
     "macOS": {
       "signingIdentity": "-",
-      "minimumSystemVersion": "13.0"
+      "minimumSystemVersion": "15.0"
     }
   }
 }
