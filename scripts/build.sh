@@ -14,15 +14,19 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root"
 
 echo "== darktable"
-# take the patch off first: a checkout of a new pin refuses to overwrite the
-# patched file
-if [ -f darktable/.git ] || [ -d darktable/.git ]; then
-  git -C darktable apply --reverse "$root/patches/darktable-engine.patch" 2>/dev/null || true
+# a source archive (scripts/source_archive.sh) is no git checkout, and
+# carries darktable and the submodules below already
+if [ -e .git ]; then
+  # take the patch off first: a checkout of a new pin refuses to overwrite
+  # the patched file
+  if [ -f darktable/.git ] || [ -d darktable/.git ]; then
+    git -C darktable apply --reverse "$root/patches/darktable-engine.patch" 2>/dev/null || true
+  fi
+  git submodule update --init darktable
+  # darktable's own submodules, without its integration tests and lua-scripts
+  git -C darktable submodule update --init src/external/rawspeed src/external/OpenCL \
+      src/external/libxcf src/external/whereami src/external/LibRaw
 fi
-git submodule update --init darktable
-# darktable's own submodules, without its integration tests and lua-scripts
-git -C darktable submodule update --init src/external/rawspeed src/external/OpenCL \
-    src/external/libxcf src/external/whereami src/external/LibRaw
 sh scripts/patch_darktable.sh
 
 # the engine needs none of darktable's GUI-side features, and each one found

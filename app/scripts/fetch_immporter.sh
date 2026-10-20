@@ -18,10 +18,13 @@ if [ -z "$rev" ]; then
   exit 1
 fi
 
-if [ ! -d "$dir/.git" ]; then
+if [ ! -d "$dir/.git" ] && [ -f "$dir/package.json" ]; then
+  # a source archive (scripts/source_archive.sh): already at the pinned commit
+  :
+elif [ ! -d "$dir/.git" ]; then
   git clone "$repo" "$dir"
-fi
-if [ -n "$(git -C "$dir" status --porcelain --untracked-files=no)" ]; then
+  git -C "$dir" checkout --detach "$rev"
+elif [ -n "$(git -C "$dir" status --porcelain --untracked-files=no)" ]; then
   echo "immporter/ has uncommitted changes: leaving it as it is" >&2
 elif [ "$(git -C "$dir" rev-parse HEAD)" != "$(git -C "$dir" rev-parse "$rev^{commit}" 2>/dev/null)" ]; then
   git -C "$dir" cat-file -e "$rev^{commit}" 2>/dev/null || git -C "$dir" fetch origin
