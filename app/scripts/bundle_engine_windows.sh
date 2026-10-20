@@ -104,6 +104,12 @@ for pkg in $(echo "$pkgs" | sort -u); do
   for f in $(pacman -Qlq "$pkg" | grep '/share/licenses/.' | grep -v '/$'); do
     mkdir -p "$lic/$name"; cp "$f" "$lic/$name/"; texts="$texts${texts:+, }$name/$(basename "$f")"
   done
+  # texts kept in app/licenses/msys2 for a package that ships none
+  if [ -z "$texts" ] && [ -d "$root/app/licenses/msys2/$name" ]; then
+    for f in "$root/app/licenses/msys2/$name"/*; do
+      mkdir -p "$lic/$name"; cp "$f" "$lic/$name/"; texts="$texts${texts:+, }$name/$(basename "$f")"
+    done
+  fi
   [ -n "$texts" ] || bare="$bare $name"
   pacman -Qi "$pkg" | tr -d '\r' | awk -v n="$name" -v t="$texts" -v p="$pkg" -F' *: ' '
     $1 == "Version" { v = $2 } $1 == "Licenses" { l = $2 } $1 == "URL" { u = $2 }
