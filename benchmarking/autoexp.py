@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the Immage authors
+
 # Basic's Auto (Exposure, AgX's range, then Contrast, Highlights, Shadows,
 # Whites and Blacks: runAutoTone() in app/src/App.tsx), run headless over the
 # benchmark corpus as the app runs it, through the app's own autoTone.ts,

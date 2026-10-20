@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // Preferences' Cache card: how much disk the thumbnail and Immich caches
 // may take (src-tauri/src/cache.rs), what each holds, and emptying one
 import { useEffect, useState } from "react";

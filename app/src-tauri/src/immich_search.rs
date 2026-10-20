@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // the Library panel's Immich card: search, thumbnails and originals, with the
 // client and key of immich_upload.rs. written against Immich 3.3's
 // structured search filter (3.2 and later); blocking, callers run it off the

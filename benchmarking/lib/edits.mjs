@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // Immage's own control-to-module mapping (app/src/manifest.ts) for the
 // benchmark harness, so it sends the engine the edits the app would. one JSON
 // request per line on stdin, one reply per line on stdout:

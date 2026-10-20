@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // the Library panel's Immich card, under Folders: a search of the server
 // whose results fill the filmstrip and grid. it starts on the external
 // libraries, the photos that live on disk where darktable can edit them;

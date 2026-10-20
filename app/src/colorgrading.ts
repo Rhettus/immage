@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // color balance rgb's hue angle is not HSL's: its own perceptual space
 // spreads hues unevenly. this maps an angle to the display hue its tint
 // actually produces, measured by rendering a 0.05-chroma global tint at

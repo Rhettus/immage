@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // Lightroom's masks: each is a set of shapes, added or subtracted, with its
 // own adjustment sliders. shapes live in the shown image's units (0-1
 // across its width and height; radii and brush sizes as fractions of its

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // Lightroom's import screen: the SD card importer (immporter/) over the whole
 // window, below the title strip. the editor stays mounted underneath, so
 // closing returns to it as it was. loaded on first use

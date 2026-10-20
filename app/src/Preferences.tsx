@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // the app's preferences, behind the rail's gear (⌘,): settings that belong
 // to the app rather than to any photo, a tab per subject
 import { useEffect, useState } from "react";
@@ -219,8 +222,18 @@ const TABS: [Tab, string, React.ReactNode][] = [
 ];
 
 // where Immage's source is published, which the GPL requires anyone given
-// the app to be able to get
+// the app to be able to get: the tag each release is built from
 const SOURCE_URL = "https://github.com/Rhettus/immage";
+const sourceUrl = (app?: string) => (app ? `${SOURCE_URL}/tree/v${app}` : SOURCE_URL);
+// darktable's source at what the engine was built from: the commit its
+// version names ("5.7.0+1428~g2747ed2a0d"), or a release's tag ("5.8.0")
+const DARKTABLE_URL = "https://github.com/darktable-org/darktable";
+function darktableUrl(version?: string) {
+  const commit = /~g([0-9a-f]{7,})/.exec(version ?? "");
+  if (commit) return `${DARKTABLE_URL}/tree/${commit[1]}`;
+  const release = /^(\d+\.\d+\.\d+)$/.exec(version?.replace(/-dirty$/, "") ?? "");
+  return release ? `${DARKTABLE_URL}/tree/release-${release[1]}` : DARKTABLE_URL;
+}
 type Licenses = { gpl: string | null; libraries: string | null; librariesPath: string | null; notices: string | null };
 
 // a license text over Preferences, taking Escape before Preferences does
@@ -533,8 +546,11 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                             onClick={() => licenses?.gpl && setViewing({ title: "GNU General Public License", text: licenses.gpl })}
                     >View</button>
                   </PrefRow>
-                  <PrefRow label="Source code" hint={SOURCE_URL}>
-                    <button className="btn" onClick={() => void openUrl(SOURCE_URL)}>Open</button>
+                  <PrefRow label="Source code" hint={sourceUrl(about?.app)}>
+                    <button className="btn" onClick={() => void openUrl(sourceUrl(about?.app))}>Open</button>
+                  </PrefRow>
+                  <PrefRow label="darktable source" hint={darktableUrl(about?.darktable)}>
+                    <button className="btn" onClick={() => void openUrl(darktableUrl(about?.darktable))}>Open</button>
                   </PrefRow>
                   <PrefRow label="Bundled libraries"
                            hint={licenses?.libraries ? "the engine's libraries, each under its own license, and where their source is"

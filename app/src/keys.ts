@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // the platform's keys: the command key is ⌘ on macOS and Ctrl on Windows and
 // Linux, and shortcuts are written in the interface the way each platform
 // writes them

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // Lightroom's manual Transform as darktable's rotate and perspective (ashift)
 // in its generic lens model. ashift computes its automatic crop only in its
 // GUI (ashift.c, _do_crop() writes gui data), so headless the crop has to be

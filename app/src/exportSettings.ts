@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // the Export dialog's settings, and its presets as Lightroom keeps them:
 // named sets of settings in a list. a preset stores only the settings it
 // was saved with and is read over the defaults, so settings added later

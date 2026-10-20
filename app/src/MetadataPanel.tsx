@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // the open image's metadata as Lightroom's Metadata panel lays it out: its
 // text fields, rating and labels editable, its EXIF shown
 import { useEffect, useState } from "react";

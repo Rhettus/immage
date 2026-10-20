@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // the open folder's images as the engine's in-memory library reports them,
 // and their thumbnails
 import { invoke } from "@tauri-apps/api/core";

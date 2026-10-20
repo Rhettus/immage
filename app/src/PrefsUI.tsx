@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // Preferences' building blocks: a titled card of settings, and a row with
 // the setting's name and a short explanation on the left, its control on
 // the right

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // darktable's history stack: at the bottom the image's darktable history as
 // opened (the modules darktable starts every photo with, and edits kept from
 // before), above it this session's undo steps, newest at the top. a click

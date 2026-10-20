@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // AI Denoise's dialog, as Lightroom's Denoise asks: how much, before
 // darktable's raw denoise writes the new DNG (App.tsx, runDenoise). a piece
 // of the photo at 1:1 shows the result, as darktable's neural restore

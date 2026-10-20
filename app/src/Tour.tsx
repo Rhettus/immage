@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // the quick start guide: a spotlight that moves from one part of the window
 // to the next with a short note on each, shown on start until its checkbox
 // says not to, and on request from the title bar. its targets carry

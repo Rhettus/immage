@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // Post-Crop Vignetting's guides on the image, as darktable's vignette draws
 // them: where the fall-off starts and ends (dashed), its midpoint, and its
 // center. a drag on the midpoint moves it, a drag on either edge sets the

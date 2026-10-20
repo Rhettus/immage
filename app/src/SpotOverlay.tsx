@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // the Heal tool on the image, as Lightroom's: a click heals a round spot,
 // a drag paints a stroke, and the selected spot shows where it copies from,
 // both ends draggable. the others show as pins. with Visualize Spots, the

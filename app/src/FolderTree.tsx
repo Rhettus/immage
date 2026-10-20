@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // the library panel's folders as a tree, as Lightroom's: each folder added
 // opens into its subfolders, read from disk when first opened and again
 // whenever it is reopened, so folders made since (by an import) show

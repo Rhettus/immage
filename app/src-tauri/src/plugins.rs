@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // Edit In: a photo handed to another application (DxO PureRAW, and later
 // panorama, HDR and stacking tools) and the file it writes taken back, as
 // Lightroom's plug-ins do. the application is started with the files, and

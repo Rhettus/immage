@@ -1,4 +1,7 @@
 #!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the Immage authors
+
 # remove what cargo leaves behind in app/src-tauri/target and never removes
 # itself: the object files of earlier builds, test executables of earlier
 # builds and incremental caches nothing uses any more. on macOS the dev

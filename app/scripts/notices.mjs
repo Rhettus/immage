@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // the license notices of the Rust crates and npm packages compiled into
 // the app, which their MIT, BSD and Apache licenses require to travel with
 // the binaries. run before every build (tauri.conf.json's beforeBuildCommand
@@ -101,9 +104,15 @@ for (const [title, list] of groups) {
   }
   index.push("");
 }
+// Immporter, a path crate and so left out of crates(), is Immage's own but
+// lives in its own repository: name the commit app/immporter.rev pins
+const immporter = readFileSync(join(app, "immporter.rev"), "utf8").trim().split(/\s/)[0];
 mkdirSync(dirname(out), { recursive: true });
 writeFileSync(out,
   "Rust crates and npm packages compiled into Immage. Each keeps its own license;\n"
-  + "the texts they ship follow the list.\n\n" + index.join("\n") + "\n" + bodies.join("\n"));
+  + "the texts they ship follow the list.\n\n"
+  + "Immporter, Immage's SD card importer\n  license: GPL-3.0-or-later, as Immage\n"
+  + `  source: https://github.com/Rhettus/immporter/tree/${immporter}\n\n`
+  + index.join("\n") + "\n" + bodies.join("\n"));
 const n = groups.reduce((s, [, l]) => s + l.length, 0);
 console.log(`notices for ${n} packages, ${Math.round(statSync(out).size / 1024)} KB; no license file: ${bare.join(", ") || "none"}`);

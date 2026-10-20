@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // Lightroom's crop overlay: the whole image with the crop drawn over it,
 // the outside dimmed, a rule-of-thirds grid inside, handles on the corners
 // and edges. the rectangle is in fractions of the uncropped frame, which

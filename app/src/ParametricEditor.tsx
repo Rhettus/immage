@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // darktable's parametric mask, as its blending tab shows it: a tab per
 // scene-referred input channel, each a gradient slider with four markers.
 // the inner two (filled, on top) are where the mask is whole, the outer

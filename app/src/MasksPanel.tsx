@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // Lightroom's Masks panel: a menu to create a mask, the image's masks with
 // the selected one opened to its shapes, and that mask's settings and own
 // adjustment sliders

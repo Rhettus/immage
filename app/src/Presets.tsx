@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // Lightroom-style develop presets: a named set of slider values, in
 // Lightroom units, applied over the image's own. kept in the app's runtime
 // folder (presets.json) by the Rust side, not in any image's sidecar.

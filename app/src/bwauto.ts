@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // an automatic B&W Mix from the image's colors: each hue present in a
 // real share of the image moves lighter or darker as its colors are
 // lighter or darker than the image's colored average, so hues that would

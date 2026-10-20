@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // Lightroom's parametric tone curve (four region sliders, three split
 // points) as darktable tonecurve nodes. x and y are tonecurve's own axes:
 // perceptual lightness L/100, applied after the tone mapper

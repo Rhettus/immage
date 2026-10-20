@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // exports sent to an Immich album: the server and key the importer keeps
 // (tauri_plugin_immporter::immich_connection), so the key never reaches the
 // web view. the importer's own client only reads; uploading lives here.

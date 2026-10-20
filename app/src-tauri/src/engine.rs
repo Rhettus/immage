@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // the darktable-engine child process: one JSON request per line on its stdin,
 // one JSON reply per line on its stdout
 use serde::Serialize;

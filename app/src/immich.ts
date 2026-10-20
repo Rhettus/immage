@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // the Library panel's Immich card: searches the server (immich_search.rs),
 // turns its assets into filmstrip entries, and builds links into Immich's
 // web app. the key stays in the backend; the page only sees the URL

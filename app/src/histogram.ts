@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // an RGB histogram of a rendered frame (display-referred 8-bit RGBA), drawn
 // as Lightroom does: the three channels overlaid, their overlaps adding up
 // toward white. the frame's other scopes, darktable's set (waveform, RGB

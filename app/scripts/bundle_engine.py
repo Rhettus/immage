@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the Immage authors
+
 # copy an installed darktable engine (cmake --install build --prefix
 # build/install) into the app's resources and make it self-contained: every
 # Homebrew library it loads is copied into lib/darktable/deps and referenced
@@ -150,10 +153,18 @@ if glob.glob(os.path.join(dst, "lib", "darktable", "libonnxruntime*")):
                 texts.append(os.path.basename(m.name))
     own.append(f"onnxruntime {version}\n  license: MIT\n  source: https://github.com/microsoft/onnxruntime\n"
                f"  texts: {', '.join(f'onnxruntime/{t}' for t in sorted(texts))}\n")
+# the darktable commit built, so its source can be found exactly; a source
+# archive has no git, and then the notice says only where darktable is
+try:
+    dt_rev = run("git", "-C", os.path.join(repo, "darktable"), "rev-parse", "HEAD").strip()
+    dt_source = f"https://github.com/darktable-org/darktable/tree/{dt_rev}"
+except (OSError, subprocess.CalledProcessError):
+    dt_source = "https://github.com/darktable-org/darktable, at the commit in Immage's source"
 with open(os.path.join(lic_dir, "INDEX.txt"), "w") as f:
     f.write("Libraries bundled with Immage's engine. Each keeps its own license; texts\n"
             "are in the folder named after it. darktable itself is under the GNU GPL,\n"
             "version 3 or later, as Immage is.\n\n"
+            f"darktable\n  license: GPL-3.0-or-later\n  source: {dt_source}\n\n"
             "Compiled into darktable, or bundled beside it:\n\n" + "\n".join(own)
             + "\nFrom Homebrew:\n\n" + "\n".join(index))
 print(f"licenses for {len(kegs)} packages; no license file in the keg: {', '.join(bare) or 'none'}")

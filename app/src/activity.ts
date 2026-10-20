@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // work the screen is waiting on (a render, an AI mask, opening a photo),
 // for the viewer's busy indicator. a job counts as waiting from when it
 // began or last showed something; the indicator comes up only once one has

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // Windows: rendered frames handed over in WebView2 shared memory (main.rs,
 // shared_frame) rather than in render's reply, which WebView2 copies across
 // processes at a fraction of the Mac's speed. render then replies with the

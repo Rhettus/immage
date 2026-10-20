@@ -1,4 +1,7 @@
 #!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the Immage authors
+
 # apply patches/darktable-engine.patch to the darktable submodule, once:
 # darktable has no hook for building a target from outside its tree, so the
 # patch adds the engine as a subdirectory of its src/ (where it inherits

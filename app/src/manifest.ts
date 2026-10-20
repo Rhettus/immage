@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // the Lightroom-style panels, in Lightroom's order, and how their controls map
 // onto darktable modules. this file, not darktable, decides names, order and
 // visibility.

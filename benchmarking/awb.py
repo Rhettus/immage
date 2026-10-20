@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the Immage authors
+
 # Auto white balance, measured headless over the benchmark corpus. each photo
 # is scored as shot, after the app's Auto (gray world over the display frame,
 # refined over several frames: refineWB() in app/src/App.tsx), and after each

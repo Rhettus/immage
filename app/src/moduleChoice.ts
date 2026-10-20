@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // which darktable module a tool runs on for photos that have not used it
 // yet (manifest.ts, MODULE_CHOICES): Default, the one darktable's AgX
 // workflow uses for each, or Custom, each tool's as Preferences' Modules

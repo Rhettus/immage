@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // a color grading wheel: the angle is color balance rgb's hue (0 at three
 // o'clock, counter-clockwise, as Lightroom and RapidRAW draw it), the
 // distance from the center its saturation. the disc is painted with the

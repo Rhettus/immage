@@ -1,4 +1,7 @@
 #!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the Immage authors
+
 # make sure the SD card importer Immage builds against is in immporter/ at
 # the commit app/immporter.rev pins: cloned when missing, checked out when
 # it is elsewhere. immporter/ is gitignored (its own repo), so the pin is

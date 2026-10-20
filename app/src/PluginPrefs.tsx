@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // Preferences' Plugins tab: the applications a photo can be handed to with
 // right-click > Edit In, one card each, and adding another
 import { useState } from "react";

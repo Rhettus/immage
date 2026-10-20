@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // Lightroom's Copy Settings: which parts of an edit to copy, by panel and
 // section, kept between uses; Paste and Previous apply the same parts
 import { useEffect, useState } from "react";

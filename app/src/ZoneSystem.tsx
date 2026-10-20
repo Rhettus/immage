@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // the Zone System module under Black & White: the image's tones as zones
 // 0-X, a zone under the pointer shown over the photo, a click pinning it
 // (shift-click or a drag pinning a run of zones), and the zone of the

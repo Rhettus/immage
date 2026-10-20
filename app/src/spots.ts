@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // Lightroom's Heal and Clone spots, kept by darktable's retouch module. in
 // shown-image units, as masks are: 0-1 across the width and height, sizes
 // as fractions of the width. (sx, sy) is where the center, or a stroke's

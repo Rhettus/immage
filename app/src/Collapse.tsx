@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // a panel's fold: its chevron, and its body easing open and shut
 import { useEffect, useState } from "react";
 

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // the Transform panel's view of the photo: Lightroom's grid while a
 // Transform slider moves or Guided is on, and Guided Upright's guides. with
 // Guided on, a drag on the photo draws a guide along what should be plumb

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // the Immich connection in Preferences: what the importer checks duplicates
 // against, and where exports can go. the key is kept in the system's key
 // store by the importer's backend and never comes back to the page. like the rest of

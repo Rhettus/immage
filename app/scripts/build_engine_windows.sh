@@ -1,4 +1,7 @@
 #!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the Immage authors
+
 # Windows, in MSYS2's UCRT64 shell: build darktable and the engine, install
 # them into build/install, and bundle the engine with every DLL it loads
 # into app/src-tauri/resources/darktable for the installer. the app itself

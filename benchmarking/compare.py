@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the Immage authors
+
 # two benchmark runs side by side: what got faster or slower, as markdown.
 #   python3 -I benchmarking/compare.py                 the last two runs
 #   python3 -I benchmarking/compare.py OLD NEW         run folders (or run.json files)

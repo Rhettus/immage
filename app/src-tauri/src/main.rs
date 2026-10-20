@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // a windowed program on Windows: without it Windows starts the app with a
 // console window of its own. debug builds keep theirs, for the log
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]

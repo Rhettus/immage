@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the Immage authors
+
 # Immage's developer diagrams, from the specs below: for each, an Excalidraw
 # scene (<name>.excalidraw, open it in excalidraw.com or the VS Code
 # extension) and a plain SVG of the same boxes and arrows (<name>.svg, which

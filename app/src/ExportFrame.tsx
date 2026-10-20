@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // the Export dialog's Frame & Captions: frames (space added around the
 // photo), keylines (thin lines on its edge) and captions, each a list
 // drawn in order

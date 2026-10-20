@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // Preferences' Modules tab: the darktable module each tool runs on, as
 // README's table lists them. a tool with more than one gets a menu, set by
 // Default (darktable's AgX workflow's module for each) or by hand under Custom

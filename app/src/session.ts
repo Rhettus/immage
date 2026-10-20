@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // one open image: control values in Lightroom units, translated to engine
 // edits. edits are coalesced: while a render is in flight, further moves
 // only mark their module dirty, and the next round sends the latest values once

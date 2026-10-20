@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the Immage authors
+
 # the screenshots the guide asks for: every image a page shows, with the
 # note on what to capture, marked done once its file exists in images/
 #   python3 -I app/docs/check_images.py

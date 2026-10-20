@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // tokens filled in from a photo's metadata: export file names, and the
 // text an export draws on its frame (LRMogrify's token names)
 import type { ImageEntry } from "./library";

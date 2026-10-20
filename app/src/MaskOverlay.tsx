@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // drawing and editing a mask's shapes over the image, and its overlay.
 // the container is placed over the whole image by the viewer (App's
 // placeLayers), so a point here is simply a fraction of the image

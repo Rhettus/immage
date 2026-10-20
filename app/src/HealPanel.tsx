@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // Lightroom's Remove panel, Heal and Clone: the brush for new spots, the
 // selected spot's own settings, and Visualize Spots
 import type { Control } from "./manifest";

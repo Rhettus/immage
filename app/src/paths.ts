@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // file paths as the system gives them: "/" on macOS and Linux, "\" (and
 // sometimes "/") on Windows
 const SEP = /[\\/]/;

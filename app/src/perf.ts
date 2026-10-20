@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // Preferences' performance overlay: how long an edit takes from the control
 // moving to its pixels on screen, stage by stage, and the GUI benchmark's
 // recordings. while the overlay is off every hook returns at once

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // Lightroom's Keyboard Shortcuts sheet (⌘/): every key the app answers,
 // by where it works. the handlers live in App.tsx; keep this list with them
 import { useEffect } from "react";

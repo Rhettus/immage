@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // Lightroom's Export dialog, reduced to what the engine does: presets on
 // the left, Lightroom's sections in the middle, a preview of the result on
 // the right. settings are remembered

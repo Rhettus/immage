@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // white balance as Lightroom shows it (Temp in K, Tint) <-> darktable's color
 // calibration illuminant. the formulas are ports of src/common/illuminants.h,
 // so a black-body point computed here is the one darktable renders

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // Lightroom's point curve: click to add a point, drag to move it between its
 // neighbors, double-click or drag it off the graph to remove it. the end
 // points stay but may move

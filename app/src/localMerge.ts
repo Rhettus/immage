@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // masks sharing instances, as Lightroom's local adjustments add up rather
 // than chain. on a merged map (manifest.ts, `merge`), masks share an
 // instance under a combined mask (the engine's `combine`), where each

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // the photo under the pointer, as the Tone Curve, HSL and B&W Mix cards
 // and the Zone System read it: its display color, where it sits on a
 // curve, which color bands it falls in, and its zone

@@ -1,4 +1,7 @@
 #!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the Immage authors
+
 # Windows, in MSYS2's UCRT64 shell: copy the installed engine (build/install)
 # into the app's resources and make it self-contained. Windows looks for a
 # program's DLLs beside it first, so every DLL it or darktable's modules
@@ -108,9 +111,17 @@ for pkg in $(echo "$pkgs" | sort -u); do
           if (t != "") printf "  texts: %s\n", t
           printf "\n" }' >> "$msys"
 done
+# the darktable commit built, so its source can be found exactly; a source
+# archive has no git, and then the notice says only where darktable is
+if dt_rev=$(git -C "$root/darktable" rev-parse HEAD 2>/dev/null); then
+  dt_source="https://github.com/darktable-org/darktable/tree/$dt_rev"
+else
+  dt_source="https://github.com/darktable-org/darktable, at the commit in Immage's source"
+fi
 { printf "Libraries bundled with Immage's engine. Each keeps its own license; texts\n"
   printf "are in the folder named after it. darktable itself is under the GNU GPL,\n"
   printf "version 3 or later, as Immage is.\n\n"
+  printf "darktable\n  license: GPL-3.0-or-later\n  source: %s\n\n" "$dt_source"
   printf "Compiled into darktable, or bundled beside it:\n\n"; cat "$own"
   printf "From MSYS2:\n\n"; cat "$msys"; } > "$lic/INDEX.txt"
 rm -f "$own" "$msys"

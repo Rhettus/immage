@@ -1,4 +1,7 @@
 #!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the Immage authors
+
 # rebuild build/dmg/<product>_<version>_aarch64.dmg from this checkout: the
 # engine and darktable install tree, made self-contained, then the app, then
 # the disk image. needs the build/ tree configured as for development

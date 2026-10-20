@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the Immage authors
+
 include_directories(${DARKTABLE_BINDIR})
 
 find_package(PkgConfig REQUIRED)

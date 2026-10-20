@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // what Immage keeps on disk to show again quickly: library thumbnails,
 // Immich's thumbnails and the Immich originals opened here. each folder has
 // a size limit of its own, so one big download does not flush every

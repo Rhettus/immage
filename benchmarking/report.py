@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the Immage authors
+
 # after a run: SUMMARY.md from the latest run (and its change since the one
 # before), and dashboard/data.js from every run and GUI report, so the
 # dashboard opens offline from file://.

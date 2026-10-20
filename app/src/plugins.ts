@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // Edit In: what darktable does not do is handed to another application (DxO
 // PureRAW now; panorama, HDR and focus stacking later), and the file it
 // writes comes back to be edited, as with Lightroom's plug-ins. a kind says

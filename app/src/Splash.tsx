@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // the startup splash: a small window of its own, as darktable's, with the
 // artwork and Immage's and darktable's versions, shown while the engine
 // starts. the main window starts hidden (tauri.conf.json); `about` answers

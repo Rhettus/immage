@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // Basic's Auto, after Exposure and AgX's auto tune levels: Blacks,
 // Whites, Shadows, Highlights and Contrast from the rendered frame with
 // all five at 0. the frame is display-referred, so its luminance is the

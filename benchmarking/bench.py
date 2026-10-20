@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the Immage authors
+
 # Immage's benchmark: drives darktable-engine headless, the way the app does,
 # over a corpus of photos, and records one run under benchmarking/results/.
 # standard library only; run it as `python3 -I benchmarking/bench.py`.

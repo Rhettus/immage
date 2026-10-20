@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // Lightroom's Keywording panel: the photo's keywords, a box to add new or
 // known ones, and the recently used ones a click away. keywords are
 // darktable's tags, "|" between the levels of a hierarchy; the engine keeps

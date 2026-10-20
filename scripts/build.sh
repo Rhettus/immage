@@ -1,4 +1,7 @@
 #!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the Immage authors
+
 # build Immage from a clone: the darktable submodule (patched to build the
 # engine), the engine, then the app for this platform. on macOS the result
 # is build/dmg/<product>_<version>_aarch64.dmg; on Windows, run this from

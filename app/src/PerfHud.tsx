@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // the performance overlay over the photo (Preferences > General >
 // Performance, or ⇧⌘P): Now has the display's frame rate, edit-to-pixels
 // latency, where the last frame's time went and every module in it; Session

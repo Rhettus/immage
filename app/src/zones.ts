@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
 // Ansel Adams' Zone System on the scene-referred black and white image:
 // zone V is middle gray (18.45%), one stop per zone, 0 and X open-ended.
 // zones are measured where Immage's masks measure luminance (the engine's
