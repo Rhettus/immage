@@ -1,0 +1,118 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the Immage authors
+
+name: codeql
+
+# no schedule yet: a scheduled run's event carries no repository, so the
+# private-repo guard below cannot tell it apart. add one when the repo is
+# public, for the queries CodeQL gains between pushes
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # code scanning on a private repo needs GitHub Code Security, which this
+  # one does not have, so the jobs skip until the repo is public
+  analyze:
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [actions, javascript-typescript, rust]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+      - uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          category: /language:${{ matrix.language }}
+
+  # the engine only. darktable is built first, outside CodeQL's tracing, so
+  # only engine/ is extracted; results in darktable's headers that the engine
+  # includes are then filtered out of the upload
+  engine:
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      security-events: write
+    env:
+      CC: gcc-12
+      CXX: g++-12
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # as build.yml's linux job
+      - name: system packages
+        run: |
+          sudo add-apt-repository -y ppa:savoury1/graphics
+          sudo add-apt-repository -y ppa:savoury1/ffmpeg4
+          sudo add-apt-repository -y ppa:savoury1/display
+          sudo apt-get update
+          sudo apt-get install -y $(grep -v '^#' .github/ubuntu-packages.txt)
+      # the build job's cache, read only
+      - uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+        with:
+          key: linux-x64
+          max-size: 2G
+          save: false
+      - run: sh app/scripts/build_linux_deps.sh
+      - run: sh scripts/build.sh configure
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: cmake --build build --target lib_darktable
+      - uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          languages: c-cpp
+          build-mode: manual
+      # ccache off: a cache hit never runs the compiler, so CodeQL would not
+      # see the file
+      - run: cmake --build build --target darktable-engine
+        env:
+          CCACHE_DISABLE: 1
+      - uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          category: /language:c-cpp
+          upload: failure-only
+          output: ${{ runner.temp }}/sarif
+      - name: keep engine/ results only
+        run: |
+          python3 - "$RUNNER_TEMP"/sarif/*.sarif <<'EOF'
+          import json, sys
+          for path in sys.argv[1:]:
+              with open(path) as f:
+                  sarif = json.load(f)
+              for run in sarif["runs"]:
+                  run["results"] = [
+                      r for r in run.get("results", [])
+                      if r.get("locations") and r["locations"][0]["physicalLocation"]
+                         ["artifactLocation"]["uri"].startswith("engine/")]
+                  print(f"{path}: {len(run['results'])} results in engine/")
+              with open(path, "w") as f:
+                  json.dump(sarif, f)
+          EOF
+      - uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          sarif_file: ${{ runner.temp }}/sarif
+          category: /language:c-cpp

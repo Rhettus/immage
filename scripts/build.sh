@@ -48,6 +48,9 @@ case "$(uname -s)" in
     if [ ! -f build/build.ninja ]; then
       cmake -S darktable -B build -G Ninja $engine_flags -DBINARY_PACKAGE_BUILD=ON -DIMMAGE_ROOT="$root"
     fi
+    # `build.sh configure` stops here: CodeQL builds only the engine target,
+    # under its compiler tracing (.github/workflows/codeql.yml)
+    [ "${1:-}" = configure ] && exit 0
     sh app/scripts/build_appimage.sh
     ;;
   MINGW*|MSYS*)
