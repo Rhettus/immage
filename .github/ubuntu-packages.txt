@@ -61,6 +61,8 @@ libde265-dev
 libaom-dev
 # libaom-dev's cmake config names /usr/bin/aomdec, which libheif's FindAOM checks for
 aom-tools
+# and the PPA's libaom links against libwebm
+libwebm-dev
 libopenh264-dev
 libsharpyuv-dev
 libinih-dev
