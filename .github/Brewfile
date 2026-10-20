@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the Immage authors
+
+# what the macOS build installs from Homebrew: darktable's .ci/Brewfile
+# without the features scripts/build.sh turns off (gmic, imagemagick,
+# opencv, lua, camera, map, ...), so the runner does not spend minutes on
+# them. ONNX Runtime is not here: darktable's configure downloads it
+
+brew 'cmake'
+brew 'ninja'
+brew 'pkgconf'
+brew 'gettext'
+brew 'intltool'
+brew 'iso-codes'
+brew 'glib'
+brew 'gtk+3'
+brew 'exiv2'
+brew 'jpeg-turbo'
+brew 'jpeg-xl'
+brew 'json-glib'
+brew 'lensfun'
+brew 'libarchive'
+brew 'libheif'
+brew 'librsvg'
+brew 'little-cms2'
+brew 'libomp'
+brew 'openexr'
+brew 'openjpeg'
+brew 'potrace'
+brew 'pugixml'
+brew 'webp'
+brew 'ccache'
