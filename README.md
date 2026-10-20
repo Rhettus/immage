@@ -60,8 +60,10 @@ present), not from a stable release, so its modules can be newer than
 yours. Once Immage saves an edit, the photo's XMP sidecar may hold module
 versions that a stable darktable cannot read: it then warns of a version
 mismatch and leaves those modules out, or resets them to their defaults,
-so the photo looks different there. Work on copies, or on photos you have
-not edited in darktable, until you know how the two fit your workflow.
+so the photo looks different there. Masks are saved in the format of
+darktable's new flexi masks, which no released darktable reads. Work on
+copies, or on photos you have not edited in darktable, until you know how
+the two fit your workflow.
 
 ## Design goals
 

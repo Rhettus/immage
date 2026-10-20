@@ -10,7 +10,7 @@ check the result.
 
 - **The submodule commit** is the pin. `git submodule status darktable`
   shows it, and `git -C darktable describe --tags --match 'release-*'`
-  names it (`release-5.7.0-1208-ge59d2bd28c` is master, 1,208 commits
+  names it (`release-5.7.0-1428-g2747ed2a0d` is master, 1,428 commits
   past the 5.7.0 tag).
 - **[patches/darktable-engine.patch](../../../patches/darktable-engine.patch)**
   is the only change to darktable: it adds the engine to darktable's
@@ -52,6 +52,11 @@ git -C darktable log --oneline HEAD..origin/master | wc -l
        src/external/libxcf src/external/whereami src/external/LibRaw
    sh scripts/patch_darktable.sh
    ```
+
+   `scripts/build.sh` takes the patch off and puts it back by itself, so
+   once the new commit is staged (`git add darktable`) a plain
+   `sh scripts/build.sh` does steps 2 and 3. Without staging, it checks
+   the old pin out again.
 
    If the patch no longer applies, darktable moved the lines around it:
    apply it by hand at the same place (after the `add_subdirectory(mcp)`
