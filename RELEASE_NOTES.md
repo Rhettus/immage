@@ -9,6 +9,8 @@ Bug fixes
 
 - a mask's Highlights, Shadows and Whites sliders now change the photo;
   in 0.31.0 they moved but did nothing
+- a mask's Defringe works on photos whose Defringe is set to the defringe
+  module in Preferences › Modules
 - a mask's Color Grading highlights luminance no longer shows up as its
   Whites when the photo is opened again
 
