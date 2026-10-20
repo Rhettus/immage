@@ -427,9 +427,11 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
               <>
               <PrefCard title="Workspace">
                 <PrefRow label="Canvas" hint="behind the photo, full screen too; neutral gray judges tones without a dark surround, white as on a print. L steps through them">
-                  <div className="segmented small">
-                    {([["Dark", "dark"], ["Neutral Gray", "gray"], ["White", "white"]] as const).map(([label, v]) => (
-                      <button key={v} className={canvas === v ? "active" : ""} onClick={() => onCanvas(v)}>{label}</button>
+                  <div className="pref-swatches">
+                    {/* the viewer's backgrounds in styles.css */}
+                    {([["Dark", "dark", "#121212"], ["Neutral Gray", "gray", "#767676"], ["White", "white", "#fff"]] as const).map(([label, v, color]) => (
+                      <button key={v} className={`swatch${canvas === v ? " on" : ""}`} title={label} aria-label={label}
+                              style={{ background: color }} onClick={() => onCanvas(v)} />
                     ))}
                   </div>
                 </PrefRow>
