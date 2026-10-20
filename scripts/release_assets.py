@@ -69,8 +69,15 @@ from inside Immage, without the warning.
 Immage checks for a new version once a day (Preferences › About ›
 Updates), and offers to install it.
 
+## Source
+
 `{source}` is the source of this release: Immage, with darktable and
-Immporter at the commits it was built from.
+Immporter at the commits it was built from. The libraries bundled from
+Homebrew, MSYS2 and Ubuntu are listed in Preferences › About with the
+version shipped and where their source is published. For at least three
+years after this release, anyone may also ask for the complete source of
+any GPL or LGPL library in these binaries, at the version shipped, free of
+charge: open an issue at {repo}/issues.
 """
 
 
@@ -118,7 +125,7 @@ def main():
     (out / "latest.json").write_text(json.dumps(feed, indent=2) + "\n", encoding="utf-8")
 
     dmg, _, nsis, msi, appimage, source = names
-    body = text + "\n\n" + unwrap(INSTALL).format(dmg=dmg, nsis=nsis, msi=msi, appimage=appimage, source=source)
+    body = text + "\n\n" + unwrap(INSTALL).format(dmg=dmg, nsis=nsis, msi=msi, appimage=appimage, source=source, repo=REPO)
     (out.parent / "body.md").write_text(body, encoding="utf-8")
 
 
