@@ -3,13 +3,13 @@
 
 name: codeql
 
-# no schedule yet: a scheduled run's event carries no repository, so the
-# private-repo guard below cannot tell it apart. add one when the repo is
-# public, for the queries CodeQL gains between pushes
+# weekly as well, for the queries CodeQL gains between pushes
 on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: "17 4 * * 1"
   workflow_dispatch:
 
 permissions:
@@ -20,10 +20,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # code scanning on a private repo needs GitHub Code Security, which this
-  # one does not have, so the jobs skip until the repo is public
   analyze:
-    if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -48,7 +45,6 @@ jobs:
   # only engine/ is extracted; results in darktable's headers that the engine
   # includes are then filtered out of the upload
   engine:
-    if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-22.04
     timeout-minutes: 120
     permissions:
