@@ -92,6 +92,26 @@ photo's starting point: they don't mark it as edited.
   reads `© 2026 Your Name`. Resetting the photo keeps them. Empty by
   default.
 
+## Modules
+
+Which darktable module each tool runs on. **Default** uses the module of
+darktable's AgX workflow for each; **Custom** lets you pick one per tool,
+from these:
+
+- **Contrast**, **Blacks**, **Saturation**: AgX (or sigmoid, on a photo
+  started under it), or color balance rgb for Contrast and Saturation and
+  exposure for Blacks
+- **Highlights and Shadows**: the tone equalizer, or shadows and
+  highlights. A mask's Highlights and Shadows use the same one
+- **Black & White**: color calibration, or the color equalizer
+- **Sharpening**: sharpen, or diffuse or sharpen
+- **Defringe** (masks only): chromatic aberrations, or defringe
+
+The tab also lists the module behind each of the other tools. A photo that
+already uses one of a tool's modules keeps it, so its edit looks the same;
+the choice applies to the tools a photo hasn't used yet, from the next
+photo you open.
+
 ## Immich
 
 The server, API key, duplicate checking and path map. See
