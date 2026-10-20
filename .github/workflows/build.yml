@@ -161,3 +161,57 @@ jobs:
             app/src-tauri/target/release/bundle/msi/*.msi
             app/src-tauri/target/release/bundle/nsis/*.exe
           if-no-files-found: error
+
+  linux:
+    # an AppImage runs where glibc is at least as new as the build's, so it
+    # is built on the oldest Ubuntu the runners have: 22.04, glibc 2.35
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    env:
+      # darktable needs gcc 12; 22.04's default is 11
+      CC: gcc-12
+      CXX: g++-12
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      # Tauri bundles with linuxdeploy, itself an AppImage, which otherwise
+      # needs FUSE
+      APPIMAGE_EXTRACT_AND_RUN: 1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # the PPAs darktable's own AppImage build uses, for newer image
+      # format libraries than 22.04 has
+      - name: system packages
+        run: |
+          sudo add-apt-repository -y ppa:savoury1/graphics
+          sudo add-apt-repository -y ppa:savoury1/ffmpeg4
+          sudo add-apt-repository -y ppa:savoury1/display
+          sudo apt-get update
+          sudo apt-get install -y $(grep -v '^#' .github/ubuntu-packages.txt)
+      - uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+        with:
+          key: linux-x64
+          max-size: 2G
+      - run: sh app/scripts/build_linux_deps.sh
+      # the newest lens database, which bundle_engine.py ships; it exits
+      # non-zero when there is nothing newer than the package's
+      - run: sudo lensfun-update-data || true
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: app/src-tauri
+      - run: npm ci
+        working-directory: app
+      - run: sh scripts/build.sh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: immage-linux-x64
+          path: app/src-tauri/target/release/bundle/appimage/*.AppImage
+          if-no-files-found: error
