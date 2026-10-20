@@ -254,7 +254,7 @@ pub fn thumb_name(photo: &Path, version: i64, size: u32) -> Option<String> {
 
 // a thumbnail as stored: JPEG from the engine's RGBA
 pub fn encode_jpeg(rgba: &[u8], width: u32, height: u32) -> Result<Vec<u8>, String> {
-    let rgb: Vec<u8> = rgba.chunks_exact(4).flat_map(|p| [p[0], p[1], p[2]]).collect();
+    let rgb: Vec<u8> = rgba.as_chunks::<4>().0.iter().flat_map(|p| [p[0], p[1], p[2]]).collect();
     let mut out = Vec::new();
     image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 90)
         .encode(&rgb, width, height, image::ExtendedColorType::Rgb8)

@@ -96,6 +96,7 @@ async fn get_params(state: State<'_, AppState>, modules: Value) -> Result<Value,
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 async fn set_params(
     state: State<'_, AppState>,
     op: String,
@@ -583,6 +584,7 @@ const FRAME_HEAD: usize = 56;
 // the per-module timings), darktable's u64 hash of the frame (FRAME_HEAD
 // bytes in all), then RGBA. ops in skip are left out of this frame
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 async fn render(
     state: State<'_, AppState>,
     webview: tauri::Webview,

@@ -158,7 +158,7 @@ pub fn plugin_find_apps(patterns: Vec<String>) -> Vec<String> {
         }
     }
     let mut out: Vec<String> = out.into_iter().map(|p| p.to_string_lossy().into_owned()).collect();
-    out.sort_by(|a, b| b.to_lowercase().cmp(&a.to_lowercase()));
+    out.sort_by_key(|a| std::cmp::Reverse(a.to_lowercase()));
     out.dedup();
     out
 }
