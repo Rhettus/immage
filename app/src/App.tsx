@@ -4182,7 +4182,14 @@ export default function App() {
           })()}
         </main>
         <div data-tour="filmstrip" ref={stripSlot}
-             style={floating.strip || grid ? { bottom: toolbarSpace } : undefined}
+             style={floating.strip || grid ? {
+               bottom: toolbarSpace,
+               // the grid makes way for a floating side panel shown over it, which
+               // would hide its first or last column (the panels' edges are the
+               // viewer's, styles.css: auto-hide), and covers the photo in the gap
+               ...(grid && floating.left && revealed.left ? { left: layout.leftWidth, background: "var(--window)" } : {}),
+               ...(grid && floating.right && revealed.right ? { right: layout.rightWidth, background: "var(--window)" } : {}),
+             } : undefined}
              className={`strip-slot${layout.strip || grid ? "" : " closed"}${floating.strip ? " floating" : ""}`
                         + `${floating.strip && revealed.strip ? " revealed" : ""}${grid ? " grid" : ""}`}>
           <div>
