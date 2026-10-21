@@ -140,17 +140,25 @@ to 0.
 
 ## Detail
 
-**Sharpening** (darktable's diffuse or sharpen)
+**Sharpening** (darktable's sharpen, or diffuse or sharpen)
 
-Sharpen as your last step. Sharpening is slow to render, and while it is
-on, Exposure, Blacks, Temp, Tint and the lens corrections take longer to
-update the photo. New raws start with it off.
+Sharpen as your last step. New raws start with it off. It runs on
+darktable's sharpen unless [Preferences › Modules](preferences.md#modules)
+picks diffuse or sharpen, and each shows its own sliders:
 
-- **Amount**: 0-5; 0 is off.
-- **Radius**: 1-12 (3 by default).
-- **Sensitivity**: 0-4.
-- **Masking**: 0-100. Sharpens only the edges as it rises; ⌥-drag shows
-  where. Raws only.
+- sharpen:
+  - **Amount**: 0-100; 0 is off.
+  - **Radius**: 0.5-3 px (2 by default).
+  - **Threshold**: 0-100 (5 by default). Leaves differences smaller than
+    this alone, such as noise.
+- diffuse or sharpen, which is slow to render: while it is on, Exposure,
+  Blacks, Temp, Tint and the lens corrections take longer to update the
+  photo.
+  - **Amount**: 0-5; 0 is off.
+  - **Radius**: 1-12 px (3 by default).
+  - **Sensitivity**: 0-4.
+- **Masking**, on either: 0-100. Sharpens only the edges as it rises;
+  ⌥-drag shows where. Raws only.
 
 **AI Denoise** (darktable's raw denoise)
 

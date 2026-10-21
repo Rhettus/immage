@@ -166,7 +166,7 @@ photo that already uses one of a tool's modules keeps it.
 | **HSL / Color**, **B&W Mix** | color equalizer (`colorequal`) |
 | **Color Grading** | color balance rgb (`colorbalancergb`) |
 | **Detail** | |
-| Sharpening | diffuse or sharpen (`diffuse`), its "sharpness \| normal" preset on an instance of its own, or sharpen (`sharpen`) |
+| Sharpening | sharpen (`sharpen`), or diffuse or sharpen (`diffuse`), its "sharpness \| normal" preset on an instance of its own |
 | Noise Reduction: Luminance | denoise (profiled) (`denoiseprofile`) |
 | **Lens Corrections** | lens correction (`lens`), with the lensfun database |
 | **Transform**: Vertical, Horizontal, Rotate | rotate and perspective (`ashift`) |
