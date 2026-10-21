@@ -4849,7 +4849,29 @@ static gboolean _working_at(_working_t *w, const _stage_t stage, char **err)
     *err = g_strdup("the working-space image is not at hand");
     return FALSE;
   }
-  // with nothing in RGB after it, colorin hands on Lab
+  // with nothing in RGB after it, colorin hands on Lab: a JPEG or TIFF has
+  // no RGB module on ahead of the anchor. the mask instances get it as the
+  // work profile's RGB, which darktable converts their input to, so it is
+  // read that way. the conversion is kept until the next one
+  static float *converted = NULL;
+  static dt_iop_buffer_dsc_t converted_dsc;
+  if(stage != _STAGE_ASHIFT && dsc->cst == IOP_CS_LAB)
+  {
+    if(converted) dt_free_align(converted);
+    converted = dt_alloc_align_float((size_t)4 * roi.width * roi.height);
+    if(!converted)
+    {
+      *err = g_strdup("out of memory for the working-space image");
+      return FALSE;
+    }
+    dt_iop_colorspace_type_t cst = IOP_CS_LAB;
+    dt_ioppr_transform_image_colorspace(piece->module, data, converted, roi.width, roi.height, IOP_CS_LAB,
+                                        IOP_CS_RGB, &cst, dt_ioppr_get_pipe_work_profile_info(&_s.ppipe));
+    converted_dsc = *dsc;
+    converted_dsc.cst = IOP_CS_RGB;
+    data = converted;
+    dsc = &converted_dsc;
+  }
   if(stage != _STAGE_ASHIFT && dsc->cst != IOP_CS_RGB)
   {
     *err = g_strdup("the image is not in RGB at the mask stage");
