@@ -15,6 +15,10 @@ Bug fixes
 - AI masks and AI Denoise download their models on Linux systems without
   curl or unzip installed, such as Arch and CachyOS, which have no unzip;
   before, the download or the unpacking failed
+- an AI model left half installed, such as by an install cut short, is
+  downloaded again the next time it is used; before, Select Object, the
+  other AI masks and AI Denoise failed with "cannot load the model" until
+  Immage's data folder was deleted
 - on Linux, sliders respond several times faster when other programs are
   busy, such as on a system drawing in software without its graphics
   driver; before, a slider like Clarity could take over a second a frame
