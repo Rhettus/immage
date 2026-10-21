@@ -1181,10 +1181,13 @@ export const modules: ModuleMap[] = [
   {
     op: "lens", keepOn: false,
     controls: ["lens_profile", "lens_ca"],
-    fields: ["modify_flags"],
-    // flags: TCA 1, vignetting 2, distortion 4 (lens.cc)
+    fields: ["modify_flags", "has_been_set"],
+    // flags: TCA 1, vignetting 2, distortion 4 (lens.cc). until has_been_set,
+    // commit_params ignores the params for the defaults, as darktable's GUI
+    // sets it on the first change; the method stays the one the defaults
+    // picked for the photo
     read: (p) => ({ lens_profile: 1, lens_ca: p.modify_flags & 1 ? 1 : 0 }),
-    write: (v) => ({ modify_flags: v.lens_ca ? 7 : 6 }),
+    write: (v) => ({ modify_flags: v.lens_ca ? 7 : 6, has_been_set: 1 }),
     enabled: (v) => v.lens_profile === 1,
   },
   transformMap,

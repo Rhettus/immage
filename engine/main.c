@@ -780,6 +780,9 @@ static gboolean _set(const char *op, const char *field, JsonNode *value,
   // iop_gen for a new instance, which always gets its history item)
   void *was = gen == _s.iop_gen && !mask ? g_malloc(mod->params_size) : NULL;
   if(was) memcpy(was, mod->params, mod->params_size);
+  // and the blend params, which "blend.details" alone changes
+  dt_develop_blend_params_t was_blend = { 0 };
+  if(mod->blend_params) memcpy(&was_blend, mod->blend_params, sizeof(was_blend));
   const gboolean was_enabled = mod->enabled;
 
   gboolean moved = FALSE;
@@ -819,7 +822,9 @@ static gboolean _set(const char *op, const char *field, JsonNode *value,
   // every item on each render (_ppipe_ready()); the tone equalizer's
   // commit is costly enough that its 160 px previews grew 14 -> 105 ms
   const gboolean same = was && !moved && mod->enabled == was_enabled
-                        && !memcmp(was, mod->params, mod->params_size);
+                        && !memcmp(was, mod->params, mod->params_size)
+                        && (!mod->blend_params
+                            || !memcmp(&was_blend, mod->blend_params, sizeof(was_blend)));
   g_free(was);
   if(same) return TRUE;
   // with a mask, the history item carries the shapes too
@@ -2513,9 +2518,13 @@ static dt_iop_module_t *_named_instance(const char *op, const char *name, const 
   // mask instances run together after the anchor, in the working space,
   // where a range mask's sampled values hold for all of them
   // except denoise (profiled), whose noise profile holds only for the
-  // camera's data where it normally runs
+  // camera's data where it normally runs, and haze removal, whose ambient
+  // light estimate goes negative on the exposed values after the anchor,
+  // which leaves a positive strength nothing to remove (hazeremoval.c,
+  // t_min)
   dt_iop_module_t *anchor = dt_iop_get_module_by_op_priority(_s.dev.iop, _MASK_ANCHOR, 0);
   if(anchored && anchor && m->iop_order < anchor->iop_order && g_strcmp0(op, "denoiseprofile")
+     && g_strcmp0(op, "hazeremoval")
      && dt_ioppr_check_can_move_after_iop(_s.dev.iop, m, anchor))
     dt_ioppr_move_iop_after(&_s.dev, m, anchor);
   // a mask's own instance runs after the instances masks share

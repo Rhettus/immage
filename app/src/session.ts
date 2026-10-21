@@ -504,25 +504,31 @@ export class Session {
 
   private async sendMaskQueues(): Promise<boolean> {
     let sent = false;
-    const touched = [...new Set([...this.dirtyLocal.keys(), ...this.dirtyShapes])];
-    // renames first: what follows is sent under the new names
-    for (const [name, to] of this.renames.splice(0)) {
-      await invoke("mask_rename", { name, to });
-      sent = true;
-    }
-    for (const name of this.deletedMasks.splice(0)) {
-      this.sentMasks.delete(name);
-      await invoke("mask_delete", { name });
-      sent = true;
-    }
-    for (const name of [...this.dirtyShapes]) {
-      this.dirtyShapes.delete(name);
-      const m = this.mask(name);
-      if (!m) continue;
-      await invoke("mask_shapes", { name, shapes: m.shapes });
-      this.sentMasks.add(name);
-      sent = true;
-    }
+    const reshaped = new Set<string>();
+    // renames first: what follows is sent under the new names. again until
+    // none is left, so a mask added or renamed while these await the engine
+    // is there before the instances below attach to it
+    do {
+      for (const [name, to] of this.renames.splice(0)) {
+        await invoke("mask_rename", { name, to });
+        sent = true;
+      }
+      for (const name of this.deletedMasks.splice(0)) {
+        this.sentMasks.delete(name);
+        await invoke("mask_delete", { name });
+        sent = true;
+      }
+      for (const name of [...this.dirtyShapes]) {
+        this.dirtyShapes.delete(name);
+        const m = this.mask(name);
+        if (!m) continue;
+        reshaped.add(name);
+        await invoke("mask_shapes", { name, shapes: m.shapes });
+        this.sentMasks.add(name);
+        sent = true;
+      }
+    } while (this.renames.length || this.deletedMasks.length || this.dirtyShapes.size);
+    const touched = [...new Set([...this.dirtyLocal.keys(), ...reshaped])];
     // which masks share instances now. one that can share no more (a range
     // added), or now can, sends its own instances of merged modules again;
     // on the first edit, every mask does. a photo from before sharing,

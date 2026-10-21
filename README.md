@@ -300,10 +300,12 @@ cd app && npm install && npm run tauri dev
 # after a change to the engine or a darktable bump
 cmake --build build
 
-# every so often: cargo never removes earlier builds' object files
-# from app/src-tauri/target, which grows by gigabytes a day
-app/scripts/prune_target.sh      # -n to list first; [days], default 3
 ```
+
+Cargo never removes earlier builds from `app/src-tauri/target`, which
+grows by gigabytes a day. `npm run tauri ...` prunes it before and after
+each build, keeping what the last two builds of each profile use
+(`app/scripts/prune_target.mjs`; `-n` lists what would go).
 
 ### Windows
 

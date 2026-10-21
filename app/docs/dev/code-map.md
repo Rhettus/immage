@@ -370,7 +370,8 @@ darktable is, and it has AI features when darktable is configured with
 | File | Coverage |
 |---|---|
 | `#[cfg(test)]` in [main.rs](../../src-tauri/src/main.rs), [engine.rs](../../src-tauri/src/engine.rs) | `cargo test` in `app/src-tauri`: model release lookup, folder listing, sha256, the `-d perf` parser. |
-| `npm run build` in `app/` | Type checking (`tsc --noEmit`) and the production bundle; there is no front-end test runner. |
+| `npm run build` in `app/` | Type checking (`tsc --noEmit`) and the production bundle; there is no front-end unit test runner (the release checks run the front end's `Session`). |
+| [verify/](../../../verify/README.md) | The release checks: the app's `Session` run under Node against the engine (`harness.mjs`, with `shim.mjs` for Tauri's invoke), every slider and mask slider measured, an edit saved and opened again, old edits rendered, and the benchmark's main timings against the last run. |
 | [benchmarking/](../../../benchmarking/README.md) | The engine benchmark (driven with the app's own manifest), the GUI benchmark's reports, the dashboard. |
 | `build/spike/*.py` | Untracked, local scripts that drive the engine headless, one per feature (masks, zones, frames, spots, AI). Useful patterns, not a suite. |
 | `darktable/src/tests/integration/` | darktable's pixel tests; run them when a change reaches the pixelpipe or `src/iop/`. |
@@ -384,7 +385,7 @@ darktable is, and it has AI features when darktable is configured with
 | [package.json](../../package.json) | `npm run tauri dev` (dev build, engine from `build/bin`), `npm run tauri build`. |
 | [bundle_engine.py](../../scripts/bundle_engine.py), [build_dmg.sh](../../scripts/build_dmg.sh) | The engine and its libraries copied into `src-tauri/resources/darktable` (gitignored) and made relocatable; the macOS disk image. |
 | [build_engine_windows.sh](../../scripts/build_engine_windows.sh), [bundle_engine_windows.sh](../../scripts/bundle_engine_windows.sh), [WINDOWS.md](../../WINDOWS.md) | The Windows (MSYS2 UCRT64) build. |
-| [prune_target.sh](../../scripts/prune_target.sh) | Frees `src-tauri/target`: object files, test executables and incremental caches from builds older than a few days, which cargo never removes. Run it every so often; it never forces a dependency rebuild. |
+| [prune_target.mjs](../../scripts/prune_target.mjs) | Frees `src-tauri/target` of earlier builds, which cargo never removes: keeps what the last two builds of each profile use, as cargo lists it. npm runs it before and after every `npm run tauri ...`. |
 | [fetch_immporter.sh](../../scripts/fetch_immporter.sh), [immporter.rev](../../immporter.rev) | The importer, cloned into the gitignored `immporter/` at a pinned commit. |
 | [app/docs/](../README.md) | The user guide, for photographers. |
 | [benchmarking/README.md](../../../benchmarking/README.md) | Performance suite, results and findings. |
