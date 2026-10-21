@@ -2518,9 +2518,13 @@ static dt_iop_module_t *_named_instance(const char *op, const char *name, const 
   // mask instances run together after the anchor, in the working space,
   // where a range mask's sampled values hold for all of them
   // except denoise (profiled), whose noise profile holds only for the
-  // camera's data where it normally runs
+  // camera's data where it normally runs, and haze removal, whose ambient
+  // light estimate goes negative on the exposed values after the anchor,
+  // which leaves a positive strength nothing to remove (hazeremoval.c,
+  // t_min)
   dt_iop_module_t *anchor = dt_iop_get_module_by_op_priority(_s.dev.iop, _MASK_ANCHOR, 0);
   if(anchored && anchor && m->iop_order < anchor->iop_order && g_strcmp0(op, "denoiseprofile")
+     && g_strcmp0(op, "hazeremoval")
      && dt_ioppr_check_can_move_after_iop(_s.dev.iop, m, anchor))
     dt_ioppr_move_iop_after(&_s.dev, m, anchor);
   // a mask's own instance runs after the instances masks share
