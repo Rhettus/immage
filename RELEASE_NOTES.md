@@ -12,9 +12,9 @@ Bug fixes
   mask stage", and the range's overlay never showed
 - a range mask's overlay no longer streaks across the photo after
   zooming in to 100% and back out
-- AI Denoise and Select Object download their models on Linux systems
-  without unzip installed, such as Arch and CachyOS; before, the model
-  downloaded but could not be unpacked
+- AI masks and AI Denoise download their models on Linux systems without
+  curl or unzip installed, such as Arch and CachyOS, which have no unzip;
+  before, the download or the unpacking failed
 
 ## 0.33.0
 
