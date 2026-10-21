@@ -199,6 +199,11 @@ impl Engine {
         if std::env::var_os("OMP_WAIT_POLICY").is_none() {
             cmd.env("OMP_WAIT_POLICY", "passive");
         }
+        // the web view's Mesa EGL (main.rs, mesa_egl) is not the engine's
+        #[cfg(target_os = "linux")]
+        if crate::WEBVIEW_MESA.load(Ordering::Relaxed) {
+            cmd.env_remove("__EGL_VENDOR_LIBRARY_FILENAMES");
+        }
         let mut child = cmd.spawn()?;
         let stdin = Arc::new(Mutex::new(child.stdin.take().expect("piped stdin")));
         let stdout = BufReader::new(child.stdout.take().expect("piped stdout"));

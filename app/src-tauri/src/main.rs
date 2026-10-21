@@ -818,13 +818,38 @@ fn machine_id() -> Option<String> {
     Some(hash.iter().take(6).map(|b| format!("{b:02x}")).collect())
 }
 
+// NVIDIA's EGL driver held each frame of WebKitGTK's page to about 72 ms,
+// and every reply to the page waited for one, on Wayland and X11 alike and
+// whichever way WebKit's DMA-BUF, compositing or NVIDIA's explicit sync
+// were set; with Mesa's EGL, which draws the page on the CPU there, a reply
+// took 2 ms and a Highlights drag frame 45 ms against 445 (GUI benchmark,
+// RTX 4070 Ti SUPER, driver 595, Ubuntu 26.04; WebKit bug 303811). so the
+// web view gets Mesa's when NVIDIA's driver is loaded and Mesa's is
+// installed, unless the user chose a vendor. `root` is "/" but in the tests
+#[cfg(any(target_os = "linux", test))]
+const EGL_VENDOR: &str = "__EGL_VENDOR_LIBRARY_FILENAMES";
+
+#[cfg(any(target_os = "linux", test))]
+fn mesa_egl(root: &Path) -> Option<PathBuf> {
+    if !root.join("proc/driver/nvidia").exists() {
+        return None;
+    }
+    ["usr/share/glvnd/egl_vendor.d/50_mesa.json", "etc/glvnd/egl_vendor.d/50_mesa.json"]
+        .iter().map(|p| root.join(p)).find(|p| p.exists())
+}
+
+// set when the web view was given Mesa's EGL, which the engine doesn't take
+#[cfg(target_os = "linux")]
+static WEBVIEW_MESA: AtomicBool = AtomicBool::new(false);
+
 // what decides how a frame reaches the screen on Linux: the session
 // (Wayland or X11) and desktop, and the GDK and WebKit settings, as this
 // process has them; an AppImage's start-up hooks can set some itself
 fn display_env() -> Value {
     let var = |k: &str| std::env::var(k).ok();
     let mut vars: Map<String, Value> = std::env::vars()
-        .filter(|(k, _)| k.starts_with("WEBKIT_") || k.starts_with("__GL_") || k.starts_with("__NV_"))
+        .filter(|(k, _)| k.starts_with("WEBKIT_") || k.starts_with("__GL_") || k.starts_with("__NV_")
+                || k.starts_with("__EGL_"))
         .map(|(k, v)| (k, Value::String(v)))
         .collect();
     for k in ["GDK_BACKEND", "LIBGL_ALWAYS_SOFTWARE"] {
@@ -1849,6 +1874,14 @@ fn launch_file(launch: State<'_, Launch>) -> Option<String> {
 }
 
 fn main() {
+    // before GTK and WebKit start, and before any other thread
+    #[cfg(target_os = "linux")]
+    if std::env::var_os(EGL_VENDOR).is_none() {
+        if let Some(mesa) = mesa_egl(Path::new("/")) {
+            std::env::set_var(EGL_VENDOR, mesa);
+            WEBVIEW_MESA.store(true, Ordering::Relaxed);
+        }
+    }
     let context = tauri::generate_context!();
     // the first argument naming a file; macOS adds -psn_... to apps it starts
     let arg = std::env::args_os().skip(1)
@@ -1960,6 +1993,30 @@ fn preview_fullscreen(app: AppHandle, on: bool) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mesa_egl_only_over_nvidia() {
+        let root = std::env::temp_dir().join(format!("immage-egl-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let touch = |p: &str| {
+            let p = root.join(p);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, "{}").unwrap();
+        };
+        // Mesa alone: an AMD or Intel system, whose EGL is Mesa's already
+        touch("etc/glvnd/egl_vendor.d/50_mesa.json");
+        assert_eq!(mesa_egl(&root), None);
+        touch("proc/driver/nvidia/version");
+        assert_eq!(mesa_egl(&root), Some(root.join("etc/glvnd/egl_vendor.d/50_mesa.json")));
+        touch("usr/share/glvnd/egl_vendor.d/50_mesa.json");
+        assert_eq!(mesa_egl(&root), Some(root.join("usr/share/glvnd/egl_vendor.d/50_mesa.json")));
+        // NVIDIA without Mesa's EGL: left to NVIDIA's
+        std::fs::remove_dir_all(root.join("usr")).unwrap();
+        std::fs::remove_dir_all(root.join("etc")).unwrap();
+        assert_eq!(mesa_egl(&root), None);
+        assert_eq!(EGL_VENDOR, "__EGL_VENDOR_LIBRARY_FILENAMES");
+        std::fs::remove_dir_all(&root).unwrap();
+    }
 
     #[test]
     fn machine_id_is_stable() {

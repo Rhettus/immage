@@ -52,7 +52,7 @@ Paths below are relative to this file.
 | [index.html](../../index.html), [main.tsx](../../src/main.tsx) | The main window: mounts `App`. |
 | [splash.html](../../splash.html), [Splash.tsx](../../src/Splash.tsx) | The splash window: asks `about`, shows the main window, closes itself. |
 | [App.tsx](../../src/App.tsx) | The whole editor's shell and state. See [inside App.tsx](#inside-apptsx). |
-| [main.rs](../../src-tauri/src/main.rs) | `main()`: migrates the old app name, registers the dialog, opener and immporter plugins. `setup()` picks the engine: `build/bin/darktable-engine` with runtime state in `build/app-runtime` for a dev build, the bundled `resources/darktable` with the app data folder for a release, or `DT_ENGINE_BIN`. Holds `AppState` and nearly every command. |
+| [main.rs](../../src-tauri/src/main.rs) | `main()`: on Linux over NVIDIA's driver gives the web view Mesa's EGL (`mesa_egl`), migrates the old app name, registers the dialog, opener and immporter plugins. `setup()` picks the engine: `build/bin/darktable-engine` with runtime state in `build/app-runtime` for a dev build, the bundled `resources/darktable` with the app data folder for a release, or `DT_ENGINE_BIN`. Holds `AppState` and nearly every command. |
 | [engine.rs](../../src-tauri/src/engine.rs) | The engine child. Spawns it (`--core --configdir --cachedir -d perf`, OpenCL on with only export's pipe type allowed the GPU, which the base borrows), retrying while an old one holds darktable's database lock. `request()` writes one JSON line and reads one back. A stderr thread writes the log and keeps darktable's `-d perf` timings apart for the performance overlay. |
 | [engine/main.c](../../../engine/main.c) | `main()`: keeps the real stdout for replies, starts darktable with an in-memory library (`dt_init`), sets its confs, then loops: read a line, `_handle()` it, reply. |
 
@@ -369,7 +369,7 @@ darktable is, and it has AI features when darktable is configured with
 
 | File | Coverage |
 |---|---|
-| `#[cfg(test)]` in [main.rs](../../src-tauri/src/main.rs), [engine.rs](../../src-tauri/src/engine.rs) | `cargo test` in `app/src-tauri`: model release lookup, folder listing, sha256, the `-d perf` parser. |
+| `#[cfg(test)]` in [main.rs](../../src-tauri/src/main.rs), [engine.rs](../../src-tauri/src/engine.rs) | `cargo test` in `app/src-tauri`: model release lookup, folder listing, sha256, the `-d perf` parser, when the web view gets Mesa's EGL. |
 | `npm run build` in `app/` | Type checking (`tsc --noEmit`) and the production bundle; there is no front-end unit test runner (the release checks run the front end's `Session`). |
 | [verify/](../../../verify/README.md) | The release checks: the app's `Session` run under Node against the engine (`harness.mjs`, with `shim.mjs` for Tauri's invoke), every slider and mask slider measured, an edit saved and opened again, old edits rendered, a check per bug fixed and per decision about Immage's behavior, and the benchmark's main timings against the last run. |
 | [benchmarking/](../../../benchmarking/README.md) | The engine benchmark (driven with the app's own manifest), the GUI benchmark's reports, the dashboard. |
