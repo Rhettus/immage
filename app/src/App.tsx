@@ -28,6 +28,7 @@ import { VignetteOverlay } from "./VignetteOverlay";
 import { GuideOverlay } from "./GuideOverlay";
 import { autoMix } from "./bwauto";
 import { begin, end, track, useWorking } from "./activity";
+import { withModel } from "./aiModel";
 import { bandWeights, invert, lightness, pixelAt, polyline, setProbe, useProbe, type Probe, type RGB } from "./probe";
 import { anchored, neutralize, whitePatch, WB_PRESETS, type WB } from "./wb";
 import { GradingWheels, type WheelMode } from "./ColorWheel";
@@ -687,9 +688,7 @@ export default function App() {
               : p.stage === "installing" ? "installing the AI model…" : working);
     });
     try {
-      await invoke("ai_model_ensure", { id: model });
-      setStatus(working);
-      const paths = await run();
+      const paths = await withModel(model, () => { setStatus(working); return run(); });
       if (!paths.length) setStatus("nothing found");
       else { done(paths); setStatus(""); }
     } catch (e) {
@@ -741,10 +740,11 @@ export default function App() {
               : p.stage === "installing" ? "installing the AI model…" : working);
     });
     try {
-      await invoke("ai_model_ensure", { id: "rawdenoise-nind" });
-      setStatus(working);
-      const r = await invoke<{ path: string; original: string; image: { imgid: number } }>(
-        "ai_denoise", { strength: amount / 100 });
+      const r = await withModel("rawdenoise-nind", () => {
+        setStatus(working);
+        return invoke<{ path: string; original: string; image: { imgid: number } }>(
+          "ai_denoise", { strength: amount / 100 });
+      });
       returns.current.set(r.path, { original: r.original, result: r.path, plugin: "ai-denoise", applied: true });
       if (folderRef.current && !immichRef.current) await showFolder(folderRef.current, true);
       await openFile(r.path, r.image.imgid);

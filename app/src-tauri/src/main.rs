@@ -499,6 +499,21 @@ async fn ai_model_ensure(app: AppHandle, state: State<'_, AppState>, id: String)
         .map_err(|e| e.to_string())?
 }
 
+// an installed model the engine cannot load, deleted and downloaded again:
+// an unpack cut short leaves its config.json, which ai_model_ensure takes
+// for a whole model, so nothing else ever replaces it
+#[tauri::command]
+async fn ai_model_reinstall(app: AppHandle, state: State<'_, AppState>, id: String) -> Result<(), String> {
+    if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        return Err(format!("not a model id: {id}"));
+    }
+    match std::fs::remove_dir_all(state.models_dir.join(&id)) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.to_string()),
+        _ => {}
+    }
+    ai_model_ensure(app, state, id).await
+}
+
 // a one-click AI mask ("subject"): its outline, as ai_object replies.
 // "depth" takes the band of depth it covers, [near, far] in 0-1
 #[tauri::command]
@@ -1895,7 +1910,7 @@ fn main() {
             open_folder, open_image, get_params, set_params, render, cancel_base, save, baseline_end, before_view, thumb, thumb_cached, cache_limits, cache_usage, cache_clear, meta, meta_set,
             export_images, export_existing, export_preview, fonts, export_presets_load, export_presets_save, preset_file_write, preset_file_read, presets_load, presets_save, looks_list, look_import, look_export, look_delete, look_apply, look_amount, preview,
             mask_shapes, combine, masks, mask_delete, mask_rename, history, sample, tone_key, agx_auto, upright, points, range_map, zones, mask_map, ai_object,
-            ai_model_ensure, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, list_subfolders, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
+            ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, list_subfolders, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
             immich_export_check, immich_search, immich_browse_check, immich_libraries, immich_suggestions, immich_people, immich_tags,
             immich_thumb, immich_resolve, launch_file, path_exists, path_kind, trash_files, create_virtual_copy, remove_virtual_copy, preview_fullscreen, about, licenses, engine_quit, keywords, keywords_set, ai_accel,
             perf_set, perf_modules, perf_report_write, perf_machine,

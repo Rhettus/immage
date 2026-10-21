@@ -8,7 +8,7 @@
 // below does the same
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
-import { mkdirSync, readFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 // main.rs's FRAME_HEAD: six u32 of geometry, six f32 of timings, the u64 hash
@@ -23,14 +23,18 @@ let engine = null, frame = null, preview = null, range = null;
 const waiting = [];
 
 // one engine for the process, in its own runtime folder, on the CPU so
-// frames are the same from run to run
-export function startEngine(binary, home) {
+// frames are the same from run to run; with AI models from `modelsDir`
+// when given
+export function startEngine(binary, home, modelsDir = null) {
   mkdirSync(home, { recursive: true });
   frame = join(home, "frame.rgba");
   preview = join(home, "preview.rgba");
   range = join(home, "range.bin");
-  const me = spawn(binary, ["--core", "--configdir", join(home, "config"), "--cachedir", join(home, "cache"),
-                            "--conf", "opencl=false"], { stdio: ["pipe", "pipe", "ignore"] });
+  models.dir = modelsDir;
+  // the engine takes --models ahead of darktable's own options
+  const me = spawn(binary, [...(modelsDir ? ["--models", modelsDir] : []), "--core", "--configdir", join(home, "config"),
+                            "--cachedir", join(home, "cache"), "--conf", "opencl=false"],
+                   { stdio: ["pipe", "pipe", "ignore"] });
   engine = me;
   exited = new Promise((r) => me.on("exit", r));
   createInterface({ input: me.stdout }).on("line", (line) => waiting.shift()?.(line));
@@ -148,7 +152,21 @@ const COMMANDS = {
   look_apply: async ({ path }) => (await request({ cmd: "look", path })).look,
   // only the idle base can be canceled, and the harness never asks for one
   cancel_base: () => Promise.resolve(),
+  // a model is copied from models.source in place of the download
+  ai_model_ensure: async ({ id }) => {
+    if (!existsSync(join(models.dir, id, "config.json"))) cpSync(join(models.source, id), join(models.dir, id), { recursive: true });
+  },
+  ai_model_reinstall: async ({ id }) => {
+    rmSync(join(models.dir, id), { recursive: true, force: true });
+    cpSync(join(models.source, id), join(models.dir, id), { recursive: true });
+  },
+  ai_object: async ({ points, box }) =>
+    (await request({ cmd: "ai_object", points, ...(box ? { box } : {}) })).paths,
 };
+
+// the engine's models folder (startEngine's), and where a check's models
+// are installed from
+export const models = { dir: null, source: null };
 
 // a check's hook on each request as it goes to the engine, to change the
 // edit while the engine has it, as a user can

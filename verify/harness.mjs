@@ -60,8 +60,9 @@ globalThis.requestAnimationFrame = (f) => setTimeout(() => f(performance.now()),
 globalThis.cancelAnimationFrame = (t) => clearTimeout(t);
 
 const args = JSON.parse(process.argv[2]);
-const { startEngine, stopEngine, request, invoke, sent } = await import(SHIM);
+const { startEngine, stopEngine, request, invoke, sent, models } = await import(SHIM);
 const { Session } = await import("../app/src/session.ts");
+const { withModel } = await import("../app/src/aiModel.ts");
 const m = await import("../app/src/manifest.ts");
 const { canMerge } = await import("../app/src/localMerge.ts");
 const { ILLUMINANT_D } = await import("../app/src/wb.ts");
@@ -414,6 +415,36 @@ async function fixes(photo) {
     const refused = await request({ cmd: "unpack", archive: bad, dir: into }).then(() => false, () => true);
     return !refused || existsSync(join(root, "link", "escaped.txt")) ? "an entry with .. was unpacked" : null;
   });
+
+  // 0.34.0: a model whose unpack was cut short kept its config.json, so it
+  // counted as installed and never loaded: Select Object failed until the
+  // app's data folder was deleted. a model that won't load is downloaded
+  // again (aiModel.ts), and the same engine then loads it. on the first
+  // photo only: it encodes the photo with SAM on the CPU
+  const SAM = "mask-object-sam21-small";
+  if (photo === args.photos[0]) {
+    if (!args.models || !existsSync(join(args.models, SAM, "config.json"))) {
+      record({ check: "fixes", photo: basename(photo), id: "AI model that won't load downloads again", status: "skip",
+               detail: `no ${SAM} in build/ai-models: use Select Object once in a dev build` });
+    } else await fix("AI model that won't load downloads again", async () => {
+      const dir = join(args.work, "models");
+      rmSync(dir, { recursive: true, force: true });
+      mkdirSync(join(dir, SAM), { recursive: true });
+      copyFileSync(join(args.models, SAM, "config.json"), join(dir, SAM, "config.json"));
+      writeFileSync(join(dir, SAM, "encoder.onnx"), readFileSync(join(args.models, SAM, "encoder.onnx")).subarray(0, 1 << 20));
+      models.source = args.models;
+      // an engine of its own, so the others' config never has AI on
+      await stopEngine();
+      startEngine(args.engine, join(args.work, "ai-engine"), dir);
+      try {
+        await request({ cmd: "open", path: fresh(photo), imgid: -1 });
+        const paths = await withModel(SAM, () => invoke("ai_object", { points: [[0.5, 0.5, 1]], box: null }));
+        return paths?.length ? null : "Select Object found nothing once the model was downloaded again";
+      } finally {
+        await restart();
+      }
+    });
+  }
 
   // 0.10.1: a second mask of a kind renames the first, and the Before view
   // sends every mask again; the rename never reached the engine, so that

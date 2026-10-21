@@ -79,6 +79,8 @@ def harness(args, photos, out):
         "rendered": None if args.images else photos[-1],
         "controls": args.controls, "references": os.path.join(HERE, "references"), "accept": args.accept,
         "git": git("rev-parse", "--short", "HEAD"), "out": out,
+        # the dev build's AI models, for the check that installs one again
+        "models": os.path.join(REPO, "build", "ai-models"),
     }
     r = subprocess.run(["node", os.path.join(HERE, "harness.mjs"), json.dumps(request)], cwd=REPO)
     if r.returncode != 0 or not os.path.exists(out):
