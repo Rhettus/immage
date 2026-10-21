@@ -24,7 +24,7 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 WORK = os.path.join(REPO, "build", "verify-work")
-CHECKS = ["sliders", "masks", "choices", "roundtrip", "reference"]
+CHECKS = ["sliders", "masks", "choices", "fixes", "decisions", "roundtrip", "reference"]
 # not DNG: one from a raw converter (DxO's) is already demosaiced, without
 # the raw-only tools; --images can still pick one
 RAW_EXT = {".cr2", ".cr3", ".nef", ".arw", ".raf", ".orf", ".rw2", ".pef", ".srw"}
@@ -44,8 +44,9 @@ def git(*a):
 
 def pick(corpus, names):
     """the largest raw and the smallest raw of another camera: the most and
-    fewest pixels. the JPEG the checks also take is exported from the second
-    (harness.mjs, colorJpeg), as a camera's own can be black and white"""
+    fewest pixels. the JPEG and TIFF the checks also take are exported from the
+    second (harness.mjs, rendered), as a camera's own JPEG can be black and
+    white"""
     files = sorted(f for f in glob.glob(os.path.join(corpus, "*")) if os.path.isfile(f))
     if names:
         return [f for f in files if any(n in os.path.basename(f) for n in names)]
@@ -75,7 +76,7 @@ def engine_age(binary):
 def harness(args, photos, out):
     request = {
         "engine": os.path.abspath(args.engine), "work": WORK, "photos": photos, "checks": args.checks,
-        "colorJpeg": None if args.images else photos[-1],
+        "rendered": None if args.images else photos[-1],
         "controls": args.controls, "references": os.path.join(HERE, "references"), "accept": args.accept,
         "git": git("rev-parse", "--short", "HEAD"), "out": out,
     }
