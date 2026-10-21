@@ -50,6 +50,17 @@ def notes(version: str) -> str:
     return unwrap(m.group(1).strip())
 
 
+DOWNLOADS = """\
+## Downloads
+
+| | |
+|---|---|
+| **macOS** (Apple Silicon) | [{dmg}]({url}/{dmg}) |
+| **Windows** (x64) | [{nsis}]({url}/{nsis}), or [{msi}]({url}/{msi}) |
+| **Linux** (x86-64) | [{appimage}]({url}/{appimage}) |
+| **Source** | [{source}]({url}/{source}) |
+"""
+
 INSTALL = """\
 ## Installing
 
@@ -85,31 +96,40 @@ def main():
     artifacts, version, out = Path(sys.argv[1]), sys.argv[2], Path(sys.argv[3])
     out.mkdir(parents=True, exist_ok=True)
 
-    # (artifact, its name in the release, the latest.json keys it serves)
+    # (artifact, its name in the release, the latest.json keys it serves).
+    # GitHub lists a release's files in one list sorted by name, so the
+    # platform comes first in each name to keep each platform's files together
+    p = f"Immage-{version}"
     files = [
-        (one(artifacts, "*.dmg"), None, []),
-        (one(artifacts, "*.app.tar.gz"), f"Immage_{version}_aarch64.app.tar.gz",
+        (one(artifacts, "*.dmg"), f"{p}-macOS-arm64.dmg", []),
+        (one(artifacts, "*.app.tar.gz"), f"{p}-macOS-arm64-update.app.tar.gz",
          ["darwin-aarch64", "darwin-aarch64-app"]),
         # the updater installs with the kind of installer that put this copy
         # there, from the key for it, and with NSIS when there is none
-        (one(artifacts, "*-setup.exe"), None, ["windows-x86_64", "windows-x86_64-nsis"]),
-        (one(artifacts, "*.msi"), None, ["windows-x86_64-msi"]),
-        (one(artifacts, "*.AppImage"), None, ["linux-x86_64", "linux-x86_64-appimage"]),
+        (one(artifacts, "*-setup.exe"), f"{p}-Windows-x64-setup.exe",
+         ["windows-x86_64", "windows-x86_64-nsis"]),
+        (one(artifacts, "*.msi"), f"{p}-Windows-x64.msi", ["windows-x86_64-msi"]),
+        (one(artifacts, "*.AppImage"), f"{p}-Linux-x86_64.AppImage",
+         ["linux-x86_64", "linux-x86_64-appimage"]),
         (one(artifacts, f"immage-{version}-source.tar.gz"), None, []),
     ]
     platforms = {}
     names = []
     for path, name, keys in files:
         name = name or path.name
-        if f"_{version}_" not in name and f"-{version}-" not in name:
-            sys.exit(f"{name} is not version {version}")
+        # the build's own names carry the version, except the updater's
+        # Immage.app.tar.gz
+        if not path.name.endswith(".app.tar.gz") and f"_{version}_" not in path.name \
+                and f"-{version}-" not in path.name:
+            sys.exit(f"{path.name} is not version {version}")
         shutil.copyfile(path, out / name)
         names.append(name)
         if keys:
+            # the signature goes into latest.json only: the updater reads it
+            # from there, so a .sig file beside it would only clutter the list
             sig = path.with_name(path.name + ".sig")
             if not sig.is_file():
                 sys.exit(f"no signature for {path.name}: was the build given the signing key?")
-            shutil.copyfile(sig, out / (name + ".sig"))
             entry = {"signature": sig.read_text(encoding="utf-8").strip(),
                      "url": f"{REPO}/releases/download/v{version}/{name}"}
             for k in keys:
@@ -125,7 +145,9 @@ def main():
     (out / "latest.json").write_text(json.dumps(feed, indent=2) + "\n", encoding="utf-8")
 
     dmg, _, nsis, msi, appimage, source = names
-    body = text + "\n\n" + unwrap(INSTALL).format(dmg=dmg, nsis=nsis, msi=msi, appimage=appimage, source=source, repo=REPO)
+    fields = dict(dmg=dmg, nsis=nsis, msi=msi, appimage=appimage, source=source, repo=REPO,
+                  url=f"{REPO}/releases/download/v{version}")
+    body = DOWNLOADS.format(**fields) + "\n" + text + "\n\n" + unwrap(INSTALL).format(**fields)
     (out.parent / "body.md").write_text(body, encoding="utf-8")
 
 
