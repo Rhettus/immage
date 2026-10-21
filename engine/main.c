@@ -4788,8 +4788,9 @@ static gboolean _working_at(_working_t *w, const _stage_t stage, char **err)
   dt_iop_buffer_dsc_t *dsc = NULL;
   dt_iop_roi_t roi = { 0 };
   // a render served from the cache leaves pieces made since (a new
-  // instance remakes them all) with no region and their output uncached:
-  // the second pass makes them run
+  // instance remakes them all) with no region and their output uncached,
+  // and the others with the region of the last render that ran them, such
+  // as a zoomed mask_map's: the second pass makes them run
   for(int pass = 0; pass < 2 && !data; pass++)
   {
     if(pass) dt_dev_pixelpipe_cache_invalidate_later(&_s.ppipe, piece->module->iop_order, "working ");
@@ -4832,11 +4833,15 @@ static gboolean _working_at(_working_t *w, const _stage_t stage, char **err)
       return FALSE;
     }
     roi = piece->processed_roi_out;
+    // only the whole image at this render's scale: another region's output
+    // can still be in the cache, and points outside it are clamped to its
+    // edges (the range map's stripes)
+    const gboolean whole = roi.x == 0 && roi.y == 0 && fabs(roi.scale - scale) < 1e-6 * scale;
     const size_t size = (size_t)roi.width * roi.height * 4 * sizeof(float);
     const dt_hash_t hash = dt_dev_pixelpipe_cache_hash(&roi, &_s.ppipe, piece->module->position);
     data = NULL;
     dsc = NULL;
-    if(size && dt_dev_pixelpipe_cache_available(&_s.ppipe, hash, size))
+    if(whole && size && dt_dev_pixelpipe_cache_available(&_s.ppipe, hash, size))
       dt_dev_pixelpipe_cache_get(&_s.ppipe, hash, size, (void **)&data, &dsc, NULL, FALSE);
   }
   if(!data || !dsc || dsc->channels != 4 || dsc->datatype != TYPE_FLOAT)
