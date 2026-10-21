@@ -780,6 +780,9 @@ static gboolean _set(const char *op, const char *field, JsonNode *value,
   // iop_gen for a new instance, which always gets its history item)
   void *was = gen == _s.iop_gen && !mask ? g_malloc(mod->params_size) : NULL;
   if(was) memcpy(was, mod->params, mod->params_size);
+  // and the blend params, which "blend.details" alone changes
+  dt_develop_blend_params_t was_blend = { 0 };
+  if(mod->blend_params) memcpy(&was_blend, mod->blend_params, sizeof(was_blend));
   const gboolean was_enabled = mod->enabled;
 
   gboolean moved = FALSE;
@@ -819,7 +822,9 @@ static gboolean _set(const char *op, const char *field, JsonNode *value,
   // every item on each render (_ppipe_ready()); the tone equalizer's
   // commit is costly enough that its 160 px previews grew 14 -> 105 ms
   const gboolean same = was && !moved && mod->enabled == was_enabled
-                        && !memcmp(was, mod->params, mod->params_size);
+                        && !memcmp(was, mod->params, mod->params_size)
+                        && (!mod->blend_params
+                            || !memcmp(&was_blend, mod->blend_params, sizeof(was_blend)));
   g_free(was);
   if(same) return TRUE;
   // with a mask, the history item carries the shapes too
