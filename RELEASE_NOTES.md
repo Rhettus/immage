@@ -15,6 +15,9 @@ Bug fixes
 - AI masks and AI Denoise download their models on Linux systems without
   curl or unzip installed, such as Arch and CachyOS, which have no unzip;
   before, the download or the unpacking failed
+- on Linux, sliders respond several times faster when other programs are
+  busy, such as on a system drawing in software without its graphics
+  driver; before, a slider like Clarity could take over a second a frame
 
 ## 0.33.0
 
