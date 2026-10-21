@@ -71,7 +71,7 @@ import { ASPECTS, CropOverlay, customAspect, findAspect, fitAspect, FULL, loadCu
          rememberCustomAspect, type Aspect, type CropRect } from "./CropTool";
 import { ShortcutsDialog } from "./Shortcuts";
 import { cmd, keys } from "./keys";
-import { perf, percentiles, STAGES } from "./perf";
+import { perf, percentiles, STAGES, webviewInfo } from "./perf";
 import { frameTransport } from "./sharedFrames";
 import { PerfHud } from "./PerfHud";
 import { KeywordingPanel } from "./Keywording";
@@ -3153,6 +3153,9 @@ export default function App() {
     ];
     const preview = loadPreview();
     const drafts = preview !== "quality";
+    // the web view measured idle, ahead of the run and its timing
+    await settle();
+    const webview = await webviewInfo();
     perf.recording = [];
     const t0 = performance.now();
     try {
@@ -3227,9 +3230,10 @@ export default function App() {
     const { w, h } = viewport();
     const at = new Date();
     const report = {
-      immage: "gui-benchmark", version: 2, at: at.toISOString(),
+      immage: "gui-benchmark", version: 3, at: at.toISOString(),
       app: await invoke<{ app: string; darktable: string }>("about").catch(() => null),
       machine: await invoke<Record<string, unknown>>("perf_machine").catch(() => null),
+      webview,
       photo: (currentRef.current?.path ?? "").split(/[\\/]/).pop(),
       viewport: { width: w, height: h, dpr: window.devicePixelRatio || 1 }, dragDrafts: drafts, preview,
       transport: frameTransport(), seconds: (performance.now() - t0) / 1000, displayLongFrames: perf.longFrames, summary, samples,

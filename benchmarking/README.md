@@ -165,7 +165,21 @@ report's `machine` names the computer it ran on: host, OS, CPU, cores,
 memory, and `id`, a hash of the system's own machine id (macOS
 IOPlatformUUID, Windows MachineGuid, Linux /etc/machine-id). Engine runs
 carry the same hash as `env.machine_id`. The dashboard's GUI tab can
-pick one machine's reports.
+pick one machine's reports. Each system has its own machine id, so a
+computer that boots Windows and two Linux distributions shows as three
+machines.
+
+From 0.35.0 (report version 3), `machine.opencl` lists darktable's OpenCL
+devices and whether OpenCL is running, `machine.display` holds the
+session type (`wayland` or `x11`), the desktop, and the GDK, WebKit and
+NVIDIA environment variables the app ran with, and `machine.webview` the
+web view's own version (WebKitGTK, WebView2 or WKWebView; the user agent's
+is frozen). `webview` holds the user agent, the GPU WebGL reports (the
+card, or a software renderer such as llvmpipe, which means the page is
+drawn without the GPU) and `frameRateHz`, how often the page ran
+animation frames while idle before the run: the display's refresh rate,
+or less where WebKit throttles them (macOS halves them in Low Power
+Mode). It bounds the paint stage.
 
 ## For the next session (Claude included)
 

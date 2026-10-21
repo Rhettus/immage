@@ -2210,6 +2210,32 @@ static gboolean _soft_device(const dt_ai_device_t *d)
   return d->name && strstr(d->name, "Basic Render");
 }
 
+// darktable's OpenCL devices, for the GUI benchmark's report: the idle base
+// render runs on one when OpenCL is up, and its driver differs between
+// systems on the same machine
+static void _opencl(JsonBuilder *b)
+{
+  json_builder_set_member_name(b, "running");
+  json_builder_add_boolean_value(b, dt_opencl_running());
+  json_builder_set_member_name(b, "devices");
+  json_builder_begin_array(b);
+#ifdef HAVE_OPENCL
+  const dt_opencl_t *cl = darktable.opencl;
+  for(int k = 0; cl && cl->inited && k < cl->num_devs; k++)
+  {
+    const dt_opencl_device_t *dev = &cl->dev[k];
+    json_builder_begin_object(b);
+    _add_string(b, "name", dev->fullname);
+    _add_string(b, "platform", dev->platform);
+    _add_string(b, "version", dev->device_version);
+    json_builder_set_member_name(b, "disabled");
+    json_builder_add_boolean_value(b, dev->disabled);
+    json_builder_end_object(b);
+  }
+#endif
+  json_builder_end_array(b);
+}
+
 // the GPU providers this computer can use, each with its devices where the
 // provider lets one be chosen; a provider whose only devices are software
 // ones is left out
@@ -6453,6 +6479,8 @@ static void _handle(JsonObject *req, FILE *out)
     _all_keywords(b);
   else if(!g_strcmp0(cmd, "ai_accel"))
     _ai_accel(b);
+  else if(!g_strcmp0(cmd, "opencl"))
+    _opencl(b);
   else if(!g_strcmp0(cmd, "keywords_set"))
   {
     if(!_keywords_set(json_object_get_int_member_with_default(req, "imgid", 0), req, b, &err)) goto fail;

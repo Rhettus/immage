@@ -803,12 +803,37 @@ fn machine_id() -> Option<String> {
     Some(hash.iter().take(6).map(|b| format!("{b:02x}")).collect())
 }
 
+// what decides how a frame reaches the screen on Linux: the session
+// (Wayland or X11) and desktop, and the GDK and WebKit settings, as this
+// process has them; an AppImage's start-up hooks can set some itself
+fn display_env() -> Value {
+    let var = |k: &str| std::env::var(k).ok();
+    let mut vars: Map<String, Value> = std::env::vars()
+        .filter(|(k, _)| k.starts_with("WEBKIT_") || k.starts_with("__GL_") || k.starts_with("__NV_"))
+        .map(|(k, v)| (k, Value::String(v)))
+        .collect();
+    for k in ["GDK_BACKEND", "LIBGL_ALWAYS_SOFTWARE"] {
+        if let Some(v) = var(k) {
+            vars.insert(k.to_string(), Value::String(v));
+        }
+    }
+    json!({
+        "sessionType": var("XDG_SESSION_TYPE"),
+        "desktop": var("XDG_CURRENT_DESKTOP"),
+        "wayland": var("WAYLAND_DISPLAY").is_some(),
+        "x11": var("DISPLAY").is_some(),
+        "vars": vars,
+    })
+}
+
 // the machine a GUI benchmark ran on: a stable id to group reports by, and
 // what it is
 #[tauri::command]
-async fn perf_machine() -> Result<Value, String> {
+async fn perf_machine(state: State<'_, AppState>) -> Result<Value, String> {
     use sysinfo::{CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};
-    tauri::async_runtime::spawn_blocking(|| {
+    let opencl = state.engine().request(json!({ "cmd": "opencl" })).ok()
+        .map(|r| json!({ "running": r["running"], "devices": r["devices"] }));
+    tauri::async_runtime::spawn_blocking(move || {
         let sys = System::new_with_specifics(RefreshKind::nothing().with_cpu(CpuRefreshKind::nothing())
                                                  .with_memory(MemoryRefreshKind::nothing().with_ram()));
         json!({
@@ -819,6 +844,11 @@ async fn perf_machine() -> Result<Value, String> {
             "cpu": sys.cpus().first().map(|c| c.brand().trim().to_string()),
             "cores": sys.cpus().len(),
             "memoryGb": (sys.total_memory() as f64 / (1u64 << 30) as f64).round(),
+            "opencl": opencl,
+            "display": display_env(),
+            // the user agent's version is frozen; this is WebKitGTK's,
+            // WebView2's or WKWebView's own
+            "webview": tauri::webview_version().ok(),
         })
     })
     .await

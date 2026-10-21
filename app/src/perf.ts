@@ -238,3 +238,30 @@ export function percentiles(xs: number[]): { p50: number; p95: number } {
   const at = (q: number) => s[Math.min(s.length - 1, Math.floor(q * s.length))];
   return { p50: at(0.5), p95: at(0.95) };
 }
+
+// the web view a GUI benchmark ran in: its user agent, whether it draws on
+// the GPU (WebGL's renderer: the card, or a software one such as llvmpipe),
+// and how often it runs animation frames, which bounds the paint stage: the
+// display's refresh rate, or less where WebKit throttles them (macOS' Low
+// Power Mode halves them). measured idle, before the benchmark
+export async function webviewInfo(): Promise<Record<string, unknown>> {
+  let gpu: { vendor: string; renderer: string } | null = null;
+  try {
+    const gl = document.createElement("canvas").getContext("webgl");
+    const dbg = gl?.getExtension("WEBGL_debug_renderer_info");
+    if (gl) gpu = { vendor: String(gl.getParameter(dbg ? dbg.UNMASKED_VENDOR_WEBGL : gl.VENDOR)),
+                    renderer: String(gl.getParameter(dbg ? dbg.UNMASKED_RENDERER_WEBGL : gl.RENDERER)) };
+    gl?.getExtension("WEBGL_lose_context")?.loseContext();
+  } catch { /* no WebGL: gpu stays null */ }
+  // the median of 60 animation frames' intervals. a hidden window has none,
+  // so it waits 2 s at most
+  const at: number[] = [];
+  await new Promise<void>((done) => {
+    const tick = (t: number) => { at.push(t); if (at.length > 60) done(); else requestAnimationFrame(tick); };
+    requestAnimationFrame(tick);
+    window.setTimeout(done, 2000);
+  });
+  const gaps = at.slice(1).map((t, i) => t - at[i]);
+  const hz = gaps.length >= 10 ? Math.round(1000 / percentiles(gaps).p50) : NaN;
+  return { userAgent: navigator.userAgent, gpu, frameRateHz: Number.isFinite(hz) ? hz : null };
+}
