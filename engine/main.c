@@ -1319,7 +1319,12 @@ static gboolean _unpack(const char *archive, const char *dir, char **err)
   // `dir`'s own included (macOS' /var, a home folder moved elsewhere), so
   // it is resolved first, as darktable's _canonical_path_utf8 does
 #ifdef _WIN32
-  gchar *real = g_canonicalize_filename(dir, NULL);
+  wchar_t *wdir = g_utf8_to_utf16(dir, -1, NULL, NULL, NULL);
+  wchar_t wreal[_MAX_PATH];
+  gchar *real = wdir && _wfullpath(wreal, wdir, _MAX_PATH)
+    ? g_utf16_to_utf8((gunichar2 *)wreal, -1, NULL, NULL, NULL) : NULL;
+  g_free(wdir);
+  if(!real) real = g_strdup(dir);
 #else
   char *resolved = realpath(dir, NULL);
   gchar *real = g_strdup(resolved ? resolved : dir);
