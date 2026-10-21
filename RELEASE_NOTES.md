@@ -3,6 +3,16 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
+## 0.34.0
+
+Bug fixes
+
+- Color Range and Luminance Range masks work on JPEG and TIFF photos;
+  before, picking a color failed with "the image is not in RGB at the
+  mask stage", and the range's overlay never showed
+- a range mask's overlay no longer streaks across the photo after
+  zooming in to 100% and back out
+
 ## 0.33.0
 
 Bug fixes
