@@ -8,8 +8,10 @@
 //     git, out }
 // and writes `out`: every result, then the summary run.py reports
 import { createRequire, registerHooks } from "node:module";
-import { existsSync, mkdirSync, copyFileSync, readdirSync, readFileSync, writeFileSync, constants } from "node:fs";
+import { existsSync, mkdirSync, copyFileSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync,
+         constants } from "node:fs";
 import { createHash } from "node:crypto";
+import { crc32 } from "node:zlib";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -360,10 +362,58 @@ const drained = () => request({ cmd: "version" });
 
 const brighter = (f, ref, region = null) => judge({ expect: { lum: 1 } }, compare(f, ref, region), 1);
 
+// a zip of `files` ({ name: text }), stored, as a .dtmodel is laid out
+function zip(files) {
+  const local = [], central = [];
+  let offset = 0;
+  for (const [name, text] of Object.entries(files)) {
+    const n = Buffer.from(name), data = Buffer.from(text), crc = crc32(data);
+    const head = Buffer.alloc(30);
+    head.writeUInt32LE(0x04034b50, 0); head.writeUInt16LE(20, 4);
+    head.writeUInt32LE(crc, 14); head.writeUInt32LE(data.length, 18); head.writeUInt32LE(data.length, 22);
+    head.writeUInt16LE(n.length, 26);
+    const dir = Buffer.alloc(46);
+    dir.writeUInt32LE(0x02014b50, 0); dir.writeUInt16LE(20, 4); dir.writeUInt16LE(20, 6);
+    dir.writeUInt32LE(crc, 16); dir.writeUInt32LE(data.length, 20); dir.writeUInt32LE(data.length, 24);
+    dir.writeUInt16LE(n.length, 28); dir.writeUInt32LE(offset, 42);
+    local.push(head, n, data);
+    central.push(dir, n);
+    offset += 30 + n.length + data.length;
+  }
+  const size = central.reduce((a, b) => a + b.length, 0), count = Object.keys(files).length;
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(count, 8); end.writeUInt16LE(count, 10);
+  end.writeUInt32LE(size, 12); end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...local, ...central, end]);
+}
+
 // bugs fixed before these checks existed, each named for the release that
 // fixed it (README, "When a bug is fixed")
 async function fixes(photo) {
   const fix = (id, run) => outcome("fixes", basename(photo), id, run);
+
+  // 0.34.0: darktable's AI models were unpacked with the system's unzip,
+  // which Arch and CachyOS do not install, so AI Denoise and Select Object
+  // never got theirs. the engine unpacks now, into a models folder reached
+  // through a symlink (macOS' /var, a moved home folder), and refuses an
+  // entry that climbs out of it
+  await fix("AI models unpack without unzip", async () => {
+    const root = join(args.work, "unpack");
+    rmSync(root, { recursive: true, force: true });
+    mkdirSync(join(root, "real"), { recursive: true });
+    symlinkSync(join(root, "real"), join(root, "link"));
+    const good = join(root, "good.dtmodel"), bad = join(root, "bad.dtmodel");
+    writeFileSync(good, zip({ "m/config.json": "{ \"id\": \"m\" }" }));
+    writeFileSync(bad, zip({ "../escaped.txt": "out" }));
+    const into = join(root, "link", "models");
+    const err = await request({ cmd: "unpack", archive: good, dir: into }).then(() => null, (e) => e.message);
+    if (err) return `unpacking failed: ${err}`;
+    const got = existsSync(join(root, "real", "models", "m", "config.json"))
+      && readFileSync(join(root, "real", "models", "m", "config.json"), "utf8");
+    if (got !== "{ \"id\": \"m\" }") return `the unpacked config.json reads ${JSON.stringify(got)}`;
+    const refused = await request({ cmd: "unpack", archive: bad, dir: into }).then(() => false, () => true);
+    return !refused || existsSync(join(root, "link", "escaped.txt")) ? "an entry with .. was unpacked" : null;
+  });
 
   // 0.10.1: a second mask of a kind renames the first, and the Before view
   // sends every mask again; the rename never reached the engine, so that

@@ -74,6 +74,8 @@
 #include <execinfo.h>
 #include <signal.h>
 #endif
+#include <archive.h>
+#include <archive_entry.h>
 #include <json-glib/json-glib.h>
 #include <pango/pangocairo.h>
 #include <inttypes.h>
@@ -1284,6 +1286,95 @@ static gboolean _sidecars(const dt_imgid_t imgid, JsonBuilder *b, char **err)
   g_list_free_full(files, g_free);
   json_builder_end_array(b);
   return TRUE;
+}
+
+static int _unpack_data(struct archive *in, struct archive *out)
+{
+  const void *buf;
+  size_t size;
+  la_int64_t offset;
+  int r;
+  while((r = archive_read_data_block(in, &buf, &size, &offset)) == ARCHIVE_OK)
+    if(archive_write_data_block(out, buf, size, offset) < ARCHIVE_WARN) return ARCHIVE_FATAL;
+  return r == ARCHIVE_EOF ? ARCHIVE_OK : r;
+}
+
+// a darktable model archive (.dtmodel, a zip) unpacked into `dir` with
+// darktable's libarchive, as its own install does (src/common/ai_models.c,
+// _extract_zip), so the app needs no unzip of the system's: an Arch install
+// has none. the app checks the archive's sha256 first
+static gboolean _unpack(const char *archive, const char *dir, char **err)
+{
+  if(!archive || !dir)
+  {
+    *err = g_strdup("unpack needs an archive and a folder");
+    return FALSE;
+  }
+  if(g_mkdir_with_parents(dir, 0755))
+  {
+    *err = g_strdup_printf("cannot create %s", dir);
+    return FALSE;
+  }
+  // ARCHIVE_EXTRACT_SECURE_SYMLINKS refuses a symlink anywhere in the path,
+  // `dir`'s own included (macOS' /var, a home folder moved elsewhere), so
+  // it is resolved first, as darktable's _canonical_path_utf8 does
+#ifdef _WIN32
+  gchar *real = g_canonicalize_filename(dir, NULL);
+#else
+  char *resolved = realpath(dir, NULL);
+  gchar *real = g_strdup(resolved ? resolved : dir);
+  free(resolved);
+#endif
+  struct archive *in = archive_read_new();
+  archive_read_support_format_zip(in);
+  struct archive *out = archive_write_disk_new();
+  // no ARCHIVE_EXTRACT_SECURE_NOABSOLUTEPATHS: every path is absolute once
+  // `dir` is put ahead of it, so an absolute entry is refused before that
+  archive_write_disk_set_options(out, ARCHIVE_EXTRACT_TIME | ARCHIVE_EXTRACT_PERM
+                                      | ARCHIVE_EXTRACT_SECURE_SYMLINKS
+                                      | ARCHIVE_EXTRACT_SECURE_NODOTDOT);
+  // libarchive's narrow paths are in the ANSI code page on Windows, and the
+  // models folder is under the user's profile, whose name can be any
+#ifdef _WIN32
+  wchar_t *wpath = g_utf8_to_utf16(archive, -1, NULL, NULL, NULL);
+  int r = wpath ? archive_read_open_filename_w(in, wpath, 10240) : ARCHIVE_FATAL;
+  g_free(wpath);
+#else
+  int r = archive_read_open_filename(in, archive, 10240);
+#endif
+  const char *bad = NULL;
+  struct archive_entry *entry;
+  while(r == ARCHIVE_OK && (r = archive_read_next_header(in, &entry)) == ARCHIVE_OK)
+  {
+    const char *name = archive_entry_pathname_utf8(entry);
+    if(!name || !name[0] || g_path_is_absolute(name))
+    {
+      bad = name ? name : "";
+      break;
+    }
+    gchar *dest = g_build_filename(real, name, NULL);
+#ifdef _WIN32
+    wchar_t *wdest = g_utf8_to_utf16(dest, -1, NULL, NULL, NULL);
+    archive_entry_copy_pathname_w(entry, wdest);
+    g_free(wdest);
+#else
+    archive_entry_set_pathname(entry, dest);
+#endif
+    g_free(dest);
+    r = archive_write_header(out, entry) < ARCHIVE_WARN ? ARCHIVE_FATAL : ARCHIVE_OK;
+    if(r == ARCHIVE_OK && archive_entry_size(entry) > 0) r = _unpack_data(in, out);
+    if(r == ARCHIVE_OK && archive_write_finish_entry(out) < ARCHIVE_WARN) r = ARCHIVE_FATAL;
+  }
+  if(bad)
+    *err = g_strdup_printf("%s: refused the entry '%s'", archive, bad);
+  else if(r != ARCHIVE_EOF)
+    *err = g_strdup_printf("%s: %s", archive,
+                           archive_error_string(out) ? archive_error_string(out)
+                           : archive_error_string(in) ? archive_error_string(in) : "cannot unpack");
+  archive_read_free(in);
+  archive_write_free(out);
+  g_free(real);
+  return !*err;
 }
 
 static gboolean _is_sidecar(const char *name)
@@ -6390,6 +6481,11 @@ static void _handle(JsonObject *req, FILE *out)
     // darktable's own, which picks the AI models' release
     json_builder_set_member_name(b, "version");
     json_builder_add_string_value(b, darktable_package_version);
+  }
+  else if(!g_strcmp0(cmd, "unpack"))
+  {
+    if(!_unpack(json_object_get_string_member_with_default(req, "archive", NULL),
+                json_object_get_string_member_with_default(req, "dir", NULL), &err)) goto fail;
   }
   // the styles outlive this process (data.db), and _style_items() keeps the
   // one it has by a name: a look imported under that name must replace it

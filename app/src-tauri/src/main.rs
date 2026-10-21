@@ -283,9 +283,9 @@ async fn ai_object(state: State<'_, AppState>, points: Value, r#box: Option<Valu
 
 // darktable's AI models come from its model repository, in the release made
 // for this darktable version, as darktable's own download does
-// (src/common/ai_models.c). the system's curl downloads and its unzip, or
-// on Windows its tar, unpacks; Windows has no shasum, so the checksum is
-// taken here
+// (src/common/ai_models.c). the system's curl downloads, the engine unpacks
+// with darktable's libarchive (not every system has an unzip), and the
+// checksum is taken here
 const MODEL_REPO: &str = "darktable-org/darktable-ai";
 
 fn sha256_file(path: &Path) -> Result<String, String> {
@@ -294,21 +294,6 @@ fn sha256_file(path: &Path) -> Result<String, String> {
     let mut hasher = Sha256::new();
     std::io::copy(&mut file, &mut hasher).map_err(|e| format!("{}: {e}", path.display()))?;
     Ok(hasher.finalize().iter().map(|b| format!("{b:02x}")).collect())
-}
-
-// Windows' tar is bsdtar, which reads zip archives
-fn unpack(archive: &Path, dir: &Path) -> Result<bool, String> {
-    let mut cmd = if cfg!(windows) {
-        let mut c = std::process::Command::new("tar");
-        c.arg("-xf").arg(archive).arg("-C").arg(dir);
-        c
-    } else {
-        let mut c = std::process::Command::new("unzip");
-        c.args(["-q", "-o"]).arg(archive).arg("-d").arg(dir);
-        c
-    };
-    no_console(&mut cmd);
-    Ok(cmd.status().map_err(|e| format!("unpacking: {e}"))?.success())
 }
 
 // on Windows a console program gets a console window of its own unless
@@ -353,8 +338,11 @@ fn model_release(compatible: &Value, short: &str) -> Result<String, String> {
 }
 
 // `progress` hears each stage ({ id, stage, mb? }); the app passes them on
-// to the window as "ai-model" events
-fn install_model(progress: &dyn Fn(Value), dir: &Path, id: &str, version: &str) -> Result<(), String> {
+// to the window as "ai-model" events. `unpack` unpacks an archive into a
+// folder: the engine's unpack
+type Unpack<'a> = &'a dyn Fn(&Path, &Path) -> Result<(), String>;
+
+fn install_model(progress: &dyn Fn(Value), unpack: Unpack, dir: &Path, id: &str, version: &str) -> Result<(), String> {
     let dl = dir.join("_dl");
     std::fs::create_dir_all(&dl).map_err(|e| e.to_string())?;
     // "5.7.0+1252~g0967d3653e" is release 5.7.0's. a checkout without
@@ -381,9 +369,10 @@ fn install_model(progress: &dyn Fn(Value), dir: &Path, id: &str, version: &str) 
         return Err(format!("the downloaded model '{id}' failed its checksum"));
     }
     progress(json!({ "id": id, "stage": "installing" }));
-    let ok = unpack(&archive, dir)?;
+    let unpacked = unpack(&archive, dir);
     let _ = std::fs::remove_file(&archive);
-    if !ok || !dir.join(id).join("config.json").exists() {
+    unpacked?;
+    if !dir.join(id).join("config.json").exists() {
         return Err(format!("could not unpack the model '{id}'"));
     }
     progress(json!({ "id": id, "stage": "ready" }));
@@ -467,7 +456,12 @@ async fn ai_model_ensure(app: AppHandle, state: State<'_, AppState>, id: String)
     let reply = state.engine().request(json!({ "cmd": "version" }))?;
     let version = reply["version"].as_str().unwrap_or("").to_string();
     tauri::async_runtime::spawn_blocking(move || {
-        install_model(&|v| { let _ = app.emit("ai-model", v); }, &dir, &id, &version)
+        let unpack = |archive: &Path, into: &Path| {
+            app.state::<AppState>().engine()
+                .request(json!({ "cmd": "unpack", "archive": archive, "dir": into }))
+                .map(|_| ())
+        };
+        install_model(&|v| { let _ = app.emit("ai-model", v); }, &unpack, &dir, &id, &version)
     })
         .await
         .map_err(|e| e.to_string())?
@@ -1946,8 +1940,16 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("immage-models-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let log = |v: Value| eprintln!("{v}");
-        install_model(&log, &dir, "mask-object-sam21-small", "5.7.0+1~gtest").expect("darktable's model");
-        install_model(&log, &dir, "rawdenoise-nind", "5.7.0+1~gtest").expect("darktable's raw denoise model");
+        // the dev build's engine unpacks, as the app's does
+        let runtime = std::env::temp_dir().join(format!("immage-models-engine-{}", std::process::id()));
+        std::fs::create_dir_all(&runtime).unwrap();
+        let engine = std::sync::Mutex::new(Engine::spawn(
+            &repo_root().join("build/bin/darktable-engine"), &runtime, &dir).expect("the dev build's engine"));
+        let unpack = |archive: &Path, into: &Path| {
+            engine.lock().unwrap().request(json!({ "cmd": "unpack", "archive": archive, "dir": into })).map(|_| ())
+        };
+        install_model(&log, &unpack, &dir, "mask-object-sam21-small", "5.7.0+1~gtest").expect("darktable's model");
+        install_model(&log, &unpack, &dir, "rawdenoise-nind", "5.7.0+1~gtest").expect("darktable's raw denoise model");
         for m in EXTRA_MODELS {
             install_extra(&log, &dir, m).expect(m.id);
         }
@@ -1955,6 +1957,8 @@ mod tests {
                    "mask-scene-segformer-b2", "mask-depth-da2-small"] {
             assert!(dir.join(id).join("config.json").exists(), "{id} has no config.json");
         }
+        drop(engine);
+        let _ = std::fs::remove_dir_all(&runtime);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
