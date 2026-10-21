@@ -3,6 +3,22 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
+## 0.33.0
+
+Bug fixes
+
+- Sharpening's Masking and Noise Reduction's Detail change the photo as
+  they are moved; before, the change showed only once the photo was
+  opened again
+- Remove Chromatic Aberration in Lens Corrections works; before, the
+  correction stayed on whatever it was set to. On a photo edited in an
+  earlier version, switch it off and on again for it to take effect
+- a mask's Dehaze removes haze on every photo; before, a positive amount
+  did nothing on some. A mask made in an earlier version keeps the old
+  behavior: draw it again
+- moving a slider on a mask just drawn no longer stops the photo from
+  updating until it is opened again
+
 ## 0.32.0
 
 Bug fixes
