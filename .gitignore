@@ -19,6 +19,10 @@ benchmarking/SUMMARY.md
 benchmarking/dashboard/data.js
 benchmarking/__pycache__/
 
+# release check reports, and the reference edits they compare with
+verify/results/
+verify/references/
+
 # Obsidian vault settings, from opening a docs folder in Obsidian
 .obsidian/
 

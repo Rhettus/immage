@@ -21,23 +21,37 @@ reaches users until you publish that draft.
    GitHub release and what the update banner shows under Release Notes.
    Write what the user gets, not how it was done. Line breaks inside a
    paragraph or a list item are joined, so wrap the file as you like.
-3. **Merge to `main`** as for any change, and wait for CI to pass.
-4. **Tag** the commit on `main`:
+3. **Run the release checks** on the commit to be released, with the
+   engine built from it:
+
+   ```bash
+   cmake --build build && python3 -I verify/run.py
+   ```
+
+   About 5 minutes; every slider, global and on a mask, a saved edit
+   opened again, and the main timings against the last run
+   ([verify/README.md](../../../verify/README.md)). Don't tag while
+   anything fails, unless the report's failure is understood and written
+   down.
+4. **Merge to `main`** as for any change, and wait for CI to pass.
+5. **Tag** the commit on `main`:
 
    ```bash
    git tag v0.32.0 && git push origin v0.32.0
    ```
 
-5. **Wait for the release run** (Actions › release, about 30 minutes). It
+6. **Wait for the release run** (Actions › release, about 30 minutes). It
    fails early when the tag and a version disagree or the notes section is
    missing, and at the end when a platform's bundle has no signature.
-6. **Try the draft.** Download the macOS `.dmg`, the Windows installer and
+7. **Try the draft.** Download the macOS `.dmg`, the Windows installer and
    the AppImage from the draft release, and open each one. Check the
    release text, and edit it on GitHub if it needs it (that edit does not
    reach the banner, which reads `latest.json`; fix RELEASE_NOTES.md too).
-7. **Publish** the draft. From then on
+8. **Publish** the draft. From then on
    `/releases/latest/download/latest.json` points at it, and installed
-   copies offer the update at their next daily check.
+   copies offer the update at their next daily check. Then run
+   `python3 -I verify/run.py --accept --skip-perf`, so the next release's
+   checks compare old edits with this one's.
 
 ## When something goes wrong
 
