@@ -6,6 +6,11 @@ three platforms from scratch, signs the updater's bundles, makes the source
 archive, and leaves a **draft** release with all of it attached. Nothing
 reaches users until you publish that draft.
 
+A release is made entirely on its branch, `release-<version>`: the work,
+the version bump, the checks and the tag. Nothing is pushed or committed
+to `main` directly; `main` takes the branch through its pull request once
+the release is published.
+
 ## Cutting a release
 
 1. **Bump the version** everywhere it is kept. The tag run fails if any
@@ -33,8 +38,9 @@ reaches users until you publish that draft.
    ([verify/README.md](../../../verify/README.md)). Don't tag while
    anything fails, unless the report's failure is understood and written
    down.
-4. **Merge to `main`** as for any change, and wait for CI to pass.
-5. **Tag** the commit on `main`:
+4. **Open the pull request** from `release-0.32.0` to `main`, and wait
+   for CI to pass on it. Don't merge it yet.
+5. **Tag** the branch's last commit, the one the checks ran on:
 
    ```bash
    git tag v0.32.0 && git push origin v0.32.0
@@ -55,8 +61,8 @@ reaches users until you publish that draft.
 
 ## When something goes wrong
 
-- **The release run fails before publish:** fix the cause on `main`,
-  then move the tag to the new commit and push it again:
+- **The release run fails before publish:** fix the cause on the release
+  branch, then move the tag to the new commit and push it again:
 
   ```bash
   git tag -f v0.32.0 && git push -f origin v0.32.0
