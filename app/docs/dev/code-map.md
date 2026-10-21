@@ -194,7 +194,7 @@ are `localStorage` keys named `immage.*`.
 
 | File | Responsibility |
 |---|---|
-| [main.rs](../../src-tauri/src/main.rs) | `AppState` (the engine, scratch file paths, looks and models folders, the folder-read token, perf state); every command except plugins'; AI model download (`install_model`, `install_extra`, through `curl`, sha256 checked, darktable's archives unpacked by the engine's `unpack`); export (naming conflicts, Immich upload); presets and looks files; launch-file handling. |
+| [main.rs](../../src-tauri/src/main.rs) | `AppState` (the engine, scratch file paths, looks and models folders, the folder-read token, perf state); every command except plugins'; AI model download (`install_model`, `install_extra`, through reqwest, sha256 checked, darktable's archives unpacked by the engine's `unpack`); export (naming conflicts, Immich upload); presets and looks files; launch-file handling. |
 | [engine.rs](../../src-tauri/src/engine.rs) | The engine child and its protocol (above); `perf_mark` and the `-d perf` parser. |
 | [immich_search.rs](../../src-tauri/src/immich_search.rs), [immich_upload.rs](../../src-tauri/src/immich_upload.rs) | Immich: search, thumbnails, originals (cached); album and upload calls. The API key never reaches the front end. |
 | [plugins.rs](../../src-tauri/src/plugins.rs) | Edit In: find apps, launch with files, poll their output folders, remember each result (`plugin-returns.json`). |

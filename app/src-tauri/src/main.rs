@@ -283,9 +283,9 @@ async fn ai_object(state: State<'_, AppState>, points: Value, r#box: Option<Valu
 
 // darktable's AI models come from its model repository, in the release made
 // for this darktable version, as darktable's own download does
-// (src/common/ai_models.c). the system's curl downloads, the engine unpacks
-// with darktable's libarchive (not every system has an unzip), and the
-// checksum is taken here
+// (src/common/ai_models.c). they are downloaded here and the engine unpacks
+// them with darktable's libarchive, so no curl or unzip of the system's is
+// needed: a fresh Linux install can lack either (Arch has no unzip)
 const MODEL_REPO: &str = "darktable-org/darktable-ai";
 
 fn sha256_file(path: &Path) -> Result<String, String> {
@@ -306,12 +306,44 @@ fn no_console(_cmd: &mut std::process::Command) {
     }
 }
 
+// the error, and whether trying again may help: a dropped connection or a
+// server's 5xx or 429 may, a 404 will not
+fn fetch_once(http: &reqwest::blocking::Client, url: &str, dest: &Path) -> Result<(), (String, bool)> {
+    let mut r = http.get(url).send().map_err(|e| (e.to_string(), true))?;
+    let status = r.status();
+    if !status.is_success() {
+        return Err((status.to_string(), status.is_server_error() || status.as_u16() == 429));
+    }
+    let mut file = std::fs::File::create(dest).map_err(|e| (format!("{}: {e}", dest.display()), false))?;
+    r.copy_to(&mut file).map(|_| ()).map_err(|e| (e.to_string(), true))
+}
+
+// tried three times. the timeout bounds each read
+// of the body (reqwest's blocking Response::read), not the whole download,
+// so only a stalled one gives up
 fn fetch(url: &str, dest: &Path) -> Result<(), String> {
-    let mut cmd = std::process::Command::new("curl");
-    cmd.args(["-fsSL", "--retry", "2", "-o"]).arg(dest).arg(url);
-    no_console(&mut cmd);
-    let ok = cmd.status().map_err(|e| format!("curl: {e}"))?.success();
-    if ok { Ok(()) } else { Err(format!("could not download {url}")) }
+    let http = reqwest::blocking::Client::builder()
+        .connect_timeout(Duration::from_secs(30))
+        .timeout(Duration::from_secs(60))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let mut last = String::new();
+    for attempt in 0..3u64 {
+        if attempt > 0 {
+            std::thread::sleep(Duration::from_secs(attempt));
+        }
+        match fetch_once(&http, url, dest) {
+            Ok(()) => return Ok(()),
+            Err((e, again)) => {
+                last = e;
+                if !again {
+                    break;
+                }
+            }
+        }
+    }
+    let _ = std::fs::remove_file(dest);
+    Err(format!("could not download {url}: {last}"))
 }
 
 fn read_json(path: &Path) -> Result<Value, String> {
@@ -1957,6 +1989,11 @@ mod tests {
                    "mask-scene-segformer-b2", "mask-depth-da2-small"] {
             assert!(dir.join(id).join("config.json").exists(), "{id} has no config.json");
         }
+        // a 404 is not tried again, and leaves no file
+        let missing = dir.join("missing");
+        let start = Instant::now();
+        assert!(fetch(&format!("https://github.com/{MODEL_REPO}/releases/download/none/none.dtmodel"), &missing).is_err());
+        assert!(start.elapsed() < Duration::from_secs(10) && !missing.exists());
         drop(engine);
         let _ = std::fs::remove_dir_all(&runtime);
         let _ = std::fs::remove_dir_all(&dir);
