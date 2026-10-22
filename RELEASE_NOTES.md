@@ -37,6 +37,12 @@ Bug fixes
   adds to or subtracts from a mask; before, the overlay stayed on until
   the brush was put down with Esc, whichever mask was selected. Moving
   one of the mask's sliders now also hides it, until the next stroke
+- on Linux, installing an update from the banner no longer stays on
+  "saving the edit and installing…" for good; an engine slow to stop is
+  stopped after a few seconds, and an install that cannot finish says so
+  and offers the release page. The update from 0.34.0 still runs
+  0.34.0's installer, so on Linux it may stop there once more: download
+  the AppImage from the release page instead
 
 ## 0.34.0
 
