@@ -18,6 +18,10 @@ Improvements
 - the History card's rows of the opened edit have buttons on hover: a
   module added in darktable can be switched off or deleted, and one
   behind Immage's sliders reset, each as one undo step
+- Preferences › New Photos has Exposure compensation: every new raw
+  starts brighter or darker by the amount set, +1 EV for instance, while
+  Basic's Exposure still starts at 0 and adds to it. Auto allows for it,
+  and each photo keeps the amount it started with. Off by default
 
 Bug fixes
 
