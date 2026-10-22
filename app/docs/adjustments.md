@@ -71,7 +71,9 @@ for **B&W Mix**.
   parts are well placed, and darkens a bright one only until its shadows
   are, so a night scene stays dark and snow or a sunny beach stays bright.
   Such a scene also keeps its shadows unlifted, or its highlights and
-  blacks untouched. Under AgX it also sets AgX's range.
+  blacks untouched. A photo with nothing dark in it, such as a plane
+  against clear sky, keeps its blacks too, rather than its sky being
+  darkened. Under AgX it also sets AgX's range.
 - **Exposure**: -5 to +5 stops.
 - **Contrast**, **Highlights**, **Shadows**, **Whites**, **Blacks**: -100 to
   +100. Whites moves the top of the tone mapper's curve; Blacks moves the

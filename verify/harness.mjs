@@ -67,6 +67,7 @@ const m = await import("../app/src/manifest.ts");
 const { canMerge } = await import("../app/src/localMerge.ts");
 const { overlayShown, overlayStep } = await import("../app/src/masks.ts");
 const { ILLUMINANT_D } = await import("../app/src/wb.ts");
+const { autoTone } = await import("../app/src/autoTone.ts");
 const z = await import("../app/src/zones.ts");
 const { compare, meanChroma, inEllipse, rightOf } = await import("./metrics.mjs");
 const { THRESHOLD, GLOBAL, COMPOSITE, LOCAL, trialValues, judge } = await import("./expect.mjs");
@@ -898,6 +899,26 @@ async function decisions(photo) {
     return got.join() === want.join() ? null : `shared: ${got.join(", ")}; decided: ${want.join(", ")}`;
   });
 
+  // Auto's Blacks places a photo's dark end, its darkest 0.5%, near black.
+  // a dark end well above it is no black at all, a plane against clear sky,
+  // and is left; one just off the target is left too (backlog.md,
+  // Decisions, 2026-10-22)
+  await decide("auto blacks leaves a frame with no black", async () => {
+    // 1% of the frame at `dark`, 5% white, the rest at `mid`
+    const frame = (dark, mid) => {
+      const w = 100, h = 100, px = new Uint8ClampedArray(w * h * 4);
+      for (let i = 0; i < w * h; i++) {
+        const v = Math.round(255 * (i < 100 ? dark : i < 600 ? 1 : mid));
+        px.set([v, v, v, 255], 4 * i);
+      }
+      return autoTone(px, w, h);
+    };
+    const got = { sky: frame(0.36, 0.45).blacks, near: frame(0.035, 0.4).blacks, flat: frame(0.07, 0.4).blacks };
+    const wrong = [got.sky !== 0 && `a sky-only frame, dark end 36%, gets ${got.sky}`,
+                   got.near !== 0 && `a dark end of 3.5%, just off the target, gets ${got.near}`,
+                   got.flat >= 0 && `a flat frame, dark end 7%, gets ${got.flat}, not deepened`].filter(Boolean);
+    return wrong.join("; ") || null;
+  });
   await decide("masks that keep their own instances", async () => {
     const range = { type: "luminance", lo: -3, hi: null, feather: 1 };
     const mask = (shapes, more = {}) => ({ name: "x", shapes, invert: false, values: {}, ...more });
