@@ -5,6 +5,13 @@ what Immage's update banner shows under Release Notes.
 
 ## 0.35.0
 
+Improvements
+
+- the Tone Curve's Parametric sliders are named as in Basic and run light
+  to dark: Whites, Highlights, Midtones, Shadows and Blacks. Midtones is
+  new, and bends the middle of the curve. Curves made with the earlier
+  sliders open with the same settings under the new names
+
 Bug fixes
 
 - O and the eye in the Masks panel hide the red overlay while a brush
