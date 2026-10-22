@@ -2696,6 +2696,9 @@ static const char *_mask_name(const char *full)
   if(g_str_has_prefix(full, _MASK_PREFIX)) return full + strlen(_MASK_PREFIX);
   return NULL;
 }
+// the mask anchor: masks' instances run right after it, all on one input,
+// so a range sampled at its output holds for every one of them
+// (app/docs/dev/masks.md, "Where the instances run")
 #define _MASK_ANCHOR "colorbalancergb"
 // the instances masks share are named so (app/src/localMerge.ts SHARED_PREFIX)
 #define _SHARED_PREFIX "immage local: "

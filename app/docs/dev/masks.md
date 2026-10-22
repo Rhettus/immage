@@ -14,7 +14,8 @@ every slider the mask uses, out of ordinary darktable parts:
 - the mask's shapes are a darktable **mask group**
 - each module a slider sets gets an **instance named after the mask**, with
   that group as its drawn mask
-- Immage places those instances in the pipe, in an order the user cannot
+- Immage places those instances in the pipe, after one fixed module, the
+  [mask anchor](#where-the-instances-run), in an order the user cannot
   change
 
 Everything is ordinary history, saved in the XMP sidecar. darktable opens the
@@ -69,10 +70,13 @@ view is on.
 
 ## Where the instances run
 
-`_named_instance` in main.c moves each new instance to just after **color
-balance rgb**, which the engine calls the mask anchor. In darktable's v5.0
-module order that is the last scene-referred color module before the tone
-mapper. Running there means:
+The **mask anchor** is the one place in the pipe where masks' instances
+run, with the two exceptions below: just after the photo's own **color
+balance rgb** (`_MASK_ANCHOR` in main.c). In darktable's v5.0 module order
+that is the last scene-referred color module before the tone mapper.
+`_named_instance` moves each new mask instance there, and a color or
+luminance range is sampled from the anchor's output (`sample`,
+`_STAGE_ANCHOR`). Running there means:
 
 - the data is linear and scene-referred, so a local +1 EV is exposure's
   own +1 EV under the mask, and AgX or sigmoid tone-maps it with the rest of
