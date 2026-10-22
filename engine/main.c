@@ -2300,10 +2300,50 @@ static const struct { dt_ai_provider_t p; const char *id; } _gpu_providers[] = {
   { DT_AI_PROVIDER_CUDA, "CUDA" }, { DT_AI_PROVIDER_MIGRAPHX, "MIGraphX" },
 };
 
+#ifdef __linux__
+// whether ONNX Runtime has this provider's entry point. darktable checks the
+// driver behind MIGraphX before it looks for the entry point
+// (backend_onnx.c, _try_provider), and that check starts ROCm's HIP, whose
+// compiler aborted the engine at start when Mesa's RustiCL OpenCL had loaded
+// another LLVM ("Option ... registered more than once"; RX 9070 XT, Ubuntu
+// 26.04). the bundled ONNX Runtime is the CPU build, so a missing entry point
+// keeps darktable from checking at all
+static gboolean _ort_exports(const dt_ai_provider_t p)
+{
+  static const struct { dt_ai_provider_t p; const char *symbol; } eps[] = {
+    { DT_AI_PROVIDER_CUDA, "OrtSessionOptionsAppendExecutionProvider_CUDA" },
+    { DT_AI_PROVIDER_MIGRAPHX, "OrtSessionOptionsAppendExecutionProvider_MIGraphX" },
+    { DT_AI_PROVIDER_MIGRAPHX, "OrtSessionOptionsAppendExecutionProvider_ROCM" },
+    { DT_AI_PROVIDER_OPENVINO, "OrtSessionOptionsAppendExecutionProvider_OpenVINO" },
+  };
+  // the library darktable opens: by name, else from its plugin folder
+  // (backend_onnx.c, _init_ort_api)
+  GModule *ort = g_module_open("libonnxruntime.so", G_MODULE_BIND_LAZY | G_MODULE_BIND_LOCAL);
+  if(!ort && darktable.plugindir)
+  {
+    gchar *path = g_build_filename(darktable.plugindir, "libonnxruntime.so", NULL);
+    ort = g_module_open(path, G_MODULE_BIND_LAZY | G_MODULE_BIND_LOCAL);
+    g_free(path);
+  }
+  if(!ort) return FALSE;
+  gboolean found = FALSE;
+  for(size_t k = 0; k < G_N_ELEMENTS(eps); k++)
+  {
+    gpointer f = NULL;
+    if(eps[k].p == p && g_module_symbol(ort, eps[k].symbol, &f)) found = TRUE;
+  }
+  g_module_close(ort);
+  return found;
+}
+#endif
+
 // a provider usable here: darktable's runtime check attaches it to a
 // session, and fails one this platform's ONNX Runtime does not have
 static gboolean _gpu_usable(const dt_ai_provider_t p)
 {
+#ifdef __linux__
+  if(!_ort_exports(p)) return FALSE;
+#endif
   return dt_ai_probe_provider(p);
 }
 
@@ -7130,6 +7170,14 @@ int main(int argc, char **argv)
   dt_conf_set_string("write_sidecar_files", "on import");
 #ifdef HAVE_AI
   if(_models_dir) dt_conf_set_bool("plugins/ai/enabled", TRUE);
+#ifdef __linux__
+  // darktable's "auto" tries CUDA, MIGraphX and OpenVINO in turn for each
+  // model (backend_common.c, _auto_candidates), with the same check as
+  // _ort_exports describes
+  if(!_ort_exports(DT_AI_PROVIDER_CUDA) && !_ort_exports(DT_AI_PROVIDER_MIGRAPHX)
+     && !_ort_exports(DT_AI_PROVIDER_OPENVINO))
+    dt_conf_set_string(DT_AI_CONF_PROVIDER, "CPU");
+#endif
 #endif
   // the library is in memory, so image ids are reused across runs; a
   // thumbnail cache on disk, keyed by id, would show another run's images
