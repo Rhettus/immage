@@ -91,9 +91,10 @@ Two modes, switched at the top of the panel:
 - **Point**: click the curve to add a point (up to 20), drag to move it,
   and double-click it or drag it off the graph to remove it. **RGB** is the
   main curve; **R**, **G** and **B** adjust one channel.
-- **Parametric**: **Highlights**, **Lights**, **Darks** and **Shadows**
-  sliders, with three **Split Points** that move the borders between the
-  regions.
+- **Parametric**: **Whites**, **Highlights**, **Midtones**, **Shadows**
+  and **Blacks** sliders, named as in Basic, each bending the curve in its
+  own band of tones. Three **Split Points** move the borders between the
+  bands; Midtones spans the two around the middle split.
 
 The graph shows the histogram behind the curve. Hover over the photo to
 see where a pixel sits on the curve. A curve drawn in darktable shows a

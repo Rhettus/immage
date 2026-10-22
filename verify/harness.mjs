@@ -729,6 +729,28 @@ async function decisions(photo) {
       : Math.abs(highlights + 40) > 1.5 ? `Highlights read back ${highlights}` : null;
   });
 
+  // a parametric tone curve saved before Midtones opens on the same four
+  // sliders, Midtones at 0. the nodes are what the four-region curve()
+  // wrote for these settings
+  await decide("a four-region tone curve keeps its sliders", async () => {
+    const ys = [0, 0.03831, 0.09292, 0.17374, 0.26784, 0.34759, 0.41279, 0.47604, 0.56, 0.64263, 0.69399,
+                0.71523, 0.73462, 0.78382, 0.85068, 0.92329, 1];
+    const want = { tc_mode: 0, tc_shadows: -30, tc_darks: 20, tc_lights: 40, tc_highlights: -20, tc_midtones: 0,
+                   tc_split1: 20, tc_split2: 50, tc_split3: 70 };
+    const path = fresh(photo);
+    await request({ cmd: "open", path, imgid: -1 });
+    await request({ cmd: "set", op: "tonecurve", enabled: true, params: {
+      "tonecurve_nodes[0]": ys.length, tonecurve_autoscale_ab: 3,
+      ...Object.fromEntries(ys.flatMap((y, k) => [[`tonecurve[0][${k}].x`, k / (ys.length - 1)], [`tonecurve[0][${k}].y`, y]])),
+    } });
+    await request({ cmd: "save" });
+    await restart();
+    const o = await open(path);
+    const got = Object.fromEntries(Object.keys(want).map((k) => [k, o.s.values[k]]));
+    await o.s.close();
+    return Object.entries(want).every(([k, v]) => got[k] === v) ? null : `opened as ${JSON.stringify(got)}`;
+  });
+
   // a drag's frame is the release's, less what the Preview setting leaves
   // out of drags (Session's DRAFT_SKIP); the harness renders at Quality
   await decide("drag frames match", async () => {
