@@ -11,6 +11,10 @@ Improvements
   to dark: Whites, Highlights, Midtones, Shadows and Blacks. Midtones is
   new, and bends the middle of the curve. Curves made with the earlier
   sliders open with the same settings under the new names
+- the Zone System's Color mask takes an object as well as Sky, Rocks,
+  Vegetation and Subject: + Object, then drag a box around the object on
+  the photo or click it, and the AI outlines it. Each object gets a
+  button of its own, Object A, Object B, and so on
 
 Bug fixes
 
