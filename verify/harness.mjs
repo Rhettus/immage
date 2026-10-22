@@ -857,6 +857,27 @@ async function decisions(photo) {
       : !row ? "opened again, the history has no compensation row" : null;
   });
 
+  // Profile's Color Balance RGB looks, darktable's "basic colorfulness"
+  // presets, each change the photo's color visibly from AgX Default. most
+  // add color; Natural Skin takes it out of bright colors, so on a bright
+  // photo it can remove more than it adds (colorbalancergb.c, init_presets)
+  const LOOKS = "color balance rgb looks change color";
+  o = await open(fresh(photo));
+  const plain = meanChroma(o.base);
+  if (!o.s.raw || plain < 1.5) {
+    await o.s.close();
+    record({ check: "decisions", photo: basename(photo), id: LOOKS, status: "skip",
+             detail: o.s.raw ? "a black and white photo" : "raws only" });
+  } else await decide(LOOKS, async () => {
+    const weak = [];
+    for (const pr of m.PROFILES) {
+      const by = meanChroma(await o.after(() => o.s.set("profile", pr.value))) / plain;
+      if (Math.abs(by - 1) < 0.03) weak.push(`${pr.label} ${((by - 1) * 100).toFixed(1)}%`);
+    }
+    await o.s.close();
+    return weak.length ? `chroma against AgX Default, needs 3% either way: ${weak.join(", ")}` : null;
+  });
+
   if (photo !== args.photos[0]) return;
 
   // Default in Preferences › Modules is darktable's AgX workflow (README)
@@ -876,6 +897,7 @@ async function decisions(photo) {
     const got = [...new Set(m.localMaps.filter((l) => l.merge).map((l) => l.op.split("#")[0]))].sort();
     return got.join() === want.join() ? null : `shared: ${got.join(", ")}; decided: ${want.join(", ")}`;
   });
+
   await decide("masks that keep their own instances", async () => {
     const range = { type: "luminance", lo: -3, hi: null, feather: 1 };
     const mask = (shapes, more = {}) => ({ name: "x", shapes, invert: false, values: {}, ...more });
