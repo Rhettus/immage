@@ -258,10 +258,28 @@ impl Engine {
     }
 
     // the engine saves the open photo and exits; requests after it fail
+    // the engine has saved by the time it replies to quit; what follows is
+    // dt_cleanup(), which can hang on some drivers (NVIDIA's OpenCL on Linux
+    // held an update on "installing" for good), so it gets a few seconds
     pub fn quit(&mut self) {
         let _ = self.request(json!({ "cmd": "quit" }));
-        let _ = self.child.wait();
+        reap(&mut self.child, QUIT_WAIT);
     }
+}
+
+const QUIT_WAIT: Duration = Duration::from_secs(5);
+
+// waits for the child to exit, and kills it after `wait`
+fn reap(child: &mut Child, wait: Duration) {
+    let until = Instant::now() + wait;
+    while Instant::now() < until {
+        match child.try_wait() {
+            Ok(None) => std::thread::sleep(Duration::from_millis(50)),
+            _ => return,
+        }
+    }
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 impl Drop for Engine {
@@ -272,7 +290,18 @@ impl Drop for Engine {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_timing;
+    use super::{parse_timing, reap};
+    use std::time::{Duration, Instant};
+
+    #[cfg(unix)]
+    #[test]
+    fn reap_kills_a_child_that_stays() {
+        let mut child = std::process::Command::new("sleep").arg("30").spawn().unwrap();
+        let t = Instant::now();
+        reap(&mut child, Duration::from_millis(300));
+        assert!(t.elapsed() < Duration::from_secs(5));
+        assert!(child.try_wait().unwrap().is_some());
+    }
 
     #[test]
     fn timings() {

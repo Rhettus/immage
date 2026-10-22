@@ -7,6 +7,8 @@ import { useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { installUpdate, later, relaunch, releaseUrl, skipVersion, useBannerShown, useUpdate } from "./updates";
 
+const IS_LINUX = /Linux/.test(navigator.userAgent) && !/Android/.test(navigator.userAgent);
+
 export function UpdateBanner({ prepare }: { prepare: () => Promise<void> }) {
   const state = useUpdate();
   const shown = useBannerShown();
@@ -41,6 +43,7 @@ export function UpdateBanner({ prepare }: { prepare: () => Promise<void> }) {
         <div className="update-line error">
           {state.engineGone ? "the update did not install, and the engine has stopped; relaunch to go on: " : "the update did not install: "}
           {state.message}
+          {IS_LINUX && "; the AppImage can also be downloaded from the release page and put in place of this one"}
         </div>
       )}
       <div className="update-foot">
