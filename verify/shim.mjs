@@ -8,22 +8,33 @@
 // below does the same
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
-import { mkdirSync, readFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 // main.rs's FRAME_HEAD: six u32 of geometry, six f32 of timings, the u64 hash
 const FRAME_HEAD = 56;
 
-let engine = null, frame = null;
+// the commands the Rust layer registers (main.rs, generate_handler!): one
+// it lacks fails in the app, as mask_rename did before 0.10.1
+const HANDLERS = new Set(readFileSync(new URL("../app/src-tauri/src/main.rs", import.meta.url), "utf8")
+  .match(/generate_handler!\[([^\]]*)\]/)[1].split(",").map((s) => s.trim().split("::").pop()).filter(Boolean));
+
+let engine = null, frame = null, preview = null, range = null;
 const waiting = [];
 
 // one engine for the process, in its own runtime folder, on the CPU so
-// frames are the same from run to run
-export function startEngine(binary, home) {
+// frames are the same from run to run; with AI models from `modelsDir`
+// when given
+export function startEngine(binary, home, modelsDir = null) {
   mkdirSync(home, { recursive: true });
   frame = join(home, "frame.rgba");
-  const me = spawn(binary, ["--core", "--configdir", join(home, "config"), "--cachedir", join(home, "cache"),
-                            "--conf", "opencl=false"], { stdio: ["pipe", "pipe", "ignore"] });
+  preview = join(home, "preview.rgba");
+  range = join(home, "range.bin");
+  models.dir = modelsDir;
+  // the engine takes --models ahead of darktable's own options
+  const me = spawn(binary, [...(modelsDir ? ["--models", modelsDir] : []), "--core", "--configdir", join(home, "config"),
+                            "--cachedir", join(home, "cache"), "--conf", "opencl=false"],
+                   { stdio: ["pipe", "pipe", "ignore"] });
   engine = me;
   exited = new Promise((r) => me.on("exit", r));
   createInterface({ input: me.stdout }).on("line", (line) => waiting.shift()?.(line));
@@ -67,6 +78,17 @@ function framed(r) {
   return out;
 }
 
+// a map the engine wrote to the range file, behind its size
+function sized(width, height) {
+  const map = readFileSync(range);
+  const out = new ArrayBuffer(8 + map.length);
+  const v = new DataView(out);
+  v.setUint32(0, width, true);
+  v.setUint32(4, height, true);
+  new Uint8Array(out, 8).set(map);
+  return out;
+}
+
 const COMMANDS = {
   open_image: ({ path, imgid }) => request({ cmd: "open", path, imgid: imgid ?? -1 }),
   get_params: ({ modules }) => request({ cmd: "get", modules }),
@@ -98,6 +120,31 @@ const COMMANDS = {
     if (scale != null) Object.assign(req, { scale, x: x ?? 0, y: y ?? 0 });
     return framed(await request(req));
   },
+  // an 8-byte header, width and height, then RGBA
+  preview: async ({ size, edits, withLook, look }) => {
+    const req = { cmd: "preview", size, edits, rgba: preview };
+    if (withLook) req.look = look;
+    const r = await request(req);
+    const pixels = readFileSync(preview);
+    const out = new ArrayBuffer(8 + pixels.length);
+    const v = new DataView(out);
+    v.setUint32(0, r.width, true);
+    v.setUint32(4, r.height, true);
+    new Uint8Array(out, 8).set(pixels);
+    return out;
+  },
+  sample: ({ x, y, area }) => request({ cmd: "sample", x, y, box: area ?? null }),
+  // u32 width and height, then a byte a point
+  range_map: async ({ ranges, width, height }) =>
+    sized(width, height, await request({ cmd: "range_map", ranges, width, height, out: range })),
+  mask_map: async ({ name, op, width, height, view }) => {
+    const req = { cmd: "mask_map", width, height, out: range };
+    if (name != null) req.name = name;
+    if (op != null) req.op = op;
+    if (view) for (const k of ["x", "y", "scale"]) req[k] = view[k];
+    const r = await request(req);
+    return sized(r.width ?? width, r.height ?? height, r);
+  },
   save: () => request({ cmd: "save" }),
   baseline_end: () => request({ cmd: "baseline_end" }),
   before_view: ({ on }) => request({ cmd: "before", on }),
@@ -105,10 +152,31 @@ const COMMANDS = {
   look_apply: async ({ path }) => (await request({ cmd: "look", path })).look,
   // only the idle base can be canceled, and the harness never asks for one
   cancel_base: () => Promise.resolve(),
+  // a model is copied from models.source in place of the download
+  ai_model_ensure: async ({ id }) => {
+    if (!existsSync(join(models.dir, id, "config.json"))) cpSync(join(models.source, id), join(models.dir, id), { recursive: true });
+  },
+  ai_model_reinstall: async ({ id }) => {
+    rmSync(join(models.dir, id), { recursive: true, force: true });
+    cpSync(join(models.source, id), join(models.dir, id), { recursive: true });
+  },
+  ai_object: async ({ points, box }) =>
+    (await request({ cmd: "ai_object", points, ...(box ? { box } : {}) })).paths,
 };
 
+// the engine's models folder (startEngine's), and where a check's models
+// are installed from
+export const models = { dir: null, source: null };
+
+// a check's hook on each request as it goes to the engine, to change the
+// edit while the engine has it, as a user can
+export const sent = { hook: null };
+
 export async function invoke(cmd, args = {}) {
+  if (!HANDLERS.has(cmd)) throw new Error(`the app registers no command ${cmd} (main.rs, generate_handler!)`);
   const f = COMMANDS[cmd];
   if (!f) throw new Error(`verify/shim.mjs has no ${cmd}`);
-  return f(args);
+  const reply = f(args);
+  sent.hook?.(cmd, args);
+  return reply;
 }

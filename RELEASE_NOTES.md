@@ -3,6 +3,31 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
+## 0.34.0
+
+Bug fixes
+
+- Color Range and Luminance Range masks work on JPEG and TIFF photos;
+  before, picking a color failed with "the image is not in RGB at the
+  mask stage", and the range's overlay never showed
+- a range mask's overlay no longer streaks across the photo after
+  zooming in to 100% and back out
+- AI masks and AI Denoise download their models on Linux systems without
+  curl or unzip installed, such as Arch and CachyOS, which have no unzip;
+  before, the download or the unpacking failed
+- an AI model left half installed, such as by an install cut short, is
+  downloaded again the next time it is used; before, Select Object, the
+  other AI masks and AI Denoise failed with "cannot load the model" until
+  Immage's data folder was deleted
+- on Linux, sliders respond several times faster when other programs are
+  busy, such as on a system drawing in software without its graphics
+  driver; before, a slider like Clarity could take over a second a frame
+- on Linux with an NVIDIA graphics card, sliders, zooming and the rest of
+  the window respond about ten times faster; before, NVIDIA's driver held
+  the window to a few updates a second, on Wayland and X11 alike. Immage
+  now has Mesa draw its window, when Mesa is installed and
+  `__EGL_VENDOR_LIBRARY_FILENAMES` isn't set
+
 ## 0.33.0
 
 Bug fixes

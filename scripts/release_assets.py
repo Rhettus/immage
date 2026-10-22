@@ -80,6 +80,19 @@ from inside Immage, without the warning.
 Immage checks for a new version once a day (Preferences › About ›
 Updates), and offers to install it.
 
+## Known issues
+
+- **Linux with an NVIDIA graphics card**: NVIDIA's driver holds Immage's
+  window to a few updates a second, on Wayland and X11 alike (WebKit bug
+  [303811](https://bugs.webkit.org/show_bug.cgi?id=303811)). Immage works
+  around it by having Mesa draw its window on the processor, when Mesa is
+  installed, as it is on most distributions. On a fast processor that is
+  about ten times faster, but it may be slower on a 4K screen or a slow
+  processor; to compare, start Immage with
+  `__EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/10_nvidia.json`
+  for NVIDIA's own drawing. A real fix has to come from NVIDIA's driver or
+  WebKitGTK
+
 ## Source
 
 `{source}` is the source of this release: Immage, with darktable and

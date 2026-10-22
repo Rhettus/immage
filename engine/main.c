@@ -74,6 +74,8 @@
 #include <execinfo.h>
 #include <signal.h>
 #endif
+#include <archive.h>
+#include <archive_entry.h>
 #include <json-glib/json-glib.h>
 #include <pango/pangocairo.h>
 #include <inttypes.h>
@@ -1286,6 +1288,100 @@ static gboolean _sidecars(const dt_imgid_t imgid, JsonBuilder *b, char **err)
   return TRUE;
 }
 
+static int _unpack_data(struct archive *in, struct archive *out)
+{
+  const void *buf;
+  size_t size;
+  la_int64_t offset;
+  int r;
+  while((r = archive_read_data_block(in, &buf, &size, &offset)) == ARCHIVE_OK)
+    if(archive_write_data_block(out, buf, size, offset) < ARCHIVE_WARN) return ARCHIVE_FATAL;
+  return r == ARCHIVE_EOF ? ARCHIVE_OK : r;
+}
+
+// a darktable model archive (.dtmodel, a zip) unpacked into `dir` with
+// darktable's libarchive, as its own install does (src/common/ai_models.c,
+// _extract_zip), so the app needs no unzip of the system's: an Arch install
+// has none. the app checks the archive's sha256 first
+static gboolean _unpack(const char *archive, const char *dir, char **err)
+{
+  if(!archive || !dir)
+  {
+    *err = g_strdup("unpack needs an archive and a folder");
+    return FALSE;
+  }
+  if(g_mkdir_with_parents(dir, 0755))
+  {
+    *err = g_strdup_printf("cannot create %s", dir);
+    return FALSE;
+  }
+  // ARCHIVE_EXTRACT_SECURE_SYMLINKS refuses a symlink anywhere in the path,
+  // `dir`'s own included (macOS' /var, a home folder moved elsewhere), so
+  // it is resolved first, as darktable's _canonical_path_utf8 does
+#ifdef _WIN32
+  wchar_t *wdir = g_utf8_to_utf16(dir, -1, NULL, NULL, NULL);
+  wchar_t wreal[_MAX_PATH];
+  gchar *real = wdir && _wfullpath(wreal, wdir, _MAX_PATH)
+    ? g_utf16_to_utf8((gunichar2 *)wreal, -1, NULL, NULL, NULL) : NULL;
+  g_free(wdir);
+  if(!real) real = g_strdup(dir);
+#else
+  char *resolved = realpath(dir, NULL);
+  gchar *real = g_strdup(resolved ? resolved : dir);
+  free(resolved);
+#endif
+  struct archive *in = archive_read_new();
+  archive_read_support_format_zip(in);
+  struct archive *out = archive_write_disk_new();
+  // no ARCHIVE_EXTRACT_SECURE_NOABSOLUTEPATHS: every path is absolute once
+  // `dir` is put ahead of it, so an absolute entry is refused before that
+  archive_write_disk_set_options(out, ARCHIVE_EXTRACT_TIME | ARCHIVE_EXTRACT_PERM
+                                      | ARCHIVE_EXTRACT_SECURE_SYMLINKS
+                                      | ARCHIVE_EXTRACT_SECURE_NODOTDOT);
+  // libarchive's narrow paths are in the ANSI code page on Windows, and the
+  // models folder is under the user's profile, whose name can be any
+#ifdef _WIN32
+  wchar_t *wpath = g_utf8_to_utf16(archive, -1, NULL, NULL, NULL);
+  int r = wpath ? archive_read_open_filename_w(in, wpath, 10240) : ARCHIVE_FATAL;
+  g_free(wpath);
+#else
+  int r = archive_read_open_filename(in, archive, 10240);
+#endif
+  const char *bad = NULL;
+  struct archive_entry *entry;
+  while(r == ARCHIVE_OK && (r = archive_read_next_header(in, &entry)) == ARCHIVE_OK)
+  {
+    const char *name = archive_entry_pathname_utf8(entry);
+    if(!name || !name[0] || g_path_is_absolute(name))
+    {
+      bad = name ? name : "";
+      break;
+    }
+    gchar *dest = g_build_filename(real, name, NULL);
+#ifdef _WIN32
+    wchar_t *wdest = g_utf8_to_utf16(dest, -1, NULL, NULL, NULL);
+    archive_entry_copy_pathname_w(entry, wdest);
+    g_free(wdest);
+#else
+    archive_entry_set_pathname(entry, dest);
+#endif
+    g_free(dest);
+    r = archive_write_header(out, entry) < ARCHIVE_WARN ? ARCHIVE_FATAL : ARCHIVE_OK;
+    if(r == ARCHIVE_OK && archive_entry_size(entry) > 0) r = _unpack_data(in, out);
+    if(r == ARCHIVE_OK && archive_write_finish_entry(out) < ARCHIVE_WARN) r = ARCHIVE_FATAL;
+  }
+  if(bad)
+    *err = g_strdup_printf("%s: refused the entry '%s'", archive, bad);
+  else if(r != ARCHIVE_EOF)
+    *err = g_strdup_printf("%s: %s", archive,
+                           archive_error_string(out) ? archive_error_string(out)
+                           : archive_error_string(in) ? archive_error_string(in) : "cannot unpack");
+  archive_read_free(in);
+  archive_write_free(out);
+  g_free(real);
+  return !*err;
+}
+
 static gboolean _is_sidecar(const char *name)
 {
   const char *dot = strrchr(name, '.');
@@ -2112,6 +2208,32 @@ static gboolean _gpu_usable(const dt_ai_provider_t p)
 static gboolean _soft_device(const dt_ai_device_t *d)
 {
   return d->name && strstr(d->name, "Basic Render");
+}
+
+// darktable's OpenCL devices, for the GUI benchmark's report: the idle base
+// render runs on one when OpenCL is up, and its driver differs between
+// systems on the same machine
+static void _opencl(JsonBuilder *b)
+{
+  json_builder_set_member_name(b, "running");
+  json_builder_add_boolean_value(b, dt_opencl_running());
+  json_builder_set_member_name(b, "devices");
+  json_builder_begin_array(b);
+#ifdef HAVE_OPENCL
+  const dt_opencl_t *cl = darktable.opencl;
+  for(int k = 0; cl && cl->inited && k < cl->num_devs; k++)
+  {
+    const dt_opencl_device_t *dev = &cl->dev[k];
+    json_builder_begin_object(b);
+    _add_string(b, "name", dev->fullname);
+    _add_string(b, "platform", dev->platform);
+    _add_string(b, "version", dev->device_version);
+    json_builder_set_member_name(b, "disabled");
+    json_builder_add_boolean_value(b, dev->disabled);
+    json_builder_end_object(b);
+  }
+#endif
+  json_builder_end_array(b);
 }
 
 // the GPU providers this computer can use, each with its devices where the
@@ -4788,8 +4910,9 @@ static gboolean _working_at(_working_t *w, const _stage_t stage, char **err)
   dt_iop_buffer_dsc_t *dsc = NULL;
   dt_iop_roi_t roi = { 0 };
   // a render served from the cache leaves pieces made since (a new
-  // instance remakes them all) with no region and their output uncached:
-  // the second pass makes them run
+  // instance remakes them all) with no region and their output uncached,
+  // and the others with the region of the last render that ran them, such
+  // as a zoomed mask_map's: the second pass makes them run
   for(int pass = 0; pass < 2 && !data; pass++)
   {
     if(pass) dt_dev_pixelpipe_cache_invalidate_later(&_s.ppipe, piece->module->iop_order, "working ");
@@ -4832,11 +4955,15 @@ static gboolean _working_at(_working_t *w, const _stage_t stage, char **err)
       return FALSE;
     }
     roi = piece->processed_roi_out;
+    // only the whole image at this render's scale: another region's output
+    // can still be in the cache, and points outside it are clamped to its
+    // edges (the range map's stripes)
+    const gboolean whole = roi.x == 0 && roi.y == 0 && fabs(roi.scale - scale) < 1e-6 * scale;
     const size_t size = (size_t)roi.width * roi.height * 4 * sizeof(float);
     const dt_hash_t hash = dt_dev_pixelpipe_cache_hash(&roi, &_s.ppipe, piece->module->position);
     data = NULL;
     dsc = NULL;
-    if(size && dt_dev_pixelpipe_cache_available(&_s.ppipe, hash, size))
+    if(whole && size && dt_dev_pixelpipe_cache_available(&_s.ppipe, hash, size))
       dt_dev_pixelpipe_cache_get(&_s.ppipe, hash, size, (void **)&data, &dsc, NULL, FALSE);
   }
   if(!data || !dsc || dsc->channels != 4 || dsc->datatype != TYPE_FLOAT)
@@ -4844,7 +4971,29 @@ static gboolean _working_at(_working_t *w, const _stage_t stage, char **err)
     *err = g_strdup("the working-space image is not at hand");
     return FALSE;
   }
-  // with nothing in RGB after it, colorin hands on Lab
+  // with nothing in RGB after it, colorin hands on Lab: a JPEG or TIFF has
+  // no RGB module on ahead of the anchor. the mask instances get it as the
+  // work profile's RGB, which darktable converts their input to, so it is
+  // read that way. the conversion is kept until the next one
+  static float *converted = NULL;
+  static dt_iop_buffer_dsc_t converted_dsc;
+  if(stage != _STAGE_ASHIFT && dsc->cst == IOP_CS_LAB)
+  {
+    if(converted) dt_free_align(converted);
+    converted = dt_alloc_align_float((size_t)4 * roi.width * roi.height);
+    if(!converted)
+    {
+      *err = g_strdup("out of memory for the working-space image");
+      return FALSE;
+    }
+    dt_iop_colorspace_type_t cst = IOP_CS_LAB;
+    dt_ioppr_transform_image_colorspace(piece->module, data, converted, roi.width, roi.height, IOP_CS_LAB,
+                                        IOP_CS_RGB, &cst, dt_ioppr_get_pipe_work_profile_info(&_s.ppipe));
+    converted_dsc = *dsc;
+    converted_dsc.cst = IOP_CS_RGB;
+    data = converted;
+    dsc = &converted_dsc;
+  }
   if(stage != _STAGE_ASHIFT && dsc->cst != IOP_CS_RGB)
   {
     *err = g_strdup("the image is not in RGB at the mask stage");
@@ -6330,6 +6479,8 @@ static void _handle(JsonObject *req, FILE *out)
     _all_keywords(b);
   else if(!g_strcmp0(cmd, "ai_accel"))
     _ai_accel(b);
+  else if(!g_strcmp0(cmd, "opencl"))
+    _opencl(b);
   else if(!g_strcmp0(cmd, "keywords_set"))
   {
     if(!_keywords_set(json_object_get_int_member_with_default(req, "imgid", 0), req, b, &err)) goto fail;
@@ -6363,6 +6514,11 @@ static void _handle(JsonObject *req, FILE *out)
     // darktable's own, which picks the AI models' release
     json_builder_set_member_name(b, "version");
     json_builder_add_string_value(b, darktable_package_version);
+  }
+  else if(!g_strcmp0(cmd, "unpack"))
+  {
+    if(!_unpack(json_object_get_string_member_with_default(req, "archive", NULL),
+                json_object_get_string_member_with_default(req, "dir", NULL), &err)) goto fail;
   }
   // the styles outlive this process (data.db), and _style_items() keeps the
   // one it has by a name: a look imported under that name must replace it

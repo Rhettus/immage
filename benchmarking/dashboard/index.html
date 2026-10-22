@@ -421,7 +421,7 @@ const views = {
       svg.append(c); hover(c, `<b>${x.label ?? ""}</b><br>${x.kind}${x.draft ? " (draft)" : ""} ${x.width}×${x.height}<br>${fmt(x.total)} ms, ${x.edits} moves`); });
     svg.append(s("text", { x: 40, y: 216 }, "time through the run →"));
     return [
-      card("GUI benchmark", `${machineName(g)}${g.machine?.os ? `, ${g.machine.os}` : ""}. Photo ${g.photo}, viewer ${g.viewport.width}×${g.viewport.height} at ${g.viewport.dpr}×, drag drafts ${g.dragDrafts ? "on" : "off"}${g.transport ? `, frames by ${g.transport === "shared" ? "shared memory" : "invoke"}` : ""}, ${g.seconds?.toFixed?.(0) ?? "?"} s. Median per step, slider move to pixels on screen.`,
+      card("GUI benchmark", `${machineName(g)}${g.machine?.os ? `, ${g.machine.os}` : ""}${g.machine?.display?.sessionType ? ` (${g.machine.display.sessionType})` : ""}${g.webview?.gpu ? `, drawn by ${g.webview.gpu.renderer}` : ""}${g.webview?.frameRateHz ? ` at ${g.webview.frameRateHz} fps` : ""}. Photo ${g.photo}, viewer ${g.viewport.width}×${g.viewport.height} at ${g.viewport.dpr}×, drag drafts ${g.dragDrafts ? "on" : "off"}${g.transport ? `, frames by ${g.transport === "shared" ? "shared memory" : "invoke"}` : ""}, ${g.seconds?.toFixed?.(0) ?? "?"} s. Median per step, slider move to pixels on screen.`,
         h("label", {}, "machine ", msel), " ", h("label", {}, "report ", sel), legend(groups), stacked(rows, STAGES, colors, { label: 230 })),
       card("Every frame", "Each frame's total, input to paint, through the run. Small dots are drafts.", legend([["edit", kinds.edit], ["view (zoom, release)", kinds.view], ["idle base", kinds.base]]), svg),
     ];
