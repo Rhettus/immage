@@ -76,7 +76,7 @@ jobs:
         # tauri's build script checks that the bundled resources exist; the
         # engine is not built in this job, so stand-ins are enough
         run: |
-          mkdir -p resources/darktable
+          mkdir -p resources/darktable resources/webext
           touch resources/notices.txt
           cargo clippy --locked -- -D warnings
       # fails on a RustSec vulnerability in Cargo.lock; unmaintained and

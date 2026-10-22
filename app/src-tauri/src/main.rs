@@ -76,6 +76,20 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
+// Linux: the folder holding the web extension for shared-memory frames
+// (webext/frames.c), built by build_appimage.sh: in the bundle's
+// resources, or in a dev build the checkout's. none, and frames come
+// through Tauri's reply
+#[cfg(target_os = "linux")]
+fn webext_dir(app: &AppHandle) -> Option<PathBuf> {
+    let dir = if cfg!(debug_assertions) {
+        repo_root().join("app/src-tauri/resources/webext")
+    } else {
+        app.path().resource_dir().ok()?.join("webext")
+    };
+    dir.join("libimmage-frames.so").is_file().then_some(dir)
+}
+
 // commands are async so a render runs off the main thread
 
 #[tauri::command]
@@ -662,6 +676,7 @@ async fn render(
     draft: Option<bool>,
     base: Option<bool>,
     shared: Option<u32>,
+    token: Option<String>,
 ) -> Result<Response, String> {
     let mut req = json!({ "cmd": "render", "width": width, "height": height, "rgba": state.frame_path });
     if let Some(skip) = skip {
@@ -731,9 +746,58 @@ async fn render(
             }
         }
     }
+    #[cfg(target_os = "linux")]
+    if let (Some(id), Some(token)) = (shared, token) {
+        match shm_frame::write(&out, &token, id) {
+            Ok(()) => return Ok(Response::new(out[..FRAME_HEAD].to_vec())),
+            Err(e) => eprintln!("shared frame: {e}"),
+        }
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
+    let _ = (shared, token);
     #[cfg(not(windows))]
-    let _ = (webview, shared);
+    let _ = webview;
     Ok(Response::new(out))
+}
+
+// Linux: a frame handed to the page through /dev/shm, which the window's
+// web extension (webext/frames.c) reads and deletes. returned through
+// Tauri, WebKitGTK copies it across processes at about 25 ms a megapixel,
+// more while a 2x page draws
+#[cfg(target_os = "linux")]
+mod shm_frame {
+    use std::path::{Path, PathBuf};
+    use std::time::{Duration, SystemTime};
+
+    const DIR: &str = "/dev/shm";
+    const PREFIX: &str = "immage-frame-";
+
+    // the page's token is 16 hex digits (sharedFrames.ts), and the
+    // extension reads no other name
+    pub fn path(token: &str, id: u32) -> Option<PathBuf> {
+        (token.len() == 16 && token.bytes().all(|b| b.is_ascii_hexdigit()))
+            .then(|| Path::new(DIR).join(format!("{PREFIX}{token}-{id}")))
+    }
+
+    pub fn write(frame: &[u8], token: &str, id: u32) -> Result<(), String> {
+        let path = path(token, id).ok_or("bad token")?;
+        std::fs::write(&path, frame).map_err(|e| format!("{}: {e}", path.display()))
+    }
+
+    // frames a page never read (it closed, or the app was killed) stay in
+    // memory until deleted: those over a minute old, at startup. another
+    // running copy's are newer
+    pub fn sweep() {
+        let Ok(dir) = std::fs::read_dir(DIR) else { return };
+        let old = SystemTime::now() - Duration::from_secs(60);
+        for e in dir.flatten() {
+            if e.file_name().to_string_lossy().starts_with(PREFIX)
+                && e.metadata().and_then(|m| m.modified()).is_ok_and(|t| t < old)
+            {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
+    }
 }
 
 // a frame handed to the page through a WebView2 shared buffer. returned
@@ -1905,7 +1969,15 @@ fn main() {
             WEBVIEW_MESA.store(true, Ordering::Relaxed);
         }
     }
-    let context = tauri::generate_context!();
+    #[allow(unused_mut)]
+    let mut context = tauri::generate_context!();
+    // Linux: setup builds the windows, with the web extension that hands
+    // frames over (webext_dir); it has to be in place before their web
+    // process starts
+    #[cfg(target_os = "linux")]
+    for w in &mut context.config_mut().app.windows {
+        w.create = false;
+    }
     // the first argument naming a file; macOS adds -psn_... to apps it starts
     let arg = std::env::args_os().skip(1)
         .filter(|a| !a.to_string_lossy().starts_with('-'))
@@ -1931,6 +2003,18 @@ fn main() {
         }))
         .manage(Launch(Mutex::new(arg)))
         .setup(|app| {
+            #[cfg(target_os = "linux")]
+            {
+                let dir = webext_dir(app.handle());
+                for config in app.config().app.windows.clone() {
+                    let mut window = tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?;
+                    if let Some(dir) = &dir {
+                        window = window.extensions_path(dir);
+                    }
+                    window.build()?;
+                }
+                shm_frame::sweep();
+            }
             // a dev build runs the engine from the checkout's build/ tree; a
             // bundled app carries its own (scripts/bundle_engine.py) and keeps
             // the engine's config and cache in its data folder
