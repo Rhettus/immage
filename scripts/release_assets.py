@@ -92,10 +92,11 @@ Updates), and offers to install it.
   `__EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/10_nvidia.json`
   for NVIDIA's own drawing. A real fix has to come from NVIDIA's driver or
   WebKitGTK
-- **Linux on a high-resolution Wayland screen**: sliders can be slow to
-  update on KDE Plasma at 200% scaling, where the window is drawn at
-  about 13 million pixels. The cause is in the window's drawing, not the
-  image processing, and is still being looked into
+- **Linux on Wayland with fractional scaling** (125%, 150%, ...): sliders
+  can be 2-3 times slower to update. The web view Immage is built on
+  draws such a window at 200% and the desktop shrinks it, so it draws far
+  more pixels than the screen shows. At 100% scaling, or started with
+  `GDK_BACKEND=x11`, it is about as fast as elsewhere
 
 ## Source
 
