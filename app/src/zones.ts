@@ -300,18 +300,29 @@ export function zonesOfShape(s: { type: string; lo?: number | null; hi?: number 
 // a zone mask narrowed to a part of the photo by an AI mask, which sees the
 // photo in color (the engine renders it without the black and white for
 // the models): the kind is kept in the mask's name, "Zone V · Sky", or
-// "Zone V · not Sky" for the rest of the photo
+// "Zone V · not Sky" for the rest of the photo. an object boxed on the
+// photo is "object:A", "Object A": a letter, as a number would read as
+// nextMaskName()'s suffix
 export const ZONE_PARTS: [string, string][] = [["sky", "Sky"], ["mountains", "Rocks"], ["vegetation", "Vegetation"],
                                                ["subject", "Subject"]];
 export type ZonePart = { kind: string; invert: boolean };
+export const partLabel = (kind: string) =>
+  ZONE_PARTS.find(([k]) => k === kind)?.[1] ?? (/^object:[A-Z]$/.test(kind) ? `Object ${kind.slice(7)}` : null);
 export const zoneMaskName = (r: ZoneRange, part: ZonePart | null = null) => {
-  const label = part && ZONE_PARTS.find(([k]) => k === part.kind)?.[1];
+  const label = part && partLabel(part.kind);
   return label ? `${rangeLabel(r)} · ${part!.invert ? "not " : ""}${label}` : rangeLabel(r);
 };
 export function zonePartOf(name: string): ZonePart | null {
   const m = /· (not )?(.+?)(?: \d+)?$/.exec(name);
-  const kind = m && ZONE_PARTS.find(([, l]) => l === m[2])?.[0];
-  return kind ? { kind, invert: !!m![1] } : null;
+  if (!m) return null;
+  const o = /^Object ([A-Z])$/.exec(m[2]);
+  const kind = o ? `object:${o[1]}` : ZONE_PARTS.find(([, l]) => l === m[2])?.[0];
+  return kind ? { kind, invert: !!m[1] } : null;
+}
+// the next object's kind, after the ones in `used`
+export function nextObjectKind(used: string[]): string | null {
+  for (let c = 65; c <= 90; c++) if (!used.includes(`object:${String.fromCharCode(c)}`)) return `object:${String.fromCharCode(c)}`;
+  return null;
 }
 export const samePart = (a: ZonePart | null, b: ZonePart | null) =>
   (!a && !b) || (!!a && !!b && a.kind === b.kind && a.invert === b.invert);

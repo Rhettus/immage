@@ -55,9 +55,9 @@ import type { ImportResult } from "@immporter/embed";
 import { MaskOverlay, type BrushSettings, type MaskTool, type ObjectPrompt } from "./MaskOverlay";
 import { MasksPanel, useDismiss, type AiKind, type ToolTarget } from "./MasksPanel";
 import { HealPanel } from "./HealPanel";
-import { LOCAL_TRANSITION, ZoneAdjust, ZoneSystem, type ZoneMaskInfo } from "./ZoneSystem";
+import { LOCAL_TRANSITION, ObjectBox, ZoneAdjust, ZoneSystem, type ZoneMaskInfo } from "./ZoneSystem";
 import { DEFAULT_TRANSITION, loadZoneOverlay, offsetsOf, overlayRgb, paintRange, paintWeights, parseZones, placeIds,
-         placeTable,
+         placeTable, nextObjectKind, partLabel,
          rangeCenter, samePart, saveZoneOverlay, ZONE_PARTS, zoneAt, zoneMaskName, zoneOfMask, zonePartOf, zoneShape,
          type ZoneData, type ZoneOverlay, type ZonePart, type ZoneRange } from "./zones";
 import { SpotOverlay, type SpotTool } from "./SpotOverlay";
@@ -1486,9 +1486,17 @@ export default function App() {
   // outlines found for this photo so far, by kind
   const [zonePart, setZonePart] = useState<ZonePart | null>(null);
   const [zoneAiPaths, setZoneAiPaths] = useState<Record<string, ObjectShape["paths"]>>({});
+  // a new object being boxed on the photo
+  const [zoneBoxing, setZoneBoxing] = useState(false);
+  const zoneBoxingRef = useRef(false);
+  zoneBoxingRef.current = zoneBoxing;
   useEffect(() => {
     setZoneData(null); setZonePinned(null); setZoneError(null); setZonePart(null); setZoneAiPaths({});
+    setZoneBoxing(false);
   }, [current]);
+  useEffect(() => { if (!zonesOpen) setZoneBoxing(false); }, [zonesOpen]);
+  // its layer may come without the overlay's, which places it otherwise
+  useEffect(() => { if (zoneBoxing) placeLayers(); }, [zoneBoxing]);   // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const s = session.current, f = full.current;
     if (!s || !f || !zonesOpen) return;
@@ -1534,13 +1542,30 @@ export default function App() {
     return null;
   };
   const pickZonePart = (kind: string | null, invert: boolean) => {
+    setZoneBoxing(false);
     if (!kind) { setZonePart(null); return; }
     if (partPaths(kind)) { setZonePart({ kind, invert }); return; }
     const a = AI_KINDS[kind as AiKind];
+    if (!a) return;
     void runAi(a.model, a.working, () => invoke<ObjectShape["paths"]>("ai_mask", { kind: a.kind }), (paths) => {
       setZoneAiPaths((old) => ({ ...old, [kind]: paths }));
       setZonePart({ kind, invert });
     });
+  };
+  // the objects boxed on this photo so far, or kept by its zone masks
+  const zoneObjects = [...new Set([...Object.keys(zoneAiPaths), ...zoneMasks.flatMap((z) => (z.part ? [z.part.kind] : []))])]
+    .filter((k) => k.startsWith("object:")).sort();
+  const boxZoneObject = (prompt: ObjectPrompt) => {
+    setZoneBoxing(false);
+    const kind = nextObjectKind(zoneObjects);
+    if (!kind) { setStatus("no more objects on this photo"); return; }
+    const invert = zonePart?.invert ?? false;
+    void runAi("mask-object-sam21-small", "finding the object…",
+      () => invoke<ObjectShape["paths"]>("ai_object", { points: prompt.points ?? [], box: prompt.box ?? null }),
+      (paths) => {
+        setZoneAiPaths((old) => ({ ...old, [kind]: paths }));
+        setZonePart({ kind, invert });
+      });
   };
   // an edit of a run of zones' adjustment, its mask made on first use, in
   // the one undo step; narrowed to the chosen part of the photo, the AI
@@ -3755,6 +3780,7 @@ export default function App() {
       if ((e.key === "w" || e.key === "W") && session.current) { setPicking(!pickingRef.current); return; }
       if (healModeRef.current && healKeyRef.current(e)) return;
       // O shows or hides the pinned zones' overlay, as it does a mask's
+      if (zoneBoxingRef.current && e.key === "Escape") { setZoneBoxing(false); return; }
       if (zonesModeRef.current && (e.key === "o" || e.key === "O")) {
         setZoneOverlayState((o) => { const next = { ...o, show: !o.show }; saveZoneOverlay(next); return next; });
         return;
@@ -4118,9 +4144,10 @@ export default function App() {
                              onCreate={createShape} />
               </div>
             )}
-            {zoneShown && full.current && (
+            {(zoneShown || zoneBoxing) && full.current && (
               <div className="mask-box" ref={zoneBox}>
-                <canvas ref={zoneCanvas} className="mask-tint zone-tint" />
+                {zoneShown && <canvas ref={zoneCanvas} className="mask-tint zone-tint" />}
+                {zoneBoxing && <ObjectBox onPrompt={boxZoneObject} />}
               </div>
             )}
             {maskOp && full.current && (
@@ -4432,8 +4459,8 @@ export default function App() {
                               }}
                               onPlace={(next) => changeMany(placeIds.map((id, i) => [id, Math.round(next[i] * 1000) / 1000]))}
                               zoneMasks={zoneMasks} selected={zoneMaskOf(zonePinned)}
-                              part={zonePart} parts={ZONE_PARTS} partBusy={aiBusy}
-                              onPart={pickZonePart}
+                              part={zonePart} parts={[...ZONE_PARTS, ...zoneObjects.map((k): [string, string] => [k, partLabel(k)!])]}
+                              partBusy={aiBusy} onPart={pickZonePart} boxing={zoneBoxing} onBoxing={setZoneBoxing}
                               onLocal={(r, id, v) => zoneEdit(r, id, (s, n) => {
                                 adjusted();
                                 s.setLocal(n, id, v);

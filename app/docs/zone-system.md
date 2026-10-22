@@ -193,6 +193,10 @@ the pinned zones:
 - **Sky**, **Rocks**, **Vegetation**, **Subject**: a part Immage's AI finds
   in the photo. It looks at the photo's original colors, so it can tell a
   gray sky from gray rock even when they share a zone.
+- **+ Object**: any one thing in the photo. Click **+ Object**, then drag
+  a box around the object on the photo, or click it, and the AI outlines
+  what is there (**Esc** cancels). Each object gets a button of its own,
+  **Object A**, **Object B** and so on, for choosing it again.
 - **everything but it**: appears once you've chosen a part, and selects the
   rest of the photo instead (for example, zone V everywhere except the sky)
 
