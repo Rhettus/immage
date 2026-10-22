@@ -67,6 +67,7 @@ const m = await import("../app/src/manifest.ts");
 const { canMerge } = await import("../app/src/localMerge.ts");
 const { overlayShown, overlayStep } = await import("../app/src/masks.ts");
 const { ILLUMINANT_D } = await import("../app/src/wb.ts");
+const z = await import("../app/src/zones.ts");
 const { compare, meanChroma, inEllipse, rightOf } = await import("./metrics.mjs");
 const { THRESHOLD, GLOBAL, COMPOSITE, LOCAL, trialValues, judge } = await import("./expect.mjs");
 
@@ -363,6 +364,21 @@ async function restart() {
 const drained = () => request({ cmd: "version" });
 
 const brighter = (f, ref, region = null) => judge({ expect: { lum: 1 } }, compare(f, ref, region), 1);
+
+// a region of the pixels well inside an AI object's outlines (`inside`), or
+// well outside them: even-odd over the paths' corners, the same answer 2%
+// of the frame either way. masks.ts's maskAt() needs a canvas, which Node
+// lacks
+function inPaths(paths, inside) {
+  const polys = paths.map((p) => p.points.map((c) => [c[0], c[1]]));
+  const at = (x, y) => {
+    let c = false;
+    for (const P of polys) for (let i = 0, j = P.length - 1; i < P.length; j = i++)
+      if ((P[i][1] > y) !== (P[j][1] > y) && x < ((P[j][0] - P[i][0]) * (y - P[i][1])) / (P[j][1] - P[i][1]) + P[i][0]) c = !c;
+    return c;
+  };
+  return (x, y) => [[0, 0], [0.02, 0], [-0.02, 0], [0, 0.02], [0, -0.02]].every(([a, b]) => at(x + a, y + b) === inside);
+}
 
 // a zip of `files` ({ name: text }), stored, as a .dtmodel is laid out
 function zip(files) {
@@ -836,6 +852,46 @@ async function decisions(photo) {
     const wrong = cases.filter(([, got, want]) => got !== want).map(([label]) => label);
     return wrong.length ? `not so: ${wrong.join(", ")}` : null;
   });
+
+  // the Zone System's Color mask narrows a zone mask to an object boxed on
+  // the photo, as it does to Sky, and the mask keeps the object in its name
+  // and shapes (zone-system.md, Color mask). on the first photo only: it
+  // encodes the photo with SAM on the CPU
+  const SAM = "mask-object-sam21-small", OBJECT = "a zone mask narrowed to an object";
+  if (photo === args.photos[0]) {
+    if (!args.models || !existsSync(join(args.models, SAM, "config.json"))) {
+      record({ check: "decisions", photo: basename(photo), id: OBJECT, status: "skip",
+               detail: `no ${SAM} in build/ai-models: use Select Object once in a dev build` });
+    } else await decide(OBJECT, async () => {
+      // an engine of its own, so the others' config never has AI on
+      await stopEngine();
+      startEngine(args.engine, join(args.work, "ai-engine"), args.models);
+      try {
+        const path = fresh(photo);
+        let o = await open(path);
+        const paths = await invoke("ai_object", { points: [], box: [0.3, 0.3, 0.7, 0.7] });
+        if (!paths?.length) return "Select Object found nothing in the middle of the photo";
+        const name = z.zoneMaskName([0, 10], { kind: "object:A", invert: false });
+        await o.after(() => o.s.addMask(name, [z.zoneShape([0, 10], 1), { type: "object", paths, mode: "add" }]));
+        const f = await o.after(() => o.s.setLocal(name, "l_exposure", 1));
+        const err = brighter(f, o.base, inPaths(paths, true));
+        if (err) return `inside the object: ${err}`;
+        const out = compare(f, o.base, inPaths(paths, false));
+        if (!(out.mad <= THRESHOLD.outside)) return `outside the object, the photo changed (mean |Δ| ${out.mad})`;
+        await o.s.close();
+        await drained();
+        o = await open(path);
+        const back = o.s.masks.find((x) => x.name === name);
+        await o.s.close();
+        const part = back && z.zonePartOf(back.name);
+        return part?.kind !== "object:A" ? `opened again, ${name} reads as ${JSON.stringify(part ?? back?.name ?? null)}`
+          : !back.shapes.some((s) => s.type === "object") || !z.zoneOfMask(back) ? "opened again, the mask lost its object or its zones"
+          : null;
+      } finally {
+        await restart();
+      }
+    });
+  }
 }
 
 // each option of each of Preferences › Modules' choices that isn't the
