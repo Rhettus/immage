@@ -825,6 +825,38 @@ async function decisions(photo) {
       : moved.hash === o.base.hash ? "a changed edit rendered with the same hash" : null;
   });
 
+  // Preferences' exposure compensation goes on a raw's own exposure
+  // instance, as App.tsx's new-photo defaults set it: Exposure still reads 0,
+  // its moves add to the compensation, and the photo keeps both (user guide,
+  // Preferences › New photos)
+  const COMP = "exposure compensation adds under Exposure";
+  const path = fresh(photo);
+  let o = await open(path);
+  if (!o.s.raw) {
+    await o.s.close();
+    record({ check: "decisions", photo: basename(photo), id: COMP, status: "skip", detail: "raws only" });
+  } else await decide(COMP, async () => {
+    const comp = await o.after(() => o.s.setMany([["exp_comp", 1]]));
+    if (Math.abs(o.s.values.exposure) > 1e-6) return `with the compensation, Exposure reads ${o.s.values.exposure}`;
+    const err = brighter(comp, o.base);
+    if (err) return `the compensation: ${err}`;
+    const both = await o.after(() => { o.s.endBaseline(); o.s.set("exposure", 0.5); });
+    await o.s.close();
+    await drained();
+    const p = await open(fresh(photo));
+    const alone = await p.after(() => { p.s.endBaseline(); p.s.set("exposure", 1.5); });
+    await p.s.close();
+    const by = compare(both, alone).mad;
+    if (by > THRESHOLD.roundtrip) return `+1 EV compensation and Exposure +0.5 differ from Exposure +1.5 (mean |Δ| ${by})`;
+    o = await open(path);
+    const { exposure, exp_comp } = o.s.values;
+    const row = o.s.history.find((h) => h.op === "exposure" && h.label === "compensation");
+    await o.s.close();
+    return Math.abs(exposure - 0.5) > 0.005 || Math.abs(exp_comp - 1) > 0.005
+      ? `opened again, Exposure reads ${exposure} and the compensation ${exp_comp}`
+      : !row ? "opened again, the history has no compensation row" : null;
+  });
+
   if (photo !== args.photos[0]) return;
 
   // Default in Preferences › Modules is darktable's AgX workflow (README)

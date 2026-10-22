@@ -41,7 +41,7 @@ import { Tour, tourSeen } from "./Tour";
 import { UpdateBanner } from "./UpdateBanner";
 import { autoCheck } from "./updates";
 import { Chevron, Collapse } from "./Collapse";
-import { loadAutoHide, loadAutoToneNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadNewPhotosProfile, loadOverlayColor, loadPins, maskOverlayRgb, loadPreview, loadSliderScroll, loadSliderScrollStep,
+import { loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadNewPhotosProfile, loadOverlayColor, loadPins, maskOverlayRgb, loadPreview, loadSliderScroll, loadSliderScrollStep,
          loadStackPairs,
          PreferencesDialog, storeOverlayColor, storeStackPairs,
          storeAutoHide, storeCanvas, CANVASES, storeFocusMode, storePins, type AccelProvider, type Canvas,
@@ -861,9 +861,10 @@ export default function App() {
     record(["reset"]);
     holdRecord.current = true;
     try {
-      // the modules and profile are the photo's own, not adjustments; the
-      // orientation stays too, as in Lightroom
-      changeMany(Object.entries(s.neutral).filter(([id]) => !isModuleSetting(id) && id !== "profile" && id !== "orient"));
+      // the modules, profile and exposure compensation are the photo's own,
+      // not adjustments; the orientation stays too, as in Lightroom
+      changeMany(Object.entries(s.neutral).filter(([id]) => !isModuleSetting(id) && id !== "profile"
+                                                            && id !== "exp_comp" && id !== "orient"));
       if (s.look) applyLook(null);
       for (const m of s.masks) s.deleteMask(m.name);
       if (s.spots.length) s.setSpots([]);
@@ -2810,6 +2811,14 @@ export default function App() {
         base.push({ op: "profile", name: profileLabel(profile).toLowerCase(),
                     label: "profile", enabled: true });
       }
+      // and a raw with Preferences' exposure compensation, on an instance of
+      // its own (exp_comp), so Exposure still reads 0 and adds to it
+      const comp = loadExposureCompNew();
+      if (!s.wasEdited && s.raw && comp) {
+        s.setMany([["exp_comp", comp]]);
+        base.push({ op: "exposure", name: "exposure",
+                    label: `compensation ${comp > 0 ? "+" : ""}${comp.toFixed(2)} EV`, enabled: true });
+      }
       // a raw starts with darktable's capture sharpening, and without noise
       // reduction, which the AgX workflow adds only where a photo needs it;
       // the preset or an Edit In return below may set them again
@@ -3044,6 +3053,11 @@ export default function App() {
     setHistoryRev((n) => n + 1);
   };
 
+  // what the Before view keeps of the edit: the crop, the modules chosen,
+  // the orientation, and the exposure compensation a raw started with, which
+  // corrects the camera rather than adjusting the photo
+  const keptBefore = (id: string) => id.startsWith("crop_") || isModuleSetting(id) || id === "orient"
+    || id === "exp_comp";
   // the before/after views (Y cycles them): the before is a render with the
   // Before view's settings, kept on a layer of its own beside the edit,
   // clipped at a divider that can be dragged, or shown while the photo is
@@ -3062,7 +3076,7 @@ export default function App() {
   const captureBefore = (delay = 0) => {
     window.clearTimeout(captureTimer.current);
     captureTimer.current = window.setTimeout(() => {
-      if (baModeRef.current !== "off") session.current?.showBefore((id) => id.startsWith("crop_") || isModuleSetting(id) || id === "orient");
+      if (baModeRef.current !== "off") session.current?.showBefore(keptBefore);
     }, delay);
   };
   const setBaMode = (mode: BaMode) => {
@@ -3169,7 +3183,7 @@ export default function App() {
     beforeRef.current = on;
     setBeforeState(on);
     baseStale.current = true;
-    session.current.showBefore(on ? (id) => id.startsWith("crop_") || isModuleSetting(id) || id === "orient" : null);
+    session.current.showBefore(on ? keptBefore : null);
   };
   const leaveBefore = () => setBefore(false);
   // the key handler is installed once; it reaches the latest of this

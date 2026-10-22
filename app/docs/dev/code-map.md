@@ -108,7 +108,7 @@ are `localStorage` keys named `immage.*`.
 | `currentView` | the `View` asked for: fitted to the viewer (capped at `MAX_PREVIEW`), a zoomed window, or a half-size draft while dragging |
 | `paintFrame` / `drawFrame` | a `Frame` onto the canvas; the histogram; `showOverview` for a whole-image frame (base layer, navigator) |
 | `animateTo`, `setZoom` | eased zoom; renders wait until it settles |
-| `openFile` / `openEntry` | open a photo: `Session.open`, then the new-photo defaults (tone mapper, profile, preset, Edit In returns) |
+| `openFile` / `openEntry` | open a photo: `Session.open`, then the new-photo defaults (tone mapper, profile, exposure compensation, preset, Edit In returns) |
 | `change` / `changeMany` | every control edit: undo step, `values` state, `Session.set` |
 | undo (`record`, `restore`, `Snap`) | snapshots of values, masks, spots and look |
 | before/after, compare | `setBaMode`, `setBefore` (`Session.showBefore`), `toggleCompare` |
@@ -313,7 +313,7 @@ darktable is, and it has AI features when darktable is configured with
    1. `openFile` in App.tsx calls `Session.open`.
    2. That sends `open_image`, which reaches the engine's `open`: import into the in-memory library (reading an existing sidecar), `dt_dev_load_image`, build the main pipe on the full raw.
    3. It then calls `get_params` for every mapped field, and each `ModuleMap.read` turns them into control values. `history`, `masks` and `spots` follow.
-   4. A never-edited raw then gets the new-photo defaults: tone mapper, profile, color noise reduction, the new-photos preset.
+   4. A never-edited raw then gets the new-photo defaults: tone mapper, profile, exposure compensation (an exposure instance of its own), color noise reduction, the new-photos preset.
 2. **Move a slider.**
    1. `Slider` calls `change()`, which records an undo step, updates `values` and calls `Session.set`.
    2. `pump()` sends `set_params` for each dirty module, then `render` for `currentView()`. Moves made meanwhile only mark modules dirty, so the next round sends the latest values once.
