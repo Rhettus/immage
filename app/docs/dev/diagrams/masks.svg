@@ -1,0 +1,129 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="20 -20 1850 1620" width="1850" height="1620" font-family="-apple-system, Helvetica, Arial, sans-serif">
+<defs><marker id="h" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#343a40"/></marker></defs>
+<rect x="20" y="-20" width="1850" height="1620" fill="#ffffff"/>
+<rect x="40" y="60" width="340" height="1422" rx="12" fill="#dbe4ff" fill-opacity="0.6" stroke="#1971c2" stroke-width="1"/>
+<text x="54.0" y="78.0" font-size="17" fill="#1971c2" text-anchor="start" dominant-baseline="middle" font-weight="600">Immage: the mask's sliders</text>
+<rect x="500" y="60" width="420" height="1422" rx="12" fill="#d3f9d8" fill-opacity="0.6" stroke="#2f9e44" stroke-width="1"/>
+<text x="514.0" y="78.0" font-size="17" fill="#2f9e44" text-anchor="start" dominant-baseline="middle" font-weight="600">darktable pixelpipe, top to bottom</text>
+<rect x="1040" y="60" width="340" height="1422" rx="12" fill="#d3f9d8" fill-opacity="0.6" stroke="#2f9e44" stroke-width="1"/>
+<text x="1054.0" y="78.0" font-size="17" fill="#2f9e44" text-anchor="start" dominant-baseline="middle" font-weight="600">darktable masks</text>
+<polyline points="360.0,282.0 520.0,282.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="360.0,410.0 520.0,410.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="360.0,858.0 520.0,858.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="360.0,922.0 520.0,922.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="360.0,986.0 520.0,986.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="360.0,1050.0 520.0,1050.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="360.0,1114.0 520.0,1114.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="360.0,1178.0 520.0,1178.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="360.0,1370.0 520.0,1370.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="1060.0,809.5 900.0,282.0" fill="none" stroke="#343a40" stroke-width="1.6" stroke-dasharray="7 5" marker-end="url(#h)"/>
+<polyline points="1060.0,809.5 900.0,410.0" fill="none" stroke="#343a40" stroke-width="1.6" stroke-dasharray="7 5" marker-end="url(#h)"/>
+<polyline points="1060.0,858.0 900.0,858.0" fill="none" stroke="#343a40" stroke-width="1.6" stroke-dasharray="7 5" marker-end="url(#h)"/>
+<polyline points="1060.0,908.5 900.0,922.0" fill="none" stroke="#343a40" stroke-width="1.6" stroke-dasharray="7 5" marker-end="url(#h)"/>
+<polyline points="1060.0,908.5 900.0,986.0" fill="none" stroke="#343a40" stroke-width="1.6" stroke-dasharray="7 5" marker-end="url(#h)"/>
+<polyline points="1060.0,908.5 900.0,1050.0" fill="none" stroke="#343a40" stroke-width="1.6" stroke-dasharray="7 5" marker-end="url(#h)"/>
+<polyline points="1060.0,908.5 900.0,1114.0" fill="none" stroke="#343a40" stroke-width="1.6" stroke-dasharray="7 5" marker-end="url(#h)"/>
+<polyline points="1060.0,908.5 900.0,1178.0" fill="none" stroke="#343a40" stroke-width="1.6" stroke-dasharray="7 5" marker-end="url(#h)"/>
+<polyline points="1060.0,908.5 900.0,1370.0" fill="none" stroke="#343a40" stroke-width="1.6" stroke-dasharray="7 5" marker-end="url(#h)"/>
+<text x="40.0" y="14.0" font-size="28" fill="#1e1e1e" text-anchor="start" dominant-baseline="middle" font-weight="600">Immage: one mask, and where its sliders run in darktable's pipe</text>
+<rect x="60" y="120" width="300" height="68" rx="10" fill="#a5d8ff" stroke="#1971c2" stroke-width="2"/>
+<text x="210.0" y="145.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">Mask "Sky"</text>
+<text x="210.0" y="162.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">one mask, every slider on it</text>
+<rect x="520" y="130" width="380" height="48" rx="10" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2"/>
+<text x="710.0" y="154.0" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">rawprepare · demosaic</text>
+<rect x="520" y="194" width="380" height="48" rx="10" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2"/>
+<text x="710.0" y="209.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">denoise (profiled)</text>
+<text x="710.0" y="226.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">global Noise Reduction</text>
+<rect x="520" y="258" width="380" height="48" rx="10" fill="#d0bfff" stroke="#6741d9" stroke-width="2"/>
+<text x="710.0" y="273.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">denoise (profiled) · "Sky"</text>
+<text x="710.0" y="290.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">stays here: the noise profile fits only this data</text>
+<rect x="60" y="258.0" width="300" height="48" rx="10" fill="#a5d8ff" stroke="#1971c2" stroke-width="2"/>
+<text x="210.0" y="282.0" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">Noise</text>
+<rect x="520" y="322" width="380" height="48" rx="10" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2"/>
+<text x="710.0" y="337.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">haze removal</text>
+<text x="710.0" y="354.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">global Dehaze</text>
+<rect x="520" y="386" width="380" height="48" rx="10" fill="#d0bfff" stroke="#6741d9" stroke-width="2"/>
+<text x="710.0" y="401.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">haze removal · "Sky"</text>
+<text x="710.0" y="418.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">stays here: later, its light estimate fails</text>
+<rect x="60" y="386.0" width="300" height="48" rx="10" fill="#a5d8ff" stroke="#1971c2" stroke-width="2"/>
+<text x="210.0" y="410.0" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">Dehaze</text>
+<rect x="520" y="450" width="380" height="48" rx="10" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2"/>
+<text x="710.0" y="465.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">exposure</text>
+<text x="710.0" y="482.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">global Exposure</text>
+<rect x="520" y="514" width="380" height="48" rx="10" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2"/>
+<text x="710.0" y="529.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">tone equalizer</text>
+<text x="710.0" y="546.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">global Highlights, Shadows</text>
+<rect x="520" y="578" width="380" height="48" rx="10" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2"/>
+<text x="710.0" y="593.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">color calibration</text>
+<text x="710.0" y="610.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">global White Balance</text>
+<rect x="520" y="642" width="380" height="48" rx="10" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2"/>
+<text x="710.0" y="657.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">diffuse or sharpen</text>
+<text x="710.0" y="674.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">global Texture</text>
+<rect x="520" y="706" width="380" height="48" rx="10" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2"/>
+<text x="710.0" y="721.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">color equalizer</text>
+<text x="710.0" y="738.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">global HSL</text>
+<rect x="520" y="770" width="380" height="48" rx="10" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2"/>
+<text x="710.0" y="785.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">color balance rgb  ◆ mask anchor</text>
+<text x="710.0" y="802.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">global Vibrance, Saturation, Color Grading</text>
+<rect x="520" y="834" width="380" height="48" rx="10" fill="#d0bfff" stroke="#6741d9" stroke-width="2"/>
+<text x="710.0" y="858.0" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">color calibration · "Sky"</text>
+<rect x="60" y="834.0" width="300" height="48" rx="10" fill="#a5d8ff" stroke="#1971c2" stroke-width="2"/>
+<text x="210.0" y="858.0" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">Temp · Tint</text>
+<rect x="520" y="898" width="380" height="48" rx="10" fill="#d0bfff" stroke="#6741d9" stroke-width="2"/>
+<text x="710.0" y="922.0" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">exposure · "Sky"</text>
+<rect x="60" y="898.0" width="300" height="48" rx="10" fill="#a5d8ff" stroke="#1971c2" stroke-width="2"/>
+<text x="210.0" y="922.0" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">Exposure · Blacks</text>
+<rect x="520" y="962" width="380" height="48" rx="10" fill="#d0bfff" stroke="#6741d9" stroke-width="2"/>
+<text x="710.0" y="986.0" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">tone equalizer · "Sky"</text>
+<rect x="60" y="962.0" width="300" height="48" rx="10" fill="#a5d8ff" stroke="#1971c2" stroke-width="2"/>
+<text x="210.0" y="986.0" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">Highlights · Shadows</text>
+<rect x="520" y="1026" width="380" height="48" rx="10" fill="#d0bfff" stroke="#6741d9" stroke-width="2"/>
+<text x="710.0" y="1050.0" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">diffuse or sharpen · "Sky"</text>
+<rect x="60" y="1026.0" width="300" height="48" rx="10" fill="#a5d8ff" stroke="#1971c2" stroke-width="2"/>
+<text x="210.0" y="1050.0" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">Texture</text>
+<rect x="520" y="1090" width="380" height="48" rx="10" fill="#d0bfff" stroke="#6741d9" stroke-width="2"/>
+<text x="710.0" y="1114.0" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">color equalizer · "Sky"</text>
+<rect x="60" y="1090.0" width="300" height="48" rx="10" fill="#a5d8ff" stroke="#1971c2" stroke-width="2"/>
+<text x="210.0" y="1114.0" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">HSL / Color</text>
+<rect x="520" y="1154" width="380" height="48" rx="10" fill="#d0bfff" stroke="#6741d9" stroke-width="2"/>
+<text x="710.0" y="1178.0" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">color balance rgb · "Sky"</text>
+<rect x="60" y="1146.0" width="300" height="64" rx="10" fill="#a5d8ff" stroke="#1971c2" stroke-width="2"/>
+<text x="210.0" y="1169.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">Contrast · Whites</text>
+<text x="210.0" y="1186.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">Saturation · Hue · Grading</text>
+<rect x="520" y="1218" width="380" height="48" rx="10" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2"/>
+<text x="710.0" y="1233.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">AgX or sigmoid (tone mapper)</text>
+<text x="710.0" y="1250.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">global Contrast, Whites, Blacks; never masked</text>
+<rect x="520" y="1282" width="380" height="48" rx="10" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2"/>
+<text x="710.0" y="1297.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">local contrast</text>
+<text x="710.0" y="1314.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">global Clarity</text>
+<rect x="520" y="1346" width="380" height="48" rx="10" fill="#d0bfff" stroke="#6741d9" stroke-width="2"/>
+<text x="710.0" y="1361.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">local contrast · "Sky"</text>
+<text x="710.0" y="1378.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">already after the anchor: stays</text>
+<rect x="60" y="1346.0" width="300" height="48" rx="10" fill="#a5d8ff" stroke="#1971c2" stroke-width="2"/>
+<text x="210.0" y="1370.0" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">Clarity</text>
+<rect x="520" y="1410" width="380" height="48" rx="10" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2"/>
+<text x="710.0" y="1434.0" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">vignette · grain · output</text>
+<rect x="1060" y="804" width="300" height="110" rx="10" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2"/>
+<text x="1210.0" y="841.5" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">mask group "immage: Sky"</text>
+<text x="1210.0" y="859.0" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">drawn shapes: AI sky path,</text>
+<text x="1210.0" y="876.5" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">linear gradient</text>
+<rect x="1060" y="1080" width="300" height="110" rx="10" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2"/>
+<text x="1210.0" y="1117.5" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">Color / Luminance Range</text>
+<text x="1210.0" y="1135.0" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">parametric (blendif) mask,</text>
+<text x="1210.0" y="1152.5" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">set on each instance</text>
+<rect x="1060" y="194" width="300" height="48" rx="10" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2"/>
+<text x="1210.0" y="218.0" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">module the photo has anyway</text>
+<rect x="1060" y="266" width="300" height="56" rx="10" fill="#d0bfff" stroke="#6741d9" stroke-width="2"/>
+<text x="1210.0" y="285.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">instance Immage adds for the</text>
+<text x="1210.0" y="302.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">mask, named after it</text>
+<rect x="1060" y="1228" width="300" height="190" rx="10" fill="#fff3bf" stroke="#f08c00" stroke-width="2"/>
+<text x="1210.0" y="1279.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">masks with the same slider</text>
+<text x="1210.0" y="1296.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">share one instance</text>
+<text x="1210.0" y="1314.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">("immage local: ...") on a</text>
+<text x="1210.0" y="1331.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">combined mask ("immage</text>
+<text x="1210.0" y="1349.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">combined: ..."), so ten masks</text>
+<text x="1210.0" y="1366.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">are not ten copies</text>
+<text x="40.0" y="1516.0" font-size="14" fill="#495057" text-anchor="start" dominant-baseline="middle" font-weight="normal">A mask's instances run right after color balance rgb, in linear scene-referred data, before the tone mapper: a local +1 EV is exposure's +1 EV under the mask, and AgX maps it with the rest of the photo.</text>
+<text x="40.0" y="1542.0" font-size="14" fill="#495057" text-anchor="start" dominant-baseline="middle" font-weight="normal">The order is fixed: Immage places every instance and the user cannot move modules. darktable opens the same XMP and shows each instance as an ordinary module with its drawn mask.</text>
+<text x="40.0" y="1568.0" font-size="14" fill="#495057" text-anchor="start" dominant-baseline="middle" font-weight="normal">Sharpening and Defringe follow the same pattern (sharpen or a second diffuse; chromatic aberrations or defringe), on the module the photo's global setting uses.</text>
+</svg>

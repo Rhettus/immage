@@ -22,6 +22,7 @@ Diagrams of the same ground:
 - [data flow](diagrams/dataflow.svg)
 - [entities](diagrams/entities.svg)
 - [one slider move](diagrams/slider-sequence.svg)
+- [one mask in darktable's pipe](diagrams/masks.svg)
 
 The editable sources are `.excalidraw` files in [`diagrams/`](diagrams/).
 Paths below are relative to this file.
@@ -32,7 +33,7 @@ Paths below are relative to this file.
 |---|---|---|
 | Remap a slider, or add one to an existing panel | `modules` and `panels` in [manifest.ts](../../src/manifest.ts) | the module's math file ([wb.ts](../../src/wb.ts), [tonecurve.ts](../../src/tonecurve.ts), ...), and [lib/edits.mjs](../../../benchmarking/lib/edits.mjs), which reads the manifest for the benchmark |
 | A new panel or section | `panels` in [manifest.ts](../../src/manifest.ts) | `PanelView` in [App.tsx](../../src/App.tsx) for a custom graph; [CopySettings.tsx](../../src/CopySettings.tsx) groups |
-| A per-mask (local) adjustment | `LOCAL_CONTROLS` and `localMaps` in [manifest.ts](../../src/manifest.ts) (`merge` and `fixed` for a module masks share) | [MasksPanel.tsx](../../src/MasksPanel.tsx), [localMerge.ts](../../src/localMerge.ts); the engine's `_named_instance`, `_attach_mask` and `_combine` |
+| A per-mask (local) adjustment | [masks.md](masks.md) for the design; `LOCAL_CONTROLS` and `localMaps` in [manifest.ts](../../src/manifest.ts) (`merge` and `fixed` for a module masks share) | [MasksPanel.tsx](../../src/MasksPanel.tsx), [localMerge.ts](../../src/localMerge.ts); the engine's `_named_instance`, `_attach_mask` and `_combine` |
 | A new mask shape or kind | [masks.ts](../../src/masks.ts) (`Shape`) | [MaskOverlay.tsx](../../src/MaskOverlay.tsx), `Session.addMask`, the engine's `_shape` / `_mask` |
 | A new engine command | `_handle()` in [main.c](../../../engine/main.c) | a `#[tauri::command]` in [main.rs](../../src-tauri/src/main.rs), registered in `invoke_handler`; the caller in [session.ts](../../src/session.ts) or [App.tsx](../../src/App.tsx) |
 | Rendering, frames, zoom | `Session.pump` / `renderView` in [session.ts](../../src/session.ts) | `currentView`, `paintFrame`, `animateTo` in [App.tsx](../../src/App.tsx); `render` in [main.rs](../../src-tauri/src/main.rs); `_render` in [main.c](../../../engine/main.c) |
