@@ -65,6 +65,7 @@ const { Session } = await import("../app/src/session.ts");
 const { withModel } = await import("../app/src/aiModel.ts");
 const m = await import("../app/src/manifest.ts");
 const { canMerge } = await import("../app/src/localMerge.ts");
+const { overlayShown, overlayStep } = await import("../app/src/masks.ts");
 const { ILLUMINANT_D } = await import("../app/src/wb.ts");
 const { compare, meanChroma, inEllipse, rightOf } = await import("./metrics.mjs");
 const { THRESHOLD, GLOBAL, COMPOSITE, LOCAL, trialValues, judge } = await import("./expect.mjs");
@@ -792,6 +793,26 @@ async function decisions(photo) {
     const wrong = cases.filter(([, mk, can]) => canMerge(mk) !== can)
       .map(([label, , can]) => `${label} ${can ? "cannot" : "can"} share`);
     return wrong.join(", ") || null;
+  });
+
+  // a brush adding to a mask shows its overlay, toggle or not, but O still
+  // hides it, and an adjustment hides it until the next stroke
+  // (masks.md, The mask list)
+  await decide("O and adjustments hide a brush's overlay", async () => {
+    const off = { on: false, hold: null };
+    const steps = (t, adding, ...evs) => evs.reduce((x, ev) => overlayStep(x, adding, ev), t);
+    const cases = [
+      ["a brush in hand shows it", overlayShown(off, true), true],
+      ["O hides it", overlayShown(steps(off, true, "key"), true), false],
+      ["O again shows it", overlayShown(steps(off, true, "key", "key"), true), true],
+      ["O hides it after a stroke", overlayShown(steps(off, true, "key", "stroke"), true), false],
+      ["an adjustment hides it", overlayShown(steps(off, true, "adjust"), true), false],
+      ["the next stroke shows it", overlayShown(steps(off, true, "adjust", "stroke"), true), true],
+      ["no tool in hand, O shows it", overlayShown(steps(off, false, "key"), false), true],
+      ["no tool in hand, an adjustment leaves it on", overlayShown(steps({ on: true, hold: null }, false, "adjust"), false), true],
+    ];
+    const wrong = cases.filter(([, got, want]) => got !== want).map(([label]) => label);
+    return wrong.length ? `not so: ${wrong.join(", ")}` : null;
   });
 }
 
