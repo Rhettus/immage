@@ -92,6 +92,10 @@ Updates), and offers to install it.
   `__EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/10_nvidia.json`
   for NVIDIA's own drawing. A real fix has to come from NVIDIA's driver or
   WebKitGTK
+- **Linux on a high-resolution Wayland screen**: sliders can be slow to
+  update on KDE Plasma at 200% scaling, where the window is drawn at
+  about 13 million pixels. The cause is in the window's drawing, not the
+  image processing, and is still being looked into
 
 ## Source
 
