@@ -283,9 +283,9 @@ async fn ai_object(state: State<'_, AppState>, points: Value, r#box: Option<Valu
 
 // darktable's AI models come from its model repository, in the release made
 // for this darktable version, as darktable's own download does
-// (src/common/ai_models.c). the system's curl downloads and its unzip, or
-// on Windows its tar, unpacks; Windows has no shasum, so the checksum is
-// taken here
+// (src/common/ai_models.c). they are downloaded here and the engine unpacks
+// them with darktable's libarchive, so no curl or unzip of the system's is
+// needed: a fresh Linux install can lack either (Arch has no unzip)
 const MODEL_REPO: &str = "darktable-org/darktable-ai";
 
 fn sha256_file(path: &Path) -> Result<String, String> {
@@ -294,21 +294,6 @@ fn sha256_file(path: &Path) -> Result<String, String> {
     let mut hasher = Sha256::new();
     std::io::copy(&mut file, &mut hasher).map_err(|e| format!("{}: {e}", path.display()))?;
     Ok(hasher.finalize().iter().map(|b| format!("{b:02x}")).collect())
-}
-
-// Windows' tar is bsdtar, which reads zip archives
-fn unpack(archive: &Path, dir: &Path) -> Result<bool, String> {
-    let mut cmd = if cfg!(windows) {
-        let mut c = std::process::Command::new("tar");
-        c.arg("-xf").arg(archive).arg("-C").arg(dir);
-        c
-    } else {
-        let mut c = std::process::Command::new("unzip");
-        c.args(["-q", "-o"]).arg(archive).arg("-d").arg(dir);
-        c
-    };
-    no_console(&mut cmd);
-    Ok(cmd.status().map_err(|e| format!("unpacking: {e}"))?.success())
 }
 
 // on Windows a console program gets a console window of its own unless
@@ -321,12 +306,44 @@ fn no_console(_cmd: &mut std::process::Command) {
     }
 }
 
+// the error, and whether trying again may help: a dropped connection or a
+// server's 5xx or 429 may, a 404 will not
+fn fetch_once(http: &reqwest::blocking::Client, url: &str, dest: &Path) -> Result<(), (String, bool)> {
+    let mut r = http.get(url).send().map_err(|e| (e.to_string(), true))?;
+    let status = r.status();
+    if !status.is_success() {
+        return Err((status.to_string(), status.is_server_error() || status.as_u16() == 429));
+    }
+    let mut file = std::fs::File::create(dest).map_err(|e| (format!("{}: {e}", dest.display()), false))?;
+    r.copy_to(&mut file).map(|_| ()).map_err(|e| (e.to_string(), true))
+}
+
+// tried three times. the timeout bounds each read
+// of the body (reqwest's blocking Response::read), not the whole download,
+// so only a stalled one gives up
 fn fetch(url: &str, dest: &Path) -> Result<(), String> {
-    let mut cmd = std::process::Command::new("curl");
-    cmd.args(["-fsSL", "--retry", "2", "-o"]).arg(dest).arg(url);
-    no_console(&mut cmd);
-    let ok = cmd.status().map_err(|e| format!("curl: {e}"))?.success();
-    if ok { Ok(()) } else { Err(format!("could not download {url}")) }
+    let http = reqwest::blocking::Client::builder()
+        .connect_timeout(Duration::from_secs(30))
+        .timeout(Duration::from_secs(60))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let mut last = String::new();
+    for attempt in 0..3u64 {
+        if attempt > 0 {
+            std::thread::sleep(Duration::from_secs(attempt));
+        }
+        match fetch_once(&http, url, dest) {
+            Ok(()) => return Ok(()),
+            Err((e, again)) => {
+                last = e;
+                if !again {
+                    break;
+                }
+            }
+        }
+    }
+    let _ = std::fs::remove_file(dest);
+    Err(format!("could not download {url}: {last}"))
 }
 
 fn read_json(path: &Path) -> Result<Value, String> {
@@ -353,8 +370,11 @@ fn model_release(compatible: &Value, short: &str) -> Result<String, String> {
 }
 
 // `progress` hears each stage ({ id, stage, mb? }); the app passes them on
-// to the window as "ai-model" events
-fn install_model(progress: &dyn Fn(Value), dir: &Path, id: &str, version: &str) -> Result<(), String> {
+// to the window as "ai-model" events. `unpack` unpacks an archive into a
+// folder: the engine's unpack
+type Unpack<'a> = &'a dyn Fn(&Path, &Path) -> Result<(), String>;
+
+fn install_model(progress: &dyn Fn(Value), unpack: Unpack, dir: &Path, id: &str, version: &str) -> Result<(), String> {
     let dl = dir.join("_dl");
     std::fs::create_dir_all(&dl).map_err(|e| e.to_string())?;
     // "5.7.0+1252~g0967d3653e" is release 5.7.0's. a checkout without
@@ -381,9 +401,10 @@ fn install_model(progress: &dyn Fn(Value), dir: &Path, id: &str, version: &str) 
         return Err(format!("the downloaded model '{id}' failed its checksum"));
     }
     progress(json!({ "id": id, "stage": "installing" }));
-    let ok = unpack(&archive, dir)?;
+    let unpacked = unpack(&archive, dir);
     let _ = std::fs::remove_file(&archive);
-    if !ok || !dir.join(id).join("config.json").exists() {
+    unpacked?;
+    if !dir.join(id).join("config.json").exists() {
         return Err(format!("could not unpack the model '{id}'"));
     }
     progress(json!({ "id": id, "stage": "ready" }));
@@ -467,10 +488,30 @@ async fn ai_model_ensure(app: AppHandle, state: State<'_, AppState>, id: String)
     let reply = state.engine().request(json!({ "cmd": "version" }))?;
     let version = reply["version"].as_str().unwrap_or("").to_string();
     tauri::async_runtime::spawn_blocking(move || {
-        install_model(&|v| { let _ = app.emit("ai-model", v); }, &dir, &id, &version)
+        let unpack = |archive: &Path, into: &Path| {
+            app.state::<AppState>().engine()
+                .request(json!({ "cmd": "unpack", "archive": archive, "dir": into }))
+                .map(|_| ())
+        };
+        install_model(&|v| { let _ = app.emit("ai-model", v); }, &unpack, &dir, &id, &version)
     })
         .await
         .map_err(|e| e.to_string())?
+}
+
+// an installed model the engine cannot load, deleted and downloaded again:
+// an unpack cut short leaves its config.json, which ai_model_ensure takes
+// for a whole model, so nothing else ever replaces it
+#[tauri::command]
+async fn ai_model_reinstall(app: AppHandle, state: State<'_, AppState>, id: String) -> Result<(), String> {
+    if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        return Err(format!("not a model id: {id}"));
+    }
+    match std::fs::remove_dir_all(state.models_dir.join(&id)) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.to_string()),
+        _ => {}
+    }
+    ai_model_ensure(app, state, id).await
 }
 
 // a one-click AI mask ("subject"): its outline, as ai_object replies.
@@ -777,12 +818,62 @@ fn machine_id() -> Option<String> {
     Some(hash.iter().take(6).map(|b| format!("{b:02x}")).collect())
 }
 
+// NVIDIA's EGL driver held each frame of WebKitGTK's page to about 72 ms,
+// and every reply to the page waited for one, on Wayland and X11 alike and
+// whichever way WebKit's DMA-BUF, compositing or NVIDIA's explicit sync
+// were set; with Mesa's EGL, which draws the page on the CPU there, a reply
+// took 2 ms and a Highlights drag frame 45 ms against 445 (GUI benchmark,
+// RTX 4070 Ti SUPER, driver 595, Ubuntu 26.04; WebKit bug 303811). so the
+// web view gets Mesa's when NVIDIA's driver is loaded and Mesa's is
+// installed, unless the user chose a vendor. `root` is "/" but in the tests
+#[cfg(any(target_os = "linux", test))]
+const EGL_VENDOR: &str = "__EGL_VENDOR_LIBRARY_FILENAMES";
+
+#[cfg(any(target_os = "linux", test))]
+fn mesa_egl(root: &Path) -> Option<PathBuf> {
+    if !root.join("proc/driver/nvidia").exists() {
+        return None;
+    }
+    ["usr/share/glvnd/egl_vendor.d/50_mesa.json", "etc/glvnd/egl_vendor.d/50_mesa.json"]
+        .iter().map(|p| root.join(p)).find(|p| p.exists())
+}
+
+// set when the web view was given Mesa's EGL, which the engine doesn't take
+#[cfg(target_os = "linux")]
+static WEBVIEW_MESA: AtomicBool = AtomicBool::new(false);
+
+// what decides how a frame reaches the screen on Linux: the session
+// (Wayland or X11) and desktop, and the GDK and WebKit settings, as this
+// process has them; an AppImage's start-up hooks can set some itself
+fn display_env() -> Value {
+    let var = |k: &str| std::env::var(k).ok();
+    let mut vars: Map<String, Value> = std::env::vars()
+        .filter(|(k, _)| k.starts_with("WEBKIT_") || k.starts_with("__GL_") || k.starts_with("__NV_")
+                || k.starts_with("__EGL_"))
+        .map(|(k, v)| (k, Value::String(v)))
+        .collect();
+    for k in ["GDK_BACKEND", "LIBGL_ALWAYS_SOFTWARE"] {
+        if let Some(v) = var(k) {
+            vars.insert(k.to_string(), Value::String(v));
+        }
+    }
+    json!({
+        "sessionType": var("XDG_SESSION_TYPE"),
+        "desktop": var("XDG_CURRENT_DESKTOP"),
+        "wayland": var("WAYLAND_DISPLAY").is_some(),
+        "x11": var("DISPLAY").is_some(),
+        "vars": vars,
+    })
+}
+
 // the machine a GUI benchmark ran on: a stable id to group reports by, and
 // what it is
 #[tauri::command]
-async fn perf_machine() -> Result<Value, String> {
+async fn perf_machine(state: State<'_, AppState>) -> Result<Value, String> {
     use sysinfo::{CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};
-    tauri::async_runtime::spawn_blocking(|| {
+    let opencl = state.engine().request(json!({ "cmd": "opencl" })).ok()
+        .map(|r| json!({ "running": r["running"], "devices": r["devices"] }));
+    tauri::async_runtime::spawn_blocking(move || {
         let sys = System::new_with_specifics(RefreshKind::nothing().with_cpu(CpuRefreshKind::nothing())
                                                  .with_memory(MemoryRefreshKind::nothing().with_ram()));
         json!({
@@ -793,6 +884,11 @@ async fn perf_machine() -> Result<Value, String> {
             "cpu": sys.cpus().first().map(|c| c.brand().trim().to_string()),
             "cores": sys.cpus().len(),
             "memoryGb": (sys.total_memory() as f64 / (1u64 << 30) as f64).round(),
+            "opencl": opencl,
+            "display": display_env(),
+            // the user agent's version is frozen; this is WebKitGTK's,
+            // WebView2's or WKWebView's own
+            "webview": tauri::webview_version().ok(),
         })
     })
     .await
@@ -1778,6 +1874,14 @@ fn launch_file(launch: State<'_, Launch>) -> Option<String> {
 }
 
 fn main() {
+    // before GTK and WebKit start, and before any other thread
+    #[cfg(target_os = "linux")]
+    if std::env::var_os(EGL_VENDOR).is_none() {
+        if let Some(mesa) = mesa_egl(Path::new("/")) {
+            std::env::set_var(EGL_VENDOR, mesa);
+            WEBVIEW_MESA.store(true, Ordering::Relaxed);
+        }
+    }
     let context = tauri::generate_context!();
     // the first argument naming a file; macOS adds -psn_... to apps it starts
     let arg = std::env::args_os().skip(1)
@@ -1839,7 +1943,7 @@ fn main() {
             open_folder, open_image, get_params, set_params, render, cancel_base, save, baseline_end, before_view, thumb, thumb_cached, cache_limits, cache_usage, cache_clear, meta, meta_set,
             export_images, export_existing, export_preview, fonts, export_presets_load, export_presets_save, preset_file_write, preset_file_read, presets_load, presets_save, looks_list, look_import, look_export, look_delete, look_apply, look_amount, preview,
             mask_shapes, combine, masks, mask_delete, mask_rename, history, sample, tone_key, agx_auto, upright, points, range_map, zones, mask_map, ai_object,
-            ai_model_ensure, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, list_subfolders, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
+            ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, list_subfolders, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
             immich_export_check, immich_search, immich_browse_check, immich_libraries, immich_suggestions, immich_people, immich_tags,
             immich_thumb, immich_resolve, launch_file, path_exists, path_kind, trash_files, create_virtual_copy, remove_virtual_copy, preview_fullscreen, about, licenses, engine_quit, keywords, keywords_set, ai_accel,
             perf_set, perf_modules, perf_report_write, perf_machine,
@@ -1889,6 +1993,30 @@ fn preview_fullscreen(app: AppHandle, on: bool) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mesa_egl_only_over_nvidia() {
+        let root = std::env::temp_dir().join(format!("immage-egl-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let touch = |p: &str| {
+            let p = root.join(p);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, "{}").unwrap();
+        };
+        // Mesa alone: an AMD or Intel system, whose EGL is Mesa's already
+        touch("etc/glvnd/egl_vendor.d/50_mesa.json");
+        assert_eq!(mesa_egl(&root), None);
+        touch("proc/driver/nvidia/version");
+        assert_eq!(mesa_egl(&root), Some(root.join("etc/glvnd/egl_vendor.d/50_mesa.json")));
+        touch("usr/share/glvnd/egl_vendor.d/50_mesa.json");
+        assert_eq!(mesa_egl(&root), Some(root.join("usr/share/glvnd/egl_vendor.d/50_mesa.json")));
+        // NVIDIA without Mesa's EGL: left to NVIDIA's
+        std::fs::remove_dir_all(root.join("usr")).unwrap();
+        std::fs::remove_dir_all(root.join("etc")).unwrap();
+        assert_eq!(mesa_egl(&root), None);
+        assert_eq!(EGL_VENDOR, "__EGL_VENDOR_LIBRARY_FILENAMES");
+        std::fs::remove_dir_all(&root).unwrap();
+    }
 
     #[test]
     fn machine_id_is_stable() {
@@ -1946,8 +2074,16 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("immage-models-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let log = |v: Value| eprintln!("{v}");
-        install_model(&log, &dir, "mask-object-sam21-small", "5.7.0+1~gtest").expect("darktable's model");
-        install_model(&log, &dir, "rawdenoise-nind", "5.7.0+1~gtest").expect("darktable's raw denoise model");
+        // the dev build's engine unpacks, as the app's does
+        let runtime = std::env::temp_dir().join(format!("immage-models-engine-{}", std::process::id()));
+        std::fs::create_dir_all(&runtime).unwrap();
+        let engine = std::sync::Mutex::new(Engine::spawn(
+            &repo_root().join("build/bin/darktable-engine"), &runtime, &dir).expect("the dev build's engine"));
+        let unpack = |archive: &Path, into: &Path| {
+            engine.lock().unwrap().request(json!({ "cmd": "unpack", "archive": archive, "dir": into })).map(|_| ())
+        };
+        install_model(&log, &unpack, &dir, "mask-object-sam21-small", "5.7.0+1~gtest").expect("darktable's model");
+        install_model(&log, &unpack, &dir, "rawdenoise-nind", "5.7.0+1~gtest").expect("darktable's raw denoise model");
         for m in EXTRA_MODELS {
             install_extra(&log, &dir, m).expect(m.id);
         }
@@ -1955,6 +2091,13 @@ mod tests {
                    "mask-scene-segformer-b2", "mask-depth-da2-small"] {
             assert!(dir.join(id).join("config.json").exists(), "{id} has no config.json");
         }
+        // a 404 is not tried again, and leaves no file
+        let missing = dir.join("missing");
+        let start = Instant::now();
+        assert!(fetch(&format!("https://github.com/{MODEL_REPO}/releases/download/none/none.dtmodel"), &missing).is_err());
+        assert!(start.elapsed() < Duration::from_secs(10) && !missing.exists());
+        drop(engine);
+        let _ = std::fs::remove_dir_all(&runtime);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

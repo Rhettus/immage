@@ -4,12 +4,15 @@
 // the release checks: the app's own Session (app/src/session.ts) driven
 // headless, every slider of every panel and of a mask moved and the frame
 // it renders measured. run by verify/run.py, with one JSON argument:
-//   { engine, work, photos: [path], colorJpeg: raw, checks: [name], controls: [id], references, accept,
+//   { engine, work, photos: [path], rendered: raw, checks: [name], controls: [id], references, accept,
 //     git, out }
 // and writes `out`: every result, then the summary run.py reports
 import { createRequire, registerHooks } from "node:module";
-import { existsSync, mkdirSync, copyFileSync, readdirSync, readFileSync, writeFileSync, constants } from "node:fs";
-import { basename, join } from "node:path";
+import { existsSync, mkdirSync, copyFileSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync,
+         constants } from "node:fs";
+import { createHash } from "node:crypto";
+import { crc32 } from "node:zlib";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
@@ -57,9 +60,12 @@ globalThis.requestAnimationFrame = (f) => setTimeout(() => f(performance.now()),
 globalThis.cancelAnimationFrame = (t) => clearTimeout(t);
 
 const args = JSON.parse(process.argv[2]);
-const { startEngine, stopEngine, request } = await import(SHIM);
+const { startEngine, stopEngine, request, invoke, sent, models } = await import(SHIM);
 const { Session } = await import("../app/src/session.ts");
+const { withModel } = await import("../app/src/aiModel.ts");
 const m = await import("../app/src/manifest.ts");
+const { canMerge } = await import("../app/src/localMerge.ts");
+const { ILLUMINANT_D } = await import("../app/src/wb.ts");
 const { compare, meanChroma, inEllipse, rightOf } = await import("./metrics.mjs");
 const { THRESHOLD, GLOBAL, COMPOSITE, LOCAL, trialValues, judge } = await import("./expect.mjs");
 
@@ -270,9 +276,7 @@ async function masks(photo) {
   // still brightening only its own ellipse
   o = await open(fresh(photo));
   // each mask drawn, then given its sliders, with a frame between as in the
-  // app. done in one go, a mask's sliders can reach the engine ahead of its
-  // shape: sendMaskQueues takes the shapes to send before it awaits, and
-  // the sliders after
+  // app
   const spots = [0.2, 0.5, 0.8];
   let f;
   for (const [i, x] of spots.entries()) {
@@ -310,6 +314,485 @@ async function masks(photo) {
     ?? (d.lumHi !== null && d.lumLo !== null && !(d.lumHi < d.lumLo) ? `the shadows darkened as much as the highlights (${d.lumLo} vs ${d.lumHi})` : null);
   record({ check: "masks", photo: name, id: "luminance range", status: err ? "fail" : "pass", detail: err ?? "", trials: [d] });
   await o.s.close();
+
+  // a mask drawn and given a slider while the engine still takes another
+  // mask's shape: its slider must not reach the engine ahead of its shape,
+  // which stopped Session on "no mask" before 0.33.0 (sendMaskQueues)
+  o = await open(fresh(photo));
+  sent.hook = (cmd, a) => {
+    if (cmd !== "mask_shapes" || a.name !== "First") return;
+    sent.hook = null;
+    o.s.addMask("Second", [{ ...MASK, x: 0.75 }]);
+    o.s.setLocal("Second", "l_exposure", 0.8);
+  };
+  try {
+    const both = await o.after(() => { o.s.addMask("First", [MASK]); o.s.setLocal("First", "l_exposure", 0.8); });
+    for (const [i, x] of [0.25, 0.75].entries()) {
+      const dm = compare(both, o.base, inEllipse(x, 0.5, 0.06));
+      const e = judge({ expect: { lum: 1 } }, dm, 1);
+      record({ check: "masks", photo: name, id: `mask added mid-send, ${i ? "second" : "first"}`, status: e ? "fail" : "pass",
+               detail: e ?? "", trials: [dm] });
+    }
+  } catch (e) {
+    record({ check: "masks", photo: name, id: "mask added mid-send", status: "fail", detail: String(e) });
+  } finally {
+    sent.hook = null;
+  }
+  await o.s.close();
+}
+
+// one check's result from `run`, which returns what went wrong or null
+async function outcome(check, photo, id, run) {
+  try {
+    const err = await run();
+    record({ check, photo, id, status: err ? "fail" : "pass", detail: err ?? "" });
+  } catch (e) {
+    record({ check, photo, id, status: "fail", detail: String(e?.stack ?? e) });
+  }
+}
+
+// the engine started again, as the app quitting and starting again
+async function restart() {
+  await stopEngine();
+  startEngine(args.engine, engineHome);
+}
+
+// once the engine has done what was asked before, a save Session made on
+// its own timer included
+const drained = () => request({ cmd: "version" });
+
+const brighter = (f, ref, region = null) => judge({ expect: { lum: 1 } }, compare(f, ref, region), 1);
+
+// a zip of `files` ({ name: text }), stored, as a .dtmodel is laid out
+function zip(files) {
+  const local = [], central = [];
+  let offset = 0;
+  for (const [name, text] of Object.entries(files)) {
+    const n = Buffer.from(name), data = Buffer.from(text), crc = crc32(data);
+    const head = Buffer.alloc(30);
+    head.writeUInt32LE(0x04034b50, 0); head.writeUInt16LE(20, 4);
+    head.writeUInt32LE(crc, 14); head.writeUInt32LE(data.length, 18); head.writeUInt32LE(data.length, 22);
+    head.writeUInt16LE(n.length, 26);
+    const dir = Buffer.alloc(46);
+    dir.writeUInt32LE(0x02014b50, 0); dir.writeUInt16LE(20, 4); dir.writeUInt16LE(20, 6);
+    dir.writeUInt32LE(crc, 16); dir.writeUInt32LE(data.length, 20); dir.writeUInt32LE(data.length, 24);
+    dir.writeUInt16LE(n.length, 28); dir.writeUInt32LE(offset, 42);
+    local.push(head, n, data);
+    central.push(dir, n);
+    offset += 30 + n.length + data.length;
+  }
+  const size = central.reduce((a, b) => a + b.length, 0), count = Object.keys(files).length;
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(count, 8); end.writeUInt16LE(count, 10);
+  end.writeUInt32LE(size, 12); end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...local, ...central, end]);
+}
+
+// bugs fixed before these checks existed, each named for the release that
+// fixed it (README, "When a bug is fixed")
+async function fixes(photo) {
+  const fix = (id, run) => outcome("fixes", basename(photo), id, run);
+
+  // 0.34.0: darktable's AI models were unpacked with the system's unzip,
+  // which Arch and CachyOS do not install, so AI Denoise and Select Object
+  // never got theirs. the engine unpacks now, into a models folder reached
+  // through a symlink (macOS' /var, a moved home folder), and refuses an
+  // entry that climbs out of it
+  await fix("AI models unpack without unzip", async () => {
+    const root = join(args.work, "unpack");
+    rmSync(root, { recursive: true, force: true });
+    mkdirSync(join(root, "real"), { recursive: true });
+    symlinkSync(join(root, "real"), join(root, "link"));
+    const good = join(root, "good.dtmodel"), bad = join(root, "bad.dtmodel");
+    writeFileSync(good, zip({ "m/config.json": "{ \"id\": \"m\" }" }));
+    writeFileSync(bad, zip({ "../escaped.txt": "out" }));
+    const into = join(root, "link", "models");
+    const err = await request({ cmd: "unpack", archive: good, dir: into }).then(() => null, (e) => e.message);
+    if (err) return `unpacking failed: ${err}`;
+    const got = existsSync(join(root, "real", "models", "m", "config.json"))
+      && readFileSync(join(root, "real", "models", "m", "config.json"), "utf8");
+    if (got !== "{ \"id\": \"m\" }") return `the unpacked config.json reads ${JSON.stringify(got)}`;
+    const refused = await request({ cmd: "unpack", archive: bad, dir: into }).then(() => false, () => true);
+    return !refused || existsSync(join(root, "link", "escaped.txt")) ? "an entry with .. was unpacked" : null;
+  });
+
+  // 0.34.0: a model whose unpack was cut short kept its config.json, so it
+  // counted as installed and never loaded: Select Object failed until the
+  // app's data folder was deleted. a model that won't load is downloaded
+  // again (aiModel.ts), and the same engine then loads it. on the first
+  // photo only: it encodes the photo with SAM on the CPU
+  const SAM = "mask-object-sam21-small";
+  if (photo === args.photos[0]) {
+    if (!args.models || !existsSync(join(args.models, SAM, "config.json"))) {
+      record({ check: "fixes", photo: basename(photo), id: "AI model that won't load downloads again", status: "skip",
+               detail: `no ${SAM} in build/ai-models: use Select Object once in a dev build` });
+    } else await fix("AI model that won't load downloads again", async () => {
+      const dir = join(args.work, "models");
+      rmSync(dir, { recursive: true, force: true });
+      mkdirSync(join(dir, SAM), { recursive: true });
+      copyFileSync(join(args.models, SAM, "config.json"), join(dir, SAM, "config.json"));
+      writeFileSync(join(dir, SAM, "encoder.onnx"), readFileSync(join(args.models, SAM, "encoder.onnx")).subarray(0, 1 << 20));
+      models.source = args.models;
+      // an engine of its own, so the others' config never has AI on
+      await stopEngine();
+      startEngine(args.engine, join(args.work, "ai-engine"), dir);
+      try {
+        await request({ cmd: "open", path: fresh(photo), imgid: -1 });
+        const paths = await withModel(SAM, () => invoke("ai_object", { points: [[0.5, 0.5, 1]], box: null }));
+        return paths?.length ? null : "Select Object found nothing once the model was downloaded again";
+      } finally {
+        await restart();
+      }
+    });
+  }
+
+  // 0.10.1: a second mask of a kind renames the first, and the Before view
+  // sends every mask again; the rename never reached the engine, so that
+  // failed on "no mask". shim.mjs refuses a command main.rs lacks, which
+  // this one was
+  await fix("renamed mask, Before view", async () => {
+    const o = await open(fresh(photo));
+    await o.after(() => o.s.addMask("Linear", [MASK]));
+    await o.after(() => o.s.setLocal("Linear", "l_exposure", 0.8));
+    await o.after(() => { o.s.renameMask("Linear", "Linear 1"); o.s.addMask("Linear 2", [{ ...MASK, x: 0.75 }]); });
+    await o.after(() => o.s.showBefore(() => false));
+    const f = await o.after(() => o.s.showBefore(null));
+    await o.s.close();
+    return brighter(f, o.base, inEllipse(0.25, 0.5, 0.06));
+  });
+
+  // 0.10.1: a deleted mask left its instances, switched off, and its
+  // shapes in the saved history
+  await fix("deleted mask leaves the sidecar", async () => {
+    const path = fresh(photo);
+    const o = await open(path);
+    await o.after(() => o.s.addMask("Gone", [MASK]));
+    await o.after(() => o.s.setLocal("Gone", "l_exposure", 0.8));
+    await o.after(() => o.s.deleteMask("Gone"));
+    await o.s.close();
+    await drained();
+    return readFileSync(sidecar(path), "utf8").includes("Gone") ? "the sidecar still names the deleted mask" : null;
+  });
+
+  // 0.10.1: quitting within 600 ms of an edit, ahead of the client's save,
+  // lost it. the engine saves on quitting, but never the Before view's
+  // settings
+  await fix("quitting saves the last edit", async () => {
+    const path = fresh(photo);
+    let o = await open(path);
+    await o.after(() => { o.s.endBaseline(); o.s.set("exposure", 0.9); });
+    clearTimeout(o.s.saveTimer);
+    await restart();
+    o = await open(path);
+    const got = o.s.values.exposure;
+    await o.after(() => o.s.showBefore(() => false));
+    clearTimeout(o.s.saveTimer);
+    await restart();
+    o = await open(path);
+    const kept = o.s.values.exposure;
+    await o.s.close();
+    return Math.abs(got - 0.9) > 0.01 ? `the edit made just before quitting was lost (Exposure ${got})`
+      : Math.abs(kept - 0.9) > 0.01 ? `quitting in the Before view saved its settings (Exposure ${kept})` : null;
+  });
+
+  // 0.11.0: a range mask whose first drawn shape subtracts selected the
+  // shape inside the range, not the range less the shape
+  await fix("subtract from a luminance range", async () => {
+    const o = await open(fresh(photo));
+    await o.after(() => o.s.addMask("Range", [{ type: "luminance", lo: -3, hi: null, feather: 1 },
+                                              { ...MASK, mode: "subtract" }]));
+    const f = await o.after(() => o.s.setLocal("Range", "l_exposure", -1));
+    await o.s.close();
+    const hole = compare(f, o.base, INSIDE);
+    return judge({ expect: { lum: -1 } }, compare(f, o.base, OUTSIDE), 1)
+      ?? (hole.mad > THRESHOLD.outside ? `changed the subtracted ellipse (mean |Δ| ${hole.mad})` : null);
+  });
+
+  // 0.22.0: a warm daylight white balance, as some cameras' as-shot one
+  // is, read as 25000 K: below 4000 K darktable renders the black body
+  await fix("warm daylight white balance", async () => {
+    const path = fresh(photo);
+    await request({ cmd: "open", path, imgid: -1 });
+    await request({ cmd: "set", op: "channelmixerrgb", params: { illuminant: ILLUMINANT_D, temperature: 3200 },
+                    enabled: true });
+    await request({ cmd: "save" });
+    const o = await open(path);
+    const { temp, tint } = o.s.values;
+    const f = await o.after(() => o.s.setMany([["temp", temp], ["tint", 0]]));
+    await o.s.close();
+    const d = compare(f, o.base);
+    return Math.abs(temp - 3200) > 100 ? `3200 K daylight reads as ${Math.round(temp)} K, tint ${tint}`
+      : d.mad > THRESHOLD.roundtrip ? `Temp ${temp} renders differently from the daylight it was read from (mean |Δ| ${d.mad})`
+      : null;
+  });
+
+  // 0.25.2: masks are kept in the shown frame, which a crop changes: they
+  // are read back once the engine has the crop, and an undo sends the old
+  // crop ahead of the old shapes, which are in its frame. the undo comes
+  // while a frame renders, so both wait for the pump's next round
+  await fix("masks follow a crop", async () => {
+    const o = await open(fresh(photo));
+    const spot = { ...MASK, x: 0.15, rx: 0.05, ry: 0.05, feather: 0.02 };
+    await o.after(() => o.s.addMask("Spot", [spot]));
+    await o.after(() => o.s.setLocal("Spot", "l_exposure", 1));
+    await o.after(() => o.s.set("crop_l", 0.1));
+    const x = o.s.masks[0].shapes[0].x, want = (0.15 - 0.1) / 0.9;
+    const f = await o.after(() => { o.s.requestRender(); o.s.set("crop_l", 0); o.s.setShapes("Spot", [spot]); });
+    await o.s.close();
+    if (Math.abs(x - want) > 0.01) return `cropped, the mask is at x ${x.toFixed(3)}, not ${want.toFixed(3)}`;
+    return brighter(f, o.base, inEllipse(0.15, 0.5, 0.02)) && "the crop undone, the mask is not where it was drawn";
+  });
+
+  // 0.24.2: a whole-image base stopped by an edit was still shown when its
+  // frame came in after the edit
+  await fix("stopped base not shown", async () => {
+    const o = await open(fresh(photo));
+    let shown = 0;
+    o.s.onThumb = () => shown++;
+    sent.hook = (cmd, a) => {
+      if (cmd !== "render" || !a.base) return;
+      sent.hook = null;
+      o.s.set("exposure", 1);
+    };
+    try {
+      const f = await o.after(() => o.s.requestThumb());
+      return shown ? "the stopped base was shown"
+        : brighter(f, o.base) && "the edit that stopped the base is not in the frame";
+    } finally {
+      sent.hook = null;
+      await o.s.close();
+    }
+  });
+
+  // 0.30.0: export reads the edit from the library, and with the Before
+  // view up it exported the view's settings
+  await fix("export in the Before view", async () => {
+    const o = await open(fresh(photo));
+    await o.after(() => { o.s.endBaseline(); o.s.set("exposure", 1); });
+    const exported = async (tag) => {
+      const out = join(args.work, "export", `${copies}-${tag}.jpg`);
+      mkdirSync(dirname(out), { recursive: true });
+      await request({ cmd: "export", imgid: o.s.imgid, out, format: "jpeg", color_space: "srgb", quality: 90,
+                      long_edge: 512 });
+      // the image data alone: the EXIF carries the time of export
+      const file = readFileSync(out);
+      return file.subarray(file.indexOf(Buffer.from([0xff, 0xda])));
+    };
+    const edit = await exported("edit");
+    await o.after(() => o.s.showBefore(() => false));
+    const before = await exported("before");
+    await o.s.close();
+    return edit.equals(before) ? null : "the export has the Before view's settings, not the edit";
+  });
+
+  // 0.34.0: zoomed in, a range mask's overlay is darktable's own mask, made
+  // on the preview pipe for the window shown. a range map after it read the
+  // whole image from that window, its edges repeated across the rest
+  await fix("range map after a zoomed mask map", async () => {
+    const o = await open(fresh(photo));
+    const range = { type: "luminance", lo: -2, hi: 1.7, feather: 1 };
+    await o.after(() => o.s.addMask("Range", [range]));
+    await o.after(() => o.s.setLocal("Range", "l_exposure", 0.5));
+    const map = async () => new Uint8Array(await invoke("range_map", { ranges: [range], width: 320, height: 240 }), 8);
+    const before = await map();
+    const { fullWidth: w, fullHeight: h } = o.base;
+    await invoke("mask_map", { name: "Range", width: 1024, height: 1024,
+                               view: { x: Math.round(w / 2), y: Math.round(h / 2), scale: 1 } });
+    const after = await map();
+    await o.s.close();
+    const moved = before.filter((v, k) => Math.abs(v - after[k]) > 2).length / before.length;
+    return moved > 0.01 ? `after a zoomed mask map, ${(100 * moved).toFixed(0)}% of the range map changed` : null;
+  });
+
+  // 0.34.0: a JPEG or TIFF reaches the mask stage in Lab, and reading it
+  // there failed ("not in RGB at the mask stage"): the color range picker,
+  // range overlays and the hover probe. what a range map reads is what
+  // darktable's own mask of the range selects
+  await fix("range masks read the photo", async () => {
+    const o = await open(fresh(photo));
+    const range = { type: "luminance", lo: -2, hi: 1, feather: 1 };
+    await o.after(() => o.s.addMask("Range", [range]));
+    await o.after(() => o.s.setLocal("Range", "l_exposure", 0.5));
+    const picked = await invoke("sample", { x: 0.5, y: 0.5 });
+    const width = 320, height = Math.round((320 * o.base.fullHeight) / o.base.fullWidth);
+    const ours = new Uint8Array(await invoke("range_map", { ranges: [range], width, height }), 8);
+    const buf = await invoke("mask_map", { name: "Range", width, height });
+    await o.s.close();
+    const head = new DataView(buf, 0, 8);
+    if (head.getUint32(0, true) !== width || head.getUint32(4, true) !== height)
+      return `darktable's mask came back ${head.getUint32(0, true)}x${head.getUint32(4, true)}, not ${width}x${height}`;
+    const theirs = new Uint8Array(buf, 8);
+    const mad = ours.reduce((a, v, k) => a + Math.abs(v - theirs[k]), 0) / ours.length;
+    return !Number.isFinite(picked.ev) ? `the picker read ${JSON.stringify(picked)}`
+      // the map reads a point a pixel, darktable's mask covers the pixel: some
+      // 4 of 255 apart on these photos
+      : mad > 8 ? `the range map differs from darktable's mask by ${mad.toFixed(1)} of 255 on average` : null;
+  });
+
+  // 0.30.0: a mask's refinements with no adjustment yet had no instance to
+  // live in, and were lost on save
+  await fix("refined mask with no adjustment", async () => {
+    const path = fresh(photo);
+    let o = await open(path);
+    await o.after(() => o.s.addMask("Soft", [MASK]));
+    await o.after(() => o.s.setRefine("Soft", { feather: 0, blur: 20, detail: 0, contrast: 0 }));
+    await o.s.close();
+    await restart();
+    o = await open(path);
+    const got = o.s.masks.find((x) => x.name === "Soft")?.refine;
+    await o.s.close();
+    return got?.blur > 0 ? null : `opened again, its refinements are ${JSON.stringify(got ?? null)}`;
+  });
+}
+
+// what Immage decided it does, as README.md, the code map and the
+// backlog's Decisions record it. changing one is deliberate, and changes
+// its check with it
+async function decisions(photo) {
+  const decide = (id, run) => outcome("decisions", basename(photo), id, run);
+
+  // the new-photo defaults never mark a photo edited, in Immage or in
+  // darktable, and apply once; the user's first change does mark it
+  // (code-map.md, Engine; backlog.md, 0.23.2)
+  await decide("new-photo defaults leave it unedited", async () => {
+    const path = fresh(photo);
+    let o = await open(path);
+    await o.s.close();
+    await drained();
+    const first = await request({ cmd: "open", path, imgid: -1 });
+    o = await open(path);
+    await o.after(() => { o.s.endBaseline(); o.s.set("exposure", 0.5); });
+    await o.s.close();
+    await drained();
+    const second = await request({ cmd: "open", path, imgid: -1 });
+    return first.edited ? "the new-photo defaults marked it edited"
+      : first.fresh ? "opened again, it is taken for a new photo" : !second.edited ? "the user's change left it unedited" : null;
+  });
+
+  // the photo is never written, only its sidecar (code-map.md, Where data
+  // lives)
+  await decide("the photo file is never written", async () => {
+    const path = fresh(photo);
+    const sum = () => createHash("sha256").update(readFileSync(path)).digest("hex");
+    const was = sum();
+    const o = await open(path);
+    await o.after(() => o.s.addMask("Verify", [MASK]));
+    await o.after(() => { o.s.endBaseline(); o.s.set("exposure", 0.5); o.s.setLocal("Verify", "l_exposure", 0.5); });
+    await o.s.close();
+    await drained();
+    return sum() === was ? null : "the photo file changed";
+  });
+
+  // a photo edited in darktable keeps all of its edit: modules Immage has
+  // no controls for, and the fields of its own modules its sliders don't
+  // set (README, Which darktable module does what)
+  await decide("darktable's edit is kept", async () => {
+    const path = fresh(photo);
+    await request({ cmd: "open", path, imgid: -1 });
+    await request({ cmd: "set", op: "velvia", params: { strength: 40 }, enabled: true });
+    await request({ cmd: "set", op: "grain", params: { strength: 20, midtones_bias: 40 }, enabled: true });
+    await request({ cmd: "save" });
+    const o = await open(path);
+    await o.after(() => { o.s.endBaseline(); o.s.setMany([["exposure", 0.5], ["grain_amount", 60]]); });
+    await o.s.close();
+    await restart();
+    await request({ cmd: "open", path, imgid: -1 });
+    const { modules: got } = await request({ cmd: "get", modules: { velvia: ["strength"],
+                                                                    grain: ["strength", "midtones_bias"] } });
+    return !got.velvia?.enabled || Math.abs(got.velvia.params.strength - 40) > 0.01
+      ? `velvia came back ${JSON.stringify(got.velvia?.params ?? null)}, ${got.velvia?.enabled ? "on" : "off"}`
+      : Math.abs(got.grain.params.midtones_bias - 40) > 0.01 ? `grain's mid-tones bias came back ${got.grain.params.midtones_bias}`
+      : Math.abs(got.grain.params.strength - 30) > 0.01 ? `Grain did not take (strength ${got.grain.params.strength})` : null;
+  });
+
+  // a photo that already uses one of a tool's modules keeps it, whatever
+  // Preferences › Modules picks (README)
+  await decide("a photo keeps its tool's module", async () => {
+    const c = m.MODULE_CHOICES.find((x) => x.id === "tone_regions");
+    const other = c.options.find((x) => x.value !== m.preferredChoice(c)).value;
+    const path = fresh(photo);
+    localStorage.setItem("immage.modules.mode", "custom");
+    localStorage.setItem("immage.modules.choices", JSON.stringify({ [c.id]: other }));
+    try {
+      const o = await open(path);
+      await o.after(() => { o.s.endBaseline(); o.s.set("highlights", -40); });
+      await o.s.close();
+    } finally {
+      localStorage.removeItem("immage.modules.mode");
+      localStorage.removeItem("immage.modules.choices");
+    }
+    const o = await open(path);
+    const { [c.control]: tool, highlights } = o.s.values;
+    await o.s.close();
+    return tool !== other ? `opened under the default, Highlights moved to option ${tool}`
+      : Math.abs(highlights + 40) > 1.5 ? `Highlights read back ${highlights}` : null;
+  });
+
+  // a drag's frame is the release's, less what the Preview setting leaves
+  // out of drags (Session's DRAFT_SKIP); the harness renders at Quality
+  await decide("drag frames match", async () => {
+    const o = await open(fresh(photo));
+    await o.after(() => o.s.set("exposure", 0.5));
+    const full = await o.frame();
+    o.view = { ...VIEW, draft: true };
+    try {
+      const f = await o.after(() => {});
+      const d = compare(f, full);
+      return d.max > 0 ? `a drag frame differs from the full one (max |Δ| ${d.max})` : null;
+    } finally {
+      o.view = VIEW;
+      await o.s.close();
+    }
+  });
+
+  // trying a setting, as a preset's tile does, never touches the edit or
+  // the main pipe (code-map.md, Engine); and a frame of an unchanged edit
+  // carries the same hash, which keeps the sharper base on zooming out
+  await decide("previews leave the edit", async () => {
+    const o = await open(fresh(photo));
+    const p = await o.s.preview(256, { exposure: 2 });
+    const f = await o.after(() => {});
+    const moved = await o.after(() => o.s.set("exposure", 0.5));
+    await o.s.close();
+    const d = compare(f, o.base);
+    return !p.width ? "the preview came back empty"
+      : d.max > 0 ? `after a preview the frame differs (max |Δ| ${d.max})`
+      : f.hash !== o.base.hash ? "the same edit rendered with another hash"
+      : moved.hash === o.base.hash ? "a changed edit rendered with the same hash" : null;
+  });
+
+  if (photo !== args.photos[0]) return;
+
+  // Default in Preferences › Modules is darktable's AgX workflow (README)
+  await decide("default modules", async () => {
+    const want = { contrast: "agx", tone_regions: "toneequal", blacks: "agx", saturation: "agx",
+                   bw: "channelmixerrgb#bw", sharpening: "sharpen", defringe: "cacorrectrgb" };
+    const wrong = m.MODULE_CHOICES.map((c) => [c.id, c.options.find((x) => x.value === m.preferredChoice(c)).op])
+      .filter(([id, op]) => want[id] !== op).map(([id, op]) => `${id}: ${op}, not ${want[id] ?? "listed here"}`);
+    return wrong.join(", ") || null;
+  });
+
+  // masks share instances of the costly local modules only, and only masks
+  // that can (backlog.md, Decisions, 2026-10-19): Clarity, Dehaze and the
+  // cheap ones stay one instance a mask
+  await decide("shared local modules", async () => {
+    const want = ["cacorrectrgb", "colorbalancergb", "colorequal", "denoiseprofile", "diffuse"];
+    const got = [...new Set(m.localMaps.filter((l) => l.merge).map((l) => l.op.split("#")[0]))].sort();
+    return got.join() === want.join() ? null : `shared: ${got.join(", ")}; decided: ${want.join(", ")}`;
+  });
+  await decide("masks that keep their own instances", async () => {
+    const range = { type: "luminance", lo: -3, hi: null, feather: 1 };
+    const mask = (shapes, more = {}) => ({ name: "x", shapes, invert: false, values: {}, ...more });
+    const cases = [
+      ["a drawn mask", mask([MASK]), true],
+      ["an inverted mask with a range", mask([MASK, range], { invert: true }), false],
+      ["a range alone", mask([range]), false],
+      ["refine Contrast", mask([MASK], { refine: { feather: 0, blur: 0, detail: 0, contrast: 0.3 } }), false],
+    ];
+    const wrong = cases.filter(([, mk, can]) => canMerge(mk) !== can)
+      .map(([label, , can]) => `${label} ${can ? "cannot" : "can"} share`);
+    return wrong.join(", ") || null;
+  });
 }
 
 // each option of each of Preferences › Modules' choices that isn't the
@@ -452,23 +935,28 @@ async function reference(photo, saved) {
   await o.s.close();
 }
 
-// a color JPEG made from a raw by darktable's export, for the JPEG path:
-// cameras' own JPEGs can be black and white, which color tools rightly
-// leave alone
-async function colorJpeg(raw) {
+// photos that are not raws, made from one by darktable's export, as the
+// app's export_images asks (main.rs): a color JPEG (cameras' own can be
+// black and white, which color tools rightly leave alone) and a 16-bit
+// TIFF, as film scans come
+async function rendered(raw) {
   const dir = join(args.work, "jpeg");
   mkdirSync(dir, { recursive: true });
   const { imgid } = await request({ cmd: "open", path: fresh(raw), imgid: -1 });
-  // as the app's export_images asks for one (main.rs)
-  const path = join(dir, `${basename(raw).replace(/\.[^.]+$/, "")}-color.jpg`);
-  await request({ cmd: "export", imgid, out: path, format: "jpeg", color_space: "srgb", quality: 92, long_edge: 3000 });
-  if (!existsSync(path)) throw new Error("the color JPEG was not exported");
-  return path;
+  const stem = join(dir, `${basename(raw).replace(/\.[^.]+$/, "")}-color`);
+  const out = [];
+  for (const [ext, format] of [["jpg", { format: "jpeg", quality: 92 }], ["tif", { format: "tiff", bpp: 16 }]]) {
+    const path = `${stem}.${ext}`;
+    await request({ cmd: "export", imgid, out: path, color_space: "srgb", long_edge: 3000, ...format });
+    if (!existsSync(path)) throw new Error(`the ${format.format} was not exported`);
+    out.push(path);
+  }
+  return out;
 }
 
-const CHECKS = { sliders, masks, choices };
+const CHECKS = { sliders, masks, choices, fixes, decisions };
 try {
-  if (args.colorJpeg) args.photos.push(await colorJpeg(args.colorJpeg));
+  if (args.rendered) args.photos.push(...await rendered(args.rendered));
   for (const photo of args.photos) {
     for (const check of args.checks) {
       if (!CHECKS[check]) continue;
