@@ -6,7 +6,8 @@
 // before), above it this session's undo steps, newest at the top. a click
 // goes to any step; those above the current one are what Redo brings back.
 // compressing folds the steps into the opened stack, as darktable's
-// "compress history stack"
+// "compress history stack". a row of the opened stack can be switched off
+// or deleted, or reset if Immage has sliders for its module (actionOf)
 import { useState } from "react";
 import { controlById, panels } from "./manifest";
 import type { HistoryItem } from "./session";
@@ -65,8 +66,10 @@ export function stepName(keys: string[]): string {
   return "Settings";
 }
 
-export function HistoryPanel({ base, steps, at, onGo, onCompress, disabled, open, onToggle }: {
+export function HistoryPanel({ base, steps, at, onGo, onCompress, disabled, open, onToggle, actionOf, onChange }: {
   base: HistoryItem[];      // the stack the photo opened with, oldest first
+  actionOf: (h: HistoryItem) => "toggle" | "reset" | null;
+  onChange: (h: HistoryItem, how: "toggle" | "delete" | "reset") => void;
   steps: string[];          // each change since, oldest first
   at: number;               // how many of them are applied
   onGo: (n: number) => void;
@@ -88,9 +91,10 @@ export function HistoryPanel({ base, steps, at, onGo, onCompress, disabled, open
   // the opened stack is one state, the undo stack's first: only its top
   // row goes there
   const rows = [
-    { name: "original", note: null, off: false, n: base.length ? null : 0 },
-    ...base.map((h, k) => ({ name: h.name, note: h.label, off: !h.enabled, n: k === base.length - 1 ? 0 : null })),
-    ...steps.map((name, k) => ({ name, note: null, off: false, n: k + 1 })),
+    { name: "original", note: null, off: false, n: base.length ? null : 0, item: null },
+    ...base.map((h, k) => ({ name: h.name, note: h.label, off: !h.enabled, n: k === base.length - 1 ? 0 : null,
+                             item: h })),
+    ...steps.map((name, k) => ({ name, note: null, off: false, n: k + 1, item: null })),
   ].map((r, num) => ({ ...r, num })).filter((r) => !(hideOff && r.off)).reverse();
   return (
     <div className="panel history" data-tour="history">
@@ -120,7 +124,9 @@ export function HistoryPanel({ base, steps, at, onGo, onCompress, disabled, open
       </div>
       {open && (
         <ol className="history-list">
-          {rows.map(({ name, note, off, n, num }) => (
+          {rows.map(({ name, note, off, n, num, item }) => {
+            const action = item && !disabled ? actionOf(item) : null;
+            return (
             <li key={num}>
               <button className={`${n === at ? "current" : ""}${n !== null && n > at ? " undone" : ""}`
                                  + `${n === null ? " fixed" : ""}`}
@@ -130,8 +136,41 @@ export function HistoryPanel({ base, steps, at, onGo, onCompress, disabled, open
                 <span className="name">{name}{note && <span className="note"> • {note}</span>}</span>
                 {off && <span className="off">off</span>}
               </button>
+              {action && (
+                <span className="row-actions">
+                  {action === "toggle" ? (
+                    <>
+                      <button onClick={() => onChange(item!, "toggle")}
+                              title={off ? "switch on" : "switch off: it stays in the history, but does nothing to the photo"}>
+                        <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+                             strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M12 3v8M6.3 6.3a8 8 0 1 0 11.4 0" />
+                        </svg>
+                      </button>
+                      <button onClick={() => onChange(item!, "delete")}
+                              title={item!.default_enabled
+                                ? "delete: darktable starts every photo with it, so it goes back to darktable's defaults"
+                                : "delete: switched off, and gone from the history once saved"}>
+                        <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+                             strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
+                        </svg>
+                      </button>
+                    </>
+                  ) : (
+                    <button onClick={() => onChange(item!, "reset")}
+                            title="reset: its sliders back to where a new photo starts">
+                      <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+                           strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5" />
+                      </svg>
+                    </button>
+                  )}
+                </span>
+              )}
             </li>
-          ))}
+            );
+          })}
         </ol>
       )}
     </div>

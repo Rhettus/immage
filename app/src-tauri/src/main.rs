@@ -91,6 +91,29 @@ async fn history(state: State<'_, AppState>, saved: Option<bool>) -> Result<Valu
     Ok(reply["items"].clone())
 }
 
+// the History panel's switch and delete for one instance in the history:
+// `enabled` switches it, `reset` puts it back to darktable's defaults,
+// `restore` to a state an earlier reply gave. replies the state before and
+// after, `was` and `now`
+#[tauri::command]
+async fn module_state(
+    state: State<'_, AppState>,
+    op: String,
+    priority: i64,
+    enabled: Option<bool>,
+    reset: Option<bool>,
+    restore: Option<Value>,
+) -> Result<Value, String> {
+    let mut req = json!({ "cmd": "module_state", "op": op, "priority": priority, "reset": reset.unwrap_or(false) });
+    if let Some(e) = enabled {
+        req["enabled"] = json!(e);
+    }
+    if let Some(r) = restore {
+        req["restore"] = r;
+    }
+    state.engine().request(req)
+}
+
 #[tauri::command]
 async fn get_params(state: State<'_, AppState>, modules: Value) -> Result<Value, String> {
     state.engine().request(json!({ "cmd": "get", "modules": modules }))
@@ -1942,7 +1965,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             open_folder, open_image, get_params, set_params, render, cancel_base, save, baseline_end, before_view, thumb, thumb_cached, cache_limits, cache_usage, cache_clear, meta, meta_set,
             export_images, export_existing, export_preview, fonts, export_presets_load, export_presets_save, preset_file_write, preset_file_read, presets_load, presets_save, looks_list, look_import, look_export, look_delete, look_apply, look_amount, preview,
-            mask_shapes, combine, masks, mask_delete, mask_rename, history, sample, tone_key, agx_auto, upright, points, range_map, zones, mask_map, ai_object,
+            mask_shapes, combine, masks, mask_delete, mask_rename, history, module_state, sample, tone_key, agx_auto, upright, points, range_map, zones, mask_map, ai_object,
             ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, list_subfolders, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
             immich_export_check, immich_search, immich_browse_check, immich_libraries, immich_suggestions, immich_people, immich_tags,
             immich_thumb, immich_resolve, launch_file, path_exists, path_kind, trash_files, create_virtual_copy, remove_virtual_copy, preview_fullscreen, about, licenses, engine_quit, keywords, keywords_set, ai_accel,

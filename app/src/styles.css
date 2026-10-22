@@ -1759,6 +1759,16 @@ input.switch:disabled { cursor: default; opacity: 0.4; }
 /* darktable's stack below this session's steps: shown, not a place to go */
 .history-list button.fixed { color: var(--text-2); }
 .history-list button:disabled { cursor: default; }
+/* a stack row's switch, delete or reset, over its right end on hover */
+.history-list li { position: relative; }
+.history-list .row-actions {
+  position: absolute; top: 0; right: 0; bottom: 0; display: none; align-items: center; gap: 2px; padding: 0 4px;
+  border-radius: 8px; background: var(--hover);
+}
+.history-list li:hover .row-actions { display: flex; }
+.history-list .row-actions button { width: 22px; height: 22px; padding: 0; justify-content: center; color: var(--text-2); }
+.history-list .row-actions button:hover { color: var(--text); background: var(--inset); }
+.history-list .row-actions .icon { width: 14px; height: 14px; }
 .sub-toggle {
   display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 14px 8px;
   color: var(--text-2); font-size: var(--fs-small); cursor: pointer;

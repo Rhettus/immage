@@ -722,6 +722,31 @@ async function decisions(photo) {
       : Math.abs(got.grain.params.strength - 30) > 0.01 ? `Grain did not take (strength ${got.grain.params.strength})` : null;
   });
 
+  // the History panel switches off, undoes and deletes a module darktable
+  // set that Immage has no sliders for; deleted, it is gone from the
+  // sidecar's history (user guide, History)
+  await decide("history rows switch off and delete", async () => {
+    const path = fresh(photo);
+    await request({ cmd: "open", path, imgid: -1 });
+    await request({ cmd: "set", op: "velvia", params: { strength: 60 }, enabled: true });
+    await request({ cmd: "save" });
+    let o = await open(path);
+    const h = o.s.history.find((x) => x.op === "velvia");
+    if (!h || h.priority === undefined || h.fixed || h.masked) return `velvia's row came as ${JSON.stringify(h ?? null)}`;
+    const off = await o.after(() => o.s.setModuleState(h, { enabled: false }));
+    const back = await o.after(() => o.s.setModuleState(h, { restore: "opened" }));
+    const offBy = compare(off, o.base).mad, backBy = compare(back, o.base).mad;
+    if (offBy <= THRESHOLD.roundtrip) return `switched off, the photo stayed the same (mean |Δ| ${offBy})`;
+    if (backBy > THRESHOLD.roundtrip) return `undone, the photo stayed different (mean |Δ| ${backBy})`;
+    await o.after(() => { o.s.deleted.add(`velvia#${h.priority}`); o.s.setModuleState(h, { enabled: false }); });
+    await o.s.close();
+    await restart();
+    o = await open(path);
+    const left = o.s.history.filter((x) => x.op === "velvia");
+    await o.s.close();
+    return left.length ? `deleted, it came back: ${JSON.stringify(left)}` : null;
+  });
+
   // a photo that already uses one of a tool's modules keeps it, whatever
   // Preferences › Modules picks (README)
   await decide("a photo keeps its tool's module", async () => {
