@@ -1915,6 +1915,15 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        // the main window opens as it was last closed. not its visibility, which
+        // the splash sets (Splash.tsx), nor full screen, which only Full Screen
+        // Preview enters
+        .plugin(tauri_plugin_window_state::Builder::new()
+            .with_state_flags(tauri_plugin_window_state::StateFlags::SIZE
+                | tauri_plugin_window_state::StateFlags::POSITION
+                | tauri_plugin_window_state::StateFlags::MAXIMIZED)
+            .with_denylist(&["splash"])
+            .build())
         // its own catalog, thumbnails and Immich key, apart from the standalone importer's
         .plugin(tauri_plugin_immporter::init(tauri_plugin_immporter::Config {
             data_subdir: Some("immporter".into()),
