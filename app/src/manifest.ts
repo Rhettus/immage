@@ -870,6 +870,17 @@ export const modules: ModuleMap[] = [
     read: (p, d) => ({ exposure: p.exposure - d.exposure }),
     write: (v, d) => ({ exposure: d.exposure + v.exposure }),
   },
+  // Preferences' exposure compensation for new photos, on an instance of
+  // its own so Exposure still starts at 0 and the photo keeps its amount.
+  // a new instance takes a raw's defaults (+0.7 EV, a black level and the
+  // camera's bias compensated, exposure.c), which the first one has already
+  {
+    op: "exposure#compensation", keepOn: false, after: "exposure",
+    controls: ["exp_comp"],
+    fields: ["mode", "exposure", "black", "compensate_exposure_bias"],
+    read: (p) => ({ exp_comp: p.exposure }),
+    write: (v) => ({ mode: 0, exposure: v.exp_comp, black: 0, compensate_exposure_bias: 0 }),
+  },
   // Blacks as exposure's black level, one of its modules. Exposure's map
   // shares the module, so a new Exposure sends it again for the new gain
   {
@@ -1477,6 +1488,15 @@ export const panels: Panel[] = [
       title: "Vignette Center",
       controls: (["vig_cx", "vig_cy"] as const).map((id) => ({
         id, label: id, min: -1, max: 1, step: 0.001, neutral: 0, format: plain(3) })),
+    }],
+  },
+  // what Preferences adds to a new raw's exposure; not a per-photo adjustment
+  {
+    id: "exposure-compensation", title: "Exposure Compensation", hidden: true,
+    sections: [{
+      title: "Exposure Compensation",
+      controls: [{ id: "exp_comp", label: "Exposure Compensation", min: -3, max: 3, step: 0.01, neutral: 0,
+                   format: signed(2, " EV") }],
     }],
   },
   // how scene light is fitted to the screen: AgX, set on a new photo, or

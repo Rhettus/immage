@@ -534,6 +534,9 @@ def run_image(eng, edits, rec, mode, img, args, workdir, spawn):
            "orientation": r.get("orientation", 0), "camera": r.get("orientation", 0)}
     controls = edits.call(cmd="init", info=info["modules"], ctx=ctx)["controls"]
     new_photo = {k: v for k, v in NEW_PHOTO.items() if k in controls and (r.get("raw") or k == "tm_mode")}
+    # Preferences' exposure compensation, on its own exposure instance
+    if args.exp_comp and r.get("raw"):
+        new_photo["exp_comp"] = args.exp_comp
     t0 = time.perf_counter()
     send_edits(eng, edits, new_photo)
     first = render_sample(eng, VIEW, rgba=rgba)
@@ -917,6 +920,8 @@ def main():
     ap.add_argument("--all", action="store_true",
                     help="every photo in the corpus; by default the largest and smallest file of each format")
     ap.add_argument("--note", default="", help="a note kept with the run")
+    ap.add_argument("--exp-comp", type=float, default=0,
+                    help="exposure compensation (EV) a new raw gets from Preferences (default 0, off)")
     ap.add_argument("--out", default=os.path.join(HERE, "results"))
     ap.add_argument("--no-perf-overhead", action="store_true", help="skip the -d perf overhead check")
     args = ap.parse_args()

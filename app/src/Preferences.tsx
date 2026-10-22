@@ -33,6 +33,32 @@ function storeNewPhotosProfile(v: number) {
   try { localStorage.setItem(PROFILE_KEY, String(v)); } catch { /* not kept */ }
 }
 
+// EV a new raw's exposure gets on an instance of its own (manifest.ts,
+// exp_comp), so Exposure still starts at 0; off unless set. the amount is
+// kept apart from the switch, so switching it off and on keeps it
+const EXP_COMP_KEY = "immage.exposureCompNew";
+const EXP_COMP_EV_KEY = "immage.exposureCompNewEv";
+export const EXP_COMP_LIMIT = 3;
+function loadExposureCompEv(): number {
+  try {
+    const v = Number(localStorage.getItem(EXP_COMP_EV_KEY) ?? 1);
+    return Number.isFinite(v) ? Math.max(-EXP_COMP_LIMIT, Math.min(EXP_COMP_LIMIT, v)) : 1;
+  } catch { return 1; }
+}
+function loadExposureCompOn(): boolean {
+  try { return localStorage.getItem(EXP_COMP_KEY) === "1"; } catch { return false; }
+}
+// the EV a new raw gets, 0 when off
+export function loadExposureCompNew(): number {
+  return loadExposureCompOn() ? loadExposureCompEv() : 0;
+}
+function storeExposureComp(on: boolean, ev: number) {
+  try {
+    localStorage.setItem(EXP_COMP_KEY, on ? "1" : "0");
+    localStorage.setItem(EXP_COMP_EV_KEY, String(ev));
+  } catch { /* not kept */ }
+}
+
 // Basic's Auto on a new raw, as Lightroom's "apply auto tone"; off unless set
 const AUTO_TONE_KEY = "immage.autoToneNew";
 export function loadAutoToneNew(): boolean {
@@ -299,6 +325,18 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   const [showTour, setShowTour] = useState(() => !tourSeen());
   const [profile, setProfile] = useState(loadNewPhotosProfile);
   const [autoToneNew, setAutoToneNew] = useState(loadAutoToneNew);
+  const [expCompOn, setExpCompOn] = useState(loadExposureCompOn);
+  const [expCompEv, setExpCompEv] = useState(loadExposureCompEv);
+  // as typed, so "-" or "1." can be on the way to a number
+  const [expCompText, setExpCompText] = useState(() => String(loadExposureCompEv()));
+  const typeExpComp = (text: string) => {
+    setExpCompText(text);
+    const v = Number(text);
+    if (text.trim() === "" || !Number.isFinite(v)) return;
+    const ev = Math.round(100 * Math.max(-EXP_COMP_LIMIT, Math.min(EXP_COMP_LIMIT, v))) / 100;
+    setExpCompEv(ev);
+    storeExposureComp(expCompOn, ev);
+  };
   const [editedKeywords, setEditedKeywords] = useState(loadEditedKeywords);
   const chooseEditedKeywords = (v: string[]) => { setEditedKeywords(v); storeEditedKeywords(v); };
   const addEditedKeywords = (names: string[]) => {
@@ -372,6 +410,19 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                           {opts.map(([label, v]) => <option key={v} value={v}>{label}</option>)}
                         </optgroup>))}
                     </select>
+                  </PrefRow>
+                </PrefCard>
+                <PrefCard title="Exposure">
+                  <PrefRow label="Exposure compensation"
+                           hint="added to a raw's exposure on a module of its own: Exposure still starts at 0 and adds to it, and Auto allows for it; JPEGs get none">
+                    <PrefSwitch checked={expCompOn}
+                                onChange={(on) => { setExpCompOn(on); storeExposureComp(on, expCompEv); }} />
+                  </PrefRow>
+                  <PrefRow label="Amount" hint={`in EV, from -${EXP_COMP_LIMIT} to +${EXP_COMP_LIMIT}`}>
+                    <input className="field" type="number" step={0.1} min={-EXP_COMP_LIMIT} max={EXP_COMP_LIMIT}
+                           disabled={!expCompOn} value={expCompText}
+                           onChange={(e) => typeExpComp(e.target.value)}
+                           onBlur={() => setExpCompText(String(expCompEv))} />
                   </PrefRow>
                 </PrefCard>
                 <PrefCard title="Auto Tone">
