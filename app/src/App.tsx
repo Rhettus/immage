@@ -12,7 +12,7 @@ import { BANDS, choiceOn, choiceShows, controlById, GUIDE_IDS, guidesOf, isModul
          UPRIGHT_MODES, uprightAspect, mapOf, mapsFor, moduleName, mapsWith, panels, pointsOf, pointValues, profileLabel, turnRect, type Control, type ControlPreset, type CurveChannel, type Values,
          type Panel, type Section, type Turn } from "./manifest";
 import { CircleOff, Grid2x2, MoveHorizontal, MoveVertical, PenLine, Sparkles, WandSparkles } from "lucide-react";
-import { Session, type Frame, type HistoryItem, type View } from "./session";
+import { Session, instanceKey, mapOpOf, type Frame, type HistoryItem, type ModuleState, type View } from "./session";
 import { AUTO_TONE_IDS, autoExposure, autoTone, type SceneKey } from "./autoTone";
 import { curve } from "./tonecurve";
 import { clipColor, computeHistogram, DEFAULT_SCOPE, drawScope, HARMONIES, HARMONY_WIDTHS, histogramPath, paintClipping,
@@ -2765,6 +2765,12 @@ export default function App() {
         if (edited) void fillEditedMeta(s.imgid);
       };
       s.onShapes = () => { syncMasks(); syncSpots(); };
+      // a module the History panel changed: its sliders, if it has any
+      s.onModules = () => {
+        if (session.current !== s) return;
+        setValues({ ...s.values });
+        setHistoryRev((n) => n + 1);
+      };
       session.current = s;
       s.lookPath = looksRef.current.find((l) => l.name === s.look)?.path ?? null;
       setMasks(s.masks);
@@ -2845,10 +2851,13 @@ export default function App() {
   // shape drag, the white balance picker settling) is one step
   // `label` names the change that follows the state, for the History panel
   type Snap = { values: Values; masks: Mask[]; spots: Spot[]; look: { name: string | null; path: string | null };
-                lookAmount: number; label: string };
+                lookAmount: number; label: string;
+                // the History panel's switched instances, and those deleted
+                modules: Map<string, ModuleState>; deleted: Set<string> };
   const snapshot = (s: Session, label = ""): Snap => ({
     values: { ...s.values }, masks: structuredClone(s.masks), spots: structuredClone(s.spots),
     look: { name: s.look, path: s.lookPath }, lookAmount: s.lookAmount, label,
+    modules: new Map(s.moduleStates), deleted: new Set(s.deleted),
   });
   const undo = useRef<{ past: Snap[]; future: Snap[]; key: string; at: number }>(
     { past: [], future: [], key: "", at: 0 });
@@ -2889,6 +2898,15 @@ export default function App() {
     if (target.lookAmount !== s.lookAmount) s.setLookAmount(target.lookAmount);
     setLookAmount(target.lookAmount);
     setMasksTo(target.masks);
+    // after the values, which Session.pump sends first. an instance whose
+    // reply is still to come is restored whatever it holds
+    for (const key of s.touched) {
+      const want = target.modules.get(key), now = s.moduleStates.get(key);
+      if (now && JSON.stringify(want ?? null) === JSON.stringify(now)) continue;
+      const h = s.history.find((x) => instanceKey(x) === key);
+      if (h) s.setModuleState(h, { restore: want ?? "opened" });
+    }
+    s.deleted = new Set(target.deleted);
     if (JSON.stringify(target.spots) !== JSON.stringify(s.spots)) {
       s.setSpots(target.spots);
       syncSpots();
@@ -2992,6 +3010,38 @@ export default function App() {
     } catch (e) {
       setStatus(`error: ${e}`);
     }
+  };
+
+  // the History panel's actions on a row of the opened stack. a module with
+  // Immage's sliders is reset through them, so the next slider move cannot
+  // switch it back; one darktable set beyond what they show, in the engine
+  const historyAction = (h: HistoryItem): "toggle" | "reset" | null => {
+    if (h.priority === undefined || h.fixed || h.masked) return null;
+    return mapsFor(mapOpOf(h)).length ? "reset" : "toggle";
+  };
+  const historyChange = (h: HistoryItem, how: "toggle" | "delete" | "reset") => {
+    const s = session.current;
+    if (!s || croppingRef.current) return;
+    const key = instanceKey(h), op = mapOpOf(h);
+    if (how === "reset" && !s.isForeign(op)) {
+      const ids = [...new Set(mapsFor(op).flatMap((m) => m.controls))];
+      changeMany(ids.map((id) => [id, s.neutral[id]]), `Reset ${h.name}`);
+      return;
+    }
+    leaveBefore();
+    setBaMode("off");
+    const on = s.moduleStates.get(key)?.enabled ?? h.enabled;
+    record([`history:${key}`], how === "toggle" ? `${on ? "Switch off" : "Switch on"} ${h.name}`
+      : how === "reset" ? `Reset ${h.name}` : `Delete ${h.name}`);
+    baseStale.current = true;
+    if (how === "toggle") s.setModuleState(h, { enabled: !on });
+    // one darktable starts on would come back on: it goes back to its defaults
+    else if (how === "reset" || h.default_enabled) s.setModuleState(h, { reset: true });
+    else {
+      s.deleted.add(key);
+      s.setModuleState(h, { enabled: false });
+    }
+    setHistoryRev((n) => n + 1);
   };
 
   // the before/after views (Y cycles them): the before is a render with the
@@ -4089,7 +4139,13 @@ export default function App() {
                        active={!!immich} searching={!!immich?.busy} onSearch={(q) => void searchImmich(q)}
                        onMenu={showResultsMenu} />
         )}
-        <HistoryPanel base={historyBase} steps={[...undo.current.past, ...[...undo.current.future].reverse()].map((x) => x.label)}
+        <HistoryPanel base={historyBase.filter((h) => !session.current?.deleted.has(instanceKey(h)))
+                             .map((h) => {
+                               const st = session.current?.moduleStates.get(instanceKey(h));
+                               return st ? { ...h, enabled: st.enabled } : h;
+                             })}
+                      actionOf={historyAction} onChange={historyChange}
+                      steps={[...undo.current.past, ...[...undo.current.future].reverse()].map((x) => x.label)}
                       at={undo.current.past.length} disabled={!current || cropping}
                       open={leftOpen.has("history")} onToggle={(alt) => toggleLeft("history", alt)}
                       onGo={(n) => {
