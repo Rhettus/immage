@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
-// Lightroom's parametric tone curve (four region sliders, three split
-// points) as darktable tonecurve nodes. x and y are tonecurve's own axes:
+// Lightroom's parametric tone curve (four region sliders, a midtones
+// slider over the middle two, three split points) as darktable tonecurve
+// nodes. x and y are tonecurve's own axes:
 // perceptual lightness L/100, applied after the tone mapper
 
 export type Parametric = {
   highlights: number; lights: number; darks: number; shadows: number; // -100..100
+  midtones: number;                                                   // -100..100
   split1: number; split2: number; split3: number;                     // 0..100
 };
 
@@ -17,22 +19,23 @@ const xs = Array.from({ length: NODES }, (_, k) => k / (NODES - 1));
 
 // one region's influence: a cosine bump centered on the region, reaching to
 // the neighbouring centers, faded to zero at black and white so the end
-// points stay put
+// points stay put. midtones is a fifth bump, centered on the middle split
+// and reaching the outer two
 function bumps(x: number, s: [number, number, number]): number[] {
   const b = [0, s[0], s[1], s[2], 1];
   const fade = Math.sqrt(Math.sin(Math.PI * x));
-  return [0, 1, 2, 3].map((i) => {
-    const c = (b[i] + b[i + 1]) / 2;
-    const h = Math.max(b[i + 1] - b[i], 1e-3);
-    const d = (x - c) / h;
+  const bump = (c: number, h: number) => {
+    const d = (x - c) / Math.max(h, 1e-3);
     return Math.abs(d) < 1 ? GAIN * fade * Math.cos((Math.PI / 2) * d) ** 2 : 0;
-  });
+  };
+  return [...[0, 1, 2, 3].map((i) => bump((b[i] + b[i + 1]) / 2, b[i + 1] - b[i])),
+          bump(s[1], Math.max(s[1] - s[0], s[2] - s[1]))];
 }
 
 const splits = (p: Parametric): [number, number, number] =>
   [p.split1 / 100, p.split2 / 100, p.split3 / 100];
-// regions run dark to light
-const amounts = (p: Parametric) => [p.shadows, p.darks, p.lights, p.highlights].map((v) => v / 100);
+// regions run dark to light, then midtones
+const amounts = (p: Parametric) => [p.shadows, p.darks, p.lights, p.highlights, p.midtones].map((v) => v / 100);
 
 export function curve(p: Parametric): [number, number][] {
   const s = splits(p);
@@ -54,10 +57,17 @@ export function curve(p: Parametric): [number, number][] {
 // returns null when the curve is not one of ours
 export function fit(nodes: [number, number][]): Parametric | null {
   if (nodes.length !== NODES || nodes.some(([x], k) => Math.abs(x - xs[k]) > 1e-4)) return null;
+  // the four regions alone first: curves from before midtones were written
+  // that way, and where the monotone clamp bent one, the fifth bump can
+  // pull the fit off the settings that made it
+  return fitWith(nodes, 4) ?? fitWith(nodes, 5);
+}
+
+function fitWith(nodes: [number, number][], n: number): Parametric | null {
   let best: { p: Parametric; err: number } | null = null;
   const tryFit = (s1: number, s2: number, s3: number) => {
     const s: [number, number, number] = [s1 / 100, s2 / 100, s3 / 100];
-    const A = xs.map((x) => bumps(x, s));
+    const A = xs.map((x) => bumps(x, s).slice(0, n));
     const r = nodes.map(([x, y]) => y - x);
     const a = leastSquares(A, r);
     const err = A.reduce((e, row, k) => e + (row.reduce((t, v, i) => t + v * a[i], 0) - r[k]) ** 2, 0);
@@ -65,7 +75,7 @@ export function fit(nodes: [number, number][]): Parametric | null {
     // may move them off the defaults tried first
     if (!best || err < best.err - 1e-9) {
       const v = a.map((t) => Math.round(Math.max(-1, Math.min(1, t)) * 100));
-      best = { err, p: { shadows: v[0], darks: v[1], lights: v[2], highlights: v[3],
+      best = { err, p: { shadows: v[0], darks: v[1], lights: v[2], highlights: v[3], midtones: v[4] ?? 0,
                          split1: s1, split2: s2, split3: s3 } };
     }
   };
@@ -81,9 +91,9 @@ export function fit(nodes: [number, number][]): Parametric | null {
   return again.every(([, y], k) => Math.abs(y - nodes[k][1]) < 5e-4) ? found.p : null;
 }
 
-// normal equations for a 4-unknown fit; tiny ridge keeps empty regions at 0
+// normal equations, one unknown per region; tiny ridge keeps empty regions at 0
 function leastSquares(A: number[][], r: number[]): number[] {
-  const n = 4;
+  const n = A[0].length;
   const M = Array.from({ length: n }, (_, i) =>
     Array.from({ length: n }, (_, j) => A.reduce((t, row) => t + row[i] * row[j], 0) + (i === j ? 1e-9 : 0)));
   const v = Array.from({ length: n }, (_, i) => A.reduce((t, row, k) => t + row[i] * r[k], 0));

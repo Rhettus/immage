@@ -72,6 +72,16 @@ photo's starting point: they don't mark it as edited.
   (**AgX Default**, the default) or one of color balance rgb's
   (**Standard**, **Natural Skin**, **Vibrant Colors**, **Legacy**). JPEGs
   keep the camera's look.
+- **Exposure compensation** and **Amount**: brightens or darkens every new
+  raw by an amount in EV, for a camera whose raws come out too dark or too
+  light; +1 is common. Exposure in Basic still starts at 0 and adds to it,
+  so Exposure +0.5 makes +1.5 in all, and **Auto** allows for it. The
+  photo keeps the amount it started with: changing the setting later
+  leaves photos already opened alone. It isn't an adjustment, so **Reset
+  all**, the Before view, Copy Settings and presets leave it as it is; to
+  take it off one photo, reset or delete the **exposure • compensation**
+  row in History once the photo has been opened again. JPEGs get none.
+  Off by default; the amount starts at +1.
 - **Apply Auto** (Auto Tone): runs Basic's **Auto** once a raw has
   rendered. Off by default.
 - **Apply preset**: **Default** gives a raw lens corrections; JPEGs get

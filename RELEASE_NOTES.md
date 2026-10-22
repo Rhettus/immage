@@ -3,6 +3,47 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
+## 0.35.0
+
+Improvements
+
+- the Tone Curve's Parametric sliders are named as in Basic and run light
+  to dark: Whites, Highlights, Midtones, Shadows and Blacks. Midtones is
+  new, and bends the middle of the curve. Curves made with the earlier
+  sliders open with the same settings under the new names
+- the Zone System's Color mask takes an object as well as Sky, Rocks,
+  Vegetation and Subject: + Object, then drag a box around the object on
+  the photo or click it, and the AI outlines it. Each object gets a
+  button of its own, Object A, Object B, and so on
+- the History card's rows of the opened edit have buttons on hover: a
+  module added in darktable can be switched off or deleted, and one
+  behind Immage's sliders reset, each as one undo step
+- Preferences › New Photos has Exposure compensation: every new raw
+  starts brighter or darker by the amount set, +1 EV for instance, while
+  Basic's Exposure still starts at 0 and adds to it. Auto allows for it,
+  and each photo keeps the amount it started with. Off by default
+- Basic's Auto sets Blacks more gently: about half as far as before, and
+  not at all when a photo's darkest parts are close to black already. A
+  photo with nothing dark in it, such as a plane against clear sky, keeps
+  its blacks; before, Auto darkened the sky to navy
+- Post-Crop Vignetting's Amount no longer shows the vignette's guides
+  while it moves, so the photo can be judged without them. Midpoint,
+  Roundness and Feather still show them, and so does the pointer over
+  the photo
+
+Bug fixes
+
+- O and the eye in the Masks panel hide the red overlay while a brush
+  adds to or subtracts from a mask; before, the overlay stayed on until
+  the brush was put down with Esc, whichever mask was selected. Moving
+  one of the mask's sliders now also hides it, until the next stroke
+- on Linux, installing an update from the banner no longer stays on
+  "saving the edit and installing…" for good; an engine slow to stop is
+  stopped after a few seconds, and an install that cannot finish says so
+  and offers the release page. The update from 0.34.0 still runs
+  0.34.0's installer, so on Linux it may stop there once more: download
+  the AppImage from the release page instead
+
 ## 0.34.0
 
 Bug fixes

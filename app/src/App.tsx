@@ -8,11 +8,11 @@ import { ask, open, save } from "@tauri-apps/plugin-dialog";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { BANDS, choiceOn, choiceShows, controlById, GUIDE_IDS, guidesOf, isModuleSetting, MAX_GUIDES, UPRIGHT_GUIDED,
+import { BANDS, choiceOn, choiceShows, controlById, GUIDE_IDS, guidesOf, isModuleSetting, MAX_GUIDES, parametricOf, UPRIGHT_GUIDED,
          UPRIGHT_MODES, uprightAspect, mapOf, mapsFor, moduleName, mapsWith, panels, pointsOf, pointValues, profileLabel, turnRect, type Control, type ControlPreset, type CurveChannel, type Values,
          type Panel, type Section, type Turn } from "./manifest";
 import { CircleOff, Grid2x2, MoveHorizontal, MoveVertical, PenLine, Sparkles, WandSparkles } from "lucide-react";
-import { Session, type Frame, type HistoryItem, type View } from "./session";
+import { Session, instanceKey, mapOpOf, type Frame, type HistoryItem, type ModuleState, type View } from "./session";
 import { AUTO_TONE_IDS, autoExposure, autoTone, type SceneKey } from "./autoTone";
 import { curve } from "./tonecurve";
 import { clipColor, computeHistogram, DEFAULT_SCOPE, drawScope, HARMONIES, HARMONY_WIDTHS, histogramPath, paintClipping,
@@ -41,7 +41,7 @@ import { Tour, tourSeen } from "./Tour";
 import { UpdateBanner } from "./UpdateBanner";
 import { autoCheck } from "./updates";
 import { Chevron, Collapse } from "./Collapse";
-import { loadAutoHide, loadAutoToneNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadNewPhotosProfile, loadOverlayColor, loadPins, maskOverlayRgb, loadPreview, loadSliderScroll, loadSliderScrollStep,
+import { loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadNewPhotosProfile, loadOverlayColor, loadPins, maskOverlayRgb, loadPreview, loadSliderScroll, loadSliderScrollStep,
          loadStackPairs,
          PreferencesDialog, storeOverlayColor, storeStackPairs,
          storeAutoHide, storeCanvas, CANVASES, storeFocusMode, storePins, type AccelProvider, type Canvas,
@@ -55,16 +55,16 @@ import type { ImportResult } from "@immporter/embed";
 import { MaskOverlay, type BrushSettings, type MaskTool, type ObjectPrompt } from "./MaskOverlay";
 import { MasksPanel, useDismiss, type AiKind, type ToolTarget } from "./MasksPanel";
 import { HealPanel } from "./HealPanel";
-import { LOCAL_TRANSITION, ZoneAdjust, ZoneSystem, type ZoneMaskInfo } from "./ZoneSystem";
+import { LOCAL_TRANSITION, ObjectBox, ZoneAdjust, ZoneSystem, type ZoneMaskInfo } from "./ZoneSystem";
 import { DEFAULT_TRANSITION, loadZoneOverlay, offsetsOf, overlayRgb, paintRange, paintWeights, parseZones, placeIds,
-         placeTable,
+         placeTable, nextObjectKind, partLabel,
          rangeCenter, samePart, saveZoneOverlay, ZONE_PARTS, zoneAt, zoneMaskName, zoneOfMask, zonePartOf, zoneShape,
          type ZoneData, type ZoneOverlay, type ZonePart, type ZoneRange } from "./zones";
 import { SpotOverlay, type SpotTool } from "./SpotOverlay";
 import type { NewSpot, Spot } from "./spots";
-import { flipMode, isRange, isRefined, maskAt, maskKindName, nextMaskName, NO_REFINE, rangeChannels, type BlendifChannel,
-         type ChannelRange, type Mask, type ObjectShape, type ParametricRange, type Range, type RangeMap, type Refine, type Region,
-         type Shape } from "./masks";
+import { flipMode, isRange, isRefined, maskAt, maskKindName, nextMaskName, NO_REFINE, overlayShown, overlayStep, rangeChannels,
+         type BlendifChannel, type ChannelRange, type Mask, type ObjectShape, type OverlayToggle, type ParametricRange, type Range,
+         type RangeMap, type Refine, type Region, type Shape } from "./masks";
 import { channelTint, type Picked } from "./ParametricEditor";
 import { BUILTIN_PRESETS, loadLooks, loadNewPhotosPreset, loadPresets, NewPresetDialog, PresetsPanel, PreviewCache,
          readSharedPresets, savePresets, sharedPresets, storeNewPhotosPreset, type Look, type Preset } from "./Presets";
@@ -360,7 +360,7 @@ export default function App() {
   const [brush, setBrush] = useState<BrushSettings>({ size: 0.05, hardness: 0.5, density: 1, erase: false });
   // the red overlay starts off; it shows anyway while a shape is drawn or
   // dragged (MaskOverlay), and O or the panel's switch keeps it on
-  const [maskOverlay, setMaskOverlay] = useState(false);
+  const [maskOverlay, setMaskOverlay] = useState<OverlayToggle>({ on: false, hold: null });
   // the mask createShape last made, for the Masks panel to open its Tone
   const [freshMask, setFreshMask] = useState<{ name: string; n: number } | null>(null);
   // the overlay steps aside while a mask's sliders move, so the change can
@@ -522,6 +522,7 @@ export default function App() {
       setShapeSel(m.shapes.length);
     }
     syncMasks();
+    overlayEvent("stroke");
     // a gradient is edited by its handles once drawn; the brush keeps painting
     if (shape.type !== "brush") setMaskTool(null);
     return name;
@@ -860,9 +861,10 @@ export default function App() {
     record(["reset"]);
     holdRecord.current = true;
     try {
-      // the modules and profile are the photo's own, not adjustments; the
-      // orientation stays too, as in Lightroom
-      changeMany(Object.entries(s.neutral).filter(([id]) => !isModuleSetting(id) && id !== "profile" && id !== "orient"));
+      // the modules, profile and exposure compensation are the photo's own,
+      // not adjustments; the orientation stays too, as in Lightroom
+      changeMany(Object.entries(s.neutral).filter(([id]) => !isModuleSetting(id) && id !== "profile"
+                                                            && id !== "exp_comp" && id !== "orient"));
       if (s.look) applyLook(null);
       for (const m of s.masks) s.deleteMask(m.name);
       if (s.spots.length) s.setSpots([]);
@@ -1089,9 +1091,15 @@ export default function App() {
   const [peekName, setPeekName] = useState<string | null>(null);
   const peekMask = masksMode ? masks.find((m) => m.name === peekName) ?? null : null;
   // a tool in hand to add to the selected mask or take from it: its overlay
-  // shows whatever the toggle says, so the shape is drawn against what is there
+  // shows whatever the toggle says, so the shape is drawn against what is
+  // there, until O or an adjustment sets it aside (overlayStep)
   const addingTo = masksMode && !!maskTool && toolTarget !== "new" && !!selMask;
-  const maskShown = maskOverlay || addingTo;
+  const addingRef = useRef(false);
+  addingRef.current = addingTo;
+  const maskShown = overlayShown(maskOverlay, addingTo);
+  const overlayEvent = (ev: "key" | "adjust" | "stroke") => setMaskOverlay((t) => overlayStep(t, addingRef.current, ev));
+  // what O or an adjustment set aside lasts as long as the tool in hand
+  useEffect(() => setMaskOverlay((t) => (t.hold ? { ...t, hold: null } : t)), [addingTo]);
   // the last full (not a drag's) sharp render's view, which a refined mask's
   // overlay is made for: its refinements depend on the scale
   const [shownView, setShownView] = useState<{ x: number; y: number; scale: number; width: number; height: number;
@@ -1390,8 +1398,9 @@ export default function App() {
   const vignetteGuides = rightMode === "adjust" && openPanels.has("effects") && !!values.vig_amount && !grainLast
     && !!current && !cropping && !preview;
   useEffect(() => { placeLayers(); }, [masksMode, healMode, current, cropping, vignetteGuides]);
-  // the guides also show while a vignette slider moves: until the button
-  // comes up after a drag, or a moment after a wheel notch or a typed value
+  // the guides also show while a slider of the vignette's shape moves (not
+  // Amount): until the button comes up after a drag, or a moment after a
+  // wheel notch or a typed value
   const [vigSliding, setVigSliding] = useState(false);
   const vigButton = useRef(false);
   const vigTimer = useRef(0);
@@ -1479,9 +1488,17 @@ export default function App() {
   // outlines found for this photo so far, by kind
   const [zonePart, setZonePart] = useState<ZonePart | null>(null);
   const [zoneAiPaths, setZoneAiPaths] = useState<Record<string, ObjectShape["paths"]>>({});
+  // a new object being boxed on the photo
+  const [zoneBoxing, setZoneBoxing] = useState(false);
+  const zoneBoxingRef = useRef(false);
+  zoneBoxingRef.current = zoneBoxing;
   useEffect(() => {
     setZoneData(null); setZonePinned(null); setZoneError(null); setZonePart(null); setZoneAiPaths({});
+    setZoneBoxing(false);
   }, [current]);
+  useEffect(() => { if (!zonesOpen) setZoneBoxing(false); }, [zonesOpen]);
+  // its layer may come without the overlay's, which places it otherwise
+  useEffect(() => { if (zoneBoxing) placeLayers(); }, [zoneBoxing]);   // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const s = session.current, f = full.current;
     if (!s || !f || !zonesOpen) return;
@@ -1527,13 +1544,30 @@ export default function App() {
     return null;
   };
   const pickZonePart = (kind: string | null, invert: boolean) => {
+    setZoneBoxing(false);
     if (!kind) { setZonePart(null); return; }
     if (partPaths(kind)) { setZonePart({ kind, invert }); return; }
     const a = AI_KINDS[kind as AiKind];
+    if (!a) return;
     void runAi(a.model, a.working, () => invoke<ObjectShape["paths"]>("ai_mask", { kind: a.kind }), (paths) => {
       setZoneAiPaths((old) => ({ ...old, [kind]: paths }));
       setZonePart({ kind, invert });
     });
+  };
+  // the objects boxed on this photo so far, or kept by its zone masks
+  const zoneObjects = [...new Set([...Object.keys(zoneAiPaths), ...zoneMasks.flatMap((z) => (z.part ? [z.part.kind] : []))])]
+    .filter((k) => k.startsWith("object:")).sort();
+  const boxZoneObject = (prompt: ObjectPrompt) => {
+    setZoneBoxing(false);
+    const kind = nextObjectKind(zoneObjects);
+    if (!kind) { setStatus("no more objects on this photo"); return; }
+    const invert = zonePart?.invert ?? false;
+    void runAi("mask-object-sam21-small", "finding the object…",
+      () => invoke<ObjectShape["paths"]>("ai_object", { points: prompt.points ?? [], box: prompt.box ?? null }),
+      (paths) => {
+        setZoneAiPaths((old) => ({ ...old, [kind]: paths }));
+        setZonePart({ kind, invert });
+      });
   };
   // an edit of a run of zones' adjustment, its mask made on first use, in
   // the one undo step; narrowed to the chosen part of the photo, the AI
@@ -2733,6 +2767,12 @@ export default function App() {
         if (edited) void fillEditedMeta(s.imgid);
       };
       s.onShapes = () => { syncMasks(); syncSpots(); };
+      // a module the History panel changed: its sliders, if it has any
+      s.onModules = () => {
+        if (session.current !== s) return;
+        setValues({ ...s.values });
+        setHistoryRev((n) => n + 1);
+      };
       session.current = s;
       s.lookPath = looksRef.current.find((l) => l.name === s.look)?.path ?? null;
       setMasks(s.masks);
@@ -2771,6 +2811,14 @@ export default function App() {
         s.setMany([["profile", profile]]);
         base.push({ op: "profile", name: profileLabel(profile).toLowerCase(),
                     label: "profile", enabled: true });
+      }
+      // and a raw with Preferences' exposure compensation, on an instance of
+      // its own (exp_comp), so Exposure still reads 0 and adds to it
+      const comp = loadExposureCompNew();
+      if (!s.wasEdited && s.raw && comp) {
+        s.setMany([["exp_comp", comp]]);
+        base.push({ op: "exposure", name: "exposure",
+                    label: `compensation ${comp > 0 ? "+" : ""}${comp.toFixed(2)} EV`, enabled: true });
       }
       // a raw starts with darktable's capture sharpening, and without noise
       // reduction, which the AgX workflow adds only where a photo needs it;
@@ -2813,10 +2861,13 @@ export default function App() {
   // shape drag, the white balance picker settling) is one step
   // `label` names the change that follows the state, for the History panel
   type Snap = { values: Values; masks: Mask[]; spots: Spot[]; look: { name: string | null; path: string | null };
-                lookAmount: number; label: string };
+                lookAmount: number; label: string;
+                // the History panel's switched instances, and those deleted
+                modules: Map<string, ModuleState>; deleted: Set<string> };
   const snapshot = (s: Session, label = ""): Snap => ({
     values: { ...s.values }, masks: structuredClone(s.masks), spots: structuredClone(s.spots),
     look: { name: s.look, path: s.lookPath }, lookAmount: s.lookAmount, label,
+    modules: new Map(s.moduleStates), deleted: new Set(s.deleted),
   });
   const undo = useRef<{ past: Snap[]; future: Snap[]; key: string; at: number }>(
     { past: [], future: [], key: "", at: 0 });
@@ -2857,6 +2908,15 @@ export default function App() {
     if (target.lookAmount !== s.lookAmount) s.setLookAmount(target.lookAmount);
     setLookAmount(target.lookAmount);
     setMasksTo(target.masks);
+    // after the values, which Session.pump sends first. an instance whose
+    // reply is still to come is restored whatever it holds
+    for (const key of s.touched) {
+      const want = target.modules.get(key), now = s.moduleStates.get(key);
+      if (now && JSON.stringify(want ?? null) === JSON.stringify(now)) continue;
+      const h = s.history.find((x) => instanceKey(x) === key);
+      if (h) s.setModuleState(h, { restore: want ?? "opened" });
+    }
+    s.deleted = new Set(target.deleted);
     if (JSON.stringify(target.spots) !== JSON.stringify(s.spots)) {
       s.setSpots(target.spots);
       syncSpots();
@@ -2962,6 +3022,43 @@ export default function App() {
     }
   };
 
+  // the History panel's actions on a row of the opened stack. a module with
+  // Immage's sliders is reset through them, so the next slider move cannot
+  // switch it back; one darktable set beyond what they show, in the engine
+  const historyAction = (h: HistoryItem): "toggle" | "reset" | null => {
+    if (h.priority === undefined || h.fixed || h.masked) return null;
+    return mapsFor(mapOpOf(h)).length ? "reset" : "toggle";
+  };
+  const historyChange = (h: HistoryItem, how: "toggle" | "delete" | "reset") => {
+    const s = session.current;
+    if (!s || croppingRef.current) return;
+    const key = instanceKey(h), op = mapOpOf(h);
+    if (how === "reset" && !s.isForeign(op)) {
+      const ids = [...new Set(mapsFor(op).flatMap((m) => m.controls))];
+      changeMany(ids.map((id) => [id, s.neutral[id]]), `Reset ${h.name}`);
+      return;
+    }
+    leaveBefore();
+    setBaMode("off");
+    const on = s.moduleStates.get(key)?.enabled ?? h.enabled;
+    record([`history:${key}`], how === "toggle" ? `${on ? "Switch off" : "Switch on"} ${h.name}`
+      : how === "reset" ? `Reset ${h.name}` : `Delete ${h.name}`);
+    baseStale.current = true;
+    if (how === "toggle") s.setModuleState(h, { enabled: !on });
+    // one darktable starts on would come back on: it goes back to its defaults
+    else if (how === "reset" || h.default_enabled) s.setModuleState(h, { reset: true });
+    else {
+      s.deleted.add(key);
+      s.setModuleState(h, { enabled: false });
+    }
+    setHistoryRev((n) => n + 1);
+  };
+
+  // what the Before view keeps of the edit: the crop, the modules chosen,
+  // the orientation, and the exposure compensation a raw started with, which
+  // corrects the camera rather than adjusting the photo
+  const keptBefore = (id: string) => id.startsWith("crop_") || isModuleSetting(id) || id === "orient"
+    || id === "exp_comp";
   // the before/after views (Y cycles them): the before is a render with the
   // Before view's settings, kept on a layer of its own beside the edit,
   // clipped at a divider that can be dragged, or shown while the photo is
@@ -2980,7 +3077,7 @@ export default function App() {
   const captureBefore = (delay = 0) => {
     window.clearTimeout(captureTimer.current);
     captureTimer.current = window.setTimeout(() => {
-      if (baModeRef.current !== "off") session.current?.showBefore((id) => id.startsWith("crop_") || isModuleSetting(id) || id === "orient");
+      if (baModeRef.current !== "off") session.current?.showBefore(keptBefore);
     }, delay);
   };
   const setBaMode = (mode: BaMode) => {
@@ -3087,7 +3184,7 @@ export default function App() {
     beforeRef.current = on;
     setBeforeState(on);
     baseStale.current = true;
-    session.current.showBefore(on ? (id) => id.startsWith("crop_") || isModuleSetting(id) || id === "orient" : null);
+    session.current.showBefore(on ? keptBefore : null);
   };
   const leaveBefore = () => setBefore(false);
   // the key handler is installed once; it reaches the latest of this
@@ -3108,7 +3205,10 @@ export default function App() {
     leaveBefore();
     setBaMode("off");
     if (entries.some(([id]) => id.startsWith("grain_"))) setGrainLast(true);
-    else if (entries.some(([id]) => id.startsWith("vig_"))) { setGrainLast(false); vigMoved(); }
+    else if (entries.some(([id]) => id.startsWith("vig_"))) {
+      setGrainLast(false);
+      if (entries.some(([id]) => id.startsWith("vig_") && id !== "vig_amount")) vigMoved();
+    }
     if (entries.some(([id]) => id.startsWith("tf_"))) tfMoved();
     record(entries.map(([id]) => id), label);
     baseStale.current = true;
@@ -3120,7 +3220,7 @@ export default function App() {
     leaveBefore();
     setBaMode("off");
     if (c.id.startsWith("grain_")) setGrainLast(true);
-    else if (c.id.startsWith("vig_")) { setGrainLast(false); vigMoved(); }
+    else if (c.id.startsWith("vig_")) { setGrainLast(false); if (c.id !== "vig_amount") vigMoved(); }
     if (c.id.startsWith("tf_")) tfMoved();
     setAmount(null);
     record([c.id]);
@@ -3748,13 +3848,14 @@ export default function App() {
       if ((e.key === "w" || e.key === "W") && session.current) { setPicking(!pickingRef.current); return; }
       if (healModeRef.current && healKeyRef.current(e)) return;
       // O shows or hides the pinned zones' overlay, as it does a mask's
+      if (zoneBoxingRef.current && e.key === "Escape") { setZoneBoxing(false); return; }
       if (zonesModeRef.current && (e.key === "o" || e.key === "O")) {
         setZoneOverlayState((o) => { const next = { ...o, show: !o.show }; saveZoneOverlay(next); return next; });
         return;
       }
       if (masksModeRef.current) {
         if (e.key === "Escape") { setMaskTool(null); return; }
-        if (e.key === "o" || e.key === "O") { setMaskOverlay((o) => !o); return; }
+        if (e.key === "o" || e.key === "O") { overlayEvent("key"); return; }
         if (e.key === "[" || e.key === "]") {
           setBrush((b) => ({ ...b, size: Math.min(0.4, Math.max(0.005, b.size * (e.key === "]" ? 1.15 : 1 / 1.15))) }));
           return;
@@ -4056,7 +4157,13 @@ export default function App() {
                        active={!!immich} searching={!!immich?.busy} onSearch={(q) => void searchImmich(q)}
                        onMenu={showResultsMenu} />
         )}
-        <HistoryPanel base={historyBase} steps={[...undo.current.past, ...[...undo.current.future].reverse()].map((x) => x.label)}
+        <HistoryPanel base={historyBase.filter((h) => !session.current?.deleted.has(instanceKey(h)))
+                             .map((h) => {
+                               const st = session.current?.moduleStates.get(instanceKey(h));
+                               return st ? { ...h, enabled: st.enabled } : h;
+                             })}
+                      actionOf={historyAction} onChange={historyChange}
+                      steps={[...undo.current.past, ...[...undo.current.future].reverse()].map((x) => x.label)}
                       at={undo.current.past.length} disabled={!current || cropping}
                       open={leftOpen.has("history")} onToggle={(alt) => toggleLeft("history", alt)}
                       onGo={(n) => {
@@ -4111,9 +4218,10 @@ export default function App() {
                              onCreate={createShape} />
               </div>
             )}
-            {zoneShown && full.current && (
+            {(zoneShown || zoneBoxing) && full.current && (
               <div className="mask-box" ref={zoneBox}>
-                <canvas ref={zoneCanvas} className="mask-tint zone-tint" />
+                {zoneShown && <canvas ref={zoneCanvas} className="mask-tint zone-tint" />}
+                {zoneBoxing && <ObjectBox onPrompt={boxZoneObject} />}
               </div>
             )}
             {maskOp && full.current && (
@@ -4318,7 +4426,7 @@ export default function App() {
         <div className="panels" data-tour="panels">
           {masksMode && !cropping && (
             <MasksPanel masks={masks} selected={maskSel} shape={shapeSel} tool={maskTool} target={toolTarget}
-                        brush={brush} overlay={maskOverlay} disabled={!current} mono={values.bw_mode === 1} photo={values}
+                        brush={brush} overlay={maskShown} disabled={!current} mono={values.bw_mode === 1} photo={values}
                         renderSlider={(c, v, onChange, glow) => (
                           <Slider key={c.id} control={c} value={v} neutral={c.neutral ?? 0} disabled={!current}
                                   values={selMask?.values ?? values} onChange={onChange} glow={glow} />
@@ -4341,7 +4449,7 @@ export default function App() {
                           setShapeSel(0);
                         }}
                         onInvert={(inv) => { if (maskSel) { record(["mask:invert"]); session.current?.setInvert(maskSel, inv); syncMasks(); } }}
-                        onOpacity={(v) => { if (maskSel) { adjusted(); record([`mask:${maskSel}:opacity`]); session.current?.setOpacity(maskSel, v); syncMasks(); } }}
+                        onOpacity={(v) => { if (maskSel) { adjusted(); overlayEvent("adjust"); record([`mask:${maskSel}:opacity`]); session.current?.setOpacity(maskSel, v); syncMasks(); } }}
                         onRefine={(patch: Partial<Refine>) => {
                           const m = masks.find((x) => x.name === maskSel);
                           if (!m) return;
@@ -4365,8 +4473,8 @@ export default function App() {
                           syncMasks();
                         }}
                         onBrush={setBrush}
-                        onOverlay={setMaskOverlay}
-                        onLocal={(id, v) => { if (maskSel) { adjusted(); record([`mask:${maskSel}:${id}`]); session.current?.setLocal(maskSel, id, v); syncMasks(); } }}
+                        onOverlay={() => overlayEvent("key")}
+                        onLocal={(id, v) => { if (maskSel) { adjusted(); overlayEvent("adjust"); record([`mask:${maskSel}:${id}`]); session.current?.setLocal(maskSel, id, v); syncMasks(); } }}
                         onRange={(k, patch) => { refined(); editShapes((sh) => sh.map((x, i) => (i === k ? { ...x, ...patch } as Shape : x))); }}
                         onDepth={(k, depth, feather) => { refined(); void editDepth(k, depth, feather); }}
                         onFeather={(k, patch) => { refined(); editShapes((sh) => sh.map((x, i) => (i === k ? { ...x, ...patch } as Shape : x))); }}
@@ -4425,8 +4533,8 @@ export default function App() {
                               }}
                               onPlace={(next) => changeMany(placeIds.map((id, i) => [id, Math.round(next[i] * 1000) / 1000]))}
                               zoneMasks={zoneMasks} selected={zoneMaskOf(zonePinned)}
-                              part={zonePart} parts={ZONE_PARTS} partBusy={aiBusy}
-                              onPart={pickZonePart}
+                              part={zonePart} parts={[...ZONE_PARTS, ...zoneObjects.map((k): [string, string] => [k, partLabel(k)!])]}
+                              partBusy={aiBusy} onPart={pickZonePart} boxing={zoneBoxing} onBoxing={setZoneBoxing}
                               onLocal={(r, id, v) => zoneEdit(r, id, (s, n) => {
                                 adjusted();
                                 s.setLocal(n, id, v);
@@ -5744,11 +5852,7 @@ function PanelView({ panel: p, open, onToggle, values, session, disabled, onChan
     // points made before stay; only an empty point curve starts from the
     // parametric curve's shape
     if (!isIdentity(pointsOf(values))) { onChange(controlById.get("tc_mode")!, 1); return; }
-    const pc = paramCurve({
-      highlights: values.tc_highlights ?? 0, lights: values.tc_lights ?? 0, darks: values.tc_darks ?? 0,
-      shadows: values.tc_shadows ?? 0, split1: values.tc_split1 ?? 25, split2: values.tc_split2 ?? 50,
-      split3: values.tc_split3 ?? 75,
-    });
+    const pc = paramCurve(parametricOf(values));
     const flat = pc.every(([x, y]) => Math.abs(x - y) < 1e-4);
     const pts: [number, number][] = flat ? [[0, 0], [1, 1]]
       : [0, 4, 8, 12, 16].map((k) => pc[k]);
@@ -6156,11 +6260,7 @@ function CurveGraph({ values: v, histogram, mark }: {
 }) {
   const W = 260, H = 260;
   const hist = histogramPath(histogram, W, H);
-  const pts = curve({
-    highlights: v.tc_highlights ?? 0, lights: v.tc_lights ?? 0, darks: v.tc_darks ?? 0,
-    shadows: v.tc_shadows ?? 0, split1: v.tc_split1 ?? 25, split2: v.tc_split2 ?? 50,
-    split3: v.tc_split3 ?? 75,
-  });
+  const pts = curve(parametricOf(v));
   const d = pts.map(([x, y], k) => `${k ? "L" : "M"}${(x * W).toFixed(1)},${((1 - y) * H).toFixed(1)}`).join(" ");
   const splits = [v.tc_split1 ?? 25, v.tc_split2 ?? 50, v.tc_split3 ?? 75];
   return (
@@ -6186,11 +6286,7 @@ function CurveGraph({ values: v, histogram, mark }: {
 // shift the answer a little
 function markOnCurve(probe: Probe, v: Record<string, number>, pointMode: boolean, channel: CurveChannel): CurveMark {
   const ch = pointMode && channel !== "rgb" ? ({ r: 0, g: 1, b: 2 } as const)[channel] : null;
-  const f = !pointMode ? polyline(paramCurve({
-      highlights: v.tc_highlights ?? 0, lights: v.tc_lights ?? 0, darks: v.tc_darks ?? 0,
-      shadows: v.tc_shadows ?? 0, split1: v.tc_split1 ?? 25, split2: v.tc_split2 ?? 50,
-      split3: v.tc_split3 ?? 75,
-    }))
+  const f = !pointMode ? polyline(paramCurve(parametricOf(v)))
     : ch === null ? monotone(pointsOf(v)) : channelCurve(pointsOf(v, channel));
   const x = invert(f, ch === null ? lightness(probe.rgb) : probe.rgb[ch] / 255);
   return { x, y: Math.min(1, Math.max(0, f(x))) };

@@ -22,8 +22,23 @@ type OpenReply = { imgid: number; sensor_width: number; sensor_height: number; o
                    fresh?: boolean };
 
 // an item of the image's darktable history, as darktable's history module
-// names it
-export type HistoryItem = { op: string; name: string; label: string | null; enabled: boolean };
+// names it. `priority` picks the instance; `fixed` ones have no switch in
+// darktable, and `masked` ones are the Masks panel's. the new-photo rows
+// Immage adds have none of these
+export type HistoryItem = {
+  op: string; name: string; label: string | null; enabled: boolean;
+  priority?: number; default_enabled?: boolean; fixed?: boolean; masked?: boolean;
+};
+
+// an instance's whole state as the engine's `module_state` gives it, for
+// undoing the History panel's switches
+export type ModuleState = { enabled: boolean; params: string; blend: string | null };
+type ModuleRequest = { enabled?: boolean; reset?: boolean; restore?: ModuleState | "opened" };
+
+// the instance a history item is for, and the ModuleMap op its sliders use:
+// Immage's own named instances carry their name, as manifest's "op#name"
+export const instanceKey = (h: HistoryItem) => `${h.op}#${h.priority}`;
+export const mapOpOf = (h: HistoryItem) => h.label ? `${h.op}#${h.label}` : h.op;
 type ModuleInfo = {
   enabled: boolean;
   default_enabled: boolean;
@@ -162,6 +177,17 @@ export class Session {
   // its darktable history when opened: the defaults darktable applies, and
   // any edit kept from before
   history: HistoryItem[] = [];
+  // instances the History panel switched, by instanceKey: their state now,
+  // and as the photo opened, which undo goes back to
+  moduleStates = new Map<string, ModuleState>();
+  private modulesOpened = new Map<string, ModuleState>();
+  private modulePending: { key: string; op: string; priority: number; req: ModuleRequest }[] = [];
+  // those deleted: switched off, and gone from the history at the next save
+  // (the engine's _prune_off), or reset if darktable starts them on
+  deleted = new Set<string>();
+  // every instance asked for, at once: moduleStates follows only the replies
+  touched = new Set<string>();
+  onModules: (() => void) | null = null;
   // a raw file rather than a JPEG, HEIC or other rendered one
   raw = true;
   private spotsDirty = false;
@@ -702,6 +728,38 @@ export class Session {
     void this.pump();
   }
 
+  // a history item's instance switched, reset, or restored for undo
+  // ("opened": as the photo opened)
+  setModuleState(h: HistoryItem, req: ModuleRequest) {
+    if (h.priority === undefined) return;
+    this.touched.add(instanceKey(h));
+    this.modulePending.push({ key: instanceKey(h), op: h.op, priority: h.priority, req });
+    void this.pump();
+  }
+
+  // whether darktable set the module in a way its sliders cannot show
+  isForeign(op: string) {
+    return mapsFor(op).some((m) => this.foreign.has(m));
+  }
+
+  // a mapped module's sliders read again after the engine changed it
+  // (setModuleState), as Session.open reads them
+  private async reread(op: string) {
+    const fields = boundFields()[op];
+    if (!fields) return;
+    const reply = await invoke<{ modules: Record<string, ModuleInfo> }>("get_params",
+      { modules: { [op]: fields } });
+    const info = this.info[op] = reply.modules[op];
+    for (const m of mapsFor(op)) {
+      this.foreign.delete(m);
+      const current = info.enabled ? m.read(info.params, info.defaults, this.ctx, this.values) : {};
+      for (const id of m.controls) {
+        if (info.enabled && current[id] === undefined) this.foreign.add(m);
+        this.values[id] = this.snap(id, current[id] ?? this.neutral[id], this.neutral[id]);
+      }
+    }
+  }
+
   // every map that shares the module contributes its fields to one edit
   private moduleEdit(op: string, values: Values = this.sent(),
                      skip: (m: ModuleMap) => boolean = (m) => this.foreign.has(m)) {
@@ -806,7 +864,7 @@ export class Session {
     try {
       while (this.dirty.size || this.needRender || this.needThumb || this.needWarm || this.wantLook !== undefined
              || this.masksPending || this.wantLookAmount !== undefined || this.spotsPending
-             || this.reshapeDue || this.baselineEnd) {
+             || this.reshapeDue || this.baselineEnd || this.modulePending.length) {
         // before the change that ended it; a save it makes is the one due
         if (this.baselineEnd) {
           this.baselineEnd = false;
@@ -864,6 +922,23 @@ export class Session {
           const path = this.wantLook;
           this.wantLook = undefined;
           await invoke("look_apply", { path });
+          if (!this.before) { this.unsaved = true; this.scheduleSave(); }
+          this.needRender = true;
+          continue;
+        }
+        // after the sliders' edits, so an undo's values cannot overwrite the
+        // state it restores
+        if (this.modulePending.length && !this.dirty.size) {
+          const { key, op, priority, req } = this.modulePending.shift()!;
+          const restore = req.restore === "opened" ? this.modulesOpened.get(key) : req.restore;
+          if (req.restore === "opened" && !restore) continue;
+          const r = await invoke<{ was: ModuleState; now: ModuleState }>("module_state",
+            { op, priority, enabled: req.enabled, reset: req.reset, restore });
+          if (!this.modulesOpened.has(key)) this.modulesOpened.set(key, r.was);
+          this.moduleStates.set(key, r.now);
+          const item = this.history.find((h) => instanceKey(h) === key);
+          if (item) await this.reread(mapOpOf(item));
+          this.onModules?.();
           if (!this.before) { this.unsaved = true; this.scheduleSave(); }
           this.needRender = true;
           continue;
@@ -948,6 +1023,11 @@ export class Session {
     const r = await invoke<{ edited: boolean }>("save");
     this.onSaved?.(r.edited);
     this.history = await invoke<HistoryItem[]>("history", { saved: true });
+    // nothing is left to undo, and a deleted instance is gone from it
+    this.moduleStates.clear();
+    this.modulesOpened.clear();
+    this.deleted.clear();
+    this.touched.clear();
     return this.history;
   }
 

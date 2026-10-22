@@ -93,6 +93,12 @@ const COMMANDS = {
   open_image: ({ path, imgid }) => request({ cmd: "open", path, imgid: imgid ?? -1 }),
   get_params: ({ modules }) => request({ cmd: "get", modules }),
   history: async ({ saved } = {}) => (await request({ cmd: "history", saved: saved ?? false })).items,
+  module_state: ({ op, priority, enabled, reset, restore }) => {
+    const req = { cmd: "module_state", op, priority, reset: reset ?? false };
+    if (enabled != null) req.enabled = enabled;
+    if (restore != null) req.restore = restore;
+    return request(req);
+  },
   masks: async ({ fields }) => (await request({ cmd: "masks", fields })).masks,
   spots: async ({ spots } = {}) => (await request({ cmd: "spots", ...(spots ? { spots } : {}) })).spots,
   spots_enable: ({ on }) => request({ cmd: "spots_enable", on }),

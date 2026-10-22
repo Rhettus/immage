@@ -54,7 +54,10 @@ export function autoExposure(current: number, z: ZoneData): AutoExposure {
 const LO_PCT = 0.005, HI_PCT = 0.995;  // the ends Blacks and Whites place
 const BLACK_TARGET = 0.03;             // just short of clipping either end
 const WHITE_TARGET = 0.96;
-const BLACKS_GAIN = 600;               // linear Blacks units per unit of lightness
+const BLACKS_GAIN = 300;               // linear Blacks units per unit of lightness
+const BLACKS_BAND = 0.015;             // a dark end this close to the target is left
+const BLACKS_NONE = 0.15;              // a dark end above this has no black to place:
+                                       // deepening it would darken the subject, a sky
 const WHITES_GAIN = 300;
 
 const SHADOW_EDGE = 0.25, SHADOW_SHARE = 0.2, SHADOWS_GAIN = 150;     // more dark than this lifts
@@ -90,7 +93,9 @@ export function autoTone(px: Uint8ClampedArray, width: number, height: number,
   };
   const mean = sum / count;
   const spread = Math.sqrt(Math.max(0, sum2 / count - mean * mean));
-  const blacks = clamp((BLACK_TARGET - pct(LO_PCT)) * BLACKS_GAIN);
+  const lo = pct(LO_PCT), off = BLACK_TARGET - lo;
+  const blacks = lo > BLACKS_NONE ? 0
+    : clamp(Math.sign(off) * Math.max(0, Math.abs(off) - BLACKS_BAND) * BLACKS_GAIN);
   const whites = clamp((WHITE_TARGET - pct(HI_PCT)) * WHITES_GAIN);
   const lift = 1 - key.lowKey, pull = 1 - key.highKey;
   return {

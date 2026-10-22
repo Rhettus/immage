@@ -65,7 +65,10 @@ const { Session } = await import("../app/src/session.ts");
 const { withModel } = await import("../app/src/aiModel.ts");
 const m = await import("../app/src/manifest.ts");
 const { canMerge } = await import("../app/src/localMerge.ts");
+const { overlayShown, overlayStep } = await import("../app/src/masks.ts");
 const { ILLUMINANT_D } = await import("../app/src/wb.ts");
+const { autoTone } = await import("../app/src/autoTone.ts");
+const z = await import("../app/src/zones.ts");
 const { compare, meanChroma, inEllipse, rightOf } = await import("./metrics.mjs");
 const { THRESHOLD, GLOBAL, COMPOSITE, LOCAL, trialValues, judge } = await import("./expect.mjs");
 
@@ -362,6 +365,21 @@ async function restart() {
 const drained = () => request({ cmd: "version" });
 
 const brighter = (f, ref, region = null) => judge({ expect: { lum: 1 } }, compare(f, ref, region), 1);
+
+// a region of the pixels well inside an AI object's outlines (`inside`), or
+// well outside them: even-odd over the paths' corners, the same answer 2%
+// of the frame either way. masks.ts's maskAt() needs a canvas, which Node
+// lacks
+function inPaths(paths, inside) {
+  const polys = paths.map((p) => p.points.map((c) => [c[0], c[1]]));
+  const at = (x, y) => {
+    let c = false;
+    for (const P of polys) for (let i = 0, j = P.length - 1; i < P.length; j = i++)
+      if ((P[i][1] > y) !== (P[j][1] > y) && x < ((P[j][0] - P[i][0]) * (y - P[i][1])) / (P[j][1] - P[i][1]) + P[i][0]) c = !c;
+    return c;
+  };
+  return (x, y) => [[0, 0], [0.02, 0], [-0.02, 0], [0, 0.02], [0, -0.02]].every(([a, b]) => at(x + a, y + b) === inside);
+}
 
 // a zip of `files` ({ name: text }), stored, as a .dtmodel is laid out
 function zip(files) {
@@ -705,6 +723,31 @@ async function decisions(photo) {
       : Math.abs(got.grain.params.strength - 30) > 0.01 ? `Grain did not take (strength ${got.grain.params.strength})` : null;
   });
 
+  // the History panel switches off, undoes and deletes a module darktable
+  // set that Immage has no sliders for; deleted, it is gone from the
+  // sidecar's history (user guide, History)
+  await decide("history rows switch off and delete", async () => {
+    const path = fresh(photo);
+    await request({ cmd: "open", path, imgid: -1 });
+    await request({ cmd: "set", op: "velvia", params: { strength: 60 }, enabled: true });
+    await request({ cmd: "save" });
+    let o = await open(path);
+    const h = o.s.history.find((x) => x.op === "velvia");
+    if (!h || h.priority === undefined || h.fixed || h.masked) return `velvia's row came as ${JSON.stringify(h ?? null)}`;
+    const off = await o.after(() => o.s.setModuleState(h, { enabled: false }));
+    const back = await o.after(() => o.s.setModuleState(h, { restore: "opened" }));
+    const offBy = compare(off, o.base).mad, backBy = compare(back, o.base).mad;
+    if (offBy <= THRESHOLD.roundtrip) return `switched off, the photo stayed the same (mean |Δ| ${offBy})`;
+    if (backBy > THRESHOLD.roundtrip) return `undone, the photo stayed different (mean |Δ| ${backBy})`;
+    await o.after(() => { o.s.deleted.add(`velvia#${h.priority}`); o.s.setModuleState(h, { enabled: false }); });
+    await o.s.close();
+    await restart();
+    o = await open(path);
+    const left = o.s.history.filter((x) => x.op === "velvia");
+    await o.s.close();
+    return left.length ? `deleted, it came back: ${JSON.stringify(left)}` : null;
+  });
+
   // a photo that already uses one of a tool's modules keeps it, whatever
   // Preferences › Modules picks (README)
   await decide("a photo keeps its tool's module", async () => {
@@ -726,6 +769,28 @@ async function decisions(photo) {
     await o.s.close();
     return tool !== other ? `opened under the default, Highlights moved to option ${tool}`
       : Math.abs(highlights + 40) > 1.5 ? `Highlights read back ${highlights}` : null;
+  });
+
+  // a parametric tone curve saved before Midtones opens on the same four
+  // sliders, Midtones at 0. the nodes are what the four-region curve()
+  // wrote for these settings
+  await decide("a four-region tone curve keeps its sliders", async () => {
+    const ys = [0, 0.03831, 0.09292, 0.17374, 0.26784, 0.34759, 0.41279, 0.47604, 0.56, 0.64263, 0.69399,
+                0.71523, 0.73462, 0.78382, 0.85068, 0.92329, 1];
+    const want = { tc_mode: 0, tc_shadows: -30, tc_darks: 20, tc_lights: 40, tc_highlights: -20, tc_midtones: 0,
+                   tc_split1: 20, tc_split2: 50, tc_split3: 70 };
+    const path = fresh(photo);
+    await request({ cmd: "open", path, imgid: -1 });
+    await request({ cmd: "set", op: "tonecurve", enabled: true, params: {
+      "tonecurve_nodes[0]": ys.length, tonecurve_autoscale_ab: 3,
+      ...Object.fromEntries(ys.flatMap((y, k) => [[`tonecurve[0][${k}].x`, k / (ys.length - 1)], [`tonecurve[0][${k}].y`, y]])),
+    } });
+    await request({ cmd: "save" });
+    await restart();
+    const o = await open(path);
+    const got = Object.fromEntries(Object.keys(want).map((k) => [k, o.s.values[k]]));
+    await o.s.close();
+    return Object.entries(want).every(([k, v]) => got[k] === v) ? null : `opened as ${JSON.stringify(got)}`;
   });
 
   // a drag's frame is the release's, less what the Preview setting leaves
@@ -761,6 +826,59 @@ async function decisions(photo) {
       : moved.hash === o.base.hash ? "a changed edit rendered with the same hash" : null;
   });
 
+  // Preferences' exposure compensation goes on a raw's own exposure
+  // instance, as App.tsx's new-photo defaults set it: Exposure still reads 0,
+  // its moves add to the compensation, and the photo keeps both (user guide,
+  // Preferences › New photos)
+  const COMP = "exposure compensation adds under Exposure";
+  const path = fresh(photo);
+  let o = await open(path);
+  if (!o.s.raw) {
+    await o.s.close();
+    record({ check: "decisions", photo: basename(photo), id: COMP, status: "skip", detail: "raws only" });
+  } else await decide(COMP, async () => {
+    const comp = await o.after(() => o.s.setMany([["exp_comp", 1]]));
+    if (Math.abs(o.s.values.exposure) > 1e-6) return `with the compensation, Exposure reads ${o.s.values.exposure}`;
+    const err = brighter(comp, o.base);
+    if (err) return `the compensation: ${err}`;
+    const both = await o.after(() => { o.s.endBaseline(); o.s.set("exposure", 0.5); });
+    await o.s.close();
+    await drained();
+    const p = await open(fresh(photo));
+    const alone = await p.after(() => { p.s.endBaseline(); p.s.set("exposure", 1.5); });
+    await p.s.close();
+    const by = compare(both, alone).mad;
+    if (by > THRESHOLD.roundtrip) return `+1 EV compensation and Exposure +0.5 differ from Exposure +1.5 (mean |Δ| ${by})`;
+    o = await open(path);
+    const { exposure, exp_comp } = o.s.values;
+    const row = o.s.history.find((h) => h.op === "exposure" && h.label === "compensation");
+    await o.s.close();
+    return Math.abs(exposure - 0.5) > 0.005 || Math.abs(exp_comp - 1) > 0.005
+      ? `opened again, Exposure reads ${exposure} and the compensation ${exp_comp}`
+      : !row ? "opened again, the history has no compensation row" : null;
+  });
+
+  // Profile's Color Balance RGB looks, darktable's "basic colorfulness"
+  // presets, each change the photo's color visibly from AgX Default. most
+  // add color; Natural Skin takes it out of bright colors, so on a bright
+  // photo it can remove more than it adds (colorbalancergb.c, init_presets)
+  const LOOKS = "color balance rgb looks change color";
+  o = await open(fresh(photo));
+  const plain = meanChroma(o.base);
+  if (!o.s.raw || plain < 1.5) {
+    await o.s.close();
+    record({ check: "decisions", photo: basename(photo), id: LOOKS, status: "skip",
+             detail: o.s.raw ? "a black and white photo" : "raws only" });
+  } else await decide(LOOKS, async () => {
+    const weak = [];
+    for (const pr of m.PROFILES) {
+      const by = meanChroma(await o.after(() => o.s.set("profile", pr.value))) / plain;
+      if (Math.abs(by - 1) < 0.03) weak.push(`${pr.label} ${((by - 1) * 100).toFixed(1)}%`);
+    }
+    await o.s.close();
+    return weak.length ? `chroma against AgX Default, needs 3% either way: ${weak.join(", ")}` : null;
+  });
+
   if (photo !== args.photos[0]) return;
 
   // Default in Preferences › Modules is darktable's AgX workflow (README)
@@ -780,6 +898,27 @@ async function decisions(photo) {
     const got = [...new Set(m.localMaps.filter((l) => l.merge).map((l) => l.op.split("#")[0]))].sort();
     return got.join() === want.join() ? null : `shared: ${got.join(", ")}; decided: ${want.join(", ")}`;
   });
+
+  // Auto's Blacks places a photo's dark end, its darkest 0.5%, near black.
+  // a dark end well above it is no black at all, a plane against clear sky,
+  // and is left; one just off the target is left too (backlog.md,
+  // Decisions, 2026-10-22)
+  await decide("auto blacks leaves a frame with no black", async () => {
+    // 1% of the frame at `dark`, 5% white, the rest at `mid`
+    const frame = (dark, mid) => {
+      const w = 100, h = 100, px = new Uint8ClampedArray(w * h * 4);
+      for (let i = 0; i < w * h; i++) {
+        const v = Math.round(255 * (i < 100 ? dark : i < 600 ? 1 : mid));
+        px.set([v, v, v, 255], 4 * i);
+      }
+      return autoTone(px, w, h);
+    };
+    const got = { sky: frame(0.36, 0.45).blacks, near: frame(0.035, 0.4).blacks, flat: frame(0.07, 0.4).blacks };
+    const wrong = [got.sky !== 0 && `a sky-only frame, dark end 36%, gets ${got.sky}`,
+                   got.near !== 0 && `a dark end of 3.5%, just off the target, gets ${got.near}`,
+                   got.flat >= 0 && `a flat frame, dark end 7%, gets ${got.flat}, not deepened`].filter(Boolean);
+    return wrong.join("; ") || null;
+  });
   await decide("masks that keep their own instances", async () => {
     const range = { type: "luminance", lo: -3, hi: null, feather: 1 };
     const mask = (shapes, more = {}) => ({ name: "x", shapes, invert: false, values: {}, ...more });
@@ -793,6 +932,66 @@ async function decisions(photo) {
       .map(([label, , can]) => `${label} ${can ? "cannot" : "can"} share`);
     return wrong.join(", ") || null;
   });
+
+  // a brush adding to a mask shows its overlay, toggle or not, but O still
+  // hides it, and an adjustment hides it until the next stroke
+  // (masks.md, The mask list)
+  await decide("O and adjustments hide a brush's overlay", async () => {
+    const off = { on: false, hold: null };
+    const steps = (t, adding, ...evs) => evs.reduce((x, ev) => overlayStep(x, adding, ev), t);
+    const cases = [
+      ["a brush in hand shows it", overlayShown(off, true), true],
+      ["O hides it", overlayShown(steps(off, true, "key"), true), false],
+      ["O again shows it", overlayShown(steps(off, true, "key", "key"), true), true],
+      ["O hides it after a stroke", overlayShown(steps(off, true, "key", "stroke"), true), false],
+      ["an adjustment hides it", overlayShown(steps(off, true, "adjust"), true), false],
+      ["the next stroke shows it", overlayShown(steps(off, true, "adjust", "stroke"), true), true],
+      ["no tool in hand, O shows it", overlayShown(steps(off, false, "key"), false), true],
+      ["no tool in hand, an adjustment leaves it on", overlayShown(steps({ on: true, hold: null }, false, "adjust"), false), true],
+    ];
+    const wrong = cases.filter(([, got, want]) => got !== want).map(([label]) => label);
+    return wrong.length ? `not so: ${wrong.join(", ")}` : null;
+  });
+
+  // the Zone System's Color mask narrows a zone mask to an object boxed on
+  // the photo, as it does to Sky, and the mask keeps the object in its name
+  // and shapes (zone-system.md, Color mask). on the first photo only: it
+  // encodes the photo with SAM on the CPU
+  const SAM = "mask-object-sam21-small", OBJECT = "a zone mask narrowed to an object";
+  if (photo === args.photos[0]) {
+    if (!args.models || !existsSync(join(args.models, SAM, "config.json"))) {
+      record({ check: "decisions", photo: basename(photo), id: OBJECT, status: "skip",
+               detail: `no ${SAM} in build/ai-models: use Select Object once in a dev build` });
+    } else await decide(OBJECT, async () => {
+      // an engine of its own, so the others' config never has AI on
+      await stopEngine();
+      startEngine(args.engine, join(args.work, "ai-engine"), args.models);
+      try {
+        const path = fresh(photo);
+        let o = await open(path);
+        const paths = await invoke("ai_object", { points: [], box: [0.3, 0.3, 0.7, 0.7] });
+        if (!paths?.length) return "Select Object found nothing in the middle of the photo";
+        const name = z.zoneMaskName([0, 10], { kind: "object:A", invert: false });
+        await o.after(() => o.s.addMask(name, [z.zoneShape([0, 10], 1), { type: "object", paths, mode: "add" }]));
+        const f = await o.after(() => o.s.setLocal(name, "l_exposure", 1));
+        const err = brighter(f, o.base, inPaths(paths, true));
+        if (err) return `inside the object: ${err}`;
+        const out = compare(f, o.base, inPaths(paths, false));
+        if (!(out.mad <= THRESHOLD.outside)) return `outside the object, the photo changed (mean |Δ| ${out.mad})`;
+        await o.s.close();
+        await drained();
+        o = await open(path);
+        const back = o.s.masks.find((x) => x.name === name);
+        await o.s.close();
+        const part = back && z.zonePartOf(back.name);
+        return part?.kind !== "object:A" ? `opened again, ${name} reads as ${JSON.stringify(part ?? back?.name ?? null)}`
+          : !back.shapes.some((s) => s.type === "object") || !z.zoneOfMask(back) ? "opened again, the mask lost its object or its zones"
+          : null;
+      } finally {
+        await restart();
+      }
+    });
+  }
 }
 
 // each option of each of Preferences › Modules' choices that isn't the

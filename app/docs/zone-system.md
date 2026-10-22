@@ -193,13 +193,29 @@ the pinned zones:
 - **Sky**, **Rocks**, **Vegetation**, **Subject**: a part Immage's AI finds
   in the photo. It looks at the photo's original colors, so it can tell a
   gray sky from gray rock even when they share a zone.
+- **+ Object**: any one thing in the photo. Click **+ Object**, then drag
+  a box around the object on the photo, or click it, and the AI outlines
+  what is there (**Esc** cancels). Each object gets a button of its own,
+  **Object A**, **Object B** and so on, for choosing it again.
 - **everything but it**: appears once you've chosen a part, and selects the
   rest of the photo instead (for example, zone V everywhere except the sky)
 
-The first time you choose a part on a photo, it takes a moment to find. The
-mask is then named for both the zones and the part, for example **Zone V ·
-Sky** or **Zone V · not Sky**. The overlay and the thumbnail show the
+The first time you choose a part on a photo, it takes a moment to find. If
+the photo has no such part, the status bar says **nothing found** and the
+choice stays as it was.
+
+Choosing a part changes only the overlay at first. Like any zone mask, the
+mask is created when you first move a slider, and it is named for both the
+zones and the part, for example **Zone V · Sky** or **Zone V · not Sky**.
+It is a mask of its own: a **Zone V** mask you made before stays as it was,
+so to move an adjustment to the sky, set it on **Zone V · Sky** and return
+the sliders of **Zone V** to zero. The overlay and the thumbnail show the
 combined selection.
+
+A part changes only where it overlaps the pinned zones. A bright sky may
+sit in zones VIII-X, so with zones III-VII pinned, **Sky** selects nothing
+and the sliders have no effect. Check the overlay: if it shows nothing
+over the part, pin zones that it covers.
 
 ### Controls
 

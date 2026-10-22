@@ -25,6 +25,7 @@ export const RELEASES_URL = "https://github.com/Rhettus/immage/releases";
 export const releaseUrl = (version: string) => `${RELEASES_URL}/tag/v${version}`;
 
 const DAY_MS = 24 * 3600 * 1000;
+const INSTALL_LIMIT_MS = 90 * 1000;
 const AUTO_KEY = "immage.updates.auto";
 const LAST_KEY = "immage.updates.lastCheck";
 const SKIP_KEY = "immage.updates.skip";
@@ -123,9 +124,19 @@ export async function installUpdate(prepare: () => Promise<void>) {
       if (step !== shown) { shown = step; set({ kind: "downloading", update, got, total }); }
     });
     set({ kind: "installing", update });
-    await prepare();
-    engineGone = true;
-    await update.install();
+    // a step that never returns would leave the banner on "installing" for
+    // good; past the limit it fails, and the banner offers the release page
+    let timer = 0;
+    const limit = new Promise<never>((_, fail) => {
+      timer = window.setTimeout(() => fail("the install did not finish"), INSTALL_LIMIT_MS);
+    });
+    try {
+      await Promise.race([prepare(), limit]);
+      engineGone = true;
+      await Promise.race([update.install(), limit]);
+    } finally {
+      clearTimeout(timer);
+    }
     await relaunch();
   } catch (e) {
     set({ kind: "failed", message: String(e), update, engineGone });

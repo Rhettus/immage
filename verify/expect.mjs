@@ -50,6 +50,7 @@ export const GLOBAL = {
   tc_lights: { with: { tc_mode: 0 }, expect: { lum: 1 } },
   tc_darks: { with: { tc_mode: 0 }, expect: { lum: 1 } },
   tc_shadows: { with: { tc_mode: 0 }, expect: { lumLo: 1 } },
+  tc_midtones: { with: { tc_mode: 0 }, expect: { lum: 1 } },
   ...Object.fromEntries(["tc_split1", "tc_split2", "tc_split3"].map((id) =>
     [id, { with: { tc_mode: 0, tc_highlights: 60, tc_lights: 60, tc_darks: -60, tc_shadows: -60 } }])),
 
