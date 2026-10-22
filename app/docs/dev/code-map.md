@@ -54,7 +54,7 @@ Paths below are relative to this file.
 | [index.html](../../index.html), [main.tsx](../../src/main.tsx) | The main window: mounts `App`. |
 | [splash.html](../../splash.html), [Splash.tsx](../../src/Splash.tsx) | The splash window: asks `about`, shows the main window, closes itself. |
 | [App.tsx](../../src/App.tsx) | The whole editor's shell and state. See [inside App.tsx](#inside-apptsx). |
-| [main.rs](../../src-tauri/src/main.rs) | `main()`: on Linux over NVIDIA's driver gives the web view Mesa's EGL (`mesa_egl`), migrates the old app name, registers the dialog, opener, updater, process, window state (the main window's size, position and maximized state) and immporter plugins. `setup()` picks the engine: `build/bin/darktable-engine` with runtime state in `build/app-runtime` for a dev build, the bundled `resources/darktable` with the app data folder for a release, or `DT_ENGINE_BIN`. Holds `AppState` and nearly every command. |
+| [main.rs](../../src-tauri/src/main.rs) | `main()`: on Linux over NVIDIA's driver gives the web view Mesa's EGL (`mesa_egl`), migrates the old app name, registers the dialog, opener, updater, process, window state (the main window's size, position and maximized state) and immporter plugins. On Linux `setup()` builds the windows itself, with the frames web extension's folder (`webext_dir`). `setup()` picks the engine: `build/bin/darktable-engine` with runtime state in `build/app-runtime` for a dev build, the bundled `resources/darktable` with the app data folder for a release, or `DT_ENGINE_BIN`. Holds `AppState` and nearly every command. |
 | [engine.rs](../../src-tauri/src/engine.rs) | The engine child. Spawns it (`--core --configdir --cachedir -d perf`, OpenCL on with only export's pipe type allowed the GPU, which the base borrows; on Linux, ROCm's platform on and its kernels built as OpenCL C 2.0 when no RustiCL is installed, `rocm_only`), retrying while an old one holds darktable's database lock. `request()` writes one JSON line and reads one back. A stderr thread writes the log and keeps darktable's `-d perf` timings apart for the performance overlay. |
 | [engine/main.c](../../../engine/main.c) | `main()`: keeps the real stdout for replies, starts darktable with an in-memory library (`dt_init`), sets its confs, then loops: read a line, `_handle()` it, reply. |
 
@@ -81,6 +81,16 @@ posts it to the page tagged with an id, and replies with the 48-byte
 header alone; [sharedFrames.ts](../../src/sharedFrames.ts) puts the two
 back together. [benchmarking/](../../../benchmarking/README.md) measures
 its timings.
+
+Linux does the same through `/dev/shm`. WebKitGTK delivers a reply at
+about 25 ms a megapixel, and more while a page at 2× draws. `render`
+writes the frame to a file there named for the page's token and the
+frame's id (`shm_frame` in main.rs). A WebKit web extension loaded into
+the window's web process,
+[webext/frames.c](../../src-tauri/webext/frames.c), gives the page
+`immageFrame()`, which copies the file in and deletes it. It can't hand
+over the mapped file itself: WebKit stops the web process when a page is
+given memory it didn't allocate.
 
 ## Front end
 
@@ -122,7 +132,7 @@ are `localStorage` keys named `immage.*`.
 | File | Responsibility |
 |---|---|
 | [session.ts](../../src/session.ts) | One open photo. `Session.open` reads every mapped module (`get_params`) into control values. `set`/`setMany` mark modules dirty, and `pump()` sends each dirty module's merged edit (`moduleEdit`) and one `render`, so moves made during a render are coalesced, latest wins. It also holds masks, spots, look and the Before view, and saves 600 ms after the last edit. `renderView` decodes the frame header; `preview` renders one-off settings on the engine's preview pipe. |
-| [sharedFrames.ts](../../src/sharedFrames.ts) | Windows: `renderFrame` asks `render` to post the frame in a WebView2 shared buffer tagged with an id, then matches the `sharedbufferreceived` event to the reply, copies the frame out and releases the buffer. On the Mac, on WebView2 runtimes before 1.0.1661, or with Preferences' "Shared-memory frames" off, the frame comes in `render`'s reply. |
+| [sharedFrames.ts](../../src/sharedFrames.ts) | Windows: `renderFrame` asks `render` to post the frame in a WebView2 shared buffer tagged with an id, then matches the `sharedbufferreceived` event to the reply, copies the frame out and releases the buffer. Linux: it asks `render` to write the frame to `/dev/shm` and reads it with the web extension's `immageFrame()`. On the Mac, on WebView2 runtimes before 1.0.1661, on Linux without the extension, or with Preferences' "Shared-memory frames" off, the frame comes in `render`'s reply. |
 | [HistoryPanel.tsx](../../src/HistoryPanel.tsx) | darktable's history plus this session's undo steps; a row's switch, delete or reset (`historyChange` in App.tsx, `Session.setModuleState`, the engine's `_module_state`). |
 | [CopySettings.tsx](../../src/CopySettings.tsx) | Copy/Paste Settings: which groups, and the clip. |
 
@@ -318,7 +328,7 @@ darktable is, and it has AI features when darktable is configured with
    1. `Slider` calls `change()`, which records an undo step, updates `values` and calls `Session.set`.
    2. `pump()` sends `set_params` for each dirty module, then `render` for `currentView()`. Moves made meanwhile only mark modules dirty, so the next round sends the latest values once.
    3. In the engine, `_set` writes the fields and adds a history item, then `_render` calls `dt_dev_pixelpipe_process`. Only modules from the changed one onwards run; the rest come from the pipe cache.
-   4. The frame is written to `frame.rgba`, read back by Rust and returned with its header (on Windows, in a shared buffer beside it).
+   4. The frame is written to `frame.rgba`, read back by Rust and returned with its header (on Windows and Linux, in shared memory beside it).
    5. `drawFrame` puts it on the canvas and computes the histogram. See [the sequence diagram](diagrams/slider-sequence.svg).
 3. **Drag and release.**
    1. While a control is held, `currentView` asks for half-size drafts.
@@ -361,6 +371,7 @@ darktable is, and it has AI features when darktable is configured with
 | Edit In results | `plugin-returns.json` in the runtime folder | permanent |
 | Engine config, cache, log | `config/`, `cache/`, `engine.log` in the runtime folder (`build/app-runtime` in dev, the app data folder in a release) | permanent; the log restarts past 5 MB |
 | Frames, thumbnails, previews, maps | `frame.rgba`, `thumb.rgba`, `preview.rgba`, `range.bin` in the runtime folder | overwritten per request |
+| Frames handed to the page (Linux) | `/dev/shm/immage-frame-<token>-<id>` | until the page reads it; left over past a minute, deleted at the next start |
 | AI models | `build/ai-models` (dev) or `<app data>/models` | until deleted |
 | Immich thumbnails and originals | `cache/immich-thumbs`, `cache/immich-originals` | cache |
 | Import catalog, Immich key | the immporter's SQLite catalog under the app data folder (`immporter/`); the key in the system keychain | permanent |
@@ -385,6 +396,7 @@ darktable is, and it has AI features when darktable is configured with
 |---|---|
 | `cmake --build build` | darktable, `libdarktable` and `build/bin/darktable-engine`. |
 | [package.json](../../package.json) | `npm run tauri dev` (dev build, engine from `build/bin`), `npm run tauri build`. |
+| [webext/frames.c](../../src-tauri/webext/frames.c) | The Linux web extension for shared-memory frames, built by [build_appimage.sh](../../scripts/build_appimage.sh) into `src-tauri/resources/webext` (gitignored). |
 | [bundle_engine.py](../../scripts/bundle_engine.py), [build_dmg.sh](../../scripts/build_dmg.sh) | The engine and its libraries copied into `src-tauri/resources/darktable` (gitignored) and made relocatable; the macOS disk image. |
 | [build_engine_windows.sh](../../scripts/build_engine_windows.sh), [bundle_engine_windows.sh](../../scripts/bundle_engine_windows.sh), [WINDOWS.md](../../WINDOWS.md) | The Windows (MSYS2 UCRT64) build. |
 | [prune_target.mjs](../../scripts/prune_target.mjs) | Frees `src-tauri/target` of earlier builds, which cargo never removes: keeps what the last two builds of each profile use, as cargo lists it. npm runs it before and after every `npm run tauri ...`. |
