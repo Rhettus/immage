@@ -15,7 +15,8 @@ import type { LucideIcon } from "lucide-react";
 import { Contrast, Sun } from "lucide-react";
 import { localIlluminant, readLocalIlluminant, readWB, writeWB, ILLUMINANT_CUSTOM, TEMP_MAX, TEMP_MIN } from "./wb";
 import { channelPointsFromLinear, channelPointsToLinear, fromParams as readCurve, isIdentity, MAX_NODES,
-         nodeFields, paramsToPoints, pointsToParams, toParams as writeCurve, type Point } from "./tonecurve";
+         nodeFields, paramsToPoints, pointsToParams, toParams as writeCurve, type Parametric,
+         type Point } from "./tonecurve";
 import { autoCrop } from "./transform";
 import { cbHueTrack, displayHue } from "./colorgrading";
 import { PLACE_BOOST, PLACE_FIELDS, PLACE_FIRST, PLACE_MAX, PLACEMENT_OP, ROMAN, ZONE_GRAY,
@@ -734,6 +735,16 @@ const GRAIN_PRESETS: ControlPreset[] = [
   { label: "Heavy", swatch: noiseSwatch(0.3, 1.8), values: { grain_amount: 85, grain_size: 50 } },
 ];
 
+// ------------------------------------------------ Tone Curve parametric
+
+// the parametric curve's settings from control values; a control a photo
+// has not read yet takes its neutral value
+export const parametricOf = (v: Values): Parametric => ({
+  highlights: v.tc_highlights ?? 0, lights: v.tc_lights ?? 0, darks: v.tc_darks ?? 0,
+  shadows: v.tc_shadows ?? 0, midtones: v.tc_midtones ?? 0,
+  split1: v.tc_split1 ?? 25, split2: v.tc_split2 ?? 50, split3: v.tc_split3 ?? 75,
+});
+
 // ------------------------------------------------ Tone Curve point curve
 
 // a point curve's points as control values: <prefix>pn of them,
@@ -858,6 +869,17 @@ export const modules: ModuleMap[] = [
     fields: ["exposure"],
     read: (p, d) => ({ exposure: p.exposure - d.exposure }),
     write: (v, d) => ({ exposure: d.exposure + v.exposure }),
+  },
+  // Preferences' exposure compensation for new photos, on an instance of
+  // its own so Exposure still starts at 0 and the photo keeps its amount.
+  // a new instance takes a raw's defaults (+0.7 EV, a black level and the
+  // camera's bias compensated, exposure.c), which the first one has already
+  {
+    op: "exposure#compensation", keepOn: false, after: "exposure",
+    controls: ["exp_comp"],
+    fields: ["mode", "exposure", "black", "compensate_exposure_bias"],
+    read: (p) => ({ exp_comp: p.exposure }),
+    write: (v) => ({ mode: 0, exposure: v.exp_comp, black: 0, compensate_exposure_bias: 0 }),
   },
   // Blacks as exposure's black level, one of its modules. Exposure's map
   // shares the module, so a new Exposure sends it again for the new gain
@@ -1014,25 +1036,22 @@ export const modules: ModuleMap[] = [
     // curve; tc_mode says which. a curve that is not one of the parametric
     // ones, drawn in darktable for instance, opens as points
     op: "tonecurve", keepOn: false,
-    controls: ["tc_mode", "tc_highlights", "tc_lights", "tc_darks", "tc_shadows", "tc_split1", "tc_split2",
-               "tc_split3", "tc_pn", ...POINT_IDS],
+    controls: ["tc_mode", "tc_highlights", "tc_lights", "tc_darks", "tc_shadows", "tc_midtones", "tc_split1",
+               "tc_split2", "tc_split3", "tc_pn", ...POINT_IDS],
     fields: nodeFields(),
     read: (p): Values => {
       const c = readCurve(p);
       // every control gets a value, the other mode's at neutral. a flat
       // curve opens as points, the default mode
-      if (c && [c.highlights, c.lights, c.darks, c.shadows].some((x) => x !== 0)) return { tc_mode: 0, tc_highlights: c.highlights, tc_lights: c.lights, tc_darks: c.darks,
-                      tc_shadows: c.shadows, tc_split1: c.split1, tc_split2: c.split2, tc_split3: c.split3,
-                      ...LINEAR };
-      return { tc_mode: 1, tc_highlights: 0, tc_lights: 0, tc_darks: 0, tc_shadows: 0,
+      if (c && [c.highlights, c.lights, c.darks, c.shadows, c.midtones].some((x) => x !== 0)) return { tc_mode: 0, tc_highlights: c.highlights, tc_lights: c.lights, tc_darks: c.darks,
+                      tc_shadows: c.shadows, tc_midtones: c.midtones, tc_split1: c.split1, tc_split2: c.split2,
+                      tc_split3: c.split3, ...LINEAR };
+      return { tc_mode: 1, tc_highlights: 0, tc_lights: 0, tc_darks: 0, tc_shadows: 0, tc_midtones: 0,
                tc_split1: 25, tc_split2: 50, tc_split3: 75, ...pointValues(paramsToPoints(p)) };
     },
-    write: (v) => v.tc_mode === 1 ? pointsToParams(pointsOf(v)) : writeCurve({
-      highlights: v.tc_highlights, lights: v.tc_lights, darks: v.tc_darks, shadows: v.tc_shadows,
-      split1: v.tc_split1, split2: v.tc_split2, split3: v.tc_split3,
-    }),
+    write: (v) => v.tc_mode === 1 ? pointsToParams(pointsOf(v)) : writeCurve(parametricOf(v)),
     enabled: (v) => v.tc_mode === 1 ? !isIdentity(pointsOf(v))
-      : [v.tc_highlights, v.tc_lights, v.tc_darks, v.tc_shadows].some((x) => x !== 0),
+      : [v.tc_highlights, v.tc_lights, v.tc_darks, v.tc_shadows, v.tc_midtones].some((x) => x !== 0),
   },
 
   // Black & White's two modules: color calibration's gray, which runs after
@@ -1253,19 +1272,24 @@ export const panels: Panel[] = [
     sections: [
       {
         title: "Region",
+        // named as Basic's Tone sliders, light to dark. the ids keep
+        // Lightroom's region names, which presets and copied settings hold:
+        // tc_highlights is Whites, tc_lights Highlights, tc_darks Shadows
+        // and tc_shadows Blacks
         controls: [
-          lr("tc_highlights", "Highlights", { neutral: 0 }),
-          lr("tc_lights", "Lights", { neutral: 0 }),
-          lr("tc_darks", "Darks", { neutral: 0 }),
-          lr("tc_shadows", "Shadows", { neutral: 0 }),
+          lr("tc_highlights", "Whites", { neutral: 0 }),
+          lr("tc_lights", "Highlights", { neutral: 0 }),
+          lr("tc_midtones", "Midtones", { neutral: 0 }),
+          lr("tc_darks", "Shadows", { neutral: 0 }),
+          lr("tc_shadows", "Blacks", { neutral: 0 }),
         ],
       },
       {
         title: "Split Points",
         controls: [
-          { id: "tc_split1", label: "Shadows / Darks", min: 10, max: 40, step: 5, neutral: 25, format: plain(0) },
-          { id: "tc_split2", label: "Darks / Lights", min: 30, max: 70, step: 5, neutral: 50, format: plain(0) },
-          { id: "tc_split3", label: "Lights / Highlights", min: 60, max: 90, step: 5, neutral: 75, format: plain(0) },
+          { id: "tc_split1", label: "Blacks / Shadows", min: 10, max: 40, step: 5, neutral: 25, format: plain(0) },
+          { id: "tc_split2", label: "Shadows / Highlights", min: 30, max: 70, step: 5, neutral: 50, format: plain(0) },
+          { id: "tc_split3", label: "Highlights / Whites", min: 60, max: 90, step: 5, neutral: 75, format: plain(0) },
         ],
       },
     ],
@@ -1464,6 +1488,15 @@ export const panels: Panel[] = [
       title: "Vignette Center",
       controls: (["vig_cx", "vig_cy"] as const).map((id) => ({
         id, label: id, min: -1, max: 1, step: 0.001, neutral: 0, format: plain(3) })),
+    }],
+  },
+  // what Preferences adds to a new raw's exposure; not a per-photo adjustment
+  {
+    id: "exposure-compensation", title: "Exposure Compensation", hidden: true,
+    sections: [{
+      title: "Exposure Compensation",
+      controls: [{ id: "exp_comp", label: "Exposure Compensation", min: -3, max: 3, step: 0.01, neutral: 0,
+                   format: signed(2, " EV") }],
     }],
   },
   // how scene light is fitted to the screen: AgX, set on a new photo, or

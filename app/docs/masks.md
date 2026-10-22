@@ -60,6 +60,9 @@ it, the arrow rotates it, and the outer ring sets its feather.
 - The **…** menu has **Duplicate Mask**, **Duplicate and Invert Mask**,
   **Rename Mask** and **Delete Mask**.
 - O, or the eye in the panel's title, shows or hides the red overlay.
+  While you add to or subtract from a mask, its overlay shows even with
+  the toggle off; O hides it until you put the tool down, and moving one
+  of the mask's sliders hides it until your next stroke.
 
 ## Mask settings
 

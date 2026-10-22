@@ -421,9 +421,12 @@ static void _compress_history(const dt_imgid_t imgid)
   if(_prune_off(imgid)) dt_history_compress(imgid);
 }
 
-// an entry of the `history` reply: the module, its instance label, on or off
+// an entry of the `history` reply: the module, its instance label, on or off.
+// `mod` is the instance the entry is for, NULL if the develop has none: what
+// the History panel may switch off or delete (`module_state`)
 static void _history_item(JsonBuilder *b, const char *op, const char *name, const char *multi_name,
-                          const gboolean hand_edited, const gboolean enabled)
+                          const gboolean hand_edited, const gboolean enabled,
+                          const int priority, const dt_iop_module_t *mod)
 {
   const gboolean labeled = multi_name && multi_name[0] && g_strcmp0(multi_name, "0");
   gchar *label = !labeled ? NULL
@@ -438,6 +441,15 @@ static void _history_item(JsonBuilder *b, const char *op, const char *name, cons
   if(label) json_builder_add_string_value(b, label); else json_builder_add_null_value(b);
   json_builder_set_member_name(b, "enabled");
   json_builder_add_boolean_value(b, enabled);
+  json_builder_set_member_name(b, "priority");
+  json_builder_add_int_value(b, priority);
+  json_builder_set_member_name(b, "default_enabled");
+  json_builder_add_boolean_value(b, mod && mod->default_enabled);
+  // no switch in darktable either: the pipe needs it, or it has none
+  json_builder_set_member_name(b, "fixed");
+  json_builder_add_boolean_value(b, !mod || mod->hide_enable_button);
+  json_builder_set_member_name(b, "masked");
+  json_builder_add_boolean_value(b, mod && mod->blend_params && mod->blend_params->mask_id > 0);
   json_builder_end_object(b);
   g_free(label);
 }
@@ -447,7 +459,8 @@ static void _saved_history(JsonBuilder *b)
 {
   sqlite3_stmt *stmt;
   DT_DEBUG_SQLITE3_PREPARE_V2(dt_database_get(darktable.db),
-                              "SELECT h.operation, h.multi_name, h.multi_name_hand_edited, h.enabled"
+                              "SELECT h.operation, h.multi_name, h.multi_name_hand_edited, h.enabled,"
+                              "       h.multi_priority"
                               " FROM main.history AS h, main.images AS i"
                               " WHERE h.imgid = ?1 AND i.id = h.imgid AND h.num < i.history_end"
                               " ORDER BY h.num",
@@ -457,8 +470,10 @@ static void _saved_history(JsonBuilder *b)
   {
     const char *op = (const char *)sqlite3_column_text(stmt, 0);
     if(!op) continue;
+    const int priority = sqlite3_column_int(stmt, 4);
     _history_item(b, op, dt_iop_get_localized_name(op), (const char *)sqlite3_column_text(stmt, 1),
-                  sqlite3_column_int(stmt, 2), sqlite3_column_int(stmt, 3));
+                  sqlite3_column_int(stmt, 2), sqlite3_column_int(stmt, 3), priority,
+                  dt_iop_get_module_by_op_priority(_s.dev.iop, op, priority));
   }
   sqlite3_finalize(stmt);
 }
@@ -835,6 +850,95 @@ static gboolean _set(const char *op, const char *field, JsonNode *value,
 
   // a new order means new pipe nodes; otherwise only the top item changed
   _changed(moved ? DT_DEV_PIPE_REMOVE : DT_DEV_PIPE_TOP_CHANGED);
+  return TRUE;
+}
+
+// an instance's whole state, params and blend params in base64, as
+// `module_state` replies it and takes it back for undo
+static void _module_state_json(JsonBuilder *b, const dt_iop_module_t *mod)
+{
+  json_builder_begin_object(b);
+  json_builder_set_member_name(b, "enabled");
+  json_builder_add_boolean_value(b, mod->enabled);
+  gchar *params = g_base64_encode(mod->params, mod->params_size);
+  json_builder_set_member_name(b, "params");
+  json_builder_add_string_value(b, params);
+  g_free(params);
+  gchar *blend = mod->blend_params
+    ? g_base64_encode((const guchar *)mod->blend_params, sizeof(dt_develop_blend_params_t)) : NULL;
+  json_builder_set_member_name(b, "blend");
+  if(blend) json_builder_add_string_value(b, blend); else json_builder_add_null_value(b);
+  g_free(blend);
+  json_builder_end_object(b);
+}
+
+// a blob of _module_state_json() back into `dst`, if it is the right size
+static gboolean _unbase64_into(const char *text, void *dst, const size_t size)
+{
+  if(!text) return FALSE;
+  gsize len = 0;
+  guchar *raw = g_base64_decode(text, &len);
+  const gboolean fits = len == size;
+  if(fits) memcpy(dst, raw, size);
+  g_free(raw);
+  return fits;
+}
+
+// the History panel's switch and delete for one instance of the history,
+// found by op and multi_priority: `enabled` switches it, `reset` puts it
+// back to its defaults, on or off as darktable starts it, and `restore`
+// to a state an earlier reply gave (undo). a module without a switch, or
+// one a mask drives (the Masks panel's), is refused. replies the state
+// before and after
+static gboolean _module_state(const char *op, const int priority, const gboolean has_enabled,
+                              const gboolean enabled, const gboolean reset, JsonObject *restore,
+                              JsonBuilder *b, char **err)
+{
+  dt_iop_module_t *mod = op ? dt_iop_get_module_by_op_priority(_s.dev.iop, op, priority) : NULL;
+  if(!mod)
+  {
+    *err = g_strdup_printf("module '%s' %d not in the pipe", op ? op : "(none)", priority);
+    return FALSE;
+  }
+  if(mod->hide_enable_button || (mod->blend_params && mod->blend_params->mask_id > 0))
+  {
+    *err = g_strdup_printf("module '%s' cannot be switched here", op);
+    return FALSE;
+  }
+  json_builder_set_member_name(b, "was");
+  _module_state_json(b, mod);
+  void *was = g_malloc(mod->params_size);
+  memcpy(was, mod->params, mod->params_size);
+  const gboolean was_enabled = mod->enabled;
+  if(restore)
+  {
+    if(!_unbase64_into(json_object_get_string_member_with_default(restore, "params", NULL),
+                       mod->params, mod->params_size))
+    {
+      g_free(was);
+      *err = g_strdup_printf("params do not fit module '%s'", op);
+      return FALSE;
+    }
+    if(mod->blend_params)
+      _unbase64_into(json_object_get_string_member_with_default(restore, "blend", NULL),
+                     mod->blend_params, sizeof(dt_develop_blend_params_t));
+    mod->enabled = json_object_get_boolean_member_with_default(restore, "enabled", mod->enabled);
+  }
+  else if(reset)
+  {
+    dt_iop_load_default_params(mod);
+    mod->enabled = mod->default_enabled;
+  }
+  else if(has_enabled) mod->enabled = enabled;
+  const gboolean same = mod->enabled == was_enabled && !memcmp(was, mod->params, mod->params_size);
+  g_free(was);
+  if(!same)
+  {
+    dt_dev_add_history_item_ext(&_s.dev, mod, mod->enabled, TRUE);
+    _changed(DT_DEV_PIPE_TOP_CHANGED);
+  }
+  json_builder_set_member_name(b, "now");
+  _module_state_json(b, mod);
   return TRUE;
 }
 
@@ -2592,6 +2696,9 @@ static const char *_mask_name(const char *full)
   if(g_str_has_prefix(full, _MASK_PREFIX)) return full + strlen(_MASK_PREFIX);
   return NULL;
 }
+// the mask anchor: masks' instances run right after it, all on one input,
+// so a range sampled at its output holds for every one of them
+// (app/docs/dev/masks.md, "Where the instances run")
 #define _MASK_ANCHOR "colorbalancergb"
 // the instances masks share are named so (app/src/localMerge.ts SHARED_PREFIX)
 #define _SHARED_PREFIX "immage local: "
@@ -6450,7 +6557,7 @@ static void _handle(JsonObject *req, FILE *out)
       {
         const dt_dev_history_item_t *h = l->data;
         _history_item(b, h->op_name, h->module->name(), h->multi_name, h->multi_name_hand_edited,
-                      h->enabled);
+                      h->enabled, h->multi_priority, h->module);
       }
     }
     json_builder_end_array(b);
@@ -6552,6 +6659,18 @@ static void _handle(JsonObject *req, FILE *out)
       ? json_object_get_object_member(req, "refine") : NULL;
     if(!op || !_set(op, field, value, params, has_enabled, enabled, after, before, instance, mask, invert, opacity,
                     refine, &err))
+      goto fail;
+  }
+  else if(!g_strcmp0(cmd, "module_state"))
+  {
+    if(!_module_state(json_object_get_string_member_with_default(req, "op", NULL),
+                      json_object_get_int_member_with_default(req, "priority", 0),
+                      json_object_has_member(req, "enabled"),
+                      json_object_get_boolean_member_with_default(req, "enabled", FALSE),
+                      json_object_get_boolean_member_with_default(req, "reset", FALSE),
+                      json_object_has_member(req, "restore")
+                        ? json_object_get_object_member(req, "restore") : NULL,
+                      b, &err))
       goto fail;
   }
   else if(!g_strcmp0(cmd, "get"))

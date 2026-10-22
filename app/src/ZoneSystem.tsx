@@ -7,6 +7,7 @@
 // photo under the pointer lit in the histogram
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Control } from "./manifest";
+import type { ObjectPrompt } from "./MaskOverlay";
 import { useProbe } from "./probe";
 import {
   DEFAULT_TRANSITION, PLACE_FIRST, PLACE_MAX, PLACE_NODES, ROMAN, ZONE_COLORS, ZONE_COUNT, placeInOrder,
@@ -236,7 +237,7 @@ const ctl = (id: string, label: string, min: number, max: number, step: number, 
 const signed = (d: number, unit = "") => (v: number) => `${v > 0 ? "+" : ""}${v.toFixed(d)}${unit}`;
 
 export function ZoneAdjust({ pinned, offsets, onPlace, zoneMasks, selected: sel, part, parts, partBusy, onPart,
-                             onLocal, onOpacity, onTransition, onEdge, onPickMask, onDeleteMask, renderSlider,
+                             boxing, onBoxing, onLocal, onOpacity, onTransition, onEdge, onPickMask, onDeleteMask, renderSlider,
                              onReach, disabled }: {
   pinned: ZoneRange | null;
   onReach: (transition: number | null) => void;   // the placement's transition while Placement is open
@@ -245,9 +246,11 @@ export function ZoneAdjust({ pinned, offsets, onPlace, zoneMasks, selected: sel,
   zoneMasks: ZoneMaskInfo[];
   selected: ZoneMaskInfo | null;           // the pinned zones' mask for the chosen part, if made
   part: ZonePart | null;                   // the part of the photo Local narrows the zones to
-  parts: [string, string][];               // the AI kinds to choose from: [kind, label]
+  parts: [string, string][];               // the AI kinds and the objects found so far: [kind, label]
   partBusy: boolean;
   onPart: (kind: string | null, invert: boolean) => void;
+  boxing: boolean;                         // a new object is being boxed on the photo
+  onBoxing: (on: boolean) => void;
   onLocal: (range: ZoneRange, id: string, v: number) => void;
   onOpacity: (range: ZoneRange, v: number) => void;
   onTransition: (range: ZoneRange, w: number) => void;
@@ -377,6 +380,10 @@ export function ZoneAdjust({ pinned, offsets, onPlace, zoneMasks, selected: sel,
                         onClick={() => onPart(kind, part?.invert ?? false)}>{label}</button>
               ))}
             </div>
+            <button className={`btn small${boxing ? " on" : ""}`} disabled={disabled || partBusy}
+                    title="drag a box around an object on the photo, or click it" onClick={() => onBoxing(!boxing)}>
+              + Object
+            </button>
             {part && (
               <label className="zone-invert">
                 <input type="checkbox" checked={part.invert} disabled={disabled}
@@ -385,6 +392,7 @@ export function ZoneAdjust({ pinned, offsets, onPlace, zoneMasks, selected: sel,
               </label>
             )}
           </div>
+          {boxing && <div className="zone-hint">drag a box around the object on the photo, or click it (Esc cancels)</div>}
           {pinned ? (
             <>
               <div className="zone-readout">{zoneMaskNameOf(pinned, part)}</div>
@@ -407,6 +415,52 @@ export function ZoneAdjust({ pinned, offsets, onPlace, zoneMasks, selected: sel,
             </>
           ) : <div className="zone-hint">pin a zone or a run of zones to adjust it</div>}
         </>
+      )}
+    </div>
+  );
+}
+
+// a box dragged over the photo, or a click, for the AI to outline the object
+// in it, in shown-image units 0-1 as Select Object takes them
+export function ObjectBox({ onPrompt }: { onPrompt: (p: ObjectPrompt) => void }) {
+  const [box, setBox] = useState<[number, number, number, number] | null>(null);
+  const start = useRef<{ x: number; y: number; cx: number; cy: number } | null>(null);
+  const at = (e: React.PointerEvent): [number, number] => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const c = (v: number) => Math.min(1, Math.max(0, v));
+    return [c((e.clientX - r.left) / r.width), c((e.clientY - r.top) / r.height)];
+  };
+  return (
+    <div className="zone-object-box"
+         onPointerDown={(e) => {
+           // boxing, not panning the viewer underneath
+           e.stopPropagation();
+           e.currentTarget.setPointerCapture(e.pointerId);
+           const [x, y] = at(e);
+           start.current = { x, y, cx: e.clientX, cy: e.clientY };
+           setBox([x, y, x, y]);
+         }}
+         onPointerMove={(e) => {
+           const s = start.current;
+           if (!s) return;
+           const [x, y] = at(e);
+           setBox([s.x, s.y, x, y]);
+         }}
+         onPointerUp={(e) => {
+           const s = start.current;
+           start.current = null;
+           setBox(null);
+           if (!s) return;
+           const [x, y] = at(e);
+           // a click picks what is under it, a drag what is inside
+           if (Math.abs(e.clientX - s.cx) + Math.abs(e.clientY - s.cy) < 8) onPrompt({ points: [[s.x, s.y, 1]] });
+           else onPrompt({ box: [Math.min(s.x, x), Math.min(s.y, y), Math.max(s.x, x), Math.max(s.y, y)] });
+         }}>
+      {box && (
+        <div className="object-rect" style={{
+          left: `${Math.min(box[0], box[2]) * 100}%`, top: `${Math.min(box[1], box[3]) * 100}%`,
+          width: `${Math.abs(box[2] - box[0]) * 100}%`, height: `${Math.abs(box[3] - box[1]) * 100}%`,
+        }} />
       )}
     </div>
   );

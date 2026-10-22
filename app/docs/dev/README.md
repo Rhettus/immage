@@ -15,6 +15,15 @@ the headless darktable engine. The photographer's guide is
     down to darktable's develop, pipes and the XMP sidecar
   - [one slider move](diagrams/slider-sequence.svg) ([.excalidraw](diagrams/slider-sequence.excalidraw)): the
     sequence from an input event to pixels on screen
+  - [one mask in darktable's pipe](diagrams/masks.svg) ([.excalidraw](diagrams/masks.excalidraw)): a
+    mask's sliders, the module instances they set, and where those run in
+    darktable's pipe
+  - [masks sharing an instance](diagrams/mask-sharing.svg) ([.excalidraw](diagrams/mask-sharing.excalidraw)):
+    several masks' groups summed into a combined mask that drives one shared
+    instance
+- [Masks in darktable's pipe](masks.md): how a mask and its local sliders
+  become darktable mask groups and module instances, where those run, and
+  how masks share them.
 - [benchmarking/](../../../benchmarking/README.md): the performance suite.
 - [Pinning darktable](darktable-pin.md): which darktable commit Immage
   builds, moving it, and what breaks when it moves.

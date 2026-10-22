@@ -71,7 +71,9 @@ for **B&W Mix**.
   parts are well placed, and darkens a bright one only until its shadows
   are, so a night scene stays dark and snow or a sunny beach stays bright.
   Such a scene also keeps its shadows unlifted, or its highlights and
-  blacks untouched. Under AgX it also sets AgX's range.
+  blacks untouched. A photo with nothing dark in it, such as a plane
+  against clear sky, keeps its blacks too, rather than its sky being
+  darkened. Under AgX it also sets AgX's range.
 - **Exposure**: -5 to +5 stops.
 - **Contrast**, **Highlights**, **Shadows**, **Whites**, **Blacks**: -100 to
   +100. Whites moves the top of the tone mapper's curve; Blacks moves the
@@ -91,9 +93,10 @@ Two modes, switched at the top of the panel:
 - **Point**: click the curve to add a point (up to 20), drag to move it,
   and double-click it or drag it off the graph to remove it. **RGB** is the
   main curve; **R**, **G** and **B** adjust one channel.
-- **Parametric**: **Highlights**, **Lights**, **Darks** and **Shadows**
-  sliders, with three **Split Points** that move the borders between the
-  regions.
+- **Parametric**: **Whites**, **Highlights**, **Midtones**, **Shadows**
+  and **Blacks** sliders, named as in Basic, each bending the curve in its
+  own band of tones. Three **Split Points** move the borders between the
+  bands; Midtones spans the two around the middle split.
 
 The graph shows the histogram behind the curve. Hover over the photo to
 see where a pixel sits on the curve. A curve drawn in darktable shows a

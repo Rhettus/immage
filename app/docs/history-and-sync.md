@@ -27,6 +27,21 @@ top:
 
 The eye button hides modules that are in the history but switched off.
 
+Pointing at a row of what the photo opened with shows its buttons:
+
+- for a module Immage has no sliders for, such as one added in
+  darktable: a **switch**, which turns it off or on again, and
+  **delete**. A deleted module is switched off and gone from the history
+  once the photo saves. darktable starts every photo with some modules,
+  and those come back if removed, so deleting one of them puts it back to
+  darktable's defaults instead.
+- for a module behind Immage's sliders, such as exposure: **reset**,
+  which puts those sliders back where a new photo starts. Moving the
+  sliders is how to change it, so it has no switch of its own.
+
+Modules every photo needs, such as demosaic, and the modules a mask
+uses (the Masks panel's) have no buttons. Each of these is one undo step.
+
 The compress button, beside the eye, is darktable's **compress history
 stack**: the session's steps fold into the photo's history, which then
 lists each module once, as darktable stores it. Steps you have undone are
