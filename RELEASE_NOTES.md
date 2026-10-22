@@ -3,6 +3,15 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
+## 0.35.0
+
+Bug fixes
+
+- O and the eye in the Masks panel hide the red overlay while a brush
+  adds to or subtracts from a mask; before, the overlay stayed on until
+  the brush was put down with Esc, whichever mask was selected. Moving
+  one of the mask's sliders now also hides it, until the next stroke
+
 ## 0.34.0
 
 Bug fixes
