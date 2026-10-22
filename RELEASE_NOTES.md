@@ -22,6 +22,10 @@ Improvements
   starts brighter or darker by the amount set, +1 EV for instance, while
   Basic's Exposure still starts at 0 and adds to it. Auto allows for it,
   and each photo keeps the amount it started with. Off by default
+- Basic's Auto sets Blacks more gently: about half as far as before, and
+  not at all when a photo's darkest parts are close to black already. A
+  photo with nothing dark in it, such as a plane against clear sky, keeps
+  its blacks; before, Auto darkened the sky to navy
 
 Bug fixes
 
