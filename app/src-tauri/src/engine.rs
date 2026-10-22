@@ -207,10 +207,16 @@ impl Engine {
             use std::os::windows::process::CommandExt;
             cmd.creation_flags(0x0800_0000);
         }
-        // ROCm's platform too, when it is the only AMD driver
+        // ROCm's platform too, when it is the only AMD driver. with ROCm
+        // 7.1 darktable's kernels failed to build on read_imagef and
+        // write_imagef, and built as OpenCL C 2.0 (darktable #20084; RX 9070
+        // XT, Ubuntu 26.04). _APPEND keeps darktable's own build options
         #[cfg(target_os = "linux")]
         if rocm_only(Path::new("/")) {
             cmd.args(["--conf", "clplatform_amdacceleratedparallelprocessing=true"]);
+            if std::env::var_os("AMD_OCL_BUILD_OPTIONS_APPEND").is_none() {
+                cmd.env("AMD_OCL_BUILD_OPTIONS_APPEND", "-cl-std=CL2.0");
+            }
         }
         // libgomp's threads spin while they wait, and when anything else
         // wants the cores (a web view drawn by llvmpipe, say) each module
