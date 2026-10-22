@@ -11,6 +11,13 @@ Improvements
   it was. On Linux under Wayland the size is kept but the desktop places
   the window
 
+Bug fixes
+
+- on Linux, an AMD graphics card with only AMD's ROCm OpenCL driver
+  installed is used again for the whole-photo render and export; since
+  darktable 5.6 it was left out unless Mesa's RustiCL driver was
+  installed instead, and Immage ran on the CPU alone
+
 ## 0.35.0
 
 Improvements
