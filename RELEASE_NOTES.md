@@ -15,6 +15,9 @@ Improvements
   Vegetation and Subject: + Object, then drag a box around the object on
   the photo or click it, and the AI outlines it. Each object gets a
   button of its own, Object A, Object B, and so on
+- the History card's rows of the opened edit have buttons on hover: a
+  module added in darktable can be switched off or deleted, and one
+  behind Immage's sliders reset, each as one undo step
 
 Bug fixes
 
