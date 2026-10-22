@@ -8,7 +8,7 @@ import { ask, open, save } from "@tauri-apps/plugin-dialog";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { BANDS, choiceOn, choiceShows, controlById, GUIDE_IDS, guidesOf, isModuleSetting, MAX_GUIDES, UPRIGHT_GUIDED,
+import { BANDS, choiceOn, choiceShows, controlById, GUIDE_IDS, guidesOf, isModuleSetting, MAX_GUIDES, parametricOf, UPRIGHT_GUIDED,
          UPRIGHT_MODES, uprightAspect, mapOf, mapsFor, moduleName, mapsWith, panels, pointsOf, pointValues, profileLabel, turnRect, type Control, type ControlPreset, type CurveChannel, type Values,
          type Panel, type Section, type Turn } from "./manifest";
 import { CircleOff, Grid2x2, MoveHorizontal, MoveVertical, PenLine, Sparkles, WandSparkles } from "lucide-react";
@@ -5751,11 +5751,7 @@ function PanelView({ panel: p, open, onToggle, values, session, disabled, onChan
     // points made before stay; only an empty point curve starts from the
     // parametric curve's shape
     if (!isIdentity(pointsOf(values))) { onChange(controlById.get("tc_mode")!, 1); return; }
-    const pc = paramCurve({
-      highlights: values.tc_highlights ?? 0, lights: values.tc_lights ?? 0, darks: values.tc_darks ?? 0,
-      shadows: values.tc_shadows ?? 0, split1: values.tc_split1 ?? 25, split2: values.tc_split2 ?? 50,
-      split3: values.tc_split3 ?? 75,
-    });
+    const pc = paramCurve(parametricOf(values));
     const flat = pc.every(([x, y]) => Math.abs(x - y) < 1e-4);
     const pts: [number, number][] = flat ? [[0, 0], [1, 1]]
       : [0, 4, 8, 12, 16].map((k) => pc[k]);
@@ -6163,11 +6159,7 @@ function CurveGraph({ values: v, histogram, mark }: {
 }) {
   const W = 260, H = 260;
   const hist = histogramPath(histogram, W, H);
-  const pts = curve({
-    highlights: v.tc_highlights ?? 0, lights: v.tc_lights ?? 0, darks: v.tc_darks ?? 0,
-    shadows: v.tc_shadows ?? 0, split1: v.tc_split1 ?? 25, split2: v.tc_split2 ?? 50,
-    split3: v.tc_split3 ?? 75,
-  });
+  const pts = curve(parametricOf(v));
   const d = pts.map(([x, y], k) => `${k ? "L" : "M"}${(x * W).toFixed(1)},${((1 - y) * H).toFixed(1)}`).join(" ");
   const splits = [v.tc_split1 ?? 25, v.tc_split2 ?? 50, v.tc_split3 ?? 75];
   return (
@@ -6193,11 +6185,7 @@ function CurveGraph({ values: v, histogram, mark }: {
 // shift the answer a little
 function markOnCurve(probe: Probe, v: Record<string, number>, pointMode: boolean, channel: CurveChannel): CurveMark {
   const ch = pointMode && channel !== "rgb" ? ({ r: 0, g: 1, b: 2 } as const)[channel] : null;
-  const f = !pointMode ? polyline(paramCurve({
-      highlights: v.tc_highlights ?? 0, lights: v.tc_lights ?? 0, darks: v.tc_darks ?? 0,
-      shadows: v.tc_shadows ?? 0, split1: v.tc_split1 ?? 25, split2: v.tc_split2 ?? 50,
-      split3: v.tc_split3 ?? 75,
-    }))
+  const f = !pointMode ? polyline(paramCurve(parametricOf(v)))
     : ch === null ? monotone(pointsOf(v)) : channelCurve(pointsOf(v, channel));
   const x = invert(f, ch === null ? lightness(probe.rgb) : probe.rgb[ch] / 255);
   return { x, y: Math.min(1, Math.max(0, f(x))) };
