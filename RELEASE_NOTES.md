@@ -26,6 +26,10 @@ Improvements
   not at all when a photo's darkest parts are close to black already. A
   photo with nothing dark in it, such as a plane against clear sky, keeps
   its blacks; before, Auto darkened the sky to navy
+- Post-Crop Vignetting's Amount no longer shows the vignette's guides
+  while it moves, so the photo can be judged without them. Midpoint,
+  Roundness and Feather still show them, and so does the pointer over
+  the photo
 
 Bug fixes
 
