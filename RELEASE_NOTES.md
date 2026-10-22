@@ -18,6 +18,10 @@ Bug fixes
   darktable 5.6 it was left out unless Mesa's RustiCL driver was
   installed instead, and with ROCm 7.1 darktable's OpenCL code did not
   build, so Immage ran on the CPU alone
+- on Linux with Mesa's RustiCL OpenCL driver and AMD's ROCm both
+  installed, Immage no longer shows empty folders and a blank photo: its
+  engine stopped at start while checking ROCm for AI acceleration, which
+  the Linux build cannot use
 
 ## 0.35.0
 
