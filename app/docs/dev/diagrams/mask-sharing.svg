@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="20 -20 1841 764" width="1841" height="764" font-family="-apple-system, Helvetica, Arial, sans-serif">
+<defs><marker id="h" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#343a40"/></marker></defs>
+<rect x="20" y="-20" width="1841" height="764" fill="#ffffff"/>
+<rect x="40" y="70" width="300" height="526" rx="12" fill="#dbe4ff" fill-opacity="0.6" stroke="#1971c2" stroke-width="1"/>
+<text x="54.0" y="88.0" font-size="17" fill="#1971c2" text-anchor="start" dominant-baseline="middle" font-weight="600">Immage: masks (planMerge)</text>
+<rect x="400" y="70" width="700" height="526" rx="12" fill="#d3f9d8" fill-opacity="0.6" stroke="#2f9e44" stroke-width="1"/>
+<text x="414.0" y="88.0" font-size="17" fill="#2f9e44" text-anchor="start" dominant-baseline="middle" font-weight="600">darktable masks</text>
+<rect x="1160" y="70" width="440" height="526" rx="12" fill="#d3f9d8" fill-opacity="0.6" stroke="#2f9e44" stroke-width="1"/>
+<text x="1174.0" y="88.0" font-size="17" fill="#2f9e44" text-anchor="start" dominant-baseline="middle" font-weight="600">darktable pixelpipe, top to bottom</text>
+<polyline points="320.0,172.0 420.0,172.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="320.0,282.0 420.0,282.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="320.0,392.0 420.0,392.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="320.0,502.0 420.0,502.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="680.0,172.0 780.0,282.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="680.0,282.0 780.0,282.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="680.0,392.0 780.0,282.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="680.0,502.0 780.0,502.0" fill="none" stroke="#343a40" stroke-width="1.6" marker-end="url(#h)"/>
+<polyline points="1080.0,282.0 1180.0,310.0" fill="none" stroke="#343a40" stroke-width="1.6" stroke-dasharray="7 5" marker-end="url(#h)"/>
+<polyline points="1080.0,502.0 1180.0,386.0" fill="none" stroke="#343a40" stroke-width="1.6" stroke-dasharray="7 5" marker-end="url(#h)"/>
+<text x="40.0" y="14.0" font-size="28" fill="#1e1e1e" text-anchor="start" dominant-baseline="middle" font-weight="600">Immage: masks sharing one instance through a combined mask</text>
+<rect x="60" y="140" width="260" height="64" rx="10" fill="#a5d8ff" stroke="#1971c2" stroke-width="2"/>
+<text x="190.0" y="163.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">Mask "Sky"</text>
+<text x="190.0" y="180.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">Saturation +40</text>
+<rect x="420" y="140" width="260" height="64" rx="10" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2"/>
+<text x="550.0" y="163.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">group "immage: Sky"</text>
+<text x="550.0" y="180.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">its own shapes</text>
+<rect x="60" y="250" width="260" height="64" rx="10" fill="#a5d8ff" stroke="#1971c2" stroke-width="2"/>
+<text x="190.0" y="273.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">Mask "Trees"</text>
+<text x="190.0" y="290.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">Saturation +20</text>
+<rect x="420" y="250" width="260" height="64" rx="10" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2"/>
+<text x="550.0" y="273.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">group "immage: Trees"</text>
+<text x="550.0" y="290.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">its own shapes</text>
+<rect x="60" y="360" width="260" height="64" rx="10" fill="#a5d8ff" stroke="#1971c2" stroke-width="2"/>
+<text x="190.0" y="383.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">Mask "Field"</text>
+<text x="190.0" y="400.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">Saturation +10</text>
+<rect x="420" y="360" width="260" height="64" rx="10" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2"/>
+<text x="550.0" y="383.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">group "immage: Field"</text>
+<text x="550.0" y="400.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">its own shapes</text>
+<rect x="60" y="470" width="260" height="64" rx="10" fill="#a5d8ff" stroke="#1971c2" stroke-width="2"/>
+<text x="190.0" y="493.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">Mask "Face"</text>
+<text x="190.0" y="510.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">Saturation -30</text>
+<rect x="420" y="470" width="260" height="64" rx="10" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2"/>
+<text x="550.0" y="493.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">group "immage: Face"</text>
+<text x="550.0" y="510.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">its own shapes</text>
+<rect x="780" y="195.0" width="300" height="174" rx="10" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2"/>
+<text x="930.0" y="247.0" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">combined mask</text>
+<text x="930.0" y="264.5" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">"immage combined:</text>
+<text x="930.0" y="282.0" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">colorbalancergb 1"</text>
+<text x="930.0" y="299.5" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">members summed (SUM),</text>
+<text x="930.0" y="317.0" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">up to 1</text>
+<rect x="780" y="470" width="300" height="64" rx="10" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2"/>
+<text x="930.0" y="493.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">combined mask</text>
+<text x="930.0" y="510.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">"... colorbalancergb 2"</text>
+<rect x="1180" y="130" width="400" height="56" rx="10" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2"/>
+<text x="1380.0" y="149.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">exposure · color calibration · ...</text>
+<text x="1380.0" y="166.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">the global modules</text>
+<rect x="1180" y="206" width="400" height="56" rx="10" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2"/>
+<text x="1380.0" y="225.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">color balance rgb  ◆ mask anchor</text>
+<text x="1380.0" y="242.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">global Saturation</text>
+<rect x="1180" y="282" width="400" height="56" rx="10" fill="#d0bfff" stroke="#6741d9" stroke-width="2"/>
+<text x="1380.0" y="301.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">immage local: colorbalancergb 1</text>
+<text x="1380.0" y="318.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">Saturation +40, the strongest member</text>
+<rect x="1180" y="358" width="400" height="56" rx="10" fill="#d0bfff" stroke="#6741d9" stroke-width="2"/>
+<text x="1380.0" y="377.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">immage local: colorbalancergb 2</text>
+<text x="1380.0" y="394.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">Saturation -30</text>
+<rect x="1180" y="434" width="400" height="56" rx="10" fill="#d0bfff" stroke="#6741d9" stroke-width="2"/>
+<text x="1380.0" y="453.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">color balance rgb · Sky, Trees, ...</text>
+<text x="1380.0" y="470.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">each mask's own: off, holding its settings</text>
+<rect x="1180" y="510" width="400" height="56" rx="10" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2"/>
+<text x="1380.0" y="538.0" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">AgX or sigmoid (tone mapper)</text>
+<text x="40.0" y="634.0" font-size="14" fill="#495057" text-anchor="start" dominant-baseline="middle" font-weight="normal">Each member counts at its strength over the shared one (20 / 40 = 0.5), times its Opacity. darktable blends out = in + mask · (module(in) - in), so Trees gets about Saturation +20.</text>
+<text x="40.0" y="660.0" font-size="14" fill="#495057" text-anchor="start" dominant-baseline="middle" font-weight="normal">Masks are grouped by the direction of their sliders, or by slider and sign: Face, pointing the other way, gets an instance of its own. Ten masks raising Saturation still run the module once.</text>
+<text x="40.0" y="686.0" font-size="14" fill="#495057" text-anchor="start" dominant-baseline="middle" font-weight="normal">Where members overlap the sum adds up, as in Lightroom; the shared strength is set for where it adds up most, as the combined mask stops at 1. Here they do not overlap, so it is the strongest member's.</text>
+<text x="40.0" y="712.0" font-size="14" fill="#495057" text-anchor="start" dominant-baseline="middle" font-weight="normal">Dragging Trees lifts it out of combined mask 1 onto its own instance, which runs after the shared ones: the drag reruns only that. It joins again on release.</text>
+<rect x="708.5" y="217.5" width="43.0" height="19" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="730.0" y="227.0" font-size="12" fill="#495057" text-anchor="middle" dominant-baseline="middle" font-weight="normal">x 1.0</text>
+<rect x="708.5" y="272.5" width="43.0" height="19" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="730.0" y="282.0" font-size="12" fill="#495057" text-anchor="middle" dominant-baseline="middle" font-weight="normal">x 0.5</text>
+<rect x="705.2" y="327.5" width="49.6" height="19" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="730.0" y="337.0" font-size="12" fill="#495057" text-anchor="middle" dominant-baseline="middle" font-weight="normal">x 0.25</text>
+<rect x="708.5" y="492.5" width="43.0" height="19" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="730.0" y="502.0" font-size="12" fill="#495057" text-anchor="middle" dominant-baseline="middle" font-weight="normal">x 1.0</text>
+<rect x="1092.0" y="286.5" width="76.0" height="19" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="1130.0" y="296.0" font-size="12" fill="#495057" text-anchor="middle" dominant-baseline="middle" font-weight="normal">drawn mask</text>
+<rect x="1092.0" y="434.5" width="76.0" height="19" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="1130.0" y="444.0" font-size="12" fill="#495057" text-anchor="middle" dominant-baseline="middle" font-weight="normal">drawn mask</text>
+</svg>

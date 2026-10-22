@@ -116,13 +116,15 @@
 <rect x="1060" y="266" width="300" height="56" rx="10" fill="#d0bfff" stroke="#6741d9" stroke-width="2"/>
 <text x="1210.0" y="285.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">instance Immage adds for the</text>
 <text x="1210.0" y="302.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">mask, named after it</text>
-<rect x="1060" y="1228" width="300" height="190" rx="10" fill="#fff3bf" stroke="#f08c00" stroke-width="2"/>
-<text x="1210.0" y="1279.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">masks with the same slider</text>
-<text x="1210.0" y="1296.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">share one instance</text>
-<text x="1210.0" y="1314.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">("immage local: ...") on a</text>
-<text x="1210.0" y="1331.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">combined mask ("immage</text>
-<text x="1210.0" y="1349.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">combined: ..."), so ten masks</text>
-<text x="1210.0" y="1366.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">are not ten copies</text>
+<rect x="1060" y="1228" width="300" height="210" rx="10" fill="#fff3bf" stroke="#f08c00" stroke-width="2"/>
+<text x="1210.0" y="1271.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">masks moving a slider the</text>
+<text x="1210.0" y="1289.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">same way, with the same</text>
+<text x="1210.0" y="1306.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">ranges, share one instance</text>
+<text x="1210.0" y="1324.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">of color balance rgb, color</text>
+<text x="1210.0" y="1341.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">equalizer, diffuse, denoise</text>
+<text x="1210.0" y="1359.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">or chromatic aberrations;</text>
+<text x="1210.0" y="1376.8" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">Sky's own instance is then</text>
+<text x="1210.0" y="1394.2" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">switched off (mask-sharing)</text>
 <text x="40.0" y="1516.0" font-size="14" fill="#495057" text-anchor="start" dominant-baseline="middle" font-weight="normal">A mask's instances run right after color balance rgb, in linear scene-referred data, before the tone mapper: a local +1 EV is exposure's +1 EV under the mask, and AgX maps it with the rest of the photo.</text>
 <text x="40.0" y="1542.0" font-size="14" fill="#495057" text-anchor="start" dominant-baseline="middle" font-weight="normal">The order is fixed: Immage places every instance and the user cannot move modules. darktable opens the same XMP and shows each instance as an ordinary module with its drawn mask.</text>
 <text x="40.0" y="1568.0" font-size="14" fill="#495057" text-anchor="start" dominant-baseline="middle" font-weight="normal">Sharpening and Defringe follow the same pattern (sharpen or a second diffuse; chromatic aberrations or defringe), on the module the photo's global setting uses.</text>

@@ -99,10 +99,36 @@ Immage. In darktable the user can move them like any instance.
 
 ## Sharing instances between masks
 
-One instance per mask per module gets slow: ten masks on color balance rgb
-are ten runs of the module, and a drag on any of them waits on the rest.
-For the modules marked `merge` in `localMaps`, `planMerge` in
-[localMerge.ts](../../src/localMerge.ts) lets masks share instead:
+With an instance per mask, a frame costs a run of the module for every
+mask: color balance rgb is some 30 ms a draft frame, so ten masks on it are
+ten runs. Worse, each new instance went in right after the anchor, ahead of
+the older ones, so a drag on the newest mask reran every older mask's
+instance as well. At ten masks a draft frame took about 340 ms, and the
+cost grew with every mask added.
+
+Sharing makes the cost depend on how many *kinds* of adjustment the masks
+make, not on how many masks there are. It rests on how darktable blends a
+module into the image. With the normal blend mode an instance's output is
+
+    out = in + m · (module(in) - in)
+
+where `m` is its mask at that pixel, 0 to 1. The module runs over the whole
+image once; the mask only decides how much of its change each pixel keeps.
+So one instance set to a strength `S` stands in for a mask that wants
+strength `s` wherever its mask counts `s / S`. For a module whose change
+grows roughly in step with its strength, which over a slider's range color
+balance rgb's does, that is close to the mask's own instance.
+
+Many masks then fit on one instance: its mask is the sum of theirs, each
+member counted at `s / S` times its own opacity. darktable already has such
+a mask, a group whose members add (`DT_MASKS_STATE_SUM`), and drawing it is
+far cheaper than running the module once per member. Overlapping masks add
+up, as Lightroom's do.
+
+In Immage, for the modules marked `merge` in `localMaps`, `planMerge` in
+[localMerge.ts](../../src/localMerge.ts) does this (the
+[sharing diagram](diagrams/mask-sharing.svg) shows four masks on two
+shared instances):
 
 - a shared instance, `immage local: <op> <n>`, runs once for several masks
 - its drawn mask is a **combined mask**, `immage combined: <op> <n>`
@@ -111,15 +137,23 @@ For the modules marked `merge` in `localMaps`, `planMerge` in
 - each mask keeps its own instance too, switched off, holding its settings
   so they can be read back
 
-Masks are grouped either by the direction their sliders point, or by slider
-and sign, whichever needs fewer shared instances. A shared instance is set
-strong enough for where its members overlap most, because the combined mask
-stops at 1. The comments in `planMerge` give the arithmetic.
+Only masks whose settings point the same way can share an instance, since
+it has one set of params. Masks are grouped either by that direction, or one
+group per slider and sign with the mask's other sliders at neutral,
+whichever needs fewer instances. The second puts any number of masks with
+the same ranges and refinements on at most two instances per slider. A
+shared instance is set strong enough for where its members overlap most,
+because the combined mask stops at 1, and never weaker than its strongest
+member, which therefore renders exactly. The comments in `planMerge` give
+the arithmetic.
 
 Some masks cannot share (`canMerge`) and keep their own instance on: an
-inverted mask with ranges, a mask of ranges alone, and a mask with refine
-Contrast. Masks share only with masks that have the same ranges and
-refinements, since the shared instance carries those.
+inverted mask with ranges (darktable inverts a drawn mask and its ranges as
+a whole, which no member of a sum can be), a mask of ranges alone (no drawn
+mask to be a member), and a mask with refine Contrast (it curves the mask
+before the instance's opacity). Ranges and refinements are an instance's
+blend parameters, so masks share only with masks that have the same ones,
+which the shared instance carries.
 
 While a mask is dragged, `Session.pump` lifts it out of the shared
 instances onto its own (`Session.lifted`). Its own instances run after the
@@ -127,6 +161,29 @@ shared ones, so the drag frames rerun only those, and the others' combined
 mask stays in darktable's cache. It joins the shared instances again before
 the frame at release. `_combined_member_changed` keeps a combined mask
 current when a member is reshaped or deleted.
+
+What it bought, from the benchmark's masks table
+([SUMMARY.md](../../../benchmarking/SUMMARY.md), median across photos,
+CPU):
+
+| Step | Instance per mask | Shared |
+|---|---:|---:|
+| 5 masks, drag on the newest, draft | 187 ms | 73 ms |
+| 10 masks, drag on the newest, draft | 340 ms | 82 ms |
+| 10 masks, drag on the newest, release | 1,377 ms | 409 ms |
+| 10 masks, newest shape moved, draft | 358 ms | 99 ms |
+| 10 masks, drag on the oldest, release | 192 ms | 396 ms |
+
+The last row is the price: the oldest mask's instance used to run last, so
+a change to it reran only that, where now its release reruns the shared
+instance. The approximation is close: separate masks render within dE p99
+of about 1 of 255 of their own instances, and where many masks overlap
+within about 8.
+
+A new darktable module could have done the same exactly, but would have
+meant changing darktable (`src/common/iop_order.c`); sharing uses only
+parts darktable already has, so the photo still opens and renders the same
+there.
 
 A photo whose masks were made before sharing keeps its own instances until a
 mask is next edited; that edit sends every mask again, which moves the photo

@@ -336,9 +336,10 @@ def masks():
         els.append(("edge", "grp", bid, "", {"fa": fa, "fb": fb, "dashed": True}))
     els.append(("box", "k_g", MX, y(1), MW, h, "module the photo has anyway", DT))
     els.append(("box", "k_m", MX, y(2) + 8, MW, h + 8, "instance Immage adds for the\nmask, named after it", ENGINE))
-    els.append(("box", "n1", MX, y(17) + 10, MW, 190,
-                "masks with the same slider\nshare one instance\n(\"immage local: ...\") on a\n"
-                "combined mask (\"immage\ncombined: ...\"), so ten masks\nare not ten copies", NOTE))
+    els.append(("box", "n1", MX, y(17) + 10, MW, 210,
+                "masks moving a slider the\nsame way, with the same\nranges, share one instance\n"
+                "of color balance rgb, color\nequalizer, diffuse, denoise\nor chromatic aberrations;\n"
+                "Sky's own instance is then\nswitched off (mask-sharing)", NOTE))
     ny = bottom + 50
     notes = [
         "A mask's instances run right after color balance rgb, in linear scene-referred data, before the tone mapper: "
@@ -353,7 +354,59 @@ def masks():
     return els
 
 
-DIAGRAMS = {"dataflow": dataflow, "entities": entities, "slider-sequence": slider_sequence, "masks": masks}
+def mask_sharing():
+    """several masks on one shared instance: their groups summed into a combined mask"""
+    els = [("title", 40, 0, "Immage: masks sharing one instance through a combined mask", 28)]
+    AX, GX, CX, PX = 60, 420, 780, 1180
+    AW, GW, CW, PW = 260, 260, 300, 400
+    top, step, h = 140, 110, 64
+    y = lambda r: top + step * r
+    masks = [("sky", "Sky", 40), ("trees", "Trees", 20), ("field", "Field", 10), ("face", "Face", -30)]
+    pstep, ph = 76, 56
+    bottom = top - 10 + pstep * 5 + ph
+    els.append(("zone", "z_ui", AX - 20, 70, AW + 40, bottom - 70 + 30, "Immage: masks (planMerge)", UI))
+    els.append(("zone", "z_mask", GX - 20, 70, CX + CW - GX + 40, bottom - 70 + 30, "darktable masks", DT))
+    els.append(("zone", "z_pipe", PX - 20, 70, PW + 40, bottom - 70 + 30, "darktable pixelpipe, top to bottom", DT))
+    for r, (mid, name, sat) in enumerate(masks):
+        els.append(("box", "m_" + mid, AX, y(r), AW, h, f"Mask \"{name}\"\nSaturation {sat:+d}", UI))
+        els.append(("box", "g_" + mid, GX, y(r), GW, h, f"group \"immage: {name}\"\nits own shapes", DT))
+        els.append(("edge", "m_" + mid, "g_" + mid, "", {}))
+    els.append(("box", "c1", CX, y(0.5), CW, h + step, "combined mask\n\"immage combined:\ncolorbalancergb 1\"\n"
+                "members summed (SUM),\nup to 1", DT))
+    els.append(("box", "c2", CX, y(3), CW, h, "combined mask\n\"... colorbalancergb 2\"", DT))
+    for mid, k in (("sky", "x 1.0"), ("trees", "x 0.5"), ("field", "x 0.25")):
+        els.append(("edge", "g_" + mid, "c1", k, {"fb": (0, 0.5)}))
+    els.append(("edge", "g_face", "c2", "x 1.0", {}))
+    stack = [
+        ("glob", "exposure · color calibration · ...", "the global modules", DT),
+        ("cb", "color balance rgb  ◆ mask anchor", "global Saturation", DT),
+        ("l1", "immage local: colorbalancergb 1", "Saturation +40, the strongest member", ENGINE),
+        ("l2", "immage local: colorbalancergb 2", "Saturation -30", ENGINE),
+        ("own", "color balance rgb · Sky, Trees, ...", "each mask's own: off, holding its settings", ENGINE),
+        ("tm", "AgX or sigmoid (tone mapper)", "", DT),
+    ]
+    for r, (bid, name, why, kind) in enumerate(stack):
+        els.append(("box", bid, PX, top - 10 + pstep * r, PW, ph, name + ("\n" + why if why else ""), kind))
+    els.append(("edge", "c1", "l1", "drawn mask", {"dashed": True, "fb": (0, 0.5)}))
+    els.append(("edge", "c2", "l2", "drawn mask", {"dashed": True, "fb": (0, 0.5)}))
+    ny = bottom + 60
+    notes = [
+        "Each member counts at its strength over the shared one (20 / 40 = 0.5), times its Opacity. darktable blends "
+        "out = in + mask · (module(in) - in), so Trees gets about Saturation +20.",
+        "Masks are grouped by the direction of their sliders, or by slider and sign: Face, pointing the other way, "
+        "gets an instance of its own. Ten masks raising Saturation still run the module once.",
+        "Where members overlap the sum adds up, as in Lightroom; the shared strength is set for where it adds up "
+        "most, as the combined mask stops at 1. Here they do not overlap, so it is the strongest member's.",
+        "Dragging Trees lifts it out of combined mask 1 onto its own instance, which runs after the shared ones: "
+        "the drag reruns only that. It joins again on release.",
+    ]
+    for i, n in enumerate(notes):
+        els.append(("text", AX - 20, ny + 26 * i, n, 16, MUTED))
+    return els
+
+
+DIAGRAMS = {"dataflow": dataflow, "entities": entities, "slider-sequence": slider_sequence, "masks": masks,
+            "mask-sharing": mask_sharing}
 
 
 # ---------------------------------------------------------------- geometry

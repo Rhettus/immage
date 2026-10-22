@@ -23,6 +23,7 @@ Diagrams of the same ground:
 - [entities](diagrams/entities.svg)
 - [one slider move](diagrams/slider-sequence.svg)
 - [one mask in darktable's pipe](diagrams/masks.svg)
+- [masks sharing an instance](diagrams/mask-sharing.svg)
 
 The editable sources are `.excalidraw` files in [`diagrams/`](diagrams/).
 Paths below are relative to this file.
