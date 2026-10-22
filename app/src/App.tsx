@@ -1398,8 +1398,9 @@ export default function App() {
   const vignetteGuides = rightMode === "adjust" && openPanels.has("effects") && !!values.vig_amount && !grainLast
     && !!current && !cropping && !preview;
   useEffect(() => { placeLayers(); }, [masksMode, healMode, current, cropping, vignetteGuides]);
-  // the guides also show while a vignette slider moves: until the button
-  // comes up after a drag, or a moment after a wheel notch or a typed value
+  // the guides also show while a slider of the vignette's shape moves (not
+  // Amount): until the button comes up after a drag, or a moment after a
+  // wheel notch or a typed value
   const [vigSliding, setVigSliding] = useState(false);
   const vigButton = useRef(false);
   const vigTimer = useRef(0);
@@ -3204,7 +3205,10 @@ export default function App() {
     leaveBefore();
     setBaMode("off");
     if (entries.some(([id]) => id.startsWith("grain_"))) setGrainLast(true);
-    else if (entries.some(([id]) => id.startsWith("vig_"))) { setGrainLast(false); vigMoved(); }
+    else if (entries.some(([id]) => id.startsWith("vig_"))) {
+      setGrainLast(false);
+      if (entries.some(([id]) => id.startsWith("vig_") && id !== "vig_amount")) vigMoved();
+    }
     if (entries.some(([id]) => id.startsWith("tf_"))) tfMoved();
     record(entries.map(([id]) => id), label);
     baseStale.current = true;
@@ -3216,7 +3220,7 @@ export default function App() {
     leaveBefore();
     setBaMode("off");
     if (c.id.startsWith("grain_")) setGrainLast(true);
-    else if (c.id.startsWith("vig_")) { setGrainLast(false); vigMoved(); }
+    else if (c.id.startsWith("vig_")) { setGrainLast(false); if (c.id !== "vig_amount") vigMoved(); }
     if (c.id.startsWith("tf_")) tfMoved();
     setAmount(null);
     record([c.id]);

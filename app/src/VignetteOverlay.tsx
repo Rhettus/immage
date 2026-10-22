@@ -6,7 +6,7 @@
 // center. a drag on the midpoint moves it, a drag on either edge sets the
 // Feather around it, and the center drags the whole vignette. they show
 // while the pointer is over the photo, one of them is being dragged, or one
-// of the vignette's sliders is moving
+// of the sliders that shape the vignette is moving (Amount is not one)
 import { useEffect, useRef, useState } from "react";
 import { VIG_MID, VIG_WIDTH, vignetteMap, type ImageContext, type Values } from "./manifest";
 
@@ -17,7 +17,7 @@ export function VignetteOverlay({ image, values, ctx, sliding, onChange }: {
   image: { w: number; h: number };   // the shown frame at 100%, the one vignette.c sees
   values: Values;
   ctx: ImageContext;
-  sliding: boolean;   // one of the vignette's sliders is moving
+  sliding: boolean;   // one of the vignette's shape sliders is moving
   onChange: (entries: [string, number][]) => void;
 }) {
   const W = image.w, H = image.h;
