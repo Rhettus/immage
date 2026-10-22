@@ -68,6 +68,7 @@ const { canMerge } = await import("../app/src/localMerge.ts");
 const { overlayShown, overlayStep } = await import("../app/src/masks.ts");
 const { ILLUMINANT_D } = await import("../app/src/wb.ts");
 const { autoTone } = await import("../app/src/autoTone.ts");
+const { dueIn } = await import("../app/src/activity.ts");
 const z = await import("../app/src/zones.ts");
 const { compare, meanChroma, inEllipse, rightOf } = await import("./metrics.mjs");
 const { THRESHOLD, GLOBAL, COMPOSITE, LOCAL, trialValues, judge } = await import("./expect.mjs");
@@ -660,6 +661,21 @@ async function fixes(photo) {
     const got = o.s.masks.find((x) => x.name === "Soft")?.refine;
     await o.s.close();
     return got?.blur > 0 ? null : `opened again, its refinements are ${JSON.stringify(got ?? null)}`;
+  });
+
+  // 0.36.0: on Linux at 2x, a drag's frames took longer than the busy
+  // indicator's wait, so it came up between them, and its spinning redrew
+  // the whole window every display frame. a job that has shown a frame
+  // waits a second before it shows the indicator
+  await fix("a slow drag doesn't bring up the busy indicator", async () => {
+    const cases = [
+      ["a first frame at 300 ms shows it", dueIn([{ since: 0, shown: false }], 300, 250, 1000) <= 0, true],
+      ["a drag's next frame at 465 ms leaves it off", dueIn([{ since: 0, shown: true }], 465, 250, 1000) <= 0, false],
+      ["a drag's frame at 1100 ms shows it", dueIn([{ since: 0, shown: true }], 1100, 250, 1000) <= 0, true],
+      ["a new job beside a drag shows it", dueIn([{ since: 0, shown: true }, { since: 0, shown: false }], 300, 250, 1000) <= 0, true],
+    ];
+    const wrong = cases.filter(([, got, want]) => got !== want).map(([label]) => label);
+    return wrong.length ? `not so: ${wrong.join(", ")}` : null;
   });
 }
 
