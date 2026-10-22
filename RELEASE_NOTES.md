@@ -3,6 +3,14 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
+## 0.36.0
+
+Improvements
+
+- Immage opens at the size and place it was closed at, and maximized if
+  it was. On Linux under Wayland the size is kept but the desktop places
+  the window
+
 ## 0.35.0
 
 Improvements
