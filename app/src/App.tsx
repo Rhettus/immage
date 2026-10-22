@@ -62,9 +62,9 @@ import { DEFAULT_TRANSITION, loadZoneOverlay, offsetsOf, overlayRgb, paintRange,
          type ZoneData, type ZoneOverlay, type ZonePart, type ZoneRange } from "./zones";
 import { SpotOverlay, type SpotTool } from "./SpotOverlay";
 import type { NewSpot, Spot } from "./spots";
-import { flipMode, isRange, isRefined, maskAt, maskKindName, nextMaskName, NO_REFINE, rangeChannels, type BlendifChannel,
-         type ChannelRange, type Mask, type ObjectShape, type ParametricRange, type Range, type RangeMap, type Refine, type Region,
-         type Shape } from "./masks";
+import { flipMode, isRange, isRefined, maskAt, maskKindName, nextMaskName, NO_REFINE, overlayShown, overlayStep, rangeChannels,
+         type BlendifChannel, type ChannelRange, type Mask, type ObjectShape, type OverlayToggle, type ParametricRange, type Range,
+         type RangeMap, type Refine, type Region, type Shape } from "./masks";
 import { channelTint, type Picked } from "./ParametricEditor";
 import { BUILTIN_PRESETS, loadLooks, loadNewPhotosPreset, loadPresets, NewPresetDialog, PresetsPanel, PreviewCache,
          readSharedPresets, savePresets, sharedPresets, storeNewPhotosPreset, type Look, type Preset } from "./Presets";
@@ -360,7 +360,7 @@ export default function App() {
   const [brush, setBrush] = useState<BrushSettings>({ size: 0.05, hardness: 0.5, density: 1, erase: false });
   // the red overlay starts off; it shows anyway while a shape is drawn or
   // dragged (MaskOverlay), and O or the panel's switch keeps it on
-  const [maskOverlay, setMaskOverlay] = useState(false);
+  const [maskOverlay, setMaskOverlay] = useState<OverlayToggle>({ on: false, hold: null });
   // the mask createShape last made, for the Masks panel to open its Tone
   const [freshMask, setFreshMask] = useState<{ name: string; n: number } | null>(null);
   // the overlay steps aside while a mask's sliders move, so the change can
@@ -522,6 +522,7 @@ export default function App() {
       setShapeSel(m.shapes.length);
     }
     syncMasks();
+    overlayEvent("stroke");
     // a gradient is edited by its handles once drawn; the brush keeps painting
     if (shape.type !== "brush") setMaskTool(null);
     return name;
@@ -1089,9 +1090,15 @@ export default function App() {
   const [peekName, setPeekName] = useState<string | null>(null);
   const peekMask = masksMode ? masks.find((m) => m.name === peekName) ?? null : null;
   // a tool in hand to add to the selected mask or take from it: its overlay
-  // shows whatever the toggle says, so the shape is drawn against what is there
+  // shows whatever the toggle says, so the shape is drawn against what is
+  // there, until O or an adjustment sets it aside (overlayStep)
   const addingTo = masksMode && !!maskTool && toolTarget !== "new" && !!selMask;
-  const maskShown = maskOverlay || addingTo;
+  const addingRef = useRef(false);
+  addingRef.current = addingTo;
+  const maskShown = overlayShown(maskOverlay, addingTo);
+  const overlayEvent = (ev: "key" | "adjust" | "stroke") => setMaskOverlay((t) => overlayStep(t, addingRef.current, ev));
+  // what O or an adjustment set aside lasts as long as the tool in hand
+  useEffect(() => setMaskOverlay((t) => (t.hold ? { ...t, hold: null } : t)), [addingTo]);
   // the last full (not a drag's) sharp render's view, which a refined mask's
   // overlay is made for: its refinements depend on the scale
   const [shownView, setShownView] = useState<{ x: number; y: number; scale: number; width: number; height: number;
@@ -3754,7 +3761,7 @@ export default function App() {
       }
       if (masksModeRef.current) {
         if (e.key === "Escape") { setMaskTool(null); return; }
-        if (e.key === "o" || e.key === "O") { setMaskOverlay((o) => !o); return; }
+        if (e.key === "o" || e.key === "O") { overlayEvent("key"); return; }
         if (e.key === "[" || e.key === "]") {
           setBrush((b) => ({ ...b, size: Math.min(0.4, Math.max(0.005, b.size * (e.key === "]" ? 1.15 : 1 / 1.15))) }));
           return;
@@ -4318,7 +4325,7 @@ export default function App() {
         <div className="panels" data-tour="panels">
           {masksMode && !cropping && (
             <MasksPanel masks={masks} selected={maskSel} shape={shapeSel} tool={maskTool} target={toolTarget}
-                        brush={brush} overlay={maskOverlay} disabled={!current} mono={values.bw_mode === 1} photo={values}
+                        brush={brush} overlay={maskShown} disabled={!current} mono={values.bw_mode === 1} photo={values}
                         renderSlider={(c, v, onChange, glow) => (
                           <Slider key={c.id} control={c} value={v} neutral={c.neutral ?? 0} disabled={!current}
                                   values={selMask?.values ?? values} onChange={onChange} glow={glow} />
@@ -4341,7 +4348,7 @@ export default function App() {
                           setShapeSel(0);
                         }}
                         onInvert={(inv) => { if (maskSel) { record(["mask:invert"]); session.current?.setInvert(maskSel, inv); syncMasks(); } }}
-                        onOpacity={(v) => { if (maskSel) { adjusted(); record([`mask:${maskSel}:opacity`]); session.current?.setOpacity(maskSel, v); syncMasks(); } }}
+                        onOpacity={(v) => { if (maskSel) { adjusted(); overlayEvent("adjust"); record([`mask:${maskSel}:opacity`]); session.current?.setOpacity(maskSel, v); syncMasks(); } }}
                         onRefine={(patch: Partial<Refine>) => {
                           const m = masks.find((x) => x.name === maskSel);
                           if (!m) return;
@@ -4365,8 +4372,8 @@ export default function App() {
                           syncMasks();
                         }}
                         onBrush={setBrush}
-                        onOverlay={setMaskOverlay}
-                        onLocal={(id, v) => { if (maskSel) { adjusted(); record([`mask:${maskSel}:${id}`]); session.current?.setLocal(maskSel, id, v); syncMasks(); } }}
+                        onOverlay={() => overlayEvent("key")}
+                        onLocal={(id, v) => { if (maskSel) { adjusted(); overlayEvent("adjust"); record([`mask:${maskSel}:${id}`]); session.current?.setLocal(maskSel, id, v); syncMasks(); } }}
                         onRange={(k, patch) => { refined(); editShapes((sh) => sh.map((x, i) => (i === k ? { ...x, ...patch } as Shape : x))); }}
                         onDepth={(k, depth, feather) => { refined(); void editDepth(k, depth, feather); }}
                         onFeather={(k, patch) => { refined(); editShapes((sh) => sh.map((x, i) => (i === k ? { ...x, ...patch } as Shape : x))); }}

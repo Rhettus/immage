@@ -347,6 +347,21 @@ function cover(s: Exclude<Shape, Range>, g: Grid): Uint8Array {
   return cov;
 }
 
+// the Masks panel's overlay: its toggle (O, or the panel's eye), and what
+// sets aside the overlay a tool adding to the selected mask shows, toggle
+// or not. O always flips what shows; an adjustment hides it until the next
+// stroke, so the change can be judged with the brush still in hand
+export type OverlayToggle = { on: boolean; hold: null | "key" | "adjust" };
+export const overlayShown = (t: OverlayToggle, adding: boolean) => t.on || (adding && !t.hold);
+export function overlayStep(t: OverlayToggle, adding: boolean, ev: "key" | "adjust" | "stroke"): OverlayToggle {
+  if (ev === "key") {
+    const shown = overlayShown(t, adding);
+    return { on: !shown, hold: shown && adding ? "key" : null };
+  }
+  if (ev === "adjust") return adding && !t.hold ? { ...t, hold: "adjust" } : t;
+  return t.hold === "adjust" ? { ...t, hold: null } : t;
+}
+
 // the overlay's color: darktable's yellow, Lightroom's red or one picked, as
 // chosen in Preferences, or a parametric channel's own while it is edited
 export type Rgb = [number, number, number];
