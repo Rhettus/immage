@@ -16,7 +16,8 @@ Bug fixes
 - on Linux, an AMD graphics card with only AMD's ROCm OpenCL driver
   installed is used again for the whole-photo render and export; since
   darktable 5.6 it was left out unless Mesa's RustiCL driver was
-  installed instead, and Immage ran on the CPU alone
+  installed instead, and with ROCm 7.1 darktable's OpenCL code did not
+  build, so Immage ran on the CPU alone
 
 ## 0.35.0
 
