@@ -179,6 +179,13 @@ class Perf {
     return trace;
   }
 
+  // a frame shown again from Session's kept frames: no engine time
+  cached(width: number, height: number): Trace {
+    const now = performance.now();
+    return { kind: "view", draft: false, inputAt: null, edits: 0, setStart: now, setEnd: now, r0: now, r1: now,
+             rust: [0, 0, 0, 0, 0, 0], width, height, histogram: 0, modules: [] };
+  }
+
   drawStart(t: Trace | undefined) {
     if (!this.enabled || !t) return;
     t.drawStart = performance.now();
