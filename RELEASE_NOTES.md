@@ -3,6 +3,42 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
+## 0.36.0
+
+Improvements
+
+- Immage opens at the size and place it was closed at, and maximized if
+  it was. On Linux under Wayland the size is kept but the desktop places
+  the window
+- the filmstrip and the grid show a folder's photos in the order they
+  were taken, rather than by file name
+- zooming is twice as quick, and a click, key or navigator zoom renders
+  the sharp view while it zooms, so it is ready sooner. Zooming back to
+  a view shown before, with nothing changed since, shows it at once.
+  Zoomed in, the whole photo is kept sharp once rendered, so moving
+  around it shows no blur and needs no wait
+- switching between Before and After, undoing, or putting a slider
+  back where it was shows the photo at once when it was shown that way
+  before, zoomed in too
+- a photo shows its thumbnail as soon as it is opened, rather than the
+  photo before it, and the arrow keys' next photo is read ahead while
+  the current one is open, so a compressed raw (an Olympus ORF, for
+  one) opens about 0.3 s sooner
+
+Bug fixes
+
+- on Linux, an AMD graphics card with only AMD's ROCm OpenCL driver
+  installed is used again for the whole-photo render and export; since
+  darktable 5.6 it was left out unless Mesa's RustiCL driver was
+  installed instead, and with ROCm 7.1 darktable's OpenCL code did not
+  build, so Immage ran on the CPU alone
+- on Linux with Mesa's RustiCL OpenCL driver and AMD's ROCm both
+  installed, Immage no longer shows empty folders and a blank photo: its
+  engine stopped at start while checking ROCm for AI acceleration, which
+  the Linux build cannot use
+- in Before/After's left and right split, the After label lines up
+  with Before instead of sitting lower
+
 ## 0.35.0
 
 Improvements

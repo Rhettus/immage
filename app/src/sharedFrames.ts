@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
-// Windows: rendered frames handed over in WebView2 shared memory (main.rs,
-// shared_frame) rather than in render's reply, which WebView2 copies across
+// Windows and Linux: rendered frames handed over in shared memory rather
+// than in render's reply, which WebView2 and WebKitGTK copy across
 // processes at a fraction of the Mac's speed. render then replies with the
-// frame's header alone, and the whole frame arrives as a
+// frame's header alone. on Windows the whole frame arrives as a
 // "sharedbufferreceived" event tagged with the id it was asked for
+// (main.rs, shared_frame); on Linux render wrote it to /dev/shm, and the
+// window's web extension reads it in (main.rs, shm_frame; webext/frames.c)
 import { invoke } from "@tauri-apps/api/core";
 
 type SharedBufferEvent = { getBuffer(): ArrayBuffer; additionalData: { frame?: number } | null };
@@ -18,8 +20,14 @@ export const FRAME_HEAD = 56;
 
 const webview = (window as unknown as { chrome?: { webview?: WebView2 } }).chrome?.webview;
 
-// WebView2 only, and its shared buffers since runtime 1.0.1661
-export const sharedFramesAvailable = !!webview && typeof webview.releaseBuffer === "function";
+// the web extension's, when it was loaded (main.rs, webext_dir)
+const shmFrame = (window as unknown as { immageFrame?: (name: string) => Uint8Array | null }).immageFrame;
+// names this page's frames apart from another window's or another copy's
+const token = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, "0")).join("");
+
+// WebView2's shared buffers since runtime 1.0.1661, or the web extension
+export const sharedFramesAvailable = (!!webview && typeof webview.releaseBuffer === "function")
+  || typeof shmFrame === "function";
 
 const KEY = "immage.sharedFrames";
 export function loadSharedFrames(): boolean {
@@ -68,7 +76,7 @@ export async function renderFrame(args: Record<string, unknown>): Promise<ArrayB
     return invoke<ArrayBuffer>("render", args);
   }
   const id = ++next;
-  const head = await invoke<ArrayBuffer>("render", { ...args, shared: id });
+  const head = await invoke<ArrayBuffer>("render", { ...args, shared: id, ...(shmFrame ? { token } : {}) });
   const v = new DataView(head);
   const pixels = 4 * v.getUint32(0, true) * v.getUint32(4, true);
   if (head.byteLength !== FRAME_HEAD || pixels === 0) {
@@ -77,6 +85,15 @@ export async function renderFrame(args: Record<string, unknown>): Promise<ArrayB
     return head;
   }
   last = "shared";
+  if (shmFrame) {
+    const frame = shmFrame(`immage-frame-${token}-${id}`);
+    if (frame?.byteLength === FRAME_HEAD + pixels) return frame.buffer as ArrayBuffer;
+    // the extension can't reach the file: asked again, through the reply
+    // from now on; the pipe's cache makes the second render quick
+    failed = true;
+    last = "invoke";
+    return invoke<ArrayBuffer>("render", args);
+  }
   const early = arrived.get(id);
   if (early) {
     arrived.delete(id);

@@ -1,6 +1,6 @@
 [package]
 name = "immage"
-version = "0.35.0"
+version = "0.36.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
 
@@ -17,6 +17,8 @@ tauri-plugin-opener = "2"
 # and the zip crate it would bring in has open RustSec advisories
 tauri-plugin-updater = { version = "2", default-features = false, features = ["rustls-tls", "system-proxy"] }
 tauri-plugin-process = "2"
+# the main window's size, position and maximized state, kept across launches
+tauri-plugin-window-state = "2"
 # engine_background() waits without holding a thread; Tauri brings tokio in already
 tokio = { version = "1", features = ["time"] }
 # the SD card importer, cloned into the repo's immporter/ (app/scripts/fetch_immporter.sh)

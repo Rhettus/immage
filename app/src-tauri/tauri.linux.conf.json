@@ -1,5 +1,8 @@
 {
   "bundle": {
-    "targets": ["appimage"]
+    "targets": ["appimage"],
+    "resources": {
+      "resources/webext/": "webext/"
+    }
   }
 }

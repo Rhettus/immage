@@ -815,6 +815,32 @@ def run_image(eng, edits, rec, mode, img, args, workdir, spawn):
         rec.add(mode, name, "export", "full size jpeg q90", samples)
         eng.req(cmd="close")
         eng.close()
+
+    # opening the photo the arrow keys go to next, cold and with its raw
+    # decoded ahead (`prefetch`, as App.tsx's prefetchNext asks once the
+    # photo before is up); each on a copy no engine has opened, after the
+    # engine's first open, which carries its start-up work
+    if "prefetch" in args.only:
+        eng = spawn([])
+        eng.req(cmd="open", path=img)
+        cold, ahead = [], []
+        for k in range(max(1, args.repeat // 2)):
+            paths = []
+            for kind in ("cold", "ahead"):
+                p = os.path.join(workdir, f"{kind}{k}{os.path.splitext(img)[1]}")
+                shutil.copyfile(img, p)
+                paths.append(p)
+            ids = {i["path"]: i["imgid"] for i in eng.req(cmd="import", files=paths)[0]["images"]}
+            _, wall, _ = eng.req(cmd="open", path=paths[0])
+            cold.append({"wall": wall})
+            eng.req(cmd="prefetch", imgid=ids[paths[1]])
+            time.sleep(2)
+            _, wall, _ = eng.req(cmd="open", path=paths[1])
+            ahead.append({"wall": wall})
+        eng.req(cmd="close")
+        eng.close()
+        rec.add(mode, name, "prefetch", "open, cold", cold)
+        rec.add(mode, name, "prefetch", "open, decoded ahead", ahead)
     return open_info
 
 
@@ -914,7 +940,7 @@ def main():
     ap.add_argument("--opencl", choices=["off", "on", "both", "split", "app"], default="both",
                     help="off: cpu; on: opencl; both: cpu and opencl; split: the app's engine; app: cpu and split")
     ap.add_argument("--repeat", type=int, default=7, help="samples per step (default 7)")
-    ap.add_argument("--only", default="sliders,roi,heavy,longdrag,draftpipe,zoom,preview,modules,export,masks",
+    ap.add_argument("--only", default="sliders,roi,heavy,longdrag,draftpipe,zoom,preview,modules,export,masks,prefetch",
                     help="scenarios, comma separated (default all)")
     ap.add_argument("--images", default="", help="only photos whose names contain one of these, comma separated")
     ap.add_argument("--all", action="store_true",

@@ -26,7 +26,7 @@ const { transformSync } = await import(pathToFileURL(
   createRequire(join(APP, "package.json")).resolve("rolldown/experimental")).href);
 
 // the app imports without extensions, as Vite allows (as benchmarking/lib/edits.mjs);
-// Tauri's invoke is the shim's
+// Tauri's invoke and events, and the importer's api, are the shim's
 registerHooks({
   load(url, ctx, next) {
     if (!url.startsWith("file:") || !/\.tsx?$/.test(url)) return next(url, ctx);
@@ -36,7 +36,7 @@ registerHooks({
     return { format: "module", source: out.code, shortCircuit: true };
   },
   resolve(spec, ctx, next) {
-    if (spec === "@tauri-apps/api/core") return next(SHIM, ctx);
+    if (spec === "@tauri-apps/api/core" || spec === "@tauri-apps/api/event" || spec === "@immporter/api") return next(SHIM, ctx);
     if ((spec.startsWith("./") || spec.startsWith("../")) && !/\.[cm]?[jt]sx?$/.test(spec)) {
       for (const ext of [".ts", ".tsx"]) {
         const url = new URL(spec + ext, ctx.parentURL);
@@ -60,7 +60,7 @@ globalThis.requestAnimationFrame = (f) => setTimeout(() => f(performance.now()),
 globalThis.cancelAnimationFrame = (t) => clearTimeout(t);
 
 const args = JSON.parse(process.argv[2]);
-const { startEngine, stopEngine, request, invoke, sent, models } = await import(SHIM);
+const { startEngine, stopEngine, request, invoke, sent, models, FRAME_HEAD } = await import(SHIM);
 const { Session } = await import("../app/src/session.ts");
 const { withModel } = await import("../app/src/aiModel.ts");
 const m = await import("../app/src/manifest.ts");
@@ -68,6 +68,8 @@ const { canMerge } = await import("../app/src/localMerge.ts");
 const { overlayShown, overlayStep } = await import("../app/src/masks.ts");
 const { ILLUMINANT_D } = await import("../app/src/wb.ts");
 const { autoTone } = await import("../app/src/autoTone.ts");
+const { dueIn } = await import("../app/src/activity.ts");
+const { byCaptureTime } = await import("../app/src/library.ts");
 const z = await import("../app/src/zones.ts");
 const { compare, meanChroma, inEllipse, rightOf } = await import("./metrics.mjs");
 const { THRESHOLD, GLOBAL, COMPOSITE, LOCAL, trialValues, judge } = await import("./expect.mjs");
@@ -661,6 +663,21 @@ async function fixes(photo) {
     await o.s.close();
     return got?.blur > 0 ? null : `opened again, its refinements are ${JSON.stringify(got ?? null)}`;
   });
+
+  // 0.36.0: on Linux at 2x, a drag's frames took longer than the busy
+  // indicator's wait, so it came up between them, and its spinning redrew
+  // the whole window every display frame. a job that has shown a frame
+  // waits a second before it shows the indicator
+  await fix("a slow drag doesn't bring up the busy indicator", async () => {
+    const cases = [
+      ["a first frame at 300 ms shows it", dueIn([{ since: 0, shown: false }], 300, 250, 1000) <= 0, true],
+      ["a drag's next frame at 465 ms leaves it off", dueIn([{ since: 0, shown: true }], 465, 250, 1000) <= 0, false],
+      ["a drag's frame at 1100 ms shows it", dueIn([{ since: 0, shown: true }], 1100, 250, 1000) <= 0, true],
+      ["a new job beside a drag shows it", dueIn([{ since: 0, shown: true }, { since: 0, shown: false }], 300, 250, 1000) <= 0, true],
+    ];
+    const wrong = cases.filter(([, got, want]) => got !== want).map(([label]) => label);
+    return wrong.length ? `not so: ${wrong.join(", ")}` : null;
+  });
 }
 
 // what Immage decided it does, as README.md, the code map and the
@@ -687,6 +704,19 @@ async function decisions(photo) {
       : first.fresh ? "opened again, it is taken for a new photo" : !second.edited ? "the user's change left it unedited" : null;
   });
 
+  // a folder's photos show in the order they were taken; ties keep the
+  // name order, and photos without a capture time go last (user guide,
+  // library.md, The filmstrip and the grid)
+  await decide("the filmstrip is in capture order", async () => {
+    const { images: [e] } = await request({ cmd: "import", files: [fresh(photo)] });
+    const t = e?.exif.datetime ?? "";
+    if (!/^\d{4}:\d\d:\d\d \d\d:\d\d:\d\d/.test(t)) return `the engine gave capture time ${JSON.stringify(t)}`;
+    const at = (filename, datetime) => ({ ...e, filename, exif: { ...e.exif, datetime } });
+    const later = `${Number(t.slice(0, 4)) + 1}${t.slice(4)}`;
+    const got = byCaptureTime([at("a", ""), at("b", later), at("c", t), at("d", t)]).map((i) => i.filename).join("");
+    return got === "cdba" ? null : `sorted as ${got}, not cdba`;
+  });
+
   // the photo is never written, only its sidecar (code-map.md, Where data
   // lives)
   await decide("the photo file is never written", async () => {
@@ -699,6 +729,58 @@ async function decisions(photo) {
     await o.s.close();
     await drained();
     return sum() === was ? null : "the photo file changed";
+  });
+
+  // a frame shown before comes back without a render when the image does:
+  // back from the Before view, or a slider put back. the engine names it by
+  // darktable's hash (session.ts, frames; _render's `have` in engine/main.c)
+  await decide("frames shown before come back unrendered", async () => {
+    const o = await open(fresh(photo));
+    o.s.endBaseline();
+    const a = await o.after(() => o.s.set("exposure", 0.5));
+    await o.after(() => o.s.showBefore(() => false));
+    const back = await o.after(() => o.s.showBefore(null));
+    const b = await o.after(() => o.s.set("exposure", 1));
+    const again = await o.after(() => o.s.set("exposure", 0.5));
+    // zoomed in, the whole-image copy the windows are cut from comes back too
+    await zoomed(o);
+    let copy = null;
+    o.s.onCopy = (f) => { copy = f; };
+    const copied = async () => {
+      copy = null;
+      o.s.requestCopy(1, { w: o.base.fullWidth, h: o.base.fullHeight });
+      await o.frame();
+      return copy;
+    };
+    const first = await copied();
+    await o.after(() => o.s.showBefore(() => false));
+    await o.after(() => o.s.showBefore(null));
+    const copyBack = await copied();
+    await o.s.close();
+    await drained();
+    return back.pixels.buffer !== a.pixels.buffer ? "back from the Before view, the frame was rendered again"
+      : b.pixels.buffer === a.pixels.buffer ? "a new Exposure showed the old frame"
+      : again.pixels.buffer !== a.pixels.buffer ? "Exposure put back, the frame was rendered again"
+      : !first ? "zoomed in, no copy was made"
+      : copyBack?.pixels.buffer !== first.pixels.buffer ? "back from the Before view, the copy was rendered again" : null;
+  });
+
+  // the photo the arrow keys open next is decoded ahead (App.tsx,
+  // prefetchNext; main.c, _prefetch). opened while that decode is still
+  // under way, it waits for it, and renders as a photo opened cold does
+  await decide("a prefetched photo opens as it would cold", async () => {
+    const cold = fresh(photo), ahead = fresh(photo);
+    const { images } = await request({ cmd: "import", files: [cold, ahead] });
+    const pixels = async (path) => {
+      await request({ cmd: "open", path, imgid: -1 });
+      return (await invoke("render", { width: 512, height: 512 })).slice(FRAME_HEAD);
+    };
+    const a = new Uint8Array(await pixels(cold));
+    await request({ cmd: "close" });
+    await request({ cmd: "prefetch", imgid: images.find((e) => e.path === ahead).imgid });
+    const b = new Uint8Array(await pixels(ahead));
+    await request({ cmd: "close" });
+    return a.length !== b.length || a.some((v, k) => v !== b[k]) ? "it rendered differently from the photo opened cold" : null;
   });
 
   // a photo edited in darktable keeps all of its edit: modules Immage has

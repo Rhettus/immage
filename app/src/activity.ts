@@ -8,13 +8,13 @@
 // never flash it
 import { useEffect, useState } from "react";
 
-type Job = { since: number };
+type Job = { since: number; shown: boolean };
 const jobs = new Set<Job>();
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
 
 export function begin(): Job {
-  const j = { since: performance.now() };
+  const j = { since: performance.now(), shown: false };
   jobs.add(j);
   emit();
   return j;
@@ -23,6 +23,7 @@ export function begin(): Job {
 // the job put something on screen: its wait starts again
 export function progress(j: Job) {
   j.since = performance.now();
+  j.shown = true;
   emit();
 }
 
@@ -39,18 +40,26 @@ export async function track<T>(p: Promise<T>): Promise<T> {
   }
 }
 
-// on while any job has waited `delay` ms; once on, it stays a little after,
-// so frames that each take a while do not make it blink
-export function useWorking(delay = 250, linger = 300): boolean {
+// ms until the indicator is due, <= 0 once it is: a job waits `delay` for
+// its first frame and `steady` for each after it. a drag's frames on Linux
+// at 2x took about 465 ms, so the spinner came up between them, and there
+// its animation redraws the whole window every display frame
+export function dueIn(waiting: Iterable<Job>, now: number, delay: number, steady: number): number {
+  let due = Infinity;
+  for (const j of waiting) due = Math.min(due, j.since + (j.shown ? steady : delay) - now);
+  return due;
+}
+
+// on while any job has waited its time (dueIn); once on, it stays a little
+// after, so frames that each take a while do not make it blink
+export function useWorking(delay = 250, linger = 300, steady = 1000): boolean {
   const [on, setOn] = useState(false);
   useEffect(() => {
     let timer = 0, shown = false, offAt = 0;
     const check = () => {
       window.clearTimeout(timer);
       const now = performance.now();
-      let oldest = Infinity;
-      for (const j of jobs) oldest = Math.min(oldest, j.since);
-      const due = oldest + delay - now;
+      const due = dueIn(jobs, now, delay, steady);
       if (due <= 0) {
         shown = true;
         offAt = now + linger;
@@ -65,6 +74,6 @@ export function useWorking(delay = 250, linger = 300): boolean {
     listeners.add(check);
     check();
     return () => { listeners.delete(check); window.clearTimeout(timer); };
-  }, [delay, linger]);
+  }, [delay, linger, steady]);
   return on;
 }
