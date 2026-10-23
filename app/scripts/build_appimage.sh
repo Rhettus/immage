@@ -23,6 +23,13 @@ cmake --install build --prefix build/install > build/install.log
 echo "== bundling the engine into the app's resources"
 python3 -I app/scripts/bundle_engine.py
 
+# the web extension that hands frames to the window in shared memory
+# (src-tauri/webext/frames.c), against the WebKitGTK the AppImage bundles
+echo "== frames web extension"
+mkdir -p app/src-tauri/resources/webext
+${CC:-cc} -shared -fPIC -O2 -Wall -o app/src-tauri/resources/webext/libimmage-frames.so \
+  app/src-tauri/webext/frames.c $(pkg-config --cflags --libs webkit2gtk-web-extension-4.1)
+
 echo "== app"
 # IMMAGE_TAURI_CONFIG is the release build's addition
 # (.github/workflows/build.yml): the updater's signature next to the AppImage

@@ -1534,7 +1534,7 @@ input.switch:disabled { cursor: default; opacity: 0.4; }
   background: rgba(0, 0, 0, 0.6); color: #fff; font-size: var(--fs-small); font-weight: 600;
 }
 .split-label.left { left: 12px; }
-.split-label.right { right: 12px; top: 54px; }
+.split-label.right { right: 12px; }
 .split-label.bottom { top: auto; bottom: 12px; left: 12px; }
 .split-label.pane-left { left: calc(50% + 13px); }
 .split-label.cand { left: calc(50% + 13px); pointer-events: auto; display: flex; align-items: center; gap: 8px; }

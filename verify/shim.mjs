@@ -12,7 +12,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 // main.rs's FRAME_HEAD: six u32 of geometry, six f32 of timings, the u64 hash
-const FRAME_HEAD = 56;
+export const FRAME_HEAD = 56;
 
 // the commands the Rust layer registers (main.rs, generate_handler!): one
 // it lacks fails in the app, as mask_rename did before 0.10.1
@@ -69,7 +69,8 @@ export async function stopEngine() {
 
 // the header render() puts ahead of the frame
 function framed(r) {
-  const pixels = readFileSync(frame);
+  // a frame of no size names one the client holds: no pixels follow
+  const pixels = r.kept ? new Uint8Array(0) : readFileSync(frame);
   const out = new ArrayBuffer(FRAME_HEAD + pixels.length);
   const v = new DataView(out);
   ["width", "height", "full_width", "full_height", "x", "y"].forEach((k, i) => v.setUint32(4 * i, r[k] ?? 0, true));
@@ -119,10 +120,11 @@ const COMMANDS = {
     }
     return request(req);
   },
-  render: async ({ width, height, scale, x, y, skip, draft }) => {
+  render: async ({ width, height, scale, x, y, skip, draft, have }) => {
     const req = { cmd: "render", width, height, rgba: frame };
     if (skip) req.skip = skip;
     if (draft) req.draft = true;
+    if (have) req.have = have;
     if (scale != null) Object.assign(req, { scale, x: x ?? 0, y: y ?? 0 });
     return framed(await request(req));
   },
@@ -177,6 +179,10 @@ export const models = { dir: null, source: null };
 // a check's hook on each request as it goes to the engine, to change the
 // edit while the engine has it, as a user can
 export const sent = { hook: null };
+
+// library.ts's imports: no events reach a check, and Immich is not reached
+export const listen = async () => () => {};
+export const api = {};
 
 export async function invoke(cmd, args = {}) {
   if (!HANDLERS.has(cmd)) throw new Error(`the app registers no command ${cmd} (main.rs, generate_handler!)`);

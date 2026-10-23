@@ -21,6 +21,7 @@ import { applyCacheLimits } from "./CachePrefs";
 import { fetchThumb, fileKind, isCompanion, isPrimaryRaw, LABEL_COLORS, loadIncludeSubfolders, openFolder, pairKey, pairPartners,
          storeIncludeSubfolders,
          ThumbLoader,
+         byCaptureTime,
          type Exif, type ImageEntry } from "./library";
 import { captureDate, exposureLine, known, MetadataPanel, shutter, type TextFields } from "./MetadataPanel";
 import { HistoryPanel, stepName } from "./HistoryPanel";
@@ -1316,6 +1317,13 @@ export default function App() {
   const straighteningRef = useRef(false);
   straighteningRef.current = straightening;
   const baseCanvas = useRef<HTMLCanvasElement>(null);
+  // the whole image at the zoom's scale (Session.onCopy), between the base
+  // and the sharp frame: what a pan or a zoom brings into view is sharp
+  const copyCanvas = useRef<HTMLCanvasElement>(null);
+  const copyMeta = useRef<{ scale: number; width: number; height: number } | null>(null);
+  const [copyOn, setCopyOn] = useState(false);
+  // a copy dropped while its bitmap was being made is not drawn
+  const copyGen = useRef(0);
   // Lightroom's clipping overlay, one layer over each image layer: shown
   // while its triangle is on (or J), or while the pointer rests on it
   const clipBase = useRef<HTMLCanvasElement>(null);
@@ -1391,6 +1399,18 @@ export default function App() {
       if (baseStale.current || baseLowRes.current) s.requestThumb();
     }, delay);
   };
+  // zoomed in, the whole image at the zoom's scale (100% above it), once
+  // the base and the edits are done with; the session keeps one
+  const copyTimer = useRef(0);
+  const scheduleCopy = (delay: number) => {
+    window.clearTimeout(copyTimer.current);
+    copyTimer.current = window.setTimeout(() => {
+      const s = session.current, f = full.current;
+      if (!s || !f || zoomRef.current === "fit" || anim.current.raf) return;
+      if (!s.idle) { scheduleCopy(400); return; }
+      s.requestCopy(Math.min(1, scaleFor(zoomRef.current)), f);
+    }, delay);
+  };
   const MARGIN = 16; // CSS pixels around a fitted image
   // the vignette's guides, while its panel is open and it does something,
   // and Grain, which shares the panel, was not the last thing changed
@@ -1452,19 +1472,23 @@ export default function App() {
   };
 
   // the view at k times the full frame's size each way, k < 1 a drag's
+  // during a zoom that renders ahead (animateTo), the view it ends on
   const viewAt = (k: number): View => {
     const { w, h } = viewport();
     const f = full.current;
-    if (zoomRef.current === "fit" || !f) {
+    const a = anim.current;
+    const ahead = !!a.raf && !!a.end;
+    const zoom = ahead ? a.zoom : zoomRef.current, c = ahead ? a.end! : center.current;
+    if (zoom === "fit" || !f) {
       const m = 2 * MARGIN * (window.devicePixelRatio || 1);
       const width = Math.min(MAX_PREVIEW, w - m), height = Math.min(MAX_PREVIEW, h - m);
       return k === 1 ? { width, height } : { width: Math.round(width * k), height: Math.round(height * k), draft: true };
     }
-    const scale = scaleFor(zoomRef.current) * k;
+    const scale = scaleFor(zoom) * k;
     const view = {
       width: Math.round(w * k), height: Math.round(h * k), scale,
-      x: Math.round(center.current.x * f.w * scale - (w * k) / 2),
-      y: Math.round(center.current.y * f.h * scale - (h * k) / 2),
+      x: Math.round(c.x * f.w * scale - (w * k) / 2),
+      y: Math.round(c.y * f.h * scale - (h * k) / 2),
     };
     return k === 1 ? view : { ...view, draft: true };
   };
@@ -1678,6 +1702,12 @@ export default function App() {
       bc.style.transform = `translate(${ox / dpr}px, ${oy / dpr}px) scale(${(z * f.w) / b.width})`;
       follow(bc, clipBase.current);
     }
+    const cm = copyMeta.current, cc = copyCanvas.current;
+    if (cm && cc) {
+      cc.style.width = `${cm.width / dpr}px`;
+      cc.style.height = `${cm.height / dpr}px`;
+      cc.style.transform = `translate(${ox / dpr}px, ${oy / dpr}px) scale(${z / cm.scale})`;
+    }
     const s = sharpMeta.current, sc = canvas.current;
     if (s && sc) {
       const sx = ox + (s.x / s.scale) * z, sy = oy + (s.y / s.scale) * z;
@@ -1803,6 +1833,7 @@ export default function App() {
     } else if (f.view.scale !== undefined && baseStale.current) {
       scheduleBase(300);
     }
+    if (f.view.scale !== undefined && !f.before) scheduleCopy(600);
     setStatus("");
   }, []);
   // timed for the performance overlay
@@ -2094,12 +2125,26 @@ export default function App() {
   };
 
   // ease the view toward a zoom; anchored, an image point stays under a
-  // screen point (the cursor) all the way. renders wait until it settles
-  const anim = useRef<{ raf: number | null; target: number; zoom: Zoom; settleAt: number;
-                        anchor: { ix: number; iy: number; sx: number; sy: number } | null }>(
-    { raf: null, target: 0, zoom: "fit", settleAt: 0, anchor: null });
+  // screen point (the cursor) all the way. a zoom to one level renders the
+  // view it ends on while it eases (`end`, read by viewAt), so the sharp
+  // frame is ready when it settles; the wheel's target moves with every
+  // notch, and it renders once settled
+  type Anchor = { ix: number; iy: number; sx: number; sy: number };
+  const anim = useRef<{ raf: number | null; target: number; zoom: Zoom; settleAt: number; anchor: Anchor | null;
+                        end: { x: number; y: number } | null; asked: View | null }>(
+    { raf: null, target: 0, zoom: "fit", settleAt: 0, anchor: null, end: null, asked: null });
+  // the share of the way left that one frame eases: half the frames 0.3 took
+  const ZOOM_EASE = 1 - 0.7 * 0.7;
 
-  const animateTo = (z: Zoom, anchor: typeof anim.current.anchor = null, settleDelay = 0) => {
+  // the view's center that keeps the anchor under its screen point at zoom z
+  const anchoredCenter = (an: Anchor, z: number) => {
+    const f = full.current!, dpr = window.devicePixelRatio || 1;
+    const { w, h } = viewport();
+    return { x: clamp01(an.ix - ((an.sx - w / 2 / dpr) * dpr) / (f.w * z)),
+             y: clamp01(an.iy - ((an.sy - h / 2 / dpr) * dpr) / (f.h * z)) };
+  };
+
+  const animateTo = (z: Zoom, anchor: Anchor | null = null, settleDelay = 0, ahead = true) => {
     const f = full.current;
     if (!f || !viewZ.current) {
       zoomRef.current = z; setZoomState(z); session.current?.requestRender();
@@ -2110,22 +2155,26 @@ export default function App() {
     a.zoom = z;
     a.anchor = anchor;
     a.settleAt = performance.now() + settleDelay;
-    if (a.raf) return;
+    a.end = !ahead ? null : z === "fit" ? { x: 0.5, y: 0.5 }
+          : anchor ? anchoredCenter(anchor, a.target) : { ...center.current };
+    a.asked = null;
+    const running = !!a.raf;
+    // viewAt reads `end` only while the ease runs
+    if (!running) a.raf = -1;
+    if (ahead) {
+      a.asked = currentView();
+      session.current?.requestRender();
+    }
+    if (running) return;
     const step = () => {
-      const ff = full.current!;
-      const dpr = window.devicePixelRatio || 1;
-      let zz = viewZ.current + (a.target - viewZ.current) * 0.3;
+      let zz = viewZ.current + (a.target - viewZ.current) * ZOOM_EASE;
       if (Math.abs(a.target - zz) < a.target * 0.002) zz = a.target;
       viewZ.current = zz;
       if (a.zoom === "fit") {
-        center.current = { x: center.current.x + (0.5 - center.current.x) * 0.3,
-                           y: center.current.y + (0.5 - center.current.y) * 0.3 };
+        center.current = { x: center.current.x + (0.5 - center.current.x) * ZOOM_EASE,
+                           y: center.current.y + (0.5 - center.current.y) * ZOOM_EASE };
       } else if (a.anchor) {
-        const { w, h } = viewport();
-        center.current = {
-          x: clamp01(a.anchor.ix - ((a.anchor.sx - w / 2 / dpr) * dpr) / (ff.w * zz)),
-          y: clamp01(a.anchor.iy - ((a.anchor.sy - h / 2 / dpr) * dpr) / (ff.h * zz)),
-        };
+        center.current = anchoredCenter(a.anchor, zz);
       }
       placeLayers();
       if (zz === a.target && performance.now() >= a.settleAt) {
@@ -2135,7 +2184,14 @@ export default function App() {
         zoomRef.current = a.zoom;
         setZoomState(a.zoom);
         updatePlacement();
-        session.current?.requestRender();
+        // the view rendered ahead is the one settled on, unless the window
+        // changed meanwhile
+        const asked = a.asked, now = currentView();
+        a.end = a.asked = null;
+        if (!asked || asked.width !== now.width || asked.height !== now.height || asked.scale !== now.scale
+            || asked.x !== now.x || asked.y !== now.y || !!asked.draft !== !!now.draft) {
+          session.current?.requestRender();
+        }
         return;
       }
       a.raf = requestAnimationFrame(step);
@@ -2233,7 +2289,7 @@ export default function App() {
           // the last folder's photos give way to the new one's cells at once
           if (!again) updateImages([]);
         }
-        got = [...got, ...batch];
+        got = byCaptureTime([...got, ...batch]);
         if (!again && batch.length) updateImages(got);
         loader.current!.request(batch.map((i) => i.imgid));
         // a refresh's photos are on show already
@@ -2241,9 +2297,10 @@ export default function App() {
       });
       if (immichRef.current) return list;
       setReading(null);
-      updateImages(list);
+      const sorted = byCaptureTime(list);
+      updateImages(sorted);
       setStatus(`${list.length} images`);
-      return list;
+      return sorted;
     } catch (e) {
       // another folder was opened meanwhile, and shows its own progress
       if (String(e) === "superseded") return [];
@@ -2709,6 +2766,19 @@ export default function App() {
     return () => { for (const off of offs) void off.then((f) => f()); };
   }, []);
 
+  // the photo the arrow keys would open next, its raw decoded ahead by the
+  // engine once this one is up (main.c, _prefetch): a compressed raw's
+  // decode, some 300 ms, is then gone from opening it
+  const stepDir = useRef<1 | -1>(1);
+  const prefetched = useRef<number | null>(null);
+  const prefetchNext = (s: Session) => {
+    const list = shownRef.current, at = list.findIndex((i) => i.imgid === s.imgid);
+    const next = at >= 0 ? list[at + stepDir.current] : undefined;
+    if (!next || isRemote(next) || next.imgid === prefetched.current) return;
+    prefetched.current = next.imgid;
+    invoke("prefetch", { imgid: next.imgid }).catch(() => {});
+  };
+
   // `imgid` picks one of the file's versions (a virtual copy); without it,
   // the original
   const openFile = async (path: string, imgid: number | null = null) => {
@@ -2739,9 +2809,25 @@ export default function App() {
       viewZ.current = 0;
       baseMeta.current = null;
       sharpMeta.current = null;
+      copyMeta.current = null;
+      copyGen.current++;
+      setCopyOn(false);
       overviewHash.current = null;
       baseStale.current = true;
-      for (const c of [baseCanvas.current, clipBase.current, clipSharp.current]) if (c) c.width = 0;
+      for (const c of [baseCanvas.current, clipBase.current, copyCanvas.current, clipSharp.current]) if (c) c.width = 0;
+      // the photo's filmstrip thumbnail, fitted, until its first frame takes
+      // its place, rather than the last photo
+      const thumb = id !== null ? loader.current?.get(id) : undefined, sc = canvas.current;
+      if (thumb && sc) {
+        const dpr = window.devicePixelRatio || 1, { w, h } = viewport(), m = 2 * MARGIN * dpr;
+        const z = Math.min((w - m) / thumb.width, (h - m) / thumb.height);
+        sc.width = thumb.width;
+        sc.height = thumb.height;
+        sc.getContext("2d")!.drawImage(thumb, 0, 0);
+        sc.style.width = `${thumb.width / dpr}px`;
+        sc.style.height = `${thumb.height / dpr}px`;
+        sc.style.transform = `translate(${(w - z * thumb.width) / 2 / dpr}px, ${(h - z * thumb.height) / 2 / dpr}px) scale(${z})`;
+      }
       const s = await track(Session.open(path, id, currentView, drawFrame, (e) => setStatus(`error: ${e}`)));
       // the engine's id, for a photo opened by its file alone
       const opened = { path, imgid: s.imgid };
@@ -2753,6 +2839,27 @@ export default function App() {
         perf.drawStart(f.trace);
         try { showOverview(f); } finally { perf.drawEnd(); }
         baseLowRes.current = false;
+        prefetchNext(s);
+      };
+      s.onCopy = (f) => {
+        const cc = copyCanvas.current, gen = ++copyGen.current;
+        if (!f) {
+          copyMeta.current = null;
+          if (cc) cc.width = 0;
+          setCopyOn(false);
+          return;
+        }
+        // off the main thread where the browser can: a copy is 80 MB or more
+        void createImageBitmap(new ImageData(f.pixels, f.width, f.height)).then((bmp) => {
+          if (session.current !== s || gen !== copyGen.current || !cc) { bmp.close(); return; }
+          cc.width = f.width;
+          cc.height = f.height;
+          cc.getContext("2d")!.drawImage(bmp, 0, 0);
+          bmp.close();
+          copyMeta.current = { scale: f.view.scale!, width: f.width, height: f.height };
+          placeLayers();
+          setCopyOn(true);
+        });
       };
       s.thumbSize = baseSize;
       s.previewMode = loadPreview;
@@ -3548,9 +3655,9 @@ export default function App() {
       let to = Math.min(MAX_SCALE, from * Math.exp(-delta * (e.ctrlKey ? 0.006 : 0.0008)));
       // a detent at 100%: crossing it stops there, the next notch moves on
       if ((from < 1 && to > 1) || (from > 1 && to < 1)) to = 1;
-      if (to <= fitScale() * 1.001) { animateTo("fit", null, 150); return; }
+      if (to <= fitScale() * 1.001) { animateTo("fit", null, 150, false); return; }
       const { sx, sy } = paneXY(e.clientX, e.clientY);
-      animateTo(to, { ...imageAt(sx, sy), sx, sy }, 150);
+      animateTo(to, { ...imageAt(sx, sy), sx, sy }, 150, false);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
@@ -3885,7 +3992,8 @@ export default function App() {
         if (k >= 0 && k < list.length && !isRemote(list[k])) setCompareRef.current(list[k].imgid);
       }
       else if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
-        const next = list[Math.min(list.length - 1, Math.max(0, at + (e.key === "ArrowRight" ? 1 : -1)))];
+        stepDir.current = e.key === "ArrowRight" ? 1 : -1;
+        const next = list[Math.min(list.length - 1, Math.max(0, at + stepDir.current))];
         if (next) { e.preventDefault(); void openEntry(next); }
       }
       else if (!cur) return;
@@ -4184,6 +4292,9 @@ export default function App() {
           <div ref={pane} className={`after-pane${baMode === "side" ? " half" : compare !== null ? " half-left" : ""}`}>
             <canvas ref={baseCanvas} className={`layer base${current ? "" : " empty"}`} />
             <canvas ref={clipBase} className={`layer clip${current && (clipShown.low || clipShown.high) ? "" : " empty"}`} />
+            {/* it carries neither the Before view nor the clipping overlay */}
+            <canvas ref={copyCanvas} className={`layer copy${current && copyOn && !before && baMode === "off"
+                      && !clipShown.low && !clipShown.high ? "" : " empty"}`} />
             <canvas ref={canvas} className={`layer sharp${current ? "" : " empty"}`} />
             <canvas ref={clipSharp} className={`layer clip${current && (clipShown.low || clipShown.high) ? "" : " empty"}`} />
             {perfHud && current && <PerfHud onClose={() => { setPerfHud(false); perf.enable(false); }} />}

@@ -54,8 +54,8 @@ Paths below are relative to this file.
 | [index.html](../../index.html), [main.tsx](../../src/main.tsx) | The main window: mounts `App`. |
 | [splash.html](../../splash.html), [Splash.tsx](../../src/Splash.tsx) | The splash window: asks `about`, shows the main window, closes itself. |
 | [App.tsx](../../src/App.tsx) | The whole editor's shell and state. See [inside App.tsx](#inside-apptsx). |
-| [main.rs](../../src-tauri/src/main.rs) | `main()`: on Linux over NVIDIA's driver gives the web view Mesa's EGL (`mesa_egl`), migrates the old app name, registers the dialog, opener and immporter plugins. `setup()` picks the engine: `build/bin/darktable-engine` with runtime state in `build/app-runtime` for a dev build, the bundled `resources/darktable` with the app data folder for a release, or `DT_ENGINE_BIN`. Holds `AppState` and nearly every command. |
-| [engine.rs](../../src-tauri/src/engine.rs) | The engine child. Spawns it (`--core --configdir --cachedir -d perf`, OpenCL on with only export's pipe type allowed the GPU, which the base borrows), retrying while an old one holds darktable's database lock. `request()` writes one JSON line and reads one back. A stderr thread writes the log and keeps darktable's `-d perf` timings apart for the performance overlay. |
+| [main.rs](../../src-tauri/src/main.rs) | `main()`: on Linux over NVIDIA's driver gives the web view Mesa's EGL (`mesa_egl`), migrates the old app name, registers the dialog, opener, updater, process, window state (the main window's size, position and maximized state) and immporter plugins. On Linux `setup()` builds the windows itself, with the frames web extension's folder (`webext_dir`). `setup()` picks the engine: `build/bin/darktable-engine` with runtime state in `build/app-runtime` for a dev build, the bundled `resources/darktable` with the app data folder for a release, or `DT_ENGINE_BIN`. Holds `AppState` and nearly every command. |
+| [engine.rs](../../src-tauri/src/engine.rs) | The engine child. Spawns it (`--core --configdir --cachedir -d perf`, OpenCL on with only export's pipe type allowed the GPU, which the base borrows; on Linux, ROCm's platform on and its kernels built as OpenCL C 2.0 when no RustiCL is installed, `rocm_only`), retrying while an old one holds darktable's database lock. `request()` writes one JSON line and reads one back. A stderr thread writes the log and keeps darktable's `-d perf` timings apart for the performance overlay. |
 | [engine/main.c](../../../engine/main.c) | `main()`: keeps the real stdout for replies, starts darktable with an in-memory library (`dt_init`), sets its confs, then loops: read a line, `_handle()` it, reply. |
 
 The boundary is strict. The front end never touches files or darktable
@@ -81,6 +81,16 @@ posts it to the page tagged with an id, and replies with the 48-byte
 header alone; [sharedFrames.ts](../../src/sharedFrames.ts) puts the two
 back together. [benchmarking/](../../../benchmarking/README.md) measures
 its timings.
+
+Linux does the same through `/dev/shm`. WebKitGTK delivers a reply at
+about 25 ms a megapixel, and more while a page at 2× draws. `render`
+writes the frame to a file there named for the page's token and the
+frame's id (`shm_frame` in main.rs). A WebKit web extension loaded into
+the window's web process,
+[webext/frames.c](../../src-tauri/webext/frames.c), gives the page
+`immageFrame()`, which copies the file in and deletes it. It can't hand
+over the mapped file itself: WebKit stops the web process when a page is
+given memory it didn't allocate.
 
 ## Front end
 
@@ -108,7 +118,7 @@ are `localStorage` keys named `immage.*`.
 | `currentView` | the `View` asked for: fitted to the viewer (capped at `MAX_PREVIEW`), a zoomed window, or a half-size draft while dragging |
 | `paintFrame` / `drawFrame` | a `Frame` onto the canvas; the histogram; `showOverview` for a whole-image frame (base layer, navigator) |
 | `animateTo`, `setZoom` | eased zoom; renders wait until it settles |
-| `openFile` / `openEntry` | open a photo: `Session.open`, then the new-photo defaults (tone mapper, profile, exposure compensation, preset, Edit In returns) |
+| `openFile` / `openEntry` | open a photo: the filmstrip's thumbnail as a stand-in, `Session.open`, then the new-photo defaults (tone mapper, profile, exposure compensation, preset, Edit In returns); once it is idle, `prefetchNext` has the engine decode the photo the arrow keys open next |
 | `change` / `changeMany` | every control edit: undo step, `values` state, `Session.set` |
 | undo (`record`, `restore`, `Snap`) | snapshots of values, masks, spots and look |
 | before/after, compare | `setBaMode`, `setBefore` (`Session.showBefore`), `toggleCompare` |
@@ -121,8 +131,8 @@ are `localStorage` keys named `immage.*`.
 
 | File | Responsibility |
 |---|---|
-| [session.ts](../../src/session.ts) | One open photo. `Session.open` reads every mapped module (`get_params`) into control values. `set`/`setMany` mark modules dirty, and `pump()` sends each dirty module's merged edit (`moduleEdit`) and one `render`, so moves made during a render are coalesced, latest wins. It also holds masks, spots, look and the Before view, and saves 600 ms after the last edit. `renderView` decodes the frame header; `preview` renders one-off settings on the engine's preview pipe. |
-| [sharedFrames.ts](../../src/sharedFrames.ts) | Windows: `renderFrame` asks `render` to post the frame in a WebView2 shared buffer tagged with an id, then matches the `sharedbufferreceived` event to the reply, copies the frame out and releases the buffer. On the Mac, on WebView2 runtimes before 1.0.1661, or with Preferences' "Shared-memory frames" off, the frame comes in `render`'s reply. |
+| [session.ts](../../src/session.ts) | One open photo. `Session.open` reads every mapped module (`get_params`) into control values. `set`/`setMany` mark modules dirty, and `pump()` sends each dirty module's merged edit (`moduleEdit`) and one `render`, so moves made during a render are coalesced, latest wins. It also holds masks, spots, look and the Before view, and saves 600 ms after the last edit. `renderView` decodes the frame header; `preview` renders one-off settings on the engine's preview pipe. Until the image changes (`changed`), it shows the full frames it was sent (`frames`, by view and darktable's hash) and, zoomed in, a copy of the whole image at the zoom's scale (`requestCopy`, rendered on the base pipe once idle), so a view seen before or a pan's window is shown without the engine; App shows the copy as a layer under the sharp frame (`onCopy`). After a change, a render sends the hashes it holds for the view (`have`), and the engine names one rather than render it when the image is back as it was (the Before view and back, undo); a copy set aside comes back the same way. |
+| [sharedFrames.ts](../../src/sharedFrames.ts) | Windows: `renderFrame` asks `render` to post the frame in a WebView2 shared buffer tagged with an id, then matches the `sharedbufferreceived` event to the reply, copies the frame out and releases the buffer. Linux: it asks `render` to write the frame to `/dev/shm` and reads it with the web extension's `immageFrame()`. On the Mac, on WebView2 runtimes before 1.0.1661, on Linux without the extension, or with Preferences' "Shared-memory frames" off, the frame comes in `render`'s reply. |
 | [HistoryPanel.tsx](../../src/HistoryPanel.tsx) | darktable's history plus this session's undo steps; a row's switch, delete or reset (`historyChange` in App.tsx, `Session.setModuleState`, the engine's `_module_state`). |
 | [CopySettings.tsx](../../src/CopySettings.tsx) | Copy/Paste Settings: which groups, and the clip. |
 
@@ -207,7 +217,7 @@ Commands by what they reach:
 | Reaches | Commands |
 |---|---|
 | The open photo, through the engine | `open_image`, `get_params`, `set_params`, `module_state`, `render`, `cancel_base`, `preview`, `save`, `before_view`, `history`, `masks`, `mask_shapes`, `combine`, `mask_delete`, `mask_rename`, `mask_map`, `range_map`, `sample`, `zones`, `tone_key`, `agx_auto`, `spots`, `spots_enable`, `spot_source`, `look_apply`, `look_amount`, `ai_object`, `ai_mask`, `ai_depth`, `ai_denoise`, `ai_denoise_preview` |
-| The library, through the engine | `open_folder` (engine `import` in batches of 24), `thumb`, `meta`, `meta_set`, `keywords`, `keywords_set`, `create_virtual_copy`, `remove_virtual_copy`, `trash_files`, `export_images`, `export_preview`, `fonts`, `ai_accel`, `about` |
+| The library, through the engine | `open_folder` (engine `import` in batches of 24), `thumb`, `prefetch`, `meta`, `meta_set`, `keywords`, `keywords_set`, `create_virtual_copy`, `remove_virtual_copy`, `trash_files`, `export_images`, `export_preview`, `fonts`, `ai_accel`, `about` |
 | Files only | `list_subfolders`, `path_exists`, `path_kind`, `export_existing`, `presets_load`, `presets_save`, `export_presets_load`, `export_presets_save`, `preset_file_read`, `preset_file_write`, `looks_list`, `sample_folder`, `launch_file` |
 | AI models (download, then the engine's `version`) | `ai_model_ensure`, `ai_model_reinstall` |
 | Immich (HTTP) | `immich_albums`, `immich_create_album`, `immich_export_check`, `immich_browse_check`, `immich_search`, `immich_libraries`, `immich_suggestions`, `immich_people`, `immich_tags`, `immich_thumb`, `immich_resolve` |
@@ -259,11 +269,11 @@ Immage or in darktable.
 |---|---|
 | Session, open, close | `_open_image`, `_close_session`, `_import`, `_compress_history` |
 | Set and get params | `_set` (fields by introspection, `instance`, `mask`, `after`/`before` moves), `_get`, `_write_field`, `_named_instance` |
-| Render | `_render` (and the `render` command's `skip`), `_write_rgba`, `_ppipe_ready`, `_preview` |
-| Library | `_folder`, `_import_files`, `_thumb`, `_image_json`, `_meta_set`, `_keywords_set`, `_copy`, `_remove_copy`, `_sidecars` |
+| Render | `_render` (and the `render` command's `skip`; with `have`, a frame of no size naming the client's frame of the hash it would get), `_write_rgba`, `_ppipe_ready`, `_preview` |
+| Library | `_folder`, `_import_files`, `_thumb`, `_prefetch` (a raw decoded ahead on a thread of its own), `_image_json`, `_meta_set`, `_keywords_set`, `_copy`, `_remove_copy`, `_sidecars` |
 | Export | `_export` (darktable's export with flags); `_frame_style` (borders and a watermark SVG as a temporary style; a fixed canvas as one last border, sized so the file comes out exactly W x H); the AI upscale proxy format (`_upscale_ctx`) |
 | Masks | `_mask` (shapes into a mask group, prefixed `immage: `), `_masks` (with `merged_in`), `_mask_delete`, `_mask_rename`, `_attach_mask`. The [mask anchor](masks.md#where-the-instances-run), `colorbalancergb`, is where every mask's instances run, so a range sampled at its output holds for all of them. `_combine`: a group of masks' groups summed, each at its opacity (prefixed `immage combined: `), with the members' ranges, driving a shared instance, which `_attach_mask` attaches only to a combined mask; `_combined_member_changed` keeps it current when a member is reshaped or deleted. `_prune_off` keeps a mask's own switched-off instances (`_holds_mask_settings`). `_named_instance` places a mask's own instance after the shared ones of its module |
-| AI (`HAVE_AI`) | `_ai_object` (SAM), `_ai_mask` (sky, subject, ...), `_ai_depth`, `_ai_denoise` (darktable's raw denoise into a DNG, repeating `src/libs/neural_restore.c`'s job on its public calls), `_ai_denoise_preview` (its 1:1 before and after, as the lib's raw preview makes them) |
+| AI (`HAVE_AI`) | `_ai_object` (SAM), `_ai_mask` (sky, subject, ...), `_ai_depth`, `_ai_denoise` (darktable's raw denoise into a DNG, repeating `src/libs/neural_restore.c`'s job on its public calls), `_ai_denoise_preview` (its 1:1 before and after, as the lib's raw preview makes them); on Linux, `_ort_exports` keeps darktable from probing a GPU provider the bundled ONNX Runtime lacks, and `main()` sets the provider to CPU when it has none |
 | Spots | `_spots_set`, `_spots_json`, `_spot_source` (the retouch module) |
 | Ranges and zones | `_sample`, `_range_map`, `_zones`, `_mask_map`, `_tone_key`, `_agx_auto` |
 | Looks | `_look`, `_look_amount` (a darktable style, its instances scaled) |
@@ -274,7 +284,7 @@ The commands `_handle()` serves:
 | Group | Commands |
 |---|---|
 | Session | `open`, `history`, `module_state`, `save`, `baseline_end`, `before`, `close`, `quit`, `version`, `unpack`, `ai_accel`, `opencl`, `fonts` |
-| Library (no photo needed) | `folder`, `import`, `thumb`, `meta`, `meta_set`, `keywords`, `keywords_set`, `copy`, `remove_copy`, `sidecars`, `export` |
+| Library (no photo needed) | `folder`, `import`, `thumb`, `prefetch`, `meta`, `meta_set`, `keywords`, `keywords_set`, `copy`, `remove_copy`, `sidecars`, `export` |
 | Edit | `set`, `get`, `render`, `preview`, `look`, `look_amount` |
 | Masks and spots | `mask`, `combine`, `masks`, `mask_rename`, `mask_delete`, `mask_map`, `range_map`, `sample`, `spots`, `spots_enable`, `spot_source` |
 | Tone | `tone_key`, `agx_auto`, `zones` |
@@ -318,7 +328,7 @@ darktable is, and it has AI features when darktable is configured with
    1. `Slider` calls `change()`, which records an undo step, updates `values` and calls `Session.set`.
    2. `pump()` sends `set_params` for each dirty module, then `render` for `currentView()`. Moves made meanwhile only mark modules dirty, so the next round sends the latest values once.
    3. In the engine, `_set` writes the fields and adds a history item, then `_render` calls `dt_dev_pixelpipe_process`. Only modules from the changed one onwards run; the rest come from the pipe cache.
-   4. The frame is written to `frame.rgba`, read back by Rust and returned with its header (on Windows, in a shared buffer beside it).
+   4. The frame is written to `frame.rgba`, read back by Rust and returned with its header (on Windows and Linux, in shared memory beside it).
    5. `drawFrame` puts it on the canvas and computes the histogram. See [the sequence diagram](diagrams/slider-sequence.svg).
 3. **Drag and release.**
    1. While a control is held, `currentView` asks for half-size drafts.
@@ -361,6 +371,7 @@ darktable is, and it has AI features when darktable is configured with
 | Edit In results | `plugin-returns.json` in the runtime folder | permanent |
 | Engine config, cache, log | `config/`, `cache/`, `engine.log` in the runtime folder (`build/app-runtime` in dev, the app data folder in a release) | permanent; the log restarts past 5 MB |
 | Frames, thumbnails, previews, maps | `frame.rgba`, `thumb.rgba`, `preview.rgba`, `range.bin` in the runtime folder | overwritten per request |
+| Frames handed to the page (Linux) | `/dev/shm/immage-frame-<token>-<id>` | until the page reads it; left over past a minute, deleted at the next start |
 | AI models | `build/ai-models` (dev) or `<app data>/models` | until deleted |
 | Immich thumbnails and originals | `cache/immich-thumbs`, `cache/immich-originals` | cache |
 | Import catalog, Immich key | the immporter's SQLite catalog under the app data folder (`immporter/`); the key in the system keychain | permanent |
@@ -385,6 +396,7 @@ darktable is, and it has AI features when darktable is configured with
 |---|---|
 | `cmake --build build` | darktable, `libdarktable` and `build/bin/darktable-engine`. |
 | [package.json](../../package.json) | `npm run tauri dev` (dev build, engine from `build/bin`), `npm run tauri build`. |
+| [webext/frames.c](../../src-tauri/webext/frames.c) | The Linux web extension for shared-memory frames, built by [build_appimage.sh](../../scripts/build_appimage.sh) into `src-tauri/resources/webext` (gitignored). |
 | [bundle_engine.py](../../scripts/bundle_engine.py), [build_dmg.sh](../../scripts/build_dmg.sh) | The engine and its libraries copied into `src-tauri/resources/darktable` (gitignored) and made relocatable; the macOS disk image. |
 | [build_engine_windows.sh](../../scripts/build_engine_windows.sh), [bundle_engine_windows.sh](../../scripts/bundle_engine_windows.sh), [WINDOWS.md](../../WINDOWS.md) | The Windows (MSYS2 UCRT64) build. |
 | [prune_target.mjs](../../scripts/prune_target.mjs) | Frees `src-tauri/target` of earlier builds, which cargo never removes: keeps what the last two builds of each profile use, as cargo lists it. npm runs it before and after every `npm run tauri ...`. |
