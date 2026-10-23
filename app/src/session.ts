@@ -361,7 +361,7 @@ export class Session {
 
   // nothing queued or rendering: the engine is free for other work
   get idle() {
-    return !this.busy && !this.dirty.size && !this.needRender && !this.needThumb && !this.needWarm
+    return !this.busy && !this.dirty.size && !this.needRender && !this.needThumb && !this.needCopy && !this.needWarm
       && this.wantLook === undefined && !this.masksPending && this.wantLookAmount === undefined
       && !this.spotsPending && !this.reshapeDue && !this.baselineEnd && !this.baseInFlight;
   }
@@ -809,7 +809,7 @@ export class Session {
   private needThumb = false;
   // a base is rendering, and nothing has asked it to stop yet: `stale` is
   // then set, and `wake` lets the pump go on without it
-  private base: { stale: boolean; wake: () => void } | null = null;
+  private base: { stale: boolean; wake: () => void; copy: number | null } | null = null;
   // until the base's render is over, stopped or not
   private baseInFlight: Promise<void> | null = null;
   get baseRendering() { return !!this.base && !this.base.stale; }
@@ -821,12 +821,12 @@ export class Session {
 
   // the header (main.rs, render): the frame's geometry, then timings
   private async renderView(view: View, kind: Trace["kind"],
-                           cycle?: Pick<Trace, "inputAt" | "edits" | "setStart">): Promise<Frame> {
+                           cycle?: Pick<Trace, "inputAt" | "edits" | "setStart">, every = false): Promise<Frame> {
     const t0 = performance.now();
     const { width, height, scale, x, y } = view;
     const preview = this.previewMode();
     const skip = view.draft ? DRAFT_SKIP[preview].filter((op) => !this.draftKeep.has(op))
-      : kind === "base" ? BASE_SKIP[preview] : null;
+      : kind === "base" && !every ? BASE_SKIP[preview] : null;
     if (!view.draft) this.draftKeep.clear();
     const buf = await renderFrame({ width, height, scale, x, y, skip, draft: !!view.draft,
                                     base: kind === "base" && !view.draft });
@@ -841,17 +841,114 @@ export class Session {
     };
   }
 
+  // full frames shown since the image last changed, by view, oldest first.
+  // the engine's pipe cache already holds their pixels, but a 100% frame on
+  // a 5K screen (41 MB) still took 150-300 ms to write, read and send, and
+  // zooming back and forth brought up the busy indicator
+  private frames = new Map<string, Frame>();
+  private framesBytes = 0;
+  private static FRAMES_BYTES = 256 << 20;
+  private frameKey(v: View, before: boolean) {
+    return `${v.width},${v.height},${v.scale},${v.x},${v.y},${before}`;
+  }
+  private keepFrame(key: string, f: Frame) {
+    this.frames.set(key, f);
+    this.framesBytes += f.pixels.byteLength;
+    for (const [k, old] of this.frames) {
+      if (this.framesBytes <= Session.FRAMES_BYTES || old === f) break;
+      this.frames.delete(k);
+      this.framesBytes -= old.pixels.byteLength;
+    }
+  }
+  // what the engine renders changed: no kept frame shows it
+  private changed() {
+    this.frames.clear();
+    this.framesBytes = 0;
+    if (this.copy) {
+      this.copy = null;
+      this.onCopy?.(null);
+    }
+  }
+
+  // the whole image at the zoom's scale, rendered once the viewer is idle
+  // zoomed in: a pan's windows are cut from it rather than rendered, since
+  // the pipe cache holds only the window it last rendered. null when gone
+  onCopy: ((f: Frame | null) => void) | null = null;
+  private copy: Frame | null = null;
+  private copyScale: number | null = null;
+  private copySize = { width: 0, height: 0 };
+  private needCopy = false;
+  // a copy and the window it is shown in come to twice its pixels; past
+  // this a large raw keeps rendering its windows
+  private static COPY_PIXELS = 64e6;
+
+  requestCopy(scale: number, full: { w: number; h: number }) {
+    if (this.before || this.copy?.view.scale === scale || this.copyScale === scale) return;
+    if (Math.floor(full.w * scale) * Math.floor(full.h * scale) > Session.COPY_PIXELS) return;
+    this.copyScale = scale;
+    // the engine trims the box to the image at that scale
+    this.copySize = { width: Math.ceil(full.w * scale), height: Math.ceil(full.h * scale) };
+    this.needCopy = true;
+    void this.pump();
+  }
+
+  // the window the engine would render (_render in engine/main.c), cut
+  // from the copy
+  private cut(c: Frame, view: View): Frame {
+    const W = c.width, H = c.height;
+    const w = Math.min(view.width, W), h = Math.min(view.height, H);
+    const x = Math.min(Math.max(view.x ?? 0, 0), W - w), y = Math.min(Math.max(view.y ?? 0, 0), H - h);
+    const pixels = new Uint8ClampedArray(4 * w * h);
+    for (let r = 0; r < h; r++) {
+      const from = 4 * ((y + r) * W + x);
+      pixels.set(c.pixels.subarray(from, from + 4 * w), 4 * r * w);
+    }
+    return { width: w, height: h, fullWidth: c.fullWidth, fullHeight: c.fullHeight, x, y, view, pixels, ms: 0,
+             trace: perf.cached(w, h) };
+  }
+
+  // a render on the base pipe, which an edit stops (cancel_base). one asked
+  // to stop is not waited for: the cancel cannot reach a frame already on
+  // its way here, some 90 ms on Windows, and the edit that stopped it would
+  // sit behind that; it is dropped instead
+  private async idleRender(view: View, every: boolean, use: (f: Frame) => void) {
+    let wake = () => {};
+    const woken = new Promise<void>((r) => { wake = r; });
+    const run = { stale: false, wake, copy: every ? view.scale ?? null : null };
+    this.base = run;
+    const done = this.renderView(view, "base", undefined, every)
+      .then((f) => { if (!run.stale) use(f); })
+      .catch((e) => { if (String(e) !== "canceled") this.onError(String(e)); })
+      .finally(() => { if (this.baseInFlight === done) this.baseInFlight = null; });
+    this.baseInFlight = done;
+    await Promise.race([done, woken]);
+    this.base = null;
+  }
+
   // work for the shown frame, which a base in flight would hold up
   private get editPending() {
-    return this.dirty.size > 0 || this.needRender || this.wantLook !== undefined || this.masksPending
+    return this.needRender || this.imagePending;
+  }
+  // the part of it that changes the image, rather than only the view
+  private get imagePending() {
+    return this.dirty.size > 0 || this.wantLook !== undefined || this.masksPending
       || this.wantLookAmount !== undefined || this.spotsPending || this.reshapeDue;
   }
+  // a pan while the copy renders: the copy is let finish and the window cut
+  // from it, since a stopped copy is never done while panning goes on. the
+  // wait is the user's, so it shows the busy indicator
+  private copyWait: ReturnType<typeof begin> | null = null;
 
   private async pump() {
     if (this.busy) {
       // the base can take seconds and would be stale: stopped, it is
       // rendered again once editing pauses (App.tsx, scheduleBase)
       if (this.base && !this.base.stale && this.editPending) {
+        const v = this.size();
+        if (!this.imagePending && !this.before && !v.draft && v.scale === this.base.copy) {
+          this.copyWait ??= begin();
+          return;
+        }
         this.base.stale = true;
         this.base.wake();
         invoke("cancel_base").catch(() => {});
@@ -860,9 +957,10 @@ export class Session {
     }
     this.busy = true;
     // the viewer's busy indicator: from now until a frame is back
-    const job = begin();
+    let job = begin();
     try {
-      while (this.dirty.size || this.needRender || this.needThumb || this.needWarm || this.wantLook !== undefined
+      while (this.dirty.size || this.needRender || this.needThumb || this.needCopy || this.needWarm
+             || this.wantLook !== undefined
              || this.masksPending || this.wantLookAmount !== undefined || this.spotsPending
              || this.reshapeDue || this.baselineEnd || this.modulePending.length) {
         // before the change that ended it; a save it makes is the one due
@@ -880,6 +978,7 @@ export class Session {
         if (this.before && !this.engineBefore) {
           await invoke("before_view", { on: true });
           this.engineBefore = true;
+          this.changed();
         }
         // a turn or a reframing goes first: masks and spots restored with
         // it (undo) are in its frame
@@ -888,6 +987,7 @@ export class Session {
           const ops = [...this.dirty];
           this.dirty.clear();
           for (const op of ops) await invoke("set_params", this.moduleEdit(op));
+          this.changed();
           if (framing) this.reshape = true;
           if (!this.before) { this.unsaved = true; this.scheduleSave(); }
           this.needRender = true;
@@ -901,6 +1001,7 @@ export class Session {
           // them off after
           if (dirty || on !== this.spotsOn) await invoke("spots_enable", { on });
           this.spotsOn = on;
+          this.changed();
           if (dirty && !this.before) { this.unsaved = true; this.scheduleSave(); }
           this.needRender = true;
           continue;
@@ -909,12 +1010,15 @@ export class Session {
           const amount = this.wantLookAmount;
           this.wantLookAmount = undefined;
           await invoke("look_amount", { amount });
+          this.changed();
           if (!this.before) { this.unsaved = true; this.scheduleSave(); }
           this.needRender = true;
           continue;
         }
         if (this.masksPending) {
-          if (await this.sendMasks() && !this.before) { this.unsaved = true; this.scheduleSave(); }
+          const sent = await this.sendMasks();
+          this.changed();
+          if (sent && !this.before) { this.unsaved = true; this.scheduleSave(); }
           this.needRender = true;
           continue;
         }
@@ -922,6 +1026,7 @@ export class Session {
           const path = this.wantLook;
           this.wantLook = undefined;
           await invoke("look_apply", { path });
+          this.changed();
           if (!this.before) { this.unsaved = true; this.scheduleSave(); }
           this.needRender = true;
           continue;
@@ -934,6 +1039,7 @@ export class Session {
           if (req.restore === "opened" && !restore) continue;
           const r = await invoke<{ was: ModuleState; now: ModuleState }>("module_state",
             { op, priority, enabled: req.enabled, reset: req.reset, restore });
+          this.changed();
           if (!this.modulesOpened.has(key)) this.modulesOpened.set(key, r.was);
           this.moduleStates.set(key, r.now);
           const item = this.history.find((h) => instanceKey(h) === key);
@@ -956,22 +1062,26 @@ export class Session {
           if (view) await this.renderView(view, "view");
           continue;
         }
-        if (!this.dirty.size && !this.needRender) {
+        if (!this.dirty.size && !this.needRender && this.needThumb) {
           this.needThumb = false;
-          // a base asked to stop is not waited for. the cancel cannot reach
-          // a frame already on its way here, some 90 ms on Windows, and the
-          // edit that stopped it would sit behind that; it is dropped instead
-          let wake = () => {};
-          const woken = new Promise<void>((r) => { wake = r; });
-          const run = { stale: false, wake };
-          this.base = run;
-          const done = this.renderView(this.thumbSize(), "base")
-            .then((thumb) => { if (!run.stale) this.onThumb?.(thumb); })
-            .catch((e) => { if (String(e) !== "canceled") this.onError(String(e)); })
-            .finally(() => { if (this.baseInFlight === done) this.baseInFlight = null; });
-          this.baseInFlight = done;
-          await Promise.race([done, woken]);
-          this.base = null;
+          await this.idleRender(this.thumbSize(), false, (thumb) => this.onThumb?.(thumb));
+          continue;
+        }
+        if (!this.dirty.size && !this.needRender && this.needCopy) {
+          this.needCopy = false;
+          const scale = this.copyScale!;
+          // nothing on screen waits for it: it takes seconds, and the busy
+          // indicator would come up for each
+          end(job);
+          await this.idleRender({ ...this.copySize, scale, x: 0, y: 0 }, true, (f) => {
+            if (this.before) return;
+            this.copy = f;
+            this.onCopy?.(f);
+          });
+          this.copyScale = null;
+          if (this.copyWait) end(this.copyWait);
+          this.copyWait = null;
+          job = begin();
           continue;
         }
         const ops = [...this.dirty];
@@ -981,18 +1091,32 @@ export class Session {
           this.draftKeep.add(op.split("#")[0]);
           await invoke("set_params", this.moduleEdit(op));
         }
+        if (ops.length) this.changed();
         // the Before view is only for looking: nothing of it reaches the sidecar
         if (ops.length && !this.before) { this.unsaved = true; this.scheduleSave(); }
         this.needRender = false;
         // what the render shows is settled by now, whatever changes during it
         const before = !!this.before;
-        this.onFrame({ ...(await this.renderView(this.size(), ops.length ? "edit" : "view", cycle)), before });
+        const view = this.size(), key = this.frameKey(view, before);
+        const kept = view.draft ? undefined : this.frames.get(key);
+        if (kept) {
+          this.frames.delete(key);
+          this.frames.set(key, kept);
+          this.onFrame({ ...kept, before, trace: perf.cached(kept.width, kept.height) });
+        } else if (!view.draft && !before && this.copy && view.scale === this.copy.view.scale) {
+          this.onFrame({ ...this.cut(this.copy, view), before });
+        } else {
+          const f = await this.renderView(view, ops.length ? "edit" : "view", cycle);
+          if (!view.draft) this.keepFrame(key, f);
+          this.onFrame({ ...f, before });
+        }
         progress(job);
       }
       // and that it is over only once the edit is back in it
       if (!this.before && this.engineBefore) {
         await invoke("before_view", { on: false });
         this.engineBefore = false;
+        this.changed();
       }
     } catch (e) {
       this.onError(String(e));
