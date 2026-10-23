@@ -36,6 +36,8 @@ Bug fixes
   installed, Immage no longer shows empty folders and a blank photo: its
   engine stopped at start while checking ROCm for AI acceleration, which
   the Linux build cannot use
+- in Before/After's left and right split, the After label lines up
+  with Before instead of sitting lower
 
 ## 0.35.0
 
