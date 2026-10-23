@@ -26,7 +26,7 @@ const { transformSync } = await import(pathToFileURL(
   createRequire(join(APP, "package.json")).resolve("rolldown/experimental")).href);
 
 // the app imports without extensions, as Vite allows (as benchmarking/lib/edits.mjs);
-// Tauri's invoke is the shim's
+// Tauri's invoke and events, and the importer's api, are the shim's
 registerHooks({
   load(url, ctx, next) {
     if (!url.startsWith("file:") || !/\.tsx?$/.test(url)) return next(url, ctx);
@@ -36,7 +36,7 @@ registerHooks({
     return { format: "module", source: out.code, shortCircuit: true };
   },
   resolve(spec, ctx, next) {
-    if (spec === "@tauri-apps/api/core") return next(SHIM, ctx);
+    if (spec === "@tauri-apps/api/core" || spec === "@tauri-apps/api/event" || spec === "@immporter/api") return next(SHIM, ctx);
     if ((spec.startsWith("./") || spec.startsWith("../")) && !/\.[cm]?[jt]sx?$/.test(spec)) {
       for (const ext of [".ts", ".tsx"]) {
         const url = new URL(spec + ext, ctx.parentURL);
@@ -69,6 +69,7 @@ const { overlayShown, overlayStep } = await import("../app/src/masks.ts");
 const { ILLUMINANT_D } = await import("../app/src/wb.ts");
 const { autoTone } = await import("../app/src/autoTone.ts");
 const { dueIn } = await import("../app/src/activity.ts");
+const { byCaptureTime } = await import("../app/src/library.ts");
 const z = await import("../app/src/zones.ts");
 const { compare, meanChroma, inEllipse, rightOf } = await import("./metrics.mjs");
 const { THRESHOLD, GLOBAL, COMPOSITE, LOCAL, trialValues, judge } = await import("./expect.mjs");
@@ -701,6 +702,19 @@ async function decisions(photo) {
     const second = await request({ cmd: "open", path, imgid: -1 });
     return first.edited ? "the new-photo defaults marked it edited"
       : first.fresh ? "opened again, it is taken for a new photo" : !second.edited ? "the user's change left it unedited" : null;
+  });
+
+  // a folder's photos show in the order they were taken; ties keep the
+  // name order, and photos without a capture time go last (user guide,
+  // library.md, The filmstrip and the grid)
+  await decide("the filmstrip is in capture order", async () => {
+    const { images: [e] } = await request({ cmd: "import", files: [fresh(photo)] });
+    const t = e?.exif.datetime ?? "";
+    if (!/^\d{4}:\d\d:\d\d \d\d:\d\d:\d\d/.test(t)) return `the engine gave capture time ${JSON.stringify(t)}`;
+    const at = (filename, datetime) => ({ ...e, filename, exif: { ...e.exif, datetime } });
+    const later = `${Number(t.slice(0, 4)) + 1}${t.slice(4)}`;
+    const got = byCaptureTime([at("a", ""), at("b", later), at("c", t), at("d", t)]).map((i) => i.filename).join("");
+    return got === "cdba" ? null : `sorted as ${got}, not cdba`;
   });
 
   // the photo is never written, only its sidecar (code-map.md, Where data

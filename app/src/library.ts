@@ -59,6 +59,16 @@ export async function openFolder(path: string, recursive = false, skip: string[]
   }
 }
 
+// a folder's photos by capture time, as Lightroom's default sort. the
+// engine's "YYYY:MM:DD HH:MM:SS" sorts as text; photos without one go last,
+// and ties keep the name order the folder was read in
+export function byCaptureTime(images: ImageEntry[]): ImageEntry[] {
+  return [...images].sort((a, b) => {
+    const p = a.exif.datetime, q = b.exif.datetime;
+    return !p || !q ? Number(!p) - Number(!q) : p < q ? -1 : p > q ? 1 : 0;
+  });
+}
+
 // the file's kind as the filmstrip's badge and the type filter name it:
 // its extension, but every raw format is "RAW"
 const NOT_RAW: Record<string, string> = {

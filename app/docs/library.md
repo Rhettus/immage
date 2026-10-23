@@ -40,7 +40,10 @@ folder and the last photo are remembered when you quit.
 
 ## The filmstrip and the grid
 
-The filmstrip under the photo shows the open folder. Each thumbnail shows
+The filmstrip under the photo shows the open folder, in the order the
+photos were taken. Photos taken at the same moment, such as a raw and its
+virtual copies, follow by file name, and photos without a capture time
+come last. Each thumbnail shows
 the file name and type (**ARW**, **JPG**, ...), and a small sliders mark
 beside the type once the photo is edited. Hover over it to see its rating,
 labels and reject button. Once a photo is rated or rejected, those show all

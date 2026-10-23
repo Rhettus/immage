@@ -21,6 +21,7 @@ import { applyCacheLimits } from "./CachePrefs";
 import { fetchThumb, fileKind, isCompanion, isPrimaryRaw, LABEL_COLORS, loadIncludeSubfolders, openFolder, pairKey, pairPartners,
          storeIncludeSubfolders,
          ThumbLoader,
+         byCaptureTime,
          type Exif, type ImageEntry } from "./library";
 import { captureDate, exposureLine, known, MetadataPanel, shutter, type TextFields } from "./MetadataPanel";
 import { HistoryPanel, stepName } from "./HistoryPanel";
@@ -2233,7 +2234,7 @@ export default function App() {
           // the last folder's photos give way to the new one's cells at once
           if (!again) updateImages([]);
         }
-        got = [...got, ...batch];
+        got = byCaptureTime([...got, ...batch]);
         if (!again && batch.length) updateImages(got);
         loader.current!.request(batch.map((i) => i.imgid));
         // a refresh's photos are on show already
@@ -2241,9 +2242,10 @@ export default function App() {
       });
       if (immichRef.current) return list;
       setReading(null);
-      updateImages(list);
+      const sorted = byCaptureTime(list);
+      updateImages(sorted);
       setStatus(`${list.length} images`);
-      return list;
+      return sorted;
     } catch (e) {
       // another folder was opened meanwhile, and shows its own progress
       if (String(e) === "superseded") return [];
