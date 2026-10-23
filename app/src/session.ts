@@ -820,51 +820,75 @@ export class Session {
   }
 
   // the header (main.rs, render): the frame's geometry, then timings
+  // `have`: frames held here, one of which the engine may name rather than
+  // render again (a frame of no size, with its hash)
   private async renderView(view: View, kind: Trace["kind"],
-                           cycle?: Pick<Trace, "inputAt" | "edits" | "setStart">, every = false): Promise<Frame> {
+                           cycle?: Pick<Trace, "inputAt" | "edits" | "setStart">, every = false,
+                           have: Frame[] = []): Promise<Frame> {
     const t0 = performance.now();
     const { width, height, scale, x, y } = view;
     const preview = this.previewMode();
     const skip = view.draft ? DRAFT_SKIP[preview].filter((op) => !this.draftKeep.has(op))
       : kind === "base" && !every ? BASE_SKIP[preview] : null;
     if (!view.draft) this.draftKeep.clear();
+    const hex = (f: Frame) => f.hash!.toString(16).padStart(16, "0");
     const buf = await renderFrame({ width, height, scale, x, y, skip, draft: !!view.draft,
-                                    base: kind === "base" && !view.draft });
+                                    base: kind === "base" && !view.draft,
+                                    have: have.length ? have.map(hex) : null });
     const head = new DataView(buf, 0, 24);
     const u = (k: number) => head.getUint32(4 * k, true);
+    const hash = new DataView(buf).getBigUint64(48, true);
+    const kept = !u(0) && !u(1) ? have.find((f) => f.hash === hash) : undefined;
     const trace = perf.rendered({ kind, draft: !!view.draft, inputAt: cycle?.inputAt ?? null, edits: cycle?.edits ?? 0,
-                                  setStart: cycle?.setStart ?? t0, setEnd: t0, r0: t0, width: u(0), height: u(1) }, buf);
+                                  setStart: cycle?.setStart ?? t0, setEnd: t0, r0: t0,
+                                  width: kept?.width ?? u(0), height: kept?.height ?? u(1) }, buf);
+    if (kept) return { ...kept, view, ms: performance.now() - t0, trace };
     return {
       width: u(0), height: u(1), fullWidth: u(2), fullHeight: u(3), x: u(4), y: u(5),
-      view, pixels: new Uint8ClampedArray(buf, FRAME_HEAD), hash: new DataView(buf).getBigUint64(48, true),
+      view, pixels: new Uint8ClampedArray(buf, FRAME_HEAD), hash,
       ms: performance.now() - t0, trace,
     };
   }
 
-  // full frames shown since the image last changed, by view, oldest first.
-  // the engine's pipe cache already holds their pixels, but a 100% frame on
-  // a 5K screen (41 MB) still took 150-300 ms to write, read and send, and
-  // zooming back and forth brought up the busy indicator
+  // full frames shown, by view and darktable's hash, oldest first. the
+  // engine's pipe cache already holds the latest one's pixels, but a 100%
+  // frame on a 5K screen (41 MB) still took 150-300 ms to write, read and
+  // send, and zooming back and forth brought up the busy indicator. a frame
+  // from before the image changed comes back when the image does (the
+  // Before view and back, undo): the engine names it by its hash instead of
+  // rendering it (`have`, _render in engine/main.c)
   private frames = new Map<string, Frame>();
   private framesBytes = 0;
   private static FRAMES_BYTES = 256 << 20;
+  // the frame each view shows, until the image changes: shown without
+  // asking the engine
+  private current = new Map<string, Frame>();
   private frameKey(v: View, before: boolean) {
     return `${v.width},${v.height},${v.scale},${v.x},${v.y},${before}`;
   }
   private keepFrame(key: string, f: Frame) {
-    this.frames.set(key, f);
-    this.framesBytes += f.pixels.byteLength;
+    const at = `${key}|${f.hash}`;
+    if (this.frames.has(at)) this.frames.delete(at);
+    else this.framesBytes += f.pixels.byteLength;
+    this.frames.set(at, f);
+    this.current.set(key, f);
     for (const [k, old] of this.frames) {
       if (this.framesBytes <= Session.FRAMES_BYTES || old === f) break;
       this.frames.delete(k);
       this.framesBytes -= old.pixels.byteLength;
+      const shown = k.slice(0, k.lastIndexOf("|"));
+      if (this.current.get(shown) === old) this.current.delete(shown);
     }
   }
-  // what the engine renders changed: no kept frame shows it
+  private heldFor(key: string) {
+    return [...this.frames].filter(([k]) => k.startsWith(`${key}|`)).map(([, f]) => f);
+  }
+  // what the engine renders changed: no frame shown is known to show it.
+  // the copy is put aside, for the engine to name if the image comes back
   private changed() {
-    this.frames.clear();
-    this.framesBytes = 0;
+    this.current.clear();
     if (this.copy) {
+      this.putAside = this.copy;
       this.copy = null;
       this.onCopy?.(null);
     }
@@ -875,6 +899,9 @@ export class Session {
   // the pipe cache holds only the window it last rendered. null when gone
   onCopy: ((f: Frame | null) => void) | null = null;
   private copy: Frame | null = null;
+  // the copy from before the image last changed, until an After frame is
+  // rendered anew (the image is then most likely another), or a copy is
+  private putAside: Frame | null = null;
   private copyScale: number | null = null;
   private copySize = { width: 0, height: 0 };
   private needCopy = false;
@@ -911,12 +938,12 @@ export class Session {
   // to stop is not waited for: the cancel cannot reach a frame already on
   // its way here, some 90 ms on Windows, and the edit that stopped it would
   // sit behind that; it is dropped instead
-  private async idleRender(view: View, every: boolean, use: (f: Frame) => void) {
+  private async idleRender(view: View, every: boolean, use: (f: Frame) => void, have: Frame[] = []) {
     let wake = () => {};
     const woken = new Promise<void>((r) => { wake = r; });
     const run = { stale: false, wake, copy: every ? view.scale ?? null : null };
     this.base = run;
-    const done = this.renderView(view, "base", undefined, every)
+    const done = this.renderView(view, "base", undefined, every, have)
       .then((f) => { if (!run.stale) use(f); })
       .catch((e) => { if (String(e) !== "canceled") this.onError(String(e)); })
       .finally(() => { if (this.baseInFlight === done) this.baseInFlight = null; });
@@ -1073,11 +1100,13 @@ export class Session {
           // nothing on screen waits for it: it takes seconds, and the busy
           // indicator would come up for each
           end(job);
+          const aside = this.putAside?.view.scale === scale ? [this.putAside] : [];
           await this.idleRender({ ...this.copySize, scale, x: 0, y: 0 }, true, (f) => {
             if (this.before) return;
+            this.putAside = null;
             this.copy = f;
             this.onCopy?.(f);
-          });
+          }, aside);
           this.copyScale = null;
           if (this.copyWait) end(this.copyWait);
           this.copyWait = null;
@@ -1098,16 +1127,17 @@ export class Session {
         // what the render shows is settled by now, whatever changes during it
         const before = !!this.before;
         const view = this.size(), key = this.frameKey(view, before);
-        const kept = view.draft ? undefined : this.frames.get(key);
+        const kept = view.draft ? undefined : this.current.get(key);
         if (kept) {
-          this.frames.delete(key);
-          this.frames.set(key, kept);
+          this.keepFrame(key, kept);
           this.onFrame({ ...kept, before, trace: perf.cached(kept.width, kept.height) });
         } else if (!view.draft && !before && this.copy && view.scale === this.copy.view.scale) {
           this.onFrame({ ...this.cut(this.copy, view), before });
         } else {
-          const f = await this.renderView(view, ops.length ? "edit" : "view", cycle);
+          const have = view.draft ? [] : this.heldFor(key);
+          const f = await this.renderView(view, ops.length ? "edit" : "view", cycle, false, have);
           if (!view.draft) this.keepFrame(key, f);
+          if (!before && !have.some((h) => h.hash === f.hash)) this.putAside = null;
           this.onFrame({ ...f, before });
         }
         progress(job);

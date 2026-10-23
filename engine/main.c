@@ -247,6 +247,39 @@ static void _cancel_base(const gint64 id)
   g_mutex_unlock(&_cancel_lock);
 }
 
+// a photo likely opened next, its raw decoded ahead on a thread of its own.
+// darktable's job threads would do it (DT_MIPMAP_PREFETCH), but without
+// its GUI darktable starts none (control.c, dt_control_init). one at a
+// time: a prefetch asked for while one is under way is dropped. `open` of
+// that photo then finds the decoded raw in the mipmap cache, or waits on
+// the decode under way
+static GThread *_prefetch_thread = NULL;
+static gint _prefetch_busy = 0;
+
+static gpointer _prefetch_run(gpointer data)
+{
+  dt_mipmap_buffer_t buf;
+  dt_mipmap_cache_get(&buf, GPOINTER_TO_INT(data), DT_MIPMAP_FULL, DT_MIPMAP_BLOCKING, 'r');
+  dt_mipmap_cache_release(&buf);
+  g_atomic_int_set(&_prefetch_busy, 0);
+  return NULL;
+}
+
+static void _prefetch(const dt_imgid_t imgid)
+{
+  if(g_atomic_int_get(&_prefetch_busy)) return;
+  if(_prefetch_thread) g_thread_join(_prefetch_thread);
+  g_atomic_int_set(&_prefetch_busy, 1);
+  _prefetch_thread = g_thread_new("prefetch", _prefetch_run, GINT_TO_POINTER(imgid));
+}
+
+// before darktable's caches go
+static void _prefetch_wait(void)
+{
+  if(_prefetch_thread) g_thread_join(_prefetch_thread);
+  _prefetch_thread = NULL;
+}
+
 static void _follower_cleanup(dt_engine_follower_t *f)
 {
   if(f->ok) dt_dev_pixelpipe_cleanup(&f->pipe);
@@ -946,10 +979,13 @@ static gboolean _module_state(const char *op, const int priority, const gboolean
 // with scale <= 0, fit the whole image into bw x bh. otherwise render the
 // bw x bh window at (x, y) of the image scaled by `scale` (1 is 100%), the
 // way the darkroom's zoomed view does; the window is clipped to the image
+// `have`: hashes of frames the client holds (hex). when this view's frame
+// would be one of them, it is not rendered: *kept is set to that hash
 static gboolean _render(dt_dev_pixelpipe_t *pipe, const int devid, const int bw, const int bh,
-                        const double req_scale, const int x, const int y, int *ow, int *oh,
-                        int *ox_out, int *oy_out, char **err)
+                        const double req_scale, const int x, const int y, JsonArray *have,
+                        int *ow, int *oh, int *ox_out, int *oy_out, dt_hash_t *kept, char **err)
 {
+  *kept = DT_INVALID_HASH;
   double scale = req_scale;
   int w, h, ox = 0, oy = 0;
   if(scale <= 0.0)
@@ -970,6 +1006,26 @@ static gboolean _render(dt_dev_pixelpipe_t *pipe, const int devid, const int bw,
     oy = CLAMP(y, 0, sh - h);
   }
 
+  if(have && json_array_get_length(have))
+  {
+    // the hash dt_dev_pixelpipe_process() gives its backbuf (pixelpipe_hb.c),
+    // from the pieces' hashes, which the pipe's sync has brought current.
+    // the same hash is darktable's own test for reusing a cacheline
+    const dt_iop_roi_t roi = { ox, oy, w, h, (float)scale };
+    const dt_hash_t hash = dt_dev_pixelpipe_cache_hash(&roi, pipe, g_list_length(pipe->iop));
+    gchar *hex = g_strdup_printf("%016" PRIx64, hash);
+    for(guint k = 0; k < json_array_get_length(have); k++)
+      if(!g_strcmp0(json_array_get_string_element(have, k), hex)) *kept = hash;
+    g_free(hex);
+    if(*kept != DT_INVALID_HASH)
+    {
+      *ow = w;
+      *oh = h;
+      *ox_out = ox;
+      *oy_out = oy;
+      return TRUE;
+    }
+  }
   if(dt_dev_pixelpipe_process(pipe, &_s.dev, ox, oy, w, h, scale, devid)
      || !pipe->backbuf)
   {
@@ -6617,6 +6673,12 @@ static void _handle(JsonObject *req, FILE *out)
                         json_object_get_int_member_with_default(req, "size", 256), dest, b, &err))
       goto fail;
   }
+  else if(!g_strcmp0(cmd, "prefetch"))
+  {
+    // the reply does not wait for the decode
+    const dt_imgid_t imgid = json_object_get_int_member_with_default(req, "imgid", 0);
+    if(dt_is_valid_imgid(imgid) && imgid != _s.imgid) _prefetch(imgid);
+  }
   else if(!g_strcmp0(cmd, "meta"))
   {
     json_builder_set_member_name(b, "image");
@@ -6761,13 +6823,17 @@ static void _handle(JsonObject *req, FILE *out)
           break;
         }
     }
+    // "have": the client's frames, by hash; one of them is named, not sent
+    JsonArray *have = json_object_has_member(req, "have")
+      ? json_object_get_array_member(req, "have") : NULL;
     int w = 0, h = 0, ox = 0, oy = 0;
+    dt_hash_t kept = DT_INVALID_HASH;
     const gboolean ok = _render(pipe, devid, json_object_get_int_member_with_default(req, "width", 2048),
                                 json_object_get_int_member_with_default(req, "height", 2048),
                                 json_object_get_double_member_with_default(req, "scale", 0.0),
                                 json_object_get_int_member_with_default(req, "x", 0),
                                 json_object_get_int_member_with_default(req, "y", 0),
-                                &w, &h, &ox, &oy, &err);
+                                have, &w, &h, &ox, &oy, &kept, &err);
     if(base_id && _base_end() && !ok)
     {
       // a stop on the GPU leaves the previous module's cacheline holding a
@@ -6800,32 +6866,50 @@ static void _handle(JsonObject *req, FILE *out)
     json_builder_set_member_name(b, "y");
     json_builder_add_int_value(b, oy);
     const double process_ms = _ms_since(t0);
-    const char *ppm = json_object_get_string_member_with_default(req, "out", NULL);
-    if(ppm && !_write_ppm(ppm, pipe->backbuf, w, h))
+    if(kept != DT_INVALID_HASH)
     {
-      err = g_strdup_printf("could not write '%s'", ppm);
-      goto fail;
+      // a frame of no size, with the hash of the one the client holds
+      json_builder_set_member_name(b, "width");
+      json_builder_add_int_value(b, 0);
+      json_builder_set_member_name(b, "height");
+      json_builder_add_int_value(b, 0);
+      gchar *hash = g_strdup_printf("%016" PRIx64, kept);
+      _add_string(b, "hash", hash);
+      g_free(hash);
+      json_builder_set_member_name(b, "kept");
+      json_builder_add_boolean_value(b, TRUE);
+      json_builder_set_member_name(b, "process_ms");
+      json_builder_add_double_value(b, process_ms);
     }
-    const char *rgba = json_object_get_string_member_with_default(req, "rgba", NULL);
-    const gint64 t1 = g_get_monotonic_time();
-    if(rgba && !_write_rgba(rgba, pipe->backbuf, w, h))
+    else
     {
-      err = g_strdup_printf("could not write '%s'", rgba);
-      goto fail;
+      const char *ppm = json_object_get_string_member_with_default(req, "out", NULL);
+      if(ppm && !_write_ppm(ppm, pipe->backbuf, w, h))
+      {
+        err = g_strdup_printf("could not write '%s'", ppm);
+        goto fail;
+      }
+      const char *rgba = json_object_get_string_member_with_default(req, "rgba", NULL);
+      const gint64 t1 = g_get_monotonic_time();
+      if(rgba && !_write_rgba(rgba, pipe->backbuf, w, h))
+      {
+        err = g_strdup_printf("could not write '%s'", rgba);
+        goto fail;
+      }
+      json_builder_set_member_name(b, "width");
+      json_builder_add_int_value(b, w);
+      json_builder_set_member_name(b, "height");
+      json_builder_add_int_value(b, h);
+      // darktable's hash of the frame, the same for one rendered again with
+      // nothing changed: a client can tell that frame from a new one
+      gchar *hash = g_strdup_printf("%016" PRIx64, pipe->backbuf_hash);
+      _add_string(b, "hash", hash);
+      g_free(hash);
+      json_builder_set_member_name(b, "process_ms");
+      json_builder_add_double_value(b, process_ms);
+      json_builder_set_member_name(b, "write_ms");
+      json_builder_add_double_value(b, _ms_since(t1));
     }
-    json_builder_set_member_name(b, "width");
-    json_builder_add_int_value(b, w);
-    json_builder_set_member_name(b, "height");
-    json_builder_add_int_value(b, h);
-    // darktable's hash of the frame, the same for one rendered again with
-    // nothing changed: a client can tell that frame from a new one
-    gchar *hash = g_strdup_printf("%016" PRIx64, pipe->backbuf_hash);
-    _add_string(b, "hash", hash);
-    g_free(hash);
-    json_builder_set_member_name(b, "process_ms");
-    json_builder_add_double_value(b, process_ms);
-    json_builder_set_member_name(b, "write_ms");
-    json_builder_add_double_value(b, _ms_since(t1));
   }
   else if(!g_strcmp0(cmd, "mask"))
   {
@@ -7222,6 +7306,7 @@ int main(int argc, char **argv)
   if(!quit) _save_pending();
 
   _close_session();
+  _prefetch_wait();
   dt_cleanup();
   g_ptr_array_free(m, TRUE);
   return 0;

@@ -60,7 +60,7 @@ globalThis.requestAnimationFrame = (f) => setTimeout(() => f(performance.now()),
 globalThis.cancelAnimationFrame = (t) => clearTimeout(t);
 
 const args = JSON.parse(process.argv[2]);
-const { startEngine, stopEngine, request, invoke, sent, models } = await import(SHIM);
+const { startEngine, stopEngine, request, invoke, sent, models, FRAME_HEAD } = await import(SHIM);
 const { Session } = await import("../app/src/session.ts");
 const { withModel } = await import("../app/src/aiModel.ts");
 const m = await import("../app/src/manifest.ts");
@@ -729,6 +729,58 @@ async function decisions(photo) {
     await o.s.close();
     await drained();
     return sum() === was ? null : "the photo file changed";
+  });
+
+  // a frame shown before comes back without a render when the image does:
+  // back from the Before view, or a slider put back. the engine names it by
+  // darktable's hash (session.ts, frames; _render's `have` in engine/main.c)
+  await decide("frames shown before come back unrendered", async () => {
+    const o = await open(fresh(photo));
+    o.s.endBaseline();
+    const a = await o.after(() => o.s.set("exposure", 0.5));
+    await o.after(() => o.s.showBefore(() => false));
+    const back = await o.after(() => o.s.showBefore(null));
+    const b = await o.after(() => o.s.set("exposure", 1));
+    const again = await o.after(() => o.s.set("exposure", 0.5));
+    // zoomed in, the whole-image copy the windows are cut from comes back too
+    await zoomed(o);
+    let copy = null;
+    o.s.onCopy = (f) => { copy = f; };
+    const copied = async () => {
+      copy = null;
+      o.s.requestCopy(1, { w: o.base.fullWidth, h: o.base.fullHeight });
+      await o.frame();
+      return copy;
+    };
+    const first = await copied();
+    await o.after(() => o.s.showBefore(() => false));
+    await o.after(() => o.s.showBefore(null));
+    const copyBack = await copied();
+    await o.s.close();
+    await drained();
+    return back.pixels.buffer !== a.pixels.buffer ? "back from the Before view, the frame was rendered again"
+      : b.pixels.buffer === a.pixels.buffer ? "a new Exposure showed the old frame"
+      : again.pixels.buffer !== a.pixels.buffer ? "Exposure put back, the frame was rendered again"
+      : !first ? "zoomed in, no copy was made"
+      : copyBack?.pixels.buffer !== first.pixels.buffer ? "back from the Before view, the copy was rendered again" : null;
+  });
+
+  // the photo the arrow keys open next is decoded ahead (App.tsx,
+  // prefetchNext; main.c, _prefetch). opened while that decode is still
+  // under way, it waits for it, and renders as a photo opened cold does
+  await decide("a prefetched photo opens as it would cold", async () => {
+    const cold = fresh(photo), ahead = fresh(photo);
+    const { images } = await request({ cmd: "import", files: [cold, ahead] });
+    const pixels = async (path) => {
+      await request({ cmd: "open", path, imgid: -1 });
+      return (await invoke("render", { width: 512, height: 512 })).slice(FRAME_HEAD);
+    };
+    const a = new Uint8Array(await pixels(cold));
+    await request({ cmd: "close" });
+    await request({ cmd: "prefetch", imgid: images.find((e) => e.path === ahead).imgid });
+    const b = new Uint8Array(await pixels(ahead));
+    await request({ cmd: "close" });
+    return a.length !== b.length || a.some((v, k) => v !== b[k]) ? "it rendered differently from the photo opened cold" : null;
   });
 
   // a photo edited in darktable keeps all of its edit: modules Immage has

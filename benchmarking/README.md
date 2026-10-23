@@ -85,6 +85,7 @@ base at 3072 (`baseSize`).
 | `preview` | the second pipe: preset tiles (160 px) and the hover preview (1600 px) |
 | `modules` | each of Immage's module choices against darktable alternatives for the same job, with the pipe cache off so every repeat runs the module; its own time per frame and Mpx/s |
 | `export` | a full-size JPEG at quality 90 |
+| `prefetch` | opening a copy of the photo no engine has opened, cold and with its raw decoded ahead (`prefetch`, 2 s before), as the arrow keys' next photo is; after the engine's first open, which carries its start-up work |
 | `masks` | 1, 5 and 10 masks (an ellipse, a gradient or a 120-point brush stroke each), each with its own Exposure and Contrast and every other one Saturation, built as the app's `Session` sends them two ways (`MaskModel` in `bench.py`): `chain`, an instance per mask and module, and `shared`, color balance rgb on instances the masks share (`app/src/localMerge.ts`), with the dragged mask lifted out onto its own instances until the release. For each: a local Contrast drag on the oldest and on the newest mask (drafts, then the release), a global Exposure drag under them, the newest shape moved, and how far the two models' frames are apart. `recomputed` shows how much of the chain each frame reran |
 | `overhead` | the same edit loop with and without `-d perf`, per mode |
 
