@@ -12,6 +12,11 @@ Improvements
   the window
 - the filmstrip and the grid show a folder's photos in the order they
   were taken, rather than by file name
+- zooming is twice as quick, and a click, key or navigator zoom renders
+  the sharp view while it zooms, so it is ready sooner. Zooming back to
+  a view shown before, with nothing changed since, shows it at once.
+  Zoomed in, the whole photo is kept sharp once rendered, so moving
+  around it shows no blur and needs no wait
 
 Bug fixes
 
