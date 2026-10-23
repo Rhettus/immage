@@ -2766,6 +2766,19 @@ export default function App() {
     return () => { for (const off of offs) void off.then((f) => f()); };
   }, []);
 
+  // the photo the arrow keys would open next, its raw decoded ahead by the
+  // engine once this one is up (main.c, _prefetch): a compressed raw's
+  // decode, some 300 ms, is then gone from opening it
+  const stepDir = useRef<1 | -1>(1);
+  const prefetched = useRef<number | null>(null);
+  const prefetchNext = (s: Session) => {
+    const list = shownRef.current, at = list.findIndex((i) => i.imgid === s.imgid);
+    const next = at >= 0 ? list[at + stepDir.current] : undefined;
+    if (!next || isRemote(next) || next.imgid === prefetched.current) return;
+    prefetched.current = next.imgid;
+    invoke("prefetch", { imgid: next.imgid }).catch(() => {});
+  };
+
   // `imgid` picks one of the file's versions (a virtual copy); without it,
   // the original
   const openFile = async (path: string, imgid: number | null = null) => {
@@ -2802,6 +2815,19 @@ export default function App() {
       overviewHash.current = null;
       baseStale.current = true;
       for (const c of [baseCanvas.current, clipBase.current, copyCanvas.current, clipSharp.current]) if (c) c.width = 0;
+      // the photo's filmstrip thumbnail, fitted, until its first frame takes
+      // its place, rather than the last photo
+      const thumb = id !== null ? loader.current?.get(id) : undefined, sc = canvas.current;
+      if (thumb && sc) {
+        const dpr = window.devicePixelRatio || 1, { w, h } = viewport(), m = 2 * MARGIN * dpr;
+        const z = Math.min((w - m) / thumb.width, (h - m) / thumb.height);
+        sc.width = thumb.width;
+        sc.height = thumb.height;
+        sc.getContext("2d")!.drawImage(thumb, 0, 0);
+        sc.style.width = `${thumb.width / dpr}px`;
+        sc.style.height = `${thumb.height / dpr}px`;
+        sc.style.transform = `translate(${(w - z * thumb.width) / 2 / dpr}px, ${(h - z * thumb.height) / 2 / dpr}px) scale(${z})`;
+      }
       const s = await track(Session.open(path, id, currentView, drawFrame, (e) => setStatus(`error: ${e}`)));
       // the engine's id, for a photo opened by its file alone
       const opened = { path, imgid: s.imgid };
@@ -2813,6 +2839,7 @@ export default function App() {
         perf.drawStart(f.trace);
         try { showOverview(f); } finally { perf.drawEnd(); }
         baseLowRes.current = false;
+        prefetchNext(s);
       };
       s.onCopy = (f) => {
         const cc = copyCanvas.current, gen = ++copyGen.current;
@@ -3965,7 +3992,8 @@ export default function App() {
         if (k >= 0 && k < list.length && !isRemote(list[k])) setCompareRef.current(list[k].imgid);
       }
       else if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
-        const next = list[Math.min(list.length - 1, Math.max(0, at + (e.key === "ArrowRight" ? 1 : -1)))];
+        stepDir.current = e.key === "ArrowRight" ? 1 : -1;
+        const next = list[Math.min(list.length - 1, Math.max(0, at + stepDir.current))];
         if (next) { e.preventDefault(); void openEntry(next); }
       }
       else if (!cur) return;

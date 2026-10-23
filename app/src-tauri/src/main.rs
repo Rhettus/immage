@@ -661,7 +661,8 @@ const FRAME_HEAD: usize = 56;
 // little-endian f32 timings in ms (waiting for the engine, the engine's
 // request, its pixelpipe, its frame write, the frame read here, collecting
 // the per-module timings), darktable's u64 hash of the frame (FRAME_HEAD
-// bytes in all), then RGBA. ops in skip are left out of this frame
+// bytes in all), then RGBA. ops in skip are left out of this frame. a
+// frame of no size, with no RGBA, is the one in `have` of that hash
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 async fn render(
@@ -677,10 +678,16 @@ async fn render(
     base: Option<bool>,
     shared: Option<u32>,
     token: Option<String>,
+    have: Option<Vec<String>>,
 ) -> Result<Response, String> {
     let mut req = json!({ "cmd": "render", "width": width, "height": height, "rgba": state.frame_path });
     if let Some(skip) = skip {
         req["skip"] = json!(skip);
+    }
+    // the hashes of frames the page holds: when the view's frame is one of
+    // them, the engine names it rather than rendering it
+    if let Some(have) = have {
+        req["have"] = json!(have);
     }
     // a drag's frame, on the engine's drag pipe
     if draft == Some(true) {
@@ -718,10 +725,13 @@ async fn render(
     out.resize(48, 0);
     let hash = reply["hash"].as_str().and_then(|h| u64::from_str_radix(h, 16).ok()).unwrap_or(0);
     out.extend_from_slice(&hash.to_le_bytes());
+    let kept = reply["kept"].as_bool() == Some(true);
     let t2 = Instant::now();
-    std::fs::File::open(&state.frame_path)
-        .and_then(|mut f| std::io::Read::read_to_end(&mut f, &mut out))
-        .map_err(|e| format!("frame: {e}"))?;
+    if !kept {
+        std::fs::File::open(&state.frame_path)
+            .and_then(|mut f| std::io::Read::read_to_end(&mut f, &mut out))
+            .map_err(|e| format!("frame: {e}"))?;
+    }
     let read_ms = ms(t2);
     let t3 = Instant::now();
     if state.perf_on.load(Ordering::Relaxed) {
@@ -732,6 +742,10 @@ async fn render(
     let f = |k: &str| reply[k].as_f64().unwrap_or(0.0);
     for (i, v) in [lock_ms, request_ms, f("process_ms"), f("write_ms"), read_ms, mark_ms].into_iter().enumerate() {
         out[timings + 4 * i..timings + 4 * i + 4].copy_from_slice(&(v as f32).to_le_bytes());
+    }
+    // the header alone, of no size: the page's own frame of that hash
+    if kept {
+        return Ok(Response::new(out));
     }
     // the header alone says the frame went by shared memory, tagged `shared`;
     // where that can't be done, it comes back whole as before
@@ -1294,6 +1308,13 @@ async fn cache_clear(caches: State<'_, Caches>, which: String) -> Result<(), Str
 #[tauri::command]
 async fn meta(state: State<'_, AppState>, imgid: i64) -> Result<Value, String> {
     state.engine().request(json!({ "cmd": "meta", "imgid": imgid }))
+}
+
+// the photo likely opened next, its raw decoded ahead on the engine's own
+// thread; the reply does not wait for it
+#[tauri::command]
+async fn prefetch(state: State<'_, AppState>, imgid: i64) -> Result<Value, String> {
+    state.engine().request(json!({ "cmd": "prefetch", "imgid": imgid }))
 }
 
 // the GPU execution providers this computer can use for AI, with their
@@ -2056,7 +2077,7 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            open_folder, open_image, get_params, set_params, render, cancel_base, save, baseline_end, before_view, thumb, thumb_cached, cache_limits, cache_usage, cache_clear, meta, meta_set,
+            open_folder, open_image, get_params, set_params, render, cancel_base, save, baseline_end, before_view, thumb, thumb_cached, cache_limits, cache_usage, cache_clear, meta, meta_set, prefetch,
             export_images, export_existing, export_preview, fonts, export_presets_load, export_presets_save, preset_file_write, preset_file_read, presets_load, presets_save, looks_list, look_import, look_export, look_delete, look_apply, look_amount, preview,
             mask_shapes, combine, masks, mask_delete, mask_rename, history, module_state, sample, tone_key, agx_auto, upright, points, range_map, zones, mask_map, ai_object,
             ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, list_subfolders, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
