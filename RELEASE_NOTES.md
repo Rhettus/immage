@@ -17,6 +17,13 @@ Improvements
   a view shown before, with nothing changed since, shows it at once.
   Zoomed in, the whole photo is kept sharp once rendered, so moving
   around it shows no blur and needs no wait
+- switching between Before and After, undoing, or putting a slider
+  back where it was shows the photo at once when it was shown that way
+  before, zoomed in too
+- a photo shows its thumbnail as soon as it is opened, rather than the
+  photo before it, and the arrow keys' next photo is read ahead while
+  the current one is open, so a compressed raw (an Olympus ORF, for
+  one) opens about 0.3 s sooner
 
 Bug fixes
 
