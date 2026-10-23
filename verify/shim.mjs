@@ -178,6 +178,10 @@ export const models = { dir: null, source: null };
 // edit while the engine has it, as a user can
 export const sent = { hook: null };
 
+// library.ts's imports: no events reach a check, and Immich is not reached
+export const listen = async () => () => {};
+export const api = {};
+
 export async function invoke(cmd, args = {}) {
   if (!HANDLERS.has(cmd)) throw new Error(`the app registers no command ${cmd} (main.rs, generate_handler!)`);
   const f = COMMANDS[cmd];
