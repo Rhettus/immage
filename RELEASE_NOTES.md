@@ -10,6 +10,8 @@ Improvements
 - Immage opens at the size and place it was closed at, and maximized if
   it was. On Linux under Wayland the size is kept but the desktop places
   the window
+- the filmstrip and the grid show a folder's photos in the order they
+  were taken, rather than by file name
 
 Bug fixes
 
