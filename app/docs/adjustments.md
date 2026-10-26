@@ -76,8 +76,9 @@ for **B&W Mix**.
   darkened. Under AgX it also sets AgX's range.
 - **Exposure**: -5 to +5 stops.
 - **Contrast**, **Highlights**, **Shadows**, **Whites**, **Blacks**: -100 to
-  +100. Whites moves the top of the tone mapper's curve; Blacks moves the
-  black point, and works the same at any Exposure.
+  +100. Whites moves the top of the tone mapper's curve, and under AgX
+  also brightens or darkens the brightest tones ahead of it; Blacks moves
+  the black point, and works the same at any Exposure.
 
 **Presence**
 
