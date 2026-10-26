@@ -7,7 +7,15 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
-- a Frame cache setting, in Preferences › General under Performance,
+- Preferences has a Performance tab, with the settings that were spread
+  through General: Preview, the frame and disk caches, AI acceleration,
+  the performance overlay and the GUI benchmark
+- new in Performance: darktable memory, how much of the computer's memory
+  darktable may take; Thumbnail memory, which caps what the library's
+  thumbnails hold (a large folder could take gigabytes); and Read ahead,
+  how many photos, ahead and optionally behind, are decoded while you edit
+  so the arrow keys open them sooner, up to three at once
+- a Frame cache setting, in Preferences › Performance under Memory,
   sets the memory kept for frames already shown, so zooming back out or
   returning to a view needs no render. On a 4K screen or larger it
   starts at 512 MB, double what 0.36.0 kept
