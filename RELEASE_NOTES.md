@@ -29,6 +29,9 @@ Bug fixes
 - hiding a mask with its eye no longer makes it vanish from the Masks
   panel after the import screen has been opened; the mask was never
   deleted, and shows again in this version
+- Crop, Masks, Zone System and Heal in the tool rail no longer go dim
+  and stop responding while a photo is open, as they could when the
+  folder shown no longer listed it
 
 ## 0.36.0
 
