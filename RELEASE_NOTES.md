@@ -21,6 +21,9 @@ Bug fixes
 - zoomed in, moving or reshaping a drawn mask shows it in its new place;
   since 0.36.0 the view could keep showing it where it had been, or not
   at all
+- after a quick slider move, zoomed in especially, the photo sometimes
+  stayed soft until the next change or zoom; it now always renders sharp
+  once the slider is let go
 
 ## 0.36.0
 
