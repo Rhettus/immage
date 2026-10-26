@@ -33,6 +33,10 @@ Improvements
 - a mask's handles and guides show while the pointer is over the photo,
   and step aside while it is over the panels, so the adjustment can be
   seen
+- Whites reaches much further under AgX: it also brightens or darkens the
+  photo's brightest tones, as a mask's Whites does, where it only reshaped
+  the top of AgX's curve. Photos edited before keep their look until Whites
+  is moved
 - Lens Corrections has Hot Pixels, which removes the stuck and hot
   pixels of long exposures and high ISO, with Strength and Threshold;
   raws only, and off until turned on
