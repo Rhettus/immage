@@ -22,7 +22,7 @@ export type Look = { name: string; group: string; path: string; user?: boolean }
 // when a control's scale changes, MIGRATIONS[n] carries a version n file's
 // presets to version n + 1, keeping what each one does to a photo. version
 // 1 was the bare list
-const PRESETS_VERSION = 2;
+const PRESETS_VERSION = 3;
 type PresetsFile = { version: number; presets: Preset[] };
 const mapValues = (presets: Preset[], f: (v: Values) => Values) =>
   presets.map((p) => ({ ...p, values: f(p.values) }));
@@ -34,6 +34,12 @@ const MIGRATIONS: Record<number, (presets: Preset[]) => Preset[]> = {
       if (Number.isFinite(out[id])) out[id] = blacksFromLinear(out[id], out[ev] ?? 0);
     return out;
   }),
+  // HSL Saturation and Luminance and the B&W Mix went to half the strength
+  // a unit (manifest.ts, HSL_SAT), so their values double, as far as the
+  // sliders reach. the bands moved to Lightroom's hues (colorequal.ts),
+  // which is what the sliders' names already asked for
+  2: (presets) => mapValues(presets, (v) => Object.fromEntries(Object.entries(v).map(([id, x]) =>
+    [id, /^(?:l_)?hsl_(?:sat|lum)_|^bw_(?!mode$)/.test(id) ? Math.max(-100, Math.min(100, 2 * x)) : x]))),
 };
 
 export async function loadPresets(): Promise<Preset[]> {

@@ -144,6 +144,7 @@ are `localStorage` keys named `immage.*`.
 | [wb.ts](../../src/wb.ts) | Temp/Tint and color calibration's illuminant. |
 | [tonecurve.ts](../../src/tonecurve.ts) | Parametric and point curves and tonecurve nodes. |
 | [transform.ts](../../src/transform.ts), [colorgrading.ts](../../src/colorgrading.ts) | Rotate/ashift and auto-crop; color balance hues. |
+| [colorequal.ts](../../src/colorequal.ts) | HSL and the B&W Mix at Lightroom's band hues: the mix of the color equalizer's eight nodes each slider sets (`toNodes`) and back (`fromNodes`), fitted to darktable's own curve through them. |
 | [GuideOverlay.tsx](../../src/GuideOverlay.tsx) | The Transform grid and Guided Upright's guides on the photo. |
 | [autoTone.ts](../../src/autoTone.ts), [bwauto.ts](../../src/bwauto.ts) | Basic's Auto and the B&W Mix's Auto, from the rendered frame. |
 

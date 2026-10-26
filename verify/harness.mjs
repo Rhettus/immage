@@ -410,8 +410,113 @@ function zip(files) {
 
 // bugs fixed before these checks existed, each named for the release that
 // fixed it (README, "When a bug is fixed")
+// every hue (HSV, 85% saturated, value 0.8) left to right, two columns a
+// degree, as an 8-bit RGB TIFF: a photo has too few hues to tell the HSL
+// bands apart
+function hueStrip() {
+  const path = join(args.work, "strip", "hues.tif");
+  if (existsSync(path)) return path;
+  mkdirSync(dirname(path), { recursive: true });
+  const w = 720, h = 120, data = 140;
+  const px = Buffer.alloc(data + w * h * 3);
+  for (let x = 0; x < w; x++) {
+    const hue = (x + 0.5) / 2 / 60, s = 0.85, v = 0.8;
+    const f = (n) => { const k = (n + hue) % 6; return v - v * s * Math.max(0, Math.min(k, 4 - k, 1)); };
+    for (let y = 0; y < h; y++) [f(5), f(3), f(1)].forEach((c, i) => { px[data + 3 * (y * w + x) + i] = Math.round(255 * c); });
+  }
+  // the header, one IFD at 8 and the three BitsPerSample at 134
+  px.write("II", 0, "latin1");
+  px.writeUInt16LE(42, 2);
+  px.writeUInt32LE(8, 4);
+  const tags = [[256, 3, 1, w], [257, 3, 1, h], [258, 3, 3, 134], [259, 3, 1, 1], [262, 3, 1, 2], [273, 4, 1, data],
+                [277, 3, 1, 3], [278, 3, 1, h], [279, 4, 1, w * h * 3], [284, 3, 1, 1]];
+  px.writeUInt16LE(tags.length, 8);
+  tags.forEach(([tag, type, count, value], i) => {
+    const at = 10 + 12 * i;
+    px.writeUInt16LE(tag, at);
+    px.writeUInt16LE(type, at + 2);
+    px.writeUInt32LE(count, at + 4);
+    if (type === 3 && count === 1) px.writeUInt16LE(value, at + 8); else px.writeUInt32LE(value, at + 8);
+  });
+  px.writeUInt32LE(0, 10 + 12 * tags.length);
+  for (let i = 0; i < 3; i++) px.writeUInt16LE(8, 134 + 2 * i);
+  writeFileSync(path, px);
+  return path;
+}
+
+// the strip's mean chroma (max - min) and luma at an HSV hue, over the
+// columns within 2° of it and the middle half of the rows
+function bandAt(f, hue) {
+  const { width: w, height: h, pixels: p } = f;
+  let n = 0, chroma = 0, luma = 0;
+  for (let y = Math.floor(h / 4); y < Math.ceil((3 * h) / 4); y++) for (let x = 0; x < w; x++) {
+    const d = Math.abs((((x + 0.5) / w) * 360 - hue + 540) % 360 - 180);
+    if (d > 2) continue;
+    const i = 4 * (y * w + x);
+    chroma += Math.max(p[i], p[i + 1], p[i + 2]) - Math.min(p[i], p[i + 1], p[i + 2]);
+    luma += 0.2126 * p[i] + 0.7152 * p[i + 1] + 0.0722 * p[i + 2];
+    n++;
+  }
+  return { chroma: Math.round(chroma / n), luma: Math.round(luma / n) };
+}
+
 async function fixes(photo) {
   const fix = (id, run) => outcome("fixes", basename(photo), id, run);
+
+  // 0.37.0: HSL's Saturation was twice Lightroom's strength, -50 already
+  // gray, and its bands sat on the color equalizer's nodes, not at
+  // Lightroom's hues (colorequal.ts). with Blue at -100, Aqua did nothing to
+  // the hues between them, or grayed them further; Purple, not Blue, grayed
+  // blue; and Luminance or the B&W Mix at -100 turned a saturated red black
+  if (photo === args.photos[0]) {
+    const strip = hueStrip();
+    await fix("HSL Blue grays blue, more than Purple", async () => {
+      const o = await open(fresh(strip));
+      const blue = bandAt(await o.after(() => o.s.set("hsl_sat_blue", -100)), 240);
+      const purple = bandAt(await o.after(() => o.s.setMany([["hsl_sat_blue", 0], ["hsl_sat_lavender", -100]])), 240);
+      await o.s.close();
+      return blue.chroma < purple.chroma ? null
+        : `at blue, Blue -100 left chroma ${blue.chroma} and Purple -100 ${purple.chroma}`;
+    });
+    await fix("HSL Aqua works with Blue at -100", async () => {
+      const o = await open(fresh(strip));
+      const gray = await o.after(() => o.s.set("hsl_sat_blue", -100));
+      const aqua = await o.after(() => o.s.set("hsl_sat_cyan", 100));
+      await o.s.close();
+      const [g200, a200, g225, a225] = [bandAt(gray, 200), bandAt(aqua, 200), bandAt(gray, 225), bandAt(aqua, 225)];
+      return a200.chroma < g200.chroma + 5 ? `at HSV 200, Aqua +100 took chroma from ${g200.chroma} to ${a200.chroma}`
+        : a225.chroma < g225.chroma - 2 ? `at HSV 225, Aqua +100 lowered chroma from ${g225.chroma} to ${a225.chroma}`
+        : null;
+    });
+    await fix("HSL Luminance -100 keeps red", async () => {
+      const o = await open(fresh(strip));
+      const was = bandAt(o.base, 0), red = bandAt(await o.after(() => o.s.set("hsl_lum_red", -100)), 0);
+      await o.s.close();
+      return red.luma >= 0.25 * was.luma ? null : `red went from luma ${was.luma} to ${red.luma}`;
+    });
+    await fix("B&W Mix -100 keeps red", async () => {
+      const o = await open(fresh(strip));
+      const was = bandAt(await o.after(() => o.s.set("bw_mode", 1)), 0);
+      const red = bandAt(await o.after(() => o.s.set("bw_red", -100)), 0);
+      await o.s.close();
+      return red.luma >= 0.25 * was.luma ? null : `red's gray went from luma ${was.luma} to ${red.luma}`;
+    });
+    // a band set in darktable or before 0.37.0 reads as a mix of sliders,
+    // some past ±100 (manifest.ts, readsPast): Luminance -100 then, which
+    // turned red black, is about -200 now. clamped, the next edit rewrote
+    // the band at half its effect, and red came back
+    await fix("an older HSL band stays as it was at the next edit", async () => {
+      const path = fresh(strip);
+      await request({ cmd: "open", path, imgid: -1 });
+      await request({ cmd: "set", op: "colorequal", params: { bright_red: 0.5 }, enabled: true });
+      await request({ cmd: "save" });
+      const o = await open(path);
+      const next = await o.after(() => { o.s.endBaseline(); o.s.set("hsl_lum_cyan", 10); });
+      await o.s.close();
+      const a = bandAt(o.base, 0), b = bandAt(next, 0);
+      return Math.abs(b.luma - a.luma) > 3 ? `red went from luma ${a.luma} to ${b.luma}` : null;
+    });
+  }
 
   // 0.34.0: darktable's AI models were unpacked with the system's unzip,
   // which Arch and CachyOS do not install, so AI Denoise and Select Object
