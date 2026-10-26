@@ -2850,6 +2850,9 @@ export default function App() {
       const opening = { path, imgid: id };
       setCurrent(opening);
       currentRef.current = opening;
+      // masks, heal and zones belong to the last photo, so a new one opens on
+      // the adjustments; presets stay, for applying one photo after another
+      setRightMode((m) => (m === "presets" ? m : "adjust"));
       // a new image opens fitted, as in Lightroom, with both layers cleared
       zoomRef.current = "fit";
       setZoomState("fit");
