@@ -5,20 +5,103 @@
 // one JSON reply per line on its stdout
 use serde::Serialize;
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 pub struct Engine {
     child: Child,
     stdin: Arc<Mutex<ChildStdin>>,
-    stdout: BufReader<ChildStdout>,
+    // replies to request(), in order; read_stdout passes them on
+    replies: Receiver<Value>,
     perf: Arc<Perf>,
     base: BaseCancel,
+    thumbs: Thumbs,
+}
+
+// thumbnails, which the engine builds on threads of its own beside its
+// main loop (main.c, _thumb_run): sent and answered while a request holds
+// the engine. each is tagged, and read_stdout hands its reply to the
+// caller waiting on that tag
+#[derive(Clone)]
+pub struct Thumbs {
+    stdin: Arc<Mutex<ChildStdin>>,
+    waiting: Waiting,
+    last: Arc<AtomicU64>,
+}
+
+// the thumbnails sent and not yet answered, by tag; None once the engine
+// has gone
+type Waiting = Arc<Mutex<Option<HashMap<u64, Sender<Value>>>>>;
+
+impl Thumbs {
+    // a tag for the next thumbnail, unique for the engine's run
+    pub fn tag(&self) -> u64 {
+        self.last.fetch_add(1, Ordering::SeqCst) + 1
+    }
+
+    // blocks until the engine replies; `req` is a "thumb" request
+    pub fn request(&self, tag: u64, mut req: Value) -> Result<Value, String> {
+        req["tag"] = json!(tag);
+        let (tx, rx) = channel();
+        self.waiting.lock().unwrap().as_mut().ok_or(ENGINE_EXITED)?.insert(tag, tx);
+        let sent = {
+            let mut stdin = self.stdin.lock().unwrap();
+            writeln!(stdin, "{req}").and_then(|_| stdin.flush())
+        };
+        if let Err(e) = sent {
+            self.waiting.lock().unwrap().as_mut().map(|w| w.remove(&tag));
+            return Err(format!("engine write: {e}"));
+        }
+        // the sender is dropped unanswered when the engine exits
+        let reply = rx.recv().map_err(|_| ENGINE_EXITED.to_string())?;
+        outcome(reply)
+    }
+}
+
+const ENGINE_EXITED: &str = "the engine exited; see build/app-runtime/engine.log";
+
+fn outcome(reply: Value) -> Result<Value, String> {
+    if reply["ok"].as_bool() == Some(true) {
+        Ok(reply)
+    } else {
+        Err(reply["error"].as_str().unwrap_or("engine request failed").to_string())
+    }
+}
+
+// the engine's replies: a tagged one to the thumbnail waiting on it, the
+// rest to request() in order. at the end both sides' waits fail
+fn read_stdout(stdout: ChildStdout, replies: Sender<Value>, waiting: Waiting) {
+    let mut reader = BufReader::new(stdout);
+    let mut line = String::new();
+    loop {
+        line.clear();
+        match reader.read_line(&mut line) {
+            Ok(0) | Err(_) => break,
+            Ok(_) => {}
+        }
+        let reply: Value = serde_json::from_str(&line)
+            .unwrap_or_else(|e| json!({ "ok": false, "error": format!("engine reply: {e}") }));
+        match reply["tag"].as_u64() {
+            Some(tag) => {
+                if let Some(tx) = waiting.lock().unwrap().as_mut().and_then(|w| w.remove(&tag)) {
+                    let _ = tx.send(reply);
+                }
+            }
+            None => {
+                if replies.send(reply).is_err() {
+                    break;
+                }
+            }
+        }
+    }
+    *waiting.lock().unwrap() = None;
 }
 
 // stops the engine's idle base render while a request holds the engine: an
@@ -256,13 +339,18 @@ impl Engine {
         }
         let mut child = cmd.spawn()?;
         let stdin = Arc::new(Mutex::new(child.stdin.take().expect("piped stdin")));
-        let stdout = BufReader::new(child.stdout.take().expect("piped stdout"));
+        let stdout = child.stdout.take().expect("piped stdout");
         let stderr = child.stderr.take().expect("piped stderr");
         let perf = Arc::new(Perf::default());
         let shared = perf.clone();
         std::thread::spawn(move || read_stderr(stderr, log, shared));
+        let (tx, replies) = channel();
+        let waiting = Arc::new(Mutex::new(Some(HashMap::new())));
+        let shared = waiting.clone();
+        std::thread::spawn(move || read_stdout(stdout, tx, shared));
         let base = BaseCancel { stdin: stdin.clone(), last: Arc::new(AtomicU64::new(0)) };
-        Ok(Self { child, stdin, stdout, perf, base })
+        let thumbs = Thumbs { stdin: stdin.clone(), waiting, last: Arc::new(AtomicU64::new(0)) };
+        Ok(Self { child, stdin, replies, perf, base, thumbs })
     }
 
     // darktable's timings of the request just made: a cheap request after it
@@ -288,23 +376,18 @@ impl Engine {
         self.base.clone()
     }
 
+    pub fn thumbs(&self) -> Thumbs {
+        self.thumbs.clone()
+    }
+
     pub fn request(&mut self, req: Value) -> Result<Value, String> {
         {
             let mut stdin = self.stdin.lock().unwrap();
             writeln!(stdin, "{req}").map_err(|e| format!("engine write: {e}"))?;
             stdin.flush().map_err(|e| format!("engine write: {e}"))?;
         }
-        let mut line = String::new();
-        let n = self.stdout.read_line(&mut line).map_err(|e| format!("engine read: {e}"))?;
-        if n == 0 {
-            return Err("the engine exited; see build/app-runtime/engine.log".into());
-        }
-        let reply: Value = serde_json::from_str(&line).map_err(|e| format!("engine reply: {e}"))?;
-        if reply["ok"].as_bool() == Some(true) {
-            Ok(reply)
-        } else {
-            Err(reply["error"].as_str().unwrap_or("engine request failed").to_string())
-        }
+        let reply = self.replies.recv().map_err(|_| ENGINE_EXITED.to_string())?;
+        outcome(reply)
     }
 
     // the engine saves the open photo and exits; requests after it fail

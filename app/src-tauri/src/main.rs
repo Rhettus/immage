@@ -12,7 +12,7 @@ mod immich_upload;
 mod plugins;
 
 use cache::Caches;
-use engine::{BaseCancel, Engine, Timing};
+use engine::{BaseCancel, Engine, Thumbs, Timing};
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use std::collections::HashSet;
@@ -27,10 +27,13 @@ struct AppState {
     engine: Mutex<Engine>,
     // calls in engine() waiting for the engine, which background work yields to
     waiting: AtomicUsize,
+    // when a call in engine() last let the engine go
+    foreground_end: Mutex<Instant>,
     // reaches the engine while a request holds it
     base_cancel: BaseCancel,
     frame_path: PathBuf,
-    thumb_path: PathBuf,
+    // thumbnails, which go to the engine without engine()
+    thumbs: Thumbs,
     presets_path: PathBuf,
     preview_path: PathBuf,
     range_path: PathBuf,
@@ -56,20 +59,66 @@ impl AppState {
     // not fair: a folder's import, taking it again after each batch, would
     // keep a click waiting until the whole folder was read (Windows' SRWLock
     // especially), so background work holds back while one waits here
-    fn engine(&self) -> MutexGuard<'_, Engine> {
+    fn engine(&self) -> Foreground<'_> {
         self.waiting.fetch_add(1, Ordering::SeqCst);
-        let engine = self.engine.lock().unwrap();
+        let guard = self.engine.lock().unwrap();
         self.waiting.fetch_sub(1, Ordering::SeqCst);
-        engine
+        Foreground { guard, end: &self.foreground_end }
     }
 
     // the engine for work nobody is waiting on (a folder's import,
-    // thumbnails), once no call in engine() is
+    // thumbnails), once no call in engine() is and none has been for
+    // BACKGROUND_QUIET. a zoom or a drag sends its renders a few ms apart,
+    // with nobody waiting between them, and a batch slipped into each gap
+    // would hold up the next frame
     async fn engine_background(&self) -> MutexGuard<'_, Engine> {
-        while self.waiting.load(Ordering::SeqCst) > 0 {
-            tokio::time::sleep(Duration::from_millis(5)).await;
+        loop {
+            if self.background_may_run() {
+                if let Ok(guard) = self.engine.try_lock() {
+                    // a call may have taken it and let it go since the check
+                    if self.background_may_run() {
+                        return guard;
+                    }
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
         }
-        self.engine.lock().unwrap()
+    }
+
+    fn background_may_run(&self) -> bool {
+        self.waiting.load(Ordering::SeqCst) == 0
+            && self.foreground_end.lock().unwrap().elapsed() >= BACKGROUND_QUIET
+    }
+}
+
+// how long the user's own work leaves the engine alone before a folder's
+// import or thumbnails take it again: longer than the gap between a
+// drag's or a zoom's frames, shorter than the wait before the idle base
+// render (scheduleBase in App.tsx)
+const BACKGROUND_QUIET: Duration = Duration::from_millis(300);
+
+// the engine held by engine(); letting it go notes the time
+struct Foreground<'a> {
+    guard: MutexGuard<'a, Engine>,
+    end: &'a Mutex<Instant>,
+}
+
+impl std::ops::Deref for Foreground<'_> {
+    type Target = Engine;
+    fn deref(&self) -> &Engine {
+        &self.guard
+    }
+}
+
+impl std::ops::DerefMut for Foreground<'_> {
+    fn deref_mut(&mut self) -> &mut Engine {
+        &mut self.guard
+    }
+}
+
+impl Drop for Foreground<'_> {
+    fn drop(&mut self) {
+        *self.end.lock().unwrap() = Instant::now();
     }
 }
 
@@ -1243,17 +1292,27 @@ async fn list_subfolders(path: String) -> Vec<SubFolder> {
 }
 
 // the lighttable thumbnail of an image: little-endian u32 width and height,
-// then RGBA. given the photo's file, it is also kept in the thumbnail cache
+// then RGBA. given the photo's file, it is also kept in the thumbnail cache.
+// the engine builds it on a thread of its own, beside any edit or render,
+// so it does not take engine()
 #[tauri::command]
 async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>, imgid: i64, size: u32,
                path: Option<String>, version: Option<i64>) -> Result<Response, String> {
     // named before the render: a sidecar written during it makes the next
     // look a miss, never a stale hit
     let name = path.and_then(|p| cache::thumb_name(Path::new(&p), version.unwrap_or(0), size));
-    let reply = state.engine_background().await.request(json!({
-        "cmd": "thumb", "imgid": imgid, "size": size, "out": state.thumb_path,
-    }))?;
-    let mut pixels = std::fs::read(&state.thumb_path).map_err(|e| format!("thumb: {e}"))?;
+    let thumbs = state.thumbs.clone();
+    let tag = thumbs.tag();
+    // a file of its own, as several are built at once
+    let out = state.runtime.join(format!("thumb-{tag}.rgba"));
+    let (reply, mut pixels) = tauri::async_runtime::spawn_blocking(move || {
+        let got = thumbs.request(tag, json!({ "cmd": "thumb", "imgid": imgid, "size": size, "out": out }))
+            .and_then(|reply| Ok((reply, std::fs::read(&out).map_err(|e| format!("thumb: {e}"))?)));
+        let _ = std::fs::remove_file(&out);
+        got
+    })
+    .await
+    .map_err(|e| e.to_string())??;
     // the thumbnail cache leaves the fourth byte at 0, which a canvas takes
     // for fully transparent
     for a in pixels.iter_mut().skip(3).step_by(4) {
@@ -2096,10 +2155,11 @@ fn main() {
                 .map_err(|e| format!("cannot start {}: {e}", bin.display()))?;
             app.manage(AppState {
                 base_cancel: engine.base_cancel(),
+                thumbs: engine.thumbs(),
                 engine: Mutex::new(engine),
                 waiting: AtomicUsize::new(0),
+                foreground_end: Mutex::new(Instant::now()),
                 frame_path: runtime.join("frame.rgba"),
-                thumb_path: runtime.join("thumb.rgba"),
                 denoise_path: runtime.join("denoise-preview.f32"),
                 presets_path: runtime.join("presets.json"),
                 preview_path: runtime.join("preview.rgba"),
