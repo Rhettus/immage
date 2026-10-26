@@ -11,6 +11,10 @@ Improvements
   sets the memory kept for frames already shown, so zooming back out or
   returning to a view needs no render. On a 4K screen or larger it
   starts at 512 MB, double what 0.36.0 kept
+- the Zone System's zones, and the overlay of a Color or Luminance Range
+  mask, show as soon as they are ready, rather than after the render of
+  the whole photo that follows an edit, which could take several seconds
+  zoomed in
 
 Bug fixes
 
