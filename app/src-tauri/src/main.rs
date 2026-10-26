@@ -1852,7 +1852,7 @@ async fn export_preview(
     let mut req = json!({
         "cmd": "export", "imgid": item.imgid, "out": out, "format": "jpeg", "quality": 85,
         "color_space": "srgb", "long_edge": options.long_edge.map_or(cap, |l| l.min(cap)),
-        "px_long_edge": options.long_edge.unwrap_or(0),
+        "px_long_edge": options.long_edge.unwrap_or(0), "draft": true,
     });
     if let Some(f) = &item.frame { req["frame"] = f.clone(); }
     state.engine().request(req)?;

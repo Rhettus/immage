@@ -2803,10 +2803,14 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
        && dt_tag_attach(tagid, imgid, FALSE, FALSE))
       added = g_list_prepend(added, GUINT_TO_POINTER(tagid));
   }
+  // a draft (the dialog's preview) downscales right after demosaic, as the
+  // darkroom does; high quality runs the whole pipe at full size and
+  // downscales only before the frame (imageio.c), many times the work
+  const gboolean high_quality = !json_object_get_boolean_member_with_default(req, "draft", FALSE);
   // NB: returns FALSE on success
   const gboolean failed = dt_imageio_export_with_flags(
       imgid, out, write_fmt, fdata,
-      FALSE /*ignore_exif*/, FALSE /*display_byteorder*/, TRUE /*high_quality*/,
+      FALSE /*ignore_exif*/, FALSE /*display_byteorder*/, high_quality,
       FALSE /*upscale*/, FALSE /*is_scaling*/, 1.0, FALSE /*thumbnail*/, NULL /*filter*/,
       TRUE /*copy_metadata*/, FALSE /*export_masks*/,
       render_icc, NULL, DT_INTENT_PERCEPTUAL, NULL, NULL, 1, 1, &metadata, -1);
