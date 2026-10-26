@@ -26,6 +26,9 @@ the release is published.
    GitHub release and what the update banner shows under Release Notes.
    Write what the user gets, not how it was done. Line breaks inside a
    paragraph or a list item are joined, so wrap the file as you like.
+   Entries are written along the way, with each change, but left out of
+   that change's commit: the section goes in as one commit per release,
+   `RELEASE_NOTES.md: 0.32.0`.
 3. **Run the release checks** on the commit to be released, with the
    engine built from it:
 
