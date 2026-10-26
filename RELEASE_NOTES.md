@@ -3,6 +3,14 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
+## 0.37.0
+
+Bug fixes
+
+- zoomed in, moving or reshaping a drawn mask shows it in its new place;
+  since 0.36.0 the view could keep showing it where it had been, or not
+  at all
+
 ## 0.36.0
 
 Improvements
