@@ -23,6 +23,8 @@ Improvements
   mask, show as soon as they are ready, rather than after the render of
   the whole photo that follows an edit, which could take several seconds
   zoomed in
+- H steps the scope over the photo's histogram: histogram, waveform, RGB
+  parade, vectorscope, and waveform with vectorscope; ⇧H steps back
 
 Bug fixes
 
