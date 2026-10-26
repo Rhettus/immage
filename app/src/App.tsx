@@ -3253,21 +3253,29 @@ export default function App() {
   const compareRef = useRef<number | null>(null);
   const candCanvas = useRef<HTMLCanvasElement>(null);
   const [candReady, setCandReady] = useState(false);
+  // the grid covers the viewer, where the two show side by side
   const setCompare = (imgid: number | null) => {
     if (compareRef.current === imgid) return;
-    if (imgid !== null) setBaMode("off");
+    if (imgid !== null) { setBaMode("off"); setGrid(false); }
     compareRef.current = imgid;
     setCompareState(imgid);
   };
   // the candidate on entering: a photo selected besides the open one, else
-  // the next photo, else the one before
+  // the next photo, else the one before. two selected (in the grid), neither
+  // of them open: the first is opened, the second its candidate
   const toggleCompare = () => {
     if (compareRef.current !== null) { setCompare(null); return; }
     const list = shownRef.current;
-    const at = list.findIndex((i) => isOpen(i));
-    if (at < 0) return;
     const sel = selectionRef.current;
     const local = (i: ImageEntry) => !isRemote(i);
+    const picked = list.filter((i) => sel.has(i.imgid) && local(i));
+    if (picked.length >= 2 && !picked.some((i) => isOpen(i))) {
+      setCompare(picked[1].imgid);
+      void openEntry(picked[0]);
+      return;
+    }
+    const at = list.findIndex((i) => isOpen(i));
+    if (at < 0) return;
     const pick = list.find((i, k) => k !== at && sel.has(i.imgid) && local(i))
       ?? list.slice(at + 1).find(local) ?? list.slice(0, at).reverse().find(local);
     if (!pick) { setStatus("compare needs a second photo"); return; }
