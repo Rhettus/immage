@@ -873,6 +873,13 @@ async fn perf_modules(state: State<'_, AppState>) -> Result<Vec<Timing>, String>
     Ok(state.perf_last.lock().unwrap().clone())
 }
 
+// does nothing: the GUI benchmark times a call's round trip on its own,
+// the cost every engine call pays on top of its work
+#[tauri::command]
+async fn perf_ping() -> Result<(), String> {
+    Ok(())
+}
+
 // a GUI benchmark's report, as <name>.json in the reports folder; its path back
 #[tauri::command]
 async fn perf_report_write(state: State<'_, AppState>, name: String, report: Value) -> Result<String, String> {
@@ -2083,7 +2090,7 @@ fn main() {
             ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, list_subfolders, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
             immich_export_check, immich_search, immich_browse_check, immich_libraries, immich_suggestions, immich_people, immich_tags,
             immich_thumb, immich_resolve, launch_file, path_exists, path_kind, trash_files, create_virtual_copy, remove_virtual_copy, preview_fullscreen, about, licenses, engine_quit, keywords, keywords_set, ai_accel,
-            perf_set, perf_modules, perf_report_write, perf_machine,
+            perf_set, perf_modules, perf_report_write, perf_machine, perf_ping,
             plugins::plugin_find_apps, plugins::plugin_launch, plugins::plugin_watch, plugins::plugin_cancel,
             plugins::plugin_returns, plugins::plugin_return_applied
         ])

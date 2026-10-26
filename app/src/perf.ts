@@ -246,6 +246,23 @@ export function percentiles(xs: number[]): { p50: number; p95: number } {
   return { p50: at(0.5), p95: at(0.95) };
 }
 
+// round trips of a call that does nothing (main.rs, perf_ping), ms: what
+// the web view's IPC costs apart from any work. slow while the page is
+// idle, the IPC itself is slow; slow only during drags, the page's drawing
+// holds it up
+export type RoundTrips = { n: number; p50: number; p95: number; min: number; max: number };
+export function roundTrips(ms: number[]): RoundTrips {
+  const r = (x: number) => Math.round(x * 100) / 100;
+  const { p50, p95 } = percentiles(ms);
+  return { n: ms.length, p50: r(p50), p95: r(p95), min: r(ms.length ? Math.min(...ms) : 0),
+           max: r(ms.length ? Math.max(...ms) : 0) };
+}
+export async function pingOnce(): Promise<number> {
+  const t = performance.now();
+  await invoke("perf_ping");
+  return performance.now() - t;
+}
+
 // the web view a GUI benchmark ran in: its user agent, whether it draws on
 // the GPU (WebGL's renderer: the card, or a software one such as llvmpipe),
 // and how often it runs animation frames, which bounds the paint stage: the

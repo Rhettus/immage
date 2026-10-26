@@ -222,7 +222,7 @@ Commands by what they reach:
 | AI models (download, then the engine's `version`) | `ai_model_ensure`, `ai_model_reinstall` |
 | Immich (HTTP) | `immich_albums`, `immich_create_album`, `immich_export_check`, `immich_browse_check`, `immich_search`, `immich_libraries`, `immich_suggestions`, `immich_people`, `immich_tags`, `immich_thumb`, `immich_resolve` |
 | Plugins | `plugin_find_apps`, `plugin_launch`, `plugin_watch`, `plugin_cancel`, `plugin_returns`, `plugin_return_applied` |
-| Performance | `perf_set`, `perf_modules`, `perf_report_write` |
+| Performance | `perf_set`, `perf_modules`, `perf_report_write`, `perf_ping` |
 | The window | `preview_fullscreen` |
 
 Events from Rust: `folder-progress`, `export-progress`, `ai-model`,
