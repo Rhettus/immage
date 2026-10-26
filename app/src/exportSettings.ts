@@ -65,7 +65,14 @@ export type Settings = {
   borders: BorderItem[];
   inner: InnerItem[];
   texts: TextItem[];
+  // what the file's metadata holds (the dialog's Metadata section); the
+  // date taken and the orientation are always kept
+  includeCamera: boolean;      // camera, lens and exposure settings
+  includeSerials: boolean;     // serial numbers and the owner's name
   removeLocation: boolean;
+  includeDescription: boolean; // title, caption, creator, copyright
+  includeKeywords: boolean;
+  includeHistory: boolean;     // darktable's edit history
   // added to each exported file's keywords, and with keywordsOnOriginal
   // to the original photo's too
   keywords: string[];
@@ -83,7 +90,8 @@ export const DEFAULTS: Settings = {
   template: "{caption}-{datecaptured}",
   format: "jpeg", quality: 90, bpp: 8, colorSpace: "srgb", resize: false, longEdge: 2048, upscale: 0,
   canvas: false, canvasW: 1638, canvasH: 2048, canvasColor: "#ffffff", canvasFlip: false,
-  borders: [], inner: [], texts: [], removeLocation: false, keywords: [], keywordsOnOriginal: false,
+  borders: [], inner: [], texts: [], includeCamera: true, includeSerials: false, removeLocation: false,
+  includeDescription: true, includeKeywords: true, includeHistory: false, keywords: [], keywordsOnOriginal: false,
   conflict: "ask", reveal: false, scope: "current", dateFormat: "YYYYMMDD", target: "folder", album: "",
 };
 
@@ -150,7 +158,8 @@ export const PRESET_KEYS = (Object.keys(DEFAULTS) as (keyof Settings)[]).filter(
 const OUTPUT: Partial<Settings> = {
   naming: "original", format: "jpeg", quality: 90, bpp: 8, colorSpace: "srgb", resize: false, longEdge: 2048,
   upscale: 0, canvas: false, canvasW: 1638, canvasH: 2048, canvasColor: "#ffffff", canvasFlip: false,
-  borders: [], inner: [], texts: [], removeLocation: false, keywords: [], keywordsOnOriginal: false,
+  borders: [], inner: [], texts: [], includeCamera: true, includeSerials: false, removeLocation: false,
+  includeDescription: true, includeKeywords: true, includeHistory: false, keywords: [], keywordsOnOriginal: false,
 };
 
 const GRAY = "#9a9a9a";

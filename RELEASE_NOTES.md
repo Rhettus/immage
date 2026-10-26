@@ -3,6 +3,120 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
+## 0.37.0
+
+Immage is in alpha. Large changes are made often, from one release to the
+next, so keep copies of photos you care about, and expect parts of the
+interface to move.
+
+Improvements
+
+- exports leave out the camera's and lens's serial numbers, which sites
+  such as Flickr show to everyone. The export dialog's Privacy section is
+  now Metadata, with a box for each part of what a file carries: camera
+  and lens, serial numbers and owner name, location, title and caption,
+  keywords, and darktable's edit history. Presets keep the boxes
+- the navigator stays the same size whatever the photo's shape: a
+  portrait photo no longer makes it tall enough to push the panels
+  below it down
+- the crop frame is easier to take hold of: its corners can be grabbed
+  further out, and an edge anywhere along it rather than only at its
+  middle bar
+- on the Mac, the first click in Immage while another app is in front
+  goes to the photo or control under it, rather than only bringing
+  Immage to the front
+- film negatives: the Negative panel, on the film strip button in the
+  rail, turns a photo of a color or black and white negative into a
+  positive with darktable's negadoctor. Pick the film border, then the
+  photo area, and the rest is set for you; each control has an
+  eyedropper of its own. A converted negative turns off Temp, Tint,
+  Exposure, Whites, Blacks, Dehaze and the tone mapper, which work before
+  the inversion, after a warning, and runs Contrast, Saturation,
+  Highlights and Shadows after it. Copy Settings' Negative group converts
+  a whole roll from one frame
+- the crop frame and its grid, and the other guides over the photo, have
+  a thin dark edge, so they show on a light photo or a White canvas, and
+  Preferences › General › Guide color sets their color: white, yellow,
+  red or your own
+- the toolbar's file type button is now Filters, which narrows the
+  folder by file type, camera, lens, keywords (a keyword includes those
+  under it), capture date (or a recent span, year or month), ISO,
+  aperture, focal length and shutter speed, then shows the result in the
+  grid. Each list holds only what your other choices leave: pick a camera
+  and Lens lists the lenses used on it. On Immich results it holds the
+  search's filters, which were under Advanced on the Immich card, and the
+  stars filter the search too, so they cover all of Immich's photos and
+  not only those loaded
+- Preferences has a Performance tab, with the settings that were spread
+  through General: Preview, the frame and disk caches, AI acceleration,
+  the performance overlay and the GUI benchmark
+- new in Performance: darktable memory, how much of the computer's memory
+  darktable may take; Thumbnail memory, which caps what the library's
+  thumbnails hold (a large folder could take gigabytes); and Read ahead,
+  how many photos, ahead and optionally behind, are decoded while you edit
+  so the arrow keys open them sooner, up to three at once
+- a Frame cache setting, in Preferences › Performance under Memory,
+  sets the memory kept for frames already shown, so zooming back out or
+  returning to a view needs no render. On a 4K screen or larger it
+  starts at 512 MB, double what 0.36.0 kept
+- the Zone System's zones, and the overlay of a Color or Luminance Range
+  mask, show as soon as they are ready, rather than after the render of
+  the whole photo that follows an edit, which could take several seconds
+  zoomed in
+- H steps the scope over the photo's histogram: histogram, waveform, RGB
+  parade, vectorscope, and waveform with vectorscope; ⇧H steps back
+- opening another photo from Masks, Heal or the Zone System returns the
+  right-hand panel to the adjustments; Presets stays open
+- a mask made by an AI selection shows its overlay straight away, so
+  you can see what was selected, until you press O or move one of its
+  sliders
+- a mask's handles and guides show while the pointer is over the photo,
+  and step aside while it is over the panels, so the adjustment can be
+  seen
+- Whites reaches much further under AgX: it also brightens or darkens the
+  photo's brightest tones, as a mask's Whites does, where it only reshaped
+  the top of AgX's curve. Photos edited before keep their look until Whites
+  is moved
+- Clarity is fine near zero: ±1 already flattened the photo's contrast,
+  more than ±10 did, and now each step adds a little. ±100 looks as
+  before, and photos edited before keep their look until Clarity is moved
+- Lens Corrections has Hot Pixels, which removes the stuck and hot
+  pixels of long exposures and high ISO, with Strength and Threshold;
+  raws only, and off until turned on
+- the Export dialog's preview renders several times faster on an edited
+  photo, and shows again at once a frame or preset you have already
+  tried; under it is the name the file will be exported with, not the
+  original's
+
+Bug fixes
+
+- zoomed in, moving or reshaping a drawn mask shows it in its new place;
+  since 0.36.0 the view could keep showing it where it had been, or not
+  at all
+- after a quick slider move, zoomed in especially, the photo sometimes
+  stayed soft until the next change or zoom; it now always renders sharp
+  once the slider is let go
+- Compare works from the grid: it shows the two photos side by side, and
+  with two photos selected, compares them, the first opened for editing
+- hiding a mask with its eye no longer makes it vanish from the Masks
+  panel after the import screen has been opened; the mask was never
+  deleted, and shows again in this version
+- Crop, Masks, Zone System and Heal in the tool rail no longer go dim
+  and stop responding while a photo is open, as they could when the
+  folder shown no longer listed it
+- the History card's rows are no longer at times drawn over each other
+- Before/After shows the Before at the same size as the After on a
+  photo with lens corrections or Transform; before, it came out larger
+- HSL / Color acts at Lightroom's colors: Blue on blue, which Purple
+  used to gray, and Green on foliage. Saturation -100 turns its color
+  gray and no more, where -50 already did and -100 grayed the colors
+  around it too, so with Blue at -100 Aqua did nothing to the blues
+  between them. Luminance and the B&W Mix at -100 darken a vivid color
+  without turning it black. The same goes for HSL on a mask, and for
+  saved presets, whose values are brought to the new strength. Photos
+  edited before look as they did; their HSL sliders can read spread over
+  neighboring bands, or past the end of a slider
+
 ## 0.36.0
 
 Improvements

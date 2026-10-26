@@ -27,6 +27,12 @@ export const NO_SEARCH: ImmichSearch = {
   rawOnly: false, make: "", model: "", lens: "", country: "", city: "", personIds: [], tagIds: [], albumIds: [],
 };
 
+// the Filters popup's fields in use; the stars, words and library are
+// shown where they are set
+export const immichFilterCount = (s: ImmichSearch) =>
+  [s.takenFrom || s.takenTo, s.favorites, s.rawOnly, s.make, s.model, s.lens, s.country, s.city,
+   s.personIds.length, s.tagIds.length, s.albumIds.length].filter(Boolean).length;
+
 const SEARCH_KEY = "immage.immichSearch";
 export function loadSearch(): ImmichSearch {
   try { return { ...NO_SEARCH, ...JSON.parse(localStorage.getItem(SEARCH_KEY) ?? "{}") }; } catch { return NO_SEARCH; }

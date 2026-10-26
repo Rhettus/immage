@@ -46,6 +46,9 @@ struct AppState {
     perf_on: AtomicBool,
     perf_last: Mutex<Vec<Timing>>,
     perf_dir: PathBuf,
+    runtime: PathBuf,
+    // darktable's resource level the engine started with
+    resource_level: String,
 }
 
 impl AppState {
@@ -197,10 +200,11 @@ async fn masks(state: State<'_, AppState>, fields: Value) -> Result<Value, Strin
 }
 
 // the working-space values at a point of the shown image, or over a box of
-// it [x0, y0, x1, y1], for range masks
+// it [x0, y0, x1, y1], for range masks; with `stage` "negadoctor", at
+// negadoctor's input, for the Negative panel's pickers
 #[tauri::command]
-async fn sample(state: State<'_, AppState>, x: f64, y: f64, area: Option<Vec<f64>>) -> Result<Value, String> {
-    state.engine().request(json!({ "cmd": "sample", "x": x, "y": y, "box": area }))
+async fn sample(state: State<'_, AppState>, x: f64, y: f64, area: Option<Vec<f64>>, stage: Option<String>) -> Result<Value, String> {
+    state.engine().request(json!({ "cmd": "sample", "x": x, "y": y, "box": area, "stage": stage }))
 }
 
 // the mean log2 luminance the tone mapper gets, for Auto's exposure
@@ -873,6 +877,13 @@ async fn perf_modules(state: State<'_, AppState>) -> Result<Vec<Timing>, String>
     Ok(state.perf_last.lock().unwrap().clone())
 }
 
+// does nothing: the GUI benchmark times a call's round trip on its own,
+// the cost every engine call pays on top of its work
+#[tauri::command]
+async fn perf_ping() -> Result<(), String> {
+    Ok(())
+}
+
 // a GUI benchmark's report, as <name>.json in the reports folder; its path back
 #[tauri::command]
 async fn perf_report_write(state: State<'_, AppState>, name: String, report: Value) -> Result<String, String> {
@@ -1310,11 +1321,23 @@ async fn meta(state: State<'_, AppState>, imgid: i64) -> Result<Value, String> {
     state.engine().request(json!({ "cmd": "meta", "imgid": imgid }))
 }
 
-// the photo likely opened next, its raw decoded ahead on the engine's own
-// thread; the reply does not wait for it
+// the photos likely opened next, their raws decoded ahead in this order on
+// the engine's own thread; the reply does not wait for them
 #[tauri::command]
-async fn prefetch(state: State<'_, AppState>, imgid: i64) -> Result<Value, String> {
-    state.engine().request(json!({ "cmd": "prefetch", "imgid": imgid }))
+async fn prefetch(state: State<'_, AppState>, imgids: Vec<i64>) -> Result<Value, String> {
+    state.engine().request(json!({ "cmd": "prefetch", "imgids": imgids }))
+}
+
+// Preferences' darktable memory: the level the engine runs at, and the one
+// its next start takes
+#[tauri::command]
+fn darktable_resources(state: State<'_, AppState>) -> Value {
+    json!({ "running": state.resource_level, "next": engine::resource_level(&state.runtime) })
+}
+
+#[tauri::command]
+fn darktable_resources_set(state: State<'_, AppState>, level: String) -> Result<(), String> {
+    engine::set_resource_level(&state.runtime, &level)
 }
 
 // the GPU execution providers this computer can use for AI, with their
@@ -1392,6 +1415,18 @@ struct ExportOptions {
     // false leaves GPS out of the file, as Lightroom's Remove Location Info
     #[serde(default)]
     location: Option<bool>,
+    // the rest of the dialog's Metadata section: false leaves each out of
+    // the file (the engine's export)
+    #[serde(default)]
+    camera: Option<bool>,
+    #[serde(default)]
+    serials: Option<bool>,
+    #[serde(default)]
+    description: Option<bool>,
+    #[serde(default)]
+    tags: Option<bool>,
+    #[serde(default)]
+    history: Option<bool>,
     // added to each exported file's keywords, and with keywords_on_original
     // to the original photo's as well
     #[serde(default)]
@@ -1500,7 +1535,11 @@ async fn export_images(
                 if let Some(b) = options.bpp { req["bpp"] = json!(b); }
                 if let Some(l) = options.long_edge { req["long_edge"] = json!(l); }
                 if let Some(f) = &item.frame { req["frame"] = f.clone(); }
-                if let Some(l) = options.location { req["location"] = json!(l); }
+                for (key, v) in [("location", options.location), ("camera", options.camera), ("serials", options.serials),
+                                 ("description", options.description), ("tags", options.tags),
+                                 ("history", options.history)] {
+                    if let Some(v) = v { req[key] = json!(v); }
+                }
                 if let Some(u) = options.upscale { req["upscale"] = json!(u); }
                 if let Some(p) = &options.ai_provider { req["ai_provider"] = json!(p); }
                 if let Some(d) = options.ai_device { req["ai_device"] = json!(d); }
@@ -1830,7 +1869,7 @@ async fn export_preview(
     let mut req = json!({
         "cmd": "export", "imgid": item.imgid, "out": out, "format": "jpeg", "quality": 85,
         "color_space": "srgb", "long_edge": options.long_edge.map_or(cap, |l| l.min(cap)),
-        "px_long_edge": options.long_edge.unwrap_or(0),
+        "px_long_edge": options.long_edge.unwrap_or(0), "draft": true,
     });
     if let Some(f) = &item.frame { req["frame"] = f.clone(); }
     state.engine().request(req)?;
@@ -2052,6 +2091,7 @@ fn main() {
                  data.join("benchmarks"))
             };
             let bin = std::env::var_os("DT_ENGINE_BIN").map(PathBuf::from).unwrap_or(default_bin);
+            let resource_level = engine::resource_level(&runtime);
             let engine = Engine::spawn(&bin, &runtime, &models_dir)
                 .map_err(|e| format!("cannot start {}: {e}", bin.display()))?;
             app.manage(AppState {
@@ -2071,19 +2111,21 @@ fn main() {
                 perf_on: AtomicBool::new(false),
                 perf_last: Mutex::new(Vec::new()),
                 perf_dir,
+                runtime: runtime.clone(),
+                resource_level,
             });
             app.manage(plugins::Plugins::new(runtime.join("plugin-returns.json")));
             app.manage(Caches::new(&app.path().app_cache_dir()?));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            open_folder, open_image, get_params, set_params, render, cancel_base, save, baseline_end, before_view, thumb, thumb_cached, cache_limits, cache_usage, cache_clear, meta, meta_set, prefetch,
+            open_folder, open_image, get_params, set_params, render, cancel_base, save, baseline_end, before_view, thumb, thumb_cached, cache_limits, cache_usage, cache_clear, meta, meta_set, prefetch, darktable_resources, darktable_resources_set,
             export_images, export_existing, export_preview, fonts, export_presets_load, export_presets_save, preset_file_write, preset_file_read, presets_load, presets_save, looks_list, look_import, look_export, look_delete, look_apply, look_amount, preview,
             mask_shapes, combine, masks, mask_delete, mask_rename, history, module_state, sample, tone_key, agx_auto, upright, points, range_map, zones, mask_map, ai_object,
             ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, list_subfolders, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
             immich_export_check, immich_search, immich_browse_check, immich_libraries, immich_suggestions, immich_people, immich_tags,
             immich_thumb, immich_resolve, launch_file, path_exists, path_kind, trash_files, create_virtual_copy, remove_virtual_copy, preview_fullscreen, about, licenses, engine_quit, keywords, keywords_set, ai_accel,
-            perf_set, perf_modules, perf_report_write, perf_machine,
+            perf_set, perf_modules, perf_report_write, perf_machine, perf_ping,
             plugins::plugin_find_apps, plugins::plugin_launch, plugins::plugin_watch, plugins::plugin_cancel,
             plugins::plugin_returns, plugins::plugin_return_applied
         ])

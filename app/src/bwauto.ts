@@ -10,8 +10,10 @@ import { hsl, NEUTRAL_SAT } from "./probe";
 
 const SAMPLES = 120_000;
 const MIN_SHARE = 0.03;  // of the image's saturated weight
-const GAIN = 120;        // mix units per unit of lightness difference
-const LIMIT = 60;
+// doubled when the B&W Mix's units halved (manifest.ts, BW_SCALE), so the
+// mix does what it did; the limit, once 60, stops at the slider's end
+const GAIN = 240;        // mix units per unit of lightness difference
+const LIMIT = 100;
 
 export function autoMix(px: Uint8ClampedArray, width: number, height: number): Values {
   const weight = new Array(BANDS.length).fill(0), light = new Array(BANDS.length).fill(0);

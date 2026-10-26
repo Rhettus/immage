@@ -9,8 +9,12 @@ import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { BANDS, choiceOn, choiceShows, controlById, GUIDE_IDS, guidesOf, isModuleSetting, MAX_GUIDES, parametricOf, UPRIGHT_GUIDED,
-         UPRIGHT_MODES, uprightAspect, mapOf, mapsFor, moduleName, mapsWith, panels, pointsOf, pointValues, profileLabel, turnRect, type Control, type ControlPreset, type CurveChannel, type Values,
+         UPRIGHT_MODES, uprightAspect, mapOf, mapsFor, moduleName, mapsWith, NEG_CHOICES, NEG_GREYED, NEG_OFF,
+         NEG_OFF_UNMAPPED, panels, pointsOf, pointValues, profileLabel, turnRect, type Control, type ControlPreset, type CurveChannel, type Values,
          type Panel, type Section, type Turn } from "./manifest";
+import { autoArea, autoBlack, autoDmax, autoDmin, autoExposure as autoPrintExposure, autoOffset, autoWbHigh, autoWbLow,
+         FILM_BW, FILM_COLOR, fromValues, PRESETS, toValues, type Stats } from "./negadoctor";
+import { NegativePanel, type NegPick } from "./NegativePanel";
 import { CircleOff, Grid2x2, MoveHorizontal, MoveVertical, PenLine, Sparkles, WandSparkles } from "lucide-react";
 import { Session, instanceKey, mapOpOf, type Frame, type HistoryItem, type ModuleState, type View } from "./session";
 import { AUTO_TONE_IDS, autoExposure, autoTone, type SceneKey } from "./autoTone";
@@ -40,13 +44,13 @@ import { CopyDialog, loadCopyGroups, makeClip, type Clip } from "./CopySettings"
 import { DenoiseDialog } from "./DenoiseDialog";
 import { Tour, tourSeen } from "./Tour";
 import { UpdateBanner } from "./UpdateBanner";
-import { autoCheck } from "./updates";
+import { autoCheck, relaunch } from "./updates";
 import { Chevron, Collapse } from "./Collapse";
-import { loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadNewPhotosProfile, loadOverlayColor, loadPins, maskOverlayRgb, loadPreview, loadSliderScroll, loadSliderScrollStep,
+import { loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadNewPhotosProfile, loadOverlayColor, loadGuideColor, guideRgb, loadPins, maskOverlayRgb, loadPreview, loadFrameCacheMb, loadSliderScroll, loadSliderScrollStep,
          loadStackPairs,
-         PreferencesDialog, storeOverlayColor, storeStackPairs,
+         PreferencesDialog, storeOverlayColor, storeGuideColor, storeStackPairs,
          storeAutoHide, storeCanvas, CANVASES, storeFocusMode, storePins, type AccelProvider, type Canvas,
-         type Pins, type PrefsTab, type Preview } from "./Preferences";
+         loadNegWarn, loadReadAhead, loadThumbMemoryMb, storeNegWarn, type Pins, type PrefsTab, type Preview } from "./Preferences";
 import { kindOf, loadPlugins, loadReturns, returnValues, storePlugins, unfit, type PluginConfig,
          type PluginReturn } from "./plugins";
 import { FolderTree } from "./FolderTree";
@@ -73,12 +77,15 @@ import { ASPECTS, CropOverlay, customAspect, findAspect, fitAspect, FULL, loadCu
          rememberCustomAspect, type Aspect, type CropRect } from "./CropTool";
 import { ShortcutsDialog } from "./Shortcuts";
 import { cmd, keys } from "./keys";
-import { perf, percentiles, STAGES, webviewInfo } from "./perf";
+import { perf, percentiles, pingOnce, roundTrips, STAGES, webviewInfo } from "./perf";
 import { frameTransport } from "./sharedFrames";
 import { PerfHud } from "./PerfHud";
 import { KeywordingPanel } from "./Keywording";
 import { ImmichPanel } from "./ImmichPanel";
-import { immichUrl, isRemote, photoUrl, resolve, search as searchImmichPage, searchUrl, type ImmichSearch } from "./immich";
+import { immichFilterCount, immichUrl, isRemote, loadSearch, NO_SEARCH, photoUrl, resolve, search as searchImmichPage, searchUrl, storeSearch,
+         type ImmichSearch } from "./immich";
+import { needsRead, NO_FILTER, passes, popupCount, type Filter } from "./filter";
+import { FilterPopup, type Bounds as FilterBounds, type ImmichFilters } from "./FilterPopup";
 
 
 const MAX_PREVIEW = 2560;
@@ -174,6 +181,7 @@ export default function App() {
                                          setThumbVersion((v) => v + 1);
                                        });
                                      },
+                                     () => loadThumbMemoryMb() * 1024 * 1024,
                                      // the server's refusal is said once, not hidden behind placeholders
                                      (imgid, e) => {
                                        if (imgid >= 0 || thumbError.current) return;
@@ -257,6 +265,21 @@ export default function App() {
   const [immich, setImmichState] = useState<{ search: ImmichSearch; next: string | null; busy: boolean } | null>(null);
   const immichRef = useRef(immich);
   const setImmich = (v: typeof immich) => { immichRef.current = v; setImmichState(v); };
+  // the Immich search as the card, the Filters popup and the stars set it.
+  // a change searches again a moment later while its results show
+  const [immichForm, setImmichForm] = useState<ImmichSearch>(loadSearch);
+  const immichFormRef = useRef(immichForm);
+  const immichTimer = useRef(0);
+  useEffect(() => () => window.clearTimeout(immichTimer.current), []);
+  const updateImmich = (patch: Partial<ImmichSearch>, now = false) => {
+    const next = { ...immichFormRef.current, ...patch };
+    immichFormRef.current = next;
+    setImmichForm(next);
+    storeSearch(next);
+    window.clearTimeout(immichTimer.current);
+    if (now) void searchImmich(next);
+    else if (immichRef.current) immichTimer.current = window.setTimeout(() => void searchImmich(next), 400);
+  };
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   // the filmstrip's selection, by image: ratings, labels and rejects apply
   // to all of it, as in Lightroom; the open photo is the active one
@@ -324,6 +347,9 @@ export default function App() {
   const [canvasColor, setCanvasColor] = useState<Canvas>(loadCanvas);
   const [focusMode, setFocusMode] = useState(loadFocusMode);
   const [overlayColor, setOverlayColor] = useState(loadOverlayColor);
+  // the guides' color, for the stylesheet (styles.css, --guide)
+  const [guideColor, setGuideColor] = useState(loadGuideColor);
+  useEffect(() => { document.documentElement.style.setProperty("--guide", guideRgb(guideColor).join(", ")); }, [guideColor]);
   // Preferences' performance overlay, and Rust told of it once
   const [perfHud, setPerfHud] = useState(perf.enabled);
   useEffect(() => { perf.init(); }, []);
@@ -763,7 +789,7 @@ export default function App() {
   };
   const selectObject = (prompt: ObjectPrompt) => runAi("mask-object-sam21-small", "finding the object…",
     () => invoke<ObjectShape["paths"]>("ai_object", { points: prompt.points ?? [], box: prompt.box ?? null }),
-    (paths) => { createShape({ type: "object", paths }); });
+    (paths) => aiShown(createShape({ type: "object", paths })));
   // the one-click selections: Subject, Background, which is the subject's
   // outline in a new mask, inverted, and People and the parts of a
   // landscape, which all come from the one scene model
@@ -789,6 +815,7 @@ export default function App() {
         const name = createShape({ type: "object", paths }, k === "background" ? "new" : target, a.label);
         if (k === "background" && name) session.current?.setInvert(name, true);
         syncMasks();
+        aiShown(name);
       });
   };
   // Depth Range: the depth where the image was clicked, give or take, as a
@@ -802,7 +829,7 @@ export default function App() {
       const d = map.data[j * map.width + i] / 255;
       depth = [Math.max(0, d - 0.15), Math.min(1, d + 0.15)];
       return invoke<ObjectShape["paths"]>("ai_mask", { kind: "depth", range: depth });
-    }, (paths) => { createShape({ type: "object", paths, depth, feather: 0.01 }); });
+    }, (paths) => aiShown(createShape({ type: "object", paths, depth, feather: 0.01 })));
   };
   // a Depth Range's sliders: the band traced again (a few ms once the
   // depth map is made); a reply overtaken by a newer move is dropped
@@ -1097,8 +1124,14 @@ export default function App() {
   const addingTo = masksMode && !!maskTool && toolTarget !== "new" && !!selMask;
   const addingRef = useRef(false);
   addingRef.current = addingTo;
-  const maskShown = overlayShown(maskOverlay, addingTo);
-  const overlayEvent = (ev: "key" | "adjust" | "stroke") => setMaskOverlay((t) => overlayStep(t, addingRef.current, ev));
+  const maskSelRef = useRef<string | null>(null);
+  maskSelRef.current = masksMode ? maskSel : null;
+  const maskShown = overlayShown(maskOverlay, addingTo, maskSelRef.current);
+  const overlayEvent = (ev: "key" | "adjust" | "stroke") =>
+    setMaskOverlay((t) => overlayStep(t, addingRef.current, ev, maskSelRef.current));
+  // a mask an AI selection just made: its overlay shows (overlayShown)
+  const aiShown = (name: string | null) => setMaskOverlay((t) => ({ ...t, fresh: name }));
+  useEffect(() => setMaskOverlay((t) => (t.fresh && t.fresh !== maskSel ? { ...t, fresh: null } : t)), [maskSel]);
   // what O or an adjustment set aside lasts as long as the tool in hand
   useEffect(() => setMaskOverlay((t) => (t.hold ? { ...t, hold: null } : t)), [addingTo]);
   // the last full (not a drag's) sharp render's view, which a refined mask's
@@ -1114,8 +1147,15 @@ export default function App() {
     if (!s || !f || !masksMode || (!maskShown && !peekMask && !refining) || !ranges.length) { setRangeMap(null); return; }
     let stale = false;
     const t = window.setTimeout(async () => {
-      while (!s.idle && !stale) await new Promise((r) => setTimeout(r, 60));
-      if (stale) return;
+      let stopped = false;
+      while (!s.idle && !stale) {
+        stopped = s.stopBase() || stopped;
+        await new Promise((r) => setTimeout(r, 60));
+      }
+      if (stale) {
+        if (stopped) resumeBase();
+        return;
+      }
       const width = 320, height = Math.max(1, Math.round((width * f.h) / f.w));
       try {
         const buf = await track(invoke<ArrayBuffer>("range_map", { ranges, width, height }));
@@ -1125,6 +1165,8 @@ export default function App() {
         }
       } catch (e) {
         setStatus(`range map: ${e}`);
+      } finally {
+        if (stopped) resumeBase();
       }
     }, 150);
     return () => { stale = true; window.clearTimeout(t); };
@@ -1159,6 +1201,7 @@ export default function App() {
           // the mask's latest settings reach the engine first
           while (s.masksPending) await new Promise((r) => setTimeout(r, 30));
           const name = finalTarget.current, v = finalView.current!;
+          const stopped = s.stopBase();
           // the window the sharp render shows, at its scale, so the
           // refinements come out as they did in it
           try {
@@ -1174,6 +1217,8 @@ export default function App() {
           } catch {
             // a mask with no adjustment yet drives nothing: the shapes' overlay serves
             setFinalMap(null);
+          } finally {
+            if (stopped) resumeBase();
           }
         }
       } finally {
@@ -1329,6 +1374,12 @@ export default function App() {
   const clipBase = useRef<HTMLCanvasElement>(null);
   const clipSharp = useRef<HTMLCanvasElement>(null);
   const [clipOn, setClipOn] = useState<ClipShow>({ low: false, high: false });
+  const [scope, setScopeState] = useState<ScopeSettings>(loadScope);
+  const setScope = useCallback((change: Partial<ScopeSettings> | ((s: ScopeSettings) => Partial<ScopeSettings>)) => setScopeState((s) => {
+    const next = { ...s, ...(typeof change === "function" ? change(s) : change) };
+    try { localStorage.setItem("immage.scope", JSON.stringify(next)); } catch { /* not kept */ }
+    return next;
+  }), []);
   const [clipPeek, setClipPeek] = useState<"low" | "high" | null>(null);
   const clipShown: ClipShow = { low: clipOn.low || clipPeek === "low", high: clipOn.high || clipPeek === "high" };
   const clipRef = useRef(clipShown);
@@ -1411,6 +1462,10 @@ export default function App() {
       s.requestCopy(Math.min(1, scaleFor(zoomRef.current)), f);
     }, delay);
   };
+  // the idle base, or zoomed in the copy, holds the engine for seconds: an
+  // overlay the user waits on stops it (Session.stopBase), and asks for it
+  // again once its own request is in
+  const resumeBase = () => { scheduleBase(0); scheduleCopy(0); };
   const MARGIN = 16; // CSS pixels around a fitted image
   // the vignette's guides, while its panel is open and it does something,
   // and Grain, which shares the panel, was not the last thing changed
@@ -1529,8 +1584,15 @@ export default function App() {
     setZoneStale(true);
     let stale = false;
     const t = window.setTimeout(async () => {
-      while ((!s.idle || s.masksPending) && !stale) await new Promise((r) => setTimeout(r, 60));
-      if (stale) return;
+      let stopped = false;
+      while ((!s.idle || s.masksPending) && !stale) {
+        stopped = s.stopBase() || stopped;
+        await new Promise((r) => setTimeout(r, 60));
+      }
+      if (stale) {
+        if (stopped) resumeBase();
+        return;
+      }
       const width = 512, height = Math.max(1, Math.round((width * f.h) / f.w));
       try {
         const buf = await track(invoke<ArrayBuffer>("zones", { width, height, transition: DEFAULT_TRANSITION, stage: "before" }));
@@ -1545,6 +1607,8 @@ export default function App() {
         setZoneStale(false);
       } catch (e) {
         if (!stale) setZoneError(`${e}`);
+      } finally {
+        if (stopped) resumeBase();
       }
     }, 250);
     return () => { stale = true; window.clearTimeout(t); };
@@ -1718,10 +1782,14 @@ export default function App() {
     }
     const bm = beforeMeta.current, bcv = beforeCanvas.current;
     if (bm && bcv) {
-      const sx = ox + (bm.x / bm.scale) * z, sy = oy + (bm.y / bm.scale) * z;
+      // the Before view leaves out lens corrections and Transform, which
+      // change the size of the whole image: it is fitted into the edit's
+      const k = Math.min(f.w / bm.fullWidth, f.h / bm.fullHeight);
+      const bx = ox + ((f.w - bm.fullWidth * k) * z) / 2, by = oy + ((f.h - bm.fullHeight * k) * z) / 2;
+      const sx = bx + (bm.x / bm.scale) * k * z, sy = by + (bm.y / bm.scale) * k * z;
       bcv.style.width = `${bm.width / dpr}px`;
       bcv.style.height = `${bm.height / dpr}px`;
-      bcv.style.transform = `translate(${sx / dpr}px, ${sy / dpr}px) scale(${z / bm.scale})`;
+      bcv.style.transform = `translate(${sx / dpr}px, ${sy / dpr}px) scale(${(z * k) / bm.scale})`;
     }
     zoomShow.current?.(z, zoomRef.current === "fit");
     const hc = hoverCanvas.current;
@@ -1732,7 +1800,7 @@ export default function App() {
       hc.style.height = `${(f.h * z) / dpr}px`;
     }
     // the mask editor and the zone overlay cover the whole image, wherever it is
-    for (const mb of [maskBox.current, zoneBox.current, detailBox.current, guideBox.current]) {
+    for (const mb of [maskBox.current, zoneBox.current, detailBox.current, guideBox.current, negBox.current]) {
       if (!mb) continue;
       mb.style.left = `${ox / dpr}px`;
       mb.style.top = `${oy / dpr}px`;
@@ -1756,6 +1824,9 @@ export default function App() {
 
   const paintFrame = useCallback((f: Frame) => {
     draftShown.current = !!f.view.draft;
+    // a draft back after the control let go (a short drag, or a slow draft
+    // zoomed in) came too late for the release to ask for its full frame
+    if (f.view.draft && !dragging.current) session.current?.requestRender();
     // the split view's before side: drawn on its own layer, and the session
     // goes back to the edit at once
     if (f.before && baModeRef.current !== "off") {
@@ -1765,7 +1836,8 @@ export default function App() {
         bc.height = f.height;
         bc.getContext("2d")!.putImageData(new ImageData(f.pixels, f.width, f.height), 0, 0);
         const scale = f.view.scale ?? f.width / f.fullWidth;
-        beforeMeta.current = { x: f.x, y: f.y, scale, width: f.width, height: f.height };
+        beforeMeta.current = { x: f.x, y: f.y, scale, width: f.width, height: f.height,
+                               fullWidth: f.fullWidth, fullHeight: f.fullHeight };
       }
       session.current?.showBefore(null);
       placeLayers();
@@ -1924,6 +1996,7 @@ export default function App() {
   const [uprightBusy, setUprightBusy] = useState(false);
   const uprightBusyRef = useRef(false);
   const guideBox = useRef<HTMLDivElement>(null);
+  const negBox = useRef<HTMLDivElement>(null);
   // the guides where they show, mapped from the input image after each frame
   const [guidesShown, setGuidesShown] = useState<Guide[]>([]);
   const baseOf = (r: UprightFit): [string, number][] =>
@@ -2766,17 +2839,26 @@ export default function App() {
     return () => { for (const off of offs) void off.then((f) => f()); };
   }, []);
 
-  // the photo the arrow keys would open next, its raw decoded ahead by the
-  // engine once this one is up (main.c, _prefetch): a compressed raw's
-  // decode, some 300 ms, is then gone from opening it
+  // the photos the arrow keys would open next, their raws decoded ahead by
+  // the engine once this one is up (main.c, _prefetch): a compressed raw's
+  // decode, some 300 ms, is then gone from opening them. Preferences' Read
+  // ahead says how many, in the direction last stepped and then behind
   const stepDir = useRef<1 | -1>(1);
-  const prefetched = useRef<number | null>(null);
+  const prefetched = useRef("");
   const prefetchNext = (s: Session) => {
     const list = shownRef.current, at = list.findIndex((i) => i.imgid === s.imgid);
-    const next = at >= 0 ? list[at + stepDir.current] : undefined;
-    if (!next || isRemote(next) || next.imgid === prefetched.current) return;
-    prefetched.current = next.imgid;
-    invoke("prefetch", { imgid: next.imgid }).catch(() => {});
+    if (at < 0) return;
+    const { count, both } = loadReadAhead();
+    const ids: number[] = [];
+    for (const dir of both ? [stepDir.current, -stepDir.current] : [stepDir.current]) {
+      for (let k = 1; k <= count; k++) {
+        const e = list[at + dir * k];
+        if (e && !isRemote(e)) ids.push(e.imgid);
+      }
+    }
+    if (ids.join() === prefetched.current) return;
+    prefetched.current = ids.join();
+    invoke("prefetch", { imgids: ids }).catch(() => {});
   };
 
   // `imgid` picks one of the file's versions (a virtual copy); without it,
@@ -2801,6 +2883,9 @@ export default function App() {
       const opening = { path, imgid: id };
       setCurrent(opening);
       currentRef.current = opening;
+      // masks, heal and zones belong to the last photo, so a new one opens on
+      // the adjustments; presets stay, for applying one photo after another
+      setRightMode((m) => (m === "presets" ? m : "adjust"));
       // a new image opens fitted, as in Lightroom, with both layers cleared
       zoomRef.current = "fit";
       setZoomState("fit");
@@ -2863,6 +2948,7 @@ export default function App() {
       };
       s.thumbSize = baseSize;
       s.previewMode = loadPreview;
+      s.frameBudget = () => loadFrameCacheMb() * 1048576;
       s.draftSize = () => (loadPreview() === "quality" ? null : viewAt(DRAFT[loadPreview()]));
       s.warmDrafts();
       // a saved edit makes the filmstrip's thumbnail stale; undone back to
@@ -3067,7 +3153,10 @@ export default function App() {
     holdRecord.current = true;
     try {
       const entries = Object.entries(c.values).filter(([id, v]) => s.values[id] !== v);
+      const converts = c.values.neg_on === 1 && s.values.neg_on !== 1;
       if (entries.length) changeMany(entries);
+      // a negative's settings pasted onto a roll's other frames convert them too
+      if (converts) negOffUnmapped(s);
       if (c.look) {
         if (c.look.name !== s.look) {
           baseStale.current = true;
@@ -3161,6 +3250,121 @@ export default function App() {
     setHistoryRev((n) => n + 1);
   };
 
+  // the Negative panel (NegativePanel.tsx): the box being picked on the
+  // photo, the photo area the auto values are read from, and the warning
+  // ahead of a first conversion
+  const [negPick, setNegPick] = useState<NegPick | null>(null);
+  const negPickRef = useRef<NegPick | null>(null);
+  negPickRef.current = negPick;
+  const [negArea, setNegArea] = useState<[number, number, number, number] | null>(null);
+  const [negBusy, setNegBusy] = useState(false);
+  const [negNote, setNegNote] = useState<string | null>(null);
+  const [negWarning, setNegWarning] = useState(false);
+  const [negNoWarn, setNegNoWarn] = useState(false);
+  const negView = !!current && layout.right && rightMode === "negative";
+  useEffect(() => { setNegPick(null); setNegArea(null); setNegNote(null); }, [current]);
+  useEffect(() => { if (!negView) setNegPick(null); }, [negView]);
+  // its layer may come without the others, which place it otherwise
+  useEffect(() => { if (negView) placeLayers(); }, [negView, negPick, negArea]);   // eslint-disable-line react-hooks/exhaustive-deps
+  // the whole frame while a box is picked and read, as the crop tool shows
+  // it, so the film border can be reached; the crop otherwise. the crop
+  // tool, opened over it, does the same and puts the crop back itself
+  const negWhole = negView && (negPick !== null || negBusy);
+  useEffect(() => {
+    const s = session.current;
+    if (!s || !negWhole || cropping) return;
+    s.bypass("crop", true);
+    return () => { if (!croppingRef.current) s.bypass("crop", false); };
+  }, [negWhole, cropping, current]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const openNegative = () => {
+    const shown = layout.right && rightMode === "negative" && !croppingRef.current;
+    if (!shown && session.current && session.current.values.neg_on !== 1 && loadNegWarn()) {
+      setNegNoWarn(false);
+      setNegWarning(true);
+      return;
+    }
+    showRight("negative");
+  };
+  // what a box holds at negadoctor's input, once the edits ahead of it are in
+  const negSample = async (box: [number, number, number, number]): Promise<Stats> => {
+    const s = session.current!;
+    let stopped = false;
+    while (!s.idle && session.current === s) {
+      stopped = s.stopBase() || stopped;
+      await new Promise((r) => setTimeout(r, 30));
+    }
+    try {
+      return (await invoke<{ picker: Stats }>("sample", {
+        x: (box[0] + box[2]) / 2, y: (box[1] + box[3]) / 2, area: box, stage: "negadoctor" })).picker;
+    } finally {
+      if (stopped) resumeBase();
+    }
+  };
+  // tone mappers from darktable that no slider covers, and modules of
+  // NEG_OFF that darktable set beyond their sliders, which the session
+  // cannot switch through them
+  const negOffUnmapped = (s: Session) => {
+    const done = new Set<string>();
+    for (const h of s.history) {
+      const key = instanceKey(h), op = mapOpOf(h);
+      if (done.has(key) || h.priority === undefined || h.masked) continue;
+      if (!NEG_OFF_UNMAPPED.has(h.op) && !(NEG_OFF.has(op) && s.isForeign(op))) continue;
+      done.add(key);
+      if (s.moduleStates.get(key)?.enabled ?? h.enabled) s.setModuleState(h, { enabled: false });
+    }
+    setHistoryRev((n) => n + 1);
+  };
+  // a box picked for the panel. the first film border converts the photo:
+  // the modules a negative turns off go off first, as negadoctor's input is
+  // read without them, then the border and the photo area set its params,
+  // all one undo step
+  const negPicked = async (kind: NegPick, box: [number, number, number, number]) => {
+    const s = session.current;
+    setNegPick(null);
+    if (!s) return;
+    if (kind === "area") setNegArea(box);
+    const converting = kind === "border" && s.values.neg_on !== 1;
+    // before the conversion the photo area is only kept, for it
+    if (!converting && s.values.neg_on !== 1) return;
+    setNegBusy(true);
+    setNegNote(null);
+    try {
+      if (converting) {
+        const film = s.values.neg_film === FILM_BW ? FILM_BW : FILM_COLOR;
+        changeMany([["neg_on", 1], ...toValues(PRESETS[film]), ...Object.entries(NEG_CHOICES),
+                    ...(film === FILM_BW ? [["bw_mode", 1] as [string, number]] : [])], "Negative conversion");
+        negOffUnmapped(s);
+      }
+      let p = fromValues(s.values);
+      if (kind === "border") {
+        const border = await negSample(box);
+        p = autoArea(autoDmin(p, border), await negSample(negArea ?? NEG_AREA));
+      } else if (kind === "area") p = autoArea(p, await negSample(box));
+      else p = NEG_AUTO[kind as keyof typeof NEG_AUTO](p, await negSample(box));
+      if (session.current !== s) return;
+      const entries = toValues(p).filter(([id, v]) => s.values[id] !== v);
+      if (converting) quietly(() => changeMany(entries));
+      else if (entries.length) changeMany(entries, NEG_PICK_LABELS[kind]);
+    } catch (e) {
+      setNegNote(`${e}`);
+    } finally {
+      setNegBusy(false);
+    }
+  };
+  // black and white film is shown in black and white, as Treatment does it
+  const negFilm = (v: number) => {
+    const s = session.current;
+    if (!s || v === s.values.neg_film) return;
+    changeMany([["neg_film", v], ["bw_mode", v === FILM_BW ? 1 : 0]], "Film Type");
+    if (s.values.neg_on === 1) setNegNote("pick the film border again for this film type");
+  };
+  const negTurnOff = () => {
+    const s = session.current;
+    if (!s) return;
+    changeMany([["neg_on", 0], ...Object.keys(NEG_CHOICES).map((id): [string, number] => [id, s.neutral[id]])],
+               "Turn off negative conversion");
+  };
+
   // what the Before view keeps of the edit: the crop, the modules chosen,
   // the orientation, and the exposure compensation a raw started with, which
   // corrects the camera rather than adjusting the photo
@@ -3179,7 +3383,8 @@ export default function App() {
   const [holdHint, setHoldHint] = useState(false);
   const hintTimer = useRef(0);
   const beforeCanvas = useRef<HTMLCanvasElement>(null);
-  const beforeMeta = useRef<{ x: number; y: number; scale: number; width: number; height: number } | null>(null);
+  const beforeMeta = useRef<{ x: number; y: number; scale: number; width: number; height: number;
+                              fullWidth: number; fullHeight: number } | null>(null);
   const captureTimer = useRef(0);
   const captureBefore = (delay = 0) => {
     window.clearTimeout(captureTimer.current);
@@ -3224,21 +3429,29 @@ export default function App() {
   const compareRef = useRef<number | null>(null);
   const candCanvas = useRef<HTMLCanvasElement>(null);
   const [candReady, setCandReady] = useState(false);
+  // the grid covers the viewer, where the two show side by side
   const setCompare = (imgid: number | null) => {
     if (compareRef.current === imgid) return;
-    if (imgid !== null) setBaMode("off");
+    if (imgid !== null) { setBaMode("off"); setGrid(false); }
     compareRef.current = imgid;
     setCompareState(imgid);
   };
   // the candidate on entering: a photo selected besides the open one, else
-  // the next photo, else the one before
+  // the next photo, else the one before. two selected (in the grid), neither
+  // of them open: the first is opened, the second its candidate
   const toggleCompare = () => {
     if (compareRef.current !== null) { setCompare(null); return; }
     const list = shownRef.current;
-    const at = list.findIndex((i) => isOpen(i));
-    if (at < 0) return;
     const sel = selectionRef.current;
     const local = (i: ImageEntry) => !isRemote(i);
+    const picked = list.filter((i) => sel.has(i.imgid) && local(i));
+    if (picked.length >= 2 && !picked.some((i) => isOpen(i))) {
+      setCompare(picked[1].imgid);
+      void openEntry(picked[0]);
+      return;
+    }
+    const at = list.findIndex((i) => isOpen(i));
+    if (at < 0) return;
     const pick = list.find((i, k) => k !== at && sel.has(i.imgid) && local(i))
       ?? list.slice(at + 1).find(local) ?? list.slice(0, at).reverse().find(local);
     if (!pick) { setStatus("compare needs a second photo"); return; }
@@ -3363,10 +3576,20 @@ export default function App() {
     // the web view measured idle, ahead of the run and its timing
     await settle();
     const webview = await webviewInfo();
+    const idlePings: number[] = [];
+    for (let i = 0; i < 100; i++) idlePings.push(await pingOnce());
     perf.recording = [];
     const t0 = performance.now();
+    // one call in flight at a time while the sliders drag, beside the renders
+    const dragPings: number[] = [];
+    let pinging = false;
+    let pinger: Promise<void> = Promise.resolve();
     try {
       await settle();
+      pinging = true;
+      pinger = (async () => {
+        while (pinging) { dragPings.push(await pingOnce().catch(() => NaN)); await sleep(50); }
+      })();
       for (const [id, delta] of steps) {
         const c = controlById.get(id);
         if (!c || session.current !== s) continue;
@@ -3386,6 +3609,8 @@ export default function App() {
         if (draftShown.current) s.requestRender();
         await settle();
       }
+      pinging = false;
+      await pinger;
       perf.label = "zoom 100%";
       setZoom(1);
       await settle();
@@ -3416,6 +3641,7 @@ export default function App() {
       await sleep(2500);
       await settle();
     } finally {
+      pinging = false;
       dragging.current = false;
       perf.label = "";
       benchRunning.current = false;
@@ -3437,13 +3663,14 @@ export default function App() {
     const { w, h } = viewport();
     const at = new Date();
     const report = {
-      immage: "gui-benchmark", version: 3, at: at.toISOString(),
+      immage: "gui-benchmark", version: 4, at: at.toISOString(),
       app: await invoke<{ app: string; darktable: string }>("about").catch(() => null),
       machine: await invoke<Record<string, unknown>>("perf_machine").catch(() => null),
       webview,
       photo: (currentRef.current?.path ?? "").split(/[\\/]/).pop(),
       viewport: { width: w, height: h, dpr: window.devicePixelRatio || 1 }, dragDrafts: drafts, preview,
-      transport: frameTransport(), seconds: (performance.now() - t0) / 1000, displayLongFrames: perf.longFrames, summary, samples,
+      transport: frameTransport(), seconds: (performance.now() - t0) / 1000, displayLongFrames: perf.longFrames,
+      invokeMs: { idle: roundTrips(idlePings), drag: roundTrips(dragPings.filter(Number.isFinite)) }, summary, samples,
     };
     const stamp = at.toISOString().replace(/[:.]/g, "-").slice(0, 19);
     return invoke<string>("perf_report_write", { name: `gui-${stamp}`, report });
@@ -3952,10 +4179,14 @@ export default function App() {
       }
       if (pickingRef.current && e.key === "Escape") { setPicking(false); return; }
       // W picks white balance from the image, as in Lightroom
-      if ((e.key === "w" || e.key === "W") && session.current) { setPicking(!pickingRef.current); return; }
+      if ((e.key === "w" || e.key === "W") && session.current && session.current.values.neg_on !== 1) {
+        setPicking(!pickingRef.current);
+        return;
+      }
       if (healModeRef.current && healKeyRef.current(e)) return;
       // O shows or hides the pinned zones' overlay, as it does a mask's
       if (zoneBoxingRef.current && e.key === "Escape") { setZoneBoxing(false); return; }
+      if (negPickRef.current && e.key === "Escape") { setNegPick(null); return; }
       if (zonesModeRef.current && (e.key === "o" || e.key === "O")) {
         setZoneOverlayState((o) => { const next = { ...o, show: !o.show }; saveZoneOverlay(next); return next; });
         return;
@@ -3969,6 +4200,12 @@ export default function App() {
         }
       }
       if (e.shiftKey && (e.key === "j" || e.key === "J")) { pickToolRef.current("color"); return; }
+      // H steps the scope as its corner menu lists them, ⇧H back
+      if ((e.key === "h" || e.key === "H") && !cmd(e) && !e.altKey && session.current) {
+        const n = SCOPE_MODES.length;
+        setScope((s) => ({ mode: SCOPE_MODES[(SCOPE_MODES.findIndex(([m]) => m === s.mode) + (e.shiftKey ? n - 1 : 1)) % n][0] }));
+        return;
+      }
       // J shows both clipping overlays, or hides them, as in Lightroom
       if (e.key === "j" && !cmd(e) && !e.altKey) {
         setClipOn((o) => (o.low && o.high ? { low: false, high: false } : { low: true, high: true }));
@@ -4033,17 +4270,10 @@ export default function App() {
   // the files still to be read, as empty cells after the photos: unless the
   // filters ask for what only reading tells (ratings, labels, rejects)
   const rawNames = stackPairs && reading ? pairedRaws(reading.files) : null;
-  const pending = !reading || filter.minRating || filter.rejected !== "all" || filter.edited !== "all" || filter.labels
-    || filter.unlabeled ? []
+  const pending = !reading || needsRead(filter) ? []
     : reading.files.slice(reading.done).filter((p) => !filter.kinds.length || filter.kinds.includes(fileKind(p)))
         // a raw's companions, stacked behind it
         .filter((p) => !rawNames?.has(pairKey(p)) || !isCompanion(p));
-  const kindCounts = (() => {
-    const m = new Map<string, number>();
-    for (const i of images) { const k = fileKind(i.filename); m.set(k, (m.get(k) ?? 0) + 1); }
-    // RAW first, then the rest by name
-    return [...m].sort(([a], [b]) => (a === "RAW" ? -1 : b === "RAW" ? 1 : a.localeCompare(b)));
-  })();
   const shownRef = useRef<ImageEntry[]>([]);
   shownRef.current = shown;
   // the open photo's cell in the filmstrip, if the filmstrip shows it, and
@@ -4087,6 +4317,12 @@ export default function App() {
   // from (Session.onSaved)
   const keywordsRef = useRef<{ imgid: number; list: string[] } | null>(null);
   keywordsRef.current = keywords && currentId !== undefined ? { imgid: currentId, list: keywords } : null;
+  // into the filmstrip's entry too, which the Filters popup reads
+  useEffect(() => {
+    if (!keywords || currentId === undefined) return;
+    const e = imagesRef.current.find((i) => i.imgid === currentId);
+    if (e && e.keywords?.join("\n") !== keywords.join("\n")) patchImage(currentId, { keywords });
+  }, [keywords]);
   // Preferences' keywords for edited photos: on once a save finds the photo
   // edited, off again once one finds it unedited
   const syncEditedKeywords = async (imgid: number, edited: boolean) => {
@@ -4101,6 +4337,7 @@ export default function App() {
       if (!add.length && !remove.length) return;
       const now = await invoke<string[]>("keywords_set", { imgid, add, remove });
       if (session.current?.imgid === imgid) setKeywords(now);
+      patchImage(imgid, { keywords: now });
       if (add.length) setKnownKeywords((k) => [...new Set([...k, ...add])].sort((a, b) => a.localeCompare(b)));
     } catch (e) {
       setStatus(`error: ${e}`);
@@ -4262,7 +4499,8 @@ export default function App() {
         </div>
         {immichBase && (
           <ImmichPanel open={leftOpen.has("immich")} onToggle={(alt) => toggleLeft("immich", alt)}
-                       active={!!immich} searching={!!immich?.busy} onSearch={(q) => void searchImmich(q)}
+                       active={!!immich} searching={!!immich?.busy} form={immichForm} onChange={updateImmich}
+                       onSearch={() => { window.clearTimeout(immichTimer.current); void searchImmich(immichFormRef.current); }}
                        onMenu={showResultsMenu} />
         )}
         <HistoryPanel base={historyBase.filter((h) => !session.current?.deleted.has(instanceKey(h)))
@@ -4333,6 +4571,24 @@ export default function App() {
               <div className="mask-box" ref={zoneBox}>
                 {zoneShown && <canvas ref={zoneCanvas} className="mask-tint zone-tint" />}
                 {zoneBoxing && <ObjectBox onPrompt={boxZoneObject} />}
+              </div>
+            )}
+            {negWhole && !cropping && full.current && (
+              <div className="mask-box" ref={negBox}>
+                {negArea && (
+                  <div className="neg-area" style={{
+                    left: `${negArea[0] * 100}%`, top: `${negArea[1] * 100}%`,
+                    width: `${(negArea[2] - negArea[0]) * 100}%`, height: `${(negArea[3] - negArea[1]) * 100}%`,
+                  }} />
+                )}
+                {negPick && (
+                  <ObjectBox onPrompt={(pr) => {
+                    // a click reads a small box round it, as darktable's picker does
+                    const [x, y] = pr.points?.[0] ?? [0.5, 0.5];
+                    void negPicked(negPick, pr.box ?? [Math.max(0, x - 0.01), Math.max(0, y - 0.01),
+                                                       Math.min(1, x + 0.01), Math.min(1, y + 0.01)]);
+                  }} />
+                )}
               </div>
             )}
             {maskOp && full.current && (
@@ -4492,7 +4748,7 @@ export default function App() {
                        onMeta={(i, fields) => rateSelection(i, fields)} />
           </div>
         </div>
-        <Toolbar filter={filter} kinds={kindCounts} remote={!!immich} layout={layout} ref={toolbar} pin={pinButton("strip")}
+        <Toolbar filter={filter} images={images} immich={immich ? { form: immichForm, update: updateImmich } : null} layout={layout} ref={toolbar} pin={pinButton("strip")}
                  viewTools={<>
                    <button className="tool" title={keys("undo (⌘Z)")} disabled={!current} onClick={() => stepHistory(true)}>
                      <UndoIcon /></button>
@@ -4506,6 +4762,19 @@ export default function App() {
                            title="compare with another photo (C): click one in the filmstrip, or step with ← →"
                            onClick={toggleCompare}><CompareIcon /></button>
                  </>}
+                 filterBounds={() => {
+                   // across the filmstrip, below the top of the photo area, and
+                   // clear of a side panel shown over it (auto-hide)
+                   const s = stripSlot.current?.getBoundingClientRect();
+                   if (!s) return undefined;
+                   const l = leftAside.current?.getBoundingClientRect(), r = rightAside.current?.getBoundingClientRect();
+                   return {
+                     left: l && l.width && l.right > 0 ? Math.max(s.left, l.right) : s.left,
+                     right: r && r.width && r.left < window.innerWidth ? Math.min(s.right, r.left) : s.right,
+                     top: viewer.current?.parentElement?.getBoundingClientRect().top ?? 0,
+                   };
+                 }}
+                 onFiltered={() => setGrid(true)}
                  grid={grid} onGrid={shown.length > 0 || pending.length > 0 || grid ? () => setGrid(!grid) : undefined}
                  zoomBar={<ZoomBar disabled={!current} register={(f) => { zoomShow.current = f; }}
                                    onZoom={(z) => setZoom(z)}
@@ -4533,7 +4802,7 @@ export default function App() {
         <HistogramView histogram={histogram} values={values} disabled={!current} exif={currentEntry?.exif ?? null}
                        neutral={(id) => session.current?.neutral[id] ?? controlById.get(id)?.neutral ?? 0}
                        onChange={change} clip={clipOn} onClip={(end) => setClipOn((o) => ({ ...o, [end]: !o[end] }))}
-                       onClipPeek={setClipPeek} />
+                       onClipPeek={setClipPeek} scope={scope} onScope={setScope} />
         <div className="panels" data-tour="panels">
           {masksMode && !cropping && (
             <MasksPanel masks={masks} selected={maskSel} shape={shapeSel} tool={maskTool} target={toolTarget}
@@ -4680,6 +4949,20 @@ export default function App() {
               )}
             </div>
           )}
+          {rightMode === "negative" && !cropping && (
+            <NegativePanel values={values} disabled={!current} converted={values.neg_on === 1} picking={negPick}
+                           busy={negBusy} hasArea={!!negArea} note={negNote} onPick={setNegPick} onTurnOff={negTurnOff}
+                           onResetColor={() => changeMany(["wbl", "wbh"].flatMap((k) => ["r", "g", "b"]
+                             .map((c): [string, number] => [`neg_${k}_${c}`, 1])), "Reset Color")}
+                           renderControl={(id) => {
+                             const c = controlById.get(id)!;
+                             const props = { control: c, value: values[id] ?? c.neutral ?? 0,
+                                             neutral: session.current?.neutral[id] ?? c.neutral ?? 0,
+                                             disabled: !current || negBusy || (id !== "neg_film" && values.neg_on !== 1),
+                                             values, onChange: (v: number) => (id === "neg_film" ? negFilm(v) : change(c, v)) };
+                             return c.kind === "choice" ? <Choice key={id} {...props} /> : <Slider key={id} {...props} />;
+                           }} />
+          )}
           {rightMode === "presets" && !cropping && (
             <PresetsPanel fold={presetFold} onAnyOpen={setPresetGroupsOpen} focusMode={focusMode}
                           presets={[...BUILTIN_PRESETS, ...presets]} looks={looks} look={look} disabled={!current}
@@ -4775,8 +5058,9 @@ export default function App() {
                        onChangeMany={changeMany} histogram={histogram} onPreview={hoverValues}
                        toneTools={p.id === "basic" ? (
                          <div className="tone-tools">
-                           <button className="btn small" disabled={!current}
-                                   title={values.tm_mode === 1
+                           <button className="btn small" disabled={!current || values.neg_on === 1}
+                                   title={values.neg_on === 1 ? "set in Negative: a converted negative has no tone mapper for Auto to set"
+                                     : values.tm_mode === 1
                                      ? "Exposure, AgX's range as darktable's auto tune levels sets it, then Contrast, Highlights, Shadows, Whites and Blacks from the photo"
                                      : "Exposure, then Contrast, Highlights, Shadows, Whites and Blacks from the photo"}
                                    onClick={() => void runAutoTone()}>Auto</button>
@@ -4829,7 +5113,7 @@ export default function App() {
                        wbTools={p.id === "basic" ? (
                          <WBTools values={values} asShot={session.current
                                     ? { temp: session.current.neutral.temp, tint: session.current.neutral.tint } : null}
-                                  picking={picking} disabled={!current || values.bw_mode === 1}
+                                  picking={picking} disabled={!current || values.bw_mode === 1 || values.neg_on === 1}
                                   onPick={() => setPicking(!pickingRef.current)}
                                   onAuto={() => void startWB(null)}
                                   onPreset={(wb) => changeMany([["temp", wb.temp], ["tint", wb.tint]])} />
@@ -4861,18 +5145,22 @@ export default function App() {
                 onClick={() => setImportOpen(true)}><ImportIcon /></button>
         <div className="rail-sep" />
         <div className="rail-group" data-tour="edit">
+        {/* the tools work on the open photo, not its cell: one opened before
+            its folder listed it, or from elsewhere, has none */}
         <button className={`tool${layout.right && !cropping && rightMode === "adjust" ? " on" : ""}`} title="adjustments"
                 data-tour="adjust" onClick={() => showRight("adjust")}>
           <SlidersIcon /></button>
-        <button className={`tool${cropping ? " on" : ""}`} title="crop (R)" data-tour="crop" disabled={!currentEntry}
+        <button className={`tool${cropping ? " on" : ""}`} title="crop (R)" data-tour="crop" disabled={!current}
                 onClick={() => (cropping ? leaveCrop(true) : enterCrop())}><CropIcon /></button>
         <button className={`tool${layout.right && !cropping && masksMode ? " on" : ""}`} title="masks" data-tour="masks"
-                disabled={!currentEntry} onClick={() => showRight("masks")}><LayersIcon /></button>
+                disabled={!current} onClick={() => showRight("masks")}><LayersIcon /></button>
         <button className={`tool${layout.right && !cropping && rightMode === "zones" ? " on" : ""}`} title="zone system"
-                data-tour="zones" disabled={!currentEntry} onClick={() => showRight("zones")}><ZonesIcon /></button>
+                data-tour="zones" disabled={!current} onClick={() => showRight("zones")}><ZonesIcon /></button>
         <button className={`tool${layout.right && !cropping && healMode ? " on" : ""}`} title="heal and clone (Q)"
                 data-tour="heal"
-                disabled={!currentEntry} onClick={() => showRight("heal")}><HealIcon /></button>
+                disabled={!current} onClick={() => showRight("heal")}><HealIcon /></button>
+        <button className={`tool${layout.right && !cropping && rightMode === "negative" ? " on" : ""}`}
+                title="film negative" disabled={!current} onClick={openNegative}><FilmIcon /></button>
         <button className={`tool${layout.right && !cropping && rightMode === "presets" ? " on" : ""}`} title="presets" data-tour="presets"
                 onClick={() => showRight("presets")}><PresetsIcon /></button>
         </div>
@@ -4914,6 +5202,7 @@ export default function App() {
                          plugins={plugins} onPlugins={setPlugins}
                          canvas={canvasColor} onCanvas={(v) => { setCanvasColor(v); storeCanvas(v); }}
                          overlayColor={overlayColor} onOverlayColor={(v) => { setOverlayColor(v); storeOverlayColor(v); }}
+                         guideColor={guideColor} onGuideColor={(v) => { setGuideColor(v); storeGuideColor(v); }}
                          focusMode={focusMode} onFocusMode={(on) => { setFocusMode(on); storeFocusMode(on); }}
                          accel={accel}
                          autoHide={autoHide} onAutoHide={(on) => { setAutoHide(on); storeAutoHide(on); }}
@@ -4924,6 +5213,11 @@ export default function App() {
                            runGuiBenchmark().then((path) => setStatus(`benchmark saved: ${path}`))
                              .catch((e) => setStatus(`benchmark: ${e}`));
                          } : null}
+                         onRelaunch={async () => {
+                           await session.current?.close();
+                           await invoke("engine_quit");
+                           await relaunch();
+                         }}
                          onClose={() => setPrefsOpen(false)} />
     )}
     <UpdateBanner prepare={async () => {
@@ -4951,6 +5245,34 @@ export default function App() {
     {copying && <CopyDialog onCopy={copySettings} onClose={() => setCopying(false)} />}
     {denoising && <DenoiseDialog thumb={navThumb} center={viewCenter()} prepare={denoiseModel}
                                  onRun={(a) => void runDenoise(a)} onClose={() => setDenoising(false)} />}
+    {negWarning && (
+      <div className="modal-backdrop">
+        <div className="modal neg-warn">
+          <div className="modal-head"><h2>Film Negative</h2></div>
+          <div className="modal-body">
+            <p>Converting a negative turns off the tools that work on the photo before it is inverted, or that
+              negadoctor's print takes the place of: Temp and Tint, Exposure, Whites, Blacks, Dehaze, Profile and
+              Auto, with the tone mapper. The Negative panel's own Exposure, White Point, Blacks and Neutral
+              Highlights stand in for them.</p>
+            <p>Contrast and Saturation move to color balance rgb, and Highlights and Shadows to shadows and
+              highlights, which work after the conversion. Turning the conversion off brings them all back as
+              they were.</p>
+            <label className="row check">
+              <input type="checkbox" checked={negNoWarn} onChange={(e) => setNegNoWarn(e.target.checked)} />
+              Don't warn me again
+            </label>
+          </div>
+          <div className="modal-foot">
+            <button className="btn" onClick={() => setNegWarning(false)}>Cancel</button>
+            <button className="btn primary" autoFocus onClick={() => {
+              if (negNoWarn) storeNegWarn(false);
+              setNegWarning(false);
+              showRight("negative");
+            }}>Continue</button>
+          </div>
+        </div>
+      </div>
+    )}
     {exporting && <ExportDialog current={currentEntry} shown={shown.filter((i) => !isRemote(i))} canUpscale={!!accel?.length}
                                 selected={shown.filter((i) => selection.has(i.imgid) && !isRemote(i))}
                                 onClose={() => setExporting(false)} onKeywordsChanged={reloadKeywords} />}
@@ -5021,13 +5343,23 @@ function Splitter({ axis, value, min, max, invert, hidden, onChange }: {
   );
 }
 
-type RightMode = "adjust" | "presets" | "masks" | "heal" | "zones";
+type RightMode = "adjust" | "presets" | "masks" | "heal" | "zones" | "negative";
+// the photo area a film border pick reads before one is picked: darktable's
+// default picker box
+const NEG_AREA: [number, number, number, number] = [0.02, 0.02, 0.98, 0.98];
+// the Negative panel's eyedroppers for one control each
+const NEG_AUTO = { dmax: autoDmax, offset: autoOffset, black: autoBlack, exposure: autoPrintExposure,
+                   shadows: autoWbLow, highlights: autoWbHigh };
+const NEG_PICK_LABELS: Record<NegPick, string> = {
+  border: "Film border", area: "Photo area", dmax: "White Point", offset: "Black Point", black: "Blacks",
+  exposure: "Negative Exposure", shadows: "Neutral Shadows", highlights: "Neutral Highlights",
+};
 // the Library panel's foldable cards; each keeps its open state under
 // immage.<id>.open
 const LEFT_CARDS = ["metadata", "keywording", "folders", "immich", "history"] as const;
 type LeftCard = typeof LEFT_CARDS[number];
 const RIGHT_TITLES: Record<RightMode, string> = { adjust: "Adjustments", presets: "Presets", masks: "Masks", heal: "Heal",
-                                                  zones: "Zone System" };
+                                                  zones: "Zone System", negative: "Negative" };
 
 // everything back to the image's defaults, as one undo step
 function ResetAll({ disabled, onReset }: { disabled: boolean; onReset: () => void }) {
@@ -5072,37 +5404,29 @@ function ZoomBar({ disabled, register, onZoom, onToggle, fit }: {
   );
 }
 
-// which images the filmstrip, the list and the arrows show
-// `rejected` hides rejected photos or shows only them; `edited` picks those
-// darktable counts as altered, or those it does not; `kinds` are file kinds
-// as fileKind() names them, none meaning all
-type Filter = { minRating: number; rejected: "all" | "hide" | "only"; edited: "all" | "edited" | "unedited";
-                labels: number; unlabeled: boolean; kinds: string[] };
-const NO_FILTER: Filter = { minRating: 0, rejected: "all", edited: "all", labels: 0, unlabeled: false, kinds: [] };
-const passes = (i: ImageEntry, f: Filter) =>
-  (f.rejected === "all" || (f.rejected === "only") === i.rejected)
-  && (f.edited === "all" || (f.edited === "edited") === i.edited)
-  && (!f.kinds.length || f.kinds.includes(fileKind(i.filename)))
-  && (f.minRating === 0 || (!i.rejected && i.rating >= f.minRating))
-  // label filters admit an image carrying any of the chosen labels
-  && ((!f.labels && !f.unlabeled) || (i.labels & f.labels) !== 0 || (f.unlabeled && i.labels === 0));
-
 // the bar under the filmstrip: rate and reject the open image, filter the
 // folder, and show or hide the side panels and the filmstrip
-function Toolbar({ filter: f, kinds, layout, zoomBar, viewTools, onFilter, onLayout, ref, pin, remote, grid, onGrid }: {
+function Toolbar({ filter: f, images, layout, zoomBar, viewTools, onFilter, onLayout, ref, pin, immich, grid, onGrid,
+                   filterBounds, onFiltered }: {
   ref: React.RefObject<HTMLDivElement | null>;
   viewTools: React.ReactNode;               // undo, redo, before/after, compare
   grid: boolean;
   onGrid?: () => void;                      // none while there are no photos to show
+  filterBounds: () => FilterBounds | undefined; // where the Filters popup may go
+  onFiltered: () => void;                   // the Filters popup's Search, which shows the grid
   pin: React.ReactNode;
-  remote: boolean;                          // Immich results, which carry no reject flag or labels
+  // with Immich results, which carry no reject flag or labels, the stars and
+  // the Filters popup set the server's search
+  immich: ImmichFilters | null;
   filter: Filter; layout: Layout; zoomBar: React.ReactNode;
-  kinds: [string, number][];                // the folder's file kinds, and how many of each
+  images: ImageEntry[];                     // the folder's photos, whose cameras, lenses and so on the Filters popup lists
   onFilter: (f: Filter) => void;
   onLayout: (k: "left" | "strip" | "right") => void;
 }) {
+  const remote = !!immich;
+  const stars = immich ? immich.form.minRating : f.minRating;
   const filtering = f.minRating > 0 || f.rejected !== "all" || f.edited !== "all" || f.labels !== 0 || f.unlabeled
-    || f.kinds.length > 0;
+    || popupCount(f) > 0 || (!!immich && (stars > 0 || immichFilterCount(immich.form) > 0));
   // what the reject filter now shows, said for a moment above it
   // (fixed to the window: the toolbar scrolls, and would clip it)
   const [note, setNote] = useState<{ text: string; x: number; y: number } | null>(null);
@@ -5116,6 +5440,10 @@ function Toolbar({ filter: f, kinds, layout, zoomBar, viewTools, onFilter, onLay
   };
   const clearFilters = (e: React.MouseEvent<HTMLButtonElement>) => {
     onFilter(NO_FILTER);
+    if (immich) {
+      const s = immich.form;
+      immich.update({ ...NO_SEARCH, mode: s.mode, text: s.text, library: s.library });
+    }
     say("Filters cleared", e);
   };
   const cycleRejected = (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -5137,8 +5465,9 @@ function Toolbar({ filter: f, kinds, layout, zoomBar, viewTools, onFilter, onLay
                 onClick={clearFilters}><FilterIcon /></button>
         {[1, 2, 3, 4, 5].map((n) => (
           <button key={n} className="tool" title={`${n} star${n > 1 ? "s" : ""} and up`}
-                  onClick={() => onFilter({ ...f, minRating: f.minRating === n ? 0 : n })}>
-            <StarIcon filled={f.minRating >= n} />
+                  onClick={() => immich ? immich.update({ minRating: stars === n ? 0 : n })
+                                        : onFilter({ ...f, minRating: f.minRating === n ? 0 : n })}>
+            <StarIcon filled={stars >= n} />
           </button>
         ))}
         {!remote && <>
@@ -5169,7 +5498,7 @@ function Toolbar({ filter: f, kinds, layout, zoomBar, viewTools, onFilter, onLay
                 title="images without a label" onClick={() => onFilter({ ...f, unlabeled: !f.unlabeled })} />
         </>}
         <span className="sep" />
-        <KindFilter kinds={kinds} chosen={f.kinds} onChange={(k) => onFilter({ ...f, kinds: k })} />
+        <FilterPopup filter={f} images={images} onFilter={onFilter} immich={immich} bounds={filterBounds} onSearch={onFiltered} />
         {filtering && (
           <button className="tool clear-filters" title="show every photo again" onClick={clearFilters}>Clear</button>
         )}
@@ -5211,48 +5540,6 @@ function GridIcon() {
 
 // the pair names (pairKey()) that have a raw among these files
 const pairedRaws = (files: string[]) => new Set(files.filter((p) => isPrimaryRaw(p)).map(pairKey));
-
-// the file type filter: a button naming what shows, opening the folder's
-// kinds to tick, with how many of each
-function KindFilter({ kinds, chosen, onChange }: {
-  kinds: [string, number][]; chosen: string[]; onChange: (kinds: string[]) => void;
-}) {
-  // where the menu opens, above the button; fixed to the window, as the
-  // toolbar scrolls and would clip it
-  const [open, setOpen] = useState<{ x: number; y: number } | null>(null);
-  const box = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const away = (e: PointerEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(null); };
-    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(null); };
-    window.addEventListener("pointerdown", away, true);
-    window.addEventListener("keydown", esc, true);
-    return () => { window.removeEventListener("pointerdown", away, true); window.removeEventListener("keydown", esc, true); };
-  }, [open]);
-  const label = !chosen.length ? "All types" : chosen.length > 2 ? `${chosen.length} types` : chosen.join(", ");
-  return (
-    <div className="kind-filter" ref={box}>
-      <button className={`tool kind-button${chosen.length ? " on" : ""}`} title="show only these file types"
-              onClick={(e) => {
-                const r = e.currentTarget.getBoundingClientRect();
-                setOpen(open ? null : { x: r.left, y: r.top });
-              }}>{label}</button>
-      {open && (
-        <div className="kind-menu" style={{ left: open.x, bottom: window.innerHeight - open.y + 6 }}>
-          <button className={!chosen.length ? "on" : ""} onClick={() => onChange([])}>
-            <span className="tick">{!chosen.length ? "✓" : ""}</span><span>All types</span></button>
-          {kinds.map(([k, n]) => (
-            <button key={k} className={chosen.includes(k) ? "on" : ""}
-                    onClick={() => onChange(chosen.includes(k) ? chosen.filter((x) => x !== k) : [...chosen, k])}>
-              <span className="tick">{chosen.includes(k) ? "✓" : ""}</span><span>{k}</span>
-              <span className="count">{n.toLocaleString()}</span></button>
-          ))}
-          {!kinds.length && <div className="empty">no photos</div>}
-        </div>
-      )}
-    </div>
-  );
-}
 
 // the folder's images along the bottom, as Lightroom's filmstrip: a cell
 // each with the file's name and type above its thumbnail, and its reject
@@ -5304,8 +5591,10 @@ function Filmstrip({ images, partners, pending, empty, current, loader, height, 
     const root = strip.current;
     if (!root) return;
     const seen = new IntersectionObserver((entries) => {
-      const ids = entries.filter((e) => e.isIntersecting)
-        .map((e) => Number((e.target as HTMLElement).dataset.imgid));
+      const id = (e: IntersectionObserverEntry) => Number((e.target as HTMLElement).dataset.imgid);
+      const ids = entries.filter((e) => e.isIntersecting).map(id);
+      loader.show(ids, true);
+      loader.show(entries.filter((e) => !e.isIntersecting).map(id), false);
       if (ids.length) loader.request(ids, true);
     }, { root, rootMargin: grid ? "300px 0px" : "0px 300px" });
     root.querySelectorAll<HTMLElement>(".thumb[data-imgid]").forEach((el) => seen.observe(el));
@@ -5585,6 +5874,9 @@ const RotateIcon = ({ right = false }: { right?: boolean }) => icon(
 const FlipIcon = ({ vertical = false }: { vertical?: boolean }) => icon(
   <g transform={vertical ? "rotate(90 12 12)" : undefined}>
     <path d="M12 3v18" strokeDasharray="2 2.5" /><path d="M9 6 3 18h6z" /><path d="M15 6l6 12h-6z" fill="currentColor" /></g>);
+// a strip of film with its sprocket holes
+const FilmIcon = () => icon(<><rect x="4" y="2.5" width="16" height="19" rx="2" /><path d="M8 2.5v19M16 2.5v19" />
+  <path d="M4 7h4M4 12h4M4 17h4M16 7h4M16 12h4M16 17h4" /></>);
 const CropIcon = () => icon(<><path d="M6 2v14a2 2 0 0 0 2 2h14" /><path d="M18 22V8a2 2 0 0 0-2-2H2" /></>);
 const ExportIcon = () => icon(<><path d="M12 15V4" /><path d="m7.5 8.5 4.5-4.5 4.5 4.5" />
                                   <path d="M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5" /></>);
@@ -5670,18 +5962,13 @@ const SCOPE_MODES: [ScopeMode, string][] = [
 // slider and a double-click resets it; on the RYB vectorscope, dragging
 // turns the color harmony guides. the clipping triangles show their
 // overlay on the photo: a click keeps it, hovering shows it for a while
-function HistogramView({ histogram: h, values, disabled, exif, neutral, onChange, clip, onClip, onClipPeek }: {
+function HistogramView({ histogram: h, values, disabled, exif, neutral, onChange, clip, onClip, onClipPeek, scope, onScope: setScope }: {
   histogram: Histogram | null; values: Record<string, number>; disabled: boolean; exif: Exif | null;
   neutral: (id: string) => number; onChange: (c: Control, v: number) => void;
   clip: ClipShow; onClip: (end: "low" | "high") => void; onClipPeek: (end: "low" | "high" | null) => void;
+  scope: ScopeSettings; onScope: (change: Partial<ScopeSettings>) => void;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
-  const [scope, setScopeState] = useState<ScopeSettings>(loadScope);
-  const setScope = (change: Partial<ScopeSettings>) => setScopeState((s) => {
-    const next = { ...s, ...change };
-    try { localStorage.setItem("immage.scope", JSON.stringify(next)); } catch { /* not kept */ }
-    return next;
-  });
   const [size, setSize] = useState(0);
   useEffect(() => {
     const c = ref.current;
@@ -5896,21 +6183,23 @@ function Navigator({ thumb, zoom, placement: p, disabled, onZoom, onPan }: {
           ))}
         </span>
       </div>
-      <div className="nav-image"
-           onPointerDown={(e) => {
-             if (!zoomed) return;
-             (e.target as HTMLElement).setPointerCapture(e.pointerId);
-             const a = at(e); setLive(a); onPan(a.x, a.y, false);
-           }}
-           onPointerMove={(e) => { if (live) { const a = at(e); setLive(a); onPan(a.x, a.y, false); } }}
-           onPointerUp={(e) => { if (live) { const a = at(e); setLive(null); onPan(a.x, a.y, true); } }}>
-        <canvas ref={thumb} />
-        {shown && (
-          <div className="nav-rect" style={{
-            left: `${shown.x * 100}%`, top: `${shown.y * 100}%`,
-            width: `${shown.w * 100}%`, height: `${shown.h * 100}%`,
-          }} />
-        )}
+      <div className="nav-image">
+        <div className="nav-pic"
+             onPointerDown={(e) => {
+               if (!zoomed) return;
+               (e.target as HTMLElement).setPointerCapture(e.pointerId);
+               const a = at(e); setLive(a); onPan(a.x, a.y, false);
+             }}
+             onPointerMove={(e) => { if (live) { const a = at(e); setLive(a); onPan(a.x, a.y, false); } }}
+             onPointerUp={(e) => { if (live) { const a = at(e); setLive(null); onPan(a.x, a.y, true); } }}>
+          <canvas ref={thumb} />
+          {shown && (
+            <div className="nav-rect" style={{
+              left: `${shown.x * 100}%`, top: `${shown.y * 100}%`,
+              width: `${shown.w * 100}%`, height: `${shown.h * 100}%`,
+            }} />
+          )}
+        </div>
       </div>
     </div>
   );
@@ -5975,10 +6264,13 @@ function PanelView({ panel: p, open, onToggle, values, session, disabled, onChan
   const [wheels, setWheels] = useState<WheelMode>("3way");
   const sections = p.tabs ? [p.sections[tab]] : p.sections;
   const showWheels = p.graph === "colorwheels" && wheels !== "sliders";
+  // a converted negative has these modules off (NEG_OFF)
+  const negative = (c: Control) => values.neg_on === 1 && NEG_GREYED.has(c.id);
   const controlProps = (c: Control) => ({
-    control: c, value: values[c.id] ?? c.neutral ?? 0,
+    control: negative(c) ? { ...c, note: "set in Negative: a converted negative turns this module off" } : c,
+    value: values[c.id] ?? c.neutral ?? 0,
     neutral: session?.neutral[c.id] ?? c.neutral ?? 0,
-    disabled: disabled || !mapOf.has(c.id) || (!!c.rawOnly && !session?.raw), onChange: (v: number) => onChange(c, v),
+    disabled: disabled || negative(c) || !mapOf.has(c.id) || (!!c.rawOnly && !session?.raw), onChange: (v: number) => onChange(c, v),
     values, glow: glowOf(c.id),
     rawOnly: !!c.rawOnly && !!session && !session.raw,
     onOption: c.optionPreview && onOptionPreview

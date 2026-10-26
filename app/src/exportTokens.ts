@@ -65,7 +65,7 @@ export function expand(template: string, i: ImageEntry, meta: Meta, seq: number,
 
 const round = (v: number, digits: number) => String(Number(v.toFixed(digits)));
 
-function shutter(s: number): string {
+export function shutter(s: number): string {
   if (!(s > 0)) return "";
   if (s >= 0.3) return `${round(s, 1)}s`;
   return `1/${Math.round(1 / s)}`;

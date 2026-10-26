@@ -141,7 +141,7 @@ const COMMANDS = {
     new Uint8Array(out, 8).set(pixels);
     return out;
   },
-  sample: ({ x, y, area }) => request({ cmd: "sample", x, y, box: area ?? null }),
+  sample: ({ x, y, area, stage }) => request({ cmd: "sample", x, y, box: area ?? null, stage: stage ?? null }),
   // u32 width and height, then a byte a point
   range_map: async ({ ranges, width, height }) =>
     sized(width, height, await request({ cmd: "range_map", ranges, width, height, out: range })),

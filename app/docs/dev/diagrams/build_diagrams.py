@@ -274,7 +274,7 @@ def slider_sequence():
     els.append(("box", "n2", 820, y + 10, 460, 70,
                 "600 ms after the last edit: save → history,\nXMP sidecar; the filmstrip thumb refreshes", NOTE))
     els.append(("text", 40, y + 110, "Timings for every hop: benchmarking/bench.py and the Performance overlay "
-                "(Preferences → General).", 16, MUTED))
+                "(Preferences → Performance).", 16, MUTED))
     return els
 
 

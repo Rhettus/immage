@@ -55,7 +55,7 @@ Paths below are relative to this file.
 | [splash.html](../../splash.html), [Splash.tsx](../../src/Splash.tsx) | The splash window: asks `about`, shows the main window, closes itself. |
 | [App.tsx](../../src/App.tsx) | The whole editor's shell and state. See [inside App.tsx](#inside-apptsx). |
 | [main.rs](../../src-tauri/src/main.rs) | `main()`: on Linux over NVIDIA's driver gives the web view Mesa's EGL (`mesa_egl`), migrates the old app name, registers the dialog, opener, updater, process, window state (the main window's size, position and maximized state) and immporter plugins. On Linux `setup()` builds the windows itself, with the frames web extension's folder (`webext_dir`). `setup()` picks the engine: `build/bin/darktable-engine` with runtime state in `build/app-runtime` for a dev build, the bundled `resources/darktable` with the app data folder for a release, or `DT_ENGINE_BIN`. Holds `AppState` and nearly every command. |
-| [engine.rs](../../src-tauri/src/engine.rs) | The engine child. Spawns it (`--core --configdir --cachedir -d perf`, OpenCL on with only export's pipe type allowed the GPU, which the base borrows; on Linux, ROCm's platform on and its kernels built as OpenCL C 2.0 when no RustiCL is installed, `rocm_only`), retrying while an old one holds darktable's database lock. `request()` writes one JSON line and reads one back. A stderr thread writes the log and keeps darktable's `-d perf` timings apart for the performance overlay. |
+| [engine.rs](../../src-tauri/src/engine.rs) | The engine child. Spawns it (`--core --configdir --cachedir -d perf`, darktable's resource level from Preferences (`resource_level`), OpenCL on with only export's pipe type allowed the GPU, which the base borrows; on Linux, ROCm's platform on and its kernels built as OpenCL C 2.0 when no RustiCL is installed, `rocm_only`), retrying while an old one holds darktable's database lock. `request()` writes one JSON line and reads one back. A stderr thread writes the log and keeps darktable's `-d perf` timings apart for the performance overlay. |
 | [engine/main.c](../../../engine/main.c) | `main()`: keeps the real stdout for replies, starts darktable with an in-memory library (`dt_init`), sets its confs, then loops: read a line, `_handle()` it, reply. |
 
 The boundary is strict. The front end never touches files or darktable
@@ -118,7 +118,7 @@ are `localStorage` keys named `immage.*`.
 | `currentView` | the `View` asked for: fitted to the viewer (capped at `MAX_PREVIEW`), a zoomed window, or a half-size draft while dragging |
 | `paintFrame` / `drawFrame` | a `Frame` onto the canvas; the histogram; `showOverview` for a whole-image frame (base layer, navigator) |
 | `animateTo`, `setZoom` | eased zoom; renders wait until it settles |
-| `openFile` / `openEntry` | open a photo: the filmstrip's thumbnail as a stand-in, `Session.open`, then the new-photo defaults (tone mapper, profile, exposure compensation, preset, Edit In returns); once it is idle, `prefetchNext` has the engine decode the photo the arrow keys open next |
+| `openFile` / `openEntry` | open a photo: the filmstrip's thumbnail as a stand-in, `Session.open`, then the new-photo defaults (tone mapper, profile, exposure compensation, preset, Edit In returns); once it is idle, `prefetchNext` has the engine decode the photos the arrow keys open next (Preferences' Read ahead) |
 | `change` / `changeMany` | every control edit: undo step, `values` state, `Session.set` |
 | undo (`record`, `restore`, `Snap`) | snapshots of values, masks, spots and look |
 | before/after, compare | `setBaMode`, `setBefore` (`Session.showBefore`), `toggleCompare` |
@@ -144,6 +144,7 @@ are `localStorage` keys named `immage.*`.
 | [wb.ts](../../src/wb.ts) | Temp/Tint and color calibration's illuminant. |
 | [tonecurve.ts](../../src/tonecurve.ts) | Parametric and point curves and tonecurve nodes. |
 | [transform.ts](../../src/transform.ts), [colorgrading.ts](../../src/colorgrading.ts) | Rotate/ashift and auto-crop; color balance hues. |
+| [colorequal.ts](../../src/colorequal.ts) | HSL and the B&W Mix at Lightroom's band hues: the mix of the color equalizer's eight nodes each slider sets (`toNodes`) and back (`fromNodes`), fitted to darktable's own curve through them. |
 | [GuideOverlay.tsx](../../src/GuideOverlay.tsx) | The Transform grid and Guided Upright's guides on the photo. |
 | [autoTone.ts](../../src/autoTone.ts), [bwauto.ts](../../src/bwauto.ts) | Basic's Auto and the B&W Mix's Auto, from the rendered frame. |
 
@@ -163,6 +164,7 @@ are `localStorage` keys named `immage.*`.
 | [localMerge.ts](../../src/localMerge.ts) | `planMerge`: which masks share instances of a `merge` module (color balance rgb, color equalizer for HSL, diffuse for Texture, denoise, chromatic aberrations for Defringe), grouped by direction or by slider and sign, whichever needs fewer; each shared instance's strength and each mask's opacity in its combined mask. Masks share only with masks of the same ranges and refinements, which the shared instance carries; an inverted mask with ranges, ranges alone and refine Contrast keep their own instances (`canMerge`). |
 | [MaskOverlay.tsx](../../src/MaskOverlay.tsx), [MasksPanel.tsx](../../src/MasksPanel.tsx), [ParametricEditor.tsx](../../src/ParametricEditor.tsx) | Drawing shapes on the photo; the Masks panel; darktable's parametric (blendif) editor. |
 | [spots.ts](../../src/spots.ts), [SpotOverlay.tsx](../../src/SpotOverlay.tsx), [HealPanel.tsx](../../src/HealPanel.tsx) | Heal/Clone spots, sent to darktable's retouch module. |
+| [negadoctor.ts](../../src/negadoctor.ts), [NegativePanel.tsx](../../src/NegativePanel.tsx) | Film negatives: negadoctor's presets and its pickers, ported from `src/iop/negadoctor.c` and fed `sample` at negadoctor's input; the Negative panel. A converted photo (`neg_on`) has the modules of `NEG_OFF` (manifest.ts) forced off in `Session.moduleEdit`, read as if on when it opens, and kept in the history by the engine's `_held_for_negative`; `NEG_CHOICES` moves Basic's tools after it. |
 | [zones.ts](../../src/zones.ts), [ZoneSystem.tsx](../../src/ZoneSystem.tsx) | The Zone System: zone statistics, the placement curve (a tone equalizer instance ahead of the [mask anchor](masks.md#where-the-instances-run)), zone masks. |
 
 ### Presets and looks
@@ -175,8 +177,10 @@ are `localStorage` keys named `immage.*`.
 
 | File | Responsibility |
 |---|---|
-| [library.ts](../../src/library.ts) | `ImageEntry`; `openFolder` (batches arriving as `folder-progress` events); RAW+JPEG pairing; `ThumbLoader`, which fetches thumbnails only while the engine is idle. |
+| [library.ts](../../src/library.ts) | `ImageEntry`; `openFolder` (batches arriving as `folder-progress` events); RAW+JPEG pairing; `ThumbLoader`, which fetches thumbnails only while the engine is idle, and lets those off screen longest go past Preferences' Thumbnail memory. |
 | [FolderTree.tsx](../../src/FolderTree.tsx) | The folder tree. |
+| [filter.ts](../../src/filter.ts) | The filmstrip's `Filter` over a folder's photos (`passes`), and what the photos hold to filter by (`facets`): kinds, cameras, lenses, keywords, exposure settings. |
+| [FilterPopup.tsx](../../src/FilterPopup.tsx) | The toolbar's Filters popup: the folder's fields, or on Immich results the server search's filters (the `ImmichSearch` App holds, shared with the Immich card). |
 
 ### Export
 
@@ -190,7 +194,7 @@ are `localStorage` keys named `immage.*`.
 
 | File | Responsibility |
 |---|---|
-| [immich.ts](../../src/immich.ts), [ImmichPanel.tsx](../../src/ImmichPanel.tsx), [ImmichPrefs.tsx](../../src/ImmichPrefs.tsx) | Search, remote assets as `ImageEntry`, path maps from Immich to local files; the Library's Immich card; connection settings (from the immporter). |
+| [immich.ts](../../src/immich.ts), [ImmichPanel.tsx](../../src/ImmichPanel.tsx), [ImmichPrefs.tsx](../../src/ImmichPrefs.tsx) | Search, remote assets as `ImageEntry`, path maps from Immich to local files; the Library's Immich card (library, words, mode; its filters are in the Filters popup); connection settings (from the immporter). |
 | [plugins.ts](../../src/plugins.ts), [PluginPrefs.tsx](../../src/PluginPrefs.tsx) | Edit In: plugin kinds (`KINDS`, DxO PureRAW today), configs, returns; the Plugins preferences tab. |
 
 ### Preferences, histogram, probe, performance
@@ -222,7 +226,7 @@ Commands by what they reach:
 | AI models (download, then the engine's `version`) | `ai_model_ensure`, `ai_model_reinstall` |
 | Immich (HTTP) | `immich_albums`, `immich_create_album`, `immich_export_check`, `immich_browse_check`, `immich_search`, `immich_libraries`, `immich_suggestions`, `immich_people`, `immich_tags`, `immich_thumb`, `immich_resolve` |
 | Plugins | `plugin_find_apps`, `plugin_launch`, `plugin_watch`, `plugin_cancel`, `plugin_returns`, `plugin_return_applied` |
-| Performance | `perf_set`, `perf_modules`, `perf_report_write` |
+| Performance | `perf_set`, `perf_modules`, `perf_report_write`, `perf_ping` |
 | The window | `preview_fullscreen` |
 
 Events from Rust: `folder-progress`, `export-progress`, `ai-model`,
@@ -270,12 +274,12 @@ Immage or in darktable.
 | Session, open, close | `_open_image`, `_close_session`, `_import`, `_compress_history` |
 | Set and get params | `_set` (fields by introspection, `instance`, `mask`, `after`/`before` moves), `_get`, `_write_field`, `_named_instance` |
 | Render | `_render` (and the `render` command's `skip`; with `have`, a frame of no size naming the client's frame of the hash it would get), `_write_rgba`, `_ppipe_ready`, `_preview` |
-| Library | `_folder`, `_import_files`, `_thumb`, `_prefetch` (a raw decoded ahead on a thread of its own), `_image_json`, `_meta_set`, `_keywords_set`, `_copy`, `_remove_copy`, `_sidecars` |
-| Export | `_export` (darktable's export with flags); `_frame_style` (borders and a watermark SVG as a temporary style; a fixed canvas as one last border, sized so the file comes out exactly W x H); the AI upscale proxy format (`_upscale_ctx`) |
+| Library | `_folder`, `_import_files`, `_thumb`, `_prefetch` (raws decoded ahead, a few at once, on a thread pool of its own), `_image_json`, `_meta_set`, `_keywords_set`, `_copy`, `_remove_copy`, `_sidecars` |
+| Export | `_export` (darktable's export with flags, then `strip_metadata` in [strip.cc](../../../engine/strip.cc), with exiv2, for what the flags do not reach: serial numbers, camera info, the source's own text fields and keywords); `_frame_style` (borders and a watermark SVG as a temporary style; a fixed canvas as one last border, sized so the file comes out exactly W x H); the AI upscale proxy format (`_upscale_ctx`) |
 | Masks | `_mask` (shapes into a mask group, prefixed `immage: `), `_masks` (with `merged_in`), `_mask_delete`, `_mask_rename`, `_attach_mask`. The [mask anchor](masks.md#where-the-instances-run), `colorbalancergb`, is where every mask's instances run, so a range sampled at its output holds for all of them. `_combine`: a group of masks' groups summed, each at its opacity (prefixed `immage combined: `), with the members' ranges, driving a shared instance, which `_attach_mask` attaches only to a combined mask; `_combined_member_changed` keeps it current when a member is reshaped or deleted. `_prune_off` keeps a mask's own switched-off instances (`_holds_mask_settings`). `_named_instance` places a mask's own instance after the shared ones of its module |
 | AI (`HAVE_AI`) | `_ai_object` (SAM), `_ai_mask` (sky, subject, ...), `_ai_depth`, `_ai_denoise` (darktable's raw denoise into a DNG, repeating `src/libs/neural_restore.c`'s job on its public calls), `_ai_denoise_preview` (its 1:1 before and after, as the lib's raw preview makes them); on Linux, `_ort_exports` keeps darktable from probing a GPU provider the bundled ONNX Runtime lacks, and `main()` sets the provider to CPU when it has none |
 | Spots | `_spots_set`, `_spots_json`, `_spot_source` (the retouch module) |
-| Ranges and zones | `_sample`, `_range_map`, `_zones`, `_mask_map`, `_tone_key`, `_agx_auto` |
+| Ranges and zones | `_sample` (at the mask anchor, or with `stage` "negadoctor" at negadoctor's input), `_range_map`, `_zones`, `_mask_map`, `_tone_key`, `_agx_auto` |
 | Looks | `_look`, `_look_amount` (a darktable style, its instances scaled) |
 | Save | `_save` (history to the database, compressed, history hash and `darktable\|changed`, XMP sidecar written) |
 

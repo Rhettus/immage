@@ -13,6 +13,11 @@ apply as you make them; **Done** closes the window.
 - **Canvas**: what is behind the photo, in full screen preview too.
   **Dark**, **Neutral Gray** to judge tones without a dark surround, or
   **White** to see the photo as on a print. L steps through them.
+- **Guide color**: the color of the lines drawn over the photo: the crop
+  frame and its grid, the straighten line, Transform's grid and guides,
+  the vignette's guides and a mask shape's outline. **White**, **Yellow**,
+  **Red** or a color of your own. Each line has a thin dark edge, so even
+  white shows on a light photo or a White canvas.
 - **Focus mode**: opening a panel closes the others; ⌥-click opens one
   alongside. On by default.
 - **Auto-hide panels**: the side panels and filmstrip slide away when the
@@ -20,6 +25,24 @@ apply as you make them; **Done** closes the window.
   bottom edge below the toolbar. A pin keeps one open.
 - **Scroll adjusts sliders**: off by default, so scrolling over the panels
   only scrolls them and an edit can't change by accident.
+
+**Library**
+
+- **Stack RAW+JPEG pairs as one photo**: a raw and the JPEG, HEIF or OM
+  System .ORI of the same name show as one, and a rating, reject or delete
+  takes them all.
+
+**Startup**
+
+- **Quick start guide**: the short tour when Immage opens.
+
+## Performance
+
+How fast the photo responds while you edit, and the memory and disk
+Immage keeps to make it so.
+
+**Editing**
+
 - **Preview**: how much the photo gives up for speed while you edit.
   Export is never affected.
   - **Quality** renders every frame in full, even while you drag.
@@ -32,12 +55,46 @@ apply as you make them; **Done** closes the window.
   - **Performance** drags at quarter size, also without noise reduction and
     HSL, and renders the picture behind the photo only at the viewer's
     size, so zooming in shows it softer until the sharp view arrives.
+- **Shared-memory frames** (Windows and Linux): hands each frame to the
+  window in memory both share, rather than copying it. On by default; turn
+  it off only to compare the two in the GUI benchmark.
 
-**Library**
+**Memory**
 
-- **Stack RAW+JPEG pairs as one photo**: a raw and the JPEG, HEIF or OM
-  System .ORI of the same name show as one, and a rating, reject or delete
-  takes them all.
+- **darktable memory**: how much of this computer's memory darktable may
+  take for its pipes and caches. **Small** keeps to about an eighth, for
+  working beside other large programs, though more of each edit is then
+  worked out again; **Default** about half; **Large** about two thirds,
+  for when Immage is the only large program running. It applies once
+  Immage starts again: **Relaunch** saves the photo and restarts.
+- **Frame cache**: memory for the views of the photo already shown, so
+  zooming back out or going back to a view seen before shows it at once,
+  without a render. A view at 100% is about 30 MB on a 4K screen and 45 MB
+  on a 5K one. 512 MB on a 4K screen or larger, 256 MB on a smaller one.
+- **Thumbnail memory**: for the library's thumbnails. Past it, those
+  scrolled out of sight longest are let go and read from the disk cache
+  again when you scroll back. A thumbnail takes about 1 MB, so the
+  default, 1 GB, holds some 900.
+- **Read ahead**: how many photos have their raws decoded while you edit,
+  in the direction you last stepped, so the arrow keys open them without
+  waiting for the decode. Up to three are decoded at once. Each holds its
+  raw in memory, about 50 MB for a 24-megapixel photo. One by default.
+- **Read ahead both ways**: as many photos behind the open one too, for
+  stepping back. Off by default.
+
+**Cache**
+
+How much disk each cache may take, with what it holds now. **Clear**
+empties one.
+
+- **Library thumbnails**: so a folder seen before opens at once. 1 GB by
+  default.
+- **Immich thumbnails**: search results scrolled through. 512 MB by
+  default.
+- **Immich originals**: photos opened from Immich. One you have edited is
+  kept whatever the limit, as its edit is beside it. 10 GB by default.
+
+The thumbnail caches keep nothing while the disk has under 5 GB free.
 
 **AI Acceleration**
 
@@ -45,7 +102,7 @@ apply as you make them; **Done** closes the window.
   first one found. If none is found, AI upscaling isn't offered.
 - **Device**: which graphics card, when there is more than one.
 
-**Performance**
+**Measuring**
 
 - **Performance overlay**: shows, over the photo, the frame rate, the time
   from a slider moving to the photo changing, where that time went, and
@@ -56,10 +113,6 @@ apply as you make them; **Done** closes the window.
 - **GUI benchmark**: **Run** drags the main sliders on the open photo and
   back, zooms in and out, and saves a timing report. Every slider ends where
   it started, but use a copy of a photo you care about.
-
-**Startup**
-
-- **Quick start guide**: the short tour when Immage opens.
 
 ## New Photos
 
