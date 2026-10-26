@@ -33,6 +33,8 @@ Bug fixes
   and stop responding while a photo is open, as they could when the
   folder shown no longer listed it
 - the History card's rows are no longer at times drawn over each other
+- Before/After shows the Before at the same size as the After on a
+  photo with lens corrections or Transform; before, it came out larger
 
 ## 0.36.0
 
