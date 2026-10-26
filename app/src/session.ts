@@ -813,6 +813,15 @@ export class Session {
   // until the base's render is over, stopped or not
   private baseInFlight: Promise<void> | null = null;
   get baseRendering() { return !!this.base && !this.base.stale; }
+  // a base in flight stopped, as an edit stops it, for work the user waits
+  // on: true when one was, so the caller asks for it again after
+  stopBase(): boolean {
+    if (!this.base || this.base.stale) return false;
+    this.base.stale = true;
+    this.base.wake();
+    invoke("cancel_base").catch(() => {});
+    return true;
+  }
 
   requestThumb() {
     this.needThumb = true;
