@@ -861,23 +861,28 @@ input.switch:disabled { cursor: default; opacity: 0.4; }
 }
 /* edge handles are short bars, corner handles L-shapes; their hit areas
    are larger than what is drawn */
-.crop-handle { position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px; }
+.crop-handle { position: absolute; width: 32px; height: 32px; margin: -16px 0 0 -16px; }
 .crop-handle::after { content: ""; position: absolute; border-color: rgb(var(--guide)); border-style: solid; border-width: 0;
                       filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.9)); }
-.crop-handle.n, .crop-handle.s { left: 50%; cursor: ns-resize; }
-.crop-handle.e, .crop-handle.w { top: 50%; cursor: ew-resize; }
-.crop-handle.n { top: 0; } .crop-handle.s { top: 100%; }
-.crop-handle.w { left: 0; } .crop-handle.e { left: 100%; }
-.crop-handle.n::after, .crop-handle.s::after { left: 3px; right: 3px; top: 9px; height: 0; border-top-width: 3px; }
-.crop-handle.e::after, .crop-handle.w::after { top: 3px; bottom: 3px; left: 9px; width: 0; border-left-width: 3px; }
+/* an edge is grabbed anywhere along it, mostly from outside the crop so
+   the inside stays free to move it; the corners sit above the edges */
+.crop-handle.n, .crop-handle.s { left: 0; width: 100%; height: 26px; margin-left: 0; cursor: ns-resize; }
+.crop-handle.e, .crop-handle.w { top: 0; height: 100%; width: 26px; margin-top: 0; cursor: ew-resize; }
+.crop-handle.n { top: 0; margin-top: -20px; } .crop-handle.s { top: 100%; margin-top: -6px; }
+.crop-handle.w { left: 0; margin-left: -20px; } .crop-handle.e { left: 100%; margin-left: -6px; }
+.crop-handle.n::after, .crop-handle.s::after { left: calc(50% - 8px); width: 16px; height: 0; border-top-width: 3px; }
+.crop-handle.e::after, .crop-handle.w::after { top: calc(50% - 8px); height: 16px; width: 0; border-left-width: 3px; }
+.crop-handle.n::after { top: 18px; } .crop-handle.s::after { top: 4px; }
+.crop-handle.w::after { left: 18px; } .crop-handle.e::after { left: 4px; }
+.crop-handle.nw, .crop-handle.ne, .crop-handle.sw, .crop-handle.se { z-index: 1; }
 .crop-handle.nw { left: 0; top: 0; cursor: nwse-resize; }
 .crop-handle.se { left: 100%; top: 100%; cursor: nwse-resize; }
 .crop-handle.ne { left: 100%; top: 0; cursor: nesw-resize; }
 .crop-handle.sw { left: 0; top: 100%; cursor: nesw-resize; }
-.crop-handle.nw::after { left: 9px; top: 9px; width: 12px; height: 12px; border-left-width: 3px; border-top-width: 3px; }
-.crop-handle.ne::after { right: 9px; top: 9px; width: 12px; height: 12px; border-right-width: 3px; border-top-width: 3px; }
-.crop-handle.sw::after { left: 9px; bottom: 9px; width: 12px; height: 12px; border-left-width: 3px; border-bottom-width: 3px; }
-.crop-handle.se::after { right: 9px; bottom: 9px; width: 12px; height: 12px; border-right-width: 3px; border-bottom-width: 3px; }
+.crop-handle.nw::after { left: 14px; top: 14px; width: 12px; height: 12px; border-left-width: 3px; border-top-width: 3px; }
+.crop-handle.ne::after { right: 14px; top: 14px; width: 12px; height: 12px; border-right-width: 3px; border-top-width: 3px; }
+.crop-handle.sw::after { left: 14px; bottom: 14px; width: 12px; height: 12px; border-left-width: 3px; border-bottom-width: 3px; }
+.crop-handle.se::after { right: 14px; bottom: 14px; width: 12px; height: 12px; border-right-width: 3px; border-bottom-width: 3px; }
 
 .crop-card .row-label { margin: 2px 0 6px; color: var(--text-2); }
 .crop-aspect { display: flex; gap: 8px; margin-bottom: 12px; }
