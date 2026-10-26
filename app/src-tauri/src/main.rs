@@ -46,6 +46,9 @@ struct AppState {
     perf_on: AtomicBool,
     perf_last: Mutex<Vec<Timing>>,
     perf_dir: PathBuf,
+    runtime: PathBuf,
+    // darktable's resource level the engine started with
+    resource_level: String,
 }
 
 impl AppState {
@@ -1317,11 +1320,23 @@ async fn meta(state: State<'_, AppState>, imgid: i64) -> Result<Value, String> {
     state.engine().request(json!({ "cmd": "meta", "imgid": imgid }))
 }
 
-// the photo likely opened next, its raw decoded ahead on the engine's own
-// thread; the reply does not wait for it
+// the photos likely opened next, their raws decoded ahead in this order on
+// the engine's own thread; the reply does not wait for them
 #[tauri::command]
-async fn prefetch(state: State<'_, AppState>, imgid: i64) -> Result<Value, String> {
-    state.engine().request(json!({ "cmd": "prefetch", "imgid": imgid }))
+async fn prefetch(state: State<'_, AppState>, imgids: Vec<i64>) -> Result<Value, String> {
+    state.engine().request(json!({ "cmd": "prefetch", "imgids": imgids }))
+}
+
+// Preferences' darktable memory: the level the engine runs at, and the one
+// its next start takes
+#[tauri::command]
+fn darktable_resources(state: State<'_, AppState>) -> Value {
+    json!({ "running": state.resource_level, "next": engine::resource_level(&state.runtime) })
+}
+
+#[tauri::command]
+fn darktable_resources_set(state: State<'_, AppState>, level: String) -> Result<(), String> {
+    engine::set_resource_level(&state.runtime, &level)
 }
 
 // the GPU execution providers this computer can use for AI, with their
@@ -2059,6 +2074,7 @@ fn main() {
                  data.join("benchmarks"))
             };
             let bin = std::env::var_os("DT_ENGINE_BIN").map(PathBuf::from).unwrap_or(default_bin);
+            let resource_level = engine::resource_level(&runtime);
             let engine = Engine::spawn(&bin, &runtime, &models_dir)
                 .map_err(|e| format!("cannot start {}: {e}", bin.display()))?;
             app.manage(AppState {
@@ -2078,13 +2094,15 @@ fn main() {
                 perf_on: AtomicBool::new(false),
                 perf_last: Mutex::new(Vec::new()),
                 perf_dir,
+                runtime: runtime.clone(),
+                resource_level,
             });
             app.manage(plugins::Plugins::new(runtime.join("plugin-returns.json")));
             app.manage(Caches::new(&app.path().app_cache_dir()?));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            open_folder, open_image, get_params, set_params, render, cancel_base, save, baseline_end, before_view, thumb, thumb_cached, cache_limits, cache_usage, cache_clear, meta, meta_set, prefetch,
+            open_folder, open_image, get_params, set_params, render, cancel_base, save, baseline_end, before_view, thumb, thumb_cached, cache_limits, cache_usage, cache_clear, meta, meta_set, prefetch, darktable_resources, darktable_resources_set,
             export_images, export_existing, export_preview, fonts, export_presets_load, export_presets_save, preset_file_write, preset_file_read, presets_load, presets_save, looks_list, look_import, look_export, look_delete, look_apply, look_amount, preview,
             mask_shapes, combine, masks, mask_delete, mask_rename, history, module_state, sample, tone_key, agx_auto, upright, points, range_map, zones, mask_map, ai_object,
             ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, list_subfolders, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,

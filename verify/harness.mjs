@@ -783,22 +783,25 @@ async function decisions(photo) {
       : copyBack?.pixels.buffer !== first.pixels.buffer ? "back from the Before view, the copy was rendered again" : null;
   });
 
-  // the photo the arrow keys open next is decoded ahead (App.tsx,
-  // prefetchNext; main.c, _prefetch). opened while that decode is still
-  // under way, it waits for it, and renders as a photo opened cold does
+  // the photos the arrow keys open next are decoded ahead, a few at once
+  // (App.tsx, prefetchNext; main.c, _prefetch). each, opened while its
+  // decode is still under way, waits for it, and renders as a photo opened
+  // cold does: the first of the list and the last, decoded beside it
   await decide("a prefetched photo opens as it would cold", async () => {
-    const cold = fresh(photo), ahead = fresh(photo);
-    const { images } = await request({ cmd: "import", files: [cold, ahead] });
+    const cold = fresh(photo), ahead = [fresh(photo), fresh(photo), fresh(photo)];
+    const { images } = await request({ cmd: "import", files: [cold, ...ahead] });
     const pixels = async (path) => {
       await request({ cmd: "open", path, imgid: -1 });
-      return (await invoke("render", { width: 512, height: 512 })).slice(FRAME_HEAD);
+      const px = new Uint8Array((await invoke("render", { width: 512, height: 512 })).slice(FRAME_HEAD));
+      await request({ cmd: "close" });
+      return px;
     };
-    const a = new Uint8Array(await pixels(cold));
-    await request({ cmd: "close" });
-    await request({ cmd: "prefetch", imgid: images.find((e) => e.path === ahead).imgid });
-    const b = new Uint8Array(await pixels(ahead));
-    await request({ cmd: "close" });
-    return a.length !== b.length || a.some((v, k) => v !== b[k]) ? "it rendered differently from the photo opened cold" : null;
+    const differs = (a, b) => a.length !== b.length || a.some((v, k) => v !== b[k]);
+    const a = await pixels(cold);
+    await request({ cmd: "prefetch", imgids: ahead.map((p) => images.find((e) => e.path === p).imgid) });
+    const last = await pixels(ahead[2]), first = await pixels(ahead[0]);
+    return differs(a, last) ? "the last of the list rendered differently from the photo opened cold"
+      : differs(a, first) ? "the first of the list rendered differently from the photo opened cold" : null;
   });
 
   // a photo edited in darktable keeps all of its edit: modules Immage has

@@ -247,37 +247,65 @@ static void _cancel_base(const gint64 id)
   g_mutex_unlock(&_cancel_lock);
 }
 
-// a photo likely opened next, its raw decoded ahead on a thread of its own.
-// darktable's job threads would do it (DT_MIPMAP_PREFETCH), but without
-// its GUI darktable starts none (control.c, dt_control_init). one at a
-// time: a prefetch asked for while one is under way is dropped. `open` of
-// that photo then finds the decoded raw in the mipmap cache, or waits on
-// the decode under way
-static GThread *_prefetch_thread = NULL;
-static gint _prefetch_busy = 0;
+// photos likely opened next, their raws decoded ahead on threads of their
+// own, a few at once: a raw's decode mostly keeps to one core. darktable's
+// job threads would do it (DT_MIPMAP_PREFETCH), but without its GUI
+// darktable starts none (control.c, dt_control_init). a new list replaces
+// the photos still waiting, not those being decoded. `open` of one of them
+// then finds the decoded raw in the mipmap cache, or waits on the decode
+// under way. the cache keeps 2 * dt_worker_threads() full raws, at least 8
+// (mipmap_cache.c, dt_mipmap_cache_init), so a list longer than 7 pushes
+// out the open photo's neighbors it decoded first
+#define _PREFETCH_THREADS 3
+static GThreadPool *_prefetch_pool = NULL;
+static GMutex _prefetch_lock;
+static GArray *_prefetch_queue = NULL;
 
-static gpointer _prefetch_run(gpointer data)
+// one task per photo queued: each decodes the next one still waiting, so a
+// task left over from a list since replaced finds the new one, or nothing
+static void _prefetch_run(gpointer data, gpointer user_data)
 {
+  g_mutex_lock(&_prefetch_lock);
+  if(!_prefetch_queue->len)
+  {
+    g_mutex_unlock(&_prefetch_lock);
+    return;
+  }
+  const dt_imgid_t imgid = g_array_index(_prefetch_queue, dt_imgid_t, 0);
+  g_array_remove_index(_prefetch_queue, 0);
+  g_mutex_unlock(&_prefetch_lock);
   dt_mipmap_buffer_t buf;
-  dt_mipmap_cache_get(&buf, GPOINTER_TO_INT(data), DT_MIPMAP_FULL, DT_MIPMAP_BLOCKING, 'r');
+  dt_mipmap_cache_get(&buf, imgid, DT_MIPMAP_FULL, DT_MIPMAP_BLOCKING, 'r');
   dt_mipmap_cache_release(&buf);
-  g_atomic_int_set(&_prefetch_busy, 0);
-  return NULL;
 }
 
-static void _prefetch(const dt_imgid_t imgid)
+static void _prefetch(const dt_imgid_t *imgids, const guint n)
 {
-  if(g_atomic_int_get(&_prefetch_busy)) return;
-  if(_prefetch_thread) g_thread_join(_prefetch_thread);
-  g_atomic_int_set(&_prefetch_busy, 1);
-  _prefetch_thread = g_thread_new("prefetch", _prefetch_run, GINT_TO_POINTER(imgid));
+  if(!_prefetch_pool)
+  {
+    _prefetch_queue = g_array_new(FALSE, FALSE, sizeof(dt_imgid_t));
+    _prefetch_pool = g_thread_pool_new(_prefetch_run, NULL, _PREFETCH_THREADS, FALSE, NULL);
+  }
+  g_mutex_lock(&_prefetch_lock);
+  g_array_set_size(_prefetch_queue, 0);
+  for(guint k = 0; k < n; k++)
+    if(dt_is_valid_imgid(imgids[k]) && imgids[k] != _s.imgid) g_array_append_val(_prefetch_queue, imgids[k]);
+  const guint queued = _prefetch_queue->len;
+  g_mutex_unlock(&_prefetch_lock);
+  // the pool takes no NULL task
+  for(guint k = 0; k < queued; k++) g_thread_pool_push(_prefetch_pool, GINT_TO_POINTER(1), NULL);
 }
 
-// before darktable's caches go
+// before darktable's caches go: the photos waiting are dropped, and the
+// decodes under way finished
 static void _prefetch_wait(void)
 {
-  if(_prefetch_thread) g_thread_join(_prefetch_thread);
-  _prefetch_thread = NULL;
+  if(!_prefetch_pool) return;
+  g_mutex_lock(&_prefetch_lock);
+  g_array_set_size(_prefetch_queue, 0);
+  g_mutex_unlock(&_prefetch_lock);
+  g_thread_pool_free(_prefetch_pool, TRUE, TRUE);
+  _prefetch_pool = NULL;
 }
 
 static void _follower_cleanup(dt_engine_follower_t *f)
@@ -6689,9 +6717,14 @@ static void _handle(JsonObject *req, FILE *out)
   }
   else if(!g_strcmp0(cmd, "prefetch"))
   {
-    // the reply does not wait for the decode
-    const dt_imgid_t imgid = json_object_get_int_member_with_default(req, "imgid", 0);
-    if(dt_is_valid_imgid(imgid) && imgid != _s.imgid) _prefetch(imgid);
+    // the reply does not wait for the decode. `imgids` in the order to
+    // decode them, or one `imgid`
+    JsonArray *ids = json_object_has_member(req, "imgids") ? json_object_get_array_member(req, "imgids") : NULL;
+    const guint n = ids ? MIN(json_array_get_length(ids), 16) : 1;
+    dt_imgid_t list[16];
+    for(guint k = 0; k < n; k++)
+      list[k] = ids ? json_array_get_int_element(ids, k) : json_object_get_int_member_with_default(req, "imgid", 0);
+    _prefetch(list, n);
   }
   else if(!g_strcmp0(cmd, "meta"))
   {
