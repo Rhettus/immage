@@ -5141,7 +5141,7 @@ export default function App() {
                 data-tour="heal"
                 disabled={!current} onClick={() => showRight("heal")}><HealIcon /></button>
         <button className={`tool${layout.right && !cropping && rightMode === "negative" ? " on" : ""}`}
-                title="film negative" disabled={!current} onClick={openNegative}><FilmIcon /></button>
+                title="film negative" data-tour="negative" disabled={!current} onClick={openNegative}><FilmIcon /></button>
         <button className={`tool${layout.right && !cropping && rightMode === "presets" ? " on" : ""}`} title="presets" data-tour="presets"
                 onClick={() => showRight("presets")}><PresetsIcon /></button>
         </div>
