@@ -90,17 +90,20 @@ Photos outside that folder are downloaded before they open.
 Once a server and key are set, the **Immich** card appears in the Library
 panel, under **Folders**.
 
-![The Immich card with a search and Advanced filters open](images/immich-search.png)
-<!-- screenshot: Library panel, Immich card, Smart search "beach at sunset", Advanced open with a person chip -->
+![The Immich card with a search, and the Filters popup open](images/immich-search.png)
+<!-- screenshot: Library panel, Immich card, Smart search "beach at sunset", the toolbar's Filters popup open with People's panel beside it, one person ticked -->
 
 - The library menu chooses what to search: **External libraries** (the
   default), **All photos**, or one library.
 - Type in the search box and press Enter. **Smart** searches by what is in
   the photo, using Immich's machine learning, for example
   `dog on a beach`. **Filename** searches file names and descriptions.
-- **Advanced** adds filters: the date taken, rating, favorites, **RAW
-  only**, camera and lens, country and city, people, tags and albums.
-  Changing a filter searches again by itself. **Clear** removes them.
+- The toolbar's stars and its **Filters** button narrow the search: the
+  date taken, rating, favorites, **RAW only**, camera and lens, keywords
+  (Immich's tags), people, albums, country and city. Immich applies them
+  to the whole search, not just the results loaded so far. Choose a
+  filter's options in the panel beside the list, then click **Search** to
+  search again and show the results in the grid.
 
 Results fill the grid with Immich's thumbnails, 250 at a time, with more
 as you scroll.

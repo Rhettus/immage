@@ -1361,8 +1361,9 @@ static void _image_json(JsonBuilder *b, const dt_imgid_t imgid, const gboolean f
       g_list_free_full(res, g_free);
     }
     json_builder_end_object(b);
-    _keywords_json(b, imgid);
   }
+  // always, as the filmstrip's filter narrows the folder by them
+  _keywords_json(b, imgid);
   json_builder_end_object(b);
 }
 

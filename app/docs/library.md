@@ -102,7 +102,28 @@ The toolbar under the filmstrip filters the folder:
   again to show only unedited ones, and again to show everything.
 - **Color labels**: show photos with any of the chosen labels; the gray
   swatch shows photos without a label.
-- **File types**: show only some kinds, for example **RAW** and **JPEG**.
+- **Filters**: opens a list of what else the folder can be narrowed by,
+  with a panel beside it showing the options of the one chosen. Choose
+  as many as you like, then click **Search** to filter the folder and show
+  it in the grid; **Clear** in the panel takes that one off, at the next
+  **Search**.
+  - **File type**, **Camera** and **Lens**: tick any to show photos of
+    those, for example **RAW** and **JPEG**. Each lists what the folder
+    holds, with how many photos of each.
+  - **Keywords**: tick one or more to show photos with all of them. A
+    keyword includes those under it, so **Places** shows photos tagged
+    **Places › Norway** too.
+  - **Captured**: photos taken between two dates. Type them, or pick a
+    recent span (**Last 30 days**, **This month**, **Last year** and
+    others), a year, or a month of the year picked.
+  - **Exposure**: ISO, aperture, focal length and shutter speed. Choose
+    one to list the values the folder holds, and tick any, for example
+    ISO 100 and 200.
+
+  Each list counts only the photos your other choices leave: tick a
+  camera, and **Lens** lists just the lenses used on it. The list shows
+  what each is set to, and the button how many are on. **Clear all**, at
+  the bottom of the panel, takes them all off when you click **Search**.
 - **Clear**: show every photo again.
 
 Opening another folder clears the filters.

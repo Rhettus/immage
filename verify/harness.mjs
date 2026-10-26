@@ -70,6 +70,7 @@ const { ILLUMINANT_D } = await import("../app/src/wb.ts");
 const { autoTone } = await import("../app/src/autoTone.ts");
 const { dueIn } = await import("../app/src/activity.ts");
 const { byCaptureTime } = await import("../app/src/library.ts");
+const { NO_FILTER, exposureLabel, facetsWithin, passes } = await import("../app/src/filter.ts");
 const z = await import("../app/src/zones.ts");
 const { compare, meanChroma, inEllipse, rightOf } = await import("./metrics.mjs");
 const { THRESHOLD, GLOBAL, COMPOSITE, LOCAL, trialValues, judge } = await import("./expect.mjs");
@@ -850,6 +851,44 @@ async function decisions(photo) {
     const later = `${Number(t.slice(0, 4)) + 1}${t.slice(4)}`;
     const got = byCaptureTime([at("a", ""), at("b", later), at("c", t), at("d", t)]).map((i) => i.filename).join("");
     return got === "cdba" ? null : `sorted as ${got}, not cdba`;
+  });
+
+  // the Filters popup narrows a folder by camera, keywords (a keyword
+  // with those under it) and exposure settings, which needs the engine to
+  // list each photo's keywords with the folder (filter.ts; library.md,
+  // Filtering)
+  await decide("the filter reads camera, keywords and exposure", async () => {
+    const path = fresh(photo);
+    const { images: [e] } = await request({ cmd: "import", files: [path] });
+    await request({ cmd: "keywords_set", imgid: e.imgid, add: ["Verify|Filter"], remove: [] });
+    const { images: [i] } = await request({ cmd: "import", files: [path] });
+    if (!i?.keywords?.includes("Verify|Filter")) return `the folder listed keywords ${JSON.stringify(i?.keywords)}`;
+    const camera = `${i.exif.maker} ${i.exif.model}`.trim();
+    const iso = i.exif.iso;
+    const cases = [
+      [{ cameras: [camera] }, true], [{ cameras: ["No Such Camera"] }, false],
+      [{ keywords: ["Verify"] }, true], [{ keywords: ["Verify|Filter"] }, true], [{ keywords: ["Verify|Other"] }, false],
+      [{ iso: [exposureLabel("iso", iso)] }, true], [{ iso: [exposureLabel("iso", iso * 2)] }, false],
+    ];
+    const wrong = cases.filter(([f, want]) => passes(i, { ...NO_FILTER, ...f }) !== want);
+    return !iso ? "the photo has no ISO to filter by"
+      : wrong.length ? `wrong for ${wrong.map(([f]) => JSON.stringify(f)).join(", ")}` : null;
+  });
+
+  // each of the Filters popup's lists holds only what the other choices
+  // leave, so a camera chosen narrows the lenses, ISOs and the rest to
+  // those it took (library.md, Filtering)
+  await decide("the filter's lists narrow by the other choices", async () => {
+    const { images: [i] } = await request({ cmd: "import", files: [fresh(photo)] });
+    const camera = `${i.exif.maker} ${i.exif.model}`.trim(), iso = exposureLabel("iso", i.exif.iso);
+    const has = (f, clear, key, v) => facetsWithin([i], { ...NO_FILTER, ...f }, clear)[key].some(([x]) => x === v);
+    const wrong = [
+      [has({ cameras: [camera] }, { iso: [] }, "iso", iso), true],
+      [has({ cameras: ["No Such Camera"] }, { iso: [] }, "iso", iso), false],
+      // its own choice left out, the other cameras stay to choose
+      [has({ cameras: ["No Such Camera"] }, { cameras: [] }, "cameras", camera), true],
+    ].map(([got, want], n) => got === want ? null : n).filter((n) => n !== null);
+    return !iso ? "the photo has no ISO to filter by" : wrong.length ? `wrong for cases ${wrong.join(", ")}` : null;
   });
 
   // the photo is never written, only its sidecar (code-map.md, Where data
