@@ -7,6 +7,15 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- the toolbar's file type button is now Filters, which narrows the
+  folder by file type, camera, lens, keywords (a keyword includes those
+  under it), capture date (or a recent span, year or month), ISO,
+  aperture, focal length and shutter speed, then shows the result in the
+  grid. Each list holds only what your other choices leave: pick a camera
+  and Lens lists the lenses used on it. On Immich results it holds the
+  search's filters, which were under Advanced on the Immich card, and the
+  stars filter the search too, so they cover all of Immich's photos and
+  not only those loaded
 - Preferences has a Performance tab, with the settings that were spread
   through General: Preview, the frame and disk caches, AI acceleration,
   the performance overlay and the GUI benchmark
