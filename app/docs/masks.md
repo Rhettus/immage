@@ -50,7 +50,9 @@ Each part of the mask is listed under it, with a **+** / **−** switch and
 **×** to delete it.
 
 On the photo, drag a shape's handles: the center moves it, the edges size
-it, the arrow rotates it, and the outer ring sets its feather.
+it, the arrow rotates it, and the outer ring sets its feather. The
+handles show while the pointer is over the photo, and step aside while it
+is over the panels, so the adjustment can be seen.
 
 ## The mask list
 
@@ -62,7 +64,9 @@ it, the arrow rotates it, and the outer ring sets its feather.
 - O, or the eye in the panel's title, shows or hides the red overlay.
   While you add to or subtract from a mask, its overlay shows even with
   the toggle off; O hides it until you put the tool down, and moving one
-  of the mask's sliders hides it until your next stroke.
+  of the mask's sliders hides it until your next stroke. A mask an AI
+  selection has just made shows its overlay too, so you can see what was
+  selected, until you press O or move one of its sliders.
 
 ## Mask settings
 
