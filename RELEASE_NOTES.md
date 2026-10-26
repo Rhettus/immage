@@ -7,6 +7,19 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- film negatives: the Negative panel, on the film strip button in the
+  rail, turns a photo of a color or black and white negative into a
+  positive with darktable's negadoctor. Pick the film border, then the
+  photo area, and the rest is set for you; each control has an
+  eyedropper of its own. A converted negative turns off Temp, Tint,
+  Exposure, Whites, Blacks, Dehaze and the tone mapper, which work before
+  the inversion, after a warning, and runs Contrast, Saturation,
+  Highlights and Shadows after it. Copy Settings' Negative group converts
+  a whole roll from one frame
+- the crop frame and its grid, and the other guides over the photo, have
+  a thin dark edge, so they show on a light photo or a White canvas, and
+  Preferences › General › Guide color sets their color: white, yellow,
+  red or your own
 - the toolbar's file type button is now Filters, which narrows the
   folder by file type, camera, lens, keywords (a keyword includes those
   under it), capture date (or a recent span, year or month), ISO,
