@@ -1743,10 +1743,14 @@ export default function App() {
     }
     const bm = beforeMeta.current, bcv = beforeCanvas.current;
     if (bm && bcv) {
-      const sx = ox + (bm.x / bm.scale) * z, sy = oy + (bm.y / bm.scale) * z;
+      // the Before view leaves out lens corrections and Transform, which
+      // change the size of the whole image: it is fitted into the edit's
+      const k = Math.min(f.w / bm.fullWidth, f.h / bm.fullHeight);
+      const bx = ox + ((f.w - bm.fullWidth * k) * z) / 2, by = oy + ((f.h - bm.fullHeight * k) * z) / 2;
+      const sx = bx + (bm.x / bm.scale) * k * z, sy = by + (bm.y / bm.scale) * k * z;
       bcv.style.width = `${bm.width / dpr}px`;
       bcv.style.height = `${bm.height / dpr}px`;
-      bcv.style.transform = `translate(${sx / dpr}px, ${sy / dpr}px) scale(${z / bm.scale})`;
+      bcv.style.transform = `translate(${sx / dpr}px, ${sy / dpr}px) scale(${(z * k) / bm.scale})`;
     }
     zoomShow.current?.(z, zoomRef.current === "fit");
     const hc = hoverCanvas.current;
@@ -1793,7 +1797,8 @@ export default function App() {
         bc.height = f.height;
         bc.getContext("2d")!.putImageData(new ImageData(f.pixels, f.width, f.height), 0, 0);
         const scale = f.view.scale ?? f.width / f.fullWidth;
-        beforeMeta.current = { x: f.x, y: f.y, scale, width: f.width, height: f.height };
+        beforeMeta.current = { x: f.x, y: f.y, scale, width: f.width, height: f.height,
+                               fullWidth: f.fullWidth, fullHeight: f.fullHeight };
       }
       session.current?.showBefore(null);
       placeLayers();
@@ -3208,7 +3213,8 @@ export default function App() {
   const [holdHint, setHoldHint] = useState(false);
   const hintTimer = useRef(0);
   const beforeCanvas = useRef<HTMLCanvasElement>(null);
-  const beforeMeta = useRef<{ x: number; y: number; scale: number; width: number; height: number } | null>(null);
+  const beforeMeta = useRef<{ x: number; y: number; scale: number; width: number; height: number;
+                              fullWidth: number; fullHeight: number } | null>(null);
   const captureTimer = useRef(0);
   const captureBefore = (delay = 0) => {
     window.clearTimeout(captureTimer.current);
