@@ -163,14 +163,19 @@ static double _ms_since(const gint64 t0)
   return (g_get_monotonic_time() - t0) / 1000.0;
 }
 
+// the main loop and the thumbnail threads (_thumb_run) both reply
+static GMutex _reply_lock;
+
 static void _reply(FILE *out, JsonBuilder *b)
 {
   JsonGenerator *gen = json_generator_new();
   JsonNode *root = json_builder_get_root(b);
   json_generator_set_root(gen, root);
   gchar *s = json_generator_to_data(gen, NULL);
+  g_mutex_lock(&_reply_lock);
   fprintf(out, "%s\n", s);
   fflush(out);
+  g_mutex_unlock(&_reply_lock);
   g_free(s);
   json_node_unref(root);
   g_object_unref(gen);
@@ -1711,6 +1716,65 @@ static gboolean _thumb(const dt_imgid_t imgid, const int size, const char *out,
   dt_mipmap_cache_release(&buf);
   if(!ok) *err = g_strdup_printf("could not write '%s'", out);
   return ok;
+}
+
+// a `thumb` with a `tag` runs here rather than in the main loop, so a
+// folder's thumbnails come in while the photo is edited and rendered.
+// darktable's lighttable builds them from its job threads the same way:
+// the mipmap cache and the library (SQLITE_CONFIG_SERIALIZED, database.c)
+// take callers on many threads. two threads, so a render keeps most of the
+// cores. the reply carries the tag, and can come between another request
+// and its reply
+#define _THUMB_THREADS 2
+static GThreadPool *_thumb_pool = NULL;
+static GMutex _thumb_lock;
+
+static void _thumb_run(gpointer data, gpointer user_data)
+{
+  JsonParser *parser = data;
+  FILE *out = user_data;
+  JsonObject *req = json_node_get_object(json_parser_get_root(parser));
+  const char *dest = json_object_get_string_member_with_default(req, "out", NULL);
+  char *err = NULL;
+  JsonBuilder *b = json_builder_new();
+  json_builder_begin_object(b);
+  json_builder_set_member_name(b, "tag");
+  json_builder_add_int_value(b, json_object_get_int_member(req, "tag"));
+  const gboolean ok = dest && _thumb(json_object_get_int_member_with_default(req, "imgid", 0),
+                                     json_object_get_int_member_with_default(req, "size", 256), dest, b, &err);
+  json_builder_set_member_name(b, "ok");
+  json_builder_add_boolean_value(b, ok);
+  if(!ok)
+  {
+    json_builder_set_member_name(b, "error");
+    json_builder_add_string_value(b, err ? err : "no output file");
+  }
+  json_builder_end_object(b);
+  _reply(out, b);
+  g_object_unref(b);
+  g_free(err);
+  g_object_unref(parser);
+}
+
+// FALSE once the pool has stopped; the request then gets no reply
+static gboolean _thumb_queue(JsonParser *parser)
+{
+  g_mutex_lock(&_thumb_lock);
+  const gboolean queued = _thumb_pool != NULL;
+  if(queued) g_thread_pool_push(_thumb_pool, parser, NULL);
+  g_mutex_unlock(&_thumb_lock);
+  return queued;
+}
+
+// before darktable's caches go: the thumbnails under way finish, those
+// waiting are dropped
+static void _thumb_wait(void)
+{
+  g_mutex_lock(&_thumb_lock);
+  GThreadPool *pool = _thumb_pool;
+  _thumb_pool = NULL;
+  g_mutex_unlock(&_thumb_lock);
+  if(pool) g_thread_pool_free(pool, TRUE, TRUE);
 }
 
 // rating (0-5), rejected, labels (bit mask: red 1, yellow 2, green 4, blue
@@ -7315,30 +7379,40 @@ static char _end_of_input[] = "";
 
 // stdin is read on a thread of its own, so a `cancel_base` (written by the
 // client while it waits on a base's reply) stops that base at once. it gets
-// no reply; every other line goes to the main loop, in order
+// no reply. a tagged `thumb` goes to the thumbnail threads (_thumb_run);
+// every other line goes to the main loop, in order
 static gpointer _read_requests(gpointer data)
 {
   GAsyncQueue *queue = data;
   GString *line = g_string_new(NULL);
   while(_read_line(line, stdin))
   {
-    gboolean cancel = FALSE;
-    if(line->len < 256 && strstr(line->str, "\"cancel_base\""))
+    gboolean taken = FALSE;
+    if(line->len < 1024 && (strstr(line->str, "\"cancel_base\"") || strstr(line->str, "\"thumb\"")))
     {
       JsonParser *parser = json_parser_new();
       if(json_parser_load_from_data(parser, line->str, line->len, NULL)
          && JSON_NODE_HOLDS_OBJECT(json_parser_get_root(parser)))
       {
         JsonObject *req = json_node_get_object(json_parser_get_root(parser));
-        cancel = !g_strcmp0(json_object_get_string_member_with_default(req, "cmd", ""), "cancel_base");
-        if(cancel) _cancel_base(json_object_get_int_member_with_default(req, "id", 0));
+        const char *cmd = json_object_get_string_member_with_default(req, "cmd", "");
+        if(!g_strcmp0(cmd, "cancel_base"))
+        {
+          fprintf(stderr, "[engine] > %.*s\n", (int)strcspn(line->str, "\r\n"), line->str);
+          _cancel_base(json_object_get_int_member_with_default(req, "id", 0));
+          taken = TRUE;
+        }
+        else if(!g_strcmp0(cmd, "thumb") && json_object_has_member(req, "tag"))
+        {
+          fprintf(stderr, "[engine] thumb %.*s\n", (int)strcspn(line->str, "\r\n"), line->str);
+          // the pool frees the parser
+          if(_thumb_queue(parser)) parser = NULL;
+          taken = TRUE;
+        }
       }
-      g_object_unref(parser);
+      if(parser) g_object_unref(parser);
     }
-    if(cancel)
-      fprintf(stderr, "[engine] > %.*s\n", (int)strcspn(line->str, "\r\n"), line->str);
-    else
-      g_async_queue_push(queue, g_strndup(line->str, line->len));
+    if(!taken) g_async_queue_push(queue, g_strndup(line->str, line->len));
   }
   g_string_free(line, TRUE);
   g_async_queue_push(queue, _end_of_input);
@@ -7410,6 +7484,7 @@ int main(int argc, char **argv)
     g_free(setting);
   }
 
+  _thumb_pool = g_thread_pool_new(_thumb_run, out, _THUMB_THREADS, FALSE, NULL);
   GAsyncQueue *requests = g_async_queue_new();
   g_thread_unref(g_thread_new("requests", _read_requests, requests));
   gboolean quit = FALSE;
@@ -7435,6 +7510,7 @@ int main(int argc, char **argv)
   // the client gone without a quit: its edits are kept all the same
   if(!quit) _save_pending();
 
+  _thumb_wait();
   _close_session();
   _prefetch_wait();
   dt_cleanup();

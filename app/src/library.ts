@@ -141,10 +141,12 @@ async function fetchCachedThumb(entry: ImageEntry, size: number): Promise<ImageB
 }
 
 // fetches thumbnails: those kept on disk first, several at a time, then
-// the rest from the engine one at a time, and only while the editor is
-// idle, so a slider drag never waits behind a thumbnail on the shared engine.
-// past `limit` bytes (Preferences' Thumbnail memory), those off screen
+// the rest from the engine, ENGINE_THUMBS at a time. the engine builds them
+// on threads of its own (main.c, _thumb_run), so they come in while a photo
+// is edited, and no render waits behind one. past `limit` bytes (Preferences' Thumbnail memory), those off screen
 // longest are let go, and come back from disk when scrolled to
+const ENGINE_THUMBS = 2; // the engine's thumbnail threads, main.c's _THUMB_THREADS
+
 export class ThumbLoader {
   private cache = new Map<number, ImageBitmap>();
   private bytes = 0;
@@ -154,6 +156,9 @@ export class ThumbLoader {
   private clock = 0;
   private queue: number[] = [];
   private running = false;
+  // engine thumbnails under way, and run() waiting for one to finish
+  private inFlight = 0;
+  private wake: (() => void) | null = null;
   // edited images whose cached thumbnail is out of date; it stays on show
   // until the fresh one is ready, so the filmstrip does not flicker
   private stale = new Set<number>();
@@ -166,12 +171,41 @@ export class ThumbLoader {
   private tried = new Set<number>();
   // a clear() while disk reads are out makes their results another folder's
   private generation = 0;
+  // each filmstrip cell hears of its own thumbnail, so one landing redraws
+  // that cell rather than the window
+  private watchers = new Map<number, Set<() => void>>();
+  private progressWatchers = new Set<() => void>();
 
-  constructor(private isIdle: () => boolean, private entryOf: (imgid: number) => ImageEntry | undefined,
-              private onLoaded: (imgid: number) => void, private limit: () => number,
+  constructor(private entryOf: (imgid: number) => ImageEntry | undefined,
+              private limit: () => number,
               private onFailed?: (imgid: number, error: unknown) => void) {}
 
   get(imgid: number) { return this.cache.get(imgid); }
+
+  // `on` is called when the image's thumbnail arrives or is let go
+  watch(imgid: number, on: () => void) {
+    let set = this.watchers.get(imgid);
+    if (!set) this.watchers.set(imgid, set = new Set());
+    set.add(on);
+    return () => {
+      set.delete(on);
+      if (!set.size) this.watchers.delete(imgid);
+    };
+  }
+
+  // `on` is called as progress() moves
+  watchProgress(on: () => void) {
+    this.progressWatchers.add(on);
+    return () => { this.progressWatchers.delete(on); };
+  }
+
+  private changed(imgid: number) {
+    this.watchers.get(imgid)?.forEach((on) => on());
+  }
+
+  private progressed() {
+    this.progressWatchers.forEach((on) => on());
+  }
 
   // load these, in this order, after anything already asked for first
   request(ids: number[], first = false) {
@@ -179,6 +213,7 @@ export class ThumbLoader {
     wanted.forEach((id) => this.asked.add(id));
     this.queue = first ? [...wanted, ...this.queue.filter((id) => !wanted.includes(id))]
                        : [...this.queue, ...wanted.filter((id) => !this.queue.includes(id))];
+    if (wanted.length) this.progressed();
     void this.run();
   }
 
@@ -220,6 +255,8 @@ export class ThumbLoader {
     this.stale.clear();
     this.refreshTimers.forEach((t) => window.clearTimeout(t));
     this.refreshTimers.clear();
+    [...this.watchers.keys()].forEach((id) => this.changed(id));
+    this.progressed();
   }
 
   // up to eight queued that may be on disk, with their entries
@@ -241,6 +278,7 @@ export class ThumbLoader {
     this.cache.set(id, bitmap);
     this.bytes += bitmap.width * bitmap.height * 4;
     if (this.asked.has(id)) this.done.add(id);
+    this.changed(id);
     this.trim();
   }
 
@@ -258,6 +296,7 @@ export class ThumbLoader {
       this.cache.delete(id);
       // read from disk again when it is next asked for
       this.tried.delete(id);
+      this.changed(id);
     }
   }
 
@@ -283,28 +322,41 @@ export class ThumbLoader {
             this.keep(id, bitmap);
             any = true;
           });
-          if (any) this.onLoaded(disk[0][0]);
+          if (any) this.progressed();
+          continue;
+        }
+        if (this.inFlight >= ENGINE_THUMBS) {
+          await new Promise<void>((r) => { this.wake = r; });
           continue;
         }
         const id = this.queue.shift()!;
-        // the server's thumbnails do not use the engine, so need not wait for it
-        while (id >= 0 && !this.isIdle()) await new Promise((r) => setTimeout(r, 60));
         if (this.cache.has(id) && !this.stale.has(id)) continue;
         this.stale.delete(id);
-        try {
-          // below zero, an Immich result: the server's own thumbnail
-          const bitmap = id < 0 ? await fetchImmichThumb(id) : await fetchThumb(id, THUMB_SIZE, this.entryOf(id));
-          this.keep(id, bitmap);
-          this.onLoaded(id);
-        } catch (e) {
-          // an image without a thumbnail keeps its placeholder
-          this.onFailed?.(id, e);
-          if (this.asked.has(id)) this.done.add(id);
-          this.onLoaded(id);
-        }
+        this.inFlight++;
+        void this.fetch(id).finally(() => {
+          this.inFlight--;
+          const wake = this.wake;
+          this.wake = null;
+          wake?.();
+        });
       }
     } finally {
       this.running = false;
     }
+  }
+
+  private async fetch(id: number) {
+    const generation = this.generation;
+    try {
+      // below zero, an Immich result: the server's own thumbnail
+      const bitmap = id < 0 ? await fetchImmichThumb(id) : await fetchThumb(id, THUMB_SIZE, this.entryOf(id));
+      if (generation === this.generation) this.keep(id, bitmap);
+    } catch (e) {
+      if (generation !== this.generation) return;
+      // an image without a thumbnail keeps its placeholder
+      this.onFailed?.(id, e);
+      if (this.asked.has(id)) this.done.add(id);
+    }
+    this.progressed();
   }
 }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ask, open, save } from "@tauri-apps/plugin-dialog";
@@ -160,7 +160,6 @@ export default function App() {
     saveLibrary({ expanded: [...next] });
   };
   const [images, setImages] = useState<ImageEntry[]>([]);
-  const [, setThumbVersion] = useState(0);
   // the key handler and the loader outlive renders, so they read these refs
   const imagesRef = useRef<ImageEntry[]>([]);
   const currentRef = useRef<Opened | null>(null);
@@ -168,19 +167,9 @@ export default function App() {
   // copies share its path; until the engine has said, the file's original
   const isOpen = (i: ImageEntry, o = currentRef.current) =>
     !!o && (o.imgid !== null ? i.imgid === o.imgid : i.path === o.path && !i.copy);
-  const thumbFrame = useRef(0);
   const loader = useRef<ThumbLoader | null>(null);
   if (!loader.current)
-    loader.current = new ThumbLoader(() => session.current?.idle ?? true,
-                                     (imgid) => imagesRef.current.find((i) => i.imgid === imgid),
-                                     // thumbnails landing together redraw the window once per frame, not once each
-                                     () => {
-                                       if (thumbFrame.current) return;
-                                       thumbFrame.current = requestAnimationFrame(() => {
-                                         thumbFrame.current = 0;
-                                         setThumbVersion((v) => v + 1);
-                                       });
-                                     },
+    loader.current = new ThumbLoader((imgid) => imagesRef.current.find((i) => i.imgid === imgid),
                                      () => loadThumbMemoryMb() * 1024 * 1024,
                                      // the server's refusal is said once, not hidden behind placeholders
                                      (imgid, e) => {
@@ -4696,7 +4685,6 @@ export default function App() {
           <div className="status">{status}</div>
           {(() => {
             // the folder's reading, then its thumbnails
-            const t = loader.current!.progress();
             if (immich?.busy) return <div className="activity"><span>Searching Immich…</span></div>;
             const w = waiting[waiting.length - 1];
             if (w && !reading) return (
@@ -4707,15 +4695,8 @@ export default function App() {
                 <button onClick={() => void invoke("plugin_cancel", { token: w.token })}>Stop waiting</button>
               </div>
             );
-            const [what, done, total] = reading ? ["Reading photos", reading.done, reading.total]
-              : t.done < t.total ? ["Loading thumbnails", t.done, t.total] : [null, 0, 0];
-            if (!what) return null;
-            return (
-              <div className="activity">
-                <span>{total ? `${what} ${done.toLocaleString()} of ${total.toLocaleString()}` : "Reading folder…"}</span>
-                <div className="bar"><div style={{ width: `${total ? (100 * done) / total : 0}%` }} /></div>
-              </div>
-            );
+            return reading ? <ActivityBar what="Reading photos" done={reading.done} total={reading.total} />
+              : <ThumbProgress loader={loader.current!} />;
           })()}
         </main>
         <div data-tour="filmstrip" ref={stripSlot}
@@ -5602,7 +5583,12 @@ function Filmstrip({ images, partners, pending, empty, current, loader, height, 
   }, [images, loader, grid]);
   // a grid's cells are a fixed height, and share each row's width
   // (styles.css, .filmstrip.grid); the strip's follow its height
-  const cell = grid ? { height: 200 } : { width: Math.round((height - 12) * 1.15) };
+  const cellSize = grid ? 200 : Math.round((height - 12) * 1.15);
+  const cell = useMemo(() => (grid ? { height: cellSize } : { width: cellSize }), [grid, cellSize]);
+  // the cells are memoized, and call through this, so a folder's next
+  // batch or a new selection redraws only the cells that changed
+  const on = useRef({ onPick, onDouble, onMenu, onMeta });
+  on.current = { onPick, onDouble, onMenu, onMeta };
   // an empty grid still covers the photo, and says why it is empty
   if (!images.length && !pending.length) {
     return grid ? <div className="filmstrip grid empty" onContextMenu={onBackMenu}><div className="grid-empty">{empty}</div></div>
@@ -5613,56 +5599,13 @@ function Filmstrip({ images, partners, pending, empty, current, loader, height, 
          onContextMenu={onBackMenu}
          onWheel={(e) => { if (strip.current && !grid) strip.current.scrollLeft += e.deltaY + e.deltaX; }}>
       {images.map((i) => (
-        <div key={i.imgid} className={`thumb${i.imgid === current ? " active" : ""}${i.rejected ? " rejected" : ""}`
-                                      + `${i.rating || i.rejected ? " rated" : ""}`
-                                      + `${selection.size > 1 && selection.has(i.imgid) ? " selected" : ""}`
-                                      + `${i.imgid === candidate ? " candidate" : ""}`}
-             style={cell}
-             title={i.filename} data-imgid={i.imgid} onClick={(e) => onPick(i, e)}
-             onDoubleClick={() => { if (grid || candidate !== null) onDouble(i); }}
-             onContextMenu={(e) => { e.stopPropagation(); onMenu(e, i.imgid); }}>
-          <div className="thumb-head">
-            <span className="thumb-name">{i.filename.replace(/\.[^.]+$/, "")}</span>
-            {/* altered, as darktable counts it, so its lighttable agrees */}
-            {i.edited && <span className="thumb-edited" title="edited"><SlidersIcon /></span>}
-            <span className="thumb-type">{[i, ...(partners.get(i.imgid) ?? [])]
-              .map((f) => (f.filename.match(/\.([^.]+)$/)?.[1] ?? "").toUpperCase()).join("+")}
-              {copyName(i)}</span>
-          </div>
-          <div className="thumb-image"><ThumbCanvas bitmap={loader.get(i.imgid)} dogEar={!!i.copy} /></div>
-          {/* rated without opening the photo, as Lightroom's filmstrip does;
-              an Immich result shows Immich's rating, set only once opened */}
-          <div className={`thumb-foot${isRemote(i) ? " read-only" : ""}`} onClick={(e) => e.stopPropagation()}>
-            {!isRemote(i) && <button className={`thumb-reject${i.rejected ? " on" : ""}`} title="reject (X)"
-                    onClick={() => onMeta(i, { rejected: !i.rejected })}>✕</button>}
-            <span className="thumb-stars">
-              {[1, 2, 3, 4, 5].map((n) => (
-                <button key={n} className={!i.rejected && i.rating >= n ? "on" : ""}
-                        title={isRemote(i) ? "Immich's rating: open the photo to change it" : `${n} star${n > 1 ? "s" : ""}`}
-                        disabled={isRemote(i)}
-                        onClick={() => onMeta(i, { rating: i.rating === n ? 0 : n, rejected: false })}>★</button>
-              ))}
-            </span>
-            <span className="labels">
-              {LABEL_COLORS.map((c, k) => (i.labels & (1 << k)
-                ? <span key={k} className="dot" style={{ background: c }} /> : null))}
-            </span>
-          </div>
-        </div>
+        <FilmCell key={i.imgid} entry={i} loader={loader} cell={cell} on={on}
+                  types={[i, ...(partners.get(i.imgid) ?? [])]
+                    .map((f) => (f.filename.match(/\.([^.]+)$/)?.[1] ?? "").toUpperCase()).join("+")}
+                  active={i.imgid === current} selected={selection.size > 1 && selection.has(i.imgid)}
+                  candidate={i.imgid === candidate} doubleOpens={grid || candidate !== null} />
       ))}
-      {pending.map((p) => {
-        const name = baseName(p);
-        return (
-          <div key={p} className="thumb ghost" style={cell} title={name}>
-            <div className="thumb-head">
-              <span className="thumb-name">{name.replace(/\.[^.]+$/, "")}</span>
-              <span className="thumb-type">{(name.match(/\.([^.]+)$/)?.[1] ?? "").toUpperCase()}</span>
-            </div>
-            <div className="thumb-image"><ThumbCanvas bitmap={undefined} /></div>
-            <div className="thumb-foot" />
-          </div>
-        );
-      })}
+      {pending.map((p) => <GhostCell key={p} path={p} cell={cell} />)}
       {more && <div ref={end} className="thumb ghost more" style={cell} />}
     </div>
   );
@@ -5671,7 +5614,98 @@ function Filmstrip({ images, partners, pending, empty, current, loader, height, 
 // `dogEar` turns the bottom left corner over, as Lightroom marks a virtual
 // copy: drawn on the thumbnail, which the cell fits, so it sits on the
 // photo's own corner whatever its shape
-function ThumbCanvas({ bitmap, dogEar = false }: { bitmap: ImageBitmap | undefined; dogEar?: boolean }) {
+type CellHandlers = Pick<Parameters<typeof Filmstrip>[0], "onPick" | "onDouble" | "onMenu" | "onMeta">;
+
+// one photo's filmstrip cell
+const FilmCell = memo(function FilmCell({ entry: i, loader, cell, on, types, active, selected, candidate, doubleOpens }: {
+  entry: ImageEntry; loader: ThumbLoader; cell: React.CSSProperties; on: React.RefObject<CellHandlers>;
+  types: string; active: boolean; selected: boolean; candidate: boolean; doubleOpens: boolean;
+}) {
+  return (
+    <div className={`thumb${active ? " active" : ""}${i.rejected ? " rejected" : ""}`
+                    + `${i.rating || i.rejected ? " rated" : ""}${selected ? " selected" : ""}`
+                    + `${candidate ? " candidate" : ""}`}
+         style={cell}
+         title={i.filename} data-imgid={i.imgid} onClick={(e) => on.current!.onPick(i, e)}
+         onDoubleClick={() => { if (doubleOpens) on.current!.onDouble(i); }}
+         onContextMenu={(e) => { e.stopPropagation(); on.current!.onMenu(e, i.imgid); }}>
+      <div className="thumb-head">
+        <span className="thumb-name">{i.filename.replace(/\.[^.]+$/, "")}</span>
+        {/* altered, as darktable counts it, so its lighttable agrees */}
+        {i.edited && <span className="thumb-edited" title="edited"><SlidersIcon /></span>}
+        <span className="thumb-type">{types}{copyName(i)}</span>
+      </div>
+      <div className="thumb-image"><ThumbCanvas loader={loader} imgid={i.imgid} dogEar={!!i.copy} /></div>
+      {/* rated without opening the photo, as Lightroom's filmstrip does;
+          an Immich result shows Immich's rating, set only once opened */}
+      <div className={`thumb-foot${isRemote(i) ? " read-only" : ""}`} onClick={(e) => e.stopPropagation()}>
+        {!isRemote(i) && <button className={`thumb-reject${i.rejected ? " on" : ""}`} title="reject (X)"
+                onClick={() => on.current!.onMeta(i, { rejected: !i.rejected })}>✕</button>}
+        <span className="thumb-stars">
+          {[1, 2, 3, 4, 5].map((n) => (
+            <button key={n} className={!i.rejected && i.rating >= n ? "on" : ""}
+                    title={isRemote(i) ? "Immich's rating: open the photo to change it" : `${n} star${n > 1 ? "s" : ""}`}
+                    disabled={isRemote(i)}
+                    onClick={() => on.current!.onMeta(i, { rating: i.rating === n ? 0 : n, rejected: false })}>★</button>
+          ))}
+        </span>
+        <span className="labels">
+          {LABEL_COLORS.map((c, k) => (i.labels & (1 << k)
+            ? <span key={k} className="dot" style={{ background: c }} /> : null))}
+        </span>
+      </div>
+    </div>
+  );
+});
+
+// a file not yet read, shown as an empty cell
+const GhostCell = memo(function GhostCell({ path, cell }: { path: string; cell: React.CSSProperties }) {
+  const name = baseName(path);
+  return (
+    <div className="thumb ghost" style={cell} title={name}>
+      <div className="thumb-head">
+        <span className="thumb-name">{name.replace(/\.[^.]+$/, "")}</span>
+        <span className="thumb-type">{(name.match(/\.([^.]+)$/)?.[1] ?? "").toUpperCase()}</span>
+      </div>
+      <div className="thumb-image"><ThumbCanvas /></div>
+      <div className="thumb-foot" />
+    </div>
+  );
+});
+
+// the activity line's progress bar
+function ActivityBar({ what, done, total }: { what: string; done: number; total: number }) {
+  return (
+    <div className="activity">
+      <span>{total ? `${what} ${done.toLocaleString()} of ${total.toLocaleString()}` : "Reading folder…"}</span>
+      <div className="bar"><div style={{ width: `${total ? (100 * done) / total : 0}%` }} /></div>
+    </div>
+  );
+}
+
+// the folder's thumbnails loading, redrawn a few times a second rather
+// than for each one
+function ThumbProgress({ loader }: { loader: ThumbLoader }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    let timer = 0;
+    const off = loader.watchProgress(() => {
+      if (!timer) timer = window.setTimeout(() => { timer = 0; setTick((n) => n + 1); }, 250);
+    });
+    return () => { off(); window.clearTimeout(timer); };
+  }, [loader]);
+  const t = loader.progress();
+  return t.done < t.total ? <ActivityBar what="Loading thumbnails" done={t.done} total={t.total} /> : null;
+}
+
+// the image's thumbnail as the loader has it, redrawn when that changes
+function ThumbCanvas({ loader, imgid, dogEar = false }: { loader?: ThumbLoader; imgid?: number; dogEar?: boolean }) {
+  const [bitmap, setBitmap] = useState(() => (imgid === undefined ? undefined : loader?.get(imgid)));
+  useEffect(() => {
+    if (!loader || imgid === undefined) return;
+    setBitmap(loader.get(imgid));
+    return loader.watch(imgid, () => setBitmap(loader.get(imgid)));
+  }, [loader, imgid]);
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const c = ref.current;
