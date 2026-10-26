@@ -24,6 +24,8 @@ Bug fixes
 - after a quick slider move, zoomed in especially, the photo sometimes
   stayed soft until the next change or zoom; it now always renders sharp
   once the slider is let go
+- Compare works from the grid: it shows the two photos side by side, and
+  with two photos selected, compares them, the first opened for editing
 
 ## 0.36.0
 
