@@ -24,6 +24,7 @@ export type ImageEntry = {
   width: number;
   height: number;
   exif: Exif;
+  keywords?: string[];  // darktable's tags, "|" between levels (absent on Immich results)
   // darktable's version of the file: Lightroom's virtual copies are every
   // version but the lowest, which is the original (absent on Immich results)
   version?: number;

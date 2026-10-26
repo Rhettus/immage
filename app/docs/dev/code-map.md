@@ -178,6 +178,8 @@ are `localStorage` keys named `immage.*`.
 |---|---|
 | [library.ts](../../src/library.ts) | `ImageEntry`; `openFolder` (batches arriving as `folder-progress` events); RAW+JPEG pairing; `ThumbLoader`, which fetches thumbnails only while the engine is idle, and lets those off screen longest go past Preferences' Thumbnail memory. |
 | [FolderTree.tsx](../../src/FolderTree.tsx) | The folder tree. |
+| [filter.ts](../../src/filter.ts) | The filmstrip's `Filter` over a folder's photos (`passes`), and what the photos hold to filter by (`facets`): kinds, cameras, lenses, keywords, exposure settings. |
+| [FilterPopup.tsx](../../src/FilterPopup.tsx) | The toolbar's Filters popup: the folder's fields, or on Immich results the server search's filters (the `ImmichSearch` App holds, shared with the Immich card). |
 
 ### Export
 
@@ -191,7 +193,7 @@ are `localStorage` keys named `immage.*`.
 
 | File | Responsibility |
 |---|---|
-| [immich.ts](../../src/immich.ts), [ImmichPanel.tsx](../../src/ImmichPanel.tsx), [ImmichPrefs.tsx](../../src/ImmichPrefs.tsx) | Search, remote assets as `ImageEntry`, path maps from Immich to local files; the Library's Immich card; connection settings (from the immporter). |
+| [immich.ts](../../src/immich.ts), [ImmichPanel.tsx](../../src/ImmichPanel.tsx), [ImmichPrefs.tsx](../../src/ImmichPrefs.tsx) | Search, remote assets as `ImageEntry`, path maps from Immich to local files; the Library's Immich card (library, words, mode; its filters are in the Filters popup); connection settings (from the immporter). |
 | [plugins.ts](../../src/plugins.ts), [PluginPrefs.tsx](../../src/PluginPrefs.tsx) | Edit In: plugin kinds (`KINDS`, DxO PureRAW today), configs, returns; the Plugins preferences tab. |
 
 ### Preferences, histogram, probe, performance

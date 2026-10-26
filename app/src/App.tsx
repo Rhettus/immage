@@ -78,7 +78,10 @@ import { frameTransport } from "./sharedFrames";
 import { PerfHud } from "./PerfHud";
 import { KeywordingPanel } from "./Keywording";
 import { ImmichPanel } from "./ImmichPanel";
-import { immichUrl, isRemote, photoUrl, resolve, search as searchImmichPage, searchUrl, type ImmichSearch } from "./immich";
+import { immichFilterCount, immichUrl, isRemote, loadSearch, NO_SEARCH, photoUrl, resolve, search as searchImmichPage, searchUrl, storeSearch,
+         type ImmichSearch } from "./immich";
+import { needsRead, NO_FILTER, passes, popupCount, type Filter } from "./filter";
+import { FilterPopup, type Bounds as FilterBounds, type ImmichFilters } from "./FilterPopup";
 
 
 const MAX_PREVIEW = 2560;
@@ -258,6 +261,21 @@ export default function App() {
   const [immich, setImmichState] = useState<{ search: ImmichSearch; next: string | null; busy: boolean } | null>(null);
   const immichRef = useRef(immich);
   const setImmich = (v: typeof immich) => { immichRef.current = v; setImmichState(v); };
+  // the Immich search as the card, the Filters popup and the stars set it.
+  // a change searches again a moment later while its results show
+  const [immichForm, setImmichForm] = useState<ImmichSearch>(loadSearch);
+  const immichFormRef = useRef(immichForm);
+  const immichTimer = useRef(0);
+  useEffect(() => () => window.clearTimeout(immichTimer.current), []);
+  const updateImmich = (patch: Partial<ImmichSearch>, now = false) => {
+    const next = { ...immichFormRef.current, ...patch };
+    immichFormRef.current = next;
+    setImmichForm(next);
+    storeSearch(next);
+    window.clearTimeout(immichTimer.current);
+    if (now) void searchImmich(next);
+    else if (immichRef.current) immichTimer.current = window.setTimeout(() => void searchImmich(next), 400);
+  };
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   // the filmstrip's selection, by image: ratings, labels and rejects apply
   // to all of it, as in Lightroom; the open photo is the active one
@@ -4122,17 +4140,10 @@ export default function App() {
   // the files still to be read, as empty cells after the photos: unless the
   // filters ask for what only reading tells (ratings, labels, rejects)
   const rawNames = stackPairs && reading ? pairedRaws(reading.files) : null;
-  const pending = !reading || filter.minRating || filter.rejected !== "all" || filter.edited !== "all" || filter.labels
-    || filter.unlabeled ? []
+  const pending = !reading || needsRead(filter) ? []
     : reading.files.slice(reading.done).filter((p) => !filter.kinds.length || filter.kinds.includes(fileKind(p)))
         // a raw's companions, stacked behind it
         .filter((p) => !rawNames?.has(pairKey(p)) || !isCompanion(p));
-  const kindCounts = (() => {
-    const m = new Map<string, number>();
-    for (const i of images) { const k = fileKind(i.filename); m.set(k, (m.get(k) ?? 0) + 1); }
-    // RAW first, then the rest by name
-    return [...m].sort(([a], [b]) => (a === "RAW" ? -1 : b === "RAW" ? 1 : a.localeCompare(b)));
-  })();
   const shownRef = useRef<ImageEntry[]>([]);
   shownRef.current = shown;
   // the open photo's cell in the filmstrip, if the filmstrip shows it, and
@@ -4176,6 +4187,12 @@ export default function App() {
   // from (Session.onSaved)
   const keywordsRef = useRef<{ imgid: number; list: string[] } | null>(null);
   keywordsRef.current = keywords && currentId !== undefined ? { imgid: currentId, list: keywords } : null;
+  // into the filmstrip's entry too, which the Filters popup reads
+  useEffect(() => {
+    if (!keywords || currentId === undefined) return;
+    const e = imagesRef.current.find((i) => i.imgid === currentId);
+    if (e && e.keywords?.join("\n") !== keywords.join("\n")) patchImage(currentId, { keywords });
+  }, [keywords]);
   // Preferences' keywords for edited photos: on once a save finds the photo
   // edited, off again once one finds it unedited
   const syncEditedKeywords = async (imgid: number, edited: boolean) => {
@@ -4190,6 +4207,7 @@ export default function App() {
       if (!add.length && !remove.length) return;
       const now = await invoke<string[]>("keywords_set", { imgid, add, remove });
       if (session.current?.imgid === imgid) setKeywords(now);
+      patchImage(imgid, { keywords: now });
       if (add.length) setKnownKeywords((k) => [...new Set([...k, ...add])].sort((a, b) => a.localeCompare(b)));
     } catch (e) {
       setStatus(`error: ${e}`);
@@ -4351,7 +4369,8 @@ export default function App() {
         </div>
         {immichBase && (
           <ImmichPanel open={leftOpen.has("immich")} onToggle={(alt) => toggleLeft("immich", alt)}
-                       active={!!immich} searching={!!immich?.busy} onSearch={(q) => void searchImmich(q)}
+                       active={!!immich} searching={!!immich?.busy} form={immichForm} onChange={updateImmich}
+                       onSearch={() => { window.clearTimeout(immichTimer.current); void searchImmich(immichFormRef.current); }}
                        onMenu={showResultsMenu} />
         )}
         <HistoryPanel base={historyBase.filter((h) => !session.current?.deleted.has(instanceKey(h)))
@@ -4581,7 +4600,7 @@ export default function App() {
                        onMeta={(i, fields) => rateSelection(i, fields)} />
           </div>
         </div>
-        <Toolbar filter={filter} kinds={kindCounts} remote={!!immich} layout={layout} ref={toolbar} pin={pinButton("strip")}
+        <Toolbar filter={filter} images={images} immich={immich ? { form: immichForm, update: updateImmich } : null} layout={layout} ref={toolbar} pin={pinButton("strip")}
                  viewTools={<>
                    <button className="tool" title={keys("undo (⌘Z)")} disabled={!current} onClick={() => stepHistory(true)}>
                      <UndoIcon /></button>
@@ -4595,6 +4614,19 @@ export default function App() {
                            title="compare with another photo (C): click one in the filmstrip, or step with ← →"
                            onClick={toggleCompare}><CompareIcon /></button>
                  </>}
+                 filterBounds={() => {
+                   // across the filmstrip, below the top of the photo area, and
+                   // clear of a side panel shown over it (auto-hide)
+                   const s = stripSlot.current?.getBoundingClientRect();
+                   if (!s) return undefined;
+                   const l = leftAside.current?.getBoundingClientRect(), r = rightAside.current?.getBoundingClientRect();
+                   return {
+                     left: l && l.width && l.right > 0 ? Math.max(s.left, l.right) : s.left,
+                     right: r && r.width && r.left < window.innerWidth ? Math.min(s.right, r.left) : s.right,
+                     top: viewer.current?.parentElement?.getBoundingClientRect().top ?? 0,
+                   };
+                 }}
+                 onFiltered={() => setGrid(true)}
                  grid={grid} onGrid={shown.length > 0 || pending.length > 0 || grid ? () => setGrid(!grid) : undefined}
                  zoomBar={<ZoomBar disabled={!current} register={(f) => { zoomShow.current = f; }}
                                    onZoom={(z) => setZoom(z)}
@@ -5168,37 +5200,29 @@ function ZoomBar({ disabled, register, onZoom, onToggle, fit }: {
   );
 }
 
-// which images the filmstrip, the list and the arrows show
-// `rejected` hides rejected photos or shows only them; `edited` picks those
-// darktable counts as altered, or those it does not; `kinds` are file kinds
-// as fileKind() names them, none meaning all
-type Filter = { minRating: number; rejected: "all" | "hide" | "only"; edited: "all" | "edited" | "unedited";
-                labels: number; unlabeled: boolean; kinds: string[] };
-const NO_FILTER: Filter = { minRating: 0, rejected: "all", edited: "all", labels: 0, unlabeled: false, kinds: [] };
-const passes = (i: ImageEntry, f: Filter) =>
-  (f.rejected === "all" || (f.rejected === "only") === i.rejected)
-  && (f.edited === "all" || (f.edited === "edited") === i.edited)
-  && (!f.kinds.length || f.kinds.includes(fileKind(i.filename)))
-  && (f.minRating === 0 || (!i.rejected && i.rating >= f.minRating))
-  // label filters admit an image carrying any of the chosen labels
-  && ((!f.labels && !f.unlabeled) || (i.labels & f.labels) !== 0 || (f.unlabeled && i.labels === 0));
-
 // the bar under the filmstrip: rate and reject the open image, filter the
 // folder, and show or hide the side panels and the filmstrip
-function Toolbar({ filter: f, kinds, layout, zoomBar, viewTools, onFilter, onLayout, ref, pin, remote, grid, onGrid }: {
+function Toolbar({ filter: f, images, layout, zoomBar, viewTools, onFilter, onLayout, ref, pin, immich, grid, onGrid,
+                   filterBounds, onFiltered }: {
   ref: React.RefObject<HTMLDivElement | null>;
   viewTools: React.ReactNode;               // undo, redo, before/after, compare
   grid: boolean;
   onGrid?: () => void;                      // none while there are no photos to show
+  filterBounds: () => FilterBounds | undefined; // where the Filters popup may go
+  onFiltered: () => void;                   // the Filters popup's Search, which shows the grid
   pin: React.ReactNode;
-  remote: boolean;                          // Immich results, which carry no reject flag or labels
+  // with Immich results, which carry no reject flag or labels, the stars and
+  // the Filters popup set the server's search
+  immich: ImmichFilters | null;
   filter: Filter; layout: Layout; zoomBar: React.ReactNode;
-  kinds: [string, number][];                // the folder's file kinds, and how many of each
+  images: ImageEntry[];                     // the folder's photos, whose cameras, lenses and so on the Filters popup lists
   onFilter: (f: Filter) => void;
   onLayout: (k: "left" | "strip" | "right") => void;
 }) {
+  const remote = !!immich;
+  const stars = immich ? immich.form.minRating : f.minRating;
   const filtering = f.minRating > 0 || f.rejected !== "all" || f.edited !== "all" || f.labels !== 0 || f.unlabeled
-    || f.kinds.length > 0;
+    || popupCount(f) > 0 || (!!immich && (stars > 0 || immichFilterCount(immich.form) > 0));
   // what the reject filter now shows, said for a moment above it
   // (fixed to the window: the toolbar scrolls, and would clip it)
   const [note, setNote] = useState<{ text: string; x: number; y: number } | null>(null);
@@ -5212,6 +5236,10 @@ function Toolbar({ filter: f, kinds, layout, zoomBar, viewTools, onFilter, onLay
   };
   const clearFilters = (e: React.MouseEvent<HTMLButtonElement>) => {
     onFilter(NO_FILTER);
+    if (immich) {
+      const s = immich.form;
+      immich.update({ ...NO_SEARCH, mode: s.mode, text: s.text, library: s.library });
+    }
     say("Filters cleared", e);
   };
   const cycleRejected = (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -5233,8 +5261,9 @@ function Toolbar({ filter: f, kinds, layout, zoomBar, viewTools, onFilter, onLay
                 onClick={clearFilters}><FilterIcon /></button>
         {[1, 2, 3, 4, 5].map((n) => (
           <button key={n} className="tool" title={`${n} star${n > 1 ? "s" : ""} and up`}
-                  onClick={() => onFilter({ ...f, minRating: f.minRating === n ? 0 : n })}>
-            <StarIcon filled={f.minRating >= n} />
+                  onClick={() => immich ? immich.update({ minRating: stars === n ? 0 : n })
+                                        : onFilter({ ...f, minRating: f.minRating === n ? 0 : n })}>
+            <StarIcon filled={stars >= n} />
           </button>
         ))}
         {!remote && <>
@@ -5265,7 +5294,7 @@ function Toolbar({ filter: f, kinds, layout, zoomBar, viewTools, onFilter, onLay
                 title="images without a label" onClick={() => onFilter({ ...f, unlabeled: !f.unlabeled })} />
         </>}
         <span className="sep" />
-        <KindFilter kinds={kinds} chosen={f.kinds} onChange={(k) => onFilter({ ...f, kinds: k })} />
+        <FilterPopup filter={f} images={images} onFilter={onFilter} immich={immich} bounds={filterBounds} onSearch={onFiltered} />
         {filtering && (
           <button className="tool clear-filters" title="show every photo again" onClick={clearFilters}>Clear</button>
         )}
@@ -5307,48 +5336,6 @@ function GridIcon() {
 
 // the pair names (pairKey()) that have a raw among these files
 const pairedRaws = (files: string[]) => new Set(files.filter((p) => isPrimaryRaw(p)).map(pairKey));
-
-// the file type filter: a button naming what shows, opening the folder's
-// kinds to tick, with how many of each
-function KindFilter({ kinds, chosen, onChange }: {
-  kinds: [string, number][]; chosen: string[]; onChange: (kinds: string[]) => void;
-}) {
-  // where the menu opens, above the button; fixed to the window, as the
-  // toolbar scrolls and would clip it
-  const [open, setOpen] = useState<{ x: number; y: number } | null>(null);
-  const box = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const away = (e: PointerEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(null); };
-    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(null); };
-    window.addEventListener("pointerdown", away, true);
-    window.addEventListener("keydown", esc, true);
-    return () => { window.removeEventListener("pointerdown", away, true); window.removeEventListener("keydown", esc, true); };
-  }, [open]);
-  const label = !chosen.length ? "All types" : chosen.length > 2 ? `${chosen.length} types` : chosen.join(", ");
-  return (
-    <div className="kind-filter" ref={box}>
-      <button className={`tool kind-button${chosen.length ? " on" : ""}`} title="show only these file types"
-              onClick={(e) => {
-                const r = e.currentTarget.getBoundingClientRect();
-                setOpen(open ? null : { x: r.left, y: r.top });
-              }}>{label}</button>
-      {open && (
-        <div className="kind-menu" style={{ left: open.x, bottom: window.innerHeight - open.y + 6 }}>
-          <button className={!chosen.length ? "on" : ""} onClick={() => onChange([])}>
-            <span className="tick">{!chosen.length ? "✓" : ""}</span><span>All types</span></button>
-          {kinds.map(([k, n]) => (
-            <button key={k} className={chosen.includes(k) ? "on" : ""}
-                    onClick={() => onChange(chosen.includes(k) ? chosen.filter((x) => x !== k) : [...chosen, k])}>
-              <span className="tick">{chosen.includes(k) ? "✓" : ""}</span><span>{k}</span>
-              <span className="count">{n.toLocaleString()}</span></button>
-          ))}
-          {!kinds.length && <div className="empty">no photos</div>}
-        </div>
-      )}
-    </div>
-  );
-}
 
 // the folder's images along the bottom, as Lightroom's filmstrip: a cell
 // each with the file's name and type above its thumbnail, and its reject

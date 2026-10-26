@@ -225,8 +225,9 @@ Immporter's.
 
 Once Immich is set up, the Library panel has an Immich card under
 Folders. It searches the external libraries by default, with Immich's
-smart search or by file name, and Advanced filters by date, rating,
-favorites, RAW, camera, lens, place, people, tags and albums. Results
+smart search or by file name, and the toolbar's Filters narrow it by
+date, rating, favorites, RAW, camera, lens, place, people, tags and
+albums. Results
 fill the grid with Immich's thumbnails. Opening one edits the external
 library's own file when this computer has it, mapped from Immich's path
 in Preferences (by default the importer's path prefix and destination),
