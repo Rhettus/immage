@@ -11,6 +11,9 @@ interface to move.
 
 Improvements
 
+- the navigator stays the same size whatever the photo's shape: a
+  portrait photo no longer makes it tall enough to push the panels
+  below it down
 - the crop frame is easier to take hold of: its corners can be grabbed
   further out, and an edge anywhere along it rather than only at its
   middle bar
