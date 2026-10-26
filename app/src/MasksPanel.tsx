@@ -281,7 +281,7 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
           {masks.length > 0 && (
             <ul className="mask-list">
               {masks.map((x) => (
-                <li key={x.name} className={`${x.name === selected ? "on" : ""}${x.hidden ? " hidden" : ""}`}>
+                <li key={x.name} className={`${x.name === selected ? "on" : ""}${x.hidden ? " off" : ""}`}>
                   <div className="mask-row" onClick={() => onSelect(x.name)}
                        onMouseEnter={() => peekSoon(x.name)} onMouseLeave={() => peekSoon(null)}>
                     {/* the eye compares with and without the mask, so the overlay keeps out of the way */}

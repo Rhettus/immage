@@ -12,6 +12,7 @@ import { existsSync, mkdirSync, copyFileSync, readdirSync, readFileSync, rmSync,
          constants } from "node:fs";
 import { createHash } from "node:crypto";
 import { crc32 } from "node:zlib";
+import { spawnSync } from "node:child_process";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -70,7 +71,9 @@ const { ILLUMINANT_D } = await import("../app/src/wb.ts");
 const { autoTone } = await import("../app/src/autoTone.ts");
 const { dueIn } = await import("../app/src/activity.ts");
 const { byCaptureTime } = await import("../app/src/library.ts");
+const { NO_FILTER, exposureLabel, facetsWithin, passes } = await import("../app/src/filter.ts");
 const z = await import("../app/src/zones.ts");
+const nd = await import("../app/src/negadoctor.ts");
 const { compare, meanChroma, inEllipse, rightOf } = await import("./metrics.mjs");
 const { THRESHOLD, GLOBAL, COMPOSITE, LOCAL, trialValues, judge } = await import("./expect.mjs");
 
@@ -410,8 +413,125 @@ function zip(files) {
 
 // bugs fixed before these checks existed, each named for the release that
 // fixed it (README, "When a bug is fixed")
+// every hue (HSV, 85% saturated, value 0.8) left to right, two columns a
+// degree, as an 8-bit RGB TIFF: a photo has too few hues to tell the HSL
+// bands apart
+function hueStrip() {
+  const path = join(args.work, "strip", "hues.tif");
+  if (existsSync(path)) return path;
+  mkdirSync(dirname(path), { recursive: true });
+  const w = 720, h = 120, data = 140;
+  const px = Buffer.alloc(data + w * h * 3);
+  for (let x = 0; x < w; x++) {
+    const hue = (x + 0.5) / 2 / 60, s = 0.85, v = 0.8;
+    const f = (n) => { const k = (n + hue) % 6; return v - v * s * Math.max(0, Math.min(k, 4 - k, 1)); };
+    for (let y = 0; y < h; y++) [f(5), f(3), f(1)].forEach((c, i) => { px[data + 3 * (y * w + x) + i] = Math.round(255 * c); });
+  }
+  // the header, one IFD at 8 and the three BitsPerSample at 134
+  px.write("II", 0, "latin1");
+  px.writeUInt16LE(42, 2);
+  px.writeUInt32LE(8, 4);
+  const tags = [[256, 3, 1, w], [257, 3, 1, h], [258, 3, 3, 134], [259, 3, 1, 1], [262, 3, 1, 2], [273, 4, 1, data],
+                [277, 3, 1, 3], [278, 3, 1, h], [279, 4, 1, w * h * 3], [284, 3, 1, 1]];
+  px.writeUInt16LE(tags.length, 8);
+  tags.forEach(([tag, type, count, value], i) => {
+    const at = 10 + 12 * i;
+    px.writeUInt16LE(tag, at);
+    px.writeUInt16LE(type, at + 2);
+    px.writeUInt32LE(count, at + 4);
+    if (type === 3 && count === 1) px.writeUInt16LE(value, at + 8); else px.writeUInt32LE(value, at + 8);
+  });
+  px.writeUInt32LE(0, 10 + 12 * tags.length);
+  for (let i = 0; i < 3; i++) px.writeUInt16LE(8, 134 + 2 * i);
+  writeFileSync(path, px);
+  return path;
+}
+
+// the strip's mean chroma (max - min) and luma at an HSV hue, over the
+// columns within 2° of it and the middle half of the rows
+function bandAt(f, hue) {
+  const { width: w, height: h, pixels: p } = f;
+  let n = 0, chroma = 0, luma = 0;
+  for (let y = Math.floor(h / 4); y < Math.ceil((3 * h) / 4); y++) for (let x = 0; x < w; x++) {
+    const d = Math.abs((((x + 0.5) / w) * 360 - hue + 540) % 360 - 180);
+    if (d > 2) continue;
+    const i = 4 * (y * w + x);
+    chroma += Math.max(p[i], p[i + 1], p[i + 2]) - Math.min(p[i], p[i + 1], p[i + 2]);
+    luma += 0.2126 * p[i] + 0.7152 * p[i + 1] + 0.0722 * p[i + 2];
+    n++;
+  }
+  return { chroma: Math.round(chroma / n), luma: Math.round(luma / n) };
+}
+
 async function fixes(photo) {
   const fix = (id, run) => outcome("fixes", basename(photo), id, run);
+
+  // 0.37.0: HSL's Saturation was twice Lightroom's strength, -50 already
+  // gray, and its bands sat on the color equalizer's nodes, not at
+  // Lightroom's hues (colorequal.ts). with Blue at -100, Aqua did nothing to
+  // the hues between them, or grayed them further; Purple, not Blue, grayed
+  // blue; and Luminance or the B&W Mix at -100 turned a saturated red black
+  if (photo === args.photos[0]) {
+    const strip = hueStrip();
+    await fix("HSL Blue grays blue, more than Purple", async () => {
+      const o = await open(fresh(strip));
+      const blue = bandAt(await o.after(() => o.s.set("hsl_sat_blue", -100)), 240);
+      const purple = bandAt(await o.after(() => o.s.setMany([["hsl_sat_blue", 0], ["hsl_sat_lavender", -100]])), 240);
+      await o.s.close();
+      return blue.chroma < purple.chroma ? null
+        : `at blue, Blue -100 left chroma ${blue.chroma} and Purple -100 ${purple.chroma}`;
+    });
+    await fix("HSL Aqua works with Blue at -100", async () => {
+      const o = await open(fresh(strip));
+      const gray = await o.after(() => o.s.set("hsl_sat_blue", -100));
+      const aqua = await o.after(() => o.s.set("hsl_sat_cyan", 100));
+      await o.s.close();
+      const [g200, a200, g225, a225] = [bandAt(gray, 200), bandAt(aqua, 200), bandAt(gray, 225), bandAt(aqua, 225)];
+      return a200.chroma < g200.chroma + 5 ? `at HSV 200, Aqua +100 took chroma from ${g200.chroma} to ${a200.chroma}`
+        : a225.chroma < g225.chroma - 2 ? `at HSV 225, Aqua +100 lowered chroma from ${g225.chroma} to ${a225.chroma}`
+        : null;
+    });
+    await fix("HSL Luminance -100 keeps red", async () => {
+      const o = await open(fresh(strip));
+      const was = bandAt(o.base, 0), red = bandAt(await o.after(() => o.s.set("hsl_lum_red", -100)), 0);
+      await o.s.close();
+      return red.luma >= 0.25 * was.luma ? null : `red went from luma ${was.luma} to ${red.luma}`;
+    });
+    await fix("B&W Mix -100 keeps red", async () => {
+      const o = await open(fresh(strip));
+      const was = bandAt(await o.after(() => o.s.set("bw_mode", 1)), 0);
+      const red = bandAt(await o.after(() => o.s.set("bw_red", -100)), 0);
+      await o.s.close();
+      return red.luma >= 0.25 * was.luma ? null : `red's gray went from luma ${was.luma} to ${red.luma}`;
+    });
+    // a band set in darktable or before 0.37.0 reads as a mix of sliders,
+    // some past ±100 (manifest.ts, readsPast): Luminance -100 then, which
+    // turned red black, is about -200 now. clamped, the next edit rewrote
+    // the band at half its effect, and red came back
+    await fix("an older HSL band stays as it was at the next edit", async () => {
+      const path = fresh(strip);
+      await request({ cmd: "open", path, imgid: -1 });
+      await request({ cmd: "set", op: "colorequal", params: { bright_red: 0.5 }, enabled: true });
+      await request({ cmd: "save" });
+      const o = await open(path);
+      const next = await o.after(() => { o.s.endBaseline(); o.s.set("hsl_lum_cyan", 10); });
+      await o.s.close();
+      const a = bandAt(o.base, 0), b = bandAt(next, 0);
+      return Math.abs(b.luma - a.luma) > 3 ? `red went from luma ${a.luma} to ${b.luma}` : null;
+    });
+  }
+
+  // 0.37.0: Clarity switched local contrast on at its default 50% shadows
+  // and highlights (manifest.ts, clarityMap), so ±1 flattened the photo
+  // more than ±10 did
+  await fix("Clarity at ±1 changes less than at ±10", async () => {
+    const o = await open(fresh(photo));
+    const mad = async (v) => compare(await o.after(() => o.s.set("clarity", v)), o.base).mad;
+    const [p1, p10, n1, n10] = [await mad(1), await mad(10), await mad(-1), await mad(-10)];
+    await o.s.close();
+    return p1 < p10 / 3 && n1 < n10 / 3 ? null
+      : `the frame changed by ${p1.toFixed(2)} at +1 and ${p10.toFixed(2)} at +10, ${n1.toFixed(2)} at -1 and ${n10.toFixed(2)} at -10`;
+  });
 
   // 0.34.0: darktable's AI models were unpacked with the system's unzip,
   // which Arch and CachyOS do not install, so AI Denoise and Select Object
@@ -605,6 +725,38 @@ async function fixes(photo) {
     return edit.equals(before) ? null : "the export has the Before view's settings, not the edit";
   });
 
+  // 0.37.0: an export carried the camera's serial numbers (Flickr showed
+  // them): darktable copies the raw's EXIF, makernotes and all. the dialog
+  // now sends serials: false unless Metadata's box is ticked, and the
+  // engine takes them out of the written file (engine/strip.cc)
+  const exiv2 = spawnSync("exiv2", ["--version"]).status === 0;
+  if (!exiv2) {
+    record({ check: "fixes", photo: basename(photo), id: "export leaves out serial numbers", status: "skip",
+             detail: "no exiv2 command to read the exported file with (brew install exiv2)" });
+  } else await fix("export leaves out serial numbers", async () => {
+    // the keys exiv2 sees, with Sony's undecoded block that holds its serial.
+    // a raw's listing runs to megabytes, past spawnSync's 1 MB default
+    const list = (file, ...opts) => spawnSync("exiv2", ["-pa", ...opts, "-q", file],
+                                              { encoding: "utf8", maxBuffer: 1 << 28 }).stdout;
+    const personal = (file) => list(file, "-u").split("\n").map((l) => l.split(/\s+/)[0])
+      .filter((k) => /serial|ownername|^Exif\.Sony\d\.0x9050$/i.test(k));
+    const keys = (file) => list(file);
+    if (!personal(photo).length) return null;
+    const { images: [e] } = await request({ cmd: "import", files: [fresh(photo)] });
+    const exported = async (tag, serials) => {
+      const out = join(args.work, "export", `${copies}-${tag}.jpg`);
+      mkdirSync(dirname(out), { recursive: true });
+      await request({ cmd: "export", imgid: e.imgid, out, format: "jpeg", color_space: "srgb", quality: 90,
+                      long_edge: 512, draft: true, serials });
+      return out;
+    };
+    const left = await exported("serials-out", false), kept = await exported("serials-in", true);
+    const leaked = personal(left);
+    return leaked.length ? `the export kept ${leaked.join(", ")}`
+      : !/^Exif\.Image\.Model /m.test(keys(left)) ? "the export lost the camera model with the serial numbers"
+      : !personal(kept).length ? "with serial numbers asked for, the export had none" : null;
+  });
+
   // 0.34.0: zoomed in, a range mask's overlay is darktable's own mask, made
   // on the preview pipe for the window shown. a range map after it read the
   // whole image from that window, its edges repeated across the rest
@@ -664,6 +816,24 @@ async function fixes(photo) {
     return got?.blur > 0 ? null : `opened again, its refinements are ${JSON.stringify(got ?? null)}`;
   });
 
+  // 0.37.0: darktable takes a mask's shapes into the pipe's hash from
+  // darktable.develop, not the engine's develop, so 0.36.0's frames by hash
+  // (`have`) handed back the zoomed frame from before a mask moved: the
+  // view showed the mask where it had been, or not at all
+  await fix("a moved mask isn't shown where it was", async () => {
+    const o = await open(fresh(photo));
+    const plain = await zoomed(o);
+    const spot = { ...MASK, x: 0.5, y: 0.5, rx: 0.1, ry: 0.1, feather: 0.02 };
+    await o.after(() => o.s.addMask("Spot", [spot]));
+    const lit = await o.after(() => o.s.setLocal("Spot", "l_exposure", 1));
+    const moved = await o.after(() => o.s.setShapes("Spot", [{ ...spot, x: 0.05, y: 0.05, rx: 0.02, ry: 0.02 }]));
+    await o.s.close();
+    const center = inEllipse(0.5, 0.5, 0.1);
+    const stale = compare(moved, plain, center).mad;
+    return brighter(lit, plain, center) ? "the mask did not brighten the zoomed view"
+      : stale > 1 ? `moved out of the view, the mask still shows there (${stale.toFixed(1)} of 255 apart)` : null;
+  });
+
   // 0.36.0: on Linux at 2x, a drag's frames took longer than the busy
   // indicator's wait, so it came up between them, and its spinning redrew
   // the whole window every display frame. a job that has shown a frame
@@ -717,6 +887,44 @@ async function decisions(photo) {
     return got === "cdba" ? null : `sorted as ${got}, not cdba`;
   });
 
+  // the Filters popup narrows a folder by camera, keywords (a keyword
+  // with those under it) and exposure settings, which needs the engine to
+  // list each photo's keywords with the folder (filter.ts; library.md,
+  // Filtering)
+  await decide("the filter reads camera, keywords and exposure", async () => {
+    const path = fresh(photo);
+    const { images: [e] } = await request({ cmd: "import", files: [path] });
+    await request({ cmd: "keywords_set", imgid: e.imgid, add: ["Verify|Filter"], remove: [] });
+    const { images: [i] } = await request({ cmd: "import", files: [path] });
+    if (!i?.keywords?.includes("Verify|Filter")) return `the folder listed keywords ${JSON.stringify(i?.keywords)}`;
+    const camera = `${i.exif.maker} ${i.exif.model}`.trim();
+    const iso = i.exif.iso;
+    const cases = [
+      [{ cameras: [camera] }, true], [{ cameras: ["No Such Camera"] }, false],
+      [{ keywords: ["Verify"] }, true], [{ keywords: ["Verify|Filter"] }, true], [{ keywords: ["Verify|Other"] }, false],
+      [{ iso: [exposureLabel("iso", iso)] }, true], [{ iso: [exposureLabel("iso", iso * 2)] }, false],
+    ];
+    const wrong = cases.filter(([f, want]) => passes(i, { ...NO_FILTER, ...f }) !== want);
+    return !iso ? "the photo has no ISO to filter by"
+      : wrong.length ? `wrong for ${wrong.map(([f]) => JSON.stringify(f)).join(", ")}` : null;
+  });
+
+  // each of the Filters popup's lists holds only what the other choices
+  // leave, so a camera chosen narrows the lenses, ISOs and the rest to
+  // those it took (library.md, Filtering)
+  await decide("the filter's lists narrow by the other choices", async () => {
+    const { images: [i] } = await request({ cmd: "import", files: [fresh(photo)] });
+    const camera = `${i.exif.maker} ${i.exif.model}`.trim(), iso = exposureLabel("iso", i.exif.iso);
+    const has = (f, clear, key, v) => facetsWithin([i], { ...NO_FILTER, ...f }, clear)[key].some(([x]) => x === v);
+    const wrong = [
+      [has({ cameras: [camera] }, { iso: [] }, "iso", iso), true],
+      [has({ cameras: ["No Such Camera"] }, { iso: [] }, "iso", iso), false],
+      // its own choice left out, the other cameras stay to choose
+      [has({ cameras: ["No Such Camera"] }, { cameras: [] }, "cameras", camera), true],
+    ].map(([got, want], n) => got === want ? null : n).filter((n) => n !== null);
+    return !iso ? "the photo has no ISO to filter by" : wrong.length ? `wrong for cases ${wrong.join(", ")}` : null;
+  });
+
   // the photo is never written, only its sidecar (code-map.md, Where data
   // lives)
   await decide("the photo file is never written", async () => {
@@ -765,22 +973,25 @@ async function decisions(photo) {
       : copyBack?.pixels.buffer !== first.pixels.buffer ? "back from the Before view, the copy was rendered again" : null;
   });
 
-  // the photo the arrow keys open next is decoded ahead (App.tsx,
-  // prefetchNext; main.c, _prefetch). opened while that decode is still
-  // under way, it waits for it, and renders as a photo opened cold does
+  // the photos the arrow keys open next are decoded ahead, a few at once
+  // (App.tsx, prefetchNext; main.c, _prefetch). each, opened while its
+  // decode is still under way, waits for it, and renders as a photo opened
+  // cold does: the first of the list and the last, decoded beside it
   await decide("a prefetched photo opens as it would cold", async () => {
-    const cold = fresh(photo), ahead = fresh(photo);
-    const { images } = await request({ cmd: "import", files: [cold, ahead] });
+    const cold = fresh(photo), ahead = [fresh(photo), fresh(photo), fresh(photo)];
+    const { images } = await request({ cmd: "import", files: [cold, ...ahead] });
     const pixels = async (path) => {
       await request({ cmd: "open", path, imgid: -1 });
-      return (await invoke("render", { width: 512, height: 512 })).slice(FRAME_HEAD);
+      const px = new Uint8Array((await invoke("render", { width: 512, height: 512 })).slice(FRAME_HEAD));
+      await request({ cmd: "close" });
+      return px;
     };
-    const a = new Uint8Array(await pixels(cold));
-    await request({ cmd: "close" });
-    await request({ cmd: "prefetch", imgid: images.find((e) => e.path === ahead).imgid });
-    const b = new Uint8Array(await pixels(ahead));
-    await request({ cmd: "close" });
-    return a.length !== b.length || a.some((v, k) => v !== b[k]) ? "it rendered differently from the photo opened cold" : null;
+    const differs = (a, b) => a.length !== b.length || a.some((v, k) => v !== b[k]);
+    const a = await pixels(cold);
+    await request({ cmd: "prefetch", imgids: ahead.map((p) => images.find((e) => e.path === p).imgid) });
+    const last = await pixels(ahead[2]), first = await pixels(ahead[0]);
+    return differs(a, last) ? "the last of the list rendered differently from the photo opened cold"
+      : differs(a, first) ? "the first of the list rendered differently from the photo opened cold" : null;
   });
 
   // a photo edited in darktable keeps all of its edit: modules Immage has
@@ -853,6 +1064,42 @@ async function decisions(photo) {
       : Math.abs(highlights + 40) > 1.5 ? `Highlights read back ${highlights}` : null;
   });
 
+  // Whites on AgX moves AgX's shoulder and color balance rgb's highlights
+  // brilliance together, as a mask's Whites does; an edit from before that
+  // opens on its shoulder alone and gains no brilliance until Whites moves
+  // (manifest.ts, WHITES_BRILLIANCE)
+  await decide("whites adds brilliance on agx", async () => {
+    const get = async () => (await request({ cmd: "get", modules: {
+      agx: ["curve_shoulder_power"], colorbalancergb: ["brilliance_highlights"] } })).modules;
+    const brilliance = (got) => (got.colorbalancergb?.enabled ? got.colorbalancergb.params.brilliance_highlights : 0);
+    let path = fresh(photo);
+    let o = await open(path);
+    if (o.s.values.tm_mode !== 1) return `a new photo opened on tone mapper ${o.s.values.tm_mode}`;
+    await o.after(() => { o.s.endBaseline(); o.s.set("whites", 50); });
+    await o.s.close();
+    await drained();
+    await request({ cmd: "open", path, imgid: -1 });
+    let got = await get();
+    if (Math.abs(brilliance(got) - 0.1) > 1e-3) return `Whites +50 set brilliance ${brilliance(got)}, not 0.1`;
+    path = fresh(photo);
+    o = await open(path);
+    await o.s.close();
+    await drained();
+    await request({ cmd: "open", path, imgid: -1 });
+    const shoulder = (await get()).agx.params.curve_shoulder_power;
+    await request({ cmd: "set", op: "agx", params: { curve_shoulder_power: shoulder * 2 ** 0.3 }, enabled: true });
+    await request({ cmd: "save" });
+    o = await open(path);
+    const whites = o.s.values.whites;
+    await o.after(() => { o.s.endBaseline(); o.s.set("exposure", 0.3); });
+    await o.s.close();
+    await drained();
+    await request({ cmd: "open", path, imgid: -1 });
+    got = await get();
+    return Math.abs(whites - 30) > 1.5 ? `an older Whites of 30 opened as ${whites}`
+      : Math.abs(brilliance(got)) > 1e-6 ? `an older Whites gained brilliance ${brilliance(got)} on another edit` : null;
+  });
+
   // a parametric tone curve saved before Midtones opens on the same four
   // sliders, Midtones at 0. the nodes are what the four-region curve()
   // wrote for these settings
@@ -906,6 +1153,31 @@ async function decisions(photo) {
       : d.max > 0 ? `after a preview the frame differs (max |Δ| ${d.max})`
       : f.hash !== o.base.hash ? "the same edit rendered with another hash"
       : moved.hash === o.base.hash ? "a changed edit rendered with the same hash" : null;
+  });
+
+  // the Export dialog's preview is a draft, downscaled after demosaic as
+  // the darkroom does, many times quicker on an edited photo; an export
+  // runs the whole pipe at full size (main.rs, export_preview; _export's
+  // `draft`). both come out the same size
+  await decide("the export preview is a draft", async () => {
+    const o = await open(fresh(photo));
+    await o.after(() => { o.s.endBaseline(); o.s.set("exposure", 0.5); });
+    const exported = async (draft) => {
+      const out = join(args.work, "export", `${copies}-preview-${draft}.jpg`);
+      mkdirSync(dirname(out), { recursive: true });
+      await request({ cmd: "export", imgid: o.s.imgid, out, format: "jpeg", color_space: "srgb", quality: 90,
+                      long_edge: 512, frame: { borders: [{ top: 5, left: 5, right: 5, bottom: 5, unit: "short",
+                                                          color: "#ffffff" }] }, draft });
+      const file = readFileSync(out);
+      // the size from the frame header (SOF0/SOF2), the data after it
+      const sof = file.findIndex((b, i) => b === 0xff && (file[i + 1] === 0xc0 || file[i + 1] === 0xc2));
+      return { size: `${file.readUInt16BE(sof + 7)}x${file.readUInt16BE(sof + 5)}`,
+               data: file.subarray(file.indexOf(Buffer.from([0xff, 0xda]))) };
+    };
+    const full = await exported(false), draft = await exported(true);
+    await o.s.close();
+    return draft.size !== full.size ? `the draft is ${draft.size}, the export ${full.size}`
+      : draft.data.equals(full.data) ? "the preview rendered as the export does, at full size" : null;
   });
 
   // Preferences' exposure compensation goes on a raw's own exposure
@@ -1033,6 +1305,93 @@ async function decisions(photo) {
     ];
     const wrong = cases.filter(([, got, want]) => got !== want).map(([label]) => label);
     return wrong.length ? `not so: ${wrong.join(", ")}` : null;
+  });
+
+  // a mask an AI selection just made shows its overlay while it is
+  // selected, toggle off, until O or an adjustment (masks.md, The mask list)
+  await decide("a new AI mask shows its overlay", async () => {
+    const fresh = { on: false, hold: null, fresh: "Sky" };
+    const steps = (t, ...evs) => evs.reduce((x, ev) => overlayStep(x, false, ev, "Sky"), t);
+    const cases = [
+      ["it shows", overlayShown(fresh, false, "Sky"), true],
+      ["not while another mask is selected", overlayShown(fresh, false, "Brush"), false],
+      ["O hides it", overlayShown(steps(fresh, "key"), false, "Sky"), false],
+      ["O again shows it", overlayShown(steps(fresh, "key", "key"), false, "Sky"), true],
+      ["an adjustment hides it", overlayShown(steps(fresh, "adjust"), false, "Sky"), false],
+      ["a brush stroke leaves it", overlayShown(steps(fresh, "stroke"), false, "Sky"), true],
+    ];
+    const wrong = cases.filter(([, got, want]) => got !== want).map(([label]) => label);
+    return wrong.length ? `not so: ${wrong.join(", ")}` : null;
+  });
+
+  // a converted negative turns off the modules that would change the
+  // negative ahead of negadoctor, and the tone mappers; Contrast,
+  // Saturation, Highlights and Shadows run after it; it opens again so, and
+  // turned back, every module is as it was (negative.md; manifest.ts,
+  // NEG_OFF and NEG_CHOICES)
+  await decide("a converted negative turns its modules off, and back", async () => {
+    const path = fresh(photo);
+    const ops = [...m.NEG_OFF, "negadoctor"];
+    const fields = m.boundFields();
+    const state = async () => (await invoke("get_params", {
+      modules: Object.fromEntries(ops.map((op) => [op, fields[op]])) })).modules;
+    let o = await open(path);
+    const was = await state();
+    await o.after(() => o.s.setMany([["neg_on", 1], ...nd.toValues(nd.PRESETS[nd.FILM_COLOR]),
+                                     ...Object.entries(m.NEG_CHOICES)]));
+    const on = (st) => ops.filter((op) => st[op]?.enabled !== (op === "negadoctor"));
+    const converted = on(await state());
+    await o.s.close();
+    o = await open(path);
+    const reopened = on(await state());
+    const choices = Object.entries(m.NEG_CHOICES).filter(([id, v]) => o.s.values[id] !== v).map(([id]) => id);
+    const negOn = o.s.values.neg_on;
+    await o.after(() => o.s.setMany([["neg_on", 0],
+                                     ...Object.keys(m.NEG_CHOICES).map((id) => [id, o.s.neutral[id]])]));
+    const back = await state();
+    await o.s.close();
+    const changed = ops.filter((op) => op !== "negadoctor").flatMap((op) => {
+      if (back[op].enabled !== was[op].enabled) return [`${op} ${was[op].enabled ? "on" : "off"} → ${back[op].enabled ? "on" : "off"}`];
+      const moved = was[op].enabled ? Object.keys(was[op].params)
+        .filter((f) => Math.abs(back[op].params[f] - was[op].params[f]) > 1e-5) : [];
+      return moved.length ? [`${op} ${moved.map((f) => `${f} ${was[op].params[f]} → ${back[op].params[f]}`).join(", ")}`] : [];
+    });
+    return converted.length ? `converted, these are not as they should be: ${converted.join(", ")}`
+      : negOn !== 1 ? "opened again, it is not a negative"
+      : reopened.length ? `opened again, these are not as they should be: ${reopened.join(", ")}`
+      : choices.length ? `opened again, these tools are back on modules a negative turns off: ${choices.join(", ")}`
+      : changed.length ? `turned back, these are not as they were: ${changed.join(", ")}` : null;
+  });
+
+  // a camera scan's blue, under the orange mask, reads the film's densest
+  // parts as noise around zero: White Point is set from the other channels,
+  // not by that one, which darkened the whole print (negadoctor.ts,
+  // autoDmax; P5290024, a Portra scan, read 8.4 against red's 1.2)
+  await decide("a starved channel does not set the negative's White Point", async () => {
+    const p = nd.autoDmax(nd.PRESETS[nd.FILM_COLOR], {
+      min: [0.0629, 0.0154, -0.00003], mean: [0.25, 0.068, 0.0095], max: [0.81, 0.27, 0.048] });
+    const want = Math.log10(nd.PRESETS[nd.FILM_COLOR].dmin[1] / 0.0154);
+    return Math.abs(p.dmax - want) > 1e-6 ? `White Point ${p.dmax.toFixed(3)}, not green's ${want.toFixed(3)}` : null;
+  });
+
+  // the Negative panel's pickers read negadoctor's input, the negative,
+  // which its own settings leave as it is (negadoctor.c reads its picker
+  // at its input; engine `sample`, stage "negadoctor")
+  await decide("the negative's pickers read the negative", async () => {
+    const o = await open(fresh(photo));
+    const box = [0.3, 0.3, 0.7, 0.7];
+    const read = async (stage) => {
+      const r = await invoke("sample", { x: 0.5, y: 0.5, area: box, stage });
+      return r.picker?.mean ?? ["R", "G", "B"].map((k) => r.channels[k].mean);
+    };
+    await o.after(() => o.s.setMany([["neg_on", 1], ...nd.toValues(nd.PRESETS[nd.FILM_COLOR])]));
+    const neg = await read("negadoctor"), pos = await read(null);
+    await o.after(() => o.s.set("neg_dmax", 3));
+    const neg2 = await read("negadoctor"), pos2 = await read(null);
+    await o.s.close();
+    const same = (a, b) => a.every((x, i) => Math.abs(x - b[i]) <= 1e-6 * Math.max(1, Math.abs(x)));
+    return !same(neg, neg2) ? `negadoctor's own setting changed what its pickers read: ${neg} → ${neg2}`
+      : same(pos, pos2) ? "the mask stage did not change either: the check cannot tell the stages apart" : null;
   });
 
   // the Zone System's Color mask narrows a zone mask to an object boxed on

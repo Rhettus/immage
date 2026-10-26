@@ -350,15 +350,19 @@ function cover(s: Exclude<Shape, Range>, g: Grid): Uint8Array {
 // the Masks panel's overlay: its toggle (O, or the panel's eye), and what
 // sets aside the overlay a tool adding to the selected mask shows, toggle
 // or not. O always flips what shows; an adjustment hides it until the next
-// stroke, so the change can be judged with the brush still in hand
-export type OverlayToggle = { on: boolean; hold: null | "key" | "adjust" };
-export const overlayShown = (t: OverlayToggle, adding: boolean) => t.on || (adding && !t.hold);
-export function overlayStep(t: OverlayToggle, adding: boolean, ev: "key" | "adjust" | "stroke"): OverlayToggle {
+// stroke, so the change can be judged with the brush still in hand. A mask
+// an AI selection just made (`fresh`) shows while it is selected, so what
+// was selected can be seen, until O or an adjustment
+export type OverlayToggle = { on: boolean; hold: null | "key" | "adjust"; fresh?: string | null };
+export const overlayShown = (t: OverlayToggle, adding: boolean, selected: string | null = null) =>
+  t.on || (!!t.fresh && t.fresh === selected) || (adding && !t.hold);
+export function overlayStep(t: OverlayToggle, adding: boolean, ev: "key" | "adjust" | "stroke",
+                            selected: string | null = null): OverlayToggle {
   if (ev === "key") {
-    const shown = overlayShown(t, adding);
-    return { on: !shown, hold: shown && adding ? "key" : null };
+    const shown = overlayShown(t, adding, selected);
+    return { on: !shown, hold: shown && adding ? "key" : null, fresh: null };
   }
-  if (ev === "adjust") return adding && !t.hold ? { ...t, hold: "adjust" } : t;
+  if (ev === "adjust") return { ...t, hold: adding && !t.hold ? "adjust" : t.hold, fresh: null };
   return t.hold === "adjust" ? { ...t, hold: null } : t;
 }
 

@@ -116,6 +116,8 @@ Everything else in this repository is Immage's own.
     are stored as darktable drawn and parametric masks
   - Heal and Clone spots with an automatically chosen source and a
     Visualize Spots view, stored in darktable's retouch module
+  - film negative conversion, color or black and white, picked from the
+    film border and the photo, in darktable's negadoctor
   - presets, film looks with live preview tiles, undo/redo, a before/after
     view, crop and straighten, a white balance picker, export with
     borders and file-name templates (to a folder or an Immich album), a
@@ -156,7 +158,7 @@ photo that already uses one of a tool's modules keeps it.
 | Blacks | AgX's lift, or sigmoid's target black; or exposure's black level (`exposure`) |
 | Vibrance | color balance rgb (`colorbalancergb`) |
 | Saturation | AgX's saturation; or color balance rgb (`colorbalancergb`), which a photo on sigmoid always uses |
-| Whites | AgX (`agx`); sigmoid (`sigmoid`) on a photo started under it |
+| Whites | AgX (`agx`), with color balance rgb's highlights brilliance (`colorbalancergb`); sigmoid (`sigmoid`) on a photo started under it |
 | Texture | diffuse or sharpen (`diffuse`) |
 | Clarity | local contrast (`bilat`) |
 | Dehaze | haze removal (`hazeremoval`) |
@@ -169,6 +171,7 @@ photo that already uses one of a tool's modules keeps it.
 | Sharpening | sharpen (`sharpen`), or diffuse or sharpen (`diffuse`), its "sharpness \| normal" preset on an instance of its own |
 | Noise Reduction: Luminance | denoise (profiled) (`denoiseprofile`) |
 | **Lens Corrections** | lens correction (`lens`), with the lensfun database |
+| Hot Pixels | hot pixels (`hotpixels`) |
 | **Transform**: Vertical, Horizontal, Rotate | rotate and perspective (`ashift`) |
 | **Effects** | |
 | Post-Crop Vignetting | vignetting (`vignette`) |
@@ -187,6 +190,7 @@ photo that already uses one of a tool's modules keeps it.
 | Local Texture, Clarity, Dehaze | an instance of diffuse or sharpen, local contrast or haze removal per mask |
 | Local Noise, Defringe, Sharpness | an instance of denoise (profiled), chromatic aberrations (`cacorrectrgb`) or defringe (`defringe`), or diffuse or sharpen or sharpen (as the photo's Sharpening) per mask |
 | **Heal and Clone** | retouch (`retouch`) |
+| **Negative** | negadoctor (`negadoctor`); a converted negative switches off color calibration, exposure, the tone equalizer, haze removal and the tone mapper, and runs Contrast and Saturation on color balance rgb, Highlights and Shadows on shadows and highlights |
 | **Looks** | darktable styles, applied as extra module instances |
 | **Export** borders | framing (`borders`), added at export only |
 | **Keywords** | darktable tags (`dc:subject`, `lr:hierarchicalSubject` in the XMP) |
@@ -224,8 +228,9 @@ Immporter's.
 
 Once Immich is set up, the Library panel has an Immich card under
 Folders. It searches the external libraries by default, with Immich's
-smart search or by file name, and Advanced filters by date, rating,
-favorites, RAW, camera, lens, place, people, tags and albums. Results
+smart search or by file name, and the toolbar's Filters narrow it by
+date, rating, favorites, RAW, camera, lens, place, people, tags and
+albums. Results
 fill the grid with Immich's thumbnails. Opening one edits the external
 library's own file when this computer has it, mapped from Immich's path
 in Preferences (by default the importer's path prefix and destination),

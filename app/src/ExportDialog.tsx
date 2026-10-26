@@ -37,6 +37,8 @@ const DATE_FORMATS = ["YYYYMMDD", "YYYY-MM-DD", "YYYY_MM_DD", "YYMMDD", "DD-MM-Y
 
 // the preview is the export made smaller, at most this long
 const PREVIEW_EDGE = 1400;
+// how many previews the dialog keeps to show again
+const PREVIEWS_KEPT = 8;
 
 // what to do with a file that is already there, as Lightroom asks it
 type Choice = "unique" | "overwrite" | "skip" | "cancel";
@@ -46,9 +48,9 @@ type Result = { written: string[]; skipped: string[]; failed: { file: string; er
                 uploaded?: number; duplicates?: number };
 
 // which sections are open, remembered
-type SectionId = "destination" | "name" | "format" | "frame" | "keywords" | "privacy";
+type SectionId = "destination" | "name" | "format" | "frame" | "keywords" | "metadata";
 const OPEN_DEFAULT: Record<SectionId, boolean> = {
-  destination: true, name: false, format: true, frame: true, keywords: false, privacy: false,
+  destination: true, name: false, format: true, frame: true, keywords: false, metadata: false,
 };
 
 // a file name's photo info, as the menu names it
@@ -58,8 +60,36 @@ const FILE_TOKEN_NAMES: Record<string, string> = {
   camera: "Camera", lens: "Lens", iso: "ISO", rating: "Rating", seq: "Number in this export",
 };
 const loadOpen = (): Record<SectionId, boolean> => {
-  try { return { ...OPEN_DEFAULT, ...JSON.parse(localStorage.getItem("immage.export.open") ?? "{}") }; }
-  catch { return OPEN_DEFAULT; }
+  try {
+    const raw = JSON.parse(localStorage.getItem("immage.export.open") ?? "{}");
+    // Metadata was Privacy before 0.37.0
+    if ("privacy" in raw && !("metadata" in raw)) raw.metadata = raw.privacy;
+    return Object.fromEntries((Object.keys(OPEN_DEFAULT) as SectionId[])
+      .map((k) => [k, typeof raw[k] === "boolean" ? raw[k] : OPEN_DEFAULT[k]])) as Record<SectionId, boolean>;
+  } catch { return OPEN_DEFAULT; }
+};
+
+// the Metadata section's switches: the label, the setting, and whether
+// the setting is the opposite of the box (removeLocation)
+type MetadataKey = "includeCamera" | "includeSerials" | "removeLocation" | "includeDescription" | "includeKeywords"
+  | "includeHistory";
+const METADATA: [string, MetadataKey, boolean][] = [
+  ["Camera and lens (make, model, exposure)", "includeCamera", false],
+  ["Serial numbers and owner name", "includeSerials", false],
+  ["Location (GPS)", "removeLocation", true],
+  ["Title, caption, creator, copyright", "includeDescription", false],
+  ["Keywords", "includeKeywords", false],
+  ["darktable edit history", "includeHistory", false],
+];
+const METADATA_SHORT: Record<MetadataKey, string> = {
+  includeCamera: "camera", includeSerials: "serial numbers", removeLocation: "location",
+  includeDescription: "title and caption", includeKeywords: "keywords", includeHistory: "edit history",
+};
+const metadataSummary = (s: Settings) => {
+  const out = METADATA.filter(([, k, flip]) => k !== "includeHistory" && (flip ? s[k] : !s[k]))
+    .map(([, k]) => METADATA_SHORT[k]);
+  const extra = s.includeHistory ? ", with edit history" : "";
+  return (out.length ? `${out.join(", ")} left out` : "all included") + extra;
 };
 
 // a Lightroom section: its title, and when shut, what it is set to
@@ -293,6 +323,13 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
     return () => window.removeEventListener("keydown", onKey);
   }, [busy, naming, onClose]);
 
+  // the file name the export gives the photo numbered `seq` of `total`,
+  // without its extension
+  const stemFor = (i: ImageEntry, meta: Meta, seq: number, total: number) =>
+    s.naming === "original" ? i.filename.replace(/\.[^.]+$/, "")
+      : s.naming === "custom" ? `${s.customName.trim()}-${String(seq).padStart(3, "0")}`
+      : expand(s.template, i, meta, seq, total, s.dateFormat);
+
   // ---------------------------------------------------------- preview
   // the first photo the export covers, exported small with the same frame
   const shownImage = items[0] ?? current;
@@ -311,9 +348,22 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
   const [preview, setPreview] = useState<{ url: string; key: string } | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const previewSeq = useRef(0);
+  // the previews rendered while the dialog is open, by key, oldest first:
+  // the photo can't change under the dialog, so going back to a frame seen
+  // before shows it without the engine
+  const previewCache = useRef(new Map<string, string>());
   useEffect(() => {
     if (!previewKey || busy || !shownImage) return;
     const seq = ++previewSeq.current;
+    const cached = previewCache.current.get(previewKey);
+    if (cached) {
+      // the newest again, kept longest
+      previewCache.current.delete(previewKey);
+      previewCache.current.set(previewKey, cached);
+      setPreview({ url: cached, key: previewKey });
+      setPreviewError(null);
+      return;
+    }
     const t = window.setTimeout(async () => {
       try {
         const bytes = await invoke<ArrayBuffer>("export_preview", {
@@ -323,7 +373,14 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
         });
         if (seq !== previewSeq.current) return;
         const url = URL.createObjectURL(new Blob([bytes], { type: "image/jpeg" }));
-        setPreview((old) => { if (old) URL.revokeObjectURL(old.url); return { url, key: previewKey }; });
+        const cache = previewCache.current;
+        cache.set(previewKey, url);
+        if (cache.size > PREVIEWS_KEPT) {
+          const [oldest, gone] = cache.entries().next().value!;
+          cache.delete(oldest);
+          URL.revokeObjectURL(gone);
+        }
+        setPreview({ url, key: previewKey });
         setPreviewError(null);
       } catch (e) {
         if (seq === previewSeq.current) setPreviewError(String(e));
@@ -331,7 +388,10 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
     }, 400);
     return () => window.clearTimeout(t);
   }, [previewKey, busy]);
-  useEffect(() => () => { setPreview((old) => { if (old) URL.revokeObjectURL(old.url); return null; }); }, []);
+  useEffect(() => () => {
+    for (const url of previewCache.current.values()) URL.revokeObjectURL(url);
+    previewCache.current.clear();
+  }, []);
 
   const pickDir = async () => {
     const dir = await open({ directory: true, defaultPath: s.dir || undefined });
@@ -357,10 +417,7 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
       const needMeta = s.naming === "template" || s.texts.length > 0;
       const metas = await Promise.all(items.map(async (i) => !needMeta ? EMPTY_META
         : invoke<{ image: { metadata: Meta } }>("meta", { imgid: i.imgid }).then((r) => r.image.metadata)));
-      const stems = items.map((i, k) =>
-        s.naming === "original" ? i.filename.replace(/\.[^.]+$/, "")
-          : s.naming === "custom" ? `${s.customName.trim()}-${String(k + 1).padStart(3, "0")}`
-          : expand(s.template, i, metas[k], k + 1, items.length, s.dateFormat));
+      const stems = items.map((i, k) => stemFor(i, metas[k], k + 1, items.length));
       // files already there, or named twice in this export: what to do
       // with each, asked one at a time unless applied to all the rest
       const conflicts: (Choice | null)[] = items.map(() => null);
@@ -411,6 +468,11 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
           conflict: s.conflict === "ask" ? "unique" : s.conflict,
           immichAlbum: toImmich ? s.album : null,
           location: !s.removeLocation,
+          camera: s.includeCamera,
+          serials: s.includeSerials,
+          description: s.includeDescription,
+          tags: s.includeKeywords,
+          history: s.includeHistory,
           keywords: s.keywords,
           keywordsOnOriginal: s.keywordsOnOriginal,
         },
@@ -631,8 +693,8 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
                 </>
               )}
               {shownImage && s.naming !== "original" && (
-                <div className="example">e.g. {s.naming === "custom" ? `${s.customName.trim() || "name"}-001`
-                  : expand(s.template, shownImage, previewMeta?.meta ?? EMPTY_META, 1, items.length || 1, s.dateFormat)}
+                <div className="example">e.g. {s.naming === "custom" && !s.customName.trim() ? "name-001"
+                  : stemFor(shownImage, previewMeta?.meta ?? EMPTY_META, 1, items.length || 1)}
                   .{ext(s.format)}</div>
               )}
             </Section>
@@ -747,18 +809,20 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
                        onChange={(e) => set("keywordsOnOriginal", e.target.checked)} />
                 Also add to the original photos
               </label>
-              <div className="note-plain">added to each exported file with the photo's own keywords; without the
-                box ticked the originals keep only theirs</div>
+              <div className="note-plain">{s.includeKeywords
+                ? "added to each exported file with the photo's own keywords; without the box ticked the originals keep only theirs"
+                : "keywords are left out of the exported files (Metadata)"}</div>
             </Section>
 
-            <Section title="Privacy" open={openSections.privacy} onToggle={(alt) => toggle("privacy", alt)}
-                     summary={s.removeLocation ? "location removed" : "location included"}>
-              <label className="row check">
-                <input type="checkbox" checked={!s.removeLocation} onChange={(e) => set("removeLocation", !e.target.checked)} />
-                Include location (GPS)
-              </label>
-              <div className="note-plain">camera info, title, caption, creator, copyright and keywords (the photo's
-                and those above) are always included; the edit history never is</div>
+            <Section title="Metadata" open={openSections.metadata} onToggle={(alt) => toggle("metadata", alt)}
+                     summary={metadataSummary(s)}>
+              {METADATA.map(([label, on, flip]) => (
+                <label key={on} className="row check">
+                  <input type="checkbox" checked={flip ? !s[on] : s[on]} onChange={(e) => set(on, flip ? !e.target.checked : e.target.checked)} />
+                  {label}
+                </label>
+              ))}
+              <div className="note-plain">the date taken is always included</div>
             </Section>
           </div>
 
@@ -772,7 +836,8 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
             </div>
             <div className="preview-caption">
               {previewError ? <span className="warn">{previewError}</span>
-                : shownImage ? <>{shownImage.filename}{items.length > 1 ? `, first of ${items.length}` : ""}</> : null}
+                : shownImage ? <>{stemFor(shownImage, previewMeta?.meta ?? EMPTY_META, 1, items.length || 1)}
+                    .{ext(s.format)}{items.length > 1 ? `, first of ${items.length}` : ""}</> : null}
             </div>
           </div>
         </div>

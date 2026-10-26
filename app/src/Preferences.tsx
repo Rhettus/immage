@@ -68,6 +68,16 @@ function storeAutoToneNew(on: boolean) {
   try { localStorage.setItem(AUTO_TONE_KEY, on ? "1" : "0"); } catch { /* not kept */ }
 }
 
+// the warning on opening the Negative panel, which says what converting
+// turns off; its own "don't warn me again" box sets the same thing
+const NEG_WARN_KEY = "immage.negWarn";
+export function loadNegWarn(): boolean {
+  try { return localStorage.getItem(NEG_WARN_KEY) !== "0"; } catch { return true; }
+}
+export function storeNegWarn(on: boolean) {
+  try { localStorage.setItem(NEG_WARN_KEY, on ? "1" : "0"); } catch { /* not kept */ }
+}
+
 // keywords a photo gets once Immage saves it as edited, and loses when it is
 // unedited again, so Immich, which reads them from the sidecar, can filter
 // on them; none unless set
@@ -132,6 +142,28 @@ export function maskOverlayRgb(v: OverlayColor): Rgb {
   const n = parseInt(v.custom.slice(1), 16);
   return [n >> 16, (n >> 8) & 255, n & 255];
 }
+// the guides drawn over the photo (the crop frame and its grid, the
+// straighten line, Transform's grid and guides, the vignette's and a mask
+// shape's, a box being picked): white unless set, each with a dark edge
+// under it so it shows on a light photo or canvas too
+export const GUIDE_COLORS = { white: [255, 255, 255] as Rgb, yellow: OVERLAY_COLORS.yellow, red: OVERLAY_COLORS.red };
+export type GuideColor = { pick: keyof typeof GUIDE_COLORS | "custom"; custom: string };
+const GUIDE_COLOR_KEY = "immage.guideColor";
+export function loadGuideColor(): GuideColor {
+  try {
+    const v = JSON.parse(localStorage.getItem(GUIDE_COLOR_KEY) ?? "null");
+    return { pick: v?.pick in GUIDE_COLORS || v?.pick === "custom" ? v.pick : "white",
+             custom: /^#[0-9a-f]{6}$/i.test(v?.custom) ? v.custom : "#33ccff" };
+  } catch { return { pick: "white", custom: "#33ccff" }; }
+}
+export function storeGuideColor(v: GuideColor) {
+  try { localStorage.setItem(GUIDE_COLOR_KEY, JSON.stringify(v)); } catch { /* not kept */ }
+}
+export function guideRgb(v: GuideColor): Rgb {
+  if (v.pick !== "custom") return GUIDE_COLORS[v.pick];
+  const n = parseInt(v.custom.slice(1), 16);
+  return [n >> 16, (n >> 8) & 255, n & 255];
+}
 // the wheel over a slider moves it only when this is on; off, the panel
 // scrolls past it, as in Lightroom, and an edit cannot change by accident
 const SLIDER_SCROLL_KEY = "immage.sliderScroll";
@@ -173,6 +205,63 @@ export function loadPreview(): Preview {
 function storePreview(v: Preview) {
   try { localStorage.setItem(PREVIEW_KEY, v); } catch { /* not kept */ }
 }
+
+// memory for the full frames the viewer keeps (Session.frames), so zooming
+// back out or returning to a view seen before needs no render. a 100% frame
+// is the viewer's size: some 30 MB on a 4K screen, 45 on a 5K, against 10
+// on a 2K, so the smallest fits only a few on a large screen
+export const FRAME_CACHE_MB = [256, 512, 1024, 2048] as const;
+const FRAME_CACHE_KEY = "immage.frameCache";
+function defaultFrameCacheMb(): number {
+  const dpr = window.devicePixelRatio || 1;
+  return screen.width * dpr * screen.height * dpr >= 3840 * 2160 ? 512 : 256;
+}
+export function loadFrameCacheMb(): number {
+  try {
+    const v = Number(localStorage.getItem(FRAME_CACHE_KEY));
+    return (FRAME_CACHE_MB as readonly number[]).includes(v) ? v : defaultFrameCacheMb();
+  } catch { return defaultFrameCacheMb(); }
+}
+function storeFrameCacheMb(v: number) {
+  try { localStorage.setItem(FRAME_CACHE_KEY, String(v)); } catch { /* not kept */ }
+}
+
+// memory for the library's thumbnails (library.ts, ThumbLoader); past it,
+// those off screen longest go, and come back from the disk cache. one is
+// about 600 x 450, 1 MB, so 1 GB holds some 900
+export const THUMB_MEMORY_MB = [256, 512, 1024, 2048, 4096] as const;
+const THUMB_MEMORY_KEY = "immage.thumbMemory";
+export function loadThumbMemoryMb(): number {
+  try {
+    const v = Number(localStorage.getItem(THUMB_MEMORY_KEY));
+    return (THUMB_MEMORY_MB as readonly number[]).includes(v) ? v : 1024;
+  } catch { return 1024; }
+}
+function storeThumbMemoryMb(v: number) {
+  try { localStorage.setItem(THUMB_MEMORY_KEY, String(v)); } catch { /* not kept */ }
+}
+
+// how many photos have their raws decoded ahead (App.tsx, prefetchNext):
+// in the direction last stepped, and as many behind it with `both`.
+// darktable's cache keeps at least 8 decoded raws (main.c, _prefetch), so
+// 3 each way and the open photo fit. one ahead unless set
+export const READ_AHEAD_MAX = 3;
+const READ_AHEAD_KEY = "immage.readAhead";
+export type ReadAhead = { count: number; both: boolean };
+export function loadReadAhead(): ReadAhead {
+  try {
+    const v = JSON.parse(localStorage.getItem(READ_AHEAD_KEY) ?? "null");
+    const count = Number(v?.count ?? 1);
+    return { count: Number.isInteger(count) && count >= 0 && count <= READ_AHEAD_MAX ? count : 1, both: !!v?.both };
+  } catch { return { count: 1, both: false }; }
+}
+function storeReadAhead(v: ReadAhead) {
+  try { localStorage.setItem(READ_AHEAD_KEY, JSON.stringify(v)); } catch { /* not kept */ }
+}
+
+// darktable's resource level, kept by the Rust side for the engine's next
+// start (engine.rs, resource_level)
+type Resources = "small" | "default" | "large";
 
 // a RAW+JPEG pair as one photo in the filmstrip, rated, rejected and
 // deleted together; off, each file stands alone
@@ -229,7 +318,7 @@ export function storeAccel(v: AccelChoice) {
   try { localStorage.setItem(ACCEL_KEY, JSON.stringify(v)); } catch { /* not kept */ }
 }
 
-export type PrefsTab = "photos" | "modules" | "immich" | "plugins" | "general" | "about";
+export type PrefsTab = "photos" | "modules" | "immich" | "plugins" | "general" | "performance" | "about";
 type Tab = PrefsTab;
 
 const svg = (body: React.ReactNode) => (
@@ -238,6 +327,7 @@ const svg = (body: React.ReactNode) => (
 );
 const TABS: [Tab, string, React.ReactNode][] = [
   ["general", "General", svg(<><circle cx="12" cy="12" r="3" /><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7" /></>)],
+  ["performance", "Performance", svg(<><path d="M4.2 17.5a8.5 8.5 0 1 1 15.6 0" /><path d="m12 13 3.5-4.5" /><circle cx="12" cy="13" r="1.3" /></>)],
   ["photos", "New Photos", svg(<><rect x="3.5" y="5" width="17" height="14" rx="2.5" /><circle cx="9" cy="10" r="1.6" />
     <path d="m4 17 5-4.5 3.5 3 2.5-2 4.5 3.5" /></>)],
   ["modules", "Modules", svg(<><rect x="3.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="3.5" width="7" height="7" rx="1.5" />
@@ -294,9 +384,9 @@ function LicenseText({ title, text, onClose }: { title: string; text: string; on
   );
 }
 
-export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurrent, focus, canvas, onCanvas, overlayColor, onOverlayColor,
+export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurrent, focus, canvas, onCanvas, overlayColor, onOverlayColor, guideColor, onGuideColor,
                                     focusMode, onFocusMode, autoHide, onAutoHide, stackPairs, onStackPairs,
-                                    accel, plugins, onPlugins, perfHud, onPerfHud, onBenchmark, onClose }: {
+                                    accel, plugins, onPlugins, perfHud, onPerfHud, onBenchmark, onRelaunch, onClose }: {
   presets: Preset[];
   focus?: Tab;                           // a tab to open at
   onSaveCurrent: (() => void) | null;    // a new preset from the open photo, or null with none open
@@ -306,6 +396,8 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   onCanvas: (v: Canvas) => void;
   overlayColor: OverlayColor;
   onOverlayColor: (v: OverlayColor) => void;
+  guideColor: GuideColor;
+  onGuideColor: (v: GuideColor) => void;
   focusMode: boolean;
   onFocusMode: (on: boolean) => void;
   autoHide: boolean;
@@ -318,6 +410,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   perfHud: boolean;
   onPerfHud: (on: boolean) => void;
   onBenchmark: (() => void) | null;     // null with no photo open
+  onRelaunch: () => Promise<void>;       // the edit saved, then Immage started again
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<Tab>(focus ?? "general");
@@ -325,6 +418,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   const [showTour, setShowTour] = useState(() => !tourSeen());
   const [profile, setProfile] = useState(loadNewPhotosProfile);
   const [autoToneNew, setAutoToneNew] = useState(loadAutoToneNew);
+  const [negWarn, setNegWarn] = useState(loadNegWarn);
   const [expCompOn, setExpCompOn] = useState(loadExposureCompOn);
   const [expCompEv, setExpCompEv] = useState(loadExposureCompEv);
   // as typed, so "-" or "1." can be on the way to a number
@@ -356,6 +450,20 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   const [scrollStep, setScrollStep] = useState(loadSliderScrollStep);
   const [preview, setPreview] = useState(loadPreview);
   const [sharedFrames, setSharedFrames] = useState(loadSharedFrames);
+  const [frameCache, setFrameCache] = useState(loadFrameCacheMb);
+  const [thumbMemory, setThumbMemory] = useState(loadThumbMemoryMb);
+  const [readAhead, setReadAhead] = useState(loadReadAhead);
+  const chooseReadAhead = (v: Partial<ReadAhead>) => {
+    const next = { ...readAhead, ...v };
+    setReadAhead(next);
+    storeReadAhead(next);
+  };
+  const [resources, setResources] = useState<{ running: Resources; next: Resources } | null>(null);
+  useEffect(() => { invoke<{ running: Resources; next: Resources }>("darktable_resources").then(setResources).catch(() => {}); }, []);
+  const chooseResources = (level: Resources) => {
+    if (!resources) return;
+    invoke("darktable_resources_set", { level }).then(() => setResources({ ...resources, next: level })).catch(() => {});
+  };
   const [accelChoice, setAccelChoice] = useState(loadAccel);
   const chooseAccel = (v: AccelChoice) => { setAccelChoice(v); storeAccel(v); };
   // the provider the choice comes to: the one chosen if this computer has
@@ -501,12 +609,31 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                     </label>
                   </div>
                 </PrefRow>
+                <PrefRow label="Guide color" hint="the crop frame and grid, the straighten line, Transform's and the vignette's guides, and a mask shape's outline">
+                  <div className="pref-swatches">
+                    {([["White", "white"], ["Yellow", "yellow"], ["Red", "red"]] as const).map(([label, v]) => (
+                      <button key={v} className={`swatch${guideColor.pick === v ? " on" : ""}`} title={label} aria-label={label}
+                              style={{ background: `rgb(${GUIDE_COLORS[v].join(", ")})` }}
+                              onClick={() => onGuideColor({ ...guideColor, pick: v })} />
+                    ))}
+                    <label className={`swatch custom${guideColor.pick === "custom" ? " on" : ""}`} title="Custom…"
+                           style={{ "--custom": guideColor.custom } as React.CSSProperties}>
+                      <input type="color" aria-label="Custom color" value={guideColor.custom}
+                             onClick={() => onGuideColor({ ...guideColor, pick: "custom" })}
+                             onChange={(e) => onGuideColor({ pick: "custom", custom: e.target.value })} />
+                    </label>
+                  </div>
+                </PrefRow>
                 <PrefRow label="Focus mode" hint={keys("opening a panel closes the others; ⌥-click opens one alongside")}>
                   <PrefSwitch checked={focusMode} onChange={onFocusMode} />
                 </PrefRow>
                 <PrefRow label="Auto-hide panels"
                          hint="the side panels and filmstrip slide away when the pointer leaves them, and back at their edge (the rail, or below the toolbar); a pin keeps one open">
                   <PrefSwitch checked={autoHide} onChange={onAutoHide} />
+                </PrefRow>
+                <PrefRow label="Warn before converting a negative"
+                         hint="opening the Negative panel says which of Basic's tools a converted negative turns off">
+                  <PrefSwitch checked={negWarn} onChange={(on) => { setNegWarn(on); storeNegWarn(on); }} />
                 </PrefRow>
                 <PrefRow label="Scroll adjusts sliders"
                          hint="off, scrolling over the panels only scrolls them, so an edit cannot change by accident">
@@ -520,6 +647,23 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                            onChange={(e) => { const v = SCROLL_STEPS[Number(e.target.value)]; setScrollStep(v); storeSliderScrollStep(v); }} />
                   </PrefRow>
                 )}
+              </PrefCard>
+              <PrefCard title="Library">
+                <PrefRow label="Stack RAW+JPEG pairs as one photo"
+                         hint="a raw and the JPEG, HEIF or OM System .ORI of the same name show as one, and a rating, reject or delete takes them all"
+                  ><PrefSwitch checked={stackPairs} onChange={onStackPairs} />
+                </PrefRow>
+              </PrefCard>
+              <PrefCard title="Startup">
+                <PrefRow label="Quick start guide" hint="a short tour of Immage when it opens">
+                  <PrefSwitch checked={showTour} onChange={(on) => { setShowTour(on); setTourSeen(!on); }} />
+                </PrefRow>
+              </PrefCard>
+              </>
+            )}
+            {tab === "performance" && (
+              <>
+              <PrefCard title="Editing">
                 <PrefRow label="Preview"
                          hint={{
                            quality: "every frame in full while you edit: the slowest, most faithful preview",
@@ -533,12 +677,67 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                     ))}
                   </div>
                 </PrefRow>
+                {sharedFramesAvailable && (
+                  <PrefRow label="Shared-memory frames"
+                           hint="hands each frame to the window in memory both share, rather than copying it through Tauri. off to compare the two in the GUI benchmark">
+                    <PrefSwitch checked={sharedFrames} onChange={(on) => { setSharedFrames(on); storeSharedFrames(on); }} />
+                  </PrefRow>
+                )}
               </PrefCard>
-              <PrefCard title="Library">
-                <PrefRow label="Stack RAW+JPEG pairs as one photo"
-                         hint="a raw and the JPEG, HEIF or OM System .ORI of the same name show as one, and a rating, reject or delete takes them all"
-                  ><PrefSwitch checked={stackPairs} onChange={onStackPairs} />
+              <PrefCard title="Memory">
+                <PrefRow label="darktable memory"
+                         hint={`${{
+                           small: "darktable keeps to about an eighth of this computer's memory, for working beside other large programs; more of each edit is worked out again",
+                           default: "darktable may take about half of this computer's memory for its pipes and caches",
+                           large: "about two thirds, for when Immage is the only large program running",
+                         }[resources?.next ?? "default"]}${resources && resources.next !== resources.running
+                           ? ". applies once Immage starts again" : ""}`}>
+                  <div className="segmented small">
+                    {([["Small", "small"], ["Default", "default"], ["Large", "large"]] as const).map(([label, v]) => (
+                      <button key={v} className={resources?.next === v ? "active" : ""} disabled={!resources}
+                              onClick={() => chooseResources(v)}>{label}</button>
+                    ))}
+                  </div>
+                  {resources && resources.next !== resources.running && (
+                    <button className="btn small" style={{ marginLeft: 8 }} onClick={() => void onRelaunch()}>Relaunch</button>
+                  )}
                 </PrefRow>
+                <PrefRow label="Frame cache"
+                         hint="memory for the frames the viewer keeps, so zooming back out or returning to a view seen before shows it without a render. a 100% frame is about 30 MB on a 4K screen and 45 MB on a 5K one">
+                  <div className="segmented small">
+                    {FRAME_CACHE_MB.map((mb) => (
+                      <button key={mb} className={frameCache === mb ? "active" : ""}
+                              onClick={() => { setFrameCache(mb); storeFrameCacheMb(mb); }}>
+                        {mb >= 1024 ? `${mb / 1024} GB` : `${mb} MB`}
+                      </button>
+                    ))}
+                  </div>
+                </PrefRow>
+                <PrefRow label="Thumbnail memory"
+                         hint="for the library's thumbnails; past it, those scrolled out of sight longest are let go, and read from the disk cache again when scrolled back. a thumbnail takes about 1 MB">
+                  <div className="segmented small">
+                    {THUMB_MEMORY_MB.map((mb) => (
+                      <button key={mb} className={thumbMemory === mb ? "active" : ""}
+                              onClick={() => { setThumbMemory(mb); storeThumbMemoryMb(mb); }}>
+                        {mb >= 1024 ? `${mb / 1024} GB` : `${mb} MB`}
+                      </button>
+                    ))}
+                  </div>
+                </PrefRow>
+                <PrefRow label="Read ahead"
+                         hint="photos whose raws are decoded while you edit, in the direction you last stepped, so the arrow keys open them without the decode (some 300 ms for a compressed raw). each holds its raw in memory, about 50 MB for 24 megapixels">
+                  <div className="segmented small">
+                    {Array.from({ length: READ_AHEAD_MAX + 1 }, (_, n) => (
+                      <button key={n} className={readAhead.count === n ? "active" : ""}
+                              onClick={() => chooseReadAhead({ count: n })}>{n ? String(n) : "Off"}</button>
+                    ))}
+                  </div>
+                </PrefRow>
+                {readAhead.count > 0 && (
+                  <PrefRow label="Read ahead both ways" hint="as many photos behind the open one too, for stepping back">
+                    <PrefSwitch checked={readAhead.both} onChange={(on) => chooseReadAhead({ both: on })} />
+                  </PrefRow>
+                )}
               </PrefCard>
               <CachePrefs />
               <PrefCard title="AI Acceleration">
@@ -563,7 +762,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                   </PrefRow>
                 )}
               </PrefCard>
-              <PrefCard title="Performance">
+              <PrefCard title="Measuring">
                 <PrefRow label="Performance overlay"
                          hint="over the photo: frame rate, the time from a slider moving to the photo changing, where that time went, and darktable's slowest modules">
                   <PrefSwitch checked={perfHud} onChange={onPerfHud} />
@@ -573,17 +772,6 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                            ? "drags the main sliders on the open photo and back, zooms in and out, and saves a timing report; every slider ends where it started. use a copy of a photo you care about"
                            : "open a photo to run it"}>
                   <button className="btn" disabled={!onBenchmark} onClick={() => onBenchmark?.()}>Run</button>
-                </PrefRow>
-                {sharedFramesAvailable && (
-                  <PrefRow label="Shared-memory frames"
-                           hint="hands each frame to the window in memory both share, rather than copying it through Tauri. off to compare the two in the GUI benchmark">
-                    <PrefSwitch checked={sharedFrames} onChange={(on) => { setSharedFrames(on); storeSharedFrames(on); }} />
-                  </PrefRow>
-                )}
-              </PrefCard>
-              <PrefCard title="Startup">
-                <PrefRow label="Quick start guide" hint="a short tour of Immage when it opens">
-                  <PrefSwitch checked={showTour} onChange={(on) => { setShowTour(on); setTourSeen(!on); }} />
                 </PrefRow>
               </PrefCard>
               </>

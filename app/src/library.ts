@@ -24,6 +24,7 @@ export type ImageEntry = {
   width: number;
   height: number;
   exif: Exif;
+  keywords?: string[];  // darktable's tags, "|" between levels (absent on Immich results)
   // darktable's version of the file: Lightroom's virtual copies are every
   // version but the lowest, which is the original (absent on Immich results)
   version?: number;
@@ -141,9 +142,16 @@ async function fetchCachedThumb(entry: ImageEntry, size: number): Promise<ImageB
 
 // fetches thumbnails: those kept on disk first, several at a time, then
 // the rest from the engine one at a time, and only while the editor is
-// idle, so a slider drag never waits behind a thumbnail on the shared engine
+// idle, so a slider drag never waits behind a thumbnail on the shared engine.
+// past `limit` bytes (Preferences' Thumbnail memory), those off screen
+// longest are let go, and come back from disk when scrolled to
 export class ThumbLoader {
   private cache = new Map<number, ImageBitmap>();
+  private bytes = 0;
+  // on screen now (show), and when each was last
+  private visible = new Set<number>();
+  private seen = new Map<number, number>();
+  private clock = 0;
   private queue: number[] = [];
   private running = false;
   // edited images whose cached thumbnail is out of date; it stays on show
@@ -160,7 +168,7 @@ export class ThumbLoader {
   private generation = 0;
 
   constructor(private isIdle: () => boolean, private entryOf: (imgid: number) => ImageEntry | undefined,
-              private onLoaded: (imgid: number) => void,
+              private onLoaded: (imgid: number) => void, private limit: () => number,
               private onFailed?: (imgid: number, error: unknown) => void) {}
 
   get(imgid: number) { return this.cache.get(imgid); }
@@ -172,6 +180,16 @@ export class ThumbLoader {
     this.queue = first ? [...wanted, ...this.queue.filter((id) => !wanted.includes(id))]
                        : [...this.queue, ...wanted.filter((id) => !this.queue.includes(id))];
     void this.run();
+  }
+
+  // these came on screen, or went off it
+  show(ids: number[], on: boolean) {
+    for (const id of ids) {
+      if (on) {
+        this.visible.add(id);
+        this.seen.set(id, ++this.clock);
+      } else this.visible.delete(id);
+    }
   }
 
   // the image was edited: render a fresh thumbnail once edits have paused
@@ -195,6 +213,9 @@ export class ThumbLoader {
     this.asked.clear();
     this.done.clear();
     this.cache.clear();
+    this.bytes = 0;
+    this.visible.clear();
+    this.seen.clear();
     this.queue = [];
     this.stale.clear();
     this.refreshTimers.forEach((t) => window.clearTimeout(t));
@@ -215,8 +236,29 @@ export class ThumbLoader {
   }
 
   private keep(id: number, bitmap: ImageBitmap) {
+    const old = this.cache.get(id);
+    if (old) this.bytes -= old.width * old.height * 4;
     this.cache.set(id, bitmap);
+    this.bytes += bitmap.width * bitmap.height * 4;
     if (this.asked.has(id)) this.done.add(id);
+    this.trim();
+  }
+
+  // over the limit, down to 90% of it, so a folder being read does not
+  // sort the cache for every thumbnail; never one on screen
+  private trim() {
+    const limit = this.limit();
+    if (this.bytes <= limit) return;
+    const gone = [...this.cache.keys()].filter((id) => !this.visible.has(id))
+      .sort((a, b) => (this.seen.get(a) ?? 0) - (this.seen.get(b) ?? 0));
+    for (const id of gone) {
+      if (this.bytes <= limit * 0.9) break;
+      const b = this.cache.get(id)!;
+      this.bytes -= b.width * b.height * 4;
+      this.cache.delete(id);
+      // read from disk again when it is next asked for
+      this.tried.delete(id);
+    }
   }
 
   private async run() {

@@ -18,7 +18,9 @@ import { channelPointsFromLinear, channelPointsToLinear, fromParams as readCurve
          nodeFields, paramsToPoints, pointsToParams, toParams as writeCurve, type Parametric,
          type Point } from "./tonecurve";
 import { autoCrop } from "./transform";
+import { fromNodes, toNodes } from "./colorequal";
 import { cbHueTrack, displayHue } from "./colorgrading";
+import { FILM_BW, FILM_COLOR, NEG_RANGES } from "./negadoctor";
 import { PLACE_BOOST, PLACE_FIELDS, PLACE_FIRST, PLACE_MAX, PLACEMENT_OP, ROMAN, ZONE_GRAY,
          placeIds } from "./zones";
 
@@ -70,6 +72,11 @@ export type Control = {
   // a non-linear track: the input works in positions, the value is derived
   slider?: { min: number; max: number; step: number; toPos: (v: number) => number;
              fromPos: (p: number) => number };
+  // read back past min and max rather than clamped: an HSL band set in
+  // darktable or by an older Immage reads as a mix of sliders
+  // (colorequal.ts), and clamping one would change the photo's other
+  // colors at the next edit
+  readsPast?: boolean;
 };
 
 export type ModuleMap = {
@@ -225,6 +232,10 @@ const tempControl: Control = {
 // Whites: the tone mapper's display white target, in stops, so that +100
 // brightens the top end by 0.6 EV and -100 dims it by as much
 const WHITES_STOPS = 0.6;
+// and on AgX, color balance rgb's highlights brilliance, which a mask's
+// Whites moves twice as far: the shoulder alone reshapes the top end but
+// leaves where AgX clips, and more dims the midtones at -100
+const WHITES_BRILLIANCE = 0.002;
 
 // Contrast on the tone mapper: AgX's contrast, or sigmoid's, ±100 doubling
 // or halving it from the photo's default
@@ -311,6 +322,23 @@ const textureWrite = (texture: number) => ({
     [k, (s * texture * TEXTURE_PRESET_ITERATIONS) / (100 * TEXTURE_ITERATIONS)])),
 });
 
+// Clarity: local contrast's detail. its shadows and highlights default to
+// 50%, which halves contrast past the midtone range
+// (locallaplacian.c, curve_scalar), so at ±1 the module switching on
+// flattened the photo more than +10 did. they follow the slider from 100%,
+// neutral, to that 50% at ±100. an edit made in darktable reads by its
+// detail alone
+const clarityMap = (id: string): ModuleMap => ({
+  op: "bilat", keepOn: false,
+  controls: [id],
+  fields: ["detail", "sigma_s", "sigma_r"],
+  read: (p) => ({ [id]: 100 * p.detail }),
+  write: (v) => {
+    const slope = 1 - (0.5 * Math.abs(v[id])) / 100;
+    return { detail: v[id] / 100, sigma_s: slope, sigma_r: slope };
+  },
+});
+
 // Sharpening: darktable's "sharpness | normal" diffusion preset
 // (diffuse.c) but for the iterations, radius span and edge sensitivity,
 // which the sliders set
@@ -392,6 +420,10 @@ export const MODULE_CHOICES: ModuleChoice[] = [
               shared(MOD_DEFRINGE, "defringe", "defringe", false)],
   },
 ];
+// the tools a converted negative runs after negadoctor rather than on a
+// module NEG_OFF turns off, as darktable's negative workflow does
+export const NEG_CHOICES: Record<string, number> = { mod_contrast: MOD_CBRGB, mod_saturation: MOD_CBRGB,
+                                                     mod_tone: MOD_SHADHI };
 // which modules the photo runs on, the tone mapper's too: its own, not an
 // adjustment, so reset, presets and the Before view leave them be
 export const isModuleSetting = (id: string) => id === "tm_mode" || MODULE_CHOICES.some((c) => c.control === id);
@@ -422,16 +454,26 @@ const GLOBAL_SAT_TRACK =
 
 // ----------------------------------------------------- HSL / Color (colorequal)
 
-// Lightroom's eight bands and the color equalizer's, in the same order, with
-// the hue each is centered on
+// Lightroom's eight bands, with the color equalizer's node names in the
+// same order and Lightroom's hue for each (HSL). the nodes sit elsewhere:
+// each slider sets a mix of them (colorequal.ts)
 export const BANDS: [string, string, number][] = [
-  ["red", "Red", 0], ["orange", "Orange", 30], ["yellow", "Yellow", 55], ["green", "Green", 120],
-  ["cyan", "Aqua", 180], ["blue", "Blue", 225], ["lavender", "Purple", 270], ["magenta", "Magenta", 315],
+  ["red", "Red", 0], ["orange", "Orange", 30], ["yellow", "Yellow", 60], ["green", "Green", 120],
+  ["cyan", "Aqua", 180], ["blue", "Blue", 240], ["lavender", "Purple", 270], ["magenta", "Magenta", 300],
 ];
-// Lightroom's ±100 as ±30° of hue, and as a saturation/brightness factor
+// Lightroom's ±100 as ±30° of hue, and as the node's saturation and
+// brightness factors. colorequal.c doubles a saturation factor's distance
+// from 1 (SAT_EFFECT), so -100 is 0.5, exactly gray; 0.01 made -50 gray
+// already and -100 gray a wide hue range around it. brightness changes by
+// 8 × the pixel's saturation × the factor's distance from 1
+// (BRIGHT_EFFECT): at 0.0025 -100 takes a saturated red down about 2 EV,
+// where 0.005 turned it black
 const HSL_HUE_DEG = 0.3;
-const HSL_SAT = 0.01;
-const HSL_LUM = 0.005;
+const HSL_SAT = 0.005;
+const HSL_LUM = 0.0025;
+// the B&W Mix's ±100 as a brightness factor of 2^±0.5: at 2^±1, -100
+// turned a saturated red black, as Luminance did
+const BW_SCALE = 200;
 
 const HSL_IDS = BANDS.flatMap(([b]) => [`hsl_hue_${b}`, `hsl_sat_${b}`, `hsl_lum_${b}`]);
 // one tab's eight sliders, "hsl" for the main panel's and "l_hsl" for a mask's
@@ -440,19 +482,39 @@ export const hslControls = (prefix: string, t: typeof HSL_TABS[number]): Control
   BANDS.map(([band, label, h]) =>
     lr(`${prefix}_${t === "Hue" ? "hue" : t === "Saturation" ? "sat" : "lum"}_${band}`, label, {
       track: t === "Hue" ? hueRamp(h, 100 * HSL_HUE_DEG) : t === "Saturation" ? satRamp(h) : lumRamp(h),
+      readsPast: true,
     }));
 const BW_IDS = BANDS.map(([b]) => `bw_${b}`);
 
+// the sliders' effects on one of the color equalizer's per-band fields
+// (hue, sat, bright), red to magenta, and back
+const nodesOf = (p: Params, field: string, base: number) => fromNodes(BANDS.map(([b]) => p[`${field}_${b}`] - base));
+const fieldsOf = (field: string, base: number, effects: number[]): [string, number][] =>
+  toNodes(effects).map((x, k) => [`${field}_${BANDS[k][0]}`, base + x]);
+// HSL sliders, the main panel's ("hsl") or a mask's ("l_hsl"), as the
+// color equalizer's params and back
+const writeHSL = (prefix: string, v: Values): Params => Object.fromEntries([
+  ...fieldsOf("hue", 0, BANDS.map(([b]) => v[`${prefix}_hue_${b}`] * HSL_HUE_DEG)),
+  ...fieldsOf("sat", 1, BANDS.map(([b]) => v[`${prefix}_sat_${b}`] * HSL_SAT)),
+  ...fieldsOf("bright", 1, BANDS.map(([b]) => v[`${prefix}_lum_${b}`] * HSL_LUM)),
+]);
+const readHSL = (prefix: string, p: Params): Values => {
+  const hue = nodesOf(p, "hue", 0), sat = nodesOf(p, "sat", 1), lum = nodesOf(p, "bright", 1);
+  return Object.fromEntries(BANDS.flatMap(([b], k) => [[`${prefix}_hue_${b}`, hue[k] / HSL_HUE_DEG],
+    [`${prefix}_sat_${b}`, sat[k] / HSL_SAT], [`${prefix}_lum_${b}`, lum[k] / HSL_LUM]]));
+};
+
 // the classic contrast filters of black and white film, as B&W Mix
-// settings: a filter lightens its own color and darkens its complement
+// settings: a filter lightens its own color and darkens its complement.
+// doubled when BW_SCALE halved the mix's strength
 const BW_FILTERS: [string, string, number[]][] = [
   // red, orange, yellow, green, aqua, blue, purple, magenta
   ["None", "linear-gradient(135deg, #eee 50%, #222 50%)", [0, 0, 0, 0, 0, 0, 0, 0]],
-  ["Red", "#e5484d", [40, 30, 10, -20, -30, -40, -20, 10]],
-  ["Orange", "#f08c2e", [30, 40, 20, -10, -30, -40, -30, 0]],
-  ["Yellow", "#f5c518", [10, 20, 30, 10, -10, -30, -20, 0]],
-  ["Green", "#46a758", [-30, -10, 10, 40, 10, -10, -10, -20]],
-  ["Blue", "#3e7bfa", [-30, -30, -20, -10, 20, 40, 20, 0]],
+  ["Red", "#e5484d", [80, 60, 20, -40, -60, -80, -40, 20]],
+  ["Orange", "#f08c2e", [60, 80, 40, -20, -60, -80, -60, 0]],
+  ["Yellow", "#f5c518", [20, 40, 60, 20, -20, -60, -40, 0]],
+  ["Green", "#46a758", [-60, -20, 20, 80, 20, -20, -20, -40]],
+  ["Blue", "#3e7bfa", [-60, -60, -40, -20, 40, 80, 40, 0]],
 ];
 
 // ------------------------------------------ Color Grading (color balance rgb)
@@ -853,6 +915,10 @@ export function turnRect(r: { l: number; t: number; r: number; b: number }, how:
   return { l: r.t, t: 1 - r.r, r: r.b, b: 1 - r.l };
 }
 
+// negadoctor's three RGB params, by the controls' names for them
+const NEG_RGB = ["dmin", "wbl", "wbh"] as const;
+const NEG_FIELD: Record<typeof NEG_RGB[number], string> = { dmin: "Dmin", wbl: "wb_low", wbh: "wb_high" };
+
 // --------------------------------------------------------------- the maps
 
 export const modules: ModuleMap[] = [
@@ -935,11 +1001,17 @@ export const modules: ModuleMap[] = [
     },
     enabled: (v) => v.tm_mode === 1,
   },
+  // Whites' brilliance on AgX, ahead of the tone mappers' Whites so that
+  // theirs is the value read: an edit from before it opens as it was
+  { ...linear("colorbalancergb", false, [{ id: "whites", field: "brilliance_highlights",
+                                             scale: WHITES_BRILLIANCE, base: 0 }]),
+    active: (v) => v.tm_mode === 1 },
   // the tone mapper: AgX, which new photos get, or sigmoid, which photos
   // started earlier or in darktable may have; one on and the other off.
   // Whites moves the top end under both: sigmoid's white
-  // target, or AgX's shoulder power, ±100 halving or doubling it. AgX's
-  // white relative exposure lifted the midtones as much as the whites
+  // target, or AgX's shoulder power, ±100 halving or doubling it, with the
+  // brilliance above. AgX's white relative exposure lifted the midtones as
+  // much as the whites
   {
     op: "sigmoid", keepOn: false,
     controls: ["whites", "tm_mode"],
@@ -1028,7 +1100,7 @@ export const modules: ModuleMap[] = [
     read: (p) => ({ texture: textureRead(p) }),
     write: (v) => textureWrite(v.texture),
   },
-  linear("bilat", false, [{ id: "clarity", field: "detail", scale: 0.01, base: 0 }]),
+  clarityMap("clarity"),
   linear("hazeremoval", false, [{ id: "dehaze", field: "strength", scale: 0.01, base: 0 }]),
 
   {
@@ -1087,20 +1159,17 @@ export const modules: ModuleMap[] = [
     controls: ["bw_mode", ...HSL_IDS, ...BW_IDS],
     fields: BANDS.flatMap(([b]) => [`hue_${b}`, `sat_${b}`, `bright_${b}`]),
     read: (p, _d, _c, v): Values => {
-      const bw = desaturated(p) || v?.bw_mode === 1;
-      const out: Values = { bw_mode: bw ? 1 : 0 };
-      for (const [b] of BANDS) {
-        out[`hsl_hue_${b}`] = bw ? 0 : p[`hue_${b}`] / HSL_HUE_DEG;
-        out[`hsl_sat_${b}`] = bw ? 0 : (p[`sat_${b}`] - 1) / HSL_SAT;
-        out[`hsl_lum_${b}`] = bw ? 0 : (p[`bright_${b}`] - 1) / HSL_LUM;
-        out[`bw_${b}`] = bw ? 100 * Math.log2(Math.max(1e-3, p[`bright_${b}`])) : 0;
-      }
-      return out;
+      const zero = (ids: string[]) => Object.fromEntries(ids.map((id) => [id, 0]));
+      if (!desaturated(p) && v?.bw_mode !== 1) return { bw_mode: 0, ...readHSL("hsl", p), ...zero(BW_IDS) };
+      const mix = nodesOf(p, "bright", 1);
+      return { bw_mode: 1, ...zero(HSL_IDS),
+               ...Object.fromEntries(BW_IDS.map((id, k) => [id, BW_SCALE * Math.log2(Math.max(1e-3, 1 + mix[k]))])) };
     },
-    write: (v) => Object.fromEntries(BANDS.flatMap(([b]) => v.bw_mode === 1
-      ? [[`hue_${b}`, 0], [`sat_${b}`, v.mod_bw === MOD_BW_EQUALIZER ? 0 : 1], [`bright_${b}`, 2 ** (v[`bw_${b}`] / 100)]]
-      : [[`hue_${b}`, v[`hsl_hue_${b}`] * HSL_HUE_DEG], [`sat_${b}`, 1 + v[`hsl_sat_${b}`] * HSL_SAT],
-         [`bright_${b}`, 1 + v[`hsl_lum_${b}`] * HSL_LUM]])),
+    write: (v) => v.bw_mode === 1
+      ? Object.fromEntries([
+          ...BANDS.flatMap(([b]) => [[`hue_${b}`, 0], [`sat_${b}`, v.mod_bw === MOD_BW_EQUALIZER ? 0 : 1]]),
+          ...fieldsOf("bright", 1, BW_IDS.map((id) => 2 ** (v[id] / BW_SCALE) - 1))])
+      : writeHSL("hsl", v),
     enabled: (v) => v.bw_mode === 1 ? v.mod_bw === MOD_BW_EQUALIZER || BW_IDS.some((id) => v[id] !== 0)
       : HSL_IDS.some((id) => v[id] !== 0),
   },
@@ -1209,6 +1278,36 @@ export const modules: ModuleMap[] = [
     write: (v) => ({ modify_flags: v.lens_ca ? 7 : 6, has_been_set: 1 }),
     enabled: (v) => v.lens_profile === 1,
   },
+  {
+    op: "hotpixels", keepOn: false,
+    controls: ["hp_enable", "hp_strength", "hp_threshold"],
+    fields: ["strength", "threshold"],
+    read: (p) => ({ hp_enable: 1, hp_strength: p.strength * 100, hp_threshold: p.threshold * 100 }),
+    write: (v) => ({ strength: v.hp_strength / 100, threshold: v.hp_threshold / 100 }),
+    enabled: (v) => v.hp_enable === 1,
+  },
+  // the Negative panel's film negative conversion (NegativePanel.tsx,
+  // negadoctor.ts); a converted photo has the modules of NEG_OFF off
+  {
+    op: "negadoctor", keepOn: false,
+    controls: ["neg_on", "neg_film", ...NEG_RGB.flatMap((k) => ["r", "g", "b"].map((c) => `neg_${k}_${c}`)),
+               "neg_dmax", "neg_offset", "neg_black", "neg_grade", "neg_gloss", "neg_exposure"],
+    fields: ["film_stock", ...NEG_RGB.flatMap((k) => [0, 1, 2].map((i) => `${NEG_FIELD[k]}[${i}]`)),
+             "D_max", "offset", "black", "gamma", "soft_clip", "exposure"],
+    read: (p) => ({
+      neg_on: 1, neg_film: p.film_stock,
+      ...Object.fromEntries(NEG_RGB.flatMap((k) => ["r", "g", "b"].map((c, i) => [`neg_${k}_${c}`, p[`${NEG_FIELD[k]}[${i}]`]]))),
+      neg_dmax: p.D_max, neg_offset: p.offset, neg_black: p.black, neg_grade: p.gamma, neg_gloss: p.soft_clip,
+      neg_exposure: Math.log2(p.exposure),
+    }),
+    write: (v) => ({
+      film_stock: v.neg_film,
+      ...Object.fromEntries(NEG_RGB.flatMap((k) => ["r", "g", "b"].map((c, i) => [`${NEG_FIELD[k]}[${i}]`, v[`neg_${k}_${c}`]]))),
+      D_max: v.neg_dmax, offset: v.neg_offset, black: v.neg_black, gamma: v.neg_grade, soft_clip: v.neg_gloss,
+      exposure: 2 ** v.neg_exposure,
+    }),
+    enabled: (v) => v.neg_on === 1,
+  },
   transformMap,
   flipMap,
   cropMap,
@@ -1216,6 +1315,19 @@ export const modules: ModuleMap[] = [
   vignetteMap,
   grainMap,
 ];
+
+// a converted negative turns these off: modules ahead of negadoctor that
+// would change the negative it inverts (color calibration's adaptation is
+// a 3x3 matrix, which the film base cannot divide out; the tone equalizer
+// works on scene light), and the tone mappers, whose part negadoctor's
+// print takes. the photo keeps their settings for when it is turned back
+export const NEG_OFF = new Set(["channelmixerrgb", "exposure", "exposure#compensation", "toneequal",
+                                "hazeremoval", "agx", "sigmoid"]);
+// tone mappers a photo from darktable may have, which no map covers
+export const NEG_OFF_UNMAPPED = new Set(["filmicrgb", "basecurve"]);
+// Basic's sliders on those modules, greyed on a negative; Contrast,
+// Saturation, Highlights and Shadows move to modules after it (NEG_CHOICES)
+export const NEG_GREYED = new Set(["temp", "tint", "exposure", "blacks", "whites", "dehaze", "profile"]);
 
 // --------------------------------------------------------------- the panels
 
@@ -1306,7 +1418,8 @@ export const panels: Panel[] = [
     sections: [{
       title: "Black & White Mix",
       controls: BANDS.map(([band, label, h]) =>
-        lr(`bw_${band}`, label, { neutral: 0, track: `linear-gradient(90deg, #111, ${hsl(h, 65, 45)})` })),
+        lr(`bw_${band}`, label, { neutral: 0, track: `linear-gradient(90deg, #111, ${hsl(h, 65, 45)})`,
+                                  readsPast: true })),
     }],
   },
   // Immage's own module: zones and zone masks, drawn by ZoneSystem.tsx
@@ -1378,6 +1491,19 @@ export const panels: Panel[] = [
           { ...toggle("lens_profile", "Enable Profile Corrections", 0),
             note: "uses the lens darktable detects through lensfun" },
           toggle("lens_ca", "Remove Chromatic Aberration", 1),
+        ],
+      },
+      {
+        // a pixel is hot when strength / 2 times it is above all four
+        // neighbors of its color, and it is above threshold
+        // (hotpixels.c). the sliders reset to darktable's 25 and 5
+        title: "Hot Pixels",
+        controls: [
+          { ...toggle("hp_enable", "Remove Hot Pixels", 0), rawOnly: true,
+            note: "for long exposures and high ISO" },
+          { id: "hp_strength", label: "Strength", min: 0, max: 100, step: 1, format: plain(0), rawOnly: true },
+          { id: "hp_threshold", label: "Threshold", min: 0, max: 100, step: 1, format: plain(0), rawOnly: true,
+            note: "lower finds more hot pixels" },
         ],
       },
     ],
@@ -1512,6 +1638,42 @@ export const panels: Panel[] = [
                  { id: "agx_white", label: "White Relative Exposure", min: 0.1, max: 20, step: 0.01, format: signed(2, " EV") }],
     }],
   },
+  // the Negative panel's (NegativePanel.tsx); labels are what each does,
+  // tooltips darktable's names. no neutral: negadoctor's defaults
+  {
+    id: "negative", title: "Negative", hidden: true,
+    sections: [{
+      title: "Negative",
+      controls: [
+        toggle("neg_on", "Convert Negative", 0),
+        { id: "neg_film", label: "Film Type", kind: "choice", min: 0, max: 1, step: 1, inline: true,
+          options: [["Color", FILM_COLOR], ["Black & White", FILM_BW]],
+          optionIcons: { [FILM_COLOR]: Sun, [FILM_BW]: Contrast },
+          format: (v) => (v === FILM_BW ? "Black & White" : "Color"), note: "darktable: film stock" },
+        ...NEG_RGB.flatMap((k) => (["r", "g", "b"] as const).map((c): Control => ({
+          id: `neg_${k}_${c}`, label: { r: "Red", g: "Green", b: "Blue" }[c],
+          min: NEG_RANGES[k][0], max: NEG_RANGES[k][1], step: 0.0001, format: plain(3),
+          note: `darktable: ${{ dmin: "color of the film base (D min)", wbl: "shadows color cast",
+                                wbh: "highlights white balance" }[k]}`,
+        }))),
+        { id: "neg_dmax", label: "White Point", min: NEG_RANGES.dmax[0], max: NEG_RANGES.dmax[1], step: 0.001,
+          format: plain(3), note: "the film's densest part, which becomes white: left brightens the highlights, "
+            + "right darkens them (darktable: D max)" },
+        { id: "neg_offset", label: "Black Point", min: NEG_RANGES.offset[0], max: NEG_RANGES.offset[1], step: 0.001,
+          format: signed(3), note: "where the scan's darkest tones sit: left brightens the shadows, right "
+            + "darkens them (darktable: scan exposure bias)" },
+        { id: "neg_exposure", label: "Exposure", min: NEG_RANGES.exposure[0], max: NEG_RANGES.exposure[1], step: 0.01,
+          format: signed(2, " EV"), note: "overall brightness of the print (darktable: print exposure adjustment)" },
+        { id: "neg_grade", label: "Contrast", min: NEG_RANGES.grade[0], max: NEG_RANGES.grade[1], step: 0.01,
+          format: plain(2), note: "the print's contrast (darktable: paper grade)" },
+        { id: "neg_black", label: "Blacks", min: NEG_RANGES.black[0], max: NEG_RANGES.black[1], step: 0.0001,
+          format: (v) => `${(v * 100).toFixed(1)}%`, note: "how deep the blacks go (darktable: paper black)" },
+        { id: "neg_gloss", label: "Highlight Roll-off", min: NEG_RANGES.gloss[0], max: NEG_RANGES.gloss[1], step: 0.0001,
+          format: (v) => `${(v * 100).toFixed(0)}%`,
+          note: "where the brightest tones start to compress: lower is gentler (darktable: paper gloss)" },
+      ],
+    }],
+  },
   // which module each of MODULE_CHOICES' tools runs on for this photo. its
   // neutral is what Preferences picks, set when the photo opens
   {
@@ -1538,9 +1700,9 @@ export const mapsWith = (id: string) => modules.filter((m) => m.controls.include
 const MODULE_NAMES: Record<string, string> = {
   agx: "AgX", ashift: "rotate and perspective", bilat: "local contrast", channelmixerrgb: "color calibration",
   cacorrectrgb: "chromatic aberrations", colorbalancergb: "color balance rgb", colorequal: "color equalizer",
-  crop: "crop", defringe: "defringe", demosaic: "demosaic",
+  crop: "crop", defringe: "defringe", demosaic: "demosaic", negadoctor: "negadoctor",
   denoiseprofile: "denoise (profiled)", diffuse: "diffuse or sharpen", exposure: "exposure", flip: "orientation",
-  grain: "grain", hazeremoval: "haze removal", lens: "lens correction", rgbcurve: "rgb curve",
+  grain: "grain", hazeremoval: "haze removal", hotpixels: "hot pixels", lens: "lens correction", rgbcurve: "rgb curve",
   shadhi: "shadows and highlights", sharpen: "sharpen", sigmoid: "sigmoid", tonecurve: "tone curve",
   toneequal: "tone equalizer", vignette: "vignetting",
 };
@@ -1636,10 +1798,10 @@ export const localMaps: ModuleMap[] = [
     },
   },
   exposureMap(false, "l_exposure", "l_blacks", () => ({ exposure: 0, black: 0 })),
-  // Whites as the highlights' brilliance: the tone mapper, which carries
-  // the global Whites, cannot run under a mask, and the highlights' gain
-  // (highlights_Y) is Color Grading's. Hue turns every hue by up to ±30
-  // degrees
+  // Whites as the highlights' brilliance, as the global Whites has on AgX:
+  // the tone mapper, which carries the rest of it, cannot run under a mask,
+  // and the highlights' gain (highlights_Y) is Color Grading's. Hue turns
+  // every hue by up to ±30 degrees
   // l_fulcrum, the contrast's pivot in EV from middle gray, has no slider:
   // a zone mask sets it to its zones' middle (ZoneSystem.tsx)
   // some 30 ms a mask's draft frame, so its masks share instances
@@ -1658,11 +1820,11 @@ export const localMaps: ModuleMap[] = [
   // some 60 ms a mask's draft frame, so its masks share instances; a Hue
   // turns colors, which a mask's strength cannot scale
   {
-    ...linear("colorequal", false, BANDS.flatMap(([b]) => [
-      { id: `l_hsl_hue_${b}`, field: `hue_${b}`, scale: HSL_HUE_DEG, base: 0 },
-      { id: `l_hsl_sat_${b}`, field: `sat_${b}`, scale: HSL_SAT, base: 1 },
-      { id: `l_hsl_lum_${b}`, field: `bright_${b}`, scale: HSL_LUM, base: 1 },
-    ])),
+    op: "colorequal", keepOn: false,
+    controls: BANDS.flatMap(([b]) => [`l_hsl_hue_${b}`, `l_hsl_sat_${b}`, `l_hsl_lum_${b}`]),
+    fields: BANDS.flatMap(([b]) => [`hue_${b}`, `sat_${b}`, `bright_${b}`]),
+    read: (p) => readHSL("l_hsl", p),
+    write: (v) => writeHSL("l_hsl", v),
     merge: true,
     fixed: BANDS.map(([b]) => `l_hsl_hue_${b}`),
   },
@@ -1692,7 +1854,7 @@ export const localMaps: ModuleMap[] = [
     read: (p) => ({ l_texture: textureRead(p) }),
     write: (v) => textureWrite(v.l_texture),
   },
-  linear("bilat", false, [{ id: "l_clarity", field: "detail", scale: 0.01, base: 0 }]),
+  clarityMap("l_clarity"),
   linear("hazeremoval", false, [{ id: "l_dehaze", field: "strength", scale: 0.01, base: 0 }]),
   {
     // as the global Noise Reduction: darktable's strength 1.0 at 50. Some

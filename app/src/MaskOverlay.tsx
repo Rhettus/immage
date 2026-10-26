@@ -56,14 +56,18 @@ export function MaskOverlay({ boxRef, image, region, mask, peek, ranges, final, 
   // a press on the image or a handle: the overlay shows whatever its toggle
   // says until the release
   const [pressed, setPressed] = useState(false);
-  // the pointer over the image: the selected shape's guides show
+  // the pointer over the image: the selected shape's guides and handles
+  // show, and over the panels they step aside so the edit can be seen
   const [hover, setHover] = useState(false);
   const hoverPick = useRef(onHoverPick);
   hoverPick.current = onHoverPick;
   useEffect(() => {
     const onMove = (e: PointerEvent) => {
       const r = boxRef.current?.getBoundingClientRect();
-      const inside = !!r && e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+      // zoomed in, the box runs on under the panels beside the viewer
+      const viewer = boxRef.current?.closest(".viewer");
+      const inside = !!r && e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom
+        && !!viewer && e.target instanceof Node && viewer.contains(e.target);
       setHover(inside);
       hoverPick.current?.(inside ? [(e.clientX - r!.left) / r!.width, (e.clientY - r!.top) / r!.height] : null);
     };
@@ -342,7 +346,7 @@ export function MaskOverlay({ boxRef, image, region, mask, peek, ranges, final, 
         {/* the overlay shows the mask; guides only while the pointer is
             near, for the feather and edges the handles move */}
         {!tool && sel && (hover || pressed) && !isRange(sel) && guides(sel)}
-        {!tool && sel && handles(sel, selected)}
+        {!tool && sel && (hover || pressed) && handles(sel, selected)}
         {/* a gradient being dragged out shows its guides and handles as it
             grows, for show only: the drag is still drawing it */}
         {tool && !painting && draft && (draft.type === "gradient" || draft.type === "ellipse") && (

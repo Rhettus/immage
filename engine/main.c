@@ -49,6 +49,7 @@
 #include "develop/imageop.h"
 #include "develop/masks.h"
 #include "develop/pixelpipe_cache.h"
+#include "strip.h"
 #include "upright.h"
 #ifdef HAVE_AI
 #include "ai/backend.h"
@@ -247,37 +248,65 @@ static void _cancel_base(const gint64 id)
   g_mutex_unlock(&_cancel_lock);
 }
 
-// a photo likely opened next, its raw decoded ahead on a thread of its own.
-// darktable's job threads would do it (DT_MIPMAP_PREFETCH), but without
-// its GUI darktable starts none (control.c, dt_control_init). one at a
-// time: a prefetch asked for while one is under way is dropped. `open` of
-// that photo then finds the decoded raw in the mipmap cache, or waits on
-// the decode under way
-static GThread *_prefetch_thread = NULL;
-static gint _prefetch_busy = 0;
+// photos likely opened next, their raws decoded ahead on threads of their
+// own, a few at once: a raw's decode mostly keeps to one core. darktable's
+// job threads would do it (DT_MIPMAP_PREFETCH), but without its GUI
+// darktable starts none (control.c, dt_control_init). a new list replaces
+// the photos still waiting, not those being decoded. `open` of one of them
+// then finds the decoded raw in the mipmap cache, or waits on the decode
+// under way. the cache keeps 2 * dt_worker_threads() full raws, at least 8
+// (mipmap_cache.c, dt_mipmap_cache_init), so a list longer than 7 pushes
+// out the open photo's neighbors it decoded first
+#define _PREFETCH_THREADS 3
+static GThreadPool *_prefetch_pool = NULL;
+static GMutex _prefetch_lock;
+static GArray *_prefetch_queue = NULL;
 
-static gpointer _prefetch_run(gpointer data)
+// one task per photo queued: each decodes the next one still waiting, so a
+// task left over from a list since replaced finds the new one, or nothing
+static void _prefetch_run(gpointer data, gpointer user_data)
 {
+  g_mutex_lock(&_prefetch_lock);
+  if(!_prefetch_queue->len)
+  {
+    g_mutex_unlock(&_prefetch_lock);
+    return;
+  }
+  const dt_imgid_t imgid = g_array_index(_prefetch_queue, dt_imgid_t, 0);
+  g_array_remove_index(_prefetch_queue, 0);
+  g_mutex_unlock(&_prefetch_lock);
   dt_mipmap_buffer_t buf;
-  dt_mipmap_cache_get(&buf, GPOINTER_TO_INT(data), DT_MIPMAP_FULL, DT_MIPMAP_BLOCKING, 'r');
+  dt_mipmap_cache_get(&buf, imgid, DT_MIPMAP_FULL, DT_MIPMAP_BLOCKING, 'r');
   dt_mipmap_cache_release(&buf);
-  g_atomic_int_set(&_prefetch_busy, 0);
-  return NULL;
 }
 
-static void _prefetch(const dt_imgid_t imgid)
+static void _prefetch(const dt_imgid_t *imgids, const guint n)
 {
-  if(g_atomic_int_get(&_prefetch_busy)) return;
-  if(_prefetch_thread) g_thread_join(_prefetch_thread);
-  g_atomic_int_set(&_prefetch_busy, 1);
-  _prefetch_thread = g_thread_new("prefetch", _prefetch_run, GINT_TO_POINTER(imgid));
+  if(!_prefetch_pool)
+  {
+    _prefetch_queue = g_array_new(FALSE, FALSE, sizeof(dt_imgid_t));
+    _prefetch_pool = g_thread_pool_new(_prefetch_run, NULL, _PREFETCH_THREADS, FALSE, NULL);
+  }
+  g_mutex_lock(&_prefetch_lock);
+  g_array_set_size(_prefetch_queue, 0);
+  for(guint k = 0; k < n; k++)
+    if(dt_is_valid_imgid(imgids[k]) && imgids[k] != _s.imgid) g_array_append_val(_prefetch_queue, imgids[k]);
+  const guint queued = _prefetch_queue->len;
+  g_mutex_unlock(&_prefetch_lock);
+  // the pool takes no NULL task
+  for(guint k = 0; k < queued; k++) g_thread_pool_push(_prefetch_pool, GINT_TO_POINTER(1), NULL);
 }
 
-// before darktable's caches go
+// before darktable's caches go: the photos waiting are dropped, and the
+// decodes under way finished
 static void _prefetch_wait(void)
 {
-  if(_prefetch_thread) g_thread_join(_prefetch_thread);
-  _prefetch_thread = NULL;
+  if(!_prefetch_pool) return;
+  g_mutex_lock(&_prefetch_lock);
+  g_array_set_size(_prefetch_queue, 0);
+  g_mutex_unlock(&_prefetch_lock);
+  g_thread_pool_free(_prefetch_pool, TRUE, TRUE);
+  _prefetch_pool = NULL;
 }
 
 static void _follower_cleanup(dt_engine_follower_t *f)
@@ -382,11 +411,26 @@ static gboolean _holds_mask_settings(const char *op, const char *multi_name)
   return FALSE;
 }
 
+// whether `op` is one a converted negative switches off, keeping its
+// settings for when the photo is turned back (manifest.ts, NEG_OFF and
+// NEG_OFF_UNMAPPED); while negadoctor is on, its entries stay
+static gboolean _held_for_negative(const char *op)
+{
+  static const char *held[] = { "channelmixerrgb", "exposure", "toneequal", "hazeremoval", "agx", "sigmoid",
+                                "filmicrgb", "basecurve", NULL };
+  const dt_iop_module_t *neg = dt_iop_get_module_by_op_priority(_s.dev.iop, "negadoctor", 0);
+  if(!neg || !neg->enabled) return FALSE;
+  for(int k = 0; held[k]; k++)
+    if(!g_strcmp0(op, held[k])) return TRUE;
+  return FALSE;
+}
+
 // drops the entries of modules switched off that darktable does not start
 // switched on: they do nothing, and a deleted mask leaves its instances so.
 // the shapes of masks all deleted go too. a mask's own instances that hold
 // its settings stay (_holds_mask_settings()), or a hidden or sharing mask
-// would come back without them.
+// would come back without them, as do those a negative holds
+// (_held_for_negative()).
 // one darktable starts on keeps its entry, or replaying the history would
 // switch it back on. needs the image open, for each module's default.
 // returns whether anything went
@@ -398,7 +442,7 @@ static gboolean _prune_off(const dt_imgid_t imgid)
   for(GList *l = _s.dev.iop; l; l = g_list_next(l))
   {
     const dt_iop_module_t *m = l->data;
-    if(m->default_enabled || g_hash_table_contains(done, m->op)) continue;
+    if(m->default_enabled || g_hash_table_contains(done, m->op) || _held_for_negative(m->op)) continue;
     g_hash_table_add(done, (gpointer)m->op);
     GArray *drop = g_array_new(FALSE, FALSE, sizeof(int));
     sqlite3_stmt *stmt;
@@ -975,6 +1019,19 @@ static gboolean _module_state(const char *op, const int priority, const gboolean
   return TRUE;
 }
 
+// a frame's identity for the client: darktable's hash of the pipe, and
+// every shape of the edit (drawn masks, spots). darktable takes a piece's
+// mask shapes from darktable.develop (imageop.c, dt_iop_commit_params),
+// which is not this engine's develop, so its hash alone stays the same
+// when a mask is reshaped, and `have` would hand back the frame from before
+static dt_hash_t _frame_hash(const dt_hash_t pipe_hash)
+{
+  dt_hash_t hash = pipe_hash;
+  for(GList *l = _s.dev.forms; l; l = g_list_next(l))
+    hash = dt_masks_group_hash_ext(hash, l->data, _s.dev.forms);
+  return hash;
+}
+
 // process into the pipe's 8-bit backbuf; returns the output size
 // with scale <= 0, fit the whole image into bw x bh. otherwise render the
 // bw x bh window at (x, y) of the image scaled by `scale` (1 is 100%), the
@@ -1010,9 +1067,10 @@ static gboolean _render(dt_dev_pixelpipe_t *pipe, const int devid, const int bw,
   {
     // the hash dt_dev_pixelpipe_process() gives its backbuf (pixelpipe_hb.c),
     // from the pieces' hashes, which the pipe's sync has brought current.
-    // the same hash is darktable's own test for reusing a cacheline
+    // the same hash is darktable's own test for reusing a cacheline. the
+    // edit's shapes go in as for the frames it sends (_frame_hash)
     const dt_iop_roi_t roi = { ox, oy, w, h, (float)scale };
-    const dt_hash_t hash = dt_dev_pixelpipe_cache_hash(&roi, pipe, g_list_length(pipe->iop));
+    const dt_hash_t hash = _frame_hash(dt_dev_pixelpipe_cache_hash(&roi, pipe, g_list_length(pipe->iop)));
     gchar *hex = g_strdup_printf("%016" PRIx64, hash);
     for(guint k = 0; k < json_array_get_length(have); k++)
       if(!g_strcmp0(json_array_get_string_element(have, k), hex)) *kept = hash;
@@ -1319,8 +1377,9 @@ static void _image_json(JsonBuilder *b, const dt_imgid_t imgid, const gboolean f
       g_list_free_full(res, g_free);
     }
     json_builder_end_object(b);
-    _keywords_json(b, imgid);
   }
+  // always, as the filmstrip's filter narrows the folder by them
+  _keywords_json(b, imgid);
   json_builder_end_object(b);
 }
 
@@ -2731,13 +2790,31 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
   }
 
   // EXIF, the text fields, location and tags, as Lightroom exports them;
-  // darktable's default would also embed the whole edit history
+  // darktable's default would also embed the whole edit history. each can
+  // be left out, as the export dialog's Metadata section asks
   dt_export_metadata_t metadata = {
     .flags = DT_META_EXIF | DT_META_METADATA | DT_META_GEOTAG | DT_META_TAG,
     .list = NULL,
   };
   // Lightroom's Remove Location Info: GPS from the EXIF too (exif.cc)
   if(!json_object_get_boolean_member_with_default(req, "location", TRUE)) metadata.flags &= ~DT_META_GEOTAG;
+  if(json_object_get_boolean_member_with_default(req, "history", FALSE)) metadata.flags |= DT_META_DT_HISTORY;
+  // what darktable's flags do not reach is taken out of the written file
+  // (strip.cc): the text fields and keywords flags decide only what
+  // darktable writes, not what the source's EXIF brings along
+  strip_t strip = 0;
+  if(!json_object_get_boolean_member_with_default(req, "serials", TRUE)) strip |= STRIP_SERIALS;
+  if(!json_object_get_boolean_member_with_default(req, "camera", TRUE)) strip |= STRIP_CAMERA;
+  if(!json_object_get_boolean_member_with_default(req, "description", TRUE))
+  {
+    metadata.flags &= ~DT_META_METADATA;
+    strip |= STRIP_DESCRIPTION;
+  }
+  if(!json_object_get_boolean_member_with_default(req, "tags", TRUE))
+  {
+    metadata.flags &= ~DT_META_TAG;
+    strip |= STRIP_KEYWORDS;
+  }
 
   gchar *dir = g_path_get_dirname(out);
   g_mkdir_with_parents(dir, 0755);
@@ -2761,10 +2838,14 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
        && dt_tag_attach(tagid, imgid, FALSE, FALSE))
       added = g_list_prepend(added, GUINT_TO_POINTER(tagid));
   }
+  // a draft (the dialog's preview) downscales right after demosaic, as the
+  // darkroom does; high quality runs the whole pipe at full size and
+  // downscales only before the frame (imageio.c), many times the work
+  const gboolean high_quality = !json_object_get_boolean_member_with_default(req, "draft", FALSE);
   // NB: returns FALSE on success
   const gboolean failed = dt_imageio_export_with_flags(
       imgid, out, write_fmt, fdata,
-      FALSE /*ignore_exif*/, FALSE /*display_byteorder*/, TRUE /*high_quality*/,
+      FALSE /*ignore_exif*/, FALSE /*display_byteorder*/, high_quality,
       FALSE /*upscale*/, FALSE /*is_scaling*/, 1.0, FALSE /*thumbnail*/, NULL /*filter*/,
       TRUE /*copy_metadata*/, FALSE /*export_masks*/,
       render_icc, NULL, DT_INTENT_PERCEPTUAL, NULL, NULL, 1, 1, &metadata, -1);
@@ -2775,8 +2856,17 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
   if(framed) _frame_done(frame_svg);
   fmt->free_params(fmt, fdata);
   if(failed)
+  {
     *err = _up.err && upscale > 1 ? g_strdup(_up.err) : g_strdup_printf("could not write '%s'", out);
-  return !failed;
+    return FALSE;
+  }
+  // a file that keeps what was asked to be left out is not delivered
+  if((*err = strip_metadata(out, strip)))
+  {
+    g_unlink(out);
+    return FALSE;
+  }
+  return TRUE;
 }
 
 // ------------------------------------------------------------------ masks
@@ -5078,13 +5168,15 @@ typedef struct _working_t
 // where _working_at() reads: the mask instances' input (the anchor's
 // output); the tone mapper's input, with every mask instance's adjustment
 // in it; the Zone System placement's input, which it has not placed yet;
-// or rotate and perspective's input, larger, for Upright's line detection
+// rotate and perspective's input, larger, for Upright's line detection; or
+// negadoctor's input, the negative as its pickers read it
 typedef enum _stage_t
 {
   _STAGE_ANCHOR,
   _STAGE_TONEMAPPER,
   _STAGE_UNPLACED,
   _STAGE_ASHIFT,
+  _STAGE_NEGADOCTOR,
 } _stage_t;
 
 // the app's instance of the tone equalizer that places the zones
@@ -5098,7 +5190,10 @@ static gboolean _working_at(_working_t *w, const _stage_t stage, char **err)
   // without a placement, what is unplaced is the anchor's output
   dt_iop_module_t *placement = stage == _STAGE_UNPLACED ? _find_named(_ZONE_PLACEMENT_OP, _ZONE_PLACEMENT_NAME) : NULL;
   dt_iop_module_t *ashift = stage == _STAGE_ASHIFT ? dt_iop_get_module_by_op_priority(_s.dev.iop, "ashift", 0) : NULL;
+  dt_iop_module_t *negadoctor = stage == _STAGE_NEGADOCTOR
+    ? dt_iop_get_module_by_op_priority(_s.dev.iop, "negadoctor", 0) : NULL;
   if(stage == _STAGE_ASHIFT) anchor = ashift;
+  if(stage == _STAGE_NEGADOCTOR) anchor = negadoctor;
   if(!anchor || !_ppipe_ready(err))
   {
     if(!*err) *err = g_strdup("no anchor module to sample at");
@@ -5147,6 +5242,10 @@ static gboolean _working_at(_working_t *w, const _stage_t stage, char **err)
       else if(stage == _STAGE_ASHIFT)
       {
         if(pc->module->iop_order >= ashift->iop_order) break;
+      }
+      else if(stage == _STAGE_NEGADOCTOR)
+      {
+        if(pc->module->iop_order >= negadoctor->iop_order) break;
       }
       else if(pc->module->iop_order > anchor->iop_order)
         break;
@@ -5284,11 +5383,13 @@ static inline float _hue_flip(const float h)
 
 // the values at a point of the shown image (a few pixels across, as a
 // picker's box), or over a box of it {x0, y0, x1, y1}; with each channel
-// of _chans's least, mean and most, for the parametric mask's pickers
-static gboolean _sample(const float x, const float y, JsonArray *box, JsonBuilder *b, char **err)
+// of _chans's least, mean and most, for the parametric mask's pickers;
+// read at the mask instances' input, or at another stage
+static gboolean _sample(const float x, const float y, JsonArray *box, const _stage_t stage, JsonBuilder *b,
+                        char **err)
 {
   _working_t w;
-  if(!_working(&w, err)) return FALSE;
+  if(!_working_at(&w, stage, err)) return FALSE;
   const dt_iop_roi_t roi = w.roi;
   const float *data = w.data;
   int i0, j0, i1, j1;
@@ -5400,6 +5501,27 @@ static gboolean _sample(const float x, const float y, JsonArray *box, JsonBuilde
     json_builder_end_object(b);
   }
   json_builder_end_object(b);
+  // negadoctor's pickers read the box as darktable's do, denoised: a raw
+  // pixel's noise can read below zero, which its densities take for an
+  // infinite one
+  if(stage == _STAGE_NEGADOCTOR)
+  {
+    const int pbox[4] = { i0, j0, i1 + 1, j1 + 1 };
+    lib_colorpicker_stats pick;
+    dt_color_picker_helper(w.dsc, w.data, &w.roi, pbox, TRUE, pick, w.dsc->cst, IOP_CS_NONE, NULL);
+    json_builder_set_member_name(b, "picker");
+    json_builder_begin_object(b);
+    const char *stat[] = { "min", "mean", "max" };
+    const int at[] = { DT_PICK_MIN, DT_PICK_MEAN, DT_PICK_MAX };
+    for(int k = 0; k < 3; k++)
+    {
+      json_builder_set_member_name(b, stat[k]);
+      json_builder_begin_array(b);
+      for(int c = 0; c < 3; c++) json_builder_add_double_value(b, pick[at[k]][c]);
+      json_builder_end_array(b);
+    }
+    json_builder_end_object(b);
+  }
   return TRUE;
 }
 
@@ -6675,9 +6797,14 @@ static void _handle(JsonObject *req, FILE *out)
   }
   else if(!g_strcmp0(cmd, "prefetch"))
   {
-    // the reply does not wait for the decode
-    const dt_imgid_t imgid = json_object_get_int_member_with_default(req, "imgid", 0);
-    if(dt_is_valid_imgid(imgid) && imgid != _s.imgid) _prefetch(imgid);
+    // the reply does not wait for the decode. `imgids` in the order to
+    // decode them, or one `imgid`
+    JsonArray *ids = json_object_has_member(req, "imgids") ? json_object_get_array_member(req, "imgids") : NULL;
+    const guint n = ids ? MIN(json_array_get_length(ids), 16) : 1;
+    dt_imgid_t list[16];
+    for(guint k = 0; k < n; k++)
+      list[k] = ids ? json_array_get_int_element(ids, k) : json_object_get_int_member_with_default(req, "imgid", 0);
+    _prefetch(list, n);
   }
   else if(!g_strcmp0(cmd, "meta"))
   {
@@ -6900,9 +7027,9 @@ static void _handle(JsonObject *req, FILE *out)
       json_builder_add_int_value(b, w);
       json_builder_set_member_name(b, "height");
       json_builder_add_int_value(b, h);
-      // darktable's hash of the frame, the same for one rendered again with
-      // nothing changed: a client can tell that frame from a new one
-      gchar *hash = g_strdup_printf("%016" PRIx64, pipe->backbuf_hash);
+      // the frame's hash, the same for one rendered again with nothing
+      // changed: a client can tell that frame from a new one
+      gchar *hash = g_strdup_printf("%016" PRIx64, _frame_hash(pipe->backbuf_hash));
       _add_string(b, "hash", hash);
       g_free(hash);
       json_builder_set_member_name(b, "process_ms");
@@ -6960,7 +7087,10 @@ static void _handle(JsonObject *req, FILE *out)
     if(!_sample(json_object_get_double_member_with_default(req, "x", 0.5),
                 json_object_get_double_member_with_default(req, "y", 0.5),
                 json_object_has_member(req, "box") && !json_object_get_null_member(req, "box")
-                  ? json_object_get_array_member(req, "box") : NULL, b, &err))
+                  ? json_object_get_array_member(req, "box") : NULL,
+                !g_strcmp0(json_object_get_string_member_with_default(req, "stage", NULL), "negadoctor")
+                  ? _STAGE_NEGADOCTOR : _STAGE_ANCHOR,
+                b, &err))
       goto fail;
   }
   else if(!g_strcmp0(cmd, "tone_key"))

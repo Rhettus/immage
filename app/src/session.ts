@@ -6,7 +6,8 @@
 // only mark their module dirty, and the next round sends the latest values once
 import { invoke } from "@tauri-apps/api/core";
 import { boundFields, choiceCovers, choiceOn, controlById, isModuleSetting, localFields, localMaps, mapOf, mapsFor,
-         mapsWith, MODULE_CHOICES, modules, turnOrientation, turnRect, type ImageContext, type ModuleMap, type Params, type Turn, type Values } from "./manifest";
+         mapsWith, MODULE_CHOICES, modules, NEG_CHOICES, NEG_OFF, turnOrientation, turnRect, type ImageContext,
+         type ModuleMap, type Params, type Turn, type Values } from "./manifest";
 import { loadModuleChoice } from "./moduleChoice";
 import { isRefined, neutralLocal, type Mask, type Refine, type Shape } from "./masks";
 import { planMerge, type MergePlan } from "./localMerge";
@@ -229,6 +230,13 @@ export class Session {
       orientation: flip?.enabled && flip.params.orientation >= 0 ? flip.params.orientation : opened.orientation,
       camera: opened.orientation,
     };
+    // a negative keeps NEG_OFF's modules off with their settings, for when
+    // it is turned back: their sliders are read as if they were on
+    if (s.info.negadoctor?.enabled) {
+      // the first instance's entry carries darktable's preset label, if any
+      const used = new Set(s.history.flatMap((h) => [mapOpOf(h), h.op]));
+      for (const op of NEG_OFF) if (s.info[op] && used.has(op)) s.info[op] = { ...s.info[op], enabled: true };
+    }
     for (const m of modules) {
       const info = s.info[m.op];
       const fromDefaults = m.read(info.defaults, info.defaults, s.ctx);
@@ -273,7 +281,9 @@ export class Session {
         })
         || localMaps.some((m) => m.choice?.control === c.control && m.choice.value === o.value
                              && [...this.maskOps.values()].some((ops) => ops.has(m.op))));
-      const value = this.wasEdited && used ? used.value : pick;
+      // a negative's tools run after negadoctor, whatever its modules hold
+      const value = this.values.neg_on === 1 && c.control in NEG_CHOICES ? NEG_CHOICES[c.control]
+        : this.wasEdited && used ? used.value : pick;
       this.values[c.control] = value;
       // only the chosen module's maps say what the shared sliders hold
       for (const id of covers) if (id in this.neutral) this.values[id] = this.neutral[id];
@@ -289,7 +299,7 @@ export class Session {
     const c = controlById.get(id)!;
     if (!Number.isFinite(v) || Math.abs(v - neutral) < c.step / 2) return neutral;
     const snapped = c.slider ? v : Math.round(v / c.step) * c.step;
-    return Math.min(c.max, Math.max(c.min, snapped));
+    return c.readsPast ? snapped : Math.min(c.max, Math.max(c.min, snapped));
   }
 
   set(id: string, v: number) {
@@ -297,12 +307,20 @@ export class Session {
     perf.input();
     this.values[id] = v;
     if (id === "orient") this.orient(v);
+    if (id === "neg_on") this.negChanged();
     for (const m of mapsWith(id)) {
       this.foreign.delete(m);
       this.dirty.add(m.op);
     }
     this.needRender = true;
     void this.pump();
+  }
+
+  // a negative converted or turned back: the modules it turns off are sent
+  // again, switched off or back as their sliders have them. one darktable
+  // set beyond its sliders is switched by the panel (setModuleState)
+  private negChanged() {
+    for (const op of NEG_OFF) if (mapsFor(op).some((m) => !this.foreign.has(m))) this.dirty.add(op);
   }
 
   // the image's frame turned: modules after flip write their values for it
@@ -714,6 +732,7 @@ export class Session {
       if (!mapOf.has(id)) continue;
       this.values[id] = v;
       if (id === "orient") this.orient(v);
+      if (id === "neg_on") this.negChanged();
       for (const m of mapsWith(id)) {
         this.foreign.delete(m);
         this.dirty.add(m.op);
@@ -782,7 +801,8 @@ export class Session {
       on ||= chosen && (m.enabled ? m.enabled(values)
                                      : m.controls.some((id) => values[id] !== this.neutral[id]));
     }
-    const enabled = this.bypassed.has(op) ? false : keepOn ? info.enabled || on : on;
+    const enabled = this.bypassed.has(op) || (values.neg_on === 1 && NEG_OFF.has(op)) ? false
+      : keepOn ? info.enabled || on : on;
     // "op#name" is the instance of op so named, made on first use
     const [real, instance] = op.split("#");
     return { op: real, params, enabled, ...(instance ? { instance } : {}), ...(after ? { after } : {}),
@@ -813,6 +833,15 @@ export class Session {
   // until the base's render is over, stopped or not
   private baseInFlight: Promise<void> | null = null;
   get baseRendering() { return !!this.base && !this.base.stale; }
+  // a base in flight stopped, as an edit stops it, for work the user waits
+  // on: true when one was, so the caller asks for it again after
+  stopBase(): boolean {
+    if (!this.base || this.base.stale) return false;
+    this.base.stale = true;
+    this.base.wake();
+    invoke("cancel_base").catch(() => {});
+    return true;
+  }
 
   requestThumb() {
     this.needThumb = true;
@@ -859,7 +888,8 @@ export class Session {
   // rendering it (`have`, _render in engine/main.c)
   private frames = new Map<string, Frame>();
   private framesBytes = 0;
-  private static FRAMES_BYTES = 256 << 20;
+  // the Frame cache preference, in bytes, read at each frame kept
+  frameBudget: () => number = () => 256 * 1048576;
   // the frame each view shows, until the image changes: shown without
   // asking the engine
   private current = new Map<string, Frame>();
@@ -873,7 +903,7 @@ export class Session {
     this.frames.set(at, f);
     this.current.set(key, f);
     for (const [k, old] of this.frames) {
-      if (this.framesBytes <= Session.FRAMES_BYTES || old === f) break;
+      if (this.framesBytes <= this.frameBudget() || old === f) break;
       this.frames.delete(k);
       this.framesBytes -= old.pixels.byteLength;
       const shown = k.slice(0, k.lastIndexOf("|"));
