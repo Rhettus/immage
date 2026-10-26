@@ -1305,7 +1305,8 @@ input.switch:disabled { cursor: default; opacity: 0.4; }
 .mask-list > li:not(.on) .mask-row:hover { background: var(--hover); }
 .mask-row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-body); }
 .mask-list > li.on .mask-row .name { color: var(--text); }
-.mask-list > li.hidden .mask-row .name, .mask-list > li.hidden .mask-thumb { opacity: 0.45; }
+/* not .hidden, which the importer's Tailwind makes display: none */
+.mask-list > li.off .mask-row .name, .mask-list > li.off .mask-thumb { opacity: 0.45; }
 .mask-thumb {
   flex: none; width: 36px; height: 24px; object-fit: contain; background: #000; border: 1.5px solid #555; border-radius: 4px;
 }
