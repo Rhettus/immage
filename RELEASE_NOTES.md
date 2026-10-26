@@ -60,6 +60,15 @@ Bug fixes
 - the History card's rows are no longer at times drawn over each other
 - Before/After shows the Before at the same size as the After on a
   photo with lens corrections or Transform; before, it came out larger
+- HSL / Color acts at Lightroom's colors: Blue on blue, which Purple
+  used to gray, and Green on foliage. Saturation -100 turns its color
+  gray and no more, where -50 already did and -100 grayed the colors
+  around it too, so with Blue at -100 Aqua did nothing to the blues
+  between them. Luminance and the B&W Mix at -100 darken a vivid color
+  without turning it black. The same goes for HSL on a mask, and for
+  saved presets, whose values are brought to the new strength. Photos
+  edited before look as they did; their HSL sliders can read spread over
+  neighboring bands, or past the end of a slider
 
 ## 0.36.0
 
