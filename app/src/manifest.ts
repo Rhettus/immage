@@ -321,6 +321,23 @@ const textureWrite = (texture: number) => ({
     [k, (s * texture * TEXTURE_PRESET_ITERATIONS) / (100 * TEXTURE_ITERATIONS)])),
 });
 
+// Clarity: local contrast's detail. its shadows and highlights default to
+// 50%, which halves contrast past the midtone range
+// (locallaplacian.c, curve_scalar), so at ±1 the module switching on
+// flattened the photo more than +10 did. they follow the slider from 100%,
+// neutral, to that 50% at ±100. an edit made in darktable reads by its
+// detail alone
+const clarityMap = (id: string): ModuleMap => ({
+  op: "bilat", keepOn: false,
+  controls: [id],
+  fields: ["detail", "sigma_s", "sigma_r"],
+  read: (p) => ({ [id]: 100 * p.detail }),
+  write: (v) => {
+    const slope = 1 - (0.5 * Math.abs(v[id])) / 100;
+    return { detail: v[id] / 100, sigma_s: slope, sigma_r: slope };
+  },
+});
+
 // Sharpening: darktable's "sharpness | normal" diffusion preset
 // (diffuse.c) but for the iterations, radius span and edge sensitivity,
 // which the sliders set
@@ -1074,7 +1091,7 @@ export const modules: ModuleMap[] = [
     read: (p) => ({ texture: textureRead(p) }),
     write: (v) => textureWrite(v.texture),
   },
-  linear("bilat", false, [{ id: "clarity", field: "detail", scale: 0.01, base: 0 }]),
+  clarityMap("clarity"),
   linear("hazeremoval", false, [{ id: "dehaze", field: "strength", scale: 0.01, base: 0 }]),
 
   {
@@ -1757,7 +1774,7 @@ export const localMaps: ModuleMap[] = [
     read: (p) => ({ l_texture: textureRead(p) }),
     write: (v) => textureWrite(v.l_texture),
   },
-  linear("bilat", false, [{ id: "l_clarity", field: "detail", scale: 0.01, base: 0 }]),
+  clarityMap("l_clarity"),
   linear("hazeremoval", false, [{ id: "l_dehaze", field: "strength", scale: 0.01, base: 0 }]),
   {
     // as the global Noise Reduction: darktable's strength 1.0 at 50. Some

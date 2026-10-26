@@ -518,6 +518,18 @@ async function fixes(photo) {
     });
   }
 
+  // 0.37.0: Clarity switched local contrast on at its default 50% shadows
+  // and highlights (manifest.ts, clarityMap), so ±1 flattened the photo
+  // more than ±10 did
+  await fix("Clarity at ±1 changes less than at ±10", async () => {
+    const o = await open(fresh(photo));
+    const mad = async (v) => compare(await o.after(() => o.s.set("clarity", v)), o.base).mad;
+    const [p1, p10, n1, n10] = [await mad(1), await mad(10), await mad(-1), await mad(-10)];
+    await o.s.close();
+    return p1 < p10 / 3 && n1 < n10 / 3 ? null
+      : `the frame changed by ${p1.toFixed(2)} at +1 and ${p10.toFixed(2)} at +10, ${n1.toFixed(2)} at -1 and ${n10.toFixed(2)} at -10`;
+  });
+
   // 0.34.0: darktable's AI models were unpacked with the system's unzip,
   // which Arch and CachyOS do not install, so AI Denoise and Select Object
   // never got theirs. the engine unpacks now, into a models folder reached
