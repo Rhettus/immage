@@ -31,6 +31,28 @@ pub struct BaseCancel {
     last: Arc<AtomicU64>,
 }
 
+// darktable's resource level, from Preferences: how much memory its caches
+// and pipes may take (darktable.c, dt_get_available_mem). darktable reads
+// it once, as it starts (dt_init sizes the mipmap cache from it), so a new
+// level waits for the engine's next start
+pub const RESOURCE_LEVELS: [&str; 3] = ["small", "default", "large"];
+const RESOURCE_FILE: &str = "darktable-resources";
+
+pub fn resource_level(runtime: &Path) -> String {
+    std::fs::read_to_string(runtime.join(RESOURCE_FILE))
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| RESOURCE_LEVELS.contains(&s.as_str()))
+        .unwrap_or_else(|| "default".into())
+}
+
+pub fn set_resource_level(runtime: &Path, level: &str) -> Result<(), String> {
+    if !RESOURCE_LEVELS.contains(&level) {
+        return Err(format!("no resource level '{level}'"));
+    }
+    std::fs::write(runtime.join(RESOURCE_FILE), level).map_err(|e| e.to_string())
+}
+
 impl BaseCancel {
     // the id of a base about to be sent
     pub fn next_id(&self) -> u64 {
@@ -194,6 +216,7 @@ impl Engine {
             // the other profiles replace the priority (opencl.c,
             // _opencl_apply_scheduling_profile)
             .args(["--conf", "opencl_scheduling_profile=default"])
+            .args(["--conf", &format!("resourcelevel={}", resource_level(runtime))])
             // per-module timings, for Preferences' performance overlay; they
             // only print, and stay out of the log
             .args(["-d", "perf"])

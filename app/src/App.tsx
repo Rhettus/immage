@@ -40,13 +40,13 @@ import { CopyDialog, loadCopyGroups, makeClip, type Clip } from "./CopySettings"
 import { DenoiseDialog } from "./DenoiseDialog";
 import { Tour, tourSeen } from "./Tour";
 import { UpdateBanner } from "./UpdateBanner";
-import { autoCheck } from "./updates";
+import { autoCheck, relaunch } from "./updates";
 import { Chevron, Collapse } from "./Collapse";
 import { loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadNewPhotosProfile, loadOverlayColor, loadPins, maskOverlayRgb, loadPreview, loadFrameCacheMb, loadSliderScroll, loadSliderScrollStep,
          loadStackPairs,
          PreferencesDialog, storeOverlayColor, storeStackPairs,
          storeAutoHide, storeCanvas, CANVASES, storeFocusMode, storePins, type AccelProvider, type Canvas,
-         type Pins, type PrefsTab, type Preview } from "./Preferences";
+         loadReadAhead, loadThumbMemoryMb, type Pins, type PrefsTab, type Preview } from "./Preferences";
 import { kindOf, loadPlugins, loadReturns, returnValues, storePlugins, unfit, type PluginConfig,
          type PluginReturn } from "./plugins";
 import { FolderTree } from "./FolderTree";
@@ -174,6 +174,7 @@ export default function App() {
                                          setThumbVersion((v) => v + 1);
                                        });
                                      },
+                                     () => loadThumbMemoryMb() * 1024 * 1024,
                                      // the server's refusal is said once, not hidden behind placeholders
                                      (imgid, e) => {
                                        if (imgid >= 0 || thumbError.current) return;
@@ -2799,17 +2800,26 @@ export default function App() {
     return () => { for (const off of offs) void off.then((f) => f()); };
   }, []);
 
-  // the photo the arrow keys would open next, its raw decoded ahead by the
-  // engine once this one is up (main.c, _prefetch): a compressed raw's
-  // decode, some 300 ms, is then gone from opening it
+  // the photos the arrow keys would open next, their raws decoded ahead by
+  // the engine once this one is up (main.c, _prefetch): a compressed raw's
+  // decode, some 300 ms, is then gone from opening them. Preferences' Read
+  // ahead says how many, in the direction last stepped and then behind
   const stepDir = useRef<1 | -1>(1);
-  const prefetched = useRef<number | null>(null);
+  const prefetched = useRef("");
   const prefetchNext = (s: Session) => {
     const list = shownRef.current, at = list.findIndex((i) => i.imgid === s.imgid);
-    const next = at >= 0 ? list[at + stepDir.current] : undefined;
-    if (!next || isRemote(next) || next.imgid === prefetched.current) return;
-    prefetched.current = next.imgid;
-    invoke("prefetch", { imgid: next.imgid }).catch(() => {});
+    if (at < 0) return;
+    const { count, both } = loadReadAhead();
+    const ids: number[] = [];
+    for (const dir of both ? [stepDir.current, -stepDir.current] : [stepDir.current]) {
+      for (let k = 1; k <= count; k++) {
+        const e = list[at + dir * k];
+        if (e && !isRemote(e)) ids.push(e.imgid);
+      }
+    }
+    if (ids.join() === prefetched.current) return;
+    prefetched.current = ids.join();
+    invoke("prefetch", { imgids: ids }).catch(() => {});
   };
 
   // `imgid` picks one of the file's versions (a virtual copy); without it,
@@ -4983,6 +4993,11 @@ export default function App() {
                            runGuiBenchmark().then((path) => setStatus(`benchmark saved: ${path}`))
                              .catch((e) => setStatus(`benchmark: ${e}`));
                          } : null}
+                         onRelaunch={async () => {
+                           await session.current?.close();
+                           await invoke("engine_quit");
+                           await relaunch();
+                         }}
                          onClose={() => setPrefsOpen(false)} />
     )}
     <UpdateBanner prepare={async () => {
@@ -5363,8 +5378,10 @@ function Filmstrip({ images, partners, pending, empty, current, loader, height, 
     const root = strip.current;
     if (!root) return;
     const seen = new IntersectionObserver((entries) => {
-      const ids = entries.filter((e) => e.isIntersecting)
-        .map((e) => Number((e.target as HTMLElement).dataset.imgid));
+      const id = (e: IntersectionObserverEntry) => Number((e.target as HTMLElement).dataset.imgid);
+      const ids = entries.filter((e) => e.isIntersecting).map(id);
+      loader.show(ids, true);
+      loader.show(entries.filter((e) => !e.isIntersecting).map(id), false);
       if (ids.length) loader.request(ids, true);
     }, { root, rootMargin: grid ? "300px 0px" : "0px 300px" });
     root.querySelectorAll<HTMLElement>(".thumb[data-imgid]").forEach((el) => seen.observe(el));

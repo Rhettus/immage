@@ -54,7 +54,7 @@ histogram, React. For those:
 
 1. `npm run tauri dev` in `app/` and open a photo. Use a copy: every slider is
    put back, but the photo's history gets the moves.
-2. Preferences → General → Performance → **Performance overlay** shows live
+2. Preferences → Performance → Measuring → **Performance overlay** shows live
    timings over the photo.
 3. **GUI benchmark → Run** drags 16 main sliders out and back at about 60
    moves a second, through the same code a hand would, then releases each
