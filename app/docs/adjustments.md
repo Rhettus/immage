@@ -109,7 +109,18 @@ note; moving a slider replaces it.
 
 **Hue**, **Saturation** and **Luminance** tabs, each with eight bands:
 **Red**, **Orange**, **Yellow**, **Green**, **Aqua**, **Blue**, **Purple**
-and **Magenta**. Hue moves each band up to 30° either way.
+and **Magenta**. Hue moves each band up to 30° either way. Saturation at
+-100 turns its color gray. Luminance changes vivid colors the most and
+leaves pale ones nearly as they were.
+
+Each band acts most on its own color and fades out toward the bands
+either side, as in Lightroom. Blue and Purple sit close together, so each
+also reaches part of the other's colors.
+
+A photo whose HSL was set in darktable, or in Immage before 0.37.0, can
+open with a band's setting spread over its neighbors' sliders, or past
+the end of a slider. It looks as it did; moving a slider carries on from
+there.
 
 Hover over the photo: the panel's title shows the color under the pointer,
 and its band's sliders glow. Uses darktable's color equalizer.

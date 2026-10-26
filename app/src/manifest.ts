@@ -18,6 +18,7 @@ import { channelPointsFromLinear, channelPointsToLinear, fromParams as readCurve
          nodeFields, paramsToPoints, pointsToParams, toParams as writeCurve, type Parametric,
          type Point } from "./tonecurve";
 import { autoCrop } from "./transform";
+import { fromNodes, toNodes } from "./colorequal";
 import { cbHueTrack, displayHue } from "./colorgrading";
 import { PLACE_BOOST, PLACE_FIELDS, PLACE_FIRST, PLACE_MAX, PLACEMENT_OP, ROMAN, ZONE_GRAY,
          placeIds } from "./zones";
@@ -70,6 +71,11 @@ export type Control = {
   // a non-linear track: the input works in positions, the value is derived
   slider?: { min: number; max: number; step: number; toPos: (v: number) => number;
              fromPos: (p: number) => number };
+  // read back past min and max rather than clamped: an HSL band set in
+  // darktable or by an older Immage reads as a mix of sliders
+  // (colorequal.ts), and clamping one would change the photo's other
+  // colors at the next edit
+  readsPast?: boolean;
 };
 
 export type ModuleMap = {
@@ -422,16 +428,26 @@ const GLOBAL_SAT_TRACK =
 
 // ----------------------------------------------------- HSL / Color (colorequal)
 
-// Lightroom's eight bands and the color equalizer's, in the same order, with
-// the hue each is centered on
+// Lightroom's eight bands, with the color equalizer's node names in the
+// same order and Lightroom's hue for each (HSL). the nodes sit elsewhere:
+// each slider sets a mix of them (colorequal.ts)
 export const BANDS: [string, string, number][] = [
-  ["red", "Red", 0], ["orange", "Orange", 30], ["yellow", "Yellow", 55], ["green", "Green", 120],
-  ["cyan", "Aqua", 180], ["blue", "Blue", 225], ["lavender", "Purple", 270], ["magenta", "Magenta", 315],
+  ["red", "Red", 0], ["orange", "Orange", 30], ["yellow", "Yellow", 60], ["green", "Green", 120],
+  ["cyan", "Aqua", 180], ["blue", "Blue", 240], ["lavender", "Purple", 270], ["magenta", "Magenta", 300],
 ];
-// Lightroom's ±100 as ±30° of hue, and as a saturation/brightness factor
+// Lightroom's ±100 as ±30° of hue, and as the node's saturation and
+// brightness factors. colorequal.c doubles a saturation factor's distance
+// from 1 (SAT_EFFECT), so -100 is 0.5, exactly gray; 0.01 made -50 gray
+// already and -100 gray a wide hue range around it. brightness changes by
+// 8 × the pixel's saturation × the factor's distance from 1
+// (BRIGHT_EFFECT): at 0.0025 -100 takes a saturated red down about 2 EV,
+// where 0.005 turned it black
 const HSL_HUE_DEG = 0.3;
-const HSL_SAT = 0.01;
-const HSL_LUM = 0.005;
+const HSL_SAT = 0.005;
+const HSL_LUM = 0.0025;
+// the B&W Mix's ±100 as a brightness factor of 2^±0.5: at 2^±1, -100
+// turned a saturated red black, as Luminance did
+const BW_SCALE = 200;
 
 const HSL_IDS = BANDS.flatMap(([b]) => [`hsl_hue_${b}`, `hsl_sat_${b}`, `hsl_lum_${b}`]);
 // one tab's eight sliders, "hsl" for the main panel's and "l_hsl" for a mask's
@@ -440,19 +456,39 @@ export const hslControls = (prefix: string, t: typeof HSL_TABS[number]): Control
   BANDS.map(([band, label, h]) =>
     lr(`${prefix}_${t === "Hue" ? "hue" : t === "Saturation" ? "sat" : "lum"}_${band}`, label, {
       track: t === "Hue" ? hueRamp(h, 100 * HSL_HUE_DEG) : t === "Saturation" ? satRamp(h) : lumRamp(h),
+      readsPast: true,
     }));
 const BW_IDS = BANDS.map(([b]) => `bw_${b}`);
 
+// the sliders' effects on one of the color equalizer's per-band fields
+// (hue, sat, bright), red to magenta, and back
+const nodesOf = (p: Params, field: string, base: number) => fromNodes(BANDS.map(([b]) => p[`${field}_${b}`] - base));
+const fieldsOf = (field: string, base: number, effects: number[]): [string, number][] =>
+  toNodes(effects).map((x, k) => [`${field}_${BANDS[k][0]}`, base + x]);
+// HSL sliders, the main panel's ("hsl") or a mask's ("l_hsl"), as the
+// color equalizer's params and back
+const writeHSL = (prefix: string, v: Values): Params => Object.fromEntries([
+  ...fieldsOf("hue", 0, BANDS.map(([b]) => v[`${prefix}_hue_${b}`] * HSL_HUE_DEG)),
+  ...fieldsOf("sat", 1, BANDS.map(([b]) => v[`${prefix}_sat_${b}`] * HSL_SAT)),
+  ...fieldsOf("bright", 1, BANDS.map(([b]) => v[`${prefix}_lum_${b}`] * HSL_LUM)),
+]);
+const readHSL = (prefix: string, p: Params): Values => {
+  const hue = nodesOf(p, "hue", 0), sat = nodesOf(p, "sat", 1), lum = nodesOf(p, "bright", 1);
+  return Object.fromEntries(BANDS.flatMap(([b], k) => [[`${prefix}_hue_${b}`, hue[k] / HSL_HUE_DEG],
+    [`${prefix}_sat_${b}`, sat[k] / HSL_SAT], [`${prefix}_lum_${b}`, lum[k] / HSL_LUM]]));
+};
+
 // the classic contrast filters of black and white film, as B&W Mix
-// settings: a filter lightens its own color and darkens its complement
+// settings: a filter lightens its own color and darkens its complement.
+// doubled when BW_SCALE halved the mix's strength
 const BW_FILTERS: [string, string, number[]][] = [
   // red, orange, yellow, green, aqua, blue, purple, magenta
   ["None", "linear-gradient(135deg, #eee 50%, #222 50%)", [0, 0, 0, 0, 0, 0, 0, 0]],
-  ["Red", "#e5484d", [40, 30, 10, -20, -30, -40, -20, 10]],
-  ["Orange", "#f08c2e", [30, 40, 20, -10, -30, -40, -30, 0]],
-  ["Yellow", "#f5c518", [10, 20, 30, 10, -10, -30, -20, 0]],
-  ["Green", "#46a758", [-30, -10, 10, 40, 10, -10, -10, -20]],
-  ["Blue", "#3e7bfa", [-30, -30, -20, -10, 20, 40, 20, 0]],
+  ["Red", "#e5484d", [80, 60, 20, -40, -60, -80, -40, 20]],
+  ["Orange", "#f08c2e", [60, 80, 40, -20, -60, -80, -60, 0]],
+  ["Yellow", "#f5c518", [20, 40, 60, 20, -20, -60, -40, 0]],
+  ["Green", "#46a758", [-60, -20, 20, 80, 20, -20, -20, -40]],
+  ["Blue", "#3e7bfa", [-60, -60, -40, -20, 40, 80, 40, 0]],
 ];
 
 // ------------------------------------------ Color Grading (color balance rgb)
@@ -1087,20 +1123,17 @@ export const modules: ModuleMap[] = [
     controls: ["bw_mode", ...HSL_IDS, ...BW_IDS],
     fields: BANDS.flatMap(([b]) => [`hue_${b}`, `sat_${b}`, `bright_${b}`]),
     read: (p, _d, _c, v): Values => {
-      const bw = desaturated(p) || v?.bw_mode === 1;
-      const out: Values = { bw_mode: bw ? 1 : 0 };
-      for (const [b] of BANDS) {
-        out[`hsl_hue_${b}`] = bw ? 0 : p[`hue_${b}`] / HSL_HUE_DEG;
-        out[`hsl_sat_${b}`] = bw ? 0 : (p[`sat_${b}`] - 1) / HSL_SAT;
-        out[`hsl_lum_${b}`] = bw ? 0 : (p[`bright_${b}`] - 1) / HSL_LUM;
-        out[`bw_${b}`] = bw ? 100 * Math.log2(Math.max(1e-3, p[`bright_${b}`])) : 0;
-      }
-      return out;
+      const zero = (ids: string[]) => Object.fromEntries(ids.map((id) => [id, 0]));
+      if (!desaturated(p) && v?.bw_mode !== 1) return { bw_mode: 0, ...readHSL("hsl", p), ...zero(BW_IDS) };
+      const mix = nodesOf(p, "bright", 1);
+      return { bw_mode: 1, ...zero(HSL_IDS),
+               ...Object.fromEntries(BW_IDS.map((id, k) => [id, BW_SCALE * Math.log2(Math.max(1e-3, 1 + mix[k]))])) };
     },
-    write: (v) => Object.fromEntries(BANDS.flatMap(([b]) => v.bw_mode === 1
-      ? [[`hue_${b}`, 0], [`sat_${b}`, v.mod_bw === MOD_BW_EQUALIZER ? 0 : 1], [`bright_${b}`, 2 ** (v[`bw_${b}`] / 100)]]
-      : [[`hue_${b}`, v[`hsl_hue_${b}`] * HSL_HUE_DEG], [`sat_${b}`, 1 + v[`hsl_sat_${b}`] * HSL_SAT],
-         [`bright_${b}`, 1 + v[`hsl_lum_${b}`] * HSL_LUM]])),
+    write: (v) => v.bw_mode === 1
+      ? Object.fromEntries([
+          ...BANDS.flatMap(([b]) => [[`hue_${b}`, 0], [`sat_${b}`, v.mod_bw === MOD_BW_EQUALIZER ? 0 : 1]]),
+          ...fieldsOf("bright", 1, BW_IDS.map((id) => 2 ** (v[id] / BW_SCALE) - 1))])
+      : writeHSL("hsl", v),
     enabled: (v) => v.bw_mode === 1 ? v.mod_bw === MOD_BW_EQUALIZER || BW_IDS.some((id) => v[id] !== 0)
       : HSL_IDS.some((id) => v[id] !== 0),
   },
@@ -1314,7 +1347,8 @@ export const panels: Panel[] = [
     sections: [{
       title: "Black & White Mix",
       controls: BANDS.map(([band, label, h]) =>
-        lr(`bw_${band}`, label, { neutral: 0, track: `linear-gradient(90deg, #111, ${hsl(h, 65, 45)})` })),
+        lr(`bw_${band}`, label, { neutral: 0, track: `linear-gradient(90deg, #111, ${hsl(h, 65, 45)})`,
+                                  readsPast: true })),
     }],
   },
   // Immage's own module: zones and zone masks, drawn by ZoneSystem.tsx
@@ -1679,11 +1713,11 @@ export const localMaps: ModuleMap[] = [
   // some 60 ms a mask's draft frame, so its masks share instances; a Hue
   // turns colors, which a mask's strength cannot scale
   {
-    ...linear("colorequal", false, BANDS.flatMap(([b]) => [
-      { id: `l_hsl_hue_${b}`, field: `hue_${b}`, scale: HSL_HUE_DEG, base: 0 },
-      { id: `l_hsl_sat_${b}`, field: `sat_${b}`, scale: HSL_SAT, base: 1 },
-      { id: `l_hsl_lum_${b}`, field: `bright_${b}`, scale: HSL_LUM, base: 1 },
-    ])),
+    op: "colorequal", keepOn: false,
+    controls: BANDS.flatMap(([b]) => [`l_hsl_hue_${b}`, `l_hsl_sat_${b}`, `l_hsl_lum_${b}`]),
+    fields: BANDS.flatMap(([b]) => [`hue_${b}`, `sat_${b}`, `bright_${b}`]),
+    read: (p) => readHSL("l_hsl", p),
+    write: (v) => writeHSL("l_hsl", v),
     merge: true,
     fixed: BANDS.map(([b]) => `l_hsl_hue_${b}`),
   },

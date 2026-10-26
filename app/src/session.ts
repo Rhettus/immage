@@ -289,7 +289,7 @@ export class Session {
     const c = controlById.get(id)!;
     if (!Number.isFinite(v) || Math.abs(v - neutral) < c.step / 2) return neutral;
     const snapped = c.slider ? v : Math.round(v / c.step) * c.step;
-    return Math.min(c.max, Math.max(c.min, snapped));
+    return c.readsPast ? snapped : Math.min(c.max, Math.max(c.min, snapped));
   }
 
   set(id: string, v: number) {
