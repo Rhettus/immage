@@ -1342,6 +1342,12 @@ export default function App() {
   const clipBase = useRef<HTMLCanvasElement>(null);
   const clipSharp = useRef<HTMLCanvasElement>(null);
   const [clipOn, setClipOn] = useState<ClipShow>({ low: false, high: false });
+  const [scope, setScopeState] = useState<ScopeSettings>(loadScope);
+  const setScope = useCallback((change: Partial<ScopeSettings> | ((s: ScopeSettings) => Partial<ScopeSettings>)) => setScopeState((s) => {
+    const next = { ...s, ...(typeof change === "function" ? change(s) : change) };
+    try { localStorage.setItem("immage.scope", JSON.stringify(next)); } catch { /* not kept */ }
+    return next;
+  }), []);
   const [clipPeek, setClipPeek] = useState<"low" | "high" | null>(null);
   const clipShown: ClipShow = { low: clipOn.low || clipPeek === "low", high: clipOn.high || clipPeek === "high" };
   const clipRef = useRef(clipShown);
@@ -4036,6 +4042,12 @@ export default function App() {
         }
       }
       if (e.shiftKey && (e.key === "j" || e.key === "J")) { pickToolRef.current("color"); return; }
+      // H steps the scope as its corner menu lists them, ⇧H back
+      if ((e.key === "h" || e.key === "H") && !cmd(e) && !e.altKey && session.current) {
+        const n = SCOPE_MODES.length;
+        setScope((s) => ({ mode: SCOPE_MODES[(SCOPE_MODES.findIndex(([m]) => m === s.mode) + (e.shiftKey ? n - 1 : 1)) % n][0] }));
+        return;
+      }
       // J shows both clipping overlays, or hides them, as in Lightroom
       if (e.key === "j" && !cmd(e) && !e.altKey) {
         setClipOn((o) => (o.low && o.high ? { low: false, high: false } : { low: true, high: true }));
@@ -4600,7 +4612,7 @@ export default function App() {
         <HistogramView histogram={histogram} values={values} disabled={!current} exif={currentEntry?.exif ?? null}
                        neutral={(id) => session.current?.neutral[id] ?? controlById.get(id)?.neutral ?? 0}
                        onChange={change} clip={clipOn} onClip={(end) => setClipOn((o) => ({ ...o, [end]: !o[end] }))}
-                       onClipPeek={setClipPeek} />
+                       onClipPeek={setClipPeek} scope={scope} onScope={setScope} />
         <div className="panels" data-tour="panels">
           {masksMode && !cropping && (
             <MasksPanel masks={masks} selected={maskSel} shape={shapeSel} tool={maskTool} target={toolTarget}
@@ -5746,18 +5758,13 @@ const SCOPE_MODES: [ScopeMode, string][] = [
 // slider and a double-click resets it; on the RYB vectorscope, dragging
 // turns the color harmony guides. the clipping triangles show their
 // overlay on the photo: a click keeps it, hovering shows it for a while
-function HistogramView({ histogram: h, values, disabled, exif, neutral, onChange, clip, onClip, onClipPeek }: {
+function HistogramView({ histogram: h, values, disabled, exif, neutral, onChange, clip, onClip, onClipPeek, scope, onScope: setScope }: {
   histogram: Histogram | null; values: Record<string, number>; disabled: boolean; exif: Exif | null;
   neutral: (id: string) => number; onChange: (c: Control, v: number) => void;
   clip: ClipShow; onClip: (end: "low" | "high") => void; onClipPeek: (end: "low" | "high" | null) => void;
+  scope: ScopeSettings; onScope: (change: Partial<ScopeSettings>) => void;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
-  const [scope, setScopeState] = useState<ScopeSettings>(loadScope);
-  const setScope = (change: Partial<ScopeSettings>) => setScopeState((s) => {
-    const next = { ...s, ...change };
-    try { localStorage.setItem("immage.scope", JSON.stringify(next)); } catch { /* not kept */ }
-    return next;
-  });
   const [size, setSize] = useState(0);
   useEffect(() => {
     const c = ref.current;

@@ -40,6 +40,7 @@ const GROUPS: Group[] = [
       ["Y", "Next before / after view: side by side, split left / right, split top / bottom, hold for before"],
       ["C", "Compare with another photo (← → step it, Esc leaves)"],
       ["J", "Show or hide shadow and highlight clipping"],
+      ["H", "Next scope: histogram, waveform, RGB parade, vectorscope, waveform + vectorscope (⇧H back)"],
       ["I", "Cycle the info over the photo: file and capture, exposure and lens, none"],
     ],
   },
