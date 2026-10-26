@@ -116,6 +116,8 @@ Everything else in this repository is Immage's own.
     are stored as darktable drawn and parametric masks
   - Heal and Clone spots with an automatically chosen source and a
     Visualize Spots view, stored in darktable's retouch module
+  - film negative conversion, color or black and white, picked from the
+    film border and the photo, in darktable's negadoctor
   - presets, film looks with live preview tiles, undo/redo, a before/after
     view, crop and straighten, a white balance picker, export with
     borders and file-name templates (to a folder or an Immich album), a
@@ -188,6 +190,7 @@ photo that already uses one of a tool's modules keeps it.
 | Local Texture, Clarity, Dehaze | an instance of diffuse or sharpen, local contrast or haze removal per mask |
 | Local Noise, Defringe, Sharpness | an instance of denoise (profiled), chromatic aberrations (`cacorrectrgb`) or defringe (`defringe`), or diffuse or sharpen or sharpen (as the photo's Sharpening) per mask |
 | **Heal and Clone** | retouch (`retouch`) |
+| **Negative** | negadoctor (`negadoctor`); a converted negative switches off color calibration, exposure, the tone equalizer, haze removal and the tone mapper, and runs Contrast and Saturation on color balance rgb, Highlights and Shadows on shadows and highlights |
 | **Looks** | darktable styles, applied as extra module instances |
 | **Export** borders | framing (`borders`), added at export only |
 | **Keywords** | darktable tags (`dc:subject`, `lr:hierarchicalSubject` in the XMP) |

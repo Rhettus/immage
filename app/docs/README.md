@@ -42,6 +42,8 @@ New to Immage? Start with [Getting started](getting-started.md).
 - [Masks](masks.md): AI selections, brushes, gradients and ranges, and the
   adjustments inside them
 - [Heal and clone](heal.md): removing spots and distractions
+- [Film negatives](negative.md): converting a photo of a film negative,
+  color or black and white, and a whole roll from one frame
 - [Zone System](zone-system.md): see a black and white photo's tones as
   zones 0-X, place them where you want them, and fine-tune any band of
   tones

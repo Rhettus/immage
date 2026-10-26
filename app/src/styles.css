@@ -16,6 +16,7 @@
   --track: #2e2e2e;
   --thumb: #f5f5f5;
   --accent: #ffffff;
+  --guide: 255, 255, 255;   /* the guides over the photo, as r, g, b: Preferences' Guide color */
   --radius-panel: 14px;
   --radius-card: 12px;
   --radius-ctl: 9px;
@@ -831,29 +832,38 @@ input.switch:disabled { cursor: default; opacity: 0.4; }
 /* crop tool */
 .crop-overlay { position: absolute; z-index: 5; touch-action: none; }
 .crop-shade { position: absolute; background: rgba(0, 0, 0, 0.55); pointer-events: none; }
+/* the frame and the grid each have a dark edge beside them, to show on a
+   light photo or canvas too */
 .crop-rect {
   position: absolute;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 0 1px rgba(var(--guide), 0.95), 0 0 0 2px rgba(0, 0, 0, 0.45), inset 0 0 0 1px rgba(0, 0, 0, 0.45);
   cursor: move;
 }
 .crop-grid {
   position: absolute;
   inset: 0;
   pointer-events: none;
+  --g: rgba(var(--guide), 0.55);
+  --d: rgba(0, 0, 0, 0.35);
   background:
-    linear-gradient(90deg, transparent calc(33.33% - 0.5px), rgba(255, 255, 255, 0.35) calc(33.33% - 0.5px),
-                    rgba(255, 255, 255, 0.35) calc(33.33% + 0.5px), transparent calc(33.33% + 0.5px),
-                    transparent calc(66.67% - 0.5px), rgba(255, 255, 255, 0.35) calc(66.67% - 0.5px),
-                    rgba(255, 255, 255, 0.35) calc(66.67% + 0.5px), transparent calc(66.67% + 0.5px)),
-    linear-gradient(0deg, transparent calc(33.33% - 0.5px), rgba(255, 255, 255, 0.35) calc(33.33% - 0.5px),
-                    rgba(255, 255, 255, 0.35) calc(33.33% + 0.5px), transparent calc(33.33% + 0.5px),
-                    transparent calc(66.67% - 0.5px), rgba(255, 255, 255, 0.35) calc(66.67% - 0.5px),
-                    rgba(255, 255, 255, 0.35) calc(66.67% + 0.5px), transparent calc(66.67% + 0.5px));
+    linear-gradient(90deg, transparent calc(33.33% - 0.5px), var(--g) calc(33.33% - 0.5px),
+                    var(--g) calc(33.33% + 0.5px), var(--d) calc(33.33% + 0.5px),
+                    var(--d) calc(33.33% + 1.5px), transparent calc(33.33% + 1.5px),
+                    transparent calc(66.67% - 0.5px), var(--g) calc(66.67% - 0.5px),
+                    var(--g) calc(66.67% + 0.5px), var(--d) calc(66.67% + 0.5px),
+                    var(--d) calc(66.67% + 1.5px), transparent calc(66.67% + 1.5px)),
+    linear-gradient(180deg, transparent calc(33.33% - 0.5px), var(--g) calc(33.33% - 0.5px),
+                    var(--g) calc(33.33% + 0.5px), var(--d) calc(33.33% + 0.5px),
+                    var(--d) calc(33.33% + 1.5px), transparent calc(33.33% + 1.5px),
+                    transparent calc(66.67% - 0.5px), var(--g) calc(66.67% - 0.5px),
+                    var(--g) calc(66.67% + 0.5px), var(--d) calc(66.67% + 0.5px),
+                    var(--d) calc(66.67% + 1.5px), transparent calc(66.67% + 1.5px));
 }
 /* edge handles are short bars, corner handles L-shapes; their hit areas
    are larger than what is drawn */
 .crop-handle { position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px; }
-.crop-handle::after { content: ""; position: absolute; border-color: #fff; border-style: solid; border-width: 0; }
+.crop-handle::after { content: ""; position: absolute; border-color: rgb(var(--guide)); border-style: solid; border-width: 0;
+                      filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.9)); }
 .crop-handle.n, .crop-handle.s { left: 50%; cursor: ns-resize; }
 .crop-handle.e, .crop-handle.w { top: 50%; cursor: ew-resize; }
 .crop-handle.n { top: 0; } .crop-handle.s { top: 100%; }
@@ -908,18 +918,18 @@ input.switch:disabled { cursor: default; opacity: 0.4; }
 .tf-grid {
   position: absolute; inset: 0; pointer-events: none;
   background-image:
-    linear-gradient(to right, rgba(255, 255, 255, 0.28) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.28) 1px, transparent 1px);
+    linear-gradient(to right, rgba(var(--guide), 0.35) 1px, rgba(0, 0, 0, 0.2) 1px, rgba(0, 0, 0, 0.2) 2px, transparent 2px),
+    linear-gradient(to bottom, rgba(var(--guide), 0.35) 1px, rgba(0, 0, 0, 0.2) 1px, rgba(0, 0, 0, 0.2) 2px, transparent 2px);
   background-size: calc(100% / var(--cells)) calc(100% / var(--cells));
-  box-shadow: inset -1px -1px 0 rgba(255, 255, 255, 0.28);
+  box-shadow: inset -1px -1px 0 rgba(var(--guide), 0.35);
 }
-.tf-guides .tf-guide line { stroke: var(--accent); stroke-width: 1.5; vector-effect: non-scaling-stroke; pointer-events: none; }
+.tf-guides .tf-guide line { stroke: rgb(var(--guide)); stroke-width: 1.5; vector-effect: non-scaling-stroke; pointer-events: none; }
 .tf-guides .tf-guide line.under { stroke: rgba(0, 0, 0, 0.5); stroke-width: 3.5; }
 .tf-guides .tf-guide line.hit { stroke: transparent; stroke-width: 12; pointer-events: stroke; cursor: pointer; }
-.tf-guides .tf-guide.selected line:not(.under):not(.hit) { stroke: #fff; }
-.tf-guides .tf-guide .end { fill: #181818; stroke: #fff; stroke-width: 1.5; vector-effect: non-scaling-stroke;
+.tf-guides .tf-guide.selected line:not(.under):not(.hit) { stroke-width: 2.5; }
+.tf-guides .tf-guide .end { fill: #181818; stroke: rgb(var(--guide)); stroke-width: 1.5; vector-effect: non-scaling-stroke;
                             pointer-events: all; cursor: grab; }
-.straighten-line line { stroke: #fff; stroke-width: 1.5; stroke-dasharray: 6 4; filter: drop-shadow(0 0 1px #000); }
+.straighten-line line { stroke: rgb(var(--guide)); stroke-width: 1.5; stroke-dasharray: 6 4; filter: drop-shadow(0 0 1px #000); }
 
 /* point curve */
 .point-curve { cursor: crosshair; touch-action: none; margin-bottom: 10px; }
@@ -1357,10 +1367,11 @@ input.switch:disabled { cursor: default; opacity: 0.4; }
 
 
 .mask-svg .guide ellipse, .mask-svg .guide line {
-  fill: none; stroke: rgba(255, 255, 255, 0.7); stroke-width: 1.2; vector-effect: non-scaling-stroke; pointer-events: none;
+  fill: none; stroke: rgba(var(--guide), 0.8); stroke-width: 1.2; vector-effect: non-scaling-stroke; pointer-events: none;
+  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.7));
 }
-.mask-svg .guide .feather { stroke-dasharray: 5 4; stroke: rgba(255, 255, 255, 0.5); }
-.mask-svg .rot-arrow { fill: none; stroke: #fff; stroke-width: 1.8; vector-effect: non-scaling-stroke; pointer-events: none;
+.mask-svg .guide .feather { stroke-dasharray: 5 4; stroke: rgba(var(--guide), 0.6); }
+.mask-svg .rot-arrow { fill: none; stroke: rgb(var(--guide)); stroke-width: 1.8; vector-effect: non-scaling-stroke; pointer-events: none;
                        filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.8)); }
 
 /* the Parametric component: darktable's channel tabs and gradient slider */
@@ -1888,7 +1899,7 @@ input.switch:disabled { cursor: default; opacity: 0.4; }
 
 /* Post-Crop Vignetting's guides: a dark line under each white one, to show
    on light and dark photos alike; the edges of the fall-off dashed */
-.vig-svg .vig-line { fill: none; stroke: #fff; stroke-width: 1.2; vector-effect: non-scaling-stroke; pointer-events: none; }
+.vig-svg .vig-line { fill: none; stroke: rgb(var(--guide)); stroke-width: 1.2; vector-effect: non-scaling-stroke; pointer-events: none; }
 .vig-svg .vig-line.under { stroke: rgba(0, 0, 0, 0.45); stroke-width: 3; }
 .vig-svg .vig-line.edge:not(.under) { stroke-dasharray: 5 4; stroke-opacity: 0.8; }
 .vig-svg .vig-line.under.edge { stroke-width: 2.4; stroke-opacity: 0.5; }
@@ -1896,7 +1907,7 @@ input.switch:disabled { cursor: default; opacity: 0.4; }
                     pointer-events: stroke; cursor: grab; }
 .vig-svg .vig-hit:active { cursor: grabbing; }
 .vig-svg .vig-center .vig-line.under { fill: rgba(0, 0, 0, 0.45); stroke: none; }
-.vig-svg .vig-dot { fill: #fff; stroke: none; pointer-events: all; cursor: move; }
+.vig-svg .vig-dot { fill: rgb(var(--guide)); stroke: none; pointer-events: all; cursor: move; }
 /* Export: presets on the left, Lightroom's sections, the preview */
 .modal.export { width: min(1240px, calc(100vw - 32px)); height: min(840px, calc(100vh - 48px)); max-height: none; }
 .modal.export .modal-head { padding-bottom: 12px; border-bottom: 1px solid #262626; }
@@ -2087,7 +2098,8 @@ input.switch:disabled { cursor: default; opacity: 0.4; }
 .zone-parts-label { font-size: var(--fs-small); color: var(--text-2); }
 .zone-invert { display: flex; align-items: center; gap: 5px; font-size: var(--fs-small); color: var(--text-2); }
 .zone-object-box { position: absolute; inset: 0; pointer-events: all; cursor: crosshair; }
-.zone-object-box .object-rect { position: absolute; background: rgba(255, 255, 255, 0.08); border: 1.2px dashed #fff; }
+.zone-object-box .object-rect { position: absolute; background: rgba(var(--guide), 0.08); border: 1.2px dashed rgb(var(--guide));
+                               box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4); }
 
 /* the performance overlay (PerfHud.tsx) */
 .perf-hud {
@@ -2123,3 +2135,17 @@ input.switch:disabled { cursor: default; opacity: 0.4; }
 .perf-thead b { color: inherit; font-weight: 400; }
 .perf-pipe { margin-left: 4px; font-style: normal; color: var(--text-3, var(--text-2)); }
 .perf-worst { margin-top: 4px; padding-top: 4px; border-top: 1px solid rgba(255, 255, 255, 0.1); }
+
+/* the Negative panel */
+.panel.negative .neg-step { display: flex; align-items: center; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
+.panel.negative .neg-step .btn svg { margin-right: 5px; vertical-align: -2px; }
+.panel.negative .neg-swatch { width: 22px; height: 22px; border-radius: 6px; border: 1px solid var(--track); }
+.panel.negative .neg-row { display: flex; align-items: center; gap: 6px; }
+.panel.negative .neg-row .neg-slider { flex: 1; min-width: 0; }
+.panel.negative .neg-row .tool { width: 26px; height: 26px; border-radius: 7px; flex: none; }
+.panel.negative .neg-row .tool.on { background: var(--inset); color: var(--accent); }
+.panel.negative .neg-sub { margin: 10px 0 2px; color: var(--text-2); font-size: var(--fs-small); }
+.neg-area { position: absolute; border: 1.2px dashed rgba(var(--guide), 0.8); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
+            pointer-events: none; }
+.modal.neg-warn { width: min(520px, calc(100vw - 32px)); }
+.modal.neg-warn p { margin: 8px 0; line-height: 1.5; color: var(--text-2); }

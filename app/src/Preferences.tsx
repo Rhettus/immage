@@ -68,6 +68,16 @@ function storeAutoToneNew(on: boolean) {
   try { localStorage.setItem(AUTO_TONE_KEY, on ? "1" : "0"); } catch { /* not kept */ }
 }
 
+// the warning on opening the Negative panel, which says what converting
+// turns off; its own "don't warn me again" box sets the same thing
+const NEG_WARN_KEY = "immage.negWarn";
+export function loadNegWarn(): boolean {
+  try { return localStorage.getItem(NEG_WARN_KEY) !== "0"; } catch { return true; }
+}
+export function storeNegWarn(on: boolean) {
+  try { localStorage.setItem(NEG_WARN_KEY, on ? "1" : "0"); } catch { /* not kept */ }
+}
+
 // keywords a photo gets once Immage saves it as edited, and loses when it is
 // unedited again, so Immich, which reads them from the sidecar, can filter
 // on them; none unless set
@@ -129,6 +139,28 @@ export function storeOverlayColor(v: OverlayColor) {
 }
 export function maskOverlayRgb(v: OverlayColor): Rgb {
   if (v.pick !== "custom") return OVERLAY_COLORS[v.pick];
+  const n = parseInt(v.custom.slice(1), 16);
+  return [n >> 16, (n >> 8) & 255, n & 255];
+}
+// the guides drawn over the photo (the crop frame and its grid, the
+// straighten line, Transform's grid and guides, the vignette's and a mask
+// shape's, a box being picked): white unless set, each with a dark edge
+// under it so it shows on a light photo or canvas too
+export const GUIDE_COLORS = { white: [255, 255, 255] as Rgb, yellow: OVERLAY_COLORS.yellow, red: OVERLAY_COLORS.red };
+export type GuideColor = { pick: keyof typeof GUIDE_COLORS | "custom"; custom: string };
+const GUIDE_COLOR_KEY = "immage.guideColor";
+export function loadGuideColor(): GuideColor {
+  try {
+    const v = JSON.parse(localStorage.getItem(GUIDE_COLOR_KEY) ?? "null");
+    return { pick: v?.pick in GUIDE_COLORS || v?.pick === "custom" ? v.pick : "white",
+             custom: /^#[0-9a-f]{6}$/i.test(v?.custom) ? v.custom : "#33ccff" };
+  } catch { return { pick: "white", custom: "#33ccff" }; }
+}
+export function storeGuideColor(v: GuideColor) {
+  try { localStorage.setItem(GUIDE_COLOR_KEY, JSON.stringify(v)); } catch { /* not kept */ }
+}
+export function guideRgb(v: GuideColor): Rgb {
+  if (v.pick !== "custom") return GUIDE_COLORS[v.pick];
   const n = parseInt(v.custom.slice(1), 16);
   return [n >> 16, (n >> 8) & 255, n & 255];
 }
@@ -352,7 +384,7 @@ function LicenseText({ title, text, onClose }: { title: string; text: string; on
   );
 }
 
-export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurrent, focus, canvas, onCanvas, overlayColor, onOverlayColor,
+export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurrent, focus, canvas, onCanvas, overlayColor, onOverlayColor, guideColor, onGuideColor,
                                     focusMode, onFocusMode, autoHide, onAutoHide, stackPairs, onStackPairs,
                                     accel, plugins, onPlugins, perfHud, onPerfHud, onBenchmark, onRelaunch, onClose }: {
   presets: Preset[];
@@ -364,6 +396,8 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   onCanvas: (v: Canvas) => void;
   overlayColor: OverlayColor;
   onOverlayColor: (v: OverlayColor) => void;
+  guideColor: GuideColor;
+  onGuideColor: (v: GuideColor) => void;
   focusMode: boolean;
   onFocusMode: (on: boolean) => void;
   autoHide: boolean;
@@ -384,6 +418,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   const [showTour, setShowTour] = useState(() => !tourSeen());
   const [profile, setProfile] = useState(loadNewPhotosProfile);
   const [autoToneNew, setAutoToneNew] = useState(loadAutoToneNew);
+  const [negWarn, setNegWarn] = useState(loadNegWarn);
   const [expCompOn, setExpCompOn] = useState(loadExposureCompOn);
   const [expCompEv, setExpCompEv] = useState(loadExposureCompEv);
   // as typed, so "-" or "1." can be on the way to a number
@@ -574,12 +609,31 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                     </label>
                   </div>
                 </PrefRow>
+                <PrefRow label="Guide color" hint="the crop frame and grid, the straighten line, Transform's and the vignette's guides, and a mask shape's outline">
+                  <div className="pref-swatches">
+                    {([["White", "white"], ["Yellow", "yellow"], ["Red", "red"]] as const).map(([label, v]) => (
+                      <button key={v} className={`swatch${guideColor.pick === v ? " on" : ""}`} title={label} aria-label={label}
+                              style={{ background: `rgb(${GUIDE_COLORS[v].join(", ")})` }}
+                              onClick={() => onGuideColor({ ...guideColor, pick: v })} />
+                    ))}
+                    <label className={`swatch custom${guideColor.pick === "custom" ? " on" : ""}`} title="Custom…"
+                           style={{ "--custom": guideColor.custom } as React.CSSProperties}>
+                      <input type="color" aria-label="Custom color" value={guideColor.custom}
+                             onClick={() => onGuideColor({ ...guideColor, pick: "custom" })}
+                             onChange={(e) => onGuideColor({ pick: "custom", custom: e.target.value })} />
+                    </label>
+                  </div>
+                </PrefRow>
                 <PrefRow label="Focus mode" hint={keys("opening a panel closes the others; ⌥-click opens one alongside")}>
                   <PrefSwitch checked={focusMode} onChange={onFocusMode} />
                 </PrefRow>
                 <PrefRow label="Auto-hide panels"
                          hint="the side panels and filmstrip slide away when the pointer leaves them, and back at their edge (the rail, or below the toolbar); a pin keeps one open">
                   <PrefSwitch checked={autoHide} onChange={onAutoHide} />
+                </PrefRow>
+                <PrefRow label="Warn before converting a negative"
+                         hint="opening the Negative panel says which of Basic's tools a converted negative turns off">
+                  <PrefSwitch checked={negWarn} onChange={(on) => { setNegWarn(on); storeNegWarn(on); }} />
                 </PrefRow>
                 <PrefRow label="Scroll adjusts sliders"
                          hint="off, scrolling over the panels only scrolls them, so an edit cannot change by accident">

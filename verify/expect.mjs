@@ -101,9 +101,20 @@ export const GLOBAL = {
   agx_white: { delta: [-2], expect: { lumHi: -1 } },
   orient: { mirror: true },
 
+  // the Negative panel's: the conversion, then each of its controls on a
+  // converted photo
+  neg_on: { values: [1] },
+  neg_exposure: { with: { neg_on: 1 }, expect: { lum: 1 } },
+  // the roll-off starts at its value: raised, it reaches only highlights
+  // above 0.75, which a default conversion may not have
+  neg_gloss: { with: { neg_on: 1 }, values: [0.3] },
+
   crop_l: { skip: CROP }, crop_t: { skip: CROP }, crop_r: { skip: CROP }, crop_b: { skip: CROP },
   crop_rd: { skip: "the crop's aspect, not a slider" }, crop_rn: { skip: "the crop's aspect, not a slider" },
 };
+for (const id of ["neg_film", "neg_dmax", "neg_offset", "neg_black", "neg_grade",
+                  ...["dmin", "wbl", "wbh"].flatMap((k) => ["r", "g", "b"].map((c) => `neg_${k}_${c}`))])
+  GLOBAL[id] = { with: { neg_on: 1 } };
 for (const id of ["tc_mode", "tc_pn", "tc_r_pn", "tc_g_pn", "tc_b_pn"]) GLOBAL[id] = { skip: POINTS };
 for (const ch of ["", "r_", "g_", "b_"])
   for (let i = 0; i < 20; i++) for (const a of ["x", "y"]) GLOBAL[`tc_${ch}p${i}${a}`] = { skip: POINTS };
