@@ -231,6 +231,10 @@ const tempControl: Control = {
 // Whites: the tone mapper's display white target, in stops, so that +100
 // brightens the top end by 0.6 EV and -100 dims it by as much
 const WHITES_STOPS = 0.6;
+// and on AgX, color balance rgb's highlights brilliance, which a mask's
+// Whites moves twice as far: the shoulder alone reshapes the top end but
+// leaves where AgX clips, and more dims the midtones at -100
+const WHITES_BRILLIANCE = 0.002;
 
 // Contrast on the tone mapper: AgX's contrast, or sigmoid's, ±100 doubling
 // or halving it from the photo's default
@@ -971,11 +975,17 @@ export const modules: ModuleMap[] = [
     },
     enabled: (v) => v.tm_mode === 1,
   },
+  // Whites' brilliance on AgX, ahead of the tone mappers' Whites so that
+  // theirs is the value read: an edit from before it opens as it was
+  { ...linear("colorbalancergb", false, [{ id: "whites", field: "brilliance_highlights",
+                                             scale: WHITES_BRILLIANCE, base: 0 }]),
+    active: (v) => v.tm_mode === 1 },
   // the tone mapper: AgX, which new photos get, or sigmoid, which photos
   // started earlier or in darktable may have; one on and the other off.
   // Whites moves the top end under both: sigmoid's white
-  // target, or AgX's shoulder power, ±100 halving or doubling it. AgX's
-  // white relative exposure lifted the midtones as much as the whites
+  // target, or AgX's shoulder power, ±100 halving or doubling it, with the
+  // brilliance above. AgX's white relative exposure lifted the midtones as
+  // much as the whites
   {
     op: "sigmoid", keepOn: false,
     controls: ["whites", "tm_mode"],
@@ -1691,10 +1701,10 @@ export const localMaps: ModuleMap[] = [
     },
   },
   exposureMap(false, "l_exposure", "l_blacks", () => ({ exposure: 0, black: 0 })),
-  // Whites as the highlights' brilliance: the tone mapper, which carries
-  // the global Whites, cannot run under a mask, and the highlights' gain
-  // (highlights_Y) is Color Grading's. Hue turns every hue by up to ±30
-  // degrees
+  // Whites as the highlights' brilliance, as the global Whites has on AgX:
+  // the tone mapper, which carries the rest of it, cannot run under a mask,
+  // and the highlights' gain (highlights_Y) is Color Grading's. Hue turns
+  // every hue by up to ±30 degrees
   // l_fulcrum, the contrast's pivot in EV from middle gray, has no slider:
   // a zone mask sets it to its zones' middle (ZoneSystem.tsx)
   // some 30 ms a mask's draft frame, so its masks share instances

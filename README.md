@@ -156,7 +156,7 @@ photo that already uses one of a tool's modules keeps it.
 | Blacks | AgX's lift, or sigmoid's target black; or exposure's black level (`exposure`) |
 | Vibrance | color balance rgb (`colorbalancergb`) |
 | Saturation | AgX's saturation; or color balance rgb (`colorbalancergb`), which a photo on sigmoid always uses |
-| Whites | AgX (`agx`); sigmoid (`sigmoid`) on a photo started under it |
+| Whites | AgX (`agx`), with color balance rgb's highlights brilliance (`colorbalancergb`); sigmoid (`sigmoid`) on a photo started under it |
 | Texture | diffuse or sharpen (`diffuse`) |
 | Clarity | local contrast (`bilat`) |
 | Dehaze | haze removal (`hazeremoval`) |

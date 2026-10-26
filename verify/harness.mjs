@@ -979,6 +979,42 @@ async function decisions(photo) {
       : Math.abs(highlights + 40) > 1.5 ? `Highlights read back ${highlights}` : null;
   });
 
+  // Whites on AgX moves AgX's shoulder and color balance rgb's highlights
+  // brilliance together, as a mask's Whites does; an edit from before that
+  // opens on its shoulder alone and gains no brilliance until Whites moves
+  // (manifest.ts, WHITES_BRILLIANCE)
+  await decide("whites adds brilliance on agx", async () => {
+    const get = async () => (await request({ cmd: "get", modules: {
+      agx: ["curve_shoulder_power"], colorbalancergb: ["brilliance_highlights"] } })).modules;
+    const brilliance = (got) => (got.colorbalancergb?.enabled ? got.colorbalancergb.params.brilliance_highlights : 0);
+    let path = fresh(photo);
+    let o = await open(path);
+    if (o.s.values.tm_mode !== 1) return `a new photo opened on tone mapper ${o.s.values.tm_mode}`;
+    await o.after(() => { o.s.endBaseline(); o.s.set("whites", 50); });
+    await o.s.close();
+    await drained();
+    await request({ cmd: "open", path, imgid: -1 });
+    let got = await get();
+    if (Math.abs(brilliance(got) - 0.1) > 1e-3) return `Whites +50 set brilliance ${brilliance(got)}, not 0.1`;
+    path = fresh(photo);
+    o = await open(path);
+    await o.s.close();
+    await drained();
+    await request({ cmd: "open", path, imgid: -1 });
+    const shoulder = (await get()).agx.params.curve_shoulder_power;
+    await request({ cmd: "set", op: "agx", params: { curve_shoulder_power: shoulder * 2 ** 0.3 }, enabled: true });
+    await request({ cmd: "save" });
+    o = await open(path);
+    const whites = o.s.values.whites;
+    await o.after(() => { o.s.endBaseline(); o.s.set("exposure", 0.3); });
+    await o.s.close();
+    await drained();
+    await request({ cmd: "open", path, imgid: -1 });
+    got = await get();
+    return Math.abs(whites - 30) > 1.5 ? `an older Whites of 30 opened as ${whites}`
+      : Math.abs(brilliance(got)) > 1e-6 ? `an older Whites gained brilliance ${brilliance(got)} on another edit` : null;
+  });
+
   // a parametric tone curve saved before Midtones opens on the same four
   // sliders, Midtones at 0. the nodes are what the four-region curve()
   // wrote for these settings

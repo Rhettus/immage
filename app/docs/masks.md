@@ -124,8 +124,9 @@ inside the mask. A new mask opens its **Tone** group.
 **Highlights**, **Shadows** and **Defringe** run on the same module as the
 photo's own, as set in [Preferences › Modules](preferences.md#modules).
 **Whites** is the exception: the photo's Whites moves the top of the tone
-mapper's curve, which can't run inside a mask, so a mask's Whites
-brightens or darkens its brightest tones instead.
+mapper's curve, which can't run inside a mask, so a mask's Whites only
+brightens or darkens its brightest tones, as the photo's Whites also does
+under AgX.
 
 Where masks overlap, their adjustments add up. **Contrast**,
 **Saturation**, **Whites**, **Color Grading**, **HSL**, **Texture**,
