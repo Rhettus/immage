@@ -26,6 +26,9 @@ Bug fixes
   once the slider is let go
 - Compare works from the grid: it shows the two photos side by side, and
   with two photos selected, compares them, the first opened for editing
+- hiding a mask with its eye no longer makes it vanish from the Masks
+  panel after the import screen has been opened; the mask was never
+  deleted, and shows again in this version
 
 ## 0.36.0
 
