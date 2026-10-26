@@ -49,6 +49,7 @@
 #include "develop/imageop.h"
 #include "develop/masks.h"
 #include "develop/pixelpipe_cache.h"
+#include "strip.h"
 #include "upright.h"
 #ifdef HAVE_AI
 #include "ai/backend.h"
@@ -2789,13 +2790,31 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
   }
 
   // EXIF, the text fields, location and tags, as Lightroom exports them;
-  // darktable's default would also embed the whole edit history
+  // darktable's default would also embed the whole edit history. each can
+  // be left out, as the export dialog's Metadata section asks
   dt_export_metadata_t metadata = {
     .flags = DT_META_EXIF | DT_META_METADATA | DT_META_GEOTAG | DT_META_TAG,
     .list = NULL,
   };
   // Lightroom's Remove Location Info: GPS from the EXIF too (exif.cc)
   if(!json_object_get_boolean_member_with_default(req, "location", TRUE)) metadata.flags &= ~DT_META_GEOTAG;
+  if(json_object_get_boolean_member_with_default(req, "history", FALSE)) metadata.flags |= DT_META_DT_HISTORY;
+  // what darktable's flags do not reach is taken out of the written file
+  // (strip.cc): the text fields and keywords flags decide only what
+  // darktable writes, not what the source's EXIF brings along
+  strip_t strip = 0;
+  if(!json_object_get_boolean_member_with_default(req, "serials", TRUE)) strip |= STRIP_SERIALS;
+  if(!json_object_get_boolean_member_with_default(req, "camera", TRUE)) strip |= STRIP_CAMERA;
+  if(!json_object_get_boolean_member_with_default(req, "description", TRUE))
+  {
+    metadata.flags &= ~DT_META_METADATA;
+    strip |= STRIP_DESCRIPTION;
+  }
+  if(!json_object_get_boolean_member_with_default(req, "tags", TRUE))
+  {
+    metadata.flags &= ~DT_META_TAG;
+    strip |= STRIP_KEYWORDS;
+  }
 
   gchar *dir = g_path_get_dirname(out);
   g_mkdir_with_parents(dir, 0755);
@@ -2837,8 +2856,17 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
   if(framed) _frame_done(frame_svg);
   fmt->free_params(fmt, fdata);
   if(failed)
+  {
     *err = _up.err && upscale > 1 ? g_strdup(_up.err) : g_strdup_printf("could not write '%s'", out);
-  return !failed;
+    return FALSE;
+  }
+  // a file that keeps what was asked to be left out is not delivered
+  if((*err = strip_metadata(out, strip)))
+  {
+    g_unlink(out);
+    return FALSE;
+  }
+  return TRUE;
 }
 
 // ------------------------------------------------------------------ masks

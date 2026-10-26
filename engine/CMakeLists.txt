@@ -6,13 +6,15 @@ include_directories(${DARKTABLE_BINDIR})
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(JSON_GLIB REQUIRED json-glib-1.0)
 
-add_executable(darktable-engine main.c upright.c)
+add_executable(darktable-engine main.c upright.c strip.cc)
 
-set_target_properties(darktable-engine PROPERTIES LINKER_LANGUAGE C)
+# strip.cc calls exiv2, darktable's own (src/CMakeLists.txt finds it), so
+# the engine links it and the C++ runtime
+set_target_properties(darktable-engine PROPERTIES LINKER_LANGUAGE CXX)
 
 target_include_directories(darktable-engine PRIVATE ${JSON_GLIB_INCLUDE_DIRS})
 target_link_directories(darktable-engine PRIVATE ${JSON_GLIB_LIBRARY_DIRS})
-target_link_libraries(darktable-engine lib_darktable ${JSON_GLIB_LIBRARIES})
+target_link_libraries(darktable-engine lib_darktable ${JSON_GLIB_LIBRARIES} ${Exiv2_LIBRARIES})
 
 set_target_properties(darktable-engine
                       PROPERTIES

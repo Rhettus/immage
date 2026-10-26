@@ -1415,6 +1415,18 @@ struct ExportOptions {
     // false leaves GPS out of the file, as Lightroom's Remove Location Info
     #[serde(default)]
     location: Option<bool>,
+    // the rest of the dialog's Metadata section: false leaves each out of
+    // the file (the engine's export)
+    #[serde(default)]
+    camera: Option<bool>,
+    #[serde(default)]
+    serials: Option<bool>,
+    #[serde(default)]
+    description: Option<bool>,
+    #[serde(default)]
+    tags: Option<bool>,
+    #[serde(default)]
+    history: Option<bool>,
     // added to each exported file's keywords, and with keywords_on_original
     // to the original photo's as well
     #[serde(default)]
@@ -1523,7 +1535,11 @@ async fn export_images(
                 if let Some(b) = options.bpp { req["bpp"] = json!(b); }
                 if let Some(l) = options.long_edge { req["long_edge"] = json!(l); }
                 if let Some(f) = &item.frame { req["frame"] = f.clone(); }
-                if let Some(l) = options.location { req["location"] = json!(l); }
+                for (key, v) in [("location", options.location), ("camera", options.camera), ("serials", options.serials),
+                                 ("description", options.description), ("tags", options.tags),
+                                 ("history", options.history)] {
+                    if let Some(v) = v { req[key] = json!(v); }
+                }
                 if let Some(u) = options.upscale { req["upscale"] = json!(u); }
                 if let Some(p) = &options.ai_provider { req["ai_provider"] = json!(p); }
                 if let Some(d) = options.ai_device { req["ai_device"] = json!(d); }

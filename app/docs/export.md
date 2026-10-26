@@ -127,11 +127,24 @@ The originals are left alone unless you tick **Also add to the original
 photos**: each photo exported then gets the keywords too, in Immage and
 in its XMP sidecar.
 
-## Privacy
+## Metadata
 
-**Include location (GPS)**: turn off to strip the location. Camera info,
-title, caption, creator, copyright and keywords are always included; the
-edit history never is.
+What each exported file says about the photo. Each box adds its part to
+the file; presets keep the boxes as they are.
+
+- **Camera and lens**: the make, model, lens and exposure settings, and
+  the camera's own notes.
+- **Serial numbers and owner name**: the camera's, lens's and accessories'
+  serial numbers, and an owner name set in the camera. Off by default, as
+  they identify your gear (Flickr, for one, shows them to everyone).
+- **Location (GPS)**: where the photo was taken.
+- **Title, caption, creator, copyright**: the photo's text fields,
+  including any another program wrote into the original.
+- **Keywords**: the photo's keywords and those added above.
+- **darktable edit history**: the edit itself, as darktable stores it.
+  Off by default.
+
+The date taken is always included.
 
 ## Which photos
 
