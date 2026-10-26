@@ -1114,8 +1114,15 @@ export default function App() {
     if (!s || !f || !masksMode || (!maskShown && !peekMask && !refining) || !ranges.length) { setRangeMap(null); return; }
     let stale = false;
     const t = window.setTimeout(async () => {
-      while (!s.idle && !stale) await new Promise((r) => setTimeout(r, 60));
-      if (stale) return;
+      let stopped = false;
+      while (!s.idle && !stale) {
+        stopped = s.stopBase() || stopped;
+        await new Promise((r) => setTimeout(r, 60));
+      }
+      if (stale) {
+        if (stopped) resumeBase();
+        return;
+      }
       const width = 320, height = Math.max(1, Math.round((width * f.h) / f.w));
       try {
         const buf = await track(invoke<ArrayBuffer>("range_map", { ranges, width, height }));
@@ -1125,6 +1132,8 @@ export default function App() {
         }
       } catch (e) {
         setStatus(`range map: ${e}`);
+      } finally {
+        if (stopped) resumeBase();
       }
     }, 150);
     return () => { stale = true; window.clearTimeout(t); };
@@ -1159,6 +1168,7 @@ export default function App() {
           // the mask's latest settings reach the engine first
           while (s.masksPending) await new Promise((r) => setTimeout(r, 30));
           const name = finalTarget.current, v = finalView.current!;
+          const stopped = s.stopBase();
           // the window the sharp render shows, at its scale, so the
           // refinements come out as they did in it
           try {
@@ -1174,6 +1184,8 @@ export default function App() {
           } catch {
             // a mask with no adjustment yet drives nothing: the shapes' overlay serves
             setFinalMap(null);
+          } finally {
+            if (stopped) resumeBase();
           }
         }
       } finally {
@@ -1411,6 +1423,10 @@ export default function App() {
       s.requestCopy(Math.min(1, scaleFor(zoomRef.current)), f);
     }, delay);
   };
+  // the idle base, or zoomed in the copy, holds the engine for seconds: an
+  // overlay the user waits on stops it (Session.stopBase), and asks for it
+  // again once its own request is in
+  const resumeBase = () => { scheduleBase(0); scheduleCopy(0); };
   const MARGIN = 16; // CSS pixels around a fitted image
   // the vignette's guides, while its panel is open and it does something,
   // and Grain, which shares the panel, was not the last thing changed
@@ -1529,8 +1545,15 @@ export default function App() {
     setZoneStale(true);
     let stale = false;
     const t = window.setTimeout(async () => {
-      while ((!s.idle || s.masksPending) && !stale) await new Promise((r) => setTimeout(r, 60));
-      if (stale) return;
+      let stopped = false;
+      while ((!s.idle || s.masksPending) && !stale) {
+        stopped = s.stopBase() || stopped;
+        await new Promise((r) => setTimeout(r, 60));
+      }
+      if (stale) {
+        if (stopped) resumeBase();
+        return;
+      }
       const width = 512, height = Math.max(1, Math.round((width * f.h) / f.w));
       try {
         const buf = await track(invoke<ArrayBuffer>("zones", { width, height, transition: DEFAULT_TRANSITION, stage: "before" }));
@@ -1545,6 +1568,8 @@ export default function App() {
         setZoneStale(false);
       } catch (e) {
         if (!stale) setZoneError(`${e}`);
+      } finally {
+        if (stopped) resumeBase();
       }
     }, 250);
     return () => { stale = true; window.clearTimeout(t); };
