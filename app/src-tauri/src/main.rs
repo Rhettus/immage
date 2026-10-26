@@ -10,6 +10,7 @@ mod engine;
 mod immich_search;
 mod immich_upload;
 mod plugins;
+mod volumes;
 
 use cache::Caches;
 use engine::{BaseCancel, Engine, Thumbs, Timing};
@@ -1291,6 +1292,15 @@ async fn list_subfolders(path: String) -> Vec<SubFolder> {
     .unwrap_or_default()
 }
 
+// the drive each library folder is on, for the folder tree's headings. off
+// the main thread: a share whose server is gone can hold statfs a while
+#[tauri::command]
+async fn folder_volumes(paths: Vec<String>) -> Vec<volumes::Volume> {
+    tauri::async_runtime::spawn_blocking(move || paths.iter().map(|p| volumes::volume(p)).collect())
+        .await
+        .unwrap_or_default()
+}
+
 // the lighttable thumbnail of an image: little-endian u32 width and height,
 // then RGBA. given the photo's file, it is also kept in the thumbnail cache.
 // the engine builds it on a thread of its own, beside any edit or render,
@@ -2182,7 +2192,7 @@ fn main() {
             open_folder, open_image, get_params, set_params, render, cancel_base, save, baseline_end, before_view, thumb, thumb_cached, cache_limits, cache_usage, cache_clear, meta, meta_set, prefetch, darktable_resources, darktable_resources_set,
             export_images, export_existing, export_preview, fonts, export_presets_load, export_presets_save, preset_file_write, preset_file_read, presets_load, presets_save, looks_list, look_import, look_export, look_delete, look_apply, look_amount, preview,
             mask_shapes, combine, masks, mask_delete, mask_rename, history, module_state, sample, tone_key, agx_auto, upright, points, range_map, zones, mask_map, ai_object,
-            ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, list_subfolders, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
+            ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, list_subfolders, folder_volumes, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
             immich_export_check, immich_search, immich_browse_check, immich_libraries, immich_suggestions, immich_people, immich_tags,
             immich_thumb, immich_resolve, launch_file, path_exists, path_kind, trash_files, create_virtual_copy, remove_virtual_copy, preview_fullscreen, about, licenses, engine_quit, keywords, keywords_set, ai_accel,
             perf_set, perf_modules, perf_report_write, perf_machine, perf_ping,

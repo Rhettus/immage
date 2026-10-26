@@ -992,6 +992,14 @@ input.switch:disabled { cursor: default; opacity: 0.4; }
 .folders .icon { color: var(--text-2); flex: none; }
 .folders .folder-row:hover { background: var(--card); }
 .folders .folder-row.active { background: var(--inset); }
+/* a drive's heading over its folders, when there is more than one drive */
+.folders .folder-volume {
+  display: flex; align-items: center; gap: 6px; padding: 6px 8px 3px;
+  font-size: 12px; font-weight: 600; color: var(--text-2); cursor: pointer;
+}
+.folders .folder-volume:hover { color: var(--text); }
+.folders .folder-volume .host { flex: none; font-weight: 400; opacity: 0.7; }
+.folders .folder-row.offline { opacity: 0.45; }
 /* the open photo's folder, when the filmstrip shows another (a parent, with
    its subfolders) */
 .folders .folder-row.has-photo { background: color-mix(in srgb, var(--inset) 50%, transparent); }
