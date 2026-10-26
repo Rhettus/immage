@@ -25,6 +25,8 @@ Improvements
   zoomed in
 - H steps the scope over the photo's histogram: histogram, waveform, RGB
   parade, vectorscope, and waveform with vectorscope; ⇧H steps back
+- opening another photo from Masks, Heal or the Zone System returns the
+  right-hand panel to the adjustments; Presets stays open
 
 Bug fixes
 
