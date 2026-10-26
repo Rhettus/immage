@@ -80,6 +80,10 @@ export const GLOBAL = {
 
   lens_profile: { toggle: true, anyPhoto: true },
   lens_ca: { with: { lens_profile: 1 }, toggle: true, anyPhoto: true, detail: true },
+  // hot pixels are too few for a mean to show: at Strength 100 the corpus's
+  // photos change by 0.005 at 100%
+  ...Object.fromEntries(["hp_enable", "hp_strength", "hp_threshold"].map((id) =>
+    [id, { skip: "the corpus has no long exposure, so no hot pixels to remove" }])),
 
   vig_amount: { expect: { lum: 1 } },
   vig_midpoint: { with: { vig_amount: -60 } },

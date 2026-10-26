@@ -194,6 +194,17 @@ Raw-only sliders are grayed out on a JPEG.
 
 The **Default** preset that new raws get turns profile corrections on.
 
+**Hot Pixels** (raws only) replaces pixels much brighter than their
+neighbors, the stuck or hot pixels of long exposures and high ISO, with
+the brightest of those neighbors. It is off until **Remove Hot Pixels**
+is turned on.
+
+- **Strength**: how much brighter than its neighbors a pixel must be to
+  count as hot. At 25 it must be 8 times brighter, at 100 twice as
+  bright; higher finds more.
+- **Threshold**: how bright a pixel must be to be checked at all; lower
+  finds hot pixels in darker areas.
+
 ## Transform
 
 **Upright** corrects the photo from its own straight lines, using

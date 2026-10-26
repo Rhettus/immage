@@ -1209,6 +1209,14 @@ export const modules: ModuleMap[] = [
     write: (v) => ({ modify_flags: v.lens_ca ? 7 : 6, has_been_set: 1 }),
     enabled: (v) => v.lens_profile === 1,
   },
+  {
+    op: "hotpixels", keepOn: false,
+    controls: ["hp_enable", "hp_strength", "hp_threshold"],
+    fields: ["strength", "threshold"],
+    read: (p) => ({ hp_enable: 1, hp_strength: p.strength * 100, hp_threshold: p.threshold * 100 }),
+    write: (v) => ({ strength: v.hp_strength / 100, threshold: v.hp_threshold / 100 }),
+    enabled: (v) => v.hp_enable === 1,
+  },
   transformMap,
   flipMap,
   cropMap,
@@ -1380,6 +1388,19 @@ export const panels: Panel[] = [
           toggle("lens_ca", "Remove Chromatic Aberration", 1),
         ],
       },
+      {
+        // a pixel is hot when strength / 2 times it is above all four
+        // neighbors of its color, and it is above threshold
+        // (hotpixels.c). the sliders reset to darktable's 25 and 5
+        title: "Hot Pixels",
+        controls: [
+          { ...toggle("hp_enable", "Remove Hot Pixels", 0), rawOnly: true,
+            note: "for long exposures and high ISO" },
+          { id: "hp_strength", label: "Strength", min: 0, max: 100, step: 1, format: plain(0), rawOnly: true },
+          { id: "hp_threshold", label: "Threshold", min: 0, max: 100, step: 1, format: plain(0), rawOnly: true,
+            note: "lower finds more hot pixels" },
+        ],
+      },
     ],
   },
   {
@@ -1540,7 +1561,7 @@ const MODULE_NAMES: Record<string, string> = {
   cacorrectrgb: "chromatic aberrations", colorbalancergb: "color balance rgb", colorequal: "color equalizer",
   crop: "crop", defringe: "defringe", demosaic: "demosaic",
   denoiseprofile: "denoise (profiled)", diffuse: "diffuse or sharpen", exposure: "exposure", flip: "orientation",
-  grain: "grain", hazeremoval: "haze removal", lens: "lens correction", rgbcurve: "rgb curve",
+  grain: "grain", hazeremoval: "haze removal", hotpixels: "hot pixels", lens: "lens correction", rgbcurve: "rgb curve",
   shadhi: "shadows and highlights", sharpen: "sharpen", sigmoid: "sigmoid", tonecurve: "tone curve",
   toneequal: "tone equalizer", vignette: "vignetting",
 };
