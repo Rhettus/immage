@@ -1056,6 +1056,23 @@ async function decisions(photo) {
     return wrong.length ? `not so: ${wrong.join(", ")}` : null;
   });
 
+  // a mask an AI selection just made shows its overlay while it is
+  // selected, toggle off, until O or an adjustment (masks.md, The mask list)
+  await decide("a new AI mask shows its overlay", async () => {
+    const fresh = { on: false, hold: null, fresh: "Sky" };
+    const steps = (t, ...evs) => evs.reduce((x, ev) => overlayStep(x, false, ev, "Sky"), t);
+    const cases = [
+      ["it shows", overlayShown(fresh, false, "Sky"), true],
+      ["not while another mask is selected", overlayShown(fresh, false, "Brush"), false],
+      ["O hides it", overlayShown(steps(fresh, "key"), false, "Sky"), false],
+      ["O again shows it", overlayShown(steps(fresh, "key", "key"), false, "Sky"), true],
+      ["an adjustment hides it", overlayShown(steps(fresh, "adjust"), false, "Sky"), false],
+      ["a brush stroke leaves it", overlayShown(steps(fresh, "stroke"), false, "Sky"), true],
+    ];
+    const wrong = cases.filter(([, got, want]) => got !== want).map(([label]) => label);
+    return wrong.length ? `not so: ${wrong.join(", ")}` : null;
+  });
+
   // the Zone System's Color mask narrows a zone mask to an object boxed on
   // the photo, as it does to Sky, and the mask keeps the object in its name
   // and shapes (zone-system.md, Color mask). on the first photo only: it

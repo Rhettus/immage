@@ -764,7 +764,7 @@ export default function App() {
   };
   const selectObject = (prompt: ObjectPrompt) => runAi("mask-object-sam21-small", "finding the object…",
     () => invoke<ObjectShape["paths"]>("ai_object", { points: prompt.points ?? [], box: prompt.box ?? null }),
-    (paths) => { createShape({ type: "object", paths }); });
+    (paths) => aiShown(createShape({ type: "object", paths })));
   // the one-click selections: Subject, Background, which is the subject's
   // outline in a new mask, inverted, and People and the parts of a
   // landscape, which all come from the one scene model
@@ -790,6 +790,7 @@ export default function App() {
         const name = createShape({ type: "object", paths }, k === "background" ? "new" : target, a.label);
         if (k === "background" && name) session.current?.setInvert(name, true);
         syncMasks();
+        aiShown(name);
       });
   };
   // Depth Range: the depth where the image was clicked, give or take, as a
@@ -803,7 +804,7 @@ export default function App() {
       const d = map.data[j * map.width + i] / 255;
       depth = [Math.max(0, d - 0.15), Math.min(1, d + 0.15)];
       return invoke<ObjectShape["paths"]>("ai_mask", { kind: "depth", range: depth });
-    }, (paths) => { createShape({ type: "object", paths, depth, feather: 0.01 }); });
+    }, (paths) => aiShown(createShape({ type: "object", paths, depth, feather: 0.01 })));
   };
   // a Depth Range's sliders: the band traced again (a few ms once the
   // depth map is made); a reply overtaken by a newer move is dropped
@@ -1098,8 +1099,14 @@ export default function App() {
   const addingTo = masksMode && !!maskTool && toolTarget !== "new" && !!selMask;
   const addingRef = useRef(false);
   addingRef.current = addingTo;
-  const maskShown = overlayShown(maskOverlay, addingTo);
-  const overlayEvent = (ev: "key" | "adjust" | "stroke") => setMaskOverlay((t) => overlayStep(t, addingRef.current, ev));
+  const maskSelRef = useRef<string | null>(null);
+  maskSelRef.current = masksMode ? maskSel : null;
+  const maskShown = overlayShown(maskOverlay, addingTo, maskSelRef.current);
+  const overlayEvent = (ev: "key" | "adjust" | "stroke") =>
+    setMaskOverlay((t) => overlayStep(t, addingRef.current, ev, maskSelRef.current));
+  // a mask an AI selection just made: its overlay shows (overlayShown)
+  const aiShown = (name: string | null) => setMaskOverlay((t) => ({ ...t, fresh: name }));
+  useEffect(() => setMaskOverlay((t) => (t.fresh && t.fresh !== maskSel ? { ...t, fresh: null } : t)), [maskSel]);
   // what O or an adjustment set aside lasts as long as the tool in hand
   useEffect(() => setMaskOverlay((t) => (t.hold ? { ...t, hold: null } : t)), [addingTo]);
   // the last full (not a drag's) sharp render's view, which a refined mask's
