@@ -48,9 +48,9 @@ type Result = { written: string[]; skipped: string[]; failed: { file: string; er
                 uploaded?: number; duplicates?: number };
 
 // which sections are open, remembered
-type SectionId = "destination" | "name" | "format" | "frame" | "keywords" | "privacy";
+type SectionId = "destination" | "name" | "format" | "frame" | "keywords" | "metadata";
 const OPEN_DEFAULT: Record<SectionId, boolean> = {
-  destination: true, name: false, format: true, frame: true, keywords: false, privacy: false,
+  destination: true, name: false, format: true, frame: true, keywords: false, metadata: false,
 };
 
 // a file name's photo info, as the menu names it
@@ -60,8 +60,36 @@ const FILE_TOKEN_NAMES: Record<string, string> = {
   camera: "Camera", lens: "Lens", iso: "ISO", rating: "Rating", seq: "Number in this export",
 };
 const loadOpen = (): Record<SectionId, boolean> => {
-  try { return { ...OPEN_DEFAULT, ...JSON.parse(localStorage.getItem("immage.export.open") ?? "{}") }; }
-  catch { return OPEN_DEFAULT; }
+  try {
+    const raw = JSON.parse(localStorage.getItem("immage.export.open") ?? "{}");
+    // Metadata was Privacy before 0.37.0
+    if ("privacy" in raw && !("metadata" in raw)) raw.metadata = raw.privacy;
+    return Object.fromEntries((Object.keys(OPEN_DEFAULT) as SectionId[])
+      .map((k) => [k, typeof raw[k] === "boolean" ? raw[k] : OPEN_DEFAULT[k]])) as Record<SectionId, boolean>;
+  } catch { return OPEN_DEFAULT; }
+};
+
+// the Metadata section's switches: the label, the setting, and whether
+// the setting is the opposite of the box (removeLocation)
+type MetadataKey = "includeCamera" | "includeSerials" | "removeLocation" | "includeDescription" | "includeKeywords"
+  | "includeHistory";
+const METADATA: [string, MetadataKey, boolean][] = [
+  ["Camera and lens (make, model, exposure)", "includeCamera", false],
+  ["Serial numbers and owner name", "includeSerials", false],
+  ["Location (GPS)", "removeLocation", true],
+  ["Title, caption, creator, copyright", "includeDescription", false],
+  ["Keywords", "includeKeywords", false],
+  ["darktable edit history", "includeHistory", false],
+];
+const METADATA_SHORT: Record<MetadataKey, string> = {
+  includeCamera: "camera", includeSerials: "serial numbers", removeLocation: "location",
+  includeDescription: "title and caption", includeKeywords: "keywords", includeHistory: "edit history",
+};
+const metadataSummary = (s: Settings) => {
+  const out = METADATA.filter(([, k, flip]) => k !== "includeHistory" && (flip ? s[k] : !s[k]))
+    .map(([, k]) => METADATA_SHORT[k]);
+  const extra = s.includeHistory ? ", with edit history" : "";
+  return (out.length ? `${out.join(", ")} left out` : "all included") + extra;
 };
 
 // a Lightroom section: its title, and when shut, what it is set to
@@ -440,6 +468,11 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
           conflict: s.conflict === "ask" ? "unique" : s.conflict,
           immichAlbum: toImmich ? s.album : null,
           location: !s.removeLocation,
+          camera: s.includeCamera,
+          serials: s.includeSerials,
+          description: s.includeDescription,
+          tags: s.includeKeywords,
+          history: s.includeHistory,
           keywords: s.keywords,
           keywordsOnOriginal: s.keywordsOnOriginal,
         },
@@ -776,18 +809,20 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
                        onChange={(e) => set("keywordsOnOriginal", e.target.checked)} />
                 Also add to the original photos
               </label>
-              <div className="note-plain">added to each exported file with the photo's own keywords; without the
-                box ticked the originals keep only theirs</div>
+              <div className="note-plain">{s.includeKeywords
+                ? "added to each exported file with the photo's own keywords; without the box ticked the originals keep only theirs"
+                : "keywords are left out of the exported files (Metadata)"}</div>
             </Section>
 
-            <Section title="Privacy" open={openSections.privacy} onToggle={(alt) => toggle("privacy", alt)}
-                     summary={s.removeLocation ? "location removed" : "location included"}>
-              <label className="row check">
-                <input type="checkbox" checked={!s.removeLocation} onChange={(e) => set("removeLocation", !e.target.checked)} />
-                Include location (GPS)
-              </label>
-              <div className="note-plain">camera info, title, caption, creator, copyright and keywords (the photo's
-                and those above) are always included; the edit history never is</div>
+            <Section title="Metadata" open={openSections.metadata} onToggle={(alt) => toggle("metadata", alt)}
+                     summary={metadataSummary(s)}>
+              {METADATA.map(([label, on, flip]) => (
+                <label key={on} className="row check">
+                  <input type="checkbox" checked={flip ? !s[on] : s[on]} onChange={(e) => set(on, flip ? !e.target.checked : e.target.checked)} />
+                  {label}
+                </label>
+              ))}
+              <div className="note-plain">the date taken is always included</div>
             </Section>
           </div>
 

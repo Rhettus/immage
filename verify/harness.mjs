@@ -12,6 +12,7 @@ import { existsSync, mkdirSync, copyFileSync, readdirSync, readFileSync, rmSync,
          constants } from "node:fs";
 import { createHash } from "node:crypto";
 import { crc32 } from "node:zlib";
+import { spawnSync } from "node:child_process";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -722,6 +723,38 @@ async function fixes(photo) {
     const before = await exported("before");
     await o.s.close();
     return edit.equals(before) ? null : "the export has the Before view's settings, not the edit";
+  });
+
+  // 0.37.0: an export carried the camera's serial numbers (Flickr showed
+  // them): darktable copies the raw's EXIF, makernotes and all. the dialog
+  // now sends serials: false unless Metadata's box is ticked, and the
+  // engine takes them out of the written file (engine/strip.cc)
+  const exiv2 = spawnSync("exiv2", ["--version"]).status === 0;
+  if (!exiv2) {
+    record({ check: "fixes", photo: basename(photo), id: "export leaves out serial numbers", status: "skip",
+             detail: "no exiv2 command to read the exported file with (brew install exiv2)" });
+  } else await fix("export leaves out serial numbers", async () => {
+    // the keys exiv2 sees, with Sony's undecoded block that holds its serial.
+    // a raw's listing runs to megabytes, past spawnSync's 1 MB default
+    const list = (file, ...opts) => spawnSync("exiv2", ["-pa", ...opts, "-q", file],
+                                              { encoding: "utf8", maxBuffer: 1 << 28 }).stdout;
+    const personal = (file) => list(file, "-u").split("\n").map((l) => l.split(/\s+/)[0])
+      .filter((k) => /serial|ownername|^Exif\.Sony\d\.0x9050$/i.test(k));
+    const keys = (file) => list(file);
+    if (!personal(photo).length) return null;
+    const { images: [e] } = await request({ cmd: "import", files: [fresh(photo)] });
+    const exported = async (tag, serials) => {
+      const out = join(args.work, "export", `${copies}-${tag}.jpg`);
+      mkdirSync(dirname(out), { recursive: true });
+      await request({ cmd: "export", imgid: e.imgid, out, format: "jpeg", color_space: "srgb", quality: 90,
+                      long_edge: 512, draft: true, serials });
+      return out;
+    };
+    const left = await exported("serials-out", false), kept = await exported("serials-in", true);
+    const leaked = personal(left);
+    return leaked.length ? `the export kept ${leaked.join(", ")}`
+      : !/^Exif\.Image\.Model /m.test(keys(left)) ? "the export lost the camera model with the serial numbers"
+      : !personal(kept).length ? "with serial numbers asked for, the export had none" : null;
   });
 
   // 0.34.0: zoomed in, a range mask's overlay is darktable's own mask, made
