@@ -182,6 +182,13 @@ animation frames while idle before the run: the display's refresh rate,
 or less where WebKit throttles them (macOS halves them in Low Power
 Mode). It bounds the paint stage.
 
+From 0.37.0 (report version 4), `invokeMs` times the round trip of a
+call that does nothing (`perf_ping`): `idle`, 100 in a row while the page
+is idle before the run, and `drag`, one every 50 ms during the slider
+drags, beside the renders. Each has n, p50, p95, min and max in ms. Slow
+`idle` means the web view's IPC itself is slow; slow `drag` alone means
+the page's drawing holds it up.
+
 ## For the next session (Claude included)
 
 1. Read SUMMARY.md: the latest state.

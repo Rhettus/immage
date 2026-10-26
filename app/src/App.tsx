@@ -73,7 +73,7 @@ import { ASPECTS, CropOverlay, customAspect, findAspect, fitAspect, FULL, loadCu
          rememberCustomAspect, type Aspect, type CropRect } from "./CropTool";
 import { ShortcutsDialog } from "./Shortcuts";
 import { cmd, keys } from "./keys";
-import { perf, percentiles, STAGES, webviewInfo } from "./perf";
+import { perf, percentiles, pingOnce, roundTrips, STAGES, webviewInfo } from "./perf";
 import { frameTransport } from "./sharedFrames";
 import { PerfHud } from "./PerfHud";
 import { KeywordingPanel } from "./Keywording";
@@ -3400,10 +3400,20 @@ export default function App() {
     // the web view measured idle, ahead of the run and its timing
     await settle();
     const webview = await webviewInfo();
+    const idlePings: number[] = [];
+    for (let i = 0; i < 100; i++) idlePings.push(await pingOnce());
     perf.recording = [];
     const t0 = performance.now();
+    // one call in flight at a time while the sliders drag, beside the renders
+    const dragPings: number[] = [];
+    let pinging = false;
+    let pinger: Promise<void> = Promise.resolve();
     try {
       await settle();
+      pinging = true;
+      pinger = (async () => {
+        while (pinging) { dragPings.push(await pingOnce().catch(() => NaN)); await sleep(50); }
+      })();
       for (const [id, delta] of steps) {
         const c = controlById.get(id);
         if (!c || session.current !== s) continue;
@@ -3423,6 +3433,8 @@ export default function App() {
         if (draftShown.current) s.requestRender();
         await settle();
       }
+      pinging = false;
+      await pinger;
       perf.label = "zoom 100%";
       setZoom(1);
       await settle();
@@ -3453,6 +3465,7 @@ export default function App() {
       await sleep(2500);
       await settle();
     } finally {
+      pinging = false;
       dragging.current = false;
       perf.label = "";
       benchRunning.current = false;
@@ -3474,13 +3487,14 @@ export default function App() {
     const { w, h } = viewport();
     const at = new Date();
     const report = {
-      immage: "gui-benchmark", version: 3, at: at.toISOString(),
+      immage: "gui-benchmark", version: 4, at: at.toISOString(),
       app: await invoke<{ app: string; darktable: string }>("about").catch(() => null),
       machine: await invoke<Record<string, unknown>>("perf_machine").catch(() => null),
       webview,
       photo: (currentRef.current?.path ?? "").split(/[\\/]/).pop(),
       viewport: { width: w, height: h, dpr: window.devicePixelRatio || 1 }, dragDrafts: drafts, preview,
-      transport: frameTransport(), seconds: (performance.now() - t0) / 1000, displayLongFrames: perf.longFrames, summary, samples,
+      transport: frameTransport(), seconds: (performance.now() - t0) / 1000, displayLongFrames: perf.longFrames,
+      invokeMs: { idle: roundTrips(idlePings), drag: roundTrips(dragPings.filter(Number.isFinite)) }, summary, samples,
     };
     const stamp = at.toISOString().replace(/[:.]/g, "-").slice(0, 19);
     return invoke<string>("perf_report_write", { name: `gui-${stamp}`, report });
