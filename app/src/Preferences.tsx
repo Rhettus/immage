@@ -174,6 +174,26 @@ function storePreview(v: Preview) {
   try { localStorage.setItem(PREVIEW_KEY, v); } catch { /* not kept */ }
 }
 
+// memory for the full frames the viewer keeps (Session.frames), so zooming
+// back out or returning to a view seen before needs no render. a 100% frame
+// is the viewer's size: some 30 MB on a 4K screen, 45 on a 5K, against 10
+// on a 2K, so the smallest fits only a few on a large screen
+export const FRAME_CACHE_MB = [256, 512, 1024, 2048] as const;
+const FRAME_CACHE_KEY = "immage.frameCache";
+function defaultFrameCacheMb(): number {
+  const dpr = window.devicePixelRatio || 1;
+  return screen.width * dpr * screen.height * dpr >= 3840 * 2160 ? 512 : 256;
+}
+export function loadFrameCacheMb(): number {
+  try {
+    const v = Number(localStorage.getItem(FRAME_CACHE_KEY));
+    return (FRAME_CACHE_MB as readonly number[]).includes(v) ? v : defaultFrameCacheMb();
+  } catch { return defaultFrameCacheMb(); }
+}
+function storeFrameCacheMb(v: number) {
+  try { localStorage.setItem(FRAME_CACHE_KEY, String(v)); } catch { /* not kept */ }
+}
+
 // a RAW+JPEG pair as one photo in the filmstrip, rated, rejected and
 // deleted together; off, each file stands alone
 const STACK_PAIRS_KEY = "immage.stackPairs";
@@ -356,6 +376,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   const [scrollStep, setScrollStep] = useState(loadSliderScrollStep);
   const [preview, setPreview] = useState(loadPreview);
   const [sharedFrames, setSharedFrames] = useState(loadSharedFrames);
+  const [frameCache, setFrameCache] = useState(loadFrameCacheMb);
   const [accelChoice, setAccelChoice] = useState(loadAccel);
   const chooseAccel = (v: AccelChoice) => { setAccelChoice(v); storeAccel(v); };
   // the provider the choice comes to: the one chosen if this computer has
@@ -573,6 +594,17 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                            ? "drags the main sliders on the open photo and back, zooms in and out, and saves a timing report; every slider ends where it started. use a copy of a photo you care about"
                            : "open a photo to run it"}>
                   <button className="btn" disabled={!onBenchmark} onClick={() => onBenchmark?.()}>Run</button>
+                </PrefRow>
+                <PrefRow label="Frame cache"
+                         hint="memory for the frames the viewer keeps, so zooming back out or returning to a view seen before shows it without a render. a 100% frame is about 30 MB on a 4K screen and 45 MB on a 5K one">
+                  <div className="segmented small">
+                    {FRAME_CACHE_MB.map((mb) => (
+                      <button key={mb} className={frameCache === mb ? "active" : ""}
+                              onClick={() => { setFrameCache(mb); storeFrameCacheMb(mb); }}>
+                        {mb >= 1024 ? `${mb / 1024} GB` : `${mb} MB`}
+                      </button>
+                    ))}
+                  </div>
                 </PrefRow>
                 {sharedFramesAvailable && (
                   <PrefRow label="Shared-memory frames"

@@ -859,7 +859,8 @@ export class Session {
   // rendering it (`have`, _render in engine/main.c)
   private frames = new Map<string, Frame>();
   private framesBytes = 0;
-  private static FRAMES_BYTES = 256 << 20;
+  // the Frame cache preference, in bytes, read at each frame kept
+  frameBudget: () => number = () => 256 * 1048576;
   // the frame each view shows, until the image changes: shown without
   // asking the engine
   private current = new Map<string, Frame>();
@@ -873,7 +874,7 @@ export class Session {
     this.frames.set(at, f);
     this.current.set(key, f);
     for (const [k, old] of this.frames) {
-      if (this.framesBytes <= Session.FRAMES_BYTES || old === f) break;
+      if (this.framesBytes <= this.frameBudget() || old === f) break;
       this.frames.delete(k);
       this.framesBytes -= old.pixels.byteLength;
       const shown = k.slice(0, k.lastIndexOf("|"));
