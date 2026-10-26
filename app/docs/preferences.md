@@ -13,6 +13,11 @@ apply as you make them; **Done** closes the window.
 - **Canvas**: what is behind the photo, in full screen preview too.
   **Dark**, **Neutral Gray** to judge tones without a dark surround, or
   **White** to see the photo as on a print. L steps through them.
+- **Guide color**: the color of the lines drawn over the photo: the crop
+  frame and its grid, the straighten line, Transform's grid and guides,
+  the vignette's guides and a mask shape's outline. **White**, **Yellow**,
+  **Red** or a color of your own. Each line has a thin dark edge, so even
+  white shows on a light photo or a White canvas.
 - **Focus mode**: opening a panel closes the others; ⌥-click opens one
   alongside. On by default.
 - **Auto-hide panels**: the side panels and filmstrip slide away when the

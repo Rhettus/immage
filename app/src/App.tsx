@@ -9,8 +9,12 @@ import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { BANDS, choiceOn, choiceShows, controlById, GUIDE_IDS, guidesOf, isModuleSetting, MAX_GUIDES, parametricOf, UPRIGHT_GUIDED,
-         UPRIGHT_MODES, uprightAspect, mapOf, mapsFor, moduleName, mapsWith, panels, pointsOf, pointValues, profileLabel, turnRect, type Control, type ControlPreset, type CurveChannel, type Values,
+         UPRIGHT_MODES, uprightAspect, mapOf, mapsFor, moduleName, mapsWith, NEG_CHOICES, NEG_GREYED, NEG_OFF,
+         NEG_OFF_UNMAPPED, panels, pointsOf, pointValues, profileLabel, turnRect, type Control, type ControlPreset, type CurveChannel, type Values,
          type Panel, type Section, type Turn } from "./manifest";
+import { autoArea, autoBlack, autoDmax, autoDmin, autoExposure as autoPrintExposure, autoOffset, autoWbHigh, autoWbLow,
+         FILM_BW, FILM_COLOR, fromValues, PRESETS, toValues, type Stats } from "./negadoctor";
+import { NegativePanel, type NegPick } from "./NegativePanel";
 import { CircleOff, Grid2x2, MoveHorizontal, MoveVertical, PenLine, Sparkles, WandSparkles } from "lucide-react";
 import { Session, instanceKey, mapOpOf, type Frame, type HistoryItem, type ModuleState, type View } from "./session";
 import { AUTO_TONE_IDS, autoExposure, autoTone, type SceneKey } from "./autoTone";
@@ -42,11 +46,11 @@ import { Tour, tourSeen } from "./Tour";
 import { UpdateBanner } from "./UpdateBanner";
 import { autoCheck, relaunch } from "./updates";
 import { Chevron, Collapse } from "./Collapse";
-import { loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadNewPhotosProfile, loadOverlayColor, loadPins, maskOverlayRgb, loadPreview, loadFrameCacheMb, loadSliderScroll, loadSliderScrollStep,
+import { loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadNewPhotosProfile, loadOverlayColor, loadGuideColor, guideRgb, loadPins, maskOverlayRgb, loadPreview, loadFrameCacheMb, loadSliderScroll, loadSliderScrollStep,
          loadStackPairs,
-         PreferencesDialog, storeOverlayColor, storeStackPairs,
+         PreferencesDialog, storeOverlayColor, storeGuideColor, storeStackPairs,
          storeAutoHide, storeCanvas, CANVASES, storeFocusMode, storePins, type AccelProvider, type Canvas,
-         loadReadAhead, loadThumbMemoryMb, type Pins, type PrefsTab, type Preview } from "./Preferences";
+         loadNegWarn, loadReadAhead, loadThumbMemoryMb, storeNegWarn, type Pins, type PrefsTab, type Preview } from "./Preferences";
 import { kindOf, loadPlugins, loadReturns, returnValues, storePlugins, unfit, type PluginConfig,
          type PluginReturn } from "./plugins";
 import { FolderTree } from "./FolderTree";
@@ -343,6 +347,9 @@ export default function App() {
   const [canvasColor, setCanvasColor] = useState<Canvas>(loadCanvas);
   const [focusMode, setFocusMode] = useState(loadFocusMode);
   const [overlayColor, setOverlayColor] = useState(loadOverlayColor);
+  // the guides' color, for the stylesheet (styles.css, --guide)
+  const [guideColor, setGuideColor] = useState(loadGuideColor);
+  useEffect(() => { document.documentElement.style.setProperty("--guide", guideRgb(guideColor).join(", ")); }, [guideColor]);
   // Preferences' performance overlay, and Rust told of it once
   const [perfHud, setPerfHud] = useState(perf.enabled);
   useEffect(() => { perf.init(); }, []);
@@ -1793,7 +1800,7 @@ export default function App() {
       hc.style.height = `${(f.h * z) / dpr}px`;
     }
     // the mask editor and the zone overlay cover the whole image, wherever it is
-    for (const mb of [maskBox.current, zoneBox.current, detailBox.current, guideBox.current]) {
+    for (const mb of [maskBox.current, zoneBox.current, detailBox.current, guideBox.current, negBox.current]) {
       if (!mb) continue;
       mb.style.left = `${ox / dpr}px`;
       mb.style.top = `${oy / dpr}px`;
@@ -1989,6 +1996,7 @@ export default function App() {
   const [uprightBusy, setUprightBusy] = useState(false);
   const uprightBusyRef = useRef(false);
   const guideBox = useRef<HTMLDivElement>(null);
+  const negBox = useRef<HTMLDivElement>(null);
   // the guides where they show, mapped from the input image after each frame
   const [guidesShown, setGuidesShown] = useState<Guide[]>([]);
   const baseOf = (r: UprightFit): [string, number][] =>
@@ -3145,7 +3153,10 @@ export default function App() {
     holdRecord.current = true;
     try {
       const entries = Object.entries(c.values).filter(([id, v]) => s.values[id] !== v);
+      const converts = c.values.neg_on === 1 && s.values.neg_on !== 1;
       if (entries.length) changeMany(entries);
+      // a negative's settings pasted onto a roll's other frames convert them too
+      if (converts) negOffUnmapped(s);
       if (c.look) {
         if (c.look.name !== s.look) {
           baseStale.current = true;
@@ -3237,6 +3248,121 @@ export default function App() {
       s.setModuleState(h, { enabled: false });
     }
     setHistoryRev((n) => n + 1);
+  };
+
+  // the Negative panel (NegativePanel.tsx): the box being picked on the
+  // photo, the photo area the auto values are read from, and the warning
+  // ahead of a first conversion
+  const [negPick, setNegPick] = useState<NegPick | null>(null);
+  const negPickRef = useRef<NegPick | null>(null);
+  negPickRef.current = negPick;
+  const [negArea, setNegArea] = useState<[number, number, number, number] | null>(null);
+  const [negBusy, setNegBusy] = useState(false);
+  const [negNote, setNegNote] = useState<string | null>(null);
+  const [negWarning, setNegWarning] = useState(false);
+  const [negNoWarn, setNegNoWarn] = useState(false);
+  const negView = !!current && layout.right && rightMode === "negative";
+  useEffect(() => { setNegPick(null); setNegArea(null); setNegNote(null); }, [current]);
+  useEffect(() => { if (!negView) setNegPick(null); }, [negView]);
+  // its layer may come without the others, which place it otherwise
+  useEffect(() => { if (negView) placeLayers(); }, [negView, negPick, negArea]);   // eslint-disable-line react-hooks/exhaustive-deps
+  // the whole frame while a box is picked and read, as the crop tool shows
+  // it, so the film border can be reached; the crop otherwise. the crop
+  // tool, opened over it, does the same and puts the crop back itself
+  const negWhole = negView && (negPick !== null || negBusy);
+  useEffect(() => {
+    const s = session.current;
+    if (!s || !negWhole || cropping) return;
+    s.bypass("crop", true);
+    return () => { if (!croppingRef.current) s.bypass("crop", false); };
+  }, [negWhole, cropping, current]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const openNegative = () => {
+    const shown = layout.right && rightMode === "negative" && !croppingRef.current;
+    if (!shown && session.current && session.current.values.neg_on !== 1 && loadNegWarn()) {
+      setNegNoWarn(false);
+      setNegWarning(true);
+      return;
+    }
+    showRight("negative");
+  };
+  // what a box holds at negadoctor's input, once the edits ahead of it are in
+  const negSample = async (box: [number, number, number, number]): Promise<Stats> => {
+    const s = session.current!;
+    let stopped = false;
+    while (!s.idle && session.current === s) {
+      stopped = s.stopBase() || stopped;
+      await new Promise((r) => setTimeout(r, 30));
+    }
+    try {
+      return (await invoke<{ picker: Stats }>("sample", {
+        x: (box[0] + box[2]) / 2, y: (box[1] + box[3]) / 2, area: box, stage: "negadoctor" })).picker;
+    } finally {
+      if (stopped) resumeBase();
+    }
+  };
+  // tone mappers from darktable that no slider covers, and modules of
+  // NEG_OFF that darktable set beyond their sliders, which the session
+  // cannot switch through them
+  const negOffUnmapped = (s: Session) => {
+    const done = new Set<string>();
+    for (const h of s.history) {
+      const key = instanceKey(h), op = mapOpOf(h);
+      if (done.has(key) || h.priority === undefined || h.masked) continue;
+      if (!NEG_OFF_UNMAPPED.has(h.op) && !(NEG_OFF.has(op) && s.isForeign(op))) continue;
+      done.add(key);
+      if (s.moduleStates.get(key)?.enabled ?? h.enabled) s.setModuleState(h, { enabled: false });
+    }
+    setHistoryRev((n) => n + 1);
+  };
+  // a box picked for the panel. the first film border converts the photo:
+  // the modules a negative turns off go off first, as negadoctor's input is
+  // read without them, then the border and the photo area set its params,
+  // all one undo step
+  const negPicked = async (kind: NegPick, box: [number, number, number, number]) => {
+    const s = session.current;
+    setNegPick(null);
+    if (!s) return;
+    if (kind === "area") setNegArea(box);
+    const converting = kind === "border" && s.values.neg_on !== 1;
+    // before the conversion the photo area is only kept, for it
+    if (!converting && s.values.neg_on !== 1) return;
+    setNegBusy(true);
+    setNegNote(null);
+    try {
+      if (converting) {
+        const film = s.values.neg_film === FILM_BW ? FILM_BW : FILM_COLOR;
+        changeMany([["neg_on", 1], ...toValues(PRESETS[film]), ...Object.entries(NEG_CHOICES),
+                    ...(film === FILM_BW ? [["bw_mode", 1] as [string, number]] : [])], "Negative conversion");
+        negOffUnmapped(s);
+      }
+      let p = fromValues(s.values);
+      if (kind === "border") {
+        const border = await negSample(box);
+        p = autoArea(autoDmin(p, border), await negSample(negArea ?? NEG_AREA));
+      } else if (kind === "area") p = autoArea(p, await negSample(box));
+      else p = NEG_AUTO[kind as keyof typeof NEG_AUTO](p, await negSample(box));
+      if (session.current !== s) return;
+      const entries = toValues(p).filter(([id, v]) => s.values[id] !== v);
+      if (converting) quietly(() => changeMany(entries));
+      else if (entries.length) changeMany(entries, NEG_PICK_LABELS[kind]);
+    } catch (e) {
+      setNegNote(`${e}`);
+    } finally {
+      setNegBusy(false);
+    }
+  };
+  // black and white film is shown in black and white, as Treatment does it
+  const negFilm = (v: number) => {
+    const s = session.current;
+    if (!s || v === s.values.neg_film) return;
+    changeMany([["neg_film", v], ["bw_mode", v === FILM_BW ? 1 : 0]], "Film Type");
+    if (s.values.neg_on === 1) setNegNote("pick the film border again for this film type");
+  };
+  const negTurnOff = () => {
+    const s = session.current;
+    if (!s) return;
+    changeMany([["neg_on", 0], ...Object.keys(NEG_CHOICES).map((id): [string, number] => [id, s.neutral[id]])],
+               "Turn off negative conversion");
   };
 
   // what the Before view keeps of the edit: the crop, the modules chosen,
@@ -4053,10 +4179,14 @@ export default function App() {
       }
       if (pickingRef.current && e.key === "Escape") { setPicking(false); return; }
       // W picks white balance from the image, as in Lightroom
-      if ((e.key === "w" || e.key === "W") && session.current) { setPicking(!pickingRef.current); return; }
+      if ((e.key === "w" || e.key === "W") && session.current && session.current.values.neg_on !== 1) {
+        setPicking(!pickingRef.current);
+        return;
+      }
       if (healModeRef.current && healKeyRef.current(e)) return;
       // O shows or hides the pinned zones' overlay, as it does a mask's
       if (zoneBoxingRef.current && e.key === "Escape") { setZoneBoxing(false); return; }
+      if (negPickRef.current && e.key === "Escape") { setNegPick(null); return; }
       if (zonesModeRef.current && (e.key === "o" || e.key === "O")) {
         setZoneOverlayState((o) => { const next = { ...o, show: !o.show }; saveZoneOverlay(next); return next; });
         return;
@@ -4443,6 +4573,24 @@ export default function App() {
                 {zoneBoxing && <ObjectBox onPrompt={boxZoneObject} />}
               </div>
             )}
+            {negWhole && !cropping && full.current && (
+              <div className="mask-box" ref={negBox}>
+                {negArea && (
+                  <div className="neg-area" style={{
+                    left: `${negArea[0] * 100}%`, top: `${negArea[1] * 100}%`,
+                    width: `${(negArea[2] - negArea[0]) * 100}%`, height: `${(negArea[3] - negArea[1]) * 100}%`,
+                  }} />
+                )}
+                {negPick && (
+                  <ObjectBox onPrompt={(pr) => {
+                    // a click reads a small box round it, as darktable's picker does
+                    const [x, y] = pr.points?.[0] ?? [0.5, 0.5];
+                    void negPicked(negPick, pr.box ?? [Math.max(0, x - 0.01), Math.max(0, y - 0.01),
+                                                       Math.min(1, x + 0.01), Math.min(1, y + 0.01)]);
+                  }} />
+                )}
+              </div>
+            )}
             {maskOp && full.current && (
               <div className="mask-box" ref={detailBox}>
                 <canvas ref={detailCanvas} className="mask-tint detail-mask" />
@@ -4801,6 +4949,20 @@ export default function App() {
               )}
             </div>
           )}
+          {rightMode === "negative" && !cropping && (
+            <NegativePanel values={values} disabled={!current} converted={values.neg_on === 1} picking={negPick}
+                           busy={negBusy} hasArea={!!negArea} note={negNote} onPick={setNegPick} onTurnOff={negTurnOff}
+                           onResetColor={() => changeMany(["wbl", "wbh"].flatMap((k) => ["r", "g", "b"]
+                             .map((c): [string, number] => [`neg_${k}_${c}`, 1])), "Reset Color")}
+                           renderControl={(id) => {
+                             const c = controlById.get(id)!;
+                             const props = { control: c, value: values[id] ?? c.neutral ?? 0,
+                                             neutral: session.current?.neutral[id] ?? c.neutral ?? 0,
+                                             disabled: !current || negBusy || (id !== "neg_film" && values.neg_on !== 1),
+                                             values, onChange: (v: number) => (id === "neg_film" ? negFilm(v) : change(c, v)) };
+                             return c.kind === "choice" ? <Choice key={id} {...props} /> : <Slider key={id} {...props} />;
+                           }} />
+          )}
           {rightMode === "presets" && !cropping && (
             <PresetsPanel fold={presetFold} onAnyOpen={setPresetGroupsOpen} focusMode={focusMode}
                           presets={[...BUILTIN_PRESETS, ...presets]} looks={looks} look={look} disabled={!current}
@@ -4896,8 +5058,9 @@ export default function App() {
                        onChangeMany={changeMany} histogram={histogram} onPreview={hoverValues}
                        toneTools={p.id === "basic" ? (
                          <div className="tone-tools">
-                           <button className="btn small" disabled={!current}
-                                   title={values.tm_mode === 1
+                           <button className="btn small" disabled={!current || values.neg_on === 1}
+                                   title={values.neg_on === 1 ? "set in Negative: a converted negative has no tone mapper for Auto to set"
+                                     : values.tm_mode === 1
                                      ? "Exposure, AgX's range as darktable's auto tune levels sets it, then Contrast, Highlights, Shadows, Whites and Blacks from the photo"
                                      : "Exposure, then Contrast, Highlights, Shadows, Whites and Blacks from the photo"}
                                    onClick={() => void runAutoTone()}>Auto</button>
@@ -4950,7 +5113,7 @@ export default function App() {
                        wbTools={p.id === "basic" ? (
                          <WBTools values={values} asShot={session.current
                                     ? { temp: session.current.neutral.temp, tint: session.current.neutral.tint } : null}
-                                  picking={picking} disabled={!current || values.bw_mode === 1}
+                                  picking={picking} disabled={!current || values.bw_mode === 1 || values.neg_on === 1}
                                   onPick={() => setPicking(!pickingRef.current)}
                                   onAuto={() => void startWB(null)}
                                   onPreset={(wb) => changeMany([["temp", wb.temp], ["tint", wb.tint]])} />
@@ -4996,6 +5159,8 @@ export default function App() {
         <button className={`tool${layout.right && !cropping && healMode ? " on" : ""}`} title="heal and clone (Q)"
                 data-tour="heal"
                 disabled={!current} onClick={() => showRight("heal")}><HealIcon /></button>
+        <button className={`tool${layout.right && !cropping && rightMode === "negative" ? " on" : ""}`}
+                title="film negative" disabled={!current} onClick={openNegative}><FilmIcon /></button>
         <button className={`tool${layout.right && !cropping && rightMode === "presets" ? " on" : ""}`} title="presets" data-tour="presets"
                 onClick={() => showRight("presets")}><PresetsIcon /></button>
         </div>
@@ -5037,6 +5202,7 @@ export default function App() {
                          plugins={plugins} onPlugins={setPlugins}
                          canvas={canvasColor} onCanvas={(v) => { setCanvasColor(v); storeCanvas(v); }}
                          overlayColor={overlayColor} onOverlayColor={(v) => { setOverlayColor(v); storeOverlayColor(v); }}
+                         guideColor={guideColor} onGuideColor={(v) => { setGuideColor(v); storeGuideColor(v); }}
                          focusMode={focusMode} onFocusMode={(on) => { setFocusMode(on); storeFocusMode(on); }}
                          accel={accel}
                          autoHide={autoHide} onAutoHide={(on) => { setAutoHide(on); storeAutoHide(on); }}
@@ -5079,6 +5245,34 @@ export default function App() {
     {copying && <CopyDialog onCopy={copySettings} onClose={() => setCopying(false)} />}
     {denoising && <DenoiseDialog thumb={navThumb} center={viewCenter()} prepare={denoiseModel}
                                  onRun={(a) => void runDenoise(a)} onClose={() => setDenoising(false)} />}
+    {negWarning && (
+      <div className="modal-backdrop">
+        <div className="modal neg-warn">
+          <div className="modal-head"><h2>Film Negative</h2></div>
+          <div className="modal-body">
+            <p>Converting a negative turns off the tools that work on the photo before it is inverted, or that
+              negadoctor's print takes the place of: Temp and Tint, Exposure, Whites, Blacks, Dehaze, Profile and
+              Auto, with the tone mapper. The Negative panel's own Exposure, White Point, Blacks and Neutral
+              Highlights stand in for them.</p>
+            <p>Contrast and Saturation move to color balance rgb, and Highlights and Shadows to shadows and
+              highlights, which work after the conversion. Turning the conversion off brings them all back as
+              they were.</p>
+            <label className="row check">
+              <input type="checkbox" checked={negNoWarn} onChange={(e) => setNegNoWarn(e.target.checked)} />
+              Don't warn me again
+            </label>
+          </div>
+          <div className="modal-foot">
+            <button className="btn" onClick={() => setNegWarning(false)}>Cancel</button>
+            <button className="btn primary" autoFocus onClick={() => {
+              if (negNoWarn) storeNegWarn(false);
+              setNegWarning(false);
+              showRight("negative");
+            }}>Continue</button>
+          </div>
+        </div>
+      </div>
+    )}
     {exporting && <ExportDialog current={currentEntry} shown={shown.filter((i) => !isRemote(i))} canUpscale={!!accel?.length}
                                 selected={shown.filter((i) => selection.has(i.imgid) && !isRemote(i))}
                                 onClose={() => setExporting(false)} onKeywordsChanged={reloadKeywords} />}
@@ -5149,13 +5343,23 @@ function Splitter({ axis, value, min, max, invert, hidden, onChange }: {
   );
 }
 
-type RightMode = "adjust" | "presets" | "masks" | "heal" | "zones";
+type RightMode = "adjust" | "presets" | "masks" | "heal" | "zones" | "negative";
+// the photo area a film border pick reads before one is picked: darktable's
+// default picker box
+const NEG_AREA: [number, number, number, number] = [0.02, 0.02, 0.98, 0.98];
+// the Negative panel's eyedroppers for one control each
+const NEG_AUTO = { dmax: autoDmax, offset: autoOffset, black: autoBlack, exposure: autoPrintExposure,
+                   shadows: autoWbLow, highlights: autoWbHigh };
+const NEG_PICK_LABELS: Record<NegPick, string> = {
+  border: "Film border", area: "Photo area", dmax: "White Point", offset: "Black Point", black: "Blacks",
+  exposure: "Negative Exposure", shadows: "Neutral Shadows", highlights: "Neutral Highlights",
+};
 // the Library panel's foldable cards; each keeps its open state under
 // immage.<id>.open
 const LEFT_CARDS = ["metadata", "keywording", "folders", "immich", "history"] as const;
 type LeftCard = typeof LEFT_CARDS[number];
 const RIGHT_TITLES: Record<RightMode, string> = { adjust: "Adjustments", presets: "Presets", masks: "Masks", heal: "Heal",
-                                                  zones: "Zone System" };
+                                                  zones: "Zone System", negative: "Negative" };
 
 // everything back to the image's defaults, as one undo step
 function ResetAll({ disabled, onReset }: { disabled: boolean; onReset: () => void }) {
@@ -5670,6 +5874,9 @@ const RotateIcon = ({ right = false }: { right?: boolean }) => icon(
 const FlipIcon = ({ vertical = false }: { vertical?: boolean }) => icon(
   <g transform={vertical ? "rotate(90 12 12)" : undefined}>
     <path d="M12 3v18" strokeDasharray="2 2.5" /><path d="M9 6 3 18h6z" /><path d="M15 6l6 12h-6z" fill="currentColor" /></g>);
+// a strip of film with its sprocket holes
+const FilmIcon = () => icon(<><rect x="4" y="2.5" width="16" height="19" rx="2" /><path d="M8 2.5v19M16 2.5v19" />
+  <path d="M4 7h4M4 12h4M4 17h4M16 7h4M16 12h4M16 17h4" /></>);
 const CropIcon = () => icon(<><path d="M6 2v14a2 2 0 0 0 2 2h14" /><path d="M18 22V8a2 2 0 0 0-2-2H2" /></>);
 const ExportIcon = () => icon(<><path d="M12 15V4" /><path d="m7.5 8.5 4.5-4.5 4.5 4.5" />
                                   <path d="M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5" /></>);
@@ -6055,10 +6262,13 @@ function PanelView({ panel: p, open, onToggle, values, session, disabled, onChan
   const [wheels, setWheels] = useState<WheelMode>("3way");
   const sections = p.tabs ? [p.sections[tab]] : p.sections;
   const showWheels = p.graph === "colorwheels" && wheels !== "sliders";
+  // a converted negative has these modules off (NEG_OFF)
+  const negative = (c: Control) => values.neg_on === 1 && NEG_GREYED.has(c.id);
   const controlProps = (c: Control) => ({
-    control: c, value: values[c.id] ?? c.neutral ?? 0,
+    control: negative(c) ? { ...c, note: "set in Negative: a converted negative turns this module off" } : c,
+    value: values[c.id] ?? c.neutral ?? 0,
     neutral: session?.neutral[c.id] ?? c.neutral ?? 0,
-    disabled: disabled || !mapOf.has(c.id) || (!!c.rawOnly && !session?.raw), onChange: (v: number) => onChange(c, v),
+    disabled: disabled || negative(c) || !mapOf.has(c.id) || (!!c.rawOnly && !session?.raw), onChange: (v: number) => onChange(c, v),
     values, glow: glowOf(c.id),
     rawOnly: !!c.rawOnly && !!session && !session.raw,
     onOption: c.optionPreview && onOptionPreview

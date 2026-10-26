@@ -72,6 +72,7 @@ const { dueIn } = await import("../app/src/activity.ts");
 const { byCaptureTime } = await import("../app/src/library.ts");
 const { NO_FILTER, exposureLabel, facetsWithin, passes } = await import("../app/src/filter.ts");
 const z = await import("../app/src/zones.ts");
+const nd = await import("../app/src/negadoctor.ts");
 const { compare, meanChroma, inEllipse, rightOf } = await import("./metrics.mjs");
 const { THRESHOLD, GLOBAL, COMPOSITE, LOCAL, trialValues, judge } = await import("./expect.mjs");
 
@@ -1288,6 +1289,76 @@ async function decisions(photo) {
     ];
     const wrong = cases.filter(([, got, want]) => got !== want).map(([label]) => label);
     return wrong.length ? `not so: ${wrong.join(", ")}` : null;
+  });
+
+  // a converted negative turns off the modules that would change the
+  // negative ahead of negadoctor, and the tone mappers; Contrast,
+  // Saturation, Highlights and Shadows run after it; it opens again so, and
+  // turned back, every module is as it was (negative.md; manifest.ts,
+  // NEG_OFF and NEG_CHOICES)
+  await decide("a converted negative turns its modules off, and back", async () => {
+    const path = fresh(photo);
+    const ops = [...m.NEG_OFF, "negadoctor"];
+    const fields = m.boundFields();
+    const state = async () => (await invoke("get_params", {
+      modules: Object.fromEntries(ops.map((op) => [op, fields[op]])) })).modules;
+    let o = await open(path);
+    const was = await state();
+    await o.after(() => o.s.setMany([["neg_on", 1], ...nd.toValues(nd.PRESETS[nd.FILM_COLOR]),
+                                     ...Object.entries(m.NEG_CHOICES)]));
+    const on = (st) => ops.filter((op) => st[op]?.enabled !== (op === "negadoctor"));
+    const converted = on(await state());
+    await o.s.close();
+    o = await open(path);
+    const reopened = on(await state());
+    const choices = Object.entries(m.NEG_CHOICES).filter(([id, v]) => o.s.values[id] !== v).map(([id]) => id);
+    const negOn = o.s.values.neg_on;
+    await o.after(() => o.s.setMany([["neg_on", 0],
+                                     ...Object.keys(m.NEG_CHOICES).map((id) => [id, o.s.neutral[id]])]));
+    const back = await state();
+    await o.s.close();
+    const changed = ops.filter((op) => op !== "negadoctor").flatMap((op) => {
+      if (back[op].enabled !== was[op].enabled) return [`${op} ${was[op].enabled ? "on" : "off"} → ${back[op].enabled ? "on" : "off"}`];
+      const moved = was[op].enabled ? Object.keys(was[op].params)
+        .filter((f) => Math.abs(back[op].params[f] - was[op].params[f]) > 1e-5) : [];
+      return moved.length ? [`${op} ${moved.map((f) => `${f} ${was[op].params[f]} → ${back[op].params[f]}`).join(", ")}`] : [];
+    });
+    return converted.length ? `converted, these are not as they should be: ${converted.join(", ")}`
+      : negOn !== 1 ? "opened again, it is not a negative"
+      : reopened.length ? `opened again, these are not as they should be: ${reopened.join(", ")}`
+      : choices.length ? `opened again, these tools are back on modules a negative turns off: ${choices.join(", ")}`
+      : changed.length ? `turned back, these are not as they were: ${changed.join(", ")}` : null;
+  });
+
+  // a camera scan's blue, under the orange mask, reads the film's densest
+  // parts as noise around zero: White Point is set from the other channels,
+  // not by that one, which darkened the whole print (negadoctor.ts,
+  // autoDmax; P5290024, a Portra scan, read 8.4 against red's 1.2)
+  await decide("a starved channel does not set the negative's White Point", async () => {
+    const p = nd.autoDmax(nd.PRESETS[nd.FILM_COLOR], {
+      min: [0.0629, 0.0154, -0.00003], mean: [0.25, 0.068, 0.0095], max: [0.81, 0.27, 0.048] });
+    const want = Math.log10(nd.PRESETS[nd.FILM_COLOR].dmin[1] / 0.0154);
+    return Math.abs(p.dmax - want) > 1e-6 ? `White Point ${p.dmax.toFixed(3)}, not green's ${want.toFixed(3)}` : null;
+  });
+
+  // the Negative panel's pickers read negadoctor's input, the negative,
+  // which its own settings leave as it is (negadoctor.c reads its picker
+  // at its input; engine `sample`, stage "negadoctor")
+  await decide("the negative's pickers read the negative", async () => {
+    const o = await open(fresh(photo));
+    const box = [0.3, 0.3, 0.7, 0.7];
+    const read = async (stage) => {
+      const r = await invoke("sample", { x: 0.5, y: 0.5, area: box, stage });
+      return r.picker?.mean ?? ["R", "G", "B"].map((k) => r.channels[k].mean);
+    };
+    await o.after(() => o.s.setMany([["neg_on", 1], ...nd.toValues(nd.PRESETS[nd.FILM_COLOR])]));
+    const neg = await read("negadoctor"), pos = await read(null);
+    await o.after(() => o.s.set("neg_dmax", 3));
+    const neg2 = await read("negadoctor"), pos2 = await read(null);
+    await o.s.close();
+    const same = (a, b) => a.every((x, i) => Math.abs(x - b[i]) <= 1e-6 * Math.max(1, Math.abs(x)));
+    return !same(neg, neg2) ? `negadoctor's own setting changed what its pickers read: ${neg} → ${neg2}`
+      : same(pos, pos2) ? "the mask stage did not change either: the check cannot tell the stages apart" : null;
   });
 
   // the Zone System's Color mask narrows a zone mask to an object boxed on

@@ -20,6 +20,7 @@ import { channelPointsFromLinear, channelPointsToLinear, fromParams as readCurve
 import { autoCrop } from "./transform";
 import { fromNodes, toNodes } from "./colorequal";
 import { cbHueTrack, displayHue } from "./colorgrading";
+import { FILM_BW, FILM_COLOR, NEG_RANGES } from "./negadoctor";
 import { PLACE_BOOST, PLACE_FIELDS, PLACE_FIRST, PLACE_MAX, PLACEMENT_OP, ROMAN, ZONE_GRAY,
          placeIds } from "./zones";
 
@@ -419,6 +420,10 @@ export const MODULE_CHOICES: ModuleChoice[] = [
               shared(MOD_DEFRINGE, "defringe", "defringe", false)],
   },
 ];
+// the tools a converted negative runs after negadoctor rather than on a
+// module NEG_OFF turns off, as darktable's negative workflow does
+export const NEG_CHOICES: Record<string, number> = { mod_contrast: MOD_CBRGB, mod_saturation: MOD_CBRGB,
+                                                     mod_tone: MOD_SHADHI };
 // which modules the photo runs on, the tone mapper's too: its own, not an
 // adjustment, so reset, presets and the Before view leave them be
 export const isModuleSetting = (id: string) => id === "tm_mode" || MODULE_CHOICES.some((c) => c.control === id);
@@ -910,6 +915,10 @@ export function turnRect(r: { l: number; t: number; r: number; b: number }, how:
   return { l: r.t, t: 1 - r.r, r: r.b, b: 1 - r.l };
 }
 
+// negadoctor's three RGB params, by the controls' names for them
+const NEG_RGB = ["dmin", "wbl", "wbh"] as const;
+const NEG_FIELD: Record<typeof NEG_RGB[number], string> = { dmin: "Dmin", wbl: "wb_low", wbh: "wb_high" };
+
 // --------------------------------------------------------------- the maps
 
 export const modules: ModuleMap[] = [
@@ -1277,6 +1286,28 @@ export const modules: ModuleMap[] = [
     write: (v) => ({ strength: v.hp_strength / 100, threshold: v.hp_threshold / 100 }),
     enabled: (v) => v.hp_enable === 1,
   },
+  // the Negative panel's film negative conversion (NegativePanel.tsx,
+  // negadoctor.ts); a converted photo has the modules of NEG_OFF off
+  {
+    op: "negadoctor", keepOn: false,
+    controls: ["neg_on", "neg_film", ...NEG_RGB.flatMap((k) => ["r", "g", "b"].map((c) => `neg_${k}_${c}`)),
+               "neg_dmax", "neg_offset", "neg_black", "neg_grade", "neg_gloss", "neg_exposure"],
+    fields: ["film_stock", ...NEG_RGB.flatMap((k) => [0, 1, 2].map((i) => `${NEG_FIELD[k]}[${i}]`)),
+             "D_max", "offset", "black", "gamma", "soft_clip", "exposure"],
+    read: (p) => ({
+      neg_on: 1, neg_film: p.film_stock,
+      ...Object.fromEntries(NEG_RGB.flatMap((k) => ["r", "g", "b"].map((c, i) => [`neg_${k}_${c}`, p[`${NEG_FIELD[k]}[${i}]`]]))),
+      neg_dmax: p.D_max, neg_offset: p.offset, neg_black: p.black, neg_grade: p.gamma, neg_gloss: p.soft_clip,
+      neg_exposure: Math.log2(p.exposure),
+    }),
+    write: (v) => ({
+      film_stock: v.neg_film,
+      ...Object.fromEntries(NEG_RGB.flatMap((k) => ["r", "g", "b"].map((c, i) => [`${NEG_FIELD[k]}[${i}]`, v[`neg_${k}_${c}`]]))),
+      D_max: v.neg_dmax, offset: v.neg_offset, black: v.neg_black, gamma: v.neg_grade, soft_clip: v.neg_gloss,
+      exposure: 2 ** v.neg_exposure,
+    }),
+    enabled: (v) => v.neg_on === 1,
+  },
   transformMap,
   flipMap,
   cropMap,
@@ -1284,6 +1315,19 @@ export const modules: ModuleMap[] = [
   vignetteMap,
   grainMap,
 ];
+
+// a converted negative turns these off: modules ahead of negadoctor that
+// would change the negative it inverts (color calibration's adaptation is
+// a 3x3 matrix, which the film base cannot divide out; the tone equalizer
+// works on scene light), and the tone mappers, whose part negadoctor's
+// print takes. the photo keeps their settings for when it is turned back
+export const NEG_OFF = new Set(["channelmixerrgb", "exposure", "exposure#compensation", "toneequal",
+                                "hazeremoval", "agx", "sigmoid"]);
+// tone mappers a photo from darktable may have, which no map covers
+export const NEG_OFF_UNMAPPED = new Set(["filmicrgb", "basecurve"]);
+// Basic's sliders on those modules, greyed on a negative; Contrast,
+// Saturation, Highlights and Shadows move to modules after it (NEG_CHOICES)
+export const NEG_GREYED = new Set(["temp", "tint", "exposure", "blacks", "whites", "dehaze", "profile"]);
 
 // --------------------------------------------------------------- the panels
 
@@ -1594,6 +1638,42 @@ export const panels: Panel[] = [
                  { id: "agx_white", label: "White Relative Exposure", min: 0.1, max: 20, step: 0.01, format: signed(2, " EV") }],
     }],
   },
+  // the Negative panel's (NegativePanel.tsx); labels are what each does,
+  // tooltips darktable's names. no neutral: negadoctor's defaults
+  {
+    id: "negative", title: "Negative", hidden: true,
+    sections: [{
+      title: "Negative",
+      controls: [
+        toggle("neg_on", "Convert Negative", 0),
+        { id: "neg_film", label: "Film Type", kind: "choice", min: 0, max: 1, step: 1, inline: true,
+          options: [["Color", FILM_COLOR], ["Black & White", FILM_BW]],
+          optionIcons: { [FILM_COLOR]: Sun, [FILM_BW]: Contrast },
+          format: (v) => (v === FILM_BW ? "Black & White" : "Color"), note: "darktable: film stock" },
+        ...NEG_RGB.flatMap((k) => (["r", "g", "b"] as const).map((c): Control => ({
+          id: `neg_${k}_${c}`, label: { r: "Red", g: "Green", b: "Blue" }[c],
+          min: NEG_RANGES[k][0], max: NEG_RANGES[k][1], step: 0.0001, format: plain(3),
+          note: `darktable: ${{ dmin: "color of the film base (D min)", wbl: "shadows color cast",
+                                wbh: "highlights white balance" }[k]}`,
+        }))),
+        { id: "neg_dmax", label: "White Point", min: NEG_RANGES.dmax[0], max: NEG_RANGES.dmax[1], step: 0.001,
+          format: plain(3), note: "the film's densest part, which becomes white: left brightens the highlights, "
+            + "right darkens them (darktable: D max)" },
+        { id: "neg_offset", label: "Black Point", min: NEG_RANGES.offset[0], max: NEG_RANGES.offset[1], step: 0.001,
+          format: signed(3), note: "where the scan's darkest tones sit: left brightens the shadows, right "
+            + "darkens them (darktable: scan exposure bias)" },
+        { id: "neg_exposure", label: "Exposure", min: NEG_RANGES.exposure[0], max: NEG_RANGES.exposure[1], step: 0.01,
+          format: signed(2, " EV"), note: "overall brightness of the print (darktable: print exposure adjustment)" },
+        { id: "neg_grade", label: "Contrast", min: NEG_RANGES.grade[0], max: NEG_RANGES.grade[1], step: 0.01,
+          format: plain(2), note: "the print's contrast (darktable: paper grade)" },
+        { id: "neg_black", label: "Blacks", min: NEG_RANGES.black[0], max: NEG_RANGES.black[1], step: 0.0001,
+          format: (v) => `${(v * 100).toFixed(1)}%`, note: "how deep the blacks go (darktable: paper black)" },
+        { id: "neg_gloss", label: "Highlight Roll-off", min: NEG_RANGES.gloss[0], max: NEG_RANGES.gloss[1], step: 0.0001,
+          format: (v) => `${(v * 100).toFixed(0)}%`,
+          note: "where the brightest tones start to compress: lower is gentler (darktable: paper gloss)" },
+      ],
+    }],
+  },
   // which module each of MODULE_CHOICES' tools runs on for this photo. its
   // neutral is what Preferences picks, set when the photo opens
   {
@@ -1620,7 +1700,7 @@ export const mapsWith = (id: string) => modules.filter((m) => m.controls.include
 const MODULE_NAMES: Record<string, string> = {
   agx: "AgX", ashift: "rotate and perspective", bilat: "local contrast", channelmixerrgb: "color calibration",
   cacorrectrgb: "chromatic aberrations", colorbalancergb: "color balance rgb", colorequal: "color equalizer",
-  crop: "crop", defringe: "defringe", demosaic: "demosaic",
+  crop: "crop", defringe: "defringe", demosaic: "demosaic", negadoctor: "negadoctor",
   denoiseprofile: "denoise (profiled)", diffuse: "diffuse or sharpen", exposure: "exposure", flip: "orientation",
   grain: "grain", hazeremoval: "haze removal", hotpixels: "hot pixels", lens: "lens correction", rgbcurve: "rgb curve",
   shadhi: "shadows and highlights", sharpen: "sharpen", sigmoid: "sigmoid", tonecurve: "tone curve",

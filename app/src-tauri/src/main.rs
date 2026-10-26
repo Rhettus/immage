@@ -200,10 +200,11 @@ async fn masks(state: State<'_, AppState>, fields: Value) -> Result<Value, Strin
 }
 
 // the working-space values at a point of the shown image, or over a box of
-// it [x0, y0, x1, y1], for range masks
+// it [x0, y0, x1, y1], for range masks; with `stage` "negadoctor", at
+// negadoctor's input, for the Negative panel's pickers
 #[tauri::command]
-async fn sample(state: State<'_, AppState>, x: f64, y: f64, area: Option<Vec<f64>>) -> Result<Value, String> {
-    state.engine().request(json!({ "cmd": "sample", "x": x, "y": y, "box": area }))
+async fn sample(state: State<'_, AppState>, x: f64, y: f64, area: Option<Vec<f64>>, stage: Option<String>) -> Result<Value, String> {
+    state.engine().request(json!({ "cmd": "sample", "x": x, "y": y, "box": area, "stage": stage }))
 }
 
 // the mean log2 luminance the tone mapper gets, for Auto's exposure
