@@ -4912,18 +4912,20 @@ export default function App() {
                 onClick={() => setImportOpen(true)}><ImportIcon /></button>
         <div className="rail-sep" />
         <div className="rail-group" data-tour="edit">
+        {/* the tools work on the open photo, not its cell: one opened before
+            its folder listed it, or from elsewhere, has none */}
         <button className={`tool${layout.right && !cropping && rightMode === "adjust" ? " on" : ""}`} title="adjustments"
                 data-tour="adjust" onClick={() => showRight("adjust")}>
           <SlidersIcon /></button>
-        <button className={`tool${cropping ? " on" : ""}`} title="crop (R)" data-tour="crop" disabled={!currentEntry}
+        <button className={`tool${cropping ? " on" : ""}`} title="crop (R)" data-tour="crop" disabled={!current}
                 onClick={() => (cropping ? leaveCrop(true) : enterCrop())}><CropIcon /></button>
         <button className={`tool${layout.right && !cropping && masksMode ? " on" : ""}`} title="masks" data-tour="masks"
-                disabled={!currentEntry} onClick={() => showRight("masks")}><LayersIcon /></button>
+                disabled={!current} onClick={() => showRight("masks")}><LayersIcon /></button>
         <button className={`tool${layout.right && !cropping && rightMode === "zones" ? " on" : ""}`} title="zone system"
-                data-tour="zones" disabled={!currentEntry} onClick={() => showRight("zones")}><ZonesIcon /></button>
+                data-tour="zones" disabled={!current} onClick={() => showRight("zones")}><ZonesIcon /></button>
         <button className={`tool${layout.right && !cropping && healMode ? " on" : ""}`} title="heal and clone (Q)"
                 data-tour="heal"
-                disabled={!currentEntry} onClick={() => showRight("heal")}><HealIcon /></button>
+                disabled={!current} onClick={() => showRight("heal")}><HealIcon /></button>
         <button className={`tool${layout.right && !cropping && rightMode === "presets" ? " on" : ""}`} title="presets" data-tour="presets"
                 onClick={() => showRight("presets")}><PresetsIcon /></button>
         </div>
