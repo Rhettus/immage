@@ -36,6 +36,10 @@ Improvements
 - Lens Corrections has Hot Pixels, which removes the stuck and hot
   pixels of long exposures and high ISO, with Strength and Threshold;
   raws only, and off until turned on
+- the Export dialog's preview renders several times faster on an edited
+  photo, and shows again at once a frame or preset you have already
+  tried; under it is the name the file will be exported with, not the
+  original's
 
 Bug fixes
 
