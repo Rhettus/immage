@@ -33,6 +33,9 @@ Improvements
 - a mask's handles and guides show while the pointer is over the photo,
   and step aside while it is over the panels, so the adjustment can be
   seen
+- Lens Corrections has Hot Pixels, which removes the stuck and hot
+  pixels of long exposures and high ISO, with Strength and Threshold;
+  raws only, and off until turned on
 
 Bug fixes
 
