@@ -975,6 +975,19 @@ static gboolean _module_state(const char *op, const int priority, const gboolean
   return TRUE;
 }
 
+// a frame's identity for the client: darktable's hash of the pipe, and
+// every shape of the edit (drawn masks, spots). darktable takes a piece's
+// mask shapes from darktable.develop (imageop.c, dt_iop_commit_params),
+// which is not this engine's develop, so its hash alone stays the same
+// when a mask is reshaped, and `have` would hand back the frame from before
+static dt_hash_t _frame_hash(const dt_hash_t pipe_hash)
+{
+  dt_hash_t hash = pipe_hash;
+  for(GList *l = _s.dev.forms; l; l = g_list_next(l))
+    hash = dt_masks_group_hash_ext(hash, l->data, _s.dev.forms);
+  return hash;
+}
+
 // process into the pipe's 8-bit backbuf; returns the output size
 // with scale <= 0, fit the whole image into bw x bh. otherwise render the
 // bw x bh window at (x, y) of the image scaled by `scale` (1 is 100%), the
@@ -1010,9 +1023,10 @@ static gboolean _render(dt_dev_pixelpipe_t *pipe, const int devid, const int bw,
   {
     // the hash dt_dev_pixelpipe_process() gives its backbuf (pixelpipe_hb.c),
     // from the pieces' hashes, which the pipe's sync has brought current.
-    // the same hash is darktable's own test for reusing a cacheline
+    // the same hash is darktable's own test for reusing a cacheline. the
+    // edit's shapes go in as for the frames it sends (_frame_hash)
     const dt_iop_roi_t roi = { ox, oy, w, h, (float)scale };
-    const dt_hash_t hash = dt_dev_pixelpipe_cache_hash(&roi, pipe, g_list_length(pipe->iop));
+    const dt_hash_t hash = _frame_hash(dt_dev_pixelpipe_cache_hash(&roi, pipe, g_list_length(pipe->iop)));
     gchar *hex = g_strdup_printf("%016" PRIx64, hash);
     for(guint k = 0; k < json_array_get_length(have); k++)
       if(!g_strcmp0(json_array_get_string_element(have, k), hex)) *kept = hash;
@@ -6900,9 +6914,9 @@ static void _handle(JsonObject *req, FILE *out)
       json_builder_add_int_value(b, w);
       json_builder_set_member_name(b, "height");
       json_builder_add_int_value(b, h);
-      // darktable's hash of the frame, the same for one rendered again with
-      // nothing changed: a client can tell that frame from a new one
-      gchar *hash = g_strdup_printf("%016" PRIx64, pipe->backbuf_hash);
+      // the frame's hash, the same for one rendered again with nothing
+      // changed: a client can tell that frame from a new one
+      gchar *hash = g_strdup_printf("%016" PRIx64, _frame_hash(pipe->backbuf_hash));
       _add_string(b, "hash", hash);
       g_free(hash);
       json_builder_set_member_name(b, "process_ms");

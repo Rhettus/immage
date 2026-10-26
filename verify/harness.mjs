@@ -664,6 +664,24 @@ async function fixes(photo) {
     return got?.blur > 0 ? null : `opened again, its refinements are ${JSON.stringify(got ?? null)}`;
   });
 
+  // 0.37.0: darktable takes a mask's shapes into the pipe's hash from
+  // darktable.develop, not the engine's develop, so 0.36.0's frames by hash
+  // (`have`) handed back the zoomed frame from before a mask moved: the
+  // view showed the mask where it had been, or not at all
+  await fix("a moved mask isn't shown where it was", async () => {
+    const o = await open(fresh(photo));
+    const plain = await zoomed(o);
+    const spot = { ...MASK, x: 0.5, y: 0.5, rx: 0.1, ry: 0.1, feather: 0.02 };
+    await o.after(() => o.s.addMask("Spot", [spot]));
+    const lit = await o.after(() => o.s.setLocal("Spot", "l_exposure", 1));
+    const moved = await o.after(() => o.s.setShapes("Spot", [{ ...spot, x: 0.05, y: 0.05, rx: 0.02, ry: 0.02 }]));
+    await o.s.close();
+    const center = inEllipse(0.5, 0.5, 0.1);
+    const stale = compare(moved, plain, center).mad;
+    return brighter(lit, plain, center) ? "the mask did not brighten the zoomed view"
+      : stale > 1 ? `moved out of the view, the mask still shows there (${stale.toFixed(1)} of 255 apart)` : null;
+  });
+
   // 0.36.0: on Linux at 2x, a drag's frames took longer than the busy
   // indicator's wait, so it came up between them, and its spinning redrew
   // the whole window every display frame. a job that has shown a frame
