@@ -929,6 +929,31 @@ async function decisions(photo) {
       : moved.hash === o.base.hash ? "a changed edit rendered with the same hash" : null;
   });
 
+  // the Export dialog's preview is a draft, downscaled after demosaic as
+  // the darkroom does, many times quicker on an edited photo; an export
+  // runs the whole pipe at full size (main.rs, export_preview; _export's
+  // `draft`). both come out the same size
+  await decide("the export preview is a draft", async () => {
+    const o = await open(fresh(photo));
+    await o.after(() => { o.s.endBaseline(); o.s.set("exposure", 0.5); });
+    const exported = async (draft) => {
+      const out = join(args.work, "export", `${copies}-preview-${draft}.jpg`);
+      mkdirSync(dirname(out), { recursive: true });
+      await request({ cmd: "export", imgid: o.s.imgid, out, format: "jpeg", color_space: "srgb", quality: 90,
+                      long_edge: 512, frame: { borders: [{ top: 5, left: 5, right: 5, bottom: 5, unit: "short",
+                                                          color: "#ffffff" }] }, draft });
+      const file = readFileSync(out);
+      // the size from the frame header (SOF0/SOF2), the data after it
+      const sof = file.findIndex((b, i) => b === 0xff && (file[i + 1] === 0xc0 || file[i + 1] === 0xc2));
+      return { size: `${file.readUInt16BE(sof + 7)}x${file.readUInt16BE(sof + 5)}`,
+               data: file.subarray(file.indexOf(Buffer.from([0xff, 0xda]))) };
+    };
+    const full = await exported(false), draft = await exported(true);
+    await o.s.close();
+    return draft.size !== full.size ? `the draft is ${draft.size}, the export ${full.size}`
+      : draft.data.equals(full.data) ? "the preview rendered as the export does, at full size" : null;
+  });
+
   // Preferences' exposure compensation goes on a raw's own exposure
   // instance, as App.tsx's new-photo defaults set it: Exposure still reads 0,
   // its moves add to the compensation, and the photo keeps both (user guide,

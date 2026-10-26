@@ -37,6 +37,8 @@ const DATE_FORMATS = ["YYYYMMDD", "YYYY-MM-DD", "YYYY_MM_DD", "YYMMDD", "DD-MM-Y
 
 // the preview is the export made smaller, at most this long
 const PREVIEW_EDGE = 1400;
+// how many previews the dialog keeps to show again
+const PREVIEWS_KEPT = 8;
 
 // what to do with a file that is already there, as Lightroom asks it
 type Choice = "unique" | "overwrite" | "skip" | "cancel";
@@ -293,6 +295,13 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
     return () => window.removeEventListener("keydown", onKey);
   }, [busy, naming, onClose]);
 
+  // the file name the export gives the photo numbered `seq` of `total`,
+  // without its extension
+  const stemFor = (i: ImageEntry, meta: Meta, seq: number, total: number) =>
+    s.naming === "original" ? i.filename.replace(/\.[^.]+$/, "")
+      : s.naming === "custom" ? `${s.customName.trim()}-${String(seq).padStart(3, "0")}`
+      : expand(s.template, i, meta, seq, total, s.dateFormat);
+
   // ---------------------------------------------------------- preview
   // the first photo the export covers, exported small with the same frame
   const shownImage = items[0] ?? current;
@@ -311,9 +320,22 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
   const [preview, setPreview] = useState<{ url: string; key: string } | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const previewSeq = useRef(0);
+  // the previews rendered while the dialog is open, by key, oldest first:
+  // the photo can't change under the dialog, so going back to a frame seen
+  // before shows it without the engine
+  const previewCache = useRef(new Map<string, string>());
   useEffect(() => {
     if (!previewKey || busy || !shownImage) return;
     const seq = ++previewSeq.current;
+    const cached = previewCache.current.get(previewKey);
+    if (cached) {
+      // the newest again, kept longest
+      previewCache.current.delete(previewKey);
+      previewCache.current.set(previewKey, cached);
+      setPreview({ url: cached, key: previewKey });
+      setPreviewError(null);
+      return;
+    }
     const t = window.setTimeout(async () => {
       try {
         const bytes = await invoke<ArrayBuffer>("export_preview", {
@@ -323,7 +345,14 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
         });
         if (seq !== previewSeq.current) return;
         const url = URL.createObjectURL(new Blob([bytes], { type: "image/jpeg" }));
-        setPreview((old) => { if (old) URL.revokeObjectURL(old.url); return { url, key: previewKey }; });
+        const cache = previewCache.current;
+        cache.set(previewKey, url);
+        if (cache.size > PREVIEWS_KEPT) {
+          const [oldest, gone] = cache.entries().next().value!;
+          cache.delete(oldest);
+          URL.revokeObjectURL(gone);
+        }
+        setPreview({ url, key: previewKey });
         setPreviewError(null);
       } catch (e) {
         if (seq === previewSeq.current) setPreviewError(String(e));
@@ -331,7 +360,10 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
     }, 400);
     return () => window.clearTimeout(t);
   }, [previewKey, busy]);
-  useEffect(() => () => { setPreview((old) => { if (old) URL.revokeObjectURL(old.url); return null; }); }, []);
+  useEffect(() => () => {
+    for (const url of previewCache.current.values()) URL.revokeObjectURL(url);
+    previewCache.current.clear();
+  }, []);
 
   const pickDir = async () => {
     const dir = await open({ directory: true, defaultPath: s.dir || undefined });
@@ -357,10 +389,7 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
       const needMeta = s.naming === "template" || s.texts.length > 0;
       const metas = await Promise.all(items.map(async (i) => !needMeta ? EMPTY_META
         : invoke<{ image: { metadata: Meta } }>("meta", { imgid: i.imgid }).then((r) => r.image.metadata)));
-      const stems = items.map((i, k) =>
-        s.naming === "original" ? i.filename.replace(/\.[^.]+$/, "")
-          : s.naming === "custom" ? `${s.customName.trim()}-${String(k + 1).padStart(3, "0")}`
-          : expand(s.template, i, metas[k], k + 1, items.length, s.dateFormat));
+      const stems = items.map((i, k) => stemFor(i, metas[k], k + 1, items.length));
       // files already there, or named twice in this export: what to do
       // with each, asked one at a time unless applied to all the rest
       const conflicts: (Choice | null)[] = items.map(() => null);
@@ -631,8 +660,8 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
                 </>
               )}
               {shownImage && s.naming !== "original" && (
-                <div className="example">e.g. {s.naming === "custom" ? `${s.customName.trim() || "name"}-001`
-                  : expand(s.template, shownImage, previewMeta?.meta ?? EMPTY_META, 1, items.length || 1, s.dateFormat)}
+                <div className="example">e.g. {s.naming === "custom" && !s.customName.trim() ? "name-001"
+                  : stemFor(shownImage, previewMeta?.meta ?? EMPTY_META, 1, items.length || 1)}
                   .{ext(s.format)}</div>
               )}
             </Section>
@@ -772,7 +801,8 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
             </div>
             <div className="preview-caption">
               {previewError ? <span className="warn">{previewError}</span>
-                : shownImage ? <>{shownImage.filename}{items.length > 1 ? `, first of ${items.length}` : ""}</> : null}
+                : shownImage ? <>{stemFor(shownImage, previewMeta?.meta ?? EMPTY_META, 1, items.length || 1)}
+                    .{ext(s.format)}{items.length > 1 ? `, first of ${items.length}` : ""}</> : null}
             </div>
           </div>
         </div>
