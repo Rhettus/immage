@@ -37,6 +37,9 @@ Improvements
   photo's brightest tones, as a mask's Whites does, where it only reshaped
   the top of AgX's curve. Photos edited before keep their look until Whites
   is moved
+- Clarity is fine near zero: ±1 already flattened the photo's contrast,
+  more than ±10 did, and now each step adds a little. ±100 looks as
+  before, and photos edited before keep their look until Clarity is moved
 - Lens Corrections has Hot Pixels, which removes the stuck and hot
   pixels of long exposures and high ISO, with Strength and Threshold;
   raws only, and off until turned on
