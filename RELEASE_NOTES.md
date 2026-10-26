@@ -11,6 +11,11 @@ interface to move.
 
 Improvements
 
+- exports leave out the camera's and lens's serial numbers, which sites
+  such as Flickr show to everyone. The export dialog's Privacy section is
+  now Metadata, with a box for each part of what a file carries: camera
+  and lens, serial numbers and owner name, location, title and caption,
+  keywords, and darktable's edit history. Presets keep the boxes
 - the navigator stays the same size whatever the photo's shape: a
   portrait photo no longer makes it tall enough to push the panels
   below it down
