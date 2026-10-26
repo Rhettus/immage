@@ -6183,21 +6183,23 @@ function Navigator({ thumb, zoom, placement: p, disabled, onZoom, onPan }: {
           ))}
         </span>
       </div>
-      <div className="nav-image"
-           onPointerDown={(e) => {
-             if (!zoomed) return;
-             (e.target as HTMLElement).setPointerCapture(e.pointerId);
-             const a = at(e); setLive(a); onPan(a.x, a.y, false);
-           }}
-           onPointerMove={(e) => { if (live) { const a = at(e); setLive(a); onPan(a.x, a.y, false); } }}
-           onPointerUp={(e) => { if (live) { const a = at(e); setLive(null); onPan(a.x, a.y, true); } }}>
-        <canvas ref={thumb} />
-        {shown && (
-          <div className="nav-rect" style={{
-            left: `${shown.x * 100}%`, top: `${shown.y * 100}%`,
-            width: `${shown.w * 100}%`, height: `${shown.h * 100}%`,
-          }} />
-        )}
+      <div className="nav-image">
+        <div className="nav-pic"
+             onPointerDown={(e) => {
+               if (!zoomed) return;
+               (e.target as HTMLElement).setPointerCapture(e.pointerId);
+               const a = at(e); setLive(a); onPan(a.x, a.y, false);
+             }}
+             onPointerMove={(e) => { if (live) { const a = at(e); setLive(a); onPan(a.x, a.y, false); } }}
+             onPointerUp={(e) => { if (live) { const a = at(e); setLive(null); onPan(a.x, a.y, true); } }}>
+          <canvas ref={thumb} />
+          {shown && (
+            <div className="nav-rect" style={{
+              left: `${shown.x * 100}%`, top: `${shown.y * 100}%`,
+              width: `${shown.w * 100}%`, height: `${shown.h * 100}%`,
+            }} />
+          )}
+        </div>
       </div>
     </div>
   );
