@@ -27,6 +27,12 @@ Improvements
   parade, vectorscope, and waveform with vectorscope; ⇧H steps back
 - opening another photo from Masks, Heal or the Zone System returns the
   right-hand panel to the adjustments; Presets stays open
+- a mask made by an AI selection shows its overlay straight away, so
+  you can see what was selected, until you press O or move one of its
+  sliders
+- a mask's handles and guides show while the pointer is over the photo,
+  and step aside while it is over the panels, so the adjustment can be
+  seen
 
 Bug fixes
 
