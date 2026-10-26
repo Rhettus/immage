@@ -5,6 +5,13 @@ what Immage's update banner shows under Release Notes.
 
 ## 0.37.0
 
+Improvements
+
+- a Frame cache setting, in Preferences › General under Performance,
+  sets the memory kept for frames already shown, so zooming back out or
+  returning to a view needs no render. On a 4K screen or larger it
+  starts at 512 MB, double what 0.36.0 kept
+
 Bug fixes
 
 - zoomed in, moving or reshaping a drawn mask shows it in its new place;
