@@ -1781,6 +1781,9 @@ export default function App() {
 
   const paintFrame = useCallback((f: Frame) => {
     draftShown.current = !!f.view.draft;
+    // a draft back after the control let go (a short drag, or a slow draft
+    // zoomed in) came too late for the release to ask for its full frame
+    if (f.view.draft && !dragging.current) session.current?.requestRender();
     // the split view's before side: drawn on its own layer, and the session
     // goes back to the edit at once
     if (f.before && baModeRef.current !== "off") {
