@@ -47,11 +47,15 @@ dispatch2 = "0.3"
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString"] }
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSWorkspace"] }
 
+# statfs, for the drive a library folder is on (volumes.rs; already in the tree)
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 # WebView2's shared buffers, for frames (main.rs, shared_frame); the versions
 # wry uses (already in the tree, via tauri)
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.39"
-windows = "0.62"
+windows = { version = "0.62", features = ["Win32_Storage_FileSystem"] }
 
 [dev-dependencies]
 mockito = "1.7.2"

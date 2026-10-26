@@ -53,7 +53,7 @@ import { loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEdi
          loadNegWarn, loadReadAhead, loadThumbMemoryMb, storeNegWarn, type Pins, type PrefsTab, type Preview } from "./Preferences";
 import { kindOf, loadPlugins, loadReturns, returnValues, storePlugins, unfit, type PluginConfig,
          type PluginReturn } from "./plugins";
-import { FolderTree } from "./FolderTree";
+import { FolderTree, type Volume } from "./FolderTree";
 import { baseName, parentDir, within } from "./paths";
 import { ImportView } from "./ImportView";
 import type { ImportResult } from "@immporter/embed";
@@ -159,6 +159,27 @@ export default function App() {
     setExpanded(next);
     saveLibrary({ expanded: [...next] });
   };
+  // the drive each folder is on, for the tree's headings; kept between
+  // launches, so a folder on a share not mounted stays under its share
+  const [volumes, setVolumes] = useState<Map<string, Volume>>(
+    () => new Map(Object.entries(loadLibrary().volumes ?? {}).map(([p, v]) => [p, { ...v, online: true }])));
+  const volumesRef = useRef(volumes);
+  volumesRef.current = volumes;
+  const [foldedVolumes, setFoldedVolumes] = useState<Set<string>>(() => new Set(loadLibrary().foldedVolumes));
+  useEffect(() => {
+    let stale = false;
+    void invoke<Volume[]>("folder_volumes", { paths: folders }).then((list) => {
+      if (stale) return;
+      const next = new Map<string, Volume>();
+      for (const v of list) {
+        const seen = volumesRef.current.get(v.path);
+        next.set(v.path, !v.online && seen ? { ...seen, online: false } : v);
+      }
+      setVolumes(next);
+      saveLibrary({ volumes: Object.fromEntries(next) });
+    });
+    return () => { stale = true; };
+  }, [folders, folderRefresh]);
   const [images, setImages] = useState<ImageEntry[]>([]);
   // the key handler and the loader outlive renders, so they read these refs
   const imagesRef = useRef<ImageEntry[]>([]);
@@ -4474,9 +4495,17 @@ export default function App() {
                   if (folder) void showFolder(folder);
                 }} />
               </label>
-              <FolderTree roots={folders} current={immich ? null : folder} photo={photoDir} expanded={expanded} hidden={hidden}
+              <FolderTree roots={folders} volumes={volumes} folded={foldedVolumes}
+                          current={immich ? null : folder} photo={photoDir} expanded={expanded} hidden={hidden}
                           refresh={folderRefresh}
-                          icon={<FolderIcon />} onOpen={(d) => { void showFolder(d); setGrid(true); }} onRemove={removeFolder}
+                          icon={<FolderIcon />} driveIcon={<DriveIcon />} networkIcon={<NetworkIcon />}
+                          onFold={(m) => {
+                            const next = new Set(foldedVolumes);
+                            if (next.has(m)) next.delete(m); else next.add(m);
+                            setFoldedVolumes(next);
+                            saveLibrary({ foldedVolumes: [...next] });
+                          }}
+                          onOpen={(d) => { void showFolder(d); setGrid(true); }} onRemove={removeFolder}
                           onToggle={(d) => {
                             const next = new Set(expanded);
                             if (next.has(d)) next.delete(d); else next.add(d);
@@ -5268,7 +5297,8 @@ type Opened = { path: string; imgid: number | null };
 // the folders added to the library panel, and the folder and image open
 // last, with its version; remembered between launches
 type Library = { folders: string[]; current: string | null; image: string | null; expanded: string[];
-                 hidden: string[]; sampled?: boolean; version?: number };
+                 hidden: string[]; sampled?: boolean; version?: number;
+                 volumes?: Record<string, Volume>; foldedVolumes?: string[] };
 function loadLibrary(): Library {
   try {
     return { folders: [], current: null, image: null, expanded: [], hidden: [],
@@ -5844,6 +5874,10 @@ const icon = (path: React.ReactNode) => (
        strokeLinecap="round" strokeLinejoin="round">{path}</svg>
 );
 const FolderIcon = () => icon(<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />);
+const DriveIcon = () => icon(<><rect x="3" y="13" width="18" height="7" rx="2" />
+  <path d="M5.5 13 8 5h8l2.5 8" /><path d="M17 16.5h.01" /></>);
+const NetworkIcon = () => icon(<><rect x="3" y="4" width="18" height="7" rx="2" /><path d="M7 7.5h.01" />
+  <path d="M12 11v5" /><path d="M4 19h16" /><circle cx="12" cy="19" r="1.5" /></>);
 const StarIcon = ({ filled }: { filled: boolean }) => (
   <svg className="icon" viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor"
        strokeWidth="1.6" strokeLinejoin="round">

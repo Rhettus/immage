@@ -3,22 +3,38 @@
 
 // the library panel's folders as a tree, as Lightroom's: each folder added
 // opens into its subfolders, read from disk when first opened and again
-// whenever it is reopened, so folders made since (by an import) show
+// whenever it is reopened, so folders made since (by an import) show.
+// with folders on more than one drive, each drive is a heading over its
+// folders, so a 2026 on the Mac and a 2026 on a NAS are told apart
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { baseName } from "./paths";
 
 type SubFolder = { name: string; path: string; has_children: boolean };
+// the drive a folder is on (folder_volumes, volumes.rs)
+export type Volume = { path: string; mount: string; name: string; host: string | null; network: boolean; online: boolean };
 
-export function FolderTree({ roots, current, photo, expanded, hidden, refresh, icon, onToggle, onOpen, onRemove }: {
+// points right, and turns down when what it opens opens
+const chevron = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6"
+       strokeLinecap="round" strokeLinejoin="round"><path d="m9 5 7 7-7 7" /></svg>
+);
+
+export function FolderTree({ roots, volumes, folded, current, photo, expanded, hidden, refresh, icon, driveIcon, networkIcon,
+                             onToggle, onFold, onOpen, onRemove }: {
   roots: string[];
+  volumes: Map<string, Volume>;        // by root
+  folded: Set<string>;                 // drive headings closed, by mount
   current: string | null;
   photo: string | null;                // the open photo's folder: scrolled to, and marked when not `current`
   expanded: Set<string>;
   hidden: Set<string>;                 // subfolders taken off the tree
   refresh: number;                     // bumped to read every open folder again
   icon: React.ReactNode;
+  driveIcon: React.ReactNode;
+  networkIcon: React.ReactNode;
   onToggle: (path: string) => void;
+  onFold: (mount: string) => void;
   onOpen: (path: string) => void;
   onRemove: (path: string) => void;
 }) {
@@ -48,20 +64,19 @@ export function FolderTree({ roots, current, photo, expanded, hidden, refresh, i
     el.scrollIntoView({ block: "nearest" });
   };
 
-  const row = (path: string, name: string, depth: number, hasChildren: boolean): React.ReactNode => {
+  const row = (path: string, name: string, depth: number, hasChildren: boolean, offline = false): React.ReactNode => {
     const open = expanded.has(path);
     const kids = open ? children.get(path)?.filter((k) => !hidden.has(k.path)) : undefined;
     const holdsPhoto = path === photo && path !== current;
     return (
       <li key={path}>
-        <div className={`folder-row${path === current ? " active" : ""}${holdsPhoto ? " has-photo" : ""}`} title={path}
+        <div className={`folder-row${path === current ? " active" : ""}${holdsPhoto ? " has-photo" : ""}${offline ? " offline" : ""}`}
+             title={offline ? `${path}\nnot connected` : path}
              ref={path === photo ? reveal : undefined}
              style={{ paddingLeft: 8 + depth * 14 }} onClick={() => onOpen(path)}>
           <button className={`twisty${open ? " open" : ""}${hasChildren ? "" : " none"}`} tabIndex={-1}
                   onClick={(e) => { e.stopPropagation(); if (hasChildren) onToggle(path); }}>
-            {/* points right, and turns down when the folder opens */}
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6"
-                 strokeLinecap="round" strokeLinejoin="round"><path d="m9 5 7 7-7 7" /></svg>
+            {chevron}
           </button>
           {icon}<span className="name">{name}</span>
           {holdsPhoto && <span className="photo-dot" title="the open photo is in this folder" />}
@@ -76,9 +91,33 @@ export function FolderTree({ roots, current, photo, expanded, hidden, refresh, i
   };
 
   // a root's twisty shows until it is known to have no subfolders
+  const rootRow = (r: string, depth: number) =>
+    row(r, baseName(r), depth, children.get(r)?.length !== 0, volumes.get(r)?.online === false);
+
+  // drives in the order their first folder was added
+  const drives = new Map<string, string[]>();
+  for (const r of roots) {
+    const mount = volumes.get(r)?.mount ?? "";
+    drives.set(mount, [...(drives.get(mount) ?? []), r]);
+  }
+  if (drives.size < 2) return <ul className="folders">{roots.map((r) => rootRow(r, 0))}</ul>;
   return (
     <ul className="folders">
-      {roots.map((r) => row(r, baseName(r), 0, children.get(r)?.length !== 0))}
+      {[...drives].map(([mount, list]) => {
+        const v = volumes.get(list[0]);
+        const open = !folded.has(mount);
+        return (
+          <li key={`drive:${mount}`}>
+            <div className="folder-volume" title={v?.host ? `${mount}\non ${v.host}` : mount} onClick={() => onFold(mount)}>
+              <span className={`twisty${open ? " open" : ""}`}>{chevron}</span>
+              {v?.network ? networkIcon : driveIcon}
+              <span className="name">{v?.name || mount}</span>
+              {v?.host && <span className="host">{v.host}</span>}
+            </div>
+            {open && <ul>{list.map((r) => rootRow(r, 1))}</ul>}
+          </li>
+        );
+      })}
     </ul>
   );
 }

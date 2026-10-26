@@ -31,6 +31,11 @@ Open the **Folders** card in the **Library** panel.
   deleted.
 - When the open photo is in a folder you aren't browsing, that folder is
   marked with a dot.
+- When your folders are on more than one drive, each drive is a heading
+  over its folders, so two folders with the same name (a 2026 on your
+  computer and a 2026 on a NAS) are told apart. A network share shows a
+  network icon and its server's name. Click a heading to fold it. A
+  folder on a share that isn't connected stays under its share, dimmed.
 
 Folders you import into join the list by themselves. The list, the open
 folder and the last photo are remembered when you quit.
