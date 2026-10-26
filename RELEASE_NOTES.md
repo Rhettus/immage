@@ -32,6 +32,7 @@ Bug fixes
 - Crop, Masks, Zone System and Heal in the tool rail no longer go dim
   and stop responding while a photo is open, as they could when the
   folder shown no longer listed it
+- the History card's rows are no longer at times drawn over each other
 
 ## 0.36.0
 
