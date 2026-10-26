@@ -5,8 +5,18 @@ what Immage's update banner shows under Release Notes.
 
 ## 0.37.0
 
+Immage is in alpha. Large changes are made often, from one release to the
+next, so keep copies of photos you care about, and expect parts of the
+interface to move.
+
 Improvements
 
+- the crop frame is easier to take hold of: its corners can be grabbed
+  further out, and an edge anywhere along it rather than only at its
+  middle bar
+- on the Mac, the first click in Immage while another app is in front
+  goes to the photo or control under it, rather than only bringing
+  Immage to the front
 - film negatives: the Negative panel, on the film strip button in the
   rail, turns a photo of a color or black and white negative into a
   positive with darktable's negadoctor. Pick the film border, then the
