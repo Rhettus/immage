@@ -48,8 +48,9 @@ registerHooks({
   },
 });
 
-// what the WebView would have: the timers Session and activity.ts use, and
-// localStorage, which holds Preferences › Modules
+// what the WebView would have: the timers Session and activity.ts use,
+// localStorage, which holds Preferences › Modules, and ImageData, which a
+// mask's overlay comes in
 const store = new Map();
 globalThis.window = globalThis;
 globalThis.localStorage = {
@@ -59,6 +60,9 @@ globalThis.localStorage = {
 };
 globalThis.requestAnimationFrame = (f) => setTimeout(() => f(performance.now()), 16);
 globalThis.cancelAnimationFrame = (t) => clearTimeout(t);
+globalThis.ImageData = class {
+  constructor(w, h) { this.width = w; this.height = h; this.data = new Uint8ClampedArray(4 * w * h); }
+};
 
 const args = JSON.parse(process.argv[2]);
 const { startEngine, stopEngine, request, requestTagged, invoke, sent, models, FRAME_HEAD } = await import(SHIM);
@@ -66,7 +70,7 @@ const { Session } = await import("../app/src/session.ts");
 const { withModel } = await import("../app/src/aiModel.ts");
 const m = await import("../app/src/manifest.ts");
 const { canMerge } = await import("../app/src/localMerge.ts");
-const { aiRefine, overlayShown, overlayStep } = await import("../app/src/masks.ts");
+const { aiRefine, overlayPixels, overlayShown, overlayStep } = await import("../app/src/masks.ts");
 const { ILLUMINANT_D } = await import("../app/src/wb.ts");
 const { autoTone } = await import("../app/src/autoTone.ts");
 const { dueIn } = await import("../app/src/activity.ts");
@@ -774,6 +778,36 @@ async function fixes(photo) {
     await o.s.close();
     const moved = before.filter((v, k) => Math.abs(v - after[k]) > 2).length / before.length;
     return moved > 0.01 ? `after a zoomed mask map, ${(100 * moved).toFixed(0)}% of the range map changed` : null;
+  });
+
+  // 0.38.0: an AI selection's overlay was drawn from a copy of its outline
+  // 512 px across, so zoomed in its edge came in steps, and it left out
+  // darktable's default feather. it is drawn at the overlay's own size now
+  // (masks.ts, objectCover): a circle 10x zoomed matches darktable's
+  // coverage, full inside, falling linearly over the feather outside
+  if (photo === args.photos[0]) await fix("an AI selection's overlay zoomed in", async () => {
+    const W = 6000, H = 4000, R = 1200, k = 0.5523 * R;
+    const at = (x, y) => [0.5 + x / W, 0.5 + y / H];
+    const points = [[R, 0], [0, R], [-R, 0], [0, -R]].map(([x, y]) => {
+      const tx = -y / R, ty = x / R;
+      return [...at(x, y), ...at(x - tx * k, y - ty * k), ...at(x + tx * k, y + ty * k)];
+    });
+    const mask = { name: "", invert: false, values: {}, shapes: [{ type: "object", paths: [{ hole: false, points }] }] };
+    const win = [0.66, 0.4, 0.74, 0.5];
+    const img = overlayPixels(mask, 640, W, H, null, [230, 40, 40], win);
+    const scale = img.width / ((win[2] - win[0]) * W), feather = 0.003 * H;
+    let worst = 0;
+    for (let j = 0; j < img.height; j++)
+      for (let i = 0; i < img.width; i++) {
+        const x = (win[0] + ((i + 0.5) / img.width) * (win[2] - win[0])) * W - W / 2;
+        const y = (win[1] + ((j + 0.5) / img.height) * (win[3] - win[1])) * H - H / 2;
+        const d = Math.hypot(x, y) - R;
+        // the anti-aliased pixels astride the outline aside
+        if (Math.abs(d) * scale < 1) continue;
+        const want = d < 0 ? 1 : Math.max(0, 1 - d / feather);
+        worst = Math.max(worst, Math.abs(img.data[4 * (j * img.width + i) + 3] / 140 - want));
+      }
+    return worst > 0.1 ? `zoomed in, the overlay strays from the mask by up to ${(100 * worst).toFixed(0)}%` : null;
   });
 
   // 0.34.0: a JPEG or TIFF reaches the mask stage in Lab, and reading it
