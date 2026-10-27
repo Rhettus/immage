@@ -1156,16 +1156,23 @@ async fn trash_files(state: State<'_, AppState>, imgids: Vec<i64>) -> Result<Vec
     }
     let mut items: Vec<PathBuf> = Vec::new();
     let mut gone = Vec::new();
+    let mut forget = Vec::new();
     for (id, path, copy) in checked {
         let cmd = if copy { "remove_copy" } else { "sidecars" };
         let reply = state.engine().request(json!({ "cmd": cmd, "imgid": id }))?;
         if !copy {
             items.push(PathBuf::from(&path));
             gone.push(path);
+            forget.push(id);
         }
         items.extend(reply["files"].as_array().into_iter().flatten().filter_map(|f| f.as_str()).map(PathBuf::from));
     }
     trash_existing(items).await?;
+    // only once the files are gone: a new file at the same path then
+    // imports fresh, not as the deleted one, rejected
+    for id in forget {
+        state.engine().request(json!({ "cmd": "forget", "imgid": id }))?;
+    }
     Ok(gone)
 }
 

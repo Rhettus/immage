@@ -1750,6 +1750,28 @@ static gboolean _remove_copy(const dt_imgid_t imgid, JsonBuilder *b, char **err)
   return TRUE;
 }
 
+// the library's rows for a file deleted from disk, every version. a new file
+// at the same path would otherwise import as the old row, rejected and with
+// its edit, since dt_image_import() returns the row the film and name find
+// (image.c, _image_import_internal()) and there is no sidecar left to read
+static gboolean _forget(const dt_imgid_t imgid, char **err)
+{
+  GList *ids = dt_is_valid_imgid(imgid) ? _image_versions(imgid) : NULL;
+  if(!ids)
+  {
+    *err = g_strdup("no such image");
+    return FALSE;
+  }
+  for(GList *l = ids; l; l = g_list_next(l))
+  {
+    const dt_imgid_t id = GPOINTER_TO_INT(l->data);
+    if(_s.open && _s.imgid == id) _close_session();
+    dt_image_remove(id);
+  }
+  g_list_free(ids);
+  return TRUE;
+}
+
 // every sidecar of the file `imgid` belongs to, all versions' and any left
 // over, as darktable deletes with the file (control_jobs.c, _delete_job_run())
 static gboolean _sidecars(const dt_imgid_t imgid, JsonBuilder *b, char **err)
@@ -7863,6 +7885,10 @@ static void _handle(JsonObject *req, FILE *out)
   else if(!g_strcmp0(cmd, "remove_copy"))
   {
     if(!_remove_copy(json_object_get_int_member_with_default(req, "imgid", 0), b, &err)) goto fail;
+  }
+  else if(!g_strcmp0(cmd, "forget"))
+  {
+    if(!_forget(json_object_get_int_member_with_default(req, "imgid", 0), &err)) goto fail;
   }
   else if(!g_strcmp0(cmd, "sidecars"))
   {

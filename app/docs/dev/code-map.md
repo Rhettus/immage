@@ -308,7 +308,7 @@ Immage or in darktable.
 | Session, open, close | `_open_image`, `_close_session`, `_import`, `_compress_history` |
 | Set and get params | `_set` (fields by introspection, `instance`, `mask`, `after`/`before` moves), `_get`, `_write_field`, `_named_instance` |
 | Render | `_render` (and the `render` command's `skip`; with `have`, a frame of no size naming the client's frame of the hash it would get), `_write_rgba`, `_ppipe_ready`, `_preview` |
-| Library | `_folder`, `_import_files` (a tagged `import` on the import thread, `_import_run`), `_thumb` (a tagged `thumb` on the thumbnail threads, `_thumb_run`, routed there by `_read_requests`), `_prefetch` (raws decoded ahead, a few at once, on a thread pool of its own), `_image_json`, `_meta_set`, `_keywords_set`, `_copy`, `_remove_copy`, `_sidecars` |
+| Library | `_folder`, `_import_files` (a tagged `import` on the import thread, `_import_run`), `_thumb` (a tagged `thumb` on the thumbnail threads, `_thumb_run`, routed there by `_read_requests`), `_prefetch` (raws decoded ahead, a few at once, on a thread pool of its own), `_image_json`, `_meta_set`, `_keywords_set`, `_copy`, `_remove_copy`, `_sidecars`, `_forget` (a deleted file's rows, so a new file at its path imports fresh) |
 | HDR Merge | `_hdr_merge` (hdrmerge.c's `hdr_merge`, on the export thread when tagged) |
 | Panorama Merge (`HAVE_PANO`) | `_pano_merge`, `_pano_frame` (pano.cc's `pano_stitch`, dng.c's `dng_write_linear_half`, on the export thread when tagged) |
 | Export | `_export` (darktable's export with flags, then `strip_metadata` in [strip.cc](../../../engine/strip.cc), with exiv2, for what the flags do not reach: serial numbers, camera info, the source's own text fields and keywords); `_frame_style` (borders and a watermark SVG as a temporary style; a fixed canvas as one last border, sized so the file comes out exactly W x H); the AI upscale proxy format (`_upscale_ctx`) |
@@ -324,7 +324,7 @@ The commands `_handle()` serves:
 | Group | Commands |
 |---|---|
 | Session | `open`, `history`, `module_state`, `save`, `baseline_end`, `before`, `close`, `quit`, `version`, `unpack`, `ai_accel`, `opencl`, `fonts` |
-| Library (no photo needed) | `folder`, `import`, `thumb`, `prefetch`, `meta`, `meta_set`, `keywords`, `keywords_set`, `copy`, `remove_copy`, `sidecars`, `export`, `export_hold`, `export_release`, `hdr_merge`, `pano_merge` |
+| Library (no photo needed) | `folder`, `import`, `thumb`, `prefetch`, `meta`, `meta_set`, `keywords`, `keywords_set`, `copy`, `remove_copy`, `sidecars`, `forget`, `export`, `export_hold`, `export_release`, `hdr_merge`, `pano_merge` |
 | Edit | `set`, `get`, `render`, `preview`, `look`, `look_amount` |
 | Masks and spots | `mask`, `combine`, `masks`, `mask_rename`, `mask_delete`, `mask_map`, `range_map`, `sample`, `spots`, `spots_enable`, `spot_source` |
 | Tone | `tone_key`, `agx_auto`, `zones` |
