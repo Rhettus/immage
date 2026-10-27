@@ -227,6 +227,9 @@ const COMMANDS = {
     (await onEngineThread({ cmd: "ai_object", points, ...(box ? { box } : {}) })).paths,
   ai_mask: async ({ kind, range }) => (await onEngineThread({ cmd: "ai_mask", kind, ...(range ? { range } : {}) })).paths,
   ai_depth: ({ size }) => onEngineThread({ cmd: "ai_depth", size }),
+  // on the export thread
+  hdr_merge: ({ imgids, align }) => requestTagged({ cmd: "hdr_merge", imgids, align }),
+  hdr_can_align: async () => (await request({ cmd: "version" })).hdr_align ?? false,
 };
 
 // the engine's models folder (startEngine's), and where a check's models

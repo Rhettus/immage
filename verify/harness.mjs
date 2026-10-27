@@ -1089,6 +1089,33 @@ async function decisions(photo) {
     });
   }
 
+  // HDR Merge writes a float DNG beside the first bracket that opens as the
+  // brackets render: two of the same exposure merge to that exposure
+  // (hdrmerge.c). a single photo is refused. on the first raw
+  if (photo === args.photos.find((p) => /\.(arw|cr2|cr3|nef|nrw|orf|pef|raf|rw2|srw)$/i.test(p))) {
+    await decide("HDR Merge of two brackets renders as one", async () => {
+      const dir = join(args.work, "hdr");
+      rmSync(dir, { recursive: true, force: true });
+      mkdirSync(dir, { recursive: true });
+      const ext = photo.match(/\.[^.]+$/)[0];
+      const files = ["a", "b"].map((n) => join(dir, n + ext));
+      for (const f of files) copyFileSync(photo, f, constants.COPYFILE_FICLONE);
+      const { images } = await request({ cmd: "import", files });
+      const alone = await invoke("hdr_merge", { imgids: [images[0].imgid], align: false }).then(() => null, (e) => String(e));
+      const r = await invoke("hdr_merge", { imgids: images.map((i) => i.imgid), align: await invoke("hdr_can_align") });
+      const src = await open(files[0]);
+      await src.s.close();
+      const hdr = await open(r.path);
+      await hdr.s.close();
+      const d = compare(hdr.base, src.base);
+      return alone === null ? "a merge of one photo was not refused"
+        : basename(r.path) !== `a-hdr.dng` ? `the merge wrote ${basename(r.path)}, not a-hdr.dng`
+        : r.image?.path !== r.path ? "the DNG was not imported"
+        : d.geometry ? `the DNG renders ${hdr.base.width}x${hdr.base.height}, the raw ${src.base.width}x${src.base.height}`
+        : Math.abs(d.lum) > 3 || d.mad > 6 ? `the DNG renders ${d.lum} brighter than the raw, ${d.mad} apart` : null;
+    });
+  }
+
   // an AI selection's model runs on a thread of the engine's while the
   // photo is edited, and a color edit leaves its result standing for the
   // next selection (main.c, _ai_run, _mask_cache). on the first photo

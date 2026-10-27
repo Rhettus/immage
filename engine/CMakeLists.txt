@@ -6,7 +6,7 @@ include_directories(${DARKTABLE_BINDIR})
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(JSON_GLIB REQUIRED json-glib-1.0)
 
-add_executable(darktable-engine main.c upright.c strip.cc)
+add_executable(darktable-engine main.c upright.c hdrmerge.c strip.cc)
 
 # strip.cc calls exiv2, darktable's own (src/CMakeLists.txt finds it), so
 # the engine links it and the C++ runtime
