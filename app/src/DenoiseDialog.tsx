@@ -155,27 +155,29 @@ export function DenoiseDialog({ thumb, center, prepare, onRun, onClose }: {
             {holding && piece && <div className="denoise-tag">Before</div>}
           </div>
           <div className="denoise-side">
-            <div className="nav-image denoise-overview"
-                 onPointerDown={(e) => {
-                   (e.target as HTMLElement).setPointerCapture(e.pointerId);
-                   setDragging(true);
-                   setAt(pointAt(e));
-                 }}
-                 onPointerMove={(e) => { if (dragging) setAt(pointAt(e)); }}
-                 onPointerUp={(e) => {
-                   if (!dragging) return;
-                   setDragging(false);
-                   const p = pointAt(e);
-                   setAt(p);
-                   void fetchPiece(p.u, p.v);
-                 }}>
-              <canvas ref={overview} />
-              {piece && (
-                <div className="nav-rect" style={{
-                  left: `${(at.u - rw / 2) * 100}%`, top: `${(at.v - rh / 2) * 100}%`,
-                  width: `${rw * 100}%`, height: `${rh * 100}%`,
-                }} />
-              )}
+            <div className="nav-image denoise-overview">
+              <div className="nav-pic"
+                   onPointerDown={(e) => {
+                     (e.target as HTMLElement).setPointerCapture(e.pointerId);
+                     setDragging(true);
+                     setAt(pointAt(e));
+                   }}
+                   onPointerMove={(e) => { if (dragging) setAt(pointAt(e)); }}
+                   onPointerUp={(e) => {
+                     if (!dragging) return;
+                     setDragging(false);
+                     const p = pointAt(e);
+                     setAt(p);
+                     void fetchPiece(p.u, p.v);
+                   }}>
+                <canvas ref={overview} />
+                {piece && (
+                  <div className="nav-rect" style={{
+                    left: `${(at.u - rw / 2) * 100}%`, top: `${(at.v - rh / 2) * 100}%`,
+                    width: `${rw * 100}%`, height: `${rh * 100}%`,
+                  }} />
+                )}
+              </div>
             </div>
             <p className="note-plain">drag on the photo to preview another part</p>
             <div className="row">
