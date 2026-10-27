@@ -18,23 +18,19 @@ use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 use tauri::{ipc::Response, AppHandle, Emitter, Manager, State};
 
 struct AppState {
-    // engine() and engine_background(), not this directly
+    // engine(), not this directly
     engine: Mutex<Engine>,
-    // calls in engine() waiting for the engine, which background work yields to
-    waiting: AtomicUsize,
-    // when a call in engine() last let the engine go
-    foreground_end: Mutex<Instant>,
     // reaches the engine while a request holds it
     base_cancel: BaseCancel,
     frame_path: PathBuf,
-    // thumbnails and background exports, which go to the engine without
-    // engine()
+    // thumbnails, folder imports and background exports, which go to the
+    // engine without engine()
     tagged: Tagged,
     // export_images' running jobs, which export_cancel stops
     export_cancels: Mutex<HashMap<u64, Arc<AtomicBool>>>,
@@ -59,70 +55,9 @@ struct AppState {
 }
 
 impl AppState {
-    // the engine for something the user is waiting on. the mutex alone is
-    // not fair: a folder's import, taking it again after each batch, would
-    // keep a click waiting until the whole folder was read (Windows' SRWLock
-    // especially), so background work holds back while one waits here
-    fn engine(&self) -> Foreground<'_> {
-        self.waiting.fetch_add(1, Ordering::SeqCst);
-        let guard = self.engine.lock().unwrap();
-        self.waiting.fetch_sub(1, Ordering::SeqCst);
-        Foreground { guard, end: &self.foreground_end }
-    }
-
-    // the engine for work nobody is waiting on (a folder's import,
-    // thumbnails), once no call in engine() is and none has been for
-    // BACKGROUND_QUIET. a zoom or a drag sends its renders a few ms apart,
-    // with nobody waiting between them, and a batch slipped into each gap
-    // would hold up the next frame
-    async fn engine_background(&self) -> MutexGuard<'_, Engine> {
-        loop {
-            if self.background_may_run() {
-                if let Ok(guard) = self.engine.try_lock() {
-                    // a call may have taken it and let it go since the check
-                    if self.background_may_run() {
-                        return guard;
-                    }
-                }
-            }
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-    }
-
-    fn background_may_run(&self) -> bool {
-        self.waiting.load(Ordering::SeqCst) == 0
-            && self.foreground_end.lock().unwrap().elapsed() >= BACKGROUND_QUIET
-    }
-}
-
-// how long the user's own work leaves the engine alone before a folder's
-// import or thumbnails take it again: longer than the gap between a
-// drag's or a zoom's frames, shorter than the wait before the idle base
-// render (scheduleBase in App.tsx)
-const BACKGROUND_QUIET: Duration = Duration::from_millis(300);
-
-// the engine held by engine(); letting it go notes the time
-struct Foreground<'a> {
-    guard: MutexGuard<'a, Engine>,
-    end: &'a Mutex<Instant>,
-}
-
-impl std::ops::Deref for Foreground<'_> {
-    type Target = Engine;
-    fn deref(&self) -> &Engine {
-        &self.guard
-    }
-}
-
-impl std::ops::DerefMut for Foreground<'_> {
-    fn deref_mut(&mut self) -> &mut Engine {
-        &mut self.guard
-    }
-}
-
-impl Drop for Foreground<'_> {
-    fn drop(&mut self) {
-        *self.end.lock().unwrap() = Instant::now();
+    // the engine for a request its main loop serves, one at a time
+    fn engine(&self) -> MutexGuard<'_, Engine> {
+        self.engine.lock().unwrap()
     }
 }
 
@@ -1074,8 +1009,8 @@ async fn perf_machine(state: State<'_, AppState>) -> Result<Value, String> {
 // `recursive` its subfolders' too; darktable decides what is an image. the
 // files go in batches, each reported as a "folder-progress" event with its
 // images, so a big folder shows its progress and its first photos early.
-// between batches the engine goes first to anything the user does
-// (AppState::engine_background), so a click waits for one batch at most.
+// the batches go to the engine's import thread (main.c, _import_run), so
+// the photo is edited and rendered while they are read.
 // a first event, before any is read, lists every file, so the client can
 // lay out a cell for each. a newer call (another `token`)
 // stops this one. returns every image: ratings, labels and EXIF summary.
@@ -1112,12 +1047,14 @@ async fn open_folder(app: AppHandle, state: State<'_, AppState>, path: String, r
         }
         let batch = &files[done..total.min(done + size)];
         let list: Vec<String> = batch.iter().map(|p| p.to_string_lossy().into_owned()).collect();
-        let (reply, took) = {
-            let mut engine = state.engine_background().await;
-            let start = Instant::now();
-            (engine.request(json!({ "cmd": "import", "files": list })), start.elapsed())
-        };
-        let got = reply?["images"].as_array().cloned().unwrap_or_default();
+        let t = state.tagged.clone();
+        let tag = t.tag();
+        let start = Instant::now();
+        let reply = tauri::async_runtime::spawn_blocking(move || t.request(tag, json!({ "cmd": "import", "files": list })))
+            .await
+            .map_err(|e| e.to_string())??;
+        let took = start.elapsed();
+        let got = reply["images"].as_array().cloned().unwrap_or_default();
         // a batch of about IMPORT_TARGET, however long a file takes to read
         if took < IMPORT_TARGET / 2 {
             size = (size * 2).min(IMPORT_BATCH.2);
@@ -1132,7 +1069,7 @@ async fn open_folder(app: AppHandle, state: State<'_, AppState>, path: String, r
 }
 
 // a batch's files to begin with, and the fewest and most: sized to take
-// about IMPORT_TARGET, which a click may have to wait behind
+// about IMPORT_TARGET, so the folder fills in steady steps
 const IMPORT_BATCH: (usize, usize, usize) = (8, 1, 64);
 const IMPORT_TARGET: Duration = Duration::from_millis(150);
 
@@ -2214,8 +2151,6 @@ fn main() {
                 tagged: engine.tagged(),
                 export_cancels: Mutex::new(HashMap::new()),
                 engine: Mutex::new(engine),
-                waiting: AtomicUsize::new(0),
-                foreground_end: Mutex::new(Instant::now()),
                 frame_path: runtime.join("frame.rgba"),
                 denoise_path: runtime.join("denoise-preview.f32"),
                 presets_path: runtime.join("presets.json"),

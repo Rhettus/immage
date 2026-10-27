@@ -61,13 +61,11 @@ Paths below are relative to this file.
 The boundary is strict. The front end never touches files or darktable
 directly. It calls `invoke(...)` commands, and every command that needs the
 engine goes through the one `Mutex<Engine>` in `AppState`, so engine work is
-serialized, one request at a time. `engine()` is for what the user waits
-on; `engine_background()` (a folder's import) waits until no `engine()`
-call has been made for a moment. Thumbnails and exports are the
-exceptions: the engine builds thumbnails on two threads of its own
-(`_thumb_run`), exports on one (`_export_run`) and AI Denoise on one
-(`_denoise_run`), beside whatever the
-mutex's holder is doing. Large results are binary and travel as
+serialized, one request at a time. Thumbnails, folder imports and
+exports are the exceptions: the engine builds thumbnails on two threads
+of its own (`_thumb_run`), and reads folders (`_import_run`), exports
+(`_export_run`) and runs AI Denoise (`_denoise_run`) on one each, beside
+whatever the mutex's holder is doing. Large results are binary and travel as
 `tauri::ipc::Response`:
 
 | Result | Format |
@@ -230,7 +228,7 @@ Commands by what they reach:
 | Reaches | Commands |
 |---|---|
 | The open photo, through the engine | `open_image`, `get_params`, `set_params`, `module_state`, `render`, `cancel_base`, `preview`, `save`, `before_view`, `history`, `masks`, `mask_shapes`, `combine`, `mask_delete`, `mask_rename`, `mask_map`, `range_map`, `sample`, `zones`, `tone_key`, `agx_auto`, `spots`, `spots_enable`, `spot_source`, `look_apply`, `look_amount`, `ai_object`, `ai_mask`, `ai_depth`, `ai_denoise`, `ai_denoise_preview` |
-| The library, through the engine | `open_folder` (engine `import` in batches of 24), `thumb`, `prefetch`, `meta`, `meta_set`, `keywords`, `keywords_set`, `create_virtual_copy`, `remove_virtual_copy`, `trash_files`, `export_images`, `export_cancel`, `export_preview`, `fonts`, `ai_accel`, `about` |
+| The library, through the engine | `open_folder` (engine `import` in batches), `thumb`, `prefetch`, `meta`, `meta_set`, `keywords`, `keywords_set`, `create_virtual_copy`, `remove_virtual_copy`, `trash_files`, `export_images`, `export_cancel`, `export_preview`, `fonts`, `ai_accel`, `about` |
 | Files only | `list_subfolders`, `folder_volumes`, `path_exists`, `path_kind`, `export_existing`, `presets_load`, `presets_save`, `export_presets_load`, `export_presets_save`, `preset_file_read`, `preset_file_write`, `looks_list`, `sample_folder`, `launch_file` |
 | AI models (download, then the engine's `version`) | `ai_model_ensure`, `ai_model_reinstall` |
 | Immich (HTTP) | `immich_albums`, `immich_create_album`, `immich_export_check`, `immich_browse_check`, `immich_search`, `immich_libraries`, `immich_suggestions`, `immich_people`, `immich_tags`, `immich_thumb`, `immich_resolve` |
@@ -283,7 +281,7 @@ Immage or in darktable.
 | Session, open, close | `_open_image`, `_close_session`, `_import`, `_compress_history` |
 | Set and get params | `_set` (fields by introspection, `instance`, `mask`, `after`/`before` moves), `_get`, `_write_field`, `_named_instance` |
 | Render | `_render` (and the `render` command's `skip`; with `have`, a frame of no size naming the client's frame of the hash it would get), `_write_rgba`, `_ppipe_ready`, `_preview` |
-| Library | `_folder`, `_import_files`, `_thumb` (a tagged `thumb` on the thumbnail threads, `_thumb_run`, routed there by `_read_requests`), `_prefetch` (raws decoded ahead, a few at once, on a thread pool of its own), `_image_json`, `_meta_set`, `_keywords_set`, `_copy`, `_remove_copy`, `_sidecars` |
+| Library | `_folder`, `_import_files` (a tagged `import` on the import thread, `_import_run`), `_thumb` (a tagged `thumb` on the thumbnail threads, `_thumb_run`, routed there by `_read_requests`), `_prefetch` (raws decoded ahead, a few at once, on a thread pool of its own), `_image_json`, `_meta_set`, `_keywords_set`, `_copy`, `_remove_copy`, `_sidecars` |
 | Export | `_export` (darktable's export with flags, then `strip_metadata` in [strip.cc](../../../engine/strip.cc), with exiv2, for what the flags do not reach: serial numbers, camera info, the source's own text fields and keywords); `_frame_style` (borders and a watermark SVG as a temporary style; a fixed canvas as one last border, sized so the file comes out exactly W x H); the AI upscale proxy format (`_upscale_ctx`) |
 | Masks | `_mask` (shapes into a mask group, prefixed `immage: `), `_masks` (with `merged_in`), `_mask_delete`, `_mask_rename`, `_attach_mask`. The [mask anchor](masks.md#where-the-instances-run), `colorbalancergb`, is where every mask's instances run, so a range sampled at its output holds for all of them. `_combine`: a group of masks' groups summed, each at its opacity (prefixed `immage combined: `), with the members' ranges, driving a shared instance, which `_attach_mask` attaches only to a combined mask; `_combined_member_changed` keeps it current when a member is reshaped or deleted. `_prune_off` keeps a mask's own switched-off instances (`_holds_mask_settings`). `_named_instance` places a mask's own instance after the shared ones of its module |
 | AI (`HAVE_AI`) | `_ai_object` (SAM), `_ai_mask` (sky, subject, ...), `_ai_depth`, `_ai_denoise` (darktable's raw denoise into a DNG, repeating `src/libs/neural_restore.c`'s job on its public calls; with a tag, the main loop snapshots the edit and answers, and the denoise runs on its own thread, `_denoise_run`, answering again with the tag), `_ai_denoise_preview` (its 1:1 before and after, as the lib's raw preview makes them); on Linux, `_ort_exports` keeps darktable from probing a GPU provider the bundled ONNX Runtime lacks, and `main()` sets the provider to CPU when it has none |
@@ -362,7 +360,7 @@ darktable is, and it has AI features when darktable is configured with
    3. Each photo is a tagged `export` on the engine's export thread (`_export_run`), outside the engine mutex, so editing goes on. The frame and captions become a temporary darktable style (borders plus a watermark SVG), and AI upscale wraps the chosen format. `export_release` then drops what is left of the job's snapshots.
    4. For Immich, Rust uploads each file and adds it to the album. Progress comes as `export-progress`, shown on the activity line with a Stop (`export_cancel`) and then a summary.
 7. **Import a folder.**
-   1. `openFolder` calls `open_folder`. Rust walks the folder, skipping packages and sidecars, and sends engine `import` in batches of 24, each reported as `folder-progress`.
+   1. `openFolder` calls `open_folder`. Rust walks the folder, skipping packages and sidecars, and sends engine `import` in batches sized to take about 150 ms, each reported as `folder-progress`. The batches are tagged and read on the engine's import thread (`_import_run`), so editing goes on meanwhile.
    2. A newer folder request cancels the older one through `folder_token`.
    3. Thumbnails follow from `ThumbLoader` (engine `thumb`) while the editor is idle.
 8. **Edit In.**
