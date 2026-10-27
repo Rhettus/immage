@@ -2170,7 +2170,9 @@ static GMutex _format_conf_lock;
 // darktable's AI provider setting, which loading a model reads
 // (backend_common.c): the upscale model and the main loop's AI masks and
 // denoise each set it before they load
+#ifdef HAVE_AI
 static GMutex _ai_load_lock;
+#endif
 
 // the format an export writes through, for _no_tmpfile_flags
 static _Thread_local dt_imageio_module_format_t *_flags_of;
@@ -2809,6 +2811,7 @@ static void _fonts(JsonBuilder *b)
 // Rec.2020 floats into a stand-in format, the upscale model runs over that
 // in tiles, and the result goes, converted to the export's color space,
 // through the real format's own writer with EXIF for the new size
+#ifdef HAVE_AI
 #define _UPSCALE_MODEL "upscale-realplksr"
 // the --models folder (defined with the AI masks' code below)
 static const char *_models_dir;
@@ -2891,6 +2894,7 @@ static gboolean _soft_device(const dt_ai_device_t *d)
 {
   return d->name && strstr(d->name, "Basic Render");
 }
+#endif
 
 // darktable's OpenCL devices, for the GUI benchmark's report: the idle base
 // render runs on one when OpenCL is up, and its driver differs between
@@ -2918,6 +2922,7 @@ static void _opencl(JsonBuilder *b)
   json_builder_end_array(b);
 }
 
+#ifdef HAVE_AI
 // the GPU providers this computer can use, each with its devices where the
 // provider lets one be chosen; a provider whose only devices are software
 // ones is left out
@@ -3110,6 +3115,7 @@ static int _up_write_image(dt_imageio_module_data_t *data, const char *filename,
   if(res) _up.err = g_strdup_printf("could not write '%s'", filename);
   return res;
 }
+#endif
 
 // write one image through darktable's own export, as its export module
 // would: `format` names a format plugin (jpeg, tiff, png, webp...); quality
@@ -3199,6 +3205,12 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
   // the real format are kept in _up
   if(upscale > 1)
   {
+#ifndef HAVE_AI
+    *err = g_strdup("AI upscaling needs an engine built with AI");
+    if(framed) _frame_done(frame_id, frame_svg);
+    fmt->free_params(fmt, fdata);
+    return FALSE;
+#else
     g_mutex_lock(&_up_lock);
     const char *asked = json_object_get_string_member_with_default(req, "ai_provider", "auto");
     const int device = json_object_get_int_member_with_default(req, "ai_device", -1);
@@ -3216,6 +3228,7 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
     _up.real = fmt;
     _up.icc = icc;
     g_clear_pointer(&_up.err, g_free);
+#endif
   }
 
   // EXIF, the text fields, location and tags, as Lightroom exports them;
@@ -3280,8 +3293,12 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
   g_list_free(added);
   if(framed) _frame_done(frame_id, frame_svg);
   fmt->free_params(fmt, fdata);
+#ifdef HAVE_AI
   if(failed) *err = _up.err && upscale > 1 ? g_strdup(_up.err) : g_strdup_printf("could not write '%s'", out);
   if(upscale > 1) g_mutex_unlock(&_up_lock);
+#else
+  if(failed) *err = g_strdup_printf("could not write '%s'", out);
+#endif
   if(failed) return FALSE;
   // a file that keeps what was asked to be left out is not delivered
   if((*err = strip_metadata(out, strip)))
@@ -7845,7 +7862,15 @@ static void _handle(JsonObject *req, FILE *out)
   else if(!g_strcmp0(cmd, "keywords"))
     _all_keywords(b);
   else if(!g_strcmp0(cmd, "ai_accel"))
+  {
+#ifdef HAVE_AI
     _ai_accel(b);
+#else
+    json_builder_set_member_name(b, "providers");
+    json_builder_begin_array(b);
+    json_builder_end_array(b);
+#endif
+  }
   else if(!g_strcmp0(cmd, "opencl"))
     _opencl(b);
   else if(!g_strcmp0(cmd, "keywords_set"))
