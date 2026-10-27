@@ -1018,6 +1018,43 @@ async function decisions(photo) {
       : after !== 2 ? `with a copy, the photo shows ${after} versions after the export` : null;
   });
 
+  // AI Denoise runs on a thread of the engine's while the photo is edited,
+  // and the DNG gets the edit as it was when it was asked for (main.c,
+  // _denoise_run). once, on the first raw: the model takes a minute on the
+  // CPU
+  const DENOISE = "rawdenoise-nind";
+  if (photo === args.photos.find((p) => /\.(arw|cr2|cr3|nef|nrw|orf|pef|raf|rw2|srw)$/i.test(p))) {
+    if (!args.models || !existsSync(join(args.models, DENOISE, "config.json"))) {
+      record({ check: "decisions", photo: basename(photo), id: "AI Denoise runs beside editing", status: "skip",
+               detail: `no ${DENOISE} in build/ai-models: use AI Denoise once in a dev build` });
+    } else await decide("AI Denoise runs beside editing", async () => {
+      // an engine of its own, so the others' config never has AI on
+      await stopEngine();
+      startEngine(args.engine, join(args.work, "ai-engine"), args.models);
+      try {
+        const o = await open(fresh(photo));
+        await o.after(() => { o.s.endBaseline(); o.s.set("exposure", 0.5); });
+        let done = false;
+        const denoising = invoke("ai_denoise", { strength: 1 }).finally(() => { done = true; });
+        const f = await o.after(() => o.s.set("exposure", 1.5));
+        await request({ cmd: "save" });
+        const beside = !done;
+        const preview = await invoke("ai_denoise_preview", { u: 0.5, v: 0.5, size: 256 }).then(() => null, (e) => String(e));
+        const r = await denoising;
+        await o.s.close();
+        const d = await open(r.path);
+        const ev = d.s.values.exposure;
+        await d.s.close();
+        return !f ? "an edit made during the denoise rendered no frame"
+          : !beside ? "an edit made during the denoise waited for it"
+          : !preview?.includes("still writing") ? `a preview during the denoise ${preview ? `failed with: ${preview}` : "ran"}`
+          : Math.abs(ev - 0.5) > 1e-3 ? `the DNG has Exposure ${ev}, not the 0.5 it was asked with` : null;
+      } finally {
+        await restart();
+      }
+    });
+  }
+
   // a frame shown before comes back without a render when the image does:
   // back from the Before view, or a slider put back. the engine names it by
   // darktable's hash (session.ts, frames; _render's `have` in engine/main.c)

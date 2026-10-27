@@ -19,9 +19,9 @@ export const FRAME_HEAD = 56;
 const HANDLERS = new Set(readFileSync(new URL("../app/src-tauri/src/main.rs", import.meta.url), "utf8")
   .match(/generate_handler!\[([^\]]*)\]/)[1].split(",").map((s) => s.trim().split("::").pop()).filter(Boolean));
 
-let engine = null, frame = null, preview = null, range = null;
+let engine = null, frame = null, preview = null, range = null, denoised = null;
 const waiting = [];
-// requestTagged()'s, by tag
+// requestTagged()'s and expectTagged()'s, by tag
 const tagged = new Map();
 let lastTag = 0;
 
@@ -33,6 +33,7 @@ export function startEngine(binary, home, modelsDir = null) {
   frame = join(home, "frame.rgba");
   preview = join(home, "preview.rgba");
   range = join(home, "range.bin");
+  denoised = join(home, "denoise-preview.f32");
   models.dir = modelsDir;
   // the engine takes --models ahead of darktable's own options
   const me = spawn(binary, [...(modelsDir ? ["--models", modelsDir] : []), "--core", "--configdir", join(home, "config"),
@@ -74,14 +75,22 @@ export function request(req) {
 // a request the engine serves off its main loop (main.rs, Tagged): sent at
 // once, beside whatever request() waits on, and answered by its tag
 export function requestTagged(req) {
+  const tag = ++lastTag;
+  const answer = expectTagged(tag);
+  engine.stdin.write(JSON.stringify({ ...req, tag }) + "\n");
+  return answer;
+}
+
+// the answer to `tag`, waited for before it is asked (engine.rs, expect):
+// for a request the main loop answers first and a thread of the engine's
+// later, as ai_denoise
+function expectTagged(tag) {
   return new Promise((resolve, reject) => {
-    const tag = ++lastTag;
     tagged.set(tag, (line) => {
       if (line === null) return reject(new Error("the engine exited"));
       const r = JSON.parse(line);
       if (r.ok) resolve(r); else reject(new Error(r.error ?? "engine request failed"));
     });
-    engine.stdin.write(JSON.stringify({ ...req, tag }) + "\n");
   });
 }
 
@@ -194,6 +203,21 @@ const COMMANDS = {
     rmSync(join(models.dir, id), { recursive: true, force: true });
     cpSync(join(models.source, id), join(models.dir, id), { recursive: true });
   },
+  // the main loop takes the edit and answers, then the denoise thread
+  ai_denoise: async ({ strength }) => {
+    const tag = ++lastTag;
+    const answer = expectTagged(tag);
+    try {
+      await request({ cmd: "ai_denoise", strength, tag });
+    } catch (e) {
+      tagged.delete(tag);
+      throw e;
+    }
+    const { ok, tag: _, ...r } = await answer;
+    return r;
+  },
+  ai_denoise_preview: ({ u, v, size }) =>
+    request({ cmd: "ai_denoise_preview", u, v, size, out: denoised }),
   ai_object: async ({ points, box }) =>
     (await request({ cmd: "ai_object", points, ...(box ? { box } : {}) })).paths,
 };

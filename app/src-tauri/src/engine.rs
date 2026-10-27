@@ -26,7 +26,8 @@ pub struct Engine {
 }
 
 // requests the engine serves on threads of its own beside its main loop:
-// thumbnails (main.c, _thumb_run) and background exports (_export_run).
+// thumbnails (main.c, _thumb_run), background exports (_export_run) and AI
+// denoise (_denoise_run).
 // they are sent and answered while a request holds the engine. each is
 // tagged, and read_stdout hands its reply to the caller waiting on that tag
 #[derive(Clone)]
@@ -49,18 +50,41 @@ impl Tagged {
     // blocks until the engine replies
     pub fn request(&self, tag: u64, mut req: Value) -> Result<Value, String> {
         req["tag"] = json!(tag);
-        let (tx, rx) = channel();
-        self.waiting.lock().unwrap().as_mut().ok_or(ENGINE_EXITED)?.insert(tag, tx);
+        let answer = self.expect(tag)?;
         let sent = {
             let mut stdin = self.stdin.lock().unwrap();
             writeln!(stdin, "{req}").and_then(|_| stdin.flush())
         };
         if let Err(e) = sent {
-            self.waiting.lock().unwrap().as_mut().map(|w| w.remove(&tag));
+            self.forget(tag);
             return Err(format!("engine write: {e}"));
         }
+        answer.wait()
+    }
+
+    // the answer to `tag`, waited for once it is asked: before, so that it
+    // is never read with no one waiting. a request the main loop answers
+    // first, and a thread of the engine's later (ai_denoise), asks it
+    // through Engine::request()
+    pub fn expect(&self, tag: u64) -> Result<Answer, String> {
+        let (tx, rx) = channel();
+        self.waiting.lock().unwrap().as_mut().ok_or(ENGINE_EXITED)?.insert(tag, tx);
+        Ok(Answer(rx))
+    }
+
+    // `tag` no longer waited for, as its request failed
+    pub fn forget(&self, tag: u64) {
+        self.waiting.lock().unwrap().as_mut().map(|w| w.remove(&tag));
+    }
+}
+
+pub struct Answer(Receiver<Value>);
+
+impl Answer {
+    // blocks until the engine replies
+    pub fn wait(self) -> Result<Value, String> {
         // the sender is dropped unanswered when the engine exits
-        let reply = rx.recv().map_err(|_| ENGINE_EXITED.to_string())?;
+        let reply = self.0.recv().map_err(|_| ENGINE_EXITED.to_string())?;
         outcome(reply)
     }
 }
