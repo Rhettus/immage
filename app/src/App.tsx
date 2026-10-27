@@ -1247,6 +1247,8 @@ export default function App() {
   // whole image, too coarse for the part shown
   const wantsFinal = (m: Mask) => isRefined(m) || (!!shownView && !shownView.fit && m.shapes.some(isRange));
   const [finalMap, setFinalMap] = useState<{ name: string; map: RangeMap; session: Session } | null>(null);
+  // the mask whose map the engine could not make, which its shapes show instead
+  const [finalMissing, setFinalMissing] = useState<string | null>(null);
   const finalWant = useRef(0);
   const finalBusy = useRef(false);
   const finalTarget = useRef("");
@@ -1280,11 +1282,13 @@ export default function App() {
             const fw = v.scale * f.w, fh = v.scale * f.h;
             const at: Region = [v.x / fw, v.y / fh, (v.x + width) / fw, (v.y + height) / fh];
             setFinalMap({ name, map: { width, height, data: new Uint8Array(buf, 8), at }, session: s });
+            setFinalMissing(null);
             // keep showing it a moment once it is in
             if (refiningRef.current) refined();
           } catch {
             // a mask with no adjustment yet drives nothing: the shapes' overlay serves
             setFinalMap(null);
+            setFinalMissing(name);
           } finally {
             if (stopped) resumeBase();
           }
@@ -4687,6 +4691,11 @@ export default function App() {
                              ranges={rangeFor === (peekMask ?? selMask)?.name ? rangeMap : null}
                              final={finalMap && finalMap.session === session.current && finalMap.name === (peekMask ?? selMask)?.name
                                     && wantsFinal(peekMask ?? selMask!) ? finalMap.map : null}
+                             awaitFinal={(() => {
+                               const t = peekMask ?? selMask;
+                               return !!t && isRefined(t) && !t.hidden && finalMissing !== t.name
+                                 && !(finalMap && finalMap.session === session.current && finalMap.name === t.name);
+                             })()}
                              onPick={(x, y) => void pickRange(x, y)}
                              onObject={(p) => void selectObject(p)}
                              onPickArea={(area, at) => void pickArea(area, at)}
