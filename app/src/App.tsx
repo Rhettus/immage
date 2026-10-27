@@ -716,10 +716,13 @@ export default function App() {
   const [aiBusy, setAiBusy] = useState(false);
   // an AI selection: its model installed first (downloaded on first use,
   // with the Rust side reporting progress), then run, then the outline
-  // added as an object shape
+  // added as an object shape. the engine runs the model beside editing,
+  // so the photo may have been left by the time it answers: the outline
+  // is then dropped
   const runAi = async (model: string, working: string, run: () => Promise<ObjectShape["paths"]>,
                        done: (paths: ObjectShape["paths"]) => void) => {
-    if (!session.current || aiBusy) return;
+    const s = session.current;
+    if (!s || aiBusy) return;
     setAiBusy(true);
     const stop = await listen<{ stage: string; mb?: number }>("ai-model", (e) => {
       const p = e.payload;
@@ -728,10 +731,11 @@ export default function App() {
     });
     try {
       const paths = await withModel(model, () => { setStatus(working); return run(); });
-      if (!paths.length) setStatus("nothing found");
+      if (session.current !== s) setStatus("");
+      else if (!paths.length) setStatus("nothing found");
       else { done(paths); setStatus(""); }
     } catch (e) {
-      setStatus(`AI mask: ${e}`);
+      setStatus(session.current === s ? `AI mask: ${e}` : "");
     } finally {
       stop();
       setAiBusy(false);

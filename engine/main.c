@@ -3547,9 +3547,27 @@ static uint8_t *_shown_rgb(const int size, const gboolean color, int *w, int *h,
 static const char *_models_dir = NULL;
 static dt_ai_environment_t *_ai_env = NULL;
 static dt_seg_context_t *_seg = NULL;
+// the photo encoded, NO_IMGID while none is
 static dt_imgid_t _seg_imgid = NO_IMGID;
 static int _seg_w = 0, _seg_h = 0;
 static int _seg_pw = 0, _seg_ph = 0;  // the image size the encoding was made at
+// the models' last results (_seg_*, _mask_cache), which the AI thread
+// (_ai_run) makes and the main loop looks at, to tell whether a request
+// needs the photo rendered for its model
+static GMutex _ai_cache_lock;
+
+// an AI selection, as the main loop hands it to the AI thread
+typedef struct _ai_job_t
+{
+  gint64 tag;
+  JsonObject *req;
+  int kind;          // in _mask_kinds, or -1 for an object
+  gboolean map;      // ai_depth: the depth map itself
+  dt_imgid_t imgid;
+  int pw, ph;        // the image's size, which the model's result holds for
+  uint8_t *rgb;      // the model's input, unless its last result holds
+  int w, h;
+} _ai_job_t;
 
 #define _SEG_MODEL "mask-object-sam21-small"
 
@@ -3564,13 +3582,17 @@ static dt_ai_environment_t *_ai_env_new(void)
 }
 #define _SEG_SIZE 1024
 
-static gboolean _seg_ready(char **err)
+// the input a result was made from is gone once a job for another photo or
+// size has replaced it, as when the photo is switched while a model runs
+static gboolean _ai_input(const _ai_job_t *job, char **err)
 {
-  if(!_models_dir)
-  {
-    *err = g_strdup("no models folder given (--models)");
-    return FALSE;
-  }
+  if(job->rgb) return TRUE;
+  *err = g_strdup("the photo changed while the model ran");
+  return FALSE;
+}
+
+static gboolean _seg_ready(const _ai_job_t *job, char **err)
+{
   if(!_ai_env) _ai_env = _ai_env_new();
   // the model may have been downloaded since the folder was last looked at
   if(!_seg && _ai_env)
@@ -3587,35 +3609,37 @@ static gboolean _seg_ready(char **err)
   }
   // the encoding holds for this image at this size; color edits do not
   // move objects, geometry edits do
-  int pw = 0, ph = 0;
-  if(_ppipe_ready(err))
-    dt_dev_pixelpipe_get_dimensions(&_s.ppipe, &_s.dev, _s.ppipe.iwidth, _s.ppipe.iheight, &pw, &ph);
-  if(_seg_imgid == _s.imgid && dt_seg_is_encoded(_seg) && pw == _seg_pw && ph == _seg_ph) return TRUE;
+  g_mutex_lock(&_ai_cache_lock);
+  const gboolean held = _seg_imgid == job->imgid && job->pw == _seg_pw && job->ph == _seg_ph;
+  g_mutex_unlock(&_ai_cache_lock);
+  if(held) return TRUE;
+  if(!_ai_input(job, err)) return FALSE;
+  g_mutex_lock(&_ai_cache_lock);
+  _seg_imgid = NO_IMGID;
+  g_mutex_unlock(&_ai_cache_lock);
   dt_seg_reset_encoding(_seg);
-  int w = 0, h = 0;
-  uint8_t *rgb = _shown_rgb(_SEG_SIZE, TRUE, &w, &h, err);
-  if(!rgb) return FALSE;
-  const gboolean ok = dt_seg_encode_image(_seg, rgb, w, h);
-  g_free(rgb);
-  if(!ok)
+  if(!dt_seg_encode_image(_seg, job->rgb, job->w, job->h))
   {
     *err = g_strdup("the model could not encode the image");
     return FALSE;
   }
-  _seg_imgid = _s.imgid;
-  _seg_w = w;
-  _seg_h = h;
-  _seg_pw = pw;
-  _seg_ph = ph;
+  g_mutex_lock(&_ai_cache_lock);
+  _seg_imgid = job->imgid;
+  _seg_w = job->w;
+  _seg_h = job->h;
+  _seg_pw = job->pw;
+  _seg_ph = job->ph;
+  g_mutex_unlock(&_ai_cache_lock);
   return TRUE;
 }
 
 // select an object: `points` [[x, y, include], ...] and/or `box`
 // [x0, y0, x1, y1], in shown-image units. replies with its outline as
 // paths, each a list of [x, y, c1x, c1y, c2x, c2y] corners, holes marked
-static gboolean _ai_object(JsonObject *req, JsonBuilder *b, char **err)
+static gboolean _ai_object(const _ai_job_t *job, JsonBuilder *b, char **err)
 {
-  if(!_seg_ready(err)) return FALSE;
+  if(!_seg_ready(job, err)) return FALSE;
+  JsonObject *req = job->req;
   JsonArray *pts = json_object_has_member(req, "points") ? json_object_get_array_member(req, "points") : NULL;
   JsonArray *box = json_object_has_member(req, "box") ? json_object_get_array_member(req, "box") : NULL;
   const guint np = pts ? json_array_get_length(pts) : 0;
@@ -3764,12 +3788,11 @@ static int _float_cmp(const void *a, const void *b)
 }
 
 // the model's output for the image as shown, rendered about `size` across
-// (w x h): C planes of O x O probabilities, 0-1
-static float *_mask_probability(const _mask_model_t *mm, dt_ai_context_t *ctx, int *w, int *h, char **err)
+// (W x H): C planes of O x O probabilities, 0-1
+static float *_mask_probability(const _mask_model_t *mm, dt_ai_context_t *ctx, const uint8_t *rgb,
+                                const int W, const int H, char **err)
 {
-  uint8_t *rgb = _shown_rgb(mm->size, TRUE, w, h, err);
-  if(!rgb) return NULL;
-  const int S = mm->size, W = *w, H = *h;
+  const int S = mm->size;
   // stretched to the model's square, normalized, planar
   float *in = g_malloc((size_t)3 * S * S * sizeof(float));
   for(int j = 0; j < S; j++)
@@ -3786,7 +3809,6 @@ static float *_mask_probability(const _mask_model_t *mm, dt_ai_context_t *ctx, i
         in[(size_t)c * S * S + (size_t)j * S + i] = (v / 255.0f - mm->mean[c]) / mm->std[c];
       }
     }
-  g_free(rgb);
   const int C = mm->classes ? mm->classes : 1, O = mm->classes ? mm->out : S;
   float *out = g_malloc((size_t)C * O * O * sizeof(float));
   int64_t ishape[4] = { 1, 3, S, S }, oshape[4] = { 1, C, O, O }, dshape[3] = { 1, S, S };
@@ -3902,24 +3924,12 @@ static void _paths_json(JsonBuilder *b, float *mask, const int mw, const int mh)
   g_list_free(signs);
 }
 
-// the kind asked for, its model's output for the image as shown cached
-static const _mask_kind_t *_mask_run(const char *kind, char **err)
+// the job's kind, its model's output for the image as shown cached
+static const _mask_kind_t *_mask_run(const _ai_job_t *job, char **err)
 {
-  const _mask_kind_t *mk = NULL;
-  for(int i = 0; i < (int)G_N_ELEMENTS(_mask_kinds); i++)
-    if(!g_strcmp0(_mask_kinds[i].kind, kind)) mk = &_mask_kinds[i];
-  if(!mk)
-  {
-    *err = g_strdup_printf("no model for '%s'", kind ? kind : "(none)");
-    return NULL;
-  }
+  const _mask_kind_t *mk = &_mask_kinds[job->kind];
   const int k = mk->model;
   const _mask_model_t *mm = &_mask_models[k];
-  if(!_models_dir)
-  {
-    *err = g_strdup("no models folder given (--models)");
-    return NULL;
-  }
   if(!_ai_env) _ai_env = _ai_env_new();
   if(!_mask_ctx[k] && _ai_env)
   {
@@ -3933,30 +3943,36 @@ static const _mask_kind_t *_mask_run(const char *kind, char **err)
     *err = g_strdup_printf("cannot load the '%s' model from %s", mm->id, _models_dir);
     return NULL;
   }
-  int pw = 0, ph = 0;
-  if(_ppipe_ready(err))
-    dt_dev_pixelpipe_get_dimensions(&_s.ppipe, &_s.dev, _s.ppipe.iwidth, _s.ppipe.iheight, &pw, &ph);
-  if(!(_mask_cache[k].p && _mask_cache[k].imgid == _s.imgid && _mask_cache[k].pw == pw && _mask_cache[k].ph == ph))
+  g_mutex_lock(&_ai_cache_lock);
+  const gboolean held = _mask_cache[k].p && _mask_cache[k].imgid == job->imgid
+                        && _mask_cache[k].pw == job->pw && _mask_cache[k].ph == job->ph;
+  g_mutex_unlock(&_ai_cache_lock);
+  if(!held)
   {
-    int w = 0, h = 0;
-    float *p = _mask_probability(mm, _mask_ctx[k], &w, &h, err);
+    if(!_ai_input(job, err)) return NULL;
+    float *p = _mask_probability(mm, _mask_ctx[k], job->rgb, job->w, job->h, err);
     if(!p) return NULL;
+    // only this thread reads the probabilities: the main loop looks at the
+    // rest
+    g_mutex_lock(&_ai_cache_lock);
     g_free(_mask_cache[k].p);
     _mask_cache[k].p = p;
-    _mask_cache[k].w = w;
-    _mask_cache[k].h = h;
-    _mask_cache[k].pw = pw;
-    _mask_cache[k].ph = ph;
-    _mask_cache[k].imgid = _s.imgid;
+    _mask_cache[k].w = job->w;
+    _mask_cache[k].h = job->h;
+    _mask_cache[k].pw = job->pw;
+    _mask_cache[k].ph = job->ph;
+    _mask_cache[k].imgid = job->imgid;
+    g_mutex_unlock(&_ai_cache_lock);
   }
   return mk;
 }
 
 // `range` [near, far] picks a band of a depth kind, 0-1 from the nearest
-static gboolean _ai_mask(const char *kind, JsonArray *range, JsonBuilder *b, char **err)
+static gboolean _ai_mask(const _ai_job_t *job, JsonBuilder *b, char **err)
 {
-  const _mask_kind_t *mk = _mask_run(kind, err);
+  const _mask_kind_t *mk = _mask_run(job, err);
   if(!mk) return FALSE;
+  JsonArray *range = json_object_has_member(job->req, "range") ? json_object_get_array_member(job->req, "range") : NULL;
   const _mask_model_t *mm = &_mask_models[mk->model];
   const int w = _mask_cache[mk->model].w, h = _mask_cache[mk->model].h;
   float *p = _mask_kind_probability(mk, w, h);
@@ -3977,10 +3993,11 @@ static gboolean _ai_mask(const char *kind, JsonArray *range, JsonBuilder *b, cha
 
 // the depth map, about `size` across, as 0 (nearest) to 255 by rows: for
 // the client to preview a band and pick a depth without a round trip
-static gboolean _ai_depth(const int size, JsonBuilder *b, char **err)
+static gboolean _ai_depth(const _ai_job_t *job, JsonBuilder *b, char **err)
 {
-  const _mask_kind_t *mk = _mask_run("depth", err);
+  const _mask_kind_t *mk = _mask_run(job, err);
   if(!mk) return FALSE;
+  const int size = json_object_get_int_member_with_default(job->req, "size", 256);
   const int W = _mask_cache[mk->model].w, H = _mask_cache[mk->model].h;
   const double scale = fmin(1.0, (double)size / MAX(W, H));
   const int w = MAX(1, (int)round(W * scale)), h = MAX(1, (int)round(H * scale));
@@ -3994,6 +4011,132 @@ static gboolean _ai_depth(const int size, JsonBuilder *b, char **err)
   for(size_t q = 0; q < (size_t)w * h; q++) json_builder_add_int_value(b, lroundf(255.0f * p[q]));
   json_builder_end_array(b);
   g_free(p);
+  return TRUE;
+}
+
+static void _ai_job_free(_ai_job_t *job)
+{
+  json_object_unref(job->req);
+  g_free(job->rgb);
+  g_free(job);
+}
+
+// the main loop's part of an AI selection: what the model needs of the
+// open photo, which is its render when the model's last result does not
+// hold for it
+static _ai_job_t *_ai_job(JsonObject *req, char **err)
+{
+  const char *cmd = json_object_get_string_member_with_default(req, "cmd", "");
+  int kind = -1;
+  if(g_strcmp0(cmd, "ai_object"))
+  {
+    const char *name = !g_strcmp0(cmd, "ai_depth") ? "depth" : json_object_get_string_member_with_default(req, "kind", NULL);
+    for(int i = 0; i < (int)G_N_ELEMENTS(_mask_kinds); i++)
+      if(!g_strcmp0(_mask_kinds[i].kind, name)) kind = i;
+    if(kind < 0)
+    {
+      *err = g_strdup_printf("no model for '%s'", name ? name : "(none)");
+      return NULL;
+    }
+  }
+  if(!_models_dir)
+  {
+    *err = g_strdup("no models folder given (--models)");
+    return NULL;
+  }
+  if(!_ppipe_ready(err)) return NULL;
+  _ai_job_t *job = g_new0(_ai_job_t, 1);
+  job->req = json_object_ref(req);
+  job->kind = kind;
+  job->map = !g_strcmp0(cmd, "ai_depth");
+  job->imgid = _s.imgid;
+  dt_dev_pixelpipe_get_dimensions(&_s.ppipe, &_s.dev, _s.ppipe.iwidth, _s.ppipe.iheight, &job->pw, &job->ph);
+  const int model = kind < 0 ? -1 : _mask_kinds[kind].model;
+  g_mutex_lock(&_ai_cache_lock);
+  const gboolean held = model < 0
+    ? _seg_imgid == job->imgid && _seg_pw == job->pw && _seg_ph == job->ph
+    : _mask_cache[model].p && _mask_cache[model].imgid == job->imgid
+      && _mask_cache[model].pw == job->pw && _mask_cache[model].ph == job->ph;
+  g_mutex_unlock(&_ai_cache_lock);
+  if(!held
+     && !(job->rgb = _shown_rgb(model < 0 ? _SEG_SIZE : _mask_models[model].size, TRUE, &job->w, &job->h, err)))
+  {
+    _ai_job_free(job);
+    return NULL;
+  }
+  return job;
+}
+
+static gboolean _ai_do(const _ai_job_t *job, JsonBuilder *b, char **err)
+{
+  return job->kind < 0 ? _ai_object(job, b, err) : job->map ? _ai_depth(job, b, err) : _ai_mask(job, b, err);
+}
+
+// a tagged AI selection runs here once the main loop has rendered what it
+// needs, so the photo is edited while the model takes its seconds. one
+// thread, in order: an object's click needs the encoding the request
+// before it made
+static GThreadPool *_ai_pool = NULL;
+static GMutex _ai_pool_lock;
+
+static void _ai_run(gpointer data, gpointer user_data)
+{
+  _ai_job_t *job = data;
+  FILE *out = user_data;
+  char *err = NULL;
+  JsonBuilder *b = json_builder_new();
+  json_builder_begin_object(b);
+  json_builder_set_member_name(b, "tag");
+  json_builder_add_int_value(b, job->tag);
+  const gboolean ok = _ai_do(job, b, &err);
+  json_builder_set_member_name(b, "ok");
+  json_builder_add_boolean_value(b, ok);
+  if(!ok)
+  {
+    json_builder_set_member_name(b, "error");
+    json_builder_add_string_value(b, err ? err : "AI selection failed");
+  }
+  json_builder_end_object(b);
+  _ai_job_free(job);
+  _reply(out, b);
+  g_object_unref(b);
+  g_free(err);
+}
+
+// before darktable's caches go: the selections asked for finish
+static void _ai_wait(void)
+{
+  g_mutex_lock(&_ai_pool_lock);
+  GThreadPool *pool = _ai_pool;
+  _ai_pool = NULL;
+  g_mutex_unlock(&_ai_pool_lock);
+  if(pool) g_thread_pool_free(pool, FALSE, TRUE);
+}
+
+// ai_object, ai_mask or ai_depth. with a `tag`, the model runs on the AI
+// thread and this replies at once; the selection's reply then comes with
+// the tag
+static gboolean _ai_select(JsonObject *req, JsonBuilder *b, char **err)
+{
+  _ai_job_t *job = _ai_job(req, err);
+  if(!job) return FALSE;
+  job->tag = json_object_get_int_member_with_default(req, "tag", 0);
+  if(!job->tag)
+  {
+    const gboolean ok = _ai_do(job, b, err);
+    _ai_job_free(job);
+    return ok;
+  }
+  g_mutex_lock(&_ai_pool_lock);
+  const gboolean queued = _ai_pool != NULL;
+  if(queued) g_thread_pool_push(_ai_pool, job, NULL);
+  g_mutex_unlock(&_ai_pool_lock);
+  if(!queued)
+  {
+    _ai_job_free(job);
+    *err = g_strdup("the engine is stopping");
+    return FALSE;
+  }
   return TRUE;
 }
 
@@ -7659,7 +7802,7 @@ static void _handle(JsonObject *req, FILE *out)
   else if(!g_strcmp0(cmd, "ai_object"))
   {
 #ifdef HAVE_AI
-    if(!_ai_object(req, b, &err)) goto fail;
+    if(!_ai_select(req, b, &err)) goto fail;
 #else
     err = g_strdup("this engine was built without AI (USE_AI=OFF)");
     goto fail;
@@ -7692,7 +7835,7 @@ static void _handle(JsonObject *req, FILE *out)
   else if(!g_strcmp0(cmd, "ai_depth"))
   {
 #ifdef HAVE_AI
-    if(!_ai_depth(json_object_get_int_member_with_default(req, "size", 256), b, &err)) goto fail;
+    if(!_ai_select(req, b, &err)) goto fail;
 #else
     err = g_strdup("this engine was built without AI (USE_AI=OFF)");
     goto fail;
@@ -7701,9 +7844,7 @@ static void _handle(JsonObject *req, FILE *out)
   else if(!g_strcmp0(cmd, "ai_mask"))
   {
 #ifdef HAVE_AI
-    if(!_ai_mask(json_object_get_string_member_with_default(req, "kind", NULL),
-                 json_object_has_member(req, "range") ? json_object_get_array_member(req, "range") : NULL, b, &err))
-      goto fail;
+    if(!_ai_select(req, b, &err)) goto fail;
 #else
     err = g_strdup("this engine was built without AI (USE_AI=OFF)");
     goto fail;
@@ -7862,9 +8003,10 @@ static char _end_of_input[] = "";
 // no reply. a tagged `thumb` goes to the thumbnail threads (_thumb_run), a
 // tagged `export` or `export_release` to the export thread (_export_run), a
 // tagged `import` to the import thread (_import_run); every other line goes
-// to the main loop, in order. a tagged `ai_denoise`
-// is among them: the main loop answers it, then hands the denoise to its
-// thread (_denoise_run), which answers again with the tag
+// to the main loop, in order. a tagged `ai_denoise`, `ai_object`,
+// `ai_mask` or `ai_depth` is among them: the main loop answers it, then
+// hands the model's work to a thread (_denoise_run, _ai_run), which
+// answers again with the tag
 static gpointer _read_requests(gpointer data)
 {
   GAsyncQueue *queue = data;
@@ -7987,6 +8129,7 @@ int main(int argc, char **argv)
   _import_pool = g_thread_pool_new(_import_run, out, 1, FALSE, NULL);
 #ifdef HAVE_AI
   _denoise_pool = g_thread_pool_new(_denoise_run, out, 1, FALSE, NULL);
+  _ai_pool = g_thread_pool_new(_ai_run, out, 1, FALSE, NULL);
 #endif
   GAsyncQueue *requests = g_async_queue_new();
   g_thread_unref(g_thread_new("requests", _read_requests, requests));
@@ -8018,6 +8161,7 @@ int main(int argc, char **argv)
   _export_wait();
 #ifdef HAVE_AI
   _denoise_wait();
+  _ai_wait();
 #endif
   _close_session();
   _prefetch_wait();

@@ -1089,6 +1089,46 @@ async function decisions(photo) {
     });
   }
 
+  // an AI selection's model runs on a thread of the engine's while the
+  // photo is edited, and a color edit leaves its result standing for the
+  // next selection (main.c, _ai_run, _mask_cache). on the first photo
+  // only: BiRefNet takes seconds on the CPU
+  const SUBJECT = "mask-subject-birefnet-lite";
+  if (photo === args.photos[0]) {
+    if (!args.models || !existsSync(join(args.models, SUBJECT, "config.json"))) {
+      record({ check: "decisions", photo: basename(photo), id: "AI selections run beside editing", status: "skip",
+               detail: `no ${SUBJECT} in build/ai-models: use Select Subject once in a dev build` });
+    } else await decide("AI selections run beside editing", async () => {
+      // an engine of its own, so the others' config never has AI on
+      await stopEngine();
+      startEngine(args.engine, join(args.work, "ai-engine"), args.models);
+      try {
+        const o = await open(fresh(photo));
+        await o.after(() => o.s.endBaseline());
+        await invoke("ai_model_ensure", { id: SUBJECT });
+        // by the time each takes, as replies that come together settle in
+        // no telling order
+        const t0 = performance.now();
+        let end = null;
+        const selecting = invoke("ai_mask", { kind: "subject" }).finally(() => { end = performance.now() - t0; });
+        const f = await o.after(() => o.s.set("exposure", 0.5));
+        const framed = performance.now() - t0;
+        const paths = await selecting;
+        const t1 = performance.now();
+        const again = await invoke("ai_mask", { kind: "subject" });
+        const twice = performance.now() - t1;
+        await o.s.close();
+        return !paths?.length ? "Select Subject found nothing"
+          : !f ? "an edit made during the selection rendered no frame"
+          : framed > end / 2 ? `an edit made during the selection took ${framed.toFixed(0)} ms, the selection ${end.toFixed(0)} ms`
+          : twice > end / 2 ? `after a color edit, Subject again took ${twice.toFixed(0)} ms, the first ${end.toFixed(0)} ms`
+          : JSON.stringify(again) !== JSON.stringify(paths) ? "after a color edit, Subject again found another outline" : null;
+      } finally {
+        await restart();
+      }
+    });
+  }
+
   // a frame shown before comes back without a render when the image does:
   // back from the Before view, or a slider put back. the engine names it by
   // darktable's hash (session.ts, frames; _render's `have` in engine/main.c)

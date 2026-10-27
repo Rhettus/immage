@@ -27,7 +27,8 @@ pub struct Engine {
 
 // requests the engine serves on threads of its own beside its main loop:
 // thumbnails (main.c, _thumb_run), folder imports (_import_run),
-// background exports (_export_run) and AI denoise (_denoise_run).
+// background exports (_export_run), AI denoise (_denoise_run) and the AI
+// selections' models (_ai_run).
 // they are sent and answered while a request holds the engine. each is
 // tagged, and read_stdout hands its reply to the caller waiting on that tag
 #[derive(Clone)]

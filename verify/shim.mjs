@@ -94,6 +94,21 @@ function expectTagged(tag) {
   });
 }
 
+// a request the main loop answers first and a thread of the engine's later,
+// with the tag (main.rs, on_engine_thread): ai_denoise, the AI selections
+async function onEngineThread(req) {
+  const tag = ++lastTag;
+  const answer = expectTagged(tag);
+  try {
+    await request({ ...req, tag });
+  } catch (e) {
+    tagged.delete(tag);
+    throw e;
+  }
+  const { ok, tag: _, ...r } = await answer;
+  return r;
+}
+
 export async function stopEngine() {
   if (!engine) return;
   await request({ cmd: "quit" }).catch(() => {});
@@ -204,22 +219,14 @@ const COMMANDS = {
     cpSync(join(models.source, id), join(models.dir, id), { recursive: true });
   },
   // the main loop takes the edit and answers, then the denoise thread
-  ai_denoise: async ({ strength }) => {
-    const tag = ++lastTag;
-    const answer = expectTagged(tag);
-    try {
-      await request({ cmd: "ai_denoise", strength, tag });
-    } catch (e) {
-      tagged.delete(tag);
-      throw e;
-    }
-    const { ok, tag: _, ...r } = await answer;
-    return r;
-  },
+  ai_denoise: ({ strength }) => onEngineThread({ cmd: "ai_denoise", strength }),
   ai_denoise_preview: ({ u, v, size }) =>
     request({ cmd: "ai_denoise_preview", u, v, size, out: denoised }),
+  // the main loop renders the model's input and answers, then the AI thread
   ai_object: async ({ points, box }) =>
-    (await request({ cmd: "ai_object", points, ...(box ? { box } : {}) })).paths,
+    (await onEngineThread({ cmd: "ai_object", points, ...(box ? { box } : {}) })).paths,
+  ai_mask: async ({ kind, range }) => (await onEngineThread({ cmd: "ai_mask", kind, ...(range ? { range } : {}) })).paths,
+  ai_depth: ({ size }) => onEngineThread({ cmd: "ai_depth", size }),
 };
 
 // the engine's models folder (startEngine's), and where a check's models

@@ -298,6 +298,22 @@ async fn mask_map(state: State<'_, AppState>, name: Option<String>, op: Option<S
     Ok(Response::new(out))
 }
 
+// a request the engine's main loop answers once it has what it needs of
+// the open photo, and a thread of the engine's then answers with the tag:
+// AI Denoise and the AI selections, whose models take seconds to a
+// minute, while the engine is free for editing
+async fn on_engine_thread(state: &AppState, mut req: Value) -> Result<Value, String> {
+    let tagged = state.tagged.clone();
+    let tag = tagged.tag();
+    req["tag"] = json!(tag);
+    let answer = tagged.expect(tag)?;
+    if let Err(e) = state.engine().request(req) {
+        tagged.forget(tag);
+        return Err(e);
+    }
+    tauri::async_runtime::spawn_blocking(move || answer.wait()).await.map_err(|e| e.to_string())?
+}
+
 // select an object with the AI model: clicks [[x, y, include]] and/or a
 // box [x0, y0, x1, y1] in shown-image units; replies with its outline
 #[tauri::command]
@@ -306,7 +322,7 @@ async fn ai_object(state: State<'_, AppState>, points: Value, r#box: Option<Valu
     if let Some(b) = r#box {
         req["box"] = b;
     }
-    let reply = state.engine().request(req)?;
+    let reply = on_engine_thread(&state, req).await?;
     Ok(reply["paths"].clone())
 }
 
@@ -551,7 +567,7 @@ async fn ai_mask(state: State<'_, AppState>, kind: String, range: Option<[f64; 2
     if let Some(r) = range {
         req["range"] = json!(r);
     }
-    let reply = state.engine().request(req)?;
+    let reply = on_engine_thread(&state, req).await?;
     Ok(reply["paths"].clone())
 }
 
@@ -559,29 +575,21 @@ async fn ai_mask(state: State<'_, AppState>, kind: String, range: Option<[f64; 2
 // 0 (nearest) to 255 by rows
 #[tauri::command]
 async fn ai_depth(state: State<'_, AppState>, size: u32) -> Result<Value, String> {
-    let mut reply = state.engine().request(json!({ "cmd": "ai_depth", "size": size }))?;
+    let mut reply = on_engine_thread(&state, json!({ "cmd": "ai_depth", "size": size })).await?;
     if let Some(o) = reply.as_object_mut() {
         o.remove("ok");
+        o.remove("tag");
     }
     Ok(reply)
 }
 
 // AI Denoise of the open raw at `strength` (0-1): a new DNG beside it with
 // its edit, which the folder view then shows after it, as an Edit In
-// result. replies { path, original, image }; takes seconds to a minute,
-// which the engine spends on a thread of its own once it has taken the
-// edit, so the engine is free for editing meanwhile
+// result. replies { path, original, image }; the engine takes the edit,
+// then denoises on a thread of its own
 #[tauri::command]
 async fn ai_denoise(state: State<'_, AppState>, plugins: State<'_, plugins::Plugins>, strength: f64) -> Result<Value, String> {
-    let tagged = state.tagged.clone();
-    let tag = tagged.tag();
-    let answer = tagged.expect(tag)?;
-    if let Err(e) = state.engine().request(json!({ "cmd": "ai_denoise", "strength": strength, "tag": tag })) {
-        tagged.forget(tag);
-        return Err(e);
-    }
-    let mut reply = tauri::async_runtime::spawn_blocking(move || answer.wait())
-        .await.map_err(|e| e.to_string())??;
+    let mut reply = on_engine_thread(&state, json!({ "cmd": "ai_denoise", "strength": strength })).await?;
     let (Some(original), Some(result)) = (reply["original"].as_str(), reply["path"].as_str()) else {
         return Err("the engine gave no DNG".into());
     };
