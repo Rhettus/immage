@@ -1601,6 +1601,17 @@ static void _image_json(JsonBuilder *b, const dt_imgid_t imgid, const gboolean f
   char datetime[DT_DATETIME_LENGTH] = { 0 };
   dt_datetime_img_to_exif(datetime, sizeof(datetime), img);
   _add_string(b, "datetime", datetime);
+  // a photo with no capture time (a camera whose clock was never set
+  // writes zeros) is placed by its file's modified time instead
+  GStatBuf st;
+  if(!*datetime && !g_stat(path, &st))
+  {
+    GDateTime *mtime = g_date_time_new_from_unix_local(st.st_mtime);
+    gchar *file_datetime = mtime ? g_date_time_format(mtime, "%Y:%m:%d %H:%M:%S") : NULL;
+    _add_string(b, "file_datetime", file_datetime ? file_datetime : "");
+    g_free(file_datetime);
+    if(mtime) g_date_time_unref(mtime);
+  }
   json_builder_set_member_name(b, "sensor_width");
   json_builder_add_int_value(b, img->p_width);
   json_builder_set_member_name(b, "sensor_height");

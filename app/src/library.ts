@@ -11,7 +11,13 @@ export type Exif = {
   maker: string; model: string; lens: string;
   exposure: number; aperture: number; iso: number; focal_length: number;
   exposure_bias: number; focus_distance: number; datetime: string;
+  // the file's modified time, sent only when there is no capture time
+  file_datetime?: string;
 };
+
+// when a photo was taken, for its order and the date filters: its file's
+// modified time when the camera recorded none. "YYYY:MM:DD HH:MM:SS", or ""
+export const takenAt = (i: ImageEntry) => i.exif.datetime || i.exif.file_datetime || "";
 
 export type ImageEntry = {
   imgid: number;
@@ -61,11 +67,12 @@ export async function openFolder(path: string, recursive = false, skip: string[]
 }
 
 // a folder's photos by capture time, as Lightroom's default sort. the
-// engine's "YYYY:MM:DD HH:MM:SS" sorts as text; photos without one go last,
-// and ties keep the name order the folder was read in
+// engine's "YYYY:MM:DD HH:MM:SS" sorts as text; a photo without one goes by
+// its file's time (takenAt), photos with neither go last, and ties keep the
+// name order the folder was read in
 export function byCaptureTime(images: ImageEntry[]): ImageEntry[] {
   return [...images].sort((a, b) => {
-    const p = a.exif.datetime, q = b.exif.datetime;
+    const p = takenAt(a), q = takenAt(b);
     return !p || !q ? Number(!p) - Number(!q) : p < q ? -1 : p > q ? 1 : 0;
   });
 }
