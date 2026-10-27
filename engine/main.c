@@ -49,6 +49,11 @@
 #include "develop/imageop.h"
 #include "develop/masks.h"
 #include "develop/pixelpipe_cache.h"
+#include "hdrmerge.h"
+#ifdef HAVE_PANO
+#include "dng.h"
+#include "pano.h"
+#endif
 #include "strip.h"
 #include "upright.h"
 #ifdef HAVE_AI
@@ -79,6 +84,7 @@
 #include <archive_entry.h>
 #include <json-glib/json-glib.h>
 #include <pango/pangocairo.h>
+#include <errno.h>
 #include <inttypes.h>
 #include <limits.h>
 #include <stdio.h>
@@ -163,14 +169,19 @@ static double _ms_since(const gint64 t0)
   return (g_get_monotonic_time() - t0) / 1000.0;
 }
 
+// the main loop and the thumbnail, export and denoise threads all reply
+static GMutex _reply_lock;
+
 static void _reply(FILE *out, JsonBuilder *b)
 {
   JsonGenerator *gen = json_generator_new();
   JsonNode *root = json_builder_get_root(b);
   json_generator_set_root(gen, root);
   gchar *s = json_generator_to_data(gen, NULL);
+  g_mutex_lock(&_reply_lock);
   fprintf(out, "%s\n", s);
   fflush(out);
+  g_mutex_unlock(&_reply_lock);
   g_free(s);
   json_node_unref(root);
   g_object_unref(gen);
@@ -194,7 +205,6 @@ static void _reply_error(FILE *out, const char *fmt, ...)
   g_free(msg);
 }
 
-static dt_imgid_t _import_muted(const char *path);
 
 // the edit changed: the main pipe follows now, the others before their next
 // frame. synch_top takes only the latest history item, so a second change
@@ -246,6 +256,73 @@ static void _cancel_base(const gint64 id)
   if(_base_running && _base_running <= id)
     dt_atomic_set_int(&_s.base.pipe.shutdown, DT_DEV_PIXELPIPE_STOP_NODES);
   g_mutex_unlock(&_cancel_lock);
+}
+
+// HDR Merge and Panorama Merge on the export thread: each writes its
+// progress as it goes, a line with the request's tag and no `ok` (the
+// app's engine.rs hands it on as `merge-progress`): the photos read, then
+// its own stages. a `merge_cancel` of its job, which the stdin reader
+// thread takes (_read_requests), stops it at its next step. the client's
+// jobs are numbered, and one export thread runs one merge at a time
+static gint64 _merge_canceled = 0;
+
+static void _merge_cancel(const gint64 job)
+{
+  g_mutex_lock(&_cancel_lock);
+  _merge_canceled = job;
+  g_mutex_unlock(&_cancel_lock);
+}
+
+typedef struct _merge_progress_t
+{
+  FILE *out;           // NULL for a merge from the main loop, which reports nothing
+  gint64 tag, job;
+  const char *after;   // HDR Merge's stage once every photo is read: "merging"
+} _merge_progress_t;
+
+// `done` of `total` of `stage` ("photos", or a merge's own); FALSE once the
+// merge is stopped. `last` is the stage past stopping, which the app then
+// no longer offers
+static gboolean _merge_report(const _merge_progress_t *pr, const char *stage, const int done, const int total,
+                              const gboolean last)
+{
+  g_mutex_lock(&_cancel_lock);
+  const gboolean stopped = pr->job && _merge_canceled == pr->job;
+  g_mutex_unlock(&_cancel_lock);
+  if(stopped || !pr->out) return !stopped;
+  JsonBuilder *b = json_builder_new();
+  json_builder_begin_object(b);
+  json_builder_set_member_name(b, "tag");
+  json_builder_add_int_value(b, pr->tag);
+  json_builder_set_member_name(b, "progress");
+  json_builder_add_boolean_value(b, TRUE);
+  json_builder_set_member_name(b, "done");
+  json_builder_add_int_value(b, done);
+  json_builder_set_member_name(b, "total");
+  json_builder_add_int_value(b, total);
+  json_builder_set_member_name(b, "stage");
+  json_builder_add_string_value(b, stage);
+  json_builder_set_member_name(b, "last");
+  json_builder_add_boolean_value(b, last);
+  json_builder_end_object(b);
+  _reply(pr->out, b);
+  g_object_unref(b);
+  return TRUE;
+}
+
+// hdr_merge_step_t: `done` of `total` photos read
+static gboolean _merge_step(const int done, const int total, void *data)
+{
+  const _merge_progress_t *pr = data;
+  return done < total ? _merge_report(pr, "photos", done, total, FALSE) : _merge_report(pr, pr->after, 0, 1, TRUE);
+}
+
+static _merge_progress_t _merge_progress(JsonObject *req, FILE *out, const char *after)
+{
+  return (_merge_progress_t){ .out = json_object_has_member(req, "tag") ? out : NULL,
+                              .tag = json_object_get_int_member_with_default(req, "tag", 0),
+                              .job = json_object_get_int_member_with_default(req, "job", 0),
+                              .after = after };
 }
 
 // photos likely opened next, their raws decoded ahead on threads of their
@@ -340,32 +417,220 @@ static void _close_session(void)
   _s.baseline = FALSE;
 }
 
-// file the image under an in-memory film roll, the way darktable-mcp does;
-// importing reads an existing sidecar, so earlier edits come back. writing
-// sidecars is switched off meanwhile: import would otherwise leave an .xmp
-// beside every image merely looked at, while reading is not affected by it
-// (image.c, _image_import_internal())
-static void _sidecars_off(void) { dt_conf_set_string("write_sidecar_files", "never"); }
-static void _sidecars_on(void) { dt_conf_set_string("write_sidecar_files", "on import"); }
-
-static dt_imgid_t _import(const char *path)
+// darktable writes sidecars as a side effect of importing, loading a
+// develop and exporting, which would leave an .xmp beside every image
+// merely looked at, so its setting stays "never" (main()). the engine
+// writes one only where it means to, with this: darktable's
+// dt_image_write_sidecar_file() without its check of that setting, which
+// would skip the write and still report success. a global switch flipped
+// around each job can't be used, as the thumbnail threads run beside the
+// main loop. TRUE means it failed, as darktable's
+static gboolean _write_sidecar(const dt_imgid_t imgid)
 {
-  _sidecars_off();
-  const dt_imgid_t id = _import_muted(path);
-  _sidecars_on();
-  return id;
+  if(!dt_is_valid_imgid(imgid)) return TRUE;
+  char filename[PATH_MAX] = { 0 };
+  gboolean from_cache = FALSE;
+  dt_image_full_path(imgid, filename, sizeof(filename), &from_cache);
+  if(!g_file_test(filename, G_FILE_TEST_EXISTS))
+  {
+    from_cache = TRUE;
+    dt_image_full_path(imgid, filename, sizeof(filename), &from_cache);
+    if(!from_cache) return TRUE;
+  }
+  dt_image_path_append_version(imgid, filename, sizeof(filename));
+  g_strlcat(filename, ".xmp", sizeof(filename));
+  if(dt_exif_xmp_write(imgid, filename, FALSE)) return TRUE;
+  sqlite3_stmt *stmt;
+  DT_DEBUG_SQLITE3_PREPARE_V2(dt_database_get(darktable.db),
+                              "UPDATE main.images SET write_timestamp = STRFTIME('%s', 'now') WHERE id = ?1",
+                              -1, &stmt, NULL);
+  DT_DEBUG_SQLITE3_BIND_INT(stmt, 1, imgid);
+  sqlite3_step(stmt);
+  sqlite3_finalize(stmt);
+  return FALSE;
 }
 
-static dt_imgid_t _import_muted(const char *path)
+// an export's copy of a photo's edit as it was when the export was asked
+// for (_hold_snapshot): a darktable duplicate, at a version from this one
+// up, which the listings leave out (_image_versions)
+#define _SNAPSHOT_VERSION 1000000
+
+static dt_imgid_t _real_version(const dt_imgid_t imgid);
+
+// the main loop, the import thread (_import_run) and the denoise thread
+// (_denoise_run) all import. a film roll and an image are each looked up,
+// then inserted when missing, so two imports into one folder at once could
+// make two of either
+static GMutex _import_lock;
+
+// file the image under an in-memory film roll, the way darktable-mcp does;
+// importing reads an existing sidecar, so earlier edits come back
+static dt_imgid_t _import(const char *path)
 {
   gchar *dir = g_path_get_dirname(path);
+  g_mutex_lock(&_import_lock);
   dt_film_t film;
   dt_film_init(&film); // holds a mutex; dt_film_new() does not set it up
   const dt_filmid_t filmid = dt_film_new(&film, dir);
   dt_film_cleanup(&film);
   g_free(dir);
-  if(!dt_is_valid_filmid(filmid)) return NO_IMGID;
-  return dt_image_import(filmid, path, TRUE, FALSE);
+  // darktable finds a file's image by its name alone (image.c,
+  // dt_image_get_id()), which can be a snapshot once the version before it
+  // has been removed
+  const dt_imgid_t imgid = dt_is_valid_filmid(filmid) ? dt_image_import(filmid, path, TRUE, FALSE) : NO_IMGID;
+  g_mutex_unlock(&_import_lock);
+  return _real_version(imgid);
+}
+
+static gboolean _is_snapshot(const dt_imgid_t imgid)
+{
+  sqlite3_stmt *stmt;
+  DT_DEBUG_SQLITE3_PREPARE_V2(dt_database_get(darktable.db),
+                              "SELECT 1 FROM main.images WHERE id = ?1 AND version >= ?2",
+                              -1, &stmt, NULL);
+  DT_DEBUG_SQLITE3_BIND_INT(stmt, 1, imgid);
+  DT_DEBUG_SQLITE3_BIND_INT(stmt, 2, _SNAPSHOT_VERSION);
+  const gboolean found = sqlite3_step(stmt) == SQLITE_ROW;
+  sqlite3_finalize(stmt);
+  return found;
+}
+
+// the lowest version of the file `imgid` that is not a snapshot, or `imgid`
+// when it is not one
+static dt_imgid_t _real_version(const dt_imgid_t imgid)
+{
+  if(!dt_is_valid_imgid(imgid) || !_is_snapshot(imgid)) return imgid;
+  sqlite3_stmt *stmt;
+  DT_DEBUG_SQLITE3_PREPARE_V2(dt_database_get(darktable.db),
+                              "SELECT b.id FROM main.images AS a, main.images AS b"
+                              " WHERE a.id = ?1 AND b.film_id = a.film_id AND b.filename = a.filename"
+                              "   AND b.version < ?2"
+                              " ORDER BY b.version LIMIT 1",
+                              -1, &stmt, NULL);
+  DT_DEBUG_SQLITE3_BIND_INT(stmt, 1, imgid);
+  DT_DEBUG_SQLITE3_BIND_INT(stmt, 2, _SNAPSHOT_VERSION);
+  const dt_imgid_t real = sqlite3_step(stmt) == SQLITE_ROW ? sqlite3_column_int(stmt, 0) : imgid;
+  sqlite3_finalize(stmt);
+  return real;
+}
+
+// a copy of `imgid`'s edit as the library holds it, for an export to
+// render however the photo is edited meanwhile
+static dt_imgid_t _snapshot(const dt_imgid_t imgid)
+{
+  static gint made = 0;
+  const dt_imgid_t snap = dt_image_duplicate_with_version(imgid, _SNAPSHOT_VERSION + g_atomic_int_add(&made, 1));
+  if(!dt_is_valid_imgid(snap)) return NO_IMGID;
+  dt_history_copy_and_paste_on_image(imgid, snap, FALSE, NULL, TRUE, TRUE, FALSE);
+  // duplicating raised the file's max_version to the snapshot's, which the
+  // next virtual copy would be numbered after (image.c, dt_image_duplicate())
+  sqlite3_stmt *stmt;
+  DT_DEBUG_SQLITE3_PREPARE_V2(dt_database_get(darktable.db),
+                              "UPDATE main.images"
+                              " SET max_version = (SELECT MAX(b.version) FROM main.images AS b"
+                              "                    WHERE b.film_id = main.images.film_id"
+                              "                      AND b.filename = main.images.filename AND b.version < ?2)"
+                              " WHERE id IN (SELECT b.id FROM main.images AS a, main.images AS b"
+                              "              WHERE a.id = ?1 AND b.film_id = a.film_id AND b.filename = a.filename)",
+                              -1, &stmt, NULL);
+  DT_DEBUG_SQLITE3_BIND_INT(stmt, 1, imgid);
+  DT_DEBUG_SQLITE3_BIND_INT(stmt, 2, _SNAPSHOT_VERSION);
+  sqlite3_step(stmt);
+  sqlite3_finalize(stmt);
+  return snap;
+}
+
+static void _snapshot_remove(const dt_imgid_t snap)
+{
+  if(!dt_is_valid_imgid(snap)) return;
+  // the raster mask data the history copy took along, beside the photo
+  // under the snapshot's version (dtdata.c, dt_dtdata_merge())
+  char data[PATH_MAX] = { 0 };
+  dt_dtdata_path(snap, data, sizeof(data));
+  if(data[0]) g_unlink(data);
+  dt_image_remove(snap);
+}
+
+// the photos each background export is to render, by job: imgid to its
+// snapshot, or to NO_IMGID until one is needed. a photo's edit changes only
+// while it is open, so the open photo is copied when the export is asked
+// for (`export_hold`) and the others as they are opened (_hold_open), or
+// when the export reaches them (_hold_take). either way the export renders
+// the edit as it was when it was asked for
+static GMutex _hold_lock;
+static GHashTable *_holds = NULL;
+
+static void _hold_free(gpointer data)
+{
+  GHashTableIter it;
+  gpointer key, value;
+  g_hash_table_iter_init(&it, data);
+  while(g_hash_table_iter_next(&it, &key, &value)) _snapshot_remove(GPOINTER_TO_INT(value));
+  g_hash_table_destroy(data);
+}
+
+// `open_imgid` is the photo open in the editor, its edit already in the
+// library, or NO_IMGID
+static void _hold(const gint64 job, JsonArray *imgids, const dt_imgid_t open_imgid)
+{
+  g_mutex_lock(&_hold_lock);
+  if(!_holds) _holds = g_hash_table_new_full(g_int64_hash, g_int64_equal, g_free, _hold_free);
+  gint64 *key = g_new(gint64, 1);
+  *key = job;
+  GHashTable *held = g_hash_table_new(NULL, NULL);
+  for(guint k = 0; imgids && k < json_array_get_length(imgids); k++)
+  {
+    const dt_imgid_t imgid = json_array_get_int_element(imgids, k);
+    if(!dt_is_valid_imgid(imgid) || g_hash_table_contains(held, GINT_TO_POINTER(imgid))) continue;
+    g_hash_table_insert(held, GINT_TO_POINTER(imgid),
+                        GINT_TO_POINTER(imgid == open_imgid ? _snapshot(imgid) : NO_IMGID));
+  }
+  g_hash_table_replace(_holds, key, held);
+  g_mutex_unlock(&_hold_lock);
+}
+
+// a photo about to be opened: every export still to render it gets its
+// edit before the editor can change it
+static void _hold_open(const dt_imgid_t imgid)
+{
+  g_mutex_lock(&_hold_lock);
+  GHashTableIter it;
+  gpointer key, held;
+  if(_holds) g_hash_table_iter_init(&it, _holds);
+  while(_holds && g_hash_table_iter_next(&it, &key, &held))
+  {
+    gpointer snap;
+    if(g_hash_table_lookup_extended(held, GINT_TO_POINTER(imgid), NULL, &snap)
+       && !dt_is_valid_imgid(GPOINTER_TO_INT(snap)))
+      g_hash_table_insert(held, GINT_TO_POINTER(imgid), GINT_TO_POINTER(_snapshot(imgid)));
+  }
+  g_mutex_unlock(&_hold_lock);
+}
+
+// the snapshot job's export of `imgid` renders, now the caller's to remove;
+// NO_IMGID when the job does not hold the photo
+static dt_imgid_t _hold_take(const gint64 job, const dt_imgid_t imgid)
+{
+  g_mutex_lock(&_hold_lock);
+  GHashTable *held = _holds ? g_hash_table_lookup(_holds, &job) : NULL;
+  gpointer snap = NULL;
+  dt_imgid_t taken = NO_IMGID;
+  if(held && g_hash_table_lookup_extended(held, GINT_TO_POINTER(imgid), NULL, &snap))
+  {
+    // under the lock, so the photo can't be opened while it is copied
+    taken = dt_is_valid_imgid(GPOINTER_TO_INT(snap)) ? GPOINTER_TO_INT(snap) : _snapshot(imgid);
+    g_hash_table_remove(held, GINT_TO_POINTER(imgid));
+  }
+  g_mutex_unlock(&_hold_lock);
+  return taken;
+}
+
+// the job's photos it will not export after all, with their snapshots
+static void _hold_release(const gint64 job)
+{
+  g_mutex_lock(&_hold_lock);
+  if(_holds) g_hash_table_remove(_holds, &job);
+  g_mutex_unlock(&_hold_lock);
 }
 
 // whether the history holds entries a later one of the same module
@@ -586,6 +851,7 @@ static gboolean _open_image(const char *path, const dt_imgid_t version, const ch
   if(ids) imgid = GPOINTER_TO_INT(ids->data);
   if(g_list_find(ids, GINT_TO_POINTER(version))) imgid = version;
   g_list_free(ids);
+  _hold_open(imgid);
 
   // a sidecar saved before history was compressed is compressed now, once,
   // so this session starts from the short history and saves stay small
@@ -595,11 +861,7 @@ static gboolean _open_image(const char *path, const dt_imgid_t version, const ch
   const gboolean fresh = !_has_history(imgid);
 
   dt_dev_init(&_s.dev, FALSE);
-  // loading applies darktable's automatic presets, which would give an
-  // image merely opened a sidecar; edits reach it through `save`
-  _sidecars_off();
   dt_dev_load_image(&_s.dev, imgid);
-  _sidecars_on();
   // load_image reads the history but does not replay it into module params
   dt_dev_pop_history_items_ext(&_s.dev, _s.dev.history_end);
 
@@ -1284,7 +1546,7 @@ static gboolean _keywords_set(const dt_imgid_t imgid, JsonObject *req, JsonBuild
       dt_tag_detach(tagid, imgid, FALSE, FALSE);
   }
   // TRUE means it failed
-  if(dt_image_write_sidecar_file(imgid))
+  if(_write_sidecar(imgid))
   {
     *err = g_strdup("could not write the XMP sidecar");
     return FALSE;
@@ -1339,6 +1601,17 @@ static void _image_json(JsonBuilder *b, const dt_imgid_t imgid, const gboolean f
   char datetime[DT_DATETIME_LENGTH] = { 0 };
   dt_datetime_img_to_exif(datetime, sizeof(datetime), img);
   _add_string(b, "datetime", datetime);
+  // a photo with no capture time (a camera whose clock was never set
+  // writes zeros) is placed by its file's modified time instead
+  GStatBuf st;
+  if(!*datetime && !g_stat(path, &st))
+  {
+    GDateTime *mtime = g_date_time_new_from_unix_local(st.st_mtime);
+    gchar *file_datetime = mtime ? g_date_time_format(mtime, "%Y:%m:%d %H:%M:%S") : NULL;
+    _add_string(b, "file_datetime", file_datetime ? file_datetime : "");
+    g_free(file_datetime);
+    if(mtime) g_date_time_unref(mtime);
+  }
   json_builder_set_member_name(b, "sensor_width");
   json_builder_add_int_value(b, img->p_width);
   json_builder_set_member_name(b, "sensor_height");
@@ -1384,8 +1657,9 @@ static void _image_json(JsonBuilder *b, const dt_imgid_t imgid, const gboolean f
 }
 
 // every version of the file `imgid` belongs to, lowest first: darktable's
-// duplicates, which the client calls virtual copies. import reads each
-// "<name>_NN.<ext>.xmp" into its own row (image.c, _image_read_duplicates())
+// duplicates, which the client calls virtual copies, but not an export's
+// snapshots. import reads each "<name>_NN.<ext>.xmp" into its own row
+// (image.c, _image_read_duplicates())
 static GList *_image_versions(const dt_imgid_t imgid)
 {
   GList *ids = NULL;
@@ -1393,9 +1667,11 @@ static GList *_image_versions(const dt_imgid_t imgid)
   DT_DEBUG_SQLITE3_PREPARE_V2(dt_database_get(darktable.db),
                               "SELECT b.id FROM main.images AS a, main.images AS b"
                               " WHERE a.id = ?1 AND b.film_id = a.film_id AND b.filename = a.filename"
+                              "   AND b.version < ?2"
                               " ORDER BY b.version",
                               -1, &stmt, NULL);
   DT_DEBUG_SQLITE3_BIND_INT(stmt, 1, imgid);
+  DT_DEBUG_SQLITE3_BIND_INT(stmt, 2, _SNAPSHOT_VERSION);
   while(sqlite3_step(stmt) == SQLITE_ROW)
     ids = g_list_prepend(ids, GINT_TO_POINTER(sqlite3_column_int(stmt, 0)));
   sqlite3_finalize(stmt);
@@ -1441,7 +1717,7 @@ static gboolean _copy(const dt_imgid_t src, JsonBuilder *b, char **err)
   // an unedited original has no sidecar yet. without one, the next import
   // takes the copy's "_01" sidecar for the original's own and makes it
   // version 1 (image.c, _image_read_duplicates()). TRUE means it failed
-  if(dt_image_write_sidecar_file(src))
+  if(_write_sidecar(src))
   {
     *err = g_strdup("could not write the XMP sidecar");
     return FALSE;
@@ -1453,7 +1729,7 @@ static gboolean _copy(const dt_imgid_t src, JsonBuilder *b, char **err)
     return FALSE;
   }
   dt_history_copy_and_paste_on_image(src, newid, FALSE, NULL, TRUE, TRUE, FALSE);
-  if(dt_image_write_sidecar_file(newid))
+  if(_write_sidecar(newid))
   {
     *err = g_strdup("could not write the copy's XMP sidecar");
     return FALSE;
@@ -1483,6 +1759,28 @@ static gboolean _remove_copy(const dt_imgid_t imgid, JsonBuilder *b, char **err)
   json_builder_end_array(b);
   // the paths first: they need the row, which this removes
   dt_image_remove(imgid);
+  return TRUE;
+}
+
+// the library's rows for a file deleted from disk, every version. a new file
+// at the same path would otherwise import as the old row, rejected and with
+// its edit, since dt_image_import() returns the row the film and name find
+// (image.c, _image_import_internal()) and there is no sidecar left to read
+static gboolean _forget(const dt_imgid_t imgid, char **err)
+{
+  GList *ids = dt_is_valid_imgid(imgid) ? _image_versions(imgid) : NULL;
+  if(!ids)
+  {
+    *err = g_strdup("no such image");
+    return FALSE;
+  }
+  for(GList *l = ids; l; l = g_list_next(l))
+  {
+    const dt_imgid_t id = GPOINTER_TO_INT(l->data);
+    if(_s.open && _s.imgid == id) _close_session();
+    dt_image_remove(id);
+  }
+  g_list_free(ids);
   return TRUE;
 }
 
@@ -1684,6 +1982,53 @@ static void _import_files(JsonArray *files, JsonBuilder *b)
   json_builder_end_array(b);
 }
 
+// a tagged `import` runs here rather than in the main loop, so a folder
+// is read while the photo is edited and rendered, as darktable's own
+// import runs as a job beside its views (control/jobs/control_jobs.c).
+// one thread: _import_lock already keeps imports apart, and a batch's
+// reply is its progress
+static GThreadPool *_import_pool = NULL;
+static GMutex _import_pool_lock;
+
+static void _import_run(gpointer data, gpointer user_data)
+{
+  JsonParser *parser = data;
+  FILE *out = user_data;
+  JsonObject *req = json_node_get_object(json_parser_get_root(parser));
+  JsonBuilder *b = json_builder_new();
+  json_builder_begin_object(b);
+  json_builder_set_member_name(b, "tag");
+  json_builder_add_int_value(b, json_object_get_int_member(req, "tag"));
+  json_builder_set_member_name(b, "ok");
+  json_builder_add_boolean_value(b, TRUE);
+  _import_files(json_object_has_member(req, "files") ? json_object_get_array_member(req, "files") : NULL, b);
+  json_builder_end_object(b);
+  _reply(out, b);
+  g_object_unref(b);
+  g_object_unref(parser);
+}
+
+// FALSE once the pool has stopped; the request then gets no reply
+static gboolean _import_queue(JsonParser *parser)
+{
+  g_mutex_lock(&_import_pool_lock);
+  const gboolean queued = _import_pool != NULL;
+  if(queued) g_thread_pool_push(_import_pool, parser, NULL);
+  g_mutex_unlock(&_import_pool_lock);
+  return queued;
+}
+
+// before darktable's caches go: the batch under way finishes, those
+// waiting are dropped
+static void _import_wait(void)
+{
+  g_mutex_lock(&_import_pool_lock);
+  GThreadPool *pool = _import_pool;
+  _import_pool = NULL;
+  g_mutex_unlock(&_import_pool_lock);
+  if(pool) g_thread_pool_free(pool, TRUE, TRUE);
+}
+
 // the lighttable's thumbnail for an image: the embedded preview of an
 // unedited raw, a processed render of an edited one. the buffer is 8-bit
 // RGBA (views/view.c swaps it to BGRA for cairo); its color space is
@@ -1711,6 +2056,65 @@ static gboolean _thumb(const dt_imgid_t imgid, const int size, const char *out,
   dt_mipmap_cache_release(&buf);
   if(!ok) *err = g_strdup_printf("could not write '%s'", out);
   return ok;
+}
+
+// a `thumb` with a `tag` runs here rather than in the main loop, so a
+// folder's thumbnails come in while the photo is edited and rendered.
+// darktable's lighttable builds them from its job threads the same way:
+// the mipmap cache and the library (SQLITE_CONFIG_SERIALIZED, database.c)
+// take callers on many threads. two threads, so a render keeps most of the
+// cores. the reply carries the tag, and can come between another request
+// and its reply
+#define _THUMB_THREADS 2
+static GThreadPool *_thumb_pool = NULL;
+static GMutex _thumb_lock;
+
+static void _thumb_run(gpointer data, gpointer user_data)
+{
+  JsonParser *parser = data;
+  FILE *out = user_data;
+  JsonObject *req = json_node_get_object(json_parser_get_root(parser));
+  const char *dest = json_object_get_string_member_with_default(req, "out", NULL);
+  char *err = NULL;
+  JsonBuilder *b = json_builder_new();
+  json_builder_begin_object(b);
+  json_builder_set_member_name(b, "tag");
+  json_builder_add_int_value(b, json_object_get_int_member(req, "tag"));
+  const gboolean ok = dest && _thumb(json_object_get_int_member_with_default(req, "imgid", 0),
+                                     json_object_get_int_member_with_default(req, "size", 256), dest, b, &err);
+  json_builder_set_member_name(b, "ok");
+  json_builder_add_boolean_value(b, ok);
+  if(!ok)
+  {
+    json_builder_set_member_name(b, "error");
+    json_builder_add_string_value(b, err ? err : "no output file");
+  }
+  json_builder_end_object(b);
+  _reply(out, b);
+  g_object_unref(b);
+  g_free(err);
+  g_object_unref(parser);
+}
+
+// FALSE once the pool has stopped; the request then gets no reply
+static gboolean _thumb_queue(JsonParser *parser)
+{
+  g_mutex_lock(&_thumb_lock);
+  const gboolean queued = _thumb_pool != NULL;
+  if(queued) g_thread_pool_push(_thumb_pool, parser, NULL);
+  g_mutex_unlock(&_thumb_lock);
+  return queued;
+}
+
+// before darktable's caches go: the thumbnails under way finish, those
+// waiting are dropped
+static void _thumb_wait(void)
+{
+  g_mutex_lock(&_thumb_lock);
+  GThreadPool *pool = _thumb_pool;
+  _thumb_pool = NULL;
+  g_mutex_unlock(&_thumb_lock);
+  if(pool) g_thread_pool_free(pool, TRUE, TRUE);
 }
 
 // rating (0-5), rejected, labels (bit mask: red 1, yellow 2, green 4, blue
@@ -1743,7 +2147,7 @@ static gboolean _meta_set(const dt_imgid_t imgid, JsonObject *req, char **err)
       dt_metadata_set(imgid, _meta_keys[k][1],
                       json_object_get_string_member(req, _meta_keys[k][0]), FALSE);
   // TRUE means it failed
-  if(dt_image_write_sidecar_file(imgid))
+  if(_write_sidecar(imgid))
   {
     *err = g_strdup("could not write the XMP sidecar");
     return FALSE;
@@ -1766,9 +2170,34 @@ static const struct { const char *name; dt_colorspaces_color_profile_type_t type
 // one SVG that its watermark module lays over the framed image. both run
 // after every other module (iop order). export applies a named style to its
 // own copy of the history only, so the frame becomes a style for the
-// duration of the export; the image's own edits are never touched
-#define _FRAME_STYLE "immage export frame"
-#define _FRAME_SVG "immage-export.svg"
+// duration of the export; the image's own edits are never touched. each
+// export's are numbered (_export)
+#define _FRAME_STYLE "immage export frame %d"
+#define _FRAME_SVG "immage-export-%d.svg"
+#define _FRAME_DTSTYLE "export-frame-%d.dtstyle"
+
+// a background export (_export_run) and the main loop's exports read the
+// format's quality from darktable's settings
+static GMutex _format_conf_lock;
+// darktable's AI provider setting, which loading a model reads
+// (backend_common.c): the upscale model and the main loop's AI masks and
+// denoise each set it before they load
+#ifdef HAVE_AI
+static GMutex _ai_load_lock;
+#endif
+
+// the format an export writes through, for _no_tmpfile_flags
+static _Thread_local dt_imageio_module_format_t *_flags_of;
+
+// the format's own flags, and no temporary file signal: export raises it
+// synchronously (imageio.c), which off the main thread waits for a GLib
+// main loop the engine does not run, whenever another thread is raising a
+// signal at that moment (signal.c, dt_control_signal_raise()). nothing in
+// the engine listens for it
+static int _no_tmpfile_flags(dt_imageio_module_data_t *data)
+{
+  return _flags_of->flags(data) | FORMAT_FLAGS_NO_TMPFILE;
+}
 
 // a char array field of a module's params, such as watermark's filename
 static gboolean _write_text(dt_iop_module_t *mod, const char *name, const char *value, char **err)
@@ -2089,16 +2518,17 @@ static void _style_plugin(GString *xml, dt_iop_module_t *mod, const int num, con
 // whether there is a style to apply, `*svg_written` whether a text layer
 // went to the watermarks folder
 static gboolean _frame_style(const dt_imgid_t imgid, JsonObject *frame, JsonObject *old_border,
-                             const int long_edge, const int upscale, gboolean *styled,
+                             const int long_edge, const int upscale, const int id, gboolean *styled,
                              gboolean *svg_written, char **err)
 {
+  char style[64], svg_name[64];
+  g_snprintf(style, sizeof(style), _FRAME_STYLE, id);
+  g_snprintf(svg_name, sizeof(svg_name), _FRAME_SVG, id);
   *styled = FALSE;
   *svg_written = FALSE;
   dt_develop_t dev;
   dt_dev_init(&dev, FALSE);
-  _sidecars_off();
   dt_dev_load_image(&dev, imgid);
-  _sidecars_on();
   dt_iop_module_t *borders = dt_iop_get_module_by_op_priority(dev.iop, "borders", 0);
   dt_iop_module_t *watermark = dt_iop_get_module_by_op_priority(dev.iop, "watermark", 0);
   if(!borders || !watermark)
@@ -2226,7 +2656,7 @@ static gboolean _frame_style(const dt_imgid_t imgid, JsonObject *frame, JsonObje
   GString *xml = g_string_new(NULL);
   g_string_append_printf(xml, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
                          "<darktable_style version=\"1.0\"><info><name>%s</name><description></description>"
-                         "</info><style>", _FRAME_STYLE);
+                         "</info><style>", style);
   gboolean ok = TRUE;
   int num = 0, cw = w, chh = h, px0 = 0, py0 = 0;
   for(guint k = 0; ok && k < nborders; k++)
@@ -2282,14 +2712,14 @@ static gboolean _frame_style(const dt_imgid_t imgid, JsonObject *frame, JsonObje
     dt_loc_get_user_config_dir(configdir, sizeof(configdir));
     gchar *dir = g_build_filename(configdir, "watermarks", NULL);
     g_mkdir_with_parents(dir, 0755);
-    svg_path = g_build_filename(dir, _FRAME_SVG, NULL);
+    svg_path = g_build_filename(dir, svg_name, NULL);
     g_free(dir);
     ok = g_file_set_contents(svg_path, svg->str, -1, NULL);
     g_string_free(svg, TRUE);
     *svg_written = ok;
 
     memcpy(watermark->params, watermark->default_params, watermark->params_size);
-    ok = ok && _write_text(watermark, "filename", _FRAME_SVG, err) && _write_text(watermark, "text", "", err)
+    ok = ok && _write_text(watermark, "filename", svg_name, err) && _write_text(watermark, "text", "", err)
       && _write_field(watermark, "opacity", 100.0, err) && _write_field(watermark, "scale", 100.0, err)
       && _write_field(watermark, "xoffset", 0.0, err) && _write_field(watermark, "yoffset", 0.0, err)
       && _write_field(watermark, "rotate", 0.0, err) && _write_field(watermark, "alignment", 0, err)
@@ -2304,14 +2734,17 @@ static gboolean _frame_style(const dt_imgid_t imgid, JsonObject *frame, JsonObje
   {
     char configdir[PATH_MAX] = { 0 };
     dt_loc_get_user_config_dir(configdir, sizeof(configdir));
-    gchar *path = g_build_filename(configdir, "export-frame.dtstyle", NULL);
+    char file[64];
+    g_snprintf(file, sizeof(file), _FRAME_DTSTYLE, id);
+    gchar *path = g_build_filename(configdir, file, NULL);
     ok = g_file_set_contents(path, xml->str, -1, NULL);
     if(ok)
     {
-      if(dt_styles_exists(_FRAME_STYLE)) dt_styles_delete_by_name(_FRAME_STYLE);
+      if(dt_styles_exists(style)) dt_styles_delete_by_name(style);
       dt_styles_import_from_file(path);
-      ok = dt_styles_exists(_FRAME_STYLE);
+      ok = dt_styles_exists(style);
     }
+    g_unlink(path);
     g_free(path);
   }
   g_string_free(xml, TRUE);
@@ -2322,13 +2755,16 @@ static gboolean _frame_style(const dt_imgid_t imgid, JsonObject *frame, JsonObje
 }
 
 // the frame's style and text layer, once the export no longer needs them
-static void _frame_done(const gboolean svg_written)
+static void _frame_done(const int id, const gboolean svg_written)
 {
-  dt_styles_delete_by_name(_FRAME_STYLE);
+  char name[64];
+  g_snprintf(name, sizeof(name), _FRAME_STYLE, id);
+  dt_styles_delete_by_name(name);
   if(!svg_written) return;
+  g_snprintf(name, sizeof(name), _FRAME_SVG, id);
   char configdir[PATH_MAX] = { 0 };
   dt_loc_get_user_config_dir(configdir, sizeof(configdir));
-  gchar *path = g_build_filename(configdir, "watermarks", _FRAME_SVG, NULL);
+  gchar *path = g_build_filename(configdir, "watermarks", name, NULL);
   g_unlink(path);
   g_free(path);
 }
@@ -2387,6 +2823,7 @@ static void _fonts(JsonBuilder *b)
 // Rec.2020 floats into a stand-in format, the upscale model runs over that
 // in tiles, and the result goes, converted to the export's color space,
 // through the real format's own writer with EXIF for the new size
+#ifdef HAVE_AI
 #define _UPSCALE_MODEL "upscale-realplksr"
 // the --models folder (defined with the AI masks' code below)
 static const char *_models_dir;
@@ -2402,6 +2839,7 @@ static struct
   dt_colorspaces_color_profile_type_t icc;
   char *err;
 } _up;
+static GMutex _up_lock;
 
 // GPU execution providers, the only ones the upscale model runs on: on the
 // CPU, ONNX Runtime expands RealPLKSR's large kernels into intermediate
@@ -2468,6 +2906,7 @@ static gboolean _soft_device(const dt_ai_device_t *d)
 {
   return d->name && strstr(d->name, "Basic Render");
 }
+#endif
 
 // darktable's OpenCL devices, for the GUI benchmark's report: the idle base
 // render runs on one when OpenCL is up, and its driver differs between
@@ -2495,6 +2934,7 @@ static void _opencl(JsonBuilder *b)
   json_builder_end_array(b);
 }
 
+#ifdef HAVE_AI
 // the GPU providers this computer can use, each with its devices where the
 // provider lets one be chosen; a provider whose only devices are software
 // ones is left out
@@ -2569,6 +3009,7 @@ static dt_restore_context_t *_upscale_ctx(const int scale, const char *asked, co
     _up.env = g_new0(dt_restore_env_t, 1);
     _up.env->ai_env = dt_ai_env_init(_models_dir);
   }
+  g_mutex_lock(&_ai_load_lock);
   dt_ai_env_refresh(_up.env->ai_env);
   // restore finds its model through darktable's active-model and provider
   // settings rather than taking them as arguments
@@ -2577,6 +3018,7 @@ static dt_restore_context_t *_upscale_ctx(const int scale, const char *asked, co
   const char *device_key = dt_ai_device_conf_key_for_provider(dt_ai_provider_from_string(provider));
   if(device_key && device >= 0) dt_conf_set_int(device_key, device);
   _up.ctx = scale == 4 ? dt_restore_load_upscale_x4(_up.env) : dt_restore_load_upscale_x2(_up.env);
+  g_mutex_unlock(&_ai_load_lock);
   if(!_up.ctx)
   {
     *err = g_strdup_printf("cannot load the '%s' model from %s", _UPSCALE_MODEL, _models_dir);
@@ -2685,6 +3127,7 @@ static int _up_write_image(dt_imageio_module_data_t *data, const char *filename,
   if(res) _up.err = g_strdup_printf("could not write '%s'", filename);
   return res;
 }
+#endif
 
 // write one image through darktable's own export, as its export module
 // would: `format` names a format plugin (jpeg, tiff, png, webp...); quality
@@ -2706,8 +3149,11 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
     return FALSE;
   }
 
+  // the format reads them from darktable's settings, which a background
+  // export and the main loop's (the dialog's preview) share
   const int quality = json_object_get_int_member_with_default(req, "quality", 0);
   const int bpp = json_object_get_int_member_with_default(req, "bpp", 0);
+  g_mutex_lock(&_format_conf_lock);
   for(int pass = 0; pass < 2; pass++)
   {
     const int value = pass ? bpp : quality;
@@ -2717,8 +3163,8 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
     if(dt_conf_key_exists(key) || dt_confgen_exists(key)) dt_conf_set_int(key, value);
     g_free(key);
   }
-
   dt_imageio_module_data_t *fdata = fmt->get_params(fmt);
+  g_mutex_unlock(&_format_conf_lock);
   if(!fdata)
   {
     *err = g_strdup_printf("format '%s' gave no parameters", format);
@@ -2732,11 +3178,6 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
   fdata->style[0] = '\0';
   fdata->style_append = TRUE;
 
-  // the open image's latest edits may not be in the library yet, and
-  // export reads its history from there; the frame's size needs its crop.
-  // in the Before view they went in as it came on ("before" below)
-  if(_s.open && _s.imgid == imgid && !_s.before) dt_dev_write_history_ext(&_s.dev, imgid);
-
   JsonObject *frame = json_object_has_member(req, "frame")
     && JSON_NODE_HOLDS_OBJECT(json_object_get_member(req, "frame"))
     ? json_object_get_object_member(req, "frame") : NULL;
@@ -2744,18 +3185,22 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
     && JSON_NODE_HOLDS_OBJECT(json_object_get_member(req, "border"))
     ? json_object_get_object_member(req, "border") : NULL;
   gboolean framed = FALSE, frame_svg = FALSE;
+  // the frame's style and text layer are named for this export alone, as a
+  // background export and the dialog's preview may be framing at once
+  static gint frames = 0;
+  const int frame_id = g_atomic_int_add(&frames, 1);
   if(frame || border)
   {
     // the long edge a frame's pixel sizes refer to: a preview smaller than
     // the export it shows passes the export's (0 for full size)
     const int px_edge = json_object_get_int_member_with_default(req, "px_long_edge", long_edge);
-    if(!_frame_style(imgid, frame, border, px_edge, upscale, &framed, &frame_svg, err))
+    if(!_frame_style(imgid, frame, border, px_edge, upscale, frame_id, &framed, &frame_svg, err))
     {
-      _frame_done(frame_svg);
+      _frame_done(frame_id, frame_svg);
       fmt->free_params(fmt, fdata);
       return FALSE;
     }
-    if(framed) g_strlcpy(fdata->style, _FRAME_STYLE, sizeof(fdata->style));
+    if(framed) g_snprintf(fdata->style, sizeof(fdata->style), _FRAME_STYLE, frame_id);
   }
 
   dt_colorspaces_color_profile_type_t icc = DT_COLORSPACE_SRGB;
@@ -2763,30 +3208,39 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
   for(size_t k = 0; k < G_N_ELEMENTS(_spaces); k++)
     if(!g_strcmp0(space, _spaces[k].name)) icc = _spaces[k].type;
 
-  // the stand-in format renders linear Rec.2020 floats for the model and
-  // hands the result to the real one
-  dt_imageio_module_format_t proxy;
-  dt_imageio_module_format_t *write_fmt = fmt;
+  dt_imageio_module_format_t proxy = *fmt;
+  _flags_of = fmt;
+  proxy.flags = _no_tmpfile_flags;
   dt_colorspaces_color_profile_type_t render_icc = icc;
+  // the stand-in format renders linear Rec.2020 floats for the model and
+  // hands the result to the real one. one upscale at a time: the model and
+  // the real format are kept in _up
   if(upscale > 1)
   {
+#ifndef HAVE_AI
+    *err = g_strdup("AI upscaling needs an engine built with AI");
+    if(framed) _frame_done(frame_id, frame_svg);
+    fmt->free_params(fmt, fdata);
+    return FALSE;
+#else
+    g_mutex_lock(&_up_lock);
     const char *asked = json_object_get_string_member_with_default(req, "ai_provider", "auto");
     const int device = json_object_get_int_member_with_default(req, "ai_device", -1);
     if(!_upscale_ctx(upscale == 4 ? 4 : 2, asked, device, err))
     {
-      if(framed) _frame_done(frame_svg);
+      g_mutex_unlock(&_up_lock);
+      if(framed) _frame_done(frame_id, frame_svg);
       fmt->free_params(fmt, fdata);
       return FALSE;
     }
-    proxy = *fmt;
     proxy.bpp = _up_bpp;
     proxy.levels = _up_levels;
     proxy.write_image = _up_write_image;
-    write_fmt = &proxy;
     render_icc = DT_COLORSPACE_LIN_REC2020;
     _up.real = fmt;
     _up.icc = icc;
     g_clear_pointer(&_up.err, g_free);
+#endif
   }
 
   // EXIF, the text fields, location and tags, as Lightroom exports them;
@@ -2820,9 +3274,6 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
   g_mkdir_with_parents(dir, 0755);
   g_free(dir);
 
-  // export would also write the image's sidecar; an unedited image must not
-  // gain one, and the open image's edits reach its sidecar through `save`
-  _sidecars_off();
   // the export's own keywords: the file takes its tags from the library
   // (exif.cc), so they are attached for the export and taken off after,
   // leaving any the image already had
@@ -2844,7 +3295,7 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
   const gboolean high_quality = !json_object_get_boolean_member_with_default(req, "draft", FALSE);
   // NB: returns FALSE on success
   const gboolean failed = dt_imageio_export_with_flags(
-      imgid, out, write_fmt, fdata,
+      imgid, out, &proxy, fdata,
       FALSE /*ignore_exif*/, FALSE /*display_byteorder*/, high_quality,
       FALSE /*upscale*/, FALSE /*is_scaling*/, 1.0, FALSE /*thumbnail*/, NULL /*filter*/,
       TRUE /*copy_metadata*/, FALSE /*export_masks*/,
@@ -2852,14 +3303,15 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
   for(GList *t = added; t; t = g_list_next(t))
     dt_tag_detach(GPOINTER_TO_UINT(t->data), imgid, FALSE, FALSE);
   g_list_free(added);
-  _sidecars_on();
-  if(framed) _frame_done(frame_svg);
+  if(framed) _frame_done(frame_id, frame_svg);
   fmt->free_params(fmt, fdata);
-  if(failed)
-  {
-    *err = _up.err && upscale > 1 ? g_strdup(_up.err) : g_strdup_printf("could not write '%s'", out);
-    return FALSE;
-  }
+#ifdef HAVE_AI
+  if(failed) *err = _up.err && upscale > 1 ? g_strdup(_up.err) : g_strdup_printf("could not write '%s'", out);
+  if(upscale > 1) g_mutex_unlock(&_up_lock);
+#else
+  if(failed) *err = g_strdup_printf("could not write '%s'", out);
+#endif
+  if(failed) return FALSE;
   // a file that keeps what was asked to be left out is not delivered
   if((*err = strip_metadata(out, strip)))
   {
@@ -2867,6 +3319,354 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
     return FALSE;
   }
   return TRUE;
+}
+
+// a tagged `export` runs here rather than in the main loop, so the photo is
+// edited while a batch exports. darktable's export job does the same beside
+// its darkroom: export builds a develop and pipe of its own from the
+// library (imageio.c). it renders the job's snapshot of the photo
+// (_hold_take), never the open session. one thread, so a batch keeps its
+// order and the editor keeps most of the cores. the job's tagged
+// `export_release` comes here too, after its exports, and a tagged
+// `hdr_merge`
+static GThreadPool *_export_pool = NULL;
+static GMutex _export_pool_lock;
+
+// Merge to HDR: the brackets `imgids` into a float DNG beside the first
+// (hdrmerge.c), imported. replies { path, image }. it reads each bracket
+// through an export pipe of its own, as an export does, so a tagged one
+// runs on the export thread
+static gboolean _hdr_merge(JsonObject *req, JsonBuilder *b, FILE *out, char **err)
+{
+  JsonArray *ids = json_object_has_member(req, "imgids") ? json_object_get_array_member(req, "imgids") : NULL;
+  GList *imgids = NULL;
+  for(guint k = 0; ids && k < json_array_get_length(ids); k++)
+  {
+    const dt_imgid_t id = json_array_get_int_element(ids, k);
+    if(dt_is_valid_imgid(id) && !g_list_find(imgids, GINT_TO_POINTER(id)))
+      imgids = g_list_append(imgids, GINT_TO_POINTER(id));
+  }
+  const gint64 t0 = g_get_monotonic_time();
+  _merge_progress_t progress = _merge_progress(req, out, "merging");
+  gchar *path = hdr_merge(imgids, json_object_get_boolean_member_with_default(req, "align", TRUE), _merge_step,
+                          &progress, err);
+  g_list_free(imgids);
+  if(!path) return FALSE;
+  const dt_imgid_t newid = _import(path);
+  if(!dt_is_valid_imgid(newid))
+  {
+    *err = g_strdup_printf("cannot import %s", path);
+    g_free(path);
+    return FALSE;
+  }
+  _add_string(b, "path", path);
+  g_free(path);
+  json_builder_set_member_name(b, "image");
+  _image_json(b, newid, FALSE);
+  json_builder_set_member_name(b, "seconds");
+  json_builder_add_double_value(b, _ms_since(t0) / 1000.0);
+  return TRUE;
+}
+
+#ifdef HAVE_PANO
+// what a panorama's frame keeps of its edit: the raw's own steps, up to
+// demosaic, denoise and the lens's corrections, all of them before colorin
+// (iop_order.c), so the frame stays in the camera's own color, as
+// Lightroom merges from the raw data. white balance, color, exposure, the
+// tone mapper, the look, crops and effects belong to the panorama, which
+// opens as its first frame's raw did (dng.c); the stitch evens out the
+// frames' exposures itself. only a module's first instance, unmasked
+static const char *_pano_keep[] = {
+  "rawprepare", "temperature", "highlights", "cacorrect", "hotpixels", "rawdenoise", "demosaic",
+  "denoiseprofile", "rotatepixels", "scalepixels", "lens", "cacorrectrgb", "flip",
+};
+
+static gboolean _pano_kept(const dt_iop_module_t *m)
+{
+  if(m->multi_priority != 0 || (m->blend_params && m->blend_params->mask_mode != DEVELOP_MASK_DISABLED))
+    return FALSE;
+  for(size_t k = 0; k < G_N_ELEMENTS(_pano_keep); k++)
+    if(!g_strcmp0(m->op, _pano_keep[k])) return TRUE;
+  return FALSE;
+}
+
+// one frame at full size, in the camera's color with its white balance
+// divided out again, through an export pipe as
+// dt_imageio_export_with_flags() builds one, with the modules _pano_keep
+// leaves out switched off after the history is replayed. lens correction
+// is switched on where the history never set it: the stitch needs the
+// lens's distortion gone, and one the user turned off (after DxO PureRAW)
+// stays off. `first` is the first frame's image, filled in by its call:
+// every other must come from the same camera, as the DNG has one color
+// matrix
+static gboolean _pano_frame(pano_t *p, const dt_imgid_t imgid, dt_image_t *first, char **err)
+{
+  dt_develop_t dev;
+  dt_dev_init(&dev, FALSE);
+  dt_dev_load_image(&dev, imgid);
+  dt_mipmap_buffer_t buf;
+  dt_mipmap_cache_get(&buf, imgid, DT_MIPMAP_FULL, DT_MIPMAP_BLOCKING, 'r');
+  const dt_image_t *img = &dev.image_storage;
+  gboolean ok = FALSE;
+  if(!buf.buf || !buf.width || !buf.height)
+  {
+    *err = g_strdup_printf("cannot read '%s'", img->filename);
+    goto early;
+  }
+  if(!dt_image_is_raw(img) || (img->flags & DT_IMAGE_4BAYER))
+  {
+    *err = g_strdup_printf("'%s' is not a raw photo; Panorama Merge takes raws only", img->filename);
+    goto early;
+  }
+  if(!dt_is_valid_imgid(first->id))
+    *first = *img;
+  else if(g_strcmp0(first->camera_makermodel, img->camera_makermodel))
+  {
+    *err = g_strdup_printf("'%s' is from another camera than '%s'", img->filename, first->filename);
+    goto early;
+  }
+  dt_dev_pixelpipe_t pipe;
+  if(!dt_dev_pixelpipe_init_export(&pipe, img->width, img->height, IMAGEIO_RGB | IMAGEIO_FLOAT, FALSE))
+  {
+    *err = g_strdup("not enough memory for the photo");
+    goto early;
+  }
+  gboolean lens_set = FALSE;
+  for(GList *l = dev.history; l && l != g_list_nth(dev.history, dev.history_end); l = g_list_next(l))
+    lens_set |= !g_strcmp0(((dt_dev_history_item_t *)l->data)->op_name, "lens");
+  dt_ioppr_resync_modules_order(&dev);
+  dt_dev_pixelpipe_set_input(&pipe, &dev, (float *)buf.buf, buf.width, buf.height, buf.iscale);
+  dt_dev_pixelpipe_create_nodes(&pipe, &dev);
+  dt_dev_pixelpipe_synch_all(&pipe, &dev);
+  for(GList *n = pipe.nodes; n; n = g_list_next(n))
+  {
+    dt_dev_pixelpipe_iop_t *piece = n->data;
+    if(!_pano_kept(piece->module))
+      piece->enabled = FALSE;
+    else if(!lens_set && !g_strcmp0(piece->module->op, "lens"))
+      piece->enabled = TRUE;
+  }
+  // the white balance temperature applied (its commit_params), divided out
+  float unbalance[3];
+  for(int c = 0; c < 3; c++)
+    unbalance[c] = dev.chroma.wb_coeffs[c] > 0.0f ? 1.0f / dev.chroma.wb_coeffs[c] : 1.0f;
+  dt_dev_pixelpipe_get_dimensions(&pipe, &dev, pipe.iwidth, pipe.iheight, &pipe.processed_width,
+                                  &pipe.processed_height);
+  const int w = pipe.processed_width, h = pipe.processed_height;
+  if(dt_dev_pixelpipe_process_no_gamma(&pipe, &dev, 0, 0, w, h, 1.0) || !pipe.backbuf)
+    *err = g_strdup_printf("cannot render '%s'", img->filename);
+  else
+  {
+    // the lens's focal length in the frame's pixels, from the EXIF focal
+    // length over the sensor's diagonal (a full frame's 43.27 mm by the crop
+    // factor); 0 without them
+    const double diag = img->exif_crop > 0.0f ? 43.2666 / img->exif_crop : 0.0;
+    const double focal = img->exif_focal_length > 0.0f && diag > 0.0
+      ? img->exif_focal_length / diag * hypot(w, h) : 0.0;
+    ok = pano_add(p, (const float *)pipe.backbuf, w, h, unbalance, focal, err);
+  }
+  dt_dev_pixelpipe_cleanup(&pipe);
+early:
+  dt_dev_cleanup(&dev);
+  dt_mipmap_cache_release(&buf);
+  return ok;
+}
+
+// pano_step_t: the stitch's stages, as a merge's progress
+static gboolean _pano_step(const char *stage, const int done, const int total, void *data)
+{
+  return _merge_report(data, stage, done, total, FALSE);
+}
+
+// the DNG's rows written, past stopping
+static void _pano_written(const int done, const int total, void *data)
+{
+  _merge_report(data, "writing the DNG", done, total, TRUE);
+}
+
+// Photo Merge › Panorama: the raws `imgids` stitched (pano.cc) into a DNG
+// beside the first, <name>-pano.dng or -pano_01.dng..., that opens as the
+// first did (dng.c), with its EXIF. `projection` is "auto", "spherical",
+// "cylindrical" or "perspective"; `crop` cuts the edges the frames leave
+// empty. replies { path, original, image, used, frames, seconds }. it runs
+// on the export thread, as HDR Merge
+static gboolean _pano_merge(JsonObject *req, JsonBuilder *b, FILE *out, char **err)
+{
+  JsonArray *ids = json_object_has_member(req, "imgids") ? json_object_get_array_member(req, "imgids") : NULL;
+  GList *imgids = NULL;
+  for(guint k = 0; ids && k < json_array_get_length(ids); k++)
+  {
+    const dt_imgid_t id = json_array_get_int_element(ids, k);
+    if(dt_is_valid_imgid(id) && !g_list_find(imgids, GINT_TO_POINTER(id)))
+      imgids = g_list_append(imgids, GINT_TO_POINTER(id));
+  }
+  if(g_list_length(imgids) < 2)
+  {
+    g_list_free(imgids);
+    *err = g_strdup("a panorama needs two photos or more");
+    return FALSE;
+  }
+  static const struct { const char *name; pano_projection_t type; } projections[] = {
+    { "auto", PANO_AUTO }, { "spherical", PANO_SPHERICAL },
+    { "cylindrical", PANO_CYLINDRICAL }, { "perspective", PANO_PERSPECTIVE },
+  };
+  pano_projection_t projection = PANO_AUTO;
+  const char *asked = json_object_get_string_member_with_default(req, "projection", "auto");
+  for(size_t k = 0; k < G_N_ELEMENTS(projections); k++)
+    if(!g_strcmp0(asked, projections[k].name)) projection = projections[k].type;
+
+  const gint64 t0 = g_get_monotonic_time();
+  const dt_imgid_t first = GPOINTER_TO_INT(imgids->data);
+  dt_image_t first_img = { 0 };
+  const int frames = g_list_length(imgids);
+  _merge_progress_t progress = _merge_progress(req, out, NULL);
+  pano_t *p = pano_new();
+  gboolean ok = TRUE;
+  int done = 0;
+  for(GList *l = imgids; ok && l; l = g_list_next(l), done++)
+  {
+    if(!_merge_report(&progress, "photos", done, frames, FALSE))
+    {
+      *err = g_strdup("stopped");
+      ok = FALSE;
+    }
+    else
+      ok = _pano_frame(p, GPOINTER_TO_INT(l->data), &first_img, err);
+  }
+  g_list_free(imgids);
+  int w = 0, h = 0, used = 0;
+  float *rgb = ok ? pano_stitch(p, projection, json_object_get_boolean_member_with_default(req, "crop", TRUE),
+                                _pano_step, &progress, &w, &h, &used, err)
+                  : NULL;
+  pano_free(p);
+  if(!rgb) return FALSE;
+
+  char pathname[PATH_MAX] = { 0 };
+  gboolean from_cache = TRUE;
+  dt_image_full_path(first, pathname, sizeof(pathname), &from_cache);
+  gchar *original = g_strdup(pathname);
+  uint8_t *exif = NULL;
+  // not in DNG mode: that keeps the raw's orientation, for a mosaic still
+  // the sensor's way up (HDR Merge), where these frames were turned already
+  const int exif_len = dt_exif_read_blob(&exif, pathname, first, FALSE, w, h, FALSE);
+  char *c = pathname + strlen(pathname);
+  while(*c != '.' && c > pathname) c--;
+  const size_t free_space = sizeof(pathname) - (c - pathname);
+  g_strlcpy(c, "-pano.dng", free_space);
+  for(int seq = 1; g_file_test(pathname, G_FILE_TEST_EXISTS); seq++)
+    snprintf(c, free_space, "-pano_%02d.dng", seq);
+
+  // written under another name and renamed once whole, so a folder read
+  // meanwhile never imports half of it. too late to stop by then
+  gchar *part = g_strdup_printf("%s.part", pathname);
+  ok = !dng_write_linear_half(part, rgb, w, h, &first_img, exif, exif_len, _pano_written, &progress)
+       && !g_rename(part, pathname);
+  free(exif);
+  g_free(rgb);
+  if(!ok)
+  {
+    g_unlink(part);
+    g_free(part);
+    g_free(original);
+    *err = g_strdup_printf("could not write '%s'", pathname);
+    return FALSE;
+  }
+  g_free(part);
+
+  const dt_imgid_t newid = _import(pathname);
+  if(!dt_is_valid_imgid(newid))
+  {
+    g_free(original);
+    *err = g_strdup_printf("cannot import %s", pathname);
+    return FALSE;
+  }
+  _add_string(b, "path", pathname);
+  _add_string(b, "original", original);
+  g_free(original);
+  json_builder_set_member_name(b, "image");
+  _image_json(b, newid, FALSE);
+  json_builder_set_member_name(b, "used");
+  json_builder_add_int_value(b, used);
+  json_builder_set_member_name(b, "frames");
+  json_builder_add_int_value(b, frames);
+  json_builder_set_member_name(b, "seconds");
+  json_builder_add_double_value(b, _ms_since(t0) / 1000.0);
+  return TRUE;
+}
+#endif
+
+static void _export_run(gpointer data, gpointer user_data)
+{
+  JsonParser *parser = data;
+  FILE *out = user_data;
+  JsonObject *req = json_node_get_object(json_parser_get_root(parser));
+  const gint64 job = json_object_get_int_member_with_default(req, "job", 0);
+  const char *cmd = json_object_get_string_member_with_default(req, "cmd", "");
+  char *err = NULL;
+  gboolean ok = TRUE;
+  JsonBuilder *b = json_builder_new();
+  json_builder_begin_object(b);
+  json_builder_set_member_name(b, "tag");
+  json_builder_add_int_value(b, json_object_get_int_member(req, "tag"));
+  if(!g_strcmp0(cmd, "export_release"))
+    _hold_release(job);
+  else if(!g_strcmp0(cmd, "hdr_merge"))
+    ok = _hdr_merge(req, b, out, &err);
+#ifdef HAVE_PANO
+  else if(!g_strcmp0(cmd, "pano_merge"))
+    ok = _pano_merge(req, b, out, &err);
+#endif
+  else
+  {
+    const dt_imgid_t snap = _hold_take(job, json_object_get_int_member_with_default(req, "imgid", 0));
+    if(dt_is_valid_imgid(snap))
+      ok = _export(snap, req, &err);
+    else
+    {
+      ok = FALSE;
+      err = g_strdup("the export was not asked for this photo");
+    }
+    _snapshot_remove(snap);
+  }
+  json_builder_set_member_name(b, "ok");
+  json_builder_add_boolean_value(b, ok);
+  if(!ok)
+  {
+    json_builder_set_member_name(b, "error");
+    json_builder_add_string_value(b, err                              ? err
+                                     : !g_strcmp0(cmd, "hdr_merge")  ? "merging to HDR failed"
+                                     : !g_strcmp0(cmd, "pano_merge") ? "merging to a panorama failed"
+                                                                     : "export failed");
+  }
+  json_builder_end_object(b);
+  _reply(out, b);
+  g_object_unref(b);
+  g_free(err);
+  g_object_unref(parser);
+}
+
+// FALSE once the pool has stopped; the request then gets no reply
+static gboolean _export_queue(JsonParser *parser)
+{
+  g_mutex_lock(&_export_pool_lock);
+  const gboolean queued = _export_pool != NULL;
+  if(queued) g_thread_pool_push(_export_pool, parser, NULL);
+  g_mutex_unlock(&_export_pool_lock);
+  return queued;
+}
+
+// before darktable's caches go: the export under way finishes, those
+// waiting are dropped, and every snapshot left goes with its holds
+static void _export_wait(void)
+{
+  g_mutex_lock(&_export_pool_lock);
+  GThreadPool *pool = _export_pool;
+  _export_pool = NULL;
+  g_mutex_unlock(&_export_pool_lock);
+  if(pool) g_thread_pool_free(pool, TRUE, TRUE);
+  g_mutex_lock(&_hold_lock);
+  g_clear_pointer(&_holds, g_hash_table_destroy);
+  g_mutex_unlock(&_hold_lock);
 }
 
 // ------------------------------------------------------------------ masks
@@ -3134,6 +3934,10 @@ static uint8_t *_shown_rgb(const int size, const gboolean color, int *w, int *h,
   return rgb;
 }
 
+// an object component's feather when none is given: a path's border, as
+// a share of the image's shorter side (path.c)
+#define _OBJECT_FEATHER 0.003
+
 // --------------------------------------------------------------- AI masks
 // Lightroom's Select Objects: darktable's segmentation (SAM) on the image as
 // edited, prompted with clicks or a box, vectorized into path shapes the way
@@ -3144,11 +3948,40 @@ static uint8_t *_shown_rgb(const int size, const gboolean color, int *w, int *h,
 static const char *_models_dir = NULL;
 static dt_ai_environment_t *_ai_env = NULL;
 static dt_seg_context_t *_seg = NULL;
+// the photo encoded, NO_IMGID while none is
 static dt_imgid_t _seg_imgid = NO_IMGID;
 static int _seg_w = 0, _seg_h = 0;
 static int _seg_pw = 0, _seg_ph = 0;  // the image size the encoding was made at
+// the models' last results (_seg_*, _mask_cache), which the AI thread
+// (_ai_run) makes and the main loop looks at, to tell whether a request
+// needs the photo rendered for its model
+static GMutex _ai_cache_lock;
+
+// an AI selection, as the main loop hands it to the AI thread
+typedef struct _ai_job_t
+{
+  gint64 tag;
+  JsonObject *req;
+  int kind;          // in _mask_kinds, or -1 for an object
+  gboolean map;      // ai_depth: the depth map itself
+  dt_imgid_t imgid;
+  int pw, ph;        // the image's size, which the model's result holds for
+  uint8_t *rgb;      // the model's input, unless its last result holds
+  int w, h;
+  GBytes *guide;     // the photo at _TRACE_SIZE, which outlines are traced at
+  int gw, gh;
+} _ai_job_t;
+
+// outlines are traced at this size, about twice the models' own, against
+// the photo rendered at it (_snap_edges). it is kept for the image at its
+// size as the models' results are, and the models' inputs are made from it
+#define _TRACE_SIZE 2048
+static struct { GBytes *rgb; int w, h, pw, ph; dt_imgid_t imgid; } _guide = { NULL, 0, 0, 0, 0, NO_IMGID };
 
 #define _SEG_MODEL "mask-object-sam21-small"
+// how far _snap_edges() may move an object's outline, in pixels at
+// _TRACE_SIZE: a cell of SAM's 256 decoder grid there is 8
+#define _SEG_SNAP 6.0f
 
 // the models run on the CPU: ONNX Runtime's CoreML provider compiles each
 // model for the Neural Engine on load, which took minutes for BiRefNet and
@@ -3161,19 +3994,25 @@ static dt_ai_environment_t *_ai_env_new(void)
 }
 #define _SEG_SIZE 1024
 
-static gboolean _seg_ready(char **err)
+// the input a result was made from is gone once a job for another photo or
+// size has replaced it, as when the photo is switched while a model runs
+static gboolean _ai_input(const _ai_job_t *job, char **err)
 {
-  if(!_models_dir)
-  {
-    *err = g_strdup("no models folder given (--models)");
-    return FALSE;
-  }
+  if(job->rgb) return TRUE;
+  *err = g_strdup("the photo changed while the model ran");
+  return FALSE;
+}
+
+static gboolean _seg_ready(const _ai_job_t *job, char **err)
+{
   if(!_ai_env) _ai_env = _ai_env_new();
   // the model may have been downloaded since the folder was last looked at
   if(!_seg && _ai_env)
   {
+    g_mutex_lock(&_ai_load_lock);
     dt_ai_env_refresh(_ai_env);
     _seg = dt_seg_load(_ai_env, _SEG_MODEL);
+    g_mutex_unlock(&_ai_load_lock);
   }
   if(!_seg)
   {
@@ -3182,35 +4021,259 @@ static gboolean _seg_ready(char **err)
   }
   // the encoding holds for this image at this size; color edits do not
   // move objects, geometry edits do
-  int pw = 0, ph = 0;
-  if(_ppipe_ready(err))
-    dt_dev_pixelpipe_get_dimensions(&_s.ppipe, &_s.dev, _s.ppipe.iwidth, _s.ppipe.iheight, &pw, &ph);
-  if(_seg_imgid == _s.imgid && dt_seg_is_encoded(_seg) && pw == _seg_pw && ph == _seg_ph) return TRUE;
+  g_mutex_lock(&_ai_cache_lock);
+  const gboolean held = _seg_imgid == job->imgid && job->pw == _seg_pw && job->ph == _seg_ph;
+  g_mutex_unlock(&_ai_cache_lock);
+  if(held) return TRUE;
+  if(!_ai_input(job, err)) return FALSE;
+  g_mutex_lock(&_ai_cache_lock);
+  _seg_imgid = NO_IMGID;
+  g_mutex_unlock(&_ai_cache_lock);
   dt_seg_reset_encoding(_seg);
-  int w = 0, h = 0;
-  uint8_t *rgb = _shown_rgb(_SEG_SIZE, TRUE, &w, &h, err);
-  if(!rgb) return FALSE;
-  const gboolean ok = dt_seg_encode_image(_seg, rgb, w, h);
-  g_free(rgb);
-  if(!ok)
+  if(!dt_seg_encode_image(_seg, job->rgb, job->w, job->h))
   {
     *err = g_strdup("the model could not encode the image");
     return FALSE;
   }
-  _seg_imgid = _s.imgid;
-  _seg_w = w;
-  _seg_h = h;
-  _seg_pw = pw;
-  _seg_ph = ph;
+  g_mutex_lock(&_ai_cache_lock);
+  _seg_imgid = job->imgid;
+  _seg_w = job->w;
+  _seg_h = job->h;
+  _seg_pw = job->pw;
+  _seg_ph = job->ph;
+  g_mutex_unlock(&_ai_cache_lock);
   return TRUE;
+}
+
+// a sw x sh grid of values spread over the image, scaled smoothly to w x h
+static float *_resample(const float *src, const int sw, const int sh, const int w, const int h)
+{
+  float *p = g_malloc((size_t)w * h * sizeof(float));
+  DT_OMP_FOR()
+  for(int j = 0; j < h; j++)
+    for(int i = 0; i < w; i++)
+    {
+      const float gx = (i + 0.5f) * sw / w - 0.5f, gy = (j + 0.5f) * sh / h - 0.5f;
+      const int x0 = CLAMP((int)floorf(gx), 0, sw - 1), y0 = CLAMP((int)floorf(gy), 0, sh - 1);
+      const int x1 = MIN(x0 + 1, sw - 1), y1 = MIN(y0 + 1, sh - 1);
+      const float ax = CLAMP(gx - x0, 0.0f, 1.0f), ay = CLAMP(gy - y0, 0.0f, 1.0f);
+      p[(size_t)j * w + i] = (1 - ay) * ((1 - ax) * src[y0 * sw + x0] + ax * src[y0 * sw + x1])
+                           + ay * ((1 - ax) * src[y1 * sw + x0] + ax * src[y1 * sw + x1]);
+    }
+  return p;
+}
+
+// the guide's RGB averaged down to fit `size` across, as _shown_rgb() would
+// have rendered it
+static uint8_t *_shrink_rgb(const uint8_t *in, const int W, const int H, const int size, int *w, int *h)
+{
+  const double scale = fmin(1.0, (double)size / MAX(W, H));
+  *w = MAX(1, (int)floor(scale * W));
+  *h = MAX(1, (int)floor(scale * H));
+  const int ow = *w, oh = *h;
+  uint8_t *out = g_malloc((size_t)3 * ow * oh);
+  DT_OMP_FOR()
+  for(int j = 0; j < oh; j++)
+  {
+    const int y0 = (int)((double)j * H / oh), y1 = MAX(y0 + 1, (int)((double)(j + 1) * H / oh));
+    for(int i = 0; i < ow; i++)
+    {
+      const int x0 = (int)((double)i * W / ow), x1 = MAX(x0 + 1, (int)((double)(i + 1) * W / ow));
+      int s[3] = { 0, 0, 0 };
+      for(int y = y0; y < y1; y++)
+        for(int x = x0; x < x1; x++)
+          for(int c = 0; c < 3; c++) s[c] += in[3 * ((size_t)y * W + x) + c];
+      const int n = (y1 - y0) * (x1 - x0);
+      for(int c = 0; c < 3; c++) out[3 * ((size_t)j * ow + i) + c] = (s[c] + n / 2) / n;
+    }
+  }
+  return out;
+}
+
+// the mean over a (2r+1)^2 window, in place, of the pixels inside the image
+static void _box_mean(float *const buf, float *const tmp, const int w, const int h, const int r)
+{
+  DT_OMP_FOR()
+  for(int y = 0; y < h; y++)
+  {
+    const float *in = buf + (size_t)y * w;
+    float *out = tmp + (size_t)y * w;
+    double s = 0.0;
+    for(int x = 0; x <= MIN(r, w - 1); x++) s += in[x];
+    for(int x = 0; x < w; x++)
+    {
+      out[x] = s / (MIN(w - 1, x + r) - MAX(0, x - r) + 1);
+      if(x + r + 1 < w) s += in[x + r + 1];
+      if(x - r >= 0) s -= in[x - r];
+    }
+  }
+  DT_OMP_FOR()
+  for(int x = 0; x < w; x++)
+  {
+    double s = 0.0;
+    for(int y = 0; y <= MIN(r, h - 1); y++) s += tmp[(size_t)y * w + x];
+    for(int y = 0; y < h; y++)
+    {
+      buf[(size_t)y * w + x] = s / (MIN(h - 1, y + r) - MAX(0, y - r) + 1);
+      if(y + r + 1 < h) s += tmp[(size_t)(y + r + 1) * w + x];
+      if(y - r >= 0) s -= tmp[(size_t)(y - r) * w + x];
+    }
+  }
+}
+
+// a model's probabilities (w x h, the guide's size) moved onto the photo's
+// own edges: a guided filter (He, Sun and Tang) with the photo's luminance
+// as the guide, so the 0.5 the outline is traced at falls on an edge. it
+// changes only the band where the model is unsure, widened by `radius`:
+// elsewhere the model's value stays. darktable's feathering (Edge Aware)
+// filters the whole mask instead, which reaches edges far from the
+// outline and leaves halos at weak ones
+static void _snap_edges(float *p, const int w, const int h, const uint8_t *guide, const float radius)
+{
+  const int r = MAX(1, (int)lroundf(radius));
+  const size_t n = (size_t)w * h;
+  float *I = g_malloc(n * sizeof(float)), *mI = g_malloc(n * sizeof(float)), *mp = g_malloc(n * sizeof(float));
+  float *mIp = g_malloc(n * sizeof(float)), *mII = g_malloc(n * sizeof(float));
+  float *band = g_malloc(n * sizeof(float)), *tmp = g_malloc(n * sizeof(float));
+  DT_OMP_FOR()
+  for(size_t k = 0; k < n; k++)
+  {
+    I[k] = (0.2126f * guide[3 * k] + 0.7152f * guide[3 * k + 1] + 0.0722f * guide[3 * k + 2]) / 255.0f;
+    mI[k] = I[k];
+    mp[k] = p[k];
+    mIp[k] = I[k] * p[k];
+    mII[k] = I[k] * I[k];
+    band[k] = p[k] > 0.02f && p[k] < 0.98f;
+  }
+  _box_mean(mI, tmp, w, h, r);
+  _box_mean(mp, tmp, w, h, r);
+  _box_mean(mIp, tmp, w, h, r);
+  _box_mean(mII, tmp, w, h, r);
+  _box_mean(band, tmp, w, h, r);
+  // eps sets how strong an edge must be to hold the outline: about 3% of
+  // the luminance range, as a standard deviation
+  const float eps = 1e-3f;
+  DT_OMP_FOR()
+  for(size_t k = 0; k < n; k++)
+  {
+    const float a = (mIp[k] - mI[k] * mp[k]) / (mII[k] - mI[k] * mI[k] + eps);
+    mIp[k] = a;
+    mII[k] = mp[k] - a * mI[k];
+  }
+  _box_mean(mIp, tmp, w, h, r);
+  _box_mean(mII, tmp, w, h, r);
+  DT_OMP_FOR()
+  for(size_t k = 0; k < n; k++)
+    if(band[k] > 0.0f) p[k] = CLAMP(mIp[k] * I[k] + mII[k], 0.0f, 1.0f);
+  g_free(I);
+  g_free(mI);
+  g_free(mp);
+  g_free(mIp);
+  g_free(mII);
+  g_free(band);
+  g_free(tmp);
+}
+
+// a mask's probabilities (w x h) as the paths _ai_object() replies with
+static void _paths_json(JsonBuilder *b, float *mask, const int mw, const int mh)
+{
+  const size_t len = (size_t)mw * mh;
+  // ras2forms traces where the mask is below the threshold, so it gets
+  // the mask inverted, as object.c gives it
+  for(size_t k = 0; k < len; k++) mask[k] = 1.0f - mask[k];
+  GList *signs = NULL;
+  // specks under the area potrace's default leaves out at 1024 pixels
+  // across, the size the models' outlines were traced at before
+  const double across = MAX(mw, mh) / 1024.0;
+  GList *forms = ras2forms(mask, mw, mh, NULL, 0.5f, MAX(1, (int)lround(50.0 * across * across)), 1.0, &signs);
+  json_builder_set_member_name(b, "paths");
+  json_builder_begin_array(b);
+  GList *sg = signs;
+  for(GList *l = forms; l; l = g_list_next(l), sg = sg ? g_list_next(sg) : NULL)
+  {
+    const dt_masks_form_t *f = l->data;
+    json_builder_begin_object(b);
+    json_builder_set_member_name(b, "hole");
+    json_builder_add_boolean_value(b, sg && GPOINTER_TO_INT(sg->data) == '-');
+    json_builder_set_member_name(b, "points");
+    json_builder_begin_array(b);
+    for(const GList *p = f->points; p; p = g_list_next(p))
+    {
+      const dt_masks_point_path_t *pt = p->data;
+      json_builder_begin_array(b);
+      json_builder_add_double_value(b, pt->corner[0] / mw);
+      json_builder_add_double_value(b, pt->corner[1] / mh);
+      json_builder_add_double_value(b, pt->ctrl1[0] / mw);
+      json_builder_add_double_value(b, pt->ctrl1[1] / mh);
+      json_builder_add_double_value(b, pt->ctrl2[0] / mw);
+      json_builder_add_double_value(b, pt->ctrl2[1] / mh);
+      json_builder_end_array(b);
+    }
+    json_builder_end_array(b);
+    json_builder_end_object(b);
+  }
+  json_builder_end_array(b);
+  g_list_free_full(forms, (GDestroyNotify)dt_masks_free_form);
+  g_list_free(signs);
+}
+
+// the selection (p >= 0.5) shrunk by `r` pixels, as 0 or 1, in place.
+// beyond the image counts as inside, so a sky reaching the frame's edge
+// keeps it
+static void _inset(float *p, const int w, const int h, const float r)
+{
+  const int R = (int)ceilf(r);
+  GArray *disc = g_array_new(FALSE, FALSE, sizeof(int) * 2);
+  for(int dy = -R; dy <= R; dy++)
+    for(int dx = -R; dx <= R; dx++)
+      if((dx || dy) && dx * dx + dy * dy <= r * r) g_array_append_val(disc, ((int[2]){ dx, dy }));
+  const int *d = (const int *)disc->data;
+  const int nd = disc->len;
+  uint8_t *in = g_malloc((size_t)w * h);
+  for(size_t k = 0; k < (size_t)w * h; k++) in[k] = p[k] >= 0.5f;
+  DT_OMP_FOR()
+  for(int y = 0; y < h; y++)
+    for(int x = 0; x < w; x++)
+    {
+      gboolean keep = in[(size_t)y * w + x];
+      for(int k = 0; keep && k < nd; k++)
+      {
+        const int u = x + d[2 * k], v = y + d[2 * k + 1];
+        if(u >= 0 && u < w && v >= 0 && v < h && !in[(size_t)v * w + u]) keep = FALSE;
+      }
+      p[(size_t)y * w + x] = keep ? 1.0f : 0.0f;
+    }
+  g_free(in);
+  g_array_free(disc, TRUE);
+}
+
+// probabilities at the guide's size, snapped to its edges by `snap`
+// pixels at _TRACE_SIZE, traced into the reply's paths. darktable feathers
+// a path outward only, fading linearly (path.c), so a selection the mask
+// adds (the request's `inset`, by default) is traced half a default
+// feather inside its edge: the mask is about half on there, as a soft
+// matte's edge is. traced on the edge, the feather carried the adjustment
+// into the background around it; a whole feather inside, the subject's
+// own rim, its crest or a beak's edge, was left out. a selection the mask
+// takes away, or inverts (Background), is traced on its edge, its feather
+// already falling on the side that is selected
+static void _trace_json(const _ai_job_t *job, JsonBuilder *b, float *p, const float snap, const gboolean add)
+{
+  if(snap > 0.0f)
+    _snap_edges(p, job->gw, job->gh, g_bytes_get_data(job->guide, NULL),
+                snap * MAX(job->gw, job->gh) / _TRACE_SIZE);
+  if(add && json_object_get_boolean_member_with_default(job->req, "inset", TRUE))
+    _inset(p, job->gw, job->gh, 0.5f * _OBJECT_FEATHER * MIN(job->gw, job->gh));
+  _paths_json(b, p, job->gw, job->gh);
 }
 
 // select an object: `points` [[x, y, include], ...] and/or `box`
 // [x0, y0, x1, y1], in shown-image units. replies with its outline as
 // paths, each a list of [x, y, c1x, c1y, c2x, c2y] corners, holes marked
-static gboolean _ai_object(JsonObject *req, JsonBuilder *b, char **err)
+static gboolean _ai_object(const _ai_job_t *job, JsonBuilder *b, char **err)
 {
-  if(!_seg_ready(err)) return FALSE;
+  if(!_seg_ready(job, err)) return FALSE;
+  JsonObject *req = job->req;
   JsonArray *pts = json_object_has_member(req, "points") ? json_object_get_array_member(req, "points") : NULL;
   JsonArray *box = json_object_has_member(req, "box") ? json_object_get_array_member(req, "box") : NULL;
   const guint np = pts ? json_array_get_length(pts) : 0;
@@ -3246,43 +4309,10 @@ static gboolean _ai_object(JsonObject *req, JsonBuilder *b, char **err)
     *err = g_strdup("the model produced no mask");
     return FALSE;
   }
-  // ras2forms traces where the mask is below the threshold, so it gets
-  // the mask inverted, as object.c gives it
-  const size_t len = (size_t)mw * mh;
-  for(size_t k = 0; k < len; k++) mask[k] = 1.0f - mask[k];
-  GList *signs = NULL;
-  GList *forms = ras2forms(mask, mw, mh, NULL, 0.5f, 0, 1.0, &signs);
+  float *p = _resample(mask, mw, mh, job->gw, job->gh);
   g_free(mask);
-
-  json_builder_set_member_name(b, "paths");
-  json_builder_begin_array(b);
-  GList *sg = signs;
-  for(GList *l = forms; l; l = g_list_next(l), sg = sg ? g_list_next(sg) : NULL)
-  {
-    const dt_masks_form_t *f = l->data;
-    json_builder_begin_object(b);
-    json_builder_set_member_name(b, "hole");
-    json_builder_add_boolean_value(b, sg && GPOINTER_TO_INT(sg->data) == '-');
-    json_builder_set_member_name(b, "points");
-    json_builder_begin_array(b);
-    for(const GList *p = f->points; p; p = g_list_next(p))
-    {
-      const dt_masks_point_path_t *pt = p->data;
-      json_builder_begin_array(b);
-      json_builder_add_double_value(b, pt->corner[0] / mw);
-      json_builder_add_double_value(b, pt->corner[1] / mh);
-      json_builder_add_double_value(b, pt->ctrl1[0] / mw);
-      json_builder_add_double_value(b, pt->ctrl1[1] / mh);
-      json_builder_add_double_value(b, pt->ctrl2[0] / mw);
-      json_builder_add_double_value(b, pt->ctrl2[1] / mh);
-      json_builder_end_array(b);
-    }
-    json_builder_end_array(b);
-    json_builder_end_object(b);
-  }
-  json_builder_end_array(b);
-  g_list_free_full(forms, (GDestroyNotify)dt_masks_free_form);
-  g_list_free(signs);
+  _trace_json(job, b, p, _SEG_SNAP, TRUE);
+  g_free(p);
   return TRUE;
 }
 
@@ -3300,16 +4330,20 @@ typedef struct _mask_model_t
   int classes, out;
   // a depth model's output instead: one relative disparity per input pixel
   gboolean depth;
+  // how far _snap_edges() may move the outline, in pixels at _TRACE_SIZE:
+  // about the model's output cell there
+  float snap;
 } _mask_model_t;
 
 #define _IMAGENET { 0.485f, 0.456f, 0.406f }, { 0.229f, 0.224f, 0.225f }
 static const _mask_model_t _mask_models[] = {
   // BiRefNet lite: the salient object
-  { "mask-subject-birefnet-lite", 1024, _IMAGENET, 0, 0 },
-  // SegFormer B2 on ADE20K: 150 classes at a quarter of its input
-  { "mask-scene-segformer-b2", 512, _IMAGENET, 150, 128 },
+  { "mask-subject-birefnet-lite", 1024, _IMAGENET, 0, 0, FALSE, 4.0f },
+  // SegFormer B2 on ADE20K: 150 classes at a quarter of its input. it takes
+  // any input size; 1024 rather than its 512 halves its cells' size
+  { "mask-scene-segformer-b2", 768, _IMAGENET, 150, 192, FALSE, 11.0f },
   // Depth Anything V2 small: relative depth, at a multiple of its 14px patch
-  { "mask-depth-da2-small", 518, _IMAGENET, 0, 0, TRUE },
+  { "mask-depth-da2-small", 518, _IMAGENET, 0, 0, TRUE, 0.0f },
 };
 
 // what the client asks for: a model, and for a scene model the ADE20K
@@ -3359,12 +4393,11 @@ static int _float_cmp(const void *a, const void *b)
 }
 
 // the model's output for the image as shown, rendered about `size` across
-// (w x h): C planes of O x O probabilities, 0-1
-static float *_mask_probability(const _mask_model_t *mm, dt_ai_context_t *ctx, int *w, int *h, char **err)
+// (W x H): C planes of O x O probabilities, 0-1
+static float *_mask_probability(const _mask_model_t *mm, dt_ai_context_t *ctx, const uint8_t *rgb,
+                                const int W, const int H, char **err)
 {
-  uint8_t *rgb = _shown_rgb(mm->size, TRUE, w, h, err);
-  if(!rgb) return NULL;
-  const int S = mm->size, W = *w, H = *h;
+  const int S = mm->size;
   // stretched to the model's square, normalized, planar
   float *in = g_malloc((size_t)3 * S * S * sizeof(float));
   for(int j = 0; j < S; j++)
@@ -3381,7 +4414,6 @@ static float *_mask_probability(const _mask_model_t *mm, dt_ai_context_t *ctx, i
         in[(size_t)c * S * S + (size_t)j * S + i] = (v / 255.0f - mm->mean[c]) / mm->std[c];
       }
     }
-  g_free(rgb);
   const int C = mm->classes ? mm->classes : 1, O = mm->classes ? mm->out : S;
   float *out = g_malloc((size_t)C * O * O * sizeof(float));
   int64_t ishape[4] = { 1, 3, S, S }, oshape[4] = { 1, C, O, O }, dshape[3] = { 1, S, S };
@@ -3429,9 +4461,9 @@ static float *_mask_probability(const _mask_model_t *mm, dt_ai_context_t *ctx, i
   return out;
 }
 
-// a kind's probability at the render's size (w x h), from its model's
-// cached output: the sum of its classes per grid cell, scaled up smoothly,
-// as a coarse grid would show as steps
+// a kind's probability at w x h, from its model's cached output: the sum
+// of its classes per grid cell, scaled up smoothly, as a coarse grid would
+// show as steps
 static float *_mask_kind_probability(const _mask_kind_t *mk, const int w, const int h)
 {
   const _mask_model_t *mm = &_mask_models[mk->model];
@@ -3444,114 +4476,63 @@ static float *_mask_kind_probability(const _mask_kind_t *mk, const int w, const 
   else
     for(int k = 0; k < 16 && mk->pick[k] >= 0; k++)
       for(size_t q = 0; q < plane; q++) grid[q] += out[mk->pick[k] * plane + q];
-  float *p = g_malloc((size_t)w * h * sizeof(float));
-  for(int j = 0; j < h; j++)
-    for(int i = 0; i < w; i++)
-    {
-      const float gx = (i + 0.5f) * O / w - 0.5f, gy = (j + 0.5f) * O / h - 0.5f;
-      const int x0 = CLAMP((int)floorf(gx), 0, O - 1), y0 = CLAMP((int)floorf(gy), 0, O - 1);
-      const int x1 = MIN(x0 + 1, O - 1), y1 = MIN(y0 + 1, O - 1);
-      const float ax = CLAMP(gx - x0, 0.0f, 1.0f), ay = CLAMP(gy - y0, 0.0f, 1.0f);
-      p[(size_t)j * w + i] = MIN(1.0f, (1 - ay) * ((1 - ax) * grid[y0 * O + x0] + ax * grid[y0 * O + x1])
-                                     + ay * ((1 - ax) * grid[y1 * O + x0] + ax * grid[y1 * O + x1]));
-    }
+  float *p = _resample(grid, O, O, w, h);
   g_free(grid);
+  for(size_t q = 0; q < (size_t)w * h; q++) p[q] = MIN(1.0f, p[q]);
   return p;
 }
 
-// a mask's probabilities as the paths _ai_object() replies with
-static void _paths_json(JsonBuilder *b, float *mask, const int mw, const int mh)
+// the job's kind, its model's output for the image as shown cached
+static const _mask_kind_t *_mask_run(const _ai_job_t *job, char **err)
 {
-  const size_t len = (size_t)mw * mh;
-  for(size_t k = 0; k < len; k++) mask[k] = 1.0f - mask[k];
-  GList *signs = NULL;
-  GList *forms = ras2forms(mask, mw, mh, NULL, 0.5f, 0, 1.0, &signs);
-  json_builder_set_member_name(b, "paths");
-  json_builder_begin_array(b);
-  GList *sg = signs;
-  for(GList *l = forms; l; l = g_list_next(l), sg = sg ? g_list_next(sg) : NULL)
-  {
-    const dt_masks_form_t *f = l->data;
-    json_builder_begin_object(b);
-    json_builder_set_member_name(b, "hole");
-    json_builder_add_boolean_value(b, sg && GPOINTER_TO_INT(sg->data) == '-');
-    json_builder_set_member_name(b, "points");
-    json_builder_begin_array(b);
-    for(const GList *p = f->points; p; p = g_list_next(p))
-    {
-      const dt_masks_point_path_t *pt = p->data;
-      json_builder_begin_array(b);
-      json_builder_add_double_value(b, pt->corner[0] / mw);
-      json_builder_add_double_value(b, pt->corner[1] / mh);
-      json_builder_add_double_value(b, pt->ctrl1[0] / mw);
-      json_builder_add_double_value(b, pt->ctrl1[1] / mh);
-      json_builder_add_double_value(b, pt->ctrl2[0] / mw);
-      json_builder_add_double_value(b, pt->ctrl2[1] / mh);
-      json_builder_end_array(b);
-    }
-    json_builder_end_array(b);
-    json_builder_end_object(b);
-  }
-  json_builder_end_array(b);
-  g_list_free_full(forms, (GDestroyNotify)dt_masks_free_form);
-  g_list_free(signs);
-}
-
-// the kind asked for, its model's output for the image as shown cached
-static const _mask_kind_t *_mask_run(const char *kind, char **err)
-{
-  const _mask_kind_t *mk = NULL;
-  for(int i = 0; i < (int)G_N_ELEMENTS(_mask_kinds); i++)
-    if(!g_strcmp0(_mask_kinds[i].kind, kind)) mk = &_mask_kinds[i];
-  if(!mk)
-  {
-    *err = g_strdup_printf("no model for '%s'", kind ? kind : "(none)");
-    return NULL;
-  }
+  const _mask_kind_t *mk = &_mask_kinds[job->kind];
   const int k = mk->model;
   const _mask_model_t *mm = &_mask_models[k];
-  if(!_models_dir)
-  {
-    *err = g_strdup("no models folder given (--models)");
-    return NULL;
-  }
   if(!_ai_env) _ai_env = _ai_env_new();
   if(!_mask_ctx[k] && _ai_env)
   {
+    g_mutex_lock(&_ai_load_lock);
     dt_ai_env_refresh(_ai_env);
     _mask_ctx[k] = dt_ai_load_model(_ai_env, mm->id, NULL, DT_AI_PROVIDER_CPU);
+    g_mutex_unlock(&_ai_load_lock);
   }
   if(!_mask_ctx[k])
   {
     *err = g_strdup_printf("cannot load the '%s' model from %s", mm->id, _models_dir);
     return NULL;
   }
-  int pw = 0, ph = 0;
-  if(_ppipe_ready(err))
-    dt_dev_pixelpipe_get_dimensions(&_s.ppipe, &_s.dev, _s.ppipe.iwidth, _s.ppipe.iheight, &pw, &ph);
-  if(!(_mask_cache[k].p && _mask_cache[k].imgid == _s.imgid && _mask_cache[k].pw == pw && _mask_cache[k].ph == ph))
+  g_mutex_lock(&_ai_cache_lock);
+  const gboolean held = _mask_cache[k].p && _mask_cache[k].imgid == job->imgid
+                        && _mask_cache[k].pw == job->pw && _mask_cache[k].ph == job->ph;
+  g_mutex_unlock(&_ai_cache_lock);
+  if(!held)
   {
-    int w = 0, h = 0;
-    float *p = _mask_probability(mm, _mask_ctx[k], &w, &h, err);
+    if(!_ai_input(job, err)) return NULL;
+    float *p = _mask_probability(mm, _mask_ctx[k], job->rgb, job->w, job->h, err);
     if(!p) return NULL;
+    // only this thread reads the probabilities: the main loop looks at the
+    // rest
+    g_mutex_lock(&_ai_cache_lock);
     g_free(_mask_cache[k].p);
     _mask_cache[k].p = p;
-    _mask_cache[k].w = w;
-    _mask_cache[k].h = h;
-    _mask_cache[k].pw = pw;
-    _mask_cache[k].ph = ph;
-    _mask_cache[k].imgid = _s.imgid;
+    _mask_cache[k].w = job->w;
+    _mask_cache[k].h = job->h;
+    _mask_cache[k].pw = job->pw;
+    _mask_cache[k].ph = job->ph;
+    _mask_cache[k].imgid = job->imgid;
+    g_mutex_unlock(&_ai_cache_lock);
   }
   return mk;
 }
 
 // `range` [near, far] picks a band of a depth kind, 0-1 from the nearest
-static gboolean _ai_mask(const char *kind, JsonArray *range, JsonBuilder *b, char **err)
+static gboolean _ai_mask(const _ai_job_t *job, JsonBuilder *b, char **err)
 {
-  const _mask_kind_t *mk = _mask_run(kind, err);
+  const _mask_kind_t *mk = _mask_run(job, err);
   if(!mk) return FALSE;
+  JsonArray *range = json_object_has_member(job->req, "range") ? json_object_get_array_member(job->req, "range") : NULL;
   const _mask_model_t *mm = &_mask_models[mk->model];
-  const int w = _mask_cache[mk->model].w, h = _mask_cache[mk->model].h;
+  const int w = job->gw, h = job->gh;
   float *p = _mask_kind_probability(mk, w, h);
   if(mm->depth)
   {
@@ -3563,17 +4544,19 @@ static gboolean _ai_mask(const char *kind, JsonArray *range, JsonBuilder *b, cha
     for(size_t q = 0; q < (size_t)w * h; q++)
       p[q] = CLAMP(0.5f + 50.0f * fminf(p[q] - l, r - p[q]), 0.0f, 1.0f);
   }
-  _paths_json(b, p, w, h);
+  // a Depth Range keeps its band's own feather, and its edge
+  _trace_json(job, b, p, mm->snap, !mm->depth);
   g_free(p);
   return TRUE;
 }
 
 // the depth map, about `size` across, as 0 (nearest) to 255 by rows: for
 // the client to preview a band and pick a depth without a round trip
-static gboolean _ai_depth(const int size, JsonBuilder *b, char **err)
+static gboolean _ai_depth(const _ai_job_t *job, JsonBuilder *b, char **err)
 {
-  const _mask_kind_t *mk = _mask_run("depth", err);
+  const _mask_kind_t *mk = _mask_run(job, err);
   if(!mk) return FALSE;
+  const int size = json_object_get_int_member_with_default(job->req, "size", 256);
   const int W = _mask_cache[mk->model].w, H = _mask_cache[mk->model].h;
   const double scale = fmin(1.0, (double)size / MAX(W, H));
   const int w = MAX(1, (int)round(W * scale)), h = MAX(1, (int)round(H * scale));
@@ -3587,6 +4570,156 @@ static gboolean _ai_depth(const int size, JsonBuilder *b, char **err)
   for(size_t q = 0; q < (size_t)w * h; q++) json_builder_add_int_value(b, lroundf(255.0f * p[q]));
   json_builder_end_array(b);
   g_free(p);
+  return TRUE;
+}
+
+static void _ai_job_free(_ai_job_t *job)
+{
+  json_object_unref(job->req);
+  g_free(job->rgb);
+  if(job->guide) g_bytes_unref(job->guide);
+  g_free(job);
+}
+
+// the main loop's part of an AI selection: what the model needs of the
+// open photo, which is its render when the model's last result does not
+// hold for it
+static _ai_job_t *_ai_job(JsonObject *req, char **err)
+{
+  const char *cmd = json_object_get_string_member_with_default(req, "cmd", "");
+  int kind = -1;
+  if(g_strcmp0(cmd, "ai_object"))
+  {
+    const char *name = !g_strcmp0(cmd, "ai_depth") ? "depth" : json_object_get_string_member_with_default(req, "kind", NULL);
+    for(int i = 0; i < (int)G_N_ELEMENTS(_mask_kinds); i++)
+      if(!g_strcmp0(_mask_kinds[i].kind, name)) kind = i;
+    if(kind < 0)
+    {
+      *err = g_strdup_printf("no model for '%s'", name ? name : "(none)");
+      return NULL;
+    }
+  }
+  if(!_models_dir)
+  {
+    *err = g_strdup("no models folder given (--models)");
+    return NULL;
+  }
+  if(!_ppipe_ready(err)) return NULL;
+  _ai_job_t *job = g_new0(_ai_job_t, 1);
+  job->req = json_object_ref(req);
+  job->kind = kind;
+  job->map = !g_strcmp0(cmd, "ai_depth");
+  job->imgid = _s.imgid;
+  dt_dev_pixelpipe_get_dimensions(&_s.ppipe, &_s.dev, _s.ppipe.iwidth, _s.ppipe.iheight, &job->pw, &job->ph);
+  const int model = kind < 0 ? -1 : _mask_kinds[kind].model;
+  g_mutex_lock(&_ai_cache_lock);
+  const gboolean held = model < 0
+    ? _seg_imgid == job->imgid && _seg_pw == job->pw && _seg_ph == job->ph
+    : _mask_cache[model].p && _mask_cache[model].imgid == job->imgid
+      && _mask_cache[model].pw == job->pw && _mask_cache[model].ph == job->ph;
+  const gboolean guide_held = _guide.rgb && _guide.imgid == job->imgid && _guide.pw == job->pw && _guide.ph == job->ph;
+  g_mutex_unlock(&_ai_cache_lock);
+  // a model that runs again sees the photo as it is now, as before the guide
+  if(!held || !guide_held)
+  {
+    int gw = 0, gh = 0;
+    uint8_t *rgb = _shown_rgb(_TRACE_SIZE, TRUE, &gw, &gh, err);
+    if(!rgb)
+    {
+      _ai_job_free(job);
+      return NULL;
+    }
+    g_mutex_lock(&_ai_cache_lock);
+    if(_guide.rgb) g_bytes_unref(_guide.rgb);
+    _guide.rgb = g_bytes_new_take(rgb, (size_t)3 * gw * gh);
+    _guide.w = gw;
+    _guide.h = gh;
+    _guide.pw = job->pw;
+    _guide.ph = job->ph;
+    _guide.imgid = job->imgid;
+    g_mutex_unlock(&_ai_cache_lock);
+  }
+  g_mutex_lock(&_ai_cache_lock);
+  job->guide = g_bytes_ref(_guide.rgb);
+  job->gw = _guide.w;
+  job->gh = _guide.h;
+  g_mutex_unlock(&_ai_cache_lock);
+  if(!held)
+    job->rgb = _shrink_rgb(g_bytes_get_data(job->guide, NULL), job->gw, job->gh,
+                           model < 0 ? _SEG_SIZE : _mask_models[model].size, &job->w, &job->h);
+  return job;
+}
+
+static gboolean _ai_do(const _ai_job_t *job, JsonBuilder *b, char **err)
+{
+  return job->kind < 0 ? _ai_object(job, b, err) : job->map ? _ai_depth(job, b, err) : _ai_mask(job, b, err);
+}
+
+// a tagged AI selection runs here once the main loop has rendered what it
+// needs, so the photo is edited while the model takes its seconds. one
+// thread, in order: an object's click needs the encoding the request
+// before it made
+static GThreadPool *_ai_pool = NULL;
+static GMutex _ai_pool_lock;
+
+static void _ai_run(gpointer data, gpointer user_data)
+{
+  _ai_job_t *job = data;
+  FILE *out = user_data;
+  char *err = NULL;
+  JsonBuilder *b = json_builder_new();
+  json_builder_begin_object(b);
+  json_builder_set_member_name(b, "tag");
+  json_builder_add_int_value(b, job->tag);
+  const gboolean ok = _ai_do(job, b, &err);
+  json_builder_set_member_name(b, "ok");
+  json_builder_add_boolean_value(b, ok);
+  if(!ok)
+  {
+    json_builder_set_member_name(b, "error");
+    json_builder_add_string_value(b, err ? err : "AI selection failed");
+  }
+  json_builder_end_object(b);
+  _ai_job_free(job);
+  _reply(out, b);
+  g_object_unref(b);
+  g_free(err);
+}
+
+// before darktable's caches go: the selections asked for finish
+static void _ai_wait(void)
+{
+  g_mutex_lock(&_ai_pool_lock);
+  GThreadPool *pool = _ai_pool;
+  _ai_pool = NULL;
+  g_mutex_unlock(&_ai_pool_lock);
+  if(pool) g_thread_pool_free(pool, FALSE, TRUE);
+}
+
+// ai_object, ai_mask or ai_depth. with a `tag`, the model runs on the AI
+// thread and this replies at once; the selection's reply then comes with
+// the tag
+static gboolean _ai_select(JsonObject *req, JsonBuilder *b, char **err)
+{
+  _ai_job_t *job = _ai_job(req, err);
+  if(!job) return FALSE;
+  job->tag = json_object_get_int_member_with_default(req, "tag", 0);
+  if(!job->tag)
+  {
+    const gboolean ok = _ai_do(job, b, err);
+    _ai_job_free(job);
+    return ok;
+  }
+  g_mutex_lock(&_ai_pool_lock);
+  const gboolean queued = _ai_pool != NULL;
+  if(queued) g_thread_pool_push(_ai_pool, job, NULL);
+  g_mutex_unlock(&_ai_pool_lock);
+  if(!queued)
+  {
+    _ai_job_free(job);
+    *err = g_strdup("the engine is stopping");
+    return FALSE;
+  }
   return TRUE;
 }
 
@@ -3611,6 +4744,11 @@ static struct
   float *full;
   int fw, fh;
 } _dn = { .cls = DT_RESTORE_SENSOR_CLASS_UNSUPPORTED, .imgid = NO_IMGID };
+
+// set while a denoise runs on its thread (_denoise_run), which has the
+// model's context to itself until then: neither a preview nor another
+// denoise may load or use it
+static gint _dn_busy = 0;
 
 static void _denoise_forget(void)
 {
@@ -3637,6 +4775,7 @@ static dt_restore_context_t *_denoise_ctx(const dt_restore_sensor_class_t cls, c
     _dn.env = g_new0(dt_restore_env_t, 1);
     _dn.env->ai_env = dt_ai_env_init(_models_dir);
   }
+  g_mutex_lock(&_ai_load_lock);
   dt_ai_env_refresh(_dn.env->ai_env);
   // restore finds its model through darktable's active-model and provider
   // settings rather than taking them as arguments
@@ -3645,6 +4784,7 @@ static dt_restore_context_t *_denoise_ctx(const dt_restore_sensor_class_t cls, c
   _dn.ctx = cls == DT_RESTORE_SENSOR_CLASS_BAYER  ? dt_restore_load_rawdenoise_bayer(_dn.env)
           : cls == DT_RESTORE_SENSOR_CLASS_XTRANS ? dt_restore_load_rawdenoise_xtrans(_dn.env)
                                                   : dt_restore_load_rawdenoise_linear(_dn.env);
+  g_mutex_unlock(&_ai_load_lock);
   if(!_dn.ctx)
   {
     *err = g_strdup_printf("cannot load the '%s' model from %s", _DENOISE_MODEL, _models_dir);
@@ -3705,9 +4845,10 @@ static float *_denoise_cfa(const dt_image_t *meta)
 }
 
 // the denoised raw written to `out` as a DNG, a CFA one for Bayer sensors
-// and a demosaiced linear one for the rest
-static gboolean _denoise_write(const dt_restore_sensor_class_t cls, const dt_image_t *meta, const char *src,
-                               const char *out, const float strength, char **err)
+// and a demosaiced linear one for the rest. the linear one is demosaiced
+// through the history of `edit`, a snapshot of the raw's
+static gboolean _denoise_write(const dt_restore_sensor_class_t cls, const dt_image_t *meta, const dt_imgid_t edit,
+                               const char *src, const char *out, const float strength, char **err)
 {
   const dt_imgid_t imgid = meta->id;
   int w = meta->width, h = meta->height;
@@ -3727,7 +4868,7 @@ static gboolean _denoise_write(const dt_restore_sensor_class_t cls, const dt_ima
       return FALSE;
     }
   }
-  else if(dt_restore_raw_linear(_dn.ctx, imgid, &rgb, &w, &h, strength, NULL) || !rgb)
+  else if(dt_restore_raw_linear(_dn.ctx, edit, &rgb, &w, &h, strength, NULL) || !rgb)
   {
     dt_free_align(rgb);
     *err = g_strdup("the denoise model failed on this photo");
@@ -3797,6 +4938,11 @@ static gboolean _denoise_source(dt_image_t *meta, dt_restore_sensor_class_t *cls
   if(!_s.open)
   {
     *err = g_strdup("no image open");
+    return FALSE;
+  }
+  if(g_atomic_int_get(&_dn_busy))
+  {
+    *err = g_strdup("AI Denoise is still writing a DNG");
     return FALSE;
   }
   if(_s.unsaved && !_s.before && !_save(err)) return FALSE;
@@ -3944,56 +5090,164 @@ static gboolean _ai_denoise_preview(const float u, const float v, const int size
   return TRUE;
 }
 
-// the open raw denoised at `strength` (0-1) into <name>_raw-denoise.dng
-// beside it, darktable's default name (neural_restore/output_pattern), or
-// _1, _2... when taken
-static gboolean _ai_denoise(const float strength, JsonBuilder *b, char **err)
+// a denoise asked for: the raw as it was then, which its snapshot holds
+// (_snapshot), and the DNG to write
+typedef struct
 {
+  gint64 tag;
   dt_image_t meta;
   dt_restore_sensor_class_t cls;
-  if(!_denoise_source(&meta, &cls, err)) return FALSE;
-  const dt_imgid_t src = meta.id;
+  dt_imgid_t snap;
+  float strength;
+  char *path, *out;
+} _denoise_job_t;
 
-  char path[PATH_MAX] = { 0 };
-  gboolean from_cache = FALSE;
-  dt_image_full_path(src, path, sizeof(path), &from_cache);
-  gchar *dot = strrchr(path, '.');
-  gchar *base = g_strdup_printf("%.*s_raw-denoise", dot ? (int)(dot - path) : (int)strlen(path), path);
-  gchar *out = g_strdup_printf("%s.dng", base);
-  for(int k = 1; g_file_test(out, G_FILE_TEST_EXISTS) && k < 10000; k++)
-  {
-    g_free(out);
-    out = g_strdup_printf("%s_%d.dng", base, k);
-  }
-  g_free(base);
+static void _denoise_job_free(_denoise_job_t *job)
+{
+  _snapshot_remove(job->snap);
+  g_free(job->path);
+  g_free(job->out);
+  g_free(job);
+}
 
+// the DNG written, imported and given the raw's edit. it is written under
+// another name and renamed once whole, so a folder read meanwhile never
+// imports half of it
+static gboolean _denoise_do(_denoise_job_t *job, JsonBuilder *b, char **err)
+{
   const gint64 t0 = g_get_monotonic_time();
-  if(!_denoise_write(cls, &meta, path, out, CLAMP(strength, 0.0f, 1.0f), err))
+  gchar *part = g_strdup_printf("%s.part", job->out);
+  const gboolean written = _denoise_write(job->cls, &job->meta, job->snap, job->path, part, job->strength, err);
+  if(written && g_rename(part, job->out))
   {
-    g_free(out);
-    return FALSE;
+    g_unlink(part);
+    *err = g_strdup_printf("cannot write %s", job->out);
   }
-  const dt_imgid_t newid = _import(out);
+  g_free(part);
+  if(*err) return FALSE;
+  const dt_imgid_t newid = _import(job->out);
   if(!dt_is_valid_imgid(newid))
   {
-    *err = g_strdup_printf("cannot import %s", out);
-    g_free(out);
+    *err = g_strdup_printf("cannot import %s", job->out);
     return FALSE;
   }
-  _denoise_inherit(src, newid);
-  if(dt_image_write_sidecar_file(newid))
+  _denoise_inherit(job->snap, newid);
+  if(_write_sidecar(newid))
   {
     *err = g_strdup("could not write the DNG's XMP sidecar");
-    g_free(out);
     return FALSE;
   }
-  _add_string(b, "path", out);
-  _add_string(b, "original", path);
+  _add_string(b, "path", job->out);
+  _add_string(b, "original", job->path);
   json_builder_set_member_name(b, "image");
   _image_json(b, newid, FALSE);
   json_builder_set_member_name(b, "seconds");
   json_builder_add_double_value(b, _ms_since(t0) / 1000.0);
-  g_free(out);
+  return TRUE;
+}
+
+// a tagged `ai_denoise` runs here once the main loop has taken its
+// snapshot, so the photo is edited while the model takes its minute. one
+// at a time (_dn_busy); the job then answers with its tag
+static GThreadPool *_denoise_pool = NULL;
+static GMutex _denoise_pool_lock;
+
+static void _denoise_run(gpointer data, gpointer user_data)
+{
+  _denoise_job_t *job = data;
+  FILE *out = user_data;
+  char *err = NULL;
+  JsonBuilder *b = json_builder_new();
+  json_builder_begin_object(b);
+  json_builder_set_member_name(b, "tag");
+  json_builder_add_int_value(b, job->tag);
+  const gboolean ok = _denoise_do(job, b, &err);
+  json_builder_set_member_name(b, "ok");
+  json_builder_add_boolean_value(b, ok);
+  if(!ok)
+  {
+    json_builder_set_member_name(b, "error");
+    json_builder_add_string_value(b, err ? err : "AI denoise failed");
+  }
+  json_builder_end_object(b);
+  _denoise_job_free(job);
+  g_atomic_int_set(&_dn_busy, 0);
+  _reply(out, b);
+  g_object_unref(b);
+  g_free(err);
+}
+
+// before darktable's caches go: a denoise under way finishes
+static void _denoise_wait(void)
+{
+  g_mutex_lock(&_denoise_pool_lock);
+  GThreadPool *pool = _denoise_pool;
+  _denoise_pool = NULL;
+  g_mutex_unlock(&_denoise_pool_lock);
+  if(pool) g_thread_pool_free(pool, FALSE, TRUE);
+}
+
+// the open raw denoised at `strength` (0-1) into <name>_raw-denoise.dng
+// beside it, darktable's default name (neural_restore/output_pattern), or
+// _1, _2... when taken. with a `tag`, the denoise goes to its thread and
+// this replies at once; the DNG's reply then comes with the tag
+static gboolean _ai_denoise(const float strength, const gint64 tag, JsonBuilder *b, char **err)
+{
+  _denoise_job_t *job = g_new0(_denoise_job_t, 1);
+  job->tag = tag;
+  job->strength = CLAMP(strength, 0.0f, 1.0f);
+  if(!_denoise_source(&job->meta, &job->cls, err))
+  {
+    g_free(job);
+    return FALSE;
+  }
+  job->snap = _snapshot(job->meta.id);
+  if(!dt_is_valid_imgid(job->snap))
+  {
+    g_free(job);
+    *err = g_strdup("cannot copy the photo's edit");
+    return FALSE;
+  }
+
+  char path[PATH_MAX] = { 0 };
+  gboolean from_cache = FALSE;
+  dt_image_full_path(job->meta.id, path, sizeof(path), &from_cache);
+  job->path = g_strdup(path);
+  gchar *dot = strrchr(path, '.');
+  gchar *base = g_strdup_printf("%.*s_raw-denoise", dot ? (int)(dot - path) : (int)strlen(path), path);
+  job->out = g_strdup_printf("%s.dng", base);
+  for(int k = 1; g_file_test(job->out, G_FILE_TEST_EXISTS) && k < 10000; k++)
+  {
+    g_free(job->out);
+    job->out = g_strdup_printf("%s_%d.dng", base, k);
+  }
+  g_free(base);
+
+  if(!tag)
+  {
+    const gboolean ok = _denoise_do(job, b, err);
+    _denoise_job_free(job);
+    return ok;
+  }
+  // the job is the thread's once queued
+  gchar *name = g_strdup(job->out);
+  g_mutex_lock(&_denoise_pool_lock);
+  const gboolean queued = _denoise_pool != NULL;
+  if(queued)
+  {
+    g_atomic_int_set(&_dn_busy, 1);
+    g_thread_pool_push(_denoise_pool, job, NULL);
+  }
+  g_mutex_unlock(&_denoise_pool_lock);
+  if(!queued)
+  {
+    _denoise_job_free(job);
+    g_free(name);
+    *err = g_strdup("the engine is stopping");
+    return FALSE;
+  }
+  _add_string(b, "path", name);
+  g_free(name);
   return TRUE;
 }
 
@@ -4005,7 +5259,7 @@ static gboolean _object_shapes(dt_masks_form_t *grp, JsonObject *o, const char *
 {
   JsonArray *paths = json_object_has_member(o, "paths") ? json_object_get_array_member(o, "paths") : NULL;
   const gboolean subtract = !g_strcmp0(json_object_get_string_member_with_default(o, "mode", "add"), "subtract");
-  const float feather = CLAMP(json_object_get_double_member_with_default(o, "feather", 0.003), 0.0, 0.1);
+  const float feather = CLAMP(json_object_get_double_member_with_default(o, "feather", _OBJECT_FEATHER), 0.0, 0.1);
   // a Depth Range's band rides along in the names, as nothing else in
   // darktable's shapes can carry it
   JsonArray *depth = json_object_has_member(o, "depth") ? json_object_get_array_member(o, "depth") : NULL;
@@ -6680,7 +7934,7 @@ static gboolean _save(char **err)
     dt_tag_detach_by_string("darktable|changed", _s.imgid, FALSE, FALSE);
   // direct rather than dt_image_synch_xmp(), whose queue is drained by a
   // background job this process may outlive. TRUE means it failed
-  if(dt_image_write_sidecar_file(_s.imgid))
+  if(_write_sidecar(_s.imgid))
   {
     *err = g_strdup("could not write the XMP sidecar");
     return FALSE;
@@ -6814,7 +8068,15 @@ static void _handle(JsonObject *req, FILE *out)
   else if(!g_strcmp0(cmd, "keywords"))
     _all_keywords(b);
   else if(!g_strcmp0(cmd, "ai_accel"))
+  {
+#ifdef HAVE_AI
     _ai_accel(b);
+#else
+    json_builder_set_member_name(b, "providers");
+    json_builder_begin_array(b);
+    json_builder_end_array(b);
+#endif
+  }
   else if(!g_strcmp0(cmd, "opencl"))
     _opencl(b);
   else if(!g_strcmp0(cmd, "keywords_set"))
@@ -6827,7 +8089,21 @@ static void _handle(JsonObject *req, FILE *out)
   }
   else if(!g_strcmp0(cmd, "export"))
   {
-    if(!_export(json_object_get_int_member_with_default(req, "imgid", 0), req, &err)) goto fail;
+    const dt_imgid_t imgid = json_object_get_int_member_with_default(req, "imgid", 0);
+    // the open image's latest edits may not be in the library yet, and
+    // export reads its history from there; the frame's size needs its crop.
+    // in the Before view they went in as it came on ("before" below)
+    if(_s.open && _s.imgid == imgid && !_s.before) dt_dev_write_history_ext(&_s.dev, imgid);
+    if(!_export(imgid, req, &err)) goto fail;
+  }
+  // the photos a background export (tagged `export`s of this `job`) is to
+  // render, each as its edit is now
+  else if(!g_strcmp0(cmd, "export_hold"))
+  {
+    if(_s.open && !_s.before) dt_dev_write_history_ext(&_s.dev, _s.imgid);
+    _hold(json_object_get_int_member_with_default(req, "job", 0),
+          json_object_has_member(req, "imgids") ? json_object_get_array_member(req, "imgids") : NULL,
+          _s.open ? _s.imgid : NO_IMGID);
   }
   else if(!g_strcmp0(cmd, "fonts"))
   {
@@ -6841,6 +8117,10 @@ static void _handle(JsonObject *req, FILE *out)
   {
     if(!_remove_copy(json_object_get_int_member_with_default(req, "imgid", 0), b, &err)) goto fail;
   }
+  else if(!g_strcmp0(cmd, "forget"))
+  {
+    if(!_forget(json_object_get_int_member_with_default(req, "imgid", 0), &err)) goto fail;
+  }
   else if(!g_strcmp0(cmd, "sidecars"))
   {
     if(!_sidecars(json_object_get_int_member_with_default(req, "imgid", 0), b, &err)) goto fail;
@@ -6850,7 +8130,28 @@ static void _handle(JsonObject *req, FILE *out)
     // darktable's own, which picks the AI models' release
     json_builder_set_member_name(b, "version");
     json_builder_add_string_value(b, darktable_package_version);
+    // whether Merge to HDR can align brackets: darktable built with OpenCV
+    json_builder_set_member_name(b, "hdr_align");
+    json_builder_add_boolean_value(b, hdr_merge_can_align());
+    // whether Panorama Merge can stitch: the engine built with OpenCV's
+    // stitching module (CMakeLists.txt)
+    json_builder_set_member_name(b, "pano");
+#ifdef HAVE_PANO
+    json_builder_add_boolean_value(b, TRUE);
+#else
+    json_builder_add_boolean_value(b, FALSE);
+#endif
   }
+  else if(!g_strcmp0(cmd, "hdr_merge"))
+  {
+    if(!_hdr_merge(req, b, NULL, &err)) goto fail;
+  }
+#ifdef HAVE_PANO
+  else if(!g_strcmp0(cmd, "pano_merge"))
+  {
+    if(!_pano_merge(req, b, NULL, &err)) goto fail;
+  }
+#endif
   else if(!g_strcmp0(cmd, "unpack"))
   {
     if(!_unpack(json_object_get_string_member_with_default(req, "archive", NULL),
@@ -7117,7 +8418,7 @@ static void _handle(JsonObject *req, FILE *out)
   else if(!g_strcmp0(cmd, "ai_object"))
   {
 #ifdef HAVE_AI
-    if(!_ai_object(req, b, &err)) goto fail;
+    if(!_ai_select(req, b, &err)) goto fail;
 #else
     err = g_strdup("this engine was built without AI (USE_AI=OFF)");
     goto fail;
@@ -7126,7 +8427,9 @@ static void _handle(JsonObject *req, FILE *out)
   else if(!g_strcmp0(cmd, "ai_denoise"))
   {
 #ifdef HAVE_AI
-    if(!_ai_denoise(json_object_get_double_member_with_default(req, "strength", 1.0), b, &err)) goto fail;
+    if(!_ai_denoise(json_object_get_double_member_with_default(req, "strength", 1.0),
+                    json_object_get_int_member_with_default(req, "tag", 0), b, &err))
+      goto fail;
 #else
     err = g_strdup("this engine was built without AI (USE_AI=OFF)");
     goto fail;
@@ -7148,7 +8451,7 @@ static void _handle(JsonObject *req, FILE *out)
   else if(!g_strcmp0(cmd, "ai_depth"))
   {
 #ifdef HAVE_AI
-    if(!_ai_depth(json_object_get_int_member_with_default(req, "size", 256), b, &err)) goto fail;
+    if(!_ai_select(req, b, &err)) goto fail;
 #else
     err = g_strdup("this engine was built without AI (USE_AI=OFF)");
     goto fail;
@@ -7157,9 +8460,7 @@ static void _handle(JsonObject *req, FILE *out)
   else if(!g_strcmp0(cmd, "ai_mask"))
   {
 #ifdef HAVE_AI
-    if(!_ai_mask(json_object_get_string_member_with_default(req, "kind", NULL),
-                 json_object_has_member(req, "range") ? json_object_get_array_member(req, "range") : NULL, b, &err))
-      goto fail;
+    if(!_ai_select(req, b, &err)) goto fail;
 #else
     err = g_strdup("this engine was built without AI (USE_AI=OFF)");
     goto fail;
@@ -7296,51 +8597,104 @@ fail:
   g_free(err);
 }
 
-// one request line from `f`, however long, into `s`; FALSE at the end of
-// input. getline() would do, but MinGW's C runtime on Windows lacks it
-static gboolean _read_line(GString *s, FILE *f)
+// one request line from stdin, however long, into `s`, with what was read
+// past it kept in `rest` for the next; FALSE at the end of input. read()
+// rather than stdio: a thread waiting in fgets() holds stdin's lock, and
+// glibc's exit() (2.43 on Ubuntu) takes every stream's lock to flush it, so
+// the engine never exited after `quit` on Linux
+static gboolean _read_line(GString *s, GString *rest)
 {
   char buf[65536];
-  g_string_truncate(s, 0);
-  while(fgets(buf, sizeof(buf), f))
+  g_string_assign(s, rest->str);
+  g_string_truncate(rest, 0);
+  gsize scanned = 0;
+  for(;;)
   {
-    g_string_append(s, buf);
-    if(s->len && s->str[s->len - 1] == '\n') return TRUE;
+    const char *nl = memchr(s->str + scanned, '\n', s->len - scanned);
+    if(nl)
+    {
+      const gsize end = nl - s->str + 1;
+      g_string_append_len(rest, s->str + end, s->len - end);
+      g_string_truncate(s, end);
+      return TRUE;
+    }
+    scanned = s->len;
+    const ssize_t got = read(STDIN_FILENO, buf, sizeof(buf));
+    if(got < 0 && errno == EINTR) continue;
+    if(got <= 0) return s->len > 0;
+    g_string_append_len(s, buf, got);
   }
-  return s->len > 0;
 }
 
 // the end of input, on the request queue
 static char _end_of_input[] = "";
 
 // stdin is read on a thread of its own, so a `cancel_base` (written by the
-// client while it waits on a base's reply) stops that base at once. it gets
-// no reply; every other line goes to the main loop, in order
+// client while it waits on a base's reply) stops that base at once, and a
+// `merge_cancel` a merge before its next photo. neither gets a reply. a
+// tagged `thumb` goes to the thumbnail threads (_thumb_run), a tagged
+// `export`, `export_release`, `hdr_merge` or `pano_merge` to the export
+// thread (_export_run), a tagged `import` to the import thread (_import_run);
+// every other line goes to the main loop, in order. a tagged `ai_denoise`,
+// `ai_object`, `ai_mask` or `ai_depth` is among them: the main loop
+// answers it, then hands the model's work to a thread (_denoise_run,
+// _ai_run), which answers again with the tag
 static gpointer _read_requests(gpointer data)
 {
   GAsyncQueue *queue = data;
-  GString *line = g_string_new(NULL);
-  while(_read_line(line, stdin))
+  GString *line = g_string_new(NULL), *rest = g_string_new(NULL);
+  while(_read_line(line, rest))
   {
-    gboolean cancel = FALSE;
-    if(line->len < 256 && strstr(line->str, "\"cancel_base\""))
+    gboolean taken = FALSE;
+    if(strstr(line->str, "\"tag\"")
+       || (line->len < 1024 && (strstr(line->str, "\"cancel_base\"") || strstr(line->str, "\"merge_cancel\""))))
     {
       JsonParser *parser = json_parser_new();
       if(json_parser_load_from_data(parser, line->str, line->len, NULL)
          && JSON_NODE_HOLDS_OBJECT(json_parser_get_root(parser)))
       {
         JsonObject *req = json_node_get_object(json_parser_get_root(parser));
-        cancel = !g_strcmp0(json_object_get_string_member_with_default(req, "cmd", ""), "cancel_base");
-        if(cancel) _cancel_base(json_object_get_int_member_with_default(req, "id", 0));
+        const char *cmd = json_object_get_string_member_with_default(req, "cmd", "");
+        if(!g_strcmp0(cmd, "cancel_base"))
+        {
+          fprintf(stderr, "[engine] > %.*s\n", (int)strcspn(line->str, "\r\n"), line->str);
+          _cancel_base(json_object_get_int_member_with_default(req, "id", 0));
+          taken = TRUE;
+        }
+        else if(!g_strcmp0(cmd, "merge_cancel"))
+        {
+          fprintf(stderr, "[engine] > %.*s\n", (int)strcspn(line->str, "\r\n"), line->str);
+          _merge_cancel(json_object_get_int_member_with_default(req, "job", 0));
+          taken = TRUE;
+        }
+        else if(!g_strcmp0(cmd, "thumb") && json_object_has_member(req, "tag"))
+        {
+          fprintf(stderr, "[engine] thumb %.*s\n", (int)strcspn(line->str, "\r\n"), line->str);
+          // the pool frees the parser
+          if(_thumb_queue(parser)) parser = NULL;
+          taken = TRUE;
+        }
+        else if((!g_strcmp0(cmd, "export") || !g_strcmp0(cmd, "export_release")
+                 || !g_strcmp0(cmd, "hdr_merge") || !g_strcmp0(cmd, "pano_merge"))
+                && json_object_has_member(req, "tag"))
+        {
+          fprintf(stderr, "[engine] export %.*s\n", (int)strcspn(line->str, "\r\n"), line->str);
+          if(_export_queue(parser)) parser = NULL;
+          taken = TRUE;
+        }
+        else if(!g_strcmp0(cmd, "import") && json_object_has_member(req, "tag"))
+        {
+          fprintf(stderr, "[engine] import %.*s\n", (int)MIN(300, strcspn(line->str, "\r\n")), line->str);
+          if(_import_queue(parser)) parser = NULL;
+          taken = TRUE;
+        }
       }
-      g_object_unref(parser);
+      if(parser) g_object_unref(parser);
     }
-    if(cancel)
-      fprintf(stderr, "[engine] > %.*s\n", (int)strcspn(line->str, "\r\n"), line->str);
-    else
-      g_async_queue_push(queue, g_strndup(line->str, line->len));
+    if(!taken) g_async_queue_push(queue, g_strndup(line->str, line->len));
   }
   g_string_free(line, TRUE);
+  g_string_free(rest, TRUE);
   g_async_queue_push(queue, _end_of_input);
   return NULL;
 }
@@ -7380,8 +8734,9 @@ int main(int argc, char **argv)
   for(size_t k = 0; k < G_N_ELEMENTS(fatal); k++) signal(fatal[k], _crash);
 #endif
 
-  // edits persist only through the sidecar
-  dt_conf_set_string("write_sidecar_files", "on import");
+  // edits persist only through the sidecar, which the engine writes itself
+  // (_write_sidecar)
+  dt_conf_set_string("write_sidecar_files", "never");
 #ifdef HAVE_AI
   if(_models_dir) dt_conf_set_bool("plugins/ai/enabled", TRUE);
 #ifdef __linux__
@@ -7410,6 +8765,13 @@ int main(int argc, char **argv)
     g_free(setting);
   }
 
+  _thumb_pool = g_thread_pool_new(_thumb_run, out, _THUMB_THREADS, FALSE, NULL);
+  _export_pool = g_thread_pool_new(_export_run, out, 1, FALSE, NULL);
+  _import_pool = g_thread_pool_new(_import_run, out, 1, FALSE, NULL);
+#ifdef HAVE_AI
+  _denoise_pool = g_thread_pool_new(_denoise_run, out, 1, FALSE, NULL);
+  _ai_pool = g_thread_pool_new(_ai_run, out, 1, FALSE, NULL);
+#endif
   GAsyncQueue *requests = g_async_queue_new();
   g_thread_unref(g_thread_new("requests", _read_requests, requests));
   gboolean quit = FALSE;
@@ -7435,6 +8797,13 @@ int main(int argc, char **argv)
   // the client gone without a quit: its edits are kept all the same
   if(!quit) _save_pending();
 
+  _thumb_wait();
+  _import_wait();
+  _export_wait();
+#ifdef HAVE_AI
+  _denoise_wait();
+  _ai_wait();
+#endif
   _close_session();
   _prefetch_wait();
   dt_cleanup();

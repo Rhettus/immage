@@ -93,6 +93,20 @@ if ls "$dst"/bin/onnxruntime*.dll > /dev/null 2>&1; then
   printf 'onnxruntime %s\n  license: MIT\n  source: https://github.com/microsoft/onnxruntime\n  texts: %s\n\n' \
     "$version" "$texts" >> "$own"
 fi
+# OpenCV, compiled into darktable for HDR Merge's alignment and into the
+# engine for Panorama Merge, from the build app/scripts/build_opencv.sh
+# makes, with the texts of the parts it includes
+cv="$root/build/opencv/install"
+if grep -q 'USE_OPENCV:BOOL=ON' "$root/build/CMakeCache.txt" && [ -f "$cv/info" ]; then
+  mkdir -p "$lic/opencv"
+  texts=""
+  for f in "$cv/LICENSE" "$cv"/share/licenses/opencv4/*; do
+    [ -f "$f" ] || continue
+    cp "$f" "$lic/opencv/"; texts="$texts${texts:+, }opencv/$(basename "$f")"
+  done
+  { sed -n 1p "$cv/info" | sed 's/$/, compiled into darktable and the engine/'; sed -n '2,3s/^/  /p' "$cv/info"
+    printf '  texts: %s\n\n' "$texts"; } >> "$own"
+fi
 # from MSYS2: the package that owns each bundled DLL, and lensfun's data
 pkgs=$(for f in "$dst"/bin/*.dll; do
          [ -e "/ucrt64/bin/$(basename "$f")" ] && echo "/ucrt64/bin/$(basename "$f")"

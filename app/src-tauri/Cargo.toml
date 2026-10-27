@@ -1,6 +1,6 @@
 [package]
 name = "immage"
-version = "0.37.0"
+version = "0.38.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
 
@@ -19,8 +19,6 @@ tauri-plugin-updater = { version = "2", default-features = false, features = ["r
 tauri-plugin-process = "2"
 # the main window's size, position and maximized state, kept across launches
 tauri-plugin-window-state = "2"
-# engine_background() waits without holding a thread; Tauri brings tokio in already
-tokio = { version = "1", features = ["time"] }
 # the SD card importer, cloned into the repo's immporter/ (app/scripts/fetch_immporter.sh)
 tauri-plugin-immporter = { path = "../../immporter/src-tauri/plugin" }
 # exports uploaded to Immich (immich_upload.rs); the same version the importer uses
@@ -47,11 +45,21 @@ dispatch2 = "0.3"
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString"] }
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSWorkspace"] }
 
+# statfs, for the drive a library folder is on (volumes.rs; already in the tree)
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+# the screen's real scale on Wayland, which GTK 3 rounds up to a whole one
+# (scale.rs)
+[target.'cfg(target_os = "linux")'.dependencies]
+wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client", "unstable"] }
+
 # WebView2's shared buffers, for frames (main.rs, shared_frame); the versions
 # wry uses (already in the tree, via tauri)
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.39"
-windows = "0.62"
+windows = { version = "0.62", features = ["Win32_Storage_FileSystem"] }
 
 [dev-dependencies]
 mockito = "1.7.2"

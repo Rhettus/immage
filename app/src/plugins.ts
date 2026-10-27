@@ -2,7 +2,7 @@
 // Copyright (C) 2026 the Immage authors
 
 // Edit In: what darktable does not do is handed to another application (DxO
-// PureRAW now; panorama, HDR and focus stacking later), and the file it
+// PureRAW, Macro Studio's focus stacking), and the file it
 // writes comes back to be edited, as with Lightroom's plug-ins. a kind says
 // what an application takes and gives back; a plugin is one the user set up
 // in Preferences, with its application and choices
@@ -20,6 +20,15 @@ export type PluginKind = {
   // user's choice of the two (sendDefault)
   send: "original" | "tiff" | "choice";
   sendDefault: "original" | "tiff";
+  // originals it takes only as raws, though a TIFF can be of any photo
+  rawOriginals?: boolean;
+  // how the photos go: "files" starts the application with them and looks
+  // for what it writes (plugins.rs, plugin_watch); "macrostudio" hands it a
+  // job and reads its receipt (plugin_job)
+  handoff?: "files" | "macrostudio";
+  // what comes back from raws is a demosaiced raw, a linear DNG, and starts
+  // with a raw's new-photo defaults, as a panorama does
+  linearDng?: boolean;
   // where the application is installed, as patterns with * under
   // /Applications or Program Files (plugins.rs, plugin_find_apps)
   appHints: { mac: string[]; win: string[] };
@@ -54,6 +63,23 @@ export const KINDS: PluginKind[] = [
     ],
     note: "set PureRAW to save DNG files. Immage waits while PureRAW works, and opens each DNG as it is saved",
   },
+  {
+    id: "macro-studio",
+    label: "Macro Studio",
+    accepts: "any",
+    minPhotos: 2,
+    send: "choice",
+    sendDefault: "original",
+    rawOriginals: true,
+    handoff: "macrostudio",
+    linearDng: true,
+    appHints: { mac: ["Macro Studio.app"], win: ["Macro Studio/MacroStudio.exe"] },
+    // the stack is saved beside the first photo, as <its name>-stacked; the
+    // receipt says where, so these are only what the filmstrip shows
+    returns: { exts: ["dng", "tif"], match: "any", subfolders: [""] },
+    onReturn: [],
+    note: "select a focus bracket. Each stack opens in Macro Studio to check and retouch, and comes back here when it is saved there, as a DNG for the most latitude",
+  },
 ];
 
 export const kindOf = (id: string) => KINDS.find((k) => k.id === id);
@@ -66,6 +92,7 @@ export type PluginConfig = {
   send: "original" | "tiff";
   outputDir: string;                   // looked in too, besides the kind's folders; "" for none
   onReturn: Record<string, boolean>;
+  look?: "" | "natural" | "enhanced";  // Macro Studio's Look; "" for its own default
 };
 
 const PLUGINS_KEY = "immage.plugins";
@@ -101,7 +128,8 @@ export function unfit(cfg: PluginConfig, targets: ImageEntry[]): string | null {
   if (!cfg.app) return "choose its application in Preferences";
   const local = targets.filter((t) => !t.remote || t.remote.localPath);
   if (local.length < targets.length) return "only photos on this computer";
-  if (kind.accepts === "raw" && targets.some((t) => fileKind(t.filename) !== "RAW")) return "raw files only";
+  const rawOnly = kind.accepts === "raw" || (kind.rawOriginals && cfg.send === "original");
+  if (rawOnly && targets.some((t) => fileKind(t.filename) !== "RAW")) return "raw files only";
   if (targets.length < kind.minPhotos) return kind.minPhotos > 1 ? `select at least ${kind.minPhotos} photos` : "no photo";
   if (kind.maxPhotos && targets.length > kind.maxPhotos) return `at most ${kind.maxPhotos} photos`;
   return null;

@@ -5,7 +5,7 @@
 // flags and labels, and the Filters popup's fields. Immich results are
 // narrowed by the server instead (immich.ts), all but the stars and type
 import { shutter } from "./exportTokens";
-import { fileKind, type ImageEntry } from "./library";
+import { fileKind, takenAt, type ImageEntry } from "./library";
 
 export const EXPOSURE = ["iso", "aperture", "focal", "shutter"] as const;
 export type ExposureKey = typeof EXPOSURE[number];
@@ -45,7 +45,7 @@ export const exposureLabel = (k: ExposureKey, v: number) =>
 const hasKeyword = (i: ImageEntry, k: string) => (i.keywords ?? []).some((x) => x === k || x.startsWith(`${k}|`));
 
 // "YYYY:MM:DD HH:MM:SS" as YYYY-MM-DD
-const day = (i: ImageEntry) => i.exif.datetime.slice(0, 10).replace(/:/g, "-");
+const day = (i: ImageEntry) => takenAt(i).slice(0, 10).replace(/:/g, "-");
 
 export const passes = (i: ImageEntry, f: Filter) =>
   (f.rejected === "all" || (f.rejected === "only") === i.rejected)
@@ -57,8 +57,8 @@ export const passes = (i: ImageEntry, f: Filter) =>
   && (!f.cameras.length || f.cameras.includes(cameraOf(i)))
   && (!f.lenses.length || f.lenses.includes(i.exif.lens))
   && f.keywords.every((k) => hasKeyword(i, k))
-  && (!f.takenFrom || (!!i.exif.datetime && day(i) >= f.takenFrom))
-  && (!f.takenTo || (!!i.exif.datetime && day(i) <= f.takenTo))
+  && (!f.takenFrom || (!!takenAt(i) && day(i) >= f.takenFrom))
+  && (!f.takenTo || (!!takenAt(i) && day(i) <= f.takenTo))
   && EXPOSURE.every((k) => !f[k].length || f[k].includes(exposureLabel(k, value(i, k))));
 
 // the popup's fields in use, one each, for its button and the toolbar
@@ -105,7 +105,7 @@ export function facets(images: ImageEntry[]): Facets {
   return {
     kinds, cameras: byName(counted(images.map(cameraOf))), lenses: byName(counted(images.map((i) => i.exif.lens))),
     keywords: byName(keywords),
-    months: [...counted(images.map((i) => i.exif.datetime && day(i).slice(0, 7)))].sort(([a], [b]) => b.localeCompare(a)),
+    months: [...counted(images.map((i) => takenAt(i) && day(i).slice(0, 7)))].sort(([a], [b]) => b.localeCompare(a)),
     iso: settings("iso"), aperture: settings("aperture"), focal: settings("focal"), shutter: settings("shutter"),
   };
 }

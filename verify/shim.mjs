@@ -19,8 +19,11 @@ export const FRAME_HEAD = 56;
 const HANDLERS = new Set(readFileSync(new URL("../app/src-tauri/src/main.rs", import.meta.url), "utf8")
   .match(/generate_handler!\[([^\]]*)\]/)[1].split(",").map((s) => s.trim().split("::").pop()).filter(Boolean));
 
-let engine = null, frame = null, preview = null, range = null;
+let engine = null, frame = null, preview = null, range = null, denoised = null;
 const waiting = [];
+// requestTagged()'s and expectTagged()'s, by tag
+const tagged = new Map();
+let lastTag = 0;
 
 // one engine for the process, in its own runtime folder, on the CPU so
 // frames are the same from run to run; with AI models from `modelsDir`
@@ -30,6 +33,7 @@ export function startEngine(binary, home, modelsDir = null) {
   frame = join(home, "frame.rgba");
   preview = join(home, "preview.rgba");
   range = join(home, "range.bin");
+  denoised = join(home, "denoise-preview.f32");
   models.dir = modelsDir;
   // the engine takes --models ahead of darktable's own options
   const me = spawn(binary, [...(modelsDir ? ["--models", modelsDir] : []), "--core", "--configdir", join(home, "config"),
@@ -37,9 +41,21 @@ export function startEngine(binary, home, modelsDir = null) {
                    { stdio: ["pipe", "pipe", "ignore"] });
   engine = me;
   exited = new Promise((r) => me.on("exit", r));
-  createInterface({ input: me.stdout }).on("line", (line) => waiting.shift()?.(line));
+  createInterface({ input: me.stdout }).on("line", (line) => {
+    const tag = /^\{"tag":(\d+)/.exec(line)?.[1];
+    // a merge's progress lines come ahead of its answer, with its tag
+    // (main.c, _merge_report); the app shows them (engine.rs, read_stdout)
+    if (tag && /^\{"tag":\d+,"progress":true/.test(line)) return;
+    const w = tag && tagged.get(Number(tag));
+    if (w) { tagged.delete(Number(tag)); w(line); } else waiting.shift()?.(line);
+  });
   // only this engine's requests fail with it: a restart's are the next one's
-  me.on("exit", () => { if (engine === me) for (const w of waiting.splice(0)) w(null); });
+  me.on("exit", () => {
+    if (engine !== me) return;
+    for (const w of waiting.splice(0)) w(null);
+    for (const w of tagged.values()) w(null);
+    tagged.clear();
+  });
 }
 let exited = Promise.resolve();
 
@@ -59,12 +75,59 @@ export function request(req) {
   return p;
 }
 
-export async function stopEngine() {
-  if (!engine) return;
+// a request the engine serves off its main loop (main.rs, Tagged): sent at
+// once, beside whatever request() waits on, and answered by its tag
+export function requestTagged(req) {
+  const tag = ++lastTag;
+  const answer = expectTagged(tag);
+  engine.stdin.write(JSON.stringify({ ...req, tag }) + "\n");
+  return answer;
+}
+
+// the answer to `tag`, waited for before it is asked (engine.rs, expect):
+// for a request the main loop answers first and a thread of the engine's
+// later, as ai_denoise
+function expectTagged(tag) {
+  return new Promise((resolve, reject) => {
+    tagged.set(tag, (line) => {
+      if (line === null) return reject(new Error("the engine exited"));
+      const r = JSON.parse(line);
+      if (r.ok) resolve(r); else reject(new Error(r.error ?? "engine request failed"));
+    });
+  });
+}
+
+// a request the main loop answers first and a thread of the engine's later,
+// with the tag (main.rs, on_engine_thread): ai_denoise, the AI selections
+async function onEngineThread(req) {
+  const tag = ++lastTag;
+  const answer = expectTagged(tag);
+  try {
+    await request({ ...req, tag });
+  } catch (e) {
+    tagged.delete(tag);
+    throw e;
+  }
+  const { ok, tag: _, ...r } = await answer;
+  return r;
+}
+
+// it saves the open photo and writes its library before it exits; one
+// still there after `wait` ms is killed, as engine.rs's reap does, and
+// stopEngine() gives false
+export async function stopEngine(wait = 5000) {
+  if (!engine) return true;
+  const me = engine;
   await request({ cmd: "quit" }).catch(() => {});
-  // it saves the open photo and writes its library before it exits
-  await exited;
+  let timer;
+  const gone = await Promise.race([exited.then(() => true), new Promise((r) => { timer = setTimeout(r, wait, false); })]);
+  clearTimeout(timer);
+  if (!gone) {
+    me.kill();
+    await exited;
+  }
   engine = null;
+  return gone;
 }
 
 // the header render() puts ahead of the frame
@@ -91,6 +154,7 @@ function sized(width, height) {
 }
 
 const COMMANDS = {
+  display_scale: () => (screen.scale === "error" ? Promise.reject(new Error("not on a screen yet")) : screen.scale),
   open_image: ({ path, imgid }) => request({ cmd: "open", path, imgid: imgid ?? -1 }),
   get_params: ({ modules }) => request({ cmd: "get", modules }),
   history: async ({ saved } = {}) => (await request({ cmd: "history", saved: saved ?? false })).items,
@@ -168,8 +232,38 @@ const COMMANDS = {
     rmSync(join(models.dir, id), { recursive: true, force: true });
     cpSync(join(models.source, id), join(models.dir, id), { recursive: true });
   },
-  ai_object: async ({ points, box }) =>
-    (await request({ cmd: "ai_object", points, ...(box ? { box } : {}) })).paths,
+  // the main loop takes the edit and answers, then the denoise thread
+  ai_denoise: ({ strength }) => onEngineThread({ cmd: "ai_denoise", strength }),
+  ai_denoise_preview: ({ u, v, size }) =>
+    request({ cmd: "ai_denoise_preview", u, v, size, out: denoised }),
+  // the main loop renders the model's input and answers, then the AI thread
+  ai_object: async ({ points, box, inset }) =>
+    (await onEngineThread({ cmd: "ai_object", points, ...(box ? { box } : {}), ...(inset === false ? { inset } : {}) })).paths,
+  ai_mask: async ({ kind, range, inset }) =>
+    (await onEngineThread({ cmd: "ai_mask", kind, ...(range ? { range } : {}), ...(inset === false ? { inset } : {}) })).paths,
+  ai_depth: ({ size }) => onEngineThread({ cmd: "ai_depth", size }),
+  // on the export thread
+  hdr_merge: ({ imgids, align }) => requestTagged({ cmd: "hdr_merge", imgids, align }),
+  hdr_can_align: async () => (await request({ cmd: "version" })).hdr_align ?? false,
+  pano_merge: ({ imgids, projection, crop }) => requestTagged({ cmd: "pano_merge", imgids, projection, crop }),
+  pano_can_merge: async () => (await request({ cmd: "version" })).pano ?? false,
+  meta_set: ({ imgid, fields }) => request({ cmd: "meta_set", imgid, ...fields }),
+  // as main.rs, with the files removed rather than put in the trash
+  trash_files: async ({ imgids }) => {
+    const gone = [];
+    for (const imgid of imgids) {
+      const { image } = await request({ cmd: "meta", imgid });
+      if (!image.rejected) throw new Error(`${image.filename} is not rejected; nothing was deleted`);
+      const cmd = image.copy ? "remove_copy" : "sidecars";
+      const { files } = await request({ cmd, imgid });
+      for (const f of [...(image.copy ? [] : [image.path]), ...files]) rmSync(f, { force: true });
+      if (!image.copy) {
+        await request({ cmd: "forget", imgid });
+        gone.push(image.path);
+      }
+    }
+    return gone;
+  },
 };
 
 // the engine's models folder (startEngine's), and where a check's models
@@ -183,6 +277,11 @@ export const sent = { hook: null };
 // library.ts's imports: no events reach a check, and Immich is not reached
 export const listen = async () => () => {};
 export const api = {};
+
+// the screen's scale display_scale gives (none, a number, or "error" for a
+// window not on a screen yet), and pixelRatio.ts's window: it never moves
+export const screen = { scale: null };
+export const getCurrentWindow = () => ({ onMoved: async () => () => {}, onScaleChanged: async () => () => {} });
 
 export async function invoke(cmd, args = {}) {
   if (!HANDLERS.has(cmd)) throw new Error(`the app registers no command ${cmd} (main.rs, generate_handler!)`);

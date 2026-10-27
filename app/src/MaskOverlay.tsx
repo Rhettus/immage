@@ -17,7 +17,7 @@ export type BrushSettings = { size: number; hardness: number; density: number; e
 
 const HANDLE = 6; // CSS pixels
 
-export function MaskOverlay({ boxRef, image, region, mask, peek, ranges, final, shaping, tool, brush, showOverlay, adding, newMask, subtract, selected,
+export function MaskOverlay({ boxRef, image, region, mask, peek, ranges, final, awaitFinal, shaping, tool, brush, showOverlay, adding, newMask, subtract, selected,
                               onSelect, onChange, onCreate, onPick, onObject, onPickArea, onHoverPick, color, overlayColor }: {
   boxRef: React.RefObject<HTMLDivElement | null>;
   image: { w: number; h: number };       // the shown image at 100%, for its aspect
@@ -26,6 +26,7 @@ export function MaskOverlay({ boxRef, image, region, mask, peek, ranges, final, 
   peek: Mask | null;                     // a mask whose name the pointer rests on: its overlay shows
   ranges: RangeMap | null;               // the engine's map of the shown mask's ranges
   final: RangeMap | null;                // darktable's mask, refinements and all, when it has some (or of `at`)
+  awaitFinal: boolean;                   // a refined mask whose `final` is still to come
   shaping: boolean;                      // a slider shaping the mask is moving: its overlay shows
   tool: MaskTool | null;                 // drawing a new shape
   brush: BrushSettings;
@@ -107,6 +108,9 @@ export function MaskOverlay({ boxRef, image, region, mask, peek, ranges, final, 
     const tone = (!peeking && color) || overlayColor;
     // shapes being drawn or dragged show as drawn; the engine's map would lag
     const engine = final && !draft && !pressed ? final : null;
+    // a refined mask shows once, as darktable refines it: its shapes alone
+    // would show first, then change as the map came in
+    if (awaitFinal && !engine && !draft && !pressed) { clear(); return; }
     const at: Region | null = engine ? engine.at ?? [0, 0, 1, 1] : region && (!ranged || ranges) ? region : null;
     // a fitted view's map is the whole image, give or take its rounding
     const whole = !!at && at[0] < 0.005 && at[1] < 0.005 && at[2] > 0.995 && at[3] > 0.995;
@@ -126,7 +130,7 @@ export function MaskOverlay({ boxRef, image, region, mask, peek, ranges, final, 
     c.style.clipPath = at ? `polygon(evenodd, 0 0, 100% 0, 100% 100%, 0 100%, 0 0, ${100 * at[0]}% ${100 * at[1]}%, `
       + `${100 * at[2]}% ${100 * at[1]}%, ${100 * at[2]}% ${100 * at[3]}%, ${100 * at[0]}% ${100 * at[3]}%, `
       + `${100 * at[0]}% ${100 * at[1]}%)` : "";
-  }, [mask, peek, ranges, final, region?.join(), shaping, adding, draft, showOverlay, pressed, newMask, W, H, color?.join(), overlayColor.join()]);
+  }, [mask, peek, ranges, final, awaitFinal, region?.join(), shaping, adding, draft, showOverlay, pressed, newMask, W, H, color?.join(), overlayColor.join()]);
 
   const unit = W / cssWidth;     // image pixels per CSS pixel
   const hr = HANDLE * unit;

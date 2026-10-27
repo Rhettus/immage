@@ -89,9 +89,8 @@ swaps the width and height for landscape photos. A photo smaller than
 the canvas is not enlarged; it sits in the middle at its own size.
 
 AI upscale is offered only on a computer with a supported GPU. It makes a
-20 MP photo 80 MP (2×) or 320 MP (4×), takes a few minutes for each photo,
-and editing waits while it runs. Its model (55 MB) downloads the first
-time.
+20 MP photo 80 MP (2×) or 320 MP (4×) and takes a few minutes for each
+photo. Its model (55 MB) downloads the first time.
 
 ## Frame & Captions
 
@@ -152,5 +151,9 @@ At the bottom: **Current image**, **Selected (N)** when several are
 selected, or **All shown (N)**, every photo the filters leave showing. With
 several selected, the dialog opens on Selected.
 
-Click **Export**. When it is done, a line reports what happened, and the
-dialog closes by itself if nothing went wrong.
+Click **Export**. The dialog closes and the export goes on while you
+edit: the bottom left of the photo shows how far it has got, and **Stop**
+ends it after the photo it is on. Each photo is exported as it was when
+you clicked Export, even if you edit it meanwhile. When the export is
+done, the same place says what happened. That goes away by itself if
+nothing went wrong; otherwise **OK** dismisses it.

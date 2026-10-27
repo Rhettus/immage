@@ -31,6 +31,13 @@ Open the **Folders** card in the **Library** panel.
   deleted.
 - When the open photo is in a folder you aren't browsing, that folder is
   marked with a dot.
+- When your folders are on more than one drive, each drive is a heading
+  over its folders, so two folders with the same name (a 2026 on your
+  computer and a 2026 on a NAS) are told apart. A network share shows a
+  network icon and its server's name, or its address when the share was
+  connected by address; double-click the name or address to give it a
+  name of your own, and clear it to go back. Click a heading to fold it. A
+  folder on a share that isn't connected stays under its share, dimmed.
 
 Folders you import into join the list by themselves. The list, the open
 folder and the last photo are remembered when you quit.
@@ -42,8 +49,9 @@ folder and the last photo are remembered when you quit.
 
 The filmstrip under the photo shows the open folder, in the order the
 photos were taken. Photos taken at the same moment, such as a raw and its
-virtual copies, follow by file name, and photos without a capture time
-come last. Each thumbnail shows
+virtual copies, follow by file name. A photo whose camera recorded no
+capture time, as one with a flat clock battery, is placed by the date its
+file was last changed; photos with neither come last. Each thumbnail shows
 the file name and type (**ARW**, **JPG**, ...), and a small sliders mark
 beside the type once the photo is edited. Hover over it to see its rating,
 labels and reject button. Once a photo is rated or rejected, those show all
@@ -115,7 +123,8 @@ The toolbar under the filmstrip filters the folder:
     **Places › Norway** too.
   - **Captured**: photos taken between two dates. Type them, or pick a
     recent span (**Last 30 days**, **This month**, **Last year** and
-    others), a year, or a month of the year picked.
+    others), a year, or a month of the year picked. A photo with no
+    capture time goes by its file's date here too.
   - **Exposure**: ISO, aperture, focal length and shutter speed. Choose
     one to list the values the folder holds, and tick any, for example
     ISO 100 and 200.
@@ -145,6 +154,59 @@ corner, and opens. Each copy has its own sidecar.
 To remove one, right-click it and choose **Remove Virtual Copy**. Its
 sidecar goes to the Trash; the photo file stays.
 
+## HDR Merge
+
+HDR Merge combines bracketed raws, the same scene at different
+exposures, into one photo with the range of them all, using darktable's
+HDR merge. Select the brackets in the filmstrip or grid, then press ⌃H
+or right-click and choose **HDR Merge…**. Turn on **Auto Align** for
+brackets shot handheld, so that they line up before they merge; brackets
+from a tripod don't need it. Click **Merge**.
+
+Immage writes a new DNG beside the first bracket, named
+`<name>-hdr.dng` (then `<name>-hdr_01.dng` and so on). It is merged in
+the background while you go on editing, and **Open** at the bottom left
+of the photo opens it. The DNG holds the raw data, not a finished
+picture: it opens with the new-photo defaults and is edited like any
+raw, with Exposure, Highlights and Shadows bringing the range in. The
+brackets themselves aren't changed.
+
+The brackets must be raws from the same camera, of the same size and
+orientation. Anything that moves between them, such as people or
+leaves, shows as a ghost: Auto Align lines up the camera's movement,
+not the subject's.
+
+## Panorama Merge
+
+Panorama Merge stitches overlapping raws into one wide photo. Select the
+photos in the filmstrip or grid, then press ⌃M or right-click and choose
+**Panorama Merge…**. Choose a projection:
+
+- **Auto** picks one from how wide the panorama is
+- **Spherical** suits very wide panoramas, and those of several rows
+- **Cylindrical** suits wide panoramas, and keeps vertical lines straight
+- **Perspective** keeps straight lines straight, for architecture, up to
+  about 100° across
+
+**Auto Crop** cuts away the empty edges the photos leave. Click
+**Merge**.
+
+Immage writes a new DNG beside the first photo, named `<name>-pano.dng`
+(then `<name>-pano_01.dng` and so on), and lists it after that photo. It
+is stitched in the background while you go on editing, and **Open** at
+the bottom left of the photo opens it. Like Lightroom's, the DNG holds
+the raw data with the lens corrections already made: it opens as the
+first photo would, with the new-photo defaults, white balance as shot
+and Lens Corrections off, and is edited as one photo. The other edits
+of the photos you merged aren't used, and the photos themselves aren't
+changed.
+
+The photos must be raws from the same camera, overlapping by a third or
+so. A photo that overlaps none of the others is left out, and the
+activity line says so. Stitching runs on OpenCV rather than darktable,
+which has no panorama tool. It takes from half a minute to a few
+minutes, and a lot of memory for many photos.
+
 ## Deleting rejected photos
 
 Immage only deletes photos you have rejected. Reject them with X, select
@@ -159,6 +221,8 @@ Right-click a photo, or a selection, for:
 
 - **Edit In ›**: send it to another application. See [Edit In](edit-in.md).
 - **Create Virtual Copy** / **Remove Virtual Copy**
+- **HDR Merge…**, for two raws or more
+- **Panorama Merge…**, for two raws or more
 - **Show in Finder**
 - **Show in Immich**, for a photo from an Immich search
 - **Delete Rejected Photo…**

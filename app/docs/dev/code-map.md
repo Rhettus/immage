@@ -38,7 +38,7 @@ Paths below are relative to this file.
 | A new mask shape or kind | [masks.ts](../../src/masks.ts) (`Shape`) | [MaskOverlay.tsx](../../src/MaskOverlay.tsx), `Session.addMask`, the engine's `_shape` / `_mask` |
 | A new engine command | `_handle()` in [main.c](../../../engine/main.c) | a `#[tauri::command]` in [main.rs](../../src-tauri/src/main.rs), registered in `invoke_handler`; the caller in [session.ts](../../src/session.ts) or [App.tsx](../../src/App.tsx) |
 | Rendering, frames, zoom | `Session.pump` / `renderView` in [session.ts](../../src/session.ts) | `currentView`, `paintFrame`, `animateTo` in [App.tsx](../../src/App.tsx); `render` in [main.rs](../../src-tauri/src/main.rs); `_render` in [main.c](../../../engine/main.c) |
-| An export option | `Settings` in [exportSettings.ts](../../src/exportSettings.ts) | [ExportDialog.tsx](../../src/ExportDialog.tsx); `export_images` in [main.rs](../../src-tauri/src/main.rs); `_export` / `_frame_style` in [main.c](../../../engine/main.c) |
+| An export option | `Settings` in [exportSettings.ts](../../src/exportSettings.ts) | [ExportDialog.tsx](../../src/ExportDialog.tsx); `export_images` in [main.rs](../../src-tauri/src/main.rs); `_export` / `_frame_style` in [main.c](../../../engine/main.c); its progress, [background.ts](../../src/background.ts) |
 | An AI feature | `runAi` / `runDenoise` in [App.tsx](../../src/App.tsx) | `withModel` in [aiModel.ts](../../src/aiModel.ts); `ai_model_ensure` in [main.rs](../../src-tauri/src/main.rs); the `HAVE_AI` section of [main.c](../../../engine/main.c); darktable's `src/ai` and `src/common/ai` |
 | A preference | [Preferences.tsx](../../src/Preferences.tsx) (a `load*`/`store*` pair and a `PrefRow`) | [PrefsUI.tsx](../../src/PrefsUI.tsx); the consumer calls `load*()` live |
 | An Immich call | [immich_search.rs](../../src-tauri/src/immich_search.rs) or [immich_upload.rs](../../src-tauri/src/immich_upload.rs) | `immich_*` commands in [main.rs](../../src-tauri/src/main.rs); [immich.ts](../../src/immich.ts), [ImmichPanel.tsx](../../src/ImmichPanel.tsx) |
@@ -55,13 +55,18 @@ Paths below are relative to this file.
 | [splash.html](../../splash.html), [Splash.tsx](../../src/Splash.tsx) | The splash window: asks `about`, shows the main window, closes itself. |
 | [App.tsx](../../src/App.tsx) | The whole editor's shell and state. See [inside App.tsx](#inside-apptsx). |
 | [main.rs](../../src-tauri/src/main.rs) | `main()`: on Linux over NVIDIA's driver gives the web view Mesa's EGL (`mesa_egl`), migrates the old app name, registers the dialog, opener, updater, process, window state (the main window's size, position and maximized state) and immporter plugins. On Linux `setup()` builds the windows itself, with the frames web extension's folder (`webext_dir`). `setup()` picks the engine: `build/bin/darktable-engine` with runtime state in `build/app-runtime` for a dev build, the bundled `resources/darktable` with the app data folder for a release, or `DT_ENGINE_BIN`. Holds `AppState` and nearly every command. |
-| [engine.rs](../../src-tauri/src/engine.rs) | The engine child. Spawns it (`--core --configdir --cachedir -d perf`, darktable's resource level from Preferences (`resource_level`), OpenCL on with only export's pipe type allowed the GPU, which the base borrows; on Linux, ROCm's platform on and its kernels built as OpenCL C 2.0 when no RustiCL is installed, `rocm_only`), retrying while an old one holds darktable's database lock. `request()` writes one JSON line and reads one back. A stderr thread writes the log and keeps darktable's `-d perf` timings apart for the performance overlay. |
+| [engine.rs](../../src-tauri/src/engine.rs) | The engine child. Spawns it (`--core --configdir --cachedir -d perf`, darktable's resource level from Preferences (`resource_level`), OpenCL on with only export's pipe type allowed the GPU, which the base borrows; on Linux, ROCm's platform on and its kernels built as OpenCL C 2.0 when no RustiCL is installed, `rocm_only`), retrying while an old one holds darktable's database lock. `request()` writes one JSON line and reads one back. Thumbnails and background exports (`Tagged`) are tagged and sent without the engine's mutex, and AI Denoise's DNG and the AI selections' outlines come as a tagged answer after the main loop's own (`expect`, `on_engine_thread` in main.rs); a stdout thread (`read_stdout`) hands each tagged reply to its caller, a merge's progress lines to what follows them (`request_with_progress`, as `merge-progress`), and the rest to `request()`. A stderr thread writes the log and keeps darktable's `-d perf` timings apart for the performance overlay. |
 | [engine/main.c](../../../engine/main.c) | `main()`: keeps the real stdout for replies, starts darktable with an in-memory library (`dt_init`), sets its confs, then loops: read a line, `_handle()` it, reply. |
 
 The boundary is strict. The front end never touches files or darktable
 directly. It calls `invoke(...)` commands, and every command that needs the
 engine goes through the one `Mutex<Engine>` in `AppState`, so engine work is
-serialized, one request at a time. Large results are binary and travel as
+serialized, one request at a time. Thumbnails, folder imports and
+exports are the exceptions: the engine builds thumbnails on two threads
+of its own (`_thumb_run`), and reads folders (`_import_run`), exports
+(`_export_run`), runs AI Denoise (`_denoise_run`) and the AI selections'
+models (`_ai_run`) on one each, beside
+whatever the mutex's holder is doing. Large results are binary and travel as
 `tauri::ipc::Response`:
 
 | Result | Format |
@@ -94,9 +99,10 @@ given memory it didn't allocate.
 
 ## Front end
 
-State lives in React `useState` and refs, mostly in `App`, plus three small
+State lives in React `useState` and refs, mostly in `App`, plus four small
 module stores: [activity.ts](../../src/activity.ts),
-[probe.ts](../../src/probe.ts) and [perf.ts](../../src/perf.ts). Preferences
+[background.ts](../../src/background.ts), [probe.ts](../../src/probe.ts) and
+[perf.ts](../../src/perf.ts). Preferences
 are `localStorage` keys named `immage.*`.
 
 ### Shell
@@ -108,6 +114,7 @@ are `localStorage` keys named `immage.*`.
 | [ImportView.tsx](../../src/ImportView.tsx) | The SD card importer, loaded from `@immporter/embed`. |
 | [Collapse.tsx](../../src/Collapse.tsx), [keys.ts](../../src/keys.ts), [paths.ts](../../src/paths.ts) | Folding panels; ⌘ or Ctrl by platform; path helpers for either separator. |
 | [activity.ts](../../src/activity.ts) | The busy indicator's job store (`begin`, `progress`, `end`, `useWorking`). |
+| [background.ts](../../src/background.ts) | Work in the background, for the activity lines under the photo: exports (`runExport`), HDR and Panorama Merge (`runMerge`: the photos read, then the merge's own stages, from the engine's `_merge_report`) and AI Denoise (`runInBackground`), each one's progress and Stop (`stopJob`: `export_cancel`, `merge_cancel`), then what it did, with a next step such as Open (`useJobs`). |
 | [styles.css](../../src/styles.css) | All styling. |
 
 ### Inside App.tsx
@@ -132,6 +139,7 @@ are `localStorage` keys named `immage.*`.
 | File | Responsibility |
 |---|---|
 | [session.ts](../../src/session.ts) | One open photo. `Session.open` reads every mapped module (`get_params`) into control values. `set`/`setMany` mark modules dirty, and `pump()` sends each dirty module's merged edit (`moduleEdit`) and one `render`, so moves made during a render are coalesced, latest wins. It also holds masks, spots, look and the Before view, and saves 600 ms after the last edit. `renderView` decodes the frame header; `preview` renders one-off settings on the engine's preview pipe. Until the image changes (`changed`), it shows the full frames it was sent (`frames`, by view and darktable's hash) and, zoomed in, a copy of the whole image at the zoom's scale (`requestCopy`, rendered on the base pipe once idle), so a view seen before or a pan's window is shown without the engine; App shows the copy as a layer under the sharp frame (`onCopy`). After a change, a render sends the hashes it holds for the view (`have`), and the engine names one rather than render it when the image is back as it was (the Before view and back, undo); a copy set aside comes back the same way. |
+| [pixelRatio.ts](../../src/pixelRatio.ts) | Linux on Wayland at a fractional scale: `draftScale()`, how much smaller drag drafts are (`draftK` in App.tsx), the screen's scale from `display_scale` over `devicePixelRatio`, as GTK 3 draws the window at the next whole scale; Preferences' "Drag drafts at the screen's scale". |
 | [sharedFrames.ts](../../src/sharedFrames.ts) | Windows: `renderFrame` asks `render` to post the frame in a WebView2 shared buffer tagged with an id, then matches the `sharedbufferreceived` event to the reply, copies the frame out and releases the buffer. Linux: it asks `render` to write the frame to `/dev/shm` and reads it with the web extension's `immageFrame()`. On the Mac, on WebView2 runtimes before 1.0.1661, on Linux without the extension, or with Preferences' "Shared-memory frames" off, the frame comes in `render`'s reply. |
 | [HistoryPanel.tsx](../../src/HistoryPanel.tsx) | darktable's history plus this session's undo steps; a row's switch, delete or reset (`historyChange` in App.tsx, `Session.setModuleState`, the engine's `_module_state`). |
 | [CopySettings.tsx](../../src/CopySettings.tsx) | Copy/Paste Settings: which groups, and the clip. |
@@ -177,9 +185,11 @@ are `localStorage` keys named `immage.*`.
 
 | File | Responsibility |
 |---|---|
-| [library.ts](../../src/library.ts) | `ImageEntry`; `openFolder` (batches arriving as `folder-progress` events); RAW+JPEG pairing; `ThumbLoader`, which fetches thumbnails only while the engine is idle, and lets those off screen longest go past Preferences' Thumbnail memory. |
-| [FolderTree.tsx](../../src/FolderTree.tsx) | The folder tree. |
+| [library.ts](../../src/library.ts) | `ImageEntry`; `openFolder` (batches arriving as `folder-progress` events); RAW+JPEG pairing; `ThumbLoader`, which fetches two thumbnails from the engine at a time, alongside editing, and lets those off screen longest go past Preferences' Thumbnail memory. |
+| [FolderTree.tsx](../../src/FolderTree.tsx) | The folder tree; with folders on more than one drive, a heading per drive (`folder_volumes`). |
 | [filter.ts](../../src/filter.ts) | The filmstrip's `Filter` over a folder's photos (`passes`), and what the photos hold to filter by (`facets`): kinds, cameras, lenses, keywords, exposure settings. |
+| [HdrDialog.tsx](../../src/HdrDialog.tsx) | HDR Merge's dialog (Auto Align, when the engine has OpenCV: `hdr_can_align`); `runHdrMerge` in App.tsx runs it in the background. |
+| [PanoDialog.tsx](../../src/PanoDialog.tsx) | Panorama Merge's dialog (projection, Auto Crop; Merge when the engine can stitch: `pano_can_merge`); `runPanoMerge` in App.tsx runs it in the background, and the DNG's first open takes a raw's new-photo defaults with Lens Corrections off (`pano` in `openFile`). |
 | [FilterPopup.tsx](../../src/FilterPopup.tsx) | The toolbar's Filters popup: the folder's fields, or on Immich results the server search's filters (the `ImmichSearch` App holds, shared with the Immich card). |
 
 ### Export
@@ -188,14 +198,14 @@ are `localStorage` keys named `immage.*`.
 |---|---|
 | [exportSettings.ts](../../src/exportSettings.ts) | Export `Settings`, presets (built-in, local, shared file) and frame items (borders, keylines, captions). |
 | [exportTokens.ts](../../src/exportTokens.ts) | File name and caption tokens. |
-| [ExportDialog.tsx](../../src/ExportDialog.tsx), [ExportFrame.tsx](../../src/ExportFrame.tsx) | The Export dialog, its live preview, the Immich target; the Frame & Captions editor. |
+| [ExportDialog.tsx](../../src/ExportDialog.tsx), [ExportFrame.tsx](../../src/ExportFrame.tsx) | The Export dialog, its live preview, the Immich target; the Frame & Captions editor. The dialog asks what an export needs (the upscale model, names that clash), hands it to `runExport` and closes. |
 
 ### Immich and plugins
 
 | File | Responsibility |
 |---|---|
 | [immich.ts](../../src/immich.ts), [ImmichPanel.tsx](../../src/ImmichPanel.tsx), [ImmichPrefs.tsx](../../src/ImmichPrefs.tsx) | Search, remote assets as `ImageEntry`, path maps from Immich to local files; the Library's Immich card (library, words, mode; its filters are in the Filters popup); connection settings (from the immporter). |
-| [plugins.ts](../../src/plugins.ts), [PluginPrefs.tsx](../../src/PluginPrefs.tsx) | Edit In: plugin kinds (`KINDS`, DxO PureRAW today), configs, returns; the Plugins preferences tab. |
+| [plugins.ts](../../src/plugins.ts), [PluginPrefs.tsx](../../src/PluginPrefs.tsx) | Edit In: plugin kinds (`KINDS`: DxO PureRAW, and Macro Studio, whose `handoff` is a job rather than files), configs, returns; the Plugins preferences tab. |
 
 ### Preferences, histogram, probe, performance
 
@@ -213,7 +223,9 @@ are `localStorage` keys named `immage.*`.
 | [main.rs](../../src-tauri/src/main.rs) | `AppState` (the engine, scratch file paths, looks and models folders, the folder-read token, perf state); every command except plugins'; AI model download (`install_model`, `install_extra`, through reqwest, sha256 checked, darktable's archives unpacked by the engine's `unpack`); export (naming conflicts, Immich upload); presets and looks files; launch-file handling. |
 | [engine.rs](../../src-tauri/src/engine.rs) | The engine child and its protocol (above); `perf_mark` and the `-d perf` parser. |
 | [immich_search.rs](../../src-tauri/src/immich_search.rs), [immich_upload.rs](../../src-tauri/src/immich_upload.rs) | Immich: search, thumbnails, originals (cached); album and upload calls. The API key never reaches the front end. |
-| [plugins.rs](../../src-tauri/src/plugins.rs) | Edit In: find apps, launch with files, poll their output folders, remember each result (`plugin-returns.json`). |
+| [volumes.rs](../../src-tauri/src/volumes.rs) | The drive a library folder is on, its name and whether it is a network share (statfs on macOS, `/proc/self/mounts` on Linux, the volume calls on Windows), for the folder tree's headings. |
+| [scale.rs](../../src-tauri/src/scale.rs) | Linux on Wayland: the screen's real scale, its output's mode over its xdg-output logical size on a Wayland connection of its own, for `display_scale`. |
+| [plugins.rs](../../src-tauri/src/plugins.rs) | Edit In: find apps, launch with files, poll their output folders, remember each result (`plugin-returns.json`). Macro Studio's protocol (`plugin_job`): a job manifest in `plugin-jobs/<id>/`, its receipt read until every stack is saved or closed, and a ledger (`plugin-jobs/pending.json`) drained at start and on each `open_folder` (`drain_jobs`), for stacks saved later. |
 | [Cargo.toml](../../src-tauri/Cargo.toml), [tauri.conf.json](../../src-tauri/tauri.conf.json), [capabilities/](../../src-tauri/capabilities) | Dependencies (each with its reason); windows, bundle resources (`resources/darktable`, `looks`, `sample`); window permissions. |
 
 Commands by what they reach:
@@ -221,13 +233,13 @@ Commands by what they reach:
 | Reaches | Commands |
 |---|---|
 | The open photo, through the engine | `open_image`, `get_params`, `set_params`, `module_state`, `render`, `cancel_base`, `preview`, `save`, `before_view`, `history`, `masks`, `mask_shapes`, `combine`, `mask_delete`, `mask_rename`, `mask_map`, `range_map`, `sample`, `zones`, `tone_key`, `agx_auto`, `spots`, `spots_enable`, `spot_source`, `look_apply`, `look_amount`, `ai_object`, `ai_mask`, `ai_depth`, `ai_denoise`, `ai_denoise_preview` |
-| The library, through the engine | `open_folder` (engine `import` in batches of 24), `thumb`, `prefetch`, `meta`, `meta_set`, `keywords`, `keywords_set`, `create_virtual_copy`, `remove_virtual_copy`, `trash_files`, `export_images`, `export_preview`, `fonts`, `ai_accel`, `about` |
-| Files only | `list_subfolders`, `path_exists`, `path_kind`, `export_existing`, `presets_load`, `presets_save`, `export_presets_load`, `export_presets_save`, `preset_file_read`, `preset_file_write`, `looks_list`, `sample_folder`, `launch_file` |
+| The library, through the engine | `open_folder` (engine `import` in batches), `thumb`, `prefetch`, `meta`, `meta_set`, `keywords`, `keywords_set`, `create_virtual_copy`, `remove_virtual_copy`, `hdr_merge`, `hdr_can_align`, `pano_merge`, `pano_can_merge`, `trash_files`, `export_images`, `export_cancel`, `export_preview`, `fonts`, `ai_accel`, `about` |
+| Files only | `list_subfolders`, `folder_volumes`, `path_exists`, `path_kind`, `export_existing`, `presets_load`, `presets_save`, `export_presets_load`, `export_presets_save`, `preset_file_read`, `preset_file_write`, `looks_list`, `sample_folder`, `launch_file` |
 | AI models (download, then the engine's `version`) | `ai_model_ensure`, `ai_model_reinstall` |
 | Immich (HTTP) | `immich_albums`, `immich_create_album`, `immich_export_check`, `immich_browse_check`, `immich_search`, `immich_libraries`, `immich_suggestions`, `immich_people`, `immich_tags`, `immich_thumb`, `immich_resolve` |
-| Plugins | `plugin_find_apps`, `plugin_launch`, `plugin_watch`, `plugin_cancel`, `plugin_returns`, `plugin_return_applied` |
+| Plugins | `plugin_find_apps`, `plugin_launch`, `plugin_watch`, `plugin_job`, `plugin_cancel`, `plugin_returns`, `plugin_return_applied` |
 | Performance | `perf_set`, `perf_modules`, `perf_report_write`, `perf_ping` |
-| The window | `preview_fullscreen` |
+| The window | `preview_fullscreen`, `display_scale` |
 
 Events from Rust: `folder-progress`, `export-progress`, `ai-model`,
 `launch-file`, `plugin-returned`, `plugin-watch-end`. The immporter plugin
@@ -260,6 +272,30 @@ rotate and perspective from the preview pipe (`_working_at`,
 `_STAGE_ASHIFT`). `points` maps points between the shown image and the
 input, for Guided's guides.
 
+[`engine/hdrmerge.c`](../../../engine/hdrmerge.c) is HDR Merge:
+darktable's HDR merge of raw brackets into a float DNG, which darktable
+runs only as a lighttable job on its selection
+(`src/control/jobs/control_jobs.c`). The merge is copied from there
+with only its messages changed, and calls darktable's own alignment
+(`src/common/hdr_alignment.cc`, with OpenCV); its header names the
+revision it was copied from. Compare the two
+when taking a new darktable release. `_hdr_merge` in main.c imports the
+DNG; a tagged one runs on the export thread (`_export_run`), as it reads
+each bracket through an export pipe.
+
+[`engine/pano.cc`](../../../engine/pano.cc) is Panorama Merge, which
+darktable doesn't have: OpenCV's stitching pipeline (`cv::detail`, as
+its `stitching_detailed.cpp` sample runs it), kept linear, with the
+blend log-encoded into the 15 bits OpenCV's blender takes. `_pano_frame`
+in main.c renders each raw through an export pipe with only the modules
+before `colorin` (`_pano_keep`) and its white balance divided out, so
+the panorama stays in the camera's color;
+[`engine/dng.c`](../../../engine/dng.c) writes it as a 16-bit float
+LinearRaw DNG with the first raw's matrix and white balance as shot,
+which darktable opens as a raw. `_pano_merge` imports it; a tagged one
+runs on the export thread. Both are built only when OpenCV's stitching
+module is found (`HAVE_PANO`, `engine/CMakeLists.txt`).
+
 Whether a photo is edited is darktable's own test, `dt_image_altered()`:
 the history hash against its basic and automatic baselines, which the
 sidecar carries. `open` replies `fresh` when the photo had no history
@@ -274,10 +310,12 @@ Immage or in darktable.
 | Session, open, close | `_open_image`, `_close_session`, `_import`, `_compress_history` |
 | Set and get params | `_set` (fields by introspection, `instance`, `mask`, `after`/`before` moves), `_get`, `_write_field`, `_named_instance` |
 | Render | `_render` (and the `render` command's `skip`; with `have`, a frame of no size naming the client's frame of the hash it would get), `_write_rgba`, `_ppipe_ready`, `_preview` |
-| Library | `_folder`, `_import_files`, `_thumb`, `_prefetch` (raws decoded ahead, a few at once, on a thread pool of its own), `_image_json`, `_meta_set`, `_keywords_set`, `_copy`, `_remove_copy`, `_sidecars` |
+| Library | `_folder`, `_import_files` (a tagged `import` on the import thread, `_import_run`), `_thumb` (a tagged `thumb` on the thumbnail threads, `_thumb_run`, routed there by `_read_requests`), `_prefetch` (raws decoded ahead, a few at once, on a thread pool of its own), `_image_json`, `_meta_set`, `_keywords_set`, `_copy`, `_remove_copy`, `_sidecars`, `_forget` (a deleted file's rows, so a new file at its path imports fresh) |
+| HDR Merge | `_hdr_merge` (hdrmerge.c's `hdr_merge`, on the export thread when tagged) |
+| Panorama Merge (`HAVE_PANO`) | `_pano_merge`, `_pano_frame` (pano.cc's `pano_stitch`, dng.c's `dng_write_linear_half`, on the export thread when tagged) |
 | Export | `_export` (darktable's export with flags, then `strip_metadata` in [strip.cc](../../../engine/strip.cc), with exiv2, for what the flags do not reach: serial numbers, camera info, the source's own text fields and keywords); `_frame_style` (borders and a watermark SVG as a temporary style; a fixed canvas as one last border, sized so the file comes out exactly W x H); the AI upscale proxy format (`_upscale_ctx`) |
 | Masks | `_mask` (shapes into a mask group, prefixed `immage: `), `_masks` (with `merged_in`), `_mask_delete`, `_mask_rename`, `_attach_mask`. The [mask anchor](masks.md#where-the-instances-run), `colorbalancergb`, is where every mask's instances run, so a range sampled at its output holds for all of them. `_combine`: a group of masks' groups summed, each at its opacity (prefixed `immage combined: `), with the members' ranges, driving a shared instance, which `_attach_mask` attaches only to a combined mask; `_combined_member_changed` keeps it current when a member is reshaped or deleted. `_prune_off` keeps a mask's own switched-off instances (`_holds_mask_settings`). `_named_instance` places a mask's own instance after the shared ones of its module |
-| AI (`HAVE_AI`) | `_ai_object` (SAM), `_ai_mask` (sky, subject, ...), `_ai_depth`, `_ai_denoise` (darktable's raw denoise into a DNG, repeating `src/libs/neural_restore.c`'s job on its public calls), `_ai_denoise_preview` (its 1:1 before and after, as the lib's raw preview makes them); on Linux, `_ort_exports` keeps darktable from probing a GPU provider the bundled ONNX Runtime lacks, and `main()` sets the provider to CPU when it has none |
+| AI (`HAVE_AI`) | `_ai_object` (SAM), `_ai_mask` (sky, subject, ...), `_ai_depth` (with a tag, the main loop renders the model's input unless its last result holds, `_ai_job`, and answers; the model runs on the AI thread, `_ai_run`, which answers again with the tag); outlines are traced at `_TRACE_SIZE` against the photo rendered at it (`_guide`, which the models' inputs are made from), moved onto its edges first by `_snap_edges`, a guided filter kept to where the model is unsure (`_trace_json`), `_ai_denoise` (darktable's raw denoise into a DNG, repeating `src/libs/neural_restore.c`'s job on its public calls; with a tag, the main loop snapshots the edit and answers, and the denoise runs on its own thread, `_denoise_run`, answering again with the tag), `_ai_denoise_preview` (its 1:1 before and after, as the lib's raw preview makes them); on Linux, `_ort_exports` keeps darktable from probing a GPU provider the bundled ONNX Runtime lacks, and `main()` sets the provider to CPU when it has none |
 | Spots | `_spots_set`, `_spots_json`, `_spot_source` (the retouch module) |
 | Ranges and zones | `_sample` (at the mask anchor, or with `stage` "negadoctor" at negadoctor's input), `_range_map`, `_zones`, `_mask_map`, `_tone_key`, `_agx_auto` |
 | Looks | `_look`, `_look_amount` (a darktable style, its instances scaled) |
@@ -288,7 +326,7 @@ The commands `_handle()` serves:
 | Group | Commands |
 |---|---|
 | Session | `open`, `history`, `module_state`, `save`, `baseline_end`, `before`, `close`, `quit`, `version`, `unpack`, `ai_accel`, `opencl`, `fonts` |
-| Library (no photo needed) | `folder`, `import`, `thumb`, `prefetch`, `meta`, `meta_set`, `keywords`, `keywords_set`, `copy`, `remove_copy`, `sidecars`, `export` |
+| Library (no photo needed) | `folder`, `import`, `thumb`, `prefetch`, `meta`, `meta_set`, `keywords`, `keywords_set`, `copy`, `remove_copy`, `sidecars`, `forget`, `export`, `export_hold`, `export_release`, `hdr_merge`, `pano_merge` |
 | Edit | `set`, `get`, `render`, `preview`, `look`, `look_amount` |
 | Masks and spots | `mask`, `combine`, `masks`, `mask_rename`, `mask_delete`, `mask_map`, `range_map`, `sample`, `spots`, `spots_enable`, `spot_source` |
 | Tone | `tone_key`, `agx_auto`, `zones` |
@@ -343,16 +381,17 @@ darktable is, and it has AI features when darktable is configured with
    1. A shape goes into the session's mask list, and `pump()` sends `mask_shapes` (the engine's `mask`: a darktable mask group).
    2. A local slider sets its `localMaps` module on an instance named for the mask (`set_params` with `instance` and `mask`), placed after the anchor.
    3. For a `merge` module, `planMerge` decides which masks share. Their own instances are sent switched off, holding their settings, and the shared ones follow: `combine` for each combined mask's members, then `set_params` on its instance (`immage local: <op> <k>`). Only what changed since the last plan is sent. A photo's first mask edit sends every mask again, which turns a photo from before sharing into one that shares; opening it or the Before view does not (`Session.edited`). During a drag, the mask being edited is lifted out of the combined masks onto its own instances (`Session.lifted`), and it joins again before the frame at release. Its own instances run after the shared ones (`_named_instance`), so a drag frame reruns only them and what follows, while the other masks' combined mask stays in darktable's drawn mask cache.
-   4. AI masks first ensure the model (`ai_model_ensure`, event `ai-model`), then `ai_mask` / `ai_object` return paths that become shapes. A model the engine cannot load is deleted and downloaded again once (`withModel`, `ai_model_reinstall`).
+   4. AI masks first ensure the model (`ai_model_ensure`, event `ai-model`), then `ai_mask` / `ai_object` return paths that become shapes. The model runs on the engine's AI thread, so editing goes on meanwhile; an outline that comes back after the photo was left is dropped (`runAi`). A model the engine cannot load is deleted and downloaded again once (`withModel`, `ai_model_reinstall`).
 5. **Save.**
    1. 600 ms after the last edit, `Session.scheduleSave` sends `save`. The engine writes history to the database, compresses it and writes the XMP sidecar beside the photo.
    2. `onSaved` refreshes the filmstrip thumbnail.
 6. **Export.**
-   1. `ExportDialog` calls `export_images`, one engine `export` per photo.
-   2. The frame and captions become a temporary darktable style (borders plus a watermark SVG), and AI upscale wraps the chosen format.
-   3. For Immich, Rust uploads each file and adds it to the album. Progress comes as `export-progress`.
+   1. `ExportDialog` asks what it needs, then `runExport` ([background.ts](../../src/background.ts)) calls `export_images` and the dialog closes.
+   2. Rust sends `export_hold`: the engine takes a snapshot of the open photo's edit (a darktable duplicate at a version from `_SNAPSHOT_VERSION` up, which listings leave out), and of each other photo as it is opened (`_hold_open`) or reached. Each photo is exported as it was edited when the export was asked for.
+   3. Each photo is a tagged `export` on the engine's export thread (`_export_run`), outside the engine mutex, so editing goes on. The frame and captions become a temporary darktable style (borders plus a watermark SVG), and AI upscale wraps the chosen format. `export_release` then drops what is left of the job's snapshots.
+   4. For Immich, Rust uploads each file and adds it to the album. Progress comes as `export-progress`, shown on the activity line with a Stop (`export_cancel`) and then a summary.
 7. **Import a folder.**
-   1. `openFolder` calls `open_folder`. Rust walks the folder, skipping packages and sidecars, and sends engine `import` in batches of 24, each reported as `folder-progress`.
+   1. `openFolder` calls `open_folder`. Rust walks the folder, skipping packages and sidecars, and sends engine `import` in batches sized to take about 150 ms, each reported as `folder-progress`. The batches are tagged and read on the engine's import thread (`_import_run`), so editing goes on meanwhile.
    2. A newer folder request cancels the older one through `folder_token`.
    3. Thumbnails follow from `ThumbLoader` (engine `thumb`) while the editor is idle.
 8. **Edit In.**
@@ -373,8 +412,9 @@ darktable is, and it has AI features when darktable is configured with
 | Develop presets | `presets.json` in the runtime folder | permanent |
 | Export presets | `export-presets.json` in the runtime folder; shared files from Import…/Export… | permanent |
 | Edit In results | `plugin-returns.json` in the runtime folder | permanent |
+| Macro Studio jobs | `plugin-jobs/` in the runtime folder: each job's manifest and receipt, and `pending.json` | until every stack is saved or closed, or 30 days |
 | Engine config, cache, log | `config/`, `cache/`, `engine.log` in the runtime folder (`build/app-runtime` in dev, the app data folder in a release) | permanent; the log restarts past 5 MB |
-| Frames, thumbnails, previews, maps | `frame.rgba`, `thumb.rgba`, `preview.rgba`, `range.bin` in the runtime folder | overwritten per request |
+| Frames, thumbnails, previews, maps | `frame.rgba`, `thumb-<tag>.rgba`, `preview.rgba`, `range.bin` in the runtime folder | overwritten per request; a thumbnail's deleted once read |
 | Frames handed to the page (Linux) | `/dev/shm/immage-frame-<token>-<id>` | until the page reads it; left over past a minute, deleted at the next start |
 | AI models | `build/ai-models` (dev) or `<app data>/models` | until deleted |
 | Immich thumbnails and originals | `cache/immich-thumbs`, `cache/immich-originals` | cache |
@@ -404,6 +444,7 @@ darktable is, and it has AI features when darktable is configured with
 | [bundle_engine.py](../../scripts/bundle_engine.py), [build_dmg.sh](../../scripts/build_dmg.sh) | The engine and its libraries copied into `src-tauri/resources/darktable` (gitignored) and made relocatable; the macOS disk image. |
 | [build_engine_windows.sh](../../scripts/build_engine_windows.sh), [bundle_engine_windows.sh](../../scripts/bundle_engine_windows.sh), [WINDOWS.md](../../WINDOWS.md) | The Windows (MSYS2 UCRT64) build. |
 | [prune_target.mjs](../../scripts/prune_target.mjs) | Frees `src-tauri/target` of earlier builds, which cargo never removes: keeps what the last two builds of each profile use, as cargo lists it. npm runs it before and after every `npm run tauri ...`. |
+| [build_opencv.sh](../../scripts/build_opencv.sh) | OpenCV for HDR Merge's alignment and Panorama Merge: the five modules darktable links and stitching, which the engine links, static, into `build/opencv/install`, which `scripts/build.sh` and `build_engine_windows.sh` hand darktable as `OpenCV_ROOT`. |
 | [fetch_immporter.sh](../../scripts/fetch_immporter.sh), [immporter.rev](../../immporter.rev) | The importer, cloned into the gitignored `immporter/` at a pinned commit. |
 | [app/docs/](../README.md) | The user guide, for photographers. |
 | [benchmarking/README.md](../../../benchmarking/README.md) | Performance suite, results and findings. |

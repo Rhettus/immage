@@ -82,6 +82,16 @@ export type Refine = { feather: number; blur: number; detail: number; contrast: 
 export const NO_REFINE: Refine = { feather: 0, blur: 0, detail: 0, contrast: 0 };
 export const isRefined = (m: Mask) => !!m.refine && Object.values(m.refine).some((v) => v !== 0);
 
+// what a new mask from an AI selection starts with. Sky and the Landscape
+// kinds start at Edge Aware 20: their outline follows the treeline (the
+// engine's _snap_edges), but only the feathering takes in the sky between
+// branches, and at 20 it reaches no farther edge to halo. Edge Aware's
+// slider is feather / 2.5 (MasksPanel.tsx, REFINES)
+const EDGE_AWARE_KINDS = new Set(["sky", "water", "vegetation", "mountains", "ground", "architecture",
+                                  "artificial_ground"]);
+export const aiRefine = (kind: string): Refine | null =>
+  EDGE_AWARE_KINDS.has(kind) ? { ...NO_REFINE, feather: 20 * 2.5 } : null;
+
 // opacity 0-100, how strongly the adjustments apply; missing is 100.
 // a hidden mask keeps its settings with its adjustments off
 export type Mask = { name: string; shapes: Shape[]; invert: boolean; opacity?: number; hidden?: boolean;
@@ -127,70 +137,99 @@ export type RangeMap = { width: number; height: number; data: Uint8Array; at?: R
 
 const smooth = (t: number) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
 
-// how strongly a shape covers the point (u, v) of a W x H image (u, v in
-// 0-1); lengths are measured in pixels so circles stay round
-// an object's outline filled, small, by the canvas: its Bézier paths as
+// darktable's feather for an object drawn without one (main.c,
+// _OBJECT_FEATHER): a share of the image's shorter side
+const OBJECT_FEATHER = 0.003;
+
+// an object's coverage of a grid, drawn at the grid's own size, so a zoomed
+// overlay's edge is as smooth as a fitted one's: its Bézier paths as
 // darktable draws them (a segment runs from a corner by its ctrl2 and the
-// next corner's ctrl1), holes left out by the even-odd rule
+// next corner's ctrl1), filled by the even-odd rule, which leaves holes
+// out, with each pixel's share of the fill. darktable's feather (path.c)
+// then falls linearly from the outline to nothing at its width, outward
+function objectCover(s: ObjectShape, g: Grid): Uint8Array {
+  const { w, h, at: [x0, y0, x1, y1], W, H } = g;
+  const gx = (u: number) => ((u - x0) / (x1 - x0)) * w, gy = (v: number) => ((v - y0) / (y1 - y0)) * h;
+  // the outline as straight edges, in grid pixels
+  const edges: number[] = [];
+  for (const p of s.paths) {
+    const pts = p.points;
+    if (pts.length < 2) continue;
+    for (let k = 0; k < pts.length; k++) {
+      const a = pts[k], b = pts[(k + 1) % pts.length];
+      const P = [gx(a[0]), gy(a[1]), gx(a[4]), gy(a[5]), gx(b[2]), gy(b[3]), gx(b[0]), gy(b[1])];
+      const n = Math.min(32, Math.max(1, Math.ceil((Math.hypot(P[2] - P[0], P[3] - P[1]) + Math.hypot(P[4] - P[2], P[5] - P[3])
+                                                   + Math.hypot(P[6] - P[4], P[7] - P[5])) / 2)));
+      let px = P[0], py = P[1];
+      for (let i = 1; i <= n; i++) {
+        const t = i / n, m = 1 - t;
+        const c0 = m * m * m, c1 = 3 * m * m * t, c2 = 3 * m * t * t, c3 = t * t * t;
+        const qx = c0 * P[0] + c1 * P[2] + c2 * P[4] + c3 * P[6], qy = c0 * P[1] + c1 * P[3] + c2 * P[5] + c3 * P[7];
+        edges.push(px, py, qx, qy);
+        px = qx; py = qy;
+      }
+    }
+  }
+  const acc = new Float32Array(w * h);
+  // four scanlines a row; across each, a span's ends counted by the share
+  // of the pixel they cover
+  const S = 4, xs: number[] = [];
+  for (let j = 0; j < h; j++)
+    for (let k = 0; k < S; k++) {
+      const y = j + (k + 0.5) / S;
+      xs.length = 0;
+      for (let e = 0; e < edges.length; e += 4) {
+        const ay = edges[e + 1], by = edges[e + 3];
+        if ((ay > y) !== (by > y)) xs.push(edges[e] + ((y - ay) / (by - ay)) * (edges[e + 2] - edges[e]));
+      }
+      xs.sort((a, b) => a - b);
+      for (let q = 0; q + 1 < xs.length; q += 2) {
+        const a = Math.max(0, xs[q]), b = Math.min(w, xs[q + 1]);
+        if (b <= a) continue;
+        const ia = Math.floor(a), ib = Math.min(w - 1, Math.floor(b));
+        if (ia === ib) { acc[j * w + ia] += (b - a) / S; continue; }
+        acc[j * w + ia] += (ia + 1 - a) / S;
+        for (let i = ia + 1; i < ib; i++) acc[j * w + i] += 1 / S;
+        acc[j * w + ib] += (b - ib) / S;
+      }
+    }
+  const border = (s.feather ?? OBJECT_FEATHER) * Math.min(W, H) * (w / ((x1 - x0) * W));
+  if (border > 0.25) {
+    // each pixel's distance to the outline, where under the feather's width
+    const dist = new Float32Array(w * h).fill(border);
+    for (let e = 0; e < edges.length; e += 4) {
+      const ax = edges[e], ay = edges[e + 1], lx = edges[e + 2] - ax, ly = edges[e + 3] - ay, len2 = lx * lx + ly * ly;
+      const i0 = Math.max(0, Math.floor(Math.min(ax, ax + lx) - border)), i1 = Math.min(w - 1, Math.ceil(Math.max(ax, ax + lx) + border));
+      const j0 = Math.max(0, Math.floor(Math.min(ay, ay + ly) - border)), j1 = Math.min(h - 1, Math.ceil(Math.max(ay, ay + ly) + border));
+      for (let j = j0; j <= j1; j++)
+        for (let i = i0; i <= i1; i++) {
+          const x = i + 0.5 - ax, y = j + 0.5 - ay;
+          const t = len2 ? Math.min(1, Math.max(0, (x * lx + y * ly) / len2)) : 0;
+          const d = Math.hypot(x - t * lx, y - t * ly);
+          if (d < dist[j * w + i]) dist[j * w + i] = d;
+        }
+    }
+    for (let n = 0; n < w * h; n++) acc[n] = Math.max(acc[n], 1 - dist[n] / border);
+  }
+  const cov = new Uint8Array(w * h);
+  for (let n = 0; n < w * h; n++) cov[n] = Math.round(255 * Math.min(1, acc[n]));
+  return cov;
+}
+
+// an object's coverage of the whole image, small, for maskAt()
 const OBJECT_RASTER = 512;
-const objectRasters = new WeakMap<ObjectShape, { w: number; h: number; a: Uint8ClampedArray }>();
+const objectRasters = new WeakMap<ObjectShape, { w: number; h: number; a: Uint8Array }>();
 function objectRaster(s: ObjectShape, W: number, H: number) {
   const hit = objectRasters.get(s);
   if (hit) return hit;
   const w = OBJECT_RASTER, h = Math.max(1, Math.round((OBJECT_RASTER * H) / W));
-  const c = new OffscreenCanvas(w, h), ctx = c.getContext("2d")!;
-  const path = new Path2D();
-  for (const p of s.paths) {
-    const pts = p.points;
-    if (pts.length < 2) continue;
-    path.moveTo(pts[0][0] * w, pts[0][1] * h);
-    for (let k = 0; k < pts.length; k++) {
-      const a = pts[k], b = pts[(k + 1) % pts.length];
-      path.bezierCurveTo(a[4] * w, a[5] * h, b[2] * w, b[3] * h, b[0] * w, b[1] * h);
-    }
-    path.closePath();
-  }
-  ctx.fillStyle = "#fff";
-  ctx.fill(path, "evenodd");
-  // darktable feathers a path outward from its outline, by `feather` of
-  // the image's shorter side: the outline widened by half that and
-  // blurred by the other half comes close
-  const border = (s.feather ?? 0) * Math.min(w, h);
-  if (border >= 1) {
-    ctx.strokeStyle = "#fff";
-    ctx.lineWidth = border;
-    ctx.stroke(path);
-  }
-  const data = ctx.getImageData(0, 0, w, h).data;
-  const a = new Uint8ClampedArray(w * h);
-  for (let k = 0; k < w * h; k++) a[k] = data[4 * k + 3];
-  if (border >= 2) boxBlur(a, w, h, Math.round(border / 4));
-  const r = { w, h, a };
+  const r = { w, h, a: objectCover(s, gridOf(w, h, [0, 0, 1, 1], W, H)) };
   objectRasters.set(s, r);
   return r;
 }
 
-// two box blurs of radius r, across then down each time: near enough a
-// Gaussian for a soft edge
-function boxBlur(a: Uint8ClampedArray, w: number, h: number, r: number) {
-  const tmp = new Float32Array(Math.max(w, h));
-  const pass = (n: number, len: number, at: (i: number, k: number) => number) => {
-    for (let i = 0; i < n; i++) {
-      let sum = 0;
-      for (let k = -r; k <= r; k++) sum += a[at(i, Math.min(len - 1, Math.max(0, k)))];
-      for (let k = 0; k < len; k++) {
-        tmp[k] = sum / (2 * r + 1);
-        sum += a[at(i, Math.min(len - 1, k + r + 1))] - a[at(i, Math.max(0, k - r))];
-      }
-      for (let k = 0; k < len; k++) a[at(i, k)] = tmp[k];
-    }
-  };
-  for (let t = 0; t < 2; t++) {
-    pass(h, w, (j, i) => j * w + i);
-    pass(w, h, (i, j) => j * w + i);
-  }
-}
-
+// how strongly a shape covers the point (u, v) of a W x H image (u, v in
+// 0-1); lengths are measured in pixels so circles stay round
 function coverage(s: Exclude<Shape, Range>, u: number, v: number, W: number, H: number): number {
   if (s.type === "object") {
     const r = objectRaster(s, W, H);
@@ -336,6 +375,7 @@ function cover(s: Exclude<Shape, Range>, g: Grid): Uint8Array {
   if (hit) return hit;
   let cov: Uint8Array;
   if (s.type === "brush") cov = brushCover(s, g);
+  else if (s.type === "object") cov = objectCover(s, g);
   else {
     const { w, h, at: [x0, y0, x1, y1], W, H } = g;
     cov = new Uint8Array(w * h);

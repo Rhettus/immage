@@ -54,6 +54,17 @@ export function meanChroma(f) {
   return s / (p.length / 4);
 }
 
+// how far each pixel's chroma moves from frame a to frame b, on average:
+// a change that takes color from some pixels and adds it to others, which
+// the mean chroma can hide, counts in full
+export function chromaChange(a, b) {
+  const p = a.pixels, q = b.pixels;
+  const c = (x, i) => Math.max(x[i], x[i + 1], x[i + 2]) - Math.min(x[i], x[i + 1], x[i + 2]);
+  let s = 0;
+  for (let i = 0; i < p.length; i += 4) s += Math.abs(c(q, i) - c(p, i));
+  return s / (p.length / 4);
+}
+
 // inside an ellipse of shown-image units: radii as fractions of the width,
 // as masks.ts keeps them; `aspect` is the frame's width over its height
 export const inEllipse = (cx, cy, r) => (x, y, aspect) =>

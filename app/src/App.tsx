@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ask, open, save } from "@tauri-apps/plugin-dialog";
@@ -33,6 +33,7 @@ import { VignetteOverlay } from "./VignetteOverlay";
 import { GuideOverlay } from "./GuideOverlay";
 import { autoMix } from "./bwauto";
 import { begin, end, track, useWorking } from "./activity";
+import { dismissJob, runInBackground, runMerge, stopJob, useJobs, type Job } from "./background";
 import { withModel } from "./aiModel";
 import { bandWeights, invert, lightness, pixelAt, polyline, setProbe, useProbe, type Probe, type RGB } from "./probe";
 import { anchored, neutralize, whitePatch, WB_PRESETS, type WB } from "./wb";
@@ -42,6 +43,8 @@ import { channelCurve, curve as paramCurve, isIdentity, monotone } from "./tonec
 import { ExportDialog, FILE_MANAGER } from "./ExportDialog";
 import { CopyDialog, loadCopyGroups, makeClip, type Clip } from "./CopySettings";
 import { DenoiseDialog } from "./DenoiseDialog";
+import { HdrDialog } from "./HdrDialog";
+import { PanoDialog, type Projection } from "./PanoDialog";
 import { Tour, tourSeen } from "./Tour";
 import { UpdateBanner } from "./UpdateBanner";
 import { autoCheck, relaunch } from "./updates";
@@ -53,7 +56,7 @@ import { loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEdi
          loadNegWarn, loadReadAhead, loadThumbMemoryMb, storeNegWarn, type Pins, type PrefsTab, type Preview } from "./Preferences";
 import { kindOf, loadPlugins, loadReturns, returnValues, storePlugins, unfit, type PluginConfig,
          type PluginReturn } from "./plugins";
-import { FolderTree } from "./FolderTree";
+import { FolderTree, type Volume } from "./FolderTree";
 import { baseName, parentDir, within } from "./paths";
 import { ImportView } from "./ImportView";
 import type { ImportResult } from "@immporter/embed";
@@ -67,7 +70,7 @@ import { DEFAULT_TRANSITION, loadZoneOverlay, offsetsOf, overlayRgb, paintRange,
          type ZoneData, type ZoneOverlay, type ZonePart, type ZoneRange } from "./zones";
 import { SpotOverlay, type SpotTool } from "./SpotOverlay";
 import type { NewSpot, Spot } from "./spots";
-import { flipMode, isRange, isRefined, maskAt, maskKindName, nextMaskName, NO_REFINE, overlayShown, overlayStep, rangeChannels,
+import { aiRefine, flipMode, isRange, isRefined, maskAt, maskKindName, nextMaskName, NO_REFINE, overlayShown, overlayStep, rangeChannels,
          type BlendifChannel, type ChannelRange, type Mask, type ObjectShape, type OverlayToggle, type ParametricRange, type Range,
          type RangeMap, type Refine, type Region, type Shape } from "./masks";
 import { channelTint, type Picked } from "./ParametricEditor";
@@ -79,6 +82,7 @@ import { ShortcutsDialog } from "./Shortcuts";
 import { cmd, keys } from "./keys";
 import { perf, percentiles, pingOnce, roundTrips, STAGES, webviewInfo } from "./perf";
 import { frameTransport } from "./sharedFrames";
+import { draftScale } from "./pixelRatio";
 import { PerfHud } from "./PerfHud";
 import { KeywordingPanel } from "./Keywording";
 import { ImmichPanel } from "./ImmichPanel";
@@ -159,8 +163,29 @@ export default function App() {
     setExpanded(next);
     saveLibrary({ expanded: [...next] });
   };
+  // the drive each folder is on, for the tree's headings; kept between
+  // launches, so a folder on a share not mounted stays under its share
+  const [volumes, setVolumes] = useState<Map<string, Volume>>(
+    () => new Map(Object.entries(loadLibrary().volumes ?? {}).map(([p, v]) => [p, { ...v, online: true }])));
+  const volumesRef = useRef(volumes);
+  volumesRef.current = volumes;
+  const [foldedVolumes, setFoldedVolumes] = useState<Set<string>>(() => new Set(loadLibrary().foldedVolumes));
+  const [hostNames, setHostNames] = useState<Record<string, string>>(() => loadLibrary().hostNames ?? {});
+  useEffect(() => {
+    let stale = false;
+    void invoke<Volume[]>("folder_volumes", { paths: folders }).then((list) => {
+      if (stale) return;
+      const next = new Map<string, Volume>();
+      for (const v of list) {
+        const seen = volumesRef.current.get(v.path);
+        next.set(v.path, !v.online && seen ? { ...seen, online: false } : v);
+      }
+      setVolumes(next);
+      saveLibrary({ volumes: Object.fromEntries(next) });
+    });
+    return () => { stale = true; };
+  }, [folders, folderRefresh]);
   const [images, setImages] = useState<ImageEntry[]>([]);
-  const [, setThumbVersion] = useState(0);
   // the key handler and the loader outlive renders, so they read these refs
   const imagesRef = useRef<ImageEntry[]>([]);
   const currentRef = useRef<Opened | null>(null);
@@ -168,19 +193,9 @@ export default function App() {
   // copies share its path; until the engine has said, the file's original
   const isOpen = (i: ImageEntry, o = currentRef.current) =>
     !!o && (o.imgid !== null ? i.imgid === o.imgid : i.path === o.path && !i.copy);
-  const thumbFrame = useRef(0);
   const loader = useRef<ThumbLoader | null>(null);
   if (!loader.current)
-    loader.current = new ThumbLoader(() => session.current?.idle ?? true,
-                                     (imgid) => imagesRef.current.find((i) => i.imgid === imgid),
-                                     // thumbnails landing together redraw the window once per frame, not once each
-                                     () => {
-                                       if (thumbFrame.current) return;
-                                       thumbFrame.current = requestAnimationFrame(() => {
-                                         thumbFrame.current = 0;
-                                         setThumbVersion((v) => v + 1);
-                                       });
-                                     },
+    loader.current = new ThumbLoader((imgid) => imagesRef.current.find((i) => i.imgid === imgid),
                                      () => loadThumbMemoryMb() * 1024 * 1024,
                                      // the server's refusal is said once, not hidden behind placeholders
                                      (imgid, e) => {
@@ -705,10 +720,13 @@ export default function App() {
   const [aiBusy, setAiBusy] = useState(false);
   // an AI selection: its model installed first (downloaded on first use,
   // with the Rust side reporting progress), then run, then the outline
-  // added as an object shape
+  // added as an object shape. the engine runs the model beside editing,
+  // so the photo may have been left by the time it answers: the outline
+  // is then dropped
   const runAi = async (model: string, working: string, run: () => Promise<ObjectShape["paths"]>,
                        done: (paths: ObjectShape["paths"]) => void) => {
-    if (!session.current || aiBusy) return;
+    const s = session.current;
+    if (!s || aiBusy) return;
     setAiBusy(true);
     const stop = await listen<{ stage: string; mb?: number }>("ai-model", (e) => {
       const p = e.payload;
@@ -717,10 +735,11 @@ export default function App() {
     });
     try {
       const paths = await withModel(model, () => { setStatus(working); return run(); });
-      if (!paths.length) setStatus("nothing found");
+      if (session.current !== s) setStatus("");
+      else if (!paths.length) setStatus("nothing found");
       else { done(paths); setStatus(""); }
     } catch (e) {
-      setStatus(`AI mask: ${e}`);
+      setStatus(session.current === s ? `AI mask: ${e}` : "");
     } finally {
       stop();
       setAiBusy(false);
@@ -733,10 +752,18 @@ export default function App() {
     return () => end(job);
   }, [aiBusy]);
   const working = useWorking();
+  const backgroundJobs = useJobs();
   // AI Denoise: darktable's raw denoise writes a DNG beside the raw with its
-  // edit (the engine's ai_denoise), shown after it in the folder as an Edit
-  // In result, and opened with noise reduction off, as the model did that
+  // edit as it was asked for (the engine's ai_denoise), shown after it in
+  // the folder as an Edit In result. it runs in the background, one at a
+  // time, and the DNG first opens with noise reduction off, as the model
+  // did that (openFile)
   const [denoising, setDenoising] = useState(false);
+  const [denoiseRunning, setDenoiseRunning] = useState(false);
+  // the brackets Merge to HDR's dialog is asking about
+  const [hdrMerging, setHdrMerging] = useState<ImageEntry[] | null>(null);
+  // the photos Panorama Merge's dialog is asking about
+  const [panoMerging, setPanoMerging] = useState<ImageEntry[] | null>(null);
   // its model, downloaded on first use, for the dialog's preview
   const denoiseModel = async () => {
     const stop = await listen<{ stage: string; mb?: number }>("ai-model", (e) => {
@@ -758,37 +785,76 @@ export default function App() {
     return { u: clamp01((p.x + p.width / 2) / (p.fullWidth * p.scale)),
              v: clamp01((p.y + p.height / 2) / (p.fullHeight * p.scale)) };
   };
-  const runDenoise = async (amount: number) => {
-    if (!session.current || aiBusy) return;
-    setAiBusy(true);
-    const working = "AI Denoise: writing a denoised DNG, up to a minute…";
-    const stop = await listen<{ stage: string; mb?: number }>("ai-model", (e) => {
-      const p = e.payload;
-      setStatus(p.stage === "downloading" ? `downloading the AI model (${p.mb ?? "?"} MB), first use only…`
-              : p.stage === "installing" ? "installing the AI model…" : working);
-    });
-    try {
-      const r = await withModel("rawdenoise-nind", () => {
-        setStatus(working);
-        return invoke<{ path: string; original: string; image: { imgid: number } }>(
-          "ai_denoise", { strength: amount / 100 });
-      });
-      returns.current.set(r.path, { original: r.original, result: r.path, plugin: "ai-denoise", applied: true });
-      if (folderRef.current && !immichRef.current) await showFolder(folderRef.current, true);
-      await openFile(r.path, r.image.imgid);
-      if (currentRef.current?.path === r.path) {
-        changeMany([["nr_luminance", 0], ["nr_color", 0]], "AI Denoise: noise reduction off");
-        setStatus(`AI Denoise: opened ${baseName(r.path)}`);
-      }
-    } catch (e) {
-      setStatus(`AI Denoise: ${e}`);
-    } finally {
-      stop();
-      setAiBusy(false);
-    }
+  // a background job's result, opened from the activity line as a double
+  // click in the grid opens a photo: out of the grid and Compare, which
+  // would otherwise cover it
+  const openResult = (path: string, imgid: number) => {
+    setCompare(null);
+    void openFile(path, imgid);
+    setGrid(false);
   };
+  const runDenoise = (amount: number) => {
+    const from = currentRef.current?.path;
+    if (!session.current || !from || denoiseRunning) return;
+    setDenoiseRunning(true);
+    void runInBackground(`AI Denoise: ${baseName(from)}`, async () => {
+      const stop = await listen<{ stage: string; mb?: number }>("ai-model", (e) => {
+        const p = e.payload;
+        setStatus(p.stage === "downloading" ? `downloading the AI model (${p.mb ?? "?"} MB), first use only…`
+                : p.stage === "installing" ? "installing the AI model…" : "");
+      });
+      try {
+        return await withModel("rawdenoise-nind", () => invoke<{ path: string; original: string; image: { imgid: number } }>(
+          "ai_denoise", { strength: amount / 100 }));
+      } finally {
+        stop();
+      }
+    }, (r) => {
+      returns.current.set(r.path, { original: r.original, result: r.path, plugin: "ai-denoise", applied: false });
+      // in the folder after the raw, if that is still the one shown
+      if (folderRef.current && !immichRef.current && parentDir(r.path) === folderRef.current)
+        void showFolder(folderRef.current, true);
+      return { text: `AI Denoise: wrote ${baseName(r.path)}`, ok: true,
+               action: { label: "Open", run: () => openResult(r.path, r.image.imgid) } };
+    }, "AI Denoise").finally(() => setDenoiseRunning(false));
+  };
+  // Lightroom's Photo Merge › HDR on darktable's HDR merge: a float DNG
+  // beside the first bracket, listed in the folder after it, opened from
+  // the activity line. the engine merges on its export thread
+  const runHdrMerge = (list: ImageEntry[], align: boolean) => {
+    const first = list[0];
+    void runMerge<{ path: string; image: ImageEntry }>("HDR Merge", list.length, "hdr_merge",
+      { imgids: list.map((i) => i.imgid), align },
+    (r) => {
+      if (folderRef.current && !immichRef.current && parentDir(r.path) === folderRef.current)
+        void showFolder(folderRef.current, true);
+      return { text: `HDR Merge: wrote ${baseName(r.path)}`, ok: true,
+               action: { label: "Open", run: () => openResult(r.path, r.image.imgid) } };
+    }, `HDR Merge of ${first?.filename ?? "the photos"}`);
+  };
+  // Lightroom's Photo Merge › Panorama, stitched by the engine with OpenCV:
+  // a DNG beside the first raw, listed in the folder after it as an Edit In
+  // result, opened from the activity line. the engine stitches on its
+  // export thread
+  const runPanoMerge = (list: ImageEntry[], projection: Projection, crop: boolean) => {
+    const first = list[0];
+    void runMerge<{ path: string; original: string; image: ImageEntry; used: number; frames: number }>(
+      "Panorama Merge", list.length, "pano_merge", { imgids: list.map((i) => i.imgid), projection, crop },
+    (r) => {
+      returns.current.set(r.path, { original: r.original, result: r.path, plugin: "panorama", applied: false });
+      if (folderRef.current && !immichRef.current && parentDir(r.path) === folderRef.current)
+        void showFolder(folderRef.current, true);
+      const left = r.frames - r.used;
+      return { text: `Panorama Merge: wrote ${baseName(r.path)}${left ? `, without ${left} photo${left > 1 ? "s" : ""} that overlapped no other` : ""}`,
+               ok: true, action: { label: "Open", run: () => openResult(r.path, r.image.imgid) } };
+    }, `Panorama Merge of ${first?.filename ?? "the photos"}`);
+  };
+  // an outline the mask adds is traced inside its edge, so its feather ends
+  // there; one it takes away, or inverts (Background), on its edge, its
+  // feather already on the selected side (main.c, _trace_json)
   const selectObject = (prompt: ObjectPrompt) => runAi("mask-object-sam21-small", "finding the object…",
-    () => invoke<ObjectShape["paths"]>("ai_object", { points: prompt.points ?? [], box: prompt.box ?? null }),
+    () => invoke<ObjectShape["paths"]>("ai_object", { points: prompt.points ?? [], box: prompt.box ?? null,
+                                                      inset: toolTarget !== "subtract" }),
     (paths) => aiShown(createShape({ type: "object", paths })));
   // the one-click selections: Subject, Background, which is the subject's
   // outline in a new mask, inverted, and People and the parts of a
@@ -810,10 +876,13 @@ export default function App() {
   const selectAi = (k: AiKind, target: ToolTarget) => {
     const a = AI_KINDS[k];
     return runAi(a.model, a.working,
-      () => invoke<ObjectShape["paths"]>("ai_mask", { kind: a.kind }),
+      () => invoke<ObjectShape["paths"]>("ai_mask", { kind: a.kind, inset: k !== "background" && target !== "subtract" }),
       (paths) => {
+        const had = new Set(session.current?.masks.map((m) => m.name));
         const name = createShape({ type: "object", paths }, k === "background" ? "new" : target, a.label);
         if (k === "background" && name) session.current?.setInvert(name, true);
+        const refine = aiRefine(k);
+        if (name && !had.has(name) && refine) session.current?.setRefine(name, refine);
         syncMasks();
         aiShown(name);
       });
@@ -1179,6 +1248,8 @@ export default function App() {
   // whole image, too coarse for the part shown
   const wantsFinal = (m: Mask) => isRefined(m) || (!!shownView && !shownView.fit && m.shapes.some(isRange));
   const [finalMap, setFinalMap] = useState<{ name: string; map: RangeMap; session: Session } | null>(null);
+  // the mask whose map the engine could not make, which its shapes show instead
+  const [finalMissing, setFinalMissing] = useState<string | null>(null);
   const finalWant = useRef(0);
   const finalBusy = useRef(false);
   const finalTarget = useRef("");
@@ -1212,11 +1283,13 @@ export default function App() {
             const fw = v.scale * f.w, fh = v.scale * f.h;
             const at: Region = [v.x / fw, v.y / fh, (v.x + width) / fw, (v.y + height) / fh];
             setFinalMap({ name, map: { width, height, data: new Uint8Array(buf, 8), at }, session: s });
+            setFinalMissing(null);
             // keep showing it a moment once it is in
             if (refiningRef.current) refined();
           } catch {
             // a mask with no adjustment yet drives nothing: the shapes' overlay serves
             setFinalMap(null);
+            setFinalMissing(name);
           } finally {
             if (stopped) resumeBase();
           }
@@ -1549,8 +1622,13 @@ export default function App() {
   };
   // while a control is dragged, half the size each way (a quarter under
   // Performance): a quarter of the pixels for darktable's modules after the
-  // one that changed, which is most of a frame's time
-  const currentView = useCallback((): View => viewAt(dragging.current ? DRAFT[loadPreview()] : 1), []);
+  // one that changed, which is most of a frame's time. on a screen drawn
+  // larger than it shows (Wayland at 125%), smaller again by as much
+  const draftK = () => {
+    const k = DRAFT[loadPreview()];
+    return k < 1 ? k * draftScale() : 1;
+  };
+  const currentView = useCallback((): View => viewAt(dragging.current ? draftK() : 1), []);
 
   const follow = (layer: HTMLCanvasElement, clip: HTMLCanvasElement | null) => {
     if (!clip) return;
@@ -2349,6 +2427,9 @@ export default function App() {
       loader.current!.clear();
       // a new folder starts unfiltered: one left on Rejected only looked empty
       setFilter(NO_FILTER);
+      // the last folder's photos go at once: listing a folder on a network
+      // share can take seconds before its first batch
+      updateImages([]);
     }
     let got: ImageEntry[] = [];
     let files: string[] = [];
@@ -2357,11 +2438,7 @@ export default function App() {
       const list = await openFolder(dir, includeSubRef.current, [...hiddenRef.current], (batch, done, total, all) => {
         // an Immich search took the filmstrip while this was read
         if (immichRef.current) return;
-        if (all) {
-          files = all;
-          // the last folder's photos give way to the new one's cells at once
-          if (!again) updateImages([]);
-        }
+        if (all) files = all;
         got = byCaptureTime([...got, ...batch]);
         if (!again && batch.length) updateImages(got);
         loader.current!.request(batch.map((i) => i.imgid));
@@ -2793,6 +2870,18 @@ export default function App() {
         }
       }
       const token = Date.now();
+      if (kind.handoff === "macrostudio") {
+        // a TIFF names its photo, so the stack is named and placed from it
+        const tiffs = send !== originals;
+        await invoke("plugin_job", { job: {
+          token, plugin: cfg.id, app_path: cfg.app, mode: tiffs ? "rendered" : "original-raw",
+          files: send.map((path, i) => ({ path, origin_path: tiffs ? originals[i] : null })),
+          look: cfg.look || null,
+        } });
+        setWaiting((w) => [...w, { token, name: cfg.name, back: 0, total: 1, opened: false }]);
+        setStatus(`sent ${send.length} photos to ${cfg.name}`);
+        return;
+      }
       await invoke("plugin_watch", { watch: {
         token, plugin: cfg.id, sources: originals, exts: kind.returns.exts, match: kind.returns.match,
         subfolders: kind.returns.subfolders, outputDir: cfg.outputDir || null, ignore: send.filter((p) => !originals.includes(p)),
@@ -2829,11 +2918,21 @@ export default function App() {
   useEffect(() => {
     const offs = [
       listen<PluginReturn & { token: number }>("plugin-returned", (e) => pluginReturned.current(e.payload)),
-      listen<{ token: number; reason: string }>("plugin-watch-end", (e) => {
+      listen<{ token: number; reason: string; message?: string }>("plugin-watch-end", (e) => {
         const w = waitingRef.current.find((x) => x.token === e.payload.token);
         setWaiting((all) => all.filter((x) => x.token !== e.payload.token));
-        if (w && e.payload.reason === "timeout")
+        if (!w) return;
+        const { reason, message } = e.payload;
+        // Macro Studio's job (plugins.rs, plugin_job): a stack saved after
+        // the wait ends still comes back, the next time its folder is read
+        const later = "a stack saved there later still comes back";
+        if (reason === "timeout")
           setStatus(`${w.name}: stopped waiting after 3 hours; ${w.back} of ${w.total} came back`);
+        else if (reason === "startup") setStatus(`${w.name} did not start, or never took the photos`);
+        else if (reason === "stalled") setStatus(`${w.name} stopped responding; ${later}`);
+        else if (reason === "stopped") setStatus(`${w.name}: ${message || "stopped"}`);
+        else if (reason === "error" || reason === "protocol") setStatus(`${w.name}: ${message || "failed"}`);
+        else if (reason === "done" && !w.back) setStatus(`${w.name}: nothing was saved`);
       }),
     ];
     return () => { for (const off of offs) void off.then((f) => f()); };
@@ -2949,7 +3048,7 @@ export default function App() {
       s.thumbSize = baseSize;
       s.previewMode = loadPreview;
       s.frameBudget = () => loadFrameCacheMb() * 1048576;
-      s.draftSize = () => (loadPreview() === "quality" ? null : viewAt(DRAFT[loadPreview()]));
+      s.draftSize = () => (loadPreview() === "quality" ? null : viewAt(draftK()));
       s.warmDrafts();
       // a saved edit makes the filmstrip's thumbnail stale; undone back to
       // where it started, the photo reads unedited again
@@ -2994,13 +3093,24 @@ export default function App() {
       // the History panel's stack: darktable's, then what Immage starts a
       // new photo with. AgX in place of darktable's sigmoid
       const base: HistoryItem[] = [...s.history];
+      // a file back from Edit In, AI Denoise or Panorama Merge
+      const back = returns.current.get(path);
+      // a panorama's DNG takes a raw's defaults, as its frames would: to
+      // darktable it is a demosaiced raw (sraw), which the engine does not
+      // call raw, as it has no mosaic for capture sharpening or hot pixels
+      const pano = back?.plugin === "panorama" && !back.applied && !s.wasEdited;
+      // and so does a stack Macro Studio made from raws
+      const backCfg = back && plugins.find((p) => p.id === back.plugin);
+      const stacked = !!back && !back.applied && !s.wasEdited && /\.dng$/i.test(path)
+        && !!kindOf(back.plugin.split(":")[0])?.linearDng && backCfg?.send !== "tiff";
+      const raw = s.raw || pano || stacked;
       if (!s.wasEdited && s.values.tm_mode !== 1) {
         s.setMany([["tm_mode", 1]]);
         base.push({ op: "tonemapper", name: "agx", label: "tone mapper", enabled: true });
       }
       // and a raw with the profile chosen in Preferences
       const profile = loadNewPhotosProfile();
-      if (!s.wasEdited && s.raw && profile !== 0 && s.values.profile !== profile) {
+      if (!s.wasEdited && raw && profile !== 0 && s.values.profile !== profile) {
         s.setMany([["profile", profile]]);
         base.push({ op: "profile", name: profileLabel(profile).toLowerCase(),
                     label: "profile", enabled: true });
@@ -3008,7 +3118,7 @@ export default function App() {
       // and a raw with Preferences' exposure compensation, on an instance of
       // its own (exp_comp), so Exposure still reads 0 and adds to it
       const comp = loadExposureCompNew();
-      if (!s.wasEdited && s.raw && comp) {
+      if (!s.wasEdited && raw && comp) {
         s.setMany([["exp_comp", comp]]);
         base.push({ op: "exposure", name: "exposure",
                     label: `compensation ${comp > 0 ? "+" : ""}${comp.toFixed(2)} EV`, enabled: true });
@@ -3019,11 +3129,14 @@ export default function App() {
       if (!s.wasEdited && s.raw) s.setMany([["capture", 1]]);
       // a file back from Edit In starts without what its application did
       // already (Lens Corrections after PureRAW), over the preset's values
-      // so they are never turned on to be turned off
-      const back = returns.current.get(path);
-      const plugin = !s.wasEdited && back && !back.applied
+      // so they are never turned on to be turned off; a panorama, without
+      // the lens corrections its frames had
+      // a DNG from AI Denoise has the raw's edit, so it is edited already
+      const denoised = back?.plugin === "ai-denoise" && !back.applied;
+      const plugin = pano ? { values: { lens_profile: 0, lens_ca: 0 }, labels: [] }
+        : !denoised && !s.wasEdited && back && !back.applied
         ? returnValues(back.plugin.split(":")[0], plugins.find((p) => p.id === back.plugin)) : null;
-      if (preset && (s.raw || !preset.rawOnly)) {
+      if (preset && (raw || !preset.rawOnly)) {
         s.setMany(Object.entries({ ...presetValues(preset), ...plugin?.values }));
         setStatus(`new photo: applied "${preset.name}"`);
         base.push({ op: "preset", name: preset.name, label: "new photos preset", enabled: true });
@@ -3039,11 +3152,18 @@ export default function App() {
         }
       }
       // and Auto, when Preferences asks for it, once the photo has rendered
-      const autoNew = !s.wasEdited && s.raw && loadAutoToneNew();
+      const autoNew = !s.wasEdited && raw && loadAutoToneNew();
       if (autoNew) base.push({ op: "autotone", name: "auto tone", label: "auto tone", enabled: true });
       setHistoryBase(base);
       setValues({ ...s.values });
       if (autoNew) void runAutoTone(true);
+      // and without the noise reduction its model did, the first time it
+      // opens, as an undo step
+      if (back && denoised && session.current === s) {
+        back.applied = true;
+        void invoke("plugin_return_applied", { result: path });
+        changeMany([["nr_luminance", 0], ["nr_color", 0]], "AI Denoise: noise reduction off");
+      }
     } catch (e) {
       setStatus(`error: ${e}`);
     }
@@ -3668,7 +3788,7 @@ export default function App() {
       machine: await invoke<Record<string, unknown>>("perf_machine").catch(() => null),
       webview,
       photo: (currentRef.current?.path ?? "").split(/[\\/]/).pop(),
-      viewport: { width: w, height: h, dpr: window.devicePixelRatio || 1 }, dragDrafts: drafts, preview,
+      viewport: { width: w, height: h, dpr: window.devicePixelRatio || 1, draftScale: draftScale() }, dragDrafts: drafts, preview,
       transport: frameTransport(), seconds: (performance.now() - t0) / 1000, displayLongFrames: perf.longFrames,
       invokeMs: { idle: roundTrips(idlePings), drag: roundTrips(dragPings.filter(Number.isFinite)) }, summary, samples,
     };
@@ -4101,6 +4221,24 @@ export default function App() {
         void createCopiesRef.current(list);
         return;
       }
+      // HDR Merge, as Lightroom's ⌃H: of the selection's raws, two or more
+      if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.code === "KeyH") {
+        e.preventDefault();
+        const sel = selectionRef.current;
+        const list = hdrBrackets(imagesRef.current.filter((i) => sel.has(i.imgid)));
+        if (list.length > 1) setHdrMerging(list);
+        else setStatus("HDR Merge: select two raw exposures or more");
+        return;
+      }
+      // Panorama Merge, as Lightroom's ⌃M: of the selection, two or more
+      if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.code === "KeyM") {
+        e.preventDefault();
+        const sel = selectionRef.current;
+        const list = panoFrames(imagesRef.current.filter((i) => sel.has(i.imgid)));
+        if (list.length > 1) setPanoMerging(list);
+        else setStatus("Panorama Merge: select two raw photos or more");
+        return;
+      }
       // Preferences, as every Mac app's ⌘,
       if (cmd(e) && e.key === ",") {
         e.preventDefault();
@@ -4485,9 +4623,23 @@ export default function App() {
                   if (folder) void showFolder(folder);
                 }} />
               </label>
-              <FolderTree roots={folders} current={immich ? null : folder} photo={photoDir} expanded={expanded} hidden={hidden}
+              <FolderTree roots={folders} volumes={volumes} hostNames={hostNames} folded={foldedVolumes}
+                          current={immich ? null : folder} photo={photoDir} expanded={expanded} hidden={hidden}
                           refresh={folderRefresh}
-                          icon={<FolderIcon />} onOpen={(d) => { void showFolder(d); setGrid(true); }} onRemove={removeFolder}
+                          icon={<FolderIcon />} driveIcon={<DriveIcon />} networkIcon={<NetworkIcon />}
+                          onFold={(m) => {
+                            const next = new Set(foldedVolumes);
+                            if (next.has(m)) next.delete(m); else next.add(m);
+                            setFoldedVolumes(next);
+                            saveLibrary({ foldedVolumes: [...next] });
+                          }}
+                          onOpen={(d) => { void showFolder(d); setGrid(true); }} onRemove={removeFolder}
+                          onRenameHost={(host, name) => {
+                            const next = { ...hostNames, [host]: name };
+                            if (!name) delete next[host];
+                            setHostNames(next);
+                            saveLibrary({ hostNames: next });
+                          }}
                           onToggle={(d) => {
                             const next = new Set(expanded);
                             if (next.has(d)) next.delete(d); else next.add(d);
@@ -4545,6 +4697,11 @@ export default function App() {
                              ranges={rangeFor === (peekMask ?? selMask)?.name ? rangeMap : null}
                              final={finalMap && finalMap.session === session.current && finalMap.name === (peekMask ?? selMask)?.name
                                     && wantsFinal(peekMask ?? selMask!) ? finalMap.map : null}
+                             awaitFinal={(() => {
+                               const t = peekMask ?? selMask;
+                               return !!t && isRefined(t) && !t.hidden && finalMissing !== t.name
+                                 && !(finalMap && finalMap.session === session.current && finalMap.name === t.name);
+                             })()}
                              onPick={(x, y) => void pickRange(x, y)}
                              onObject={(p) => void selectObject(p)}
                              onPickArea={(area, at) => void pickArea(area, at)}
@@ -4694,9 +4851,10 @@ export default function App() {
           )}
           <div className={`working${working ? " on" : ""}`} title="working…" aria-hidden={!working}><span /></div>
           <div className="status">{status}</div>
+          <div className="activities">
+          {backgroundJobs.map((j) => <JobActivity key={j.id} job={j} />)}
           {(() => {
             // the folder's reading, then its thumbnails
-            const t = loader.current!.progress();
             if (immich?.busy) return <div className="activity"><span>Searching Immich…</span></div>;
             const w = waiting[waiting.length - 1];
             if (w && !reading) return (
@@ -4707,16 +4865,10 @@ export default function App() {
                 <button onClick={() => void invoke("plugin_cancel", { token: w.token })}>Stop waiting</button>
               </div>
             );
-            const [what, done, total] = reading ? ["Reading photos", reading.done, reading.total]
-              : t.done < t.total ? ["Loading thumbnails", t.done, t.total] : [null, 0, 0];
-            if (!what) return null;
-            return (
-              <div className="activity">
-                <span>{total ? `${what} ${done.toLocaleString()} of ${total.toLocaleString()}` : "Reading folder…"}</span>
-                <div className="bar"><div style={{ width: `${total ? (100 * done) / total : 0}%` }} /></div>
-              </div>
-            );
+            return reading ? <ActivityBar what="Reading photos" done={reading.done} total={reading.total} />
+              : <ThumbProgress loader={loader.current!} />;
           })()}
+          </div>
         </main>
         <div data-tour="filmstrip" ref={stripSlot}
              style={floating.strip || grid ? {
@@ -5104,7 +5256,8 @@ export default function App() {
                          : immich ? <div className="note-plain">photos in a folder on this computer only</div>
                          : (
                            <div className="denoise-tools">
-                             <button className="btn small" disabled={!current || aiBusy}
+                             <button className="btn small" disabled={!current || aiBusy || denoiseRunning}
+                                     title={denoiseRunning ? "a denoise is still running" : undefined}
                                      onClick={() => setDenoising(true)}>Denoise…</button>
                              <span className="note-plain">writes a denoised DNG beside the raw, with this edit</span>
                            </div>
@@ -5160,7 +5313,7 @@ export default function App() {
                 data-tour="heal"
                 disabled={!current} onClick={() => showRight("heal")}><HealIcon /></button>
         <button className={`tool${layout.right && !cropping && rightMode === "negative" ? " on" : ""}`}
-                title="film negative" disabled={!current} onClick={openNegative}><FilmIcon /></button>
+                title="film negative" data-tour="negative" disabled={!current} onClick={openNegative}><FilmIcon /></button>
         <button className={`tool${layout.right && !cropping && rightMode === "presets" ? " on" : ""}`} title="presets" data-tour="presets"
                 onClick={() => showRight("presets")}><PresetsIcon /></button>
         </div>
@@ -5184,6 +5337,8 @@ export default function App() {
         <FileMenu x={fileMenu.x} y={fileMenu.y}
                   copyable={sources.length} copies={copies.length === local.length ? copies.length : 0}
                   onCopy={() => void createCopies(sources)} onRemoveCopies={() => void removeCopies(copies)}
+                  mergeable={hdrBrackets(local).length} onMergeHdr={() => setHdrMerging(hdrBrackets(local))}
+                  stitchable={panoFrames(sources).length} onMergePano={() => setPanoMerging(panoFrames(sources))}
                   reveal={!hit ? null : hit.remote ? hit.remote.localPath ?? (isRemote(hit) ? null : hit.path) : hit.path}
                   rejected={hit && !isRemote(hit) ? local.filter((i) => i.rejected).length : null}
                   photo={immichBase && hit?.remote ? photoUrl(immichBase, hit.remote.assetId) : null}
@@ -5243,6 +5398,11 @@ export default function App() {
     {touring && <Tour onClose={endTour} />}
     {dropping && <div className="drop-target"><span>drop a photo to edit it, or a folder to add it</span></div>}
     {copying && <CopyDialog onCopy={copySettings} onClose={() => setCopying(false)} />}
+    {hdrMerging && <HdrDialog count={hdrMerging.length} onRun={(align) => runHdrMerge(hdrMerging, align)}
+                              onClose={() => setHdrMerging(null)} />}
+    {panoMerging && <PanoDialog count={panoMerging.length}
+                                onRun={(projection, crop) => runPanoMerge(panoMerging, projection, crop)}
+                                onClose={() => setPanoMerging(null)} />}
     {denoising && <DenoiseDialog thumb={navThumb} center={viewCenter()} prepare={denoiseModel}
                                  onRun={(a) => void runDenoise(a)} onClose={() => setDenoising(false)} />}
     {negWarning && (
@@ -5287,7 +5447,8 @@ type Opened = { path: string; imgid: number | null };
 // the folders added to the library panel, and the folder and image open
 // last, with its version; remembered between launches
 type Library = { folders: string[]; current: string | null; image: string | null; expanded: string[];
-                 hidden: string[]; sampled?: boolean; version?: number };
+                 hidden: string[]; sampled?: boolean; version?: number;
+                 volumes?: Record<string, Volume>; foldedVolumes?: string[]; hostNames?: Record<string, string> };
 function loadLibrary(): Library {
   try {
     return { folders: [], current: null, image: null, expanded: [], hidden: [],
@@ -5602,7 +5763,12 @@ function Filmstrip({ images, partners, pending, empty, current, loader, height, 
   }, [images, loader, grid]);
   // a grid's cells are a fixed height, and share each row's width
   // (styles.css, .filmstrip.grid); the strip's follow its height
-  const cell = grid ? { height: 200 } : { width: Math.round((height - 12) * 1.15) };
+  const cellSize = grid ? 200 : Math.round((height - 12) * 1.15);
+  const cell = useMemo(() => (grid ? { height: cellSize } : { width: cellSize }), [grid, cellSize]);
+  // the cells are memoized, and call through this, so a folder's next
+  // batch or a new selection redraws only the cells that changed
+  const on = useRef({ onPick, onDouble, onMenu, onMeta });
+  on.current = { onPick, onDouble, onMenu, onMeta };
   // an empty grid still covers the photo, and says why it is empty
   if (!images.length && !pending.length) {
     return grid ? <div className="filmstrip grid empty" onContextMenu={onBackMenu}><div className="grid-empty">{empty}</div></div>
@@ -5613,56 +5779,13 @@ function Filmstrip({ images, partners, pending, empty, current, loader, height, 
          onContextMenu={onBackMenu}
          onWheel={(e) => { if (strip.current && !grid) strip.current.scrollLeft += e.deltaY + e.deltaX; }}>
       {images.map((i) => (
-        <div key={i.imgid} className={`thumb${i.imgid === current ? " active" : ""}${i.rejected ? " rejected" : ""}`
-                                      + `${i.rating || i.rejected ? " rated" : ""}`
-                                      + `${selection.size > 1 && selection.has(i.imgid) ? " selected" : ""}`
-                                      + `${i.imgid === candidate ? " candidate" : ""}`}
-             style={cell}
-             title={i.filename} data-imgid={i.imgid} onClick={(e) => onPick(i, e)}
-             onDoubleClick={() => { if (grid || candidate !== null) onDouble(i); }}
-             onContextMenu={(e) => { e.stopPropagation(); onMenu(e, i.imgid); }}>
-          <div className="thumb-head">
-            <span className="thumb-name">{i.filename.replace(/\.[^.]+$/, "")}</span>
-            {/* altered, as darktable counts it, so its lighttable agrees */}
-            {i.edited && <span className="thumb-edited" title="edited"><SlidersIcon /></span>}
-            <span className="thumb-type">{[i, ...(partners.get(i.imgid) ?? [])]
-              .map((f) => (f.filename.match(/\.([^.]+)$/)?.[1] ?? "").toUpperCase()).join("+")}
-              {copyName(i)}</span>
-          </div>
-          <div className="thumb-image"><ThumbCanvas bitmap={loader.get(i.imgid)} dogEar={!!i.copy} /></div>
-          {/* rated without opening the photo, as Lightroom's filmstrip does;
-              an Immich result shows Immich's rating, set only once opened */}
-          <div className={`thumb-foot${isRemote(i) ? " read-only" : ""}`} onClick={(e) => e.stopPropagation()}>
-            {!isRemote(i) && <button className={`thumb-reject${i.rejected ? " on" : ""}`} title="reject (X)"
-                    onClick={() => onMeta(i, { rejected: !i.rejected })}>✕</button>}
-            <span className="thumb-stars">
-              {[1, 2, 3, 4, 5].map((n) => (
-                <button key={n} className={!i.rejected && i.rating >= n ? "on" : ""}
-                        title={isRemote(i) ? "Immich's rating: open the photo to change it" : `${n} star${n > 1 ? "s" : ""}`}
-                        disabled={isRemote(i)}
-                        onClick={() => onMeta(i, { rating: i.rating === n ? 0 : n, rejected: false })}>★</button>
-              ))}
-            </span>
-            <span className="labels">
-              {LABEL_COLORS.map((c, k) => (i.labels & (1 << k)
-                ? <span key={k} className="dot" style={{ background: c }} /> : null))}
-            </span>
-          </div>
-        </div>
+        <FilmCell key={i.imgid} entry={i} loader={loader} cell={cell} on={on}
+                  types={[i, ...(partners.get(i.imgid) ?? [])]
+                    .map((f) => (f.filename.match(/\.([^.]+)$/)?.[1] ?? "").toUpperCase()).join("+")}
+                  active={i.imgid === current} selected={selection.size > 1 && selection.has(i.imgid)}
+                  candidate={i.imgid === candidate} doubleOpens={grid || candidate !== null} />
       ))}
-      {pending.map((p) => {
-        const name = baseName(p);
-        return (
-          <div key={p} className="thumb ghost" style={cell} title={name}>
-            <div className="thumb-head">
-              <span className="thumb-name">{name.replace(/\.[^.]+$/, "")}</span>
-              <span className="thumb-type">{(name.match(/\.([^.]+)$/)?.[1] ?? "").toUpperCase()}</span>
-            </div>
-            <div className="thumb-image"><ThumbCanvas bitmap={undefined} /></div>
-            <div className="thumb-foot" />
-          </div>
-        );
-      })}
+      {pending.map((p) => <GhostCell key={p} path={p} cell={cell} />)}
       {more && <div ref={end} className="thumb ghost more" style={cell} />}
     </div>
   );
@@ -5671,14 +5794,143 @@ function Filmstrip({ images, partners, pending, empty, current, loader, height, 
 // `dogEar` turns the bottom left corner over, as Lightroom marks a virtual
 // copy: drawn on the thumbnail, which the cell fits, so it sits on the
 // photo's own corner whatever its shape
-function ThumbCanvas({ bitmap, dogEar = false }: { bitmap: ImageBitmap | undefined; dogEar?: boolean }) {
+type CellHandlers = Pick<Parameters<typeof Filmstrip>[0], "onPick" | "onDouble" | "onMenu" | "onMeta">;
+
+// one photo's filmstrip cell
+const FilmCell = memo(function FilmCell({ entry: i, loader, cell, on, types, active, selected, candidate, doubleOpens }: {
+  entry: ImageEntry; loader: ThumbLoader; cell: React.CSSProperties; on: React.RefObject<CellHandlers>;
+  types: string; active: boolean; selected: boolean; candidate: boolean; doubleOpens: boolean;
+}) {
+  return (
+    <div className={`thumb${active ? " active" : ""}${i.rejected ? " rejected" : ""}`
+                    + `${i.rating || i.rejected ? " rated" : ""}${selected ? " selected" : ""}`
+                    + `${candidate ? " candidate" : ""}`}
+         style={cell}
+         title={i.filename} data-imgid={i.imgid} onClick={(e) => on.current!.onPick(i, e)}
+         onDoubleClick={() => { if (doubleOpens) on.current!.onDouble(i); }}
+         onContextMenu={(e) => { e.stopPropagation(); on.current!.onMenu(e, i.imgid); }}>
+      <div className="thumb-head">
+        <span className="thumb-name">{i.filename.replace(/\.[^.]+$/, "")}</span>
+        {/* altered, as darktable counts it, so its lighttable agrees */}
+        {i.edited && <span className="thumb-edited" title="edited"><SlidersIcon /></span>}
+        <span className="thumb-type">{types}{copyName(i)}</span>
+      </div>
+      <div className="thumb-image"><ThumbCanvas loader={loader} imgid={i.imgid} dogEar={!!i.copy} /></div>
+      {/* rated without opening the photo, as Lightroom's filmstrip does;
+          an Immich result shows Immich's rating, set only once opened */}
+      <div className={`thumb-foot${isRemote(i) ? " read-only" : ""}`} onClick={(e) => e.stopPropagation()}>
+        {!isRemote(i) && <button className={`thumb-reject${i.rejected ? " on" : ""}`} title="reject (X)"
+                onClick={() => on.current!.onMeta(i, { rejected: !i.rejected })}>✕</button>}
+        <span className="thumb-stars">
+          {[1, 2, 3, 4, 5].map((n) => (
+            <button key={n} className={!i.rejected && i.rating >= n ? "on" : ""}
+                    title={isRemote(i) ? "Immich's rating: open the photo to change it" : `${n} star${n > 1 ? "s" : ""}`}
+                    disabled={isRemote(i)}
+                    onClick={() => on.current!.onMeta(i, { rating: i.rating === n ? 0 : n, rejected: false })}>★</button>
+          ))}
+        </span>
+        <span className="labels">
+          {LABEL_COLORS.map((c, k) => (i.labels & (1 << k)
+            ? <span key={k} className="dot" style={{ background: c }} /> : null))}
+        </span>
+      </div>
+    </div>
+  );
+});
+
+// a file not yet read, shown as an empty cell
+const GhostCell = memo(function GhostCell({ path, cell }: { path: string; cell: React.CSSProperties }) {
+  const name = baseName(path);
+  return (
+    <div className="thumb ghost" style={cell} title={name}>
+      <div className="thumb-head">
+        <span className="thumb-name">{name.replace(/\.[^.]+$/, "")}</span>
+        <span className="thumb-type">{(name.match(/\.([^.]+)$/)?.[1] ?? "").toUpperCase()}</span>
+      </div>
+      <div className="thumb-image"><ThumbCanvas /></div>
+      <div className="thumb-foot" />
+    </div>
+  );
+});
+
+// the activity line's progress bar
+function ActivityBar({ what, done, total }: { what: string; done: number; total: number }) {
+  return (
+    <div className="activity">
+      <span>{total ? `${what} ${done.toLocaleString()} of ${total.toLocaleString()}` : "Reading folder…"}</span>
+      <div className="bar"><div style={{ width: `${total ? (100 * done) / total : 0}%` }} /></div>
+    </div>
+  );
+}
+
+// a background export or merge (background.ts): its progress and Stop, then
+// what it did
+function JobActivity({ job }: { job: Job }) {
+  // the viewer's own pointer handling (zoom on click) stays off it
+  const keep = (e: React.PointerEvent) => e.stopPropagation();
+  const action = job.action;
+  return (
+    <div className="activity waiting" onPointerDown={keep} onPointerUp={keep}>
+      {job.summary === null ? <>
+        {job.stage ? (
+          // a merge's own stage, with a bar when it has steps to count
+          job.total > 1 ? (
+            <div className="progress">
+              <span>{job.what}: {job.stage}</span>
+              <div className="bar"><div style={{ width: `${(100 * job.done) / job.total}%` }} /></div>
+            </div>
+          ) : <span>{job.what}: {job.stage}…</span>
+        ) : job.total ? (
+          <div className="progress">
+            <span>{job.what} {job.done.toLocaleString()} of {job.total.toLocaleString()}</span>
+            <div className="bar"><div style={{ width: `${(100 * job.done) / job.total}%` }} /></div>
+          </div>
+        ) : <span>{job.what}…</span>}
+        {job.cancel && (
+          <button disabled={job.stopping} onClick={() => stopJob(job)}>{job.stopping ? "Stopping…" : "Stop"}</button>
+        )}
+      </> : <>
+        <span className={job.failed ? "failed" : ""}>{job.summary}</span>
+        {action && <button onClick={() => { dismissJob(job.id); action.run(); }}>{action.label}</button>}
+        <button onClick={() => dismissJob(job.id)}>OK</button>
+      </>}
+    </div>
+  );
+}
+
+// the folder's thumbnails loading, redrawn a few times a second rather
+// than for each one
+function ThumbProgress({ loader }: { loader: ThumbLoader }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    let timer = 0;
+    const off = loader.watchProgress(() => {
+      if (!timer) timer = window.setTimeout(() => { timer = 0; setTick((n) => n + 1); }, 250);
+    });
+    return () => { off(); window.clearTimeout(timer); };
+  }, [loader]);
+  const t = loader.progress();
+  return t.done < t.total ? <ActivityBar what="Loading thumbnails" done={t.done} total={t.total} /> : null;
+}
+
+// the image's thumbnail as the loader has it, redrawn when that changes
+function ThumbCanvas({ loader, imgid, dogEar = false }: { loader?: ThumbLoader; imgid?: number; dogEar?: boolean }) {
+  const [bitmap, setBitmap] = useState(() => (imgid === undefined ? undefined : loader?.get(imgid)));
+  useEffect(() => {
+    if (!loader || imgid === undefined) return;
+    setBitmap(loader.get(imgid));
+    return loader.watch(imgid, () => setBitmap(loader.get(imgid)));
+  }, [loader, imgid]);
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const c = ref.current;
     if (!c || !bitmap) return;
     c.width = bitmap.width;
     c.height = bitmap.height;
-    const g = c.getContext("2d")!;
+    // WebKitGTK stops showing GPU-backed thumbnail canvases once a photo is
+    // open, though their pixels are intact; unaccelerated ones are painted
+    // with the page
+    const g = c.getContext("2d", { willReadFrequently: true })!;
     g.drawImage(bitmap, 0, 0);
     if (!dogEar) return;
     const d = Math.round(Math.max(c.width, c.height) * 0.09), h = c.height;
@@ -5730,14 +5982,26 @@ const copyName = (i: ImageEntry | null | undefined) => (i?.copy ? ` · Copy ${i.
 // what the system's file manager is called
 const TRASH = navigator.userAgent.includes("Windows") ? "Recycle Bin" : "Trash";
 
+// the raws an HDR merge takes of `list`: each file once, as the merge reads
+// the raw alone, whichever version's edit it has
+const hdrBrackets = (list: ImageEntry[]) => {
+  const seen = new Set<string>();
+  return list.filter((i) => !isRemote(i) && fileKind(i.filename) === "RAW" && !seen.has(i.path) && !!seen.add(i.path));
+};
+// what Panorama Merge stitches: the raws on this computer, each file once,
+// as its DNG holds the camera's own color
+const panoFrames = hdrBrackets;
+
 // a photo's right-click menu: Edit In, Show in Finder, as Lightroom's, and
 // Delete, for rejected photos only; for Immich results, the photo or the
 // whole search in Immich's web app. any click elsewhere, a scroll or Escape
 // closes it
-function FileMenu({ x, y, copyable, copies, reveal, rejected, photo, results, editIn, onCopy, onRemoveCopies, onDelete,
-                    onEditIn, onSetUpPlugins, onClose }: {
+function FileMenu({ x, y, copyable, copies, mergeable, stitchable, reveal, rejected, photo, results, editIn, onCopy,
+                    onRemoveCopies, onMergeHdr, onMergePano, onDelete, onEditIn, onSetUpPlugins, onClose }: {
   x: number; y: number;
   copyable: number;                       // how many photos a virtual copy can be made of
+  mergeable: number;                      // how many raws an HDR merge would take
+  stitchable: number;                     // how many photos a panorama would take
   copies: number;                         // how many virtual copies it acts on, when it acts on nothing else
   reveal: string | null;                  // the file to show in the file manager
   rejected: number | null;                // how many of the photos it acts on are rejected; null, none can be
@@ -5745,7 +6009,8 @@ function FileMenu({ x, y, copyable, copies, reveal, rejected, photo, results, ed
   results: string | null;                 // the search it came from, there
   editIn: { cfg: PluginConfig; why: string | null }[] | null;  // the plugins, and why one cannot take the photos
   onEditIn: (cfg: PluginConfig) => void; onSetUpPlugins: () => void;
-  onCopy: () => void; onRemoveCopies: () => void; onDelete: () => void; onClose: () => void;
+  onCopy: () => void; onRemoveCopies: () => void; onMergeHdr: () => void; onMergePano: () => void;
+  onDelete: () => void; onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -5791,6 +6056,11 @@ function FileMenu({ x, y, copyable, copies, reveal, rejected, photo, results, ed
           {copies > 1 ? `Remove ${copies} Virtual Copies` : "Remove Virtual Copy"}</button>}
         {(reveal || photo || results || rejected !== null) && <div className="menu-sep" />}
       </>}
+      {(mergeable > 1 || stitchable > 1) && <>
+        {mergeable > 1 && <button onClick={() => { onClose(); onMergeHdr(); }}>HDR Merge…</button>}
+        {stitchable > 1 && <button onClick={() => { onClose(); onMergePano(); }}>Panorama Merge…</button>}
+        <div className="menu-sep" />
+      </>}
       {reveal && <button onClick={() => { onClose(); void revealItemInDir(reveal); }}>Show in {FILE_MANAGER}</button>}
       {photo && <button onClick={() => go(photo)}>Show in Immich</button>}
       {results && <button onClick={() => go(results)}>Show Results in Immich</button>}
@@ -5810,6 +6080,10 @@ const icon = (path: React.ReactNode) => (
        strokeLinecap="round" strokeLinejoin="round">{path}</svg>
 );
 const FolderIcon = () => icon(<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />);
+const DriveIcon = () => icon(<><rect x="3" y="13" width="18" height="7" rx="2" />
+  <path d="M5.5 13 8 5h8l2.5 8" /><path d="M17 16.5h.01" /></>);
+const NetworkIcon = () => icon(<><rect x="3" y="4" width="18" height="7" rx="2" /><path d="M7 7.5h.01" />
+  <path d="M12 11v5" /><path d="M4 19h16" /><circle cx="12" cy="19" r="1.5" /></>);
 const StarIcon = ({ filled }: { filled: boolean }) => (
   <svg className="icon" viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor"
        strokeWidth="1.6" strokeLinejoin="round">
