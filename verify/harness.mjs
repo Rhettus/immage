@@ -848,6 +848,19 @@ async function fixes(photo) {
     const wrong = cases.filter(([, got, want]) => got !== want).map(([label]) => label);
     return wrong.length ? `not so: ${wrong.join(", ")}` : null;
   });
+
+  // 0.38.0: a rejected photo deleted, then a new file at its path (a
+  // panorama merged again), came back rejected: the library kept its row
+  await fix("a new file where a deleted one was isn't rejected", async () => {
+    const path = fresh(photo);
+    const { images: [e] } = await request({ cmd: "import", files: [path] });
+    await invoke("meta_set", { imgid: e.imgid, fields: { rejected: true } });
+    await invoke("trash_files", { imgids: [e.imgid] });
+    if (existsSync(path)) return "the photo wasn't deleted";
+    copyFileSync(photo, path, constants.COPYFILE_FICLONE);
+    const { images: [i] } = await request({ cmd: "import", files: [path] });
+    return i.rejected ? "it came back rejected" : null;
+  });
 }
 
 // what Immage decided it does, as README.md, the code map and the

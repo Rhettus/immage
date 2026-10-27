@@ -232,6 +232,23 @@ const COMMANDS = {
   hdr_can_align: async () => (await request({ cmd: "version" })).hdr_align ?? false,
   pano_merge: ({ imgids, projection, crop }) => requestTagged({ cmd: "pano_merge", imgids, projection, crop }),
   pano_can_merge: async () => (await request({ cmd: "version" })).pano ?? false,
+  meta_set: ({ imgid, fields }) => request({ cmd: "meta_set", imgid, ...fields }),
+  // as main.rs, with the files removed rather than put in the trash
+  trash_files: async ({ imgids }) => {
+    const gone = [];
+    for (const imgid of imgids) {
+      const { image } = await request({ cmd: "meta", imgid });
+      if (!image.rejected) throw new Error(`${image.filename} is not rejected; nothing was deleted`);
+      const cmd = image.copy ? "remove_copy" : "sidecars";
+      const { files } = await request({ cmd, imgid });
+      for (const f of [...(image.copy ? [] : [image.path]), ...files]) rmSync(f, { force: true });
+      if (!image.copy) {
+        await request({ cmd: "forget", imgid });
+        gone.push(image.path);
+      }
+    }
+    return gone;
+  },
 };
 
 // the engine's models folder (startEngine's), and where a check's models
