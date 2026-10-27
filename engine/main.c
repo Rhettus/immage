@@ -199,7 +199,6 @@ static void _reply_error(FILE *out, const char *fmt, ...)
   g_free(msg);
 }
 
-static dt_imgid_t _import_muted(const char *path);
 
 // the edit changed: the main pipe follows now, the others before their next
 // frame. synch_top takes only the latest history item, so a second change
@@ -345,23 +344,42 @@ static void _close_session(void)
   _s.baseline = FALSE;
 }
 
-// file the image under an in-memory film roll, the way darktable-mcp does;
-// importing reads an existing sidecar, so earlier edits come back. writing
-// sidecars is switched off meanwhile: import would otherwise leave an .xmp
-// beside every image merely looked at, while reading is not affected by it
-// (image.c, _image_import_internal())
-static void _sidecars_off(void) { dt_conf_set_string("write_sidecar_files", "never"); }
-static void _sidecars_on(void) { dt_conf_set_string("write_sidecar_files", "on import"); }
-
-static dt_imgid_t _import(const char *path)
+// darktable writes sidecars as a side effect of importing, loading a
+// develop and exporting, which would leave an .xmp beside every image
+// merely looked at, so its setting stays "never" (main()). the engine
+// writes one only where it means to, with this: darktable's
+// dt_image_write_sidecar_file() without its check of that setting, which
+// would skip the write and still report success. a global switch flipped
+// around each job can't be used, as the thumbnail threads run beside the
+// main loop. TRUE means it failed, as darktable's
+static gboolean _write_sidecar(const dt_imgid_t imgid)
 {
-  _sidecars_off();
-  const dt_imgid_t id = _import_muted(path);
-  _sidecars_on();
-  return id;
+  if(!dt_is_valid_imgid(imgid)) return TRUE;
+  char filename[PATH_MAX] = { 0 };
+  gboolean from_cache = FALSE;
+  dt_image_full_path(imgid, filename, sizeof(filename), &from_cache);
+  if(!g_file_test(filename, G_FILE_TEST_EXISTS))
+  {
+    from_cache = TRUE;
+    dt_image_full_path(imgid, filename, sizeof(filename), &from_cache);
+    if(!from_cache) return TRUE;
+  }
+  dt_image_path_append_version(imgid, filename, sizeof(filename));
+  g_strlcat(filename, ".xmp", sizeof(filename));
+  if(dt_exif_xmp_write(imgid, filename, FALSE)) return TRUE;
+  sqlite3_stmt *stmt;
+  DT_DEBUG_SQLITE3_PREPARE_V2(dt_database_get(darktable.db),
+                              "UPDATE main.images SET write_timestamp = STRFTIME('%s', 'now') WHERE id = ?1",
+                              -1, &stmt, NULL);
+  DT_DEBUG_SQLITE3_BIND_INT(stmt, 1, imgid);
+  sqlite3_step(stmt);
+  sqlite3_finalize(stmt);
+  return FALSE;
 }
 
-static dt_imgid_t _import_muted(const char *path)
+// file the image under an in-memory film roll, the way darktable-mcp does;
+// importing reads an existing sidecar, so earlier edits come back
+static dt_imgid_t _import(const char *path)
 {
   gchar *dir = g_path_get_dirname(path);
   dt_film_t film;
@@ -600,11 +618,7 @@ static gboolean _open_image(const char *path, const dt_imgid_t version, const ch
   const gboolean fresh = !_has_history(imgid);
 
   dt_dev_init(&_s.dev, FALSE);
-  // loading applies darktable's automatic presets, which would give an
-  // image merely opened a sidecar; edits reach it through `save`
-  _sidecars_off();
   dt_dev_load_image(&_s.dev, imgid);
-  _sidecars_on();
   // load_image reads the history but does not replay it into module params
   dt_dev_pop_history_items_ext(&_s.dev, _s.dev.history_end);
 
@@ -1289,7 +1303,7 @@ static gboolean _keywords_set(const dt_imgid_t imgid, JsonObject *req, JsonBuild
       dt_tag_detach(tagid, imgid, FALSE, FALSE);
   }
   // TRUE means it failed
-  if(dt_image_write_sidecar_file(imgid))
+  if(_write_sidecar(imgid))
   {
     *err = g_strdup("could not write the XMP sidecar");
     return FALSE;
@@ -1446,7 +1460,7 @@ static gboolean _copy(const dt_imgid_t src, JsonBuilder *b, char **err)
   // an unedited original has no sidecar yet. without one, the next import
   // takes the copy's "_01" sidecar for the original's own and makes it
   // version 1 (image.c, _image_read_duplicates()). TRUE means it failed
-  if(dt_image_write_sidecar_file(src))
+  if(_write_sidecar(src))
   {
     *err = g_strdup("could not write the XMP sidecar");
     return FALSE;
@@ -1458,7 +1472,7 @@ static gboolean _copy(const dt_imgid_t src, JsonBuilder *b, char **err)
     return FALSE;
   }
   dt_history_copy_and_paste_on_image(src, newid, FALSE, NULL, TRUE, TRUE, FALSE);
-  if(dt_image_write_sidecar_file(newid))
+  if(_write_sidecar(newid))
   {
     *err = g_strdup("could not write the copy's XMP sidecar");
     return FALSE;
@@ -1807,7 +1821,7 @@ static gboolean _meta_set(const dt_imgid_t imgid, JsonObject *req, char **err)
       dt_metadata_set(imgid, _meta_keys[k][1],
                       json_object_get_string_member(req, _meta_keys[k][0]), FALSE);
   // TRUE means it failed
-  if(dt_image_write_sidecar_file(imgid))
+  if(_write_sidecar(imgid))
   {
     *err = g_strdup("could not write the XMP sidecar");
     return FALSE;
@@ -2160,9 +2174,7 @@ static gboolean _frame_style(const dt_imgid_t imgid, JsonObject *frame, JsonObje
   *svg_written = FALSE;
   dt_develop_t dev;
   dt_dev_init(&dev, FALSE);
-  _sidecars_off();
   dt_dev_load_image(&dev, imgid);
-  _sidecars_on();
   dt_iop_module_t *borders = dt_iop_get_module_by_op_priority(dev.iop, "borders", 0);
   dt_iop_module_t *watermark = dt_iop_get_module_by_op_priority(dev.iop, "watermark", 0);
   if(!borders || !watermark)
@@ -2884,9 +2896,6 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
   g_mkdir_with_parents(dir, 0755);
   g_free(dir);
 
-  // export would also write the image's sidecar; an unedited image must not
-  // gain one, and the open image's edits reach its sidecar through `save`
-  _sidecars_off();
   // the export's own keywords: the file takes its tags from the library
   // (exif.cc), so they are attached for the export and taken off after,
   // leaving any the image already had
@@ -2916,7 +2925,6 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
   for(GList *t = added; t; t = g_list_next(t))
     dt_tag_detach(GPOINTER_TO_UINT(t->data), imgid, FALSE, FALSE);
   g_list_free(added);
-  _sidecars_on();
   if(framed) _frame_done(frame_svg);
   fmt->free_params(fmt, fdata);
   if(failed)
@@ -4045,7 +4053,7 @@ static gboolean _ai_denoise(const float strength, JsonBuilder *b, char **err)
     return FALSE;
   }
   _denoise_inherit(src, newid);
-  if(dt_image_write_sidecar_file(newid))
+  if(_write_sidecar(newid))
   {
     *err = g_strdup("could not write the DNG's XMP sidecar");
     g_free(out);
@@ -6744,7 +6752,7 @@ static gboolean _save(char **err)
     dt_tag_detach_by_string("darktable|changed", _s.imgid, FALSE, FALSE);
   // direct rather than dt_image_synch_xmp(), whose queue is drained by a
   // background job this process may outlive. TRUE means it failed
-  if(dt_image_write_sidecar_file(_s.imgid))
+  if(_write_sidecar(_s.imgid))
   {
     *err = g_strdup("could not write the XMP sidecar");
     return FALSE;
@@ -7454,8 +7462,9 @@ int main(int argc, char **argv)
   for(size_t k = 0; k < G_N_ELEMENTS(fatal); k++) signal(fatal[k], _crash);
 #endif
 
-  // edits persist only through the sidecar
-  dt_conf_set_string("write_sidecar_files", "on import");
+  // edits persist only through the sidecar, which the engine writes itself
+  // (_write_sidecar)
+  dt_conf_set_string("write_sidecar_files", "never");
 #ifdef HAVE_AI
   if(_models_dir) dt_conf_set_bool("plugins/ai/enabled", TRUE);
 #ifdef __linux__
