@@ -169,6 +169,7 @@ export default function App() {
   const volumesRef = useRef(volumes);
   volumesRef.current = volumes;
   const [foldedVolumes, setFoldedVolumes] = useState<Set<string>>(() => new Set(loadLibrary().foldedVolumes));
+  const [hostNames, setHostNames] = useState<Record<string, string>>(() => loadLibrary().hostNames ?? {});
   useEffect(() => {
     let stale = false;
     void invoke<Volume[]>("folder_volumes", { paths: folders }).then((list) => {
@@ -4579,7 +4580,7 @@ export default function App() {
                   if (folder) void showFolder(folder);
                 }} />
               </label>
-              <FolderTree roots={folders} volumes={volumes} folded={foldedVolumes}
+              <FolderTree roots={folders} volumes={volumes} hostNames={hostNames} folded={foldedVolumes}
                           current={immich ? null : folder} photo={photoDir} expanded={expanded} hidden={hidden}
                           refresh={folderRefresh}
                           icon={<FolderIcon />} driveIcon={<DriveIcon />} networkIcon={<NetworkIcon />}
@@ -4590,6 +4591,12 @@ export default function App() {
                             saveLibrary({ foldedVolumes: [...next] });
                           }}
                           onOpen={(d) => { void showFolder(d); setGrid(true); }} onRemove={removeFolder}
+                          onRenameHost={(host, name) => {
+                            const next = { ...hostNames, [host]: name };
+                            if (!name) delete next[host];
+                            setHostNames(next);
+                            saveLibrary({ hostNames: next });
+                          }}
                           onToggle={(d) => {
                             const next = new Set(expanded);
                             if (next.has(d)) next.delete(d); else next.add(d);
@@ -5393,7 +5400,7 @@ type Opened = { path: string; imgid: number | null };
 // last, with its version; remembered between launches
 type Library = { folders: string[]; current: string | null; image: string | null; expanded: string[];
                  hidden: string[]; sampled?: boolean; version?: number;
-                 volumes?: Record<string, Volume>; foldedVolumes?: string[] };
+                 volumes?: Record<string, Volume>; foldedVolumes?: string[]; hostNames?: Record<string, string> };
 function loadLibrary(): Library {
   try {
     return { folders: [], current: null, image: null, expanded: [], hidden: [],

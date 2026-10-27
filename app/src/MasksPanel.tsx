@@ -583,7 +583,7 @@ function MaskName({ name, editing, onEditing, onRename }: {
   return <NameEdit shown={shown} onDone={(to) => { onEditing(false); if (to && to !== shown) onRename(to); }} />;
 }
 
-function NameEdit({ shown, onDone }: { shown: string; onDone: (to: string | null) => void }) {
+export function NameEdit({ shown, onDone }: { shown: string; onDone: (to: string | null) => void }) {
   const [draft, setDraft] = useState(shown);
   return (
     <input className="name-edit" autoFocus value={draft} onChange={(e) => setDraft(e.target.value)}
