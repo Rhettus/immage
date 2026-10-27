@@ -34,7 +34,9 @@ Open the **Folders** card in the **Library** panel.
 - When your folders are on more than one drive, each drive is a heading
   over its folders, so two folders with the same name (a 2026 on your
   computer and a 2026 on a NAS) are told apart. A network share shows a
-  network icon and its server's name. Click a heading to fold it. A
+  network icon and its server's name, or its address when the share was
+  connected by address; double-click the name or address to give it a
+  name of your own, and clear it to go back. Click a heading to fold it. A
   folder on a share that isn't connected stays under its share, dimmed.
 
 Folders you import into join the list by themselves. The list, the open

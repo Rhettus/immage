@@ -8,6 +8,7 @@
 // folders, so a 2026 on the Mac and a 2026 on a NAS are told apart
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { NameEdit } from "./MasksPanel";
 import { baseName } from "./paths";
 
 type SubFolder = { name: string; path: string; has_children: boolean };
@@ -20,10 +21,11 @@ const chevron = (
        strokeLinecap="round" strokeLinejoin="round"><path d="m9 5 7 7-7 7" /></svg>
 );
 
-export function FolderTree({ roots, volumes, folded, current, photo, expanded, hidden, refresh, icon, driveIcon, networkIcon,
-                             onToggle, onFold, onOpen, onRemove }: {
+export function FolderTree({ roots, volumes, hostNames, folded, current, photo, expanded, hidden, refresh, icon, driveIcon, networkIcon,
+                             onToggle, onFold, onOpen, onRemove, onRenameHost }: {
   roots: string[];
   volumes: Map<string, Volume>;        // by root
+  hostNames: Record<string, string>;   // the user's names for servers, by host
   folded: Set<string>;                 // drive headings closed, by mount
   current: string | null;
   photo: string | null;                // the open photo's folder: scrolled to, and marked when not `current`
@@ -37,7 +39,9 @@ export function FolderTree({ roots, volumes, folded, current, photo, expanded, h
   onFold: (mount: string) => void;
   onOpen: (path: string) => void;
   onRemove: (path: string) => void;
+  onRenameHost: (host: string, name: string) => void;  // "" goes back to the host
 }) {
+  const [editingHost, setEditingHost] = useState<string | null>(null);
   const [children, setChildren] = useState<Map<string, SubFolder[]>>(new Map());
   // the open folders' subfolders, read when a folder opens or on refresh
   useEffect(() => {
@@ -106,13 +110,23 @@ export function FolderTree({ roots, volumes, folded, current, photo, expanded, h
       {[...drives].map(([mount, list]) => {
         const v = volumes.get(list[0]);
         const open = !folded.has(mount);
+        // a share mounted by its address shows it, unless the user named it
+        const host = v?.host ? hostNames[v.host] || v.host : null;
         return (
           <li key={`drive:${mount}`}>
-            <div className="folder-volume" title={v?.host ? `${mount}\non ${v.host}` : mount} onClick={() => onFold(mount)}>
+            <div className="folder-volume" title={v?.host ? `${mount}\non ${host}${host !== v.host ? ` (${v.host})` : ""}` : mount}
+                 onClick={() => onFold(mount)}>
               <span className={`twisty${open ? " open" : ""}`}>{chevron}</span>
               {v?.network ? networkIcon : driveIcon}
               <span className="name">{v?.name || mount}</span>
-              {v?.host && <span className="host">{v.host}</span>}
+              {v?.host && (editingHost === mount
+                ? <NameEdit shown={host!} onDone={(to) => {
+                    setEditingHost(null);
+                    if (to !== null && to !== host) onRenameHost(v.host!, to === v.host ? "" : to);
+                  }} />
+                : <span className="host" title="double-click to rename"
+                        onClick={(e) => e.stopPropagation()}
+                        onDoubleClick={(e) => { e.stopPropagation(); setEditingHost(mount); }}>{host}</span>)}
             </div>
             {open && <ul>{list.map((r) => rootRow(r, 1))}</ul>}
           </li>
