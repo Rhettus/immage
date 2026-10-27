@@ -226,9 +226,10 @@ const COMMANDS = {
   ai_denoise_preview: ({ u, v, size }) =>
     request({ cmd: "ai_denoise_preview", u, v, size, out: denoised }),
   // the main loop renders the model's input and answers, then the AI thread
-  ai_object: async ({ points, box }) =>
-    (await onEngineThread({ cmd: "ai_object", points, ...(box ? { box } : {}) })).paths,
-  ai_mask: async ({ kind, range }) => (await onEngineThread({ cmd: "ai_mask", kind, ...(range ? { range } : {}) })).paths,
+  ai_object: async ({ points, box, inset }) =>
+    (await onEngineThread({ cmd: "ai_object", points, ...(box ? { box } : {}), ...(inset === false ? { inset } : {}) })).paths,
+  ai_mask: async ({ kind, range, inset }) =>
+    (await onEngineThread({ cmd: "ai_mask", kind, ...(range ? { range } : {}), ...(inset === false ? { inset } : {}) })).paths,
   ai_depth: ({ size }) => onEngineThread({ cmd: "ai_depth", size }),
   // on the export thread
   hdr_merge: ({ imgids, align }) => requestTagged({ cmd: "hdr_merge", imgids, align }),

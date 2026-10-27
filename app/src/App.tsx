@@ -848,8 +848,12 @@ export default function App() {
                ok: true, action: { label: "Open", run: () => openResult(r.path, r.image.imgid) } };
     }, `Panorama Merge of ${first?.filename ?? "the photos"}`);
   };
+  // an outline the mask adds is traced inside its edge, so its feather ends
+  // there; one it takes away, or inverts (Background), on its edge, its
+  // feather already on the selected side (main.c, _trace_json)
   const selectObject = (prompt: ObjectPrompt) => runAi("mask-object-sam21-small", "finding the object…",
-    () => invoke<ObjectShape["paths"]>("ai_object", { points: prompt.points ?? [], box: prompt.box ?? null }),
+    () => invoke<ObjectShape["paths"]>("ai_object", { points: prompt.points ?? [], box: prompt.box ?? null,
+                                                      inset: toolTarget !== "subtract" }),
     (paths) => aiShown(createShape({ type: "object", paths })));
   // the one-click selections: Subject, Background, which is the subject's
   // outline in a new mask, inverted, and People and the parts of a
@@ -871,7 +875,7 @@ export default function App() {
   const selectAi = (k: AiKind, target: ToolTarget) => {
     const a = AI_KINDS[k];
     return runAi(a.model, a.working,
-      () => invoke<ObjectShape["paths"]>("ai_mask", { kind: a.kind }),
+      () => invoke<ObjectShape["paths"]>("ai_mask", { kind: a.kind, inset: k !== "background" && target !== "subtract" }),
       (paths) => {
         const had = new Set(session.current?.masks.map((m) => m.name));
         const name = createShape({ type: "object", paths }, k === "background" ? "new" : target, a.label);

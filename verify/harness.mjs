@@ -1227,7 +1227,9 @@ async function decisions(photo) {
   // moved onto the photo's own edges (main.c, _snap_edges). a made-up
   // photo whose subject's rim is known, toothed finer than the model sees:
   // the outline's corners lie 1.7 px from it on average, and 3.8 px when
-  // traced at the model's size unsnapped
+  // traced at the model's size unsnapped. by default it is traced a
+  // feather's width inside (0.003 of the shorter side, _trace_json), so
+  // the mask's feather ends at the rim rather than past it
   const RIM = "AI outlines follow the photo's edges";
   if (photo === args.photos[0]) {
     if (!args.models || !existsSync(join(args.models, SUBJECT, "config.json"))) {
@@ -1254,14 +1256,24 @@ async function decisions(photo) {
       try {
         await request({ cmd: "open", path, imgid: -1 });
         await invoke("ai_model_ensure", { id: SUBJECT });
-        const paths = await invoke("ai_mask", { kind: "subject" });
-        const errs = (paths ?? []).flatMap((p) => p.points.map(([x, y]) => {
-          const dx = x * W - W / 2, dy = y * H - H / 2;
-          return Math.abs(Math.hypot(dx, dy) - rim(Math.atan2(dy, dx)));
-        }));
-        const mean = errs.reduce((a, b) => a + b, 0) / Math.max(1, errs.length);
-        return !errs.length ? "Select Subject found nothing"
-          : mean > 2.5 ? `the outline lies ${mean.toFixed(2)} px from the subject's rim on average` : null;
+        // how far inside the rim the corners lie, on average, and how far
+        // from that they stray
+        const inside = (paths) => {
+          const d = (paths ?? []).flatMap((p) => p.points.map(([x, y]) => {
+            const dx = x * W - W / 2, dy = y * H - H / 2;
+            return rim(Math.atan2(dy, dx)) - Math.hypot(dx, dy);
+          }));
+          const mean = (f) => d.reduce((a, b) => a + f(b), 0) / Math.max(1, d.length);
+          return { n: d.length, by: mean((v) => v), off: (at) => mean((v) => Math.abs(v - at)) };
+        };
+        const edge = inside(await invoke("ai_mask", { kind: "subject", inset: false }));
+        const feather = 0.003 * Math.min(W, H);
+        const inset = inside(await invoke("ai_mask", { kind: "subject" }));
+        return !edge.n || !inset.n ? "Select Subject found nothing"
+          : edge.off(0) > 2.5 ? `the outline lies ${edge.off(0).toFixed(2)} px from the subject's rim on average`
+          // more on this rim's teeth, whose tips an inset takes more off
+          : inset.by < feather - 1.5 || inset.by > 2 * feather + 1.5
+            ? `traced to be added, the outline lies ${inset.by.toFixed(2)} px inside the rim, not about ${feather}` : null;
       } finally {
         await restart();
       }
@@ -1760,12 +1772,15 @@ async function decisions(photo) {
         let o = await open(path);
         const paths = await invoke("ai_object", { points: [], box: [0.3, 0.3, 0.7, 0.7] });
         if (!paths?.length) return "Select Object found nothing in the middle of the photo";
+        // the object's own edge: the outline added is traced a feather's
+        // width inside it, so the feather ends there (main.c, _trace_json)
+        const edge = await invoke("ai_object", { points: [], box: [0.3, 0.3, 0.7, 0.7], inset: false });
         const name = z.zoneMaskName([0, 10], { kind: "object:A", invert: false });
         await o.after(() => o.s.addMask(name, [z.zoneShape([0, 10], 1), { type: "object", paths, mode: "add" }]));
         const f = await o.after(() => o.s.setLocal(name, "l_exposure", 1));
         const err = brighter(f, o.base, inPaths(paths, true));
         if (err) return `inside the object: ${err}`;
-        const out = compare(f, o.base, inPaths(paths, false));
+        const out = compare(f, o.base, inPaths(edge, false));
         if (!(out.mad <= THRESHOLD.outside)) return `outside the object, the photo changed (mean |Δ| ${out.mad})`;
         await o.s.close();
         await drained();
