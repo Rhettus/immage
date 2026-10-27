@@ -4237,10 +4237,12 @@ static void _inset(float *p, const int w, const int h, const float r)
 
 // probabilities at the guide's size, snapped to its edges by `snap`
 // pixels at _TRACE_SIZE, traced into the reply's paths. darktable feathers
-// a path outward only, so a selection the mask adds (the request's
-// `inset`, by default) is traced a default feather's width inside its
-// edge, where the feather then ends: a feather past the edge would carry
-// the adjustment into the background around it. a selection the mask
+// a path outward only, fading linearly (path.c), so a selection the mask
+// adds (the request's `inset`, by default) is traced half a default
+// feather inside its edge: the mask is about half on there, as a soft
+// matte's edge is. traced on the edge, the feather carried the adjustment
+// into the background around it; a whole feather inside, the subject's
+// own rim, its crest or a beak's edge, was left out. a selection the mask
 // takes away, or inverts (Background), is traced on its edge, its feather
 // already falling on the side that is selected
 static void _trace_json(const _ai_job_t *job, JsonBuilder *b, float *p, const float snap, const gboolean add)
@@ -4249,7 +4251,7 @@ static void _trace_json(const _ai_job_t *job, JsonBuilder *b, float *p, const fl
     _snap_edges(p, job->gw, job->gh, g_bytes_get_data(job->guide, NULL),
                 snap * MAX(job->gw, job->gh) / _TRACE_SIZE);
   if(add && json_object_get_boolean_member_with_default(job->req, "inset", TRUE))
-    _inset(p, job->gw, job->gh, _OBJECT_FEATHER * MIN(job->gw, job->gh));
+    _inset(p, job->gw, job->gh, 0.5f * _OBJECT_FEATHER * MIN(job->gw, job->gh));
   _paths_json(b, p, job->gw, job->gh);
 }
 
