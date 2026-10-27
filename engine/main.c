@@ -84,6 +84,7 @@
 #include <archive_entry.h>
 #include <json-glib/json-glib.h>
 #include <pango/pangocairo.h>
+#include <errno.h>
 #include <inttypes.h>
 #include <limits.h>
 #include <stdio.h>
@@ -8585,18 +8586,33 @@ fail:
   g_free(err);
 }
 
-// one request line from `f`, however long, into `s`; FALSE at the end of
-// input. getline() would do, but MinGW's C runtime on Windows lacks it
-static gboolean _read_line(GString *s, FILE *f)
+// one request line from stdin, however long, into `s`, with what was read
+// past it kept in `rest` for the next; FALSE at the end of input. read()
+// rather than stdio: a thread waiting in fgets() holds stdin's lock, and
+// glibc's exit() (2.43 on Ubuntu) takes every stream's lock to flush it, so
+// the engine never exited after `quit` on Linux
+static gboolean _read_line(GString *s, GString *rest)
 {
   char buf[65536];
-  g_string_truncate(s, 0);
-  while(fgets(buf, sizeof(buf), f))
+  g_string_assign(s, rest->str);
+  g_string_truncate(rest, 0);
+  gsize scanned = 0;
+  for(;;)
   {
-    g_string_append(s, buf);
-    if(s->len && s->str[s->len - 1] == '\n') return TRUE;
+    const char *nl = memchr(s->str + scanned, '\n', s->len - scanned);
+    if(nl)
+    {
+      const gsize end = nl - s->str + 1;
+      g_string_append_len(rest, s->str + end, s->len - end);
+      g_string_truncate(s, end);
+      return TRUE;
+    }
+    scanned = s->len;
+    const ssize_t got = read(STDIN_FILENO, buf, sizeof(buf));
+    if(got < 0 && errno == EINTR) continue;
+    if(got <= 0) return s->len > 0;
+    g_string_append_len(s, buf, got);
   }
-  return s->len > 0;
 }
 
 // the end of input, on the request queue
@@ -8615,8 +8631,8 @@ static char _end_of_input[] = "";
 static gpointer _read_requests(gpointer data)
 {
   GAsyncQueue *queue = data;
-  GString *line = g_string_new(NULL);
-  while(_read_line(line, stdin))
+  GString *line = g_string_new(NULL), *rest = g_string_new(NULL);
+  while(_read_line(line, rest))
   {
     gboolean taken = FALSE;
     if(strstr(line->str, "\"tag\"")
@@ -8667,6 +8683,7 @@ static gpointer _read_requests(gpointer data)
     if(!taken) g_async_queue_push(queue, g_strndup(line->str, line->len));
   }
   g_string_free(line, TRUE);
+  g_string_free(rest, TRUE);
   g_async_queue_push(queue, _end_of_input);
   return NULL;
 }

@@ -472,6 +472,15 @@ function bandAt(f, hue) {
 async function fixes(photo) {
   const fix = (id, run) => outcome("fixes", basename(photo), id, run);
 
+  // 0.38.0: on Linux the engine never exited after quit. its stdin reader
+  // waited in fgets(), holding stdin's lock, which glibc's exit() takes to
+  // flush every stream (main.c, _read_line); the app killed it after 5 s
+  if (photo === args.photos[0]) await fix("the engine exits after quit", async () => {
+    const gone = await stopEngine();
+    startEngine(args.engine, engineHome);
+    return gone ? null : "still running 5 s after quit";
+  });
+
   // 0.37.0: HSL's Saturation was twice Lightroom's strength, -50 already
   // gray, and its bands sat on the color equalizer's nodes, not at
   // Lightroom's hues (colorequal.ts). with Blue at -100, Aqua did nothing to
