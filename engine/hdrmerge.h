@@ -27,8 +27,13 @@
 // whether this build can align brackets (darktable built with OpenCV)
 gboolean hdr_merge_can_align(void);
 
+// called before each bracket is read, with how many have been, and once
+// all have; FALSE stops the merge
+typedef gboolean (*hdr_merge_step_t)(int done, int total, void *data);
+
 // the raw brackets `imgids` merged into a float DNG beside the first:
 // <name>-hdr.dng, or -hdr_01.dng, -hdr_02.dng... when taken. `align`
-// registers each onto the reference first, when the build can. returns the
-// DNG's path, or NULL with *err
-gchar *hdr_merge(GList *imgids, gboolean align, char **err);
+// registers each onto the reference first, when the build can. `step`, if
+// any, follows the brackets as they are read. returns the DNG's path, or
+// NULL with *err
+gchar *hdr_merge(GList *imgids, gboolean align, hdr_merge_step_t step, void *data, char **err);

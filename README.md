@@ -13,6 +13,9 @@ shows each one). Edits are saved as ordinary darktable XMP sidecars.
 Staying out of the pipeline is what keeps Immage compatible with
 darktable: darktable of the same version opens an Immage edit and renders
 it the same, and every improvement to darktable's engine reaches Immage.
+The one exception is Panorama Merge, which darktable doesn't have: it
+stitches raws with OpenCV into a new DNG, which is then edited with
+darktable's modules like any other raw.
 
 It is a personal, non-commercial project, with builds for macOS, Windows
 and Linux on the [Releases](https://github.com/Rhettus/immage/releases)
@@ -118,6 +121,8 @@ Everything else in this repository is Immage's own.
     Visualize Spots view, stored in darktable's retouch module
   - film negative conversion, color or black and white, picked from the
     film border and the photo, in darktable's negadoctor
+  - HDR Merge, in darktable's HDR merge, and Panorama Merge, stitched
+    with OpenCV, each into a new DNG
   - presets, film looks with live preview tiles, undo/redo, a before/after
     view, crop and straighten, a white balance picker, export with
     borders and file-name templates (to a folder or an Immich album), a
@@ -191,6 +196,7 @@ photo that already uses one of a tool's modules keeps it.
 | Local Noise, Defringe, Sharpness | an instance of denoise (profiled), chromatic aberrations (`cacorrectrgb`) or defringe (`defringe`), or diffuse or sharpen or sharpen (as the photo's Sharpening) per mask |
 | **Heal and Clone** | retouch (`retouch`) |
 | **HDR Merge** | darktable's HDR merge (lighttable's "create HDR"), with its auto-alignment, into a float DNG |
+| **Panorama Merge** | no darktable module: OpenCV's stitching, of raws rendered by darktable up to lens correction (`lens`), into a float DNG |
 | **Negative** | negadoctor (`negadoctor`); a converted negative switches off color calibration, exposure, the tone equalizer, haze removal and the tone mapper, and runs Contrast and Saturation on color balance rgb, Highlights and Shadows on shadows and highlights |
 | **Looks** | darktable styles, applied as extra module instances |
 | **Export** borders | framing (`borders`), added at export only |
@@ -418,8 +424,9 @@ Immage stands on the work of these projects:
 - [**ONNX Runtime**](https://github.com/microsoft/onnxruntime): runs the
   AI models. MIT.
 - [**OpenCV**](https://opencv.org/): aligns the brackets of an HDR Merge,
-  in darktable's HDR merge; built from source with only the parts it
-  needs (`app/scripts/build_opencv.sh`). Apache-2.0.
+  in darktable's HDR merge, and stitches Panorama Merge's photos; built
+  from source with only the parts they need
+  (`app/scripts/build_opencv.sh`). Apache-2.0.
 - [**lensfun**](https://lensfun.github.io/): the lens correction
   database, bundled with the app. LGPL-3.0 library, CC BY-SA 3.0 data.
 - [**Stairs to mountain**](https://commons.wikimedia.org/wiki/File:Stairs_to_mountain.jpg)

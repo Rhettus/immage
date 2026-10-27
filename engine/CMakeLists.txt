@@ -16,6 +16,22 @@ target_include_directories(darktable-engine PRIVATE ${JSON_GLIB_INCLUDE_DIRS})
 target_link_directories(darktable-engine PRIVATE ${JSON_GLIB_LIBRARY_DIRS})
 target_link_libraries(darktable-engine lib_darktable ${JSON_GLIB_LIBRARIES} ${Exiv2_LIBRARIES})
 
+# Panorama Merge (pano.cc) stitches with OpenCV's stitching module, which
+# darktable does not link (src/CMakeLists.txt, DT_OPENCV4_MODULES): built
+# when darktable found OpenCV 4 and app/scripts/build_opencv.sh built the
+# module too. its DNG writer (dng.c) calls libtiff, darktable's own
+if(OpenCV_FOUND AND OpenCV_VERSION VERSION_GREATER_EQUAL 4 AND OpenCV_VERSION VERSION_LESS 5)
+  find_package(OpenCV 4 QUIET COMPONENTS stitching)
+endif()
+if(TARGET opencv_stitching)
+  target_sources(darktable-engine PRIVATE pano.cc dng.c)
+  target_compile_definitions(darktable-engine PRIVATE HAVE_PANO)
+  target_link_libraries(darktable-engine opencv_stitching ${TIFF_LIBRARIES})
+  message(STATUS "OpenCV stitching found: Panorama Merge enabled")
+else()
+  message(STATUS "OpenCV stitching not found: Panorama Merge disabled")
+endif()
+
 set_target_properties(darktable-engine
                       PROPERTIES
                       INSTALL_RPATH ${RPATH_ORIGIN}/${REL_BIN_TO_LIBDIR}

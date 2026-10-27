@@ -24,8 +24,9 @@
 // (dt_control_merge_hdr_t, the format callbacks, _envelope,
 // _control_merge_hdr_process, _control_merge_hdr_validate) with only its
 // messages changed: dt_control_log() becomes the error handed back. the
-// job's run is rewritten as hdr_merge(), without the job's progress, the
-// collection reload and the import, which the engine does itself. compare
+// job's run is rewritten as hdr_merge(), with its progress a callback of
+// the engine's, and without the collection reload and the import, which
+// the engine does itself. compare
 // these with control_jobs.c when taking a new darktable release
 
 #include "hdrmerge.h"
@@ -415,7 +416,7 @@ static void _merge_frame(const dt_imgid_t imgid, dt_imageio_module_format_t *buf
                                NULL, num, total, NULL, -1);
 }
 
-gchar *hdr_merge(GList *imgids, const gboolean align, char **err)
+gchar *hdr_merge(GList *imgids, const gboolean align, hdr_merge_step_t step, void *data, char **err)
 {
   GList *t = g_list_copy(imgids);
   const guint total = g_list_length(t);
@@ -485,7 +486,20 @@ gchar *hdr_merge(GList *imgids, const gboolean align, char **err)
 
   int num = 1;
   for(GList *p = t; p && !d.abort; p = g_list_next(p))
+  {
+    if(step && !step(num - 1, total, data))
+    {
+      d.abort = TRUE;
+      d.err = g_strdup("stopped");
+      break;
+    }
     _merge_frame(GPOINTER_TO_INT(p->data), &buf, &dat, num++, total);
+  }
+  if(!d.abort && step && !step(total, total, data))
+  {
+    d.abort = TRUE;
+    d.err = g_strdup("stopped");
+  }
 
   if(d.abort) goto end;
   if(!d.pixels)

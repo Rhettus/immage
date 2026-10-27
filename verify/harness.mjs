@@ -1116,6 +1116,53 @@ async function decisions(photo) {
     });
   }
 
+  // Panorama Merge writes a DNG beside the first raw that opens as that
+  // raw, in its own color (main.c, _pano_frame; dng.c): two copies of one
+  // raw stitch back into it, as bright and of the same color, upright. a
+  // single photo is refused. on the first raw, when the engine has OpenCV's
+  // stitching
+  if (photo === args.photos.find((p) => /\.(arw|cr2|cr3|nef|nrw|orf|pef|raf|rw2|srw)$/i.test(p))
+      && await invoke("pano_can_merge")) {
+    await decide("Panorama Merge of two copies of a raw renders as the raw", async () => {
+      const dir = join(args.work, "pano");
+      rmSync(dir, { recursive: true, force: true });
+      mkdirSync(dir, { recursive: true });
+      const ext = photo.match(/\.[^.]+$/)[0];
+      const files = ["a", "b"].map((n) => join(dir, n + ext));
+      for (const f of files) copyFileSync(photo, f, constants.COPYFILE_FICLONE);
+      const { images } = await request({ cmd: "import", files });
+      const alone = await invoke("pano_merge", { imgids: [images[0].imgid], projection: "auto", crop: true })
+        .then(() => null, (e) => String(e));
+      const r = await invoke("pano_merge", { imgids: images.map((i) => i.imgid), projection: "auto", crop: true });
+      const src = await open(files[0]);
+      await src.s.close();
+      const pano = await open(r.path);
+      const fresh = !pano.s.wasEdited;
+      await pano.s.close();
+      // the mean luma and warmth of a frame: the two differ in size, as the
+      // stitch warps and crops
+      const mean = (f) => {
+        let l = 0, w = 0;
+        const p = f.pixels, n = f.width * f.height;
+        for (let i = 0; i < 4 * n; i += 4) {
+          l += 0.2126 * p[i] + 0.7152 * p[i + 1] + 0.0722 * p[i + 2];
+          w += p[i] - p[i + 2];
+        }
+        return { lum: l / n, warm: w / n };
+      };
+      const a = mean(pano.base), b = mean(src.base);
+      const tall = (f) => f.height > f.width;
+      return alone === null ? "a merge of one photo was not refused"
+        : basename(r.path) !== "a-pano.dng" ? `the merge wrote ${basename(r.path)}, not a-pano.dng`
+        : r.image?.path !== r.path ? "the DNG was not imported"
+        : r.used !== 2 ? `the panorama holds ${r.used} of the 2 photos`
+        : !fresh ? "the DNG opens with an edit"
+        : tall(pano.base) !== tall(src.base) ? "the DNG is turned from the raw"
+        : Math.abs(a.lum - b.lum) > 4 ? `the DNG renders ${(a.lum - b.lum).toFixed(1)} brighter than the raw`
+        : Math.abs(a.warm - b.warm) > 4 ? `the DNG renders ${(a.warm - b.warm).toFixed(1)} warmer than the raw` : null;
+    });
+  }
+
   // an AI selection's model runs on a thread of the engine's while the
   // photo is edited, and a color edit leaves its result standing for the
   // next selection (main.c, _ai_run, _mask_cache). on the first photo

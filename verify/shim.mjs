@@ -230,6 +230,8 @@ const COMMANDS = {
   // on the export thread
   hdr_merge: ({ imgids, align }) => requestTagged({ cmd: "hdr_merge", imgids, align }),
   hdr_can_align: async () => (await request({ cmd: "version" })).hdr_align ?? false,
+  pano_merge: ({ imgids, projection, crop }) => requestTagged({ cmd: "pano_merge", imgids, projection, crop }),
+  pano_can_merge: async () => (await request({ cmd: "version" })).pano ?? false,
 };
 
 // the engine's models folder (startEngine's), and where a check's models
