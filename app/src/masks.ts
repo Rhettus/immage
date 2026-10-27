@@ -82,6 +82,16 @@ export type Refine = { feather: number; blur: number; detail: number; contrast: 
 export const NO_REFINE: Refine = { feather: 0, blur: 0, detail: 0, contrast: 0 };
 export const isRefined = (m: Mask) => !!m.refine && Object.values(m.refine).some((v) => v !== 0);
 
+// what a new mask from an AI selection starts with. Sky and the Landscape
+// kinds start at Edge Aware 20: their outline follows the treeline (the
+// engine's _snap_edges), but only the feathering takes in the sky between
+// branches, and at 20 it reaches no farther edge to halo. Edge Aware's
+// slider is feather / 2.5 (MasksPanel.tsx, REFINES)
+const EDGE_AWARE_KINDS = new Set(["sky", "water", "vegetation", "mountains", "ground", "architecture",
+                                  "artificial_ground"]);
+export const aiRefine = (kind: string): Refine | null =>
+  EDGE_AWARE_KINDS.has(kind) ? { ...NO_REFINE, feather: 20 * 2.5 } : null;
+
 // opacity 0-100, how strongly the adjustments apply; missing is 100.
 // a hidden mask keeps its settings with its adjustments off
 export type Mask = { name: string; shapes: Shape[]; invert: boolean; opacity?: number; hidden?: boolean;

@@ -70,7 +70,7 @@ import { DEFAULT_TRANSITION, loadZoneOverlay, offsetsOf, overlayRgb, paintRange,
          type ZoneData, type ZoneOverlay, type ZonePart, type ZoneRange } from "./zones";
 import { SpotOverlay, type SpotTool } from "./SpotOverlay";
 import type { NewSpot, Spot } from "./spots";
-import { flipMode, isRange, isRefined, maskAt, maskKindName, nextMaskName, NO_REFINE, overlayShown, overlayStep, rangeChannels,
+import { aiRefine, flipMode, isRange, isRefined, maskAt, maskKindName, nextMaskName, NO_REFINE, overlayShown, overlayStep, rangeChannels,
          type BlendifChannel, type ChannelRange, type Mask, type ObjectShape, type OverlayToggle, type ParametricRange, type Range,
          type RangeMap, type Refine, type Region, type Shape } from "./masks";
 import { channelTint, type Picked } from "./ParametricEditor";
@@ -873,8 +873,11 @@ export default function App() {
     return runAi(a.model, a.working,
       () => invoke<ObjectShape["paths"]>("ai_mask", { kind: a.kind }),
       (paths) => {
+        const had = new Set(session.current?.masks.map((m) => m.name));
         const name = createShape({ type: "object", paths }, k === "background" ? "new" : target, a.label);
         if (k === "background" && name) session.current?.setInvert(name, true);
+        const refine = aiRefine(k);
+        if (name && !had.has(name) && refine) session.current?.setRefine(name, refine);
         syncMasks();
         aiShown(name);
       });

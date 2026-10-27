@@ -66,7 +66,7 @@ const { Session } = await import("../app/src/session.ts");
 const { withModel } = await import("../app/src/aiModel.ts");
 const m = await import("../app/src/manifest.ts");
 const { canMerge } = await import("../app/src/localMerge.ts");
-const { overlayShown, overlayStep } = await import("../app/src/masks.ts");
+const { aiRefine, overlayShown, overlayStep } = await import("../app/src/masks.ts");
 const { ILLUMINANT_D } = await import("../app/src/wb.ts");
 const { autoTone } = await import("../app/src/autoTone.ts");
 const { dueIn } = await import("../app/src/activity.ts");
@@ -1644,6 +1644,19 @@ async function decisions(photo) {
     ];
     const wrong = cases.filter(([, got, want]) => got !== want).map(([label]) => label);
     return wrong.length ? `not so: ${wrong.join(", ")}` : null;
+  });
+
+  // a new Sky or Landscape mask starts at Edge Aware 20, which takes in
+  // the sky between branches the traced outline leaves out without the
+  // halo a wider one leaves; a subject, people or an object start with none
+  // (masks.ts, aiRefine)
+  await decide("Sky and Landscape masks start edge aware", async () => {
+    const edge = (k) => (aiRefine(k)?.feather ?? 0) / 2.5;
+    const cases = [...["sky", "water", "vegetation", "mountains", "ground", "architecture", "artificial_ground"]
+                     .map((k) => [k, edge(k), 20]),
+                   ...["subject", "background", "people", "object", "depth"].map((k) => [k, edge(k), 0])];
+    const wrong = cases.filter(([, got, want]) => got !== want).map(([k, got, want]) => `${k} starts at ${got}, not ${want}`);
+    return wrong.length ? wrong.join(", ") : null;
   });
 
   // a converted negative turns off the modules that would change the
