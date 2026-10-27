@@ -112,12 +112,22 @@ async function onEngineThread(req) {
   return r;
 }
 
-export async function stopEngine() {
-  if (!engine) return;
+// it saves the open photo and writes its library before it exits; one
+// still there after `wait` ms is killed, as engine.rs's reap does, and
+// stopEngine() gives false
+export async function stopEngine(wait = 5000) {
+  if (!engine) return true;
+  const me = engine;
   await request({ cmd: "quit" }).catch(() => {});
-  // it saves the open photo and writes its library before it exits
-  await exited;
+  let timer;
+  const gone = await Promise.race([exited.then(() => true), new Promise((r) => { timer = setTimeout(r, wait, false); })]);
+  clearTimeout(timer);
+  if (!gone) {
+    me.kill();
+    await exited;
+  }
   engine = null;
+  return gone;
 }
 
 // the header render() puts ahead of the frame
