@@ -1530,8 +1530,12 @@ async function decisions(photo) {
     const p = await open(fresh(photo));
     const alone = await p.after(() => { p.s.endBaseline(); p.s.set("exposure", 1.5); });
     await p.s.close();
+    // not to the bit: Exposure's own instance has a raw's black level and
+    // the compensation's none, and exposure scales by 1 / (2^-EV - black)
+    // (exposure.c), so EV split over the two lands a twentieth of a level
+    // off on some photos. no change a control could be told by
     const by = compare(both, alone).mad;
-    if (by > THRESHOLD.roundtrip) return `+1 EV compensation and Exposure +0.5 differ from Exposure +1.5 (mean |Δ| ${by})`;
+    if (by > THRESHOLD.change) return `+1 EV compensation and Exposure +0.5 differ from Exposure +1.5 (mean |Δ| ${by})`;
     o = await open(path);
     const { exposure, exp_comp } = o.s.values;
     const row = o.s.history.find((h) => h.op === "exposure" && h.label === "compensation");
