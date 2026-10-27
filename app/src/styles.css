@@ -323,6 +323,8 @@ section h3 { margin: 7px 0 5px; font-size: var(--fs-body); font-weight: 600; col
 .denoise-tools { display: flex; align-items: center; gap: 8px; margin: 2px 0 6px; }
 /* AI Denoise's dialog: the piece at 1:1, and the small photo that moves it */
 .modal.denoise { width: min(860px, calc(100vw - 32px)); }
+.modal.hdr-merge { width: min(440px, calc(100vw - 32px)); }
+.modal.pano-merge { width: min(480px, calc(100vw - 32px)); }
 .denoise-body { display: flex; gap: 18px; padding-top: 8px; }
 .denoise-view {
   position: relative; flex: none; width: 480px; height: 480px; overflow: hidden;
@@ -992,6 +994,14 @@ input.switch:disabled { cursor: default; opacity: 0.4; }
 .folders .icon { color: var(--text-2); flex: none; }
 .folders .folder-row:hover { background: var(--card); }
 .folders .folder-row.active { background: var(--inset); }
+/* a drive's heading over its folders, when there is more than one drive */
+.folders .folder-volume {
+  display: flex; align-items: center; gap: 6px; padding: 6px 8px 3px;
+  font-size: 12px; font-weight: 600; color: var(--text-2); cursor: pointer;
+}
+.folders .folder-volume:hover { color: var(--text); }
+.folders .folder-volume .host { flex: none; font-weight: 400; opacity: 0.7; }
+.folders .folder-row.offline { opacity: 0.45; }
 /* the open photo's folder, when the filmstrip shows another (a parent, with
    its subfolders) */
 .folders .folder-row.has-photo { background: color-mix(in srgb, var(--inset) 50%, transparent); }
@@ -1709,20 +1719,32 @@ input.switch:disabled { cursor: default; opacity: 0.4; }
 .history .panel-title .compress:hover:not(:disabled) { background: var(--hover); color: var(--text); }
 .history .panel-title .compress:disabled { opacity: 0.35; cursor: default; }
 
-/* reading a folder, then loading its thumbnails: bottom left of the photo */
+/* background exports, then reading a folder or loading its thumbnails:
+   bottom left of the photo, and over the grid (25), where merges are
+   started from, under the floating panels */
+.activities {
+  position: absolute; bottom: 8px; left: 12px; z-index: 26; display: flex; flex-direction: column;
+  align-items: flex-start; gap: 6px; pointer-events: none;
+}
 .activity {
-  position: absolute; bottom: 8px; left: 12px; display: flex; flex-direction: column; gap: 4px;
+  display: flex; flex-direction: column; gap: 4px;
   padding: 5px 10px 6px; background: rgba(14, 14, 14, 0.75); border-radius: 6px;
   color: var(--text-2); font-size: var(--fs-small); font-variant-numeric: tabular-nums; pointer-events: none;
 }
+.activity .progress {
+  display: flex; flex-direction: column; gap: 4px; height: auto; margin: 0; background: none; border-radius: 0;
+  overflow: visible;
+}
+.activity .failed { color: #ff6b6b; }
 .activity .bar { width: 180px; height: 3px; border-radius: 2px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
 .activity .bar > div { height: 100%; background: var(--accent); transition: width 0.2s; }
-.window.preview .activity { display: none; }
+.window.preview .activities { display: none; }
 .activity.waiting { flex-direction: row; align-items: center; gap: 10px; pointer-events: auto; }
 .activity.waiting button {
   padding: 1px 8px; background: #2a2a2a; border: none; border-radius: 5px; color: var(--text); font: inherit; cursor: pointer;
 }
-.activity.waiting button:hover { background: #353535; }
+.activity.waiting button:hover:not(:disabled) { background: #353535; }
+.activity.waiting button:disabled { opacity: 0.5; cursor: default; }
 
 /* the reject filter showing only rejected photos */
 .tool-group.filter .tool.on.only-rejected { color: #ff6b6b; }

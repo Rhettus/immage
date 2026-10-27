@@ -182,13 +182,17 @@ The dialog previews a piece of the photo at 1:1, starting where you are
 zoomed in. Amount changes it at once. Hold the preview to see it without
 AI Denoise, and drag on the small photo beside it to preview another
 part, which takes a moment.
-Immage writes a new DNG beside the raw, named `<name>_raw-denoise.dng`,
-and opens it. The DNG starts with the raw's edit, with Profiled Denoise's
-Luminance and Color at 0, since the AI took the noise out. It is a photo
-of its own and sits after the raw in the folder; the raw itself isn't
-changed. This takes up to a minute, and the model downloads on first use.
-Raws only, in a folder on this computer. To try another Amount, run it
-again on the raw; the next DNG is `<name>_raw-denoise_1.dng`.
+Immage writes a new DNG beside the raw, named `<name>_raw-denoise.dng`.
+This takes up to a minute, and the model downloads on first use. It runs
+in the background: you go on editing, this photo or another, while the
+bottom left of the photo shows it under way. When it's done, **Open**
+there opens the DNG. The DNG starts with the raw's edit as it was when
+you clicked Denoise, and the first time it opens, Profiled Denoise's
+Luminance and Color go to 0, since the AI took the noise out. It is a
+photo of its own and sits after the raw in the folder; the raw itself
+isn't changed. Raws only, in a folder on this computer, one at a time.
+To try another Amount, run it again on the raw; the next DNG is
+`<name>_raw-denoise_1.dng`.
 
 **Profiled Denoise** (darktable's profiled denoise)
 

@@ -37,7 +37,8 @@ registerHooks({
     return { format: "module", source: out.code, shortCircuit: true };
   },
   resolve(spec, ctx, next) {
-    if (spec === "@tauri-apps/api/core" || spec === "@tauri-apps/api/event" || spec === "@immporter/api") return next(SHIM, ctx);
+    if (spec === "@tauri-apps/api/core" || spec === "@tauri-apps/api/event" || spec === "@tauri-apps/api/window"
+        || spec === "@immporter/api") return next(SHIM, ctx);
     if ((spec.startsWith("./") || spec.startsWith("../")) && !/\.[cm]?[jt]sx?$/.test(spec)) {
       for (const ext of [".ts", ".tsx"]) {
         const url = new URL(spec + ext, ctx.parentURL);
@@ -48,8 +49,9 @@ registerHooks({
   },
 });
 
-// what the WebView would have: the timers Session and activity.ts use, and
-// localStorage, which holds Preferences › Modules
+// what the WebView would have: the timers Session and activity.ts use,
+// localStorage, which holds Preferences › Modules, and ImageData, which a
+// mask's overlay comes in
 const store = new Map();
 globalThis.window = globalThis;
 globalThis.localStorage = {
@@ -57,16 +59,20 @@ globalThis.localStorage = {
   setItem: (k, v) => store.set(k, String(v)),
   removeItem: (k) => store.delete(k),
 };
+globalThis.addEventListener ??= () => {};
 globalThis.requestAnimationFrame = (f) => setTimeout(() => f(performance.now()), 16);
 globalThis.cancelAnimationFrame = (t) => clearTimeout(t);
+globalThis.ImageData = class {
+  constructor(w, h) { this.width = w; this.height = h; this.data = new Uint8ClampedArray(4 * w * h); }
+};
 
 const args = JSON.parse(process.argv[2]);
-const { startEngine, stopEngine, request, invoke, sent, models, FRAME_HEAD } = await import(SHIM);
+const { startEngine, stopEngine, request, requestTagged, invoke, sent, models, screen, FRAME_HEAD } = await import(SHIM);
 const { Session } = await import("../app/src/session.ts");
 const { withModel } = await import("../app/src/aiModel.ts");
 const m = await import("../app/src/manifest.ts");
 const { canMerge } = await import("../app/src/localMerge.ts");
-const { overlayShown, overlayStep } = await import("../app/src/masks.ts");
+const { aiRefine, overlayPixels, overlayShown, overlayStep } = await import("../app/src/masks.ts");
 const { ILLUMINANT_D } = await import("../app/src/wb.ts");
 const { autoTone } = await import("../app/src/autoTone.ts");
 const { dueIn } = await import("../app/src/activity.ts");
@@ -74,7 +80,7 @@ const { byCaptureTime } = await import("../app/src/library.ts");
 const { NO_FILTER, exposureLabel, facetsWithin, passes } = await import("../app/src/filter.ts");
 const z = await import("../app/src/zones.ts");
 const nd = await import("../app/src/negadoctor.ts");
-const { compare, meanChroma, inEllipse, rightOf } = await import("./metrics.mjs");
+const { compare, chromaChange, meanChroma, inEllipse, rightOf } = await import("./metrics.mjs");
 const { THRESHOLD, GLOBAL, COMPOSITE, LOCAL, trialValues, judge } = await import("./expect.mjs");
 
 const VIEW = { width: 1024, height: 1024 };
@@ -466,6 +472,15 @@ function bandAt(f, hue) {
 async function fixes(photo) {
   const fix = (id, run) => outcome("fixes", basename(photo), id, run);
 
+  // 0.38.0: on Linux the engine never exited after quit. its stdin reader
+  // waited in fgets(), holding stdin's lock, which glibc's exit() takes to
+  // flush every stream (main.c, _read_line); the app killed it after 5 s
+  if (photo === args.photos[0]) await fix("the engine exits after quit", async () => {
+    const gone = await stopEngine();
+    startEngine(args.engine, engineHome);
+    return gone ? null : "still running 5 s after quit";
+  });
+
   // 0.37.0: HSL's Saturation was twice Lightroom's strength, -50 already
   // gray, and its bands sat on the color equalizer's nodes, not at
   // Lightroom's hues (colorequal.ts). with Blue at -100, Aqua did nothing to
@@ -776,6 +791,36 @@ async function fixes(photo) {
     return moved > 0.01 ? `after a zoomed mask map, ${(100 * moved).toFixed(0)}% of the range map changed` : null;
   });
 
+  // 0.38.0: an AI selection's overlay was drawn from a copy of its outline
+  // 512 px across, so zoomed in its edge came in steps, and it left out
+  // darktable's default feather. it is drawn at the overlay's own size now
+  // (masks.ts, objectCover): a circle 10x zoomed matches darktable's
+  // coverage, full inside, falling linearly over the feather outside
+  if (photo === args.photos[0]) await fix("an AI selection's overlay zoomed in", async () => {
+    const W = 6000, H = 4000, R = 1200, k = 0.5523 * R;
+    const at = (x, y) => [0.5 + x / W, 0.5 + y / H];
+    const points = [[R, 0], [0, R], [-R, 0], [0, -R]].map(([x, y]) => {
+      const tx = -y / R, ty = x / R;
+      return [...at(x, y), ...at(x - tx * k, y - ty * k), ...at(x + tx * k, y + ty * k)];
+    });
+    const mask = { name: "", invert: false, values: {}, shapes: [{ type: "object", paths: [{ hole: false, points }] }] };
+    const win = [0.66, 0.4, 0.74, 0.5];
+    const img = overlayPixels(mask, 640, W, H, null, [230, 40, 40], win);
+    const scale = img.width / ((win[2] - win[0]) * W), feather = 0.003 * H;
+    let worst = 0;
+    for (let j = 0; j < img.height; j++)
+      for (let i = 0; i < img.width; i++) {
+        const x = (win[0] + ((i + 0.5) / img.width) * (win[2] - win[0])) * W - W / 2;
+        const y = (win[1] + ((j + 0.5) / img.height) * (win[3] - win[1])) * H - H / 2;
+        const d = Math.hypot(x, y) - R;
+        // the anti-aliased pixels astride the outline aside
+        if (Math.abs(d) * scale < 1) continue;
+        const want = d < 0 ? 1 : Math.max(0, 1 - d / feather);
+        worst = Math.max(worst, Math.abs(img.data[4 * (j * img.width + i) + 3] / 140 - want));
+      }
+    return worst > 0.1 ? `zoomed in, the overlay strays from the mask by up to ${(100 * worst).toFixed(0)}%` : null;
+  });
+
   // 0.34.0: a JPEG or TIFF reaches the mask stage in Lab, and reading it
   // there failed ("not in RGB at the mask stage"): the color range picker,
   // range overlays and the hover probe. what a range map reads is what
@@ -848,6 +893,19 @@ async function fixes(photo) {
     const wrong = cases.filter(([, got, want]) => got !== want).map(([label]) => label);
     return wrong.length ? `not so: ${wrong.join(", ")}` : null;
   });
+
+  // 0.38.0: a rejected photo deleted, then a new file at its path (a
+  // panorama merged again), came back rejected: the library kept its row
+  await fix("a new file where a deleted one was isn't rejected", async () => {
+    const path = fresh(photo);
+    const { images: [e] } = await request({ cmd: "import", files: [path] });
+    await invoke("meta_set", { imgid: e.imgid, fields: { rejected: true } });
+    await invoke("trash_files", { imgids: [e.imgid] });
+    if (existsSync(path)) return "the photo wasn't deleted";
+    copyFileSync(photo, path, constants.COPYFILE_FICLONE);
+    const { images: [i] } = await request({ cmd: "import", files: [path] });
+    return i.rejected ? "it came back rejected" : null;
+  });
 }
 
 // what Immage decided it does, as README.md, the code map and the
@@ -875,16 +933,50 @@ async function decisions(photo) {
   });
 
   // a folder's photos show in the order they were taken; ties keep the
-  // name order, and photos without a capture time go last (user guide,
-  // library.md, The filmstrip and the grid)
+  // name order, a photo without a capture time goes by its file's, and
+  // photos with neither go last (user guide, library.md, The filmstrip and
+  // the grid)
   await decide("the filmstrip is in capture order", async () => {
     const { images: [e] } = await request({ cmd: "import", files: [fresh(photo)] });
-    const t = e?.exif.datetime ?? "";
+    // a camera whose clock was never set writes zeros, which read as no time
+    const t = e?.exif.datetime || e?.exif.file_datetime || "";
     if (!/^\d{4}:\d\d:\d\d \d\d:\d\d:\d\d/.test(t)) return `the engine gave capture time ${JSON.stringify(t)}`;
-    const at = (filename, datetime) => ({ ...e, filename, exif: { ...e.exif, datetime } });
-    const later = `${Number(t.slice(0, 4)) + 1}${t.slice(4)}`;
-    const got = byCaptureTime([at("a", ""), at("b", later), at("c", t), at("d", t)]).map((i) => i.filename).join("");
-    return got === "cdba" ? null : `sorted as ${got}, not cdba`;
+    const at = (filename, datetime, file_datetime) => ({ ...e, filename, exif: { ...e.exif, datetime, file_datetime } });
+    const later = `${Number(t.slice(0, 4)) + 1}${t.slice(4)}`, earlier = `${Number(t.slice(0, 4)) - 1}${t.slice(4)}`;
+    const got = byCaptureTime([at("a", ""), at("b", later), at("c", t), at("d", t), at("e", "", earlier)])
+      .map((i) => i.filename).join("");
+    return got === "ecdba" ? null : `sorted as ${got}, not ecdba`;
+  });
+
+  // on Wayland at 125%, where the window is drawn at 2× and shrunk, drag
+  // drafts are sized for the screen: smaller by 1.25 over 2. not the frame
+  // after letting go, which came out jagged (FINDINGS, "Drag drafts at the
+  // screen's scale"); not where the screen's scale is the window's, nor
+  // with the preference off. a window not on a screen yet keeps the scale
+  await decide("drag drafts at the screen's scale", async () => {
+    const { draftScale, refreshScreenScale, storeScreenScale } = await import("../app/src/pixelRatio.ts");
+    const at = async (dpr, scale) => {
+      globalThis.devicePixelRatio = dpr;
+      screen.scale = scale;
+      await refreshScreenScale(0);
+      return draftScale();
+    };
+    const got = {
+      "125%": await at(2, 1.25),
+      "not on a screen yet": await at(2, "error"),
+      "200%": await at(2, null),
+      "the compositor's 2 at 200%": await at(2, 2),
+      "at 1×": await at(1, 1.25),
+    };
+    await at(2, 1.25);
+    storeScreenScale(false);
+    got["preference off"] = draftScale();
+    storeScreenScale(true);
+    await at(undefined, null);
+    const want = { "125%": 0.625, "not on a screen yet": 0.625, "200%": 1, "the compositor's 2 at 200%": 1, "at 1×": 1,
+                   "preference off": 1 };
+    const wrong = Object.keys(want).filter((k) => got[k] !== want[k]);
+    return wrong.length ? wrong.map((k) => `${k}: ${got[k]}, not ${want[k]}`).join("; ") : null;
   });
 
   // the Filters popup narrows a folder by camera, keywords (a keyword
@@ -938,6 +1030,334 @@ async function decisions(photo) {
     await drained();
     return sum() === was ? null : "the photo file changed";
   });
+
+  // a photo shown in the library or exported, and not opened, gains no
+  // sidecar: darktable's own writes stay off, and the engine writes one only
+  // where it means to (_write_sidecar in engine/main.c). opening one saves
+  // the new-photo defaults as its baseline (code-map.md, Engine)
+  await decide("a photo shown or exported gains no sidecar", async () => {
+    const path = fresh(photo);
+    const { images: [e] } = await request({ cmd: "import", files: [path] });
+    await request({ cmd: "thumb", imgid: e.imgid, size: 240, out: join(args.work, "thumb.rgba") });
+    await request({ cmd: "export", imgid: e.imgid, out: join(args.work, "looked.jpg"), format: "jpeg",
+                    color_space: "srgb", quality: 90, long_edge: 512 });
+    return sidecar(path) ? `it gained ${basename(sidecar(path))}` : null;
+  });
+
+  // an export renders each photo as it was when the export was asked for,
+  // however it is edited while the export runs: the open photo, and one
+  // opened after (exports.ts; export_hold in engine/main.c)
+  const exportOpts = { format: "jpeg", color_space: "srgb", quality: 90, long_edge: 512 };
+  const exportOut = (tag) => {
+    const out = join(args.work, "export", `${copies}-${tag}.jpg`);
+    mkdirSync(dirname(out), { recursive: true });
+    return out;
+  };
+  // the image data alone: the EXIF carries the time of export. the
+  // segments are walked to the start of scan, as its marker's two bytes
+  // can turn up in a photo's metadata before it
+  const scan = (file) => {
+    const b = readFileSync(file);
+    let i = 2;
+    while (i + 4 <= b.length && b[i] === 0xff && b[i + 1] !== 0xda) i += 2 + b.readUInt16BE(i + 2);
+    return b.subarray(i);
+  };
+  let jobs = 0;
+  await decide("an export renders the edit it was asked for", async () => {
+    for (const later of [false, true]) {
+      const path = fresh(photo);
+      let o = await open(path);
+      await o.after(() => { o.s.endBaseline(); o.s.set("exposure", 1); });
+      const asked = exportOut("asked");
+      await request({ cmd: "export", imgid: o.s.imgid, out: asked, ...exportOpts });
+      const imgid = o.s.imgid, job = ++jobs;
+      // the engine keeps a photo open until the next one opens
+      if (later) {
+        await o.s.close();
+        await (await open(fresh(photo))).s.close();
+      }
+      await request({ cmd: "export_hold", job, imgids: [imgid] });
+      if (later) o = await open(path);
+      await o.after(() => o.s.set("exposure", -1));
+      await o.s.close();
+      await drained();
+      const held = exportOut("held");
+      await requestTagged({ cmd: "export", job, imgid, out: held, ...exportOpts });
+      await requestTagged({ cmd: "export_release", job });
+      if (!scan(held).equals(scan(asked)))
+        return `the export of the photo ${later ? "opened after it was asked for" : "open"} has the later edit`;
+    }
+    return null;
+  });
+
+  // a background export leaves the editor rendering, and its copies of the
+  // edit never show as versions of the photo or take a virtual copy's
+  // number (_SNAPSHOT_VERSION in engine/main.c)
+  await decide("a background export stays out of the editor's way", async () => {
+    const path = fresh(photo);
+    const o = await open(path);
+    await o.after(() => { o.s.endBaseline(); o.s.set("exposure", 0.5); });
+    const job = ++jobs;
+    await request({ cmd: "export_hold", job, imgids: [o.s.imgid] });
+    // before the import below, which has darktable number the file's
+    // versions again
+    const { image: copy } = await request({ cmd: "copy", imgid: o.s.imgid });
+    const versions = async () => (await request({ cmd: "import", files: [path] })).images.length;
+    const during = await versions();
+    const exporting = requestTagged({ cmd: "export", job, imgid: o.s.imgid, out: exportOut("beside"), ...exportOpts });
+    const frames = [];
+    for (const ev of [1, 0.25, 0.75]) frames.push(await o.after(() => o.s.set("exposure", ev)));
+    await exporting;
+    await requestTagged({ cmd: "export_release", job });
+    await o.s.close();
+    const after = await versions();
+    return frames.some((f) => !f) ? "an edit made during the export rendered no frame"
+      : copy.version !== 1 ? `a virtual copy made during the export is version ${copy.version}`
+      : during !== 2 ? `with a copy, the photo showed ${during} versions while it exported`
+      : after !== 2 ? `with a copy, the photo shows ${after} versions after the export` : null;
+  });
+
+  // a folder is read on the engine's import thread while the photo is
+  // edited (main.c, _import_run), and an import on the main loop meanwhile,
+  // as `open` makes, waits for one file at most (_import_lock)
+  await decide("a folder imports beside editing", async () => {
+    const o = await open(fresh(photo));
+    await o.after(() => o.s.endBaseline());
+    const dir = join(args.work, "photos", String(++copies));
+    mkdirSync(dir, { recursive: true });
+    const files = Array.from({ length: 200 }, (_, k) => {
+      const to = join(dir, `${k}-${basename(photo)}`);
+      copyFileSync(photo, to, constants.COPYFILE_FICLONE);
+      return to;
+    });
+    // by the time each takes: replies that come together settle in no
+    // telling order. the batch takes about 1 s, an edit's frame 50 ms
+    const t0 = performance.now();
+    let end = null;
+    const importing = requestTagged({ cmd: "import", files }).finally(() => { end = performance.now() - t0; });
+    const f = await o.after(() => o.s.set("exposure", 0.5));
+    const framed = performance.now() - t0;
+    const one = (await request({ cmd: "import", files: [files.at(-1)] })).images[0];
+    const alone = performance.now() - t0;
+    const { images } = await importing;
+    await o.s.close();
+    const last = images.find((i) => i.path === files.at(-1));
+    const sidecars = readdirSync(dir).filter((n) => n.endsWith(".xmp"));
+    return !f ? "an edit made during the import rendered no frame"
+      : framed > end / 2 ? `an edit made during the import took ${framed.toFixed(0)} ms, the import ${end.toFixed(0)} ms`
+      : alone > end / 2 ? `an import on the main loop took ${alone.toFixed(0)} ms, the folder's ${end.toFixed(0)} ms`
+      : images.length !== files.length ? `the folder's ${files.length} photos imported as ${images.length}`
+      : last?.imgid !== one?.imgid ? `one file imported twice at once is images ${one?.imgid} and ${last?.imgid}`
+      : sidecars.length ? `the import wrote ${sidecars.length} sidecars` : null;
+  });
+
+  // AI Denoise runs on a thread of the engine's while the photo is edited,
+  // and the DNG gets the edit as it was when it was asked for (main.c,
+  // _denoise_run). once, on the first raw: the model takes a minute on the
+  // CPU
+  const DENOISE = "rawdenoise-nind";
+  if (photo === args.photos.find((p) => /\.(arw|cr2|cr3|nef|nrw|orf|pef|raf|rw2|srw)$/i.test(p))) {
+    if (!args.models || !existsSync(join(args.models, DENOISE, "config.json"))) {
+      record({ check: "decisions", photo: basename(photo), id: "AI Denoise runs beside editing", status: "skip",
+               detail: `no ${DENOISE} in build/ai-models: use AI Denoise once in a dev build` });
+    } else await decide("AI Denoise runs beside editing", async () => {
+      // an engine of its own, so the others' config never has AI on
+      await stopEngine();
+      startEngine(args.engine, join(args.work, "ai-engine"), args.models);
+      try {
+        const o = await open(fresh(photo));
+        await o.after(() => { o.s.endBaseline(); o.s.set("exposure", 0.5); });
+        let done = false;
+        const denoising = invoke("ai_denoise", { strength: 1 }).finally(() => { done = true; });
+        const f = await o.after(() => o.s.set("exposure", 1.5));
+        await request({ cmd: "save" });
+        const beside = !done;
+        const preview = await invoke("ai_denoise_preview", { u: 0.5, v: 0.5, size: 256 }).then(() => null, (e) => String(e));
+        const r = await denoising;
+        await o.s.close();
+        const d = await open(r.path);
+        const ev = d.s.values.exposure;
+        await d.s.close();
+        return !f ? "an edit made during the denoise rendered no frame"
+          : !beside ? "an edit made during the denoise waited for it"
+          : !preview?.includes("still writing") ? `a preview during the denoise ${preview ? `failed with: ${preview}` : "ran"}`
+          : Math.abs(ev - 0.5) > 1e-3 ? `the DNG has Exposure ${ev}, not the 0.5 it was asked with` : null;
+      } finally {
+        await restart();
+      }
+    });
+  }
+
+  // HDR Merge writes a float DNG beside the first bracket that opens as the
+  // brackets render: two of the same exposure merge to that exposure
+  // (hdrmerge.c). a single photo is refused. on the first raw
+  if (photo === args.photos.find((p) => /\.(arw|cr2|cr3|nef|nrw|orf|pef|raf|rw2|srw)$/i.test(p))) {
+    await decide("HDR Merge of two brackets renders as one", async () => {
+      const dir = join(args.work, "hdr");
+      rmSync(dir, { recursive: true, force: true });
+      mkdirSync(dir, { recursive: true });
+      const ext = photo.match(/\.[^.]+$/)[0];
+      const files = ["a", "b"].map((n) => join(dir, n + ext));
+      for (const f of files) copyFileSync(photo, f, constants.COPYFILE_FICLONE);
+      const { images } = await request({ cmd: "import", files });
+      const alone = await invoke("hdr_merge", { imgids: [images[0].imgid], align: false }).then(() => null, (e) => String(e));
+      const r = await invoke("hdr_merge", { imgids: images.map((i) => i.imgid), align: await invoke("hdr_can_align") });
+      const src = await open(files[0]);
+      await src.s.close();
+      const hdr = await open(r.path);
+      await hdr.s.close();
+      const d = compare(hdr.base, src.base);
+      return alone === null ? "a merge of one photo was not refused"
+        : basename(r.path) !== `a-hdr.dng` ? `the merge wrote ${basename(r.path)}, not a-hdr.dng`
+        : r.image?.path !== r.path ? "the DNG was not imported"
+        : d.geometry ? `the DNG renders ${hdr.base.width}x${hdr.base.height}, the raw ${src.base.width}x${src.base.height}`
+        : Math.abs(d.lum) > 3 || d.mad > 6 ? `the DNG renders ${d.lum} brighter than the raw, ${d.mad} apart` : null;
+    });
+  }
+
+  // Panorama Merge writes a DNG beside the first raw that opens as that
+  // raw, in its own color (main.c, _pano_frame; dng.c): two copies of one
+  // raw stitch back into it, as bright and of the same color, upright. a
+  // single photo is refused. on the first raw, when the engine has OpenCV's
+  // stitching
+  if (photo === args.photos.find((p) => /\.(arw|cr2|cr3|nef|nrw|orf|pef|raf|rw2|srw)$/i.test(p))
+      && await invoke("pano_can_merge")) {
+    await decide("Panorama Merge of two copies of a raw renders as the raw", async () => {
+      const dir = join(args.work, "pano");
+      rmSync(dir, { recursive: true, force: true });
+      mkdirSync(dir, { recursive: true });
+      const ext = photo.match(/\.[^.]+$/)[0];
+      const files = ["a", "b"].map((n) => join(dir, n + ext));
+      for (const f of files) copyFileSync(photo, f, constants.COPYFILE_FICLONE);
+      const { images } = await request({ cmd: "import", files });
+      const alone = await invoke("pano_merge", { imgids: [images[0].imgid], projection: "auto", crop: true })
+        .then(() => null, (e) => String(e));
+      const r = await invoke("pano_merge", { imgids: images.map((i) => i.imgid), projection: "auto", crop: true });
+      const src = await open(files[0]);
+      await src.s.close();
+      const pano = await open(r.path);
+      const fresh = !pano.s.wasEdited;
+      await pano.s.close();
+      // the mean luma and warmth of a frame: the two differ in size, as the
+      // stitch warps and crops
+      const mean = (f) => {
+        let l = 0, w = 0;
+        const p = f.pixels, n = f.width * f.height;
+        for (let i = 0; i < 4 * n; i += 4) {
+          l += 0.2126 * p[i] + 0.7152 * p[i + 1] + 0.0722 * p[i + 2];
+          w += p[i] - p[i + 2];
+        }
+        return { lum: l / n, warm: w / n };
+      };
+      const a = mean(pano.base), b = mean(src.base);
+      const tall = (f) => f.height > f.width;
+      return alone === null ? "a merge of one photo was not refused"
+        : basename(r.path) !== "a-pano.dng" ? `the merge wrote ${basename(r.path)}, not a-pano.dng`
+        : r.image?.path !== r.path ? "the DNG was not imported"
+        : r.used !== 2 ? `the panorama holds ${r.used} of the 2 photos`
+        : !fresh ? "the DNG opens with an edit"
+        : tall(pano.base) !== tall(src.base) ? "the DNG is turned from the raw"
+        : Math.abs(a.lum - b.lum) > 4 ? `the DNG renders ${(a.lum - b.lum).toFixed(1)} brighter than the raw`
+        : Math.abs(a.warm - b.warm) > 4 ? `the DNG renders ${(a.warm - b.warm).toFixed(1)} warmer than the raw` : null;
+    });
+  }
+
+  // an AI selection's model runs on a thread of the engine's while the
+  // photo is edited, and a color edit leaves its result standing for the
+  // next selection (main.c, _ai_run, _mask_cache). on the first photo
+  // only: BiRefNet takes seconds on the CPU
+  const SUBJECT = "mask-subject-birefnet-lite";
+  if (photo === args.photos[0]) {
+    if (!args.models || !existsSync(join(args.models, SUBJECT, "config.json"))) {
+      record({ check: "decisions", photo: basename(photo), id: "AI selections run beside editing", status: "skip",
+               detail: `no ${SUBJECT} in build/ai-models: use Select Subject once in a dev build` });
+    } else await decide("AI selections run beside editing", async () => {
+      // an engine of its own, so the others' config never has AI on
+      await stopEngine();
+      startEngine(args.engine, join(args.work, "ai-engine"), args.models);
+      try {
+        const o = await open(fresh(photo));
+        await o.after(() => o.s.endBaseline());
+        await invoke("ai_model_ensure", { id: SUBJECT });
+        // by the time each takes, as replies that come together settle in
+        // no telling order
+        const t0 = performance.now();
+        let end = null;
+        const selecting = invoke("ai_mask", { kind: "subject" }).finally(() => { end = performance.now() - t0; });
+        const f = await o.after(() => o.s.set("exposure", 0.5));
+        const framed = performance.now() - t0;
+        const paths = await selecting;
+        const t1 = performance.now();
+        const again = await invoke("ai_mask", { kind: "subject" });
+        const twice = performance.now() - t1;
+        await o.s.close();
+        return !paths?.length ? "Select Subject found nothing"
+          : !f ? "an edit made during the selection rendered no frame"
+          : framed > end / 2 ? `an edit made during the selection took ${framed.toFixed(0)} ms, the selection ${end.toFixed(0)} ms`
+          : twice > end / 2 ? `after a color edit, Subject again took ${twice.toFixed(0)} ms, the first ${end.toFixed(0)} ms`
+          : JSON.stringify(again) !== JSON.stringify(paths) ? "after a color edit, Subject again found another outline" : null;
+      } finally {
+        await restart();
+      }
+    });
+  }
+
+  // an AI selection's outline is traced at twice the model's size and
+  // moved onto the photo's own edges (main.c, _snap_edges). a made-up
+  // photo whose subject's rim is known, toothed finer than the model sees:
+  // the outline's corners lie 1.7 px from it on average, and 3.8 px when
+  // traced at the model's size unsnapped. by default it is traced half a
+  // feather inside (0.003 of the shorter side, _trace_json), so the mask
+  // is about half on at the rim, and its feather goes little past it
+  const RIM = "AI outlines follow the photo's edges";
+  if (photo === args.photos[0]) {
+    if (!args.models || !existsSync(join(args.models, SUBJECT, "config.json"))) {
+      record({ check: "decisions", photo: basename(photo), id: RIM, status: "skip",
+               detail: `no ${SUBJECT} in build/ai-models: use Select Subject once in a dev build` });
+    } else await decide(RIM, async () => {
+      const W = 3000, H = 2000, R = 600, A = 25, N = 48;
+      const rim = (t) => R + A * Math.sin(N * t);
+      const px = Buffer.alloc(3 * W * H);
+      let seed = 1;
+      const noise = () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 2 ** 32 - 0.5) * 40;
+      for (let y = 0; y < H; y++)
+        for (let x = 0; x < W; x++) {
+          const dx = x - W / 2, dy = y - H / 2, k = 3 * (y * W + x);
+          const c = Math.hypot(dx, dy) < rim(Math.atan2(dy, dx)) ? [230, 150, 40] : [70, 90, 80].map((v) => v + noise());
+          for (let i = 0; i < 3; i++) px[k + i] = Math.max(0, Math.min(255, Math.round(c[i])));
+        }
+      const dir = join(args.work, "rim");
+      mkdirSync(dir, { recursive: true });
+      const path = join(dir, "rim.ppm");
+      writeFileSync(path, Buffer.concat([Buffer.from(`P6\n${W} ${H}\n255\n`), px]));
+      await stopEngine();
+      startEngine(args.engine, join(args.work, "ai-engine"), args.models);
+      try {
+        await request({ cmd: "open", path, imgid: -1 });
+        await invoke("ai_model_ensure", { id: SUBJECT });
+        // how far inside the rim the corners lie, on average, and how far
+        // from that they stray
+        const inside = (paths) => {
+          const d = (paths ?? []).flatMap((p) => p.points.map(([x, y]) => {
+            const dx = x * W - W / 2, dy = y * H - H / 2;
+            return rim(Math.atan2(dy, dx)) - Math.hypot(dx, dy);
+          }));
+          const mean = (f) => d.reduce((a, b) => a + f(b), 0) / Math.max(1, d.length);
+          return { n: d.length, by: mean((v) => v), off: (at) => mean((v) => Math.abs(v - at)) };
+        };
+        const edge = inside(await invoke("ai_mask", { kind: "subject", inset: false }));
+        const half = 0.5 * 0.003 * Math.min(W, H);
+        const inset = inside(await invoke("ai_mask", { kind: "subject" }));
+        return !edge.n || !inset.n ? "Select Subject found nothing"
+          : edge.off(0) > 2.5 ? `the outline lies ${edge.off(0).toFixed(2)} px from the subject's rim on average`
+          // more on this rim's teeth, whose tips an inset takes more off
+          : inset.by < half - 1.5 || inset.by > 2 * half + 1.5
+            ? `traced to be added, the outline lies ${inset.by.toFixed(2)} px inside the rim, not about ${half}` : null;
+      } finally {
+        await restart();
+      }
+    });
+  }
 
   // a frame shown before comes back without a render when the image does:
   // back from the Before view, or a slider put back. the engine names it by
@@ -1201,8 +1621,12 @@ async function decisions(photo) {
     const p = await open(fresh(photo));
     const alone = await p.after(() => { p.s.endBaseline(); p.s.set("exposure", 1.5); });
     await p.s.close();
+    // not to the bit: Exposure's own instance has a raw's black level and
+    // the compensation's none, and exposure scales by 1 / (2^-EV - black)
+    // (exposure.c), so EV split over the two lands a twentieth of a level
+    // off on some photos. no change a control could be told by
     const by = compare(both, alone).mad;
-    if (by > THRESHOLD.roundtrip) return `+1 EV compensation and Exposure +0.5 differ from Exposure +1.5 (mean |Δ| ${by})`;
+    if (by > THRESHOLD.change) return `+1 EV compensation and Exposure +0.5 differ from Exposure +1.5 (mean |Δ| ${by})`;
     o = await open(path);
     const { exposure, exp_comp } = o.s.values;
     const row = o.s.history.find((h) => h.op === "exposure" && h.label === "compensation");
@@ -1215,7 +1639,9 @@ async function decisions(photo) {
   // Profile's Color Balance RGB looks, darktable's "basic colorfulness"
   // presets, each change the photo's color visibly from AgX Default. most
   // add color; Natural Skin takes it out of bright colors, so on a bright
-  // photo it can remove more than it adds (colorbalancergb.c, init_presets)
+  // photo it can remove about as much as it adds (colorbalancergb.c,
+  // init_presets), and the change is measured per pixel rather than as the
+  // mean chroma, which would hide it
   const LOOKS = "color balance rgb looks change color";
   o = await open(fresh(photo));
   const plain = meanChroma(o.base);
@@ -1226,11 +1652,11 @@ async function decisions(photo) {
   } else await decide(LOOKS, async () => {
     const weak = [];
     for (const pr of m.PROFILES) {
-      const by = meanChroma(await o.after(() => o.s.set("profile", pr.value))) / plain;
-      if (Math.abs(by - 1) < 0.03) weak.push(`${pr.label} ${((by - 1) * 100).toFixed(1)}%`);
+      const by = chromaChange(o.base, await o.after(() => o.s.set("profile", pr.value))) / plain;
+      if (by < 0.03) weak.push(`${pr.label} ${(by * 100).toFixed(1)}%`);
     }
     await o.s.close();
-    return weak.length ? `chroma against AgX Default, needs 3% either way: ${weak.join(", ")}` : null;
+    return weak.length ? `chroma moved from AgX Default, needs 3%: ${weak.join(", ")}` : null;
   });
 
   if (photo !== args.photos[0]) return;
@@ -1324,6 +1750,19 @@ async function decisions(photo) {
     return wrong.length ? `not so: ${wrong.join(", ")}` : null;
   });
 
+  // a new Sky or Landscape mask starts at Edge Aware 20, which takes in
+  // the sky between branches the traced outline leaves out without the
+  // halo a wider one leaves; a subject, people or an object start with none
+  // (masks.ts, aiRefine)
+  await decide("Sky and Landscape masks start edge aware", async () => {
+    const edge = (k) => (aiRefine(k)?.feather ?? 0) / 2.5;
+    const cases = [...["sky", "water", "vegetation", "mountains", "ground", "architecture", "artificial_ground"]
+                     .map((k) => [k, edge(k), 20]),
+                   ...["subject", "background", "people", "object", "depth"].map((k) => [k, edge(k), 0])];
+    const wrong = cases.filter(([, got, want]) => got !== want).map(([k, got, want]) => `${k} starts at ${got}, not ${want}`);
+    return wrong.length ? wrong.join(", ") : null;
+  });
+
   // a converted negative turns off the modules that would change the
   // negative ahead of negadoctor, and the tone mappers; Contrast,
   // Saturation, Highlights and Shadows run after it; it opens again so, and
@@ -1412,12 +1851,16 @@ async function decisions(photo) {
         let o = await open(path);
         const paths = await invoke("ai_object", { points: [], box: [0.3, 0.3, 0.7, 0.7] });
         if (!paths?.length) return "Select Object found nothing in the middle of the photo";
+        // the object's own edge: the outline added is traced half a
+        // feather inside it, so little of the feather passes it (main.c,
+        // _trace_json)
+        const edge = await invoke("ai_object", { points: [], box: [0.3, 0.3, 0.7, 0.7], inset: false });
         const name = z.zoneMaskName([0, 10], { kind: "object:A", invert: false });
         await o.after(() => o.s.addMask(name, [z.zoneShape([0, 10], 1), { type: "object", paths, mode: "add" }]));
         const f = await o.after(() => o.s.setLocal(name, "l_exposure", 1));
         const err = brighter(f, o.base, inPaths(paths, true));
         if (err) return `inside the object: ${err}`;
-        const out = compare(f, o.base, inPaths(paths, false));
+        const out = compare(f, o.base, inPaths(edge, false));
         if (!(out.mad <= THRESHOLD.outside)) return `outside the object, the photo changed (mean |Δ| ${out.mad})`;
         await o.s.close();
         await drained();

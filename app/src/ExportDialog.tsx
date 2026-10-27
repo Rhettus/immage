@@ -18,6 +18,7 @@ import { Aperture, Archive, BookOpen, Briefcase, Camera, CloudUpload, FileDown, 
 import { ColorPick, FrameEditor } from "./ExportFrame";
 import { KeywordChips, KeywordInput, parseKeyword } from "./Keywording";
 import { expand, TOKENS, EMPTY_META, type Meta } from "./exportTokens";
+import { runExport } from "./background";
 import {
   BUILTINS, DEFAULTS, PERSONAL_KEYS, frameFor, readShared, sharedFile, loadPresets, loadSettings, newId, presetEdited, presetOf, savePresets, saveSettings,
   type ExportPreset, type Settings,
@@ -45,7 +46,7 @@ type Choice = "unique" | "overwrite" | "skip" | "cancel";
 type Ask = { name: string; dir: string; inBatch: boolean; left: number; all: boolean };
 
 type Result = { written: string[]; skipped: string[]; failed: { file: string; error: string }[]; dir?: string;
-                uploaded?: number; duplicates?: number };
+                uploaded?: number; duplicates?: number; cancelled: boolean };
 
 // which sections are open, remembered
 type SectionId = "destination" | "name" | "format" | "frame" | "keywords" | "metadata";
@@ -143,8 +144,9 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
     const l = loadSettings();
     return selected.length > 1 ? { ...l, scope: "selected" } : l.scope === "selected" ? { ...l, scope: "current" } : l;
   });
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
-  const [result, setResult] = useState<Result | null>(null);
+  // the export runs in the background once the dialog has asked what it
+  // needs (exports.ts); until then, it is preparing
+  const [preparing, setPreparing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // the question about one existing file, answered by its buttons
   const [ask, setAsk] = useState<Ask | null>(null);
@@ -264,9 +266,9 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
     : s.scope === "selected" && selected.length > 1 ? selected
     : current ? [current] : [];
   const upscale = canUpscale ? s.upscale : 0;
-  // what a long export is doing: downloading the model, or upscaling
+  // what preparing is doing: downloading the upscale model
   const [note, setNote] = useState<string | null>(null);
-  const busy = progress !== null && result === null;
+  const busy = preparing;
   const toImmich = s.target === "immich";
   // a canvas is fitted by its longer side: the framed photo has its shape
   const canvas = s.canvas && !upscale;
@@ -305,13 +307,8 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
     if (fresh.length) set("keywords", [...s.keywords, ...new Set(fresh)]);
   };
 
-  useEffect(() => {
-    const off = listen<{ done: number; total: number }>("export-progress", (e) => setProgress(e.payload));
-    return () => { void off.then((f) => f()); };
-  }, []);
-
-  // Escape closes, unless an export is running; over the question about an
-  // existing file it cancels
+  // Escape closes, unless the export is being prepared; over the question
+  // about an existing file it cancels
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
@@ -400,8 +397,7 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
 
   const run = async () => {
     setError(null);
-    setResult(null);
-    setProgress({ done: 0, total: items.length });
+    setPreparing(true);
     try {
       // the upscale model, downloaded on first use
       if (upscale) {
@@ -411,7 +407,7 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
                 : p.stage === "installing" ? "installing the upscale model…" : null);
         });
         try { await invoke("ai_model_ensure", { id: UPSCALE_MODEL }); } finally { stop(); }
-        setNote(`AI upscaling ${upscale}×: a few minutes for each photo`);
+        setNote(null);
       }
       // each image's metadata, when its name or its frame's text needs it
       const needMeta = s.naming === "template" || s.texts.length > 0;
@@ -442,7 +438,7 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
               name: path.slice(cut + 1), dir: path.slice(0, cut), inBatch: !files[k].exists,
               left: clash.slice(k).filter(Boolean).length,
             });
-            if (c === "cancel") { setProgress(null); setNote(null); return; }
+            if (c === "cancel") { setPreparing(false); return; }
             if (toAll) all = c;
             conflicts[k] = c;
           } else {
@@ -450,7 +446,21 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
           }
         }
       }
-      const r = await invoke<Result>("export_images", {
+      const album = albums?.find((a) => a.id === s.album)?.name ?? "the album";
+      const total = items.length;
+      const summarize = (r: Result) => {
+        const failed = r.failed.length ? `, ${r.failed.length} failed: ${r.failed[0].error}` : "";
+        const stopped = r.cancelled ? "stopped: " : "";
+        const text = r.uploaded !== undefined
+          ? `Upload ${stopped}${r.uploaded} of ${total} to ${album}`
+            + (r.duplicates ? `, ${r.duplicates} already in Immich (added to the album)` : "") + failed
+          : `Export ${stopped}${r.written.length} of ${total} to ${r.dir}`
+            + (r.skipped.length ? `, skipped ${r.skipped.length} already there` : "") + failed;
+        return { text, ok: !r.failed.length && !r.skipped.length };
+      };
+      const what = upscale ? `Upscaling ${upscale}× and exporting` : toImmich ? "Uploading" : "Exporting";
+      const reveal = s.reveal && !toImmich, keywordsChanged = s.keywordsOnOriginal && s.keywords.length > 0;
+      void runExport<Result>(what, total, {
         items: items.map((i, k) => ({ imgid: i.imgid, stem: stems[k], created: i.exif.datetime || null,
                                       conflict: conflicts[k] ?? (s.conflict === "ask" ? "unique" : null),
                                       frame: frameFor(s, i, metas[k]) })),
@@ -476,16 +486,15 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
           keywords: s.keywords,
           keywordsOnOriginal: s.keywordsOnOriginal,
         },
+      }, summarize).then((r) => {
+        if (!r) return;
+        if (keywordsChanged) onKeywordsChanged?.();
+        if (reveal && r.written.length) void revealItemInDir(r.written).catch(() => {});
       });
-      setResult(r);
-      if (s.keywordsOnOriginal && s.keywords.length) onKeywordsChanged?.();
-      setNote(null);
-      if (s.reveal && !toImmich && r.written.length) void revealItemInDir(r.written).catch(() => {});
-      // a clean export needs no reading; anything skipped or failed stays up
-      if (!r.failed.length && !r.skipped.length) setTimeout(onClose, 900);
+      onClose();
     } catch (e) {
       setError(String(e));
-      setProgress(null);
+      setPreparing(false);
       setNote(null);
     }
   };
@@ -842,25 +851,6 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
           </div>
         </div>
 
-        {progress && (
-          <div className="progress">
-            <div className="bar" style={{ width: `${(100 * progress.done) / Math.max(1, progress.total)}%` }} />
-          </div>
-        )}
-        {result && result.uploaded !== undefined && (
-          <div className="summary">
-            Uploaded {result.uploaded} of {items.length} to {albums?.find((a) => a.id === s.album)?.name ?? "the album"}
-            {result.duplicates ? `, ${result.duplicates} already in Immich (added to the album)` : ""}
-            {result.failed.length > 0 && `, ${result.failed.length} failed: ${result.failed[0].error}`}
-          </div>
-        )}
-        {result && result.uploaded === undefined && (
-          <div className="summary">
-            Exported {result.written.length} of {items.length} to {result.dir}
-            {result.skipped.length > 0 && `, skipped ${result.skipped.length} already there`}
-            {result.failed.length > 0 && `, ${result.failed.length} failed: ${result.failed[0].error}`}
-          </div>
-        )}
         {note && busy && <div className="summary">{note}</div>}
         {error && <div className="summary error">{error}</div>}
 
@@ -878,10 +868,9 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
               All shown ({shown.length})
             </button>
           </div>
-          <button className="btn" disabled={busy} onClick={onClose}>{result ? "Done" : "Cancel"}</button>
+          <button className="btn" disabled={busy} onClick={onClose}>Cancel</button>
           <button className="btn primary" disabled={!canRun} onClick={run}>
-            {busy ? `Exporting ${progress!.done}/${progress!.total}…`
-                  : `Export ${items.length} image${items.length === 1 ? "" : "s"}`}
+            {busy ? "Preparing…" : `Export ${items.length} image${items.length === 1 ? "" : "s"}`}
           </button>
         </div>
       </div>

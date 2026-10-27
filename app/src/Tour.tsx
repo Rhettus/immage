@@ -39,6 +39,8 @@ const STEPS: Step[] = [
         body: "Black and white tones as zones 0–X: see where each falls, then place or adjust it." },
       { target: "heal", title: "Heal",
         body: "Click a spot or paint over a line to remove it. Q opens it." },
+      { target: "negative", title: "Negative",
+        body: "Turn a photo of a film negative into a positive, picked from its border." },
       { target: "presets", title: "Presets",
         body: "Live previews of presets and film looks; save your own." },
     ] },

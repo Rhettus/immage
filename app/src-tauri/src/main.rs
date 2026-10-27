@@ -10,27 +10,32 @@ mod engine;
 mod immich_search;
 mod immich_upload;
 mod plugins;
+#[cfg(target_os = "linux")]
+mod scale;
+mod volumes;
 
 use cache::Caches;
-use engine::{BaseCancel, Engine, Timing};
+use engine::{BaseCancel, Engine, Tagged, Timing};
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 use tauri::{ipc::Response, AppHandle, Emitter, Manager, State};
 
 struct AppState {
-    // engine() and engine_background(), not this directly
+    // engine(), not this directly
     engine: Mutex<Engine>,
-    // calls in engine() waiting for the engine, which background work yields to
-    waiting: AtomicUsize,
     // reaches the engine while a request holds it
     base_cancel: BaseCancel,
     frame_path: PathBuf,
-    thumb_path: PathBuf,
+    // thumbnails, folder imports and background exports, which go to the
+    // engine without engine()
+    tagged: Tagged,
+    // export_images' running jobs, which export_cancel stops
+    export_cancels: Mutex<HashMap<u64, Arc<AtomicBool>>>,
     presets_path: PathBuf,
     preview_path: PathBuf,
     range_path: PathBuf,
@@ -52,23 +57,8 @@ struct AppState {
 }
 
 impl AppState {
-    // the engine for something the user is waiting on. the mutex alone is
-    // not fair: a folder's import, taking it again after each batch, would
-    // keep a click waiting until the whole folder was read (Windows' SRWLock
-    // especially), so background work holds back while one waits here
+    // the engine for a request its main loop serves, one at a time
     fn engine(&self) -> MutexGuard<'_, Engine> {
-        self.waiting.fetch_add(1, Ordering::SeqCst);
-        let engine = self.engine.lock().unwrap();
-        self.waiting.fetch_sub(1, Ordering::SeqCst);
-        engine
-    }
-
-    // the engine for work nobody is waiting on (a folder's import,
-    // thumbnails), once no call in engine() is
-    async fn engine_background(&self) -> MutexGuard<'_, Engine> {
-        while self.waiting.load(Ordering::SeqCst) > 0 {
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
         self.engine.lock().unwrap()
     }
 }
@@ -310,15 +300,36 @@ async fn mask_map(state: State<'_, AppState>, name: Option<String>, op: Option<S
     Ok(Response::new(out))
 }
 
+// a request the engine's main loop answers once it has what it needs of
+// the open photo, and a thread of the engine's then answers with the tag:
+// AI Denoise and the AI selections, whose models take seconds to a
+// minute, while the engine is free for editing
+async fn on_engine_thread(state: &AppState, mut req: Value) -> Result<Value, String> {
+    let tagged = state.tagged.clone();
+    let tag = tagged.tag();
+    req["tag"] = json!(tag);
+    let answer = tagged.expect(tag)?;
+    if let Err(e) = state.engine().request(req) {
+        tagged.forget(tag);
+        return Err(e);
+    }
+    tauri::async_runtime::spawn_blocking(move || answer.wait()).await.map_err(|e| e.to_string())?
+}
+
 // select an object with the AI model: clicks [[x, y, include]] and/or a
-// box [x0, y0, x1, y1] in shown-image units; replies with its outline
+// box [x0, y0, x1, y1] in shown-image units; replies with its outline.
+// `inset` false traces it on its edge, for a selection the mask takes away
+// (main.c, _trace_json)
 #[tauri::command]
-async fn ai_object(state: State<'_, AppState>, points: Value, r#box: Option<Value>) -> Result<Value, String> {
+async fn ai_object(state: State<'_, AppState>, points: Value, r#box: Option<Value>, inset: Option<bool>) -> Result<Value, String> {
     let mut req = json!({ "cmd": "ai_object", "points": points });
     if let Some(b) = r#box {
         req["box"] = b;
     }
-    let reply = state.engine().request(req)?;
+    if let Some(i) = inset {
+        req["inset"] = json!(i);
+    }
+    let reply = on_engine_thread(&state, req).await?;
     Ok(reply["paths"].clone())
 }
 
@@ -555,15 +566,19 @@ async fn ai_model_reinstall(app: AppHandle, state: State<'_, AppState>, id: Stri
     ai_model_ensure(app, state, id).await
 }
 
-// a one-click AI mask ("subject"): its outline, as ai_object replies.
-// "depth" takes the band of depth it covers, [near, far] in 0-1
+// a one-click AI mask ("subject"): its outline, as ai_object replies, and
+// `inset` as there. "depth" takes the band of depth it covers, [near, far]
+// in 0-1
 #[tauri::command]
-async fn ai_mask(state: State<'_, AppState>, kind: String, range: Option<[f64; 2]>) -> Result<Value, String> {
+async fn ai_mask(state: State<'_, AppState>, kind: String, range: Option<[f64; 2]>, inset: Option<bool>) -> Result<Value, String> {
     let mut req = json!({ "cmd": "ai_mask", "kind": kind });
     if let Some(r) = range {
         req["range"] = json!(r);
     }
-    let reply = state.engine().request(req)?;
+    if let Some(i) = inset {
+        req["inset"] = json!(i);
+    }
+    let reply = on_engine_thread(&state, req).await?;
     Ok(reply["paths"].clone())
 }
 
@@ -571,24 +586,26 @@ async fn ai_mask(state: State<'_, AppState>, kind: String, range: Option<[f64; 2
 // 0 (nearest) to 255 by rows
 #[tauri::command]
 async fn ai_depth(state: State<'_, AppState>, size: u32) -> Result<Value, String> {
-    let mut reply = state.engine().request(json!({ "cmd": "ai_depth", "size": size }))?;
+    let mut reply = on_engine_thread(&state, json!({ "cmd": "ai_depth", "size": size })).await?;
     if let Some(o) = reply.as_object_mut() {
         o.remove("ok");
+        o.remove("tag");
     }
     Ok(reply)
 }
 
 // AI Denoise of the open raw at `strength` (0-1): a new DNG beside it with
 // its edit, which the folder view then shows after it, as an Edit In
-// result. replies { path, original, image }; takes seconds to a minute
+// result. replies { path, original, image }; the engine takes the edit,
+// then denoises on a thread of its own
 #[tauri::command]
 async fn ai_denoise(state: State<'_, AppState>, plugins: State<'_, plugins::Plugins>, strength: f64) -> Result<Value, String> {
-    let mut reply = state.engine().request(json!({ "cmd": "ai_denoise", "strength": strength }))?;
+    let mut reply = on_engine_thread(&state, json!({ "cmd": "ai_denoise", "strength": strength })).await?;
     let (Some(original), Some(result)) = (reply["original"].as_str(), reply["path"].as_str()) else {
         return Err("the engine gave no DNG".into());
     };
     plugins.record(plugins::Return {
-        original: original.into(), result: result.into(), plugin: "ai-denoise".into(), applied: true,
+        original: original.into(), result: result.into(), plugin: "ai-denoise".into(), applied: false,
     })?;
     if let Some(o) = reply.as_object_mut() {
         o.remove("ok");
@@ -1011,8 +1028,8 @@ async fn perf_machine(state: State<'_, AppState>) -> Result<Value, String> {
 // `recursive` its subfolders' too; darktable decides what is an image. the
 // files go in batches, each reported as a "folder-progress" event with its
 // images, so a big folder shows its progress and its first photos early.
-// between batches the engine goes first to anything the user does
-// (AppState::engine_background), so a click waits for one batch at most.
+// the batches go to the engine's import thread (main.c, _import_run), so
+// the photo is edited and rendered while they are read.
 // a first event, before any is read, lists every file, so the client can
 // lay out a cell for each. a newer call (another `token`)
 // stops this one. returns every image: ratings, labels and EXIF summary.
@@ -1035,6 +1052,7 @@ async fn open_folder(app: AppHandle, state: State<'_, AppState>, path: String, r
     })
     .await
     .map_err(|e| e.to_string())?;
+    app.state::<plugins::Plugins>().drain_jobs();
     app.state::<plugins::Plugins>().beside_originals(&mut files);
     let total = files.len();
     let list: Vec<String> = files.iter().map(|p| p.to_string_lossy().into_owned()).collect();
@@ -1049,12 +1067,14 @@ async fn open_folder(app: AppHandle, state: State<'_, AppState>, path: String, r
         }
         let batch = &files[done..total.min(done + size)];
         let list: Vec<String> = batch.iter().map(|p| p.to_string_lossy().into_owned()).collect();
-        let (reply, took) = {
-            let mut engine = state.engine_background().await;
-            let start = Instant::now();
-            (engine.request(json!({ "cmd": "import", "files": list })), start.elapsed())
-        };
-        let got = reply?["images"].as_array().cloned().unwrap_or_default();
+        let t = state.tagged.clone();
+        let tag = t.tag();
+        let start = Instant::now();
+        let reply = tauri::async_runtime::spawn_blocking(move || t.request(tag, json!({ "cmd": "import", "files": list })))
+            .await
+            .map_err(|e| e.to_string())??;
+        let took = start.elapsed();
+        let got = reply["images"].as_array().cloned().unwrap_or_default();
         // a batch of about IMPORT_TARGET, however long a file takes to read
         if took < IMPORT_TARGET / 2 {
             size = (size * 2).min(IMPORT_BATCH.2);
@@ -1069,7 +1089,7 @@ async fn open_folder(app: AppHandle, state: State<'_, AppState>, path: String, r
 }
 
 // a batch's files to begin with, and the fewest and most: sized to take
-// about IMPORT_TARGET, which a click may have to wait behind
+// about IMPORT_TARGET, so the folder fills in steady steps
 const IMPORT_BATCH: (usize, usize, usize) = (8, 1, 64);
 const IMPORT_TARGET: Duration = Duration::from_millis(150);
 
@@ -1128,6 +1148,28 @@ fn path_kind(path: String) -> Option<&'static str> {
     if p.is_dir() { Some("dir") } else if p.is_file() { Some("file") } else { None }
 }
 
+// the screen's real scale where it is less than the whole one GTK draws
+// the window at (Wayland at 125%: 1.25 against 2), so the viewer sizes
+// frames for the screen; none elsewhere. an error until the window is on a
+// screen, as at start: the page asks again. not async: GTK's monitor is
+// read on the main thread
+#[tauri::command]
+fn display_scale(window: tauri::WebviewWindow) -> Result<Option<f64>, String> {
+    #[cfg(target_os = "linux")]
+    {
+        let monitor = window.current_monitor().ok().flatten().ok_or("not on a screen yet")?;
+        let whole = monitor.scale_factor();
+        let p = monitor.position();
+        let at = ((p.x as f64 / whole).round() as i32, (p.y as f64 / whole).round() as i32);
+        Ok(scale::output_scale(at).filter(|s| *s < whole - 0.01))
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = window;
+        Ok(None)
+    }
+}
+
 // rejected photos to the system's Trash. the engine, not the client, says
 // whether each is rejected and where it is: if any is not rejected, nothing
 // moves. a virtual copy takes only its own sidecars, leaving the file to
@@ -1148,16 +1190,23 @@ async fn trash_files(state: State<'_, AppState>, imgids: Vec<i64>) -> Result<Vec
     }
     let mut items: Vec<PathBuf> = Vec::new();
     let mut gone = Vec::new();
+    let mut forget = Vec::new();
     for (id, path, copy) in checked {
         let cmd = if copy { "remove_copy" } else { "sidecars" };
         let reply = state.engine().request(json!({ "cmd": cmd, "imgid": id }))?;
         if !copy {
             items.push(PathBuf::from(&path));
             gone.push(path);
+            forget.push(id);
         }
         items.extend(reply["files"].as_array().into_iter().flatten().filter_map(|f| f.as_str()).map(PathBuf::from));
     }
     trash_existing(items).await?;
+    // only once the files are gone: a new file at the same path then
+    // imports fresh, not as the deleted one, rejected
+    for id in forget {
+        state.engine().request(json!({ "cmd": "forget", "imgid": id }))?;
+    }
     Ok(gone)
 }
 
@@ -1192,6 +1241,91 @@ async fn trash_existing(mut items: Vec<PathBuf>) -> Result<(), String> {
 async fn create_virtual_copy(state: State<'_, AppState>, imgid: i64) -> Result<Value, String> {
     let reply = state.engine().request(json!({ "cmd": "copy", "imgid": imgid }))?;
     Ok(reply["image"].clone())
+}
+
+// a merge on the engine's export thread as the page's job `job`, its
+// progress emitted as "merge-progress" { job, done, total, stage, last }:
+// the photos read, then the merge's own stages, `last` the one past
+// stopping (main.c, _merge_report); merge_cancel stops it at its next step
+fn merge(app: AppHandle, t: engine::Tagged, job: u64, mut req: Value) -> Result<Value, String> {
+    let tag = t.tag();
+    req["job"] = json!(job);
+    t.request_with_progress(tag, req, move |p| {
+        let _ = app.emit("merge-progress", json!({
+            "job": job, "done": p["done"], "total": p["total"], "stage": p["stage"], "last": p["last"],
+        }));
+    })
+}
+
+// stops the page's merge `job` at its next step. the line gets no reply;
+// the merge answers "stopped"
+#[tauri::command]
+fn merge_cancel(state: State<'_, AppState>, job: u64) -> Result<(), String> {
+    state.tagged.send(json!({ "cmd": "merge_cancel", "job": job }))
+}
+
+// Merge to HDR: the raw brackets `imgids` into a float DNG beside the
+// first (<name>-hdr.dng), registered onto each other first when `align`.
+// replies { path, image }. the engine merges on its export thread, so the
+// photo is edited meanwhile
+#[tauri::command]
+async fn hdr_merge(app: AppHandle, state: State<'_, AppState>, job: u64, imgids: Vec<i64>, align: bool)
+                   -> Result<Value, String> {
+    let t = state.tagged.clone();
+    let mut reply = tauri::async_runtime::spawn_blocking(move || {
+        merge(app, t, job, json!({ "cmd": "hdr_merge", "imgids": imgids, "align": align }))
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    if let Some(o) = reply.as_object_mut() {
+        o.remove("ok");
+        o.remove("tag");
+    }
+    Ok(reply)
+}
+
+// whether Merge to HDR can align brackets: the engine built with OpenCV
+#[tauri::command]
+async fn hdr_can_align(state: State<'_, AppState>) -> Result<bool, String> {
+    let reply = state.engine().request(json!({ "cmd": "version" }))?;
+    Ok(reply["hdr_align"].as_bool().unwrap_or(false))
+}
+
+// Panorama Merge: the raws `imgids` stitched into a DNG beside the first
+// (<name>-pano.dng), which the folder view then shows after it, as an
+// Edit In result. `projection` is "auto", "spherical", "cylindrical" or
+// "perspective"; `crop` cuts the empty edges. replies { path, original,
+// image, used, frames }, `used` being how many frames overlapped the rest.
+// the engine stitches on its export thread, so the photo is edited
+// meanwhile
+#[tauri::command]
+async fn pano_merge(app: AppHandle, state: State<'_, AppState>, plugins: State<'_, plugins::Plugins>, job: u64,
+                    imgids: Vec<i64>, projection: String, crop: bool) -> Result<Value, String> {
+    let t = state.tagged.clone();
+    let mut reply = tauri::async_runtime::spawn_blocking(move || {
+        merge(app, t, job, json!({ "cmd": "pano_merge", "imgids": imgids, "projection": projection, "crop": crop }))
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    let (Some(original), Some(result)) = (reply["original"].as_str(), reply["path"].as_str()) else {
+        return Err("the engine gave no DNG".into());
+    };
+    plugins.record(plugins::Return {
+        original: original.into(), result: result.into(), plugin: "panorama".into(), applied: false,
+    })?;
+    if let Some(o) = reply.as_object_mut() {
+        o.remove("ok");
+        o.remove("tag");
+    }
+    Ok(reply)
+}
+
+// whether Panorama Merge can stitch: the engine built with OpenCV's
+// stitching module
+#[tauri::command]
+async fn pano_can_merge(state: State<'_, AppState>) -> Result<bool, String> {
+    let reply = state.engine().request(json!({ "cmd": "version" }))?;
+    Ok(reply["pano"].as_bool().unwrap_or(false))
 }
 
 // out of the library, its sidecars to the Trash. the photo's file stays.
@@ -1242,18 +1376,37 @@ async fn list_subfolders(path: String) -> Vec<SubFolder> {
     .unwrap_or_default()
 }
 
+// the drive each library folder is on, for the folder tree's headings. off
+// the main thread: a share whose server is gone can hold statfs a while
+#[tauri::command]
+async fn folder_volumes(paths: Vec<String>) -> Vec<volumes::Volume> {
+    tauri::async_runtime::spawn_blocking(move || paths.iter().map(|p| volumes::volume(p)).collect())
+        .await
+        .unwrap_or_default()
+}
+
 // the lighttable thumbnail of an image: little-endian u32 width and height,
-// then RGBA. given the photo's file, it is also kept in the thumbnail cache
+// then RGBA. given the photo's file, it is also kept in the thumbnail cache.
+// the engine builds it on a thread of its own, beside any edit or render,
+// so it does not take engine()
 #[tauri::command]
 async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>, imgid: i64, size: u32,
                path: Option<String>, version: Option<i64>) -> Result<Response, String> {
     // named before the render: a sidecar written during it makes the next
     // look a miss, never a stale hit
     let name = path.and_then(|p| cache::thumb_name(Path::new(&p), version.unwrap_or(0), size));
-    let reply = state.engine_background().await.request(json!({
-        "cmd": "thumb", "imgid": imgid, "size": size, "out": state.thumb_path,
-    }))?;
-    let mut pixels = std::fs::read(&state.thumb_path).map_err(|e| format!("thumb: {e}"))?;
+    let thumbs = state.tagged.clone();
+    let tag = thumbs.tag();
+    // a file of its own, as several are built at once
+    let out = state.runtime.join(format!("thumb-{tag}.rgba"));
+    let (reply, mut pixels) = tauri::async_runtime::spawn_blocking(move || {
+        let got = thumbs.request(tag, json!({ "cmd": "thumb", "imgid": imgid, "size": size, "out": out }))
+            .and_then(|reply| Ok((reply, std::fs::read(&out).map_err(|e| format!("thumb: {e}"))?)));
+        let _ = std::fs::remove_file(&out);
+        got
+    })
+    .await
+    .map_err(|e| e.to_string())??;
     // the thumbnail cache leaves the fourth byte at 0, which a canvas takes
     // for fully transparent
     for a in pixels.iter_mut().skip(3).step_by(4) {
@@ -1483,12 +1636,16 @@ fn export_target(dir: &Path, stem: &str, ext: &str, conflict: &str) -> Option<Pa
     (1..).map(|n| dir.join(format!("{stem}-{n}.{ext}"))).find(|p| !p.exists())
 }
 
-// export images one at a time, releasing the engine between them so the
-// editor stays usable; progress goes to the window as "export-progress"
+// export images one at a time on the engine's export thread (main.c,
+// _export_run), without engine(), so the photo is edited meanwhile. each
+// renders its edit as it was when the export was asked for, which the
+// engine holds for `job` (export_hold). progress goes to the window as
+// "export-progress"; export_cancel stops before the next image
 #[tauri::command]
 async fn export_images(
     app: AppHandle,
     state: State<'_, AppState>,
+    job: u64,
     items: Vec<ExportItem>,
     options: ExportOptions,
 ) -> Result<Value, String> {
@@ -1518,7 +1675,18 @@ async fn export_images(
     let total = items.len();
     let keywords = options.keywords.clone().unwrap_or_default();
     let tag_original = options.keywords_on_original.unwrap_or(false) && !keywords.is_empty();
+    let tagged = state.tagged.clone();
+    let held = tagged.tag();
+    let imgids: Vec<i64> = items.iter().map(|i| i.imgid).collect();
+    state.engine().request(json!({ "cmd": "export_hold", "job": held, "imgids": imgids }))?;
+    let cancel = Arc::new(AtomicBool::new(false));
+    state.export_cancels.lock().unwrap().insert(job, cancel.clone());
+    let mut cancelled = false;
     for (n, item) in items.iter().enumerate() {
+        if cancel.load(Ordering::SeqCst) {
+            cancelled = true;
+            break;
+        }
         let stem = export_stem(item);
         let conflict = match (&immich, item.conflict.as_deref()) {
             (None, Some(c)) => c,
@@ -1528,7 +1696,7 @@ async fn export_images(
             None => skipped.push(json!(dir.join(format!("{stem}.{ext}")))),
             Some(target) => {
                 let mut req = json!({
-                    "cmd": "export", "imgid": item.imgid, "out": target, "format": options.format,
+                    "cmd": "export", "job": held, "imgid": item.imgid, "out": target, "format": options.format,
                     "color_space": options.color_space,
                 });
                 if let Some(q) = options.quality { req["quality"] = json!(q); }
@@ -1544,7 +1712,10 @@ async fn export_images(
                 if let Some(p) = &options.ai_provider { req["ai_provider"] = json!(p); }
                 if let Some(d) = options.ai_device { req["ai_device"] = json!(d); }
                 if !keywords.is_empty() { req["keywords"] = json!(keywords); }
-                let result = state.engine().request(req);
+                let t = tagged.clone();
+                let tag = t.tag();
+                let result = tauri::async_runtime::spawn_blocking(move || t.request(tag, req))
+                    .await.map_err(|e| e.to_string()).and_then(|r| r);
                 if result.is_ok() && tag_original {
                     let req = json!({ "cmd": "keywords_set", "imgid": item.imgid, "add": keywords, "remove": [] });
                     if let Err(e) = state.engine().request(req) {
@@ -1572,8 +1743,15 @@ async fn export_images(
                 }
             }
         }
-        let _ = app.emit("export-progress", json!({ "done": n + 1, "total": total }));
+        let _ = app.emit("export-progress", json!({ "job": job, "done": n + 1, "total": total }));
     }
+    // the photos not reached, and their snapshots; after the last export,
+    // on the same thread
+    state.export_cancels.lock().unwrap().remove(&job);
+    let t = tagged.clone();
+    let tag = t.tag();
+    let _ = tauri::async_runtime::spawn_blocking(move || t.request(tag, json!({ "cmd": "export_release", "job": held })))
+        .await;
     if let (Some(c), Some(album)) = (immich, options.immich_album.clone()) {
         let _ = std::fs::remove_dir(&dir);
         let added = tauri::async_runtime::spawn_blocking(move || c.add_to_album(&album, &ids))
@@ -1582,9 +1760,17 @@ async fn export_images(
             failed.push(json!({ "file": "", "error": e }));
         }
         return Ok(json!({ "written": [], "skipped": skipped, "failed": failed, "uploaded": uploaded,
-                          "duplicates": duplicates, "album": options.immich_album }));
+                          "duplicates": duplicates, "album": options.immich_album, "cancelled": cancelled }));
     }
-    Ok(json!({ "written": written, "skipped": skipped, "failed": failed, "dir": dir }))
+    Ok(json!({ "written": written, "skipped": skipped, "failed": failed, "dir": dir, "cancelled": cancelled }))
+}
+
+// stops export_images' `job` before its next image
+#[tauri::command]
+fn export_cancel(state: State<'_, AppState>, job: u64) {
+    if let Some(c) = state.export_cancels.lock().unwrap().get(&job) {
+        c.store(true, Ordering::SeqCst);
+    }
 }
 
 // the Immich side of exporting: run off the async runtime, as the client
@@ -2096,10 +2282,10 @@ fn main() {
                 .map_err(|e| format!("cannot start {}: {e}", bin.display()))?;
             app.manage(AppState {
                 base_cancel: engine.base_cancel(),
+                tagged: engine.tagged(),
+                export_cancels: Mutex::new(HashMap::new()),
                 engine: Mutex::new(engine),
-                waiting: AtomicUsize::new(0),
                 frame_path: runtime.join("frame.rgba"),
-                thumb_path: runtime.join("thumb.rgba"),
                 denoise_path: runtime.join("denoise-preview.f32"),
                 presets_path: runtime.join("presets.json"),
                 preview_path: runtime.join("preview.rgba"),
@@ -2115,18 +2301,21 @@ fn main() {
                 resource_level,
             });
             app.manage(plugins::Plugins::new(runtime.join("plugin-returns.json")));
+            // stacks saved in Macro Studio while Immage was closed
+            let handle = app.handle().clone();
+            std::thread::spawn(move || handle.state::<plugins::Plugins>().drain_jobs());
             app.manage(Caches::new(&app.path().app_cache_dir()?));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             open_folder, open_image, get_params, set_params, render, cancel_base, save, baseline_end, before_view, thumb, thumb_cached, cache_limits, cache_usage, cache_clear, meta, meta_set, prefetch, darktable_resources, darktable_resources_set,
-            export_images, export_existing, export_preview, fonts, export_presets_load, export_presets_save, preset_file_write, preset_file_read, presets_load, presets_save, looks_list, look_import, look_export, look_delete, look_apply, look_amount, preview,
+            export_images, export_cancel, export_existing, export_preview, fonts, export_presets_load, export_presets_save, preset_file_write, preset_file_read, presets_load, presets_save, looks_list, look_import, look_export, look_delete, look_apply, look_amount, preview,
             mask_shapes, combine, masks, mask_delete, mask_rename, history, module_state, sample, tone_key, agx_auto, upright, points, range_map, zones, mask_map, ai_object,
-            ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, list_subfolders, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
+            ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, list_subfolders, folder_volumes, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
             immich_export_check, immich_search, immich_browse_check, immich_libraries, immich_suggestions, immich_people, immich_tags,
-            immich_thumb, immich_resolve, launch_file, path_exists, path_kind, trash_files, create_virtual_copy, remove_virtual_copy, preview_fullscreen, about, licenses, engine_quit, keywords, keywords_set, ai_accel,
+            immich_thumb, immich_resolve, launch_file, path_exists, path_kind, display_scale, trash_files, create_virtual_copy, remove_virtual_copy, hdr_merge, hdr_can_align, pano_merge, pano_can_merge, merge_cancel, preview_fullscreen, about, licenses, engine_quit, keywords, keywords_set, ai_accel,
             perf_set, perf_modules, perf_report_write, perf_machine, perf_ping,
-            plugins::plugin_find_apps, plugins::plugin_launch, plugins::plugin_watch, plugins::plugin_cancel,
+            plugins::plugin_find_apps, plugins::plugin_launch, plugins::plugin_watch, plugins::plugin_cancel, plugins::plugin_job,
             plugins::plugin_returns, plugins::plugin_return_applied
         ])
         .build(context)
