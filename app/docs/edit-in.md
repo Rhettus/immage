@@ -1,9 +1,10 @@
 # Edit In
 
 **Edit In** sends photos to another application for something Immage
-doesn't do itself, and brings back the file it saves, ready to edit. Today
-that application is **DxO PureRAW**, for its noise reduction and lens
-sharpening on raws.
+doesn't do itself, and brings back the file it saves, ready to edit. It
+works with **DxO PureRAW**, for its noise reduction and lens sharpening on
+raws, and **Macro Studio**, for focus stacking
+([below](#macro-studio-focus-stacking)).
 
 **If you've used another editor:** this is the usual Edit In command and
 PureRAW's own plugin in one. The returned file appears beside its original,
@@ -54,5 +55,51 @@ waiting**, or after three hours.
 | Reason shown | Why |
 | --- | --- |
 | **choose its application in Preferences** | PureRAW wasn't found; set **Application**. |
-| **raw files only** | PureRAW only takes raws. |
+| **raw files only** | PureRAW only takes raws, and so does Macro Studio set to send **Raws**. |
+| **select at least 2 photos** | Macro Studio stacks two or more. |
 | **only photos on this computer** | An Immich result that hasn't been opened or downloaded yet. |
+
+## Macro Studio: focus stacking
+
+[Macro Studio](https://macrostudio.pro) merges a focus bracket, the same
+subject shot at a run of focus distances, into one photo sharp from front
+to back. Immage hands it the bracket and takes back the stack.
+
+**If you've used another editor:** this is Macro Studio's own Lightroom
+plugin: the stack opens in Macro Studio for you to check and retouch, and
+comes back when you save it there.
+
+### Setting it up
+
+1. In **Preferences › Plugins**, click **Add Plugin ▾** and choose
+   **Macro Studio**. Immage looks for it in your Applications folder; if
+   it isn't found, click **Choose…** beside **Application**.
+2. **Send**:
+   - **Raws** (the default): the raw files go over as they are, with
+     nothing clipped on the way, and the stack comes back as a raw DNG to
+     edit here from the start. Your edit to the frames doesn't go with
+     them.
+   - **16-bit TIFFs**: each frame is written with its edit so far, as
+     "-Edit" TIFFs beside the photos, and the stack has that edit baked
+     in. Very saturated colors can clip. Takes photos that aren't raws.
+3. **Look**: Macro Studio's finish on the stack. **Natural** leaves it
+   as stacked, **Enhanced** sharpens it and adds clarity, and
+   **Default** is what Macro Studio's own preferences say.
+
+### Stacking
+
+Select the frames of one bracket (two or more), right-click, and choose
+**Edit In › Macro Studio**. Macro Studio stacks them and opens the result
+in its editor. The banner reads **Waiting for Macro Studio…** meanwhile,
+and you can keep editing.
+
+Save the stack in Macro Studio, as DNG for the most latitude. It appears
+in the filmstrip beside the first frame, named after it
+(**P1010001-stacked.dng**), and opens. A stack made from raws starts
+with the defaults a new raw gets. Saved again, it comes back again.
+
+A stack saved after Immage stopped waiting, or while Immage was closed,
+comes back the next time its folder is shown. Immage stops waiting when
+the stack is saved or closed in Macro Studio, when you click **Stop
+waiting**, or if Macro Studio doesn't start or stops responding.
+

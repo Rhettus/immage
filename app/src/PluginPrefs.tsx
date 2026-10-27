@@ -54,15 +54,26 @@ export function PluginPrefs({ plugins, onPlugins }: {
               </div>
             </PrefRow>
             {kind.send === "choice" && (
-              <PrefRow label="Send" hint="TIFFs carry the edit so far; originals suit applications that read raws">
+              <PrefRow label="Send" hint={kind.rawOriginals
+                ? "raws keep the most color and come back as a raw DNG, without the edit; TIFFs carry the edit so far, but very saturated colors can clip"
+                : "TIFFs carry the edit so far; originals suit applications that read raws"}>
                 <div className="segmented small">
-                  {([["Originals", "original"], ["16-bit TIFFs", "tiff"]] as const).map(([label, v]) => (
+                  {([[kind.rawOriginals ? "Raws" : "Originals", "original"], ["16-bit TIFFs", "tiff"]] as const).map(([label, v]) => (
                     <button key={v} className={p.send === v ? "active" : ""} onClick={() => update(p.id, { send: v })}>{label}</button>
                   ))}
                 </div>
               </PrefRow>
             )}
-            <PrefRow label="Results folder"
+            {kind.handoff === "macrostudio" && (
+              <PrefRow label="Look" hint="Macro Studio's finish on the stack; Enhanced sharpens and adds clarity">
+                <div className="segmented small">
+                  {([["Natural", "natural"], ["Enhanced", "enhanced"], ["Default", ""]] as const).map(([label, v]) => (
+                    <button key={v} className={(p.look ?? "") === v ? "active" : ""} onClick={() => update(p.id, { look: v })}>{label}</button>
+                  ))}
+                </div>
+              </PrefRow>
+            )}
+            {kind.handoff !== "macrostudio" && <PrefRow label="Results folder"
                      hint={`where ${appName(p.app || kind.label)} saves, if not ${kind.returns.subfolders
                        .map((s) => (s ? `a "${s}" folder beside the photo` : "beside the photo")).join(" or ")}`}>
               <div className="pref-inline">
@@ -70,7 +81,7 @@ export function PluginPrefs({ plugins, onPlugins }: {
                        onChange={(e) => update(p.id, { outputDir: e.target.value })} />
                 <button className="btn small" onClick={() => void chooseDir(p.id)}>Choose…</button>
               </div>
-            </PrefRow>
+            </PrefRow>}
             {kind.onReturn.map((o) => (
               <PrefRow key={o.id} label={o.label} hint={`on a returned file, the first time it opens: ${o.hint}`}>
                 <PrefSwitch checked={!!p.onReturn[o.id]}

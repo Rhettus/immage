@@ -56,7 +56,7 @@ New to Immage? Start with [Getting started](getting-started.md).
 
 - [Export](export.md): to a folder or an Immich album, with file names,
   borders and captions
-- [Edit In](edit-in.md): sending photos to DxO PureRAW and back
+- [Edit In](edit-in.md): sending photos to DxO PureRAW or Macro Studio and back
 
 **Reference**
 

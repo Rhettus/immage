@@ -204,7 +204,7 @@ are `localStorage` keys named `immage.*`.
 | File | Responsibility |
 |---|---|
 | [immich.ts](../../src/immich.ts), [ImmichPanel.tsx](../../src/ImmichPanel.tsx), [ImmichPrefs.tsx](../../src/ImmichPrefs.tsx) | Search, remote assets as `ImageEntry`, path maps from Immich to local files; the Library's Immich card (library, words, mode; its filters are in the Filters popup); connection settings (from the immporter). |
-| [plugins.ts](../../src/plugins.ts), [PluginPrefs.tsx](../../src/PluginPrefs.tsx) | Edit In: plugin kinds (`KINDS`, DxO PureRAW today), configs, returns; the Plugins preferences tab. |
+| [plugins.ts](../../src/plugins.ts), [PluginPrefs.tsx](../../src/PluginPrefs.tsx) | Edit In: plugin kinds (`KINDS`: DxO PureRAW, and Macro Studio, whose `handoff` is a job rather than files), configs, returns; the Plugins preferences tab. |
 
 ### Preferences, histogram, probe, performance
 
@@ -223,7 +223,7 @@ are `localStorage` keys named `immage.*`.
 | [engine.rs](../../src-tauri/src/engine.rs) | The engine child and its protocol (above); `perf_mark` and the `-d perf` parser. |
 | [immich_search.rs](../../src-tauri/src/immich_search.rs), [immich_upload.rs](../../src-tauri/src/immich_upload.rs) | Immich: search, thumbnails, originals (cached); album and upload calls. The API key never reaches the front end. |
 | [volumes.rs](../../src-tauri/src/volumes.rs) | The drive a library folder is on, its name and whether it is a network share (statfs on macOS, `/proc/self/mounts` on Linux, the volume calls on Windows), for the folder tree's headings. |
-| [plugins.rs](../../src-tauri/src/plugins.rs) | Edit In: find apps, launch with files, poll their output folders, remember each result (`plugin-returns.json`). |
+| [plugins.rs](../../src-tauri/src/plugins.rs) | Edit In: find apps, launch with files, poll their output folders, remember each result (`plugin-returns.json`). Macro Studio's protocol (`plugin_job`): a job manifest in `plugin-jobs/<id>/`, its receipt read until every stack is saved or closed, and a ledger (`plugin-jobs/pending.json`) drained at start and on each `open_folder` (`drain_jobs`), for stacks saved later. |
 | [Cargo.toml](../../src-tauri/Cargo.toml), [tauri.conf.json](../../src-tauri/tauri.conf.json), [capabilities/](../../src-tauri/capabilities) | Dependencies (each with its reason); windows, bundle resources (`resources/darktable`, `looks`, `sample`); window permissions. |
 
 Commands by what they reach:
@@ -235,7 +235,7 @@ Commands by what they reach:
 | Files only | `list_subfolders`, `folder_volumes`, `path_exists`, `path_kind`, `export_existing`, `presets_load`, `presets_save`, `export_presets_load`, `export_presets_save`, `preset_file_read`, `preset_file_write`, `looks_list`, `sample_folder`, `launch_file` |
 | AI models (download, then the engine's `version`) | `ai_model_ensure`, `ai_model_reinstall` |
 | Immich (HTTP) | `immich_albums`, `immich_create_album`, `immich_export_check`, `immich_browse_check`, `immich_search`, `immich_libraries`, `immich_suggestions`, `immich_people`, `immich_tags`, `immich_thumb`, `immich_resolve` |
-| Plugins | `plugin_find_apps`, `plugin_launch`, `plugin_watch`, `plugin_cancel`, `plugin_returns`, `plugin_return_applied` |
+| Plugins | `plugin_find_apps`, `plugin_launch`, `plugin_watch`, `plugin_job`, `plugin_cancel`, `plugin_returns`, `plugin_return_applied` |
 | Performance | `perf_set`, `perf_modules`, `perf_report_write`, `perf_ping` |
 | The window | `preview_fullscreen` |
 
@@ -410,6 +410,7 @@ darktable is, and it has AI features when darktable is configured with
 | Develop presets | `presets.json` in the runtime folder | permanent |
 | Export presets | `export-presets.json` in the runtime folder; shared files from Import…/Export… | permanent |
 | Edit In results | `plugin-returns.json` in the runtime folder | permanent |
+| Macro Studio jobs | `plugin-jobs/` in the runtime folder: each job's manifest and receipt, and `pending.json` | until every stack is saved or closed, or 30 days |
 | Engine config, cache, log | `config/`, `cache/`, `engine.log` in the runtime folder (`build/app-runtime` in dev, the app data folder in a release) | permanent; the log restarts past 5 MB |
 | Frames, thumbnails, previews, maps | `frame.rgba`, `thumb-<tag>.rgba`, `preview.rgba`, `range.bin` in the runtime folder | overwritten per request; a thumbnail's deleted once read |
 | Frames handed to the page (Linux) | `/dev/shm/immage-frame-<token>-<id>` | until the page reads it; left over past a minute, deleted at the next start |
