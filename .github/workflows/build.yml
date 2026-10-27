@@ -68,7 +68,7 @@ jobs:
         working-directory: app
       - run: npm audit --omit=dev --audit-level=high
         working-directory: app
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: app/src-tauri
       - name: cargo clippy
@@ -120,7 +120,7 @@ jobs:
           node-version: lts/*
           cache: ${{ !inputs.release && 'npm' || '' }}
           cache-dependency-path: app/package-lock.json
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         if: ${{ !inputs.release }}
         with:
           workspaces: app/src-tauri
@@ -192,7 +192,7 @@ jobs:
           node-version: lts/*
           cache: ${{ !inputs.release && 'npm' || '' }}
           cache-dependency-path: app/package-lock.json
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         if: ${{ !inputs.release }}
         with:
           workspaces: app/src-tauri
@@ -270,7 +270,7 @@ jobs:
           node-version: lts/*
           cache: ${{ !inputs.release && 'npm' || '' }}
           cache-dependency-path: app/package-lock.json
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         if: ${{ !inputs.release }}
         with:
           workspaces: app/src-tauri
