@@ -783,6 +783,14 @@ export default function App() {
     return { u: clamp01((p.x + p.width / 2) / (p.fullWidth * p.scale)),
              v: clamp01((p.y + p.height / 2) / (p.fullHeight * p.scale)) };
   };
+  // a background job's result, opened from the activity line as a double
+  // click in the grid opens a photo: out of the grid and Compare, which
+  // would otherwise cover it
+  const openResult = (path: string, imgid: number) => {
+    setCompare(null);
+    void openFile(path, imgid);
+    setGrid(false);
+  };
   const runDenoise = (amount: number) => {
     const from = currentRef.current?.path;
     if (!session.current || !from || denoiseRunning) return;
@@ -805,7 +813,7 @@ export default function App() {
       if (folderRef.current && !immichRef.current && parentDir(r.path) === folderRef.current)
         void showFolder(folderRef.current, true);
       return { text: `AI Denoise: wrote ${baseName(r.path)}`, ok: true,
-               action: { label: "Open", run: () => void openFile(r.path, r.image.imgid) } };
+               action: { label: "Open", run: () => openResult(r.path, r.image.imgid) } };
     }, "AI Denoise").finally(() => setDenoiseRunning(false));
   };
   // Lightroom's Photo Merge › HDR on darktable's HDR merge: a float DNG
@@ -819,7 +827,7 @@ export default function App() {
       if (folderRef.current && !immichRef.current && parentDir(r.path) === folderRef.current)
         void showFolder(folderRef.current, true);
       return { text: `HDR Merge: wrote ${baseName(r.path)}`, ok: true,
-               action: { label: "Open", run: () => void openFile(r.path, r.image.imgid) } };
+               action: { label: "Open", run: () => openResult(r.path, r.image.imgid) } };
     }, `HDR Merge of ${first?.filename ?? "the photos"}`);
   };
   // Lightroom's Photo Merge › Panorama, stitched by the engine with OpenCV:
@@ -836,7 +844,7 @@ export default function App() {
         void showFolder(folderRef.current, true);
       const left = r.frames - r.used;
       return { text: `Panorama Merge: wrote ${baseName(r.path)}${left ? `, without ${left} photo${left > 1 ? "s" : ""} that overlapped no other` : ""}`,
-               ok: true, action: { label: "Open", run: () => void openFile(r.path, r.image.imgid) } };
+               ok: true, action: { label: "Open", run: () => openResult(r.path, r.image.imgid) } };
     }, `Panorama Merge of ${first?.filename ?? "the photos"}`);
   };
   const selectObject = (prompt: ObjectPrompt) => runAi("mask-object-sam21-small", "finding the object…",
