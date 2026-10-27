@@ -1216,6 +1216,51 @@ async function decisions(photo) {
     });
   }
 
+  // an AI selection's outline is traced at twice the model's size and
+  // moved onto the photo's own edges (main.c, _snap_edges). a made-up
+  // photo whose subject's rim is known, toothed finer than the model sees:
+  // the outline's corners lie 1.7 px from it on average, and 3.8 px when
+  // traced at the model's size unsnapped
+  const RIM = "AI outlines follow the photo's edges";
+  if (photo === args.photos[0]) {
+    if (!args.models || !existsSync(join(args.models, SUBJECT, "config.json"))) {
+      record({ check: "decisions", photo: basename(photo), id: RIM, status: "skip",
+               detail: `no ${SUBJECT} in build/ai-models: use Select Subject once in a dev build` });
+    } else await decide(RIM, async () => {
+      const W = 3000, H = 2000, R = 600, A = 25, N = 48;
+      const rim = (t) => R + A * Math.sin(N * t);
+      const px = Buffer.alloc(3 * W * H);
+      let seed = 1;
+      const noise = () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 2 ** 32 - 0.5) * 40;
+      for (let y = 0; y < H; y++)
+        for (let x = 0; x < W; x++) {
+          const dx = x - W / 2, dy = y - H / 2, k = 3 * (y * W + x);
+          const c = Math.hypot(dx, dy) < rim(Math.atan2(dy, dx)) ? [230, 150, 40] : [70, 90, 80].map((v) => v + noise());
+          for (let i = 0; i < 3; i++) px[k + i] = Math.max(0, Math.min(255, Math.round(c[i])));
+        }
+      const dir = join(args.work, "rim");
+      mkdirSync(dir, { recursive: true });
+      const path = join(dir, "rim.ppm");
+      writeFileSync(path, Buffer.concat([Buffer.from(`P6\n${W} ${H}\n255\n`), px]));
+      await stopEngine();
+      startEngine(args.engine, join(args.work, "ai-engine"), args.models);
+      try {
+        await request({ cmd: "open", path, imgid: -1 });
+        await invoke("ai_model_ensure", { id: SUBJECT });
+        const paths = await invoke("ai_mask", { kind: "subject" });
+        const errs = (paths ?? []).flatMap((p) => p.points.map(([x, y]) => {
+          const dx = x * W - W / 2, dy = y * H - H / 2;
+          return Math.abs(Math.hypot(dx, dy) - rim(Math.atan2(dy, dx)));
+        }));
+        const mean = errs.reduce((a, b) => a + b, 0) / Math.max(1, errs.length);
+        return !errs.length ? "Select Subject found nothing"
+          : mean > 2.5 ? `the outline lies ${mean.toFixed(2)} px from the subject's rim on average` : null;
+      } finally {
+        await restart();
+      }
+    });
+  }
+
   // a frame shown before comes back without a render when the image does:
   // back from the Before view, or a slider put back. the engine names it by
   // darktable's hash (session.ts, frames; _render's `have` in engine/main.c)
