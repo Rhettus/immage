@@ -5927,7 +5927,10 @@ function ThumbCanvas({ loader, imgid, dogEar = false }: { loader?: ThumbLoader; 
     if (!c || !bitmap) return;
     c.width = bitmap.width;
     c.height = bitmap.height;
-    const g = c.getContext("2d")!;
+    // WebKitGTK stops showing GPU-backed thumbnail canvases once a photo is
+    // open, though their pixels are intact; unaccelerated ones are painted
+    // with the page
+    const g = c.getContext("2d", { willReadFrequently: true })!;
     g.drawImage(bitmap, 0, 0);
     if (!dogEar) return;
     const d = Math.round(Math.max(c.width, c.height) * 0.09), h = c.height;
