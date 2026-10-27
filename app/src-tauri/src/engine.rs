@@ -22,31 +22,31 @@ pub struct Engine {
     replies: Receiver<Value>,
     perf: Arc<Perf>,
     base: BaseCancel,
-    thumbs: Thumbs,
+    tagged: Tagged,
 }
 
-// thumbnails, which the engine builds on threads of its own beside its
-// main loop (main.c, _thumb_run): sent and answered while a request holds
-// the engine. each is tagged, and read_stdout hands its reply to the
-// caller waiting on that tag
+// requests the engine serves on threads of its own beside its main loop:
+// thumbnails (main.c, _thumb_run) and background exports (_export_run).
+// they are sent and answered while a request holds the engine. each is
+// tagged, and read_stdout hands its reply to the caller waiting on that tag
 #[derive(Clone)]
-pub struct Thumbs {
+pub struct Tagged {
     stdin: Arc<Mutex<ChildStdin>>,
     waiting: Waiting,
     last: Arc<AtomicU64>,
 }
 
-// the thumbnails sent and not yet answered, by tag; None once the engine
-// has gone
+// the tagged requests sent and not yet answered, by tag; None once the
+// engine has gone
 type Waiting = Arc<Mutex<Option<HashMap<u64, Sender<Value>>>>>;
 
-impl Thumbs {
-    // a tag for the next thumbnail, unique for the engine's run
+impl Tagged {
+    // a tag for the next request, unique for the engine's run
     pub fn tag(&self) -> u64 {
         self.last.fetch_add(1, Ordering::SeqCst) + 1
     }
 
-    // blocks until the engine replies; `req` is a "thumb" request
+    // blocks until the engine replies
     pub fn request(&self, tag: u64, mut req: Value) -> Result<Value, String> {
         req["tag"] = json!(tag);
         let (tx, rx) = channel();
@@ -75,7 +75,7 @@ fn outcome(reply: Value) -> Result<Value, String> {
     }
 }
 
-// the engine's replies: a tagged one to the thumbnail waiting on it, the
+// the engine's replies: a tagged one to the caller waiting on it, the
 // rest to request() in order. at the end both sides' waits fail
 fn read_stdout(stdout: ChildStdout, replies: Sender<Value>, waiting: Waiting) {
     let mut reader = BufReader::new(stdout);
@@ -349,8 +349,8 @@ impl Engine {
         let shared = waiting.clone();
         std::thread::spawn(move || read_stdout(stdout, tx, shared));
         let base = BaseCancel { stdin: stdin.clone(), last: Arc::new(AtomicU64::new(0)) };
-        let thumbs = Thumbs { stdin: stdin.clone(), waiting, last: Arc::new(AtomicU64::new(0)) };
-        Ok(Self { child, stdin, replies, perf, base, thumbs })
+        let tagged = Tagged { stdin: stdin.clone(), waiting, last: Arc::new(AtomicU64::new(0)) };
+        Ok(Self { child, stdin, replies, perf, base, tagged })
     }
 
     // darktable's timings of the request just made: a cheap request after it
@@ -376,8 +376,8 @@ impl Engine {
         self.base.clone()
     }
 
-    pub fn thumbs(&self) -> Thumbs {
-        self.thumbs.clone()
+    pub fn tagged(&self) -> Tagged {
+        self.tagged.clone()
     }
 
     pub fn request(&mut self, req: Value) -> Result<Value, String> {

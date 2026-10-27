@@ -21,6 +21,9 @@ const HANDLERS = new Set(readFileSync(new URL("../app/src-tauri/src/main.rs", im
 
 let engine = null, frame = null, preview = null, range = null;
 const waiting = [];
+// requestTagged()'s, by tag
+const tagged = new Map();
+let lastTag = 0;
 
 // one engine for the process, in its own runtime folder, on the CPU so
 // frames are the same from run to run; with AI models from `modelsDir`
@@ -37,9 +40,18 @@ export function startEngine(binary, home, modelsDir = null) {
                    { stdio: ["pipe", "pipe", "ignore"] });
   engine = me;
   exited = new Promise((r) => me.on("exit", r));
-  createInterface({ input: me.stdout }).on("line", (line) => waiting.shift()?.(line));
+  createInterface({ input: me.stdout }).on("line", (line) => {
+    const tag = /^\{"tag":(\d+)/.exec(line)?.[1];
+    const w = tag && tagged.get(Number(tag));
+    if (w) { tagged.delete(Number(tag)); w(line); } else waiting.shift()?.(line);
+  });
   // only this engine's requests fail with it: a restart's are the next one's
-  me.on("exit", () => { if (engine === me) for (const w of waiting.splice(0)) w(null); });
+  me.on("exit", () => {
+    if (engine !== me) return;
+    for (const w of waiting.splice(0)) w(null);
+    for (const w of tagged.values()) w(null);
+    tagged.clear();
+  });
 }
 let exited = Promise.resolve();
 
@@ -57,6 +69,20 @@ export function request(req) {
   const p = chain.then(run, run);
   chain = p.catch(() => {});
   return p;
+}
+
+// a request the engine serves off its main loop (main.rs, Tagged): sent at
+// once, beside whatever request() waits on, and answered by its tag
+export function requestTagged(req) {
+  return new Promise((resolve, reject) => {
+    const tag = ++lastTag;
+    tagged.set(tag, (line) => {
+      if (line === null) return reject(new Error("the engine exited"));
+      const r = JSON.parse(line);
+      if (r.ok) resolve(r); else reject(new Error(r.error ?? "engine request failed"));
+    });
+    engine.stdin.write(JSON.stringify({ ...req, tag }) + "\n");
+  });
 }
 
 export async function stopEngine() {

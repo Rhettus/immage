@@ -38,7 +38,7 @@ Paths below are relative to this file.
 | A new mask shape or kind | [masks.ts](../../src/masks.ts) (`Shape`) | [MaskOverlay.tsx](../../src/MaskOverlay.tsx), `Session.addMask`, the engine's `_shape` / `_mask` |
 | A new engine command | `_handle()` in [main.c](../../../engine/main.c) | a `#[tauri::command]` in [main.rs](../../src-tauri/src/main.rs), registered in `invoke_handler`; the caller in [session.ts](../../src/session.ts) or [App.tsx](../../src/App.tsx) |
 | Rendering, frames, zoom | `Session.pump` / `renderView` in [session.ts](../../src/session.ts) | `currentView`, `paintFrame`, `animateTo` in [App.tsx](../../src/App.tsx); `render` in [main.rs](../../src-tauri/src/main.rs); `_render` in [main.c](../../../engine/main.c) |
-| An export option | `Settings` in [exportSettings.ts](../../src/exportSettings.ts) | [ExportDialog.tsx](../../src/ExportDialog.tsx); `export_images` in [main.rs](../../src-tauri/src/main.rs); `_export` / `_frame_style` in [main.c](../../../engine/main.c) |
+| An export option | `Settings` in [exportSettings.ts](../../src/exportSettings.ts) | [ExportDialog.tsx](../../src/ExportDialog.tsx); `export_images` in [main.rs](../../src-tauri/src/main.rs); `_export` / `_frame_style` in [main.c](../../../engine/main.c); its progress, [exports.ts](../../src/exports.ts) |
 | An AI feature | `runAi` / `runDenoise` in [App.tsx](../../src/App.tsx) | `withModel` in [aiModel.ts](../../src/aiModel.ts); `ai_model_ensure` in [main.rs](../../src-tauri/src/main.rs); the `HAVE_AI` section of [main.c](../../../engine/main.c); darktable's `src/ai` and `src/common/ai` |
 | A preference | [Preferences.tsx](../../src/Preferences.tsx) (a `load*`/`store*` pair and a `PrefRow`) | [PrefsUI.tsx](../../src/PrefsUI.tsx); the consumer calls `load*()` live |
 | An Immich call | [immich_search.rs](../../src-tauri/src/immich_search.rs) or [immich_upload.rs](../../src-tauri/src/immich_upload.rs) | `immich_*` commands in [main.rs](../../src-tauri/src/main.rs); [immich.ts](../../src/immich.ts), [ImmichPanel.tsx](../../src/ImmichPanel.tsx) |
@@ -55,7 +55,7 @@ Paths below are relative to this file.
 | [splash.html](../../splash.html), [Splash.tsx](../../src/Splash.tsx) | The splash window: asks `about`, shows the main window, closes itself. |
 | [App.tsx](../../src/App.tsx) | The whole editor's shell and state. See [inside App.tsx](#inside-apptsx). |
 | [main.rs](../../src-tauri/src/main.rs) | `main()`: on Linux over NVIDIA's driver gives the web view Mesa's EGL (`mesa_egl`), migrates the old app name, registers the dialog, opener, updater, process, window state (the main window's size, position and maximized state) and immporter plugins. On Linux `setup()` builds the windows itself, with the frames web extension's folder (`webext_dir`). `setup()` picks the engine: `build/bin/darktable-engine` with runtime state in `build/app-runtime` for a dev build, the bundled `resources/darktable` with the app data folder for a release, or `DT_ENGINE_BIN`. Holds `AppState` and nearly every command. |
-| [engine.rs](../../src-tauri/src/engine.rs) | The engine child. Spawns it (`--core --configdir --cachedir -d perf`, darktable's resource level from Preferences (`resource_level`), OpenCL on with only export's pipe type allowed the GPU, which the base borrows; on Linux, ROCm's platform on and its kernels built as OpenCL C 2.0 when no RustiCL is installed, `rocm_only`), retrying while an old one holds darktable's database lock. `request()` writes one JSON line and reads one back. Thumbnails (`Thumbs`) are tagged and sent without the engine's mutex; a stdout thread (`read_stdout`) hands each tagged reply to its caller and the rest to `request()`. A stderr thread writes the log and keeps darktable's `-d perf` timings apart for the performance overlay. |
+| [engine.rs](../../src-tauri/src/engine.rs) | The engine child. Spawns it (`--core --configdir --cachedir -d perf`, darktable's resource level from Preferences (`resource_level`), OpenCL on with only export's pipe type allowed the GPU, which the base borrows; on Linux, ROCm's platform on and its kernels built as OpenCL C 2.0 when no RustiCL is installed, `rocm_only`), retrying while an old one holds darktable's database lock. `request()` writes one JSON line and reads one back. Thumbnails and background exports (`Tagged`) are tagged and sent without the engine's mutex; a stdout thread (`read_stdout`) hands each tagged reply to its caller and the rest to `request()`. A stderr thread writes the log and keeps darktable's `-d perf` timings apart for the performance overlay. |
 | [engine/main.c](../../../engine/main.c) | `main()`: keeps the real stdout for replies, starts darktable with an in-memory library (`dt_init`), sets its confs, then loops: read a line, `_handle()` it, reply. |
 
 The boundary is strict. The front end never touches files or darktable
@@ -63,9 +63,10 @@ directly. It calls `invoke(...)` commands, and every command that needs the
 engine goes through the one `Mutex<Engine>` in `AppState`, so engine work is
 serialized, one request at a time. `engine()` is for what the user waits
 on; `engine_background()` (a folder's import) waits until no `engine()`
-call has been made for a moment. Thumbnails are the exception: the
-engine builds them on two threads of its own (`_thumb_run`), beside
-whatever the mutex's holder is doing. Large results are binary and travel as
+call has been made for a moment. Thumbnails and exports are the
+exceptions: the engine builds thumbnails on two threads of its own
+(`_thumb_run`) and exports on one (`_export_run`), beside whatever the
+mutex's holder is doing. Large results are binary and travel as
 `tauri::ipc::Response`:
 
 | Result | Format |
@@ -98,9 +99,10 @@ given memory it didn't allocate.
 
 ## Front end
 
-State lives in React `useState` and refs, mostly in `App`, plus three small
+State lives in React `useState` and refs, mostly in `App`, plus four small
 module stores: [activity.ts](../../src/activity.ts),
-[probe.ts](../../src/probe.ts) and [perf.ts](../../src/perf.ts). Preferences
+[exports.ts](../../src/exports.ts), [probe.ts](../../src/probe.ts) and
+[perf.ts](../../src/perf.ts). Preferences
 are `localStorage` keys named `immage.*`.
 
 ### Shell
@@ -112,6 +114,7 @@ are `localStorage` keys named `immage.*`.
 | [ImportView.tsx](../../src/ImportView.tsx) | The SD card importer, loaded from `@immporter/embed`. |
 | [Collapse.tsx](../../src/Collapse.tsx), [keys.ts](../../src/keys.ts), [paths.ts](../../src/paths.ts) | Folding panels; ⌘ or Ctrl by platform; path helpers for either separator. |
 | [activity.ts](../../src/activity.ts) | The busy indicator's job store (`begin`, `progress`, `end`, `useWorking`). |
+| [exports.ts](../../src/exports.ts) | Background exports for the activity line under the photo (`runExport`, `stopExport`, `useExports`): each one's progress, then what it did. |
 | [styles.css](../../src/styles.css) | All styling. |
 
 ### Inside App.tsx
@@ -192,7 +195,7 @@ are `localStorage` keys named `immage.*`.
 |---|---|
 | [exportSettings.ts](../../src/exportSettings.ts) | Export `Settings`, presets (built-in, local, shared file) and frame items (borders, keylines, captions). |
 | [exportTokens.ts](../../src/exportTokens.ts) | File name and caption tokens. |
-| [ExportDialog.tsx](../../src/ExportDialog.tsx), [ExportFrame.tsx](../../src/ExportFrame.tsx) | The Export dialog, its live preview, the Immich target; the Frame & Captions editor. |
+| [ExportDialog.tsx](../../src/ExportDialog.tsx), [ExportFrame.tsx](../../src/ExportFrame.tsx) | The Export dialog, its live preview, the Immich target; the Frame & Captions editor. The dialog asks what an export needs (the upscale model, names that clash), hands it to `runExport` and closes. |
 
 ### Immich and plugins
 
@@ -226,7 +229,7 @@ Commands by what they reach:
 | Reaches | Commands |
 |---|---|
 | The open photo, through the engine | `open_image`, `get_params`, `set_params`, `module_state`, `render`, `cancel_base`, `preview`, `save`, `before_view`, `history`, `masks`, `mask_shapes`, `combine`, `mask_delete`, `mask_rename`, `mask_map`, `range_map`, `sample`, `zones`, `tone_key`, `agx_auto`, `spots`, `spots_enable`, `spot_source`, `look_apply`, `look_amount`, `ai_object`, `ai_mask`, `ai_depth`, `ai_denoise`, `ai_denoise_preview` |
-| The library, through the engine | `open_folder` (engine `import` in batches of 24), `thumb`, `prefetch`, `meta`, `meta_set`, `keywords`, `keywords_set`, `create_virtual_copy`, `remove_virtual_copy`, `trash_files`, `export_images`, `export_preview`, `fonts`, `ai_accel`, `about` |
+| The library, through the engine | `open_folder` (engine `import` in batches of 24), `thumb`, `prefetch`, `meta`, `meta_set`, `keywords`, `keywords_set`, `create_virtual_copy`, `remove_virtual_copy`, `trash_files`, `export_images`, `export_cancel`, `export_preview`, `fonts`, `ai_accel`, `about` |
 | Files only | `list_subfolders`, `folder_volumes`, `path_exists`, `path_kind`, `export_existing`, `presets_load`, `presets_save`, `export_presets_load`, `export_presets_save`, `preset_file_read`, `preset_file_write`, `looks_list`, `sample_folder`, `launch_file` |
 | AI models (download, then the engine's `version`) | `ai_model_ensure`, `ai_model_reinstall` |
 | Immich (HTTP) | `immich_albums`, `immich_create_album`, `immich_export_check`, `immich_browse_check`, `immich_search`, `immich_libraries`, `immich_suggestions`, `immich_people`, `immich_tags`, `immich_thumb`, `immich_resolve` |
@@ -293,7 +296,7 @@ The commands `_handle()` serves:
 | Group | Commands |
 |---|---|
 | Session | `open`, `history`, `module_state`, `save`, `baseline_end`, `before`, `close`, `quit`, `version`, `unpack`, `ai_accel`, `opencl`, `fonts` |
-| Library (no photo needed) | `folder`, `import`, `thumb`, `prefetch`, `meta`, `meta_set`, `keywords`, `keywords_set`, `copy`, `remove_copy`, `sidecars`, `export` |
+| Library (no photo needed) | `folder`, `import`, `thumb`, `prefetch`, `meta`, `meta_set`, `keywords`, `keywords_set`, `copy`, `remove_copy`, `sidecars`, `export`, `export_hold`, `export_release` |
 | Edit | `set`, `get`, `render`, `preview`, `look`, `look_amount` |
 | Masks and spots | `mask`, `combine`, `masks`, `mask_rename`, `mask_delete`, `mask_map`, `range_map`, `sample`, `spots`, `spots_enable`, `spot_source` |
 | Tone | `tone_key`, `agx_auto`, `zones` |
@@ -353,9 +356,10 @@ darktable is, and it has AI features when darktable is configured with
    1. 600 ms after the last edit, `Session.scheduleSave` sends `save`. The engine writes history to the database, compresses it and writes the XMP sidecar beside the photo.
    2. `onSaved` refreshes the filmstrip thumbnail.
 6. **Export.**
-   1. `ExportDialog` calls `export_images`, one engine `export` per photo.
-   2. The frame and captions become a temporary darktable style (borders plus a watermark SVG), and AI upscale wraps the chosen format.
-   3. For Immich, Rust uploads each file and adds it to the album. Progress comes as `export-progress`.
+   1. `ExportDialog` asks what it needs, then `runExport` ([exports.ts](../../src/exports.ts)) calls `export_images` and the dialog closes.
+   2. Rust sends `export_hold`: the engine takes a snapshot of the open photo's edit (a darktable duplicate at a version from `_SNAPSHOT_VERSION` up, which listings leave out), and of each other photo as it is opened (`_hold_open`) or reached. Each photo is exported as it was edited when the export was asked for.
+   3. Each photo is a tagged `export` on the engine's export thread (`_export_run`), outside the engine mutex, so editing goes on. The frame and captions become a temporary darktable style (borders plus a watermark SVG), and AI upscale wraps the chosen format. `export_release` then drops what is left of the job's snapshots.
+   4. For Immich, Rust uploads each file and adds it to the album. Progress comes as `export-progress`, shown on the activity line with a Stop (`export_cancel`) and then a summary.
 7. **Import a folder.**
    1. `openFolder` calls `open_folder`. Rust walks the folder, skipping packages and sidecars, and sends engine `import` in batches of 24, each reported as `folder-progress`.
    2. A newer folder request cancels the older one through `folder_token`.

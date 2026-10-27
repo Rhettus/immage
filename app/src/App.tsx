@@ -33,6 +33,7 @@ import { VignetteOverlay } from "./VignetteOverlay";
 import { GuideOverlay } from "./GuideOverlay";
 import { autoMix } from "./bwauto";
 import { begin, end, track, useWorking } from "./activity";
+import { dismissExport, stopExport, useExports, type ExportJob } from "./exports";
 import { withModel } from "./aiModel";
 import { bandWeights, invert, lightness, pixelAt, polyline, setProbe, useProbe, type Probe, type RGB } from "./probe";
 import { anchored, neutralize, whitePatch, WB_PRESETS, type WB } from "./wb";
@@ -743,6 +744,7 @@ export default function App() {
     return () => end(job);
   }, [aiBusy]);
   const working = useWorking();
+  const exportJobs = useExports();
   // AI Denoise: darktable's raw denoise writes a DNG beside the raw with its
   // edit (the engine's ai_denoise), shown after it in the folder as an Edit
   // In result, and opened with noise reduction off, as the model did that
@@ -4712,6 +4714,8 @@ export default function App() {
           )}
           <div className={`working${working ? " on" : ""}`} title="working…" aria-hidden={!working}><span /></div>
           <div className="status">{status}</div>
+          <div className="activities">
+          {exportJobs.map((j) => <ExportActivity key={j.id} job={j} />)}
           {(() => {
             // the folder's reading, then its thumbnails
             if (immich?.busy) return <div className="activity"><span>Searching Immich…</span></div>;
@@ -4727,6 +4731,7 @@ export default function App() {
             return reading ? <ActivityBar what="Reading photos" done={reading.done} total={reading.total} />
               : <ThumbProgress loader={loader.current!} />;
           })()}
+          </div>
         </main>
         <div data-tour="filmstrip" ref={stripSlot}
              style={floating.strip || grid ? {
@@ -5709,6 +5714,26 @@ function ActivityBar({ what, done, total }: { what: string; done: number; total:
     <div className="activity">
       <span>{total ? `${what} ${done.toLocaleString()} of ${total.toLocaleString()}` : "Reading folder…"}</span>
       <div className="bar"><div style={{ width: `${total ? (100 * done) / total : 0}%` }} /></div>
+    </div>
+  );
+}
+
+// a background export (exports.ts): its progress and Stop, then what it did
+function ExportActivity({ job }: { job: ExportJob }) {
+  // the viewer's own pointer handling (zoom on click) stays off it
+  const keep = (e: React.PointerEvent) => e.stopPropagation();
+  return (
+    <div className="activity waiting" onPointerDown={keep} onPointerUp={keep}>
+      {job.summary === null ? <>
+        <div className="progress">
+          <span>{job.what} {job.done.toLocaleString()} of {job.total.toLocaleString()}</span>
+          <div className="bar"><div style={{ width: `${(100 * job.done) / Math.max(1, job.total)}%` }} /></div>
+        </div>
+        <button disabled={job.stopping} onClick={() => stopExport(job.id)}>{job.stopping ? "Stopping…" : "Stop"}</button>
+      </> : <>
+        <span className={job.failed ? "failed" : ""}>{job.summary}</span>
+        <button onClick={() => dismissExport(job.id)}>OK</button>
+      </>}
     </div>
   );
 }
