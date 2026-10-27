@@ -28,6 +28,7 @@
 #include "pano.h"
 
 #include <algorithm>
+#include <climits>
 #include <cmath>
 #include <vector>
 
@@ -154,6 +155,17 @@ static void _span(const std::vector<CameraParams> &cams, const std::vector<Size>
   }
   *across = r - l;
   *up = t - b;
+}
+
+// a canvas past _MAX_CANVAS, or a frame warped wider or taller than the
+// 32767 pixels OpenCV's remap takes. Rect's area() is an int, which a
+// runaway canvas overflows
+static bool _too_large(const Rect &dst, const std::vector<Size> &frames)
+{
+  if((double)dst.width * dst.height > _MAX_CANVAS) return true;
+  for(const Size &s : frames)
+    if(s.width >= SHRT_MAX || s.height >= SHRT_MAX) return true;
+  return false;
 }
 
 static Ptr<WarperCreator> _warper(const pano_projection_t projection)
@@ -304,7 +316,19 @@ float *pano_stitch(pano_t *p, pano_projection_t projection, const gboolean crop,
     std::vector<Mat> rmats;
     for(const CameraParams &c : cams) rmats.push_back(c.R.clone());
     waveCorrect(rmats, WAVE_CORRECT_HORIZ);
-    for(int i = 0; i < m; i++) cams[i].R = rmats[i];
+    // the correction levels the horizon by a few degrees. it finds the
+    // horizon from how the cameras turn, so frames that hardly do leave it
+    // free to tip the whole panorama on its side, a cylinder hundreds of
+    // thousands of pixels tall: then the cameras stay as aligned
+    double turned = 0.0;
+    for(int i = 0; i < m; i++)
+    {
+      Mat d = rmats[i] * cams[i].R.t();
+      d.convertTo(d, CV_64F);
+      turned = std::max(turned, std::acos(std::clamp((trace(d)[0] - 1.0) / 2.0, -1.0, 1.0)));
+    }
+    if(turned <= 20.0 * CV_PI / 180.0)
+      for(int i = 0; i < m; i++) cams[i].R = rmats[i];
     std::vector<double> focals;
     for(const CameraParams &c : cams) focals.push_back(c.focal);
     std::sort(focals.begin(), focals.end());
@@ -349,10 +373,10 @@ float *pano_stitch(pano_t *p, pano_projection_t projection, const gboolean crop,
         fsizes[i] = roi.size();
       }
       dst = resultRoi(corners, fsizes);
-      if(dst.area() <= _MAX_CANVAS || !automatic || projection != PANO_PERSPECTIVE) break;
+      if(!_too_large(dst, fsizes) || !automatic || projection != PANO_PERSPECTIVE) break;
       projection = PANO_CYLINDRICAL;
     }
-    if(dst.area() > _MAX_CANVAS)
+    if(_too_large(dst, fsizes))
     {
       *err = g_strdup_printf("the panorama would be %d x %d pixels, too large to stitch%s", dst.width, dst.height,
                              projection == PANO_PERSPECTIVE ? "; try Cylindrical or Spherical" : "");
