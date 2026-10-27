@@ -974,8 +974,15 @@ async function decisions(photo) {
     mkdirSync(dirname(out), { recursive: true });
     return out;
   };
-  // the image data alone: the EXIF carries the time of export
-  const scan = (file) => { const b = readFileSync(file); return b.subarray(b.indexOf(Buffer.from([0xff, 0xda]))); };
+  // the image data alone: the EXIF carries the time of export. the
+  // segments are walked to the start of scan, as its marker's two bytes
+  // can turn up in a photo's metadata before it
+  const scan = (file) => {
+    const b = readFileSync(file);
+    let i = 2;
+    while (i + 4 <= b.length && b[i] === 0xff && b[i + 1] !== 0xda) i += 2 + b.readUInt16BE(i + 2);
+    return b.subarray(i);
+  };
   let jobs = 0;
   await decide("an export renders the edit it was asked for", async () => {
     for (const later of [false, true]) {
