@@ -221,6 +221,8 @@ pub struct Watch {
     match_: String,
     // looked in beside each source ("" is the source's own folder)
     subfolders: Vec<String>,
+    // Preferences' Results folder, as editIn names it
+    #[serde(rename = "outputDir")]
     output_dir: Option<String>,
     // files the hand-off wrote itself (TIFFs sent), never a result
     #[serde(default)]
@@ -704,6 +706,16 @@ mod tests {
         // a deleted result is forgotten
         assert_eq!(p.load().len(), 1);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn watch_args() {
+        // the fields as App.tsx's editIn sends them
+        let w: Watch = serde_json::from_value(json!({
+            "token": 1, "plugin": "dxo-pureraw:x", "sources": ["/p/a.orf"], "exts": ["dng"], "match": "prefix",
+            "subfolders": ["DxO", ""], "outputDir": "/out", "ignore": [],
+        })).unwrap();
+        assert_eq!(w.output_dir.as_deref(), Some("/out"));
     }
 
     #[test]
