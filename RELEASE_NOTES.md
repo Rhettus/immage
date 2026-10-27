@@ -3,6 +3,98 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
+## 0.38.0
+
+Improvements
+
+- the Folders card tells drives apart: with folders on more than one
+  drive, each drive is a heading over its folders, and a NAS share shows
+  a network icon and its server's name, so a 2026 on the Mac and a 2026
+  on the NAS no longer look the same. A folder on a share that isn't
+  connected stays under its share, dimmed. Double-click a server's name
+  or address to give it a name of your own
+- reading a large folder and loading its thumbnails no longer slow down
+  editing: zooming, sliders and resizing the window stay responsive.
+  The folder is read and its thumbnails load while you edit, beside the
+  photo's own rendering, so a big folder fills in without waiting for
+  you to stop
+- exports run in the background: the Export dialog closes as soon as
+  the export starts, and you go on editing while it runs. The bottom
+  left of the photo shows how far it has got, with Stop, and then what
+  it did. Each photo is exported as it was when you clicked Export, even
+  if you edit it meanwhile
+- AI Denoise runs in the background too: you go on editing while it
+  writes the DNG, and when it's done, Open at the bottom left opens it.
+  The DNG has the edit as it was when you clicked Denoise
+- AI selections (Select Subject, Sky, People, an object, Depth Range
+  and the rest) no longer hold up editing while the model runs: sliders
+  and zoom stay responsive during the seconds it takes to find the
+  subject. A selection that finishes after you have moved to another
+  photo is left out
+- AI selections fit more closely: the outline follows the photo's own
+  edges, such as a treeline against the sky or the rim of a subject,
+  instead of rounding them off, so less of the sky is left out around
+  trees and less of the background is taken in around a subject. Select
+  Sky and the Landscape choices look at the photo in more detail, and
+  take about half a second longer. A new Sky or Landscape mask starts
+  with Edge Aware at 20, which takes in the sky between branches without
+  a halo along the horizon, and its overlay shows once, as Edge Aware
+  leaves it, rather than first without it. An adjustment on a selected
+  subject or object no longer spills onto a band of the background
+  around it, and still reaches the subject's own rim, such as a bird's
+  crest or the edge of its beak
+- HDR Merge: select bracketed raws and press ⌃H (Ctrl+H on Windows
+  and Linux), or right-click them, to merge them into one DNG with the
+  range of them all, using darktable's HDR merge. Auto Align lines up
+  brackets shot handheld. The DNG is written beside the first bracket
+  while you go on editing, with its progress and Stop at the bottom
+  left of the photo, and edits like any raw
+- Panorama Merge: select overlapping raws and press ⌃M (Ctrl+M on
+  Windows and Linux), or right-click them, to stitch them into one wide
+  DNG, as Lightroom's Photo Merge does. Choose Spherical, Cylindrical or
+  Perspective, or let Auto pick, and Auto Crop cuts the empty edges. The
+  DNG is written beside the first photo while you go on editing, with
+  each stage's progress and Stop at the bottom left of the photo, and
+  opens like that photo's raw, with the lens corrections made. It is
+  stitched with OpenCV, as darktable has no panorama tool
+- Edit In › Macro Studio, for focus stacking: select a focus bracket,
+  right-click and choose Edit In › Macro Studio. The stack opens in
+  Macro Studio to check and retouch, and when you save it there it
+  comes back beside the first photo and opens, even if you save it after
+  closing Immage. Set it up in Preferences › Plugins, sending the raws
+  (the stack comes back as a raw DNG) or 16-bit TIFFs with the edit
+- Linux on Wayland with fractional scaling (125%, 150%, ...): sliders
+  update about twice as fast. Such a window is drawn at 200% and shrunk
+  by the desktop, and the photo was rendered for the 200% while a slider
+  moved; it is now rendered for the screen's own scale, which shows the
+  same. The photo after you let go is as sharp as before. Preferences ›
+  Performance › Editing › "Drag drafts at the screen's scale" turns it
+  off
+
+Bug fixes
+
+- AI Denoise's small photo shows the part being previewed again: the
+  box was drawn far too large, over the dialog and the photo behind it,
+  instead of on the small photo
+- a new photo with the name of one deleted from the same folder, such
+  as a panorama or HDR merged again, no longer comes back rejected and
+  with the deleted photo's edit
+- picking another folder clears the grid at once: on a NAS, the last
+  folder's photos stayed on show for seconds while the new one was read
+- Edit In's Results folder is looked in again: a DxO PureRAW set to
+  save somewhere other than beside the photo or its DxO folder had its
+  DNGs never come back
+- the overlay of a selected subject or object has a smooth edge when
+  zoomed in, rather than one in steps, and shows the mask's soft edge
+- Linux: the filmstrip and grid keep their thumbnails once a photo is
+  open, where they went blank, all but the open photo's
+- Linux: Immage's engine stops as soon as it is asked, where it was
+  stopped only after five seconds, when quitting Immage
+- a photo with no capture time, such as one from a camera whose clock
+  battery was flat, is placed in the filmstrip, and in the Filters'
+  Captured dates, by the date its file was last changed. It went to the
+  end, and was left out of every date range
+
 ## 0.37.0
 
 Immage is in alpha. Large changes are made often, from one release to the
