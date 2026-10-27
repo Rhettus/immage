@@ -50,6 +50,7 @@ using namespace cv::detail;
 struct pano_t
 {
   std::vector<Mat> frames;  // CV_16FC3, linear
+  std::vector<double> focals;  // each frame's focal length in its pixels, 0 if not known
   double vmax = 1.0;        // the brightest value of any frame
 };
 
@@ -74,7 +75,7 @@ void pano_free(pano_t *p)
 }
 
 gboolean pano_add(pano_t *p, const float *rgba, const int width, const int height, const float scale[3],
-                  char **err)
+                  const double focal, char **err)
 {
   try
   {
@@ -86,6 +87,7 @@ gboolean pano_add(pano_t *p, const float *rgba, const int width, const int heigh
     p->vmax = std::max(p->vmax, hi);
     rgb.convertTo(half, CV_16F);
     p->frames.push_back(half);
+    p->focals.push_back(focal);
     return TRUE;
   }
   catch(const std::exception &e)
@@ -261,11 +263,13 @@ float *pano_stitch(pano_t *p, pano_projection_t projection, const gboolean crop,
     }
     std::vector<Mat> frames, seams;
     std::vector<Size> sizes;
+    std::vector<double> lens;
     for(const int k : keep)
     {
       frames.push_back(p->frames[k]);
       seams.push_back(seam8[k]);
       sizes.push_back(work_sizes[k]);
+      lens.push_back(p->focals[k] * work_scale);
     }
     p->frames.clear();
     const int m = (int)frames.size();
@@ -277,11 +281,18 @@ float *pano_stitch(pano_t *p, pano_projection_t projection, const gboolean crop,
       *err = g_strdup("the photos could not be aligned");
       return NULL;
     }
-    for(CameraParams &c : cams)
+    // the bundle adjustment starts from the lens's focal length: the
+    // estimator finds one only from the rotation between the frames, and
+    // without much of one (frames shot close together, or the same frame
+    // twice) guesses, which the adjustment then cannot correct and the
+    // panorama comes out warped and zoomed in
+    const gboolean known = std::all_of(lens.begin(), lens.end(), [](const double f) { return f > 0.0; });
+    for(int i = 0; i < (int)cams.size(); i++)
     {
       Mat R;
-      c.R.convertTo(R, CV_32F);
-      c.R = R;
+      cams[i].R.convertTo(R, CV_32F);
+      cams[i].R = R;
+      if(known) cams[i].focal = lens[i];
     }
     BundleAdjusterRay adjuster;
     adjuster.setConfThresh(1.0);
