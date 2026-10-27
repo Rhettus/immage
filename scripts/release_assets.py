@@ -92,11 +92,14 @@ Updates), and offers to install it.
   `__EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/10_nvidia.json`
   for NVIDIA's own drawing. A real fix has to come from NVIDIA's driver or
   WebKitGTK
-- **Linux on Wayland with fractional scaling** (125%, 150%, ...): sliders
-  can be 2-3 times slower to update. The web view Immage is built on
-  draws such a window at 200% and the desktop shrinks it, so it draws far
-  more pixels than the screen shows. At 100% scaling, or started with
-  `GDK_BACKEND=x11`, it is about as fast as elsewhere
+- **Linux on Wayland with fractional scaling** (125%, 150%, ...): the
+  web view Immage is built on draws such a window at 200% and the desktop
+  shrinks it. Immage renders the photo for the screen's own scale while a
+  slider moves, but the photo after you let go, and the window itself,
+  are still drawn at 200%, so letting go is slower than at 100%. On some
+  computers frames also take longer to reach the window at 200%. At 100%
+  scaling, or started with `GDK_BACKEND=x11`, it is about as fast as
+  elsewhere
 
 ## Source
 

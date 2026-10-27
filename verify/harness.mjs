@@ -37,7 +37,8 @@ registerHooks({
     return { format: "module", source: out.code, shortCircuit: true };
   },
   resolve(spec, ctx, next) {
-    if (spec === "@tauri-apps/api/core" || spec === "@tauri-apps/api/event" || spec === "@immporter/api") return next(SHIM, ctx);
+    if (spec === "@tauri-apps/api/core" || spec === "@tauri-apps/api/event" || spec === "@tauri-apps/api/window"
+        || spec === "@immporter/api") return next(SHIM, ctx);
     if ((spec.startsWith("./") || spec.startsWith("../")) && !/\.[cm]?[jt]sx?$/.test(spec)) {
       for (const ext of [".ts", ".tsx"]) {
         const url = new URL(spec + ext, ctx.parentURL);
@@ -58,6 +59,7 @@ globalThis.localStorage = {
   setItem: (k, v) => store.set(k, String(v)),
   removeItem: (k) => store.delete(k),
 };
+globalThis.addEventListener ??= () => {};
 globalThis.requestAnimationFrame = (f) => setTimeout(() => f(performance.now()), 16);
 globalThis.cancelAnimationFrame = (t) => clearTimeout(t);
 globalThis.ImageData = class {
@@ -65,7 +67,7 @@ globalThis.ImageData = class {
 };
 
 const args = JSON.parse(process.argv[2]);
-const { startEngine, stopEngine, request, requestTagged, invoke, sent, models, FRAME_HEAD } = await import(SHIM);
+const { startEngine, stopEngine, request, requestTagged, invoke, sent, models, screen, FRAME_HEAD } = await import(SHIM);
 const { Session } = await import("../app/src/session.ts");
 const { withModel } = await import("../app/src/aiModel.ts");
 const m = await import("../app/src/manifest.ts");
@@ -932,6 +934,37 @@ async function decisions(photo) {
     const later = `${Number(t.slice(0, 4)) + 1}${t.slice(4)}`;
     const got = byCaptureTime([at("a", ""), at("b", later), at("c", t), at("d", t)]).map((i) => i.filename).join("");
     return got === "cdba" ? null : `sorted as ${got}, not cdba`;
+  });
+
+  // on Wayland at 125%, where the window is drawn at 2× and shrunk, drag
+  // drafts are sized for the screen: smaller by 1.25 over 2. not the frame
+  // after letting go, which came out jagged (FINDINGS, "Drag drafts at the
+  // screen's scale"); not where the screen's scale is the window's, nor
+  // with the preference off. a window not on a screen yet keeps the scale
+  await decide("drag drafts at the screen's scale", async () => {
+    const { draftScale, refreshScreenScale, storeScreenScale } = await import("../app/src/pixelRatio.ts");
+    const at = async (dpr, scale) => {
+      globalThis.devicePixelRatio = dpr;
+      screen.scale = scale;
+      await refreshScreenScale(0);
+      return draftScale();
+    };
+    const got = {
+      "125%": await at(2, 1.25),
+      "not on a screen yet": await at(2, "error"),
+      "200%": await at(2, null),
+      "the compositor's 2 at 200%": await at(2, 2),
+      "at 1×": await at(1, 1.25),
+    };
+    await at(2, 1.25);
+    storeScreenScale(false);
+    got["preference off"] = draftScale();
+    storeScreenScale(true);
+    await at(undefined, null);
+    const want = { "125%": 0.625, "not on a screen yet": 0.625, "200%": 1, "the compositor's 2 at 200%": 1, "at 1×": 1,
+                   "preference off": 1 };
+    const wrong = Object.keys(want).filter((k) => got[k] !== want[k]);
+    return wrong.length ? wrong.map((k) => `${k}: ${got[k]}, not ${want[k]}`).join("; ") : null;
   });
 
   // the Filters popup narrows a folder by camera, keywords (a keyword

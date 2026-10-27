@@ -82,6 +82,7 @@ import { ShortcutsDialog } from "./Shortcuts";
 import { cmd, keys } from "./keys";
 import { perf, percentiles, pingOnce, roundTrips, STAGES, webviewInfo } from "./perf";
 import { frameTransport } from "./sharedFrames";
+import { draftScale } from "./pixelRatio";
 import { PerfHud } from "./PerfHud";
 import { KeywordingPanel } from "./Keywording";
 import { ImmichPanel } from "./ImmichPanel";
@@ -1621,8 +1622,13 @@ export default function App() {
   };
   // while a control is dragged, half the size each way (a quarter under
   // Performance): a quarter of the pixels for darktable's modules after the
-  // one that changed, which is most of a frame's time
-  const currentView = useCallback((): View => viewAt(dragging.current ? DRAFT[loadPreview()] : 1), []);
+  // one that changed, which is most of a frame's time. on a screen drawn
+  // larger than it shows (Wayland at 125%), smaller again by as much
+  const draftK = () => {
+    const k = DRAFT[loadPreview()];
+    return k < 1 ? k * draftScale() : 1;
+  };
+  const currentView = useCallback((): View => viewAt(dragging.current ? draftK() : 1), []);
 
   const follow = (layer: HTMLCanvasElement, clip: HTMLCanvasElement | null) => {
     if (!clip) return;
@@ -3042,7 +3048,7 @@ export default function App() {
       s.thumbSize = baseSize;
       s.previewMode = loadPreview;
       s.frameBudget = () => loadFrameCacheMb() * 1048576;
-      s.draftSize = () => (loadPreview() === "quality" ? null : viewAt(DRAFT[loadPreview()]));
+      s.draftSize = () => (loadPreview() === "quality" ? null : viewAt(draftK()));
       s.warmDrafts();
       // a saved edit makes the filmstrip's thumbnail stale; undone back to
       // where it started, the photo reads unedited again
@@ -3782,7 +3788,7 @@ export default function App() {
       machine: await invoke<Record<string, unknown>>("perf_machine").catch(() => null),
       webview,
       photo: (currentRef.current?.path ?? "").split(/[\\/]/).pop(),
-      viewport: { width: w, height: h, dpr: window.devicePixelRatio || 1 }, dragDrafts: drafts, preview,
+      viewport: { width: w, height: h, dpr: window.devicePixelRatio || 1, draftScale: draftScale() }, dragDrafts: drafts, preview,
       transport: frameTransport(), seconds: (performance.now() - t0) / 1000, displayLongFrames: perf.longFrames,
       invokeMs: { idle: roundTrips(idlePings), drag: roundTrips(dragPings.filter(Number.isFinite)) }, summary, samples,
     };
