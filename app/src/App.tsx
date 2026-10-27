@@ -33,7 +33,7 @@ import { VignetteOverlay } from "./VignetteOverlay";
 import { GuideOverlay } from "./GuideOverlay";
 import { autoMix } from "./bwauto";
 import { begin, end, track, useWorking } from "./activity";
-import { dismissJob, runInBackground, stopExport, useJobs, type Job } from "./background";
+import { dismissJob, runInBackground, runMerge, stopJob, useJobs, type Job } from "./background";
 import { withModel } from "./aiModel";
 import { bandWeights, invert, lightness, pixelAt, polyline, setProbe, useProbe, type Probe, type RGB } from "./probe";
 import { anchored, neutralize, whitePatch, WB_PRESETS, type WB } from "./wb";
@@ -44,6 +44,7 @@ import { ExportDialog, FILE_MANAGER } from "./ExportDialog";
 import { CopyDialog, loadCopyGroups, makeClip, type Clip } from "./CopySettings";
 import { DenoiseDialog } from "./DenoiseDialog";
 import { HdrDialog } from "./HdrDialog";
+import { PanoDialog, type Projection } from "./PanoDialog";
 import { Tour, tourSeen } from "./Tour";
 import { UpdateBanner } from "./UpdateBanner";
 import { autoCheck, relaunch } from "./updates";
@@ -759,6 +760,8 @@ export default function App() {
   const [denoiseRunning, setDenoiseRunning] = useState(false);
   // the brackets Merge to HDR's dialog is asking about
   const [hdrMerging, setHdrMerging] = useState<ImageEntry[] | null>(null);
+  // the photos Panorama Merge's dialog is asking about
+  const [panoMerging, setPanoMerging] = useState<ImageEntry[] | null>(null);
   // its model, downloaded on first use, for the dialog's preview
   const denoiseModel = async () => {
     const stop = await listen<{ stage: string; mb?: number }>("ai-model", (e) => {
@@ -810,14 +813,31 @@ export default function App() {
   // the activity line. the engine merges on its export thread
   const runHdrMerge = (list: ImageEntry[], align: boolean) => {
     const first = list[0];
-    void runInBackground(`HDR Merge: ${list.length} photos`, () =>
-      invoke<{ path: string; image: ImageEntry }>("hdr_merge", { imgids: list.map((i) => i.imgid), align }),
+    void runMerge<{ path: string; image: ImageEntry }>("HDR Merge", list.length, "hdr_merge",
+      { imgids: list.map((i) => i.imgid), align },
     (r) => {
       if (folderRef.current && !immichRef.current && parentDir(r.path) === folderRef.current)
         void showFolder(folderRef.current, true);
       return { text: `HDR Merge: wrote ${baseName(r.path)}`, ok: true,
                action: { label: "Open", run: () => void openFile(r.path, r.image.imgid) } };
     }, `HDR Merge of ${first?.filename ?? "the photos"}`);
+  };
+  // Lightroom's Photo Merge › Panorama, stitched by the engine with OpenCV:
+  // a DNG beside the first raw, listed in the folder after it as an Edit In
+  // result, opened from the activity line. the engine stitches on its
+  // export thread
+  const runPanoMerge = (list: ImageEntry[], projection: Projection, crop: boolean) => {
+    const first = list[0];
+    void runMerge<{ path: string; original: string; image: ImageEntry; used: number; frames: number }>(
+      "Panorama Merge", list.length, "pano_merge", { imgids: list.map((i) => i.imgid), projection, crop },
+    (r) => {
+      returns.current.set(r.path, { original: r.original, result: r.path, plugin: "panorama", applied: false });
+      if (folderRef.current && !immichRef.current && parentDir(r.path) === folderRef.current)
+        void showFolder(folderRef.current, true);
+      const left = r.frames - r.used;
+      return { text: `Panorama Merge: wrote ${baseName(r.path)}${left ? `, without ${left} photo${left > 1 ? "s" : ""} that overlapped no other` : ""}`,
+               ok: true, action: { label: "Open", run: () => void openFile(r.path, r.image.imgid) } };
+    }, `Panorama Merge of ${first?.filename ?? "the photos"}`);
   };
   const selectObject = (prompt: ObjectPrompt) => runAi("mask-object-sam21-small", "finding the object…",
     () => invoke<ObjectShape["paths"]>("ai_object", { points: prompt.points ?? [], box: prompt.box ?? null }),
@@ -3026,13 +3046,20 @@ export default function App() {
       // the History panel's stack: darktable's, then what Immage starts a
       // new photo with. AgX in place of darktable's sigmoid
       const base: HistoryItem[] = [...s.history];
+      // a file back from Edit In, AI Denoise or Panorama Merge
+      const back = returns.current.get(path);
+      // a panorama's DNG takes a raw's defaults, as its frames would: to
+      // darktable it is a demosaiced raw (sraw), which the engine does not
+      // call raw, as it has no mosaic for capture sharpening or hot pixels
+      const pano = back?.plugin === "panorama" && !back.applied && !s.wasEdited;
+      const raw = s.raw || pano;
       if (!s.wasEdited && s.values.tm_mode !== 1) {
         s.setMany([["tm_mode", 1]]);
         base.push({ op: "tonemapper", name: "agx", label: "tone mapper", enabled: true });
       }
       // and a raw with the profile chosen in Preferences
       const profile = loadNewPhotosProfile();
-      if (!s.wasEdited && s.raw && profile !== 0 && s.values.profile !== profile) {
+      if (!s.wasEdited && raw && profile !== 0 && s.values.profile !== profile) {
         s.setMany([["profile", profile]]);
         base.push({ op: "profile", name: profileLabel(profile).toLowerCase(),
                     label: "profile", enabled: true });
@@ -3040,7 +3067,7 @@ export default function App() {
       // and a raw with Preferences' exposure compensation, on an instance of
       // its own (exp_comp), so Exposure still reads 0 and adds to it
       const comp = loadExposureCompNew();
-      if (!s.wasEdited && s.raw && comp) {
+      if (!s.wasEdited && raw && comp) {
         s.setMany([["exp_comp", comp]]);
         base.push({ op: "exposure", name: "exposure",
                     label: `compensation ${comp > 0 ? "+" : ""}${comp.toFixed(2)} EV`, enabled: true });
@@ -3051,13 +3078,14 @@ export default function App() {
       if (!s.wasEdited && s.raw) s.setMany([["capture", 1]]);
       // a file back from Edit In starts without what its application did
       // already (Lens Corrections after PureRAW), over the preset's values
-      // so they are never turned on to be turned off
-      const back = returns.current.get(path);
+      // so they are never turned on to be turned off; a panorama, without
+      // the lens corrections its frames had
       // a DNG from AI Denoise has the raw's edit, so it is edited already
       const denoised = back?.plugin === "ai-denoise" && !back.applied;
-      const plugin = !denoised && !s.wasEdited && back && !back.applied
+      const plugin = pano ? { values: { lens_profile: 0, lens_ca: 0 }, labels: [] }
+        : !denoised && !s.wasEdited && back && !back.applied
         ? returnValues(back.plugin.split(":")[0], plugins.find((p) => p.id === back.plugin)) : null;
-      if (preset && (s.raw || !preset.rawOnly)) {
+      if (preset && (raw || !preset.rawOnly)) {
         s.setMany(Object.entries({ ...presetValues(preset), ...plugin?.values }));
         setStatus(`new photo: applied "${preset.name}"`);
         base.push({ op: "preset", name: preset.name, label: "new photos preset", enabled: true });
@@ -3073,7 +3101,7 @@ export default function App() {
         }
       }
       // and Auto, when Preferences asks for it, once the photo has rendered
-      const autoNew = !s.wasEdited && s.raw && loadAutoToneNew();
+      const autoNew = !s.wasEdited && raw && loadAutoToneNew();
       if (autoNew) base.push({ op: "autotone", name: "auto tone", label: "auto tone", enabled: true });
       setHistoryBase(base);
       setValues({ ...s.values });
@@ -4149,6 +4177,15 @@ export default function App() {
         const list = hdrBrackets(imagesRef.current.filter((i) => sel.has(i.imgid)));
         if (list.length > 1) setHdrMerging(list);
         else setStatus("HDR Merge: select two raw exposures or more");
+        return;
+      }
+      // Panorama Merge, as Lightroom's ⌃M: of the selection, two or more
+      if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.code === "KeyM") {
+        e.preventDefault();
+        const sel = selectionRef.current;
+        const list = panoFrames(imagesRef.current.filter((i) => sel.has(i.imgid)));
+        if (list.length > 1) setPanoMerging(list);
+        else setStatus("Panorama Merge: select two raw photos or more");
         return;
       }
       // Preferences, as every Mac app's ⌘,
@@ -5239,6 +5276,7 @@ export default function App() {
                   copyable={sources.length} copies={copies.length === local.length ? copies.length : 0}
                   onCopy={() => void createCopies(sources)} onRemoveCopies={() => void removeCopies(copies)}
                   mergeable={hdrBrackets(local).length} onMergeHdr={() => setHdrMerging(hdrBrackets(local))}
+                  stitchable={panoFrames(sources).length} onMergePano={() => setPanoMerging(panoFrames(sources))}
                   reveal={!hit ? null : hit.remote ? hit.remote.localPath ?? (isRemote(hit) ? null : hit.path) : hit.path}
                   rejected={hit && !isRemote(hit) ? local.filter((i) => i.rejected).length : null}
                   photo={immichBase && hit?.remote ? photoUrl(immichBase, hit.remote.assetId) : null}
@@ -5300,6 +5338,9 @@ export default function App() {
     {copying && <CopyDialog onCopy={copySettings} onClose={() => setCopying(false)} />}
     {hdrMerging && <HdrDialog count={hdrMerging.length} onRun={(align) => runHdrMerge(hdrMerging, align)}
                               onClose={() => setHdrMerging(null)} />}
+    {panoMerging && <PanoDialog count={panoMerging.length}
+                                onRun={(projection, crop) => runPanoMerge(panoMerging, projection, crop)}
+                                onClose={() => setPanoMerging(null)} />}
     {denoising && <DenoiseDialog thumb={navThumb} center={viewCenter()} prepare={denoiseModel}
                                  onRun={(a) => void runDenoise(a)} onClose={() => setDenoising(false)} />}
     {negWarning && (
@@ -5760,7 +5801,8 @@ function ActivityBar({ what, done, total }: { what: string; done: number; total:
   );
 }
 
-// a background export (exports.ts): its progress and Stop, then what it did
+// a background export or merge (background.ts): its progress and Stop, then
+// what it did
 function JobActivity({ job }: { job: Job }) {
   // the viewer's own pointer handling (zoom on click) stays off it
   const keep = (e: React.PointerEvent) => e.stopPropagation();
@@ -5768,14 +5810,22 @@ function JobActivity({ job }: { job: Job }) {
   return (
     <div className="activity waiting" onPointerDown={keep} onPointerUp={keep}>
       {job.summary === null ? <>
-        {job.total ? (
+        {job.stage ? (
+          // a merge's own stage, with a bar when it has steps to count
+          job.total > 1 ? (
+            <div className="progress">
+              <span>{job.what}: {job.stage}</span>
+              <div className="bar"><div style={{ width: `${(100 * job.done) / job.total}%` }} /></div>
+            </div>
+          ) : <span>{job.what}: {job.stage}…</span>
+        ) : job.total ? (
           <div className="progress">
             <span>{job.what} {job.done.toLocaleString()} of {job.total.toLocaleString()}</span>
             <div className="bar"><div style={{ width: `${(100 * job.done) / job.total}%` }} /></div>
           </div>
         ) : <span>{job.what}…</span>}
-        {job.stoppable && (
-          <button disabled={job.stopping} onClick={() => stopExport(job.id)}>{job.stopping ? "Stopping…" : "Stop"}</button>
+        {job.cancel && (
+          <button disabled={job.stopping} onClick={() => stopJob(job)}>{job.stopping ? "Stopping…" : "Stop"}</button>
         )}
       </> : <>
         <span className={job.failed ? "failed" : ""}>{job.summary}</span>
@@ -5873,16 +5923,20 @@ const hdrBrackets = (list: ImageEntry[]) => {
   const seen = new Set<string>();
   return list.filter((i) => !isRemote(i) && fileKind(i.filename) === "RAW" && !seen.has(i.path) && !!seen.add(i.path));
 };
+// what Panorama Merge stitches: the raws on this computer, each file once,
+// as its DNG holds the camera's own color
+const panoFrames = hdrBrackets;
 
 // a photo's right-click menu: Edit In, Show in Finder, as Lightroom's, and
 // Delete, for rejected photos only; for Immich results, the photo or the
 // whole search in Immich's web app. any click elsewhere, a scroll or Escape
 // closes it
-function FileMenu({ x, y, copyable, copies, mergeable, reveal, rejected, photo, results, editIn, onCopy, onRemoveCopies,
-                    onMergeHdr, onDelete, onEditIn, onSetUpPlugins, onClose }: {
+function FileMenu({ x, y, copyable, copies, mergeable, stitchable, reveal, rejected, photo, results, editIn, onCopy,
+                    onRemoveCopies, onMergeHdr, onMergePano, onDelete, onEditIn, onSetUpPlugins, onClose }: {
   x: number; y: number;
   copyable: number;                       // how many photos a virtual copy can be made of
   mergeable: number;                      // how many raws an HDR merge would take
+  stitchable: number;                     // how many photos a panorama would take
   copies: number;                         // how many virtual copies it acts on, when it acts on nothing else
   reveal: string | null;                  // the file to show in the file manager
   rejected: number | null;                // how many of the photos it acts on are rejected; null, none can be
@@ -5890,7 +5944,8 @@ function FileMenu({ x, y, copyable, copies, mergeable, reveal, rejected, photo, 
   results: string | null;                 // the search it came from, there
   editIn: { cfg: PluginConfig; why: string | null }[] | null;  // the plugins, and why one cannot take the photos
   onEditIn: (cfg: PluginConfig) => void; onSetUpPlugins: () => void;
-  onCopy: () => void; onRemoveCopies: () => void; onMergeHdr: () => void; onDelete: () => void; onClose: () => void;
+  onCopy: () => void; onRemoveCopies: () => void; onMergeHdr: () => void; onMergePano: () => void;
+  onDelete: () => void; onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -5936,8 +5991,9 @@ function FileMenu({ x, y, copyable, copies, mergeable, reveal, rejected, photo, 
           {copies > 1 ? `Remove ${copies} Virtual Copies` : "Remove Virtual Copy"}</button>}
         {(reveal || photo || results || rejected !== null) && <div className="menu-sep" />}
       </>}
-      {mergeable > 1 && <>
-        <button onClick={() => { onClose(); onMergeHdr(); }}>HDR Merge…</button>
+      {(mergeable > 1 || stitchable > 1) && <>
+        {mergeable > 1 && <button onClick={() => { onClose(); onMergeHdr(); }}>HDR Merge…</button>}
+        {stitchable > 1 && <button onClick={() => { onClose(); onMergePano(); }}>Panorama Merge…</button>}
         <div className="menu-sep" />
       </>}
       {reveal && <button onClick={() => { onClose(); void revealItemInDir(reveal); }}>Show in {FILE_MANAGER}</button>}

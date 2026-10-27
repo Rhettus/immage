@@ -50,6 +50,10 @@
 #include "develop/masks.h"
 #include "develop/pixelpipe_cache.h"
 #include "hdrmerge.h"
+#ifdef HAVE_PANO
+#include "dng.h"
+#include "pano.h"
+#endif
 #include "strip.h"
 #include "upright.h"
 #ifdef HAVE_AI
@@ -251,6 +255,73 @@ static void _cancel_base(const gint64 id)
   if(_base_running && _base_running <= id)
     dt_atomic_set_int(&_s.base.pipe.shutdown, DT_DEV_PIXELPIPE_STOP_NODES);
   g_mutex_unlock(&_cancel_lock);
+}
+
+// HDR Merge and Panorama Merge on the export thread: each writes its
+// progress as it goes, a line with the request's tag and no `ok` (the
+// app's engine.rs hands it on as `merge-progress`): the photos read, then
+// its own stages. a `merge_cancel` of its job, which the stdin reader
+// thread takes (_read_requests), stops it at its next step. the client's
+// jobs are numbered, and one export thread runs one merge at a time
+static gint64 _merge_canceled = 0;
+
+static void _merge_cancel(const gint64 job)
+{
+  g_mutex_lock(&_cancel_lock);
+  _merge_canceled = job;
+  g_mutex_unlock(&_cancel_lock);
+}
+
+typedef struct _merge_progress_t
+{
+  FILE *out;           // NULL for a merge from the main loop, which reports nothing
+  gint64 tag, job;
+  const char *after;   // HDR Merge's stage once every photo is read: "merging"
+} _merge_progress_t;
+
+// `done` of `total` of `stage` ("photos", or a merge's own); FALSE once the
+// merge is stopped. `last` is the stage past stopping, which the app then
+// no longer offers
+static gboolean _merge_report(const _merge_progress_t *pr, const char *stage, const int done, const int total,
+                              const gboolean last)
+{
+  g_mutex_lock(&_cancel_lock);
+  const gboolean stopped = pr->job && _merge_canceled == pr->job;
+  g_mutex_unlock(&_cancel_lock);
+  if(stopped || !pr->out) return !stopped;
+  JsonBuilder *b = json_builder_new();
+  json_builder_begin_object(b);
+  json_builder_set_member_name(b, "tag");
+  json_builder_add_int_value(b, pr->tag);
+  json_builder_set_member_name(b, "progress");
+  json_builder_add_boolean_value(b, TRUE);
+  json_builder_set_member_name(b, "done");
+  json_builder_add_int_value(b, done);
+  json_builder_set_member_name(b, "total");
+  json_builder_add_int_value(b, total);
+  json_builder_set_member_name(b, "stage");
+  json_builder_add_string_value(b, stage);
+  json_builder_set_member_name(b, "last");
+  json_builder_add_boolean_value(b, last);
+  json_builder_end_object(b);
+  _reply(pr->out, b);
+  g_object_unref(b);
+  return TRUE;
+}
+
+// hdr_merge_step_t: `done` of `total` photos read
+static gboolean _merge_step(const int done, const int total, void *data)
+{
+  const _merge_progress_t *pr = data;
+  return done < total ? _merge_report(pr, "photos", done, total, FALSE) : _merge_report(pr, pr->after, 0, 1, TRUE);
+}
+
+static _merge_progress_t _merge_progress(JsonObject *req, FILE *out, const char *after)
+{
+  return (_merge_progress_t){ .out = json_object_has_member(req, "tag") ? out : NULL,
+                              .tag = json_object_get_int_member_with_default(req, "tag", 0),
+                              .job = json_object_get_int_member_with_default(req, "job", 0),
+                              .after = after };
 }
 
 // photos likely opened next, their raws decoded ahead on threads of their
@@ -3214,7 +3285,7 @@ static GMutex _export_pool_lock;
 // (hdrmerge.c), imported. replies { path, image }. it reads each bracket
 // through an export pipe of its own, as an export does, so a tagged one
 // runs on the export thread
-static gboolean _hdr_merge(JsonObject *req, JsonBuilder *b, char **err)
+static gboolean _hdr_merge(JsonObject *req, JsonBuilder *b, FILE *out, char **err)
 {
   JsonArray *ids = json_object_has_member(req, "imgids") ? json_object_get_array_member(req, "imgids") : NULL;
   GList *imgids = NULL;
@@ -3225,7 +3296,9 @@ static gboolean _hdr_merge(JsonObject *req, JsonBuilder *b, char **err)
       imgids = g_list_append(imgids, GINT_TO_POINTER(id));
   }
   const gint64 t0 = g_get_monotonic_time();
-  gchar *path = hdr_merge(imgids, json_object_get_boolean_member_with_default(req, "align", TRUE), err);
+  _merge_progress_t progress = _merge_progress(req, out, "merging");
+  gchar *path = hdr_merge(imgids, json_object_get_boolean_member_with_default(req, "align", TRUE), _merge_step,
+                          &progress, err);
   g_list_free(imgids);
   if(!path) return FALSE;
   const dt_imgid_t newid = _import(path);
@@ -3244,6 +3317,225 @@ static gboolean _hdr_merge(JsonObject *req, JsonBuilder *b, char **err)
   return TRUE;
 }
 
+#ifdef HAVE_PANO
+// what a panorama's frame keeps of its edit: the raw's own steps, up to
+// demosaic, denoise and the lens's corrections, all of them before colorin
+// (iop_order.c), so the frame stays in the camera's own color, as
+// Lightroom merges from the raw data. white balance, color, exposure, the
+// tone mapper, the look, crops and effects belong to the panorama, which
+// opens as its first frame's raw did (dng.c); the stitch evens out the
+// frames' exposures itself. only a module's first instance, unmasked
+static const char *_pano_keep[] = {
+  "rawprepare", "temperature", "highlights", "cacorrect", "hotpixels", "rawdenoise", "demosaic",
+  "denoiseprofile", "rotatepixels", "scalepixels", "lens", "cacorrectrgb", "flip",
+};
+
+static gboolean _pano_kept(const dt_iop_module_t *m)
+{
+  if(m->multi_priority != 0 || (m->blend_params && m->blend_params->mask_mode != DEVELOP_MASK_DISABLED))
+    return FALSE;
+  for(size_t k = 0; k < G_N_ELEMENTS(_pano_keep); k++)
+    if(!g_strcmp0(m->op, _pano_keep[k])) return TRUE;
+  return FALSE;
+}
+
+// one frame at full size, in the camera's color with its white balance
+// divided out again, through an export pipe as
+// dt_imageio_export_with_flags() builds one, with the modules _pano_keep
+// leaves out switched off after the history is replayed. lens correction
+// is switched on where the history never set it: the stitch needs the
+// lens's distortion gone, and one the user turned off (after DxO PureRAW)
+// stays off. `first` is the first frame's image, filled in by its call:
+// every other must come from the same camera, as the DNG has one color
+// matrix
+static gboolean _pano_frame(pano_t *p, const dt_imgid_t imgid, dt_image_t *first, char **err)
+{
+  dt_develop_t dev;
+  dt_dev_init(&dev, FALSE);
+  dt_dev_load_image(&dev, imgid);
+  dt_mipmap_buffer_t buf;
+  dt_mipmap_cache_get(&buf, imgid, DT_MIPMAP_FULL, DT_MIPMAP_BLOCKING, 'r');
+  const dt_image_t *img = &dev.image_storage;
+  gboolean ok = FALSE;
+  if(!buf.buf || !buf.width || !buf.height)
+  {
+    *err = g_strdup_printf("cannot read '%s'", img->filename);
+    goto early;
+  }
+  if(!dt_image_is_raw(img) || (img->flags & DT_IMAGE_4BAYER))
+  {
+    *err = g_strdup_printf("'%s' is not a raw photo; Panorama Merge takes raws only", img->filename);
+    goto early;
+  }
+  if(!dt_is_valid_imgid(first->id))
+    *first = *img;
+  else if(g_strcmp0(first->camera_makermodel, img->camera_makermodel))
+  {
+    *err = g_strdup_printf("'%s' is from another camera than '%s'", img->filename, first->filename);
+    goto early;
+  }
+  dt_dev_pixelpipe_t pipe;
+  if(!dt_dev_pixelpipe_init_export(&pipe, img->width, img->height, IMAGEIO_RGB | IMAGEIO_FLOAT, FALSE))
+  {
+    *err = g_strdup("not enough memory for the photo");
+    goto early;
+  }
+  gboolean lens_set = FALSE;
+  for(GList *l = dev.history; l && l != g_list_nth(dev.history, dev.history_end); l = g_list_next(l))
+    lens_set |= !g_strcmp0(((dt_dev_history_item_t *)l->data)->op_name, "lens");
+  dt_ioppr_resync_modules_order(&dev);
+  dt_dev_pixelpipe_set_input(&pipe, &dev, (float *)buf.buf, buf.width, buf.height, buf.iscale);
+  dt_dev_pixelpipe_create_nodes(&pipe, &dev);
+  dt_dev_pixelpipe_synch_all(&pipe, &dev);
+  for(GList *n = pipe.nodes; n; n = g_list_next(n))
+  {
+    dt_dev_pixelpipe_iop_t *piece = n->data;
+    if(!_pano_kept(piece->module))
+      piece->enabled = FALSE;
+    else if(!lens_set && !g_strcmp0(piece->module->op, "lens"))
+      piece->enabled = TRUE;
+  }
+  // the white balance temperature applied (its commit_params), divided out
+  float unbalance[3];
+  for(int c = 0; c < 3; c++)
+    unbalance[c] = dev.chroma.wb_coeffs[c] > 0.0f ? 1.0f / dev.chroma.wb_coeffs[c] : 1.0f;
+  dt_dev_pixelpipe_get_dimensions(&pipe, &dev, pipe.iwidth, pipe.iheight, &pipe.processed_width,
+                                  &pipe.processed_height);
+  const int w = pipe.processed_width, h = pipe.processed_height;
+  if(dt_dev_pixelpipe_process_no_gamma(&pipe, &dev, 0, 0, w, h, 1.0) || !pipe.backbuf)
+    *err = g_strdup_printf("cannot render '%s'", img->filename);
+  else
+    ok = pano_add(p, (const float *)pipe.backbuf, w, h, unbalance, err);
+  dt_dev_pixelpipe_cleanup(&pipe);
+early:
+  dt_dev_cleanup(&dev);
+  dt_mipmap_cache_release(&buf);
+  return ok;
+}
+
+// pano_step_t: the stitch's stages, as a merge's progress
+static gboolean _pano_step(const char *stage, const int done, const int total, void *data)
+{
+  return _merge_report(data, stage, done, total, FALSE);
+}
+
+// the DNG's rows written, past stopping
+static void _pano_written(const int done, const int total, void *data)
+{
+  _merge_report(data, "writing the DNG", done, total, TRUE);
+}
+
+// Photo Merge › Panorama: the raws `imgids` stitched (pano.cc) into a DNG
+// beside the first, <name>-pano.dng or -pano_01.dng..., that opens as the
+// first did (dng.c), with its EXIF. `projection` is "auto", "spherical",
+// "cylindrical" or "perspective"; `crop` cuts the edges the frames leave
+// empty. replies { path, original, image, used, frames, seconds }. it runs
+// on the export thread, as HDR Merge
+static gboolean _pano_merge(JsonObject *req, JsonBuilder *b, FILE *out, char **err)
+{
+  JsonArray *ids = json_object_has_member(req, "imgids") ? json_object_get_array_member(req, "imgids") : NULL;
+  GList *imgids = NULL;
+  for(guint k = 0; ids && k < json_array_get_length(ids); k++)
+  {
+    const dt_imgid_t id = json_array_get_int_element(ids, k);
+    if(dt_is_valid_imgid(id) && !g_list_find(imgids, GINT_TO_POINTER(id)))
+      imgids = g_list_append(imgids, GINT_TO_POINTER(id));
+  }
+  if(g_list_length(imgids) < 2)
+  {
+    g_list_free(imgids);
+    *err = g_strdup("a panorama needs two photos or more");
+    return FALSE;
+  }
+  static const struct { const char *name; pano_projection_t type; } projections[] = {
+    { "auto", PANO_AUTO }, { "spherical", PANO_SPHERICAL },
+    { "cylindrical", PANO_CYLINDRICAL }, { "perspective", PANO_PERSPECTIVE },
+  };
+  pano_projection_t projection = PANO_AUTO;
+  const char *asked = json_object_get_string_member_with_default(req, "projection", "auto");
+  for(size_t k = 0; k < G_N_ELEMENTS(projections); k++)
+    if(!g_strcmp0(asked, projections[k].name)) projection = projections[k].type;
+
+  const gint64 t0 = g_get_monotonic_time();
+  const dt_imgid_t first = GPOINTER_TO_INT(imgids->data);
+  dt_image_t first_img = { 0 };
+  const int frames = g_list_length(imgids);
+  _merge_progress_t progress = _merge_progress(req, out, NULL);
+  pano_t *p = pano_new();
+  gboolean ok = TRUE;
+  int done = 0;
+  for(GList *l = imgids; ok && l; l = g_list_next(l), done++)
+  {
+    if(!_merge_report(&progress, "photos", done, frames, FALSE))
+    {
+      *err = g_strdup("stopped");
+      ok = FALSE;
+    }
+    else
+      ok = _pano_frame(p, GPOINTER_TO_INT(l->data), &first_img, err);
+  }
+  g_list_free(imgids);
+  int w = 0, h = 0, used = 0;
+  float *rgb = ok ? pano_stitch(p, projection, json_object_get_boolean_member_with_default(req, "crop", TRUE),
+                                _pano_step, &progress, &w, &h, &used, err)
+                  : NULL;
+  pano_free(p);
+  if(!rgb) return FALSE;
+
+  char pathname[PATH_MAX] = { 0 };
+  gboolean from_cache = TRUE;
+  dt_image_full_path(first, pathname, sizeof(pathname), &from_cache);
+  gchar *original = g_strdup(pathname);
+  uint8_t *exif = NULL;
+  // not in DNG mode: that keeps the raw's orientation, for a mosaic still
+  // the sensor's way up (HDR Merge), where these frames were turned already
+  const int exif_len = dt_exif_read_blob(&exif, pathname, first, FALSE, w, h, FALSE);
+  char *c = pathname + strlen(pathname);
+  while(*c != '.' && c > pathname) c--;
+  const size_t free_space = sizeof(pathname) - (c - pathname);
+  g_strlcpy(c, "-pano.dng", free_space);
+  for(int seq = 1; g_file_test(pathname, G_FILE_TEST_EXISTS); seq++)
+    snprintf(c, free_space, "-pano_%02d.dng", seq);
+
+  // written under another name and renamed once whole, so a folder read
+  // meanwhile never imports half of it. too late to stop by then
+  gchar *part = g_strdup_printf("%s.part", pathname);
+  ok = !dng_write_linear_half(part, rgb, w, h, &first_img, exif, exif_len, _pano_written, &progress)
+       && !g_rename(part, pathname);
+  free(exif);
+  g_free(rgb);
+  if(!ok)
+  {
+    g_unlink(part);
+    g_free(part);
+    g_free(original);
+    *err = g_strdup_printf("could not write '%s'", pathname);
+    return FALSE;
+  }
+  g_free(part);
+
+  const dt_imgid_t newid = _import(pathname);
+  if(!dt_is_valid_imgid(newid))
+  {
+    g_free(original);
+    *err = g_strdup_printf("cannot import %s", pathname);
+    return FALSE;
+  }
+  _add_string(b, "path", pathname);
+  _add_string(b, "original", original);
+  g_free(original);
+  json_builder_set_member_name(b, "image");
+  _image_json(b, newid, FALSE);
+  json_builder_set_member_name(b, "used");
+  json_builder_add_int_value(b, used);
+  json_builder_set_member_name(b, "frames");
+  json_builder_add_int_value(b, frames);
+  json_builder_set_member_name(b, "seconds");
+  json_builder_add_double_value(b, _ms_since(t0) / 1000.0);
+  return TRUE;
+}
+#endif
+
 static void _export_run(gpointer data, gpointer user_data)
 {
   JsonParser *parser = data;
@@ -3260,7 +3552,11 @@ static void _export_run(gpointer data, gpointer user_data)
   if(!g_strcmp0(cmd, "export_release"))
     _hold_release(job);
   else if(!g_strcmp0(cmd, "hdr_merge"))
-    ok = _hdr_merge(req, b, &err);
+    ok = _hdr_merge(req, b, out, &err);
+#ifdef HAVE_PANO
+  else if(!g_strcmp0(cmd, "pano_merge"))
+    ok = _pano_merge(req, b, out, &err);
+#endif
   else
   {
     const dt_imgid_t snap = _hold_take(job, json_object_get_int_member_with_default(req, "imgid", 0));
@@ -3278,7 +3574,10 @@ static void _export_run(gpointer data, gpointer user_data)
   if(!ok)
   {
     json_builder_set_member_name(b, "error");
-    json_builder_add_string_value(b, err ? err : !g_strcmp0(cmd, "hdr_merge") ? "merging to HDR failed" : "export failed");
+    json_builder_add_string_value(b, err                              ? err
+                                     : !g_strcmp0(cmd, "hdr_merge")  ? "merging to HDR failed"
+                                     : !g_strcmp0(cmd, "pano_merge") ? "merging to a panorama failed"
+                                                                     : "export failed");
   }
   json_builder_end_object(b);
   _reply(out, b);
@@ -7577,11 +7876,25 @@ static void _handle(JsonObject *req, FILE *out)
     // whether Merge to HDR can align brackets: darktable built with OpenCV
     json_builder_set_member_name(b, "hdr_align");
     json_builder_add_boolean_value(b, hdr_merge_can_align());
+    // whether Panorama Merge can stitch: the engine built with OpenCV's
+    // stitching module (CMakeLists.txt)
+    json_builder_set_member_name(b, "pano");
+#ifdef HAVE_PANO
+    json_builder_add_boolean_value(b, TRUE);
+#else
+    json_builder_add_boolean_value(b, FALSE);
+#endif
   }
   else if(!g_strcmp0(cmd, "hdr_merge"))
   {
-    if(!_hdr_merge(req, b, &err)) goto fail;
+    if(!_hdr_merge(req, b, NULL, &err)) goto fail;
   }
+#ifdef HAVE_PANO
+  else if(!g_strcmp0(cmd, "pano_merge"))
+  {
+    if(!_pano_merge(req, b, NULL, &err)) goto fail;
+  }
+#endif
   else if(!g_strcmp0(cmd, "unpack"))
   {
     if(!_unpack(json_object_get_string_member_with_default(req, "archive", NULL),
@@ -8045,10 +8358,11 @@ static gboolean _read_line(GString *s, FILE *f)
 static char _end_of_input[] = "";
 
 // stdin is read on a thread of its own, so a `cancel_base` (written by the
-// client while it waits on a base's reply) stops that base at once. it gets
-// no reply. a tagged `thumb` goes to the thumbnail threads (_thumb_run), a
-// tagged `export`, `export_release` or `hdr_merge` to the export thread
-// (_export_run), a tagged `import` to the import thread (_import_run);
+// client while it waits on a base's reply) stops that base at once, and a
+// `merge_cancel` a merge before its next photo. neither gets a reply. a
+// tagged `thumb` goes to the thumbnail threads (_thumb_run), a tagged
+// `export`, `export_release`, `hdr_merge` or `pano_merge` to the export
+// thread (_export_run), a tagged `import` to the import thread (_import_run);
 // every other line goes to the main loop, in order. a tagged `ai_denoise`,
 // `ai_object`, `ai_mask` or `ai_depth` is among them: the main loop
 // answers it, then hands the model's work to a thread (_denoise_run,
@@ -8060,7 +8374,8 @@ static gpointer _read_requests(gpointer data)
   while(_read_line(line, stdin))
   {
     gboolean taken = FALSE;
-    if(strstr(line->str, "\"tag\"") || (line->len < 1024 && strstr(line->str, "\"cancel_base\"")))
+    if(strstr(line->str, "\"tag\"")
+       || (line->len < 1024 && (strstr(line->str, "\"cancel_base\"") || strstr(line->str, "\"merge_cancel\""))))
     {
       JsonParser *parser = json_parser_new();
       if(json_parser_load_from_data(parser, line->str, line->len, NULL)
@@ -8074,6 +8389,12 @@ static gpointer _read_requests(gpointer data)
           _cancel_base(json_object_get_int_member_with_default(req, "id", 0));
           taken = TRUE;
         }
+        else if(!g_strcmp0(cmd, "merge_cancel"))
+        {
+          fprintf(stderr, "[engine] > %.*s\n", (int)strcspn(line->str, "\r\n"), line->str);
+          _merge_cancel(json_object_get_int_member_with_default(req, "job", 0));
+          taken = TRUE;
+        }
         else if(!g_strcmp0(cmd, "thumb") && json_object_has_member(req, "tag"))
         {
           fprintf(stderr, "[engine] thumb %.*s\n", (int)strcspn(line->str, "\r\n"), line->str);
@@ -8082,7 +8403,7 @@ static gpointer _read_requests(gpointer data)
           taken = TRUE;
         }
         else if((!g_strcmp0(cmd, "export") || !g_strcmp0(cmd, "export_release")
-                 || !g_strcmp0(cmd, "hdr_merge"))
+                 || !g_strcmp0(cmd, "hdr_merge") || !g_strcmp0(cmd, "pano_merge"))
                 && json_object_has_member(req, "tag"))
         {
           fprintf(stderr, "[engine] export %.*s\n", (int)strcspn(line->str, "\r\n"), line->str);

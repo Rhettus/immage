@@ -172,6 +172,37 @@ orientation. Anything that moves between them, such as people or
 leaves, shows as a ghost: Auto Align lines up the camera's movement,
 not the subject's.
 
+## Panorama Merge
+
+Panorama Merge stitches overlapping raws into one wide photo. Select the
+photos in the filmstrip or grid, then press ⌃M or right-click and choose
+**Panorama Merge…**. Choose a projection:
+
+- **Auto** picks one from how wide the panorama is
+- **Spherical** suits very wide panoramas, and those of several rows
+- **Cylindrical** suits wide panoramas, and keeps vertical lines straight
+- **Perspective** keeps straight lines straight, for architecture, up to
+  about 100° across
+
+**Auto Crop** cuts away the empty edges the photos leave. Click
+**Merge**.
+
+Immage writes a new DNG beside the first photo, named `<name>-pano.dng`
+(then `<name>-pano_01.dng` and so on), and lists it after that photo. It
+is stitched in the background while you go on editing, and **Open** at
+the bottom left of the photo opens it. Like Lightroom's, the DNG holds
+the raw data with the lens corrections already made: it opens as the
+first photo would, with the new-photo defaults, white balance as shot
+and Lens Corrections off, and is edited as one photo. The other edits
+of the photos you merged aren't used, and the photos themselves aren't
+changed.
+
+The photos must be raws from the same camera, overlapping by a third or
+so. A photo that overlaps none of the others is left out, and the
+activity line says so. Stitching runs on OpenCV rather than darktable,
+which has no panorama tool. It takes from half a minute to a few
+minutes, and a lot of memory for many photos.
+
 ## Deleting rejected photos
 
 Immage only deletes photos you have rejected. Reject them with X, select
@@ -187,6 +218,7 @@ Right-click a photo, or a selection, for:
 - **Edit In ›**: send it to another application. See [Edit In](edit-in.md).
 - **Create Virtual Copy** / **Remove Virtual Copy**
 - **HDR Merge…**, for two raws or more
+- **Panorama Merge…**, for two raws or more
 - **Show in Finder**
 - **Show in Immich**, for a photo from an Immich search
 - **Delete Rejected Photo…**

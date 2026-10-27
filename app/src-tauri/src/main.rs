@@ -1202,16 +1202,37 @@ async fn create_virtual_copy(state: State<'_, AppState>, imgid: i64) -> Result<V
     Ok(reply["image"].clone())
 }
 
+// a merge on the engine's export thread as the page's job `job`, its
+// progress emitted as "merge-progress" { job, done, total, stage, last }:
+// the photos read, then the merge's own stages, `last` the one past
+// stopping (main.c, _merge_report); merge_cancel stops it at its next step
+fn merge(app: AppHandle, t: engine::Tagged, job: u64, mut req: Value) -> Result<Value, String> {
+    let tag = t.tag();
+    req["job"] = json!(job);
+    t.request_with_progress(tag, req, move |p| {
+        let _ = app.emit("merge-progress", json!({
+            "job": job, "done": p["done"], "total": p["total"], "stage": p["stage"], "last": p["last"],
+        }));
+    })
+}
+
+// stops the page's merge `job` at its next step. the line gets no reply;
+// the merge answers "stopped"
+#[tauri::command]
+fn merge_cancel(state: State<'_, AppState>, job: u64) -> Result<(), String> {
+    state.tagged.send(json!({ "cmd": "merge_cancel", "job": job }))
+}
+
 // Merge to HDR: the raw brackets `imgids` into a float DNG beside the
 // first (<name>-hdr.dng), registered onto each other first when `align`.
 // replies { path, image }. the engine merges on its export thread, so the
 // photo is edited meanwhile
 #[tauri::command]
-async fn hdr_merge(state: State<'_, AppState>, imgids: Vec<i64>, align: bool) -> Result<Value, String> {
+async fn hdr_merge(app: AppHandle, state: State<'_, AppState>, job: u64, imgids: Vec<i64>, align: bool)
+                   -> Result<Value, String> {
     let t = state.tagged.clone();
-    let tag = t.tag();
     let mut reply = tauri::async_runtime::spawn_blocking(move || {
-        t.request(tag, json!({ "cmd": "hdr_merge", "imgids": imgids, "align": align }))
+        merge(app, t, job, json!({ "cmd": "hdr_merge", "imgids": imgids, "align": align }))
     })
     .await
     .map_err(|e| e.to_string())??;
@@ -1227,6 +1248,43 @@ async fn hdr_merge(state: State<'_, AppState>, imgids: Vec<i64>, align: bool) ->
 async fn hdr_can_align(state: State<'_, AppState>) -> Result<bool, String> {
     let reply = state.engine().request(json!({ "cmd": "version" }))?;
     Ok(reply["hdr_align"].as_bool().unwrap_or(false))
+}
+
+// Panorama Merge: the raws `imgids` stitched into a DNG beside the first
+// (<name>-pano.dng), which the folder view then shows after it, as an
+// Edit In result. `projection` is "auto", "spherical", "cylindrical" or
+// "perspective"; `crop` cuts the empty edges. replies { path, original,
+// image, used, frames }, `used` being how many frames overlapped the rest.
+// the engine stitches on its export thread, so the photo is edited
+// meanwhile
+#[tauri::command]
+async fn pano_merge(app: AppHandle, state: State<'_, AppState>, plugins: State<'_, plugins::Plugins>, job: u64,
+                    imgids: Vec<i64>, projection: String, crop: bool) -> Result<Value, String> {
+    let t = state.tagged.clone();
+    let mut reply = tauri::async_runtime::spawn_blocking(move || {
+        merge(app, t, job, json!({ "cmd": "pano_merge", "imgids": imgids, "projection": projection, "crop": crop }))
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    let (Some(original), Some(result)) = (reply["original"].as_str(), reply["path"].as_str()) else {
+        return Err("the engine gave no DNG".into());
+    };
+    plugins.record(plugins::Return {
+        original: original.into(), result: result.into(), plugin: "panorama".into(), applied: false,
+    })?;
+    if let Some(o) = reply.as_object_mut() {
+        o.remove("ok");
+        o.remove("tag");
+    }
+    Ok(reply)
+}
+
+// whether Panorama Merge can stitch: the engine built with OpenCV's
+// stitching module
+#[tauri::command]
+async fn pano_can_merge(state: State<'_, AppState>) -> Result<bool, String> {
+    let reply = state.engine().request(json!({ "cmd": "version" }))?;
+    Ok(reply["pano"].as_bool().unwrap_or(false))
 }
 
 // out of the library, its sidecars to the Trash. the photo's file stays.
@@ -2211,7 +2269,7 @@ fn main() {
             mask_shapes, combine, masks, mask_delete, mask_rename, history, module_state, sample, tone_key, agx_auto, upright, points, range_map, zones, mask_map, ai_object,
             ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, list_subfolders, folder_volumes, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
             immich_export_check, immich_search, immich_browse_check, immich_libraries, immich_suggestions, immich_people, immich_tags,
-            immich_thumb, immich_resolve, launch_file, path_exists, path_kind, trash_files, create_virtual_copy, remove_virtual_copy, hdr_merge, hdr_can_align, preview_fullscreen, about, licenses, engine_quit, keywords, keywords_set, ai_accel,
+            immich_thumb, immich_resolve, launch_file, path_exists, path_kind, trash_files, create_virtual_copy, remove_virtual_copy, hdr_merge, hdr_can_align, pano_merge, pano_can_merge, merge_cancel, preview_fullscreen, about, licenses, engine_quit, keywords, keywords_set, ai_accel,
             perf_set, perf_modules, perf_report_write, perf_machine, perf_ping,
             plugins::plugin_find_apps, plugins::plugin_launch, plugins::plugin_watch, plugins::plugin_cancel,
             plugins::plugin_returns, plugins::plugin_return_applied

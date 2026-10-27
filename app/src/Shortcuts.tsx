@@ -24,6 +24,7 @@ const GROUPS: Group[] = [
       ["⌥⌘V", "Paste the previous photo's settings"],
       ["⌘'", "Create virtual copy, of every selected photo"],
       ["⌃H", "HDR Merge, of the selected raws"],
+      ["⌃M", "Panorama Merge, of the selected raws"],
     ],
   },
   {

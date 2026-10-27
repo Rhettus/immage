@@ -35,12 +35,17 @@ pub struct Engine {
 pub struct Tagged {
     stdin: Arc<Mutex<ChildStdin>>,
     waiting: Waiting,
+    progress: Progress,
     last: Arc<AtomicU64>,
 }
 
 // the tagged requests sent and not yet answered, by tag; None once the
 // engine has gone
 type Waiting = Arc<Mutex<Option<HashMap<u64, Sender<Value>>>>>;
+
+// what follows a tagged request's progress, by tag: the lines a merge
+// writes before its reply (main.c, _merge_step), which have no `ok`
+type Progress = Arc<Mutex<HashMap<u64, Box<dyn Fn(&Value) + Send>>>>;
 
 impl Tagged {
     // a tag for the next request, unique for the engine's run
@@ -77,6 +82,23 @@ impl Tagged {
     pub fn forget(&self, tag: u64) {
         self.waiting.lock().unwrap().as_mut().map(|w| w.remove(&tag));
     }
+
+    // request() with each progress line of its handed to `progress`, on the
+    // thread reading the engine's replies
+    pub fn request_with_progress(&self, tag: u64, req: Value, progress: impl Fn(&Value) + Send + 'static)
+                                 -> Result<Value, String> {
+        self.progress.lock().unwrap().insert(tag, Box::new(progress));
+        let reply = self.request(tag, req);
+        self.progress.lock().unwrap().remove(&tag);
+        reply
+    }
+
+    // a line that gets no reply, written while others wait on theirs, as
+    // `merge_cancel` (main.c, _read_requests)
+    pub fn send(&self, req: Value) -> Result<(), String> {
+        let mut stdin = self.stdin.lock().unwrap();
+        writeln!(stdin, "{req}").and_then(|_| stdin.flush()).map_err(|e| format!("engine write: {e}"))
+    }
 }
 
 pub struct Answer(Receiver<Value>);
@@ -100,9 +122,10 @@ fn outcome(reply: Value) -> Result<Value, String> {
     }
 }
 
-// the engine's replies: a tagged one to the caller waiting on it, the
-// rest to request() in order. at the end both sides' waits fail
-fn read_stdout(stdout: ChildStdout, replies: Sender<Value>, waiting: Waiting) {
+// the engine's replies: a tagged one to the caller waiting on it, a tagged
+// request's progress to what follows it, the rest to request() in order.
+// at the end both sides' waits fail
+fn read_stdout(stdout: ChildStdout, replies: Sender<Value>, waiting: Waiting, progress: Progress) {
     let mut reader = BufReader::new(stdout);
     let mut line = String::new();
     loop {
@@ -114,6 +137,11 @@ fn read_stdout(stdout: ChildStdout, replies: Sender<Value>, waiting: Waiting) {
         let reply: Value = serde_json::from_str(&line)
             .unwrap_or_else(|e| json!({ "ok": false, "error": format!("engine reply: {e}") }));
         match reply["tag"].as_u64() {
+            Some(tag) if reply["progress"].as_bool() == Some(true) => {
+                if let Some(f) = progress.lock().unwrap().get(&tag) {
+                    f(&reply);
+                }
+            }
             Some(tag) => {
                 if let Some(tx) = waiting.lock().unwrap().as_mut().and_then(|w| w.remove(&tag)) {
                     let _ = tx.send(reply);
@@ -372,9 +400,11 @@ impl Engine {
         let (tx, replies) = channel();
         let waiting = Arc::new(Mutex::new(Some(HashMap::new())));
         let shared = waiting.clone();
-        std::thread::spawn(move || read_stdout(stdout, tx, shared));
+        let progress: Progress = Arc::new(Mutex::new(HashMap::new()));
+        let following = progress.clone();
+        std::thread::spawn(move || read_stdout(stdout, tx, shared, following));
         let base = BaseCancel { stdin: stdin.clone(), last: Arc::new(AtomicU64::new(0)) };
-        let tagged = Tagged { stdin: stdin.clone(), waiting, last: Arc::new(AtomicU64::new(0)) };
+        let tagged = Tagged { stdin: stdin.clone(), waiting, progress, last: Arc::new(AtomicU64::new(0)) };
         Ok(Self { child, stdin, replies, perf, base, tagged })
     }
 
