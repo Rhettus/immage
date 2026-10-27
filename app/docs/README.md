@@ -44,6 +44,10 @@ New to Immage? Start with [Getting started](getting-started.md).
 - [Heal and clone](heal.md): removing spots and distractions
 - [Film negatives](negative.md): converting a photo of a film negative,
   color or black and white, and a whole roll from one frame
+- [HDR Merge](library.md#hdr-merge) and
+  [Panorama Merge](library.md#panorama-merge): bracketed or overlapping
+  raws into one new DNG
+- [AI Denoise](adjustments.md#detail): a raw denoised into a new DNG
 - [Zone System](zone-system.md): see a black and white photo's tones as
   zones 0-X, place them where you want them, and fine-tune any band of
   tones
