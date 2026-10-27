@@ -2409,6 +2409,9 @@ export default function App() {
       loader.current!.clear();
       // a new folder starts unfiltered: one left on Rejected only looked empty
       setFilter(NO_FILTER);
+      // the last folder's photos go at once: listing a folder on a network
+      // share can take seconds before its first batch
+      updateImages([]);
     }
     let got: ImageEntry[] = [];
     let files: string[] = [];
@@ -2417,11 +2420,7 @@ export default function App() {
       const list = await openFolder(dir, includeSubRef.current, [...hiddenRef.current], (batch, done, total, all) => {
         // an Immich search took the filmstrip while this was read
         if (immichRef.current) return;
-        if (all) {
-          files = all;
-          // the last folder's photos give way to the new one's cells at once
-          if (!again) updateImages([]);
-        }
+        if (all) files = all;
         got = byCaptureTime([...got, ...batch]);
         if (!again && batch.length) updateImages(got);
         loader.current!.request(batch.map((i) => i.imgid));
