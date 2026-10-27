@@ -187,6 +187,7 @@ are `localStorage` keys named `immage.*`.
 | [library.ts](../../src/library.ts) | `ImageEntry`; `openFolder` (batches arriving as `folder-progress` events); RAW+JPEG pairing; `ThumbLoader`, which fetches two thumbnails from the engine at a time, alongside editing, and lets those off screen longest go past Preferences' Thumbnail memory. |
 | [FolderTree.tsx](../../src/FolderTree.tsx) | The folder tree; with folders on more than one drive, a heading per drive (`folder_volumes`). |
 | [filter.ts](../../src/filter.ts) | The filmstrip's `Filter` over a folder's photos (`passes`), and what the photos hold to filter by (`facets`): kinds, cameras, lenses, keywords, exposure settings. |
+| [HdrDialog.tsx](../../src/HdrDialog.tsx) | HDR Merge's dialog (Auto Align, when the engine has OpenCV: `hdr_can_align`); `runHdrMerge` in App.tsx runs it in the background. |
 | [FilterPopup.tsx](../../src/FilterPopup.tsx) | The toolbar's Filters popup: the folder's fields, or on Immich results the server search's filters (the `ImmichSearch` App holds, shared with the Immich card). |
 
 ### Export
@@ -229,7 +230,7 @@ Commands by what they reach:
 | Reaches | Commands |
 |---|---|
 | The open photo, through the engine | `open_image`, `get_params`, `set_params`, `module_state`, `render`, `cancel_base`, `preview`, `save`, `before_view`, `history`, `masks`, `mask_shapes`, `combine`, `mask_delete`, `mask_rename`, `mask_map`, `range_map`, `sample`, `zones`, `tone_key`, `agx_auto`, `spots`, `spots_enable`, `spot_source`, `look_apply`, `look_amount`, `ai_object`, `ai_mask`, `ai_depth`, `ai_denoise`, `ai_denoise_preview` |
-| The library, through the engine | `open_folder` (engine `import` in batches), `thumb`, `prefetch`, `meta`, `meta_set`, `keywords`, `keywords_set`, `create_virtual_copy`, `remove_virtual_copy`, `trash_files`, `export_images`, `export_cancel`, `export_preview`, `fonts`, `ai_accel`, `about` |
+| The library, through the engine | `open_folder` (engine `import` in batches), `thumb`, `prefetch`, `meta`, `meta_set`, `keywords`, `keywords_set`, `create_virtual_copy`, `remove_virtual_copy`, `hdr_merge`, `hdr_can_align`, `trash_files`, `export_images`, `export_cancel`, `export_preview`, `fonts`, `ai_accel`, `about` |
 | Files only | `list_subfolders`, `folder_volumes`, `path_exists`, `path_kind`, `export_existing`, `presets_load`, `presets_save`, `export_presets_load`, `export_presets_save`, `preset_file_read`, `preset_file_write`, `looks_list`, `sample_folder`, `launch_file` |
 | AI models (download, then the engine's `version`) | `ai_model_ensure`, `ai_model_reinstall` |
 | Immich (HTTP) | `immich_albums`, `immich_create_album`, `immich_export_check`, `immich_browse_check`, `immich_search`, `immich_libraries`, `immich_suggestions`, `immich_people`, `immich_tags`, `immich_thumb`, `immich_resolve` |
@@ -268,6 +269,17 @@ rotate and perspective from the preview pipe (`_working_at`,
 `_STAGE_ASHIFT`). `points` maps points between the shown image and the
 input, for Guided's guides.
 
+[`engine/hdrmerge.c`](../../../engine/hdrmerge.c) is HDR Merge:
+darktable's HDR merge of raw brackets into a float DNG, which darktable
+runs only as a lighttable job on its selection
+(`src/control/jobs/control_jobs.c`). The merge is copied from there
+with only its messages changed, and calls darktable's own alignment
+(`src/common/hdr_alignment.cc`, with OpenCV); its header names the
+revision it was copied from. Compare the two
+when taking a new darktable release. `_hdr_merge` in main.c imports the
+DNG; a tagged one runs on the export thread (`_export_run`), as it reads
+each bracket through an export pipe.
+
 Whether a photo is edited is darktable's own test, `dt_image_altered()`:
 the history hash against its basic and automatic baselines, which the
 sidecar carries. `open` replies `fresh` when the photo had no history
@@ -283,6 +295,7 @@ Immage or in darktable.
 | Set and get params | `_set` (fields by introspection, `instance`, `mask`, `after`/`before` moves), `_get`, `_write_field`, `_named_instance` |
 | Render | `_render` (and the `render` command's `skip`; with `have`, a frame of no size naming the client's frame of the hash it would get), `_write_rgba`, `_ppipe_ready`, `_preview` |
 | Library | `_folder`, `_import_files` (a tagged `import` on the import thread, `_import_run`), `_thumb` (a tagged `thumb` on the thumbnail threads, `_thumb_run`, routed there by `_read_requests`), `_prefetch` (raws decoded ahead, a few at once, on a thread pool of its own), `_image_json`, `_meta_set`, `_keywords_set`, `_copy`, `_remove_copy`, `_sidecars` |
+| HDR Merge | `_hdr_merge` (hdrmerge.c's `hdr_merge`, on the export thread when tagged) |
 | Export | `_export` (darktable's export with flags, then `strip_metadata` in [strip.cc](../../../engine/strip.cc), with exiv2, for what the flags do not reach: serial numbers, camera info, the source's own text fields and keywords); `_frame_style` (borders and a watermark SVG as a temporary style; a fixed canvas as one last border, sized so the file comes out exactly W x H); the AI upscale proxy format (`_upscale_ctx`) |
 | Masks | `_mask` (shapes into a mask group, prefixed `immage: `), `_masks` (with `merged_in`), `_mask_delete`, `_mask_rename`, `_attach_mask`. The [mask anchor](masks.md#where-the-instances-run), `colorbalancergb`, is where every mask's instances run, so a range sampled at its output holds for all of them. `_combine`: a group of masks' groups summed, each at its opacity (prefixed `immage combined: `), with the members' ranges, driving a shared instance, which `_attach_mask` attaches only to a combined mask; `_combined_member_changed` keeps it current when a member is reshaped or deleted. `_prune_off` keeps a mask's own switched-off instances (`_holds_mask_settings`). `_named_instance` places a mask's own instance after the shared ones of its module |
 | AI (`HAVE_AI`) | `_ai_object` (SAM), `_ai_mask` (sky, subject, ...), `_ai_depth` (with a tag, the main loop renders the model's input unless its last result holds, `_ai_job`, and answers; the model runs on the AI thread, `_ai_run`, which answers again with the tag), `_ai_denoise` (darktable's raw denoise into a DNG, repeating `src/libs/neural_restore.c`'s job on its public calls; with a tag, the main loop snapshots the edit and answers, and the denoise runs on its own thread, `_denoise_run`, answering again with the tag), `_ai_denoise_preview` (its 1:1 before and after, as the lib's raw preview makes them); on Linux, `_ort_exports` keeps darktable from probing a GPU provider the bundled ONNX Runtime lacks, and `main()` sets the provider to CPU when it has none |
@@ -296,7 +309,7 @@ The commands `_handle()` serves:
 | Group | Commands |
 |---|---|
 | Session | `open`, `history`, `module_state`, `save`, `baseline_end`, `before`, `close`, `quit`, `version`, `unpack`, `ai_accel`, `opencl`, `fonts` |
-| Library (no photo needed) | `folder`, `import`, `thumb`, `prefetch`, `meta`, `meta_set`, `keywords`, `keywords_set`, `copy`, `remove_copy`, `sidecars`, `export`, `export_hold`, `export_release` |
+| Library (no photo needed) | `folder`, `import`, `thumb`, `prefetch`, `meta`, `meta_set`, `keywords`, `keywords_set`, `copy`, `remove_copy`, `sidecars`, `export`, `export_hold`, `export_release`, `hdr_merge` |
 | Edit | `set`, `get`, `render`, `preview`, `look`, `look_amount` |
 | Masks and spots | `mask`, `combine`, `masks`, `mask_rename`, `mask_delete`, `mask_map`, `range_map`, `sample`, `spots`, `spots_enable`, `spot_source` |
 | Tone | `tone_key`, `agx_auto`, `zones` |
@@ -413,6 +426,7 @@ darktable is, and it has AI features when darktable is configured with
 | [bundle_engine.py](../../scripts/bundle_engine.py), [build_dmg.sh](../../scripts/build_dmg.sh) | The engine and its libraries copied into `src-tauri/resources/darktable` (gitignored) and made relocatable; the macOS disk image. |
 | [build_engine_windows.sh](../../scripts/build_engine_windows.sh), [bundle_engine_windows.sh](../../scripts/bundle_engine_windows.sh), [WINDOWS.md](../../WINDOWS.md) | The Windows (MSYS2 UCRT64) build. |
 | [prune_target.mjs](../../scripts/prune_target.mjs) | Frees `src-tauri/target` of earlier builds, which cargo never removes: keeps what the last two builds of each profile use, as cargo lists it. npm runs it before and after every `npm run tauri ...`. |
+| [build_opencv.sh](../../scripts/build_opencv.sh) | OpenCV for HDR Merge's alignment: the five modules darktable links, static, into `build/opencv/install`, which `scripts/build.sh` and `build_engine_windows.sh` hand darktable as `OpenCV_ROOT`. |
 | [fetch_immporter.sh](../../scripts/fetch_immporter.sh), [immporter.rev](../../immporter.rev) | The importer, cloned into the gitignored `immporter/` at a pinned commit. |
 | [app/docs/](../README.md) | The user guide, for photographers. |
 | [benchmarking/README.md](../../../benchmarking/README.md) | Performance suite, results and findings. |

@@ -190,6 +190,7 @@ photo that already uses one of a tool's modules keeps it.
 | Local Texture, Clarity, Dehaze | an instance of diffuse or sharpen, local contrast or haze removal per mask |
 | Local Noise, Defringe, Sharpness | an instance of denoise (profiled), chromatic aberrations (`cacorrectrgb`) or defringe (`defringe`), or diffuse or sharpen or sharpen (as the photo's Sharpening) per mask |
 | **Heal and Clone** | retouch (`retouch`) |
+| **HDR Merge** | darktable's HDR merge (lighttable's "create HDR"), with its auto-alignment, into a float DNG |
 | **Negative** | negadoctor (`negadoctor`); a converted negative switches off color calibration, exposure, the tone equalizer, haze removal and the tone mapper, and runs Contrast and Saturation on color balance rgb, Highlights and Shadows on shadows and highlights |
 | **Looks** | darktable styles, applied as extra module instances |
 | **Export** borders | framing (`borders`), added at export only |
@@ -281,7 +282,8 @@ Windows and Ubuntu on Linux (`app/scripts/bundle_engine.py`,
 ## Building
 
 `scripts/build.sh` is the one entry point on every platform; what each
-needs installed first is below, and the CI workflow
+needs installed first is below (OpenCV is not among it: `build.sh` builds
+the few parts of it darktable uses, into `build/opencv`), and the CI workflow
 ([build.yml](.github/workflows/build.yml)) does the same steps on a clean
 machine. A release's `immage-<version>-source.tar.gz` builds the same way
 as a clone.
@@ -415,6 +417,9 @@ Immage stands on the work of these projects:
   own license.
 - [**ONNX Runtime**](https://github.com/microsoft/onnxruntime): runs the
   AI models. MIT.
+- [**OpenCV**](https://opencv.org/): aligns the brackets of an HDR Merge,
+  in darktable's HDR merge; built from source with only the parts it
+  needs (`app/scripts/build_opencv.sh`). Apache-2.0.
 - [**lensfun**](https://lensfun.github.io/): the lens correction
   database, bundled with the app. LGPL-3.0 library, CC BY-SA 3.0 data.
 - [**Stairs to mountain**](https://commons.wikimedia.org/wiki/File:Stairs_to_mountain.jpg)

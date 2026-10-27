@@ -20,6 +20,7 @@ Keys do nothing while you type in a text field or while a dialog is open.
 | ⇧⌘V | Paste settings |
 | ⌥⌘V | Paste the previous photo's settings |
 | ⌘' | Create virtual copy, of every selected photo |
+| ⌃H | HDR Merge, of the selected raws (Ctrl+H on Windows and Linux) |
 | ⌘A | Select every photo shown |
 
 ## View

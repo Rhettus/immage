@@ -150,6 +150,28 @@ corner, and opens. Each copy has its own sidecar.
 To remove one, right-click it and choose **Remove Virtual Copy**. Its
 sidecar goes to the Trash; the photo file stays.
 
+## HDR Merge
+
+HDR Merge combines bracketed raws, the same scene at different
+exposures, into one photo with the range of them all, using darktable's
+HDR merge. Select the brackets in the filmstrip or grid, then press ⌃H
+or right-click and choose **HDR Merge…**. Turn on **Auto Align** for
+brackets shot handheld, so that they line up before they merge; brackets
+from a tripod don't need it. Click **Merge**.
+
+Immage writes a new DNG beside the first bracket, named
+`<name>-hdr.dng` (then `<name>-hdr_01.dng` and so on). It is merged in
+the background while you go on editing, and **Open** at the bottom left
+of the photo opens it. The DNG holds the raw data, not a finished
+picture: it opens with the new-photo defaults and is edited like any
+raw, with Exposure, Highlights and Shadows bringing the range in. The
+brackets themselves aren't changed.
+
+The brackets must be raws from the same camera, of the same size and
+orientation. Anything that moves between them, such as people or
+leaves, shows as a ghost: Auto Align lines up the camera's movement,
+not the subject's.
+
 ## Deleting rejected photos
 
 Immage only deletes photos you have rejected. Reject them with X, select
@@ -164,6 +186,7 @@ Right-click a photo, or a selection, for:
 
 - **Edit In ›**: send it to another application. See [Edit In](edit-in.md).
 - **Create Virtual Copy** / **Remove Virtual Copy**
+- **HDR Merge…**, for two raws or more
 - **Show in Finder**
 - **Show in Immich**, for a photo from an Immich search
 - **Delete Rejected Photo…**

@@ -43,6 +43,7 @@ import { channelCurve, curve as paramCurve, isIdentity, monotone } from "./tonec
 import { ExportDialog, FILE_MANAGER } from "./ExportDialog";
 import { CopyDialog, loadCopyGroups, makeClip, type Clip } from "./CopySettings";
 import { DenoiseDialog } from "./DenoiseDialog";
+import { HdrDialog } from "./HdrDialog";
 import { Tour, tourSeen } from "./Tour";
 import { UpdateBanner } from "./UpdateBanner";
 import { autoCheck, relaunch } from "./updates";
@@ -756,6 +757,8 @@ export default function App() {
   // did that (openFile)
   const [denoising, setDenoising] = useState(false);
   const [denoiseRunning, setDenoiseRunning] = useState(false);
+  // the brackets Merge to HDR's dialog is asking about
+  const [hdrMerging, setHdrMerging] = useState<ImageEntry[] | null>(null);
   // its model, downloaded on first use, for the dialog's preview
   const denoiseModel = async () => {
     const stop = await listen<{ stage: string; mb?: number }>("ai-model", (e) => {
@@ -801,6 +804,20 @@ export default function App() {
       return { text: `AI Denoise: wrote ${baseName(r.path)}`, ok: true,
                action: { label: "Open", run: () => void openFile(r.path, r.image.imgid) } };
     }, "AI Denoise").finally(() => setDenoiseRunning(false));
+  };
+  // Lightroom's Photo Merge › HDR on darktable's HDR merge: a float DNG
+  // beside the first bracket, listed in the folder after it, opened from
+  // the activity line. the engine merges on its export thread
+  const runHdrMerge = (list: ImageEntry[], align: boolean) => {
+    const first = list[0];
+    void runInBackground(`HDR Merge: ${list.length} photos`, () =>
+      invoke<{ path: string; image: ImageEntry }>("hdr_merge", { imgids: list.map((i) => i.imgid), align }),
+    (r) => {
+      if (folderRef.current && !immichRef.current && parentDir(r.path) === folderRef.current)
+        void showFolder(folderRef.current, true);
+      return { text: `HDR Merge: wrote ${baseName(r.path)}`, ok: true,
+               action: { label: "Open", run: () => void openFile(r.path, r.image.imgid) } };
+    }, `HDR Merge of ${first?.filename ?? "the photos"}`);
   };
   const selectObject = (prompt: ObjectPrompt) => runAi("mask-object-sam21-small", "finding the object…",
     () => invoke<ObjectShape["paths"]>("ai_object", { points: prompt.points ?? [], box: prompt.box ?? null }),
@@ -4125,6 +4142,15 @@ export default function App() {
         void createCopiesRef.current(list);
         return;
       }
+      // HDR Merge, as Lightroom's ⌃H: of the selection's raws, two or more
+      if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.code === "KeyH") {
+        e.preventDefault();
+        const sel = selectionRef.current;
+        const list = hdrBrackets(imagesRef.current.filter((i) => sel.has(i.imgid)));
+        if (list.length > 1) setHdrMerging(list);
+        else setStatus("HDR Merge: select two raw exposures or more");
+        return;
+      }
       // Preferences, as every Mac app's ⌘,
       if (cmd(e) && e.key === ",") {
         e.preventDefault();
@@ -5212,6 +5238,7 @@ export default function App() {
         <FileMenu x={fileMenu.x} y={fileMenu.y}
                   copyable={sources.length} copies={copies.length === local.length ? copies.length : 0}
                   onCopy={() => void createCopies(sources)} onRemoveCopies={() => void removeCopies(copies)}
+                  mergeable={hdrBrackets(local).length} onMergeHdr={() => setHdrMerging(hdrBrackets(local))}
                   reveal={!hit ? null : hit.remote ? hit.remote.localPath ?? (isRemote(hit) ? null : hit.path) : hit.path}
                   rejected={hit && !isRemote(hit) ? local.filter((i) => i.rejected).length : null}
                   photo={immichBase && hit?.remote ? photoUrl(immichBase, hit.remote.assetId) : null}
@@ -5271,6 +5298,8 @@ export default function App() {
     {touring && <Tour onClose={endTour} />}
     {dropping && <div className="drop-target"><span>drop a photo to edit it, or a folder to add it</span></div>}
     {copying && <CopyDialog onCopy={copySettings} onClose={() => setCopying(false)} />}
+    {hdrMerging && <HdrDialog count={hdrMerging.length} onRun={(align) => runHdrMerge(hdrMerging, align)}
+                              onClose={() => setHdrMerging(null)} />}
     {denoising && <DenoiseDialog thumb={navThumb} center={viewCenter()} prepare={denoiseModel}
                                  onRun={(a) => void runDenoise(a)} onClose={() => setDenoising(false)} />}
     {negWarning && (
@@ -5838,14 +5867,22 @@ const copyName = (i: ImageEntry | null | undefined) => (i?.copy ? ` · Copy ${i.
 // what the system's file manager is called
 const TRASH = navigator.userAgent.includes("Windows") ? "Recycle Bin" : "Trash";
 
+// the raws an HDR merge takes of `list`: each file once, as the merge reads
+// the raw alone, whichever version's edit it has
+const hdrBrackets = (list: ImageEntry[]) => {
+  const seen = new Set<string>();
+  return list.filter((i) => !isRemote(i) && fileKind(i.filename) === "RAW" && !seen.has(i.path) && !!seen.add(i.path));
+};
+
 // a photo's right-click menu: Edit In, Show in Finder, as Lightroom's, and
 // Delete, for rejected photos only; for Immich results, the photo or the
 // whole search in Immich's web app. any click elsewhere, a scroll or Escape
 // closes it
-function FileMenu({ x, y, copyable, copies, reveal, rejected, photo, results, editIn, onCopy, onRemoveCopies, onDelete,
-                    onEditIn, onSetUpPlugins, onClose }: {
+function FileMenu({ x, y, copyable, copies, mergeable, reveal, rejected, photo, results, editIn, onCopy, onRemoveCopies,
+                    onMergeHdr, onDelete, onEditIn, onSetUpPlugins, onClose }: {
   x: number; y: number;
   copyable: number;                       // how many photos a virtual copy can be made of
+  mergeable: number;                      // how many raws an HDR merge would take
   copies: number;                         // how many virtual copies it acts on, when it acts on nothing else
   reveal: string | null;                  // the file to show in the file manager
   rejected: number | null;                // how many of the photos it acts on are rejected; null, none can be
@@ -5853,7 +5890,7 @@ function FileMenu({ x, y, copyable, copies, reveal, rejected, photo, results, ed
   results: string | null;                 // the search it came from, there
   editIn: { cfg: PluginConfig; why: string | null }[] | null;  // the plugins, and why one cannot take the photos
   onEditIn: (cfg: PluginConfig) => void; onSetUpPlugins: () => void;
-  onCopy: () => void; onRemoveCopies: () => void; onDelete: () => void; onClose: () => void;
+  onCopy: () => void; onRemoveCopies: () => void; onMergeHdr: () => void; onDelete: () => void; onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -5898,6 +5935,10 @@ function FileMenu({ x, y, copyable, copies, reveal, rejected, photo, results, ed
         {copies > 0 && <button onClick={() => { onClose(); onRemoveCopies(); }}>
           {copies > 1 ? `Remove ${copies} Virtual Copies` : "Remove Virtual Copy"}</button>}
         {(reveal || photo || results || rejected !== null) && <div className="menu-sep" />}
+      </>}
+      {mergeable > 1 && <>
+        <button onClick={() => { onClose(); onMergeHdr(); }}>HDR Merge…</button>
+        <div className="menu-sep" />
       </>}
       {reveal && <button onClick={() => { onClose(); void revealItemInDir(reveal); }}>Show in {FILE_MANAGER}</button>}
       {photo && <button onClick={() => go(photo)}>Show in Immich</button>}

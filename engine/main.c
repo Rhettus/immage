@@ -49,6 +49,7 @@
 #include "develop/imageop.h"
 #include "develop/masks.h"
 #include "develop/pixelpipe_cache.h"
+#include "hdrmerge.h"
 #include "strip.h"
 #include "upright.h"
 #ifdef HAVE_AI
@@ -3204,9 +3205,44 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
 // library (imageio.c). it renders the job's snapshot of the photo
 // (_hold_take), never the open session. one thread, so a batch keeps its
 // order and the editor keeps most of the cores. the job's tagged
-// `export_release` comes here too, after its exports
+// `export_release` comes here too, after its exports, and a tagged
+// `hdr_merge`
 static GThreadPool *_export_pool = NULL;
 static GMutex _export_pool_lock;
+
+// Merge to HDR: the brackets `imgids` into a float DNG beside the first
+// (hdrmerge.c), imported. replies { path, image }. it reads each bracket
+// through an export pipe of its own, as an export does, so a tagged one
+// runs on the export thread
+static gboolean _hdr_merge(JsonObject *req, JsonBuilder *b, char **err)
+{
+  JsonArray *ids = json_object_has_member(req, "imgids") ? json_object_get_array_member(req, "imgids") : NULL;
+  GList *imgids = NULL;
+  for(guint k = 0; ids && k < json_array_get_length(ids); k++)
+  {
+    const dt_imgid_t id = json_array_get_int_element(ids, k);
+    if(dt_is_valid_imgid(id) && !g_list_find(imgids, GINT_TO_POINTER(id)))
+      imgids = g_list_append(imgids, GINT_TO_POINTER(id));
+  }
+  const gint64 t0 = g_get_monotonic_time();
+  gchar *path = hdr_merge(imgids, json_object_get_boolean_member_with_default(req, "align", TRUE), err);
+  g_list_free(imgids);
+  if(!path) return FALSE;
+  const dt_imgid_t newid = _import(path);
+  if(!dt_is_valid_imgid(newid))
+  {
+    *err = g_strdup_printf("cannot import %s", path);
+    g_free(path);
+    return FALSE;
+  }
+  _add_string(b, "path", path);
+  g_free(path);
+  json_builder_set_member_name(b, "image");
+  _image_json(b, newid, FALSE);
+  json_builder_set_member_name(b, "seconds");
+  json_builder_add_double_value(b, _ms_since(t0) / 1000.0);
+  return TRUE;
+}
 
 static void _export_run(gpointer data, gpointer user_data)
 {
@@ -3214,10 +3250,17 @@ static void _export_run(gpointer data, gpointer user_data)
   FILE *out = user_data;
   JsonObject *req = json_node_get_object(json_parser_get_root(parser));
   const gint64 job = json_object_get_int_member_with_default(req, "job", 0);
+  const char *cmd = json_object_get_string_member_with_default(req, "cmd", "");
   char *err = NULL;
   gboolean ok = TRUE;
-  if(!g_strcmp0(json_object_get_string_member_with_default(req, "cmd", ""), "export_release"))
+  JsonBuilder *b = json_builder_new();
+  json_builder_begin_object(b);
+  json_builder_set_member_name(b, "tag");
+  json_builder_add_int_value(b, json_object_get_int_member(req, "tag"));
+  if(!g_strcmp0(cmd, "export_release"))
     _hold_release(job);
+  else if(!g_strcmp0(cmd, "hdr_merge"))
+    ok = _hdr_merge(req, b, &err);
   else
   {
     const dt_imgid_t snap = _hold_take(job, json_object_get_int_member_with_default(req, "imgid", 0));
@@ -3230,16 +3273,12 @@ static void _export_run(gpointer data, gpointer user_data)
     }
     _snapshot_remove(snap);
   }
-  JsonBuilder *b = json_builder_new();
-  json_builder_begin_object(b);
-  json_builder_set_member_name(b, "tag");
-  json_builder_add_int_value(b, json_object_get_int_member(req, "tag"));
   json_builder_set_member_name(b, "ok");
   json_builder_add_boolean_value(b, ok);
   if(!ok)
   {
     json_builder_set_member_name(b, "error");
-    json_builder_add_string_value(b, err ? err : "export failed");
+    json_builder_add_string_value(b, err ? err : !g_strcmp0(cmd, "hdr_merge") ? "merging to HDR failed" : "export failed");
   }
   json_builder_end_object(b);
   _reply(out, b);
@@ -7535,6 +7574,13 @@ static void _handle(JsonObject *req, FILE *out)
     // darktable's own, which picks the AI models' release
     json_builder_set_member_name(b, "version");
     json_builder_add_string_value(b, darktable_package_version);
+    // whether Merge to HDR can align brackets: darktable built with OpenCV
+    json_builder_set_member_name(b, "hdr_align");
+    json_builder_add_boolean_value(b, hdr_merge_can_align());
+  }
+  else if(!g_strcmp0(cmd, "hdr_merge"))
+  {
+    if(!_hdr_merge(req, b, &err)) goto fail;
   }
   else if(!g_strcmp0(cmd, "unpack"))
   {
@@ -8001,12 +8047,12 @@ static char _end_of_input[] = "";
 // stdin is read on a thread of its own, so a `cancel_base` (written by the
 // client while it waits on a base's reply) stops that base at once. it gets
 // no reply. a tagged `thumb` goes to the thumbnail threads (_thumb_run), a
-// tagged `export` or `export_release` to the export thread (_export_run), a
-// tagged `import` to the import thread (_import_run); every other line goes
-// to the main loop, in order. a tagged `ai_denoise`, `ai_object`,
-// `ai_mask` or `ai_depth` is among them: the main loop answers it, then
-// hands the model's work to a thread (_denoise_run, _ai_run), which
-// answers again with the tag
+// tagged `export`, `export_release` or `hdr_merge` to the export thread
+// (_export_run), a tagged `import` to the import thread (_import_run);
+// every other line goes to the main loop, in order. a tagged `ai_denoise`,
+// `ai_object`, `ai_mask` or `ai_depth` is among them: the main loop
+// answers it, then hands the model's work to a thread (_denoise_run,
+// _ai_run), which answers again with the tag
 static gpointer _read_requests(gpointer data)
 {
   GAsyncQueue *queue = data;
@@ -8035,7 +8081,8 @@ static gpointer _read_requests(gpointer data)
           if(_thumb_queue(parser)) parser = NULL;
           taken = TRUE;
         }
-        else if((!g_strcmp0(cmd, "export") || !g_strcmp0(cmd, "export_release"))
+        else if((!g_strcmp0(cmd, "export") || !g_strcmp0(cmd, "export_release")
+                 || !g_strcmp0(cmd, "hdr_merge"))
                 && json_object_has_member(req, "tag"))
         {
           fprintf(stderr, "[engine] export %.*s\n", (int)strcspn(line->str, "\r\n"), line->str);

@@ -303,6 +303,20 @@ if glob.glob(os.path.join(dst, "lib", "darktable", "libonnxruntime*")):
                 texts.append(os.path.basename(m.name))
     own.append(f"onnxruntime {version}\n  license: MIT\n  source: https://github.com/microsoft/onnxruntime\n"
                f"  texts: {', '.join(f'onnxruntime/{t}' for t in sorted(texts))}\n")
+# OpenCV, compiled into darktable for HDR Merge's alignment from the build
+# app/scripts/build_opencv.sh makes, with the texts of the parts it includes
+cv = os.path.join(repo, "build", "opencv", "install")
+with open(os.path.join(repo, "build", "CMakeCache.txt")) as f:
+    with_cv = "USE_OPENCV:BOOL=ON" in f.read()
+if with_cv and os.path.exists(os.path.join(cv, "info")):
+    with open(os.path.join(cv, "info")) as f:
+        head, license, source = f.read().splitlines()[:3]
+    os.makedirs(os.path.join(lic_dir, "opencv"), exist_ok=True)
+    texts = [os.path.join(cv, "LICENSE")] + sorted(glob.glob(os.path.join(cv, "share", "licenses", "opencv4", "*")))
+    for t in texts:
+        shutil.copy2(t, os.path.join(lic_dir, "opencv", os.path.basename(t)))
+    own.append(f"{head}, compiled into darktable\n  {license}\n  {source}\n"
+               f"  texts: {', '.join('opencv/' + os.path.basename(t) for t in texts)}\n")
 # the darktable commit built, so its source can be found exactly; a source
 # archive has no git, and then the notice says only where darktable is
 try:
