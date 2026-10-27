@@ -144,6 +144,7 @@ function sized(width, height) {
 }
 
 const COMMANDS = {
+  display_scale: () => (screen.scale === "error" ? Promise.reject(new Error("not on a screen yet")) : screen.scale),
   open_image: ({ path, imgid }) => request({ cmd: "open", path, imgid: imgid ?? -1 }),
   get_params: ({ modules }) => request({ cmd: "get", modules }),
   history: async ({ saved } = {}) => (await request({ cmd: "history", saved: saved ?? false })).items,
@@ -266,6 +267,11 @@ export const sent = { hook: null };
 // library.ts's imports: no events reach a check, and Immich is not reached
 export const listen = async () => () => {};
 export const api = {};
+
+// the screen's scale display_scale gives (none, a number, or "error" for a
+// window not on a screen yet), and pixelRatio.ts's window: it never moves
+export const screen = { scale: null };
+export const getCurrentWindow = () => ({ onMoved: async () => () => {}, onScaleChanged: async () => () => {} });
 
 export async function invoke(cmd, args = {}) {
   if (!HANDLERS.has(cmd)) throw new Error(`the app registers no command ${cmd} (main.rs, generate_handler!)`);

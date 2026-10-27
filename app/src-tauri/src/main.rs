@@ -10,6 +10,8 @@ mod engine;
 mod immich_search;
 mod immich_upload;
 mod plugins;
+#[cfg(target_os = "linux")]
+mod scale;
 mod volumes;
 
 use cache::Caches;
@@ -1144,6 +1146,28 @@ fn path_exists(path: String) -> bool {
 fn path_kind(path: String) -> Option<&'static str> {
     let p = std::fs::canonicalize(&path).ok()?;
     if p.is_dir() { Some("dir") } else if p.is_file() { Some("file") } else { None }
+}
+
+// the screen's real scale where it is less than the whole one GTK draws
+// the window at (Wayland at 125%: 1.25 against 2), so the viewer sizes
+// frames for the screen; none elsewhere. an error until the window is on a
+// screen, as at start: the page asks again. not async: GTK's monitor is
+// read on the main thread
+#[tauri::command]
+fn display_scale(window: tauri::WebviewWindow) -> Result<Option<f64>, String> {
+    #[cfg(target_os = "linux")]
+    {
+        let monitor = window.current_monitor().ok().flatten().ok_or("not on a screen yet")?;
+        let whole = monitor.scale_factor();
+        let p = monitor.position();
+        let at = ((p.x as f64 / whole).round() as i32, (p.y as f64 / whole).round() as i32);
+        Ok(scale::output_scale(at).filter(|s| *s < whole - 0.01))
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = window;
+        Ok(None)
+    }
 }
 
 // rejected photos to the system's Trash. the engine, not the client, says
@@ -2289,7 +2313,7 @@ fn main() {
             mask_shapes, combine, masks, mask_delete, mask_rename, history, module_state, sample, tone_key, agx_auto, upright, points, range_map, zones, mask_map, ai_object,
             ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, list_subfolders, folder_volumes, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
             immich_export_check, immich_search, immich_browse_check, immich_libraries, immich_suggestions, immich_people, immich_tags,
-            immich_thumb, immich_resolve, launch_file, path_exists, path_kind, trash_files, create_virtual_copy, remove_virtual_copy, hdr_merge, hdr_can_align, pano_merge, pano_can_merge, merge_cancel, preview_fullscreen, about, licenses, engine_quit, keywords, keywords_set, ai_accel,
+            immich_thumb, immich_resolve, launch_file, path_exists, path_kind, display_scale, trash_files, create_virtual_copy, remove_virtual_copy, hdr_merge, hdr_can_align, pano_merge, pano_can_merge, merge_cancel, preview_fullscreen, about, licenses, engine_quit, keywords, keywords_set, ai_accel,
             perf_set, perf_modules, perf_report_write, perf_machine, perf_ping,
             plugins::plugin_find_apps, plugins::plugin_launch, plugins::plugin_watch, plugins::plugin_cancel, plugins::plugin_job,
             plugins::plugin_returns, plugins::plugin_return_applied

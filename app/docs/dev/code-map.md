@@ -139,6 +139,7 @@ are `localStorage` keys named `immage.*`.
 | File | Responsibility |
 |---|---|
 | [session.ts](../../src/session.ts) | One open photo. `Session.open` reads every mapped module (`get_params`) into control values. `set`/`setMany` mark modules dirty, and `pump()` sends each dirty module's merged edit (`moduleEdit`) and one `render`, so moves made during a render are coalesced, latest wins. It also holds masks, spots, look and the Before view, and saves 600 ms after the last edit. `renderView` decodes the frame header; `preview` renders one-off settings on the engine's preview pipe. Until the image changes (`changed`), it shows the full frames it was sent (`frames`, by view and darktable's hash) and, zoomed in, a copy of the whole image at the zoom's scale (`requestCopy`, rendered on the base pipe once idle), so a view seen before or a pan's window is shown without the engine; App shows the copy as a layer under the sharp frame (`onCopy`). After a change, a render sends the hashes it holds for the view (`have`), and the engine names one rather than render it when the image is back as it was (the Before view and back, undo); a copy set aside comes back the same way. |
+| [pixelRatio.ts](../../src/pixelRatio.ts) | Linux on Wayland at a fractional scale: `draftScale()`, how much smaller drag drafts are (`draftK` in App.tsx), the screen's scale from `display_scale` over `devicePixelRatio`, as GTK 3 draws the window at the next whole scale; Preferences' "Drag drafts at the screen's scale". |
 | [sharedFrames.ts](../../src/sharedFrames.ts) | Windows: `renderFrame` asks `render` to post the frame in a WebView2 shared buffer tagged with an id, then matches the `sharedbufferreceived` event to the reply, copies the frame out and releases the buffer. Linux: it asks `render` to write the frame to `/dev/shm` and reads it with the web extension's `immageFrame()`. On the Mac, on WebView2 runtimes before 1.0.1661, on Linux without the extension, or with Preferences' "Shared-memory frames" off, the frame comes in `render`'s reply. |
 | [HistoryPanel.tsx](../../src/HistoryPanel.tsx) | darktable's history plus this session's undo steps; a row's switch, delete or reset (`historyChange` in App.tsx, `Session.setModuleState`, the engine's `_module_state`). |
 | [CopySettings.tsx](../../src/CopySettings.tsx) | Copy/Paste Settings: which groups, and the clip. |
@@ -223,6 +224,7 @@ are `localStorage` keys named `immage.*`.
 | [engine.rs](../../src-tauri/src/engine.rs) | The engine child and its protocol (above); `perf_mark` and the `-d perf` parser. |
 | [immich_search.rs](../../src-tauri/src/immich_search.rs), [immich_upload.rs](../../src-tauri/src/immich_upload.rs) | Immich: search, thumbnails, originals (cached); album and upload calls. The API key never reaches the front end. |
 | [volumes.rs](../../src-tauri/src/volumes.rs) | The drive a library folder is on, its name and whether it is a network share (statfs on macOS, `/proc/self/mounts` on Linux, the volume calls on Windows), for the folder tree's headings. |
+| [scale.rs](../../src-tauri/src/scale.rs) | Linux on Wayland: the screen's real scale, its output's mode over its xdg-output logical size on a Wayland connection of its own, for `display_scale`. |
 | [plugins.rs](../../src-tauri/src/plugins.rs) | Edit In: find apps, launch with files, poll their output folders, remember each result (`plugin-returns.json`). Macro Studio's protocol (`plugin_job`): a job manifest in `plugin-jobs/<id>/`, its receipt read until every stack is saved or closed, and a ledger (`plugin-jobs/pending.json`) drained at start and on each `open_folder` (`drain_jobs`), for stacks saved later. |
 | [Cargo.toml](../../src-tauri/Cargo.toml), [tauri.conf.json](../../src-tauri/tauri.conf.json), [capabilities/](../../src-tauri/capabilities) | Dependencies (each with its reason); windows, bundle resources (`resources/darktable`, `looks`, `sample`); window permissions. |
 
@@ -237,7 +239,7 @@ Commands by what they reach:
 | Immich (HTTP) | `immich_albums`, `immich_create_album`, `immich_export_check`, `immich_browse_check`, `immich_search`, `immich_libraries`, `immich_suggestions`, `immich_people`, `immich_tags`, `immich_thumb`, `immich_resolve` |
 | Plugins | `plugin_find_apps`, `plugin_launch`, `plugin_watch`, `plugin_job`, `plugin_cancel`, `plugin_returns`, `plugin_return_applied` |
 | Performance | `perf_set`, `perf_modules`, `perf_report_write`, `perf_ping` |
-| The window | `preview_fullscreen` |
+| The window | `preview_fullscreen`, `display_scale` |
 
 Events from Rust: `folder-progress`, `export-progress`, `ai-model`,
 `launch-file`, `plugin-returned`, `plugin-watch-end`. The immporter plugin
