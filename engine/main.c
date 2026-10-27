@@ -3444,7 +3444,15 @@ static gboolean _pano_frame(pano_t *p, const dt_imgid_t imgid, dt_image_t *first
   if(dt_dev_pixelpipe_process_no_gamma(&pipe, &dev, 0, 0, w, h, 1.0) || !pipe.backbuf)
     *err = g_strdup_printf("cannot render '%s'", img->filename);
   else
-    ok = pano_add(p, (const float *)pipe.backbuf, w, h, unbalance, err);
+  {
+    // the lens's focal length in the frame's pixels, from the EXIF focal
+    // length over the sensor's diagonal (a full frame's 43.27 mm by the crop
+    // factor); 0 without them
+    const double diag = img->exif_crop > 0.0f ? 43.2666 / img->exif_crop : 0.0;
+    const double focal = img->exif_focal_length > 0.0f && diag > 0.0
+      ? img->exif_focal_length / diag * hypot(w, h) : 0.0;
+    ok = pano_add(p, (const float *)pipe.backbuf, w, h, unbalance, focal, err);
+  }
   dt_dev_pixelpipe_cleanup(&pipe);
 early:
   dt_dev_cleanup(&dev);

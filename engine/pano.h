@@ -42,8 +42,10 @@ void pano_free(pano_t *p);
 
 // a frame: `rgba` linear floats, 4 per pixel as darktable's pipe gives
 // them, each channel multiplied by `scale`, copied in at half precision,
-// so the caller frees its buffer
-gboolean pano_add(pano_t *p, const float *rgba, int width, int height, const float scale[3], char **err);
+// so the caller frees its buffer. `focal` is the lens's focal length in
+// the frame's pixels, 0 when not known
+gboolean pano_add(pano_t *p, const float *rgba, int width, int height, const float scale[3], double focal,
+                  char **err);
 
 // called as the stitch goes: `stage` ("finding features", "aligning",
 // "finding seams", "blending"), `done` of `total` of it. FALSE stops the
