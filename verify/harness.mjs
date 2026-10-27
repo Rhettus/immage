@@ -74,7 +74,7 @@ const { byCaptureTime } = await import("../app/src/library.ts");
 const { NO_FILTER, exposureLabel, facetsWithin, passes } = await import("../app/src/filter.ts");
 const z = await import("../app/src/zones.ts");
 const nd = await import("../app/src/negadoctor.ts");
-const { compare, meanChroma, inEllipse, rightOf } = await import("./metrics.mjs");
+const { compare, chromaChange, meanChroma, inEllipse, rightOf } = await import("./metrics.mjs");
 const { THRESHOLD, GLOBAL, COMPOSITE, LOCAL, trialValues, judge } = await import("./expect.mjs");
 
 const VIEW = { width: 1024, height: 1024 };
@@ -1544,7 +1544,9 @@ async function decisions(photo) {
   // Profile's Color Balance RGB looks, darktable's "basic colorfulness"
   // presets, each change the photo's color visibly from AgX Default. most
   // add color; Natural Skin takes it out of bright colors, so on a bright
-  // photo it can remove more than it adds (colorbalancergb.c, init_presets)
+  // photo it can remove about as much as it adds (colorbalancergb.c,
+  // init_presets), and the change is measured per pixel rather than as the
+  // mean chroma, which would hide it
   const LOOKS = "color balance rgb looks change color";
   o = await open(fresh(photo));
   const plain = meanChroma(o.base);
@@ -1555,11 +1557,11 @@ async function decisions(photo) {
   } else await decide(LOOKS, async () => {
     const weak = [];
     for (const pr of m.PROFILES) {
-      const by = meanChroma(await o.after(() => o.s.set("profile", pr.value))) / plain;
-      if (Math.abs(by - 1) < 0.03) weak.push(`${pr.label} ${((by - 1) * 100).toFixed(1)}%`);
+      const by = chromaChange(o.base, await o.after(() => o.s.set("profile", pr.value))) / plain;
+      if (by < 0.03) weak.push(`${pr.label} ${(by * 100).toFixed(1)}%`);
     }
     await o.s.close();
-    return weak.length ? `chroma against AgX Default, needs 3% either way: ${weak.join(", ")}` : null;
+    return weak.length ? `chroma moved from AgX Default, needs 3%: ${weak.join(", ")}` : null;
   });
 
   if (photo !== args.photos[0]) return;
