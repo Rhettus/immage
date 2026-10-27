@@ -18,15 +18,22 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 pub struct Plugins {
     returns_path: PathBuf,
+    // Macro Studio's jobs, each in a folder of its own, and the ledger of
+    // those whose results may still come (pending.json)
+    jobs_dir: PathBuf,
     // the hand-offs still waiting, by token; a cancelled one leaves
     live: Mutex<HashSet<u64>>,
     // one reader or writer of the returns file at a time
     io: Mutex<()>,
+    // and of the ledger
+    jobs_io: Mutex<()>,
 }
 
 impl Plugins {
     pub fn new(returns_path: PathBuf) -> Self {
-        Plugins { returns_path, live: Mutex::new(HashSet::new()), io: Mutex::new(()) }
+        let jobs_dir = returns_path.with_file_name("plugin-jobs");
+        Plugins { returns_path, jobs_dir, live: Mutex::new(HashSet::new()), io: Mutex::new(()),
+                  jobs_io: Mutex::new(()) }
     }
 
     fn load(&self) -> Vec<Return> {
@@ -49,6 +56,18 @@ impl Plugins {
         let _io = self.io.lock().unwrap();
         let mut returns = self.load();
         returns.retain(|o| o.result != r.result);
+        returns.push(r);
+        self.store(&returns)
+    }
+
+    // a result remembered unless it is already, so a stack saved again to
+    // the same file keeps what its first open did
+    fn record_new(&self, r: Return) -> Result<(), String> {
+        let _io = self.io.lock().unwrap();
+        let mut returns = self.load();
+        if returns.iter().any(|o| o.result == r.result) {
+            return Ok(());
+        }
         returns.push(r);
         self.store(&returns)
     }
@@ -141,6 +160,10 @@ fn app_folders() -> Vec<PathBuf> {
             if let Some(p) = std::env::var_os(var) {
                 v.push(PathBuf::from(p));
             }
+        }
+        // where a per-user installer puts it (Macro Studio's)
+        if let Some(p) = std::env::var_os("LOCALAPPDATA") {
+            v.push(PathBuf::from(p).join("Programs"));
         }
     }
     v
@@ -352,6 +375,292 @@ pub fn plugin_return_applied(state: State<'_, Plugins>, result: String) -> Resul
     state.store(&returns)
 }
 
+// Macro Studio, for focus stacking, speaks a protocol of its own, the one
+// its Lightroom, Bridge and Capture One plugins use: a job manifest handed
+// to the app, and a receipt it appends a line to as each stack is made and
+// saved. both are defined in its bundle, macrostack/host_bridge/manifest.py
+// (v1) and receipt.py (v1). Immage asks for review mode: each stack opens in
+// Macro Studio's editor, and is reported only when the user saves it there,
+// which can be long after the job itself is complete. so a job is kept in a
+// ledger until every stack is saved or closed, and drained when a folder is
+// read, for the saves that come after the watch has ended
+
+const MS_RECEIPT_VERSION: u64 = 1;
+const MS_POLL: Duration = Duration::from_secs(1);
+// no record at all: the app never started, or never took the job
+const MS_STARTUP: Duration = Duration::from_secs(90);
+// it appends a heartbeat every 30 s while it stacks, so this much silence
+// before the job is complete means it is gone
+const MS_STALL: Duration = Duration::from_secs(300);
+// a job left in the ledger this long is given up
+const MS_KEEP_SECS: u64 = 30 * 86400;
+
+#[derive(Deserialize, Serialize)]
+pub struct StackFile {
+    path: String,
+    // the photo a TIFF sent was written from, which names and places the result
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    origin_path: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct Job {
+    token: u64,
+    plugin: String,
+    app_path: String,
+    // "original-raw" or "rendered" (TIFFs)
+    mode: String,
+    files: Vec<StackFile>,
+    // "natural" or "enhanced"; none for the app's own default
+    look: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct Pending {
+    job_id: String,
+    token: u64,
+    plugin: String,
+    receipt: String,
+    dir: String,
+    started: u64,
+}
+
+fn manifest_json(job: &Job, job_id: &str, receipt: &Path, host_version: &str) -> serde_json::Value {
+    let mut m = json!({
+        "version": 1,
+        "job_id": job_id,
+        "host": "immage",
+        "host_version": host_version,
+        "mode": job.mode,
+        "files": job.files,
+        "return_mode": "review",
+        "receipt_path": receipt.to_string_lossy(),
+    });
+    if let Some(look) = job.look.as_deref().filter(|l| *l == "natural" || *l == "enhanced") {
+        m["look"] = json!(look);
+    }
+    m
+}
+
+// the receipt's records; a line that does not parse is the one being
+// written, and is read again next time
+fn receipt_records(path: &Path) -> Vec<serde_json::Value> {
+    let Ok(text) = std::fs::read_to_string(path) else { return Vec::new() };
+    text.lines().filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+        .filter(|r| r.is_object())
+        .collect()
+}
+
+fn kind_of(r: &serde_json::Value) -> &str {
+    r["type"].as_str().unwrap_or("")
+}
+
+// the stacks open in Macro Studio and neither saved nor closed, by index:
+// a stack saved twice is still one stack
+fn outstanding(records: &[serde_json::Value]) -> usize {
+    let (mut ready, mut settled) = (HashSet::new(), HashSet::new());
+    for r in records {
+        let i = r["stack_index"].as_i64().unwrap_or(0);
+        match kind_of(r) {
+            "stack_ready" => { ready.insert(i); }
+            "stack_done" | "stack_error" => { settled.insert(i); }
+            _ => {}
+        }
+    }
+    ready.difference(&settled).count()
+}
+
+// job_complete or job_error, once the app is done with the job's stacking
+fn terminal(records: &[serde_json::Value]) -> Option<&serde_json::Value> {
+    records.iter().find(|r| matches!(kind_of(r), "job_complete" | "job_error"))
+}
+
+// a saved stack's file, with the first photo it was made from
+fn saved(r: &serde_json::Value, plugin: &str) -> Option<Return> {
+    if kind_of(r) != "stack_done" {
+        return None;
+    }
+    let result = r["output_path"].as_str()?;
+    let original = r["origin_paths"].get(0).or_else(|| r["source_paths"].get(0))?.as_str()?;
+    Some(Return { original: original.into(), result: result.into(), plugin: plugin.into(), applied: false })
+}
+
+// the app the job goes to: the one chosen in Preferences, else where Macro
+// Studio says it lives (it writes host-integration.json on every launch)
+fn ms_executable(chosen: &str) -> Option<PathBuf> {
+    let p = PathBuf::from(chosen);
+    let p = if p.extension().is_some_and(|x| x == "app") { p.join("Contents/MacOS/MacroStudio") } else { p };
+    if p.is_file() {
+        return Some(p);
+    }
+    let integration = if cfg!(windows) {
+        PathBuf::from(std::env::var_os("APPDATA")?).join("MacroStudio")
+    } else {
+        PathBuf::from(std::env::var_os("HOME")?).join("Library/Application Support/MacroStudio")
+    }
+    .join("host-integration.json");
+    let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(integration).ok()?).ok()?;
+    Some(PathBuf::from(v["app_path"].as_str()?)).filter(|p| p.is_file())
+}
+
+fn now_secs() -> u64 {
+    SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+impl Plugins {
+    fn ledger_path(&self) -> PathBuf {
+        self.jobs_dir.join("pending.json")
+    }
+
+    fn ledger(&self) -> Vec<Pending> {
+        std::fs::read_to_string(self.ledger_path()).ok()
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_default()
+    }
+
+    fn store_ledger(&self, list: &[Pending]) -> Result<(), String> {
+        let path = self.ledger_path();
+        let tmp = path.with_extension("json.tmp");
+        let text = serde_json::to_string_pretty(list).map_err(|e| e.to_string())?;
+        std::fs::write(&tmp, text).map_err(|e| format!("plugin jobs: {e}"))?;
+        std::fs::rename(&tmp, &path).map_err(|e| format!("plugin jobs: {e}"))
+    }
+
+    fn remember_job(&self, p: Pending) -> Result<(), String> {
+        let _io = self.jobs_io.lock().unwrap();
+        let mut list = self.ledger();
+        list.push(p);
+        self.store_ledger(&list)
+    }
+
+    // every stack saved since, taken back; a job whose stacks are all saved
+    // or closed, or that never started, is retired with its folder. a job
+    // still being watched is left to its watcher
+    pub fn drain_jobs(&self) {
+        let _io = self.jobs_io.lock().unwrap();
+        let list = self.ledger();
+        if list.is_empty() {
+            return;
+        }
+        let live = self.live.lock().unwrap().clone();
+        let now = now_secs();
+        let mut keep = Vec::new();
+        for p in list {
+            if live.contains(&p.token) {
+                keep.push(p);
+                continue;
+            }
+            let records = receipt_records(Path::new(&p.receipt));
+            for r in records.iter().filter_map(|r| saved(r, &p.plugin)) {
+                if let Err(e) = self.record_new(r) {
+                    eprintln!("{e}");
+                }
+            }
+            let settled = terminal(&records).is_some() && outstanding(&records) == 0;
+            let lost = records.is_empty() && now.saturating_sub(p.started) > 86400;
+            if settled || lost || now.saturating_sub(p.started) > MS_KEEP_SECS {
+                let _ = std::fs::remove_dir_all(&p.dir);
+            } else {
+                keep.push(p);
+            }
+        }
+        if let Err(e) = self.store_ledger(&keep) {
+            eprintln!("{e}");
+        }
+    }
+}
+
+// a job handed to Macro Studio, then its receipt watched in the background:
+// each saved stack is remembered and announced as "plugin-returned", and
+// "plugin-watch-end" says why the wait ended (done, cancelled, timeout,
+// startup, stalled, protocol, stopped or error, the last two with the app's
+// message)
+#[tauri::command]
+pub fn plugin_job(app: AppHandle, state: State<'_, Plugins>, job: Job) -> Result<(), String> {
+    if job.mode != "original-raw" && job.mode != "rendered" {
+        return Err(format!("unknown mode {}", job.mode));
+    }
+    let exe = ms_executable(&job.app_path).ok_or("Macro Studio was not found; choose it in Preferences")?;
+    let job_id = format!("immage-{}", job.token);
+    let dir = state.jobs_dir.join(&job_id);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("plugin job: {e}"))?;
+    let receipt = dir.join("job.receipt.jsonl");
+    let manifest = dir.join("job.msjob");
+    let text = manifest_json(&job, &job_id, &receipt, &app.package_info().version.to_string()).to_string();
+    std::fs::write(&manifest, text).map_err(|e| format!("plugin job: {e}"))?;
+    // in the ledger before the app starts, so a stack saved while Immage is
+    // closed is still taken back
+    state.remember_job(Pending {
+        job_id, token: job.token, plugin: job.plugin.clone(), receipt: receipt.to_string_lossy().into_owned(),
+        dir: dir.to_string_lossy().into_owned(), started: now_secs(),
+    })?;
+    // the executable itself, as Macro Studio's Lightroom plugin starts it: a
+    // second instance hands the job to one running already, and exits
+    let mut cmd = std::process::Command::new(&exe);
+    if !cfg!(windows) {
+        cmd.arg("--job");
+    }
+    let mut child = cmd.arg(&manifest)
+        .stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null())
+        .spawn().map_err(|e| format!("could not start Macro Studio: {e}"))?;
+    std::thread::spawn(move || { let _ = child.wait(); });
+
+    state.live.lock().unwrap().insert(job.token);
+    let (token, plugin) = (job.token, job.plugin);
+    std::thread::spawn(move || {
+        let plugins = app.state::<Plugins>();
+        let started = Instant::now();
+        let mut last = Instant::now();
+        let mut consumed = 0;
+        let mut message = String::new();
+        let reason = 'watch: loop {
+            std::thread::sleep(MS_POLL);
+            if !plugins.live.lock().unwrap().contains(&token) {
+                break "cancelled";
+            }
+            let records = receipt_records(&receipt);
+            if records.len() > consumed {
+                last = Instant::now();
+            }
+            for r in records.iter().skip(consumed) {
+                if kind_of(r) == "job_started" && r["v"].as_u64() != Some(MS_RECEIPT_VERSION) {
+                    message = format!("Macro Studio speaks receipt version {}, Immage version {MS_RECEIPT_VERSION}",
+                                      r["v"]);
+                    break 'watch "protocol";
+                }
+                let Some(ret) = saved(r, &plugin) else { continue };
+                if let Err(e) = plugins.record_new(ret.clone()) {
+                    eprintln!("{e}");
+                }
+                let _ = app.emit("plugin-returned", json!({
+                    "token": token, "plugin": ret.plugin, "original": ret.original, "result": ret.result,
+                }));
+            }
+            consumed = consumed.max(records.len());
+            match terminal(&records) {
+                Some(t) if kind_of(t) == "job_error" => {
+                    message = t["message"].as_str().unwrap_or("").to_string();
+                    break if t["reason"].is_string() { "stopped" } else { "error" };
+                }
+                Some(_) if outstanding(&records) == 0 => break "done",
+                Some(_) => {}
+                None if records.is_empty() && started.elapsed() > MS_STARTUP => break "startup",
+                None if !records.is_empty() && last.elapsed() > MS_STALL => break "stalled",
+                None => {}
+            }
+            if last.elapsed() > GIVE_UP {
+                break "timeout";
+            }
+        };
+        plugins.live.lock().unwrap().remove(&token);
+        // what the watch leaves, the ledger takes back later; a job that is
+        // finished with, or never started, is retired now
+        plugins.drain_jobs();
+        let _ = app.emit("plugin-watch-end", json!({ "token": token, "reason": reason, "message": message }));
+    });
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -394,6 +703,84 @@ mod tests {
         assert_eq!(files, vec![a.clone(), ra.clone(), b.clone()]);
         // a deleted result is forgotten
         assert_eq!(p.load().len(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn manifest() {
+        let job = Job {
+            token: 1, plugin: "macro-studio:x".into(), app_path: "".into(), mode: "rendered".into(),
+            files: vec![StackFile { path: "/p/a-Edit.tif".into(), origin_path: Some("/p/a.orf".into()) },
+                        StackFile { path: "/p/b.orf".into(), origin_path: None }],
+            look: Some("".into()),
+        };
+        let m = manifest_json(&job, "immage-1", Path::new("/j/job.receipt.jsonl"), "0.38.0");
+        // Macro Studio rejects a key it does not know, and a look it has not
+        let mut keys: Vec<&str> = m.as_object().unwrap().keys().map(|k| k.as_str()).collect();
+        keys.sort();
+        assert_eq!(keys, ["files", "host", "host_version", "job_id", "mode", "receipt_path", "return_mode", "version"]);
+        assert_eq!(m["files"][0]["origin_path"], "/p/a.orf");
+        assert!(m["files"][1].get("origin_path").is_none());
+        assert_eq!(m["return_mode"], "review");
+    }
+
+    const RECEIPT: &str = concat!(
+        r#"{"v":1,"type":"job_started","total_stacks":2,"leftover_paths":[]}"#, "\n",
+        r#"{"v":1,"type":"stack_ready","stack_index":0}"#, "\n",
+        r#"{"v":1,"type":"heartbeat"}"#, "\n",
+        r#"{"v":1,"type":"stack_ready","stack_index":1}"#, "\n",
+        r#"{"v":1,"type":"job_complete","done":2,"failed":0}"#, "\n",
+        r#"{"v":1,"type":"stack_done","stack_index":0,"output_path":"/p/a-stacked.dng","origin_paths":["/p/a.orf","/p/b.orf"]}"#, "\n",
+        r#"{"v":1,"type":"stack_done","stack_index":0,"output_path":"/p/a-stacked.tif","origin_paths":["/p/a.orf","/p/b.orf"]}"#, "\n",
+        r#"{"v":1,"type":"something_new"}"#, "\n",
+        r#"{"v":1,"type":"stack_do"#,
+    );
+
+    #[test]
+    fn receipts() {
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/test-receipt");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("job.receipt.jsonl");
+        std::fs::write(&path, RECEIPT).unwrap();
+        // the line being written is left for the next read
+        let records = receipt_records(&path);
+        assert_eq!(records.len(), 8);
+        // complete, but stack 1 is still open in Macro Studio; stack 0 saved
+        // twice counts once
+        assert!(terminal(&records).is_some());
+        assert_eq!(outstanding(&records), 1);
+        let back: Vec<Return> = records.iter().filter_map(|r| saved(r, "ms")).collect();
+        assert_eq!(back.len(), 2);
+        assert_eq!(back[0].original, "/p/a.orf");
+        assert_eq!(back[1].result, "/p/a-stacked.tif");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn drain() {
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/test-drain");
+        let _ = std::fs::remove_dir_all(&dir);
+        let p = Plugins::new(dir.join("returns.json"));
+        let job = |id: &str, receipt: &str| {
+            let d = p.jobs_dir.join(id);
+            std::fs::create_dir_all(&d).unwrap();
+            std::fs::write(d.join("job.receipt.jsonl"), receipt).unwrap();
+            Pending { job_id: id.into(), token: 0, plugin: "ms".into(),
+                      receipt: d.join("job.receipt.jsonl").to_string_lossy().into(),
+                      dir: d.to_string_lossy().into(), started: now_secs() }
+        };
+        let open = job("open", RECEIPT);
+        let finished = job("finished", &format!("{RECEIPT}\n{}\n",
+            r#"{"v":1,"type":"stack_error","stack_index":1,"message":"closed without saving"}"#));
+        p.store_ledger(&[open, finished.clone()]).unwrap();
+        p.drain_jobs();
+        // the saved files are taken back once each; the finished job goes,
+        // its folder with it, and the one with a stack still open stays
+        assert_eq!(p.load().len(), 2);
+        let left: Vec<String> = p.ledger().into_iter().map(|j| j.job_id).collect();
+        assert_eq!(left, ["open"]);
+        assert!(!Path::new(&finished.dir).exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

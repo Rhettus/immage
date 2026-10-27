@@ -1041,6 +1041,7 @@ async fn open_folder(app: AppHandle, state: State<'_, AppState>, path: String, r
     })
     .await
     .map_err(|e| e.to_string())?;
+    app.state::<plugins::Plugins>().drain_jobs();
     app.state::<plugins::Plugins>().beside_originals(&mut files);
     let total = files.len();
     let list: Vec<String> = files.iter().map(|p| p.to_string_lossy().into_owned()).collect();
@@ -2267,6 +2268,9 @@ fn main() {
                 resource_level,
             });
             app.manage(plugins::Plugins::new(runtime.join("plugin-returns.json")));
+            // stacks saved in Macro Studio while Immage was closed
+            let handle = app.handle().clone();
+            std::thread::spawn(move || handle.state::<plugins::Plugins>().drain_jobs());
             app.manage(Caches::new(&app.path().app_cache_dir()?));
             Ok(())
         })
@@ -2278,7 +2282,7 @@ fn main() {
             immich_export_check, immich_search, immich_browse_check, immich_libraries, immich_suggestions, immich_people, immich_tags,
             immich_thumb, immich_resolve, launch_file, path_exists, path_kind, trash_files, create_virtual_copy, remove_virtual_copy, hdr_merge, hdr_can_align, pano_merge, pano_can_merge, merge_cancel, preview_fullscreen, about, licenses, engine_quit, keywords, keywords_set, ai_accel,
             perf_set, perf_modules, perf_report_write, perf_machine, perf_ping,
-            plugins::plugin_find_apps, plugins::plugin_launch, plugins::plugin_watch, plugins::plugin_cancel,
+            plugins::plugin_find_apps, plugins::plugin_launch, plugins::plugin_watch, plugins::plugin_cancel, plugins::plugin_job,
             plugins::plugin_returns, plugins::plugin_return_applied
         ])
         .build(context)

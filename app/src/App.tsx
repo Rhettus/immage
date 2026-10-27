@@ -2853,6 +2853,18 @@ export default function App() {
         }
       }
       const token = Date.now();
+      if (kind.handoff === "macrostudio") {
+        // a TIFF names its photo, so the stack is named and placed from it
+        const tiffs = send !== originals;
+        await invoke("plugin_job", { job: {
+          token, plugin: cfg.id, app_path: cfg.app, mode: tiffs ? "rendered" : "original-raw",
+          files: send.map((path, i) => ({ path, origin_path: tiffs ? originals[i] : null })),
+          look: cfg.look || null,
+        } });
+        setWaiting((w) => [...w, { token, name: cfg.name, back: 0, total: 1, opened: false }]);
+        setStatus(`sent ${send.length} photos to ${cfg.name}`);
+        return;
+      }
       await invoke("plugin_watch", { watch: {
         token, plugin: cfg.id, sources: originals, exts: kind.returns.exts, match: kind.returns.match,
         subfolders: kind.returns.subfolders, outputDir: cfg.outputDir || null, ignore: send.filter((p) => !originals.includes(p)),
@@ -2889,11 +2901,21 @@ export default function App() {
   useEffect(() => {
     const offs = [
       listen<PluginReturn & { token: number }>("plugin-returned", (e) => pluginReturned.current(e.payload)),
-      listen<{ token: number; reason: string }>("plugin-watch-end", (e) => {
+      listen<{ token: number; reason: string; message?: string }>("plugin-watch-end", (e) => {
         const w = waitingRef.current.find((x) => x.token === e.payload.token);
         setWaiting((all) => all.filter((x) => x.token !== e.payload.token));
-        if (w && e.payload.reason === "timeout")
+        if (!w) return;
+        const { reason, message } = e.payload;
+        // Macro Studio's job (plugins.rs, plugin_job): a stack saved after
+        // the wait ends still comes back, the next time its folder is read
+        const later = "a stack saved there later still comes back";
+        if (reason === "timeout")
           setStatus(`${w.name}: stopped waiting after 3 hours; ${w.back} of ${w.total} came back`);
+        else if (reason === "startup") setStatus(`${w.name} did not start, or never took the photos`);
+        else if (reason === "stalled") setStatus(`${w.name} stopped responding; ${later}`);
+        else if (reason === "stopped") setStatus(`${w.name}: ${message || "stopped"}`);
+        else if (reason === "error" || reason === "protocol") setStatus(`${w.name}: ${message || "failed"}`);
+        else if (reason === "done" && !w.back) setStatus(`${w.name}: nothing was saved`);
       }),
     ];
     return () => { for (const off of offs) void off.then((f) => f()); };
@@ -3060,7 +3082,11 @@ export default function App() {
       // darktable it is a demosaiced raw (sraw), which the engine does not
       // call raw, as it has no mosaic for capture sharpening or hot pixels
       const pano = back?.plugin === "panorama" && !back.applied && !s.wasEdited;
-      const raw = s.raw || pano;
+      // and so does a stack Macro Studio made from raws
+      const backCfg = back && plugins.find((p) => p.id === back.plugin);
+      const stacked = !!back && !back.applied && !s.wasEdited && /\.dng$/i.test(path)
+        && !!kindOf(back.plugin.split(":")[0])?.linearDng && backCfg?.send !== "tiff";
+      const raw = s.raw || pano || stacked;
       if (!s.wasEdited && s.values.tm_mode !== 1) {
         s.setMany([["tm_mode", 1]]);
         base.push({ op: "tonemapper", name: "agx", label: "tone mapper", enabled: true });
