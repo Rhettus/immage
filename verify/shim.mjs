@@ -43,6 +43,9 @@ export function startEngine(binary, home, modelsDir = null) {
   exited = new Promise((r) => me.on("exit", r));
   createInterface({ input: me.stdout }).on("line", (line) => {
     const tag = /^\{"tag":(\d+)/.exec(line)?.[1];
+    // a merge's progress lines come ahead of its answer, with its tag
+    // (main.c, _merge_report); the app shows them (engine.rs, read_stdout)
+    if (tag && /^\{"tag":\d+,"progress":true/.test(line)) return;
     const w = tag && tagged.get(Number(tag));
     if (w) { tagged.delete(Number(tag)); w(line); } else waiting.shift()?.(line);
   });
