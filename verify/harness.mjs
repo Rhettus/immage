@@ -939,6 +939,19 @@ async function decisions(photo) {
     return sum() === was ? null : "the photo file changed";
   });
 
+  // a photo shown in the library or exported, and not opened, gains no
+  // sidecar: darktable's own writes stay off, and the engine writes one only
+  // where it means to (_write_sidecar in engine/main.c). opening one saves
+  // the new-photo defaults as its baseline (code-map.md, Engine)
+  await decide("a photo shown or exported gains no sidecar", async () => {
+    const path = fresh(photo);
+    const { images: [e] } = await request({ cmd: "import", files: [path] });
+    await request({ cmd: "thumb", imgid: e.imgid, size: 240, out: join(args.work, "thumb.rgba") });
+    await request({ cmd: "export", imgid: e.imgid, out: join(args.work, "looked.jpg"), format: "jpeg",
+                    color_space: "srgb", quality: 90, long_edge: 512 });
+    return sidecar(path) ? `it gained ${basename(sidecar(path))}` : null;
+  });
+
   // a frame shown before comes back without a render when the image does:
   // back from the Before view, or a slider put back. the engine names it by
   // darktable's hash (session.ts, frames; _render's `have` in engine/main.c)
