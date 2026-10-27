@@ -13,13 +13,13 @@ mod plugins;
 mod volumes;
 
 use cache::Caches;
-use engine::{BaseCancel, Engine, Thumbs, Timing};
+use engine::{BaseCancel, Engine, Tagged, Timing};
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 use tauri::{ipc::Response, AppHandle, Emitter, Manager, State};
 
@@ -33,8 +33,11 @@ struct AppState {
     // reaches the engine while a request holds it
     base_cancel: BaseCancel,
     frame_path: PathBuf,
-    // thumbnails, which go to the engine without engine()
-    thumbs: Thumbs,
+    // thumbnails and background exports, which go to the engine without
+    // engine()
+    tagged: Tagged,
+    // export_images' running jobs, which export_cancel stops
+    export_cancels: Mutex<HashMap<u64, Arc<AtomicBool>>>,
     presets_path: PathBuf,
     preview_path: PathBuf,
     range_path: PathBuf,
@@ -1311,7 +1314,7 @@ async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>, imgid: i64
     // named before the render: a sidecar written during it makes the next
     // look a miss, never a stale hit
     let name = path.and_then(|p| cache::thumb_name(Path::new(&p), version.unwrap_or(0), size));
-    let thumbs = state.thumbs.clone();
+    let thumbs = state.tagged.clone();
     let tag = thumbs.tag();
     // a file of its own, as several are built at once
     let out = state.runtime.join(format!("thumb-{tag}.rgba"));
@@ -1552,12 +1555,16 @@ fn export_target(dir: &Path, stem: &str, ext: &str, conflict: &str) -> Option<Pa
     (1..).map(|n| dir.join(format!("{stem}-{n}.{ext}"))).find(|p| !p.exists())
 }
 
-// export images one at a time, releasing the engine between them so the
-// editor stays usable; progress goes to the window as "export-progress"
+// export images one at a time on the engine's export thread (main.c,
+// _export_run), without engine(), so the photo is edited meanwhile. each
+// renders its edit as it was when the export was asked for, which the
+// engine holds for `job` (export_hold). progress goes to the window as
+// "export-progress"; export_cancel stops before the next image
 #[tauri::command]
 async fn export_images(
     app: AppHandle,
     state: State<'_, AppState>,
+    job: u64,
     items: Vec<ExportItem>,
     options: ExportOptions,
 ) -> Result<Value, String> {
@@ -1587,7 +1594,18 @@ async fn export_images(
     let total = items.len();
     let keywords = options.keywords.clone().unwrap_or_default();
     let tag_original = options.keywords_on_original.unwrap_or(false) && !keywords.is_empty();
+    let tagged = state.tagged.clone();
+    let held = tagged.tag();
+    let imgids: Vec<i64> = items.iter().map(|i| i.imgid).collect();
+    state.engine().request(json!({ "cmd": "export_hold", "job": held, "imgids": imgids }))?;
+    let cancel = Arc::new(AtomicBool::new(false));
+    state.export_cancels.lock().unwrap().insert(job, cancel.clone());
+    let mut cancelled = false;
     for (n, item) in items.iter().enumerate() {
+        if cancel.load(Ordering::SeqCst) {
+            cancelled = true;
+            break;
+        }
         let stem = export_stem(item);
         let conflict = match (&immich, item.conflict.as_deref()) {
             (None, Some(c)) => c,
@@ -1597,7 +1615,7 @@ async fn export_images(
             None => skipped.push(json!(dir.join(format!("{stem}.{ext}")))),
             Some(target) => {
                 let mut req = json!({
-                    "cmd": "export", "imgid": item.imgid, "out": target, "format": options.format,
+                    "cmd": "export", "job": held, "imgid": item.imgid, "out": target, "format": options.format,
                     "color_space": options.color_space,
                 });
                 if let Some(q) = options.quality { req["quality"] = json!(q); }
@@ -1613,7 +1631,10 @@ async fn export_images(
                 if let Some(p) = &options.ai_provider { req["ai_provider"] = json!(p); }
                 if let Some(d) = options.ai_device { req["ai_device"] = json!(d); }
                 if !keywords.is_empty() { req["keywords"] = json!(keywords); }
-                let result = state.engine().request(req);
+                let t = tagged.clone();
+                let tag = t.tag();
+                let result = tauri::async_runtime::spawn_blocking(move || t.request(tag, req))
+                    .await.map_err(|e| e.to_string()).and_then(|r| r);
                 if result.is_ok() && tag_original {
                     let req = json!({ "cmd": "keywords_set", "imgid": item.imgid, "add": keywords, "remove": [] });
                     if let Err(e) = state.engine().request(req) {
@@ -1641,8 +1662,15 @@ async fn export_images(
                 }
             }
         }
-        let _ = app.emit("export-progress", json!({ "done": n + 1, "total": total }));
+        let _ = app.emit("export-progress", json!({ "job": job, "done": n + 1, "total": total }));
     }
+    // the photos not reached, and their snapshots; after the last export,
+    // on the same thread
+    state.export_cancels.lock().unwrap().remove(&job);
+    let t = tagged.clone();
+    let tag = t.tag();
+    let _ = tauri::async_runtime::spawn_blocking(move || t.request(tag, json!({ "cmd": "export_release", "job": held })))
+        .await;
     if let (Some(c), Some(album)) = (immich, options.immich_album.clone()) {
         let _ = std::fs::remove_dir(&dir);
         let added = tauri::async_runtime::spawn_blocking(move || c.add_to_album(&album, &ids))
@@ -1651,9 +1679,17 @@ async fn export_images(
             failed.push(json!({ "file": "", "error": e }));
         }
         return Ok(json!({ "written": [], "skipped": skipped, "failed": failed, "uploaded": uploaded,
-                          "duplicates": duplicates, "album": options.immich_album }));
+                          "duplicates": duplicates, "album": options.immich_album, "cancelled": cancelled }));
     }
-    Ok(json!({ "written": written, "skipped": skipped, "failed": failed, "dir": dir }))
+    Ok(json!({ "written": written, "skipped": skipped, "failed": failed, "dir": dir, "cancelled": cancelled }))
+}
+
+// stops export_images' `job` before its next image
+#[tauri::command]
+fn export_cancel(state: State<'_, AppState>, job: u64) {
+    if let Some(c) = state.export_cancels.lock().unwrap().get(&job) {
+        c.store(true, Ordering::SeqCst);
+    }
 }
 
 // the Immich side of exporting: run off the async runtime, as the client
@@ -2165,7 +2201,8 @@ fn main() {
                 .map_err(|e| format!("cannot start {}: {e}", bin.display()))?;
             app.manage(AppState {
                 base_cancel: engine.base_cancel(),
-                thumbs: engine.thumbs(),
+                tagged: engine.tagged(),
+                export_cancels: Mutex::new(HashMap::new()),
                 engine: Mutex::new(engine),
                 waiting: AtomicUsize::new(0),
                 foreground_end: Mutex::new(Instant::now()),
@@ -2190,7 +2227,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             open_folder, open_image, get_params, set_params, render, cancel_base, save, baseline_end, before_view, thumb, thumb_cached, cache_limits, cache_usage, cache_clear, meta, meta_set, prefetch, darktable_resources, darktable_resources_set,
-            export_images, export_existing, export_preview, fonts, export_presets_load, export_presets_save, preset_file_write, preset_file_read, presets_load, presets_save, looks_list, look_import, look_export, look_delete, look_apply, look_amount, preview,
+            export_images, export_cancel, export_existing, export_preview, fonts, export_presets_load, export_presets_save, preset_file_write, preset_file_read, presets_load, presets_save, looks_list, look_import, look_export, look_delete, look_apply, look_amount, preview,
             mask_shapes, combine, masks, mask_delete, mask_rename, history, module_state, sample, tone_key, agx_auto, upright, points, range_map, zones, mask_map, ai_object,
             ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, list_subfolders, folder_volumes, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
             immich_export_check, immich_search, immich_browse_check, immich_libraries, immich_suggestions, immich_people, immich_tags,

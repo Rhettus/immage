@@ -61,7 +61,7 @@ globalThis.requestAnimationFrame = (f) => setTimeout(() => f(performance.now()),
 globalThis.cancelAnimationFrame = (t) => clearTimeout(t);
 
 const args = JSON.parse(process.argv[2]);
-const { startEngine, stopEngine, request, invoke, sent, models, FRAME_HEAD } = await import(SHIM);
+const { startEngine, stopEngine, request, requestTagged, invoke, sent, models, FRAME_HEAD } = await import(SHIM);
 const { Session } = await import("../app/src/session.ts");
 const { withModel } = await import("../app/src/aiModel.ts");
 const m = await import("../app/src/manifest.ts");
@@ -950,6 +950,72 @@ async function decisions(photo) {
     await request({ cmd: "export", imgid: e.imgid, out: join(args.work, "looked.jpg"), format: "jpeg",
                     color_space: "srgb", quality: 90, long_edge: 512 });
     return sidecar(path) ? `it gained ${basename(sidecar(path))}` : null;
+  });
+
+  // an export renders each photo as it was when the export was asked for,
+  // however it is edited while the export runs: the open photo, and one
+  // opened after (exports.ts; export_hold in engine/main.c)
+  const exportOpts = { format: "jpeg", color_space: "srgb", quality: 90, long_edge: 512 };
+  const exportOut = (tag) => {
+    const out = join(args.work, "export", `${copies}-${tag}.jpg`);
+    mkdirSync(dirname(out), { recursive: true });
+    return out;
+  };
+  // the image data alone: the EXIF carries the time of export
+  const scan = (file) => { const b = readFileSync(file); return b.subarray(b.indexOf(Buffer.from([0xff, 0xda]))); };
+  let jobs = 0;
+  await decide("an export renders the edit it was asked for", async () => {
+    for (const later of [false, true]) {
+      const path = fresh(photo);
+      let o = await open(path);
+      await o.after(() => { o.s.endBaseline(); o.s.set("exposure", 1); });
+      const asked = exportOut("asked");
+      await request({ cmd: "export", imgid: o.s.imgid, out: asked, ...exportOpts });
+      const imgid = o.s.imgid, job = ++jobs;
+      // the engine keeps a photo open until the next one opens
+      if (later) {
+        await o.s.close();
+        await (await open(fresh(photo))).s.close();
+      }
+      await request({ cmd: "export_hold", job, imgids: [imgid] });
+      if (later) o = await open(path);
+      await o.after(() => o.s.set("exposure", -1));
+      await o.s.close();
+      await drained();
+      const held = exportOut("held");
+      await requestTagged({ cmd: "export", job, imgid, out: held, ...exportOpts });
+      await requestTagged({ cmd: "export_release", job });
+      if (!scan(held).equals(scan(asked)))
+        return `the export of the photo ${later ? "opened after it was asked for" : "open"} has the later edit`;
+    }
+    return null;
+  });
+
+  // a background export leaves the editor rendering, and its copies of the
+  // edit never show as versions of the photo or take a virtual copy's
+  // number (_SNAPSHOT_VERSION in engine/main.c)
+  await decide("a background export stays out of the editor's way", async () => {
+    const path = fresh(photo);
+    const o = await open(path);
+    await o.after(() => { o.s.endBaseline(); o.s.set("exposure", 0.5); });
+    const job = ++jobs;
+    await request({ cmd: "export_hold", job, imgids: [o.s.imgid] });
+    // before the import below, which has darktable number the file's
+    // versions again
+    const { image: copy } = await request({ cmd: "copy", imgid: o.s.imgid });
+    const versions = async () => (await request({ cmd: "import", files: [path] })).images.length;
+    const during = await versions();
+    const exporting = requestTagged({ cmd: "export", job, imgid: o.s.imgid, out: exportOut("beside"), ...exportOpts });
+    const frames = [];
+    for (const ev of [1, 0.25, 0.75]) frames.push(await o.after(() => o.s.set("exposure", ev)));
+    await exporting;
+    await requestTagged({ cmd: "export_release", job });
+    await o.s.close();
+    const after = await versions();
+    return frames.some((f) => !f) ? "an edit made during the export rendered no frame"
+      : copy.version !== 1 ? `a virtual copy made during the export is version ${copy.version}`
+      : during !== 2 ? `with a copy, the photo showed ${during} versions while it exported`
+      : after !== 2 ? `with a copy, the photo shows ${after} versions after the export` : null;
   });
 
   // a frame shown before comes back without a render when the image does:

@@ -1717,20 +1717,28 @@ input.switch:disabled { cursor: default; opacity: 0.4; }
 .history .panel-title .compress:hover:not(:disabled) { background: var(--hover); color: var(--text); }
 .history .panel-title .compress:disabled { opacity: 0.35; cursor: default; }
 
-/* reading a folder, then loading its thumbnails: bottom left of the photo */
+/* background exports, then reading a folder or loading its thumbnails:
+   bottom left of the photo */
+.activities {
+  position: absolute; bottom: 8px; left: 12px; display: flex; flex-direction: column; align-items: flex-start;
+  gap: 6px; pointer-events: none;
+}
 .activity {
-  position: absolute; bottom: 8px; left: 12px; display: flex; flex-direction: column; gap: 4px;
+  display: flex; flex-direction: column; gap: 4px;
   padding: 5px 10px 6px; background: rgba(14, 14, 14, 0.75); border-radius: 6px;
   color: var(--text-2); font-size: var(--fs-small); font-variant-numeric: tabular-nums; pointer-events: none;
 }
+.activity .progress { display: flex; flex-direction: column; gap: 4px; }
+.activity .failed { color: #ff6b6b; }
 .activity .bar { width: 180px; height: 3px; border-radius: 2px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
 .activity .bar > div { height: 100%; background: var(--accent); transition: width 0.2s; }
-.window.preview .activity { display: none; }
+.window.preview .activities { display: none; }
 .activity.waiting { flex-direction: row; align-items: center; gap: 10px; pointer-events: auto; }
 .activity.waiting button {
   padding: 1px 8px; background: #2a2a2a; border: none; border-radius: 5px; color: var(--text); font: inherit; cursor: pointer;
 }
-.activity.waiting button:hover { background: #353535; }
+.activity.waiting button:hover:not(:disabled) { background: #353535; }
+.activity.waiting button:disabled { opacity: 0.5; cursor: default; }
 
 /* the reject filter showing only rejected photos */
 .tool-group.filter .tool.on.only-rejected { color: #ff6b6b; }

@@ -377,6 +377,13 @@ static gboolean _write_sidecar(const dt_imgid_t imgid)
   return FALSE;
 }
 
+// an export's copy of a photo's edit as it was when the export was asked
+// for (_hold_snapshot): a darktable duplicate, at a version from this one
+// up, which the listings leave out (_image_versions)
+#define _SNAPSHOT_VERSION 1000000
+
+static dt_imgid_t _real_version(const dt_imgid_t imgid);
+
 // file the image under an in-memory film roll, the way darktable-mcp does;
 // importing reads an existing sidecar, so earlier edits come back
 static dt_imgid_t _import(const char *path)
@@ -388,7 +395,161 @@ static dt_imgid_t _import(const char *path)
   dt_film_cleanup(&film);
   g_free(dir);
   if(!dt_is_valid_filmid(filmid)) return NO_IMGID;
-  return dt_image_import(filmid, path, TRUE, FALSE);
+  // darktable finds a file's image by its name alone (image.c,
+  // dt_image_get_id()), which can be a snapshot once the version before it
+  // has been removed
+  return _real_version(dt_image_import(filmid, path, TRUE, FALSE));
+}
+
+static gboolean _is_snapshot(const dt_imgid_t imgid)
+{
+  sqlite3_stmt *stmt;
+  DT_DEBUG_SQLITE3_PREPARE_V2(dt_database_get(darktable.db),
+                              "SELECT 1 FROM main.images WHERE id = ?1 AND version >= ?2",
+                              -1, &stmt, NULL);
+  DT_DEBUG_SQLITE3_BIND_INT(stmt, 1, imgid);
+  DT_DEBUG_SQLITE3_BIND_INT(stmt, 2, _SNAPSHOT_VERSION);
+  const gboolean found = sqlite3_step(stmt) == SQLITE_ROW;
+  sqlite3_finalize(stmt);
+  return found;
+}
+
+// the lowest version of the file `imgid` that is not a snapshot, or `imgid`
+// when it is not one
+static dt_imgid_t _real_version(const dt_imgid_t imgid)
+{
+  if(!dt_is_valid_imgid(imgid) || !_is_snapshot(imgid)) return imgid;
+  sqlite3_stmt *stmt;
+  DT_DEBUG_SQLITE3_PREPARE_V2(dt_database_get(darktable.db),
+                              "SELECT b.id FROM main.images AS a, main.images AS b"
+                              " WHERE a.id = ?1 AND b.film_id = a.film_id AND b.filename = a.filename"
+                              "   AND b.version < ?2"
+                              " ORDER BY b.version LIMIT 1",
+                              -1, &stmt, NULL);
+  DT_DEBUG_SQLITE3_BIND_INT(stmt, 1, imgid);
+  DT_DEBUG_SQLITE3_BIND_INT(stmt, 2, _SNAPSHOT_VERSION);
+  const dt_imgid_t real = sqlite3_step(stmt) == SQLITE_ROW ? sqlite3_column_int(stmt, 0) : imgid;
+  sqlite3_finalize(stmt);
+  return real;
+}
+
+// a copy of `imgid`'s edit as the library holds it, for an export to
+// render however the photo is edited meanwhile
+static dt_imgid_t _snapshot(const dt_imgid_t imgid)
+{
+  static gint made = 0;
+  const dt_imgid_t snap = dt_image_duplicate_with_version(imgid, _SNAPSHOT_VERSION + g_atomic_int_add(&made, 1));
+  if(!dt_is_valid_imgid(snap)) return NO_IMGID;
+  dt_history_copy_and_paste_on_image(imgid, snap, FALSE, NULL, TRUE, TRUE, FALSE);
+  // duplicating raised the file's max_version to the snapshot's, which the
+  // next virtual copy would be numbered after (image.c, dt_image_duplicate())
+  sqlite3_stmt *stmt;
+  DT_DEBUG_SQLITE3_PREPARE_V2(dt_database_get(darktable.db),
+                              "UPDATE main.images"
+                              " SET max_version = (SELECT MAX(b.version) FROM main.images AS b"
+                              "                    WHERE b.film_id = main.images.film_id"
+                              "                      AND b.filename = main.images.filename AND b.version < ?2)"
+                              " WHERE id IN (SELECT b.id FROM main.images AS a, main.images AS b"
+                              "              WHERE a.id = ?1 AND b.film_id = a.film_id AND b.filename = a.filename)",
+                              -1, &stmt, NULL);
+  DT_DEBUG_SQLITE3_BIND_INT(stmt, 1, imgid);
+  DT_DEBUG_SQLITE3_BIND_INT(stmt, 2, _SNAPSHOT_VERSION);
+  sqlite3_step(stmt);
+  sqlite3_finalize(stmt);
+  return snap;
+}
+
+static void _snapshot_remove(const dt_imgid_t snap)
+{
+  if(!dt_is_valid_imgid(snap)) return;
+  // the raster mask data the history copy took along, beside the photo
+  // under the snapshot's version (dtdata.c, dt_dtdata_merge())
+  char data[PATH_MAX] = { 0 };
+  dt_dtdata_path(snap, data, sizeof(data));
+  if(data[0]) g_unlink(data);
+  dt_image_remove(snap);
+}
+
+// the photos each background export is to render, by job: imgid to its
+// snapshot, or to NO_IMGID until one is needed. a photo's edit changes only
+// while it is open, so the open photo is copied when the export is asked
+// for (`export_hold`) and the others as they are opened (_hold_open), or
+// when the export reaches them (_hold_take). either way the export renders
+// the edit as it was when it was asked for
+static GMutex _hold_lock;
+static GHashTable *_holds = NULL;
+
+static void _hold_free(gpointer data)
+{
+  GHashTableIter it;
+  gpointer key, value;
+  g_hash_table_iter_init(&it, data);
+  while(g_hash_table_iter_next(&it, &key, &value)) _snapshot_remove(GPOINTER_TO_INT(value));
+  g_hash_table_destroy(data);
+}
+
+// `open_imgid` is the photo open in the editor, its edit already in the
+// library, or NO_IMGID
+static void _hold(const gint64 job, JsonArray *imgids, const dt_imgid_t open_imgid)
+{
+  g_mutex_lock(&_hold_lock);
+  if(!_holds) _holds = g_hash_table_new_full(g_int64_hash, g_int64_equal, g_free, _hold_free);
+  gint64 *key = g_new(gint64, 1);
+  *key = job;
+  GHashTable *held = g_hash_table_new(NULL, NULL);
+  for(guint k = 0; imgids && k < json_array_get_length(imgids); k++)
+  {
+    const dt_imgid_t imgid = json_array_get_int_element(imgids, k);
+    if(!dt_is_valid_imgid(imgid) || g_hash_table_contains(held, GINT_TO_POINTER(imgid))) continue;
+    g_hash_table_insert(held, GINT_TO_POINTER(imgid),
+                        GINT_TO_POINTER(imgid == open_imgid ? _snapshot(imgid) : NO_IMGID));
+  }
+  g_hash_table_replace(_holds, key, held);
+  g_mutex_unlock(&_hold_lock);
+}
+
+// a photo about to be opened: every export still to render it gets its
+// edit before the editor can change it
+static void _hold_open(const dt_imgid_t imgid)
+{
+  g_mutex_lock(&_hold_lock);
+  GHashTableIter it;
+  gpointer key, held;
+  if(_holds) g_hash_table_iter_init(&it, _holds);
+  while(_holds && g_hash_table_iter_next(&it, &key, &held))
+  {
+    gpointer snap;
+    if(g_hash_table_lookup_extended(held, GINT_TO_POINTER(imgid), NULL, &snap)
+       && !dt_is_valid_imgid(GPOINTER_TO_INT(snap)))
+      g_hash_table_insert(held, GINT_TO_POINTER(imgid), GINT_TO_POINTER(_snapshot(imgid)));
+  }
+  g_mutex_unlock(&_hold_lock);
+}
+
+// the snapshot job's export of `imgid` renders, now the caller's to remove;
+// NO_IMGID when the job does not hold the photo
+static dt_imgid_t _hold_take(const gint64 job, const dt_imgid_t imgid)
+{
+  g_mutex_lock(&_hold_lock);
+  GHashTable *held = _holds ? g_hash_table_lookup(_holds, &job) : NULL;
+  gpointer snap = NULL;
+  dt_imgid_t taken = NO_IMGID;
+  if(held && g_hash_table_lookup_extended(held, GINT_TO_POINTER(imgid), NULL, &snap))
+  {
+    // under the lock, so the photo can't be opened while it is copied
+    taken = dt_is_valid_imgid(GPOINTER_TO_INT(snap)) ? GPOINTER_TO_INT(snap) : _snapshot(imgid);
+    g_hash_table_remove(held, GINT_TO_POINTER(imgid));
+  }
+  g_mutex_unlock(&_hold_lock);
+  return taken;
+}
+
+// the job's photos it will not export after all, with their snapshots
+static void _hold_release(const gint64 job)
+{
+  g_mutex_lock(&_hold_lock);
+  if(_holds) g_hash_table_remove(_holds, &job);
+  g_mutex_unlock(&_hold_lock);
 }
 
 // whether the history holds entries a later one of the same module
@@ -609,6 +770,7 @@ static gboolean _open_image(const char *path, const dt_imgid_t version, const ch
   if(ids) imgid = GPOINTER_TO_INT(ids->data);
   if(g_list_find(ids, GINT_TO_POINTER(version))) imgid = version;
   g_list_free(ids);
+  _hold_open(imgid);
 
   // a sidecar saved before history was compressed is compressed now, once,
   // so this session starts from the short history and saves stay small
@@ -1403,8 +1565,9 @@ static void _image_json(JsonBuilder *b, const dt_imgid_t imgid, const gboolean f
 }
 
 // every version of the file `imgid` belongs to, lowest first: darktable's
-// duplicates, which the client calls virtual copies. import reads each
-// "<name>_NN.<ext>.xmp" into its own row (image.c, _image_read_duplicates())
+// duplicates, which the client calls virtual copies, but not an export's
+// snapshots. import reads each "<name>_NN.<ext>.xmp" into its own row
+// (image.c, _image_read_duplicates())
 static GList *_image_versions(const dt_imgid_t imgid)
 {
   GList *ids = NULL;
@@ -1412,9 +1575,11 @@ static GList *_image_versions(const dt_imgid_t imgid)
   DT_DEBUG_SQLITE3_PREPARE_V2(dt_database_get(darktable.db),
                               "SELECT b.id FROM main.images AS a, main.images AS b"
                               " WHERE a.id = ?1 AND b.film_id = a.film_id AND b.filename = a.filename"
+                              "   AND b.version < ?2"
                               " ORDER BY b.version",
                               -1, &stmt, NULL);
   DT_DEBUG_SQLITE3_BIND_INT(stmt, 1, imgid);
+  DT_DEBUG_SQLITE3_BIND_INT(stmt, 2, _SNAPSHOT_VERSION);
   while(sqlite3_step(stmt) == SQLITE_ROW)
     ids = g_list_prepend(ids, GINT_TO_POINTER(sqlite3_column_int(stmt, 0)));
   sqlite3_finalize(stmt);
@@ -1844,9 +2009,32 @@ static const struct { const char *name; dt_colorspaces_color_profile_type_t type
 // one SVG that its watermark module lays over the framed image. both run
 // after every other module (iop order). export applies a named style to its
 // own copy of the history only, so the frame becomes a style for the
-// duration of the export; the image's own edits are never touched
-#define _FRAME_STYLE "immage export frame"
-#define _FRAME_SVG "immage-export.svg"
+// duration of the export; the image's own edits are never touched. each
+// export's are numbered (_export)
+#define _FRAME_STYLE "immage export frame %d"
+#define _FRAME_SVG "immage-export-%d.svg"
+#define _FRAME_DTSTYLE "export-frame-%d.dtstyle"
+
+// a background export (_export_run) and the main loop's exports read the
+// format's quality from darktable's settings
+static GMutex _format_conf_lock;
+// darktable's AI provider setting, which loading a model reads
+// (backend_common.c): the upscale model and the main loop's AI masks and
+// denoise each set it before they load
+static GMutex _ai_load_lock;
+
+// the format an export writes through, for _no_tmpfile_flags
+static _Thread_local dt_imageio_module_format_t *_flags_of;
+
+// the format's own flags, and no temporary file signal: export raises it
+// synchronously (imageio.c), which off the main thread waits for a GLib
+// main loop the engine does not run, whenever another thread is raising a
+// signal at that moment (signal.c, dt_control_signal_raise()). nothing in
+// the engine listens for it
+static int _no_tmpfile_flags(dt_imageio_module_data_t *data)
+{
+  return _flags_of->flags(data) | FORMAT_FLAGS_NO_TMPFILE;
+}
 
 // a char array field of a module's params, such as watermark's filename
 static gboolean _write_text(dt_iop_module_t *mod, const char *name, const char *value, char **err)
@@ -2167,9 +2355,12 @@ static void _style_plugin(GString *xml, dt_iop_module_t *mod, const int num, con
 // whether there is a style to apply, `*svg_written` whether a text layer
 // went to the watermarks folder
 static gboolean _frame_style(const dt_imgid_t imgid, JsonObject *frame, JsonObject *old_border,
-                             const int long_edge, const int upscale, gboolean *styled,
+                             const int long_edge, const int upscale, const int id, gboolean *styled,
                              gboolean *svg_written, char **err)
 {
+  char style[64], svg_name[64];
+  g_snprintf(style, sizeof(style), _FRAME_STYLE, id);
+  g_snprintf(svg_name, sizeof(svg_name), _FRAME_SVG, id);
   *styled = FALSE;
   *svg_written = FALSE;
   dt_develop_t dev;
@@ -2302,7 +2493,7 @@ static gboolean _frame_style(const dt_imgid_t imgid, JsonObject *frame, JsonObje
   GString *xml = g_string_new(NULL);
   g_string_append_printf(xml, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
                          "<darktable_style version=\"1.0\"><info><name>%s</name><description></description>"
-                         "</info><style>", _FRAME_STYLE);
+                         "</info><style>", style);
   gboolean ok = TRUE;
   int num = 0, cw = w, chh = h, px0 = 0, py0 = 0;
   for(guint k = 0; ok && k < nborders; k++)
@@ -2358,14 +2549,14 @@ static gboolean _frame_style(const dt_imgid_t imgid, JsonObject *frame, JsonObje
     dt_loc_get_user_config_dir(configdir, sizeof(configdir));
     gchar *dir = g_build_filename(configdir, "watermarks", NULL);
     g_mkdir_with_parents(dir, 0755);
-    svg_path = g_build_filename(dir, _FRAME_SVG, NULL);
+    svg_path = g_build_filename(dir, svg_name, NULL);
     g_free(dir);
     ok = g_file_set_contents(svg_path, svg->str, -1, NULL);
     g_string_free(svg, TRUE);
     *svg_written = ok;
 
     memcpy(watermark->params, watermark->default_params, watermark->params_size);
-    ok = ok && _write_text(watermark, "filename", _FRAME_SVG, err) && _write_text(watermark, "text", "", err)
+    ok = ok && _write_text(watermark, "filename", svg_name, err) && _write_text(watermark, "text", "", err)
       && _write_field(watermark, "opacity", 100.0, err) && _write_field(watermark, "scale", 100.0, err)
       && _write_field(watermark, "xoffset", 0.0, err) && _write_field(watermark, "yoffset", 0.0, err)
       && _write_field(watermark, "rotate", 0.0, err) && _write_field(watermark, "alignment", 0, err)
@@ -2380,14 +2571,17 @@ static gboolean _frame_style(const dt_imgid_t imgid, JsonObject *frame, JsonObje
   {
     char configdir[PATH_MAX] = { 0 };
     dt_loc_get_user_config_dir(configdir, sizeof(configdir));
-    gchar *path = g_build_filename(configdir, "export-frame.dtstyle", NULL);
+    char file[64];
+    g_snprintf(file, sizeof(file), _FRAME_DTSTYLE, id);
+    gchar *path = g_build_filename(configdir, file, NULL);
     ok = g_file_set_contents(path, xml->str, -1, NULL);
     if(ok)
     {
-      if(dt_styles_exists(_FRAME_STYLE)) dt_styles_delete_by_name(_FRAME_STYLE);
+      if(dt_styles_exists(style)) dt_styles_delete_by_name(style);
       dt_styles_import_from_file(path);
-      ok = dt_styles_exists(_FRAME_STYLE);
+      ok = dt_styles_exists(style);
     }
+    g_unlink(path);
     g_free(path);
   }
   g_string_free(xml, TRUE);
@@ -2398,13 +2592,16 @@ static gboolean _frame_style(const dt_imgid_t imgid, JsonObject *frame, JsonObje
 }
 
 // the frame's style and text layer, once the export no longer needs them
-static void _frame_done(const gboolean svg_written)
+static void _frame_done(const int id, const gboolean svg_written)
 {
-  dt_styles_delete_by_name(_FRAME_STYLE);
+  char name[64];
+  g_snprintf(name, sizeof(name), _FRAME_STYLE, id);
+  dt_styles_delete_by_name(name);
   if(!svg_written) return;
+  g_snprintf(name, sizeof(name), _FRAME_SVG, id);
   char configdir[PATH_MAX] = { 0 };
   dt_loc_get_user_config_dir(configdir, sizeof(configdir));
-  gchar *path = g_build_filename(configdir, "watermarks", _FRAME_SVG, NULL);
+  gchar *path = g_build_filename(configdir, "watermarks", name, NULL);
   g_unlink(path);
   g_free(path);
 }
@@ -2478,6 +2675,7 @@ static struct
   dt_colorspaces_color_profile_type_t icc;
   char *err;
 } _up;
+static GMutex _up_lock;
 
 // GPU execution providers, the only ones the upscale model runs on: on the
 // CPU, ONNX Runtime expands RealPLKSR's large kernels into intermediate
@@ -2645,6 +2843,7 @@ static dt_restore_context_t *_upscale_ctx(const int scale, const char *asked, co
     _up.env = g_new0(dt_restore_env_t, 1);
     _up.env->ai_env = dt_ai_env_init(_models_dir);
   }
+  g_mutex_lock(&_ai_load_lock);
   dt_ai_env_refresh(_up.env->ai_env);
   // restore finds its model through darktable's active-model and provider
   // settings rather than taking them as arguments
@@ -2653,6 +2852,7 @@ static dt_restore_context_t *_upscale_ctx(const int scale, const char *asked, co
   const char *device_key = dt_ai_device_conf_key_for_provider(dt_ai_provider_from_string(provider));
   if(device_key && device >= 0) dt_conf_set_int(device_key, device);
   _up.ctx = scale == 4 ? dt_restore_load_upscale_x4(_up.env) : dt_restore_load_upscale_x2(_up.env);
+  g_mutex_unlock(&_ai_load_lock);
   if(!_up.ctx)
   {
     *err = g_strdup_printf("cannot load the '%s' model from %s", _UPSCALE_MODEL, _models_dir);
@@ -2782,8 +2982,11 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
     return FALSE;
   }
 
+  // the format reads them from darktable's settings, which a background
+  // export and the main loop's (the dialog's preview) share
   const int quality = json_object_get_int_member_with_default(req, "quality", 0);
   const int bpp = json_object_get_int_member_with_default(req, "bpp", 0);
+  g_mutex_lock(&_format_conf_lock);
   for(int pass = 0; pass < 2; pass++)
   {
     const int value = pass ? bpp : quality;
@@ -2793,8 +2996,8 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
     if(dt_conf_key_exists(key) || dt_confgen_exists(key)) dt_conf_set_int(key, value);
     g_free(key);
   }
-
   dt_imageio_module_data_t *fdata = fmt->get_params(fmt);
+  g_mutex_unlock(&_format_conf_lock);
   if(!fdata)
   {
     *err = g_strdup_printf("format '%s' gave no parameters", format);
@@ -2808,11 +3011,6 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
   fdata->style[0] = '\0';
   fdata->style_append = TRUE;
 
-  // the open image's latest edits may not be in the library yet, and
-  // export reads its history from there; the frame's size needs its crop.
-  // in the Before view they went in as it came on ("before" below)
-  if(_s.open && _s.imgid == imgid && !_s.before) dt_dev_write_history_ext(&_s.dev, imgid);
-
   JsonObject *frame = json_object_has_member(req, "frame")
     && JSON_NODE_HOLDS_OBJECT(json_object_get_member(req, "frame"))
     ? json_object_get_object_member(req, "frame") : NULL;
@@ -2820,18 +3018,22 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
     && JSON_NODE_HOLDS_OBJECT(json_object_get_member(req, "border"))
     ? json_object_get_object_member(req, "border") : NULL;
   gboolean framed = FALSE, frame_svg = FALSE;
+  // the frame's style and text layer are named for this export alone, as a
+  // background export and the dialog's preview may be framing at once
+  static gint frames = 0;
+  const int frame_id = g_atomic_int_add(&frames, 1);
   if(frame || border)
   {
     // the long edge a frame's pixel sizes refer to: a preview smaller than
     // the export it shows passes the export's (0 for full size)
     const int px_edge = json_object_get_int_member_with_default(req, "px_long_edge", long_edge);
-    if(!_frame_style(imgid, frame, border, px_edge, upscale, &framed, &frame_svg, err))
+    if(!_frame_style(imgid, frame, border, px_edge, upscale, frame_id, &framed, &frame_svg, err))
     {
-      _frame_done(frame_svg);
+      _frame_done(frame_id, frame_svg);
       fmt->free_params(fmt, fdata);
       return FALSE;
     }
-    if(framed) g_strlcpy(fdata->style, _FRAME_STYLE, sizeof(fdata->style));
+    if(framed) g_snprintf(fdata->style, sizeof(fdata->style), _FRAME_STYLE, frame_id);
   }
 
   dt_colorspaces_color_profile_type_t icc = DT_COLORSPACE_SRGB;
@@ -2839,26 +3041,28 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
   for(size_t k = 0; k < G_N_ELEMENTS(_spaces); k++)
     if(!g_strcmp0(space, _spaces[k].name)) icc = _spaces[k].type;
 
-  // the stand-in format renders linear Rec.2020 floats for the model and
-  // hands the result to the real one
-  dt_imageio_module_format_t proxy;
-  dt_imageio_module_format_t *write_fmt = fmt;
+  dt_imageio_module_format_t proxy = *fmt;
+  _flags_of = fmt;
+  proxy.flags = _no_tmpfile_flags;
   dt_colorspaces_color_profile_type_t render_icc = icc;
+  // the stand-in format renders linear Rec.2020 floats for the model and
+  // hands the result to the real one. one upscale at a time: the model and
+  // the real format are kept in _up
   if(upscale > 1)
   {
+    g_mutex_lock(&_up_lock);
     const char *asked = json_object_get_string_member_with_default(req, "ai_provider", "auto");
     const int device = json_object_get_int_member_with_default(req, "ai_device", -1);
     if(!_upscale_ctx(upscale == 4 ? 4 : 2, asked, device, err))
     {
-      if(framed) _frame_done(frame_svg);
+      g_mutex_unlock(&_up_lock);
+      if(framed) _frame_done(frame_id, frame_svg);
       fmt->free_params(fmt, fdata);
       return FALSE;
     }
-    proxy = *fmt;
     proxy.bpp = _up_bpp;
     proxy.levels = _up_levels;
     proxy.write_image = _up_write_image;
-    write_fmt = &proxy;
     render_icc = DT_COLORSPACE_LIN_REC2020;
     _up.real = fmt;
     _up.icc = icc;
@@ -2917,7 +3121,7 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
   const gboolean high_quality = !json_object_get_boolean_member_with_default(req, "draft", FALSE);
   // NB: returns FALSE on success
   const gboolean failed = dt_imageio_export_with_flags(
-      imgid, out, write_fmt, fdata,
+      imgid, out, &proxy, fdata,
       FALSE /*ignore_exif*/, FALSE /*display_byteorder*/, high_quality,
       FALSE /*upscale*/, FALSE /*is_scaling*/, 1.0, FALSE /*thumbnail*/, NULL /*filter*/,
       TRUE /*copy_metadata*/, FALSE /*export_masks*/,
@@ -2925,13 +3129,11 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
   for(GList *t = added; t; t = g_list_next(t))
     dt_tag_detach(GPOINTER_TO_UINT(t->data), imgid, FALSE, FALSE);
   g_list_free(added);
-  if(framed) _frame_done(frame_svg);
+  if(framed) _frame_done(frame_id, frame_svg);
   fmt->free_params(fmt, fdata);
-  if(failed)
-  {
-    *err = _up.err && upscale > 1 ? g_strdup(_up.err) : g_strdup_printf("could not write '%s'", out);
-    return FALSE;
-  }
+  if(failed) *err = _up.err && upscale > 1 ? g_strdup(_up.err) : g_strdup_printf("could not write '%s'", out);
+  if(upscale > 1) g_mutex_unlock(&_up_lock);
+  if(failed) return FALSE;
   // a file that keeps what was asked to be left out is not delivered
   if((*err = strip_metadata(out, strip)))
   {
@@ -2939,6 +3141,80 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
     return FALSE;
   }
   return TRUE;
+}
+
+// a tagged `export` runs here rather than in the main loop, so the photo is
+// edited while a batch exports. darktable's export job does the same beside
+// its darkroom: export builds a develop and pipe of its own from the
+// library (imageio.c). it renders the job's snapshot of the photo
+// (_hold_take), never the open session. one thread, so a batch keeps its
+// order and the editor keeps most of the cores. the job's tagged
+// `export_release` comes here too, after its exports
+static GThreadPool *_export_pool = NULL;
+static GMutex _export_pool_lock;
+
+static void _export_run(gpointer data, gpointer user_data)
+{
+  JsonParser *parser = data;
+  FILE *out = user_data;
+  JsonObject *req = json_node_get_object(json_parser_get_root(parser));
+  const gint64 job = json_object_get_int_member_with_default(req, "job", 0);
+  char *err = NULL;
+  gboolean ok = TRUE;
+  if(!g_strcmp0(json_object_get_string_member_with_default(req, "cmd", ""), "export_release"))
+    _hold_release(job);
+  else
+  {
+    const dt_imgid_t snap = _hold_take(job, json_object_get_int_member_with_default(req, "imgid", 0));
+    if(dt_is_valid_imgid(snap))
+      ok = _export(snap, req, &err);
+    else
+    {
+      ok = FALSE;
+      err = g_strdup("the export was not asked for this photo");
+    }
+    _snapshot_remove(snap);
+  }
+  JsonBuilder *b = json_builder_new();
+  json_builder_begin_object(b);
+  json_builder_set_member_name(b, "tag");
+  json_builder_add_int_value(b, json_object_get_int_member(req, "tag"));
+  json_builder_set_member_name(b, "ok");
+  json_builder_add_boolean_value(b, ok);
+  if(!ok)
+  {
+    json_builder_set_member_name(b, "error");
+    json_builder_add_string_value(b, err ? err : "export failed");
+  }
+  json_builder_end_object(b);
+  _reply(out, b);
+  g_object_unref(b);
+  g_free(err);
+  g_object_unref(parser);
+}
+
+// FALSE once the pool has stopped; the request then gets no reply
+static gboolean _export_queue(JsonParser *parser)
+{
+  g_mutex_lock(&_export_pool_lock);
+  const gboolean queued = _export_pool != NULL;
+  if(queued) g_thread_pool_push(_export_pool, parser, NULL);
+  g_mutex_unlock(&_export_pool_lock);
+  return queued;
+}
+
+// before darktable's caches go: the export under way finishes, those
+// waiting are dropped, and every snapshot left goes with its holds
+static void _export_wait(void)
+{
+  g_mutex_lock(&_export_pool_lock);
+  GThreadPool *pool = _export_pool;
+  _export_pool = NULL;
+  g_mutex_unlock(&_export_pool_lock);
+  if(pool) g_thread_pool_free(pool, TRUE, TRUE);
+  g_mutex_lock(&_hold_lock);
+  g_clear_pointer(&_holds, g_hash_table_destroy);
+  g_mutex_unlock(&_hold_lock);
 }
 
 // ------------------------------------------------------------------ masks
@@ -3244,8 +3520,10 @@ static gboolean _seg_ready(char **err)
   // the model may have been downloaded since the folder was last looked at
   if(!_seg && _ai_env)
   {
+    g_mutex_lock(&_ai_load_lock);
     dt_ai_env_refresh(_ai_env);
     _seg = dt_seg_load(_ai_env, _SEG_MODEL);
+    g_mutex_unlock(&_ai_load_lock);
   }
   if(!_seg)
   {
@@ -3590,8 +3868,10 @@ static const _mask_kind_t *_mask_run(const char *kind, char **err)
   if(!_ai_env) _ai_env = _ai_env_new();
   if(!_mask_ctx[k] && _ai_env)
   {
+    g_mutex_lock(&_ai_load_lock);
     dt_ai_env_refresh(_ai_env);
     _mask_ctx[k] = dt_ai_load_model(_ai_env, mm->id, NULL, DT_AI_PROVIDER_CPU);
+    g_mutex_unlock(&_ai_load_lock);
   }
   if(!_mask_ctx[k])
   {
@@ -3709,6 +3989,7 @@ static dt_restore_context_t *_denoise_ctx(const dt_restore_sensor_class_t cls, c
     _dn.env = g_new0(dt_restore_env_t, 1);
     _dn.env->ai_env = dt_ai_env_init(_models_dir);
   }
+  g_mutex_lock(&_ai_load_lock);
   dt_ai_env_refresh(_dn.env->ai_env);
   // restore finds its model through darktable's active-model and provider
   // settings rather than taking them as arguments
@@ -3717,6 +3998,7 @@ static dt_restore_context_t *_denoise_ctx(const dt_restore_sensor_class_t cls, c
   _dn.ctx = cls == DT_RESTORE_SENSOR_CLASS_BAYER  ? dt_restore_load_rawdenoise_bayer(_dn.env)
           : cls == DT_RESTORE_SENSOR_CLASS_XTRANS ? dt_restore_load_rawdenoise_xtrans(_dn.env)
                                                   : dt_restore_load_rawdenoise_linear(_dn.env);
+  g_mutex_unlock(&_ai_load_lock);
   if(!_dn.ctx)
   {
     *err = g_strdup_printf("cannot load the '%s' model from %s", _DENOISE_MODEL, _models_dir);
@@ -6899,7 +7181,21 @@ static void _handle(JsonObject *req, FILE *out)
   }
   else if(!g_strcmp0(cmd, "export"))
   {
-    if(!_export(json_object_get_int_member_with_default(req, "imgid", 0), req, &err)) goto fail;
+    const dt_imgid_t imgid = json_object_get_int_member_with_default(req, "imgid", 0);
+    // the open image's latest edits may not be in the library yet, and
+    // export reads its history from there; the frame's size needs its crop.
+    // in the Before view they went in as it came on ("before" below)
+    if(_s.open && _s.imgid == imgid && !_s.before) dt_dev_write_history_ext(&_s.dev, imgid);
+    if(!_export(imgid, req, &err)) goto fail;
+  }
+  // the photos a background export (tagged `export`s of this `job`) is to
+  // render, each as its edit is now
+  else if(!g_strcmp0(cmd, "export_hold"))
+  {
+    if(_s.open && !_s.before) dt_dev_write_history_ext(&_s.dev, _s.imgid);
+    _hold(json_object_get_int_member_with_default(req, "job", 0),
+          json_object_has_member(req, "imgids") ? json_object_get_array_member(req, "imgids") : NULL,
+          _s.open ? _s.imgid : NO_IMGID);
   }
   else if(!g_strcmp0(cmd, "fonts"))
   {
@@ -7387,7 +7683,8 @@ static char _end_of_input[] = "";
 
 // stdin is read on a thread of its own, so a `cancel_base` (written by the
 // client while it waits on a base's reply) stops that base at once. it gets
-// no reply. a tagged `thumb` goes to the thumbnail threads (_thumb_run);
+// no reply. a tagged `thumb` goes to the thumbnail threads (_thumb_run), a
+// tagged `export` or `export_release` to the export thread (_export_run);
 // every other line goes to the main loop, in order
 static gpointer _read_requests(gpointer data)
 {
@@ -7396,7 +7693,7 @@ static gpointer _read_requests(gpointer data)
   while(_read_line(line, stdin))
   {
     gboolean taken = FALSE;
-    if(line->len < 1024 && (strstr(line->str, "\"cancel_base\"") || strstr(line->str, "\"thumb\"")))
+    if(strstr(line->str, "\"tag\"") || (line->len < 1024 && strstr(line->str, "\"cancel_base\"")))
     {
       JsonParser *parser = json_parser_new();
       if(json_parser_load_from_data(parser, line->str, line->len, NULL)
@@ -7415,6 +7712,13 @@ static gpointer _read_requests(gpointer data)
           fprintf(stderr, "[engine] thumb %.*s\n", (int)strcspn(line->str, "\r\n"), line->str);
           // the pool frees the parser
           if(_thumb_queue(parser)) parser = NULL;
+          taken = TRUE;
+        }
+        else if((!g_strcmp0(cmd, "export") || !g_strcmp0(cmd, "export_release"))
+                && json_object_has_member(req, "tag"))
+        {
+          fprintf(stderr, "[engine] export %.*s\n", (int)strcspn(line->str, "\r\n"), line->str);
+          if(_export_queue(parser)) parser = NULL;
           taken = TRUE;
         }
       }
@@ -7494,6 +7798,7 @@ int main(int argc, char **argv)
   }
 
   _thumb_pool = g_thread_pool_new(_thumb_run, out, _THUMB_THREADS, FALSE, NULL);
+  _export_pool = g_thread_pool_new(_export_run, out, 1, FALSE, NULL);
   GAsyncQueue *requests = g_async_queue_new();
   g_thread_unref(g_thread_new("requests", _read_requests, requests));
   gboolean quit = FALSE;
@@ -7520,6 +7825,7 @@ int main(int argc, char **argv)
   if(!quit) _save_pending();
 
   _thumb_wait();
+  _export_wait();
   _close_session();
   _prefetch_wait();
   dt_cleanup();
