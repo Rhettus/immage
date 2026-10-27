@@ -315,12 +315,17 @@ async fn on_engine_thread(state: &AppState, mut req: Value) -> Result<Value, Str
 }
 
 // select an object with the AI model: clicks [[x, y, include]] and/or a
-// box [x0, y0, x1, y1] in shown-image units; replies with its outline
+// box [x0, y0, x1, y1] in shown-image units; replies with its outline.
+// `inset` false traces it on its edge, for a selection the mask takes away
+// (main.c, _trace_json)
 #[tauri::command]
-async fn ai_object(state: State<'_, AppState>, points: Value, r#box: Option<Value>) -> Result<Value, String> {
+async fn ai_object(state: State<'_, AppState>, points: Value, r#box: Option<Value>, inset: Option<bool>) -> Result<Value, String> {
     let mut req = json!({ "cmd": "ai_object", "points": points });
     if let Some(b) = r#box {
         req["box"] = b;
+    }
+    if let Some(i) = inset {
+        req["inset"] = json!(i);
     }
     let reply = on_engine_thread(&state, req).await?;
     Ok(reply["paths"].clone())
@@ -559,13 +564,17 @@ async fn ai_model_reinstall(app: AppHandle, state: State<'_, AppState>, id: Stri
     ai_model_ensure(app, state, id).await
 }
 
-// a one-click AI mask ("subject"): its outline, as ai_object replies.
-// "depth" takes the band of depth it covers, [near, far] in 0-1
+// a one-click AI mask ("subject"): its outline, as ai_object replies, and
+// `inset` as there. "depth" takes the band of depth it covers, [near, far]
+// in 0-1
 #[tauri::command]
-async fn ai_mask(state: State<'_, AppState>, kind: String, range: Option<[f64; 2]>) -> Result<Value, String> {
+async fn ai_mask(state: State<'_, AppState>, kind: String, range: Option<[f64; 2]>, inset: Option<bool>) -> Result<Value, String> {
     let mut req = json!({ "cmd": "ai_mask", "kind": kind });
     if let Some(r) = range {
         req["range"] = json!(r);
+    }
+    if let Some(i) = inset {
+        req["inset"] = json!(i);
     }
     let reply = on_engine_thread(&state, req).await?;
     Ok(reply["paths"].clone())

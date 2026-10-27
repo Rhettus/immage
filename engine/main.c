@@ -3922,6 +3922,10 @@ static uint8_t *_shown_rgb(const int size, const gboolean color, int *w, int *h,
   return rgb;
 }
 
+// an object component's feather when none is given: a path's border, as
+// a share of the image's shorter side (path.c)
+#define _OBJECT_FEATHER 0.003
+
 // --------------------------------------------------------------- AI masks
 // Lightroom's Select Objects: darktable's segmentation (SAM) on the image as
 // edited, prompted with clicks or a box, vectorized into path shapes the way
@@ -4201,13 +4205,51 @@ static void _paths_json(JsonBuilder *b, float *mask, const int mw, const int mh)
   g_list_free(signs);
 }
 
+// the selection (p >= 0.5) shrunk by `r` pixels, as 0 or 1, in place.
+// beyond the image counts as inside, so a sky reaching the frame's edge
+// keeps it
+static void _inset(float *p, const int w, const int h, const float r)
+{
+  const int R = (int)ceilf(r);
+  GArray *disc = g_array_new(FALSE, FALSE, sizeof(int) * 2);
+  for(int dy = -R; dy <= R; dy++)
+    for(int dx = -R; dx <= R; dx++)
+      if((dx || dy) && dx * dx + dy * dy <= r * r) g_array_append_val(disc, ((int[2]){ dx, dy }));
+  const int *d = (const int *)disc->data;
+  const int nd = disc->len;
+  uint8_t *in = g_malloc((size_t)w * h);
+  for(size_t k = 0; k < (size_t)w * h; k++) in[k] = p[k] >= 0.5f;
+  DT_OMP_FOR()
+  for(int y = 0; y < h; y++)
+    for(int x = 0; x < w; x++)
+    {
+      gboolean keep = in[(size_t)y * w + x];
+      for(int k = 0; keep && k < nd; k++)
+      {
+        const int u = x + d[2 * k], v = y + d[2 * k + 1];
+        if(u >= 0 && u < w && v >= 0 && v < h && !in[(size_t)v * w + u]) keep = FALSE;
+      }
+      p[(size_t)y * w + x] = keep ? 1.0f : 0.0f;
+    }
+  g_free(in);
+  g_array_free(disc, TRUE);
+}
+
 // probabilities at the guide's size, snapped to its edges by `snap`
-// pixels at _TRACE_SIZE, traced into the reply's paths
-static void _trace_json(const _ai_job_t *job, JsonBuilder *b, float *p, const float snap)
+// pixels at _TRACE_SIZE, traced into the reply's paths. darktable feathers
+// a path outward only, so a selection the mask adds (the request's
+// `inset`, by default) is traced a default feather's width inside its
+// edge, where the feather then ends: a feather past the edge would carry
+// the adjustment into the background around it. a selection the mask
+// takes away, or inverts (Background), is traced on its edge, its feather
+// already falling on the side that is selected
+static void _trace_json(const _ai_job_t *job, JsonBuilder *b, float *p, const float snap, const gboolean add)
 {
   if(snap > 0.0f)
     _snap_edges(p, job->gw, job->gh, g_bytes_get_data(job->guide, NULL),
                 snap * MAX(job->gw, job->gh) / _TRACE_SIZE);
+  if(add && json_object_get_boolean_member_with_default(job->req, "inset", TRUE))
+    _inset(p, job->gw, job->gh, _OBJECT_FEATHER * MIN(job->gw, job->gh));
   _paths_json(b, p, job->gw, job->gh);
 }
 
@@ -4255,7 +4297,7 @@ static gboolean _ai_object(const _ai_job_t *job, JsonBuilder *b, char **err)
   }
   float *p = _resample(mask, mw, mh, job->gw, job->gh);
   g_free(mask);
-  _trace_json(job, b, p, _SEG_SNAP);
+  _trace_json(job, b, p, _SEG_SNAP, TRUE);
   g_free(p);
   return TRUE;
 }
@@ -4488,7 +4530,8 @@ static gboolean _ai_mask(const _ai_job_t *job, JsonBuilder *b, char **err)
     for(size_t q = 0; q < (size_t)w * h; q++)
       p[q] = CLAMP(0.5f + 50.0f * fminf(p[q] - l, r - p[q]), 0.0f, 1.0f);
   }
-  _trace_json(job, b, p, mm->snap);
+  // a Depth Range keeps its band's own feather, and its edge
+  _trace_json(job, b, p, mm->snap, !mm->depth);
   g_free(p);
   return TRUE;
 }
@@ -5202,7 +5245,7 @@ static gboolean _object_shapes(dt_masks_form_t *grp, JsonObject *o, const char *
 {
   JsonArray *paths = json_object_has_member(o, "paths") ? json_object_get_array_member(o, "paths") : NULL;
   const gboolean subtract = !g_strcmp0(json_object_get_string_member_with_default(o, "mode", "add"), "subtract");
-  const float feather = CLAMP(json_object_get_double_member_with_default(o, "feather", 0.003), 0.0, 0.1);
+  const float feather = CLAMP(json_object_get_double_member_with_default(o, "feather", _OBJECT_FEATHER), 0.0, 0.1);
   // a Depth Range's band rides along in the names, as nothing else in
   // darktable's shapes can carry it
   JsonArray *depth = json_object_has_member(o, "depth") ? json_object_get_array_member(o, "depth") : NULL;
