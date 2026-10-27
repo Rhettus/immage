@@ -633,15 +633,25 @@ async fn ai_depth(state: State<'_, AppState>, size: u32) -> Result<Value, String
 
 // AI Denoise of the open raw at `strength` (0-1): a new DNG beside it with
 // its edit, which the folder view then shows after it, as an Edit In
-// result. replies { path, original, image }; takes seconds to a minute
+// result. replies { path, original, image }; takes seconds to a minute,
+// which the engine spends on a thread of its own once it has taken the
+// edit, so the engine is free for editing meanwhile
 #[tauri::command]
 async fn ai_denoise(state: State<'_, AppState>, plugins: State<'_, plugins::Plugins>, strength: f64) -> Result<Value, String> {
-    let mut reply = state.engine().request(json!({ "cmd": "ai_denoise", "strength": strength }))?;
+    let tagged = state.tagged.clone();
+    let tag = tagged.tag();
+    let answer = tagged.expect(tag)?;
+    if let Err(e) = state.engine().request(json!({ "cmd": "ai_denoise", "strength": strength, "tag": tag })) {
+        tagged.forget(tag);
+        return Err(e);
+    }
+    let mut reply = tauri::async_runtime::spawn_blocking(move || answer.wait())
+        .await.map_err(|e| e.to_string())??;
     let (Some(original), Some(result)) = (reply["original"].as_str(), reply["path"].as_str()) else {
         return Err("the engine gave no DNG".into());
     };
     plugins.record(plugins::Return {
-        original: original.into(), result: result.into(), plugin: "ai-denoise".into(), applied: true,
+        original: original.into(), result: result.into(), plugin: "ai-denoise".into(), applied: false,
     })?;
     if let Some(o) = reply.as_object_mut() {
         o.remove("ok");

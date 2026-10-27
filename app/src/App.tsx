@@ -33,7 +33,7 @@ import { VignetteOverlay } from "./VignetteOverlay";
 import { GuideOverlay } from "./GuideOverlay";
 import { autoMix } from "./bwauto";
 import { begin, end, track, useWorking } from "./activity";
-import { dismissExport, stopExport, useExports, type ExportJob } from "./exports";
+import { dismissJob, runInBackground, stopExport, useJobs, type Job } from "./background";
 import { withModel } from "./aiModel";
 import { bandWeights, invert, lightness, pixelAt, polyline, setProbe, useProbe, type Probe, type RGB } from "./probe";
 import { anchored, neutralize, whitePatch, WB_PRESETS, type WB } from "./wb";
@@ -744,11 +744,14 @@ export default function App() {
     return () => end(job);
   }, [aiBusy]);
   const working = useWorking();
-  const exportJobs = useExports();
+  const backgroundJobs = useJobs();
   // AI Denoise: darktable's raw denoise writes a DNG beside the raw with its
-  // edit (the engine's ai_denoise), shown after it in the folder as an Edit
-  // In result, and opened with noise reduction off, as the model did that
+  // edit as it was asked for (the engine's ai_denoise), shown after it in
+  // the folder as an Edit In result. it runs in the background, one at a
+  // time, and the DNG first opens with noise reduction off, as the model
+  // did that (openFile)
   const [denoising, setDenoising] = useState(false);
+  const [denoiseRunning, setDenoiseRunning] = useState(false);
   // its model, downloaded on first use, for the dialog's preview
   const denoiseModel = async () => {
     const stop = await listen<{ stage: string; mb?: number }>("ai-model", (e) => {
@@ -770,34 +773,30 @@ export default function App() {
     return { u: clamp01((p.x + p.width / 2) / (p.fullWidth * p.scale)),
              v: clamp01((p.y + p.height / 2) / (p.fullHeight * p.scale)) };
   };
-  const runDenoise = async (amount: number) => {
-    if (!session.current || aiBusy) return;
-    setAiBusy(true);
-    const working = "AI Denoise: writing a denoised DNG, up to a minute…";
-    const stop = await listen<{ stage: string; mb?: number }>("ai-model", (e) => {
-      const p = e.payload;
-      setStatus(p.stage === "downloading" ? `downloading the AI model (${p.mb ?? "?"} MB), first use only…`
-              : p.stage === "installing" ? "installing the AI model…" : working);
-    });
-    try {
-      const r = await withModel("rawdenoise-nind", () => {
-        setStatus(working);
-        return invoke<{ path: string; original: string; image: { imgid: number } }>(
-          "ai_denoise", { strength: amount / 100 });
+  const runDenoise = (amount: number) => {
+    const from = currentRef.current?.path;
+    if (!session.current || !from || denoiseRunning) return;
+    setDenoiseRunning(true);
+    void runInBackground(`AI Denoise: ${baseName(from)}`, async () => {
+      const stop = await listen<{ stage: string; mb?: number }>("ai-model", (e) => {
+        const p = e.payload;
+        setStatus(p.stage === "downloading" ? `downloading the AI model (${p.mb ?? "?"} MB), first use only…`
+                : p.stage === "installing" ? "installing the AI model…" : "");
       });
-      returns.current.set(r.path, { original: r.original, result: r.path, plugin: "ai-denoise", applied: true });
-      if (folderRef.current && !immichRef.current) await showFolder(folderRef.current, true);
-      await openFile(r.path, r.image.imgid);
-      if (currentRef.current?.path === r.path) {
-        changeMany([["nr_luminance", 0], ["nr_color", 0]], "AI Denoise: noise reduction off");
-        setStatus(`AI Denoise: opened ${baseName(r.path)}`);
+      try {
+        return await withModel("rawdenoise-nind", () => invoke<{ path: string; original: string; image: { imgid: number } }>(
+          "ai_denoise", { strength: amount / 100 }));
+      } finally {
+        stop();
       }
-    } catch (e) {
-      setStatus(`AI Denoise: ${e}`);
-    } finally {
-      stop();
-      setAiBusy(false);
-    }
+    }, (r) => {
+      returns.current.set(r.path, { original: r.original, result: r.path, plugin: "ai-denoise", applied: false });
+      // in the folder after the raw, if that is still the one shown
+      if (folderRef.current && !immichRef.current && parentDir(r.path) === folderRef.current)
+        void showFolder(folderRef.current, true);
+      return { text: `AI Denoise: wrote ${baseName(r.path)}`, ok: true,
+               action: { label: "Open", run: () => void openFile(r.path, r.image.imgid) } };
+    }, "AI Denoise").finally(() => setDenoiseRunning(false));
   };
   const selectObject = (prompt: ObjectPrompt) => runAi("mask-object-sam21-small", "finding the object…",
     () => invoke<ObjectShape["paths"]>("ai_object", { points: prompt.points ?? [], box: prompt.box ?? null }),
@@ -3033,7 +3032,9 @@ export default function App() {
       // already (Lens Corrections after PureRAW), over the preset's values
       // so they are never turned on to be turned off
       const back = returns.current.get(path);
-      const plugin = !s.wasEdited && back && !back.applied
+      // a DNG from AI Denoise has the raw's edit, so it is edited already
+      const denoised = back?.plugin === "ai-denoise" && !back.applied;
+      const plugin = !denoised && !s.wasEdited && back && !back.applied
         ? returnValues(back.plugin.split(":")[0], plugins.find((p) => p.id === back.plugin)) : null;
       if (preset && (s.raw || !preset.rawOnly)) {
         s.setMany(Object.entries({ ...presetValues(preset), ...plugin?.values }));
@@ -3056,6 +3057,13 @@ export default function App() {
       setHistoryBase(base);
       setValues({ ...s.values });
       if (autoNew) void runAutoTone(true);
+      // and without the noise reduction its model did, the first time it
+      // opens, as an undo step
+      if (back && denoised && session.current === s) {
+        back.applied = true;
+        void invoke("plugin_return_applied", { result: path });
+        changeMany([["nr_luminance", 0], ["nr_color", 0]], "AI Denoise: noise reduction off");
+      }
     } catch (e) {
       setStatus(`error: ${e}`);
     }
@@ -4715,7 +4723,7 @@ export default function App() {
           <div className={`working${working ? " on" : ""}`} title="working…" aria-hidden={!working}><span /></div>
           <div className="status">{status}</div>
           <div className="activities">
-          {exportJobs.map((j) => <ExportActivity key={j.id} job={j} />)}
+          {backgroundJobs.map((j) => <JobActivity key={j.id} job={j} />)}
           {(() => {
             // the folder's reading, then its thumbnails
             if (immich?.busy) return <div className="activity"><span>Searching Immich…</span></div>;
@@ -5119,7 +5127,8 @@ export default function App() {
                          : immich ? <div className="note-plain">photos in a folder on this computer only</div>
                          : (
                            <div className="denoise-tools">
-                             <button className="btn small" disabled={!current || aiBusy}
+                             <button className="btn small" disabled={!current || aiBusy || denoiseRunning}
+                                     title={denoiseRunning ? "a denoise is still running" : undefined}
                                      onClick={() => setDenoising(true)}>Denoise…</button>
                              <span className="note-plain">writes a denoised DNG beside the raw, with this edit</span>
                            </div>
@@ -5719,20 +5728,26 @@ function ActivityBar({ what, done, total }: { what: string; done: number; total:
 }
 
 // a background export (exports.ts): its progress and Stop, then what it did
-function ExportActivity({ job }: { job: ExportJob }) {
+function JobActivity({ job }: { job: Job }) {
   // the viewer's own pointer handling (zoom on click) stays off it
   const keep = (e: React.PointerEvent) => e.stopPropagation();
+  const action = job.action;
   return (
     <div className="activity waiting" onPointerDown={keep} onPointerUp={keep}>
       {job.summary === null ? <>
-        <div className="progress">
-          <span>{job.what} {job.done.toLocaleString()} of {job.total.toLocaleString()}</span>
-          <div className="bar"><div style={{ width: `${(100 * job.done) / Math.max(1, job.total)}%` }} /></div>
-        </div>
-        <button disabled={job.stopping} onClick={() => stopExport(job.id)}>{job.stopping ? "Stopping…" : "Stop"}</button>
+        {job.total ? (
+          <div className="progress">
+            <span>{job.what} {job.done.toLocaleString()} of {job.total.toLocaleString()}</span>
+            <div className="bar"><div style={{ width: `${(100 * job.done) / job.total}%` }} /></div>
+          </div>
+        ) : <span>{job.what}…</span>}
+        {job.stoppable && (
+          <button disabled={job.stopping} onClick={() => stopExport(job.id)}>{job.stopping ? "Stopping…" : "Stop"}</button>
+        )}
       </> : <>
         <span className={job.failed ? "failed" : ""}>{job.summary}</span>
-        <button onClick={() => dismissExport(job.id)}>OK</button>
+        {action && <button onClick={() => { dismissJob(job.id); action.run(); }}>{action.label}</button>}
+        <button onClick={() => dismissJob(job.id)}>OK</button>
       </>}
     </div>
   );

@@ -18,7 +18,7 @@ import { Aperture, Archive, BookOpen, Briefcase, Camera, CloudUpload, FileDown, 
 import { ColorPick, FrameEditor } from "./ExportFrame";
 import { KeywordChips, KeywordInput, parseKeyword } from "./Keywording";
 import { expand, TOKENS, EMPTY_META, type Meta } from "./exportTokens";
-import { runExport } from "./exports";
+import { runExport } from "./background";
 import {
   BUILTINS, DEFAULTS, PERSONAL_KEYS, frameFor, readShared, sharedFile, loadPresets, loadSettings, newId, presetEdited, presetOf, savePresets, saveSettings,
   type ExportPreset, type Settings,

@@ -163,7 +163,7 @@ static double _ms_since(const gint64 t0)
   return (g_get_monotonic_time() - t0) / 1000.0;
 }
 
-// the main loop and the thumbnail threads (_thumb_run) both reply
+// the main loop and the thumbnail, export and denoise threads all reply
 static GMutex _reply_lock;
 
 static void _reply(FILE *out, JsonBuilder *b)
@@ -384,21 +384,28 @@ static gboolean _write_sidecar(const dt_imgid_t imgid)
 
 static dt_imgid_t _real_version(const dt_imgid_t imgid);
 
+// the main loop and the denoise thread (_denoise_run) both import. a film
+// roll and an image are each looked up, then inserted when missing, so two
+// imports into one folder at once could make two of either
+static GMutex _import_lock;
+
 // file the image under an in-memory film roll, the way darktable-mcp does;
 // importing reads an existing sidecar, so earlier edits come back
 static dt_imgid_t _import(const char *path)
 {
   gchar *dir = g_path_get_dirname(path);
+  g_mutex_lock(&_import_lock);
   dt_film_t film;
   dt_film_init(&film); // holds a mutex; dt_film_new() does not set it up
   const dt_filmid_t filmid = dt_film_new(&film, dir);
   dt_film_cleanup(&film);
   g_free(dir);
-  if(!dt_is_valid_filmid(filmid)) return NO_IMGID;
   // darktable finds a file's image by its name alone (image.c,
   // dt_image_get_id()), which can be a snapshot once the version before it
   // has been removed
-  return _real_version(dt_image_import(filmid, path, TRUE, FALSE));
+  const dt_imgid_t imgid = dt_is_valid_filmid(filmid) ? dt_image_import(filmid, path, TRUE, FALSE) : NO_IMGID;
+  g_mutex_unlock(&_import_lock);
+  return _real_version(imgid);
 }
 
 static gboolean _is_snapshot(const dt_imgid_t imgid)
@@ -3964,6 +3971,11 @@ static struct
   int fw, fh;
 } _dn = { .cls = DT_RESTORE_SENSOR_CLASS_UNSUPPORTED, .imgid = NO_IMGID };
 
+// set while a denoise runs on its thread (_denoise_run), which has the
+// model's context to itself until then: neither a preview nor another
+// denoise may load or use it
+static gint _dn_busy = 0;
+
 static void _denoise_forget(void)
 {
   if(_dn.linear) dt_free_align(_dn.full);
@@ -4059,9 +4071,10 @@ static float *_denoise_cfa(const dt_image_t *meta)
 }
 
 // the denoised raw written to `out` as a DNG, a CFA one for Bayer sensors
-// and a demosaiced linear one for the rest
-static gboolean _denoise_write(const dt_restore_sensor_class_t cls, const dt_image_t *meta, const char *src,
-                               const char *out, const float strength, char **err)
+// and a demosaiced linear one for the rest. the linear one is demosaiced
+// through the history of `edit`, a snapshot of the raw's
+static gboolean _denoise_write(const dt_restore_sensor_class_t cls, const dt_image_t *meta, const dt_imgid_t edit,
+                               const char *src, const char *out, const float strength, char **err)
 {
   const dt_imgid_t imgid = meta->id;
   int w = meta->width, h = meta->height;
@@ -4081,7 +4094,7 @@ static gboolean _denoise_write(const dt_restore_sensor_class_t cls, const dt_ima
       return FALSE;
     }
   }
-  else if(dt_restore_raw_linear(_dn.ctx, imgid, &rgb, &w, &h, strength, NULL) || !rgb)
+  else if(dt_restore_raw_linear(_dn.ctx, edit, &rgb, &w, &h, strength, NULL) || !rgb)
   {
     dt_free_align(rgb);
     *err = g_strdup("the denoise model failed on this photo");
@@ -4151,6 +4164,11 @@ static gboolean _denoise_source(dt_image_t *meta, dt_restore_sensor_class_t *cls
   if(!_s.open)
   {
     *err = g_strdup("no image open");
+    return FALSE;
+  }
+  if(g_atomic_int_get(&_dn_busy))
+  {
+    *err = g_strdup("AI Denoise is still writing a DNG");
     return FALSE;
   }
   if(_s.unsaved && !_s.before && !_save(err)) return FALSE;
@@ -4298,56 +4316,164 @@ static gboolean _ai_denoise_preview(const float u, const float v, const int size
   return TRUE;
 }
 
-// the open raw denoised at `strength` (0-1) into <name>_raw-denoise.dng
-// beside it, darktable's default name (neural_restore/output_pattern), or
-// _1, _2... when taken
-static gboolean _ai_denoise(const float strength, JsonBuilder *b, char **err)
+// a denoise asked for: the raw as it was then, which its snapshot holds
+// (_snapshot), and the DNG to write
+typedef struct
 {
+  gint64 tag;
   dt_image_t meta;
   dt_restore_sensor_class_t cls;
-  if(!_denoise_source(&meta, &cls, err)) return FALSE;
-  const dt_imgid_t src = meta.id;
+  dt_imgid_t snap;
+  float strength;
+  char *path, *out;
+} _denoise_job_t;
 
-  char path[PATH_MAX] = { 0 };
-  gboolean from_cache = FALSE;
-  dt_image_full_path(src, path, sizeof(path), &from_cache);
-  gchar *dot = strrchr(path, '.');
-  gchar *base = g_strdup_printf("%.*s_raw-denoise", dot ? (int)(dot - path) : (int)strlen(path), path);
-  gchar *out = g_strdup_printf("%s.dng", base);
-  for(int k = 1; g_file_test(out, G_FILE_TEST_EXISTS) && k < 10000; k++)
-  {
-    g_free(out);
-    out = g_strdup_printf("%s_%d.dng", base, k);
-  }
-  g_free(base);
+static void _denoise_job_free(_denoise_job_t *job)
+{
+  _snapshot_remove(job->snap);
+  g_free(job->path);
+  g_free(job->out);
+  g_free(job);
+}
 
+// the DNG written, imported and given the raw's edit. it is written under
+// another name and renamed once whole, so a folder read meanwhile never
+// imports half of it
+static gboolean _denoise_do(_denoise_job_t *job, JsonBuilder *b, char **err)
+{
   const gint64 t0 = g_get_monotonic_time();
-  if(!_denoise_write(cls, &meta, path, out, CLAMP(strength, 0.0f, 1.0f), err))
+  gchar *part = g_strdup_printf("%s.part", job->out);
+  const gboolean written = _denoise_write(job->cls, &job->meta, job->snap, job->path, part, job->strength, err);
+  if(written && g_rename(part, job->out))
   {
-    g_free(out);
-    return FALSE;
+    g_unlink(part);
+    *err = g_strdup_printf("cannot write %s", job->out);
   }
-  const dt_imgid_t newid = _import(out);
+  g_free(part);
+  if(*err) return FALSE;
+  const dt_imgid_t newid = _import(job->out);
   if(!dt_is_valid_imgid(newid))
   {
-    *err = g_strdup_printf("cannot import %s", out);
-    g_free(out);
+    *err = g_strdup_printf("cannot import %s", job->out);
     return FALSE;
   }
-  _denoise_inherit(src, newid);
+  _denoise_inherit(job->snap, newid);
   if(_write_sidecar(newid))
   {
     *err = g_strdup("could not write the DNG's XMP sidecar");
-    g_free(out);
     return FALSE;
   }
-  _add_string(b, "path", out);
-  _add_string(b, "original", path);
+  _add_string(b, "path", job->out);
+  _add_string(b, "original", job->path);
   json_builder_set_member_name(b, "image");
   _image_json(b, newid, FALSE);
   json_builder_set_member_name(b, "seconds");
   json_builder_add_double_value(b, _ms_since(t0) / 1000.0);
-  g_free(out);
+  return TRUE;
+}
+
+// a tagged `ai_denoise` runs here once the main loop has taken its
+// snapshot, so the photo is edited while the model takes its minute. one
+// at a time (_dn_busy); the job then answers with its tag
+static GThreadPool *_denoise_pool = NULL;
+static GMutex _denoise_pool_lock;
+
+static void _denoise_run(gpointer data, gpointer user_data)
+{
+  _denoise_job_t *job = data;
+  FILE *out = user_data;
+  char *err = NULL;
+  JsonBuilder *b = json_builder_new();
+  json_builder_begin_object(b);
+  json_builder_set_member_name(b, "tag");
+  json_builder_add_int_value(b, job->tag);
+  const gboolean ok = _denoise_do(job, b, &err);
+  json_builder_set_member_name(b, "ok");
+  json_builder_add_boolean_value(b, ok);
+  if(!ok)
+  {
+    json_builder_set_member_name(b, "error");
+    json_builder_add_string_value(b, err ? err : "AI denoise failed");
+  }
+  json_builder_end_object(b);
+  _denoise_job_free(job);
+  g_atomic_int_set(&_dn_busy, 0);
+  _reply(out, b);
+  g_object_unref(b);
+  g_free(err);
+}
+
+// before darktable's caches go: a denoise under way finishes
+static void _denoise_wait(void)
+{
+  g_mutex_lock(&_denoise_pool_lock);
+  GThreadPool *pool = _denoise_pool;
+  _denoise_pool = NULL;
+  g_mutex_unlock(&_denoise_pool_lock);
+  if(pool) g_thread_pool_free(pool, FALSE, TRUE);
+}
+
+// the open raw denoised at `strength` (0-1) into <name>_raw-denoise.dng
+// beside it, darktable's default name (neural_restore/output_pattern), or
+// _1, _2... when taken. with a `tag`, the denoise goes to its thread and
+// this replies at once; the DNG's reply then comes with the tag
+static gboolean _ai_denoise(const float strength, const gint64 tag, JsonBuilder *b, char **err)
+{
+  _denoise_job_t *job = g_new0(_denoise_job_t, 1);
+  job->tag = tag;
+  job->strength = CLAMP(strength, 0.0f, 1.0f);
+  if(!_denoise_source(&job->meta, &job->cls, err))
+  {
+    g_free(job);
+    return FALSE;
+  }
+  job->snap = _snapshot(job->meta.id);
+  if(!dt_is_valid_imgid(job->snap))
+  {
+    g_free(job);
+    *err = g_strdup("cannot copy the photo's edit");
+    return FALSE;
+  }
+
+  char path[PATH_MAX] = { 0 };
+  gboolean from_cache = FALSE;
+  dt_image_full_path(job->meta.id, path, sizeof(path), &from_cache);
+  job->path = g_strdup(path);
+  gchar *dot = strrchr(path, '.');
+  gchar *base = g_strdup_printf("%.*s_raw-denoise", dot ? (int)(dot - path) : (int)strlen(path), path);
+  job->out = g_strdup_printf("%s.dng", base);
+  for(int k = 1; g_file_test(job->out, G_FILE_TEST_EXISTS) && k < 10000; k++)
+  {
+    g_free(job->out);
+    job->out = g_strdup_printf("%s_%d.dng", base, k);
+  }
+  g_free(base);
+
+  if(!tag)
+  {
+    const gboolean ok = _denoise_do(job, b, err);
+    _denoise_job_free(job);
+    return ok;
+  }
+  // the job is the thread's once queued
+  gchar *name = g_strdup(job->out);
+  g_mutex_lock(&_denoise_pool_lock);
+  const gboolean queued = _denoise_pool != NULL;
+  if(queued)
+  {
+    g_atomic_int_set(&_dn_busy, 1);
+    g_thread_pool_push(_denoise_pool, job, NULL);
+  }
+  g_mutex_unlock(&_denoise_pool_lock);
+  if(!queued)
+  {
+    _denoise_job_free(job);
+    g_free(name);
+    *err = g_strdup("the engine is stopping");
+    return FALSE;
+  }
+  _add_string(b, "path", name);
+  g_free(name);
   return TRUE;
 }
 
@@ -7494,7 +7620,9 @@ static void _handle(JsonObject *req, FILE *out)
   else if(!g_strcmp0(cmd, "ai_denoise"))
   {
 #ifdef HAVE_AI
-    if(!_ai_denoise(json_object_get_double_member_with_default(req, "strength", 1.0), b, &err)) goto fail;
+    if(!_ai_denoise(json_object_get_double_member_with_default(req, "strength", 1.0),
+                    json_object_get_int_member_with_default(req, "tag", 0), b, &err))
+      goto fail;
 #else
     err = g_strdup("this engine was built without AI (USE_AI=OFF)");
     goto fail;
@@ -7685,7 +7813,9 @@ static char _end_of_input[] = "";
 // client while it waits on a base's reply) stops that base at once. it gets
 // no reply. a tagged `thumb` goes to the thumbnail threads (_thumb_run), a
 // tagged `export` or `export_release` to the export thread (_export_run);
-// every other line goes to the main loop, in order
+// every other line goes to the main loop, in order. a tagged `ai_denoise`
+// is among them: the main loop answers it, then hands the denoise to its
+// thread (_denoise_run), which answers again with the tag
 static gpointer _read_requests(gpointer data)
 {
   GAsyncQueue *queue = data;
@@ -7799,6 +7929,9 @@ int main(int argc, char **argv)
 
   _thumb_pool = g_thread_pool_new(_thumb_run, out, _THUMB_THREADS, FALSE, NULL);
   _export_pool = g_thread_pool_new(_export_run, out, 1, FALSE, NULL);
+#ifdef HAVE_AI
+  _denoise_pool = g_thread_pool_new(_denoise_run, out, 1, FALSE, NULL);
+#endif
   GAsyncQueue *requests = g_async_queue_new();
   g_thread_unref(g_thread_new("requests", _read_requests, requests));
   gboolean quit = FALSE;
@@ -7826,6 +7959,9 @@ int main(int argc, char **argv)
 
   _thumb_wait();
   _export_wait();
+#ifdef HAVE_AI
+  _denoise_wait();
+#endif
   _close_session();
   _prefetch_wait();
   dt_cleanup();
