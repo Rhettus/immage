@@ -384,9 +384,10 @@ static gboolean _write_sidecar(const dt_imgid_t imgid)
 
 static dt_imgid_t _real_version(const dt_imgid_t imgid);
 
-// the main loop and the denoise thread (_denoise_run) both import. a film
-// roll and an image are each looked up, then inserted when missing, so two
-// imports into one folder at once could make two of either
+// the main loop, the import thread (_import_run) and the denoise thread
+// (_denoise_run) all import. a film roll and an image are each looked up,
+// then inserted when missing, so two imports into one folder at once could
+// make two of either
 static GMutex _import_lock;
 
 // file the image under an in-memory film roll, the way darktable-mcp does;
@@ -1873,6 +1874,53 @@ static void _import_files(JsonArray *files, JsonBuilder *b)
     if(dt_is_valid_imgid(imgid)) _image_versions_json(b, imgid);
   }
   json_builder_end_array(b);
+}
+
+// a tagged `import` runs here rather than in the main loop, so a folder
+// is read while the photo is edited and rendered, as darktable's own
+// import runs as a job beside its views (control/jobs/control_jobs.c).
+// one thread: _import_lock already keeps imports apart, and a batch's
+// reply is its progress
+static GThreadPool *_import_pool = NULL;
+static GMutex _import_pool_lock;
+
+static void _import_run(gpointer data, gpointer user_data)
+{
+  JsonParser *parser = data;
+  FILE *out = user_data;
+  JsonObject *req = json_node_get_object(json_parser_get_root(parser));
+  JsonBuilder *b = json_builder_new();
+  json_builder_begin_object(b);
+  json_builder_set_member_name(b, "tag");
+  json_builder_add_int_value(b, json_object_get_int_member(req, "tag"));
+  json_builder_set_member_name(b, "ok");
+  json_builder_add_boolean_value(b, TRUE);
+  _import_files(json_object_has_member(req, "files") ? json_object_get_array_member(req, "files") : NULL, b);
+  json_builder_end_object(b);
+  _reply(out, b);
+  g_object_unref(b);
+  g_object_unref(parser);
+}
+
+// FALSE once the pool has stopped; the request then gets no reply
+static gboolean _import_queue(JsonParser *parser)
+{
+  g_mutex_lock(&_import_pool_lock);
+  const gboolean queued = _import_pool != NULL;
+  if(queued) g_thread_pool_push(_import_pool, parser, NULL);
+  g_mutex_unlock(&_import_pool_lock);
+  return queued;
+}
+
+// before darktable's caches go: the batch under way finishes, those
+// waiting are dropped
+static void _import_wait(void)
+{
+  g_mutex_lock(&_import_pool_lock);
+  GThreadPool *pool = _import_pool;
+  _import_pool = NULL;
+  g_mutex_unlock(&_import_pool_lock);
+  if(pool) g_thread_pool_free(pool, TRUE, TRUE);
 }
 
 // the lighttable's thumbnail for an image: the embedded preview of an
@@ -7812,8 +7860,9 @@ static char _end_of_input[] = "";
 // stdin is read on a thread of its own, so a `cancel_base` (written by the
 // client while it waits on a base's reply) stops that base at once. it gets
 // no reply. a tagged `thumb` goes to the thumbnail threads (_thumb_run), a
-// tagged `export` or `export_release` to the export thread (_export_run);
-// every other line goes to the main loop, in order. a tagged `ai_denoise`
+// tagged `export` or `export_release` to the export thread (_export_run), a
+// tagged `import` to the import thread (_import_run); every other line goes
+// to the main loop, in order. a tagged `ai_denoise`
 // is among them: the main loop answers it, then hands the denoise to its
 // thread (_denoise_run), which answers again with the tag
 static gpointer _read_requests(gpointer data)
@@ -7849,6 +7898,12 @@ static gpointer _read_requests(gpointer data)
         {
           fprintf(stderr, "[engine] export %.*s\n", (int)strcspn(line->str, "\r\n"), line->str);
           if(_export_queue(parser)) parser = NULL;
+          taken = TRUE;
+        }
+        else if(!g_strcmp0(cmd, "import") && json_object_has_member(req, "tag"))
+        {
+          fprintf(stderr, "[engine] import %.*s\n", (int)MIN(300, strcspn(line->str, "\r\n")), line->str);
+          if(_import_queue(parser)) parser = NULL;
           taken = TRUE;
         }
       }
@@ -7929,6 +7984,7 @@ int main(int argc, char **argv)
 
   _thumb_pool = g_thread_pool_new(_thumb_run, out, _THUMB_THREADS, FALSE, NULL);
   _export_pool = g_thread_pool_new(_export_run, out, 1, FALSE, NULL);
+  _import_pool = g_thread_pool_new(_import_run, out, 1, FALSE, NULL);
 #ifdef HAVE_AI
   _denoise_pool = g_thread_pool_new(_denoise_run, out, 1, FALSE, NULL);
 #endif
@@ -7958,6 +8014,7 @@ int main(int argc, char **argv)
   if(!quit) _save_pending();
 
   _thumb_wait();
+  _import_wait();
   _export_wait();
 #ifdef HAVE_AI
   _denoise_wait();

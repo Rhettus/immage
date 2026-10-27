@@ -1018,6 +1018,40 @@ async function decisions(photo) {
       : after !== 2 ? `with a copy, the photo shows ${after} versions after the export` : null;
   });
 
+  // a folder is read on the engine's import thread while the photo is
+  // edited (main.c, _import_run), and an import on the main loop meanwhile,
+  // as `open` makes, waits for one file at most (_import_lock)
+  await decide("a folder imports beside editing", async () => {
+    const o = await open(fresh(photo));
+    await o.after(() => o.s.endBaseline());
+    const dir = join(args.work, "photos", String(++copies));
+    mkdirSync(dir, { recursive: true });
+    const files = Array.from({ length: 200 }, (_, k) => {
+      const to = join(dir, `${k}-${basename(photo)}`);
+      copyFileSync(photo, to, constants.COPYFILE_FICLONE);
+      return to;
+    });
+    // by the time each takes: replies that come together settle in no
+    // telling order. the batch takes about 1 s, an edit's frame 50 ms
+    const t0 = performance.now();
+    let end = null;
+    const importing = requestTagged({ cmd: "import", files }).finally(() => { end = performance.now() - t0; });
+    const f = await o.after(() => o.s.set("exposure", 0.5));
+    const framed = performance.now() - t0;
+    const one = (await request({ cmd: "import", files: [files.at(-1)] })).images[0];
+    const alone = performance.now() - t0;
+    const { images } = await importing;
+    await o.s.close();
+    const last = images.find((i) => i.path === files.at(-1));
+    const sidecars = readdirSync(dir).filter((n) => n.endsWith(".xmp"));
+    return !f ? "an edit made during the import rendered no frame"
+      : framed > end / 2 ? `an edit made during the import took ${framed.toFixed(0)} ms, the import ${end.toFixed(0)} ms`
+      : alone > end / 2 ? `an import on the main loop took ${alone.toFixed(0)} ms, the folder's ${end.toFixed(0)} ms`
+      : images.length !== files.length ? `the folder's ${files.length} photos imported as ${images.length}`
+      : last?.imgid !== one?.imgid ? `one file imported twice at once is images ${one?.imgid} and ${last?.imgid}`
+      : sidecars.length ? `the import wrote ${sidecars.length} sidecars` : null;
+  });
+
   // AI Denoise runs on a thread of the engine's while the photo is edited,
   // and the DNG gets the edit as it was when it was asked for (main.c,
   // _denoise_run). once, on the first raw: the model takes a minute on the

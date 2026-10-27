@@ -19,8 +19,6 @@ tauri-plugin-updater = { version = "2", default-features = false, features = ["r
 tauri-plugin-process = "2"
 # the main window's size, position and maximized state, kept across launches
 tauri-plugin-window-state = "2"
-# engine_background() waits without holding a thread; Tauri brings tokio in already
-tokio = { version = "1", features = ["time"] }
 # the SD card importer, cloned into the repo's immporter/ (app/scripts/fetch_immporter.sh)
 tauri-plugin-immporter = { path = "../../immporter/src-tauri/plugin" }
 # exports uploaded to Immich (immich_upload.rs); the same version the importer uses
