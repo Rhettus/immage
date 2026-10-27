@@ -933,16 +933,19 @@ async function decisions(photo) {
   });
 
   // a folder's photos show in the order they were taken; ties keep the
-  // name order, and photos without a capture time go last (user guide,
-  // library.md, The filmstrip and the grid)
+  // name order, a photo without a capture time goes by its file's, and
+  // photos with neither go last (user guide, library.md, The filmstrip and
+  // the grid)
   await decide("the filmstrip is in capture order", async () => {
     const { images: [e] } = await request({ cmd: "import", files: [fresh(photo)] });
-    const t = e?.exif.datetime ?? "";
+    // a camera whose clock was never set writes zeros, which read as no time
+    const t = e?.exif.datetime || e?.exif.file_datetime || "";
     if (!/^\d{4}:\d\d:\d\d \d\d:\d\d:\d\d/.test(t)) return `the engine gave capture time ${JSON.stringify(t)}`;
-    const at = (filename, datetime) => ({ ...e, filename, exif: { ...e.exif, datetime } });
-    const later = `${Number(t.slice(0, 4)) + 1}${t.slice(4)}`;
-    const got = byCaptureTime([at("a", ""), at("b", later), at("c", t), at("d", t)]).map((i) => i.filename).join("");
-    return got === "cdba" ? null : `sorted as ${got}, not cdba`;
+    const at = (filename, datetime, file_datetime) => ({ ...e, filename, exif: { ...e.exif, datetime, file_datetime } });
+    const later = `${Number(t.slice(0, 4)) + 1}${t.slice(4)}`, earlier = `${Number(t.slice(0, 4)) - 1}${t.slice(4)}`;
+    const got = byCaptureTime([at("a", ""), at("b", later), at("c", t), at("d", t), at("e", "", earlier)])
+      .map((i) => i.filename).join("");
+    return got === "ecdba" ? null : `sorted as ${got}, not ecdba`;
   });
 
   // on Wayland at 125%, where the window is drawn at 2× and shrunk, drag

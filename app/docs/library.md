@@ -49,8 +49,9 @@ folder and the last photo are remembered when you quit.
 
 The filmstrip under the photo shows the open folder, in the order the
 photos were taken. Photos taken at the same moment, such as a raw and its
-virtual copies, follow by file name, and photos without a capture time
-come last. Each thumbnail shows
+virtual copies, follow by file name. A photo whose camera recorded no
+capture time, as one with a flat clock battery, is placed by the date its
+file was last changed; photos with neither come last. Each thumbnail shows
 the file name and type (**ARW**, **JPG**, ...), and a small sliders mark
 beside the type once the photo is edited. Hover over it to see its rating,
 labels and reject button. Once a photo is rated or rejected, those show all
@@ -122,7 +123,8 @@ The toolbar under the filmstrip filters the folder:
     **Places › Norway** too.
   - **Captured**: photos taken between two dates. Type them, or pick a
     recent span (**Last 30 days**, **This month**, **Last year** and
-    others), a year, or a month of the year picked.
+    others), a year, or a month of the year picked. A photo with no
+    capture time goes by its file's date here too.
   - **Exposure**: ISO, aperture, focal length and shutter speed. Choose
     one to list the values the folder holds, and tick any, for example
     ISO 100 and 200.
