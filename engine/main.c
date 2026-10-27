@@ -3952,9 +3952,20 @@ typedef struct _ai_job_t
   int pw, ph;        // the image's size, which the model's result holds for
   uint8_t *rgb;      // the model's input, unless its last result holds
   int w, h;
+  GBytes *guide;     // the photo at _TRACE_SIZE, which outlines are traced at
+  int gw, gh;
 } _ai_job_t;
 
+// outlines are traced at this size, about twice the models' own, against
+// the photo rendered at it (_snap_edges). it is kept for the image at its
+// size as the models' results are, and the models' inputs are made from it
+#define _TRACE_SIZE 2048
+static struct { GBytes *rgb; int w, h, pw, ph; dt_imgid_t imgid; } _guide = { NULL, 0, 0, 0, 0, NO_IMGID };
+
 #define _SEG_MODEL "mask-object-sam21-small"
+// how far _snap_edges() may move an object's outline, in pixels at
+// _TRACE_SIZE: a cell of SAM's 256 decoder grid there is 8
+#define _SEG_SNAP 6.0f
 
 // the models run on the CPU: ONNX Runtime's CoreML provider compiles each
 // model for the Neural Engine on load, which took minutes for BiRefNet and
@@ -4018,6 +4029,188 @@ static gboolean _seg_ready(const _ai_job_t *job, char **err)
   return TRUE;
 }
 
+// a sw x sh grid of values spread over the image, scaled smoothly to w x h
+static float *_resample(const float *src, const int sw, const int sh, const int w, const int h)
+{
+  float *p = g_malloc((size_t)w * h * sizeof(float));
+  DT_OMP_FOR()
+  for(int j = 0; j < h; j++)
+    for(int i = 0; i < w; i++)
+    {
+      const float gx = (i + 0.5f) * sw / w - 0.5f, gy = (j + 0.5f) * sh / h - 0.5f;
+      const int x0 = CLAMP((int)floorf(gx), 0, sw - 1), y0 = CLAMP((int)floorf(gy), 0, sh - 1);
+      const int x1 = MIN(x0 + 1, sw - 1), y1 = MIN(y0 + 1, sh - 1);
+      const float ax = CLAMP(gx - x0, 0.0f, 1.0f), ay = CLAMP(gy - y0, 0.0f, 1.0f);
+      p[(size_t)j * w + i] = (1 - ay) * ((1 - ax) * src[y0 * sw + x0] + ax * src[y0 * sw + x1])
+                           + ay * ((1 - ax) * src[y1 * sw + x0] + ax * src[y1 * sw + x1]);
+    }
+  return p;
+}
+
+// the guide's RGB averaged down to fit `size` across, as _shown_rgb() would
+// have rendered it
+static uint8_t *_shrink_rgb(const uint8_t *in, const int W, const int H, const int size, int *w, int *h)
+{
+  const double scale = fmin(1.0, (double)size / MAX(W, H));
+  *w = MAX(1, (int)floor(scale * W));
+  *h = MAX(1, (int)floor(scale * H));
+  const int ow = *w, oh = *h;
+  uint8_t *out = g_malloc((size_t)3 * ow * oh);
+  DT_OMP_FOR()
+  for(int j = 0; j < oh; j++)
+  {
+    const int y0 = (int)((double)j * H / oh), y1 = MAX(y0 + 1, (int)((double)(j + 1) * H / oh));
+    for(int i = 0; i < ow; i++)
+    {
+      const int x0 = (int)((double)i * W / ow), x1 = MAX(x0 + 1, (int)((double)(i + 1) * W / ow));
+      int s[3] = { 0, 0, 0 };
+      for(int y = y0; y < y1; y++)
+        for(int x = x0; x < x1; x++)
+          for(int c = 0; c < 3; c++) s[c] += in[3 * ((size_t)y * W + x) + c];
+      const int n = (y1 - y0) * (x1 - x0);
+      for(int c = 0; c < 3; c++) out[3 * ((size_t)j * ow + i) + c] = (s[c] + n / 2) / n;
+    }
+  }
+  return out;
+}
+
+// the mean over a (2r+1)^2 window, in place, of the pixels inside the image
+static void _box_mean(float *const buf, float *const tmp, const int w, const int h, const int r)
+{
+  DT_OMP_FOR()
+  for(int y = 0; y < h; y++)
+  {
+    const float *in = buf + (size_t)y * w;
+    float *out = tmp + (size_t)y * w;
+    double s = 0.0;
+    for(int x = 0; x <= MIN(r, w - 1); x++) s += in[x];
+    for(int x = 0; x < w; x++)
+    {
+      out[x] = s / (MIN(w - 1, x + r) - MAX(0, x - r) + 1);
+      if(x + r + 1 < w) s += in[x + r + 1];
+      if(x - r >= 0) s -= in[x - r];
+    }
+  }
+  DT_OMP_FOR()
+  for(int x = 0; x < w; x++)
+  {
+    double s = 0.0;
+    for(int y = 0; y <= MIN(r, h - 1); y++) s += tmp[(size_t)y * w + x];
+    for(int y = 0; y < h; y++)
+    {
+      buf[(size_t)y * w + x] = s / (MIN(h - 1, y + r) - MAX(0, y - r) + 1);
+      if(y + r + 1 < h) s += tmp[(size_t)(y + r + 1) * w + x];
+      if(y - r >= 0) s -= tmp[(size_t)(y - r) * w + x];
+    }
+  }
+}
+
+// a model's probabilities (w x h, the guide's size) moved onto the photo's
+// own edges: a guided filter (He, Sun and Tang) with the photo's luminance
+// as the guide, so the 0.5 the outline is traced at falls on an edge. it
+// changes only the band where the model is unsure, widened by `radius`:
+// elsewhere the model's value stays. darktable's feathering (Edge Aware)
+// filters the whole mask instead, which reaches edges far from the
+// outline and leaves halos at weak ones
+static void _snap_edges(float *p, const int w, const int h, const uint8_t *guide, const float radius)
+{
+  const int r = MAX(1, (int)lroundf(radius));
+  const size_t n = (size_t)w * h;
+  float *I = g_malloc(n * sizeof(float)), *mI = g_malloc(n * sizeof(float)), *mp = g_malloc(n * sizeof(float));
+  float *mIp = g_malloc(n * sizeof(float)), *mII = g_malloc(n * sizeof(float));
+  float *band = g_malloc(n * sizeof(float)), *tmp = g_malloc(n * sizeof(float));
+  DT_OMP_FOR()
+  for(size_t k = 0; k < n; k++)
+  {
+    I[k] = (0.2126f * guide[3 * k] + 0.7152f * guide[3 * k + 1] + 0.0722f * guide[3 * k + 2]) / 255.0f;
+    mI[k] = I[k];
+    mp[k] = p[k];
+    mIp[k] = I[k] * p[k];
+    mII[k] = I[k] * I[k];
+    band[k] = p[k] > 0.02f && p[k] < 0.98f;
+  }
+  _box_mean(mI, tmp, w, h, r);
+  _box_mean(mp, tmp, w, h, r);
+  _box_mean(mIp, tmp, w, h, r);
+  _box_mean(mII, tmp, w, h, r);
+  _box_mean(band, tmp, w, h, r);
+  // eps sets how strong an edge must be to hold the outline: about 3% of
+  // the luminance range, as a standard deviation
+  const float eps = 1e-3f;
+  DT_OMP_FOR()
+  for(size_t k = 0; k < n; k++)
+  {
+    const float a = (mIp[k] - mI[k] * mp[k]) / (mII[k] - mI[k] * mI[k] + eps);
+    mIp[k] = a;
+    mII[k] = mp[k] - a * mI[k];
+  }
+  _box_mean(mIp, tmp, w, h, r);
+  _box_mean(mII, tmp, w, h, r);
+  DT_OMP_FOR()
+  for(size_t k = 0; k < n; k++)
+    if(band[k] > 0.0f) p[k] = CLAMP(mIp[k] * I[k] + mII[k], 0.0f, 1.0f);
+  g_free(I);
+  g_free(mI);
+  g_free(mp);
+  g_free(mIp);
+  g_free(mII);
+  g_free(band);
+  g_free(tmp);
+}
+
+// a mask's probabilities (w x h) as the paths _ai_object() replies with
+static void _paths_json(JsonBuilder *b, float *mask, const int mw, const int mh)
+{
+  const size_t len = (size_t)mw * mh;
+  // ras2forms traces where the mask is below the threshold, so it gets
+  // the mask inverted, as object.c gives it
+  for(size_t k = 0; k < len; k++) mask[k] = 1.0f - mask[k];
+  GList *signs = NULL;
+  // specks under the area potrace's default leaves out at 1024 pixels
+  // across, the size the models' outlines were traced at before
+  const double across = MAX(mw, mh) / 1024.0;
+  GList *forms = ras2forms(mask, mw, mh, NULL, 0.5f, MAX(1, (int)lround(50.0 * across * across)), 1.0, &signs);
+  json_builder_set_member_name(b, "paths");
+  json_builder_begin_array(b);
+  GList *sg = signs;
+  for(GList *l = forms; l; l = g_list_next(l), sg = sg ? g_list_next(sg) : NULL)
+  {
+    const dt_masks_form_t *f = l->data;
+    json_builder_begin_object(b);
+    json_builder_set_member_name(b, "hole");
+    json_builder_add_boolean_value(b, sg && GPOINTER_TO_INT(sg->data) == '-');
+    json_builder_set_member_name(b, "points");
+    json_builder_begin_array(b);
+    for(const GList *p = f->points; p; p = g_list_next(p))
+    {
+      const dt_masks_point_path_t *pt = p->data;
+      json_builder_begin_array(b);
+      json_builder_add_double_value(b, pt->corner[0] / mw);
+      json_builder_add_double_value(b, pt->corner[1] / mh);
+      json_builder_add_double_value(b, pt->ctrl1[0] / mw);
+      json_builder_add_double_value(b, pt->ctrl1[1] / mh);
+      json_builder_add_double_value(b, pt->ctrl2[0] / mw);
+      json_builder_add_double_value(b, pt->ctrl2[1] / mh);
+      json_builder_end_array(b);
+    }
+    json_builder_end_array(b);
+    json_builder_end_object(b);
+  }
+  json_builder_end_array(b);
+  g_list_free_full(forms, (GDestroyNotify)dt_masks_free_form);
+  g_list_free(signs);
+}
+
+// probabilities at the guide's size, snapped to its edges by `snap`
+// pixels at _TRACE_SIZE, traced into the reply's paths
+static void _trace_json(const _ai_job_t *job, JsonBuilder *b, float *p, const float snap)
+{
+  if(snap > 0.0f)
+    _snap_edges(p, job->gw, job->gh, g_bytes_get_data(job->guide, NULL),
+                snap * MAX(job->gw, job->gh) / _TRACE_SIZE);
+  _paths_json(b, p, job->gw, job->gh);
+}
+
 // select an object: `points` [[x, y, include], ...] and/or `box`
 // [x0, y0, x1, y1], in shown-image units. replies with its outline as
 // paths, each a list of [x, y, c1x, c1y, c2x, c2y] corners, holes marked
@@ -4060,43 +4253,10 @@ static gboolean _ai_object(const _ai_job_t *job, JsonBuilder *b, char **err)
     *err = g_strdup("the model produced no mask");
     return FALSE;
   }
-  // ras2forms traces where the mask is below the threshold, so it gets
-  // the mask inverted, as object.c gives it
-  const size_t len = (size_t)mw * mh;
-  for(size_t k = 0; k < len; k++) mask[k] = 1.0f - mask[k];
-  GList *signs = NULL;
-  GList *forms = ras2forms(mask, mw, mh, NULL, 0.5f, 0, 1.0, &signs);
+  float *p = _resample(mask, mw, mh, job->gw, job->gh);
   g_free(mask);
-
-  json_builder_set_member_name(b, "paths");
-  json_builder_begin_array(b);
-  GList *sg = signs;
-  for(GList *l = forms; l; l = g_list_next(l), sg = sg ? g_list_next(sg) : NULL)
-  {
-    const dt_masks_form_t *f = l->data;
-    json_builder_begin_object(b);
-    json_builder_set_member_name(b, "hole");
-    json_builder_add_boolean_value(b, sg && GPOINTER_TO_INT(sg->data) == '-');
-    json_builder_set_member_name(b, "points");
-    json_builder_begin_array(b);
-    for(const GList *p = f->points; p; p = g_list_next(p))
-    {
-      const dt_masks_point_path_t *pt = p->data;
-      json_builder_begin_array(b);
-      json_builder_add_double_value(b, pt->corner[0] / mw);
-      json_builder_add_double_value(b, pt->corner[1] / mh);
-      json_builder_add_double_value(b, pt->ctrl1[0] / mw);
-      json_builder_add_double_value(b, pt->ctrl1[1] / mh);
-      json_builder_add_double_value(b, pt->ctrl2[0] / mw);
-      json_builder_add_double_value(b, pt->ctrl2[1] / mh);
-      json_builder_end_array(b);
-    }
-    json_builder_end_array(b);
-    json_builder_end_object(b);
-  }
-  json_builder_end_array(b);
-  g_list_free_full(forms, (GDestroyNotify)dt_masks_free_form);
-  g_list_free(signs);
+  _trace_json(job, b, p, _SEG_SNAP);
+  g_free(p);
   return TRUE;
 }
 
@@ -4114,16 +4274,20 @@ typedef struct _mask_model_t
   int classes, out;
   // a depth model's output instead: one relative disparity per input pixel
   gboolean depth;
+  // how far _snap_edges() may move the outline, in pixels at _TRACE_SIZE:
+  // about the model's output cell there
+  float snap;
 } _mask_model_t;
 
 #define _IMAGENET { 0.485f, 0.456f, 0.406f }, { 0.229f, 0.224f, 0.225f }
 static const _mask_model_t _mask_models[] = {
   // BiRefNet lite: the salient object
-  { "mask-subject-birefnet-lite", 1024, _IMAGENET, 0, 0 },
-  // SegFormer B2 on ADE20K: 150 classes at a quarter of its input
-  { "mask-scene-segformer-b2", 512, _IMAGENET, 150, 128 },
+  { "mask-subject-birefnet-lite", 1024, _IMAGENET, 0, 0, FALSE, 4.0f },
+  // SegFormer B2 on ADE20K: 150 classes at a quarter of its input. it takes
+  // any input size; 1024 rather than its 512 halves its cells' size
+  { "mask-scene-segformer-b2", 768, _IMAGENET, 150, 192, FALSE, 11.0f },
   // Depth Anything V2 small: relative depth, at a multiple of its 14px patch
-  { "mask-depth-da2-small", 518, _IMAGENET, 0, 0, TRUE },
+  { "mask-depth-da2-small", 518, _IMAGENET, 0, 0, TRUE, 0.0f },
 };
 
 // what the client asks for: a model, and for a scene model the ADE20K
@@ -4241,9 +4405,9 @@ static float *_mask_probability(const _mask_model_t *mm, dt_ai_context_t *ctx, c
   return out;
 }
 
-// a kind's probability at the render's size (w x h), from its model's
-// cached output: the sum of its classes per grid cell, scaled up smoothly,
-// as a coarse grid would show as steps
+// a kind's probability at w x h, from its model's cached output: the sum
+// of its classes per grid cell, scaled up smoothly, as a coarse grid would
+// show as steps
 static float *_mask_kind_probability(const _mask_kind_t *mk, const int w, const int h)
 {
   const _mask_model_t *mm = &_mask_models[mk->model];
@@ -4256,57 +4420,10 @@ static float *_mask_kind_probability(const _mask_kind_t *mk, const int w, const 
   else
     for(int k = 0; k < 16 && mk->pick[k] >= 0; k++)
       for(size_t q = 0; q < plane; q++) grid[q] += out[mk->pick[k] * plane + q];
-  float *p = g_malloc((size_t)w * h * sizeof(float));
-  for(int j = 0; j < h; j++)
-    for(int i = 0; i < w; i++)
-    {
-      const float gx = (i + 0.5f) * O / w - 0.5f, gy = (j + 0.5f) * O / h - 0.5f;
-      const int x0 = CLAMP((int)floorf(gx), 0, O - 1), y0 = CLAMP((int)floorf(gy), 0, O - 1);
-      const int x1 = MIN(x0 + 1, O - 1), y1 = MIN(y0 + 1, O - 1);
-      const float ax = CLAMP(gx - x0, 0.0f, 1.0f), ay = CLAMP(gy - y0, 0.0f, 1.0f);
-      p[(size_t)j * w + i] = MIN(1.0f, (1 - ay) * ((1 - ax) * grid[y0 * O + x0] + ax * grid[y0 * O + x1])
-                                     + ay * ((1 - ax) * grid[y1 * O + x0] + ax * grid[y1 * O + x1]));
-    }
+  float *p = _resample(grid, O, O, w, h);
   g_free(grid);
+  for(size_t q = 0; q < (size_t)w * h; q++) p[q] = MIN(1.0f, p[q]);
   return p;
-}
-
-// a mask's probabilities as the paths _ai_object() replies with
-static void _paths_json(JsonBuilder *b, float *mask, const int mw, const int mh)
-{
-  const size_t len = (size_t)mw * mh;
-  for(size_t k = 0; k < len; k++) mask[k] = 1.0f - mask[k];
-  GList *signs = NULL;
-  GList *forms = ras2forms(mask, mw, mh, NULL, 0.5f, 0, 1.0, &signs);
-  json_builder_set_member_name(b, "paths");
-  json_builder_begin_array(b);
-  GList *sg = signs;
-  for(GList *l = forms; l; l = g_list_next(l), sg = sg ? g_list_next(sg) : NULL)
-  {
-    const dt_masks_form_t *f = l->data;
-    json_builder_begin_object(b);
-    json_builder_set_member_name(b, "hole");
-    json_builder_add_boolean_value(b, sg && GPOINTER_TO_INT(sg->data) == '-');
-    json_builder_set_member_name(b, "points");
-    json_builder_begin_array(b);
-    for(const GList *p = f->points; p; p = g_list_next(p))
-    {
-      const dt_masks_point_path_t *pt = p->data;
-      json_builder_begin_array(b);
-      json_builder_add_double_value(b, pt->corner[0] / mw);
-      json_builder_add_double_value(b, pt->corner[1] / mh);
-      json_builder_add_double_value(b, pt->ctrl1[0] / mw);
-      json_builder_add_double_value(b, pt->ctrl1[1] / mh);
-      json_builder_add_double_value(b, pt->ctrl2[0] / mw);
-      json_builder_add_double_value(b, pt->ctrl2[1] / mh);
-      json_builder_end_array(b);
-    }
-    json_builder_end_array(b);
-    json_builder_end_object(b);
-  }
-  json_builder_end_array(b);
-  g_list_free_full(forms, (GDestroyNotify)dt_masks_free_form);
-  g_list_free(signs);
 }
 
 // the job's kind, its model's output for the image as shown cached
@@ -4359,7 +4476,7 @@ static gboolean _ai_mask(const _ai_job_t *job, JsonBuilder *b, char **err)
   if(!mk) return FALSE;
   JsonArray *range = json_object_has_member(job->req, "range") ? json_object_get_array_member(job->req, "range") : NULL;
   const _mask_model_t *mm = &_mask_models[mk->model];
-  const int w = _mask_cache[mk->model].w, h = _mask_cache[mk->model].h;
+  const int w = job->gw, h = job->gh;
   float *p = _mask_kind_probability(mk, w, h);
   if(mm->depth)
   {
@@ -4371,7 +4488,7 @@ static gboolean _ai_mask(const _ai_job_t *job, JsonBuilder *b, char **err)
     for(size_t q = 0; q < (size_t)w * h; q++)
       p[q] = CLAMP(0.5f + 50.0f * fminf(p[q] - l, r - p[q]), 0.0f, 1.0f);
   }
-  _paths_json(b, p, w, h);
+  _trace_json(job, b, p, mm->snap);
   g_free(p);
   return TRUE;
 }
@@ -4403,6 +4520,7 @@ static void _ai_job_free(_ai_job_t *job)
 {
   json_object_unref(job->req);
   g_free(job->rgb);
+  if(job->guide) g_bytes_unref(job->guide);
   g_free(job);
 }
 
@@ -4442,13 +4560,36 @@ static _ai_job_t *_ai_job(JsonObject *req, char **err)
     ? _seg_imgid == job->imgid && _seg_pw == job->pw && _seg_ph == job->ph
     : _mask_cache[model].p && _mask_cache[model].imgid == job->imgid
       && _mask_cache[model].pw == job->pw && _mask_cache[model].ph == job->ph;
+  const gboolean guide_held = _guide.rgb && _guide.imgid == job->imgid && _guide.pw == job->pw && _guide.ph == job->ph;
   g_mutex_unlock(&_ai_cache_lock);
-  if(!held
-     && !(job->rgb = _shown_rgb(model < 0 ? _SEG_SIZE : _mask_models[model].size, TRUE, &job->w, &job->h, err)))
+  // a model that runs again sees the photo as it is now, as before the guide
+  if(!held || !guide_held)
   {
-    _ai_job_free(job);
-    return NULL;
+    int gw = 0, gh = 0;
+    uint8_t *rgb = _shown_rgb(_TRACE_SIZE, TRUE, &gw, &gh, err);
+    if(!rgb)
+    {
+      _ai_job_free(job);
+      return NULL;
+    }
+    g_mutex_lock(&_ai_cache_lock);
+    if(_guide.rgb) g_bytes_unref(_guide.rgb);
+    _guide.rgb = g_bytes_new_take(rgb, (size_t)3 * gw * gh);
+    _guide.w = gw;
+    _guide.h = gh;
+    _guide.pw = job->pw;
+    _guide.ph = job->ph;
+    _guide.imgid = job->imgid;
+    g_mutex_unlock(&_ai_cache_lock);
   }
+  g_mutex_lock(&_ai_cache_lock);
+  job->guide = g_bytes_ref(_guide.rgb);
+  job->gw = _guide.w;
+  job->gh = _guide.h;
+  g_mutex_unlock(&_ai_cache_lock);
+  if(!held)
+    job->rgb = _shrink_rgb(g_bytes_get_data(job->guide, NULL), job->gw, job->gh,
+                           model < 0 ? _SEG_SIZE : _mask_models[model].size, &job->w, &job->h);
   return job;
 }
 
