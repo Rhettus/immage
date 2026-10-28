@@ -90,13 +90,14 @@ def harness(args, photos, out):
 
 
 def perf(args, photos, folder):
-    """the benchmark's main scenarios, compared with the last verify run of
-    the same photos on this machine: (status, markdown)"""
+    """the benchmark's main scenarios on the CPU and on the app's GPU engine,
+    compared with the last verify run of the same photos on this machine:
+    (status, markdown)"""
     results = os.path.join(REPO, "benchmarking", "results")
     before = set(glob.glob(os.path.join(results, "*", "run.json")))
     names = ",".join(os.path.basename(p) for p in photos if os.path.exists(p))
     r = subprocess.run([sys.executable, "-I", os.path.join(REPO, "benchmarking", "bench.py"), "--engine", args.engine,
-                        "--corpus", args.corpus, "--images", names, "--only", PERF_SCENARIOS, "--opencl", "off",
+                        "--corpus", args.corpus, "--images", names, "--only", PERF_SCENARIOS, "--opencl", "app",
                         "--repeat", str(args.repeat), "--no-perf-overhead", "--note", "verify"], cwd=REPO)
     if r.returncode != 0:
         return "fail", "the benchmark stopped; see its output above\n"
