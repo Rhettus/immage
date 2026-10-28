@@ -191,15 +191,17 @@ pub fn set_resource_level(runtime: &Path, level: &str) -> Result<(), String> {
 
 // edits on the GPU, from Preferences: the engine's edit pipes get OpenCL as
 // well as the idle base, read as the engine starts like the resource level.
-// on by default on macOS, where an M4 rendered slider frames 2-4x faster on
-// it (benchmarking/bench.py); elsewhere off until measured on those GPUs
+// on by default: slider frames came 1.5-3x sooner on the GPU on an M4, and
+// on an RTX 4070 Ti SUPER under Windows and Linux (GUI benchmark). without
+// a usable GPU darktable runs them on the CPU anyway; a weak one is what
+// the switch is for
 const GPU_EDITS_FILE: &str = "gpu-edits";
 
 pub fn gpu_edits(runtime: &Path) -> bool {
     match std::fs::read_to_string(runtime.join(GPU_EDITS_FILE)).ok().as_deref().map(str::trim) {
         Some("on") => true,
         Some("off") => false,
-        _ => cfg!(target_os = "macos"),
+        _ => true,
     }
 }
 
@@ -529,11 +531,11 @@ mod tests {
     }
 
     #[test]
-    fn gpu_edits_default_by_platform() {
+    fn gpu_edits_on_by_default() {
         let root = std::env::temp_dir().join(format!("immage-gpu-edits-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
-        assert_eq!(gpu_edits(&root), cfg!(target_os = "macos"));
+        assert!(gpu_edits(&root));
         set_gpu_edits(&root, false).unwrap();
         assert!(!gpu_edits(&root));
         set_gpu_edits(&root, true).unwrap();
