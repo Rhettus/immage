@@ -74,12 +74,14 @@ impl Plugins {
 
     // each result whose original is among a folder's files moves to just
     // after it, or joins it there when it lives in a folder not being read
-    // (PureRAW's DxO subfolder). results deleted since are forgotten
+    // (PureRAW's DxO subfolder). results deleted since are forgotten, of
+    // this folder's originals only: a result on a share that has gone away
+    // blocks its stat in the kernel for good, and every folder after it
     pub fn beside_originals(&self, files: &mut Vec<PathBuf>) {
         let _io = self.io.lock().unwrap();
         let mut returns = self.load();
         let before = returns.len();
-        returns.retain(|r| Path::new(&r.result).is_file());
+        returns.retain(|r| !files.iter().any(|f| f == Path::new(&r.original)) || Path::new(&r.result).is_file());
         if returns.len() != before {
             let _ = self.store(&returns);
         }
@@ -694,7 +696,10 @@ mod tests {
         let p = Plugins::new(dir.join("returns.json"));
         let rec = |result: &Path| Return { original: a.to_string_lossy().into(), result: result.to_string_lossy().into(),
                                            plugin: "dxo".into(), applied: false };
-        p.store(&[rec(&ra), rec(&dir.join("DxO/gone.dng"))]).unwrap();
+        // another folder's result, on a share that may have gone away
+        let away = Return { original: "/Volumes/gone/c.orf".into(), result: "/Volumes/gone/c-DxO.dng".into(),
+                            plugin: "dxo".into(), applied: false };
+        p.store(&[rec(&ra), rec(&dir.join("DxO/gone.dng")), away]).unwrap();
         // the result joins its original, from a folder not read
         let mut files = vec![a.clone(), b.clone()];
         p.beside_originals(&mut files);
@@ -703,8 +708,9 @@ mod tests {
         let mut files = vec![a.clone(), b.clone(), ra.clone()];
         p.beside_originals(&mut files);
         assert_eq!(files, vec![a.clone(), ra.clone(), b.clone()]);
-        // a deleted result is forgotten
-        assert_eq!(p.load().len(), 1);
+        // a deleted result is forgotten, and another folder's left unchecked
+        let kept: Vec<String> = p.load().into_iter().map(|r| r.result).collect();
+        assert_eq!(kept, vec![ra.to_string_lossy().into_owned(), "/Volumes/gone/c-DxO.dng".to_string()]);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
