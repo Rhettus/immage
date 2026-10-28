@@ -8,7 +8,7 @@ last time this was run.
 
 ```bash
 cmake --build build                      # the engine under test
-python3 -I verify/run.py                 # about 5 minutes; exits 1 on a failure
+python3 -I verify/run.py                 # about 10 minutes; exits 1 on a failure
 python3 -I verify/run.py --accept        # after publishing a release: its edit becomes the reference
 ```
 
