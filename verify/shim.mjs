@@ -11,8 +11,9 @@ import { createInterface } from "node:readline";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
-// main.rs's FRAME_HEAD: six u32 of geometry, six f32 of timings, the u64 hash
-export const FRAME_HEAD = 56;
+// main.rs's FRAME_HEAD: six u32 of geometry, six f32 of timings, the u64
+// hash, the edits' f32 timing and padding
+export const FRAME_HEAD = 64;
 
 // the commands the Rust layer registers (main.rs, generate_handler!): one
 // it lacks fails in the app, as mask_rename did before 0.10.1
@@ -194,7 +195,13 @@ const COMMANDS = {
     }
     return request(req);
   },
-  render: async ({ width, height, scale, x, y, skip, draft, have }) => {
+  // a move's module edits go first, as set_params would send them
+  render: async ({ width, height, scale, x, y, skip, draft, have, edits }) => {
+    for (const e of edits ?? []) {
+      const set = { cmd: "set" };
+      for (const k of ["op", "params", "enabled", "after", "before", "instance"]) if (e[k] != null) set[k] = e[k];
+      await request(set);
+    }
     const req = { cmd: "render", width, height, rgba: frame };
     if (skip) req.skip = skip;
     if (draft) req.draft = true;

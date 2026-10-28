@@ -1029,6 +1029,29 @@ async function decisions(photo) {
     return wrong.length ? wrong.map((k) => `${k}: ${got[k]}, not ${want[k]}`).join("; ") : null;
   });
 
+  // a move's module edits go with its render, one call however many modules
+  // moved: a call cost 20 ms or more on Linux while the page drew (FINDINGS,
+  // "KDE on AMD at 100%"). its frame shows them
+  await decide("a move's edits go with its render", async () => {
+    const o = await open(fresh(photo));
+    const calls = [];
+    sent.hook = (cmd, a) => { calls.push({ cmd, ops: (a.edits ?? []).map((e) => e.op) }); };
+    let f;
+    try {
+      f = await o.after(() => o.s.setMany([["exposure", 0.5], ["vibrance", 30]]));
+    } finally {
+      sent.hook = null;
+    }
+    await o.s.close();
+    const sets = calls.filter((c) => c.cmd === "set_params").length;
+    const carried = calls.filter((c) => c.cmd === "render" && c.ops.length);
+    const ops = carried.flatMap((c) => c.ops).sort().join(", ");
+    return sets ? `${sets} set_params calls`
+      : carried.length !== 1 ? `${carried.length} renders carried edits`
+      : ops !== "colorbalancergb, exposure" ? `the render carried ${ops}`
+      : judge({ expect: { lum: 1 } }, compare(f, o.base), 1);
+  });
+
   // the Filters popup narrows a folder by camera, keywords (a keyword
   // with those under it) and exposure settings, which needs the engine to
   // list each photo's keywords with the folder (filter.ts; library.md,

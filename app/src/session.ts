@@ -853,7 +853,7 @@ export class Session {
   // render again (a frame of no size, with its hash)
   private async renderView(view: View, kind: Trace["kind"],
                            cycle?: Pick<Trace, "inputAt" | "edits" | "setStart">, every = false,
-                           have: Frame[] = []): Promise<Frame> {
+                           have: Frame[] = [], edits: ReturnType<Session["moduleEdit"]>[] = []): Promise<Frame> {
     const t0 = performance.now();
     const { width, height, scale, x, y } = view;
     const preview = this.previewMode();
@@ -863,7 +863,8 @@ export class Session {
     const hex = (f: Frame) => f.hash!.toString(16).padStart(16, "0");
     const buf = await renderFrame({ width, height, scale, x, y, skip, draft: !!view.draft,
                                     base: kind === "base" && !view.draft,
-                                    have: have.length ? have.map(hex) : null });
+                                    have: have.length ? have.map(hex) : null,
+                                    edits: edits.length ? edits : null });
     const head = new DataView(buf, 0, 24);
     const u = (k: number) => head.getUint32(4 * k, true);
     const hash = new DataView(buf).getBigUint64(48, true);
@@ -1146,10 +1147,12 @@ export class Session {
         const ops = [...this.dirty];
         this.dirty.clear();
         const cycle = perf.cycle();
-        for (const op of ops) {
+        // sent with the render rather than one call each: on Linux a call
+        // took 20 ms or more while the page drew (FINDINGS, "KDE on AMD")
+        const edits = ops.map((op) => {
           this.draftKeep.add(op.split("#")[0]);
-          await invoke("set_params", this.moduleEdit(op));
-        }
+          return this.moduleEdit(op);
+        });
         if (ops.length) this.changed();
         // the Before view is only for looking: nothing of it reaches the sidecar
         if (ops.length && !this.before) { this.unsaved = true; this.scheduleSave(); }
@@ -1157,15 +1160,15 @@ export class Session {
         // what the render shows is settled by now, whatever changes during it
         const before = !!this.before;
         const view = this.size(), key = this.frameKey(view, before);
-        const kept = view.draft ? undefined : this.current.get(key);
+        const kept = view.draft || edits.length ? undefined : this.current.get(key);
         if (kept) {
           this.keepFrame(key, kept);
           this.onFrame({ ...kept, before, trace: perf.cached(kept.width, kept.height) });
-        } else if (!view.draft && !before && this.copy && view.scale === this.copy.view.scale) {
+        } else if (!view.draft && !edits.length && !before && this.copy && view.scale === this.copy.view.scale) {
           this.onFrame({ ...this.cut(this.copy, view), before });
         } else {
           const have = view.draft ? [] : this.heldFor(key);
-          const f = await this.renderView(view, ops.length ? "edit" : "view", cycle, false, have);
+          const f = await this.renderView(view, ops.length ? "edit" : "view", cycle, false, have, edits);
           if (!view.draft) this.keepFrame(key, f);
           if (!before && !have.some((h) => h.hash === f.hash)) this.putAside = null;
           this.onFrame({ ...f, before });
