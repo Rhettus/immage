@@ -79,7 +79,7 @@ import { BUILTIN_PRESETS, loadLooks, loadNewPhotosPreset, loadPresets, NewPreset
 import { ASPECTS, CropOverlay, customAspect, findAspect, fitAspect, FULL, loadCustomAspects, pixelAspect,
          rememberCustomAspect, type Aspect, type CropRect } from "./CropTool";
 import { ShortcutsDialog } from "./Shortcuts";
-import { cmd, keys } from "./keys";
+import { cmd, fieldKeeps, keys } from "./keys";
 import { perf, percentiles, pingOnce, roundTrips, STAGES, webviewInfo } from "./perf";
 import { frameTransport } from "./sharedFrames";
 import { draftScale } from "./pixelRatio";
@@ -4206,14 +4206,13 @@ export default function App() {
 
   // Lightroom's keys: Z toggles fit and the navigator's level, the arrows
   // step through the folder, 0-5 rate, 6-9 toggle the red, yellow, green and
-  // blue labels, X rejects. typing in a field, or a focused slider's arrows, are left alone
+  // blue labels, X rejects. typing in a field, a focused slider's arrows, or a switch's Space, are left alone
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target;
       // a dialog owns the keyboard while it is open
       if (document.querySelector(".modal-backdrop")) return;
-      if (t instanceof HTMLTextAreaElement) return;
-      if (t instanceof HTMLInputElement && (t.type !== "range" || e.key.startsWith("Arrow"))) return;
+      if (fieldKeeps(t, e.key)) return;
       // the import screen has its own keys; Preferences still opens over it
       if (importOpenRef.current && !(cmd(e) && (e.key === "," || e.code === "Slash"))) return;
       if (cmd(e) && e.shiftKey && e.code === "KeyP") {

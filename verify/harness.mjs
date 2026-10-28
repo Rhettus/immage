@@ -73,6 +73,7 @@ const { withModel } = await import("../app/src/aiModel.ts");
 const m = await import("../app/src/manifest.ts");
 const { canMerge } = await import("../app/src/localMerge.ts");
 const { aiRefine, overlayPixels, overlayShown, overlayStep, readsBackdrop } = await import("../app/src/masks.ts");
+const { fieldKeeps } = await import("../app/src/keys.ts");
 const { ILLUMINANT_D } = await import("../app/src/wb.ts");
 const { autoTone } = await import("../app/src/autoTone.ts");
 const { dueIn } = await import("../app/src/activity.ts");
@@ -1895,6 +1896,23 @@ async function decisions(photo) {
       ["the next stroke shows it", overlayShown(steps(off, true, "adjust", "stroke"), true), true],
       ["no tool in hand, O shows it", overlayShown(steps(off, false, "key"), false), true],
       ["no tool in hand, an adjustment leaves it on", overlayShown(steps({ on: true, hold: null }, false, "adjust"), false), true],
+    ];
+    const wrong = cases.filter(([, got, want]) => got !== want).map(([label]) => label);
+    return wrong.length ? `not so: ${wrong.join(", ")}` : null;
+  });
+
+  // a switch clicked last, Fit to Background or Invert, keeps only its
+  // Space: it kept every key, so O did nothing and the overlay stayed up
+  // (keys.ts, fieldKeeps)
+  await decide("O works after a switch is clicked", async () => {
+    const box = { tagName: "INPUT", type: "checkbox" }, slider = { tagName: "INPUT", type: "range" };
+    const cases = [
+      ["a switch leaves O", fieldKeeps(box, "o"), false],
+      ["a switch keeps Space", fieldKeeps(box, " "), true],
+      ["a slider keeps its arrows", fieldKeeps(slider, "ArrowLeft"), true],
+      ["a slider leaves O", fieldKeeps(slider, "o"), false],
+      ["a text field keeps O", fieldKeeps({ tagName: "INPUT", type: "text" }, "o"), true],
+      ["a text area keeps O", fieldKeeps({ tagName: "TEXTAREA" }, "o"), true],
     ];
     const wrong = cases.filter(([, got, want]) => got !== want).map(([label]) => label);
     return wrong.length ? `not so: ${wrong.join(", ")}` : null;
