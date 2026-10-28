@@ -1089,8 +1089,16 @@ async fn open_folder(app: AppHandle, state: State<'_, AppState>, path: String, r
                                                     "known": known }));
     }
     let dir = PathBuf::from(&path);
-    if !dir.is_dir() {
-        return Err(format!("folder not found: {path}"));
+    let there = {
+        let dir = dir.clone();
+        tauri::async_runtime::spawn_blocking(move || volumes::answering(&dir).then(|| dir.is_dir()))
+            .await
+            .map_err(|e| e.to_string())?
+    };
+    match there {
+        None => return Err(format!("{path} is not answering: its drive or network share may be disconnected")),
+        Some(false) => return Err(format!("folder not found: {path}")),
+        Some(true) => {}
     }
     let skip: HashSet<PathBuf> = skip.unwrap_or_default().into_iter().map(PathBuf::from).collect();
     let (mut files, listed) = tauri::async_runtime::spawn_blocking(move || {
@@ -1241,9 +1249,13 @@ fn is_package(_path: &Path) -> bool {
 
 // whether a file or folder is still there, as one moved or deleted outside
 // the app is not
+// a folder on a drive that is not answering counts as there, so it is not
+// taken for one moved or deleted
 #[tauri::command]
-fn path_exists(path: String) -> bool {
-    Path::new(&path).exists()
+async fn path_exists(path: String) -> bool {
+    tauri::async_runtime::spawn_blocking(move || !volumes::answering(Path::new(&path)) || Path::new(&path).exists())
+        .await
+        .unwrap_or(true)
 }
 
 // a path dropped on the window: "dir", "file", or none when it is gone
@@ -1466,6 +1478,9 @@ fn subdirs(path: &Path) -> Vec<PathBuf> {
 #[tauri::command]
 async fn list_subfolders(path: String) -> Vec<SubFolder> {
     tauri::async_runtime::spawn_blocking(move || {
+        if !volumes::answering(Path::new(&path)) {
+            return Vec::new();
+        }
         let mut list: Vec<SubFolder> = subdirs(Path::new(&path))
             .into_iter()
             .map(|p| SubFolder {

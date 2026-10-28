@@ -1001,6 +1001,9 @@ input.switch:disabled { cursor: default; opacity: 0.4; }
 }
 .folders .folder-volume:hover { color: var(--text); }
 .folders .folder-volume .host { flex: none; font-weight: 400; opacity: 0.7; }
+/* green while the drive answers, red while it doesn't (volumes.rs, answering) */
+.folders .drive-dot { width: 6px; height: 6px; flex: none; margin: 0 2px; border-radius: 50%; background: #5fd068; }
+.folders .drive-dot.off { background: #ff6b6b; }
 .folders .folder-row.offline { opacity: 0.45; }
 /* the open photo's folder, when the filmstrip shows another (a parent, with
    its subfolders) */
