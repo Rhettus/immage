@@ -1,8 +1,8 @@
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index e2da2f9136..50069e10e5 100644
+index 938c3172bd..316d298dac 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
-@@ -1229,6 +1229,12 @@ if(USE_MCP)
+@@ -1264,6 +1264,12 @@ if(USE_MCP)
    add_subdirectory(mcp)
  endif()
  
@@ -15,3 +15,26 @@ index e2da2f9136..50069e10e5 100644
  # have a command line utility to generate all the thumbnails
  add_subdirectory(generate-cache)
  
+diff --git a/src/develop/pixelpipe_hb.c b/src/develop/pixelpipe_hb.c
+index a7e5b88a37..e3a650f309 100644
+--- a/src/develop/pixelpipe_hb.c
++++ b/src/develop/pixelpipe_hb.c
+@@ -2550,13 +2550,16 @@ static gboolean _dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe,
+ 
+   */
+   const gboolean has_focus = module == dt_dev_gui_module() && module->enabled;
+-  const gboolean last_history = darktable.develop->history_last_module == module;
++  // a pipe without a gui (Immage's engine) has no focus, so its own
++  // develop's last edited module is the hint
++  const gboolean last_history = darktable.develop->history_last_module == module
++                                || (!dev->gui_attached && dev->history_last_module == module);
+   const gboolean iop_wanting = module->flags() & IOP_FLAGS_WRITE_PIPECACHE_IN;
+   const gboolean important_input =
+           dt_pipe_no_mask_display(pipe)
+             && dt_pipe_is_screen(pipe)
+             && !dt_pipe_is_fast(pipe)
+-            && dev->gui_attached
++            && (dev->gui_attached || last_history)
+             && (has_focus || last_history || iop_wanting);
+ 
+ #ifdef HAVE_OPENCL

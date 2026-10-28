@@ -28,13 +28,98 @@ turns a mask's shapes into a darktable group named `immage: <mask>`. Brush,
 linear and radial gradients become darktable's brush, gradient and ellipse
 forms. AI selections (Object, Subject, Sky, Depth Range and the rest) are
 traced into path forms, so the model is needed only when the selection is
-made, never to render.
+made, never to render. A Subject, People or Object selection over a plain,
+colorful background is built so its feather stops at that color; see
+[Selections over a plain background](#selections-over-a-plain-background).
 
 Color and luminance ranges are not shapes in darktable. They are a module's
 parametric (blendif) mask, so the engine keeps each mask's ranges and sets
 them on every instance the mask drives (`_apply_ranges`). The refinements
 (feather, blur, detail, contrast) are blend parameters in the same way. The
 mask's Opacity slider is each instance's opacity.
+
+## Selections over a plain background
+
+darktable feathers a path outward only. An AI selection's outline is
+therefore traced half a feather inside the subject's edge (`_trace_json`
+in [main.c](../../../engine/main.c)), so the feather fades out about half
+a feather beyond it. Lift that by a stop and the fade shows on the
+background as a halo, worst over water or sky.
+
+Where the background is one plain, vivid color that the subject's edge
+stands clear of, the engine builds the selection so the feather stops at
+that color instead:
+
+```
+Subject, People or Object, adding to a mask
+│
+├─ not the mask's first shape (the app asks only when it starts one),
+│  or taking away from a mask ──────────────────────► default outline
+├─ Fit to Background turned off ───────────────────► default outline
+│
+└─ _backdrop() looks at a ring 0.3-1.2% of the long side outside it
+   │
+   ├─ under 75% of the ring colorful (Cz/Jz ≥ 0.1) and near
+   │  one hue ─────────────────────────────────────────► default outline
+   ├─ the ring's median Cz/Jz under 0.25 (pale)  ──────► default outline
+   ├─ over 10% of the band just outside the edge dull
+   │  or near the window's ends (unclear) ─────────────► default outline
+   ├─ the hue window crosses hz 0/1 ───────────────────► default outline
+   │
+   └─ otherwise ───────────────────────────────────────► backdrop mask
+```
+
+The **default outline** is the outline half a feather inside the edge, as
+before.
+
+The **backdrop mask** is three members in darktable's group, folded in
+order (`_object_shapes`):
+
+1. the outline on the edge, so its feather goes over the edge
+2. ∩ a parametric shape that takes the background's hue window out
+   (`_backdrop_shape`), so that feather stops at the color
+3. ∪ the outline a whole feather inside the edge, whose feather ends at the
+   edge, so the subject keeps its mask wherever its own colors match the
+   background (a blue-shaded white chest over blue water)
+
+That is max(inset, min(edge, not background)). It is never below the
+inset outline, so the hue cannot cut holes in the subject, and outside the
+edge it is the edge outline's feather less the background color.
+
+The app keeps the edge outline, the window and the default outline on
+the object shape as `backdrop` (`ObjectShape` in
+[masks.ts](../../src/masks.ts)), and the engine reads them back from the
+shapes' names (`#k.i~` for the edge paths, `#k~` for the hue shape,
+`#k.i^` for the default outline). The shape's Feather section has a
+**Fit to Background** switch, on by default: off, the engine uses the
+default outline and names the hue shape `#k~off`. Whichever members are
+not in use are kept with darktable's disabled state, which its group
+passes over, so the switch, or moving the shape first in its mask, comes
+back to them after the photo is opened again.
+
+The app's own overlay drawn from the paths would show the inset outline
+alone, missing the rim and any part thinner than two feathers, such as a
+beak, so a mask using its backdrop shows the engine's `mask_map`
+(`readsBackdrop`), as a refined mask does.
+
+Each limit stands for a failure seen on a test photo:
+
+| Limit | What fails without it |
+|---|---|
+| cover 75% | a busy background: the edge outline's wider feather goes through wherever the ring is another color |
+| vivid 0.25 | a child before a cream wall: the faint hue drops in and out of the window with the noise, speckling the edge |
+| clear 10% | a face before green leaves, hair over pale bokeh: the same speckle, from the pixels at the window's ends |
+
+On a stilt over water, the mask 1-3 px outside the edge fell from 49% to
+31% and 4-10 px from 16% to 11%, while the rim 1-3 px inside rose from 70%
+to 80%. Blurring or feathering the hue shape cleared the speckle but gave
+the halo back, which is why the limits keep such photos out instead.
+
+darktable evaluates the hue shape with the module's own `mask_combine`
+(`masks/parametric.c`). An inverted mask with ranges (`DEVELOP_COMBINE_INV`)
+would invert the shape too, so `_backdrop_polarity` flips its channel to
+match. Such a mask shares no instance (`canMerge`), so every instance of it
+agrees.
 
 ## The adjustments: one instance per module
 

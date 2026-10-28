@@ -21,7 +21,7 @@ export type Timing = { label: string; kind: "module" | "colorspace" | "other"; m
 // in the order they happen
 export const STAGES = [
   "queue",     // the edit waiting for the render before it to finish
-  "set",       // set_params, one per module changed
+  "set",       // the module edits sent with the render, one set each (main.rs, render)
   "lock",      // waiting for the engine behind another command
   "pipeline",  // darktable's pixelpipe
   "write",     // the engine writing the frame, and its reply
@@ -58,7 +58,7 @@ export type Trace = {
   setEnd: number;
   r0: number;                  // the render invoke made
   r1: number;                  // and back
-  rust: number[];              // lock, request, pipeline, write, read, probe (main.rs, render)
+  rust: number[];              // lock, request, pipeline, write, read, probe, set (main.rs, render)
   width: number;
   height: number;
   drawStart?: number;
@@ -170,6 +170,7 @@ class Perf {
     const r1 = performance.now();
     const head = new DataView(buf, 24, 24);
     const rust = [0, 1, 2, 3, 4, 5].map((k) => head.getFloat32(4 * k, true));
+    rust.push(new DataView(buf).getFloat32(56, true));
     const trace: Trace = { ...t, r1, rust, histogram: 0, modules: [] };
     if (this.enabled) {
       // set in Rust before the frame came back, so already this frame's; the
@@ -183,7 +184,7 @@ class Perf {
   cached(width: number, height: number): Trace {
     const now = performance.now();
     return { kind: "view", draft: false, inputAt: null, edits: 0, setStart: now, setEnd: now, r0: now, r1: now,
-             rust: [0, 0, 0, 0, 0, 0], width, height, histogram: 0, modules: [] };
+             rust: [0, 0, 0, 0, 0, 0, 0], width, height, histogram: 0, modules: [] };
   }
 
   drawStart(t: Trace | undefined) {
@@ -208,17 +209,17 @@ class Perf {
     const label = this.label;
     window.requestAnimationFrame(() => {
       const paint = performance.now();
-      const [lock, request, pipeline, write, read, probe] = t.rust;
+      const [lock, request, pipeline, write, read, probe, sent] = t.rust;
       const start = t.kind === "edit" ? (t.inputAt ?? t.setStart) : t.setStart;
       const stages: Record<Stage, number> = {
         queue: t.kind === "edit" && t.inputAt !== null ? t.setStart - t.inputAt : 0,
-        set: t.setEnd - t.setStart,
+        set: t.setEnd - t.setStart + sent,
         lock,
         pipeline,
         write: Math.max(0, request - pipeline),
         read,
         probe,
-        ipc: Math.max(0, t.r1 - t.r0 - lock - request - read - probe),
+        ipc: Math.max(0, t.r1 - t.r0 - lock - sent - request - read - probe),
         handoff: t.drawStart! - t.r1,
         draw: drawEnd - t.drawStart! - t.histogram,
         histogram: t.histogram,

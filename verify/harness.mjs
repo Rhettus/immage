@@ -67,16 +67,17 @@ globalThis.ImageData = class {
 };
 
 const args = JSON.parse(process.argv[2]);
-const { startEngine, stopEngine, request, requestTagged, invoke, sent, models, screen, FRAME_HEAD } = await import(SHIM);
-const { Session } = await import("../app/src/session.ts");
+const { startEngine, stopEngine, request, requestTagged, invoke, sent, models, screen, enginePid, FRAME_HEAD } = await import(SHIM);
+const { Session, framePlace } = await import("../app/src/session.ts");
 const { withModel } = await import("../app/src/aiModel.ts");
 const m = await import("../app/src/manifest.ts");
 const { canMerge } = await import("../app/src/localMerge.ts");
-const { aiRefine, overlayPixels, overlayShown, overlayStep } = await import("../app/src/masks.ts");
+const { aiRefine, overlayPixels, overlayShown, overlayStep, readsBackdrop } = await import("../app/src/masks.ts");
+const { fieldKeeps } = await import("../app/src/keys.ts");
 const { ILLUMINANT_D } = await import("../app/src/wb.ts");
 const { autoTone } = await import("../app/src/autoTone.ts");
 const { dueIn } = await import("../app/src/activity.ts");
-const { byCaptureTime } = await import("../app/src/library.ts");
+const { byCaptureTime, withKnown } = await import("../app/src/library.ts");
 const { NO_FILTER, exposureLabel, facetsWithin, passes } = await import("../app/src/filter.ts");
 const z = await import("../app/src/zones.ts");
 const nd = await import("../app/src/negadoctor.ts");
@@ -116,6 +117,8 @@ async function open(path) {
   const o = { view: VIEW };
   const s = await Session.open(path, null, () => o.view, (f) => { last = f; }, (e) => errors.push(e));
   s.previewMode = () => "quality";
+  // drafts at the view's size, however long they take
+  s.draftLimits = () => ({ target: 60, smallest: 1 });
   if (!s.wasEdited) {
     const defaults = [];
     if (s.values.tm_mode !== 1) defaults.push(["tm_mode", 1]);
@@ -548,6 +551,51 @@ async function fixes(photo) {
       : `the frame changed by ${p1.toFixed(2)} at +1 and ${p10.toFixed(2)} at +10, ${n1.toFixed(2)} at -1 and ${n10.toFixed(2)} at -10`;
   });
 
+  // 0.39.0: the photo moved when a slider was let go. the app drew a frame
+  // as if darktable's pixels showed the image at their middles, where they
+  // show it at their corners, and took a fitted frame's scale from its
+  // rounded width (session.ts, framePlace): the half-size draft sat half a
+  // pixel or more off the full frame. here the draft is drawn as the app
+  // draws it, and the full frame must match it best unshifted
+  await fix("a drag's draft lines up with the full frame", async () => {
+    const o = await open(fresh(photo));
+    try {
+      const full = await o.after(() => o.s.set("exposure", 0.3));
+      o.view = { width: VIEW.width / 2, height: VIEW.height / 2, draft: true };
+      const draft = await o.after(() => {});
+      const z = Math.min(1, VIEW.width / full.fullWidth, VIEW.height / full.fullHeight);
+      const pf = framePlace(full, z), pd = framePlace(draft, z);
+      const luma = (f, i) => 0.2126 * f.pixels[i] + 0.7152 * f.pixels[i + 1] + 0.0722 * f.pixels[i + 2];
+      // the draft at a screen point, bilinear as the web view enlarges it
+      const at = (sx, sy) => {
+        const u = Math.min(Math.max((sx - pd.x) / pd.k - 0.5, 0), draft.width - 1.001);
+        const v = Math.min(Math.max((sy - pd.y) / pd.k - 0.5, 0), draft.height - 1.001);
+        const i = Math.floor(u), j = Math.floor(v), a = u - i, b = v - j;
+        const p = (x, y) => luma(draft, 4 * (y * draft.width + x));
+        return (1 - b) * ((1 - a) * p(i, j) + a * p(i + 1, j)) + b * ((1 - a) * p(i, j + 1) + a * p(i + 1, j + 1));
+      };
+      const mad = (dx, dy) => {
+        let n = 0, sum = 0;
+        for (let y = 16; y < full.height - 16; y++) for (let x = 16; x < full.width - 16; x++) {
+          const sx = pf.x + (x + 0.5) * pf.k + dx, sy = pf.y + (y + 0.5) * pf.k + dy;
+          sum += Math.abs(luma(full, 4 * (y * full.width + x)) - at(sx, sy));
+          n++;
+        }
+        return sum / n;
+      };
+      let best = { dx: 0, dy: 0, d: mad(0, 0) };
+      for (const dx of [-0.5, 0, 0.5]) for (const dy of [-0.5, 0, 0.5]) {
+        const d = mad(dx, dy);
+        if (d < best.d) best = { dx, dy, d };
+      }
+      return !best.dx && !best.dy ? null
+        : `the draft matches the full frame best moved ${best.dx}, ${best.dy} screen pixels`;
+    } finally {
+      o.view = VIEW;
+      await o.s.close();
+    }
+  });
+
   // 0.34.0: darktable's AI models were unpacked with the system's unzip,
   // which Arch and CachyOS do not install, so AI Denoise and Select Object
   // never got theirs. the engine unpacks now, into a models folder reached
@@ -791,6 +839,36 @@ async function fixes(photo) {
     return moved > 0.01 ? `after a zoomed mask map, ${(100 * moved).toFixed(0)}% of the range map changed` : null;
   });
 
+  // 0.39.0: an AI selection's model stayed loaded for the engine's life,
+  // and ONNX Runtime keeps a session's peak working memory until the
+  // session goes: after Select Subject, 7-10 GB resident and an 18 GB
+  // footprint for good. the engine lets the models go 30 s after their
+  // last use (main.c, _ai_release)
+  const BIREFNET = "mask-subject-birefnet-lite", IDLE = "AI models let go when idle";
+  if (photo === args.photos[0]) {
+    if (process.platform === "win32" || !args.models || !existsSync(join(args.models, BIREFNET, "config.json"))) {
+      record({ check: "fixes", photo: basename(photo), id: IDLE, status: "skip",
+               detail: process.platform === "win32" ? "measured with ps, which Windows lacks"
+                 : `no ${BIREFNET} in build/ai-models: use Select Subject once in a dev build` });
+    } else await fix(IDLE, async () => {
+      await stopEngine();
+      startEngine(args.engine, join(args.work, "ai-engine"), args.models);
+      try {
+        const rss = () => Number(spawnSync("ps", ["-o", "rss=", "-p", String(enginePid())]).stdout.toString().trim()) / 1024;
+        await request({ cmd: "open", path: fresh(photo), imgid: -1 });
+        await invoke("ai_model_ensure", { id: BIREFNET });
+        if (!(await invoke("ai_mask", { kind: "subject" }))?.length) return "Select Subject found nothing";
+        const ran = rss();
+        await new Promise((r) => setTimeout(r, 40000));
+        const idle = rss();
+        return idle > ran / 2
+          ? `40 s after Select Subject, the engine still holds ${idle.toFixed(0)} MB of the ${ran.toFixed(0)} MB it ran with` : null;
+      } finally {
+        await restart();
+      }
+    });
+  }
+
   // 0.38.0: an AI selection's overlay was drawn from a copy of its outline
   // 512 px across, so zoomed in its edge came in steps, and it left out
   // darktable's default feather. it is drawn at the overlay's own size now
@@ -916,7 +994,7 @@ async function decisions(photo) {
 
   // the new-photo defaults never mark a photo edited, in Immage or in
   // darktable, and apply once; the user's first change does mark it
-  // (code-map.md, Engine; backlog.md, 0.23.2)
+  // (architecture.md, Engine; backlog.md, 0.23.2)
   await decide("new-photo defaults leave it unedited", async () => {
     const path = fresh(photo);
     let o = await open(path);
@@ -948,6 +1026,25 @@ async function decisions(photo) {
     return got === "ecdba" ? null : `sorted as ${got}, not ecdba`;
   });
 
+  // a folder read before shows its photos as the last read found them,
+  // until this one reaches them, and in the order the read ends with: a
+  // known cell keeps its place when its photo is read (architecture.md,
+  // Import a folder), whatever the capture times and however far it got
+  await decide("a known photo keeps its place when read", async () => {
+    const { images: [e] } = await request({ cmd: "import", files: [fresh(photo)] });
+    const t = e?.exif.datetime || e?.exif.file_datetime || "";
+    if (!t) return "the engine gave no capture time";
+    const at = (name, datetime) => ({ ...e, filename: name, path: `/folder/${name}`, version: 0,
+                                      exif: { ...e.exif, datetime, file_datetime: "" } });
+    const listed = [at("z", t), at("y", ""), at("x", t), at("w", ""), at("v", t)];
+    const end = byCaptureTime(listed).map((i) => i.filename).join("");
+    for (let read = 0; read <= listed.length; read++) {
+      const got = withKnown(byCaptureTime(listed.slice(0, read)), listed.slice(read)).map((i) => i.filename).join("");
+      if (got !== end) return `with ${read} read, shown as ${got}, then ${end}`;
+    }
+    return null;
+  });
+
   // on Wayland at 125%, where the window is drawn at 2× and shrunk, drag
   // drafts are sized for the screen: smaller by 1.25 over 2. not the frame
   // after letting go, which came out jagged (FINDINGS, "Drag drafts at the
@@ -977,6 +1074,29 @@ async function decisions(photo) {
                    "preference off": 1 };
     const wrong = Object.keys(want).filter((k) => got[k] !== want[k]);
     return wrong.length ? wrong.map((k) => `${k}: ${got[k]}, not ${want[k]}`).join("; ") : null;
+  });
+
+  // a move's module edits go with its render, one call however many modules
+  // moved: a call cost 20 ms or more on Linux while the page drew (FINDINGS,
+  // "KDE on AMD at 100%"). its frame shows them
+  await decide("a move's edits go with its render", async () => {
+    const o = await open(fresh(photo));
+    const calls = [];
+    sent.hook = (cmd, a) => { calls.push({ cmd, ops: (a.edits ?? []).map((e) => e.op) }); };
+    let f;
+    try {
+      f = await o.after(() => o.s.setMany([["exposure", 0.5], ["vibrance", 30]]));
+    } finally {
+      sent.hook = null;
+    }
+    await o.s.close();
+    const sets = calls.filter((c) => c.cmd === "set_params").length;
+    const carried = calls.filter((c) => c.cmd === "render" && c.ops.length);
+    const ops = carried.flatMap((c) => c.ops).sort().join(", ");
+    return sets ? `${sets} set_params calls`
+      : carried.length !== 1 ? `${carried.length} renders carried edits`
+      : ops !== "colorbalancergb, exposure" ? `the render carried ${ops}`
+      : judge({ expect: { lum: 1 } }, compare(f, o.base), 1);
   });
 
   // the Filters popup narrows a folder by camera, keywords (a keyword
@@ -1017,7 +1137,7 @@ async function decisions(photo) {
     return !iso ? "the photo has no ISO to filter by" : wrong.length ? `wrong for cases ${wrong.join(", ")}` : null;
   });
 
-  // the photo is never written, only its sidecar (code-map.md, Where data
+  // the photo is never written, only its sidecar (architecture.md, Where data
   // lives)
   await decide("the photo file is never written", async () => {
     const path = fresh(photo);
@@ -1034,7 +1154,7 @@ async function decisions(photo) {
   // a photo shown in the library or exported, and not opened, gains no
   // sidecar: darktable's own writes stay off, and the engine writes one only
   // where it means to (_write_sidecar in engine/main.c). opening one saves
-  // the new-photo defaults as its baseline (code-map.md, Engine)
+  // the new-photo defaults as its baseline (architecture.md, Engine)
   await decide("a photo shown or exported gains no sidecar", async () => {
     const path = fresh(photo);
     const { images: [e] } = await request({ cmd: "import", files: [path] });
@@ -1359,6 +1479,124 @@ async function decisions(photo) {
     });
   }
 
+  // a selection that starts a mask over a plain, colorful background takes
+  // that color out of its feather: the edge outline less the color, or the
+  // inset outline (main.c, _backdrop and _object_shapes). darktable
+  // feathers the outline outward, so the inset one alone still lifts the
+  // background beside it, a halo at +1 EV; on a stilt over water its fringe
+  // fell from 9% to under 1%. a made-up subject over plain blue, with a
+  // blue patch of its own: the range is round the blue, the mask in the
+  // 1-4 px outside the rim falls from about 43%, the 1-3 px inside keeps
+  // its part, and so does the patch, which a hue range over the whole mask
+  // cut out (as it did a stilt's blue-shaded chest). inverted with a range,
+  // where darktable inverts the backdrop's shape too, the rim is the same
+  // mask inverted. over gray, pale cream, or stripes of four colors, there
+  // is no backdrop, and the outline stays inset: cream's hue is too faint
+  // to hold still in the noise, and speckles the edge. Fit to Background
+  // turned off, the mask is the one a selection without a backdrop gets,
+  // and opened again it is still off (MasksPanel.tsx)
+  const BACKDROP = "a subject over a plain background takes its color out";
+  if (photo === args.photos[0]) {
+    if (!args.models || !existsSync(join(args.models, SUBJECT, "config.json"))) {
+      record({ check: "decisions", photo: basename(photo), id: BACKDROP, status: "skip",
+               detail: `no ${SUBJECT} in build/ai-models: use Select Subject once in a dev build` });
+    } else await decide(BACKDROP, async () => {
+      const W = 3000, H = 2000, R = 600, A = 25, N = 48;
+      const rim = (t) => R + A * Math.sin(N * t);
+      // the patch, inside the disc's right side
+      const PX = W / 2 + 330, PY = H / 2, PR = 110;
+      const dir = join(args.work, "backdrop");
+      mkdirSync(dir, { recursive: true });
+      const made = (name, back) => {
+        const px = Buffer.alloc(3 * W * H);
+        let seed = 1;
+        const noise = () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 2 ** 32 - 0.5) * 30;
+        for (let y = 0; y < H; y++)
+          for (let x = 0; x < W; x++) {
+            const dx = x - W / 2, dy = y - H / 2, k = 3 * (y * W + x);
+            const c = Math.hypot(x - PX, y - PY) < PR ? [40, 80, 170]
+              : Math.hypot(dx, dy) < rim(Math.atan2(dy, dx)) ? [230, 150, 40] : back(x).map((v) => v + noise());
+            for (let i = 0; i < 3; i++) px[k + i] = Math.max(0, Math.min(255, Math.round(c[i])));
+          }
+        const path = join(dir, `${name}.ppm`);
+        writeFileSync(path, Buffer.concat([Buffer.from(`P6\n${W} ${H}\n255\n`), px]));
+        return path;
+      };
+      const STRIPES = [[60, 140, 60], [40, 80, 170], [170, 60, 140], [200, 190, 60]];
+      const blue = made("blue", () => [40, 80, 170]);
+      const gray = made("gray", () => [120, 120, 120]), cream = made("cream", () => [185, 180, 165]), stripes = made("stripes", (x) => STRIPES[Math.floor(x / 150) % 4]);
+      await stopEngine();
+      startEngine(args.engine, join(args.work, "ai-engine"), args.models);
+      try {
+        await invoke("ai_model_ensure", { id: SUBJECT });
+        const select = async (path) => {
+          await request({ cmd: "open", path: fresh(path), imgid: -1 });
+          return invoke("ai_mask", { kind: "subject", backdrop: true });
+        };
+        const got = await select(blue), back = (await invoke("sample", { x: 0.05, y: 0.5 })).hue;
+        const inset = await invoke("ai_mask", { kind: "subject" });
+        const grayGot = (await select(gray)).backdrop, creamGot = (await select(cream)).backdrop;
+        const stripesGot = (await select(stripes)).backdrop;
+        if (!got.paths?.length) return "Select Subject found nothing";
+        if (!got.backdrop) return "over plain blue, no backdrop";
+        const [, lo, hi] = got.backdrop.range;
+        if (back < lo || back > hi) return `the range ${lo.toFixed(3)}-${hi.toFixed(3)} leaves out the blue's hue ${back.toFixed(3)}`;
+        if (grayGot) return "over gray, a backdrop";
+        if (creamGot) return "over pale cream, a backdrop";
+        if (stripesGot) return "over stripes of four colors, a backdrop";
+        // darktable's mask at full size over the disc's right side: how much
+        // it holds 1-4 px outside the rim, 1-3 px inside, and over the patch
+        const VX = 1700, VY = 600, VW = 700, VH = 800;
+        const rimMask = async (shapes, invert = false) => {
+          const o = await open(fresh(blue));
+          await o.after(() => o.s.addMask("M", shapes));
+          await o.after(() => o.s.setLocal("M", "l_exposure", 1));
+          if (invert) await o.after(() => o.s.setInvert("M", true));
+          const map = new Uint8Array(await invoke("mask_map", { name: "M", width: VW, height: VH,
+                                                                view: { x: VX, y: VY, scale: 1 } }), 8);
+          const kept = (await invoke("masks", { fields: {} })).find((m) => m.name === "M")?.shapes[0];
+          await o.s.close();
+          const sum = { out: 0, no: 0, in: 0, ni: 0, patch: 0, np: 0 };
+          for (let y = 0; y < VH; y++)
+            for (let x = 0; x < VW; x++) {
+              const dx = VX + x + 0.5 - W / 2, dy = VY + y + 0.5 - H / 2;
+              const d = Math.hypot(dx, dy) - rim(Math.atan2(dy, dx));
+              if (d > 1 && d < 4) { sum.out += map[y * VW + x]; sum.no++; }
+              if (d < -1 && d > -3) { sum.in += map[y * VW + x]; sum.ni++; }
+              if (Math.hypot(VX + x + 0.5 - PX, VY + y + 0.5 - PY) < PR - 10) { sum.patch += map[y * VW + x]; sum.np++; }
+            }
+          return { out: sum.out / sum.no / 255, in: sum.in / sum.ni / 255, patch: sum.patch / sum.np / 255, kept };
+        };
+        if (!got.backdrop.plain?.length) return "no plain outline comes with the backdrop";
+        const subject = { type: "object", paths: got.paths,
+                          backdrop: { range: got.backdrop.range, paths: got.backdrop.paths, plain: got.backdrop.plain } };
+        const was = await rimMask([{ type: "object", paths: inset }]);
+        const now = await rimMask([subject]);
+        const off = await rimMask([{ ...subject, backdrop: { ...subject.backdrop, off: true } }]);
+        const inv = await rimMask([subject, { type: "luminance", lo: null, hi: null, feather: 1 }], true);
+        const pct = (v) => `${(100 * v).toFixed(0)}%`;
+        // its paths show only the inset outline, so the overlay is the
+        // engine's map, as the engine adds the backdrop: under a first shape
+        const mask = (shapes) => ({ name: "m", shapes, invert: false, values: {} });
+        const lum = { type: "luminance", lo: null, hi: null, feather: 1 };
+        return !readsBackdrop(mask([lum, subject])) ? "its overlay is drawn from its paths, which show the inset outline alone"
+          : readsBackdrop(mask([{ type: "object", paths: inset }, subject])) ? "under another shape, its overlay waits on a backdrop the engine leaves out"
+          : readsBackdrop(mask([{ ...subject, backdrop: { ...subject.backdrop, off: true } }])) ? "turned off, its overlay waits on the backdrop"
+          : now.out > 0.6 * was.out ? `outside the rim the mask holds ${pct(now.out)}, against ${pct(was.out)} inset`
+          : now.in < was.in - 0.02 ? `inside the rim the mask holds ${pct(now.in)}, against ${pct(was.in)} inset`
+          : now.patch < was.patch - 0.02 ? `over the subject's blue the mask holds ${pct(now.patch)}, against ${pct(was.patch)} inset`
+          : Math.abs(1 - inv.out - now.out) > 0.05 ? `inverted with a range, outside the rim it holds ${pct(inv.out)}, against ${pct(1 - now.out)}`
+          : Math.abs(off.out - was.out) > 0.02 || Math.abs(off.in - was.in) > 0.02
+            ? `turned off, the rim holds ${pct(off.out)} outside and ${pct(off.in)} inside, against ${pct(was.out)} and ${pct(was.in)} without a backdrop`
+          : !off.kept?.backdrop?.off ? "turned off, it reads back on"
+          : now.kept?.backdrop?.off !== false || !now.kept.backdrop.plain?.length ? "on, it reads back off or without its plain outline"
+          : null;
+      } finally {
+        await restart();
+      }
+    });
+  }
+
   // a frame shown before comes back without a render when the image does:
   // back from the Before view, or a slider put back. the engine names it by
   // darktable's hash (session.ts, frames; _render's `have` in engine/main.c)
@@ -1559,8 +1797,71 @@ async function decisions(photo) {
     }
   });
 
+  // a drag's drafts step down in size while darktable takes longer than the
+  // target on them, not on the first draft at a size (which ran from the
+  // raw) nor on one darktable had cached (a value shown before), never
+  // below the smallest step, and back up once the size above would fit
+  // (Session.draftView)
+  await decide("slow drags get smaller drafts", async () => {
+    const o = await open(fresh(photo));
+    let limits = { target: 0, smallest: 0.5 };
+    o.s.draftLimits = () => limits;
+    o.view = { ...VIEW, draft: true };
+    // one draft a move, as a drag sends them: after() would render another
+    // with no edit, which pays for a new size in its place
+    const widths = [];
+    const move = async (v) => { o.s.set("exposure", v); widths.push((await o.frame()).width); };
+    try {
+      for (let k = 1; k <= 5; k++) await move(k / 10);
+      limits = { target: 0.5, smallest: 0.5 };
+      for (const v of [0.6, 0.5, 0.7]) await move(v);
+      limits = { target: 1e6, smallest: 0.5 };
+      for (let k = 8; k <= 11; k++) await move(k / 10);
+    } finally {
+      o.view = VIEW;
+      await o.s.close();
+    }
+    const want = [1024, 1024, 717, 717, 512, 512, 512, 512, 512, 717, 717, 1024];
+    return widths.join() === want.join() ? null : `draft widths ${widths.join(", ")}, not ${want.join(", ")}`;
+  });
+
+  // a drag on the GPU starts each frame from the dragged module's input in
+  // the pipe cache, not from the raw: darktable keeps GPU results there only
+  // for its GUI's focused module, and headless every frame reran demosaic
+  // (patches/darktable-engine.patch, important_input; main.c, _set's
+  // history_last_module). once, on the first raw, where OpenCL works
+  if (photo === args.photos.find((p) => /\.(arw|cr2|cr3|nef|nrw|orf|pef|raf|rw2|srw)$/i.test(p))) {
+    const GPU_DRAG = "GPU drags start from the module dragged";
+    let err = null, skip = null;
+    const lines = [];
+    await stopEngine();
+    startEngine(args.engine, join(args.work, "gpu-engine"), null, { gpu: true, onPerf: (l) => lines.push(l) });
+    try {
+      const o = await open(fresh(photo));
+      o.view = { ...VIEW, draft: true };
+      for (const v of [0.1, 0.2]) { o.s.set("exposure", v); await o.frame(); }
+      lines.length = 0;
+      o.s.set("exposure", 0.3);
+      await o.frame();
+      // its timings are all printed once the engine starts on the next request
+      await request({ cmd: "version", perf_mark: 1 });
+      for (let t = 0; t < 100 && !lines.some((l) => l.includes('"perf_mark"')); t++) await new Promise((r) => setTimeout(r, 20));
+      await o.s.close();
+      const ran = lines.map((l) => /processed `([^']+)' on (GPU|CPU)/.exec(l)).filter(Boolean);
+      if (!ran.some((r) => r[2] === "GPU")) skip = "no module ran on the GPU: no OpenCL here";
+      else if (!ran.some((r) => r[1] === "exposure")) err = `the last frame's timings lack exposure: ${ran.map((r) => r[1]).join(", ")}`;
+      else if (ran.some((r) => r[1] === "demosaic")) err = `the last drag frame ran from the raw: ${ran.map((r) => r[1]).join(", ")}`;
+    } catch (e) {
+      err = String(e?.stack ?? e);
+    } finally {
+      await restart();
+    }
+    record({ check: "decisions", photo: basename(photo), id: GPU_DRAG, status: skip ? "skip" : err ? "fail" : "pass",
+             detail: skip ?? err ?? "" });
+  }
+
   // trying a setting, as a preset's tile does, never touches the edit or
-  // the main pipe (code-map.md, Engine); and a frame of an unchanged edit
+  // the main pipe (architecture.md, Engine); and a frame of an unchanged edit
   // carries the same hash, which keeps the sharper base on zooming out
   await decide("previews leave the edit", async () => {
     const o = await open(fresh(photo));
@@ -1728,6 +2029,23 @@ async function decisions(photo) {
       ["the next stroke shows it", overlayShown(steps(off, true, "adjust", "stroke"), true), true],
       ["no tool in hand, O shows it", overlayShown(steps(off, false, "key"), false), true],
       ["no tool in hand, an adjustment leaves it on", overlayShown(steps({ on: true, hold: null }, false, "adjust"), false), true],
+    ];
+    const wrong = cases.filter(([, got, want]) => got !== want).map(([label]) => label);
+    return wrong.length ? `not so: ${wrong.join(", ")}` : null;
+  });
+
+  // a switch clicked last, Fit to Background or Invert, keeps only its
+  // Space: it kept every key, so O did nothing and the overlay stayed up
+  // (keys.ts, fieldKeeps)
+  await decide("O works after a switch is clicked", async () => {
+    const box = { tagName: "INPUT", type: "checkbox" }, slider = { tagName: "INPUT", type: "range" };
+    const cases = [
+      ["a switch leaves O", fieldKeeps(box, "o"), false],
+      ["a switch keeps Space", fieldKeeps(box, " "), true],
+      ["a slider keeps its arrows", fieldKeeps(slider, "ArrowLeft"), true],
+      ["a slider leaves O", fieldKeeps(slider, "o"), false],
+      ["a text field keeps O", fieldKeeps({ tagName: "INPUT", type: "text" }, "o"), true],
+      ["a text area keeps O", fieldKeeps({ tagName: "TEXTAREA" }, "o"), true],
     ];
     const wrong = cases.filter(([, got, want]) => got !== want).map(([label]) => label);
     return wrong.length ? `not so: ${wrong.join(", ")}` : null;

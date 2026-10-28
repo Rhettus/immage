@@ -11,8 +11,9 @@ import { createInterface } from "node:readline";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
-// main.rs's FRAME_HEAD: six u32 of geometry, six f32 of timings, the u64 hash
-export const FRAME_HEAD = 56;
+// main.rs's FRAME_HEAD: six u32 of geometry, six f32 of timings, the u64
+// hash, the edits' f32 timing and padding
+export const FRAME_HEAD = 64;
 
 // the commands the Rust layer registers (main.rs, generate_handler!): one
 // it lacks fails in the app, as mask_rename did before 0.10.1
@@ -27,8 +28,10 @@ let lastTag = 0;
 
 // one engine for the process, in its own runtime folder, on the CPU so
 // frames are the same from run to run; with AI models from `modelsDir`
-// when given
-export function startEngine(binary, home, modelsDir = null) {
+// when given. `gpu` gives OpenCL the pipes the app's GPU edits give it
+// (engine.rs, gpu_edits), and `onPerf` gets each line
+// of darktable's -d perf timings, for the checks that look at the pipe
+export function startEngine(binary, home, modelsDir = null, { gpu = false, onPerf = null } = {}) {
   mkdirSync(home, { recursive: true });
   frame = join(home, "frame.rgba");
   preview = join(home, "preview.rgba");
@@ -37,9 +40,12 @@ export function startEngine(binary, home, modelsDir = null) {
   models.dir = modelsDir;
   // the engine takes --models ahead of darktable's own options
   const me = spawn(binary, [...(modelsDir ? ["--models", modelsDir] : []), "--core", "--configdir", join(home, "config"),
-                            "--cachedir", join(home, "cache"), "--conf", "opencl=false"],
-                   { stdio: ["pipe", "pipe", "ignore"] });
+                            "--cachedir", join(home, "cache"), "--conf", `opencl=${gpu}`,
+                            ...(gpu ? ["--conf", "opencl_device_priority=*//*//", "--conf", "opencl_scheduling_profile=default"] : []),
+                            ...(onPerf ? ["-d", "perf"] : [])],
+                   { stdio: ["pipe", "pipe", onPerf ? "pipe" : "ignore"] });
   engine = me;
+  if (onPerf) createInterface({ input: me.stderr }).on("line", onPerf);
   exited = new Promise((r) => me.on("exit", r));
   createInterface({ input: me.stdout }).on("line", (line) => {
     const tag = /^\{"tag":(\d+)/.exec(line)?.[1];
@@ -58,6 +64,8 @@ export function startEngine(binary, home, modelsDir = null) {
   });
 }
 let exited = Promise.resolve();
+// the running engine's process, for the checks that measure it
+export const enginePid = () => engine?.pid ?? null;
 
 // one request at a time, as the Rust layer's Mutex<Engine> serializes them
 let chain = Promise.resolve();
@@ -112,6 +120,14 @@ async function onEngineThread(req) {
   return r;
 }
 
+// main.rs, ai_outline: the paths, or with `backdrop` the paths and the
+// backdrop (its hue range and edge outline)
+async function aiOutline(req, backdrop) {
+  if (!backdrop) return (await onEngineThread(req)).paths;
+  const r = await onEngineThread({ ...req, backdrop: true });
+  return { paths: r.paths, backdrop: r.backdrop ?? null };
+}
+
 // it saves the open photo and writes its library before it exits; one
 // still there after `wait` ms is killed, as engine.rs's reap does, and
 // stopEngine() gives false
@@ -137,6 +153,9 @@ function framed(r) {
   const out = new ArrayBuffer(FRAME_HEAD + pixels.length);
   const v = new DataView(out);
   ["width", "height", "full_width", "full_height", "x", "y"].forEach((k, i) => v.setUint32(4 * i, r[k] ?? 0, true));
+  // the engine's timings, as main.rs places them (Session's drafts read the pipeline's)
+  v.setFloat32(32, r.process_ms ?? 0, true);
+  v.setFloat32(36, r.write_ms ?? 0, true);
   v.setBigUint64(48, BigInt("0x" + (r.hash || "0")), true);
   new Uint8Array(out, FRAME_HEAD).set(pixels);
   return out;
@@ -184,7 +203,13 @@ const COMMANDS = {
     }
     return request(req);
   },
-  render: async ({ width, height, scale, x, y, skip, draft, have }) => {
+  // a move's module edits go first, as set_params would send them
+  render: async ({ width, height, scale, x, y, skip, draft, have, edits }) => {
+    for (const e of edits ?? []) {
+      const set = { cmd: "set" };
+      for (const k of ["op", "params", "enabled", "after", "before", "instance"]) if (e[k] != null) set[k] = e[k];
+      await request(set);
+    }
     const req = { cmd: "render", width, height, rgba: frame };
     if (skip) req.skip = skip;
     if (draft) req.draft = true;
@@ -237,10 +262,10 @@ const COMMANDS = {
   ai_denoise_preview: ({ u, v, size }) =>
     request({ cmd: "ai_denoise_preview", u, v, size, out: denoised }),
   // the main loop renders the model's input and answers, then the AI thread
-  ai_object: async ({ points, box, inset }) =>
-    (await onEngineThread({ cmd: "ai_object", points, ...(box ? { box } : {}), ...(inset === false ? { inset } : {}) })).paths,
-  ai_mask: async ({ kind, range, inset }) =>
-    (await onEngineThread({ cmd: "ai_mask", kind, ...(range ? { range } : {}), ...(inset === false ? { inset } : {}) })).paths,
+  ai_object: ({ points, box, inset, backdrop }) =>
+    aiOutline({ cmd: "ai_object", points, ...(box ? { box } : {}), ...(inset === false ? { inset } : {}) }, backdrop),
+  ai_mask: ({ kind, range, inset, backdrop }) =>
+    aiOutline({ cmd: "ai_mask", kind, ...(range ? { range } : {}), ...(inset === false ? { inset } : {}) }, backdrop),
   ai_depth: ({ size }) => onEngineThread({ cmd: "ai_depth", size }),
   // on the export thread
   hdr_merge: ({ imgids, align }) => requestTagged({ cmd: "hdr_merge", imgids, align }),

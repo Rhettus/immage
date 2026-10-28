@@ -5,7 +5,8 @@
 # apply patches/darktable-engine.patch to the darktable submodule, once:
 # darktable has no hook for building a target from outside its tree, so the
 # patch adds the engine as a subdirectory of its src/ (where it inherits
-# darktable's include paths and flags) when IMMAGE_ROOT is set
+# darktable's include paths and flags) when IMMAGE_ROOT is set. it also lets
+# the engine's GUI-less pipes keep GPU results in the pipe cache
 set -eu
 
 root=$(cd "$(dirname "$0")/.." && pwd)

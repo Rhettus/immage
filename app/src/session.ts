@@ -66,6 +66,17 @@ const DRAFT_SKIP: Record<Preview, string[]> = {
   balanced: ["grain", "diffuse", "sharpen"],
   performance: ["grain", "diffuse", "sharpen", "denoiseprofile", "colorequal"],
 };
+// a drag's draft, smaller again each way while darktable takes longer than
+// the target on it: an Exposure draft was 65-70 ms of pipeline at half size
+// on an M4, and about as long again waiting behind the one before, against
+// 20 ms for Contrast (gui-2026-10-28T10-36-27). in fixed steps, as the pipe
+// cache keys on the frame's size: a draft at a new size runs the drag pipe
+// from the raw. kept by module for the app's run, so its next drag starts
+// at the size it ended on
+const DRAFT_STEPS = [1, 0.7, 0.5];
+const draftSteps = new Map<string, number>();
+export type DraftLimits = { target: number; smallest: number };
+
 // left out of the idle base, which lies under the sharp frame and feeds the
 // navigator and histogram: with a heavy edit Grain is 1.6 s of it and
 // diffuse another 1.1 s on the CPU (measured with benchmarking/bench.py)
@@ -92,6 +103,20 @@ export type Frame = {
   before?: boolean;   // rendered with the Before view's settings
   trace?: Trace;      // its timings, for the performance overlay
 };
+
+// where a frame is drawn when the image is shown z times its size: k times
+// the frame's size, its corner (x, y) screen pixels from the image's.
+// darktable's pixel i shows the image at i / scale, at the pixel's corner
+// and not its middle, so a frame drawn k times larger sits (k - 1) / 2
+// screen pixels right and down of one drawn 1:1: a half-size draft was half
+// a pixel off the full frame after it
+export function framePlace(f: Pick<Frame, "x" | "y" | "view" | "fullWidth" | "fullHeight">, z: number) {
+  // the scale _render (engine/main.c) fits a frame at: its size is rounded
+  // down each way, so its width or height alone gives one a little off
+  const scale = f.view.scale ?? Math.min(1, f.view.width / f.fullWidth, f.view.height / f.fullHeight);
+  const k = z / scale;
+  return { k, x: (f.x / scale) * z - (k - 1) / 2, y: (f.y / scale) * z - (k - 1) / 2 };
+}
 
 // the module whose instance holds a mask's refinements before it has any
 // adjustment
@@ -818,7 +843,39 @@ export class Session {
   previewMode: () => Preview = () => "balanced";
   // a drag's view, or null when drags have none (Quality)
   draftSize: () => View | null = () => null;
+  // the pipeline time a draft aims for, in ms, and its smallest step
+  draftLimits: () => DraftLimits = () => ({ target: 60, smallest: 0.7 });
+  // the modules the drag's edits are for, and the size of its last draft
+  private draftKey = "";
+  private draftWas = "";
   private needWarm = false;
+
+  private draftView(view: View, ops: string[]): View {
+    if (!view.draft) return view;
+    if (ops.length) this.draftKey = [...new Set(ops.map((op) => op.split("#")[0]))].sort().join();
+    const steps = DRAFT_STEPS.filter((k) => k >= this.draftLimits().smallest);
+    const k = steps[Math.min(draftSteps.get(this.draftKey) ?? 0, steps.length - 1)];
+    if (k === 1) return view;
+    const at = (v: number | undefined) => v === undefined ? undefined : Math.round(v * k);
+    return { ...view, width: at(view.width)!, height: at(view.height)!, x: at(view.x), y: at(view.y),
+             scale: view.scale === undefined ? undefined : view.scale * k };
+  }
+
+  // a step down when a draft took longer than the target, and back up when
+  // the size above would take well under it. not on the first draft at a
+  // size, which ran from the raw, nor on one darktable found in its cache
+  // (0 ms), as a drag back over values just shown does
+  private draftTimed(f: Frame, edits: number) {
+    const size = `${f.width}x${f.height}`, first = size !== this.draftWas;
+    this.draftWas = size;
+    const ms = f.trace?.rust[2] ?? 0;
+    if (first || !edits || ms < 1) return;
+    const { target, smallest } = this.draftLimits();
+    const steps = DRAFT_STEPS.filter((k) => k >= smallest);
+    const i = Math.min(draftSteps.get(this.draftKey) ?? 0, steps.length - 1);
+    if (ms > target && i < steps.length - 1) draftSteps.set(this.draftKey, i + 1);
+    else if (i > 0 && ms * (steps[i - 1] / steps[i]) ** 2 < 0.8 * target) draftSteps.set(this.draftKey, i - 1);
+  }
 
   // one drag frame, thrown away, once the photo is up: the engine's drag
   // pipe starts empty, and filling it made a drag's first frame some 250 ms
@@ -853,7 +910,7 @@ export class Session {
   // render again (a frame of no size, with its hash)
   private async renderView(view: View, kind: Trace["kind"],
                            cycle?: Pick<Trace, "inputAt" | "edits" | "setStart">, every = false,
-                           have: Frame[] = []): Promise<Frame> {
+                           have: Frame[] = [], edits: ReturnType<Session["moduleEdit"]>[] = []): Promise<Frame> {
     const t0 = performance.now();
     const { width, height, scale, x, y } = view;
     const preview = this.previewMode();
@@ -863,7 +920,8 @@ export class Session {
     const hex = (f: Frame) => f.hash!.toString(16).padStart(16, "0");
     const buf = await renderFrame({ width, height, scale, x, y, skip, draft: !!view.draft,
                                     base: kind === "base" && !view.draft,
-                                    have: have.length ? have.map(hex) : null });
+                                    have: have.length ? have.map(hex) : null,
+                                    edits: edits.length ? edits : null });
     const head = new DataView(buf, 0, 24);
     const u = (k: number) => head.getUint32(4 * k, true);
     const hash = new DataView(buf).getBigUint64(48, true);
@@ -1146,27 +1204,30 @@ export class Session {
         const ops = [...this.dirty];
         this.dirty.clear();
         const cycle = perf.cycle();
-        for (const op of ops) {
+        // sent with the render rather than one call each: on Linux a call
+        // took 20 ms or more while the page drew (FINDINGS, "KDE on AMD")
+        const edits = ops.map((op) => {
           this.draftKeep.add(op.split("#")[0]);
-          await invoke("set_params", this.moduleEdit(op));
-        }
+          return this.moduleEdit(op);
+        });
         if (ops.length) this.changed();
         // the Before view is only for looking: nothing of it reaches the sidecar
         if (ops.length && !this.before) { this.unsaved = true; this.scheduleSave(); }
         this.needRender = false;
         // what the render shows is settled by now, whatever changes during it
         const before = !!this.before;
-        const view = this.size(), key = this.frameKey(view, before);
-        const kept = view.draft ? undefined : this.current.get(key);
+        const view = this.draftView(this.size(), ops), key = this.frameKey(view, before);
+        const kept = view.draft || edits.length ? undefined : this.current.get(key);
         if (kept) {
           this.keepFrame(key, kept);
           this.onFrame({ ...kept, before, trace: perf.cached(kept.width, kept.height) });
-        } else if (!view.draft && !before && this.copy && view.scale === this.copy.view.scale) {
+        } else if (!view.draft && !edits.length && !before && this.copy && view.scale === this.copy.view.scale) {
           this.onFrame({ ...this.cut(this.copy, view), before });
         } else {
           const have = view.draft ? [] : this.heldFor(key);
-          const f = await this.renderView(view, ops.length ? "edit" : "view", cycle, false, have);
+          const f = await this.renderView(view, ops.length ? "edit" : "view", cycle, false, have, edits);
           if (!view.draft) this.keepFrame(key, f);
+          else this.draftTimed(f, edits.length);
           if (!before && !have.some((h) => h.hash === f.hash)) this.putAside = null;
           this.onFrame({ ...f, before });
         }
