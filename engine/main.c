@@ -3956,6 +3956,9 @@ static int _seg_pw = 0, _seg_ph = 0;  // the image size the encoding was made at
 // (_ai_run) makes and the main loop looks at, to tell whether a request
 // needs the photo rendered for its model
 static GMutex _ai_cache_lock;
+// when a selection last asked for a model (g_get_monotonic_time()), and
+// the use its models were last released after (_ai_release)
+static gint64 _ai_used = 0, _ai_released = 0;
 
 // an AI selection, as the main loop hands it to the AI thread
 typedef struct _ai_job_t
@@ -4613,6 +4616,7 @@ static _ai_job_t *_ai_job(JsonObject *req, char **err)
   dt_dev_pixelpipe_get_dimensions(&_s.ppipe, &_s.dev, _s.ppipe.iwidth, _s.ppipe.iheight, &job->pw, &job->ph);
   const int model = kind < 0 ? -1 : _mask_kinds[kind].model;
   g_mutex_lock(&_ai_cache_lock);
+  _ai_used = g_get_monotonic_time();
   const gboolean held = model < 0
     ? _seg_imgid == job->imgid && _seg_pw == job->pw && _seg_ph == job->ph
     : _mask_cache[model].p && _mask_cache[model].imgid == job->imgid
@@ -4662,8 +4666,67 @@ static gboolean _ai_do(const _ai_job_t *job, JsonBuilder *b, char **err)
 static GThreadPool *_ai_pool = NULL;
 static GMutex _ai_pool_lock;
 
+// the selection models are let go once none has been asked for in this
+// long. ONNX Runtime keeps a session's peak working memory in its arena
+// until the session goes: after Select Subject, about 14 GB of a 24 GB
+// Mac, which darktable gives no option to turn off. loading them again
+// costs little beside a run (BiRefNet's is within a run's own variation),
+// and their last results stay, so the same photo needs no model at all
+#define _AI_IDLE_US (30 * G_USEC_PER_SEC)
+static _ai_job_t _ai_release_job;
+static gint _ai_release_queued = 0;
+
+// on the AI thread, between selections. SAM's encoding goes with it, so a
+// click after this renders the photo for it again (_ai_job)
+static void _ai_release(void)
+{
+  g_mutex_lock(&_ai_cache_lock);
+  const gboolean idle = _ai_used != _ai_released && g_get_monotonic_time() - _ai_used >= _AI_IDLE_US;
+  if(idle)
+  {
+    _ai_released = _ai_used;
+    _seg_imgid = NO_IMGID;
+  }
+  g_mutex_unlock(&_ai_cache_lock);
+  if(!idle) return;
+  g_mutex_lock(&_ai_load_lock);
+  if(_seg) dt_seg_free(_seg);
+  _seg = NULL;
+  for(size_t k = 0; k < G_N_ELEMENTS(_mask_ctx); k++)
+  {
+    if(_mask_ctx[k]) dt_ai_unload_model(_mask_ctx[k]);
+    _mask_ctx[k] = NULL;
+  }
+  g_mutex_unlock(&_ai_load_lock);
+}
+
+// queues _ai_release() once the models have been idle long enough,
+// until the engine stops
+static gpointer _ai_idle_watch(gpointer data)
+{
+  for(;;)
+  {
+    g_usleep(5 * G_USEC_PER_SEC);
+    g_mutex_lock(&_ai_cache_lock);
+    const gboolean due = _ai_used != _ai_released && g_get_monotonic_time() - _ai_used >= _AI_IDLE_US;
+    g_mutex_unlock(&_ai_cache_lock);
+    g_mutex_lock(&_ai_pool_lock);
+    const gboolean running = _ai_pool != NULL;
+    if(running && due && g_atomic_int_compare_and_exchange(&_ai_release_queued, 0, 1))
+      g_thread_pool_push(_ai_pool, &_ai_release_job, NULL);
+    g_mutex_unlock(&_ai_pool_lock);
+    if(!running) return NULL;
+  }
+}
+
 static void _ai_run(gpointer data, gpointer user_data)
 {
+  if(data == &_ai_release_job)
+  {
+    g_atomic_int_set(&_ai_release_queued, 0);
+    _ai_release();
+    return;
+  }
   _ai_job_t *job = data;
   FILE *out = user_data;
   char *err = NULL;
@@ -8771,6 +8834,7 @@ int main(int argc, char **argv)
 #ifdef HAVE_AI
   _denoise_pool = g_thread_pool_new(_denoise_run, out, 1, FALSE, NULL);
   _ai_pool = g_thread_pool_new(_ai_run, out, 1, FALSE, NULL);
+  g_thread_unref(g_thread_new("ai idle", _ai_idle_watch, NULL));
 #endif
   GAsyncQueue *requests = g_async_queue_new();
   g_thread_unref(g_thread_new("requests", _read_requests, requests));
