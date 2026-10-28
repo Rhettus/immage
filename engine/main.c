@@ -6690,6 +6690,53 @@ typedef enum _stage_t
 #define _ZONE_PLACEMENT_OP "toneequal"
 #define _ZONE_PLACEMENT_NAME "zone placement"
 
+// the pipe caches what modules that ran put out; the mask instances' input
+// is that of the last one to run up to the anchor, which may be switched off
+// itself. reader, if asked for, gets the first module on that runs after it
+static dt_dev_pixelpipe_iop_t *_stage_piece(const _stage_t stage, const dt_iop_module_t *anchor,
+                                            const dt_iop_module_t *placement, const dt_iop_module_t *ashift,
+                                            const dt_iop_module_t *negadoctor, dt_iop_module_t **reader)
+{
+  dt_dev_pixelpipe_iop_t *piece = NULL;
+  GList *n = _s.ppipe.nodes;
+  for(; n; n = g_list_next(n))
+  {
+    dt_dev_pixelpipe_iop_t *pc = n->data;
+    if(stage == _STAGE_TONEMAPPER)
+    {
+      if(pc->enabled && (!g_strcmp0(pc->module->op, "sigmoid") || !g_strcmp0(pc->module->op, "agx")
+                         || !g_strcmp0(pc->module->op, "filmicrgb")
+                         || !g_strcmp0(pc->module->op, "colorout")))
+        break;
+    }
+    else if(placement && placement->enabled)
+    {
+      if(pc->module == placement) break;
+    }
+    else if(stage == _STAGE_ASHIFT)
+    {
+      if(pc->module->iop_order >= ashift->iop_order) break;
+    }
+    else if(stage == _STAGE_NEGADOCTOR)
+    {
+      if(pc->module->iop_order >= negadoctor->iop_order) break;
+    }
+    else if(pc->module->iop_order > anchor->iop_order)
+      break;
+    if(pc->enabled) piece = pc;
+  }
+  if(reader)
+  {
+    *reader = NULL;
+    for(; n && !*reader; n = g_list_next(n))
+    {
+      dt_dev_pixelpipe_iop_t *pc = n->data;
+      if(pc->enabled) *reader = pc->module;
+    }
+  }
+  return piece;
+}
+
 static gboolean _working_at(_working_t *w, const _stage_t stage, char **err)
 {
   dt_iop_module_t *anchor = dt_iop_get_module_by_op_priority(_s.dev.iop, _MASK_ANCHOR, 0);
@@ -6713,6 +6760,13 @@ static gboolean _working_at(_working_t *w, const _stage_t stage, char **err)
   float *data = NULL;
   dt_iop_buffer_dsc_t *dsc = NULL;
   dt_iop_roi_t roi = { 0 };
+  // on the GPU, darktable keeps a module's output in the pipe cache only
+  // as the input of the last edited module (patches/darktable-engine.patch,
+  // important_input), so the module that reads the sampled image stands in
+  // for it during the render
+  dt_iop_module_t *reader = NULL;
+  _stage_piece(stage, anchor, placement, ashift, negadoctor, &reader);
+  dt_iop_module_t *last = _s.dev.history_last_module;
   // a render served from the cache leaves pieces made since (a new
   // instance remakes them all) with no region and their output uncached,
   // and the others with the region of the last render that ran them, such
@@ -6721,42 +6775,16 @@ static gboolean _working_at(_working_t *w, const _stage_t stage, char **err)
   {
     if(pass) dt_dev_pixelpipe_cache_invalidate_later(&_s.ppipe, piece->module->iop_order, "working ");
     _s.ppipe.changed = DT_DEV_PIPE_UNCHANGED;
-    if(dt_dev_pixelpipe_process(&_s.ppipe, &_s.dev, 0, 0, MAX(1, floor(scale * pw)), MAX(1, floor(scale * ph)),
-                                scale, DT_DEVICE_NONE))
+    if(reader) _s.dev.history_last_module = reader;
+    const int failed = dt_dev_pixelpipe_process(&_s.ppipe, &_s.dev, 0, 0, MAX(1, floor(scale * pw)),
+                                                MAX(1, floor(scale * ph)), scale, DT_DEVICE_NONE);
+    _s.dev.history_last_module = last;
+    if(failed)
     {
       *err = g_strdup("the sample render failed");
       return FALSE;
     }
-    // the pipe caches what modules that ran put out; the mask instances'
-    // input is that of the last one to run up to the anchor, which may be
-    // switched off itself
-    piece = NULL;
-    for(GList *n = _s.ppipe.nodes; n; n = g_list_next(n))
-    {
-      dt_dev_pixelpipe_iop_t *pc = n->data;
-      if(stage == _STAGE_TONEMAPPER)
-      {
-        if(pc->enabled && (!g_strcmp0(pc->module->op, "sigmoid") || !g_strcmp0(pc->module->op, "agx")
-                           || !g_strcmp0(pc->module->op, "filmicrgb")
-                           || !g_strcmp0(pc->module->op, "colorout")))
-          break;
-      }
-      else if(placement && placement->enabled)
-      {
-        if(pc->module == placement) break;
-      }
-      else if(stage == _STAGE_ASHIFT)
-      {
-        if(pc->module->iop_order >= ashift->iop_order) break;
-      }
-      else if(stage == _STAGE_NEGADOCTOR)
-      {
-        if(pc->module->iop_order >= negadoctor->iop_order) break;
-      }
-      else if(pc->module->iop_order > anchor->iop_order)
-        break;
-      if(pc->enabled) piece = pc;
-    }
+    piece = _stage_piece(stage, anchor, placement, ashift, negadoctor, NULL);
     if(!piece)
     {
       *err = g_strdup("nothing runs before the anchor");

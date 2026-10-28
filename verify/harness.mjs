@@ -484,6 +484,35 @@ async function fixes(photo) {
     return gone ? null : "still running 5 s after quit";
   });
 
+  // 0.39.0: with edits on the GPU, Auto and every other sample of the
+  // working-space image failed with "the working-space image is not at
+  // hand": the sample pipe became a GPU one too, and darktable keeps no GPU
+  // output in the pipe cache unless it is the last edited module's input
+  // (main.c, _working_at). once, on the first raw, where OpenCL works
+  if (photo === args.photos.find((p) => /\.(arw|cr2|cr3|nef|nrw|orf|pef|raf|rw2|srw)$/i.test(p))) {
+    await stopEngine();
+    startEngine(args.engine, join(args.work, "gpu-engine"), null, { gpu: true });
+    const cl = await request({ cmd: "opencl" });
+    if (!cl.running) record({ check: "fixes", photo: basename(photo), id: "samples on the GPU", status: "skip",
+                              detail: "no OpenCL here" });
+    else await fix("samples on the GPU", async () => {
+      const o = await open(fresh(photo));
+      await o.frame();
+      const failed = [];
+      const zones = join(args.work, "gpu-zones.bin");
+      for (const [what, req] of [["Auto", { cmd: "agx_auto" }], ["sample", { cmd: "sample", x: 0.5, y: 0.5 }],
+                                 ["zones before", { cmd: "zones", stage: "before", out: zones }],
+                                 ["zones after", { cmd: "zones", stage: "after", out: zones }],
+                                 ["zones unplaced", { cmd: "zones", stage: "unplaced", out: zones }],
+                                 ["Upright", { cmd: "upright", mode: "auto", aspect: 1 }]]) {
+        try { await request(req); } catch (e) { failed.push(`${what}: ${e.message}`); }
+      }
+      await o.s.close();
+      return failed.length ? failed.join("; ") : null;
+    });
+    await restart();
+  }
+
   // 0.37.0: HSL's Saturation was twice Lightroom's strength, -50 already
   // gray, and its bands sat on the color equalizer's nodes, not at
   // Lightroom's hues (colorequal.ts). with Blue at -100, Aqua did nothing to
