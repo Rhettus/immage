@@ -70,7 +70,7 @@ import { DEFAULT_TRANSITION, loadZoneOverlay, offsetsOf, overlayRgb, paintRange,
          type ZoneData, type ZoneOverlay, type ZonePart, type ZoneRange } from "./zones";
 import { SpotOverlay, type SpotTool } from "./SpotOverlay";
 import type { NewSpot, Spot } from "./spots";
-import { aiRefine, flipMode, isRange, isRefined, maskAt, maskKindName, nextMaskName, NO_REFINE, overlayShown, overlayStep, rangeChannels,
+import { aiRefine, type Backdrop, flipMode, isRange, isRefined, maskAt, readsBackdrop, maskKindName, nextMaskName, NO_REFINE, overlayShown, overlayStep, rangeChannels,
          type BlendifChannel, type ChannelRange, type Mask, type ObjectShape, type OverlayToggle, type ParametricRange, type Range,
          type RangeMap, type Refine, type Region, type Shape } from "./masks";
 import { channelTint, type Picked } from "./ParametricEditor";
@@ -853,11 +853,26 @@ export default function App() {
   };
   // an outline the mask adds is traced inside its edge, so its feather ends
   // there; one it takes away, or inverts (Background), on its edge, its
-  // feather already on the selected side (main.c, _trace_json)
-  const selectObject = (prompt: ObjectPrompt) => runAi("mask-object-sam21-small", "finding the object…",
-    () => invoke<ObjectShape["paths"]>("ai_object", { points: prompt.points ?? [], box: prompt.box ?? null,
-                                                      inset: toolTarget !== "subtract" }),
-    (paths) => aiShown(createShape({ type: "object", paths })));
+  // feather already on the selected side (main.c, _trace_json). one that
+  // starts a mask over a plain, colorful background comes with that color
+  // and its edge outline too, which end the feather at the color
+  // (masks.ts, ObjectShape): the engine uses them in a mask's first shape
+  const startsMask = (target: ToolTarget) =>
+    target === "new" || (target !== "subtract" && !session.current?.masks.some((m) => m.name === maskSel));
+  const outline = async (cmd: string, args: Record<string, unknown>, backdrop: boolean,
+                         got: (b: Backdrop | undefined) => void) => {
+    if (!backdrop) return invoke<ObjectShape["paths"]>(cmd, args);
+    const r = await invoke<{ paths: ObjectShape["paths"]; backdrop: Backdrop | null }>(cmd, { ...args, backdrop });
+    got(r.backdrop ? { range: r.backdrop.range, paths: r.backdrop.paths, plain: r.backdrop.plain } : undefined);
+    return r.paths;
+  };
+  const selectObject = (prompt: ObjectPrompt) => {
+    let backdrop: Backdrop | undefined;
+    return runAi("mask-object-sam21-small", "finding the object…",
+      () => outline("ai_object", { points: prompt.points ?? [], box: prompt.box ?? null, inset: toolTarget !== "subtract" },
+                    startsMask(toolTarget), (b) => { backdrop = b; }),
+      (paths) => aiShown(createShape({ type: "object", paths, ...(backdrop && { backdrop }) })));
+  };
   // the one-click selections: Subject, Background, which is the subject's
   // outline in a new mask, inverted, and People and the parts of a
   // landscape, which all come from the one scene model
@@ -875,13 +890,17 @@ export default function App() {
     architecture: { kind: "architecture", ...scene("architecture"), label: "Architecture" },
     artificial_ground: { kind: "artificial_ground", ...scene("artificial ground"), label: "Artificial Ground" },
   };
+  // Subject and People only: the Landscape kinds are the background
   const selectAi = (k: AiKind, target: ToolTarget) => {
     const a = AI_KINDS[k];
+    let backdrop: Backdrop | undefined;
     return runAi(a.model, a.working,
-      () => invoke<ObjectShape["paths"]>("ai_mask", { kind: a.kind, inset: k !== "background" && target !== "subtract" }),
+      () => outline("ai_mask", { kind: a.kind, inset: k !== "background" && target !== "subtract" },
+                    (k === "subject" || k === "people") && startsMask(target), (b) => { backdrop = b; }),
       (paths) => {
         const had = new Set(session.current?.masks.map((m) => m.name));
-        const name = createShape({ type: "object", paths }, k === "background" ? "new" : target, a.label);
+        const name = createShape({ type: "object", paths, ...(backdrop && { backdrop }) },
+                                 k === "background" ? "new" : target, a.label);
         if (k === "background" && name) session.current?.setInvert(name, true);
         const refine = aiRefine(k);
         if (name && !had.has(name) && refine) session.current?.setRefine(name, refine);
@@ -1248,7 +1267,7 @@ export default function App() {
   // last one stays up until the next arrives
   // zoomed in, a range mask's map too: the engine's ranges map is of the
   // whole image, too coarse for the part shown
-  const wantsFinal = (m: Mask) => isRefined(m) || (!!shownView && !shownView.fit && m.shapes.some(isRange));
+  const wantsFinal = (m: Mask) => isRefined(m) || readsBackdrop(m) || (!!shownView && !shownView.fit && m.shapes.some(isRange));
   const [finalMap, setFinalMap] = useState<{ name: string; map: RangeMap; session: Session } | null>(null);
   // the mask whose map the engine could not make, which its shapes show instead
   const [finalMissing, setFinalMissing] = useState<string | null>(null);
@@ -4727,7 +4746,7 @@ export default function App() {
                                     && wantsFinal(peekMask ?? selMask!) ? finalMap.map : null}
                              awaitFinal={(() => {
                                const t = peekMask ?? selMask;
-                               return !!t && isRefined(t) && !t.hidden && finalMissing !== t.name
+                               return !!t && (isRefined(t) || readsBackdrop(t)) && !t.hidden && finalMissing !== t.name
                                  && !(finalMap && finalMap.session === session.current && finalMap.name === t.name);
                              })()}
                              onPick={(x, y) => void pickRange(x, y)}

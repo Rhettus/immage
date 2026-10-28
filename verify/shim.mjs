@@ -114,6 +114,14 @@ async function onEngineThread(req) {
   return r;
 }
 
+// main.rs, ai_outline: the paths, or with `backdrop` the paths and the
+// backdrop (its hue range and edge outline)
+async function aiOutline(req, backdrop) {
+  if (!backdrop) return (await onEngineThread(req)).paths;
+  const r = await onEngineThread({ ...req, backdrop: true });
+  return { paths: r.paths, backdrop: r.backdrop ?? null };
+}
+
 // it saves the open photo and writes its library before it exits; one
 // still there after `wait` ms is killed, as engine.rs's reap does, and
 // stopEngine() gives false
@@ -239,10 +247,10 @@ const COMMANDS = {
   ai_denoise_preview: ({ u, v, size }) =>
     request({ cmd: "ai_denoise_preview", u, v, size, out: denoised }),
   // the main loop renders the model's input and answers, then the AI thread
-  ai_object: async ({ points, box, inset }) =>
-    (await onEngineThread({ cmd: "ai_object", points, ...(box ? { box } : {}), ...(inset === false ? { inset } : {}) })).paths,
-  ai_mask: async ({ kind, range, inset }) =>
-    (await onEngineThread({ cmd: "ai_mask", kind, ...(range ? { range } : {}), ...(inset === false ? { inset } : {}) })).paths,
+  ai_object: ({ points, box, inset, backdrop }) =>
+    aiOutline({ cmd: "ai_object", points, ...(box ? { box } : {}), ...(inset === false ? { inset } : {}) }, backdrop),
+  ai_mask: ({ kind, range, inset, backdrop }) =>
+    aiOutline({ cmd: "ai_mask", kind, ...(range ? { range } : {}), ...(inset === false ? { inset } : {}) }, backdrop),
   ai_depth: ({ size }) => onEngineThread({ cmd: "ai_depth", size }),
   // on the export thread
   hdr_merge: ({ imgids, align }) => requestTagged({ cmd: "hdr_merge", imgids, align }),
