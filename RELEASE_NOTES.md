@@ -3,6 +3,62 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
+## 0.39.1
+
+Improvements
+
+- a folder you've opened before shows its photos at once, even on a
+  NAS: the thumbnails, ratings and labels from last time fill the
+  filmstrip in their final order, and the filters work on them, while
+  the folder is read again behind them. A photo changed since is
+  updated when the read reaches it, and you can open any photo before
+  then
+- reading a folder on a network share asks the share less on macOS and
+  Windows: the folder is listed, and its thumbnails checked against
+  their files, without a request for each file
+- Select Subject, People and Select Object leave less halo on a plain,
+  vivid background such as water or blue sky: a new mask over one goes
+  just over the subject's edge and stops at the background's color, so a
+  bird over water lifted a stop shows almost no glow around it, and its
+  rim keeps the lift, even where its own colors match the background.
+  Over a busy, gray or pale background the mask is made as before. The
+  shape's Fit to Background switch turns it off, to the outline it would
+  have had
+- on Linux, sliders answer sooner: a slider's change now goes to the
+  engine with the frame it asks for, in one request instead of one for
+  each tool it moves, where each request could take 20 ms or more while
+  the window was drawing
+- sliders early in darktable's pipe, such as Exposure, White Balance,
+  Highlights and noise reduction, follow the mouse more closely while
+  dragged: where darktable takes longer than 60 ms on a frame, the next
+  ones render smaller, down to 70% each way, and the size is remembered
+  for that slider's next drag. The frame after letting go is full size
+  as before. Preferences, Performance sets the time and how small the
+  frames may get, or turns it off
+- editing runs on the GPU where there is one: a slider's frames while
+  dragged, and the frame after letting go, come about one and a half to
+  three times sooner than on the CPU, and look the same. Measured on a
+  Mac M4 and on an NVIDIA RTX 4070 Ti SUPER under Windows and Linux.
+  Preferences, Performance, Edit on the GPU turns it off, for a GPU that
+  is slower than the computer's CPU
+
+Bug fixes
+
+- Auto in the Basic panel works again with editing on the GPU, the
+  default since 0.39.0: it stopped with "the working-space image is
+  not at hand". Picking a color or luminance range for a mask, the
+  Zone System and Upright failed the same way
+- AI selections give their memory back: after Select Subject, Immage
+  held on to as much as 18 GB until it was quit. The AI models are now
+  let go half a minute after the last selection, which takes no longer
+  to make again
+- O shows and hides a mask's overlay straight after a switch in the
+  Masks panel, such as Invert, is clicked: until something else was
+  clicked, the switch took every key
+- the photo no longer shifts by a pixel or so when a slider is let go:
+  the smaller frames shown while dragging were placed half a pixel or
+  more off the full frame that follows
+
 ## 0.39.0
 
 Improvements
