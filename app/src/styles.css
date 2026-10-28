@@ -2067,8 +2067,9 @@ input.switch:disabled { cursor: default; opacity: 0.4; }
 .immich-body .field:focus { border-color: #555; background: #2c2c2c; }
 .immich-search { display: flex; gap: 6px; }
 .immich-search .field { flex: 1; }
-/* an Immich result's stars: Immich's rating, shown as any other, not set here */
-.thumb-foot.read-only .thumb-stars button:disabled { cursor: default; opacity: 1; }
+/* an Immich result's stars: Immich's rating, shown as any other, not set
+   here; and a known photo's, set once it is read */
+.thumb-foot.read-only button:disabled { cursor: default; opacity: 1; }
 .thumb.ghost.more { opacity: 0.4; }
 
 /* Zone System: the zone bars, their labels, the selection's mask and facts */

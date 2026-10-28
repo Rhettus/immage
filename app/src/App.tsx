@@ -25,8 +25,8 @@ import { applyCacheLimits } from "./CachePrefs";
 import { fetchThumb, fileKind, isCompanion, isPrimaryRaw, LABEL_COLORS, loadIncludeSubfolders, openFolder, pairKey, pairPartners,
          storeIncludeSubfolders,
          ThumbLoader,
-         byCaptureTime,
-         type Exif, type ImageEntry } from "./library";
+         byCaptureTime, knownKey, withKnown,
+         type Exif, type ImageEntry, type Known } from "./library";
 import { captureDate, exposureLine, known, MetadataPanel, shutter, type TextFields } from "./MetadataPanel";
 import { HistoryPanel, stepName } from "./HistoryPanel";
 import { VignetteOverlay } from "./VignetteOverlay";
@@ -211,8 +211,10 @@ export default function App() {
   const [values, setValues] = useState<Record<string, number>>({});
   const [status, setStatus] = useState("open a folder to start");
   // how far the open folder's reading has got, while it is read
-  // `files` lists them all, in the order they are read
-  const [reading, setReading] = useState<{ done: number; total: number; files: string[] } | null>(null);
+  // `files` lists them all, in the order they are read, once `listed`;
+  // `known` are the photos the folder's last read found, shown until read
+  const [reading, setReading] = useState<{ done: number; total: number; files: string[]; listed: boolean;
+                                           known: Known[] } | null>(null);
   const [openPanels, setOpenPanels] = useState<Set<string>>(new Set(["basic"]));
   const [layout, setLayoutState] = useState<Layout>(loadLayout);
   const setLayout = (f: (l: Layout) => Layout) =>
@@ -2433,17 +2435,26 @@ export default function App() {
     }
     let got: ImageEntry[] = [];
     let files: string[] = [];
+    let listed = false;
+    let known: Known[] = [];
     try {
-      setReading({ done: 0, total: 0, files });
-      const list = await openFolder(dir, includeSubRef.current, [...hiddenRef.current], (batch, done, total, all) => {
+      setReading({ done: 0, total: 0, files, listed, known });
+      const list = await openFolder(dir, includeSubRef.current, [...hiddenRef.current], (batch, done, total, all, last) => {
         // an Immich search took the filmstrip while this was read
         if (immichRef.current) return;
-        if (all) files = all;
+        // a refresh's photos are on show already
+        if (last && !again) {
+          known = last;
+          loader.current!.request(byCaptureTime(known).map(knownKey));
+        }
+        if (all) {
+          files = all;
+          listed = true;
+        }
         got = byCaptureTime([...got, ...batch]);
         if (!again && batch.length) updateImages(got);
         loader.current!.request(batch.map((i) => i.imgid));
-        // a refresh's photos are on show already
-        setReading({ done, total, files: again ? [] : files });
+        setReading({ done, total, files: again ? [] : files, listed, known });
       });
       if (immichRef.current) return list;
       setReading(null);
@@ -4404,12 +4415,29 @@ export default function App() {
   partnersRef.current = partners;
   const passing = images.filter((i) => passes(i, filter));
   const behind = new Set(passing.flatMap((i) => (partners.get(i.imgid) ?? []).map((p) => p.imgid)));
-  const shown = passing.filter((i) => !behind.has(i.imgid));
-  // the files still to be read, as empty cells after the photos: unless the
-  // filters ask for what only reading tells (ratings, labels, rejects)
+  // the photos the folder's last read found that this one has not reached:
+  // shown as they were, through the filters, until they are read. once the
+  // folder is listed, those no longer in it go
+  const knownPaths = reading?.known.length ? new Set(reading.known.map((k) => k.path)) : null;
+  const readPaths = knownPaths && new Set(images.map((i) => i.path));
+  const listedPaths = knownPaths && reading!.listed ? new Set(reading!.files) : null;
+  const unread = !readPaths ? []
+    : reading!.known.filter((k) => !readPaths.has(k.path) && (!listedPaths || listedPaths.has(k.path)) && passes(k, filter));
+  // a raw not yet read stacks its companions too, read or not
+  const stackRaw = (i: Known) => !i.copy && isPrimaryRaw(i.filename);
+  const unreadRaws = stackPairs ? new Set(unread.filter(stackRaw).map((k) => pairKey(k.path))) : null;
+  const stacked = (i: Known) => !i.copy && isCompanion(i.filename) && !!unreadRaws?.has(pairKey(i.path));
+  const shown = passing.filter((i) => !behind.has(i.imgid) && !stacked(i));
+  const passingRaws = stackPairs ? new Set(passing.filter(stackRaw).map((i) => pairKey(i.path))) : null;
+  const provisional = unread.filter((k) => !stacked(k) && !(!k.copy && isCompanion(k.filename) && passingRaws?.has(pairKey(k.path))));
+  const cells: (ImageEntry | Known)[] = provisional.length ? withKnown(shown, provisional) : shown;
+  // the files still to be read and not known, as empty cells after the
+  // photos: unless the filters ask for what only reading tells (ratings,
+  // labels, rejects)
   const rawNames = stackPairs && reading ? pairedRaws(reading.files) : null;
   const pending = !reading || needsRead(filter) ? []
     : reading.files.slice(reading.done).filter((p) => !filter.kinds.length || filter.kinds.includes(fileKind(p)))
+        .filter((p) => !knownPaths?.has(p))
         // a raw's companions, stacked behind it
         .filter((p) => !rawNames?.has(pairKey(p)) || !isCompanion(p));
   const shownRef = useRef<ImageEntry[]>([]);
@@ -4882,11 +4910,11 @@ export default function App() {
              className={`strip-slot${layout.strip || grid ? "" : " closed"}${floating.strip ? " floating" : ""}`
                         + `${floating.strip && revealed.strip ? " revealed" : ""}${grid ? " grid" : ""}`}>
           <div>
-            {(shown.length > 0 || pending.length > 0) && !grid && (
+            {(cells.length > 0 || pending.length > 0) && !grid && (
               <Splitter axis="y" value={layout.stripHeight} min={90} max={300} invert hidden={!layout.strip}
                         onChange={(v) => setLayout((l) => ({ ...l, stripHeight: v }))} />
             )}
-            <Filmstrip images={shown} partners={partners} pending={pending}
+            <Filmstrip images={cells} partners={partners} pending={pending}
                        empty={immich ? (immich.busy ? "searching Immich…" : "no photos in Immich match the search")
                               : reading ? "reading the folder…"
                               : images.length ? "no photos match the filters"
@@ -4895,6 +4923,14 @@ export default function App() {
                        height={layout.stripHeight} grid={grid} selection={selection} onPick={pickPhoto}
                        candidate={compare}
                        onDouble={(i) => { setCompare(null); void openEntry(i); setGrid(false); }}
+                       onOpenKnown={(k, double) => {
+                         // a comparison's candidate waits for its photo to be read, and so
+                         // does a virtual copy: by its path alone, the original would open
+                         if ((compare !== null && !double) || k.copy) return;
+                         if (double) { setCompare(null); setGrid(false); }
+                         setSelection(new Set());
+                         void openFile(k.path);
+                       }}
                        more={immich?.next && !immich.busy ? () => void searchImmich(immich.search, true) : undefined}
                        onBackMenu={showResultsMenu}
                        onMeta={(i, fields) => rateSelection(i, fields)} />
@@ -4927,7 +4963,7 @@ export default function App() {
                    };
                  }}
                  onFiltered={() => setGrid(true)}
-                 grid={grid} onGrid={shown.length > 0 || pending.length > 0 || grid ? () => setGrid(!grid) : undefined}
+                 grid={grid} onGrid={cells.length > 0 || pending.length > 0 || grid ? () => setGrid(!grid) : undefined}
                  zoomBar={<ZoomBar disabled={!current} register={(f) => { zoomShow.current = f; }}
                                    onZoom={(z) => setZoom(z)}
                                    onToggle={() => setZoom(zoomRef.current === "fit" ? 1 : "fit")}
@@ -5706,8 +5742,9 @@ const pairedRaws = (files: string[]) => new Set(files.filter((p) => isPrimaryRaw
 // each with the file's name and type above its thumbnail, and its reject
 // flag and stars below, shown on hover or once it has a rating
 function Filmstrip({ images, partners, pending, empty, current, loader, height, grid, selection, candidate, onPick, onDouble,
-                     onMenu, onMeta, more, onBackMenu }: {
-  images: ImageEntry[]; current: number | null; loader: ThumbLoader; height: number;
+                     onOpenKnown, onMenu, onMeta, more, onBackMenu }: {
+  // photos, and those known from the folder's last read (library.ts)
+  images: (ImageEntry | Known)[]; current: number | null; loader: ThumbLoader; height: number;
   pending: string[];                      // files not yet read, shown as empty cells
   partners: Map<number, ImageEntry[]>;    // a stacked raw's JPEG or HEIF, by its imgid
   empty: string;                          // what an empty grid says
@@ -5716,6 +5753,7 @@ function Filmstrip({ images, partners, pending, empty, current, loader, height, 
   candidate: number | null;               // the photo compared with the open one
   onPick: (i: ImageEntry, e: React.MouseEvent) => void;
   onDouble: (i: ImageEntry) => void;
+  onOpenKnown: (k: Known, double: boolean) => void;
   onMenu: (e: React.MouseEvent, imgid: number) => void;
   onMeta: (i: ImageEntry, fields: Partial<ImageEntry>) => void;
   more?: () => void;                      // there are more results: called as the end scrolls into view
@@ -5752,13 +5790,17 @@ function Filmstrip({ images, partners, pending, empty, current, loader, height, 
     const root = strip.current;
     if (!root) return;
     const seen = new IntersectionObserver((entries) => {
-      const id = (e: IntersectionObserverEntry) => Number((e.target as HTMLElement).dataset.imgid);
+      // a known photo's cell by its knownKey()
+      const id = (e: IntersectionObserverEntry) => {
+        const d = (e.target as HTMLElement).dataset;
+        return d.imgid !== undefined ? Number(d.imgid) : d.known!;
+      };
       const ids = entries.filter((e) => e.isIntersecting).map(id);
       loader.show(ids, true);
       loader.show(entries.filter((e) => !e.isIntersecting).map(id), false);
       if (ids.length) loader.request(ids, true);
     }, { root, rootMargin: grid ? "300px 0px" : "0px 300px" });
-    root.querySelectorAll<HTMLElement>(".thumb[data-imgid]").forEach((el) => seen.observe(el));
+    root.querySelectorAll<HTMLElement>(".thumb[data-imgid], .thumb[data-known]").forEach((el) => seen.observe(el));
     return () => seen.disconnect();
   }, [images, loader, grid]);
   // a grid's cells are a fixed height, and share each row's width
@@ -5769,6 +5811,8 @@ function Filmstrip({ images, partners, pending, empty, current, loader, height, 
   // batch or a new selection redraws only the cells that changed
   const on = useRef({ onPick, onDouble, onMenu, onMeta });
   on.current = { onPick, onDouble, onMenu, onMeta };
+  const openKnown = useRef(onOpenKnown);
+  openKnown.current = onOpenKnown;
   // an empty grid still covers the photo, and says why it is empty
   if (!images.length && !pending.length) {
     return grid ? <div className="filmstrip grid empty" onContextMenu={onBackMenu}><div className="grid-empty">{empty}</div></div>
@@ -5778,7 +5822,9 @@ function Filmstrip({ images, partners, pending, empty, current, loader, height, 
     <div className={`filmstrip${grid ? " grid" : ""}`} ref={strip} style={grid ? undefined : { height }}
          onContextMenu={onBackMenu}
          onWheel={(e) => { if (strip.current && !grid) strip.current.scrollLeft += e.deltaY + e.deltaX; }}>
-      {images.map((i) => (
+      {images.map((i) => !("imgid" in i)
+        ? <KnownCell key={`k${knownKey(i)}`} entry={i} loader={loader} cell={cell} open={openKnown} doubleOpens={grid} />
+        : (
         <FilmCell key={i.imgid} entry={i} loader={loader} cell={cell} on={on}
                   types={[i, ...(partners.get(i.imgid) ?? [])]
                     .map((f) => (f.filename.match(/\.([^.]+)$/)?.[1] ?? "").toUpperCase()).join("+")}
@@ -5828,6 +5874,36 @@ const FilmCell = memo(function FilmCell({ entry: i, loader, cell, on, types, act
                     disabled={isRemote(i)}
                     onClick={() => on.current!.onMeta(i, { rating: i.rating === n ? 0 : n, rejected: false })}>★</button>
           ))}
+        </span>
+        <span className="labels">
+          {LABEL_COLORS.map((c, k) => (i.labels & (1 << k)
+            ? <span key={k} className="dot" style={{ background: c }} /> : null))}
+        </span>
+      </div>
+    </div>
+  );
+});
+
+// a photo known from the folder's last read, not yet read by this one: as
+// it was then, and read-only until it is read, when a FilmCell takes its place
+const KnownCell = memo(function KnownCell({ entry: i, loader, cell, open, doubleOpens }: {
+  entry: Known; loader: ThumbLoader; cell: React.CSSProperties;
+  open: React.RefObject<(k: Known, double: boolean) => void>; doubleOpens: boolean;
+}) {
+  return (
+    <div className={`thumb known${i.rejected ? " rejected" : ""}${i.rating || i.rejected ? " rated" : ""}`} style={cell}
+         title={i.filename} data-known={knownKey(i)} onClick={() => { if (!doubleOpens) open.current!(i, false); }}
+         onDoubleClick={() => { if (doubleOpens) open.current!(i, true); }}>
+      <div className="thumb-head">
+        <span className="thumb-name">{i.filename.replace(/\.[^.]+$/, "")}</span>
+        {i.edited && <span className="thumb-edited" title="edited"><SlidersIcon /></span>}
+        <span className="thumb-type">{(i.filename.match(/\.([^.]+)$/)?.[1] ?? "").toUpperCase()}{copyName(i)}</span>
+      </div>
+      <div className="thumb-image"><ThumbCanvas loader={loader} imgid={knownKey(i)} dogEar={!!i.copy} /></div>
+      <div className="thumb-foot read-only">
+        {i.rejected && <button className="thumb-reject on" disabled>✕</button>}
+        <span className="thumb-stars">
+          {[1, 2, 3, 4, 5].map((n) => <button key={n} className={!i.rejected && i.rating >= n ? "on" : ""} disabled>★</button>)}
         </span>
         <span className="labels">
           {LABEL_COLORS.map((c, k) => (i.labels & (1 << k)
@@ -5914,7 +5990,7 @@ function ThumbProgress({ loader }: { loader: ThumbLoader }) {
 }
 
 // the image's thumbnail as the loader has it, redrawn when that changes
-function ThumbCanvas({ loader, imgid, dogEar = false }: { loader?: ThumbLoader; imgid?: number; dogEar?: boolean }) {
+function ThumbCanvas({ loader, imgid, dogEar = false }: { loader?: ThumbLoader; imgid?: number | string; dogEar?: boolean }) {
   const [bitmap, setBitmap] = useState(() => (imgid === undefined ? undefined : loader?.get(imgid)));
   useEffect(() => {
     if (!loader || imgid === undefined) return;
@@ -5977,7 +6053,7 @@ function InfoOverlay({ mode, name, dir, entry }: { mode: number; name: string; d
   );
 }
 
-const copyName = (i: ImageEntry | null | undefined) => (i?.copy ? ` · Copy ${i.version}` : "");
+const copyName = (i: Known | null | undefined) => (i?.copy ? ` · Copy ${i.version}` : "");
 
 // what the system's file manager is called
 const TRASH = navigator.userAgent.includes("Windows") ? "Recycle Bin" : "Trash";
