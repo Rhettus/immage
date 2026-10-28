@@ -320,9 +320,11 @@ async fn on_engine_thread(state: &AppState, mut req: Value) -> Result<Value, Str
 // select an object with the AI model: clicks [[x, y, include]] and/or a
 // box [x0, y0, x1, y1] in shown-image units; replies with its outline.
 // `inset` false traces it on its edge, for a selection the mask takes away
-// (main.c, _trace_json)
+// (main.c, _trace_json). with `backdrop`, replies { paths, backdrop }: the
+// hue range of a plain background to take out, or null (main.c, _backdrop)
 #[tauri::command]
-async fn ai_object(state: State<'_, AppState>, points: Value, r#box: Option<Value>, inset: Option<bool>) -> Result<Value, String> {
+async fn ai_object(state: State<'_, AppState>, points: Value, r#box: Option<Value>, inset: Option<bool>,
+                   backdrop: Option<bool>) -> Result<Value, String> {
     let mut req = json!({ "cmd": "ai_object", "points": points });
     if let Some(b) = r#box {
         req["box"] = b;
@@ -330,8 +332,22 @@ async fn ai_object(state: State<'_, AppState>, points: Value, r#box: Option<Valu
     if let Some(i) = inset {
         req["inset"] = json!(i);
     }
-    let reply = on_engine_thread(&state, req).await?;
-    Ok(reply["paths"].clone())
+    ai_outline(&state, req, backdrop).await
+}
+
+// an AI selection's reply as its command gives it: the paths, or with
+// `backdrop`, the paths and the backdrop (its hue range and edge outline)
+async fn ai_outline(state: &AppState, mut req: Value, backdrop: Option<bool>) -> Result<Value, String> {
+    let backdrop = backdrop.unwrap_or(false);
+    if backdrop {
+        req["backdrop"] = json!(true);
+    }
+    let reply = on_engine_thread(state, req).await?;
+    Ok(if backdrop {
+        json!({ "paths": reply["paths"], "backdrop": reply["backdrop"] })
+    } else {
+        reply["paths"].clone()
+    })
 }
 
 // darktable's AI models come from its model repository, in the release made
@@ -569,9 +585,10 @@ async fn ai_model_reinstall(app: AppHandle, state: State<'_, AppState>, id: Stri
 
 // a one-click AI mask ("subject"): its outline, as ai_object replies, and
 // `inset` as there. "depth" takes the band of depth it covers, [near, far]
-// in 0-1
+// in 0-1. `backdrop` as there too
 #[tauri::command]
-async fn ai_mask(state: State<'_, AppState>, kind: String, range: Option<[f64; 2]>, inset: Option<bool>) -> Result<Value, String> {
+async fn ai_mask(state: State<'_, AppState>, kind: String, range: Option<[f64; 2]>, inset: Option<bool>,
+                 backdrop: Option<bool>) -> Result<Value, String> {
     let mut req = json!({ "cmd": "ai_mask", "kind": kind });
     if let Some(r) = range {
         req["range"] = json!(r);
@@ -579,8 +596,7 @@ async fn ai_mask(state: State<'_, AppState>, kind: String, range: Option<[f64; 2
     if let Some(i) = inset {
         req["inset"] = json!(i);
     }
-    let reply = on_engine_thread(&state, req).await?;
-    Ok(reply["paths"].clone())
+    ai_outline(&state, req, backdrop).await
 }
 
 // the depth map, about `size` across: { width, height, data } with data

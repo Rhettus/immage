@@ -72,7 +72,7 @@ const { Session } = await import("../app/src/session.ts");
 const { withModel } = await import("../app/src/aiModel.ts");
 const m = await import("../app/src/manifest.ts");
 const { canMerge } = await import("../app/src/localMerge.ts");
-const { aiRefine, overlayPixels, overlayShown, overlayStep } = await import("../app/src/masks.ts");
+const { aiRefine, overlayPixels, overlayShown, overlayStep, readsBackdrop } = await import("../app/src/masks.ts");
 const { ILLUMINANT_D } = await import("../app/src/wb.ts");
 const { autoTone } = await import("../app/src/autoTone.ts");
 const { dueIn } = await import("../app/src/activity.ts");
@@ -1402,6 +1402,124 @@ async function decisions(photo) {
           // more on this rim's teeth, whose tips an inset takes more off
           : inset.by < half - 1.5 || inset.by > 2 * half + 1.5
             ? `traced to be added, the outline lies ${inset.by.toFixed(2)} px inside the rim, not about ${half}` : null;
+      } finally {
+        await restart();
+      }
+    });
+  }
+
+  // a selection that starts a mask over a plain, colorful background takes
+  // that color out of its feather: the edge outline less the color, or the
+  // inset outline (main.c, _backdrop and _object_shapes). darktable
+  // feathers the outline outward, so the inset one alone still lifts the
+  // background beside it, a halo at +1 EV; on a stilt over water its fringe
+  // fell from 9% to under 1%. a made-up subject over plain blue, with a
+  // blue patch of its own: the range is round the blue, the mask in the
+  // 1-4 px outside the rim falls from about 43%, the 1-3 px inside keeps
+  // its part, and so does the patch, which a hue range over the whole mask
+  // cut out (as it did a stilt's blue-shaded chest). inverted with a range,
+  // where darktable inverts the backdrop's shape too, the rim is the same
+  // mask inverted. over gray, pale cream, or stripes of four colors, there
+  // is no backdrop, and the outline stays inset: cream's hue is too faint
+  // to hold still in the noise, and speckles the edge. Fit to Background
+  // turned off, the mask is the one a selection without a backdrop gets,
+  // and opened again it is still off (MasksPanel.tsx)
+  const BACKDROP = "a subject over a plain background takes its color out";
+  if (photo === args.photos[0]) {
+    if (!args.models || !existsSync(join(args.models, SUBJECT, "config.json"))) {
+      record({ check: "decisions", photo: basename(photo), id: BACKDROP, status: "skip",
+               detail: `no ${SUBJECT} in build/ai-models: use Select Subject once in a dev build` });
+    } else await decide(BACKDROP, async () => {
+      const W = 3000, H = 2000, R = 600, A = 25, N = 48;
+      const rim = (t) => R + A * Math.sin(N * t);
+      // the patch, inside the disc's right side
+      const PX = W / 2 + 330, PY = H / 2, PR = 110;
+      const dir = join(args.work, "backdrop");
+      mkdirSync(dir, { recursive: true });
+      const made = (name, back) => {
+        const px = Buffer.alloc(3 * W * H);
+        let seed = 1;
+        const noise = () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 2 ** 32 - 0.5) * 30;
+        for (let y = 0; y < H; y++)
+          for (let x = 0; x < W; x++) {
+            const dx = x - W / 2, dy = y - H / 2, k = 3 * (y * W + x);
+            const c = Math.hypot(x - PX, y - PY) < PR ? [40, 80, 170]
+              : Math.hypot(dx, dy) < rim(Math.atan2(dy, dx)) ? [230, 150, 40] : back(x).map((v) => v + noise());
+            for (let i = 0; i < 3; i++) px[k + i] = Math.max(0, Math.min(255, Math.round(c[i])));
+          }
+        const path = join(dir, `${name}.ppm`);
+        writeFileSync(path, Buffer.concat([Buffer.from(`P6\n${W} ${H}\n255\n`), px]));
+        return path;
+      };
+      const STRIPES = [[60, 140, 60], [40, 80, 170], [170, 60, 140], [200, 190, 60]];
+      const blue = made("blue", () => [40, 80, 170]);
+      const gray = made("gray", () => [120, 120, 120]), cream = made("cream", () => [185, 180, 165]), stripes = made("stripes", (x) => STRIPES[Math.floor(x / 150) % 4]);
+      await stopEngine();
+      startEngine(args.engine, join(args.work, "ai-engine"), args.models);
+      try {
+        await invoke("ai_model_ensure", { id: SUBJECT });
+        const select = async (path) => {
+          await request({ cmd: "open", path: fresh(path), imgid: -1 });
+          return invoke("ai_mask", { kind: "subject", backdrop: true });
+        };
+        const got = await select(blue), back = (await invoke("sample", { x: 0.05, y: 0.5 })).hue;
+        const inset = await invoke("ai_mask", { kind: "subject" });
+        const grayGot = (await select(gray)).backdrop, creamGot = (await select(cream)).backdrop;
+        const stripesGot = (await select(stripes)).backdrop;
+        if (!got.paths?.length) return "Select Subject found nothing";
+        if (!got.backdrop) return "over plain blue, no backdrop";
+        const [, lo, hi] = got.backdrop.range;
+        if (back < lo || back > hi) return `the range ${lo.toFixed(3)}-${hi.toFixed(3)} leaves out the blue's hue ${back.toFixed(3)}`;
+        if (grayGot) return "over gray, a backdrop";
+        if (creamGot) return "over pale cream, a backdrop";
+        if (stripesGot) return "over stripes of four colors, a backdrop";
+        // darktable's mask at full size over the disc's right side: how much
+        // it holds 1-4 px outside the rim, 1-3 px inside, and over the patch
+        const VX = 1700, VY = 600, VW = 700, VH = 800;
+        const rimMask = async (shapes, invert = false) => {
+          const o = await open(fresh(blue));
+          await o.after(() => o.s.addMask("M", shapes));
+          await o.after(() => o.s.setLocal("M", "l_exposure", 1));
+          if (invert) await o.after(() => o.s.setInvert("M", true));
+          const map = new Uint8Array(await invoke("mask_map", { name: "M", width: VW, height: VH,
+                                                                view: { x: VX, y: VY, scale: 1 } }), 8);
+          const kept = (await invoke("masks", { fields: {} })).find((m) => m.name === "M")?.shapes[0];
+          await o.s.close();
+          const sum = { out: 0, no: 0, in: 0, ni: 0, patch: 0, np: 0 };
+          for (let y = 0; y < VH; y++)
+            for (let x = 0; x < VW; x++) {
+              const dx = VX + x + 0.5 - W / 2, dy = VY + y + 0.5 - H / 2;
+              const d = Math.hypot(dx, dy) - rim(Math.atan2(dy, dx));
+              if (d > 1 && d < 4) { sum.out += map[y * VW + x]; sum.no++; }
+              if (d < -1 && d > -3) { sum.in += map[y * VW + x]; sum.ni++; }
+              if (Math.hypot(VX + x + 0.5 - PX, VY + y + 0.5 - PY) < PR - 10) { sum.patch += map[y * VW + x]; sum.np++; }
+            }
+          return { out: sum.out / sum.no / 255, in: sum.in / sum.ni / 255, patch: sum.patch / sum.np / 255, kept };
+        };
+        if (!got.backdrop.plain?.length) return "no plain outline comes with the backdrop";
+        const subject = { type: "object", paths: got.paths,
+                          backdrop: { range: got.backdrop.range, paths: got.backdrop.paths, plain: got.backdrop.plain } };
+        const was = await rimMask([{ type: "object", paths: inset }]);
+        const now = await rimMask([subject]);
+        const off = await rimMask([{ ...subject, backdrop: { ...subject.backdrop, off: true } }]);
+        const inv = await rimMask([subject, { type: "luminance", lo: null, hi: null, feather: 1 }], true);
+        const pct = (v) => `${(100 * v).toFixed(0)}%`;
+        // its paths show only the inset outline, so the overlay is the
+        // engine's map, as the engine adds the backdrop: under a first shape
+        const mask = (shapes) => ({ name: "m", shapes, invert: false, values: {} });
+        const lum = { type: "luminance", lo: null, hi: null, feather: 1 };
+        return !readsBackdrop(mask([lum, subject])) ? "its overlay is drawn from its paths, which show the inset outline alone"
+          : readsBackdrop(mask([{ type: "object", paths: inset }, subject])) ? "under another shape, its overlay waits on a backdrop the engine leaves out"
+          : readsBackdrop(mask([{ ...subject, backdrop: { ...subject.backdrop, off: true } }])) ? "turned off, its overlay waits on the backdrop"
+          : now.out > 0.6 * was.out ? `outside the rim the mask holds ${pct(now.out)}, against ${pct(was.out)} inset`
+          : now.in < was.in - 0.02 ? `inside the rim the mask holds ${pct(now.in)}, against ${pct(was.in)} inset`
+          : now.patch < was.patch - 0.02 ? `over the subject's blue the mask holds ${pct(now.patch)}, against ${pct(was.patch)} inset`
+          : Math.abs(1 - inv.out - now.out) > 0.05 ? `inverted with a range, outside the rim it holds ${pct(inv.out)}, against ${pct(1 - now.out)}`
+          : Math.abs(off.out - was.out) > 0.02 || Math.abs(off.in - was.in) > 0.02
+            ? `turned off, the rim holds ${pct(off.out)} outside and ${pct(off.in)} inside, against ${pct(was.out)} and ${pct(was.in)} without a backdrop`
+          : !off.kept?.backdrop?.off ? "turned off, it reads back on"
+          : now.kept?.backdrop?.off !== false || !now.kept.backdrop.plain?.length ? "on, it reads back off or without its plain outline"
+          : null;
       } finally {
         await restart();
       }
