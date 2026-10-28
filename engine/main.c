@@ -6953,27 +6953,27 @@ static gboolean _backdrop(const _ai_job_t *job, const float *p, JsonBuilder *b)
   const int w = job->hw, h = job->hh;
   const size_t n = (size_t)w * h;
   const float *hc = job->hues;
-  float *near = g_malloc(n * sizeof(float));
-  float *far = g_malloc(n * sizeof(float)), *tmp = g_malloc(n * sizeof(float));
+  float *near_mean = g_malloc(n * sizeof(float));
+  float *far_mean = g_malloc(n * sizeof(float)), *tmp = g_malloc(n * sizeof(float));
   for(int j = 0; j < h; j++)
     for(int i = 0; i < w; i++)
     {
       const int x = MIN(job->gw - 1, (int)((i + 0.5f) * job->gw / w));
       const int y = MIN(job->gh - 1, (int)((j + 0.5f) * job->gh / h));
       const size_t k = (size_t)j * w + i;
-      near[k] = far[k] = p[(size_t)y * job->gw + x] >= 0.5f;
+      near_mean[k] = far_mean[k] = p[(size_t)y * job->gw + x] >= 0.5f;
     }
   // the ring outside, clear of the edge, whose pixels at the working
   // image's size are part either side
   const int r0 = MAX(2, MAX(w, h) / 340), r1 = MAX(6, MAX(w, h) / 85);
-  _box_mean(near, tmp, w, h, r0);
-  _box_mean(far, tmp, w, h, r1);
+  _box_mean(near_mean, tmp, w, h, r0);
+  _box_mean(far_mean, tmp, w, h, r1);
   uint8_t *ring = g_malloc(n);
   size_t rn = 0;
   int hist[72] = { 0 };
   for(size_t k = 0; k < n; k++)
   {
-    ring[k] = near[k] == 0.0f && far[k] > 0.0f;
+    ring[k] = near_mean[k] == 0.0f && far_mean[k] > 0.0f;
     rn += ring[k];
     if(ring[k] && hc[3 * k + 1] >= _BACKDROP_CHROMA) hist[MIN(71, (int)(hc[3 * k] * 72))]++;
   }
@@ -7029,13 +7029,13 @@ static gboolean _backdrop(const _ai_job_t *job, const float *p, JsonBuilder *b)
       const size_t k = (size_t)j * w + i;
       const int x = MIN(job->gw - 1, (int)((i + 0.5f) * job->gw / w));
       const int y = MIN(job->gh - 1, (int)((j + 0.5f) * job->gh / h));
-      if(p[(size_t)y * job->gw + x] >= 0.5f || near[k] == 0.0f) continue;
+      if(p[(size_t)y * job->gw + x] >= 0.5f || near_mean[k] == 0.0f) continue;
       const float d = _hue_dist(hc[3 * k], hue);
       bn++;
       unclear += hc[3 * k + 1] < _BACKDROP_CHROMA || (d > a && d < o + 0.08f);
     }
-  g_free(near);
-  g_free(far);
+  g_free(near_mean);
+  g_free(far_mean);
   g_free(tmp);
   g_free(ring);
   // hz runs 0-1 without wrapping: a window over its ends cannot be made
