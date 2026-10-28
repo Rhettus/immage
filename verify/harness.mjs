@@ -1780,6 +1780,41 @@ async function decisions(photo) {
     return widths.join() === want.join() ? null : `draft widths ${widths.join(", ")}, not ${want.join(", ")}`;
   });
 
+  // a drag on the GPU starts each frame from the dragged module's input in
+  // the pipe cache, not from the raw: darktable keeps GPU results there only
+  // for its GUI's focused module, and headless every frame reran demosaic
+  // (patches/darktable-engine.patch, important_input; main.c, _set's
+  // history_last_module). once, on the first raw, where OpenCL works
+  if (photo === args.photos.find((p) => /\.(arw|cr2|cr3|nef|nrw|orf|pef|raf|rw2|srw)$/i.test(p))) {
+    const GPU_DRAG = "GPU drags start from the module dragged";
+    let err = null, skip = null;
+    const lines = [];
+    await stopEngine();
+    startEngine(args.engine, join(args.work, "gpu-engine"), null, { gpu: true, onPerf: (l) => lines.push(l) });
+    try {
+      const o = await open(fresh(photo));
+      o.view = { ...VIEW, draft: true };
+      for (const v of [0.1, 0.2]) { o.s.set("exposure", v); await o.frame(); }
+      lines.length = 0;
+      o.s.set("exposure", 0.3);
+      await o.frame();
+      // its timings are all printed once the engine starts on the next request
+      await request({ cmd: "version", perf_mark: 1 });
+      for (let t = 0; t < 100 && !lines.some((l) => l.includes('"perf_mark"')); t++) await new Promise((r) => setTimeout(r, 20));
+      await o.s.close();
+      const ran = lines.map((l) => /processed `([^']+)' on (GPU|CPU)/.exec(l)).filter(Boolean);
+      if (!ran.some((r) => r[2] === "GPU")) skip = "no module ran on the GPU: no OpenCL here";
+      else if (!ran.some((r) => r[1] === "exposure")) err = `the last frame's timings lack exposure: ${ran.map((r) => r[1]).join(", ")}`;
+      else if (ran.some((r) => r[1] === "demosaic")) err = `the last drag frame ran from the raw: ${ran.map((r) => r[1]).join(", ")}`;
+    } catch (e) {
+      err = String(e?.stack ?? e);
+    } finally {
+      await restart();
+    }
+    record({ check: "decisions", photo: basename(photo), id: GPU_DRAG, status: skip ? "skip" : err ? "fail" : "pass",
+             detail: skip ?? err ?? "" });
+  }
+
   // trying a setting, as a preset's tile does, never touches the edit or
   // the main pipe (architecture.md, Engine); and a frame of an unchanged edit
   // carries the same hash, which keeps the sharper base on zooming out

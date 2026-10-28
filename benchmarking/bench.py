@@ -288,6 +288,9 @@ NEW_PHOTO = {"tm_mode": 1}
 # the heavy scenario's edit: the four modules that took the app's idle base
 # render to 4.8 s in an earlier run
 HEAVY = {"grain_amount": 30, "texture": 40, "usm_amount": 25, "nr_luminance": 40}
+# the heavydrag scenario's sliders, early to late in the pipe, and frames a drag
+HEAVY_DRAG = ["temp", "exposure", "highlights", "clarity", "vibrance", "vig_amount"]
+HEAVY_DRAG_FRAMES = 12
 
 # each of Immage's modules, timed against darktable modules that do a
 # similar job. "controls" are Immage's own edit (lib/edits.mjs); "op" enables
@@ -638,6 +641,32 @@ def run_image(eng, edits, rec, mode, img, args, workdir, spawn):
         for step, samples in seq.items():
             rec.add(mode, name, "heavy", step, samples, {"controls": heavy})
 
+    # drags over the heavy edit, sliders early to late in the pipe: the
+    # modules before the dragged one come from the drag pipe's cache, which
+    # on the GPU keeps them only for the module marked as last edited. the
+    # first frame of each drag, which fills that cacheline, is left out
+    if "heavydrag" in args.only:
+        heavy = {k: v for k, v in HEAVY.items() if k in controls}
+        undo = {k: controls[k]["value"] for k in heavy}
+        send_edits(eng, edits, heavy)
+        render_sample(eng, VIEW, rgba=rgba)
+        for cid in HEAVY_DRAG:
+            c = controls.get(cid)
+            if not c:
+                continue
+            delta = dict((k, d) for k, d, *_ in CONTROLS)[cid]
+            sign = 1 if c["min"] <= c["value"] + delta <= c["max"] else -1
+            frames = []
+            for i in range(HEAVY_DRAG_FRAMES):
+                send_edits(eng, edits, {cid: c["value"] + sign * delta * (i + 1) / HEAVY_DRAG_FRAMES})
+                frames.append(render_sample(eng, DRAFT, rgba=rgba, skip=DRAFT_SKIP, draft=True))
+            send_edits(eng, edits, {cid: c["value"]})
+            render_sample(eng, VIEW, rgba=rgba)
+            rec.add(mode, name, "heavydrag", f"{cid} drag (heavy edit)", frames[1:],
+                    {"control": cid, "controls": heavy, "first": frames[0]["wall"]})
+        send_edits(eng, edits, undo)
+        render_sample(eng, VIEW, rgba=rgba)
+
     # a long drag and its release. a drag's frames once filled the main
     # pipe's 64 cachelines, and after some 30 of them the release reran from
     # the raw (540 ms for Highlights); the engine's drag pipe keeps them apart.
@@ -940,7 +969,7 @@ def main():
     ap.add_argument("--opencl", choices=["off", "on", "both", "split", "app"], default="both",
                     help="off: cpu; on: opencl; both: cpu and opencl; split: the app's engine; app: cpu and split")
     ap.add_argument("--repeat", type=int, default=7, help="samples per step (default 7)")
-    ap.add_argument("--only", default="sliders,roi,heavy,longdrag,draftpipe,zoom,preview,modules,export,masks,prefetch",
+    ap.add_argument("--only", default="sliders,roi,heavy,heavydrag,longdrag,draftpipe,zoom,preview,modules,export,masks,prefetch",
                     help="scenarios, comma separated (default all)")
     ap.add_argument("--images", default="", help="only photos whose names contain one of these, comma separated")
     ap.add_argument("--all", action="store_true",
