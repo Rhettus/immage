@@ -148,6 +148,9 @@ function framed(r) {
   const out = new ArrayBuffer(FRAME_HEAD + pixels.length);
   const v = new DataView(out);
   ["width", "height", "full_width", "full_height", "x", "y"].forEach((k, i) => v.setUint32(4 * i, r[k] ?? 0, true));
+  // the engine's timings, as main.rs places them (Session's drafts read the pipeline's)
+  v.setFloat32(32, r.process_ms ?? 0, true);
+  v.setFloat32(36, r.write_ms ?? 0, true);
   v.setBigUint64(48, BigInt("0x" + (r.hash || "0")), true);
   new Uint8Array(out, FRAME_HEAD).set(pixels);
   return out;

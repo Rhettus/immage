@@ -117,6 +117,8 @@ async function open(path) {
   const o = { view: VIEW };
   const s = await Session.open(path, null, () => o.view, (f) => { last = f; }, (e) => errors.push(e));
   s.previewMode = () => "quality";
+  // drafts at the view's size, however long they take
+  s.draftLimits = () => ({ target: 60, smallest: 1 });
   if (!s.wasEdited) {
     const defaults = [];
     if (s.values.tm_mode !== 1) defaults.push(["tm_mode", 1]);
@@ -1748,6 +1750,34 @@ async function decisions(photo) {
       o.view = VIEW;
       await o.s.close();
     }
+  });
+
+  // a drag's drafts step down in size while darktable takes longer than the
+  // target on them, not on the first draft at a size (which ran from the
+  // raw) nor on one darktable had cached (a value shown before), never
+  // below the smallest step, and back up once the size above would fit
+  // (Session.draftView)
+  await decide("slow drags get smaller drafts", async () => {
+    const o = await open(fresh(photo));
+    let limits = { target: 0, smallest: 0.5 };
+    o.s.draftLimits = () => limits;
+    o.view = { ...VIEW, draft: true };
+    // one draft a move, as a drag sends them: after() would render another
+    // with no edit, which pays for a new size in its place
+    const widths = [];
+    const move = async (v) => { o.s.set("exposure", v); widths.push((await o.frame()).width); };
+    try {
+      for (let k = 1; k <= 5; k++) await move(k / 10);
+      limits = { target: 0.5, smallest: 0.5 };
+      for (const v of [0.6, 0.5, 0.7]) await move(v);
+      limits = { target: 1e6, smallest: 0.5 };
+      for (let k = 8; k <= 11; k++) await move(k / 10);
+    } finally {
+      o.view = VIEW;
+      await o.s.close();
+    }
+    const want = [1024, 1024, 717, 717, 512, 512, 512, 512, 512, 717, 717, 1024];
+    return widths.join() === want.join() ? null : `draft widths ${widths.join(", ")}, not ${want.join(", ")}`;
   });
 
   // trying a setting, as a preset's tile does, never touches the edit or
