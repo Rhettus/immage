@@ -67,7 +67,7 @@ globalThis.ImageData = class {
 };
 
 const args = JSON.parse(process.argv[2]);
-const { startEngine, stopEngine, request, requestTagged, invoke, sent, models, screen, FRAME_HEAD } = await import(SHIM);
+const { startEngine, stopEngine, request, requestTagged, invoke, sent, models, screen, enginePid, FRAME_HEAD } = await import(SHIM);
 const { Session } = await import("../app/src/session.ts");
 const { withModel } = await import("../app/src/aiModel.ts");
 const m = await import("../app/src/manifest.ts");
@@ -790,6 +790,36 @@ async function fixes(photo) {
     const moved = before.filter((v, k) => Math.abs(v - after[k]) > 2).length / before.length;
     return moved > 0.01 ? `after a zoomed mask map, ${(100 * moved).toFixed(0)}% of the range map changed` : null;
   });
+
+  // 0.39.0: an AI selection's model stayed loaded for the engine's life,
+  // and ONNX Runtime keeps a session's peak working memory until the
+  // session goes: after Select Subject, 7-10 GB resident and an 18 GB
+  // footprint for good. the engine lets the models go 30 s after their
+  // last use (main.c, _ai_release)
+  const BIREFNET = "mask-subject-birefnet-lite", IDLE = "AI models let go when idle";
+  if (photo === args.photos[0]) {
+    if (process.platform === "win32" || !args.models || !existsSync(join(args.models, BIREFNET, "config.json"))) {
+      record({ check: "fixes", photo: basename(photo), id: IDLE, status: "skip",
+               detail: process.platform === "win32" ? "measured with ps, which Windows lacks"
+                 : `no ${BIREFNET} in build/ai-models: use Select Subject once in a dev build` });
+    } else await fix(IDLE, async () => {
+      await stopEngine();
+      startEngine(args.engine, join(args.work, "ai-engine"), args.models);
+      try {
+        const rss = () => Number(spawnSync("ps", ["-o", "rss=", "-p", String(enginePid())]).stdout.toString().trim()) / 1024;
+        await request({ cmd: "open", path: fresh(photo), imgid: -1 });
+        await invoke("ai_model_ensure", { id: BIREFNET });
+        if (!(await invoke("ai_mask", { kind: "subject" }))?.length) return "Select Subject found nothing";
+        const ran = rss();
+        await new Promise((r) => setTimeout(r, 40000));
+        const idle = rss();
+        return idle > ran / 2
+          ? `40 s after Select Subject, the engine still holds ${idle.toFixed(0)} MB of the ${ran.toFixed(0)} MB it ran with` : null;
+      } finally {
+        await restart();
+      }
+    });
+  }
 
   // 0.38.0: an AI selection's overlay was drawn from a copy of its outline
   // 512 px across, so zoomed in its edge came in steps, and it left out

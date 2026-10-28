@@ -58,6 +58,8 @@ export function startEngine(binary, home, modelsDir = null) {
   });
 }
 let exited = Promise.resolve();
+// the running engine's process, for the checks that measure it
+export const enginePid = () => engine?.pid ?? null;
 
 // one request at a time, as the Rust layer's Mutex<Engine> serializes them
 let chain = Promise.resolve();
