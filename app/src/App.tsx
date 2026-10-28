@@ -16,7 +16,7 @@ import { autoArea, autoBlack, autoDmax, autoDmin, autoExposure as autoPrintExpos
          FILM_BW, FILM_COLOR, fromValues, PRESETS, toValues, type Stats } from "./negadoctor";
 import { NegativePanel, type NegPick } from "./NegativePanel";
 import { CircleOff, Grid2x2, MoveHorizontal, MoveVertical, PenLine, Sparkles, WandSparkles } from "lucide-react";
-import { Session, instanceKey, mapOpOf, type Frame, type HistoryItem, type ModuleState, type View } from "./session";
+import { Session, framePlace, instanceKey, mapOpOf, type Frame, type HistoryItem, type ModuleState, type View } from "./session";
 import { AUTO_TONE_IDS, autoExposure, autoTone, type SceneKey } from "./autoTone";
 import { curve } from "./tonecurve";
 import { clipColor, computeHistogram, DEFAULT_SCOPE, drawScope, HARMONIES, HARMONY_WIDTHS, histogramPath, paintClipping,
@@ -93,6 +93,10 @@ import { FilterPopup, type Bounds as FilterBounds, type ImmichFilters } from "./
 
 
 const MAX_PREVIEW = 2560;
+// what a layer keeps of its frame to be placed (framePlace)
+type Placed = Pick<Frame, "x" | "y" | "view" | "fullWidth" | "fullHeight" | "width" | "height">;
+const placed = (f: Frame): Placed => ({ x: f.x, y: f.y, view: f.view, fullWidth: f.fullWidth, fullHeight: f.fullHeight,
+                                        width: f.width, height: f.height });
 // a drag's frames, as a share of the full frame's width and height, by the
 // Preview preference; Quality has no drag frames
 const DRAFT: Record<Preview, number> = { quality: 1, balanced: 0.5, performance: 0.25 };
@@ -1459,7 +1463,7 @@ export default function App() {
   // the whole image at the zoom's scale (Session.onCopy), between the base
   // and the sharp frame: what a pan or a zoom brings into view is sharp
   const copyCanvas = useRef<HTMLCanvasElement>(null);
-  const copyMeta = useRef<{ scale: number; width: number; height: number } | null>(null);
+  const copyMeta = useRef<Placed | null>(null);
   const [copyOn, setCopyOn] = useState(false);
   // a copy dropped while its bitmap was being made is not drawn
   const copyGen = useRef(0);
@@ -1485,7 +1489,7 @@ export default function App() {
     for (const [src, dst] of pairs) if (src && dst) paintClipping(src, dst, clipRef.current);
   };
   useEffect(() => { paintClip("both"); }, [clipShown.low, clipShown.high]);
-  const baseMeta = useRef<{ width: number; height: number } | null>(null);
+  const baseMeta = useRef<Placed | null>(null);
   // a control in the panels, the histogram or the mask editor held down (or
   // a wheel turning one): frames are drafts until it lets go, and then one
   // full frame follows if a draft was shown
@@ -1523,10 +1527,7 @@ export default function App() {
       window.removeEventListener("wheel", wheel, true);
     };
   }, []);
-  // scaleY, down: a fitted drag frame's own, as its size is rounded each way
-  // and drafts change size during a drag (Session.draftView); taking the
-  // width's for both moved the photo by a pixel or two at each change
-  const sharpMeta = useRef<{ x: number; y: number; scale: number; scaleY: number; width: number; height: number } | null>(null);
+  const sharpMeta = useRef<Placed | null>(null);
   // edits since the base was rendered; set on open and on every change
   const baseStale = useRef(true);
   // the base is a fitted frame at the viewer's size, not yet the sharper
@@ -1863,23 +1864,25 @@ export default function App() {
     const ox = w / 2 - center.current.x * f.w * z, oy = h / 2 - center.current.y * f.h * z;
     const b = baseMeta.current, bc = baseCanvas.current;
     if (b && bc) {
+      const p = framePlace(b, z);
       bc.style.width = `${b.width / dpr}px`;
       bc.style.height = `${b.height / dpr}px`;
-      bc.style.transform = `translate(${ox / dpr}px, ${oy / dpr}px) scale(${(z * f.w) / b.width})`;
+      bc.style.transform = `translate(${(ox + p.x) / dpr}px, ${(oy + p.y) / dpr}px) scale(${p.k})`;
       follow(bc, clipBase.current);
     }
     const cm = copyMeta.current, cc = copyCanvas.current;
     if (cm && cc) {
+      const p = framePlace(cm, z);
       cc.style.width = `${cm.width / dpr}px`;
       cc.style.height = `${cm.height / dpr}px`;
-      cc.style.transform = `translate(${ox / dpr}px, ${oy / dpr}px) scale(${z / cm.scale})`;
+      cc.style.transform = `translate(${(ox + p.x) / dpr}px, ${(oy + p.y) / dpr}px) scale(${p.k})`;
     }
     const s = sharpMeta.current, sc = canvas.current;
     if (s && sc) {
-      const sx = ox + (s.x / s.scale) * z, sy = oy + (s.y / s.scaleY) * z;
+      const p = framePlace(s, z);
       sc.style.width = `${s.width / dpr}px`;
       sc.style.height = `${s.height / dpr}px`;
-      sc.style.transform = `translate(${sx / dpr}px, ${sy / dpr}px) scale(${z / s.scale}, ${z / s.scaleY})`;
+      sc.style.transform = `translate(${(ox + p.x) / dpr}px, ${(oy + p.y) / dpr}px) scale(${p.k})`;
       follow(sc, clipSharp.current);
     }
     const bm = beforeMeta.current, bcv = beforeCanvas.current;
@@ -1954,8 +1957,7 @@ export default function App() {
     if (clipRef.current.low || clipRef.current.high) paintClip("sharp");
     full.current = { w: f.fullWidth, h: f.fullHeight };
     const scale = f.view.scale ?? f.width / f.fullWidth;
-    const scaleY = f.view.draft && f.view.scale === undefined ? f.height / f.fullHeight : scale;
-    sharpMeta.current = { x: f.x, y: f.y, scale, scaleY, width: f.width, height: f.height };
+    sharpMeta.current = placed(f);
     // a drag's frame is drawn once and placed; the histogram follows it. the
     // base, navigator, split view and fade wait for the full frame after
     if (f.view.draft) {
@@ -2277,7 +2279,7 @@ export default function App() {
       bc.height = f.height;
       bc.getContext("2d")!.putImageData(new ImageData(f.pixels, f.width, f.height), 0, 0);
       if (clipRef.current.low || clipRef.current.high) paintClip("base");
-      baseMeta.current = { width: f.width, height: f.height };
+      baseMeta.current = placed(f);
       setBaseTick((t) => t + 1);
     }
     full.current = { w: f.fullWidth, h: f.fullHeight };
@@ -3074,7 +3076,7 @@ export default function App() {
           cc.height = f.height;
           cc.getContext("2d")!.drawImage(bmp, 0, 0);
           bmp.close();
-          copyMeta.current = { scale: f.view.scale!, width: f.width, height: f.height };
+          copyMeta.current = placed(f);
           placeLayers();
           setCopyOn(true);
         });

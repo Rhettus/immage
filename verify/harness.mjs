@@ -68,7 +68,7 @@ globalThis.ImageData = class {
 
 const args = JSON.parse(process.argv[2]);
 const { startEngine, stopEngine, request, requestTagged, invoke, sent, models, screen, enginePid, FRAME_HEAD } = await import(SHIM);
-const { Session } = await import("../app/src/session.ts");
+const { Session, framePlace } = await import("../app/src/session.ts");
 const { withModel } = await import("../app/src/aiModel.ts");
 const m = await import("../app/src/manifest.ts");
 const { canMerge } = await import("../app/src/localMerge.ts");
@@ -549,6 +549,51 @@ async function fixes(photo) {
     await o.s.close();
     return p1 < p10 / 3 && n1 < n10 / 3 ? null
       : `the frame changed by ${p1.toFixed(2)} at +1 and ${p10.toFixed(2)} at +10, ${n1.toFixed(2)} at -1 and ${n10.toFixed(2)} at -10`;
+  });
+
+  // 0.39.0: the photo moved when a slider was let go. the app drew a frame
+  // as if darktable's pixels showed the image at their middles, where they
+  // show it at their corners, and took a fitted frame's scale from its
+  // rounded width (session.ts, framePlace): the half-size draft sat half a
+  // pixel or more off the full frame. here the draft is drawn as the app
+  // draws it, and the full frame must match it best unshifted
+  await fix("a drag's draft lines up with the full frame", async () => {
+    const o = await open(fresh(photo));
+    try {
+      const full = await o.after(() => o.s.set("exposure", 0.3));
+      o.view = { width: VIEW.width / 2, height: VIEW.height / 2, draft: true };
+      const draft = await o.after(() => {});
+      const z = Math.min(1, VIEW.width / full.fullWidth, VIEW.height / full.fullHeight);
+      const pf = framePlace(full, z), pd = framePlace(draft, z);
+      const luma = (f, i) => 0.2126 * f.pixels[i] + 0.7152 * f.pixels[i + 1] + 0.0722 * f.pixels[i + 2];
+      // the draft at a screen point, bilinear as the web view enlarges it
+      const at = (sx, sy) => {
+        const u = Math.min(Math.max((sx - pd.x) / pd.k - 0.5, 0), draft.width - 1.001);
+        const v = Math.min(Math.max((sy - pd.y) / pd.k - 0.5, 0), draft.height - 1.001);
+        const i = Math.floor(u), j = Math.floor(v), a = u - i, b = v - j;
+        const p = (x, y) => luma(draft, 4 * (y * draft.width + x));
+        return (1 - b) * ((1 - a) * p(i, j) + a * p(i + 1, j)) + b * ((1 - a) * p(i, j + 1) + a * p(i + 1, j + 1));
+      };
+      const mad = (dx, dy) => {
+        let n = 0, sum = 0;
+        for (let y = 16; y < full.height - 16; y++) for (let x = 16; x < full.width - 16; x++) {
+          const sx = pf.x + (x + 0.5) * pf.k + dx, sy = pf.y + (y + 0.5) * pf.k + dy;
+          sum += Math.abs(luma(full, 4 * (y * full.width + x)) - at(sx, sy));
+          n++;
+        }
+        return sum / n;
+      };
+      let best = { dx: 0, dy: 0, d: mad(0, 0) };
+      for (const dx of [-0.5, 0, 0.5]) for (const dy of [-0.5, 0, 0.5]) {
+        const d = mad(dx, dy);
+        if (d < best.d) best = { dx, dy, d };
+      }
+      return !best.dx && !best.dy ? null
+        : `the draft matches the full frame best moved ${best.dx}, ${best.dy} screen pixels`;
+    } finally {
+      o.view = VIEW;
+      await o.s.close();
+    }
   });
 
   // 0.34.0: darktable's AI models were unpacked with the system's unzip,
