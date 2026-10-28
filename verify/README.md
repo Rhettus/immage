@@ -10,6 +10,7 @@ last time this was run.
 cmake --build build                      # the engine under test
 python3 -I verify/run.py                 # about 10 minutes; exits 1 on a failure
 python3 -I verify/run.py --accept        # after publishing a release: its edit becomes the reference
+python3 -I verify/run.py --cpu           # the checks with edits on the CPU
 ```
 
 The report goes to `verify/results/<date>_<sha>/report.md`, with every
@@ -26,7 +27,9 @@ then runs the app's `Session` (`app/src/session.ts`) under Node, with
 Tauri's `invoke` replaced by `shim.mjs`, which sends the engine what the
 Rust commands would. So the checks cover `manifest.ts`, `localMerge.ts`,
 `Session`'s edits and masks, and the engine together, as the app runs
-them.
+them. The engine is started as the app starts it, with edits on the GPU
+as by default; `--cpu` runs the checks as with Preferences' Edit on the
+GPU off. Without an OpenCL device, both render on the CPU.
 
 | check | what passes |
 |---|---|
