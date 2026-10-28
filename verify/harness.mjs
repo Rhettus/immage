@@ -76,7 +76,7 @@ const { aiRefine, overlayPixels, overlayShown, overlayStep } = await import("../
 const { ILLUMINANT_D } = await import("../app/src/wb.ts");
 const { autoTone } = await import("../app/src/autoTone.ts");
 const { dueIn } = await import("../app/src/activity.ts");
-const { byCaptureTime } = await import("../app/src/library.ts");
+const { byCaptureTime, withKnown } = await import("../app/src/library.ts");
 const { NO_FILTER, exposureLabel, facetsWithin, passes } = await import("../app/src/filter.ts");
 const z = await import("../app/src/zones.ts");
 const nd = await import("../app/src/negadoctor.ts");
@@ -976,6 +976,25 @@ async function decisions(photo) {
     const got = byCaptureTime([at("a", ""), at("b", later), at("c", t), at("d", t), at("e", "", earlier)])
       .map((i) => i.filename).join("");
     return got === "ecdba" ? null : `sorted as ${got}, not ecdba`;
+  });
+
+  // a folder read before shows its photos as the last read found them,
+  // until this one reaches them, and in the order the read ends with: a
+  // known cell keeps its place when its photo is read (architecture.md,
+  // Import a folder), whatever the capture times and however far it got
+  await decide("a known photo keeps its place when read", async () => {
+    const { images: [e] } = await request({ cmd: "import", files: [fresh(photo)] });
+    const t = e?.exif.datetime || e?.exif.file_datetime || "";
+    if (!t) return "the engine gave no capture time";
+    const at = (name, datetime) => ({ ...e, filename: name, path: `/folder/${name}`, version: 0,
+                                      exif: { ...e.exif, datetime, file_datetime: "" } });
+    const listed = [at("z", t), at("y", ""), at("x", t), at("w", ""), at("v", t)];
+    const end = byCaptureTime(listed).map((i) => i.filename).join("");
+    for (let read = 0; read <= listed.length; read++) {
+      const got = withKnown(byCaptureTime(listed.slice(0, read)), listed.slice(read)).map((i) => i.filename).join("");
+      if (got !== end) return `with ${read} read, shown as ${got}, then ${end}`;
+    }
+    return null;
   });
 
   // on Wayland at 125%, where the window is drawn at 2× and shrunk, drag

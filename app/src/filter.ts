@@ -5,7 +5,7 @@
 // flags and labels, and the Filters popup's fields. Immich results are
 // narrowed by the server instead (immich.ts), all but the stars and type
 import { shutter } from "./exportTokens";
-import { fileKind, takenAt, type ImageEntry } from "./library";
+import { fileKind, takenAt, type ImageEntry, type Known } from "./library";
 
 export const EXPOSURE = ["iso", "aperture", "focal", "shutter"] as const;
 export type ExposureKey = typeof EXPOSURE[number];
@@ -27,10 +27,10 @@ export const NO_FILTER: Filter = {
   keywords: [], takenFrom: "", takenTo: "", iso: [], aperture: [], focal: [], shutter: [],
 };
 
-export const cameraOf = (i: ImageEntry) => `${i.exif.maker} ${i.exif.model}`.trim();
+export const cameraOf = (i: Known) => `${i.exif.maker} ${i.exif.model}`.trim();
 
 // the exposure value each setting reads; 0 where the camera did not record it
-const value = (i: ImageEntry, k: ExposureKey) =>
+const value = (i: Known, k: ExposureKey) =>
   k === "iso" ? i.exif.iso : k === "aperture" ? i.exif.aperture : k === "focal" ? i.exif.focal_length
     : i.exif.exposure;
 
@@ -42,12 +42,13 @@ export const exposureLabel = (k: ExposureKey, v: number) =>
 
 // a keyword is chosen with everything under it, as darktable's "a|b"
 // hierarchy nests b in a
-const hasKeyword = (i: ImageEntry, k: string) => (i.keywords ?? []).some((x) => x === k || x.startsWith(`${k}|`));
+const hasKeyword = (i: Known, k: string) => (i.keywords ?? []).some((x) => x === k || x.startsWith(`${k}|`));
 
 // "YYYY:MM:DD HH:MM:SS" as YYYY-MM-DD
-const day = (i: ImageEntry) => takenAt(i).slice(0, 10).replace(/:/g, "-");
+const day = (i: Known) => takenAt(i).slice(0, 10).replace(/:/g, "-");
 
-export const passes = (i: ImageEntry, f: Filter) =>
+// a known image (library.ts) too, before this read reaches it
+export const passes = (i: Known, f: Filter) =>
   (f.rejected === "all" || (f.rejected === "only") === i.rejected)
   && (f.edited === "all" || (f.edited === "edited") === i.edited)
   && (!f.kinds.length || f.kinds.includes(fileKind(i.filename)))

@@ -145,7 +145,7 @@ are `localStorage` keys named `immage.*`.
 
 | File | Responsibility |
 |---|---|
-| [library.ts](../../src/library.ts) | `ImageEntry`; `openFolder` (batches arriving as `folder-progress` events); RAW+JPEG pairing; `ThumbLoader`, which fetches two thumbnails from the engine at a time, alongside editing, and lets those off screen longest go past Preferences' Thumbnail memory. |
+| [library.ts](../../src/library.ts) | `ImageEntry`, and `Known`: a photo as the folder's last read found it; `openFolder` (batches arriving as `folder-progress` events); `withKnown`, the read and known photos in one order; RAW+JPEG pairing; `ThumbLoader`, which fetches two thumbnails from the engine at a time, alongside editing, shows a known photo's last thumbnail until it is checked, and lets those off screen longest go past Preferences' Thumbnail memory. |
 | [FolderTree.tsx](../../src/FolderTree.tsx) | The folder tree; with folders on more than one drive, a heading per drive (`folder_volumes`). |
 | [filter.ts](../../src/filter.ts) | The filmstrip's `Filter` over a folder's photos (`passes`), and what the photos hold to filter by (`facets`): kinds, cameras, lenses, keywords, exposure settings. |
 | [HdrDialog.tsx](../../src/HdrDialog.tsx) | HDR Merge's dialog (Auto Align, when the engine has OpenCV: `hdr_can_align`); `runHdrMerge` in App.tsx runs it in the background. |
@@ -183,6 +183,7 @@ are `localStorage` keys named `immage.*`.
 | [main.rs](../../src-tauri/src/main.rs) | `AppState` (the engine, scratch file paths, looks and models folders, the folder-read token, perf state); every command except plugins'; AI model download (`install_model`, `install_extra`, through reqwest, sha256 checked, darktable's archives unpacked by the engine's `unpack`); export (naming conflicts, Immich upload); presets and looks files; launch-file handling. |
 | [engine.rs](../../src-tauri/src/engine.rs) | The engine child and its protocol (above); `perf_mark` and the `-d perf` parser. |
 | [immich_search.rs](../../src-tauri/src/immich_search.rs), [immich_upload.rs](../../src-tauri/src/immich_upload.rs) | Immich: search, thumbnails, originals (cached); album and upload calls. The API key never reaches the front end. |
+| [listing.rs](../../src-tauri/src/listing.rs) | A folder's entries with each file's size and modified time from the listing itself (`getattrlistbulk` on macOS, the listing's own on Windows; elsewhere left to a stat), so a folder on a network share is listed and its thumbnails checked without a round trip per file. |
 | [volumes.rs](../../src-tauri/src/volumes.rs) | The drive a library folder is on, its name and whether it is a network share (statfs on macOS, `/proc/self/mounts` on Linux, the volume calls on Windows), for the folder tree's headings. |
 | [scale.rs](../../src-tauri/src/scale.rs) | Linux on Wayland: the screen's real scale, its output's mode over its xdg-output logical size on a Wayland connection of its own, for `display_scale`. |
 | [plugins.rs](../../src-tauri/src/plugins.rs) | Edit In: find apps, launch with files, poll their output folders, remember each result (`plugin-returns.json`). Macro Studio's protocol (`plugin_job`): a job manifest in `plugin-jobs/<id>/`, its receipt read until every stack is saved or closed, and a ledger (`plugin-jobs/pending.json`) drained at start and on each `open_folder` (`drain_jobs`), for stacks saved later. |
@@ -193,7 +194,7 @@ Commands by what they reach:
 | Reaches | Commands |
 |---|---|
 | The open photo, through the engine | `open_image`, `get_params`, `set_params`, `module_state`, `render`, `cancel_base`, `preview`, `save`, `before_view`, `history`, `masks`, `mask_shapes`, `combine`, `mask_delete`, `mask_rename`, `mask_map`, `range_map`, `sample`, `zones`, `tone_key`, `agx_auto`, `spots`, `spots_enable`, `spot_source`, `look_apply`, `look_amount`, `ai_object`, `ai_mask`, `ai_depth`, `ai_denoise`, `ai_denoise_preview` |
-| The library, through the engine | `open_folder` (engine `import` in batches), `thumb`, `prefetch`, `meta`, `meta_set`, `keywords`, `keywords_set`, `create_virtual_copy`, `remove_virtual_copy`, `hdr_merge`, `hdr_can_align`, `pano_merge`, `pano_can_merge`, `trash_files`, `export_images`, `export_cancel`, `export_preview`, `fonts`, `ai_accel`, `about` |
+| The library, through the engine | `open_folder` (engine `import` in batches), `thumb`, `thumb_cached`, `thumb_known`, `prefetch`, `meta`, `meta_set`, `keywords`, `keywords_set`, `create_virtual_copy`, `remove_virtual_copy`, `hdr_merge`, `hdr_can_align`, `pano_merge`, `pano_can_merge`, `trash_files`, `export_images`, `export_cancel`, `export_preview`, `fonts`, `ai_accel`, `about` |
 | Files only | `list_subfolders`, `folder_volumes`, `path_exists`, `path_kind`, `export_existing`, `presets_load`, `presets_save`, `export_presets_load`, `export_presets_save`, `preset_file_read`, `preset_file_write`, `looks_list`, `sample_folder`, `launch_file` |
 | AI models (download, then the engine's `version`) | `ai_model_ensure`, `ai_model_reinstall` |
 | Immich (HTTP) | `immich_albums`, `immich_create_album`, `immich_export_check`, `immich_browse_check`, `immich_search`, `immich_libraries`, `immich_suggestions`, `immich_people`, `immich_tags`, `immich_thumb`, `immich_resolve` |
@@ -351,9 +352,10 @@ darktable is, and it has AI features when darktable is configured with
    3. Each photo is a tagged `export` on the engine's export thread (`_export_run`), outside the engine mutex, so editing goes on. The frame and captions become a temporary darktable style (borders plus a watermark SVG), and AI upscale wraps the chosen format. `export_release` then drops what is left of the job's snapshots.
    4. For Immich, Rust uploads each file and adds it to the album. Progress comes as `export-progress`, shown on the activity line with a Stop (`export_cancel`) and then a summary.
 7. **Import a folder.**
-   1. `openFolder` calls `open_folder`. Rust walks the folder, skipping packages and sidecars, and sends engine `import` in batches sized to take about 150 ms, each reported as `folder-progress`. The batches are tagged and read on the engine's import thread (`_import_run`), so editing goes on meanwhile.
-   2. A newer folder request cancels the older one through `folder_token`.
-   3. Thumbnails follow from `ThumbLoader` (engine `thumb`) while the editor is idle.
+   1. `openFolder` calls `open_folder`. For a folder read before, Rust first sends the folder's snapshot (`known`): its photos as the last whole read found them, from the runtime folder, so the filmstrip fills before the folder is even listed. Each known photo shows its last thumbnail (`thumb_known`, by its path alone, without looking at the file, which on a network share is a round trip each) and its rating, labels and capture time, through the filters, in the order the read will end with (`withKnown`), and opens on a click.
+   2. Rust walks the folder, skipping packages and sidecars, from the listing alone (`listing.rs`, no look at each file), keeping each file's size and time (`cache::Listed`), and sends engine `import` in batches sized to take about 150 ms, each reported as `folder-progress`. The batches are tagged and read on the engine's import thread (`_import_run`), so editing goes on meanwhile. Known photos no longer listed go; a photo read takes its known cell's place, and its thumbnail is then checked against the file's size and time as listed (`thumb_cached`), else rendered again. A thumbnail rendered takes the file as it is then (`cache::refresh`), so an edit saved here is not checked against the listing's sidecar.
+   3. A newer folder request cancels the older one through `folder_token`. A whole read writes the folder's snapshot.
+   4. Thumbnails follow from `ThumbLoader` (engine `thumb`) while the editor is idle.
 8. **Edit In.**
    1. `editIn` calls `plugin_launch`, which opens the app with the files, then `plugin_watch`.
    2. Rust polls the output folder and emits `plugin-returned` for each finished file, saved in `plugin-returns.json`.
@@ -377,6 +379,8 @@ darktable is, and it has AI features when darktable is configured with
 | Frames, thumbnails, previews, maps | `frame.rgba`, `thumb-<tag>.rgba`, `preview.rgba`, `range.bin` in the runtime folder | overwritten per request; a thumbnail's deleted once read |
 | Frames handed to the page (Linux) | `/dev/shm/immage-frame-<token>-<id>` | until the page reads it; left over past a minute, deleted at the next start |
 | AI models | `build/ai-models` (dev) or `<app data>/models` | until deleted |
+| Library thumbnails | `cache/thumbs`: a JPEG named for the photo, its sidecar and their times; a `.last` beside, by path alone, naming the newest | cache |
+| Folder snapshots | `folders/` in the runtime folder: each folder's photos as its last whole read found them | permanent; written again at each read |
 | Immich thumbnails and originals | `cache/immich-thumbs`, `cache/immich-originals` | cache |
 | Import catalog, Immich key | the immporter's SQLite catalog under the app data folder (`immporter/`); the key in the system keychain | permanent |
 | Benchmark results | [benchmarking/results/](../../../benchmarking/results/) (GUI reports under `gui/` in a dev build, `<app data>/benchmarks` in a release) | permanent, tracked |

@@ -9,6 +9,7 @@ mod cache;
 mod engine;
 mod immich_search;
 mod immich_upload;
+mod listing;
 mod plugins;
 #[cfg(target_os = "linux")]
 mod scale;
@@ -1030,8 +1031,10 @@ async fn perf_machine(state: State<'_, AppState>) -> Result<Value, String> {
 // images, so a big folder shows its progress and its first photos early.
 // the batches go to the engine's import thread (main.c, _import_run), so
 // the photo is edited and rendered while they are read.
-// a first event, before any is read, lists every file, so the client can
-// lay out a cell for each. a newer call (another `token`)
+// a first event, before the folder is even listed, has its images as the
+// last read found them (`known`, without imgids): from the app's own disk,
+// so a folder on a network share shows at once. the next lists every file,
+// so the client can lay out a cell for each. a newer call (another `token`)
 // stops this one. returns every image: ratings, labels and EXIF summary.
 // `skip` names subfolders taken off the folder tree, which `recursive`
 // leaves out with their own subfolders
@@ -1039,19 +1042,32 @@ async fn perf_machine(state: State<'_, AppState>) -> Result<Value, String> {
 async fn open_folder(app: AppHandle, state: State<'_, AppState>, path: String, recursive: Option<bool>,
                      skip: Option<Vec<String>>, token: u64) -> Result<Value, String> {
     state.folder_token.store(token, Ordering::SeqCst);
+    let recursive = recursive.unwrap_or(false);
+    let snapshot = snapshot_path(&state.runtime, &path, recursive, skip.as_deref().unwrap_or_default());
+    let known = {
+        let snapshot = snapshot.clone();
+        tauri::async_runtime::spawn_blocking(move || read_snapshot(&snapshot)).await.map_err(|e| e.to_string())?
+    };
+    if let Some(known) = known {
+        let _ = app.emit("folder-progress", json!({ "token": token, "done": 0, "total": 0, "images": [],
+                                                    "known": known }));
+    }
     let dir = PathBuf::from(&path);
     if !dir.is_dir() {
         return Err(format!("folder not found: {path}"));
     }
-    let recursive = recursive.unwrap_or(false);
     let skip: HashSet<PathBuf> = skip.unwrap_or_default().into_iter().map(PathBuf::from).collect();
-    let mut files = tauri::async_runtime::spawn_blocking(move || {
-        let mut out = Vec::new();
-        folder_files(&dir, recursive, &skip, &mut out);
-        out
+    let (mut files, listed) = tauri::async_runtime::spawn_blocking(move || {
+        let (mut out, mut listed) = (Vec::new(), cache::Listed::default());
+        folder_files(&dir, recursive, &skip, &mut out, &mut listed);
+        (out, listed)
     })
     .await
     .map_err(|e| e.to_string())?;
+    if state.folder_token.load(Ordering::SeqCst) != token {
+        return Err("superseded".into());
+    }
+    *app.state::<Caches>().listed.lock().unwrap() = listed;
     app.state::<plugins::Plugins>().drain_jobs();
     app.state::<plugins::Plugins>().beside_originals(&mut files);
     let total = files.len();
@@ -1085,7 +1101,46 @@ async fn open_folder(app: AppHandle, state: State<'_, AppState>, path: String, r
         let _ = app.emit("folder-progress", json!({ "token": token, "done": done, "total": total, "images": got }));
         images.extend(got);
     }
+    let kept = images.clone();
+    tauri::async_runtime::spawn_blocking(move || write_snapshot(&snapshot, &kept));
     Ok(json!({ "images": images }))
+}
+
+// the folder's images as its last whole read found them, for open_folder()
+// to show before it reads again: one file per folder (and recursive and
+// skip, which change what it holds) in the runtime folder
+fn snapshot_path(runtime: &Path, dir: &str, recursive: bool, skip: &[String]) -> PathBuf {
+    use sha2::{Digest, Sha256};
+    let mut skip = skip.to_vec();
+    skip.sort();
+    let mut h = Sha256::new();
+    h.update(format!("{dir}\0{recursive}\0{}", skip.join("\0")));
+    let name: String = h.finalize().iter().map(|b| format!("{b:02x}")).collect();
+    runtime.join("folders").join(format!("{name}.json"))
+}
+
+fn read_snapshot(path: &Path) -> Option<Value> {
+    let list: Value = serde_json::from_slice(&std::fs::read(path).ok()?).ok()?;
+    list.is_array().then_some(list)
+}
+
+// without imgids, which are the engine's for this session only. written
+// beside and renamed, so a read never finds half a file
+fn write_snapshot(path: &Path, images: &[Value]) {
+    let list: Vec<Value> = images.iter().map(|i| {
+        let mut i = i.clone();
+        if let Some(o) = i.as_object_mut() {
+            o.remove("imgid");
+        }
+        i
+    }).collect();
+    let Ok(bytes) = serde_json::to_vec(&list) else { return };
+    let Some(dir) = path.parent() else { return };
+    let part = path.with_extension("part");
+    if std::fs::create_dir_all(dir).is_ok() && std::fs::write(&part, bytes).is_ok()
+        && std::fs::rename(&part, path).is_err() {
+        let _ = std::fs::remove_file(&part);
+    }
 }
 
 // a batch's files to begin with, and the fewest and most: sized to take
@@ -1096,28 +1151,42 @@ const IMPORT_TARGET: Duration = Duration::from_millis(150);
 // the files of `dir` by name, then with `recursive` each subfolder's in
 // turn, as darktable's own folder import orders them. dot files, sidecars
 // and packages are left out, and so are the subfolders in `skip`
-fn folder_files(dir: &Path, recursive: bool, skip: &HashSet<PathBuf>, out: &mut Vec<PathBuf>) {
-    let Ok(rd) = std::fs::read_dir(dir) else { return };
-    let (mut files, mut dirs) = (Vec::new(), Vec::new());
-    for e in rd.flatten() {
-        let name = e.file_name().to_string_lossy().to_lowercase();
+// each file's stamp, sidecars' too, goes in `listed`, so its thumbnail is
+// checked without asking the disk again (cache::listed_thumb_name)
+fn folder_files(dir: &Path, recursive: bool, skip: &HashSet<PathBuf>, out: &mut Vec<PathBuf>,
+                listed: &mut cache::Listed) {
+    let (mut files, mut dirs, mut stamps) = (Vec::new(), Vec::new(), Vec::new());
+    for e in listing::list(dir) {
+        let name = e.name.to_string_lossy().to_lowercase();
         if name.starts_with('.') {
             continue;
         }
-        let p = e.path();
-        if p.is_dir() {
+        let p = dir.join(&e.name);
+        // from the listing itself, where p.is_dir() would ask the disk of
+        // every file, a round trip each on a network share; a link is
+        // followed, as is_dir() did
+        let is_dir = match e.kind {
+            listing::Kind::Dir => true,
+            listing::Kind::File => false,
+            listing::Kind::Other => p.is_dir(),
+        };
+        if is_dir {
             if recursive && !skip.contains(&p) && !is_package(&p) {
                 dirs.push((name, p));
             }
-        } else if !name.ends_with(".xmp") {
+            continue;
+        }
+        stamps.push((p.clone(), e.stamp));
+        if !name.ends_with(".xmp") {
             files.push((name, p));
         }
     }
+    listed.add(dir, stamps);
     files.sort();
     dirs.sort();
     out.extend(files.into_iter().map(|(_, p)| p));
     for (_, d) in dirs {
-        folder_files(&d, true, skip, out);
+        folder_files(&d, true, skip, out, listed);
     }
 }
 
@@ -1394,7 +1463,7 @@ async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>, imgid: i64
                path: Option<String>, version: Option<i64>) -> Result<Response, String> {
     // named before the render: a sidecar written during it makes the next
     // look a miss, never a stale hit
-    let name = path.and_then(|p| cache::thumb_name(Path::new(&p), version.unwrap_or(0), size));
+    let name = path.and_then(|p| cache::refresh(&caches.listed, Path::new(&p), version.unwrap_or(0), size).map(|n| (p, n)));
     let thumbs = state.tagged.clone();
     let tag = thumbs.tag();
     // a file of its own, as several are built at once
@@ -1418,11 +1487,13 @@ async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>, imgid: i64
     out.extend_from_slice(&height.to_le_bytes());
     out.extend_from_slice(&pixels);
     // encoded and written after the reply, which need not wait for it
-    if let Some(name) = name {
+    if let Some((photo, name)) = name {
         let thumbs = caches.thumbs.clone();
         tauri::async_runtime::spawn_blocking(move || {
             if let Ok(jpeg) = cache::encode_jpeg(&pixels, width, height) {
-                let _ = thumbs.write(&name, &jpeg);
+                if thumbs.write(&name, &jpeg).is_ok() {
+                    thumbs.set_known(Path::new(&photo), version.unwrap_or(0), size, &name);
+                }
             }
         });
     }
@@ -1430,13 +1501,30 @@ async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>, imgid: i64
 }
 
 // a library thumbnail from the cache, as JPEG, or nothing when it has none
-// for the photo as it is now; the engine is not asked
+// for the photo as it is now: as the open folder's listing found it, else
+// as a stat finds it. the engine is not asked
 #[tauri::command]
 async fn thumb_cached(caches: State<'_, Caches>, path: String, version: i64, size: u32) -> Result<Response, String> {
-    let thumbs = caches.thumbs.clone();
+    let (thumbs, listed) = (caches.thumbs.clone(), caches.listed.clone());
     let bytes = tauri::async_runtime::spawn_blocking(move || {
-        cache::thumb_name(Path::new(&path), version, size).and_then(|n| thumbs.read(&n))
+        let photo = Path::new(&path);
+        let name = cache::listed_thumb_name(&listed, photo, version, size)?;
+        let bytes = thumbs.read(&name)?;
+        // a cache from before known thumbnails learns them as it is read
+        thumbs.set_known(photo, version, size, &name);
+        Some(bytes)
     }).await.map_err(|e| e.to_string())?;
+    Ok(Response::new(bytes.unwrap_or_default()))
+}
+
+// the photo's last thumbnail as JPEG, or nothing, found by its path alone:
+// the photo is not looked at, so this is quick on a network share, but it
+// may be of the photo as it was. thumb_cached() is the one to trust
+#[tauri::command]
+async fn thumb_known(caches: State<'_, Caches>, path: String, version: i64, size: u32) -> Result<Response, String> {
+    let thumbs = caches.thumbs.clone();
+    let bytes = tauri::async_runtime::spawn_blocking(move || thumbs.read_known(Path::new(&path), version, size))
+        .await.map_err(|e| e.to_string())?;
     Ok(Response::new(bytes.unwrap_or_default()))
 }
 
@@ -2308,7 +2396,7 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            open_folder, open_image, get_params, set_params, render, cancel_base, save, baseline_end, before_view, thumb, thumb_cached, cache_limits, cache_usage, cache_clear, meta, meta_set, prefetch, darktable_resources, darktable_resources_set,
+            open_folder, open_image, get_params, set_params, render, cancel_base, save, baseline_end, before_view, thumb, thumb_cached, thumb_known, cache_limits, cache_usage, cache_clear, meta, meta_set, prefetch, darktable_resources, darktable_resources_set,
             export_images, export_cancel, export_existing, export_preview, fonts, export_presets_load, export_presets_save, preset_file_write, preset_file_read, presets_load, presets_save, looks_list, look_import, look_export, look_delete, look_apply, look_amount, preview,
             mask_shapes, combine, masks, mask_delete, mask_rename, history, module_state, sample, tone_key, agx_auto, upright, points, range_map, zones, mask_map, ai_object,
             ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, list_subfolders, folder_volumes, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
@@ -2414,8 +2502,11 @@ mod tests {
             std::fs::create_dir_all(p.parent().unwrap()).unwrap();
             std::fs::write(&p, "").unwrap();
         }
+        // a link to a folder is listed as one, though the listing calls it a link
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(dir.join("sub"), dir.join("link")).unwrap();
         let mut got = Vec::new();
-        folder_files(&dir, true, &HashSet::new(), &mut got);
+        folder_files(&dir, true, &HashSet::new(), &mut got, &mut cache::Listed::default());
         let names: Vec<String> = got.iter().map(|p| p.strip_prefix(&dir).unwrap().to_string_lossy().into_owned()).collect();
         let _ = std::fs::remove_dir_all(&dir);
         // macOS knows .photoslibrary for a package; elsewhere it is a folder
@@ -2423,8 +2514,26 @@ mod tests {
         if !cfg!(target_os = "macos") {
             want.push("Photos Library.photoslibrary/d.jpg");
         }
+        if cfg!(unix) {
+            want.push("link/c.jpg");
+        }
         want.push("sub/c.jpg");
         assert_eq!(names, want);
+    }
+
+    #[test]
+    fn snapshot_without_imgids() {
+        let runtime = repo_root().join(format!("build/scratch/snapshot-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&runtime);
+        let path = snapshot_path(&runtime, "/photos", false, &["/photos/b".into(), "/photos/a".into()]);
+        // what changes the folder's photos names another snapshot; skip's order does not
+        assert_eq!(path, snapshot_path(&runtime, "/photos", false, &["/photos/a".into(), "/photos/b".into()]));
+        assert_ne!(path, snapshot_path(&runtime, "/photos", true, &["/photos/a".into(), "/photos/b".into()]));
+        assert_eq!(read_snapshot(&path), None);
+        write_snapshot(&path, &[json!({ "imgid": 7, "path": "/photos/x.jpg", "rating": 3 })]);
+        let got = read_snapshot(&path);
+        let _ = std::fs::remove_dir_all(&runtime);
+        assert_eq!(got, Some(json!([{ "path": "/photos/x.jpg", "rating": 3 }])));
     }
 
     #[test]
