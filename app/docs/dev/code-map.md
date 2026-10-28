@@ -40,7 +40,7 @@ the app, where data lives, and the frame formats. Diagrams are in
 | An Edit In plugin kind | `KINDS` in [plugins.ts](../../src/plugins.ts) | [plugins.rs](../../src-tauri/src/plugins.rs); `editIn` in [App.tsx](../../src/App.tsx) |
 | Performance | [benchmarking/README.md](../../../benchmarking/README.md) | [perf.ts](../../src/perf.ts), [PerfHud.tsx](../../src/PerfHud.tsx); `perf_*` in [main.rs](../../src-tauri/src/main.rs) |
 | Move to another darktable commit or release | [darktable-pin.md](darktable-pin.md) | [patches/darktable-engine.patch](../../../patches/darktable-engine.patch) |
-| A release | the five version files ([package.json](../../package.json), `package-lock.json`, [Cargo.toml](../../src-tauri/Cargo.toml), `Cargo.lock`, [tauri.conf.json](../../src-tauri/tauri.conf.json)) | tag `immage-X.Y.Z`; [build_dmg.sh](../../scripts/build_dmg.sh) |
+| A release | the five version files ([package.json](../../package.json), `package-lock.json`, [Cargo.toml](../../src-tauri/Cargo.toml), `Cargo.lock`, [tauri.conf.json](../../src-tauri/tauri.conf.json)) | [releasing.md](releasing.md): the work on `release-X.Y.Z`, tagged `vX.Y.Z` there; [build_dmg.sh](../../scripts/build_dmg.sh) |
 
 ## Files
 
