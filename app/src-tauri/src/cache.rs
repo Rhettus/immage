@@ -176,7 +176,7 @@ impl DiskCache {
     }
 
     // whether the disk has room to spare; asked of the system at most once
-    // a minute, as listing the disks is not free
+    // a minute, not for every thumbnail written
     fn space_free(&self) -> bool {
         let mut space = self.space.lock().unwrap();
         if let Some((at, ok)) = *space {
@@ -227,14 +227,25 @@ fn scan(dir: &Path) -> Vec<Entry> {
         .collect()
 }
 
-// the free space of the disk holding the folder, or None when no disk
-// listed holds it
+// the free space of the disk holding the folder, or None when it can't be
+// read. asked of that disk alone: sysinfo's list of disks asks every
+// network share too, and one whose server has gone away never answers
+#[cfg(unix)]
 fn free_space(dir: &Path) -> Option<u64> {
-    let disks = sysinfo::Disks::new_with_refreshed_list();
-    disks.list().iter()
-        .filter(|d| dir.starts_with(d.mount_point()))
-        .max_by_key(|d| d.mount_point().as_os_str().len())
-        .map(|d| d.available_space())
+    use std::os::unix::ffi::OsStrExt;
+    let c = std::ffi::CString::new(dir.as_os_str().as_bytes()).ok()?;
+    let mut st: libc::statvfs = unsafe { std::mem::zeroed() };
+    if unsafe { libc::statvfs(c.as_ptr(), &mut st) } != 0 { return None; }
+    Some(st.f_bavail as u64 * st.f_frsize as u64)
+}
+
+#[cfg(windows)]
+fn free_space(dir: &Path) -> Option<u64> {
+    use windows::core::HSTRING;
+    use windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+    let mut free = 0u64;
+    unsafe { GetDiskFreeSpaceExW(&HSTRING::from(dir.as_os_str()), Some(&mut free as *mut u64), None, None) }.ok()?;
+    Some(free)
 }
 
 // darktable's sidecar for a version of a photo: IMG_1.CR3.xmp, and for

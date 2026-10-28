@@ -127,6 +127,8 @@ export function FolderTree({ roots, volumes, hostNames, folded, current, photo, 
                 : <span className="host" title="double-click to rename"
                         onClick={(e) => e.stopPropagation()}
                         onDoubleClick={(e) => { e.stopPropagation(); setEditingHost(mount); }}>{host}</span>)}
+              <span className={`drive-dot${v?.online === false ? " off" : ""}`}
+                    title={v?.online === false ? "not answering" : "connected"} />
             </div>
             {open && <ul>{list.map((r) => rootRow(r, 1))}</ul>}
           </li>
