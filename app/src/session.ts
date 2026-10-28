@@ -104,6 +104,20 @@ export type Frame = {
   trace?: Trace;      // its timings, for the performance overlay
 };
 
+// where a frame is drawn when the image is shown z times its size: k times
+// the frame's size, its corner (x, y) screen pixels from the image's.
+// darktable's pixel i shows the image at i / scale, at the pixel's corner
+// and not its middle, so a frame drawn k times larger sits (k - 1) / 2
+// screen pixels right and down of one drawn 1:1: a half-size draft was half
+// a pixel off the full frame after it
+export function framePlace(f: Pick<Frame, "x" | "y" | "view" | "fullWidth" | "fullHeight">, z: number) {
+  // the scale _render (engine/main.c) fits a frame at: its size is rounded
+  // down each way, so its width or height alone gives one a little off
+  const scale = f.view.scale ?? Math.min(1, f.view.width / f.fullWidth, f.view.height / f.fullHeight);
+  const k = z / scale;
+  return { k, x: (f.x / scale) * z - (k - 1) / 2, y: (f.y / scale) * z - (k - 1) / 2 };
+}
+
 // the module whose instance holds a mask's refinements before it has any
 // adjustment
 const REFINE_CARRIER = "exposure";
