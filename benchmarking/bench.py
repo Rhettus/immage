@@ -519,8 +519,10 @@ def run_masks(eng, edits, rec, mode, name, controls, rgba, args):
         else:
             s = render_sample(eng, VIEW, rgba=rgba)
             with open(rgba, "rb") as f:
+                # a frame to compare, not a timing: its one render is
+                # left out of compare.py's judgment
                 rec.add(mode, name, "masks", f"{count} masks, shared vs chain, same settings", [s],
-                        {"diff": frame_diff(chain_frame, (s["w"], s["h"]), f.read(), (s["w"], s["h"]))})
+                        {"diff": frame_diff(chain_frame, (s["w"], s["h"]), f.read(), (s["w"], s["h"])), "untimed": True})
         mm.clear()
 
 
