@@ -36,7 +36,7 @@ the release is published.
    cmake --build build && python3 -I verify/run.py
    ```
 
-   About 5 minutes; every slider, global and on a mask, a saved edit
+   About 10 minutes; every slider, global and on a mask, a saved edit
    opened again, and the main timings against the last run
    ([verify/README.md](../../../verify/README.md)). Don't tag while
    anything fails, unless the report's failure is understood and written
