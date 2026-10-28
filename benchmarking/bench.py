@@ -34,15 +34,18 @@ BASE = (3072, 3072)
 # left out of a drag's frames unless the drag is of one of them (DRAFT_SKIP
 # and draftKeep, app/src/session.ts)
 DRAFT_SKIP = ["grain", "diffuse", "sharpen"]
-# the app's engine since the base pipe: OpenCL on, but only export's pipe
+# the app's engine with GPU edits off: OpenCL on, but only export's pipe
 # type may use the GPU, which the base borrows (app/src-tauri/src/engine.rs)
 SPLIT = ["--conf", "opencl_device_priority=//*//"]
+# the app's engine by default, GPU edits on: the full pipes join export's
+GPU = ["--conf", "opencl_device_priority=*//*//", "--conf", "opencl_scheduling_profile=default"]
 
 
 def mode_engine(mode):
     """an Engine's opencl and extra arguments for a mode: cpu, opencl
-    (every pipe may use the GPU) or split (the app's)"""
-    return mode != "cpu", SPLIT if mode == "split" else []
+    (every pipe may use the GPU), gpu (the app's) or split (the app's with
+    GPU edits off)"""
+    return mode != "cpu", {"split": SPLIT, "gpu": GPU}.get(mode, [])
 
 
 # the long-drag scenario: frames in a drag, well past the 30 or so that
@@ -966,8 +969,9 @@ def main():
     ap = argparse.ArgumentParser(description="Immage's engine benchmark")
     ap.add_argument("--corpus", default=os.path.join(HERE, "corpus"), help="folder of photos (default benchmarking/corpus)")
     ap.add_argument("--engine", default=os.path.join(REPO, "build", "bin", "darktable-engine"))
-    ap.add_argument("--opencl", choices=["off", "on", "both", "split", "app"], default="both",
-                    help="off: cpu; on: opencl; both: cpu and opencl; split: the app's engine; app: cpu and split")
+    ap.add_argument("--opencl", choices=["off", "on", "both", "split", "gpu", "app"], default="both",
+                    help="off: cpu; on: opencl; both: cpu and opencl; gpu: the app's engine; "
+                         "split: the app's with GPU edits off; app: cpu and gpu")
     ap.add_argument("--repeat", type=int, default=7, help="samples per step (default 7)")
     ap.add_argument("--only", default="sliders,roi,heavy,heavydrag,longdrag,draftpipe,zoom,preview,modules,export,masks,prefetch",
                     help="scenarios, comma separated (default all)")
@@ -982,7 +986,7 @@ def main():
     args = ap.parse_args()
     args.only = set(s.strip() for s in args.only.split(",") if s.strip())
     args.modes = {"off": ["cpu"], "on": ["opencl"], "both": ["cpu", "opencl"], "split": ["split"],
-                  "app": ["cpu", "split"]}[args.opencl]
+                  "gpu": ["gpu"], "app": ["cpu", "gpu"]}[args.opencl]
 
     files = corpus_files(args.corpus)
     if args.images:
@@ -1053,7 +1057,7 @@ def main():
         for eng in engines.values():
             eng.close()
         engines = {}
-        if "opencl" in args.modes:
+        if any(m != "cpu" for m in args.modes):
             opencl_devices = opencl_summary(args, rec)
 
         # what -d perf itself costs: the same edit loop with and without it.

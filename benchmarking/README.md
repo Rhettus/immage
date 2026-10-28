@@ -32,7 +32,7 @@ python3 -I benchmarking/compare.py           # optional: the latest run against 
 
 - `--all` runs every photo in the corpus. By default it takes the largest and
   smallest file of each format: the most and fewest megapixels each camera brings.
-- `--opencl off|on|both` (default both) and `--repeat N` (samples per step, default 7)
+- `--opencl off|on|both|gpu|split|app` (default both): `gpu` is the app's engine, `split` the app's with GPU edits off, `app` the CPU and `gpu`; `--repeat N` (samples per step, default 7)
 - `--only sliders,roi,heavy,heavydrag,longdrag,draftpipe,zoom,preview,modules,export,masks` runs some scenarios only
 - `--images name1,name2` runs only photos whose names contain these
 - `--note "..."` is kept with the run and shown in the dashboard
