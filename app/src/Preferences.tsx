@@ -207,6 +207,31 @@ function storePreview(v: Preview) {
   try { localStorage.setItem(PREVIEW_KEY, v); } catch { /* not kept */ }
 }
 
+// how long darktable may take on a drag's draft before the next is smaller,
+// and how small it may get each way (Session.draftView): 60 ms and 70% unless set
+export const DRAFT_TARGETS = [40, 60, 80, 120] as const;
+export const DRAFT_SMALLEST = [1, 0.7, 0.5] as const;
+const DRAFT_TARGET_KEY = "immage.draftTarget";
+const DRAFT_SMALLEST_KEY = "immage.draftSmallest";
+export function loadDraftTarget(): number {
+  try {
+    const v = Number(localStorage.getItem(DRAFT_TARGET_KEY));
+    return (DRAFT_TARGETS as readonly number[]).includes(v) ? v : 60;
+  } catch { return 60; }
+}
+function storeDraftTarget(v: number) {
+  try { localStorage.setItem(DRAFT_TARGET_KEY, String(v)); } catch { /* not kept */ }
+}
+export function loadDraftSmallest(): number {
+  try {
+    const v = Number(localStorage.getItem(DRAFT_SMALLEST_KEY));
+    return (DRAFT_SMALLEST as readonly number[]).includes(v) ? v : 0.7;
+  } catch { return 0.7; }
+}
+function storeDraftSmallest(v: number) {
+  try { localStorage.setItem(DRAFT_SMALLEST_KEY, String(v)); } catch { /* not kept */ }
+}
+
 // memory for the full frames the viewer keeps (Session.frames), so zooming
 // back out or returning to a view seen before needs no render. a 100% frame
 // is the viewer's size: some 30 MB on a 4K screen, 45 on a 5K, against 10
@@ -452,6 +477,8 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   const [preview, setPreview] = useState(loadPreview);
   const [sharedFrames, setSharedFrames] = useState(loadSharedFrames);
   const [atScreenScale, setAtScreenScale] = useState(loadScreenScale);
+  const [draftTarget, setDraftTarget] = useState(loadDraftTarget);
+  const [draftSmallest, setDraftSmallest] = useState(loadDraftSmallest);
   const [frameCache, setFrameCache] = useState(loadFrameCacheMb);
   const [thumbMemory, setThumbMemory] = useState(loadThumbMemoryMb);
   const [readAhead, setReadAhead] = useState(loadReadAhead);
@@ -465,6 +492,12 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   const chooseResources = (level: Resources) => {
     if (!resources) return;
     invoke("darktable_resources_set", { level }).then(() => setResources({ ...resources, next: level })).catch(() => {});
+  };
+  const [gpuEdits, setGpuEdits] = useState<{ running: boolean; next: boolean } | null>(null);
+  useEffect(() => { invoke<{ running: boolean; next: boolean }>("gpu_edits").then(setGpuEdits).catch(() => {}); }, []);
+  const chooseGpuEdits = (on: boolean) => {
+    if (!gpuEdits) return;
+    invoke("gpu_edits_set", { on }).then(() => setGpuEdits({ ...gpuEdits, next: on })).catch(() => {});
   };
   const [accelChoice, setAccelChoice] = useState(loadAccel);
   const chooseAccel = (v: AccelChoice) => { setAccelChoice(v); storeAccel(v); };
@@ -666,6 +699,14 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
             {tab === "performance" && (
               <>
               <PrefCard title="Editing">
+                <PrefRow label="Edit on the GPU"
+                         hint={`renders the photo on the graphics card while you edit, as exports and the whole-photo render behind the viewer already are; off keeps edits on the CPU. without a usable GPU darktable uses the CPU either way. smaller drafts for slow sliders still apply, though on the GPU frames are seldom slow enough${gpuEdits && gpuEdits.next !== gpuEdits.running
+                           ? ". applies once Immage starts again" : ""}`}>
+                  <PrefSwitch checked={gpuEdits?.next ?? false} disabled={!gpuEdits} onChange={chooseGpuEdits} />
+                  {gpuEdits && gpuEdits.next !== gpuEdits.running && (
+                    <button className="btn small" style={{ marginLeft: 8 }} onClick={() => void onRelaunch()}>Relaunch</button>
+                  )}
+                </PrefRow>
                 <PrefRow label="Preview"
                          hint={{
                            quality: "every frame in full while you edit: the slowest, most faithful preview",
@@ -679,6 +720,32 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                     ))}
                   </div>
                 </PrefRow>
+                {preview !== "quality" && (
+                  <>
+                    <PrefRow label="Smaller drafts for slow sliders"
+                             hint="while a slider early in darktable's pipe moves (Exposure, White Balance, noise reduction), the photo renders smaller again, so each frame comes sooner. off keeps Preview's size">
+                      <div className="segmented small">
+                        {DRAFT_SMALLEST.map((v) => (
+                          <button key={v} className={draftSmallest === v ? "active" : ""}
+                                  onClick={() => { setDraftSmallest(v); storeDraftSmallest(v); }}>
+                            {v === 1 ? "Off" : `${v * 100}%`}
+                          </button>
+                        ))}
+                      </div>
+                    </PrefRow>
+                    {draftSmallest < 1 && (
+                      <PrefRow label="Draft time"
+                               hint="how long darktable may take on a frame while a slider moves before the next one is smaller; less is quicker and softer">
+                        <div className="segmented small">
+                          {DRAFT_TARGETS.map((ms) => (
+                            <button key={ms} className={draftTarget === ms ? "active" : ""}
+                                    onClick={() => { setDraftTarget(ms); storeDraftTarget(ms); }}>{ms} ms</button>
+                          ))}
+                        </div>
+                      </PrefRow>
+                    )}
+                  </>
+                )}
                 {sharedFramesAvailable && (
                   <PrefRow label="Shared-memory frames"
                            hint="hands each frame to the window in memory both share, rather than copying it through Tauri. off to compare the two in the GUI benchmark">

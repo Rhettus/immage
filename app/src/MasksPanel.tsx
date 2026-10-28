@@ -144,7 +144,7 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
   onLocal: (id: string, v: number) => void;
   onRange: (k: number, patch: Partial<Range>) => void;
   onDepth: (k: number, depth: [number, number], feather: number) => void;
-  onFeather: (k: number, patch: Partial<Shape>) => void;   // the selected component's soft edge
+  onFeather: (k: number, patch: Partial<Shape>) => void;   // the selected component's soft edge, or its fit to the background
   onAi: (kind: AiKind, target: ToolTarget) => void;  // one click, no tool
   aiBusy: boolean;
   focusMode: boolean;
@@ -354,7 +354,21 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
                 if (r?.type === "brush")
                   return feather((1 - r.hardness) * 100, 50, (v) => onFeather(shape, { hardness: 1 - v / 100 }));
                 if (r?.type === "object" && !r.depth)
-                  return feather((r.feather ?? 0.003) * 2000, 6, (v) => onFeather(shape, { feather: v / 2000 }));
+                  return (
+                    <>
+                      {feather((r.feather ?? 0.003) * 2000, 6, (v) => onFeather(shape, { feather: v / 2000 }))}
+                      {r.backdrop && (
+                        // over a plain, colorful background the outline goes
+                        // just over the edge and stops at its color (masks.ts,
+                        // Backdrop); off, it is the outline any selection gets
+                        <label className="toggle" title="stop the mask at the background's color, so no halo shows around the subject">
+                          <span>Fit to Background</span>
+                          <input type="checkbox" className="switch" checked={!r.backdrop.off} disabled={disabled}
+                                 onChange={(e) => onFeather(shape, { backdrop: { ...r.backdrop!, off: !e.target.checked } })} />
+                        </label>
+                      )}
+                    </>
+                  );
                 if (r?.type === "object" && r.depth) {
                   const [near, far] = r.depth, f = r.feather ?? 0.01;
                   return (

@@ -32,9 +32,20 @@ export type Range = LuminanceRange | ColorRange | ParametricRange;
 // an AI-selected object: its outline as darktable paths, each point
 // [x, y, ctrl1x, ctrl1y, ctrl2x, ctrl2y] in shown-image units; holes cut out.
 // a Depth Range is one too, traced around the band of depth it covers
-// (0-1, from the nearest), with its edges feathered by `feather`
-export type ObjectShape = { type: "object"; paths: { hole: boolean; points: number[][] }[];
-                            depth?: [number, number]; feather?: number } & Mode;
+// (0-1, from the nearest), with its edges feathered by `feather`. one over
+// a plain, colorful background (water, sky, a backdrop), as the engine
+// finds it (main.c, _backdrop), carries that color's hz window and its
+// outline on its edge as `backdrop`; as a mask's first shape, the engine
+// makes it the edge outline less the color, or the inset `paths`
+// (_object_shapes), so the adjustment ends at the color instead of
+// feathering onto it as a halo. `plain` is the outline as it would be
+// without one, which the engine uses elsewhere in the mask or turned `off`
+// (Fit to Background); none in one made before it was kept
+export type ObjectPath = { hole: boolean; points: number[][] };
+export type Backdrop = { range: [number, number, number, number]; paths: ObjectPath[]; plain?: ObjectPath[];
+                         off?: boolean };
+export type ObjectShape = { type: "object"; paths: ObjectPath[]; depth?: [number, number]; feather?: number;
+                            backdrop?: Backdrop } & Mode;
 export type Shape = Ellipse | Gradient | Brush | Range | ObjectShape;
 export const isRange = (s: Shape): s is Range => s.type === "luminance" || s.type === "color" || s.type === "parametric";
 
@@ -81,6 +92,13 @@ export function rangeChannels(r: LuminanceRange | ColorRange): ParametricRange["
 export type Refine = { feather: number; blur: number; detail: number; contrast: number };
 export const NO_REFINE: Refine = { feather: 0, blur: 0, detail: 0, contrast: 0 };
 export const isRefined = (m: Mask) => !!m.refine && Object.values(m.refine).some((v) => v !== 0);
+// a mask whose first drawn shape takes its backdrop (main.c, _object_shapes):
+// its paths alone show only the inset outline, which a thin part like a beak
+// lies outside, so its overlay is the engine's map
+export const readsBackdrop = (m: Mask) => {
+  const s = m.shapes.find((t) => !isRange(t));
+  return s?.type === "object" && !!s.backdrop && !s.backdrop.off && s.mode !== "subtract" && !s.depth;
+};
 
 // what a new mask from an AI selection starts with. Sky and the Landscape
 // kinds start at Edge Aware 20: their outline follows the treeline (the
@@ -152,7 +170,9 @@ function objectCover(s: ObjectShape, g: Grid): Uint8Array {
   const gx = (u: number) => ((u - x0) / (x1 - x0)) * w, gy = (v: number) => ((v - y0) / (y1 - y0)) * h;
   // the outline as straight edges, in grid pixels
   const edges: number[] = [];
-  for (const p of s.paths) {
+  // with a backdrop, the plain outline: the engine's map shows the mask
+  // that uses the backdrop (readsBackdrop)
+  for (const p of s.backdrop?.plain ?? s.paths) {
     const pts = p.points;
     if (pts.length < 2) continue;
     for (let k = 0; k < pts.length; k++) {

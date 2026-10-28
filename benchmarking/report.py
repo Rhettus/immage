@@ -160,6 +160,15 @@ def summary(runs, guis):
             L.append(f"| {step} | " + " | ".join(fmt(med(compare.metric(r) for r in pick(run, m, "heavy", step)))
                                                  for m in modes) + " |")
 
+    hdrags = [r["step"] for r in run["records"] if r["scenario"] == "heavydrag"]
+    if hdrags:
+        L += ["", "## Drags over a heavy edit (median across photos)", "",
+              "A drag's draft frames, after its first, with the heavy edit on.", "",
+              "| step | " + " | ".join(names[m] for m in modes) + " |", "|---|" + "---:|" * len(modes)]
+        for step in dict.fromkeys(hdrags):
+            L.append(f"| {step} | " + " | ".join(fmt(med(compare.metric(r) for r in pick(run, m, "heavydrag", step)))
+                                                 for m in modes) + " |")
+
     longs = [r["step"] for r in run["records"] if r["scenario"] == "longdrag"]
     if longs:
         L += ["", "## A long drag's release (median across photos)", "",

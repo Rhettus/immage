@@ -23,3 +23,16 @@ export function keys(s: string): string {
     return next === undefined || next === " " || next === ")" ? names : `${names}+`;
   });
 }
+
+// whether a focused control keeps a key from the app's shortcuts: a text
+// field every key, a slider its arrows, a switch its Space. a switch kept
+// every key once, so O did nothing after one was clicked, and the overlay
+// it had brought up stayed
+export function fieldKeeps(t: EventTarget | null, key: string): boolean {
+  const el = t as { tagName?: string; type?: string } | null;
+  if (el?.tagName === "TEXTAREA") return true;
+  if (el?.tagName !== "INPUT") return false;
+  if (el.type === "range") return key.startsWith("Arrow");
+  if (el.type === "checkbox") return key === " ";
+  return true;
+}

@@ -4,8 +4,11 @@ For people changing Immage's code: the React front end, the Rust layer and
 the headless darktable engine. The photographer's guide is
 [one folder up](../README.md).
 
-- [Code map](code-map.md): where everything lives, where to start a change,
-  how an operation moves through the app, and where data is kept.
+- [Code map](code-map.md): where to start a change, and a line on each
+  file. Short, as agents read it at the start of every session.
+- [Architecture](architecture.md): the detail behind it: each file's job,
+  the engine's pipes and commands, how an operation moves through the
+  app, and where data is kept.
 - Diagrams, each an editable [Excalidraw](https://excalidraw.com) scene with an SVG
   beside it:
   - [data flow](diagrams/dataflow.svg) ([.excalidraw](diagrams/dataflow.excalidraw)): the three processes,

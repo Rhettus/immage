@@ -1186,6 +1186,10 @@ static gboolean _set(const char *op, const char *field, JsonNode *value,
   // with a mask, the history item carries the shapes too
   if(mask) dt_dev_add_masks_history_item_ext(&_s.dev, mod, mod->enabled, TRUE);
   else dt_dev_add_history_item_ext(&_s.dev, mod, mod->enabled, TRUE);
+  // the module a drag moves next, whose input a GPU pipe then copies back
+  // to the pipe cache (patched pixelpipe_hb.c, important_input); without
+  // it every GPU frame reran from the raw. no_image above leaves it unset
+  if(mod->enabled) _s.dev.history_last_module = mod;
 
   // a new order means new pipe nodes; otherwise only the top item changed
   _changed(moved ? DT_DEV_PIPE_REMOVE : DT_DEV_PIPE_TOP_CHANGED);
@@ -3956,6 +3960,9 @@ static int _seg_pw = 0, _seg_ph = 0;  // the image size the encoding was made at
 // (_ai_run) makes and the main loop looks at, to tell whether a request
 // needs the photo rendered for its model
 static GMutex _ai_cache_lock;
+// when a selection last asked for a model (g_get_monotonic_time()), and
+// the use its models were last released after (_ai_release)
+static gint64 _ai_used = 0, _ai_released = 0;
 
 // an AI selection, as the main loop hands it to the AI thread
 typedef struct _ai_job_t
@@ -3970,6 +3977,8 @@ typedef struct _ai_job_t
   int w, h;
   GBytes *guide;     // the photo at _TRACE_SIZE, which outlines are traced at
   int gw, gh;
+  float *hues;       // the request's `backdrop`: _hue_map() at half the guide's size
+  int hw, hh;
 } _ai_job_t;
 
 // outlines are traced at this size, about twice the models' own, against
@@ -4175,7 +4184,7 @@ static void _snap_edges(float *p, const int w, const int h, const uint8_t *guide
 }
 
 // a mask's probabilities (w x h) as the paths _ai_object() replies with
-static void _paths_json(JsonBuilder *b, float *mask, const int mw, const int mh)
+static void _paths_json(JsonBuilder *b, const char *member, float *mask, const int mw, const int mh)
 {
   const size_t len = (size_t)mw * mh;
   // ras2forms traces where the mask is below the threshold, so it gets
@@ -4186,7 +4195,7 @@ static void _paths_json(JsonBuilder *b, float *mask, const int mw, const int mh)
   // across, the size the models' outlines were traced at before
   const double across = MAX(mw, mh) / 1024.0;
   GList *forms = ras2forms(mask, mw, mh, NULL, 0.5f, MAX(1, (int)lround(50.0 * across * across)), 1.0, &signs);
-  json_builder_set_member_name(b, "paths");
+  json_builder_set_member_name(b, member);
   json_builder_begin_array(b);
   GList *sg = signs;
   for(GList *l = forms; l; l = g_list_next(l), sg = sg ? g_list_next(sg) : NULL)
@@ -4257,14 +4266,21 @@ static void _inset(float *p, const int w, const int h, const float r)
 // own rim, its crest or a beak's edge, was left out. a selection the mask
 // takes away, or inverts (Background), is traced on its edge, its feather
 // already falling on the side that is selected
+static gboolean _backdrop(const _ai_job_t *job, const float *p, JsonBuilder *b);
+
 static void _trace_json(const _ai_job_t *job, JsonBuilder *b, float *p, const float snap, const gboolean add)
 {
   if(snap > 0.0f)
     _snap_edges(p, job->gw, job->gh, g_bytes_get_data(job->guide, NULL),
                 snap * MAX(job->gw, job->gh) / _TRACE_SIZE);
+  // with a backdrop's edge outline as well, a whole feather inside, so its
+  // feather ends at the edge (_object_shapes)
   if(add && json_object_get_boolean_member_with_default(job->req, "inset", TRUE))
-    _inset(p, job->gw, job->gh, 0.5f * _OBJECT_FEATHER * MIN(job->gw, job->gh));
-  _paths_json(b, p, job->gw, job->gh);
+  {
+    const gboolean bd = job->hues && _backdrop(job, p, b);
+    _inset(p, job->gw, job->gh, (bd ? 1.0f : 0.5f) * _OBJECT_FEATHER * MIN(job->gw, job->gh));
+  }
+  _paths_json(b, "paths", p, job->gw, job->gh);
 }
 
 // select an object: `points` [[x, y, include], ...] and/or `box`
@@ -4577,6 +4593,7 @@ static void _ai_job_free(_ai_job_t *job)
 {
   json_object_unref(job->req);
   g_free(job->rgb);
+  g_free(job->hues);
   if(job->guide) g_bytes_unref(job->guide);
   g_free(job);
 }
@@ -4584,6 +4601,8 @@ static void _ai_job_free(_ai_job_t *job)
 // the main loop's part of an AI selection: what the model needs of the
 // open photo, which is its render when the model's last result does not
 // hold for it
+static float *_hue_map(const int w, const int h, char **err);
+
 static _ai_job_t *_ai_job(JsonObject *req, char **err)
 {
   const char *cmd = json_object_get_string_member_with_default(req, "cmd", "");
@@ -4613,6 +4632,7 @@ static _ai_job_t *_ai_job(JsonObject *req, char **err)
   dt_dev_pixelpipe_get_dimensions(&_s.ppipe, &_s.dev, _s.ppipe.iwidth, _s.ppipe.iheight, &job->pw, &job->ph);
   const int model = kind < 0 ? -1 : _mask_kinds[kind].model;
   g_mutex_lock(&_ai_cache_lock);
+  _ai_used = g_get_monotonic_time();
   const gboolean held = model < 0
     ? _seg_imgid == job->imgid && _seg_pw == job->pw && _seg_ph == job->ph
     : _mask_cache[model].p && _mask_cache[model].imgid == job->imgid
@@ -4644,6 +4664,15 @@ static _ai_job_t *_ai_job(JsonObject *req, char **err)
   job->gw = _guide.w;
   job->gh = _guide.h;
   g_mutex_unlock(&_ai_cache_lock);
+  if(json_object_get_boolean_member_with_default(req, "backdrop", FALSE) && !job->map)
+  {
+    // without the map, the selection is made as it would be without asking
+    char *e = NULL;
+    job->hw = MAX(1, job->gw / 2);
+    job->hh = MAX(1, job->gh / 2);
+    job->hues = _hue_map(job->hw, job->hh, &e);
+    g_free(e);
+  }
   if(!held)
     job->rgb = _shrink_rgb(g_bytes_get_data(job->guide, NULL), job->gw, job->gh,
                            model < 0 ? _SEG_SIZE : _mask_models[model].size, &job->w, &job->h);
@@ -4662,8 +4691,67 @@ static gboolean _ai_do(const _ai_job_t *job, JsonBuilder *b, char **err)
 static GThreadPool *_ai_pool = NULL;
 static GMutex _ai_pool_lock;
 
+// the selection models are let go once none has been asked for in this
+// long. ONNX Runtime keeps a session's peak working memory in its arena
+// until the session goes: after Select Subject, about 14 GB of a 24 GB
+// Mac, which darktable gives no option to turn off. loading them again
+// costs little beside a run (BiRefNet's is within a run's own variation),
+// and their last results stay, so the same photo needs no model at all
+#define _AI_IDLE_US (30 * G_USEC_PER_SEC)
+static _ai_job_t _ai_release_job;
+static gint _ai_release_queued = 0;
+
+// on the AI thread, between selections. SAM's encoding goes with it, so a
+// click after this renders the photo for it again (_ai_job)
+static void _ai_release(void)
+{
+  g_mutex_lock(&_ai_cache_lock);
+  const gboolean idle = _ai_used != _ai_released && g_get_monotonic_time() - _ai_used >= _AI_IDLE_US;
+  if(idle)
+  {
+    _ai_released = _ai_used;
+    _seg_imgid = NO_IMGID;
+  }
+  g_mutex_unlock(&_ai_cache_lock);
+  if(!idle) return;
+  g_mutex_lock(&_ai_load_lock);
+  if(_seg) dt_seg_free(_seg);
+  _seg = NULL;
+  for(size_t k = 0; k < G_N_ELEMENTS(_mask_ctx); k++)
+  {
+    if(_mask_ctx[k]) dt_ai_unload_model(_mask_ctx[k]);
+    _mask_ctx[k] = NULL;
+  }
+  g_mutex_unlock(&_ai_load_lock);
+}
+
+// queues _ai_release() once the models have been idle long enough,
+// until the engine stops
+static gpointer _ai_idle_watch(gpointer data)
+{
+  for(;;)
+  {
+    g_usleep(5 * G_USEC_PER_SEC);
+    g_mutex_lock(&_ai_cache_lock);
+    const gboolean due = _ai_used != _ai_released && g_get_monotonic_time() - _ai_used >= _AI_IDLE_US;
+    g_mutex_unlock(&_ai_cache_lock);
+    g_mutex_lock(&_ai_pool_lock);
+    const gboolean running = _ai_pool != NULL;
+    if(running && due && g_atomic_int_compare_and_exchange(&_ai_release_queued, 0, 1))
+      g_thread_pool_push(_ai_pool, &_ai_release_job, NULL);
+    g_mutex_unlock(&_ai_pool_lock);
+    if(!running) return NULL;
+  }
+}
+
 static void _ai_run(gpointer data, gpointer user_data)
 {
+  if(data == &_ai_release_job)
+  {
+    g_atomic_int_set(&_ai_release_queued, 0);
+    _ai_release();
+    return;
+  }
   _ai_job_t *job = data;
   FILE *out = user_data;
   char *err = NULL;
@@ -5253,25 +5341,14 @@ static gboolean _ai_denoise(const float strength, const gint64 tag, JsonBuilder 
 
 #endif
 
-// an "object" component's paths as darktable path shapes, appended to `grp`
-static gboolean _object_shapes(dt_masks_form_t *grp, JsonObject *o, const char *name, const guint k,
-                               const gboolean first, char **err)
+// `paths` of component k as darktable path shapes, appended to `grp`
+// and named "#k.i", `mark` before a hole's "-". `*bottom` while nothing
+// is under them in the group: the first then takes no operator. `off`,
+// kept but disabled, which darktable's group passes over (masks/group.c)
+static gboolean _object_paths(dt_masks_form_t *grp, JsonArray *paths, const char *name, const guint k,
+                              const char *tag, const char *mark, const float feather,
+                              const gboolean subtract, const gboolean off, gboolean *bottom)
 {
-  JsonArray *paths = json_object_has_member(o, "paths") ? json_object_get_array_member(o, "paths") : NULL;
-  const gboolean subtract = !g_strcmp0(json_object_get_string_member_with_default(o, "mode", "add"), "subtract");
-  const float feather = CLAMP(json_object_get_double_member_with_default(o, "feather", _OBJECT_FEATHER), 0.0, 0.1);
-  // a Depth Range's band rides along in the names, as nothing else in
-  // darktable's shapes can carry it
-  JsonArray *depth = json_object_has_member(o, "depth") ? json_object_get_array_member(o, "depth") : NULL;
-  gchar tag[3 * G_ASCII_DTOSTR_BUF_SIZE + 4] = "";
-  if(depth && json_array_get_length(depth) == 2)
-  {
-    gchar lo[G_ASCII_DTOSTR_BUF_SIZE], hi[G_ASCII_DTOSTR_BUF_SIZE], fe[G_ASCII_DTOSTR_BUF_SIZE];
-    g_ascii_formatd(lo, sizeof(lo), "%.3f", json_array_get_double_element(depth, 0));
-    g_ascii_formatd(hi, sizeof(hi), "%.3f", json_array_get_double_element(depth, 1));
-    g_ascii_formatd(fe, sizeof(fe), "%.4f", feather);
-    g_snprintf(tag, sizeof(tag), "@%s,%s,%s", lo, hi, fe);
-  }
   gboolean any = FALSE;
   for(guint i = 0; paths && i < json_array_get_length(paths); i++)
   {
@@ -5294,7 +5371,8 @@ static gboolean _object_shapes(dt_masks_form_t *grp, JsonObject *o, const char *
     // the name keeps which component a path belongs to, and whether it is a
     // hole, for reading the component back
     const gboolean hole = json_object_get_boolean_member_with_default(po, "hole", FALSE);
-    g_snprintf(f->name, sizeof(f->name), "%s%s #%u.%u%s%s", _MASK_PREFIX, name, k + 1, i + 1, tag, hole ? "-" : "");
+    g_snprintf(f->name, sizeof(f->name), "%s%s #%u.%u%s%s%s", _MASK_PREFIX, name, k + 1, i + 1, tag, mark,
+               hole ? "-" : "");
     _s.dev.forms = g_list_append(_s.dev.forms, f);
     dt_masks_point_group_t *gp = calloc(1, sizeof(dt_masks_point_group_t));
     gp->formid = f->formid;
@@ -5302,12 +5380,126 @@ static gboolean _object_shapes(dt_masks_form_t *grp, JsonObject *o, const char *
     gp->state = DT_MASKS_STATE_SHOW | DT_MASKS_STATE_USE;
     // a hole takes away from the object; a subtracted object's outline
     // takes away from the mask
-    if(!(first && !any))
+    if(!*bottom)
       gp->state |= (hole != subtract) ? DT_MASKS_STATE_DIFFERENCE : DT_MASKS_STATE_UNION;
+    if(off) gp->state |= DT_MASKS_STATE_DISABLE;
     gp->opacity = 1.0f;
     grp->points = g_list_append(grp->points, gp);
+    if(!off) *bottom = FALSE;
     any = TRUE;
   }
+  return any;
+}
+
+static void _set_channel(dt_develop_blend_params_t *bp, const int ch, const float lim[4], const gboolean invert);
+
+// component k's backdrop: a parametric shape taking hz window `range` out,
+// named "#k~", or "#k~off" turned off, intersecting what is in `grp` so
+// far, or `disabled`. its polarity follows the instances' (_backdrop_polarity)
+static void _backdrop_shape(dt_masks_form_t *grp, JsonArray *range, const char *name, const guint k,
+                            const gboolean turned_off, const gboolean disabled)
+{
+  dt_develop_blend_params_t bp = { 0 };
+  float lim[4];
+  for(int i = 0; i < 4; i++) lim[i] = CLAMP(json_array_get_double_element(range, i), 0.0, 1.0);
+  _set_channel(&bp, DEVELOP_BLENDIF_hz_in, lim, TRUE);
+  dt_masks_form_t *f = dt_masks_create(DT_MASKS_PARAMETRIC);
+  dt_masks_point_parametric_t *pp = calloc(1, sizeof(dt_masks_point_parametric_t));
+  pp->blendif = bp.blendif;
+  memcpy(pp->blendif_parameters, bp.blendif_parameters, sizeof(pp->blendif_parameters));
+  memcpy(pp->blendif_boost_factors, bp.blendif_boost_factors, sizeof(pp->blendif_boost_factors));
+  pp->colorspace = DEVELOP_BLEND_CS_RGB_SCENE;
+  // the channel darktable's mask panel shows it as
+  const dt_iop_gui_blendif_channel_t *chans = dt_develop_blendif_channels_for_csp(DEVELOP_BLEND_CS_RGB_SCENE);
+  for(int c = 0; chans && chans[c].label; c++)
+    if(chans[c].param_channels[0] == DEVELOP_BLENDIF_hz_in) pp->channel = c;
+  f->points = g_list_append(f->points, pp);
+  g_snprintf(f->name, sizeof(f->name), "%s%s #%u~%s", _MASK_PREFIX, name, k + 1, turned_off ? "off" : "");
+  _s.dev.forms = g_list_append(_s.dev.forms, f);
+  dt_masks_point_group_t *gp = calloc(1, sizeof(dt_masks_point_group_t));
+  gp->formid = f->formid;
+  gp->parentid = grp->formid;
+  gp->state = DT_MASKS_STATE_SHOW | DT_MASKS_STATE_USE | DT_MASKS_STATE_INTERSECTION;
+  if(disabled) gp->state |= DT_MASKS_STATE_DISABLE;
+  gp->opacity = 1.0f;
+  grp->points = g_list_append(grp->points, gp);
+}
+
+// a component's backdrop shape, "#k~" or "#k~off"
+static gboolean _is_backdrop_shape(const dt_masks_form_t *f)
+{
+  const char *hash = strrchr(f->name, '#');
+  return (f->type & DT_MASKS_PARAMETRIC) && hash && strchr(hash, '~');
+}
+
+// the backdrop shapes in `grp` take their color out under the instances'
+// mask_combine: darktable evaluates a parametric shape with the module's
+// (masks/parametric.c), and its "inverted" (DEVELOP_COMBINE_INV, a mask
+// with ranges) inverts the shape as well, so the shape's own channel is
+// inverted the other way. every instance of a mask has the same
+// mask_combine, and a mask with it shares none (localMerge.ts, canMerge)
+static void _backdrop_polarity(dt_masks_form_t *grp, const gboolean inv)
+{
+  for(GList *l = grp ? grp->points : NULL; l; l = g_list_next(l))
+  {
+    dt_masks_form_t *f = dt_masks_get_from_id(&_s.dev, ((dt_masks_point_group_t *)l->data)->formid);
+    if(!f || !_is_backdrop_shape(f) || !f->points) continue;
+    dt_masks_point_parametric_t *pp = f->points->data;
+    const uint32_t bit = 1u << (DEVELOP_BLENDIF_hz_in + 16);
+    pp->blendif = inv ? pp->blendif & ~bit : pp->blendif | bit;
+  }
+}
+
+// an "object" component's paths as darktable path shapes, appended to `grp`.
+// with a `backdrop` {range, paths, plain} (_backdrop), as the mask's first
+// shape: its edge outline, less the backdrop's color, or its outline inset
+// a whole feather, whose feather ends at the edge. the edge's feather ends
+// at the color, and the subject keeps the inset outline's mask.
+// darktable's group folds in list order, union by max and intersection by
+// min (masks/group.c), so the edge outline goes first, then the backdrop
+// shape, then the inset outline. anywhere else the backdrop shape would
+// take the color out of the shapes before it, so there, or turned `off`,
+// the plain outline "#k.i^" serves, as a selection without a backdrop
+// would be traced. the parts not used are kept disabled, so turning it
+// back on, or moving the shape first, finds them
+static gboolean _object_shapes(dt_masks_form_t *grp, JsonObject *o, const char *name, const guint k,
+                               const gboolean first, char **err)
+{
+  JsonArray *paths = json_object_has_member(o, "paths") ? json_object_get_array_member(o, "paths") : NULL;
+  const gboolean subtract = !g_strcmp0(json_object_get_string_member_with_default(o, "mode", "add"), "subtract");
+  const float feather = CLAMP(json_object_get_double_member_with_default(o, "feather", _OBJECT_FEATHER), 0.0, 0.1);
+  // a Depth Range's band rides along in the names, as nothing else in
+  // darktable's shapes can carry it
+  JsonArray *depth = json_object_has_member(o, "depth") ? json_object_get_array_member(o, "depth") : NULL;
+  gchar tag[3 * G_ASCII_DTOSTR_BUF_SIZE + 4] = "";
+  if(depth && json_array_get_length(depth) == 2)
+  {
+    gchar lo[G_ASCII_DTOSTR_BUF_SIZE], hi[G_ASCII_DTOSTR_BUF_SIZE], fe[G_ASCII_DTOSTR_BUF_SIZE];
+    g_ascii_formatd(lo, sizeof(lo), "%.3f", json_array_get_double_element(depth, 0));
+    g_ascii_formatd(hi, sizeof(hi), "%.3f", json_array_get_double_element(depth, 1));
+    g_ascii_formatd(fe, sizeof(fe), "%.4f", feather);
+    g_snprintf(tag, sizeof(tag), "@%s,%s,%s", lo, hi, fe);
+  }
+  JsonObject *bd = json_object_has_member(o, "backdrop") ? json_object_get_object_member(o, "backdrop") : NULL;
+  JsonArray *range = bd && json_object_has_member(bd, "range") ? json_object_get_array_member(bd, "range") : NULL;
+  JsonArray *edge = bd && json_object_has_member(bd, "paths") ? json_object_get_array_member(bd, "paths") : NULL;
+  JsonArray *plain = bd && json_object_has_member(bd, "plain") ? json_object_get_array_member(bd, "plain") : NULL;
+  const gboolean off = bd && json_object_get_boolean_member_with_default(bd, "off", FALSE);
+  gboolean bottom = first;
+  gboolean any;
+  if(range && json_array_get_length(range) == 4 && edge && json_array_get_length(edge))
+  {
+    // a backdrop made before the plain outline was kept has none: its
+    // inset outline stands in
+    const gboolean use = first && !subtract && !depth && !off;
+    const gboolean have_plain = plain && json_array_get_length(plain);
+    _object_paths(grp, edge, name, k, tag, "~", feather, subtract, !use, &bottom);
+    _backdrop_shape(grp, range, name, k, off, !use);
+    any = _object_paths(grp, paths, name, k, tag, "", feather, subtract, !use && have_plain, &bottom);
+    if(have_plain) any |= _object_paths(grp, plain, name, k, tag, "^", feather, subtract, use, &bottom);
+  }
+  else
+    any = _object_paths(grp, paths, name, k, tag, "", feather, subtract, FALSE, &bottom);
   if(!any) *err = g_strdup("an object component needs paths");
   return any;
 }
@@ -6123,6 +6315,69 @@ static const char *_mask_instance_tag(const dt_iop_module_t *m, const char *name
   return m->multi_name[n] == '#' ? m->multi_name + n + 1 : NULL;
 }
 
+// a path of an object component as _object_paths() takes it
+static void _object_path_json(JsonBuilder *b, const dt_masks_form_t *f, const gboolean hole)
+{
+  json_builder_begin_object(b);
+  json_builder_set_member_name(b, "hole");
+  json_builder_add_boolean_value(b, hole);
+  json_builder_set_member_name(b, "points");
+  json_builder_begin_array(b);
+  for(const GList *q = f->points; q; q = g_list_next(q))
+  {
+    const dt_masks_point_path_t *pp = q->data;
+    float c[6];
+    _to_shown(pp->corner[0], pp->corner[1], &c[0], &c[1]);
+    _to_shown(pp->ctrl1[0], pp->ctrl1[1], &c[2], &c[3]);
+    _to_shown(pp->ctrl2[0], pp->ctrl2[1], &c[4], &c[5]);
+    json_builder_begin_array(b);
+    for(int j = 0; j < 6; j++) json_builder_add_double_value(b, c[j]);
+    json_builder_end_array(b);
+  }
+  json_builder_end_array(b);
+  json_builder_end_object(b);
+}
+
+// a run of an object component's paths read back, into `*run`
+static void _object_run_close(JsonBuilder *b, const char *member, JsonBuilder **run)
+{
+  if(!*run) return;
+  json_builder_end_array(*run);
+  json_builder_set_member_name(b, member);
+  json_builder_add_value(b, json_builder_get_root(*run));
+  g_object_unref(*run);
+  *run = NULL;
+}
+
+// the end of an object component read back: its paths, then its backdrop
+// from the edge paths in `*edge`, the plain ones in `*plain` and the
+// backdrop shape `bd`, if it had them
+static void _object_close(JsonBuilder *b, JsonBuilder **edge, JsonBuilder **plain, const dt_masks_form_t *bd)
+{
+  json_builder_end_array(b);
+  if(*edge && bd && bd->points)
+  {
+    const dt_masks_point_parametric_t *pp = bd->points->data;
+    const int ch = DEVELOP_BLENDIF_hz_in;
+    json_builder_set_member_name(b, "backdrop");
+    json_builder_begin_object(b);
+    json_builder_set_member_name(b, "range");
+    json_builder_begin_array(b);
+    for(int i = 0; i < 4; i++)
+      json_builder_add_double_value(b, pp->blendif_parameters[4 * ch + i] * exp2f(pp->blendif_boost_factors[ch]));
+    json_builder_end_array(b);
+    _object_run_close(b, "paths", edge);
+    _object_run_close(b, "plain", plain);
+    json_builder_set_member_name(b, "off");
+    json_builder_add_boolean_value(b, g_str_has_suffix(bd->name, "~off"));
+    json_builder_end_object(b);
+  }
+  json_builder_end_object(b);
+  if(*edge) g_object_unref(*edge);
+  if(*plain) g_object_unref(*plain);
+  *edge = *plain = NULL;
+}
+
 // every client mask: its shapes, whether it is inverted, and for each
 // instance it drives, whether it is on and the asked-for fields
 // ({ op: [field, ...] } in `fields`; a tagged instance is "op#tag")
@@ -6140,8 +6395,12 @@ static gboolean _masks(JsonObject *fields, JsonBuilder *b, char **err)
     json_builder_add_string_value(b, name);
     json_builder_set_member_name(b, "shapes");
     json_builder_begin_array(b);
-    // an object component is several paths in a row, named "#k.i"
+    // an object component is several paths in a row, named "#k.i"; with
+    // a backdrop, its edge paths "#k.i~" and backdrop shape "#k~" first,
+    // and its plain paths "#k.i^" last
     int open_obj = -1;
+    JsonBuilder *edge = NULL, *plain = NULL;
+    const dt_masks_form_t *bd = NULL;
     for(const GList *p = grp->points; p; p = g_list_next(p))
     {
       const dt_masks_point_group_t *pt = p->data;
@@ -6149,11 +6408,13 @@ static gboolean _masks(JsonObject *fields, JsonBuilder *b, char **err)
       if(!f || _is_base_shape(f)) continue;
       const char *hash = strrchr(f->name, '#');
       unsigned comp = 0, part = 0;
-      const gboolean is_obj = (f->type & DT_MASKS_PATH) && hash && sscanf(hash + 1, "%u.%u", &comp, &part) == 2;
+      const gboolean is_bd = _is_backdrop_shape(f) && hash && sscanf(hash + 1, "%u", &comp) == 1;
+      const gboolean is_obj = is_bd
+        || ((f->type & DT_MASKS_PATH) && hash && sscanf(hash + 1, "%u.%u", &comp, &part) == 2);
       if(open_obj >= 0 && (!is_obj || (int)comp != open_obj))
       {
-        json_builder_end_array(b);
-        json_builder_end_object(b);
+        _object_close(b, &edge, &plain, bd);
+        bd = NULL;
         open_obj = -1;
       }
       if(!is_obj)
@@ -6161,7 +6422,13 @@ static gboolean _masks(JsonObject *fields, JsonBuilder *b, char **err)
         _shape_json(b, f, pt->state);
         continue;
       }
+      if(is_bd)
+      {
+        bd = f;
+        continue;
+      }
       const gboolean hole = f->name[strlen(f->name) - 1] == '-';
+      const gboolean is_edge = strchr(hash, '~') != NULL, is_plain = strchr(hash, '^') != NULL;
       if(open_obj < 0)
       {
         json_builder_begin_object(b);
@@ -6195,30 +6462,15 @@ static gboolean _masks(JsonObject *fields, JsonBuilder *b, char **err)
         json_builder_begin_array(b);
         open_obj = comp;
       }
-      json_builder_begin_object(b);
-      json_builder_set_member_name(b, "hole");
-      json_builder_add_boolean_value(b, hole);
-      json_builder_set_member_name(b, "points");
-      json_builder_begin_array(b);
-      for(const GList *q = f->points; q; q = g_list_next(q))
+      JsonBuilder **run = is_edge ? &edge : is_plain ? &plain : NULL;
+      if(run && !*run)
       {
-        const dt_masks_point_path_t *pp = q->data;
-        float c[6];
-        _to_shown(pp->corner[0], pp->corner[1], &c[0], &c[1]);
-        _to_shown(pp->ctrl1[0], pp->ctrl1[1], &c[2], &c[3]);
-        _to_shown(pp->ctrl2[0], pp->ctrl2[1], &c[4], &c[5]);
-        json_builder_begin_array(b);
-        for(int j = 0; j < 6; j++) json_builder_add_double_value(b, c[j]);
-        json_builder_end_array(b);
+        *run = json_builder_new();
+        json_builder_begin_array(*run);
       }
-      json_builder_end_array(b);
-      json_builder_end_object(b);
+      _object_path_json(run ? *run : b, f, hole);
     }
-    if(open_obj >= 0)
-    {
-      json_builder_end_array(b);
-      json_builder_end_object(b);
-    }
+    if(open_obj >= 0) _object_close(b, &edge, &plain, bd);
     // the ranges, from the first instance carrying the mask; kept for
     // instances made later
     for(GList *m = _s.dev.iop; m; m = g_list_next(m))
@@ -6628,6 +6880,193 @@ static void _chan_values(const _working_t *w, const float *rgb, float v[_N_CHANS
   for(int c = 0; c < 3; c++) v[1 + c] = rgb[c];
   for(int c = 0; c < 3; c++) v[4 + c] = JzCzhz[c];
 }
+
+#ifdef HAVE_AI
+// the mask instances' input as blendif's hue (hz), how colorful it is
+// for its lightness (Cz / Jz: dark water is as plainly blue as a bright
+// sky at a tenth of its chroma) and its lightness (Jz), over a w x h grid
+// on the shown image: triples by rows
+static float *_hue_map(const int w, const int h, char **err)
+{
+  _working_t wk;
+  if(!_working(&wk, err)) return NULL;
+  const size_t n = (size_t)w * h;
+  float *pts = g_malloc(2 * n * sizeof(float));
+  for(int j = 0; j < h; j++)
+    for(int i = 0; i < w; i++)
+    {
+      pts[2 * ((size_t)j * w + i)] = (i + 0.5f) / w;
+      pts[2 * ((size_t)j * w + i) + 1] = (j + 0.5f) / h;
+    }
+  _to_working(&wk, pts, n);
+  float *hc = g_malloc(3 * n * sizeof(float));
+  DT_OMP_FOR()
+  for(size_t k = 0; k < n; k++)
+  {
+    const int x = CLAMP((int)pts[2 * k], 0, wk.roi.width - 1), y = CLAMP((int)pts[2 * k + 1], 0, wk.roi.height - 1);
+    float Y;
+    dt_aligned_pixel_t JzCzhz;
+    _blend_values(&wk, wk.data + 4 * ((size_t)y * wk.roi.width + x), &Y, JzCzhz);
+    hc[3 * k] = JzCzhz[2];
+    hc[3 * k + 1] = JzCzhz[1] / fmaxf(JzCzhz[0], 1e-4f);
+    hc[3 * k + 2] = JzCzhz[0];
+  }
+  g_free(pts);
+  return hc;
+}
+
+// a hue's distance from another, round the circle
+static inline float _hue_dist(const float a, const float b)
+{
+  const float d = fabsf(a - b);
+  return fminf(d, 1.0f - d);
+}
+
+// _backdrop()'s limits, from photos of birds, people and flowers: a pixel
+// is colorful where its Cz / Jz passes _BACKDROP_CHROMA; a background is
+// one color where _BACKDROP_COVER of the ring round the selection is
+// colorful and near its hue, and vivid where the ring's median Cz / Jz
+// passes _BACKDROP_VIVID; and the edge is clear where under
+// _BACKDROP_UNCLEAR of the band just outside it is dull, or near the
+// window's ends. a dull or unclear edge speckles: its pixels' hues drop in
+// and out of the window with the noise, and each shows where the edge
+// outline is on and the inset one is not. a child before a cream wall
+// (median 0.16) and a face before green leaves (18% unclear) speckled at
+// +1 EV; a stilt over dark water is 0.42 and 4%, a kingfisher on blue sky
+// 1.39 and 1%
+#define _BACKDROP_CHROMA 0.1f
+#define _BACKDROP_COVER 0.75f
+#define _BACKDROP_VIVID 0.25f
+#define _BACKDROP_UNCLEAR 0.1f
+
+// a selection over a plain, colorful background (water, sky, a backdrop)
+// gets that color's hue range and its outline on its edge as well as
+// inset. darktable feathers a path outward only, so even inset half a
+// feather (_trace_json) the outline left the adjustment on the background
+// for a few pixels, which shows as a halo once it lifts a stop. the mask
+// takes the edge outline less the color, or the outline inset a whole
+// feather (_object_shapes): the feather ends at the color, and the subject
+// keeps the inset outline's mask wherever its own colors fall. on the
+// stilt the mask 1-3 px out fell from 49% to 31%, and 4-10 px from 16% to
+// 11%, its rim 1-3 px in rose from 70% to 80%. replies, for such a background, with
+// `backdrop` {hue, range, paths, plain}: range is the hz window an inverted
+// parametric channel takes the color out with, paths the edge outline,
+// plain the outline inset half a feather, as without a backdrop
+static gboolean _backdrop(const _ai_job_t *job, const float *p, JsonBuilder *b)
+{
+  const int w = job->hw, h = job->hh;
+  const size_t n = (size_t)w * h;
+  const float *hc = job->hues;
+  float *near_mean = g_malloc(n * sizeof(float));
+  float *far_mean = g_malloc(n * sizeof(float)), *tmp = g_malloc(n * sizeof(float));
+  for(int j = 0; j < h; j++)
+    for(int i = 0; i < w; i++)
+    {
+      const int x = MIN(job->gw - 1, (int)((i + 0.5f) * job->gw / w));
+      const int y = MIN(job->gh - 1, (int)((j + 0.5f) * job->gh / h));
+      const size_t k = (size_t)j * w + i;
+      near_mean[k] = far_mean[k] = p[(size_t)y * job->gw + x] >= 0.5f;
+    }
+  // the ring outside, clear of the edge, whose pixels at the working
+  // image's size are part either side
+  const int r0 = MAX(2, MAX(w, h) / 340), r1 = MAX(6, MAX(w, h) / 85);
+  _box_mean(near_mean, tmp, w, h, r0);
+  _box_mean(far_mean, tmp, w, h, r1);
+  uint8_t *ring = g_malloc(n);
+  size_t rn = 0;
+  int hist[72] = { 0 };
+  for(size_t k = 0; k < n; k++)
+  {
+    ring[k] = near_mean[k] == 0.0f && far_mean[k] > 0.0f;
+    rn += ring[k];
+    if(ring[k] && hc[3 * k + 1] >= _BACKDROP_CHROMA) hist[MIN(71, (int)(hc[3 * k] * 72))]++;
+  }
+  // its hue: the busiest 35 degrees of the colorful ring, then their mean
+  int peak = 0, best = -1;
+  for(int k = 0; k < 72; k++)
+  {
+    int c = 0;
+    for(int d = -3; d <= 3; d++) c += hist[(k + d + 72) % 72];
+    if(c > best)
+    {
+      best = c;
+      peak = k;
+    }
+  }
+  const float h0 = (peak + 0.5f) / 72.0f;
+  double hs = 0.0, hcs = 0.0;
+  for(size_t k = 0; k < n; k++)
+    if(ring[k] && hc[3 * k + 1] >= _BACKDROP_CHROMA && _hue_dist(hc[3 * k], h0) < 0.15f)
+    {
+      hs += sin(2.0 * M_PI * hc[3 * k]);
+      hcs += cos(2.0 * M_PI * hc[3 * k]);
+    }
+  float hue = atan2(hs, hcs) / (2.0 * M_PI);
+  if(hue < 0.0f) hue += 1.0f;
+  // the window holds 90% of the hues near it, with a margin; no narrower
+  // than the stilt's water needed
+  int spread[101] = { 0 }, close = 0;
+  for(size_t k = 0; k < n; k++)
+    if(ring[k] && hc[3 * k + 1] >= _BACKDROP_CHROMA && _hue_dist(hc[3 * k], hue) < 0.2f)
+    {
+      spread[MIN(100, (int)(_hue_dist(hc[3 * k], hue) * 500))]++;
+      close++;
+    }
+  int q = 0;
+  for(int c = 0; q < 100 && (c += spread[q]) < 0.9f * close; q++);
+  const float a = CLAMP(q / 500.0f + 0.045f, 0.085f, 0.14f), o = a + 0.08f;
+  size_t cover = 0;
+  for(size_t k = 0; k < n; k++)
+    if(ring[k] && hc[3 * k + 1] >= _BACKDROP_CHROMA && _hue_dist(hc[3 * k], hue) <= a) cover++;
+  // the ring's median colorfulness
+  int vivid[201] = { 0 };
+  for(size_t k = 0; k < n; k++)
+    if(ring[k]) vivid[MIN(200, (int)(hc[3 * k + 1] * 100))]++;
+  int med = 0;
+  for(size_t c = 0; med < 200 && (c += vivid[med]) < rn / 2; med++);
+  // the band just outside the edge: how much of it is dull, or near the
+  // window's ends, widened by the noise of the full-size photo
+  size_t bn = 0, unclear = 0;
+  for(int j = 0; j < h; j++)
+    for(int i = 0; i < w; i++)
+    {
+      const size_t k = (size_t)j * w + i;
+      const int x = MIN(job->gw - 1, (int)((i + 0.5f) * job->gw / w));
+      const int y = MIN(job->gh - 1, (int)((j + 0.5f) * job->gh / h));
+      if(p[(size_t)y * job->gw + x] >= 0.5f || near_mean[k] == 0.0f) continue;
+      const float d = _hue_dist(hc[3 * k], hue);
+      bn++;
+      unclear += hc[3 * k + 1] < _BACKDROP_CHROMA || (d > a && d < o + 0.08f);
+    }
+  g_free(near_mean);
+  g_free(far_mean);
+  g_free(tmp);
+  g_free(ring);
+  // hz runs 0-1 without wrapping: a window over its ends cannot be made
+  if(!rn || cover < _BACKDROP_COVER * rn || med < 100 * _BACKDROP_VIVID || !bn || unclear > _BACKDROP_UNCLEAR * bn
+     || hue - o < 0.0f || hue + o > 1.0f)
+    return FALSE;
+  json_builder_set_member_name(b, "backdrop");
+  json_builder_begin_object(b);
+  _add_num(b, "hue", hue);
+  json_builder_set_member_name(b, "range");
+  json_builder_begin_array(b);
+  const float r[4] = { hue - o, hue - a, hue + a, hue + o };
+  for(int k = 0; k < 4; k++) json_builder_add_double_value(b, r[k]);
+  json_builder_end_array(b);
+  // and the outline as it would be without one, for a shape that leaves
+  // its backdrop out (_object_shapes)
+  float *edge = g_malloc(sizeof(float) * job->gw * job->gh);
+  memcpy(edge, p, sizeof(float) * job->gw * job->gh);
+  _paths_json(b, "paths", edge, job->gw, job->gh);
+  memcpy(edge, p, sizeof(float) * job->gw * job->gh);
+  _inset(edge, job->gw, job->gh, 0.5f * _OBJECT_FEATHER * MIN(job->gw, job->gh));
+  _paths_json(b, "plain", edge, job->gw, job->gh);
+  g_free(edge);
+  json_builder_end_object(b);
+  return TRUE;
+}
+#endif
 
 // a hue's opposite, half way round
 static inline float _hue_flip(const float h)
@@ -7093,6 +7532,9 @@ static void _apply_ranges(dt_iop_module_t *m, const char *name, const gboolean h
   // parametric one as a whole with INV
   bp->mask_combine &= ~(DEVELOP_COMBINE_INV | DEVELOP_COMBINE_MASKS_POS | DEVELOP_COMBINE_INCL);
   if(invert) bp->mask_combine |= conditional ? DEVELOP_COMBINE_INV : DEVELOP_COMBINE_MASKS_POS;
+  // a backdrop shape reads no hue in another space, whatever its polarity
+  if(cst == DEVELOP_BLEND_CS_RGB_SCENE)
+    _backdrop_polarity(dt_masks_get_from_id(&_s.dev, bp->mask_id), (bp->mask_combine & DEVELOP_COMBINE_INV) != 0);
 }
 
 // darktable's per-channel factor (blendif_rgb_jzczhz.c), for range_map
@@ -8226,7 +8668,7 @@ static void _handle(JsonObject *req, FILE *out)
       goto fail;
     }
     // the export pipe's device priority, which allows the GPU; the full
-    // pipes' leaves them on the CPU (the app's opencl_device_priority)
+    // pipes' allows it only with the app's GPU edits (engine.rs, gpu_edits)
     const int devid = f == &_s.base && dt_opencl_running()
       ? dt_opencl_lock_device(DT_DEV_PIXELPIPE_EXPORT) : DT_DEVICE_NONE;
     // "skip": ops left out of this one frame, every instance, so a slider
@@ -8771,6 +9213,7 @@ int main(int argc, char **argv)
 #ifdef HAVE_AI
   _denoise_pool = g_thread_pool_new(_denoise_run, out, 1, FALSE, NULL);
   _ai_pool = g_thread_pool_new(_ai_run, out, 1, FALSE, NULL);
+  g_thread_unref(g_thread_new("ai idle", _ai_idle_watch, NULL));
 #endif
   GAsyncQueue *requests = g_async_queue_new();
   g_thread_unref(g_thread_new("requests", _read_requests, requests));

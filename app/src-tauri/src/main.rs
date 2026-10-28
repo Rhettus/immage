@@ -9,6 +9,7 @@ mod cache;
 mod engine;
 mod immich_search;
 mod immich_upload;
+mod listing;
 mod plugins;
 #[cfg(target_os = "linux")]
 mod scale;
@@ -54,6 +55,8 @@ struct AppState {
     runtime: PathBuf,
     // darktable's resource level the engine started with
     resource_level: String,
+    // whether the engine started with its edits on the GPU
+    gpu_edits: bool,
 }
 
 impl AppState {
@@ -319,9 +322,11 @@ async fn on_engine_thread(state: &AppState, mut req: Value) -> Result<Value, Str
 // select an object with the AI model: clicks [[x, y, include]] and/or a
 // box [x0, y0, x1, y1] in shown-image units; replies with its outline.
 // `inset` false traces it on its edge, for a selection the mask takes away
-// (main.c, _trace_json)
+// (main.c, _trace_json). with `backdrop`, replies { paths, backdrop }: the
+// hue range of a plain background to take out, or null (main.c, _backdrop)
 #[tauri::command]
-async fn ai_object(state: State<'_, AppState>, points: Value, r#box: Option<Value>, inset: Option<bool>) -> Result<Value, String> {
+async fn ai_object(state: State<'_, AppState>, points: Value, r#box: Option<Value>, inset: Option<bool>,
+                   backdrop: Option<bool>) -> Result<Value, String> {
     let mut req = json!({ "cmd": "ai_object", "points": points });
     if let Some(b) = r#box {
         req["box"] = b;
@@ -329,8 +334,22 @@ async fn ai_object(state: State<'_, AppState>, points: Value, r#box: Option<Valu
     if let Some(i) = inset {
         req["inset"] = json!(i);
     }
-    let reply = on_engine_thread(&state, req).await?;
-    Ok(reply["paths"].clone())
+    ai_outline(&state, req, backdrop).await
+}
+
+// an AI selection's reply as its command gives it: the paths, or with
+// `backdrop`, the paths and the backdrop (its hue range and edge outline)
+async fn ai_outline(state: &AppState, mut req: Value, backdrop: Option<bool>) -> Result<Value, String> {
+    let backdrop = backdrop.unwrap_or(false);
+    if backdrop {
+        req["backdrop"] = json!(true);
+    }
+    let reply = on_engine_thread(state, req).await?;
+    Ok(if backdrop {
+        json!({ "paths": reply["paths"], "backdrop": reply["backdrop"] })
+    } else {
+        reply["paths"].clone()
+    })
 }
 
 // darktable's AI models come from its model repository, in the release made
@@ -568,9 +587,10 @@ async fn ai_model_reinstall(app: AppHandle, state: State<'_, AppState>, id: Stri
 
 // a one-click AI mask ("subject"): its outline, as ai_object replies, and
 // `inset` as there. "depth" takes the band of depth it covers, [near, far]
-// in 0-1
+// in 0-1. `backdrop` as there too
 #[tauri::command]
-async fn ai_mask(state: State<'_, AppState>, kind: String, range: Option<[f64; 2]>, inset: Option<bool>) -> Result<Value, String> {
+async fn ai_mask(state: State<'_, AppState>, kind: String, range: Option<[f64; 2]>, inset: Option<bool>,
+                 backdrop: Option<bool>) -> Result<Value, String> {
     let mut req = json!({ "cmd": "ai_mask", "kind": kind });
     if let Some(r) = range {
         req["range"] = json!(r);
@@ -578,8 +598,7 @@ async fn ai_mask(state: State<'_, AppState>, kind: String, range: Option<[f64; 2
     if let Some(i) = inset {
         req["inset"] = json!(i);
     }
-    let reply = on_engine_thread(&state, req).await?;
-    Ok(reply["paths"].clone())
+    ai_outline(&state, req, backdrop).await
 }
 
 // the depth map, about `size` across: { width, height, data } with data
@@ -673,7 +692,7 @@ async fn mask_rename(state: State<'_, AppState>, name: String, to: String) -> Re
     state.engine().request(json!({ "cmd": "mask_rename", "name": name, "to": to })).map(|_| ())
 }
 
-const FRAME_HEAD: usize = 56;
+const FRAME_HEAD: usize = 64;
 
 // without a scale the whole image is fitted into width x height; with one
 // (1.0 is 100%) the width x height window at (x, y) of the scaled image is
@@ -681,8 +700,9 @@ const FRAME_HEAD: usize = 56;
 // width, height, image width and height at 100%, window x, y), six
 // little-endian f32 timings in ms (waiting for the engine, the engine's
 // request, its pixelpipe, its frame write, the frame read here, collecting
-// the per-module timings), darktable's u64 hash of the frame (FRAME_HEAD
-// bytes in all), then RGBA. ops in skip are left out of this frame. a
+// the per-module timings), darktable's u64 hash of the frame, one more f32
+// timing (the edits sent ahead of the render) and four bytes of padding
+// (FRAME_HEAD bytes in all), then RGBA. ops in skip are left out of this frame. a
 // frame of no size, with no RGBA, is the one in `have` of that hash
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
@@ -700,6 +720,7 @@ async fn render(
     shared: Option<u32>,
     token: Option<String>,
     have: Option<Vec<String>>,
+    edits: Option<Vec<Value>>,
 ) -> Result<Response, String> {
     let mut req = json!({ "cmd": "render", "width": width, "height": height, "rgba": state.frame_path });
     if let Some(skip) = skip {
@@ -730,6 +751,20 @@ async fn render(
     let t0 = Instant::now();
     let mut engine = state.engine();
     let lock_ms = ms(t0);
+    // a move's module edits (Session.moduleEdit), sent as set_params would,
+    // under the same lock: one call from the page rather than one each,
+    // which cost 20 ms or more a call on Linux while the page draws
+    let ts = Instant::now();
+    for e in edits.unwrap_or_default() {
+        let mut set = json!({ "cmd": "set" });
+        for k in ["op", "params", "enabled", "after", "before", "instance"] {
+            if !e[k].is_null() {
+                set[k] = e[k].clone();
+            }
+        }
+        engine.request(set)?;
+    }
+    let set_ms = ms(ts);
     let t1 = Instant::now();
     let reply = engine.request(req)?;
     let request_ms = ms(t1);
@@ -746,6 +781,8 @@ async fn render(
     out.resize(48, 0);
     let hash = reply["hash"].as_str().and_then(|h| u64::from_str_radix(h, 16).ok()).unwrap_or(0);
     out.extend_from_slice(&hash.to_le_bytes());
+    out.extend_from_slice(&(set_ms as f32).to_le_bytes());
+    out.resize(FRAME_HEAD, 0);
     let kept = reply["kept"].as_bool() == Some(true);
     let t2 = Instant::now();
     if !kept {
@@ -1030,8 +1067,10 @@ async fn perf_machine(state: State<'_, AppState>) -> Result<Value, String> {
 // images, so a big folder shows its progress and its first photos early.
 // the batches go to the engine's import thread (main.c, _import_run), so
 // the photo is edited and rendered while they are read.
-// a first event, before any is read, lists every file, so the client can
-// lay out a cell for each. a newer call (another `token`)
+// a first event, before the folder is even listed, has its images as the
+// last read found them (`known`, without imgids): from the app's own disk,
+// so a folder on a network share shows at once. the next lists every file,
+// so the client can lay out a cell for each. a newer call (another `token`)
 // stops this one. returns every image: ratings, labels and EXIF summary.
 // `skip` names subfolders taken off the folder tree, which `recursive`
 // leaves out with their own subfolders
@@ -1039,19 +1078,32 @@ async fn perf_machine(state: State<'_, AppState>) -> Result<Value, String> {
 async fn open_folder(app: AppHandle, state: State<'_, AppState>, path: String, recursive: Option<bool>,
                      skip: Option<Vec<String>>, token: u64) -> Result<Value, String> {
     state.folder_token.store(token, Ordering::SeqCst);
+    let recursive = recursive.unwrap_or(false);
+    let snapshot = snapshot_path(&state.runtime, &path, recursive, skip.as_deref().unwrap_or_default());
+    let known = {
+        let snapshot = snapshot.clone();
+        tauri::async_runtime::spawn_blocking(move || read_snapshot(&snapshot)).await.map_err(|e| e.to_string())?
+    };
+    if let Some(known) = known {
+        let _ = app.emit("folder-progress", json!({ "token": token, "done": 0, "total": 0, "images": [],
+                                                    "known": known }));
+    }
     let dir = PathBuf::from(&path);
     if !dir.is_dir() {
         return Err(format!("folder not found: {path}"));
     }
-    let recursive = recursive.unwrap_or(false);
     let skip: HashSet<PathBuf> = skip.unwrap_or_default().into_iter().map(PathBuf::from).collect();
-    let mut files = tauri::async_runtime::spawn_blocking(move || {
-        let mut out = Vec::new();
-        folder_files(&dir, recursive, &skip, &mut out);
-        out
+    let (mut files, listed) = tauri::async_runtime::spawn_blocking(move || {
+        let (mut out, mut listed) = (Vec::new(), cache::Listed::default());
+        folder_files(&dir, recursive, &skip, &mut out, &mut listed);
+        (out, listed)
     })
     .await
     .map_err(|e| e.to_string())?;
+    if state.folder_token.load(Ordering::SeqCst) != token {
+        return Err("superseded".into());
+    }
+    *app.state::<Caches>().listed.lock().unwrap() = listed;
     app.state::<plugins::Plugins>().drain_jobs();
     app.state::<plugins::Plugins>().beside_originals(&mut files);
     let total = files.len();
@@ -1085,7 +1137,46 @@ async fn open_folder(app: AppHandle, state: State<'_, AppState>, path: String, r
         let _ = app.emit("folder-progress", json!({ "token": token, "done": done, "total": total, "images": got }));
         images.extend(got);
     }
+    let kept = images.clone();
+    tauri::async_runtime::spawn_blocking(move || write_snapshot(&snapshot, &kept));
     Ok(json!({ "images": images }))
+}
+
+// the folder's images as its last whole read found them, for open_folder()
+// to show before it reads again: one file per folder (and recursive and
+// skip, which change what it holds) in the runtime folder
+fn snapshot_path(runtime: &Path, dir: &str, recursive: bool, skip: &[String]) -> PathBuf {
+    use sha2::{Digest, Sha256};
+    let mut skip = skip.to_vec();
+    skip.sort();
+    let mut h = Sha256::new();
+    h.update(format!("{dir}\0{recursive}\0{}", skip.join("\0")));
+    let name: String = h.finalize().iter().map(|b| format!("{b:02x}")).collect();
+    runtime.join("folders").join(format!("{name}.json"))
+}
+
+fn read_snapshot(path: &Path) -> Option<Value> {
+    let list: Value = serde_json::from_slice(&std::fs::read(path).ok()?).ok()?;
+    list.is_array().then_some(list)
+}
+
+// without imgids, which are the engine's for this session only. written
+// beside and renamed, so a read never finds half a file
+fn write_snapshot(path: &Path, images: &[Value]) {
+    let list: Vec<Value> = images.iter().map(|i| {
+        let mut i = i.clone();
+        if let Some(o) = i.as_object_mut() {
+            o.remove("imgid");
+        }
+        i
+    }).collect();
+    let Ok(bytes) = serde_json::to_vec(&list) else { return };
+    let Some(dir) = path.parent() else { return };
+    let part = path.with_extension("part");
+    if std::fs::create_dir_all(dir).is_ok() && std::fs::write(&part, bytes).is_ok()
+        && std::fs::rename(&part, path).is_err() {
+        let _ = std::fs::remove_file(&part);
+    }
 }
 
 // a batch's files to begin with, and the fewest and most: sized to take
@@ -1096,28 +1187,42 @@ const IMPORT_TARGET: Duration = Duration::from_millis(150);
 // the files of `dir` by name, then with `recursive` each subfolder's in
 // turn, as darktable's own folder import orders them. dot files, sidecars
 // and packages are left out, and so are the subfolders in `skip`
-fn folder_files(dir: &Path, recursive: bool, skip: &HashSet<PathBuf>, out: &mut Vec<PathBuf>) {
-    let Ok(rd) = std::fs::read_dir(dir) else { return };
-    let (mut files, mut dirs) = (Vec::new(), Vec::new());
-    for e in rd.flatten() {
-        let name = e.file_name().to_string_lossy().to_lowercase();
+// each file's stamp, sidecars' too, goes in `listed`, so its thumbnail is
+// checked without asking the disk again (cache::listed_thumb_name)
+fn folder_files(dir: &Path, recursive: bool, skip: &HashSet<PathBuf>, out: &mut Vec<PathBuf>,
+                listed: &mut cache::Listed) {
+    let (mut files, mut dirs, mut stamps) = (Vec::new(), Vec::new(), Vec::new());
+    for e in listing::list(dir) {
+        let name = e.name.to_string_lossy().to_lowercase();
         if name.starts_with('.') {
             continue;
         }
-        let p = e.path();
-        if p.is_dir() {
+        let p = dir.join(&e.name);
+        // from the listing itself, where p.is_dir() would ask the disk of
+        // every file, a round trip each on a network share; a link is
+        // followed, as is_dir() did
+        let is_dir = match e.kind {
+            listing::Kind::Dir => true,
+            listing::Kind::File => false,
+            listing::Kind::Other => p.is_dir(),
+        };
+        if is_dir {
             if recursive && !skip.contains(&p) && !is_package(&p) {
                 dirs.push((name, p));
             }
-        } else if !name.ends_with(".xmp") {
+            continue;
+        }
+        stamps.push((p.clone(), e.stamp));
+        if !name.ends_with(".xmp") {
             files.push((name, p));
         }
     }
+    listed.add(dir, stamps);
     files.sort();
     dirs.sort();
     out.extend(files.into_iter().map(|(_, p)| p));
     for (_, d) in dirs {
-        folder_files(&d, true, skip, out);
+        folder_files(&d, true, skip, out, listed);
     }
 }
 
@@ -1394,7 +1499,7 @@ async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>, imgid: i64
                path: Option<String>, version: Option<i64>) -> Result<Response, String> {
     // named before the render: a sidecar written during it makes the next
     // look a miss, never a stale hit
-    let name = path.and_then(|p| cache::thumb_name(Path::new(&p), version.unwrap_or(0), size));
+    let name = path.and_then(|p| cache::refresh(&caches.listed, Path::new(&p), version.unwrap_or(0), size).map(|n| (p, n)));
     let thumbs = state.tagged.clone();
     let tag = thumbs.tag();
     // a file of its own, as several are built at once
@@ -1418,11 +1523,13 @@ async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>, imgid: i64
     out.extend_from_slice(&height.to_le_bytes());
     out.extend_from_slice(&pixels);
     // encoded and written after the reply, which need not wait for it
-    if let Some(name) = name {
+    if let Some((photo, name)) = name {
         let thumbs = caches.thumbs.clone();
         tauri::async_runtime::spawn_blocking(move || {
             if let Ok(jpeg) = cache::encode_jpeg(&pixels, width, height) {
-                let _ = thumbs.write(&name, &jpeg);
+                if thumbs.write(&name, &jpeg).is_ok() {
+                    thumbs.set_known(Path::new(&photo), version.unwrap_or(0), size, &name);
+                }
             }
         });
     }
@@ -1430,13 +1537,30 @@ async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>, imgid: i64
 }
 
 // a library thumbnail from the cache, as JPEG, or nothing when it has none
-// for the photo as it is now; the engine is not asked
+// for the photo as it is now: as the open folder's listing found it, else
+// as a stat finds it. the engine is not asked
 #[tauri::command]
 async fn thumb_cached(caches: State<'_, Caches>, path: String, version: i64, size: u32) -> Result<Response, String> {
-    let thumbs = caches.thumbs.clone();
+    let (thumbs, listed) = (caches.thumbs.clone(), caches.listed.clone());
     let bytes = tauri::async_runtime::spawn_blocking(move || {
-        cache::thumb_name(Path::new(&path), version, size).and_then(|n| thumbs.read(&n))
+        let photo = Path::new(&path);
+        let name = cache::listed_thumb_name(&listed, photo, version, size)?;
+        let bytes = thumbs.read(&name)?;
+        // a cache from before known thumbnails learns them as it is read
+        thumbs.set_known(photo, version, size, &name);
+        Some(bytes)
     }).await.map_err(|e| e.to_string())?;
+    Ok(Response::new(bytes.unwrap_or_default()))
+}
+
+// the photo's last thumbnail as JPEG, or nothing, found by its path alone:
+// the photo is not looked at, so this is quick on a network share, but it
+// may be of the photo as it was. thumb_cached() is the one to trust
+#[tauri::command]
+async fn thumb_known(caches: State<'_, Caches>, path: String, version: i64, size: u32) -> Result<Response, String> {
+    let thumbs = caches.thumbs.clone();
+    let bytes = tauri::async_runtime::spawn_blocking(move || thumbs.read_known(Path::new(&path), version, size))
+        .await.map_err(|e| e.to_string())?;
     Ok(Response::new(bytes.unwrap_or_default()))
 }
 
@@ -1491,6 +1615,18 @@ fn darktable_resources(state: State<'_, AppState>) -> Value {
 #[tauri::command]
 fn darktable_resources_set(state: State<'_, AppState>, level: String) -> Result<(), String> {
     engine::set_resource_level(&state.runtime, &level)
+}
+
+// Preferences' GPU edits: whether the engine runs with them, and whether
+// its next start will
+#[tauri::command]
+fn gpu_edits(state: State<'_, AppState>) -> Value {
+    json!({ "running": state.gpu_edits, "next": engine::gpu_edits(&state.runtime) })
+}
+
+#[tauri::command]
+fn gpu_edits_set(state: State<'_, AppState>, on: bool) -> Result<(), String> {
+    engine::set_gpu_edits(&state.runtime, on)
 }
 
 // the GPU execution providers this computer can use for AI, with their
@@ -2278,6 +2414,7 @@ fn main() {
             };
             let bin = std::env::var_os("DT_ENGINE_BIN").map(PathBuf::from).unwrap_or(default_bin);
             let resource_level = engine::resource_level(&runtime);
+            let gpu_edits = engine::gpu_edits(&runtime);
             let engine = Engine::spawn(&bin, &runtime, &models_dir)
                 .map_err(|e| format!("cannot start {}: {e}", bin.display()))?;
             app.manage(AppState {
@@ -2299,6 +2436,7 @@ fn main() {
                 perf_dir,
                 runtime: runtime.clone(),
                 resource_level,
+                gpu_edits,
             });
             app.manage(plugins::Plugins::new(runtime.join("plugin-returns.json")));
             // stacks saved in Macro Studio while Immage was closed
@@ -2308,7 +2446,7 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            open_folder, open_image, get_params, set_params, render, cancel_base, save, baseline_end, before_view, thumb, thumb_cached, cache_limits, cache_usage, cache_clear, meta, meta_set, prefetch, darktable_resources, darktable_resources_set,
+            open_folder, open_image, get_params, set_params, render, cancel_base, save, baseline_end, before_view, thumb, thumb_cached, thumb_known, cache_limits, cache_usage, cache_clear, meta, meta_set, prefetch, darktable_resources, darktable_resources_set, gpu_edits, gpu_edits_set,
             export_images, export_cancel, export_existing, export_preview, fonts, export_presets_load, export_presets_save, preset_file_write, preset_file_read, presets_load, presets_save, looks_list, look_import, look_export, look_delete, look_apply, look_amount, preview,
             mask_shapes, combine, masks, mask_delete, mask_rename, history, module_state, sample, tone_key, agx_auto, upright, points, range_map, zones, mask_map, ai_object,
             ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, list_subfolders, folder_volumes, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
@@ -2414,8 +2552,11 @@ mod tests {
             std::fs::create_dir_all(p.parent().unwrap()).unwrap();
             std::fs::write(&p, "").unwrap();
         }
+        // a link to a folder is listed as one, though the listing calls it a link
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(dir.join("sub"), dir.join("link")).unwrap();
         let mut got = Vec::new();
-        folder_files(&dir, true, &HashSet::new(), &mut got);
+        folder_files(&dir, true, &HashSet::new(), &mut got, &mut cache::Listed::default());
         let names: Vec<String> = got.iter().map(|p| p.strip_prefix(&dir).unwrap().to_string_lossy().into_owned()).collect();
         let _ = std::fs::remove_dir_all(&dir);
         // macOS knows .photoslibrary for a package; elsewhere it is a folder
@@ -2423,8 +2564,26 @@ mod tests {
         if !cfg!(target_os = "macos") {
             want.push("Photos Library.photoslibrary/d.jpg");
         }
+        if cfg!(unix) {
+            want.push("link/c.jpg");
+        }
         want.push("sub/c.jpg");
         assert_eq!(names, want);
+    }
+
+    #[test]
+    fn snapshot_without_imgids() {
+        let runtime = repo_root().join(format!("build/scratch/snapshot-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&runtime);
+        let path = snapshot_path(&runtime, "/photos", false, &["/photos/b".into(), "/photos/a".into()]);
+        // what changes the folder's photos names another snapshot; skip's order does not
+        assert_eq!(path, snapshot_path(&runtime, "/photos", false, &["/photos/a".into(), "/photos/b".into()]));
+        assert_ne!(path, snapshot_path(&runtime, "/photos", true, &["/photos/a".into(), "/photos/b".into()]));
+        assert_eq!(read_snapshot(&path), None);
+        write_snapshot(&path, &[json!({ "imgid": 7, "path": "/photos/x.jpg", "rating": 3 })]);
+        let got = read_snapshot(&path);
+        let _ = std::fs::remove_dir_all(&runtime);
+        assert_eq!(got, Some(json!([{ "path": "/photos/x.jpg", "rating": 3 }])));
     }
 
     #[test]

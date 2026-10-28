@@ -10,6 +10,7 @@
 
 use serde::Serialize;
 use sha2::{Digest, Sha256};
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -63,6 +64,21 @@ impl DiskCache {
         let bytes = std::fs::read(&path).ok()?;
         touch(&path);
         Some(bytes)
+    }
+
+    // `name` becomes the photo's known thumbnail (known_name()); written
+    // only when it was another, as this is called on every hit
+    pub fn set_known(&self, photo: &Path, version: i64, size: u32, name: &str) {
+        let known = known_name(photo, version, size);
+        if self.read(&known).as_deref() != Some(name.as_bytes()) {
+            let _ = self.write(&known, name.as_bytes());
+        }
+    }
+
+    // the photo's last thumbnail, by its path alone (known_name())
+    pub fn read_known(&self, photo: &Path, version: i64, size: u32) -> Option<Vec<u8>> {
+        let name = String::from_utf8(self.read(&known_name(photo, version, size))?).ok()?;
+        self.read(&name)
     }
 
     // the entry was read: its time moves to now
@@ -235,21 +251,129 @@ fn sidecar(photo: &Path, version: i64) -> PathBuf {
     PathBuf::from(s)
 }
 
-fn stamp(meta: &std::fs::Metadata) -> String {
+pub fn stamp(meta: &std::fs::Metadata) -> String {
     let t = meta.modified().ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map_or(0, |d| d.as_nanos());
-    format!("{}:{t}", meta.len())
+    stamp_of(meta.len(), t)
+}
+
+// a file's size and modified time, in nanoseconds, as a thumbnail's name
+// takes them
+pub fn stamp_of(size: u64, nanos: u128) -> String {
+    format!("{size}:{nanos}")
+}
+
+// the photo's stamp and its sidecar's ("-" for none) as they are now
+fn stamps_now(photo: &Path, version: i64) -> Option<(String, String)> {
+    let meta = std::fs::metadata(photo).ok()?;
+    let side = std::fs::metadata(sidecar(photo, version)).map_or_else(|_| "-".into(), |m| stamp(&m));
+    Some((stamp(&meta), side))
+}
+
+fn named(photo: &Path, version: i64, size: u32, (file, side): (String, String)) -> String {
+    let mut h = Sha256::new();
+    h.update(photo.to_string_lossy().as_bytes());
+    h.update(format!("\0{version}\0{file}\0{side}\0{size}"));
+    format!("{}.jpg", h.finalize().iter().map(|b| format!("{b:02x}")).collect::<String>())
 }
 
 // a library thumbnail's name in the cache: the photo's path, size and
 // time, its sidecar's (so an edit, here or in darktable, makes a new one)
-// and the size asked for. None when the photo is not there
-pub fn thumb_name(photo: &Path, version: i64, size: u32) -> Option<String> {
-    let meta = std::fs::metadata(photo).ok()?;
-    let side = std::fs::metadata(sidecar(photo, version)).map_or_else(|_| "-".into(), |m| stamp(&m));
+// and the size asked for. None when the photo is not there. the app names
+// them through listed_thumb_name() and refresh(), which must agree with it
+#[cfg(test)]
+fn thumb_name(photo: &Path, version: i64, size: u32) -> Option<String> {
+    Some(named(photo, version, size, stamps_now(photo, version)?))
+}
+
+// what the open folder's listing found (listing.rs): each file's stamp, so
+// thumbnails are checked without a stat each, which on a network share is
+// a round trip per file. a file of a listed folder that is not here was
+// not there
+#[derive(Default)]
+pub struct Listed {
+    dirs: HashSet<PathBuf>,
+    // None: a file the listing could not say of (a link), stat'ed instead
+    stamps: HashMap<PathBuf, Option<String>>,
+}
+
+enum Seen {
+    Gone,
+    Unknown,
+    Stamp(String),
+}
+
+impl Listed {
+    // a folder's files, as listing.rs found them: all of them, so one not
+    // among them was not there
+    pub fn add(&mut self, dir: &Path, files: impl IntoIterator<Item = (PathBuf, Option<String>)>) {
+        self.stamps.extend(files);
+        self.dirs.insert(dir.to_path_buf());
+    }
+
+    fn seen(&self, path: &Path) -> Seen {
+        if !path.parent().is_some_and(|d| self.dirs.contains(d)) {
+            return Seen::Unknown;
+        }
+        match self.stamps.get(path) {
+            None => Seen::Gone,
+            Some(None) => Seen::Unknown,
+            Some(Some(s)) => Seen::Stamp(s.clone()),
+        }
+    }
+}
+
+// a thumbnail's name (thumb_name()) from the open folder's listing, stat'ing only what it
+// could not say, and outside the lock, so checks run side by side. the
+// stamps are as the folder was listed: refresh() a photo whose edit this
+// app has just saved
+pub fn listed_thumb_name(listed: &Mutex<Listed>, photo: &Path, version: i64, size: u32) -> Option<String> {
+    let side = sidecar(photo, version);
+    let (file, side_seen) = {
+        let l = listed.lock().unwrap();
+        (l.seen(photo), l.seen(&side))
+    };
+    let file = match file {
+        Seen::Gone => return None,
+        Seen::Unknown => stamp(&std::fs::metadata(photo).ok()?),
+        Seen::Stamp(s) => s,
+    };
+    let side = match side_seen {
+        Seen::Gone => "-".into(),
+        Seen::Unknown => std::fs::metadata(&side).map_or_else(|_| "-".into(), |m| stamp(&m)),
+        Seen::Stamp(s) => s,
+    };
+    Some(named(photo, version, size, (file, side)))
+}
+
+// the photo's thumbnail name as it is now, kept for the next
+// listed_thumb_name(): its sidecar changes as it is edited here
+pub fn refresh(listed: &Mutex<Listed>, photo: &Path, version: i64, size: u32) -> Option<String> {
+    let now = stamps_now(photo, version);
+    let mut l = listed.lock().unwrap();
+    if photo.parent().is_some_and(|d| l.dirs.contains(d)) {
+        let side = sidecar(photo, version);
+        match &now {
+            Some((file, s)) => {
+                l.stamps.insert(photo.to_path_buf(), Some(file.clone()));
+                if s == "-" { l.stamps.remove(&side) } else { l.stamps.insert(side, Some(s.clone())) };
+            }
+            None => {
+                l.stamps.remove(photo);
+            }
+        }
+    }
+    drop(l);
+    Some(named(photo, version, size, now?))
+}
+
+// the entry naming the photo's newest thumbnail, by its path alone: found
+// without looking at the photo, which on a network share is a round trip
+// per file. what it names may be out of date; listed_thumb_name() tells
+pub fn known_name(photo: &Path, version: i64, size: u32) -> String {
     let mut h = Sha256::new();
     h.update(photo.to_string_lossy().as_bytes());
-    h.update(format!("\0{version}\0{}\0{side}\0{size}", stamp(&meta)));
-    Some(format!("{}.jpg", h.finalize().iter().map(|b| format!("{b:02x}")).collect::<String>()))
+    h.update(format!("\0{version}\0{size}"));
+    format!("{}.last", h.finalize().iter().map(|b| format!("{b:02x}")).collect::<String>())
 }
 
 // a thumbnail as stored: JPEG from the engine's RGBA
@@ -264,6 +388,8 @@ pub fn encode_jpeg(rgba: &[u8], width: u32, height: u32) -> Result<Vec<u8>, Stri
 
 pub struct Caches {
     pub thumbs: Arc<DiskCache>,
+    // the open folder's listing, for naming its thumbnails
+    pub listed: Arc<Mutex<Listed>>,
     pub immich_thumbs: Arc<DiskCache>,
     pub immich_originals: Arc<DiskCache>,
 }
@@ -284,6 +410,7 @@ impl Caches {
         let l = DEFAULT_LIMITS;
         Self {
             thumbs: DiskCache::new(root.join("thumbs"), l.thumbs, true),
+            listed: Arc::default(),
             immich_thumbs: DiskCache::new(root.join("immich-thumbs"), l.immich_thumbs, true),
             immich_originals: DiskCache::new(root.join("immich-originals"), l.immich_originals, false),
         }
@@ -333,6 +460,26 @@ mod tests {
     }
 
     #[test]
+    fn known_thumbnail_by_path() {
+        let dir = test_dir("cache-known");
+        let c = DiskCache::new(dir.clone(), 1 << 20, false);
+        let photo = Path::new("/photos/a.jpg");
+        assert_eq!(c.read_known(photo, 0, 240), None);
+        c.write("one.jpg", b"1").unwrap();
+        c.set_known(photo, 0, 240, "one.jpg");
+        assert_eq!(c.read_known(photo, 0, 240).as_deref(), Some(&b"1"[..]));
+        // another version or size is another thumbnail
+        assert_eq!(c.read_known(photo, 1, 240), None);
+        assert_eq!(c.read_known(photo, 0, 480), None);
+        c.write("two.jpg", b"2").unwrap();
+        c.set_known(photo, 0, 240, "two.jpg");
+        assert_eq!(c.read_known(photo, 0, 240).as_deref(), Some(&b"2"[..]));
+        c.clear();
+        assert_eq!(c.read_known(photo, 0, 240), None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn edited_originals_stay() {
         let dir = test_dir("cache-originals");
         let c = DiskCache::new(dir.clone(), 1000, false);
@@ -377,6 +524,43 @@ mod tests {
         assert_ne!(thumb_name(&photo, 0, 240).unwrap(), bare);
         assert_eq!(sidecar(&photo, 2), dir.join("IMG_1_02.CR3.xmp"));
         assert!(thumb_name(&dir.join("gone.CR3"), 0, 240).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // a name from the folder's listing is the one a stat gives, so the
+    // thumbnails cached before stay found; it follows a sidecar written
+    // here once refreshed, and one not there, it does not look for
+    #[test]
+    fn a_listed_name_is_a_stat_name() {
+        let dir = test_dir("cache-listed");
+        std::fs::create_dir_all(&dir).unwrap();
+        let (a, b) = (dir.join("A.CR3"), dir.join("B.jpg"));
+        std::fs::write(&a, b"raw").unwrap();
+        std::fs::write(dir.join("A.CR3.xmp"), b"edit").unwrap();
+        std::fs::write(&b, b"jpeg").unwrap();
+        let listed = Mutex::new(Listed::default());
+        let list = |l: &Mutex<Listed>| l.lock().unwrap().add(&dir, crate::listing::list(&dir).into_iter()
+            .map(|e| (dir.join(&e.name), e.stamp)));
+        list(&listed);
+        for p in [&a, &b] {
+            assert_eq!(listed_thumb_name(&listed, p, 0, 240), thumb_name(p, 0, 240), "{p:?}");
+        }
+        assert_eq!(listed_thumb_name(&listed, &dir.join("gone.jpg"), 0, 240), None);
+        // a sidecar written after the listing: the listed name is the old
+        // one until the photo is refreshed, as `thumb` does
+        let before = thumb_name(&b, 0, 240);
+        std::fs::write(dir.join("B.jpg.xmp"), b"edit").unwrap();
+        let after = thumb_name(&b, 0, 240);
+        assert_ne!(before, after);
+        if cfg!(any(target_os = "macos", windows)) {
+            assert_eq!(listed_thumb_name(&listed, &b, 0, 240), before);
+        }
+        assert_eq!(refresh(&listed, &b, 0, 240), after);
+        assert_eq!(listed_thumb_name(&listed, &b, 0, 240), after);
+        // and the other way: a sidecar deleted, then refreshed
+        std::fs::remove_file(dir.join("B.jpg.xmp")).unwrap();
+        assert_eq!(refresh(&listed, &b, 0, 240), before);
+        assert_eq!(listed_thumb_name(&listed, &b, 0, 240), before);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -16,7 +16,7 @@ import { autoArea, autoBlack, autoDmax, autoDmin, autoExposure as autoPrintExpos
          FILM_BW, FILM_COLOR, fromValues, PRESETS, toValues, type Stats } from "./negadoctor";
 import { NegativePanel, type NegPick } from "./NegativePanel";
 import { CircleOff, Grid2x2, MoveHorizontal, MoveVertical, PenLine, Sparkles, WandSparkles } from "lucide-react";
-import { Session, instanceKey, mapOpOf, type Frame, type HistoryItem, type ModuleState, type View } from "./session";
+import { Session, framePlace, instanceKey, mapOpOf, type Frame, type HistoryItem, type ModuleState, type View } from "./session";
 import { AUTO_TONE_IDS, autoExposure, autoTone, type SceneKey } from "./autoTone";
 import { curve } from "./tonecurve";
 import { clipColor, computeHistogram, DEFAULT_SCOPE, drawScope, HARMONIES, HARMONY_WIDTHS, histogramPath, paintClipping,
@@ -25,8 +25,8 @@ import { applyCacheLimits } from "./CachePrefs";
 import { fetchThumb, fileKind, isCompanion, isPrimaryRaw, LABEL_COLORS, loadIncludeSubfolders, openFolder, pairKey, pairPartners,
          storeIncludeSubfolders,
          ThumbLoader,
-         byCaptureTime,
-         type Exif, type ImageEntry } from "./library";
+         byCaptureTime, knownKey, withKnown,
+         type Exif, type ImageEntry, type Known } from "./library";
 import { captureDate, exposureLine, known, MetadataPanel, shutter, type TextFields } from "./MetadataPanel";
 import { HistoryPanel, stepName } from "./HistoryPanel";
 import { VignetteOverlay } from "./VignetteOverlay";
@@ -49,7 +49,7 @@ import { Tour, tourSeen } from "./Tour";
 import { UpdateBanner } from "./UpdateBanner";
 import { autoCheck, relaunch } from "./updates";
 import { Chevron, Collapse } from "./Collapse";
-import { loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadNewPhotosProfile, loadOverlayColor, loadGuideColor, guideRgb, loadPins, maskOverlayRgb, loadPreview, loadFrameCacheMb, loadSliderScroll, loadSliderScrollStep,
+import { loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadNewPhotosProfile, loadOverlayColor, loadGuideColor, guideRgb, loadPins, maskOverlayRgb, loadPreview, loadFrameCacheMb, loadDraftTarget, loadDraftSmallest,loadSliderScroll, loadSliderScrollStep,
          loadStackPairs,
          PreferencesDialog, storeOverlayColor, storeGuideColor, storeStackPairs,
          storeAutoHide, storeCanvas, CANVASES, storeFocusMode, storePins, type AccelProvider, type Canvas,
@@ -70,7 +70,7 @@ import { DEFAULT_TRANSITION, loadZoneOverlay, offsetsOf, overlayRgb, paintRange,
          type ZoneData, type ZoneOverlay, type ZonePart, type ZoneRange } from "./zones";
 import { SpotOverlay, type SpotTool } from "./SpotOverlay";
 import type { NewSpot, Spot } from "./spots";
-import { aiRefine, flipMode, isRange, isRefined, maskAt, maskKindName, nextMaskName, NO_REFINE, overlayShown, overlayStep, rangeChannels,
+import { aiRefine, type Backdrop, flipMode, isRange, isRefined, maskAt, readsBackdrop, maskKindName, nextMaskName, NO_REFINE, overlayShown, overlayStep, rangeChannels,
          type BlendifChannel, type ChannelRange, type Mask, type ObjectShape, type OverlayToggle, type ParametricRange, type Range,
          type RangeMap, type Refine, type Region, type Shape } from "./masks";
 import { channelTint, type Picked } from "./ParametricEditor";
@@ -79,7 +79,7 @@ import { BUILTIN_PRESETS, loadLooks, loadNewPhotosPreset, loadPresets, NewPreset
 import { ASPECTS, CropOverlay, customAspect, findAspect, fitAspect, FULL, loadCustomAspects, pixelAspect,
          rememberCustomAspect, type Aspect, type CropRect } from "./CropTool";
 import { ShortcutsDialog } from "./Shortcuts";
-import { cmd, keys } from "./keys";
+import { cmd, fieldKeeps, keys } from "./keys";
 import { perf, percentiles, pingOnce, roundTrips, STAGES, webviewInfo } from "./perf";
 import { frameTransport } from "./sharedFrames";
 import { draftScale } from "./pixelRatio";
@@ -93,6 +93,10 @@ import { FilterPopup, type Bounds as FilterBounds, type ImmichFilters } from "./
 
 
 const MAX_PREVIEW = 2560;
+// what a layer keeps of its frame to be placed (framePlace)
+type Placed = Pick<Frame, "x" | "y" | "view" | "fullWidth" | "fullHeight" | "width" | "height">;
+const placed = (f: Frame): Placed => ({ x: f.x, y: f.y, view: f.view, fullWidth: f.fullWidth, fullHeight: f.fullHeight,
+                                        width: f.width, height: f.height });
 // a drag's frames, as a share of the full frame's width and height, by the
 // Preview preference; Quality has no drag frames
 const DRAFT: Record<Preview, number> = { quality: 1, balanced: 0.5, performance: 0.25 };
@@ -211,8 +215,10 @@ export default function App() {
   const [values, setValues] = useState<Record<string, number>>({});
   const [status, setStatus] = useState("open a folder to start");
   // how far the open folder's reading has got, while it is read
-  // `files` lists them all, in the order they are read
-  const [reading, setReading] = useState<{ done: number; total: number; files: string[] } | null>(null);
+  // `files` lists them all, in the order they are read, once `listed`;
+  // `known` are the photos the folder's last read found, shown until read
+  const [reading, setReading] = useState<{ done: number; total: number; files: string[]; listed: boolean;
+                                           known: Known[] } | null>(null);
   const [openPanels, setOpenPanels] = useState<Set<string>>(new Set(["basic"]));
   const [layout, setLayoutState] = useState<Layout>(loadLayout);
   const setLayout = (f: (l: Layout) => Layout) =>
@@ -851,11 +857,26 @@ export default function App() {
   };
   // an outline the mask adds is traced inside its edge, so its feather ends
   // there; one it takes away, or inverts (Background), on its edge, its
-  // feather already on the selected side (main.c, _trace_json)
-  const selectObject = (prompt: ObjectPrompt) => runAi("mask-object-sam21-small", "finding the object…",
-    () => invoke<ObjectShape["paths"]>("ai_object", { points: prompt.points ?? [], box: prompt.box ?? null,
-                                                      inset: toolTarget !== "subtract" }),
-    (paths) => aiShown(createShape({ type: "object", paths })));
+  // feather already on the selected side (main.c, _trace_json). one that
+  // starts a mask over a plain, colorful background comes with that color
+  // and its edge outline too, which end the feather at the color
+  // (masks.ts, ObjectShape): the engine uses them in a mask's first shape
+  const startsMask = (target: ToolTarget) =>
+    target === "new" || (target !== "subtract" && !session.current?.masks.some((m) => m.name === maskSel));
+  const outline = async (cmd: string, args: Record<string, unknown>, backdrop: boolean,
+                         got: (b: Backdrop | undefined) => void) => {
+    if (!backdrop) return invoke<ObjectShape["paths"]>(cmd, args);
+    const r = await invoke<{ paths: ObjectShape["paths"]; backdrop: Backdrop | null }>(cmd, { ...args, backdrop });
+    got(r.backdrop ? { range: r.backdrop.range, paths: r.backdrop.paths, plain: r.backdrop.plain } : undefined);
+    return r.paths;
+  };
+  const selectObject = (prompt: ObjectPrompt) => {
+    let backdrop: Backdrop | undefined;
+    return runAi("mask-object-sam21-small", "finding the object…",
+      () => outline("ai_object", { points: prompt.points ?? [], box: prompt.box ?? null, inset: toolTarget !== "subtract" },
+                    startsMask(toolTarget), (b) => { backdrop = b; }),
+      (paths) => aiShown(createShape({ type: "object", paths, ...(backdrop && { backdrop }) })));
+  };
   // the one-click selections: Subject, Background, which is the subject's
   // outline in a new mask, inverted, and People and the parts of a
   // landscape, which all come from the one scene model
@@ -873,13 +894,17 @@ export default function App() {
     architecture: { kind: "architecture", ...scene("architecture"), label: "Architecture" },
     artificial_ground: { kind: "artificial_ground", ...scene("artificial ground"), label: "Artificial Ground" },
   };
+  // Subject and People only: the Landscape kinds are the background
   const selectAi = (k: AiKind, target: ToolTarget) => {
     const a = AI_KINDS[k];
+    let backdrop: Backdrop | undefined;
     return runAi(a.model, a.working,
-      () => invoke<ObjectShape["paths"]>("ai_mask", { kind: a.kind, inset: k !== "background" && target !== "subtract" }),
+      () => outline("ai_mask", { kind: a.kind, inset: k !== "background" && target !== "subtract" },
+                    (k === "subject" || k === "people") && startsMask(target), (b) => { backdrop = b; }),
       (paths) => {
         const had = new Set(session.current?.masks.map((m) => m.name));
-        const name = createShape({ type: "object", paths }, k === "background" ? "new" : target, a.label);
+        const name = createShape({ type: "object", paths, ...(backdrop && { backdrop }) },
+                                 k === "background" ? "new" : target, a.label);
         if (k === "background" && name) session.current?.setInvert(name, true);
         const refine = aiRefine(k);
         if (name && !had.has(name) && refine) session.current?.setRefine(name, refine);
@@ -1246,7 +1271,7 @@ export default function App() {
   // last one stays up until the next arrives
   // zoomed in, a range mask's map too: the engine's ranges map is of the
   // whole image, too coarse for the part shown
-  const wantsFinal = (m: Mask) => isRefined(m) || (!!shownView && !shownView.fit && m.shapes.some(isRange));
+  const wantsFinal = (m: Mask) => isRefined(m) || readsBackdrop(m) || (!!shownView && !shownView.fit && m.shapes.some(isRange));
   const [finalMap, setFinalMap] = useState<{ name: string; map: RangeMap; session: Session } | null>(null);
   // the mask whose map the engine could not make, which its shapes show instead
   const [finalMissing, setFinalMissing] = useState<string | null>(null);
@@ -1438,7 +1463,7 @@ export default function App() {
   // the whole image at the zoom's scale (Session.onCopy), between the base
   // and the sharp frame: what a pan or a zoom brings into view is sharp
   const copyCanvas = useRef<HTMLCanvasElement>(null);
-  const copyMeta = useRef<{ scale: number; width: number; height: number } | null>(null);
+  const copyMeta = useRef<Placed | null>(null);
   const [copyOn, setCopyOn] = useState(false);
   // a copy dropped while its bitmap was being made is not drawn
   const copyGen = useRef(0);
@@ -1464,7 +1489,7 @@ export default function App() {
     for (const [src, dst] of pairs) if (src && dst) paintClipping(src, dst, clipRef.current);
   };
   useEffect(() => { paintClip("both"); }, [clipShown.low, clipShown.high]);
-  const baseMeta = useRef<{ width: number; height: number } | null>(null);
+  const baseMeta = useRef<Placed | null>(null);
   // a control in the panels, the histogram or the mask editor held down (or
   // a wheel turning one): frames are drafts until it lets go, and then one
   // full frame follows if a draft was shown
@@ -1502,7 +1527,7 @@ export default function App() {
       window.removeEventListener("wheel", wheel, true);
     };
   }, []);
-  const sharpMeta = useRef<{ x: number; y: number; scale: number; width: number; height: number } | null>(null);
+  const sharpMeta = useRef<Placed | null>(null);
   // edits since the base was rendered; set on open and on every change
   const baseStale = useRef(true);
   // the base is a fitted frame at the viewer's size, not yet the sharper
@@ -1839,23 +1864,25 @@ export default function App() {
     const ox = w / 2 - center.current.x * f.w * z, oy = h / 2 - center.current.y * f.h * z;
     const b = baseMeta.current, bc = baseCanvas.current;
     if (b && bc) {
+      const p = framePlace(b, z);
       bc.style.width = `${b.width / dpr}px`;
       bc.style.height = `${b.height / dpr}px`;
-      bc.style.transform = `translate(${ox / dpr}px, ${oy / dpr}px) scale(${(z * f.w) / b.width})`;
+      bc.style.transform = `translate(${(ox + p.x) / dpr}px, ${(oy + p.y) / dpr}px) scale(${p.k})`;
       follow(bc, clipBase.current);
     }
     const cm = copyMeta.current, cc = copyCanvas.current;
     if (cm && cc) {
+      const p = framePlace(cm, z);
       cc.style.width = `${cm.width / dpr}px`;
       cc.style.height = `${cm.height / dpr}px`;
-      cc.style.transform = `translate(${ox / dpr}px, ${oy / dpr}px) scale(${z / cm.scale})`;
+      cc.style.transform = `translate(${(ox + p.x) / dpr}px, ${(oy + p.y) / dpr}px) scale(${p.k})`;
     }
     const s = sharpMeta.current, sc = canvas.current;
     if (s && sc) {
-      const sx = ox + (s.x / s.scale) * z, sy = oy + (s.y / s.scale) * z;
+      const p = framePlace(s, z);
       sc.style.width = `${s.width / dpr}px`;
       sc.style.height = `${s.height / dpr}px`;
-      sc.style.transform = `translate(${sx / dpr}px, ${sy / dpr}px) scale(${z / s.scale})`;
+      sc.style.transform = `translate(${(ox + p.x) / dpr}px, ${(oy + p.y) / dpr}px) scale(${p.k})`;
       follow(sc, clipSharp.current);
     }
     const bm = beforeMeta.current, bcv = beforeCanvas.current;
@@ -1930,7 +1957,7 @@ export default function App() {
     if (clipRef.current.low || clipRef.current.high) paintClip("sharp");
     full.current = { w: f.fullWidth, h: f.fullHeight };
     const scale = f.view.scale ?? f.width / f.fullWidth;
-    sharpMeta.current = { x: f.x, y: f.y, scale, width: f.width, height: f.height };
+    sharpMeta.current = placed(f);
     // a drag's frame is drawn once and placed; the histogram follows it. the
     // base, navigator, split view and fade wait for the full frame after
     if (f.view.draft) {
@@ -2252,7 +2279,7 @@ export default function App() {
       bc.height = f.height;
       bc.getContext("2d")!.putImageData(new ImageData(f.pixels, f.width, f.height), 0, 0);
       if (clipRef.current.low || clipRef.current.high) paintClip("base");
-      baseMeta.current = { width: f.width, height: f.height };
+      baseMeta.current = placed(f);
       setBaseTick((t) => t + 1);
     }
     full.current = { w: f.fullWidth, h: f.fullHeight };
@@ -2433,17 +2460,26 @@ export default function App() {
     }
     let got: ImageEntry[] = [];
     let files: string[] = [];
+    let listed = false;
+    let known: Known[] = [];
     try {
-      setReading({ done: 0, total: 0, files });
-      const list = await openFolder(dir, includeSubRef.current, [...hiddenRef.current], (batch, done, total, all) => {
+      setReading({ done: 0, total: 0, files, listed, known });
+      const list = await openFolder(dir, includeSubRef.current, [...hiddenRef.current], (batch, done, total, all, last) => {
         // an Immich search took the filmstrip while this was read
         if (immichRef.current) return;
-        if (all) files = all;
+        // a refresh's photos are on show already
+        if (last && !again) {
+          known = last;
+          loader.current!.request(byCaptureTime(known).map(knownKey));
+        }
+        if (all) {
+          files = all;
+          listed = true;
+        }
         got = byCaptureTime([...got, ...batch]);
         if (!again && batch.length) updateImages(got);
         loader.current!.request(batch.map((i) => i.imgid));
-        // a refresh's photos are on show already
-        setReading({ done, total, files: again ? [] : files });
+        setReading({ done, total, files: again ? [] : files, listed, known });
       });
       if (immichRef.current) return list;
       setReading(null);
@@ -3040,7 +3076,7 @@ export default function App() {
           cc.height = f.height;
           cc.getContext("2d")!.drawImage(bmp, 0, 0);
           bmp.close();
-          copyMeta.current = { scale: f.view.scale!, width: f.width, height: f.height };
+          copyMeta.current = placed(f);
           placeLayers();
           setCopyOn(true);
         });
@@ -3049,6 +3085,7 @@ export default function App() {
       s.previewMode = loadPreview;
       s.frameBudget = () => loadFrameCacheMb() * 1048576;
       s.draftSize = () => (loadPreview() === "quality" ? null : viewAt(draftK()));
+      s.draftLimits = () => ({ target: loadDraftTarget(), smallest: loadDraftSmallest() });
       s.warmDrafts();
       // a saved edit makes the filmstrip's thumbnail stale; undone back to
       // where it started, the photo reads unedited again
@@ -4176,14 +4213,13 @@ export default function App() {
 
   // Lightroom's keys: Z toggles fit and the navigator's level, the arrows
   // step through the folder, 0-5 rate, 6-9 toggle the red, yellow, green and
-  // blue labels, X rejects. typing in a field, or a focused slider's arrows, are left alone
+  // blue labels, X rejects. typing in a field, a focused slider's arrows, or a switch's Space, are left alone
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target;
       // a dialog owns the keyboard while it is open
       if (document.querySelector(".modal-backdrop")) return;
-      if (t instanceof HTMLTextAreaElement) return;
-      if (t instanceof HTMLInputElement && (t.type !== "range" || e.key.startsWith("Arrow"))) return;
+      if (fieldKeeps(t, e.key)) return;
       // the import screen has its own keys; Preferences still opens over it
       if (importOpenRef.current && !(cmd(e) && (e.key === "," || e.code === "Slash"))) return;
       if (cmd(e) && e.shiftKey && e.code === "KeyP") {
@@ -4404,12 +4440,29 @@ export default function App() {
   partnersRef.current = partners;
   const passing = images.filter((i) => passes(i, filter));
   const behind = new Set(passing.flatMap((i) => (partners.get(i.imgid) ?? []).map((p) => p.imgid)));
-  const shown = passing.filter((i) => !behind.has(i.imgid));
-  // the files still to be read, as empty cells after the photos: unless the
-  // filters ask for what only reading tells (ratings, labels, rejects)
+  // the photos the folder's last read found that this one has not reached:
+  // shown as they were, through the filters, until they are read. once the
+  // folder is listed, those no longer in it go
+  const knownPaths = reading?.known.length ? new Set(reading.known.map((k) => k.path)) : null;
+  const readPaths = knownPaths && new Set(images.map((i) => i.path));
+  const listedPaths = knownPaths && reading!.listed ? new Set(reading!.files) : null;
+  const unread = !readPaths ? []
+    : reading!.known.filter((k) => !readPaths.has(k.path) && (!listedPaths || listedPaths.has(k.path)) && passes(k, filter));
+  // a raw not yet read stacks its companions too, read or not
+  const stackRaw = (i: Known) => !i.copy && isPrimaryRaw(i.filename);
+  const unreadRaws = stackPairs ? new Set(unread.filter(stackRaw).map((k) => pairKey(k.path))) : null;
+  const stacked = (i: Known) => !i.copy && isCompanion(i.filename) && !!unreadRaws?.has(pairKey(i.path));
+  const shown = passing.filter((i) => !behind.has(i.imgid) && !stacked(i));
+  const passingRaws = stackPairs ? new Set(passing.filter(stackRaw).map((i) => pairKey(i.path))) : null;
+  const provisional = unread.filter((k) => !stacked(k) && !(!k.copy && isCompanion(k.filename) && passingRaws?.has(pairKey(k.path))));
+  const cells: (ImageEntry | Known)[] = provisional.length ? withKnown(shown, provisional) : shown;
+  // the files still to be read and not known, as empty cells after the
+  // photos: unless the filters ask for what only reading tells (ratings,
+  // labels, rejects)
   const rawNames = stackPairs && reading ? pairedRaws(reading.files) : null;
   const pending = !reading || needsRead(filter) ? []
     : reading.files.slice(reading.done).filter((p) => !filter.kinds.length || filter.kinds.includes(fileKind(p)))
+        .filter((p) => !knownPaths?.has(p))
         // a raw's companions, stacked behind it
         .filter((p) => !rawNames?.has(pairKey(p)) || !isCompanion(p));
   const shownRef = useRef<ImageEntry[]>([]);
@@ -4699,7 +4752,7 @@ export default function App() {
                                     && wantsFinal(peekMask ?? selMask!) ? finalMap.map : null}
                              awaitFinal={(() => {
                                const t = peekMask ?? selMask;
-                               return !!t && isRefined(t) && !t.hidden && finalMissing !== t.name
+                               return !!t && (isRefined(t) || readsBackdrop(t)) && !t.hidden && finalMissing !== t.name
                                  && !(finalMap && finalMap.session === session.current && finalMap.name === t.name);
                              })()}
                              onPick={(x, y) => void pickRange(x, y)}
@@ -4882,11 +4935,11 @@ export default function App() {
              className={`strip-slot${layout.strip || grid ? "" : " closed"}${floating.strip ? " floating" : ""}`
                         + `${floating.strip && revealed.strip ? " revealed" : ""}${grid ? " grid" : ""}`}>
           <div>
-            {(shown.length > 0 || pending.length > 0) && !grid && (
+            {(cells.length > 0 || pending.length > 0) && !grid && (
               <Splitter axis="y" value={layout.stripHeight} min={90} max={300} invert hidden={!layout.strip}
                         onChange={(v) => setLayout((l) => ({ ...l, stripHeight: v }))} />
             )}
-            <Filmstrip images={shown} partners={partners} pending={pending}
+            <Filmstrip images={cells} partners={partners} pending={pending}
                        empty={immich ? (immich.busy ? "searching Immich…" : "no photos in Immich match the search")
                               : reading ? "reading the folder…"
                               : images.length ? "no photos match the filters"
@@ -4895,6 +4948,14 @@ export default function App() {
                        height={layout.stripHeight} grid={grid} selection={selection} onPick={pickPhoto}
                        candidate={compare}
                        onDouble={(i) => { setCompare(null); void openEntry(i); setGrid(false); }}
+                       onOpenKnown={(k, double) => {
+                         // a comparison's candidate waits for its photo to be read, and so
+                         // does a virtual copy: by its path alone, the original would open
+                         if ((compare !== null && !double) || k.copy) return;
+                         if (double) { setCompare(null); setGrid(false); }
+                         setSelection(new Set());
+                         void openFile(k.path);
+                       }}
                        more={immich?.next && !immich.busy ? () => void searchImmich(immich.search, true) : undefined}
                        onBackMenu={showResultsMenu}
                        onMeta={(i, fields) => rateSelection(i, fields)} />
@@ -4927,7 +4988,7 @@ export default function App() {
                    };
                  }}
                  onFiltered={() => setGrid(true)}
-                 grid={grid} onGrid={shown.length > 0 || pending.length > 0 || grid ? () => setGrid(!grid) : undefined}
+                 grid={grid} onGrid={cells.length > 0 || pending.length > 0 || grid ? () => setGrid(!grid) : undefined}
                  zoomBar={<ZoomBar disabled={!current} register={(f) => { zoomShow.current = f; }}
                                    onZoom={(z) => setZoom(z)}
                                    onToggle={() => setZoom(zoomRef.current === "fit" ? 1 : "fit")}
@@ -5706,8 +5767,9 @@ const pairedRaws = (files: string[]) => new Set(files.filter((p) => isPrimaryRaw
 // each with the file's name and type above its thumbnail, and its reject
 // flag and stars below, shown on hover or once it has a rating
 function Filmstrip({ images, partners, pending, empty, current, loader, height, grid, selection, candidate, onPick, onDouble,
-                     onMenu, onMeta, more, onBackMenu }: {
-  images: ImageEntry[]; current: number | null; loader: ThumbLoader; height: number;
+                     onOpenKnown, onMenu, onMeta, more, onBackMenu }: {
+  // photos, and those known from the folder's last read (library.ts)
+  images: (ImageEntry | Known)[]; current: number | null; loader: ThumbLoader; height: number;
   pending: string[];                      // files not yet read, shown as empty cells
   partners: Map<number, ImageEntry[]>;    // a stacked raw's JPEG or HEIF, by its imgid
   empty: string;                          // what an empty grid says
@@ -5716,6 +5778,7 @@ function Filmstrip({ images, partners, pending, empty, current, loader, height, 
   candidate: number | null;               // the photo compared with the open one
   onPick: (i: ImageEntry, e: React.MouseEvent) => void;
   onDouble: (i: ImageEntry) => void;
+  onOpenKnown: (k: Known, double: boolean) => void;
   onMenu: (e: React.MouseEvent, imgid: number) => void;
   onMeta: (i: ImageEntry, fields: Partial<ImageEntry>) => void;
   more?: () => void;                      // there are more results: called as the end scrolls into view
@@ -5752,13 +5815,17 @@ function Filmstrip({ images, partners, pending, empty, current, loader, height, 
     const root = strip.current;
     if (!root) return;
     const seen = new IntersectionObserver((entries) => {
-      const id = (e: IntersectionObserverEntry) => Number((e.target as HTMLElement).dataset.imgid);
+      // a known photo's cell by its knownKey()
+      const id = (e: IntersectionObserverEntry) => {
+        const d = (e.target as HTMLElement).dataset;
+        return d.imgid !== undefined ? Number(d.imgid) : d.known!;
+      };
       const ids = entries.filter((e) => e.isIntersecting).map(id);
       loader.show(ids, true);
       loader.show(entries.filter((e) => !e.isIntersecting).map(id), false);
       if (ids.length) loader.request(ids, true);
     }, { root, rootMargin: grid ? "300px 0px" : "0px 300px" });
-    root.querySelectorAll<HTMLElement>(".thumb[data-imgid]").forEach((el) => seen.observe(el));
+    root.querySelectorAll<HTMLElement>(".thumb[data-imgid], .thumb[data-known]").forEach((el) => seen.observe(el));
     return () => seen.disconnect();
   }, [images, loader, grid]);
   // a grid's cells are a fixed height, and share each row's width
@@ -5769,6 +5836,8 @@ function Filmstrip({ images, partners, pending, empty, current, loader, height, 
   // batch or a new selection redraws only the cells that changed
   const on = useRef({ onPick, onDouble, onMenu, onMeta });
   on.current = { onPick, onDouble, onMenu, onMeta };
+  const openKnown = useRef(onOpenKnown);
+  openKnown.current = onOpenKnown;
   // an empty grid still covers the photo, and says why it is empty
   if (!images.length && !pending.length) {
     return grid ? <div className="filmstrip grid empty" onContextMenu={onBackMenu}><div className="grid-empty">{empty}</div></div>
@@ -5778,7 +5847,9 @@ function Filmstrip({ images, partners, pending, empty, current, loader, height, 
     <div className={`filmstrip${grid ? " grid" : ""}`} ref={strip} style={grid ? undefined : { height }}
          onContextMenu={onBackMenu}
          onWheel={(e) => { if (strip.current && !grid) strip.current.scrollLeft += e.deltaY + e.deltaX; }}>
-      {images.map((i) => (
+      {images.map((i) => !("imgid" in i)
+        ? <KnownCell key={`k${knownKey(i)}`} entry={i} loader={loader} cell={cell} open={openKnown} doubleOpens={grid} />
+        : (
         <FilmCell key={i.imgid} entry={i} loader={loader} cell={cell} on={on}
                   types={[i, ...(partners.get(i.imgid) ?? [])]
                     .map((f) => (f.filename.match(/\.([^.]+)$/)?.[1] ?? "").toUpperCase()).join("+")}
@@ -5828,6 +5899,36 @@ const FilmCell = memo(function FilmCell({ entry: i, loader, cell, on, types, act
                     disabled={isRemote(i)}
                     onClick={() => on.current!.onMeta(i, { rating: i.rating === n ? 0 : n, rejected: false })}>★</button>
           ))}
+        </span>
+        <span className="labels">
+          {LABEL_COLORS.map((c, k) => (i.labels & (1 << k)
+            ? <span key={k} className="dot" style={{ background: c }} /> : null))}
+        </span>
+      </div>
+    </div>
+  );
+});
+
+// a photo known from the folder's last read, not yet read by this one: as
+// it was then, and read-only until it is read, when a FilmCell takes its place
+const KnownCell = memo(function KnownCell({ entry: i, loader, cell, open, doubleOpens }: {
+  entry: Known; loader: ThumbLoader; cell: React.CSSProperties;
+  open: React.RefObject<(k: Known, double: boolean) => void>; doubleOpens: boolean;
+}) {
+  return (
+    <div className={`thumb known${i.rejected ? " rejected" : ""}${i.rating || i.rejected ? " rated" : ""}`} style={cell}
+         title={i.filename} data-known={knownKey(i)} onClick={() => { if (!doubleOpens) open.current!(i, false); }}
+         onDoubleClick={() => { if (doubleOpens) open.current!(i, true); }}>
+      <div className="thumb-head">
+        <span className="thumb-name">{i.filename.replace(/\.[^.]+$/, "")}</span>
+        {i.edited && <span className="thumb-edited" title="edited"><SlidersIcon /></span>}
+        <span className="thumb-type">{(i.filename.match(/\.([^.]+)$/)?.[1] ?? "").toUpperCase()}{copyName(i)}</span>
+      </div>
+      <div className="thumb-image"><ThumbCanvas loader={loader} imgid={knownKey(i)} dogEar={!!i.copy} /></div>
+      <div className="thumb-foot read-only">
+        {i.rejected && <button className="thumb-reject on" disabled>✕</button>}
+        <span className="thumb-stars">
+          {[1, 2, 3, 4, 5].map((n) => <button key={n} className={!i.rejected && i.rating >= n ? "on" : ""} disabled>★</button>)}
         </span>
         <span className="labels">
           {LABEL_COLORS.map((c, k) => (i.labels & (1 << k)
@@ -5914,7 +6015,7 @@ function ThumbProgress({ loader }: { loader: ThumbLoader }) {
 }
 
 // the image's thumbnail as the loader has it, redrawn when that changes
-function ThumbCanvas({ loader, imgid, dogEar = false }: { loader?: ThumbLoader; imgid?: number; dogEar?: boolean }) {
+function ThumbCanvas({ loader, imgid, dogEar = false }: { loader?: ThumbLoader; imgid?: number | string; dogEar?: boolean }) {
   const [bitmap, setBitmap] = useState(() => (imgid === undefined ? undefined : loader?.get(imgid)));
   useEffect(() => {
     if (!loader || imgid === undefined) return;
@@ -5977,7 +6078,7 @@ function InfoOverlay({ mode, name, dir, entry }: { mode: number; name: string; d
   );
 }
 
-const copyName = (i: ImageEntry | null | undefined) => (i?.copy ? ` · Copy ${i.version}` : "");
+const copyName = (i: Known | null | undefined) => (i?.copy ? ` · Copy ${i.version}` : "");
 
 // what the system's file manager is called
 const TRASH = navigator.userAgent.includes("Windows") ? "Recycle Bin" : "Trash";
