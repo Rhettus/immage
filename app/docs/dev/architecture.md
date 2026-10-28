@@ -31,7 +31,7 @@ whatever the mutex's holder is doing. Large results are binary and travel as
 
 | Result | Format |
 |---|---|
-| Frames | a 48-byte header (six u32: size, image size, window x/y; six f32 timings), then RGBA |
+| Frames | a 64-byte header (six u32: size, image size, window x/y; six f32 timings; darktable's u64 hash; the edits' f32 timing; padding), then RGBA |
 | Thumbnails | an 8-byte header (u32 width, u32 height), then RGBA |
 | Range and mask maps | an 8-byte header (u32 width, u32 height), then RGBA |
 
@@ -98,7 +98,7 @@ are `localStorage` keys named `immage.*`.
 
 | File | Responsibility |
 |---|---|
-| [session.ts](../../src/session.ts) | One open photo. `Session.open` reads every mapped module (`get_params`) into control values. `set`/`setMany` mark modules dirty, and `pump()` sends each dirty module's merged edit (`moduleEdit`) and one `render`, so moves made during a render are coalesced, latest wins. It also holds masks, spots, look and the Before view, and saves 600 ms after the last edit. `renderView` decodes the frame header; `preview` renders one-off settings on the engine's preview pipe. Until the image changes (`changed`), it shows the full frames it was sent (`frames`, by view and darktable's hash) and, zoomed in, a copy of the whole image at the zoom's scale (`requestCopy`, rendered on the base pipe once idle), so a view seen before or a pan's window is shown without the engine; App shows the copy as a layer under the sharp frame (`onCopy`). After a change, a render sends the hashes it holds for the view (`have`), and the engine names one rather than render it when the image is back as it was (the Before view and back, undo); a copy set aside comes back the same way. |
+| [session.ts](../../src/session.ts) | One open photo. `Session.open` reads every mapped module (`get_params`) into control values. `set`/`setMany` mark modules dirty, and `pump()` sends each dirty module's merged edit (`moduleEdit`) with one `render`, in the one call, so moves made during a render are coalesced, latest wins. It also holds masks, spots, look and the Before view, and saves 600 ms after the last edit. `renderView` decodes the frame header; `preview` renders one-off settings on the engine's preview pipe. Until the image changes (`changed`), it shows the full frames it was sent (`frames`, by view and darktable's hash) and, zoomed in, a copy of the whole image at the zoom's scale (`requestCopy`, rendered on the base pipe once idle), so a view seen before or a pan's window is shown without the engine; App shows the copy as a layer under the sharp frame (`onCopy`). After a change, a render sends the hashes it holds for the view (`have`), and the engine names one rather than render it when the image is back as it was (the Before view and back, undo); a copy set aside comes back the same way. |
 | [pixelRatio.ts](../../src/pixelRatio.ts) | Linux on Wayland at a fractional scale: `draftScale()`, how much smaller drag drafts are (`draftK` in App.tsx), the screen's scale from `display_scale` over `devicePixelRatio`, as GTK 3 draws the window at the next whole scale; Preferences' "Drag drafts at the screen's scale". |
 | [sharedFrames.ts](../../src/sharedFrames.ts) | Windows: `renderFrame` asks `render` to post the frame in a WebView2 shared buffer tagged with an id, then matches the `sharedbufferreceived` event to the reply, copies the frame out and releases the buffer. Linux: it asks `render` to write the frame to `/dev/shm` and reads it with the web extension's `immageFrame()`. On the Mac, on WebView2 runtimes before 1.0.1661, on Linux without the extension, or with Preferences' "Shared-memory frames" off, the frame comes in `render`'s reply. |
 | [HistoryPanel.tsx](../../src/HistoryPanel.tsx) | darktable's history plus this session's undo steps; a row's switch, delete or reset (`historyChange` in App.tsx, `Session.setModuleState`, the engine's `_module_state`). |
@@ -329,7 +329,7 @@ darktable is, and it has AI features when darktable is configured with
    4. A never-edited raw then gets the new-photo defaults: tone mapper, profile, exposure compensation (an exposure instance of its own), color noise reduction, the new-photos preset.
 2. **Move a slider.**
    1. `Slider` calls `change()`, which records an undo step, updates `values` and calls `Session.set`.
-   2. `pump()` sends `set_params` for each dirty module, then `render` for `currentView()`. Moves made meanwhile only mark modules dirty, so the next round sends the latest values once.
+   2. `pump()` sends `render` for `currentView()` with each dirty module's edit (`edits`), which Rust sends to the engine as `set`s ahead of the render: one call from the page however many modules moved, as a call cost 20 ms or more on Linux while the page drew. Moves made meanwhile only mark modules dirty, so the next round sends the latest values once.
    3. In the engine, `_set` writes the fields and adds a history item, then `_render` calls `dt_dev_pixelpipe_process`. Only modules from the changed one onwards run; the rest come from the pipe cache.
    4. The frame is written to `frame.rgba`, read back by Rust and returned with its header (on Windows and Linux, in shared memory beside it).
    5. `drawFrame` puts it on the canvas and computes the histogram. See [the sequence diagram](diagrams/slider-sequence.svg).

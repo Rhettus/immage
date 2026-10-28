@@ -16,7 +16,7 @@ type WebView2 = {
   releaseBuffer(buffer: ArrayBuffer): void;
 };
 // the bytes before a frame's pixels (main.rs, render)
-export const FRAME_HEAD = 56;
+export const FRAME_HEAD = 64;
 
 const webview = (window as unknown as { chrome?: { webview?: WebView2 } }).chrome?.webview;
 
@@ -89,10 +89,11 @@ export async function renderFrame(args: Record<string, unknown>): Promise<ArrayB
     const frame = shmFrame(`immage-frame-${token}-${id}`);
     if (frame?.byteLength === FRAME_HEAD + pixels) return frame.buffer as ArrayBuffer;
     // the extension can't reach the file: asked again, through the reply
-    // from now on; the pipe's cache makes the second render quick
+    // from now on; the pipe's cache makes the second render quick. the
+    // edits are in already
     failed = true;
     last = "invoke";
-    return invoke<ArrayBuffer>("render", args);
+    return invoke<ArrayBuffer>("render", { ...args, edits: null });
   }
   const early = arrived.get(id);
   if (early) {

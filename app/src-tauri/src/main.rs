@@ -690,7 +690,7 @@ async fn mask_rename(state: State<'_, AppState>, name: String, to: String) -> Re
     state.engine().request(json!({ "cmd": "mask_rename", "name": name, "to": to })).map(|_| ())
 }
 
-const FRAME_HEAD: usize = 56;
+const FRAME_HEAD: usize = 64;
 
 // without a scale the whole image is fitted into width x height; with one
 // (1.0 is 100%) the width x height window at (x, y) of the scaled image is
@@ -698,8 +698,9 @@ const FRAME_HEAD: usize = 56;
 // width, height, image width and height at 100%, window x, y), six
 // little-endian f32 timings in ms (waiting for the engine, the engine's
 // request, its pixelpipe, its frame write, the frame read here, collecting
-// the per-module timings), darktable's u64 hash of the frame (FRAME_HEAD
-// bytes in all), then RGBA. ops in skip are left out of this frame. a
+// the per-module timings), darktable's u64 hash of the frame, one more f32
+// timing (the edits sent ahead of the render) and four bytes of padding
+// (FRAME_HEAD bytes in all), then RGBA. ops in skip are left out of this frame. a
 // frame of no size, with no RGBA, is the one in `have` of that hash
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
@@ -717,6 +718,7 @@ async fn render(
     shared: Option<u32>,
     token: Option<String>,
     have: Option<Vec<String>>,
+    edits: Option<Vec<Value>>,
 ) -> Result<Response, String> {
     let mut req = json!({ "cmd": "render", "width": width, "height": height, "rgba": state.frame_path });
     if let Some(skip) = skip {
@@ -747,6 +749,20 @@ async fn render(
     let t0 = Instant::now();
     let mut engine = state.engine();
     let lock_ms = ms(t0);
+    // a move's module edits (Session.moduleEdit), sent as set_params would,
+    // under the same lock: one call from the page rather than one each,
+    // which cost 20 ms or more a call on Linux while the page draws
+    let ts = Instant::now();
+    for e in edits.unwrap_or_default() {
+        let mut set = json!({ "cmd": "set" });
+        for k in ["op", "params", "enabled", "after", "before", "instance"] {
+            if !e[k].is_null() {
+                set[k] = e[k].clone();
+            }
+        }
+        engine.request(set)?;
+    }
+    let set_ms = ms(ts);
     let t1 = Instant::now();
     let reply = engine.request(req)?;
     let request_ms = ms(t1);
@@ -763,6 +779,8 @@ async fn render(
     out.resize(48, 0);
     let hash = reply["hash"].as_str().and_then(|h| u64::from_str_radix(h, 16).ok()).unwrap_or(0);
     out.extend_from_slice(&hash.to_le_bytes());
+    out.extend_from_slice(&(set_ms as f32).to_le_bytes());
+    out.resize(FRAME_HEAD, 0);
     let kept = reply["kept"].as_bool() == Some(true);
     let t2 = Instant::now();
     if !kept {
