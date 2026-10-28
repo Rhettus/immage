@@ -75,7 +75,7 @@ def engine_age(binary):
 
 def harness(args, photos, out):
     request = {
-        "engine": os.path.abspath(args.engine), "work": WORK, "photos": photos, "checks": args.checks,
+        "engine": os.path.abspath(args.engine), "work": WORK, "photos": photos, "checks": args.checks, "cpu": args.cpu,
         "rendered": None if args.images else photos[-1],
         "controls": args.controls, "references": os.path.join(HERE, "references"), "accept": args.accept,
         "git": git("rev-parse", "--short", "HEAD"), "out": out,
@@ -156,6 +156,8 @@ def main():
     ap.add_argument("--checks", default=",".join(CHECKS), help=f"some of {','.join(CHECKS)}")
     ap.add_argument("--controls", default="", help="only these controls, by id, comma separated")
     ap.add_argument("--skip-perf", action="store_true", help="leave out the timing check")
+    ap.add_argument("--cpu", action="store_true",
+                    help="the checks with edits on the CPU, as Preferences' Edit on the GPU off (default: the GPU)")
     ap.add_argument("--repeat", type=int, default=5, help="the benchmark's samples per step (default 5)")
     ap.add_argument("--accept", action="store_true",
                     help="keep this build's saved edit and frame as the reference later builds must match")

@@ -26,11 +26,11 @@ const waiting = [];
 const tagged = new Map();
 let lastTag = 0;
 
-// one engine for the process, in its own runtime folder, on the CPU so
-// frames are the same from run to run; with AI models from `modelsDir`
-// when given. `gpu` gives OpenCL the pipes the app's GPU edits give it
-// (engine.rs, gpu_edits), and `onPerf` gets each line
-// of darktable's -d perf timings, for the checks that look at the pipe
+// one engine for the process, in its own runtime folder, started as the
+// app starts it (engine.rs): OpenCL on, with edits on the GPU when `gpu`
+// (Preferences, Edit on the GPU), and export and the base there either way.
+// with AI models from `modelsDir` when given; `onPerf` gets each line of
+// darktable's -d perf timings, for the checks that look at the pipe
 export function startEngine(binary, home, modelsDir = null, { gpu = false, onPerf = null } = {}) {
   mkdirSync(home, { recursive: true });
   frame = join(home, "frame.rgba");
@@ -40,8 +40,9 @@ export function startEngine(binary, home, modelsDir = null, { gpu = false, onPer
   models.dir = modelsDir;
   // the engine takes --models ahead of darktable's own options
   const me = spawn(binary, [...(modelsDir ? ["--models", modelsDir] : []), "--core", "--configdir", join(home, "config"),
-                            "--cachedir", join(home, "cache"), "--conf", `opencl=${gpu}`,
-                            ...(gpu ? ["--conf", "opencl_device_priority=*//*//", "--conf", "opencl_scheduling_profile=default"] : []),
+                            "--cachedir", join(home, "cache"), "--conf", "opencl=true",
+                            "--conf", `opencl_device_priority=${gpu ? "*//*//" : "//*//"}`,
+                            "--conf", "opencl_scheduling_profile=default",
                             ...(onPerf ? ["-d", "perf"] : [])],
                    { stdio: ["pipe", "pipe", onPerf ? "pipe" : "ignore"] });
   engine = me;
