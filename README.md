@@ -366,9 +366,11 @@ use SegFormer, and Depth Range uses Depth Anything V2.
 - [User guide](app/docs/README.md): Immage's editing tools, written for
   photographers.
 - [Developer docs](app/docs/dev/README.md): the
-  [code map](app/docs/dev/code-map.md) (where everything lives, where to
-  start a change, how an operation moves through the app) and diagrams of
-  the data flow, the entities and a slider move.
+  [code map](app/docs/dev/code-map.md) (where to start a change, and a
+  line on each file), the [architecture](app/docs/dev/architecture.md)
+  (how an operation moves through the app, the engine's pipes and
+  commands, where data lives) and diagrams of the data flow, the
+  entities and a slider move.
 - [Benchmarks](benchmarking/README.md): the performance suite, its
   recorded results and an offline dashboard.
 - [darktable/dev-doc/](darktable/dev-doc/README.md): darktable's own

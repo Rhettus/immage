@@ -946,7 +946,7 @@ async function decisions(photo) {
 
   // the new-photo defaults never mark a photo edited, in Immage or in
   // darktable, and apply once; the user's first change does mark it
-  // (code-map.md, Engine; backlog.md, 0.23.2)
+  // (architecture.md, Engine; backlog.md, 0.23.2)
   await decide("new-photo defaults leave it unedited", async () => {
     const path = fresh(photo);
     let o = await open(path);
@@ -1047,7 +1047,7 @@ async function decisions(photo) {
     return !iso ? "the photo has no ISO to filter by" : wrong.length ? `wrong for cases ${wrong.join(", ")}` : null;
   });
 
-  // the photo is never written, only its sidecar (code-map.md, Where data
+  // the photo is never written, only its sidecar (architecture.md, Where data
   // lives)
   await decide("the photo file is never written", async () => {
     const path = fresh(photo);
@@ -1064,7 +1064,7 @@ async function decisions(photo) {
   // a photo shown in the library or exported, and not opened, gains no
   // sidecar: darktable's own writes stay off, and the engine writes one only
   // where it means to (_write_sidecar in engine/main.c). opening one saves
-  // the new-photo defaults as its baseline (code-map.md, Engine)
+  // the new-photo defaults as its baseline (architecture.md, Engine)
   await decide("a photo shown or exported gains no sidecar", async () => {
     const path = fresh(photo);
     const { images: [e] } = await request({ cmd: "import", files: [path] });
@@ -1590,7 +1590,7 @@ async function decisions(photo) {
   });
 
   // trying a setting, as a preset's tile does, never touches the edit or
-  // the main pipe (code-map.md, Engine); and a frame of an unchanged edit
+  // the main pipe (architecture.md, Engine); and a frame of an unchanged edit
   // carries the same hash, which keeps the sharper base on zooming out
   await decide("previews leave the edit", async () => {
     const o = await open(fresh(photo));
