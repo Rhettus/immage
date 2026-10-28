@@ -493,6 +493,12 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
     if (!resources) return;
     invoke("darktable_resources_set", { level }).then(() => setResources({ ...resources, next: level })).catch(() => {});
   };
+  const [gpuEdits, setGpuEdits] = useState<{ running: boolean; next: boolean } | null>(null);
+  useEffect(() => { invoke<{ running: boolean; next: boolean }>("gpu_edits").then(setGpuEdits).catch(() => {}); }, []);
+  const chooseGpuEdits = (on: boolean) => {
+    if (!gpuEdits) return;
+    invoke("gpu_edits_set", { on }).then(() => setGpuEdits({ ...gpuEdits, next: on })).catch(() => {});
+  };
   const [accelChoice, setAccelChoice] = useState(loadAccel);
   const chooseAccel = (v: AccelChoice) => { setAccelChoice(v); storeAccel(v); };
   // the provider the choice comes to: the one chosen if this computer has
@@ -693,6 +699,14 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
             {tab === "performance" && (
               <>
               <PrefCard title="Editing">
+                <PrefRow label="Edit on the GPU"
+                         hint={`renders the photo on the graphics card while you edit, as exports and the whole-photo render behind the viewer already are; off keeps edits on the CPU. without a usable GPU darktable uses the CPU either way. smaller drafts for slow sliders still apply, though on the GPU frames are seldom slow enough${gpuEdits && gpuEdits.next !== gpuEdits.running
+                           ? ". applies once Immage starts again" : ""}`}>
+                  <PrefSwitch checked={gpuEdits?.next ?? false} disabled={!gpuEdits} onChange={chooseGpuEdits} />
+                  {gpuEdits && gpuEdits.next !== gpuEdits.running && (
+                    <button className="btn small" style={{ marginLeft: 8 }} onClick={() => void onRelaunch()}>Relaunch</button>
+                  )}
+                </PrefRow>
                 <PrefRow label="Preview"
                          hint={{
                            quality: "every frame in full while you edit: the slowest, most faithful preview",

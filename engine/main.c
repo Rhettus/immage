@@ -1186,6 +1186,10 @@ static gboolean _set(const char *op, const char *field, JsonNode *value,
   // with a mask, the history item carries the shapes too
   if(mask) dt_dev_add_masks_history_item_ext(&_s.dev, mod, mod->enabled, TRUE);
   else dt_dev_add_history_item_ext(&_s.dev, mod, mod->enabled, TRUE);
+  // the module a drag moves next, whose input a GPU pipe then copies back
+  // to the pipe cache (patched pixelpipe_hb.c, important_input); without
+  // it every GPU frame reran from the raw. no_image above leaves it unset
+  if(mod->enabled) _s.dev.history_last_module = mod;
 
   // a new order means new pipe nodes; otherwise only the top item changed
   _changed(moved ? DT_DEV_PIPE_REMOVE : DT_DEV_PIPE_TOP_CHANGED);
@@ -8664,7 +8668,7 @@ static void _handle(JsonObject *req, FILE *out)
       goto fail;
     }
     // the export pipe's device priority, which allows the GPU; the full
-    // pipes' leaves them on the CPU (the app's opencl_device_priority)
+    // pipes' allows it only with the app's GPU edits (engine.rs, gpu_edits)
     const int devid = f == &_s.base && dt_opencl_running()
       ? dt_opencl_lock_device(DT_DEV_PIXELPIPE_EXPORT) : DT_DEVICE_NONE;
     // "skip": ops left out of this one frame, every instance, so a slider

@@ -55,6 +55,8 @@ struct AppState {
     runtime: PathBuf,
     // darktable's resource level the engine started with
     resource_level: String,
+    // whether the engine started with its edits on the GPU
+    gpu_edits: bool,
 }
 
 impl AppState {
@@ -1615,6 +1617,18 @@ fn darktable_resources_set(state: State<'_, AppState>, level: String) -> Result<
     engine::set_resource_level(&state.runtime, &level)
 }
 
+// Preferences' GPU edits: whether the engine runs with them, and whether
+// its next start will
+#[tauri::command]
+fn gpu_edits(state: State<'_, AppState>) -> Value {
+    json!({ "running": state.gpu_edits, "next": engine::gpu_edits(&state.runtime) })
+}
+
+#[tauri::command]
+fn gpu_edits_set(state: State<'_, AppState>, on: bool) -> Result<(), String> {
+    engine::set_gpu_edits(&state.runtime, on)
+}
+
 // the GPU execution providers this computer can use for AI, with their
 // devices, for Preferences and the Export dialog's AI upscale
 #[tauri::command]
@@ -2400,6 +2414,7 @@ fn main() {
             };
             let bin = std::env::var_os("DT_ENGINE_BIN").map(PathBuf::from).unwrap_or(default_bin);
             let resource_level = engine::resource_level(&runtime);
+            let gpu_edits = engine::gpu_edits(&runtime);
             let engine = Engine::spawn(&bin, &runtime, &models_dir)
                 .map_err(|e| format!("cannot start {}: {e}", bin.display()))?;
             app.manage(AppState {
@@ -2421,6 +2436,7 @@ fn main() {
                 perf_dir,
                 runtime: runtime.clone(),
                 resource_level,
+                gpu_edits,
             });
             app.manage(plugins::Plugins::new(runtime.join("plugin-returns.json")));
             // stacks saved in Macro Studio while Immage was closed
@@ -2430,7 +2446,7 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            open_folder, open_image, get_params, set_params, render, cancel_base, save, baseline_end, before_view, thumb, thumb_cached, thumb_known, cache_limits, cache_usage, cache_clear, meta, meta_set, prefetch, darktable_resources, darktable_resources_set,
+            open_folder, open_image, get_params, set_params, render, cancel_base, save, baseline_end, before_view, thumb, thumb_cached, thumb_known, cache_limits, cache_usage, cache_clear, meta, meta_set, prefetch, darktable_resources, darktable_resources_set, gpu_edits, gpu_edits_set,
             export_images, export_cancel, export_existing, export_preview, fonts, export_presets_load, export_presets_save, preset_file_write, preset_file_read, presets_load, presets_save, looks_list, look_import, look_export, look_delete, look_apply, look_amount, preview,
             mask_shapes, combine, masks, mask_delete, mask_rename, history, module_state, sample, tone_key, agx_auto, upright, points, range_map, zones, mask_map, ai_object,
             ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, list_subfolders, folder_volumes, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,

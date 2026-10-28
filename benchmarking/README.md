@@ -33,7 +33,7 @@ python3 -I benchmarking/compare.py           # optional: the latest run against 
 - `--all` runs every photo in the corpus. By default it takes the largest and
   smallest file of each format: the most and fewest megapixels each camera brings.
 - `--opencl off|on|both` (default both) and `--repeat N` (samples per step, default 7)
-- `--only sliders,roi,heavy,longdrag,draftpipe,zoom,preview,modules,export,masks` runs some scenarios only
+- `--only sliders,roi,heavy,heavydrag,longdrag,draftpipe,zoom,preview,modules,export,masks` runs some scenarios only
 - `--images name1,name2` runs only photos whose names contain these
 - `--note "..."` is kept with the run and shown in the dashboard
 
@@ -79,6 +79,7 @@ base at 3072 (`baseSize`).
 | `sliders` | for each of 21 controls, set + render at full size and as a drag draft (without grain, diffuse and sharpen unless the control is theirs, as the app drags); each sample is a new value, as in a real drag |
 | `roi` | one drag cycle: draft, full frame on release, the idle 3072 px base, the next edit's full frame, and an unchanged repeat |
 | `heavy` | Grain, Texture, Sharpening and luminance denoise on, then an Exposure drag cycle: the draft (also as the Performance preview's, at quarter size without denoise and HSL), the release, and the idle 3072 px base as today, without grain, and without grain or diffuse |
+| `heavydrag` | The heavy edit on, then a 12-frame drag of Temp, Exposure, Highlights, Clarity, Vibrance and Vignette, early to late in the pipe, on the drag pipe without grain, diffuse or sharpening; the draft frames after each drag's first. Shows whether the modules before the dragged one stay cached, which on the GPU needs the dragged module marked as last edited |
 | `longdrag` | for Highlights and Exposure, the release after a 40-frame drag on the drag pipe (as the app drags), the same drag with its frames on the main pipe (as before 0.20, when the release reran from the raw), and a 4-frame drag; 3 drags each |
 | `draftpipe` | the draft pipe prototype (`render` with `"draft": true`): drags at draft size on today's main pipe against the small-mip draft pipe, the first draft after a full frame, and how different the two frames look. Skipped by an engine without it, which today is every engine: the prototype measured slower and was removed |
 | `zoom` | 100% at the centre, 4 pans, an exposure edit at 100%, and back to fit |

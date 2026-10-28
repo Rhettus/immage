@@ -13,8 +13,10 @@ check the result.
   names it (`release-5.7.0-1428-g2747ed2a0d` is master, 1,428 commits
   past the 5.7.0 tag).
 - **[patches/darktable-engine.patch](../../../patches/darktable-engine.patch)**
-  is the only change to darktable: it adds the engine to darktable's
-  `src/CMakeLists.txt` when `IMMAGE_ROOT` is set.
+  is the only change to darktable. It adds the engine to darktable's
+  `src/CMakeLists.txt` when `IMMAGE_ROOT` is set, and lets a pipe without
+  a GUI keep its GPU results in the pipe cache
+  (`src/develop/pixelpipe_hb.c`, `important_input`).
   [scripts/patch_darktable.sh](../../../scripts/patch_darktable.sh) applies
   it once (`scripts/build.sh` calls it), and `.gitmodules` sets
   `ignore = dirty`, so the patched submodule does not show as changed.
@@ -46,7 +48,7 @@ git -C darktable log --oneline HEAD..origin/master | wc -l
 2. Move the submodule, its own submodules, and re-apply the patch:
 
    ```sh
-   git -C darktable checkout -- src/CMakeLists.txt   # drop the old patch
+   git -C darktable apply --reverse "$PWD/patches/darktable-engine.patch"   # drop the old patch
    git -C darktable checkout release-5.8.0           # or a master commit
    git -C darktable submodule update --init src/external/rawspeed src/external/OpenCL \
        src/external/libxcf src/external/whereami src/external/LibRaw
@@ -59,8 +61,9 @@ git -C darktable log --oneline HEAD..origin/master | wc -l
    the old pin out again.
 
    If the patch no longer applies, darktable moved the lines around it:
-   apply it by hand at the same place (after the `add_subdirectory(mcp)`
-   block in `src/CMakeLists.txt`), and regenerate it with
+   apply it by hand at the same places (after the `add_subdirectory(mcp)`
+   block in `src/CMakeLists.txt`, and the `important_input` condition in
+   `_dev_pixelpipe_process_rec`), and regenerate it with
    `git -C darktable diff > patches/darktable-engine.patch`.
 3. Rebuild: `cmake --build build`, a fresh configure if CMake asks. Then
    `(cd app && npm run build)` and `(cd app/src-tauri && cargo build && cargo test)`.
@@ -108,6 +111,12 @@ These break silently, and are the reason this page has a checklist:
   `cache_disk_backend_full`, `ui_last/import_initial_rating` and the
   metadata import flags. Check that each still exists in
   `darktable/data/darktableconfig.xml.in`.
+- **GPU drags slow down again.** The `pixelpipe_hb.c` hunk keeps the
+  input of the module last edited (the engine's `_set` names it in
+  `history_last_module`) when darktable has no GUI. If upstream reworks
+  `important_input` the patch may still apply but no longer work: each
+  GPU drag frame then reruns from the raw. The `heavydrag` benchmark
+  shows it, at about 10 ms a frame with the hunk and 100 or more without.
 - **Old edits load differently.** A newer darktable reads older params
   through each module's `legacy_params()`, so this direction is usually
   safe. Compare the reference renders anyway.

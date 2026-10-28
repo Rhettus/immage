@@ -189,6 +189,24 @@ pub fn set_resource_level(runtime: &Path, level: &str) -> Result<(), String> {
     std::fs::write(runtime.join(RESOURCE_FILE), level).map_err(|e| e.to_string())
 }
 
+// edits on the GPU, from Preferences: the engine's edit pipes get OpenCL as
+// well as the idle base, read as the engine starts like the resource level.
+// on by default on macOS, where an M4 rendered slider frames 2-4x faster on
+// it (benchmarking/bench.py); elsewhere off until measured on those GPUs
+const GPU_EDITS_FILE: &str = "gpu-edits";
+
+pub fn gpu_edits(runtime: &Path) -> bool {
+    match std::fs::read_to_string(runtime.join(GPU_EDITS_FILE)).ok().as_deref().map(str::trim) {
+        Some("on") => true,
+        Some("off") => false,
+        _ => cfg!(target_os = "macos"),
+    }
+}
+
+pub fn set_gpu_edits(runtime: &Path, on: bool) -> Result<(), String> {
+    std::fs::write(runtime.join(GPU_EDITS_FILE), if on { "on" } else { "off" }).map_err(|e| e.to_string())
+}
+
 impl BaseCancel {
     // the id of a base about to be sent
     pub fn next_id(&self) -> u64 {
@@ -342,13 +360,15 @@ impl Engine {
             .arg(runtime.join("cache"))
             // OpenCL for whole-image work, export and the idle base (which
             // the engine renders with export's priority), 2-3x faster on
-            // the GPU. edits, drags, previews and thumbnails keep to the
-            // CPU: headless, darktable keeps no GPU results in a pipe's
-            // cache, and every frame reran from the raw
-            // (measured with benchmarking/bench.py). the priority is full/preview/
-            // export/thumbnail/preview2, empty for none
+            // the GPU. edits and drags (the engine's full pipes) join them
+            // with gpu_edits: headless, darktable kept no GPU results in a
+            // pipe's cache and every frame reran from the raw, until
+            // patches/darktable-engine.patch kept the edited module's input.
+            // thumbnails stay on the CPU. the priority is full/preview/
+            // export/thumbnail/preview2, empty for none; darktable falls
+            // back to the CPU when no device is free or a module fails
             .args(["--conf", "opencl=true"])
-            .args(["--conf", "opencl_device_priority=//*//"])
+            .args(["--conf", if gpu_edits(runtime) { "opencl_device_priority=*//*//" } else { "opencl_device_priority=//*//" }])
             // the other profiles replace the priority (opencl.c,
             // _opencl_apply_scheduling_profile)
             .args(["--conf", "opencl_scheduling_profile=default"])
@@ -478,7 +498,7 @@ impl Drop for Engine {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_timing, reap, rocm_only};
+    use super::{gpu_edits, parse_timing, reap, rocm_only, set_gpu_edits};
     use std::time::{Duration, Instant};
 
     #[cfg(unix)]
@@ -505,6 +525,19 @@ mod tests {
         assert!(rocm_only(&root));
         std::fs::write(vendors.join("rusticl.icd"), "libRusticlOpenCL.so.1\n").unwrap();
         assert!(!rocm_only(&root));
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn gpu_edits_default_by_platform() {
+        let root = std::env::temp_dir().join(format!("immage-gpu-edits-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        assert_eq!(gpu_edits(&root), cfg!(target_os = "macos"));
+        set_gpu_edits(&root, false).unwrap();
+        assert!(!gpu_edits(&root));
+        set_gpu_edits(&root, true).unwrap();
+        assert!(gpu_edits(&root));
         std::fs::remove_dir_all(&root).unwrap();
     }
 
