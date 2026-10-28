@@ -66,6 +66,17 @@ const DRAFT_SKIP: Record<Preview, string[]> = {
   balanced: ["grain", "diffuse", "sharpen"],
   performance: ["grain", "diffuse", "sharpen", "denoiseprofile", "colorequal"],
 };
+// a drag's draft, smaller again each way while darktable takes longer than
+// the target on it: an Exposure draft was 65-70 ms of pipeline at half size
+// on an M4, and about as long again waiting behind the one before, against
+// 20 ms for Contrast (gui-2026-10-28T10-36-27). in fixed steps, as the pipe
+// cache keys on the frame's size: a draft at a new size runs the drag pipe
+// from the raw. kept by module for the app's run, so its next drag starts
+// at the size it ended on
+const DRAFT_STEPS = [1, 0.7, 0.5];
+const draftSteps = new Map<string, number>();
+export type DraftLimits = { target: number; smallest: number };
+
 // left out of the idle base, which lies under the sharp frame and feeds the
 // navigator and histogram: with a heavy edit Grain is 1.6 s of it and
 // diffuse another 1.1 s on the CPU (measured with benchmarking/bench.py)
@@ -818,7 +829,39 @@ export class Session {
   previewMode: () => Preview = () => "balanced";
   // a drag's view, or null when drags have none (Quality)
   draftSize: () => View | null = () => null;
+  // the pipeline time a draft aims for, in ms, and its smallest step
+  draftLimits: () => DraftLimits = () => ({ target: 60, smallest: 0.7 });
+  // the modules the drag's edits are for, and the size of its last draft
+  private draftKey = "";
+  private draftWas = "";
   private needWarm = false;
+
+  private draftView(view: View, ops: string[]): View {
+    if (!view.draft) return view;
+    if (ops.length) this.draftKey = [...new Set(ops.map((op) => op.split("#")[0]))].sort().join();
+    const steps = DRAFT_STEPS.filter((k) => k >= this.draftLimits().smallest);
+    const k = steps[Math.min(draftSteps.get(this.draftKey) ?? 0, steps.length - 1)];
+    if (k === 1) return view;
+    const at = (v: number | undefined) => v === undefined ? undefined : Math.round(v * k);
+    return { ...view, width: at(view.width)!, height: at(view.height)!, x: at(view.x), y: at(view.y),
+             scale: view.scale === undefined ? undefined : view.scale * k };
+  }
+
+  // a step down when a draft took longer than the target, and back up when
+  // the size above would take well under it. not on the first draft at a
+  // size, which ran from the raw, nor on one darktable found in its cache
+  // (0 ms), as a drag back over values just shown does
+  private draftTimed(f: Frame, edits: number) {
+    const size = `${f.width}x${f.height}`, first = size !== this.draftWas;
+    this.draftWas = size;
+    const ms = f.trace?.rust[2] ?? 0;
+    if (first || !edits || ms < 1) return;
+    const { target, smallest } = this.draftLimits();
+    const steps = DRAFT_STEPS.filter((k) => k >= smallest);
+    const i = Math.min(draftSteps.get(this.draftKey) ?? 0, steps.length - 1);
+    if (ms > target && i < steps.length - 1) draftSteps.set(this.draftKey, i + 1);
+    else if (i > 0 && ms * (steps[i - 1] / steps[i]) ** 2 < 0.8 * target) draftSteps.set(this.draftKey, i - 1);
+  }
 
   // one drag frame, thrown away, once the photo is up: the engine's drag
   // pipe starts empty, and filling it made a drag's first frame some 250 ms
@@ -1159,7 +1202,7 @@ export class Session {
         this.needRender = false;
         // what the render shows is settled by now, whatever changes during it
         const before = !!this.before;
-        const view = this.size(), key = this.frameKey(view, before);
+        const view = this.draftView(this.size(), ops), key = this.frameKey(view, before);
         const kept = view.draft || edits.length ? undefined : this.current.get(key);
         if (kept) {
           this.keepFrame(key, kept);
@@ -1170,6 +1213,7 @@ export class Session {
           const have = view.draft ? [] : this.heldFor(key);
           const f = await this.renderView(view, ops.length ? "edit" : "view", cycle, false, have, edits);
           if (!view.draft) this.keepFrame(key, f);
+          else this.draftTimed(f, edits.length);
           if (!before && !have.some((h) => h.hash === f.hash)) this.putAside = null;
           this.onFrame({ ...f, before });
         }

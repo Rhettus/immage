@@ -49,7 +49,7 @@ import { Tour, tourSeen } from "./Tour";
 import { UpdateBanner } from "./UpdateBanner";
 import { autoCheck, relaunch } from "./updates";
 import { Chevron, Collapse } from "./Collapse";
-import { loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadNewPhotosProfile, loadOverlayColor, loadGuideColor, guideRgb, loadPins, maskOverlayRgb, loadPreview, loadFrameCacheMb, loadSliderScroll, loadSliderScrollStep,
+import { loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadNewPhotosProfile, loadOverlayColor, loadGuideColor, guideRgb, loadPins, maskOverlayRgb, loadPreview, loadFrameCacheMb, loadDraftTarget, loadDraftSmallest,loadSliderScroll, loadSliderScrollStep,
          loadStackPairs,
          PreferencesDialog, storeOverlayColor, storeGuideColor, storeStackPairs,
          storeAutoHide, storeCanvas, CANVASES, storeFocusMode, storePins, type AccelProvider, type Canvas,
@@ -1523,7 +1523,10 @@ export default function App() {
       window.removeEventListener("wheel", wheel, true);
     };
   }, []);
-  const sharpMeta = useRef<{ x: number; y: number; scale: number; width: number; height: number } | null>(null);
+  // scaleY, down: a fitted drag frame's own, as its size is rounded each way
+  // and drafts change size during a drag (Session.draftView); taking the
+  // width's for both moved the photo by a pixel or two at each change
+  const sharpMeta = useRef<{ x: number; y: number; scale: number; scaleY: number; width: number; height: number } | null>(null);
   // edits since the base was rendered; set on open and on every change
   const baseStale = useRef(true);
   // the base is a fitted frame at the viewer's size, not yet the sharper
@@ -1873,10 +1876,10 @@ export default function App() {
     }
     const s = sharpMeta.current, sc = canvas.current;
     if (s && sc) {
-      const sx = ox + (s.x / s.scale) * z, sy = oy + (s.y / s.scale) * z;
+      const sx = ox + (s.x / s.scale) * z, sy = oy + (s.y / s.scaleY) * z;
       sc.style.width = `${s.width / dpr}px`;
       sc.style.height = `${s.height / dpr}px`;
-      sc.style.transform = `translate(${sx / dpr}px, ${sy / dpr}px) scale(${z / s.scale})`;
+      sc.style.transform = `translate(${sx / dpr}px, ${sy / dpr}px) scale(${z / s.scale}, ${z / s.scaleY})`;
       follow(sc, clipSharp.current);
     }
     const bm = beforeMeta.current, bcv = beforeCanvas.current;
@@ -1951,7 +1954,8 @@ export default function App() {
     if (clipRef.current.low || clipRef.current.high) paintClip("sharp");
     full.current = { w: f.fullWidth, h: f.fullHeight };
     const scale = f.view.scale ?? f.width / f.fullWidth;
-    sharpMeta.current = { x: f.x, y: f.y, scale, width: f.width, height: f.height };
+    const scaleY = f.view.draft && f.view.scale === undefined ? f.height / f.fullHeight : scale;
+    sharpMeta.current = { x: f.x, y: f.y, scale, scaleY, width: f.width, height: f.height };
     // a drag's frame is drawn once and placed; the histogram follows it. the
     // base, navigator, split view and fade wait for the full frame after
     if (f.view.draft) {
@@ -3079,6 +3083,7 @@ export default function App() {
       s.previewMode = loadPreview;
       s.frameBudget = () => loadFrameCacheMb() * 1048576;
       s.draftSize = () => (loadPreview() === "quality" ? null : viewAt(draftK()));
+      s.draftLimits = () => ({ target: loadDraftTarget(), smallest: loadDraftSmallest() });
       s.warmDrafts();
       // a saved edit makes the filmstrip's thumbnail stale; undone back to
       // where it started, the photo reads unedited again
