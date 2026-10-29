@@ -75,7 +75,7 @@ def engine_age(binary):
 
 def harness(args, photos, out):
     request = {
-        "engine": os.path.abspath(args.engine), "work": WORK, "photos": photos, "checks": args.checks,
+        "engine": os.path.abspath(args.engine), "work": WORK, "photos": photos, "checks": args.checks, "cpu": args.cpu,
         "rendered": None if args.images else photos[-1],
         "controls": args.controls, "references": os.path.join(HERE, "references"), "accept": args.accept,
         "git": git("rev-parse", "--short", "HEAD"), "out": out,
@@ -90,13 +90,14 @@ def harness(args, photos, out):
 
 
 def perf(args, photos, folder):
-    """the benchmark's main scenarios, compared with the last verify run of
-    the same photos on this machine: (status, markdown)"""
+    """the benchmark's main scenarios on the CPU and on the app's GPU engine,
+    compared with the last verify run of the same photos on this machine:
+    (status, markdown)"""
     results = os.path.join(REPO, "benchmarking", "results")
     before = set(glob.glob(os.path.join(results, "*", "run.json")))
     names = ",".join(os.path.basename(p) for p in photos if os.path.exists(p))
     r = subprocess.run([sys.executable, "-I", os.path.join(REPO, "benchmarking", "bench.py"), "--engine", args.engine,
-                        "--corpus", args.corpus, "--images", names, "--only", PERF_SCENARIOS, "--opencl", "off",
+                        "--corpus", args.corpus, "--images", names, "--only", PERF_SCENARIOS, "--opencl", "app",
                         "--repeat", str(args.repeat), "--no-perf-overhead", "--note", "verify"], cwd=REPO)
     if r.returncode != 0:
         return "fail", "the benchmark stopped; see its output above\n"
@@ -155,6 +156,8 @@ def main():
     ap.add_argument("--checks", default=",".join(CHECKS), help=f"some of {','.join(CHECKS)}")
     ap.add_argument("--controls", default="", help="only these controls, by id, comma separated")
     ap.add_argument("--skip-perf", action="store_true", help="leave out the timing check")
+    ap.add_argument("--cpu", action="store_true",
+                    help="the checks with edits on the CPU, as Preferences' Edit on the GPU off (default: the GPU)")
     ap.add_argument("--repeat", type=int, default=5, help="the benchmark's samples per step (default 5)")
     ap.add_argument("--accept", action="store_true",
                     help="keep this build's saved edit and frame as the reference later builds must match")

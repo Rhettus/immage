@@ -3,6 +3,40 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
+## 0.40.0
+
+This release comes early, for one bug big enough to have a release of
+its own: in a big folder, editing a photo all but stopped while its
+thumbnails were made. It is the last of the bug fixes below.
+
+Improvements
+
+- the folder tree's drive headings have a dot, green while the drive
+  answers and red while it doesn't, as when a network share has been
+  disconnected. Its folders show their subfolders again when it comes
+  back
+- Preferences' Cache card shows a bar of how much of its limit each
+  cache holds, red once it is full and letting the thumbnails or
+  originals not looked at longest go
+
+Bug fixes
+
+- a folder on this computer opens while a network share is
+  disconnected: if a photo had been sent to Edit In on that share,
+  every folder stayed at "Reading folder…" until Immage was quit and
+  the share reconnected
+- Immage no longer waits for ever on a network share whose server has
+  gone away, or a disk that stops answering: opening one of its folders
+  says it isn't answering after a few seconds, and the folder tree, the
+  drive headings and thumbnails carry on without it
+- a photo can be edited while a big folder on a network share is read:
+  the filmstrip redrew after every photo or two the share gave, and
+  sliders and zoom barely moved until the folder was read
+- a photo can be edited while a big folder's thumbnails are made: with
+  the filmstrip hidden, its thousands of cells were still laid out
+  again at every change on screen, seconds each, and sliders hardly
+  moved
+
 ## 0.39.1
 
 Improvements
