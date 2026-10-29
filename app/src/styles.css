@@ -1900,6 +1900,14 @@ input.switch:disabled { cursor: default; opacity: 0.4; }
 /* a keyword list as a setting, the Keywording card's chips and box */
 .pref-keywords { width: 100%; font-size: var(--fs-small); }
 .pref-value { color: var(--text-2); font-size: var(--fs-small); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* a cache's usage of its limit, red once full (CachePrefs.tsx, FULL) */
+.cache-bar { flex: 1; align-self: center; height: 6px; margin-right: 12px; background: var(--inset); border-radius: 3px; overflow: hidden; }
+.cache-bar > span { display: block; height: 100%; background: var(--accent); transition: width 0.2s; }
+.cache-bar.full > span { background: #e5484d; }
+/* the size menus a fixed width, so the bars and trash cans line up down the card */
+.pref-control > select.cache-size { flex: 0 0 104px; width: 104px; }
+/* the names' column only as wide as the longest, "Immich thumbnails", so the bars have the room */
+.cache-rows .pref-label { flex-basis: 140px; }
 .btn.danger { color: #ff6b6b; }
 /* Plugins: Add Plugin and the kinds it offers, under it */
 .plugin-add { position: relative; display: inline-block; }
