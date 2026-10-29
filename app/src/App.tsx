@@ -2452,13 +2452,18 @@ export default function App() {
   includeSubRef.current = includeSub;
   // a folder's photos, shown batch by batch as they are read. `again` reads
   // the open folder anew (Refresh): its thumbnails stay, and the list is
-  // swapped whole at the end rather than shrinking and growing back
-  const showFolder = async (dir: string, again = false) => {
+  // swapped whole at the end rather than shrinking and growing back.
+  // `seen` has the photos listed so far, after each batch. null when the
+  // folder could not be read
+  const shownGen = useRef(0);
+  const showFolder = async (dir: string, again = false,
+                            seen?: (got: ImageEntry[]) => void): Promise<ImageEntry[] | null> => {
     setImmich(null);
     immichToken.current++;
     setFolder(dir);
     saveLibrary({ current: dir });
     if (!again) {
+      shownGen.current++;
       loader.current!.clear();
       // a new folder starts unfiltered: one left on Rejected only looked empty
       setFilter(NO_FILTER);
@@ -2485,7 +2490,7 @@ export default function App() {
           listed = true;
         }
         got = byCaptureTime([...got, ...batch]);
-        if (!again && batch.length) updateImages(got);
+        if (!again && batch.length) { updateImages(got); seen?.(got); }
         loader.current!.request(batch.map((i) => i.imgid));
         setReading({ done, total, files: again ? [] : files, listed, known });
       });
@@ -2494,6 +2499,7 @@ export default function App() {
       const sorted = byCaptureTime(list);
       updateImages(sorted);
       setStatus(`${list.length} images`);
+      if (!again) saveLibrary({ recent: [dir, ...(loadLibrary().recent ?? []).filter((d) => d !== dir)].slice(0, 10) });
       return sorted;
     } catch (e) {
       // another folder was opened meanwhile, and shows its own progress
@@ -2504,7 +2510,7 @@ export default function App() {
         setFolderRefresh((n) => n + 1);
         setStatus(`folder not found: ${dir}. it was moved or deleted outside Immage`);
       } else setStatus(`error: ${e}`);
-      return [];
+      return null;
     }
   };
 
@@ -2646,7 +2652,7 @@ export default function App() {
     if (r.root) addPathToLibrary(r.root);
     addPathToLibrary(target);
     void showFolder(target).then((list) => {
-      const photo = list.find((i) => i.path === first) ?? list[0];
+      const photo = list?.find((i) => i.path === first) ?? list?.[0];
       if (photo) void openFile(photo.path);
     });
   };
@@ -2657,6 +2663,7 @@ export default function App() {
     const dir = parentDir(path);
     addPathToLibrary(dir);
     const list = await showFolder(dir);
+    if (!list) return;
     if (list.some((i) => i.path === path)) await openFile(path);
     else setStatus(`not a photo Immage can open: ${path}`);
   };
@@ -2716,19 +2723,57 @@ export default function App() {
         void invoke<string>("sample_folder").then((dir) => {
           addPathToLibrary(dir);
           return showFolder(dir);
-        }).then((list) => { if (list[0]) void openFile(list[0].path); })
+        }).then((list) => { if (list?.[0]) void openFile(list[0].path); })
           .catch((e) => setStatus(`sample photo: ${e}`));
         return;
       }
-      if (!lib.current) return;
-      void showFolder(lib.current).then((list) => {
-        const last = list.find((i) => i.path === lib.image && (i.version ?? 0) === (lib.version ?? 0))
-          ?? list.find((i) => i.path === lib.image && !i.copy);
-        if (last) void openFile(last.path, last.imgid);
-      });
+      void restoreLast(lib);
     });
     return () => { void off.then((f) => f()); };
   }, []);
+  // the folder and photo open when the app last closed, as they were left:
+  // in the grid, or the photo in the editor, opened once its folder lists
+  // it rather than after the whole folder. a photo that does not open
+  // leaves its folder's grid, and a folder that cannot be read the grid of
+  // the last one read that can, rather than an empty viewer
+  const restoreLast = async (lib: Library) => {
+    const dirs = [...new Set([lib.current, ...(lib.recent ?? []), ...lib.folders])].filter((d): d is string => !!d);
+    for (const dir of dirs) {
+      const want = dir === lib.current && !lib.grid ? lib.image : null;
+      const pick = (list: ImageEntry[]) => list.find((i) => i.path === want && (i.version ?? 0) === (lib.version ?? 0))
+        ?? list.find((i) => i.path === want && !i.copy);
+      const opened: { p: Promise<boolean> | null } = { p: null };
+      const tryOpen = (list: ImageEntry[]) => {
+        // not over a photo picked while the folder is read
+        const last = want && !opened.p && !currentRef.current ? pick(list) : undefined;
+        if (last) opened.p = openFile(last.path, last.imgid);
+      };
+      const shown = showFolder(dir, false, tryOpen);
+      const gen = shownGen.current;
+      const list = await shown;
+      // another folder or photo was opened meanwhile, and stays
+      if (shownGen.current !== gen) return;
+      if (!list) continue;
+      tryOpen(list);
+      if (opened.p && await opened.p) return;
+      if (lib.current && dir !== lib.current) setStatus(`could not read ${lib.current}; showing ${dir}`);
+      if (!currentRef.current && !gridRef.current) {
+        autoGrid.current = true;
+        setGrid(true);
+      }
+      return;
+    }
+  };
+  // the grid or the editor, for the next start; not the grid a photo that
+  // did not open there left, so the next start tries it again
+  const autoGrid = useRef(false);
+  const lastGrid = useRef(grid);
+  useEffect(() => {
+    if (lastGrid.current === grid) return;
+    lastGrid.current = grid;
+    if (autoGrid.current) autoGrid.current = false;
+    else saveLibrary({ grid });
+  }, [grid]);
 
   // rating, labels, rejection and text fields: the engine writes the sidecar
   // a rating, reject or label for the photos selected in the filmstrip when
@@ -3005,15 +3050,15 @@ export default function App() {
   };
 
   // `imgid` picks one of the file's versions (a virtual copy); without it,
-  // the original
-  const openFile = async (path: string, imgid: number | null = null) => {
+  // the original. false when it did not open
+  const openFile = async (path: string, imgid: number | null = null): Promise<boolean> => {
     const id = imgid ?? imagesRef.current.find((i) => i.path === path && !i.copy)?.imgid ?? null;
     const cur = currentRef.current;
-    if (cur && cur.path === path && (id === null || cur.imgid === id)) return;
+    if (cur && cur.path === path && (id === null || cur.imgid === id)) return true;
     if (!(await invoke<boolean>("path_exists", { path }))) {
       setStatus(`file not found: ${baseName(path)}. it was moved or deleted outside Immage`);
       if (folderRef.current && !immichRef.current) void showFolder(folderRef.current, true);
-      return;
+      return false;
     }
     try {
       if (session.current) {
@@ -3209,8 +3254,10 @@ export default function App() {
         void invoke("plugin_return_applied", { result: path });
         changeMany([["nr_luminance", 0], ["nr_color", 0]], "AI Denoise: noise reduction off");
       }
+      return true;
     } catch (e) {
       setStatus(`error: ${e}`);
+      return false;
     }
   };
 
@@ -5514,9 +5561,10 @@ export default function App() {
 type Opened = { path: string; imgid: number | null };
 
 // the folders added to the library panel, and the folder and image open
-// last, with its version; remembered between launches
+// last, with its version, whether the grid was showing, and the folders
+// read last, newest first; remembered between launches
 type Library = { folders: string[]; current: string | null; image: string | null; expanded: string[];
-                 hidden: string[]; sampled?: boolean; version?: number;
+                 hidden: string[]; sampled?: boolean; version?: number; grid?: boolean; recent?: string[];
                  volumes?: Record<string, Volume>; foldedVolumes?: string[]; hostNames?: Record<string, string> };
 function loadLibrary(): Library {
   try {
