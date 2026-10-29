@@ -494,11 +494,16 @@ input.switch:disabled { cursor: default; opacity: 0.4; }
   border-radius: var(--radius-card);
 }
 /* a cell as Lightroom's filmstrip has them: name and type, the thumbnail
-   fitted in the middle, the reject flag and stars below */
+   fitted in the middle, the reject flag and stars below. its size is set
+   from outside (the strip's height, the grid's rows), so it is contained:
+   a thumbnail landing does not lay out a folder's thousands of cells again,
+   and those off screen are not laid out or painted at all */
 .thumb {
   position: relative;
   flex: none;
   height: 100%;
+  contain: strict;
+  content-visibility: auto;
   display: flex;
   flex-direction: column;
   border-radius: 4px;
@@ -1107,6 +1112,10 @@ input.switch:disabled { cursor: default; opacity: 0.4; }
   transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0s 0.22s;
 }
 .strip-slot.floating .filmstrip { box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.55); }
+/* out of sight, not laid out (.strip-slot.closed) */
+.strip-slot.floating:not(.revealed) > div {
+  content-visibility: hidden; transition: content-visibility 0s 0.22s; transition-behavior: allow-discrete;
+}
 /* Lightroom's Grid: the filmstrip over the editing area, in rows */
 .strip-slot > div { position: relative; }
 .toolbar .tool.grid-toggle {
@@ -1149,7 +1158,13 @@ input.switch:disabled { cursor: default; opacity: 0.4; }
   transition: opacity 0.18s;
 }
 .strip-slot.closed { grid-template-rows: 0fr; }
-.strip-slot.closed > div { opacity: 0; visibility: hidden; transition: opacity 0.18s, visibility 0s 0.22s; }
+/* closed, its cells are not laid out at all: visibility alone still lays
+   out a folder's thousands of them at every change to the page, seconds
+   each, and a slider waits behind that */
+.strip-slot.closed > div {
+  opacity: 0; visibility: hidden; content-visibility: hidden;
+  transition: opacity 0.18s, visibility 0s 0.22s, content-visibility 0s 0.22s; transition-behavior: allow-discrete;
+}
 
 /* the histogram's drag regions */
 .histogram .hist-area { position: relative; }
