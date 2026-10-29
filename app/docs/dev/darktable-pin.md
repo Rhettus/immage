@@ -16,7 +16,10 @@ check the result.
   is the only change to darktable. It adds the engine to darktable's
   `src/CMakeLists.txt` when `IMMAGE_ROOT` is set, and lets a pipe without
   a GUI keep its GPU results in the pipe cache
-  (`src/develop/pixelpipe_hb.c`, `important_input`).
+  (`src/develop/pixelpipe_hb.c`, `important_input`), and has exiv2 and
+  libtiff read photos rather than memory-map them, so a network share
+  dropping fails a read instead of killing the engine
+  (`src/common/exif.cc`, `_open_read`; `src/imageio/imageio_tiff.c`).
   [scripts/patch_darktable.sh](../../../scripts/patch_darktable.sh) applies
   it once (`scripts/build.sh` calls it), and `.gitmodules` sets
   `ignore = dirty`, so the patched submodule does not show as changed.
@@ -62,8 +65,10 @@ git -C darktable log --oneline HEAD..origin/master | wc -l
 
    If the patch no longer applies, darktable moved the lines around it:
    apply it by hand at the same places (after the `add_subdirectory(mcp)`
-   block in `src/CMakeLists.txt`, and the `important_input` condition in
-   `_dev_pixelpipe_process_rec`), and regenerate it with
+   block in `src/CMakeLists.txt`, the `important_input` condition in
+   `_dev_pixelpipe_process_rec`, exif.cc's `ImageFactory::open` calls
+   that read a photo, and imageio_tiff.c's `TIFFOpen` modes), and
+   regenerate it with
    `git -C darktable diff > patches/darktable-engine.patch`.
 3. Rebuild: `cmake --build build`, a fresh configure if CMake asks. Then
    `(cd app && npm run build)` and `(cd app/src-tauri && cargo build && cargo test)`.
@@ -117,6 +122,10 @@ These break silently, and are the reason this page has a checklist:
   `important_input` the patch may still apply but no longer work: each
   GPU drag frame then reruns from the raw. The `heavydrag` benchmark
   shows it, at about 10 ms a frame with the hunk and 100 or more without.
+- **The engine crashes when a share drops again.** A new
+  `ImageFactory::open(path)` reading a photo in exif.cc, or a new
+  `TIFFOpen` without `m`, maps the file again. The `fixes` check "a
+  dropped share's photo" fails then.
 - **Old edits load differently.** A newer darktable reads older params
   through each module's `legacy_params()`, so this direction is usually
   safe. Compare the reference renders anyway.

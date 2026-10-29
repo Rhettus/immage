@@ -15,6 +15,99 @@ index 938c3172bd..316d298dac 100644
  # have a command line utility to generate all the thumbnails
  add_subdirectory(generate-cache)
  
+diff --git a/src/common/exif.cc b/src/common/exif.cc
+index efdd7f15a0..8482b14e42 100644
+--- a/src/common/exif.cc
++++ b/src/common/exif.cc
+@@ -432,6 +432,27 @@ public:
+   image->writeMetadata();                                     \
+ }
+ 
++// a source file read whole, for exiv2 to parse from memory. exiv2 maps
++// TIFF-based files, and a mapped file whose network share drops (the
++// computer sleeping) raises SIGBUS, where read() only returns an error
++class FileData
++{
++public:
++  gchar *data = NULL;
++  gsize size = 0;
++  ~FileData() { g_free(data); }
++};
++
++// the image must not outlive file, which holds its bytes
++static std::unique_ptr<Exiv2::Image> _open_read(const char *path, FileData &file)
++{
++  if(!g_file_get_contents(path, &file.data, &file.size, NULL))
++    // let exiv2 report the error as it does for any file it cannot open
++    return std::unique_ptr<Exiv2::Image>(Exiv2::ImageFactory::open(WIDEN(path)));
++  return std::unique_ptr<Exiv2::Image>(
++    Exiv2::ImageFactory::open((const Exiv2::byte *)file.data, file.size));
++}
++
+ static void _exif_import_tags(dt_image_t *img, Exiv2::XmpData::iterator &pos);
+ 
+ static void _read_xmp_timestamps(Exiv2::XmpData &xmpData,
+@@ -1770,7 +1791,8 @@ void dt_exif_img_check_additional_tags(dt_image_t *img,
+ 
+   try
+   {
+-    std::unique_ptr<Exiv2::Image> image(Exiv2::ImageFactory::open(WIDEN(filename)));
++    FileData file;
++    std::unique_ptr<Exiv2::Image> image(_open_read(filename, file));
+     assert(image.get() != 0);
+     read_metadata_threadsafe(image);
+     Exiv2::ExifData &exifData = image->exifData();
+@@ -2932,7 +2954,8 @@ gboolean dt_exif_get_thumbnail(const char *path,
+ {
+   try
+   {
+-    std::unique_ptr<Exiv2::Image> image(Exiv2::ImageFactory::open(WIDEN(path)));
++    FileData file;
++    std::unique_ptr<Exiv2::Image> image(_open_read(path, file));
+     assert(image.get() != 0);
+     read_metadata_threadsafe(image);
+ 
+@@ -3003,7 +3026,8 @@ gboolean dt_exif_read(dt_image_t *img,
+ 
+   try
+   {
+-    std::unique_ptr<Exiv2::Image> image(Exiv2::ImageFactory::open(WIDEN(path)));
++    FileData file;
++    std::unique_ptr<Exiv2::Image> image(_open_read(path, file));
+     assert(image.get() != 0);
+     read_metadata_threadsafe(image);
+     bool res = true;
+@@ -3068,7 +3092,8 @@ gboolean dt_exif_get_dimensions(const char *path, int *width, int *height)
+ {
+   try
+   {
+-    std::unique_ptr<Exiv2::Image> image(Exiv2::ImageFactory::open(WIDEN(path)));
++    FileData file;
++    std::unique_ptr<Exiv2::Image> image(_open_read(path, file));
+     if(!image.get()) return FALSE;
+     read_metadata_threadsafe(image);
+     const int w = (int)image->pixelWidth();
+@@ -3199,7 +3224,8 @@ int dt_exif_read_blob(uint8_t **buf,
+   *buf = NULL;
+   try
+   {
+-    std::unique_ptr<Exiv2::Image> image(Exiv2::ImageFactory::open(WIDEN(path)));
++    FileData file;
++    std::unique_ptr<Exiv2::Image> image(_open_read(path, file));
+     assert(image.get() != 0);
+     read_metadata_threadsafe(image);
+     Exiv2::ExifData &exifData = image->exifData();
+@@ -6298,8 +6324,9 @@ gboolean dt_exif_xmp_attach_export(const dt_imgid_t imgid,
+     try
+     {
+       // Initialize XMP and IPTC data with the one from the original file.
++      FileData input_file;
+       std::unique_ptr<Exiv2::Image> input_image
+-        (Exiv2::ImageFactory::open(WIDEN(input_filename)));
++        (_open_read(input_filename, input_file));
+       if(input_image.get() != 0)
+       {
+         read_metadata_threadsafe(input_image);
 diff --git a/src/develop/pixelpipe_hb.c b/src/develop/pixelpipe_hb.c
 index a7e5b88a37..e3a650f309 100644
 --- a/src/develop/pixelpipe_hb.c
@@ -38,3 +131,33 @@ index a7e5b88a37..e3a650f309 100644
              && (has_focus || last_history || iop_wanting);
  
  #ifdef HAVE_OPENCL
+diff --git a/src/imageio/imageio_tiff.c b/src/imageio/imageio_tiff.c
+index b92768d02c..20c006236a 100644
+--- a/src/imageio/imageio_tiff.c
++++ b/src/imageio/imageio_tiff.c
+@@ -389,10 +389,10 @@ dt_imageio_retval_t dt_imageio_open_tiff(dt_image_t *img,
+ 
+ #ifdef _WIN32
+   wchar_t *wfilename = g_utf8_to_utf16(filename, -1, NULL, NULL, NULL);
+-  t.tiff = TIFFOpenW(wfilename, "rb");
++  t.tiff = TIFFOpenW(wfilename, "rbm");
+   g_free(wfilename);
+ #else
+-  t.tiff = TIFFOpen(filename, "rb");
++  t.tiff = TIFFOpen(filename, "rbm");
+ #endif
+ 
+   if(t.tiff == NULL) return DT_IMAGEIO_LOAD_FAILED;
+@@ -610,10 +610,10 @@ int dt_imageio_tiff_read_profile(const char *filename, uint8_t **out)
+ 
+ #ifdef _WIN32
+   wchar_t *wfilename = g_utf8_to_utf16(filename, -1, NULL, NULL, NULL);
+-  tiff = TIFFOpenW(wfilename, "rb");
++  tiff = TIFFOpenW(wfilename, "rbm");
+   g_free(wfilename);
+ #else
+-  tiff = TIFFOpen(filename, "rb");
++  tiff = TIFFOpen(filename, "rbm");
+ #endif
+ 
+   if(tiff == NULL) return 0;

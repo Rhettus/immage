@@ -30,8 +30,9 @@ let lastTag = 0;
 // app starts it (engine.rs): OpenCL on, with edits on the GPU when `gpu`
 // (Preferences, Edit on the GPU), and export and the base there either way.
 // with AI models from `modelsDir` when given; `onPerf` gets each line of
-// darktable's -d perf timings, for the checks that look at the pipe
-export function startEngine(binary, home, modelsDir = null, { gpu = false, onPerf = null } = {}) {
+// darktable's -d perf timings, for the checks that look at the pipe; `env`
+// added to the engine's environment
+export function startEngine(binary, home, modelsDir = null, { gpu = false, onPerf = null, env = null } = {}) {
   mkdirSync(home, { recursive: true });
   frame = join(home, "frame.rgba");
   preview = join(home, "preview.rgba");
@@ -44,7 +45,7 @@ export function startEngine(binary, home, modelsDir = null, { gpu = false, onPer
                             "--conf", `opencl_device_priority=${gpu ? "*//*//" : "//*//"}`,
                             "--conf", "opencl_scheduling_profile=default",
                             ...(onPerf ? ["-d", "perf"] : [])],
-                   { stdio: ["pipe", "pipe", onPerf ? "pipe" : "ignore"] });
+                   { stdio: ["pipe", "pipe", onPerf ? "pipe" : "ignore"], env: { ...process.env, ...env } });
   engine = me;
   if (onPerf) createInterface({ input: me.stderr }).on("line", onPerf);
   exited = new Promise((r) => me.on("exit", r));

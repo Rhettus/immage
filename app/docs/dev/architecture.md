@@ -320,6 +320,7 @@ darktable is, and it has AI features when darktable is configured with
 |---|---|
 | `src/CMakeLists.txt` | `add_subdirectory(${IMMAGE_ROOT}/engine)`, from [patches/darktable-engine.patch](../../../patches/darktable-engine.patch). |
 | `src/develop/pixelpipe_hb.c` | `important_input` also holds without a GUI, for the module the engine's `_set` names in `history_last_module`, so a GPU drag's frames start from the cached input of the dragged module rather than the raw. darktable only does this for the focused module of its GUI. |
+| `src/common/exif.cc`, `src/imageio/imageio_tiff.c` | Photos are read, not memory-mapped: exiv2 parses a file read whole (`_open_read`), and libtiff opens with `"rbm"`. A mapped file on a network share that drops, as when the computer sleeps, kills the engine with SIGBUS; a read only fails. verify's [trapmap.c](../../../verify/trapmap.c) checks it. |
 
 ## How an operation moves through the app
 
