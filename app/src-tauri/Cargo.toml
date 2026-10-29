@@ -1,6 +1,6 @@
 [package]
 name = "immage"
-version = "0.39.1"
+version = "0.40.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
 
