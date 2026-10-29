@@ -1089,8 +1089,16 @@ async fn open_folder(app: AppHandle, state: State<'_, AppState>, path: String, r
                                                     "known": known }));
     }
     let dir = PathBuf::from(&path);
-    if !dir.is_dir() {
-        return Err(format!("folder not found: {path}"));
+    let there = {
+        let dir = dir.clone();
+        tauri::async_runtime::spawn_blocking(move || volumes::answering(&dir).then(|| dir.is_dir()))
+            .await
+            .map_err(|e| e.to_string())?
+    };
+    match there {
+        None => return Err(format!("{path} is not answering: its drive or network share may be disconnected")),
+        Some(false) => return Err(format!("folder not found: {path}")),
+        Some(true) => {}
     }
     let skip: HashSet<PathBuf> = skip.unwrap_or_default().into_iter().map(PathBuf::from).collect();
     let (mut files, listed) = tauri::async_runtime::spawn_blocking(move || {
@@ -1113,6 +1121,7 @@ async fn open_folder(app: AppHandle, state: State<'_, AppState>, path: String, r
     let mut images = Vec::new();
     let mut done = 0;
     let mut size = IMPORT_BATCH.0;
+    let mut progress = Progress::default();
     while done < total {
         if state.folder_token.load(Ordering::SeqCst) != token {
             return Err("superseded".into());
@@ -1134,8 +1143,10 @@ async fn open_folder(app: AppHandle, state: State<'_, AppState>, path: String, r
             size = (size / 2).max(IMPORT_BATCH.1);
         }
         done += batch.len();
-        let _ = app.emit("folder-progress", json!({ "token": token, "done": done, "total": total, "images": got }));
-        images.extend(got);
+        images.extend(got.iter().cloned());
+        if let Some(got) = progress.add(got, Instant::now(), done == total) {
+            let _ = app.emit("folder-progress", json!({ "token": token, "done": done, "total": total, "images": got }));
+        }
     }
     let kept = images.clone();
     tauri::async_runtime::spawn_blocking(move || write_snapshot(&snapshot, &kept));
@@ -1183,6 +1194,32 @@ fn write_snapshot(path: &Path, images: &[Value]) {
 // about IMPORT_TARGET, so the folder fills in steady steps
 const IMPORT_BATCH: (usize, usize, usize) = (8, 1, 64);
 const IMPORT_TARGET: Duration = Duration::from_millis(150);
+
+// a folder's batches, reported as a folder-progress event at most every
+// PROGRESS_EVERY: each event redraws the filmstrip, a cell for every file
+// in the folder, and a network share's batch is a file or two, so an
+// event per batch kept the window too busy to edit in. the first batch
+// goes at once, for the folder's first photos, and the last for the rest
+const PROGRESS_EVERY: Duration = Duration::from_secs(1);
+
+#[derive(Default)]
+struct Progress {
+    sent: Option<Instant>,
+    held: Vec<Value>,
+}
+
+impl Progress {
+    // a batch's images; those held since the last event, with these, when
+    // it is time for the next
+    fn add(&mut self, got: Vec<Value>, now: Instant, last: bool) -> Option<Vec<Value>> {
+        self.held.extend(got);
+        if !last && self.sent.is_some_and(|t| now.duration_since(t) < PROGRESS_EVERY) {
+            return None;
+        }
+        self.sent = Some(now);
+        Some(std::mem::take(&mut self.held))
+    }
+}
 
 // the files of `dir` by name, then with `recursive` each subfolder's in
 // turn, as darktable's own folder import orders them. dot files, sidecars
@@ -1241,9 +1278,13 @@ fn is_package(_path: &Path) -> bool {
 
 // whether a file or folder is still there, as one moved or deleted outside
 // the app is not
+// a folder on a drive that is not answering counts as there, so it is not
+// taken for one moved or deleted
 #[tauri::command]
-fn path_exists(path: String) -> bool {
-    Path::new(&path).exists()
+async fn path_exists(path: String) -> bool {
+    tauri::async_runtime::spawn_blocking(move || !volumes::answering(Path::new(&path)) || Path::new(&path).exists())
+        .await
+        .unwrap_or(true)
 }
 
 // a path dropped on the window: "dir", "file", or none when it is gone
@@ -1466,6 +1507,9 @@ fn subdirs(path: &Path) -> Vec<PathBuf> {
 #[tauri::command]
 async fn list_subfolders(path: String) -> Vec<SubFolder> {
     tauri::async_runtime::spawn_blocking(move || {
+        if !volumes::answering(Path::new(&path)) {
+            return Vec::new();
+        }
         let mut list: Vec<SubFolder> = subdirs(Path::new(&path))
             .into_iter()
             .map(|p| SubFolder {
@@ -2499,6 +2543,21 @@ fn preview_fullscreen(app: AppHandle, on: bool) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn folder_progress_once_a_second() {
+        let mut p = Progress::default();
+        let t = Instant::now();
+        let ms = |n| t + Duration::from_millis(n);
+        // the first batch at once, then batches held until a second has gone
+        assert_eq!(p.add(vec![json!(1)], t, false), Some(vec![json!(1)]));
+        assert_eq!(p.add(vec![json!(2)], ms(150), false), None);
+        assert_eq!(p.add(vec![json!(3)], ms(300), false), None);
+        assert_eq!(p.add(vec![json!(4)], ms(1000), false), Some(vec![json!(2), json!(3), json!(4)]));
+        // the last batch whenever it comes, with those held
+        assert_eq!(p.add(vec![json!(5)], ms(1100), false), None);
+        assert_eq!(p.add(vec![json!(6)], ms(1200), true), Some(vec![json!(5), json!(6)]));
+    }
 
     #[test]
     fn mesa_egl_only_over_nvidia() {

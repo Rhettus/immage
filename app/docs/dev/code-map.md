@@ -60,7 +60,7 @@ Front end ([`app/src`](../../src)):
 Rust ([`app/src-tauri/src`](../../src-tauri/src)):
 
 - [main.rs](../../src-tauri/src/main.rs): `AppState` and nearly every command; [engine.rs](../../src-tauri/src/engine.rs): the engine child and its protocol
-- [immich_search.rs](../../src-tauri/src/immich_search.rs), [immich_upload.rs](../../src-tauri/src/immich_upload.rs); [plugins.rs](../../src-tauri/src/plugins.rs) (Edit In); [listing.rs](../../src-tauri/src/listing.rs) (folder listings with sizes and times); [volumes.rs](../../src-tauri/src/volumes.rs) (drives); [scale.rs](../../src-tauri/src/scale.rs) (Wayland scale); [webext/frames.c](../../src-tauri/webext/frames.c) (Linux shared frames)
+- [immich_search.rs](../../src-tauri/src/immich_search.rs), [immich_upload.rs](../../src-tauri/src/immich_upload.rs); [plugins.rs](../../src-tauri/src/plugins.rs) (Edit In); [listing.rs](../../src-tauri/src/listing.rs) (folder listings with sizes and times); [volumes.rs](../../src-tauri/src/volumes.rs) (drives, and whether each answers); [scale.rs](../../src-tauri/src/scale.rs) (Wayland scale); [webext/frames.c](../../src-tauri/webext/frames.c) (Linux shared frames)
 
 Engine ([`engine/`](../../../engine)):
 

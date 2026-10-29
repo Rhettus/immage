@@ -11,7 +11,9 @@
 # percent (10 by default, as src/tests/integration/check-performance uses)
 # and by more than --floor ms, so a 2 ms step's noise is not news.
 # --stat min judges the fastest sample instead, which a busy moment on the
-# machine cannot move: with few samples the median can shift by a third
+# machine cannot move: with few samples the median can shift by a third.
+# a step bench.py marks untimed (a render made to compare its frame) is
+# left out
 import argparse
 import glob
 import json
@@ -65,6 +67,8 @@ def diff(old, new, threshold=10.0, floor=2.0, stat="p50"):
     before = {key(r): metric(r, stat) for r in old["records"]}
     rows = []
     for r in new["records"]:
+        if r.get("untimed"):
+            continue
         k = key(r)
         a, b = before.get(k), metric(r, stat)
         if a is None or b is None:

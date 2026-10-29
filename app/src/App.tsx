@@ -175,19 +175,27 @@ export default function App() {
   volumesRef.current = volumes;
   const [foldedVolumes, setFoldedVolumes] = useState<Set<string>>(() => new Set(loadLibrary().foldedVolumes));
   const [hostNames, setHostNames] = useState<Record<string, string>>(() => loadLibrary().hostNames ?? {});
+  // read again every few seconds, for the drive headings' dots: a share
+  // that comes back has its folders' subfolders read again
   useEffect(() => {
     let stale = false;
-    void invoke<Volume[]>("folder_volumes", { paths: folders }).then((list) => {
+    const read = () => void invoke<Volume[]>("folder_volumes", { paths: folders }).then((list) => {
       if (stale) return;
       const next = new Map<string, Volume>();
+      let back = false;
       for (const v of list) {
         const seen = volumesRef.current.get(v.path);
+        if (v.online && seen?.online === false) back = true;
         next.set(v.path, !v.online && seen ? { ...seen, online: false } : v);
       }
+      if (JSON.stringify([...next]) === JSON.stringify([...volumesRef.current])) return;
       setVolumes(next);
       saveLibrary({ volumes: Object.fromEntries(next) });
+      if (back) setFolderRefresh((n) => n + 1);
     });
-    return () => { stale = true; };
+    read();
+    const timer = setInterval(read, 10000);
+    return () => { stale = true; clearInterval(timer); };
   }, [folders, folderRefresh]);
   const [images, setImages] = useState<ImageEntry[]>([]);
   // the key handler and the loader outlive renders, so they read these refs

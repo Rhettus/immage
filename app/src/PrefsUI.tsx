@@ -13,12 +13,12 @@ export function PrefCard({ title, children }: { title: string; children: React.R
   );
 }
 
-export function PrefRow({ label, hint, children }: {
-  label: string; hint?: React.ReactNode; children: React.ReactNode;
+export function PrefRow({ label, hint, title, children }: {
+  label: string; hint?: React.ReactNode; title?: string; children: React.ReactNode;
 }) {
   return (
     <div className="pref-row">
-      <div className="pref-label">
+      <div className="pref-label" title={title}>
         <span>{label}</span>
         {hint && <span className="pref-hint">{hint}</span>}
       </div>
