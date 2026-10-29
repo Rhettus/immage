@@ -8,8 +8,8 @@
 //     git, out }
 // and writes `out`: every result, then the summary run.py reports
 import { createRequire, registerHooks } from "node:module";
-import { existsSync, mkdirSync, copyFileSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync,
-         constants } from "node:fs";
+import { existsSync, mkdirSync, copyFileSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync,
+         writeFileSync, constants } from "node:fs";
 import { createHash } from "node:crypto";
 import { crc32 } from "node:zlib";
 import { spawnSync } from "node:child_process";
@@ -517,6 +517,39 @@ async function fixes(photo) {
       return failed.length ? failed.join("; ") : null;
     });
     await restart();
+  }
+
+  // 0.41.0: a network share dropping (the computer sleeping) while the
+  // engine read a photo from it killed the engine with SIGBUS, as exiv2 and
+  // libtiff read TIFF-based files through a memory map (darktable's exif.cc,
+  // _open_read; imageio_tiff.c, "rbm"). trapmap.c truncates a photo once
+  // it is mapped, as the drop does. once, on the first TIFF-based raw, with
+  // the hue strip for libtiff
+  if (photo === args.photos.find((p) => /\.(arw|cr2|dng|nef|orf|pef)$/i.test(p))) {
+    const id = "a dropped share's photo";
+    const skip = (detail) => record({ check: "fixes", photo: basename(photo), id, status: "skip", detail });
+    const lib = join(args.work, "trapmap.dylib");
+    if (process.platform !== "darwin") skip("trapmap.c is built for macOS only");
+    else if (spawnSync("cc", ["-dynamiclib", "-o", lib, join(HERE, "trapmap.c")]).status !== 0) skip("cc could not build trapmap.c");
+    else {
+      const home = join(args.work, "trapmap-engine"), dir = join(args.work, "trapmap");
+      for (const d of [home, dir]) rmSync(d, { recursive: true, force: true });
+      mkdirSync(dir, { recursive: true });
+      // the path the engine's descriptors give (F_GETPATH), /private/var for /var
+      const real = realpathSync(dir);
+      const files = [photo, hueStrip()].map((p) => { const to = join(real, basename(p)); copyFileSync(p, to); return to; });
+      await stopEngine();
+      startApp(home, null, { env: { DYLD_INSERT_LIBRARIES: lib, TRAPMAP_DIR: real } });
+      await drained();
+      if (!existsSync(join(real, ".loaded"))) skip("the engine ignores DYLD_INSERT_LIBRARIES (a hardened runtime)");
+      else await fix(id, async () => {
+        const { images } = await request({ cmd: "import", files });
+        for (const [i, e] of images.entries())
+          await request({ cmd: "thumb", imgid: e.imgid, size: 240, out: join(args.work, `trapmap-${i}.rgba`) });
+        return null;
+      });
+      await restart();
+    }
   }
 
   // 0.37.0: HSL's Saturation was twice Lightroom's strength, -50 already
