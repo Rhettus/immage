@@ -27,10 +27,14 @@ measured reduction until new reports exist.
    worker queue, is submitted after native frame delivery, and does not hold the
    render pump. Cache/generation/anchor guards reject obsolete results; accuracy
    recovery and exact release behavior remain.
-3. Reduce worker input copies: validation currently copies three full images and
-   allocates a full predicted frame to inspect sampled error. Compute prediction
-   error directly at sample positions; consider retaining anchors in the worker
-   and reducing histogram inputs while preserving sampling quality.
+3. Implemented: compute prediction error directly without allocating a predicted
+   frame, preserving every RGB pixel and the existing rounding/error thresholds.
+   Retain at most three validation frames in the worker; consecutive validations
+   transfer only the new native frame instead of all three. Original renderer
+   buffers remain available for failure/timeout fallback. Histogram input
+   reduction remains a possible follow-up alongside item 5; its existing sample
+   positions and spatial scope input are unchanged. Kernel/worker checks and the
+   frontend build pass; matching GUI CPU measurements remain outstanding.
 4. Retain reusable GPU anchor textures across exact native refreshes. Drawing
    an exact frame as A=B currently retires the older anchor; the next estimate
    may upload it again. Bound the texture pool and test memory/context recovery.

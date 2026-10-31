@@ -30,9 +30,18 @@ const pixels = new Uint8ClampedArray([0, 20, 40, 255, 255, 200, 100, 255]);
 const task = { kind: 'histogram', pixels, width: 2, height: 1 };
 class FakeWorker {
   messages = [];
+  anchors = new Map();
   postMessage(value, transfer) { this.messages.push(structuredClone(value, { transfer })); }
   finish() {
-    const { id, task } = this.messages.shift();
+    const { id, task, validationIds } = this.messages.shift();
+    if (validationIds?.length) {
+      validationIds.forEach((id, i) => {
+        const key = ['pixels', 'other', 'actual'][i];
+        if (!this.anchors.has(id)) this.anchors.set(id, task[key]);
+        task[key] = this.anchors.get(id);
+      });
+      for (const id of this.anchors.keys()) if (!validationIds.includes(id)) this.anchors.delete(id);
+    }
     this.onmessage({ data: { id, result: runPixelTask(task), workMs: 1 } });
   }
   terminate() { this.terminated = true; }
@@ -95,4 +104,75 @@ test('an unresponsive worker times out and completes through fallback', t => {
   assert.equal(pool.threaded, false);
   assert.deepEqual(shown, [computeHistogram(pixels, 2, 1)]);
   pool.dispose();
+});
+test('validation matches full-frame interpolation error', async () => {
+  const { mixDetailPixels, predictionError } = await import('../app/src/cachedDetail.ts');
+  const a = new Uint8ClampedArray(4096 * 4), b = a.slice(), actual = a.slice();
+  for (let i=0;i<a.length;i++) {
+    a[i] = (i * 71) % 256; b[i] = (i * 13 + 55) % 256; actual[i] = (i * 37) % 256;
+  }
+  for (const mix of [-1, -.5, 0, .5, 1, 1.5, 2]) {
+    const task = { kind: 'validation', pixels: a, other: b, actual, mix, width: 64, height: 64 };
+    const expected = predictionError(mixDetailPixels(a, b, mix), actual);
+    assert.deepEqual(runPixelTask(task), expected);
+    const worker = new FakeWorker(), pool = new PixelWorker(() => worker);
+    let result;
+    pool.submit('validation', task, value => { result = value; });
+    const sent = worker.messages[0].task;
+    for (const key of ['pixels', 'other', 'actual']) assert.equal(sent[key].length, a.length);
+    worker.finish();
+    assert.deepEqual(result, expected);
+    assert.equal(a.length, 4096 * 4);
+    pool.dispose();
+    const fallback = new PixelWorker(() => { throw Error('unavailable'); });
+    fallback.submit('validation', task, value => assert.deepEqual(value, expected));
+    fallback.dispose();
+  }
+});
+test('direct validation preserves clamping, ties to even, alpha exclusion and invalid input', async () => {
+  const { mixedPredictionError, mixDetailPixels, predictionError } = await import('../app/src/cachedDetail.ts');
+  const a = new Uint8ClampedArray([0, 1, 2, 0, 255, 254, 253, 255]);
+  const b = new Uint8ClampedArray([1, 2, 3, 255, 254, 253, 252, 0]);
+  for (const mix of [.5, -10, 10]) {
+    assert.deepEqual(mixedPredictionError(a, b, a, mix), predictionError(mixDetailPixels(a, b, mix), a));
+  }
+  assert.deepEqual(mixedPredictionError(a, b, new Uint8ClampedArray(), .5), {mean:Infinity,p95:Infinity});
+});
+test('validation reuses two anchors, bounds retained frames and falls back with original buffers', () => {
+  const worker = new FakeWorker(), pool = new PixelWorker(() => worker);
+  const frames = Array.from({length: 8}, (_, i) => new Uint8ClampedArray(64).fill(i * 30));
+  for (let i=0;i<frames.length-2;i++) {
+    const task = {kind:'validation', pixels:frames[i], other:frames[i+1], actual:frames[i+2], mix:.5, width:4,height:4};
+    pool.submit('validation', task, result => assert.deepEqual(result, runPixelTask(task)));
+    const sent = worker.messages[0].task;
+    assert.equal(sent.pixels.length, i ? 0 : 64);
+    assert.equal(sent.other.length, i ? 0 : 64);
+    assert.equal(sent.actual.length, 64);
+    worker.finish();
+    assert.equal(worker.anchors.size, 3);
+  }
+  const task = {kind:'validation', pixels:frames[6], other:frames[7], actual:frames[0], mix:.5, width:4,height:4};
+  let result;
+  pool.submit('validation', task, value => { result = value; });
+  assert.equal(worker.messages[0].task.pixels.length, 0);
+  worker.onerror({preventDefault(){}});
+  assert.deepEqual(result, runPixelTask(task));
+  for (const frame of frames) assert.equal(frame.length, 64);
+  pool.dispose();
+});
+test('real worker resolves retained validation buffers and evicts unused anchors', async () => {
+  const replies = [];
+  globalThis.self = {postMessage: value => replies.push(value)};
+  await import('../app/src/pixel.worker.ts');
+  const first = {kind:'validation', pixels, other:pixels.slice(), actual:pixels.slice(), mix:.5,width:2,height:1};
+  const send = (task, validationIds) => self.onmessage({data:{id:replies.length,task,validationIds}});
+  send(first, [1,2,3]);
+  const next = {...first, pixels:new Uint8ClampedArray(), other:new Uint8ClampedArray(), actual:pixels.slice()};
+  send(next, [2,3,4]);
+  assert.deepEqual(replies[1].result, runPixelTask(first));
+  const replacement = {...first, pixels:new Uint8ClampedArray(pixels.length).fill(255), other:pixels.slice(), actual:pixels.slice()};
+  const expected = runPixelTask(replacement);
+  send(replacement, [1,5,6]); // id 1 was evicted, so this must use the new pixels
+  assert.deepEqual(replies[2].result, expected);
+  delete globalThis.self;
 });

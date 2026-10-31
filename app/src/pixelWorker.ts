@@ -11,6 +11,9 @@ export class PixelWorker {
   private failed = false;
   private watchdog: ReturnType<typeof setTimeout> | null = null;
   private serial = 0;
+  private anchorSerial = 0;
+  private anchorIds = new WeakMap<Uint8ClampedArray<ArrayBuffer>, number>();
+  private retainedAnchors = new Set<number>();
   private active: Job | null = null;
   private pending = new Map<string, Job>();
   private latest = new Map<string, number>();
@@ -29,7 +32,7 @@ export class PixelWorker {
   dispose() {
     if (this.watchdog !== null) clearTimeout(this.watchdog); this.watchdog = null;
     this.worker?.terminate(); this.worker = null; this.active = null;
-    this.pending.clear(); this.latest.clear();
+    this.pending.clear(); this.latest.clear(); this.retainedAnchors.clear();
   }
   private finish(result: PixelResult, workMs: number) {
     const job = this.active;
@@ -79,11 +82,28 @@ export class PixelWorker {
       return;
     }
     try {
-      const actual = job.task.actual ? perf.time("pixels.copy", () => job.task.actual!.slice()) : undefined;
-      const other = job.task.other ? perf.time("pixels.copy", () => job.task.other!.slice()) : undefined;
-      const pixels = perf.time("pixels.copy", () => job.task.pixels.slice());
-      perf.count("pixelBytesCopied", pixels.byteLength + (other?.byteLength ?? 0) + (actual?.byteLength ?? 0));
-      perf.time("worker.postMessage", () => this.worker!.postMessage({ id: job.id, task: { ...job.task, pixels, other, actual } }, [pixels.buffer, ...(other ? [other.buffer] : []), ...(actual ? [actual.buffer] : [])]));
+      const validationIds: number[] = [];
+      const transfer: ArrayBuffer[] = [];
+      let bytes = 0;
+      const copy = (source: Uint8ClampedArray<ArrayBuffer>) => {
+        if (job.task.kind === "validation") {
+          let id = this.anchorIds.get(source);
+          if (id === undefined) { id = ++this.anchorSerial; this.anchorIds.set(source, id); }
+          validationIds.push(id);
+          if (this.retainedAnchors.has(id)) return new Uint8ClampedArray(0);
+        }
+        const pixels = perf.time("pixels.copy", () => source.slice());
+        transfer.push(pixels.buffer); bytes += pixels.byteLength;
+        return pixels;
+      };
+      const pixels = copy(job.task.pixels);
+      const other = job.task.other ? copy(job.task.other) : undefined;
+      const actual = job.task.actual ? copy(job.task.actual) : undefined;
+      perf.count("pixelBytesCopied", bytes);
+      perf.time("worker.postMessage", () => this.worker!.postMessage({ id: job.id,
+        task: { ...job.task, pixels, other, actual }, validationIds }, transfer));
+      // retain only this validation's three frames; fallback uses original buffers
+      if (validationIds.length) this.retainedAnchors = new Set(validationIds);
       this.watchdog = setTimeout(() => this.fallback(), 10000);
     } catch { this.fallback(); }
   }

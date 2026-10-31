@@ -454,8 +454,12 @@ unsupported dimensions fall back to CPU interpolation. Restored contexts
 reupload anchors on demand. CPU `Frame` caches and pixel consumers keep native
 pixels. During GPU estimates the histogram and scopes follow native frames;
 clipping overlays use the current estimate without readback. Native prediction
-validation still uses CPU interpolation at the adaptive refresh interval and
-retains the current error thresholds and exact release rendering.
+validation computes interpolated RGB error directly at the adaptive refresh
+interval without allocating a predicted frame. It preserves every pixel,
+clamping, ties-to-even rounding and the current error thresholds. The validation
+worker retains only its latest three immutable frame buffers, so successive
+checks copy only the new native frame. Worker failure uses the original buffers
+for synchronous fallback. Exact release rendering remains independent.
 
 Performance samples identify `previewBackend` (`cpu` or `webgl`), per-draw
 `anchorUploads`, and retained `textureBytes`. GPU draw timing measures command
