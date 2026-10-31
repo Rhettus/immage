@@ -176,6 +176,45 @@ def dpkg_owner(path):
             return r.stdout.split(":")[0].split(",")[0].strip()
     return None
 
+def pacman_owner(path):
+    r = subprocess.run(["pacman", "-Qoq", os.path.realpath(path)], capture_output=True, text=True)
+    return r.stdout.strip() if r.returncode == 0 else None
+
+
+def pacman_notice(pkg):
+    version = run("pacman", "-Q", pkg).strip().split(maxsplit=1)[1]
+    # pacman's local database keeps the upstream URL and license identifiers
+    # without the translated labels of `pacman -Qi`
+    with open(f"/var/lib/pacman/local/{pkg}-{version}/desc") as f:
+        fields = {lines[0].strip("%"): lines[1:] for stanza in f.read().split("\n\n")
+                  if (lines := stanza.splitlines())}
+    licenses = fields.get("LICENSE", [])
+    texts = []
+    source = os.path.join("/usr/share/licenses", pkg)
+    if os.path.isdir(source):
+        target = os.path.join(lic_dir, pkg)
+        shutil.copytree(source, target, dirs_exist_ok=True)
+        texts += [os.path.relpath(os.path.join(root, name), lic_dir)
+                  for root, _, files in os.walk(target) for name in sorted(files)]
+    # Arch keeps common license texts centrally instead of in each package
+    for license in re.findall(r"[A-Za-z0-9.+-]+", " ".join(licenses)):
+        sources = glob.glob(os.path.join("/usr/share/licenses/spdx", license + ".txt"))
+        legacy = re.fullmatch(r"(L?GPL)([23])?", license)
+        if legacy:
+            family, legacy_version = legacy.groups()
+            sources += glob.glob(f"/usr/share/licenses/spdx/{family}-{legacy_version or ''}*.txt")
+        for source in sorted(sources):
+            os.makedirs(os.path.join(lic_dir, "spdx"), exist_ok=True)
+            shutil.copy2(source, os.path.join(lic_dir, "spdx", os.path.basename(source)))
+            texts.append(f"spdx/{os.path.basename(source)}")
+    if not texts:
+        bare.append(pkg)
+    homepage = " ".join(fields.get("URL", [])) or "none given"
+    return (f"{pkg} {version}\n  license: {', '.join(licenses) or 'unknown'}\n"
+            f"  source: {homepage} (pacman package {pkg} {version})\n"
+            + (f"  texts: {', '.join(texts)}\n" if texts else ""))
+
+
 def dep5_license(text):
     # the license of a machine-readable debian/copyright's "Files: *"
     if text.startswith("Format:"):
@@ -193,21 +232,28 @@ if LINUX:
         with open(os.path.join(meta, "files")) as f:
             for line in f:
                 local[line.strip()] = meta
+    if shutil.which("dpkg"):
+        package_owner = dpkg_owner
+    elif shutil.which("pacman"):
+        package_owner = pacman_owner
+    else:
+        sys.exit("collecting Linux library licenses requires dpkg or pacman")
     pkgs, local_used = set(), set()
     for name, (path, _) in copied.items():
         meta = local.get(path) or local.get(os.path.realpath(path))
         if meta:
             local_used.add(meta)
             continue
-        pkg = dpkg_owner(path)
+        pkg = package_owner(path)
         if pkg:
             pkgs.add(pkg)
         else:
             bare.append(name)
             index.append(f"{name}\n  license: unknown, from {os.path.realpath(path)}\n")
     lensfun_file = next(iter(sorted(glob.glob(os.path.join(lensfun_pkg, "version_1", "*.xml")))), None)
-    if lensfun_file and dpkg_owner(lensfun_file):
-        pkgs.add(dpkg_owner(lensfun_file))
+    lensfun_owner = package_owner(lensfun_file) if lensfun_file else None
+    if lensfun_owner:
+        pkgs.add(lensfun_owner)
     for meta in sorted(local_used):
         with open(os.path.join(meta, "info")) as f:
             head, license, source = f.read().splitlines()[:3]
@@ -219,6 +265,9 @@ if LINUX:
         index.append(f"{head}, built from source\n  {license}\n  {source}\n"
                      f"  texts: {', '.join(f'{name}/{t}' for t in texts)}\n")
     for pkg in sorted(pkgs):
+        if package_owner is pacman_owner:
+            index.append(pacman_notice(pkg))
+            continue
         version, homepage, srcpkg = run("dpkg-query", "-W", "-f", "${Version}\t${Homepage}\t${source:Package}",
                                         pkg).split("\t")
         copyright = os.path.join("/usr/share/doc", pkg, "copyright")

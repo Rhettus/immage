@@ -23,6 +23,16 @@ if [ -e .git ]; then
     git -C darktable apply --reverse "$root/patches/darktable-engine.patch" 2>/dev/null || true
   fi
   git submodule update --init darktable
+  # AI model downloads use darktable's release version. a shallow checkout
+  # without its release tags reports only a hash and selects the wrong models
+  if ! git -C darktable describe --tags --match 'release-*' >/dev/null 2>&1; then
+    if [ "$(git -C darktable rev-parse --is-shallow-repository)" = true ]; then
+      git -C darktable fetch --no-recurse-submodules --unshallow --tags origin
+    else
+      git -C darktable fetch --no-recurse-submodules --tags origin
+    fi
+    git -C darktable describe --tags --match 'release-*' >/dev/null
+  fi
   # darktable's own submodules, without its integration tests and lua-scripts
   git -C darktable submodule update --init src/external/rawspeed src/external/OpenCL \
       src/external/libxcf src/external/whereami src/external/LibRaw

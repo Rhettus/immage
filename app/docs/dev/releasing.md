@@ -1,9 +1,10 @@
 # Releasing
 
 A release is a tag. Pushing `v<version>` runs
-[release.yml](../../../.github/workflows/release.yml), which builds the
-three platforms from scratch, signs the updater's bundles, makes the source
-archive, and leaves a **draft** release with all of it attached. Nothing
+[release.yml](../../../.github/workflows/release.yml), which builds
+macOS, Windows and Linux (x86-64 and ARM64) from scratch, signs the
+updater's bundles, makes the source archive, and leaves a **draft** release
+with all of it attached. Nothing
 reaches users until you publish that draft.
 
 A release is made entirely on its branch, `release-<version>`: the work,
@@ -57,8 +58,8 @@ the release is published.
    disagree or the notes section is missing, and at the end when a
    platform's bundle has no signature.
 6. **Try the draft.** Download the macOS `.dmg`, the Windows installer and
-   the AppImage from the draft release, and open each one. Check the
-   release text, and edit it on GitHub if it needs it (that edit does not
+   both Linux AppImages from the draft release, and open each one. Check
+   the release text, and edit it on GitHub if it needs it (that edit does not
    reach the banner, which reads `latest.json`; fix RELEASE_NOTES.md too).
 7. **Publish** the draft. From then on
    `/releases/latest/download/latest.json` points at it, and installed

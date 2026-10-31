@@ -58,6 +58,7 @@ DOWNLOADS = """\
 | **macOS** (Apple Silicon) | [{dmg}]({url}/{dmg}) |
 | **Windows** (x64) | [{nsis}]({url}/{nsis}), or [{msi}]({url}/{msi}) |
 | **Linux** (x86-64) | [{appimage}]({url}/{appimage}) |
+| **Linux** (ARM64) | [{appimage_arm64}]({url}/{appimage_arm64}) |
 | **Source** | [{source}]({url}/{source}) |
 """
 
@@ -76,6 +77,8 @@ from inside Immage, without the warning.
   it, click **More info**, then **Run anyway**
 - **Linux** (x86-64, glibc 2.35 or newer, such as Ubuntu 22.04): make
   `{appimage}` executable (`chmod +x {appimage}`) and run it
+- **Linux** (ARM64, glibc 2.35 or newer, such as Ubuntu 22.04): make
+  `{appimage_arm64}` executable (`chmod +x {appimage_arm64}`) and run it
 
 Immage checks for a new version once a day (Preferences › About ›
 Updates), and offers to install it.
@@ -130,8 +133,10 @@ def main():
         (one(artifacts, "*-setup.exe"), f"{p}-Windows-x64-setup.exe",
          ["windows-x86_64", "windows-x86_64-nsis"]),
         (one(artifacts, "*.msi"), f"{p}-Windows-x64.msi", ["windows-x86_64-msi"]),
-        (one(artifacts, "*.AppImage"), f"{p}-Linux-x86_64.AppImage",
+        (one(artifacts, "*_amd64.AppImage"), f"{p}-Linux-x86_64.AppImage",
          ["linux-x86_64", "linux-x86_64-appimage"]),
+        (one(artifacts, "*_aarch64.AppImage"), f"{p}-Linux-arm64.AppImage",
+         ["linux-aarch64", "linux-aarch64-appimage"]),
         (one(artifacts, f"immage-{version}-source.tar.gz"), None, []),
     ]
     platforms = {}
@@ -165,8 +170,8 @@ def main():
     }
     (out / "latest.json").write_text(json.dumps(feed, indent=2) + "\n", encoding="utf-8")
 
-    dmg, _, nsis, msi, appimage, source = names
-    fields = dict(dmg=dmg, nsis=nsis, msi=msi, appimage=appimage, source=source, repo=REPO,
+    dmg, _, nsis, msi, appimage, appimage_arm64, source = names
+    fields = dict(dmg=dmg, nsis=nsis, msi=msi, appimage=appimage, appimage_arm64=appimage_arm64, source=source, repo=REPO,
                   url=f"{REPO}/releases/download/v{version}")
     body = DOWNLOADS.format(**fields) + "\n" + text + "\n\n" + unwrap(INSTALL).format(**fields)
     (out.parent / "body.md").write_text(body, encoding="utf-8")

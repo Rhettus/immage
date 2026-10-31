@@ -393,6 +393,7 @@ darktable is, and it has AI features when darktable is configured with
 | File | Coverage |
 |---|---|
 | `#[cfg(test)]` in [main.rs](../../src-tauri/src/main.rs), [engine.rs](../../src-tauri/src/engine.rs) | `cargo test` in `app/src-tauri`: model release lookup, folder listing, sha256, the `-d perf` parser, when the web view gets Mesa's EGL. |
+| [test_release_assets.py](../../../scripts/test_release_assets.py) | Release assembly checks: both Linux downloads and updater entries, missing bundles or signatures, duplicate architectures and mismatched versions. Run by the build workflow. |
 | `npm run build` in `app/` | Type checking (`tsc --noEmit`) and the production bundle; there is no front-end unit test runner (the release checks run the front end's `Session`). |
 | [verify/](../../../verify/README.md) | The release checks: the app's `Session` run under Node against the engine (`harness.mjs`, with `shim.mjs` for Tauri's invoke), every slider and mask slider measured, an edit saved and opened again, old edits rendered, a check per bug fixed and per decision about Immage's behavior, and the benchmark's main timings against the last run. |
 | [benchmarking/](../../../benchmarking/README.md) | The engine benchmark (driven with the app's own manifest), the GUI benchmark's reports, the dashboard. |

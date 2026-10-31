@@ -49,8 +49,9 @@ libxml2-dev
 zlib1g-dev
 libjpeg-turbo8-dev
 libopenjp2-7-dev
-# from the PPAs: Ubuntu 22.04 has no libjxl, and older libavif and openexr
-# than darktable reads
+# from the PPAs: newer image-format libraries than Ubuntu 22.04 ships.
+# on ARM64, build.yml omits libjxl-dev and libsharpyuv-dev below;
+# build_linux_deps.sh builds their libraries from source instead
 libavif-dev
 libjxl-dev
 libopenexr-dev
