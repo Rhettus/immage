@@ -4,7 +4,7 @@
 // Lightroom's Masks panel: a menu to create a mask, the image's masks with
 // the selected one opened to its shapes, and that mask's settings and own
 // adjustment sliders
-import { BANDS, choiceShows, HSL_TABS, localControlById, RANGES, type Control, type Values } from "./manifest";
+import { BANDS, choiceShows, detailControlIds, HSL_TABS, localControlById, RANGES, type Control, type Values } from "./manifest";
 import { GradingWheels, type WheelMode } from "./ColorWheel";
 import { isRange, maskThumb, NO_REFINE, shapeLabel, type BlendifChannel, type Mask, type ParametricRange,
          type Range, type RangeMap, type Refine, type Shape } from "./masks";
@@ -42,7 +42,7 @@ const RANGE_TOOLS: [MaskTool, string, string][] = [
 const LOCAL_GROUPS: [string, string[]][] = [
   ["White Balance", ["l_temp", "l_tint"]],
   ["Tone", ["l_exposure", "l_contrast", "l_highlights", "l_shadows", "l_whites", "l_blacks"]],
-  ["Presence", ["l_texture", "l_clarity", "l_dehaze", "l_hue", "l_saturation"]],
+  ["Presence", ["l_texture", ...detailControlIds("l_detail_texture"), "l_clarity", ...detailControlIds("l_detail_clarity"), "l_dehaze", "l_hue", "l_saturation"]],
   ["HSL", BANDS.flatMap(([b]) => [`l_hsl_hue_${b}`, `l_hsl_sat_${b}`, `l_hsl_lum_${b}`])],
   ["Color Grading", RANGES.flatMap(([r]) => [`l_cg_${r}_hue`, `l_cg_${r}_sat`, `l_cg_${r}_lum`])],
   // Sharpening as the photo's module has it (MODULE_CHOICES)

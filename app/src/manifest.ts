@@ -339,6 +339,35 @@ const clarityMap = (id: string): ModuleMap => ({
   },
 });
 
+const DETAIL_FIELDS = [
+  ["gain_coarse", "Coarse details", -1, 5, 0, 0.01],
+  ["gain_medium", "Medium details", -1, 5, 0, 0.01],
+  ["gain_fine", "Fine details", -1, 5, 0, 0.01],
+  ["detail_level", "Base detail level", 1, 15, 5, 0.01],
+  ["halo_control", "Halo control", -10, 10, 0, 0.01],
+  ["noise_bias", "Noise bias", 0, 1, 0.001, 0.0001],
+  ["gain_shadows", "Shadows", -5, 5, 0, 0.01],
+  ["gain_highlights", "Highlights", -5, 5, 0, 0.01],
+] as const;
+export const detailControlIds = (prefix: string) => DETAIL_FIELDS.map(([field]) => `${prefix}_${field}`);
+const detailControls = (prefix: string, label: string): Control[] =>
+  DETAIL_FIELDS.map(([field, name, min, max, neutral, step]) => ({
+    id: `${prefix}_${field}`, label: `${label}: ${name}`, min, max, neutral, step,
+    format: plain(field === "noise_bias" ? 4 : 2),
+  }));
+
+// separate instances let Clarity and Texture choose their modules independently
+const detailMap = (prefix: string, texture: boolean): ModuleMap => ({
+  op: texture ? "contrastntexture#texture" : "contrastntexture",
+  keepOn: false,
+  controls: detailControlIds(prefix),
+  fields: DETAIL_FIELDS.map(([field]) => field),
+  read: (p) => Object.fromEntries(DETAIL_FIELDS.map(([field]) => [`${prefix}_${field}`, p[field]])),
+  write: (v) => Object.fromEntries(DETAIL_FIELDS.map(([field, , , , neutral]) =>
+    [field, v[`${prefix}_${field}`] ?? neutral])),
+  enabled: (v) => DETAIL_FIELDS.some(([field]) => field.startsWith("gain_") && (v[`${prefix}_${field}`] ?? 0) !== 0),
+});
+
 // Sharpening: darktable's "sharpness | normal" diffusion preset
 // (diffuse.c) but for the iterations, radius span and edge sensitivity,
 // which the sliders set
@@ -404,6 +433,22 @@ export const MODULE_CHOICES: ModuleChoice[] = [
     id: "bw", label: "Black & White", control: "mod_bw", covers: ["bw_mode"],
     options: [shared(MOD_BW_CALIBRATION, "channelmixerrgb#bw", "color calibration", true),
               shared(MOD_BW_EQUALIZER, "colorequal", "color equalizer", false)],
+  },
+  {
+    id: "clarity", label: "Clarity", control: "mod_clarity",
+    options: [
+      { ...shared(0, "bilat", "local contrast", true), controls: ["clarity"], localControls: ["l_clarity"] },
+      { ...shared(1, "contrastntexture", "contrast & texture", false),
+        controls: detailControlIds("detail_clarity"), localControls: detailControlIds("l_detail_clarity") },
+    ],
+  },
+  {
+    id: "texture", label: "Texture", control: "mod_texture",
+    options: [
+      { ...shared(0, "diffuse", "diffuse or sharpen", true), controls: ["texture"], localControls: ["l_texture"] },
+      { ...shared(1, "contrastntexture#texture", "contrast & texture", false),
+        controls: detailControlIds("detail_texture"), localControls: detailControlIds("l_detail_texture") },
+    ],
   },
   {
     id: "sharpening", label: "Sharpening", control: "mod_sharpening",
@@ -1094,13 +1139,15 @@ export const modules: ModuleMap[] = [
     enabled: (v) => v.tm_mode === 1,
   },
   {
-    op: "diffuse", keepOn: false,
-    controls: ["texture"],
+    op: "diffuse", keepOn: false, choice: { control: "mod_texture", value: 0 },
+    controls: ["texture", "mod_texture"],
     fields: [...Object.keys(TEXTURE_SPEEDS), ...Object.keys(TEXTURE_FIXED)],
-    read: (p) => ({ texture: textureRead(p) }),
+    read: (p) => ({ texture: textureRead(p), mod_texture: 0 }),
     write: (v) => textureWrite(v.texture),
   },
-  clarityMap("clarity"),
+  chosen(clarityMap("clarity"), "mod_clarity", 0),
+  chosen(detailMap("detail_clarity", false), "mod_clarity", 1),
+  chosen(detailMap("detail_texture", true), "mod_texture", 1),
   linear("hazeremoval", false, [{ id: "dehaze", field: "strength", scale: 0.01, base: 0 }]),
 
   {
@@ -1371,7 +1418,9 @@ export const panels: Panel[] = [
         title: "Presence",
         controls: [
           lr("texture", "Texture"),
+          ...detailControls("detail_texture", "Texture"),
           lr("clarity", "Clarity"),
+          ...detailControls("detail_clarity", "Clarity"),
           lr("dehaze", "Dehaze"),
           lr("vibrance", "Vibrance", { track: GLOBAL_SAT_TRACK }),
           lr("saturation", "Saturation", { track: GLOBAL_SAT_TRACK }),
@@ -1700,7 +1749,7 @@ export const mapsWith = (id: string) => modules.filter((m) => m.controls.include
 const MODULE_NAMES: Record<string, string> = {
   agx: "AgX", ashift: "rotate and perspective", bilat: "local contrast", channelmixerrgb: "color calibration",
   cacorrectrgb: "chromatic aberrations", colorbalancergb: "color balance rgb", colorequal: "color equalizer",
-  crop: "crop", defringe: "defringe", demosaic: "demosaic", negadoctor: "negadoctor",
+  contrastntexture: "contrast & texture", crop: "crop", defringe: "defringe", demosaic: "demosaic", negadoctor: "negadoctor",
   denoiseprofile: "denoise (profiled)", diffuse: "diffuse or sharpen", exposure: "exposure", flip: "orientation",
   grain: "grain", hazeremoval: "haze removal", hotpixels: "hot pixels", lens: "lens correction", rgbcurve: "rgb curve",
   shadhi: "shadows and highlights", sharpen: "sharpen", sigmoid: "sigmoid", tonecurve: "tone curve",
@@ -1768,7 +1817,9 @@ export const LOCAL_CONTROLS: Control[] = [
   lr("l_whites", "Whites"),
   lr("l_blacks", "Blacks"),
   lr("l_texture", "Texture"),
+  ...detailControls("l_detail_texture", "Texture"),
   lr("l_clarity", "Clarity"),
+  ...detailControls("l_detail_clarity", "Clarity"),
   lr("l_dehaze", "Dehaze"),
   { ...lr("l_hue", "Hue"), track: hueRamp(0, 180) },
   lr("l_saturation", "Saturation"),
@@ -1848,13 +1899,15 @@ export const localMaps: ModuleMap[] = [
   // some 40 ms a mask's draft frame, so its masks share instances: the
   // speeds follow the slider in proportion, as a mask's strength scales them
   {
-    op: "diffuse", keepOn: false, merge: true,
+    op: "diffuse", keepOn: false, merge: true, choice: { control: "mod_texture", value: 0 },
     controls: ["l_texture"],
     fields: [...Object.keys(TEXTURE_SPEEDS), ...Object.keys(TEXTURE_FIXED)],
     read: (p) => ({ l_texture: textureRead(p) }),
     write: (v) => textureWrite(v.l_texture),
   },
-  clarityMap("l_clarity"),
+  { ...clarityMap("l_clarity"), choice: { control: "mod_clarity", value: 0 } },
+  { ...detailMap("l_detail_clarity", false), choice: { control: "mod_clarity", value: 1 } },
+  { ...detailMap("l_detail_texture", true), choice: { control: "mod_texture", value: 1 } },
   linear("hazeremoval", false, [{ id: "l_dehaze", field: "strength", scale: 0.01, base: 0 }]),
   {
     // as the global Noise Reduction: darktable's strength 1.0 at 50. Some
