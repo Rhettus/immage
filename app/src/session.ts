@@ -55,6 +55,8 @@ export type View = {
   // a smaller frame while a control is dragged, shown enlarged; a full one
   // follows on release
   draft?: boolean;
+  detail?: boolean;
+  loupe?: boolean;
 };
 
 // left out of drag frames, every instance (masks' too), and back on the
@@ -874,8 +876,26 @@ export class Session {
   private draftWas = "";
   private needWarm = false;
 
+  // detail previews keep every module and pixel; only their area adapts
+  detailView: (() => View | null) = () => null;
+  private detailKey = "";
+  private detailSlow = 0;
+  private detailOps = "";
+
   private draftView(view: View, ops: string[]): View {
-    if (!view.draft) return view;
+    if (!view.draft) { this.detailKey = ""; this.detailSlow = 0; return view; }
+    if (ops.length) this.detailOps = [...new Set(ops.map((op) => op.split("#")[0]))].sort().join();
+    const detail = this.detailView();
+    const eligible = this.detailOps.split(",").every((op) =>
+      ["diffuse", "sharpen", "contrastntexture", "denoiseprofile", "bilat", "localcontrast", "agx", "sigmoid", "rgbcurve", "tonecurve", "colorbalancergb"].includes(op));
+    if (detail && eligible) {
+      const full = this.fullView();
+      const key = `${this.detailOps}:${full.width}:${full.height}:${full.scale}`;
+      if (key !== this.detailKey) { this.detailKey = key; this.detailSlow = 0; }
+      return this.detailSlow >= 2 ? { ...detail, draft: true, detail: true, loupe: true }
+        : { ...full, draft: true, detail: true };
+    }
+
     if (ops.length) this.draftKey = [...new Set(ops.map((op) => op.split("#")[0]))].sort().join();
     const steps = DRAFT_STEPS.filter((k) => k >= this.draftLimits().smallest);
     const k = steps[Math.min(draftSteps.get(this.draftKey) ?? 0, steps.length - 1)];
@@ -890,6 +910,13 @@ export class Session {
   // size, which ran from the raw, nor on one darktable found in its cache
   // (0 ms), as a drag back over values just shown does
   private draftTimed(f: Frame, edits: number) {
+    if (f.view.detail) {
+      if (!f.view.loupe && edits) {
+        const ms = f.ms;
+        if (ms > 0) this.detailSlow = ms > this.draftLimits().target ? this.detailSlow + 1 : 0;
+      }
+      return;
+    }
     const size = `${f.width}x${f.height}`, first = size !== this.draftWas;
     this.draftWas = size;
     const ms = f.trace?.rust[2] ?? 0;
@@ -938,7 +965,7 @@ export class Session {
     const t0 = performance.now();
     const { width, height, scale, x, y } = view;
     const preview = this.previewMode();
-    const skip = view.draft ? DRAFT_SKIP[preview].filter((op) => !this.draftKeep.has(op))
+    const skip = view.detail ? null : view.draft ? DRAFT_SKIP[preview].filter((op) => !this.draftKeep.has(op))
       : kind === "base" && !every ? BASE_SKIP[preview] : null;
     if (!view.draft) this.draftKeep.clear();
     const hex = (f: Frame) => f.hash!.toString(16).padStart(16, "0");
