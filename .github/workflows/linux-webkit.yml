@@ -49,7 +49,7 @@ jobs:
           sudo apt-get update
           packages=$(sed -e '/^#/d' -e 's/^gcc-12$/gcc/' -e 's/^g++-12$/g++/' \
             -e 's/^libfuse2$/libfuse2t64/' -e 's/^libtiff5-dev$/libtiff-dev/' .github/ubuntu-packages.txt)
-          sudo apt-get install -y $packages lld
+          sudo apt-get install -y $packages lld libgstreamer-plugins-bad1.0-dev
           sudo apt-get build-dep -y webkit2gtk
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: webkit-cache
