@@ -1503,6 +1503,15 @@ export default function App() {
   // full frame follows if a draft was shown
   const dragging = useRef(false);
   const draftShown = useRef(false);
+  const [loupeEnabled, setLoupeEnabled] = useState(true);
+  const loupeEnabledRef = useRef(true);
+  loupeEnabledRef.current = loupeEnabled;
+  const [loupePosition, setLoupePosition] = useState({ x: 0.5, y: 0.5 });
+  const loupePositionRef = useRef(loupePosition);
+  loupePositionRef.current = loupePosition;
+  const loupeCanvas = useRef<HTMLCanvasElement>(null);
+  const loupeMeta = useRef<Placed | null>(null);
+
   useEffect(() => {
     const DRAG_AREAS = ".panels, .histogram, .mask-box";
     let wheelTimer = 0;
@@ -1515,10 +1524,10 @@ export default function App() {
       // a <select>'s native menu takes the pointer on macOS: its pointerup
       // never reaches the page, so a drag begun there would never end
       if ((e.target as Element).closest?.("select")) return;
-      if (e.button === 0 && (e.target as Element).closest?.(DRAG_AREAS) && (loadPreview() !== "quality" || loadCachedExposurePreview())) dragging.current = true;
+      if (e.button === 0 && (e.target as Element).closest?.(DRAG_AREAS) && (loadPreview() !== "quality" || loadCachedExposurePreview() || loupeEnabledRef.current)) dragging.current = true;
     };
     const wheel = (e: WheelEvent) => {
-      if (!(e.target as Element).closest?.(".panels, .histogram") || !loadSliderScroll() || (loadPreview() === "quality" && !loadCachedExposurePreview())) return;
+      if (!(e.target as Element).closest?.(".panels, .histogram") || !loadSliderScroll() || (loadPreview() === "quality" && !loadCachedExposurePreview() && !loupeEnabledRef.current)) return;
       dragging.current = true;
       window.clearTimeout(wheelTimer);
       wheelTimer = window.setTimeout(end, 250);
@@ -1885,6 +1894,13 @@ export default function App() {
       cc.style.height = `${cm.height / dpr}px`;
       cc.style.transform = `translate(${(ox + p.x) / dpr}px, ${(oy + p.y) / dpr}px) scale(${p.k})`;
     }
+    const lm = loupeMeta.current, lc = loupeCanvas.current;
+    if (lm && lc) {
+      const p = framePlace(lm, z);
+      lc.style.width = `${lm.width / dpr}px`;
+      lc.style.height = `${lm.height / dpr}px`;
+      lc.style.transform = `translate(${(ox + p.x) / dpr}px, ${(oy + p.y) / dpr}px) scale(${p.k})`;
+    }
     const s = sharpMeta.current, sc = canvas.current;
     if (s && sc) {
       const p = framePlace(s, z);
@@ -1956,6 +1972,21 @@ export default function App() {
       placeLayers();
       return;
     }
+    if (f.view.loupe) {
+      // a late draft must not cover the final frame after release
+      if (!dragging.current || !loupeEnabledRef.current) return;
+      const lc = loupeCanvas.current;
+      if (lc) {
+        lc.width = f.width; lc.height = f.height;
+        lc.getContext("2d")!.putImageData(new ImageData(f.pixels, f.width, f.height), 0, 0);
+        lc.style.display = "block";
+        loupeMeta.current = placed(f);
+        placeLayers();
+      }
+      return;
+    }
+    if (loupeCanvas.current) loupeCanvas.current.style.display = "none";
+    loupeMeta.current = null;
     const c = canvas.current!;
     if (c.width !== f.width || c.height !== f.height) {
       c.width = f.width;
@@ -3138,6 +3169,20 @@ export default function App() {
       s.previewMode = loadPreview;
       s.cachedExposurePreview = loadCachedExposurePreview;
       s.fullView = () => viewAt(1);
+      s.detailView = () => {
+        if (!loupeEnabledRef.current || beforeRef.current || baModeRef.current !== "off" || !full.current) return null;
+        const v = viewAt(1), f = full.current;
+        const scale = v.scale ?? Math.min(1, v.width / f.w, v.height / f.h);
+        const sw = Math.floor(f.w * scale), sh = Math.floor(f.h * scale);
+        const w = Math.min(v.width, sw), h = Math.min(v.height, sh);
+        const x = Math.max(0, Math.min(v.x ?? 0, sw - w));
+        const y = Math.max(0, Math.min(v.y ?? 0, sh - h));
+        const side = Math.round(240 * (window.devicePixelRatio || 1));
+        const width = Math.min(side, w), height = Math.min(side, h);
+        const pos = loupePositionRef.current, screen = viewport();
+        return { width, height, scale,
+          x: Math.round(x + Math.max(0, Math.min(w - width, pos.x * screen.w - (screen.w - w) / 2 - width / 2))), y: Math.round(y + Math.max(0, Math.min(h - height, pos.y * screen.h - (screen.h - h) / 2 - height / 2))) };
+      };
       s.frameBudget = () => loadFrameCacheMb() * 1048576;
       s.draftSize = () => (loadPreview() === "quality" ? null : { ...viewAt(draftK()), draft: true });
       s.draftLimits = () => ({ target: loadDraftTarget(), smallest: loadPreview() === "balanced" && loadBalancedPreviewSize() === 1 ? 1 : loadDraftSmallest() });
@@ -4818,6 +4863,37 @@ export default function App() {
             <canvas ref={copyCanvas} className={`layer copy${current && copyOn && !before && baMode === "off"
                       && !clipShown.low && !clipShown.high ? "" : " empty"}`} />
             <canvas ref={canvas} className={`layer sharp${current ? "" : " empty"}`} />
+            <canvas ref={loupeCanvas} className="layer" style={{ display: "none", pointerEvents: "none", zIndex: 5, outline: "1px solid white" }} />
+            {current && !cropping && !before && baMode === "off" && <>
+              <button style={{ position: "absolute", top: 12, right: 12, zIndex: 9 }}
+                aria-pressed={loupeEnabled} title="Adaptive detail loupe: drag its handle to choose the preview area"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={() => { setLoupeEnabled(!loupeEnabled); if (loupeCanvas.current) loupeCanvas.current.style.display = "none"; }}>
+                Detail loupe {loupeEnabled ? "on" : "off"}
+              </button>
+              {loupeEnabled && <button aria-label="Move detail loupe" title="Drag to place the detail preview; arrow keys move it"
+                onKeyDown={(e) => {
+                  const move: Record<string, [number, number]> = { ArrowLeft: [-0.02, 0], ArrowRight: [0.02, 0], ArrowUp: [0, -0.02], ArrowDown: [0, 0.02] };
+                  const delta = move[e.key];
+                  if (!delta) return;
+                  e.preventDefault(); e.stopPropagation();
+                  setLoupePosition((p) => ({ x: Math.max(0, Math.min(1, p.x + delta[0])), y: Math.max(0, Math.min(1, p.y + delta[1])) }));
+                }}
+                style={{ position: "absolute", left: `${loupePosition.x * 100}%`, top: `${loupePosition.y * 100}%`,
+                  transform: "translate(-50%, -50%)", zIndex: 8, cursor: "move", touchAction: "none", opacity: 0.7 }}
+                onPointerDown={(e) => { e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId); }}
+                onPointerMove={(e) => {
+                  if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+                  e.stopPropagation();
+                  const r = pane.current!.getBoundingClientRect();
+                  setLoupePosition({ x: Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)),
+                    y: Math.max(0, Math.min(1, (e.clientY - r.top) / r.height)) });
+                }}
+                onPointerUp={(e) => { e.stopPropagation(); e.currentTarget.releasePointerCapture(e.pointerId); }}>
+                ⊕
+              </button>}
+            </>}
+
             <canvas ref={clipSharp} className={`layer clip${current && (clipShown.low || clipShown.high) ? "" : " empty"}`} />
             {perfHud && current && <PerfHud onClose={() => { setPerfHud(false); perf.enable(false); }} />}
             <canvas ref={hoverCanvas} className={`hover-preview${(hoverShown === "tiles" && tilesShown)

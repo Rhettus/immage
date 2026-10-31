@@ -225,3 +225,11 @@ one after. Updates are signed, and one whose signature does not match is
 not installed.
 
 Cached exposure preview (Performance → Editing) is an optional experimental preview, off by default. Exposure drags adjust a frozen rendered viewport, retaining sharpening and texture. It approximates exposure in display space and cannot recover clipped detail. Releasing the slider runs the normal accurate render. Other controls use the selected Preview mode.
+
+The viewer's **Detail loupe** button enables adaptive previews for sharpening,
+clarity, texture, contrast, and denoise. They retain all modules and the current
+view scale. If two full-view previews exceed the Performance target frame time,
+subsequent frames update a 240-pixel detail area only; the surroundings keep
+the previous frame. Drag the crosshair to choose that area before adjusting a
+slider. Releasing the slider renders the full visible view. Each new drag
+tries the full view again so faster adjustments can use the whole viewport.
