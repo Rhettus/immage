@@ -27,9 +27,9 @@ export function interpolateDetail(a:DetailAnchor, b:DetailAnchor, value:number, 
   return pixels;
 }
 
-// Color controls use anchors without activating the detail loupe.
+// Basic tone and color sliders use anchors without activating the detail loupe.
 export function isCachedControl(id: string): boolean {
-  return isDetailControl(id) || ["exposure", "vibrance", "saturation"].includes(id);
+  return isDetailControl(id) || ["temp", "tint", "exposure", "highlights", "shadows", "whites", "blacks", "vibrance", "saturation"].includes(id);
 }
 
 export function predictionError(predicted: Pixels, actual: Pixels): { mean:number; p95:number } {
