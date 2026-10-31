@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { createRequire, registerHooks } from 'node:module';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { interpolateDetail, isDetailControl, isCachedControl, predictionError, anchorInterval } from '../app/src/cachedDetail.ts';
+import { interpolateDetail, isDetailControl, isCachedControl, predictionError, anchorInterval, predictionAccuracy, validatePrediction } from '../app/src/cachedDetail.ts';
 const pixels=(...values)=>new Uint8ClampedArray(values);
 
 test('detail interpolation follows real render endpoints and preserves alpha',()=>{
@@ -375,4 +375,107 @@ for(const gpu of [false,true])test(`an anchor completing before the display call
   assert.equal(estimates[0].a,previous);assert.equal(estimates[0].b,s.detailCache.b.frame);
   assert.ok(Math.abs(estimates[0].mix-1.25)<1e-9);
   release();await settle();assert.equal(shown.at(-1).view.draft,false);
+});
+
+
+test('accuracy lengthens reliable intervals, shortens risky intervals and preserves bounds',()=>{
+  const state=predictionAccuracy();
+  const interval=()=>anchorInterval(80,80,state.factor);
+  assert.equal(interval(),100);
+  for(let i=0;i<4;i++)validatePrediction(state,{mean:0,p95:0});
+  assert.equal(interval(),200);
+  validatePrediction(state,{mean:0.015,p95:0.04});
+  assert.equal(interval(),100);
+  validatePrediction(state,{mean:0.019,p95:0.05});
+  assert.equal(interval(),50);
+  assert.equal(anchorInterval(1,1,0.5),40);
+  assert.equal(anchorInterval(1000,1000,2),320);
+  for(const error of [{mean:Infinity,p95:0},{mean:0,p95:NaN}]) {
+    assert.equal(validatePrediction(state,error),false);
+    assert.equal(state.recovering,true);
+  }
+});
+
+for(const gpu of [false,true]) test(`failed predictions retrain privately and recover within the same drag (${gpu?'GPU':'CPU'})`,async()=>{
+  const {s,shown,settle,release}=exposureSession(v=>pixels(v>0.2?200:100,80,60,255));
+  const estimates=[];
+  if(gpu)s.onCachedPreview=p=>{estimates.push(p);return true;};
+  const count=()=>gpu?estimates.length:shown.filter(f=>f.trace?.estimated).length;
+  for(const v of [0.1,0.2,0.24]){s.set('exposure',v);await settle();}
+  const cache=s.detailCache;
+  assert.equal(cache.blocked,true);assert.equal(cache.a,undefined);
+  assert.equal(cache.b.value,0.24);assert.equal(cache.accuracy.failures,1);
+  const before=count();
+  for(const v of [0.25,0.26]){s.set('exposure',v);await settle();assert.equal(cache.blocked,true);}
+  assert.equal(cache.accuracy.good,1);
+  s.set('exposure',0.27);await settle();
+  assert.equal(cache.blocked,false);assert.equal(count(),before);
+  s.set('exposure',0.274);displayFrame();assert.equal(count(),before+1);
+  await settle();release();await settle();
+  assert.equal(s.detailCache,null);assert.equal(shown.at(-1).view.draft,false);
+});
+
+test('repeated inaccurate recovery checks stop retries for the drag',async()=>{
+  let bright=false;
+  const {s,shown,settle,release}=exposureSession(()=>pixels(bright?240:20,80,60,255));
+  for(const v of [0.1,0.2]){s.set('exposure',v);await settle();}
+  bright=true;s.set('exposure',0.24);await settle();
+  for(const [base,next] of [[0.25,0.26],[0.27,0.28]]) {
+    s.set('exposure',base);await settle();
+    bright=!bright;s.set('exposure',next);await settle();
+  }
+  assert.equal(s.detailCache.accuracy.failures,3);
+  const count=shown.filter(f=>f.trace?.estimated).length;
+  for(const v of [0.29,0.30,0.31,0.32]){s.set('exposure',v);await settle();}
+  assert.equal(s.detailCache.blocked,true);
+  assert.equal(s.detailCache.accuracy.good,0);
+  assert.equal(shown.filter(f=>f.trace?.estimated).length,count);
+  release();await settle();
+});
+
+
+test('private recovery validation allows uniform native steps without widening displayed estimates',()=>{
+  const a={value:0,pixels:pixels(10,20,30,255)},b={value:1,pixels:pixels(20,30,40,255)};
+  assert.equal(interpolateDetail(a,b,2,100),null);
+  assert.deepEqual([...interpolateDetail(a,b,2,100,true)],[30,40,50,255]);
+  assert.equal(interpolateDetail(a,b,3,100,true),null);
+});
+
+test('native timer applies accuracy factor and refreshes without more input',async()=>{
+  const {s,settle,native,release}=exposureSession();
+  for(const v of [0.1,0.2]){s.set('exposure',v);await settle();}
+  const cache=s.detailCache;
+  cache.nativeMs=80;cache.accuracy.factor=2;cache.lastStart=performance.now();
+  s.set('exposure',0.24);displayFrame();
+  await new Promise(r=>setTimeout(r,100));assert.equal(native(),2);
+  await settle();assert.equal(native(),3);
+  assert.equal(cache.accuracy.factor,2);
+  cache.nativeMs=80;cache.accuracy.factor=0.5;cache.lastStart=performance.now();
+  s.set('exposure',0.25);displayFrame();
+  await new Promise(r=>setTimeout(r,80));assert.equal(native(),4);
+  await settle();release();await settle();
+});
+
+for(const gpu of [false,true]) test(`accuracy failure cancels queued feedback and suppresses an older in-flight frame (${gpu?'GPU':'CPU'})`,async()=>{
+  const {s,shown,settle,release}=exposureSession(v=>pixels(v>0.2?200:100,80,60,255));
+  if(gpu)s.onCachedPreview=()=>true;
+  for(const v of [0.1,0.2]){s.set('exposure',v);await settle();}
+  const render=s.renderView;let finish;
+  s.renderView=async view=>{
+    const f=await render(view);
+    if(!finish)await new Promise(resolve=>{finish=resolve;});
+    return f;
+  };
+  s.detailCache.lastStart=0;s.set('exposure',0.24);
+  for(let i=0;i<100&&!finish;i++)await new Promise(r=>setTimeout(r,1));
+  assert.ok(finish);
+  s.set('exposure',0.25);const count=shown.length;
+  finish();
+  for(let i=0;i<100&&!s.detailCache.blocked;i++)await new Promise(r=>setTimeout(r,1));
+  await settle();
+  assert.equal(s.detailCache.blocked,true);
+  assert.equal(s.detailCache.b.value,0.25);
+  assert.equal(shown.slice(count).some(f=>f.trace?.estimated),false);
+  assert.equal(shown.slice(count).length,1);
+  release();await settle();
 });

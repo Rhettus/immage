@@ -15,13 +15,13 @@ import type { Spot } from "./spots";
 import { begin, end, progress } from "./activity";
 import { perf, type Trace } from "./perf";
 import { FRAME_HEAD, renderFrame } from "./sharedFrames";
-import { detailMix, mixDetailPixels, interpolateDetail, isDetailControl, isCachedControl, predictionError, previewTiming, anchorInterval } from "./cachedDetail";
+import { detailMix, mixDetailPixels, interpolateDetail, isDetailControl, isCachedControl, predictionError, previewTiming, anchorInterval, predictionAccuracy, validatePrediction } from "./cachedDetail";
 import type { Preview } from "./Preferences";
 
 
 export type CachedPreview = { a:Frame; b:Frame; mix:number; frame:Frame };
 type DetailCache = { id:string; key:string; range:number; lastStart:number; nativeMs:number; blocked:boolean;
-  direction:number; predictedValue?:number; a?:{frame:Frame;value:number}; b?:{frame:Frame;value:number} };
+  accuracy?:ReturnType<typeof predictionAccuracy>; direction:number; predictedValue?:number; a?:{frame:Frame;value:number}; b?:{frame:Frame;value:number} };
 
 type OpenReply = { imgid: number; sensor_width: number; sensor_height: number; orientation: number;
                    look: string | null; look_amount: number; edited: boolean; raw: boolean;
@@ -347,7 +347,7 @@ export class Session {
       if (this.detailCache?.id !== id || this.detailCache.key !== key) {
         const frame = !this.busy && !this.dirty.size ? this.current.get(key) : undefined;
         this.detailCache = {id,key,range:c.max-c.min,b:frame ? {frame,value:from} : undefined,
-          lastStart:0,nativeMs:previewTiming().native,blocked:false,direction:0};
+          lastStart:0,nativeMs:previewTiming().native,blocked:false,direction:0,accuracy:predictionAccuracy()};
       }
     } else this.detailCache = null;
     if (this.detailCache) {
@@ -1337,7 +1337,7 @@ export class Session {
             || (this.queuedPreview?.cache === adaptive && this.queuedPreview.value === this.values[adaptive.id]))
             && this.size().draft && this.cachedDetailPreview() && !this.before
             && adaptive.key === this.frameKey(this.fullView(),false)) {
-          const wait = anchorInterval(adaptive.nativeMs,previewTiming().target) - (performance.now()-adaptive.lastStart);
+          const wait = anchorInterval(adaptive.nativeMs,previewTiming().target,adaptive.accuracy?.factor) - (performance.now()-adaptive.lastStart);
           if (wait > 1) {
             clearTimeout(this.previewTimer);
             this.previewTimer = setTimeout(() => { this.previewTimer=undefined; void this.pump(); },wait);
@@ -1374,16 +1374,26 @@ export class Session {
           const started = performance.now();
           if (cache) cache.lastStart = started;
           // Validate against the old anchors before training on this frame.
-          const predicted = cache?.a && cache.b && cacheValue !== undefined && !cache.blocked
+          const predicted = cache?.a && cache.b && cacheValue !== undefined
+            && (!cache.blocked || (cache.accuracy?.recovering && cache.accuracy.failures<3))
             ? interpolateDetail({pixels:cache.a.frame.pixels,value:cache.a.value},
-                {pixels:cache.b.frame.pixels,value:cache.b.value},cacheValue,cache.range) : null;
+                {pixels:cache.b.frame.pixels,value:cache.b.value},cacheValue,cache.range,!!cache.accuracy?.recovering) : null;
           const f = await this.renderView(view, ops.length ? "edit" : "view", cycle, false, have, edits);
           if (cache && this.detailCache === cache && view.detail && !view.loupe && !before
               && this.frameKey(view,false) === cache.key && cacheValue !== undefined && cache.b?.value !== cacheValue) {
             cache.nativeMs = cache.nativeMs*0.5 + (performance.now()-started)*0.5;
             if (predicted) {
               const error = predictionError(predicted,f.pixels);
-              if (error.mean>0.02 || error.p95>0.06) cache.blocked = true;
+              const accuracy = cache.accuracy ??= predictionAccuracy();
+              const valid = validatePrediction(accuracy,error);
+              cache.blocked = accuracy.recovering;
+              if (!valid) {
+                // discard the failed pair; rebuild solely from fresh native output
+                cache.a = undefined;
+                cache.b = undefined;
+                cache.predictedValue = undefined;
+                this.cancelPreview();
+              }
             }
             cache.a = cache.b; cache.b = {frame:f,value:cacheValue};
           }
@@ -1392,8 +1402,7 @@ export class Session {
           if (!before && !have.some((h) => h.hash === f.hash)) this.putAside = null;
           // Completed anchors must not overwrite newer slider feedback or a
           // frame from a released drag / changed viewport.
-          const newerFeedback = cache && (cache.predictedValue !== undefined || this.queuedPreview?.cache === cache);
-          const stale = cache && (this.detailCache !== cache || (newerFeedback && cacheValue !== this.values[cache.id]));
+          const stale = cache && (this.detailCache !== cache || cacheValue !== this.values[cache.id]);
           if (!stale) this.onFrame({ ...f, before });
         }
         progress(job);

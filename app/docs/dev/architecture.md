@@ -433,7 +433,7 @@ records CPU, process memory, Linux threads and available GPU counters on a
 background worker; `App.tsx` attaches phase timestamps to report version 5.
 The GUI dashboard plots these alongside timing summaries.
 
-[cachedDetail.ts](../../src/cachedDetail.ts) bounds interpolation between real renders for Exposure, Vibrance, Saturation and detail controls, measures display RGB prediction error, and stores the tuner timing seed. `Session` coalesces native edits until the next timed anchor (80–320 ms at the default target, or native completion when slower), checks predictions against native output, and disables estimates for the drag on excessive error or estimation cost. Estimated performance samples are marked separately; tuner verification requires native samples too. `Session` invalidates anchors on release, control/view changes and non-slider edits. Release cancels the timer and requests exact output. `App` shows loupe controls only during eligible detail interactions.
+[cachedDetail.ts](../../src/cachedDetail.ts) bounds interpolation between real renders for Exposure, Vibrance, Saturation and detail controls, measures display RGB prediction error, and stores the tuner timing seed. `Session` coalesces native edits until the next timed anchor (40–320 ms, or native completion when slower), checks predictions against native output, and suspends estimates on excessive error. Estimation cost failures disable estimates for the drag. Estimated performance samples are marked separately; tuner verification requires native samples too. `Session` invalidates anchors on release, control/view changes and non-slider edits. Release cancels the timer and requests exact output. `App` shows loupe controls only during eligible detail interactions.
 
 
 [cachedPreviewRenderer.ts](../../src/cachedPreviewRenderer.ts) presents estimates
@@ -454,7 +454,7 @@ unsupported dimensions fall back to CPU interpolation. Restored contexts
 reupload anchors on demand. CPU `Frame` caches and pixel consumers keep native
 pixels. During GPU estimates the histogram and scopes follow native frames;
 clipping overlays use the current estimate without readback. Native prediction
-validation still uses CPU interpolation at the existing refresh interval and
+validation still uses CPU interpolation at the adaptive refresh interval and
 retains the current error thresholds and exact release rendering.
 
 Performance samples identify `previewBackend` (`cpu` or `webgl`), per-draw
@@ -481,3 +481,20 @@ is displayed or queued. Replacing or invalidating the detail cache cancels
 its animation callback, including on release, control/view changes, non-slider
 edits and photo close. Release updates the engine immediately with the latest
 values and never waits for an animation callback.
+
+
+Native refresh timing starts from the larger of the tuner target and 1.25 times
+measured native cost. Validated low error (at most half the existing mean 2%
+and p95 6% limits) adds 0.25 to an interval factor, up to 2. Higher accepted
+error halves it, down to 0.5; failed validation resets it to 0.5. The resulting
+interval is bounded to 40–320 ms. These are scheduling bounds; native work
+can take longer. Periodic validation and exact release remain mandatory.
+
+After an accuracy failure, discard the old pair and seed recovery from the
+new native frame. Estimates stay hidden while fresh native anchors train and
+two consecutive low-error private predictions pass. Private recovery checks
+allow one full extrapolated anchor step (mix -1 to 2), so uniform slider steps
+can validate; displayed estimates retain the tighter -0.5 to 1.5 bounds and
+all checks retain the 10% slider-range proximity limit. A new failure discards
+the pair again; three failures stop recovery for that drag. Recovery state
+belongs to the control/view cache and disappears on invalidation or release.

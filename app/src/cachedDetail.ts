@@ -12,17 +12,18 @@ type Pixels = Uint8ClampedArray<ArrayBuffer>;
 export type DetailAnchor = { value:number; pixels:Pixels };
 
 // use actual module output, never a generic exposure or tone transform
-export function detailMix(a:DetailAnchor, b:DetailAnchor, value:number, range:number): number | null {
+export function detailMix(a:DetailAnchor, b:DetailAnchor, value:number, range:number, validation=false): number | null {
   const span = b.value-a.value;
   if (!Number.isFinite(value) || !Number.isFinite(span) || Math.abs(span)<1e-9
       || a.pixels.length!==b.pixels.length || !a.pixels.length || !(range>0)) return null;
+  // private recovery validation allows one full native step; displayed bounds stay tighter
   const k = (value-a.value)/span;
-  if (k < -0.5 || k > 1.5 || Math.min(Math.abs(value-a.value),Math.abs(value-b.value)) > range*0.1) return null;
+  if (k < (validation ? -1 : -0.5) || k > (validation ? 2 : 1.5) || Math.min(Math.abs(value-a.value),Math.abs(value-b.value)) > range*0.1) return null;
   return k;
 }
 
-export function interpolateDetail(a:DetailAnchor, b:DetailAnchor, value:number, range:number): Pixels | null {
-  const k = detailMix(a,b,value,range);
+export function interpolateDetail(a:DetailAnchor, b:DetailAnchor, value:number, range:number, validation=false): Pixels | null {
+  const k = detailMix(a,b,value,range,validation);
   return k === null ? null : mixDetailPixels(a.pixels,b.pixels,k);
 }
 
@@ -72,6 +73,32 @@ export function storePreviewTiming(native:number, target:number) {
   if (!(native>0) || !Number.isFinite(native) || !(target>0) || !Number.isFinite(target)) return;
   try { localStorage.setItem(PROFILE,JSON.stringify({native,target})); } catch { /* session only */ }
 }
-export function anchorInterval(native:number, target:number): number {
-  return Math.min(320,Math.max(target,native*1.25));
+export type PredictionAccuracy = { factor:number; recovering:boolean; good:number; failures:number };
+export function predictionAccuracy(): PredictionAccuracy {
+  return {factor:1,recovering:false,good:0,failures:0};
+}
+
+// recovery checks are private predictions: never display them until validated
+export function validatePrediction(state:PredictionAccuracy, error:{mean:number;p95:number}): boolean {
+  const risk = Math.max(error.mean/0.02,error.p95/0.06);
+  if (!Number.isFinite(risk) || risk>1) {
+    state.factor = 0.5;
+    state.recovering = true;
+    state.good = 0;
+    state.failures++;
+    return false;
+  }
+  if (risk>0.5) {
+    state.factor = Math.max(0.5,state.factor*0.5);
+    state.good = 0;
+  } else {
+    state.factor = Math.min(2,state.factor+0.25);
+    state.good++;
+    if (state.good>=2) state.recovering = false;
+  }
+  return true;
+}
+
+export function anchorInterval(native:number, target:number, factor=1): number {
+  return Math.min(320,Math.max(40,Math.max(target,native*1.25)*factor));
 }
