@@ -92,3 +92,20 @@ sliders --controls usm_amount --images DSC07636`.
 - AI masks and AI Denoise, looks, presets, export settings and Immich.
 - The GUI benchmark (IPC, drawing): run it from Preferences in the app
   ([benchmarking/README.md](../benchmarking/README.md)).
+
+## Folder metadata and embedded thumbnails
+
+Build and run the focused checks with an isolated scratch directory:
+
+```bash
+cmake --build build --target immage-thumbnail-check
+build/bin/immage-thumbnail-check /tmp/immage-thumbnail-check /path/to/camera.CR2 /path/to/camera.NEF
+```
+
+The check generates TIFFs with two embedded JPEG sizes, rotated orientation,
+metadata beyond the prefix limit, and truncated data. It verifies metadata,
+compares extracted JPEG bytes with Exiv2's full-file previews, and decodes
+four thumbnail sizes. Optional RAW paths must contain an embedded preview.
+On Linux it also prints logical bytes read from `/proc/self/io`; these include
+buffering and other reads during each call and do not measure network traffic
+or physical disk reads. Camera fixtures are supplied locally and stay out of git.

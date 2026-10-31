@@ -20,6 +20,15 @@ check the result.
   libtiff read photos rather than memory-map them, so a network share
   dropping fails a read instead of killing the engine
   (`src/common/exif.cc`, `_open_read`; `src/imageio/imageio_tiff.c`).
+  Folder metadata also uses `_read_metadata`: it grows TIFF prefixes while
+  Exiv2 reports missing metadata, ignoring missing pixel strips, then falls
+  back to a heap-backed read that reuses the prefix. JPEG and other seekable
+  metadata readers use file I/O with the same heap-backed mapping fallback.
+  Sized thumbnails use `_read_jpeg_thumbnail` to read absolute JPEG ranges
+  or reuse previews already in metadata; unsupported layouts retain Exiv2's
+  full-file preview loader. The mipmap cache passes its requested size to
+  `dt_imageio_thumbnail`, which uses JPEG scaled decoding. Existing full-size
+  thumbnail entry points retain their behavior.
   [scripts/patch_darktable.sh](../../../scripts/patch_darktable.sh) applies
   it once (`scripts/build.sh` calls it), and `.gitmodules` sets
   `ignore = dirty`, so the patched submodule does not show as changed.

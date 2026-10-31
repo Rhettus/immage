@@ -44,3 +44,8 @@ if(WIN32)
 endif()
 
 install(TARGETS darktable-engine DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT DTApplication)
+
+# focused metadata and embedded-preview checks, built only when requested
+add_executable(immage-thumbnail-check EXCLUDE_FROM_ALL "${CMAKE_CURRENT_SOURCE_DIR}/../verify/thumbnail-io.cc")
+target_link_libraries(immage-thumbnail-check lib_darktable ${Exiv2_LIBRARIES})
+set_target_properties(immage-thumbnail-check PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${DARKTABLE_BINDIR})
