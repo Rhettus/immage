@@ -176,3 +176,41 @@ test('real worker resolves retained validation buffers and evicts unused anchors
   assert.deepEqual(replies[2].result, expected);
   delete globalThis.self;
 });
+
+test('histogram cadence coalesces before copying, flushes release and cancels old photos', async t => {
+  const { PixelCadence } = await import('../app/src/pixelWorker.ts');
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let now = 0;
+  const shown = [];
+  const cadence = new PixelCadence(value => shown.push(value), () => now);
+  cadence.submit(0, true);
+  assert.deepEqual(shown, []); // drawing finishes before the copy
+  t.mock.timers.tick(1);
+  assert.deepEqual(shown, [0]);
+  now = 20;
+  t.mock.timers.tick(20);
+  cadence.submit(20, true);
+  now = 79;
+  t.mock.timers.tick(59);
+  cadence.submit(79, true);
+  assert.deepEqual(shown, [0]);
+  now = 80;
+  t.mock.timers.tick(1);
+  assert.deepEqual(shown, [0, 79]);
+  now = 81;
+  cadence.submit(81, true);
+  cadence.flush();
+  t.mock.timers.tick(1);
+  assert.deepEqual(shown, [0, 79, 81]);
+  cadence.submit(82, true);
+  cadence.submit(83, false); // exact final frame bypasses drag cadence
+  t.mock.timers.tick(1);
+  assert.deepEqual(shown, [0, 79, 81, 83]);
+  cadence.submit(84, true);
+  cadence.cancel();
+  t.mock.timers.tick(100);
+  assert.deepEqual(shown, [0, 79, 81, 83]);
+  cadence.submit(85, true); // new photo starts immediately
+  t.mock.timers.tick(1);
+  assert.equal(shown.at(-1), 85);
+});

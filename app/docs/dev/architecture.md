@@ -173,7 +173,7 @@ are `localStorage` keys named `immage.*`.
 | File | Responsibility |
 |---|---|
 | [Preferences.tsx](../../src/Preferences.tsx), [PrefsUI.tsx](../../src/PrefsUI.tsx) | The Preferences dialog and its `load*`/`store*` pairs; `PrefCard`, `PrefRow`, `PrefSwitch`. |
-| [histogram.ts](../../src/histogram.ts) | Histogram (computed on the main thread from the frame), clipping overlay, scopes. |
+| [histogram.ts](../../src/histogram.ts) | Histogram and scope kernels (worker with main-thread fallback), clipping overlay. |
 | [probe.ts](../../src/probe.ts) | The color under the pointer, for the Tone Curve, HSL and B&W cards. |
 | [PerformanceTuner.tsx](../../src/PerformanceTuner.tsx), [previewTuning.ts](../../src/previewTuning.ts), [tunerOptions.ts](../../src/tunerOptions.ts), [tunerWorkload.ts](../../src/tunerWorkload.ts) | Quality-first preview search with trimmed-median metrics with FPS/latency targets, explicit apply and remeasurement, restart/resume and navigation workload comparisons; AI and thumbnail settings excluded. |
 | [perf.ts](../../src/perf.ts), [PerfHud.tsx](../../src/PerfHud.tsx) | Edit-to-pixels timing by stage, the performance overlay and the GUI benchmark's recording. |
@@ -455,7 +455,12 @@ CPU, photo changes and component cleanup release the textures. Context loss
 reveals the last CPU frame, and unavailable WebGL, shader/upload failure or
 unsupported dimensions fall back to CPU interpolation. Restored contexts
 reupload anchors on demand. CPU `Frame` caches and pixel consumers keep native
-pixels. During GPU estimates the histogram and scopes follow native frames;
+pixels. Histogram/scope inputs coalesce before copying at 12.5 Hz during
+interaction. Release flushes pending input, and final frames bypass the cadence
+delay. Copies are deferred until after preview drawing, with a separate
+histogram worker so auxiliary computation cannot queue ahead of clipping.
+Photo/crop changes and unmount cancel pending input and dispose the worker.
+During GPU estimates the histogram and scopes follow native frames;
 clipping overlays use the current estimate without readback. Native prediction
 validation computes interpolated RGB error directly at the adaptive refresh
 interval without allocating a predicted frame. It preserves every pixel,

@@ -42,9 +42,13 @@ measured reduction until new reports exist.
    clear incompatible resources. Chromium/SwiftShader browser checks pass at
    1080p and 4K, including pixel parity, reuse, eviction and context recovery;
    hardware WebKit and cross-platform GUI measurements remain outstanding.
-5. Give histogram/scope updates a slower interactive cadence (e.g. 10–15 Hz),
-   always update after release, and prioritize preview work over auxiliary
-   pixel jobs. Subscription isolation alone does not reduce computation rate.
+5. Implemented: histogram/scope inputs coalesce to the latest native frame at
+   12.5 Hz during interaction, before any pixel copy. Release flushes pending
+   input and final frames bypass the cadence delay. Auxiliary copies run in a
+   deferred task after preview drawing; a separate histogram worker avoids
+   blocking clipping jobs. Photo/crop changes and unmount cancel pending work.
+   Cadence/release/cancellation tests and the frontend build pass; GUI CPU
+   measurements remain outstanding.
 6. Coalesce engine slider submissions per display frame and ignore unchanged
    values. Preserve immediate thumb feedback, final-value flushing, undo grouping,
    keyboard/wheel/fine adjustment behavior, and batched multi-control wheel edits.
