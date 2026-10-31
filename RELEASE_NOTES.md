@@ -9,6 +9,8 @@ what Immage's update banner shows under Release Notes.
   checks run independently of native frame delivery. Those checks reuse
   recent frames and avoid allocating a predicted image, reducing temporary
   copies while preserving accuracy checks and exact rendering on release.
+  GPU previews also reuse recent frames across exact refreshes, avoiding
+  repeated texture uploads when slider estimates resume.
 
 - Cached slider previews refresh native frames more often as prediction
   error rises and less often after reliable checks, within a 320 ms cap.
