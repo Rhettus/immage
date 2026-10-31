@@ -22,13 +22,14 @@ if [ ! -f "$notice" ] || ! head -n 1 "$notice" | grep -qx "WebKitGTK $v"; then
   tar -xJf "$work/source.tar.xz" -C "$work/src" --strip-components=1
   # match Ubuntu's multiarch helper location: Tauri searches it and the
   # GTK bundling hook relocates /usr paths inside the library
+  # Ubuntu's WebKit build dependencies omit optional libbacktrace support
   cmake -S "$work/src" -B "$work/compile" -G Ninja \
     -DPORT=GTK -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \
     -DCMAKE_C_COMPILER_LAUNCHER= -DCMAKE_CXX_COMPILER_LAUNCHER= \
     -DCMAKE_INSTALL_LIBDIR="lib/$triplet" -DCMAKE_INSTALL_LIBEXECDIR="lib/$triplet" \
     -DUSE_GTK4=OFF -DTRY_USE_LD_LLD=ON -DUSE_LD_LLD=ON -DENABLE_DOCUMENTATION=OFF \
     -DENABLE_MINIBROWSER=OFF -DENABLE_WEBDRIVER=OFF -DENABLE_API_TESTS=OFF \
-    -DENABLE_LAYOUT_TESTS=OFF
+    -DENABLE_LAYOUT_TESTS=OFF -DUSE_LIBBACKTRACE=OFF
   cmake --build "$work/compile" --parallel "${CMAKE_BUILD_PARALLEL_LEVEL:-2}"
   DESTDIR="$stage" cmake --install "$work/compile" --strip
   # preserve the upstream notices, including licenses of vendored code,
