@@ -463,10 +463,10 @@ index 2afb4f5ba8..65a307692b 100644
        {
          // use embedded JPEG if it is large enough or conf requests
 diff --git a/src/develop/pixelpipe_hb.c b/src/develop/pixelpipe_hb.c
-index a7e5b88a37..e3a650f309 100644
+index a7e5b88a37..47841d428f 100644
 --- a/src/develop/pixelpipe_hb.c
 +++ b/src/develop/pixelpipe_hb.c
-@@ -2550,13 +2550,16 @@ static gboolean _dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe,
+@@ -2550,14 +2550,25 @@ static gboolean _dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe,
 
    */
    const gboolean has_focus = module == dt_dev_gui_module() && module->enabled;
@@ -476,15 +476,39 @@ index a7e5b88a37..e3a650f309 100644
 +  const gboolean last_history = darktable.develop->history_last_module == module
 +                                || (!dev->gui_attached && dev->history_last_module == module);
    const gboolean iop_wanting = module->flags() & IOP_FLAGS_WRITE_PIPECACHE_IN;
++  // retain the scaled output, not demosaicscale's full-resolution input
++  // skipped pieces forward that same buffer without processing it
++  GList *previous = dev->gui_attached ? NULL : g_list_previous(pieces);
++  while(previous && _skip_piece_on_tags(previous->data)) previous = g_list_previous(previous);
++  const gboolean scaled_input = previous
++    && !strcmp(((dt_dev_pixelpipe_iop_t *)previous->data)->module->op, "demosaicscale");
++  const gboolean cache_hint = dev->gui_attached
++    ? has_focus || last_history || iop_wanting
++    : last_history || scaled_input;
    const gboolean important_input =
            dt_pipe_no_mask_display(pipe)
              && dt_pipe_is_screen(pipe)
              && !dt_pipe_is_fast(pipe)
 -            && dev->gui_attached
-+            && (dev->gui_attached || last_history || iop_wanting)
-             && (has_focus || last_history || iop_wanting);
+-            && (has_focus || last_history || iop_wanting);
++            && cache_hint;
 
  #ifdef HAVE_OPENCL
+
+@@ -3249,10 +3260,11 @@ static gboolean _dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe,
+   if(important_input && input)
+   {
+     dt_print_pipe(DT_DEBUG_PIPE,
+-                "importance hint", pipe, module, pipe->devid, &roi_in, NULL, "%s%s%s",
++                "importance hint", pipe, module, pipe->devid, &roi_in, NULL, "%s%s%s%s",
+                 last_history ? "last_history " : "",
+                 has_focus ? "focus " : "",
+-                iop_wanting ? "iop_flags " : "");
++                iop_wanting ? "iop_flags " : "",
++                scaled_input ? "scaled_input " : "");
+
+     dt_dev_pixelpipe_important_cacheline(pipe, input, roi_in.width * roi_in.height * in_bpp);
+   }
 diff --git a/src/imageio/imageio.c b/src/imageio/imageio.c
 index d7b5a79ef4..9b8340e4ff 100644
 --- a/src/imageio/imageio.c

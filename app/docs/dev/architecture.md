@@ -447,9 +447,10 @@ With cached previews disabled, eligible detail drags start directly in the
 loupe at the display scale; they do not probe whole-image rendering first.
 Grain amount and size also use native loupe frames, with interpolation excluded.
 Disabling the loupe retains whole-image drafts. Release renders the exact full
-view. The engine pixelpipe patch honors `IOP_FLAGS_WRITE_PIPECACHE_IN` in
-headless screen pipes as well as the last edited module, retaining checkpoints
-such as the demosaiced input to scaling when controls or preview sizes change.
+view. In headless screen pipes, the engine pixelpipe patch retains the last
+edited module's input and the scaled output of `demosaicscale`, identified at
+the next active piece. It avoids retaining the full-resolution input to
+scaling. Ordinary darktable GUI pipes keep their module-requested checkpoints.
 
 
 [cachedPreviewRenderer.ts](../../src/cachedPreviewRenderer.ts) presents estimates

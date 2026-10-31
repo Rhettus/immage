@@ -71,9 +71,12 @@ Shared-transport events identify retries and failures. Hooks do no console loggi
 starts directly in the loupe. Cached detail previews retain their whole-image
 anchor path. Compare first frames and queue delays separately from sustained
 frames when checking this policy; full-view probe frames no longer precede the
-loupe. The native cache patch also retains module-requested GPU checkpoints;
-check whether raw preparation and demosaicing disappear from subsequent
-downstream edits, and compare process memory as well as latency.
+loupe. The native cache patch retains the scaled GPU checkpoint rather than
+the full-resolution input to scaling. Check both `demosaic` and
+`demosaicscale` costs on subsequent downstream edits at the same geometry;
+size changes can still require upstream processing. Pipe debug logs identify
+the retained checkpoint with `scaled_input`. Compare process memory as well
+as latency.
 
 Cancellation request and signal-sent events are separate. Signal-sent means the
 cancel command was written, not that rendering stopped. Render cancelled/end
