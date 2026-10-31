@@ -4,6 +4,7 @@
 // Preferences' performance overlay: how long an edit takes from the control
 // moving to its pixels on screen, stage by stage, and the GUI benchmark's
 // recordings. while the overlay is off every hook returns at once
+import { PerfDiagnostics } from "./perfDiagnostics";
 import { invoke } from "@tauri-apps/api/core";
 
 const KEY = "immage.perfHud";
@@ -31,11 +32,15 @@ export const STAGES = [
   "handoff",   // from the frame arriving to its drawing starting
   "draw",      // canvas upload or GPU draw and frame placement
   "histogram",
-  "paint",     // to the next animation frame, when it is on screen
+  "paint",     // next animation callback; does not measure compositor presentation
 ] as const;
 export type Stage = typeof STAGES[number];
 
+export type FrameDiagnostic = { frameId?: number; source?: "native" | "engine-reuse" | "local-reuse" | "estimated"; requestId?: number; firstInputId?: number; firstInputAt?: number; latestInputId?: number; label: string };
 export type Sample = {
+  diagnostic?: FrameDiagnostic;
+  oldestInputLatency?: number;
+  latestInputLatency?: number;
   estimated?: boolean;
   previewBackend?: "cpu" | "webgl";
   anchorUploads?: number;
@@ -49,11 +54,16 @@ export type Sample = {
   total: number;               // input (or request) to paint, ms
   stages: Record<Stage, number>;
   modules: Timing[];
+  moduleTimings?: { status:"pending" | "complete" | "unavailable" };
   label?: string;              // the GUI benchmark's step
 };
 
 // what renderView and drawFrame learn of one frame on its way
 export type Trace = {
+  measurement?: number;
+  diagnostic?: FrameDiagnostic;
+  oldestInputLatency?: number;
+  latestInputLatency?: number;
   estimated?: boolean;
   previewBackend?: "cpu" | "webgl";
   anchorUploads?: number;
@@ -71,8 +81,10 @@ export type Trace = {
   width: number;
   height: number;
   drawStart?: number;
+  drawOperationId?: number;
   histogram: number;
   modules: Timing[];
+  moduleTimings?: { status:"pending" | "complete" | "unavailable" };
 };
 
 const MAX_SAMPLES = 400;
@@ -90,6 +102,45 @@ export type Session = {
 const newSession = (): Session => ({ since: Date.now(), modules: new Map(), worst: {} });
 
 class Perf {
+  private diagnostics = new PerfDiagnostics();
+  private diagnosticsEnabled = true;
+  measurement = 0;
+  private shutdown: Promise<unknown> = Promise.resolve();
+  get tracing() { return this.measuring && this.diagnosticsEnabled; }
+  private firstInputId?: number;
+  private latestInputId?: number;
+  event(name: string, data?: Record<string, unknown>, id?: number) {
+    if (this.tracing) this.diagnostics.record({ at: performance.now(), label: this.label, name, id, data });
+  }
+  begin(name: string, data?: Record<string, unknown>) {
+    return this.tracing ? this.diagnostics.begin(performance.now(), this.label, name, data) : undefined;
+  }
+  finish(id: number | undefined, outcome = "end", data?: Record<string, unknown>) {
+    if (this.tracing) this.diagnostics.finish(performance.now(), id, outcome, data);
+  }
+  request(data: Record<string, unknown>) { return this.begin("render", data); }
+  command<T>(command: string, args?: Parameters<typeof invoke>[1], details?: Record<string, unknown>): Promise<T> {
+    if (!this.tracing) return invoke<T>(command, args);
+    const id = this.begin("command", { command, ...details });
+    return invoke<T>(command, args).then(result => {
+      this.finish(id); return result;
+    }, error => {
+      this.finish(id, "failed"); throw error;
+    });
+  }
+  activeRenderIds(kind: string) {
+    return this.tracing ? this.diagnostics.activeEvents().filter(e => e.name === "render.start" && e.data?.kind === kind).map(e => e.id) : [];
+  }
+  attribution(): FrameDiagnostic | undefined {
+    return this.tracing ? { firstInputId: this.firstInputId, firstInputAt:this.inputAt ?? undefined, latestInputId: this.latestInputId, label: this.label } : undefined;
+  }
+  frame(diagnostic: FrameDiagnostic | undefined, source: FrameDiagnostic["source"]): FrameDiagnostic | undefined {
+    if (!this.tracing) return undefined;
+    const result = { ...diagnostic, label: diagnostic?.label ?? this.label, frameId: this.diagnostics.next(), source };
+    this.event("frame.created", result);
+    return result;
+  }
+  diagnosticReport() { const report = this.diagnostics.report(); return { ...report, enabled:this.diagnosticsEnabled, capabilities:this.diagnosticsEnabled ? report.capabilities : [] }; }
   enabled = loadPerfHud();
   measuring = false;
   samples: Sample[] = [];
@@ -156,18 +207,33 @@ class Perf {
   }
 
   // collect timings without changing the user's overlay preference
-  async startMeasurement(): Promise<() => void> {
+  async startMeasurement(diagnostics?: boolean): Promise<() => void> {
     if (this.measuring) throw new Error("another performance measurement is running");
+    try { this.diagnosticsEnabled = diagnostics ?? (localStorage.getItem("immage.perfDiagnostics") !== "0"); }
+    catch { this.diagnosticsEnabled = diagnostics ?? true; }
+    this.measurement++;
     this.measuring = true;
     this.resetFrontend();
-    try { await invoke("perf_set", { on: true }); }
-    catch (error) { this.measuring = false; throw error; }
+    this.diagnostics.reset();
+    this.firstInputId = this.latestInputId = undefined;
+    this.inputAt = this.latestInputAt = null; this.edits = 0;
+    try {
+      await this.shutdown;
+      await invoke("perf_set", { on: true });
+      await invoke(this.diagnosticsEnabled ? "perf_trace_start" : "perf_trace_stop");
+    }
+    catch (error) {
+      this.measuring = false;
+      void invoke("perf_set", { on:this.enabled }).catch(() => {});
+      throw error;
+    }
     if (!this.enabled) this.watchFrames();
     return () => {
       this.measuring = false;
-      this.inputAt = null; this.edits = 0;
+      this.inputAt = this.latestInputAt = null; this.edits = 0;
+      this.firstInputId = this.latestInputId = undefined;
+      this.shutdown = invoke("perf_trace_stop").catch(() => {}).then(() => invoke("perf_set", { on: this.enabled })).catch(() => {});
       if (!this.enabled) { window.cancelAnimationFrame(this.raf); this.raf = 0; }
-      void invoke("perf_set", { on: this.enabled }).catch(() => {});
     };
   }
 
@@ -218,17 +284,23 @@ class Perf {
   }
 
   // a control moved (Session.set)
-  input() {
+  input(control?: string | string[]) {
     if (!this.enabled && !this.measuring) return;
-    this.count("sliderInputs");
     this.latestInputAt = performance.now();
     this.inputAt ??= this.latestInputAt;
+    if (this.tracing) {
+      this.latestInputId = this.diagnostics.next();
+      this.firstInputId ??= this.latestInputId;
+      this.event("input", { control, activeOperations: this.diagnostics.activeIds() }, this.latestInputId);
+    }
+    this.count("sliderInputs");
     this.edits++;
   }
 
   // a round of edits about to go to the engine: the moves it carries
-  cycle(): Pick<Trace, "inputAt" | "latestInputAt" | "edits" | "setStart"> {
-    const c = { inputAt: this.inputAt, latestInputAt: this.latestInputAt, edits: this.edits, setStart: performance.now() };
+  cycle(): Pick<Trace, "inputAt" | "latestInputAt" | "edits" | "setStart" | "diagnostic"> {
+    const c = { diagnostic: this.attribution(), inputAt: this.inputAt, latestInputAt: this.latestInputAt, edits: this.edits, setStart: performance.now() };
+    this.firstInputId = this.latestInputId = undefined;
     this.inputAt = null;
     this.edits = 0; this.latestInputAt = null;
     return c;
@@ -240,25 +312,35 @@ class Perf {
     const head = new DataView(buf, 24, 24);
     const rust = [0, 1, 2, 3, 4, 5].map((k) => head.getFloat32(4 * k, true));
     rust.push(new DataView(buf).getFloat32(56, true));
-    const trace: Trace = { ...t, r1, rust, histogram: 0, modules: [] };
+    const trace: Trace = { measurement:this.measurement, ...t, r1, rust, histogram: 0, modules: [] };
     if (this.enabled || this.measuring) {
       // set in Rust before the frame came back, so already this frame's; the
       // sample made at paint shares the array
-      void invoke<Timing[]>("perf_modules").then((m) => { trace.modules.push(...m); this.foldModules(m); }).catch(() => {});
+      trace.moduleTimings = { status:"pending" };
+      void invoke<Timing[]>("perf_modules", { request:t.diagnostic?.requestId }).then((m) => {
+        trace.modules.push(...m); this.foldModules(m); trace.moduleTimings!.status="complete";
+      }).catch(() => { trace.moduleTimings!.status="unavailable"; });
     }
     return trace;
   }
 
   // a frame shown again from Session's kept frames: no engine time
-  cached(width: number, height: number): Trace {
+  cached(width: number, height: number, cycle?: Pick<Trace, "diagnostic" | "inputAt" | "latestInputAt" | "edits" | "setStart">, source: FrameDiagnostic["source"] = "local-reuse"): Trace {
     const now = performance.now();
-    return { kind: "view", draft: false, inputAt: null, edits: 0, setStart: now, setEnd: now, r0: now, r1: now,
+    return { measurement:this.measurement, diagnostic: this.frame(cycle?.diagnostic, source), kind: cycle?.edits ? "edit" : "view", draft: false, inputAt: cycle?.inputAt ?? null, latestInputAt: cycle?.latestInputAt, edits: cycle?.edits ?? 0, setStart: cycle?.setStart ?? now, setEnd: now, r0: now, r1: now,
              rust: [0, 0, 0, 0, 0, 0, 0], width, height, histogram: 0, modules: [] };
+  }
+
+  discard(t: Trace | undefined, reason: string) {
+    if (this.measuring && t?.measurement !== undefined && t.measurement !== this.measurement) return;
+    this.event("frame.discarded", { ...t?.diagnostic, reason });
   }
 
   drawStart(t: Trace | undefined) {
     if ((!this.enabled && !this.measuring) || !t) return;
+    if (this.measuring && t.measurement !== undefined && t.measurement !== this.measurement) return;
     t.drawStart = performance.now();
+    t.drawOperationId = this.begin("draw", { ...t.diagnostic });
     this.drawing = t;
   }
 
@@ -273,11 +355,15 @@ class Perf {
   drawEnd(shown = true) {
     const t = this.drawing;
     this.drawing = null;
-    if (!shown || !t || t.drawStart === undefined) return;
+    if (!t || t.drawStart === undefined) return;
+    this.finish(t.drawOperationId, shown ? "end" : "skipped", { ...t.diagnostic });
+    if (!shown) return;
     this.count(t.estimated ? "estimatedFramesDrawn" : "nativeFramesDrawn");
     const drawEnd = performance.now();
     const label = this.label;
+    const measurement = this.measurement;
     window.requestAnimationFrame(() => {
+      if (this.measurement !== measurement) return;
       const paint = performance.now();
       if (t.kind === "edit") this.work("inputToRaf.latestCarriedInput", paint - (t.latestInputAt ?? t.inputAt ?? t.setStart), label);
       const [lock, request, pipeline, write, read, probe, sent] = t.rust;
@@ -296,10 +382,11 @@ class Perf {
         histogram: t.histogram,
         paint: paint - drawEnd,
       };
-      const s: Sample = { estimated:t.estimated, previewBackend:t.previewBackend,
+      this.event("frame.raf", { ...t.diagnostic });
+      const s: Sample = { diagnostic: t.diagnostic, oldestInputLatency:t.diagnostic?.firstInputAt != null ? paint-t.diagnostic.firstInputAt : undefined, latestInputLatency: t.latestInputAt != null ? paint - t.latestInputAt : undefined, estimated:t.estimated, previewBackend:t.previewBackend,
                           anchorUploads:t.anchorUploads, textureBytes:t.textureBytes,
                           at: paint, kind: t.kind, draft: t.draft, width: t.width, height: t.height,
-                          edits: t.edits, total: paint - start, stages, modules: t.modules,
+                          edits: t.edits, total: paint - start, stages, modules: t.modules, moduleTimings:t.moduleTimings,
                           ...(label ? { label } : {}) };
       this.samples.push(s);
       if (this.samples.length > MAX_SAMPLES) this.samples.shift();

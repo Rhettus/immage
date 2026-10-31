@@ -27,6 +27,7 @@ the headless darktable engine. The photographer's guide is
 - [Masks in darktable's pipe](masks.md): how a mask and its local sliders
   become darktable mask groups and module instances, where those run, and
   how masks share them.
+- [GUI performance tracing](performance-tracing.md): diagnostic events, scheduling flow and slow-frame analysis.
 - [benchmarking/](../../../benchmarking/README.md): the performance suite.
 - [Pinning darktable](darktable-pin.md): which darktable commit Immage
   builds, moving it, and what breaks when it moves.

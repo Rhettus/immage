@@ -8,6 +8,7 @@
 // "sharedbufferreceived" event tagged with the id it was asked for
 // (main.rs, shared_frame); on Linux render wrote it to /dev/shm, and the
 // window's web extension reads it in (main.rs, shm_frame; webext/frames.c)
+import { perf } from "./perf";
 import { invoke } from "@tauri-apps/api/core";
 
 type SharedBufferEvent = { getBuffer(): ArrayBuffer; additionalData: { frame?: number } | null };
@@ -71,11 +72,14 @@ webview?.addEventListener("sharedbufferreceived", (e) => {
 // render's reply, with the frame put back behind the header when it came by
 // shared memory
 export async function renderFrame(args: Record<string, unknown>): Promise<ArrayBuffer> {
+  const event = (name: string, data?: Record<string, unknown>) => perf.event(name, { requestId:args.diagnosticRequest, ...data });
   if (!sharedFramesAvailable || failed || !loadSharedFrames()) {
     last = "invoke";
+    event("transport.selected", { transport:"invoke", available:sharedFramesAvailable, failed });
     return invoke<ArrayBuffer>("render", args);
   }
   const id = ++next;
+  event("transport.selected", { transport:"shared", sharedId:id });
   const head = await invoke<ArrayBuffer>("render", { ...args, shared: id, ...(shmFrame ? { token } : {}) });
   const v = new DataView(head);
   const pixels = 4 * v.getUint32(0, true) * v.getUint32(4, true);
@@ -93,6 +97,7 @@ export async function renderFrame(args: Record<string, unknown>): Promise<ArrayB
     // edits are in already
     failed = true;
     last = "invoke";
+    event("transport.retry", { reason:"shared-file-unavailable", transport:"invoke" });
     return invoke<ArrayBuffer>("render", { ...args, edits: null });
   }
   const early = arrived.get(id);
@@ -104,6 +109,7 @@ export async function renderFrame(args: Record<string, unknown>): Promise<ArrayB
     const timer = window.setTimeout(() => {
       waiting.delete(id);
       failed = true;
+      event("transport.failed", { reason:"shared-frame-timeout" });
       reject(new Error("the frame from shared memory never came"));
     }, 2000);
     waiting.set(id, (buffer) => { window.clearTimeout(timer); resolve(buffer); });

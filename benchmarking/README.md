@@ -104,6 +104,12 @@ histogram, React. For those:
    (in the app's data folder `benchmarks/` in a bundled one). Run
    `report.py` to bring it into SUMMARY.md and the dashboard.
 
+GUI reports include bounded diagnostic events and native engine-lock spans.
+Run `python3 -I benchmarking/diagnose.py <report.json> --json /tmp/analysis.json --trace /tmp/trace.json`
+for slow-frame attribution and independent frontend/native timelines. See
+[GUI performance tracing](../app/docs/dev/performance-tracing.md) for the flow,
+fields, limitations and diagnostics-on/off comparisons.
+
 ## What each scenario measures
 
 All engine timings are wall time of the request, as the app waits for it.

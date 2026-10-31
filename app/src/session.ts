@@ -4,7 +4,7 @@
 // one open image: control values in Lightroom units, translated to engine
 // edits. edits are coalesced: while a render is in flight, further moves
 // only mark their module dirty, and the next round sends the latest values once
-import { invoke } from "@tauri-apps/api/core";
+
 import { boundFields, choiceCovers, choiceOn, controlById, isModuleSetting, localControlById, localFields, localMaps, mapOf, mapsFor,
          mapsWith, MODULE_CHOICES, modules, NEG_CHOICES, NEG_OFF, turnOrientation, turnRect, type ImageContext,
          type ModuleMap, type Params, type Turn, type Values } from "./manifest";
@@ -18,6 +18,7 @@ import { FRAME_HEAD, renderFrame } from "./sharedFrames";
 import { PixelWorker } from "./pixelWorker";
 import { detailMix, isDetailControl, isCachedControl, previewTiming, anchorInterval, predictionAccuracy, validatePrediction } from "./cachedDetail";
 import type { Preview } from "./Preferences";
+const invoke = <T = unknown>(command: string, args?: Parameters<typeof perf.command>[1]) => perf.command<T>(command, args);
 
 
 export type CachedPreview = { a:Frame; b:Frame; mix:number; frame:Frame };
@@ -338,7 +339,7 @@ export class Session {
 
   set(id: string, v: number, coalesce = false) {
     if (!mapOf.has(id) || this.values[id] === v) return;
-    perf.input();
+    perf.input(id);
     const inputAt = performance.now();
     const from = this.values[id];
     this.activeDetailControl = this.size().draft && isDetailControl(id) ? id : null;
@@ -367,13 +368,21 @@ export class Session {
       this.dirty.add(m.op);
     }
     const cache = this.detailCache;
-    if (cache?.a && cache.b && !cache.blocked
-        && detailMix({pixels:cache.a.frame.pixels,value:cache.a.value},
-          {pixels:cache.b.frame.pixels,value:cache.b.value},v,cache.range) !== null) {
+    const mix = cache?.a && cache.b && !cache.blocked
+      ? detailMix({pixels:cache.a.frame.pixels,value:cache.a.value},
+          {pixels:cache.b.frame.pixels,value:cache.b.value},v,cache.range) : null;
+    perf.event("cache.input", { control:id, eligible, blocked:cache?.blocked, anchors:!!cache?.a && !!cache.b,
+      predictionAvailable:mix !== null,
+      reason:!eligible ? "ineligible-or-disabled" : cache?.blocked ? "accuracy-blocked"
+        : !cache?.a || !cache.b ? "anchors-not-ready" : mix === null ? "outside-interpolation-range" : "estimate-ready" });
+    if (cache?.a && cache.b && !cache.blocked && mix !== null) {
       const edits = this.queuedPreview?.cache === cache ? this.queuedPreview.edits+1 : 1;
       perf.count("estimatedFramesRequested");
       if (this.queuedPreview) perf.count("estimatedFramesCoalesced");
-      this.queuedPreview = {cache,value:v,inputAt,edits};
+      const previous = this.queuedPreview?.cache === cache ? this.queuedPreview : null;
+      const attribution = perf.attribution();
+      this.queuedPreview = {cache,value:v,inputAt,latestInputAt:inputAt,edits,
+        diagnostic: attribution ? {...attribution, firstInputId:previous?.diagnostic?.firstInputId ?? attribution.latestInputId, firstInputAt:previous?.diagnostic?.firstInputAt ?? inputAt} : undefined};
       this.previewFrame ??= window.requestAnimationFrame(() => this.flushPreview());
     } else this.cancelPreview();
     this.needRender = true;
@@ -381,24 +390,34 @@ export class Session {
   }
 
   private editFrame: number | null = null;
+  private coalesceWait?: number;
+  private throttleWait?: number;
   private submitEdits(coalesce: boolean) {
     if (!coalesce) { this.flushEdits(); return; }
+    if (this.editFrame === null) this.coalesceWait = perf.begin("coalesce", { blockingPump:true });
     this.editFrame ??= window.requestAnimationFrame(() => this.flushEdits());
     // let the pump cancel an obsolete base render immediately
     if (this.busy) void this.pump();
   }
   flushEdits() {
+    perf.finish(this.coalesceWait); this.coalesceWait = undefined;
     if (this.editFrame !== null) window.cancelAnimationFrame(this.editFrame);
     this.editFrame = null;
     void this.pump();
   }
 
   private previewWorker: PixelWorker | null = null;
+  private estimateWork?: number;
+  private estimateTrace?: Trace;
   // Validation must not queue behind CPU display work or hold the render pump.
   private validationWorker: PixelWorker | null = null;
   private validationSerial = 0;
 
   private cancelPreview() {
+    if (this.queuedPreview) perf.event("estimate.cancelled", { ...this.queuedPreview.diagnostic, reason: "preview-invalidated" });
+    if (this.estimateTrace) perf.discard(this.estimateTrace, "estimate-worker-cancelled");
+    this.estimateTrace=undefined;
+    perf.finish(this.estimateWork, "cancelled"); this.estimateWork = undefined;
     this.previewWorker?.cancel("mix");
     if (this.previewFrame !== null) window.cancelAnimationFrame(this.previewFrame);
     this.previewFrame = null;
@@ -410,18 +429,23 @@ export class Session {
     this.previewFrame = null;
     this.queuedPreview = null;
     if (!queued) return;
-    const {cache,value,inputAt,edits} = queued;
+    const {cache,value,inputAt,latestInputAt,edits,diagnostic} = queued;
     try {
       // native anchors or the view may have changed while the display was waiting
       if (this.detailCache !== cache || !cache.a || !cache.b || cache.blocked
           || this.values[cache.id] !== value || cache.b.value === value || !this.size().draft
           || !this.cachedDetailPreview() || this.before || this.masksPending
-          || cache.key !== this.frameKey(this.fullView(),false)) return;
+          || cache.key !== this.frameKey(this.fullView(),false)) {
+        perf.event("estimate.rejected", { ...diagnostic, reason:"invalid-anchors-or-view", blocked:cache.blocked,
+          cacheChanged:this.detailCache !== cache, missingAnchors:!cache.a || !cache.b, valueChanged:this.values[cache.id] !== value,
+          released:!this.size().draft, before:!!this.before, masksPending:this.masksPending }); return;
+      }
       const mix = detailMix({pixels:cache.a.frame.pixels,value:cache.a.value},
         {pixels:cache.b.frame.pixels,value:cache.b.value},value,cache.range);
-      if (mix === null) return;
+      if (mix === null) { perf.event("estimate.rejected", { ...diagnostic, reason:"outside-interpolation-range" }); return; }
       const started = performance.now();
-      const trace = perf.cached(cache.b.frame.width,cache.b.frame.height);
+      const trace = perf.cached(cache.b.frame.width,cache.b.frame.height, { diagnostic, inputAt, latestInputAt, edits, setStart:started }, "estimated");
+      trace.latestInputAt = latestInputAt;
       trace.estimated = true; trace.draft = true; trace.previewBackend = "cpu";
       trace.kind = "edit"; trace.edits = edits; trace.inputAt = inputAt;
       const frame = {...cache.b.frame,hash:undefined,trace,ms:0,
@@ -429,21 +453,27 @@ export class Session {
       const shown = this.onCachedPreview?.({a:cache.a.frame,b:cache.b.frame,mix,frame});
       if (shown) { cache.predictedValue = value; cache.shownSerial = cache.inputSerial; }
       else {
+        if (this.estimateTrace) perf.discard(this.estimateTrace, "estimate-worker-superseded");
+        this.estimateTrace=trace;
+        perf.finish(this.estimateWork, "superseded");
+        const estimateWork = this.estimateWork = perf.begin("estimate.worker", { ...trace.diagnostic });
         const serial = cache.inputSerial;
         const a = cache.a, b = cache.b;
         (this.previewWorker ??= new PixelWorker()).submit("mix", {
           kind: "mix", pixels: a.frame.pixels, other: b.frame.pixels, mix,
           width: frame.width, height: frame.height,
         }, result => {
+          perf.finish(estimateWork);
+          if (this.estimateWork === estimateWork) { this.estimateWork = undefined; this.estimateTrace=undefined; }
           // A worker result must never cover newer native feedback, a changed
           // anchor pair, or the final frame after release.
           if (this.detailCache !== cache || cache.inputSerial !== serial || cache.shownSerial > serial
               || cache.a !== a || cache.b !== b || cache.blocked || !this.size().draft
               || !this.cachedDetailPreview() || this.before || this.masksPending
-              || cache.key !== this.frameKey(this.fullView(), false)) { perf.count("estimatedFramesDiscarded"); return; }
+              || cache.key !== this.frameKey(this.fullView(), false)) { perf.count("estimatedFramesDiscarded"); perf.discard(trace, "estimate-obsolete"); return; }
           // Worker time no longer blocks input. Its latency is measured separately
           // rather than treating time off-thread as a UI generation-budget failure.
-          if (!this.previewWorker?.threaded && performance.now() - started > previewTiming().target) { cache.blocked = true; return; }
+          if (!this.previewWorker?.threaded && performance.now() - started > previewTiming().target) { cache.blocked = true; perf.event("cache.state", { control:cache.id, blocked:true, reason:"cpu-estimate-over-budget" }); perf.discard(trace, "estimate-over-budget"); return; }
           cache.predictedValue = value;
           cache.shownSerial = serial;
           this.onFrame({ ...frame, pixels: result as Frame["pixels"] });
@@ -872,7 +902,7 @@ export class Session {
   setMany(entries: [string, number][], coalesce = false) {
     entries = [...new Map(entries)].filter(([id, v]) => mapOf.has(id) && this.values[id] !== v);
     if (!entries.length) return;
-    perf.input();
+    perf.input(entries.map(([id]) => id));
     this.detailCache = null;
     this.activeDetailControl = null;
     this.onDetailControl?.(null);
@@ -897,10 +927,11 @@ export class Session {
   private activeDetailControl: string | null = null;
   private previewTimer: ReturnType<typeof setTimeout> | undefined;
   private previewFrame:number | null = null;
-  private queuedPreview: {cache:DetailCache; value:number; inputAt:number; edits:number} | null = null;
+  private queuedPreview: {cache:DetailCache; value:number; inputAt:number; latestInputAt:number; edits:number; diagnostic?:Trace["diagnostic"]} | null = null;
   private _detailCache:DetailCache | null = null;
   private get detailCache() { return this._detailCache; }
   private set detailCache(cache:DetailCache | null) {
+    perf.event("cache.replaced", { previous:this._detailCache?.id, next:cache?.id, blocked:cache?.blocked });
     this.validationSerial++;
     this.validationWorker?.cancel("validation");
     this.cancelPreview();
@@ -909,8 +940,10 @@ export class Session {
 
   requestRender() {
     if (this.editFrame !== null) window.cancelAnimationFrame(this.editFrame);
+    perf.finish(this.coalesceWait, "interrupted"); this.coalesceWait = undefined;
     this.editFrame = null;
     clearTimeout(this.previewTimer);
+    perf.finish(this.throttleWait, "interrupted"); this.throttleWait=undefined;
     this.previewTimer = undefined;
     this.detailCache = null;
     this.activeDetailControl = null;
@@ -1004,16 +1037,20 @@ export class Session {
   private detailOps = "";
 
   private draftView(view: View, ops: string[]): View {
-    if (!view.draft) { this.detailKey = ""; this.detailSlow = 0; return view; }
+    if (!view.draft) { perf.event("preview.decision", { reason:"exact-view" }); this.detailKey = ""; this.detailSlow = 0; return view; }
     if (ops.length) this.detailOps = [...new Set(ops.map((op) => op.split("#")[0]))].sort().join();
     const detail = this.detailView();
-    if (this.detailCache && this.cachedDetailPreview()) return {...this.fullView(),draft:true,detail:true};
+    if (this.detailCache && this.cachedDetailPreview()) {
+      perf.event("preview.decision", { reason:"cached-detail-full-view", blocked:this.detailCache.blocked, anchors:!!this.detailCache.a && !!this.detailCache.b });
+      return {...this.fullView(),draft:true,detail:true};
+    }
     const eligible = !!this.activeDetailControl && this.detailOps.split(",").every((op) =>
       ["diffuse", "sharpen", "contrastntexture", "denoiseprofile", "bilat", "localcontrast", "agx", "sigmoid", "rgbcurve", "tonecurve", "colorbalancergb"].includes(op));
     if (detail && eligible) {
       const full = this.fullView();
       const key = `${this.detailOps}:${full.width}:${full.height}:${full.scale}`;
       if (key !== this.detailKey) { this.detailKey = key; this.detailSlow = 0; }
+      perf.event("preview.decision", { reason:this.detailSlow >= 2 ? "detail-loupe-after-slow-frames" : "detail-full-view", slowFrames:this.detailSlow });
       return this.detailSlow >= 2 ? { ...detail, draft: true, detail: true, loupe: true }
         : { ...full, draft: true, detail: true };
     }
@@ -1021,6 +1058,7 @@ export class Session {
     if (ops.length) this.draftKey = [...new Set(ops.map((op) => op.split("#")[0]))].sort().join();
     const steps = DRAFT_STEPS.filter((k) => k >= this.draftLimits().smallest);
     const k = steps[Math.min(draftSteps.get(this.draftKey) ?? 0, steps.length - 1)];
+    perf.event("preview.decision", { reason:k === 1 ? "selected-draft-size" : "adaptive-draft-size", factor:k, modules:this.draftKey, target:this.draftLimits().target });
     if (k === 1) return view;
     const at = (v: number | undefined) => v === undefined ? undefined : Math.round(v * k);
     return { ...view, width: at(view.width)!, height: at(view.height)!, x: at(view.x), y: at(view.y),
@@ -1042,12 +1080,16 @@ export class Session {
     const size = `${f.width}x${f.height}`, first = size !== this.draftWas;
     this.draftWas = size;
     const ms = f.trace?.rust[2] ?? 0;
-    if (first || !edits || ms < 1) return;
+    if (first || !edits || ms < 1) {
+      perf.event("preview.adaptation", { reason:first ? "first-frame-at-size" : !edits ? "no-edits" : "pipeline-cache-hit", ms, size });
+      return;
+    }
     const { target, smallest } = this.draftLimits();
     const steps = DRAFT_STEPS.filter((k) => k >= smallest);
     const i = Math.min(draftSteps.get(this.draftKey) ?? 0, steps.length - 1);
     if (ms > target && i < steps.length - 1) draftSteps.set(this.draftKey, i + 1);
     else if (i > 0 && ms * (steps[i - 1] / steps[i]) ** 2 < 0.8 * target) draftSteps.set(this.draftKey, i - 1);
+    perf.event("preview.adaptation", { ms, target, modules:this.draftKey, previousStep:i, nextStep:draftSteps.get(this.draftKey) ?? 0 });
   }
 
   // one drag frame, thrown away, once the photo is up: the engine's drag
@@ -1082,26 +1124,35 @@ export class Session {
   // `have`: frames held here, one of which the engine may name rather than
   // render again (a frame of no size, with its hash)
   private async renderView(view: View, kind: Trace["kind"],
-                           cycle?: Pick<Trace, "inputAt" | "latestInputAt" | "edits" | "setStart">, every = false,
+                           cycle?: Pick<Trace, "inputAt" | "latestInputAt" | "edits" | "setStart" | "diagnostic">, every = false,
                            have: Frame[] = [], edits: ReturnType<Session["moduleEdit"]>[] = []): Promise<Frame> {
     perf.count("nativeFramesRequested");
     const t0 = performance.now();
+    const measurement = perf.measurement;
     const { width, height, scale, x, y } = view;
     const preview = this.previewMode();
     const skip = view.detail ? null : view.draft ? DRAFT_SKIP[preview].filter((op) => !this.draftKeep.has(op))
       : kind === "base" && !every ? BASE_SKIP[preview] : null;
     if (!view.draft) this.draftKeep.clear();
     const hex = (f: Frame) => f.hash!.toString(16).padStart(16, "0");
-    const buf = await renderFrame({ width, height, scale, x, y, skip, draft: !!view.draft,
+    const requestLabel = cycle?.diagnostic?.label ?? perf.label;
+    const requestId = perf.request({ kind, draft: !!view.draft, width, height, blockingPump:kind !== "base", detail: !!view.detail, loupe: !!view.loupe, ...cycle?.diagnostic });
+    let buf: ArrayBuffer;
+    try { buf = await renderFrame({ width, height, scale, x, y, skip, draft: !!view.draft,
                                     base: kind === "base" && !view.draft,
                                     have: have.length ? have.map(hex) : null,
-                                    edits: edits.length ? edits : null });
+                                    edits: edits.length ? edits : null, diagnosticRequest: requestId });
+      perf.finish(requestId);
+    } catch (error) {
+      perf.finish(requestId, /cancel/i.test(String(error)) ? "cancelled" : "failed");
+      throw error;
+    }
     perf.count("nativeFramesCompleted");
     const head = new DataView(buf, 0, 24);
     const u = (k: number) => head.getUint32(4 * k, true);
     const hash = new DataView(buf).getBigUint64(48, true);
     const kept = !u(0) && !u(1) ? have.find((f) => f.hash === hash) : undefined;
-    const trace = perf.rendered({ kind, draft: !!view.draft, inputAt: cycle?.inputAt ?? null, latestInputAt: cycle?.latestInputAt ?? null, edits: cycle?.edits ?? 0,
+    const trace = perf.rendered({ measurement, diagnostic: measurement === perf.measurement ? perf.frame({ ...cycle?.diagnostic, label: requestLabel, requestId }, kept ? "engine-reuse" : "native") : undefined, kind, draft: !!view.draft, inputAt: cycle?.inputAt ?? null, latestInputAt: cycle?.latestInputAt ?? null, edits: cycle?.edits ?? 0,
                                   setStart: cycle?.setStart ?? t0, setEnd: t0, r0: t0,
                                   width: kept?.width ?? u(0), height: kept?.height ?? u(1) }, buf);
     if (kept) return { ...kept, view, ms: performance.now() - t0, trace };
@@ -1185,7 +1236,7 @@ export class Session {
 
   // the window the engine would render (_render in engine/main.c), cut
   // from the copy
-  private cut(c: Frame, view: View): Frame {
+  private cut(c: Frame, view: View, cycle?: Parameters<typeof perf.cached>[2]): Frame {
     const W = c.width, H = c.height;
     const w = Math.min(view.width, W), h = Math.min(view.height, H);
     const x = Math.min(Math.max(view.x ?? 0, 0), W - w), y = Math.min(Math.max(view.y ?? 0, 0), H - h);
@@ -1195,7 +1246,7 @@ export class Session {
       pixels.set(c.pixels.subarray(from, from + 4 * w), 4 * r * w);
     }
     return { width: w, height: h, fullWidth: c.fullWidth, fullHeight: c.fullHeight, x, y, view, pixels, ms: 0,
-             trace: perf.cached(w, h) };
+             trace: perf.cached(w, h, cycle) };
   }
 
   // a render on the base pipe, which an edit stops (cancel_base). one asked
@@ -1208,11 +1259,13 @@ export class Session {
     const run = { stale: false, wake, copy: every ? view.scale ?? null : null };
     this.base = run;
     const done = this.renderView(view, "base", undefined, every, have)
-      .then((f) => { if (!run.stale) use(f); })
+      .then((f) => { if (!run.stale) use(f); else perf.discard(f.trace, "base-obsolete-after-cancel"); })
       .catch((e) => { if (String(e) !== "canceled") this.onError(String(e)); })
       .finally(() => { if (this.baseInFlight === done) this.baseInFlight = null; });
     this.baseInFlight = done;
+    const wait = perf.begin("base.wait", { copy: every });
     await Promise.race([done, woken]);
+    perf.finish(wait);
     this.base = null;
   }
 
@@ -1230,8 +1283,13 @@ export class Session {
   // wait is the user's, so it shows the busy indicator
   private copyWait: ReturnType<typeof begin> | null = null;
 
+  private pumpCommand<T = unknown>(command: string, args?: Parameters<typeof perf.command>[1]) {
+    return perf.command<T>(command, args, { blockingPump:true });
+  }
+
   private async pump() {
     if (this.busy) {
+      perf.event("pump.busy", { base: !!this.base, editPending: this.editPending });
       // the base can take seconds and would be stale: stopped, it is
       // rendered again once editing pauses (App.tsx, scheduleBase)
       if (this.base && !this.base.stale && this.editPending) {
@@ -1242,7 +1300,10 @@ export class Session {
         }
         this.base.stale = true;
         this.base.wake();
-        invoke("cancel_base").catch(() => {});
+        const requestIds = perf.activeRenderIds("base");
+        perf.event("base.cancelRequested", { requestIds });
+        invoke("cancel_base").then(() => perf.event("base.cancelSignalSent", { requestIds }))
+          .catch(() => perf.event("base.cancelSignalFailed", { requestIds }));
       }
       return;
     }
@@ -1263,13 +1324,13 @@ export class Session {
             window.clearTimeout(this.saveTimer);
             this.unsaved = false;
           }
-          await invoke("baseline_end");
+          await this.pumpCommand("baseline_end");
           continue;
         }
         // the engine saves on quitting, but never the Before view's settings:
         // it hears of the view before they go
         if (this.before && !this.engineBefore) {
-          await invoke("before_view", { on: true });
+          await this.pumpCommand("before_view", { on: true });
           this.engineBefore = true;
           this.changed();
         }
@@ -1279,7 +1340,7 @@ export class Session {
         if (this.dirty.has("flip") || framing) {
           const ops = [...this.dirty];
           this.dirty.clear();
-          for (const op of ops) await invoke("set_params", this.moduleEdit(op));
+          for (const op of ops) await this.pumpCommand("set_params", this.moduleEdit(op));
           this.changed();
           if (framing) this.reshape = true;
           if (!this.before) { this.unsaved = true; this.scheduleSave(); }
@@ -1289,10 +1350,10 @@ export class Session {
         if (this.spotsPending) {
           const dirty = this.spotsDirty, on = !this.before;
           this.spotsDirty = false;
-          if (dirty) await invoke("spots", { spots: this.spots });
+          if (dirty) await this.pumpCommand("spots", { spots: this.spots });
           // a new set of spots comes on with them; the Before view turns
           // them off after
-          if (dirty || on !== this.spotsOn) await invoke("spots_enable", { on });
+          if (dirty || on !== this.spotsOn) await this.pumpCommand("spots_enable", { on });
           this.spotsOn = on;
           this.changed();
           if (dirty && !this.before) { this.unsaved = true; this.scheduleSave(); }
@@ -1302,14 +1363,16 @@ export class Session {
         if (this.wantLookAmount !== undefined && this.wantLook === undefined) {
           const amount = this.wantLookAmount;
           this.wantLookAmount = undefined;
-          await invoke("look_amount", { amount });
+          await this.pumpCommand("look_amount", { amount });
           this.changed();
           if (!this.before) { this.unsaved = true; this.scheduleSave(); }
           this.needRender = true;
           continue;
         }
         if (this.masksPending) {
-          const sent = await this.sendMasks();
+          const task = perf.begin("pump.task", { operation:"sendMasks", blockingPump:true });
+          let sent: boolean;
+          try { sent = await this.sendMasks(); } finally { perf.finish(task); }
           this.changed();
           if (sent && !this.before) { this.unsaved = true; this.scheduleSave(); }
           this.needRender = true;
@@ -1318,7 +1381,7 @@ export class Session {
         if (this.wantLook !== undefined) {
           const path = this.wantLook;
           this.wantLook = undefined;
-          await invoke("look_apply", { path });
+          await this.pumpCommand("look_apply", { path });
           this.changed();
           if (!this.before) { this.unsaved = true; this.scheduleSave(); }
           this.needRender = true;
@@ -1330,13 +1393,16 @@ export class Session {
           const { key, op, priority, req } = this.modulePending.shift()!;
           const restore = req.restore === "opened" ? this.modulesOpened.get(key) : req.restore;
           if (req.restore === "opened" && !restore) continue;
-          const r = await invoke<{ was: ModuleState; now: ModuleState }>("module_state",
+          const r = await this.pumpCommand<{ was: ModuleState; now: ModuleState }>("module_state",
             { op, priority, enabled: req.enabled, reset: req.reset, restore });
           this.changed();
           if (!this.modulesOpened.has(key)) this.modulesOpened.set(key, r.was);
           this.moduleStates.set(key, r.now);
           const item = this.history.find((h) => instanceKey(h) === key);
-          if (item) await this.reread(mapOpOf(item));
+          if (item) {
+            const task = perf.begin("pump.task", { operation:"reread", blockingPump:true });
+            try { await this.reread(mapOpOf(item)); } finally { perf.finish(task); }
+          }
           this.onModules?.();
           if (!this.before) { this.unsaved = true; this.scheduleSave(); }
           this.needRender = true;
@@ -1344,15 +1410,19 @@ export class Session {
         }
         if (this.reshapeDue && !this.dirty.size) {
           this.reshape = false;
-          await this.loadMasks();
-          this.spots = await invoke<Spot[]>("spots", {});
+          const task = perf.begin("pump.task", { operation:"loadMasks", blockingPump:true });
+          try { await this.loadMasks(); } finally { perf.finish(task); }
+          this.spots = await this.pumpCommand<Spot[]>("spots", {});
           this.onShapes?.();
           continue;
         }
         if (!this.dirty.size && !this.needRender && this.needWarm) {
           this.needWarm = false;
           const view = this.draftSize();
-          if (view) await this.renderView(view, "view");
+          if (view) {
+            const warm = await this.renderView(view, "view");
+            perf.event("frame.notPresented", { ...warm.trace?.diagnostic, reason:"warmup-only" });
+          }
           continue;
         }
         if (!this.dirty.size && !this.needRender && this.needThumb) {
@@ -1386,12 +1456,15 @@ export class Session {
             && adaptive.key === this.frameKey(this.fullView(),false)) {
           const wait = anchorInterval(adaptive.nativeMs,previewTiming().target,adaptive.accuracy?.factor) - (performance.now()-adaptive.lastStart);
           if (wait > 1) {
+            perf.finish(this.throttleWait, "rescheduled");
+            this.throttleWait = perf.begin("preview.throttle", { wait, blockingPump:true });
             clearTimeout(this.previewTimer);
-            this.previewTimer = setTimeout(() => { this.previewTimer=undefined; void this.pump(); },wait);
+            this.previewTimer = setTimeout(() => { this.previewTimer=undefined; perf.finish(this.throttleWait); this.throttleWait=undefined; void this.pump(); },wait);
             break;
           }
         }
         clearTimeout(this.previewTimer);
+        perf.finish(this.throttleWait, "interrupted"); this.throttleWait=undefined;
         this.previewTimer = undefined;
         const ops = [...this.dirty];
         this.dirty.clear();
@@ -1411,12 +1484,14 @@ export class Session {
         const requestedView = this.size();
         const requestedKey = this.frameKey(requestedView, before);
         const view = this.draftView(requestedView, ops), key = this.frameKey(view, before);
+        perf.event("preview.selected", { requested:{...requestedView}, selected:{...view}, controls:ops });
         const kept = view.draft || edits.length ? undefined : this.current.get(key);
         if (kept) {
           this.keepFrame(key, kept);
-          this.onFrame({ ...kept, before, trace: perf.cached(kept.width, kept.height) });
+          this.onFrame({ ...kept, before, trace: perf.cached(kept.width, kept.height, cycle) });
         } else if (!view.draft && !edits.length && !before && this.copy && view.scale === this.copy.view.scale) {
-          this.onFrame({ ...this.cut(this.copy, view), before });
+          const reused = this.cut(this.copy, view, cycle);
+          this.onFrame({ ...reused, before });
         } else {
           const have = view.draft ? [] : this.heldFor(key);
           const cache = this.detailCache, cacheValue = cache ? this.values[cache.id] : undefined;
@@ -1449,10 +1524,11 @@ export class Session {
                 actual: f.pixels, width: f.width, height: f.height,
               }, result => {
                 if (this.detailCache !== cache || this.validationSerial !== serial
-                    || cache.a !== a || cache.b !== b) { perf.count("validationResultsDiscarded"); return; }
+                    || cache.a !== a || cache.b !== b) { perf.count("validationResultsDiscarded"); perf.event("cache.validationDiscarded", { reason:"anchors-or-generation-changed" }); return; }
                 const accuracy = cache.accuracy ??= predictionAccuracy();
                 const valid = validatePrediction(accuracy,result as {mean:number;p95:number});
                 cache.blocked = accuracy.recovering;
+                perf.event("cache.state", { control:cache.id, blocked:cache.blocked, valid, accuracy:{...accuracy}, reason:valid ? "validation-passed" : "prediction-rejected" });
                 if (!valid) {
                   // The new native B is exact; retire the failed prediction's
                   // older anchor and recover from fresh native output.
@@ -1463,6 +1539,7 @@ export class Session {
                 // Apply the new accuracy interval to pending native edits now,
                 // including immediate fallback when estimates became unsafe.
                 clearTimeout(this.previewTimer); this.previewTimer = undefined;
+                perf.finish(this.throttleWait, "interrupted"); this.throttleWait=undefined;
                 if (this.dirty.size || this.needRender) void this.pump();
               });
             };
@@ -1482,7 +1559,10 @@ export class Session {
             || requestedKey !== this.frameKey(now, !!this.before)
             || !!requestedView.draft !== !!now.draft
             || this.reshapeDue || [...this.dirty].some((op) => op === "flip" || FRAMING.has(op.split("#")[0]));
-          if (stale) perf.count("nativeFramesDiscarded");
+          if (stale) {
+            perf.count("nativeFramesDiscarded");
+            perf.event("frame.discarded", { ...f.trace?.diagnostic, newerQueued: !!newerQueued, viewportChanged: requestedKey !== this.frameKey(now, !!this.before), draftChanged: !!requestedView.draft !== !!now.draft, reshape: this.reshapeDue, cacheChanged: !!cache && this.detailCache !== cache, newerShown: !!cache && cacheSerial < cache.shownSerial });
+          }
           if (!stale) {
             if (cache) cache.shownSerial = cacheSerial;
             // Keep exact anchors on the same surface as slider estimates.
@@ -1502,7 +1582,7 @@ export class Session {
       }
       // and that it is over only once the edit is back in it
       if (!this.before && this.engineBefore) {
-        await invoke("before_view", { on: false });
+        await this.pumpCommand("before_view", { on: false });
         this.engineBefore = false;
         this.changed();
       }
