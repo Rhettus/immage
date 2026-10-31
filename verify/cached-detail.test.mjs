@@ -48,6 +48,15 @@ registerHooks({
 });
 globalThis.localStorage={getItem:()=>null,setItem:()=>{}};
 globalThis.window=globalThis;
+let nextFrame=0;
+const animationFrames=new Map();
+globalThis.requestAnimationFrame=callback=>{const id=++nextFrame;animationFrames.set(id,callback);return id;};
+globalThis.cancelAnimationFrame=id=>animationFrames.delete(id);
+function displayFrame() {
+  const callbacks=[...animationFrames.values()];animationFrames.clear();
+  for(const callback of callbacks)callback(performance.now());
+}
+test.afterEach(()=>{assert.equal(animationFrames.size,0,'test left a queued preview');});
 const {Session}=await import('../app/src/session.ts');
 const full={width:1,height:1,scale:1,x:0,y:0};
 function session(){
@@ -62,8 +71,8 @@ test('cached feedback still schedules native work; Exposure is eligible without 
   s.set('texture',10);
   const frame={...full,view:full,pixels:pixels(20,40,60,255)};
   s.detailCache.a={frame,value:0};s.detailCache.b={frame:{...frame,pixels:pixels(40,60,80,255)},value:20};
-  s.set('texture',15);
-  assert.equal(shown.length,1);assert.equal(shown[0].view.detail,true);assert.equal(pumping(),2);assert.equal(s.pending,true);
+  s.set('texture',15);displayFrame();
+  assert.equal(shown.length,1);assert.equal(shown[0].view.detail,true);assert.equal(pumping(),3);assert.equal(s.pending,true);
   s.set('exposure',1);assert.equal(shown.length,1);assert.equal(s.detailCache.id,'exposure');assert.equal(s.activeDetailControl,null);
 });
 test('release, multi-control edits and view changes invalidate cached detail frames',()=>{
@@ -87,7 +96,7 @@ test('native renders train the cache and release discards it for an exact full r
   const frame=(value,view)=>({width:1,height:1,fullWidth:1,fullHeight:1,x:0,y:0,view,pixels:pixels(value,40,60,255),ms:1,hash:BigInt(value+1000)});
   s.current.set(s.frameKey(full,false),frame(0,full));
   s.renderView=async view=>{native++;return frame(s.values.texture,view);};
-  const settle=async()=>{for(let i=0;i<500&&!s.idle;i++)await new Promise(r=>setTimeout(r,1));assert.equal(s.idle,true);};
+  const settle=async()=>{for(let i=0;i<500&&!s.idle;i++){displayFrame();await new Promise(r=>setTimeout(r,1));}assert.equal(s.idle,true);};
   s.set('texture',10);await settle();assert.equal(s.detailCache.a.value,0);assert.equal(s.detailCache.b.value,10);
   s.set('texture',12);await settle();assert.equal(shown.length,3);assert.equal(native,2);
   dragging=false;s.requestRender();await settle();assert.equal(s.detailCache,null);assert.equal(shown.at(-1).view.draft,false);assert.equal(native,3);
@@ -113,7 +122,7 @@ function exposureSession(renderPixels=value=>pixels(100+value*20,80,60,255)) {
   s.fullView=()=>full;s.cachedDetailPreview=()=>true;s.values={exposure:0};
   s.moduleEdit=op=>({op,params:{},enabled:true});s.scheduleSave=()=>{};
   s.renderView=async view=>{native++;return {width:1,height:1,view,pixels:renderPixels(s.values.exposure),ms:1};};
-  const settle=async()=>{for(let i=0;i<600&&!s.idle;i++)await new Promise(r=>setTimeout(r,1));assert.equal(s.idle,true);};
+  const settle=async()=>{for(let i=0;i<600&&!s.idle;i++){displayFrame();await new Promise(r=>setTimeout(r,1));}assert.equal(s.idle,true);};
   return {s,shown,settle,native:()=>native,release:()=>{dragging=false;s.requestRender();}};
 }
 
@@ -121,7 +130,7 @@ test('Exposure estimates coalesce native work and release bypasses the timer',as
   const {s,shown,settle,native,release}=exposureSession();
   s.set('exposure',0.1);await settle();s.set('exposure',0.2);await settle();
   s.set('exposure',0.22);s.set('exposure',0.24);
-  assert.equal(native(),2);assert.equal(shown.at(-1).trace.estimated,true);
+  assert.equal(native(),2);displayFrame();assert.equal(shown.at(-1).trace.estimated,true);
   assert.equal(s.idle,false);
   await settle();assert.equal(native(),3);assert.equal(s.detailCache.b.value,0.24);
   s.set('exposure',0.25);assert.equal(native(),3);
@@ -132,7 +141,7 @@ test('Exposure estimates coalesce native work and release bypasses the timer',as
 test('periodic native work runs without another input and rejects inaccurate Exposure predictions',async()=>{
   const {s,shown,settle,native,release}=exposureSession(value=>pixels(value>0.2?250:100+value*20,80,60,255));
   s.set('exposure',0.1);await settle();s.set('exposure',0.2);await settle();
-  s.set('exposure',0.24);assert.equal(shown.at(-1).trace.estimated,true);
+  s.set('exposure',0.24);displayFrame();assert.equal(shown.at(-1).trace.estimated,true);
   await settle();assert.equal(native(),3);assert.equal(s.detailCache.blocked,true);
   const count=shown.length;s.set('exposure',0.25);
   assert.equal(shown.slice(count).some(f=>f.trace?.estimated),false);
@@ -218,15 +227,15 @@ test('GPU feedback passes native anchors without allocating an estimated image',
   s.detailCache.a={frame:a,value:0};s.detailCache.b={frame:b,value:20};
   let preview;
   s.onCachedPreview=p=>{preview=p;return true;};
-  s.set('texture',15);
+  s.set('texture',15);assert.equal(preview,undefined);displayFrame();
   assert.equal(preview.a,a);assert.equal(preview.b,b);assert.equal(preview.mix,0.75);
   assert.equal(preview.frame.pixels,b.pixels);
   assert.equal(preview.frame.trace.estimated,true);
   assert.equal(preview.frame.view.draft,true);
   assert.equal(shown.length,0);assert.equal(s.detailCache.predictedValue,15);
-  assert.equal(pumping(),2);assert.equal(s.pending,true);
+  assert.equal(pumping(),3);assert.equal(s.pending,true);
   s.onCachedPreview=()=>false;
-  s.set('texture',16);
+  s.set('texture',16);displayFrame();
   assert.deepEqual([...shown.at(-1).pixels],[36,56,76,128]);
   assert.notEqual(shown.at(-1).pixels,b.pixels);
 });
@@ -235,10 +244,135 @@ test('GPU feedback retains native error rejection and exact release',async()=>{
   const {s,shown,settle,release,native}=exposureSession(value=>pixels(value>0.2?250:100+value*20,80,60,255));
   const estimates=[];s.onCachedPreview=p=>{estimates.push(p);return true;};
   s.set('exposure',0.1);await settle();s.set('exposure',0.2);await settle();
-  s.set('exposure',0.24);assert.equal(estimates.length,1);
+  s.set('exposure',0.24);displayFrame();assert.equal(estimates.length,1);
   await settle();assert.equal(s.detailCache.blocked,true);assert.equal(native(),3);
   s.set('exposure',0.25);assert.equal(estimates.length,1);
   release();await settle();
   assert.equal(shown.at(-1).view.draft,false);assert.equal(shown.at(-1).pixels[0],250);
   assert.equal(s.detailCache,null);
+});
+
+function seededPreview(gpu=false) {
+  const result=session(),estimates=[];
+  const {s}=result;s.set('texture',10);
+  const frame={...full,view:full,pixels:pixels(20,40,60,255)};
+  s.detailCache.a={frame,value:0};
+  s.detailCache.b={frame:{...frame,pixels:pixels(40,60,80,128)},value:20};
+  s.onCachedPreview=preview=>{estimates.push(preview);return gpu;};
+  return {...result,estimates};
+}
+
+for(const gpu of [false,true]) test(`a burst draws only the latest value per display frame (${gpu?'GPU':'CPU'})`,()=>{
+  const {s,shown,estimates}=seededPreview(gpu);
+  for(let i=1;i<=100;i++)s.set('texture',10+i*0.09);
+  assert.equal(s.values.texture,19);
+  assert.equal(animationFrames.size,1);
+  assert.equal(estimates.length,0);assert.equal(shown.length,0);
+  displayFrame();
+  assert.equal(animationFrames.size,0);assert.equal(estimates.length,1);
+  assert.equal(estimates[0].mix,0.95);assert.equal(estimates[0].frame.trace.edits,100);
+  assert.equal(s.detailCache.predictedValue,19);
+  assert.equal(shown.length,gpu?0:1);
+  if(!gpu)assert.deepEqual([...shown[0].pixels],[39,59,79,128]);
+  s.set('texture',19.1);s.set('texture',19.2);
+  assert.equal(estimates.length,1);assert.equal(animationFrames.size,1);
+  displayFrame();assert.equal(estimates.length,2);assert.equal(estimates[1].mix,0.96);
+});
+
+test('frame waiting preserves the latest input timestamp without blocking cheap CPU fallback',t=>{
+  let now=100;t.mock.method(performance,'now',()=>now);
+  const {s,shown}=seededPreview();
+  s.set('texture',11);now=110;s.set('texture',15);
+  now=1000;displayFrame();
+  assert.equal(shown.length,1);assert.equal(shown[0].trace.inputAt,110);
+  assert.equal(shown[0].trace.edits,2);assert.equal(s.detailCache.blocked,false);
+});
+
+for(const [name,invalidate] of [
+  ['release',s=>s.requestRender()],
+  ['multiple controls',s=>s.setMany([['contrast',10]])],
+  ['another slider',s=>s.set('exposure',1)],
+  ['a new viewport',s=>{s.fullView=()=>({...full,width:2});s.set('texture',16);}],
+  ['a reversal',s=>s.set('texture',5)],
+  ['an unsafe jump',s=>s.set('texture',90)],
+  ['non-slider edits',s=>s.changed()],
+])test(`${name} cancels a queued preview`,()=>{
+  const {s,shown,estimates}=seededPreview(true);
+  s.set('texture',15);assert.equal(animationFrames.size,1);
+  invalidate(s);assert.equal(animationFrames.size,0);
+  displayFrame();assert.equal(estimates.length,0);assert.equal(shown.length,0);
+});
+
+for(const [name,invalidate] of [
+  ['view moved',s=>{s.fullView=()=>({...full,x:1});}],
+  ['caching disabled',s=>{s.cachedDetailPreview=()=>false;}],
+  ['prediction rejected',s=>{s.detailCache.blocked=true;}],
+  ['native value already shown',s=>{s.detailCache.b.value=15;}],
+])test(`queued preview rechecks ${name} before drawing`,()=>{
+  const {s,shown,estimates}=seededPreview(true);
+  s.set('texture',15);invalidate(s);displayFrame();
+  assert.equal(estimates.length,0);assert.equal(shown.length,0);
+});
+
+test('a paused display does not prevent periodic native refresh',async()=>{
+  const {s,shown,native,settle,release}=exposureSession();
+  s.set('exposure',0.1);await settle();s.set('exposure',0.2);await settle();
+  s.set('exposure',0.24);
+  assert.equal(animationFrames.size,1);assert.equal(native(),2);
+  // deliberately do not run any animation callbacks while the anchor timer runs
+  for(let i=0;i<300&&native()===2;i++)await new Promise(r=>setTimeout(r,1));
+  assert.equal(native(),3);
+  await new Promise(r=>setTimeout(r,1));
+  assert.equal(shown.at(-1).trace?.estimated,undefined);
+  const count=shown.length;displayFrame();
+  assert.equal(shown.length,count,'queued estimate replaced a newer native frame');
+  release();await settle();assert.equal(shown.at(-1).view.draft,false);
+});
+
+for(const gpu of [false,true])test(`release before the display callback renders exactly without a draft (${gpu?'GPU':'CPU'})`,async()=>{
+  const {s,shown,native,settle,release}=exposureSession();
+  const estimates=[];s.onCachedPreview=p=>{estimates.push(p);return gpu;};
+  s.set('exposure',0.1);await settle();s.set('exposure',0.2);await settle();
+  const count=shown.length;
+  s.set('exposure',0.22);s.set('exposure',0.24);
+  assert.equal(native(),2);assert.equal(animationFrames.size,1);
+  release();assert.equal(animationFrames.size,0);
+  await settle();displayFrame();
+  assert.equal(native(),3);assert.equal(shown.length,count+1);
+  assert.equal(shown.at(-1).view.draft,false);assert.equal(shown.at(-1).pixels[0],105);
+  assert.equal(estimates.length,0);
+});
+
+test('an expensive fallback resumes native work immediately',t=>{
+  let now=100;t.mock.method(performance,'now',()=>now);
+  const {s,shown,pumping}=seededPreview();
+  s.onCachedPreview=()=>{now+=1000;return false;};
+  s.set('texture',15);const before=pumping();displayFrame();
+  assert.equal(s.detailCache.blocked,true);assert.equal(shown.length,0);
+  assert.equal(pumping(),before+1);
+});
+
+for(const gpu of [false,true])test(`an anchor completing before the display callback cannot paint an old value (${gpu?'GPU':'CPU'})`,async()=>{
+  const {s,shown,settle,release}=exposureSession();
+  const estimates=[];s.onCachedPreview=p=>{estimates.push(p);return gpu;};
+  s.set('exposure',0.1);await settle();s.set('exposure',0.2);await settle();
+  const previous=s.detailCache.b.frame,render=s.renderView;
+  let finish;
+  s.renderView=async view=>{
+    const frame=await render(view);
+    if(!finish)await new Promise(resolve=>{finish=resolve;});
+    return frame;
+  };
+  s.detailCache.lastStart=0;s.set('exposure',0.22);
+  for(let i=0;i<100&&!finish;i++)await new Promise(r=>setTimeout(r,1));
+  assert.ok(finish);s.set('exposure',0.225);
+  const count=shown.length;finish();
+  await new Promise(r=>setTimeout(r,1));
+  assert.equal(shown.length,count,'an old anchor painted while a newer value awaited display');
+  assert.equal(estimates.length,0);
+  assert.equal(s.detailCache.b.value,0.22);
+  displayFrame();assert.equal(estimates.length,1);
+  assert.equal(estimates[0].a,previous);assert.equal(estimates[0].b,s.detailCache.b.frame);
+  assert.ok(Math.abs(estimates[0].mix-1.25)<1e-9);
+  release();await settle();assert.equal(shown.at(-1).view.draft,false);
 });
