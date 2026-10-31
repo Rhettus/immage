@@ -5,6 +5,10 @@ what Immage's update banner shows under Release Notes.
 
 ## Experimental Linux renderer build
 
+- Balanced previews add a 75% size. The tuner uses median timing from the
+  middle 10–90% of frames, defaults to an 80 ms latency target, and groups
+  setup, targets and recommendations with advanced comparisons folded away.
+
 - Preferences > Performance adds a tuner that starts at full preview quality
   and finds the highest tested quality meeting your FPS and latency targets.
   Review its recommended changes, apply them, and verify with another run.
@@ -16,11 +20,13 @@ what Immage's update banner shows under Release Notes.
   preview frames miss the target frame rate, rendering narrows to a movable
   detail loupe while the surrounding photo keeps its previous sharp frame.
   Release the slider to update the full visible area. The viewer's Detail
-  loupe button switches this behavior off.
+  loupe button switches this behavior off. Loupe controls appear only while
+  detail sliders are being used.
 
-- Preferences > Performance > Editing offers an optional cached Exposure
-  preview that preserves sharpening and texture while dragging. Release the
-  slider to render the accurate result; the preview is approximate.
+- Cached detail preview replaces the inaccurate cached Exposure preview.
+  It interpolates recent full renders for detail, texture, contrast and
+  dehaze controls while native rendering continues. Release renders the
+  accurate result; intermediate previews remain experimental.
 
 - GUI benchmarks now record CPU usage per core and process, RAM and swap,
   supported GPU/VRAM counters, and the busiest Linux threads to help identify
