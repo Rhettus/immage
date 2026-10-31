@@ -21,6 +21,7 @@ import type { Preview } from "./Preferences";
 
 export type CachedPreview = { a:Frame; b:Frame; mix:number; frame:Frame };
 type DetailCache = { id:string; key:string; range:number; lastStart:number; nativeMs:number; blocked:boolean;
+  inputSerial:number; shownSerial:number;
   accuracy?:ReturnType<typeof predictionAccuracy>; direction:number; predictedValue?:number; a?:{frame:Frame;value:number}; b?:{frame:Frame;value:number} };
 
 type OpenReply = { imgid: number; sensor_width: number; sensor_height: number; orientation: number;
@@ -347,10 +348,11 @@ export class Session {
       if (this.detailCache?.id !== id || this.detailCache.key !== key) {
         const frame = !this.busy && !this.dirty.size ? this.current.get(key) : undefined;
         this.detailCache = {id,key,range:c.max-c.min,b:frame ? {frame,value:from} : undefined,
-          lastStart:0,nativeMs:previewTiming().native,blocked:false,direction:0,accuracy:predictionAccuracy()};
+          lastStart:0,nativeMs:previewTiming().native,blocked:false,direction:0,accuracy:predictionAccuracy(),inputSerial:0,shownSerial:0};
       }
     } else this.detailCache = null;
     if (this.detailCache) {
+      this.detailCache.inputSerial++;
       const direction = Math.sign(v-from);
       if (direction && this.detailCache.direction && direction !== this.detailCache.direction) this.detailCache.a = undefined;
       if (direction) this.detailCache.direction = direction;
@@ -403,12 +405,13 @@ export class Session {
       const frame = {...cache.b.frame,hash:undefined,trace,ms:0,
         view:{...cache.b.frame.view,draft:true,detail:true}};
       const shown = this.onCachedPreview?.({a:cache.a.frame,b:cache.b.frame,mix,frame});
-      if (shown) cache.predictedValue = value;
+      if (shown) { cache.predictedValue = value; cache.shownSerial = cache.inputSerial; }
       else {
         const pixels = mixDetailPixels(cache.a.frame.pixels,cache.b.frame.pixels,mix);
         // display wait contributes to latency, not the CPU generation budget
         if (performance.now()-started <= previewTiming().target) {
           cache.predictedValue = value;
+          cache.shownSerial = cache.inputSerial;
           this.onFrame({...frame,pixels});
         } else cache.blocked = true;
       }
@@ -1373,6 +1376,7 @@ export class Session {
         } else {
           const have = view.draft ? [] : this.heldFor(key);
           const cache = this.detailCache, cacheValue = cache ? this.values[cache.id] : undefined;
+          const cacheSerial = cache?.inputSerial ?? 0;
           const started = performance.now();
           if (cache) cache.lastStart = started;
           // Validate against the old anchors before training on this frame.
@@ -1405,11 +1409,17 @@ export class Session {
           // Completed anchors must not overwrite newer slider feedback or a
           // frame from a released drag / changed viewport.
           const now = this.size();
-          const stale = (cache && (this.detailCache !== cache || cacheValue !== this.values[cache.id]))
+          // New input alone does not make a completed frame useless. If bounded
+          // estimation is unavailable, dropping every in-flight frame freezes
+          // a continuous drag. Only newer feedback already presented wins.
+          const newerQueued = cache && !cache.blocked && this.queuedPreview?.cache === cache
+            && this.queuedPreview.value !== cacheValue;
+          const stale = (cache && (this.detailCache !== cache || cacheSerial < cache.shownSerial || newerQueued))
             || requestedKey !== this.frameKey(now, !!this.before)
             || !!requestedView.draft !== !!now.draft
             || this.reshapeDue || [...this.dirty].some((op) => op === "flip" || FRAMING.has(op.split("#")[0]));
           if (!stale) {
+            if (cache) cache.shownSerial = cacheSerial;
             // Keep exact anchors on the same surface as slider estimates.
             // Switching to the 2D canvas on every refresh uploads the whole
             // image again and forces a compositor layer handoff mid-drag.

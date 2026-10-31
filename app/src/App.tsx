@@ -4314,12 +4314,35 @@ export default function App() {
     return p ? { w: p.fullWidth, h: p.fullHeight } : { w: 3, h: 2 };
   };
 
+  const prepareCropView = () => {
+    // Crop bypass changes coordinates. Discard every old image surface before
+    // asking for the replacement, including a cached GPU preview and clipping.
+    hideCachedPreview();
+    cachedRenderer.current?.reset();
+    for (const layer of [canvas, baseCanvas, clipSharp, clipBase, loupeCanvas]) {
+      const c = layer.current;
+      if (c) c.getContext("2d")?.clearRect(0, 0, c.width, c.height);
+    }
+    sharpMeta.current = baseMeta.current = loupeMeta.current = null;
+    overviewHash.current = null;
+    setCropBox(null);
+    // Do not animate using the cropped frame's dimensions: the next fitted
+    // frame must choose its scale from the uncropped dimensions immediately.
+    const a = anim.current;
+    if (a.raf !== null) cancelAnimationFrame(a.raf);
+    a.raf = null;
+    a.end = a.asked = null;
+    zoomRef.current = "fit";
+    setZoomState("fit");
+    center.current = { x: 0.5, y: 0.5 };
+  };
+
   const enterCrop = () => {
     const s = session.current;
     if (!s || croppingRef.current) return;
     setBaMode("off");
     setCompare(null);
-    setZoom("fit");
+    prepareCropView();
     const v = s.values;
     const rect = { l: v.crop_l ?? 0, t: v.crop_t ?? 0, r: v.crop_r ?? 1, b: v.crop_b ?? 1 };
     const rd = v.crop_rd ?? 0, rn = v.crop_rn ?? 0;
@@ -4349,6 +4372,7 @@ export default function App() {
   const leaveCrop = (apply: boolean) => {
     const s = session.current;
     if (!s || !croppingRef.current) return;
+    prepareCropView();
     croppingRef.current = false;
     setCropping(false);
     setStraightening(false);
@@ -4407,7 +4431,7 @@ export default function App() {
 
   // the overlay sits exactly over the image as drawn
   useEffect(() => {
-    if (!cropping || !canvas.current || !viewer.current) { setCropBox(null); return; }
+    if (!cropping || !sharpMeta.current || !canvas.current || !viewer.current) { setCropBox(null); return; }
     const c = canvas.current.getBoundingClientRect(), v = viewer.current.getBoundingClientRect();
     setCropBox({ left: c.left - v.left, top: c.top - v.top, width: c.width, height: c.height });
   }, [cropping, placement]);
