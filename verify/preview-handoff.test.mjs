@@ -27,6 +27,8 @@ function fixture(success=true) {
     clipRef:ref({low:false,high:false}),
     canvas:ref({width:2,height:2,getContext(){return {putImageData(){calls.push(['cpu']);}};}}),
     hideCachedPreview(){calls.push(['hide']);env.cachedShown.current=false;},
+    invalidateClip(){},frameGenerations:{histogram:{next(){}}},
+    canvasFrames:{draw(){calls.push(['cpu']);}},
     ImageData:class {},paintClip(){},full:ref(null),sharpMeta:ref(null),placed:f=>f,
     setShownView(){},placeLayers(){calls.push(['place']);},updatePlacement(){calls.push(['placement']);},
     baseStale:ref(false),overviewHash:ref(null),autoPending:ref(false),tonePending:ref(null),wbTarget:ref(null),
@@ -52,4 +54,32 @@ test('failed exact GPU upload falls back to native pixels',()=>{
   paint(f);
   assert.deepEqual(calls.map(c=>c[0]),['gpu','hide','reset','cpu','place','placement','copy','status']);
   assert.equal(env.cachedShown.current,false);assert.equal(env.exactGpuFrame.current,null);
+});
+
+// Copy bitmaps finish asynchronously; stale copies must report a discard rather
+// than a displayed frame, and each accepted copy must close its draw span.
+const copyStart=source.indexOf('      s.onCopy = (f) => {');
+const copyEnd=source.indexOf('      s.thumbSize =',copyStart);
+const copyCode=transformSync('copy.ts',source.slice(copyStart,copyEnd)).code;
+const createCopy=new Function('env',`with(env) { ${copyCode}; return s.onCopy; }`);
+function copyFixture() {
+  const calls=[],pending=[];
+  const s={};
+  const env={s,session:ref(s),copyCanvas:ref({getContext(){return {drawImage(){calls.push('pixels');}};}}),
+    copyGen:ref(0),copyMeta:ref(null),placed:f=>f,placeLayers(){calls.push('place');},setCopyOn(on){calls.push(on);},
+    ImageData:class {},createImageBitmap(){return new Promise(resolve=>pending.push(resolve));},
+    perf:{begin(){calls.push('begin');return 1;},finish(){calls.push('finish');},
+      drawStart(){calls.push('draw.start');},drawEnd(){calls.push('draw.end');},discard(_trace,reason){calls.push(reason);}}};
+  const f={width:1,height:1,pixels:new Uint8ClampedArray(4),trace:{}};
+  return {env,calls,pending,f,copy:createCopy(env)};
+}
+test('copy bitmap completion draws and closes the frame lifecycle',async()=>{
+  const {copy,f,pending,calls}=copyFixture();copy(f);
+  pending[0]({close(){calls.push('close');}});await new Promise(setImmediate);
+  assert.deepEqual(calls,['begin','finish','draw.start','pixels','place',true,'close','draw.end']);
+});
+test('a late copy bitmap is closed and recorded as discarded',async()=>{
+  const {copy,f,pending,calls,env}=copyFixture();copy(f);env.session.current=null;
+  pending[0]({close(){calls.push('close');}});await new Promise(setImmediate);
+  assert.deepEqual(calls,['begin','finish','close','copy-bitmap-obsolete']);
 });

@@ -3339,15 +3339,23 @@ export default function App() {
           return;
         }
         // off the main thread where the browser can: a copy is 80 MB or more
+        const bitmapWork = perf.begin("copy.bitmap", { ...f.trace?.diagnostic });
         void createImageBitmap(new ImageData(f.pixels, f.width, f.height)).then((bmp) => {
-          if (session.current !== s || gen !== copyGen.current || !cc) { bmp.close(); return; }
-          cc.width = f.width;
-          cc.height = f.height;
-          cc.getContext("2d")!.drawImage(bmp, 0, 0);
-          bmp.close();
-          copyMeta.current = placed(f);
-          placeLayers();
-          setCopyOn(true);
+          perf.finish(bitmapWork);
+          if (session.current !== s || gen !== copyGen.current || !cc) {
+            bmp.close(); perf.discard(f.trace, "copy-bitmap-obsolete"); return;
+          }
+          perf.drawStart(f.trace);
+          try {
+            cc.width = f.width;
+            cc.height = f.height;
+            cc.getContext("2d")!.drawImage(bmp, 0, 0);
+            copyMeta.current = placed(f);
+            placeLayers();
+            setCopyOn(true);
+          } finally { bmp.close(); perf.drawEnd(); }
+        }).catch(() => {
+          perf.finish(bitmapWork, "failed"); perf.discard(f.trace, "copy-bitmap-failed");
         });
       };
       s.thumbSize = baseSize;
@@ -4155,10 +4163,10 @@ export default function App() {
       const { w, h } = viewport();
       const at = new Date();
       const report = {
-        immage: "gui-benchmark", version: 6, at: at.toISOString(),
+        immage: "gui-benchmark", version: 8, at: at.toISOString(),
         app: await invoke<{ app: string; darktable: string }>("about").catch(() => null),
         machine: await invoke<Record<string, unknown>>("perf_machine").catch(() => null),
-        frontend: perf.frontendReport(),
+        frontend: perf.frontendReport(), diagnostics: perf.diagnosticReport(),
         webview, webviewTiming, resources: { ...resources, phases },
         photo: (currentRef.current?.path ?? "").split(/[\\/]/).pop(),
         viewport: { width: w, height: h, dpr: window.devicePixelRatio || 1, draftScale: draftScale() }, dragDrafts: drafts, preview,
