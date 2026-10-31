@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
-import { Profiler, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Profiler, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ask, open, save } from "@tauri-apps/plugin-dialog";
@@ -16,6 +16,8 @@ import { autoArea, autoBlack, autoDmax, autoDmin, autoExposure as autoPrintExpos
          FILM_BW, FILM_COLOR, fromValues, PRESETS, toValues, type Stats } from "./negadoctor";
 import { NegativePanel, type NegPick } from "./NegativePanel";
 import { CircleOff, Grid2x2, ScanSearch, MoveHorizontal, MoveVertical, PenLine, Sparkles, WandSparkles } from "lucide-react";
+import { panelValues } from "./panelValues";
+import { FrameUpdates, Snapshot } from "./uiUpdates";
 import { PixelWorker } from "./pixelWorker";
 import { CachedPreviewRenderer } from "./cachedPreviewRenderer";
 import { Session, framePlace, instanceKey, mapOpOf, type Frame, type HistoryItem, type ModuleState, type View } from "./session";
@@ -228,7 +230,12 @@ export default function App() {
   // the open photo's filmstrip cell, kept while the filmstrip shows another
   // folder or an Immich search, so the tools and panels that need it still work
   const [openCell, setOpenCell] = useState<ImageEntry | null>(null);
-  const [values, setValues] = useState<Record<string, number>>({});
+  const [values, publishValues] = useState<Record<string, number>>({});
+  const valueUpdates = useRef<FrameUpdates<Record<string, number>> | null>(null);
+  valueUpdates.current ??= new FrameUpdates(publishValues);
+  const setValues = (update: React.SetStateAction<Record<string, number>>) =>
+    valueUpdates.current!.immediate(old => typeof update === "function" ? update(old) : update);
+  useEffect(() => () => valueUpdates.current?.dispose(), []);
   const [status, setStatus] = useState("open a folder to start");
   // how far the open folder's reading has got, while it is read
   // `files` lists them all, in the order they are read, once `listed`;
@@ -1431,18 +1438,18 @@ export default function App() {
   cropRef.current = { rect: cropRect, aspect: cropAspect, portrait: cropPortrait, choices: cropChoices };
   const [zoom, setZoomState] = useState<Zoom>("fit");
   const [placement, setPlacement] = useState<Placement | null>(null);
-  const [histogram, setHistogram] = useState<Histogram | null>(null);
+  const [histograms] = useState(() => new Snapshot<Histogram | null>(null));
   const pixelWorker = useRef<PixelWorker | null>(null);
   const pixelsWorker = () => pixelWorker.current ??= new PixelWorker();
   useEffect(() => () => { pixelWorker.current?.dispose(); pixelWorker.current = null; }, []);
   useEffect(() => {
     pixelWorker.current?.dispose(); pixelWorker.current = null;
-    setHistogram(null);
+    histograms.set(null);
   }, [current]);
   const updateHistogram = (f: Frame) => {
     const owner = session.current;
     pixelsWorker().submit("histogram", { kind: "histogram", pixels: f.pixels, width: f.width, height: f.height }, result => {
-      if (session.current === owner) setHistogram(result as Histogram);
+      if (session.current === owner) histograms.set(result as Histogram);
     });
   };
   const placementRef = useRef<Placement | null>(null);
@@ -1571,6 +1578,7 @@ export default function App() {
     let wheelTimer = 0;
     const end = () => {
       if (!dragging.current) return;
+      valueUpdates.current?.flush();
       dragging.current = false;
       detailActiveRef.current = false;
       setDetailActive(false); setLoupeShown(false);
@@ -3461,7 +3469,7 @@ export default function App() {
   // set while one step makes several changes (Reset all), so they record once
   const holdRecord = useRef(false);
   // the History panel follows the stack, which is kept outside React
-  const [, setHistoryRev] = useState(0);
+  const [historyRev, setHistoryRev] = useState(0);
   const [historyBase, setHistoryBase] = useState<HistoryItem[]>([]);
   const record = (ids: string[], label?: string) => {
     const s = session.current;
@@ -3939,7 +3947,7 @@ export default function App() {
     setAmount(null);
     record([c.id]);
     baseStale.current = true;
-    setValues((old) => ({ ...old, [c.id]: v }));
+    valueUpdates.current!.enqueue(old => old[c.id] === v ? old : ({ ...old, [c.id]: v }));
     perf.time("slider.sessionSet", () => session.current?.set(c.id, v));
   });
 
@@ -5361,7 +5369,7 @@ export default function App() {
             )}
             <ResetAll disabled={!current} onReset={resetAll} />
           </div></div>
-        <Profiler id="histogram" onRender={perf.reactCommit}><HistogramView histogram={histogram} values={values} disabled={!current} exif={currentEntry?.exif ?? null}
+        <Profiler id="histogram" onRender={perf.reactCommit}><HistogramView histograms={histograms} values={values} disabled={!current} exif={currentEntry?.exif ?? null}
                        neutral={(id) => session.current?.neutral[id] ?? controlById.get(id)?.neutral ?? 0}
                        onChange={change} clip={clipOn} onClip={(end) => setClipOn((o) => ({ ...o, [end]: !o[end] }))}
                        onClipPeek={setClipPeek} scope={scope} onScope={setScope} /></Profiler>
@@ -5615,9 +5623,9 @@ export default function App() {
             </div>
           )}
           {rightMode === "adjust" && !cropping && panels.filter((p) => !p.hidden && (!p.showIf || p.showIf(values))).map((p) => (
-            <Profiler key={p.id} id={`panel.${p.id}`} onRender={perf.reactCommit}><PanelView panel={p} open={openPanels.has(p.id)} onToggle={(solo) => togglePanel(p.id, solo)}
+            <Profiler key={p.id} id={`panel.${p.id}`} onRender={perf.reactCommit}><PanelView sessionRevision={historyRev} panel={p} open={openPanels.has(p.id)} onToggle={(solo) => togglePanel(p.id, solo)}
                        values={values} session={session.current} disabled={!current} onChange={change}
-                       onChangeMany={changeMany} histogram={histogram} onPreview={hoverValues}
+                       onChangeMany={changeMany} histograms={histograms} onPreview={hoverValues}
                        toneTools={p.id === "basic" ? (
                          <div className="tone-tools">
                            <button className="btn small" disabled={!current || values.neg_on === 1}
@@ -6692,12 +6700,13 @@ const SCOPE_MODES: [ScopeMode, string][] = [
 // slider and a double-click resets it; on the RYB vectorscope, dragging
 // turns the color harmony guides. the clipping triangles show their
 // overlay on the photo: a click keeps it, hovering shows it for a while
-function HistogramView({ histogram: h, values, disabled, exif, neutral, onChange, clip, onClip, onClipPeek, scope, onScope: setScope }: {
-  histogram: Histogram | null; values: Record<string, number>; disabled: boolean; exif: Exif | null;
+function HistogramView({ histograms, values, disabled, exif, neutral, onChange, clip, onClip, onClipPeek, scope, onScope: setScope }: {
+  histograms: Snapshot<Histogram | null>; values: Record<string, number>; disabled: boolean; exif: Exif | null;
   neutral: (id: string) => number; onChange: (c: Control, v: number) => void;
   clip: ClipShow; onClip: (end: "low" | "high") => void; onClipPeek: (end: "low" | "high" | null) => void;
   scope: ScopeSettings; onScope: (change: Partial<ScopeSettings>) => void;
 }) {
+  const h = useSyncExternalStore(histograms.subscribe, histograms.get);
   const ref = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState(0);
   useEffect(() => {
@@ -6949,11 +6958,14 @@ const UPRIGHT_TITLES = [
 // by the axis they straighten, Full by both
 const UPRIGHT_ICONS = [CircleOff, WandSparkles, PenLine, MoveHorizontal, MoveVertical, Grid2x2];
 
-function PanelView({ panel: p, open, onToggle, values, session, disabled, onChange, onChangeMany, histogram,
-                     onAuto, wbTools, toneTools, denoiseTools, straightenTools, transformTools, onPreview, onOptionPreview }: {
+const noHistogramSubscription = () => () => {};
+const noHistogram = () => null;
+
+type PanelProps = {
+  sessionRevision: number;
   panel: Panel; open: boolean; onToggle: (solo: boolean) => void; values: Record<string, number>;
   session: Session | null; disabled: boolean; onChange: (c: Control, v: number) => void;
-  onChangeMany: (entries: [string, number][]) => void; histogram: Histogram | null;
+  onChangeMany: (entries: [string, number][]) => void; histograms: Snapshot<Histogram | null>;
   onAuto?: () => void;
   wbTools?: React.ReactNode;   // the picker and presets, above Temp
   toneTools?: React.ReactNode;   // Auto, above Exposure
@@ -6962,7 +6974,34 @@ function PanelView({ panel: p, open, onToggle, values, session, disabled, onChan
   transformTools?: React.ReactNode;   // Upright's buttons, its section's only content
   onPreview: (values: Values | null) => void;   // a swatch under the pointer
   onOptionPreview?: (preview: OptionPreview | null) => void;   // a slider ⌥-dragged
-}) {
+};
+
+// Event bridges retain the latest committed handlers without making every panel
+// and slider render just because the App created another closure.
+function useLiveEvent<A extends unknown[], R>(callback: (...args: A) => R) {
+  const latest = useRef(callback);
+  useLayoutEffect(() => { latest.current = callback; });
+  return useCallback((...args: A) => latest.current(...args), []);
+}
+
+function PanelView(props: PanelProps) {
+  const selected = useRef<Values | undefined>(undefined);
+  const values = panelValues(props.panel, props.values, selected.current);
+  useLayoutEffect(() => { selected.current = values; });
+  const onToggle = useLiveEvent(props.onToggle);
+  const onChange = useLiveEvent(props.onChange);
+  const onChangeMany = useLiveEvent(props.onChangeMany);
+  const onPreview = useLiveEvent(props.onPreview);
+  const auto = useLiveEvent(() => props.onAuto?.());
+  const option = useLiveEvent((preview: OptionPreview | null) => props.onOptionPreview?.(preview));
+  return <PanelWidget {...props} values={values} onToggle={onToggle} onChange={onChange}
+    onChangeMany={onChangeMany} onPreview={onPreview} onAuto={props.onAuto ? auto : undefined}
+    onOptionPreview={props.onOptionPreview ? option : undefined} />;
+}
+
+const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle, values, session, disabled, onChange, onChangeMany, histograms,
+                     onAuto, wbTools, toneTools, denoiseTools, straightenTools, transformTools, onPreview, onOptionPreview }: PanelProps) {
+  const histogram = useSyncExternalStore(p.graph === "tonecurve" ? histograms.subscribe : noHistogramSubscription, p.graph === "tonecurve" ? histograms.get : noHistogram);
   const pointMode = p.graph === "tonecurve" && values.tc_mode === 1;
   // which curve the point editor shows: the master, or one channel
   const [curveChannel, setCurveChannel] = useState<CurveChannel>("rgb");
@@ -7124,7 +7163,7 @@ function PanelView({ panel: p, open, onToggle, values, session, disabled, onChan
       </Collapse>
     </div>
   );
-}
+});
 
 // buttons that set several controls at once; one with a swatch shows as a
 // colored circle, its label as a tooltip
@@ -7202,11 +7241,20 @@ function isMono(f: Frame): boolean {
 // about one mouse notch of a wheel event's deltaY on macOS
 const WHEEL_NOTCH = 40;
 
-function Slider({ control: c, value, neutral, disabled, onChange, values, glow = 0, rawOnly, onOption }: ControlProps) {
+function Slider({ values, onChange, onOption, ...props }: ControlProps) {
+  const callbacks = useRef({ onChange, onOption });
+  useLayoutEffect(() => { callbacks.current = { onChange, onOption }; });
+  const change = useCallback((value: number) => callbacks.current.onChange(value), []);
+  const option = useCallback((on: boolean) => callbacks.current.onOption?.(on), []);
+  const track = typeof props.control.track === "function" ? props.control.track(values) : props.control.track;
+  return <SliderWidget {...props} track={track} onChange={change} onOption={onOption ? option : undefined} />;
+}
+
+const SliderWidget = memo(function SliderWidget({ control: c, value, neutral, disabled, onChange, track, glow = 0, rawOnly, onOption }:
+  Omit<ControlProps, "values"> & { track?: string }) {
   perf.count("react.sliderRenderAttempts");
   const s = c.slider;
-  const track = typeof c.track === "function" ? c.track(values) : c.track;
-  const reset = () => !disabled && onChange(neutral);
+  const reset = () => !disabled && send(neutral);
   const m = mapOf.get(c.id);
   const [editing, setEditing] = useState(false);
   const cancel = useRef(false);
@@ -7218,6 +7266,9 @@ function Slider({ control: c, value, neutral, disabled, onChange, values, glow =
   const box = useRef<HTMLDivElement>(null);
   const live = useRef({ value, onChange, disabled });
   live.current = { value, onChange, disabled };
+  // React publication can wait until the next display frame. Relative input
+  // (wheel steps and Shift anchors) must still see every preceding input.
+  const send = (next: number) => { live.current.value = next; onChange(next); };
   useEffect(() => {
     const el = box.current;
     if (!el) return;
@@ -7235,7 +7286,9 @@ function Slider({ control: c, value, neutral, disabled, onChange, values, glow =
       const by = Math.max(step, (hi - lo) * loadSliderScrollStep());
       const pos = Math.min(hi, Math.max(lo, (s ? s.toPos(v) : v) - notches * by));
       const snapped = Math.round(pos / step) * step;
-      change(s ? s.fromPos(snapped) : snapped);
+      const next = s ? s.fromPos(snapped) : snapped;
+      live.current.value = next;
+      change(next);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
@@ -7316,7 +7369,7 @@ function Slider({ control: c, value, neutral, disabled, onChange, values, glow =
                  const typed = parseFloat(e.target.value.replace(/[^0-9.+-]/g, ""));
                  if (!cancel.current && Number.isFinite(typed)) {
                    const v = Math.min(c.max, Math.max(c.min, Math.round(typed / c.step) * c.step));
-                   onChange(v);
+                   send(v);
                  }
                  cancel.current = false;
                  setEditing(false);
@@ -7339,11 +7392,11 @@ function Slider({ control: c, value, neutral, disabled, onChange, values, glow =
                  const lo = s ? s.min : c.min, hi = s ? s.max : c.max, step = s ? s.step : c.step;
                  n = Math.min(hi, Math.max(lo, Math.round((f.from + (n - f.at) * f.scale) / step) * step));
                }
-               onChange(s ? s.fromPos(n) : n);
+               send(s ? s.fromPos(n) : n);
              }} />
     </div>
   );
-}
+});
 
 // a few named values as a segmented control (Color | Black & White)
 function Choice({ control: c, value, disabled, onChange }: ControlProps) {
