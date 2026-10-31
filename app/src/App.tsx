@@ -18,7 +18,7 @@ import { NegativePanel, type NegPick } from "./NegativePanel";
 import { CircleOff, Grid2x2, ScanSearch, MoveHorizontal, MoveVertical, PenLine, Sparkles, WandSparkles } from "lucide-react";
 import { panelValues } from "./panelValues";
 import { FrameUpdates, Snapshot } from "./uiUpdates";
-import { PixelWorker } from "./pixelWorker";
+import { PixelCadence, PixelWorker } from "./pixelWorker";
 import { CachedPreviewRenderer } from "./cachedPreviewRenderer";
 import { Session, framePlace, instanceKey, mapOpOf, type Frame, type HistoryItem, type ModuleState, type View } from "./session";
 import { AUTO_TONE_IDS, autoExposure, autoTone, type SceneKey } from "./autoTone";
@@ -1441,16 +1441,29 @@ export default function App() {
   const [histograms] = useState(() => new Snapshot<Histogram | null>(null));
   const pixelWorker = useRef<PixelWorker | null>(null);
   const pixelsWorker = () => pixelWorker.current ??= new PixelWorker();
-  useEffect(() => () => { pixelWorker.current?.dispose(); pixelWorker.current = null; }, []);
+  const histogramWorker = useRef<PixelWorker | null>(null);
+  const [histogramUpdates] = useState(() => new PixelCadence<{ frame: Frame; owner: Session | null }>(({ frame: f, owner }) => {
+    if (session.current !== owner) return;
+    (histogramWorker.current ??= new PixelWorker()).submit("histogram",
+      { kind: "histogram", pixels: f.pixels, width: f.width, height: f.height }, result => {
+        if (session.current === owner) histograms.set(result as Histogram);
+      });
+  }));
+  const resetHistogram = () => {
+    histogramUpdates.cancel();
+    histogramWorker.current?.dispose(); histogramWorker.current = null;
+  };
+  useEffect(() => () => {
+    pixelWorker.current?.dispose(); pixelWorker.current = null;
+    resetHistogram();
+  }, []);
   useEffect(() => {
     pixelWorker.current?.dispose(); pixelWorker.current = null;
+    resetHistogram();
     histograms.set(null);
   }, [current]);
   const updateHistogram = (f: Frame) => {
-    const owner = session.current;
-    pixelsWorker().submit("histogram", { kind: "histogram", pixels: f.pixels, width: f.width, height: f.height }, result => {
-      if (session.current === owner) histograms.set(result as Histogram);
-    });
+    histogramUpdates.submit({ frame: f, owner: session.current }, dragging.current);
   };
   const placementRef = useRef<Placement | null>(null);
   const session = useRef<Session | null>(null);
@@ -1580,6 +1593,7 @@ export default function App() {
       if (!dragging.current) return;
       valueUpdates.current?.flush();
       dragging.current = false;
+      histogramUpdates.flush();
       detailActiveRef.current = false;
       setDetailActive(false); setLoupeShown(false);
       if (loupeCanvas.current) loupeCanvas.current.style.display = "none";
@@ -4353,6 +4367,7 @@ export default function App() {
   };
 
   const prepareCropView = () => {
+    resetHistogram();
     pixelWorker.current?.dispose(); pixelWorker.current = null;
     // Crop bypass changes coordinates. Discard every old image surface before
     // asking for the replacement, including a cached GPU preview and clipping.

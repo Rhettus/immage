@@ -2,6 +2,32 @@
 import { runPixelTask, type PixelTask, type PixelResult } from "./pixelTasks";
 import { perf } from "./perf";
 
+// defer auxiliary copies until after drawing, keeping only the latest frame
+export class PixelCadence<T> {
+  private pending: T | undefined;
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  private last = -Infinity;
+  constructor(private emit: (value: T) => void, private now = () => performance.now()) {}
+  submit(value: T, interactive: boolean) {
+    this.pending = value;
+    if (this.timer !== null) clearTimeout(this.timer);
+    this.timer = setTimeout(() => {
+      this.timer = null;
+      const next = this.pending!;
+      this.pending = undefined;
+      this.last = this.now();
+      this.emit(next);
+    }, interactive ? Math.max(0, 80 - (this.now() - this.last)) : 0);
+  }
+  flush() {
+    if (this.pending !== undefined) this.submit(this.pending, false);
+  }
+  cancel() {
+    if (this.timer !== null) clearTimeout(this.timer);
+    this.timer = null; this.pending = undefined; this.last = -Infinity;
+  }
+}
+
 type Job = { id: number; key: string; task: PixelTask; done: (result: PixelResult) => void;
   label: string; queuedAt: number; startedAt?: number };
 // One running task and one latest pending task per surface. Original frame
