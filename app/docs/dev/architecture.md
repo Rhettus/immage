@@ -447,8 +447,11 @@ colors after quantization. Texture storage is bounded to two anchors and
 256 MiB, with device texture and viewport limits checked before upload.
 
 `App` places the GPU canvas with the sharp layer and keeps the latest estimate
-visible until a native frame replaces it. Native full frames release the
-textures; photo changes and component cleanup release them too. Context loss
+visible until a native frame replaces it. Exact A=B draws retain the preceding
+compatible anchor for the next estimate. The two-texture pool evicts the least
+recently used unrequested anchor before uploading, within the 256 MiB bound;
+dimension changes discard incompatible textures. Native frames shown on the
+CPU, photo changes and component cleanup release the textures. Context loss
 reveals the last CPU frame, and unavailable WebGL, shader/upload failure or
 unsupported dimensions fall back to CPU interpolation. Restored contexts
 reupload anchors on demand. CPU `Frame` caches and pixel consumers keep native

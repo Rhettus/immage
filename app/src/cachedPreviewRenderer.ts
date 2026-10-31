@@ -38,7 +38,7 @@ void main() {
   else gl_FragColor = vec4(bytes / 255.0, b.a);
 }`;
 
-// only two native anchors are retained; slider events change uniforms, not pixels
+// retain two native anchors in recency order, including across exact A=B draws
 export class CachedPreviewRenderer {
   private gl:WebGLRenderingContext | null = null;
   private program:WebGLProgram | null = null;
@@ -128,15 +128,24 @@ export class CachedPreviewRenderer {
       if (!gl || gl.isContextLost()) return false;
       if (a.width > this.maxWidth || a.height > this.maxHeight) return false;
       const frames = [a,b];
-      // keep the former B when it becomes A; delete retired anchors before uploading
+      // an exact A=B refresh must preserve the preceding anchor for the next mix
       const matches = (anchor:Anchor, frame:typeof a) => anchor.pixels === frame.pixels
         && anchor.width === frame.width && anchor.height === frame.height;
-      for (const anchor of this.anchors) if (!frames.some(frame => matches(anchor,frame))) gl.deleteTexture(anchor.texture);
-      this.anchors = this.anchors.filter(anchor => frames.some(frame => matches(anchor,frame)));
+      const compatible = (anchor:Anchor) => anchor.width === a.width && anchor.height === a.height;
+      for (const anchor of this.anchors) if (!compatible(anchor)) gl.deleteTexture(anchor.texture);
+      this.anchors = this.anchors.filter(compatible);
       frames.forEach((frame,unit) => {
         gl.activeTexture(gl.TEXTURE0+unit);
         let anchor = this.anchors.find(anchor => matches(anchor,frame));
         if (!anchor) {
+          // protect both requested anchors even when the older one binds second
+          while (this.anchors.length >= 2 || this.anchors.reduce((sum,item) => sum+item.pixels.byteLength,0)
+              + frame.pixels.byteLength > MAX_TEXTURE_BYTES) {
+            const index = this.anchors.findIndex(item => !frames.some(frame => matches(item,frame)));
+            if (index < 0) throw Error("preview texture budget");
+            gl.deleteTexture(this.anchors[index].texture);
+            this.anchors.splice(index,1);
+          }
           const texture = gl.createTexture();
           if (!texture) throw Error("preview texture allocation");
           anchor = {texture,pixels:frame.pixels,width:frame.width,height:frame.height};
@@ -149,7 +158,11 @@ export class CachedPreviewRenderer {
           gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,frame.width,frame.height,0,gl.RGBA,gl.UNSIGNED_BYTE,frame.pixels);
           if (gl.getError() !== gl.NO_ERROR) throw Error("preview texture upload");
           this.stats.uploads++;
-        } else gl.bindTexture(gl.TEXTURE_2D,anchor.texture);
+        } else {
+          gl.bindTexture(gl.TEXTURE_2D,anchor.texture);
+          this.anchors.splice(this.anchors.indexOf(anchor),1);
+          this.anchors.push(anchor);
+        }
       });
       this.stats.textureBytes = this.anchors.reduce((sum,anchor) => sum+anchor.pixels.byteLength,0);
       if (this.canvas.width !== b.width) this.canvas.width = b.width;

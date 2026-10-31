@@ -78,10 +78,20 @@ async function check() {
   parity(halfA,halfB,0.5,{low:true,high:true});
   // restore the pair before checking the B-to-A transition
   parity(a,b,0.5);
-  const before=renderer.stats.uploads;
+  let before=renderer.stats.uploads;
+  parity(b,b,1); // exact native refresh must retain A for the next estimate
+  parity(a,b,0.75);
+  assert(renderer.stats.uploads===before,'exact refresh retired a reusable anchor');
   const c={...b,pixels:new Uint8ClampedArray(b.pixels).fill(120)};
+  parity(c,c,1); // train the next native anchor before estimating from B and C
+  assert(renderer.stats.uploads===before+1,'exact refresh uploaded more than its new frame');
   parity(b,c,0.5);
-  assert(renderer.stats.uploads===before+1,'new anchor did not reuse old B');
+  assert(renderer.stats.uploads===before+1,'next estimate re-uploaded the retained B');
+  parity(c,b,0.25); // requested anchors must survive even when bound second
+  assert(renderer.stats.uploads===before+1,'reversed pair re-uploaded anchors');
+  before=renderer.stats.uploads;
+  parity(a,c,0.5);
+  assert(renderer.stats.uploads===before+1,'evicted A was not uploaded again');
   assert(renderer.stats.textureBytes===a.pixels.byteLength*2,'texture budget grew');
   assert(!renderer.draw({a,b:{...b,width:2},mix:0.5},off),'mismatched dimensions accepted');
   assert(!renderer.draw({a,b,mix:Infinity},off),'nonfinite mix accepted');
@@ -91,6 +101,7 @@ async function check() {
   const resized=frame(2,1,new Uint8ClampedArray([2,4,6,255,8,10,12,255]));
   parity(resized,resized,0.5);
   assert(canvas.width===2&&canvas.height===1,'canvas resize failed');
+  assert(renderer.stats.textureBytes===resized.pixels.byteLength,'dimension change retained incompatible textures');
   renderer.reset();assert(renderer.stats.textureBytes===0,'reset leaked textures');
   parity(a,b,0.25);
   const random=(width,height,seed)=>{
@@ -120,6 +131,9 @@ async function check() {
       return {p50:values[6],p95:values[11]};
     };
     const uploads=renderer.stats.uploads;
+    renderer.draw({a:b,b,mix:1},off);
+    renderer.draw({a,b,mix:0.5},off);
+    assert(renderer.stats.uploads===uploads,'full-size exact refresh re-uploaded anchors');
     const cpuMs=measure(i=>ctx.putImageData(new ImageData(mixDetailPixels(a.pixels,b.pixels,i/12),width,height),0,0));
     const gpuSubmitMs=measure(i=>renderer.draw({a,b,mix:i/12},off));complete();
     const gpuCompleteMs=measure(i=>{renderer.draw({a,b,mix:i/12},off);complete();});
@@ -135,7 +149,10 @@ async function check() {
   assert(!renderer.draw({a,b,mix:0.5},off),'lost context did not fall back');
   extension.restoreContext();
   await new Promise(resolve=>setTimeout(resolve,200));
+  assert(renderer.stats.textureBytes===0,'context loss retained textures');
+  const recoveredUploads=renderer.stats.uploads;
   parity(a,b,0.5);
+  assert(renderer.stats.uploads===recoveredUploads+2,'restored context reused invalid textures');
   const {Session}=await import('/session.js');
   const scheduling=[];
   for(const gpu of [false,true]) {
@@ -153,12 +170,18 @@ async function check() {
     await new Promise(requestAnimationFrame);
     assert(estimates.length===1&&estimates[0].mix===0.95,'display did not draw just the latest input');
     assert(estimates[0].frame.trace.edits===100,'coalesced trace lost input count');
+    // CPU mixing may finish after the animation frame via its worker queue.
+    if (!gpu) {
+      const deadline=performance.now()+2000;
+      while (!shown.length&&performance.now()<deadline) await new Promise(resolve=>setTimeout(resolve,10));
+    }
     assert(shown.length===(gpu?0:1),'incorrect CPU fallback draw count');
     assert(renderer.stats.draws-before===(gpu?1:0),'GPU drew more than once per display frame');
     s.set('texture',19.5);s.requestRender();
     await new Promise(requestAnimationFrame);
     assert(estimates.length===1,'release did not cancel the queued display callback');
     scheduling.push({backend:gpu?'webgl':'cpu',inputs:100,draws:1,releaseCancelled:true});
+    s.previewWorker?.dispose();
   }
   renderer.dispose();assert(renderer.stats.textureBytes===0,'dispose leaked textures');
   const unavailable=new CachedPreviewRenderer({getContext:()=>null,addEventListener(){},removeEventListener(){}},()=>{});
