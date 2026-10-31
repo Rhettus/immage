@@ -5,6 +5,10 @@ what Immage's update banner shows under Release Notes.
 
 ## Experimental Linux renderer build
 
+- Preview layers reuse canvas allocations and already uploaded frames,
+  skip unchanged placement updates, and defer navigator drawing to reduce
+  work when an exact frame arrives.
+
 - Slider drags avoid redundant panel updates, and cached preview accuracy
   checks run independently of native frame delivery. Those checks reuse
   recent frames and avoid allocating a predicted image, reducing temporary
