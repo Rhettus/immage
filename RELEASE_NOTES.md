@@ -5,6 +5,12 @@ what Immage's update banner shows under Release Notes.
 
 ## Experimental Linux renderer build
 
+- Detail sliders use accurate previews at the current view scale. When two
+  preview frames miss the target frame rate, rendering narrows to a movable
+  detail loupe while the surrounding photo keeps its previous sharp frame.
+  Release the slider to update the full visible area. The viewer's Detail
+  loupe button switches this behavior off.
+
 - Preferences > Performance > Editing offers an optional cached Exposure
   preview that preserves sharpening and texture while dragging. Release the
   slider to render the accurate result; the preview is approximate.
