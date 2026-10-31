@@ -54,8 +54,10 @@ First load a representative RAW from your typical work, with typical edits,
 modules and masks, and use your normal editing window size. Use a copy: GUI
 benchmark slider moves are added to the photo's history.
 
-Choose the desired rendered-photo FPS and maximum input-to-paint latency.
-**Find best preview** tests Quality, full-size Balanced, then progressively
+Choose the desired rendered-photo FPS and maximum input-to-paint latency (80 ms by default).
+Both metrics use the median after trimming the lowest and highest 10%: frame
+intervals for FPS, and input-to-paint times for latency.
+**Find best preview** tests Quality, full-size Balanced, Balanced 75%, then progressively
 smaller Balanced and Performance drafts. It stops at the first quality level
 meeting both targets across the measured slider drags. It restores your
 preferences and offers the measured configuration for **Apply** or **Cancel**.
@@ -63,7 +65,7 @@ Apply runs the benchmark again; a failed target remains visibly unverified.
 The search is bounded, and reports when none of the tested setups meets the
 targets. Results apply to this photo, edit, display and window size.
 
-The options table also allows measured comparisons of cached Exposure,
+The options table also allows measured comparisons of cached detail previews,
 transport, screen scale, frame cache, GPU edits, darktable memory and available
 window renderers. Changes requiring a relaunch save the tuning session and
 resume verification after the photo reopens. Read ahead and the Immich
@@ -81,7 +83,7 @@ editing target. Profiler instrumentation can run with the overlay hidden.
 Focused synthetic checks (no machine performance benchmark):
 
 ```bash
-node --test verify/performance-tuner.test.mjs
+node --test verify/performance-tuner.test.mjs verify/cached-detail.test.mjs
 ```
 
 ### The GUI benchmark

@@ -2,7 +2,7 @@
 import test from 'node:test';
 import { readdirSync } from 'node:fs';
 import assert from 'node:assert/strict';
-import { measureTuner, searchTuner, tunerCandidates, tunerChanges } from '../app/src/previewTuning.ts';
+import { measureTuner, trimmedMedian, searchTuner, tunerCandidates, tunerChanges } from '../app/src/previewTuning.ts';
 import { startTunerWork, stopTunerWork, timeTunerWork } from '../app/src/tunerWorkload.ts';
 
 const fixture = (fps = 40, latency = 50) => {
@@ -17,13 +17,24 @@ const fixture = (fps = 40, latency = 50) => {
   return {path:'fixture.json',phases,samples,valid:true};
 };
 
-test('measures photo frames per drag, not display refresh or release frames', () => {
-  const run = fixture();
-  run.samples = run.samples.filter(s => s.at < 4000 || s.at >= 5000 || s.at % 2 === 0);
-  const m = measureTuner(fixture());
-  assert.equal(m.fps,40); assert.equal(m.latency,50); assert.equal(m.complete,true);
-  const slow = fixture(); slow.samples = slow.samples.filter(s => s.at >= 1000 || s.at < 250);
-  assert.equal(measureTuner(slow).fps,10);
+test('uses central frame-interval and latency medians, excluding release frames', () => {
+  const run=fixture();
+  for (let i=0;i<run.samples.length;i+=40) run.samples[i].total=9000;
+  const measured=measureTuner(run);
+  assert.equal(measured.fps,40);assert.equal(measured.latency,50);assert.equal(measured.complete,true);
+  // a single slow slider must not replace the requested median across measured frames
+  const slow=fixture();
+  slow.samples=slow.samples.filter((s) => s.at>=1000 || s.at<250);
+  assert.equal(measureTuner(slow).fps,40);
+});
+test('trims both deciles and averages the central pair for even samples', () => {
+  assert.equal(trimmedMedian([10000,1,2,3,4,5,6,7,8,9]),5.5);
+  assert.equal(trimmedMedian([NaN,Infinity,-1,3,5]),4);
+  assert.equal(trimmedMedian([]),Infinity);
+});
+test('75% Balanced is tested between 100% and 50%', () => {
+  const candidates=tunerCandidates();
+  assert.deepEqual(candidates.slice(1,4).map((s) => s.balancedSize),[1,0.75,0.5]);
 });
 test('missing, sparse or backgrounded data cannot pass verification', () => {
   assert.equal(measureTuner(fixture(1)).complete,false);
@@ -31,7 +42,7 @@ test('missing, sparse or backgrounded data cannot pass verification', () => {
   assert.equal(measureTuner({path:'empty',phases:[],samples:[]}).complete,false);
 });
 test('starts at full fidelity, stops at the first passing quality, restores originals', async () => {
-  const original = {...tunerCandidates()[4],cachedExposure:true};
+  const original = {...tunerCandidates()[4],cachedDetail:true};
   let active = original, runs=0;
   const result = await searchTuner(original,{fps:30,latency:100},async s => {active=s;},async () => {runs++;return fixture(runs===1?10:40,runs===1?150:50);},() => {});
   assert.equal(runs,2); assert.equal(result.met,true);
@@ -68,8 +79,8 @@ test('records only completed work in its own recording', async () => {
   const samples=stopTunerWork();assert.equal(samples.length,2);assert.equal(samples[0].ok,true);assert.equal(samples[1].ok,false);
   assert.deepEqual(stopTunerWork(),[]);
 });
-test('recommendations explicitly describe cached exposure and preview quality changes', () => {
-  assert.ok(tunerChanges({...tunerCandidates()[0],cachedExposure:true},tunerCandidates()[1]).some(s=>s.startsWith('Cached exposure preview: Off')));
+test('recommendations explicitly describe cached detail and preview quality changes', () => {
+  assert.ok(tunerChanges({...tunerCandidates()[0],cachedDetail:true},tunerCandidates()[1]).some(s=>s.startsWith('Cached detail preview: Off')));
 });
 
 // TypeScript resolves .ts before .tsx; these must remain distinct on macOS/Windows.
