@@ -491,7 +491,7 @@ test('native timer applies accuracy factor and refreshes without more input',asy
   await settle();release();await settle();
 });
 
-for(const gpu of [false,true]) test(`accuracy failure cancels queued feedback and suppresses an older in-flight frame (${gpu?'GPU':'CPU'})`,async()=>{
+for(const gpu of [false,true]) test(`accuracy failure cancels estimates while native updates keep advancing (${gpu?'GPU':'CPU'})`,async()=>{
   const {s,shown,settle,release}=exposureSession(v=>pixels(v>0.2?200:100,80,60,255));
   if(gpu)s.onCachedPreview=()=>true;
   for(const v of [0.1,0.2]){s.set('exposure',v);await settle();}
@@ -511,6 +511,40 @@ for(const gpu of [false,true]) test(`accuracy failure cancels queued feedback an
   assert.equal(s.detailCache.blocked,true);
   assert.equal(s.detailCache.b.value,0.25);
   assert.equal(shown.slice(count).some(f=>f.trace?.estimated),false);
-  assert.equal(shown.slice(count).length,1);
+  assert.equal(shown.slice(count).length,2);
   release();await settle();
+});
+
+for(const blocked of [false,true]) test(`continuous dragging keeps native feedback when ${blocked?'accuracy blocked the cache':'movement exceeds estimation bounds'}`,async()=>{
+  const {s,shown,settle,release}=exposureSession();
+  s.set('exposure',0.1);await settle();s.set('exposure',0.2);await settle();
+  s.detailCache.blocked=blocked;
+  const render=s.renderView,finishes=[];
+  s.renderView=async view=>{
+    const frame=await render(view);
+    await new Promise(resolve=>finishes.push(resolve));
+    return frame;
+  };
+  const waitForRender=async()=>{
+    for(let i=0;i<100&&!finishes.length;i++)await new Promise(r=>setTimeout(r,1));
+    assert.ok(finishes.length,'native render did not start');
+  };
+  s.set('exposure',1);
+  for(const next of [2,3,4]) {
+    await waitForRender();
+    const count=shown.length;
+    // Another input always arrives before the current native render finishes.
+    // No estimate can be shown for these widely spaced values.
+    s.set('exposure',next);
+    assert.equal(animationFrames.size,0);
+    finishes.shift()();
+    await waitForRender();
+    assert.equal(shown.length,count+1,'drag froze while waiting for an exact latest value');
+    assert.equal(shown.at(-1).pixels[0],100+(next-1)*20);
+  }
+  // Stop holding renders, then release: the final image is still exact.
+  s.renderView=render;
+  release();finishes.shift()();await settle();
+  assert.equal(shown.at(-1).view.draft,false);
+  assert.equal(shown.at(-1).pixels[0],180);
 });
