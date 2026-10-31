@@ -34,25 +34,28 @@ test('trims both deciles and averages the central pair for even samples', () => 
 });
 test('75% Balanced is tested between 100% and 50%', () => {
   const candidates=tunerCandidates().filter(s=>!s.cachedDetail);
-  assert.deepEqual(candidates.slice(1,4).map((s) => s.balancedSize),[1,0.75,0.5]);
+  assert.deepEqual(candidates.slice(0,3).map((s) => s.balancedSize),[1,0.75,0.5]);
 });
 test('missing, sparse or backgrounded data cannot pass verification', () => {
   assert.equal(measureTuner(fixture(1)).complete,false);
   assert.equal(measureTuner({...fixture(),valid:false}).complete,false);
   assert.equal(measureTuner({path:'empty',phases:[],samples:[]}).complete,false);
 });
-test('starts at full fidelity, stops at the first passing quality, restores originals', async () => {
+test('falls back to native Balanced 100% when adaptive misses targets, restoring originals', async () => {
   const original = {...tunerCandidates()[4],cachedDetail:true};
   let active = original, runs=0;
   const result = await searchTuner(original,{fps:30,latency:100},async s => {active=s;},async () => {runs++;return fixture(runs===1?10:40,runs===1?150:50);},() => {});
   assert.equal(runs,2); assert.equal(result.met,true);
   assert.equal(result.trial.settings.preview,'balanced'); assert.equal(result.trial.settings.balancedSize,1);
+  assert.equal(result.trial.settings.cachedDetail,false);
   assert.deepEqual(active,original);
 });
-test('full-quality pass never tests a lower-quality candidate', async () => {
+test('passing full-size adaptive previews stop the search before native or smaller previews', async () => {
   let runs=0;
   const r=await searchTuner(tunerCandidates()[7],{fps:30,latency:100},async()=>{},async()=>{runs++;return fixture();},()=>{});
-  assert.equal(runs,1); assert.equal(r.trial.settings.preview,'quality');
+  assert.equal(runs,1); assert.equal(r.trial.settings.preview,'balanced');
+  assert.equal(r.trial.settings.balancedSize,1); assert.equal(r.trial.settings.smallest,1);
+  assert.equal(r.trial.settings.cachedDetail,true);
 });
 test('latency failure continues search even when FPS passes', async () => {
   let runs=0;
@@ -96,11 +99,17 @@ test('frontend module names are unambiguous on case-insensitive filesystems', ()
 });
 
 
-test('adaptive candidates follow native candidates at the same preview size',()=>{
+test('full-size previews precede smaller sizes, with adaptive first at each size',()=>{
   const candidates=tunerCandidates();
-  for(let i=1;i<candidates.length;i+=2) {
-    assert.equal(candidates[i].cachedDetail,false);
-    assert.deepEqual(candidates[i+1],{...candidates[i],cachedDetail:true});
+  assert.deepEqual(candidates.slice(0,2).map(s=>[s.preview,s.balancedSize,s.cachedDetail]),[
+    ['balanced',1,true],['balanced',1,false],
+  ]);
+  assert.equal(new Set(candidates.map(s=>JSON.stringify(s))).size,candidates.length);
+  assert.ok(candidates.every(s=>s.preview!=='quality'));
+  for(let i=2;i<candidates.length;i+=2) {
+    assert.equal(candidates[i].cachedDetail,true);
+    assert.ok(candidates[i].balancedSize<1);
+    assert.deepEqual(candidates[i+1],{...candidates[i],cachedDetail:false});
   }
 });
 test('estimated frames alone cannot satisfy tuner verification',()=>{

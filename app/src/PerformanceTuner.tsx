@@ -86,7 +86,7 @@ export function PerformanceTuner({ run, onClose, onRelaunch, onOverlay, photo, r
           await option.set(String(value));
         }
       };
-      const best = await searchTuner(original,{fps,latency},applySettings,run,(s,i,total) => setProgress(`Testing ${i}/${total}: ${s.preview}${s.preview === "balanced" ? ` ${s.balancedSize*100}%` : ""}, smallest draft ${s.smallest*100}%`));
+      const best = await searchTuner(original,{fps,latency},applySettings,run,(s,i,total) => setProgress(`Testing ${i}/${total}: ${s.preview}${s.preview === "balanced" ? ` ${s.balancedSize*100}%` : ""}, smallest draft ${s.smallest*100}%, adaptive cache ${s.cachedDetail ? "on" : "off"}`));
       setTrials(best.trials); setResult(best.trial.measurement); setPath(best.trial.path); setTestedSettings(best.trial.settings); setVerified(false);
       const adjustments = tunerChanges(original,best.trial.settings);
       setProposal(adjustments.length ? best.trial.settings : null); setChanges(adjustments);
@@ -203,7 +203,7 @@ export function PerformanceTuner({ run, onClose, onRelaunch, onOverlay, photo, r
           <label>Frame rate <select className="field" value={fps} onChange={(e) => {setFps(Number(e.target.value));setVerified(false);setResult(null);setProposal(null);}}>{[15,30,60].map((n) => <option key={n} value={n}>{n} FPS</option>)}</select></label>
           <label>Maximum latency <select className="field" value={latency} onChange={(e) => {setLatency(Number(e.target.value));setVerified(false);setResult(null);setProposal(null);}}>{[50,80,100,200].map((n) => <option key={n} value={n}>{n} ms</option>)}</select></label>
         </div>
-        <p>Starts at full quality. Stops at the highest tested quality meeting both targets.</p>
+        <p>Tries 100% previews with adaptive caching first, then native previews, before smaller sizes. Stops when both targets are met.</p>
       </section>
       {result && <section className="tuner-section">
         <h3>3. {verified ? "Verification" : "Recommendation"}</h3>
