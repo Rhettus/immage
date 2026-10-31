@@ -82,6 +82,13 @@ same commit.
 To look into one control: `python3 -I verify/run.py --skip-perf --checks
 sliders --controls usm_amount --images DSC07636`.
 
+For the headless pipeline checkpoint policy, run
+`python3 -I verify/run.py --skip-perf --checks checkpoints --images PHOTO`.
+This checks pipe debug hints for the scaled checkpoint and excludes retention
+of the full-resolution input to scaling. It also checks repeated GPU drags
+for unnecessary demosaicing when OpenCL is available; that portion is reported
+as skipped when no module runs on the GPU.
+
 ## What it doesn't cover
 
 - The interface itself: whether a click on a slider reaches `change()` in
