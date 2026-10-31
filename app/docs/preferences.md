@@ -223,3 +223,5 @@ are editing, and opens the new version where you were. **Later** puts the
 card away until Immage next starts; **Skip This Version** waits for the
 one after. Updates are signed, and one whose signature does not match is
 not installed.
+
+Cached exposure preview (Performance → Editing) is an optional experimental preview, off by default. Exposure drags adjust a frozen rendered viewport, retaining sharpening and texture. It approximates exposure in display space and cannot recover clipped detail. Releasing the slider runs the normal accurate render. Other controls use the selected Preview mode.
