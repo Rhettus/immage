@@ -49,7 +49,7 @@ import { Tour, tourSeen } from "./Tour";
 import { UpdateBanner } from "./UpdateBanner";
 import { autoCheck, relaunch } from "./updates";
 import { Chevron, Collapse } from "./Collapse";
-import { loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadNewPhotosProfile, loadOverlayColor, loadGuideColor, guideRgb, loadPins, maskOverlayRgb, loadPreview, loadFrameCacheMb, loadDraftTarget, loadDraftSmallest,loadSliderScroll, loadSliderScrollStep,
+import { loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadNewPhotosProfile, loadOverlayColor, loadGuideColor, guideRgb, loadPins, maskOverlayRgb, loadPreview, loadBalancedPreviewSize, loadFrameCacheMb, loadDraftTarget, loadDraftSmallest,loadSliderScroll, loadSliderScrollStep,
          loadStackPairs,
          PreferencesDialog, storeOverlayColor, storeGuideColor, storeStackPairs,
          storeAutoHide, storeCanvas, CANVASES, storeFocusMode, storePins, type AccelProvider, type Canvas,
@@ -1653,15 +1653,15 @@ export default function App() {
     };
     return k === 1 ? view : { ...view, draft: true };
   };
-  // while a control is dragged, half the size each way (a quarter under
-  // Performance): a quarter of the pixels for darktable's modules after the
-  // one that changed, which is most of a frame's time. on a screen drawn
-  // larger than it shows (Wayland at 125%), smaller again by as much
+  // reduced previews also follow the screen scale on displays drawn larger
+  // than they show; full-size Balanced previews keep every pixel
   const draftK = () => {
-    const k = DRAFT[loadPreview()];
+    const preview = loadPreview();
+    const k = preview === "balanced" ? loadBalancedPreviewSize() : DRAFT[preview];
     return k < 1 ? k * draftScale() : 1;
   };
-  const currentView = useCallback((): View => viewAt(dragging.current ? draftK() : 1), []);
+  const currentView = useCallback((): View => dragging.current
+    ? { ...viewAt(draftK()), draft: true } : viewAt(1), []);
 
   const follow = (layer: HTMLCanvasElement, clip: HTMLCanvasElement | null) => {
     if (!clip) return;
@@ -3137,8 +3137,8 @@ export default function App() {
       s.thumbSize = baseSize;
       s.previewMode = loadPreview;
       s.frameBudget = () => loadFrameCacheMb() * 1048576;
-      s.draftSize = () => (loadPreview() === "quality" ? null : viewAt(draftK()));
-      s.draftLimits = () => ({ target: loadDraftTarget(), smallest: loadDraftSmallest() });
+      s.draftSize = () => (loadPreview() === "quality" ? null : { ...viewAt(draftK()), draft: true });
+      s.draftLimits = () => ({ target: loadDraftTarget(), smallest: loadPreview() === "balanced" && loadBalancedPreviewSize() === 1 ? 1 : loadDraftSmallest() });
       s.warmDrafts();
       // a saved edit makes the filmstrip's thumbnail stale; undone back to
       // where it started, the photo reads unedited again

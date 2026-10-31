@@ -188,7 +188,7 @@ function storeSliderScrollStep(v: number) {
 }
 
 // how much the photo gives up while it is being edited, for speed. Quality
-// renders every frame in full; Balanced drags at half size and leaves Grain
+// renders every frame in full; Balanced defaults to half size and leaves Grain
 // and diffuse (Texture, Sharpening) out of drag frames and the idle base;
 // Performance drags at quarter size, also without denoise and HSL, and its
 // base is only the viewer's size. export is never affected
@@ -205,6 +205,15 @@ export function loadPreview(): Preview {
 }
 function storePreview(v: Preview) {
   try { localStorage.setItem(PREVIEW_KEY, v); } catch { /* not kept */ }
+}
+
+const BALANCED_SIZE_KEY = "immage.balancedPreviewSize";
+export function loadBalancedPreviewSize(): number {
+  try { return localStorage.getItem(BALANCED_SIZE_KEY) === "1" ? 1 : 0.5; }
+  catch { return 0.5; }
+}
+function storeBalancedPreviewSize(v: number) {
+  try { localStorage.setItem(BALANCED_SIZE_KEY, String(v)); } catch { /* not kept */ }
 }
 
 // how long darktable may take on a drag's draft before the next is smaller,
@@ -478,6 +487,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   const [sliderScroll, setSliderScroll] = useState(loadSliderScroll);
   const [scrollStep, setScrollStep] = useState(loadSliderScrollStep);
   const [preview, setPreview] = useState(loadPreview);
+  const [balancedSize, setBalancedSize] = useState(loadBalancedPreviewSize);
   const [sharedFrames, setSharedFrames] = useState(loadSharedFrames);
   const [atScreenScale, setAtScreenScale] = useState(loadScreenScale);
   const [draftTarget, setDraftTarget] = useState(loadDraftTarget);
@@ -748,7 +758,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                 <PrefRow label="Preview"
                          hint={{
                            quality: "every frame in full while you edit: the slowest, most faithful preview",
-                           balanced: "while a slider, wheel or curve moves, the photo renders at half size without grain, texture and diffuse or sharpen's sharpening, and in full on release. the zoomed-out view behind the photo leaves them out too",
+                           balanced: "while a slider, wheel or curve moves, the photo renders at the selected preview size without grain, texture and diffuse or sharpen's sharpening, and in full on release. the zoomed-out view behind the photo leaves them out too",
                            performance: "as Balanced, at quarter size while dragging and also without noise reduction and HSL; the whole-photo render behind the viewer is only the viewer's size",
                          }[preview]}>
                   <div className="segmented small">
@@ -758,7 +768,18 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                     ))}
                   </div>
                 </PrefRow>
-                {preview !== "quality" && (
+                {preview === "balanced" && (
+                  <PrefRow label="Balanced preview size"
+                           hint="100% keeps drag previews at full size and disables smaller drafts for slow sliders; grain, texture and sharpening shortcuts still apply">
+                    <div className="segmented small">
+                      {[0.5, 1].map((v) => (
+                        <button key={v} className={balancedSize === v ? "active" : ""}
+                                onClick={() => { setBalancedSize(v); storeBalancedPreviewSize(v); }}>{v * 100}%</button>
+                      ))}
+                    </div>
+                  </PrefRow>
+                )}
+                {preview !== "quality" && !(preview === "balanced" && balancedSize === 1) && (
                   <>
                     <PrefRow label="Smaller drafts for slow sliders"
                              hint="while a slider early in darktable's pipe moves (Exposure, White Balance, noise reduction), the photo renders smaller again, so each frame comes sooner. off keeps Preview's size">

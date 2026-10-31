@@ -63,6 +63,8 @@ Immage keeps to make it so.
   - **Quality** renders every frame in full, even while you drag.
   - **Balanced**, the default, renders at half size while a slider, wheel
     or curve moves, about four times as fast, and in full on release.
+    **Balanced preview size** offers 50% (the default) and 100%. At 100%,
+    drag previews stay full size and automatic smaller drafts are disabled.
     Grain, Texture and Sharpening are left out until release, unless they
     are what you are dragging. They are also left out of the zoomed-out
     picture behind the photo, which the navigator and histogram read and
