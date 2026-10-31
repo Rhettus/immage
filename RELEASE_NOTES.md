@@ -5,6 +5,10 @@ what Immage's update banner shows under Release Notes.
 
 ## Experimental Linux renderer build
 
+- Preferences > Performance > Editing offers an optional cached Exposure
+  preview that preserves sharpening and texture while dragging. Release the
+  slider to render the accurate result; the preview is approximate.
+
 - GUI benchmarks now record CPU usage per core and process, RAM and swap,
   supported GPU/VRAM counters, and the busiest Linux threads to help identify
   single-thread bottlenecks. The dashboard shows resource use by step,
