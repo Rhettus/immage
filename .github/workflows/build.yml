@@ -239,16 +239,20 @@ jobs:
         include:
           - arch: x64
             runner: ubuntu-22.04
+            cc: gcc-12
+            cxx: g++-12
           - arch: arm64
             runner: ubuntu-22.04-arm
+            cc: gcc-14
+            cxx: g++-14
     # an AppImage runs where glibc is at least as new as the build's, so it
     # is built on Ubuntu 22.04 for both architectures, with glibc 2.35
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     env:
-      # darktable needs gcc 12; 22.04's default is 11
-      CC: gcc-12
-      CXX: g++-12
+      # GCC 12 cannot emit darktable's mixed-type OpenMP SIMD clones on ARM64
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
       CMAKE_C_COMPILER_LAUNCHER: ccache
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
       # Tauri bundles with linuxdeploy, itself an AppImage, which otherwise
@@ -267,12 +271,15 @@ jobs:
           sudo add-apt-repository -y ppa:savoury1/graphics
           sudo add-apt-repository -y ppa:savoury1/ffmpeg4
           sudo add-apt-repository -y ppa:savoury1/display
+          if [ "$(uname -m)" = aarch64 ]; then
+            sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+          fi
           sudo apt-get update
           packages=$(grep -v '^#' .github/ubuntu-packages.txt)
           # jammy ARM64 lacks these PPA versions; its OpenEXR 2
           # conflicts with Imath 3. build_linux_deps.sh supplies them
           if [ "$(uname -m)" = aarch64 ]; then
-            packages=$(printf '%s\n' "$packages" | grep -Ev '^(libjxl-dev|libsharpyuv-dev|libopenexr-dev)$')
+            packages=$(printf '%s\n' "$packages" | grep -Ev '^(libjxl-dev|libsharpyuv-dev|libopenexr-dev)$' | sed -e 's/^gcc-12$/gcc-14/' -e 's/^g++-12$/g++-14/')
           fi
           sudo apt-get install -y $packages
       - uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
