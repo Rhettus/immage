@@ -177,11 +177,20 @@ session type (`wayland` or `x11`), the desktop, and the GDK, WebKit, EGL and
 NVIDIA environment variables the app ran with, and `machine.webview` the
 web view's own version (WebKitGTK, WebView2 or WKWebView; the user agent's
 is frozen). `webview` holds the user agent, the GPU WebGL reports (the
-card, or a software renderer such as llvmpipe, which means the page is
-drawn without the GPU) and `frameRateHz`, how often the page ran
+card, or a software renderer such as llvmpipe; this describes the WebGL
+context and does not prove the compositor uses the same renderer) and
+`frameRateHz`, how often the page ran
 animation frames while idle before the run: the display's refresh rate,
 or less where WebKit throttles them (macOS halves them in Low Power
 Mode). It bounds the paint stage.
+
+The experimental Linux renderer build also records `machine.display.renderer`:
+`running` is the preference read at startup, `active` the selected EGL vendor
+(or `system` / `environment`), and `next` the saved selection for the next
+launch. The WebGL report above identifies its context's renderer, not the
+compositor's. Compare
+Mesa and NVIDIA after relaunching between runs; keep the photo, window size,
+preview mode and Edit on the GPU setting unchanged.
 
 From 0.37.0 (report version 4), `invokeMs` times the round trip of a
 call that does nothing (`perf_ping`): `idle`, 100 in a row while the page
@@ -189,6 +198,57 @@ is idle before the run, and `drag`, one every 50 ms during the slider
 drags, beside the renders. Each has n, p50, p95, min and max in ms. Slow
 `idle` means the web view's IPC itself is slow; slow `drag` alone means
 the page's drawing holds it up.
+
+From report version 5, `resources` records system and app usage on a background
+thread at a nominal 500 ms interval. `atUnixMs` aligns each sample with the
+`phases` (slider drag/release, zoom and idle) in the same clock. The dashboard's
+GUI tab shows CPU, memory, GPU and per-step peaks, and individual process peaks.
+
+- `cpuPercent` lists system-wide usage for each logical CPU. Each process in
+  Immage's descendant tree records CPU usage and RSS, including darktable and
+  WebKit helpers. CPU 100% means one logical CPU, so a process can exceed 100%.
+- On Linux, `threads` holds the eight busiest app-tree threads each interval,
+  with PID, TID, name and CPU usage from `/proc`. A single thread near 100%
+  during a slow step can reveal serial work even when it migrates between
+  cores. This suggests a bottleneck; it does not establish its cause. Threads
+  that start or exit within an interval may be missed. Other platforms still
+  record CPU per core and per process, but do not report individual threads.
+- Memory includes system RAM used/available, swap used and process RSS in bytes.
+  Summed RSS can count shared pages multiple times. Linux memory PSI is saved
+  as `memoryPressure`; it measures stalls rather than just allocated memory.
+- GPU readings are device-wide, including the desktop and other programs.
+  NVIDIA's persistent `nvidia-smi` query runs once per second and records
+  GPU/memory utilization and VRAM used/total when supported. It does not query
+  clocks, power or temperature. Linux DRM sysfs records
+  GPU busy and VRAM on drivers exposing those counters. Unavailable counters
+  are absent or null, never a fabricated zero. Intel, Apple and other devices
+  without these interfaces may have no GPU readings.
+
+Sampling runs only during the benchmark, stops on success or failure, and is
+capped at ten minutes. `intervalMs` records actual elapsed sample time and
+`collectionMs` records sampler work excluding the asynchronous NVIDIA query.
+Set `IMMAGE_BENCH_RESOURCES=0` before launching the app to disable backend
+resource sampling for an overhead comparison. The sampler adds overhead,
+and sub-500 ms spikes can be missed. Samples are assigned to the phase at the
+end of the interval, so they can include work from a neighboring phase. Compare
+A/B runs with the same instrumentation. App version numbers are unchanged.
+
+Version 5 also includes `webviewTiming`: per-step p50/p95/p99 animation callback
+intervals, estimated missed refresh slots relative to the idle callback rate,
+and event-loop lateness measured by a 100 ms timer. It reuses the existing
+performance overlay's animation callback. These are callback pacing metrics,
+not measurements of actual compositor presentation. Visibility changes are
+recorded; hidden-window samples are excluded from summaries and backgrounded
+runs are flagged for repetition. Raw observations carry phase labels and
+wall-clock timestamps.
+
+`resources.rendererEvidence` captures graphics library basenames and open GPU
+device nodes in the app's Linux process tree at the end of the run, plus the
+loaded NVIDIA driver version when available. Unreadable maps/descriptors are
+flagged. This evidence complements the selected EGL vendor and WebGL context;
+it does not claim to prove WebKit compositor acceleration. Other platforms
+retain the WebGL context and version/environment details without `/proc` data.
+No clock, power, thermal, driver or system settings are changed.
 
 ## For the next session (Claude included)
 

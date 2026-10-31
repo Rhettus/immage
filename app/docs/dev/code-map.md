@@ -60,16 +60,21 @@ Front end ([`app/src`](../../src)):
 Rust ([`app/src-tauri/src`](../../src-tauri/src)):
 
 - [main.rs](../../src-tauri/src/main.rs): `AppState` and nearly every command; [engine.rs](../../src-tauri/src/engine.rs): the engine child and its protocol
-- [immich_search.rs](../../src-tauri/src/immich_search.rs), [immich_upload.rs](../../src-tauri/src/immich_upload.rs); [plugins.rs](../../src-tauri/src/plugins.rs) (Edit In); [listing.rs](../../src-tauri/src/listing.rs) (folder listings with sizes and times); [volumes.rs](../../src-tauri/src/volumes.rs) (drives, and whether each answers); [scale.rs](../../src-tauri/src/scale.rs) (Wayland scale); [webext/frames.c](../../src-tauri/webext/frames.c) (Linux shared frames)
+- [immich_search.rs](../../src-tauri/src/immich_search.rs), [immich_upload.rs](../../src-tauri/src/immich_upload.rs); [plugins.rs](../../src-tauri/src/plugins.rs) (Edit In); [listing.rs](../../src-tauri/src/listing.rs) (folder listings with sizes and times); [volumes.rs](../../src-tauri/src/volumes.rs) (drives, and whether each answers); [scale.rs](../../src-tauri/src/scale.rs) (Wayland scale); [renderer.rs](../../src-tauri/src/renderer.rs) (Linux interface EGL selection before GTK starts); [webext/frames.c](../../src-tauri/webext/frames.c) (Linux shared frames)
 
 Engine ([`engine/`](../../../engine)):
 
 - [main.c](../../../engine/main.c): `_handle()` serves every command; four pipes (main, preview, drag, base) over the open photo; sections for library, export, masks, AI (`HAVE_AI`), spots, ranges and zones, looks, save
 - [upright.c](../../../engine/upright.c) (Upright, from ashift.c), [hdrmerge.c](../../../engine/hdrmerge.c) (HDR Merge), [pano.cc](../../../engine/pano.cc) and [dng.c](../../../engine/dng.c) (Panorama Merge), [strip.cc](../../../engine/strip.cc) (export metadata)
 
-Checks and tools: [release asset tests](../../../scripts/test_release_assets.py) (`python3 -I scripts/test_release_assets.py`), [verify/](../../../verify/README.md) (the release checks: `Session` under Node against the engine), [benchmarking/](../../../benchmarking/README.md), `cargo test` in `app/src-tauri`, `npm run build` (type check), [darktable-pin.md](darktable-pin.md), and darktable's own [dev-doc/](../../../darktable/dev-doc/README.md).
+Checks and tools: [experimental WebKitGTK build](../../scripts/build_webkitgtk.sh) and [bundle check](../../scripts/check_webkit_bundle.py), [release asset tests](../../../scripts/test_release_assets.py) (`python3 -I scripts/test_release_assets.py`), [verify/](../../../verify/README.md) (the release checks: `Session` under Node against the engine), [benchmarking/](../../../benchmarking/README.md), `cargo test` in `app/src-tauri`, `npm run build` (type check), [darktable-pin.md](darktable-pin.md), and darktable's own [dev-doc/](../../../darktable/dev-doc/README.md).
 
 ## Keeping this map current
 
 - Add a file to its line here and its entry in [architecture.md](architecture.md); keep this map short, as it is read at the start of every session.
 - Refer to code by symbol, not line number.
+
+GUI benchmark resource sampling: [resources.rs](../../src-tauri/src/resources.rs)
+records CPU, process memory, Linux threads and available GPU counters on a
+background worker; `App.tsx` attaches phase timestamps to report version 5.
+The GUI dashboard plots these alongside timing summaries.

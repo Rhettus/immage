@@ -80,7 +80,7 @@ import { ASPECTS, CropOverlay, customAspect, findAspect, fitAspect, FULL, loadCu
          rememberCustomAspect, type Aspect, type CropRect } from "./CropTool";
 import { ShortcutsDialog } from "./Shortcuts";
 import { cmd, fieldKeeps, keys } from "./keys";
-import { perf, percentiles, pingOnce, roundTrips, STAGES, webviewInfo } from "./perf";
+import { perf, percentiles, pingOnce, roundTrips, STAGES, webviewInfo, observeWebview } from "./perf";
 import { frameTransport } from "./sharedFrames";
 import { draftScale } from "./pixelRatio";
 import { PerfHud } from "./PerfHud";
@@ -3792,11 +3792,22 @@ export default function App() {
     for (let i = 0; i < 100; i++) idlePings.push(await pingOnce());
     perf.recording = [];
     const t0 = performance.now();
+    const longFramesBefore = perf.longFrames;
     // one call in flight at a time while the sliders drag, beside the renders
     const dragPings: number[] = [];
     let pinging = false;
     let pinger: Promise<void> = Promise.resolve();
+    let resources: Record<string, unknown> | null = null;
+    let stopWebview: ReturnType<typeof observeWebview> | null = null;
+    let webviewTiming: ReturnType<ReturnType<typeof observeWebview>> | null = null;
+    let resourceRecording = false;
+    const phases: { atUnixMs: number; label: string }[] = [];
+    const phase = (label: string) => { perf.label = label; phases.push({ atUnixMs: Date.now(), label }); };
     try {
+      await invoke("perf_resources_start").then(() => { resourceRecording = true; })
+        .catch((error) => { resources = { error: String(error) }; });
+      stopWebview = observeWebview(typeof webview.frameRateHz === "number" ? webview.frameRateHz : null);
+      phase("settling");
       await settle();
       pinging = true;
       pinger = (async () => {
@@ -3808,7 +3819,7 @@ export default function App() {
         const from = s.values[id] ?? c.neutral ?? 0;
         const to = Math.min(c.max, Math.max(c.min, from + delta));
         // 30 moves out and 30 back, at about 60 a second
-        perf.label = `${id} drag`;
+        phase(`${id} drag`);
         dragging.current = drafts;
         for (let i = 1; i <= 60; i++) {
           const k = i <= 30 ? i / 30 : (60 - i) / 30;
@@ -3817,16 +3828,16 @@ export default function App() {
         }
         change(c, from);
         dragging.current = false;
-        perf.label = `${id} release`;
+        phase(`${id} release`);
         if (draftShown.current) s.requestRender();
         await settle();
       }
       pinging = false;
       await pinger;
-      perf.label = "zoom 100%";
+      phase("zoom 100%");
       setZoom(1);
       await settle();
-      perf.label = "zoom fit";
+      phase("zoom fit");
       setZoom("fit");
       await settle();
       // a drag begun while the base renders, which cancels it: the first
@@ -3836,7 +3847,7 @@ export default function App() {
       while (!s.baseRendering && performance.now() < until) await sleep(10);
       if (ex && s.baseRendering) {
         const from = s.values.exposure ?? ex.neutral ?? 0;
-        perf.label = "drag during base";
+        phase("drag during base");
         dragging.current = drafts;
         for (let i = 1; i <= 20; i++) {
           change(ex, from + 0.5 * (i <= 10 ? i / 10 : (20 - i) / 10));
@@ -3844,20 +3855,31 @@ export default function App() {
         }
         change(ex, from);
         dragging.current = false;
-        perf.label = "drag during base, release";
+        phase("drag during base, release");
         if (draftShown.current) s.requestRender();
         await settle();
       }
       // the sharper base, once editing has paused (scheduleBase)
-      perf.label = "idle base";
+      phase("idle base");
       await sleep(2500);
       await settle();
+    } catch (error) {
+      perf.recording = null;
+      if (!wasOn) { setPerfHud(false); perf.enable(false); }
+      throw error;
     } finally {
+      webviewTiming = stopWebview?.() ?? null;
+      if (resourceRecording) {
+        resources = await invoke<Record<string, unknown>>("perf_resources_stop")
+          .catch((error) => ({ error: String(error) }));
+      }
       pinging = false;
+      await pinger;
       dragging.current = false;
       perf.label = "";
       benchRunning.current = false;
     }
+    const seconds = (performance.now() - t0) / 1000;
     // a drag's last draft can finish after the label turns to its release;
     // it is the drag's, and the release is the full frame (and its wait)
     const dragOf = (l: string) => (l.endsWith(", release") ? l.slice(0, -", release".length)
@@ -3875,13 +3897,13 @@ export default function App() {
     const { w, h } = viewport();
     const at = new Date();
     const report = {
-      immage: "gui-benchmark", version: 4, at: at.toISOString(),
+      immage: "gui-benchmark", version: 5, at: at.toISOString(),
       app: await invoke<{ app: string; darktable: string }>("about").catch(() => null),
       machine: await invoke<Record<string, unknown>>("perf_machine").catch(() => null),
-      webview,
+      webview, webviewTiming, resources: { ...resources, phases },
       photo: (currentRef.current?.path ?? "").split(/[\\/]/).pop(),
       viewport: { width: w, height: h, dpr: window.devicePixelRatio || 1, draftScale: draftScale() }, dragDrafts: drafts, preview,
-      transport: frameTransport(), seconds: (performance.now() - t0) / 1000, displayLongFrames: perf.longFrames,
+      transport: frameTransport(), seconds, displayLongFrames: perf.longFrames - longFramesBefore,
       invokeMs: { idle: roundTrips(idlePings), drag: roundTrips(dragPings.filter(Number.isFinite)) }, summary, samples,
     };
     const stamp = at.toISOString().replace(/[:.]/g, "-").slice(0, 19);

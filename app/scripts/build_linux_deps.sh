@@ -48,7 +48,8 @@ build() {
 # packages. OpenEXR 2 conflicts with Imath 3, which darktable uses. build
 # the libraries here, keeping the same formats as the x86-64 AppImage.
 # Highway is JPEG XL's SIMD library, newer than jammy's system package
-if [ "$(uname -m)" = aarch64 ]; then
+. /etc/os-release
+if [ "$(uname -m)" = aarch64 ] && [ "$ID" = ubuntu ] && [ "$VERSION_ID" = 22.04 ]; then
   build openexr v3.3.5 BSD-3-Clause https://github.com/AcademySoftwareFoundation/openexr 'LICENSE.md' \
         -DBUILD_SHARED_LIBS=ON -DOPENEXR_BUILD_TOOLS=OFF -DOPENEXR_BUILD_EXAMPLES=OFF
   build libwebp v1.6.0 BSD-3-Clause https://github.com/webmproject/libwebp 'COPYING PATENTS AUTHORS' \
