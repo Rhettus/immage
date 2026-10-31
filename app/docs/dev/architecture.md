@@ -434,3 +434,31 @@ background worker; `App.tsx` attaches phase timestamps to report version 5.
 The GUI dashboard plots these alongside timing summaries.
 
 [cachedDetail.ts](../../src/cachedDetail.ts) bounds interpolation between real renders for Exposure, Vibrance, Saturation and detail controls, measures display RGB prediction error, and stores the tuner timing seed. `Session` coalesces native edits until the next timed anchor (80–320 ms at the default target, or native completion when slower), checks predictions against native output, and disables estimates for the drag on excessive error or estimation cost. Estimated performance samples are marked separately; tuner verification requires native samples too. `Session` invalidates anchors on release, control/view changes and non-slider edits. Release cancels the timer and requests exact output. `App` shows loupe controls only during eligible detail interactions.
+
+
+[cachedPreviewRenderer.ts](../../src/cachedPreviewRenderer.ts) presents estimates
+from `Session.onCachedPreview` using two native RGBA textures and a WebGL
+fragment shader. `detailMix` shares eligibility and extrapolation bounds with
+the CPU path. Each new native anchor is uploaded once; the previous B texture
+is reused as A. Slider events update the mix uniform and draw without creating
+an estimated pixel array. The shader interpolates display bytes, clamps and
+rounds to even like `Uint8ClampedArray`, preserves B's alpha, and draws clipping
+colors after quantization. Texture storage is bounded to two anchors and
+256 MiB, with device texture and viewport limits checked before upload.
+
+`App` places the GPU canvas with the sharp layer and keeps the latest estimate
+visible until a native frame replaces it. Native full frames release the
+textures; photo changes and component cleanup release them too. Context loss
+reveals the last CPU frame, and unavailable WebGL, shader/upload failure or
+unsupported dimensions fall back to CPU interpolation. Restored contexts
+reupload anchors on demand. CPU `Frame` caches and pixel consumers keep native
+pixels. During GPU estimates the histogram and scopes follow native frames;
+clipping overlays use the current estimate without readback. Native prediction
+validation still uses CPU interpolation at the existing refresh interval and
+retains the current error thresholds and exact release rendering.
+
+Performance samples identify `previewBackend` (`cpu` or `webgl`), per-draw
+`anchorUploads`, and retained `textureBytes`. GPU draw timing measures command
+submission and placement; it does not synchronously wait for the GPU. The
+[browser check](../../../verify/cached-preview-gpu.mjs) separately forces completion with a test-only one-pixel
+readback when comparing rendering costs.

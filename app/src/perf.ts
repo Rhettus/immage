@@ -29,7 +29,7 @@ export const STAGES = [
   "probe",     // collecting the per-module timings
   "ipc",       // the frame crossing to the page
   "handoff",   // from the frame arriving to its drawing starting
-  "draw",      // putImageData and the rest of drawFrame
+  "draw",      // canvas upload or GPU draw and frame placement
   "histogram",
   "paint",     // to the next animation frame, when it is on screen
 ] as const;
@@ -37,6 +37,9 @@ export type Stage = typeof STAGES[number];
 
 export type Sample = {
   estimated?: boolean;
+  previewBackend?: "cpu" | "webgl";
+  anchorUploads?: number;
+  textureBytes?: number;
   at: number;                  // performance.now() at paint
   kind: "edit" | "view" | "base";
   draft: boolean;
@@ -52,6 +55,9 @@ export type Sample = {
 // what renderView and drawFrame learn of one frame on its way
 export type Trace = {
   estimated?: boolean;
+  previewBackend?: "cpu" | "webgl";
+  anchorUploads?: number;
+  textureBytes?: number;
   kind: Sample["kind"];
   draft: boolean;
   inputAt: number | null;
@@ -221,10 +227,10 @@ class Perf {
     return out;
   }
 
-  drawEnd() {
+  drawEnd(shown = true) {
     const t = this.drawing;
     this.drawing = null;
-    if (!t || t.drawStart === undefined) return;
+    if (!shown || !t || t.drawStart === undefined) return;
     const drawEnd = performance.now();
     const label = this.label;
     window.requestAnimationFrame(() => {
@@ -245,7 +251,9 @@ class Perf {
         histogram: t.histogram,
         paint: paint - drawEnd,
       };
-      const s: Sample = { estimated:t.estimated, at: paint, kind: t.kind, draft: t.draft, width: t.width, height: t.height,
+      const s: Sample = { estimated:t.estimated, previewBackend:t.previewBackend,
+                          anchorUploads:t.anchorUploads, textureBytes:t.textureBytes,
+                          at: paint, kind: t.kind, draft: t.draft, width: t.width, height: t.height,
                           edits: t.edits, total: paint - start, stages, modules: t.modules,
                           ...(label ? { label } : {}) };
       this.samples.push(s);

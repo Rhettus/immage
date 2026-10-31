@@ -15,9 +15,11 @@ import type { Spot } from "./spots";
 import { begin, end, progress } from "./activity";
 import { perf, type Trace } from "./perf";
 import { FRAME_HEAD, renderFrame } from "./sharedFrames";
-import { interpolateDetail, isDetailControl, isCachedControl, predictionError, previewTiming, anchorInterval } from "./cachedDetail";
+import { detailMix, mixDetailPixels, interpolateDetail, isDetailControl, isCachedControl, predictionError, previewTiming, anchorInterval } from "./cachedDetail";
 import type { Preview } from "./Preferences";
 
+
+export type CachedPreview = { a:Frame; b:Frame; mix:number; frame:Frame };
 
 type OpenReply = { imgid: number; sensor_width: number; sensor_height: number; orientation: number;
                    look: string | null; look_amount: number; edited: boolean; raw: boolean;
@@ -361,16 +363,25 @@ export class Session {
     }
     const cache = this.detailCache;
     if (cache?.a && cache.b && !cache.blocked) {
-      const pixels = interpolateDetail({pixels:cache.a.frame.pixels,value:cache.a.value},
+      const mix = detailMix({pixels:cache.a.frame.pixels,value:cache.a.value},
         {pixels:cache.b.frame.pixels,value:cache.b.value},v,cache.range);
-      if (pixels && performance.now()-inputAt <= previewTiming().target) {
+      if (mix !== null) {
         const trace = perf.cached(cache.b.frame.width,cache.b.frame.height);
-        cache.predictedValue = v;
-        trace.estimated = true;
+        trace.estimated = true; trace.draft = true; trace.previewBackend = "cpu";
         trace.kind = "edit"; trace.edits = 1; trace.inputAt = inputAt;
-        this.onFrame({...cache.b.frame,pixels,hash:undefined,trace,ms:0,
-          view:{...cache.b.frame.view,draft:true,detail:true}});
-      } else if (pixels) cache.blocked = true;
+        const frame = {...cache.b.frame,hash:undefined,trace,ms:0,
+          view:{...cache.b.frame.view,draft:true,detail:true}};
+        // the GPU consumer draws from anchors; other consumers retain CPU feedback
+        const shown = this.onCachedPreview?.({a:cache.a.frame,b:cache.b.frame,mix,frame});
+        if (shown) cache.predictedValue = v;
+        else {
+          const pixels = mixDetailPixels(cache.a.frame.pixels,cache.b.frame.pixels,mix);
+          if (performance.now()-inputAt <= previewTiming().target) {
+            cache.predictedValue = v;
+            this.onFrame({...frame,pixels});
+          } else cache.blocked = true;
+        }
+      }
     }
     this.needRender = true;
     void this.pump();
@@ -809,6 +820,7 @@ export class Session {
     void this.pump();
   }
 
+  onCachedPreview: ((preview:CachedPreview) => boolean) | null = null;
   cachedDetailPreview: () => boolean = () => false;
   fullView: () => View = () => this.size();
   onDetailControl: ((id:string|null) => void) | null = null;

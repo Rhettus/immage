@@ -150,8 +150,9 @@ test('reversals and large jumps require a fresh native anchor',async()=>{
 });
 
 
-test('an in-flight anchor never overwrites newer Exposure feedback',async()=>{
+for(const gpu of [false,true]) test(`an in-flight anchor never overwrites newer Exposure feedback (${gpu?'GPU':'CPU'})`,async()=>{
   const {s,shown,settle,release}=exposureSession();
+  if(gpu)s.onCachedPreview=()=>true;
   s.set('exposure',0.1);await settle();s.set('exposure',0.2);await settle();
   const render=s.renderView;
   let finish;
@@ -172,8 +173,9 @@ test('an in-flight anchor never overwrites newer Exposure feedback',async()=>{
   release();await settle();
 });
 
-test('release during an in-flight anchor discards it and renders the latest exact value',async()=>{
+for(const gpu of [false,true]) test(`release during an in-flight anchor discards it and renders the latest exact value (${gpu?'GPU':'CPU'})`,async()=>{
   const {s,shown,settle,release}=exposureSession();
+  if(gpu)s.onCachedPreview=()=>true;
   s.set('exposure',0.1);await settle();s.set('exposure',0.2);await settle();
   const render=s.renderView;
   let finish;
@@ -206,4 +208,37 @@ test('every Basic slider supports adaptive caching without extending the loupe',
     assert.equal(s.activeDetailControl,null);
     s.requestRender();assert.equal(s.detailCache,null);
   }
+});
+
+test('GPU feedback passes native anchors without allocating an estimated image',()=>{
+  const {s,shown,pumping}=session();
+  s.set('texture',10);
+  const frame={...full,view:full,pixels:pixels(20,40,60,255)};
+  const a={...frame},b={...frame,pixels:pixels(40,60,80,128)};
+  s.detailCache.a={frame:a,value:0};s.detailCache.b={frame:b,value:20};
+  let preview;
+  s.onCachedPreview=p=>{preview=p;return true;};
+  s.set('texture',15);
+  assert.equal(preview.a,a);assert.equal(preview.b,b);assert.equal(preview.mix,0.75);
+  assert.equal(preview.frame.pixels,b.pixels);
+  assert.equal(preview.frame.trace.estimated,true);
+  assert.equal(preview.frame.view.draft,true);
+  assert.equal(shown.length,0);assert.equal(s.detailCache.predictedValue,15);
+  assert.equal(pumping(),2);assert.equal(s.pending,true);
+  s.onCachedPreview=()=>false;
+  s.set('texture',16);
+  assert.deepEqual([...shown.at(-1).pixels],[36,56,76,128]);
+  assert.notEqual(shown.at(-1).pixels,b.pixels);
+});
+
+test('GPU feedback retains native error rejection and exact release',async()=>{
+  const {s,shown,settle,release,native}=exposureSession(value=>pixels(value>0.2?250:100+value*20,80,60,255));
+  const estimates=[];s.onCachedPreview=p=>{estimates.push(p);return true;};
+  s.set('exposure',0.1);await settle();s.set('exposure',0.2);await settle();
+  s.set('exposure',0.24);assert.equal(estimates.length,1);
+  await settle();assert.equal(s.detailCache.blocked,true);assert.equal(native(),3);
+  s.set('exposure',0.25);assert.equal(estimates.length,1);
+  release();await settle();
+  assert.equal(shown.at(-1).view.draft,false);assert.equal(shown.at(-1).pixels[0],250);
+  assert.equal(s.detailCache,null);
 });
