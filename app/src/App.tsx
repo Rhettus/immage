@@ -1597,7 +1597,8 @@ export default function App() {
       detailActiveRef.current = false;
       setDetailActive(false); setLoupeShown(false);
       if (loupeCanvas.current) loupeCanvas.current.style.display = "none";
-      if (draftShown.current) session.current?.requestRender();
+      if (draftShown.current || session.current?.pending) session.current?.requestRender();
+      else session.current?.flushEdits();
     };
     const down = (e: PointerEvent) => {
       // a <select>'s native menu takes the pointer on macOS: its pointerup
@@ -3938,6 +3939,9 @@ export default function App() {
   pastePreviousRef.current = () => pastePrevious();
 
   const changeMany = (entries: [string, number][], label?: string) => {
+    const s = session.current;
+    entries = [...new Map(entries)];
+    if (!entries.length || entries.every(([id, v]) => s?.values[id] === v)) return;
     leaveBefore();
     setBaMode("off");
     if (entries.some(([id]) => id.startsWith("grain_"))) setGrainLast(true);
@@ -3949,10 +3953,11 @@ export default function App() {
     record(entries.map(([id]) => id), label);
     baseStale.current = true;
     setValues((old) => ({ ...old, ...Object.fromEntries(entries) }));
-    session.current?.setMany(entries);
+    session.current?.setMany(entries, dragging.current);
   };
 
   const change = (c: Control, v: number) => perf.time("slider.handler", () => {
+    if (session.current?.values[c.id] === v) return;
     leaveBefore();
     setBaMode("off");
     if (c.id.startsWith("grain_")) setGrainLast(true);
@@ -3962,7 +3967,7 @@ export default function App() {
     record([c.id]);
     baseStale.current = true;
     valueUpdates.current!.enqueue(old => old[c.id] === v ? old : ({ ...old, [c.id]: v }));
-    perf.time("slider.sessionSet", () => session.current?.set(c.id, v));
+    perf.time("slider.sessionSet", () => session.current?.set(c.id, v, dragging.current));
   });
 
   // Preferences' GUI benchmark: scripted drags of the main sliders through
@@ -4052,7 +4057,7 @@ export default function App() {
           change(c, from);
           dragging.current = false;
           phase(`${id} release`);
-          if (draftShown.current) s.requestRender();
+          if (draftShown.current || s.pending) s.requestRender();
           await settle();
         }
         pinging = false;
@@ -4080,7 +4085,7 @@ export default function App() {
           change(ex, from);
           dragging.current = false;
           phase("drag during base, release");
-          if (draftShown.current) s.requestRender();
+          if (draftShown.current || s.pending) s.requestRender();
           await settle();
         }
         // the sharper base, once editing has paused (scheduleBase)

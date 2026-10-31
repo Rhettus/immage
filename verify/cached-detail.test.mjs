@@ -735,3 +735,80 @@ test('a validation failure during native rendering retires that render\'s old pr
   assert.equal(validation.messages.length, 0, 'retired anchors were validated again');
   release(); await settle();
 });
+
+function editSession() {
+  let dragging = true;
+  const sent = [], shown = [], errors = [];
+  const s = new Session(() => ({...full, draft: dragging}), f => shown.push(f), e => errors.push(e));
+  s.values = {exposure: 0, contrast: 0};
+  s.moduleEdit = op => ({op, params: {...s.values}, enabled: true});
+  s.scheduleSave = () => {};
+  s.renderView = async (view, ...args) => {
+    sent.push({values: {...s.values}, args});
+    return {width: 1, height: 1, fullWidth: 1, fullHeight: 1, x: 0, y: 0,
+      view, pixels: pixels(20, 40, 60, 255), ms: 1, hash: BigInt(sent.length)};
+  };
+  const settle = async () => {
+    for (let n = 0; n < 100 && !s.idle; n++) await new Promise(r => setTimeout(r, 1));
+    assert.deepEqual(errors, []); assert.equal(s.idle, true);
+  };
+  return {s, sent, shown, settle, release() {dragging = false; s.requestRender();}};
+}
+test('engine slider bursts submit once per frame with immediately current model values', async () => {
+  const {s, sent, settle} = editSession();
+  for (let n = 1; n <= 100; n++) s.set('exposure', n / 100, true);
+  assert.equal(s.values.exposure, 1);
+  assert.equal(sent.length, 0); assert.equal(animationFrames.size, 1);
+  displayFrame(); await settle();
+  assert.equal(sent.length, 1); assert.equal(sent[0].values.exposure, 1);
+  assert.ok(sent[0].args.at(-1).length > 0);
+  for (const edit of sent[0].args.at(-1)) assert.equal(edit.params.exposure, 1);
+  s.set('exposure', 1, true); s.setMany([['exposure', 1]], true);
+  assert.equal(animationFrames.size, 0); assert.equal(s.idle, true);
+});
+test('batched wheel edits accumulate across controls and preserve their final values', async () => {
+  const {s, sent, settle} = editSession();
+  for (let n = 0; n < 10; n++) s.setMany([
+    ['exposure', s.values.exposure + 0.125], ['contrast', s.values.contrast + 1],
+  ], true);
+  assert.equal(sent.length, 0); assert.equal(animationFrames.size, 1);
+  assert.deepEqual(s.values, {exposure: 1.25, contrast: 10});
+  displayFrame(); await settle(); assert.equal(sent.length, 1);
+  s.setMany([['exposure', 2], ['exposure', 1.25]], true);
+  assert.equal(animationFrames.size, 0); assert.equal(s.values.exposure, 1.25);
+});
+test('release before the first display frame flushes the latest exact edit and cancels dispatch', async () => {
+  const {s, sent, shown, settle, release} = editSession();
+  s.set('exposure', 0.5, true); s.set('exposure', 0.75, true);
+  release(); await settle();
+  assert.equal(animationFrames.size, 0); assert.equal(sent.length, 1);
+  assert.equal(sent[0].values.exposure, 0.75); assert.equal(shown.at(-1).view.draft, false);
+  displayFrame(); assert.equal(sent.length, 1);
+});
+test('discrete keyboard or undo edits supersede queued input and dispatch immediately', async () => {
+  const {s, sent, settle} = editSession();
+  s.set('exposure', 0.5, true);
+  s.setMany([['exposure', 0], ['contrast', 3]]);
+  await settle();
+  assert.equal(animationFrames.size, 0); assert.equal(sent.length, 1);
+  assert.deepEqual(sent[0].values, {exposure: 0, contrast: 3});
+  s.set('exposure', 0.125); await settle();
+  assert.equal(sent.length, 2); assert.equal(sent[1].values.exposure, 0.125);
+});
+test('edits arriving during an in-flight render wait for their next display frame', async () => {
+  const {s, sent, settle} = editSession();
+  const render = s.renderView;
+  let finish;
+  s.renderView = async (...args) => {
+    const result = await render(...args);
+    if (sent.length === 1) await new Promise(resolve => {finish = resolve;});
+    return result;
+  };
+  s.set('exposure', 0.1, true); displayFrame();
+  await new Promise(r => setTimeout(r, 0));
+  s.set('exposure', 0.2, true); s.set('exposure', 0.3, true);
+  finish(); await new Promise(r => setTimeout(r, 0));
+  assert.equal(sent.length, 1);
+  displayFrame(); await settle();
+  assert.equal(sent.length, 2); assert.equal(sent[1].values.exposure, 0.3);
+});

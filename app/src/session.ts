@@ -336,8 +336,8 @@ export class Session {
     return c.readsPast ? snapped : Math.min(c.max, Math.max(c.min, snapped));
   }
 
-  set(id: string, v: number) {
-    if (!mapOf.has(id)) return;
+  set(id: string, v: number, coalesce = false) {
+    if (!mapOf.has(id) || this.values[id] === v) return;
     perf.input();
     const inputAt = performance.now();
     const from = this.values[id];
@@ -377,6 +377,19 @@ export class Session {
       this.previewFrame ??= window.requestAnimationFrame(() => this.flushPreview());
     } else this.cancelPreview();
     this.needRender = true;
+    this.submitEdits(coalesce);
+  }
+
+  private editFrame: number | null = null;
+  private submitEdits(coalesce: boolean) {
+    if (!coalesce) { this.flushEdits(); return; }
+    this.editFrame ??= window.requestAnimationFrame(() => this.flushEdits());
+    // let the pump cancel an obsolete base render immediately
+    if (this.busy) void this.pump();
+  }
+  flushEdits() {
+    if (this.editFrame !== null) window.cancelAnimationFrame(this.editFrame);
+    this.editFrame = null;
     void this.pump();
   }
 
@@ -856,7 +869,9 @@ export class Session {
   }
 
   // several controls at once, as one round of edits (a point curve drag)
-  setMany(entries: [string, number][]) {
+  setMany(entries: [string, number][], coalesce = false) {
+    entries = [...new Map(entries)].filter(([id, v]) => mapOf.has(id) && this.values[id] !== v);
+    if (!entries.length) return;
     perf.input();
     this.detailCache = null;
     this.activeDetailControl = null;
@@ -872,7 +887,7 @@ export class Session {
       }
     }
     this.needRender = true;
-    void this.pump();
+    this.submitEdits(coalesce);
   }
 
   onCachedPreview: ((preview:CachedPreview) => boolean) | null = null;
@@ -893,6 +908,8 @@ export class Session {
   }
 
   requestRender() {
+    if (this.editFrame !== null) window.cancelAnimationFrame(this.editFrame);
+    this.editFrame = null;
     clearTimeout(this.previewTimer);
     this.previewTimer = undefined;
     this.detailCache = null;
@@ -1229,6 +1246,7 @@ export class Session {
       }
       return;
     }
+    if (this.editFrame !== null) return;
     this.busy = true;
     // the viewer's busy indicator: from now until a frame is back
     let job = begin();
@@ -1237,6 +1255,7 @@ export class Session {
              || this.wantLook !== undefined
              || this.masksPending || this.wantLookAmount !== undefined || this.spotsPending
              || this.reshapeDue || this.baselineEnd || this.modulePending.length) {
+        if (this.editFrame !== null) break;
         // before the change that ended it; a save it makes is the one due
         if (this.baselineEnd) {
           this.baselineEnd = false;
