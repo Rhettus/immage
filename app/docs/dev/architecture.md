@@ -168,6 +168,14 @@ are `localStorage` keys named `immage.*`.
 | [immich.ts](../../src/immich.ts), [ImmichPanel.tsx](../../src/ImmichPanel.tsx), [ImmichPrefs.tsx](../../src/ImmichPrefs.tsx) | Search, remote assets as `ImageEntry`, path maps from Immich to local files; the Library's Immich card (library, words, mode; its filters are in the Filters popup); connection settings (from the immporter). |
 | [plugins.ts](../../src/plugins.ts), [PluginPrefs.tsx](../../src/PluginPrefs.tsx) | Edit In: plugin kinds (`KINDS`: DxO PureRAW, and Macro Studio, whose `handoff` is a job rather than files), configs, returns; the Plugins preferences tab. |
 
+[canvasLayers.ts](../../src/canvasLayers.ts) preserves canvas allocations when dimensions
+match and tracks immutable frame identity to skip repeated uploads. A fitted
+CPU frame copies the sharp canvas into the base instead of uploading its bytes
+again. External writes on photo/crop reset clear the tracked identities. Layer
+placement skips unchanged styles and navigator/crop placement snapshots.
+Navigator drawing runs in a deferred task and checks the session and base frame
+identity before drawing, so replacement frames cancel obsolete work.
+
 ### Preferences, histogram, probe, performance
 
 | File | Responsibility |

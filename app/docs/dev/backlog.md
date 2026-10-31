@@ -57,9 +57,12 @@ measured reduction until new reports exist.
    close and view changes cancel the queued dispatch through requestRender.
    Tests cover bursts, batched wheel input, discrete edits, release and in-flight
    rendering. Frontend build passes; GUI CPU measurements remain outstanding.
-7. Reduce repeated final-frame canvas/placement work: avoid unconditional base
-   canvas resize, duplicate uploads and unchanged style writes; defer secondary
-   navigator/base updates where appropriate without exposing stale images.
+7. Implemented: base/before/loupe canvases retain matching allocations; immutable
+   frame identity skips repeated CPU uploads and the base reuses the sharp
+   canvas when available. Layer styles and placement snapshots skip unchanged
+   values. Navigator drawing is deferred with session/base identity checks and
+   canceled on photo/crop reset and unmount. Browser checks cover pixel/alpha
+   parity, reuse, resizing, reset and style writes; GUI timings remain unmeasured.
 8. Tie async clipping and histogram results to the displayed frame generation.
    Matching session/dimensions/settings does not prove an overlay matches the
    pixels currently visible, especially across GPU estimates and native frames.

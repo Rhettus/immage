@@ -19,6 +19,7 @@ import { CircleOff, Grid2x2, ScanSearch, MoveHorizontal, MoveVertical, PenLine, 
 import { panelValues } from "./panelValues";
 import { FrameUpdates, Snapshot } from "./uiUpdates";
 import { PixelCadence, PixelWorker } from "./pixelWorker";
+import { CanvasFrames, layerStyle, resizeCanvas } from "./canvasLayers";
 import { CachedPreviewRenderer } from "./cachedPreviewRenderer";
 import { Session, framePlace, instanceKey, mapOpOf, type Frame, type HistoryItem, type ModuleState, type View } from "./session";
 import { AUTO_TONE_IDS, autoExposure, autoTone, type SceneKey } from "./autoTone";
@@ -1441,6 +1442,16 @@ export default function App() {
   const [histograms] = useState(() => new Snapshot<Histogram | null>(null));
   const pixelWorker = useRef<PixelWorker | null>(null);
   const pixelsWorker = () => pixelWorker.current ??= new PixelWorker();
+  const [canvasFrames] = useState(() => new CanvasFrames());
+  const [navigatorUpdates] = useState(() => new PixelCadence<{ frame: Frame; owner: Session | null }>(({ frame: f, owner }) => {
+    const t = navThumb.current, bc = baseCanvas.current;
+    if (session.current !== owner || !t || !bc || !canvasFrames.matches(bc, f)) return;
+    resizeCanvas(t, 400, Math.round(400 * f.height / f.width));
+    const ctx = t.getContext("2d")!;
+    ctx.clearRect(0, 0, t.width, t.height);
+    ctx.drawImage(bc, 0, 0, t.width, t.height);
+  }));
+  const resetCanvases = () => { navigatorUpdates.cancel(); canvasFrames.clear(); };
   const histogramWorker = useRef<PixelWorker | null>(null);
   const [histogramUpdates] = useState(() => new PixelCadence<{ frame: Frame; owner: Session | null }>(({ frame: f, owner }) => {
     if (session.current !== owner) return;
@@ -1456,6 +1467,7 @@ export default function App() {
   useEffect(() => () => {
     pixelWorker.current?.dispose(); pixelWorker.current = null;
     resetHistogram();
+    resetCanvases();
   }, []);
   useEffect(() => {
     pixelWorker.current?.dispose(); pixelWorker.current = null;
@@ -1756,9 +1768,9 @@ export default function App() {
 
   const follow = (layer: HTMLCanvasElement, clip: HTMLCanvasElement | null) => {
     if (!clip) return;
-    clip.style.width = layer.style.width;
-    clip.style.height = layer.style.height;
-    clip.style.transform = layer.style.transform;
+    layerStyle(clip, "width", layer.style.width);
+    layerStyle(clip, "height", layer.style.height);
+    layerStyle(clip, "transform", layer.style.transform);
   };
 
   // place both layers for the current view
@@ -1965,35 +1977,35 @@ export default function App() {
     // A crop/rotation changes the image coordinate system. The old overview
     // cannot sit underneath the new frame while its replacement renders.
     const baseCompatible = !!b && b.fullWidth === f.w && b.fullHeight === f.h;
-    if (bc) bc.style.visibility = baseCompatible ? "" : "hidden";
-    if (clipBase.current) clipBase.current.style.visibility = baseCompatible ? "" : "hidden";
+    if (bc) layerStyle(bc, "visibility", baseCompatible ? "" : "hidden");
+    if (clipBase.current) layerStyle(clipBase.current, "visibility", baseCompatible ? "" : "hidden");
     if (b && bc) {
       const p = framePlace(b, z);
-      bc.style.width = `${b.width / dpr}px`;
-      bc.style.height = `${b.height / dpr}px`;
-      bc.style.transform = `translate(${(ox + p.x) / dpr}px, ${(oy + p.y) / dpr}px) scale(${p.k})`;
+      layerStyle(bc, "width", `${b.width / dpr}px`);
+      layerStyle(bc, "height", `${b.height / dpr}px`);
+      layerStyle(bc, "transform", `translate(${(ox + p.x) / dpr}px, ${(oy + p.y) / dpr}px) scale(${p.k})`);
       follow(bc, clipBase.current);
     }
     const cm = copyMeta.current, cc = copyCanvas.current;
     if (cm && cc) {
       const p = framePlace(cm, z);
-      cc.style.width = `${cm.width / dpr}px`;
-      cc.style.height = `${cm.height / dpr}px`;
-      cc.style.transform = `translate(${(ox + p.x) / dpr}px, ${(oy + p.y) / dpr}px) scale(${p.k})`;
+      layerStyle(cc, "width", `${cm.width / dpr}px`);
+      layerStyle(cc, "height", `${cm.height / dpr}px`);
+      layerStyle(cc, "transform", `translate(${(ox + p.x) / dpr}px, ${(oy + p.y) / dpr}px) scale(${p.k})`);
     }
     const lm = loupeMeta.current, lc = loupeCanvas.current;
     if (lm && lc) {
       const p = framePlace(lm, z);
-      lc.style.width = `${lm.width / dpr}px`;
-      lc.style.height = `${lm.height / dpr}px`;
-      lc.style.transform = `translate(${(ox + p.x) / dpr}px, ${(oy + p.y) / dpr}px) scale(${p.k})`;
+      layerStyle(lc, "width", `${lm.width / dpr}px`);
+      layerStyle(lc, "height", `${lm.height / dpr}px`);
+      layerStyle(lc, "transform", `translate(${(ox + p.x) / dpr}px, ${(oy + p.y) / dpr}px) scale(${p.k})`);
     }
     const s = sharpMeta.current, sc = canvas.current;
     if (s && sc) {
       const p = framePlace(s, z);
-      sc.style.width = `${s.width / dpr}px`;
-      sc.style.height = `${s.height / dpr}px`;
-      sc.style.transform = `translate(${(ox + p.x) / dpr}px, ${(oy + p.y) / dpr}px) scale(${p.k})`;
+      layerStyle(sc, "width", `${s.width / dpr}px`);
+      layerStyle(sc, "height", `${s.height / dpr}px`);
+      layerStyle(sc, "transform", `translate(${(ox + p.x) / dpr}px, ${(oy + p.y) / dpr}px) scale(${p.k})`);
       follow(sc, clipSharp.current);
       follow(sc, cachedCanvas.current);
     }
@@ -2004,25 +2016,25 @@ export default function App() {
       const k = Math.min(f.w / bm.fullWidth, f.h / bm.fullHeight);
       const bx = ox + ((f.w - bm.fullWidth * k) * z) / 2, by = oy + ((f.h - bm.fullHeight * k) * z) / 2;
       const sx = bx + (bm.x / bm.scale) * k * z, sy = by + (bm.y / bm.scale) * k * z;
-      bcv.style.width = `${bm.width / dpr}px`;
-      bcv.style.height = `${bm.height / dpr}px`;
-      bcv.style.transform = `translate(${sx / dpr}px, ${sy / dpr}px) scale(${(z * k) / bm.scale})`;
+      layerStyle(bcv, "width", `${bm.width / dpr}px`);
+      layerStyle(bcv, "height", `${bm.height / dpr}px`);
+      layerStyle(bcv, "transform", `translate(${sx / dpr}px, ${sy / dpr}px) scale(${(z * k) / bm.scale})`);
     }
     zoomShow.current?.(z, zoomRef.current === "fit");
     const hc = hoverCanvas.current;
     if (hc) {
-      hc.style.left = `${ox / dpr}px`;
-      hc.style.top = `${oy / dpr}px`;
-      hc.style.width = `${(f.w * z) / dpr}px`;
-      hc.style.height = `${(f.h * z) / dpr}px`;
+      layerStyle(hc, "left", `${ox / dpr}px`);
+      layerStyle(hc, "top", `${oy / dpr}px`);
+      layerStyle(hc, "width", `${(f.w * z) / dpr}px`);
+      layerStyle(hc, "height", `${(f.h * z) / dpr}px`);
     }
     // the mask editor and the zone overlay cover the whole image, wherever it is
     for (const mb of [maskBox.current, zoneBox.current, detailBox.current, guideBox.current, negBox.current]) {
       if (!mb) continue;
-      mb.style.left = `${ox / dpr}px`;
-      mb.style.top = `${oy / dpr}px`;
-      mb.style.width = `${(f.w * z) / dpr}px`;
-      mb.style.height = `${(f.h * z) / dpr}px`;
+      layerStyle(mb, "left", `${ox / dpr}px`);
+      layerStyle(mb, "top", `${oy / dpr}px`);
+      layerStyle(mb, "width", `${(f.w * z) / dpr}px`);
+      layerStyle(mb, "height", `${(f.h * z) / dpr}px`);
     }
   };
 
@@ -2035,6 +2047,8 @@ export default function App() {
       fullWidth: f.w, fullHeight: f.h, scale: z,
       x: center.current.x * f.w * z - w / 2, y: center.current.y * f.h * z - h / 2, width: w, height: h,
     };
+    const old = placementRef.current;
+    if (old && (Object.keys(pl) as (keyof Placement)[]).every(key => old[key] === pl[key])) return;
     placementRef.current = pl;
     setPlacement(pl);
   };
@@ -2049,8 +2063,7 @@ export default function App() {
     if (f.before && baModeRef.current !== "off") {
       const bc = beforeCanvas.current;
       if (bc) {
-        bc.width = f.width;
-        bc.height = f.height;
+        resizeCanvas(bc, f.width, f.height);
         perf.time("pixels.canvasUpload", () => bc.getContext("2d")!.putImageData(new ImageData(f.pixels, f.width, f.height), 0, 0));
         const scale = f.view.scale ?? f.width / f.fullWidth;
         beforeMeta.current = { x: f.x, y: f.y, scale, width: f.width, height: f.height,
@@ -2066,7 +2079,7 @@ export default function App() {
       setLoupeShown(true);
       const lc = loupeCanvas.current;
       if (lc) {
-        lc.width = f.width; lc.height = f.height;
+        resizeCanvas(lc, f.width, f.height);
         perf.time("pixels.canvasUpload", () => lc.getContext("2d")!.putImageData(new ImageData(f.pixels, f.width, f.height), 0, 0));
         lc.style.display = "block";
         loupeMeta.current = placed(f);
@@ -2100,11 +2113,7 @@ export default function App() {
     }
     const c = canvas.current!;
     if (!gpu) {
-      if (c.width !== f.width || c.height !== f.height) {
-        c.width = f.width;
-        c.height = f.height;
-      }
-      perf.time("pixels.canvasUpload", () => c.getContext("2d")!.putImageData(new ImageData(f.pixels, f.width, f.height), 0, 0));
+      perf.time("pixels.canvasUpload", () => canvasFrames.draw(c, f));
       if (clipRef.current.low || clipRef.current.high) paintClip("sharp", f);
     }
     full.current = { w: f.fullWidth, h: f.fullHeight };
@@ -2425,22 +2434,15 @@ export default function App() {
     if (tonePending.current && !session.current?.pending) applyAutoTone(f.pixels, f.width, f.height);
     const bc = baseCanvas.current;
     if (bc) {
-      bc.width = f.width;
-      bc.height = f.height;
-      perf.time("pixels.canvasUpload", () => bc.getContext("2d")!.putImageData(new ImageData(f.pixels, f.width, f.height), 0, 0));
+      const changed = perf.time("pixels.canvasUpload", () => canvasFrames.draw(bc, f, canvas.current));
       if (clipRef.current.low || clipRef.current.high) paintClip("base", f);
       baseMeta.current = placed(f);
-      setBaseTick((t) => t + 1);
+      if (changed) setBaseTick((t) => t + 1);
     }
     full.current = { w: f.fullWidth, h: f.fullHeight };
     if (!viewZ.current) viewZ.current = fitScale();
     placeLayers();
-    const t = navThumb.current;
-    if (t && bc) {
-      t.width = 400;
-      t.height = Math.round((400 * f.height) / f.width);
-      t.getContext("2d")!.drawImage(bc, 0, 0, t.width, t.height);
-    }
+    navigatorUpdates.submit({ frame: f, owner: session.current }, false);
     updateHistogram(f);
   }, []);
 
@@ -3063,6 +3065,7 @@ export default function App() {
     setCurrent(null);
     setOpenCell(null);
     setValues({});
+    resetCanvases();
     for (const c of [canvas.current, baseCanvas.current, navThumb.current, clipBase.current, clipSharp.current]) if (c) c.width = 0;
   };
 
@@ -3233,6 +3236,7 @@ export default function App() {
       copyGen.current++;
       setCopyOn(false);
       overviewHash.current = null;
+      resetCanvases();
       baseStale.current = true;
       for (const c of [baseCanvas.current, clipBase.current, copyCanvas.current, clipSharp.current]) if (c) c.width = 0;
       // the photo's filmstrip thumbnail, fitted, until its first frame takes
@@ -4372,6 +4376,7 @@ export default function App() {
   };
 
   const prepareCropView = () => {
+    resetCanvases();
     resetHistogram();
     pixelWorker.current?.dispose(); pixelWorker.current = null;
     // Crop bypass changes coordinates. Discard every old image surface before

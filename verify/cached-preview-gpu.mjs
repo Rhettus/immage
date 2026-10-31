@@ -12,7 +12,7 @@ const {transformSync}=await import(require.resolve('rolldown/experimental'));
 const root=fileURLToPath(new URL('results/',import.meta.url));
 mkdirSync(root,{recursive:true});
 const profile=mkdtempSync(root+'g-');
-const modules=new Map(['cachedPreviewRenderer','cachedDetail'].map(name=>{
+const modules=new Map(['cachedPreviewRenderer','cachedDetail','canvasLayers'].map(name=>{
   const path=fileURLToPath(new URL(`../app/src/${name}.ts`,import.meta.url));
   return [`/${name}.js`,transformSync(path,readFileSync(path,'utf8')).code];
 }));
@@ -47,6 +47,28 @@ async function check() {
     255,60,0,255, 20,90,250,128, 100,20,80,0,
     100,180,250,200, 0,255,80,255, 120,90,255,255,
   ]));
+  const {CanvasFrames, resizeCanvas, layerStyle}=await import('/canvasLayers.js');
+  const surfaces=new CanvasFrames();
+  const sharp=document.createElement('canvas'),base=document.createElement('canvas');
+  assert(surfaces.draw(sharp,b),'first sharp upload skipped');
+  assert(!surfaces.draw(sharp,b),'same frame uploaded twice');
+  assert(surfaces.draw(base,b,sharp),'base copy skipped');
+  const read=c=>[...c.getContext('2d').getImageData(0,0,c.width,c.height).data];
+  assert(JSON.stringify(read(base))===JSON.stringify(read(sharp)),'base copy changed alpha/pixels');
+  resizeCanvas(base,b.width,b.height);
+  assert(JSON.stringify(read(base))===JSON.stringify(read(sharp)),'unchanged dimensions cleared the canvas');
+  assert(!surfaces.draw(base,b,sharp),'same base frame copied twice');
+  surfaces.clear();
+  base.getContext('2d').clearRect(0,0,base.width,base.height);
+  assert(surfaces.draw(base,b),'reset reused cleared contents');
+  assert(JSON.stringify(read(base))===JSON.stringify(read(sharp)),'reset did not restore pixels');
+  assert(surfaces.draw(base,a),'new pixels with same dimensions were skipped');
+  const writes=[];
+  const element={style:new Proxy({}, {set(target,key,value){writes.push(key);target[key]=value;return true;}})};
+  layerStyle(element,'transform','translate(1px, 2px)');
+  layerStyle(element,'transform','translate(1px, 2px)');
+  layerStyle(element,'transform','translate(2px, 2px)');
+  assert(writes.length===2,'unchanged style was rewritten');
   const off={low:false,high:false};
   let cases=0,worst=0;
   function parity(a,b,mix,clipping=off) {
