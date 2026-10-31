@@ -186,8 +186,6 @@ button { font: inherit; color: inherit; }
 .viewer .layer.empty { display: none; }
 .viewer .layer.clip { pointer-events: none; }
 .viewer .layer.base { box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55); }
-.viewer .layer.sharp.fade-in { animation: sharp-in 120ms ease-out; }
-@keyframes sharp-in { from { opacity: 0; } to { opacity: 1; } }
 .viewer.zoom-fit { cursor: zoom-in; }
 .viewer.zoom-in { cursor: grab; }
 .viewer.hold-view.zoom-fit { cursor: default; }

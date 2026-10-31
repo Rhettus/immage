@@ -1361,7 +1361,9 @@ export class Session {
         this.needRender = false;
         // what the render shows is settled by now, whatever changes during it
         const before = !!this.before;
-        const view = this.draftView(this.size(), ops), key = this.frameKey(view, before);
+        const requestedView = this.size();
+        const requestedKey = this.frameKey(requestedView, before);
+        const view = this.draftView(requestedView, ops), key = this.frameKey(view, before);
         const kept = view.draft || edits.length ? undefined : this.current.get(key);
         if (kept) {
           this.keepFrame(key, kept);
@@ -1402,7 +1404,11 @@ export class Session {
           if (!before && !have.some((h) => h.hash === f.hash)) this.putAside = null;
           // Completed anchors must not overwrite newer slider feedback or a
           // frame from a released drag / changed viewport.
-          const stale = cache && (this.detailCache !== cache || cacheValue !== this.values[cache.id]);
+          const now = this.size();
+          const stale = (cache && (this.detailCache !== cache || cacheValue !== this.values[cache.id]))
+            || requestedKey !== this.frameKey(now, !!this.before)
+            || !!requestedView.draft !== !!now.draft
+            || this.reshapeDue || [...this.dirty].some((op) => op === "flip" || FRAMING.has(op.split("#")[0]));
           if (!stale) this.onFrame({ ...f, before });
         }
         progress(job);
