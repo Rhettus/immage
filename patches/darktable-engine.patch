@@ -481,7 +481,7 @@ index a7e5b88a37..e3a650f309 100644
              && dt_pipe_is_screen(pipe)
              && !dt_pipe_is_fast(pipe)
 -            && dev->gui_attached
-+            && (dev->gui_attached || last_history)
++            && (dev->gui_attached || last_history || iop_wanting)
              && (has_focus || last_history || iop_wanting);
 
  #ifdef HAVE_OPENCL

@@ -3,7 +3,7 @@
 
 export function isDetailControl(id: string): boolean {
   const global = id.replace(/^l_/, "");
-  return ["texture", "clarity", "contrast", "dehaze", "nr_detail"].includes(global)
+  return ["texture", "clarity", "contrast", "dehaze", "nr_detail", "grain_amount", "grain_size"].includes(global)
     || global.startsWith("detail_clarity_") || global.startsWith("detail_texture_")
     || global.startsWith("sharp_");
 }
@@ -38,6 +38,8 @@ export function mixDetailPixels(a:Pixels, b:Pixels, k:number): Pixels {
 
 // Basic tone and color sliders use anchors without activating the detail loupe.
 export function isCachedControl(id: string): boolean {
+  // grain's noise depends on its size; show native loupe pixels rather than mixing anchors
+  if (id.replace(/^l_/, "").startsWith("grain_")) return false;
   return isDetailControl(id) || ["temp", "tint", "exposure", "highlights", "shadows", "whites", "blacks", "vibrance", "saturation"].includes(id);
 }
 

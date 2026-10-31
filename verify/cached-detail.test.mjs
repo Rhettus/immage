@@ -107,6 +107,40 @@ test('loupe is ineligible for ordinary sliders even when they share a module',()
   s.set('contrast',20);assert.equal(s.draftView({...full,draft:true},['colorbalancergb']).detail,true);
 });
 
+test('detail drags start in the loupe without full-size probe frames',()=>{
+  const {s}=session();s.cachedDetailPreview=()=>false;
+  s.fullView=()=>({width:2400,height:1800});
+  s.detailView=()=>({width:480,height:480,scale:0.4,x:120,y:60});
+  s.set('texture',20);
+  for(let i=0;i<3;i++) {
+    const view=s.draftView({width:1200,height:900,draft:true},['diffuse']);
+    assert.deepEqual(view,{width:480,height:480,scale:0.4,x:120,y:60,draft:true,detail:true,loupe:true});
+    s.draftTimed({view,ms:300},1);
+  }
+  const release={width:2400,height:1800};
+  assert.equal(s.draftView(release,[]),release);
+});
+
+test('grain uses native loupe feedback without interpolation anchors',()=>{
+  const {s}=session();s.values.grain_amount=0;s.values.grain_size=25;
+  s.detailView=()=>({width:480,height:480,scale:0.4,x:0,y:0});
+  for(const id of ['grain_amount','grain_size']) {
+    assert.equal(isDetailControl(id),true);assert.equal(isCachedControl(id),false);
+    s.set(id,40);
+    assert.equal(s.activeDetailControl,id);assert.equal(s.detailCache,null);
+    assert.equal(s.draftView({...full,draft:true},['grain']).loupe,true);
+  }
+});
+
+test('disabling the loupe retains whole-image drafts for detail and grain',()=>{
+  const {s}=session();s.cachedDetailPreview=()=>false;s.detailView=()=>null;
+  for(const [id,op] of [['texture','diffuse'],['grain_amount','grain']]) {
+    s.values[id]=0;s.set(id,10);
+    const view=s.draftView({...full,draft:true},[op]);
+    assert.equal(view.loupe,undefined);assert.equal(view.detail,undefined);
+  }
+});
+
 test('native renders train the cache and release discards it for an exact full render',async()=>{
   let dragging=true,native=0;const shown=[];
   const s=new Session(()=>({...full,draft:dragging}),f=>shown.push(f),e=>{throw Error(e);});
