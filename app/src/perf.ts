@@ -94,6 +94,7 @@ class Perf {
   fps = 0;
   longFrames = 0;
   private raf = 0;
+  frameObserver: ((at: number, ms: number) => void) | null = null;
 
   enable(on: boolean) {
     this.enabled = on;
@@ -137,6 +138,7 @@ class Perf {
   private watchFrames() {
     let last = performance.now(), count = 0, since = last;
     const tick = (t: number) => {
+      this.frameObserver?.(t, t - last);
       if (t - last > 50) this.longFrames++;
       last = t;
       count++;
@@ -264,18 +266,19 @@ export async function pingOnce(): Promise<number> {
   return performance.now() - t;
 }
 
-// the web view a GUI benchmark ran in: its user agent, whether it draws on
-// the GPU (WebGL's renderer: the card, or a software one such as llvmpipe),
+// the web view a GUI benchmark ran in: its user agent and WebGL renderer
+// (this identifies the WebGL context, not the compositor),
 // and how often it runs animation frames, which bounds the paint stage: the
 // display's refresh rate, or less where WebKit throttles them (macOS' Low
 // Power Mode halves them). measured idle, before the benchmark
 export async function webviewInfo(): Promise<Record<string, unknown>> {
-  let gpu: { vendor: string; renderer: string } | null = null;
+  let gpu: { vendor: string; renderer: string; version: string } | null = null;
   try {
     const gl = document.createElement("canvas").getContext("webgl");
     const dbg = gl?.getExtension("WEBGL_debug_renderer_info");
     if (gl) gpu = { vendor: String(gl.getParameter(dbg ? dbg.UNMASKED_VENDOR_WEBGL : gl.VENDOR)),
-                    renderer: String(gl.getParameter(dbg ? dbg.UNMASKED_RENDERER_WEBGL : gl.RENDERER)) };
+                    renderer: String(gl.getParameter(dbg ? dbg.UNMASKED_RENDERER_WEBGL : gl.RENDERER)),
+                    version: String(gl.getParameter(gl.VERSION)) };
     gl?.getExtension("WEBGL_lose_context")?.loseContext();
   } catch { /* no WebGL: gpu stays null */ }
   // the median of 60 animation frames' intervals. a hidden window has none,
@@ -289,4 +292,49 @@ export async function webviewInfo(): Promise<Record<string, unknown>> {
   const gaps = at.slice(1).map((t, i) => t - at[i]);
   const hz = gaps.length >= 10 ? Math.round(1000 / percentiles(gaps).p50) : NaN;
   return { userAgent: navigator.userAgent, gpu, frameRateHz: Number.isFinite(hz) ? hz : null };
+}
+
+// reuse the overlay's rAF callback; timers measure scheduling delay without driver queries
+export function observeWebview(refreshHz: number | null) {
+  type Observation = { atUnixMs: number; ms: number; label: string; hidden: boolean };
+  const frames: Observation[] = [], loop: Observation[] = [];
+  const start = performance.now();
+  const visibilityChanges: { atUnixMs: number; hidden: boolean }[] = [];
+  const visibility = () => visibilityChanges.push({ atUnixMs: Date.now(), hidden: document.hidden });
+  visibility();
+  document.addEventListener("visibilitychange", visibility);
+  const observation = (ms: number): Observation => ({ atUnixMs: Date.now(), ms, label: perf.label, hidden: document.hidden });
+  perf.frameObserver = (at, ms) => { if (at - ms >= start) frames.push(observation(ms)); };
+  let due = performance.now() + 100;
+  let timer = window.setTimeout(tick, 100);
+  function tick() {
+    loop.push(observation(Math.max(0, performance.now() - due)));
+    due = performance.now() + 100;
+    timer = window.setTimeout(tick, 100);
+  }
+  const stats = (values: number[]) => {
+    if (!values.length) return { n: 0, p50: null, p95: null, p99: null, max: null };
+    const sorted = [...values].sort((a, b) => a - b);
+    const at = (q: number) => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * q))];
+    return { n: sorted.length, p50: at(.5), p95: at(.95), p99: at(.99), max: sorted.at(-1) };
+  };
+  return () => {
+    perf.frameObserver = null;
+    window.clearTimeout(timer);
+    document.removeEventListener("visibilitychange", visibility);
+    const budget = refreshHz && refreshHz > 0 ? 1000 / refreshHz : null;
+    const summarize = (fs: Observation[], ls: Observation[]) => {
+      const visible = fs.filter((x) => !x.hidden);
+      return { frameIntervalMs: stats(visible.map((x) => x.ms)),
+        eventLoopDelayMs: stats(ls.filter((x) => !x.hidden).map((x) => x.ms)),
+        longFrames50ms: visible.filter((x) => x.ms > 50).length,
+        missedRefreshSlots: budget ? visible.reduce((n, x) => n + Math.max(0, Math.round(x.ms / budget) - 1), 0) : null };
+    };
+    return { refreshHz, frameBudgetMs: budget, timerIntervalMs: 100,
+      note: "rAF measures callback pacing, not compositor presentation; missed slots are estimates against the idle callback rate",
+      ...summarize(frames, loop),
+      byStep: [...new Set([...frames, ...loop].map((x) => x.label))].map((label) => ({ label,
+        ...summarize(frames.filter((x) => x.label === label), loop.filter((x) => x.label === label)) })),
+      frames, eventLoop: loop, visibilityChanges, backgrounded: visibilityChanges.some((x) => x.hidden) };
+  };
 }

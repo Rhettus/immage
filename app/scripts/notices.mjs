@@ -108,11 +108,13 @@ for (const [title, list] of groups) {
 // lives in its own repository: name the commit app/immporter.rev pins
 const immporter = readFileSync(join(app, "immporter.rev"), "utf8").trim().split(/\s/)[0];
 mkdirSync(dirname(out), { recursive: true });
+const webkitNotice = join(app, "..", "build", "webkitgtk", "install", "usr", "share", "doc", "immage-webkitgtk", "NOTICE");
 writeFileSync(out,
   "Rust crates and npm packages compiled into Immage. Each keeps its own license;\n"
   + "the texts they ship follow the list.\n\n"
   + "Immporter, Immage's SD card importer\n  license: GPL-3.0-or-later, as Immage\n"
   + `  source: https://github.com/Rhettus/immporter/tree/${immporter}\n\n`
-  + index.join("\n") + "\n" + bodies.join("\n"));
+  + index.join("\n") + "\n" + bodies.join("\n")
+  + (process.platform === "linux" && existsSync(webkitNotice) ? "\n\n" + readFileSync(webkitNotice, "utf8") : ""));
 const n = groups.reduce((s, [, l]) => s + l.length, 0);
 console.log(`notices for ${n} packages, ${Math.round(statSync(out).size / 1024)} KB; no license file: ${bare.join(", ") || "none"}`);

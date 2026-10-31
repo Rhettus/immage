@@ -483,3 +483,19 @@ and where their source is published. For at least three years after a
 release, anyone may also ask for the complete source of any GPL or LGPL
 library in its binaries, at the version shipped, free of charge: open an
 issue at [github.com/Rhettus/immage/issues](https://github.com/Rhettus/immage/issues).
+
+### Experimental Linux WebKitGTK renderer build
+
+The `experiment/linux-webkit-renderer` branch has a separate GitHub Actions
+workflow, **experimental Linux WebKitGTK 2.54**. It builds x64 and ARM64
+AppImages on Ubuntu 26.04 with WebKitGTK **2.54.2** from the upstream source
+archive, verified by SHA-256. Tauri's GTK3 / 4.1 API, JavaScriptCore and the
+WebKit helper processes are built and installed together. The installation
+is cached separately per architecture; the first build can take hours.
+These artifacts target Ubuntu 26.04 and compatible newer distributions.
+Version numbers stay unchanged.
+
+Preferences > Performance > Interface rendering selects Automatic, Mesa or
+NVIDIA for the window. Relaunch between A/B benchmark runs. The engine's
+GPU processing setting is separate. See [Preferences](app/docs/preferences.md)
+for the procedure. Standard release builds remain on Ubuntu 22.04.

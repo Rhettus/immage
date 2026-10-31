@@ -1,0 +1,98 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the Immage authors
+
+name: experimental Linux WebKitGTK 2.54
+
+on:
+  push:
+    branches: [experiment/linux-webkit-renderer]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: experimental-webkit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: WebKitGTK 2.54 / Linux (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-26.04
+          - arch: arm64
+            runner: ubuntu-26.04-arm
+    # experimental artifacts require Ubuntu 26.04 or a compatible newer system
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 360
+    env:
+      CC: gcc
+      CXX: g++
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      # Tauri bundles with linuxdeploy, itself an AppImage, which otherwise
+      # needs FUSE
+      APPIMAGE_EXTRACT_AND_RUN: 1
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+      CARGO_BUILD_JOBS: 2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: system packages and WebKitGTK build dependencies
+        run: |
+          sudo sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources
+          sudo apt-get update
+          packages=$(sed -e '/^#/d' -e 's/^gcc-12$/gcc/' -e 's/^g++-12$/g++/' \
+            -e 's/^libfuse2$/libfuse2t64/' -e 's/^libtiff5-dev$/libtiff-dev/' .github/ubuntu-packages.txt)
+          sudo apt-get install -y $packages lld
+          sudo apt-get build-dep -y webkit2gtk
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: webkit-cache
+        with:
+          path: build/webkitgtk/install
+          key: webkitgtk-2.54.2-ubuntu26-${{ matrix.arch }}-${{ hashFiles('app/scripts/build_webkitgtk.sh') }}
+      - name: build WebKitGTK 2.54.2
+        run: sh app/scripts/build_webkitgtk.sh
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: steps.webkit-cache.outputs.cache-hit != 'true'
+        with:
+          path: build/webkitgtk/install
+          key: webkitgtk-2.54.2-ubuntu26-${{ matrix.arch }}-${{ hashFiles('app/scripts/build_webkitgtk.sh') }}
+      - uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+        with:
+          key: linux-ubuntu26-webkit254-${{ matrix.arch }}
+          max-size: 2G
+      - run: sh app/scripts/build_linux_deps.sh
+      # the newest lens database, which bundle_engine.py ships; it exits
+      # non-zero when there is nothing newer than the package's
+      - run: sudo lensfun-update-data || true
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: app/src-tauri
+          key: linux-ubuntu26-webkit254-${{ matrix.arch }}
+      - run: npm ci
+        working-directory: app
+      - run: sh scripts/build.sh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: verify bundled WebKitGTK and JavaScriptCore
+        run: |
+          python3 -I app/scripts/check_webkit_bundle.py \
+            app/src-tauri/target/release/bundle/appimage/Immage.AppDir 2.54.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: immage-experimental-webkit254-linux-${{ matrix.arch }}
+          path: |
+            app/src-tauri/target/release/bundle/appimage/*.AppImage*
+            build/webkitgtk/versions.txt
+          if-no-files-found: error

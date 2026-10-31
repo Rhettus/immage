@@ -41,6 +41,21 @@ apply as you make them; **Done** closes the window.
 How fast the photo responds while you edit, and the memory and disk
 Immage keeps to make it so.
 
+**Interface rendering** (Linux)
+
+- **Window renderer**: **Automatic** keeps the Mesa workaround on NVIDIA;
+  **Mesa** selects Mesa's EGL explicitly, and **NVIDIA** selects NVIDIA's.
+  Only installed drivers can be selected. On NVIDIA, Mesa normally draws
+  the interface on the CPU. This setting is separate from **Edit on the
+  GPU**, which controls darktable's photo processing.
+- The row shows the active EGL selection. **Relaunch** saves the photo and
+  restarts Immage to apply a change. An explicit
+  `__EGL_VENDOR_LIBRARY_FILENAMES` in the launch environment takes priority.
+- For an A/B benchmark, select Mesa, relaunch, open the test photo and run
+  the GUI benchmark. Repeat with NVIDIA on the same build, photo, window
+  size and editing settings. The reports record the selected path,
+  environment, WebKitGTK version and WebGL renderer.
+
 **Editing**
 
 - **Preview**: how much the photo gives up for speed while you edit.

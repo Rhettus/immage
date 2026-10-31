@@ -11,8 +11,11 @@ mod immich_search;
 mod immich_upload;
 mod listing;
 mod plugins;
+mod resources;
 #[cfg(target_os = "linux")]
 mod scale;
+#[cfg(target_os = "linux")]
+mod renderer;
 mod volumes;
 
 use cache::Caches;
@@ -984,29 +987,25 @@ fn machine_id() -> Option<String> {
     Some(hash.iter().take(6).map(|b| format!("{b:02x}")).collect())
 }
 
-// NVIDIA's EGL driver held each frame of WebKitGTK's page to about 72 ms,
-// and every reply to the page waited for one, on Wayland and X11 alike and
-// whichever way WebKit's DMA-BUF, compositing or NVIDIA's explicit sync
-// were set; with Mesa's EGL, which draws the page on the CPU there, a reply
-// took 2 ms and a Highlights drag frame 45 ms against 445 (GUI benchmark,
-// RTX 4070 Ti SUPER, driver 595, Ubuntu 26.04; WebKit bug 303811). so the
-// web view gets Mesa's when NVIDIA's driver is loaded and Mesa's is
-// installed, unless the user chose a vendor. `root` is "/" but in the tests
-#[cfg(any(target_os = "linux", test))]
-const EGL_VENDOR: &str = "__EGL_VENDOR_LIBRARY_FILENAMES";
+// the web view's EGL override is kept out of the image engine
+#[cfg(target_os = "linux")]
+static WEBVIEW_EGL_OVERRIDE: AtomicBool = AtomicBool::new(false);
 
-#[cfg(any(target_os = "linux", test))]
-fn mesa_egl(root: &Path) -> Option<PathBuf> {
-    if !root.join("proc/driver/nvidia").exists() {
-        return None;
-    }
-    ["usr/share/glvnd/egl_vendor.d/50_mesa.json", "etc/glvnd/egl_vendor.d/50_mesa.json"]
-        .iter().map(|p| root.join(p)).find(|p| p.exists())
+#[tauri::command]
+fn webview_renderer() -> Value {
+    #[cfg(target_os = "linux")]
+    return renderer::status();
+    #[cfg(not(target_os = "linux"))]
+    json!(null)
 }
 
-// set when the web view was given Mesa's EGL, which the engine doesn't take
-#[cfg(target_os = "linux")]
-static WEBVIEW_MESA: AtomicBool = AtomicBool::new(false);
+#[tauri::command]
+fn webview_renderer_set(mode: String) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    return renderer::set(&mode);
+    #[cfg(not(target_os = "linux"))]
+    { let _ = mode; Err("webview renderer selection is available on Linux".into()) }
+}
 
 // what decides how a frame reaches the screen on Linux: the session
 // (Wayland or X11) and desktop, and the GDK and WebKit settings, as this
@@ -1029,6 +1028,7 @@ fn display_env() -> Value {
         "wayland": var("WAYLAND_DISPLAY").is_some(),
         "x11": var("DISPLAY").is_some(),
         "vars": vars,
+        "renderer": webview_renderer(),
     })
 }
 
@@ -2387,16 +2387,11 @@ fn launch_file(launch: State<'_, Launch>) -> Option<String> {
 }
 
 fn main() {
-    // before GTK and WebKit start, and before any other thread
-    #[cfg(target_os = "linux")]
-    if std::env::var_os(EGL_VENDOR).is_none() {
-        if let Some(mesa) = mesa_egl(Path::new("/")) {
-            std::env::set_var(EGL_VENDOR, mesa);
-            WEBVIEW_MESA.store(true, Ordering::Relaxed);
-        }
-    }
     #[allow(unused_mut)]
     let mut context = tauri::generate_context!();
+    // before GTK and WebKit start, and before any other thread
+    #[cfg(target_os = "linux")]
+    renderer::init(&context.config().identifier).expect("cannot select the webview renderer");
     // Linux: setup builds the windows, with the web extension that hands
     // frames over (webext_dir); it has to be in place before their web
     // process starts
@@ -2490,13 +2485,13 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            open_folder, open_image, get_params, set_params, render, cancel_base, save, baseline_end, before_view, thumb, thumb_cached, thumb_known, cache_limits, cache_usage, cache_clear, meta, meta_set, prefetch, darktable_resources, darktable_resources_set, gpu_edits, gpu_edits_set,
+            open_folder, open_image, get_params, set_params, render, cancel_base, save, baseline_end, before_view, thumb, thumb_cached, thumb_known, cache_limits, cache_usage, cache_clear, meta, meta_set, prefetch, darktable_resources, darktable_resources_set, gpu_edits, gpu_edits_set, webview_renderer, webview_renderer_set,
             export_images, export_cancel, export_existing, export_preview, fonts, export_presets_load, export_presets_save, preset_file_write, preset_file_read, presets_load, presets_save, looks_list, look_import, look_export, look_delete, look_apply, look_amount, preview,
             mask_shapes, combine, masks, mask_delete, mask_rename, history, module_state, sample, tone_key, agx_auto, upright, points, range_map, zones, mask_map, ai_object,
             ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, list_subfolders, folder_volumes, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
             immich_export_check, immich_search, immich_browse_check, immich_libraries, immich_suggestions, immich_people, immich_tags,
             immich_thumb, immich_resolve, launch_file, path_exists, path_kind, display_scale, trash_files, create_virtual_copy, remove_virtual_copy, hdr_merge, hdr_can_align, pano_merge, pano_can_merge, merge_cancel, preview_fullscreen, about, licenses, engine_quit, keywords, keywords_set, ai_accel,
-            perf_set, perf_modules, perf_report_write, perf_machine, perf_ping,
+            perf_set, perf_modules, perf_report_write, perf_machine, perf_ping, resources::perf_resources_start, resources::perf_resources_stop,
             plugins::plugin_find_apps, plugins::plugin_launch, plugins::plugin_watch, plugins::plugin_cancel, plugins::plugin_job,
             plugins::plugin_returns, plugins::plugin_return_applied
         ])
@@ -2557,30 +2552,6 @@ mod tests {
         // the last batch whenever it comes, with those held
         assert_eq!(p.add(vec![json!(5)], ms(1100), false), None);
         assert_eq!(p.add(vec![json!(6)], ms(1200), true), Some(vec![json!(5), json!(6)]));
-    }
-
-    #[test]
-    fn mesa_egl_only_over_nvidia() {
-        let root = std::env::temp_dir().join(format!("immage-egl-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        let touch = |p: &str| {
-            let p = root.join(p);
-            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
-            std::fs::write(p, "{}").unwrap();
-        };
-        // Mesa alone: an AMD or Intel system, whose EGL is Mesa's already
-        touch("etc/glvnd/egl_vendor.d/50_mesa.json");
-        assert_eq!(mesa_egl(&root), None);
-        touch("proc/driver/nvidia/version");
-        assert_eq!(mesa_egl(&root), Some(root.join("etc/glvnd/egl_vendor.d/50_mesa.json")));
-        touch("usr/share/glvnd/egl_vendor.d/50_mesa.json");
-        assert_eq!(mesa_egl(&root), Some(root.join("usr/share/glvnd/egl_vendor.d/50_mesa.json")));
-        // NVIDIA without Mesa's EGL: left to NVIDIA's
-        std::fs::remove_dir_all(root.join("usr")).unwrap();
-        std::fs::remove_dir_all(root.join("etc")).unwrap();
-        assert_eq!(mesa_egl(&root), None);
-        assert_eq!(EGL_VENDOR, "__EGL_VENDOR_LIBRARY_FILENAMES");
-        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]

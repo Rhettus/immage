@@ -288,6 +288,9 @@ function storeReadAhead(v: ReadAhead) {
 // darktable's resource level, kept by the Rust side for the engine's next
 // start (engine.rs, resource_level)
 type Resources = "small" | "default" | "large";
+type RendererMode = "auto" | "mesa" | "nvidia";
+type WebviewRenderer = { running: RendererMode; next: RendererMode; active: string;
+  external: boolean; mesa: boolean; nvidia: boolean };
 
 // a RAW+JPEG pair as one photo in the filmstrip, rated, rejected and
 // deleted together; off, each file stands alone
@@ -499,6 +502,20 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
     if (!gpuEdits) return;
     invoke("gpu_edits_set", { on }).then(() => setGpuEdits({ ...gpuEdits, next: on })).catch(() => {});
   };
+  const [renderer, setRenderer] = useState<WebviewRenderer | null>(null);
+  const [rendererError, setRendererError] = useState("");
+  const [rendererSaving, setRendererSaving] = useState(false);
+  useEffect(() => { invoke<WebviewRenderer | null>("webview_renderer").then(setRenderer).catch(() => {}); }, []);
+  const chooseRenderer = async (mode: RendererMode) => {
+    if (!renderer) return;
+    setRendererSaving(true);
+    setRendererError("");
+    try {
+      await invoke("webview_renderer_set", { mode });
+      setRenderer({ ...renderer, next: mode });
+    } catch (e) { setRendererError(String(e)); }
+    finally { setRendererSaving(false); }
+  };
   const [accelChoice, setAccelChoice] = useState(loadAccel);
   const chooseAccel = (v: AccelChoice) => { setAccelChoice(v); storeAccel(v); };
   // the provider the choice comes to: the one chosen if this computer has
@@ -698,6 +715,27 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
             )}
             {tab === "performance" && (
               <>
+              {renderer && (
+                <PrefCard title="Interface rendering">
+                  <PrefRow label="Window renderer"
+                           hint={`draws Immage's interface; photo processing uses Edit on the GPU separately. Automatic keeps the Mesa workaround on NVIDIA. running: ${{ mesa: "Mesa", nvidia: "NVIDIA", system: "system default", environment: "environment override" }[renderer.active] ?? renderer.active}${renderer.external
+                             ? ". remove __EGL_VENDOR_LIBRARY_FILENAMES from the launch environment to change this"
+                             : renderer.next !== renderer.running ? ". relaunch to apply the selected renderer" : ""}`}>
+                    <div className="segmented small">
+                      {([["Automatic", "auto"], ["Mesa", "mesa"], ["NVIDIA", "nvidia"]] as const).map(([label, mode]) => (
+                        <button key={mode} className={renderer.next === mode ? "active" : ""}
+                                disabled={renderer.external || rendererSaving || (mode !== "auto" && !renderer[mode])}
+                                onClick={() => void chooseRenderer(mode)}>{label}</button>
+                      ))}
+                    </div>
+                    {renderer.next !== renderer.running && (
+                      <button className="btn small" style={{ marginLeft: 8 }} disabled={rendererSaving}
+                              onClick={() => void onRelaunch()}>Relaunch</button>
+                    )}
+                  </PrefRow>
+                  {rendererError && <p role="alert">{rendererError}</p>}
+                </PrefCard>
+              )}
               <PrefCard title="Editing">
                 <PrefRow label="Edit on the GPU"
                          hint={`renders the photo on the graphics card while you edit, as exports and the whole-photo render behind the viewer already are; off keeps edits on the CPU. without a usable GPU darktable uses the CPU either way. smaller drafts for slow sliders still apply, though on the GPU frames are seldom slow enough${gpuEdits && gpuEdits.next !== gpuEdits.running
@@ -844,7 +882,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                 </PrefRow>
                 <PrefRow label="GUI benchmark"
                          hint={onBenchmark
-                           ? "drags the main sliders on the open photo and back, zooms in and out, and saves a timing report; every slider ends where it started. use a copy of a photo you care about"
+                           ? "drags the main sliders on the open photo and back, zooms in and out, and saves timing, frame pacing and resource usage; every slider ends where it started. use a copy of a photo you care about"
                            : "open a photo to run it"}>
                   <button className="btn" disabled={!onBenchmark} onClick={() => onBenchmark?.()}>Run</button>
                 </PrefRow>
