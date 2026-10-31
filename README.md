@@ -355,8 +355,9 @@ CC=gcc-12 CXX=g++-12 scripts/build.sh
 #### Native ARM64 builds
 
 CI builds Linux natively on Ubuntu 22.04 for x86-64 and ARM64. On ARM64,
-`build_linux_deps.sh` also builds WebP/SharpYUV, Highway and JPEG XL, whose
-required versions are unavailable in the jammy ARM64 packages.
+`build_linux_deps.sh` also builds OpenEXR 3, WebP/SharpYUV, Highway and
+JPEG XL, whose required versions are unavailable in the jammy ARM64
+packages. OpenEXR 3 also avoids the system OpenEXR 2 / Imath 3 conflict.
 
 The Linux build scripts also build natively on an ARM64 host. The Rust app,
 darktable engine, OpenCV and ONNX Runtime use the host architecture; the

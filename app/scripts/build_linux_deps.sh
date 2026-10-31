@@ -44,10 +44,13 @@ build() {
   $sudo ldconfig
 }
 
-# the graphics PPA has no jammy ARM64 JPEG XL or SharpYUV packages.
-# build them here, keeping the same formats as the x86-64 AppImage.
+# the graphics PPA has no jammy ARM64 JPEG XL, SharpYUV or OpenEXR 3
+# packages. OpenEXR 2 conflicts with Imath 3, which darktable uses. build
+# the libraries here, keeping the same formats as the x86-64 AppImage.
 # Highway is JPEG XL's SIMD library, newer than jammy's system package
 if [ "$(uname -m)" = aarch64 ]; then
+  build openexr v3.3.5 BSD-3-Clause https://github.com/AcademySoftwareFoundation/openexr 'LICENSE.md' \
+        -DBUILD_SHARED_LIBS=ON -DOPENEXR_BUILD_TOOLS=OFF -DOPENEXR_BUILD_EXAMPLES=OFF
   build libwebp v1.6.0 BSD-3-Clause https://github.com/webmproject/libwebp 'COPYING PATENTS AUTHORS' \
         -DBUILD_SHARED_LIBS=ON -DWEBP_BUILD_ANIM_UTILS=OFF -DWEBP_BUILD_CWEBP=OFF \
         -DWEBP_BUILD_DWEBP=OFF -DWEBP_BUILD_GIF2WEBP=OFF -DWEBP_BUILD_IMG2WEBP=OFF \
