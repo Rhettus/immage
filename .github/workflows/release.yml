@@ -3,7 +3,7 @@
 
 name: release
 
-# a tag v<version> makes a draft release of that version: the three builds,
+# a tag v<version> makes a draft release: macOS, Windows and both Linux builds,
 # the updater's signed bundles, the source archive, and latest.json, which
 # installed copies read once the release is published
 on:

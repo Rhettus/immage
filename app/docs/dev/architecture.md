@@ -320,6 +320,7 @@ darktable is, and it has AI features when darktable is configured with
 |---|---|
 | `src/CMakeLists.txt` | `add_subdirectory(${IMMAGE_ROOT}/engine)`, from [patches/darktable-engine.patch](../../../patches/darktable-engine.patch). |
 | `src/develop/pixelpipe_hb.c` | `important_input` also holds without a GUI, for the module the engine's `_set` names in `history_last_module`, so a GPU drag's frames start from the cached input of the dragged module rather than the raw. darktable only does this for the focused module of its GUI. |
+| `src/common/exif.cc`, `src/imageio/imageio_tiff.c` | Photos are read, not memory-mapped: exiv2 parses a file read whole (`_open_read`), and libtiff opens with `"rbm"`. A mapped file on a network share that drops, as when the computer sleeps, kills the engine with SIGBUS; a read only fails. verify's [trapmap.c](../../../verify/trapmap.c) checks it. |
 
 ## How an operation moves through the app
 
@@ -392,6 +393,7 @@ darktable is, and it has AI features when darktable is configured with
 | File | Coverage |
 |---|---|
 | `#[cfg(test)]` in [main.rs](../../src-tauri/src/main.rs), [engine.rs](../../src-tauri/src/engine.rs) | `cargo test` in `app/src-tauri`: model release lookup, folder listing, sha256, the `-d perf` parser, when the web view gets Mesa's EGL. |
+| [test_release_assets.py](../../../scripts/test_release_assets.py) | Release assembly checks: both Linux downloads and updater entries, missing bundles or signatures, duplicate architectures and mismatched versions. Run by the build workflow. |
 | `npm run build` in `app/` | Type checking (`tsc --noEmit`) and the production bundle; there is no front-end unit test runner (the release checks run the front end's `Session`). |
 | [verify/](../../../verify/README.md) | The release checks: the app's `Session` run under Node against the engine (`harness.mjs`, with `shim.mjs` for Tauri's invoke), every slider and mask slider measured, an edit saved and opened again, old edits rendered, a check per bug fixed and per decision about Immage's behavior, and the benchmark's main timings against the last run. |
 | [benchmarking/](../../../benchmarking/README.md) | The engine benchmark (driven with the app's own manifest), the GUI benchmark's reports, the dashboard. |

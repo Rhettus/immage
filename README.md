@@ -269,8 +269,8 @@ Each release has builds for:
 - **macOS**: Apple silicon, macOS 15 or newer, as a `.dmg`
 - **Windows**: x64, Windows 10 or 11 (and Windows on ARM through its x64
   emulation), as an NSIS installer (`-setup.exe`) or an `.msi`
-- **Linux**: x86-64, as an AppImage, on any distribution with glibc 2.35
-  or newer (Ubuntu 22.04 and later)
+- **Linux**: x86-64 and ARM64, as AppImages, on distributions with
+  glibc 2.35 or newer (Ubuntu 22.04 and later)
 
 The builds are not signed with a developer certificate yet; the release
 page says how to open them the first time. After that, Immage updates
@@ -351,6 +351,33 @@ app/scripts/build_linux_deps.sh
 (cd app && npm ci)
 CC=gcc-12 CXX=g++-12 scripts/build.sh
 ```
+
+#### Native ARM64 builds
+
+CI builds Linux natively on Ubuntu 22.04 for x86-64 and ARM64. On ARM64,
+`build_linux_deps.sh` also builds OpenEXR 3, WebP/SharpYUV, Highway and
+JPEG XL, whose required versions are unavailable in the jammy ARM64
+packages. OpenEXR 3 also avoids the system OpenEXR 2 / Imath 3 conflict.
+
+The Linux build scripts also build natively on an ARM64 host. The Rust app,
+darktable engine, OpenCV and ONNX Runtime use the host architecture; the
+AppImage is named `Immage_<version>_aarch64.AppImage`.
+
+On Arch Linux, install the native equivalents of the dependencies above
+instead of adding Ubuntu PPAs or running `build_linux_deps.sh`. The engine
+bundler reads package versions and licenses from pacman. `po4a` also needs
+`perl-pod-parser` to generate darktable's translated manual pages.
+
+With the dependencies, Rust and Node.js installed:
+
+```sh
+(cd app && npm ci)
+CMAKE_BUILD_PARALLEL_LEVEL=2 CARGO_BUILD_JOBS=2 APPIMAGE_EXTRACT_AND_RUN=1 scripts/build.sh
+```
+
+The two-job limit is useful on machines with 8 GB of RAM. An AppImage built
+on Arch requires a sufficiently recent host glibc; it does not establish
+the Ubuntu 22.04 compatibility baseline of the release builds.
 
 ### AI models
 
