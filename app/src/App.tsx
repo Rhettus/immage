@@ -49,7 +49,7 @@ import { Tour, tourSeen } from "./Tour";
 import { UpdateBanner } from "./UpdateBanner";
 import { autoCheck, relaunch } from "./updates";
 import { Chevron, Collapse } from "./Collapse";
-import { loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadNewPhotosProfile, loadOverlayColor, loadGuideColor, guideRgb, loadPins, maskOverlayRgb, loadPreview, loadBalancedPreviewSize, loadFrameCacheMb, loadDraftTarget, loadDraftSmallest,loadSliderScroll, loadSliderScrollStep,
+import { loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadNewPhotosProfile, loadOverlayColor, loadGuideColor, guideRgb, loadPins, maskOverlayRgb, loadPreview, loadCachedExposurePreview, loadBalancedPreviewSize, loadFrameCacheMb, loadDraftTarget, loadDraftSmallest,loadSliderScroll, loadSliderScrollStep,
          loadStackPairs,
          PreferencesDialog, storeOverlayColor, storeGuideColor, storeStackPairs,
          storeAutoHide, storeCanvas, CANVASES, storeFocusMode, storePins, type AccelProvider, type Canvas,
@@ -1515,10 +1515,10 @@ export default function App() {
       // a <select>'s native menu takes the pointer on macOS: its pointerup
       // never reaches the page, so a drag begun there would never end
       if ((e.target as Element).closest?.("select")) return;
-      if (e.button === 0 && (e.target as Element).closest?.(DRAG_AREAS) && loadPreview() !== "quality") dragging.current = true;
+      if (e.button === 0 && (e.target as Element).closest?.(DRAG_AREAS) && (loadPreview() !== "quality" || loadCachedExposurePreview())) dragging.current = true;
     };
     const wheel = (e: WheelEvent) => {
-      if (!(e.target as Element).closest?.(".panels, .histogram") || !loadSliderScroll() || loadPreview() === "quality") return;
+      if (!(e.target as Element).closest?.(".panels, .histogram") || !loadSliderScroll() || (loadPreview() === "quality" && !loadCachedExposurePreview())) return;
       dragging.current = true;
       window.clearTimeout(wheelTimer);
       wheelTimer = window.setTimeout(end, 250);
@@ -3136,6 +3136,8 @@ export default function App() {
       };
       s.thumbSize = baseSize;
       s.previewMode = loadPreview;
+      s.cachedExposurePreview = loadCachedExposurePreview;
+      s.fullView = () => viewAt(1);
       s.frameBudget = () => loadFrameCacheMb() * 1048576;
       s.draftSize = () => (loadPreview() === "quality" ? null : { ...viewAt(draftK()), draft: true });
       s.draftLimits = () => ({ target: loadDraftTarget(), smallest: loadPreview() === "balanced" && loadBalancedPreviewSize() === 1 ? 1 : loadDraftSmallest() });

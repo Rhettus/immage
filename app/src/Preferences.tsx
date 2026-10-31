@@ -207,6 +207,15 @@ function storePreview(v: Preview) {
   try { localStorage.setItem(PREVIEW_KEY, v); } catch { /* not kept */ }
 }
 
+const CACHED_EXPOSURE_KEY = "immage.cachedExposurePreview";
+export function loadCachedExposurePreview(): boolean {
+  try { return localStorage.getItem(CACHED_EXPOSURE_KEY) === "1"; }
+  catch { return false; }
+}
+function storeCachedExposurePreview(on: boolean) {
+  try { localStorage.setItem(CACHED_EXPOSURE_KEY, on ? "1" : "0"); } catch { /* not kept */ }
+}
+
 const BALANCED_SIZE_KEY = "immage.balancedPreviewSize";
 export function loadBalancedPreviewSize(): number {
   try { return localStorage.getItem(BALANCED_SIZE_KEY) === "1" ? 1 : 0.5; }
@@ -487,6 +496,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   const [sliderScroll, setSliderScroll] = useState(loadSliderScroll);
   const [scrollStep, setScrollStep] = useState(loadSliderScrollStep);
   const [preview, setPreview] = useState(loadPreview);
+  const [cachedExposure, setCachedExposure] = useState(loadCachedExposurePreview);
   const [balancedSize, setBalancedSize] = useState(loadBalancedPreviewSize);
   const [sharedFrames, setSharedFrames] = useState(loadSharedFrames);
   const [atScreenScale, setAtScreenScale] = useState(loadScreenScale);
@@ -765,6 +775,15 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                     {([["Quality", "quality"], ["Balanced", "balanced"], ["Performance", "performance"]] as const).map(([label, v]) => (
                       <button key={v} className={preview === v ? "active" : ""}
                               onClick={() => { setPreview(v); storePreview(v); }}>{label}</button>
+                    ))}
+                  </div>
+                </PrefRow>
+                <PrefRow label="Cached exposure preview"
+                         hint="experimental: Exposure drags adjust a frozen, fully rendered view, preserving sharpening and texture. Highlights and shadows are approximate; release renders the accurate result">
+                  <div className="segmented small">
+                    {[false, true].map((on) => (
+                      <button key={String(on)} className={cachedExposure === on ? "active" : ""}
+                              onClick={() => { setCachedExposure(on); storeCachedExposurePreview(on); }}>{on ? "On" : "Off"}</button>
                     ))}
                   </div>
                 </PrefRow>

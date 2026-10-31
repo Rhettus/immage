@@ -15,6 +15,7 @@ import type { Spot } from "./spots";
 import { begin, end, progress } from "./activity";
 import { perf, type Trace } from "./perf";
 import { FRAME_HEAD, renderFrame } from "./sharedFrames";
+import { exposurePreview } from "./cachedExposure";
 import type { Preview } from "./Preferences";
 
 
@@ -330,6 +331,7 @@ export class Session {
   set(id: string, v: number) {
     if (!mapOf.has(id)) return;
     perf.input();
+    const startExposure = this.values.exposure;
     this.values[id] = v;
     if (id === "orient") this.orient(v);
     if (id === "neg_on") this.negChanged();
@@ -337,6 +339,22 @@ export class Session {
       this.foreign.delete(m);
       this.dirty.add(m.op);
     }
+    if (id === "exposure" && this.cachedExposurePreview() && this.size().draft && !this.busy
+        && !this.before && !this.masksPending && this.dirty.size === 1 && this.dirty.has("exposure")) {
+      const view = this.fullView();
+      const key = this.frameKey(view, false);
+      const source = this.frozenExposure?.key === key ? this.frozenExposure : null;
+      const frame = source?.frame ?? this.current.get(key)
+        ?? (this.copy && view.scale === this.copy.view.scale ? this.cut(this.copy, view) : null);
+      if (frame) {
+        this.frozenExposure = source ?? { key, frame, exposure: startExposure };
+        const pixels = exposurePreview(frame.pixels, v - this.frozenExposure.exposure);
+        this.onFrame({ ...frame, pixels, hash: undefined, trace: undefined, ms: 0,
+                       view: { ...frame.view, draft: true } });
+        return;
+      }
+    }
+    this.frozenExposure = null;
     this.needRender = true;
     void this.pump();
   }
@@ -768,7 +786,12 @@ export class Session {
     void this.pump();
   }
 
+  cachedExposurePreview: () => boolean = () => false;
+  fullView: () => View = () => this.size();
+  private frozenExposure: { key: string; frame: Frame; exposure: number } | null = null;
+
   requestRender() {
+    this.frozenExposure = null;
     this.needRender = true;
     void this.pump();
   }
@@ -975,6 +998,7 @@ export class Session {
   // what the engine renders changed: no frame shown is known to show it.
   // the copy is put aside, for the engine to name if the image comes back
   private changed() {
+    this.frozenExposure = null;
     this.current.clear();
     if (this.copy) {
       this.putAside = this.copy;
