@@ -114,7 +114,7 @@ or physical disk reads. Camera fixtures are supplied locally and stay out of git
 ## Cached preview GPU checks
 
 Run `node --test verify/cached-detail.test.mjs verify/performance-tuner.test.mjs`
-for cache eligibility, GPU descriptors, CPU fallback, prediction rejection,
+for cache eligibility, GPU descriptors, CPU fallback, prediction rejection and private recovery, bounded accuracy-based native timing,
 in-flight anchor ordering and exact release behavior. Display-frame tests also
 cover burst coalescing, queued-preview cancellation and revalidation, native
 refresh with paused animation callbacks, and release before the next frame.

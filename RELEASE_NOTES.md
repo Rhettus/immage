@@ -5,9 +5,14 @@ what Immage's update banner shows under Release Notes.
 
 ## Experimental Linux renderer build
 
+- Cached slider previews refresh native frames more often as prediction
+  error rises and less often after reliable checks, within a 320 ms cap.
+  Failed predictions retrain privately from fresh native frames and can
+  recover during the same drag. Release still requests the exact result.
+
 - Cached slider previews show the latest value once per display frame,
   coalescing rapid input on GPU and CPU fallback paths. Native refreshes
-  continue on their existing timer, and releasing a slider cancels queued
+  continue on a bounded timer, and releasing a slider cancels queued
   previews and requests the exact result immediately.
 
 - Adaptive cached previews blend native frames on the WebView GPU when
