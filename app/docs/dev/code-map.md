@@ -67,7 +67,7 @@ Engine ([`engine/`](../../../engine)):
 - [main.c](../../../engine/main.c): `_handle()` serves every command; four pipes (main, preview, drag, base) over the open photo; sections for library, export, masks, AI (`HAVE_AI`), spots, ranges and zones, looks, save
 - [upright.c](../../../engine/upright.c) (Upright, from ashift.c), [hdrmerge.c](../../../engine/hdrmerge.c) (HDR Merge), [pano.cc](../../../engine/pano.cc) and [dng.c](../../../engine/dng.c) (Panorama Merge), [strip.cc](../../../engine/strip.cc) (export metadata)
 
-Checks and tools: [verify/](../../../verify/README.md) (the release checks: `Session` under Node against the engine), [benchmarking/](../../../benchmarking/README.md), `cargo test` in `app/src-tauri`, `npm run build` (type check), [darktable-pin.md](darktable-pin.md), and darktable's own [dev-doc/](../../../darktable/dev-doc/README.md).
+Checks and tools: [release asset tests](../../../scripts/test_release_assets.py) (`python3 -I scripts/test_release_assets.py`), [verify/](../../../verify/README.md) (the release checks: `Session` under Node against the engine), [benchmarking/](../../../benchmarking/README.md), `cargo test` in `app/src-tauri`, `npm run build` (type check), [darktable-pin.md](darktable-pin.md), and darktable's own [dev-doc/](../../../darktable/dev-doc/README.md).
 
 ## Keeping this map current
 

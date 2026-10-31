@@ -2,13 +2,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 the Immage authors
 
-# Linux: build the two libraries Ubuntu 22.04 has too old for darktable,
+# Linux: build the libraries Ubuntu 22.04 has too old for darktable,
 # libheif and exiv2, at the versions darktable's own AppImage uses
 # (darktable/.github/workflows/nightly.yml), and install them into
 # /usr/local. each one also leaves, in /usr/local/share/immage-deps/<name>,
 # its license texts, an `info` file (name and version, license, source) and
 # the list of files it installed, which bundle_engine.py reads to credit
-# the libraries it bundles that no distribution package owns
+# the libraries it bundles that no distribution package owns. ARM64 also
+# builds the image libraries unavailable from the jammy PPAs
 set -eu
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
@@ -42,6 +43,28 @@ build() {
     | $sudo tee "$meta/info" > /dev/null
   $sudo ldconfig
 }
+
+# the graphics PPA has no jammy ARM64 JPEG XL or SharpYUV packages.
+# build them here, keeping the same formats as the x86-64 AppImage.
+# Highway is JPEG XL's SIMD library, newer than jammy's system package
+if [ "$(uname -m)" = aarch64 ]; then
+  build libwebp v1.6.0 BSD-3-Clause https://github.com/webmproject/libwebp 'COPYING PATENTS AUTHORS' \
+        -DBUILD_SHARED_LIBS=ON -DWEBP_BUILD_ANIM_UTILS=OFF -DWEBP_BUILD_CWEBP=OFF \
+        -DWEBP_BUILD_DWEBP=OFF -DWEBP_BUILD_GIF2WEBP=OFF -DWEBP_BUILD_IMG2WEBP=OFF \
+        -DWEBP_BUILD_VWEBP=OFF -DWEBP_BUILD_WEBPINFO=OFF -DWEBP_BUILD_WEBPMUX=OFF \
+        -DWEBP_BUILD_EXTRAS=OFF
+  build highway 1.3.0 Apache-2.0 https://github.com/google/highway 'LICENSE' \
+        -DBUILD_SHARED_LIBS=ON -DHWY_ENABLE_TESTS=OFF -DHWY_ENABLE_EXAMPLES=OFF \
+        -DHWY_ENABLE_CONTRIB=OFF
+  build libjxl v0.12.0 BSD-3-Clause https://github.com/libjxl/libjxl 'LICENSE PATENTS AUTHORS' \
+        -DBUILD_SHARED_LIBS=ON -DJPEGXL_FORCE_SYSTEM_HWY=ON \
+        -DJPEGXL_FORCE_SYSTEM_BROTLI=ON -DJPEGXL_FORCE_SYSTEM_LCMS2=ON \
+        -DJPEGXL_ENABLE_SKCMS=OFF -DJPEGXL_ENABLE_SJPEG=OFF \
+        -DJPEGXL_ENABLE_TOOLS=OFF -DJPEGXL_ENABLE_DEVTOOLS=OFF -DJPEGXL_ENABLE_BENCHMARK=OFF \
+        -DJPEGXL_ENABLE_EXAMPLES=OFF -DJPEGXL_ENABLE_JNI=OFF -DJPEGXL_ENABLE_PLUGINS=OFF \
+        -DJPEGXL_ENABLE_DOXYGEN=OFF -DJPEGXL_ENABLE_MANPAGES=OFF -DJPEGXL_ENABLE_FUZZERS=OFF \
+        -DJPEGXL_ENABLE_TCMALLOC=OFF
+fi
 
 # the HEVC encoder is left out: darktable only reads HEIF, and x265 is GPL
 build libheif v1.23.6 LGPL-3.0-or-later https://github.com/strukturag/libheif COPYING \
