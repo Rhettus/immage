@@ -87,7 +87,7 @@ import { tunerOptions } from "./tunerOptions";
 import { timeTunerWork } from "./tunerWorkload";
 import { hasPendingTuner } from "./PerformanceTuner";
 import { PerformanceTuner } from "./PerformanceTuner";
-import type { TunerRun } from "./performanceTuner";
+import type { TunerRun } from "./previewTuning";
 import { PerfHud } from "./PerfHud";
 import { KeywordingPanel } from "./Keywording";
 import { ImmichPanel } from "./ImmichPanel";

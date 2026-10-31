@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import test from 'node:test';
+import { readdirSync } from 'node:fs';
 import assert from 'node:assert/strict';
-import { measureTuner, searchTuner, tunerCandidates, tunerChanges } from '../app/src/performanceTuner.ts';
+import { measureTuner, searchTuner, tunerCandidates, tunerChanges } from '../app/src/previewTuning.ts';
 import { startTunerWork, stopTunerWork, timeTunerWork } from '../app/src/tunerWorkload.ts';
 
 const fixture = (fps = 40, latency = 50) => {
@@ -69,4 +70,16 @@ test('records only completed work in its own recording', async () => {
 });
 test('recommendations explicitly describe cached exposure and preview quality changes', () => {
   assert.ok(tunerChanges({...tunerCandidates()[0],cachedExposure:true},tunerCandidates()[1]).some(s=>s.startsWith('Cached exposure preview: Off')));
+});
+
+// TypeScript resolves .ts before .tsx; these must remain distinct on macOS/Windows.
+test('frontend module names are unambiguous on case-insensitive filesystems', () => {
+  const root = new URL('../app/src/', import.meta.url);
+  const seen = new Map();
+  for (const path of readdirSync(root, { recursive:true })) {
+    if (!/\.tsx?$/.test(path)) continue;
+    const key = path.replace(/\.tsx?$/, '').toLowerCase();
+    assert.ok(!seen.has(key), `ambiguous modules: ${seen.get(key)} and ${path}`);
+    seen.set(key,path);
+  }
 });

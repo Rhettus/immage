@@ -68,6 +68,8 @@ jobs:
         working-directory: app
       - run: npx tsc --noEmit
         working-directory: app
+      - name: performance tuner and portable module checks
+        run: node --test verify/performance-tuner.test.mjs
       - run: npm audit --omit=dev --audit-level=high
         working-directory: app
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
