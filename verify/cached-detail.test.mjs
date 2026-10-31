@@ -281,7 +281,9 @@ test('GPU feedback retains native error rejection and exact release',async()=>{
   s.set('exposure',0.1);await settle();s.set('exposure',0.2);await settle();
   s.set('exposure',0.24);displayFrame();assert.equal(estimates.length,1);
   await settle();assert.equal(s.detailCache.blocked,true);assert.equal(native(),3);
-  s.set('exposure',0.25);assert.equal(estimates.length,1);
+  const count = estimates.length;
+  assert.equal(estimates.at(-1).a, estimates.at(-1).b, 'native refresh should already be presented');
+  s.set('exposure',0.25);assert.equal(estimates.length,count);
   release();await settle();
   assert.equal(shown.at(-1).view.draft,false);assert.equal(shown.at(-1).pixels[0],250);
   assert.equal(s.detailCache,null);
@@ -511,7 +513,10 @@ for(const gpu of [false,true]) test(`accuracy failure cancels estimates while na
   assert.equal(s.detailCache.blocked,true);
   assert.equal(s.detailCache.b.value,0.25);
   assert.equal(shown.slice(count).some(f=>f.trace?.estimated),false);
-  assert.equal(shown.slice(count).length,2);
+  // The obsolete queued native value can be skipped now: validation no longer
+  // runs before the stale-frame check and cancels the newer queued estimate.
+  assert.equal(shown.slice(count).length,1);
+  assert.equal(shown.at(-1).pixels[0],200);
   release();await settle();
 });
 
@@ -594,9 +599,139 @@ test('release while accuracy validation is off-thread finishes with the exact fr
   assert.ok(worker,'validation was not sent to a worker');
   assert.equal(worker.messages[0].task.kind,'validation');
   release();assert.equal(s.detailCache,null);
-  worker.finish();await settle();
+  await settle(); // release must finish even while validation remains held
+  assert.equal(worker.messages.length,1);
+  worker.finish();
   assert.equal(s.detailCache,null);
   assert.equal(shown.at(-1).view.draft,false);
   assert.equal(shown.at(-1).pixels[0],250);
-  s.previewWorker.dispose();
+  s.validationWorker.dispose();
+});
+
+async function heldValidation(t, gpu = true) {
+  const { runPixelTask } = await import('../app/src/pixelTasks.ts');
+  const workers = [], events = [], previous = globalThis.Worker;
+  globalThis.Worker = class {
+    messages = [];
+    constructor() { workers.push(this); }
+    postMessage(message, transfer) { events.push(message.task.kind); this.messages.push(structuredClone(message, { transfer })); }
+    terminate() { this.terminated = true; }
+    finish(result) {
+      const {id, task} = this.messages.shift();
+      this.onmessage({data:{id, result: result ?? runPixelTask(task), workMs: 1}});
+    }
+  };
+  t.after(() => { if (previous === undefined) delete globalThis.Worker; else globalThis.Worker = previous; });
+  const fixture = exposureSession();
+  const exact = [];
+  const onFrame = fixture.s.onFrame;
+  fixture.s.onFrame = f => { events.push('frame'); onFrame(f); };
+  if (gpu) fixture.s.onCachedPreview = p => { if (!p.frame.trace?.estimated) { exact.push(p); events.push('frame'); } return true; };
+  t.after(() => {
+    fixture.s.previewWorker?.dispose(); fixture.s.validationWorker?.dispose();
+    clearTimeout(fixture.s.previewTimer);
+  });
+  for (const v of [.1, .2]) { fixture.s.set('exposure', v); await fixture.settle(); }
+  fixture.s.detailCache.lastStart = 0;
+  fixture.s.set('exposure', .24); displayFrame(); await fixture.settle();
+  const validation = workers.find(w => w.messages[0]?.task.kind === 'validation');
+  assert.ok(validation, 'expected a held validation task');
+  return { ...fixture, exact, workers, validation, events };
+}
+
+test('held validation does not block native presentation or the next native render', async t => {
+  const {s, exact, native, settle, release, validation, events} = await heldValidation(t);
+  assert.deepEqual(events.slice(-2), ["frame", "validation"], "submit validation only after presenting native pixels");
+  assert.equal(native(), 3);
+  assert.equal(exact.at(-1).frame.pixels[0], 105, 'native frame waited for accuracy work');
+  const cache = s.detailCache, oldB = cache.b;
+  cache.lastStart = 0; s.set('exposure', .25); displayFrame(); await settle();
+  assert.equal(native(), 4, 'next edit queued behind accuracy work');
+  assert.notEqual(cache.b, oldB);
+  assert.equal(cache.b.value, .25);
+  validation.finish({mean:1, p95:1}); // obsolete failure for the older trained pair
+  assert.equal(cache.blocked, false);
+  assert.equal(cache.b.value, .25);
+  assert.equal(validation.messages.length, 1, 'latest validation should now be running');
+  validation.finish({mean:1, p95:1});
+  assert.equal(cache.blocked, true, 'current prediction failure must still enter recovery');
+  assert.equal(cache.a, undefined);
+  assert.equal(cache.b.value, .25, 'keep the exact latest native anchor for recovery');
+  release(); await settle(); assert.equal(s.detailCache, null);
+});
+
+test('CPU mixing and validation have independent worker queues', async t => {
+  const {s, workers, validation, shown, native, settle, release} = await heldValidation(t, false);
+  const mixing = workers.find(w => w.messages[0]?.task.kind === 'mix');
+  assert.ok(mixing); assert.notEqual(mixing, validation);
+  assert.equal(native(), 3); assert.equal(shown.at(-1).pixels[0], 105);
+  const count = shown.length;
+  mixing.finish(); assert.equal(shown.length, count, 'old mix covered the newer native anchor');
+  release(); await settle(); assert.equal(shown.at(-1).view.draft, false);
+  assert.equal(validation.messages.length, 1, 'release must not wait for validation');
+  validation.finish({mean:1, p95:1}); assert.equal(s.detailCache, null);
+});
+
+for (const invalidate of ['control', 'viewport', 'direction']) test(`late validation cannot affect a changed ${invalidate}`, async t => {
+  const {s, validation, settle, release} = await heldValidation(t);
+  const old = s.detailCache;
+  if (invalidate === 'control') s.set('contrast', 1);
+  if (invalidate === 'viewport') s.requestRender();
+  if (invalidate === 'direction') s.set('exposure', .23);
+  const cache = s.detailCache, a = cache?.a, b = cache?.b;
+  validation.finish({mean:1, p95:1});
+  assert.equal(s.detailCache, cache);
+  if (cache) { assert.equal(cache.a, a); assert.equal(cache.b, b); assert.equal(cache.blocked, false); }
+  assert.equal(old.accuracy?.failures ?? 0, 0);
+  release(); await settle();
+});
+
+test('synchronous validation fallback starts after native presentation', async () => {
+  const {s, shown, settle, release} = exposureSession();
+  for (const v of [.1, .2]) { s.set('exposure', v); await settle(); }
+  let checked = false;
+  s.validationWorker = {
+    cancel() {}, dispose() {},
+    submit(_key, _task, done) {
+      checked = true;
+      assert.equal(shown.at(-1).pixels[0], 105);
+      assert.notEqual(shown.at(-1).trace?.estimated, true);
+      done({mean: 1, p95: 1});
+    },
+  };
+  s.detailCache.lastStart = 0; s.set('exposure', .24); await settle();
+  assert.equal(checked, true); assert.equal(s.detailCache.blocked, true);
+  release(); await settle();
+});
+
+test('close disposes held validation without waiting for its result', async t => {
+  const {s, validation, shown, release} = await heldValidation(t);
+  release(); await s.close();
+  assert.equal(validation.terminated, true);
+  assert.equal(s.validationWorker, null); assert.equal(s.detailCache, null);
+  assert.equal(shown.at(-1).view.draft, false);
+  const count = shown.length;
+  validation.finish({mean:1, p95:1});
+  assert.equal(shown.length, count);
+});
+
+test('a validation failure during native rendering retires that render\'s old prediction', async t => {
+  const {s, validation, settle, release} = await heldValidation(t);
+  const render = s.renderView;
+  let finish;
+  s.renderView = async view => {
+    const frame = await render(view);
+    await new Promise(resolve => { finish = () => resolve(frame); });
+    return frame;
+  };
+  s.detailCache.lastStart = 0; s.set('exposure', .25);
+  for (let i = 0; i < 100 && !finish; i++) await new Promise(resolve => setTimeout(resolve, 1));
+  assert.ok(finish);
+  validation.finish({mean:1, p95:1});
+  assert.equal(s.detailCache.blocked, true);
+  assert.equal(s.detailCache.a, undefined);
+  s.renderView = render; finish(); await settle();
+  assert.equal(s.detailCache.b.value, .25);
+  assert.equal(validation.messages.length, 0, 'retired anchors were validated again');
+  release(); await settle();
 });
