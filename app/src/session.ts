@@ -1030,14 +1030,12 @@ export class Session {
   private draftWas = "";
   private needWarm = false;
 
-  // detail previews keep every module and pixel; only their area adapts
+  // native detail previews keep every module and the display scale in a loupe
   detailView: (() => View | null) = () => null;
-  private detailKey = "";
-  private detailSlow = 0;
   private detailOps = "";
 
   private draftView(view: View, ops: string[]): View {
-    if (!view.draft) { perf.event("preview.decision", { reason:"exact-view" }); this.detailKey = ""; this.detailSlow = 0; return view; }
+    if (!view.draft) { perf.event("preview.decision", { reason:"exact-view" }); return view; }
     if (ops.length) this.detailOps = [...new Set(ops.map((op) => op.split("#")[0]))].sort().join();
     const detail = this.detailView();
     if (this.detailCache && this.cachedDetailPreview()) {
@@ -1045,14 +1043,11 @@ export class Session {
       return {...this.fullView(),draft:true,detail:true};
     }
     const eligible = !!this.activeDetailControl && this.detailOps.split(",").every((op) =>
-      ["diffuse", "sharpen", "contrastntexture", "denoiseprofile", "bilat", "localcontrast", "agx", "sigmoid", "rgbcurve", "tonecurve", "colorbalancergb"].includes(op));
+      ["diffuse", "sharpen", "contrastntexture", "denoiseprofile", "bilat", "localcontrast", "agx", "sigmoid", "rgbcurve", "tonecurve", "colorbalancergb", "grain"].includes(op));
     if (detail && eligible) {
-      const full = this.fullView();
-      const key = `${this.detailOps}:${full.width}:${full.height}:${full.scale}`;
-      if (key !== this.detailKey) { this.detailKey = key; this.detailSlow = 0; }
-      perf.event("preview.decision", { reason:this.detailSlow >= 2 ? "detail-loupe-after-slow-frames" : "detail-full-view", slowFrames:this.detailSlow });
-      return this.detailSlow >= 2 ? { ...detail, draft: true, detail: true, loupe: true }
-        : { ...full, draft: true, detail: true };
+      // full-size probes block newer inputs before the loupe can appear
+      perf.event("preview.decision", { reason:"detail-loupe" });
+      return { ...detail, draft: true, detail: true, loupe: true };
     }
 
     if (ops.length) this.draftKey = [...new Set(ops.map((op) => op.split("#")[0]))].sort().join();
@@ -1070,13 +1065,7 @@ export class Session {
   // size, which ran from the raw, nor on one darktable found in its cache
   // (0 ms), as a drag back over values just shown does
   private draftTimed(f: Frame, edits: number) {
-    if (f.view.detail) {
-      if (!f.view.loupe && edits) {
-        const ms = f.ms;
-        if (ms > 0) this.detailSlow = ms > this.draftLimits().target ? this.detailSlow + 1 : 0;
-      }
-      return;
-    }
+    if (f.view.detail) return;
     const size = `${f.width}x${f.height}`, first = size !== this.draftWas;
     this.draftWas = size;
     const ms = f.trace?.rust[2] ?? 0;

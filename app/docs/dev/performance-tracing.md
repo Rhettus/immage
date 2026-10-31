@@ -67,6 +67,14 @@ Cache events show replacement, validation results, recovery state and rejected
 estimates. Estimate-worker spans include off-thread waiting, not just compute.
 Shared-transport events identify retries and failures. Hooks do no console logging.
 
+`preview.decision` reports `detail-loupe` when a native detail or grain drag
+starts directly in the loupe. Cached detail previews retain their whole-image
+anchor path. Compare first frames and queue delays separately from sustained
+frames when checking this policy; full-view probe frames no longer precede the
+loupe. The native cache patch also retains module-requested GPU checkpoints;
+check whether raw preparation and demosaicing disappear from subsequent
+downstream edits, and compare process memory as well as latency.
+
 Cancellation request and signal-sent events are separate. Signal-sent means the
 cancel command was written, not that rendering stopped. Render cancelled/end
 outcomes and native release spans show completion; stale completed base frames

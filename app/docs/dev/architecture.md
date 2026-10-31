@@ -443,6 +443,14 @@ The GUI dashboard plots these alongside timing summaries.
 
 [cachedDetail.ts](../../src/cachedDetail.ts) bounds interpolation between real renders for Exposure, Vibrance, Saturation and detail controls, measures display RGB prediction error, and stores the tuner timing seed. `Session` coalesces native edits until the next timed anchor (40–320 ms, or native completion when slower), checks predictions against native output, and suspends estimates on excessive error. Estimation cost failures disable estimates for the drag. Estimated performance samples are marked separately; tuner verification requires native samples too. `Session` invalidates anchors on release, control/view changes and non-slider edits. Release cancels the timer and requests exact output. `App` shows loupe controls only during eligible detail interactions.
 
+With cached previews disabled, eligible detail drags start directly in the
+loupe at the display scale; they do not probe whole-image rendering first.
+Grain amount and size also use native loupe frames, with interpolation excluded.
+Disabling the loupe retains whole-image drafts. Release renders the exact full
+view. The engine pixelpipe patch honors `IOP_FLAGS_WRITE_PIPECACHE_IN` in
+headless screen pipes as well as the last edited module, retaining checkpoints
+such as the demosaiced input to scaling when controls or preview sizes change.
+
 
 [cachedPreviewRenderer.ts](../../src/cachedPreviewRenderer.ts) presents estimates
 from `Session.onCachedPreview` using two native RGBA textures and a WebGL
