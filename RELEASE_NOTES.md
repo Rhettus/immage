@@ -10,7 +10,9 @@ what Immage's update banner shows under Release Notes.
   recent frames and avoid allocating a predicted image, reducing temporary
   copies while preserving accuracy checks and exact rendering on release.
   GPU previews also reuse recent frames across exact refreshes, avoiding
-  repeated texture uploads when slider estimates resume.
+  repeated texture uploads when slider estimates resume. Histograms and
+  scopes update at a reduced cadence during interaction and refresh on
+  release, leaving more time for the preview.
 
 - Cached slider previews refresh native frames more often as prediction
   error rises and less often after reliable checks, within a 320 ms cap.
