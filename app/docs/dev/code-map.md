@@ -70,6 +70,11 @@ Engine ([`engine/`](../../../engine)):
 
 Checks and tools: [experimental WebKitGTK build](../../scripts/build_webkitgtk.sh) and [bundle check](../../scripts/check_webkit_bundle.py), [release asset tests](../../../scripts/test_release_assets.py) (`python3 -I scripts/test_release_assets.py`), [verify/](../../../verify/README.md) (the release checks: `Session` under Node against the engine), [benchmarking/](../../../benchmarking/README.md), `cargo test` in `app/src-tauri`, `npm run build` (type check), [darktable-pin.md](darktable-pin.md), and darktable's own [dev-doc/](../../../darktable/dev-doc/README.md).
 
+[verify/thumbnail-io.cc](../../../verify/thumbnail-io.cc) is the optional
+`immage-thumbnail-check` CMake target: metadata prefixes, late metadata
+fallback, embedded JPEG equality, orientation and scaled decoding.
+
+
 ## Keeping this map current
 
 - Add a file to its line here and its entry in [architecture.md](architecture.md); keep this map short, as it is read at the start of every session.

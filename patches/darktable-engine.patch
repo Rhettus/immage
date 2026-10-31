@@ -5,7 +5,7 @@ index 938c3172bd..316d298dac 100644
 @@ -1264,6 +1264,12 @@ if(USE_MCP)
    add_subdirectory(mcp)
  endif()
- 
+
 +# Immage's headless engine, built from outside this tree: IMMAGE_ROOT is
 +# set by Immage's scripts/build.sh
 +if(IMMAGE_ROOT)
@@ -14,15 +14,15 @@ index 938c3172bd..316d298dac 100644
 +
  # have a command line utility to generate all the thumbnails
  add_subdirectory(generate-cache)
- 
+
 diff --git a/src/common/exif.cc b/src/common/exif.cc
-index efdd7f15a0..8482b14e42 100644
+index efdd7f15a0..656074b5a7 100644
 --- a/src/common/exif.cc
 +++ b/src/common/exif.cc
-@@ -432,6 +432,27 @@ public:
+@@ -432,6 +432,134 @@ public:
    image->writeMetadata();                                     \
  }
- 
+
 +// a source file read whole, for exiv2 to parse from memory. exiv2 maps
 +// TIFF-based files, and a mapped file whose network share drops (the
 +// computer sleeping) raises SIGBUS, where read() only returns an error
@@ -37,18 +37,125 @@ index efdd7f15a0..8482b14e42 100644
 +// the image must not outlive file, which holds its bytes
 +static std::unique_ptr<Exiv2::Image> _open_read(const char *path, FileData &file)
 +{
-+  if(!g_file_get_contents(path, &file.data, &file.size, NULL))
-+    // let exiv2 report the error as it does for any file it cannot open
-+    return std::unique_ptr<Exiv2::Image>(Exiv2::ImageFactory::open(WIDEN(path)));
++  g_clear_pointer(&file.data, g_free);
++  GError *error = NULL;
++  if(!g_file_get_contents(path, &file.data, &file.size, &error))
++  {
++    const std::string message = error ? error->message : "could not read metadata source";
++    g_clear_error(&error);
++    throw Exiv2::Error(Exiv2::ErrorCode::kerErrorMessage, message);
++  }
 +  return std::unique_ptr<Exiv2::Image>(
 +    Exiv2::ImageFactory::open((const Exiv2::byte *)file.data, file.size));
 +}
 +
++// Exiv2 accepts incomplete TIFF directories with a warning instead of failing
++// only missing pixel strips are harmless when reading metadata
++static thread_local bool _reading_prefix = false;
++static thread_local bool _prefix_incomplete = false;
++
++class ReadFileIo : public Exiv2::FileIo
++{
++public:
++  explicit ReadFileIo(const char *path) : Exiv2::FileIo(WIDEN(path)) {}
++  Exiv2::byte *mmap(bool writeable = false) override
++  {
++    if(writeable)
++      throw Exiv2::Error(Exiv2::ErrorCode::kerErrorMessage, "read-only metadata source");
++    const size_t length = size();
++    if(length == SIZE_MAX || length < _data.size())
++      throw Exiv2::Error(Exiv2::ErrorCode::kerInputDataReadFailed);
++    if(_data.size() != length)
++    {
++      const size_t used = _data.size();
++      _data.resize(length);
++      if(seek(used, Exiv2::BasicIo::beg) || (size_t)read(_data.data() + used, length - used) != length - used)
++      {
++        _data.clear();
++        throw Exiv2::Error(Exiv2::ErrorCode::kerInputDataReadFailed);
++      }
++    }
++    return _data.data();
++  }
++  int munmap() override { return 0; }
++  void cache_prefix(const gchar *data, const size_t size)
++  {
++    if(size) _data.assign(data, data + size);
++  }
++private:
++  std::vector<Exiv2::byte> _data;
++};
++
++static std::unique_ptr<Exiv2::Image> _read_metadata(const char *path, FileData &file)
++{
++  // FileIo reads JPEG segments and CR3 boxes by seeking; only TIFF-like
++  // formats need a contiguous buffer, supplied by ReadFileIo without mmap
++#if EXIV2_TEST_VERSION(0,28,0)
++  auto io = std::make_unique<ReadFileIo>(path);
++#else
++  Exiv2::BasicIo::AutoPtr io(new ReadFileIo(path));
++#endif
++  if(io->open())
++    throw Exiv2::Error(Exiv2::ErrorCode::kerDataSourceOpenFailed, path, g_strerror(errno));
++  const size_t length = io->size();
++  unsigned char header[4] = {};
++  const bool tiff = (size_t)io->read(header, sizeof(header)) == sizeof(header)
++                    && (!memcmp(header, "II*\0", 4) || !memcmp(header, "MM\0*", 4));
++  if(tiff && Exiv2::LogMsg::level() <= Exiv2::LogMsg::warn)
++  {
++    size_t used = 0;
++    for(size_t limit = 64 * 1024; limit < length && limit <= 16 * 1024 * 1024; limit *= 4)
++    {
++      file.data = (gchar *)g_realloc(file.data, limit);
++      if(io->seek(used, Exiv2::BasicIo::beg)
++         || (size_t)io->read((Exiv2::byte *)file.data + used, limit - used) != limit - used)
++        throw Exiv2::Error(Exiv2::ErrorCode::kerInputDataReadFailed);
++      used = file.size = limit;
++      std::unique_ptr<Exiv2::Image> image;
++      bool complete = false;
++      {
++        Lock lock;
++        _reading_prefix = true;
++        _prefix_incomplete = false;
++        try
++        {
++          image = Exiv2::ImageFactory::open((const Exiv2::byte *)file.data, file.size);
++          if(image) image->readMetadata();
++          complete = image && !_prefix_incomplete;
++        }
++        catch(const Exiv2::AnyError &) {}
++        catch(...) { _reading_prefix = false; throw; }
++        _reading_prefix = false;
++      }
++      if(complete)
++      {
++        // preview JPEGs may be outside the metadata prefix: keep the file's
++        // real extent and let the thumbnail reader seek to their bytes
++        std::unique_ptr<Exiv2::Image> source(Exiv2::ImageFactory::open(std::move(io)));
++        source->setExifData(image->exifData());
++        source->setIptcData(image->iptcData());
++        source->setXmpData(image->xmpData());
++        source->setByteOrder(image->byteOrder());
++        return source;
++      }
++    }
++  }
++  static_cast<ReadFileIo *>(io.get())->cache_prefix(file.data, file.size);
++  g_clear_pointer(&file.data, g_free);
++  file.size = 0;
++  std::unique_ptr<Exiv2::Image> image(Exiv2::ImageFactory::open(std::move(io)));
++  if(image)
++  {
++    read_metadata_threadsafe(image);
++  }
++  return image;
++}
++
  static void _exif_import_tags(dt_image_t *img, Exiv2::XmpData::iterator &pos);
- 
+
  static void _read_xmp_timestamps(Exiv2::XmpData &xmpData,
-@@ -1770,7 +1791,8 @@ void dt_exif_img_check_additional_tags(dt_image_t *img,
- 
+@@ -1770,7 +1898,8 @@ void dt_exif_img_check_additional_tags(dt_image_t *img,
+
    try
    {
 -    std::unique_ptr<Exiv2::Image> image(Exiv2::ImageFactory::open(WIDEN(filename)));
@@ -57,37 +164,240 @@ index efdd7f15a0..8482b14e42 100644
      assert(image.get() != 0);
      read_metadata_threadsafe(image);
      Exiv2::ExifData &exifData = image->exifData();
-@@ -2932,7 +2954,8 @@ gboolean dt_exif_get_thumbnail(const char *path,
+@@ -2922,19 +3051,154 @@ gboolean dt_exif_read_from_blob(dt_image_t *img,
+   }
+ }
+
+-/**
+- * Get the largest possible thumbnail from the image
+- */
+-gboolean dt_exif_get_thumbnail(const char *path,
++// inspect JPEG headers by seeking over segments, without reading compressed pixels
++static bool _jpeg_dimensions(Exiv2::BasicIo &io, const size_t offset, const size_t length,
++                             unsigned int &width, unsigned int &height)
++{
++  unsigned char bytes[7];
++  if(length < 4 || io.seek(offset, Exiv2::BasicIo::beg) || io.read(bytes, 2) != 2
++     || bytes[0] != 0xff || bytes[1] != 0xd8)
++    return false;
++  size_t at = 2;
++  for(int markers = 0; markers < 1024 && at + 4 <= length; markers++)
++  {
++    if(io.seek(offset + at, Exiv2::BasicIo::beg) || io.read(bytes, 4) != 4 || bytes[0] != 0xff)
++      return false;
++    const unsigned int marker = bytes[1];
++    if(marker == 0xff) { at++; continue; }
++    if(marker == 0xda || marker == 0xd9) return false;
++    const size_t segment = ((size_t)bytes[2] << 8) | bytes[3];
++    if(segment < 2 || segment > length - at - 2) return false;
++    if(marker >= 0xc0 && marker <= 0xcf && marker != 0xc4 && marker != 0xc8 && marker != 0xcc)
++    {
++      if(segment < 8 || io.read(bytes, 5) != 5) return false;
++      height = ((unsigned int)bytes[1] << 8) | bytes[2];
++      width = ((unsigned int)bytes[3] << 8) | bytes[4];
++      return width > 0 && height > 0;
++    }
++    at += 2 + segment;
++  }
++  return false;
++}
++
++static bool _read_jpeg_thumbnail(Exiv2::Image &image, const int target,
++                                 uint8_t **buffer, size_t *size, char **mime_type)
++{
++  auto &io = image.io();
++  if(io.open()) return false;
++  Exiv2::IoCloser closer(io);
++  const size_t length = io.size();
++  std::vector<std::pair<size_t, size_t>> ranges;
++  const auto add_range = [&](const uint64_t offset, const uint64_t bytes)
++  {
++    if(bytes > 0 && offset <= length && bytes <= length - offset)
++      ranges.emplace_back(offset, bytes);
++  };
++  const auto &exif = image.exifData();
++  const auto number = [&](const std::string &key) -> int64_t
++  {
++    const auto pos = exif.findKey(Exiv2::ExifKey(key));
++    return pos != exif.end() && pos->count() == 1 ? pos->toLong() : -1;
++  };
++  // these TIFF groups use absolute offsets; maker-note offsets can have
++  // vendor-specific bases and stay with the general Exiv2 fallback
++  const char *groups[] = { "Image", "Image2", "Image3", "Thumbnail", "SubThumb1",
++                           "SubImage1", "SubImage2", "SubImage3", "SubImage4" };
++  for(const auto group : groups)
++  {
++    const std::string prefix = std::string("Exif.") + group + ".";
++    add_range(number(prefix + "JPEGInterchangeFormat"), number(prefix + "JPEGInterchangeFormatLength"));
++    const auto compression = number(prefix + "Compression");
++    const auto photometric = number(prefix + "PhotometricInterpretation");
++    if((compression == 6 || compression == 7)
++       && (photometric == 2 || photometric == 6
++           || (!strcmp(group, "Image") && image.mimeType() == "image/x-canon-cr2")))
++      add_range(number(prefix + "StripOffsets"), number(prefix + "StripByteCounts"));
++  }
++  for(const auto &preview : image.nativePreviews())
++    if(preview.mimeType_ == "image/jpeg" && preview.filter_.empty())
++      add_range(preview.position_, preview.size_);
++
++  size_t best_offset = 0, best_length = 0;
++  uint64_t best_pixels = UINT64_MAX;
++  for(const auto &range : ranges)
++  {
++    unsigned int width = 0, height = 0;
++    if(_jpeg_dimensions(io, range.first, range.second, width, height)
++       && std::max(width, height) >= (unsigned int)target)
++    {
++      const uint64_t pixels = (uint64_t)width * height;
++      if(pixels < best_pixels)
++      {
++        best_offset = range.first;
++        best_length = range.second;
++        best_pixels = pixels;
++      }
++    }
++  }
++  std::vector<uint8_t> embedded;
++  const char *data_keys[] = { "Exif.Thumbnail.JPEGInterchangeFormat",
++                              "Exif.NikonPreview.JPEGInterchangeFormat",
++                              "Exif.Pentax.PreviewOffset", "Exif.PentaxDng.PreviewOffset",
++                              "Exif.SamsungPreview.JPEGInterchangeFormat" };
++  for(const auto key : data_keys)
++  {
++    const auto pos = exif.findKey(Exiv2::ExifKey(key));
++    if(pos == exif.end() || !pos->sizeDataArea()) continue;
++    const auto data = pos->dataArea();
++#if EXIV2_TEST_VERSION(0,28,0)
++    const auto data_bytes = data.c_data();
++    const size_t data_size = data.size();
++#else
++    const auto data_bytes = data.pData_;
++    const size_t data_size = data.size_;
++#endif
++    Exiv2::MemIo jpeg(data_bytes, data_size);
++    unsigned int width = 0, height = 0;
++    if(_jpeg_dimensions(jpeg, 0, data_size, width, height)
++       && std::max(width, height) >= (unsigned int)target && (uint64_t)width * height < best_pixels)
++    {
++      best_pixels = (uint64_t)width * height;
++      best_length = data_size;
++      embedded.assign(data_bytes, data_bytes + data_size);
++    }
++  }
++  if(!best_length) return false;
++  auto bytes = std::unique_ptr<uint8_t, decltype(&free)>((uint8_t *)malloc(best_length), free);
++  if(!bytes) return false;
++  if(!embedded.empty())
++    memcpy(bytes.get(), embedded.data(), best_length);
++  else if(io.seek(best_offset, Exiv2::BasicIo::beg) || (size_t)io.read(bytes.get(), best_length) != best_length)
++    return false;
++  *mime_type = strdup("image/jpeg");
++  if(!*mime_type) return false;
++  *size = best_length;
++  *buffer = bytes.release();
++  return true;
++}
++
++gboolean dt_exif_get_thumbnail_sized(const char *path,
+                                uint8_t **buffer,
+                                size_t *size,
+-                               char **mime_type)
++                               char **mime_type,
++                               const int target)
  {
    try
    {
 -    std::unique_ptr<Exiv2::Image> image(Exiv2::ImageFactory::open(WIDEN(path)));
+-    assert(image.get() != 0);
+-    read_metadata_threadsafe(image);
 +    FileData file;
-+    std::unique_ptr<Exiv2::Image> image(_open_read(path, file));
-     assert(image.get() != 0);
-     read_metadata_threadsafe(image);
- 
-@@ -3003,7 +3026,8 @@ gboolean dt_exif_read(dt_image_t *img,
- 
++    std::unique_ptr<Exiv2::Image> image;
++    if(target > 0)
++    {
++      image = _read_metadata(path, file);
++      if(image && _read_jpeg_thumbnail(*image, target, buffer, size, mime_type))
++        return FALSE;
++    }
++    if(!image || file.size)
++    {
++      image = _open_read(path, file);
++      assert(image.get() != 0);
++      read_metadata_threadsafe(image);
++    }
+
+     // Get a list of preview images available in the image. The list is sorted
+     // by the preview image pixel size, starting with the smallest preview.
+@@ -2947,10 +3211,14 @@ gboolean dt_exif_get_thumbnail(const char *path,
+       return TRUE;
+     }
+
+-    // Select the largest one
+-    // FIXME: We could probably select a smaller thumbnail to match the mip size
+-    //        we actually want to create. Is it really much faster though?
+     Exiv2::PreviewProperties selected = list.back();
++    if(target > 0)
++      for(const auto &candidate : list)
++        if(std::max(candidate.width_, candidate.height_) >= (size_t)target)
++        {
++          selected = candidate;
++          break;
++        }
+
+     // Get the selected preview image
+     Exiv2::PreviewImage preview = loader.getPreviewImage(selected);
+@@ -2981,6 +3249,11 @@ gboolean dt_exif_get_thumbnail(const char *path,
+   }
+ }
+
++gboolean dt_exif_get_thumbnail(const char *path, uint8_t **buffer, size_t *size, char **mime_type)
++{
++  return dt_exif_get_thumbnail_sized(path, buffer, size, mime_type, 0);
++}
++
+ /* Read the metadata of an image.
+  * XMP data trumps IPTC data trumps EXIF data.
+  */
+@@ -3003,9 +3276,9 @@ gboolean dt_exif_read(dt_image_t *img,
+
    try
    {
 -    std::unique_ptr<Exiv2::Image> image(Exiv2::ImageFactory::open(WIDEN(path)));
 +    FileData file;
-+    std::unique_ptr<Exiv2::Image> image(_open_read(path, file));
++    std::unique_ptr<Exiv2::Image> image(_read_metadata(path, file));
      assert(image.get() != 0);
-     read_metadata_threadsafe(image);
+-    read_metadata_threadsafe(image);
      bool res = true;
-@@ -3068,7 +3092,8 @@ gboolean dt_exif_get_dimensions(const char *path, int *width, int *height)
+
+     // EXIF metadata
+@@ -3068,9 +3341,9 @@ gboolean dt_exif_get_dimensions(const char *path, int *width, int *height)
  {
    try
    {
 -    std::unique_ptr<Exiv2::Image> image(Exiv2::ImageFactory::open(WIDEN(path)));
 +    FileData file;
-+    std::unique_ptr<Exiv2::Image> image(_open_read(path, file));
++    std::unique_ptr<Exiv2::Image> image(_read_metadata(path, file));
      if(!image.get()) return FALSE;
-     read_metadata_threadsafe(image);
+-    read_metadata_threadsafe(image);
      const int w = (int)image->pixelWidth();
-@@ -3199,7 +3224,8 @@ int dt_exif_read_blob(uint8_t **buf,
+     const int h = (int)image->pixelHeight();
+     if(w <= 0 || h <= 0) return FALSE;
+@@ -3095,7 +3368,6 @@ gboolean dt_exif_xmp_write_neural_restore(const char *path, const char *task)
+   {
+     std::unique_ptr<Exiv2::Image> image(Exiv2::ImageFactory::open(WIDEN(path)));
+     if(!image.get()) return FALSE;
+-    read_metadata_threadsafe(image);
+     image->xmpData()["Xmp.darktable.neural_restore"] = task;
+     write_metadata_threadsafe(image);
+     return TRUE;
+@@ -3118,7 +3390,6 @@ int dt_exif_write_blob(uint8_t *blob,
+   {
+     std::unique_ptr<Exiv2::Image> image(Exiv2::ImageFactory::open(WIDEN(path)));
+     assert(image.get() != 0);
+-    read_metadata_threadsafe(image);
+     Exiv2::ExifData &imgExifData = image->exifData();
+     Exiv2::ExifData blobExifData;
+     Exiv2::ExifParser::decode(blobExifData, blob, size);
+@@ -3199,7 +3470,8 @@ int dt_exif_read_blob(uint8_t **buf,
    *buf = NULL;
    try
    {
@@ -97,7 +407,7 @@ index efdd7f15a0..8482b14e42 100644
      assert(image.get() != 0);
      read_metadata_threadsafe(image);
      Exiv2::ExifData &exifData = image->exifData();
-@@ -6298,8 +6324,9 @@ gboolean dt_exif_xmp_attach_export(const dt_imgid_t imgid,
+@@ -6298,8 +6570,9 @@ gboolean dt_exif_xmp_attach_export(const dt_imgid_t imgid,
      try
      {
        // Initialize XMP and IPTC data with the one from the original file.
@@ -108,12 +418,56 @@ index efdd7f15a0..8482b14e42 100644
        if(input_image.get() != 0)
        {
          read_metadata_threadsafe(input_image);
+@@ -6766,6 +7039,15 @@ void dt_exif_get_basic_data(const uint8_t *data,
+ static void _exif_log_handler(const int log_level,
+                               const char *message)
+ {
++  if(_reading_prefix)
++  {
++    // TIFF pixel strip payloads are not metadata; missing directories,
++    // maker notes and out-of-line values must retry with more bytes
++    if(log_level >= Exiv2::LogMsg::warn
++       && !(strstr(message, ": Strip ") && strstr(message, "outside of the data area; ignored")))
++      _prefix_incomplete = true;
++    return;
++  }
+   if(log_level >= Exiv2::LogMsg::level())
+   {
+     // We don't seem to need \n in the format string as Exiv2 includes it
+diff --git a/src/common/exif.h b/src/common/exif.h
+index b7617404e6..093b2bf617 100644
+--- a/src/common/exif.h
++++ b/src/common/exif.h
+@@ -129,6 +129,8 @@ void dt_exif_apply_default_metadata(dt_image_t *img);
+
+ /** fetch largest exif thumbnail jpg bytestream into buffer. Returns TRUE in case of any error */
+ gboolean dt_exif_get_thumbnail(const char *path, uint8_t **buffer, size_t *size, char **mime_type);
++gboolean dt_exif_get_thumbnail_sized(const char *path, uint8_t **buffer, size_t *size, char **mime_type,
++                                     const int target);
+
+ /** thread safe init and cleanup. */
+ void dt_exif_init();
+diff --git a/src/common/mipmap_cache.c b/src/common/mipmap_cache.c
+index 2afb4f5ba8..65a307692b 100644
+--- a/src/common/mipmap_cache.c
++++ b/src/common/mipmap_cache.c
+@@ -1596,8 +1596,8 @@ static void _init_8(uint8_t *buf,
+     {
+       uint8_t *tmp = 0;
+       int32_t thumb_width, thumb_height;
+-      res = dt_imageio_large_thumbnail(filename, &tmp, &thumb_width, &thumb_height,
+-                                       color_space);
++      res = dt_imageio_thumbnail(filename, &tmp, &thumb_width, &thumb_height,
++                                 color_space, MAX(wd, ht));
+       if(!res)
+       {
+         // use embedded JPEG if it is large enough or conf requests
 diff --git a/src/develop/pixelpipe_hb.c b/src/develop/pixelpipe_hb.c
 index a7e5b88a37..e3a650f309 100644
 --- a/src/develop/pixelpipe_hb.c
 +++ b/src/develop/pixelpipe_hb.c
 @@ -2550,13 +2550,16 @@ static gboolean _dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe,
- 
+
    */
    const gboolean has_focus = module == dt_dev_gui_module() && module->enabled;
 -  const gboolean last_history = darktable.develop->history_last_module == module;
@@ -129,14 +483,160 @@ index a7e5b88a37..e3a650f309 100644
 -            && dev->gui_attached
 +            && (dev->gui_attached || last_history)
              && (has_focus || last_history || iop_wanting);
- 
+
  #ifdef HAVE_OPENCL
+diff --git a/src/imageio/imageio.c b/src/imageio/imageio.c
+index d7b5a79ef4..9b8340e4ff 100644
+--- a/src/imageio/imageio.c
++++ b/src/imageio/imageio.c
+@@ -650,12 +650,13 @@ dt_image_flags_t dt_imageio_get_type_from_extension(const char *extension)
+   return 0;
+ }
+
+-// load a full-res thumbnail:
+-gboolean dt_imageio_large_thumbnail(const char *filename,
++// load an embedded preview, using JPEG scaled decoding when a size is requested
++gboolean dt_imageio_thumbnail(const char *filename,
+                                     uint8_t **buffer,
+                                     int32_t *width,
+                                     int32_t *height,
+-                                    dt_colorspaces_color_profile_type_t *color_space)
++                                    dt_colorspaces_color_profile_type_t *color_space,
++                                    const int target)
+ {
+   int res = TRUE;
+
+@@ -663,8 +664,8 @@ gboolean dt_imageio_large_thumbnail(const char *filename,
+   char *mime_type = NULL;
+   size_t bufsize;
+
+-  // get the biggest thumb from exif
+-  if(dt_exif_get_thumbnail(filename, &buf, &bufsize, &mime_type))
++  // get a preview large enough for the requested thumbnail
++  if(dt_exif_get_thumbnail_sized(filename, &buf, &bufsize, &mime_type, target))
+     goto error;
+
+   if(strcmp(mime_type, "image/jpeg") == 0)
+@@ -674,8 +675,25 @@ gboolean dt_imageio_large_thumbnail(const char *filename,
+     if(dt_imageio_jpeg_decompress_header(buf, bufsize, &jpg))
+       goto error;
+
++    if(target > 0)
++    {
++      for(unsigned int denom = 8; denom >= 2; denom /= 2)
++        if((MAX(jpg.width, jpg.height) + denom - 1) / denom >= (unsigned int)target)
++        {
++          jpg.dinfo.scale_num = 1;
++          jpg.dinfo.scale_denom = denom;
++          break;
++        }
++      jpg.width = (jpg.width + jpg.dinfo.scale_denom - 1) / jpg.dinfo.scale_denom;
++      jpg.height = (jpg.height + jpg.dinfo.scale_denom - 1) / jpg.dinfo.scale_denom;
++    }
++
+     *buffer = dt_alloc_align_uint8((size_t)4 * jpg.width * jpg.height);
+-    if(!*buffer) goto error;
++    if(!*buffer)
++    {
++      jpeg_destroy_decompress(&jpg.dinfo);
++      goto error;
++    }
+
+     *width = jpg.width;
+     *height = jpg.height;
+@@ -820,6 +838,13 @@ error:
+   return res;
+ }
+
++gboolean dt_imageio_large_thumbnail(const char *filename, uint8_t **buffer,
++                                    int32_t *width, int32_t *height,
++                                    dt_colorspaces_color_profile_type_t *color_space)
++{
++  return dt_imageio_thumbnail(filename, buffer, width, height, color_space, 0);
++}
++
+ gboolean dt_imageio_has_mono_preview(const char *filename)
+ {
+   dt_colorspaces_color_profile_type_t color_space;
+diff --git a/src/imageio/imageio_common.h b/src/imageio/imageio_common.h
+index 55f7df6f6c..75bda2b8fa 100644
+--- a/src/imageio/imageio_common.h
++++ b/src/imageio/imageio_common.h
+@@ -164,6 +164,11 @@ gboolean dt_imageio_large_thumbnail(const char *filename,
+                                int32_t *height,
+                                dt_colorspaces_color_profile_type_t *color_space);
+
++// a thumbnail decoded no smaller than target on its longest edge; 0 keeps full size
++gboolean dt_imageio_thumbnail(const char *filename, uint8_t **buffer,
++                               int32_t *width, int32_t *height,
++                               dt_colorspaces_color_profile_type_t *color_space, const int target);
++
+ // lookup maker and model, dispatch lookup to rawspeed or libraw
+ gboolean dt_imageio_lookup_makermodel(const char *maker,
+                                       const char *model,
+diff --git a/src/imageio/imageio_jpeg.c b/src/imageio/imageio_jpeg.c
+index 01120a4b89..6912622ba5 100644
+--- a/src/imageio/imageio_jpeg.c
++++ b/src/imageio/imageio_jpeg.c
+@@ -154,7 +154,7 @@ int dt_imageio_jpeg_decompress_header(const void *in, size_t length, dt_imageio_
+ static int decompress_jsc(dt_imageio_jpeg_t *jpg, uint8_t *out)
+ {
+   uint8_t *tmp = out;
+-  while(jpg->dinfo.output_scanline < jpg->dinfo.image_height)
++  while(jpg->dinfo.output_scanline < jpg->dinfo.output_height)
+   {
+     if(jpeg_read_scanlines(&(jpg->dinfo), &tmp, 1) != 1)
+     {
+@@ -173,14 +173,14 @@ static int decompress_plain(dt_imageio_jpeg_t *jpg, uint8_t *out)
+   if(!row_pointer[0])
+     return 1;
+   uint8_t *tmp = out;
+-  while(jpg->dinfo.output_scanline < jpg->dinfo.image_height)
++  while(jpg->dinfo.output_scanline < jpg->dinfo.output_height)
+   {
+     if(jpeg_read_scanlines(&(jpg->dinfo), row_pointer, 1) != 1)
+     {
+       dt_free_align(row_pointer[0]);
+       return 1;
+     }
+-    for(unsigned int i = 0; i < jpg->dinfo.image_width; i++)
++    for(unsigned int i = 0; i < jpg->dinfo.output_width; i++)
+     {
+       for(int k = 0; k < 3; k++) tmp[4 * i + k] = row_pointer[0][3 * i + k];
+     }
+@@ -617,7 +617,7 @@ int dt_imageio_jpeg_read_header(const char *filename, dt_imageio_jpeg_t *jpg)
+ static int read_jsc(dt_imageio_jpeg_t *jpg, uint8_t *out)
+ {
+   uint8_t *tmp = out;
+-  while(jpg->dinfo.output_scanline < jpg->dinfo.image_height)
++  while(jpg->dinfo.output_scanline < jpg->dinfo.output_height)
+   {
+     if(jpeg_read_scanlines(&(jpg->dinfo), &tmp, 1) != 1)
+     {
+@@ -636,7 +636,7 @@ static int read_plain(dt_imageio_jpeg_t *jpg, uint8_t *out)
+   if(!row_pointer[0])
+     return 1;
+   uint8_t *tmp = out;
+-  while(jpg->dinfo.output_scanline < jpg->dinfo.image_height)
++  while(jpg->dinfo.output_scanline < jpg->dinfo.output_height)
+   {
+     if(jpeg_read_scanlines(&(jpg->dinfo), row_pointer, 1) != 1)
+     {
+@@ -645,7 +645,7 @@ static int read_plain(dt_imageio_jpeg_t *jpg, uint8_t *out)
+       fclose(jpg->f);
+       return 1;
+     }
+-    for(unsigned int i = 0; i < jpg->dinfo.image_width; i++)
++    for(unsigned int i = 0; i < jpg->dinfo.output_width; i++)
+       for(int k = 0; k < 3; k++) tmp[4 * i + k] = row_pointer[0][3 * i + k];
+     tmp += 4 * jpg->width;
+   }
 diff --git a/src/imageio/imageio_tiff.c b/src/imageio/imageio_tiff.c
 index b92768d02c..20c006236a 100644
 --- a/src/imageio/imageio_tiff.c
 +++ b/src/imageio/imageio_tiff.c
 @@ -389,10 +389,10 @@ dt_imageio_retval_t dt_imageio_open_tiff(dt_image_t *img,
- 
+
  #ifdef _WIN32
    wchar_t *wfilename = g_utf8_to_utf16(filename, -1, NULL, NULL, NULL);
 -  t.tiff = TIFFOpenW(wfilename, "rb");
@@ -146,10 +646,10 @@ index b92768d02c..20c006236a 100644
 -  t.tiff = TIFFOpen(filename, "rb");
 +  t.tiff = TIFFOpen(filename, "rbm");
  #endif
- 
+
    if(t.tiff == NULL) return DT_IMAGEIO_LOAD_FAILED;
 @@ -610,10 +610,10 @@ int dt_imageio_tiff_read_profile(const char *filename, uint8_t **out)
- 
+
  #ifdef _WIN32
    wchar_t *wfilename = g_utf8_to_utf16(filename, -1, NULL, NULL, NULL);
 -  tiff = TIFFOpenW(wfilename, "rb");
@@ -159,5 +659,5 @@ index b92768d02c..20c006236a 100644
 -  tiff = TIFFOpen(filename, "rb");
 +  tiff = TIFFOpen(filename, "rbm");
  #endif
- 
+
    if(tiff == NULL) return 0;
