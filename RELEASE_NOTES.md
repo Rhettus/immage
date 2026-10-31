@@ -12,7 +12,9 @@ what Immage's update banner shows under Release Notes.
   GPU previews also reuse recent frames across exact refreshes, avoiding
   repeated texture uploads when slider estimates resume. Histograms and
   scopes update at a reduced cadence during interaction and refresh on
-  release, leaving more time for the preview.
+  release, leaving more time for the preview. Slider drags and wheel
+  gestures also combine engine edits once per display frame and skip
+  unchanged values, while release immediately submits the final edit.
 
 - Cached slider previews refresh native frames more often as prediction
   error rises and less often after reliable checks, within a 320 ms cap.
