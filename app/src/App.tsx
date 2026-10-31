@@ -19,7 +19,7 @@ import { CircleOff, Grid2x2, ScanSearch, MoveHorizontal, MoveVertical, PenLine, 
 import { panelValues } from "./panelValues";
 import { FrameUpdates, Snapshot } from "./uiUpdates";
 import { PixelCadence, PixelWorker } from "./pixelWorker";
-import { CanvasFrames, layerStyle, resizeCanvas } from "./canvasLayers";
+import { CanvasFrames, FrameGeneration, layerStyle, resizeCanvas } from "./canvasLayers";
 import { CachedPreviewRenderer } from "./cachedPreviewRenderer";
 import { Session, framePlace, instanceKey, mapOpOf, type Frame, type HistoryItem, type ModuleState, type View } from "./session";
 import { AUTO_TONE_IDS, autoExposure, autoTone, type SceneKey } from "./autoTone";
@@ -1442,6 +1442,7 @@ export default function App() {
   const [histograms] = useState(() => new Snapshot<Histogram | null>(null));
   const pixelWorker = useRef<PixelWorker | null>(null);
   const pixelsWorker = () => pixelWorker.current ??= new PixelWorker();
+  const [frameGenerations] = useState(() => ({ sharp: new FrameGeneration(), base: new FrameGeneration(), histogram: new FrameGeneration() }));
   const [canvasFrames] = useState(() => new CanvasFrames());
   const [navigatorUpdates] = useState(() => new PixelCadence<{ frame: Frame; owner: Session | null }>(({ frame: f, owner }) => {
     const t = navThumb.current, bc = baseCanvas.current;
@@ -1451,16 +1452,20 @@ export default function App() {
     ctx.clearRect(0, 0, t.width, t.height);
     ctx.drawImage(bc, 0, 0, t.width, t.height);
   }));
-  const resetCanvases = () => { navigatorUpdates.cancel(); canvasFrames.clear(); };
+  const resetCanvases = () => {
+    navigatorUpdates.cancel(); canvasFrames.clear();
+    frameGenerations.sharp.next(); frameGenerations.base.next(); frameGenerations.histogram.next();
+  };
   const histogramWorker = useRef<PixelWorker | null>(null);
-  const [histogramUpdates] = useState(() => new PixelCadence<{ frame: Frame; owner: Session | null }>(({ frame: f, owner }) => {
-    if (session.current !== owner) return;
+  const [histogramUpdates] = useState(() => new PixelCadence<{ frame: Frame; owner: Session | null; generation: number }>(({ frame: f, owner, generation }) => {
+    if (session.current !== owner || !frameGenerations.histogram.matches(generation)) return;
     (histogramWorker.current ??= new PixelWorker()).submit("histogram",
       { kind: "histogram", pixels: f.pixels, width: f.width, height: f.height }, result => {
-        if (session.current === owner) histograms.set(result as Histogram);
+        if (session.current === owner && frameGenerations.histogram.matches(generation)) histograms.set(result as Histogram);
       });
   }));
   const resetHistogram = () => {
+    frameGenerations.histogram.next();
     histogramUpdates.cancel();
     histogramWorker.current?.dispose(); histogramWorker.current = null;
   };
@@ -1475,7 +1480,8 @@ export default function App() {
     histograms.set(null);
   }, [current]);
   const updateHistogram = (f: Frame) => {
-    histogramUpdates.submit({ frame: f, owner: session.current }, dragging.current);
+    const generation = frameGenerations.histogram.next();
+    histogramUpdates.submit({ frame: f, owner: session.current, generation }, dragging.current);
   };
   const placementRef = useRef<Placement | null>(null);
   const session = useRef<Session | null>(null);
@@ -1485,6 +1491,10 @@ export default function App() {
   const cachedShown = useRef(false);
   const exactGpuFrame = useRef<Frame | null>(null);
   const hideCachedPreview = () => {
+    if (cachedShown.current) {
+      invalidateClip("sharp");
+      frameGenerations.histogram.next();
+    }
     cachedShown.current = false;
     exactGpuFrame.current = null;
     if (cachedCanvas.current) cachedCanvas.current.style.display = "none";
@@ -1557,6 +1567,12 @@ export default function App() {
   const clipShown: ClipShow = { low: clipOn.low || clipPeek === "low", high: clipOn.high || clipPeek === "high" };
   const clipRef = useRef(clipShown);
   clipRef.current = clipShown;
+  const invalidateClip = (layer: "base" | "sharp") => {
+    frameGenerations[layer].next();
+    pixelWorker.current?.cancel(layer === "base" ? "clipBase" : "clipSharp");
+    const dst = layer === "base" ? clipBase.current : clipSharp.current;
+    if (dst) dst.getContext("2d")!.clearRect(0, 0, dst.width, dst.height);
+  };
   const paintClip = (layer: "base" | "sharp" | "both", frame?: Frame) => {
     const pairs: [HTMLCanvasElement | null, HTMLCanvasElement | null][] = [];
     if (layer !== "sharp") pairs.push([baseCanvas.current, clipBase.current]);
@@ -1564,13 +1580,17 @@ export default function App() {
     for (const [src, dst] of pairs) if (src && dst) {
       const key = dst === clipBase.current ? "clipBase" : "clipSharp";
       pixelsWorker().cancel(key);
+      const sourceGeneration = dst === clipBase.current ? frameGenerations.base : frameGenerations.sharp;
+      const generation = sourceGeneration.capture();
       if (dst.width !== src.width || dst.height !== src.height) { dst.width = src.width; dst.height = src.height; }
-      if (!clipRef.current.low && !clipRef.current.high) dst.getContext("2d")!.clearRect(0, 0, dst.width, dst.height);
+      dst.getContext("2d")!.clearRect(0, 0, dst.width, dst.height);
+      // the GPU shader owns sharp clipping while estimates or exact GPU frames show
+      if (key === "clipSharp" && cachedShown.current) continue;
       const show = { ...clipRef.current }, width = src.width, height = src.height, owner = session.current;
       if (!width || !height || (!show.low && !show.high)) continue;
       const pixels = frame?.pixels ?? perf.time("pixels.canvasReadback", () => src.getContext("2d")!.getImageData(0, 0, width, height).data);
       pixelsWorker().submit(key, { kind: "clipping", pixels, width, height, show }, result => {
-        if (session.current !== owner || src.width !== width || src.height !== height
+        if (session.current !== owner || !sourceGeneration.matches(generation) || src.width !== width || src.height !== height
             || show.low !== clipRef.current.low || show.high !== clipRef.current.high) return;
         perf.time("pixels.clippingUpload", () => dst.getContext("2d")!.putImageData(new ImageData(result as Uint8ClampedArray<ArrayBuffer>, width, height), 0, 0));
       });
@@ -2087,6 +2107,8 @@ export default function App() {
       }
       return;
     }
+    invalidateClip("sharp");
+    frameGenerations.histogram.next();
     if (loupeCanvas.current) loupeCanvas.current.style.display = "none";
     setLoupeShown(false);
     loupeMeta.current = null;
@@ -2166,7 +2188,9 @@ export default function App() {
       // Performance's base is the viewer's size, which this frame already is
       baseLowRes.current = loadPreview() !== "performance";
       scheduleBase(500);
-    } else if (f.view.scale !== undefined && baseStale.current) {
+    } else if (f.view.scale === undefined) {
+      updateHistogram(f);
+    } else if (baseStale.current) {
       scheduleBase(300);
     }
     if (f.view.scale !== undefined && !f.before) scheduleCopy(600);
@@ -2435,6 +2459,7 @@ export default function App() {
     const bc = baseCanvas.current;
     if (bc) {
       const changed = perf.time("pixels.canvasUpload", () => canvasFrames.draw(bc, f, canvas.current));
+      if (changed) invalidateClip("base");
       if (clipRef.current.low || clipRef.current.high) paintClip("base", f);
       baseMeta.current = placed(f);
       if (changed) setBaseTick((t) => t + 1);
@@ -3279,6 +3304,8 @@ export default function App() {
             f.trace.textureBytes = renderer.stats.textureBytes;
           }
           if (!shown) { hideCachedPreview(); return false; }
+          invalidateClip("sharp");
+          frameGenerations.histogram.next();
           draftShown.current = true;
           exactGpuFrame.current = null;
           cachedShown.current = true;
@@ -3292,7 +3319,8 @@ export default function App() {
             center.current = {x:0.5,y:0.5};
           }
           placeLayers();
-          // scopes follow native anchors, avoiding readback of GPU estimates
+          // scopes follow the displayed estimate's native anchor without GPU readback
+          if (f.view.scale === undefined) updateHistogram(preview.b);
           return true;
         } finally { perf.drawEnd(shown); }
       };

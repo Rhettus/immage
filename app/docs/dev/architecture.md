@@ -468,6 +468,13 @@ interaction. Release flushes pending input, and final frames bypass the cadence
 delay. Copies are deferred until after preview drawing, with a separate
 histogram worker so auxiliary computation cannot queue ahead of clipping.
 Photo/crop changes and unmount cancel pending input and dispose the worker.
+Clipping jobs capture independent sharp/base surface generations; replacing a
+surface clears its old overlay and invalidates late results even at identical
+dimensions. Sharp clipping is computed only by the shader while GPU frames show.
+Histogram inputs carry a generation checked before dispatch and publication;
+new display frames and newly queued cadence inputs retire previous results.
+CPU/GPU transitions and photo/crop reset invalidate generations as well. Fitted
+GPU estimates submit their native anchor as the scope input without readback.
 During GPU estimates the histogram and scopes follow native frames;
 clipping overlays use the current estimate without readback. Native prediction
 validation computes interpolated RGB error directly at the adaptive refresh

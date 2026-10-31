@@ -214,3 +214,64 @@ test('histogram cadence coalesces before copying, flushes release and cancels ol
   t.mock.timers.tick(1);
   assert.equal(shown.at(-1), 85);
 });
+
+test('same-size clipping results expire when their displayed surface changes', async () => {
+  const { FrameGeneration } = await import('../app/src/canvasLayers.ts');
+  const sharp = new FrameGeneration(), base = new FrameGeneration();
+  const worker = new FakeWorker(), queue = new PixelWorker(() => worker);
+  const shown = [];
+  const source = sharp.capture();
+  queue.submit('clipSharp', {...task, kind: 'clipping', show: {low: true, high: true}}, result => {
+    if (sharp.matches(source)) shown.push(result);
+  });
+  sharp.next(); // same-size native replacement, before its clipping job is queued
+  worker.finish();
+  assert.equal(shown.length, 0);
+  const baseSource = base.capture();
+  queue.submit('clipBase', {...task, kind: 'clipping', show: {low: true, high: true}}, result => {
+    if (base.matches(baseSource)) shown.push(result);
+  });
+  sharp.next(); // a GPU estimate changes sharp pixels, not the base underneath
+  worker.finish();
+  assert.equal(shown.length, 1);
+  const gpuSource = sharp.capture();
+  queue.submit('clipSharp', {...task, kind: 'clipping', show: {low: true, high: true}}, result => {
+    if (sharp.matches(gpuSource)) shown.push(result);
+  });
+  sharp.next(); // GPU -> CPU fallback, with unchanged dimensions and settings
+  worker.finish();
+  assert.equal(shown.length, 1);
+  queue.dispose();
+});
+
+test('histogram results expire before the newer cadence input dispatches', async t => {
+  const { FrameGeneration } = await import('../app/src/canvasLayers.ts');
+  const { PixelCadence } = await import('../app/src/pixelWorker.ts');
+  t.mock.timers.enable({apis: ['setTimeout']});
+  const generation = new FrameGeneration(), worker = new FakeWorker();
+  const queue = new PixelWorker(() => worker), shown = [];
+  let now = 0;
+  const cadence = new PixelCadence(({token, input}) => {
+    if (!generation.matches(token)) return;
+    queue.submit('histogram', input, result => {
+      if (generation.matches(token)) shown.push(result);
+    });
+  }, () => now);
+  cadence.submit({token: generation.next(), input: task}, true);
+  t.mock.timers.tick(1);
+  assert.equal(worker.messages.length, 1);
+  now = 10;
+  cadence.submit({token: generation.next(), input: {...task, pixels: pixels.slice()}}, true);
+  worker.finish(); // still the latest worker job, but no longer the displayed frame
+  assert.equal(shown.length, 0);
+  now = 80;
+  t.mock.timers.tick(80);
+  worker.finish();
+  assert.equal(shown.length, 1);
+  cadence.submit({token: generation.next(), input: task}, true);
+  generation.next(); // a photo/crop/GPU transition retires even undelivered inputs
+  t.mock.timers.tick(100);
+  assert.equal(worker.messages.length, 0);
+  assert.equal(shown.length, 1);
+  cadence.cancel(); queue.dispose();
+});
