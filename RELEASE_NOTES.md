@@ -5,6 +5,10 @@ what Immage's update banner shows under Release Notes.
 
 ## Experimental Linux renderer build
 
+- Clipping overlays and histogram/scope updates discard results from
+  replaced frames, including same-sized frames and GPU/CPU transitions.
+  Old clipping overlays clear as their source frame changes.
+
 - Preview layers reuse canvas allocations and already uploaded frames,
   skip unchanged placement updates, and defer navigator drawing to reduce
   work when an exact frame arrives.
