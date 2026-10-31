@@ -61,6 +61,28 @@ export function predictionError(predicted: Pixels, actual: Pixels): { mean:numbe
   return {mean:sum/(count*3*255),p95:p95/255};
 }
 
+// match Uint8ClampedArray rounding, including ties to even, before measuring error
+export function mixedPredictionError(a: Pixels, b: Pixels, actual: Pixels, k: number): { mean:number; p95:number } {
+  if (!actual.length || actual.length !== a.length || a.length !== b.length) return {mean:Infinity,p95:Infinity};
+  const bins = new Uint32Array(256), rounded = new Uint8ClampedArray(1);
+  let sum = 0, count = 0;
+  for (let i=0;i<actual.length;i+=4) {
+    let worst = 0;
+    for (let c=0;c<3;c++) {
+      rounded[0] = a[i+c]+(b[i+c]-a[i+c])*k;
+      const error = Math.abs(rounded[0]-actual[i+c]);
+      sum += error; worst = Math.max(worst,error);
+    }
+    bins[worst]++; count++;
+  }
+  let cumulative = 0, p95 = 255;
+  for (let i=0;i<bins.length;i++) {
+    cumulative += bins[i];
+    if (cumulative >= count*0.95) { p95=i; break; }
+  }
+  return {mean:sum/(count*3*255),p95:p95/255};
+}
+
 const PROFILE = "immage.cachedPreviewTiming";
 export function previewTiming(): { native:number; target:number } {
   try {

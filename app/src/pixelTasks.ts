@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { mixDetailPixels, predictionError } from "./cachedDetail";
+import { mixDetailPixels, mixedPredictionError } from "./cachedDetail";
 import { computeHistogram, type Histogram, type ClipShow } from "./histogram";
 
 export type PixelTask = { kind: "histogram" | "clipping" | "mix" | "validation"; pixels: Uint8ClampedArray<ArrayBuffer>;
   width: number; height: number; show?: ClipShow; other?: Uint8ClampedArray<ArrayBuffer>; mix?: number; actual?: Uint8ClampedArray<ArrayBuffer> };
 export type PixelResult = Histogram | Uint8ClampedArray<ArrayBuffer> | { mean: number; p95: number };
 export function runPixelTask(task: PixelTask): PixelResult {
-  if (task.kind === "validation") return predictionError(mixDetailPixels(task.pixels, task.other!, task.mix!), task.actual!);
+  if (task.kind === "validation") return mixedPredictionError(task.pixels, task.other!, task.actual!, task.mix!);
   if (task.kind === "mix") return mixDetailPixels(task.pixels, task.other!, task.mix!);
   if (task.kind === "histogram") return computeHistogram(task.pixels, task.width, task.height);
   const out = new Uint8ClampedArray(task.pixels.length), px = task.pixels;
