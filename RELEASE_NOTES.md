@@ -5,6 +5,11 @@ what Immage's update banner shows under Release Notes.
 
 ## Experimental Linux renderer build
 
+- Slider drags avoid redundant panel updates, and cached preview accuracy
+  checks run independently of native frame delivery. Those checks reuse
+  recent frames and avoid allocating a predicted image, reducing temporary
+  copies while preserving accuracy checks and exact rendering on release.
+
 - Cached slider previews refresh native frames more often as prediction
   error rises and less often after reliable checks, within a 320 ms cap.
   Failed predictions retrain privately from fresh native frames and can
