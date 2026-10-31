@@ -1909,6 +1909,11 @@ export default function App() {
     // where the image's top-left corner lands, in device pixels
     const ox = w / 2 - center.current.x * f.w * z, oy = h / 2 - center.current.y * f.h * z;
     const b = baseMeta.current, bc = baseCanvas.current;
+    // A crop/rotation changes the image coordinate system. The old overview
+    // cannot sit underneath the new frame while its replacement renders.
+    const baseCompatible = !!b && b.fullWidth === f.w && b.fullHeight === f.h;
+    if (bc) bc.style.visibility = baseCompatible ? "" : "hidden";
+    if (clipBase.current) clipBase.current.style.visibility = baseCompatible ? "" : "hidden";
     if (b && bc) {
       const p = framePlace(b, z);
       bc.style.width = `${b.width / dpr}px`;
@@ -2061,10 +2066,8 @@ export default function App() {
       if (!b || b.x !== f.x || b.y !== f.y || Math.abs(b.scale - (f.view.scale ?? f.width / f.fullWidth)) > 1e-6
           || b.width !== f.width || b.height !== f.height) captureBefore(300);
     }
-    // fade the sharp layer in over the base
-    c.classList.remove("fade-in");
-    void c.offsetWidth;
-    c.classList.add("fade-in");
+    // Present completed edits immediately; fading reveals an older overview
+    // and makes each render flash back to the previous image.
     updatePlacement();
     // a fitted frame is the whole image, so it serves as the base, the
     // histogram and the navigator straight away; the sharper base follows

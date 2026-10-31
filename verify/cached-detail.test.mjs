@@ -59,6 +59,25 @@ function displayFrame() {
 test.afterEach(()=>{assert.equal(animationFrames.size,0,'test left a queued preview');});
 const {Session}=await import('../app/src/session.ts');
 const full={width:1,height:1,scale:1,x:0,y:0};
+for (const change of ['pan','resize','release']) test(`ordinary in-flight preview is discarded after ${change}`,async()=>{
+  let view={...full,draft:true},finish,started;
+  const ready=new Promise(resolve=>{started=resolve;});
+  const shown=[],errors=[];
+  const s=new Session(()=>({...view}),f=>shown.push(f),e=>errors.push(e));
+  s.cachedDetailPreview=()=>false;
+  let renders=0;
+  s.renderView=async requested=>{
+    if(++renders===1){started();await new Promise(resolve=>{finish=resolve;});}
+    return {width:1,height:1,fullWidth:1,fullHeight:1,x:0,y:0,view:requested,
+      pixels:pixels(10,20,30,255),ms:1,hash:BigInt(renders)};
+  };
+  s.requestRender();await ready;
+  view=change==='pan'?{...view,x:1}:change==='resize'?{...view,width:2}:{...view,draft:false};
+  s.requestRender();finish();
+  for(let i=0;i<100&&!s.idle;i++)await new Promise(resolve=>setTimeout(resolve,1));
+  assert.deepEqual(errors,[]);assert.equal(s.idle,true);
+  assert.equal(shown.length,1);assert.deepEqual(shown[0].view,view);
+});
 function session(){
   const shown=[],active=[];let pumping=0;
   const s=new Session(()=>({...full,draft:true}),f=>shown.push(f),e=>{throw Error(e);});
