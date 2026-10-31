@@ -15,6 +15,7 @@ const ref=current=>({current});
 test('crop transition removes previous pixels and stops zoom before the replacement arrives',()=>{
   const cleared=[], canceled=[];
   const env={
+    pixelWorker:ref({dispose(){env.workerDisposed=true;}}),
     hideCachedPreview(){this.cachedShown=false;},cachedShown:true,
     cachedRenderer:ref({reset(){env.reset=true;}}),
     sharpMeta:ref({}),baseMeta:ref({}),loupeMeta:ref({}),overviewHash:ref('old'),
@@ -31,6 +32,8 @@ test('crop transition removes previous pixels and stops zoom before the replacem
   create(env)();
   assert.equal(env.cachedShown,false);
   assert.equal(env.reset,true);
+  assert.equal(env.workerDisposed,true);
+  assert.equal(env.pixelWorker.current,null);
   assert.equal(cleared.length,5);
   for(const [, ...rect] of cleared) assert.deepEqual(rect,[0,0,800,600]);
   for(const name of ['sharpMeta','baseMeta','loupeMeta','overviewHash']) assert.equal(env[name].current,null);

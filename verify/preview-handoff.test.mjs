@@ -19,6 +19,7 @@ function fixture(success=true) {
     calls.push(['gpu',preview]);this.stats.uploads++;return success;
   },reset(){calls.push(['reset']);}};
   const env={
+    perf:{time(_name,fn){return fn();}},
     useCallback:callback=>callback,
     draftShown:ref(true),dragging:ref(false),session:ref(null),
     baModeRef:ref('off'),loupeCanvas:ref(null),loupeMeta:ref(null),setLoupeShown(){},

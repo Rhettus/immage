@@ -299,3 +299,31 @@ No clock, power, thermal, driver or system settings are changed.
    comparison by adding a group to `ALTERNATIVES`. Add a control to `CONTROLS`
    with its drag distance.
 4. SUMMARY.md is regenerated; keep conclusions in your own notes.
+
+### GUI frontend metrics (report version 6)
+
+GUI reports include a `frontend` section with overall timing distributions
+(count, median, p95, min, max and total milliseconds) and a breakdown by step.
+It records slider handlers and session updates; React render durations,
+render-to-commit elapsed time and commit counts for the app, histogram and
+adjustment panels; slider render attempts; pixel buffer copies and bytes;
+canvas uploads/readbacks; scope drawing; and worker queue, compute and
+round-trip times. Counts track native render requests, completions and
+stale discards, drawn native/estimated frames, estimated requests/coalescing,
+and worker coalescing, discards and fallback.
+
+`inputToRaf.latestCarriedInput` measures from the newest input carried by a
+frame to its animation-frame callback. Existing sample `total` measures from
+the oldest carried input. Neither proves compositor presentation. Likewise,
+React render-to-commit includes scheduling, not just commit execution, and
+nested profiler durations overlap. Release builds retain React's profiling
+renderer, so compare matching builds and configurations.
+
+Histograms, clipping-overlay generation, adaptive CPU interpolation and
+prediction accuracy checks execute in module Web Workers. The renderer keeps
+its original buffers; dispatched copies are transferred to the workers.
+Each worker runs one job at a time and retains only the newest pending job
+per surface/task, rejecting superseded results. Worker failure or a ten-second
+response timeout enables synchronous fallback, reported by `workerFallback`
+and `main.<task>.compute`. Worker compute times are separate from the existing
+synchronous frame stages; do not add overlapping timings together.
