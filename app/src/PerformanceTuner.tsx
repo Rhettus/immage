@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { perf, observeWebview, percentiles } from "./perf";
 import { loadPreview, loadBalancedPreviewSize, loadDraftSmallest, loadDraftTarget, loadCachedExposurePreview } from "./Preferences";
-import { measureTuner, searchTuner, tunerChanges, type TunerSettings, type TunerRun, type TunerMeasurement, type TunerContext, type TunerTrial } from "./performanceTuner";
+import { measureTuner, searchTuner, tunerChanges, type TunerSettings, type TunerRun, type TunerMeasurement, type TunerContext, type TunerTrial } from "./previewTuning";
 import { tunerOptions, type TunerOption } from "./tunerOptions";
 import { startTunerWork, stopTunerWork, type WorkSample } from "./tunerWorkload";
 
