@@ -2419,6 +2419,12 @@ async function checkpoints(photo, check = "checkpoints") {
         status: hints.some((l) => l.includes("scaled_input"))
           && !hints.some((l) => /\bdemosaicscale\b/.test(l)) ? "pass" : "fail",
         detail: hints.join("\n") });
+      const lookups = lines.filter((l) => l.includes("checkpoint lookup"));
+      record({ check, photo: basename(photo), id: "raw checkpoint lookups expose state and geometry",
+        status: ["demosaic", "demosaicscale"].every((op) => lookups.some((l) =>
+          new RegExp(`\\b${op}\\b`).test(l)
+          && /hash=[0-9a-f]+ state=[0-9a-f]+ bytes=\d+ hit=[01]/.test(l))) ? "pass" : "fail",
+        detail: lookups.join("\n") });
       lines.length = 0;
       o.s.set("exposure", 0.3);
       await o.frame();

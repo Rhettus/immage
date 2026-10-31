@@ -78,6 +78,33 @@ size changes can still require upstream processing. Pipe debug logs identify
 the retained checkpoint with `scaled_input`. Compare process memory as well
 as latency.
 
+For repeated raw processing, launch the engine with separate `-d perf -d pipe`
+arguments (the verification harness enables these with `pipeTrace`). Headless
+`checkpoint lookup` lines for `demosaic` and `demosaicscale` include pipe identity, run number,
+ROI, full lookup `hash`, ROI-independent parameter `state`, bytes, hit status,
+and mask/detail/Scharr state. A changed full hash with unchanged parameter state
+requires checking ROI and the other reported fields; it does not establish an
+upstream edit. `cache replace`, `cache invalidate`, `cache clear`, and
+`cache evict` lines record the affected hashes so a missing buffer can be traced
+to replacement, explicit invalidation, or memory trimming. These are opt-in
+native debug logs; GUI benchmark JSON does not collect them.
+
+`demosaicscale.modify_roi_in()` requests the whole input at scale 1 even when
+its output is a smaller preview. Preview geometry changes therefore do not by
+themselves prove that demosaic geometry changed. A GPU checkpoint must preserve
+its buffer against subsequent in-place colorspace conversion and blending,
+respect device ownership and memory limits, and invalidate with upstream
+state. Existing per-module GPU inputs are released after processing; a cache
+importance hint alone cannot retain GPU storage across requests.
+
+A CPU probe on `nikon.NEF` with successive exposure edits and requested draft
+sizes 1000x750, 1000x750, 700x525, 1000x750 confirmed that the smaller render
+missed the scaled checkpoint but hit the same demosaic hash and full-resolution
+ROI (4286x2844). Only scaling reran; returning to the larger size hit the old
+scaled checkpoint. This establishes that geometry changes can reuse the
+demosaiced CPU buffer. It does not explain individual macOS GPU misses; those
+need the native logs above from the affected machine.
+
 Cancellation request and signal-sent events are separate. Signal-sent means the
 cancel command was written, not that rendering stopped. Render cancelled/end
 outcomes and native release spans show completion; stale completed base frames
