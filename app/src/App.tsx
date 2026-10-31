@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Profiler, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ask, open, save } from "@tauri-apps/plugin-dialog";
@@ -16,11 +16,12 @@ import { autoArea, autoBlack, autoDmax, autoDmin, autoExposure as autoPrintExpos
          FILM_BW, FILM_COLOR, fromValues, PRESETS, toValues, type Stats } from "./negadoctor";
 import { NegativePanel, type NegPick } from "./NegativePanel";
 import { CircleOff, Grid2x2, ScanSearch, MoveHorizontal, MoveVertical, PenLine, Sparkles, WandSparkles } from "lucide-react";
+import { PixelWorker } from "./pixelWorker";
 import { CachedPreviewRenderer } from "./cachedPreviewRenderer";
 import { Session, framePlace, instanceKey, mapOpOf, type Frame, type HistoryItem, type ModuleState, type View } from "./session";
 import { AUTO_TONE_IDS, autoExposure, autoTone, type SceneKey } from "./autoTone";
 import { curve } from "./tonecurve";
-import { clipColor, computeHistogram, DEFAULT_SCOPE, drawScope, HARMONIES, HARMONY_WIDTHS, histogramPath, paintClipping,
+import { clipColor, DEFAULT_SCOPE, drawScope, HARMONIES, HARMONY_WIDTHS, histogramPath,
          type ClipShow, type Histogram, type ScopeMode, type ScopeSettings, type VecSpace } from "./histogram";
 import { applyCacheLimits } from "./CachePrefs";
 import { fetchThumb, fileKind, isCompanion, isPrimaryRaw, LABEL_COLORS, loadIncludeSubfolders, openFolder, pairKey, pairPartners,
@@ -141,6 +142,7 @@ type Placement = { fullWidth: number; fullHeight: number; scale: number; x: numb
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
 export default function App() {
+  perf.count("react.appRenderAttempts");
   const [folder, setFolder] = useState<string | null>(null);
   const folderRef = useRef(folder);
   folderRef.current = folder;
@@ -1049,7 +1051,7 @@ export default function App() {
         if (!f || !c || token !== hoverToken.current) return;
         c.width = f.width;
         c.height = f.height;
-        c.getContext("2d")!.putImageData(new ImageData(f.pixels, f.width, f.height), 0, 0);
+        perf.time("pixels.canvasUpload", () => c.getContext("2d")!.putImageData(new ImageData(f.pixels, f.width, f.height), 0, 0));
         placeLayers();
         setHoverShown(from);
       } catch {
@@ -1430,6 +1432,19 @@ export default function App() {
   const [zoom, setZoomState] = useState<Zoom>("fit");
   const [placement, setPlacement] = useState<Placement | null>(null);
   const [histogram, setHistogram] = useState<Histogram | null>(null);
+  const pixelWorker = useRef<PixelWorker | null>(null);
+  const pixelsWorker = () => pixelWorker.current ??= new PixelWorker();
+  useEffect(() => () => { pixelWorker.current?.dispose(); pixelWorker.current = null; }, []);
+  useEffect(() => {
+    pixelWorker.current?.dispose(); pixelWorker.current = null;
+    setHistogram(null);
+  }, [current]);
+  const updateHistogram = (f: Frame) => {
+    const owner = session.current;
+    pixelsWorker().submit("histogram", { kind: "histogram", pixels: f.pixels, width: f.width, height: f.height }, result => {
+      if (session.current === owner) setHistogram(result as Histogram);
+    });
+  };
   const placementRef = useRef<Placement | null>(null);
   const session = useRef<Session | null>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -1510,11 +1525,24 @@ export default function App() {
   const clipShown: ClipShow = { low: clipOn.low || clipPeek === "low", high: clipOn.high || clipPeek === "high" };
   const clipRef = useRef(clipShown);
   clipRef.current = clipShown;
-  const paintClip = (layer: "base" | "sharp" | "both") => {
+  const paintClip = (layer: "base" | "sharp" | "both", frame?: Frame) => {
     const pairs: [HTMLCanvasElement | null, HTMLCanvasElement | null][] = [];
     if (layer !== "sharp") pairs.push([baseCanvas.current, clipBase.current]);
     if (layer !== "base") pairs.push([canvas.current, clipSharp.current]);
-    for (const [src, dst] of pairs) if (src && dst) paintClipping(src, dst, clipRef.current);
+    for (const [src, dst] of pairs) if (src && dst) {
+      const key = dst === clipBase.current ? "clipBase" : "clipSharp";
+      pixelsWorker().cancel(key);
+      if (dst.width !== src.width || dst.height !== src.height) { dst.width = src.width; dst.height = src.height; }
+      if (!clipRef.current.low && !clipRef.current.high) dst.getContext("2d")!.clearRect(0, 0, dst.width, dst.height);
+      const show = { ...clipRef.current }, width = src.width, height = src.height, owner = session.current;
+      if (!width || !height || (!show.low && !show.high)) continue;
+      const pixels = frame?.pixels ?? perf.time("pixels.canvasReadback", () => src.getContext("2d")!.getImageData(0, 0, width, height).data);
+      pixelsWorker().submit(key, { kind: "clipping", pixels, width, height, show }, result => {
+        if (session.current !== owner || src.width !== width || src.height !== height
+            || show.low !== clipRef.current.low || show.high !== clipRef.current.high) return;
+        perf.time("pixels.clippingUpload", () => dst.getContext("2d")!.putImageData(new ImageData(result as Uint8ClampedArray<ArrayBuffer>, width, height), 0, 0));
+      });
+    }
   };
   useEffect(() => {
     paintClip("both");
@@ -2000,7 +2028,7 @@ export default function App() {
       if (bc) {
         bc.width = f.width;
         bc.height = f.height;
-        bc.getContext("2d")!.putImageData(new ImageData(f.pixels, f.width, f.height), 0, 0);
+        perf.time("pixels.canvasUpload", () => bc.getContext("2d")!.putImageData(new ImageData(f.pixels, f.width, f.height), 0, 0));
         const scale = f.view.scale ?? f.width / f.fullWidth;
         beforeMeta.current = { x: f.x, y: f.y, scale, width: f.width, height: f.height,
                                fullWidth: f.fullWidth, fullHeight: f.fullHeight };
@@ -2016,7 +2044,7 @@ export default function App() {
       const lc = loupeCanvas.current;
       if (lc) {
         lc.width = f.width; lc.height = f.height;
-        lc.getContext("2d")!.putImageData(new ImageData(f.pixels, f.width, f.height), 0, 0);
+        perf.time("pixels.canvasUpload", () => lc.getContext("2d")!.putImageData(new ImageData(f.pixels, f.width, f.height), 0, 0));
         lc.style.display = "block";
         loupeMeta.current = placed(f);
         placeLayers();
@@ -2053,8 +2081,8 @@ export default function App() {
         c.width = f.width;
         c.height = f.height;
       }
-      c.getContext("2d")!.putImageData(new ImageData(f.pixels, f.width, f.height), 0, 0);
-      if (clipRef.current.low || clipRef.current.high) paintClip("sharp");
+      perf.time("pixels.canvasUpload", () => c.getContext("2d")!.putImageData(new ImageData(f.pixels, f.width, f.height), 0, 0));
+      if (clipRef.current.low || clipRef.current.high) paintClip("sharp", f);
     }
     full.current = { w: f.fullWidth, h: f.fullHeight };
     const scale = f.view.scale ?? f.width / f.fullWidth;
@@ -2067,7 +2095,7 @@ export default function App() {
         center.current = { x: 0.5, y: 0.5 };
       }
       placeLayers();
-      if (f.view.scale === undefined) setHistogram(perf.histogram(() => computeHistogram(f.pixels, f.width, f.height)));
+      if (f.view.scale === undefined) updateHistogram(f);
       return;
     }
     const fit = f.view.scale === undefined;
@@ -2376,8 +2404,8 @@ export default function App() {
     if (bc) {
       bc.width = f.width;
       bc.height = f.height;
-      bc.getContext("2d")!.putImageData(new ImageData(f.pixels, f.width, f.height), 0, 0);
-      if (clipRef.current.low || clipRef.current.high) paintClip("base");
+      perf.time("pixels.canvasUpload", () => bc.getContext("2d")!.putImageData(new ImageData(f.pixels, f.width, f.height), 0, 0));
+      if (clipRef.current.low || clipRef.current.high) paintClip("base", f);
       baseMeta.current = placed(f);
       setBaseTick((t) => t + 1);
     }
@@ -2390,7 +2418,7 @@ export default function App() {
       t.height = Math.round((400 * f.height) / f.width);
       t.getContext("2d")!.drawImage(bc, 0, 0, t.width, t.height);
     }
-    setHistogram(perf.histogram(() => computeHistogram(f.pixels, f.width, f.height)));
+    updateHistogram(f);
   }, []);
 
   // the size the base is rendered at: twice the viewer, within reason, and
@@ -3902,7 +3930,7 @@ export default function App() {
     session.current?.setMany(entries);
   };
 
-  const change = (c: Control, v: number) => {
+  const change = (c: Control, v: number) => perf.time("slider.handler", () => {
     leaveBefore();
     setBaMode("off");
     if (c.id.startsWith("grain_")) setGrainLast(true);
@@ -3912,8 +3940,8 @@ export default function App() {
     record([c.id]);
     baseStale.current = true;
     setValues((old) => ({ ...old, [c.id]: v }));
-    session.current?.set(c.id, v);
-  };
+    perf.time("slider.sessionSet", () => session.current?.set(c.id, v));
+  });
 
   // Preferences' GUI benchmark: scripted drags of the main sliders through
   // change(), as a hand would make them, then a zoom in and out and the idle
@@ -3957,6 +3985,7 @@ export default function App() {
       const webview = await webviewInfo();
       const idlePings: number[] = [];
       for (let i = 0; i < 100; i++) idlePings.push(await pingOnce());
+      perf.resetFrontend();
       perf.recording = [];
       const t0 = performance.now();
       const longFramesBefore = perf.longFrames;
@@ -4067,9 +4096,10 @@ export default function App() {
       const { w, h } = viewport();
       const at = new Date();
       const report = {
-        immage: "gui-benchmark", version: 5, at: at.toISOString(),
+        immage: "gui-benchmark", version: 6, at: at.toISOString(),
         app: await invoke<{ app: string; darktable: string }>("about").catch(() => null),
         machine: await invoke<Record<string, unknown>>("perf_machine").catch(() => null),
+        frontend: perf.frontendReport(),
         webview, webviewTiming, resources: { ...resources, phases },
         photo: (currentRef.current?.path ?? "").split(/[\\/]/).pop(),
         viewport: { width: w, height: h, dpr: window.devicePixelRatio || 1, draftScale: draftScale() }, dragDrafts: drafts, preview,
@@ -4315,6 +4345,7 @@ export default function App() {
   };
 
   const prepareCropView = () => {
+    pixelWorker.current?.dispose(); pixelWorker.current = null;
     // Crop bypass changes coordinates. Discard every old image surface before
     // asking for the replacement, including a cached GPU preview and clipping.
     hideCachedPreview();
@@ -5330,10 +5361,10 @@ export default function App() {
             )}
             <ResetAll disabled={!current} onReset={resetAll} />
           </div></div>
-        <HistogramView histogram={histogram} values={values} disabled={!current} exif={currentEntry?.exif ?? null}
+        <Profiler id="histogram" onRender={perf.reactCommit}><HistogramView histogram={histogram} values={values} disabled={!current} exif={currentEntry?.exif ?? null}
                        neutral={(id) => session.current?.neutral[id] ?? controlById.get(id)?.neutral ?? 0}
                        onChange={change} clip={clipOn} onClip={(end) => setClipOn((o) => ({ ...o, [end]: !o[end] }))}
-                       onClipPeek={setClipPeek} scope={scope} onScope={setScope} />
+                       onClipPeek={setClipPeek} scope={scope} onScope={setScope} /></Profiler>
         <div className="panels" data-tour="panels">
           {masksMode && !cropping && (
             <MasksPanel masks={masks} selected={maskSel} shape={shapeSel} tool={maskTool} target={toolTarget}
@@ -5584,7 +5615,7 @@ export default function App() {
             </div>
           )}
           {rightMode === "adjust" && !cropping && panels.filter((p) => !p.hidden && (!p.showIf || p.showIf(values))).map((p) => (
-            <PanelView key={p.id} panel={p} open={openPanels.has(p.id)} onToggle={(solo) => togglePanel(p.id, solo)}
+            <Profiler key={p.id} id={`panel.${p.id}`} onRender={perf.reactCommit}><PanelView panel={p} open={openPanels.has(p.id)} onToggle={(solo) => togglePanel(p.id, solo)}
                        values={values} session={session.current} disabled={!current} onChange={change}
                        onChangeMany={changeMany} histogram={histogram} onPreview={hoverValues}
                        toneTools={p.id === "basic" ? (
@@ -5656,7 +5687,7 @@ export default function App() {
                          autoPending.current = true;
                          baseStale.current = true;
                          session.current.bypass("colorequal", true);
-                       } : undefined} />
+                       } : undefined} /></Profiler>
           ))}
         </div>
         <div className="right-foot">
@@ -6676,7 +6707,7 @@ function HistogramView({ histogram: h, values, disabled, exif, neutral, onChange
     ro.observe(c);
     return () => ro.disconnect();
   }, []);
-  useEffect(() => { if (ref.current) drawScope(ref.current, h, scope); }, [h, scope, size]);
+  useEffect(() => { if (ref.current) perf.time("pixels.scopeDraw", () => drawScope(ref.current!, h, scope)); }, [h, scope, size]);
   const tones = scope.mode === "histogram";
   const turning = (scope.mode === "vectorscope" || scope.mode === "split")
     && scope.space === "ryb" && scope.harmony > 0;
@@ -7172,6 +7203,7 @@ function isMono(f: Frame): boolean {
 const WHEEL_NOTCH = 40;
 
 function Slider({ control: c, value, neutral, disabled, onChange, values, glow = 0, rawOnly, onOption }: ControlProps) {
+  perf.count("react.sliderRenderAttempts");
   const s = c.slider;
   const track = typeof c.track === "function" ? c.track(values) : c.track;
   const reset = () => !disabled && onChange(neutral);

@@ -60,6 +60,7 @@ export type Trace = {
   textureBytes?: number;
   kind: Sample["kind"];
   draft: boolean;
+  latestInputAt?: number | null;
   inputAt: number | null;
   edits: number;
   setStart: number;
@@ -98,6 +99,45 @@ class Perf {
   session = newSession();
   private inputAt: number | null = null;
   private edits = 0;
+  private latestInputAt: number | null = null;
+  private workSamples: { name: string; ms: number; label: string }[] = [];
+  private counters: Record<string, Record<string, number>> = {};
+  private droppedWorkSamples = 0;
+
+  count(name: string, amount = 1) {
+    if (!this.measuring) return;
+    const step = this.counters[this.label] ??= {};
+    step[name] = (step[name] ?? 0) + amount;
+  }
+  work(name: string, ms: number, label = this.label) {
+    if (!this.measuring) return;
+    if (this.workSamples.length < 30000) this.workSamples.push({ name, ms, label });
+    else this.droppedWorkSamples++;
+  }
+  time<T>(name: string, fn: () => T): T {
+    if (!this.measuring) return fn();
+    const start = performance.now();
+    try { return fn(); } finally { this.work(name, performance.now() - start); }
+  }
+  reactCommit = (id: string, phase: string, actualDuration: number, baseDuration: number,
+                 startTime: number, commitTime: number) => {
+    this.count(`react.${id}.${phase}`);
+    this.work(`react.${id}.render`, actualDuration);
+    this.work(`react.${id}.baseRender`, baseDuration);
+    this.work(`react.${id}.renderToCommit`, commitTime - startTime);
+  };
+  resetFrontend() { this.workSamples = []; this.counters = {}; this.droppedWorkSamples = 0; }
+  frontendReport() {
+    const summarize = (xs: typeof this.workSamples) => Object.fromEntries(
+      [...new Set(xs.map(x => x.name))].map(name => {
+        const values = xs.filter(x => x.name === name).map(x => x.ms);
+        return [name, { ...roundTrips(values), total: values.reduce((a, b) => a + b, 0) }];
+      }));
+    return { reactProfiling: true, note: "Work timings can overlap; worker compute is off-thread. React renderToCommit is elapsed scheduling time, not commit execution. Input-to-rAF is a callback proxy, not compositor presentation.",
+      droppedWorkSamples: this.droppedWorkSamples, timings: summarize(this.workSamples),
+      byStep: [...new Set([...Object.keys(this.counters), ...this.workSamples.map(x => x.label)])]
+        .map(label => ({ label, counts: this.counters[label] ?? {}, timings: summarize(this.workSamples.filter(x => x.label === label)) })) };
+  }
   private drawing: Trace | null = null;
   // the display's own frame rate, and frames that took over 50 ms
   fps = 0;
@@ -119,6 +159,7 @@ class Perf {
   async startMeasurement(): Promise<() => void> {
     if (this.measuring) throw new Error("another performance measurement is running");
     this.measuring = true;
+    this.resetFrontend();
     try { await invoke("perf_set", { on: true }); }
     catch (error) { this.measuring = false; throw error; }
     if (!this.enabled) this.watchFrames();
@@ -179,15 +220,17 @@ class Perf {
   // a control moved (Session.set)
   input() {
     if (!this.enabled && !this.measuring) return;
-    this.inputAt ??= performance.now();
+    this.count("sliderInputs");
+    this.latestInputAt = performance.now();
+    this.inputAt ??= this.latestInputAt;
     this.edits++;
   }
 
   // a round of edits about to go to the engine: the moves it carries
-  cycle(): Pick<Trace, "inputAt" | "edits" | "setStart"> {
-    const c = { inputAt: this.inputAt, edits: this.edits, setStart: performance.now() };
+  cycle(): Pick<Trace, "inputAt" | "latestInputAt" | "edits" | "setStart"> {
+    const c = { inputAt: this.inputAt, latestInputAt: this.latestInputAt, edits: this.edits, setStart: performance.now() };
     this.inputAt = null;
-    this.edits = 0;
+    this.edits = 0; this.latestInputAt = null;
     return c;
   }
 
@@ -231,10 +274,12 @@ class Perf {
     const t = this.drawing;
     this.drawing = null;
     if (!shown || !t || t.drawStart === undefined) return;
+    this.count(t.estimated ? "estimatedFramesDrawn" : "nativeFramesDrawn");
     const drawEnd = performance.now();
     const label = this.label;
     window.requestAnimationFrame(() => {
       const paint = performance.now();
+      if (t.kind === "edit") this.work("inputToRaf.latestCarriedInput", paint - (t.latestInputAt ?? t.inputAt ?? t.setStart), label);
       const [lock, request, pipeline, write, read, probe, sent] = t.rust;
       const start = t.kind === "edit" ? (t.inputAt ?? t.setStart) : t.setStart;
       const stages: Record<Stage, number> = {

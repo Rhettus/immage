@@ -548,3 +548,55 @@ for(const blocked of [false,true]) test(`continuous dragging keeps native feedba
   assert.equal(shown.at(-1).view.draft,false);
   assert.equal(shown.at(-1).pixels[0],180);
 });
+
+for (const invalidate of ['release','newer input','new anchors']) test(`asynchronous CPU preview ignores ${invalidate}`,async t=>{
+  const {runPixelTask}=await import('../app/src/pixelTasks.ts');
+  let worker;
+  const previous=globalThis.Worker;
+  globalThis.Worker=class {
+    constructor(){worker=this;this.messages=[];}
+    postMessage(message,transfer){this.messages.push(structuredClone(message,{transfer}));}
+    terminate(){}
+    finish(){const {id,task}=this.messages.shift();this.onmessage({data:{id,result:runPixelTask(task),workMs:120}});}
+  };
+  t.after(()=>{if(previous===undefined)delete globalThis.Worker;else globalThis.Worker=previous;});
+  const {s,shown}=seededPreview();
+  s.set('texture',15);displayFrame();
+  assert.equal(shown.length,0,'CPU work must be asynchronous');
+  if(invalidate==='release')s.requestRender();
+  if(invalidate==='newer input')s.set('texture',16);
+  if(invalidate==='new anchors')s.detailCache.b={...s.detailCache.b};
+  worker.finish();
+  assert.equal(shown.length,0,'late estimate covered newer feedback');
+  if(invalidate==='newer input'){
+    displayFrame();worker.finish();
+    assert.equal(shown.length,1);assert.equal(shown[0].pixels[0],36);
+    assert.equal(s.detailCache.blocked,false,'off-thread compute must not exhaust the main-thread budget');
+  }
+  s.previewWorker.dispose();
+});
+test('release while accuracy validation is off-thread finishes with the exact frame', async t => {
+  const {runPixelTask}=await import('../app/src/pixelTasks.ts');
+  let worker;
+  const previous=globalThis.Worker;
+  globalThis.Worker=class {
+    constructor(){worker=this;this.messages=[];}
+    postMessage(message,transfer){this.messages.push(structuredClone(message,{transfer}));}
+    terminate(){}
+    finish(){const {id,task}=this.messages.shift();this.onmessage({data:{id,result:runPixelTask(task),workMs:1}});}
+  };
+  t.after(()=>{if(previous===undefined)delete globalThis.Worker;else globalThis.Worker=previous;});
+  const {s,shown,settle,release}=exposureSession(value=>pixels(value>0.2?250:100+value*20,80,60,255));
+  s.onCachedPreview=()=>true;
+  s.set('exposure',0.1);await settle();s.set('exposure',0.2);await settle();
+  s.set('exposure',0.24);displayFrame();
+  for(let i=0;i<500&&!worker;i++)await new Promise(r=>setTimeout(r,1));
+  assert.ok(worker,'validation was not sent to a worker');
+  assert.equal(worker.messages[0].task.kind,'validation');
+  release();assert.equal(s.detailCache,null);
+  worker.finish();await settle();
+  assert.equal(s.detailCache,null);
+  assert.equal(shown.at(-1).view.draft,false);
+  assert.equal(shown.at(-1).pixels[0],250);
+  s.previewWorker.dispose();
+});

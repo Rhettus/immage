@@ -17,7 +17,11 @@ export default defineConfig({
   // the startup splash is a window of its own, with its own page
   build: { rolldownOptions: { input: { main: "index.html", splash: "splash.html" } } },
   resolve: {
-    alias: { "@immporter": immporter },
+    alias: [
+      { find: "@immporter", replacement: immporter },
+      // Retain React timing callbacks in release builds used for GUI benchmarks.
+      { find: /^react-dom\/client$/, replacement: "react-dom/profiling" },
+    ],
     // one copy of each, from app/node_modules, even if immporter/ has its own
     dedupe: ["react", "react-dom", "@tauri-apps/api", "@tauri-apps/plugin-dialog", "@tauri-apps/plugin-opener",
              "zustand", "lucide-react", "@tanstack/react-virtual"],

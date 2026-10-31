@@ -15,7 +15,8 @@ import type { Spot } from "./spots";
 import { begin, end, progress } from "./activity";
 import { perf, type Trace } from "./perf";
 import { FRAME_HEAD, renderFrame } from "./sharedFrames";
-import { detailMix, mixDetailPixels, interpolateDetail, isDetailControl, isCachedControl, predictionError, previewTiming, anchorInterval, predictionAccuracy, validatePrediction } from "./cachedDetail";
+import { PixelWorker } from "./pixelWorker";
+import { detailMix, isDetailControl, isCachedControl, previewTiming, anchorInterval, predictionAccuracy, validatePrediction } from "./cachedDetail";
 import type { Preview } from "./Preferences";
 
 
@@ -370,6 +371,8 @@ export class Session {
         && detailMix({pixels:cache.a.frame.pixels,value:cache.a.value},
           {pixels:cache.b.frame.pixels,value:cache.b.value},v,cache.range) !== null) {
       const edits = this.queuedPreview?.cache === cache ? this.queuedPreview.edits+1 : 1;
+      perf.count("estimatedFramesRequested");
+      if (this.queuedPreview) perf.count("estimatedFramesCoalesced");
       this.queuedPreview = {cache,value:v,inputAt,edits};
       this.previewFrame ??= window.requestAnimationFrame(() => this.flushPreview());
     } else this.cancelPreview();
@@ -377,7 +380,10 @@ export class Session {
     void this.pump();
   }
 
+  private previewWorker: PixelWorker | null = null;
+
   private cancelPreview() {
+    this.previewWorker?.cancel("mix");
     if (this.previewFrame !== null) window.cancelAnimationFrame(this.previewFrame);
     this.previewFrame = null;
     this.queuedPreview = null;
@@ -407,13 +413,25 @@ export class Session {
       const shown = this.onCachedPreview?.({a:cache.a.frame,b:cache.b.frame,mix,frame});
       if (shown) { cache.predictedValue = value; cache.shownSerial = cache.inputSerial; }
       else {
-        const pixels = mixDetailPixels(cache.a.frame.pixels,cache.b.frame.pixels,mix);
-        // display wait contributes to latency, not the CPU generation budget
-        if (performance.now()-started <= previewTiming().target) {
+        const serial = cache.inputSerial;
+        const a = cache.a, b = cache.b;
+        (this.previewWorker ??= new PixelWorker()).submit("mix", {
+          kind: "mix", pixels: a.frame.pixels, other: b.frame.pixels, mix,
+          width: frame.width, height: frame.height,
+        }, result => {
+          // A worker result must never cover newer native feedback, a changed
+          // anchor pair, or the final frame after release.
+          if (this.detailCache !== cache || cache.inputSerial !== serial || cache.shownSerial > serial
+              || cache.a !== a || cache.b !== b || cache.blocked || !this.size().draft
+              || !this.cachedDetailPreview() || this.before || this.masksPending
+              || cache.key !== this.frameKey(this.fullView(), false)) { perf.count("estimatedFramesDiscarded"); return; }
+          // Worker time no longer blocks input. Its latency is measured separately
+          // rather than treating time off-thread as a UI generation-budget failure.
+          if (!this.previewWorker?.threaded && performance.now() - started > previewTiming().target) { cache.blocked = true; return; }
           cache.predictedValue = value;
-          cache.shownSerial = cache.inputSerial;
-          this.onFrame({...frame,pixels});
-        } else cache.blocked = true;
+          cache.shownSerial = serial;
+          this.onFrame({ ...frame, pixels: result as Frame["pixels"] });
+        });
       }
     } finally {
       // a rejected or expensive estimate must not defer native fallback
@@ -1042,8 +1060,9 @@ export class Session {
   // `have`: frames held here, one of which the engine may name rather than
   // render again (a frame of no size, with its hash)
   private async renderView(view: View, kind: Trace["kind"],
-                           cycle?: Pick<Trace, "inputAt" | "edits" | "setStart">, every = false,
+                           cycle?: Pick<Trace, "inputAt" | "latestInputAt" | "edits" | "setStart">, every = false,
                            have: Frame[] = [], edits: ReturnType<Session["moduleEdit"]>[] = []): Promise<Frame> {
+    perf.count("nativeFramesRequested");
     const t0 = performance.now();
     const { width, height, scale, x, y } = view;
     const preview = this.previewMode();
@@ -1055,11 +1074,12 @@ export class Session {
                                     base: kind === "base" && !view.draft,
                                     have: have.length ? have.map(hex) : null,
                                     edits: edits.length ? edits : null });
+    perf.count("nativeFramesCompleted");
     const head = new DataView(buf, 0, 24);
     const u = (k: number) => head.getUint32(4 * k, true);
     const hash = new DataView(buf).getBigUint64(48, true);
     const kept = !u(0) && !u(1) ? have.find((f) => f.hash === hash) : undefined;
-    const trace = perf.rendered({ kind, draft: !!view.draft, inputAt: cycle?.inputAt ?? null, edits: cycle?.edits ?? 0,
+    const trace = perf.rendered({ kind, draft: !!view.draft, inputAt: cycle?.inputAt ?? null, latestInputAt: cycle?.latestInputAt ?? null, edits: cycle?.edits ?? 0,
                                   setStart: cycle?.setStart ?? t0, setEnd: t0, r0: t0,
                                   width: kept?.width ?? u(0), height: kept?.height ?? u(1) }, buf);
     if (kept) return { ...kept, view, ms: performance.now() - t0, trace };
@@ -1380,28 +1400,39 @@ export class Session {
           const started = performance.now();
           if (cache) cache.lastStart = started;
           // Validate against the old anchors before training on this frame.
-          const predicted = cache?.a && cache.b && cacheValue !== undefined
+          const predictionMix = cache?.a && cache.b && cacheValue !== undefined
             && (!cache.blocked || (cache.accuracy?.recovering && cache.accuracy.failures<3))
-            ? interpolateDetail({pixels:cache.a.frame.pixels,value:cache.a.value},
+            ? detailMix({pixels:cache.a.frame.pixels,value:cache.a.value},
                 {pixels:cache.b.frame.pixels,value:cache.b.value},cacheValue,cache.range,!!cache.accuracy?.recovering) : null;
+          const prediction = predictionMix !== null && cache?.a && cache.b
+            ? { a: cache.a.frame.pixels, b: cache.b.frame.pixels, mix: predictionMix } : null;
           const f = await this.renderView(view, ops.length ? "edit" : "view", cycle, false, have, edits);
           if (cache && this.detailCache === cache && view.detail && !view.loupe && !before
               && this.frameKey(view,false) === cache.key && cacheValue !== undefined && cache.b?.value !== cacheValue) {
             cache.nativeMs = cache.nativeMs*0.5 + (performance.now()-started)*0.5;
-            if (predicted) {
-              const error = predictionError(predicted,f.pixels);
-              const accuracy = cache.accuracy ??= predictionAccuracy();
-              const valid = validatePrediction(accuracy,error);
-              cache.blocked = accuracy.recovering;
-              if (!valid) {
-                // discard the failed pair; rebuild solely from fresh native output
-                cache.a = undefined;
-                cache.b = undefined;
-                cache.predictedValue = undefined;
-                this.cancelPreview();
+            if (prediction) {
+              const error = await new Promise<{mean:number;p95:number}>(resolve => {
+                (this.previewWorker ??= new PixelWorker()).submit("validation", {
+                  kind: "validation", pixels: prediction.a, other: prediction.b, mix: prediction.mix,
+                  actual: f.pixels, width: f.width, height: f.height,
+                }, result => resolve(result as {mean:number;p95:number}));
+              });
+              // Input can switch photos, controls or release while validation runs.
+              // Its result must not cancel feedback belonging to another cache.
+              if (this.detailCache === cache) {
+                const accuracy = cache.accuracy ??= predictionAccuracy();
+                const valid = validatePrediction(accuracy,error);
+                cache.blocked = accuracy.recovering;
+                if (!valid) {
+                  // discard the failed pair; rebuild solely from fresh native output
+                  cache.a = undefined;
+                  cache.b = undefined;
+                  cache.predictedValue = undefined;
+                  this.cancelPreview();
+                }
               }
             }
-            cache.a = cache.b; cache.b = {frame:f,value:cacheValue};
+            if (this.detailCache === cache) { cache.a = cache.b; cache.b = {frame:f,value:cacheValue}; }
           }
           if (!view.draft) this.keepFrame(key, f);
           else this.draftTimed(f, edits.length);
@@ -1418,6 +1449,7 @@ export class Session {
             || requestedKey !== this.frameKey(now, !!this.before)
             || !!requestedView.draft !== !!now.draft
             || this.reshapeDue || [...this.dirty].some((op) => op === "flip" || FRAMING.has(op.split("#")[0]));
+          if (stale) perf.count("nativeFramesDiscarded");
           if (!stale) {
             if (cache) cache.shownSerial = cacheSerial;
             // Keep exact anchors on the same surface as slider estimates.
@@ -1476,10 +1508,12 @@ export class Session {
   }
 
   async close() {
+    this.cancelPreview();
     this.requestRender();
     window.clearTimeout(this.saveTimer);
     if (this.before) this.showBefore(null);
     while (this.busy || this.dirty.size || this.baseInFlight) await new Promise((r) => setTimeout(r, 20));
+    this.previewWorker?.dispose(); this.previewWorker = null;
     if (!this.unsaved) return;
     this.unsaved = false;
     const r = await invoke<{ edited: boolean }>("save");
