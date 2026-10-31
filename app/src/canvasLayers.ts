@@ -33,3 +33,11 @@ export class CanvasFrames {
     return true;
   }
 }
+
+// tokens expire on every replacement, including an A -> B -> A transition
+export class FrameGeneration {
+  private serial = 0;
+  next() { return ++this.serial; }
+  capture() { return this.serial; }
+  matches(token: number) { return this.serial === token; }
+}

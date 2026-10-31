@@ -63,6 +63,12 @@ measured reduction until new reports exist.
    values. Navigator drawing is deferred with session/base identity checks and
    canceled on photo/crop reset and unmount. Browser checks cover pixel/alpha
    parity, reuse, resizing, reset and style writes; GUI timings remain unmeasured.
-8. Tie async clipping and histogram results to the displayed frame generation.
-   Matching session/dimensions/settings does not prove an overlay matches the
-   pixels currently visible, especially across GPU estimates and native frames.
+8. Implemented: sharp/base clipping results carry independent displayed-surface
+   generations; replacements clear old overlays and reject late same-size results.
+   GPU clipping stays in the shader, including exact GPU frames. Histogram
+   generations expire on display changes and immediately on newer cadence input,
+   with checks before dispatch and publication. GPU scopes follow the current
+   estimate's native anchor without readback. CPU fallback, photo/crop reset
+   and unmount invalidate pending work. Regression tests cover delayed same-size
+   clipping, independent base/sharp surfaces, GPU/CPU transitions and histogram
+   completion before newer cadence dispatch. GUI verification remains outstanding.
