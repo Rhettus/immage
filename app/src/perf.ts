@@ -82,6 +82,7 @@ const newSession = (): Session => ({ since: Date.now(), modules: new Map(), wors
 
 class Perf {
   enabled = loadPerfHud();
+  measuring = false;
   samples: Sample[] = [];
   // the GUI benchmark's, with its step names
   recording: Sample[] | null = null;
@@ -99,11 +100,26 @@ class Perf {
   enable(on: boolean) {
     this.enabled = on;
     storePerfHud(on);
-    void invoke("perf_set", { on }).catch(() => {});
+    void invoke("perf_set", { on: on || this.measuring }).catch(() => {});
     window.cancelAnimationFrame(this.raf);
     this.raf = 0;
-    if (on) this.watchFrames();
+    if (on || this.measuring) this.watchFrames();
     else this.samples = [];
+  }
+
+  // collect timings without changing the user's overlay preference
+  async startMeasurement(): Promise<() => void> {
+    if (this.measuring) throw new Error("another performance measurement is running");
+    this.measuring = true;
+    try { await invoke("perf_set", { on: true }); }
+    catch (error) { this.measuring = false; throw error; }
+    if (!this.enabled) this.watchFrames();
+    return () => {
+      this.measuring = false;
+      this.inputAt = null; this.edits = 0;
+      if (!this.enabled) { window.cancelAnimationFrame(this.raf); this.raf = 0; }
+      void invoke("perf_set", { on: this.enabled }).catch(() => {});
+    };
   }
 
   resetSession() {
@@ -154,7 +170,7 @@ class Perf {
 
   // a control moved (Session.set)
   input() {
-    if (!this.enabled) return;
+    if (!this.enabled && !this.measuring) return;
     this.inputAt ??= performance.now();
     this.edits++;
   }
@@ -174,7 +190,7 @@ class Perf {
     const rust = [0, 1, 2, 3, 4, 5].map((k) => head.getFloat32(4 * k, true));
     rust.push(new DataView(buf).getFloat32(56, true));
     const trace: Trace = { ...t, r1, rust, histogram: 0, modules: [] };
-    if (this.enabled) {
+    if (this.enabled || this.measuring) {
       // set in Rust before the frame came back, so already this frame's; the
       // sample made at paint shares the array
       void invoke<Timing[]>("perf_modules").then((m) => { trace.modules.push(...m); this.foldModules(m); }).catch(() => {});
@@ -190,7 +206,7 @@ class Perf {
   }
 
   drawStart(t: Trace | undefined) {
-    if (!this.enabled || !t) return;
+    if ((!this.enabled && !this.measuring) || !t) return;
     t.drawStart = performance.now();
     this.drawing = t;
   }

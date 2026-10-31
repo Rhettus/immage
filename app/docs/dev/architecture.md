@@ -175,6 +175,7 @@ are `localStorage` keys named `immage.*`.
 | [Preferences.tsx](../../src/Preferences.tsx), [PrefsUI.tsx](../../src/PrefsUI.tsx) | The Preferences dialog and its `load*`/`store*` pairs; `PrefCard`, `PrefRow`, `PrefSwitch`. |
 | [histogram.ts](../../src/histogram.ts) | Histogram (computed on the main thread from the frame), clipping overlay, scopes. |
 | [probe.ts](../../src/probe.ts) | The color under the pointer, for the Tone Curve, HSL and B&W cards. |
+| [PerformanceTuner.tsx](../../src/PerformanceTuner.tsx), [performanceTuner.ts](../../src/performanceTuner.ts), [tunerOptions.ts](../../src/tunerOptions.ts), [tunerWorkload.ts](../../src/tunerWorkload.ts) | Quality-first preview search with FPS/latency targets, explicit apply and remeasurement, restart/resume and navigation workload comparisons; AI and thumbnail settings excluded. |
 | [perf.ts](../../src/perf.ts), [PerfHud.tsx](../../src/PerfHud.tsx) | Edit-to-pixels timing by stage, the performance overlay and the GUI benchmark's recording. |
 
 ## Rust layer

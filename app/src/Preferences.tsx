@@ -203,7 +203,7 @@ export function loadPreview(): Preview {
     return localStorage.getItem(DRAG_DRAFTS_KEY) === "0" ? "quality" : "balanced";
   } catch { return "balanced"; }
 }
-function storePreview(v: Preview) {
+export function storePreview(v: Preview) {
   try { localStorage.setItem(PREVIEW_KEY, v); } catch { /* not kept */ }
 }
 
@@ -212,7 +212,7 @@ export function loadCachedExposurePreview(): boolean {
   try { return localStorage.getItem(CACHED_EXPOSURE_KEY) === "1"; }
   catch { return false; }
 }
-function storeCachedExposurePreview(on: boolean) {
+export function storeCachedExposurePreview(on: boolean) {
   try { localStorage.setItem(CACHED_EXPOSURE_KEY, on ? "1" : "0"); } catch { /* not kept */ }
 }
 
@@ -221,7 +221,7 @@ export function loadBalancedPreviewSize(): number {
   try { return localStorage.getItem(BALANCED_SIZE_KEY) === "1" ? 1 : 0.5; }
   catch { return 0.5; }
 }
-function storeBalancedPreviewSize(v: number) {
+export function storeBalancedPreviewSize(v: number) {
   try { localStorage.setItem(BALANCED_SIZE_KEY, String(v)); } catch { /* not kept */ }
 }
 
@@ -237,7 +237,7 @@ export function loadDraftTarget(): number {
     return (DRAFT_TARGETS as readonly number[]).includes(v) ? v : 60;
   } catch { return 60; }
 }
-function storeDraftTarget(v: number) {
+export function storeDraftTarget(v: number) {
   try { localStorage.setItem(DRAFT_TARGET_KEY, String(v)); } catch { /* not kept */ }
 }
 export function loadDraftSmallest(): number {
@@ -246,7 +246,7 @@ export function loadDraftSmallest(): number {
     return (DRAFT_SMALLEST as readonly number[]).includes(v) ? v : 0.7;
   } catch { return 0.7; }
 }
-function storeDraftSmallest(v: number) {
+export function storeDraftSmallest(v: number) {
   try { localStorage.setItem(DRAFT_SMALLEST_KEY, String(v)); } catch { /* not kept */ }
 }
 
@@ -266,7 +266,7 @@ export function loadFrameCacheMb(): number {
     return (FRAME_CACHE_MB as readonly number[]).includes(v) ? v : defaultFrameCacheMb();
   } catch { return defaultFrameCacheMb(); }
 }
-function storeFrameCacheMb(v: number) {
+export function storeFrameCacheMb(v: number) {
   try { localStorage.setItem(FRAME_CACHE_KEY, String(v)); } catch { /* not kept */ }
 }
 
@@ -299,7 +299,7 @@ export function loadReadAhead(): ReadAhead {
     return { count: Number.isInteger(count) && count >= 0 && count <= READ_AHEAD_MAX ? count : 1, both: !!v?.both };
   } catch { return { count: 1, both: false }; }
 }
-function storeReadAhead(v: ReadAhead) {
+export function storeReadAhead(v: ReadAhead) {
   try { localStorage.setItem(READ_AHEAD_KEY, JSON.stringify(v)); } catch { /* not kept */ }
 }
 
@@ -433,7 +433,7 @@ function LicenseText({ title, text, onClose }: { title: string; text: string; on
 
 export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurrent, focus, canvas, onCanvas, overlayColor, onOverlayColor, guideColor, onGuideColor,
                                     focusMode, onFocusMode, autoHide, onAutoHide, stackPairs, onStackPairs,
-                                    accel, plugins, onPlugins, perfHud, onPerfHud, onBenchmark, onRelaunch, onClose }: {
+                                    accel, plugins, onPlugins, perfHud, onPerfHud, onBenchmark, onTune, onRelaunch, onClose }: {
   presets: Preset[];
   focus?: Tab;                           // a tab to open at
   onSaveCurrent: (() => void) | null;    // a new preset from the open photo, or null with none open
@@ -456,6 +456,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   onPlugins: (list: PluginConfig[]) => void;
   perfHud: boolean;
   onPerfHud: (on: boolean) => void;
+  onTune: (() => void) | null;
   onBenchmark: (() => void) | null;     // null with no photo open
   onRelaunch: () => Promise<void>;       // the edit saved, then Immage started again
   onClose: () => void;
@@ -925,6 +926,10 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                            ? "drags the main sliders on the open photo and back, zooms in and out, and saves timing, frame pacing and resource usage; every slider ends where it started. use a copy of a photo you care about"
                            : "open a photo to run it"}>
                   <button className="btn" disabled={!onBenchmark} onClick={() => onBenchmark?.()}>Run</button>
+                </PrefRow>
+                <PrefRow label="Performance tuner"
+                         hint="load a representative RAW from your usual work and use your normal window size. finds the highest-quality preview meeting your FPS and latency targets; Apply verifies the result">
+                  <button className="btn" disabled={!onTune} onClick={() => onTune?.()}>Tune…</button>
                 </PrefRow>
               </PrefCard>
               </>

@@ -16,7 +16,7 @@ const MB = 1024 * 1024;
 const GB = 1024 * MB;
 // the same as cache.rs's DEFAULT_LIMITS, which apply until these are sent
 const DEFAULTS: Limits = { thumbs: GB, immichThumbs: 512 * MB, immichOriginals: 10 * GB };
-const SIZES: Record<Which, number[]> = {
+export const SIZES: Record<Which, number[]> = {
   thumbs: [256 * MB, 512 * MB, GB, 2 * GB, 5 * GB, 10 * GB],
   immichThumbs: [128 * MB, 256 * MB, 512 * MB, GB, 2 * GB],
   immichOriginals: [2 * GB, 5 * GB, 10 * GB, 20 * GB, 50 * GB],
@@ -31,8 +31,13 @@ const ROWS: [Which, string, string][] = [
 ];
 
 const LIMITS_KEY = "immage.cacheLimits";
-function loadLimits(): Limits {
+export function loadLimits(): Limits {
   try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(LIMITS_KEY) ?? "{}") }; } catch { return DEFAULTS; }
+}
+
+export async function storeLimits(limits: Limits) {
+  await invoke("cache_limits", { limits });
+  localStorage.setItem(LIMITS_KEY, JSON.stringify(limits));
 }
 
 // the stored limits to the caches; at startup and on each change

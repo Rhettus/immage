@@ -83,6 +83,11 @@ import { cmd, fieldKeeps, keys } from "./keys";
 import { perf, percentiles, pingOnce, roundTrips, STAGES, webviewInfo, observeWebview } from "./perf";
 import { frameTransport } from "./sharedFrames";
 import { draftScale } from "./pixelRatio";
+import { tunerOptions } from "./tunerOptions";
+import { timeTunerWork } from "./tunerWorkload";
+import { hasPendingTuner } from "./PerformanceTuner";
+import { PerformanceTuner } from "./PerformanceTuner";
+import type { TunerRun } from "./performanceTuner";
 import { PerfHud } from "./PerfHud";
 import { KeywordingPanel } from "./Keywording";
 import { ImmichPanel } from "./ImmichPanel";
@@ -285,6 +290,8 @@ export default function App() {
   const previous = useRef<Clip | null>(null);
   // the quick start guide: by itself on first start, then from the title bar
   const [touring, setTouring] = useState(() => !tourSeen());
+  const [tunerOpen, setTunerOpen] = useState(false);
+  useEffect(() => { if (current && hasPendingTuner()) setTunerOpen(true); }, [current]);
   const [prefsOpen, setPrefsOpen] = useState<false | true | PrefsTab>(false);
   // the Immich card: shown once Immich is set up (checked again as
   // Preferences closes), with the server's URL for links into its web app.
@@ -3132,7 +3139,7 @@ export default function App() {
         sc.style.height = `${thumb.height / dpr}px`;
         sc.style.transform = `translate(${(w - z * thumb.width) / 2 / dpr}px, ${(h - z * thumb.height) / 2 / dpr}px) scale(${z})`;
       }
-      const s = await track(Session.open(path, id, currentView, drawFrame, (e) => setStatus(`error: ${e}`)));
+      const s = await timeTunerWork("Photo open", () => track(Session.open(path, id, currentView, drawFrame, (e) => setStatus(`error: ${e}`))));
       // the engine's id, for a photo opened by its file alone
       const opened = { path, imgid: s.imgid };
       setCurrent(opened);
@@ -3813,148 +3820,179 @@ export default function App() {
   // base render, each frame timed by the overlay; every control ends where it
   // started. the report goes to benchmarking/results/gui in a dev build
   const benchRunning = useRef(false);
-  const runGuiBenchmark = async (): Promise<string> => {
+  const runGuiBenchmark = async (): Promise<TunerRun> => {
     const s = session.current;
-    if (!s || benchRunning.current) throw new Error("no photo open, or a benchmark is running");
+    if (!s || benchRunning.current || perf.measuring) throw new Error("no photo open, or a benchmark is running");
     benchRunning.current = true;
-    const sleep = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
-    const settle = async () => {
-      await sleep(100);
-      while (!s.idle) await sleep(30);
-      await sleep(300);
-    };
-    const wasOn = perf.enabled;
-    if (!wasOn) { setPerfHud(true); perf.enable(true); }
-    const steps: [string, number][] = [
-      ["exposure", 1.5], ["contrast", 50], ["highlights", -60], ["shadows", 60], ["whites", 40], ["blacks", -40],
-      ["temp", 1500], ["tint", 30], ["texture", 40], ["clarity", 40], ["dehaze", 30], ["vibrance", 30],
-      ["saturation", 30], ["nr_luminance", 40], ["vig_amount", -30], ["grain_amount", 30],
-    ];
-    const preview = loadPreview();
-    const drafts = preview !== "quality";
-    // the web view measured idle, ahead of the run and its timing
-    await settle();
-    const webview = await webviewInfo();
-    const idlePings: number[] = [];
-    for (let i = 0; i < 100; i++) idlePings.push(await pingOnce());
-    perf.recording = [];
-    const t0 = performance.now();
-    const longFramesBefore = perf.longFrames;
-    // one call in flight at a time while the sliders drag, beside the renders
-    const dragPings: number[] = [];
-    let pinging = false;
-    let pinger: Promise<void> = Promise.resolve();
-    let resources: Record<string, unknown> | null = null;
-    let stopWebview: ReturnType<typeof observeWebview> | null = null;
-    let webviewTiming: ReturnType<ReturnType<typeof observeWebview>> | null = null;
-    let resourceRecording = false;
-    const phases: { atUnixMs: number; label: string }[] = [];
-    const phase = (label: string) => { perf.label = label; phases.push({ atUnixMs: Date.now(), label }); };
+    const originalZoom = zoomRef.current;
+    const originalValues = new Map<string, number>();
+    let stopMeasurement: (() => void) | null = null;
     try {
-      await invoke("perf_resources_start").then(() => { resourceRecording = true; })
-        .catch((error) => { resources = { error: String(error) }; });
-      stopWebview = observeWebview(typeof webview.frameRateHz === "number" ? webview.frameRateHz : null);
-      phase("settling");
-      await settle();
-      pinging = true;
-      pinger = (async () => {
-        while (pinging) { dragPings.push(await pingOnce().catch(() => NaN)); await sleep(50); }
-      })();
-      for (const [id, delta] of steps) {
-        const c = controlById.get(id);
-        if (!c || session.current !== s) continue;
-        const from = s.values[id] ?? c.neutral ?? 0;
-        const to = Math.min(c.max, Math.max(c.min, from + delta));
-        // 30 moves out and 30 back, at about 60 a second
-        phase(`${id} drag`);
-        dragging.current = drafts;
-        for (let i = 1; i <= 60; i++) {
-          const k = i <= 30 ? i / 30 : (60 - i) / 30;
-          change(c, from + (to - from) * k);
-          await sleep(16);
+      stopMeasurement = await perf.startMeasurement();
+      const initialViewport = viewport();
+      const context = { photo:currentRef.current?.path ?? "", width:initialViewport.w, height:initialViewport.h, dpr:window.devicePixelRatio || 1 };
+      const configuration = (await tunerOptions(setPerfHud)).map(({id,current,running}) => ({id,value:current,...(running === undefined ? {} : {running})}));
+      const sleep = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
+      const settle = async () => {
+        await sleep(100);
+        const deadline = performance.now() + 120000;
+        while (!s.idle) {
+          if (session.current !== s) throw new Error("photo changed during benchmark");
+          if (performance.now() > deadline) throw new Error("benchmark timed out waiting for the renderer");
+          await sleep(30);
         }
-        change(c, from);
-        dragging.current = false;
-        phase(`${id} release`);
-        if (draftShown.current) s.requestRender();
-        await settle();
-      }
-      pinging = false;
-      await pinger;
-      phase("zoom 100%");
-      setZoom(1);
-      await settle();
-      phase("zoom fit");
+        if (session.current !== s) throw new Error("photo changed during benchmark");
+        await sleep(300);
+      };
+      const steps: [string, number][] = [
+        ["exposure", 1.5], ["contrast", 50], ["highlights", -60], ["shadows", 60], ["whites", 40], ["blacks", -40],
+        ["temp", 1500], ["tint", 30], ["texture", 40], ["clarity", 40], ["dehaze", 30], ["vibrance", 30],
+        ["saturation", 30], ["nr_luminance", 40], ["vig_amount", -30], ["grain_amount", 30],
+      ];
+      const preview = loadPreview();
+      const drafts = preview !== "quality";
+      // the web view measured idle, ahead of the run and its timing
       setZoom("fit");
       await settle();
-      // a drag begun while the base renders, which cancels it: the first
-      // frame shows how long the base still held the engine
-      const ex = controlById.get("exposure");
-      const until = performance.now() + 5000;
-      while (!s.baseRendering && performance.now() < until) await sleep(10);
-      if (ex && s.baseRendering) {
-        const from = s.values.exposure ?? ex.neutral ?? 0;
-        phase("drag during base");
-        dragging.current = drafts;
-        for (let i = 1; i <= 20; i++) {
-          change(ex, from + 0.5 * (i <= 10 ? i / 10 : (20 - i) / 10));
-          await sleep(16);
-        }
-        change(ex, from);
-        dragging.current = false;
-        phase("drag during base, release");
-        if (draftShown.current) s.requestRender();
+      const webview = await webviewInfo();
+      const idlePings: number[] = [];
+      for (let i = 0; i < 100; i++) idlePings.push(await pingOnce());
+      perf.recording = [];
+      const t0 = performance.now();
+      const longFramesBefore = perf.longFrames;
+      // one call in flight at a time while the sliders drag, beside the renders
+      const dragPings: number[] = [];
+      let pinging = false;
+      let pinger: Promise<void> = Promise.resolve();
+      let resources: Record<string, unknown> | null = null;
+      let stopWebview: ReturnType<typeof observeWebview> | null = null;
+      let webviewTiming: ReturnType<ReturnType<typeof observeWebview>> | null = null;
+      let resourceRecording = false;
+      const phases: { atUnixMs: number; atMs: number; label: string }[] = [];
+      const phase = (label: string) => { perf.label = label; phases.push({ atUnixMs: Date.now(), atMs: performance.now(), label }); };
+      try {
+        await invoke("perf_resources_start").then(() => { resourceRecording = true; })
+          .catch((error) => { resources = { error: String(error) }; });
+        stopWebview = observeWebview(typeof webview.frameRateHz === "number" ? webview.frameRateHz : null);
+        phase("settling");
         await settle();
+        pinging = true;
+        pinger = (async () => {
+          while (pinging) { dragPings.push(await pingOnce().catch(() => NaN)); await sleep(50); }
+        })();
+        for (const [baseId, delta] of steps) {
+          const id = baseId === "clarity" && s.values.mod_clarity === 1 ? "detail_clarity_gain_medium"
+            : baseId === "texture" && s.values.mod_texture === 1 ? "detail_texture_gain_fine" : baseId;
+          const c = controlById.get(id);
+          if (!c || !choiceShows(id, s.values)) continue;
+          if (session.current !== s) throw new Error("photo changed during benchmark");
+          const from = s.values[id] ?? c.neutral ?? 0;
+          originalValues.set(id, from);
+          const to = Math.min(c.max, Math.max(c.min, from + (id === baseId ? delta : (c.max - c.min) * 0.2)));
+          // 30 moves out and 30 back, at about 60 a second
+          phase(`${id} drag`);
+          dragging.current = drafts;
+          for (let i = 1; i <= 60; i++) {
+            const k = i <= 30 ? i / 30 : (60 - i) / 30;
+            if (session.current !== s) throw new Error("photo changed during benchmark");
+            change(c, from + (to - from) * k);
+            await sleep(16);
+          }
+          change(c, from);
+          dragging.current = false;
+          phase(`${id} release`);
+          if (draftShown.current) s.requestRender();
+          await settle();
+        }
+        pinging = false;
+        await pinger;
+        phase("zoom 100%");
+        setZoom(1);
+        await settle();
+        phase("zoom fit");
+        setZoom("fit");
+        await settle();
+        // a drag begun while the base renders, which cancels it: the first
+        // frame shows how long the base still held the engine
+        const ex = controlById.get("exposure");
+        const until = performance.now() + 5000;
+        while (!s.baseRendering && performance.now() < until) await sleep(10);
+        if (ex && s.baseRendering) {
+          const from = s.values.exposure ?? ex.neutral ?? 0;
+          phase("drag during base");
+          dragging.current = drafts;
+          for (let i = 1; i <= 20; i++) {
+            if (session.current !== s) throw new Error("photo changed during benchmark");
+            change(ex, from + 0.5 * (i <= 10 ? i / 10 : (20 - i) / 10));
+            await sleep(16);
+          }
+          change(ex, from);
+          dragging.current = false;
+          phase("drag during base, release");
+          if (draftShown.current) s.requestRender();
+          await settle();
+        }
+        // the sharper base, once editing has paused (scheduleBase)
+        phase("idle base");
+        await sleep(2500);
+        await settle();
+      } catch (error) {
+        perf.recording = null;
+        throw error;
+      } finally {
+        webviewTiming = stopWebview?.() ?? null;
+        if (resourceRecording) {
+          resources = await invoke<Record<string, unknown>>("perf_resources_stop")
+            .catch((error) => ({ error: String(error) }));
+        }
+        pinging = false;
+        await pinger;
+        dragging.current = false;
+        perf.label = "";
       }
-      // the sharper base, once editing has paused (scheduleBase)
-      phase("idle base");
-      await sleep(2500);
-      await settle();
-    } catch (error) {
+      const seconds = (performance.now() - t0) / 1000;
+      // a drag's last draft can finish after the label turns to its release;
+      // it is the drag's, and the release is the full frame (and its wait)
+      const dragOf = (l: string) => (l.endsWith(", release") ? l.slice(0, -", release".length)
+                                                            : l.replace(/ release$/, " drag"));
+      const samples = (perf.recording ?? []).map((x) =>
+        x.draft && x.label?.endsWith(" release") ? { ...x, label: dragOf(x.label) } : x);
       perf.recording = null;
-      if (!wasOn) { setPerfHud(false); perf.enable(false); }
-      throw error;
+      const labels = [...new Set(samples.map((x) => x.label ?? ""))];
+      const summary = labels.map((label) => {
+        const of = samples.filter((x) => (x.label ?? "") === label);
+        const stages = Object.fromEntries(STAGES.map((k) => [k, percentiles(of.map((x) => x.stages[k])).p50]));
+        return { label, frames: of.length, ...percentiles(of.map((x) => x.total)), stages };
+      });
+      const { w, h } = viewport();
+      const at = new Date();
+      const report = {
+        immage: "gui-benchmark", version: 5, at: at.toISOString(),
+        app: await invoke<{ app: string; darktable: string }>("about").catch(() => null),
+        machine: await invoke<Record<string, unknown>>("perf_machine").catch(() => null),
+        webview, webviewTiming, resources: { ...resources, phases },
+        photo: (currentRef.current?.path ?? "").split(/[\\/]/).pop(),
+        viewport: { width: w, height: h, dpr: window.devicePixelRatio || 1, draftScale: draftScale() }, dragDrafts: drafts, preview,
+        configuration, transport: frameTransport(), seconds, displayLongFrames: perf.longFrames - longFramesBefore,
+        invokeMs: { idle: roundTrips(idlePings), drag: roundTrips(dragPings.filter(Number.isFinite)) }, summary, samples,
+      };
+      const stamp = at.toISOString().replace(/[:.]/g, "-").slice(0, 19);
+      const path = await invoke<string>("perf_report_write", { name: `gui-${stamp}`, report });
+      return { path, samples, phases, context, valid: !webviewTiming?.backgrounded && w === context.width && h === context.height && (window.devicePixelRatio || 1) === context.dpr };
     } finally {
-      webviewTiming = stopWebview?.() ?? null;
-      if (resourceRecording) {
-        resources = await invoke<Record<string, unknown>>("perf_resources_stop")
-          .catch((error) => ({ error: String(error) }));
+      if (session.current === s) {
+        for (const [id, value] of originalValues) {
+          const c = controlById.get(id);
+          if (c && s.values[id] !== value) change(c, value);
+        }
+        setZoom(originalZoom);
       }
-      pinging = false;
-      await pinger;
       dragging.current = false;
+      perf.recording = null;
       perf.label = "";
+      stopMeasurement?.();
       benchRunning.current = false;
     }
-    const seconds = (performance.now() - t0) / 1000;
-    // a drag's last draft can finish after the label turns to its release;
-    // it is the drag's, and the release is the full frame (and its wait)
-    const dragOf = (l: string) => (l.endsWith(", release") ? l.slice(0, -", release".length)
-                                                          : l.replace(/ release$/, " drag"));
-    const samples = (perf.recording ?? []).map((x) =>
-      x.draft && x.label?.endsWith(" release") ? { ...x, label: dragOf(x.label) } : x);
-    perf.recording = null;
-    if (!wasOn) { setPerfHud(false); perf.enable(false); }
-    const labels = [...new Set(samples.map((x) => x.label ?? ""))];
-    const summary = labels.map((label) => {
-      const of = samples.filter((x) => (x.label ?? "") === label);
-      const stages = Object.fromEntries(STAGES.map((k) => [k, percentiles(of.map((x) => x.stages[k])).p50]));
-      return { label, frames: of.length, ...percentiles(of.map((x) => x.total)), stages };
-    });
-    const { w, h } = viewport();
-    const at = new Date();
-    const report = {
-      immage: "gui-benchmark", version: 5, at: at.toISOString(),
-      app: await invoke<{ app: string; darktable: string }>("about").catch(() => null),
-      machine: await invoke<Record<string, unknown>>("perf_machine").catch(() => null),
-      webview, webviewTiming, resources: { ...resources, phases },
-      photo: (currentRef.current?.path ?? "").split(/[\\/]/).pop(),
-      viewport: { width: w, height: h, dpr: window.devicePixelRatio || 1, draftScale: draftScale() }, dragDrafts: drafts, preview,
-      transport: frameTransport(), seconds, displayLongFrames: perf.longFrames - longFramesBefore,
-      invokeMs: { idle: roundTrips(idlePings), drag: roundTrips(dragPings.filter(Number.isFinite)) }, summary, samples,
-    };
-    const stamp = at.toISOString().replace(/[:.]/g, "-").slice(0, 19);
-    return invoke<string>("perf_report_write", { name: `gui-${stamp}`, report });
   };
 
   // ⌥-click opens a panel alone, as Lightroom's solo mode (Preferences' focus
@@ -5581,9 +5619,10 @@ export default function App() {
                          perfHud={perfHud} onPerfHud={(on) => { setPerfHud(on); perf.enable(on); }}
                          onBenchmark={current ? () => {
                            setPrefsOpen(false);
-                           runGuiBenchmark().then((path) => setStatus(`benchmark saved: ${path}`))
+                           runGuiBenchmark().then(({ path }) => setStatus(`benchmark saved: ${path}`))
                              .catch((e) => setStatus(`benchmark: ${e}`));
                          } : null}
+                         onTune={current ? () => { setPrefsOpen(false); setTunerOpen(true); } : null}
                          onRelaunch={async () => {
                            await session.current?.close();
                            await invoke("engine_quit");
@@ -5591,6 +5630,10 @@ export default function App() {
                          }}
                          onClose={() => setPrefsOpen(false)} />
     )}
+    {tunerOpen && <PerformanceTuner run={runGuiBenchmark} photo={current?.path} raw={session.current?.raw} previewArea={viewport()}
+      onOverlay={setPerfHud}
+      onRelaunch={async () => { await session.current?.close(); await invoke("engine_quit"); await relaunch(); }}
+      onClose={() => { setTunerOpen(false); setPrefsOpen("performance"); }} />}
     <UpdateBanner prepare={async () => {
       // the edit saved now, then the engine stopped, before the installer
       // replaces its files
