@@ -23,9 +23,10 @@ measured reduction until new reports exist.
    histogram subscriptions, and memoize unrelated panels/unchanged sliders with
    current callbacks and dependent tracks. The App shell still renders when its
    published values change; further extraction should follow measured costs.
-2. Next separate commit: remove the awaited adaptive prediction validation from
-   native frame delivery and the render pump. Keep cache/generation guards,
-   accuracy recovery, and exact release behavior.
+2. Implemented in a separate commit: adaptive prediction validation has its own
+   worker queue, is submitted after native frame delivery, and does not hold the
+   render pump. Cache/generation/anchor guards reject obsolete results; accuracy
+   recovery and exact release behavior remain.
 3. Reduce worker input copies: validation currently copies three full images and
    allocates a full predicted frame to inspect sampled error. Compute prediction
    error directly at sample positions; consider retaining anchors in the worker

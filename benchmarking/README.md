@@ -322,6 +322,9 @@ renderer, so compare matching builds and configurations.
 Histograms, clipping-overlay generation, adaptive CPU interpolation and
 prediction accuracy checks execute in module Web Workers. The renderer keeps
 its original buffers; dispatched copies are transferred to the workers.
+Accuracy validation uses its own worker queue, is submitted after native frame
+delivery, and never holds the render pump or CPU mixing queue. Only results
+for the current cache and trained anchor pair can change accuracy/recovery.
 Each worker runs one job at a time and retains only the newest pending job
 per surface/task, rejecting superseded results. Worker failure or a ten-second
 response timeout enables synchronous fallback, reported by `workerFallback`

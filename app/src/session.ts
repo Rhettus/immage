@@ -381,6 +381,9 @@ export class Session {
   }
 
   private previewWorker: PixelWorker | null = null;
+  // Validation must not queue behind CPU display work or hold the render pump.
+  private validationWorker: PixelWorker | null = null;
+  private validationSerial = 0;
 
   private cancelPreview() {
     this.previewWorker?.cancel("mix");
@@ -883,6 +886,8 @@ export class Session {
   private _detailCache:DetailCache | null = null;
   private get detailCache() { return this._detailCache; }
   private set detailCache(cache:DetailCache | null) {
+    this.validationSerial++;
+    this.validationWorker?.cancel("validation");
     this.cancelPreview();
     this._detailCache = cache;
   }
@@ -1399,40 +1404,49 @@ export class Session {
           const cacheSerial = cache?.inputSerial ?? 0;
           const started = performance.now();
           if (cache) cache.lastStart = started;
-          // Validate against the old anchors before training on this frame.
+          // Capture the old prediction before rendering/training on this frame.
           const predictionMix = cache?.a && cache.b && cacheValue !== undefined
             && (!cache.blocked || (cache.accuracy?.recovering && cache.accuracy.failures<3))
             ? detailMix({pixels:cache.a.frame.pixels,value:cache.a.value},
                 {pixels:cache.b.frame.pixels,value:cache.b.value},cacheValue,cache.range,!!cache.accuracy?.recovering) : null;
           const prediction = predictionMix !== null && cache?.a && cache.b
-            ? { a: cache.a.frame.pixels, b: cache.b.frame.pixels, mix: predictionMix } : null;
+            ? { a: cache.a.frame.pixels, b: cache.b.frame.pixels, mix: predictionMix,
+                aAnchor: cache.a, bAnchor: cache.b } : null;
           const f = await this.renderView(view, ops.length ? "edit" : "view", cycle, false, have, edits);
+          let validate: (() => void) | undefined;
           if (cache && this.detailCache === cache && view.detail && !view.loupe && !before
               && this.frameKey(view,false) === cache.key && cacheValue !== undefined && cache.b?.value !== cacheValue) {
             cache.nativeMs = cache.nativeMs*0.5 + (performance.now()-started)*0.5;
-            if (prediction) {
-              const error = await new Promise<{mean:number;p95:number}>(resolve => {
-                (this.previewWorker ??= new PixelWorker()).submit("validation", {
-                  kind: "validation", pixels: prediction.a, other: prediction.b, mix: prediction.mix,
-                  actual: f.pixels, width: f.width, height: f.height,
-                }, result => resolve(result as {mean:number;p95:number}));
-              });
-              // Input can switch photos, controls or release while validation runs.
-              // Its result must not cancel feedback belonging to another cache.
-              if (this.detailCache === cache) {
+            const check = prediction && cache.a === prediction.aAnchor && cache.b === prediction.bAnchor ? prediction : null;
+            // Train immediately so native frames and the next edit never wait
+            // for accuracy work. A late check may only affect this trained pair.
+            cache.a = cache.b; cache.b = {frame:f,value:cacheValue};
+            const a = cache.a, b = cache.b, serial = ++this.validationSerial;
+            this.validationWorker?.cancel("validation");
+            if (check) validate = () => {
+              if (this.detailCache !== cache || this.validationSerial !== serial) return;
+              (this.validationWorker ??= new PixelWorker()).submit("validation", {
+                kind: "validation", pixels: check.a, other: check.b, mix: check.mix,
+                actual: f.pixels, width: f.width, height: f.height,
+              }, result => {
+                if (this.detailCache !== cache || this.validationSerial !== serial
+                    || cache.a !== a || cache.b !== b) { perf.count("validationResultsDiscarded"); return; }
                 const accuracy = cache.accuracy ??= predictionAccuracy();
-                const valid = validatePrediction(accuracy,error);
+                const valid = validatePrediction(accuracy,result as {mean:number;p95:number});
                 cache.blocked = accuracy.recovering;
                 if (!valid) {
-                  // discard the failed pair; rebuild solely from fresh native output
+                  // The new native B is exact; retire the failed prediction's
+                  // older anchor and recover from fresh native output.
                   cache.a = undefined;
-                  cache.b = undefined;
                   cache.predictedValue = undefined;
                   this.cancelPreview();
                 }
-              }
-            }
-            if (this.detailCache === cache) { cache.a = cache.b; cache.b = {frame:f,value:cacheValue}; }
+                // Apply the new accuracy interval to pending native edits now,
+                // including immediate fallback when estimates became unsafe.
+                clearTimeout(this.previewTimer); this.previewTimer = undefined;
+                if (this.dirty.size || this.needRender) void this.pump();
+              });
+            };
           }
           if (!view.draft) this.keepFrame(key, f);
           else this.draftTimed(f, edits.length);
@@ -1461,6 +1475,9 @@ export class Session {
             if (gpu) cache.predictedValue = cacheValue;
             else this.onFrame({ ...f, before });
           }
+          // Submit only after presentation. Even worker startup failure and
+          // synchronous fallback cannot delay delivery of these native pixels.
+          validate?.();
         }
         progress(job);
       }
@@ -1514,6 +1531,7 @@ export class Session {
     if (this.before) this.showBefore(null);
     while (this.busy || this.dirty.size || this.baseInFlight) await new Promise((r) => setTimeout(r, 20));
     this.previewWorker?.dispose(); this.previewWorker = null;
+    this.validationWorker?.dispose(); this.validationWorker = null;
     if (!this.unsaved) return;
     this.unsaved = false;
     const r = await invoke<{ edited: boolean }>("save");
