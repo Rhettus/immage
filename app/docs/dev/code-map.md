@@ -85,4 +85,4 @@ records CPU, process memory, Linux threads and available GPU counters on a
 background worker; `App.tsx` attaches phase timestamps to report version 5.
 The GUI dashboard plots these alongside timing summaries.
 
-Cached detail interpolation: [cachedDetail.ts](../../src/cachedDetail.ts), integrated in `Session.set` and `Session.pump`; no Exposure approximation.
+Adaptive cached preview: [cachedDetail.ts](../../src/cachedDetail.ts), integrated in `Session.set` and `Session.pump`; Exposure, Vibrance, Saturation and detail controls use bounded interpolation with periodic native anchors and error checks.

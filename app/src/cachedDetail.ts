@@ -26,3 +26,44 @@ export function interpolateDetail(a:DetailAnchor, b:DetailAnchor, value:number, 
   }
   return pixels;
 }
+
+// Color controls use anchors without activating the detail loupe.
+export function isCachedControl(id: string): boolean {
+  return isDetailControl(id) || ["exposure", "vibrance", "saturation"].includes(id);
+}
+
+export function predictionError(predicted: Pixels, actual: Pixels): { mean:number; p95:number } {
+  if (!actual.length || actual.length !== predicted.length) return {mean:Infinity,p95:Infinity};
+  const bins = new Uint32Array(256);
+  let sum = 0, count = 0;
+  for (let i=0;i<actual.length;i+=4) {
+    let worst = 0;
+    for (let c=0;c<3;c++) {
+      const error = Math.abs(predicted[i+c]-actual[i+c]);
+      sum += error; worst = Math.max(worst,error);
+    }
+    bins[worst]++; count++;
+  }
+  let cumulative = 0, p95 = 255;
+  for (let i=0;i<bins.length;i++) {
+    cumulative += bins[i];
+    if (cumulative >= count*0.95) { p95=i; break; }
+  }
+  return {mean:sum/(count*3*255),p95:p95/255};
+}
+
+const PROFILE = "immage.cachedPreviewTiming";
+export function previewTiming(): { native:number; target:number } {
+  try {
+    const p = JSON.parse(localStorage.getItem(PROFILE) ?? "null");
+    if (p && Number.isFinite(p.native) && p.native>0 && Number.isFinite(p.target) && p.target>0) return p;
+  } catch { /* use initial budget */ }
+  return {native:80,target:80};
+}
+export function storePreviewTiming(native:number, target:number) {
+  if (!(native>0) || !Number.isFinite(native) || !(target>0) || !Number.isFinite(target)) return;
+  try { localStorage.setItem(PROFILE,JSON.stringify({native,target})); } catch { /* session only */ }
+}
+export function anchorInterval(native:number, target:number): number {
+  return Math.min(320,Math.max(target,native*1.25));
+}

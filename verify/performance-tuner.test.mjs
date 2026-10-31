@@ -33,7 +33,7 @@ test('trims both deciles and averages the central pair for even samples', () => 
   assert.equal(trimmedMedian([]),Infinity);
 });
 test('75% Balanced is tested between 100% and 50%', () => {
-  const candidates=tunerCandidates();
+  const candidates=tunerCandidates().filter(s=>!s.cachedDetail);
   assert.deepEqual(candidates.slice(1,4).map((s) => s.balancedSize),[1,0.75,0.5]);
 });
 test('missing, sparse or backgrounded data cannot pass verification', () => {
@@ -80,7 +80,7 @@ test('records only completed work in its own recording', async () => {
   assert.deepEqual(stopTunerWork(),[]);
 });
 test('recommendations explicitly describe cached detail and preview quality changes', () => {
-  assert.ok(tunerChanges({...tunerCandidates()[0],cachedDetail:true},tunerCandidates()[1]).some(s=>s.startsWith('Cached detail preview: Off')));
+  assert.ok(tunerChanges({...tunerCandidates()[0],cachedDetail:true},tunerCandidates()[1]).some(s=>s.startsWith('Adaptive cached preview: Off')));
 });
 
 // TypeScript resolves .ts before .tsx; these must remain distinct on macOS/Windows.
@@ -93,4 +93,17 @@ test('frontend module names are unambiguous on case-insensitive filesystems', ()
     assert.ok(!seen.has(key), `ambiguous modules: ${seen.get(key)} and ${path}`);
     seen.set(key,path);
   }
+});
+
+
+test('adaptive candidates follow native candidates at the same preview size',()=>{
+  const candidates=tunerCandidates();
+  for(let i=1;i<candidates.length;i+=2) {
+    assert.equal(candidates[i].cachedDetail,false);
+    assert.deepEqual(candidates[i+1],{...candidates[i],cachedDetail:true});
+  }
+});
+test('estimated frames alone cannot satisfy tuner verification',()=>{
+  const run=fixture();run.samples.forEach(s=>{s.estimated=true;});
+  assert.equal(measureTuner(run).complete,false);
 });

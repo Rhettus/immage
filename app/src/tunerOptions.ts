@@ -19,7 +19,7 @@ export async function tunerOptions(onOverlay: (on: boolean) => void): Promise<Tu
   };
   add("preview", "Preview", "editing", choices(["quality", "balanced", "performance"]), prefs.loadPreview(), (v) => prefs.storePreview(v as prefs.Preview));
   add("balancedSize", "Balanced preview size", "editing", prefs.BALANCED_PREVIEW_SIZES.map((size) => ({label:`${size*100}%`,value:String(size)})), prefs.loadBalancedPreviewSize(), (v) => prefs.storeBalancedPreviewSize(Number(v)));
-  add("cachedDetail", "Cached detail preview", "editing", choices([false,true]), prefs.loadCachedDetailPreview(), (v) => prefs.storeCachedDetailPreview(v === "true"));
+  add("cachedDetail", "Adaptive cached preview", "editing", choices([false,true]), prefs.loadCachedDetailPreview(), (v) => prefs.storeCachedDetailPreview(v === "true"));
   add("smallest", "Smaller drafts for slow sliders", "editing", choices(prefs.DRAFT_SMALLEST), prefs.loadDraftSmallest(), (v) => prefs.storeDraftSmallest(Number(v)));
   add("draftTarget", "Draft time (ms)", "editing", choices(prefs.DRAFT_TARGETS), prefs.loadDraftTarget(), (v) => prefs.storeDraftTarget(Number(v)));
   if (sharedFramesAvailable) add("sharedFrames", "Shared-memory frames", "editing", choices([false,true]), loadSharedFrames(), (v) => storeSharedFrames(v === "true"));

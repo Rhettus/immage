@@ -224,12 +224,20 @@ card away until Immage next starts; **Skip This Version** waits for the
 one after. Updates are signed, and one whose signature does not match is
 not installed.
 
-Cached detail preview (Performance → Editing) is experimental and off by default.
-For global Texture, Clarity, Contrast, Dehaze and detail controls, it interpolates
-recent full renders of the same control while the native pipeline keeps working.
-It needs two distinct rendered values and only extrapolates near those values;
-other changes, a new view, or release discard the cache. Release always renders
-the accurate result. Exposure uses the normal native preview. The loupe controls
+Adaptive cached preview (Performance → Editing) is experimental and off by default.
+Exposure, Vibrance, Saturation, Texture, Clarity, Contrast, Dehaze and detail
+controls estimate nearby values from two distinct full darktable renders.
+Native renders periodically refresh the anchors. Their cadence starts with the
+performance tuner's measured cost and latency target (80 ms by default), then
+adapts to render times during the drag. Large jumps and reversals require fresh
+native output. Estimates that take longer than the latency target are disabled.
+
+Each new native anchor checks prediction error. Estimation stops for that drag
+if average RGB error exceeds 2% or the 95th percentile of per-pixel maximum
+channel error exceeds 6%, measured against the 8-bit display output. These checks
+detect drift; they do not guarantee every intermediate prediction stays within
+those limits. A different control, view, or non-slider edit discards the anchors.
+Release bypasses deferred work and renders the accurate result. The loupe controls
 appear only while detail sliders are in use, and the move handle appears only
 when the loupe itself is shown.
 

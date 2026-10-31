@@ -8,6 +8,8 @@ import { measureTuner, searchTuner, trimmedMedian, tunerChanges, type TunerSetti
 import { tunerOptions, type TunerOption } from "./tunerOptions";
 import { startTunerWork, stopTunerWork, type WorkSample } from "./tunerWorkload";
 
+import { storePreviewTiming } from "./cachedDetail";
+
 const PENDING = "immage.performanceTuner.pending";
 type WorkResult = { settings: Record<string,string>; samples: WorkSample[]; path: string };
 type Pending = { fps: number; latency: number; work: WorkResult[]; navigationPending: boolean; context?:TunerContext };
@@ -59,6 +61,8 @@ export function PerformanceTuner({ run, onClose, onRelaunch, onOverlay, photo, r
     }
     setContext(runResult.context);
     const measured = measureTuner(runResult);
+    const native = trimmedMedian(runResult.samples.filter(s => s.kind === "edit" && !s.estimated).map(s => s.total));
+    if (measured.complete) storePreviewTiming(native,latency);
     setResult(measured); setPath(runResult.path);
     setTestedSettings(settings()); setProposal(null); setChanges([]);
   };
