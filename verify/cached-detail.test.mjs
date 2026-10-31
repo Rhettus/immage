@@ -180,7 +180,7 @@ test('reversals and large jumps require a fresh native anchor',async()=>{
 
 for(const gpu of [false,true]) test(`an in-flight anchor never overwrites newer Exposure feedback (${gpu?'GPU':'CPU'})`,async()=>{
   const {s,shown,settle,release}=exposureSession();
-  if(gpu)s.onCachedPreview=()=>true;
+  if(gpu)s.onCachedPreview=preview=>{if(!preview.frame.trace?.estimated)shown.push(preview.frame);return true;};
   s.set('exposure',0.1);await settle();s.set('exposure',0.2);await settle();
   const render=s.renderView;
   let finish;
@@ -199,6 +199,22 @@ for(const gpu of [false,true]) test(`an in-flight anchor never overwrites newer 
   assert.equal(newer.some(f=>f.pixels[0]===104),false);
   assert.equal(newer.at(-1).pixels[0],105);
   release();await settle();
+});
+
+test('exact adaptive refresh stays on the GPU surface until release',async()=>{
+  const {s,shown,settle,release}=exposureSession();
+  const gpu=[];
+  s.onCachedPreview=preview=>{gpu.push(preview);return true;};
+  s.set('exposure',0.1);await settle();s.set('exposure',0.2);await settle();
+  const count=shown.length;
+  s.set('exposure',0.24);displayFrame();await settle();
+  assert.equal(shown.length,count,'native refresh must not switch to the CPU canvas');
+  const exact=gpu.at(-1);
+  assert.equal(exact.frame.trace?.estimated,undefined);
+  assert.equal(exact.a,exact.b);assert.equal(exact.mix,1);
+  assert.equal(exact.frame.pixels[0],105);
+  release();await settle();
+  assert.equal(shown.length,count+1);assert.equal(shown.at(-1).view.draft,false);
 });
 
 for(const gpu of [false,true]) test(`release during an in-flight anchor discards it and renders the latest exact value (${gpu?'GPU':'CPU'})`,async()=>{

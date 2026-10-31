@@ -1436,8 +1436,10 @@ export default function App() {
   const cachedCanvas = useRef<HTMLCanvasElement>(null);
   const cachedRenderer = useRef<CachedPreviewRenderer | null>(null);
   const cachedShown = useRef(false);
+  const exactGpuFrame = useRef<Frame | null>(null);
   const hideCachedPreview = () => {
     cachedShown.current = false;
+    exactGpuFrame.current = null;
     if (cachedCanvas.current) cachedCanvas.current.style.display = "none";
     if (canvas.current) canvas.current.style.visibility = "";
     if (clipSharp.current) clipSharp.current.style.visibility = "";
@@ -2024,15 +2026,36 @@ export default function App() {
     if (loupeCanvas.current) loupeCanvas.current.style.display = "none";
     setLoupeShown(false);
     loupeMeta.current = null;
-    hideCachedPreview();
-    if (!f.view.draft) cachedRenderer.current?.reset();
-    const c = canvas.current!;
-    if (c.width !== f.width || c.height !== f.height) {
-      c.width = f.width;
-      c.height = f.height;
+    // Keep the estimated image visible until its exact replacement has been
+    // uploaded to the same GPU surface. The rest of the full-frame lifecycle
+    // (overview, histogram, placement and caches) still runs on release.
+    let gpu = false;
+    const renderer = cachedRenderer.current;
+    if (cachedShown.current && renderer && !f.view.draft && !f.before) {
+      const uploads = renderer.stats.uploads;
+      gpu = renderer.draw({a:f,b:f,mix:1,frame:f},clipRef.current);
+      if (gpu) {
+        exactGpuFrame.current = f;
+        if (f.trace) {
+          f.trace.previewBackend = "webgl";
+          f.trace.anchorUploads = renderer.stats.uploads-uploads;
+          f.trace.textureBytes = renderer.stats.textureBytes;
+        }
+      }
     }
-    c.getContext("2d")!.putImageData(new ImageData(f.pixels, f.width, f.height), 0, 0);
-    if (clipRef.current.low || clipRef.current.high) paintClip("sharp");
+    if (!gpu) {
+      hideCachedPreview();
+      if (!f.view.draft) renderer?.reset();
+    }
+    const c = canvas.current!;
+    if (!gpu) {
+      if (c.width !== f.width || c.height !== f.height) {
+        c.width = f.width;
+        c.height = f.height;
+      }
+      c.getContext("2d")!.putImageData(new ImageData(f.pixels, f.width, f.height), 0, 0);
+      if (clipRef.current.low || clipRef.current.high) paintClip("sharp");
+    }
     full.current = { w: f.fullWidth, h: f.fullHeight };
     const scale = f.view.scale ?? f.width / f.fullWidth;
     sharpMeta.current = placed(f);
@@ -3184,7 +3207,12 @@ export default function App() {
       s.onCachedPreview = (preview) => {
         if (session.current !== s || !dragging.current || !cachedCanvas.current || !canvas.current) return false;
         const f = preview.frame;
-        const renderer = cachedRenderer.current ??= new CachedPreviewRenderer(cachedCanvas.current,hideCachedPreview);
+        const renderer = cachedRenderer.current ??= new CachedPreviewRenderer(cachedCanvas.current,() => {
+          const exact = exactGpuFrame.current;
+          hideCachedPreview();
+          if (exact) drawFrame(exact);
+          else session.current?.requestRender();
+        });
         let shown = false;
         perf.drawStart(f.trace);
         try {
@@ -3197,6 +3225,7 @@ export default function App() {
           }
           if (!shown) { hideCachedPreview(); return false; }
           draftShown.current = true;
+          exactGpuFrame.current = null;
           cachedShown.current = true;
           cachedCanvas.current.style.display = "block";
           canvas.current.style.visibility = "hidden";

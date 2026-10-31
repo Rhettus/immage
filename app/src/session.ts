@@ -1409,7 +1409,16 @@ export class Session {
             || requestedKey !== this.frameKey(now, !!this.before)
             || !!requestedView.draft !== !!now.draft
             || this.reshapeDue || [...this.dirty].some((op) => op === "flip" || FRAMING.has(op.split("#")[0]));
-          if (!stale) this.onFrame({ ...f, before });
+          if (!stale) {
+            // Keep exact anchors on the same surface as slider estimates.
+            // Switching to the 2D canvas on every refresh uploads the whole
+            // image again and forces a compositor layer handoff mid-drag.
+            const gpu = cache && this.detailCache === cache && !cache.blocked
+              && cache.predictedValue !== undefined && view.detail && view.draft && !before
+              && this.onCachedPreview?.({a:f,b:f,mix:1,frame:{...f,before}});
+            if (gpu) cache.predictedValue = cacheValue;
+            else this.onFrame({ ...f, before });
+          }
         }
         progress(job);
       }
