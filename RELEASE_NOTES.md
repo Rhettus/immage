@@ -5,6 +5,13 @@ what Immage's update banner shows under Release Notes.
 
 ## Experimental Linux renderer build
 
+- Preferences > Performance adds a tuner that starts at full preview quality
+  and finds the highest tested quality meeting your FPS and latency targets.
+  Review its recommended changes, apply them, and verify with another run.
+  Load a representative RAW and use your usual window size for useful results.
+  Other performance settings support measured comparisons and relaunch
+  verification; AI and thumbnail caches are excluded.
+
 - Detail sliders use accurate previews at the current view scale. When two
   preview frames miss the target frame rate, rendering narrows to a movable
   detail loupe while the surrounding photo keeps its previous sharp frame.
