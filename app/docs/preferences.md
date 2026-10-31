@@ -225,8 +225,7 @@ one after. Updates are signed, and one whose signature does not match is
 not installed.
 
 Adaptive cached preview (Performance → Editing) is experimental and off by default.
-Exposure, Vibrance, Saturation, Texture, Clarity, Contrast, Dehaze and detail
-controls estimate nearby values from two distinct full darktable renders.
+All Basic sliders and detail controls estimate nearby values from two distinct full darktable renders.
 Native renders periodically refresh the anchors. Their cadence starts with the
 performance tuner's measured cost and latency target (80 ms by default), then
 adapts to render times during the drag. Large jumps and reversals require fresh
@@ -243,4 +242,7 @@ when the loupe itself is shown.
 
 The performance tuner defaults to an 80 ms latency target. It uses the median
 of the middle 10–90% of measured frame intervals and input-to-paint latencies,
-then selects the highest tested preview quality meeting both targets.
+then tries Balanced 100% with adaptive caching first, followed by native Balanced 100%. Smaller previews are tested only if those miss the
+targets, with adaptive caching first at each size. The first configuration
+meeting both targets is recommended. Full Quality remains a manual option and
+is excluded from the tuner search.
