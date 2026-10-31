@@ -440,8 +440,8 @@ The GUI dashboard plots these alongside timing summaries.
 from `Session.onCachedPreview` using two native RGBA textures and a WebGL
 fragment shader. `detailMix` shares eligibility and extrapolation bounds with
 the CPU path. Each new native anchor is uploaded once; the previous B texture
-is reused as A. Slider events update the mix uniform and draw without creating
-an estimated pixel array. The shader interpolates display bytes, clamps and
+is reused as A. Slider events queue the latest value; once per display frame the callback
+updates the mix uniform and draws without creating an estimated pixel array. The shader interpolates display bytes, clamps and
 rounds to even like `Uint8ClampedArray`, preserves B's alpha, and draws clipping
 colors after quantization. Texture storage is bounded to two anchors and
 256 MiB, with device texture and viewport limits checked before upload.
@@ -462,3 +462,22 @@ Performance samples identify `previewBackend` (`cpu` or `webgl`), per-draw
 submission and placement; it does not synchronously wait for the GPU. The
 [browser check](../../../verify/cached-preview-gpu.mjs) separately forces completion with a test-only one-pixel
 readback when comparing rendering costs.
+
+
+`Session.set` applies values and marks native edits immediately, but queues
+cached feedback for `requestAnimationFrame`. A burst shares one callback and
+only the latest value is interpolated and drawn, on either backend. The
+queued preview retains its cache identity, latest input timestamp and count
+of coalesced edits. Before drawing, `flushPreview` rechecks the view, settings,
+anchor bounds and accuracy state against the current native anchors. It skips
+an estimate if a matching native anchor has already been shown. CPU cost
+limits cover preview generation rather than time spent waiting for display.
+
+A valid queued prediction can defer native work to the existing anchor timer,
+just as a displayed prediction does. That timer still runs when animation
+callbacks are paused. Rejected or expensive display callbacks resume native
+work immediately. Native completion suppresses old values when newer feedback
+is displayed or queued. Replacing or invalidating the detail cache cancels
+its animation callback, including on release, control/view changes, non-slider
+edits and photo close. Release updates the engine immediately with the latest
+values and never waits for an animation callback.

@@ -16,6 +16,21 @@ const modules=new Map(['cachedPreviewRenderer','cachedDetail'].map(name=>{
   const path=fileURLToPath(new URL(`../app/src/${name}.ts`,import.meta.url));
   return [`/${name}.js`,transformSync(path,readFileSync(path,'utf8')).code];
 }));
+const {rolldown}=await import(require.resolve('rolldown'));
+const sessionBundle=await rolldown({
+  input:fileURLToPath(new URL('../app/src/session.ts',import.meta.url)),
+  transform:{define:{'process.env.NODE_ENV':'"production"'}},
+  onwarn(warning,warn){if(warning.code!=='MODULE_LEVEL_DIRECTIVE')warn(warning);},
+  plugins:[{
+    name:'test-engine-boundary',
+    resolveId(id){if(id==='@tauri-apps/api/core')return '\0test-core';},
+    load(id){if(id==='\0test-core')return 'export async function invoke(){throw Error("unexpected engine call");}';},
+  }],
+});
+try {
+  const {output}=await sessionBundle.generate({format:'es'});
+  modules.set('/session.js',output.find(chunk=>chunk.type==='chunk'&&chunk.isEntry).code);
+} finally {await sessionBundle.close();}
 async function check() {
   const {CachedPreviewRenderer}=await import('/cachedPreviewRenderer.js');
   const {mixDetailPixels}=await import('/cachedDetail.js');
@@ -121,6 +136,30 @@ async function check() {
   extension.restoreContext();
   await new Promise(resolve=>setTimeout(resolve,200));
   parity(a,b,0.5);
+  const {Session}=await import('/session.js');
+  const scheduling=[];
+  for(const gpu of [false,true]) {
+    const view={width:a.width,height:a.height,scale:1,x:0,y:0,draft:true};
+    const shown=[],estimates=[];
+    const s=new Session(()=>view,f=>shown.push(f),error=>{throw Error(error);});
+    s.pump=async()=>{};s.fullView=()=>view;s.cachedDetailPreview=()=>true;s.values={texture:0};
+    s.set('texture',10);
+    s.detailCache.a={frame:{...a,view},value:0};
+    s.detailCache.b={frame:{...b,view},value:20};
+    const before=renderer.stats.draws;
+    s.onCachedPreview=p=>{estimates.push(p);return gpu&&renderer.draw(p,off);};
+    for(let i=1;i<=100;i++)s.set('texture',10+i*0.09);
+    assert(estimates.length===0&&shown.length===0,'burst drew before the display frame');
+    await new Promise(requestAnimationFrame);
+    assert(estimates.length===1&&estimates[0].mix===0.95,'display did not draw just the latest input');
+    assert(estimates[0].frame.trace.edits===100,'coalesced trace lost input count');
+    assert(shown.length===(gpu?0:1),'incorrect CPU fallback draw count');
+    assert(renderer.stats.draws-before===(gpu?1:0),'GPU drew more than once per display frame');
+    s.set('texture',19.5);s.requestRender();
+    await new Promise(requestAnimationFrame);
+    assert(estimates.length===1,'release did not cancel the queued display callback');
+    scheduling.push({backend:gpu?'webgl':'cpu',inputs:100,draws:1,releaseCancelled:true});
+  }
   renderer.dispose();assert(renderer.stats.textureBytes===0,'dispose leaked textures');
   const unavailable=new CachedPreviewRenderer({getContext:()=>null,addEventListener(){},removeEventListener(){}},()=>{});
   assert(!unavailable.draw({a,b,mix:0.5},off),'unavailable WebGL did not fall back');unavailable.dispose();
@@ -132,7 +171,7 @@ async function check() {
   assert(!failing.draw({a,b,mix:0.5},off),'upload failure did not fall back');
   assert(failing.stats.textureBytes===0,'upload failure retained textures');
   failingGl.texImage2D=upload;failing.dispose();
-  return {cases,worstByteError:worst,device,timings,contextRecovery:true,uploadFailureFallback:true};
+  return {cases,worstByteError:worst,device,timings,scheduling,contextRecovery:true,uploadFailureFallback:true};
 }
 let resolveReport,rejectReport;
 const report=new Promise((resolve,reject)=>{resolveReport=resolve;rejectReport=reject;});

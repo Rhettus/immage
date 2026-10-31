@@ -20,6 +20,8 @@ import type { Preview } from "./Preferences";
 
 
 export type CachedPreview = { a:Frame; b:Frame; mix:number; frame:Frame };
+type DetailCache = { id:string; key:string; range:number; lastStart:number; nativeMs:number; blocked:boolean;
+  direction:number; predictedValue?:number; a?:{frame:Frame;value:number}; b?:{frame:Frame;value:number} };
 
 type OpenReply = { imgid: number; sensor_width: number; sensor_height: number; orientation: number;
                    look: string | null; look_amount: number; edited: boolean; raw: boolean;
@@ -362,29 +364,58 @@ export class Session {
       this.dirty.add(m.op);
     }
     const cache = this.detailCache;
-    if (cache?.a && cache.b && !cache.blocked) {
-      const mix = detailMix({pixels:cache.a.frame.pixels,value:cache.a.value},
-        {pixels:cache.b.frame.pixels,value:cache.b.value},v,cache.range);
-      if (mix !== null) {
-        const trace = perf.cached(cache.b.frame.width,cache.b.frame.height);
-        trace.estimated = true; trace.draft = true; trace.previewBackend = "cpu";
-        trace.kind = "edit"; trace.edits = 1; trace.inputAt = inputAt;
-        const frame = {...cache.b.frame,hash:undefined,trace,ms:0,
-          view:{...cache.b.frame.view,draft:true,detail:true}};
-        // the GPU consumer draws from anchors; other consumers retain CPU feedback
-        const shown = this.onCachedPreview?.({a:cache.a.frame,b:cache.b.frame,mix,frame});
-        if (shown) cache.predictedValue = v;
-        else {
-          const pixels = mixDetailPixels(cache.a.frame.pixels,cache.b.frame.pixels,mix);
-          if (performance.now()-inputAt <= previewTiming().target) {
-            cache.predictedValue = v;
-            this.onFrame({...frame,pixels});
-          } else cache.blocked = true;
-        }
-      }
-    }
+    if (cache?.a && cache.b && !cache.blocked
+        && detailMix({pixels:cache.a.frame.pixels,value:cache.a.value},
+          {pixels:cache.b.frame.pixels,value:cache.b.value},v,cache.range) !== null) {
+      const edits = this.queuedPreview?.cache === cache ? this.queuedPreview.edits+1 : 1;
+      this.queuedPreview = {cache,value:v,inputAt,edits};
+      this.previewFrame ??= window.requestAnimationFrame(() => this.flushPreview());
+    } else this.cancelPreview();
     this.needRender = true;
     void this.pump();
+  }
+
+  private cancelPreview() {
+    if (this.previewFrame !== null) window.cancelAnimationFrame(this.previewFrame);
+    this.previewFrame = null;
+    this.queuedPreview = null;
+  }
+
+  private flushPreview() {
+    const queued = this.queuedPreview;
+    this.previewFrame = null;
+    this.queuedPreview = null;
+    if (!queued) return;
+    const {cache,value,inputAt,edits} = queued;
+    try {
+      // native anchors or the view may have changed while the display was waiting
+      if (this.detailCache !== cache || !cache.a || !cache.b || cache.blocked
+          || this.values[cache.id] !== value || cache.b.value === value || !this.size().draft
+          || !this.cachedDetailPreview() || this.before || this.masksPending
+          || cache.key !== this.frameKey(this.fullView(),false)) return;
+      const mix = detailMix({pixels:cache.a.frame.pixels,value:cache.a.value},
+        {pixels:cache.b.frame.pixels,value:cache.b.value},value,cache.range);
+      if (mix === null) return;
+      const started = performance.now();
+      const trace = perf.cached(cache.b.frame.width,cache.b.frame.height);
+      trace.estimated = true; trace.draft = true; trace.previewBackend = "cpu";
+      trace.kind = "edit"; trace.edits = edits; trace.inputAt = inputAt;
+      const frame = {...cache.b.frame,hash:undefined,trace,ms:0,
+        view:{...cache.b.frame.view,draft:true,detail:true}};
+      const shown = this.onCachedPreview?.({a:cache.a.frame,b:cache.b.frame,mix,frame});
+      if (shown) cache.predictedValue = value;
+      else {
+        const pixels = mixDetailPixels(cache.a.frame.pixels,cache.b.frame.pixels,mix);
+        // display wait contributes to latency, not the CPU generation budget
+        if (performance.now()-started <= previewTiming().target) {
+          cache.predictedValue = value;
+          this.onFrame({...frame,pixels});
+        } else cache.blocked = true;
+      }
+    } finally {
+      // a rejected or expensive estimate must not defer native fallback
+      void this.pump();
+    }
   }
 
   // a negative converted or turned back: the modules it turns off are sent
@@ -452,7 +483,7 @@ export class Session {
   get idle() {
     return !this.busy && !this.dirty.size && !this.needRender && !this.needThumb && !this.needCopy && !this.needWarm
       && this.wantLook === undefined && !this.masksPending && this.wantLookAmount === undefined
-      && !this.spotsPending && !this.reshapeDue && !this.baselineEnd && !this.baseInFlight;
+      && !this.spotsPending && !this.reshapeDue && !this.baselineEnd && !this.baseInFlight && !this.queuedPreview;
   }
 
   // not while crop is bypassed or the Before view is up: the one changes
@@ -826,7 +857,14 @@ export class Session {
   onDetailControl: ((id:string|null) => void) | null = null;
   private activeDetailControl: string | null = null;
   private previewTimer: ReturnType<typeof setTimeout> | undefined;
-  private detailCache: { id:string; key:string; range:number; lastStart:number; nativeMs:number; blocked:boolean; direction:number; predictedValue?:number; a?:{frame:Frame;value:number}; b?:{frame:Frame;value:number} } | null = null;
+  private previewFrame:number | null = null;
+  private queuedPreview: {cache:DetailCache; value:number; inputAt:number; edits:number} | null = null;
+  private _detailCache:DetailCache | null = null;
+  private get detailCache() { return this._detailCache; }
+  private set detailCache(cache:DetailCache | null) {
+    this.cancelPreview();
+    this._detailCache = cache;
+  }
 
   requestRender() {
     clearTimeout(this.previewTimer);
@@ -1295,7 +1333,8 @@ export class Session {
           continue;
         }
         const adaptive = this.detailCache;
-        if (adaptive && !adaptive.blocked && adaptive.predictedValue === this.values[adaptive.id]
+        if (adaptive && !adaptive.blocked && (adaptive.predictedValue === this.values[adaptive.id]
+            || (this.queuedPreview?.cache === adaptive && this.queuedPreview.value === this.values[adaptive.id]))
             && this.size().draft && this.cachedDetailPreview() && !this.before
             && adaptive.key === this.frameKey(this.fullView(),false)) {
           const wait = anchorInterval(adaptive.nativeMs,previewTiming().target) - (performance.now()-adaptive.lastStart);
@@ -1353,7 +1392,8 @@ export class Session {
           if (!before && !have.some((h) => h.hash === f.hash)) this.putAside = null;
           // Completed anchors must not overwrite newer slider feedback or a
           // frame from a released drag / changed viewport.
-          const stale = cache && (this.detailCache !== cache || (cache.predictedValue !== undefined && cacheValue !== this.values[cache.id]));
+          const newerFeedback = cache && (cache.predictedValue !== undefined || this.queuedPreview?.cache === cache);
+          const stale = cache && (this.detailCache !== cache || (newerFeedback && cacheValue !== this.values[cache.id]));
           if (!stale) this.onFrame({ ...f, before });
         }
         progress(job);

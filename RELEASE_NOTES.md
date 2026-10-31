@@ -5,6 +5,11 @@ what Immage's update banner shows under Release Notes.
 
 ## Experimental Linux renderer build
 
+- Cached slider previews show the latest value once per display frame,
+  coalescing rapid input on GPU and CPU fallback paths. Native refreshes
+  continue on their existing timer, and releasing a slider cancels queued
+  previews and requests the exact result immediately.
+
 - Adaptive cached previews blend native frames on the WebView GPU when
   available, reusing anchor textures between slider moves. Clipping colors
   follow the estimate; histograms and scopes update with native frames.

@@ -115,11 +115,15 @@ or physical disk reads. Camera fixtures are supplied locally and stay out of git
 
 Run `node --test verify/cached-detail.test.mjs verify/performance-tuner.test.mjs`
 for cache eligibility, GPU descriptors, CPU fallback, prediction rejection,
-in-flight anchor ordering and exact release behavior.
+in-flight anchor ordering and exact release behavior. Display-frame tests also
+cover burst coalescing, queued-preview cancellation and revalidation, native
+refresh with paused animation callbacks, and release before the next frame.
 
 Run `node verify/cached-preview-gpu.mjs` for browser pixel parity (including
 alpha, extrapolation, rounding, clipping and orientation), anchor texture reuse,
-resizing, context loss/recovery and a 1080p/4K CPU/GPU comparison. It requires
+resizing, context loss/recovery and a 1080p/4K CPU/GPU comparison. It also runs
+`Session` with real browser animation callbacks and confirms that 100 inputs
+produce one draw on either backend, with queued drafts canceled on release. It requires
 installed app dependencies and Chromium (`CHROMIUM=/path/to/chromium` overrides
 the executable). Set `WEBKIT_MINIBROWSER=/path/to/MiniBrowser` to run in WebKitGTK
 instead. Profiles are isolated under the ignored `verify/results/` directory
