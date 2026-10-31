@@ -5,6 +5,12 @@ what Immage's update banner shows under Release Notes.
 
 ## Experimental Linux renderer build
 
+- Adaptive cached previews blend native frames on the WebView GPU when
+  available, reusing anchor textures between slider moves. Clipping colors
+  follow the estimate; histograms and scopes update with native frames.
+  CPU fallback, prediction accuracy checks and exact rendering on release
+  remain available.
+
 - Opening folders reads TIFF-based RAW metadata from small prefixes where
   possible. Grid thumbnails read suitable embedded JPEGs directly and decode
   them closer to the grid size, reducing file reads and temporary memory.

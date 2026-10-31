@@ -16,6 +16,7 @@ import { autoArea, autoBlack, autoDmax, autoDmin, autoExposure as autoPrintExpos
          FILM_BW, FILM_COLOR, fromValues, PRESETS, toValues, type Stats } from "./negadoctor";
 import { NegativePanel, type NegPick } from "./NegativePanel";
 import { CircleOff, Grid2x2, ScanSearch, MoveHorizontal, MoveVertical, PenLine, Sparkles, WandSparkles } from "lucide-react";
+import { CachedPreviewRenderer } from "./cachedPreviewRenderer";
 import { Session, framePlace, instanceKey, mapOpOf, type Frame, type HistoryItem, type ModuleState, type View } from "./session";
 import { AUTO_TONE_IDS, autoExposure, autoTone, type SceneKey } from "./autoTone";
 import { curve } from "./tonecurve";
@@ -1432,6 +1433,16 @@ export default function App() {
   const placementRef = useRef<Placement | null>(null);
   const session = useRef<Session | null>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
+  const cachedCanvas = useRef<HTMLCanvasElement>(null);
+  const cachedRenderer = useRef<CachedPreviewRenderer | null>(null);
+  const cachedShown = useRef(false);
+  const hideCachedPreview = () => {
+    cachedShown.current = false;
+    if (cachedCanvas.current) cachedCanvas.current.style.display = "none";
+    if (canvas.current) canvas.current.style.visibility = "";
+    if (clipSharp.current) clipSharp.current.style.visibility = "";
+  };
+  useEffect(() => () => { cachedRenderer.current?.dispose(); }, []);
   const viewer = useRef<HTMLDivElement>(null);
   // the edit's pane: the whole viewer, or its half beside the before
   const pane = useRef<HTMLDivElement>(null);
@@ -1503,7 +1514,10 @@ export default function App() {
     if (layer !== "base") pairs.push([canvas.current, clipSharp.current]);
     for (const [src, dst] of pairs) if (src && dst) paintClipping(src, dst, clipRef.current);
   };
-  useEffect(() => { paintClip("both"); }, [clipShown.low, clipShown.high]);
+  useEffect(() => {
+    paintClip("both");
+    if (cachedShown.current) cachedRenderer.current?.redraw(clipRef.current);
+  }, [clipShown.low, clipShown.high]);
   const baseMeta = useRef<Placed | null>(null);
   // a control in the panels, the histogram or the mask editor held down (or
   // a wheel turning one): frames are drafts until it lets go, and then one
@@ -1923,6 +1937,7 @@ export default function App() {
       sc.style.height = `${s.height / dpr}px`;
       sc.style.transform = `translate(${(ox + p.x) / dpr}px, ${(oy + p.y) / dpr}px) scale(${p.k})`;
       follow(sc, clipSharp.current);
+      follow(sc, cachedCanvas.current);
     }
     const bm = beforeMeta.current, bcv = beforeCanvas.current;
     if (bm && bcv) {
@@ -2004,6 +2019,8 @@ export default function App() {
     if (loupeCanvas.current) loupeCanvas.current.style.display = "none";
     setLoupeShown(false);
     loupeMeta.current = null;
+    hideCachedPreview();
+    if (!f.view.draft) cachedRenderer.current?.reset();
     const c = canvas.current!;
     if (c.width !== f.width || c.height !== f.height) {
       c.width = f.width;
@@ -2964,6 +2981,7 @@ export default function App() {
     if (!s) return;
     await s.close();
     session.current = null;
+    hideCachedPreview(); cachedRenderer.current?.reset();
     currentRef.current = null;
     setCurrent(null);
     setOpenCell(null);
@@ -3115,6 +3133,7 @@ export default function App() {
                              masks: structuredClone(o.masks) };
         await o.close();
       }
+      hideCachedPreview(); cachedRenderer.current?.reset();
       detailActiveRef.current = false;
       setDetailActive(false); setLoupeShown(false);
       if (loupeCanvas.current) loupeCanvas.current.style.display = "none";
@@ -3159,6 +3178,37 @@ export default function App() {
       currentRef.current = opened;
       setOpenCell(imagesRef.current.find((i) => isOpen(i, opened)) ?? null);
       saveLibrary({ image: path, version: imagesRef.current.find((i) => i.imgid === s.imgid)?.version ?? 0 });
+      s.onCachedPreview = (preview) => {
+        if (session.current !== s || !dragging.current || !cachedCanvas.current || !canvas.current) return false;
+        const f = preview.frame;
+        const renderer = cachedRenderer.current ??= new CachedPreviewRenderer(cachedCanvas.current,hideCachedPreview);
+        let shown = false;
+        perf.drawStart(f.trace);
+        try {
+          const uploads = renderer.stats.uploads;
+          shown = renderer.draw(preview,clipRef.current);
+          if (shown && f.trace) {
+            f.trace.previewBackend = "webgl";
+            f.trace.anchorUploads = renderer.stats.uploads-uploads;
+            f.trace.textureBytes = renderer.stats.textureBytes;
+          }
+          if (!shown) { hideCachedPreview(); return false; }
+          draftShown.current = true;
+          cachedShown.current = true;
+          cachedCanvas.current.style.display = "block";
+          canvas.current.style.visibility = "hidden";
+          if (clipSharp.current) clipSharp.current.style.visibility = "hidden";
+          full.current = {w:f.fullWidth,h:f.fullHeight};
+          sharpMeta.current = placed(f);
+          if (f.view.scale === undefined && zoomRef.current === "fit" && !anim.current.raf) {
+            viewZ.current = fitScale();
+            center.current = {x:0.5,y:0.5};
+          }
+          placeLayers();
+          // scopes follow native anchors, avoiding readback of GPU estimates
+          return true;
+        } finally { perf.drawEnd(shown); }
+      };
       s.onThumb = (f) => {
         perf.drawStart(f.trace);
         try { showOverview(f); } finally { perf.drawEnd(); }
@@ -4919,6 +4969,7 @@ export default function App() {
             <canvas ref={copyCanvas} className={`layer copy${current && copyOn && !before && baMode === "off"
                       && !clipShown.low && !clipShown.high ? "" : " empty"}`} />
             <canvas ref={canvas} className={`layer sharp${current ? "" : " empty"}`} />
+            <canvas ref={cachedCanvas} className={`layer${current ? "" : " empty"}`} style={{ display: "none", pointerEvents: "none" }} />
             <canvas ref={loupeCanvas} className="layer" style={{ display: "none", pointerEvents: "none", zIndex: 5, outline: "1px solid white" }} />
             {current && detailActive && !cropping && !before && baMode === "off" && <>
               <button style={{ position: "absolute", top: 12, right: 12, zIndex: 9 }}
