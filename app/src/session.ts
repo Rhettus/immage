@@ -15,7 +15,7 @@ import type { Spot } from "./spots";
 import { begin, end, progress } from "./activity";
 import { perf, type Trace } from "./perf";
 import { FRAME_HEAD, renderFrame } from "./sharedFrames";
-import { interpolateDetail, isDetailControl } from "./cachedDetail";
+import { interpolateDetail, isDetailControl, isCachedControl, predictionError, previewTiming, anchorInterval } from "./cachedDetail";
 import type { Preview } from "./Preferences";
 
 
@@ -337,14 +337,21 @@ export class Session {
     const from = this.values[id];
     this.activeDetailControl = this.size().draft && isDetailControl(id) ? id : null;
     this.onDetailControl?.(this.activeDetailControl);
-    const eligible = this.activeDetailControl && this.cachedDetailPreview() && !this.before && !this.masksPending;
+    const eligible = this.size().draft && isCachedControl(id) && this.cachedDetailPreview() && !this.before && !this.masksPending;
     if (eligible) {
       const key = this.frameKey(this.fullView(),false), c = controlById.get(id)!;
       if (this.detailCache?.id !== id || this.detailCache.key !== key) {
         const frame = !this.busy && !this.dirty.size ? this.current.get(key) : undefined;
-        this.detailCache = {id,key,range:c.max-c.min,b:frame ? {frame,value:from} : undefined};
+        this.detailCache = {id,key,range:c.max-c.min,b:frame ? {frame,value:from} : undefined,
+          lastStart:0,nativeMs:previewTiming().native,blocked:false,direction:0};
       }
     } else this.detailCache = null;
+    if (this.detailCache) {
+      const direction = Math.sign(v-from);
+      if (direction && this.detailCache.direction && direction !== this.detailCache.direction) this.detailCache.a = undefined;
+      if (direction) this.detailCache.direction = direction;
+      this.detailCache.predictedValue = undefined;
+    }
     this.values[id] = v;
     if (id === "orient") this.orient(v);
     if (id === "neg_on") this.negChanged();
@@ -353,15 +360,17 @@ export class Session {
       this.dirty.add(m.op);
     }
     const cache = this.detailCache;
-    if (cache?.a && cache.b) {
+    if (cache?.a && cache.b && !cache.blocked) {
       const pixels = interpolateDetail({pixels:cache.a.frame.pixels,value:cache.a.value},
         {pixels:cache.b.frame.pixels,value:cache.b.value},v,cache.range);
-      if (pixels) {
+      if (pixels && performance.now()-inputAt <= previewTiming().target) {
         const trace = perf.cached(cache.b.frame.width,cache.b.frame.height);
+        cache.predictedValue = v;
+        trace.estimated = true;
         trace.kind = "edit"; trace.edits = 1; trace.inputAt = inputAt;
         this.onFrame({...cache.b.frame,pixels,hash:undefined,trace,ms:0,
           view:{...cache.b.frame.view,draft:true,detail:true}});
-      }
+      } else if (pixels) cache.blocked = true;
     }
     this.needRender = true;
     void this.pump();
@@ -804,9 +813,12 @@ export class Session {
   fullView: () => View = () => this.size();
   onDetailControl: ((id:string|null) => void) | null = null;
   private activeDetailControl: string | null = null;
-  private detailCache: { id:string; key:string; range:number; a?:{frame:Frame;value:number}; b?:{frame:Frame;value:number} } | null = null;
+  private previewTimer: ReturnType<typeof setTimeout> | undefined;
+  private detailCache: { id:string; key:string; range:number; lastStart:number; nativeMs:number; blocked:boolean; direction:number; predictedValue?:number; a?:{frame:Frame;value:number}; b?:{frame:Frame;value:number} } | null = null;
 
   requestRender() {
+    clearTimeout(this.previewTimer);
+    this.previewTimer = undefined;
     this.detailCache = null;
     this.activeDetailControl = null;
     this.onDetailControl?.(null);
@@ -902,7 +914,7 @@ export class Session {
     if (!view.draft) { this.detailKey = ""; this.detailSlow = 0; return view; }
     if (ops.length) this.detailOps = [...new Set(ops.map((op) => op.split("#")[0]))].sort().join();
     const detail = this.detailView();
-    if (this.detailCache && this.activeDetailControl && this.cachedDetailPreview()) return {...this.fullView(),draft:true,detail:true};
+    if (this.detailCache && this.cachedDetailPreview()) return {...this.fullView(),draft:true,detail:true};
     const eligible = !!this.activeDetailControl && this.detailOps.split(",").every((op) =>
       ["diffuse", "sharpen", "contrastntexture", "denoiseprofile", "bilat", "localcontrast", "agx", "sigmoid", "rgbcurve", "tonecurve", "colorbalancergb"].includes(op));
     if (detail && eligible) {
@@ -1270,6 +1282,19 @@ export class Session {
           job = begin();
           continue;
         }
+        const adaptive = this.detailCache;
+        if (adaptive && !adaptive.blocked && adaptive.predictedValue === this.values[adaptive.id]
+            && this.size().draft && this.cachedDetailPreview() && !this.before
+            && adaptive.key === this.frameKey(this.fullView(),false)) {
+          const wait = anchorInterval(adaptive.nativeMs,previewTiming().target) - (performance.now()-adaptive.lastStart);
+          if (wait > 1) {
+            clearTimeout(this.previewTimer);
+            this.previewTimer = setTimeout(() => { this.previewTimer=undefined; void this.pump(); },wait);
+            break;
+          }
+        }
+        clearTimeout(this.previewTimer);
+        this.previewTimer = undefined;
         const ops = [...this.dirty];
         this.dirty.clear();
         const cycle = perf.cycle();
@@ -1295,15 +1320,29 @@ export class Session {
         } else {
           const have = view.draft ? [] : this.heldFor(key);
           const cache = this.detailCache, cacheValue = cache ? this.values[cache.id] : undefined;
+          const started = performance.now();
+          if (cache) cache.lastStart = started;
+          // Validate against the old anchors before training on this frame.
+          const predicted = cache?.a && cache.b && cacheValue !== undefined && !cache.blocked
+            ? interpolateDetail({pixels:cache.a.frame.pixels,value:cache.a.value},
+                {pixels:cache.b.frame.pixels,value:cache.b.value},cacheValue,cache.range) : null;
           const f = await this.renderView(view, ops.length ? "edit" : "view", cycle, false, have, edits);
           if (cache && this.detailCache === cache && view.detail && !view.loupe && !before
               && this.frameKey(view,false) === cache.key && cacheValue !== undefined && cache.b?.value !== cacheValue) {
+            cache.nativeMs = cache.nativeMs*0.5 + (performance.now()-started)*0.5;
+            if (predicted) {
+              const error = predictionError(predicted,f.pixels);
+              if (error.mean>0.02 || error.p95>0.06) cache.blocked = true;
+            }
             cache.a = cache.b; cache.b = {frame:f,value:cacheValue};
           }
           if (!view.draft) this.keepFrame(key, f);
           else this.draftTimed(f, edits.length);
           if (!before && !have.some((h) => h.hash === f.hash)) this.putAside = null;
-          this.onFrame({ ...f, before });
+          // Completed anchors must not overwrite newer slider feedback or a
+          // frame from a released drag / changed viewport.
+          const stale = cache && (this.detailCache !== cache || (cache.predictedValue !== undefined && cacheValue !== this.values[cache.id]));
+          if (!stale) this.onFrame({ ...f, before });
         }
         progress(job);
       }
@@ -1351,6 +1390,7 @@ export class Session {
   }
 
   async close() {
+    this.requestRender();
     window.clearTimeout(this.saveTimer);
     if (this.before) this.showBefore(null);
     while (this.busy || this.dirty.size || this.baseInFlight) await new Promise((r) => setTimeout(r, 20));

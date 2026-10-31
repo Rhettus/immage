@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { createRequire, registerHooks } from 'node:module';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { interpolateDetail, isDetailControl } from '../app/src/cachedDetail.ts';
+import { interpolateDetail, isDetailControl, isCachedControl, predictionError, anchorInterval } from '../app/src/cachedDetail.ts';
 const pixels=(...values)=>new Uint8ClampedArray(values);
 
 test('detail interpolation follows real render endpoints and preserves alpha',()=>{
@@ -57,14 +57,14 @@ function session(){
   s.fullView=()=>full;s.cachedDetailPreview=()=>true;s.onDetailControl=id=>active.push(id);
   return {s,shown,active,pumping:()=>pumping};
 }
-test('cached feedback still schedules native work; Exposure never uses it',()=>{
+test('cached feedback still schedules native work; Exposure is eligible without a loupe',()=>{
   const {s,shown,pumping}=session();
   s.set('texture',10);
   const frame={...full,view:full,pixels:pixels(20,40,60,255)};
   s.detailCache.a={frame,value:0};s.detailCache.b={frame:{...frame,pixels:pixels(40,60,80,255)},value:20};
   s.set('texture',15);
   assert.equal(shown.length,1);assert.equal(shown[0].view.detail,true);assert.equal(pumping(),2);assert.equal(s.pending,true);
-  s.set('exposure',1);assert.equal(shown.length,1);assert.equal(s.detailCache,null);
+  s.set('exposure',1);assert.equal(shown.length,1);assert.equal(s.detailCache.id,'exposure');assert.equal(s.activeDetailControl,null);
 });
 test('release, multi-control edits and view changes invalidate cached detail frames',()=>{
   const {s,active}=session();s.set('texture',10);assert.equal(active.at(-1),'texture');
@@ -87,8 +87,106 @@ test('native renders train the cache and release discards it for an exact full r
   const frame=(value,view)=>({width:1,height:1,fullWidth:1,fullHeight:1,x:0,y:0,view,pixels:pixels(value,40,60,255),ms:1,hash:BigInt(value+1000)});
   s.current.set(s.frameKey(full,false),frame(0,full));
   s.renderView=async view=>{native++;return frame(s.values.texture,view);};
-  const settle=async()=>{for(let i=0;i<20&&!s.idle;i++)await new Promise(r=>setTimeout(r,1));assert.equal(s.idle,true);};
+  const settle=async()=>{for(let i=0;i<500&&!s.idle;i++)await new Promise(r=>setTimeout(r,1));assert.equal(s.idle,true);};
   s.set('texture',10);await settle();assert.equal(s.detailCache.a.value,0);assert.equal(s.detailCache.b.value,10);
   s.set('texture',12);await settle();assert.equal(shown.length,3);assert.equal(native,2);
   dragging=false;s.requestRender();await settle();assert.equal(s.detailCache,null);assert.equal(shown.at(-1).view.draft,false);assert.equal(native,3);
+});
+
+
+test('adaptive color eligibility and normalized prediction error',()=>{
+  for(const id of ['exposure','vibrance','saturation','texture'])assert.equal(isCachedControl(id),true);
+  for(const id of ['temp','highlights','l_exposure'])assert.equal(isCachedControl(id),false);
+  assert.equal(isDetailControl('exposure'),false);
+  assert.deepEqual(predictionError(pixels(0,0,0,0),pixels(0,0,0,255)),{mean:0,p95:0});
+  const error=predictionError(pixels(0,0,0,255),pixels(255,0,0,255));
+  assert.equal(error.mean,1/3);assert.equal(error.p95,1);
+  assert.equal(predictionError(pixels(0),pixels()).mean,Infinity);
+  assert.equal(anchorInterval(40,80),80);assert.equal(anchorInterval(160,80),200);
+  assert.equal(anchorInterval(1000,80),320);
+});
+
+function exposureSession(renderPixels=value=>pixels(100+value*20,80,60,255)) {
+  let dragging=true,native=0;
+  const shown=[];
+  const s=new Session(()=>({...full,draft:dragging}),f=>shown.push(f),e=>{throw Error(e);});
+  s.fullView=()=>full;s.cachedDetailPreview=()=>true;s.values={exposure:0};
+  s.moduleEdit=op=>({op,params:{},enabled:true});s.scheduleSave=()=>{};
+  s.renderView=async view=>{native++;return {width:1,height:1,view,pixels:renderPixels(s.values.exposure),ms:1};};
+  const settle=async()=>{for(let i=0;i<600&&!s.idle;i++)await new Promise(r=>setTimeout(r,1));assert.equal(s.idle,true);};
+  return {s,shown,settle,native:()=>native,release:()=>{dragging=false;s.requestRender();}};
+}
+
+test('Exposure estimates coalesce native work and release bypasses the timer',async()=>{
+  const {s,shown,settle,native,release}=exposureSession();
+  s.set('exposure',0.1);await settle();s.set('exposure',0.2);await settle();
+  s.set('exposure',0.22);s.set('exposure',0.24);
+  assert.equal(native(),2);assert.equal(shown.at(-1).trace.estimated,true);
+  assert.equal(s.idle,false);
+  await settle();assert.equal(native(),3);assert.equal(s.detailCache.b.value,0.24);
+  s.set('exposure',0.25);assert.equal(native(),3);
+  release();await settle();assert.equal(native(),4);
+  assert.equal(shown.at(-1).view.draft,false);assert.equal(s.detailCache,null);
+});
+
+test('periodic native work runs without another input and rejects inaccurate Exposure predictions',async()=>{
+  const {s,shown,settle,native,release}=exposureSession(value=>pixels(value>0.2?250:100+value*20,80,60,255));
+  s.set('exposure',0.1);await settle();s.set('exposure',0.2);await settle();
+  s.set('exposure',0.24);assert.equal(shown.at(-1).trace.estimated,true);
+  await settle();assert.equal(native(),3);assert.equal(s.detailCache.blocked,true);
+  const count=shown.length;s.set('exposure',0.25);
+  assert.equal(shown.slice(count).some(f=>f.trace?.estimated),false);
+  await settle();release();await settle();
+});
+
+test('reversals and large jumps require a fresh native anchor',async()=>{
+  const {s,shown,settle,release}=exposureSession();
+  s.set('exposure',0.1);await settle();s.set('exposure',0.2);await settle();
+  const count=shown.length;s.set('exposure',0.15);await settle();
+  assert.equal(shown.slice(count).some(f=>f.trace?.estimated),false);
+  const next=shown.length;s.set('exposure',3);await settle();
+  assert.equal(shown.slice(next).some(f=>f.trace?.estimated),false);
+  release();await settle();
+});
+
+
+test('an in-flight anchor never overwrites newer Exposure feedback',async()=>{
+  const {s,shown,settle,release}=exposureSession();
+  s.set('exposure',0.1);await settle();s.set('exposure',0.2);await settle();
+  const render=s.renderView;
+  let finish;
+  s.renderView=async view=>{
+    const frame=await render(view);
+    if (!finish) await new Promise(resolve=>{finish=()=>resolve();});
+    return frame;
+  };
+  s.detailCache.lastStart=0;
+  s.set('exposure',0.22);
+  for(let i=0;i<100&&!finish;i++)await new Promise(r=>setTimeout(r,1));
+  assert.ok(finish);
+  s.set('exposure',0.24);const count=shown.length;
+  finish();await settle();
+  const newer=shown.slice(count);
+  assert.equal(newer.some(f=>f.pixels[0]===104),false);
+  assert.equal(newer.at(-1).pixels[0],105);
+  release();await settle();
+});
+
+test('release during an in-flight anchor discards it and renders the latest exact value',async()=>{
+  const {s,shown,settle,release}=exposureSession();
+  s.set('exposure',0.1);await settle();s.set('exposure',0.2);await settle();
+  const render=s.renderView;
+  let finish;
+  s.renderView=async view=>{
+    const frame=await render(view);
+    if (!finish) await new Promise(resolve=>{finish=()=>resolve();});
+    return frame;
+  };
+  s.detailCache.lastStart=0;s.set('exposure',0.22);
+  for(let i=0;i<100&&!finish;i++)await new Promise(r=>setTimeout(r,1));
+  assert.ok(finish);s.set('exposure',0.24);release();
+  const count=shown.length;finish();await settle();
+  assert.equal(shown.length,count+1);
+  assert.equal(shown.at(-1).view.draft,false);
+  assert.equal(shown.at(-1).pixels[0],105);
 });

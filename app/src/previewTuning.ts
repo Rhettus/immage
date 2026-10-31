@@ -34,14 +34,14 @@ export function measureTuner(run: TunerRun): TunerMeasurement {
   return {
     fps: Number.isFinite(frameTime) && frameTime>0 ? 1000/frameTime : 0,
     latency: trimmedMedian(samples.map((s) => s.total)),
-    complete: run.valid !== false && drags.length>=6 && drags.every((frames) => frames.length>=2 && frames.every((s) => Number.isFinite(s.total) && s.total>=0)),
+    complete: run.valid !== false && drags.length>=6 && drags.every((frames) => frames.length>=2 && frames.some((s) => !s.estimated) && frames.every((s) => Number.isFinite(s.total) && s.total>=0)),
     modules: [...costs].map(([name,times]):[string,number] => [name,trimmedMedian(times)]).sort((a,b) => b[1]-a[1]).slice(0,4),
   };
 }
 
 export function tunerChanges(from: TunerSettings, to: TunerSettings): string[] {
   const changes: string[] = [];
-  if (from.cachedDetail !== to.cachedDetail) changes.push(`Cached detail preview: ${to.cachedDetail ? "On" : "Off"}`);
+  if (from.cachedDetail !== to.cachedDetail) changes.push(`Adaptive cached preview: ${to.cachedDetail ? "On" : "Off"}`);
   if (from.preview !== to.preview) changes.push(`Preview: ${from.preview} → ${to.preview}`);
   if (to.preview === "balanced" && from.balancedSize !== to.balancedSize) changes.push(`Balanced preview size: ${to.balancedSize * 100}%`);
   if (from.smallest !== to.smallest) changes.push(`Smaller drafts for slow sliders: ${to.smallest * 100}% of the selected preview size`);
@@ -62,7 +62,8 @@ export function tunerCandidates(): TunerSettings[] {
     { ...full, preview: "performance", balancedSize: 0.5, smallest: 1 },
     { ...full, preview: "performance", balancedSize: 0.5, smallest: 0.7 },
     { ...full, preview: "performance", balancedSize: 0.5, smallest: 0.5 },
-  ];
+  ].flatMap((settings) => settings.preview === "quality" ? [settings]
+    : [settings,{...settings,cachedDetail:true}]) as TunerSettings[];
 }
 
 // test faithful previews first; stop as soon as both measured targets are met

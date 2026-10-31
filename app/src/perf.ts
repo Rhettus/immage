@@ -36,6 +36,7 @@ export const STAGES = [
 export type Stage = typeof STAGES[number];
 
 export type Sample = {
+  estimated?: boolean;
   at: number;                  // performance.now() at paint
   kind: "edit" | "view" | "base";
   draft: boolean;
@@ -50,6 +51,7 @@ export type Sample = {
 
 // what renderView and drawFrame learn of one frame on its way
 export type Trace = {
+  estimated?: boolean;
   kind: Sample["kind"];
   draft: boolean;
   inputAt: number | null;
@@ -243,7 +245,7 @@ class Perf {
         histogram: t.histogram,
         paint: paint - drawEnd,
       };
-      const s: Sample = { at: paint, kind: t.kind, draft: t.draft, width: t.width, height: t.height,
+      const s: Sample = { estimated:t.estimated, at: paint, kind: t.kind, draft: t.draft, width: t.width, height: t.height,
                           edits: t.edits, total: paint - start, stages, modules: t.modules,
                           ...(label ? { label } : {}) };
       this.samples.push(s);
