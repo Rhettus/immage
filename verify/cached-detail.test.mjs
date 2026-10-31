@@ -95,8 +95,8 @@ test('native renders train the cache and release discards it for an exact full r
 
 
 test('adaptive color eligibility and normalized prediction error',()=>{
-  for(const id of ['exposure','vibrance','saturation','texture'])assert.equal(isCachedControl(id),true);
-  for(const id of ['temp','highlights','l_exposure'])assert.equal(isCachedControl(id),false);
+  for(const id of ['temp','tint','exposure','contrast','highlights','shadows','whites','blacks','texture','clarity','dehaze','vibrance','saturation'])assert.equal(isCachedControl(id),true);
+  for(const id of ['profile','bw_mode','tc_highlights','l_exposure'])assert.equal(isCachedControl(id),false);
   assert.equal(isDetailControl('exposure'),false);
   assert.deepEqual(predictionError(pixels(0,0,0,0),pixels(0,0,0,255)),{mean:0,p95:0});
   const error=predictionError(pixels(0,0,0,255),pixels(255,0,0,255));
@@ -189,4 +189,21 @@ test('release during an in-flight anchor discards it and renders the latest exac
   assert.equal(shown.length,count+1);
   assert.equal(shown.at(-1).view.draft,false);
   assert.equal(shown.at(-1).pixels[0],105);
+});
+
+// Keep cache support aligned with every continuous slider in Basic.
+test('every Basic slider supports adaptive caching without extending the loupe',async()=>{
+  const {panels}=await import('../app/src/manifest.ts');
+  const basic=panels.find(p=>p.id==='basic');
+  for(const control of basic.sections.flatMap(section=>section.controls ?? [])) {
+    if(control.kind==='choice')continue;
+    assert.equal(isCachedControl(control.id),true,control.id);
+  }
+  for(const id of ['temp','tint','highlights','shadows','whites','blacks']) {
+    assert.equal(isDetailControl(id),false,id);
+    const {s}=session();s.values[id]=0;s.set(id,1);
+    assert.equal(s.detailCache.id,id);
+    assert.equal(s.activeDetailControl,null);
+    s.requestRender();assert.equal(s.detailCache,null);
+  }
 });

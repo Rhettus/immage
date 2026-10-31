@@ -782,7 +782,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                   </div>
                 </PrefRow>
                 <PrefRow label="Adaptive cached preview"
-                         hint="experimental: exposure, vibrance, saturation and detail drags estimate between recent full renders. periodic native renders check accuracy; release gives the accurate result">
+                         hint="experimental: all Basic sliders and detail drags estimate between recent full renders. periodic native renders check accuracy; release gives the accurate result">
                   <div className="segmented small">
                     {[false, true].map((on) => (
                       <button key={String(on)} className={cachedDetail === on ? "active" : ""}

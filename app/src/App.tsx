@@ -15,7 +15,7 @@ import { BANDS, choiceOn, choiceShows, controlById, GUIDE_IDS, guidesOf, isModul
 import { autoArea, autoBlack, autoDmax, autoDmin, autoExposure as autoPrintExposure, autoOffset, autoWbHigh, autoWbLow,
          FILM_BW, FILM_COLOR, fromValues, PRESETS, toValues, type Stats } from "./negadoctor";
 import { NegativePanel, type NegPick } from "./NegativePanel";
-import { CircleOff, Grid2x2, MoveHorizontal, MoveVertical, PenLine, Sparkles, WandSparkles } from "lucide-react";
+import { CircleOff, Grid2x2, ScanSearch, MoveHorizontal, MoveVertical, PenLine, Sparkles, WandSparkles } from "lucide-react";
 import { Session, framePlace, instanceKey, mapOpOf, type Frame, type HistoryItem, type ModuleState, type View } from "./session";
 import { AUTO_TONE_IDS, autoExposure, autoTone, type SceneKey } from "./autoTone";
 import { curve } from "./tonecurve";
@@ -4922,10 +4922,10 @@ export default function App() {
             <canvas ref={loupeCanvas} className="layer" style={{ display: "none", pointerEvents: "none", zIndex: 5, outline: "1px solid white" }} />
             {current && detailActive && !cropping && !before && baMode === "off" && <>
               <button style={{ position: "absolute", top: 12, right: 12, zIndex: 9 }}
-                aria-pressed={loupeEnabled} title="Adaptive detail loupe: drag its handle to choose the preview area"
+                aria-label="Toggle detail loupe" aria-pressed={loupeEnabled} title="Adaptive detail loupe: drag its handle to choose the preview area"
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={() => { setLoupeEnabled(!loupeEnabled); if (loupeCanvas.current) loupeCanvas.current.style.display = "none"; }}>
-                Detail loupe {loupeEnabled ? "on" : "off"}
+                <ScanSearch size={16} aria-hidden="true" />
               </button>
               {loupeEnabled && loupeShown && <button aria-label="Move detail loupe" title="Drag to place the detail preview; arrow keys move it"
                 onKeyDown={(e) => {
