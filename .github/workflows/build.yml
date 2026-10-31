@@ -269,10 +269,10 @@ jobs:
           sudo add-apt-repository -y ppa:savoury1/display
           sudo apt-get update
           packages=$(grep -v '^#' .github/ubuntu-packages.txt)
-          # these PPA packages are not published for jammy ARM64;
-          # build_linux_deps.sh builds their libraries from source instead
+          # jammy ARM64 lacks these PPA versions; its OpenEXR 2
+          # conflicts with Imath 3. build_linux_deps.sh supplies them
           if [ "$(uname -m)" = aarch64 ]; then
-            packages=$(printf '%s\n' "$packages" | grep -Ev '^(libjxl-dev|libsharpyuv-dev)$')
+            packages=$(printf '%s\n' "$packages" | grep -Ev '^(libjxl-dev|libsharpyuv-dev|libopenexr-dev)$')
           fi
           sudo apt-get install -y $packages
       - uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24

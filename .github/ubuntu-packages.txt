@@ -50,7 +50,7 @@ zlib1g-dev
 libjpeg-turbo8-dev
 libopenjp2-7-dev
 # from the PPAs: newer image-format libraries than Ubuntu 22.04 ships.
-# on ARM64, build.yml omits libjxl-dev and libsharpyuv-dev below;
+# on ARM64, build.yml omits libjxl-dev, libsharpyuv-dev and libopenexr-dev;
 # build_linux_deps.sh builds their libraries from source instead
 libavif-dev
 libjxl-dev
@@ -68,6 +68,8 @@ libopenh264-dev
 libsharpyuv-dev
 libinih-dev
 libbrotli-dev
+# OpenEXR on ARM64 uses the system libdeflate instead of fetching a private copy
+libdeflate-dev
 libexpat1-dev
 
 # Tauri
