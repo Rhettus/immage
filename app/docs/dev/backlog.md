@@ -35,9 +35,13 @@ measured reduction until new reports exist.
    reduction remains a possible follow-up alongside item 5; its existing sample
    positions and spatial scope input are unchanged. Kernel/worker checks and the
    frontend build pass; matching GUI CPU measurements remain outstanding.
-4. Retain reusable GPU anchor textures across exact native refreshes. Drawing
-   an exact frame as A=B currently retires the older anchor; the next estimate
-   may upload it again. Bound the texture pool and test memory/context recovery.
+4. Implemented: exact A=B GPU draws preserve the preceding compatible anchor.
+   The next estimate reuses both textures; the pool evicts the least recently
+   used unrequested anchor before an upload, retaining at most two textures
+   within the existing 256 MiB limit. Dimension changes, reset and context loss
+   clear incompatible resources. Chromium/SwiftShader browser checks pass at
+   1080p and 4K, including pixel parity, reuse, eviction and context recovery;
+   hardware WebKit and cross-platform GUI measurements remain outstanding.
 5. Give histogram/scope updates a slower interactive cadence (e.g. 10–15 Hz),
    always update after release, and prioritize preview work over auxiliary
    pixel jobs. Subscription isolation alone does not reduce computation rate.
