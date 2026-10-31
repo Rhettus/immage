@@ -5,7 +5,7 @@
 // edits. edits are coalesced: while a render is in flight, further moves
 // only mark their module dirty, and the next round sends the latest values once
 import { invoke } from "@tauri-apps/api/core";
-import { boundFields, choiceCovers, choiceOn, controlById, isModuleSetting, localFields, localMaps, mapOf, mapsFor,
+import { boundFields, choiceCovers, choiceOn, controlById, isModuleSetting, localControlById, localFields, localMaps, mapOf, mapsFor,
          mapsWith, MODULE_CHOICES, modules, NEG_CHOICES, NEG_OFF, turnOrientation, turnRect, type ImageContext,
          type ModuleMap, type Params, type Turn, type Values } from "./manifest";
 import { loadModuleChoice } from "./moduleChoice";
@@ -450,7 +450,7 @@ export class Session {
         const inst = r.instances[m.op];
         if (inst) Object.assign(values, m.read(inst.params, {}, this.ctx));
       }
-      for (const [id, v] of Object.entries(values)) values[id] = Math.round(v * 100) / 100;
+      for (const [id, v] of Object.entries(values)) values[id] = id.startsWith("l_detail_") ? v : Math.round(v * 100) / 100;
       const insts = Object.values(r.instances);
       const hidden = insts.length > 0 && insts.every((i) => !i.enabled) && !r.merged_in?.length
         && Object.entries(values).some(([id, v]) => v !== neutral[id]);
@@ -642,7 +642,8 @@ export class Session {
         // a module the photo's tool no longer runs on (MODULE_CHOICES) stays
         // off
         // a mask sharing an instance keeps its own off, holding its settings
-        const holds = map.controls.some((id) => m.values[id] !== 0);
+        const holds = map.enabled ? map.enabled(m.values)
+          : map.controls.some((id) => m.values[id] !== (localControlById.get(id)?.neutral ?? 0));
         const shares = plan.merged.get(name)?.has(op) ?? false;
         const on = !shares && !this.before && !m.hidden && choiceOn(map, this.values) && holds;
         // refinements live in an instance's blend parameters: a mask with

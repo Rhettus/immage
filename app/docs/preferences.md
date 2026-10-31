@@ -187,6 +187,13 @@ from these:
 - **Sharpening**: sharpen, or diffuse or sharpen
 - **Defringe** (masks only): chromatic aberrations, or defringe
 
+Clarity and Texture can each use **contrast & texture** under Custom modules.
+Selecting it replaces the corresponding slider with the module's Coarse,
+Medium and Fine details, Base detail level, Halo control, Noise bias, Shadows
+and Highlights sliders, using darktable's ranges and defaults. This also
+applies to masks. Clarity and Texture use separate instances. The existing
+modules remain the defaults; contrast & texture currently runs on the CPU.
+
 The tab also lists the module behind each of the other tools. A photo that
 already uses one of a tool's modules keeps it, so its edit looks the same;
 the choice applies to the tools a photo hasn't used yet, from the next
