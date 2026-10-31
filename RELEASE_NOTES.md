@@ -3,6 +3,20 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
+## Experimental Linux renderer build
+
+- GUI benchmarks now record CPU usage per core and process, RAM and swap,
+  supported GPU/VRAM counters, and the busiest Linux threads to help identify
+  single-thread bottlenecks. The dashboard shows resource use by step,
+  frame pacing, UI stalls and rendering-path evidence.
+
+- Preferences > Performance has a Window renderer choice: Automatic,
+  Mesa or NVIDIA. Relaunch to switch paths, then run the GUI benchmark
+  to compare them on the same build. Photo processing keeps its own
+  GPU setting.
+- Experimental Linux AppImages use WebKitGTK 2.54.2's new compositor,
+  built on Ubuntu 26.04 for x64 and ARM64.
+
 ## 0.40.0
 
 This release comes early, for one bug big enough to have a release of
