@@ -63,7 +63,7 @@ Immage keeps to make it so.
   - **Quality** renders every frame in full, even while you drag.
   - **Balanced**, the default, renders at half size while a slider, wheel
     or curve moves, about four times as fast, and in full on release.
-    **Balanced preview size** offers 50% (the default) and 100%. At 100%,
+    **Balanced preview size** offers 50% (the default), 75%, and 100%. At 100%,
     drag previews stay full size and automatic smaller drafts are disabled.
     Grain, Texture and Sharpening are left out until release, unless they
     are what you are dragging. They are also left out of the zoomed-out
@@ -224,12 +224,15 @@ card away until Immage next starts; **Skip This Version** waits for the
 one after. Updates are signed, and one whose signature does not match is
 not installed.
 
-Cached exposure preview (Performance → Editing) is an optional experimental preview, off by default. Exposure drags adjust a frozen rendered viewport, retaining sharpening and texture. It approximates exposure in display space and cannot recover clipped detail. Releasing the slider runs the normal accurate render. Other controls use the selected Preview mode.
+Cached detail preview (Performance → Editing) is experimental and off by default.
+For global Texture, Clarity, Contrast, Dehaze and detail controls, it interpolates
+recent full renders of the same control while the native pipeline keeps working.
+It needs two distinct rendered values and only extrapolates near those values;
+other changes, a new view, or release discard the cache. Release always renders
+the accurate result. Exposure uses the normal native preview. The loupe controls
+appear only while detail sliders are in use, and the move handle appears only
+when the loupe itself is shown.
 
-The viewer's **Detail loupe** button enables adaptive previews for sharpening,
-clarity, texture, contrast, and denoise. They retain all modules and the current
-view scale. If two full-view previews exceed the Performance target frame time,
-subsequent frames update a 240-pixel detail area only; the surroundings keep
-the previous frame. Drag the crosshair to choose that area before adjusting a
-slider. Releasing the slider renders the full visible view. Each new drag
-tries the full view again so faster adjustments can use the whole viewport.
+The performance tuner defaults to an 80 ms latency target. It uses the median
+of the middle 10–90% of measured frame intervals and input-to-paint latencies,
+then selects the highest tested preview quality meeting both targets.

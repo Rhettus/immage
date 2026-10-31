@@ -3,38 +3,46 @@
 import type { Sample } from "./perf";
 import type { Preview } from "./Preferences";
 
-export type TunerSettings = { preview: Preview; balancedSize: number; smallest: number; draftTarget: number; cachedExposure: boolean };
+export type TunerSettings = { preview: Preview; balancedSize: number; smallest: number; draftTarget: number; cachedDetail: boolean };
 export type TunerContext = { photo:string; width:number; height:number; dpr:number };
 export type TunerRun = { context?: TunerContext; valid?: boolean; path: string; samples: Sample[]; phases: { atMs: number; label: string }[] };
 export type TunerMeasurement = { fps: number; latency: number; complete: boolean; modules: [string, number][] };
 
+// discard each outer decile by rank, then take the median of the retained frames
+export function trimmedMedian(values: number[]): number {
+  const sorted = values.filter((v) => Number.isFinite(v) && v >= 0).sort((a,b) => a-b);
+  if (!sorted.length) return Infinity;
+  const cut = Math.floor(sorted.length*0.1);
+  const middle = sorted.slice(cut,sorted.length-cut), at = Math.floor(middle.length/2);
+  return middle.length%2 ? middle[at] : (middle[at-1]+middle[at])/2;
+}
+
 export function measureTuner(run: TunerRun): TunerMeasurement {
-  const drags = run.phases.flatMap((phase, i) => {
-    if (!phase.label.endsWith(" drag") || !run.phases[i + 1]) return [];
-    const end = run.phases[i + 1].atMs;
-    const samples = run.samples.filter((s) => s.kind === "edit" && s.at >= phase.atMs && s.at < end);
-    const times = samples.map((s) => s.total).filter((n) => Number.isFinite(n) && n >= 0).sort((a, b) => a - b);
-    return [{ fps: samples.length * 1000 / (end - phase.atMs), latency: times.length ? times[Math.ceil(times.length * 0.95) - 1] : Infinity, samples }];
+  const drags = run.phases.flatMap((phase,i) => {
+    if (!phase.label.endsWith(" drag") || !run.phases[i+1]) return [];
+    const end = run.phases[i+1].atMs;
+    return [run.samples.filter((s) => s.kind === "edit" && s.at >= phase.atMs && s.at < end).sort((a,b) => a.at-b.at)];
   });
-  const costs = new Map<string, number[]>();
-  for (const drag of drags) for (const sample of drag.samples) for (const m of sample.modules) {
+  const samples = drags.flat();
+  const intervals = drags.flatMap((frames) => frames.slice(1).map((s,i) => s.at-frames[i].at)).filter((v) => v>0);
+  const frameTime = trimmedMedian(intervals), costs = new Map<string,number[]>();
+  for (const sample of samples) for (const m of sample.modules) {
     if (m.kind !== "module" || !Number.isFinite(m.ms)) continue;
     const values = costs.get(m.label) ?? [];
-    values.push(m.ms); costs.set(m.label, values);
+    values.push(m.ms); costs.set(m.label,values);
   }
   return {
-    fps: drags.length ? Math.min(...drags.map((d) => d.fps)) : 0,
-    latency: drags.length ? Math.max(...drags.map((d) => d.latency)) : Infinity,
-    complete: run.valid !== false && drags.length >= 6 && drags.every((d) => d.samples.length >= 2 && Number.isFinite(d.latency)),
-    modules: [...costs].map(([name, times]): [string, number] => [name, times.reduce((a, b) => a + b, 0) / times.length])
-      .sort((a, b) => b[1] - a[1]).slice(0, 4),
+    fps: Number.isFinite(frameTime) && frameTime>0 ? 1000/frameTime : 0,
+    latency: trimmedMedian(samples.map((s) => s.total)),
+    complete: run.valid !== false && drags.length>=6 && drags.every((frames) => frames.length>=2 && frames.every((s) => Number.isFinite(s.total) && s.total>=0)),
+    modules: [...costs].map(([name,times]):[string,number] => [name,trimmedMedian(times)]).sort((a,b) => b[1]-a[1]).slice(0,4),
   };
 }
 
 export function tunerChanges(from: TunerSettings, to: TunerSettings): string[] {
   const changes: string[] = [];
-  if (from.cachedExposure !== to.cachedExposure) changes.push(`Cached exposure preview: ${to.cachedExposure ? "On" : "Off"}`);
-  if (from.preview !== to.preview) changes.push(`Preview: ${from.preview} → ${to.preview}${to.preview === "balanced" ? ". Grain, diffuse texture and sharpening are omitted while dragging" : ". Also omits noise reduction and HSL while dragging"}`);
+  if (from.cachedDetail !== to.cachedDetail) changes.push(`Cached detail preview: ${to.cachedDetail ? "On" : "Off"}`);
+  if (from.preview !== to.preview) changes.push(`Preview: ${from.preview} → ${to.preview}`);
   if (to.preview === "balanced" && from.balancedSize !== to.balancedSize) changes.push(`Balanced preview size: ${to.balancedSize * 100}%`);
   if (from.smallest !== to.smallest) changes.push(`Smaller drafts for slow sliders: ${to.smallest * 100}% of the selected preview size`);
   if (from.draftTarget !== to.draftTarget) changes.push(`Draft time: ${to.draftTarget} ms`);
@@ -43,10 +51,11 @@ export function tunerChanges(from: TunerSettings, to: TunerSettings): string[] {
 
 export type TunerTrial = { settings: TunerSettings; measurement: TunerMeasurement; path: string };
 export function tunerCandidates(): TunerSettings[] {
-  const full: TunerSettings = { preview: "quality", balancedSize: 1, smallest: 1, draftTarget: 40, cachedExposure: false };
+  const full: TunerSettings = { preview: "quality", balancedSize: 1, smallest: 1, draftTarget: 40, cachedDetail: false };
   return [
     full,
     { ...full, preview: "balanced" },
+    { ...full, preview: "balanced", balancedSize: 0.75 },
     { ...full, preview: "balanced", balancedSize: 0.5 },
     { ...full, preview: "balanced", balancedSize: 0.5, smallest: 0.7 },
     { ...full, preview: "balanced", balancedSize: 0.5, smallest: 0.5 },

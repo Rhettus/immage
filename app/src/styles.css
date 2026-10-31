@@ -2208,3 +2208,21 @@ input.switch:disabled { cursor: default; opacity: 0.4; }
             pointer-events: none; }
 .modal.neg-warn { width: min(520px, calc(100vw - 32px)); }
 .modal.neg-warn p { margin: 8px 0; line-height: 1.5; color: var(--text-2); }
+
+/* performance tuner: setup and result first, comparison tools on demand */
+.modal.tuner { width: 700px; max-width: 95vw; max-height: 90vh; }
+.tuner-section { padding: 0 0 12px; border-bottom: 1px solid var(--inset); }
+.tuner-section p, .tuner-details p { color: var(--text-2); line-height: 1.5; }
+.tuner-photo { color: var(--text-3); font-size: var(--fs-small); overflow-wrap: anywhere; }
+.tuner-targets, .tuner-metrics { display: flex; gap: 20px; flex-wrap: wrap; }
+.tuner-targets label { display: flex; align-items: center; gap: 8px; }
+.tuner-metrics { padding: 12px 0; }
+.tuner-metrics div { display: grid; gap: 4px; }
+.tuner-metrics strong { font-size: 22px; font-variant-numeric: tabular-nums; }
+.tuner-metrics span { color: var(--text-3); }
+.tuner-details { margin-top: 14px; }
+.tuner-details summary { cursor: pointer; color: var(--text-2); }
+.tuner table { width: 100%; margin: 12px 0; border-collapse: collapse; font-size: var(--fs-small); }
+.tuner th, .tuner td { padding: 7px 4px; text-align: left; border-bottom: 1px solid var(--inset); }
+.tuner-report { overflow-wrap: anywhere; }
+.tuner .modal-foot { flex-wrap: wrap; }

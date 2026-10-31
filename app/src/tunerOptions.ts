@@ -18,8 +18,8 @@ export async function tunerOptions(onOverlay: (on: boolean) => void): Promise<Tu
     options.push({ id, label, workload, values, current: String(current), running: running === undefined ? undefined : String(running), restart, set: async (v) => { await set(v); } });
   };
   add("preview", "Preview", "editing", choices(["quality", "balanced", "performance"]), prefs.loadPreview(), (v) => prefs.storePreview(v as prefs.Preview));
-  add("balancedSize", "Balanced preview size", "editing", [{label:"50%",value:"0.5"},{label:"100%",value:"1"}], prefs.loadBalancedPreviewSize(), (v) => prefs.storeBalancedPreviewSize(Number(v)));
-  add("cachedExposure", "Cached exposure preview", "editing", choices([false,true]), prefs.loadCachedExposurePreview(), (v) => prefs.storeCachedExposurePreview(v === "true"));
+  add("balancedSize", "Balanced preview size", "editing", prefs.BALANCED_PREVIEW_SIZES.map((size) => ({label:`${size*100}%`,value:String(size)})), prefs.loadBalancedPreviewSize(), (v) => prefs.storeBalancedPreviewSize(Number(v)));
+  add("cachedDetail", "Cached detail preview", "editing", choices([false,true]), prefs.loadCachedDetailPreview(), (v) => prefs.storeCachedDetailPreview(v === "true"));
   add("smallest", "Smaller drafts for slow sliders", "editing", choices(prefs.DRAFT_SMALLEST), prefs.loadDraftSmallest(), (v) => prefs.storeDraftSmallest(Number(v)));
   add("draftTarget", "Draft time (ms)", "editing", choices(prefs.DRAFT_TARGETS), prefs.loadDraftTarget(), (v) => prefs.storeDraftTarget(Number(v)));
   if (sharedFramesAvailable) add("sharedFrames", "Shared-memory frames", "editing", choices([false,true]), loadSharedFrames(), (v) => storeSharedFrames(v === "true"));

@@ -2,9 +2,9 @@
 // Copyright (C) 2026 the Immage authors
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { perf, observeWebview, percentiles } from "./perf";
-import { loadPreview, loadBalancedPreviewSize, loadDraftSmallest, loadDraftTarget, loadCachedExposurePreview } from "./Preferences";
-import { measureTuner, searchTuner, tunerChanges, type TunerSettings, type TunerRun, type TunerMeasurement, type TunerContext, type TunerTrial } from "./previewTuning";
+import { perf, observeWebview } from "./perf";
+import { loadPreview, loadBalancedPreviewSize, loadDraftSmallest, loadDraftTarget, loadCachedDetailPreview } from "./Preferences";
+import { measureTuner, searchTuner, trimmedMedian, tunerChanges, type TunerSettings, type TunerRun, type TunerMeasurement, type TunerContext, type TunerTrial } from "./previewTuning";
 import { tunerOptions, type TunerOption } from "./tunerOptions";
 import { startTunerWork, stopTunerWork, type WorkSample } from "./tunerWorkload";
 
@@ -14,11 +14,11 @@ type Pending = { fps: number; latency: number; work: WorkResult[]; navigationPen
 function loadPending(): Pending | null {
   try {
     const v = JSON.parse(localStorage.getItem(PENDING) ?? "null");
-    return v && [15,30,60].includes(v.fps) && [50,100,200].includes(v.latency) && Array.isArray(v.work) ? v : null;
+    return v && [15,30,60].includes(v.fps) && [50,80,100,200].includes(v.latency) && Array.isArray(v.work) ? v : null;
   } catch { return null; }
 }
 export const hasPendingTuner = () => !!loadPending();
-const settings = (): TunerSettings => ({ preview:loadPreview(), balancedSize:loadBalancedPreviewSize(), smallest:loadDraftSmallest(), draftTarget:loadDraftTarget(), cachedExposure:loadCachedExposurePreview() });
+const settings = (): TunerSettings => ({ preview:loadPreview(), balancedSize:loadBalancedPreviewSize(), smallest:loadDraftSmallest(), draftTarget:loadDraftTarget(), cachedDetail:loadCachedDetailPreview() });
 const navSamples = (samples: WorkSample[]) => samples.filter((s) => s.ok && (s.name === "Photo open" || s.name === "Immich original resolve"));
 
 export function PerformanceTuner({ run, onClose, onRelaunch, onOverlay, photo, raw, previewArea }: {
@@ -27,7 +27,7 @@ export function PerformanceTuner({ run, onClose, onRelaunch, onOverlay, photo, r
 }) {
   const pending = useRef(loadPending());
   const [fps, setFps] = useState(pending.current?.fps ?? 30);
-  const [latency, setLatency] = useState(pending.current?.latency ?? 100);
+  const [latency, setLatency] = useState(pending.current?.latency ?? 80);
   const [busy, setBusy] = useState(false);
   const [recording, setRecording] = useState(false);
   const lock = useRef(false);
@@ -76,7 +76,7 @@ export function PerformanceTuner({ run, onClose, onRelaunch, onOverlay, photo, r
     try {
       const all = await reload();
       const applySettings = async (s:TunerSettings) => {
-        for (const [id,value] of Object.entries({preview:s.preview,balancedSize:s.balancedSize,smallest:s.smallest,draftTarget:s.draftTarget,cachedExposure:s.cachedExposure})) {
+        for (const [id,value] of Object.entries({preview:s.preview,balancedSize:s.balancedSize,smallest:s.smallest,draftTarget:s.draftTarget,cachedDetail:s.cachedDetail})) {
           const option = all.find((o) => o.id === id);
           if (!option) throw new Error(`Missing tuner option: ${id}`);
           await option.set(String(value));
@@ -115,7 +115,7 @@ export function PerformanceTuner({ run, onClose, onRelaunch, onOverlay, photo, r
     lock.current = true; setBusy(true); setError("");
     const prior = Object.fromEntries(options.map((o) => [o.id,o.current]));
     // recommendations change only their named fields, never other unreviewed candidates
-    const updates = recommended && proposal ? { ...prior,preview:proposal.preview,balancedSize:String(proposal.balancedSize),smallest:String(proposal.smallest),draftTarget:String(proposal.draftTarget),cachedExposure:String(proposal.cachedExposure) } : chosen;
+    const updates = recommended && proposal ? { ...prior,preview:proposal.preview,balancedSize:String(proposal.balancedSize),smallest:String(proposal.smallest),draftTarget:String(proposal.draftTarget),cachedDetail:String(proposal.cachedDetail) } : chosen;
     const changed = options.filter((o) => updates[o.id] !== o.current);
     const applied: TunerOption[] = [];
     try {
@@ -184,47 +184,60 @@ export function PerformanceTuner({ run, onClose, onRelaunch, onOverlay, photo, r
     <button className="btn" onClick={() => void finish()}>Stop and compare</button>
   </div>;
   if (busy) return <div className="modal-backdrop" style={{background:"transparent"}}><div role="status" style={{alignSelf:"flex-end",background:"var(--panel)",padding:16}}>{progress || "Performance tuner: measuring or applying settings…"} Leave the app in front and wait.</div></div>;
-  return <div className="modal-backdrop"><div className="modal" role="dialog" aria-modal="true" aria-labelledby="tuner-title" style={{width:820,maxWidth:"95vw",maxHeight:"90vh"}}>
+  return <div className="modal-backdrop"><div className="modal tuner" role="dialog" aria-modal="true" aria-labelledby="tuner-title">
     <div className="modal-head"><h2 id="tuner-title">Performance tuner</h2></div>
-    <div className="modal-body" style={{overflowY:"auto"}}>
-      <p><strong>Before running: load a representative RAW file from your typical work, and size the window as you normally use it.</strong> Use a copy with a typical edit, including the modules and masks you normally use. Camera resolution, edits and preview area affect the result.</p>
-      {photo && <p>Current photo: {photo.split(/[\\/]/).pop()}{raw === false ? " (not a RAW file; choose a representative RAW for useful recommendations)" : ""}. {previewArea ? `Preview area: ${Math.round(previewArea.w)} × ${Math.round(previewArea.h)} pixels.` : ""}</p>}
-      <p>Starts with full-quality previews and tests progressively lighter settings on the open photo at this window size. Stops at the highest-quality tested setup that meets both targets. Your settings are restored until you choose Apply. Sliders return to their starting values, but the benchmark adds history; use a copy of a photo you care about.</p>
-      <label>Target FPS <select className="field" value={fps} onChange={(e) => {setFps(Number(e.target.value));setVerified(false);}}>{[15,30,60].map((n) => <option key={n}>{n}</option>)}</select></label>{" "}
-      <label>Maximum latency <select className="field" value={latency} onChange={(e) => {setLatency(Number(e.target.value));setVerified(false);}}>{[50,100,200].map((n) => <option key={n} value={n}>{n} ms</option>)}</select></label>
-      <p>Editing targets apply to the slowest slider: rendered photo FPS per drag and the worst drag's 95th percentile input-to-paint latency.</p>
-      {result && <>
-        <p role="status">{passed ? verified ? "Verified: editing targets reached." : proposal ? "The highest-quality passing preview is ready to apply." : "Current settings meet the editing targets." : "Editing targets not reached."} Slowest drag: {result.fps.toFixed(1)} FPS; worst latency: {Number.isFinite(result.latency) ? `${result.latency.toFixed(0)} ms` : "unavailable"}.</p>
-        {!result.complete && <p>The run had too few frames, was backgrounded, or the viewport changed. Repeat it with the app visible at the same window size.</p>}
-        {changes.length > 0 && <><p>Recommended next adjustments in Preferences → Performance:</p><ul>{changes.map((c) => <li key={c}>{c}</li>)}</ul><p>Smaller previews are softer while dragging. Apply measures again to check the targets.</p></>}
-        {!passed && !proposal && <p>Compare the other options below or lower the targets.</p>}
-        {result.modules.length > 0 && <p>Costliest measured modules: {result.modules.map(([n,ms]) => `${n} (${ms.toFixed(1)} ms per execution)`).join(", ")}. Module alternatives can change the image: compare them on a copy in Preferences → Modules.</p>}
-        {path && <p style={{overflowWrap:"anywhere"}}>Editing report: {path}</p>}
-      </>}
-      {testedSettings && <p>Tested preview: {testedSettings.preview}{testedSettings.preview === "balanced" ? ` ${testedSettings.balancedSize*100}%` : ""}; smallest draft: {testedSettings.smallest*100}%.</p>}
-      {trials.length > 0 && <details><summary>Quality search: {trials.length} measured configurations</summary><table><thead><tr><th>Preview</th><th>Smallest draft</th><th>FPS</th><th>Latency p95</th></tr></thead><tbody>{trials.map((t,i) => <tr key={i}><td>{t.settings.preview}{t.settings.preview === "balanced" ? ` ${t.settings.balancedSize*100}%` : ""}</td><td>{t.settings.smallest*100}%</td><td>{t.measurement.fps.toFixed(1)}</td><td>{Number.isFinite(t.measurement.latency) ? `${t.measurement.latency.toFixed(0)} ms` : "unavailable"}</td></tr>)}</tbody></table></details>}
-      <details><summary>Performance options: measure and change</summary>
-        <p>Choose candidates, then Apply and verify. Editing options rerun the GUI benchmark. Navigation options require recording the same work before and after applying. Warm caches and different photos affect comparisons. Reducing the originals cache can evict downloaded originals; edited originals are retained.</p>
-        <table style={{width:"100%"}}><thead><tr><th>Option</th><th>Candidate</th><th>Measurement</th></tr></thead><tbody>{options.map((o) => <tr key={o.id}><td>{o.label}{o.restart ? " (relaunch)" : ""}</td><td><select aria-label={o.label} className="field" value={chosen[o.id] ?? o.current} onChange={(e) => setChosen((old) => ({...old,[o.id]:e.target.value}))}>{o.values.map((v) => <option key={v.value} value={v.value}>{v.label}{v.value === o.current ? " (current)" : ""}</option>)}</select></td><td>{o.workload}</td></tr>)}</tbody></table>
-        <p>Unavailable hardware options are omitted. Balanced size affects Balanced only; full-size Balanced disables smaller drafts. Memory and cache limits need workloads large enough to exercise their limits. AI acceleration and thumbnail caches are excluded.</p>
-      </details>
-      <p><button className="btn" onClick={() => void record()}>Record navigation workload</button> Step through the same photos in both directions, pausing for read ahead. To test Immich originals, reopen the same Immich photos.</p>
-      <p>Recording includes frame timing and resource usage. Reports retain settings and cache usage. This measures photo opening separately from slider FPS.</p>
-      {selected.length > 0 && !result && <p>Run the editing benchmark before applying candidates, to keep a baseline.</p>}
-      {needsBaseline && <p>Record a navigation baseline before applying the selected navigation settings.</p>}
-      {navigationPending && <p>Navigation verification pending. Record the same navigation workload again before judging the changed settings.</p>}
-      {work.length > 0 && <table style={{width:"100%"}}><thead><tr><th>Navigation run</th><th>Completed operations</th><th>Operation p95</th></tr></thead><tbody>{work.map((r,i) => {
-        const samples = navSamples(r.samples), names = [...new Set(samples.map((s) => s.name))];
-        return <tr key={i}><td title={r.path}>{i+1}</td><td>{names.map((n) => `${n}: ${samples.filter((s) => s.name === n).length}`).join("; ") || "Unmeasured"}</td><td>{names.map((n) => `${n}: ${percentiles(samples.filter((s) => s.name === n).map((s) => s.ms)).p95.toFixed(1)} ms`).join("; ")}</td></tr>;
-      })}</tbody></table>}
+    <div className="modal-body">
+      <section className="tuner-section">
+        <h3>1. Prepare</h3>
+        <p>Load a representative RAW with your usual edits. Use your normal window size and a copy of the photo.</p>
+        <div className="tuner-photo">{photo?.split(/[\\/]/).pop() ?? "Open photo"}{previewArea && ` · ${Math.round(previewArea.w)} × ${Math.round(previewArea.h)} px`}</div>
+        {raw === false && <p role="alert">Choose a representative RAW for useful recommendations.</p>}
+      </section>
+      <section className="tuner-section">
+        <h3>2. Set targets</h3>
+        <div className="tuner-targets">
+          <label>Frame rate <select className="field" value={fps} onChange={(e) => {setFps(Number(e.target.value));setVerified(false);setResult(null);setProposal(null);}}>{[15,30,60].map((n) => <option key={n} value={n}>{n} FPS</option>)}</select></label>
+          <label>Maximum latency <select className="field" value={latency} onChange={(e) => {setLatency(Number(e.target.value));setVerified(false);setResult(null);setProposal(null);}}>{[50,80,100,200].map((n) => <option key={n} value={n}>{n} ms</option>)}</select></label>
+        </div>
+        <p>Starts at full quality. Stops at the highest tested quality meeting both targets.</p>
+      </section>
+      {result && <section className="tuner-section">
+        <h3>3. {verified ? "Verification" : "Recommendation"}</h3>
+        <p role="status">{passed ? verified ? "Verified: targets reached." : proposal ? "Ready to apply." : "Current settings meet the targets." : "Targets not reached."}</p>
+        <div className="tuner-metrics"><div><strong>{result.fps.toFixed(1)} FPS</strong><span>Median frame rate</span></div><div><strong>{Number.isFinite(result.latency) ? `${result.latency.toFixed(0)} ms` : "Unavailable"}</strong><span>Median latency</span></div></div>
+        {changes.length>0 && <ul>{changes.map((c) => <li key={c}>{c}</li>)}</ul>}
+        {!result.complete && <p>Incomplete measurement. Keep the app visible at the same size and retry.</p>}
+        {testedSettings && <p className="tuner-photo">{testedSettings.preview}{testedSettings.preview === "balanced" ? ` ${testedSettings.balancedSize*100}%` : ""} · minimum draft {testedSettings.smallest*100}%</p>}
+      </section>}
       {error && <p role="alert">{error}</p>}
+      {navigationPending && <p role="status">Navigation verification pending; record the same sequence again below.</p>}
+      <details className="tuner-details"><summary>Advanced comparisons</summary>
+        <p>Change one option at a time, then apply and verify. AI and thumbnail caches are excluded.</p>
+        <button className="btn" onClick={() => void startMeasure()}>Measure current settings</button>
+        <table><thead><tr><th>Option</th><th>Candidate</th><th>Test</th></tr></thead><tbody>{options.map((o) => <tr key={o.id}><td>{o.label}{o.restart ? " · relaunch" : ""}</td><td><select aria-label={o.label} className="field" value={chosen[o.id] ?? o.current} onChange={(e) => setChosen((old) => ({...old,[o.id]:e.target.value}))}>{o.values.map((v) => <option key={v.value} value={v.value}>{v.label}{v.value === o.current ? " (current)" : ""}</option>)}</select></td><td>{o.workload}</td></tr>)}</tbody></table>
+        {selected.length>0 && <button className="btn" disabled={needsBaseline || !result} onClick={() => void apply(false)}>{restart ? "Apply, relaunch and verify" : "Apply selected and verify"}</button>}
+        {selected.length>0 && !result && <p>Measure current settings first.</p>}
+        {needsBaseline && <p>Record a navigation baseline first.</p>}
+        <h3>Navigation</h3>
+        <p>Record the same photo sequence before and after changing read ahead or the originals cache. Include both directions. Smaller cache limits can evict downloaded originals; edited originals are retained.</p>
+        <button className="btn" onClick={() => void record()}>Record navigation workload</button>
+        {work.length>0 && <table><thead><tr><th>Run</th><th>Operation</th><th>Median</th></tr></thead><tbody>{work.flatMap((r,i) => {
+          const samples=navSamples(r.samples), names=[...new Set(samples.map((v) => v.name))];
+          return names.map((name) => <tr key={`${i}-${name}`}><td title={r.path}>{i+1}</td><td>{name}</td><td>{trimmedMedian(samples.filter((v) => v.name===name).map((v) => v.ms)).toFixed(1)} ms</td></tr>);
+        })}</tbody></table>}
+      </details>
+      <details className="tuner-details"><summary>Measurements and reports</summary>
+        <p>Recommendations use the median after removing the fastest and slowest 10% of drag-frame measurements. FPS comes from intervals between painted photo frames; latency measures input to paint.</p>
+        <p>Sliders return to their starting values; benchmark moves add history. Original preferences are restored before Apply. Applying runs verification again.</p>
+        {trials.length>0 && <table><thead><tr><th>Preview</th><th>Minimum draft</th><th>Median FPS</th><th>Median latency</th></tr></thead><tbody>{trials.map((t,i) => <tr key={i}><td>{t.settings.preview}{t.settings.preview === "balanced" ? ` ${t.settings.balancedSize*100}%` : ""}</td><td>{t.settings.smallest*100}%</td><td>{t.measurement.fps.toFixed(1)}</td><td>{Number.isFinite(t.measurement.latency) ? `${t.measurement.latency.toFixed(0)} ms` : "unavailable"}</td></tr>)}</tbody></table>}
+        {result?.modules.length ? <p>Costliest modules: {result.modules.map(([name,ms]) => `${name}: ${ms.toFixed(1)} ms`).join(", ")}.</p> : null}
+        {path && <p className="tuner-report">Report: {path}</p>}
+      </details>
     </div>
-    <div className="modal-foot" style={{flexWrap:"wrap"}}>
-      <button className="btn" onClick={close}>{result ? "Cancel remaining adjustments" : "Cancel"}</button>
-      <button className="btn" onClick={() => void search()}>Find best preview</button>
-      <button className="btn" onClick={() => void startMeasure()}>Measure current settings</button>
-      {proposal && <button className="btn primary" onClick={() => void apply(true)}>Apply recommendation and verify</button>}
-      {selected.length > 0 && <button className="btn primary" disabled={needsBaseline || !result} onClick={() => void apply(false)}>{restart ? "Apply, relaunch and verify" : "Apply selected and verify"}</button>}
+    <div className="modal-foot">
+      <button className="btn" onClick={close}>{verified ? "Done" : "Cancel"}</button>
+      <button className={`btn${proposal ? "" : " primary"}`} onClick={() => void search()}>Find best preview</button>
+      {proposal && <button className="btn primary" onClick={() => void apply(true)}>Apply and verify</button>}
     </div>
   </div></div>;
 }

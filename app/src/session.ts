@@ -15,7 +15,7 @@ import type { Spot } from "./spots";
 import { begin, end, progress } from "./activity";
 import { perf, type Trace } from "./perf";
 import { FRAME_HEAD, renderFrame } from "./sharedFrames";
-import { exposurePreview } from "./cachedExposure";
+import { interpolateDetail, isDetailControl } from "./cachedDetail";
 import type { Preview } from "./Preferences";
 
 
@@ -333,7 +333,18 @@ export class Session {
   set(id: string, v: number) {
     if (!mapOf.has(id)) return;
     perf.input();
-    const startExposure = this.values.exposure;
+    const inputAt = performance.now();
+    const from = this.values[id];
+    this.activeDetailControl = this.size().draft && isDetailControl(id) ? id : null;
+    this.onDetailControl?.(this.activeDetailControl);
+    const eligible = this.activeDetailControl && this.cachedDetailPreview() && !this.before && !this.masksPending;
+    if (eligible) {
+      const key = this.frameKey(this.fullView(),false), c = controlById.get(id)!;
+      if (this.detailCache?.id !== id || this.detailCache.key !== key) {
+        const frame = !this.busy && !this.dirty.size ? this.current.get(key) : undefined;
+        this.detailCache = {id,key,range:c.max-c.min,b:frame ? {frame,value:from} : undefined};
+      }
+    } else this.detailCache = null;
     this.values[id] = v;
     if (id === "orient") this.orient(v);
     if (id === "neg_on") this.negChanged();
@@ -341,22 +352,17 @@ export class Session {
       this.foreign.delete(m);
       this.dirty.add(m.op);
     }
-    if (id === "exposure" && this.cachedExposurePreview() && this.size().draft && !this.busy
-        && !this.before && !this.masksPending && this.dirty.size === 1 && this.dirty.has("exposure")) {
-      const view = this.fullView();
-      const key = this.frameKey(view, false);
-      const source = this.frozenExposure?.key === key ? this.frozenExposure : null;
-      const frame = source?.frame ?? this.current.get(key)
-        ?? (this.copy && view.scale === this.copy.view.scale ? this.cut(this.copy, view) : null);
-      if (frame) {
-        this.frozenExposure = source ?? { key, frame, exposure: startExposure };
-        const pixels = exposurePreview(frame.pixels, v - this.frozenExposure.exposure);
-        this.onFrame({ ...frame, pixels, hash: undefined, trace: undefined, ms: 0,
-                       view: { ...frame.view, draft: true } });
-        return;
+    const cache = this.detailCache;
+    if (cache?.a && cache.b) {
+      const pixels = interpolateDetail({pixels:cache.a.frame.pixels,value:cache.a.value},
+        {pixels:cache.b.frame.pixels,value:cache.b.value},v,cache.range);
+      if (pixels) {
+        const trace = perf.cached(cache.b.frame.width,cache.b.frame.height);
+        trace.kind = "edit"; trace.edits = 1; trace.inputAt = inputAt;
+        this.onFrame({...cache.b.frame,pixels,hash:undefined,trace,ms:0,
+          view:{...cache.b.frame.view,draft:true,detail:true}});
       }
     }
-    this.frozenExposure = null;
     this.needRender = true;
     void this.pump();
   }
@@ -502,6 +508,9 @@ export class Session {
   // every map of the control: Highlights and Shadows have one per module the
   // photo's tool can be on, and pump() sends only the chosen one
   setLocal(name: string, id: string, v: number) {
+    this.detailCache = null;
+    this.activeDetailControl = this.size().draft && isDetailControl(id) ? id : null;
+    this.onDetailControl?.(this.activeDetailControl);
     const ops = localMaps.filter((m) => m.controls.includes(id)).map((m) => m.op);
     if (!ops.length) return;
     this.masks = this.masks.map((m) => (m.name === name ? { ...m, values: { ...m.values, [id]: v } } : m));
@@ -774,6 +783,9 @@ export class Session {
   // several controls at once, as one round of edits (a point curve drag)
   setMany(entries: [string, number][]) {
     perf.input();
+    this.detailCache = null;
+    this.activeDetailControl = null;
+    this.onDetailControl?.(null);
     for (const [id, v] of entries) {
       if (!mapOf.has(id)) continue;
       this.values[id] = v;
@@ -788,12 +800,16 @@ export class Session {
     void this.pump();
   }
 
-  cachedExposurePreview: () => boolean = () => false;
+  cachedDetailPreview: () => boolean = () => false;
   fullView: () => View = () => this.size();
-  private frozenExposure: { key: string; frame: Frame; exposure: number } | null = null;
+  onDetailControl: ((id:string|null) => void) | null = null;
+  private activeDetailControl: string | null = null;
+  private detailCache: { id:string; key:string; range:number; a?:{frame:Frame;value:number}; b?:{frame:Frame;value:number} } | null = null;
 
   requestRender() {
-    this.frozenExposure = null;
+    this.detailCache = null;
+    this.activeDetailControl = null;
+    this.onDetailControl?.(null);
     this.needRender = true;
     void this.pump();
   }
@@ -886,7 +902,8 @@ export class Session {
     if (!view.draft) { this.detailKey = ""; this.detailSlow = 0; return view; }
     if (ops.length) this.detailOps = [...new Set(ops.map((op) => op.split("#")[0]))].sort().join();
     const detail = this.detailView();
-    const eligible = this.detailOps.split(",").every((op) =>
+    if (this.detailCache && this.activeDetailControl && this.cachedDetailPreview()) return {...this.fullView(),draft:true,detail:true};
+    const eligible = !!this.activeDetailControl && this.detailOps.split(",").every((op) =>
       ["diffuse", "sharpen", "contrastntexture", "denoiseprofile", "bilat", "localcontrast", "agx", "sigmoid", "rgbcurve", "tonecurve", "colorbalancergb"].includes(op));
     if (detail && eligible) {
       const full = this.fullView();
@@ -1024,8 +1041,8 @@ export class Session {
   }
   // what the engine renders changed: no frame shown is known to show it.
   // the copy is put aside, for the engine to name if the image comes back
-  private changed() {
-    this.frozenExposure = null;
+  private changed(keepDetail = false) {
+    if (!keepDetail) this.detailCache = null;
     this.current.clear();
     if (this.copy) {
       this.putAside = this.copy;
@@ -1262,7 +1279,7 @@ export class Session {
           this.draftKeep.add(op.split("#")[0]);
           return this.moduleEdit(op);
         });
-        if (ops.length) this.changed();
+        if (ops.length) this.changed(true);
         // the Before view is only for looking: nothing of it reaches the sidecar
         if (ops.length && !this.before) { this.unsaved = true; this.scheduleSave(); }
         this.needRender = false;
@@ -1277,7 +1294,12 @@ export class Session {
           this.onFrame({ ...this.cut(this.copy, view), before });
         } else {
           const have = view.draft ? [] : this.heldFor(key);
+          const cache = this.detailCache, cacheValue = cache ? this.values[cache.id] : undefined;
           const f = await this.renderView(view, ops.length ? "edit" : "view", cycle, false, have, edits);
+          if (cache && this.detailCache === cache && view.detail && !view.loupe && !before
+              && this.frameKey(view,false) === cache.key && cacheValue !== undefined && cache.b?.value !== cacheValue) {
+            cache.a = cache.b; cache.b = {frame:f,value:cacheValue};
+          }
           if (!view.draft) this.keepFrame(key, f);
           else this.draftTimed(f, edits.length);
           if (!before && !have.some((h) => h.hash === f.hash)) this.putAside = null;
