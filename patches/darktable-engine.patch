@@ -462,11 +462,86 @@ index 2afb4f5ba8..65a307692b 100644
        if(!res)
        {
          // use embedded JPEG if it is large enough or conf requests
+diff --git a/src/develop/pixelpipe_cache.c b/src/develop/pixelpipe_cache.c
+index a1bd507d81..3f1ffc1004 100644
+--- a/src/develop/pixelpipe_cache.c
++++ b/src/develop/pixelpipe_cache.c
+@@ -323,6 +323,11 @@ gboolean dt_dev_pixelpipe_cache_get(dt_dev_pixelpipe_t *pipe,
+   // Check both for free and non-matching (and grow or shrink buffer).
+   const int cline = _get_cacheline(pipe);
+
++  dt_print_pipe(DT_DEBUG_PIPE, "cache replace", pipe, module, DT_DEVICE_NONE, NULL, NULL,
++                "pipe=%p line=%d old_hash=%" PRIx64 " old_bytes=%zu old_order=%d age=%d new_hash=%" PRIx64,
++                (void *)pipe, cline, cache->hash[cline], cache->size[cline], cache->ioporder[cline],
++                cache->used[cline], hash);
++
+   if(((cache->entries == DT_PIPECACHE_MIN) && (cache->size[cline] < size))
+      || ((cache->entries > DT_PIPECACHE_MIN) && (cache->size[cline] != size)))
+   {
+@@ -377,6 +382,9 @@ void dt_dev_pixelpipe_cache_invalidate_later(dt_dev_pixelpipe_t *pipe,
+   {
+     if((cache->ioporder[k] >= order) && (cache->hash[k] != DT_INVALID_HASH))
+     {
++      dt_print_pipe(DT_DEBUG_PIPE, "cache invalidate", pipe, NULL, DT_DEVICE_NONE, NULL, NULL,
++                    "pipe=%p line=%d hash=%" PRIx64 " order=%d boundary=%d reason=%s",
++                    (void *)pipe, k, cache->hash[k], cache->ioporder[k], order, info ? info : "unspecified");
+       cache->hash[k] = DT_INVALID_HASH;
+       invalidated++;
+     }
+@@ -420,6 +428,9 @@ void dt_dev_pixelpipe_invalidate_cacheline(const dt_dev_pixelpipe_t *pipe,
+   {
+     if(cache->data[k] == data && cache->hash[k] != DT_INVALID_HASH)
+     {
++      dt_print_pipe(DT_DEBUG_PIPE, "cache invalidate", pipe, NULL, pipe->devid, NULL, NULL,
++                    "pipe=%p line=%d hash=%" PRIx64 " order=%d reason=%s",
++                    (void *)pipe, k, cache->hash[k], cache->ioporder[k], info ? info : "unspecified");
+       cache->hash[k] = DT_INVALID_HASH;
+       if(info)
+         dt_print_pipe(DT_DEBUG_PIPE, "invalidate cacheline", pipe, NULL, pipe->devid, NULL, NULL,
+@@ -450,6 +461,9 @@ void dt_dev_pixelpipe_clear_cacheline(dt_dev_pixelpipe_t *pipe,
+   {
+     if(cache->data[k] == data)
+     {
++      dt_print_pipe(DT_DEBUG_PIPE, "cache clear", pipe, NULL, pipe->devid, NULL, NULL,
++                    "pipe=%p line=%d hash=%" PRIx64 " bytes=%zu reason=%s",
++                    (void *)pipe, k, cache->hash[k], cache->size[k], info ? info : "unspecified");
+       _free_cacheline(cache, k);
+       if(info)
+         dt_print_pipe(DT_DEBUG_PIPE | DT_DEBUG_VERBOSE,
+@@ -513,6 +527,10 @@ void dt_dev_pixelpipe_cache_checkmem(dt_dev_pixelpipe_t *pipe, const gboolean tr
+     const int k = _get_oldest_cacheline(cache, DT_CACHETEST_USED);
+     if(k == 0) break;
+
++    dt_print_pipe(DT_DEBUG_PIPE, "cache evict", pipe, NULL, DT_DEVICE_NONE, NULL, NULL,
++                  "pipe=%p line=%d hash=%" PRIx64 " bytes=%zu order=%d age=%d trim=%d lowmem=%d limit=%zu",
++                  (void *)pipe, k, cache->hash[k], cache->size[k], cache->ioporder[k], cache->used[k],
++                  trim, lowmem, trim_limit);
+     freed += _free_cacheline(cache, k);
+     free_cnt++;
+   }
 diff --git a/src/develop/pixelpipe_hb.c b/src/develop/pixelpipe_hb.c
-index a7e5b88a37..47841d428f 100644
+index a7e5b88a37..119960fe82 100644
 --- a/src/develop/pixelpipe_hb.c
 +++ b/src/develop/pixelpipe_hb.c
-@@ -2550,14 +2550,25 @@ static gboolean _dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe,
+@@ -2221,6 +2221,17 @@ static gboolean _dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe,
+       && !pipe->nocache
+       && dt_dev_pixelpipe_cache_available(pipe, hash, bufsize);
+
++  // separate upstream parameter identity from geometry when tracing repeated raw work
++  if((darktable.unmuted & DT_DEBUG_PIPE) && !dev->gui_attached && module
++     && (!strcmp(module->op, "demosaic") || !strcmp(module->op, "demosaicscale")))
++    dt_print_pipe(DT_DEBUG_PIPE, "checkpoint lookup", pipe, module, pipe->devid,
++                  NULL, roi_out,
++                  "pipe=%p run=%" PRIu64 " hash=%" PRIx64 " state=%" PRIx64
++                  " bytes=%zu hit=%d nocache=%d masking=%d detail=%d scharr=%" PRIx64,
++                  (void *)pipe, pipe->runs, hash, dt_dev_pixelpipe_cache_hash(NULL, pipe, pos),
++                  bufsize, cache_available, pipe->nocache, pipe->mask_display,
++                  pipe->want_detail_mask, pipe->scharr.hash);
++
+   if(cache_available)
+   {
+     dt_dev_pixelpipe_cache_get(pipe, hash, bufsize,
+@@ -2550,14 +2561,25 @@ static gboolean _dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe,
 
    */
    const gboolean has_focus = module == dt_dev_gui_module() && module->enabled;
@@ -495,7 +570,7 @@ index a7e5b88a37..47841d428f 100644
 
  #ifdef HAVE_OPENCL
 
-@@ -3249,10 +3260,11 @@ static gboolean _dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe,
+@@ -3249,10 +3271,11 @@ static gboolean _dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe,
    if(important_input && input)
    {
      dt_print_pipe(DT_DEBUG_PIPE,
