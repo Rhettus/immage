@@ -5,6 +5,11 @@ what Immage's update banner shows under Release Notes.
 
 ## Experimental Linux renderer build
 
+- Opening folders reads TIFF-based RAW metadata from small prefixes where
+  possible. Grid thumbnails read suitable embedded JPEGs directly and decode
+  them closer to the grid size, reducing file reads and temporary memory.
+  Other preview layouts retain the full-read fallback.
+
 - Balanced previews add a 75% size. The tuner uses median timing from the
   middle 10–90% of frames, defaults to an 80 ms latency target, and groups
   setup, targets and recommendations with advanced comparisons folded away.
