@@ -159,15 +159,21 @@ async function check() {
     const view={width:a.width,height:a.height,scale:1,x:0,y:0,draft:true};
     const shown=[],estimates=[];
     const s=new Session(()=>view,f=>shown.push(f),error=>{throw Error(error);});
+    let dispatches=0;
+    const flush=s.flushEdits.bind(s);
+    s.flushEdits=()=>{dispatches++;flush();};
     s.pump=async()=>{};s.fullView=()=>view;s.cachedDetailPreview=()=>true;s.values={texture:0};
     s.set('texture',10);
     s.detailCache.a={frame:{...a,view},value:0};
     s.detailCache.b={frame:{...b,view},value:20};
     const before=renderer.stats.draws;
     s.onCachedPreview=p=>{estimates.push(p);return gpu&&renderer.draw(p,off);};
-    for(let i=1;i<=100;i++)s.set('texture',10+i*0.09);
+    dispatches=0;
+    for(let i=1;i<=100;i++)s.set('texture',10+i*0.09,true);
+    assert(dispatches===0,'burst submitted native work before the display frame');
     assert(estimates.length===0&&shown.length===0,'burst drew before the display frame');
     await new Promise(requestAnimationFrame);
+    assert(dispatches===1,'burst did not submit native work once per frame');
     assert(estimates.length===1&&estimates[0].mix===0.95,'display did not draw just the latest input');
     assert(estimates[0].frame.trace.edits===100,'coalesced trace lost input count');
     // CPU mixing may finish after the animation frame via its worker queue.
@@ -177,7 +183,7 @@ async function check() {
     }
     assert(shown.length===(gpu?0:1),'incorrect CPU fallback draw count');
     assert(renderer.stats.draws-before===(gpu?1:0),'GPU drew more than once per display frame');
-    s.set('texture',19.5);s.requestRender();
+    s.set('texture',19.5,true);s.requestRender();
     await new Promise(requestAnimationFrame);
     assert(estimates.length===1,'release did not cancel the queued display callback');
     scheduling.push({backend:gpu?'webgl':'cpu',inputs:100,draws:1,releaseCancelled:true});

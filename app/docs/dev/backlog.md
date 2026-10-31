@@ -49,10 +49,14 @@ measured reduction until new reports exist.
    blocking clipping jobs. Photo/crop changes and unmount cancel pending work.
    Cadence/release/cancellation tests and the frontend build pass; GUI CPU
    measurements remain outstanding.
-6. Coalesce engine slider submissions per display frame and ignore unchanged
-   values. Preserve immediate thumb feedback, final-value flushing, undo grouping,
-   keyboard/wheel/fine adjustment behavior, and batched multi-control wheel edits.
-   UI publication coalescing in item 1 deliberately keeps engine edits immediate.
+6. Implemented: interactive single and multi-control edits retain immediate
+   model/thumb feedback and undo recording, but defer engine dispatch to
+   the next display frame. Unchanged values are ignored. Wheel steps accumulate
+   against current model values; discrete keyboard/undo edits dispatch immediately.
+   Release flushes the latest exact edit even before the first draft is shown;
+   close and view changes cancel the queued dispatch through requestRender.
+   Tests cover bursts, batched wheel input, discrete edits, release and in-flight
+   rendering. Frontend build passes; GUI CPU measurements remain outstanding.
 7. Reduce repeated final-frame canvas/placement work: avoid unconditional base
    canvas resize, duplicate uploads and unchanged style writes; defer secondary
    navigator/base updates where appropriate without exposing stale images.

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Keep high-rate input publication separate from immediate engine edits.
+// keep high-rate input publication separate from immediate control feedback
 export class FrameUpdates<T> {
   private pending: ((value: T) => T)[] = [];
   private frame: number | null = null;
