@@ -40,6 +40,7 @@ globalThis.requestAnimationFrame=callback=>{const id=++nextFrame;animationFrames
 globalThis.cancelAnimationFrame=id=>animationFrames.delete(id);
 test.afterEach(()=>{assert.equal(animationFrames.size,0,'test left a queued preview');});
 const {Session}=await import('../app/src/session.ts');
+const {neutralLocal}=await import('../app/src/masks.ts');
 const full={width:1,height:1,scale:1,x:0,y:0};
 for (const change of ['pan','resize','release']) test(`ordinary in-flight preview is discarded after ${change}`,async()=>{
   let view={...full,draft:true},finish,started;
@@ -143,21 +144,25 @@ for (const mode of ['idle', 'disabled', 'moved']) test(`persistent loupe request
 test('module preferences refresh unused tools and preserve global and masked edits', () => {
   const storage = globalThis.localStorage;
   globalThis.localStorage = { getItem: key => key.endsWith('.mode') ? 'custom'
-    : key.endsWith('.choices') ? '{"clarity":1,"texture":1}' : null };
+    : (key.endsWith('.choices') || key.endsWith('.choices.masks')) ? '{"clarity":1,"texture":1}' : null };
   try {
-    const s = Object.create(Session.prototype);
+    const { s } = session();
     s.values = { mod_clarity: 0, mod_texture: 0, clarity: 0, texture: 0 };
     s.neutral = { clarity: 0, texture: 0 };
-    s.foreign = new Set(); s.maskOps = new Map();
+    s.foreign = new Set();
+    s.masks = [{ name: 'edited', values: { ...neutralLocal(), mod_texture: 0, l_texture: 20 } },
+      { name: 'unused', values: { ...neutralLocal(), mod_texture: 0, l_texture: 0 } }];
     s.set = (id, value) => { s.values[id] = value; };
     let updates = 0; s.onModules = () => updates++;
     s.refreshModuleChoices();
     assert.equal(s.values.mod_clarity, 1); assert.equal(s.values.mod_texture, 1);
     assert.equal(updates, 1);
+    assert.equal(s.masks[0].values.mod_texture, 0, 'edited mask keeps its module');
+    assert.equal(s.masks[0].values.l_texture, 20);
+    assert.equal(s.masks[1].values.mod_texture, 1, 'unused mask follows its preference');
     s.values = { mod_clarity: 0, mod_texture: 0, clarity: 20, texture: 0 };
-    s.maskOps.set('mask1', new Set(['diffuse']));
     s.refreshModuleChoices();
     assert.equal(s.values.mod_clarity, 0); assert.equal(s.values.clarity, 20);
-    assert.equal(s.values.mod_texture, 0);
+    assert.equal(s.values.mod_texture, 1, 'mask edits do not block unused global tools');
   } finally { globalThis.localStorage = storage; }
 });
