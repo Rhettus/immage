@@ -1260,8 +1260,8 @@ static gboolean _unbase64_into(const char *text, void *dst, const size_t size)
 // the History panel's switch and delete for one instance of the history,
 // found by op and multi_priority: `enabled` switches it, `reset` puts it
 // back to its defaults, on or off as darktable starts it, and `restore`
-// to a state an earlier reply gave (undo). a module without a switch, or
-// one a mask drives (the Masks panel's), is refused. replies the state
+// to a state an earlier reply gave (undo). modules without a switch and
+// masked modules permit reset/restore, but not an independent switch. replies the state
 // before and after
 static gboolean _module_state(const char *op, const int priority, const gboolean has_enabled,
                               const gboolean enabled, const gboolean reset, JsonObject *restore,
@@ -1273,7 +1273,8 @@ static gboolean _module_state(const char *op, const int priority, const gboolean
     *err = g_strdup_printf("module '%s' %d not in the pipe", op ? op : "(none)", priority);
     return FALSE;
   }
-  if(mod->hide_enable_button || (mod->blend_params && mod->blend_params->mask_id > 0))
+  if(!reset && !restore
+     && (mod->hide_enable_button || (mod->blend_params && mod->blend_params->mask_id > 0)))
   {
     *err = g_strdup_printf("module '%s' cannot be switched here", op);
     return FALSE;
@@ -1282,6 +1283,8 @@ static gboolean _module_state(const char *op, const int priority, const gboolean
   _module_state_json(b, mod);
   void *was = g_malloc(mod->params_size);
   memcpy(was, mod->params, mod->params_size);
+  dt_develop_blend_params_t was_blend = { 0 };
+  if(mod->blend_params) memcpy(&was_blend, mod->blend_params, sizeof(was_blend));
   const gboolean was_enabled = mod->enabled;
   if(restore)
   {
@@ -1300,10 +1303,11 @@ static gboolean _module_state(const char *op, const int priority, const gboolean
   else if(reset)
   {
     dt_iop_load_default_params(mod);
-    mod->enabled = mod->default_enabled;
+    mod->enabled = has_enabled ? enabled : mod->default_enabled;
   }
   else if(has_enabled) mod->enabled = enabled;
-  const gboolean same = mod->enabled == was_enabled && !memcmp(was, mod->params, mod->params_size);
+  const gboolean same = mod->enabled == was_enabled && !memcmp(was, mod->params, mod->params_size)
+    && (!mod->blend_params || !memcmp(&was_blend, mod->blend_params, sizeof(was_blend)));
   g_free(was);
   if(!same)
   {

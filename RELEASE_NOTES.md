@@ -94,6 +94,10 @@ Performance
 
 Bug fixes
 
+- Reset All clears native module settings as well as sliders, including edits
+  imported from darktable that Immage has no controls for. Legacy Filmic and
+  Base Curve tone mappers switch off so they cannot compress highlights after
+  Immage's tone mapper. The reset remains undoable.
 - Histogram graphs give clipped black and white peaks their full bin width,
   keeping endpoint spikes visible in scopes and tone curves.
 - Preview and final frames stay aligned on scaled displays when adjusting

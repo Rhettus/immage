@@ -212,6 +212,7 @@ export class Session {
   moduleStates = new Map<string, ModuleState>();
   private modulesOpened = new Map<string, ModuleState>();
   private modulePending: { key: string; op: string; priority: number; req: ModuleRequest }[] = [];
+  private resetModulesPending = false;
   // those deleted: switched off, and gone from the history at the next save
   // (the engine's _prune_off), or reset if darktable starts them on
   deleted = new Set<string>();
@@ -825,6 +826,14 @@ export class Session {
     void this.pump();
   }
 
+  // Reset native parameters too: slider writes cover only part of a module.
+  // Replay all mapped controls afterwards, including the settings Reset keeps.
+  resetModules() {
+    this.resetModulesPending = true;
+    this.needRender = true;
+    void this.pump();
+  }
+
   // a history item's instance switched, reset, or restored for undo
   // ("opened": as the photo opened)
   setModuleState(h: HistoryItem, req: ModuleRequest) {
@@ -1186,7 +1195,7 @@ export class Session {
       while (this.dirty.size || this.needRender || this.needThumb || this.needCopy || this.needWarm || this.needLoupe
              || this.wantLook !== undefined
              || this.masksPending || this.wantLookAmount !== undefined || this.spotsPending
-             || this.reshapeDue || this.baselineEnd || this.modulePending.length) {
+             || this.reshapeDue || this.baselineEnd || this.modulePending.length || this.resetModulesPending) {
         if (this.editFrame !== null) break;
         // before the change that ended it; a save it makes is the one due
         if (this.baselineEnd) {
@@ -1254,6 +1263,30 @@ export class Session {
           this.wantLook = undefined;
           await this.pumpCommand("look_apply", { path });
           this.changed();
+          if (!this.before) { this.unsaved = true; this.scheduleSave(); }
+          this.needRender = true;
+          continue;
+        }
+        if (this.resetModulesPending) {
+          this.resetModulesPending = false;
+          const seen = new Set<string>();
+          for (const h of this.history) {
+            if (h.priority === undefined) continue;
+            const key = instanceKey(h);
+            if (seen.has(key)) continue;
+            seen.add(key);
+            const legacy = ["filmicrgb", "filmic", "basecurve"].includes(h.op);
+            const r = await this.pumpCommand<{ was: ModuleState; now: ModuleState }>("module_state",
+              { op: h.op, priority: h.priority, reset: true, ...(legacy ? { enabled: false } : {}) });
+            this.touched.add(key);
+            if (!this.modulesOpened.has(key)) this.modulesOpened.set(key, r.was);
+            this.moduleStates.set(key, r.now);
+          }
+          this.foreign.clear();
+          for (const m of modules) this.dirty.add(m.op);
+          this.deleted.clear();
+          this.changed();
+          this.onModules?.();
           if (!this.before) { this.unsaved = true; this.scheduleSave(); }
           this.needRender = true;
           continue;

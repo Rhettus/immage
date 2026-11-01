@@ -1089,6 +1089,7 @@ export default function App() {
       // not adjustments; the orientation stays too, as in Lightroom
       changeMany(Object.entries(s.neutral).filter(([id]) => !isModuleSetting(id) && id !== "profile"
                                                             && id !== "exp_comp" && id !== "orient"));
+      s.resetModules();
       if (s.look) applyLook(null);
       for (const m of s.masks) s.deleteMask(m.name);
       if (s.spots.length) s.setSpots([]);
