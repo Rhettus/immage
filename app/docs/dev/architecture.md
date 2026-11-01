@@ -581,3 +581,35 @@ change. Workers support synchronous fallback and dispose on cleanup.
 
 Adaptive cached preview interpolation was removed after latency and visual
 quality regressed.
+
+### Rejected-photo deletion
+
+`deleteRejected` in `App.tsx` hides confirmed targets through `updateImages`
+before awaiting navigation or `trash_files`. Originals hide their virtual
+copies too; deleting a copy hides only that copy. Pending deletion predicates
+filter library updates so refreshes cannot restore thumbnails during the job.
+The open session saves and closes before the Rust command moves files and
+sidecars to Trash. Failed navigation aborts deletion. On error, release the
+pending filter and refresh only if the same local folder is still displayed,
+recovering actual disk state even after a partially successful batch.
+
+Verify with slow Trash operations: thumbnails should disappear immediately,
+including copies of deleted originals. Refresh while pending, test a deletion
+failure, and switch folders before completion to verify recovery stays in the
+correct folder. Check that sidecars are saved before files move.
+
+### Thumbnail scheduling while scrolling
+
+Filmstrip's IntersectionObserver tracks the actual viewport, clearing its
+visible IDs when rebuilt or unmounted. ThumbLoader partitions its queue by
+current visibility on every scheduling pass, including after asynchronous disk
+reads and render completions. Visible cache checks run first, in batches of
+eight; visible cache misses then take the two engine slots before off-screen
+cache checks. Already running reads and renders finish normally. A rendering
+ID set prevents repeat viewport requests from queueing duplicate renders.
+
+Verify on an uncached large folder: scroll far down while thumbnails load,
+then back up. The next free render slots should serve the current viewport
+before the previous region; also check horizontal filmstrip scrolling and
+switching between grid and filmstrip. Cached thumbnails should still appear
+without rendering, and folder thumbnail progress should eventually finish.

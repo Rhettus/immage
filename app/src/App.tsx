@@ -2612,7 +2612,10 @@ export default function App() {
     if (next) animateTo(next.z);
   };
 
+  // Refreshes must not restore thumbnails while their Trash job runs.
+  const pendingDeletes = useRef(new Set<(image: ImageEntry) => boolean>());
   const updateImages = (next: ImageEntry[]) => {
+    next = next.filter((image) => ![...pendingDeletes.current].some((gone) => gone(image)));
     imagesRef.current = next;
     setImages(next);
     const open = next.find((i) => isOpen(i));
@@ -3029,7 +3032,7 @@ export default function App() {
     }
   };
 
-  // rejected photos to the Trash, once confirmed, with their sidecars. the
+  // Hide confirmed deletions immediately while the Trash job runs. The
   // open photo moves on to the next one first, so the engine is not left
   // writing a sidecar beside a file in the Trash
   const deleteRejected = async (list: ImageEntry[]) => {
@@ -3044,19 +3047,27 @@ export default function App() {
     const ids = new Set(list.map((i) => i.imgid)), files = new Set(list.filter((i) => !i.copy).map((i) => i.path));
     const gone = (i: ImageEntry) => ids.has(i.imgid) || files.has(i.path);
     const cur = imagesRef.current.find((i) => isOpen(i));
-    if (cur && gone(cur)) {
-      const shownNow = shownRef.current, at = shownNow.findIndex((i) => isOpen(i));
-      const next = [...shownNow.slice(at + 1), ...shownNow.slice(0, Math.max(0, at)).reverse()]
-        .find((i) => !gone(i));
-      if (next) await openFile(next.path, next.imgid);
-      else await closePhoto();
-    }
+    const dir = folderRef.current;
+    pendingDeletes.current.add(gone);
+    updateImages(imagesRef.current);
     try {
+      if (cur && gone(cur)) {
+        const shownNow = shownRef.current, at = shownNow.findIndex((i) => isOpen(i));
+        const next = [...shownNow.slice(at + 1), ...shownNow.slice(0, Math.max(0, at)).reverse()]
+          .find((i) => !gone(i));
+        if (next) {
+          if (!await openFile(next.path, next.imgid)) throw new Error("could not leave the open photo");
+        } else await closePhoto();
+      }
       await invoke("trash_files", { imgids: list.map((i) => i.imgid) });
-      updateImages(imagesRef.current.filter((i) => !gone(i)));
       setStatus(`moved ${n === 1 ? list[0].filename : `${n} photos`} to the ${TRASH}`);
     } catch (e) {
+      // Re-read disk: a failed batch may already have moved some files.
+      pendingDeletes.current.delete(gone);
+      if (dir && folderRef.current === dir && !immichRef.current) await showFolder(dir, true);
       setStatus(`delete: ${e}`);
+    } finally {
+      pendingDeletes.current.delete(gone);
     }
   };
   // Lightroom's Create Virtual Copy: another version of each photo, starting
@@ -6235,6 +6246,7 @@ function Filmstrip({ images, partners, pending, empty, current, loader, height, 
   useEffect(() => {
     const root = strip.current;
     if (!root) return;
+    const visible = new Set<number | string>();
     const seen = new IntersectionObserver((entries) => {
       // a known photo's cell by its knownKey()
       const id = (e: IntersectionObserverEntry) => {
@@ -6242,12 +6254,18 @@ function Filmstrip({ images, partners, pending, empty, current, loader, height, 
         return d.imgid !== undefined ? Number(d.imgid) : d.known!;
       };
       const ids = entries.filter((e) => e.isIntersecting).map(id);
+      ids.forEach((id) => visible.add(id));
+      const hidden = entries.filter((e) => !e.isIntersecting).map(id);
+      hidden.forEach((id) => visible.delete(id));
       loader.show(ids, true);
-      loader.show(entries.filter((e) => !e.isIntersecting).map(id), false);
+      loader.show(hidden, false);
       if (ids.length) loader.request(ids, true);
-    }, { root, rootMargin: grid ? "300px 0px" : "0px 300px" });
+    }, { root });
     root.querySelectorAll<HTMLElement>(".thumb[data-imgid], .thumb[data-known]").forEach((el) => seen.observe(el));
-    return () => seen.disconnect();
+    return () => {
+      seen.disconnect();
+      loader.show([...visible], false);
+    };
   }, [images, loader, grid]);
   // a grid's cells are a fixed height, and share each row's width
   // (styles.css, .filmstrip.grid); the strip's follow its height

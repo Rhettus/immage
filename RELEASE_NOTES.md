@@ -59,6 +59,10 @@ Improvements
 
 Performance
 
+- Thumbnail loading follows the visible grid or filmstrip as you scroll,
+  rendering on-screen photos before checking the rest of the folder.
+- Deleting rejected photos removes their thumbnails immediately after
+  confirmation while the files move to the Trash in the background.
 - Preview layers reuse canvas allocations and already uploaded frames,
   skip unchanged placement updates, and defer navigator drawing to reduce
   work when an exact frame arrives.

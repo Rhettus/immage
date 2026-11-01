@@ -198,6 +198,7 @@ export class ThumbLoader {
   private running = false;
   // engine thumbnails under way, and run() waiting for one to finish
   private inFlight = 0;
+  private rendering = new Set<Id>();
   private wake: (() => void) | null = null;
   // edited images whose cached thumbnail is out of date; it stays on show
   // until the fresh one is ready, so the filmstrip does not flicker
@@ -255,7 +256,8 @@ export class ThumbLoader {
   // load these, in this order, after anything already asked for first
   request(ids: Id[], first = false) {
     for (const id of ids) if (typeof id === "number") this.adopt(id);
-    const wanted = ids.filter((id) => !this.cache.has(id) || (typeof id === "number" && this.unverified.has(id)));
+    const wanted = ids.filter((id) => !this.rendering.has(id) &&
+      (!this.cache.has(id) || (typeof id === "number" && this.unverified.has(id))));
     wanted.forEach((id) => { if (typeof id === "number") this.asked.add(id); });
     this.queue = first ? [...wanted, ...this.queue.filter((id) => !wanted.includes(id))]
                        : [...this.queue, ...wanted.filter((id) => !this.queue.includes(id))];
@@ -326,9 +328,10 @@ export class ThumbLoader {
 
   // up to eight queued that may be on disk, with their entries (none for
   // a known thumbnail)
-  private nextOnDisk(): [Id, ImageEntry | null][] {
+  private nextOnDisk(visibleOnly: boolean): [Id, ImageEntry | null][] {
     const out: [Id, ImageEntry | null][] = [];
     for (const id of this.queue) {
+      if (visibleOnly && !this.visible.has(id)) continue;
       if (out.length === 8) break;
       if (typeof id === "string") {
         if (this.tried.has(id) || this.cache.has(id) || this.adopted.has(id)) continue;
@@ -377,9 +380,12 @@ export class ThumbLoader {
     this.running = true;
     try {
       while (this.queue.length) {
-        // eight reads from disk at a time, ahead of any render, and one
-        // redraw for them all
-        const disk = this.nextOnDisk();
+        // Re-evaluate visibility after every await. Visible cache misses render
+        // before checking the rest of the folder's disk cache.
+        this.queue = [...this.queue.filter((id) => this.visible.has(id)),
+                      ...this.queue.filter((id) => !this.visible.has(id))];
+        const visiblePending = this.queue.some((id) => this.visible.has(id));
+        const disk = this.nextOnDisk(visiblePending);
         if (disk.length) {
           const generation = this.generation;
           const got = await Promise.all(disk.map(([id, entry]) =>
@@ -414,7 +420,9 @@ export class ThumbLoader {
         this.stale.delete(id);
         this.unverified.delete(id);
         this.inFlight++;
+        this.rendering.add(id);
         void this.fetch(id).finally(() => {
+          this.rendering.delete(id);
           this.inFlight--;
           const wake = this.wake;
           this.wake = null;

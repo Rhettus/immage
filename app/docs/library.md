@@ -57,6 +57,10 @@ beside the type once the photo is edited. Hover over it to see its rating,
 labels and reject button. Once a photo is rated or rejected, those show all
 the time.
 
+Thumbnails load in the background and prioritize the photos currently visible
+in the grid or filmstrip. Scrolling changes that priority; renders already
+running finish before the newly visible photos use their slots.
+
 A photo counts as edited once you change something yourself. What Immage
 gives a photo the first time it opens (the **New Photos** settings in
 [Preferences](preferences.md)) doesn't count, and undoing every change
@@ -244,7 +248,9 @@ Immage only deletes photos you have rejected. Reject them with X, select
 them (or show only rejected photos and press ⌘A), then right-click and
 choose **Delete Rejected Photo…** (with several, **Delete 3 Rejected
 Photos…**). They move to the Trash with their sidecars, after you
-confirm.
+confirm. Thumbnails disappear immediately while the files move in the
+background. If deletion fails, an error appears and the folder refreshes to
+show any files still present.
 
 ## The right-click menu
 
