@@ -4369,6 +4369,9 @@ export default function App() {
     sharpMeta.current = baseMeta.current = null;
     overviewHash.current = null;
     setCropBox(null);
+    // The replacement must publish its placement even when bypassing crop
+    // leaves the image dimensions unchanged, so the cleared guides return.
+    placementRef.current = null;
     // Do not animate using the cropped frame's dimensions: the next fitted
     // frame must choose its scale from the uncropped dimensions immediately.
     const a = anim.current;

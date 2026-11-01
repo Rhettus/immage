@@ -82,6 +82,8 @@ Performance
 
 Bug fixes
 
+- Crop guides appear immediately when entering crop and selecting an aspect
+  ratio, including on photos that have not been cropped before.
 - Clipping overlays and histogram/scope updates discard results from
   replaced frames, including same-sized frames and GPU/CPU transitions.
   Old clipping overlays clear as their source frame changes.

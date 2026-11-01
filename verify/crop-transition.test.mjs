@@ -19,6 +19,7 @@ test('crop transition removes previous pixels and stops zoom before the replacem
     pixelWorker:ref({dispose(){env.workerDisposed=true;}}),
     sharpMeta:ref({}),baseMeta:ref({}),loupeMeta:ref({}),overviewHash:ref('old'),
     setCropBox(box){env.box=box;},
+    placementRef:ref({fullWidth:800,fullHeight:600}),
     anim:ref({raf:42,end:{x:0.2},asked:{scale:1}}),
     cancelAnimationFrame(id){canceled.push(id);},
     zoomRef:ref(1),setZoomState(z){env.zoom=z;},center:ref({x:0.2,y:0.7}),
@@ -34,11 +35,40 @@ test('crop transition removes previous pixels and stops zoom before the replacem
   assert.equal(env.pixelWorker.current,null);
   assert.equal(cleared.length,5);
   for(const [, ...rect] of cleared) assert.deepEqual(rect,[0,0,800,600]);
-  for(const name of ['sharpMeta','baseMeta','loupeMeta','overviewHash']) assert.equal(env[name].current,null);
+  for(const name of ['sharpMeta','baseMeta','overviewHash']) assert.equal(env[name].current,null);
   assert.equal(env.box,null);
+  assert.equal(env.placementRef.current,null);
   assert.deepEqual(canceled,[42]);
   assert.deepEqual(env.anim.current,{raf:null,end:null,asked:null});
   assert.equal(env.zoomRef.current,'fit');
   assert.equal(env.zoom,'fit');
   assert.deepEqual(env.center.current,{x:0.5,y:0.5});
+});
+
+test('entering crop republishes unchanged placement when the replacement frame arrives',()=>{
+  const start=source.indexOf('  const updatePlacement =');
+  const end=source.indexOf('  const paintFrame =',start);
+  assert.ok(start>=0&&end>start);
+  const {code}=transformSync('placement.ts',source.slice(start,end));
+  const makePlacement=new Function('env',`with(env) { ${code}; return updatePlacement; }`);
+  const placement={fullWidth:800,fullHeight:600,scale:1,x:0,y:0,width:800,height:600};
+  let updates=0;
+  const env={
+    resetCanvases(){},resetHistogram(){},pixelWorker:ref(null),
+    sharpMeta:ref({}),baseMeta:ref(null),loupeMeta:ref(null),overviewHash:ref(null),
+    setCropBox(){},anim:ref({raf:null,end:null,asked:null}),
+    zoomRef:ref('fit'),setZoomState(){},center:ref({x:0.5,y:0.5}),
+    placementRef:ref(placement),full:ref({w:800,h:600}),viewZ:ref(1),
+    viewport(){return {w:800,h:600};},setPlacement(p){updates++;assert.deepEqual(p,placement);},
+  };
+  for(const name of ['canvas','baseCanvas','clipSharp','clipBase','loupeCanvas']) env[name]=ref(null);
+  const updatePlacement=makePlacement(env);
+  updatePlacement();
+  assert.equal(updates,0,'ordinary unchanged frames still skip placement updates');
+  create(env)();
+  env.sharpMeta.current={}; // the uncropped replacement frame has arrived
+  updatePlacement();
+  assert.equal(updates,1,'the replacement restores the crop overlay even with identical geometry');
+  updatePlacement();
+  assert.equal(updates,1,'subsequent identical frames remain deduplicated');
 });
