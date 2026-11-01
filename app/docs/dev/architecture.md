@@ -740,3 +740,21 @@ Fractional-scale drag compensation (`scale.rs`, `pixelRatio.ts`, `draftK` in
 The adaptive cached-preview experiment remains removed; native previews and
 scaled GPU checkpoint retention remain in use. Verify the scaling behavior
 with the existing `decisions` check and placement with `verify/preview-placement.py`.
+
+### Visible-app GUI verification
+
+`verify/gui/run.mjs` launches the checkout's release app and real engine through
+Tauri WebDriver on a visible Linux desktop. XDG directories isolate app state
+and the webview profile; a cross-worktree desktop lock serializes input. Only
+that session's main app URL/window can receive actions or screenshots. Config
+contains paths, never injected scripts; checked-in observation functions read
+DOM/CSS/geometry/canvas pixels without calling Tauri or changing application state.
+
+`paintFrame` marks the sharp canvas with `data-render-quality` (`draft` or `final`)
+when it presents a frame. The suite combines that read-only marker with stable
+pixels to avoid accepting a drag draft after release. It drags Exposure using
+WebDriver pointer actions, checks displayed and range values and brightness in
+both directions, and resets through a label double-click. Expected mean pixel
+error after reset is below 1/255. See `verify/gui/README.md` for setup, evidence,
+coverage limits and remaining scenarios. Results stay in `verify/results/gui/`;
+fixture originals and the user's running app are not test state.

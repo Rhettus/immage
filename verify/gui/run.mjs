@@ -1,0 +1,162 @@
+#!/usr/bin/env node
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+import { spawn, execFileSync } from 'node:child_process';
+import { createHash, randomUUID } from 'node:crypto';
+import { createServer } from 'node:net';
+import { readFile, writeFile, mkdir, copyFile, stat, access, realpath } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { hostname, tmpdir } from 'node:os';
+import { dirname, resolve, join, basename } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { AppDriver, until } from './support/webdriver.mjs';
+import { startup, exposure } from './specs/smoke.mjs';
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+const hash = bytes => createHash('sha256').update(bytes).digest('hex');
+let gitError;
+const git = (...args) => {
+  try { return execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim(); }
+  catch (e) { gitError = e; return 'unknown'; }
+};
+const args = process.argv.slice(2);
+if (args.includes('--help')) {
+  console.log('node verify/gui/run.mjs --config verify/gui/local.json [--suite smoke | --case startup|exposure]');
+  process.exit(0);
+}
+let configFile = 'verify/gui/local.json', selected = 'smoke';
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === '--config' && args[i + 1]) configFile = args[++i];
+  else if (['--suite', '--case'].includes(args[i]) && args[i + 1]) selected = args[++i];
+  else throw Error(`Unknown argument: ${args[i]}`);
+}
+if (!['smoke', 'startup', 'exposure'].includes(selected)) throw Error(`Unknown case/suite: ${selected}`);
+const id = `${new Date().toISOString().replaceAll(':', '-')}_${git('rev-parse', '--short', 'HEAD')}_${randomUUID().slice(0, 8)}`;
+const out = join(root, 'verify/results/gui', id);
+await mkdir(out, { recursive: true });
+const report = { id, status: 'blocked', started: new Date().toISOString(), checkout: root,
+  commit: git('rev-parse', 'HEAD'), dirty: !!git('status', '--porcelain'),
+  host: hostname(), platform: process.platform, arch: process.arch,
+  display: { wayland: process.env.WAYLAND_DISPLAY, x11: process.env.DISPLAY, backend: process.env.XDG_SESSION_TYPE },
+  coverage: 'Visible Linux app using system WebKit; native cursor, Windows, masks and scale matrix unverified.',
+  actions: [], cases: [], errors: [] };
+let driver, processDriver, lock, logHandle, acquired = false;
+for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, async () => {
+  report.status = 'failure'; report.errors.push(`Interrupted by ${signal}`);
+  if (processDriver?.pid) { try { process.kill(-processDriver.pid, 'SIGTERM'); } catch {} }
+  if (acquired) lock.stdin.end();
+  await finishReport();
+  process.exit(signal === 'SIGINT' ? 130 : 143);
+});
+const log = step => report.actions.push({ at: new Date().toISOString(), ...step });
+const freePort = () => new Promise((yes, no) => {
+  const s = createServer(); s.on('error', no); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => yes(p)); });
+});
+async function executable(path) {
+  const full = await realpath(resolve(root, path));
+  await access(full, constants.X_OK);
+  if (!(await stat(full)).isFile()) throw Error(`Not an executable file: ${full}`);
+  return full;
+}
+async function finishReport() {
+  report.finished = new Date().toISOString();
+  await writeFile(join(out, 'report.json'), JSON.stringify(report, null, 2) + '\n');
+  const md = [`# GUI verification: ${report.status}`, '', `Run: ${id}`, '',
+    `Checkout: ${report.commit}${report.dirty ? ' (dirty)' : ''}`, '', report.coverage, '',
+    ...report.cases.map(c => `- ${c.name}: ${c.status}${c.error ? ` — ${c.error}` : ''}`),
+    ...report.errors.map(e => `- ${e}`), '', 'Evidence and action log: see report.json and case directories.', ''];
+  await writeFile(join(out, 'report.md'), md.join('\n'));
+  console.log(`${report.status.toUpperCase()}: ${out}/report.md`);
+}
+try {
+  if (gitError) throw Error(`Git metadata is unavailable: ${gitError.message}`);
+  if (process.platform !== 'linux') throw Error('This initial runner supports Linux only.');
+  if (!process.env.WAYLAND_DISPLAY && !process.env.DISPLAY) throw Error('A visible desktop is required.');
+  const config = JSON.parse(await readFile(resolve(root, configFile), 'utf8'));
+  const allowed = ['binary', 'engine', 'tauriDriver', 'nativeDriver', 'fixture', 'binaryRevision'];
+  for (const key of Object.keys(config)) if (!allowed.includes(key)) throw Error(`Unsupported configuration key: ${key}`);
+  for (const key of ['binary', 'engine', 'tauriDriver', 'nativeDriver', 'fixture'])
+    if (typeof config[key] !== 'string' || !config[key]) throw Error(`Missing configuration path: ${key}`);
+  const binary = await executable(config.binary), engine = await executable(config.engine);
+  const supportedBinary = await realpath(join(root, 'app/src-tauri/target/release/immage'));
+  if (binary !== supportedBinary) throw Error('This initial runner supports only this checkout’s release binary; debug and installed builds are blocked to protect shared app state.');
+  const tauriDriver = await executable(config.tauriDriver), nativeDriver = await executable(config.nativeDriver);
+  const fixture = await realpath(resolve(root, config.fixture));
+  if (!(await stat(fixture)).isFile()) throw Error('Fixture must be a file.');
+  const bytes = await readFile(fixture), binaryBytes = await readFile(binary);
+  for (const path of [binary, engine, tauriDriver, nativeDriver]) {
+    const magic = (await readFile(path)).subarray(0, 4);
+    if (!magic.equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46]))) throw Error(`Expected a native ELF executable, not a script: ${path}`);
+  }
+  report.drivers = { tauri: { path: tauriDriver, sha256: hash(await readFile(tauriDriver)) },
+    native: { path: nativeDriver, sha256: hash(await readFile(nativeDriver)) },
+    installedWebKit: execFileSync('pkg-config', ['--modversion', 'webkit2gtk-4.1'], { encoding: 'utf8' }).trim() };
+  report.binary = { path: binary, sha256: hash(binaryBytes), modified: (await stat(binary)).mtime.toISOString(),
+    declaredRevision: config.binaryRevision || 'unknown — executable may predate checkout',
+    runtime: 'system WebKit (not the CI AppImage)' };
+  report.engine = { path: engine, sha256: hash(await readFile(engine)) };
+  report.fixture = { name: basename(fixture), sha256: hash(bytes) };
+  // flock is held by a live child, so the kernel releases it even after a crash.
+  // The lock lives outside the checkout: separate worktrees share the desktop.
+  const displayKey = hash(`${process.env.XDG_RUNTIME_DIR}:${process.env.WAYLAND_DISPLAY || process.env.DISPLAY}`).slice(0, 20);
+  const lockFile = join(tmpdir(), `immage-gui-${process.getuid()}-${displayKey}.lock`);
+  lock = spawn('flock', ['--nonblock', '--exclusive', lockFile, 'sh', '-c', 'printf "locked\\n"; cat >/dev/null'], { stdio: ['pipe', 'pipe', 'pipe'] });
+  await new Promise((yes, no) => {
+    lock.once('error', no);
+    lock.once('exit', code => { if (!acquired) no(Error(`Desktop lock is occupied or unavailable (${code}); no app was launched.`)); });
+    lock.stdout.once('data', () => { acquired = true; yes(); });
+  });
+  report.lock = { path: lockFile, ownerPid: process.pid, machine: hostname(), run: id };
+  const profile = join(out, 'profile'), fixtures = join(out, 'fixtures');
+  await mkdir(fixtures);
+  for (const part of ['data', 'config', 'cache', 'state']) await mkdir(join(profile, part), { recursive: true });
+  const copiedFixture = join(fixtures, basename(fixture));
+  await copyFile(fixture, copiedFixture);
+  const port = await freePort(); let nativePort = await freePort(); while (nativePort === port) nativePort = await freePort();
+  const env = { ...process.env,
+    XDG_DATA_HOME: join(profile, 'data'), XDG_CONFIG_HOME: join(profile, 'config'),
+    XDG_CACHE_HOME: join(profile, 'cache'), XDG_STATE_HOME: join(profile, 'state'),
+    DT_ENGINE_BIN: engine, TAURI_WEBVIEW_AUTOMATION: 'true' };
+  report.profile = { path: profile, variables: Object.fromEntries(Object.entries(env).filter(([k]) => /^XDG_(DATA|CONFIG|CACHE|STATE)_HOME$/.test(k))) };
+  const { open } = await import('node:fs/promises'); logHandle = await open(join(out, 'driver-app.log'), 'w');
+  processDriver = spawn(tauriDriver, ['--port', String(port), '--native-port', String(nativePort), '--native-driver', nativeDriver],
+    { cwd: root, env, detached: true, stdio: ['ignore', logHandle.fd, logHandle.fd] });
+  let launchError; processDriver.on('error', e => { launchError = e; });
+  driver = new AppDriver(`http://127.0.0.1:${port}`, log);
+  await until(async () => { if (launchError) throw launchError; return driver.request('GET', '/status'); }, 'Tauri driver', 15000);
+  await driver.open(binary, copiedFixture);
+  report.capabilities = driver.capabilities;
+  await driver.command('POST', '/timeouts', { script: 10000, pageLoad: 15000, implicit: 0 });
+  console.log(`Visible app launched; evidence: ${out}`);
+  report.status = 'running';
+  for (const [name, run] of [['startup', startup], ...(selected === 'startup' ? [] : [['exposure', exposure]])]) {
+    const c = { name, status: 'running', measurements: [], started: new Date().toISOString() };
+    report.cases.push(c);
+    const caseDir = join(out, name); await mkdir(caseDir);
+    const t = { driver, measure: m => c.measurements.push(m), evidence: async label => {
+      await driver.screenshot(join(caseDir, `${label}.png`));
+    } };
+    try { await run(t); c.status = 'pass'; }
+    catch (e) {
+      c.status = 'failure'; c.error = e.stack;
+      try { await t.evidence('failure'); } catch (capture) { c.captureError = capture.message; }
+      throw e;
+    } finally { c.finished = new Date().toISOString(); }
+  }
+  // App and engine output must have landed in this run's XDG profile.
+  const engineLog = join(profile, 'data', 'app.immage', 'engine.log');
+  await access(engineLog);
+  report.isolation = { engineLog, fixtureOriginalUnchanged: hash(await readFile(fixture)) === report.fixture.sha256 };
+  if (!report.isolation.fixtureOriginalUnchanged) throw Error('Original fixture changed.');
+  report.status = 'pass';
+} catch (error) {
+  if (report.status === 'running') report.status = 'failure';
+  report.errors.push(error.stack ?? error.message);
+} finally {
+  if (driver?.session) { try { await driver.close(); } catch (e) { report.errors.push(`Session cleanup: ${e.message}`); if (report.status === 'pass') report.status = 'failure'; } }
+  if (processDriver?.pid) { try { process.kill(-processDriver.pid, 'SIGTERM'); } catch {} }
+  await logHandle?.close();
+  if (acquired) lock.stdin.end();
+  await finishReport();
+}
+process.exitCode = report.status === 'pass' ? 0 : 1;

@@ -7,6 +7,9 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Add a visible-app GUI smoke suite for startup, Exposure dragging and reset,
+  with application screenshots and isolated test data for diagnosing interface
+  regressions.
 - Windows downloads now provide a single `.exe` installer, with a choice of
   installation for your account or for everyone on the computer.
 - Linux AppImages bundle WebKitGTK and JavaScriptCore 2.54.2 while keeping

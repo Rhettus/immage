@@ -1,8 +1,61 @@
 # Visible-app GUI verification plan
 
-Status: design agreed; the runner and test cases are not implemented yet.
+Status: initial Linux runner and startup/Exposure cases implemented; live
+verification passed on the development VM using its system webview. The broader scenario matrix below remains planned.
 This suite will run alongside `verify/run.py`, with its own command and report.
 The existing suite continues to check the editing pipeline and performance.
+
+## Setup and execution (Linux)
+
+Use Node.js 22 or newer, `flock`, a visible desktop, and a production Immage
+binary built with `cd app && npx tauri build --no-bundle`. Plain `cargo build`
+does not enable Tauri's production frontend configuration. Build the engine with
+the normal project build instructions first. The runner does not build the app.
+
+Install `tauri-driver` (`cargo install tauri-driver --version 2.1.0 --locked`)
+and obtain a `WebKitWebDriver` matching the installed system WebKitGTK. On this
+VM the matching driver was extracted from the distribution's WebKitGTK 6.0
+package into `/tmp`; it drives the application's GTK3 webview through automation,
+not a separate browser. No system package installation is required when an
+extracted matching binary and its dependencies are available.
+
+Copy `local.example.json` to ignored `local.json` and set the five absolute or
+repository-relative paths. `binaryRevision` is an optional annotation, not proof
+of the binary's identity: reports also record its SHA-256 and modification time.
+Use the bundled sample JPEG or another suitable fixture. The source photo is
+copied without its sidecar and never opened directly by the test app.
+
+```sh
+node verify/gui/run.mjs --config verify/gui/local.json --suite smoke
+node verify/gui/run.mjs --config verify/gui/local.json --case startup
+node verify/gui/run.mjs --config verify/gui/local.json --case exposure
+```
+
+Exposure includes startup as its prerequisite. The runner launches a new driver
+and app, dismisses the tour through
+its Skip button, and uses the app's supported file argument to open the copy.
+XDG data/config/cache/state variables isolate the release app's storage and its
+webview profile. A successful run also checks that `engine.log` was created in
+that profile and verifies the original fixture's checksum. Use release binaries;
+debug builds use shared development runtime paths and are blocked. Initially
+only this checkout’s `app/src-tauri/target/release/immage` is accepted.
+
+The smoke test measures the visible sharp canvas, waits for stable pixels and
+its `data-render-quality="final"` marker, drags Exposure to approximately +1 and
+-1 through pointer actions, compares brightness, and double-clicks the label to
+reset. Reset must restore pixels within a mean difference of 1/255. It does not
+use approved screenshot references yet; PNGs are diagnostic evidence.
+
+Before launching on a tiling desktop, prepare an empty workspace so the app
+gets sufficient space. Workspace switching is outside the runner's app-only
+boundary; prepare it manually or authorize that one-time desktop action.
+The runner leaves the compositor configuration untouched.
+
+A kernel `flock` keyed by user and display serializes runs across worktrees.
+Missing tools/display/config or a busy lock yield a blocked report and exit 1.
+Failed assertions also exit 1. Signals clean up only the run's own process group;
+reports and copied fixtures remain available. No automatic retries or reference
+acceptance are provided.
 
 ## What a run must exercise
 
@@ -26,8 +79,7 @@ identify itself as such. macOS automation is a separate follow-up, not assumed
 to work through the Linux driver or through Docker on a Mac.
 
 A visible desktop is required. Missing display or driver support is a blocked
-run, not a pass. Initial runs are local and opt-in; CI integration comes after
-the cases are reliable. Reference: https://v2.tauri.app/develop/tests/webdriver/
+run, not a pass. Runs are local and opt-in; CI integration remains a follow-up. Reference: https://v2.tauri.app/develop/tests/webdriver/
 
 ## Files and results
 
@@ -35,10 +87,10 @@ the cases are reliable. Reference: https://v2.tauri.app/develop/tests/webdriver/
 |---|---|---|
 | `verify/gui/README.md` | Shared design, then setup and run instructions | tracked |
 | `verify/gui/AGENTS.md` | Instructions for any agent working on this suite | tracked |
-| `verify/gui/run.mjs` | Planned command-line runner | tracked when implemented |
-| `verify/gui/specs/` | Independent interaction scenarios | tracked when implemented |
-| `verify/gui/support/` | App launch, controls, waits, evidence and desktop lock | tracked when implemented |
-| `verify/gui/local.example.json` | Documented machine-settings template | tracked when implemented |
+| `verify/gui/run.mjs` | Initial command-line runner | tracked |
+| `verify/gui/specs/` | Startup and Exposure interaction scenarios | tracked |
+| `verify/gui/support/` | App launch, observations, waits, evidence and desktop lock | tracked |
+| `verify/gui/local.example.json` | Documented machine-settings template | tracked |
 | `verify/gui/local.json` | Binary, driver, display and fixture paths | ignored |
 | `AGENTS.local.md` | Personal agent instructions and machine notes | ignored |
 | `verify/results/gui/<run-id>/` | Reports, screenshots, logs, copied fixtures and isolated state | ignored |
@@ -54,6 +106,23 @@ computed-style and geometry observations, browser logs, engine logs and timings.
 Record OS, architecture, backend (Wayland/X11), display scale, viewport, theme,
 fonts, renderer/GPU, webview version, fixture checksums and reference identity.
 Keep a failed case's evidence even if cleanup or a later case also fails.
+
+## App-only interaction boundary
+
+Only the dedicated test Immage window's main webview may receive automation.
+Use the run's own WebDriver session and verify app/window identity before input.
+No global desktop input, switching apps, clipboard access, native dialogs,
+file-manager actions or desktop screenshots. Opening the fixture uses Immage's
+normal launch-file argument; all subsequent edits use the visible controls.
+Only screenshots scoped to the test application window, webview or elements
+are captured. DOM/CSS/canvas inspection is
+read-only and may not call Tauri APIs or change application state. Local config
+contains data paths and settings, not arbitrary scripts or shell commands.
+A case needing broader UI access is blocked; it does not expand its permissions.
+
+These rules govern the suite and agent behavior. They are not an OS sandbox
+that removes the coding agent's other tools. Enforced process/filesystem/network
+isolation would require a separately restricted execution environment.
 
 ## Isolation and multiple agents
 
@@ -91,10 +160,10 @@ that it can drive and observe the full app. Extend coverage from the manifest to
 all applicable sliders later, with explicit prerequisites and suitable fixtures;
 controls hidden by module choices must not silently count as tested.
 
-The Windows pointer-over-icon regression also needs a compositor/OS capture that
-includes the native cursor. Webview screenshots do not establish cursor stacking.
-Treat that visual observation separately from DOM hit-testing and computed cursor
-style. If cursor-inclusive capture is unavailable, report that part as unverified.
+The Windows pointer-over-icon regression cannot be fully verified by this
+app-only suite: webview screenshots do not establish native cursor stacking.
+Test DOM hit-testing and computed cursor style here, and leave the native-cursor
+observation to a manual check by the user. Do not capture the desktop.
 
 ## Stable checks and references
 
@@ -122,8 +191,8 @@ all failing evidence; do not retry until green and discard the first failure.
 
 ## Implementation order and acceptance
 
-1. Implement configuration validation, isolated app state, desktop lock and
-   cleanup. Validate a blocked run leaves the user's app and photos untouched.
+1. Implement configuration validation, the app-only input boundary, isolated
+   app state, desktop lock and cleanup. Validate a blocked run leaves the user's app and photos untouched.
 2. Launch the visible app with its native driver. Implement startup and Exposure
    pointer drag/reset using a copied fixture and real engine rendering.
 3. Produce the report and screenshots. Deliberately break a control's CSS or
@@ -131,10 +200,10 @@ all failing evidence; do not retry until green and discard the first failure.
 4. Add slider input, panels, rail tools and undo/redo. Repeat a clean smoke run
    three times to identify instability; retain reports for every attempt.
 5. Add mask editing, themes/scales and Windows. Document exact prerequisites and
-   coverage gaps, including native-pointer capture and packaged webview matching.
+   coverage gaps, including the manual native-pointer check and packaged webview matching.
 6. Consider desktop CI and broader manifest coverage after local runs are stable.
 
-Planned interface (not runnable yet):
+Current smoke interface:
 
 ```sh
 node verify/gui/run.mjs --config verify/gui/local.json --suite smoke
@@ -142,7 +211,22 @@ node verify/gui/run.mjs --config verify/gui/local.json --case exposure
 ```
 
 The runner should default to a visible window and return nonzero for failures or
-blocked required cases. A separate explicit reference-accept operation must name
-the source run and environment. Before calling this suite ready, replace these
-proposed commands with verified installation and execution instructions, and have
-another agent follow the checked-in guide without private conversation context.
+blocked required cases. Any future reference-accept operation must explicitly name
+the source run and environment. Before calling the broader suite ready, have another agent follow the
+checked-in guide without private conversation context and complete the remaining
+scenario matrix. Do not infer full coverage from the initial smoke test.
+
+## Verified scope
+
+The initial smoke suite passed three consecutive visible runs on the ARM64
+Wayland development VM using system WebKitGTK 2.54.2, and then passed with the
+app alone on an empty workspace. Reports retain the earlier development failures.
+A deliberately occupied desktop lock was verified to produce a blocked report
+without launching another app. The boundary checks run separately with
+`node --test verify/gui/support.test.mjs`; they supplement the visible tests.
+
+The full panel/rail/mask/theme/scale matrix, Windows automation, approved visual
+reference comparison and deliberate CSS fault-injection validation remain to be
+implemented. A smoke pass does not establish those capabilities or verify the
+CI AppImage's bundled webview. On this VM GTK reported software rendering;
+performance and GPU-renderer coverage are not established by these passes.

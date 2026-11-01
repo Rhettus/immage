@@ -2167,6 +2167,9 @@ export default function App() {
     frameGenerations.histogram.next();
     if (!gridRef.current && loupeEnabledRef.current && !f.view.draft) session.current?.requestLoupe();
     const c = canvas.current!;
+    // Read-only observation for visible-app verification: distinguish a drag
+    // draft from the final frame without exposing application commands.
+    c.dataset.renderQuality = f.view.draft ? "draft" : "final";
     perf.time("pixels.canvasUpload", () => canvasFrames.draw(c, f));
     if (clipRef.current.low || clipRef.current.high) paintClip("sharp", f);
     full.current = { w: f.fullWidth, h: f.fullHeight };

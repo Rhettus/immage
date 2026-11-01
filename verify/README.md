@@ -129,11 +129,12 @@ as skipped when no module runs on the GPU.
 
 ## Visible-app GUI suite
 
-A separate [visible-app test suite is planned in `gui/`](gui/README.md). It will
-exercise real pointer/keyboard interactions, CSS/layout and photo rendering in
-the Tauri window. Its runner is not implemented yet. Results will live in the
-ignored `verify/results/gui/` directory. This plan does not change what the
-existing pipeline checks cover.
+The separate [visible-app suite in `gui/`](gui/README.md) now checks startup and
+real Exposure pointer drags/reset, CSS/hit-testing and rendered photo pixels in
+the Tauri window. Run `node verify/gui/run.mjs --config verify/gui/local.json
+--suite smoke` after following its setup guide. Results and application screenshots
+live in ignored `verify/results/gui/`. The broader GUI matrix remains planned;
+these smoke checks supplement the pipeline tests below.
 
 ## What it doesn't cover
 

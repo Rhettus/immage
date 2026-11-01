@@ -73,6 +73,14 @@ New to Immage? Start with [Getting started](getting-started.md).
 
 Working on Immage's code? See the [developer docs](dev/README.md).
 
+## Reporting an interface problem
+
+An application screenshot can show clipped labels, overlapping controls or a
+slider that looks wrong. Include the app version, operating system and display
+scale, and describe the control you moved and what you expected to see.
+Developers can also run a visible-app smoke check against a copied sample photo;
+it checks Exposure dragging and reset without using your photo library.
+
 ## About this guide
 
 This is a first pass, written from the app's own labels and hints.
