@@ -7,6 +7,8 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Windows downloads now provide a single `.exe` installer, with a choice of
+  installation for your account or for everyone on the computer.
 - Linux AppImages bundle WebKitGTK and JavaScriptCore 2.54.2 while keeping
   the Ubuntu 22.04 runtime baseline, including Linux Mint 22.x, on x86-64
   and ARM64. Fractional-scale drag previews remain supported.

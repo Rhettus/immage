@@ -56,7 +56,7 @@ DOWNLOADS = """\
 | | |
 |---|---|
 | **macOS** (Apple Silicon) | [{dmg}]({url}/{dmg}) |
-| **Windows** (x64) | [{nsis}]({url}/{nsis}), or [{msi}]({url}/{msi}) |
+| **Windows** (x64) | [{nsis}]({url}/{nsis}) |
 | **Linux** (x86-64) | [{appimage}]({url}/{appimage}) |
 | **Linux** (ARM64) | [{appimage_arm64}]({url}/{appimage_arm64}) |
 | **Source** | [{source}]({url}/{source}) |
@@ -73,7 +73,7 @@ from inside Immage, without the warning.
   Immage to Applications. Open it once; when macOS says it cannot check it,
   go to System Settings › Privacy & Security and click **Open Anyway**.
   Or, in Terminal: `xattr -dr com.apple.quarantine /Applications/Immage.app`
-- **Windows** (x64): run `{nsis}` (or `{msi}`). When SmartScreen stops
+- **Windows** (x64): run `{nsis}`. When SmartScreen stops
   it, click **More info**, then **Run anyway**
 - **Linux** (x86-64, glibc 2.35 or newer, such as Ubuntu 22.04 or Linux Mint 22.x):
   make `{appimage}` executable (`chmod +x {appimage}`) and run it
@@ -124,11 +124,10 @@ def main():
         (one(artifacts, "*.dmg"), f"{p}-macOS-arm64.dmg", []),
         (one(artifacts, "*.app.tar.gz"), f"{p}-macOS-arm64-update.app.tar.gz",
          ["darwin-aarch64", "darwin-aarch64-app"]),
-        # the updater installs with the kind of installer that put this copy
-        # there, from the key for it, and with NSIS when there is none
+        # The generic key also serves copies installed with an older MSI:
+        # Tauri falls back to it when the installer-specific key is absent.
         (one(artifacts, "*-setup.exe"), f"{p}-Windows-x64-setup.exe",
          ["windows-x86_64", "windows-x86_64-nsis"]),
-        (one(artifacts, "*.msi"), f"{p}-Windows-x64.msi", ["windows-x86_64-msi"]),
         (one(artifacts, "*_amd64.AppImage"), f"{p}-Linux-x86_64.AppImage",
          ["linux-x86_64", "linux-x86_64-appimage"]),
         (one(artifacts, "*_aarch64.AppImage"), f"{p}-Linux-arm64.AppImage",
@@ -166,8 +165,8 @@ def main():
     }
     (out / "latest.json").write_text(json.dumps(feed, indent=2) + "\n", encoding="utf-8")
 
-    dmg, _, nsis, msi, appimage, appimage_arm64, source = names
-    fields = dict(dmg=dmg, nsis=nsis, msi=msi, appimage=appimage, appimage_arm64=appimage_arm64, source=source, repo=REPO,
+    dmg, _, nsis, appimage, appimage_arm64, source = names
+    fields = dict(dmg=dmg, nsis=nsis, appimage=appimage, appimage_arm64=appimage_arm64, source=source, repo=REPO,
                   url=f"{REPO}/releases/download/v{version}")
     body = DOWNLOADS.format(**fields) + "\n" + text + "\n\n" + unwrap(INSTALL).format(**fields)
     (out.parent / "body.md").write_text(body, encoding="utf-8")

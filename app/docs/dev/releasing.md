@@ -12,6 +12,15 @@ the version bump, the checks and the tag. Nothing is pushed or committed
 to `main` directly; `main` takes the branch through its pull request once
 the release is published.
 
+Windows builds produce only the NSIS `-setup.exe` installer, configured in
+`app/src-tauri/tauri.windows.conf.json`. The build uploads its `.exe` and updater
+signature; `scripts/release_assets.py` requires that installer and publishes
+`windows-x86_64` and `windows-x86_64-nsis` feed entries. It does not require or
+publish MSI artifacts. The generic key remains available to the updater's
+fallback lookup from older MSI-installed copies; the updater detects the
+installer format from the downloaded bytes. Test assembly without an MSI using
+`python3 -I scripts/test_release_assets.py`.
+
 ## Cutting a release
 
 1. **Bump the version** everywhere it is kept. The tag run fails if any

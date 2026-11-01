@@ -27,7 +27,6 @@ class ReleaseAssets(unittest.TestCase):
             ("macos", f"Immage_{VERSION}_aarch64.dmg", False),
             ("macos-update", "Immage.app.tar.gz", True),
             ("nsis", f"Immage_{VERSION}_x64-setup.exe", True),
-            ("msi", f"Immage_{VERSION}_x64.msi", True),
             ("x64", f"Immage_{VERSION}_amd64.AppImage", True),
             ("arm64", f"Immage_{VERSION}_aarch64.AppImage", True),
             ("source", f"immage-{VERSION}-source.tar.gz", False),
@@ -62,8 +61,25 @@ class ReleaseAssets(unittest.TestCase):
             self.assertIn(filename, body)
             self.assertEqual((self.out / filename).read_text(), "x64" if arch == "x86_64" else "arm64")
         self.assertIn("darwin-aarch64", platforms)
-        self.assertIn("windows-x86_64-msi", platforms)
+        self.assertNotIn("windows-x86_64-msi", platforms)
+        self.assertEqual(platforms["windows-x86_64"], platforms["windows-x86_64-nsis"])
+        self.assertTrue(platforms["windows-x86_64"]["url"].endswith("-Windows-x64-setup.exe"))
+        self.assertNotIn(".msi", body)
+        self.assertFalse(list(self.out.glob("*.msi")))
         self.assertFalse(list(self.out.glob("*.sig")))
+
+    def test_missing_windows_exe_fails(self):
+        self.files["nsis"].unlink()
+        result = self.assemble()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("expected one *-setup.exe", result.stderr)
+
+    def test_missing_windows_signature_fails(self):
+        path = self.files["nsis"]
+        path.with_name(path.name + ".sig").unlink()
+        result = self.assemble()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("no signature for " + path.name, result.stderr)
 
     def test_missing_arm64_bundle_fails(self):
         self.files["arm64"].unlink()

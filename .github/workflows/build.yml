@@ -230,7 +230,6 @@ jobs:
         with:
           name: immage-windows-x64
           path: |
-            app/src-tauri/target/release/bundle/msi/*.msi*
             app/src-tauri/target/release/bundle/nsis/*.exe*
           if-no-files-found: error
 

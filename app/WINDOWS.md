@@ -1,6 +1,6 @@
 # Building Immage on Windows
 
-The result is an x64 installer, `.msi` and `.exe`, that runs on any 64-bit
+The result is an x64 `.exe` installer, that runs on any 64-bit
 Windows 10 or 11 PC, and on Windows on ARM through its x64 emulation. It is
 built on Windows itself; a Windows 11 on ARM virtual machine works, building
 under the same emulation, only more slowly.
@@ -95,10 +95,9 @@ cd C:\src\immage\app; npm ci
 npm run tauri build
 ```
 
-The installers land in `app\src-tauri\target\release\bundle\`:
-`msi\Immage_<version>_x64_en-US.msi` and `nsis\Immage_<version>_x64-setup.exe`.
-The `.msi` installs into `C:\Program Files\Immage` for every user. The
-`.exe` asks: for everyone, into Program Files, or just for you, under
+The installer lands in
+`app\src-tauri\target\release\bundle\nsis\Immage_<version>_x64-setup.exe`.
+The `.exe` asks: for everyone, into Program Files, or just for you, under
 AppData, without administrator rights. On an administrator's account
 Windows asks for permission before that choice either way; a standard
 user gets no prompt and installs just for themselves. Settings, AI
@@ -110,9 +109,6 @@ that copy first.
 
 - Copy the last 20 or so lines of the window's output; the first error is
   the one that matters.
-- If only the `.msi` step fails (WiX's `light.exe`), turn on **VBScript**
-  in *Settings > System > Optional features*; the `.exe` installer is made
-  either way.
 - An unsigned installer makes SmartScreen warn on first run: *More info >
   Run anyway*.
 - AI masks download their models on first use with Windows' own `curl`

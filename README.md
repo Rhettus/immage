@@ -278,7 +278,7 @@ Each release has builds for:
 
 - **macOS**: Apple silicon, macOS 15 or newer, as a `.dmg`
 - **Windows**: x64, Windows 10 or 11 (and Windows on ARM through its x64
-  emulation), as an NSIS installer (`-setup.exe`) or an `.msi`
+  emulation), as an NSIS installer (`-setup.exe`)
 - **Linux**: x86-64 and ARM64, as AppImages, on distributions with
   glibc 2.35 or newer (Ubuntu 22.04 and later, including Linux Mint 22.x),
   bundling WebKitGTK 2.54.2
@@ -336,7 +336,7 @@ each build, keeping what the last two builds of each profile use
 [app/WINDOWS.md](app/WINDOWS.md) walks through it: darktable's MSYS2
 toolchain for the engine (`scripts/build.sh` in the MSYS2 UCRT64 shell),
 then `npm run tauri build` in PowerShell with the MSVC Rust toolchain. It
-makes the `.msi` and the NSIS installer in
+makes the NSIS `.exe` installer in
 `app/src-tauri/target/release/bundle/`. A Windows on ARM virtual machine
 works, building under x64 emulation.
 
