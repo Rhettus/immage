@@ -7,6 +7,8 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Lens Corrections adds global Defringe Amount and Radius sliders to remove
+  color fringes. Set Amount to zero to switch correction off.
 - Panorama Merge supports JPEGs and other non-RAW photos, including mixed
   RAW and non-RAW selections, and saves an editable DNG beside the first photo.
 - Generated HDR merges, panoramas, AI denoise results, positive exports and
