@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 the Immage authors
 
-"""Check the experimental AppDir carries the requested WebKitGTK and helpers."""
+"""Check the AppDir carries the requested WebKitGTK and helpers."""
 import ctypes
 import json
 import os

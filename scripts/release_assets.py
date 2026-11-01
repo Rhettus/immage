@@ -75,9 +75,9 @@ from inside Immage, without the warning.
   Or, in Terminal: `xattr -dr com.apple.quarantine /Applications/Immage.app`
 - **Windows** (x64): run `{nsis}` (or `{msi}`). When SmartScreen stops
   it, click **More info**, then **Run anyway**
-- **Linux** (x86-64, glibc 2.35 or newer, such as Ubuntu 22.04): make
+- **Linux** (x86-64, Ubuntu 26.04 or a compatible newer distribution): make
   `{appimage}` executable (`chmod +x {appimage}`) and run it
-- **Linux** (ARM64, glibc 2.35 or newer, such as Ubuntu 22.04): make
+- **Linux** (ARM64, Ubuntu 26.04 or a compatible newer distribution): make
   `{appimage_arm64}` executable (`chmod +x {appimage_arm64}`) and run it
 
 Immage checks for a new version once a day (Preferences › About ›
@@ -85,16 +85,12 @@ Updates), and offers to install it.
 
 ## Known issues
 
-- **Linux with an NVIDIA graphics card**: NVIDIA's driver holds Immage's
-  window to a few updates a second, on Wayland and X11 alike (WebKit bug
-  [303811](https://bugs.webkit.org/show_bug.cgi?id=303811)). Immage works
-  around it by having Mesa draw its window on the processor, when Mesa is
-  installed, as it is on most distributions. On a fast processor that is
-  about ten times faster, but it may be slower on a 4K screen or a slow
-  processor; to compare, start Immage with
-  `__EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/10_nvidia.json`
-  for NVIDIA's own drawing. A real fix has to come from NVIDIA's driver or
-  WebKitGTK
+- **Linux with an NVIDIA graphics card**: rendering performance varies by
+  system. Preferences > Performance > Window renderer offers Automatic
+  (the system default), Mesa and NVIDIA. Relaunch after changing it and
+  compare GUI benchmarks. Photo processing uses its own GPU setting.
+  Linux AppImages bundle WebKitGTK 2.54.2; NVIDIA performance should be
+  checked again after upgrading.
 - **Linux on Wayland with fractional scaling** (125%, 150%, ...): the
   web view Immage is built on draws such a window at 200% and the desktop
   shrinks it. Immage renders the photo for the screen's own scale while a

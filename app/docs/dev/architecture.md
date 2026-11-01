@@ -674,3 +674,23 @@ Verify with `node --test verify/camera-body.test.mjs` after building the engine.
 The checks cover standard and DNG serial extraction, leading zeros, lens-only
 metadata, unknown values, identical models with swapped lenses, combined
 filters and facet counts. Run `npm run build` in `app` for frontend validation.
+
+### Linux WebKitGTK packaging
+
+The normal Linux jobs in `.github/workflows/build.yml` build x86-64 and ARM64
+AppImages on Ubuntu 26.04. Before compiling the app and frames web extension,
+`app/scripts/build_webkitgtk.sh` builds SHA-256-pinned WebKitGTK 2.54.2 with
+GTK 3, JavaScriptCore and matching helper processes, and installs them into
+`/usr` for Tauri to bundle. Non-release CI caches the staged installation by
+architecture and script hash; release jobs rebuild it without that cache.
+WebKit compilation uses two jobs and the Linux job allows six hours.
+
+After packaging, `app/scripts/check_webkit_bundle.py` requires both bundled
+libraries to report 2.54.2 and checks for WebKitWebProcess, WebKitNetworkProcess
+and the injected bundle. Missing helpers or wrong versions fail the job before
+artifact upload. Run it with the AppDir path and `2.54.2` to repeat this check.
+GUI reports obtain the runtime version through `tauri::webview_version()`;
+verify it on the resulting AppImage and repeat Mesa/NVIDIA benchmarks. The
+upgrade does not establish that NVIDIA stalls are fixed. Automatic still uses
+the system EGL selection, with explicit renderer preferences available.
+The Ubuntu 26.04 build baseline replaces the former Ubuntu 22.04 baseline.

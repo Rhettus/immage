@@ -51,6 +51,11 @@ Immage keeps to make it so.
 
 **Interface rendering** (Linux)
 
+Official Linux AppImages bundle WebKitGTK and JavaScriptCore 2.54.2 and
+require Ubuntu 26.04 or a compatible newer distribution. GUI benchmark
+reports record the running WebKitGTK version; use a new build when comparing
+renderer behavior after upgrading.
+
 - **Window renderer**: **Automatic** uses the system default renderer, including on NVIDIA;
   **Mesa** selects Mesa's EGL explicitly, and **NVIDIA** selects NVIDIA's.
   Only installed drivers can be selected. On NVIDIA, Mesa normally draws
