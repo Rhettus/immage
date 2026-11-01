@@ -888,6 +888,8 @@ export class Session {
 
   // native detail previews keep every module and the display scale in a loupe
   detailView: (() => View | null) = () => null;
+  // Full resolution of the visible view, before preview quality reductions.
+  exactView: (() => View | null) = () => null;
   private needLoupe = false;
   requestLoupe() {
     this.needLoupe = true;
@@ -905,6 +907,13 @@ export class Session {
       // full-size probes block newer inputs before the loupe can appear
       perf.event("preview.decision", { reason:"detail-loupe" });
       return { ...detail, draft: true, detail: true, loupe: true };
+    }
+    if (eligible) {
+      const exact = this.exactView();
+      if (exact) {
+        perf.event("preview.decision", { reason:"detail-whole-view" });
+        return { ...exact, draft: true, detail: true };
+      }
     }
 
     if (ops.length) this.draftKey = [...new Set(ops.map((op) => op.split("#")[0]))].sort().join();

@@ -3305,6 +3305,7 @@ export default function App() {
       };
       s.thumbSize = baseSize;
       s.previewMode = loadPreview;
+      s.exactView = () => viewAt(1);
       s.detailView = () => {
         if (!loupeEnabledRef.current || beforeRef.current || baModeRef.current !== "off" || !full.current) return null;
         const f = full.current;

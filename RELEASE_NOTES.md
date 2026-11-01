@@ -29,9 +29,12 @@ Improvements
 - An optional persistent 100% Detail loupe in Adjustments shows a selected
   area. It defaults to off; enable it in General > Workspace. Use its point
   picker, then click the photo to choose the area; Escape cancels picking.
-  Disabling the loupe also disables its rendering. Detail and grain drags preview the selected area directly,
-  avoiding initial whole-image probe renders; release updates the full
-  visible view. Contrast and tone adjustments keep whole-image previews.
+  Disabling the loupe also disables its rendering. Detail and grain drags
+  preview the selected area directly when the loupe is enabled; otherwise,
+  they keep the visible image at full preview resolution while dragging,
+  including Texture, Sharpening, and luminance and color Denoise. Release
+  updates the full visible view. Contrast and tone adjustments keep their
+  normal whole-image previews.
 - Preferences > Modules offers Contrast & Texture alternatives for Clarity
   and Texture, with the module's native controls in adjustments and masks.
   Existing defaults remain in place.

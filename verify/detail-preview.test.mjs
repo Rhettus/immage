@@ -100,13 +100,24 @@ test('grain uses native loupe feedback',()=>{
   }
 });
 
-test('disabling the loupe retains whole-image drafts for detail and grain',()=>{
+test('disabling the loupe keeps detail and grain at full visible resolution',()=>{
   const {s}=session();s.detailView=()=>null;
-  for(const [id,op] of [['texture','diffuse'],['grain_amount','grain']]) {
+  const exact={width:2400,height:1800,scale:0.8,x:120,y:60};
+  s.exactView=()=>exact;
+  for(const [id,op] of [['texture','diffuse'],['sharp_amount','sharpen'],
+    ['nr_luminance','denoiseprofile'],['nr_color','denoiseprofile'],['nr_detail','denoiseprofile'],
+    ['l_nr_color','denoiseprofile'],['grain_amount','grain']]) {
     s.values[id]=0;s.set(id,10);
-    const view=s.draftView({...full,draft:true},[op]);
-    assert.equal(view.loupe,undefined);assert.equal(view.detail,undefined);
+    for(let i=0;i<3;i++) {
+      const view=s.draftView({width:1200,height:900,draft:true},[op]);
+      assert.deepEqual(view,{...exact,draft:true,detail:true},id);
+      s.draftTimed({view,ms:300},1);
+    }
   }
+  s.set('exposure',1);
+  const ordinary={width:1200,height:900,draft:true};
+  assert.equal(s.draftView(ordinary,['exposure']),ordinary);
+  assert.equal(s.draftView(exact,[]),exact,'release uses the ordinary exact view');
 });
 
 for (const mode of ['idle', 'disabled', 'moved']) test(`persistent loupe request: ${mode}`, async()=>{
