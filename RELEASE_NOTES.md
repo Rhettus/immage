@@ -17,6 +17,15 @@ what Immage's update banner shows under Release Notes.
   skip unchanged placement updates, and defer navigator drawing to reduce
   work when an exact frame arrives.
 
+- Histogram, scope and clipping calculations run in background workers,
+  with a fallback where workers are unavailable. Histogram input copies
+  wait until after drawing to reduce work on the window's main thread.
+
+- The engine retains scaled preview checkpoints on the GPU for reuse by
+  downstream edits. Three recent scaled checkpoints survive ordinary cache
+  replacement, while upstream changes and memory cleanup still invalidate
+  them. This avoids retaining full-resolution demosaiced GPU buffers.
+
 - Removed the experimental adaptive cached preview and its performance tuner
   choices after paired benchmarks showed higher latency, more stalls and worse
   visual feedback. Native adaptive preview sizing, detail loupe rendering and
@@ -43,22 +52,26 @@ what Immage's update banner shows under Release Notes.
   Other performance settings support measured comparisons and relaunch
   verification; AI and thumbnail caches are excluded.
 
-- Detail sliders use accurate previews at the current view scale. When two
-  preview frames miss the target frame rate, rendering narrows to a movable
-  detail loupe while the surrounding photo keeps its previous sharp frame.
-  Release the slider to update the full visible area. The viewer's Detail
-  loupe button switches this behavior off. Loupe controls appear only while
-  detail sliders are being used.
+- A persistent 100% Detail loupe in Adjustments shows a selected area.
+  Use its point picker, then click the photo to choose the area; Escape
+  cancels picking. General > Workspace can disable the loupe and its
+  rendering. Detail and grain drags preview the selected area directly,
+  avoiding initial whole-image probe renders; release updates the full
+  visible view. Contrast and tone adjustments keep whole-image previews.
 
-- Cached detail preview replaces the inaccurate cached Exposure preview.
-  It interpolates recent full renders for detail, texture, contrast and
-  dehaze controls while native rendering continues. Release renders the
-  accurate result; intermediate previews remain experimental.
+- Preferences > Modules offers Contrast & Texture alternatives for Clarity
+  and Texture, with the module's native controls in adjustments and masks.
+  Existing defaults remain in place.
 
 - GUI benchmarks now record CPU usage per core and process, RAM and swap,
   supported GPU/VRAM counters, and the busiest Linux threads to help identify
   single-thread bottlenecks. The dashboard shows resource use by step,
   frame pacing, UI stalls and rendering-path evidence.
+
+- GUI benchmark diagnostics trace input-to-frame latency, render queues,
+  engine mutex waits, module timings and raw checkpoint cache reuse and
+  eviction. Reports include the build commit and tracked-change status;
+  a bottleneck analysis tool helps interpret the collected traces.
 
 - Preferences > Performance has a Window renderer choice: Automatic,
   Mesa or NVIDIA. Relaunch to switch paths, then run the GUI benchmark
