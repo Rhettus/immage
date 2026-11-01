@@ -22,7 +22,7 @@ is no process version to choose: the tone mapper, AgX, plays that part.
 - **Hold ⌥ while dragging** some sliders to see what they affect: the
   sharpening and noise sliders show the photo in gray, and
   their masking sliders show where they act.
-- While you drag, the photo renders at half size so it can keep up, and
+- While you drag most sliders, the photo renders at half size so it can keep up, and
   sharpens when you let go. Grain, Texture and Sharpening also wait until
   you let go, unless they are what you are dragging. **Preview** in
   Preferences sets how far this goes: Quality turns it off, Performance
@@ -86,6 +86,27 @@ for **B&W Mix**.
 - **Clarity**: midtone contrast (darktable's local contrast).
 - **Dehaze**: removes haze; negative values add it.
 - **Vibrance** and **Saturation**.
+
+With **contrast & texture** selected for Clarity or Texture in Preferences ›
+Modules, that slider becomes **Medium details** and **Fine details** (-1 to 5).
+**Advanced** reveals Coarse details (-1 to 5), Base detail level (1–15), Halo
+control (-10 to 10), Noise bias (0–1), Shadows and Highlights (-5 to 5).
+Clarity and Texture use separate instances, including on masks. This module
+currently runs on the CPU.
+
+## Contrast equalizer
+
+Choose **Custom › Contrast › contrast equalizer** in Preferences › Modules
+for a photo whose Contrast has not been edited. In Basic, a graph replaces
+the Contrast slider. It adjusts detail by spatial scale rather than tonal range.
+
+Select **Luminance**, **Chroma**, **Edges**, **Luminance noise** or **Chroma
+noise**. Each channel has six points, from **Coarse** on the left to **Fine**
+on the right. Click near a point and drag vertically to change that band.
+Pull up to boost, down to reduce; the noise channels set noise thresholds.
+Focus a point and use Up/Down to adjust it, or Home to restore its neutral
+value. **Reset** restores all five channels. This option is global; mask
+Contrast keeps its existing controls.
 
 ## Tone Curve
 
@@ -155,6 +176,12 @@ to 0.
 
 ## Detail
 
+Enable **Detail loupe** in Preferences › General › Workspace for compact
+100% previews above Detail and Presence. Their point pickers select the same
+area. Detail and grain drags preview that area directly; with the loupe off,
+they keep the visible image at full preview resolution. Release updates the
+full visible view. Tone and contrast controls retain whole-image previews.
+
 **Sharpening** (darktable's sharpen, or diffuse or sharpen)
 
 Sharpen as your last step. New raws start with it off. It runs on
@@ -203,6 +230,11 @@ To try another Amount, run it again on the raw; the next DNG is
 Raw-only sliders are grayed out on a JPEG.
 
 ## Lens Corrections
+
+**Defringe** removes color fringes using darktable's chromatic aberrations:
+**Amount** sets strength and **Radius** sets its reach. Amount 0 switches it
+off. This is separate from Remove Chromatic Aberration and from the module
+choice for a mask's Defringe.
 
 - **Enable Profile Corrections**: corrects distortion and vignetting for
   the lens darktable detects (through the lensfun database).

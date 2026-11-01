@@ -158,14 +158,15 @@ photo that already uses one of a tool's modules keeps it.
 | Treatment (Color, Black & White) | color calibration's gray (`channelmixerrgb`), on an instance of its own after the color equalizer, or the color equalizer (`colorequal`) |
 | White Balance: Temp, Tint, the picker | color calibration (`channelmixerrgb`) |
 | Exposure | exposure (`exposure`) |
-| Contrast | AgX (`agx`), or sigmoid (`sigmoid`) on a photo started under it; or color balance rgb (`colorbalancergb`) |
+| Contrast | AgX (`agx`), or sigmoid (`sigmoid`) on a photo started under it; or color balance rgb (`colorbalancergb`); or contrast equalizer (below) |
+| Contrast equalizer (Contrast option) | contrast equalizer (`atrous`): five channels, each with six coarse-to-fine bands; replaces the global Contrast slider |
 | Highlights, Shadows | tone equalizer (`toneequal`), or shadows and highlights (`shadhi`) |
 | Blacks | AgX's lift, or sigmoid's target black; or exposure's black level (`exposure`) |
 | Vibrance | color balance rgb (`colorbalancergb`) |
 | Saturation | AgX's saturation; or color balance rgb (`colorbalancergb`), which a photo on sigmoid always uses |
 | Whites | AgX (`agx`), with color balance rgb's highlights brilliance (`colorbalancergb`); sigmoid (`sigmoid`) on a photo started under it |
-| Texture | diffuse or sharpen (`diffuse`) |
-| Clarity | local contrast (`bilat`) |
+| Texture | diffuse or sharpen (`diffuse`), or contrast & texture (`contrastntexture`), on its own instance |
+| Clarity | local contrast (`bilat`), or contrast & texture (`contrastntexture`) |
 | Dehaze | haze removal (`hazeremoval`) |
 | **Tone Curve** | |
 | Parametric and point curve | tone curve (`tonecurve`) |
@@ -193,11 +194,11 @@ photo that already uses one of a tool's modules keeps it.
 | Local Exposure, Blacks, Contrast, Whites, Saturation, Hue | an instance of exposure or color balance rgb per mask |
 | Local Highlights, Shadows | an instance of tone equalizer or shadows and highlights (as the photo's) per mask |
 | Local Temp, Tint | an instance of color calibration per mask |
-| Local Texture, Clarity, Dehaze | an instance of diffuse or sharpen, local contrast or haze removal per mask |
+| Local Texture, Clarity, Dehaze | an instance of the chosen Texture or Clarity module (including contrast & texture), or haze removal per mask |
 | Local Noise, Defringe, Sharpness | an instance of denoise (profiled), chromatic aberrations (`cacorrectrgb`) or defringe (`defringe`), or diffuse or sharpen or sharpen (as the photo's Sharpening) per mask |
 | **Heal and Clone** | retouch (`retouch`) |
 | **HDR Merge** | darktable's HDR merge (lighttable's "create HDR"), with its auto-alignment, into a float DNG |
-| **Panorama Merge** | no darktable module: OpenCV's stitching, of raws rendered by darktable up to lens correction (`lens`), into a float DNG |
+| **Panorama Merge** | no darktable module: OpenCV stitches RAW and non-RAW photos rendered by darktable into a float DNG |
 | **Negative** | negadoctor (`negadoctor`); a converted negative switches off color calibration, exposure, the tone equalizer, haze removal and the tone mapper, and runs Contrast and Saturation on color balance rgb, Highlights and Shadows on shadows and highlights |
 | **Looks** | darktable styles, applied as extra module instances |
 | **Export** borders | framing (`borders`), added at export only |

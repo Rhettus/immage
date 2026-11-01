@@ -204,7 +204,7 @@ Commands by what they reach:
 | Reaches | Commands |
 |---|---|
 | The open photo, through the engine | `open_image`, `get_params`, `set_params`, `module_state`, `render`, `cancel_base`, `preview`, `save`, `before_view`, `history`, `masks`, `mask_shapes`, `combine`, `mask_delete`, `mask_rename`, `mask_map`, `range_map`, `sample`, `zones`, `tone_key`, `agx_auto`, `spots`, `spots_enable`, `spot_source`, `look_apply`, `look_amount`, `ai_object`, `ai_mask`, `ai_depth`, `ai_denoise`, `ai_denoise_preview` |
-| The library, through the engine | `open_folder` (engine `import` in batches), `thumb`, `thumb_cached`, `thumb_known`, `prefetch`, `meta`, `meta_set`, `keywords`, `keywords_set`, `create_virtual_copy`, `remove_virtual_copy`, `hdr_merge`, `hdr_can_align`, `pano_merge`, `pano_can_merge`, `trash_files`, `export_images`, `export_cancel`, `export_preview`, `fonts`, `ai_accel`, `about` |
+| The library, through the engine | `open_folder` (engine `import` in batches), `thumb`, `thumb_cached`, `thumb_known`, `prefetch`, `meta`, `meta_set`, `capture_times`, `keywords`, `keywords_set`, `create_virtual_copy`, `remove_virtual_copy`, `hdr_merge`, `hdr_can_align`, `pano_merge`, `pano_can_merge`, `trash_files`, `export_images`, `export_cancel`, `export_preview`, `fonts`, `ai_accel`, `about` |
 | Files only | `list_subfolders`, `folder_volumes`, `path_exists`, `path_kind`, `export_existing`, `presets_load`, `presets_save`, `export_presets_load`, `export_presets_save`, `preset_file_read`, `preset_file_write`, `looks_list`, `sample_folder`, `launch_file` |
 | AI models (download, then the engine's `version`) | `ai_model_ensure`, `ai_model_reinstall` |
 | Immich (HTTP) | `immich_albums`, `immich_create_album`, `immich_export_check`, `immich_browse_check`, `immich_search`, `immich_libraries`, `immich_suggestions`, `immich_people`, `immich_tags`, `immich_thumb`, `immich_resolve` |
@@ -263,7 +263,10 @@ before `colorin` (`_pano_keep`) and its white balance divided out, so
 the panorama stays in the camera's color;
 [`engine/dng.c`](../../../engine/dng.c) writes it as a 16-bit float
 LinearRaw DNG with the first raw's matrix and white balance as shot,
-which darktable opens as a raw. `_pano_merge` imports it; a tagged one
+which darktable opens as a raw. Selections containing non-RAW images instead
+render into common linear Rec.2020 with white balance applied, write the DNG
+in that space and use `_positive_import` for neutral starting history.
+`_pano_merge` imports it; a tagged one
 runs on the export thread. Both are built only when OpenCV's stitching
 module is found (`HAVE_PANO`, `engine/CMakeLists.txt`).
 
@@ -297,7 +300,7 @@ The commands `_handle()` serves:
 | Group | Commands |
 |---|---|
 | Session | `open`, `history`, `module_state`, `save`, `baseline_end`, `before`, `close`, `quit`, `version`, `unpack`, `ai_accel`, `opencl`, `fonts` |
-| Library (no photo needed) | `folder`, `import`, `thumb`, `prefetch`, `meta`, `meta_set`, `keywords`, `keywords_set`, `copy`, `remove_copy`, `sidecars`, `forget`, `export`, `export_hold`, `export_release`, `hdr_merge`, `pano_merge` |
+| Library (no photo needed) | `folder`, `import`, `thumb`, `prefetch`, `meta`, `meta_set`, `capture_times`, `keywords`, `keywords_set`, `copy`, `remove_copy`, `sidecars`, `forget`, `export`, `export_hold`, `export_release`, `hdr_merge`, `pano_merge` |
 | Edit | `set`, `get`, `render`, `preview`, `look`, `look_amount` |
 | Masks and spots | `mask`, `combine`, `masks`, `mask_rename`, `mask_delete`, `mask_map`, `range_map`, `sample`, `spots`, `spots_enable`, `spot_source` |
 | Tone | `tone_key`, `agx_auto`, `zones` |
@@ -395,7 +398,7 @@ darktable is, and it has AI features when darktable is configured with
 | Folder snapshots | `folders/` in the runtime folder: each folder's photos as its last whole read found them | permanent; written again at each read |
 | Immich thumbnails and originals | `cache/immich-thumbs`, `cache/immich-originals` | cache |
 | Import catalog, Immich key | the immporter's SQLite catalog under the app data folder (`immporter/`); the key in the system keychain | permanent |
-| Benchmark results | [benchmarking/results/](../../../benchmarking/results/) (GUI reports under `gui/` in a dev build, `<app data>/benchmarks` in a release) | permanent, tracked |
+| Benchmark results | `benchmarking/results/` (see [benchmarking guide](../../../benchmarking/README.md)) (GUI reports under `gui/` in a dev build, `<app data>/benchmarks` in a release) | permanent, tracked |
 | Source photos | wherever the user keeps them | never written, except the sidecar |
 
 ## Tests and reference tools
@@ -420,13 +423,47 @@ darktable is, and it has AI features when darktable is configured with
 | [webext/frames.c](../../src-tauri/webext/frames.c) | The Linux web extension for shared-memory frames, built by [build_appimage.sh](../../scripts/build_appimage.sh) into `src-tauri/resources/webext` (gitignored). |
 | [bundle_engine.py](../../scripts/bundle_engine.py), [build_dmg.sh](../../scripts/build_dmg.sh) | The engine and its libraries copied into `src-tauri/resources/darktable` (gitignored) and made relocatable; the macOS disk image. |
 | [build_engine_windows.sh](../../scripts/build_engine_windows.sh), [bundle_engine_windows.sh](../../scripts/bundle_engine_windows.sh), [WINDOWS.md](../../WINDOWS.md) | The Windows (MSYS2 UCRT64) build. |
-| [build_webkitgtk.sh](../../scripts/build_webkitgtk.sh), [check_webkit_bundle.py](../../scripts/check_webkit_bundle.py) | Experimental Ubuntu 26.04 workflow: checksum-verified WebKitGTK 2.54.2 source build for the GTK3 / 4.1 API; cached staged install, upstream license notices, and verification that the AppDir contains matching WebKitGTK, JavaScriptCore and helper processes. |
 | [prune_target.mjs](../../scripts/prune_target.mjs) | Frees `src-tauri/target` of earlier builds, which cargo never removes: keeps what the last two builds of each profile use, as cargo lists it. npm runs it before and after every `npm run tauri ...`. |
 | [build_opencv.sh](../../scripts/build_opencv.sh) | OpenCV for HDR Merge's alignment and Panorama Merge: the five modules darktable links and stitching, which the engine links, static, into `build/opencv/install`, which `scripts/build.sh` and `build_engine_windows.sh` hand darktable as `OpenCV_ROOT`. |
 | [fetch_immporter.sh](../../scripts/fetch_immporter.sh), [immporter.rev](../../immporter.rev) | The importer, cloned into the gitignored `immporter/` at a pinned commit. |
 | [app/docs/](../README.md) | The user guide, for photographers. |
 | [benchmarking/README.md](../../../benchmarking/README.md) | Performance suite, results and findings. |
 | [darktable/dev-doc/](../../../darktable/dev-doc/README.md) | darktable's own developer docs: the module API, pixelpipe, introspection. Read them before changing the engine's calls into darktable. |
+
+## Module options and metadata editing
+
+`MODULE_CHOICES` in [manifest.ts](../../src/manifest.ts) is the source of truth
+for the alternatives, preferred defaults, global controls and local controls.
+[moduleChoice.ts](../../src/moduleChoice.ts) preserves used tools' choices;
+closing Preferences updates unused tools in the open session.
+[ContrastEqualizer.tsx](../../src/ContrastEqualizer.tsx) replaces global Contrast
+when `mod_contrast` is 2. `equalizerMap` maps 30 `ce_<channel>_<band>` values to
+`atrous`'s `y[channel][band]`: five channels, six bands, range 0–1. The first
+three channels are neutral at 0.5, noise channels at 0. Reset restores every
+channel; the module is disabled at neutral. There is no local equalizer option.
+`detailMap` uses separate `contrastntexture` instances for Clarity and Texture,
+with local counterparts; [DetailControls.tsx](../../src/DetailControls.tsx)
+folds everything except Medium and Fine details under Advanced. Global
+Defringe uses `cacorrectrgb`; `mod_defringe` selects only the local module.
+
+[CaptureTimeDialog.tsx](../../src/CaptureTimeDialog.tsx) builds before/after
+entries for a shared offset, skipping invalid recorded times. App.tsx retains
+the last batch for confirmed restoration. Rust `capture_times` forwards to
+engine `_capture_times`, which checks expected times before writing sidecars.
+[LocationEditor.tsx](../../src/LocationEditor.tsx) saves GPS through `meta_set`;
+[map_tiles.rs](../../src-tauri/src/map_tiles.rs) supplies the optional map tiles.
+
+Rust `negative_export` exports a converted negative as a losslessly compressed
+16-bit float DNG or 32-bit float TIFF. Engine `_positive_import` gives the
+baked image a persistent neutral starting history. App.tsx's generated-result
+handling observes Open generated photos for merges, AI denoise, positives and
+the first plugin result, and clears incompatible Immich filtering so the result
+can be edited. Successful activity notifications expire after 30 seconds.
+
+Folder reads use a token to reject stale progress/results and time out an
+engine batch after 30 seconds. FolderTree loads expanded branches independently.
+Engine shutdown in Rust is bounded to five seconds even without a quit reply;
+Linux parent-death handling also terminates an orphan engine after an app crash.
 
 ## Keeping this current
 
@@ -444,7 +481,7 @@ The GUI dashboard plots these alongside timing summaries.
 [detailPreview.ts](../../src/detailPreview.ts) identifies controls eligible for
 native loupe rendering. Detail and grain drags start directly in the loupe at
 the display scale, without probing whole-image rendering first. Disabling the
-loupe retains whole-image drafts. Release renders the exact full view.
+loupe keeps eligible detail drags at full visible preview resolution. Release renders the exact full view.
 
 In headless screen pipes, the engine pixelpipe patch retains the last edited
 module's input and the scaled output of `demosaicscale`, identified at the next

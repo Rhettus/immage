@@ -10,6 +10,14 @@ apply as you make them; **Done** closes the window.
 
 **Workspace**
 
+- **Detail loupe**: optional compact 100% previews above Detail and Presence,
+  off by default. Both show the same area. Use the point picker, then click
+  the photo to choose it; Escape cancels. Turning it off stops loupe rendering.
+- **Open generated photos**: automatically opens HDR merges, panoramas, AI
+  denoise results, positive exports and the first plugin result for editing.
+- **Converted negative format**: losslessly compressed DNG (16-bit float,
+  default) or TIFF (32-bit float) for Negative’s **Export to Library**.
+
 - **Canvas**: what is behind the photo, in full screen preview too.
   **Dark**, **Neutral Gray** to judge tones without a dark surround, or
   **White** to see the photo as on a print. L steps through them.
@@ -131,6 +139,17 @@ The thumbnail caches keep nothing while the disk has under 5 GB free.
   back, zooms in and out, and saves a timing report. Every slider ends where
   it started, but use a copy of a photo you care about.
 
+Use the **Performance tuner** with a representative RAW and your usual window
+size. Set FPS and latency targets, run it, review the recommendation, then
+apply it and verify with another run. Export quality is unaffected.
+
+The performance tuner defaults to an 80 ms latency target. It uses the median
+of the middle 10–90% of measured frame intervals and input-to-paint latencies,
+then tries Balanced 100%, followed by smaller preview sizes and drafts only
+if the targets are missed. The first configuration
+meeting both targets is recommended. Full Quality remains a manual option and
+is excluded from the tuner search.
+
 ## New Photos
 
 What a photo starts with the first time it is opened, if it has no history
@@ -178,9 +197,12 @@ Which darktable module each tool runs on. **Default** uses the module of
 darktable's AgX workflow for each; **Custom** lets you pick one per tool,
 from these:
 
-- **Contrast**, **Blacks**, **Saturation**: AgX (or sigmoid, on a photo
-  started under it), or color balance rgb for Contrast and Saturation and
-  exposure for Blacks
+- **Contrast**: AgX (or sigmoid on a photo started under it), color balance
+  rgb, or contrast equalizer, which replaces the slider with a curve editor
+- **Blacks**: AgX (or sigmoid), or exposure
+- **Saturation**: AgX (or sigmoid), or color balance rgb
+- **Clarity**: local contrast, or contrast & texture
+- **Texture**: diffuse or sharpen, or contrast & texture
 - **Highlights and Shadows**: the tone equalizer, or shadows and
   highlights. A mask's Highlights and Shadows use the same one
 - **Black & White**: color calibration, or the color equalizer
@@ -190,14 +212,17 @@ from these:
 Clarity and Texture can each use **contrast & texture** under Custom modules.
 Selecting it replaces the corresponding slider with the module's Coarse,
 Medium and Fine details, Base detail level, Halo control, Noise bias, Shadows
-and Highlights sliders, using darktable's ranges and defaults. This also
+and Highlights sliders, using darktable's ranges and defaults. Medium and Fine
+details stay visible; expand **Advanced** for the other controls. This also
 applies to masks. Clarity and Texture use separate instances. The existing
 modules remain the defaults; contrast & texture currently runs on the CPU.
 
 The tab also lists the module behind each of the other tools. A photo that
 already uses one of a tool's modules keeps it, so its edit looks the same;
-the choice applies to the tools a photo hasn't used yet, from the next
-photo you open.
+closing Preferences applies the choice to unused tools on the current photo
+as well as photos opened later. See [Adjustments](adjustments.md#contrast-equalizer)
+for the equalizer graph. The Defringe choice affects masks only; global
+Defringe always uses chromatic aberrations.
 
 ## Immich
 
@@ -223,16 +248,3 @@ are editing, and opens the new version where you were. **Later** puts the
 card away until Immage next starts; **Skip This Version** waits for the
 one after. Updates are signed, and one whose signature does not match is
 not installed.
-
-Detail loupe controls appear only while detail sliders are in use, and the move
-handle appears only when the loupe itself is shown. Slider previews use native
-engine output; release restores the accurate full view.
-
-The performance tuner defaults to an 80 ms latency target. It uses the median
-of the middle 10–90% of measured frame intervals and input-to-paint latencies,
-then tries Balanced 100%, followed by smaller preview sizes and drafts only
-if the targets are missed. The first configuration
-meeting both targets is recommended. Full Quality remains a manual option and
-is excluded from the tuner search.
-
-The **Detail loupe** switch in General → Workspace enables compact 100% previews above the Detail and Presence controls (off by default). Both show the same selected area. Use its point picker, then click the photo to select the area; Escape cancels picking. Disabling the loupe also disables its rendering. Contrast and tone adjustments keep a whole-image live preview; detail controls can preview the selected area during a drag.

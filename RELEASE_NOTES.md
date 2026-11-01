@@ -7,6 +7,8 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- User and developer guides now cover all module choices, the contrast equalizer
+  graph, detail previews, metadata editing and generated-photo workflows.
 - Preferences > Modules adds Contrast equalizer as a Contrast option, replacing
   the Contrast slider with a draggable graph for luminance, chroma, edges and
   noise thresholds across coarse-to-fine detail bands.

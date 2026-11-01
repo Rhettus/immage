@@ -115,6 +115,8 @@ The toolbar under the filmstrip filters the folder:
   as many as you like, then click **Search** to filter the folder and show
   it in the grid; **Clear** in the panel takes that one off, at the next
   **Search**.
+  - **Rejected**: **All photos**, **Hide rejected** or **Only rejected**.
+    This counts as an active filter and resets with **Clear all**.
   - **File type**, **Camera** and **Lens**: tick any to show photos of
     those, for example **RAW** and **JPEG**. Each lists what the folder
     holds, with how many photos of each.
@@ -154,6 +156,13 @@ corner, and opens. Each copy has its own sidecar.
 To remove one, right-click it and choose **Remove Virtual Copy**. Its
 sidecar goes to the Trash; the photo file stays.
 
+## Generated photos
+
+Generated photos open for editing automatically, including HDR and panorama
+merges. Turn off **Open generated photos** in Preferences › General › Workspace
+to stay on your current photo and use the completion notification's **Open**.
+Successful notifications close after 30 seconds, or when Open or OK is selected.
+
 ## HDR Merge
 
 HDR Merge combines bracketed raws, the same scene at different
@@ -178,7 +187,8 @@ not the subject's.
 
 ## Panorama Merge
 
-Panorama Merge stitches overlapping raws into one wide photo. Select the
+Panorama Merge stitches overlapping RAW or non-RAW photos, including mixed
+selections, into one wide photo. Select the
 photos in the filmstrip or grid, then press ⌃M or right-click and choose
 **Panorama Merge…**. Choose a projection:
 
@@ -195,15 +205,15 @@ Immage writes a new DNG beside the first photo, named `<name>-pano.dng`
 (then `<name>-pano_01.dng` and so on), and lists it after that photo. It
 is stitched in the background while you go on editing, and **Open** at
 the bottom left of the photo opens it. Like Lightroom's, the DNG holds
-the raw data with the lens corrections already made: it opens as the
-first photo would, with the new-photo defaults, white balance as shot
-and Lens Corrections off, and is edited as one photo. The other edits
+linear image data with lens corrections already made. An all-RAW selection
+opens with the new-photo defaults, white balance as shot and Lens Corrections
+off. A selection containing non-RAW photos uses a common linear color space
+and a neutral starting edit. The DNG is edited as one photo. The other edits
 of the photos you merged aren't used, and the photos themselves aren't
 changed.
 
-The photos must be raws from the same camera, overlapping by a third or
-so. A photo that overlaps none of the others is left out, and the
-activity line says so. Stitching runs on OpenCV rather than darktable,
+The photos should overlap by a third or so. A photo that overlaps none of
+the others is left out, and the activity line says so. Stitching runs on OpenCV rather than darktable,
 which has no panorama tool. It takes from half a minute to a few
 minutes, and a lot of memory for many photos.
 
@@ -222,7 +232,8 @@ Right-click a photo, or a selection, for:
 - **Edit In ›**: send it to another application. See [Edit In](edit-in.md).
 - **Create Virtual Copy** / **Remove Virtual Copy**
 - **HDR Merge…**, for two raws or more
-- **Panorama Merge…**, for two raws or more
+- **Panorama Merge…**, for two photos or more
+- **Adjust Capture Time…** / **Undo Capture Time Adjustment…**
 - **Show in Finder**
 - **Show in Immich**, for a photo from an Immich search
 - **Delete Rejected Photo…**
@@ -237,6 +248,23 @@ The **Metadata** card shows the open photo's:
 - the rating and color label
 - what the camera recorded: capture date, dimensions, focal length,
   aperture, shutter speed, ISO, exposure bias, flash, lens, camera and more
+
+### Adjust capture time
+
+Select photos, then choose **Adjust Capture Time…** in the context menu or
+Metadata panel. Enter the correct time for the reference photo. The dialog
+previews the offset and number of photos; confirm to shift them all by the
+same amount, preserving relative timing. Photos without a valid recorded
+time are skipped. Changes go to XMP sidecars; original files stay unchanged.
+The context menu can undo the last batch after confirmation.
+
+### Location
+
+In Metadata’s **Location**, enter latitude and longitude or open the optional
+OpenStreetMap map. Click to drop a pin, or drag it, then **Apply** to save GPS
+coordinates to the XMP sidecar. **Remove location** clears coordinates and
+altitude. The map offers dark and standard styles and needs an internet
+connection, with no API key.
 
 ## Keywords
 

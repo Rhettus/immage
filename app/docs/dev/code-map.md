@@ -69,7 +69,7 @@ Engine ([`engine/`](../../../engine)):
 - [main.c](../../../engine/main.c): `_handle()` serves every command; four pipes (main, preview, drag, base) over the open photo; sections for library, export, masks, AI (`HAVE_AI`), spots, ranges and zones, looks, save
 - [upright.c](../../../engine/upright.c) (Upright, from ashift.c), [hdrmerge.c](../../../engine/hdrmerge.c) (HDR Merge), [pano.cc](../../../engine/pano.cc) and [dng.c](../../../engine/dng.c) (Panorama Merge), [strip.cc](../../../engine/strip.cc) (export metadata)
 
-Checks and tools: [experimental WebKitGTK build](../../scripts/build_webkitgtk.sh) and [bundle check](../../scripts/check_webkit_bundle.py), [release asset tests](../../../scripts/test_release_assets.py) (`python3 -I scripts/test_release_assets.py`), [verify/](../../../verify/README.md) (the release checks: `Session` under Node against the engine), [benchmarking/](../../../benchmarking/README.md), `cargo test` in `app/src-tauri`, `npm run build` (type check), [darktable-pin.md](darktable-pin.md), and darktable's own [dev-doc/](../../../darktable/dev-doc/README.md).
+Checks and tools: [release asset tests](../../../scripts/test_release_assets.py) (`python3 -I scripts/test_release_assets.py`), [verify/](../../../verify/README.md) (the release checks: `Session` under Node against the engine), [benchmarking/](../../../benchmarking/README.md), `cargo test` in `app/src-tauri`, `npm run build` (type check), [darktable-pin.md](darktable-pin.md), and darktable's own [dev-doc/](../../../darktable/dev-doc/README.md).
 
 [verify/thumbnail-io.cc](../../../verify/thumbnail-io.cc) is the optional
 `immage-thumbnail-check` CMake target: metadata prefixes, late metadata
@@ -85,5 +85,22 @@ GUI benchmark resource sampling: [resources.rs](../../src-tauri/src/resources.rs
 records CPU, process memory, Linux threads and available GPU counters on a
 background worker; `App.tsx` attaches phase timestamps to report version 5.
 The GUI dashboard plots these alongside timing summaries.
+
+Module options: [moduleChoice.ts](../../src/moduleChoice.ts) resolves saved
+choices and preferences; [ModulePrefs.tsx](../../src/ModulePrefs.tsx) displays
+`MODULE_CHOICES` from the manifest. Closing Preferences reapplies choices to
+unused tools in the current session. [ContrastEqualizer.tsx](../../src/ContrastEqualizer.tsx)
+edits the global `atrous` curves (`EQ_IDS`, `equalizerMap` in manifest.ts).
+[DetailControls.tsx](../../src/DetailControls.tsx) groups contrast & texture
+controls, with Medium/Fine visible and the remainder under Advanced.
+
+Metadata: [CaptureTimeDialog.tsx](../../src/CaptureTimeDialog.tsx) previews and
+confirms batch offsets and restoration; App.tsx owns the last batch and calls
+`capture_times`. [LocationEditor.tsx](../../src/LocationEditor.tsx) edits GPS via
+`meta_set`; [map_tiles.rs](../../src-tauri/src/map_tiles.rs) serves map tiles.
+`negative_export` in Rust main.rs writes and imports a positive; engine main.c
+uses `_positive_import` for its neutral starting history. App.tsx handles generated
+results and the Open generated photos preference, including results outside
+an active Immich search.
 
 Native detail previews: [detailPreview.ts](../../src/detailPreview.ts) identifies controls eligible for the loupe. `Session.draftView` selects native whole-image drafts or the detail crop; release requests the exact full view. The removed adaptive-cache experiment is recorded in [failed experiments](../../../benchmarking/failed-experiments.md).
