@@ -1,3 +1,9 @@
+# Local instructions
+
+Read `AGENTS.local.md` in this directory when it exists. It contains personal,
+machine-specific instructions and is intentionally excluded from Git. Keep
+shared project instructions in this tracked file so all agents can find them.
+
 # Release notes
 
 Update `RELEASE_NOTES.md` for user-visible changes, including performance work.
