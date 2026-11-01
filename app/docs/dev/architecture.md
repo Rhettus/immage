@@ -497,4 +497,4 @@ workers. Surface generations reject stale results after a frame, photo or crop
 change. Workers support synchronous fallback and dispose on cleanup.
 
 Adaptive cached preview interpolation was removed after latency and visual
-quality regressed. See the measured [failed experiment](../../../benchmarking/failed-experiments.md).
+quality regressed.

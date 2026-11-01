@@ -103,4 +103,4 @@ uses `_positive_import` for its neutral starting history. App.tsx handles genera
 results and the Open generated photos preference, including results outside
 an active Immich search.
 
-Native detail previews: [detailPreview.ts](../../src/detailPreview.ts) identifies controls eligible for the loupe. `Session.draftView` selects native whole-image drafts or the detail crop; release requests the exact full view. The removed adaptive-cache experiment is recorded in [failed experiments](../../../benchmarking/failed-experiments.md).
+Native detail previews: [detailPreview.ts](../../src/detailPreview.ts) identifies controls eligible for the loupe. `Session.draftView` selects native whole-image drafts or the detail crop; release requests the exact full view. Adaptive cached preview interpolation was removed after latency and visual quality regressed.
