@@ -15,7 +15,7 @@ import { BANDS, choiceOn, choiceShows, controlById, GUIDE_IDS, guidesOf, isModul
 import { autoArea, autoBlack, autoDmax, autoDmin, autoExposure as autoPrintExposure, autoOffset, autoWbHigh, autoWbLow,
          FILM_BW, FILM_COLOR, fromValues, PRESETS, toValues, type Stats } from "./negadoctor";
 import { NegativePanel, type NegPick } from "./NegativePanel";
-import { CircleOff, Grid2x2, ScanSearch, MoveHorizontal, MoveVertical, PenLine, Sparkles, WandSparkles } from "lucide-react";
+import { CircleOff, Grid2x2, Pipette, MoveHorizontal, MoveVertical, PenLine, Sparkles, WandSparkles } from "lucide-react";
 import { panelValues } from "./panelValues";
 import { FrameUpdates, Snapshot } from "./uiUpdates";
 import { PixelCadence, PixelWorker } from "./pixelWorker";
@@ -53,7 +53,7 @@ import { Tour, tourSeen } from "./Tour";
 import { UpdateBanner } from "./UpdateBanner";
 import { autoCheck, relaunch } from "./updates";
 import { Chevron, Collapse } from "./Collapse";
-import { loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadNewPhotosProfile, loadOverlayColor, loadGuideColor, guideRgb, loadPins, maskOverlayRgb, loadPreview, loadBalancedPreviewSize, loadFrameCacheMb, loadDraftTarget, loadDraftSmallest,loadSliderScroll, loadSliderScrollStep,
+import { loadLoupe, storeLoupe, loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadNewPhotosProfile, loadOverlayColor, loadGuideColor, guideRgb, loadPins, maskOverlayRgb, loadPreview, loadBalancedPreviewSize, loadFrameCacheMb, loadDraftTarget, loadDraftSmallest,loadSliderScroll, loadSliderScrollStep,
          loadStackPairs,
          PreferencesDialog, storeOverlayColor, storeGuideColor, storeStackPairs,
          storeAutoHide, storeCanvas, CANVASES, storeFocusMode, storePins, type AccelProvider, type Canvas,
@@ -1586,17 +1586,27 @@ export default function App() {
   // full frame follows if a draft was shown
   const dragging = useRef(false);
   const draftShown = useRef(false);
-  const [detailActive, setDetailActive] = useState(false);
-  const detailActiveRef = useRef(false);
   const [loupeShown, setLoupeShown] = useState(false);
-  const [loupeEnabled, setLoupeEnabled] = useState(true);
+  const [loupeEnabled, setLoupeEnabled] = useState(loadLoupe);
+  const [loupePicking, setLoupePicking] = useState(false);
   const loupeEnabledRef = useRef(true);
   loupeEnabledRef.current = loupeEnabled;
   const [loupePosition, setLoupePosition] = useState({ x: 0.5, y: 0.5 });
   const loupePositionRef = useRef(loupePosition);
   loupePositionRef.current = loupePosition;
   const loupeCanvas = useRef<HTMLCanvasElement>(null);
-  const loupeMeta = useRef<Placed | null>(null);
+
+  useEffect(() => {
+    session.current?.requestLoupe();
+  }, [loupeEnabled, loupePosition]);
+  useEffect(() => {
+    if (!loupePicking) return;
+    const cancel = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); setLoupePicking(false); }
+    };
+    window.addEventListener("keydown", cancel, true);
+    return () => window.removeEventListener("keydown", cancel, true);
+  }, [loupePicking]);
 
   useEffect(() => {
     const DRAG_AREAS = ".panels, .histogram, .mask-box";
@@ -1606,9 +1616,6 @@ export default function App() {
       valueUpdates.current?.flush();
       dragging.current = false;
       histogramUpdates.flush();
-      detailActiveRef.current = false;
-      setDetailActive(false); setLoupeShown(false);
-      if (loupeCanvas.current) loupeCanvas.current.style.display = "none";
       if (draftShown.current || session.current?.pending) session.current?.requestRender();
       else session.current?.flushEdits();
     };
@@ -1993,13 +2000,6 @@ export default function App() {
       layerStyle(cc, "height", `${cm.height / dpr}px`);
       layerStyle(cc, "transform", `translate(${(ox + p.x) / dpr}px, ${(oy + p.y) / dpr}px) scale(${p.k})`);
     }
-    const lm = loupeMeta.current, lc = loupeCanvas.current;
-    if (lm && lc) {
-      const p = framePlace(lm, z);
-      layerStyle(lc, "width", `${lm.width / dpr}px`);
-      layerStyle(lc, "height", `${lm.height / dpr}px`);
-      layerStyle(lc, "transform", `translate(${(ox + p.x) / dpr}px, ${(oy + p.y) / dpr}px) scale(${p.k})`);
-    }
     const s = sharpMeta.current, sc = canvas.current;
     if (s && sc) {
       const p = framePlace(s, z);
@@ -2074,23 +2074,19 @@ export default function App() {
     }
     if (f.view.loupe) {
       // a late draft must not cover the final frame after release
-      if (!dragging.current || !detailActiveRef.current || !loupeEnabledRef.current) return;
+      if (!loupeEnabledRef.current) return;
       setLoupeShown(true);
       const lc = loupeCanvas.current;
       if (lc) {
         resizeCanvas(lc, f.width, f.height);
         perf.time("pixels.canvasUpload", () => lc.getContext("2d")!.putImageData(new ImageData(f.pixels, f.width, f.height), 0, 0));
         lc.style.display = "block";
-        loupeMeta.current = placed(f);
-        placeLayers();
       }
       return;
     }
     invalidateClip("sharp");
     frameGenerations.histogram.next();
-    if (loupeCanvas.current) loupeCanvas.current.style.display = "none";
-    setLoupeShown(false);
-    loupeMeta.current = null;
+    if (!f.view.draft) session.current?.requestLoupe();
     const c = canvas.current!;
     perf.time("pixels.canvasUpload", () => canvasFrames.draw(c, f));
     if (clipRef.current.low || clipRef.current.high) paintClip("sharp", f);
@@ -3193,8 +3189,7 @@ export default function App() {
                              masks: structuredClone(o.masks) };
         await o.close();
       }
-      detailActiveRef.current = false;
-      setDetailActive(false); setLoupeShown(false);
+      setLoupeShown(false);
       if (loupeCanvas.current) loupeCanvas.current.style.display = "none";
       setStatus("opening…");
       const opening = { path, imgid: id };
@@ -3274,24 +3269,15 @@ export default function App() {
       };
       s.thumbSize = baseSize;
       s.previewMode = loadPreview;
-      s.onDetailControl = (id) => {
-        if (session.current !== s) return;
-        detailActiveRef.current = !!id; setDetailActive(!!id);
-        if (!id) { setLoupeShown(false); if (loupeCanvas.current) loupeCanvas.current.style.display = "none"; }
-      };
       s.detailView = () => {
         if (!loupeEnabledRef.current || beforeRef.current || baModeRef.current !== "off" || !full.current) return null;
-        const v = viewAt(1), f = full.current;
-        const scale = v.scale ?? Math.min(1, v.width / f.w, v.height / f.h);
-        const sw = Math.floor(f.w * scale), sh = Math.floor(f.h * scale);
-        const w = Math.min(v.width, sw), h = Math.min(v.height, sh);
-        const x = Math.max(0, Math.min(v.x ?? 0, sw - w));
-        const y = Math.max(0, Math.min(v.y ?? 0, sh - h));
-        const side = Math.round(240 * (window.devicePixelRatio || 1));
-        const width = Math.min(side, w), height = Math.min(side, h);
-        const pos = loupePositionRef.current, screen = viewport();
-        return { width, height, scale,
-          x: Math.round(x + Math.max(0, Math.min(w - width, pos.x * screen.w - (screen.w - w) / 2 - width / 2))), y: Math.round(y + Math.max(0, Math.min(h - height, pos.y * screen.h - (screen.h - h) / 2 - height / 2))) };
+        const f = full.current;
+        const side = 240;
+        const width = Math.min(side, f.w), height = Math.min(side, f.h);
+        const pos = loupePositionRef.current;
+        return { width, height, scale: 1,
+          x: Math.round(Math.max(0, Math.min(f.w - width, pos.x * f.w - width / 2))),
+          y: Math.round(Math.max(0, Math.min(f.h - height, pos.y * f.h - height / 2))) };
       };
       s.frameBudget = () => loadFrameCacheMb() * 1048576;
       s.draftSize = () => (loadPreview() === "quality" ? null : { ...viewAt(draftK()), draft: true });
@@ -4240,6 +4226,17 @@ export default function App() {
   }, [zoneData]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const onPointerDown = (e: React.PointerEvent<HTMLElement>) => {
+    if (loupePicking && loupeEnabled) {
+      const { sx, sy } = paneXY(e.clientX, e.clientY);
+      const { ix, iy } = imageAt(sx, sy);
+      if (ix >= 0 && ix <= 1 && iy >= 0 && iy <= 1) {
+        loupePositionRef.current = { x: ix, y: iy };
+        setLoupePosition({ x: ix, y: iy });
+        setLoupePicking(false);
+        session.current?.requestLoupe();
+      }
+      return;
+    }
     if (lineRef.current) return;
     if (!current || croppingRef.current || !viewZ.current) return;
     if (pickingRef.current) {
@@ -4333,7 +4330,7 @@ export default function App() {
       const c = layer.current;
       if (c) c.getContext("2d")?.clearRect(0, 0, c.width, c.height);
     }
-    sharpMeta.current = baseMeta.current = loupeMeta.current = null;
+    sharpMeta.current = baseMeta.current = null;
     overviewHash.current = null;
     setCropBox(null);
     // Do not animate using the cropped frame's dimensions: the next fitted
@@ -5024,7 +5021,7 @@ export default function App() {
       <Splitter axis="x" value={layout.leftWidth} min={220} max={560} hidden={!docked.left}
                 onChange={(v) => setLayout((l) => ({ ...l, leftWidth: v }))} />
       <section className="center">
-        <main data-tour="viewer" className={`viewer zoom-${zoom === "fit" ? "fit" : "in"}${picking ? " picking" : ""}${aiBusy ? " busy" : ""}${straightening || line || (shiftHeld && current && (cropping || (!masksMode && !healMode)) && !preview) ? " straightening" : ""}${canvasColor !== "dark" ? ` canvas-${canvasColor}` : ""}${baMode === "overlay" ? " hold-view" : ""}${optPreview?.kind === "gray" ? " gray-view" : ""}`} ref={viewer}
+        <main data-tour="viewer" className={`viewer zoom-${zoom === "fit" ? "fit" : "in"}${picking || loupePicking ? " picking" : ""}${aiBusy ? " busy" : ""}${straightening || line || (shiftHeld && current && (cropping || (!masksMode && !healMode)) && !preview) ? " straightening" : ""}${canvasColor !== "dark" ? ` canvas-${canvasColor}` : ""}${baMode === "overlay" ? " hold-view" : ""}${optPreview?.kind === "gray" ? " gray-view" : ""}`} ref={viewer}
               onPointerDownCapture={onStraightenDown}
               onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
               onPointerLeave={leaveProbe}>
@@ -5035,36 +5032,6 @@ export default function App() {
             <canvas ref={copyCanvas} className={`layer copy${current && copyOn && !before && baMode === "off"
                       && !clipShown.low && !clipShown.high ? "" : " empty"}`} />
             <canvas ref={canvas} className={`layer sharp${current ? "" : " empty"}`} />
-            <canvas ref={loupeCanvas} className="layer" style={{ display: "none", pointerEvents: "none", zIndex: 5, outline: "1px solid white" }} />
-            {current && detailActive && !cropping && !before && baMode === "off" && <>
-              <button style={{ position: "absolute", top: 12, right: 12, zIndex: 9 }}
-                aria-label="Toggle detail loupe" aria-pressed={loupeEnabled} title="Adaptive detail loupe: drag its handle to choose the preview area"
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={() => { setLoupeEnabled(!loupeEnabled); if (loupeCanvas.current) loupeCanvas.current.style.display = "none"; }}>
-                <ScanSearch size={16} aria-hidden="true" />
-              </button>
-              {loupeEnabled && loupeShown && <button aria-label="Move detail loupe" title="Drag to place the detail preview; arrow keys move it"
-                onKeyDown={(e) => {
-                  const move: Record<string, [number, number]> = { ArrowLeft: [-0.02, 0], ArrowRight: [0.02, 0], ArrowUp: [0, -0.02], ArrowDown: [0, 0.02] };
-                  const delta = move[e.key];
-                  if (!delta) return;
-                  e.preventDefault(); e.stopPropagation();
-                  setLoupePosition((p) => ({ x: Math.max(0, Math.min(1, p.x + delta[0])), y: Math.max(0, Math.min(1, p.y + delta[1])) }));
-                }}
-                style={{ position: "absolute", left: `${loupePosition.x * 100}%`, top: `${loupePosition.y * 100}%`,
-                  transform: "translate(-50%, -50%)", zIndex: 8, cursor: "move", touchAction: "none", opacity: 0.7 }}
-                onPointerDown={(e) => { e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId); }}
-                onPointerMove={(e) => {
-                  if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
-                  e.stopPropagation();
-                  const r = pane.current!.getBoundingClientRect();
-                  setLoupePosition({ x: Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)),
-                    y: Math.max(0, Math.min(1, (e.clientY - r.top) / r.height)) });
-                }}
-                onPointerUp={(e) => { e.stopPropagation(); e.currentTarget.releasePointerCapture(e.pointerId); }}>
-                ⊕
-              </button>}
-            </>}
 
             <canvas ref={clipSharp} className={`layer clip${current && (clipShown.low || clipShown.high) ? "" : " empty"}`} />
             {perfHud && current && <PerfHud onClose={() => { setPerfHud(false); perf.enable(false); }} />}
@@ -5339,6 +5306,19 @@ export default function App() {
             )}
             <ResetAll disabled={!current} onReset={resetAll} />
           </div></div>
+        {loupeEnabled && <div className="detail-loupe" style={{ padding: 12, display: rightMode === "adjust" && !cropping ? undefined : "none" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+            <span>Detail · 100%</span>
+            <button className={`tool${loupePicking ? " on" : ""}`} disabled={!current || cropping || before || baMode !== "off"}
+              aria-label="Pick loupe point" aria-pressed={loupePicking} title="Pick a point on the photo"
+              onClick={() => setLoupePicking((v) => !v)}><Pipette size={16} /></button>
+          </div>
+          <div style={{ height: 240, display: "grid", placeItems: "center", background: "#121212", overflow: "hidden", position: "relative" }}>
+            <canvas ref={loupeCanvas} style={{ display: "none", flexShrink: 0 }} />
+            {!loupeShown && <span style={{ position: "absolute" }}>{current ? "Preparing preview…" : "Open a photo to preview detail"}</span>}
+          </div>
+          {loupePicking && <div role="status">Click a point on the photo · Escape to cancel</div>}
+        </div>}
         <Profiler id="histogram" onRender={perf.reactCommit}><HistogramView histograms={histograms} values={values} disabled={!current} exif={currentEntry?.exif ?? null}
                        neutral={(id) => session.current?.neutral[id] ?? controlById.get(id)?.neutral ?? 0}
                        onChange={change} clip={clipOn} onClip={(end) => setClipOn((o) => ({ ...o, [end]: !o[end] }))}
@@ -5738,7 +5718,7 @@ export default function App() {
       );
     })()}
     {prefsOpen && (
-      <PreferencesDialog presets={[...BUILTIN_PRESETS, ...presets]} newPhotos={newPhotos}
+      <PreferencesDialog loupe={loupeEnabled} onLoupe={(on) => { storeLoupe(on); setLoupeEnabled(on); loupeEnabledRef.current = on; setLoupePicking(false); setLoupeShown(false); if (on) session.current?.requestLoupe(); }} presets={[...BUILTIN_PRESETS, ...presets]} newPhotos={newPhotos}
                          onNewPhotos={(id) => { setNewPhotos(id); storeNewPhotosPreset(id); }}
                          onSaveCurrent={current ? () => setNewPreset("newPhotos") : null}
                          focus={prefsOpen === true ? undefined : prefsOpen}

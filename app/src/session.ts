@@ -888,6 +888,11 @@ export class Session {
 
   // native detail previews keep every module and the display scale in a loupe
   detailView: (() => View | null) = () => null;
+  private needLoupe = false;
+  requestLoupe() {
+    this.needLoupe = true;
+    void this.pump();
+  }
   private detailOps = "";
 
   private draftView(view: View, ops: string[]): View {
@@ -895,7 +900,7 @@ export class Session {
     if (ops.length) this.detailOps = [...new Set(ops.map((op) => op.split("#")[0]))].sort().join();
     const detail = this.detailView();
     const eligible = !!this.activeDetailControl && this.detailOps.split(",").every((op) =>
-      ["diffuse", "sharpen", "contrastntexture", "denoiseprofile", "bilat", "localcontrast", "agx", "sigmoid", "rgbcurve", "tonecurve", "colorbalancergb", "grain"].includes(op));
+      ["diffuse", "sharpen", "contrastntexture", "denoiseprofile", "bilat", "grain"].includes(op));
     if (detail && eligible) {
       // full-size probes block newer inputs before the loupe can appear
       perf.event("preview.decision", { reason:"detail-loupe" });
@@ -1152,7 +1157,7 @@ export class Session {
     // the viewer's busy indicator: from now until a frame is back
     let job = begin();
     try {
-      while (this.dirty.size || this.needRender || this.needThumb || this.needCopy || this.needWarm
+      while (this.dirty.size || this.needRender || this.needThumb || this.needCopy || this.needWarm || this.needLoupe
              || this.wantLook !== undefined
              || this.masksPending || this.wantLookAmount !== undefined || this.spotsPending
              || this.reshapeDue || this.baselineEnd || this.modulePending.length) {
@@ -1254,6 +1259,19 @@ export class Session {
           try { await this.loadMasks(); } finally { perf.finish(task); }
           this.spots = await this.pumpCommand<Spot[]>("spots", {});
           this.onShapes?.();
+          continue;
+        }
+        if (!this.dirty.size && !this.needRender && this.needLoupe) {
+          this.needLoupe = false;
+          const view = this.before ? null : this.detailView();
+          if (view) {
+            end(job);
+            await this.idleRender({ ...view, detail: true, loupe: true }, true, (f) => {
+              const now = this.detailView();
+              if (!this.before && now && this.frameKey(now, false) === this.frameKey(view, false)) this.onFrame(f);
+            });
+            job = begin();
+          }
           continue;
         }
         if (!this.dirty.size && !this.needRender && this.needWarm) {
