@@ -17,10 +17,10 @@ The report goes to `verify/results/<date>_<sha>/report.md`, with every
 measurement in `report.json`. Both, and `verify/references/`, are your
 machine's own and stay out of git.
 
-The focused negative-export regression check runs with the built engine:
+The focused panorama and negative-export regression checks run with the built engine:
 
 ```bash
-node --test verify/negative-export.test.mjs
+node --test verify/panorama.test.mjs verify/negative-export.test.mjs
 ```
 
 It checks compressed DNG and TIFF color metadata, conversion and crop

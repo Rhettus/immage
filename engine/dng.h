@@ -42,4 +42,9 @@ int dng_write_linear_half(const char *filename, const float *rgb, int width, int
 int dng_write_rendered_half(const char *filename, const float *rgba, int width, int height,
                             const void *exif, int exif_len);
 
+// A panorama in linear Rec.2020, supplied as float RGB.
+int dng_write_rendered_rgb_half(const char *filename, const float *rgb, int width, int height,
+                                const void *exif, int exif_len,
+                                void (*progress)(int, int, void *), void *data);
+
 G_END_DECLS

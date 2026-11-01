@@ -1545,7 +1545,7 @@ async fn hdr_can_align(state: State<'_, AppState>) -> Result<bool, String> {
     Ok(reply["hdr_align"].as_bool().unwrap_or(false))
 }
 
-// Panorama Merge: the raws `imgids` stitched into a DNG beside the first
+// Panorama Merge: the photos `imgids` stitched into a DNG beside the first
 // (<name>-pano.dng), which the folder view then shows after it, as an
 // Edit In result. `projection` is "auto", "spherical", "cylindrical" or
 // "perspective"; `crop` cuts the empty edges. replies { path, original,

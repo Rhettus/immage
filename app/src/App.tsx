@@ -6439,9 +6439,11 @@ const hdrBrackets = (list: ImageEntry[]) => {
   const seen = new Set<string>();
   return list.filter((i) => !isRemote(i) && fileKind(i.filename) === "RAW" && !seen.has(i.path) && !!seen.add(i.path));
 };
-// what Panorama Merge stitches: the raws on this computer, each file once,
-// as its DNG holds the camera's own color
-const panoFrames = hdrBrackets;
+// Panorama Merge takes local photos, each source file once.
+const panoFrames = (list: ImageEntry[]) => {
+  const seen = new Set<string>();
+  return list.filter((i) => !isRemote(i) && !seen.has(i.path) && !!seen.add(i.path));
+};
 
 // a photo's right-click menu: Edit In, Show in Finder, as Lightroom's, and
 // Delete, for rejected photos only; for Immich results, the photo or the

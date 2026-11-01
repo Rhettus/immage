@@ -7,6 +7,8 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Panorama Merge supports JPEGs and other non-RAW photos, including mixed
+  RAW and non-RAW selections, and saves an editable DNG beside the first photo.
 - Generated HDR merges, panoramas, AI denoise results, positive exports and
   the first result from a plugin open for editing automatically. Preferences >
   General > Workspace can disable this. Successful completion notifications

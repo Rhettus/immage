@@ -149,8 +149,9 @@ int dng_write_linear_half(const char *filename, const float *rgb, const int widt
 // Rendered positives use linear Rec.2020, not the original camera's RGB.
 // A neutral white balance and the matching XYZ D65 matrix describe those
 // pixels without applying the camera's profile or white balance again.
-int dng_write_rendered_half(const char *filename, const float *rgba, const int width, const int height,
-                            const void *exif, const int exif_len)
+static int _write_rendered_half(const char *filename, const float *rgba, const int width, const int height,
+                                const int channels, const void *exif, const int exif_len,
+                                void (*progress)(int, int, void *), void *data)
 {
   dt_image_t img = { 0 };
   g_strlcpy(img.camera_maker, "Immage", sizeof(img.camera_maker));
@@ -161,11 +162,24 @@ int dng_write_rendered_half(const char *filename, const float *rgba, const int w
     img.wb_coeffs[c] = 1.0f;
     for(int k = 0; k < 3; k++) img.adobe_XYZ_to_CAM[c][k] = xyz_to_rec2020_d65[3 * c + k];
   }
-  int res = _write_half(filename, rgba, width, height, &img, 4, NULL, 0, NULL, NULL);
+  int res = _write_half(filename, rgba, width, height, &img, channels, NULL, 0, progress, data);
   if(!res && !rendered_metadata(filename, exif, exif_len, TRUE))
   {
     g_unlink(filename);
     res = 1;
   }
   return res;
+}
+
+int dng_write_rendered_half(const char *filename, const float *rgba, int width, int height,
+                            const void *exif, int exif_len)
+{
+  return _write_rendered_half(filename, rgba, width, height, 4, exif, exif_len, NULL, NULL);
+}
+
+int dng_write_rendered_rgb_half(const char *filename, const float *rgb, int width, int height,
+                                const void *exif, int exif_len,
+                                void (*progress)(int, int, void *), void *data)
+{
+  return _write_rendered_half(filename, rgb, width, height, 3, exif, exif_len, progress, data);
 }
