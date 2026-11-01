@@ -235,4 +235,4 @@ if the targets are missed. The first configuration
 meeting both targets is recommended. Full Quality remains a manual option and
 is excluded from the tuner search.
 
-The **Detail loupe** switch in General → Workspace enables a persistent 100% preview in Adjustments (off by default). Use its point picker, then click the photo to select the area; Escape cancels picking. Disabling the loupe also disables its rendering. Contrast and tone adjustments keep a whole-image live preview; detail controls can preview the selected area during a drag.
+The **Detail loupe** switch in General → Workspace enables compact 100% previews above the Detail and Presence controls (off by default). Both show the same selected area. Use its point picker, then click the photo to select the area; Escape cancels picking. Disabling the loupe also disables its rendering. Contrast and tone adjustments keep a whole-image live preview; detail controls can preview the selected area during a drag.

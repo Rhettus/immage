@@ -1636,6 +1636,7 @@ export default function App() {
   const loupePositionRef = useRef(loupePosition);
   loupePositionRef.current = loupePosition;
   const loupeCanvas = useRef<HTMLCanvasElement>(null);
+  const loupeDisplays = useRef(new Map<string, HTMLCanvasElement>());
 
   useEffect(() => {
     session.current?.requestLoupe();
@@ -2117,11 +2118,14 @@ export default function App() {
       // a late draft must not cover the final frame after release
       if (!loupeEnabledRef.current) return;
       setLoupeShown(true);
-      const lc = loupeCanvas.current;
+      const lc = loupeCanvas.current ?? (loupeCanvas.current = document.createElement("canvas"));
       if (lc) {
         resizeCanvas(lc, f.width, f.height);
         perf.time("pixels.canvasUpload", () => lc.getContext("2d")!.putImageData(new ImageData(f.pixels, f.width, f.height), 0, 0));
-        lc.style.display = "block";
+        for (const display of loupeDisplays.current.values()) {
+          resizeCanvas(display, f.width, f.height);
+          display.getContext("2d")!.drawImage(lc, 0, 0);
+        }
       }
       return;
     }
@@ -3317,7 +3321,7 @@ export default function App() {
       s.detailView = () => {
         if (!loupeEnabledRef.current || beforeRef.current || baModeRef.current !== "off" || !full.current) return null;
         const f = full.current;
-        const side = 240;
+        const side = 160;
         const width = Math.min(side, f.w), height = Math.min(side, f.h);
         const pos = loupePositionRef.current;
         return { width, height, scale: 1,
@@ -4139,6 +4143,30 @@ export default function App() {
   // mode makes that the plain click)
   // in focus mode a plain click is the solo one, and ⌥ opens a panel
   // alongside the others; either way a click on an open panel closes it
+  const renderLoupe = (id: string) => loupeEnabled ? (
+    <div className="detail-loupe" style={{ padding: "8px 12px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+        <span>100%</span>
+        <button className={`tool${loupePicking ? " on" : ""}`} disabled={!current || cropping || before || baMode !== "off"}
+          aria-label={`Pick ${id} loupe point`} aria-pressed={loupePicking} title="Pick a point on the photo"
+          onClick={() => setLoupePicking((v) => !v)}><Pipette size={16} /></button>
+      </div>
+      <div style={{ width: 160, height: 160, margin: "0 auto", display: "grid", placeItems: "center", background: "#121212", overflow: "hidden", position: "relative" }}>
+        <canvas ref={(display) => {
+          if (!display) { loupeDisplays.current.delete(id); return; }
+          loupeDisplays.current.set(id, display);
+          const source = loupeCanvas.current;
+          if (loupeShown && source) {
+            resizeCanvas(display, source.width, source.height);
+            display.getContext("2d")!.drawImage(source, 0, 0);
+          }
+        }} style={{ display: loupeShown ? "block" : "none" }} />
+        {!loupeShown && <span style={{ position: "absolute", padding: 8, textAlign: "center" }}>{current ? "Preparing preview…" : "Open a photo to preview detail"}</span>}
+      </div>
+      {loupePicking && <div role="status">Click a point on the photo · Escape to cancel</div>}
+    </div>
+  ) : undefined;
+
   const togglePanel = (id: string, alt = false) =>
     setOpenPanels((old) => {
       const solo = focusMode ? !alt && !old.has(id) : alt;
@@ -4375,6 +4403,8 @@ export default function App() {
       const c = layer.current;
       if (c) c.getContext("2d")?.clearRect(0, 0, c.width, c.height);
     }
+    for (const display of loupeDisplays.current.values())
+      display.getContext("2d")?.clearRect(0, 0, display.width, display.height);
     sharpMeta.current = baseMeta.current = null;
     overviewHash.current = null;
     setCropBox(null);
@@ -5355,19 +5385,6 @@ export default function App() {
             )}
             <ResetAll disabled={!current} onReset={resetAll} />
           </div></div>
-        {loupeEnabled && <div className="detail-loupe" style={{ padding: 12, display: rightMode === "adjust" && !cropping ? undefined : "none" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-            <span>Detail · 100%</span>
-            <button className={`tool${loupePicking ? " on" : ""}`} disabled={!current || cropping || before || baMode !== "off"}
-              aria-label="Pick loupe point" aria-pressed={loupePicking} title="Pick a point on the photo"
-              onClick={() => setLoupePicking((v) => !v)}><Pipette size={16} /></button>
-          </div>
-          <div style={{ height: 240, display: "grid", placeItems: "center", background: "#121212", overflow: "hidden", position: "relative" }}>
-            <canvas ref={loupeCanvas} style={{ display: "none", flexShrink: 0 }} />
-            {!loupeShown && <span style={{ position: "absolute" }}>{current ? "Preparing preview…" : "Open a photo to preview detail"}</span>}
-          </div>
-          {loupePicking && <div role="status">Click a point on the photo · Escape to cancel</div>}
-        </div>}
         <Profiler id="histogram" onRender={perf.reactCommit}><HistogramView histograms={histograms} values={values} disabled={!current} exif={currentEntry?.exif ?? null}
                        neutral={(id) => session.current?.neutral[id] ?? controlById.get(id)?.neutral ?? 0}
                        onChange={change} clip={clipOn} onClip={(end) => setClipOn((o) => ({ ...o, [end]: !o[end] }))}
@@ -5625,6 +5642,8 @@ export default function App() {
           {rightMode === "adjust" && !cropping && panels.filter((p) => !p.hidden && (!p.showIf || p.showIf(values))).map((p) => (
             <Profiler key={p.id} id={`panel.${p.id}`} onRender={perf.reactCommit}><PanelView sessionRevision={historyRev} panel={p} open={openPanels.has(p.id)} onToggle={(solo) => togglePanel(p.id, solo)}
                        values={values} session={session.current} disabled={!current} onChange={change}
+                       detailLoupe={p.id === "detail" ? renderLoupe("detail") : undefined}
+                       presenceLoupe={p.id === "basic" ? renderLoupe("presence") : undefined}
                        onChangeMany={changeMany} histograms={histograms} onPreview={hoverValues}
                        toneTools={p.id === "basic" ? (
                          <div className="tone-tools">
@@ -6969,6 +6988,8 @@ type PanelProps = {
   session: Session | null; disabled: boolean; onChange: (c: Control, v: number) => void;
   onChangeMany: (entries: [string, number][]) => void; histograms: Snapshot<Histogram | null>;
   onAuto?: () => void;
+  detailLoupe?: React.ReactNode;
+  presenceLoupe?: React.ReactNode;
   wbTools?: React.ReactNode;   // the picker and presets, above Temp
   toneTools?: React.ReactNode;   // Auto, above Exposure
   denoiseTools?: React.ReactNode;   // AI Denoise's button, its section's only content
@@ -7002,7 +7023,7 @@ function PanelView(props: PanelProps) {
 }
 
 const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle, values, session, disabled, onChange, onChangeMany, histograms,
-                     onAuto, wbTools, toneTools, denoiseTools, straightenTools, transformTools, onPreview, onOptionPreview }: PanelProps) {
+                     onAuto, wbTools, toneTools, denoiseTools, straightenTools, transformTools, detailLoupe, presenceLoupe, onPreview, onOptionPreview }: PanelProps) {
   const histogram = useSyncExternalStore(p.graph === "tonecurve" ? histograms.subscribe : noHistogramSubscription, p.graph === "tonecurve" ? histograms.get : noHistogram);
   const pointMode = p.graph === "tonecurve" && values.tc_mode === 1;
   // which curve the point editor shows: the master, or one channel
@@ -7071,6 +7092,7 @@ const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle, values
       </div>
       <Collapse open={open}>
         <div className="panel-body">
+          {detailLoupe}
           {p.graph === "tonecurve" && (
             <div className="segmented tabs">
               <button className={pointMode ? "active" : ""} onClick={() => !pointMode && toPoints()}>Point</button>
@@ -7157,7 +7179,7 @@ const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle, values
                   {!s.group && s.tag && <span className="tag"><Sparkles size={11} strokeWidth={2} />{s.tag}</span>}
                   <Chevron open={!shut} />
                 </h3>
-                <Collapse open={!shut}><div className="section-body">{body}</div></Collapse>
+                <Collapse open={!shut}><div className="section-body">{s.title === "Presence" && presenceLoupe}{body}</div></Collapse>
               </section>
             );
           })}

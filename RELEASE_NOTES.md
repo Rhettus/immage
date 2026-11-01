@@ -26,8 +26,8 @@ Improvements
 - Filters adds a Rejected category with All photos, Hide rejected and Only
   rejected options. The selection counts as an active filter and resets with
   Clear all.
-- An optional persistent 100% Detail loupe in Adjustments shows a selected
-  area. It defaults to off; enable it in General > Workspace. Use its point
+- Optional compact 100% loupes above the Detail and Presence controls show
+  the same selected area. It defaults to off; enable it in General > Workspace. Use its point
   picker, then click the photo to choose the area; Escape cancels picking.
   Disabling the loupe also disables its rendering. Detail and grain drags
   preview the selected area directly when the loupe is enabled; otherwise,
