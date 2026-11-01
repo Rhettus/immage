@@ -8,8 +8,8 @@ import { isDetailControl } from '../app/src/detailPreview.ts';
 const pixels=(...values)=>new Uint8ClampedArray(values);
 
 test('detail eligibility excludes Exposure and other tone controls',()=>{
-  for(const id of ['texture','clarity','contrast','dehaze','sharp_amount','detail_texture_gain_fine','l_detail_clarity_halo_control'])assert.equal(isDetailControl(id),true,id);
-  for(const id of ['exposure','highlights','shadows','temp','saturation','l_exposure'])assert.equal(isDetailControl(id),false,id);
+  for(const id of ['texture','clarity','dehaze','sharp_amount','detail_texture_gain_fine','l_detail_clarity_halo_control'])assert.equal(isDetailControl(id),true,id);
+  for(const id of ['contrast','l_contrast','exposure','highlights','shadows','temp','saturation','l_exposure'])assert.equal(isDetailControl(id),false,id);
 });
 
 // Exercise native preview scheduling and detail-control lifecycle without an engine.
@@ -69,7 +69,11 @@ function session(){
 test('loupe is ineligible for ordinary sliders even when they share a module',()=>{
   const {s}=session();s.detailView=()=>full;
   s.set('saturation',20);assert.equal(s.draftView({...full,draft:true},['colorbalancergb']).detail,undefined);
-  s.set('contrast',20);assert.equal(s.draftView({...full,draft:true},['colorbalancergb']).detail,true);
+  for(const id of ['contrast','l_contrast']) {
+    s.set(id,20);
+    assert.equal(s.activeDetailControl,null);
+    assert.equal(s.draftView({...full,draft:true},['colorbalancergb']).detail,undefined);
+  }
 });
 
 test('detail drags start in the loupe without full-size probe frames',()=>{
@@ -103,4 +107,24 @@ test('disabling the loupe retains whole-image drafts for detail and grain',()=>{
     const view=s.draftView({...full,draft:true},[op]);
     assert.equal(view.loupe,undefined);assert.equal(view.detail,undefined);
   }
+});
+
+for (const mode of ['idle', 'disabled', 'moved']) test(`persistent loupe request: ${mode}`, async()=>{
+  let view=mode==='disabled'?null:{...full};
+  const shown=[],errors=[],rendered=[];
+  const s=new Session(()=>full,f=>shown.push(f),e=>errors.push(e));
+  s.detailView=()=>view;
+  s.idleRender=async(requested,every,use)=>{
+    rendered.push(requested);
+    assert.equal(every,true);
+    if(mode==='moved')view={...full,x:10};
+    use({view:requested});
+  };
+  s.requestLoupe();
+  for(let i=0;i<100&&!s.idle;i++)await new Promise(resolve=>setTimeout(resolve,1));
+  assert.deepEqual(errors,[]);
+  assert.equal(s.idle,true);
+  assert.equal(rendered.length,mode==='disabled'?0:1);
+  assert.equal(shown.length,mode==='idle'?1:0);
+  if(mode==='idle')assert.deepEqual(shown[0].view,{...full,detail:true,loupe:true});
 });
