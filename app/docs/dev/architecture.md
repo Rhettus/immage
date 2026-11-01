@@ -613,3 +613,13 @@ then back up. The next free render slots should serve the current viewport
 before the previous region; also check horizontal filmstrip scrolling and
 switching between grid and filmstrip. Cached thumbnails should still appear
 without rendering, and folder thumbnail progress should eventually finish.
+
+Loupe grid behavior: `App.tsx` suppresses requests from completed frames and
+preferences in grid view. The session’s `detailView` callback returns null
+while `gridRef.current` is true, preventing queued loupe work from starting;
+frame delivery also ignores late loupe results. The grid-dependent effect
+cancels point picking on entry and requests a refresh on exit when enabled.
+Verify by browsing grid selections with the loupe enabled: no new loupe
+renders should start, and leaving the grid should refresh the selected area.
+Native rendering uses the full-resolution buffer loaded when opening the
+session; loupe updates add processing but do not independently reopen the file.

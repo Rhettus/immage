@@ -255,3 +255,6 @@ are editing, and opens the new version where you were. **Later** puts the
 card away until Immage next starts; **Skip This Version** waits for the
 one after. Updates are signed, and one whose signature does not match is
 not installed.
+
+Loupe rendering pauses while selecting or browsing photos in grid view and
+refreshes when you return to the photo view.

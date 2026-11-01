@@ -59,6 +59,8 @@ Improvements
 
 Performance
 
+- Detail and Presence loupes pause while browsing or selecting photos in grid
+  view and refresh on return to the photo view, avoiding extra detail renders.
 - Thumbnail loading follows the visible grid or filmstrip as you scroll,
   rendering on-screen photos before checking the rest of the folder.
 - Deleting rejected photos removes their thumbnails immediately after

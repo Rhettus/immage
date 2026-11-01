@@ -309,3 +309,6 @@ which keeps bright colors from going garish. A photo started under
 darktable's Sigmoid, in darktable or an earlier Immage, keeps it.
 
 See [Preferences](preferences.md).
+
+Loupe rendering pauses while selecting or browsing photos in grid view and
+refreshes when you return to the photo view.

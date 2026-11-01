@@ -1677,8 +1677,12 @@ export default function App() {
   const loupeDisplays = useRef(new Map<string, HTMLCanvasElement>());
 
   useEffect(() => {
-    session.current?.requestLoupe();
-  }, [loupeEnabled, loupePosition]);
+    if (grid) {
+      setLoupePicking(false);
+      return;
+    }
+    if (loupeEnabled) session.current?.requestLoupe();
+  }, [grid, loupeEnabled, loupePosition]);
   useEffect(() => {
     if (!loupePicking) return;
     const cancel = (e: KeyboardEvent) => {
@@ -2146,7 +2150,7 @@ export default function App() {
     }
     if (f.view.loupe) {
       // a late draft must not cover the final frame after release
-      if (!loupeEnabledRef.current) return;
+      if (gridRef.current || !loupeEnabledRef.current) return;
       setLoupeShown(true);
       const lc = loupeCanvas.current ?? (loupeCanvas.current = document.createElement("canvas"));
       if (lc) {
@@ -2161,7 +2165,7 @@ export default function App() {
     }
     invalidateClip("sharp");
     frameGenerations.histogram.next();
-    if (!f.view.draft) session.current?.requestLoupe();
+    if (!gridRef.current && loupeEnabledRef.current && !f.view.draft) session.current?.requestLoupe();
     const c = canvas.current!;
     perf.time("pixels.canvasUpload", () => canvasFrames.draw(c, f));
     if (clipRef.current.low || clipRef.current.high) paintClip("sharp", f);
@@ -3361,7 +3365,7 @@ export default function App() {
       s.previewMode = loadPreview;
       s.exactView = () => viewAt(1);
       s.detailView = () => {
-        if (!loupeEnabledRef.current || beforeRef.current || baModeRef.current !== "off" || !full.current) return null;
+        if (gridRef.current || !loupeEnabledRef.current || beforeRef.current || baModeRef.current !== "off" || !full.current) return null;
         const f = full.current;
         const side = 160;
         const width = Math.min(side, f.w), height = Math.min(side, f.h);
@@ -5837,7 +5841,7 @@ export default function App() {
       );
     })()}
     {prefsOpen && (
-      <PreferencesDialog openGenerated={openGenerated} onOpenGenerated={(on) => { storeOpenGenerated(on); setOpenGenerated(on); }} loupe={loupeEnabled} onLoupe={(on) => { storeLoupe(on); setLoupeEnabled(on); loupeEnabledRef.current = on; setLoupePicking(false); setLoupeShown(false); if (on) session.current?.requestLoupe(); }} presets={[...BUILTIN_PRESETS, ...presets]} newPhotos={newPhotos}
+      <PreferencesDialog openGenerated={openGenerated} onOpenGenerated={(on) => { storeOpenGenerated(on); setOpenGenerated(on); }} loupe={loupeEnabled} onLoupe={(on) => { storeLoupe(on); setLoupeEnabled(on); loupeEnabledRef.current = on; setLoupePicking(false); setLoupeShown(false); if (on && !gridRef.current) session.current?.requestLoupe(); }} presets={[...BUILTIN_PRESETS, ...presets]} newPhotos={newPhotos}
                          onNewPhotos={(id) => { setNewPhotos(id); storeNewPhotosPreset(id); }}
                          onSaveCurrent={current ? () => setNewPreset("newPhotos") : null}
                          focus={prefsOpen === true ? undefined : prefsOpen}
