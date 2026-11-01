@@ -1326,6 +1326,14 @@ export const modules: ModuleMap[] = [
     enabled: (v) => v.lens_profile === 1,
   },
   {
+    op: "cacorrectrgb", keepOn: false,
+    controls: ["defringe_amount", "defringe_radius"],
+    fields: ["strength", "radius"],
+    read: (p) => ({ defringe_amount: p.strength * 25, defringe_radius: p.radius }),
+    write: (v) => ({ strength: v.defringe_amount / 25, radius: v.defringe_radius }),
+    enabled: (v) => v.defringe_amount > 0,
+  },
+  {
     op: "hotpixels", keepOn: false,
     controls: ["hp_enable", "hp_strength", "hp_threshold"],
     fields: ["strength", "threshold"],
@@ -1540,6 +1548,15 @@ export const panels: Panel[] = [
           { ...toggle("lens_profile", "Enable Profile Corrections", 0),
             note: "uses the lens darktable detects through lensfun" },
           toggle("lens_ca", "Remove Chromatic Aberration", 1),
+        ],
+      },
+      {
+        title: "Defringe",
+        controls: [
+          { id: "defringe_amount", label: "Amount", min: 0, max: 100, step: 1, neutral: 0,
+            format: plain(0), note: "higher corrects more fringing but can wash out colors; zero switches correction off" },
+          { id: "defringe_radius", label: "Radius", min: 1, max: 500, step: 1, neutral: 5,
+            format: plain(0, " px"), note: "increase until the color fringes disappear" },
         ],
       },
       {
