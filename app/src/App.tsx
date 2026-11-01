@@ -20,7 +20,6 @@ import { panelValues } from "./panelValues";
 import { FrameUpdates, Snapshot } from "./uiUpdates";
 import { PixelCadence, PixelWorker } from "./pixelWorker";
 import { CanvasFrames, FrameGeneration, layerStyle, resizeCanvas } from "./canvasLayers";
-import { CachedPreviewRenderer } from "./cachedPreviewRenderer";
 import { Session, framePlace, instanceKey, mapOpOf, type Frame, type HistoryItem, type ModuleState, type View } from "./session";
 import { AUTO_TONE_IDS, autoExposure, autoTone, type SceneKey } from "./autoTone";
 import { curve } from "./tonecurve";
@@ -54,7 +53,7 @@ import { Tour, tourSeen } from "./Tour";
 import { UpdateBanner } from "./UpdateBanner";
 import { autoCheck, relaunch } from "./updates";
 import { Chevron, Collapse } from "./Collapse";
-import { loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadNewPhotosProfile, loadOverlayColor, loadGuideColor, guideRgb, loadPins, maskOverlayRgb, loadPreview, loadCachedDetailPreview, loadBalancedPreviewSize, loadFrameCacheMb, loadDraftTarget, loadDraftSmallest,loadSliderScroll, loadSliderScrollStep,
+import { loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadNewPhotosProfile, loadOverlayColor, loadGuideColor, guideRgb, loadPins, maskOverlayRgb, loadPreview, loadBalancedPreviewSize, loadFrameCacheMb, loadDraftTarget, loadDraftSmallest,loadSliderScroll, loadSliderScrollStep,
          loadStackPairs,
          PreferencesDialog, storeOverlayColor, storeGuideColor, storeStackPairs,
          storeAutoHide, storeCanvas, CANVASES, storeFocusMode, storePins, type AccelProvider, type Canvas,
@@ -1486,22 +1485,6 @@ export default function App() {
   const placementRef = useRef<Placement | null>(null);
   const session = useRef<Session | null>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
-  const cachedCanvas = useRef<HTMLCanvasElement>(null);
-  const cachedRenderer = useRef<CachedPreviewRenderer | null>(null);
-  const cachedShown = useRef(false);
-  const exactGpuFrame = useRef<Frame | null>(null);
-  const hideCachedPreview = () => {
-    if (cachedShown.current) {
-      invalidateClip("sharp");
-      frameGenerations.histogram.next();
-    }
-    cachedShown.current = false;
-    exactGpuFrame.current = null;
-    if (cachedCanvas.current) cachedCanvas.current.style.display = "none";
-    if (canvas.current) canvas.current.style.visibility = "";
-    if (clipSharp.current) clipSharp.current.style.visibility = "";
-  };
-  useEffect(() => () => { cachedRenderer.current?.dispose(); }, []);
   const viewer = useRef<HTMLDivElement>(null);
   // the edit's pane: the whole viewer, or its half beside the before
   const pane = useRef<HTMLDivElement>(null);
@@ -1584,8 +1567,6 @@ export default function App() {
       const generation = sourceGeneration.capture();
       if (dst.width !== src.width || dst.height !== src.height) { dst.width = src.width; dst.height = src.height; }
       dst.getContext("2d")!.clearRect(0, 0, dst.width, dst.height);
-      // the GPU shader owns sharp clipping while estimates or exact GPU frames show
-      if (key === "clipSharp" && cachedShown.current) continue;
       const show = { ...clipRef.current }, width = src.width, height = src.height, owner = session.current;
       if (!width || !height || (!show.low && !show.high)) continue;
       const pixels = frame?.pixels ?? perf.time("pixels.canvasReadback", () => src.getContext("2d")!.getImageData(0, 0, width, height).data);
@@ -1598,7 +1579,6 @@ export default function App() {
   };
   useEffect(() => {
     paintClip("both");
-    if (cachedShown.current) cachedRenderer.current?.redraw(clipRef.current);
   }, [clipShown.low, clipShown.high]);
   const baseMeta = useRef<Placed | null>(null);
   // a control in the panels, the histogram or the mask editor held down (or
@@ -2027,7 +2007,6 @@ export default function App() {
       layerStyle(sc, "height", `${s.height / dpr}px`);
       layerStyle(sc, "transform", `translate(${(ox + p.x) / dpr}px, ${(oy + p.y) / dpr}px) scale(${p.k})`);
       follow(sc, clipSharp.current);
-      follow(sc, cachedCanvas.current);
     }
     const bm = beforeMeta.current, bcv = beforeCanvas.current;
     if (bm && bcv) {
@@ -2112,32 +2091,9 @@ export default function App() {
     if (loupeCanvas.current) loupeCanvas.current.style.display = "none";
     setLoupeShown(false);
     loupeMeta.current = null;
-    // Keep the estimated image visible until its exact replacement has been
-    // uploaded to the same GPU surface. The rest of the full-frame lifecycle
-    // (overview, histogram, placement and caches) still runs on release.
-    let gpu = false;
-    const renderer = cachedRenderer.current;
-    if (cachedShown.current && renderer && !f.view.draft && !f.before) {
-      const uploads = renderer.stats.uploads;
-      gpu = renderer.draw({a:f,b:f,mix:1,frame:f},clipRef.current);
-      if (gpu) {
-        exactGpuFrame.current = f;
-        if (f.trace) {
-          f.trace.previewBackend = "webgl";
-          f.trace.anchorUploads = renderer.stats.uploads-uploads;
-          f.trace.textureBytes = renderer.stats.textureBytes;
-        }
-      }
-    }
-    if (!gpu) {
-      hideCachedPreview();
-      if (!f.view.draft) renderer?.reset();
-    }
     const c = canvas.current!;
-    if (!gpu) {
-      perf.time("pixels.canvasUpload", () => canvasFrames.draw(c, f));
-      if (clipRef.current.low || clipRef.current.high) paintClip("sharp", f);
-    }
+    perf.time("pixels.canvasUpload", () => canvasFrames.draw(c, f));
+    if (clipRef.current.low || clipRef.current.high) paintClip("sharp", f);
     full.current = { w: f.fullWidth, h: f.fullHeight };
     const scale = f.view.scale ?? f.width / f.fullWidth;
     sharpMeta.current = placed(f);
@@ -3085,7 +3041,6 @@ export default function App() {
     if (!s) return;
     await s.close();
     session.current = null;
-    hideCachedPreview(); cachedRenderer.current?.reset();
     currentRef.current = null;
     setCurrent(null);
     setOpenCell(null);
@@ -3238,7 +3193,6 @@ export default function App() {
                              masks: structuredClone(o.masks) };
         await o.close();
       }
-      hideCachedPreview(); cachedRenderer.current?.reset();
       detailActiveRef.current = false;
       setDetailActive(false); setLoupeShown(false);
       if (loupeCanvas.current) loupeCanvas.current.style.display = "none";
@@ -3284,46 +3238,6 @@ export default function App() {
       currentRef.current = opened;
       setOpenCell(imagesRef.current.find((i) => isOpen(i, opened)) ?? null);
       saveLibrary({ image: path, version: imagesRef.current.find((i) => i.imgid === s.imgid)?.version ?? 0 });
-      s.onCachedPreview = (preview) => {
-        if (session.current !== s || !dragging.current || !cachedCanvas.current || !canvas.current) return false;
-        const f = preview.frame;
-        const renderer = cachedRenderer.current ??= new CachedPreviewRenderer(cachedCanvas.current,() => {
-          const exact = exactGpuFrame.current;
-          hideCachedPreview();
-          if (exact) drawFrame(exact);
-          else session.current?.requestRender();
-        });
-        let shown = false;
-        perf.drawStart(f.trace);
-        try {
-          const uploads = renderer.stats.uploads;
-          shown = renderer.draw(preview,clipRef.current);
-          if (shown && f.trace) {
-            f.trace.previewBackend = "webgl";
-            f.trace.anchorUploads = renderer.stats.uploads-uploads;
-            f.trace.textureBytes = renderer.stats.textureBytes;
-          }
-          if (!shown) { hideCachedPreview(); return false; }
-          invalidateClip("sharp");
-          frameGenerations.histogram.next();
-          draftShown.current = true;
-          exactGpuFrame.current = null;
-          cachedShown.current = true;
-          cachedCanvas.current.style.display = "block";
-          canvas.current.style.visibility = "hidden";
-          if (clipSharp.current) clipSharp.current.style.visibility = "hidden";
-          full.current = {w:f.fullWidth,h:f.fullHeight};
-          sharpMeta.current = placed(f);
-          if (f.view.scale === undefined && zoomRef.current === "fit" && !anim.current.raf) {
-            viewZ.current = fitScale();
-            center.current = {x:0.5,y:0.5};
-          }
-          placeLayers();
-          // scopes follow the displayed estimate's native anchor without GPU readback
-          if (f.view.scale === undefined) updateHistogram(preview.b);
-          return true;
-        } finally { perf.drawEnd(shown); }
-      };
       s.onThumb = (f) => {
         perf.drawStart(f.trace);
         try { showOverview(f); } finally { perf.drawEnd(); }
@@ -3360,13 +3274,11 @@ export default function App() {
       };
       s.thumbSize = baseSize;
       s.previewMode = loadPreview;
-      s.cachedDetailPreview = loadCachedDetailPreview;
       s.onDetailControl = (id) => {
         if (session.current !== s) return;
         detailActiveRef.current = !!id; setDetailActive(!!id);
         if (!id) { setLoupeShown(false); if (loupeCanvas.current) loupeCanvas.current.style.display = "none"; }
       };
-      s.fullView = () => viewAt(1);
       s.detailView = () => {
         if (!loupeEnabledRef.current || beforeRef.current || baModeRef.current !== "off" || !full.current) return null;
         const v = viewAt(1), f = full.current;
@@ -4416,9 +4328,7 @@ export default function App() {
     resetHistogram();
     pixelWorker.current?.dispose(); pixelWorker.current = null;
     // Crop bypass changes coordinates. Discard every old image surface before
-    // asking for the replacement, including a cached GPU preview and clipping.
-    hideCachedPreview();
-    cachedRenderer.current?.reset();
+    // asking for the replacement, including clipping.
     for (const layer of [canvas, baseCanvas, clipSharp, clipBase, loupeCanvas]) {
       const c = layer.current;
       if (c) c.getContext("2d")?.clearRect(0, 0, c.width, c.height);
@@ -5125,7 +5035,6 @@ export default function App() {
             <canvas ref={copyCanvas} className={`layer copy${current && copyOn && !before && baMode === "off"
                       && !clipShown.low && !clipShown.high ? "" : " empty"}`} />
             <canvas ref={canvas} className={`layer sharp${current ? "" : " empty"}`} />
-            <canvas ref={cachedCanvas} className={`layer${current ? "" : " empty"}`} style={{ display: "none", pointerEvents: "none" }} />
             <canvas ref={loupeCanvas} className="layer" style={{ display: "none", pointerEvents: "none", zIndex: 5, outline: "1px solid white" }} />
             {current && detailActive && !cropping && !before && baMode === "off" && <>
               <button style={{ position: "absolute", top: 12, right: 12, zIndex: 9 }}

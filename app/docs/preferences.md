@@ -224,25 +224,13 @@ card away until Immage next starts; **Skip This Version** waits for the
 one after. Updates are signed, and one whose signature does not match is
 not installed.
 
-Adaptive cached preview (Performance → Editing) is experimental and off by default.
-All Basic sliders and detail controls estimate nearby values from two distinct full darktable renders.
-Native renders periodically refresh the anchors. Their cadence starts with the
-performance tuner's measured cost and latency target (80 ms by default), then
-adapts to render times during the drag. Large jumps and reversals require fresh
-native output. Estimates that take longer than the latency target are disabled.
-
-Each new native anchor checks prediction error. Estimation stops for that drag
-if average RGB error exceeds 2% or the 95th percentile of per-pixel maximum
-channel error exceeds 6%, measured against the 8-bit display output. These checks
-detect drift; they do not guarantee every intermediate prediction stays within
-those limits. A different control, view, or non-slider edit discards the anchors.
-Release bypasses deferred work and renders the accurate result. The loupe controls
-appear only while detail sliders are in use, and the move handle appears only
-when the loupe itself is shown.
+Detail loupe controls appear only while detail sliders are in use, and the move
+handle appears only when the loupe itself is shown. Slider previews use native
+engine output; release restores the accurate full view.
 
 The performance tuner defaults to an 80 ms latency target. It uses the median
 of the middle 10–90% of measured frame intervals and input-to-paint latencies,
-then tries Balanced 100% with adaptive caching first, followed by native Balanced 100%. Smaller previews are tested only if those miss the
-targets, with adaptive caching first at each size. The first configuration
+then tries Balanced 100%, followed by smaller preview sizes and drafts only
+if the targets are missed. The first configuration
 meeting both targets is recommended. Full Quality remains a manual option and
 is excluded from the tuner search.

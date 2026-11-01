@@ -60,16 +60,14 @@ Unit tests do not establish profiler overhead on a user's hardware.
   `droppedModuleTimings`.
 
 `command` spans identify auxiliary calls. Commands awaited by the pump carry
-`blockingPump`; concurrent saves do not. Coalescing, base waiting and adaptive
-throttling have separate elapsed spans. Render events record geometry and
+`blockingPump`; concurrent saves do not. Coalescing and base waiting have separate elapsed spans. Render events record geometry and
 input attribution. `preview.decision` / `preview.selected` explain size changes.
-Cache events show replacement, validation results, recovery state and rejected
-estimates. Estimate-worker spans include off-thread waiting, not just compute.
+Historical reports may include adaptive-cache validation and estimate events;
+the removed experiment no longer emits them.
 Shared-transport events identify retries and failures. Hooks do no console logging.
 
 `preview.decision` reports `detail-loupe` when a native detail or grain drag
-starts directly in the loupe. Cached detail previews retain their whole-image
-anchor path. Compare first frames and queue delays separately from sustained
+starts directly in the loupe. Compare first frames and queue delays separately from sustained
 frames when checking this policy; full-view probe frames no longer precede the
 loupe. The native cache patch retains the scaled GPU checkpoint rather than
 the full-resolution input to scaling. Check both `demosaic` and

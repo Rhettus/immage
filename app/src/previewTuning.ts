@@ -3,7 +3,7 @@
 import type { Sample } from "./perf";
 import type { Preview } from "./Preferences";
 
-export type TunerSettings = { preview: Preview; balancedSize: number; smallest: number; draftTarget: number; cachedDetail: boolean };
+export type TunerSettings = { preview: Preview; balancedSize: number; smallest: number; draftTarget: number };
 export type TunerContext = { photo:string; width:number; height:number; dpr:number };
 export type TunerRun = { context?: TunerContext; valid?: boolean; path: string; samples: Sample[]; phases: { atMs: number; label: string }[] };
 export type TunerMeasurement = { fps: number; latency: number; complete: boolean; modules: [string, number][] };
@@ -41,7 +41,6 @@ export function measureTuner(run: TunerRun): TunerMeasurement {
 
 export function tunerChanges(from: TunerSettings, to: TunerSettings): string[] {
   const changes: string[] = [];
-  if (from.cachedDetail !== to.cachedDetail) changes.push(`Adaptive cached preview: ${to.cachedDetail ? "On" : "Off"}`);
   if (from.preview !== to.preview) changes.push(`Preview: ${from.preview} → ${to.preview}`);
   if (to.preview === "balanced" && from.balancedSize !== to.balancedSize) changes.push(`Balanced preview size: ${to.balancedSize * 100}%`);
   if (from.smallest !== to.smallest) changes.push(`Smaller drafts for slow sliders: ${to.smallest * 100}% of the selected preview size`);
@@ -51,9 +50,8 @@ export function tunerChanges(from: TunerSettings, to: TunerSettings): string[] {
 
 export type TunerTrial = { settings: TunerSettings; measurement: TunerMeasurement; path: string };
 export function tunerCandidates(): TunerSettings[] {
-  const full: TunerSettings = { preview: "quality", balancedSize: 1, smallest: 1, draftTarget: 40, cachedDetail: false };
+  const full: TunerSettings = { preview: "quality", balancedSize: 1, smallest: 1, draftTarget: 40 };
   return [
-    { ...full, preview: "balanced", cachedDetail: true },
     { ...full, preview: "balanced" },
     { ...full, preview: "balanced", balancedSize: 0.75 },
     { ...full, preview: "balanced", balancedSize: 0.5 },
@@ -62,11 +60,10 @@ export function tunerCandidates(): TunerSettings[] {
     { ...full, preview: "performance", balancedSize: 0.5, smallest: 1 },
     { ...full, preview: "performance", balancedSize: 0.5, smallest: 0.7 },
     { ...full, preview: "performance", balancedSize: 0.5, smallest: 0.5 },
-  ].flatMap((settings) => settings.balancedSize === 1 ? [settings]
-    : [{...settings,cachedDetail:true},settings]) as TunerSettings[];
+  ];
 }
 
-// Prefer full-size adaptive previews; stop as soon as both measured targets are met.
+// Prefer full-size previews; stop as soon as both measured targets are met.
 export async function searchTuner(original: TunerSettings, target: { fps:number; latency:number },
   apply: (settings:TunerSettings) => Promise<void>, run: () => Promise<TunerRun>,
   progress: (settings:TunerSettings, index:number, total:number) => void) {

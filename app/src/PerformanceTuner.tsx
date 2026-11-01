@@ -3,12 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { perf, observeWebview } from "./perf";
-import { loadPreview, loadBalancedPreviewSize, loadDraftSmallest, loadDraftTarget, loadCachedDetailPreview } from "./Preferences";
+import { loadPreview, loadBalancedPreviewSize, loadDraftSmallest, loadDraftTarget } from "./Preferences";
 import { measureTuner, searchTuner, trimmedMedian, tunerChanges, type TunerSettings, type TunerRun, type TunerMeasurement, type TunerContext, type TunerTrial } from "./previewTuning";
 import { tunerOptions, type TunerOption } from "./tunerOptions";
 import { startTunerWork, stopTunerWork, type WorkSample } from "./tunerWorkload";
 
-import { storePreviewTiming } from "./cachedDetail";
 
 const PENDING = "immage.performanceTuner.pending";
 type WorkResult = { settings: Record<string,string>; samples: WorkSample[]; path: string };
@@ -20,7 +19,7 @@ function loadPending(): Pending | null {
   } catch { return null; }
 }
 export const hasPendingTuner = () => !!loadPending();
-const settings = (): TunerSettings => ({ preview:loadPreview(), balancedSize:loadBalancedPreviewSize(), smallest:loadDraftSmallest(), draftTarget:loadDraftTarget(), cachedDetail:loadCachedDetailPreview() });
+const settings = (): TunerSettings => ({ preview:loadPreview(), balancedSize:loadBalancedPreviewSize(), smallest:loadDraftSmallest(), draftTarget:loadDraftTarget() });
 const navSamples = (samples: WorkSample[]) => samples.filter((s) => s.ok && (s.name === "Photo open" || s.name === "Immich original resolve"));
 
 export function PerformanceTuner({ run, onClose, onRelaunch, onOverlay, photo, raw, previewArea }: {
@@ -61,8 +60,6 @@ export function PerformanceTuner({ run, onClose, onRelaunch, onOverlay, photo, r
     }
     setContext(runResult.context);
     const measured = measureTuner(runResult);
-    const native = trimmedMedian(runResult.samples.filter(s => s.kind === "edit" && !s.estimated).map(s => s.total));
-    if (measured.complete) storePreviewTiming(native,latency);
     setResult(measured); setPath(runResult.path);
     setTestedSettings(settings()); setProposal(null); setChanges([]);
   };
@@ -80,13 +77,13 @@ export function PerformanceTuner({ run, onClose, onRelaunch, onOverlay, photo, r
     try {
       const all = await reload();
       const applySettings = async (s:TunerSettings) => {
-        for (const [id,value] of Object.entries({preview:s.preview,balancedSize:s.balancedSize,smallest:s.smallest,draftTarget:s.draftTarget,cachedDetail:s.cachedDetail})) {
+        for (const [id,value] of Object.entries({preview:s.preview,balancedSize:s.balancedSize,smallest:s.smallest,draftTarget:s.draftTarget})) {
           const option = all.find((o) => o.id === id);
           if (!option) throw new Error(`Missing tuner option: ${id}`);
           await option.set(String(value));
         }
       };
-      const best = await searchTuner(original,{fps,latency},applySettings,run,(s,i,total) => setProgress(`Testing ${i}/${total}: ${s.preview}${s.preview === "balanced" ? ` ${s.balancedSize*100}%` : ""}, smallest draft ${s.smallest*100}%, adaptive cache ${s.cachedDetail ? "on" : "off"}`));
+      const best = await searchTuner(original,{fps,latency},applySettings,run,(s,i,total) => setProgress(`Testing ${i}/${total}: ${s.preview}${s.preview === "balanced" ? ` ${s.balancedSize*100}%` : ""}, smallest draft ${s.smallest*100}%`));
       setTrials(best.trials); setResult(best.trial.measurement); setPath(best.trial.path); setTestedSettings(best.trial.settings); setVerified(false);
       const adjustments = tunerChanges(original,best.trial.settings);
       setProposal(adjustments.length ? best.trial.settings : null); setChanges(adjustments);
@@ -119,7 +116,7 @@ export function PerformanceTuner({ run, onClose, onRelaunch, onOverlay, photo, r
     lock.current = true; setBusy(true); setError("");
     const prior = Object.fromEntries(options.map((o) => [o.id,o.current]));
     // recommendations change only their named fields, never other unreviewed candidates
-    const updates = recommended && proposal ? { ...prior,preview:proposal.preview,balancedSize:String(proposal.balancedSize),smallest:String(proposal.smallest),draftTarget:String(proposal.draftTarget),cachedDetail:String(proposal.cachedDetail) } : chosen;
+    const updates = recommended && proposal ? { ...prior,preview:proposal.preview,balancedSize:String(proposal.balancedSize),smallest:String(proposal.smallest),draftTarget:String(proposal.draftTarget) } : chosen;
     const changed = options.filter((o) => updates[o.id] !== o.current);
     const applied: TunerOption[] = [];
     try {
@@ -203,7 +200,7 @@ export function PerformanceTuner({ run, onClose, onRelaunch, onOverlay, photo, r
           <label>Frame rate <select className="field" value={fps} onChange={(e) => {setFps(Number(e.target.value));setVerified(false);setResult(null);setProposal(null);}}>{[15,30,60].map((n) => <option key={n} value={n}>{n} FPS</option>)}</select></label>
           <label>Maximum latency <select className="field" value={latency} onChange={(e) => {setLatency(Number(e.target.value));setVerified(false);setResult(null);setProposal(null);}}>{[50,80,100,200].map((n) => <option key={n} value={n}>{n} ms</option>)}</select></label>
         </div>
-        <p>Tries 100% previews with adaptive caching first, then native previews, before smaller sizes. Stops when both targets are met.</p>
+        <p>Tries Balanced 100% previews first, then smaller preview sizes and drafts. Stops when both targets are met.</p>
       </section>
       {result && <section className="tuner-section">
         <h3>3. {verified ? "Verification" : "Recommendation"}</h3>

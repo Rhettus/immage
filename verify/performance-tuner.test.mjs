@@ -33,7 +33,7 @@ test('trims both deciles and averages the central pair for even samples', () => 
   assert.equal(trimmedMedian([]),Infinity);
 });
 test('75% Balanced is tested between 100% and 50%', () => {
-  const candidates=tunerCandidates().filter(s=>!s.cachedDetail);
+  const candidates=tunerCandidates();
   assert.deepEqual(candidates.slice(0,3).map((s) => s.balancedSize),[1,0.75,0.5]);
 });
 test('missing, sparse or backgrounded data cannot pass verification', () => {
@@ -41,21 +41,19 @@ test('missing, sparse or backgrounded data cannot pass verification', () => {
   assert.equal(measureTuner({...fixture(),valid:false}).complete,false);
   assert.equal(measureTuner({path:'empty',phases:[],samples:[]}).complete,false);
 });
-test('falls back to native Balanced 100% when adaptive misses targets, restoring originals', async () => {
-  const original = {...tunerCandidates()[4],cachedDetail:true};
+test('tries smaller previews when full-size misses targets, restoring originals', async () => {
+  const original = tunerCandidates()[4];
   let active = original, runs=0;
   const result = await searchTuner(original,{fps:30,latency:100},async s => {active=s;},async () => {runs++;return fixture(runs===1?10:40,runs===1?150:50);},() => {});
   assert.equal(runs,2); assert.equal(result.met,true);
-  assert.equal(result.trial.settings.preview,'balanced'); assert.equal(result.trial.settings.balancedSize,1);
-  assert.equal(result.trial.settings.cachedDetail,false);
+  assert.equal(result.trial.settings.preview,'balanced'); assert.equal(result.trial.settings.balancedSize,0.75);
   assert.deepEqual(active,original);
 });
-test('passing full-size adaptive previews stop the search before native or smaller previews', async () => {
+test('passing full-size previews stop the search before smaller previews', async () => {
   let runs=0;
-  const r=await searchTuner(tunerCandidates()[7],{fps:30,latency:100},async()=>{},async()=>{runs++;return fixture();},()=>{});
+  const r=await searchTuner(tunerCandidates()[6],{fps:30,latency:100},async()=>{},async()=>{runs++;return fixture();},()=>{});
   assert.equal(runs,1); assert.equal(r.trial.settings.preview,'balanced');
   assert.equal(r.trial.settings.balancedSize,1); assert.equal(r.trial.settings.smallest,1);
-  assert.equal(r.trial.settings.cachedDetail,true);
 });
 test('latency failure continues search even when FPS passes', async () => {
   let runs=0;
@@ -82,8 +80,10 @@ test('records only completed work in its own recording', async () => {
   const samples=stopTunerWork();assert.equal(samples.length,2);assert.equal(samples[0].ok,true);assert.equal(samples[1].ok,false);
   assert.deepEqual(stopTunerWork(),[]);
 });
-test('recommendations explicitly describe cached detail and preview quality changes', () => {
-  assert.ok(tunerChanges({...tunerCandidates()[0],cachedDetail:true},tunerCandidates()[1]).some(s=>s.startsWith('Adaptive cached preview: Off')));
+test('recommendations describe preview quality and adaptive sizing changes', () => {
+  const changes=tunerChanges(tunerCandidates()[0],tunerCandidates()[3]);
+  assert.ok(changes.some(s=>s.startsWith('Balanced preview size: 50%')));
+  assert.ok(changes.some(s=>s.startsWith('Smaller drafts for slow sliders: 70%')));
 });
 
 // TypeScript resolves .ts before .tsx; these must remain distinct on macOS/Windows.
@@ -99,18 +99,13 @@ test('frontend module names are unambiguous on case-insensitive filesystems', ()
 });
 
 
-test('full-size previews precede smaller sizes, with adaptive first at each size',()=>{
+test('full-size previews precede smaller sizes without duplicate candidates',()=>{
   const candidates=tunerCandidates();
-  assert.deepEqual(candidates.slice(0,2).map(s=>[s.preview,s.balancedSize,s.cachedDetail]),[
-    ['balanced',1,true],['balanced',1,false],
+  assert.deepEqual(candidates.slice(0,3).map(s=>[s.preview,s.balancedSize]),[
+    ['balanced',1],['balanced',0.75],['balanced',0.5],
   ]);
   assert.equal(new Set(candidates.map(s=>JSON.stringify(s))).size,candidates.length);
   assert.ok(candidates.every(s=>s.preview!=='quality'));
-  for(let i=2;i<candidates.length;i+=2) {
-    assert.equal(candidates[i].cachedDetail,true);
-    assert.ok(candidates[i].balancedSize<1);
-    assert.deepEqual(candidates[i+1],{...candidates[i],cachedDetail:false});
-  }
 });
 test('estimated frames alone cannot satisfy tuner verification',()=>{
   const run=fixture();run.samples.forEach(s=>{s.estimated=true;});

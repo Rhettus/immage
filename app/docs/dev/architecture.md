@@ -441,96 +441,23 @@ records CPU, process memory, Linux threads and available GPU counters on a
 background worker; `App.tsx` attaches phase timestamps to report version 5.
 The GUI dashboard plots these alongside timing summaries.
 
-[cachedDetail.ts](../../src/cachedDetail.ts) bounds interpolation between real renders for Exposure, Vibrance, Saturation and detail controls, measures display RGB prediction error, and stores the tuner timing seed. `Session` coalesces native edits until the next timed anchor (40–320 ms, or native completion when slower), checks predictions against native output, and suspends estimates on excessive error. Estimation cost failures disable estimates for the drag. Estimated performance samples are marked separately; tuner verification requires native samples too. `Session` invalidates anchors on release, control/view changes and non-slider edits. Release cancels the timer and requests exact output. `App` shows loupe controls only during eligible detail interactions.
+[detailPreview.ts](../../src/detailPreview.ts) identifies controls eligible for
+native loupe rendering. Detail and grain drags start directly in the loupe at
+the display scale, without probing whole-image rendering first. Disabling the
+loupe retains whole-image drafts. Release renders the exact full view.
 
-With cached previews disabled, eligible detail drags start directly in the
-loupe at the display scale; they do not probe whole-image rendering first.
-Grain amount and size also use native loupe frames, with interpolation excluded.
-Disabling the loupe retains whole-image drafts. Release renders the exact full
-view. In headless screen pipes, the engine pixelpipe patch retains the last
-edited module's input and the scaled output of `demosaicscale`, identified at
-the next active piece. It avoids retaining the full-resolution input to
-scaling. Ordinary darktable GUI pipes keep their module-requested checkpoints.
+In headless screen pipes, the engine pixelpipe patch retains the last edited
+module's input and the scaled output of `demosaicscale`, identified at the next
+active piece. Three recent scaled checkpoints survive ordinary replacement;
+upstream invalidation and memory cleanup still apply. This does not retain
+full-resolution GPU demosaiced pixels. Ordinary darktable GUI pipes keep their
+module-requested checkpoints.
 
+Histogram/scope inputs coalesce before copying at 12.5 Hz during interaction.
+Release flushes pending input, and final frames bypass the cadence delay.
+Copies are deferred until after drawing, with separate histogram and clipping
+workers. Surface generations reject stale results after a frame, photo or crop
+change. Workers support synchronous fallback and dispose on cleanup.
 
-[cachedPreviewRenderer.ts](../../src/cachedPreviewRenderer.ts) presents estimates
-from `Session.onCachedPreview` using two native RGBA textures and a WebGL
-fragment shader. `detailMix` shares eligibility and extrapolation bounds with
-the CPU path. Each new native anchor is uploaded once; the previous B texture
-is reused as A. Slider events queue the latest value; once per display frame the callback
-updates the mix uniform and draws without creating an estimated pixel array. The shader interpolates display bytes, clamps and
-rounds to even like `Uint8ClampedArray`, preserves B's alpha, and draws clipping
-colors after quantization. Texture storage is bounded to two anchors and
-256 MiB, with device texture and viewport limits checked before upload.
-
-`App` places the GPU canvas with the sharp layer and keeps the latest estimate
-visible until a native frame replaces it. Exact A=B draws retain the preceding
-compatible anchor for the next estimate. The two-texture pool evicts the least
-recently used unrequested anchor before uploading, within the 256 MiB bound;
-dimension changes discard incompatible textures. Native frames shown on the
-CPU, photo changes and component cleanup release the textures. Context loss
-reveals the last CPU frame, and unavailable WebGL, shader/upload failure or
-unsupported dimensions fall back to CPU interpolation. Restored contexts
-reupload anchors on demand. CPU `Frame` caches and pixel consumers keep native
-pixels. Histogram/scope inputs coalesce before copying at 12.5 Hz during
-interaction. Release flushes pending input, and final frames bypass the cadence
-delay. Copies are deferred until after preview drawing, with a separate
-histogram worker so auxiliary computation cannot queue ahead of clipping.
-Photo/crop changes and unmount cancel pending input and dispose the worker.
-Clipping jobs capture independent sharp/base surface generations; replacing a
-surface clears its old overlay and invalidates late results even at identical
-dimensions. Sharp clipping is computed only by the shader while GPU frames show.
-Histogram inputs carry a generation checked before dispatch and publication;
-new display frames and newly queued cadence inputs retire previous results.
-CPU/GPU transitions and photo/crop reset invalidate generations as well. Fitted
-GPU estimates submit their native anchor as the scope input without readback.
-During GPU estimates the histogram and scopes follow native frames;
-clipping overlays use the current estimate without readback. Native prediction
-validation computes interpolated RGB error directly at the adaptive refresh
-interval without allocating a predicted frame. It preserves every pixel,
-clamping, ties-to-even rounding and the current error thresholds. The validation
-worker retains only its latest three immutable frame buffers, so successive
-checks copy only the new native frame. Worker failure uses the original buffers
-for synchronous fallback. Exact release rendering remains independent.
-
-Performance samples identify `previewBackend` (`cpu` or `webgl`), per-draw
-`anchorUploads`, and retained `textureBytes`. GPU draw timing measures command
-submission and placement; it does not synchronously wait for the GPU. The
-[browser check](../../../verify/cached-preview-gpu.mjs) separately forces completion with a test-only one-pixel
-readback when comparing rendering costs.
-
-
-`Session.set` applies values and marks native edits immediately, but queues
-cached feedback for `requestAnimationFrame`. A burst shares one callback and
-only the latest value is interpolated and drawn, on either backend. The
-queued preview retains its cache identity, latest input timestamp and count
-of coalesced edits. Before drawing, `flushPreview` rechecks the view, settings,
-anchor bounds and accuracy state against the current native anchors. It skips
-an estimate if a matching native anchor has already been shown. CPU cost
-limits cover preview generation rather than time spent waiting for display.
-
-A valid queued prediction can defer native work to the existing anchor timer,
-just as a displayed prediction does. That timer still runs when animation
-callbacks are paused. Rejected or expensive display callbacks resume native
-work immediately. Native completion suppresses old values when newer feedback
-is displayed or queued. Replacing or invalidating the detail cache cancels
-its animation callback, including on release, control/view changes, non-slider
-edits and photo close. Release updates the engine immediately with the latest
-values and never waits for an animation callback.
-
-
-Native refresh timing starts from the larger of the tuner target and 1.25 times
-measured native cost. Validated low error (at most half the existing mean 2%
-and p95 6% limits) adds 0.25 to an interval factor, up to 2. Higher accepted
-error halves it, down to 0.5; failed validation resets it to 0.5. The resulting
-interval is bounded to 40–320 ms. These are scheduling bounds; native work
-can take longer. Periodic validation and exact release remain mandatory.
-
-After an accuracy failure, discard the old pair and seed recovery from the
-new native frame. Estimates stay hidden while fresh native anchors train and
-two consecutive low-error private predictions pass. Private recovery checks
-allow one full extrapolated anchor step (mix -1 to 2), so uniform slider steps
-can validate; displayed estimates retain the tighter -0.5 to 1.5 bounds and
-all checks retain the 10% slider-range proximity limit. A new failure discards
-the pair again; three failures stop recovery for that drag. Recovery state
-belongs to the control/view cache and disappears on invalidation or release.
+Adaptive cached preview interpolation was removed after latency and visual
+quality regressed. See the measured [failed experiment](../../../benchmarking/failed-experiments.md).
