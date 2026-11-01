@@ -506,6 +506,7 @@ impl Engine {
             cmd.env_remove(crate::renderer::EGL_VENDOR);
             cmd.env_remove("IMMAGE_WEBVIEW_EGL_VENDOR");
         }
+        kill_with_parent(&mut cmd);
         let mut child = cmd.spawn()?;
         let stdin = Arc::new(Mutex::new(child.stdin.take().expect("piped stdin")));
         let stdout = child.stdout.take().expect("piped stdout");
@@ -588,12 +589,47 @@ impl Engine {
     // dt_cleanup(), which can hang on some drivers (NVIDIA's OpenCL on Linux
     // held an update on "installing" for good), so it gets a few seconds
     pub fn quit(&mut self) {
-        let _ = self.request(json!({ "cmd": "quit" }));
+        if !matches!(self.child.try_wait(), Ok(None)) { return; }
+        // Writing can also block behind another writer or a full pipe. Let
+        // the child exit normally, but enforce the deadline independently
+        // of both the write and the reply (which a stalled engine never sends).
+        let stdin = self.stdin.clone();
+        std::thread::spawn(move || {
+            if let Ok(mut stdin) = stdin.lock() {
+                let _ = writeln!(stdin, "{}", json!({ "cmd": "quit" }))
+                    .and_then(|_| stdin.flush());
+            }
+        });
         reap(&mut self.child, QUIT_WAIT);
     }
 }
 
 const QUIT_WAIT: Duration = Duration::from_secs(5);
+
+// EOF alone cannot stop an engine stuck in an import or driver call. Linux
+// must kill it even when Immage aborts and no Rust destructors run.
+fn kill_with_parent(cmd: &mut Command) {
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::process::CommandExt;
+        let parent = std::process::id() as libc::pid_t;
+        // Only async-signal-safe calls in the child before exec.
+        unsafe {
+            cmd.pre_exec(move || {
+                if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                // The parent could have died before prctl was installed.
+                if libc::getppid() != parent {
+                    libc::_exit(1);
+                }
+                Ok(())
+            });
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = cmd;
+}
 
 // waits for the child to exit, and kills it after `wait`
 fn reap(child: &mut Child, wait: Duration) {
@@ -618,6 +654,61 @@ impl Drop for Engine {
 mod tests {
     use super::{gpu_edits, parse_timing, reap, rocm_only, set_gpu_edits, CacheLog, CACHE_RECORD_LIMIT};
     use std::time::{Duration, Instant};
+
+    #[cfg(unix)]
+    #[test]
+    fn quit_stops_engine_that_never_reads_or_replies() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!("immage-stuck-engine-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let bin = root.join("engine");
+        std::fs::write(&bin, "#!/bin/sh\nexec sleep 60\n").unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let mut engine = super::Engine::spawn_once(&bin, &root, &root).unwrap();
+        let started = Instant::now();
+        engine.quit();
+        assert!(started.elapsed() < Duration::from_secs(8));
+        assert!(engine.child.try_wait().unwrap().is_some());
+        // Explicit quit followed by Drop must not wait again.
+        drop(engine);
+        assert!(started.elapsed() < Duration::from_secs(8));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn parent_death_helper() {
+        let Some(path) = std::env::var_os("IMMAGE_PARENT_DEATH_TEST") else { return };
+        let mut cmd = std::process::Command::new("sleep");
+        cmd.arg("60");
+        super::kill_with_parent(&mut cmd);
+        let child = cmd.spawn().unwrap();
+        std::fs::write(path, child.id().to_string()).unwrap();
+        // Simulate abrupt application exit without dropping the child.
+        std::process::exit(0);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn engine_dies_with_parent() {
+        let path = std::env::temp_dir().join(format!("immage-parent-death-{}", std::process::id()));
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "engine::tests::parent_death_helper"])
+            .env("IMMAGE_PARENT_DEATH_TEST", &path).status().unwrap();
+        assert!(status.success());
+        let pid = std::fs::read_to_string(&path).unwrap();
+        std::fs::remove_file(path).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            let stat = std::fs::read_to_string(format!("/proc/{pid}/stat"));
+            if stat.as_ref().is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
+                || stat.as_ref().is_ok_and(|s| s.split_once(") ").is_some_and(|(_, rest)| rest.starts_with('Z'))) {
+                break;
+            }
+            assert!(Instant::now() < deadline, "orphan engine survived parent exit: {pid}");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
 
     #[test]
     fn folder_wait_times_out_cancels_and_handles_replies() {

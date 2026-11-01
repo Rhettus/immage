@@ -91,6 +91,9 @@ Performance
 
 Bug fixes
 
+- Closing Immage stops an unresponsive engine after five seconds, even if
+  it never answers the quit request. On Linux, an Immage crash also stops
+  its engine so it cannot keep the library locked and block relaunching.
 - Folder reads report an error after 30 seconds without an engine batch reply
   instead of waiting indefinitely. Switching folders ignores the previous
   read's progress and results.
