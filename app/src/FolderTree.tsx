@@ -46,16 +46,18 @@ export function FolderTree({ roots, volumes, hostNames, folded, current, photo, 
   // the open folders' subfolders, read when a folder opens or on refresh
   useEffect(() => {
     let stale = false;
-    const open = [...expanded];
-    void Promise.all(open.map(async (p) => [p, await invoke<SubFolder[]>("list_subfolders", { path: p })] as const))
-      .then((lists) => {
+    // Publish each folder as it arrives: a slow or unavailable drive must
+    // not hold back the children of another folder the user just expanded.
+    for (const p of expanded) {
+      void invoke<SubFolder[]>("list_subfolders", { path: p }).then((list) => {
         if (stale) return;
         setChildren((old) => {
           const next = new Map(old);
-          for (const [p, list] of lists) next.set(p, list);
+          next.set(p, list);
           return next;
         });
-      });
+      }).catch(() => { /* keep prior children; reopening or refresh retries */ });
+    }
     return () => { stale = true; };
   }, [expanded, refresh]);
 

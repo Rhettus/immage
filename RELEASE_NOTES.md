@@ -89,6 +89,8 @@ Performance
 
 Bug fixes
 
+- Expanding a folder shows its subfolders without waiting for other expanded
+  folders on slow or disconnected drives to finish loading.
 - Closing Immage stops an unresponsive engine after five seconds, even if
   it never answers the quit request. On Linux, an Immage crash also stops
   its engine so it cannot keep the library locked and block relaunching.
