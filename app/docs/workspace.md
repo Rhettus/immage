@@ -33,6 +33,9 @@ in, edit them, send them out.
 Clicking the button of the panel that is already showing slides the right
 panel shut. Crop, Masks, Zone System and Heal need a photo open.
 
+On Windows, icon buttons use the standard arrow cursor across the whole
+button, including its icon. Hover highlights and tooltips identify the tool.
+
 ## The Library panel
 
 Down the left side, under the **Navigator**:

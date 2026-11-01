@@ -9,6 +9,16 @@ needs it. Paths below are relative to this file.
 
 ## Entry points and process boundary
 
+`main.tsx` marks the document root with `windows` when the webview's user
+agent identifies Windows. `styles.css` uses that class to give `.tool`
+buttons and their descendants the native arrow cursor. This avoids the
+hand cursor's apparent overlap with icon strokes while preserving native
+pointer sizing, hover highlights, tooltips and click handling. Other
+platforms retain the hand cursor. To verify on Windows, move slowly across
+the rail buttons (including Presets, Crop and Adjustments), from their
+padding onto the SVG strokes: the arrow should remain stable. Check
+tooltips, clicks and disabled buttons as well.
+
 | File | Responsibility |
 |---|---|
 | [index.html](../../index.html), [main.tsx](../../src/main.tsx) | The main window: mounts `App`. |

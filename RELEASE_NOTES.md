@@ -116,6 +116,8 @@ Performance
 
 Bug fixes
 
+- Windows icon buttons use a consistent arrow cursor so toolbar icons no
+  longer appear to overlap the hand pointer.
 - Windows builds correctly detect the bundled static OpenCV libraries, enabling
   Panorama Merge and its projection preview. Builds fail if stitching is missing.
 - Opening Crop preserves portrait orientation, so resizing from the top edge

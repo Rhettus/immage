@@ -615,6 +615,8 @@ input.switch:disabled { cursor: default; opacity: 0.4; }
 .tool.on { color: var(--text); }
 .tool.reject.on { color: #ff6b6b; }
 .tool:disabled { color: var(--text-3); cursor: default; }
+/* Keep a stable native arrow across the button and its SVG on Windows. */
+html.windows .tool, html.windows .tool * { cursor: default; }
 .tool-group.filter.active .tool.on { color: var(--accent); }
 .swatch {
   width: 15px;
