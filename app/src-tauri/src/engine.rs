@@ -23,6 +23,7 @@ pub struct Engine {
     perf: Arc<Perf>,
     base: BaseCancel,
     tagged: Tagged,
+    cache_trace: bool,
 }
 
 // requests the engine serves on threads of its own beside its main loop:
@@ -239,12 +240,67 @@ pub struct Timing {
     pub tiled: bool,
 }
 
+const CACHE_RECORD_LIMIT: usize = 10000;
+
+#[derive(Default)]
+struct CacheLog {
+    records: Vec<Value>,
+    dropped: usize,
+    sequence: u64,
+    context: Option<(u64, String)>,
+}
+
+impl CacheLog {
+    fn consume(&mut self, line: &str) -> bool {
+        if let Some(begin) = line.strip_prefix("[engine-cache] begin ") {
+            if let Some((id, command)) = begin.split_once(' ') {
+                self.sequence += 1;
+                self.context = id.parse().ok().map(|id| (id, command.to_string()));
+            }
+            return true;
+        }
+        if line == "[engine-cache] end" {
+            self.context = None;
+            return true;
+        }
+        let Some((request, command)) = &self.context else { return false };
+        let mut words = line.split_whitespace();
+        let Some(seconds) = words.next().and_then(|s| s.parse::<f64>().ok()) else { return false };
+        let (Some(first), Some(second)) = (words.next(), words.next()) else { return false };
+        let event = format!("{first} {second}");
+        if !matches!(event.as_str(), "checkpoint lookup" | "cache replace" | "cache invalidate" | "cache clear" | "cache evict") {
+            return false;
+        }
+        if self.records.len() >= CACHE_RECORD_LIMIT {
+            self.dropped += 1;
+            return true;
+        }
+        // hashes remain strings: JavaScript numbers cannot represent all u64 values
+        let fields: serde_json::Map<String, Value> = line.split_whitespace()
+            .filter_map(|word| word.split_once('='))
+            .map(|(key, value)| (key.to_string(), json!(value.trim_end_matches(';'))))
+            .collect();
+        self.records.push(json!({ "event":event, "engineAt":seconds * 1000.0,
+            "sequence":self.sequence, "requestId":if *request == 0 { None } else { Some(*request) },
+            "command":command, "fields":fields, "line":line }));
+        true
+    }
+
+    fn report(&self) -> Value {
+        json!({ "records":self.records, "droppedRecords":self.dropped, "limit":CACHE_RECORD_LIMIT,
+            "tracedRequests":self.sequence,
+            "clock":"engine monotonic milliseconds; independent of frontend and native clocks",
+            "scope":"request thread only; tagged/background workers excluded; cache contents before recording are unknown" })
+    }
+}
+
 // the timings of the request under way, and of the last one marked
 #[derive(Default)]
 struct PerfLog {
     current: Vec<Timing>,
     last: Vec<Timing>,
     marks: u64,
+    cache: CacheLog,
 }
 
 #[derive(Default)]
@@ -287,6 +343,9 @@ fn read_stderr(stderr: ChildStderr, mut log: File, perf: Arc<Perf>) {
         }
         let line = String::from_utf8_lossy(&buf);
         let line = line.trim_end_matches(['\r', '\n']);
+        if perf.log.lock().unwrap().cache.consume(line) {
+            continue;
+        }
         if let Some(req) = line.strip_prefix("[engine] > ") {
             let mut p = perf.log.lock().unwrap();
             if req.contains("\"perf_mark\"") {
@@ -428,7 +487,7 @@ impl Engine {
         std::thread::spawn(move || read_stdout(stdout, tx, shared, following));
         let base = BaseCancel { stdin: stdin.clone(), last: Arc::new(AtomicU64::new(0)) };
         let tagged = Tagged { stdin: stdin.clone(), waiting, progress, last: Arc::new(AtomicU64::new(0)) };
-        Ok(Self { child, stdin, replies, perf, base, tagged })
+        Ok(Self { child, stdin, replies, perf, base, tagged, cache_trace: false })
     }
 
     // darktable's timings of the request just made: a cheap request after it
@@ -458,7 +517,29 @@ impl Engine {
         self.tagged.clone()
     }
 
-    pub fn request(&mut self, req: Value) -> Result<Value, String> {
+    pub fn cache_trace(&mut self, on: bool) -> Result<(), String> {
+        self.cache_trace = false;
+        let seen = self.perf.log.lock().unwrap().marks;
+        self.perf_mark(); // drain stderr from the previous recording before reset
+        if self.perf.log.lock().unwrap().marks <= seen {
+            return Err("cache diagnostics: engine stderr did not drain".into());
+        }
+        if on { self.perf.log.lock().unwrap().cache = CacheLog::default(); }
+        self.cache_trace = on;
+        Ok(())
+    }
+
+    pub fn cache_report(&mut self) -> Value {
+        let seen = self.perf.log.lock().unwrap().marks;
+        self.perf_mark();
+        let log = self.perf.log.lock().unwrap();
+        let mut report = log.cache.report();
+        report["stderrDrained"] = json!(log.marks > seen);
+        report
+    }
+
+    pub fn request(&mut self, mut req: Value) -> Result<Value, String> {
+        if self.cache_trace { req["cache_trace"] = json!(true); }
         {
             let mut stdin = self.stdin.lock().unwrap();
             writeln!(stdin, "{req}").map_err(|e| format!("engine write: {e}"))?;
@@ -501,8 +582,66 @@ impl Drop for Engine {
 
 #[cfg(test)]
 mod tests {
-    use super::{gpu_edits, parse_timing, reap, rocm_only, set_gpu_edits};
+    use super::{gpu_edits, parse_timing, reap, rocm_only, set_gpu_edits, CacheLog, CACHE_RECORD_LIMIT};
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn checkpoint_records_are_scoped_bounded_and_preserve_hashes() {
+        let mut cache = CacheLog::default();
+        let lookup = " 1.25 checkpoint lookup CL0 [full] demosaic 3 none --> (0/0) 4286x2844 sc=1.0000; pipe=0xabc run=2 hash=fffffffffffffffe state=abcdef bytes=195033216 hit=0";
+        assert!(!cache.consume(lookup));
+        assert!(cache.consume("[engine-cache] begin 42 render"));
+        assert!(cache.consume(lookup));
+        assert!(!cache.consume(" 1.26 pipe data: cache HIT"));
+        assert!(cache.consume("[engine-cache] end"));
+        assert!(!cache.consume(lookup));
+        assert!(cache.consume("[engine-cache] begin 0 set"));
+        assert!(cache.consume(" 1.27 cache invalidate [full] pipe=0xabc hash=abcdef reason=history"));
+        let report = cache.report();
+        assert_eq!(report["records"][0]["requestId"], 42);
+        assert_eq!(report["records"][0]["engineAt"], 1250.0);
+        assert_eq!(report["records"][0]["fields"]["hash"], "fffffffffffffffe");
+        assert_eq!(report["records"][0]["line"], lookup);
+        assert!(report["records"][1]["requestId"].is_null());
+        assert_eq!(report["records"][1]["command"], "set");
+        assert_eq!(report["records"][1]["sequence"], 2);
+        for _ in 2..CACHE_RECORD_LIMIT + 3 { cache.consume(lookup); }
+        assert_eq!(cache.records.len(), CACHE_RECORD_LIMIT);
+        assert_eq!(cache.dropped, 3);
+        cache = CacheLog::default();
+        assert!(cache.records.is_empty() && cache.context.is_none() && cache.dropped == 0);
+    }
+
+    #[test]
+    #[ignore = "requires IMMAGE_TEST_ENGINE and IMMAGE_TEST_RAW"]
+    fn native_checkpoint_export() {
+        let bin = std::env::var("IMMAGE_TEST_ENGINE").expect("engine binary");
+        let raw = std::env::var("IMMAGE_TEST_RAW").expect("raw fixture");
+        let runtime = std::env::temp_dir().join(format!("immage-cache-export-{}", std::process::id()));
+        let mut engine = super::Engine::spawn(std::path::Path::new(&bin), &runtime, &runtime).unwrap();
+        let fixture = runtime.join(std::path::Path::new(&raw).file_name().unwrap());
+        std::fs::copy(&raw, &fixture).unwrap();
+        engine.request(serde_json::json!({"cmd":"open", "path":fixture})).unwrap();
+        engine.cache_trace(true).unwrap();
+        engine.request(serde_json::json!({"cmd":"render", "width":700, "height":525, "draft":true,
+            "diagnostic_request":42, "rgba":runtime.join("frame.rgba")})).unwrap();
+        let report = engine.cache_report();
+        let records = report["records"].as_array().unwrap();
+        assert!(records.iter().any(|r| r["event"] == "checkpoint lookup" && r["requestId"] == 42
+            && r["line"].as_str().unwrap().contains("demosaic")));
+        assert!(records.iter().any(|r| r["event"] == "cache replace"));
+        assert_eq!(report["droppedRecords"], 0);
+        engine.cache_trace(false).unwrap();
+        let stopped = engine.cache_report();
+        engine.request(serde_json::json!({"cmd":"render", "width":500, "height":375,
+            "draft":true, "rgba":runtime.join("frame.rgba")})).unwrap();
+        assert_eq!(engine.cache_report()["records"], stopped["records"]);
+        engine.cache_trace(true).unwrap();
+        assert_eq!(engine.cache_report()["records"], serde_json::json!([]));
+        engine.cache_trace(false).unwrap();
+        engine.quit();
+        std::fs::remove_dir_all(runtime).unwrap();
+    }
 
     #[cfg(unix)]
     #[test]

@@ -30,7 +30,7 @@ flowchart TD
 ## Collection
 
 Run the existing GUI benchmark in Preferences → Performance → Measuring. Report
-schema 8 includes diagnostics by default, independently of the overlay. For an
+schema 9 includes diagnostics by default, independently of the overlay. For an
 overhead comparison, set `localStorage.setItem("immage.perfDiagnostics", "0")` in
 the webview developer console before a run; set it to `"1"` to restore diagnostics.
 This leaves legacy timing, resource and frontend-work metrics enabled. Alternate
@@ -86,8 +86,23 @@ and mask/detail/Scharr state. A changed full hash with unchanged parameter state
 requires checking ROI and the other reported fields; it does not establish an
 upstream edit. `cache replace`, `cache invalidate`, `cache clear`, and
 `cache evict` lines record the affected hashes so a missing buffer can be traced
-to replacement, explicit invalidation, or memory trimming. These are opt-in
-native debug logs; GUI benchmark JSON does not collect them.
+to replacement, explicit invalidation, or memory trimming. Schema 9 GUI
+benchmarks collect these same records automatically under
+`diagnostics.cache`, without a separate log or verbose pipe tracing. Capture is
+enabled only during diagnostic measurements (including tuner measurements).
+The request thread uses a thread-local flag; background workers are excluded.
+Render records carry the frontend `requestId`; other commands carry a null ID,
+a command name and an engine request sequence. Pipe pointer and hashes remain
+strings. `fields` contains key/value tokens; `line` preserves the module and
+ROI text, including scale. `engineAt` uses an independent engine clock; link by
+request ID rather than aligning it with frontend/native timestamps.
+At most 10,000 records are retained; `droppedRecords` reports truncation.
+`tracedRequests` counts requests with capture markers (zero means no capture).
+Each recording resets the store, and export drains pending stderr first;
+`stderrDrained: false` means the final records may be incomplete.
+Cache contents predating measurement are unknown, so absence of a replacement
+record does not prove the buffer was never cached. The analyzer preserves
+the complete cache section and attaches matching records to each frame.
 
 `demosaicscale.modify_roi_in()` requests the whole input at scale 1 even when
 its output is a smaller preview. Preview geometry changes therefore do not by

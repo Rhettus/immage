@@ -62,6 +62,11 @@ def summarize(report):
     events = diagnostics.get('events', [])
     spans = operation_spans(events)
     native = diagnostics.get('native', {}).get('spans', [])
+    cache = diagnostics.get('cache', {})
+    cache_by_request = collections.defaultdict(list)
+    for record in cache.get('records', []):
+        if record.get('requestId') is not None:
+            cache_by_request[record['requestId']].append(record)
     starts = {s['id']: s for s in spans if s['name'] == 'render'}
     samples = report.get('samples', [])
     frames, groups, first = [], collections.defaultdict(list), set()
@@ -92,7 +97,7 @@ def summarize(report):
         frames.append({'frameId': diagnostic.get('frameId'), 'requestId': request, 'kind': frame.get('kind'),
                        'label': label, 'phase': phase, 'source': source, 'total': frame['total'],
                        'latestInputLatency': frame.get('latestInputLatency'), 'stages': frame.get('stages', {}),
-                       'moduleTimings': frame.get('moduleTimings'),
+                       'moduleTimings': frame.get('moduleTimings'), 'cacheRecords':cache_by_request.get(request, []),
                        'modules': sorted(frame.get('modules', []), key=lambda m:m.get('ms', 0), reverse=True)[:8],
                        'queue': {'blockers': blockers, 'coveredMs': covered(intervals),
                                  'unattributedMs': max(0, queue_end-input_at-covered(intervals))},
@@ -126,7 +131,7 @@ def summarize(report):
                                   'completionAfterRequestMs':max(0, span['end']-event['at']) if span else None})
     outcomes = collections.Counter(e['name'] for e in events if e['name'].startswith(('frame.', 'estimate.'))
                                    or e['name'] in ('render.cancelled', 'render.failed'))
-    return {'build': report.get('build'), 'groups': rows, 'frames': frames, 'outcomes': dict(outcomes),
+    return {'build': report.get('build'), 'cache':cache, 'groups': rows, 'frames': frames, 'outcomes': dict(outcomes),
             'eventCount': len(events), 'droppedEvents': diagnostics.get('droppedEvents', 0),
             'droppedNativeSpans': diagnostics.get('native', {}).get('droppedSpans', 0),
             'unfinished': diagnostics.get('unfinished', []), 'nativeUnfinished': diagnostics.get('native', {}).get('unfinished', []),
@@ -148,11 +153,18 @@ def analyze(report):
               f"prior overlapping requests={frame['priorOverlappingRequests']}, stages={frame['stages']}")
         print(f"  Queue: {frame['queue']}; native lock waits: {frame['nativeWaits']}")
         print(f"  Modules: {frame['modules']}; timing status: {frame['moduleTimings']}")
+        for record in frame['cacheRecords']:
+            if record['event'] == 'checkpoint lookup':
+                print(f"  Checkpoint: {record['line']}")
     print(f"\nFrame lifecycle: {dict(collections.Counter(f['outcome'] for f in result['frameLifecycle']))}")
     print(f"\nCancellation completion delays: {result['cancellations']}")
     print(f"\nOutcomes: {result['outcomes']}")
     print(f"Diagnostic events: {result['eventCount']}, dropped: {result['droppedEvents']}; "
           f"native dropped: {result['droppedNativeSpans']}; unfinished operations: {len(result['unfinished'])}")
+    if result['cache']:
+        print(f"Cache records: {len(result['cache'].get('records', []))}, "
+              f"dropped: {result['cache'].get('droppedRecords', 0)}, "
+              f"stderr drained: {result['cache'].get('stderrDrained')}")
     if not result['eventCount']:
         print('Older report or diagnostics disabled: request attribution unavailable.')
     return result

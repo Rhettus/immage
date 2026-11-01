@@ -9258,7 +9258,15 @@ int main(int argc, char **argv)
     {
       JsonObject *req = json_node_get_object(json_parser_get_root(parser));
       quit = !g_strcmp0(json_object_get_string_member_with_default(req, "cmd", ""), "quit");
+      const gboolean cache_trace = json_object_get_boolean_member_with_default(req, "cache_trace", FALSE);
+      dt_dev_pixelpipe_cache_trace_set(cache_trace);
+      if(cache_trace)
+        fprintf(stderr, "[engine-cache] begin %" G_GINT64_FORMAT " %s\n",
+                json_object_get_int_member_with_default(req, "diagnostic_request", 0),
+                json_object_get_string_member_with_default(req, "cmd", ""));
       _handle(req, out);
+      if(cache_trace) fprintf(stderr, "[engine-cache] end\n");
+      dt_dev_pixelpipe_cache_trace_set(FALSE);
     }
     else
       _reply_error(out, "request is not a JSON object");

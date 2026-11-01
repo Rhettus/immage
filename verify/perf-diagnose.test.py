@@ -30,6 +30,20 @@ class DiagnoseTest(unittest.TestCase):
         self.assertIn('prior overlapping requests=[1]', text)
         self.assertIn('latest-input median=30.0', text)
 
+    def test_cache_records_link_by_request_without_aligning_clocks(self):
+        records = [
+            {'event':'checkpoint lookup', 'requestId':42, 'engineAt':900000,
+             'fields':{'hash':'fffffffffffffffe','hit':'0'}},
+            {'event':'cache invalidate', 'requestId':None, 'command':'set', 'engineAt':899999},
+            {'event':'cache replace', 'requestId':99, 'engineAt':900001},
+        ]
+        cache = {'records':records, 'droppedRecords':3, 'stderrDrained':False}
+        result = diagnose.summarize({'diagnostics':{'cache':cache}, 'samples':[
+            {'kind':'edit','at':20,'total':10,'width':1,'height':1,
+             'diagnostic':{'requestId':42}}]})
+        self.assertEqual(result['frames'][0]['cacheRecords'], records[:1])
+        self.assertEqual(result['cache'], cache)
+
     def test_old_report(self):
         with contextlib.redirect_stdout(io.StringIO()) as output:
             diagnose.analyze({'samples': []})
