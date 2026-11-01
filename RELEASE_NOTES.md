@@ -7,6 +7,10 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Metadata adds Location: enter coordinates or drop and drag a pin on an
+  optional OpenStreetMap map, then Apply to save GPS information to the photo's
+  XMP sidecar. Remove location clears GPS coordinates and altitude. Maps offer
+  dark and standard styles and require no API key.
 - Lens Corrections adds global Defringe Amount and Radius sliders to remove
   color fringes. Set Amount to zero to switch correction off.
 - Panorama Merge supports JPEGs and other non-RAW photos, including mixed

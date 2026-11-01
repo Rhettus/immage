@@ -4,6 +4,7 @@
 // the open image's metadata as Lightroom's Metadata panel lays it out: its
 // text fields, rating and labels editable, its EXIF shown
 import { useEffect, useState } from "react";
+import { LocationEditor } from "./LocationEditor";
 import { baseName } from "./paths";
 import { LABEL_COLORS, type Exif, type ImageEntry } from "./library";
 
@@ -48,11 +49,12 @@ export function captureDate(exif: string): string {
   return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
-export function MetadataPanel({ image, text, onText, onMeta, open, onToggle }: {
+export function MetadataPanel({ image, text, onText, onMeta, onLocationSaved, open, onToggle }: {
   image: ImageEntry | null;
   text: TextFields | null;
   onText: (field: keyof TextFields, value: string) => void;
   onMeta: (fields: Partial<ImageEntry>) => void;
+  onLocationSaved: (location: NonNullable<ImageEntry["location"]> | null) => void;
   open: boolean;
   onToggle: (alt: boolean) => void;
 }) {
@@ -89,6 +91,7 @@ export function MetadataPanel({ image, text, onText, onMeta, open, onToggle }: {
              strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 15 6-6 6 6" /></svg>
       </div>
       {open && (
+        <>
         <div className="meta-grid">
           <span className="k">File Name</span><span className="v" title={image.filename}>{image.filename}</span>
           <span className="k">Folder</span><span className="v" title={folder}>{baseName(folder)}</span>
@@ -116,6 +119,8 @@ export function MetadataPanel({ image, text, onText, onMeta, open, onToggle }: {
             <Row key={k} k={k} v={v} />
           ))}
         </div>
+        <LocationEditor key={image.imgid} image={image} onSaved={onLocationSaved} />
+        </>
       )}
     </div>
   );

@@ -4968,6 +4968,7 @@ export default function App() {
                      if (done) { updatePlacement(); session.current?.requestRender(); }
                    }} />
         <MetadataPanel image={currentEntry} text={metaText}
+                       onLocationSaved={(location) => currentEntry && patchImage(currentEntry.imgid, { location })}
                        open={leftOpen.has("metadata")} onToggle={(alt) => toggleLeft("metadata", alt)}
                        onMeta={(fields) => currentEntry && setMeta(currentEntry.imgid, fields)}
                        onText={(field, value) => {

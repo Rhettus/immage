@@ -500,3 +500,26 @@ Preferences > Performance > Interface rendering selects Automatic, Mesa or
 NVIDIA for the window. Relaunch between A/B benchmark runs. The engine's
 GPU processing setting is separate. See [Preferences](app/docs/preferences.md)
 for the procedure. Standard release builds remain on Ubuntu 22.04.
+
+## Location metadata and map attribution
+
+The Metadata panel's Location section accepts latitude and longitude in decimal
+degrees (latitude first). Use Show map to place or drag a pin, then Apply to
+save it to the photo's XMP sidecar. Remove location clears GPS coordinates and
+altitude in Immage without changing the original photo. An Immage XMP marker
+keeps removed camera GPS from returning on reopen; other photo software may
+still show GPS embedded in the original. Moving a location clears the old altitude. Coordinate editing works
+offline; maps require internet access and no API key. Place-name lookup is not
+included.
+
+Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright),
+available under the [Open Database License (ODbL)](https://opendatacommons.org/licenses/odbl/).
+Map tiles are provided by the OpenStreetMap Foundation and are subject to its
+[tile usage policy](https://operations.osmfoundation.org/policies/tiles/).
+Immage identifies its requests, caches viewed tiles for seven days, and does not
+prefetch areas for offline use. Opening the map sends the viewed area and your
+IP address to the tile service.
+
+Interactive maps use [Leaflet](https://leafletjs.com/), Copyright © 2010–2023
+Volodymyr Agafonkin and © 2010–2011 CloudMade, under the
+[BSD 2-Clause license](https://github.com/Leaflet/Leaflet/blob/main/LICENSE).

@@ -27,6 +27,13 @@ It checks compressed DNG and TIFF color metadata, conversion and crop
 round-trips, export snapshots, further exposure edits and reopening after
 an engine restart. It creates its own small fixture and temporary workspace.
 
+The focused GPS check covers camera-embedded coordinates, XMP edits and removal,
+altitude invalidation, invalid input, and persistence after restarting:
+
+```bash
+node --test verify/location.test.mjs
+```
+
 ## What it checks
 
 `run.py` takes the largest raw in `benchmarking/corpus/` and the smallest
