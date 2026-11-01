@@ -2431,11 +2431,35 @@ async function checkpoints(photo, check = "checkpoints") {
       // its timings are all printed once the engine starts on the next request
       await request({ cmd: "version", perf_mark: 1 });
       for (let t = 0; t < 100 && !lines.some((l) => l.includes('"perf_mark"')); t++) await new Promise((r) => setTimeout(r, 20));
-      await o.s.close();
       const ran = lines.map((l) => /processed `([^']+)' on (GPU|CPU)/.exec(l)).filter(Boolean);
       if (!ran.some((r) => r[2] === "GPU")) skip = "no module ran on the GPU: no OpenCL here";
       else if (!ran.some((r) => r[1] === "exposure")) err = `the last frame's timings lack exposure: ${ran.map((r) => r[1]).join(", ")}`;
       else if (ran.some((r) => r[1] === "demosaic")) err = `the last drag frame ran from the raw: ${ran.map((r) => r[1]).join(", ")}`;
+      // use small frames so this tests entry replacement without forcing memory trimming
+      const geometries = [
+        { width: 320, height: 240 }, { width: 224, height: 168 },
+        { width: 128, height: 128, scale: 0.25, x: 100, y: 100 },
+      ];
+      const geometryFrame = async (view, exposure) => {
+        await request({ cmd: "set", op: "exposure", params: { exposure }, enabled: true });
+        await request({ cmd: "render", ...view, draft: true, rgba: join(args.work, "checkpoint-geometry.rgba") });
+      };
+      for (let i = 0; i < geometries.length; i++) await geometryFrame(geometries[i], 0.4 + i * 0.01);
+      for (let i = 0; i < 30; i++) await geometryFrame(geometries[0], 0.5 + i * 0.01);
+      const retained = [];
+      for (let i = 0; i < geometries.length; i++) {
+        lines.length = 0;
+        await geometryFrame(geometries[i], 0.9 + i * 0.01);
+        const mark = `geometry-${i}`;
+        await request({ cmd: "version", perf_mark: mark });
+        for (let t = 0; t < 100 && !lines.some((l) => l.includes(`"${mark}"`)); t++)
+          await new Promise((r) => setTimeout(r, 20));
+        retained.push(lines.filter((l) => l.includes("checkpoint lookup") && /\bdemosaicscale\b/.test(l)));
+      }
+      record({ check, photo: basename(photo), id: "three scaled geometries survive downstream cache churn",
+        status: retained.every((lookups) => lookups.length && lookups.every((l) => /\bhit=1\b/.test(l))) ? "pass" : "fail",
+        detail: retained.flat().join("\n") });
+      await o.s.close();
     } catch (e) {
       err = String(e?.stack ?? e);
     } finally {

@@ -76,7 +76,10 @@ the full-resolution input to scaling. Check both `demosaic` and
 `demosaicscale` costs on subsequent downstream edits at the same geometry;
 size changes can still require upstream processing. Pipe debug logs identify
 the retained checkpoint with `scaled_input`. Compare process memory as well
-as latency.
+as latency. The headless cache protects its three most recently retained scaled
+checkpoints from ordinary buffer replacement. New geometries replace the oldest
+protection; upstream invalidation, memory trimming and cleanup still apply.
+Full-resolution demosaiced GPU buffers are not retained by this policy.
 
 For repeated raw processing, launch the engine with separate `-d perf -d pipe`
 arguments (the verification harness enables these with `pipeTrace`). Headless

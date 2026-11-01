@@ -49,3 +49,7 @@ install(TARGETS darktable-engine DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT D
 add_executable(immage-thumbnail-check EXCLUDE_FROM_ALL "${CMAKE_CURRENT_SOURCE_DIR}/../verify/thumbnail-io.cc")
 target_link_libraries(immage-thumbnail-check lib_darktable ${Exiv2_LIBRARIES})
 set_target_properties(immage-thumbnail-check PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${DARKTABLE_BINDIR})
+
+add_executable(immage-checkpoint-check EXCLUDE_FROM_ALL "${CMAKE_CURRENT_SOURCE_DIR}/../verify/checkpoint-cache.c")
+target_link_libraries(immage-checkpoint-check lib_darktable)
+set_target_properties(immage-checkpoint-check PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${DARKTABLE_BINDIR})
