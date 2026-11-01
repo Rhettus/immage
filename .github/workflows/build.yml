@@ -241,14 +241,14 @@ jobs:
       matrix:
         include:
           - arch: x64
-            runner: ubuntu-26.04
-            cc: gcc
-            cxx: g++
+            runner: ubuntu-22.04
+            cc: gcc-12
+            cxx: g++-12
           - arch: arm64
-            runner: ubuntu-26.04-arm
-            cc: gcc
-            cxx: g++
-    # WebKitGTK 2.54.2 and its dependencies use the Ubuntu 26.04 baseline.
+            runner: ubuntu-22.04-arm
+            cc: gcc-14
+            cxx: g++-14
+    # Build the bundled WebKit on glibc 2.35, including for Mint 22.x.
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 360
     env:
@@ -267,31 +267,41 @@ jobs:
           persist-credentials: false
       - name: system packages and WebKitGTK build dependencies
         run: |
-          sudo sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources
+          sudo add-apt-repository -y ppa:savoury1/graphics
+          sudo add-apt-repository -y ppa:savoury1/ffmpeg4
+          sudo add-apt-repository -y ppa:savoury1/display
+          if [ "$(uname -m)" = aarch64 ]; then
+            sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+          fi
+          sudo sed -i 's/^# deb-src /deb-src /' /etc/apt/sources.list
           sudo apt-get update
-          packages=$(sed -e '/^#/d' -e 's/^gcc-12$/gcc/' -e 's/^g++-12$/g++/' \
-            -e 's/^libfuse2$/libfuse2t64/' -e 's/^libtiff5-dev$/libtiff-dev/' .github/ubuntu-packages.txt)
-          sudo apt-get install -y $packages lld libgstreamer-plugins-bad1.0-dev
+          packages=$(grep -v '^#' .github/ubuntu-packages.txt)
+          # Jammy ARM64 lacks these PPA libraries; build_linux_deps supplies
+          # them before WebKit is configured (including its JPEG XL dependency).
+          if [ "$(uname -m)" = aarch64 ]; then
+            packages=$(printf '%s\n' "$packages" | grep -Ev '^(libjxl-dev|libsharpyuv-dev|libopenexr-dev)$' | sed -e 's/^gcc-12$/gcc-14/' -e 's/^g++-12$/g++-14/')
+          fi
+          sudo apt-get install -y $packages lld flite1-dev libgstreamer-plugins-bad1.0-dev
           sudo apt-get build-dep -y webkit2gtk
+      - run: sh app/scripts/build_linux_deps.sh
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: webkit-cache
         if: ${{ !inputs.release }}
         with:
           path: build/webkitgtk/install
-          key: webkitgtk-2.54.2-ubuntu26-${{ matrix.arch }}-${{ hashFiles('app/scripts/build_webkitgtk.sh') }}
+          key: webkitgtk-2.54.2-ubuntu22-${{ matrix.arch }}-${{ hashFiles('app/scripts/build_webkitgtk.sh') }}
       - name: build WebKitGTK 2.54.2
         run: sh app/scripts/build_webkitgtk.sh
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: ${{ !inputs.release && steps.webkit-cache.outputs.cache-hit != 'true' }}
         with:
           path: build/webkitgtk/install
-          key: webkitgtk-2.54.2-ubuntu26-${{ matrix.arch }}-${{ hashFiles('app/scripts/build_webkitgtk.sh') }}
+          key: webkitgtk-2.54.2-ubuntu22-${{ matrix.arch }}-${{ hashFiles('app/scripts/build_webkitgtk.sh') }}
       - uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
         if: ${{ !inputs.release }}
         with:
-          key: linux-ubuntu26-webkit254-${{ matrix.arch }}
+          key: linux-ubuntu22-webkit254-${{ matrix.arch }}
           max-size: 2G
-      - run: sh app/scripts/build_linux_deps.sh
       # the newest lens database, which bundle_engine.py ships; it exits
       # non-zero when there is nothing newer than the package's
       - run: sudo lensfun-update-data || true
@@ -304,7 +314,7 @@ jobs:
         if: ${{ !inputs.release }}
         with:
           workspaces: app/src-tauri
-          key: linux-ubuntu26-webkit254-${{ matrix.arch }}
+          key: linux-ubuntu22-webkit254-${{ matrix.arch }}
       - run: npm ci
         working-directory: app
       - run: sh scripts/build.sh
@@ -314,10 +324,12 @@ jobs:
           IMMAGE_TAURI_CONFIG: ${{ inputs.release && format('{0}/app/src-tauri/tauri.release.conf.json', github.workspace) || '' }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ inputs.release && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ inputs.release && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
+      - name: test WebKit packaging checks
+        run: python3 -I scripts/test_webkit_bundle.py
       - name: verify bundled WebKitGTK and JavaScriptCore
         run: |
           python3 -I app/scripts/check_webkit_bundle.py \
-            app/src-tauri/target/release/bundle/appimage/Immage.AppDir 2.54.2
+            app/src-tauri/target/release/bundle/appimage/Immage.AppDir 2.54.2 --max-glibc 2.35
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: immage-linux-${{ matrix.arch }}

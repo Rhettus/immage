@@ -75,10 +75,10 @@ from inside Immage, without the warning.
   Or, in Terminal: `xattr -dr com.apple.quarantine /Applications/Immage.app`
 - **Windows** (x64): run `{nsis}` (or `{msi}`). When SmartScreen stops
   it, click **More info**, then **Run anyway**
-- **Linux** (x86-64, Ubuntu 26.04 or a compatible newer distribution): make
-  `{appimage}` executable (`chmod +x {appimage}`) and run it
-- **Linux** (ARM64, Ubuntu 26.04 or a compatible newer distribution): make
-  `{appimage_arm64}` executable (`chmod +x {appimage_arm64}`) and run it
+- **Linux** (x86-64, glibc 2.35 or newer, such as Ubuntu 22.04 or Linux Mint 22.x):
+  make `{appimage}` executable (`chmod +x {appimage}`) and run it
+- **Linux** (ARM64, glibc 2.35 or newer, such as Ubuntu 22.04 or Linux Mint 22.x):
+  make `{appimage_arm64}` executable (`chmod +x {appimage_arm64}`) and run it
 
 Immage checks for a new version once a day (Preferences › About ›
 Updates), and offers to install it.

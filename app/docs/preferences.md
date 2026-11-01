@@ -52,9 +52,11 @@ Immage keeps to make it so.
 **Interface rendering** (Linux)
 
 Official Linux AppImages bundle WebKitGTK and JavaScriptCore 2.54.2 and
-require Ubuntu 26.04 or a compatible newer distribution. GUI benchmark
+keep the Ubuntu 22.04 runtime baseline, including Linux Mint 22.x. GUI benchmark
 reports record the running WebKitGTK version; use a new build when comparing
-renderer behavior after upgrading.
+renderer behavior after upgrading. On Wayland, **Drag drafts at the screen’s
+scale** still sizes reduced drag previews for the compositor’s actual fractional
+scale (for example, 125%), while release frames keep full quality.
 
 - **Window renderer**: **Automatic** uses the system default renderer, including on NVIDIA;
   **Mesa** selects Mesa's EGL explicitly, and **NVIDIA** selects NVIDIA's.

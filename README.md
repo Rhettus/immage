@@ -280,7 +280,8 @@ Each release has builds for:
 - **Windows**: x64, Windows 10 or 11 (and Windows on ARM through its x64
   emulation), as an NSIS installer (`-setup.exe`) or an `.msi`
 - **Linux**: x86-64 and ARM64, as AppImages, on distributions with
-  Ubuntu 26.04 or a compatible newer distribution, bundling WebKitGTK 2.54.2
+  glibc 2.35 or newer (Ubuntu 22.04 and later, including Linux Mint 22.x),
+  bundling WebKitGTK 2.54.2
 
 The builds are not signed with a developer certificate yet; the release
 page says how to open them the first time. After that, Immage updates
@@ -341,33 +342,41 @@ works, building under x64 emulation.
 
 ### Linux
 
-On Ubuntu 26.04, the system the release AppImages are built on:
+On Ubuntu 22.04, the system the release AppImages are built on:
 
 ```sh
-# Enable deb-src entries in /etc/apt/sources.list.d/ubuntu.sources first.
+sudo add-apt-repository ppa:savoury1/graphics
+sudo add-apt-repository ppa:savoury1/ffmpeg4
+sudo add-apt-repository ppa:savoury1/display
+sudo sed -i 's/^# deb-src /deb-src /' /etc/apt/sources.list
 sudo apt-get update
-packages=$(sed -e '/^#/d' -e 's/^gcc-12$/gcc/' -e 's/^g++-12$/g++/' \
-  -e 's/^libfuse2$/libfuse2t64/' -e 's/^libtiff5-dev$/libtiff-dev/' .github/ubuntu-packages.txt)
-sudo apt-get install -y $packages lld libgstreamer-plugins-bad1.0-dev
+sudo apt-get install $(grep -v '^#' .github/ubuntu-packages.txt) \
+  lld libgstreamer-plugins-bad1.0-dev flite1-dev
 sudo apt-get build-dep -y webkit2gtk
 
-# Pinned WebKitGTK / JavaScriptCore 2.54.2, then image-format dependencies.
-# Building WebKit takes substantial time; CI caches its staged installation.
-sh app/scripts/build_webkitgtk.sh
+# Image-format libraries first: ARM64 also needs their JPEG XL build for WebKit.
 sh app/scripts/build_linux_deps.sh
+# Pinned WebKitGTK / JavaScriptCore 2.54.2 and matching helpers.
+# Building WebKit takes substantial time; CI caches its staged installation.
+CC=gcc-12 CXX=g++-12 sh app/scripts/build_webkitgtk.sh
 
 # With Rust and Node.js installed, build and verify the AppImage.
 (cd app && npm ci)
-CC=gcc CXX=g++ scripts/build.sh
+CC=gcc-12 CXX=g++-12 scripts/build.sh
 python3 -I app/scripts/check_webkit_bundle.py \
-  app/src-tauri/target/release/bundle/appimage/Immage.AppDir 2.54.2
+  app/src-tauri/target/release/bundle/appimage/Immage.AppDir 2.54.2 --max-glibc 2.35
 ```
 
 #### Native ARM64 builds
 
-CI builds Linux natively on Ubuntu 26.04 for x86-64 and ARM64, including
-WebKitGTK, JavaScriptCore and matching helper processes. Packaging fails if
-the bundled libraries do not report 2.54.2 or the helpers are missing.
+CI builds Linux natively on Ubuntu 22.04 for x86-64 and ARM64, including
+WebKitGTK, JavaScriptCore and matching helper processes. ARM64 uses GCC 14
+from `ppa:ubuntu-toolchain-r/test` (replace the GCC 12 packages and commands
+above) and builds missing image libraries with `build_linux_deps.sh` instead
+of installing `libjxl-dev`, `libsharpyuv-dev` and `libopenexr-dev`.
+Packaging fails if the bundled WebKit libraries do not report 2.54.2,
+helpers are missing, or any packaged ELF imports glibc newer than 2.35.
+This keeps the runtime baseline compatible with Linux Mint 22.x.
 
 The Linux build scripts also build natively on an ARM64 host. The Rust app,
 darktable engine, OpenCV and ONNX Runtime use the host architecture; the
@@ -387,7 +396,7 @@ CMAKE_BUILD_PARALLEL_LEVEL=2 CARGO_BUILD_JOBS=2 APPIMAGE_EXTRACT_AND_RUN=1 scrip
 
 The two-job limit is useful on machines with 8 GB of RAM. An AppImage built
 on Arch requires a sufficiently recent host glibc; it does not establish
-the Ubuntu 26.04 compatibility baseline of the release builds.
+the Ubuntu 22.04 compatibility baseline of the release builds.
 
 ### AI models
 

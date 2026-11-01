@@ -7,8 +7,9 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
-- Linux AppImages bundle WebKitGTK and JavaScriptCore 2.54.2 and require
-  Ubuntu 26.04 or a compatible newer distribution, on x86-64 and ARM64.
+- Linux AppImages bundle WebKitGTK and JavaScriptCore 2.54.2 while keeping
+  the Ubuntu 22.04 runtime baseline, including Linux Mint 22.x, on x86-64
+  and ARM64. Fractional-scale drag previews remain supported.
 - Filters adds Camera body: distinguish identical camera models by their body
   serial numbers, independently of the lens, or find photos without a serial.
 - Immich search results add Import Parent Folder to the right-click menu:

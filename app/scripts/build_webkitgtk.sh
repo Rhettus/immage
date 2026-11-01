@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 the Immage authors
 
-# the Ubuntu 26.04 release runners: install a matched GTK3 / 4.1
+# the Ubuntu 22.04 release runners: install a matched GTK3 / 4.1
 # WebKitGTK, JavaScriptCore and helper processes for Tauri to bundle
 set -eu
 root=$(cd "$(dirname "$0")/../.." && pwd)

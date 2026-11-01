@@ -678,19 +678,34 @@ filters and facet counts. Run `npm run build` in `app` for frontend validation.
 ### Linux WebKitGTK packaging
 
 The normal Linux jobs in `.github/workflows/build.yml` build x86-64 and ARM64
-AppImages on Ubuntu 26.04. Before compiling the app and frames web extension,
-`app/scripts/build_webkitgtk.sh` builds SHA-256-pinned WebKitGTK 2.54.2 with
-GTK 3, JavaScriptCore and matching helper processes, and installs them into
-`/usr` for Tauri to bundle. Non-release CI caches the staged installation by
+AppImages on Ubuntu 22.04 (glibc 2.35), retaining compatibility with Linux Mint
+22.x. The image libraries from `build_linux_deps.sh` are installed first so
+ARM64 has JPEG XL available. Flite development files are installed explicitly
+in addition to Jammy's WebKit build dependencies. With those installed,
+`app/scripts/build_webkitgtk.sh` builds SHA-256-pinned WebKitGTK 2.54.2 using
+GTK 3, JavaScriptCore and matching helpers, then installs them into `/usr`
+for Tauri to bundle. Build compilers remain GCC 12 on x86-64 and GCC 14 on
+ARM64. Non-release CI caches the staged installation by Ubuntu baseline,
 architecture and script hash; release jobs rebuild it without that cache.
 WebKit compilation uses two jobs and the Linux job allows six hours.
 
 After packaging, `app/scripts/check_webkit_bundle.py` requires both bundled
 libraries to report 2.54.2 and checks for WebKitWebProcess, WebKitNetworkProcess
-and the injected bundle. Missing helpers or wrong versions fail the job before
-artifact upload. Run it with the AppDir path and `2.54.2` to repeat this check.
-GUI reports obtain the runtime version through `tauri::webview_version()`;
-verify it on the resulting AppImage and repeat Mesa/NVIDIA benchmarks. The
-upgrade does not establish that NVIDIA stalls are fixed. Automatic still uses
-the system EGL selection, with explicit renderer preferences available.
-The Ubuntu 26.04 build baseline replaces the former Ubuntu 22.04 baseline.
+and the injected bundle. `--max-glibc 2.35` scans undefined dynamic symbols in
+all packaged ELF files, including helpers and engine libraries, and rejects
+newer glibc imports. These checks run before artifact upload. Run the script
+with the AppDir path, `2.54.2` and `--max-glibc 2.35` to repeat them. They
+establish library versions and the glibc baseline, not a complete desktop
+compatibility test; launch the resulting AppImage on Mint and benchmark it.
+Packaging regressions run with `python3 -I scripts/test_webkit_bundle.py`,
+including missing helpers/libraries, mismatched JavaScriptCore and newer glibc
+imports. GUI reports obtain the runtime version through `tauri::webview_version()`.
+The upgrade does not establish that NVIDIA stalls are fixed. Automatic still
+uses system EGL selection, with explicit renderer preferences available.
+
+Fractional-scale drag compensation (`scale.rs`, `pixelRatio.ts`, `draftK` in
+`App.tsx`) remains active: at 125% on a GTK 2x surface, reduced drafts use a
+0.625 scale multiplier. Full-quality release frames keep the GTK pixel size.
+The adaptive cached-preview experiment remains removed; native previews and
+scaled GPU checkpoint retention remain in use. Verify the scaling behavior
+with the existing `decisions` check and placement with `verify/preview-placement.py`.
