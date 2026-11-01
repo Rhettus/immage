@@ -21,7 +21,7 @@ export function ModulePrefs() {
       <p className="prefs-lead">
         Which darktable module each tool runs on, and so which sliders it shows. Photos that already use one of a
         tool's modules keep it, so their edits look the same; the choice here applies to tools a photo has not used
-        yet, from the next photo opened.
+        yet, as soon as Preferences closes.
       </p>
       <PrefCard title="Modules">
         <PrefRow label="Modules"

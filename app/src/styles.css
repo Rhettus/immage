@@ -2238,3 +2238,6 @@ input.switch:disabled { cursor: default; opacity: 0.4; }
 .location-attribution { text-align: right; font-size: 10px; margin-top: 4px; }
 .location-attribution button { color: inherit; font: inherit; padding: 0; background: none; border: 0; text-decoration: underline; cursor: pointer; }
 .location-error { color: #f3a184; }
+
+.detail-advanced { display: flex; align-items: center; justify-content: space-between; width: 100%; border: 0; background: none; color: var(--text-2); padding: 6px 0; font: inherit; cursor: pointer; }
+.detail-advanced:hover { color: var(--text); }

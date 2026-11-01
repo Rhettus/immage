@@ -1,3 +1,4 @@
+import { detailRows } from "./DetailControls";
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
@@ -258,7 +259,7 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
           </div>
         ))}
       </>;
-    return ids.map(slider);
+    return detailRows(ids.map((id) => localControlById.get(id)!), (c) => slider(c.id));
   };
   const menu = (t: ToolTarget) => (
     <ShapeMenu target={t} tool={target === t ? tool : null} disabled={disabled} aiBusy={aiBusy}

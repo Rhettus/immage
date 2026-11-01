@@ -37,7 +37,9 @@ Improvements
   normal whole-image previews.
 - Preferences > Modules offers Contrast & Texture alternatives for Clarity
   and Texture, with the module's native controls in adjustments and masks.
-  Existing defaults remain in place.
+  Medium and Fine details stay visible; an Advanced chevron reveals the
+  remaining controls in both adjustments and masks. Existing defaults remain
+  in place.
 
 Performance
 
@@ -85,6 +87,8 @@ Performance
 
 Bug fixes
 
+- Changes in Preferences > Modules apply to unused tools on the current photo
+  when Preferences closes, without restarting. Tools with edits keep their module.
 - Object mask backdrop ranges use double precision when read back to avoid
   intermediate overflow with large boost values.
 - Opening a generated positive or other local result from an Immich search

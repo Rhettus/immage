@@ -1,3 +1,4 @@
+import { detailRows } from "./DetailControls";
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
@@ -5811,7 +5812,7 @@ export default function App() {
                            await invoke("engine_quit");
                            await relaunch();
                          }}
-                         onClose={() => setPrefsOpen(false)} />
+                         onClose={() => { session.current?.refreshModuleChoices(); setPrefsOpen(false); }} />
     )}
     {tunerOpen && <PerformanceTuner run={runGuiBenchmark} photo={current?.path} raw={session.current?.raw} previewArea={viewport()}
       onOverlay={setPerfHud}
@@ -7146,7 +7147,7 @@ const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle, values
                 {s.title === "AI Denoise" && denoiseTools}
                 {s.title === "Straighten" && straightenTools}
                 {s.title === "Upright" && transformTools}
-                {s.controls.filter((c) => choiceShows(c.id, values)).map((c) => {
+                {detailRows(s.controls.filter((c) => choiceShows(c.id, values)), (c) => {
                   const props = controlProps(c);
                   return c.kind === "toggle" ? <Toggle key={c.id} {...props} />
                     : c.kind === "choice" ? <Choice key={c.id} {...props} />

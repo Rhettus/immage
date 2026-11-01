@@ -323,6 +323,23 @@ export class Session {
     }
   }
 
+  // Refresh unused tools without replacing any current global or masked edits.
+  refreshModuleChoices() {
+    for (const c of MODULE_CHOICES) {
+      const current = this.values[c.control];
+      const option = c.options.find((o) => o.value === current);
+      const controls = c.covers ?? option?.controls ?? [];
+      const used = modules.some((m) => m.choice?.control === c.control && this.foreign.has(m))
+        || controls.some((id) => Math.abs((this.values[id] ?? 0) - (this.neutral[id] ?? 0)) > 1e-6)
+        || localMaps.some((m) => m.choice?.control === c.control
+          && [...this.maskOps.values()].some((ops) => ops.has(m.op)));
+      const pick = loadModuleChoice(c.id);
+      this.neutral[c.control] = pick;
+      if (!used && !(this.values.neg_on === 1 && c.control in NEG_CHOICES)) this.set(c.control, pick);
+    }
+    this.onModules?.();
+  }
+
   // round onto the control's step, and let float noise read as neutral
   private snap(id: string, v: number, neutral: number): number {
     const c = controlById.get(id)!;

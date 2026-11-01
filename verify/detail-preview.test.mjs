@@ -139,3 +139,25 @@ for (const mode of ['idle', 'disabled', 'moved']) test(`persistent loupe request
   assert.equal(shown.length,mode==='idle'?1:0);
   if(mode==='idle')assert.deepEqual(shown[0].view,{...full,detail:true,loupe:true});
 });
+
+test('module preferences refresh unused tools and preserve global and masked edits', () => {
+  const storage = globalThis.localStorage;
+  globalThis.localStorage = { getItem: key => key.endsWith('.mode') ? 'custom'
+    : key.endsWith('.choices') ? '{"clarity":1,"texture":1}' : null };
+  try {
+    const s = Object.create(Session.prototype);
+    s.values = { mod_clarity: 0, mod_texture: 0, clarity: 0, texture: 0 };
+    s.neutral = { clarity: 0, texture: 0 };
+    s.foreign = new Set(); s.maskOps = new Map();
+    s.set = (id, value) => { s.values[id] = value; };
+    let updates = 0; s.onModules = () => updates++;
+    s.refreshModuleChoices();
+    assert.equal(s.values.mod_clarity, 1); assert.equal(s.values.mod_texture, 1);
+    assert.equal(updates, 1);
+    s.values = { mod_clarity: 0, mod_texture: 0, clarity: 20, texture: 0 };
+    s.maskOps.set('mask1', new Set(['diffuse']));
+    s.refreshModuleChoices();
+    assert.equal(s.values.mod_clarity, 0); assert.equal(s.values.clarity, 20);
+    assert.equal(s.values.mod_texture, 0);
+  } finally { globalThis.localStorage = storage; }
+});
