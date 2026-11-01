@@ -4484,6 +4484,8 @@ export default function App() {
     if (!s || croppingRef.current) return;
     setBaMode("off");
     setCompare(null);
+    // Preserve the displayed crop orientation before clearing its placement.
+    const p = placementRef.current;
     prepareCropView();
     const v = s.values;
     const rect = { l: v.crop_l ?? 0, t: v.crop_t ?? 0, r: v.crop_r ?? 1, b: v.crop_b ?? 1 };
@@ -4500,7 +4502,6 @@ export default function App() {
       : (ASPECTS.find(same) ?? cropCustoms.find(same) ?? own)?.id ?? "free";
     // the guide starts in the photo's orientation: the image shown until
     // crop is bypassed below is the crop as it stands, or the whole photo
-    const p = placementRef.current;
     setCropRect(rect);
     setCropOwn(own);
     setCropEntry(null);

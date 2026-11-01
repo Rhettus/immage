@@ -23,7 +23,9 @@ own if it is unusual. **Enter Custom…** takes any width and height,
 decimals included, such as 1 × 2.35.
 
 **Orientation**: the landscape / portrait button, or X, turns the aspect.
-Dragging a corner across the diagonal turns it too.
+Dragging a corner across the diagonal turns it too. Opening Crop preserves the
+photo's current orientation; dragging an edge keeps the selected orientation
+and aspect ratio.
 
 ## Straightening
 

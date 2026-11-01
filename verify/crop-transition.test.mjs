@@ -16,6 +16,7 @@ test('crop transition removes previous pixels and stops zoom before the replacem
   const cleared=[], canceled=[];
   const env={
     resetCanvases(){env.canvasesReset=true;},resetHistogram(){env.histogramReset=true;},
+    loupeDisplays:ref(new Map()),
     pixelWorker:ref({dispose(){env.workerDisposed=true;}}),
     sharpMeta:ref({}),baseMeta:ref({}),loupeMeta:ref({}),overviewHash:ref('old'),
     setCropBox(box){env.box=box;},
@@ -54,7 +55,7 @@ test('entering crop republishes unchanged placement when the replacement frame a
   const placement={fullWidth:800,fullHeight:600,scale:1,x:0,y:0,width:800,height:600};
   let updates=0;
   const env={
-    resetCanvases(){},resetHistogram(){},pixelWorker:ref(null),
+    resetCanvases(){},resetHistogram(){},pixelWorker:ref(null),loupeDisplays:ref(new Map()),
     sharpMeta:ref({}),baseMeta:ref(null),loupeMeta:ref(null),overviewHash:ref(null),
     setCropBox(){},anim:ref({raf:null,end:null,asked:null}),
     zoomRef:ref('fit'),setZoomState(){},center:ref({x:0.5,y:0.5}),
@@ -71,4 +72,30 @@ test('entering crop republishes unchanged placement when the replacement frame a
   assert.equal(updates,1,'the replacement restores the crop overlay even with identical geometry');
   updatePlacement();
   assert.equal(updates,1,'subsequent identical frames remain deduplicated');
+});
+
+
+test('entering crop preserves displayed orientation before resetting placement', () => {
+  const start = source.indexOf('  const enterCrop =');
+  const end = source.indexOf('  const leaveCrop =', start);
+  assert.ok(start >= 0 && end > start);
+  const {code} = transformSync('enter-crop.ts', source.slice(start, end));
+  const enter = new Function('env', `with(env) { ${code}; return enterCrop; }`);
+  for (const [width, height] of [[600, 900], [900, 600], [600, 600]]) {
+    for (const cropped of [false, true]) {
+      const env = {
+        session: ref({values: cropped ? {crop_l: 0.1, crop_t: 0.1, crop_r: 0.9, crop_b: 0.9,
+          crop_rd: 3, crop_rn: 2} : {}, bypass() {}}),
+        croppingRef: ref(false), placementRef: ref({fullWidth: width, fullHeight: height}),
+        cropCustoms: [], ASPECTS: [{id: '3:2', ratio: [3, 2]}],
+        setBaMode() {}, setCompare() {},
+        prepareCropView() { env.placementRef.current = null; },
+        setCropRect() {}, setCropOwn() {}, setCropEntry() {}, setCropAspect() {},
+        setCropPortrait(value) { env.portrait = value; }, setCropping() {},
+      };
+      enter(env)();
+      assert.equal(env.portrait, height > width);
+      assert.equal(env.placementRef.current, null);
+    }
+  }
 });

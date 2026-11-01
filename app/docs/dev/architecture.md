@@ -95,6 +95,13 @@ are `localStorage` keys named `immage.*`.
 | keyboard | one `keydown` handler for every shortcut |
 | `openLaunched`, `dropped` | a photo handed over (`launch-file`), or photos and folders dragged onto the window (`onDragDropEvent`, `path_kind`) |
 
+`enterCrop` snapshots the displayed placement before `prepareCropView` clears
+it, so the initial aspect orientation follows the current photo or crop. Edge
+drags in `CropTool.tsx` preserve that orientation; only corner drags across the
+diagonal can swap it. `node --test verify/crop-transition.test.mjs
+verify/crop-corner.test.mjs` checks orientation initialization, crop view resets
+and constrained resizing.
+
 ### Session and engine bridge
 
 | File | Responsibility |
