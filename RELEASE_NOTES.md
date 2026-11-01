@@ -85,6 +85,9 @@ Performance
 
 Bug fixes
 
+- Opening a generated positive or other local result from an Immich search
+  switches the grid to its local folder, so the new image is visible there.
+  Generated images also retain their information while the folder loads.
 - Crop corners respond to the first inward drag with a locked aspect ratio,
   including pulls that are mostly horizontal or vertical.
 - Windows builds compile positive export with or without panorama support

@@ -821,6 +821,12 @@ export default function App() {
   // would otherwise cover it
   const openResult = (path: string, imgid?: number) => {
     setCompare(null);
+    // Generated files are local and cannot appear in an Immich search.
+    // Show their folder so returning to the grid also reveals the result.
+    if (immichRef.current) {
+      window.clearTimeout(immichTimer.current);
+      void showFolder(parentDir(path));
+    }
     void openFile(path, imgid);
     setGrid(false);
   };
@@ -3267,7 +3273,9 @@ export default function App() {
       const opened = { path, imgid: s.imgid };
       setCurrent(opened);
       currentRef.current = opened;
-      setOpenCell(imagesRef.current.find((i) => isOpen(i, opened)) ?? null);
+      const entry = imagesRef.current.find((i) => isOpen(i, opened))
+        ?? (await invoke<{ image: ImageEntry }>("meta", { imgid: s.imgid })).image;
+      setOpenCell(entry);
       saveLibrary({ image: path, version: imagesRef.current.find((i) => i.imgid === s.imgid)?.version ?? 0 });
       s.onThumb = (f) => {
         perf.drawStart(f.trace);
