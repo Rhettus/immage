@@ -2230,6 +2230,70 @@ static gboolean _meta_set(const dt_imgid_t imgid, JsonObject *req, char **err)
   return TRUE;
 }
 
+// validate the whole batch before changing anything; stale times also protect undo
+static gboolean _capture_times(JsonObject *req, JsonBuilder *b, char **err)
+{
+  JsonArray *entries = json_object_get_array_member(req, "entries");
+  if(!entries || !json_array_get_length(entries))
+  {
+    *err = g_strdup("no capture times supplied");
+    return FALSE;
+  }
+  GHashTable *seen = g_hash_table_new(g_direct_hash, g_direct_equal);
+  for(guint k = 0; k < json_array_get_length(entries); k++)
+  {
+    JsonObject *entry = json_array_get_object_element(entries, k);
+    const dt_imgid_t imgid = json_object_get_int_member_with_default(entry, "imgid", 0);
+    const char *before = json_object_get_string_member_with_default(entry, "before", "");
+    const char *after = json_object_get_string_member_with_default(entry, "after", "");
+    char current[DT_DATETIME_LENGTH] = { 0 }, canonical[DT_DATETIME_LENGTH] = { 0 };
+    if(dt_is_valid_imgid(imgid)) dt_image_get_datetime(imgid, current);
+    GTimeZone *tz = g_time_zone_new_utc();
+    GDateTime *date = dt_datetime_exif_to_gdatetime(after, tz);
+    g_time_zone_unref(tz);
+    if(date) dt_datetime_gdatetime_to_exif(canonical, sizeof(canonical), date);
+    if(date) g_date_time_unref(date);
+    if(!*current || strcmp(current, before) || strcmp(canonical, after))
+    {
+      g_hash_table_unref(seen);
+      *err = g_strdup_printf("image %d has an invalid or changed capture time; reopen the dialog", imgid);
+      return FALSE;
+    }
+    if(!g_hash_table_add(seen, GINT_TO_POINTER(imgid)))
+    {
+      g_hash_table_unref(seen);
+      *err = g_strdup("duplicate image in capture time batch");
+      return FALSE;
+    }
+  }
+  g_hash_table_unref(seen);
+  json_builder_set_member_name(b, "updates");
+  json_builder_begin_array(b);
+  for(guint k = 0; k < json_array_get_length(entries); k++)
+  {
+    JsonObject *entry = json_array_get_object_element(entries, k);
+    const dt_imgid_t imgid = json_object_get_int_member(entry, "imgid");
+    const char *before = json_object_get_string_member(entry, "before");
+    const char *after = json_object_get_string_member(entry, "after");
+    GList *imgs = g_list_append(NULL, GINT_TO_POINTER(imgid));
+    dt_image_set_datetime(imgs, after, FALSE);
+    const gboolean failed = _write_sidecar(imgid);
+    if(failed) dt_image_set_datetime(imgs, before, FALSE);
+    g_list_free(imgs);
+    if(_s.open && _s.imgid == imgid)
+      dt_datetime_exif_to_img(&_s.dev.image_storage, failed ? before : after);
+    json_builder_begin_object(b);
+    json_builder_set_member_name(b, "imgid");
+    json_builder_add_int_value(b, imgid);
+    _add_string(b, "before", before);
+    _add_string(b, "after", failed ? before : after);
+    if(failed) _add_string(b, "error", "could not write the XMP sidecar");
+    json_builder_end_object(b);
+  }
+  json_builder_end_array(b);
+  return TRUE;
+}
+
 // ------------------------------------------------------------ export
 
 // the output color spaces offered, as darktable's profile types
@@ -8749,6 +8813,10 @@ static void _handle(JsonObject *req, FILE *out)
   else if(!g_strcmp0(cmd, "keywords_set"))
   {
     if(!_keywords_set(json_object_get_int_member_with_default(req, "imgid", 0), req, b, &err)) goto fail;
+  }
+  else if(!g_strcmp0(cmd, "capture_times"))
+  {
+    if(!_capture_times(req, b, &err)) goto fail;
   }
   else if(!g_strcmp0(cmd, "meta_set"))
   {

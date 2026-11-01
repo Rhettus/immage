@@ -4,6 +4,7 @@
 // the open image's metadata as Lightroom's Metadata panel lays it out: its
 // text fields, rating and labels editable, its EXIF shown
 import { useEffect, useState } from "react";
+import { Pencil } from "lucide-react";
 import { LocationEditor } from "./LocationEditor";
 import { baseName } from "./paths";
 import { LABEL_COLORS, type Exif, type ImageEntry } from "./library";
@@ -49,11 +50,12 @@ export function captureDate(exif: string): string {
   return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
-export function MetadataPanel({ image, text, onText, onMeta, onLocationSaved, open, onToggle }: {
+export function MetadataPanel({ image, text, onText, onMeta, onLocationSaved, onCaptureTime, open, onToggle }: {
   image: ImageEntry | null;
   text: TextFields | null;
   onText: (field: keyof TextFields, value: string) => void;
   onMeta: (fields: Partial<ImageEntry>) => void;
+  onCaptureTime: () => void;
   onLocationSaved: (location: NonNullable<ImageEntry["location"]> | null) => void;
   open: boolean;
   onToggle: (alt: boolean) => void;
@@ -63,7 +65,6 @@ export function MetadataPanel({ image, text, onText, onMeta, onLocationSaved, op
   const folder = image.path.slice(0, image.path.length - image.filename.length - 1);
   const mp = e.file_width * e.file_height / 1e6;
   const rows: [string, string][] = [
-    ["Capture Date", e.datetime ? captureDate(e.datetime) : ""],
     ["File Dimensions", e.file_width ? `${e.file_width} × ${e.file_height}` : ""],
     ["Megapixels", mp ? `${mp.toFixed(1)} MP` : ""],
     ["Subject Distance", known(e.focus_distance) && e.focus_distance > 0 ? `${+e.focus_distance.toFixed(2)} m` : ""],
@@ -95,6 +96,11 @@ export function MetadataPanel({ image, text, onText, onMeta, onLocationSaved, op
         <div className="meta-grid">
           <span className="k">File Name</span><span className="v" title={image.filename}>{image.filename}</span>
           <span className="k">Folder</span><span className="v" title={folder}>{baseName(folder)}</span>
+          <span className="k">Capture Date</span><span className="v">
+            {e.datetime ? captureDate(e.datetime) : ""}{" "}
+            {image.imgid > 0 ? <button className="tool" onClick={onCaptureTime}
+              title="Adjust capture time for selected photos" aria-label="Adjust Capture Time"><Pencil size={13} /></button> : null}
+          </span>
           {EDITABLE.map(([field, label]) => (
             <TextRow key={`${image.imgid}-${field}`} label={label} value={text?.[field] ?? ""}
                      disabled={!text} onCommit={(v) => onText(field, v)} />

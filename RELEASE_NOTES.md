@@ -7,6 +7,10 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Adjust Capture Time in the photo context menu or Metadata panel shifts
+  selected photos by the same amount to synchronize camera clocks. Preview
+  and confirm the adjustment before saving it to XMP sidecars; the context
+  menu can undo the last batch. Photos without a recorded time are skipped.
 - Metadata adds Location: enter coordinates or drop and drag a pin on an
   optional OpenStreetMap map, then Apply to save GPS information to the photo's
   XMP sidecar. Remove location clears GPS coordinates and altitude. Maps offer

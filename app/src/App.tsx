@@ -2,6 +2,8 @@ import { detailRows } from "./DetailControls";
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
+import { CaptureTimeDialog } from "./CaptureTimeDialog";
+import { captureMillis, type CaptureTimeEntry, type CaptureTimeUpdate } from "./captureTime";
 import { Profiler, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -375,6 +377,39 @@ export default function App() {
   // a photo's right-click menu, where it was clicked
   // the photos it acts on are the selection when the click is in it, else
   // that photo alone
+  const [captureDialog, setCaptureDialog] = useState<{ targets: ImageEntry[]; reference: ImageEntry; undo?: CaptureTimeEntry[] } | null>(null);
+  const [captureUndo, setCaptureUndo] = useState<CaptureTimeEntry[]>([]);
+  const startCaptureAdjustment = (targets: ImageEntry[], preferred?: ImageEntry) => {
+    const local = targets.filter((i) => !isRemote(i));
+    const valid = (i: ImageEntry) => Number.isFinite(captureMillis(i.exif.datetime));
+    const reference = preferred && local.some((i) => i.imgid === preferred.imgid) && valid(preferred)
+      ? preferred : local.find(valid);
+    if (reference) setCaptureDialog({ targets: local, reference });
+    else setStatus("no selected photos have a recorded capture time");
+  };
+  const startCaptureUndo = () => {
+    const reference = imagesRef.current.find((i) => i.imgid === captureUndo[0]?.imgid);
+    if (reference) setCaptureDialog({ targets: [], reference, undo: captureUndo.map((e) => ({ imgid: e.imgid, before: e.after, after: e.before })) });
+    else setStatus("open the folder containing the adjusted photos to undo their capture times");
+  };
+  const applyCaptureTimes = async (entries: CaptureTimeEntry[]) => {
+    const reply = await invoke<{ updates: CaptureTimeUpdate[] }>("capture_times", { entries });
+    const changed = reply.updates.filter((e) => !e.error);
+    const times = new Map(changed.map((e) => [e.imgid, e.after]));
+    updateImages(byCaptureTime(imagesRef.current.map((i) => times.has(i.imgid)
+      ? { ...i, exif: { ...i.exif, datetime: times.get(i.imgid)! } } : i)));
+    setOpenCell((i) => i && times.has(i.imgid) ? { ...i, exif: { ...i.exif, datetime: times.get(i.imgid)! } } : i);
+    if (captureDialog?.undo) {
+      const restored = new Set(changed.map((e) => e.imgid));
+      setCaptureUndo((old) => old.filter((e) => !restored.has(e.imgid)));
+    } else if (changed.length) setCaptureUndo(changed);
+    const failures = reply.updates.filter((e) => e.error);
+    const message = `${changed.length} photo${changed.length === 1 ? "" : "s"} ${captureDialog?.undo ? "restored" : "adjusted"}.`
+      + (failures.length ? ` ${failures.length} could not be saved; their capture times were left unchanged. ${failures[0].error}.` : "")
+      + (!captureDialog?.undo && changed.length ? " Undo Capture Time Adjustment is available in the photo context menu." : "");
+    setStatus(message);
+    return message;
+  };
   const [fileMenu, setFileMenu] = useState<{ x: number; y: number; imgid: number | null; targets: ImageEntry[] } | null>(null);
   // right-click on the Immich card or the results' empty space: the search
   // in Immich's web app
@@ -5012,6 +5047,11 @@ export default function App() {
                    }} />
         <MetadataPanel image={currentEntry} text={metaText}
                        onLocationSaved={(location) => currentEntry && patchImage(currentEntry.imgid, { location })}
+                       onCaptureTime={() => { if (currentEntry) {
+                         const sel = selectionRef.current;
+                         startCaptureAdjustment(withPartners(sel.size > 1 && sel.has(currentEntry.imgid)
+                           ? imagesRef.current.filter((i) => sel.has(i.imgid)) : [currentEntry]), currentEntry);
+                       } }}
                        open={leftOpen.has("metadata")} onToggle={(alt) => toggleLeft("metadata", alt)}
                        onMeta={(fields) => currentEntry && setMeta(currentEntry.imgid, fields)}
                        onText={(field, value) => {
@@ -5764,6 +5804,7 @@ export default function App() {
       </nav>
     </div>
     {shortcutsOpen && <ShortcutsDialog onClose={() => setShortcutsOpen(false)} />}
+    {captureDialog && <CaptureTimeDialog {...captureDialog} onApply={applyCaptureTimes} onClose={() => setCaptureDialog(null)} />}
     {fileMenu && (() => {
       const hit = images.find((i) => i.imgid === fileMenu.imgid);
       const local = fileMenu.targets.filter((i) => !isRemote(i));
@@ -5773,6 +5814,8 @@ export default function App() {
       const copies = local.filter((i) => i.copy);
       return (
         <FileMenu x={fileMenu.x} y={fileMenu.y}
+                  captureCount={local.length} onCaptureTime={() => startCaptureAdjustment(local, hit)}
+                  canUndoCapture={captureUndo.length > 0} onUndoCapture={startCaptureUndo}
                   copyable={sources.length} copies={copies.length === local.length ? copies.length : 0}
                   onCopy={() => void createCopies(sources)} onRemoveCopies={() => void removeCopies(copies)}
                   mergeable={hdrBrackets(local).length} onMergeHdr={() => setHdrMerging(hdrBrackets(local))}
@@ -6482,8 +6525,10 @@ const panoFrames = (list: ImageEntry[]) => {
 // Delete, for rejected photos only; for Immich results, the photo or the
 // whole search in Immich's web app. any click elsewhere, a scroll or Escape
 // closes it
-function FileMenu({ x, y, copyable, copies, mergeable, stitchable, reveal, rejected, photo, results, editIn, onCopy,
+function FileMenu({ captureCount, onCaptureTime, canUndoCapture, onUndoCapture, x, y, copyable, copies, mergeable, stitchable, reveal, rejected, photo, results, editIn, onCopy,
                     onRemoveCopies, onMergeHdr, onMergePano, onDelete, onEditIn, onSetUpPlugins, onClose }: {
+  captureCount: number; onCaptureTime: () => void;
+  canUndoCapture: boolean; onUndoCapture: () => void;
   x: number; y: number;
   copyable: number;                       // how many photos a virtual copy can be made of
   mergeable: number;                      // how many raws an HDR merge would take
@@ -6535,6 +6580,8 @@ function FileMenu({ x, y, copyable, copies, mergeable, stitchable, reveal, rejec
         </div>
         <div className="menu-sep" />
       </>}
+      {captureCount > 0 && <button onClick={() => { onClose(); onCaptureTime(); }}>Adjust Capture Time…</button>}
+      {canUndoCapture && <button onClick={() => { onClose(); onUndoCapture(); }}>Undo Capture Time Adjustment…</button>}
       {copyable > 0 && <>
         <button onClick={() => { onClose(); onCopy(); }}>
           {copyable > 1 ? `Create ${copyable} Virtual Copies` : "Create Virtual Copy"}</button>
