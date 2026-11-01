@@ -116,6 +116,8 @@ Performance
 
 Bug fixes
 
+- Fix Windows engine linking with the bundled OpenCV used by HDR alignment
+  and Panorama Merge.
 - Fix conflicting Linux build dependencies for the bundled webview on x86-64
   and ARM64.
 - Windows icon buttons use a consistent arrow cursor so toolbar icons no

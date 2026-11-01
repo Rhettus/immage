@@ -28,6 +28,20 @@ if(TARGET opencv_stitching)
   target_sources(darktable-engine PRIVATE pano.cc)
   target_compile_definitions(darktable-engine PRIVATE HAVE_PANO)
   target_link_libraries(darktable-engine opencv_stitching)
+  if(MINGW)
+    # MinGW auto-exports symbols from static archives in libdarktable.dll.
+    # The engine also links OpenCV for stitching; importing those symbols
+    # from darktable first causes duplicate definitions when core is linked.
+    foreach(module core imgproc features2d flann calib3d)
+      if(TARGET opencv_${module})
+        get_target_property(opencv_type opencv_${module} TYPE)
+        if(opencv_type STREQUAL "STATIC_LIBRARY")
+          target_link_options(lib_darktable PRIVATE
+            "LINKER:--exclude-libs,$<TARGET_FILE_NAME:opencv_${module}>")
+        endif()
+      endif()
+    endforeach()
+  endif()
   message(STATUS "OpenCV stitching found: Panorama Merge enabled")
 else()
   if(IMMAGE_REQUIRE_PANO)

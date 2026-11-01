@@ -508,6 +508,13 @@ darktable is, and it has AI features when darktable is configured with
 | [benchmarking/README.md](../../../benchmarking/README.md) | Performance suite, results and findings. |
 | [darktable/dev-doc/](../../../darktable/dev-doc/README.md) | darktable's own developer docs: the module API, pixelpipe, introspection. Read them before changing the engine's calls into darktable. |
 
+For MinGW, `engine/CMakeLists.txt` excludes the five static OpenCV archives
+from `lib_darktable`'s automatic DLL exports. Otherwise the engine's import
+library supplies OpenCV symbols before its own stitching/core archives are
+linked, producing duplicate definitions. Darktable's own symbols remain
+exported. Verify the Windows engine link succeeds as well as the configure
+check and panorama smoke test below.
+
 Windows engine configuration also sets `OpenCV_STATIC=ON`: OpenCV's Windows
 root package otherwise searches for shared libraries and can miss the installed
 `x64/mingw/staticlib` package. `IMMAGE_REQUIRE_PANO=ON` makes missing stitching

@@ -206,7 +206,8 @@ not the subject's.
 ## Panorama Merge
 
 Panorama Merge and its projection preview are supported on Windows, macOS and
-Linux. If the dialog says this build cannot stitch panoramas, its engine lacks
+Linux. Official Windows builds include the OpenCV stitching support needed for
+both preview and merge. If the dialog says this build cannot stitch panoramas, its engine lacks
 stitching support; install a build that includes it.
 
 Panorama Merge stitches overlapping RAW or non-RAW photos, including mixed
