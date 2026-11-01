@@ -97,7 +97,8 @@ Performance
 - Preferences > Performance has a Window renderer choice: Automatic,
   Mesa or NVIDIA. Relaunch to switch paths, then run the GUI benchmark
   to compare them on the same build. Photo processing keeps its own
-  GPU setting.
+  GPU setting. Automatic uses the system default renderer on all GPUs,
+  removing the forced Mesa override on NVIDIA.
 
 Bug fixes
 
@@ -578,11 +579,6 @@ Bug fixes
 - on Linux, sliders respond several times faster when other programs are
   busy, such as on a system drawing in software without its graphics
   driver; before, a slider like Clarity could take over a second a frame
-- on Linux with an NVIDIA graphics card, sliders, zooming and the rest of
-  the window respond about ten times faster; before, NVIDIA's driver held
-  the window to a few updates a second, on Wayland and X11 alike. Immage
-  now has Mesa draw its window, when Mesa is installed and
-  `__EGL_VENDOR_LIBRARY_FILENAMES` isn't set
 
 ## 0.33.0
 

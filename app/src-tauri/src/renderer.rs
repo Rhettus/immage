@@ -40,10 +40,6 @@ fn selection(root: &Path, mode: &str) -> Option<(&'static str, PathBuf)> {
     match mode {
         "mesa" => vendor(root, "mesa").map(|p| ("mesa", p)),
         "nvidia" => vendor(root, "nvidia").map(|p| ("nvidia", p)),
-        // NVIDIA EGL held page replies to 72 ms versus Mesa's 2 ms in the
-        // original RTX 4070 Ti SUPER benchmark (WebKit bug 303811).
-        // keep that workaround unless the user selects a driver
-        _ if root.join("proc/driver/nvidia").exists() => vendor(root, "mesa").map(|p| ("mesa", p)),
         _ => None,
     }
 }
@@ -122,9 +118,10 @@ mod tests {
         assert_eq!(selection(&root, "mesa").unwrap().0, "mesa");
         assert_eq!(selection(&root, "nvidia"), None);
         touch("proc/driver/nvidia/version");
-        assert_eq!(selection(&root, "auto").unwrap().0, "mesa");
+        assert_eq!(selection(&root, "auto"), None);
         touch("usr/share/glvnd/egl_vendor.d/10_nvidia.json");
         assert_eq!(selection(&root, "nvidia").unwrap().0, "nvidia");
+        assert_eq!(selection(&root, "auto"), None);
         let file = root.join("webview-renderer");
         assert_eq!(load(&file), "auto");
         for mode in MODES {

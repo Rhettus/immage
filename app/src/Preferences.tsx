@@ -776,7 +776,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
               {renderer && (
                 <PrefCard title="Interface rendering">
                   <PrefRow label="Window renderer"
-                           hint={`draws Immage's interface; photo processing uses Edit on the GPU separately. Automatic keeps the Mesa workaround on NVIDIA. running: ${{ mesa: "Mesa", nvidia: "NVIDIA", system: "system default", environment: "environment override" }[renderer.active] ?? renderer.active}${renderer.external
+                           hint={`draws Immage's interface; photo processing uses Edit on the GPU separately. Automatic uses the system default renderer. running: ${{ mesa: "Mesa", nvidia: "NVIDIA", system: "system default", environment: "environment override" }[renderer.active] ?? renderer.active}${renderer.external
                              ? ". remove __EGL_VENDOR_LIBRARY_FILENAMES from the launch environment to change this"
                              : renderer.next !== renderer.running ? ". relaunch to apply the selected renderer" : ""}`}>
                     <div className="segmented small">

@@ -51,7 +51,7 @@ Immage keeps to make it so.
 
 **Interface rendering** (Linux)
 
-- **Window renderer**: **Automatic** keeps the Mesa workaround on NVIDIA;
+- **Window renderer**: **Automatic** uses the system default renderer, including on NVIDIA;
   **Mesa** selects Mesa's EGL explicitly, and **NVIDIA** selects NVIDIA's.
   Only installed drivers can be selected. On NVIDIA, Mesa normally draws
   the interface on the CPU. This setting is separate from **Edit on the
