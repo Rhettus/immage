@@ -132,7 +132,7 @@ export function storeOpenGenerated(on: boolean) {
 }
 const LOUPE_KEY = "immage.loupe";
 export function loadLoupe(): boolean {
-  try { return localStorage.getItem(LOUPE_KEY) !== "0"; } catch { return true; }
+  try { return localStorage.getItem(LOUPE_KEY) === "1"; } catch { return false; }
 }
 export function storeLoupe(on: boolean) {
   try { localStorage.setItem(LOUPE_KEY, on ? "1" : "0"); } catch { /* not kept */ }
