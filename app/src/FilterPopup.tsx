@@ -75,7 +75,7 @@ export function FilterPopup({ filter: f, images, onFilter, immich, bounds, onSea
   return (
     <div className="kind-filter" ref={box}>
       <button ref={button} className={`tool kind-button${count ? " on" : ""}`}
-              title={immich ? "filter the Immich search" : "filter by file type, camera, lens, keywords, date and exposure"}
+              title={immich ? "filter the Immich search" : "filter by rejected status, file type, camera, lens, keywords, date and exposure"}
               onClick={() => setOpen(!open)}>{count ? `${count} filter${count > 1 ? "s" : ""}` : "Filters"}</button>
       {/* over everything, as the toolbar's own layer sits under the side panels */}
       {at && createPortal(
@@ -289,6 +289,19 @@ function FolderCategories({ filter: f, images, onFilter, onSearch }: {
 }) {
   const within = (v: Filter, clear: Partial<Filter>) => facetsWithin(images, v, clear);
   const cats: Category<Filter>[] = [
+    { key: "rejected", title: "Rejected", summary: (v) => v.rejected === "all" ? "" : v.rejected === "hide" ? "Hidden" : "Only rejected",
+      clear: { rejected: "all" },
+      body: (v, set) => (
+        <div className="meta-grid filter-immich">
+          <label className="k" htmlFor="filter-rejected">Show</label>
+          <select id="filter-rejected" className="field" value={v.rejected}
+                  onChange={(e) => set({ rejected: e.target.value as Filter["rejected"] })}>
+            <option value="all">All photos</option>
+            <option value="hide">Hide rejected</option>
+            <option value="only">Only rejected</option>
+          </select>
+        </div>
+      ) },
     { key: "kinds", title: "File type", summary: (v) => chosen(v.kinds), clear: { kinds: [] },
       body: (v, set) => <Ticks items={within(v, { kinds: [] }).kinds} chosen={v.kinds} onChange={(kinds) => set({ kinds })} empty="no photos" /> },
     { key: "cameras", title: "Camera", summary: (v) => chosen(v.cameras), clear: { cameras: [] },
@@ -311,7 +324,7 @@ function FolderCategories({ filter: f, images, onFilter, onSearch }: {
   ];
   return (
     <Categories title="Filters" value={f} apply={onFilter} cats={cats} onSearch={onSearch}
-                none={{ ...NO_FILTER, minRating: f.minRating, rejected: f.rejected, edited: f.edited, labels: f.labels,
+                none={{ ...NO_FILTER, minRating: f.minRating, edited: f.edited, labels: f.labels,
                         unlabeled: f.unlabeled }} />
   );
 }

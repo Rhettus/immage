@@ -64,7 +64,7 @@ export const passes = (i: Known, f: Filter) =>
 
 // the popup's fields in use, one each, for its button and the toolbar
 export const popupCount = (f: Filter) =>
-  [f.kinds.length, f.cameras.length, f.lenses.length, f.keywords.length, f.takenFrom || f.takenTo]
+  [f.rejected !== "all", f.kinds.length, f.cameras.length, f.lenses.length, f.keywords.length, f.takenFrom || f.takenTo]
     .filter(Boolean).length + EXPOSURE.filter((k) => f[k].length).length;
 
 // whether the filter asks for what only reading the file tells: everything
