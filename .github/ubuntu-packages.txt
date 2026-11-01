@@ -8,9 +8,9 @@
 # (app/scripts/build_linux_deps.sh), which are built from source rather
 # than installed, and Tauri's
 
-# toolchain; darktable needs gcc 12 or later
-gcc-12
-g++-12
+# toolchain; WebKit ANGLE needs newer template assertion handling
+gcc-14
+g++-14
 cmake
 ninja-build
 ccache

@@ -13,6 +13,14 @@ sha=a76345b391bef6211fb5ab6cfab2e86b285d18cda17cbb9ade595f1252b86065
 triplet=$(dpkg-architecture -qDEB_HOST_MULTIARCH)
 notice="$stage/usr/share/doc/immage-webkitgtk/NOTICE"
 
+# ANGLE contains static_assert(false) in discarded template branches.
+# Probe support before downloading and compiling thousands of source files.
+if ! printf '%s\n' 'template<class T> void probe() { if constexpr (false) { static_assert(false); } }' 'template void probe<int>();' \
+  | "${CXX:-c++}" -std=c++23 -x c++ -fsyntax-only -; then
+  echo "WebKitGTK requires a compiler with deferred template assertions (CI uses GCC 14)." >&2
+  exit 1
+fi
+
 if [ ! -f "$notice" ] || ! head -n 1 "$notice" | grep -qx "WebKitGTK $v"; then
   mkdir -p "$work"
   curl -fL --retry 3 "https://webkitgtk.org/releases/webkitgtk-$v.tar.xz" -o "$work/source.tar.xz"

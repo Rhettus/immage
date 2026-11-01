@@ -707,15 +707,17 @@ by `patches/webkitgtk-optional-mpegts.patch` so its CMake component list honors
 `USE_GSTREAMER_MPEGTS=OFF` with video enabled; upstream's C++ code already guards
 the MPEG-TS includes and calls with that flag. Apply the patch to the pinned
 tarball and check CMake component resolution with the flag both off and on when
-updating WebKit. The patch hash participates in the staged WebKit cache key. CI pins libunwind runtime and headers
-to Ubuntu together and removes conflicting LLVM 14 development headers.
+updating WebKit. The patch hash participates in the staged WebKit cache key.
+CI pins libunwind runtime and headers to Ubuntu together and removes conflicting LLVM 14 development headers.
 Verify both Linux package-install steps before checking compilation and the
 packaging tests; local shell checks cannot establish APT resolution. With those installed,
 `app/scripts/build_webkitgtk.sh` builds SHA-256-pinned WebKitGTK 2.54.2 using
 GTK 3, JavaScriptCore and matching helpers, then installs them into `/usr`
-for Tauri to bundle. Build compilers remain GCC 12 on x86-64 and GCC 14 on
-ARM64. Non-release CI caches the staged installation by Ubuntu baseline,
-architecture and script hash; release jobs rebuild it without that cache.
+for Tauri to bundle. Both architectures use GCC 14 from the Ubuntu toolchain
+PPA; GCC 12 rejects ANGLE's assertion in a discarded template branch. A C++23 compiler probe runs
+before source download to catch this immediately. The compiler name is included
+in the staged installation cache key. Non-release CI caches the staged
+installation by Ubuntu baseline, architecture and script/patch hashes; release jobs rebuild it without that cache.
 WebKit compilation uses two jobs and the Linux job allows six hours.
 
 After packaging, `app/scripts/check_webkit_bundle.py` requires both bundled
