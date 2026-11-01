@@ -368,6 +368,23 @@ const detailMap = (prefix: string, texture: boolean): ModuleMap => ({
   enabled: (v) => DETAIL_FIELDS.some(([field]) => field.startsWith("gain_") && (v[`${prefix}_${field}`] ?? 0) !== 0),
 });
 
+// Native contrast equalizer: five channels with six spatial-frequency bands.
+export const EQ_CHANNELS = ["Luminance", "Chroma", "Edges", "Luminance noise", "Chroma noise"];
+export const EQ_IDS = EQ_CHANNELS.flatMap((_, c) => Array.from({ length: 6 }, (_, k) => `ce_${c}_${k}`));
+const equalizerControls: Control[] = EQ_IDS.map((id, i) => ({
+  id, label: "Contrast equalizer", min: 0, max: 1, step: 0.001,
+  neutral: Math.floor(i / 6) < 3 ? 0.5 : 0, format: plain(3),
+}));
+const equalizerMap: ModuleMap = {
+  op: "atrous", keepOn: false,
+  controls: EQ_IDS,
+  enabled: (v) => EQ_IDS.some((id, i) => Math.abs((v[id] ?? (i < 18 ? 0.5 : 0)) - (i < 18 ? 0.5 : 0)) > 1e-6),
+  fields: EQ_IDS.map((_, i) => `y[${Math.floor(i / 6)}][${i % 6}]`),
+  read: (p) => Object.fromEntries(EQ_IDS.map((id, i) => [id, p[`y[${Math.floor(i / 6)}][${i % 6}]`]])),
+  write: (v) => Object.fromEntries(EQ_IDS.map((id, i) =>
+    [`y[${Math.floor(i / 6)}][${i % 6}]`, v[id] ?? (i < 18 ? 0.5 : 0)])),
+};
+
 // Sharpening: darktable's "sharpness | normal" diffusion preset
 // (diffuse.c) but for the iterations, radius span and edge sensitivity,
 // which the sliders set
@@ -412,8 +429,9 @@ const shared = (value: number, op: string, name: string, preferred: boolean): Mo
   ({ value, op, name, preferred, controls: [], localControls: [] });
 export const MODULE_CHOICES: ModuleChoice[] = [
   {
-    id: "contrast", label: "Contrast", control: "mod_contrast", covers: ["contrast"],
-    options: [shared(MOD_TM, "agx", "AgX", true), shared(MOD_CBRGB, "colorbalancergb", "color balance rgb", false)],
+    id: "contrast", label: "Contrast", control: "mod_contrast", covers: ["contrast", ...EQ_IDS],
+    options: [shared(MOD_TM, "agx", "AgX", true), shared(MOD_CBRGB, "colorbalancergb", "color balance rgb", false),
+      { ...shared(2, "atrous", "contrast equalizer", false), controls: EQ_IDS }],
   },
   {
     id: "tone_regions", label: "Highlights and Shadows", control: "mod_tone",
@@ -481,6 +499,7 @@ const optionOf = new Map(MODULE_CHOICES.flatMap((c) => c.options.flatMap((o) =>
 // whether a slider is one of the photo's modules' (or belongs to no choice)
 export const choiceShows = (id: string, v: Values) => {
   const at = optionOf.get(id);
+  if (id === "contrast" && v.mod_contrast === 2) return false;
   return !at || v[at.choice.control] === at.option.value;
 };
 export const choiceOn = (m: ModuleMap, v: Values) =>
@@ -1004,6 +1023,7 @@ export const modules: ModuleMap[] = [
     }),
     write: (v, d) => ({ black: d.black + bend(v.blacks, BLACKS_POWER) * BLACKS_SCALE * 2 ** -v.exposure }),
   },
+  chosen(equalizerMap, "mod_contrast", 2),
   linear("colorbalancergb", false, [{ id: "vibrance", field: "vibrance", scale: 0.01, base: 0 }]),
   chosen(linear("colorbalancergb", false, [{ id: "contrast", field: "contrast", scale: 0.01, base: 0 }]),
          "mod_contrast", MOD_CBRGB),
@@ -1416,6 +1436,7 @@ export const panels: Panel[] = [
         controls: [
           { id: "exposure", label: "Exposure", min: -5, max: 5, step: 0.01, format: signed(2) },
           lr("contrast", "Contrast"),
+          ...equalizerControls,
           lr("highlights", "Highlights"),
           lr("shadows", "Shadows"),
           lr("whites", "Whites"),
@@ -1764,7 +1785,7 @@ export const mapsWith = (id: string) => modules.filter((m) => m.controls.include
 
 // darktable's names for the modules, as its darkroom lists them
 const MODULE_NAMES: Record<string, string> = {
-  agx: "AgX", ashift: "rotate and perspective", bilat: "local contrast", channelmixerrgb: "color calibration",
+  atrous: "contrast equalizer", agx: "AgX", ashift: "rotate and perspective", bilat: "local contrast", channelmixerrgb: "color calibration",
   cacorrectrgb: "chromatic aberrations", colorbalancergb: "color balance rgb", colorequal: "color equalizer",
   contrastntexture: "contrast & texture", crop: "crop", defringe: "defringe", demosaic: "demosaic", negadoctor: "negadoctor",
   denoiseprofile: "denoise (profiled)", diffuse: "diffuse or sharpen", exposure: "exposure", flip: "orientation",

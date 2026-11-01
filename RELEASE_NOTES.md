@@ -7,6 +7,9 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Preferences > Modules adds Contrast equalizer as a Contrast option, replacing
+  the Contrast slider with a draggable graph for luminance, chroma, edges and
+  noise thresholds across coarse-to-fine detail bands.
 - Adjust Capture Time in the photo context menu or Metadata panel shifts
   selected photos by the same amount to synchronize camera clocks. Preview
   and confirm the adjustment before saving it to XMP sidecars; the context

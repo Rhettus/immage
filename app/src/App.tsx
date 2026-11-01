@@ -1,3 +1,4 @@
+import { ContrastEqualizer } from "./ContrastEqualizer";
 import { detailRows } from "./DetailControls";
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
@@ -7188,6 +7189,9 @@ const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle, values
                 {s.title === "Straighten" && straightenTools}
                 {s.title === "Upright" && transformTools}
                 {detailRows(s.controls.filter((c) => choiceShows(c.id, values)), (c) => {
+                  if (c.id.startsWith("ce_")) return c.id === "ce_0_0"
+                    ? <ContrastEqualizer key="contrast-equalizer" values={values} disabled={disabled} onChange={onChangeMany} />
+                    : null;
                   const props = controlProps(c);
                   return c.kind === "toggle" ? <Toggle key={c.id} {...props} />
                     : c.kind === "choice" ? <Choice key={c.id} {...props} />

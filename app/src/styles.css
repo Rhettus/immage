@@ -2241,3 +2241,14 @@ input.switch:disabled { cursor: default; opacity: 0.4; }
 
 .detail-advanced { display: flex; align-items: center; justify-content: space-between; width: 100%; border: 0; background: none; color: var(--text-2); padding: 6px 0; font: inherit; cursor: pointer; }
 .detail-advanced:hover { color: var(--text); }
+
+.contrast-equalizer { margin: 10px 0 14px; }
+.equalizer-heading, .equalizer-scale { display: flex; justify-content: space-between; align-items: center; }
+.contrast-equalizer select { width: 100%; margin: 8px 0; }
+.equalizer-graph { display: block; width: 100%; height: 140px; overflow: visible; background: var(--window); touch-action: none; cursor: ns-resize; }
+.equalizer-graph .eq-grid { stroke: currentColor; opacity: .12; stroke-width: 1; }
+.equalizer-graph .eq-neutral { stroke: currentColor; opacity: .4; stroke-dasharray: 4 4; }
+.equalizer-graph path { fill: none; stroke: currentColor; stroke-width: 2; }
+.equalizer-graph circle { fill: currentColor; }
+.equalizer-graph circle:focus { outline: none; stroke: var(--accent); stroke-width: 3; }
+.equalizer-scale, .equalizer-hint { font-size: 11px; opacity: .65; margin-top: 6px; }
