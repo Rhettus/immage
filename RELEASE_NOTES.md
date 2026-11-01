@@ -13,32 +13,15 @@ what Immage's update banner shows under Release Notes.
   skip unchanged placement updates, and defer navigator drawing to reduce
   work when an exact frame arrives.
 
-- Slider drags avoid redundant panel updates, and cached preview accuracy
-  checks run independently of native frame delivery. Those checks reuse
-  recent frames and avoid allocating a predicted image, reducing temporary
-  copies while preserving accuracy checks and exact rendering on release.
-  GPU previews also reuse recent frames across exact refreshes, avoiding
-  repeated texture uploads when slider estimates resume. Histograms and
-  scopes update at a reduced cadence during interaction and refresh on
-  release, leaving more time for the preview. Slider drags and wheel
-  gestures also combine engine edits once per display frame and skip
+- Removed the experimental adaptive cached preview and its performance tuner
+  choices after paired benchmarks showed higher latency, more stalls and worse
+  visual feedback. Native adaptive preview sizing, detail loupe rendering and
+  scaled checkpoint retention remain available.
+
+- Slider drags avoid redundant panel updates. Histograms and scopes update at
+  a reduced cadence during interaction and refresh on release. Slider drags
+  and wheel gestures combine engine edits once per display frame and skip
   unchanged values, while release immediately submits the final edit.
-
-- Cached slider previews refresh native frames more often as prediction
-  error rises and less often after reliable checks, within a 320 ms cap.
-  Failed predictions retrain privately from fresh native frames and can
-  recover during the same drag. Release still requests the exact result.
-
-- Cached slider previews show the latest value once per display frame,
-  coalescing rapid input on GPU and CPU fallback paths. Native refreshes
-  continue on a bounded timer, and releasing a slider cancels queued
-  previews and requests the exact result immediately.
-
-- Adaptive cached previews blend native frames on the WebView GPU when
-  available, reusing anchor textures between slider moves. Clipping colors
-  follow the estimate; histograms and scopes update with native frames.
-  CPU fallback, prediction accuracy checks and exact rendering on release
-  remain available.
 
 - Opening folders reads TIFF-based RAW metadata from small prefixes where
   possible. Grid thumbnails read suitable embedded JPEGs directly and decode

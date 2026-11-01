@@ -15,9 +15,8 @@ const ref=current=>({current});
 test('crop transition removes previous pixels and stops zoom before the replacement arrives',()=>{
   const cleared=[], canceled=[];
   const env={
+    resetCanvases(){env.canvasesReset=true;},resetHistogram(){env.histogramReset=true;},
     pixelWorker:ref({dispose(){env.workerDisposed=true;}}),
-    hideCachedPreview(){this.cachedShown=false;},cachedShown:true,
-    cachedRenderer:ref({reset(){env.reset=true;}}),
     sharpMeta:ref({}),baseMeta:ref({}),loupeMeta:ref({}),overviewHash:ref('old'),
     setCropBox(box){env.box=box;},
     anim:ref({raf:42,end:{x:0.2},asked:{scale:1}}),
@@ -30,8 +29,7 @@ test('crop transition removes previous pixels and stops zoom before the replacem
     };}});
   }
   create(env)();
-  assert.equal(env.cachedShown,false);
-  assert.equal(env.reset,true);
+  assert.equal(env.canvasesReset,true);assert.equal(env.histogramReset,true);
   assert.equal(env.workerDisposed,true);
   assert.equal(env.pixelWorker.current,null);
   assert.equal(cleared.length,5);

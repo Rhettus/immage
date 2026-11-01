@@ -207,15 +207,6 @@ export function storePreview(v: Preview) {
   try { localStorage.setItem(PREVIEW_KEY, v); } catch { /* not kept */ }
 }
 
-const CACHED_DETAIL_KEY = "immage.cachedDetailPreview";
-export function loadCachedDetailPreview(): boolean {
-  try { return localStorage.getItem(CACHED_DETAIL_KEY) === "1"; }
-  catch { return false; }
-}
-export function storeCachedDetailPreview(on: boolean) {
-  try { localStorage.setItem(CACHED_DETAIL_KEY, on ? "1" : "0"); } catch { /* not kept */ }
-}
-
 export const BALANCED_PREVIEW_SIZES: readonly number[] = [0.5, 0.75, 1];
 const BALANCED_SIZE_KEY = "immage.balancedPreviewSize";
 export function loadBalancedPreviewSize(): number {
@@ -499,7 +490,6 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   const [sliderScroll, setSliderScroll] = useState(loadSliderScroll);
   const [scrollStep, setScrollStep] = useState(loadSliderScrollStep);
   const [preview, setPreview] = useState(loadPreview);
-  const [cachedDetail, setCachedDetail] = useState(loadCachedDetailPreview);
   const [balancedSize, setBalancedSize] = useState(loadBalancedPreviewSize);
   const [sharedFrames, setSharedFrames] = useState(loadSharedFrames);
   const [atScreenScale, setAtScreenScale] = useState(loadScreenScale);
@@ -778,15 +768,6 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                     {([["Quality", "quality"], ["Balanced", "balanced"], ["Performance", "performance"]] as const).map(([label, v]) => (
                       <button key={v} className={preview === v ? "active" : ""}
                               onClick={() => { setPreview(v); storePreview(v); }}>{label}</button>
-                    ))}
-                  </div>
-                </PrefRow>
-                <PrefRow label="Adaptive cached preview"
-                         hint="experimental: all Basic sliders and detail drags estimate between recent full renders. periodic native renders check accuracy; release gives the accurate result">
-                  <div className="segmented small">
-                    {[false, true].map((on) => (
-                      <button key={String(on)} className={cachedDetail === on ? "active" : ""}
-                              onClick={() => { setCachedDetail(on); storeCachedDetailPreview(on); }}>{on ? "On" : "Off"}</button>
                     ))}
                   </div>
                 </PrefRow>

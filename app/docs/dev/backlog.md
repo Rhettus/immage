@@ -1,6 +1,12 @@
 # Backlog
 
-## Full-size adaptive preview performance
+## Full-size adaptive preview performance (retired experiment)
+
+The following records historical work. Adaptive cached previews and their
+validation/GPU workers were removed after the paired November 1 benchmarks
+showed worse latency and visual quality; see [failed experiments](../../../benchmarking/failed-experiments.md).
+The former preference below is superseded. Native preview sizing, histogram
+workers and checkpoint retention continue independently.
 
 Preference: keep previews at 100% with adaptive caching whenever measured frame
 rate and latency meet the user's targets. Release must always render exactly.
@@ -12,6 +18,9 @@ rate and latency meet the user's targets. Release must always render exactly.
 - [x] Prediction recovery: after an accuracy failure, retrain from fresh native anchors and resume estimates when reliable, rather than disabling them for the remainder of the drag. Discard failed pairs, require two consecutive low-error private native checks before resuming, and stop recovery after three accuracy failures per drag. CPU cost failures remain disabled until release.
 
 ## UI performance audit — 2026-10-31
+
+Historical record: items 2–4 belonged to the retired adaptive-cache experiment
+and have been removed. The other UI and native-preview work remains.
 
 User requested separate commits for items 1 and 2. Preserve the remaining work
 in this order; priorities are code-inspection estimates, not measured savings.

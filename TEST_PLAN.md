@@ -21,16 +21,16 @@ sharpening and noise reduction. Use your normal window size; close busy apps.
    **Expect:** 100% Balanced avoids resolution shrinking; smaller previews can
    soften during dragging. Release restores the accurate full preview.
 
-4. **Cached detail preview.** Compare Texture, Clarity, Contrast and Dehaze
-   drags with Cached detail preview on/off. Allow two native renders, then
-   move nearby values. Release; zoom, switch controls and switch photos.
-   **Expect:** nearby cached previews follow the rendered detail; release is
-   accurate. No stale frames or cached Exposure approximation remain.
+4. **Native slider preview.** Drag Exposure and detail controls, release,
+   zoom, switch controls and switch photos. Repeat with an existing profile
+   that previously enabled adaptive cached preview.
+   **Expect:** native previews throughout; exact full-view output on release,
+   no interpolation artifacts, and no adaptive cache preference or tuner choice.
 
 5. **Detail loupe.** Check that its label/handle are hidden normally. Drag detail sliders on the heavy edit. Move the
    loupe if it appears, then release. Repeat with it disabled.
-   **Expect:** slow previews can narrow to the selected area; release updates
-   the whole view. Fast machines may never trigger the loupe.
+   **Expect:** eligible detail drags start in the selected area when the loupe
+   is enabled; release updates the whole view. Disabling it retains whole-image drafts.
 
 6. **Clarity/Texture alternatives.** In Preferences → Modules → Custom, choose
    contrast & texture for both. Open a fresh photo where those tools are unused.

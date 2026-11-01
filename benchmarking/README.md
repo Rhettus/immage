@@ -83,7 +83,7 @@ editing target. Profiler instrumentation can run with the overlay hidden.
 Focused synthetic checks (no machine performance benchmark):
 
 ```bash
-node --test verify/performance-tuner.test.mjs verify/cached-detail.test.mjs
+node --test verify/performance-tuner.test.mjs verify/detail-preview.test.mjs
 ```
 
 ### The GUI benchmark
@@ -336,3 +336,6 @@ per surface/task, rejecting superseded results. Worker failure or a ten-second
 response timeout enables synchronous fallback, reported by `workerFallback`
 and `main.<task>.compute`. Worker compute times are separate from the existing
 synchronous frame stages; do not add overlapping timings together.
+
+Retired performance experiments and their measured outcomes are recorded in
+[failed-experiments.md](failed-experiments.md).
