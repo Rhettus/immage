@@ -983,6 +983,16 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                     </p>
                   </div>
                 </PrefCard>
+                <PrefCard title="Maps">
+                  <div className="prefs-legal">
+                    <p>Map data © OpenStreetMap contributors, available under the Open Database License (ODbL).
+                      Map tiles provided by the OpenStreetMap Foundation.</p>
+                    <p>Interactive maps use Leaflet, Copyright © 2010–2023 Volodymyr Agafonkin
+                      and © 2010–2011 CloudMade, under the BSD 2-Clause license.</p>
+                    <button className="btn" onClick={() => void openUrl("https://www.openstreetmap.org/copyright")}>OpenStreetMap attribution</button>{" "}
+                    <button className="btn" onClick={() => void openUrl("https://github.com/Leaflet/Leaflet/blob/main/LICENSE")}>Leaflet license</button>
+                  </div>
+                </PrefCard>
                 <PrefCard title="Updates">
                   <PrefRow label="Check automatically" hint="once a day, from Immage's releases on GitHub">
                     <PrefSwitch checked={autoUpdate} onChange={(on) => { setAutoUpdate(on); storeAutoCheck(on); }} />

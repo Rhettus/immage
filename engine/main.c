@@ -425,7 +425,7 @@ static void _close_session(void)
 // would skip the write and still report success. a global switch flipped
 // around each job can't be used, as the thumbnail threads run beside the
 // main loop. TRUE means it failed, as darktable's
-static gboolean _write_sidecar(const dt_imgid_t imgid)
+static gboolean _write_sidecar_location(const dt_imgid_t imgid, const gboolean location_changed)
 {
   if(!dt_is_valid_imgid(imgid)) return TRUE;
   char filename[PATH_MAX] = { 0 };
@@ -440,6 +440,7 @@ static gboolean _write_sidecar(const dt_imgid_t imgid)
   dt_image_path_append_version(imgid, filename, sizeof(filename));
   g_strlcat(filename, ".xmp", sizeof(filename));
   if(dt_exif_xmp_write(imgid, filename, FALSE)) return TRUE;
+  if(location_changed && !location_sidecar_mark(filename)) return TRUE;
   sqlite3_stmt *stmt;
   DT_DEBUG_SQLITE3_PREPARE_V2(dt_database_get(darktable.db),
                               "UPDATE main.images SET write_timestamp = STRFTIME('%s', 'now') WHERE id = ?1",
@@ -448,6 +449,11 @@ static gboolean _write_sidecar(const dt_imgid_t imgid)
   sqlite3_step(stmt);
   sqlite3_finalize(stmt);
   return FALSE;
+}
+
+static gboolean _write_sidecar(const dt_imgid_t imgid)
+{
+  return _write_sidecar_location(imgid, FALSE);
 }
 
 // an export's copy of a photo's edit as it was when the export was asked
@@ -462,6 +468,8 @@ static dt_imgid_t _real_version(const dt_imgid_t imgid);
 // then inserted when missing, so two imports into one folder at once could
 // make two of either
 static GMutex _import_lock;
+
+static GList *_image_versions(const dt_imgid_t imgid);
 
 // file the image under an in-memory film roll, the way darktable-mcp does;
 // importing reads an existing sidecar, so earlier edits come back
@@ -478,6 +486,30 @@ static dt_imgid_t _import(const char *path)
   // dt_image_get_id()), which can be a snapshot once the version before it
   // has been removed
   const dt_imgid_t imgid = dt_is_valid_filmid(filmid) ? dt_image_import(filmid, path, TRUE, FALSE) : NO_IMGID;
+  if(dt_is_valid_imgid(imgid))
+  {
+    GList *versions = _image_versions(imgid);
+    for(GList *l = versions; l; l = l->next)
+    {
+      const dt_imgid_t id = GPOINTER_TO_INT(l->data);
+      char sidecar[PATH_MAX] = { 0 };
+      gboolean from_cache = FALSE;
+      dt_image_full_path(id, sidecar, sizeof(sidecar), &from_cache);
+      dt_image_path_append_version(id, sidecar, sizeof(sidecar));
+      g_strlcat(sidecar, ".xmp", sizeof(sidecar));
+      if(!g_file_test(sidecar, G_FILE_TEST_EXISTS)) continue;
+      const int missing = location_sidecar_missing(sidecar);
+      if(missing)
+      {
+        dt_image_geoloc_t geo;
+        dt_image_get_location(id, &geo);
+        if(missing & 1) geo.latitude = geo.longitude = NAN;
+        if(missing & 2) geo.elevation = NAN;
+        dt_image_set_location(id, &geo, FALSE, FALSE);
+      }
+    }
+    g_list_free(versions);
+  }
   g_mutex_unlock(&_import_lock);
   return _real_version(imgid);
 }
@@ -819,8 +851,6 @@ static void _saved_history(JsonBuilder *b)
   }
   sqlite3_finalize(stmt);
 }
-
-static GList *_image_versions(const dt_imgid_t imgid);
 
 static gboolean _has_history(const dt_imgid_t imgid)
 {
@@ -1580,6 +1610,15 @@ static void _image_json(JsonBuilder *b, const dt_imgid_t imgid, const gboolean f
   json_builder_add_int_value(b, img->final_width > 0 ? img->final_width : img->width);
   json_builder_set_member_name(b, "height");
   json_builder_add_int_value(b, img->final_height > 0 ? img->final_height : img->height);
+  json_builder_set_member_name(b, "location");
+  if(isfinite(img->geoloc.latitude) && isfinite(img->geoloc.longitude))
+  {
+    json_builder_begin_object(b);
+    _add_double(b, "latitude", img->geoloc.latitude);
+    _add_double(b, "longitude", img->geoloc.longitude);
+    json_builder_end_object(b);
+  }
+  else json_builder_add_null_value(b);
   json_builder_set_member_name(b, "exif");
   json_builder_begin_object(b);
   _add_string(b, "maker", img->camera_maker);
@@ -2131,6 +2170,38 @@ static gboolean _meta_set(const dt_imgid_t imgid, JsonObject *req, char **err)
     *err = g_strdup("no such image");
     return FALSE;
   }
+  if(json_object_has_member(req, "location"))
+  {
+    dt_image_geoloc_t geo = { NAN, NAN, NAN };
+    if(!JSON_NODE_HOLDS_NULL(json_object_get_member(req, "location")))
+    {
+      JsonNode *node = json_object_get_member(req, "location");
+      JsonObject *location = JSON_NODE_HOLDS_OBJECT(node) ? json_node_get_object(node) : NULL;
+      JsonNode *lat = location ? json_object_get_member(location, "latitude") : NULL;
+      JsonNode *lon = location ? json_object_get_member(location, "longitude") : NULL;
+      if(!lat || !lon || !JSON_NODE_HOLDS_VALUE(lat) || !JSON_NODE_HOLDS_VALUE(lon)
+         || (json_node_get_value_type(lat) != G_TYPE_DOUBLE && json_node_get_value_type(lat) != G_TYPE_INT64)
+         || (json_node_get_value_type(lon) != G_TYPE_DOUBLE && json_node_get_value_type(lon) != G_TYPE_INT64))
+      {
+        *err = g_strdup("location needs numeric latitude and longitude");
+        return FALSE;
+      }
+      geo.latitude = json_node_get_double(lat);
+      geo.longitude = json_node_get_double(lon);
+      if(!isfinite(geo.latitude) || !isfinite(geo.longitude)
+         || fabs(geo.latitude) > 90 || fabs(geo.longitude) > 180)
+      {
+        *err = g_strdup("latitude must be between -90 and 90, longitude between -180 and 180");
+        return FALSE;
+      }
+      dt_image_geoloc_t previous;
+      dt_image_get_location(imgid, &previous);
+      // moving a pin invalidates an elevation measured at the previous position
+      if(previous.latitude == geo.latitude && previous.longitude == geo.longitude)
+        geo.elevation = previous.elevation;
+    }
+    dt_image_set_location(imgid, &geo, FALSE, FALSE);
+  }
   if(json_object_has_member(req, "rejected") && json_object_get_boolean_member(req, "rejected"))
     dt_ratings_apply_on_image(imgid, DT_VIEW_REJECT, FALSE, FALSE, FALSE);
   else if(json_object_has_member(req, "rating") || json_object_has_member(req, "rejected"))
@@ -2151,7 +2222,7 @@ static gboolean _meta_set(const dt_imgid_t imgid, JsonObject *req, char **err)
       dt_metadata_set(imgid, _meta_keys[k][1],
                       json_object_get_string_member(req, _meta_keys[k][0]), FALSE);
   // TRUE means it failed
-  if(_write_sidecar(imgid))
+  if(_write_sidecar_location(imgid, json_object_has_member(req, "location")))
   {
     *err = g_strdup("could not write the XMP sidecar");
     return FALSE;

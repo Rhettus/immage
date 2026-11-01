@@ -238,3 +238,42 @@ gboolean rendered_metadata(const char *path, const void *blob, const int size, c
     return FALSE;
   }
 }
+
+// XMP has no standard deletion value for GPS. Mark Immage sidecars as
+// authoritative so missing fields override GPS embedded in the source.
+gboolean location_sidecar_mark(const char *path)
+{
+  try
+  {
+    _lock lock;
+    Exiv2::XmpProperties::registerNs("https://github.com/Rhettus/immage/ns/1.0/", "immage");
+    auto image = Exiv2::ImageFactory::open(path);
+    if(!image.get()) return FALSE;
+    image->readMetadata();
+    image->xmpData()["Xmp.immage.locationManaged"] = "True";
+    image->writeMetadata();
+    return TRUE;
+  }
+  catch(const std::exception &) { return FALSE; }
+}
+
+int location_sidecar_missing(const char *path)
+{
+  try
+  {
+    _lock lock;
+    Exiv2::XmpProperties::registerNs("https://github.com/Rhettus/immage/ns/1.0/", "immage");
+    auto image = Exiv2::ImageFactory::open(path);
+    if(!image.get()) return 0;
+    image->readMetadata();
+    auto &xmp = image->xmpData();
+    auto managed = xmp.findKey(Exiv2::XmpKey("Xmp.immage.locationManaged"));
+    if(managed == xmp.end() || managed->toString() != "True") return 0;
+    int missing = 0;
+    if(xmp.findKey(Exiv2::XmpKey("Xmp.exif.GPSLatitude")) == xmp.end()
+       || xmp.findKey(Exiv2::XmpKey("Xmp.exif.GPSLongitude")) == xmp.end()) missing |= 1;
+    if(xmp.findKey(Exiv2::XmpKey("Xmp.exif.GPSAltitude")) == xmp.end()) missing |= 2;
+    return missing;
+  }
+  catch(const std::exception &) { return 0; }
+}

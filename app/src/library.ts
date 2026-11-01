@@ -21,6 +21,7 @@ export const takenAt = (i: Known) => i.exif.datetime || i.exif.file_datetime || 
 
 export type ImageEntry = {
   imgid: number;
+  location?: { latitude: number; longitude: number } | null;
   path: string;
   filename: string;
   rating: number;     // 0-5

@@ -2224,3 +2224,17 @@ input.switch:disabled { cursor: default; opacity: 0.4; }
 .tuner th, .tuner td { padding: 7px 4px; text-align: left; border-bottom: 1px solid var(--inset); }
 .tuner-report { overflow-wrap: anywhere; }
 .tuner .modal-foot { flex-wrap: wrap; }
+
+.location-editor { padding: 12px; border-top: 1px solid var(--border, #444); font-size: 11px; }
+.location-heading { font-weight: 600; margin-bottom: 10px; }
+.location-editor > label { display: block; margin-bottom: 5px; opacity: .75; }
+.location-editor > input { width: 100%; box-sizing: border-box; }
+.location-actions { display: flex; gap: 5px; flex-wrap: wrap; margin: 8px 0; }
+.location-map-tools { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 10px 0 6px; }
+.location-map-tools label { white-space: nowrap; }
+.location-map { height: 220px; width: 100%; border-radius: 4px; background: #303030; z-index: 0; }
+.location-map.dark .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.8) contrast(.85); }
+.location-pin span { display: block; width: 16px; height: 16px; background: #f08032; border: 2px solid white; border-radius: 50%; box-shadow: 0 1px 5px #000; }
+.location-attribution { text-align: right; font-size: 10px; margin-top: 4px; }
+.location-attribution button { color: inherit; font: inherit; padding: 0; background: none; border: 0; text-decoration: underline; cursor: pointer; }
+.location-error { color: #f3a184; }
