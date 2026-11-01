@@ -123,6 +123,13 @@ function storeEditedMeta(v: EditedMeta) {
 export type Canvas = "dark" | "gray" | "white";
 // in the order L steps through them
 export const CANVASES: readonly Canvas[] = ["dark", "gray", "white"];
+const OPEN_GENERATED_KEY = "immage.openGenerated";
+export function loadOpenGenerated(): boolean {
+  try { return localStorage.getItem(OPEN_GENERATED_KEY) !== "0"; } catch { return true; }
+}
+export function storeOpenGenerated(on: boolean) {
+  try { localStorage.setItem(OPEN_GENERATED_KEY, on ? "1" : "0"); } catch { /* not kept */ }
+}
 const LOUPE_KEY = "immage.loupe";
 export function loadLoupe(): boolean {
   try { return localStorage.getItem(LOUPE_KEY) !== "0"; } catch { return true; }
@@ -442,7 +449,7 @@ function LicenseText({ title, text, onClose }: { title: string; text: string; on
 }
 
 export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurrent, focus, canvas, onCanvas, overlayColor, onOverlayColor, guideColor, onGuideColor,
-                                    loupe, onLoupe, focusMode, onFocusMode, autoHide, onAutoHide, stackPairs, onStackPairs,
+                                    openGenerated, onOpenGenerated, loupe, onLoupe, focusMode, onFocusMode, autoHide, onAutoHide, stackPairs, onStackPairs,
                                     accel, plugins, onPlugins, perfHud, onPerfHud, onBenchmark, onTune, onRelaunch, onClose }: {
   presets: Preset[];
   focus?: Tab;                           // a tab to open at
@@ -455,6 +462,8 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   onOverlayColor: (v: OverlayColor) => void;
   guideColor: GuideColor;
   onGuideColor: (v: GuideColor) => void;
+  openGenerated: boolean;
+  onOpenGenerated: (on: boolean) => void;
   loupe: boolean;
   onLoupe: (on: boolean) => void;
   focusMode: boolean;
@@ -670,6 +679,9 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
             {tab === "general" && (
               <>
               <PrefCard title="Workspace">
+                <PrefRow label="Open generated photos" hint="switch to editing after HDR or panorama merge, AI denoise, positive export, or the first result from a plugin">
+                  <PrefSwitch checked={openGenerated} onChange={onOpenGenerated} />
+                </PrefRow>
                 <PrefRow label="Detail loupe" hint="show a 100% preview in Adjustments; use its picker to inspect a point on the photo">
                   <PrefSwitch checked={loupe} onChange={onLoupe} />
                 </PrefRow>
