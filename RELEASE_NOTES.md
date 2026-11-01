@@ -5,6 +5,10 @@ what Immage's update banner shows under Release Notes.
 
 ## Experimental Linux renderer build
 
+- Filters adds a Rejected category with All photos, Hide rejected and Only
+  rejected options. The selection counts as an active filter and resets with
+  Clear all.
+
 - Clipping overlays and histogram/scope updates discard results from
   replaced frames, including same-sized frames and GPU/CPU transitions.
   Old clipping overlays clear as their source frame changes.
