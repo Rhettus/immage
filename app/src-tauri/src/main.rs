@@ -730,6 +730,7 @@ async fn render(
     diagnostic_request: Option<u64>,
 ) -> Result<Response, String> {
     let mut req = json!({ "cmd": "render", "width": width, "height": height, "rgba": state.frame_path });
+    if let Some(id) = diagnostic_request { req["diagnostic_request"] = json!(id); }
     if let Some(skip) = skip {
         req["skip"] = json!(skip);
     }
@@ -945,12 +946,14 @@ async fn perf_set(state: State<'_, AppState>, on: bool) -> Result<(), String> {
 async fn perf_trace_start(state: State<'_, AppState>) -> Result<(), String> {
     state.perf_by_request.lock().unwrap().clear();
     state.perf_modules_dropped.store(0, Ordering::Relaxed);
+    state.engine("perf_trace_start").cache_trace(true)?;
     state.engine.start();
     Ok(())
 }
 #[tauri::command]
 async fn perf_trace_stop(state: State<'_, AppState>) -> Result<(), String> {
     state.engine.stop();
+    state.engine("perf_trace_stop").cache_trace(false)?;
     Ok(())
 }
 
@@ -981,6 +984,7 @@ async fn perf_report_write(state: State<'_, AppState>, name: String, mut report:
     let (spans, dropped, unfinished) = state.engine.snapshot();
     report["build"] = json!({ "commit": option_env!("IMMAGE_BUILD_COMMIT"), "dirty": option_env!("IMMAGE_BUILD_DIRTY").map(|s| s == "true") });
     if report["diagnostics"]["enabled"].as_bool() == Some(true) {
+        report["diagnostics"]["cache"] = state.engine("perf_cache_report").cache_report();
         report["diagnostics"]["native"] = json!({ "clock": "native monotonic milliseconds; independent of frontend clock",
             "droppedSpans": dropped, "droppedModuleTimings":state.perf_modules_dropped.load(Ordering::Relaxed),
             "unfinished": unfinished.iter().map(|s| json!({ "id":s.id, "requestId":s.request, "operation":s.operation, "waitAt":s.wait, "acquiredAt":s.acquired })).collect::<Vec<_>>(),

@@ -4163,7 +4163,7 @@ export default function App() {
       const { w, h } = viewport();
       const at = new Date();
       const report = {
-        immage: "gui-benchmark", version: 8, at: at.toISOString(),
+        immage: "gui-benchmark", version: 9, at: at.toISOString(),
         app: await invoke<{ app: string; darktable: string }>("about").catch(() => null),
         machine: await invoke<Record<string, unknown>>("perf_machine").catch(() => null),
         frontend: perf.frontendReport(), diagnostics: perf.diagnosticReport(),
