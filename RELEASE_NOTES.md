@@ -7,6 +7,10 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Generated HDR merges, panoramas, AI denoise results, positive exports and
+  the first result from a plugin open for editing automatically. Preferences >
+  General > Workspace can disable this. Successful completion notifications
+  close after 30 seconds, or immediately when Open or OK is selected.
 - Negative adds Export to Library to save a separate positive beside the
   original, with the conversion and current edits baked in and normal editing
   tools available. Preferences > General > Workspace chooses losslessly

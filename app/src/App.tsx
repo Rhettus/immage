@@ -53,7 +53,7 @@ import { Tour, tourSeen } from "./Tour";
 import { UpdateBanner } from "./UpdateBanner";
 import { autoCheck, relaunch } from "./updates";
 import { Chevron, Collapse } from "./Collapse";
-import { loadLoupe, storeLoupe, loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadNewPhotosProfile, loadOverlayColor, loadGuideColor, guideRgb, loadPins, maskOverlayRgb, loadPreview, loadBalancedPreviewSize, loadFrameCacheMb, loadDraftTarget, loadDraftSmallest,loadSliderScroll, loadSliderScrollStep,
+import { loadOpenGenerated, storeOpenGenerated, loadLoupe, storeLoupe, loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadNewPhotosProfile, loadOverlayColor, loadGuideColor, guideRgb, loadPins, maskOverlayRgb, loadPreview, loadBalancedPreviewSize, loadFrameCacheMb, loadDraftTarget, loadDraftSmallest,loadSliderScroll, loadSliderScrollStep,
          loadStackPairs,
          PreferencesDialog, storeOverlayColor, storeGuideColor, storeStackPairs,
          storeAutoHide, storeCanvas, CANVASES, storeFocusMode, storePins, type AccelProvider, type Canvas,
@@ -819,10 +819,18 @@ export default function App() {
   // a background job's result, opened from the activity line as a double
   // click in the grid opens a photo: out of the grid and Compare, which
   // would otherwise cover it
-  const openResult = (path: string, imgid: number) => {
+  const openResult = (path: string, imgid?: number) => {
     setCompare(null);
     void openFile(path, imgid);
     setGrid(false);
+  };
+  // Use the current preference when a background result arrives.
+  const generatedAction = (path: string, imgid?: number, auto = true) => {
+    if (auto && loadOpenGenerated()) {
+      openResult(path, imgid);
+      return undefined;
+    }
+    return { label: "Open", run: () => openResult(path, imgid) };
   };
   const runDenoise = (amount: number) => {
     const from = currentRef.current?.path;
@@ -846,7 +854,7 @@ export default function App() {
       if (folderRef.current && !immichRef.current && parentDir(r.path) === folderRef.current)
         void showFolder(folderRef.current, true);
       return { text: `AI Denoise: wrote ${baseName(r.path)}`, ok: true,
-               action: { label: "Open", run: () => openResult(r.path, r.image.imgid) } };
+               action: generatedAction(r.path, r.image.imgid) };
     }, "AI Denoise").finally(() => setDenoiseRunning(false));
   };
   const [negativeExporting, setNegativeExporting] = useState(false);
@@ -869,7 +877,7 @@ export default function App() {
       if (folderRef.current && !immichRef.current && parentDir(r.path) === folderRef.current)
         void showFolder(folderRef.current, true);
       return { text: `Converted positive: wrote ${baseName(r.path)}`, ok: true,
-               action: { label: "Open", run: () => openResult(r.path, r.image.imgid) } };
+               action: generatedAction(r.path, r.image.imgid) };
     }, "Export converted negative").finally(() => {
       negativeExportRunning.current = false;
       setNegativeExporting(false);
@@ -886,7 +894,7 @@ export default function App() {
       if (folderRef.current && !immichRef.current && parentDir(r.path) === folderRef.current)
         void showFolder(folderRef.current, true);
       return { text: `HDR Merge: wrote ${baseName(r.path)}`, ok: true,
-               action: { label: "Open", run: () => openResult(r.path, r.image.imgid) } };
+               action: generatedAction(r.path, r.image.imgid) };
     }, `HDR Merge of ${first?.filename ?? "the photos"}`);
   };
   // Lightroom's Photo Merge › Panorama, stitched by the engine with OpenCV:
@@ -903,7 +911,7 @@ export default function App() {
         void showFolder(folderRef.current, true);
       const left = r.frames - r.used;
       return { text: `Panorama Merge: wrote ${baseName(r.path)}${left ? `, without ${left} photo${left > 1 ? "s" : ""} that overlapped no other` : ""}`,
-               ok: true, action: { label: "Open", run: () => openResult(r.path, r.image.imgid) } };
+               ok: true, action: generatedAction(r.path, r.image.imgid) };
     }, `Panorama Merge of ${first?.filename ?? "the photos"}`);
   };
   // an outline the mask adds is traced inside its edge, so its feather ends
@@ -1613,6 +1621,7 @@ export default function App() {
   const dragging = useRef(false);
   const draftShown = useRef(false);
   const [loupeShown, setLoupeShown] = useState(false);
+  const [openGenerated, setOpenGenerated] = useState(loadOpenGenerated);
   const [loupeEnabled, setLoupeEnabled] = useState(loadLoupe);
   const [loupePicking, setLoupePicking] = useState(false);
   const loupeEnabledRef = useRef(true);
@@ -3142,15 +3151,16 @@ export default function App() {
   pluginReturned.current = async (r) => {
     returns.current.set(r.result, { original: r.original, result: r.result, plugin: r.plugin, applied: false });
     const w = waitingRef.current.find((x) => x.token === r.token);
-    setWaiting((all) => all.map((x) => (x.token === r.token ? { ...x, back: x.back + 1, opened: true } : x)));
+    // Claim the first result before awaiting the folder refresh or another return.
+    waitingRef.current = waitingRef.current.map((x) =>
+      x.token === r.token ? { ...x, back: x.back + 1, opened: true } : x);
+    setWaiting(waitingRef.current);
     if (folderRef.current && !immichRef.current && imagesRef.current.some((i) => i.path === r.original))
       await showFolder(folderRef.current, true);
-    if (w && !w.opened) {
-      await openFile(r.result);
-      setStatus(`${w.name}: opened ${baseName(r.result)}`);
-    } else {
-      setStatus(`${w?.name ?? "plugin"}: ${baseName(r.result)} is back`);
-    }
+    void runInBackground(`${w?.name ?? "Plugin"}: result`, async () => r, () => ({
+      text: `${w?.name ?? "Plugin"}: ${baseName(r.result)} is back`, ok: true,
+      action: generatedAction(r.result, undefined, !!w && !w.opened),
+    }), "Plugin result");
   };
   useEffect(() => {
     const offs = [
@@ -5745,7 +5755,7 @@ export default function App() {
       );
     })()}
     {prefsOpen && (
-      <PreferencesDialog loupe={loupeEnabled} onLoupe={(on) => { storeLoupe(on); setLoupeEnabled(on); loupeEnabledRef.current = on; setLoupePicking(false); setLoupeShown(false); if (on) session.current?.requestLoupe(); }} presets={[...BUILTIN_PRESETS, ...presets]} newPhotos={newPhotos}
+      <PreferencesDialog openGenerated={openGenerated} onOpenGenerated={(on) => { storeOpenGenerated(on); setOpenGenerated(on); }} loupe={loupeEnabled} onLoupe={(on) => { storeLoupe(on); setLoupeEnabled(on); loupeEnabledRef.current = on; setLoupePicking(false); setLoupeShown(false); if (on) session.current?.requestLoupe(); }} presets={[...BUILTIN_PRESETS, ...presets]} newPhotos={newPhotos}
                          onNewPhotos={(id) => { setNewPhotos(id); storeNewPhotosPreset(id); }}
                          onSaveCurrent={current ? () => setNewPreset("newPhotos") : null}
                          focus={prefsOpen === true ? undefined : prefsOpen}
