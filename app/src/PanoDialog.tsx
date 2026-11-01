@@ -65,8 +65,8 @@ export function PanoDialog({ count, onRun, onClose }: {
           {can === false
             ? <p className="note-plain warn">this build cannot stitch panoramas</p>
             : <p className="note-plain">
-                the {count} raws are stitched, with OpenCV, into a new DNG beside the first, with their lens
-                corrections. it opens as the first raw does, to be edited as one photo. Auto Crop cuts the empty
+                the {count} photos are stitched, with OpenCV, into a new DNG beside the first, with their lens
+                corrections. the result can be edited as one photo. Auto Crop cuts the empty
                 edges
               </p>}
         </div>

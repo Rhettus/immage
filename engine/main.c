@@ -3449,8 +3449,9 @@ static gboolean _pano_kept(const dt_iop_module_t *m)
 // lens's distortion gone, and one the user turned off (after DxO PureRAW)
 // stays off. `first` is the first frame's image, filled in by its call:
 // every other must come from the same camera, as the DNG has one color
-// matrix
-static gboolean _pano_frame(pano_t *p, const dt_imgid_t imgid, dt_image_t *first, char **err)
+// matrix. With rendered inputs, colorin and colorout instead convert all
+// frames to linear Rec.2020 and white balance stays applied.
+static gboolean _pano_frame(pano_t *p, const dt_imgid_t imgid, dt_image_t *first, const gboolean rendered, char **err)
 {
   dt_develop_t dev;
   dt_dev_init(&dev, FALSE);
@@ -3464,14 +3465,14 @@ static gboolean _pano_frame(pano_t *p, const dt_imgid_t imgid, dt_image_t *first
     *err = g_strdup_printf("cannot read '%s'", img->filename);
     goto early;
   }
-  if(!dt_image_is_raw(img) || (img->flags & DT_IMAGE_4BAYER))
+  if(img->flags & DT_IMAGE_4BAYER)
   {
-    *err = g_strdup_printf("'%s' is not a raw photo; Panorama Merge takes raws only", img->filename);
+    *err = g_strdup_printf("'%s' uses an unsupported four-color sensor", img->filename);
     goto early;
   }
   if(!dt_is_valid_imgid(first->id))
     *first = *img;
-  else if(g_strcmp0(first->camera_makermodel, img->camera_makermodel))
+  else if(!rendered && g_strcmp0(first->camera_makermodel, img->camera_makermodel))
   {
     *err = g_strdup_printf("'%s' is from another camera than '%s'", img->filename, first->filename);
     goto early;
@@ -3482,6 +3483,8 @@ static gboolean _pano_frame(pano_t *p, const dt_imgid_t imgid, dt_image_t *first
     *err = g_strdup("not enough memory for the photo");
     goto early;
   }
+  if(rendered)
+    dt_dev_pixelpipe_set_icc(&pipe, DT_COLORSPACE_LIN_REC2020, "", DT_INTENT_RELATIVE_COLORIMETRIC);
   gboolean lens_set = FALSE;
   for(GList *l = dev.history; l && l != g_list_nth(dev.history, dev.history_end); l = g_list_next(l))
     lens_set |= !g_strcmp0(((dt_dev_history_item_t *)l->data)->op_name, "lens");
@@ -3492,7 +3495,9 @@ static gboolean _pano_frame(pano_t *p, const dt_imgid_t imgid, dt_image_t *first
   for(GList *n = pipe.nodes; n; n = g_list_next(n))
   {
     dt_dev_pixelpipe_iop_t *piece = n->data;
-    if(!_pano_kept(piece->module))
+    if(!_pano_kept(piece->module)
+       && !(rendered && (!g_strcmp0(piece->module->op, "colorin")
+                         || !g_strcmp0(piece->module->op, "colorout"))))
       piece->enabled = FALSE;
     else if(!lens_set && !g_strcmp0(piece->module->op, "lens"))
       piece->enabled = TRUE;
@@ -3500,7 +3505,7 @@ static gboolean _pano_frame(pano_t *p, const dt_imgid_t imgid, dt_image_t *first
   // the white balance temperature applied (its commit_params), divided out
   float unbalance[3];
   for(int c = 0; c < 3; c++)
-    unbalance[c] = dev.chroma.wb_coeffs[c] > 0.0f ? 1.0f / dev.chroma.wb_coeffs[c] : 1.0f;
+    unbalance[c] = !rendered && dev.chroma.wb_coeffs[c] > 0.0f ? 1.0f / dev.chroma.wb_coeffs[c] : 1.0f;
   dt_dev_pixelpipe_get_dimensions(&pipe, &dev, pipe.iwidth, pipe.iheight, &pipe.processed_width,
                                   &pipe.processed_height);
   const int w = pipe.processed_width, h = pipe.processed_height;
@@ -3535,7 +3540,9 @@ static void _pano_written(const int done, const int total, void *data)
   _merge_report(data, "writing the DNG", done, total, TRUE);
 }
 
-// Photo Merge › Panorama: the raws `imgids` stitched (pano.cc) into a DNG
+static gboolean _positive_import(const char *path, JsonBuilder *b, char **err);
+
+// Photo Merge › Panorama: the photos `imgids` stitched (pano.cc) into a DNG
 // beside the first, <name>-pano.dng or -pano_01.dng..., that opens as the
 // first did (dng.c), with its EXIF. `projection` is "auto", "spherical",
 // "cylindrical" or "perspective"; `crop` cuts the edges the frames leave
@@ -3566,6 +3573,18 @@ static gboolean _pano_merge(JsonObject *req, JsonBuilder *b, FILE *out, char **e
   for(size_t k = 0; k < G_N_ELEMENTS(projections); k++)
     if(!g_strcmp0(asked, projections[k].name)) projection = projections[k].type;
 
+  // A selection containing rendered photos uses one common linear space,
+  // including any RAW frames in that selection.
+  gboolean rendered = FALSE;
+  for(GList *l = imgids; l; l = g_list_next(l))
+  {
+    const dt_image_t *img = dt_image_cache_get(GPOINTER_TO_INT(l->data), 'r');
+    if(img)
+    {
+      rendered |= !dt_image_is_raw(img);
+      dt_image_cache_read_release(img);
+    }
+  }
   const gint64 t0 = g_get_monotonic_time();
   const dt_imgid_t first = GPOINTER_TO_INT(imgids->data);
   dt_image_t first_img = { 0 };
@@ -3582,7 +3601,7 @@ static gboolean _pano_merge(JsonObject *req, JsonBuilder *b, FILE *out, char **e
       ok = FALSE;
     }
     else
-      ok = _pano_frame(p, GPOINTER_TO_INT(l->data), &first_img, err);
+      ok = _pano_frame(p, GPOINTER_TO_INT(l->data), &first_img, rendered, err);
   }
   g_list_free(imgids);
   int w = 0, h = 0, used = 0;
@@ -3610,8 +3629,10 @@ static gboolean _pano_merge(JsonObject *req, JsonBuilder *b, FILE *out, char **e
   // written under another name and renamed once whole, so a folder read
   // meanwhile never imports half of it. too late to stop by then
   gchar *part = g_strdup_printf("%s.part", pathname);
-  ok = !dng_write_linear_half(part, rgb, w, h, &first_img, exif, exif_len, _pano_written, &progress)
-       && !g_rename(part, pathname);
+  ok = !(rendered
+    ? dng_write_rendered_rgb_half(part, rgb, w, h, exif, exif_len, _pano_written, &progress)
+    : dng_write_linear_half(part, rgb, w, h, &first_img, exif, exif_len, _pano_written, &progress))
+    && !g_rename(part, pathname);
   free(exif);
   g_free(rgb);
   if(!ok)
@@ -3624,18 +3645,28 @@ static gboolean _pano_merge(JsonObject *req, JsonBuilder *b, FILE *out, char **e
   }
   g_free(part);
 
-  const dt_imgid_t newid = _import(pathname);
-  if(!dt_is_valid_imgid(newid))
+  if(rendered)
   {
+    ok = _positive_import(pathname, b, err);
+    if(ok) _add_string(b, "original", original);
     g_free(original);
-    *err = g_strdup_printf("cannot import %s", pathname);
-    return FALSE;
+    if(!ok) return FALSE;
   }
-  _add_string(b, "path", pathname);
-  _add_string(b, "original", original);
-  g_free(original);
-  json_builder_set_member_name(b, "image");
-  _image_json(b, newid, FALSE);
+  else
+  {
+    const dt_imgid_t newid = _import(pathname);
+    if(!dt_is_valid_imgid(newid))
+    {
+      g_free(original);
+      *err = g_strdup_printf("cannot import %s", pathname);
+      return FALSE;
+    }
+    _add_string(b, "path", pathname);
+    _add_string(b, "original", original);
+    g_free(original);
+    json_builder_set_member_name(b, "image");
+    _image_json(b, newid, FALSE);
+  }
   json_builder_set_member_name(b, "used");
   json_builder_add_int_value(b, used);
   json_builder_set_member_name(b, "frames");
