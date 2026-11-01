@@ -691,7 +691,7 @@ The normal Linux jobs in `.github/workflows/build.yml` build x86-64 and ARM64
 AppImages on Ubuntu 22.04 (glibc 2.35), retaining compatibility with Linux Mint
 22.x. The image libraries from `build_linux_deps.sh` are installed first so
 ARM64 has JPEG XL available. `.github/ubuntu-packages.txt` lists WebKit's
-GTK3 build dependencies explicitly. Do not install Jammy's broad WebKit
+GTK3 build dependencies explicitly, including LibXslt development headers. Do not install Jammy's broad WebKit
 source build dependencies or `libgstreamer-plugins-bad1.0-dev`: they pull in
 distribution OpenCV, VTK and FFmpeg, conflicting with the image-library PPAs
 and ARM64's source-built OpenEXR/Imath. WebKit keeps video and WebAudio enabled;

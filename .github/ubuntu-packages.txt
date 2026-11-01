@@ -92,6 +92,7 @@ unifdef
 gobject-introspection
 libgirepository1.0-dev
 libgcrypt20-dev
+libxslt1-dev
 libtasn1-6-dev
 libharfbuzz-dev
 libharfbuzz-icu0
