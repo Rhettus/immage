@@ -116,6 +116,8 @@ Performance
 
 Bug fixes
 
+- Fix conflicting Linux build dependencies for the bundled webview on x86-64
+  and ARM64.
 - Windows icon buttons use a consistent arrow cursor so toolbar icons no
   longer appear to overlap the hand pointer.
 - Windows builds correctly detect the bundled static OpenCV libraries, enabling

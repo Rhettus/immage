@@ -52,7 +52,8 @@ Immage keeps to make it so.
 **Interface rendering** (Linux)
 
 Official Linux AppImages bundle WebKitGTK and JavaScriptCore 2.54.2 and
-keep the Ubuntu 22.04 runtime baseline, including Linux Mint 22.x. GUI benchmark
+keep the Ubuntu 22.04 runtime baseline, including Linux Mint 22.x. The bundled
+webview retains video and audio support; MPEG-TS and WebRTC are not enabled. GUI benchmark
 reports record the running WebKitGTK version; use a new build when comparing
 renderer behavior after upgrading. On Wayland, **Drag drafts at the screen’s
 scale** still sizes reduced drag previews for the compositor’s actual fractional

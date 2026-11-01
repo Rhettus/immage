@@ -78,3 +78,42 @@ libjavascriptcoregtk-4.1-dev
 libsoup-3.0-dev
 libayatana-appindicator3-dev
 libssl-dev
+
+# WebKitGTK 2.54.2 (GTK3): explicit dependencies instead of Jammy's
+# source-package build-deps. In particular, gst-plugins-bad's development
+# package pulls in distribution OpenCV, VTK and FFmpeg, which conflict with
+# the image-library PPAs and the source-built OpenEXR on ARM64.
+lld
+bison
+flex
+gperf
+ruby
+unifdef
+gobject-introspection
+libgirepository1.0-dev
+libgcrypt20-dev
+libtasn1-6-dev
+libharfbuzz-dev
+libharfbuzz-icu0
+libicu-dev
+libepoxy-dev
+libatk-bridge2.0-dev
+libsecret-1-dev
+libhyphen-dev
+libenchant-2-dev
+libmanette-0.2-dev
+libsystemd-dev
+libdrm-dev
+libgbm-dev
+libegl1-mesa-dev
+libgles2-mesa-dev
+libwayland-dev
+wayland-protocols
+libwoff-dev
+flite1-dev
+libgstreamer1.0-dev
+libgstreamer-plugins-base1.0-dev
+libgstreamer-gl1.0-0
+libseccomp-dev
+bubblewrap
+xdg-dbus-proxy

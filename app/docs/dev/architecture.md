@@ -690,8 +690,15 @@ filters and facet counts. Run `npm run build` in `app` for frontend validation.
 The normal Linux jobs in `.github/workflows/build.yml` build x86-64 and ARM64
 AppImages on Ubuntu 22.04 (glibc 2.35), retaining compatibility with Linux Mint
 22.x. The image libraries from `build_linux_deps.sh` are installed first so
-ARM64 has JPEG XL available. Flite development files are installed explicitly
-in addition to Jammy's WebKit build dependencies. With those installed,
+ARM64 has JPEG XL available. `.github/ubuntu-packages.txt` lists WebKit's
+GTK3 build dependencies explicitly. Do not install Jammy's broad WebKit
+source build dependencies or `libgstreamer-plugins-bad1.0-dev`: they pull in
+distribution OpenCV, VTK and FFmpeg, conflicting with the image-library PPAs
+and ARM64's source-built OpenEXR/Imath. WebKit keeps video and WebAudio enabled;
+MPEG-TS and GStreamer WebRTC are disabled. CI pins libunwind runtime and headers
+to Ubuntu together and removes conflicting LLVM 14 development headers.
+Verify both Linux package-install steps before checking compilation and the
+packaging tests; local shell checks cannot establish APT resolution. With those installed,
 `app/scripts/build_webkitgtk.sh` builds SHA-256-pinned WebKitGTK 2.54.2 using
 GTK 3, JavaScriptCore and matching helpers, then installs them into `/usr`
 for Tauri to bundle. Build compilers remain GCC 12 on x86-64 and GCC 14 on
