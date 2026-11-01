@@ -142,3 +142,16 @@ These are synthetic costs, excluding anchor upload, native rendering,
 histograms and full-app composition. Repeated draws must upload no textures.
 Software-rendered browser timings do not establish hardware GPU performance;
 use the app's GUI benchmark for final input-to-paint latency and frame pacing.
+
+## Scaled checkpoint retention
+
+Exercise cache churn beyond its entry count, the three-checkpoint bound,
+invalidation, memory trimming and the two-buffer fallback:
+
+```bash
+cmake --build build --target immage-checkpoint-check
+build/bin/immage-checkpoint-check
+```
+
+After cache structure changes, rebuild the full tree before rendering so the
+engine and dynamically loaded image-processing modules use the same layout.

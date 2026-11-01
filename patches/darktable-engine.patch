@@ -463,7 +463,7 @@ index 2afb4f5ba8..65a307692b 100644
        {
          // use embedded JPEG if it is large enough or conf requests
 diff --git a/src/develop/pixelpipe_cache.c b/src/develop/pixelpipe_cache.c
-index a1bd507d81..fc3268e0dc 100644
+index a1bd507d81..c046f41f88 100644
 --- a/src/develop/pixelpipe_cache.c
 +++ b/src/develop/pixelpipe_cache.c
 @@ -23,6 +23,18 @@
@@ -485,7 +485,28 @@ index a1bd507d81..fc3268e0dc 100644
  gboolean dt_dev_pixelpipe_cache_init(dt_dev_pixelpipe_t *pipe,
                                       const int entries,
                                       const size_t size,
-@@ -323,6 +335,11 @@ gboolean dt_dev_pixelpipe_cache_get(dt_dev_pixelpipe_t *pipe,
+@@ -33,6 +45,7 @@ gboolean dt_dev_pixelpipe_cache_init(dt_dev_pixelpipe_t *pipe,
+   cache->entries = entries;
+   cache->allmem = cache->max_allmem = cache->hits = cache->calls = cache->tests = 0;
+   cache->mem_fraction = fraction;
++  for(int k = 0; k < 3; k++) cache->checkpoints[k] = DT_INVALID_HASH;
+
+   const size_t csize = sizeof(void *) + sizeof(size_t) + sizeof(dt_iop_buffer_dsc_t) + 2*sizeof(int32_t) + sizeof(uint64_t);
+   cache->data = (void **) calloc(entries, csize);
+@@ -205,6 +218,12 @@ static int _get_oldest_cacheline(dt_dev_pixelpipe_cache_t *cache,
+   for(int k = DT_PIPECACHE_MIN; k < cache->entries; k++)
+   {
+     gboolean older = (cache->used[k] > age) && (k != cache->lastline);
++    if(older && mode == DT_CACHETEST_PLAIN && cache->hash[k] != DT_INVALID_HASH)
++    {
++      // scaled checkpoints survive ordinary churn, but remain eligible for memory cleanup
++      for(int c = 0; c < 3; c++)
++        if(cache->checkpoints[c] == cache->hash[k]) older = FALSE;
++    }
+     if(older)
+     {
+       if(mode == DT_CACHETEST_USED)         older = cache->data[k] != NULL;
+@@ -323,6 +342,11 @@ gboolean dt_dev_pixelpipe_cache_get(dt_dev_pixelpipe_t *pipe,
    // Check both for free and non-matching (and grow or shrink buffer).
    const int cline = _get_cacheline(pipe);
 
@@ -497,7 +518,7 @@ index a1bd507d81..fc3268e0dc 100644
    if(((cache->entries == DT_PIPECACHE_MIN) && (cache->size[cline] < size))
       || ((cache->entries > DT_PIPECACHE_MIN) && (cache->size[cline] != size)))
    {
-@@ -377,6 +394,9 @@ void dt_dev_pixelpipe_cache_invalidate_later(dt_dev_pixelpipe_t *pipe,
+@@ -377,6 +401,9 @@ void dt_dev_pixelpipe_cache_invalidate_later(dt_dev_pixelpipe_t *pipe,
    {
      if((cache->ioporder[k] >= order) && (cache->hash[k] != DT_INVALID_HASH))
      {
@@ -507,7 +528,32 @@ index a1bd507d81..fc3268e0dc 100644
        cache->hash[k] = DT_INVALID_HASH;
        invalidated++;
      }
-@@ -420,6 +440,9 @@ void dt_dev_pixelpipe_invalidate_cacheline(const dt_dev_pixelpipe_t *pipe,
+@@ -411,6 +438,24 @@ void dt_dev_pixelpipe_important_cacheline(const dt_dev_pixelpipe_t *pipe,
+   }
+ }
+
++void dt_dev_pixelpipe_retain_checkpoint(dt_dev_pixelpipe_t *pipe,
++                                       const void *data,
++                                       const size_t size)
++{
++  dt_dev_pixelpipe_cache_t *cache = &pipe->cache;
++  for(int k = DT_PIPECACHE_MIN; k < cache->entries; k++)
++  {
++    if(cache->data[k] != data || cache->size[k] != size || cache->hash[k] == DT_INVALID_HASH)
++      continue;
++    int slot = 2;
++    for(int c = 0; c < 3; c++)
++      if(cache->checkpoints[c] == cache->hash[k]) slot = c;
++    for(int c = slot; c > 0; c--) cache->checkpoints[c] = cache->checkpoints[c - 1];
++    cache->checkpoints[0] = cache->hash[k];
++    return;
++  }
++}
++
+ void dt_dev_pixelpipe_invalidate_cacheline(const dt_dev_pixelpipe_t *pipe,
+                                            const void *data,
+                                            const char *info)
+@@ -420,6 +465,9 @@ void dt_dev_pixelpipe_invalidate_cacheline(const dt_dev_pixelpipe_t *pipe,
    {
      if(cache->data[k] == data && cache->hash[k] != DT_INVALID_HASH)
      {
@@ -517,7 +563,7 @@ index a1bd507d81..fc3268e0dc 100644
        cache->hash[k] = DT_INVALID_HASH;
        if(info)
          dt_print_pipe(DT_DEBUG_PIPE, "invalidate cacheline", pipe, NULL, pipe->devid, NULL, NULL,
-@@ -450,6 +473,9 @@ void dt_dev_pixelpipe_clear_cacheline(dt_dev_pixelpipe_t *pipe,
+@@ -450,6 +498,9 @@ void dt_dev_pixelpipe_clear_cacheline(dt_dev_pixelpipe_t *pipe,
    {
      if(cache->data[k] == data)
      {
@@ -527,7 +573,7 @@ index a1bd507d81..fc3268e0dc 100644
        _free_cacheline(cache, k);
        if(info)
          dt_print_pipe(DT_DEBUG_PIPE | DT_DEBUG_VERBOSE,
-@@ -513,6 +539,10 @@ void dt_dev_pixelpipe_cache_checkmem(dt_dev_pixelpipe_t *pipe, const gboolean tr
+@@ -513,6 +564,10 @@ void dt_dev_pixelpipe_cache_checkmem(dt_dev_pixelpipe_t *pipe, const gboolean tr
      const int k = _get_oldest_cacheline(cache, DT_CACHETEST_USED);
      if(k == 0) break;
 
@@ -539,7 +585,7 @@ index a1bd507d81..fc3268e0dc 100644
      free_cnt++;
    }
 diff --git a/src/develop/pixelpipe_cache.h b/src/develop/pixelpipe_cache.h
-index 20358e4796..a7eaab0862 100644
+index 20358e4796..8ca2e03b66 100644
 --- a/src/develop/pixelpipe_cache.h
 +++ b/src/develop/pixelpipe_cache.h
 @@ -20,6 +20,10 @@
@@ -553,8 +599,26 @@ index 20358e4796..a7eaab0862 100644
  struct dt_dev_pixelpipe_t;
  struct dt_iop_buffer_dsc_t;
  struct dt_iop_roi_t;
+@@ -44,6 +48,7 @@ typedef struct dt_dev_pixelpipe_cache_t
+   int32_t *ioporder;
+   uint64_t calls;
+   int32_t lastline;
++  dt_hash_t checkpoints[3];
+   // profiling
+   uint64_t tests;
+   uint64_t hits;
+@@ -87,6 +92,9 @@ void dt_dev_pixelpipe_cache_invalidate_later(struct dt_dev_pixelpipe_t *pipe, co
+ /** makes this buffer very important after it has been pulled from the cache. */
+ void dt_dev_pixelpipe_important_cacheline(const struct dt_dev_pixelpipe_t *pipe, const void *data, const size_t size);
+
++/** retain up to three scaled headless checkpoints against ordinary replacement */
++void dt_dev_pixelpipe_retain_checkpoint(struct dt_dev_pixelpipe_t *pipe, const void *data, const size_t size);
++
+ /** mark the given cache line as invalid or to be ignored */
+ void dt_dev_pixelpipe_invalidate_cacheline(const struct dt_dev_pixelpipe_t *pipe, const void *data, const char *info);
+
 diff --git a/src/develop/pixelpipe_hb.c b/src/develop/pixelpipe_hb.c
-index a7e5b88a37..638917ed3a 100644
+index a7e5b88a37..f0d5a295af 100644
 --- a/src/develop/pixelpipe_hb.c
 +++ b/src/develop/pixelpipe_hb.c
 @@ -2221,6 +2221,19 @@ static gboolean _dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe,
@@ -606,7 +670,7 @@ index a7e5b88a37..638917ed3a 100644
 
  #ifdef HAVE_OPENCL
 
-@@ -3249,10 +3273,11 @@ static gboolean _dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe,
+@@ -3249,12 +3273,15 @@ static gboolean _dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe,
    if(important_input && input)
    {
      dt_print_pipe(DT_DEBUG_PIPE,
@@ -619,7 +683,11 @@ index a7e5b88a37..638917ed3a 100644
 +                scaled_input ? "scaled_input " : "");
 
      dt_dev_pixelpipe_important_cacheline(pipe, input, roi_in.width * roi_in.height * in_bpp);
++    if(scaled_input && !pipe->nocache)
++      dt_dev_pixelpipe_retain_checkpoint(pipe, input, roi_in.width * roi_in.height * in_bpp);
    }
+
+   if(dt_pipe_mask_display(pipe))
 diff --git a/src/imageio/imageio.c b/src/imageio/imageio.c
 index d7b5a79ef4..9b8340e4ff 100644
 --- a/src/imageio/imageio.c
