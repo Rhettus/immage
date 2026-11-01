@@ -20,6 +20,9 @@ if [ ! -f "$notice" ] || ! head -n 1 "$notice" | grep -qx "WebKitGTK $v"; then
   rm -rf "$work/src" "$work/compile" "$stage"
   mkdir -p "$work/src"
   tar -xJf "$work/source.tar.xz" -C "$work/src" --strip-components=1
+  # Upstream requires MPEG-TS whenever video is enabled, even with its
+  # option off. Its includes and code are already guarded by that option.
+  patch -d "$work/src" -p1 < "$root/patches/webkitgtk-optional-mpegts.patch"
   # match Ubuntu's multiarch helper location: Tauri searches it and the
   # GTK bundling hook relocates /usr paths inside the library
   # CI installs explicit GTK3 dependencies; MPEG-TS and WebRTC would

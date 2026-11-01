@@ -290,14 +290,14 @@ jobs:
         if: ${{ !inputs.release }}
         with:
           path: build/webkitgtk/install
-          key: webkitgtk-2.54.2-ubuntu22-${{ matrix.arch }}-${{ hashFiles('app/scripts/build_webkitgtk.sh') }}
+          key: webkitgtk-2.54.2-ubuntu22-${{ matrix.arch }}-${{ hashFiles('app/scripts/build_webkitgtk.sh', 'patches/webkitgtk-*.patch') }}
       - name: build WebKitGTK 2.54.2
         run: sh app/scripts/build_webkitgtk.sh
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: ${{ !inputs.release && steps.webkit-cache.outputs.cache-hit != 'true' }}
         with:
           path: build/webkitgtk/install
-          key: webkitgtk-2.54.2-ubuntu22-${{ matrix.arch }}-${{ hashFiles('app/scripts/build_webkitgtk.sh') }}
+          key: webkitgtk-2.54.2-ubuntu22-${{ matrix.arch }}-${{ hashFiles('app/scripts/build_webkitgtk.sh', 'patches/webkitgtk-*.patch') }}
       - uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
         if: ${{ !inputs.release }}
         with:

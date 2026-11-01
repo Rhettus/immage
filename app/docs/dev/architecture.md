@@ -695,7 +695,12 @@ GTK3 build dependencies explicitly, including LibXslt development headers. Do no
 source build dependencies or `libgstreamer-plugins-bad1.0-dev`: they pull in
 distribution OpenCV, VTK and FFmpeg, conflicting with the image-library PPAs
 and ARM64's source-built OpenEXR/Imath. WebKit keeps video and WebAudio enabled;
-MPEG-TS and GStreamer WebRTC are disabled. CI pins libunwind runtime and headers
+MPEG-TS and GStreamer WebRTC are disabled. The pinned WebKit source is patched
+by `patches/webkitgtk-optional-mpegts.patch` so its CMake component list honors
+`USE_GSTREAMER_MPEGTS=OFF` with video enabled; upstream's C++ code already guards
+the MPEG-TS includes and calls with that flag. Apply the patch to the pinned
+tarball and check CMake component resolution with the flag both off and on when
+updating WebKit. The patch hash participates in the staged WebKit cache key. CI pins libunwind runtime and headers
 to Ubuntu together and removes conflicting LLVM 14 development headers.
 Verify both Linux package-install steps before checking compilation and the
 packaging tests; local shell checks cannot establish APT resolution. With those installed,

@@ -1,0 +1,14 @@
+--- a/Source/cmake/GStreamerChecks.cmake
++++ b/Source/cmake/GStreamerChecks.cmake
+@@ -9,7 +9,10 @@
+       else ()
+           set(GSTREAMER_COMPONENTS app pbutils)
+           if (ENABLE_VIDEO)
+-              list(APPEND GSTREAMER_COMPONENTS video mpegts tag gl)
++              list(APPEND GSTREAMER_COMPONENTS video tag gl)
++          endif ()
++          if (USE_GSTREAMER_MPEGTS)
++              list(APPEND GSTREAMER_COMPONENTS mpegts)
+           endif ()
+ 
+           if (ENABLE_WEB_AUDIO)
