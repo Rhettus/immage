@@ -796,3 +796,16 @@ index b92768d02c..20c006236a 100644
  #endif
 
    if(tiff == NULL) return 0;
+diff --git a/cmake/modules/FindONNXRuntime.cmake b/cmake/modules/FindONNXRuntime.cmake
+index 6827133a6d..2cd7c9f630 100644
+--- a/cmake/modules/FindONNXRuntime.cmake
++++ b/cmake/modules/FindONNXRuntime.cmake
+@@ -152,7 +152,7 @@ if(NOT _ORT_HEADER OR NOT _ORT_LIBRARY)
+   endif()
+
+   if(_ORT_NUGET)
+-    set(_ORT_URL "https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime.DirectML/${_ORT_VER}")
++    set(_ORT_URL "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.directml/${_ORT_VER}/${_ORT_PACKAGE}")
+   else()
+     set(_ORT_URL "https://github.com/microsoft/onnxruntime/releases/download/v${_ORT_VER}/${_ORT_PACKAGE}")
+   endif()
