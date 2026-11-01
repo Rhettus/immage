@@ -239,6 +239,28 @@ gboolean rendered_metadata(const char *path, const void *blob, const int size, c
   }
 }
 
+gboolean denoised_metadata(const char *path)
+{
+  try
+  {
+    _lock lock;
+#if defined(_WIN32) && defined(EXV_UNICODE_PATH)
+    gunichar2 *wide = g_utf8_to_utf16(path, -1, NULL, NULL, NULL);
+    auto image = Exiv2::ImageFactory::open(std::wstring((const wchar_t *)wide));
+    g_free(wide);
+#else
+    auto image = Exiv2::ImageFactory::open(path);
+#endif
+    image->readMetadata();
+    // Keep the source ISO, but prevent automatic denoise presets from
+    // processing pixels that the model has already denoised.
+    image->xmpData()["Xmp.darktable.neural_restore"] = "raw-denoise";
+    image->writeMetadata();
+    return TRUE;
+  }
+  catch(const std::exception &) { return FALSE; }
+}
+
 // XMP has no standard deletion value for GPS. Mark Immage sidecars as
 // authoritative so missing fields override GPS embedded in the source.
 gboolean location_sidecar_mark(const char *path)

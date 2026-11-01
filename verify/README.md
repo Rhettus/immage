@@ -25,6 +25,10 @@ node --test verify/panorama.test.mjs verify/negative-export.test.mjs
 
 The panorama check also verifies previews for all projections, Auto's resolved
 projection, RGBA coverage and crop bounds, and that previewing writes no DNG.
+Set `IMMAGE_TEST_RAW=/path/to/photo.ORF` to additionally check HDR and all-RAW panorama merges:
+DNG identification and calibration tags survive EXIF copying, the thumbnail
+loads, and pixels render before and after an engine restart. The RAW fixture
+is copied into the temporary workspace; its original is left untouched.
 Run `node verify/panorama-ui.mjs` for the panel's canvas, caching, cancellation,
 stale-reply, retry and merge-settings checks in headless Chromium.
 

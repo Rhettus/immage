@@ -5264,8 +5264,10 @@ static gboolean _denoise_write(const dt_restore_sensor_class_t cls, const dt_ima
   const int exif_len = dt_exif_read_blob(&exif, src, imgid, FALSE, w, h, TRUE);
   dt_imageio_dng_preview_t preview = { 0 };
   uint8_t *jpeg = _denoise_preview(src, &preview);
-  const int res = cfa ? dt_imageio_dng_write_cfa_bayer(out, cfa, w, h, meta, exif, exif_len, jpeg ? &preview : NULL)
-                      : dt_imageio_dng_write_linear(out, rgb, w, h, meta, exif, exif_len, jpeg ? &preview : NULL);
+  int res = cfa ? dt_imageio_dng_write_cfa_bayer(out, cfa, w, h, meta, NULL, 0, jpeg ? &preview : NULL)
+                : dt_imageio_dng_write_linear(out, rgb, w, h, meta, NULL, 0, jpeg ? &preview : NULL);
+  if(!res && !rendered_metadata(out, exif, exif_len, TRUE)) res = 1;
+  if(!res && !denoised_metadata(out)) res = 1;
   g_free(jpeg);
   free(exif);
   g_free(cfa);
@@ -5276,10 +5278,6 @@ static gboolean _denoise_write(const dt_restore_sensor_class_t cls, const dt_ima
     *err = g_strdup_printf("cannot write %s", out);
     return FALSE;
   }
-  // after the writer, which merges the source's exif in over an earlier
-  // stamp. darktable then skips its auto-applied denoise presets on the
-  // file, which keeps the raw's ISO (develop.c, _dev_auto_apply_presets)
-  dt_exif_xmp_write_neural_restore(out, "raw-denoise");
   return TRUE;
 }
 

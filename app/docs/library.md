@@ -180,6 +180,10 @@ picture: it opens with the new-photo defaults and is edited like any
 raw, with Exposure, Highlights and Shadows bringing the range in. The
 brackets themselves aren't changed.
 
+HDR DNGs preserve their format identification, color calibration and sensor
+pattern when copying the brackets' EXIF, and can also open in darktable.
+Regenerate an older merge if it shows a **?** thumbnail and cannot open.
+
 The brackets must be raws from the same camera, of the same size and
 orientation. Anything that moves between them, such as people or
 leaves, shows as a ghost: Auto Align lines up the camera's movement,
@@ -223,6 +227,11 @@ off. A selection containing non-RAW photos uses a common linear color space
 and a neutral starting edit. The DNG is edited as one photo. The other edits
 of the photos you merged aren't used, and the photos themselves aren't
 changed.
+
+Panorama DNGs can also be opened in darktable. RAW merges preserve the DNG's
+format identification, camera color matrix and white balance when copying
+the source photo's EXIF. If an older RAW merge shows a **?** thumbnail and
+cannot open, merge the original photos again with the updated version.
 
 The photos should overlap by a third or so. A photo that overlaps none of
 the others is left out, and the activity line says so. Stitching runs on OpenCV rather than darktable,

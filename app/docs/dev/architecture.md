@@ -253,6 +253,17 @@ revision it was copied from. Compare the two
 when taking a new darktable release. `_hdr_merge` in main.c imports the
 DNG; a tagged one runs on the export thread (`_export_run`), as it reads
 each bracket through an export pipe.
+The float writer receives no EXIF; `hdr_merge` then merges it through
+`rendered_metadata` so the generated DNG tags and CFA pattern survive.
+An EXIF-write failure removes the temporary output instead of importing it.
+The RAW regression in `verify/panorama.test.mjs` checks HDR as well as panorama
+thumbnails, rendering and reopening after engine restart.
+
+AI Denoise's `_denoise_write` likewise calls the CFA or linear DNG writer
+without EXIF, then uses `rendered_metadata` and `denoised_metadata` in
+`strip.cc`. The latter reads existing metadata before adding the
+`Xmp.darktable.neural_restore` marker, preserving DNG tags and previews while
+preventing automatic denoise presets. Either metadata failure deletes the output.
 
 [`engine/pano.cc`](../../../engine/pano.cc) is Panorama Merge, which
 darktable doesn't have: OpenCV's stitching pipeline (`cv::detail`, as
@@ -266,6 +277,13 @@ LinearRaw DNG with the first raw's matrix and white balance as shot,
 which darktable opens as a raw. Selections containing non-RAW images instead
 render into common linear Rec.2020 with white balance applied, write the DNG
 in that space and use `_positive_import` for neutral starting history.
+Both paths merge source EXIF through `rendered_metadata`, which reads the
+generated TIFF metadata first and preserves its DNG identification, calibration,
+orientation and software tags. Do not use `dt_exif_write_blob` here: it drops
+the generated DNG tags, causing RAW-camera decoders to be selected instead.
+Metadata-write failures remove the incomplete output. Run
+`IMMAGE_TEST_RAW=/path/to/photo.ORF node --test verify/panorama.test.mjs`
+to check RAW-merge tags, thumbnails, rendering and reopening after engine restart.
 `_pano_merge` imports it; a tagged one
 runs on the export thread. Both are built only when OpenCV's stitching
 module is found (`HAVE_PANO`, `engine/CMakeLists.txt`).

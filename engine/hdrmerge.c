@@ -30,6 +30,7 @@
 // these with control_jobs.c when taking a new darktable release
 
 #include "hdrmerge.h"
+#include "strip.h"
 
 #include "common/darktable.h"
 #include "common/debug.h"
@@ -544,15 +545,19 @@ gchar *hdr_merge(GList *imgids, const gboolean align, hdr_merge_step_t step, voi
                              d.pixels,
                              d.wd,
                              d.ht,
-                             exif,
-                             exif_len,
+                             NULL,
+                             0,
                              d.first_filter,
                              (const uint8_t (*)[6])d.first_xtrans,
                              1.0f,
                              (const float (*))d.wb_coeffs,
                              d.adobe_XYZ_to_CAM);
+  // Preserve the writer's DNG/CFA tags. It supplies no Make/Model, so
+  // copy those from the source rather than protecting them as rendered DNGs do.
+  const gboolean metadata_ok = g_file_test(part, G_FILE_TEST_IS_REGULAR)
+    && rendered_metadata(part, exif, exif_len, FALSE);
   free(exif);
-  if(!g_file_test(part, G_FILE_TEST_IS_REGULAR) || g_rename(part, pathname))
+  if(!metadata_ok || g_rename(part, pathname))
   {
     g_unlink(part);
     d.err = g_strdup_printf("cannot write %s", pathname);

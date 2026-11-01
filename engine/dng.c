@@ -134,7 +134,10 @@ static int _write_half(const char *filename, const float *rgb, const int width, 
   g_free(row);
   TIFFClose(tif);
 
-  if(!res && exif && exif_len > 0) dt_exif_write_blob((uint8_t *)exif, (uint32_t)exif_len, filename, 0);
+  // Read back our metadata before merging the source EXIF. The generic
+  // blob writer replaces it, dropping DNGVersion and the calibration tags;
+  // a camera-labelled panorama is then mistaken for that camera's raw.
+  if(!res && !rendered_metadata(filename, exif, exif_len, TRUE)) res = 1;
   if(res) g_unlink(filename);
   return res;
 }

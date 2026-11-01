@@ -102,6 +102,9 @@ Performance
 
 Bug fixes
 
+- HDR, RAW panorama and AI Denoise DNGs retain their format and color
+  calibration metadata, so thumbnails display and the generated photo opens
+  for editing in Immage and darktable.
 - Reset All clears native module settings as well as sliders, including edits
   imported from darktable that Immage has no controls for. Legacy Filmic and
   Base Curve tone mappers switch off so they cannot compress highlights after

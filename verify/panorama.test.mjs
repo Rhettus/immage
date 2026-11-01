@@ -9,6 +9,52 @@ import { fileURLToPath } from "node:url";
 import { startEngine, stopEngine, request, requestTagged } from "./shim.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
+for (const cmd of ["hdr_merge", "pano_merge"]) {
+  test(`${cmd} preserves DNG identification, calibration and readable pixels`, async (t) => {
+    const source = process.env.IMMAGE_TEST_RAW;
+    if (!source) return t.skip("set IMMAGE_TEST_RAW to a camera RAW fixture");
+    const dir = mkdtempSync(join(tmpdir(), "immage-raw-pano-"));
+    const runtime = join(dir, "runtime");
+    const binary = join(root, "build/bin/darktable-engine");
+    startEngine(binary, runtime);
+    try {
+      if (!(await request({ cmd: "version" })).pano && cmd === "pano_merge") return t.skip("OpenCV stitching unavailable");
+      const suffix = source.slice(source.lastIndexOf("."));
+      const files = [join(dir, "a" + suffix), join(dir, "b" + suffix)];
+      for (const path of files) copyFileSync(source, path);
+      const { images } = await request({ cmd: "import", files });
+      const result = await requestTagged({ cmd, imgids: images.map(i => i.imgid), projection: "perspective", crop: true, align: false });
+      if (cmd === "pano_merge") assert.equal(result.used, 2);
+      // Check the actual TIFF directory, independently of darktable's import cache.
+      const bytes = readFileSync(result.path);
+      const le = bytes.toString("ascii", 0, 2) === "II";
+      const u16 = at => le ? bytes.readUInt16LE(at) : bytes.readUInt16BE(at);
+      const u32 = at => le ? bytes.readUInt32LE(at) : bytes.readUInt32BE(at);
+      const ifd = u32(4), tags = new Set();
+      for (let i = 0; i < u16(ifd); i++) tags.add(u16(ifd + 2 + i * 12));
+      for (const tag of [50706, 50721, 50728, 50778])
+        assert.ok(tags.has(tag), `DNG identification/calibration tag ${tag} must survive source EXIF`);
+      await request({ cmd: "thumb", imgid: result.image.imgid, size: 240, out: join(dir, "thumb.rgba") });
+      assert.ok(readFileSync(join(dir, "thumb.rgba")).length > 0);
+      for (let pass = 0; pass < 2; pass++) {
+        const opened = await request({ cmd: "open", path: result.path });
+        assert.ok(opened.imgid > 0);
+        const rgba = join(dir, `render-${pass}.rgba`);
+        await request({ cmd: "render", width: 256, height: 256, rgba });
+        assert.ok(readFileSync(rgba).some((value, i) => i % 4 !== 3 && value > 0));
+        if (!pass) {
+          await stopEngine();
+          startEngine(binary, runtime);
+        }
+      }
+      await request({ cmd: "close" });
+    } finally {
+      await stopEngine();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
+
 test("JPEG panoramas retain color and reopen with neutral, editable defaults", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "immage-pano-"));
   startEngine(join(root, "build/bin/darktable-engine"), join(dir, "runtime"));
