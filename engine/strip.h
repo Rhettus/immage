@@ -37,4 +37,7 @@ typedef enum strip_t
 // stay. NULL when done, else a message to g_free()
 char *strip_metadata(const char *path, strip_t what);
 
+// Merge export EXIF while preserving the rendered file's layout and color tags.
+gboolean rendered_metadata(const char *path, const void *blob, int size, gboolean dng);
+
 G_END_DECLS

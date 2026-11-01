@@ -57,7 +57,7 @@ import { loadLoupe, storeLoupe, loadAutoHide, loadAutoToneNew, loadExposureCompN
          loadStackPairs,
          PreferencesDialog, storeOverlayColor, storeGuideColor, storeStackPairs,
          storeAutoHide, storeCanvas, CANVASES, storeFocusMode, storePins, type AccelProvider, type Canvas,
-         loadNegWarn, loadReadAhead, loadThumbMemoryMb, storeNegWarn, type Pins, type PrefsTab, type Preview } from "./Preferences";
+         loadNegWarn, loadNegativeExportFormat, loadReadAhead, loadThumbMemoryMb, storeNegWarn, type Pins, type PrefsTab, type Preview } from "./Preferences";
 import { kindOf, loadPlugins, loadReturns, returnValues, storePlugins, unfit, type PluginConfig,
          type PluginReturn } from "./plugins";
 import { FolderTree, type Volume } from "./FolderTree";
@@ -848,6 +848,32 @@ export default function App() {
       return { text: `AI Denoise: wrote ${baseName(r.path)}`, ok: true,
                action: { label: "Open", run: () => openResult(r.path, r.image.imgid) } };
     }, "AI Denoise").finally(() => setDenoiseRunning(false));
+  };
+  const [negativeExporting, setNegativeExporting] = useState(false);
+  const negativeExportRunning = useRef(false);
+  const exportNegative = () => {
+    const s = session.current, from = currentRef.current?.path;
+    if (!s || !from || s.values.neg_on !== 1 || negativeExportRunning.current) return;
+    negativeExportRunning.current = true;
+    setNegativeExporting(true);
+    const format = loadNegativeExportFormat();
+    void runInBackground(`Converted positive: ${baseName(from)}`, async () => {
+      s.flushEdits();
+      await s.settled();
+      if (session.current !== s) throw new Error("the open photo changed; export the negative again");
+      return await invoke<{ path: string; original: string; image: { imgid: number } }>("negative_export", {
+        imgid: s.imgid, original: from, format,
+      });
+    }, (r) => {
+      returns.current.set(r.path, { original: r.original, result: r.path, plugin: "negative-positive", applied: true });
+      if (folderRef.current && !immichRef.current && parentDir(r.path) === folderRef.current)
+        void showFolder(folderRef.current, true);
+      return { text: `Converted positive: wrote ${baseName(r.path)}`, ok: true,
+               action: { label: "Open", run: () => openResult(r.path, r.image.imgid) } };
+    }, "Export converted negative").finally(() => {
+      negativeExportRunning.current = false;
+      setNegativeExporting(false);
+    });
   };
   // Lightroom's Photo Merge › HDR on darktable's HDR merge: a float DNG
   // beside the first bracket, listed in the folder after it, opened from
@@ -5471,6 +5497,7 @@ export default function App() {
           )}
           {rightMode === "negative" && !cropping && (
             <NegativePanel values={values} disabled={!current} converted={values.neg_on === 1} picking={negPick}
+                           onExport={exportNegative} exporting={negativeExporting} exportFormat={loadNegativeExportFormat()}
                            busy={negBusy} hasArea={!!negArea} note={negNote} onPick={setNegPick} onTurnOff={negTurnOff}
                            onResetColor={() => changeMany(["wbl", "wbh"].flatMap((k) => ["r", "g", "b"]
                              .map((c): [string, number] => [`neg_${k}_${c}`, 1])), "Reset Color")}

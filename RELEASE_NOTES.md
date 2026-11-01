@@ -7,6 +7,10 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Negative adds Export to Library to save a separate positive beside the
+  original, with the conversion and current edits baked in and normal editing
+  tools available. Preferences > General > Workspace chooses losslessly
+  compressed DNG (16-bit float, the default) or TIFF (32-bit float).
 - Filters adds a Rejected category with All photos, Hide rejected and Only
   rejected options. The selection counts as an active filter and resets with
   Clear all.

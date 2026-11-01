@@ -3133,6 +3133,30 @@ static int _up_write_image(dt_imageio_module_data_t *data, const char *filename,
 }
 #endif
 
+// A linear DNG uses the normal export pipe, retaining every edit, but
+// stores its rendered RGB with a matching synthetic camera matrix.
+static int _positive_bpp(dt_imageio_module_data_t *data) { return 32; }
+static int _positive_levels(dt_imageio_module_data_t *data) { return IMAGEIO_RGB | IMAGEIO_FLOAT; }
+static int _positive_write(dt_imageio_module_data_t *data, const char *filename, const void *in,
+                           dt_colorspaces_color_profile_type_t over_type, const char *over_filename,
+                           void *exif, int exif_len, dt_imgid_t imgid, int num, int total,
+                           struct dt_dev_pixelpipe_t *pipe, const gboolean export_masks)
+{
+  return dng_write_rendered_half(filename, in, data->width, data->height, exif, exif_len);
+}
+
+static int _positive_tiff_write(dt_imageio_module_data_t *data, const char *filename, const void *in,
+                                dt_colorspaces_color_profile_type_t over_type, const char *over_filename,
+                                void *exif, int exif_len, dt_imgid_t imgid, int num, int total,
+                                struct dt_dev_pixelpipe_t *pipe, const gboolean export_masks)
+{
+  dt_imageio_module_format_t *fmt = dt_imageio_get_format_by_name("tiff");
+  const int res = fmt->write_image(data, filename, in, over_type, over_filename, NULL, 0,
+                                   imgid, num, total, pipe, export_masks);
+  if(res) return res;
+  return rendered_metadata(filename, exif, exif_len, FALSE) ? 0 : 1;
+}
+
 // write one image through darktable's own export, as its export module
 // would: `format` names a format plugin (jpeg, tiff, png, webp...); quality
 // and bit depth go through the plugin's conf keys, which its get_params()
@@ -3146,7 +3170,9 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
     *err = g_strdup("export needs an image and an output file");
     return FALSE;
   }
-  dt_imageio_module_format_t *fmt = dt_imageio_get_format_by_name(format);
+  const gboolean positive = json_object_get_boolean_member_with_default(req, "negative_copy", FALSE);
+  const gboolean positive_dng = positive && !g_strcmp0(format, "dng");
+  dt_imageio_module_format_t *fmt = dt_imageio_get_format_by_name(positive_dng ? "tiff" : format);
   if(!fmt)
   {
     *err = g_strdup_printf("no export format '%s'", format);
@@ -3158,6 +3184,7 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
   const int quality = json_object_get_int_member_with_default(req, "quality", 0);
   const int bpp = json_object_get_int_member_with_default(req, "bpp", 0);
   g_mutex_lock(&_format_conf_lock);
+  const int old_bpp = positive ? dt_conf_get_int("plugins/imageio/format/tiff/bpp") : 0;
   for(int pass = 0; pass < 2; pass++)
   {
     const int value = pass ? bpp : quality;
@@ -3167,7 +3194,16 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
     if(dt_conf_key_exists(key) || dt_confgen_exists(key)) dt_conf_set_int(key, value);
     g_free(key);
   }
+  // Converted TIFFs always use lossless compression; leave ordinary export
+  // preferences as they were after taking this job's parameters.
+  const int old_compress = positive ? dt_conf_get_int("plugins/imageio/format/tiff/compress") : 0;
+  if(positive) dt_conf_set_int("plugins/imageio/format/tiff/compress", 2);
   dt_imageio_module_data_t *fdata = fmt->get_params(fmt);
+  if(positive)
+  {
+    dt_conf_set_int("plugins/imageio/format/tiff/compress", old_compress);
+    dt_conf_set_int("plugins/imageio/format/tiff/bpp", old_bpp);
+  }
   g_mutex_unlock(&_format_conf_lock);
   if(!fdata)
   {
@@ -3216,6 +3252,17 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
   _flags_of = fmt;
   proxy.flags = _no_tmpfile_flags;
   dt_colorspaces_color_profile_type_t render_icc = icc;
+  if(positive)
+  {
+    render_icc = DT_COLORSPACE_LIN_REC2020;
+    if(positive_dng)
+    {
+      proxy.bpp = _positive_bpp;
+      proxy.levels = _positive_levels;
+      proxy.write_image = _positive_write;
+    }
+    else proxy.write_image = _positive_tiff_write;
+  }
   // the stand-in format renders linear Rec.2020 floats for the model and
   // hands the result to the real one. one upscale at a time: the model and
   // the real format are kept in _up
@@ -3599,6 +3646,50 @@ static gboolean _pano_merge(JsonObject *req, JsonBuilder *b, FILE *out, char **e
 }
 #endif
 
+// Give a rendered positive a persistent neutral starting history. This
+// prevents import presets, camera exposure and tone mapping from processing
+// the baked conversion twice, including after the app restarts.
+static gboolean _positive_import(const char *path, JsonBuilder *b, char **err)
+{
+  const dt_imgid_t imgid = _import(path);
+  if(!dt_is_valid_imgid(imgid))
+  {
+    *err = g_strdup_printf("wrote '%s', but could not import it", path);
+    return FALSE;
+  }
+  dt_develop_t dev;
+  dt_dev_init(&dev, FALSE);
+  dt_dev_load_image(&dev, imgid);
+  dt_dev_pop_history_items_ext(&dev, dev.history_end);
+  for(GList *l = dev.iop; l; l = g_list_next(l))
+  {
+    dt_iop_module_t *m = l->data;
+    const gboolean essential = !g_strcmp0(m->op, "rawprepare") || !g_strcmp0(m->op, "demosaic")
+      || !g_strcmp0(m->op, "temperature") || !g_strcmp0(m->op, "colorin")
+      || !g_strcmp0(m->op, "colorout") || !g_strcmp0(m->op, "gamma")
+      || !g_strcmp0(m->op, "flip") || !g_strcmp0(m->op, "scalepixels");
+    if(m->enabled && !essential)
+    {
+      m->enabled = FALSE;
+      dt_dev_add_history_item_ext(&dev, m, FALSE, TRUE);
+    }
+  }
+  dt_dev_write_history_ext(&dev, imgid);
+  dt_dev_cleanup(&dev);
+  dt_history_hash_write_from_history(imgid, DT_HISTORY_HASH_AUTO | DT_HISTORY_HASH_CURRENT);
+  if(_write_sidecar(imgid))
+  {
+    *err = g_strdup_printf("wrote '%s', but could not save its starting history", path);
+    return FALSE;
+  }
+  dt_mipmap_cache_remove(imgid);
+  json_builder_set_member_name(b, "path");
+  json_builder_add_string_value(b, path);
+  json_builder_set_member_name(b, "image");
+  _image_json(b, imgid, FALSE);
+  return TRUE;
+}
+
 static void _export_run(gpointer data, gpointer user_data)
 {
   JsonParser *parser = data;
@@ -3624,7 +3715,11 @@ static void _export_run(gpointer data, gpointer user_data)
   {
     const dt_imgid_t snap = _hold_take(job, json_object_get_int_member_with_default(req, "imgid", 0));
     if(dt_is_valid_imgid(snap))
+    {
       ok = _export(snap, req, &err);
+      if(ok && json_object_get_boolean_member_with_default(req, "negative_copy", FALSE))
+        ok = _positive_import(json_object_get_string_member(req, "out"), b, &err);
+    }
     else
     {
       ok = FALSE;

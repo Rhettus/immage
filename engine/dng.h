@@ -38,4 +38,8 @@ int dng_write_linear_half(const char *filename, const float *rgb, int width, int
                           const struct dt_image_t *img, const void *exif, int exif_len,
                           void (*progress)(int done, int total, void *data), void *data);
 
+// A converted positive in linear Rec.2020, supplied as float RGBA.
+int dng_write_rendered_half(const char *filename, const float *rgba, int width, int height,
+                            const void *exif, int exif_len);
+
 G_END_DECLS

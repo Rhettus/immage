@@ -17,6 +17,16 @@ The report goes to `verify/results/<date>_<sha>/report.md`, with every
 measurement in `report.json`. Both, and `verify/references/`, are your
 machine's own and stay out of git.
 
+The focused negative-export regression check runs with the built engine:
+
+```bash
+node --test verify/negative-export.test.mjs
+```
+
+It checks compressed DNG and TIFF color metadata, conversion and crop
+round-trips, export snapshots, further exposure edits and reopening after
+an engine restart. It creates its own small fixture and temporary workspace.
+
 ## What it checks
 
 `run.py` takes the largest raw in `benchmarking/corpus/` and the smallest
