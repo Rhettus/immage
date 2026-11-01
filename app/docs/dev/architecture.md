@@ -632,3 +632,31 @@ Verify by browsing grid selections with the loupe enabled: no new loupe
 renders should start, and leaving the grid should refresh the selected area.
 Native rendering uses the full-resolution buffer loaded when opening the
 session; loupe updates add processing but do not independently reopen the file.
+
+### Camera body filtering
+
+`engine/main.c::_image_json` sends `exif.body_serial` for folder and metadata
+replies. `engine/strip.cc::camera_body_serial` reads the original with Exiv2,
+under darktable's Exiv2 mutex: standard `Exif.Photo.BodySerialNumber`, then
+DNG `Exif.Image.CameraSerialNumber`, then Exiv2's camera serial easy accessor
+for recognized maker notes. It never searches arbitrary serial tags (which
+could identify a lens). Missing, unsupported, all-zero and common unknown
+values return an empty string. Strings preserve leading zeros.
+
+The request/import threads share a mutex-protected cache of up to 4096 source
+paths by modification time, change time and size, avoiding repeated EXIF reads for metadata requests and
+virtual copies. Sidecars do not determine body identity. The optional field in
+`library.ts::Exif` tolerates old folder snapshots and Immich results; normal
+folder progress replaces snapshots with current engine metadata.
+
+`filter.ts::bodyOf` uses a JSON tuple of make, model and complete serial as
+the identity, or the empty string for **Serial not recorded**. `passes`,
+`facets`, `popupCount` and `needsRead` include `bodies`; selections use OR
+within the category and AND with other categories. `FilterPopup.tsx` places
+Camera body below Camera, uses existing draft/Search/Clear semantics and
+faceted counts, and wraps long serial labels. Immich server search is unchanged.
+
+Verify with `node --test verify/camera-body.test.mjs` after building the engine.
+The checks cover standard and DNG serial extraction, leading zeros, lens-only
+metadata, unknown values, identical models with swapped lenses, combined
+filters and facet counts. Run `npm run build` in `app` for frontend validation.

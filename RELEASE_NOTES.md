@@ -7,6 +7,8 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Filters adds Camera body: distinguish identical camera models by their body
+  serial numbers, independently of the lens, or find photos without a serial.
 - Immich search results add Import Parent Folder to the right-click menu:
   add a locally available result's folder to Folders and browse its photos.
   The action appears only when Immich is configured in Preferences.

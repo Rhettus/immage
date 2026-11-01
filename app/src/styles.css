@@ -2286,3 +2286,7 @@ input.switch:disabled { cursor: default; opacity: 0.4; }
   width: 100%; padding: 12px 0; border: 0; background: none;
   color: var(--text); font: inherit; font-weight: 600; cursor: pointer;
 }
+
+/* Keep complete body serials readable even in a narrow filter popup. */
+.filter-bodies .filter-ticks .name { white-space: normal; overflow-wrap: anywhere; }
+.filter-bodies .hint { margin: 12px 10px; color: var(--text-3); }

@@ -24,6 +24,8 @@
 // and so do a title or keywords another program wrote into the EXIF
 
 #include <string>
+#include <map>
+#include <glib/gstdio.h>
 
 // as exif.cc includes it (XCode 15.2)
 #pragma GCC diagnostic push
@@ -298,4 +300,44 @@ int location_sidecar_missing(const char *path)
     return missing;
   }
   catch(const std::exception &) { return 0; }
+}
+
+// Called on request/import threads. Cache source metadata across virtual copies
+// and repeated meta replies; source changes invalidate it, sidecar edits do not.
+char *camera_body_serial(const char *path)
+{
+  _lock lock; // Protect both Exiv2 and the cache across request/import threads.
+  struct Entry { gint64 mtime; gint64 ctime; gint64 size; std::string serial; };
+  static std::map<std::string, Entry> cache;
+  GStatBuf st;
+  if(g_stat(path, &st)) return g_strdup("");
+  const auto hit = cache.find(path);
+  if(hit != cache.end() && hit->second.mtime == st.st_mtime
+     && hit->second.ctime == st.st_ctime && hit->second.size == st.st_size)
+    return g_strdup(hit->second.serial.c_str());
+  std::string serial;
+  try
+  {
+    auto image = Exiv2::ImageFactory::open(path);
+    if(image)
+    {
+      image->readMetadata();
+      const auto &exif = image->exifData();
+      auto it = exif.findKey(Exiv2::ExifKey("Exif.Photo.BodySerialNumber"));
+      if(it == exif.end()) it = exif.findKey(Exiv2::ExifKey("Exif.Image.CameraSerialNumber"));
+      if(it == exif.end()) it = Exiv2::serialNumber(exif);
+      if(it != exif.end()) serial = it->print(&exif);
+    }
+  }
+  catch(const Exiv2::Error &) { /* Missing or unsupported metadata is unknown. */ }
+  gchar *trimmed = g_strdup(serial.c_str());
+  g_strstrip(trimmed);
+  serial = trimmed;
+  g_free(trimmed);
+  // Common placeholders must not pretend to identify a physical body.
+  if(serial == "n/a" || serial == "Unknown" || serial == "unknown"
+     || (!serial.empty() && serial.find_first_not_of("0 ") == std::string::npos)) serial.clear();
+  if(cache.size() >= 4096) cache.clear();
+  cache[path] = { st.st_mtime, st.st_ctime, st.st_size, serial };
+  return g_strdup(serial.c_str());
 }

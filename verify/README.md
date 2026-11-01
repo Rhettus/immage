@@ -189,3 +189,10 @@ Independent module preferences: run `node verify/contrast-equalizer.test.mjs`
 for mapping and scoped-choice checks, and `node verify/mask-modules.mjs` with
 the built engine for a render/save/reload check of global AgX alongside masked
 contrast equalizer. The latter uses a temporary copy of the sample photo.
+
+Camera body filtering: after building the engine, run
+`node --test verify/camera-body.test.mjs` (requires the `exiv2` CLI).
+Fixtures cover standard EXIF and DNG body serial tags, leading zeros,
+missing/placeholder serials and lens-only metadata through import and meta
+replies. Filter checks cover identical models with swapped lenses, multiple
+bodies, unknown bodies, combined filters, facet counts and active filter counts.

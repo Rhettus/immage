@@ -48,4 +48,7 @@ gboolean denoised_metadata(const char *path);
 gboolean location_sidecar_mark(const char *path);
 int location_sidecar_missing(const char *path);
 
+// Camera body serial from standard EXIF/DNG or recognized maker notes; caller frees.
+char *camera_body_serial(const char *path);
+
 G_END_DECLS

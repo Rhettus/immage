@@ -9,6 +9,7 @@ import { fetchImmichThumb } from "./immich";
 
 export type Exif = {
   maker: string; model: string; lens: string;
+  body_serial?: string; // absent in older cached entries and Immich search results
   exposure: number; aperture: number; iso: number; focal_length: number;
   exposure_bias: number; focus_distance: number; datetime: string;
   // the file's modified time, sent only when there is no capture time

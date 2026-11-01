@@ -124,6 +124,16 @@ The toolbar under the filmstrip filters the folder:
   - **File type**, **Camera** and **Lens**: tick any to show photos of
     those, for example **RAW** and **JPEG**. Each lists what the folder
     holds, with how many photos of each.
+  - **Camera body**: distinguish physical bodies of the same model by their
+    full serial numbers, even when you swap lenses. Entries show the camera
+    model, serial and photo count. Tick multiple bodies to include any of them;
+    combine with Camera, Lens or other filters to narrow the results. Long
+    lists can be searched by model or serial. **Serial not recorded** selects
+    photos without a usable body serial; those cannot be assigned reliably to
+    a particular body. Serials come from the original file's supported metadata,
+    including recognized camera maker notes; lens serials are never used.
+    Changes apply with **Search**, and reset with **Clear** or **Clear all**.
+    This filter is available for folders, not Immich server searches.
   - **Keywords**: tick one or more to show photos with all of them. A
     keyword includes those under it, so **Places** shows photos tagged
     **Places › Norway** too.

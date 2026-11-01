@@ -1628,6 +1628,9 @@ static void _image_json(JsonBuilder *b, const dt_imgid_t imgid, const gboolean f
   _add_string(b, "maker", img->camera_maker);
   _add_string(b, "model", img->camera_model);
   _add_string(b, "lens", img->exif_lens);
+  gchar *body_serial = camera_body_serial(path);
+  _add_string(b, "body_serial", body_serial);
+  g_free(body_serial);
   _add_double(b, "exposure", img->exif_exposure);
   _add_double(b, "aperture", img->exif_aperture);
   _add_double(b, "iso", img->exif_iso);
