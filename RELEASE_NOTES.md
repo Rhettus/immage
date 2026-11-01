@@ -7,6 +7,9 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Immich search results add Import Parent Folder to the right-click menu:
+  add a locally available result's folder to Folders and browse its photos.
+  The action appears only when Immich is configured in Preferences.
 - Panorama Merge shows a preview above the projection choices. Compare
   projections, see which one Auto chooses, and toggle Auto Crop to see the
   edges it removes before merging.

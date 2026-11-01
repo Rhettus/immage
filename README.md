@@ -249,7 +249,10 @@ fill the grid with Immich's thumbnails. Opening one edits the external
 library's own file when this computer has it, mapped from Immich's path
 in Preferences (by default the importer's path prefix and destination),
 and otherwise downloads the original into Immage's cache first.
-Right-click a result to show it, or the whole search, in Immich. A
+Right-click a result to show it, or the whole search, in Immich. With Immich
+configured in Preferences, **Import Parent Folder** adds its locally mapped
+folder to Folders and opens its photos in the grid; it is disabled for
+results without a local file. A
 result shows Immich's rating until it is opened; ratings set after that
 go into the photo's XMP sidecar, as for any other photo.
 

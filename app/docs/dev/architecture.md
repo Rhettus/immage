@@ -429,6 +429,15 @@ darktable is, and it has AI features when darktable is configured with
    3. Opening a returned file applies the plugin's return values, for example lens corrections off after PureRAW.
 9. **Immich browse.**
    1. `ImmichPanel` searches through `immich_search`.
+      The result's FileMenu shows Import Parent Folder only while `immichBase`
+      confirms a configured server URL and stored API key. The action is enabled
+      when `remote.localPath` is available (disabled otherwise).
+      `importImmichParent` cancels debounced searches, calls
+      `addPathToLibrary` to add/unhide the parent or expand its existing root,
+      opens the Folders card and Library panel, and calls `showFolder` in grid
+      view. Normal subfolder settings apply; cached downloads never supply a
+      parent. Verify unopened and opened mapped results, a parent already under
+      a library root, and unmapped/downloaded results (disabled action).
    2. Each asset becomes an `ImageEntry`. Opening one calls `immich_resolve`: the local file through the path map if it exists, otherwise the original downloaded into the cache.
 
 ## Where data lives

@@ -126,6 +126,15 @@ metadata refresh.
 Right-click a result for **Show in Immich**, or **Show Results in Immich**
 to see the same search in Immich's web page.
 
+With a server URL and API key configured in Preferences, choose
+**Import Parent Folder** to add the result's containing folder to
+**Folders** and browse its photos in the grid. An existing library folder
+expands to show it; otherwise the folder is added to the library. This uses
+the local file set up under **Opening photos**, without copying files.
+The action is disabled when the result has no available local file;
+downloading an original does not provide access to its server folder.
+Browsing follows your **Include Photos from Subfolders** setting.
+
 ## Exporting to an album
 
 In the Export dialog, set **Save to** to **Immich album**, then choose an

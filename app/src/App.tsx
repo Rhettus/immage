@@ -2837,6 +2837,17 @@ export default function App() {
     setFolderRefresh((n) => n + 1);
   };
 
+  const importImmichParent = (path: string) => {
+    const dir = parentDir(path);
+    window.clearTimeout(immichTimer.current);
+    addPathToLibrary(dir);
+    setLeftOpen((old) => new Set([...old, "folders"]));
+    try { localStorage.setItem("immage.folders.open", "1"); } catch { /* not kept */ }
+    setLayout((old) => ({ ...old, left: true }));
+    setGrid(true);
+    void showFolder(dir);
+  };
+
   // the importer's Immich buttons open Preferences there; stable, as the
   // importer keeps it
   const openImmichPrefs = useCallback(() => setPrefsOpen("immich"), []);
@@ -5834,6 +5845,8 @@ export default function App() {
                   rejected={hit && !isRemote(hit) ? local.filter((i) => i.rejected).length : null}
                   photo={immichBase && hit?.remote ? photoUrl(immichBase, hit.remote.assetId) : null}
                   results={immichBase && immich ? searchUrl(immichBase, immich.search) : null}
+                  parentFolder={immichBase && hit?.remote ? hit.remote.localPath : undefined}
+                  onImportParent={importImmichParent}
                   onDelete={() => void deleteRejected(local.filter((i) => i.rejected))}
                   editIn={hit && !isRemote(hit) ? plugins.map((cfg) => ({ cfg, why: unfit(cfg, sources) })) : null}
                   onEditIn={(cfg) => void editIn(cfg, sources)} onSetUpPlugins={() => setPrefsOpen("plugins")}
@@ -6542,7 +6555,7 @@ const panoFrames = (list: ImageEntry[]) => {
 // Delete, for rejected photos only; for Immich results, the photo or the
 // whole search in Immich's web app. any click elsewhere, a scroll or Escape
 // closes it
-function FileMenu({ captureCount, onCaptureTime, canUndoCapture, onUndoCapture, x, y, copyable, copies, mergeable, stitchable, reveal, rejected, photo, results, editIn, onCopy,
+function FileMenu({ captureCount, onCaptureTime, canUndoCapture, onUndoCapture, x, y, copyable, copies, mergeable, stitchable, reveal, rejected, photo, results, parentFolder, onImportParent, editIn, onCopy,
                     onRemoveCopies, onMergeHdr, onMergePano, onDelete, onEditIn, onSetUpPlugins, onClose }: {
   captureCount: number; onCaptureTime: () => void;
   canUndoCapture: boolean; onUndoCapture: () => void;
@@ -6555,6 +6568,8 @@ function FileMenu({ captureCount, onCaptureTime, canUndoCapture, onUndoCapture, 
   rejected: number | null;                // how many of the photos it acts on are rejected; null, none can be
   photo: string | null;                   // the photo in Immich's web app
   results: string | null;                 // the search it came from, there
+  parentFolder: string | null | undefined; // local Immich file; undefined for ordinary folder entries
+  onImportParent: (path: string) => void;
   editIn: { cfg: PluginConfig; why: string | null }[] | null;  // the plugins, and why one cannot take the photos
   onEditIn: (cfg: PluginConfig) => void; onSetUpPlugins: () => void;
   onCopy: () => void; onRemoveCopies: () => void; onMergeHdr: () => void; onMergePano: () => void;
@@ -6612,6 +6627,9 @@ function FileMenu({ captureCount, onCaptureTime, canUndoCapture, onUndoCapture, 
         <div className="menu-sep" />
       </>}
       {reveal && <button onClick={() => { onClose(); void revealItemInDir(reveal); }}>Show in {FILE_MANAGER}</button>}
+      {parentFolder !== undefined && <button disabled={!parentFolder}
+        title={parentFolder ? parentDir(parentFolder) : "Set up Opening photos in Preferences > Immich so this file is available on this computer"}
+        onClick={() => { onClose(); if (parentFolder) onImportParent(parentFolder); }}>Import Parent Folder</button>}
       {photo && <button onClick={() => go(photo)}>Show in Immich</button>}
       {results && <button onClick={() => go(results)}>Show Results in Immich</button>}
       {rejected !== null && <>

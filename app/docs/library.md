@@ -262,6 +262,9 @@ Right-click a photo, or a selection, for:
 - **Panorama Merge…**, for two photos or more
 - **Adjust Capture Time…** / **Undo Capture Time Adjustment…**
 - **Show in Finder**
+- **Import Parent Folder**, for an Immich result when Immich is configured in
+  Preferences: add its locally mapped parent to Folders and browse its photos.
+  Disabled when no local file is available. See [Immich](immich.md).
 - **Show in Immich**, for a photo from an Immich search
 - **Delete Rejected Photo…**
 
