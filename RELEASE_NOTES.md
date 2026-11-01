@@ -92,6 +92,8 @@ Performance
 
 Bug fixes
 
+- Histogram graphs give clipped black and white peaks their full bin width,
+  keeping endpoint spikes visible in scopes and tone curves.
 - Preview and final frames stay aligned on scaled displays when adjusting
   sliders, including 75% previews with odd pixel dimensions.
 - Expanding a folder shows its subfolders without waiting for other expanded

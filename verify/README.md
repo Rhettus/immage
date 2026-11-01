@@ -156,6 +156,12 @@ tuner search, exact frame delivery, and histogram/clipping worker lifecycle:
 node --test verify/detail-preview.test.mjs verify/performance-tuner.test.mjs verify/preview-handoff.test.mjs verify/pixel-worker.test.mjs
 ```
 
+Check histogram endpoint widths and black/white clipping in headless Chromium:
+
+```bash
+node verify/histogram-rendering.mjs
+```
+
 ## Scaled checkpoint retention
 
 Exercise cache churn beyond its entry count, the three-checkpoint bound,

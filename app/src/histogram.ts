@@ -180,7 +180,10 @@ function histogramInto(ctx: CanvasRenderingContext2D, x0: number, y0: number, W:
     ctx.moveTo(x0, y0 + H);
     for (let i = 0; i < 256; i++) {
       const y = H - Math.min(1, f(b[i]) / peak) * (H - 2);
-      ctx.lineTo(x0 + (i / 255) * W, y0 + y);
+      // Each value occupies a full bin, including clipped black and white.
+      // Connecting bin centers halves the endpoint spikes at the graph edges.
+      ctx.lineTo(x0 + (i / 256) * W, y0 + y);
+      ctx.lineTo(x0 + ((i + 1) / 256) * W, y0 + y);
     }
     ctx.lineTo(x0 + W, y0 + H);
     ctx.closePath();
@@ -570,6 +573,9 @@ export function histogramPath(h: Histogram | null, W: number, H: number,
     channel === null ? (h.bins[0][i] + h.bins[1][i] + h.bins[2][i]) / 3 : h.bins[channel][i]);
   let peak = 1;
   for (let i = 2; i < 254; i++) peak = Math.max(peak, avg[i]);
-  const pts = avg.map((v, i) => `L${((i / 255) * W).toFixed(1)},${(H - Math.min(1, v / peak) * H * 0.9).toFixed(1)}`);
+  const pts = avg.map((v, i) => {
+    const y = (H - Math.min(1, v / peak) * H * 0.9).toFixed(1);
+    return `L${((i / 256) * W).toFixed(1)},${y} L${(((i + 1) / 256) * W).toFixed(1)},${y}`;
+  });
   return `M0,${H} ${pts.join(" ")} L${W},${H} Z`;
 }
