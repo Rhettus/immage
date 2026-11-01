@@ -3,6 +3,89 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
+## 0.41.0
+
+Improvements
+
+- Metadata adds Location: enter coordinates or drop and drag a pin on an
+  optional OpenStreetMap map, then Apply to save GPS information to the photo's
+  XMP sidecar. Remove location clears GPS coordinates and altitude. Maps offer
+  dark and standard styles and require no API key.
+- Lens Corrections adds global Defringe Amount and Radius sliders to remove
+  color fringes. Set Amount to zero to switch correction off.
+- Panorama Merge supports JPEGs and other non-RAW photos, including mixed
+  RAW and non-RAW selections, and saves an editable DNG beside the first photo.
+- Generated HDR merges, panoramas, AI denoise results, positive exports and
+  the first result from a plugin open for editing automatically. Preferences >
+  General > Workspace can disable this. Successful completion notifications
+  close after 30 seconds, or immediately when Open or OK is selected.
+- Negative adds Export to Library to save a separate positive beside the
+  original, with the conversion and current edits baked in and normal editing
+  tools available. Preferences > General > Workspace chooses losslessly
+  compressed DNG (16-bit float, the default) or TIFF (32-bit float).
+- Filters adds a Rejected category with All photos, Hide rejected and Only
+  rejected options. The selection counts as an active filter and resets with
+  Clear all.
+- A persistent 100% Detail loupe in Adjustments shows a selected area.
+  Use its point picker, then click the photo to choose the area; Escape
+  cancels picking. General > Workspace can disable the loupe and its
+  rendering. Detail and grain drags preview the selected area directly,
+  avoiding initial whole-image probe renders; release updates the full
+  visible view. Contrast and tone adjustments keep whole-image previews.
+- Preferences > Modules offers Contrast & Texture alternatives for Clarity
+  and Texture, with the module's native controls in adjustments and masks.
+  Existing defaults remain in place.
+
+Performance
+
+- Preview layers reuse canvas allocations and already uploaded frames,
+  skip unchanged placement updates, and defer navigator drawing to reduce
+  work when an exact frame arrives.
+- Histogram, scope and clipping calculations run in background workers,
+  with a fallback where workers are unavailable. Histogram input copies
+  wait until after drawing to reduce work on the window's main thread.
+- The engine retains scaled preview checkpoints on the GPU for reuse by
+  downstream edits. Three recent scaled checkpoints survive ordinary cache
+  replacement, while upstream changes and memory cleanup still invalidate
+  them. This avoids retaining full-resolution demosaiced GPU buffers.
+- Slider drags avoid redundant panel updates. Histograms and scopes update at
+  a reduced cadence during interaction and refresh on release. Slider drags
+  and wheel gestures combine engine edits once per display frame and skip
+  unchanged values, while release immediately submits the final edit.
+- Opening folders reads TIFF-based RAW metadata from small prefixes where
+  possible. Grid thumbnails read suitable embedded JPEGs directly and decode
+  them closer to the grid size, reducing file reads and temporary memory.
+  Other preview layouts retain the full-read fallback.
+- Balanced previews add a 75% size. The tuner uses median timing from the
+  middle 10–90% of frames, defaults to an 80 ms latency target, and groups
+  setup, targets and recommendations with advanced comparisons folded away.
+- Preferences > Performance adds a tuner that starts at full preview quality
+  and finds the highest tested quality meeting your FPS and latency targets.
+  Review its recommended changes, apply them, and verify with another run.
+  Load a representative RAW and use your usual window size for useful results.
+  Other performance settings support measured comparisons and relaunch
+  verification; AI and thumbnail caches are excluded.
+- GUI benchmarks now record CPU usage per core and process, RAM and swap,
+  supported GPU/VRAM counters, and the busiest Linux threads to help identify
+  single-thread bottlenecks. The dashboard shows resource use by step,
+  frame pacing, UI stalls and rendering-path evidence.
+- GUI benchmark diagnostics trace input-to-frame latency, render queues,
+  engine mutex waits, module timings and raw checkpoint cache reuse and
+  eviction. Reports include the build commit and tracked-change status;
+  a bottleneck analysis tool helps interpret the collected traces.
+- Preferences > Performance has a Window renderer choice: Automatic,
+  Mesa or NVIDIA. Relaunch to switch paths, then run the GUI benchmark
+  to compare them on the same build. Photo processing keeps its own
+  GPU setting.
+- Experimental Linux AppImages use WebKitGTK 2.54.2's new compositor,
+  built on Ubuntu 26.04 for x64 and ARM64.
+
+Bug fixes
+
+- Clipping overlays and histogram/scope updates discard results from
+  replaced frames, including same-sized frames and GPU/CPU transitions.
+  Old clipping overlays clear as their source frame changes.
+
 ## 0.40.0
 
 This release comes early, for one bug big enough to have a release of

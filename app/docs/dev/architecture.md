@@ -14,7 +14,8 @@ needs it. Paths below are relative to this file.
 | [index.html](../../index.html), [main.tsx](../../src/main.tsx) | The main window: mounts `App`. |
 | [splash.html](../../splash.html), [Splash.tsx](../../src/Splash.tsx) | The splash window: asks `about`, shows the main window, closes itself. |
 | [App.tsx](../../src/App.tsx) | The whole editor's shell and state. See [inside App.tsx](#inside-apptsx). |
-| [main.rs](../../src-tauri/src/main.rs) | `main()`: on Linux over NVIDIA's driver gives the web view Mesa's EGL (`mesa_egl`), migrates the old app name, registers the dialog, opener, updater, process, window state (the main window's size, position and maximized state) and immporter plugins. On Linux `setup()` builds the windows itself, with the frames web extension's folder (`webext_dir`). `setup()` picks the engine: `build/bin/darktable-engine` with runtime state in `build/app-runtime` for a dev build, the bundled `resources/darktable` with the app data folder for a release, or `DT_ENGINE_BIN`. Holds `AppState` and nearly every command. |
+| [main.rs](../../src-tauri/src/main.rs) | `main()`: on Linux selects the web view's EGL before GTK starts (`renderer::init`), migrates the old app name, registers the dialog, opener, updater, process, window state (the main window's size, position and maximized state) and immporter plugins. On Linux `setup()` builds the windows itself, with the frames web extension's folder (`webext_dir`). `setup()` picks the engine: `build/bin/darktable-engine` with runtime state in `build/app-runtime` for a dev build, the bundled `resources/darktable` with the app data folder for a release, or `DT_ENGINE_BIN`. Holds `AppState` and nearly every command. |
+| [renderer.rs](../../src-tauri/src/renderer.rs) | Linux window renderer: Automatic keeps the Mesa workaround on NVIDIA; explicit Mesa or NVIDIA selects that EGL vendor. Stored as `webview-renderer` in the runtime directory so startup can read it before GTK. An inherited marker allows Relaunch to change the selection, while a user-supplied EGL environment override takes priority. Only the web view receives the override; benchmark display metadata records the running and next selections. |
 | [engine.rs](../../src-tauri/src/engine.rs) | The engine child. Spawns it (`--core --configdir --cachedir -d perf`, darktable's resource level from Preferences (`resource_level`), OpenCL on with export's pipe type allowed the GPU, which the base borrows, and the full pipes (edits and drags) too with Preferences' Edit on the GPU (`gpu_edits`, on by default); on Linux, ROCm's platform on and its kernels built as OpenCL C 2.0 when no RustiCL is installed, `rocm_only`), retrying while an old one holds darktable's database lock. `request()` writes one JSON line and reads one back. Thumbnails and background exports (`Tagged`) are tagged and sent without the engine's mutex, and AI Denoise's DNG and the AI selections' outlines come as a tagged answer after the main loop's own (`expect`, `on_engine_thread` in main.rs); a stdout thread (`read_stdout`) hands each tagged reply to its caller, a merge's progress lines to what follows them (`request_with_progress`, as `merge-progress`), and the rest to `request()`. A stderr thread writes the log and keeps darktable's `-d perf` timings apart for the performance overlay. |
 | [engine/main.c](../../../engine/main.c) | `main()`: keeps the real stdout for replies, starts darktable with an in-memory library (`dt_init`), sets its confs, then loops: read a line, `_handle()` it, reply. |
 
@@ -98,7 +99,7 @@ are `localStorage` keys named `immage.*`.
 
 | File | Responsibility |
 |---|---|
-| [session.ts](../../src/session.ts) | One open photo. `Session.open` reads every mapped module (`get_params`) into control values. `set`/`setMany` mark modules dirty, and `pump()` sends each dirty module's merged edit (`moduleEdit`) with one `render`, in the one call, so moves made during a render are coalesced, latest wins. It also holds masks, spots, look and the Before view, and saves 600 ms after the last edit. `renderView` decodes the frame header; `preview` renders one-off settings on the engine's preview pipe. Until the image changes (`changed`), it shows the full frames it was sent (`frames`, by view and darktable's hash) and, zoomed in, a copy of the whole image at the zoom's scale (`requestCopy`, rendered on the base pipe once idle), so a view seen before or a pan's window is shown without the engine; App shows the copy as a layer under the sharp frame (`onCopy`). After a change, a render sends the hashes it holds for the view (`have`), and the engine names one rather than render it when the image is back as it was (the Before view and back, undo); a copy set aside comes back the same way. |
+| [session.ts](../../src/session.ts) | One open photo. `Session.open` reads every mapped module (`get_params`) into control values. `set`/`setMany` update model values immediately and ignore unchanged values. Interactive calls defer dispatch until the next display frame; discrete edits and release flush it immediately. `pump()` sends each dirty module's merged edit (`moduleEdit`) with one `render`, in the one call, so moves made during a render are coalesced, latest wins. It also holds masks, spots, look and the Before view, and saves 600 ms after the last edit. `renderView` decodes the frame header; `preview` renders one-off settings on the engine's preview pipe. Until the image changes (`changed`), it shows the full frames it was sent (`frames`, by view and darktable's hash) and, zoomed in, a copy of the whole image at the zoom's scale (`requestCopy`, rendered on the base pipe once idle), so a view seen before or a pan's window is shown without the engine; App shows the copy as a layer under the sharp frame (`onCopy`). After a change, a render sends the hashes it holds for the view (`have`), and the engine names one rather than render it when the image is back as it was (the Before view and back, undo); a copy set aside comes back the same way. |
 | [pixelRatio.ts](../../src/pixelRatio.ts) | Linux on Wayland at a fractional scale: `draftScale()`, how much smaller drag drafts are (`draftK` in App.tsx), the screen's scale from `display_scale` over `devicePixelRatio`, as GTK 3 draws the window at the next whole scale; Preferences' "Drag drafts at the screen's scale". |
 | [sharedFrames.ts](../../src/sharedFrames.ts) | Windows: `renderFrame` asks `render` to post the frame in a WebView2 shared buffer tagged with an id, then matches the `sharedbufferreceived` event to the reply, copies the frame out and releases the buffer. Linux: it asks `render` to write the frame to `/dev/shm` and reads it with the web extension's `immageFrame()`. On the Mac, on WebView2 runtimes before 1.0.1661, on Linux without the extension, or with Preferences' "Shared-memory frames" off, the frame comes in `render`'s reply. |
 | [HistoryPanel.tsx](../../src/HistoryPanel.tsx) | darktable's history plus this session's undo steps; a row's switch, delete or reset (`historyChange` in App.tsx, `Session.setModuleState`, the engine's `_module_state`). |
@@ -167,13 +168,22 @@ are `localStorage` keys named `immage.*`.
 | [immich.ts](../../src/immich.ts), [ImmichPanel.tsx](../../src/ImmichPanel.tsx), [ImmichPrefs.tsx](../../src/ImmichPrefs.tsx) | Search, remote assets as `ImageEntry`, path maps from Immich to local files; the Library's Immich card (library, words, mode; its filters are in the Filters popup); connection settings (from the immporter). |
 | [plugins.ts](../../src/plugins.ts), [PluginPrefs.tsx](../../src/PluginPrefs.tsx) | Edit In: plugin kinds (`KINDS`: DxO PureRAW, and Macro Studio, whose `handoff` is a job rather than files), configs, returns; the Plugins preferences tab. |
 
+[canvasLayers.ts](../../src/canvasLayers.ts) preserves canvas allocations when dimensions
+match and tracks immutable frame identity to skip repeated uploads. A fitted
+CPU frame copies the sharp canvas into the base instead of uploading its bytes
+again. External writes on photo/crop reset clear the tracked identities. Layer
+placement skips unchanged styles and navigator/crop placement snapshots.
+Navigator drawing runs in a deferred task and checks the session and base frame
+identity before drawing, so replacement frames cancel obsolete work.
+
 ### Preferences, histogram, probe, performance
 
 | File | Responsibility |
 |---|---|
 | [Preferences.tsx](../../src/Preferences.tsx), [PrefsUI.tsx](../../src/PrefsUI.tsx) | The Preferences dialog and its `load*`/`store*` pairs; `PrefCard`, `PrefRow`, `PrefSwitch`. |
-| [histogram.ts](../../src/histogram.ts) | Histogram (computed on the main thread from the frame), clipping overlay, scopes. |
+| [histogram.ts](../../src/histogram.ts) | Histogram and scope kernels (worker with main-thread fallback), clipping overlay. |
 | [probe.ts](../../src/probe.ts) | The color under the pointer, for the Tone Curve, HSL and B&W cards. |
+| [PerformanceTuner.tsx](../../src/PerformanceTuner.tsx), [previewTuning.ts](../../src/previewTuning.ts), [tunerOptions.ts](../../src/tunerOptions.ts), [tunerWorkload.ts](../../src/tunerWorkload.ts) | Quality-first preview search with trimmed-median metrics with FPS/latency targets, explicit apply and remeasurement, restart/resume and navigation workload comparisons; AI and thumbnail settings excluded. |
 | [perf.ts](../../src/perf.ts), [PerfHud.tsx](../../src/PerfHud.tsx) | Edit-to-pixels timing by stage, the performance overlay and the GUI benchmark's recording. |
 
 ## Rust layer
@@ -331,7 +341,7 @@ darktable is, and it has AI features when darktable is configured with
    4. A never-edited raw then gets the new-photo defaults: tone mapper, profile, exposure compensation (an exposure instance of its own), color noise reduction, the new-photos preset.
 2. **Move a slider.**
    1. `Slider` calls `change()`, which records an undo step, updates `values` and calls `Session.set`.
-   2. `pump()` sends `render` for `currentView()` with each dirty module's edit (`edits`), which Rust sends to the engine as `set`s ahead of the render: one call from the page however many modules moved, as a call cost 20 ms or more on Linux while the page drew. Moves made meanwhile only mark modules dirty, so the next round sends the latest values once.
+   2. During pointer/wheel interaction, `Session` waits until the next display frame before dispatching; discrete keyboard/undo edits dispatch immediately. Release cancels the queued callback and requests the latest exact frame, including when no draft has been shown. `pump()` sends `render` for `currentView()` with each dirty module's edit (`edits`), which Rust sends to the engine as `set`s ahead of the render: one call from the page however many modules moved, as a call cost 20 ms or more on Linux while the page drew. Moves made meanwhile only mark modules dirty, so the next round sends the latest values once.
    3. In the engine, `_set` writes the fields and adds a history item, then `_render` calls `dt_dev_pixelpipe_process`. Only modules from the changed one onwards run; the rest come from the pipe cache.
    4. The frame is written to `frame.rgba`, read back by Rust and returned with its header (on Windows and Linux, in shared memory beside it).
    5. `drawFrame` puts it on the canvas and computes the histogram. See [the sequence diagram](diagrams/slider-sequence.svg).
@@ -392,7 +402,7 @@ darktable is, and it has AI features when darktable is configured with
 
 | File | Coverage |
 |---|---|
-| `#[cfg(test)]` in [main.rs](../../src-tauri/src/main.rs), [engine.rs](../../src-tauri/src/engine.rs) | `cargo test` in `app/src-tauri`: model release lookup, folder listing, sha256, the `-d perf` parser, when the web view gets Mesa's EGL. |
+| `#[cfg(test)]` in [main.rs](../../src-tauri/src/main.rs), [engine.rs](../../src-tauri/src/engine.rs) | `cargo test` in `app/src-tauri`: model release lookup, folder listing, sha256, the `-d perf` parser, the window renderer's selection, persistence and inherited environment handling. |
 | [test_release_assets.py](../../../scripts/test_release_assets.py) | Release assembly checks: both Linux downloads and updater entries, missing bundles or signatures, duplicate architectures and mismatched versions. Run by the build workflow. |
 | `npm run build` in `app/` | Type checking (`tsc --noEmit`) and the production bundle; there is no front-end unit test runner (the release checks run the front end's `Session`). |
 | [verify/](../../../verify/README.md) | The release checks: the app's `Session` run under Node against the engine (`harness.mjs`, with `shim.mjs` for Tauri's invoke), every slider and mask slider measured, an edit saved and opened again, old edits rendered, a check per bug fixed and per decision about Immage's behavior, and the benchmark's main timings against the last run. |
@@ -410,6 +420,7 @@ darktable is, and it has AI features when darktable is configured with
 | [webext/frames.c](../../src-tauri/webext/frames.c) | The Linux web extension for shared-memory frames, built by [build_appimage.sh](../../scripts/build_appimage.sh) into `src-tauri/resources/webext` (gitignored). |
 | [bundle_engine.py](../../scripts/bundle_engine.py), [build_dmg.sh](../../scripts/build_dmg.sh) | The engine and its libraries copied into `src-tauri/resources/darktable` (gitignored) and made relocatable; the macOS disk image. |
 | [build_engine_windows.sh](../../scripts/build_engine_windows.sh), [bundle_engine_windows.sh](../../scripts/bundle_engine_windows.sh), [WINDOWS.md](../../WINDOWS.md) | The Windows (MSYS2 UCRT64) build. |
+| [build_webkitgtk.sh](../../scripts/build_webkitgtk.sh), [check_webkit_bundle.py](../../scripts/check_webkit_bundle.py) | Experimental Ubuntu 26.04 workflow: checksum-verified WebKitGTK 2.54.2 source build for the GTK3 / 4.1 API; cached staged install, upstream license notices, and verification that the AppDir contains matching WebKitGTK, JavaScriptCore and helper processes. |
 | [prune_target.mjs](../../scripts/prune_target.mjs) | Frees `src-tauri/target` of earlier builds, which cargo never removes: keeps what the last two builds of each profile use, as cargo lists it. npm runs it before and after every `npm run tauri ...`. |
 | [build_opencv.sh](../../scripts/build_opencv.sh) | OpenCV for HDR Merge's alignment and Panorama Merge: the five modules darktable links and stitching, which the engine links, static, into `build/opencv/install`, which `scripts/build.sh` and `build_engine_windows.sh` hand darktable as `OpenCV_ROOT`. |
 | [fetch_immporter.sh](../../scripts/fetch_immporter.sh), [immporter.rev](../../immporter.rev) | The importer, cloned into the gitignored `immporter/` at a pinned commit. |
@@ -424,3 +435,29 @@ darktable is, and it has AI features when darktable is configured with
 - Refer to code by symbol, not line number.
 - Contracts belong in comments beside the code. Measured results belong in [benchmarking/](../../../benchmarking/README.md), and decisions about darktable internals belong in darktable's `dev-doc/`. This file only says where things are and how they connect.
 - After changing a diagram's spec in [`diagrams/build_diagrams.py`](diagrams/build_diagrams.py), rerun it so the `.excalidraw` and `.svg` files agree.
+
+GUI benchmark resource sampling: [resources.rs](../../src-tauri/src/resources.rs)
+records CPU, process memory, Linux threads and available GPU counters on a
+background worker; `App.tsx` attaches phase timestamps to report version 5.
+The GUI dashboard plots these alongside timing summaries.
+
+[detailPreview.ts](../../src/detailPreview.ts) identifies controls eligible for
+native loupe rendering. Detail and grain drags start directly in the loupe at
+the display scale, without probing whole-image rendering first. Disabling the
+loupe retains whole-image drafts. Release renders the exact full view.
+
+In headless screen pipes, the engine pixelpipe patch retains the last edited
+module's input and the scaled output of `demosaicscale`, identified at the next
+active piece. Three recent scaled checkpoints survive ordinary replacement;
+upstream invalidation and memory cleanup still apply. This does not retain
+full-resolution GPU demosaiced pixels. Ordinary darktable GUI pipes keep their
+module-requested checkpoints.
+
+Histogram/scope inputs coalesce before copying at 12.5 Hz during interaction.
+Release flushes pending input, and final frames bypass the cadence delay.
+Copies are deferred until after drawing, with separate histogram and clipping
+workers. Surface generations reject stale results after a frame, photo or crop
+change. Workers support synchronous fallback and dispose on cleanup.
+
+Adaptive cached preview interpolation was removed after latency and visual
+quality regressed. See the measured [failed experiment](../../../benchmarking/failed-experiments.md).

@@ -41,6 +41,21 @@ apply as you make them; **Done** closes the window.
 How fast the photo responds while you edit, and the memory and disk
 Immage keeps to make it so.
 
+**Interface rendering** (Linux)
+
+- **Window renderer**: **Automatic** keeps the Mesa workaround on NVIDIA;
+  **Mesa** selects Mesa's EGL explicitly, and **NVIDIA** selects NVIDIA's.
+  Only installed drivers can be selected. On NVIDIA, Mesa normally draws
+  the interface on the CPU. This setting is separate from **Edit on the
+  GPU**, which controls darktable's photo processing.
+- The row shows the active EGL selection. **Relaunch** saves the photo and
+  restarts Immage to apply a change. An explicit
+  `__EGL_VENDOR_LIBRARY_FILENAMES` in the launch environment takes priority.
+- For an A/B benchmark, select Mesa, relaunch, open the test photo and run
+  the GUI benchmark. Repeat with NVIDIA on the same build, photo, window
+  size and editing settings. The reports record the selected path,
+  environment, WebKitGTK version and WebGL renderer.
+
 **Editing**
 
 - **Preview**: how much the photo gives up for speed while you edit.
@@ -48,6 +63,8 @@ Immage keeps to make it so.
   - **Quality** renders every frame in full, even while you drag.
   - **Balanced**, the default, renders at half size while a slider, wheel
     or curve moves, about four times as fast, and in full on release.
+    **Balanced preview size** offers 50% (the default), 75%, and 100%. At 100%,
+    drag previews stay full size and automatic smaller drafts are disabled.
     Grain, Texture and Sharpening are left out until release, unless they
     are what you are dragging. They are also left out of the zoomed-out
     picture behind the photo, which the navigator and histogram read and
@@ -170,6 +187,13 @@ from these:
 - **Sharpening**: sharpen, or diffuse or sharpen
 - **Defringe** (masks only): chromatic aberrations, or defringe
 
+Clarity and Texture can each use **contrast & texture** under Custom modules.
+Selecting it replaces the corresponding slider with the module's Coarse,
+Medium and Fine details, Base detail level, Halo control, Noise bias, Shadows
+and Highlights sliders, using darktable's ranges and defaults. This also
+applies to masks. Clarity and Texture use separate instances. The existing
+modules remain the defaults; contrast & texture currently runs on the CPU.
+
 The tab also lists the module behind each of the other tools. A photo that
 already uses one of a tool's modules keeps it, so its edit looks the same;
 the choice applies to the tools a photo hasn't used yet, from the next
@@ -199,3 +223,16 @@ are editing, and opens the new version where you were. **Later** puts the
 card away until Immage next starts; **Skip This Version** waits for the
 one after. Updates are signed, and one whose signature does not match is
 not installed.
+
+Detail loupe controls appear only while detail sliders are in use, and the move
+handle appears only when the loupe itself is shown. Slider previews use native
+engine output; release restores the accurate full view.
+
+The performance tuner defaults to an 80 ms latency target. It uses the median
+of the middle 10–90% of measured frame intervals and input-to-paint latencies,
+then tries Balanced 100%, followed by smaller preview sizes and drafts only
+if the targets are missed. The first configuration
+meeting both targets is recommended. Full Quality remains a manual option and
+is excluded from the tuner search.
+
+The **Detail loupe** switch in General → Workspace enables a persistent 100% preview in Adjustments (on by default). Use its point picker, then click the photo to select the area; Escape cancels picking. Disabling the loupe also disables its rendering. Contrast and tone adjustments keep a whole-image live preview; detail controls can preview the selected area during a drag.

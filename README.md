@@ -176,6 +176,7 @@ photo that already uses one of a tool's modules keeps it.
 | Sharpening | sharpen (`sharpen`), or diffuse or sharpen (`diffuse`), its "sharpness \| normal" preset on an instance of its own |
 | Noise Reduction: Luminance | denoise (profiled) (`denoiseprofile`) |
 | **Lens Corrections** | lens correction (`lens`), with the lensfun database |
+| Defringe: Amount, Radius | chromatic aberrations (`cacorrectrgb`) |
 | Hot Pixels | hot pixels (`hotpixels`) |
 | **Transform**: Vertical, Horizontal, Rotate | rotate and perspective (`ashift`) |
 | **Effects** | |
@@ -483,3 +484,42 @@ and where their source is published. For at least three years after a
 release, anyone may also ask for the complete source of any GPL or LGPL
 library in its binaries, at the version shipped, free of charge: open an
 issue at [github.com/Rhettus/immage/issues](https://github.com/Rhettus/immage/issues).
+
+### Experimental Linux WebKitGTK renderer build
+
+The `experiment/linux-webkit-renderer` branch has a separate GitHub Actions
+workflow, **experimental Linux WebKitGTK 2.54**. It builds x64 and ARM64
+AppImages on Ubuntu 26.04 with WebKitGTK **2.54.2** from the upstream source
+archive, verified by SHA-256. Tauri's GTK3 / 4.1 API, JavaScriptCore and the
+WebKit helper processes are built and installed together. The installation
+is cached separately per architecture; the first build can take hours.
+These artifacts target Ubuntu 26.04 and compatible newer distributions.
+Version numbers stay unchanged.
+
+Preferences > Performance > Interface rendering selects Automatic, Mesa or
+NVIDIA for the window. Relaunch between A/B benchmark runs. The engine's
+GPU processing setting is separate. See [Preferences](app/docs/preferences.md)
+for the procedure. Standard release builds remain on Ubuntu 22.04.
+
+## Location metadata and map attribution
+
+The Metadata panel's Location section accepts latitude and longitude in decimal
+degrees (latitude first). Use Show map to place or drag a pin, then Apply to
+save it to the photo's XMP sidecar. Remove location clears GPS coordinates and
+altitude in Immage without changing the original photo. An Immage XMP marker
+keeps removed camera GPS from returning on reopen; other photo software may
+still show GPS embedded in the original. Moving a location clears the old altitude. Coordinate editing works
+offline; maps require internet access and no API key. Place-name lookup is not
+included.
+
+Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright),
+available under the [Open Database License (ODbL)](https://opendatacommons.org/licenses/odbl/).
+Map tiles are provided by the OpenStreetMap Foundation and are subject to its
+[tile usage policy](https://operations.osmfoundation.org/policies/tiles/).
+Immage identifies its requests, caches viewed tiles for seven days, and does not
+prefetch areas for offline use. Opening the map sends the viewed area and your
+IP address to the tile service.
+
+Interactive maps use [Leaflet](https://leafletjs.com/), Copyright © 2010–2023
+Volodymyr Agafonkin and © 2010–2011 CloudMade, under the
+[BSD 2-Clause license](https://github.com/Leaflet/Leaflet/blob/main/LICENSE).

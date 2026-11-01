@@ -4,8 +4,8 @@
 // one open image: control values in Lightroom units, translated to engine
 // edits. edits are coalesced: while a render is in flight, further moves
 // only mark their module dirty, and the next round sends the latest values once
-import { invoke } from "@tauri-apps/api/core";
-import { boundFields, choiceCovers, choiceOn, controlById, isModuleSetting, localFields, localMaps, mapOf, mapsFor,
+
+import { boundFields, choiceCovers, choiceOn, controlById, isModuleSetting, localControlById, localFields, localMaps, mapOf, mapsFor,
          mapsWith, MODULE_CHOICES, modules, NEG_CHOICES, NEG_OFF, turnOrientation, turnRect, type ImageContext,
          type ModuleMap, type Params, type Turn, type Values } from "./manifest";
 import { loadModuleChoice } from "./moduleChoice";
@@ -15,7 +15,9 @@ import type { Spot } from "./spots";
 import { begin, end, progress } from "./activity";
 import { perf, type Trace } from "./perf";
 import { FRAME_HEAD, renderFrame } from "./sharedFrames";
+import { isDetailControl } from "./detailPreview";
 import type { Preview } from "./Preferences";
+const invoke = <T = unknown>(command: string, args?: Parameters<typeof perf.command>[1]) => perf.command<T>(command, args);
 
 
 type OpenReply = { imgid: number; sensor_width: number; sensor_height: number; orientation: number;
@@ -54,6 +56,8 @@ export type View = {
   // a smaller frame while a control is dragged, shown enlarged; a full one
   // follows on release
   draft?: boolean;
+  detail?: boolean;
+  loupe?: boolean;
 };
 
 // left out of drag frames, every instance (masks' too), and back on the
@@ -327,9 +331,11 @@ export class Session {
     return c.readsPast ? snapped : Math.min(c.max, Math.max(c.min, snapped));
   }
 
-  set(id: string, v: number) {
-    if (!mapOf.has(id)) return;
-    perf.input();
+  set(id: string, v: number, coalesce = false) {
+    if (!mapOf.has(id) || this.values[id] === v) return;
+    perf.input(id);
+    this.activeDetailControl = this.size().draft && isDetailControl(id) ? id : null;
+    this.onDetailControl?.(this.activeDetailControl);
     this.values[id] = v;
     if (id === "orient") this.orient(v);
     if (id === "neg_on") this.negChanged();
@@ -338,6 +344,22 @@ export class Session {
       this.dirty.add(m.op);
     }
     this.needRender = true;
+    this.submitEdits(coalesce);
+  }
+
+  private editFrame: number | null = null;
+  private coalesceWait?: number;
+  private submitEdits(coalesce: boolean) {
+    if (!coalesce) { this.flushEdits(); return; }
+    if (this.editFrame === null) this.coalesceWait = perf.begin("coalesce", { blockingPump:true });
+    this.editFrame ??= window.requestAnimationFrame(() => this.flushEdits());
+    // let the pump cancel an obsolete base render immediately
+    if (this.busy) void this.pump();
+  }
+  flushEdits() {
+    perf.finish(this.coalesceWait); this.coalesceWait = undefined;
+    if (this.editFrame !== null) window.cancelAnimationFrame(this.editFrame);
+    this.editFrame = null;
     void this.pump();
   }
 
@@ -450,7 +472,7 @@ export class Session {
         const inst = r.instances[m.op];
         if (inst) Object.assign(values, m.read(inst.params, {}, this.ctx));
       }
-      for (const [id, v] of Object.entries(values)) values[id] = Math.round(v * 100) / 100;
+      for (const [id, v] of Object.entries(values)) values[id] = id.startsWith("l_detail_") ? v : Math.round(v * 100) / 100;
       const insts = Object.values(r.instances);
       const hidden = insts.length > 0 && insts.every((i) => !i.enabled) && !r.merged_in?.length
         && Object.entries(values).some(([id, v]) => v !== neutral[id]);
@@ -482,6 +504,8 @@ export class Session {
   // every map of the control: Highlights and Shadows have one per module the
   // photo's tool can be on, and pump() sends only the chosen one
   setLocal(name: string, id: string, v: number) {
+    this.activeDetailControl = this.size().draft && isDetailControl(id) ? id : null;
+    this.onDetailControl?.(this.activeDetailControl);
     const ops = localMaps.filter((m) => m.controls.includes(id)).map((m) => m.op);
     if (!ops.length) return;
     this.masks = this.masks.map((m) => (m.name === name ? { ...m, values: { ...m.values, [id]: v } } : m));
@@ -642,7 +666,8 @@ export class Session {
         // a module the photo's tool no longer runs on (MODULE_CHOICES) stays
         // off
         // a mask sharing an instance keeps its own off, holding its settings
-        const holds = map.controls.some((id) => m.values[id] !== 0);
+        const holds = map.enabled ? map.enabled(m.values)
+          : map.controls.some((id) => m.values[id] !== (localControlById.get(id)?.neutral ?? 0));
         const shares = plan.merged.get(name)?.has(op) ?? false;
         const on = !shares && !this.before && !m.hidden && choiceOn(map, this.values) && holds;
         // refinements live in an instance's blend parameters: a mask with
@@ -751,8 +776,12 @@ export class Session {
   }
 
   // several controls at once, as one round of edits (a point curve drag)
-  setMany(entries: [string, number][]) {
-    perf.input();
+  setMany(entries: [string, number][], coalesce = false) {
+    entries = [...new Map(entries)].filter(([id, v]) => mapOf.has(id) && this.values[id] !== v);
+    if (!entries.length) return;
+    perf.input(entries.map(([id]) => id));
+    this.activeDetailControl = null;
+    this.onDetailControl?.(null);
     for (const [id, v] of entries) {
       if (!mapOf.has(id)) continue;
       this.values[id] = v;
@@ -764,10 +793,17 @@ export class Session {
       }
     }
     this.needRender = true;
-    void this.pump();
+    this.submitEdits(coalesce);
   }
 
+  onDetailControl: ((id:string|null) => void) | null = null;
+  private activeDetailControl: string | null = null;
   requestRender() {
+    if (this.editFrame !== null) window.cancelAnimationFrame(this.editFrame);
+    perf.finish(this.coalesceWait, "interrupted"); this.coalesceWait = undefined;
+    this.editFrame = null;
+    this.activeDetailControl = null;
+    this.onDetailControl?.(null);
     this.needRender = true;
     void this.pump();
   }
@@ -850,11 +886,31 @@ export class Session {
   private draftWas = "";
   private needWarm = false;
 
+  // native detail previews keep every module and the display scale in a loupe
+  detailView: (() => View | null) = () => null;
+  private needLoupe = false;
+  requestLoupe() {
+    this.needLoupe = true;
+    void this.pump();
+  }
+  private detailOps = "";
+
   private draftView(view: View, ops: string[]): View {
-    if (!view.draft) return view;
+    if (!view.draft) { perf.event("preview.decision", { reason:"exact-view" }); return view; }
+    if (ops.length) this.detailOps = [...new Set(ops.map((op) => op.split("#")[0]))].sort().join();
+    const detail = this.detailView();
+    const eligible = !!this.activeDetailControl && this.detailOps.split(",").every((op) =>
+      ["diffuse", "sharpen", "contrastntexture", "denoiseprofile", "bilat", "grain"].includes(op));
+    if (detail && eligible) {
+      // full-size probes block newer inputs before the loupe can appear
+      perf.event("preview.decision", { reason:"detail-loupe" });
+      return { ...detail, draft: true, detail: true, loupe: true };
+    }
+
     if (ops.length) this.draftKey = [...new Set(ops.map((op) => op.split("#")[0]))].sort().join();
     const steps = DRAFT_STEPS.filter((k) => k >= this.draftLimits().smallest);
     const k = steps[Math.min(draftSteps.get(this.draftKey) ?? 0, steps.length - 1)];
+    perf.event("preview.decision", { reason:k === 1 ? "selected-draft-size" : "adaptive-draft-size", factor:k, modules:this.draftKey, target:this.draftLimits().target });
     if (k === 1) return view;
     const at = (v: number | undefined) => v === undefined ? undefined : Math.round(v * k);
     return { ...view, width: at(view.width)!, height: at(view.height)!, x: at(view.x), y: at(view.y),
@@ -866,15 +922,20 @@ export class Session {
   // size, which ran from the raw, nor on one darktable found in its cache
   // (0 ms), as a drag back over values just shown does
   private draftTimed(f: Frame, edits: number) {
+    if (f.view.detail) return;
     const size = `${f.width}x${f.height}`, first = size !== this.draftWas;
     this.draftWas = size;
     const ms = f.trace?.rust[2] ?? 0;
-    if (first || !edits || ms < 1) return;
+    if (first || !edits || ms < 1) {
+      perf.event("preview.adaptation", { reason:first ? "first-frame-at-size" : !edits ? "no-edits" : "pipeline-cache-hit", ms, size });
+      return;
+    }
     const { target, smallest } = this.draftLimits();
     const steps = DRAFT_STEPS.filter((k) => k >= smallest);
     const i = Math.min(draftSteps.get(this.draftKey) ?? 0, steps.length - 1);
     if (ms > target && i < steps.length - 1) draftSteps.set(this.draftKey, i + 1);
     else if (i > 0 && ms * (steps[i - 1] / steps[i]) ** 2 < 0.8 * target) draftSteps.set(this.draftKey, i - 1);
+    perf.event("preview.adaptation", { ms, target, modules:this.draftKey, previousStep:i, nextStep:draftSteps.get(this.draftKey) ?? 0 });
   }
 
   // one drag frame, thrown away, once the photo is up: the engine's drag
@@ -909,24 +970,35 @@ export class Session {
   // `have`: frames held here, one of which the engine may name rather than
   // render again (a frame of no size, with its hash)
   private async renderView(view: View, kind: Trace["kind"],
-                           cycle?: Pick<Trace, "inputAt" | "edits" | "setStart">, every = false,
+                           cycle?: Pick<Trace, "inputAt" | "latestInputAt" | "edits" | "setStart" | "diagnostic">, every = false,
                            have: Frame[] = [], edits: ReturnType<Session["moduleEdit"]>[] = []): Promise<Frame> {
+    perf.count("nativeFramesRequested");
     const t0 = performance.now();
+    const measurement = perf.measurement;
     const { width, height, scale, x, y } = view;
     const preview = this.previewMode();
-    const skip = view.draft ? DRAFT_SKIP[preview].filter((op) => !this.draftKeep.has(op))
+    const skip = view.detail ? null : view.draft ? DRAFT_SKIP[preview].filter((op) => !this.draftKeep.has(op))
       : kind === "base" && !every ? BASE_SKIP[preview] : null;
     if (!view.draft) this.draftKeep.clear();
     const hex = (f: Frame) => f.hash!.toString(16).padStart(16, "0");
-    const buf = await renderFrame({ width, height, scale, x, y, skip, draft: !!view.draft,
+    const requestLabel = cycle?.diagnostic?.label ?? perf.label;
+    const requestId = perf.request({ kind, draft: !!view.draft, width, height, blockingPump:kind !== "base", detail: !!view.detail, loupe: !!view.loupe, ...cycle?.diagnostic });
+    let buf: ArrayBuffer;
+    try { buf = await renderFrame({ width, height, scale, x, y, skip, draft: !!view.draft,
                                     base: kind === "base" && !view.draft,
                                     have: have.length ? have.map(hex) : null,
-                                    edits: edits.length ? edits : null });
+                                    edits: edits.length ? edits : null, diagnosticRequest: requestId });
+      perf.finish(requestId);
+    } catch (error) {
+      perf.finish(requestId, /cancel/i.test(String(error)) ? "cancelled" : "failed");
+      throw error;
+    }
+    perf.count("nativeFramesCompleted");
     const head = new DataView(buf, 0, 24);
     const u = (k: number) => head.getUint32(4 * k, true);
     const hash = new DataView(buf).getBigUint64(48, true);
     const kept = !u(0) && !u(1) ? have.find((f) => f.hash === hash) : undefined;
-    const trace = perf.rendered({ kind, draft: !!view.draft, inputAt: cycle?.inputAt ?? null, edits: cycle?.edits ?? 0,
+    const trace = perf.rendered({ measurement, diagnostic: measurement === perf.measurement ? perf.frame({ ...cycle?.diagnostic, label: requestLabel, requestId }, kept ? "engine-reuse" : "native") : undefined, kind, draft: !!view.draft, inputAt: cycle?.inputAt ?? null, latestInputAt: cycle?.latestInputAt ?? null, edits: cycle?.edits ?? 0,
                                   setStart: cycle?.setStart ?? t0, setEnd: t0, r0: t0,
                                   width: kept?.width ?? u(0), height: kept?.height ?? u(1) }, buf);
     if (kept) return { ...kept, view, ms: performance.now() - t0, trace };
@@ -1009,7 +1081,7 @@ export class Session {
 
   // the window the engine would render (_render in engine/main.c), cut
   // from the copy
-  private cut(c: Frame, view: View): Frame {
+  private cut(c: Frame, view: View, cycle?: Parameters<typeof perf.cached>[2]): Frame {
     const W = c.width, H = c.height;
     const w = Math.min(view.width, W), h = Math.min(view.height, H);
     const x = Math.min(Math.max(view.x ?? 0, 0), W - w), y = Math.min(Math.max(view.y ?? 0, 0), H - h);
@@ -1019,7 +1091,7 @@ export class Session {
       pixels.set(c.pixels.subarray(from, from + 4 * w), 4 * r * w);
     }
     return { width: w, height: h, fullWidth: c.fullWidth, fullHeight: c.fullHeight, x, y, view, pixels, ms: 0,
-             trace: perf.cached(w, h) };
+             trace: perf.cached(w, h, cycle) };
   }
 
   // a render on the base pipe, which an edit stops (cancel_base). one asked
@@ -1032,11 +1104,13 @@ export class Session {
     const run = { stale: false, wake, copy: every ? view.scale ?? null : null };
     this.base = run;
     const done = this.renderView(view, "base", undefined, every, have)
-      .then((f) => { if (!run.stale) use(f); })
+      .then((f) => { if (!run.stale) use(f); else perf.discard(f.trace, "base-obsolete-after-cancel"); })
       .catch((e) => { if (String(e) !== "canceled") this.onError(String(e)); })
       .finally(() => { if (this.baseInFlight === done) this.baseInFlight = null; });
     this.baseInFlight = done;
+    const wait = perf.begin("base.wait", { copy: every });
     await Promise.race([done, woken]);
+    perf.finish(wait);
     this.base = null;
   }
 
@@ -1054,8 +1128,13 @@ export class Session {
   // wait is the user's, so it shows the busy indicator
   private copyWait: ReturnType<typeof begin> | null = null;
 
+  private pumpCommand<T = unknown>(command: string, args?: Parameters<typeof perf.command>[1]) {
+    return perf.command<T>(command, args, { blockingPump:true });
+  }
+
   private async pump() {
     if (this.busy) {
+      perf.event("pump.busy", { base: !!this.base, editPending: this.editPending });
       // the base can take seconds and would be stale: stopped, it is
       // rendered again once editing pauses (App.tsx, scheduleBase)
       if (this.base && !this.base.stale && this.editPending) {
@@ -1066,18 +1145,23 @@ export class Session {
         }
         this.base.stale = true;
         this.base.wake();
-        invoke("cancel_base").catch(() => {});
+        const requestIds = perf.activeRenderIds("base");
+        perf.event("base.cancelRequested", { requestIds });
+        invoke("cancel_base").then(() => perf.event("base.cancelSignalSent", { requestIds }))
+          .catch(() => perf.event("base.cancelSignalFailed", { requestIds }));
       }
       return;
     }
+    if (this.editFrame !== null) return;
     this.busy = true;
     // the viewer's busy indicator: from now until a frame is back
     let job = begin();
     try {
-      while (this.dirty.size || this.needRender || this.needThumb || this.needCopy || this.needWarm
+      while (this.dirty.size || this.needRender || this.needThumb || this.needCopy || this.needWarm || this.needLoupe
              || this.wantLook !== undefined
              || this.masksPending || this.wantLookAmount !== undefined || this.spotsPending
              || this.reshapeDue || this.baselineEnd || this.modulePending.length) {
+        if (this.editFrame !== null) break;
         // before the change that ended it; a save it makes is the one due
         if (this.baselineEnd) {
           this.baselineEnd = false;
@@ -1085,13 +1169,13 @@ export class Session {
             window.clearTimeout(this.saveTimer);
             this.unsaved = false;
           }
-          await invoke("baseline_end");
+          await this.pumpCommand("baseline_end");
           continue;
         }
         // the engine saves on quitting, but never the Before view's settings:
         // it hears of the view before they go
         if (this.before && !this.engineBefore) {
-          await invoke("before_view", { on: true });
+          await this.pumpCommand("before_view", { on: true });
           this.engineBefore = true;
           this.changed();
         }
@@ -1101,7 +1185,7 @@ export class Session {
         if (this.dirty.has("flip") || framing) {
           const ops = [...this.dirty];
           this.dirty.clear();
-          for (const op of ops) await invoke("set_params", this.moduleEdit(op));
+          for (const op of ops) await this.pumpCommand("set_params", this.moduleEdit(op));
           this.changed();
           if (framing) this.reshape = true;
           if (!this.before) { this.unsaved = true; this.scheduleSave(); }
@@ -1111,10 +1195,10 @@ export class Session {
         if (this.spotsPending) {
           const dirty = this.spotsDirty, on = !this.before;
           this.spotsDirty = false;
-          if (dirty) await invoke("spots", { spots: this.spots });
+          if (dirty) await this.pumpCommand("spots", { spots: this.spots });
           // a new set of spots comes on with them; the Before view turns
           // them off after
-          if (dirty || on !== this.spotsOn) await invoke("spots_enable", { on });
+          if (dirty || on !== this.spotsOn) await this.pumpCommand("spots_enable", { on });
           this.spotsOn = on;
           this.changed();
           if (dirty && !this.before) { this.unsaved = true; this.scheduleSave(); }
@@ -1124,14 +1208,16 @@ export class Session {
         if (this.wantLookAmount !== undefined && this.wantLook === undefined) {
           const amount = this.wantLookAmount;
           this.wantLookAmount = undefined;
-          await invoke("look_amount", { amount });
+          await this.pumpCommand("look_amount", { amount });
           this.changed();
           if (!this.before) { this.unsaved = true; this.scheduleSave(); }
           this.needRender = true;
           continue;
         }
         if (this.masksPending) {
-          const sent = await this.sendMasks();
+          const task = perf.begin("pump.task", { operation:"sendMasks", blockingPump:true });
+          let sent: boolean;
+          try { sent = await this.sendMasks(); } finally { perf.finish(task); }
           this.changed();
           if (sent && !this.before) { this.unsaved = true; this.scheduleSave(); }
           this.needRender = true;
@@ -1140,7 +1226,7 @@ export class Session {
         if (this.wantLook !== undefined) {
           const path = this.wantLook;
           this.wantLook = undefined;
-          await invoke("look_apply", { path });
+          await this.pumpCommand("look_apply", { path });
           this.changed();
           if (!this.before) { this.unsaved = true; this.scheduleSave(); }
           this.needRender = true;
@@ -1152,13 +1238,16 @@ export class Session {
           const { key, op, priority, req } = this.modulePending.shift()!;
           const restore = req.restore === "opened" ? this.modulesOpened.get(key) : req.restore;
           if (req.restore === "opened" && !restore) continue;
-          const r = await invoke<{ was: ModuleState; now: ModuleState }>("module_state",
+          const r = await this.pumpCommand<{ was: ModuleState; now: ModuleState }>("module_state",
             { op, priority, enabled: req.enabled, reset: req.reset, restore });
           this.changed();
           if (!this.modulesOpened.has(key)) this.modulesOpened.set(key, r.was);
           this.moduleStates.set(key, r.now);
           const item = this.history.find((h) => instanceKey(h) === key);
-          if (item) await this.reread(mapOpOf(item));
+          if (item) {
+            const task = perf.begin("pump.task", { operation:"reread", blockingPump:true });
+            try { await this.reread(mapOpOf(item)); } finally { perf.finish(task); }
+          }
           this.onModules?.();
           if (!this.before) { this.unsaved = true; this.scheduleSave(); }
           this.needRender = true;
@@ -1166,15 +1255,32 @@ export class Session {
         }
         if (this.reshapeDue && !this.dirty.size) {
           this.reshape = false;
-          await this.loadMasks();
-          this.spots = await invoke<Spot[]>("spots", {});
+          const task = perf.begin("pump.task", { operation:"loadMasks", blockingPump:true });
+          try { await this.loadMasks(); } finally { perf.finish(task); }
+          this.spots = await this.pumpCommand<Spot[]>("spots", {});
           this.onShapes?.();
+          continue;
+        }
+        if (!this.dirty.size && !this.needRender && this.needLoupe) {
+          this.needLoupe = false;
+          const view = this.before ? null : this.detailView();
+          if (view) {
+            end(job);
+            await this.idleRender({ ...view, detail: true, loupe: true }, true, (f) => {
+              const now = this.detailView();
+              if (!this.before && now && this.frameKey(now, false) === this.frameKey(view, false)) this.onFrame(f);
+            });
+            job = begin();
+          }
           continue;
         }
         if (!this.dirty.size && !this.needRender && this.needWarm) {
           this.needWarm = false;
           const view = this.draftSize();
-          if (view) await this.renderView(view, "view");
+          if (view) {
+            const warm = await this.renderView(view, "view");
+            perf.event("frame.notPresented", { ...warm.trace?.diagnostic, reason:"warmup-only" });
+          }
           continue;
         }
         if (!this.dirty.size && !this.needRender && this.needThumb) {
@@ -1216,26 +1322,38 @@ export class Session {
         this.needRender = false;
         // what the render shows is settled by now, whatever changes during it
         const before = !!this.before;
-        const view = this.draftView(this.size(), ops), key = this.frameKey(view, before);
+        const requestedView = this.size();
+        const requestedKey = this.frameKey(requestedView, before);
+        const view = this.draftView(requestedView, ops), key = this.frameKey(view, before);
+        perf.event("preview.selected", { requested:{...requestedView}, selected:{...view}, controls:ops });
         const kept = view.draft || edits.length ? undefined : this.current.get(key);
         if (kept) {
           this.keepFrame(key, kept);
-          this.onFrame({ ...kept, before, trace: perf.cached(kept.width, kept.height) });
+          this.onFrame({ ...kept, before, trace: perf.cached(kept.width, kept.height, cycle) });
         } else if (!view.draft && !edits.length && !before && this.copy && view.scale === this.copy.view.scale) {
-          this.onFrame({ ...this.cut(this.copy, view), before });
+          const reused = this.cut(this.copy, view, cycle);
+          this.onFrame({ ...reused, before });
         } else {
           const have = view.draft ? [] : this.heldFor(key);
           const f = await this.renderView(view, ops.length ? "edit" : "view", cycle, false, have, edits);
           if (!view.draft) this.keepFrame(key, f);
           else this.draftTimed(f, edits.length);
           if (!before && !have.some((h) => h.hash === f.hash)) this.putAside = null;
-          this.onFrame({ ...f, before });
+          const now = this.size();
+          const stale = requestedKey !== this.frameKey(now, !!this.before)
+            || !!requestedView.draft !== !!now.draft
+            || this.reshapeDue || [...this.dirty].some((op) => op === "flip" || FRAMING.has(op.split("#")[0]));
+          if (stale) {
+            perf.count("nativeFramesDiscarded");
+            perf.event("frame.discarded", { ...f.trace?.diagnostic, viewportChanged: requestedKey !== this.frameKey(now, !!this.before), draftChanged: !!requestedView.draft !== !!now.draft, reshape: this.reshapeDue });
+          }
+          if (!stale) this.onFrame({ ...f, before });
         }
         progress(job);
       }
       // and that it is over only once the edit is back in it
       if (!this.before && this.engineBefore) {
-        await invoke("before_view", { on: false });
+        await this.pumpCommand("before_view", { on: false });
         this.engineBefore = false;
         this.changed();
       }
@@ -1277,6 +1395,7 @@ export class Session {
   }
 
   async close() {
+    this.requestRender();
     window.clearTimeout(this.saveTimer);
     if (this.before) this.showBefore(null);
     while (this.busy || this.dirty.size || this.baseInFlight) await new Promise((r) => setTimeout(r, 20));

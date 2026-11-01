@@ -21,11 +21,14 @@
 // dt_imageio_dng_write_linear) stores 16-bit integers clipped at the
 // sensor's white, which would cut a panorama's highlights, and its float
 // writer only a mosaic. this one keeps the metadata that writer's
-// _set_dng_shared_metadata() gives, for floats
+// _set_dng_shared_metadata() gives, for floats. Converted positives use
+// the same storage with a linear Rec.2020 matrix instead of camera RGB.
 
 #include "dng.h"
+#include "strip.h"
 
 #include "common/darktable.h"
+#include "common/colorspaces_inline_conversions.h"
 #include "common/exif.h"
 #include "common/image.h"
 
@@ -56,8 +59,8 @@ static uint16_t _half(const float f)
   return sign | (h + (rest > 0x1000 || (rest == 0x1000 && (h & 1))));
 }
 
-int dng_write_linear_half(const char *filename, const float *rgb, const int width, const int height,
-                          const dt_image_t *img, const void *exif, const int exif_len,
+static int _write_half(const char *filename, const float *rgb, const int width, const int height,
+                          const dt_image_t *img, const int stride, const void *exif, const int exif_len,
                           void (*progress)(int done, int total, void *data), void *data)
 {
 #ifdef _WIN32
@@ -122,8 +125,9 @@ int dng_write_linear_half(const char *filename, const float *rgb, const int widt
   const int every = MAX(1, height / 50);
   for(int y = 0; y < height && !res; y++)
   {
-    const float *in = rgb + (size_t)y * width * 3;
-    for(int x = 0; x < width * 3; x++) row[x] = _half(in[x]);
+    const float *in = rgb + (size_t)y * width * stride;
+    for(int x = 0; x < width; x++)
+      for(int c = 0; c < 3; c++) row[3 * x + c] = _half(in[stride * x + c]);
     if(TIFFWriteScanline(tif, row, y, 0) < 0) res = 1;
     if(progress && y % every == 0) progress(y, height, data);
   }
@@ -133,4 +137,49 @@ int dng_write_linear_half(const char *filename, const float *rgb, const int widt
   if(!res && exif && exif_len > 0) dt_exif_write_blob((uint8_t *)exif, (uint32_t)exif_len, filename, 0);
   if(res) g_unlink(filename);
   return res;
+}
+
+int dng_write_linear_half(const char *filename, const float *rgb, const int width, const int height,
+                          const dt_image_t *img, const void *exif, const int exif_len,
+                          void (*progress)(int done, int total, void *data), void *data)
+{
+  return _write_half(filename, rgb, width, height, img, 3, exif, exif_len, progress, data);
+}
+
+// Rendered positives use linear Rec.2020, not the original camera's RGB.
+// A neutral white balance and the matching XYZ D65 matrix describe those
+// pixels without applying the camera's profile or white balance again.
+static int _write_rendered_half(const char *filename, const float *rgba, const int width, const int height,
+                                const int channels, const void *exif, const int exif_len,
+                                void (*progress)(int, int, void *), void *data)
+{
+  dt_image_t img = { 0 };
+  g_strlcpy(img.camera_maker, "Immage", sizeof(img.camera_maker));
+  g_strlcpy(img.camera_model, "Converted positive", sizeof(img.camera_model));
+  g_strlcpy(img.camera_makermodel, "Immage linear Rec.2020", sizeof(img.camera_makermodel));
+  for(int c = 0; c < 3; c++)
+  {
+    img.wb_coeffs[c] = 1.0f;
+    for(int k = 0; k < 3; k++) img.adobe_XYZ_to_CAM[c][k] = xyz_to_rec2020_d65[3 * c + k];
+  }
+  int res = _write_half(filename, rgba, width, height, &img, channels, NULL, 0, progress, data);
+  if(!res && !rendered_metadata(filename, exif, exif_len, TRUE))
+  {
+    g_unlink(filename);
+    res = 1;
+  }
+  return res;
+}
+
+int dng_write_rendered_half(const char *filename, const float *rgba, int width, int height,
+                            const void *exif, int exif_len)
+{
+  return _write_rendered_half(filename, rgba, width, height, 4, exif, exif_len, NULL, NULL);
+}
+
+int dng_write_rendered_rgb_half(const char *filename, const float *rgb, int width, int height,
+                                const void *exif, int exif_len,
+                                void (*progress)(int, int, void *), void *data)
+{
+  return _write_rendered_half(filename, rgb, width, height, 3, exif, exif_len, progress, data);
 }

@@ -32,7 +32,7 @@ let lastTag = 0;
 // with AI models from `modelsDir` when given; `onPerf` gets each line of
 // darktable's -d perf timings, for the checks that look at the pipe; `env`
 // added to the engine's environment
-export function startEngine(binary, home, modelsDir = null, { gpu = false, onPerf = null, env = null } = {}) {
+export function startEngine(binary, home, modelsDir = null, { gpu = false, onPerf = null, pipeTrace = false, env = null } = {}) {
   mkdirSync(home, { recursive: true });
   frame = join(home, "frame.rgba");
   preview = join(home, "preview.rgba");
@@ -44,7 +44,7 @@ export function startEngine(binary, home, modelsDir = null, { gpu = false, onPer
                             "--cachedir", join(home, "cache"), "--conf", "opencl=true",
                             "--conf", `opencl_device_priority=${gpu ? "*//*//" : "//*//"}`,
                             "--conf", "opencl_scheduling_profile=default",
-                            ...(onPerf ? ["-d", "perf"] : [])],
+                            ...(onPerf ? ["-d", "perf", ...(pipeTrace ? ["-d", "pipe"] : [])] : [])],
                    { stdio: ["pipe", "pipe", onPerf ? "pipe" : "ignore"], env: { ...process.env, ...env } });
   engine = me;
   if (onPerf) createInterface({ input: me.stderr }).on("line", onPerf);

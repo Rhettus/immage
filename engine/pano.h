@@ -24,8 +24,8 @@
 G_BEGIN_DECLS
 
 // Lightroom's Photo Merge › Panorama on OpenCV's stitching module, which
-// darktable does not have. the frames come in linear, in the camera's own
-// color, and the panorama goes out so, to be written as a raw (dng.h)
+// darktable does not have. Frames and output share a linear RGB space:
+// camera RGB for RAW selections, Rec.2020 for selections with non-RAWs.
 
 typedef struct pano_t pano_t;
 

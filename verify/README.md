@@ -17,6 +17,23 @@ The report goes to `verify/results/<date>_<sha>/report.md`, with every
 measurement in `report.json`. Both, and `verify/references/`, are your
 machine's own and stay out of git.
 
+The focused panorama and negative-export regression checks run with the built engine:
+
+```bash
+node --test verify/panorama.test.mjs verify/negative-export.test.mjs
+```
+
+It checks compressed DNG and TIFF color metadata, conversion and crop
+round-trips, export snapshots, further exposure edits and reopening after
+an engine restart. It creates its own small fixture and temporary workspace.
+
+The focused GPS check covers camera-embedded coordinates, XMP edits and removal,
+altitude invalidation, invalid input, and persistence after restarting:
+
+```bash
+node --test verify/location.test.mjs
+```
+
 ## What it checks
 
 `run.py` takes the largest raw in `benchmarking/corpus/` and the smallest
@@ -82,6 +99,13 @@ same commit.
 To look into one control: `python3 -I verify/run.py --skip-perf --checks
 sliders --controls usm_amount --images DSC07636`.
 
+For the headless pipeline checkpoint policy, run
+`python3 -I verify/run.py --skip-perf --checks checkpoints --images PHOTO`.
+This checks pipe debug hints for the scaled checkpoint and excludes retention
+of the full-resolution input to scaling. It also checks repeated GPU drags
+for unnecessary demosaicing when OpenCL is available; that portion is reported
+as skipped when no module runs on the GPU.
+
 ## What it doesn't cover
 
 - The interface itself: whether a click on a slider reaches `change()` in
@@ -92,3 +116,43 @@ sliders --controls usm_amount --images DSC07636`.
 - AI masks and AI Denoise, looks, presets, export settings and Immich.
 - The GUI benchmark (IPC, drawing): run it from Preferences in the app
   ([benchmarking/README.md](../benchmarking/README.md)).
+
+## Folder metadata and embedded thumbnails
+
+Build and run the focused checks with an isolated scratch directory:
+
+```bash
+cmake --build build --target immage-thumbnail-check
+build/bin/immage-thumbnail-check /tmp/immage-thumbnail-check /path/to/camera.CR2 /path/to/camera.NEF
+```
+
+The check generates TIFFs with two embedded JPEG sizes, rotated orientation,
+metadata beyond the prefix limit, and truncated data. It verifies metadata,
+compares extracted JPEG bytes with Exiv2's full-file previews, and decodes
+four thumbnail sizes. Optional RAW paths must contain an embedded preview.
+On Linux it also prints logical bytes read from `/proc/self/io`; these include
+buffering and other reads during each call and do not measure network traffic
+or physical disk reads. Camera fixtures are supplied locally and stay out of git.
+
+
+## Native detail preview checks
+
+Check detail eligibility, native loupe selection, view/release invalidation,
+tuner search, exact frame delivery, and histogram/clipping worker lifecycle:
+
+```bash
+node --test verify/detail-preview.test.mjs verify/performance-tuner.test.mjs verify/preview-handoff.test.mjs verify/pixel-worker.test.mjs
+```
+
+## Scaled checkpoint retention
+
+Exercise cache churn beyond its entry count, the three-checkpoint bound,
+invalidation, memory trimming and the two-buffer fallback:
+
+```bash
+cmake --build build --target immage-checkpoint-check
+build/bin/immage-checkpoint-check
+```
+
+After cache structure changes, rebuild the full tree before rendering so the
+engine and dynamically loaded image-processing modules use the same layout.

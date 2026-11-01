@@ -110,7 +110,7 @@ const hover = (el, html) => { el.addEventListener("mousemove", (e) => { tip.inne
   el.addEventListener("mouseleave", () => tip.style.display = "none"); };
 
 // ---------------------------------------------------------------- state
-const state = { tab: "overview", run: D.runs.length - 1, mode: null, image: "all", compareWith: null, gui: D.gui.length - 1, step: null, machine: null };
+const state = { tab: !D.runs.length && D.gui.length ? "gui" : "overview", run: D.runs.length - 1, mode: null, image: "all", compareWith: null, gui: D.gui.length - 1, step: null, machine: null };
 // GUI reports from before 0.32.0 carry no machine
 const machineOf = (g) => g.machine?.id ?? "unknown";
 const machineName = (g) => g.machine ? `${g.machine.host ?? "?"} · ${g.machine.cpu ?? "?"}` : "unknown machine";
@@ -172,15 +172,15 @@ function stacked(rows, keys, colors, { unit = "ms", width = 900, label = 210, ro
   return svg;
 }
 
-function lines(seriesList, xLabels, { unit = "ms", width = 900, height = 260 } = {}) {
+function lines(seriesList, xLabels, { unit = "ms", width = 900, height = 260, xValues = null, tickEvery = 1 } = {}) {
   const W = width, H = height, L = 56, B = 40, plotW = W - L - 20, plotH = H - B - 14;
   const all = seriesList.flatMap((sr) => sr.values.filter((v) => v != null));
   const ticks = niceTicks(Math.max(1, ...all)), top = ticks[ticks.length - 1];
-  const X = (i) => L + (xLabels.length < 2 ? plotW / 2 : (i / (xLabels.length - 1)) * plotW), Y = (v) => 14 + plotH - (v / top) * plotH;
+  const X = (i) => L + (xLabels.length < 2 ? plotW / 2 : (xValues ? (xValues[i] - xValues[0]) / Math.max(1, xValues.at(-1) - xValues[0]) : i / (xLabels.length - 1)) * plotW), Y = (v) => 14 + plotH - (v / top) * plotH;
   const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", role: "img" });
   for (const t of ticks) svg.append(s("line", { x1: L, x2: W - 20, y1: Y(t), y2: Y(t), class: "gridl" }), s("text", { x: L - 6, y: Y(t), "text-anchor": "end", "dominant-baseline": "middle" }, t));
   svg.append(s("text", { x: 4, y: 10 }, unit));
-  xLabels.forEach((l, i) => svg.append(s("text", { x: X(i), y: H - 22, "text-anchor": "middle" }, l)));
+  xLabels.forEach((l, i) => { if (i % tickEvery) return; svg.append(s("text", { x: X(i), y: H - 22, "text-anchor": "middle" }, l)); });
   seriesList.forEach((sr) => {
     const pts = sr.values.map((v, i) => v == null ? null : [X(i), Y(v)]);
     const d = pts.reduce((a, p, i) => p ? a + (a && pts[i - 1] ? "L" : "M") + p[0] + "," + p[1] : a, "");
@@ -200,6 +200,77 @@ const card = (title, note, ...kids) => h("div", { class: "card" }, h("h2", {}, t
 const table = (head, rows, numeric = []) => h("div", { class: "scroll" }, h("table", {},
   h("thead", {}, h("tr", {}, head.map((x, i) => h("th", { class: numeric.includes(i) ? "n" : "" }, x)))),
   h("tbody", {}, rows.map((r) => h("tr", {}, r.map((x, i) => x instanceof Node ? h("td", { class: numeric.includes(i) ? "n" : "" }, x) : h("td", { class: numeric.includes(i) ? "n" : "" }, x)))))));
+
+
+function webviewCards(g) {
+  const t = g.webviewTiming;
+  if (!t) return [];
+  const f = (v) => v == null ? "unavailable" : `${v.toFixed(1)} ms`;
+  const rows = (t.byStep ?? []).map((x) => [x.label, f(x.frameIntervalMs.p50), f(x.frameIntervalMs.p95),
+    f(x.frameIntervalMs.p99), x.missedRefreshSlots ?? "unavailable", f(x.eventLoopDelayMs.p95), f(x.eventLoopDelayMs.max)]);
+  return [card("WebKit pacing and UI stalls", `${t.backgrounded ? "<b>The window was backgrounded during this run; repeat before comparing.</b> " : ""}rAF callback intervals: p95 ${f(t.frameIntervalMs.p95)}, p99 ${f(t.frameIntervalMs.p99)}. Missed refresh slots: ${t.missedRefreshSlots ?? "unavailable"}, estimated against the idle callback rate (${t.refreshHz ?? "?"} Hz). These measure callback pacing, not confirmed compositor presentation. UI delay is lateness of a 100 ms timer; hidden-window samples are excluded.`,
+    table(["Step", "Frame p50", "Frame p95", "Frame p99", "Missed slots", "UI delay p95", "UI delay max"], rows, [1, 2, 3, 4, 5, 6]))];
+}
+
+function resourceCards(g) {
+  const r = g.resources, samples = r?.samples;
+  if (!samples?.length) return [card("System resources", r?.error ? `Recording unavailable: ${r.error}` : "This report has no resource samples. Run the benchmark with the new build.")];
+  const phase = (x) => r.phases?.findLast((p) => p.atUnixMs <= x.atUnixMs)?.label ?? "startup";
+  const sum = (xs) => xs.reduce((a, b) => a + b, 0);
+  const treeCpu = (x) => sum(x.processes.map((p) => p.cpuPercent));
+  const treeRam = (x) => sum(x.processes.map((p) => p.rssBytes)) / 2 ** 30;
+  const thread = (x) => x.threads?.[0]?.cpuPercent ?? null;
+  const time = samples.map((x) => (x.atUnixMs - r.startedUnixMs) / 1000);
+  const labels = time.map((x) => `${x.toFixed(1)}s`);
+  const chart = (series, unit) => [legend(series.map((x) => [x.name, x.color])),
+    lines(series, labels, { unit, xValues: time, tickEvery: Math.max(1, Math.ceil(samples.length / 8)) })];
+  const cpu = [{ name: "Immage + children", color: CAT[0], values: samples.map(treeCpu) },
+    { name: "busiest app thread", color: CAT[1], values: samples.map(thread) }];
+  const cores = samples[0].cpuPercent.map((_, i) => ({ name: `CPU ${i}`, color: CAT[i % CAT.length], values: samples.map((x) => x.cpuPercent[i]) }));
+  const memory = [
+    { name: "system RAM used", color: CAT[0], values: samples.map((x) => x.memory.usedBytes / 2 ** 30) },
+    { name: "system RAM available", color: CAT[1], values: samples.map((x) => x.memory.availableBytes / 2 ** 30) },
+    { name: "system swap used", color: CAT[2], values: samples.map((x) => x.memory.swapUsedBytes / 2 ** 30) },
+    { name: "app tree RSS (shared pages counted per process)", color: CAT[3], values: samples.map(treeRam) }];
+  const gpuIds = [...new Set(samples.flatMap((x) => x.gpus.map((v) => v.id)))];
+  const gpuSeries = (field, divisor = 1) => gpuIds.map((id, i) => ({ name: id, color: CAT[i % CAT.length],
+    values: samples.map((x) => { const v = x.gpus.find((v) => v.id === id)?.[field]; return v == null ? null : v / divisor; }) }));
+  const peak = (xs) => { const valid = xs.filter((v) => v != null); return valid.length ? Math.max(...valid) : null; };
+  const format = (v, unit) => v == null ? "unavailable" : `${v.toFixed(1)}${unit}`;
+  const stepRows = [...new Set(samples.map(phase))].map((label) => {
+    const xs = samples.filter((x) => phase(x) === label);
+    const activeThread = xs.flatMap((x) => x.threads ?? []).sort((a, b) => b.cpuPercent - a.cpuPercent)[0];
+    return [label, format(peak(xs.map(treeCpu)), "%"), format(peak(xs.map(thread)), "%"),
+      activeThread ? `${activeThread.name} (${activeThread.pid}/${activeThread.tid})` : "unavailable",
+      format(peak(xs.map(treeRam)), " GiB"), format(Math.min(...xs.map((x) => x.memory.availableBytes / 2 ** 30)), " GiB"),
+      format(peak(xs.flatMap((x) => x.gpus.map((v) => v.busyPercent))), "%")];
+  });
+  const processIds = [...new Set(samples.flatMap((x) => x.processes.map((p) => p.pid)))];
+  const processRows = processIds.map((pid) => {
+    const ps = samples.flatMap((x) => x.processes.filter((p) => p.pid === pid));
+    return [pid, ps[0].name, format(peak(ps.map((p) => p.cpuPercent)), "%"), format(peak(ps.map((p) => p.rssBytes / 2 ** 30)), " GiB")];
+  });
+  const evidence = r.rendererEvidence;
+  const evidenceRows = (evidence?.processes ?? []).map((p) => [p.pid, p.name,
+    p.mapsReadable ? p.driverLibraries.join(", ") || "none observed" : "unavailable",
+    p.fdsReadable ? p.gpuDevices.join(", ") || "none observed" : "unavailable"]);
+  const costs = samples.map((x) => x.collectionMs ?? 0).sort((a, b) => a - b);
+  const p95Cost = costs[Math.min(costs.length - 1, Math.floor(costs.length * .95))];
+  return [
+    card("Rendering path evidence", `WebKit/WebView: ${g.machine?.webview ?? "unavailable"}. EGL selection: ${g.machine?.display?.renderer?.active ?? "system / unknown"}. WebGL context: ${g.webview?.gpu?.renderer ?? "unavailable"}. NVIDIA driver: ${evidence?.nvidiaDriverVersion ?? "unavailable"}. The saved renderer preference, loaded driver libraries and open GPU device nodes help distinguish paths. Compositor acceleration remains unconfirmed; a loaded library alone does not establish which path rendered a frame.`,
+      table(["PID", "Process", "Loaded graphics libraries", "Open GPU devices"], evidenceRows, [0])),
+    card("Sampling overhead", `Resource collection p95 ${p95Cost.toFixed(1)} ms, maximum ${Math.max(...costs).toFixed(1)} ms per nominal 500 ms interval. Excludes the separate NVIDIA query (once per second) and frontend observers. Use identical instrumentation for A/B runs; IMMAGE_BENCH_RESOURCES=0 disables backend resource sampling for an overhead check.`),
+    card("CPU use", "100% means one logical CPU; app totals may exceed 100%. A thread near 100% during a slow step suggests a serial CPU bottleneck, even if it moves between cores. These are interval averages, not proof of the cause.", ...chart(cpu, "%")),
+    card("Logical CPU use", "System-wide, including other applications. Compare with the app and thread traces above.", ...chart(cores, "%")),
+    card("RAM and swap", "Available memory and swap help identify memory pressure. App RSS sums can count shared pages more than once; Linux memory PSI is also saved in the JSON.", ...chart(memory, "GiB")),
+    card("GPU use", "Device-wide utilization, including the desktop and other apps. Missing readings are unavailable, never zero. NVIDIA uses nvidia-smi; supported DRM devices use sysfs.",
+      ...(gpuIds.length ? chart(gpuSeries("busyPercent"), "%") : [h("p", {}, "GPU utilization unavailable on this machine.")])),
+    ...(gpuIds.length ? [card("VRAM used", "Device-wide allocation; an allocation alone does not mean the GPU is busy.", ...chart(gpuSeries("vramUsedBytes", 2 ** 30), "GiB"))] : []),
+    card("Resources by step", "Peaks from samples ending in each step, about every 500 ms. Intervals can straddle step boundaries and short spikes can fall between samples. The hottest Linux thread is identified by process/thread ID.",
+      table(["Step", "App CPU peak", "Thread peak", "Hottest thread", "App RSS peak", "RAM available min", "GPU peak"], stepRows, [1, 2, 4, 5, 6]),
+      h("details", {}, h("summary", {}, "Processes in this run"), table(["PID", "Process", "CPU peak", "RSS peak"], processRows, [0, 2, 3]))),
+  ];
+}
 
 // ---------------------------------------------------------------- the latency diagram
 // the path of one slider move, each hop with its measured time: from the
@@ -421,8 +492,10 @@ const views = {
       svg.append(c); hover(c, `<b>${x.label ?? ""}</b><br>${x.kind}${x.draft ? " (draft)" : ""} ${x.width}×${x.height}<br>${fmt(x.total)} ms, ${x.edits} moves`); });
     svg.append(s("text", { x: 40, y: 216 }, "time through the run →"));
     return [
-      card("GUI benchmark", `${machineName(g)}${g.machine?.os ? `, ${g.machine.os}` : ""}${g.machine?.display?.sessionType ? ` (${g.machine.display.sessionType})` : ""}${g.webview?.gpu ? `, drawn by ${g.webview.gpu.renderer}` : ""}${g.webview?.frameRateHz ? ` at ${g.webview.frameRateHz} fps` : ""}. Photo ${g.photo}, viewer ${g.viewport.width}×${g.viewport.height} at ${g.viewport.dpr}×, drag drafts ${g.dragDrafts ? "on" : "off"}${g.transport ? `, frames by ${g.transport === "shared" ? "shared memory" : "invoke"}` : ""}, ${g.seconds?.toFixed?.(0) ?? "?"} s. Median per step, slider move to pixels on screen.`,
+      card("GUI benchmark", `${machineName(g)}${g.machine?.os ? `, ${g.machine.os}` : ""}${g.machine?.display?.sessionType ? ` (${g.machine.display.sessionType})` : ""}${g.webview?.gpu ? `, WebGL renderer ${g.webview.gpu.renderer}` : ""}${g.webview?.frameRateHz ? ` at ${g.webview.frameRateHz} fps` : ""}. Photo ${g.photo}, viewer ${g.viewport.width}×${g.viewport.height} at ${g.viewport.dpr}×, drag drafts ${g.dragDrafts ? "on" : "off"}${g.transport ? `, frames by ${g.transport === "shared" ? "shared memory" : "invoke"}` : ""}, ${g.seconds?.toFixed?.(0) ?? "?"} s. Median per step, slider move to pixels on screen.`,
         h("label", {}, "machine ", msel), " ", h("label", {}, "report ", sel), legend(groups), stacked(rows, STAGES, colors, { label: 230 })),
+      ...webviewCards(g),
+      ...resourceCards(g),
       card("Every frame", "Each frame's total, input to paint, through the run. Small dots are drafts.", legend([["edit", kinds.edit], ["view (zoom, release)", kinds.view], ["idle base", kinds.base]]), svg),
     ];
   },
@@ -462,6 +535,12 @@ const TABS = [["overview", "Overview"], ["sliders", "Sliders"], ["modules", "Mod
 function render() {
   const tabs = $("#tabs"); tabs.replaceChildren(...TABS.map(([id, name]) => h("button", { class: state.tab === id ? "on" : "", onclick: () => { state.tab = id; state.step = null; render(); } }, name)));
   const main = $("#main");
+  if (!D.runs.length && state.tab === "gui" && D.gui.length) {
+    $("#meta").textContent = "GUI benchmark reports";
+    $("#filters").replaceChildren();
+    main.replaceChildren(...views.gui());
+    return;
+  }
   if (!D.runs.length) { main.replaceChildren(card("No runs yet", "Run <code>python3 -I benchmarking/bench.py</code>, then <code>python3 -I benchmarking/report.py</code>, and reload.")); return; }
   const r = run();
   $("#meta").textContent = `${r.env.sysinfo?.["machdep.cpu.brand_string"] ?? r.env.machine} · ${r.env.at} · git ${r.env.git.sha} · data ${D.generated}`;

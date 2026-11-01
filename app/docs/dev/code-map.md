@@ -38,7 +38,7 @@ the app, where data lives, and the frame formats. Diagrams are in
 | A preference | [Preferences.tsx](../../src/Preferences.tsx) (a `load*`/`store*` pair and a `PrefRow`) | [PrefsUI.tsx](../../src/PrefsUI.tsx); the consumer calls `load*()` live |
 | An Immich call | [immich_search.rs](../../src-tauri/src/immich_search.rs) or [immich_upload.rs](../../src-tauri/src/immich_upload.rs) | `immich_*` commands in [main.rs](../../src-tauri/src/main.rs); [immich.ts](../../src/immich.ts), [ImmichPanel.tsx](../../src/ImmichPanel.tsx) |
 | An Edit In plugin kind | `KINDS` in [plugins.ts](../../src/plugins.ts) | [plugins.rs](../../src-tauri/src/plugins.rs); `editIn` in [App.tsx](../../src/App.tsx) |
-| Performance | [benchmarking/README.md](../../../benchmarking/README.md) | [perf.ts](../../src/perf.ts), [PerfHud.tsx](../../src/PerfHud.tsx); `perf_*` in [main.rs](../../src-tauri/src/main.rs) |
+| Performance | [benchmarking/README.md](../../../benchmarking/README.md), [tracing flow](performance-tracing.md) | [perf.ts](../../src/perf.ts), [perfDiagnostics.ts](../../src/perfDiagnostics.ts), [PerfHud.tsx](../../src/PerfHud.tsx); `perf_*` in [main.rs](../../src-tauri/src/main.rs), [perf_trace.rs](../../src-tauri/src/perf_trace.rs); [diagnose.py](../../../benchmarking/diagnose.py) |
 | Move to another darktable commit or release | [darktable-pin.md](darktable-pin.md) | [patches/darktable-engine.patch](../../../patches/darktable-engine.patch) |
 | A release | the five version files ([package.json](../../package.json), `package-lock.json`, [Cargo.toml](../../src-tauri/Cargo.toml), `Cargo.lock`, [tauri.conf.json](../../src-tauri/tauri.conf.json)) | [releasing.md](releasing.md): the work on `release-X.Y.Z`, tagged `vX.Y.Z` there; [build_dmg.sh](../../scripts/build_dmg.sh) |
 
@@ -50,26 +50,40 @@ Front end ([`app/src`](../../src)):
 - [manifest.ts](../../src/manifest.ts): panels, controls, and their mapping to darktable params; math in [wb.ts](../../src/wb.ts), [tonecurve.ts](../../src/tonecurve.ts), [transform.ts](../../src/transform.ts), [colorgrading.ts](../../src/colorgrading.ts), [colorequal.ts](../../src/colorequal.ts), [autoTone.ts](../../src/autoTone.ts), [bwauto.ts](../../src/bwauto.ts)
 - masks: [masks.ts](../../src/masks.ts) (shapes, overlay pixels), [localMerge.ts](../../src/localMerge.ts) (shared instances), [MaskOverlay.tsx](../../src/MaskOverlay.tsx), [MasksPanel.tsx](../../src/MasksPanel.tsx), [ParametricEditor.tsx](../../src/ParametricEditor.tsx); design in [masks.md](masks.md)
 - heal, negatives, zones: [spots.ts](../../src/spots.ts), [SpotOverlay.tsx](../../src/SpotOverlay.tsx), [HealPanel.tsx](../../src/HealPanel.tsx); [negadoctor.ts](../../src/negadoctor.ts), [NegativePanel.tsx](../../src/NegativePanel.tsx); [zones.ts](../../src/zones.ts), [ZoneSystem.tsx](../../src/ZoneSystem.tsx)
+- canvas layers: [canvasLayers.ts](../../src/canvasLayers.ts) keeps canvas allocations and immutable frame uploads, reuses a sharp canvas for the base, and skips unchanged placement styles
 - frames to the page: [sharedFrames.ts](../../src/sharedFrames.ts) (Windows and Linux shared memory), [pixelRatio.ts](../../src/pixelRatio.ts) (Wayland draft scale)
 - library: [library.ts](../../src/library.ts), [FolderTree.tsx](../../src/FolderTree.tsx), [filter.ts](../../src/filter.ts), [FilterPopup.tsx](../../src/FilterPopup.tsx); merges in [HdrDialog.tsx](../../src/HdrDialog.tsx), [PanoDialog.tsx](../../src/PanoDialog.tsx)
 - export: [exportSettings.ts](../../src/exportSettings.ts), [exportTokens.ts](../../src/exportTokens.ts), [ExportDialog.tsx](../../src/ExportDialog.tsx), [ExportFrame.tsx](../../src/ExportFrame.tsx); background work in [background.ts](../../src/background.ts), [activity.ts](../../src/activity.ts)
 - [Presets.tsx](../../src/Presets.tsx) (presets, looks), [HistoryPanel.tsx](../../src/HistoryPanel.tsx), [CopySettings.tsx](../../src/CopySettings.tsx), [ColorWheel.tsx](../../src/ColorWheel.tsx), [PointCurve.tsx](../../src/PointCurve.tsx), [CropTool.tsx](../../src/CropTool.tsx), [VignetteOverlay.tsx](../../src/VignetteOverlay.tsx), [GuideOverlay.tsx](../../src/GuideOverlay.tsx), [MetadataPanel.tsx](../../src/MetadataPanel.tsx), [Keywording.tsx](../../src/Keywording.tsx)
 - Immich and plugins: [immich.ts](../../src/immich.ts), [ImmichPanel.tsx](../../src/ImmichPanel.tsx), [ImmichPrefs.tsx](../../src/ImmichPrefs.tsx); [plugins.ts](../../src/plugins.ts), [PluginPrefs.tsx](../../src/PluginPrefs.tsx)
+- [PerformanceTuner.tsx](../../src/PerformanceTuner.tsx), [previewTuning.ts](../../src/previewTuning.ts), [tunerOptions.ts](../../src/tunerOptions.ts), [tunerWorkload.ts](../../src/tunerWorkload.ts): quality-first preview search with trimmed-median metrics, performance option comparisons, relaunch verification and navigation workload recording
 - [Preferences.tsx](../../src/Preferences.tsx), [PrefsUI.tsx](../../src/PrefsUI.tsx); [histogram.ts](../../src/histogram.ts), [probe.ts](../../src/probe.ts); [perf.ts](../../src/perf.ts), [PerfHud.tsx](../../src/PerfHud.tsx); [aiModel.ts](../../src/aiModel.ts); [ImportView.tsx](../../src/ImportView.tsx) (the importer); [styles.css](../../src/styles.css)
 
 Rust ([`app/src-tauri/src`](../../src-tauri/src)):
 
 - [main.rs](../../src-tauri/src/main.rs): `AppState` and nearly every command; [engine.rs](../../src-tauri/src/engine.rs): the engine child and its protocol
-- [immich_search.rs](../../src-tauri/src/immich_search.rs), [immich_upload.rs](../../src-tauri/src/immich_upload.rs); [plugins.rs](../../src-tauri/src/plugins.rs) (Edit In); [listing.rs](../../src-tauri/src/listing.rs) (folder listings with sizes and times); [volumes.rs](../../src-tauri/src/volumes.rs) (drives, and whether each answers); [scale.rs](../../src-tauri/src/scale.rs) (Wayland scale); [webext/frames.c](../../src-tauri/webext/frames.c) (Linux shared frames)
+- [immich_search.rs](../../src-tauri/src/immich_search.rs), [immich_upload.rs](../../src-tauri/src/immich_upload.rs); [plugins.rs](../../src-tauri/src/plugins.rs) (Edit In); [listing.rs](../../src-tauri/src/listing.rs) (folder listings with sizes and times); [volumes.rs](../../src-tauri/src/volumes.rs) (drives, and whether each answers); [scale.rs](../../src-tauri/src/scale.rs) (Wayland scale); [renderer.rs](../../src-tauri/src/renderer.rs) (Linux interface EGL selection before GTK starts); [webext/frames.c](../../src-tauri/webext/frames.c) (Linux shared frames)
 
 Engine ([`engine/`](../../../engine)):
 
 - [main.c](../../../engine/main.c): `_handle()` serves every command; four pipes (main, preview, drag, base) over the open photo; sections for library, export, masks, AI (`HAVE_AI`), spots, ranges and zones, looks, save
 - [upright.c](../../../engine/upright.c) (Upright, from ashift.c), [hdrmerge.c](../../../engine/hdrmerge.c) (HDR Merge), [pano.cc](../../../engine/pano.cc) and [dng.c](../../../engine/dng.c) (Panorama Merge), [strip.cc](../../../engine/strip.cc) (export metadata)
 
-Checks and tools: [release asset tests](../../../scripts/test_release_assets.py) (`python3 -I scripts/test_release_assets.py`), [verify/](../../../verify/README.md) (the release checks: `Session` under Node against the engine), [benchmarking/](../../../benchmarking/README.md), `cargo test` in `app/src-tauri`, `npm run build` (type check), [darktable-pin.md](darktable-pin.md), and darktable's own [dev-doc/](../../../darktable/dev-doc/README.md).
+Checks and tools: [experimental WebKitGTK build](../../scripts/build_webkitgtk.sh) and [bundle check](../../scripts/check_webkit_bundle.py), [release asset tests](../../../scripts/test_release_assets.py) (`python3 -I scripts/test_release_assets.py`), [verify/](../../../verify/README.md) (the release checks: `Session` under Node against the engine), [benchmarking/](../../../benchmarking/README.md), `cargo test` in `app/src-tauri`, `npm run build` (type check), [darktable-pin.md](darktable-pin.md), and darktable's own [dev-doc/](../../../darktable/dev-doc/README.md).
+
+[verify/thumbnail-io.cc](../../../verify/thumbnail-io.cc) is the optional
+`immage-thumbnail-check` CMake target: metadata prefixes, late metadata
+fallback, embedded JPEG equality, orientation and scaled decoding.
+
 
 ## Keeping this map current
 
 - Add a file to its line here and its entry in [architecture.md](architecture.md); keep this map short, as it is read at the start of every session.
 - Refer to code by symbol, not line number.
+
+GUI benchmark resource sampling: [resources.rs](../../src-tauri/src/resources.rs)
+records CPU, process memory, Linux threads and available GPU counters on a
+background worker; `App.tsx` attaches phase timestamps to report version 5.
+The GUI dashboard plots these alongside timing summaries.
+
+Native detail previews: [detailPreview.ts](../../src/detailPreview.ts) identifies controls eligible for the loupe. `Session.draftView` selects native whole-image drafts or the detail crop; release requests the exact full view. The removed adaptive-cache experiment is recorded in [failed experiments](../../../benchmarking/failed-experiments.md).

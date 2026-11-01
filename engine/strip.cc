@@ -199,3 +199,81 @@ char *strip_metadata(const char *path, const strip_t what)
     return g_strdup_printf("could not remove metadata from '%s': %s", path, e.what());
   }
 }
+
+// Read the generated file before merging EXIF, retaining its ICC profile
+// and, for DNG, its version and calibration tags.
+gboolean rendered_metadata(const char *path, const void *blob, const int size, const gboolean dng)
+{
+  if(!blob || size <= 0) return TRUE;
+  try
+  {
+    _lock lock;
+#ifdef _WIN32
+    gunichar2 *wide = g_utf8_to_utf16(path, -1, NULL, NULL, NULL);
+    auto image = Exiv2::ImageFactory::open(std::wstring((const wchar_t *)wide));
+    g_free(wide);
+#else
+    auto image = Exiv2::ImageFactory::open(path);
+#endif
+    image->readMetadata();
+    Exiv2::ExifData source;
+    Exiv2::ExifParser::decode(source, static_cast<const uint8_t *>(blob), size);
+    auto &dest = image->exifData();
+    for(const auto &d : source)
+    {
+      // The output owns its layout, color calibration and orientation.
+      if(d.groupName() == "Image"
+         && (d.tag() >= 50706 || d.tag() == 34675 || d.tagName() == "Orientation"
+             || d.tagName() == "Software" || (dng && (d.tagName() == "Make" || d.tagName() == "Model")))) continue;
+      const Exiv2::ExifKey key(d.key());
+      auto old = dest.findKey(key);
+      if(old != dest.end()) dest.erase(old);
+      dest.add(key, &d.value());
+    }
+    image->writeMetadata();
+    return TRUE;
+  }
+  catch(const std::exception &)
+  {
+    return FALSE;
+  }
+}
+
+// XMP has no standard deletion value for GPS. Mark Immage sidecars as
+// authoritative so missing fields override GPS embedded in the source.
+gboolean location_sidecar_mark(const char *path)
+{
+  try
+  {
+    _lock lock;
+    Exiv2::XmpProperties::registerNs("https://github.com/Rhettus/immage/ns/1.0/", "immage");
+    auto image = Exiv2::ImageFactory::open(path);
+    if(!image.get()) return FALSE;
+    image->readMetadata();
+    image->xmpData()["Xmp.immage.locationManaged"] = "True";
+    image->writeMetadata();
+    return TRUE;
+  }
+  catch(const std::exception &) { return FALSE; }
+}
+
+int location_sidecar_missing(const char *path)
+{
+  try
+  {
+    _lock lock;
+    Exiv2::XmpProperties::registerNs("https://github.com/Rhettus/immage/ns/1.0/", "immage");
+    auto image = Exiv2::ImageFactory::open(path);
+    if(!image.get()) return 0;
+    image->readMetadata();
+    auto &xmp = image->xmpData();
+    auto managed = xmp.findKey(Exiv2::XmpKey("Xmp.immage.locationManaged"));
+    if(managed == xmp.end() || managed->toString() != "True") return 0;
+    int missing = 0;
+    if(xmp.findKey(Exiv2::XmpKey("Xmp.exif.GPSLatitude")) == xmp.end()
+       || xmp.findKey(Exiv2::XmpKey("Xmp.exif.GPSLongitude")) == xmp.end()) missing |= 1;
+    if(xmp.findKey(Exiv2::XmpKey("Xmp.exif.GPSAltitude")) == xmp.end()) missing |= 2;
+    return missing;
+  }
+  catch(const std::exception &) { return 0; }
+}

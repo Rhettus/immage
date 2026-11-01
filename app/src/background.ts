@@ -5,8 +5,7 @@
 // exports, which the Export dialog starts and leaves, and HDR and Panorama
 // Merge, on the engine's export thread, and AI Denoise on its thread, while
 // the photo is edited. each shows its progress, then what it did: for a
-// while, or until dismissed when anything went wrong or it offers a next
-// step
+// while, or until dismissed when anything went wrong
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
@@ -30,7 +29,7 @@ export type Job = {
 export type Outcome = { text: string; ok: boolean; action?: Action };
 
 // how long a clean job's summary stays up
-const SUMMARY_MS = 5000;
+const SUMMARY_MS = 30000;
 
 let jobs: Job[] = [];
 const listeners = new Set<() => void>();
@@ -58,7 +57,7 @@ const track = async <R,>(id: number, run: () => Promise<R>, summarize: (r: R) =>
     const r = await run();
     const s = summarize(r);
     update(id, { summary: s.text, failed: !s.ok, action: s.action ?? null });
-    if (s.ok && !s.action) window.setTimeout(() => dismissJob(id), SUMMARY_MS);
+    if (s.ok) window.setTimeout(() => dismissJob(id), SUMMARY_MS);
     return r;
   } catch (e) {
     // a merge stopped from its Stop answers so (main.c, _merge_step)
