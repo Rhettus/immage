@@ -10,6 +10,18 @@ export function layerStyle(element: HTMLElement, key: "width" | "height" | "tran
   if (element.style[key] !== value) element.style[key] = value;
 }
 
+export function placeCanvas(canvas: HTMLCanvasElement, width: number, height: number,
+                            p: { x: number; y: number; k: number }, dpr: number) {
+  // Keep the CSS box in native pixels. WebKit rounds fractional canvas box
+  // sizes when painting, stretching each axis differently as preview sizes
+  // change. Apply display scaling only in the compositor transform instead.
+  layerStyle(canvas, "width", `${width}px`);
+  layerStyle(canvas, "height", `${height}px`);
+  layerStyle(canvas, "transform", `translate(${p.x / dpr}px, ${p.y / dpr}px) scale(${p.k / dpr})`);
+  const ratio = String(dpr);
+  if (canvas.style.getPropertyValue("--canvas-dpr") !== ratio) canvas.style.setProperty("--canvas-dpr", ratio);
+}
+
 // immutable frame identity avoids repeated uploads; clear after external canvas writes
 export class CanvasFrames {
   private frames = new WeakMap<HTMLCanvasElement, Pixels>();

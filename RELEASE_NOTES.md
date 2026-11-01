@@ -89,6 +89,8 @@ Performance
 
 Bug fixes
 
+- Preview and final frames stay aligned on scaled displays when adjusting
+  sliders, including 75% previews with odd pixel dimensions.
 - Expanding a folder shows its subfolders without waiting for other expanded
   folders on slow or disconnected drives to finish loading.
 - Closing Immage stops an unresponsive engine after five seconds, even if

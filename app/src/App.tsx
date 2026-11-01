@@ -22,7 +22,7 @@ import { CircleOff, Grid2x2, Pipette, MoveHorizontal, MoveVertical, PenLine, Spa
 import { panelValues } from "./panelValues";
 import { FrameUpdates, Snapshot } from "./uiUpdates";
 import { PixelCadence, PixelWorker } from "./pixelWorker";
-import { CanvasFrames, FrameGeneration, layerStyle, resizeCanvas } from "./canvasLayers";
+import { CanvasFrames, FrameGeneration, layerStyle, placeCanvas, resizeCanvas } from "./canvasLayers";
 import { Session, framePlace, instanceKey, mapOpOf, type Frame, type HistoryItem, type ModuleState, type View } from "./session";
 import { AUTO_TONE_IDS, autoExposure, autoTone, type SceneKey } from "./autoTone";
 import { curve } from "./tonecurve";
@@ -2066,24 +2066,18 @@ export default function App() {
     if (clipBase.current) layerStyle(clipBase.current, "visibility", baseCompatible ? "" : "hidden");
     if (b && bc) {
       const p = framePlace(b, z);
-      layerStyle(bc, "width", `${b.width / dpr}px`);
-      layerStyle(bc, "height", `${b.height / dpr}px`);
-      layerStyle(bc, "transform", `translate(${(ox + p.x) / dpr}px, ${(oy + p.y) / dpr}px) scale(${p.k})`);
+      placeCanvas(bc, b.width, b.height, { x: ox + p.x, y: oy + p.y, k: p.k }, dpr);
       follow(bc, clipBase.current);
     }
     const cm = copyMeta.current, cc = copyCanvas.current;
     if (cm && cc) {
       const p = framePlace(cm, z);
-      layerStyle(cc, "width", `${cm.width / dpr}px`);
-      layerStyle(cc, "height", `${cm.height / dpr}px`);
-      layerStyle(cc, "transform", `translate(${(ox + p.x) / dpr}px, ${(oy + p.y) / dpr}px) scale(${p.k})`);
+      placeCanvas(cc, cm.width, cm.height, { x: ox + p.x, y: oy + p.y, k: p.k }, dpr);
     }
     const s = sharpMeta.current, sc = canvas.current;
     if (s && sc) {
       const p = framePlace(s, z);
-      layerStyle(sc, "width", `${s.width / dpr}px`);
-      layerStyle(sc, "height", `${s.height / dpr}px`);
-      layerStyle(sc, "transform", `translate(${(ox + p.x) / dpr}px, ${(oy + p.y) / dpr}px) scale(${p.k})`);
+      placeCanvas(sc, s.width, s.height, { x: ox + p.x, y: oy + p.y, k: p.k }, dpr);
       follow(sc, clipSharp.current);
     }
     const bm = beforeMeta.current, bcv = beforeCanvas.current;
@@ -2093,9 +2087,7 @@ export default function App() {
       const k = Math.min(f.w / bm.fullWidth, f.h / bm.fullHeight);
       const bx = ox + ((f.w - bm.fullWidth * k) * z) / 2, by = oy + ((f.h - bm.fullHeight * k) * z) / 2;
       const sx = bx + (bm.x / bm.scale) * k * z, sy = by + (bm.y / bm.scale) * k * z;
-      layerStyle(bcv, "width", `${bm.width / dpr}px`);
-      layerStyle(bcv, "height", `${bm.height / dpr}px`);
-      layerStyle(bcv, "transform", `translate(${sx / dpr}px, ${sy / dpr}px) scale(${(z * k) / bm.scale})`);
+      placeCanvas(bcv, bm.width, bm.height, { x: sx, y: sy, k: (z * k) / bm.scale }, dpr);
     }
     zoomShow.current?.(z, zoomRef.current === "fit");
     const hc = hoverCanvas.current;
@@ -3306,9 +3298,8 @@ export default function App() {
         sc.width = thumb.width;
         sc.height = thumb.height;
         sc.getContext("2d")!.drawImage(thumb, 0, 0);
-        sc.style.width = `${thumb.width / dpr}px`;
-        sc.style.height = `${thumb.height / dpr}px`;
-        sc.style.transform = `translate(${(w - z * thumb.width) / 2 / dpr}px, ${(h - z * thumb.height) / 2 / dpr}px) scale(${z})`;
+        placeCanvas(sc, thumb.width, thumb.height,
+          { x: (w - z * thumb.width) / 2, y: (h - z * thumb.height) / 2, k: z }, dpr);
       }
       const s = await timeTunerWork("Photo open", () => track(Session.open(path, id, currentView, drawFrame, (e) => setStatus(`error: ${e}`))));
       // the engine's id, for a photo opened by its file alone

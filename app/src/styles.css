@@ -185,7 +185,7 @@ button { font: inherit; color: inherit; }
 }
 .viewer .layer.empty { display: none; }
 .viewer .layer.clip { pointer-events: none; }
-.viewer .layer.base { box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55); }
+.viewer .layer.base { box-shadow: 0 calc(10px * var(--canvas-dpr, 1)) calc(30px * var(--canvas-dpr, 1)) rgba(0, 0, 0, 0.55); }
 .viewer.zoom-fit { cursor: zoom-in; }
 .viewer.zoom-in { cursor: grab; }
 .viewer.hold-view.zoom-fit { cursor: default; }

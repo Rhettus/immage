@@ -34,6 +34,18 @@ altitude invalidation, invalid input, and persistence after restarting:
 node --test verify/location.test.mjs
 ```
 
+The WebKit preview-placement pixel check needs a desktop display, GTK 3,
+WebKitGTK 4.1 and Python's gi/cairo bindings:
+
+```bash
+GDK_SCALE=2 python verify/preview-placement.py
+```
+
+It renders a synthetic texture at final and 75% preview sizes through the
+production canvas placement helper and checks for position drift. Add `--legacy`
+to reproduce the failure with fractional CSS canvas dimensions. The browser
+test opens a temporary window; it does not need a photo or the engine.
+
 ## What it checks
 
 `run.py` takes the largest raw in `benchmarking/corpus/` and the smallest
