@@ -638,6 +638,70 @@ async fn ai_denoise(state: State<'_, AppState>, plugins: State<'_, plugins::Plug
     Ok(reply)
 }
 
+// Bake the converted negative into a new positive beside its source.
+// Reserve the name before exporting so repeated requests never overwrite.
+#[tauri::command]
+async fn negative_export(state: State<'_, AppState>, plugins: State<'_, plugins::Plugins>,
+                         imgid: i64, original: String, format: String) -> Result<Value, String> {
+    if format != "dng" && format != "tiff" {
+        return Err("choose DNG or TIFF for converted negatives".into());
+    }
+    let source = Path::new(&original);
+    let dir = source.parent().ok_or("the source has no folder")?;
+    let stem = source.file_stem().ok_or("the source has no filename")?.to_string_lossy();
+    let ext = extension(&format);
+    let mut n = 0;
+    let target = loop {
+        let suffix = if n == 0 { String::new() } else { format!("_{n:02}") };
+        let path = dir.join(format!("{stem}-positive{suffix}.{ext}"));
+        // An orphaned sidecar must not supply an old edit to a new export.
+        if path.with_file_name(format!("{}.xmp", path.file_name().unwrap().to_string_lossy())).exists() {
+            n += 1;
+            continue;
+        }
+        match std::fs::OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(_) => break path,
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => n += 1,
+            Err(e) => return Err(format!("cannot create the positive: {e}")),
+        }
+    };
+    let t = state.tagged.clone();
+    let held = t.tag();
+    if let Err(e) = state.engine("negative_export").request(json!({
+        "cmd": "export_hold", "job": held, "imgids": [imgid],
+    })) {
+        let _ = std::fs::remove_file(&target);
+        return Err(e);
+    }
+    let out = target.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let tag = t.tag();
+        let result = t.request(tag, json!({
+            "cmd": "export", "job": held, "imgid": imgid, "out": out,
+            "format": format, "bpp": 32, "negative_copy": true, "history": false,
+        }));
+        let tag = t.tag();
+        let _ = t.request(tag, json!({ "cmd": "export_release", "job": held }));
+        result
+    }).await.map_err(|e| e.to_string()).and_then(|r| r);
+    // Keep a completed file on an import/sidecar failure for recovery.
+    let mut reply = match result {
+        Ok(reply) => reply,
+        Err(e) => {
+            if std::fs::metadata(&target).map(|m| m.len() == 0).unwrap_or(false) {
+                let _ = std::fs::remove_file(&target);
+            }
+            return Err(e);
+        }
+    };
+    let path = target.to_string_lossy().into_owned();
+    plugins.record(plugins::Return {
+        original: original.clone(), result: path, plugin: "negative-positive".into(), applied: true,
+    })?;
+    reply["original"] = json!(original);
+    Ok(reply)
+}
+
 // AI Denoise's preview: a crop about `size` pixels square centered on (u, v)
 // of the edited photo. replies a header (width, height as u32; the crop's
 // share of the photo across and down as f32), then the crop as float linear
@@ -2534,7 +2598,7 @@ fn main() {
             open_folder, open_image, get_params, set_params, render, cancel_base, save, baseline_end, before_view, thumb, thumb_cached, thumb_known, cache_limits, cache_usage, cache_clear, meta, meta_set, prefetch, darktable_resources, darktable_resources_set, gpu_edits, gpu_edits_set, webview_renderer, webview_renderer_set,
             export_images, export_cancel, export_existing, export_preview, fonts, export_presets_load, export_presets_save, preset_file_write, preset_file_read, presets_load, presets_save, looks_list, look_import, look_export, look_delete, look_apply, look_amount, preview,
             mask_shapes, combine, masks, mask_delete, mask_rename, history, module_state, sample, tone_key, agx_auto, upright, points, range_map, zones, mask_map, ai_object,
-            ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, list_subfolders, folder_volumes, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
+            ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, negative_export, list_subfolders, folder_volumes, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
             immich_export_check, immich_search, immich_browse_check, immich_libraries, immich_suggestions, immich_people, immich_tags,
             immich_thumb, immich_resolve, launch_file, path_exists, path_kind, display_scale, trash_files, create_virtual_copy, remove_virtual_copy, hdr_merge, hdr_can_align, pano_merge, pano_can_merge, merge_cancel, preview_fullscreen, about, licenses, engine_quit, keywords, keywords_set, ai_accel,
             perf_set, perf_trace_start, perf_trace_stop, perf_modules, perf_report_write, perf_machine, perf_ping, resources::perf_resources_start, resources::perf_resources_stop,

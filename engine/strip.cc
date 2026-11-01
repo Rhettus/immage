@@ -199,3 +199,42 @@ char *strip_metadata(const char *path, const strip_t what)
     return g_strdup_printf("could not remove metadata from '%s': %s", path, e.what());
   }
 }
+
+// Read the generated file before merging EXIF, retaining its ICC profile
+// and, for DNG, its version and calibration tags.
+gboolean rendered_metadata(const char *path, const void *blob, const int size, const gboolean dng)
+{
+  if(!blob || size <= 0) return TRUE;
+  try
+  {
+    _lock lock;
+#ifdef _WIN32
+    gunichar2 *wide = g_utf8_to_utf16(path, -1, NULL, NULL, NULL);
+    auto image = Exiv2::ImageFactory::open(std::wstring((const wchar_t *)wide));
+    g_free(wide);
+#else
+    auto image = Exiv2::ImageFactory::open(path);
+#endif
+    image->readMetadata();
+    Exiv2::ExifData source;
+    Exiv2::ExifParser::decode(source, static_cast<const uint8_t *>(blob), size);
+    auto &dest = image->exifData();
+    for(const auto &d : source)
+    {
+      // The output owns its layout, color calibration and orientation.
+      if(d.groupName() == "Image"
+         && (d.tag() >= 50706 || d.tag() == 34675 || d.tagName() == "Orientation"
+             || d.tagName() == "Software" || (dng && (d.tagName() == "Make" || d.tagName() == "Model")))) continue;
+      const Exiv2::ExifKey key(d.key());
+      auto old = dest.findKey(key);
+      if(old != dest.end()) dest.erase(old);
+      dest.add(key, &d.value());
+    }
+    image->writeMetadata();
+    return TRUE;
+  }
+  catch(const std::exception &)
+  {
+    return FALSE;
+  }
+}

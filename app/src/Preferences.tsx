@@ -79,6 +79,16 @@ export function storeNegWarn(on: boolean) {
   try { localStorage.setItem(NEG_WARN_KEY, on ? "1" : "0"); } catch { /* not kept */ }
 }
 
+export type NegativeExportFormat = "dng" | "tiff";
+const NEG_EXPORT_KEY = "immage.negativeExportFormat";
+export function loadNegativeExportFormat(): NegativeExportFormat {
+  try { return localStorage.getItem(NEG_EXPORT_KEY) === "tiff" ? "tiff" : "dng"; }
+  catch { return "dng"; }
+}
+function storeNegativeExportFormat(format: NegativeExportFormat) {
+  try { localStorage.setItem(NEG_EXPORT_KEY, format); } catch { /* not kept */ }
+}
+
 // keywords a photo gets once Immage saves it as edited, and loses when it is
 // unedited again, so Immich, which reads them from the sidecar, can filter
 // on them; none unless set
@@ -469,6 +479,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   const [profile, setProfile] = useState(loadNewPhotosProfile);
   const [autoToneNew, setAutoToneNew] = useState(loadAutoToneNew);
   const [negWarn, setNegWarn] = useState(loadNegWarn);
+  const [negativeExportFormat, setNegativeExportFormat] = useState(loadNegativeExportFormat);
   const [expCompOn, setExpCompOn] = useState(loadExposureCompOn);
   const [expCompEv, setExpCompEv] = useState(loadExposureCompEv);
   // as typed, so "-" or "1." can be on the way to a number
@@ -711,6 +722,16 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                 <PrefRow label="Warn before converting a negative"
                          hint="opening the Negative panel says which of Basic's tools a converted negative turns off">
                   <PrefSwitch checked={negWarn} onChange={(on) => { setNegWarn(on); storeNegWarn(on); }} />
+                </PrefRow>
+                <PrefRow label="Converted negative format"
+                         hint="Export to Library saves a separate positive with the conversion and edits baked in; both formats use lossless compression">
+                  <select className="field" aria-label="Converted negative format" value={negativeExportFormat} onChange={(e) => {
+                    const format = e.target.value as NegativeExportFormat;
+                    setNegativeExportFormat(format); storeNegativeExportFormat(format);
+                  }}>
+                    <option value="dng">DNG (16-bit float)</option>
+                    <option value="tiff">TIFF (32-bit float)</option>
+                  </select>
                 </PrefRow>
                 <PrefRow label="Scroll adjusts sliders"
                          hint="off, scrolling over the panels only scrolls them, so an edit cannot change by accident">
