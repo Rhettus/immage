@@ -6561,7 +6561,7 @@ static void _object_close(JsonBuilder *b, JsonBuilder **edge, JsonBuilder **plai
     json_builder_set_member_name(b, "range");
     json_builder_begin_array(b);
     for(int i = 0; i < 4; i++)
-      json_builder_add_double_value(b, pp->blendif_parameters[4 * ch + i] * exp2f(pp->blendif_boost_factors[ch]));
+      json_builder_add_double_value(b, (double)pp->blendif_parameters[4 * ch + i] * exp2(pp->blendif_boost_factors[ch]));
     json_builder_end_array(b);
     _object_run_close(b, "paths", edge);
     _object_run_close(b, "plain", plain);

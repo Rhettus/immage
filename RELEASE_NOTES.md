@@ -85,6 +85,8 @@ Performance
 
 Bug fixes
 
+- Object mask backdrop ranges use double precision when read back to avoid
+  intermediate overflow with large boost values.
 - Opening a generated positive or other local result from an Immich search
   switches the grid to its local folder, so the new image is visible there.
   Generated images also retain their information while the folder loads.
