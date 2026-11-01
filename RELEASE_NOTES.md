@@ -113,6 +113,8 @@ Performance
 
 Bug fixes
 
+- Windows builds correctly detect the bundled static OpenCV libraries, enabling
+  Panorama Merge and its projection preview. Builds fail if stitching is missing.
 - Opening Crop preserves portrait orientation, so resizing from the top edge
   no longer snaps a vertical photo to a horizontal crop.
 - HDR, RAW panorama and AI Denoise DNGs retain their format and color

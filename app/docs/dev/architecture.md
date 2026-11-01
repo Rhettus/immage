@@ -498,6 +498,13 @@ darktable is, and it has AI features when darktable is configured with
 | [benchmarking/README.md](../../../benchmarking/README.md) | Performance suite, results and findings. |
 | [darktable/dev-doc/](../../../darktable/dev-doc/README.md) | darktable's own developer docs: the module API, pixelpipe, introspection. Read them before changing the engine's calls into darktable. |
 
+Windows engine configuration also sets `OpenCV_STATIC=ON`: OpenCV's Windows
+root package otherwise searches for shared libraries and can miss the installed
+`x64/mingw/staticlib` package. `IMMAGE_REQUIRE_PANO=ON` makes missing stitching
+a configuration error instead of shipping an engine without panorama support.
+Verify the Windows configure log says `Panorama Merge enabled`, then select two
+overlapping local photos and check the projection preview and Merge action.
+
 ## Module options and metadata editing
 
 `MODULE_CHOICES` in [manifest.ts](../../src/manifest.ts) is the source of truth

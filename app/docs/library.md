@@ -205,6 +205,10 @@ not the subject's.
 
 ## Panorama Merge
 
+Panorama Merge and its projection preview are supported on Windows, macOS and
+Linux. If the dialog says this build cannot stitch panoramas, its engine lacks
+stitching support; install a build that includes it.
+
 Panorama Merge stitches overlapping RAW or non-RAW photos, including mixed
 selections, into one wide photo. Select the
 photos in the filmstrip or grid, then press ⌃M or right-click and choose

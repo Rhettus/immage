@@ -20,6 +20,7 @@ target_link_libraries(darktable-engine lib_darktable ${JSON_GLIB_LIBRARIES} ${Ex
 # darktable does not link (src/CMakeLists.txt, DT_OPENCV4_MODULES): built
 # when darktable found OpenCV 4 and app/scripts/build_opencv.sh built the
 # module too.
+option(IMMAGE_REQUIRE_PANO "Fail configuration if Panorama Merge is unavailable" OFF)
 if(OpenCV_FOUND AND OpenCV_VERSION VERSION_GREATER_EQUAL 4 AND OpenCV_VERSION VERSION_LESS 5)
   find_package(OpenCV 4 QUIET COMPONENTS stitching)
 endif()
@@ -29,6 +30,9 @@ if(TARGET opencv_stitching)
   target_link_libraries(darktable-engine opencv_stitching)
   message(STATUS "OpenCV stitching found: Panorama Merge enabled")
 else()
+  if(IMMAGE_REQUIRE_PANO)
+    message(FATAL_ERROR "OpenCV stitching is required for this build. Check OpenCV_ROOT and OpenCV_STATIC.")
+  endif()
   message(STATUS "OpenCV stitching not found: Panorama Merge disabled")
 endif()
 
