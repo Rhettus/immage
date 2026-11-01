@@ -85,6 +85,8 @@ Performance
 
 Bug fixes
 
+- Crop corners respond to the first inward drag with a locked aspect ratio,
+  including pulls that are mostly horizontal or vertical.
 - Windows builds compile positive export with or without panorama support
   and with Exiv2 builds that use UTF-8 paths.
 - Crop guides appear immediately when entering crop and selecting an aspect

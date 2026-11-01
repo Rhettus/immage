@@ -176,7 +176,11 @@ function constrain(handle: Handle, r: CropRect, start: CropRect, aspect: number,
   let w = r.r - r.l, h = r.b - r.t;
   if (handle === "n" || handle === "s") w = wFor(h);
   else if (handle === "e" || handle === "w") h = hFor(w);
-  else if (hFor(w) > h) h = hFor(w); else w = wFor(h);
+  // A corner follows the stronger relative movement. Taking the larger
+  // resulting dimension instead leaves a full-frame crop stuck when the
+  // first pull is mostly horizontal or vertical.
+  else if (Math.abs(w / (start.r - start.l) - 1) >= Math.abs(h / (start.b - start.t) - 1)) h = hFor(w);
+  else w = wFor(h);
 
   // anchor at the fixed side, then shrink to stay inside the frame
   const anchorX = handle.includes("w") ? start.r : handle.includes("e") ? start.l : (start.l + start.r) / 2;
