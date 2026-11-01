@@ -86,8 +86,6 @@ Performance
   Mesa or NVIDIA. Relaunch to switch paths, then run the GUI benchmark
   to compare them on the same build. Photo processing keeps its own
   GPU setting.
-- Experimental Linux AppImages use WebKitGTK 2.54.2's new compositor,
-  built on Ubuntu 26.04 for x64 and ARM64.
 
 Bug fixes
 
