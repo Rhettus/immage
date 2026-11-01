@@ -85,6 +85,8 @@ Performance
 
 Bug fixes
 
+- Windows builds compile positive export with or without panorama support
+  and with Exiv2 builds that use UTF-8 paths.
 - Crop guides appear immediately when entering crop and selecting an aspect
   ratio, including on photos that have not been cropped before.
 - Clipping overlays and histogram/scope updates discard results from

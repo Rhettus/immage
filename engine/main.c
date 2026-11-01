@@ -50,8 +50,8 @@
 #include "develop/masks.h"
 #include "develop/pixelpipe_cache.h"
 #include "hdrmerge.h"
-#ifdef HAVE_PANO
 #include "dng.h"
+#ifdef HAVE_PANO
 #include "pano.h"
 #endif
 #include "strip.h"

@@ -208,7 +208,7 @@ gboolean rendered_metadata(const char *path, const void *blob, const int size, c
   try
   {
     _lock lock;
-#ifdef _WIN32
+#if defined(_WIN32) && defined(EXV_UNICODE_PATH)
     gunichar2 *wide = g_utf8_to_utf16(path, -1, NULL, NULL, NULL);
     auto image = Exiv2::ImageFactory::open(std::wstring((const wchar_t *)wide));
     g_free(wide);
