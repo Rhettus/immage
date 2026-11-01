@@ -59,4 +59,17 @@ typedef gboolean (*pano_step_t)(const char *stage, int done, int total, void *da
 float *pano_stitch(pano_t *p, pano_projection_t projection, gboolean crop, pano_step_t step, void *data,
                    int *width, int *height, int *used, char **err);
 
+// Display preview from linear Rec.2020 frames. RGBA8 has transparent empty
+// edges; crop is the same largest covered rectangle used by the final stitch.
+// The canvas is bounded to 1600 pixels on its long edge. Caller g_free()s rgba.
+typedef struct pano_preview_t
+{
+  guchar *rgba;
+  int width, height, used;
+  int crop[4];
+  pano_projection_t projection;
+} pano_preview_t;
+gboolean pano_preview(pano_t *p, pano_projection_t projection, pano_step_t step, void *data,
+                      pano_preview_t *result, char **err);
+
 G_END_DECLS

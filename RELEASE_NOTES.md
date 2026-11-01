@@ -7,6 +7,9 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Panorama Merge shows a preview above the projection choices. Compare
+  projections, see which one Auto chooses, and toggle Auto Crop to see the
+  edges it removes before merging.
 - Preferences > Modules groups settings under collapsible Global and Masks
   sections that follow Focus mode; Alt-click keeps both open. Custom module
   choices are independent, including contrast equalizer for masks while using

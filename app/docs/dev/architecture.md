@@ -150,7 +150,7 @@ are `localStorage` keys named `immage.*`.
 | [FolderTree.tsx](../../src/FolderTree.tsx) | The folder tree; with folders on more than one drive, a heading per drive (`folder_volumes`, read again every 10 s), its dot green while the drive answers and red while it does not. |
 | [filter.ts](../../src/filter.ts) | The filmstrip's `Filter` over a folder's photos (`passes`), and what the photos hold to filter by (`facets`): kinds, cameras, lenses, keywords, exposure settings. |
 | [HdrDialog.tsx](../../src/HdrDialog.tsx) | HDR Merge's dialog (Auto Align, when the engine has OpenCV: `hdr_can_align`); `runHdrMerge` in App.tsx runs it in the background. |
-| [PanoDialog.tsx](../../src/PanoDialog.tsx) | Panorama Merge's dialog (projection, Auto Crop; Merge when the engine can stitch: `pano_can_merge`); `runPanoMerge` in App.tsx runs it in the background, and the DNG's first open takes a raw's new-photo defaults with Lens Corrections off (`pano` in `openFile`). |
+| [PanoDialog.tsx](../../src/PanoDialog.tsx) | Panorama Merge's dialog (reduced-resolution preview above projection and Auto Crop; `pano_preview`, `merge_cancel`, `pano_can_merge`); `runPanoMerge` in App.tsx runs it in the background, and the DNG's first open takes a raw's new-photo defaults with Lens Corrections off (`pano` in `openFile`). |
 | [FilterPopup.tsx](../../src/FilterPopup.tsx) | The toolbar's Filters popup: the folder's fields, or on Immich results the server search's filters (the `ImmichSearch` App holds, shared with the Immich card). |
 
 ### Export
@@ -269,6 +269,40 @@ in that space and use `_positive_import` for neutral starting history.
 `_pano_merge` imports it; a tagged one
 runs on the export thread. Both are built only when OpenCV's stitching
 module is found (`HAVE_PANO`, `engine/CMakeLists.txt`).
+
+`pano_preview` uses the same `_pano_merge` input validation and `_pano_frame`
+lens-corrected export pipe, with every input rendered into linear Rec.2020
+at a maximum long edge of 1280 pixels. `pano_preview` in pano.cc shares
+`_stitch` with the full merge: feature matching, camera estimation, Auto
+projection selection, warping, seams and blending. Its output warper bounds
+the canvas to about 1600 pixels on the long edge. It returns sRGB RGBA8
+(base64 `rgba`, `width`, `height`), the resolved `projection`, `used` count
+and `[x, y, width, height]` `crop` from the same coverage-based `_auto_crop`.
+Empty pixels have zero alpha. This branch writes no DNG and imports nothing;
+full-resolution merges keep their existing color and output paths. Preview
+geometry and color are approximate, especially when reduced features differ
+from the full-resolution alignment; no creative tone mapper is applied.
+
+The Rust `pano_preview` command uses the tagged export queue and existing
+merge cancellation. PanoDialog debounces projection changes, serializes
+requests across mounts, cancels obsolete work and ignores late replies.
+Successful previews are cached per selection and projection for that dialog;
+Auto Crop redraws the returned rectangle locally without engine work. A new
+projection clears the old preview while loading so it cannot be mistaken for
+the new result. Errors offer Retry and keep Merge available; builds without
+stitching disable Merge and explain that preview is unavailable. Stopping
+occurs at the next photo or stitch stage; an individual alignment stage can
+take time to finish.
+
+Verification: `node --test verify/panorama.test.mjs` exercises all four preview
+choices, resolved Auto, RGBA dimensions, transparent coverage and crop bounds,
+no-file preview behavior, duplicate input rejection and the final DNG color
+round trip. `node verify/panorama-ui.mjs` checks canvas cropping, cached
+switches, stale responses, cancellation, retry and Merge settings in Chromium.
+Run `cmake --build build --target darktable-engine`, `npm run build --prefix app`
+and `cargo check --offline --manifest-path app/src-tauri/Cargo.toml` for the
+engine, frontend and bridge respectively.
+
 
 Whether a photo is edited is darktable's own test, `dt_image_altered()`:
 the history hash against its basic and automatic baselines, which the

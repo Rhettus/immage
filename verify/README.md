@@ -23,7 +23,12 @@ The focused panorama and negative-export regression checks run with the built en
 node --test verify/panorama.test.mjs verify/negative-export.test.mjs
 ```
 
-It checks compressed DNG and TIFF color metadata, conversion and crop
+The panorama check also verifies previews for all projections, Auto's resolved
+projection, RGBA coverage and crop bounds, and that previewing writes no DNG.
+Run `node verify/panorama-ui.mjs` for the panel's canvas, caching, cancellation,
+stale-reply, retry and merge-settings checks in headless Chromium.
+
+The negative-export check checks compressed DNG and TIFF color metadata, conversion and crop
 round-trips, export snapshots, further exposure edits and reopening after
 an engine restart. It creates its own small fixture and temporary workspace.
 

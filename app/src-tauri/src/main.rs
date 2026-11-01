@@ -1578,6 +1578,19 @@ async fn pano_merge(app: AppHandle, state: State<'_, AppState>, plugins: State<'
     Ok(reply)
 }
 
+// Reduced-size panorama on the export thread. No file is written or imported;
+// the page crops the returned RGBA coverage locally, and merge_cancel stops it.
+#[tauri::command]
+async fn pano_preview(app: AppHandle, state: State<'_, AppState>, job: u64,
+                      imgids: Vec<i64>, projection: String) -> Result<Value, String> {
+    let t = state.tagged.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        merge(app, t, job, json!({ "cmd": "pano_preview", "imgids": imgids, "projection": projection }))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 // whether Panorama Merge can stitch: the engine built with OpenCV's
 // stitching module
 #[tauri::command]
@@ -2616,7 +2629,7 @@ fn main() {
             mask_shapes, combine, masks, mask_delete, mask_rename, history, module_state, sample, tone_key, agx_auto, upright, points, range_map, zones, mask_map, ai_object,
             ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, negative_export, list_subfolders, folder_volumes, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
             immich_export_check, immich_search, immich_browse_check, immich_libraries, immich_suggestions, immich_people, immich_tags,
-            immich_thumb, immich_resolve, launch_file, path_exists, path_kind, display_scale, trash_files, create_virtual_copy, remove_virtual_copy, hdr_merge, hdr_can_align, pano_merge, pano_can_merge, merge_cancel, preview_fullscreen, about, licenses, engine_quit, keywords, keywords_set, ai_accel,
+            immich_thumb, immich_resolve, launch_file, path_exists, path_kind, display_scale, trash_files, create_virtual_copy, remove_virtual_copy, hdr_merge, hdr_can_align, pano_merge, pano_preview, pano_can_merge, merge_cancel, preview_fullscreen, about, licenses, engine_quit, keywords, keywords_set, ai_accel,
             perf_set, perf_trace_start, perf_trace_stop, perf_modules, perf_report_write, perf_machine, perf_ping, resources::perf_resources_start, resources::perf_resources_stop,
             plugins::plugin_find_apps, plugins::plugin_launch, plugins::plugin_watch, plugins::plugin_cancel, plugins::plugin_job,
             plugins::plugin_returns, plugins::plugin_return_applied

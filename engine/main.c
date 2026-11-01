@@ -3580,7 +3580,7 @@ static gboolean _pano_kept(const dt_iop_module_t *m)
   return FALSE;
 }
 
-// one frame at full size, in the camera's color with its white balance
+// one frame at full size (or bounded by max_edge for a preview), in the camera's color with its white balance
 // divided out again, through an export pipe as
 // dt_imageio_export_with_flags() builds one, with the modules _pano_keep
 // leaves out switched off after the history is replayed. lens correction
@@ -3590,7 +3590,8 @@ static gboolean _pano_kept(const dt_iop_module_t *m)
 // every other must come from the same camera, as the DNG has one color
 // matrix. With rendered inputs, colorin and colorout instead convert all
 // frames to linear Rec.2020 and white balance stays applied.
-static gboolean _pano_frame(pano_t *p, const dt_imgid_t imgid, dt_image_t *first, const gboolean rendered, char **err)
+static gboolean _pano_frame(pano_t *p, const dt_imgid_t imgid, dt_image_t *first, const gboolean rendered,
+                             const int max_edge, char **err)
 {
   dt_develop_t dev;
   dt_dev_init(&dev, FALSE);
@@ -3647,8 +3648,11 @@ static gboolean _pano_frame(pano_t *p, const dt_imgid_t imgid, dt_image_t *first
     unbalance[c] = !rendered && dev.chroma.wb_coeffs[c] > 0.0f ? 1.0f / dev.chroma.wb_coeffs[c] : 1.0f;
   dt_dev_pixelpipe_get_dimensions(&pipe, &dev, pipe.iwidth, pipe.iheight, &pipe.processed_width,
                                   &pipe.processed_height);
-  const int w = pipe.processed_width, h = pipe.processed_height;
-  if(dt_dev_pixelpipe_process_no_gamma(&pipe, &dev, 0, 0, w, h, 1.0) || !pipe.backbuf)
+  const float scale = max_edge > 0
+    ? fminf(1.0f, (float)max_edge / MAX(pipe.processed_width, pipe.processed_height)) : 1.0f;
+  const int w = MAX(1, (int)(pipe.processed_width * scale));
+  const int h = MAX(1, (int)(pipe.processed_height * scale));
+  if(dt_dev_pixelpipe_process_no_gamma(&pipe, &dev, 0, 0, w, h, scale) || !pipe.backbuf)
     *err = g_strdup_printf("cannot render '%s'", img->filename);
   else
   {
@@ -3689,6 +3693,8 @@ static gboolean _positive_import(const char *path, JsonBuilder *b, char **err);
 // on the export thread, as HDR Merge
 static gboolean _pano_merge(JsonObject *req, JsonBuilder *b, FILE *out, char **err)
 {
+  const gboolean preview = !g_strcmp0(json_object_get_string_member_with_default(req, "cmd", ""),
+                                      "pano_preview");
   JsonArray *ids = json_object_has_member(req, "imgids") ? json_object_get_array_member(req, "imgids") : NULL;
   GList *imgids = NULL;
   for(guint k = 0; ids && k < json_array_get_length(ids); k++)
@@ -3714,7 +3720,7 @@ static gboolean _pano_merge(JsonObject *req, JsonBuilder *b, FILE *out, char **e
 
   // A selection containing rendered photos uses one common linear space,
   // including any RAW frames in that selection.
-  gboolean rendered = FALSE;
+  gboolean rendered = preview;
   for(GList *l = imgids; l; l = g_list_next(l))
   {
     const dt_image_t *img = dt_image_cache_get(GPOINTER_TO_INT(l->data), 'r');
@@ -3740,9 +3746,35 @@ static gboolean _pano_merge(JsonObject *req, JsonBuilder *b, FILE *out, char **e
       ok = FALSE;
     }
     else
-      ok = _pano_frame(p, GPOINTER_TO_INT(l->data), &first_img, rendered, err);
+      ok = _pano_frame(p, GPOINTER_TO_INT(l->data), &first_img, rendered, preview ? 1280 : 0, err);
   }
   g_list_free(imgids);
+  if(preview)
+  {
+    pano_preview_t result = { 0 };
+    ok = ok && pano_preview(p, projection, _pano_step, &progress, &result, err);
+    pano_free(p);
+    if(!ok) return FALSE;
+    gchar *rgba = g_base64_encode(result.rgba, (gsize)result.width * result.height * 4);
+    g_free(result.rgba);
+    json_builder_set_member_name(b, "rgba");
+    json_builder_add_string_value(b, rgba);
+    g_free(rgba);
+    json_builder_set_member_name(b, "width");
+    json_builder_add_int_value(b, result.width);
+    json_builder_set_member_name(b, "height");
+    json_builder_add_int_value(b, result.height);
+    json_builder_set_member_name(b, "used");
+    json_builder_add_int_value(b, result.used);
+    json_builder_set_member_name(b, "projection");
+    for(size_t k = 0; k < G_N_ELEMENTS(projections); k++)
+      if(projections[k].type == result.projection) json_builder_add_string_value(b, projections[k].name);
+    json_builder_set_member_name(b, "crop");
+    json_builder_begin_array(b);
+    for(int k = 0; k < 4; k++) json_builder_add_int_value(b, result.crop[k]);
+    json_builder_end_array(b);
+    return TRUE;
+  }
   int w = 0, h = 0, used = 0;
   float *rgb = ok ? pano_stitch(p, projection, json_object_get_boolean_member_with_default(req, "crop", TRUE),
                                 _pano_step, &progress, &w, &h, &used, err)
@@ -3878,7 +3910,7 @@ static void _export_run(gpointer data, gpointer user_data)
   else if(!g_strcmp0(cmd, "hdr_merge"))
     ok = _hdr_merge(req, b, out, &err);
 #ifdef HAVE_PANO
-  else if(!g_strcmp0(cmd, "pano_merge"))
+  else if(!g_strcmp0(cmd, "pano_merge") || !g_strcmp0(cmd, "pano_preview"))
     ok = _pano_merge(req, b, out, &err);
 #endif
   else
@@ -8886,7 +8918,7 @@ static void _handle(JsonObject *req, FILE *out)
     if(!_hdr_merge(req, b, NULL, &err)) goto fail;
   }
 #ifdef HAVE_PANO
-  else if(!g_strcmp0(cmd, "pano_merge"))
+  else if(!g_strcmp0(cmd, "pano_merge") || !g_strcmp0(cmd, "pano_preview"))
   {
     if(!_pano_merge(req, b, NULL, &err)) goto fail;
   }
@@ -9372,7 +9404,7 @@ static char _end_of_input[] = "";
 // client while it waits on a base's reply) stops that base at once, and a
 // `merge_cancel` a merge before its next photo. neither gets a reply. a
 // tagged `thumb` goes to the thumbnail threads (_thumb_run), a tagged
-// `export`, `export_release`, `hdr_merge` or `pano_merge` to the export
+// `export`, `export_release`, `hdr_merge`, `pano_merge` or `pano_preview` to the export
 // thread (_export_run), a tagged `import` to the import thread (_import_run);
 // every other line goes to the main loop, in order. a tagged `ai_denoise`,
 // `ai_object`, `ai_mask` or `ai_depth` is among them: the main loop
@@ -9414,7 +9446,8 @@ static gpointer _read_requests(gpointer data)
           taken = TRUE;
         }
         else if((!g_strcmp0(cmd, "export") || !g_strcmp0(cmd, "export_release")
-                 || !g_strcmp0(cmd, "hdr_merge") || !g_strcmp0(cmd, "pano_merge"))
+                 || !g_strcmp0(cmd, "hdr_merge") || !g_strcmp0(cmd, "pano_merge")
+                 || !g_strcmp0(cmd, "pano_preview"))
                 && json_object_has_member(req, "tag"))
         {
           fprintf(stderr, "[engine] export %.*s\n", (int)strcspn(line->str, "\r\n"), line->str);

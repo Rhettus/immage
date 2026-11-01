@@ -122,7 +122,8 @@ Everything else in this repository is Immage's own.
   - film negative conversion, color or black and white, picked from the
     film border and the photo, in darktable's negadoctor
   - HDR Merge, in darktable's HDR merge, and Panorama Merge, stitched
-    with OpenCV, each into a new DNG
+    with OpenCV, each into a new DNG; panorama projection and crop can be
+    previewed before merging
   - presets, film looks with live preview tiles, undo/redo, a before/after
     view, crop and straighten, a white balance picker, export with
     borders and file-name templates (to a folder or an Immich album), a

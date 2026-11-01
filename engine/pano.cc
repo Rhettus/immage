@@ -224,8 +224,9 @@ static void _step(const pano_step_t step, void *data, const char *stage, const i
   if(step && !step(stage, done, total, data)) throw _stopped();
 }
 
-float *pano_stitch(pano_t *p, pano_projection_t projection, const gboolean crop, const pano_step_t step,
-                   void *data, int *width, int *height, int *used, char **err)
+static float *_stitch(pano_t *p, pano_projection_t projection, const gboolean crop, const pano_step_t step,
+                      void *data, int *width, int *height, int *used, Mat *coverage,
+                      pano_projection_t *resolved, char **err)
 {
   const int n = (int)p->frames.size();
   if(n < 2)
@@ -383,6 +384,23 @@ float *pano_stitch(pano_t *p, pano_projection_t projection, const gboolean crop,
       return NULL;
     }
 
+    // Preview keeps the input cameras and features, but warps onto a bounded
+    // canvas. A lower warper scale changes output size without changing K.
+    if(coverage)
+    {
+      const double scale = std::min(1.0, 1600.0 / std::max(dst.width, dst.height));
+      fw = _warper(projection)->create((float)(warped_scale * compose_scale * scale));
+      for(int i = 0; i < m; i++)
+      {
+        Mat K;
+        full[i].K().convertTo(K, CV_32F);
+        const Rect roi = fw->warpRoi(frames[i].size(), K, full[i].R);
+        corners[i] = roi.tl();
+        fsizes[i] = roi.size();
+      }
+      dst = resultRoi(corners, fsizes);
+    }
+
     // seams and gains, at the seam scale
     _step(step, data, "finding seams", 0, 1);
     const double seam_aspect = seam_scale / work_scale;
@@ -458,6 +476,8 @@ float *pano_stitch(pano_t *p, pano_projection_t projection, const gboolean crop,
         for(int ch = 0; ch < 3; ch++)
           o[3 * x + ch] = v[x] ? (float)std::max(0.0, (std::exp(c[3 * x + ch] * k) - 1.0) / _A) : 0.0f;
     }
+    if(coverage) *coverage = covered;
+    if(resolved) *resolved = projection;
     *width = out.width;
     *height = out.height;
     *used = m;
@@ -473,4 +493,53 @@ float *pano_stitch(pano_t *p, pano_projection_t projection, const gboolean crop,
     *err = g_strdup_printf("stitching failed: %s", e.what());
     return NULL;
   }
+}
+
+float *pano_stitch(pano_t *p, pano_projection_t projection, const gboolean crop, const pano_step_t step,
+                   void *data, int *width, int *height, int *used, char **err)
+{
+  return _stitch(p, projection, crop, step, data, width, height, used, nullptr, nullptr, err);
+}
+
+gboolean pano_preview(pano_t *p, pano_projection_t projection, const pano_step_t step, void *data,
+                      pano_preview_t *result, char **err)
+{
+  Mat coverage;
+  float *rgb = _stitch(p, projection, FALSE, step, data, &result->width, &result->height,
+                       &result->used, &coverage, &result->projection, err);
+  if(!rgb) return FALSE;
+  const Rect crop = _auto_crop(coverage);
+  result->crop[0] = crop.x;
+  result->crop[1] = crop.y;
+  result->crop[2] = crop.width;
+  result->crop[3] = crop.height;
+  result->rgba = (guchar *)g_try_malloc((size_t)result->width * result->height * 4);
+  if(!result->rgba)
+  {
+    g_free(rgb);
+    *err = g_strdup("not enough memory for the panorama preview");
+    return FALSE;
+  }
+  // Linear Rec.2020 -> linear sRGB, followed by the sRGB transfer curve.
+  // This is a geometry preview; no tone mapper or creative edit is applied.
+  const double matrix[3][3] = {
+    { 1.660491, -0.587641, -0.072850 },
+    { -0.124550, 1.132900, -0.008349 },
+    { -0.018151, -0.100579, 1.118730 },
+  };
+  for(int y = 0; y < result->height; y++)
+    for(int x = 0; x < result->width; x++)
+    {
+      const size_t i = (size_t)y * result->width + x;
+      for(int c = 0; c < 3; c++)
+      {
+        const double v = std::clamp(matrix[c][0] * rgb[3*i] + matrix[c][1] * rgb[3*i+1]
+                                    + matrix[c][2] * rgb[3*i+2], 0.0, 1.0);
+        const double encoded = v <= 0.0031308 ? 12.92 * v : 1.055 * std::pow(v, 1.0 / 2.4) - 0.055;
+        result->rgba[4*i+c] = (guchar)std::lround(encoded * 255.0);
+      }
+      result->rgba[4*i+3] = coverage.at<uchar>(y, x) ? 255 : 0;
+    }
+  g_free(rgb);
+  return TRUE;
 }

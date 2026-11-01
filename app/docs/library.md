@@ -190,7 +190,8 @@ not the subject's.
 Panorama Merge stitches overlapping RAW or non-RAW photos, including mixed
 selections, into one wide photo. Select the
 photos in the filmstrip or grid, then press ⌃M or right-click and choose
-**Panorama Merge…**. Choose a projection:
+**Panorama Merge…**. A preview of your selected photos appears above the
+projection choices. Choose a projection to compare its effect:
 
 - **Auto** picks one from how wide the panorama is
 - **Spherical** suits very wide panoramas, and those of several rows
@@ -198,8 +199,19 @@ photos in the filmstrip or grid, then press ⌃M or right-click and choose
 - **Perspective** keeps straight lines straight, for architecture, up to
   about 100° across
 
-**Auto Crop** cuts away the empty edges the photos leave. Click
-**Merge**.
+With **Auto**, the label below the preview shows the projection chosen.
+**Auto Crop** cuts away the empty edges the photos leave; toggle it to compare
+the crop immediately. With it off, empty edges appear as a checkerboard.
+
+The preview takes a moment to build and updates when you change projection.
+Previously viewed projections are kept while the panel is open. It shows
+geometry at reduced resolution; final detail, alignment and color may differ.
+If some photos do not overlap, the panel shows how many the preview uses.
+If the preview fails, try **Retry** or another projection. You can still click
+**Merge** to attempt the full-resolution stitch. Closing the panel cancels
+preview work. Previewing does not create a file or change your source photos.
+
+Click **Merge** when you are happy with the projection and crop.
 
 Immage writes a new DNG beside the first photo, named `<name>-pano.dng`
 (then `<name>-pano_01.dng` and so on), and lists it after that photo. It

@@ -322,7 +322,34 @@ section h3 { margin: 7px 0 5px; font-size: var(--fs-body); font-weight: 600; col
 /* AI Denoise's dialog: the piece at 1:1, and the small photo that moves it */
 .modal.denoise { width: min(860px, calc(100vw - 32px)); }
 .modal.hdr-merge { width: min(440px, calc(100vw - 32px)); }
-.modal.pano-merge { width: min(480px, calc(100vw - 32px)); }
+.modal.pano-merge { width: min(800px, calc(100vw - 32px)); }
+.pano-merge .modal-head { padding-bottom: 18px; gap: 12px; }
+.pano-count { color: var(--text-2); font-size: var(--fs-small); }
+.pano-preview {
+  height: clamp(180px, 34vh, 340px); position: relative; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  background: #141414; border: 1px solid #393939; border-radius: 6px;
+}
+.pano-preview canvas {
+  display: block; max-width: 100%; max-height: 100%; object-fit: contain;
+  background: repeating-conic-gradient(#202020 0% 25%, #141414 0% 50%) 0 / 16px 16px;
+}
+.pano-badge { position: absolute; top: 10px; left: 10px; padding: 4px 8px;
+  border: 1px solid #ffffff20; border-radius: 4px; background: #171717cc; font-size: var(--fs-micro); }
+.pano-preview-state .spinner { width: 18px; height: 18px; border: 2px solid #ffffff30;
+  border-top-color: var(--text); border-radius: 50%; animation: working-spin .8s linear infinite; }
+.pano-merge .modal-foot { align-items: center; }
+.pano-preview-state { display: flex; flex-direction: column; align-items: center; gap: 12px;
+  padding: 20px; text-align: center; color: var(--text-2); overflow-wrap: anywhere; }
+.pano-preview-meta { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px 12px;
+  min-height: 16px; margin: 10px 0 22px; color: var(--text-2); font-size: var(--fs-caption); }
+.pano-label { color: var(--text-2); font-size: var(--fs-small); margin-bottom: 8px; }
+.pano-hint { color: var(--text-2); font-size: var(--fs-small); margin: 10px 0 20px; }
+.pano-crop-hint { display: block; color: var(--text-2); font-size: var(--fs-small); margin-top: 5px; }
+.pano-merge .row.check { align-items: flex-start; color: var(--text); }
+.pano-merge .row.check input { margin-top: 3px; }
+.pano-merge .note-plain { margin-top: 20px; }
+.pano-foot-status { margin-right: auto; color: var(--text-2); font-size: var(--fs-small); }
 .denoise-body { display: flex; gap: 18px; padding-top: 8px; }
 .denoise-view {
   position: relative; flex: none; width: 480px; height: 480px; overflow: hidden;

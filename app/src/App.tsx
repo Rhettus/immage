@@ -5881,7 +5881,7 @@ export default function App() {
     {copying && <CopyDialog onCopy={copySettings} onClose={() => setCopying(false)} />}
     {hdrMerging && <HdrDialog count={hdrMerging.length} onRun={(align) => runHdrMerge(hdrMerging, align)}
                               onClose={() => setHdrMerging(null)} />}
-    {panoMerging && <PanoDialog count={panoMerging.length}
+    {panoMerging && <PanoDialog photos={panoMerging}
                                 onRun={(projection, crop) => runPanoMerge(panoMerging, projection, crop)}
                                 onClose={() => setPanoMerging(null)} />}
     {denoising && <DenoiseDialog thumb={navThumb} center={viewCenter()} prepare={denoiseModel}
