@@ -65,11 +65,16 @@ export async function openFolder(path: string, recursive = false, skip: string[]
   type Progress = { token: number; done: number; total: number; images: ImageEntry[]; files?: string[]; known?: Known[] };
   const off = await listen<Progress>("folder-progress", (e) => {
     const p = e.payload;
-    if (p.token === token) onBatch?.(p.images, p.done, p.total, p.files, p.known);
+    if (p.token === token && token === folderToken) onBatch?.(p.images, p.done, p.total, p.files, p.known);
   });
   try {
+    if (token !== folderToken) throw "superseded";
     const reply = await invoke<{ images: ImageEntry[] }>("open_folder", { path, recursive, skip, token });
+    if (token !== folderToken) throw "superseded";
     return reply.images;
+  } catch (e) {
+    if (token !== folderToken) throw "superseded";
+    throw e;
   } finally {
     off();
   }

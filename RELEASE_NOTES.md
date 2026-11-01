@@ -91,6 +91,9 @@ Performance
 
 Bug fixes
 
+- Folder reads report an error after 30 seconds without an engine batch reply
+  instead of waiting indefinitely. Switching folders ignores the previous
+  read's progress and results.
 - Changes in Preferences > Modules apply to unused tools on the current photo
   when Preferences closes, without restarting. Tools with edits keep their module.
 - Object mask backdrop ranges use double precision when read back to avoid

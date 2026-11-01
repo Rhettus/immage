@@ -2707,7 +2707,9 @@ export default function App() {
       // another folder was opened meanwhile, and shows its own progress
       if (String(e) === "superseded") return [];
       setReading(null);
-      if (!(await invoke<boolean>("path_exists", { path: dir }))) {
+      if (String(e).startsWith("Reading photos timed out")) {
+        setStatus(`error: ${e}`);
+      } else if (!(await invoke<boolean>("path_exists", { path: dir }))) {
         updateImages([]);
         setFolderRefresh((n) => n + 1);
         setStatus(`folder not found: ${dir}. it was moved or deleted outside Immage`);

@@ -1240,7 +1240,10 @@ async fn open_folder(app: AppHandle, state: State<'_, AppState>, path: String, r
         let t = state.tagged.clone();
         let tag = t.tag();
         let start = Instant::now();
-        let reply = tauri::async_runtime::spawn_blocking(move || t.request(tag, json!({ "cmd": "import", "files": list })))
+        let handle = app.clone();
+        let reply = tauri::async_runtime::spawn_blocking(move || t.request_until(
+            tag, json!({ "cmd": "import", "files": list }), Duration::from_secs(30),
+            || handle.state::<AppState>().folder_token.load(Ordering::SeqCst) != token))
             .await
             .map_err(|e| e.to_string())??;
         let took = start.elapsed();

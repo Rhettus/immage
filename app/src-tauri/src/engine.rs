@@ -69,6 +69,24 @@ impl Tagged {
         answer.wait()
     }
 
+    // Folder reads must release their caller even if an import worker stalls.
+    // Late replies retain their tag and are discarded after forget().
+    pub fn request_until(&self, tag: u64, mut req: Value, timeout: Duration,
+                         cancelled: impl Fn() -> bool) -> Result<Value, String> {
+        req["tag"] = json!(tag);
+        let answer = self.expect(tag)?;
+        let result = (|| {
+            {
+                let mut stdin = self.stdin.lock().unwrap();
+                writeln!(stdin, "{req}").and_then(|_| stdin.flush())
+                    .map_err(|e| format!("engine write: {e}"))?;
+            }
+            answer.wait_until(timeout, cancelled)
+        })();
+        self.forget(tag);
+        result
+    }
+
     // the answer to `tag`, waited for once it is asked: before, so that it
     // is never read with no one waiting. a request the main loop answers
     // first, and a thread of the engine's later (ai_denoise), asks it
@@ -105,6 +123,22 @@ impl Tagged {
 pub struct Answer(Receiver<Value>);
 
 impl Answer {
+    fn wait_until(self, timeout: Duration, cancelled: impl Fn() -> bool) -> Result<Value, String> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            if cancelled() { return Err("superseded".into()); }
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return Err("Reading photos timed out waiting for the engine. A file or drive may be unresponsive. Try another folder; if it also stalls, restart Immage.".into());
+            }
+            match self.0.recv_timeout(left.min(Duration::from_millis(100))) {
+                Ok(reply) => return outcome(reply),
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {},
+                Err(_) => return Err(ENGINE_EXITED.into()),
+            }
+        }
+    }
+
     // blocks until the engine replies
     pub fn wait(self) -> Result<Value, String> {
         // the sender is dropped unanswered when the engine exits
@@ -584,6 +618,24 @@ impl Drop for Engine {
 mod tests {
     use super::{gpu_edits, parse_timing, reap, rocm_only, set_gpu_edits, CacheLog, CACHE_RECORD_LIMIT};
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn folder_wait_times_out_cancels_and_handles_replies() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let started = Instant::now();
+        assert!(super::Answer(rx).wait_until(Duration::from_millis(10), || false)
+            .unwrap_err().starts_with("Reading photos timed out"));
+        assert!(started.elapsed() < Duration::from_secs(1));
+        drop(tx);
+        let (_tx, rx) = std::sync::mpsc::channel();
+        assert_eq!(super::Answer(rx).wait_until(Duration::from_secs(30), || true).unwrap_err(), "superseded");
+        let (tx, rx) = std::sync::mpsc::channel();
+        tx.send(serde_json::json!({"ok":true,"images":[]})).unwrap();
+        assert!(super::Answer(rx).wait_until(Duration::from_secs(1), || false).is_ok());
+        let (tx, rx) = std::sync::mpsc::channel();
+        drop(tx);
+        assert_eq!(super::Answer(rx).wait_until(Duration::from_secs(1), || false).unwrap_err(), super::ENGINE_EXITED);
+    }
 
     #[test]
     fn checkpoint_records_are_scoped_bounded_and_preserve_hashes() {
