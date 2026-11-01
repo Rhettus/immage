@@ -121,8 +121,11 @@ The selected mask's sliders sit below its settings, in six groups:
 They work like the same sliders in [Adjustments](adjustments.md), only
 inside the mask. A new mask opens its **Tone** group.
 
-**Highlights**, **Shadows** and **Defringe** run on the same module as the
-photo's own, as set in [Preferences › Modules](preferences.md#modules).
+Choose mask modules independently of global adjustments under
+[Preferences › Modules › Masks](preferences.md#modules). Alternatives are
+available for Contrast, Highlights and Shadows, Clarity, Texture, Sharpening,
+and Defringe. Used mask adjustments keep their modules when preferences change;
+new masks and unused tools take the current mask choices.
 **Whites** is the exception: the photo's Whites moves the top of the tone
 mapper's curve, which can't run inside a mask, so a mask's Whites only
 brightens or darkens its brightest tones, as the photo's Whites also does
@@ -149,4 +152,9 @@ Where masks overlap, their adjustments add up. **Contrast**,
 Clarity and Texture also offer **contrast & texture**, chosen independently in
 [Preferences › Modules](preferences.md#modules). Medium and Fine details stay
 visible; **Advanced** reveals the remaining native controls. Contrast equalizer
-is a global Contrast option and does not replace mask Contrast.
+can also replace mask Contrast: select **Custom**, then **Masks › Contrast ›
+contrast equalizer**. The mask's Tone group shows the same five-channel,
+six-band graph described in [Adjustments](adjustments.md#contrast-equalizer),
+applied only inside that mask. Global Contrast can still use AgX. Masked
+equalizer instances run separately; the slider-based overlap limits described
+above apply to color balance rgb Contrast.

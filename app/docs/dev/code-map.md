@@ -88,9 +88,13 @@ The GUI dashboard plots these alongside timing summaries.
 
 Module options: [moduleChoice.ts](../../src/moduleChoice.ts) resolves saved
 choices and preferences; [ModulePrefs.tsx](../../src/ModulePrefs.tsx) displays
-`MODULE_CHOICES` from the manifest. Closing Preferences reapplies choices to
-unused tools in the current session. [ContrastEqualizer.tsx](../../src/ContrastEqualizer.tsx)
-edits the global `atrous` curves (`EQ_IDS`, `equalizerMap` in manifest.ts).
+`MODULE_CHOICES` and `MASK_MODULE_CHOICES` from the manifest under Global and
+Masks. It receives `focusMode` from PreferencesDialog and uses the panels'
+normal/Alt-click folding behavior. Closing Preferences reapplies choices to
+unused global and mask tools in the current session.
+[ContrastEqualizer.tsx](../../src/ContrastEqualizer.tsx) edits global or per-mask
+`atrous` curves (`EQ_IDS`, `equalizerMap` in manifest.ts); mask choices live
+in each `Mask.values`, separate from `Session.values`.
 [DetailControls.tsx](../../src/DetailControls.tsx) groups contrast & texture
 controls, with Medium/Fine visible and the remainder under Advanced.
 

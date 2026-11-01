@@ -96,7 +96,7 @@ currently runs on the CPU.
 
 ## Contrast equalizer
 
-Choose **Custom › Contrast › contrast equalizer** in Preferences › Modules
+Choose **Custom**, then **Global › Contrast › contrast equalizer** in Preferences › Modules
 for a photo whose Contrast has not been edited. In Basic, a graph replaces
 the Contrast slider. It adjusts detail by spatial scale rather than tonal range.
 
@@ -105,8 +105,10 @@ noise**. Each channel has six points, from **Coarse** on the left to **Fine**
 on the right. Click near a point and drag vertically to change that band.
 Pull up to boost, down to reduce; the noise channels set noise thresholds.
 Focus a point and use Up/Down to adjust it, or Home to restore its neutral
-value. **Reset** restores all five channels. This option is global; mask
-Contrast keeps its existing controls.
+value. **Reset** restores all five channels. To use the graph inside masks,
+choose **Masks › Contrast › contrast equalizer** in the same preferences tab.
+Global and mask choices are independent, so global Contrast can use AgX while
+masks use the equalizer. Existing adjustments keep their selected module.
 
 ## Tone Curve
 

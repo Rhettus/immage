@@ -150,7 +150,11 @@ Some tools can run on more than one module. Preferences › Modules picks
 which for the tools a photo has not used yet: Default takes the module
 darktable's [AgX workflow](https://avidandrew.com/agx-workflow.html) uses
 for each, the first one listed below, and Custom lets each be set. A
-photo that already uses one of a tool's modules keeps it.
+photo that already uses one of a tool's modules keeps it. The collapsible
+Global and Masks sections choose modules independently: for example, use AgX
+globally and contrast equalizer inside masks. They follow Focus mode; Alt-click
+keeps both sections open. See the [module preferences guide](app/docs/preferences.md#modules)
+for the available mask alternatives.
 
 | Immage | darktable module |
 |---|---|
@@ -159,7 +163,7 @@ photo that already uses one of a tool's modules keeps it.
 | White Balance: Temp, Tint, the picker | color calibration (`channelmixerrgb`) |
 | Exposure | exposure (`exposure`) |
 | Contrast | AgX (`agx`), or sigmoid (`sigmoid`) on a photo started under it; or color balance rgb (`colorbalancergb`); or contrast equalizer (below) |
-| Contrast equalizer (Contrast option) | contrast equalizer (`atrous`): five channels, each with six coarse-to-fine bands; replaces the global Contrast slider |
+| Contrast equalizer (Contrast option) | contrast equalizer (`atrous`): five channels, each with six coarse-to-fine bands; replaces the global or masked Contrast slider, chosen independently |
 | Highlights, Shadows | tone equalizer (`toneequal`), or shadows and highlights (`shadhi`) |
 | Blacks | AgX's lift, or sigmoid's target black; or exposure's black level (`exposure`) |
 | Vibrance | color balance rgb (`colorbalancergb`) |

@@ -16,3 +16,12 @@ Follow the format of previous releases:
   spaces of indentation.
 - Write concise descriptions of what changes for the user. Group related commits
   into one entry where useful; release notes do not need one bullet per commit.
+
+# Documentation
+
+Whenever adding or changing a feature, update both the user guide in
+`app/docs/` and the developer documentation in `app/docs/dev/` as part of
+the same change. Describe the final behavior, settings and interactions for
+users, and the relevant architecture, code paths and verification for developers.
+Revise or remove outdated descriptions in related guides and the project README.
+Documentation updates are required alongside the release notes.

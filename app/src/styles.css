@@ -2252,3 +2252,10 @@ input.switch:disabled { cursor: default; opacity: 0.4; }
 .equalizer-graph circle { fill: currentColor; }
 .equalizer-graph circle:focus { outline: none; stroke: var(--accent); stroke-width: 3; }
 .equalizer-scale, .equalizer-hint { font-size: 11px; opacity: .65; margin-top: 6px; }
+
+
+.module-prefs-fold {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; padding: 12px 0; border: 0; background: none;
+  color: var(--text); font: inherit; font-weight: 600; cursor: pointer;
+}

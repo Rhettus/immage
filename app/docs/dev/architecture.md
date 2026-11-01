@@ -434,17 +434,48 @@ darktable is, and it has AI features when darktable is configured with
 
 `MODULE_CHOICES` in [manifest.ts](../../src/manifest.ts) is the source of truth
 for the alternatives, preferred defaults, global controls and local controls.
-[moduleChoice.ts](../../src/moduleChoice.ts) preserves used tools' choices;
-closing Preferences updates unused tools in the open session.
+`MASK_MODULE_CHOICES` filters these to the alternatives implemented by
+`localMaps`; masked Contrast offers color balance rgb (default) and atrous,
+excluding AgX because tone mappers cannot be masked.
+[moduleChoice.ts](../../src/moduleChoice.ts) resolves global and mask scopes
+separately: `immage.modules.choices` and `immage.modules.choices.masks` in
+localStorage share the `immage.modules.mode` Default/Custom switch.
+[ModulePrefs.tsx](../../src/ModulePrefs.tsx) renders Global and Masks chevrons
+using the `focusMode` prop passed by PreferencesDialog. Focus mode initially
+opens Global only; opening either group closes the other. Alt-click keeps
+both open. With focus mode off, groups toggle independently; Alt-click opens
+one alone (or closes it if it is already the only open group).
+
+Session preserves used global choices in `chooseModules` and infers each
+loaded mask's choices from its module instances in `loadMasks`. New masks
+start with the mask preferences in `Mask.values`. Closing Preferences calls
+`refreshModuleChoices`, updating unused global and mask tools and notifying
+the UI without replacing used adjustments. Mask rendering, `planMerge` and
+MasksPanel resolve choices from mask values before global values; mask modules
+no longer select the global tool's module. `setLocal` accepts module-choice
+controls as well as adjustment controls so undo and copied masks retain them.
 [ContrastEqualizer.tsx](../../src/ContrastEqualizer.tsx) replaces global Contrast
 when `mod_contrast` is 2. `equalizerMap` maps 30 `ce_<channel>_<band>` values to
 `atrous`'s `y[channel][band]`: five channels, six bands, range 0–1. The first
 three channels are neutral at 0.5, noise channels at 0. Reset restores every
-channel; the module is disabled at neutral. There is no local equalizer option.
+channel; the module is disabled at neutral. The same map and graph support
+masked Contrast when the mask's `mod_contrast` is 2. Local curve values retain
+their 0.001 precision on reload. Each mask has its own atrous instance; it does
+not participate in shared-instance merging. Color balance rgb continues to
+carry the mask's Whites, Hue, Saturation and Color Grading, with its Contrast
+neutralized while atrous is selected.
 `detailMap` uses separate `contrastntexture` instances for Clarity and Texture,
 with local counterparts; [DetailControls.tsx](../../src/DetailControls.tsx)
 folds everything except Medium and Fine details under Advanced. Global
 Defringe uses `cacorrectrgb`; `mod_defringe` selects only the local module.
+
+Verification: `node verify/contrast-equalizer.test.mjs` checks parameter round
+trips, independent preference scopes and mask choices in shared rendering.
+`node verify/mask-modules.mjs` uses the built engine and a temporary sample
+photo to check global AgX alongside masked atrous, preservation of used mask
+choices, and rendering, saving and reloading the mask's curves and module
+selection. `npm run build --prefix app` checks TypeScript and the front-end
+bundle.
 
 [CaptureTimeDialog.tsx](../../src/CaptureTimeDialog.tsx) builds before/after
 entries for a shared offset, skipping invalid recorded times. App.tsx retains

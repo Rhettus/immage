@@ -7,6 +7,10 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Preferences > Modules groups settings under collapsible Global and Masks
+  sections that follow Focus mode; Alt-click keeps both open. Custom module
+  choices are independent, including contrast equalizer for masks while using
+  AgX globally. Existing adjustments keep their modules.
 - User and developer guides now cover all module choices, the contrast equalizer
   graph, detail previews, metadata editing and generated-photo workflows.
 - Preferences > Modules adds Contrast equalizer as a Contrast option, replacing

@@ -5,23 +5,44 @@
 // README's table lists them. a tool with more than one gets a menu, set by
 // Default (darktable's AgX workflow's module for each) or by hand under Custom
 import { useState } from "react";
-import { moduleTools } from "./manifest";
+import { MASK_MODULE_CHOICES, moduleTools, type ModuleChoice } from "./manifest";
 import { loadModuleChoice, loadModuleMode, storeModuleChoice, storeModuleMode, type ModuleMode } from "./moduleChoice";
+import { Chevron, Collapse } from "./Collapse";
 import { PrefCard, PrefRow } from "./PrefsUI";
 
-const TOOLS = moduleTools();
+const TOOLS = moduleTools().filter((group) => group.panel !== "Masks");
 
-export function ModulePrefs() {
+export function ModulePrefs({ focusMode }: { focusMode: boolean }) {
+  const [open, setOpen] = useState(() => new Set(focusMode ? ["global"] : ["global", "masks"]));
+  const toggle = (id: string, alt: boolean) => setOpen((old) => {
+    const solo = focusMode ? !alt && !old.has(id) : alt;
+    if (solo) return new Set(old.has(id) && old.size === 1 ? [] : [id]);
+    const next = new Set(old);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const globalOpen = open.has("global");
+  const masksOpen = open.has("masks");
   const [mode, setMode] = useState(loadModuleMode);
   // bumped on a pick, so the menus read their stored values again
   const [, setPicked] = useState(0);
   const chooseMode = (v: ModuleMode) => { setMode(v); storeModuleMode(v); };
+  const menu = (choice: ModuleChoice, scope: "global" | "masks") => (
+    <select className="field" aria-label={`${scope === "global" ? "Global" : "Masks"} ${choice.label}`}
+            value={loadModuleChoice(choice.id, scope)} disabled={mode === "default"}
+            onChange={(e) => { storeModuleChoice(choice.id, Number(e.target.value), scope); setPicked((n) => n + 1); }}>
+      {choice.options.map((o) => (
+        <option key={o.value} value={o.value}>{o.name}{o.preferred ? " (default)" : ""}</option>
+      ))}
+    </select>
+  );
   return (
     <>
       <p className="prefs-lead">
         Which darktable module each tool runs on, and so which sliders it shows. Photos that already use one of a
         tool's modules keep it, so their edits look the same; the choice here applies to tools a photo has not used
-        yet, as soon as Preferences closes.
+        yet, as soon as Preferences closes. Global and Masks have separate choices;
+        existing mask adjustments keep their modules.
       </p>
       <PrefCard title="Modules">
         <PrefRow label="Modules"
@@ -34,22 +55,45 @@ export function ModulePrefs() {
           </div>
         </PrefRow>
       </PrefCard>
-      {TOOLS.map(({ panel, tools }) => (
-        <PrefCard key={panel} title={panel}>
-          {tools.map((t) => (
-            <PrefRow key={t.title} label={t.title}>
-              {t.choice ? (
-                <select className="field" value={loadModuleChoice(t.choice.id)} disabled={mode === "default"}
-                        onChange={(e) => { storeModuleChoice(t.choice!.id, Number(e.target.value)); setPicked((n) => n + 1); }}>
-                  {t.choice.options.map((o) => (
-                    <option key={o.value} value={o.value}>{o.name}{o.preferred ? " (AgX workflow)" : ""}</option>
-                  ))}
-                </select>
-              ) : <span className="pref-value" title={t.modules.join(", ")}>{t.modules.join(", ")}</span>}
-            </PrefRow>
-          ))}
-        </PrefCard>
-      ))}
+      <button className="module-prefs-fold" aria-expanded={globalOpen} aria-controls="module-prefs-global"
+              onClick={(e) => toggle("global", e.altKey)}>
+        Global <Chevron open={globalOpen} />
+      </button>
+      <Collapse open={globalOpen}>
+        <div id="module-prefs-global">
+        {TOOLS.map(({ panel, tools }) => (
+          <PrefCard key={panel} title={panel}>
+            {tools.map((t) => (
+              <PrefRow key={t.title} label={t.title}>
+                {t.choice ? (
+                  menu(t.choice, "global")
+                ) : <span className="pref-value" title={t.modules.join(", ")}>{t.modules.join(", ")}</span>}
+              </PrefRow>
+            ))}
+          </PrefCard>
+        ))}
+        </div>
+      </Collapse>
+      <button className="module-prefs-fold" aria-expanded={masksOpen} aria-controls="module-prefs-masks"
+              onClick={(e) => toggle("masks", e.altKey)}>
+        Masks <Chevron open={masksOpen} />
+      </button>
+      <Collapse open={masksOpen}>
+        <div id="module-prefs-masks">
+          <PrefCard title="Mask adjustments">
+            {MASK_MODULE_CHOICES.map((c) => (
+              <PrefRow key={c.id} label={c.label}>{menu(c, "masks")}</PrefRow>
+            ))}
+            <PrefRow label="White Balance"><span className="pref-value">color calibration</span></PrefRow>
+            <PrefRow label="Exposure and Blacks"><span className="pref-value">exposure</span></PrefRow>
+            <PrefRow label="Whites, Hue and Saturation"><span className="pref-value">color balance rgb</span></PrefRow>
+            <PrefRow label="HSL"><span className="pref-value">color equalizer</span></PrefRow>
+            <PrefRow label="Color Grading"><span className="pref-value">color balance rgb</span></PrefRow>
+            <PrefRow label="Dehaze"><span className="pref-value">haze removal</span></PrefRow>
+            <PrefRow label="Noise"><span className="pref-value">denoise (profiled)</span></PrefRow>
+          </PrefCard>
+        </div>
+      </Collapse>
     </>
   );
 }

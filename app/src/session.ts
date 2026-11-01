@@ -6,7 +6,7 @@
 // only mark their module dirty, and the next round sends the latest values once
 
 import { boundFields, choiceCovers, choiceOn, controlById, isModuleSetting, localControlById, localFields, localMaps, mapOf, mapsFor,
-         mapsWith, MODULE_CHOICES, modules, NEG_CHOICES, NEG_OFF, turnOrientation, turnRect, type ImageContext,
+         mapsWith, MASK_MODULE_CHOICES, MODULE_CHOICES, modules, NEG_CHOICES, NEG_OFF, turnOrientation, turnRect, type ImageContext,
          type ModuleMap, type Params, type Turn, type Values } from "./manifest";
 import { loadModuleChoice } from "./moduleChoice";
 import { isRefined, neutralLocal, type Mask, type Refine, type Shape } from "./masks";
@@ -308,9 +308,7 @@ export class Session {
         ofOption(o.value).some((m) => {
           const r = reads(m);
           return r && covers.some((id) => id in r && Math.abs(r[id] - (this.neutral[id] ?? 0)) > 1e-6);
-        })
-        || localMaps.some((m) => m.choice?.control === c.control && m.choice.value === o.value
-                             && [...this.maskOps.values()].some((ops) => ops.has(m.op))));
+        }));
       // a negative's tools run after negadoctor, whatever its modules hold
       const value = this.values.neg_on === 1 && c.control in NEG_CHOICES ? NEG_CHOICES[c.control]
         : this.wasEdited && used ? used.value : pick;
@@ -331,13 +329,24 @@ export class Session {
       const option = c.options.find((o) => o.value === current);
       const controls = c.covers ?? option?.controls ?? [];
       const used = modules.some((m) => m.choice?.control === c.control && this.foreign.has(m))
-        || controls.some((id) => Math.abs((this.values[id] ?? 0) - (this.neutral[id] ?? 0)) > 1e-6)
-        || localMaps.some((m) => m.choice?.control === c.control
-          && [...this.maskOps.values()].some((ops) => ops.has(m.op)));
+        || controls.some((id) => Math.abs((this.values[id] ?? 0) - (this.neutral[id] ?? 0)) > 1e-6);
       const pick = loadModuleChoice(c.id);
       this.neutral[c.control] = pick;
       if (!used && !(this.values.neg_on === 1 && c.control in NEG_CHOICES)) this.set(c.control, pick);
     }
+    this.masks = this.masks.map((mask) => {
+      const values = { ...mask.values };
+      for (const c of MASK_MODULE_CHOICES) {
+        const maps = localMaps.filter((m) => m.choice?.control === c.control);
+        const ids = c.id === "contrast" ? ["l_contrast", ...maps.flatMap((m) => m.controls)]
+          : maps.flatMap((m) => m.controls);
+        const used = ids.some((id) =>
+          Math.abs((values[id] ?? 0) - (localControlById.get(id)?.neutral ?? 0)) > 1e-6);
+        if (!used) values[c.control] = loadModuleChoice(c.id, "masks");
+      }
+      return { ...mask, values };
+    });
+    this.onShapes?.();
     this.onModules?.();
   }
 
@@ -483,6 +492,14 @@ export class Session {
     this.masks = raw.map((r) => {
       const values = neutralLocal();
       const neutral = { ...values };
+      for (const c of MASK_MODULE_CHOICES) {
+        const hasOption = (value: number, enabled: boolean) => localMaps.some((m) =>
+          m.choice?.control === c.control && m.choice.value === value
+          && r.instances[m.op] && (!enabled || r.instances[m.op].enabled));
+        const used = c.options.find((o) => hasOption(o.value, true))
+          ?? c.options.find((o) => hasOption(o.value, false));
+        values[c.control] = used?.value ?? (c.id === "contrast" ? 1 : loadModuleChoice(c.id, "masks"));
+      }
       // an instance that is off holds neutral values, unless its mask is
       // hidden or shares instances: then all are off and some still hold
       // the mask's settings
@@ -490,10 +507,10 @@ export class Session {
         const inst = r.instances[m.op];
         if (inst) Object.assign(values, m.read(inst.params, {}, this.ctx));
       }
-      for (const [id, v] of Object.entries(values)) values[id] = id.startsWith("l_detail_") ? v : Math.round(v * 100) / 100;
+      for (const [id, v] of Object.entries(values)) values[id] = id.startsWith("l_detail_") || id.startsWith("ce_") ? v : Math.round(v * 100) / 100;
       const insts = Object.values(r.instances);
       const hidden = insts.length > 0 && insts.every((i) => !i.enabled) && !r.merged_in?.length
-        && Object.entries(values).some(([id, v]) => v !== neutral[id]);
+        && Object.entries(values).some(([id, v]) => id in neutral && v !== neutral[id]);
       this.maskOps.set(r.name, new Set(Object.keys(r.instances)));
       this.sentMasks.add(r.name);
       return { name: r.name, shapes: r.shapes, invert: r.invert, opacity: Math.round(r.opacity ?? 100),
@@ -504,7 +521,8 @@ export class Session {
   private mask(name: string) { return this.masks.find((m) => m.name === name); }
 
   addMask(name: string, shapes: Shape[]) {
-    this.masks = [...this.masks, { name, shapes, invert: false, values: neutralLocal() }];
+    this.masks = [...this.masks, { name, shapes, invert: false, values: { ...neutralLocal(), ...Object.fromEntries(
+      MASK_MODULE_CHOICES.map((c) => [c.control, loadModuleChoice(c.id, "masks")])) } }];
     this.edited = true;
     this.dirtyShapes.add(name);
     this.needRender = true;
@@ -524,7 +542,8 @@ export class Session {
   setLocal(name: string, id: string, v: number) {
     this.activeDetailControl = this.size().draft && isDetailControl(id) ? id : null;
     this.onDetailControl?.(this.activeDetailControl);
-    const ops = localMaps.filter((m) => m.controls.includes(id)).map((m) => m.op);
+    const ops = localMaps.filter((m) => m.controls.includes(id) || m.choice?.control === id
+      || (id === "mod_contrast" && m.op === "colorbalancergb")).map((m) => m.op);
     if (!ops.length) return;
     this.masks = this.masks.map((m) => (m.name === name ? { ...m, values: { ...m.values, [id]: v } } : m));
     this.markLocal(name, ops);
@@ -687,7 +706,7 @@ export class Session {
         const holds = map.enabled ? map.enabled(m.values)
           : map.controls.some((id) => m.values[id] !== (localControlById.get(id)?.neutral ?? 0));
         const shares = plan.merged.get(name)?.has(op) ?? false;
-        const on = !shares && !this.before && !m.hidden && choiceOn(map, this.values) && holds;
+        const on = !shares && !this.before && !m.hidden && choiceOn(map, { ...this.values, ...m.values }) && holds;
         // refinements live in an instance's blend parameters: a mask with
         // none yet gets one that is off to hold them, which the overlay's
         // mask_map then uses

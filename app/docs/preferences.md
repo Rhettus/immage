@@ -195,7 +195,10 @@ photo's starting point: they don't mark it as edited.
 
 Which darktable module each tool runs on. **Default** uses the module of
 darktable's AgX workflow for each; **Custom** lets you pick one per tool,
-from these:
+under separate collapsible **Global** and **Masks** sections. For example,
+use AgX for global Contrast and contrast equalizer for masks. With **Focus mode**
+on, opening one section closes the other; Alt-click keeps both open. With it off,
+sections open independently, and Alt-click opens one on its own. Global offers:
 
 - **Contrast**: AgX (or sigmoid on a photo started under it), color balance
   rgb, or contrast equalizer, which replaces the slider with a curve editor
@@ -204,10 +207,14 @@ from these:
 - **Clarity**: local contrast, or contrast & texture
 - **Texture**: diffuse or sharpen, or contrast & texture
 - **Highlights and Shadows**: the tone equalizer, or shadows and
-  highlights. A mask's Highlights and Shadows use the same one
+  highlights
 - **Black & White**: color calibration, or the color equalizer
 - **Sharpening**: sharpen, or diffuse or sharpen
-- **Defringe** (masks only): chromatic aberrations, or defringe
+
+**Masks** independently offers Contrast (color balance rgb or contrast equalizer),
+Highlights and Shadows, Clarity, Texture, Sharpening, and Defringe (chromatic
+aberrations or defringe). Modules without alternatives are also listed. Existing
+mask adjustments keep their modules; unused tools and new masks take these choices.
 
 Clarity and Texture can each use **contrast & texture** under Custom modules.
 Selecting it replaces the corresponding slider with the module's Coarse,

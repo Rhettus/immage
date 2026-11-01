@@ -1849,6 +1849,7 @@ export const LOCAL_CONTROLS: Control[] = [
   { ...lr("l_tint", "Tint"), track: "linear-gradient(90deg, #4caf50, #e8e3d0, #d05fd0)" },
   { id: "l_exposure", label: "Exposure", min: -4, max: 4, step: 0.01, neutral: 0, format: signed(2) },
   lr("l_contrast", "Contrast"),
+  ...equalizerControls,
   { id: "l_fulcrum", label: "Contrast pivot", min: -6, max: 6, step: 0.1, neutral: 0, format: signed(1, " EV") },
   lr("l_highlights", "Highlights"),
   lr("l_shadows", "Shadows"),
@@ -1871,7 +1872,16 @@ export const LOCAL_CONTROLS: Control[] = [
   ...RANGES.flatMap(([r]) => gradingControls("l_cg", r)),
 ].map((c) => ({ neutral: 0, ...c }));
 
+const localBalanceMap = withFulcrum(linear("colorbalancergb", false, [
+  { id: "l_contrast", field: "contrast", scale: 0.01, base: 0 },
+  { id: "l_saturation", field: "saturation_global", scale: 0.01, base: 0 },
+  { id: "l_whites", field: "brilliance_highlights", scale: 0.004, base: 0 },
+  { id: "l_hue", field: "hue_angle", scale: 0.3, base: 0 },
+  ...gradingFields("l_cg"),
+]));
+
 export const localMaps: ModuleMap[] = [
+  { ...equalizerMap, choice: { control: "mod_contrast", value: 2 } },
   {
     op: "channelmixerrgb", keepOn: false,
     controls: ["l_temp", "l_tint"],
@@ -1895,13 +1905,9 @@ export const localMaps: ModuleMap[] = [
   // a zone mask sets it to its zones' middle (ZoneSystem.tsx)
   // some 30 ms a mask's draft frame, so its masks share instances
   {
-    ...withFulcrum(linear("colorbalancergb", false, [
-      { id: "l_contrast", field: "contrast", scale: 0.01, base: 0 },
-      { id: "l_saturation", field: "saturation_global", scale: 0.01, base: 0 },
-      { id: "l_whites", field: "brilliance_highlights", scale: 0.004, base: 0 },
-      { id: "l_hue", field: "hue_angle", scale: 0.3, base: 0 },
-      ...gradingFields("l_cg"),
-    ])),
+    ...localBalanceMap,
+    write: (v, d, c) => localBalanceMap.write(
+      { ...v, l_contrast: v.mod_contrast === 2 ? 0 : v.l_contrast }, d, c),
     merge: true,
     fixed: ["l_hue", "l_fulcrum", ...RANGES.map(([r]) => `l_cg_${r}_hue`)],
   },
@@ -1917,7 +1923,7 @@ export const localMaps: ModuleMap[] = [
     merge: true,
     fixed: BANDS.map(([b]) => `l_hsl_hue_${b}`),
   },
-  // Highlights and Shadows as the photo's are: the tone equalizer, or
+  // Highlights and Shadows on the mask's chosen tone equalizer, or
   // shadows and highlights
   {
     ...linear("shadhi", false, [
@@ -1999,3 +2005,12 @@ export const localControlById = new Map(LOCAL_CONTROLS.map((c) => [c.id, c]));
 export const localMapOf = new Map(localMaps.flatMap((m) => m.controls.map((id) => [id, m] as const)));
 // the fields to read back from each mask's instances
 export const localFields = () => Object.fromEntries(localMaps.map((m) => [m.op, m.fields]));
+
+// Only modules that support local adjustments are offered for masks.
+export const MASK_MODULE_CHOICES: ModuleChoice[] = MODULE_CHOICES.flatMap((c) => {
+  if (c.id === "contrast") return [{ ...c, options: c.options.filter((o) => o.value !== 0)
+    .map((o) => ({ ...o, preferred: o.value === 1 })) }];
+  const options = c.options.filter((o) => localMaps.some((m) =>
+    m.choice?.control === c.control && m.choice.value === o.value));
+  return options.length ? [{ ...c, options }] : [];
+});

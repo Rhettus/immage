@@ -174,3 +174,9 @@ build/bin/immage-checkpoint-check
 
 After cache structure changes, rebuild the full tree before rendering so the
 engine and dynamically loaded image-processing modules use the same layout.
+
+
+Independent module preferences: run `node verify/contrast-equalizer.test.mjs`
+for mapping and scoped-choice checks, and `node verify/mask-modules.mjs` with
+the built engine for a render/save/reload check of global AgX alongside masked
+contrast equalizer. The latter uses a temporary copy of the sample photo.

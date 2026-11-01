@@ -673,7 +673,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                 </PrefCard>
               </>
             )}
-            {tab === "modules" && <ModulePrefs />}
+            {tab === "modules" && <ModulePrefs focusMode={focusMode} />}
             {tab === "immich" && <ImmichPrefs />}
             {tab === "plugins" && <PluginPrefs plugins={plugins} onPlugins={onPlugins} />}
             {tab === "general" && (
