@@ -9,6 +9,10 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
+      checks_only:
+        description: Run validation without rebuilding platform packages
+        type: boolean
+        default: false
       diagnostic_x64:
         description: Build only Linux x86_64 plus checks for a native diagnostic run
         type: boolean
@@ -39,8 +43,8 @@ concurrency:
 
 jobs:
   launcher-experiment:
-    if: ${{ inputs.launcher_experiment }}
-    uses: ./.github/workflows/launcher-experiment.yml
+    if: ${{ inputs.launcher_experiment && !inputs.checks_only }}
+    uses: $/.github/workflows/launcher-experiment.yml
 
   checks:
     if: ${{ !inputs.launcher_experiment }}
@@ -111,7 +115,7 @@ jobs:
           "$RUNNER_TEMP/cargo-audit" audit
 
   macos:
-    if: ${{ !inputs.launcher_experiment && !inputs.diagnostic_x64 }}
+    if: ${{ !inputs.launcher_experiment && !inputs.diagnostic_x64 && !inputs.checks_only }}
     runs-on: macos-15
     timeout-minutes: 120
     env:
@@ -161,7 +165,7 @@ jobs:
           if-no-files-found: error
 
   windows:
-    if: ${{ !inputs.launcher_experiment && !inputs.diagnostic_x64 }}
+    if: ${{ !inputs.launcher_experiment && !inputs.diagnostic_x64 && !inputs.checks_only }}
     runs-on: windows-2025
     timeout-minutes: 180
     env:
@@ -245,7 +249,7 @@ jobs:
           if-no-files-found: error
 
   linux:
-    if: ${{ !inputs.launcher_experiment }}
+    if: ${{ !inputs.launcher_experiment && !inputs.checks_only }}
     name: Linux (${{ matrix.arch }})
     strategy:
       fail-fast: false
