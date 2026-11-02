@@ -71,7 +71,32 @@ updated automatic launcher and broader hardware coverage remain pending.
 The separately named x86_64 test AppImage uses the released 0.41.0 editor and
 still reports that version. It does not include later editor changes.
 
-To compare either runtime explicitly from a terminal:
+Replace `Immage.AppImage` below with your downloaded filename. Close Immage
+between comparisons and keep the same photo and window-renderer preference.
+
+**Mint / X11 / NVIDIA:** normal launch selects system WebKit and disables GBM
+when the host stack passes compatibility checks:
+
+```bash
+./Immage.AppImage
+```
+
+To force the combination confirmed to launch quickly on the affected Mint system:
+
+```bash
+IMMAGE_WEBKIT=system GDK_BACKEND=x11 WEBKIT_DMABUF_RENDERER_DISABLE_GBM=1 ./Immage.AppImage
+```
+
+**Ubuntu / Wayland:** normal launch keeps bundled WebKit. To force that path:
+
+```bash
+IMMAGE_WEBKIT=bundled GDK_BACKEND=wayland ./Immage.AppImage
+```
+
+These rules follow the session and driver, rather than the distribution name.
+For example, Ubuntu on X11 with NVIDIA follows the same rule as Mint/X11.
+
+To compare either runtime without forcing a display backend:
 
 ```bash
 IMMAGE_WEBKIT=system ./Immage.AppImage

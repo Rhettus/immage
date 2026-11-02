@@ -862,7 +862,11 @@ source build also includes the launcher for subsequent builds.
 Compare forced system and bundled runs on Mint/X11/NVIDIA with matching photos,
 renderer settings and scale, then verify Wayland retains the bundle. Confirm the
 reported WebKit version, frame delivery and helper processes, as well as speed.
-This manual validation remains pending.
+The user guide and README provide explicit Mint/X11/system/GBM-off and
+Ubuntu/Wayland/bundled launch recipes. Verify normal launch and the renderer's
+in-app Relaunch against these recipes, with no inherited shell overrides, then
+check explicit `WEBKIT_DMABUF_RENDERER_DISABLE_GBM=0` and `=1` take precedence.
+Manual validation of the updated automatic default remains pending.
 
 Fractional-scale drag compensation (`scale.rs`, `pixelRatio.ts`, `draftK` in
 `App.tsx`) remains active: at 125% on a GTK 2x surface, reduced drafts use a
