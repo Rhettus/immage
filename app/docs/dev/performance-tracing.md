@@ -414,8 +414,8 @@ capacity/creation errors and exact RGBA bytes (including odd dimensions and alph
 The POSIX transport test rejects any second truncate of an allocated object to
 emulate Darwin on Linux, and reopens names after growth as the app does.
 The standalone transport test also passes address/undefined sanitizers; leak
-sanitizer is unavailable under this VM's tracing environment. Native before/after
-measurements remain required; do not extrapolate the earlier tmpfs speedup.
+sanitizer is unavailable under this VM's tracing environment. Native results and their limits are recorded below; do not extrapolate the
+earlier tmpfs speedup to every output or workload.
 
 For a real-engine integration smoke after a local engine build, run
 `python3 verify/transient-engine.py`. It creates an isolated synthetic PNG and
@@ -423,3 +423,81 @@ runtime, opens it headlessly, renders four changing sizes, checks RGBA lengths
 and alpha, runs a preview, and requests an in-memory JPEG export. No GUI,
 original photos or user app state are used. This is correctness coverage, not a
 native graphics performance result.
+
+
+### Native validation for 0.42.0
+
+The file-operation rollout is retained for 0.42.0 after native Linux x86_64,
+Windows x86_64 and macOS arm64 comparisons. All-platform CI on `2fdaf95`
+passed checks and Linux x86_64/arm64, Windows and macOS builds. The user confirmed
+that the corrected Mac build no longer reports the POSIX shared-memory write
+error. Package version alone does not identify an experimental build: the
+baseline and candidate reports below all identify as 0.41.1. Record the commit.
+
+These are individual native runs of the same approximately 20 MP ORF photo,
+with matching settings and viewport within each platform. They are not a
+cross-platform hardware ranking or a controlled estimate of every commit's gain.
+Windows/Linux used Ryzen 7 9800X3D and NVIDIA RTX 4070 Ti SUPER with OpenCL;
+macOS used Apple M4 with OpenCL. Different platform viewports and draft settings
+make absolute latency comparisons across platforms inappropriate.
+
+| Platform | Baseline → candidate | Clarity frame size | Median engine output stage | Median Clarity drag latency |
+|---|---|---|---|---|
+| Linux, initial memory transfer → mapped output | `1695132` → `ee36459` | 2488 × 1862 | 4.357 → 0.740 ms | 134 → 119 ms |
+| Windows | `d4d7d25` → `ee36459` | 1633 × 1222 | 2.894 → 0.450 ms | 99.7 → 76.05 ms |
+| macOS | `d4d7d25` → `2fdaf95` | 2298 × 1720 | 3.141 → 0.608 ms | 122 → 113.5 ms |
+
+The output column uses the sample's complete `write` stage. The narrower
+`transport.reply.engineWriteMs` has different boundaries; do not mix them when
+calculating percentages. For Linux, the earlier regular-file diagnostic build
+`4f6e647` measured 41.469 ms output and 211 ms Clarity drag latency. Its initial
+move to tmpfs accounts for much of the full Linux improvement. Processing times
+for Clarity remained similar between the initial tmpfs and mapped-output runs.
+Completed Clarity drag frames increased from 10 (regular file), to 18 (tmpfs),
+to 21 (mapped output); Windows increased from 21 to 26, macOS from 18 to 20.
+
+Windows' first candidate run had slower Exposure latency (108.35 → 150.5 ms),
+despite faster output and reads. A second run of the same candidate and settings
+measured 73.8 ms, with processing returning from 67.041 to 31.828 ms, near the
+baseline's 32.115 ms. Several module wall times returned to baseline levels.
+The initial Exposure slowdown did not reproduce; startup background load is a
+plausible explanation, not a confirmed cause. Baseline Windows Texture exercised
+`detail_texture_gain_fine`, while the candidate exercised `texture`; exclude that
+pair, and Contrast, which has no baseline sample, from direct slider comparisons.
+
+On Mac, adaptive preview selected different size distributions despite matching
+preferences. Baseline Exposure used 1206 × 903 throughout; the candidate used
+1723 × 1290 for ten of fifteen frames. Baseline Vibrance was mostly smaller,
+while the candidate was entirely larger. Their raw latency increases do not
+establish regressions at equal work. Clarity, Texture and noise reduction used
+identical dimensions in both builds and show lower output cost; their median
+latencies changed by approximately 7%, 1% and 4%, respectively. Mac Vignette
+remains an observed slowdown (40 → 50 ms), with nearly all frames the same size
+and processing rising from 16.705 to 22.820 ms despite faster output. Investigate
+it with fixed preview sizes before attributing a cause. Use Balanced preview
+size 100% in both builds to disable automatic smaller drafts, and verify actual
+reported frame dimensions as well as preferences in any follow-up.
+
+CPU reduction is not established. Linux and Mac still reached a sampled 100%
+on their busiest logical core. Windows' average engine CPU was about 111% in
+both runs, where 100% means one logical CPU. Windows did not record per-thread
+samples; the Mac reports did not include WebKit process CPU. Aggregate samples
+cannot identify which functions keep a core busy. Symbolized native thread/core
+profiling remains a follow-up, as does reducing remaining receiver/WebView copies.
+
+All compared reports had no main/native/module diagnostic drops, unfinished
+spans, transport retries or backgrounding. Auxiliary frontend work recording
+hit its cap, so late detailed frontend summaries are incomplete. Latency ends at
+an animation callback, not observed compositor presentation. Grain had only one
+to three samples per run and cannot support a robust regression claim. All
+release samples reused engine frames: these reports do not measure fresh settled
+render cost. Slider runs also do not establish performance gains for thumbnails,
+denoise, export-dialog previews or persistent-cache timestamp throttling. Keep
+those workflow measurements separate from byte-transport correctness tests.
+
+Raw report timestamps (UTC, 2026-11-02 unless stated): Linux regular-file
+17:51:43, tmpfs 18:25:34, mapped output 21:13:26; Windows baseline 2026-11-03
+04:19:18, candidate 04:21:36, repeat 04:27:38; Mac candidate 21:33:07 and
+baseline 21:36:45. Mac's baseline ran after its candidate. Reports remain in the
+operator's benchmark archive; machine identifiers and raw diagnostic payloads
+are not needed in the public documentation.

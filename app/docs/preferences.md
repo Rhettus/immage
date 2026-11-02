@@ -183,6 +183,10 @@ performance; results still vary by system.
   can be paged out under memory pressure.
   Drag and settled frames reuse engine output mappings and convert pixels
   directly into them, avoiding a separate temporary RGBA allocation and copy.
+  Native tests on all three platforms show lower frame-output costs. The effect
+  on slider latency depends on image processing and preview size; lower CPU
+  usage is not established. For a fixed-size benchmark comparison, use Balanced
+  preview size 100% in both builds and match the photo, window and display scale.
   AI Denoise before/after preview buffers use this storage too.
   Export dialog previews also use memory-backed transfer, with the same export
   rendering and sRGB JPEG quality. Actual exports retain their selected metadata.

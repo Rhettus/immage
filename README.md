@@ -9,6 +9,10 @@
 🟢 **Linux:** Fully functional alpha build. Bugs are still expected.
 See [Linux setup and troubleshooting](app/docs/preferences.md#performance).
 
+The upcoming 0.42.0 work includes memory-backed engine output on all three
+platforms. Native measurements confirm lower frame-output costs; slider gains
+vary by workload. See the [native validation findings](app/docs/dev/performance-tracing.md#native-validation-for-0420).
+
 ## What is it
 
 Immage builds on [darktable](https://www.darktable.org/)'s raw processing

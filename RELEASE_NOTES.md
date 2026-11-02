@@ -19,7 +19,8 @@ Performance
   avoiding regular temporary-file writes during overlay updates.
 - Engine drag and settled preview frames use reusable memory-backed output
   buffers on Windows, macOS and Linux, avoiding temporary RGBA allocations and
-  copies without changing resolution.
+  copies without changing resolution. Native tests confirm lower frame-output
+  costs on all three platforms; slider latency gains vary by workload.
 
 Improvements
 
