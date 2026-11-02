@@ -26,9 +26,10 @@ script does not use sudo or change permissions/settings.
 3. Wait for xctrace's recording-start message. Run **Preferences → Performance →
    Measuring → GUI benchmark** once. Keep Immage visible, avoid other work and
    do not resize it. The script stops recording automatically at the time limit;
-   choose a duration long enough to cover the complete benchmark. Leave a short
-   idle interval before and after the workload. Do not interrupt the script
-   merely because the benchmark has finished.
+   choose a duration long enough to cover the complete benchmark. Ctrl-C requests
+   an early stop; the wrapper waits for xctrace to save and then exports the trace.
+   Leave a short
+   idle interval before and after the workload.
 4. Copy the benchmark JSON into the capture directory. Keep `cpu.trace`,
    `cpu-stacks.xml`, `toc.xml`, `capture.json` and process snapshots together.
    If XML export fails, the original trace remains available in Instruments.

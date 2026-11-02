@@ -514,3 +514,7 @@ is pending. Run `python3 verify/macos-capture.test.py` for mocked orchestration
 checks, including failure evidence and process scope. The capture guide defines
 clock alignment limits, symbol requirements, overhead comparison and the
 evidence table used to prioritize threading and copy-reduction changes.
+
+The capture wrapper leaves terminal SIGINT handling to xctrace while waiting
+for recording to finish, restores its handler afterward, and continues exports
+on a successful early stop. A nonzero profiler exit remains a reported failure.

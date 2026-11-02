@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 import platform
+import signal
 import subprocess
 import sys
 import time
@@ -12,6 +13,17 @@ import time
 def command(args, output):
     with output.open('w') as stream:
         return subprocess.run(args, stdout=stream, stderr=subprocess.STDOUT, check=False).returncode
+
+
+def record(args):
+    # The terminal sends SIGINT to both processes. Let xctrace handle it and
+    # finish saving; interrupting Python too would skip the exports.
+    process = subprocess.Popen(args)
+    previous = signal.signal(signal.SIGINT, signal.SIG_IGN)
+    try:
+        return process.wait()
+    finally:
+        signal.signal(signal.SIGINT, previous)
 
 
 def capture(output, seconds, pid=None):
@@ -38,7 +50,7 @@ def capture(output, seconds, pid=None):
         metadata['recordCommandStartedUnixMs'] = time.time_ns() // 1_000_000
         print('Starting Time Profiler. Wait for its recording-start message, then run the GUI benchmark.', flush=True)
         # Inherit the terminal so authorization prompts and recording readiness are visible.
-        code = subprocess.run(args, check=False).returncode
+        code = record(args)
         metadata['recordCommandEndedUnixMs'] = time.time_ns() // 1_000_000
         metadata['commands'].append({'argv': args, 'exitCode': code})
         run(['ps', '-axo', 'pid,ppid,comm'], 'processes-after.txt')

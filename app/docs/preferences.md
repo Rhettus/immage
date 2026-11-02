@@ -379,3 +379,6 @@ Profiler to start recording, then run **Performance > Measuring > GUI benchmark*
 Save the benchmark JSON with the capture. Full Xcode is required. System-wide
 capture includes other applications; the guide explains scope and sharing. Keep
 the photo, window and performance settings fixed throughout the run.
+
+Ctrl-C stops a Mac CPU recording early; allow the profiler to finish saving and
+the script to export before closing the terminal.

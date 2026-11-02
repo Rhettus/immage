@@ -29,6 +29,8 @@ Performance
 
 Bug fixes
 
+- Mac CPU captures wait for the profiler to save after Ctrl-C, then export
+  the recorded trace instead of exiting with a Python interruption.
 - Transform's automatic corrections work on cropped portrait and rotated
   images instead of reporting that the working-space image is not at hand.
 - Fix macOS intermediate-buffer writes when previews or thumbnails change size,
