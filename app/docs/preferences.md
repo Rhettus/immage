@@ -59,7 +59,7 @@ renderer behavior after upgrading. On Wayland, **Drag drafts at the screen’s
 scale** still sizes reduced drag previews for the compositor’s actual fractional
 scale (for example, 125%), while release frames keep full quality.
 
-The experimental launcher chooses the WebKitGTK installed by your distribution
+Starting with 0.41.1, the launcher chooses the WebKitGTK installed by your distribution
 when it detects X11 and a loaded NVIDIA driver. Wayland, other GPUs and uncertain
 backend selections use WebKitGTK 2.54.2 included in the AppImage. The system
 version depends on your installed packages; the launcher does not require or
@@ -71,9 +71,6 @@ testing confirmed the updated automatic launcher works on the reported
 Mint/X11/NVIDIA and Ubuntu/Wayland systems. The earlier Mint test also confirmed
 fast launch with NVIDIA selected when GBM was disabled. Results on other
 hardware may vary.
-The separately named x86_64 test AppImage uses the released 0.41.0 editor and
-still reports that version. It does not include later editor changes.
-
 Replace `Immage.AppImage` below with your downloaded filename. Close Immage
 between comparisons and keep the same photo and window-renderer preference.
 

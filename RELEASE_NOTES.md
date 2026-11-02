@@ -3,7 +3,7 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
-## Unreleased
+## 0.41.1
 
 Improvements
 
@@ -11,13 +11,14 @@ Improvements
   including virtual copies, while keeping the active photo and selection.
   Looks retain their strength. One undo or redo restores the whole batch;
   failures report recovery and sidecar write problems.
-- Experimental Linux launcher tries compatible system WebKitGTK on NVIDIA/X11
-  and keeps bundled WebKitGTK on Wayland and other GPUs. Command-line environment
-  overrides allow comparing system and bundled runtimes; automatic mode falls
-  back to the bundle if system compatibility checks fail. The NVIDIA/X11 system
-  path disables GBM by default to avoid the EGL startup abort seen on Mint,
-  with manual launch checks confirmed on Mint/X11 and Ubuntu/Wayland. Explicit
-  environment switches can enable or disable GBM for comparison.
+
+Bug fixes
+
+- Linux AppImages use compatible system WebKitGTK with GBM disabled on
+  NVIDIA/X11, fixing the startup failure and slow rendering seen on Mint.
+  Wayland and other GPUs keep bundled WebKitGTK 2.54.2. Automatic selection
+  falls back to the bundle if needed; environment switches override the
+  WebKit selection and enable or disable GBM.
 
 ## 0.41.0
 

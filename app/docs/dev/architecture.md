@@ -803,7 +803,7 @@ selection, with explicit renderer preferences available. Verify both display
 backends with matching hardware, photos and settings before changing defaults
 or providing different WebKitGTK packages.
 
-The launcher experiment is installed by
+Starting with 0.41.1, Linux runtime selection is installed by
 `app/scripts/prepare_appimage_launcher.py` after Tauri deploys the AppDir.
 `AppRun.bundled` preserves the generated launcher and GTK hook. The new
 `AppRun` selects `IMMAGE_WEBKIT=auto|system|bundled` before either runs.

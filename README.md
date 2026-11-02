@@ -310,7 +310,7 @@ engine with the libraries it links: from Homebrew on macOS, MSYS2 on
 Windows and Ubuntu on Linux (`app/scripts/bundle_engine.py`,
 `app/scripts/bundle_engine_windows.sh`).
 
-### Linux launch options (experimental)
+### Linux launch options
 
 Replace `Immage.AppImage` with your downloaded filename. Normal launch detects
 Mint/X11 with NVIDIA or Ubuntu/Wayland automatically. NVIDIA/X11 uses your
@@ -332,8 +332,8 @@ IMMAGE_WEBKIT=bundled GDK_BACKEND=wayland ./Immage.AppImage
 ```
 
 Use `WEBKIT_DMABUF_RENDERER_DISABLE_GBM=0` to enable GBM or `=1` to disable it.
-Omit the switches to restore automatic selection. These options apply to the
-experimental launcher build; see [Linux troubleshooting](app/docs/preferences.md#performance)
+Omit the switches to restore automatic selection. These options are available
+starting with 0.41.1; see [Linux troubleshooting](app/docs/preferences.md#performance)
 for older releases and additional overrides.
 
 ## Building
