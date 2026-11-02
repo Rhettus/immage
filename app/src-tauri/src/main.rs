@@ -2392,15 +2392,19 @@ async fn export_preview(
     options: ExportOptions,
     cap: i64,
 ) -> Result<Response, String> {
-    let out = state.presets_path.with_file_name("export-preview.jpg");
+    let out = state._frame_output.path("export-preview.jpg");
     let mut req = json!({
         "cmd": "export", "imgid": item.imgid, "out": out, "format": "jpeg", "quality": 85,
         "color_space": "srgb", "long_edge": options.long_edge.map_or(cap, |l| l.min(cap)),
-        "px_long_edge": options.long_edge.unwrap_or(0), "draft": true,
+        "px_long_edge": options.long_edge.unwrap_or(0), "draft": true, "transient": true,
     });
     if let Some(f) = &item.frame { req["frame"] = f.clone(); }
-    state.engine("export_preview").request(req)?;
-    std::fs::read(&out).map(Response::new).map_err(|e| format!("preview: {e}"))
+    let mut engine = state.engine("export_preview");
+    let result = engine.request(req).and_then(|_| {
+        frame_output::FrameOutput::read(&out).map(Response::new).map_err(|e| format!("preview: {e}"))
+    });
+    state._frame_output.remove(&out);
+    result
 }
 
 // the installed font families and their faces, as the engine draws them

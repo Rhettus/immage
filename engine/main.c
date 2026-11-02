@@ -3315,6 +3315,8 @@ static int _positive_tiff_write(dt_imageio_module_data_t *data, const char *file
 // would: `format` names a format plugin (jpeg, tiff, png, webp...); quality
 // and bit depth go through the plugin's conf keys, which its get_params()
 // reads; long_edge bounds both sides (0 keeps the full size)
+#include "preview_jpeg.h"
+
 static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
 {
   const char *out = json_object_get_string_member_with_default(req, "out", NULL);
@@ -3322,6 +3324,16 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
   if(!out || !dt_is_valid_imgid(imgid))
   {
     *err = g_strdup("export needs an image and an output file");
+    return FALSE;
+  }
+  const gboolean transient = json_object_get_boolean_member_with_default(req, "transient", FALSE);
+  if(transient && (g_strcmp0(format, "jpeg")
+      || g_strcmp0(json_object_get_string_member_with_default(req, "color_space", "srgb"), "srgb")
+      || json_object_get_int_member_with_default(req, "quality", 0) != 85
+      || json_object_get_int_member_with_default(req, "upscale", 0) > 1
+      || json_object_get_boolean_member_with_default(req, "negative_copy", FALSE)))
+  {
+    *err = g_strdup("transient export requires an sRGB JPEG preview at quality 85");
     return FALSE;
   }
   const gboolean positive = json_object_get_boolean_member_with_default(req, "negative_copy", FALSE);
@@ -3405,6 +3417,7 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
   dt_imageio_module_format_t proxy = *fmt;
   _flags_of = fmt;
   proxy.flags = _no_tmpfile_flags;
+  if(transient) proxy.write_image = preview_jpeg_write;
   dt_colorspaces_color_profile_type_t render_icc = icc;
   if(positive)
   {
@@ -3475,9 +3488,12 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
     strip |= STRIP_KEYWORDS;
   }
 
-  gchar *dir = g_path_get_dirname(out);
-  g_mkdir_with_parents(dir, 0755);
-  g_free(dir);
+  if(!transient)
+  {
+    gchar *dir = g_path_get_dirname(out);
+    g_mkdir_with_parents(dir, 0755);
+    g_free(dir);
+  }
 
   // the export's own keywords: the file takes its tags from the library
   // (exif.cc), so they are attached for the export and taken off after,
@@ -3501,9 +3517,9 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
   // NB: returns FALSE on success
   const gboolean failed = dt_imageio_export_with_flags(
       imgid, out, &proxy, fdata,
-      FALSE /*ignore_exif*/, FALSE /*display_byteorder*/, high_quality,
+      transient /*ignore_exif*/, FALSE /*display_byteorder*/, high_quality,
       FALSE /*upscale*/, FALSE /*is_scaling*/, 1.0, FALSE /*thumbnail*/, NULL /*filter*/,
-      TRUE /*copy_metadata*/, FALSE /*export_masks*/,
+      !transient /*copy_metadata*/, FALSE /*export_masks*/,
       render_icc, NULL, DT_INTENT_PERCEPTUAL, NULL, NULL, 1, 1, &metadata, -1);
   for(GList *t = added; t; t = g_list_next(t))
     dt_tag_detach(GPOINTER_TO_UINT(t->data), imgid, FALSE, FALSE);
@@ -3518,7 +3534,7 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
 #endif
   if(failed) return FALSE;
   // a file that keeps what was asked to be left out is not delivered
-  if((*err = strip_metadata(out, strip)))
+  if(!transient && (*err = strip_metadata(out, strip)))
   {
     g_unlink(out);
     return FALSE;

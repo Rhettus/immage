@@ -4,6 +4,7 @@
 include_directories(${DARKTABLE_BINDIR})
 
 find_package(PkgConfig REQUIRED)
+find_package(JPEG REQUIRED)
 pkg_check_modules(JSON_GLIB REQUIRED json-glib-1.0)
 
 add_executable(darktable-engine main.c upright.c hdrmerge.c strip.cc dng.c)
@@ -14,7 +15,7 @@ set_target_properties(darktable-engine PROPERTIES LINKER_LANGUAGE CXX)
 
 target_include_directories(darktable-engine PRIVATE ${JSON_GLIB_INCLUDE_DIRS})
 target_link_directories(darktable-engine PRIVATE ${JSON_GLIB_LIBRARY_DIRS})
-target_link_libraries(darktable-engine lib_darktable ${JSON_GLIB_LIBRARIES} ${Exiv2_LIBRARIES} ${TIFF_LIBRARIES})
+target_link_libraries(darktable-engine lib_darktable ${JSON_GLIB_LIBRARIES} ${Exiv2_LIBRARIES} ${TIFF_LIBRARIES} ${JPEG_LIBRARIES})
 
 # Panorama Merge (pano.cc) stitches with OpenCV's stitching module, which
 # darktable does not link (src/CMakeLists.txt, DT_OPENCV4_MODULES): built

@@ -180,6 +180,8 @@ performance; results still vary by system.
   Buffer creation or capacity failures cause render errors. Memory-backed pages
   can be paged out under memory pressure.
   AI Denoise before/after preview buffers use this storage too.
+  Export dialog previews also use memory-backed transfer, with the same export
+  rendering and sRGB JPEG quality. Actual exports retain their selected metadata.
   Newly generated library thumbnails also use memory-backed intermediate
   storage; their reusable JPEG cache stays on disk.
   Mask, range and zone overlays use the same intermediate storage.

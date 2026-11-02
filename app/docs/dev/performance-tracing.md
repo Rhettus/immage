@@ -336,3 +336,24 @@ without assembling another combined buffer. Rust appends the payload directly
 behind the unchanged dimensions/crop metadata header while holding the engine
 lock. The C test verifies two-span concatenation and resize handling; no float
 conversion, denoise strength, crop geometry or saved DNG behavior changes.
+
+### Export dialog preview storage
+
+`export_preview` supplies `transient: true` to the ordinary export renderer and
+uses an owned `export-preview.jpg` destination. Rust keeps the engine lock until
+it has read and removed the output, including request/read failures. On Windows
+and macOS that destination is a mapping; Linux uses its private tmpfs directory.
+The transient mode is restricted to sRGB JPEG quality 85 without AI upscaling or
+negative conversion. `preview_jpeg.h` replaces only the format's write callback:
+the export pipe still applies the edits, draft downscaling and frame sizing.
+libjpeg encodes to memory with the JPEG plugin's quality-85 optimizer, chroma
+subsampling and density settings. Preview-only EXIF/XMP/ICC container metadata
+is omitted; the pixels are already sRGB. Actual export format callbacks and
+metadata filtering remain unchanged. This avoids EXIF reads, XMP attachment and
+post-encode metadata stripping for a container that is displayed then discarded.
+
+Run `python3 verify/check-transient-output.py` after configuring the Linux engine
+build. It syntax-checks the engine and runs byte-transfer and JPEG callback tests
+without starting the application. JPEG checks decode all five subsampling modes,
+verify dimensions/density/pixel error, and exercise output failure and invalid
+sizes. Native export-dialog appearance and latency still need validation.

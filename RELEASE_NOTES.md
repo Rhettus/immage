@@ -7,6 +7,8 @@ what Immage's update banner shows under Release Notes.
 
 Performance
 
+- Export dialog previews encode JPEG in memory and use memory-backed transfer,
+  avoiding temporary-container metadata and regular-file output.
 - AI Denoise previews transfer their before/after buffers through memory-backed
   storage, preserving the full linear-float preview data.
 - Generating library thumbnails uses memory-backed intermediate buffers while
