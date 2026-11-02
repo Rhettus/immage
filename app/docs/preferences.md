@@ -67,9 +67,10 @@ select a particular older release such as 2.52. The host must provide compatible
 JavaScriptCore, GTK dependencies and matching helper processes; automatic mode
 falls back to the bundle if its startup checks fail. On the NVIDIA/X11 system
 path, the launcher also disables WebKit's GBM rendering path by default. Manual
-testing on the affected Mint system confirmed fast launch with NVIDIA selected
-when GBM was disabled; Ubuntu/Wayland also launched successfully. Testing the
-updated automatic launcher and broader hardware coverage remain pending.
+testing confirmed the updated automatic launcher works on the reported
+Mint/X11/NVIDIA and Ubuntu/Wayland systems. The earlier Mint test also confirmed
+fast launch with NVIDIA selected when GBM was disabled. Results on other
+hardware may vary.
 The separately named x86_64 test AppImage uses the released 0.41.0 editor and
 still reports that version. It does not include later editor changes.
 

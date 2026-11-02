@@ -6,7 +6,7 @@
 
 🟢 **Windows:** Fully functional alpha build. Bugs are still expected.
 
-🟡 **Linux:** Functional alpha build. NVIDIA rendering fixes are being tested.
+🟢 **Linux:** Fully functional alpha build. Bugs are still expected.
 See [Linux setup and troubleshooting](app/docs/preferences.md#performance).
 
 ## What is it

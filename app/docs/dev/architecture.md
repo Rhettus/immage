@@ -842,8 +842,9 @@ mode and preflight fallback get no automatic GBM override. The system launch
 message records `GBM-disable`. This follows a manual Mint report: confirmed
 `WebKit=system backend=x11` still aborted with NVIDIA selected, while adding
 `WEBKIT_DMABUF_RENDERER_DISABLE_GBM=1` launched quickly. Ubuntu testing also
-succeeded. The updated automatic behavior and its relaunch still require manual
-verification; these observations do not establish a fix for every NVIDIA system.
+succeeded. The user subsequently confirmed the updated automatic launcher
+works on both Mint/X11 and Ubuntu/Wayland. These are manual results on the
+reported machines, not automated GUI passes or measurements across hardware.
 The launcher tests cover scoped defaults, explicit on/off overrides and no
 changes on Wayland, non-NVIDIA, ambiguous backend or fallback paths.
 
@@ -875,7 +876,10 @@ The user guide and README provide explicit Mint/X11/system/GBM-off and
 Ubuntu/Wayland/bundled launch recipes. Verify normal launch and the renderer's
 in-app Relaunch against these recipes, with no inherited shell overrides, then
 check explicit `WEBKIT_DMABUF_RENDERER_DISABLE_GBM=0` and `=1` take precedence.
-Manual validation of the updated automatic default remains pending.
+Manual result: the user confirmed run 41391144072's x86_64 artifact (launcher
+commit cb4f987) works on both reported systems. Detailed helper/frame checks,
+individual override combinations and broader hardware coverage are not established
+by those confirmations. No local GUI automation was run.
 
 Fractional-scale drag compensation (`scale.rs`, `pixelRatio.ts`, `draftK` in
 `App.tsx`) remains active: at 125% on a GTK 2x surface, reduced drafts use a

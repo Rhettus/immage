@@ -15,7 +15,8 @@ Improvements
   and keeps bundled WebKitGTK on Wayland and other GPUs. Command-line environment
   overrides allow comparing system and bundled runtimes; automatic mode falls
   back to the bundle if system compatibility checks fail. The NVIDIA/X11 system
-  path disables GBM by default to avoid an observed EGL startup abort; explicit
+  path disables GBM by default to avoid the EGL startup abort seen on Mint,
+  with manual launch checks confirmed on Mint/X11 and Ubuntu/Wayland. Explicit
   environment switches can enable or disable GBM for comparison.
 
 ## 0.41.0
