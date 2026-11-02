@@ -1,5 +1,18 @@
 # Immage
 
+## Status
+
+🟢 **macOS:** Fully functional alpha build. Bugs are still expected.
+
+🟢 **Windows:** Fully functional alpha build. Bugs are still expected.
+
+🟡 **Linux:** Fully functional alpha build, but performance may vary. We’re
+investigating issues involving NVIDIA drivers and `GDK_BACKEND` settings.
+If running NVIDIA, try switching to **MESA** in **Preferences → Performance**
+to see if it helps. A restart is required.
+
+## What is it
+
 Immage builds on [darktable](https://www.darktable.org/)'s raw processing
 engine, and brings its power to photographers who know other editors. It
 works the way mainstream raw editors do: the familiar panels, slider
