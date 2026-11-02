@@ -1,0 +1,6248 @@
+{
+  "scope": "Expanded editing manifest and module preferences. Does not enumerate every non-manifest menu/dialog setting. Declaration is not executed test coverage.",
+  "panels": [
+    {
+      "id": "basic",
+      "title": "Basic",
+      "hidden": false,
+      "conditional": false,
+      "tabs": false,
+      "sections": [
+        {
+          "title": "Profile",
+          "controls": [
+            {
+              "id": "profile",
+              "label": "Profile",
+              "kind": "choice",
+              "rawOnly": false,
+              "min": 0,
+              "max": 16,
+              "step": 1,
+              "nonlinear": false,
+              "options": [
+                [
+                  "AgX Default",
+                  0
+                ],
+                [
+                  "Unmodified Primaries",
+                  11
+                ],
+                [
+                  "Blender",
+                  12
+                ],
+                [
+                  "Blender Punchy",
+                  13
+                ],
+                [
+                  "Sigmoid-like",
+                  14
+                ],
+                [
+                  "Sigmoid-like Smooth",
+                  15
+                ],
+                [
+                  "Smooth",
+                  16
+                ],
+                [
+                  "Standard",
+                  1
+                ],
+                [
+                  "Natural Skin",
+                  2
+                ],
+                [
+                  "Vibrant Colors",
+                  3
+                ],
+                [
+                  "Legacy",
+                  4
+                ]
+              ],
+              "status": "pending"
+            }
+          ]
+        },
+        {
+          "title": "Treatment",
+          "controls": [
+            {
+              "id": "bw_mode",
+              "label": "Treatment",
+              "kind": "choice",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "nonlinear": false,
+              "options": [
+                [
+                  "Color",
+                  0
+                ],
+                [
+                  "Black & White",
+                  1
+                ]
+              ],
+              "status": "pending"
+            }
+          ]
+        },
+        {
+          "title": "White Balance",
+          "controls": [
+            {
+              "id": "temp",
+              "label": "Temp",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 2000,
+              "max": 25000,
+              "step": 1,
+              "nonlinear": true,
+              "status": "pending"
+            },
+            {
+              "id": "tint",
+              "label": "Tint",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -150,
+              "max": 150,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            }
+          ]
+        },
+        {
+          "title": "Tone",
+          "controls": [
+            {
+              "id": "exposure",
+              "label": "Exposure",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -5,
+              "max": 5,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "contrast",
+              "label": "Contrast",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "ce_0_0",
+              "label": "Contrast equalizer",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "ce_0_1",
+              "label": "Contrast equalizer",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "ce_0_2",
+              "label": "Contrast equalizer",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "ce_0_3",
+              "label": "Contrast equalizer",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "ce_0_4",
+              "label": "Contrast equalizer",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "ce_0_5",
+              "label": "Contrast equalizer",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "ce_1_0",
+              "label": "Contrast equalizer",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "ce_1_1",
+              "label": "Contrast equalizer",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "ce_1_2",
+              "label": "Contrast equalizer",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "ce_1_3",
+              "label": "Contrast equalizer",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "ce_1_4",
+              "label": "Contrast equalizer",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "ce_1_5",
+              "label": "Contrast equalizer",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "ce_2_0",
+              "label": "Contrast equalizer",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "ce_2_1",
+              "label": "Contrast equalizer",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "ce_2_2",
+              "label": "Contrast equalizer",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "ce_2_3",
+              "label": "Contrast equalizer",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "ce_2_4",
+              "label": "Contrast equalizer",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "ce_2_5",
+              "label": "Contrast equalizer",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "ce_3_0",
+              "label": "Contrast equalizer",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "ce_3_1",
+              "label": "Contrast equalizer",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "ce_3_2",
+              "label": "Contrast equalizer",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "ce_3_3",
+              "label": "Contrast equalizer",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "ce_3_4",
+              "label": "Contrast equalizer",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "ce_3_5",
+              "label": "Contrast equalizer",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "ce_4_0",
+              "label": "Contrast equalizer",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "ce_4_1",
+              "label": "Contrast equalizer",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "ce_4_2",
+              "label": "Contrast equalizer",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "ce_4_3",
+              "label": "Contrast equalizer",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "ce_4_4",
+              "label": "Contrast equalizer",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "ce_4_5",
+              "label": "Contrast equalizer",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "highlights",
+              "label": "Highlights",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "shadows",
+              "label": "Shadows",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "whites",
+              "label": "Whites",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "blacks",
+              "label": "Blacks",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            }
+          ]
+        },
+        {
+          "title": "Presence",
+          "controls": [
+            {
+              "id": "texture",
+              "label": "Texture",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "detail_texture_gain_coarse",
+              "label": "Texture: Coarse details",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -1,
+              "max": 5,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "detail_texture_gain_medium",
+              "label": "Texture: Medium details",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -1,
+              "max": 5,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "detail_texture_gain_fine",
+              "label": "Texture: Fine details",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -1,
+              "max": 5,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "detail_texture_detail_level",
+              "label": "Texture: Base detail level",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 1,
+              "max": 15,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "detail_texture_halo_control",
+              "label": "Texture: Halo control",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -10,
+              "max": 10,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "detail_texture_noise_bias",
+              "label": "Texture: Noise bias",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "detail_texture_gain_shadows",
+              "label": "Texture: Shadows",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -5,
+              "max": 5,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "detail_texture_gain_highlights",
+              "label": "Texture: Highlights",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -5,
+              "max": 5,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "clarity",
+              "label": "Clarity",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "detail_clarity_gain_coarse",
+              "label": "Clarity: Coarse details",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -1,
+              "max": 5,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "detail_clarity_gain_medium",
+              "label": "Clarity: Medium details",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -1,
+              "max": 5,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "detail_clarity_gain_fine",
+              "label": "Clarity: Fine details",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -1,
+              "max": 5,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "detail_clarity_detail_level",
+              "label": "Clarity: Base detail level",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 1,
+              "max": 15,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "detail_clarity_halo_control",
+              "label": "Clarity: Halo control",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -10,
+              "max": 10,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "detail_clarity_noise_bias",
+              "label": "Clarity: Noise bias",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "detail_clarity_gain_shadows",
+              "label": "Clarity: Shadows",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -5,
+              "max": 5,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "detail_clarity_gain_highlights",
+              "label": "Clarity: Highlights",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -5,
+              "max": 5,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "dehaze",
+              "label": "Dehaze",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "vibrance",
+              "label": "Vibrance",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "saturation",
+              "label": "Saturation",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tonecurve",
+      "title": "Tone Curve",
+      "hidden": false,
+      "conditional": false,
+      "tabs": false,
+      "sections": [
+        {
+          "title": "Region",
+          "controls": [
+            {
+              "id": "tc_highlights",
+              "label": "Whites",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_lights",
+              "label": "Highlights",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_midtones",
+              "label": "Midtones",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_darks",
+              "label": "Shadows",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_shadows",
+              "label": "Blacks",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            }
+          ]
+        },
+        {
+          "title": "Split Points",
+          "controls": [
+            {
+              "id": "tc_split1",
+              "label": "Blacks / Shadows",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 10,
+              "max": 40,
+              "step": 5,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_split2",
+              "label": "Shadows / Highlights",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 30,
+              "max": 70,
+              "step": 5,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_split3",
+              "label": "Highlights / Whites",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 60,
+              "max": 90,
+              "step": 5,
+              "nonlinear": false,
+              "status": "pending"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hsl",
+      "title": "HSL / Color",
+      "hidden": false,
+      "conditional": true,
+      "tabs": true,
+      "sections": [
+        {
+          "title": "Hue",
+          "controls": [
+            {
+              "id": "hsl_hue_red",
+              "label": "Red",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "hsl_hue_orange",
+              "label": "Orange",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "hsl_hue_yellow",
+              "label": "Yellow",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "hsl_hue_green",
+              "label": "Green",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "hsl_hue_cyan",
+              "label": "Aqua",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "hsl_hue_blue",
+              "label": "Blue",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "hsl_hue_lavender",
+              "label": "Purple",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "hsl_hue_magenta",
+              "label": "Magenta",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            }
+          ]
+        },
+        {
+          "title": "Saturation",
+          "controls": [
+            {
+              "id": "hsl_sat_red",
+              "label": "Red",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "hsl_sat_orange",
+              "label": "Orange",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "hsl_sat_yellow",
+              "label": "Yellow",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "hsl_sat_green",
+              "label": "Green",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "hsl_sat_cyan",
+              "label": "Aqua",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "hsl_sat_blue",
+              "label": "Blue",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "hsl_sat_lavender",
+              "label": "Purple",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "hsl_sat_magenta",
+              "label": "Magenta",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            }
+          ]
+        },
+        {
+          "title": "Luminance",
+          "controls": [
+            {
+              "id": "hsl_lum_red",
+              "label": "Red",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "hsl_lum_orange",
+              "label": "Orange",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "hsl_lum_yellow",
+              "label": "Yellow",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "hsl_lum_green",
+              "label": "Green",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "hsl_lum_cyan",
+              "label": "Aqua",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "hsl_lum_blue",
+              "label": "Blue",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "hsl_lum_lavender",
+              "label": "Purple",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "hsl_lum_magenta",
+              "label": "Magenta",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bw",
+      "title": "B&W Mix",
+      "hidden": false,
+      "conditional": true,
+      "tabs": false,
+      "sections": [
+        {
+          "title": "Black & White Mix",
+          "controls": [
+            {
+              "id": "bw_red",
+              "label": "Red",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "bw_orange",
+              "label": "Orange",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "bw_yellow",
+              "label": "Yellow",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "bw_green",
+              "label": "Green",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "bw_cyan",
+              "label": "Aqua",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "bw_blue",
+              "label": "Blue",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "bw_lavender",
+              "label": "Purple",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "bw_magenta",
+              "label": "Magenta",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "zones",
+      "title": "Zone System",
+      "hidden": true,
+      "conditional": false,
+      "tabs": false,
+      "sections": [
+        {
+          "title": "Placement",
+          "controls": [
+            {
+              "id": "zp_2",
+              "label": "Zone II",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -2,
+              "max": 2,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "zp_3",
+              "label": "Zone III",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -2,
+              "max": 2,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "zp_4",
+              "label": "Zone IV",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -2,
+              "max": 2,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "zp_5",
+              "label": "Zone V",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -2,
+              "max": 2,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "zp_6",
+              "label": "Zone VI",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -2,
+              "max": 2,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "zp_7",
+              "label": "Zone VII",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -2,
+              "max": 2,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "zp_8",
+              "label": "Zone VIII",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -2,
+              "max": 2,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "zp_9",
+              "label": "Zone IX",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -2,
+              "max": 2,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "zp_10",
+              "label": "Zone X",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -2,
+              "max": 2,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "colorgrading",
+      "title": "Color Grading",
+      "hidden": false,
+      "conditional": false,
+      "tabs": false,
+      "sections": [
+        {
+          "title": "Shadows",
+          "controls": [
+            {
+              "id": "cg_shadows_hue",
+              "label": "Hue",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 359,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "cg_shadows_sat",
+              "label": "Saturation",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "cg_shadows_lum",
+              "label": "Luminance",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            }
+          ]
+        },
+        {
+          "title": "Midtones",
+          "controls": [
+            {
+              "id": "cg_midtones_hue",
+              "label": "Hue",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 359,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "cg_midtones_sat",
+              "label": "Saturation",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "cg_midtones_lum",
+              "label": "Luminance",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            }
+          ]
+        },
+        {
+          "title": "Highlights",
+          "controls": [
+            {
+              "id": "cg_highlights_hue",
+              "label": "Hue",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 359,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "cg_highlights_sat",
+              "label": "Saturation",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "cg_highlights_lum",
+              "label": "Luminance",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            }
+          ]
+        },
+        {
+          "title": "Global",
+          "controls": [
+            {
+              "id": "cg_global_hue",
+              "label": "Hue",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 359,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "cg_global_sat",
+              "label": "Saturation",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "cg_global_lum",
+              "label": "Luminance",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "detail",
+      "title": "Detail",
+      "hidden": false,
+      "conditional": false,
+      "tabs": false,
+      "sections": [
+        {
+          "title": "Capture Sharpening",
+          "controls": [
+            {
+              "id": "capture",
+              "label": "Enable",
+              "kind": "toggle",
+              "rawOnly": true,
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            }
+          ]
+        },
+        {
+          "title": "Sharpening",
+          "controls": [
+            {
+              "id": "usm_amount",
+              "label": "Amount",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "usm_radius",
+              "label": "Radius",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0.5,
+              "max": 3,
+              "step": 0.1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "usm_threshold",
+              "label": "Threshold",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sharp_amount",
+              "label": "Amount",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 5,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sharp_radius",
+              "label": "Radius",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 1,
+              "max": 12,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sharp_sensitivity",
+              "label": "Sensitivity",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 4,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sharp_masking",
+              "label": "Masking",
+              "kind": "slider",
+              "rawOnly": true,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            }
+          ]
+        },
+        {
+          "title": "AI Denoise",
+          "controls": []
+        },
+        {
+          "title": "Profiled Denoise",
+          "controls": [
+            {
+              "id": "nr_luminance",
+              "label": "Luminance",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "nr_color",
+              "label": "Color",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "nr_detail",
+              "label": "Detail",
+              "kind": "slider",
+              "rawOnly": true,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "lens",
+      "title": "Lens Corrections",
+      "hidden": false,
+      "conditional": false,
+      "tabs": false,
+      "sections": [
+        {
+          "title": "Profile",
+          "controls": [
+            {
+              "id": "lens_profile",
+              "label": "Enable Profile Corrections",
+              "kind": "toggle",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "lens_ca",
+              "label": "Remove Chromatic Aberration",
+              "kind": "toggle",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            }
+          ]
+        },
+        {
+          "title": "Defringe",
+          "controls": [
+            {
+              "id": "defringe_amount",
+              "label": "Amount",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "defringe_radius",
+              "label": "Radius",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 1,
+              "max": 500,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            }
+          ]
+        },
+        {
+          "title": "Hot Pixels",
+          "controls": [
+            {
+              "id": "hp_enable",
+              "label": "Remove Hot Pixels",
+              "kind": "toggle",
+              "rawOnly": true,
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "hp_strength",
+              "label": "Strength",
+              "kind": "slider",
+              "rawOnly": true,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "hp_threshold",
+              "label": "Threshold",
+              "kind": "slider",
+              "rawOnly": true,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "transform",
+      "title": "Transform",
+      "hidden": false,
+      "conditional": false,
+      "tabs": false,
+      "sections": [
+        {
+          "title": "Straighten",
+          "controls": []
+        },
+        {
+          "title": "Upright",
+          "controls": []
+        },
+        {
+          "title": "Manual",
+          "controls": [
+            {
+              "id": "tf_vertical",
+              "label": "Vertical",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tf_horizontal",
+              "label": "Horizontal",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tf_rotate",
+              "label": "Rotate",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -45,
+              "max": 45,
+              "step": 0.1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tf_aspect",
+              "label": "Aspect",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "upright",
+      "title": "Upright",
+      "hidden": true,
+      "conditional": false,
+      "tabs": false,
+      "sections": [
+        {
+          "title": "Upright",
+          "controls": [
+            {
+              "id": "tf_upright",
+              "label": "Upright",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 5,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tf_base_r",
+              "label": "tf_base_r",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -180,
+              "max": 180,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tf_base_v",
+              "label": "tf_base_v",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -2,
+              "max": 2,
+              "step": 0.00001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tf_base_h",
+              "label": "tf_base_h",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -2,
+              "max": 2,
+              "step": 0.00001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tf_gn",
+              "label": "tf_gn",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 4,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tf_g0",
+              "label": "tf_g0",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -1,
+              "max": 2,
+              "step": 0.00001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tf_g1",
+              "label": "tf_g1",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -1,
+              "max": 2,
+              "step": 0.00001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tf_g2",
+              "label": "tf_g2",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -1,
+              "max": 2,
+              "step": 0.00001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tf_g3",
+              "label": "tf_g3",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -1,
+              "max": 2,
+              "step": 0.00001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tf_g4",
+              "label": "tf_g4",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -1,
+              "max": 2,
+              "step": 0.00001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tf_g5",
+              "label": "tf_g5",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -1,
+              "max": 2,
+              "step": 0.00001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tf_g6",
+              "label": "tf_g6",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -1,
+              "max": 2,
+              "step": 0.00001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tf_g7",
+              "label": "tf_g7",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -1,
+              "max": 2,
+              "step": 0.00001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tf_g8",
+              "label": "tf_g8",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -1,
+              "max": 2,
+              "step": 0.00001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tf_g9",
+              "label": "tf_g9",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -1,
+              "max": 2,
+              "step": 0.00001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tf_g10",
+              "label": "tf_g10",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -1,
+              "max": 2,
+              "step": 0.00001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tf_g11",
+              "label": "tf_g11",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -1,
+              "max": 2,
+              "step": 0.00001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tf_g12",
+              "label": "tf_g12",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -1,
+              "max": 2,
+              "step": 0.00001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tf_g13",
+              "label": "tf_g13",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -1,
+              "max": 2,
+              "step": 0.00001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tf_g14",
+              "label": "tf_g14",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -1,
+              "max": 2,
+              "step": 0.00001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tf_g15",
+              "label": "tf_g15",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -1,
+              "max": 2,
+              "step": 0.00001,
+              "nonlinear": false,
+              "status": "pending"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "effects",
+      "title": "Effects",
+      "hidden": false,
+      "conditional": false,
+      "tabs": false,
+      "sections": [
+        {
+          "title": "Post-Crop Vignetting",
+          "controls": [
+            {
+              "id": "vig_amount",
+              "label": "Amount",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "vig_midpoint",
+              "label": "Midpoint",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "vig_roundness",
+              "label": "Roundness",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -100,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "vig_feather",
+              "label": "Feather",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            }
+          ]
+        },
+        {
+          "title": "Grain",
+          "controls": [
+            {
+              "id": "grain_amount",
+              "label": "Amount",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "grain_size",
+              "label": "Size",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tonecurve-points",
+      "title": "Point Curve",
+      "hidden": true,
+      "conditional": false,
+      "tabs": false,
+      "sections": [
+        {
+          "title": "Points",
+          "controls": [
+            {
+              "id": "tc_mode",
+              "label": "mode",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_pn",
+              "label": "points",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 2,
+              "max": 20,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p0x",
+              "label": "tc_p0x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p0y",
+              "label": "tc_p0y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p1x",
+              "label": "tc_p1x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p1y",
+              "label": "tc_p1y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p2x",
+              "label": "tc_p2x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p2y",
+              "label": "tc_p2y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p3x",
+              "label": "tc_p3x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p3y",
+              "label": "tc_p3y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p4x",
+              "label": "tc_p4x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p4y",
+              "label": "tc_p4y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p5x",
+              "label": "tc_p5x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p5y",
+              "label": "tc_p5y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p6x",
+              "label": "tc_p6x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p6y",
+              "label": "tc_p6y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p7x",
+              "label": "tc_p7x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p7y",
+              "label": "tc_p7y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p8x",
+              "label": "tc_p8x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p8y",
+              "label": "tc_p8y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p9x",
+              "label": "tc_p9x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p9y",
+              "label": "tc_p9y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p10x",
+              "label": "tc_p10x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p10y",
+              "label": "tc_p10y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p11x",
+              "label": "tc_p11x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p11y",
+              "label": "tc_p11y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p12x",
+              "label": "tc_p12x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p12y",
+              "label": "tc_p12y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p13x",
+              "label": "tc_p13x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p13y",
+              "label": "tc_p13y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p14x",
+              "label": "tc_p14x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p14y",
+              "label": "tc_p14y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p15x",
+              "label": "tc_p15x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p15y",
+              "label": "tc_p15y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p16x",
+              "label": "tc_p16x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p16y",
+              "label": "tc_p16y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p17x",
+              "label": "tc_p17x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p17y",
+              "label": "tc_p17y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p18x",
+              "label": "tc_p18x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p18y",
+              "label": "tc_p18y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p19x",
+              "label": "tc_p19x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_p19y",
+              "label": "tc_p19y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_pn",
+              "label": "points",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 2,
+              "max": 20,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p0x",
+              "label": "tc_r_p0x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p0y",
+              "label": "tc_r_p0y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p1x",
+              "label": "tc_r_p1x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p1y",
+              "label": "tc_r_p1y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p2x",
+              "label": "tc_r_p2x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p2y",
+              "label": "tc_r_p2y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p3x",
+              "label": "tc_r_p3x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p3y",
+              "label": "tc_r_p3y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p4x",
+              "label": "tc_r_p4x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p4y",
+              "label": "tc_r_p4y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p5x",
+              "label": "tc_r_p5x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p5y",
+              "label": "tc_r_p5y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p6x",
+              "label": "tc_r_p6x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p6y",
+              "label": "tc_r_p6y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p7x",
+              "label": "tc_r_p7x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p7y",
+              "label": "tc_r_p7y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p8x",
+              "label": "tc_r_p8x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p8y",
+              "label": "tc_r_p8y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p9x",
+              "label": "tc_r_p9x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p9y",
+              "label": "tc_r_p9y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p10x",
+              "label": "tc_r_p10x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p10y",
+              "label": "tc_r_p10y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p11x",
+              "label": "tc_r_p11x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p11y",
+              "label": "tc_r_p11y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p12x",
+              "label": "tc_r_p12x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p12y",
+              "label": "tc_r_p12y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p13x",
+              "label": "tc_r_p13x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p13y",
+              "label": "tc_r_p13y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p14x",
+              "label": "tc_r_p14x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p14y",
+              "label": "tc_r_p14y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p15x",
+              "label": "tc_r_p15x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p15y",
+              "label": "tc_r_p15y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p16x",
+              "label": "tc_r_p16x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p16y",
+              "label": "tc_r_p16y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p17x",
+              "label": "tc_r_p17x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p17y",
+              "label": "tc_r_p17y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p18x",
+              "label": "tc_r_p18x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p18y",
+              "label": "tc_r_p18y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p19x",
+              "label": "tc_r_p19x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_r_p19y",
+              "label": "tc_r_p19y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_pn",
+              "label": "points",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 2,
+              "max": 20,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p0x",
+              "label": "tc_g_p0x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p0y",
+              "label": "tc_g_p0y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p1x",
+              "label": "tc_g_p1x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p1y",
+              "label": "tc_g_p1y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p2x",
+              "label": "tc_g_p2x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p2y",
+              "label": "tc_g_p2y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p3x",
+              "label": "tc_g_p3x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p3y",
+              "label": "tc_g_p3y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p4x",
+              "label": "tc_g_p4x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p4y",
+              "label": "tc_g_p4y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p5x",
+              "label": "tc_g_p5x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p5y",
+              "label": "tc_g_p5y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p6x",
+              "label": "tc_g_p6x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p6y",
+              "label": "tc_g_p6y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p7x",
+              "label": "tc_g_p7x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p7y",
+              "label": "tc_g_p7y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p8x",
+              "label": "tc_g_p8x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p8y",
+              "label": "tc_g_p8y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p9x",
+              "label": "tc_g_p9x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p9y",
+              "label": "tc_g_p9y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p10x",
+              "label": "tc_g_p10x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p10y",
+              "label": "tc_g_p10y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p11x",
+              "label": "tc_g_p11x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p11y",
+              "label": "tc_g_p11y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p12x",
+              "label": "tc_g_p12x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p12y",
+              "label": "tc_g_p12y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p13x",
+              "label": "tc_g_p13x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p13y",
+              "label": "tc_g_p13y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p14x",
+              "label": "tc_g_p14x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p14y",
+              "label": "tc_g_p14y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p15x",
+              "label": "tc_g_p15x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p15y",
+              "label": "tc_g_p15y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p16x",
+              "label": "tc_g_p16x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p16y",
+              "label": "tc_g_p16y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p17x",
+              "label": "tc_g_p17x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p17y",
+              "label": "tc_g_p17y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p18x",
+              "label": "tc_g_p18x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p18y",
+              "label": "tc_g_p18y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p19x",
+              "label": "tc_g_p19x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_g_p19y",
+              "label": "tc_g_p19y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_pn",
+              "label": "points",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 2,
+              "max": 20,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p0x",
+              "label": "tc_b_p0x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p0y",
+              "label": "tc_b_p0y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p1x",
+              "label": "tc_b_p1x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p1y",
+              "label": "tc_b_p1y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p2x",
+              "label": "tc_b_p2x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p2y",
+              "label": "tc_b_p2y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p3x",
+              "label": "tc_b_p3x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p3y",
+              "label": "tc_b_p3y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p4x",
+              "label": "tc_b_p4x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p4y",
+              "label": "tc_b_p4y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p5x",
+              "label": "tc_b_p5x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p5y",
+              "label": "tc_b_p5y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p6x",
+              "label": "tc_b_p6x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p6y",
+              "label": "tc_b_p6y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p7x",
+              "label": "tc_b_p7x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p7y",
+              "label": "tc_b_p7y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p8x",
+              "label": "tc_b_p8x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p8y",
+              "label": "tc_b_p8y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p9x",
+              "label": "tc_b_p9x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p9y",
+              "label": "tc_b_p9y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p10x",
+              "label": "tc_b_p10x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p10y",
+              "label": "tc_b_p10y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p11x",
+              "label": "tc_b_p11x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p11y",
+              "label": "tc_b_p11y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p12x",
+              "label": "tc_b_p12x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p12y",
+              "label": "tc_b_p12y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p13x",
+              "label": "tc_b_p13x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p13y",
+              "label": "tc_b_p13y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p14x",
+              "label": "tc_b_p14x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p14y",
+              "label": "tc_b_p14y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p15x",
+              "label": "tc_b_p15x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p15y",
+              "label": "tc_b_p15y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p16x",
+              "label": "tc_b_p16x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p16y",
+              "label": "tc_b_p16y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p17x",
+              "label": "tc_b_p17x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p17y",
+              "label": "tc_b_p17y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p18x",
+              "label": "tc_b_p18x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p18y",
+              "label": "tc_b_p18y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p19x",
+              "label": "tc_b_p19x",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "tc_b_p19y",
+              "label": "tc_b_p19y",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "crop",
+      "title": "Crop",
+      "hidden": true,
+      "conditional": false,
+      "tabs": false,
+      "sections": [
+        {
+          "title": "Crop",
+          "controls": [
+            {
+              "id": "crop_l",
+              "label": "crop_l",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "crop_t",
+              "label": "crop_t",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "crop_r",
+              "label": "crop_r",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "crop_b",
+              "label": "crop_b",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "crop_rd",
+              "label": "crop_rd",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -1,
+              "max": 10000,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "crop_rn",
+              "label": "crop_rn",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -1,
+              "max": 10000,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "orientation",
+      "title": "Orientation",
+      "hidden": true,
+      "conditional": false,
+      "tabs": false,
+      "sections": [
+        {
+          "title": "Orientation",
+          "controls": [
+            {
+              "id": "orient",
+              "label": "Orientation",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 7,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "vignette-center",
+      "title": "Vignette Center",
+      "hidden": true,
+      "conditional": false,
+      "tabs": false,
+      "sections": [
+        {
+          "title": "Vignette Center",
+          "controls": [
+            {
+              "id": "vig_cx",
+              "label": "vig_cx",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -1,
+              "max": 1,
+              "step": 0.001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "vig_cy",
+              "label": "vig_cy",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -1,
+              "max": 1,
+              "step": 0.001,
+              "nonlinear": false,
+              "status": "pending"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "exposure-compensation",
+      "title": "Exposure Compensation",
+      "hidden": true,
+      "conditional": false,
+      "tabs": false,
+      "sections": [
+        {
+          "title": "Exposure Compensation",
+          "controls": [
+            {
+              "id": "exp_comp",
+              "label": "Exposure Compensation",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -3,
+              "max": 3,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tonemapper",
+      "title": "Tone Mapper",
+      "hidden": true,
+      "conditional": false,
+      "tabs": false,
+      "sections": [
+        {
+          "title": "Tone Mapper",
+          "controls": [
+            {
+              "id": "tm_mode",
+              "label": "Tone Mapper",
+              "kind": "choice",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "nonlinear": false,
+              "options": [
+                [
+                  "Sigmoid",
+                  0
+                ],
+                [
+                  "AgX",
+                  1
+                ]
+              ],
+              "status": "pending"
+            },
+            {
+              "id": "agx_black",
+              "label": "Black Relative Exposure",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -20,
+              "max": -0.1,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "agx_white",
+              "label": "White Relative Exposure",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0.1,
+              "max": 20,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "negative",
+      "title": "Negative",
+      "hidden": true,
+      "conditional": false,
+      "tabs": false,
+      "sections": [
+        {
+          "title": "Negative",
+          "controls": [
+            {
+              "id": "neg_on",
+              "label": "Convert Negative",
+              "kind": "toggle",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "neg_film",
+              "label": "Film Type",
+              "kind": "choice",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "nonlinear": false,
+              "options": [
+                [
+                  "Color",
+                  1
+                ],
+                [
+                  "Black & White",
+                  0
+                ]
+              ],
+              "status": "pending"
+            },
+            {
+              "id": "neg_dmin_r",
+              "label": "Red",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0.00001,
+              "max": 1.5,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "neg_dmin_g",
+              "label": "Green",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0.00001,
+              "max": 1.5,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "neg_dmin_b",
+              "label": "Blue",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0.00001,
+              "max": 1.5,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "neg_wbl_r",
+              "label": "Red",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0.25,
+              "max": 2,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "neg_wbl_g",
+              "label": "Green",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0.25,
+              "max": 2,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "neg_wbl_b",
+              "label": "Blue",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0.25,
+              "max": 2,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "neg_wbh_r",
+              "label": "Red",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0.25,
+              "max": 2,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "neg_wbh_g",
+              "label": "Green",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0.25,
+              "max": 2,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "neg_wbh_b",
+              "label": "Blue",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0.25,
+              "max": 2,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "neg_dmax",
+              "label": "White Point",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0.1,
+              "max": 6,
+              "step": 0.001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "neg_offset",
+              "label": "Black Point",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -1,
+              "max": 1,
+              "step": 0.001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "neg_exposure",
+              "label": "Exposure",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -1,
+              "max": 1,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "neg_grade",
+              "label": "Contrast",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 1,
+              "max": 8,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "neg_black",
+              "label": "Blacks",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -0.5,
+              "max": 0.5,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "neg_gloss",
+              "label": "Highlight Roll-off",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0.0001,
+              "max": 1,
+              "step": 0.0001,
+              "nonlinear": false,
+              "status": "pending"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "modules",
+      "title": "Modules",
+      "hidden": true,
+      "conditional": false,
+      "tabs": false,
+      "sections": [
+        {
+          "title": "Modules",
+          "controls": [
+            {
+              "id": "mod_contrast",
+              "label": "Contrast",
+              "kind": "choice",
+              "rawOnly": false,
+              "min": 0,
+              "max": 2,
+              "step": 1,
+              "nonlinear": false,
+              "options": [
+                [
+                  "AgX",
+                  0
+                ],
+                [
+                  "color balance rgb",
+                  1
+                ],
+                [
+                  "contrast equalizer",
+                  2
+                ]
+              ],
+              "status": "pending"
+            },
+            {
+              "id": "mod_tone",
+              "label": "Highlights and Shadows",
+              "kind": "choice",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "nonlinear": false,
+              "options": [
+                [
+                  "tone equalizer",
+                  0
+                ],
+                [
+                  "shadows and highlights",
+                  1
+                ]
+              ],
+              "status": "pending"
+            },
+            {
+              "id": "mod_blacks",
+              "label": "Blacks",
+              "kind": "choice",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "nonlinear": false,
+              "options": [
+                [
+                  "AgX",
+                  0
+                ],
+                [
+                  "exposure",
+                  1
+                ]
+              ],
+              "status": "pending"
+            },
+            {
+              "id": "mod_saturation",
+              "label": "Saturation",
+              "kind": "choice",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "nonlinear": false,
+              "options": [
+                [
+                  "AgX",
+                  0
+                ],
+                [
+                  "color balance rgb",
+                  1
+                ]
+              ],
+              "status": "pending"
+            },
+            {
+              "id": "mod_bw",
+              "label": "Black & White",
+              "kind": "choice",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "nonlinear": false,
+              "options": [
+                [
+                  "color calibration",
+                  0
+                ],
+                [
+                  "color equalizer",
+                  1
+                ]
+              ],
+              "status": "pending"
+            },
+            {
+              "id": "mod_clarity",
+              "label": "Clarity",
+              "kind": "choice",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "nonlinear": false,
+              "options": [
+                [
+                  "local contrast",
+                  0
+                ],
+                [
+                  "contrast & texture",
+                  1
+                ]
+              ],
+              "status": "pending"
+            },
+            {
+              "id": "mod_texture",
+              "label": "Texture",
+              "kind": "choice",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "nonlinear": false,
+              "options": [
+                [
+                  "diffuse or sharpen",
+                  0
+                ],
+                [
+                  "contrast & texture",
+                  1
+                ]
+              ],
+              "status": "pending"
+            },
+            {
+              "id": "mod_sharpening",
+              "label": "Sharpening",
+              "kind": "choice",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "nonlinear": false,
+              "options": [
+                [
+                  "sharpen",
+                  0
+                ],
+                [
+                  "diffuse or sharpen",
+                  1
+                ]
+              ],
+              "status": "pending"
+            },
+            {
+              "id": "mod_defringe",
+              "label": "Defringe",
+              "kind": "choice",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "nonlinear": false,
+              "options": [
+                [
+                  "chromatic aberrations",
+                  0
+                ],
+                [
+                  "defringe",
+                  1
+                ]
+              ],
+              "status": "pending"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "localControls": [
+    {
+      "id": "l_temp",
+      "label": "Temp",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_tint",
+      "label": "Tint",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_exposure",
+      "label": "Exposure",
+      "kind": "slider",
+      "min": -4,
+      "max": 4,
+      "step": 0.01,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_contrast",
+      "label": "Contrast",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "ce_0_0",
+      "label": "Contrast equalizer",
+      "kind": "slider",
+      "min": 0,
+      "max": 1,
+      "step": 0.001,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "ce_0_1",
+      "label": "Contrast equalizer",
+      "kind": "slider",
+      "min": 0,
+      "max": 1,
+      "step": 0.001,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "ce_0_2",
+      "label": "Contrast equalizer",
+      "kind": "slider",
+      "min": 0,
+      "max": 1,
+      "step": 0.001,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "ce_0_3",
+      "label": "Contrast equalizer",
+      "kind": "slider",
+      "min": 0,
+      "max": 1,
+      "step": 0.001,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "ce_0_4",
+      "label": "Contrast equalizer",
+      "kind": "slider",
+      "min": 0,
+      "max": 1,
+      "step": 0.001,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "ce_0_5",
+      "label": "Contrast equalizer",
+      "kind": "slider",
+      "min": 0,
+      "max": 1,
+      "step": 0.001,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "ce_1_0",
+      "label": "Contrast equalizer",
+      "kind": "slider",
+      "min": 0,
+      "max": 1,
+      "step": 0.001,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "ce_1_1",
+      "label": "Contrast equalizer",
+      "kind": "slider",
+      "min": 0,
+      "max": 1,
+      "step": 0.001,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "ce_1_2",
+      "label": "Contrast equalizer",
+      "kind": "slider",
+      "min": 0,
+      "max": 1,
+      "step": 0.001,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "ce_1_3",
+      "label": "Contrast equalizer",
+      "kind": "slider",
+      "min": 0,
+      "max": 1,
+      "step": 0.001,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "ce_1_4",
+      "label": "Contrast equalizer",
+      "kind": "slider",
+      "min": 0,
+      "max": 1,
+      "step": 0.001,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "ce_1_5",
+      "label": "Contrast equalizer",
+      "kind": "slider",
+      "min": 0,
+      "max": 1,
+      "step": 0.001,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "ce_2_0",
+      "label": "Contrast equalizer",
+      "kind": "slider",
+      "min": 0,
+      "max": 1,
+      "step": 0.001,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "ce_2_1",
+      "label": "Contrast equalizer",
+      "kind": "slider",
+      "min": 0,
+      "max": 1,
+      "step": 0.001,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "ce_2_2",
+      "label": "Contrast equalizer",
+      "kind": "slider",
+      "min": 0,
+      "max": 1,
+      "step": 0.001,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "ce_2_3",
+      "label": "Contrast equalizer",
+      "kind": "slider",
+      "min": 0,
+      "max": 1,
+      "step": 0.001,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "ce_2_4",
+      "label": "Contrast equalizer",
+      "kind": "slider",
+      "min": 0,
+      "max": 1,
+      "step": 0.001,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "ce_2_5",
+      "label": "Contrast equalizer",
+      "kind": "slider",
+      "min": 0,
+      "max": 1,
+      "step": 0.001,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "ce_3_0",
+      "label": "Contrast equalizer",
+      "kind": "slider",
+      "min": 0,
+      "max": 1,
+      "step": 0.001,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "ce_3_1",
+      "label": "Contrast equalizer",
+      "kind": "slider",
+      "min": 0,
+      "max": 1,
+      "step": 0.001,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "ce_3_2",
+      "label": "Contrast equalizer",
+      "kind": "slider",
+      "min": 0,
+      "max": 1,
+      "step": 0.001,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "ce_3_3",
+      "label": "Contrast equalizer",
+      "kind": "slider",
+      "min": 0,
+      "max": 1,
+      "step": 0.001,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "ce_3_4",
+      "label": "Contrast equalizer",
+      "kind": "slider",
+      "min": 0,
+      "max": 1,
+      "step": 0.001,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "ce_3_5",
+      "label": "Contrast equalizer",
+      "kind": "slider",
+      "min": 0,
+      "max": 1,
+      "step": 0.001,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "ce_4_0",
+      "label": "Contrast equalizer",
+      "kind": "slider",
+      "min": 0,
+      "max": 1,
+      "step": 0.001,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "ce_4_1",
+      "label": "Contrast equalizer",
+      "kind": "slider",
+      "min": 0,
+      "max": 1,
+      "step": 0.001,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "ce_4_2",
+      "label": "Contrast equalizer",
+      "kind": "slider",
+      "min": 0,
+      "max": 1,
+      "step": 0.001,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "ce_4_3",
+      "label": "Contrast equalizer",
+      "kind": "slider",
+      "min": 0,
+      "max": 1,
+      "step": 0.001,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "ce_4_4",
+      "label": "Contrast equalizer",
+      "kind": "slider",
+      "min": 0,
+      "max": 1,
+      "step": 0.001,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "ce_4_5",
+      "label": "Contrast equalizer",
+      "kind": "slider",
+      "min": 0,
+      "max": 1,
+      "step": 0.001,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_fulcrum",
+      "label": "Contrast pivot",
+      "kind": "slider",
+      "min": -6,
+      "max": 6,
+      "step": 0.1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_highlights",
+      "label": "Highlights",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_shadows",
+      "label": "Shadows",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_whites",
+      "label": "Whites",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_blacks",
+      "label": "Blacks",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_texture",
+      "label": "Texture",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_detail_texture_gain_coarse",
+      "label": "Texture: Coarse details",
+      "kind": "slider",
+      "min": -1,
+      "max": 5,
+      "step": 0.01,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_detail_texture_gain_medium",
+      "label": "Texture: Medium details",
+      "kind": "slider",
+      "min": -1,
+      "max": 5,
+      "step": 0.01,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_detail_texture_gain_fine",
+      "label": "Texture: Fine details",
+      "kind": "slider",
+      "min": -1,
+      "max": 5,
+      "step": 0.01,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_detail_texture_detail_level",
+      "label": "Texture: Base detail level",
+      "kind": "slider",
+      "min": 1,
+      "max": 15,
+      "step": 0.01,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_detail_texture_halo_control",
+      "label": "Texture: Halo control",
+      "kind": "slider",
+      "min": -10,
+      "max": 10,
+      "step": 0.01,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_detail_texture_noise_bias",
+      "label": "Texture: Noise bias",
+      "kind": "slider",
+      "min": 0,
+      "max": 1,
+      "step": 0.0001,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_detail_texture_gain_shadows",
+      "label": "Texture: Shadows",
+      "kind": "slider",
+      "min": -5,
+      "max": 5,
+      "step": 0.01,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_detail_texture_gain_highlights",
+      "label": "Texture: Highlights",
+      "kind": "slider",
+      "min": -5,
+      "max": 5,
+      "step": 0.01,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_clarity",
+      "label": "Clarity",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_detail_clarity_gain_coarse",
+      "label": "Clarity: Coarse details",
+      "kind": "slider",
+      "min": -1,
+      "max": 5,
+      "step": 0.01,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_detail_clarity_gain_medium",
+      "label": "Clarity: Medium details",
+      "kind": "slider",
+      "min": -1,
+      "max": 5,
+      "step": 0.01,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_detail_clarity_gain_fine",
+      "label": "Clarity: Fine details",
+      "kind": "slider",
+      "min": -1,
+      "max": 5,
+      "step": 0.01,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_detail_clarity_detail_level",
+      "label": "Clarity: Base detail level",
+      "kind": "slider",
+      "min": 1,
+      "max": 15,
+      "step": 0.01,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_detail_clarity_halo_control",
+      "label": "Clarity: Halo control",
+      "kind": "slider",
+      "min": -10,
+      "max": 10,
+      "step": 0.01,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_detail_clarity_noise_bias",
+      "label": "Clarity: Noise bias",
+      "kind": "slider",
+      "min": 0,
+      "max": 1,
+      "step": 0.0001,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_detail_clarity_gain_shadows",
+      "label": "Clarity: Shadows",
+      "kind": "slider",
+      "min": -5,
+      "max": 5,
+      "step": 0.01,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_detail_clarity_gain_highlights",
+      "label": "Clarity: Highlights",
+      "kind": "slider",
+      "min": -5,
+      "max": 5,
+      "step": 0.01,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_dehaze",
+      "label": "Dehaze",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_hue",
+      "label": "Hue",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_saturation",
+      "label": "Saturation",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_sharpness",
+      "label": "Sharpening",
+      "kind": "slider",
+      "min": 0,
+      "max": 5,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_usm",
+      "label": "Sharpening",
+      "kind": "slider",
+      "min": 0,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_noise",
+      "label": "Noise",
+      "kind": "slider",
+      "min": 0,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_defringe",
+      "label": "Defringe",
+      "kind": "slider",
+      "min": 0,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_hsl_hue_red",
+      "label": "Red",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_hsl_hue_orange",
+      "label": "Orange",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_hsl_hue_yellow",
+      "label": "Yellow",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_hsl_hue_green",
+      "label": "Green",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_hsl_hue_cyan",
+      "label": "Aqua",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_hsl_hue_blue",
+      "label": "Blue",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_hsl_hue_lavender",
+      "label": "Purple",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_hsl_hue_magenta",
+      "label": "Magenta",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_hsl_sat_red",
+      "label": "Red",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_hsl_sat_orange",
+      "label": "Orange",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_hsl_sat_yellow",
+      "label": "Yellow",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_hsl_sat_green",
+      "label": "Green",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_hsl_sat_cyan",
+      "label": "Aqua",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_hsl_sat_blue",
+      "label": "Blue",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_hsl_sat_lavender",
+      "label": "Purple",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_hsl_sat_magenta",
+      "label": "Magenta",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_hsl_lum_red",
+      "label": "Red",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_hsl_lum_orange",
+      "label": "Orange",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_hsl_lum_yellow",
+      "label": "Yellow",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_hsl_lum_green",
+      "label": "Green",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_hsl_lum_cyan",
+      "label": "Aqua",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_hsl_lum_blue",
+      "label": "Blue",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_hsl_lum_lavender",
+      "label": "Purple",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_hsl_lum_magenta",
+      "label": "Magenta",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_cg_shadows_hue",
+      "label": "Hue",
+      "kind": "slider",
+      "min": 0,
+      "max": 359,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_cg_shadows_sat",
+      "label": "Saturation",
+      "kind": "slider",
+      "min": 0,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_cg_shadows_lum",
+      "label": "Luminance",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_cg_midtones_hue",
+      "label": "Hue",
+      "kind": "slider",
+      "min": 0,
+      "max": 359,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_cg_midtones_sat",
+      "label": "Saturation",
+      "kind": "slider",
+      "min": 0,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_cg_midtones_lum",
+      "label": "Luminance",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_cg_highlights_hue",
+      "label": "Hue",
+      "kind": "slider",
+      "min": 0,
+      "max": 359,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_cg_highlights_sat",
+      "label": "Saturation",
+      "kind": "slider",
+      "min": 0,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_cg_highlights_lum",
+      "label": "Luminance",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_cg_global_hue",
+      "label": "Hue",
+      "kind": "slider",
+      "min": 0,
+      "max": 359,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_cg_global_sat",
+      "label": "Saturation",
+      "kind": "slider",
+      "min": 0,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    },
+    {
+      "id": "l_cg_global_lum",
+      "label": "Luminance",
+      "kind": "slider",
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "rawOnly": false,
+      "status": "pending"
+    }
+  ],
+  "globalModules": [
+    {
+      "id": "contrast",
+      "label": "Contrast",
+      "control": "mod_contrast",
+      "covers": [
+        "contrast",
+        "ce_0_0",
+        "ce_0_1",
+        "ce_0_2",
+        "ce_0_3",
+        "ce_0_4",
+        "ce_0_5",
+        "ce_1_0",
+        "ce_1_1",
+        "ce_1_2",
+        "ce_1_3",
+        "ce_1_4",
+        "ce_1_5",
+        "ce_2_0",
+        "ce_2_1",
+        "ce_2_2",
+        "ce_2_3",
+        "ce_2_4",
+        "ce_2_5",
+        "ce_3_0",
+        "ce_3_1",
+        "ce_3_2",
+        "ce_3_3",
+        "ce_3_4",
+        "ce_3_5",
+        "ce_4_0",
+        "ce_4_1",
+        "ce_4_2",
+        "ce_4_3",
+        "ce_4_4",
+        "ce_4_5"
+      ],
+      "options": [
+        {
+          "value": 0,
+          "name": "AgX",
+          "op": "agx",
+          "controls": [],
+          "localControls": []
+        },
+        {
+          "value": 1,
+          "name": "color balance rgb",
+          "op": "colorbalancergb",
+          "controls": [],
+          "localControls": []
+        },
+        {
+          "value": 2,
+          "name": "contrast equalizer",
+          "op": "atrous",
+          "controls": [
+            "ce_0_0",
+            "ce_0_1",
+            "ce_0_2",
+            "ce_0_3",
+            "ce_0_4",
+            "ce_0_5",
+            "ce_1_0",
+            "ce_1_1",
+            "ce_1_2",
+            "ce_1_3",
+            "ce_1_4",
+            "ce_1_5",
+            "ce_2_0",
+            "ce_2_1",
+            "ce_2_2",
+            "ce_2_3",
+            "ce_2_4",
+            "ce_2_5",
+            "ce_3_0",
+            "ce_3_1",
+            "ce_3_2",
+            "ce_3_3",
+            "ce_3_4",
+            "ce_3_5",
+            "ce_4_0",
+            "ce_4_1",
+            "ce_4_2",
+            "ce_4_3",
+            "ce_4_4",
+            "ce_4_5"
+          ],
+          "localControls": []
+        }
+      ]
+    },
+    {
+      "id": "tone_regions",
+      "label": "Highlights and Shadows",
+      "control": "mod_tone",
+      "covers": [
+        "highlights",
+        "shadows",
+        "l_highlights",
+        "l_shadows"
+      ],
+      "options": [
+        {
+          "value": 0,
+          "name": "tone equalizer",
+          "op": "toneequal",
+          "controls": [],
+          "localControls": []
+        },
+        {
+          "value": 1,
+          "name": "shadows and highlights",
+          "op": "shadhi",
+          "controls": [],
+          "localControls": []
+        }
+      ]
+    },
+    {
+      "id": "blacks",
+      "label": "Blacks",
+      "control": "mod_blacks",
+      "covers": [
+        "blacks"
+      ],
+      "options": [
+        {
+          "value": 0,
+          "name": "AgX",
+          "op": "agx",
+          "controls": [],
+          "localControls": []
+        },
+        {
+          "value": 1,
+          "name": "exposure",
+          "op": "exposure",
+          "controls": [],
+          "localControls": []
+        }
+      ]
+    },
+    {
+      "id": "saturation",
+      "label": "Saturation",
+      "control": "mod_saturation",
+      "covers": [
+        "saturation"
+      ],
+      "options": [
+        {
+          "value": 0,
+          "name": "AgX",
+          "op": "agx",
+          "controls": [],
+          "localControls": []
+        },
+        {
+          "value": 1,
+          "name": "color balance rgb",
+          "op": "colorbalancergb",
+          "controls": [],
+          "localControls": []
+        }
+      ]
+    },
+    {
+      "id": "bw",
+      "label": "Black & White",
+      "control": "mod_bw",
+      "covers": [
+        "bw_mode"
+      ],
+      "options": [
+        {
+          "value": 0,
+          "name": "color calibration",
+          "op": "channelmixerrgb#bw",
+          "controls": [],
+          "localControls": []
+        },
+        {
+          "value": 1,
+          "name": "color equalizer",
+          "op": "colorequal",
+          "controls": [],
+          "localControls": []
+        }
+      ]
+    },
+    {
+      "id": "clarity",
+      "label": "Clarity",
+      "control": "mod_clarity",
+      "options": [
+        {
+          "value": 0,
+          "name": "local contrast",
+          "op": "bilat",
+          "controls": [
+            "clarity"
+          ],
+          "localControls": [
+            "l_clarity"
+          ]
+        },
+        {
+          "value": 1,
+          "name": "contrast & texture",
+          "op": "contrastntexture",
+          "controls": [
+            "detail_clarity_gain_coarse",
+            "detail_clarity_gain_medium",
+            "detail_clarity_gain_fine",
+            "detail_clarity_detail_level",
+            "detail_clarity_halo_control",
+            "detail_clarity_noise_bias",
+            "detail_clarity_gain_shadows",
+            "detail_clarity_gain_highlights"
+          ],
+          "localControls": [
+            "l_detail_clarity_gain_coarse",
+            "l_detail_clarity_gain_medium",
+            "l_detail_clarity_gain_fine",
+            "l_detail_clarity_detail_level",
+            "l_detail_clarity_halo_control",
+            "l_detail_clarity_noise_bias",
+            "l_detail_clarity_gain_shadows",
+            "l_detail_clarity_gain_highlights"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "texture",
+      "label": "Texture",
+      "control": "mod_texture",
+      "options": [
+        {
+          "value": 0,
+          "name": "diffuse or sharpen",
+          "op": "diffuse",
+          "controls": [
+            "texture"
+          ],
+          "localControls": [
+            "l_texture"
+          ]
+        },
+        {
+          "value": 1,
+          "name": "contrast & texture",
+          "op": "contrastntexture#texture",
+          "controls": [
+            "detail_texture_gain_coarse",
+            "detail_texture_gain_medium",
+            "detail_texture_gain_fine",
+            "detail_texture_detail_level",
+            "detail_texture_halo_control",
+            "detail_texture_noise_bias",
+            "detail_texture_gain_shadows",
+            "detail_texture_gain_highlights"
+          ],
+          "localControls": [
+            "l_detail_texture_gain_coarse",
+            "l_detail_texture_gain_medium",
+            "l_detail_texture_gain_fine",
+            "l_detail_texture_detail_level",
+            "l_detail_texture_halo_control",
+            "l_detail_texture_noise_bias",
+            "l_detail_texture_gain_shadows",
+            "l_detail_texture_gain_highlights"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sharpening",
+      "label": "Sharpening",
+      "control": "mod_sharpening",
+      "options": [
+        {
+          "value": 0,
+          "name": "sharpen",
+          "op": "sharpen",
+          "controls": [
+            "usm_amount",
+            "usm_radius",
+            "usm_threshold"
+          ],
+          "localControls": [
+            "l_usm"
+          ]
+        },
+        {
+          "value": 1,
+          "name": "diffuse or sharpen",
+          "op": "diffuse#sharpen",
+          "controls": [
+            "sharp_amount",
+            "sharp_radius",
+            "sharp_sensitivity"
+          ],
+          "localControls": [
+            "l_sharpness"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "defringe",
+      "label": "Defringe",
+      "control": "mod_defringe",
+      "covers": [
+        "l_defringe"
+      ],
+      "options": [
+        {
+          "value": 0,
+          "name": "chromatic aberrations",
+          "op": "cacorrectrgb",
+          "controls": [],
+          "localControls": []
+        },
+        {
+          "value": 1,
+          "name": "defringe",
+          "op": "defringe",
+          "controls": [],
+          "localControls": []
+        }
+      ]
+    }
+  ],
+  "maskModules": [
+    {
+      "id": "contrast",
+      "label": "Contrast",
+      "control": "mod_contrast",
+      "covers": [
+        "contrast",
+        "ce_0_0",
+        "ce_0_1",
+        "ce_0_2",
+        "ce_0_3",
+        "ce_0_4",
+        "ce_0_5",
+        "ce_1_0",
+        "ce_1_1",
+        "ce_1_2",
+        "ce_1_3",
+        "ce_1_4",
+        "ce_1_5",
+        "ce_2_0",
+        "ce_2_1",
+        "ce_2_2",
+        "ce_2_3",
+        "ce_2_4",
+        "ce_2_5",
+        "ce_3_0",
+        "ce_3_1",
+        "ce_3_2",
+        "ce_3_3",
+        "ce_3_4",
+        "ce_3_5",
+        "ce_4_0",
+        "ce_4_1",
+        "ce_4_2",
+        "ce_4_3",
+        "ce_4_4",
+        "ce_4_5"
+      ],
+      "options": [
+        {
+          "value": 1,
+          "name": "color balance rgb",
+          "op": "colorbalancergb",
+          "controls": [],
+          "localControls": []
+        },
+        {
+          "value": 2,
+          "name": "contrast equalizer",
+          "op": "atrous",
+          "controls": [
+            "ce_0_0",
+            "ce_0_1",
+            "ce_0_2",
+            "ce_0_3",
+            "ce_0_4",
+            "ce_0_5",
+            "ce_1_0",
+            "ce_1_1",
+            "ce_1_2",
+            "ce_1_3",
+            "ce_1_4",
+            "ce_1_5",
+            "ce_2_0",
+            "ce_2_1",
+            "ce_2_2",
+            "ce_2_3",
+            "ce_2_4",
+            "ce_2_5",
+            "ce_3_0",
+            "ce_3_1",
+            "ce_3_2",
+            "ce_3_3",
+            "ce_3_4",
+            "ce_3_5",
+            "ce_4_0",
+            "ce_4_1",
+            "ce_4_2",
+            "ce_4_3",
+            "ce_4_4",
+            "ce_4_5"
+          ],
+          "localControls": []
+        }
+      ]
+    },
+    {
+      "id": "tone_regions",
+      "label": "Highlights and Shadows",
+      "control": "mod_tone",
+      "covers": [
+        "highlights",
+        "shadows",
+        "l_highlights",
+        "l_shadows"
+      ],
+      "options": [
+        {
+          "value": 0,
+          "name": "tone equalizer",
+          "op": "toneequal",
+          "controls": [],
+          "localControls": []
+        },
+        {
+          "value": 1,
+          "name": "shadows and highlights",
+          "op": "shadhi",
+          "controls": [],
+          "localControls": []
+        }
+      ]
+    },
+    {
+      "id": "clarity",
+      "label": "Clarity",
+      "control": "mod_clarity",
+      "options": [
+        {
+          "value": 0,
+          "name": "local contrast",
+          "op": "bilat",
+          "controls": [
+            "clarity"
+          ],
+          "localControls": [
+            "l_clarity"
+          ]
+        },
+        {
+          "value": 1,
+          "name": "contrast & texture",
+          "op": "contrastntexture",
+          "controls": [
+            "detail_clarity_gain_coarse",
+            "detail_clarity_gain_medium",
+            "detail_clarity_gain_fine",
+            "detail_clarity_detail_level",
+            "detail_clarity_halo_control",
+            "detail_clarity_noise_bias",
+            "detail_clarity_gain_shadows",
+            "detail_clarity_gain_highlights"
+          ],
+          "localControls": [
+            "l_detail_clarity_gain_coarse",
+            "l_detail_clarity_gain_medium",
+            "l_detail_clarity_gain_fine",
+            "l_detail_clarity_detail_level",
+            "l_detail_clarity_halo_control",
+            "l_detail_clarity_noise_bias",
+            "l_detail_clarity_gain_shadows",
+            "l_detail_clarity_gain_highlights"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "texture",
+      "label": "Texture",
+      "control": "mod_texture",
+      "options": [
+        {
+          "value": 0,
+          "name": "diffuse or sharpen",
+          "op": "diffuse",
+          "controls": [
+            "texture"
+          ],
+          "localControls": [
+            "l_texture"
+          ]
+        },
+        {
+          "value": 1,
+          "name": "contrast & texture",
+          "op": "contrastntexture#texture",
+          "controls": [
+            "detail_texture_gain_coarse",
+            "detail_texture_gain_medium",
+            "detail_texture_gain_fine",
+            "detail_texture_detail_level",
+            "detail_texture_halo_control",
+            "detail_texture_noise_bias",
+            "detail_texture_gain_shadows",
+            "detail_texture_gain_highlights"
+          ],
+          "localControls": [
+            "l_detail_texture_gain_coarse",
+            "l_detail_texture_gain_medium",
+            "l_detail_texture_gain_fine",
+            "l_detail_texture_detail_level",
+            "l_detail_texture_halo_control",
+            "l_detail_texture_noise_bias",
+            "l_detail_texture_gain_shadows",
+            "l_detail_texture_gain_highlights"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sharpening",
+      "label": "Sharpening",
+      "control": "mod_sharpening",
+      "options": [
+        {
+          "value": 0,
+          "name": "sharpen",
+          "op": "sharpen",
+          "controls": [
+            "usm_amount",
+            "usm_radius",
+            "usm_threshold"
+          ],
+          "localControls": [
+            "l_usm"
+          ]
+        },
+        {
+          "value": 1,
+          "name": "diffuse or sharpen",
+          "op": "diffuse#sharpen",
+          "controls": [
+            "sharp_amount",
+            "sharp_radius",
+            "sharp_sensitivity"
+          ],
+          "localControls": [
+            "l_sharpness"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "defringe",
+      "label": "Defringe",
+      "control": "mod_defringe",
+      "covers": [
+        "l_defringe"
+      ],
+      "options": [
+        {
+          "value": 0,
+          "name": "chromatic aberrations",
+          "op": "cacorrectrgb",
+          "controls": [],
+          "localControls": []
+        },
+        {
+          "value": 1,
+          "name": "defringe",
+          "op": "defringe",
+          "controls": [],
+          "localControls": []
+        }
+      ]
+    }
+  ]
+}

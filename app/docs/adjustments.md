@@ -8,8 +8,7 @@ modules; hover over a slider's row to see which ("darktable: …").
 most have the usual range. Where Immage differs, this page says so. There
 is no process version to choose: the tone mapper, AgX, plays that part.
 
-![The Adjustments panel with Basic open](images/adjustments-basic.png)
-<!-- screenshot: Adjustments, Basic open, histogram above, a landscape photo -->
+<a href="images/adjustments-basic.png"><img src="images/adjustments-basic.png" width="280" alt="The Adjustments panel with the histogram and expanded Basic controls for Profile, Treatment, White Balance, Tone and Presence"></a>
 
 ## Working with sliders
 

@@ -9,7 +9,7 @@ function DetailControls({ controls, render }: { controls: Control[]; render: (c:
   const label = controls[0].id.includes("clarity") ? "Clarity" : "Texture";
   return <>
     {controls.filter(primary).map(render)}
-    <button className="detail-advanced fold" aria-expanded={open} onClick={() => setOpen(!open)}>
+    <button data-detail-id={controls[0].id} className="detail-advanced fold" aria-expanded={open} onClick={() => setOpen(!open)}>
       {label}: Advanced<Chevron open={open} />
     </button>
     <Collapse open={open}>{controls.filter((c) => !primary(c)).map(render)}</Collapse>

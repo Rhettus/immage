@@ -7,54 +7,14 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
-- Add a visible-app GUI smoke suite for startup, Exposure dragging and reset,
-  with application screenshots and isolated test data for diagnosing interface
-  regressions.
-- Windows downloads now provide a single `.exe` installer, with a choice of
-  installation for your account or for everyone on the computer.
-- Linux AppImages bundle WebKitGTK and JavaScriptCore 2.54.2 while keeping
-  the Ubuntu 22.04 runtime baseline, including Linux Mint 22.x, on x86-64
-  and ARM64. Fractional-scale drag previews remain supported.
-- Filters adds Camera body: distinguish identical camera models by their body
-  serial numbers, independently of the lens, or find photos without a serial.
-- Immich search results add Import Parent Folder to the right-click menu:
-  add a locally available result's folder to Folders and browse its photos.
-  The action appears only when Immich is configured in Preferences.
-- Panorama Merge shows a preview above the projection choices. Compare
-  projections, see which one Auto chooses, and toggle Auto Crop to see the
-  edges it removes before merging.
-- Preferences > Modules groups settings under collapsible Global and Masks
-  sections that follow Focus mode; Alt-click keeps both open. Custom module
-  choices are independent, including contrast equalizer for masks while using
-  AgX globally. Existing adjustments keep their modules.
-- User and developer guides now cover all module choices, the contrast equalizer
-  graph, detail previews, metadata editing and generated-photo workflows.
 - Preferences > Modules adds Contrast equalizer as a Contrast option, replacing
   the Contrast slider with a draggable graph for luminance, chroma, edges and
   noise thresholds across coarse-to-fine detail bands.
-- Adjust Capture Time in the photo context menu or Metadata panel shifts
-  selected photos by the same amount to synchronize camera clocks. Preview
-  and confirm the adjustment before saving it to XMP sidecars; the context
-  menu can undo the last batch. Photos without a recorded time are skipped.
-- Metadata adds Location: enter coordinates or drop and drag a pin on an
-  optional OpenStreetMap map, then Apply to save GPS information to the photo's
-  XMP sidecar. Remove location clears GPS coordinates and altitude. Maps offer
-  dark and standard styles and require no API key.
-- Lens Corrections adds global Defringe Amount and Radius sliders to remove
-  color fringes. Set Amount to zero to switch correction off.
-- Panorama Merge supports JPEGs and other non-RAW photos, including mixed
-  RAW and non-RAW selections, and saves an editable DNG beside the first photo.
-- Generated HDR merges, panoramas, AI denoise results, positive exports and
-  the first result from a plugin open for editing automatically. Preferences >
-  General > Workspace can disable this. Successful completion notifications
-  close after 30 seconds, or immediately when Open or OK is selected.
-- Negative adds Export to Library to save a separate positive beside the
-  original, with the conversion and current edits baked in and normal editing
-  tools available. Preferences > General > Workspace chooses losslessly
-  compressed DNG (16-bit float, the default) or TIFF (32-bit float).
-- Filters adds a Rejected category with All photos, Hide rejected and Only
-  rejected options. The selection counts as an active filter and resets with
-  Clear all.
+- Preferences > Modules offers Contrast & Texture alternatives for Clarity
+  and Texture, with the module's native controls in adjustments and masks.
+  Medium and Fine details stay visible; an Advanced chevron reveals the
+  remaining controls in both adjustments and masks. Existing defaults remain
+  in place.
 - Optional compact 100% loupes above the Detail and Presence controls show
   the same selected area. It defaults to off; enable it in General > Workspace. Use its point
   picker, then click the photo to choose the area; Escape cancels picking.
@@ -64,14 +24,51 @@ Improvements
   including Texture, Sharpening, and luminance and color Denoise. Release
   updates the full visible view. Contrast and tone adjustments keep their
   normal whole-image previews.
-- Preferences > Modules offers Contrast & Texture alternatives for Clarity
-  and Texture, with the module's native controls in adjustments and masks.
-  Medium and Fine details stay visible; an Advanced chevron reveals the
-  remaining controls in both adjustments and masks. Existing defaults remain
-  in place.
+- Panorama Merge supports JPEGs and other non-RAW photos, including mixed
+  RAW and non-RAW selections, and saves an editable DNG beside the first photo.
+  A preview above the projection choices lets you compare
+  projections, see which one Auto chooses, and toggle Auto Crop to see the
+  edges it removes before merging.
+- Adjust Capture Time in the photo context menu or Metadata panel shifts
+  selected photos by the same amount to synchronize camera clocks. Preview
+  and confirm the adjustment before saving it to XMP sidecars; the context
+  menu can undo the last batch. Photos without a recorded time are skipped.
+- Metadata adds Location: enter coordinates or drop and drag a pin on an
+  optional OpenStreetMap map, then Apply to save GPS information to the photo's
+  XMP sidecar. Remove location clears GPS coordinates and altitude. Maps offer
+  dark and standard styles and require no API key.
+- Negative adds Export to Library to save a separate positive beside the
+  original, with the conversion and current edits baked in and normal editing
+  tools available. Preferences > General > Workspace chooses losslessly
+  compressed DNG (16-bit float, the default) or TIFF (32-bit float).
+- Filters adds a Rejected category with All photos, Hide rejected and Only
+  rejected options. The selection counts as an active filter and resets with
+  Clear all.
+- Filters adds Camera body: distinguish identical camera models by their body
+  serial numbers, independently of the lens, or find photos without a serial.
+- Immich search results add Import Parent Folder to the right-click menu:
+  add a locally available result's folder to Folders and browse its photos.
+  The action appears only when Immich is configured in Preferences.
+- Generated HDR merges, panoramas, AI denoise results, positive exports and
+  the first result from a plugin open for editing automatically. Preferences >
+  General > Workspace can disable this. Successful completion notifications
+  close after 30 seconds, or immediately when Open or OK is selected.
+- Preferences > Modules groups settings under collapsible Global and Masks
+  sections that follow Focus mode; Alt-click keeps both open. Custom module
+  choices are independent, including contrast equalizer for masks while using
+  AgX globally. Existing adjustments keep their modules.
+- Windows downloads now provide a single `.exe` installer, with a choice of
+  installation for your account or for everyone on the computer.
+- The user guide now includes compact screenshots of the workspace and Basic
+  adjustment controls, with links to the full-size images.
+- User and developer guides now cover all module choices, the contrast equalizer
+  graph, detail previews, metadata editing and generated-photo workflows.
 
 Performance
 
+- Linux AppImages bundle WebKitGTK and JavaScriptCore 2.54.2 while keeping
+  the Ubuntu 22.04 runtime baseline, including Linux Mint 22.x, on x86-64
+  and ARM64. Fractional-scale drag previews remain supported.
 - Detail and Presence loupes pause while browsing or selecting photos in grid
   view and refresh on return to the photo view, avoiding extra detail renders.
 - Thumbnail loading follows the visible grid or filmstrip as you scroll,

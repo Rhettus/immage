@@ -1,8 +1,8 @@
 # GUI verification agents
 
 Read `README.md` here and the repository's `AGENTS.local.md` when present.
-The initial Linux startup/Exposure runner exists; the broader suite remains
-planned. Report only runs actually executed and distinguish smoke coverage
+The Linux startup/Exposure runner passed previously; expanded cases are
+implemented but await approved live verification. Report only runs actually executed and distinguish smoke coverage
 from the full scenario matrix.
 
 Keep tests, shared setup and assertions checked in. Keep reports, screenshots,
@@ -13,8 +13,7 @@ Exercise the visible Tauri window through actual pointer/keyboard actions.
 Use real photo rendering for editing cases. Do not replace interactions with
 state mutations or mark a headless/component check as a full-app GUI pass.
 
-Before sending input, acquire the runner's exclusive desktop lock. Until that
-mechanism exists, GUI execution requires an explicitly coordinated desktop.
+Before sending input, acquire the runner's exclusive kernel desktop lock.
 Separate worktrees do not make shared mouse focus safe. Never stop another
 agent's or the user's app to make a test pass.
 
@@ -54,3 +53,19 @@ reason. Do not broaden access automatically to finish a test.
 
 These are suite and agent instructions, not an OS sandbox for the coding agent.
 Do not claim they technically revoke access to tools the agent still possesses.
+
+## Extending coverage
+
+Read `COVERAGE.md` and use `inventory.json` to identify missing controls and
+prerequisites. Regenerate/check the inventory after changing manifest controls.
+Use `suites.mjs` for explicit case scope, commit links, limitations and validation
+status. Mark a new case live-validated only after a real approved run succeeds;
+include its environment and retained report. Do not label the whole application
+covered because the currently mounted controls passed. Read-only data attributes
+identify controls; drive changes through guarded WebDriver pointer/keyboard/wheel
+input. The runner's desktop lock is implemented and required.
+
+Before launch, allow the runner's RAM/swap admission checks to complete. They
+require 4 GiB available RAM and at most 50% swap used; invalid counters block.
+Do not weaken thresholds or stop unrelated processes to force a GUI run. A
+preflight pass cannot rule out memory growth during later edits.

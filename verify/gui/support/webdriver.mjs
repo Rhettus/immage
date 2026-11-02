@@ -78,5 +78,25 @@ export class AppDriver {
     const png = await this.command('GET', '/screenshot');
     await writeFile(path, Buffer.from(png, 'base64'));
   }
+  async keys(...keys) {
+    await this.guard();
+    this.log({ action: 'keys', keys });
+    await this.command('POST', '/actions', { actions: [{ type: 'key', id: 'keyboard',
+      actions: keys.flatMap(value => [{ type: 'keyDown', value }, { type: 'keyUp', value }]) }] });
+  }
+  async chord(modifier, key) {
+    await this.guard(); this.log({ action: 'chord', modifier, key });
+    await this.command('POST', '/actions', { actions: [{ type: 'key', id: 'keyboard', actions: [
+      { type: 'keyDown', value: modifier }, { type: 'keyDown', value: key },
+      { type: 'keyUp', value: key }, { type: 'keyUp', value: modifier },
+    ] }] });
+  }
+  async wheel(x, y, deltaY, deltaX = 0) {
+    await this.guard();
+    this.log({ action: 'wheel', x, y, deltaY, deltaX });
+    await this.command('POST', '/actions', { actions: [{ type: 'wheel', id: 'wheel', actions: [
+      { type: 'scroll', origin: 'viewport', x: Math.round(x), y: Math.round(y), deltaX, deltaY, duration: 180 },
+    ] }] });
+  }
   async close() { if (this.session) await this.command('DELETE', ''); }
 }

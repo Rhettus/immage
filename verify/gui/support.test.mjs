@@ -34,3 +34,15 @@ test('navigation within localhost is rejected after binding to the app URL', asy
   await assert.rejects(driver.point(10, 10), /main URL changed/);
   assert.equal(state.input.length, 0);
 });
+test('external pages never receive keyboard or wheel input', async () => {
+  const { driver, state } = fixture(); state.url = 'https://example.com';
+  await assert.rejects(driver.keys('a', '\uE007'), /App-only boundary/);
+  await assert.rejects(driver.wheel(10, 10, 180), /App-only boundary/);
+  assert.equal(state.input.length, 0);
+});
+test('a changed window rejects keyboard and wheel input', async () => {
+  const { driver, state } = fixture(); await driver.guard(); state.handle = 'other';
+  await assert.rejects(driver.keys('\uE014'), /main window changed/);
+  await assert.rejects(driver.wheel(10, 10, -180), /main window changed/);
+  assert.equal(state.input.length, 0);
+});

@@ -2149,6 +2149,7 @@ export default function App() {
       return;
     }
     if (f.view.loupe) {
+      document.documentElement.dataset.loupeFrames = String(Number(document.documentElement.dataset.loupeFrames ?? 0) + 1);
       // a late draft must not cover the final frame after release
       if (gridRef.current || !loupeEnabledRef.current) return;
       setLoupeShown(true);
@@ -5049,7 +5050,7 @@ export default function App() {
   }, [photoDir]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className={`window${preview ? " preview" : ""}`}>
+    <div className={`window${preview ? " preview" : ""}`} data-module-choices={JSON.stringify(Object.fromEntries(Object.entries(values).filter(([id]) => id.startsWith("mod_"))))}>
     {/* the window's title bar is hidden (tauri.conf.json); this strip moves
         the window and leaves room for the traffic lights */}
     {/* full screen has no traffic lights to hold, and the photo wants the room */}
@@ -7159,7 +7160,7 @@ const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle, values
   });
   const foreign = p.graph === "tonecurve" && [...(session?.foreign ?? [])].some((m) => m.op === "tonecurve");
   return (
-    <div className="panel adjust">
+    <div className="panel adjust" data-panel-id={p.id}>
       <div className={`panel-title${open ? " open" : ""}`} onClick={(e) => onToggle(e.altKey)}>
         <span>{p.title}</span>
         {curveMark && (
@@ -7263,7 +7264,7 @@ const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle, values
               : content(s);
             const shut = closed.has(`${p.id}/${title}`);
             return (
-              <section key={title}>
+              <section key={title} data-section-id={title}>
                 <h3 className="fold" onClick={() => toggleSection(title)}>
                   {title}
                   {!s.group && s.tag && <span className="tag"><Sparkles size={11} strokeWidth={2} />{s.tag}</span>}
@@ -7464,7 +7465,7 @@ const SliderWidget = memo(function SliderWidget({ control: c, value, neutral, di
   // width under it, as does a label too long for the row
   const compact = !track && c.label.length <= 11;
   return (
-    <div ref={box} className={`slider${compact ? " compact" : ""}${disabled ? " disabled" : ""}`
+    <div ref={box} data-control-id={c.id} className={`slider${compact ? " compact" : ""}${disabled ? " disabled" : ""}`
                               + `${glow > 0.1 ? " probed" : ""}${value === neutral ? " at-neutral" : ""}`}
          style={glow > 0.1 ? { ["--glow" as string]: glow } : undefined}
          title={rawOnly ? "needs a raw photo: darktable makes the detail mask from the raw"
@@ -7515,7 +7516,7 @@ const SliderWidget = memo(function SliderWidget({ control: c, value, neutral, di
 // a few named values as a segmented control (Color | Black & White)
 function Choice({ control: c, value, disabled, onChange }: ControlProps) {
   if (c.menu) return (
-    <div className="choice-row">
+    <div className="choice-row" data-control-id={c.id}>
       <span>{c.label}</span>
       <select className="field" value={value} disabled={disabled} onChange={(e) => onChange(Number(e.target.value))}>
         {c.optionGroups
@@ -7528,7 +7529,7 @@ function Choice({ control: c, value, disabled, onChange }: ControlProps) {
     </div>
   );
   const options = (
-    <div className={`${c.inline ? "pills" : "segmented"} choice${disabled ? " disabled" : ""}`}>
+    <div data-control-id={c.id} className={`${c.inline ? "pills" : "segmented"} choice${disabled ? " disabled" : ""}`}>
       {(c.options ?? []).map(([label, v]) => {
         const Icon = c.optionIcons?.[v];
         return (
@@ -7546,7 +7547,7 @@ function Choice({ control: c, value, disabled, onChange }: ControlProps) {
 function Toggle({ control: c, value, disabled, onChange }: ControlProps) {
   const m = mapOf.get(c.id);
   return (
-    <label className={`toggle${disabled ? " disabled" : ""}`}
+    <label data-control-id={c.id} className={`toggle${disabled ? " disabled" : ""}`}
            title={c.note ?? (m ? `darktable: ${moduleName(m.op)}` : "")}>
       <span>{c.label}</span>
       <input type="checkbox" className="switch" checked={value === 1} disabled={disabled}

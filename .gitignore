@@ -23,6 +23,7 @@ benchmarking/__pycache__/
 verify/results/
 verify/references/
 verify/gui/local.json
+verify/gui/__pycache__/
 
 # Obsidian vault settings, from opening a docs folder in Obsidian
 .obsidian/

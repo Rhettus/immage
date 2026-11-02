@@ -8,8 +8,7 @@ right, and the rail down the right edge.
 develop modes. The filmstrip and grid browse a folder, and the right side
 always edits the open photo. The rail stands in for a module picker.
 
-![The Immage window with each part labeled](images/workspace-labeled.png)
-<!-- screenshot: a photo open, Adjustments showing; annotate rail, Library panel, viewer, filmstrip, toolbar -->
+<a href="images/workspace.png"><img src="images/workspace.png" width="960" alt="Immage editing a RAW photo, with Library on the left, the viewer and filmstrip in the middle, and Adjustments and the tool rail on the right"></a>
 
 ## The rail
 
@@ -147,3 +146,25 @@ Library panel, the filmstrip and the Adjustments panel.
 ⌘Z undoes any edit and ⇧⌘Z redoes it. The undo and redo buttons also sit
 in the toolbar under the filmstrip. See [History, undo and copying
 settings](history-and-sync.md).
+
+## Checking interface regressions
+
+The optional [visible-app GUI suite](../../verify/gui/README.md) exercises a
+separate copy of a photo in an isolated test app. Its new control cases cover
+slider keyboard/typed input, undo/redo, crop, graphs, masks, settings and module
+choices; these additions await live verification. The
+[coverage ledger](../../verify/gui/COVERAGE.md) tracks earlier fixes and remaining
+controls. Reports and app screenshots stay local. Screenshots are diagnostic
+until reviewed; a passing selection does not certify every module or platform.
+Follow local approval instructions before each GUI run.
+
+GUI verification checks memory before starting the test app: it requires at
+least 4 GiB available RAM and swap usage no higher than 50%. If resources are
+insufficient, it saves a blocked report instead of launching. This does not
+protect against all memory growth during a run; it never closes your other apps
+to free memory automatically.
+
+Interrupted tests retain incremental evidence and memory readings for diagnosis.
+An incomplete run is never treated as a pass. Optional screenshot comparison uses
+explicitly reviewed local references for the same environment; no baseline is
+accepted automatically. See the suite guide for offline inspection commands.

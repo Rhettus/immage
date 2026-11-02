@@ -460,7 +460,7 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
           </div>
           {(mono ? MONO_GROUPS : LOCAL_GROUPS).map(([title, ids]) => (
             <section key={title}>
-              <h3 className="fold" onClick={(e) => toggle(title, e.altKey)}>
+              <h3 data-mask-group={title} className="fold" onClick={(e) => toggle(title, e.altKey)}>
                 {title}
                 {title === "HSL" && probe && (
                   <span className="probe-chip" title="the color under the pointer, and its band">

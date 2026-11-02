@@ -98,7 +98,7 @@ function Section({ title, summary, open, onToggle, children }: {
   title: string; summary?: string; open: boolean; onToggle: (alt: boolean) => void; children: React.ReactNode;
 }) {
   return (
-    <section className={`export-section${open ? " open" : ""}`}>
+    <section data-export-section={title} className={`export-section${open ? " open" : ""}`}>
       <button className="export-section-head" onClick={(e) => onToggle(e.altKey)}>
         <Chevron open={open} />
         <span className="title">{title}</span>
@@ -618,7 +618,7 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
                   </label>
                   <div className="row">
                     <span className="k">If a file exists</span>
-                    <select value={s.conflict} onChange={(e) => set("conflict", e.target.value as Settings["conflict"])}>
+                    <select data-export-field="conflict" value={s.conflict} onChange={(e) => set("conflict", e.target.value as Settings["conflict"])}>
                       {Object.entries(conflictNames).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                     </select>
                   </div>
@@ -665,7 +665,7 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
                        ? `${s.customName || "name"}-001` : s.template}>
               <div className="row">
                 <span className="k">Name</span>
-                <select value={s.naming} onChange={(e) => set("naming", e.target.value as Settings["naming"])}>
+                <select data-export-field="naming" value={s.naming} onChange={(e) => set("naming", e.target.value as Settings["naming"])}>
                   <option value="original">Same as original</option>
                   <option value="custom">Custom name + number</option>
                   <option value="template">Built from photo info</option>
@@ -695,7 +695,7 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
                   </div>
                   <div className="row">
                     <span className="k">Date style</span>
-                    <select value={s.dateFormat} onChange={(e) => set("dateFormat", e.target.value)}>
+                    <select data-export-field="dateFormat" value={s.dateFormat} onChange={(e) => set("dateFormat", e.target.value)}>
                       {DATE_FORMATS.map((f) => <option key={f} value={f}>{f}</option>)}
                     </select>
                   </div>
@@ -713,7 +713,7 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
                        + `${upscale ? `AI ${upscale}×` : canvas ? `canvas ${s.canvasW} × ${s.canvasH}` : s.resize ? `${s.longEdge} px` : "original size"}`}>
               <div className="row">
                 <span className="k">Format</span>
-                <select value={s.format} onChange={(e) => set("format", e.target.value as Settings["format"])}>
+                <select data-export-field="format" value={s.format} onChange={(e) => set("format", e.target.value as Settings["format"])}>
                   {Object.entries(formatNames).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                 </select>
               </div>
@@ -728,7 +728,7 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
               {(s.format === "tiff" || s.format === "png") && (
                 <div className="row">
                   <span className="k">Bit depth</span>
-                  <select value={s.bpp} onChange={(e) => set("bpp", Number(e.target.value) as 8 | 16)}>
+                  <select data-export-field="bpp" value={s.bpp} onChange={(e) => set("bpp", Number(e.target.value) as 8 | 16)}>
                     <option value={8}>8 bit</option>
                     <option value={16}>16 bit</option>
                   </select>
@@ -736,7 +736,7 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
               )}
               <div className="row">
                 <span className="k">Size</span>
-                <select value={upscale ? `ai${upscale}` : canvas ? "canvas" : s.resize ? "fit" : "original"} onChange={(e) => {
+                <select data-export-field="resize" value={upscale ? `ai${upscale}` : canvas ? "canvas" : s.resize ? "fit" : "original"} onChange={(e) => {
                   const v = e.target.value;
                   setS((old) => {
                     const n: Settings = { ...old, resize: v === "fit", canvas: v === "canvas",
@@ -792,7 +792,7 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
               )}
               <div className="row">
                 <span className="k">Color space</span>
-                <select value={s.colorSpace} onChange={(e) => set("colorSpace", e.target.value as Settings["colorSpace"])}>
+                <select data-export-field="colorSpace" value={s.colorSpace} onChange={(e) => set("colorSpace", e.target.value as Settings["colorSpace"])}>
                   {Object.entries(spaceNames).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                 </select>
               </div>

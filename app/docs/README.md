@@ -18,7 +18,7 @@ provided as `.exe` installers only.
 
 New to Immage? Start with [Getting started](getting-started.md).
 
-![Immage editing a photo](images/workspace-labeled.png)
+<a href="images/workspace.png"><img src="images/workspace.png" width="960" alt="Immage editing a photo"></a>
 
 ## Contents
 

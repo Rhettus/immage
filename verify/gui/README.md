@@ -1,9 +1,11 @@
 # Visible-app GUI verification plan
 
-Status: initial Linux runner and startup/Exposure cases implemented; live
-verification passed on the development VM using its system webview. The broader scenario matrix below remains planned.
-This suite will run alongside `verify/run.py`, with its own command and report.
-The existing suite continues to check the editing pipeline and performance.
+Status: startup/Exposure and slider-input have previous Linux live passes.
+The expanded registry contains 540 named cases, including generated control and
+module variants. New cases are written but have not run; declarations are not
+coverage passes. Some scenarios block on unsupported fixtures or native dialogs.
+See `COVERAGE.md` for limitations. Real GUI execution is currently paused by
+local instructions; non-GUI development and checks may continue.
 
 ## Setup and execution (Linux)
 
@@ -88,7 +90,7 @@ run, not a pass. Runs are local and opt-in; CI integration remains a follow-up. 
 | `verify/gui/README.md` | Shared design, then setup and run instructions | tracked |
 | `verify/gui/AGENTS.md` | Instructions for any agent working on this suite | tracked |
 | `verify/gui/run.mjs` | Initial command-line runner | tracked |
-| `verify/gui/specs/` | Startup and Exposure interaction scenarios | tracked |
+| `verify/gui/specs/` | Smoke, controls and module-preference scenarios | tracked |
 | `verify/gui/support/` | App launch, observations, waits, evidence and desktop lock | tracked |
 | `verify/gui/local.example.json` | Documented machine-settings template | tracked |
 | `verify/gui/local.json` | Binary, driver, display and fixture paths | ignored |
@@ -225,8 +227,137 @@ A deliberately occupied desktop lock was verified to produce a blocked report
 without launching another app. The boundary checks run separately with
 `node --test verify/gui/support.test.mjs`; they supplement the visible tests.
 
-The full panel/rail/mask/theme/scale matrix, Windows automation, approved visual
-reference comparison and deliberate CSS fault-injection validation remain to be
-implemented. A smoke pass does not establish those capabilities or verify the
+The rail and reachable-slider cases are now implemented but await live
+verification. Expanded panel/branch/mask cases await live validation. Windows automation,
+approved reference baselines and deliberate application CSS fault-injection
+validation remain outstanding. A smoke pass does not establish those capabilities or verify the
 CI AppImage's bundled webview. On this VM GTK reported software rendering;
 performance and GPU-renderer coverage are not established by these passes.
+
+## Expanded control and regression cases
+
+See [COVERAGE.md](COVERAGE.md) for commit-linked regression targets, verification
+status and the complete control-area backlog. The generated [inventory.json](inventory.json)
+contains expanded manifest declarations, including conditional/RAW-only controls;
+it is an inventory, not a pass list. Regenerate using Node >= 22.18:
+
+```sh
+node verify/gui/inventory.mjs
+node verify/gui/inventory.mjs --check
+node verify/gui/run.mjs --list
+```
+
+These commands do not launch or interact with a GUI. After obtaining the approval
+required by `AGENTS.local.md`, a single run may select:
+
+```sh
+node verify/gui/run.mjs --config verify/gui/local.json --suite regressions
+node verify/gui/run.mjs --config verify/gui/local.json --suite controls
+node verify/gui/run.mjs --config verify/gui/local.json --case module-options
+```
+
+Each command is a separate GUI run requiring its own approval. New cases are
+implemented but await live validation. Build the production app again before
+running: `data-panel-id` and `data-control-id` are read-only observation attributes
+on manifest panels and range widgets. They never bypass UI interactions.
+The range walker visits mounted sliders in available panels, records disabled
+controls as blocked, and captures changes and reset frames. It does not reach
+hidden tabs/sections/module branches or establish every slider's image effect.
+Module-options exercises preference selection, not every engine implementation.
+Diagnostic screenshots require review and are not approved visual baselines.
+
+## Memory admission check
+
+Before setup and again immediately before starting the driver/app, the Linux
+runner reads `/proc/meminfo`. It requires at least **4 GiB MemAvailable** and
+**no more than 50% swap used**. Swap is not counted as available RAM. A machine
+without swap can qualify on RAM alone. Missing or inconsistent counters block
+launch. Reports retain both snapshots, thresholds and any blocking reason;
+blocked launches return exit 1. No configuration override lowers these limits.
+
+This is a conservative preflight, not a guarantee against later memory growth.
+The expanded slider run on 2026-11-01 was interrupted by systemd-oomd while
+exercising Shadows; its final report could not be written. Keep its screenshots
+and engine log as incomplete evidence. It is not a suite pass. Investigating
+runtime memory growth and adding per-process monitoring remain follow-ups.
+Do not stop unrelated apps, drop caches or change swap automatically to qualify.
+Check resources before workspace preparation where practical; every actual GUI
+run still requires approval, an empty workspace and restoration afterward per
+local instructions.
+
+The read-only check can be exercised without launching any GUI:
+
+```sh
+node verify/gui/memory.test.mjs
+node --input-type=module -e 'import { availableMemory } from "./verify/gui/support/memory.mjs"; console.log(await availableMemory())'
+```
+
+## Expanded selections and fixtures
+
+List cases without starting an app with `node verify/gui/run.mjs --list`.
+Suites are `smoke`, `controls`, `regressions`, `crop`, `workflows`, and `inventory`.
+`--suite all` selects every declaration, but mixes incompatible prerequisites;
+it is not a turnkey full-coverage run. Prefer one case and its required fixture:
+
+```sh
+# GUI commands: obtain fresh approval for each command first.
+node verify/gui/run.mjs --config verify/gui/local.json --case crop-portrait --fixture portrait
+node verify/gui/run.mjs --config verify/gui/local.json --case histogram-endpoints --fixture endpoints
+node verify/gui/run.mjs --config verify/gui/local.json --case negative --fixture negative
+```
+
+The default `configured` fixture copies the configured photo. Synthetic choices
+are `landscape`, `portrait`, `endpoints`, `negative`, `camera-a`, `camera-b`, and
+`camera-missing`; the runner generates TIFFs inside its own results directory
+using Python 3's standard library. These do not replace RAW, overlapping panorama,
+slow-folder or isolated service fixtures. Missing prerequisites block the case.
+
+## Durable evidence and memory diagnostics
+
+The runner fsyncs `events.jsonl` and atomically checkpoints `report.json` before
+launch and during cases. Abrupt termination may prevent the final Markdown
+report; surviving screenshots do not prove case success. Inspect a run offline:
+
+```sh
+node verify/gui/recover.mjs verify/results/gui/RUN_ID
+```
+
+Every two seconds, memory events sample the owned driver/app descendants and
+system pressure, with the current case. RSS totals can double-count shared pages;
+PSS is recorded when available. Short-lived children may be missed. The sampler
+checks the root process start identity to avoid attributing a reused PID.
+The runner attempts to stop its own tree if available RAM drops below 1 GiB or
+swap use exceeds 85%. This is best effort and cannot guarantee OOM prevention
+or identify a crash cause. Admission still requires 4 GiB / at most 50% swap.
+
+## Offline screenshot comparison
+
+Evidence PNGs have adjacent JSON environment metadata. Review an app screenshot
+and obtain explicit authorization before accepting a reference:
+
+```sh
+node verify/gui/visual.mjs accept --source verify/results/gui/RUN_ID/CASE/IMAGE.png --destination verify/references/gui/ENV/IMAGE.png --reviewer NAME
+node verify/gui/visual.mjs compare --reference verify/references/gui/ENV/IMAGE.png --actual verify/results/gui/RUN_ID/CASE/IMAGE.png
+```
+
+Use actual evidence paths from the run. These commands do not launch a GUI.
+Acceptance refuses overwrite. Comparison requires matching environment metadata
+and an approved reference; its policy defines channel tolerance, changed-pixel
+fraction, optional region and exclusion rectangles. It writes a diff PNG and
+JSON summary next to the actual image. No references have been accepted yet.
+Synthetic pixel tests prove the comparator detects a moved region; they do not
+prove the suite detects a CSS regression in the real application.
+
+## Non-GUI checks
+
+```sh
+node verify/gui/infrastructure.test.mjs
+node verify/gui/memory.test.mjs
+node verify/gui/support.test.mjs
+python3 verify/gui/fixtures.test.py
+node verify/gui/inventory.mjs --check
+cd app && npm run build
+```
+
+These checks do not approve or replace a visible-app run. Rebuild the native
+production executable before a future approved run using the new observations.
