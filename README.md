@@ -304,7 +304,10 @@ itself: it checks for a new release once a day and installs it when asked
 macOS is where Immage is developed. All three are built by GitHub Actions
 ([.github/workflows/build.yml](.github/workflows/build.yml)) on every
 change, and a `v*` tag makes a draft release
-([release.yml](.github/workflows/release.yml)). Each build bundles the
+([release.yml](.github/workflows/release.yml)). Release builds can also run
+manually on the release branch to reuse its dependency caches, with the tag
+required to match that exact commit; see [Releasing](app/docs/dev/releasing.md).
+Each build bundles the
 engine with the libraries it links: from Homebrew on macOS, MSYS2 on
 Windows and Ubuntu on Linux (`app/scripts/bundle_engine.py`,
 `app/scripts/bundle_engine_windows.sh`).

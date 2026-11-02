@@ -9,12 +9,18 @@ name: release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag at this branch commit (e.g. v0.41.0)
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -24,10 +30,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - name: the tag is the app's version, and has release notes
         env:
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Expected a release tag such as v0.41.0"; exit 1
+          fi
+          if [ "$(git rev-parse "refs/tags/$TAG^{commit}")" != "$(git rev-parse HEAD)" ]; then
+            echo "::error::Release tag must point to this exact workflow commit"; exit 1
+          fi
           v=${TAG#v}
           for f in app/src-tauri/tauri.conf.json app/package.json; do
             got=$(jq -r .version "$f")
@@ -41,7 +54,7 @@ jobs:
 
   build:
     needs: version
-    uses: $/.github/workflows/build.yml
+    uses: ./.github/workflows/build.yml
     with:
       release: true
     secrets:
@@ -76,14 +89,14 @@ jobs:
           path: ${{ runner.temp }}/artifacts
       - name: latest.json and the release text
         env:
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: python3 -I scripts/release_assets.py "$RUNNER_TEMP/artifacts" "${TAG#v}" "$RUNNER_TEMP/release/assets"
       # a draft, published by hand after the binaries are tried: only then
       # does /releases/latest/download/latest.json offer it to installed copies.
       # a re-run replaces the draft's files, and never touches a published one
       - name: draft release
         env:
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.tag || github.ref_name }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |

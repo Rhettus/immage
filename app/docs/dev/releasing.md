@@ -2,7 +2,7 @@
 
 A release is a tag. Pushing `v<version>` runs
 [release.yml](../../../.github/workflows/release.yml), which builds
-macOS, Windows and Linux (x86-64 and ARM64) from scratch, signs the
+macOS, Windows and Linux (x86-64 and ARM64), reuses dependency caches, signs the
 updater's bundles, makes the source archive, and leaves a **draft** release
 with all of it attached. Nothing
 reaches users until you publish that draft.
@@ -77,6 +77,30 @@ installer format from the downloaded bytes. Test assembly without an MSI using
    checks compare old edits with this one's.
 8. **Merge the pull request** into `main`, then delete the branch. The
    next release starts a new `release-<version>` branch from `main`.
+
+## Cached release builds from a branch
+
+GitHub caches are scoped to refs. A tag run cannot restore caches saved on
+`release-<version>`. To reuse those caches, commit the final version and notes
+with `[skip ci]`, push the branch and its `v<version>` tag, then dispatch the
+release workflow on that branch:
+
+```bash
+gh workflow run release.yml --ref release-0.41.0 -f tag=v0.41.0
+```
+
+The skip marker prevents duplicate push/PR/tag builds; manual dispatch still
+runs. The version job fetches tags and requires the requested tag to resolve
+to the exact checked-out commit. It also checks the app versions and release
+notes. The reusable build retains release configuration and updater signing,
+while restoring npm, Rust, ccache and Linux WebKit caches using the same keys
+as normal builds. A cache miss builds the dependency normally. Source and
+release assets come from the dispatched commit; publication remains manual.
+
+Verify workflow syntax, `python3 -I scripts/test_release_assets.py`, and all
+five version files before dispatch. In Actions, confirm WebKit cache hits on
+both Linux jobs; cache existence alone does not prove a restore succeeded.
+This path rebuilds the app; it does not promote an earlier run's installers.
 
 ## When something goes wrong
 
