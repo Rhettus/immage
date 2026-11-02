@@ -10,6 +10,16 @@ and verifies serialized latest-value delivery without advancing the animation
 clock. Native latency improvement requires a matched benchmark; no gain is
 inferred from the deterministic scheduling check.
 
+The resource collector uses the same `sysinfo` refresh policy on Windows,
+macOS and Linux: CPU/memory for known descendants every 500 ms; parent/name
+discovery without unrelated-process CPU/RSS every two seconds. Selected exits
+are removed on each tick. Reports expose `processDiscoveryIntervalMs` and
+per-sample `processDiscovery`; processes that live entirely between discovery
+ticks can be missed. macOS launchd-parented webview helpers remain unassigned.
+`cargo test resources::tests` checks live CPU/memory plus child discovery and
+exit removal using a bounded headless Rust subprocess. It does not launch Tauri.
+Lower sampler overhead is distinct from an improvement to photo processing.
+
 The existing [slider sequence](diagrams/slider-sequence.svg) describes the
 three-process rendering flow. This diagram shows the diagnostic points:
 

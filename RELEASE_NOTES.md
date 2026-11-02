@@ -12,6 +12,8 @@ Improvements
 
 Performance
 
+- GUI benchmarks reduce sampler overhead by collecting process CPU and memory
+  only for Immage's process tree, with less frequent discovery of new processes.
 - Slider edits queued during a render can start their next preview as soon as
   that render finishes, avoiding an extra display-frame wait.
 - Repeated cache hits update access timestamps at most once a minute, reducing

@@ -236,6 +236,9 @@ The thumbnail caches keep nothing while the disk has under 5 GB free.
 - **GUI benchmark**: **Run** drags the main sliders on the open photo and
   back, zooms in and out, and saves a timing report. Every slider ends where
   it started, but use a copy of a photo you care about.
+  Resource readings are sampled: brief CPU spikes or short-lived helper
+  processes can be missed. Compare reports made with the same build and
+  measurement settings when assessing a settings change.
 
 Use the **Performance tuner** with a representative RAW and your usual window
 size. Set FPS and latency targets, run it, review the recommendation, then

@@ -252,6 +252,16 @@ thread at a nominal 500 ms interval. `atUnixMs` aligns each sample with the
 `phases` (slider drag/release, zoom and idle) in the same clock. The dashboard's
 GUI tab shows CPU, memory, GPU and per-step peaks, and individual process peaks.
 
+Known app-tree processes are refreshed each tick; new processes are discovered
+every two seconds without collecting CPU/RSS for unrelated processes.
+`processDiscoveryIntervalMs` records that discovery interval and each sample's
+`processDiscovery` flag identifies a discovery tick. Short-lived children can
+be missed between discovery ticks, and a new process needs a CPU baseline before
+its CPU reading is meaningful. Known exits are removed on the next sample.
+macOS helpers reparented to launchd are not automatically attributed to Immage;
+use the native trace to investigate them rather than treating the process-tree
+sum as complete browser CPU usage. Keep sampling policy identical in A/B runs.
+
 - `cpuPercent` lists system-wide usage for each logical CPU. Each process in
   Immage's descendant tree records CPU usage and RSS, including darktable and
   WebKit helpers. CPU 100% means one logical CPU, so a process can exceed 100%.
