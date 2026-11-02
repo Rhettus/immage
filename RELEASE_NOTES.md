@@ -5,6 +5,11 @@ what Immage's update banner shows under Release Notes.
 
 ## 0.42.0
 
+Improvements
+
+- Add a scripted Mac CPU capture workflow to profile the engine and webview
+  alongside GUI benchmarks and investigate busy-core bottlenecks.
+
 Performance
 
 - Repeated cache hits update access timestamps at most once a minute, reducing

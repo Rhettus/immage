@@ -501,3 +501,16 @@ Raw report timestamps (UTC, 2026-11-02 unless stated): Linux regular-file
 baseline 21:36:45. Mac's baseline ran after its candidate. Reports remain in the
 operator's benchmark archive; machine identifiers and raw diagnostic payloads
 are not needed in the public documentation.
+
+## Native Mac CPU profiling
+
+Use [Mac CPU capture](../../../benchmarking/MACOS_PROFILING.md) to run
+`benchmarking/capture-macos.py` alongside the existing GUI benchmark. It records
+a bounded Time Profiler trace, exports its table of contents and CPU stacks, and
+retains command status, wall-clock bounds, tool versions and process snapshots.
+It launches no app and drives no GUI. All-process capture includes XPC WebKit
+helpers; explicit single-PID capture is also available. Native Mac validation
+is pending. Run `python3 verify/macos-capture.test.py` for mocked orchestration
+checks, including failure evidence and process scope. The capture guide defines
+clock alignment limits, symbol requirements, overhead comparison and the
+evidence table used to prioritize threading and copy-reduction changes.

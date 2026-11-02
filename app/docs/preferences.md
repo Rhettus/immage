@@ -370,3 +370,12 @@ same. Collect one report at 100% and one at 125%, recording display scale and
 refresh rate. Keep the app visible and do not resize it during either run.
 Return both JSON reports from the benchmarks directory shown after completion.
 The existing 0.41.1 reports remain the baseline; no further baseline run is needed.
+
+### Mac CPU profiling alongside a benchmark
+
+To investigate a busy CPU core, run the repository’s
+[Mac CPU capture script](../../benchmarking/MACOS_PROFILING.md), wait for Time
+Profiler to start recording, then run **Performance > Measuring > GUI benchmark**.
+Save the benchmark JSON with the capture. Full Xcode is required. System-wide
+capture includes other applications; the guide explains scope and sharing. Keep
+the photo, window and performance settings fixed throughout the run.

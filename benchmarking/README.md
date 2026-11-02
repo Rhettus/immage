@@ -19,6 +19,9 @@ are your machine's own and stay out of git: a fresh clone starts with none.
 | `awb.py`, `awb-neutral.json` | Auto white balance against neutral patches in the corpus; not a timing benchmark |
 | `autoexp.py` | Basic's Auto over the corpus, old and new side by side; not a timing benchmark |
 
+For native Mac CPU stacks alongside the GUI benchmark, see
+[Mac CPU capture](MACOS_PROFILING.md).
+
 ## Running it
 
 ```bash
