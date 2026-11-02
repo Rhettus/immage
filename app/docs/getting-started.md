@@ -67,8 +67,10 @@ after you make it, and ⌘Z undoes it.
 Each photo you edit gets a small file beside it, named like the photo with
 `.xmp` added, for example `P9302114.ORF.xmp`. It holds the whole edit,
 plus your rating, labels, title, caption and keywords. darktable opens the
-same file and renders the photo the same way, so you can always finish an
-edit there.
+same file and renders the photo the same way when its module and mask
+versions are compatible. Immage uses a development version of darktable;
+try copies first if you also use stable darktable. See
+[darktable compatibility](darktable.md#compatibility).
 
 Immage never changes the photo file itself.
 

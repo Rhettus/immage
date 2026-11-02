@@ -40,6 +40,9 @@ the headless darktable engine. The photographer's guide is
 - [darktable/dev-doc/](../../../darktable/dev-doc/README.md): darktable's
   own developer docs, for anything the engine calls into darktable for.
 
+- [Building Immage](building.md): platform dependencies, local builds and packaging.
+- [Implementation overview](overview.md): engine, interface and import integration.
+
 ## Editing the diagrams
 
 The diagrams are generated from the specs in

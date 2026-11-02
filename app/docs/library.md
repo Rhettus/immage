@@ -305,11 +305,14 @@ The context menu can undo the last batch after confirmation.
 
 ### Location
 
-In Metadata’s **Location**, enter latitude and longitude or open the optional
-OpenStreetMap map. Click to drop a pin, or drag it, then **Apply** to save GPS
-coordinates to the XMP sidecar. **Remove location** clears coordinates and
-altitude. The map offers dark and standard styles and needs an internet
-connection, with no API key.
+The Metadata panel's Location section accepts latitude and longitude in decimal
+degrees (latitude first). Use Show map to place or drag a pin, then Apply to
+save it to the photo's XMP sidecar. Remove location clears GPS coordinates and
+altitude in Immage without changing the original photo. An Immage XMP marker
+keeps removed camera GPS from returning on reopen; other photo software may
+still show GPS embedded in the original. Moving a location clears the old altitude. Coordinate editing works
+offline; maps require internet access and no API key. Place-name lookup is not
+included.
 
 ## Keywords
 

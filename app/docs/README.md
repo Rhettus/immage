@@ -68,6 +68,10 @@ New to Immage? Start with [Getting started](getting-started.md).
 
 **Reference**
 
+- [Working with darktable](darktable.md): compatibility and the tool/module reference.
+- [Credits and licenses](credits.md): acknowledgments, source availability and map attribution.
+
+
 - [Preferences](preferences.md): every setting
 - [Keyboard shortcuts](shortcuts.md)
 
