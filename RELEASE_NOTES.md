@@ -3,7 +3,7 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
-## Unreleased
+## 0.42.0
 
 Performance
 
@@ -22,22 +22,12 @@ Performance
   copies without changing resolution. Native tests confirm lower frame-output
   costs on all three platforms; slider latency gains vary by workload.
 
-Improvements
-
-- GUI benchmark reports include shared-frame write, reply, WebKit read and
-  engine pixel-conversion/file-output timings to diagnose native preview latency.
-- A Linux AI diagnostic script collects model-loading logs and file checksums
-  into one report without requiring an application rebuild.
-
 Bug fixes
 
 - Transform's automatic corrections work on cropped portrait and rotated
   images instead of reporting that the working-space image is not at hand.
 - Fix macOS intermediate-buffer writes when previews or thumbnails change size,
   respecting the platform’s shared-memory sizing restrictions.
-- Release instructions describe automatic NVIDIA/X11 startup handling and
-  the remaining Wayland fractional-scaling overhead without requiring the
-  older Mint launch workaround.
 
 ## 0.41.1
 
