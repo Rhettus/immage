@@ -149,3 +149,16 @@ from Homebrew, MSYS2 or Ubuntu and attach it to the issue.
 
 A release that moves the darktable pin needs the checks in
 [Pinning darktable](darktable-pin.md) before it is tagged.
+
+## Security scanning
+
+The engine CodeQL job in `.github/workflows/codeql.yml` uses the shared Ubuntu
+package list and the Linux build's GCC 14 toolchain repository and libunwind
+package selection. Keep these aligned when changing Linux build dependencies.
+Dependencies and darktable build before tracing; ccache is disabled for the
+traced engine build so CodeQL sees compilation. A successful scan on `main`
+updates existing alerts; a failed setup leaves older findings visible.
+
+Validate workflow edits with actionlint and zizmor, then check the CodeQL run's
+engine analysis and SARIF upload. Compiler setup changes do not require rebuilding
+release installers.
