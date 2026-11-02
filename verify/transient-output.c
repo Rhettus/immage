@@ -7,6 +7,7 @@
 #include <unistd.h>
 #define IMMAGE_TEST_POSIX_OUTPUT
 #include "../engine/transient_output.h"
+#include "../engine/rgba_output.h"
 #include <assert.h>
 int main(void)
 {
@@ -35,6 +36,29 @@ int main(void)
     g_free(bytes);
   }
   assert(!transient_write(path, "", SIZE_MAX, "", 1));
+  // Direct mapped output reuses capacity, including shrink/regrow, while the
+  // published file length stays exact. A second output has independent bytes.
+  void *large_view = NULL;
+  for(size_t i = 0; i < G_N_ELEMENTS(sizes); i++)
+  {
+    size_t n = sizes[i] + 1;
+    uint8_t *mapped = rgba_output_acquire(path, n);
+    assert(mapped);
+    memset(mapped, 19 + i, n);
+    if(n == 100001) large_view = _rgba_outputs[0].view;
+    if(n == 18) assert(_rgba_outputs[0].view == large_view);
+    struct stat st;
+    assert(!fstat(fd, &st) && st.st_size == (off_t)n + 8);
+    void *view = mmap(NULL, n + 8, PROT_READ, MAP_SHARED, fd, 0);
+    assert(view != MAP_FAILED);
+    for(size_t k = 0; k < n; k++) assert(((uint8_t *)view)[8+k] == 19 + i);
+    munmap(view, n + 8);
+  }
+  assert(rgba_output_acquire(path, 1000)); // regrow within retained capacity
+  assert(_rgba_outputs[0].view == large_view);
+  assert(!rgba_output_acquire(path, 0));
+  assert(!rgba_output_acquire(path, SIZE_MAX));
+  rgba_output_close(&_rgba_outputs[0]);
   close(fd);
   assert(!shm_unlink(name));
   assert(!transient_write(path, "gone", 4, NULL, 0));
@@ -49,6 +73,24 @@ int main(void)
   gsize length = 0;
   assert(g_file_get_contents(file, &got, &length, NULL));
   assert(length == 3 && !memcmp(got, "new", 3));
+  uint8_t *direct = rgba_output_acquire(file, 10000);
+  assert(direct); memset(direct, 117, 10000);
+  uint8_t *second = rgba_output_acquire("/dev/null/not-a-file", 32);
+  assert(!second);
+  char *second_file = NULL;
+  fd = g_file_open_tmp("immage-transient-second-XXXXXX", &second_file, NULL);
+  assert(fd >= 0); close(fd);
+  second = rgba_output_acquire(second_file, 32);
+  assert(second); memset(second, 42, 32);
+  assert(direct[0] == 117 && direct[9999] == 117);
+  assert(rgba_output_acquire(file, 16) == direct);
+  g_free(got); got = NULL;
+  assert(g_file_get_contents(file, &got, &length, NULL));
+  assert(length == 16);
+  for(size_t k = 0; k < length; k++) assert((uint8_t)got[k] == 117);
+  rgba_output_close(&_rgba_outputs[0]);
+  rgba_output_close(&_rgba_outputs[1]);
+  g_unlink(second_file); g_free(second_file);
   g_unlink(file);
   g_free(got); g_free(file); g_free(path); g_free(name);
   return 0;

@@ -373,3 +373,40 @@ covers repeated-hit/marker timestamp stability, stale refresh, eviction ordering
 known thumbnails, cache path validation and edited-original retention. The policy
 reduces timestamp writes; metadata reads still occur and native browsing impact
 has not yet been measured.
+
+### Reusable engine render buffers
+
+`rgba_output.h` keeps two output mappings for the serialized `_write_rgba`
+render/preview callers. It reuses each mapping up to its largest successful
+frame size; growth closes the old mapping before replacement. The total retained
+capacity is bounded by those two frame high-water marks, not by render count.
+BGRA-to-RGBA conversion writes directly into the mapped payload. There is no
+per-frame intermediate RGBA allocation, `fwrite` or copy into the mapping.
+Regular-file Windows CLI output retains the existing allocation/write path.
+
+POSIX output descriptors and mappings stay open. `ftruncate` runs only when the
+visible payload size changes, including shrink/regrow within retained capacity;
+reads see the exact current length. Linux files stay headerless, while macOS
+objects retain their eight-byte length header. MAP_SHARED visibility plus the
+JSON completion reply publishes the pixels without a disk flush. Slots close
+with the engine process before the app's storage owner removes their names.
+
+Windows retains each mapping/view and consumption event. Acquisition requires a
+signalled event before reuse, then resets it. Growth closes the acknowledged
+mapping before creating a larger one under the same private name. Rust closes
+its read view/handle before acknowledgement, so resize cannot invalidate a live
+consumer. This protocol uses the existing engine mutex as its generation boundary;
+thumbnail and other worker outputs use their separate transient writer.
+
+The `allocate` output metric now includes mapping acquisition/resize, `convert`
+includes conversion/page first-touch, and `file`/`free` are normally near zero for
+mapped render output. These stages still nest inside engine output/request time.
+Rust still opens and copies each consumed frame into its response; Linux uses
+file reads, macOS/Windows use mapping views. Eliminating those remaining receiver
+operations and later WebView copies is separate work, not a measured benefit here.
+
+`verify/check-transient-output.py` exercises reuse, shrink/regrow, two-span writes,
+capacity/creation errors and exact RGBA bytes (including odd dimensions and alpha).
+The standalone transport test also passes address/undefined sanitizers; leak
+sanitizer is unavailable under this VM's tracing environment. Native before/after
+measurements remain required; do not extrapolate the earlier tmpfs speedup.

@@ -17,8 +17,9 @@ Performance
   retaining the persistent JPEG cache for subsequent visits.
 - Mask, range and zone overlays use memory-backed intermediate storage,
   avoiding regular temporary-file writes during overlay updates.
-- Engine drag and settled preview frames use memory-backed storage on Windows,
-  macOS and Linux, reducing temporary file overhead without changing resolution.
+- Engine drag and settled preview frames use reusable memory-backed output
+  buffers on Windows, macOS and Linux, avoiding temporary RGBA allocations and
+  copies without changing resolution.
 
 Improvements
 

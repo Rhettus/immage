@@ -7,6 +7,7 @@
 #include "../engine/main.c"
 #undef main
 #include <assert.h>
+darktable_t darktable = { .num_openmp_threads = 2 };
 static int test_subsample;
 int dt_conf_get_int(const char *name)
 {
@@ -58,6 +59,28 @@ int main(void)
     jpeg_destroy_decompress(&decoder);
     g_free(bytes);
   }
+  // Direct RGBA output must preserve the former conversion byte-for-byte,
+  // including odd dimensions and a smaller subsequent frame.
+  for(int pass = 0; pass < 2; pass++)
+  {
+    int width = pass ? 17 : 31, height = pass ? 11 : 19;
+    double timings[4];
+    assert(_write_rgba(path, input, width, height, timings));
+    char *bytes = NULL; gsize length = 0;
+    assert(g_file_get_contents(path, &bytes, &length, NULL));
+    assert(length == (size_t)width * height * 4);
+    for(size_t k = 0; k < length / 4; k++)
+    {
+      assert((uint8_t)bytes[4*k] == input[4*k+2]);
+      assert((uint8_t)bytes[4*k+1] == input[4*k+1]);
+      assert((uint8_t)bytes[4*k+2] == input[4*k]);
+      assert((uint8_t)bytes[4*k+3] == 255);
+    }
+    for(int k = 0; k < 4; k++) assert(timings[k] >= 0);
+    g_free(bytes);
+  }
+  rgba_output_close(&_rgba_outputs[0]);
+  rgba_output_close(&_rgba_outputs[1]);
   assert(preview_jpeg_write(&data, "/dev/null/missing", input, DT_COLORSPACE_SRGB,
                             NULL, NULL, 0, 0, 0, 0, NULL, FALSE));
   data.width = 0;

@@ -179,6 +179,8 @@ performance; results still vary by system.
   Windows uses pagefile-backed mappings; macOS uses private shared-memory objects.
   Buffer creation or capacity failures cause render errors. Memory-backed pages
   can be paged out under memory pressure.
+  Drag and settled frames reuse engine output mappings and convert pixels
+  directly into them, avoiding a separate temporary RGBA allocation and copy.
   AI Denoise before/after preview buffers use this storage too.
   Export dialog previews also use memory-backed transfer, with the same export
   rendering and sRGB JPEG quality. Actual exports retain their selected metadata.

@@ -1422,6 +1422,7 @@ static gboolean _write_ppm(const char *path, const uint8_t *in, const int w, con
 }
 
 #include "transient_output.h"
+#include "rgba_output.h"
 
 // headerless RGBA, ready for a canvas ImageData; the size is in the reply.
 // written over the file in place: g_file_set_contents() would write a
@@ -1431,8 +1432,16 @@ static gboolean _write_ppm(const char *path, const uint8_t *in, const int w, con
 static gboolean _write_rgba(const char *path, const uint8_t *in, const int w, const int h, double *timings)
 {
   const gint64 started = g_get_monotonic_time();
+  if(w <= 0 || h <= 0 || (size_t)w > SIZE_MAX / 4 / (size_t)h) return FALSE;
   const size_t n = (size_t)w * h;
-  uint8_t *rgba = g_try_malloc(4 * n);
+#ifdef _WIN32
+  // The CLI can still request an ordinary RGBA file; app output is mapped.
+  const gboolean mapped = g_str_has_prefix(path, "shm:");
+  uint8_t *rgba = mapped ? rgba_output_acquire(path, 4 * n) : g_try_malloc(4 * n);
+#else
+  const gboolean mapped = TRUE;
+  uint8_t *rgba = rgba_output_acquire(path, 4 * n);
+#endif
   if(!rgba) return FALSE;
   const gint64 allocated = g_get_monotonic_time();
   DT_OMP_FOR()
@@ -1444,9 +1453,11 @@ static gboolean _write_rgba(const char *path, const uint8_t *in, const int w, co
     rgba[4 * k + 3] = 255;
   }
   const gint64 converted = g_get_monotonic_time();
-  gboolean ok = transient_write(path, rgba, 4 * n, NULL, 0);
+  // MAP_SHARED writes are visible before the JSON completion reply. No file
+  // write, flush, or intermediate RGBA allocation is needed for mapped output.
+  gboolean ok = mapped || transient_write(path, rgba, 4 * n, NULL, 0);
   const gint64 written = g_get_monotonic_time();
-  g_free(rgba);
+  if(!mapped) g_free(rgba);
   const gint64 freed = g_get_monotonic_time();
   if(timings)
   {
