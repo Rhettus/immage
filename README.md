@@ -9,6 +9,15 @@
 🟡 **Linux:** Fully functional alpha build, but performance may vary. We’re
 investigating NVIDIA rendering issues.
 
+**Linux launcher experiment:** NVIDIA/X11 tries a compatible system WebKitGTK
+stack; Wayland and other GPUs keep bundled WebKitGTK 2.54.2. Automatic mode
+falls back to the bundle if host checks fail. Compare explicitly with
+`IMMAGE_WEBKIT=system ./Immage.AppImage` or
+`IMMAGE_WEBKIT=bundled ./Immage.AppImage`. Forced system mode reports an error
+if incompatible. The experiment repacks the released x86_64 0.41.0 app without recompiling
+WebKit. Performance validation is pending; see the
+[Linux rendering guide](app/docs/preferences.md#performance).
+
 **X11 desktops with NVIDIA:** If Immage fails to launch, use:
 
 ```bash

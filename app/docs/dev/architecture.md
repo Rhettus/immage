@@ -794,6 +794,62 @@ selection, with explicit renderer preferences available. Verify both display
 backends with matching hardware, photos and settings before changing defaults
 or providing different WebKitGTK packages.
 
+The launcher experiment is installed by
+`app/scripts/prepare_appimage_launcher.py` after Tauri deploys the AppDir.
+`AppRun.bundled` preserves the generated launcher and GTK hook. The new
+`AppRun` selects `IMMAGE_WEBKIT=auto|system|bundled` before either runs.
+An explicit single `GDK_BACKEND` wins over `XDG_SESSION_TYPE`, then Wayland/DISPLAY
+presence is used only if the session type is unavailable. Backend lists are
+uncertain and retain the bundle. Known backends are pinned for launch.
+Automatic system selection requires X11 and a loaded NVIDIA driver, detected
+through DRM driver links or `/proc/driver/nvidia/version`; hybrid systems can
+qualify even if NVIDIA is not driving the window.
+
+System mode bypasses both bundled AppRun and its GTK environment. A separate
+`usr/bin/immage-system` copy has its ELF RPATH/RUNPATH removed. Its entire UI
+library closure comes from the host, avoiding mixed GLib/GTK/WebKit/JSC stacks.
+The existing frame extension in `usr/lib/Immage/webext` also has its private
+search path removed: it uses the WebKit/JSC already loaded by either runtime,
+with AppRun supplying bundled search paths only in bundled mode. Its resource
+location stays unchanged, so the launcher can be applied to an existing release
+without recompiling the app. The engine retains its own resource library
+RPATHs; photo processing is unchanged. The launcher clears inherited loader,
+GTK module/schema and WebKit helper overrides in system mode, checks `ldd -r`
+for missing dependencies/symbols or bundled UI paths, and checks host WebKit
+helpers and injected bundle adjacent to the resolved host library or in
+`/usr/libexec/webkit2gtk-4.1`. Host WebKit uses its compiled helper paths;
+matching helper override paths are also exported for builds supporting them.
+This validates dynamic symbol availability, including the frame extension's JSC
+typed-array calls; it does not prove rendering performance or runtime ABI behavior.
+Auto falls back before app startup if checks fail; forced system stops with an
+error. An app failure after startup is never retried automatically.
+
+`repack_appimage.sh` installs the selector and repacks with the AppImage output
+plugin, reusing the base image's runtime instead of downloading another.
+`build_appimage.sh` uses Tauri's cached output plugin and regenerates updater
+signatures over the final bytes.
+It fails if a release configuration lacks signing credentials. The normal
+bundled copy and packaged 2.54.2 verification remain intact. Headless launcher
+and ELF search-path regressions run with
+`python3 -I scripts/test_appimage_launcher.py`; no real app or GUI is started.
+Dispatch `build.yml` on the experiment branch with `launcher_experiment=true`
+(`gh workflow run build.yml --ref release-0.41.1 -f launcher_experiment=true`).
+This skips all ordinary build jobs and calls `launcher-experiment.yml`, which
+builds only x86_64. It verifies
+the published v0.41.0 x86_64 AppImage and output plugin against pinned SHA-256s,
+extracts the baseline, applies the launcher and repacks it. It runs headless
+packaging tests, verifies the 2.54.2 bundle/glibc baseline and launcher wiring,
+and uploads `immage-launcher-experiment-linux-x86_64` with a checksum and build
+identity. The editor remains the released 0.41.0 binary (including its reported
+version/commit); later changes such as batch paste are absent. This isolates
+the launcher comparison and avoids WebKit compilation. The workflow neither
+launches the editor nor signs/publishes an updater or release. The ordinary
+source build also includes the launcher for subsequent builds.
+Compare forced system and bundled runs on Mint/X11/NVIDIA with matching photos,
+renderer settings and scale, then verify Wayland retains the bundle. Confirm the
+reported WebKit version, frame delivery and helper processes, as well as speed.
+This manual validation remains pending.
+
 Fractional-scale drag compensation (`scale.rs`, `pixelRatio.ts`, `draftK` in
 `App.tsx`) remains active: at 125% on a GTK 2x surface, reduced drafts use a
 0.625 scale multiplier. Full-quality release frames keep the GTK pixel size.

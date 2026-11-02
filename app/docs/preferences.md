@@ -59,6 +59,30 @@ renderer behavior after upgrading. On Wayland, **Drag drafts at the screen’s
 scale** still sizes reduced drag previews for the compositor’s actual fractional
 scale (for example, 125%), while release frames keep full quality.
 
+The experimental launcher chooses the system WebKitGTK 4.1 stack when it detects
+X11 and a loaded NVIDIA driver. Wayland, other GPUs and uncertain backend
+selections keep the packaged stack. The host must provide compatible WebKitGTK,
+JavaScriptCore, GTK dependencies and matching helper processes; automatic mode
+falls back to the bundle if its startup checks fail. This is an experiment;
+Mint/X11 and Ubuntu/Wayland performance still need comparison with this build.
+The separately named x86_64 test AppImage uses the released 0.41.0 editor and
+still reports that version. It does not include later editor changes.
+
+To compare either runtime explicitly from a terminal:
+
+```bash
+IMMAGE_WEBKIT=system ./Immage.AppImage
+IMMAGE_WEBKIT=bundled ./Immage.AppImage
+```
+
+The default is `IMMAGE_WEBKIT=auto`. Forced `system` mode stops with a message
+if the host stack is unavailable or incompatible, rather than silently using
+the bundle. The launcher prints its selected runtime and detected backend to
+stderr. `GDK_BACKEND=x11` or `GDK_BACKEND=wayland` explicitly selects the backend;
+backend lists keep the bundle in automatic mode. These switches select the UI
+runtime, independently of the window renderer and photo-processing settings.
+An NVIDIA driver detected on a hybrid system also qualifies for the experiment.
+
 On X11 desktops with NVIDIA, including Linux Mint, launch or rendering issues
 have been reported with the bundled WebKitGTK. If Immage fails to launch, run:
 

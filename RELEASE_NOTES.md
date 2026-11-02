@@ -11,6 +11,10 @@ Improvements
   including virtual copies, while keeping the active photo and selection.
   Looks retain their strength. One undo or redo restores the whole batch;
   failures report recovery and sidecar write problems.
+- Experimental Linux launcher tries compatible system WebKitGTK on NVIDIA/X11
+  and keeps bundled WebKitGTK on Wayland and other GPUs. Command-line environment
+  overrides allow comparing system and bundled runtimes; automatic mode falls
+  back to the bundle if system compatibility checks fail.
 
 ## 0.41.0
 

@@ -8,6 +8,11 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      launcher_experiment:
+        description: Repack only the released x86_64 AppImage with the experimental launcher
+        type: boolean
+        default: false
   # release.yml's builds reuse dependency caches and sign updater bundles
   # (app/src-tauri/tauri.release.conf.json)
   workflow_call:
@@ -29,7 +34,12 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  launcher-experiment:
+    if: ${{ inputs.launcher_experiment }}
+    uses: $/.github/workflows/launcher-experiment.yml
+
   checks:
+    if: ${{ !inputs.launcher_experiment }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -97,6 +107,7 @@ jobs:
           "$RUNNER_TEMP/cargo-audit" audit
 
   macos:
+    if: ${{ !inputs.launcher_experiment }}
     runs-on: macos-15
     timeout-minutes: 120
     env:
@@ -146,6 +157,7 @@ jobs:
           if-no-files-found: error
 
   windows:
+    if: ${{ !inputs.launcher_experiment }}
     runs-on: windows-2025
     timeout-minutes: 180
     env:
@@ -229,6 +241,7 @@ jobs:
           if-no-files-found: error
 
   linux:
+    if: ${{ !inputs.launcher_experiment }}
     name: Linux (${{ matrix.arch }})
     strategy:
       fail-fast: false
@@ -315,11 +328,14 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ inputs.release && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ inputs.release && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
       - name: test WebKit packaging checks
-        run: python3 -I scripts/test_webkit_bundle.py
+        run: |
+          python3 -I scripts/test_webkit_bundle.py
+          python3 -I scripts/test_appimage_launcher.py
       - name: verify bundled WebKitGTK and JavaScriptCore
         run: |
           python3 -I app/scripts/check_webkit_bundle.py \
             app/src-tauri/target/release/bundle/appimage/Immage.AppDir 2.54.2 --max-glibc 2.35
+          python3 -I app/scripts/check_appimage_launcher.py app/src-tauri/target/release/bundle/appimage/Immage.AppDir
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: immage-linux-${{ matrix.arch }}

@@ -35,4 +35,21 @@ echo "== app"
 # (.github/workflows/build.yml): the updater's signature next to the AppImage
 rm -f app/src-tauri/target/release/bundle/appimage/*.AppImage*
 (cd app && npm run tauri build -- ${IMMAGE_TAURI_CONFIG:+--config "$IMMAGE_TAURI_CONFIG"})
-ls -l app/src-tauri/target/release/bundle/appimage/*.AppImage
+# Tauri has now deployed dependencies and generated the normal AppRun. Install
+# the selector, then regenerate the image BEFORE its final updater signature.
+bundle_dir="$root/app/src-tauri/target/release/bundle/appimage"
+# Reuse the exact output plugin downloaded by Tauri (no second tool download).
+plugin="${XDG_CACHE_HOME:-$HOME/.cache}/tauri/linuxdeploy-plugin-appimage.AppImage"
+[ -x "$plugin" ] || { echo "Missing Tauri AppImage output plugin: $plugin" >&2; exit 1; }
+for image in "$bundle_dir"/*.AppImage; do
+    rm -f "$image.sig"
+    sh app/scripts/repack_appimage.sh "$image" "$bundle_dir/Immage.AppDir" "$plugin" "$image"
+    if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}${TAURI_SIGNING_PRIVATE_KEY_PATH:-}" ]; then
+        version=$(node -p "require('./app/src-tauri/tauri.conf.json').version")
+        (cd app && npx tauri signer sign --app-version "$version" "$image")
+    elif [ -n "${IMMAGE_TAURI_CONFIG:-}" ]; then
+        echo 'Release AppImage requires signing credentials after launcher repack' >&2
+        exit 1
+    fi
+done
+ls -l "$bundle_dir"/*.AppImage
