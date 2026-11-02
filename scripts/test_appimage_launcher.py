@@ -32,6 +32,7 @@ class LauncherTests(unittest.TestCase):
         script = '''#!/bin/sh
 printf 'EXEC=%s SELECTED=%s GDK=%s LD=%s HELPERS=%s\\n' "$0" "$IMMAGE_WEBKIT_SELECTED" "${GDK_BACKEND:-}" "${LD_LIBRARY_PATH:-}" "${WEBKIT_EXEC_PATH:-}"
 printf 'ARG=<%s>\\n' "$@"
+printf 'GBM_DISABLE=<%s>\\n' "${WEBKIT_DMABUF_RENDERER_DISABLE_GBM-unset}"
 '''
         self.write(self.app / 'AppRun.bundled', script)
         self.write(self.app / 'usr/bin/immage-system', script)
@@ -95,6 +96,44 @@ printf 'libwebkit2gtk-4.1.so.0 => %s/libwebkit2gtk-4.1.so.0 (0x123)\\n' "$TEST_H
         self.assertIn('SELECTED=bundled', self.run_launcher(IMMAGE_WEBKIT='bundled').stdout)
         self.assertIn('SELECTED=system', self.run_launcher(IMMAGE_WEBKIT='system',
                                                          XDG_SESSION_TYPE='wayland').stdout)
+
+    def test_nvidia_x11_system_disables_gbm_by_default(self):
+        for mode in ('auto', 'system'):
+            with self.subTest(mode=mode):
+                result = self.run_launcher(IMMAGE_WEBKIT=mode)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn('GBM_DISABLE=<1>', result.stdout)
+                self.assertIn('GBM-disable=1', result.stderr)
+
+    def test_explicit_gbm_override_wins(self):
+        for value in ('0', '1', ''):
+            with self.subTest(value=value):
+                result = self.run_launcher(WEBKIT_DMABUF_RENDERER_DISABLE_GBM=value)
+                self.assertIn(f'GBM_DISABLE=<{value}>', result.stdout)
+
+    def test_wayland_leaves_gbm_untouched(self):
+        for mode in ('auto', 'system'):
+            with self.subTest(mode=mode):
+                result = self.run_launcher(IMMAGE_WEBKIT=mode, XDG_SESSION_TYPE='wayland')
+                self.assertIn('GBM_DISABLE=<unset>', result.stdout)
+        result = self.run_launcher(XDG_SESSION_TYPE='wayland', WEBKIT_DMABUF_RENDERER_DISABLE_GBM='0')
+        self.assertIn('GBM_DISABLE=<0>', result.stdout)
+
+    def test_bundled_and_fallback_leave_gbm_untouched(self):
+        for env in ({'IMMAGE_WEBKIT': 'bundled'}, {'TEST_BAD_LIBS': 'yes'},
+                    {'GDK_BACKEND': 'wayland,x11'}):
+            with self.subTest(env=env):
+                result = self.run_launcher(**env)
+                self.assertIn('SELECTED=bundled', result.stdout)
+                self.assertIn('GBM_DISABLE=<unset>', result.stdout)
+
+    def test_non_nvidia_system_leaves_gbm_untouched(self):
+        if Path('/proc/driver/nvidia/version').exists():
+            self.skipTest('real NVIDIA host overrides DRM fixture')
+        self.write(self.tools / 'readlink', '#!/bin/sh\nprintf /drivers/amdgpu\n')
+        result = self.run_launcher(IMMAGE_WEBKIT='system')
+        self.assertIn('SELECTED=system', result.stdout)
+        self.assertIn('GBM_DISABLE=<unset>', result.stdout)
 
     def test_bad_override(self):
         result = self.run_launcher(IMMAGE_WEBKIT='invalid')

@@ -824,6 +824,20 @@ typed-array calls; it does not prove rendering performance or runtime ABI behavi
 Auto falls back before app startup if checks fail; forced system stops with an
 error. An app failure after startup is never retried automatically.
 
+Once system preflight succeeds, X11 plus NVIDIA defaults
+`WEBKIT_DMABUF_RENDERER_DISABLE_GBM` to `1` only if the variable is unset.
+Explicit `0` enables GBM, explicit `1` disables it; all supplied values are
+preserved. The setting is applied before exec and inherited by WebKit helpers
+and relaunch. Wayland (including forced system mode), non-NVIDIA hosts, bundled
+mode and preflight fallback get no automatic GBM override. The system launch
+message records `GBM-disable`. This follows a manual Mint report: confirmed
+`WebKit=system backend=x11` still aborted with NVIDIA selected, while adding
+`WEBKIT_DMABUF_RENDERER_DISABLE_GBM=1` launched quickly. Ubuntu testing also
+succeeded. The updated automatic behavior and its relaunch still require manual
+verification; these observations do not establish a fix for every NVIDIA system.
+The launcher tests cover scoped defaults, explicit on/off overrides and no
+changes on Wayland, non-NVIDIA, ambiguous backend or fallback paths.
+
 `repack_appimage.sh` installs the selector and repacks with the AppImage output
 plugin, reusing the base image's runtime instead of downloading another.
 `build_appimage.sh` uses Tauri's cached output plugin and regenerates updater

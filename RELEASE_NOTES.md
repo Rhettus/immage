@@ -14,7 +14,9 @@ Improvements
 - Experimental Linux launcher tries compatible system WebKitGTK on NVIDIA/X11
   and keeps bundled WebKitGTK on Wayland and other GPUs. Command-line environment
   overrides allow comparing system and bundled runtimes; automatic mode falls
-  back to the bundle if system compatibility checks fail.
+  back to the bundle if system compatibility checks fail. The NVIDIA/X11 system
+  path disables GBM by default to avoid an observed EGL startup abort; explicit
+  environment switches can enable or disable GBM for comparison.
 
 ## 0.41.0
 

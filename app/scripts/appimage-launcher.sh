@@ -68,7 +68,14 @@ if [ "$selected" = system ]; then
             fi
         done
         if [ -n "$helperdir" ]; then
-            echo "Immage: WebKit=system backend=$backend NVIDIA=$nvidia library=$webkit" >&2
+            # Mint/X11/NVIDIA can abort creating a GBM EGL display even with
+            # system WebKit. Keep the confirmed fast path, with an explicit
+            # 0 (enable GBM) or 1 (disable GBM) taking precedence over our default.
+            if [ "$backend" = x11 ] && [ "$nvidia" = yes ] && \
+               [ "${WEBKIT_DMABUF_RENDERER_DISABLE_GBM+x}" != x ]; then
+                export WEBKIT_DMABUF_RENDERER_DISABLE_GBM=1
+            fi
+            echo "Immage: WebKit=system backend=$backend NVIDIA=$nvidia library=$webkit GBM-disable=${WEBKIT_DMABUF_RENDERER_DISABLE_GBM-unset}" >&2
             export IMMAGE_WEBKIT_SELECTED=system
             # Freeze a detected backend so GTK cannot silently choose another.
             case "$backend" in x11|wayland) export GDK_BACKEND=$backend;; esac

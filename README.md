@@ -15,10 +15,13 @@ falls back to the bundle if host checks fail. Compare explicitly with
 `IMMAGE_WEBKIT=system ./Immage.AppImage` or
 `IMMAGE_WEBKIT=bundled ./Immage.AppImage`. Forced system mode reports an error
 if incompatible. The experiment repacks the released x86_64 0.41.0 app without recompiling
-WebKit. Performance validation is pending; see the
-[Linux rendering guide](app/docs/preferences.md#performance).
+WebKit. Its NVIDIA/X11 system path disables GBM by default, following a fast
+manual Mint test with NVIDIA selected. Override with
+`WEBKIT_DMABUF_RENDERER_DISABLE_GBM=0` to enable GBM or `=1` to disable it.
+Ubuntu/Wayland also launched successfully; the updated automatic launcher still
+needs verification. See the [Linux rendering guide](app/docs/preferences.md#performance).
 
-**X11 desktops with NVIDIA:** If Immage fails to launch, use:
+**Published 0.41.0 or forced bundled mode on NVIDIA/X11:** If Immage fails to launch, use:
 
 ```bash
 GDK_BACKEND=x11 WEBKIT_DISABLE_DMABUF_RENDERER=1 ./Immage.AppImage
