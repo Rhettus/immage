@@ -13,6 +13,7 @@ mod immich_upload;
 mod listing;
 mod plugins;
 mod perf_trace;
+mod frame_output;
 mod resources;
 #[cfg(target_os = "linux")]
 mod scale;
@@ -64,6 +65,8 @@ struct AppState {
     resource_level: String,
     // whether the engine started with its edits on the GPU
     gpu_edits: bool,
+    // Drop after Engine so it cannot still be writing into this directory.
+    _frame_output: frame_output::FrameOutput,
 }
 
 impl AppState {
@@ -2612,15 +2615,16 @@ fn main() {
             let gpu_edits = engine::gpu_edits(&runtime);
             let engine = Engine::spawn(&bin, &runtime, &models_dir)
                 .map_err(|e| format!("cannot start {}: {e}", bin.display()))?;
+            let frame_output = frame_output::FrameOutput::new(&runtime);
             app.manage(AppState {
                 base_cancel: engine.base_cancel(),
                 tagged: engine.tagged(),
                 export_cancels: Mutex::new(HashMap::new()),
                 engine: perf_trace::TracedMutex::new(engine),
-                frame_path: runtime.join("frame.rgba"),
+                frame_path: frame_output.path("frame.rgba"),
                 denoise_path: runtime.join("denoise-preview.f32"),
                 presets_path: runtime.join("presets.json"),
-                preview_path: runtime.join("preview.rgba"),
+                preview_path: frame_output.path("preview.rgba"),
                 range_path: runtime.join("range.bin"),
                 looks_dir,
                 user_looks_dir: runtime.join("looks"),
@@ -2634,6 +2638,7 @@ fn main() {
                 runtime: runtime.clone(),
                 resource_level,
                 gpu_edits,
+                _frame_output: frame_output,
             });
             app.manage(plugins::Plugins::new(runtime.join("plugin-returns.json")));
             // stacks saved in Macro Studio while Immage was closed

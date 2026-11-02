@@ -172,6 +172,11 @@ performance; results still vary by system.
 - **Shared-memory frames** (Windows and Linux): hands each frame to the
   window in memory both share, rather than copying it. On by default; turn
   it off only to compare the two in the GUI benchmark.
+  Linux also uses private `/dev/shm` storage for intermediate engine frames,
+  including slider drags and settled previews, independently of this setting.
+  Resolution is unchanged. If that storage cannot be created at startup, the
+  app logs a warning and uses its usual runtime folder. Full storage causes a
+  render error; memory-backed pages may be swapped under memory pressure.
 - **Drag drafts at the screen's scale** (Linux Wayland): appears when the
   detected screen scale is below the webview's pixel ratio, such as 125% on
   a window drawn at 200%. On by default, it reduces drag-preview pixels to

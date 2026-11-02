@@ -5,6 +5,12 @@ what Immage's update banner shows under Release Notes.
 
 ## Unreleased
 
+Performance
+
+- Linux uses private memory-backed storage for engine drag and settled preview
+  frames when available, reducing temporary file output overhead without
+  changing image resolution.
+
 Improvements
 
 - GUI benchmark reports include shared-frame write, reply, WebKit read and

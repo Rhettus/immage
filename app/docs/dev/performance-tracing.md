@@ -266,6 +266,28 @@ write and close, without an explicit durability sync. These four stages nest
 inside `engineWriteMs`; do not add them again. Reused frames have no output
 breakdown (`outputMs: null`). No settled or draft dimensions change.
 
+### Engine intermediate frame storage
+
+`frame_output.rs` selects the engine output directory independently of persistent
+runtime data. On Linux, `mkdtemp` creates a unique mode-0700 directory under
+`/dev/shm`; both render `frame.rgba` and preview `preview.rgba` live there.
+This covers freshly rendered slider-drag frames and settled frames. It does not
+change engine resolution, RGBA conversion, request serialization or the later
+Rust-to-WebView shared-frame transport. Other platforms retain runtime files.
+The shared-memory preference controls that later transport only.
+
+Failure to create the directory logs a warning and retains the runtime paths.
+Once selected, output failures (including exhausted tmpfs space) retain the
+existing render error behavior rather than silently retrying on disk. tmpfs can
+swap under memory pressure. The owning AppState drops the output directory after
+the engine exits; abrupt process termination can leave a private directory until
+reboot or manual cleanup. Persistent configuration and caches remain unchanged.
+
+Non-GUI unit tests cover private permissions, instance isolation, byte roundtrip
+and cleanup ownership. Validate latency with native 100% and 125% benchmark runs
+using identical photo, viewport and settings; compare `outputMs.file` and total
+latency without adding nested timings twice. No speedup is assumed from VM runs.
+
 For a transportable x86_64 AppImage from this ARM64 development machine,
 dispatch `build.yml` with `diagnostic_x64=true` on the diagnostic branch. Checks
 and the Linux x64 build run; download `immage-linux-x64`. This is an unsigned
