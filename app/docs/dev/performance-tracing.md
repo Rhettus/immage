@@ -538,3 +538,56 @@ evidence table used to prioritize threading and copy-reduction changes.
 The capture wrapper leaves terminal SIGINT handling to xctrace while waiting
 for recording to finish, restores its handler afterward, and continues exports
 on a successful early stop. A nonzero profiler exit remains a reported failure.
+
+## Output ownership audit and next experiment
+
+The current output path has distinct lifetimes; a shared address is not enough
+to eliminate a copy safely:
+
+| Boundary | Representation and owner | Lifetime requirement |
+|---|---|---|
+| Gamma output | Byte BGRX, pixelpipe cache | Cache replacement and cleanup own allocation; alpha is not initialized by the ordinary gamma copy |
+| Screen back buffer | Separate BGRX allocation owned by the pipe | `pixelpipe_hb.c` copies the completed cache buffer while holding `backbuf_mutex`; cleanup frees this allocation |
+| Engine output | Opaque RGBA in an `rgba_output.h` mapping | `_write_rgba` swaps channels and supplies alpha 255; the mapping is reused by later serialized requests |
+| Rust response | Header and owned RGBA `Vec` | `render` reads the mapping before releasing the engine lock, protecting against the next render |
+| Retained frontend frame | Owned RGBA bytes | Frames can survive for Before, histogram and cache reuse; Windows copies and releases the WebView2 shared buffer |
+
+Screen pipes take the separate back-buffer copy; non-screen pipes can point
+`backbuf` at cache storage. Float image requests bypass byte gamma conversion
+and must retain their separate representation. Other BGR consumers include PPM
+output and the preview used by AI models. Mask/channel display uses separate
+gamma writers. Changing gamma globally to RGBA would require all of these
+contracts to change and would still leave transport ownership to solve.
+
+The next proposed prototype is an engine-only synchronous completion sink at
+the existing screen back-copy boundary. It would convert the completed BGRX
+cache buffer directly into the acquired RGBA mapping, before cache reporting
+or cleanup can reclaim the source. This targets the intermediate back-buffer
+copy, preserving gamma's existing clamp/rounding and OpenMP conversion. It is
+a design proposal, not implemented or a measured speedup.
+
+The sink must be opt-in for byte render requests with a transport destination.
+Legacy back-buffer behavior must remain for other callers, PPM requests and
+float processing. A successful sink must never publish an old back buffer as
+the newly completed frame. Failed rendering or sink allocation must publish no
+completed frame, clear request-scoped sink state and preserve subsequent
+requests. Cache-hit, CPU fallback, cancellation, resize and pipe teardown paths
+must obey the same ownership rules. Do not store a cache pointer in a mapping
+slot or make cache cleanup free externally owned memory.
+
+Before integration, exercise exact bytes against the current path for ordinary
+and mask/channel pixels, odd dimensions, changing sizes, repeated/cache-hit
+requests and output failures. Verify full, drag and base pipes independently;
+leave thumbnails, AI previews and float/export paths on their existing path.
+Record the sink's cost in pipeline timing as well as total request timing so
+moving a conversion earlier cannot masquerade as a speedup in `output_ms`.
+Native comparisons must use matching dimensions/settings and report completed
+frames, input latency, total pipeline/request time, CPU and memory. Retain the
+prototype only with repeatable benefit on supported platforms.
+
+Build validation currently covers Linux x86-64 and ARM64, macOS ARM64 and
+Windows x86-64. This matrix does not establish Intel macOS or Windows ARM64
+compatibility. Keep the proposed sink independent of architecture intrinsics
+and platform transport details; additional native coverage is still needed
+before claiming validation of those targets. GUI execution remains a separate
+operator-approved step from these headless checks.
