@@ -332,6 +332,20 @@ model success is not a complete Object load test.
 
 Run `python3 -I scripts/test_ai_diagnostics.py` for command-line fixtures that
 check wrapper argument preservation, AI logging, exit-status reporting, model
-metadata and archive creation. These fixtures never start a GUI. A local
-ARM64 engine probe loaded Object and produced a mask using ONNX Runtime 1.24.4;
-that does not reproduce or resolve the reported Ubuntu x86_64 loading failure.
+metadata and archive creation. These fixtures never start a GUI. The engine passes `--models` into core configuration as
+`plugins/ai/models_path` and enables AI **before** `dt_init`, after incoming core
+arguments. The global model registry and inference environment therefore inspect
+the same folder, even with a stale saved path or an already-enabled profile.
+Previously, Object loaded both ONNX files but checked the default darktable
+folder for their version, reporting a valid model as incompatible version 0.0.
+`_seg_ready` refreshes registry status alongside the inference environment before
+loading, so downloads after startup are recognized. Minimum model version
+validation remains enforced.
+
+Run `DT_ORT_LIBRARY=/path/to/libonnxruntime.so python3 scripts/test_ai_model_path.py`
+with a built AI engine and the cached model in
+`build/ai-models/mask-object-sam21-small`. This headless regression uses isolated
+profiles, copied configuration and read-only references to cached weights. It
+checks enabled/disabled startup settings, a persisted enabled profile, conflicting
+core model paths, paths with spaces, installation after startup, and rejection
+of an incompatible version. It uses no GUI or downloads.

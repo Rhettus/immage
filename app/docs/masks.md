@@ -159,6 +159,10 @@ applied only inside that mask. Global Contrast can still use AgX. Masked
 equalizer instances run separately; the slider-based overlap limits described
 above apply to color balance rgb Contrast.
 
+Object selections use the same model folder as the other AI tools. A model
+downloaded during the current session is available immediately; restarting the
+app is unnecessary. Existing valid models are reused.
+
 ## Reporting an AI model loading error on Linux
 
 If an AI tool repeatedly downloads its model and then says it cannot load it,

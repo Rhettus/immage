@@ -58,6 +58,7 @@
 #include "upright.h"
 #ifdef HAVE_AI
 #include "ai/backend.h"
+#include "common/ai_models.h"
 #include "common/ai/segmentation.h"
 #include "common/ai/restore.h"
 #include "common/ai/restore_common.h"
@@ -4320,6 +4321,7 @@ static gboolean _seg_ready(const _ai_job_t *job, char **err)
   {
     g_mutex_lock(&_ai_load_lock);
     dt_ai_env_refresh(_ai_env);
+    dt_ai_models_refresh_status();
     _seg = dt_seg_load(_ai_env, _SEG_MODEL);
     g_mutex_unlock(&_ai_load_lock);
   }
@@ -9670,6 +9672,21 @@ int main(int argc, char **argv)
   }
   for(i++; i < argc; i++) g_ptr_array_add(m, argv[i]);
 
+#ifdef HAVE_AI
+  // The registry checks installed model versions during dt_init. It must
+  // inspect the same directory as the inference environment, including on
+  // profiles that already have AI enabled or a different saved model path.
+  g_autofree char *models_conf = NULL;
+  if(_models_dir)
+  {
+    models_conf = g_strdup_printf("plugins/ai/models_path=%s", _models_dir);
+    g_ptr_array_add(m, (gpointer)"--conf");
+    g_ptr_array_add(m, models_conf);
+    g_ptr_array_add(m, (gpointer)"--conf");
+    g_ptr_array_add(m, (gpointer)"plugins/ai/enabled=true");
+  }
+#endif
+
   if(dt_init(m->len, (char **)m->pdata, FALSE, TRUE, NULL))
   {
     fprintf(stderr, "darktable-engine: dt_init failed\n");
@@ -9685,7 +9702,6 @@ int main(int argc, char **argv)
   // (_write_sidecar)
   dt_conf_set_string("write_sidecar_files", "never");
 #ifdef HAVE_AI
-  if(_models_dir) dt_conf_set_bool("plugins/ai/enabled", TRUE);
 #ifdef __linux__
   // darktable's "auto" tries CUDA, MIGraphX and OpenVINO in turn for each
   // model (backend_common.c, _auto_candidates), with the same check as

@@ -21,6 +21,8 @@ Improvements
 
 Bug fixes
 
+- Select Object correctly recognizes installed AI models, including downloads
+  made during the current session, fixing loading errors and repeated downloads.
 - Linux AppImages use compatible system WebKitGTK with GBM disabled on
   NVIDIA/X11, fixing the startup failure and slow rendering seen on Mint.
   Wayland and other GPUs keep bundled WebKitGTK 2.54.2. Automatic selection
