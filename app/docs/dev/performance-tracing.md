@@ -384,11 +384,15 @@ BGRA-to-RGBA conversion writes directly into the mapped payload. There is no
 per-frame intermediate RGBA allocation, `fwrite` or copy into the mapping.
 Regular-file Windows CLI output retains the existing allocation/write path.
 
-POSIX output descriptors and mappings stay open. `ftruncate` runs only when the
-visible payload size changes, including shrink/regrow within retained capacity;
-reads see the exact current length. Linux files stay headerless, while macOS
-objects retain their eight-byte length header. MAP_SHARED visibility plus the
-JSON completion reply publishes the pixels without a disk flush. Slots close
+POSIX output descriptors and mappings stay open. Linux files stay headerless;
+`ftruncate` updates their visible length when payload size changes. macOS objects
+retain capacity and publish the current payload length in their eight-byte header.
+Darwin permits only one sizing operation per object: growing an allocated object
+unlinks and recreates its private name with mode 0600 before mapping it. Smaller
+outputs reuse capacity without truncating. The transient thumbnail/overlay/denoise/
+JPEG writer follows the same rule. Readers open the current name after completion;
+the app remains responsible for unlinking it, including after a failed write.
+MAP_SHARED visibility plus the JSON completion reply publishes the pixels without a disk flush. Slots close
 with the engine process before the app's storage owner removes their names.
 
 Windows retains each mapping/view and consumption event. Acquisition requires a
@@ -407,6 +411,8 @@ operations and later WebView copies is separate work, not a measured benefit her
 
 `verify/check-transient-output.py` exercises reuse, shrink/regrow, two-span writes,
 capacity/creation errors and exact RGBA bytes (including odd dimensions and alpha).
+The POSIX transport test rejects any second truncate of an allocated object to
+emulate Darwin on Linux, and reopens names after growth as the app does.
 The standalone transport test also passes address/undefined sanitizers; leak
 sanitizer is unavailable under this VM's tracing environment. Native before/after
 measurements remain required; do not extrapolate the earlier tmpfs speedup.

@@ -30,6 +30,8 @@ Improvements
 
 Bug fixes
 
+- Fix macOS intermediate-buffer writes when previews or thumbnails change size,
+  respecting the platform’s shared-memory sizing restrictions.
 - Release instructions describe automatic NVIDIA/X11 startup handling and
   the remaining Wayland fractional-scaling overhead without requiring the
   older Mint launch workaround.

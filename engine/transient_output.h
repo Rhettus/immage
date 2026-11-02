@@ -19,6 +19,30 @@ static GMutex _transient_lock;
 #include <fcntl.h>
 #endif
 
+#if defined(__APPLE__) || defined(IMMAGE_TEST_POSIX_OUTPUT)
+// Darwin permits only one ftruncate per POSIX shm object. The app owns these
+// private names and serializes each writer through consumption. Retain capacity
+// for smaller payloads; replace the named object only when it must grow. Readers
+// open the name after the completion reply, and the app still unlinks it on exit.
+static int transient_shared_open(const char *name, size_t length)
+{
+  int fd = shm_open(name, O_RDWR, 0);
+  if(fd < 0) return -1;
+  struct stat st;
+  if(fstat(fd, &st)) { close(fd); return -1; }
+  if(st.st_size >= 0 && (uint64_t)st.st_size >= length) return fd;
+  if(st.st_size != 0)
+  {
+    close(fd);
+    if(shm_unlink(name)) return -1;
+    fd = shm_open(name, O_RDWR | O_CREAT | O_EXCL, 0600);
+    if(fd < 0) return -1;
+  }
+  if(ftruncate(fd, (off_t)length)) { close(fd); return -1; }
+  return fd;
+}
+#endif
+
 static gboolean transient_write(const char *path, const void *first, size_t a,
                                  const void *second, size_t b)
 {
@@ -74,9 +98,8 @@ static gboolean transient_write(const char *path, const void *first, size_t a,
 #elif defined(__APPLE__) || defined(IMMAGE_TEST_POSIX_OUTPUT)
   // The app creates and owns this mode-0600 object. Do not create arbitrary
   // objects here; failed/abandoned output remains owned by the app's lifetime.
-  int fd = shm_open(name, O_RDWR, 0);
+  int fd = transient_shared_open(name, length);
   if(fd < 0) return FALSE;
-  if(ftruncate(fd, (off_t)length)) { close(fd); return FALSE; }
   view = mmap(NULL, length, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
   close(fd);
   if(view == MAP_FAILED) return FALSE;

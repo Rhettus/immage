@@ -177,6 +177,8 @@ performance; results still vary by system.
   setting. Resolution is unchanged. Linux uses private `/dev/shm` files and
   falls back to its runtime folder if the directory cannot be created at startup.
   Windows uses pagefile-backed mappings; macOS uses private shared-memory objects.
+  macOS buffers retain capacity for smaller previews and are replaced when they
+  grow, allowing repeated rendering and thumbnail generation without resize errors.
   Buffer creation or capacity failures cause render errors. Memory-backed pages
   can be paged out under memory pressure.
   Drag and settled frames reuse engine output mappings and convert pixels

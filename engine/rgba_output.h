@@ -79,9 +79,14 @@ static uint8_t *rgba_output_acquire(const char *path, size_t bytes)
     }
     slot->mapping = mapping; slot->done = done; slot->view = view;
 #else
-    int fd = shared ? shm_open(path + 4, O_RDWR, 0) : g_open(path, O_RDWR | O_CREAT | O_CLOEXEC, 0600);
+    int fd;
+#if defined(__APPLE__) || defined(IMMAGE_TEST_POSIX_OUTPUT)
+    if(shared) fd = transient_shared_open(path + 4, length);
+    else
+#endif
+      fd = shared ? -1 : g_open(path, O_RDWR | O_CREAT | O_CLOEXEC, 0600);
     if(fd < 0) return NULL;
-    if(ftruncate(fd, (off_t)length)) { close(fd); return NULL; }
+    if(!shared && ftruncate(fd, (off_t)length)) { close(fd); return NULL; }
     void *view = mmap(NULL, length, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if(view == MAP_FAILED) { close(fd); return NULL; }
     slot->fd = fd; slot->view = view;
@@ -91,8 +96,8 @@ static uint8_t *rgba_output_acquire(const char *path, size_t bytes)
 #ifdef _WIN32
   if(!ResetEvent(slot->done)) return NULL;
 #else
-  // Keep the file/object's visible length exact while retaining the mapping.
-  if(slot->length != length && ftruncate(slot->fd, (off_t)length)) return NULL;
+  // Files expose exact length; shared objects publish payload size in header.
+  if(!shared && slot->length != length && ftruncate(slot->fd, (off_t)length)) return NULL;
 #endif
   slot->length = length;
   if(shared)
