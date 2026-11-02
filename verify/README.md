@@ -217,3 +217,16 @@ Fixtures cover standard EXIF and DNG body serial tags, leading zeros,
 missing/placeholder serials and lens-only metadata through import and meta
 replies. Filter checks cover identical models with swapped lenses, multiple
 bodies, unknown bodies, combined filters, facet counts and active filter counts.
+
+## Portrait Transform corpus
+
+`python3 verify/transform-sampling.py --write-corpus benchmarking/corpus`
+runs the real engine without a GUI and adds reproducible synthetic TIFFs to
+the ignored local corpus: landscape, native portrait, clockwise and
+counterclockwise EXIF portraits, and mirrored portrait. Existing corpus files
+are never replaced with different content. Tests edit temporary copies only.
+All fixtures exceed Upright's 1600-pixel sampling limit so downscaling is covered.
+The check fits Auto, Level, Vertical and Full before cropping, after cropping
+and after restoring the frame, with intervening renders and applied corrections.
+These fixtures supplement real camera portrait RAWs; they do not establish RAW,
+GPU or visible-app coverage. Run without `--write-corpus` for temporary fixtures.

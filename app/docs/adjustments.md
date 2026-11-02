@@ -275,6 +275,9 @@ darktable's line detection and fit from its rotate and perspective module:
 - **Off**: removes the Upright correction.
 
 Auto, Level, Vertical and Full set the Manual sliders back to 0.
+These modes also work on cropped photos and portraits, including photos turned
+upright by the camera's orientation metadata. Detection uses the available
+photo region; a photo without enough straight lines may still need Guided.
 
 **Manual** adjusts on top of Upright:
 

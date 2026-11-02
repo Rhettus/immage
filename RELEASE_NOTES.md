@@ -31,6 +31,8 @@ Improvements
 
 Bug fixes
 
+- Transform's automatic corrections work on cropped portrait and rotated
+  images instead of reporting that the working-space image is not at hand.
 - Fix macOS intermediate-buffer writes when previews or thumbnails change size,
   respecting the platform’s shared-memory sizing restrictions.
 - Release instructions describe automatic NVIDIA/X11 startup handling and

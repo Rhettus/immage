@@ -336,3 +336,14 @@ per surface/task, rejecting superseded results. Worker failure or a ten-second
 response timeout enables synchronous fallback, reported by `workerFallback`
 and `main.<task>.compute`. Worker compute times are separate from the existing
 synchronous frame stages; do not add overlapping timings together.
+
+### Synthetic portrait coverage
+
+Run `python3 verify/transform-sampling.py --write-corpus benchmarking/corpus`
+from the repository root to add reproducible landscape and portrait TIFFs
+(native portrait, EXIF rotations in both directions, and mirrored portrait).
+The command also runs headless CPU Upright checks on isolated copies, including
+cropped and restored frames. Corpus files remain ignored; the tracked generator
+makes the fixtures reproducible. Use these alongside camera portrait RAWs,
+which are still needed for sensor orientation and GPU validation. The default
+release check selects RAWs; run this focused check separately for these TIFFs.

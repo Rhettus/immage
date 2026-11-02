@@ -72,6 +72,7 @@ do not prove compatibility or installation behavior.
 | Every module | Global and mask scope, each backend option, effect/reset/undo, keep existing edits, reopen sidecar | Preference options only; output cases pending |
 | Curves/wheels/graphs | Drag points, boundaries, channels, reset, photo effect, graph hit targets | Pending |
 | Crop/transform | Free/locked/portrait, corners/edges, aspect options, rotation/flip, guides, cancel/apply, undo | Pending |
+| Portrait automatic Transform | Crop a native/EXIF portrait, click Auto, Level, Vertical and Full; verify a rendered correction without a working-space error, then restore the crop and repeat | GUI case pending; headless CPU sampling covered by `verify/transform-sampling.py` |
 | Masks/heal/negative/zones | Creation and deletion, every shape/option, local module controls, outside-region invariance, reset/undo | Rail opening only; editing pending |
 | Preferences | Every safe local setting, persistence, theme/canvas/font/preview, disabled hardware states | Module tab only; external apps/services/relaunch excluded |
 | Library/filter/history/presets | Every menu and option with disposable folder/metadata fixtures | Pending |

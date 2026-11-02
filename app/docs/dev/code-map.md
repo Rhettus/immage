@@ -108,3 +108,22 @@ results and the Open generated photos preference, including results outside
 an active Immich search.
 
 Native detail previews: [detailPreview.ts](../../src/detailPreview.ts) identifies controls eligible for the loupe. `Session.draftView` selects native whole-image drafts or the detail crop; release requests the exact full view. Adaptive cached preview interpolation was removed after latency and visual quality regressed.
+
+### Transform sampling regression
+
+`_upright` in `engine/main.c` reads `_STAGE_ASHIFT` through `_working_at`,
+before geometry. Rendering the current crop can request an input region with
+nonzero x/y, including on EXIF-oriented portraits. Upright forces that region's
+producer and later cache entries to rerender, accepts its offset, and passes
+x/y/scale to `upright_detect` so detected lines remain in sensor coordinates.
+Other working-space consumers retain their origin-zero check. Do not relax
+that check for mask sampling: a stale zoom region would clamp mask samples.
+
+Run `python3 verify/transform-sampling.py` after building the engine. This
+headless CPU check generates landscape, native portrait, both EXIF quarter
+turns and mirrored portrait TIFFs above the 1600-pixel detection limit. It
+renders at a different scale, checks all four automatic modes before/after a
+crop and after restoring the frame, and applies each result before the next
+fit. `--write-corpus benchmarking/corpus` retains the synthetic photos in the
+ignored local corpus. This verifies engine sampling, not visible controls,
+OpenCL or camera RAW decoding; retain real portrait RAWs for those checks.

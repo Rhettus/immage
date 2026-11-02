@@ -7109,7 +7109,14 @@ static gboolean _working_at(_working_t *w, const _stage_t stage, char **err)
   // as a zoomed mask_map's: the second pass makes them run
   for(int pass = 0; pass < 2 && !data; pass++)
   {
-    if(pass) dt_dev_pixelpipe_cache_invalidate_later(&_s.ppipe, piece->module->iop_order, "working ");
+    // upright reads before geometry: crop, orientation and perspective can
+    // request an offset input region. force its producer to run so that a
+    // previous render's region cannot be mistaken for this sample's
+    if(pass || stage == _STAGE_ASHIFT)
+    {
+      if(!piece) piece = _stage_piece(stage, anchor, placement, ashift, negadoctor, NULL);
+      if(piece) dt_dev_pixelpipe_cache_invalidate_later(&_s.ppipe, piece->module->iop_order, "working ");
+    }
     _s.ppipe.changed = DT_DEV_PIPE_UNCHANGED;
     if(reader) _s.dev.history_last_module = reader;
     const int failed = dt_dev_pixelpipe_process(&_s.ppipe, &_s.dev, 0, 0, MAX(1, floor(scale * pw)),
@@ -7130,7 +7137,10 @@ static gboolean _working_at(_working_t *w, const _stage_t stage, char **err)
     // only the whole image at this render's scale: another region's output
     // can still be in the cache, and points outside it are clamped to its
     // edges (the range map's stripes)
-    const gboolean whole = roi.x == 0 && roi.y == 0 && fabs(roi.scale - scale) < 1e-6 * scale;
+    // upright_detect uses the region's origin when locating its lines;
+    // mask sampling still needs an image starting at the origin
+    const gboolean whole = (stage == _STAGE_ASHIFT || (roi.x == 0 && roi.y == 0))
+                           && fabs(roi.scale - scale) < 1e-6 * scale;
     const size_t size = (size_t)roi.width * roi.height * 4 * sizeof(float);
     const dt_hash_t hash = dt_dev_pixelpipe_cache_hash(&roi, &_s.ppipe, piece->module->position);
     data = NULL;
