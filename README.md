@@ -7,9 +7,17 @@
 🟢 **Windows:** Fully functional alpha build. Bugs are still expected.
 
 🟡 **Linux:** Fully functional alpha build, but performance may vary. We’re
-investigating issues involving NVIDIA drivers and `GDK_BACKEND` settings.
-If running NVIDIA, try switching to **MESA** in **Preferences → Performance**
-to see if it helps. A restart is required.
+investigating NVIDIA rendering issues.
+
+**X11 desktops with NVIDIA:** If Immage fails to launch, use:
+
+```bash
+GDK_BACKEND=x11 WEBKIT_DISABLE_DMABUF_RENDERER=1 ./Immage.AppImage
+```
+
+Replace `Immage.AppImage` with your downloaded filename. Then select **MESA**
+in **Preferences → Performance** and restart Immage. After selecting MESA,
+you can launch normally without the environment variables.
 
 ## What is it
 

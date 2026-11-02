@@ -717,7 +717,9 @@ for Tauri to bundle. Both architectures use GCC 14 from the Ubuntu toolchain
 PPA; GCC 12 rejects ANGLE's assertion in a discarded template branch. A C++23 compiler probe runs
 before source download to catch this immediately. The compiler name is included
 in the staged installation cache key. Non-release CI caches the staged
-installation by Ubuntu baseline, architecture and script/patch hashes; release jobs rebuild it without that cache.
+installation by Ubuntu baseline, architecture and script/patch hashes. Release
+jobs can reuse these caches when dispatched on the branch that owns them; see
+[Releasing](releasing.md).
 WebKit compilation uses two jobs and the Linux job allows six hours.
 
 After packaging, `app/scripts/check_webkit_bundle.py` requires both bundled
@@ -731,8 +733,17 @@ compatibility test; launch the resulting AppImage on Mint and benchmark it.
 Packaging regressions run with `python3 -I scripts/test_webkit_bundle.py`,
 including missing helpers/libraries, mismatched JavaScriptCore and newer glibc
 imports. GUI reports obtain the runtime version through `tauri::webview_version()`.
-The upgrade does not establish that NVIDIA stalls are fixed. Automatic still
-uses system EGL selection, with explicit renderer preferences available.
+Reported testing shows improved NVIDIA performance on Ubuntu/Wayland and a
+rendering performance regression on Mint/X11 that is resolved by selecting Mesa
+and restarting. For initial launch on the affected X11 system, use
+`GDK_BACKEND=x11 WEBKIT_DISABLE_DMABUF_RENDERER=1 ./Immage.AppImage`, then
+select Mesa in Preferences > Performance. Manual testing on the affected
+Mint/X11 system confirmed that subsequent normal launches need neither variable
+once Mesa is saved. These are system-specific observations, not proof of a
+general NVIDIA fix or of WebKitGTK as the sole cause. Automatic still uses system EGL
+selection, with explicit renderer preferences available. Verify both display
+backends with matching hardware, photos and settings before changing defaults
+or providing different WebKitGTK packages.
 
 Fractional-scale drag compensation (`scale.rs`, `pixelRatio.ts`, `draftK` in
 `App.tsx`) remains active: at 125% on a GTK 2x surface, reduced drafts use a

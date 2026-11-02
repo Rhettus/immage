@@ -89,8 +89,13 @@ Updates), and offers to install it.
   system. Preferences > Performance > Window renderer offers Automatic
   (the system default), Mesa and NVIDIA. Relaunch after changing it and
   compare GUI benchmarks. Photo processing uses its own GPU setting.
-  Linux AppImages bundle WebKitGTK 2.54.2; NVIDIA performance should be
-  checked again after upgrading.
+  Linux AppImages bundle WebKitGTK 2.54.2. On X11 with NVIDIA, including
+  Linux Mint, launch or rendering issues have been reported. For initial
+  launch, use `GDK_BACKEND=x11 WEBKIT_DISABLE_DMABUF_RENDERER=1 ./Immage.AppImage`
+  (replace the filename), then select Mesa in Preferences > Performance and
+  restart. After selecting Mesa, launch normally without these variables.
+  Ubuntu/Wayland testing showed improved NVIDIA performance, but results
+  still vary by system.
 - **Linux on Wayland with fractional scaling** (125%, 150%, ...): the
   web view Immage is built on draws such a window at 200% and the desktop
   shrinks it. Immage renders the photo for the screen's own scale while a

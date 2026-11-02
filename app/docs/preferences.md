@@ -59,6 +59,19 @@ renderer behavior after upgrading. On Wayland, **Drag drafts at the screen’s
 scale** still sizes reduced drag previews for the compositor’s actual fractional
 scale (for example, 125%), while release frames keep full quality.
 
+On X11 desktops with NVIDIA, including Linux Mint, launch or rendering issues
+have been reported with the bundled WebKitGTK. If Immage fails to launch, run:
+
+```bash
+GDK_BACKEND=x11 WEBKIT_DISABLE_DMABUF_RENDERER=1 ./Immage.AppImage
+```
+
+Replace the filename with your downloaded AppImage. Select **Mesa** under
+**Preferences → Performance** and restart Immage. Once Mesa is selected,
+normal launches no longer require these environment variables, as confirmed
+on the reported Mint/X11 system. Ubuntu/Wayland testing showed improved NVIDIA
+performance; results still vary by system.
+
 - **Window renderer**: **Automatic** uses the system default renderer, including on NVIDIA;
   **Mesa** selects Mesa's EGL explicitly, and **NVIDIA** selects NVIDIA's.
   Only installed drivers can be selected. On NVIDIA, Mesa normally draws
