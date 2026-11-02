@@ -59,9 +59,11 @@ renderer behavior after upgrading. On Wayland, **Drag drafts at the screen’s
 scale** still sizes reduced drag previews for the compositor’s actual fractional
 scale (for example, 125%), while release frames keep full quality.
 
-The experimental launcher chooses the system WebKitGTK 4.1 stack when it detects
-X11 and a loaded NVIDIA driver. Wayland, other GPUs and uncertain backend
-selections keep the packaged stack. The host must provide compatible WebKitGTK,
+The experimental launcher chooses the WebKitGTK installed by your distribution
+when it detects X11 and a loaded NVIDIA driver. Wayland, other GPUs and uncertain
+backend selections use WebKitGTK 2.54.2 included in the AppImage. The system
+version depends on your installed packages; the launcher does not require or
+select a particular older release such as 2.52. The host must provide compatible WebKitGTK,
 JavaScriptCore, GTK dependencies and matching helper processes; automatic mode
 falls back to the bundle if its startup checks fail. On the NVIDIA/X11 system
 path, the launcher also disables WebKit's GBM rendering path by default. Manual
@@ -74,7 +76,7 @@ still reports that version. It does not include later editor changes.
 Replace `Immage.AppImage` below with your downloaded filename. Close Immage
 between comparisons and keep the same photo and window-renderer preference.
 
-**Mint / X11 / NVIDIA:** normal launch selects system WebKit and disables GBM
+**Mint / X11 / NVIDIA:** normal launch selects your installed WebKitGTK and disables GBM
 when the host stack passes compatibility checks:
 
 ```bash
@@ -87,7 +89,7 @@ To force the combination confirmed to launch quickly on the affected Mint system
 IMMAGE_WEBKIT=system GDK_BACKEND=x11 WEBKIT_DMABUF_RENDERER_DISABLE_GBM=1 ./Immage.AppImage
 ```
 
-**Ubuntu / Wayland:** normal launch keeps bundled WebKit. To force that path:
+**Ubuntu / Wayland:** normal launch uses bundled WebKitGTK 2.54.2. To force that path:
 
 ```bash
 IMMAGE_WEBKIT=bundled GDK_BACKEND=wayland ./Immage.AppImage

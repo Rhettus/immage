@@ -313,7 +313,9 @@ Windows and Ubuntu on Linux (`app/scripts/bundle_engine.py`,
 ### Linux launch options (experimental)
 
 Replace `Immage.AppImage` with your downloaded filename. Normal launch detects
-Mint/X11 with NVIDIA or Ubuntu/Wayland automatically:
+Mint/X11 with NVIDIA or Ubuntu/Wayland automatically. NVIDIA/X11 uses your
+system-installed WebKitGTK when compatible; Wayland uses WebKitGTK 2.54.2
+included in the AppImage:
 
 ```sh
 ./Immage.AppImage
@@ -322,10 +324,10 @@ Mint/X11 with NVIDIA or Ubuntu/Wayland automatically:
 To select either path explicitly:
 
 ```sh
-# Mint / X11 / NVIDIA: system WebKit, GBM off
+# Mint / X11 / NVIDIA: your installed WebKitGTK, GBM off
 IMMAGE_WEBKIT=system GDK_BACKEND=x11 WEBKIT_DMABUF_RENDERER_DISABLE_GBM=1 ./Immage.AppImage
 
-# Ubuntu / Wayland: bundled WebKit
+# Ubuntu / Wayland: bundled WebKitGTK 2.54.2
 IMMAGE_WEBKIT=bundled GDK_BACKEND=wayland ./Immage.AppImage
 ```
 

@@ -743,6 +743,15 @@ filters and facet counts. Run `npm run build` in `app` for frontend validation.
 
 ### Linux WebKitGTK packaging
 
+WebKitGTK release versions (for example, 2.52 or the pinned 2.54.2) are separate
+from the API/ABI package name `webkit2gtk-4.1`. Here `4.1` identifies the GTK 3 /
+libsoup 3 API used by both runtime modes, not an older engine release. See the
+[WebKitGTK API documentation](https://webkitgtk.org/reference/webkit2gtk/2.42.1/).
+The bundled mode pins 2.54.2; system mode uses the installed distribution version
+if compatibility checks pass. Do not document Mint's version as 2.52 without
+runtime/package evidence. User-facing instructions should say "system-installed
+WebKitGTK" or "bundled WebKitGTK 2.54.2" instead of "WebKitGTK 4.1".
+
 The normal Linux jobs in `.github/workflows/build.yml` build x86-64 and ARM64
 AppImages on Ubuntu 22.04 (glibc 2.35), retaining compatibility with Linux Mint
 22.x. The image libraries from `build_linux_deps.sh` are installed first so
