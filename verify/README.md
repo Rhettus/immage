@@ -17,6 +17,18 @@ The report goes to `verify/results/<date>_<sha>/report.md`, with every
 measurement in `report.json`. Both, and `verify/references/`, are your
 machine's own and stay out of git.
 
+The focused batch-paste regression check drives production Session and settings
+code through the real engine, with isolated photos and sidecars:
+
+```bash
+node --test --test-isolation=none verify/batch-paste.test.mjs
+```
+
+It checks exact selection, untouched groups, look/strength, native history
+undo/redo, virtual copies, mask/crop preservation, restart persistence, stale
+undo and sidecar failure recovery. The separate visible-app `batch-paste` case
+is registered in `verify/gui/`; it requires an approved GUI run.
+
 The focused panorama and negative-export regression checks run with the built engine:
 
 ```bash

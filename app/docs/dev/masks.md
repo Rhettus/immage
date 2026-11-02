@@ -308,3 +308,44 @@ Opened in darktable, a photo with a mask "Sky" shows:
 Changes made there are kept by Immage, which finds a mask's instances by
 name. An instance renamed in darktable is no longer one Immage recognizes as
 the mask's, but it stays in the history and keeps rendering.
+
+## Linux AppImage AI loading diagnostics
+
+`app/scripts/diagnose_ai_appimage.sh` temporarily overrides `DT_ENGINE_BIN` with
+a report-local shell wrapper. It resolves the packaged engine through `APPDIR`,
+preserves its stdin/stdout protocol and arguments, adds `-d ai` after the core
+arguments, and redirects native stderr into `engine-ai.log`. Native performance
+lines also go there rather than through the app's performance parser for this
+one diagnostic run. No application rebuild is needed, including for the
+0.41.0-based launcher test image. The script collects launcher output, platform
+and AppImage identity, and before/after Object model sizes/checksums/config,
+then creates a tar.gz after the app exits. It does not gather arbitrary app
+configuration or photos. Avoid Relaunch: a restarted process can outlive the
+collector's original app process and continue writing after archiving.
+
+The ordinary engine log only enables `-d perf`, so generic `cannot load` errors
+can omit the ONNX session or segmentation failure. `withModel` reinstalls once
+per request after that error; repeated downloads do not prove repeated network
+failures. Check the native diagnostics before deleting models or changing the
+runtime. Object requires `encoder.onnx` and `decoder.onnx`; Subject's independent
+model success is not a complete Object load test.
+
+Run `python3 -I scripts/test_ai_diagnostics.py` for command-line fixtures that
+check wrapper argument preservation, AI logging, exit-status reporting, model
+metadata and archive creation. These fixtures never start a GUI. The engine passes `--models` into core configuration as
+`plugins/ai/models_path` and enables AI **before** `dt_init`, after incoming core
+arguments. The global model registry and inference environment therefore inspect
+the same folder, even with a stale saved path or an already-enabled profile.
+Previously, Object loaded both ONNX files but checked the default darktable
+folder for their version, reporting a valid model as incompatible version 0.0.
+`_seg_ready` refreshes registry status alongside the inference environment before
+loading, so downloads after startup are recognized. Minimum model version
+validation remains enforced.
+
+Run `DT_ORT_LIBRARY=/path/to/libonnxruntime.so python3 scripts/test_ai_model_path.py`
+with a built AI engine and the cached model in
+`build/ai-models/mask-object-sam21-small`. This headless regression uses isolated
+profiles, copied configuration and read-only references to cached weights. It
+checks enabled/disabled startup settings, a persisted enabled profile, conflicting
+core model paths, paths with spaces, installation after startup, and rejection
+of an incompatible version. It uses no GUI or downloads.

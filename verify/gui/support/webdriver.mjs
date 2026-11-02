@@ -61,6 +61,20 @@ export class AppDriver {
     }
     await this.command('POST', '/actions', { actions: [{ type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' }, actions }] });
   }
+  async modifiedPoint(modifier, x, y) {
+    if (!['\uE008', '\uE009', '\uE03D'].includes(modifier)) throw Error('Unsupported pointer modifier');
+    await this.guard();
+    this.log({ action: 'modified-click', modifier, x, y });
+    try {
+      await this.command('POST', '/actions', { actions: [
+        { type: 'key', id: 'keyboard', actions: [{ type: 'keyDown', value: modifier },
+          { type: 'pause', duration: 200 }, { type: 'pause', duration: 0 }, { type: 'keyUp', value: modifier }] },
+        { type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' }, actions: [
+          { type: 'pointerMove', duration: 120, origin: 'viewport', x: Math.round(x), y: Math.round(y) },
+          { type: 'pointerDown', button: 0 }, { type: 'pointerUp', button: 0 }] },
+      ] });
+    } finally { await this.command('DELETE', '/actions'); }
+  }
   async drag(from, to) {
     await this.guard();
     this.log({ action: 'drag', from, to });

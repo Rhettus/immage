@@ -64,9 +64,10 @@ The buttons at the bottom of the right panel:
 
 - **Copy…** (⇧⌘C) opens **Copy Settings**: tick what to copy, then copy
   it.
-- **Paste** (⇧⌘V) pastes those settings onto the open photo. To give
-  several photos the same settings, open each and paste; ← and → step
-  through them.
+- **Paste** (⇧⌘V) pastes those settings onto the selected photos in the
+  grid or filmstrip. A single selection is also the target, even if another
+  photo is open. Without a selection, Paste uses the open photo. The open
+  photo and selection stay in place.
 - **Previous** (⌥⌘V) pastes the previous photo's settings, the parts ticked
   in Copy Settings.
 
@@ -77,4 +78,26 @@ Corrections**, **Transform**, **Post-Crop Vignetting**, **Grain**,
 **Crop**, **Look** and **Masks**. **Crop** and **Masks**
 start unticked. Your choice is remembered.
 
-Each paste is one step: ⌘Z undoes it.
+Only the groups ticked in Copy Settings change; other edits stay as they
+were. **Look**, ticked by default, includes the film style's own module
+settings and **Look amount**. It reapplies the saved style definition, rather
+than copying manual changes to its individual History instances. The style
+file must remain available. **Masks**, when ticked, replaces the target's
+masks; **Crop** and **Negative** also need to be explicitly ticked.
+
+Virtual copies are independent targets. Paste does not automatically include
+an unselected RAW/JPEG partner. Remote results that have not been opened into
+the local library are skipped and counted in the status message.
+
+Each paste is one step: ⌘Z undoes it, and ⇧⌘Z redoes it. A batch step restores
+all of its targets, including their native look and mask settings. Undo is
+part of the current photo's editing history; switching photos or compressing
+history clears it, as with other editing steps. Previous remains a single-photo
+action. Paste requires an open photo and is unavailable while cropping.
+
+A progress overlay prevents editing or navigation during a batch. Immage saves
+each target's XMP sidecar and refreshes its thumbnail. If a target fails, the
+batch attempts to restore all targets. If recovery cannot write a sidecar,
+the status reports it and Undo can retry recovery once the problem is fixed.
+Undo/redo refuses a batch if a target's saved edit has since changed outside
+that step; it does not overwrite the newer edit.

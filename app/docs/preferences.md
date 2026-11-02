@@ -59,8 +59,72 @@ renderer behavior after upgrading. On Wayland, **Drag drafts at the screen’s
 scale** still sizes reduced drag previews for the compositor’s actual fractional
 scale (for example, 125%), while release frames keep full quality.
 
-On X11 desktops with NVIDIA, including Linux Mint, launch or rendering issues
-have been reported with the bundled WebKitGTK. If Immage fails to launch, run:
+Starting with 0.41.1, the launcher chooses the WebKitGTK installed by your distribution
+when it detects X11 and a loaded NVIDIA driver. Wayland, other GPUs and uncertain
+backend selections use WebKitGTK 2.54.2 included in the AppImage. The system
+version depends on your installed packages; the launcher does not require or
+select a particular older release such as 2.52. The host must provide compatible WebKitGTK,
+JavaScriptCore, GTK dependencies and matching helper processes; automatic mode
+falls back to the bundle if its startup checks fail. On the NVIDIA/X11 system
+path, the launcher also disables WebKit's GBM rendering path by default. Manual
+testing confirmed the updated automatic launcher works on the reported
+Mint/X11/NVIDIA and Ubuntu/Wayland systems. The earlier Mint test also confirmed
+fast launch with NVIDIA selected when GBM was disabled. Results on other
+hardware may vary.
+Replace `Immage.AppImage` below with your downloaded filename. Close Immage
+between comparisons and keep the same photo and window-renderer preference.
+
+**Mint / X11 / NVIDIA:** normal launch selects your installed WebKitGTK and disables GBM
+when the host stack passes compatibility checks:
+
+```bash
+./Immage.AppImage
+```
+
+To force the combination confirmed to launch quickly on the affected Mint system:
+
+```bash
+IMMAGE_WEBKIT=system GDK_BACKEND=x11 WEBKIT_DMABUF_RENDERER_DISABLE_GBM=1 ./Immage.AppImage
+```
+
+**Ubuntu / Wayland:** normal launch uses bundled WebKitGTK 2.54.2. To force that path:
+
+```bash
+IMMAGE_WEBKIT=bundled GDK_BACKEND=wayland ./Immage.AppImage
+```
+
+These rules follow the session and driver, rather than the distribution name.
+For example, Ubuntu on X11 with NVIDIA follows the same rule as Mint/X11.
+
+To compare either runtime without forcing a display backend:
+
+```bash
+IMMAGE_WEBKIT=system ./Immage.AppImage
+IMMAGE_WEBKIT=bundled ./Immage.AppImage
+```
+
+The default is `IMMAGE_WEBKIT=auto`. Forced `system` mode stops with a message
+if the host stack is unavailable or incompatible, rather than silently using
+the bundle. The launcher prints its selected runtime and detected backend to
+stderr. `GDK_BACKEND=x11` or `GDK_BACKEND=wayland` explicitly selects the backend;
+backend lists keep the bundle in automatic mode. These switches select the UI
+runtime, independently of the window renderer and photo-processing settings.
+An NVIDIA driver detected on a hybrid system also qualifies for the experiment.
+
+You can explicitly enable or disable WebKit's GBM path for comparison:
+
+```bash
+WEBKIT_DMABUF_RENDERER_DISABLE_GBM=0 ./Immage.AppImage  # enable GBM
+WEBKIT_DMABUF_RENDERER_DISABLE_GBM=1 ./Immage.AppImage  # disable GBM
+```
+
+An explicit value takes precedence over the launcher's default. Leaving the
+variable unset restores automatic behavior. Wayland, bundled mode, automatic
+fallback to the bundle and other GPUs receive no GBM default from the launcher.
+System mode prints `GBM-disable=1`, `0` or `unset` alongside its runtime selection.
+
+For the published 0.41.0 release or forced bundled mode, X11 desktops with
+NVIDIA can still have launch or rendering issues. If Immage fails to launch, run:
 
 ```bash
 GDK_BACKEND=x11 WEBKIT_DISABLE_DMABUF_RENDERER=1 ./Immage.AppImage

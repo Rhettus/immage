@@ -10,7 +10,8 @@ function fixture() {
   driver.command = async (method, path, body) => {
     if (path === '/window') return state.handle;
     if (path === '/execute/sync') return { url: state.url, viewer: state.viewer };
-    if (path === '/actions') state.input.push(body);
+    if (path === '/actions' && method === 'POST') state.input.push(body);
+    if (path === '/actions' && method === 'DELETE') state.releases = (state.releases ?? 0) + 1;
   };
   return { driver, state };
 }
@@ -45,4 +46,18 @@ test('a changed window rejects keyboard and wheel input', async () => {
   await assert.rejects(driver.keys('\uE014'), /main window changed/);
   await assert.rejects(driver.wheel(10, 10, -180), /main window changed/);
   assert.equal(state.input.length, 0);
+});
+
+test('modified selection clicks stay inside the original app and release modifiers', async () => {
+  const { driver, state } = fixture();
+  await driver.modifiedPoint('\uE009',10,10);
+  assert.equal(state.input.length,1);
+  assert.equal(state.releases,1);
+  const keyboard=state.input[0].actions.find(a=>a.type==='key').actions;
+  const pointer=state.input[0].actions.find(a=>a.type==='pointer').actions;
+  assert(keyboard.findIndex(a=>a.type==='keyUp')>pointer.findIndex(a=>a.type==='pointerUp'),'modifier is held through the click event');
+  state.url='https://example.com';
+  await assert.rejects(driver.modifiedPoint('\uE009',10,10),/App-only boundary/);
+  assert.equal(state.input.length,1);
+  await assert.rejects(driver.modifiedPoint('x',10,10),/Unsupported/);
 });

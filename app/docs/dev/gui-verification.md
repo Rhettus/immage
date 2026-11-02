@@ -88,3 +88,13 @@ comparator fault tests are not an application CSS fault-injection result.
 Run `infrastructure.test.mjs`, `memory.test.mjs`, `support.test.mjs`,
 `fixtures.test.py`, inventory freshness and the frontend build without a GUI.
 The README documents the full commands and offline recovery/reference tools.
+
+## Batch paste case
+
+`batch-paste` adds copied JPEG targets before launch and uses guarded WebDriver
+modifier-pointer selection. `data-action="copy-settings"` / `paste-settings`
+and `data-copy-group` identify real production controls. `sidecarsNamed` reads
+only XMP files in the run's fixture directory; tests cannot name arbitrary
+paths. The case checks the Kodak look/amount, selected targets, whole-batch
+undo/redo, pixels, persisted sidecars, reopening and an unselected control.
+It awaits approved visible execution; backend checks do not establish a GUI pass.

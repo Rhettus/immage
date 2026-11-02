@@ -121,6 +121,7 @@ and constrained resizing.
 | [sharedFrames.ts](../../src/sharedFrames.ts) | Windows: `renderFrame` asks `render` to post the frame in a WebView2 shared buffer tagged with an id, then matches the `sharedbufferreceived` event to the reply, copies the frame out and releases the buffer. Linux: it asks `render` to write the frame to `/dev/shm` and reads it with the web extension's `immageFrame()`. On the Mac, on WebView2 runtimes before 1.0.1661, on Linux without the extension, or with Preferences' "Shared-memory frames" off, the frame comes in `render`'s reply. |
 | [HistoryPanel.tsx](../../src/HistoryPanel.tsx) | darktable's history plus this session's undo steps; a row's switch, delete or reset (`historyChange` in App.tsx, `Session.setModuleState`, the engine's `_module_state`). |
 | [CopySettings.tsx](../../src/CopySettings.tsx) | Copy/Paste Settings: which groups, and the clip. |
+| [batchPaste.ts](../../src/batchPaste.ts) | Exact selection targets; shared single/batch clip application; sequential background Sessions, native snapshot commit and rollback. |
 
 ### Control mapping (pure math, no Tauri)
 
@@ -588,6 +589,54 @@ engine batch after 30 seconds. FolderTree loads expanded branches independently.
 Engine shutdown in Rust is bounded to five seconds even without a quit reply;
 Linux parent-death handling also terminates an orphan engine after an app crash.
 
+## Batch settings paste
+
+`App.pasteSettings` freezes the clip and exact selected local imgids (or the
+open photo when selection is empty). It does not expand paired photos; virtual
+copies retain their own ids. `Previous` still calls the single-photo path.
+The modal plus synchronous busy ref block overlapping edits/shortcuts and
+navigation. The viewer leaves Before, drains/saves its Session and clears base
+and copy timers before relinquishing the engine. The same photo is reopened
+in `finally` without clearing the selection or the UI undo stacks.
+`Session.inheritUndo` retains earlier native-module opening states across that
+reload. Each batch appears as one `Snap.batch` edge; multi-step History jumps
+cross batch edges sequentially, and discarded edges release their snapshots.
+Undo remains scoped to the current editor history, not a persistent library log.
+
+`batchPaste.applyClip` uses the same `Session.setMany`, look, negative-module
+and mask operations as single-image Paste. Masks replace the target collection,
+including resetting values absent from a same-named source mask. An unavailable
+look path fails rather than removing the look silently. Each target opens a
+background Session: normal per-image mappings and mask transports run, but
+previews and delayed autosaves do not. Explicit close drains all pending work
+(including native module changes), propagates background pump failures and
+saves before advancing. Before snapshots, `pasteDefaults.preparePastePhoto`
+establishes an unedited baseline for never-opened photos using the frozen
+new-photo profile, exposure compensation, capture sharpening, preset and Auto
+preferences. Existing saved edits are untouched. Auto may request a small
+measurement preview; ordinary target edits do not render full previews.
+
+The Rust `paste_batch` command serializes each engine request. Engine
+`_paste_batch` supports `begin`, `commit`, `undo`, `redo`, `abort`, `release`.
+Begin validates all ids/paths/duplicates before taking private native history
+snapshots with `_snapshot`. Commit records the completed state. Restore copies
+full history, module order and mask data, restores baseline/current hashes and
+the edited tag, invalidates mipmaps and explicitly writes XMP. Sidecar failures
+are returned per image; failed recovery keeps the token so Undo can retry.
+Stale undo/redo is checked for the whole target list before any restore. Snapshot
+versions are excluded from library listings and released with their UI entries
+or at engine shutdown. These tokens do not survive an engine restart.
+
+Verification: `node --test --test-isolation=none verify/batch-paste.test.mjs`
+runs production Session/mapping/batch code through `verify/shim.mjs` and the real
+engine in isolated temporary photo/runtime directories. It covers targeting,
+native look parameters/strength, rendered undo/redo, untouched groups, virtual copies, mask/crop preservation,
+persistence, undo/redo, stale edits and failed sidecar recovery. The separate
+`batch-paste` visible-app case uses actual Copy/Paste controls and modifier
+selection, then checks values, look amount, rendered output, both sidecars,
+undo/redo, reopening and an unselected image. See the GUI coverage ledger for
+execution status; writing the case is not a GUI pass.
+
 ## Keeping this current
 
 - Update the entry when a file is added, moved or changes its job, here
@@ -694,6 +743,15 @@ filters and facet counts. Run `npm run build` in `app` for frontend validation.
 
 ### Linux WebKitGTK packaging
 
+WebKitGTK release versions (for example, 2.52 or the pinned 2.54.2) are separate
+from the API/ABI package name `webkit2gtk-4.1`. Here `4.1` identifies the GTK 3 /
+libsoup 3 API used by both runtime modes, not an older engine release. See the
+[WebKitGTK API documentation](https://webkitgtk.org/reference/webkit2gtk/2.42.1/).
+The bundled mode pins 2.54.2; system mode uses the installed distribution version
+if compatibility checks pass. Do not document Mint's version as 2.52 without
+runtime/package evidence. User-facing instructions should say "system-installed
+WebKitGTK" or "bundled WebKitGTK 2.54.2" instead of "WebKitGTK 4.1".
+
 The normal Linux jobs in `.github/workflows/build.yml` build x86-64 and ARM64
 AppImages on Ubuntu 22.04 (glibc 2.35), retaining compatibility with Linux Mint
 22.x. The image libraries from `build_linux_deps.sh` are installed first so
@@ -744,6 +802,84 @@ general NVIDIA fix or of WebKitGTK as the sole cause. Automatic still uses syste
 selection, with explicit renderer preferences available. Verify both display
 backends with matching hardware, photos and settings before changing defaults
 or providing different WebKitGTK packages.
+
+Starting with 0.41.1, Linux runtime selection is installed by
+`app/scripts/prepare_appimage_launcher.py` after Tauri deploys the AppDir.
+`AppRun.bundled` preserves the generated launcher and GTK hook. The new
+`AppRun` selects `IMMAGE_WEBKIT=auto|system|bundled` before either runs.
+An explicit single `GDK_BACKEND` wins over `XDG_SESSION_TYPE`, then Wayland/DISPLAY
+presence is used only if the session type is unavailable. Backend lists are
+uncertain and retain the bundle. Known backends are pinned for launch.
+Automatic system selection requires X11 and a loaded NVIDIA driver, detected
+through DRM driver links or `/proc/driver/nvidia/version`; hybrid systems can
+qualify even if NVIDIA is not driving the window.
+
+System mode bypasses both bundled AppRun and its GTK environment. A separate
+`usr/bin/immage-system` copy has its ELF RPATH/RUNPATH removed. Its entire UI
+library closure comes from the host, avoiding mixed GLib/GTK/WebKit/JSC stacks.
+The existing frame extension in `usr/lib/Immage/webext` also has its private
+search path removed: it uses the WebKit/JSC already loaded by either runtime,
+with AppRun supplying bundled search paths only in bundled mode. Its resource
+location stays unchanged, so the launcher can be applied to an existing release
+without recompiling the app. The engine retains its own resource library
+RPATHs; photo processing is unchanged. The launcher clears inherited loader,
+GTK module/schema and WebKit helper overrides in system mode, checks `ldd -r`
+for missing dependencies/symbols or bundled UI paths, and checks host WebKit
+helpers and injected bundle adjacent to the resolved host library or in
+`/usr/libexec/webkit2gtk-4.1`. Host WebKit uses its compiled helper paths;
+matching helper override paths are also exported for builds supporting them.
+This validates dynamic symbol availability, including the frame extension's JSC
+typed-array calls; it does not prove rendering performance or runtime ABI behavior.
+Auto falls back before app startup if checks fail; forced system stops with an
+error. An app failure after startup is never retried automatically.
+
+Once system preflight succeeds, X11 plus NVIDIA defaults
+`WEBKIT_DMABUF_RENDERER_DISABLE_GBM` to `1` only if the variable is unset.
+Explicit `0` enables GBM, explicit `1` disables it; all supplied values are
+preserved. The setting is applied before exec and inherited by WebKit helpers
+and relaunch. Wayland (including forced system mode), non-NVIDIA hosts, bundled
+mode and preflight fallback get no automatic GBM override. The system launch
+message records `GBM-disable`. This follows a manual Mint report: confirmed
+`WebKit=system backend=x11` still aborted with NVIDIA selected, while adding
+`WEBKIT_DMABUF_RENDERER_DISABLE_GBM=1` launched quickly. Ubuntu testing also
+succeeded. The user subsequently confirmed the updated automatic launcher
+works on both Mint/X11 and Ubuntu/Wayland. These are manual results on the
+reported machines, not automated GUI passes or measurements across hardware.
+The launcher tests cover scoped defaults, explicit on/off overrides and no
+changes on Wayland, non-NVIDIA, ambiguous backend or fallback paths.
+
+`repack_appimage.sh` installs the selector and repacks with the AppImage output
+plugin, reusing the base image's runtime instead of downloading another.
+`build_appimage.sh` uses Tauri's cached output plugin and regenerates updater
+signatures over the final bytes.
+It fails if a release configuration lacks signing credentials. The normal
+bundled copy and packaged 2.54.2 verification remain intact. Headless launcher
+and ELF search-path regressions run with
+`python3 -I scripts/test_appimage_launcher.py`; no real app or GUI is started.
+Dispatch `build.yml` on the experiment branch with `launcher_experiment=true`
+(`gh workflow run build.yml --ref release-0.41.1 -f launcher_experiment=true`).
+This skips all ordinary build jobs and calls `launcher-experiment.yml`, which
+builds only x86_64. It verifies
+the published v0.41.0 x86_64 AppImage and output plugin against pinned SHA-256s,
+extracts the baseline, applies the launcher and repacks it. It runs headless
+packaging tests, verifies the 2.54.2 bundle/glibc baseline and launcher wiring,
+and uploads `immage-launcher-experiment-linux-x86_64` with a checksum and build
+identity. The editor remains the released 0.41.0 binary (including its reported
+version/commit); later changes such as batch paste are absent. This isolates
+the launcher comparison and avoids WebKit compilation. The workflow neither
+launches the editor nor signs/publishes an updater or release. The ordinary
+source build also includes the launcher for subsequent builds.
+Compare forced system and bundled runs on Mint/X11/NVIDIA with matching photos,
+renderer settings and scale, then verify Wayland retains the bundle. Confirm the
+reported WebKit version, frame delivery and helper processes, as well as speed.
+The user guide and README provide explicit Mint/X11/system/GBM-off and
+Ubuntu/Wayland/bundled launch recipes. Verify normal launch and the renderer's
+in-app Relaunch against these recipes, with no inherited shell overrides, then
+check explicit `WEBKIT_DMABUF_RENDERER_DISABLE_GBM=0` and `=1` take precedence.
+Manual result: the user confirmed run 41391144072's x86_64 artifact (launcher
+commit cb4f987) works on both reported systems. Detailed helper/frame checks,
+individual override combinations and broader hardware coverage are not established
+by those confirmations. No local GUI automation was run.
 
 Fractional-scale drag compensation (`scale.rs`, `pixelRatio.ts`, `draftK` in
 `App.tsx`) remains active: at 125% on a GTK 2x surface, reduced drafts use a

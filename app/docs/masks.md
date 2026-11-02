@@ -158,3 +158,32 @@ six-band graph described in [Adjustments](adjustments.md#contrast-equalizer),
 applied only inside that mask. Global Contrast can still use AgX. Masked
 equalizer instances run separately; the slider-based overlap limits described
 above apply to color balance rgb Contrast.
+
+Object selections use the same model folder as the other AI tools. A model
+downloaded during the current session is available immediately; restarting the
+app is unnecessary. Existing valid models are reused.
+
+## Reporting an AI model loading error on Linux
+
+If an AI tool repeatedly downloads its model and then says it cannot load it,
+use the diagnostic script to capture the native loading error. Subject and
+Select Object use different models, so one can work while another fails.
+
+1. Close Immage. Copy `app/scripts/diagnose_ai_appimage.sh` from the source
+   repository to the affected machine, beside your AppImage.
+2. In a terminal in that folder, run:
+
+   ```sh
+   sh diagnose_ai_appimage.sh ./Immage.AppImage
+   ```
+
+   Replace the AppImage filename with yours.
+3. Try one Object mask, wait for the error, then close Immage. Avoid in-app
+   Relaunch during this diagnostic run.
+4. Share the `immage-ai-report.*.tar.gz` file created in that folder.
+
+The report contains AI and launcher logs, platform information and Object model
+file sizes, checksums and configuration. It contains no photos or model weights.
+Logs can include local file paths. The debug switch applies only to this launch;
+the script does not change saved preferences or delete model files. The app's
+normal automatic model recovery can still download the model during the test.

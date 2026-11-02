@@ -176,6 +176,8 @@ function sized(width, height) {
 
 const COMMANDS = {
   display_scale: () => (screen.scale === "error" ? Promise.reject(new Error("not on a screen yet")) : screen.scale),
+  meta: ({ imgid }) => request({ cmd: "meta", imgid }),
+  paste_batch: (args) => request({ cmd: "paste_batch", ...args }),
   open_image: ({ path, imgid }) => request({ cmd: "open", path, imgid: imgid ?? -1 }),
   get_params: ({ modules }) => request({ cmd: "get", modules }),
   history: async ({ saved } = {}) => (await request({ cmd: "history", saved: saved ?? false })).items,

@@ -1,7 +1,7 @@
 # Visible-app GUI verification plan
 
 Status: startup/Exposure and slider-input have previous Linux live passes.
-The expanded registry contains 540 named cases, including generated control and
+The expanded registry contains 541 named cases, including generated control and
 module variants. New cases are written but have not run; declarations are not
 coverage passes. Some scenarios block on unsupported fixtures or native dialogs.
 See `COVERAGE.md` for limitations. Real GUI execution is currently paused by
@@ -361,3 +361,15 @@ cd app && npm run build
 
 These checks do not approve or replace a visible-app run. Rebuild the native
 production executable before a future approved run using the new observations.
+
+## Batch settings paste
+
+`--case batch-paste` (also in `--suite regressions`) requires a JPEG fixture.
+Before launch the runner makes three more copies in its own fixture directory:
+two targets and one unselected control. The case applies Kodak Gold 200 at 35%,
+copies Tone and Look through Copy Settings, selects two targets with a guarded
+modifier click, and exercises Paste, whole-batch Undo and Redo. It checks the
+selection/active photo, Exposure, look/amount, rendered pixels and both saved
+sidecars, then reopens the second target and the unselected photo. Inspection
+is read-only and limited to the app and this run's fixture sidecars. No system
+clipboard or native dialog is used. This case is written, not live-validated.

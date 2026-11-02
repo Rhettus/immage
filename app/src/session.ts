@@ -147,6 +147,7 @@ export class Session {
   private draftKeep = new Set<string>();
   private needRender = false;
   private busy = false;
+  private backgroundFailure: string | null = null;
   private saveTimer: number | undefined;
   // edits not yet in the sidecar; saving also drops the cached thumbnail,
   // so an untouched image is not saved on close
@@ -234,13 +235,14 @@ export class Session {
     private size: () => View,
     private onFrame: (f: Frame) => void,
     private onError: (e: string) => void,
+    private background = false,
   ) {}
 
   // `imgid` picks one of the file's versions; without it, the original
   static async open(path: string, imgid: number | null, size: Session["size"], onFrame: Session["onFrame"],
-                    onError: Session["onError"]): Promise<Session> {
+                    onError: Session["onError"], background = false): Promise<Session> {
     const opened = await invoke<OpenReply>("open_image", { path, imgid: imgid !== null && imgid > 0 ? imgid : null });
-    const s = new Session(size, onFrame, onError);
+    const s = new Session(size, onFrame, onError, background);
     s.imgid = opened.imgid;
     // an engine without "fresh" knows only whether the photo is altered
     s.wasEdited = opened.fresh === undefined ? opened.edited : !opened.fresh;
@@ -287,6 +289,17 @@ export class Session {
     s.spots = await invoke<Spot[]>("spots", {});
     s.requestRender();
     return s;
+  }
+
+  // Batch operations reopen the same engine image without starting a new UI
+  // editing history. Earlier native-module undo steps still refer to the
+  // original opening state, not to the freshly loaded pasted state.
+  inheritUndo(from: Session) {
+    if (from.imgid !== this.imgid) return;
+    this.modulesOpened = new Map(from.modulesOpened);
+    this.moduleStates = new Map(from.moduleStates);
+    this.touched = new Set(from.touched);
+    this.deleted = new Set(from.deleted);
   }
 
   // a tool's module: the one the photo uses, else what Preferences picks,
@@ -438,7 +451,11 @@ export class Session {
 
   // nothing queued or in flight
   async settled() {
-    while (!this.idle) await new Promise((r) => setTimeout(r, 20));
+    while (!this.idle) {
+      if (this.backgroundFailure && !this.busy) throw Error(this.backgroundFailure);
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    if (this.backgroundFailure) throw Error(this.backgroundFailure);
   }
 
   bypass(op: string, on: boolean) {
@@ -455,7 +472,8 @@ export class Session {
   get idle() {
     return !this.busy && !this.dirty.size && !this.needRender && !this.needThumb && !this.needCopy && !this.needWarm
       && this.wantLook === undefined && !this.masksPending && this.wantLookAmount === undefined
-      && !this.spotsPending && !this.reshapeDue && !this.baselineEnd && !this.baseInFlight;
+      && !this.spotsPending && !this.reshapeDue && !this.baselineEnd && !this.baseInFlight
+      && !this.modulePending.length && !this.resetModulesPending;
   }
 
   // not while crop is bypassed or the Before view is up: the one changes
@@ -1187,6 +1205,7 @@ export class Session {
   }
 
   private async pump() {
+    if (this.backgroundFailure) return;
     if (this.busy) {
       perf.event("pump.busy", { base: !!this.base, editPending: this.editPending });
       // the base can take seconds and would be stale: stopped, it is
@@ -1398,6 +1417,12 @@ export class Session {
         // the Before view is only for looking: nothing of it reaches the sidecar
         if (ops.length && !this.before) { this.unsaved = true; this.scheduleSave(); }
         this.needRender = false;
+        // Batch edits use the same module maps and mask transport, without
+        // rendering previews for photos that are not on screen.
+        if (this.background) {
+          for (const edit of edits) await this.pumpCommand("set_params", edit);
+          continue;
+        }
         // what the render shows is settled by now, whatever changes during it
         const before = !!this.before;
         const requestedView = this.size();
@@ -1436,6 +1461,7 @@ export class Session {
         this.changed();
       }
     } catch (e) {
+      if (this.background) this.backgroundFailure = String(e);
       this.onError(String(e));
     } finally {
       this.busy = false;
@@ -1444,6 +1470,7 @@ export class Session {
   }
 
   private scheduleSave() {
+    if (this.background) return; // the batch explicitly saves/checks each target
     window.clearTimeout(this.saveTimer);
     this.saveTimer = window.setTimeout(() => {
       // the engine holds the Before view's settings; save once it is gone
@@ -1476,7 +1503,7 @@ export class Session {
     this.requestRender();
     window.clearTimeout(this.saveTimer);
     if (this.before) this.showBefore(null);
-    while (this.busy || this.dirty.size || this.baseInFlight) await new Promise((r) => setTimeout(r, 20));
+    await this.settled();
     if (!this.unsaved) return;
     this.unsaved = false;
     const r = await invoke<{ edited: boolean }>("save");

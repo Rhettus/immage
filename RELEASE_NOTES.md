@@ -3,6 +3,32 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
+## Unreleased
+
+Improvements
+
+- A Linux AI diagnostic script collects model-loading logs and file checksums
+  into one report without requiring an application rebuild.
+
+## 0.41.1
+
+Improvements
+
+- Paste Settings applies the copied groups to every selected local photo,
+  including virtual copies, while keeping the active photo and selection.
+  Looks retain their strength. One undo or redo restores the whole batch;
+  failures report recovery and sidecar write problems.
+
+Bug fixes
+
+- Select Object correctly recognizes installed AI models, including downloads
+  made during the current session, fixing loading errors and repeated downloads.
+- Linux AppImages use compatible system WebKitGTK with GBM disabled on
+  NVIDIA/X11, fixing the startup failure and slow rendering seen on Mint.
+  Wayland and other GPUs keep bundled WebKitGTK 2.54.2. Automatic selection
+  falls back to the bundle if needed; environment switches override the
+  WebKit selection and enable or disable GBM.
+
 ## 0.41.0
 
 Improvements

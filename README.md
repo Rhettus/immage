@@ -6,18 +6,8 @@
 
 🟢 **Windows:** Fully functional alpha build. Bugs are still expected.
 
-🟡 **Linux:** Fully functional alpha build, but performance may vary. We’re
-investigating NVIDIA rendering issues.
-
-**X11 desktops with NVIDIA:** If Immage fails to launch, use:
-
-```bash
-GDK_BACKEND=x11 WEBKIT_DISABLE_DMABUF_RENDERER=1 ./Immage.AppImage
-```
-
-Replace `Immage.AppImage` with your downloaded filename. Then select **MESA**
-in **Preferences → Performance** and restart Immage. After selecting MESA,
-you can launch normally without the environment variables.
+🟢 **Linux:** Fully functional alpha build. Bugs are still expected.
+See [Linux setup and troubleshooting](app/docs/preferences.md#performance).
 
 ## What is it
 
@@ -59,7 +49,7 @@ having to learn darktable:
   already follows darktable's scene-referred AgX workflow before the first
   slider is touched
 - people who want to get through a shoot quickly: one set of panels with
-  a fixed order, settings copied from one photo to the next, and nothing
+  a fixed order, settings copied to selected photos in a batch, and nothing
   to set up before editing. Immage does not render faster than darktable;
   the time it saves is the editor's
 - people who keep their photos in folders, or in an Immich library,
@@ -319,6 +309,32 @@ Each build bundles the
 engine with the libraries it links: from Homebrew on macOS, MSYS2 on
 Windows and Ubuntu on Linux (`app/scripts/bundle_engine.py`,
 `app/scripts/bundle_engine_windows.sh`).
+
+### Linux launch options
+
+Replace `Immage.AppImage` with your downloaded filename. Normal launch detects
+Mint/X11 with NVIDIA or Ubuntu/Wayland automatically. NVIDIA/X11 uses your
+system-installed WebKitGTK when compatible; Wayland uses WebKitGTK 2.54.2
+included in the AppImage:
+
+```sh
+./Immage.AppImage
+```
+
+To select either path explicitly:
+
+```sh
+# Mint / X11 / NVIDIA: your installed WebKitGTK, GBM off
+IMMAGE_WEBKIT=system GDK_BACKEND=x11 WEBKIT_DMABUF_RENDERER_DISABLE_GBM=1 ./Immage.AppImage
+
+# Ubuntu / Wayland: bundled WebKitGTK 2.54.2
+IMMAGE_WEBKIT=bundled GDK_BACKEND=wayland ./Immage.AppImage
+```
+
+Use `WEBKIT_DMABUF_RENDERER_DISABLE_GBM=0` to enable GBM or `=1` to disable it.
+Omit the switches to restore automatic selection. These options are available
+starting with 0.41.1; see [Linux troubleshooting](app/docs/preferences.md#performance)
+for older releases and additional overrides.
 
 ## Building
 

@@ -15,6 +15,7 @@ This imports pure manifest/math code using Node >= 22.18, without launching an a
 |---|---|---|
 | startup, exposure | Real fixture, final photo, drag lighter/darker, exact reset | Previously passed on Linux system WebKit |
 | slider-input | Arrow keys, focus retention, double-click numeric editing, Enter, reset/photo | Passed on Linux system WebKit, Wayland, DPR 2 |
+| batch-paste | Two selected JPEGs, Kodak look/amount, one batch undo/redo, both sidecars, reopening and unselected image | Written; awaiting approved GUI run |
 | history | Slider edit, toolbar undo/redo, value/photo agreement, basic Reset All | Awaiting approved GUI run |
 | rail | Presets, masks, zones, heal, adjustments, active state, hit geometry, screenshots | Awaiting approved GUI run |
 | sliders | Current reachable panel ranges, pointer change, reset, final pixels, CSS, screenshots | Awaiting approved GUI run; hidden branches excluded |
@@ -93,11 +94,11 @@ options did not execute. Preserve the failed report; this was not a suite pass.
 
 ## Expanded implementation status
 
-The registry now contains 540 named declarations. Generated range cases exercise
+The registry now contains 541 named declarations. Generated range cases exercise
 both pointer directions, keyboard limits/steps, typed minimum/maximum clamping,
 Escape and reset; generated choices enumerate mounted options. Global/mask module
 variants exercise a candidate control and rendered effect. These are unverified
-implementations, not 540 passes. Hidden graph controls, RAW-only controls and
+implementations, not 541 passes. Hidden graph controls, RAW-only controls and
 neutral/gated effects can block or need stronger dedicated oracles.
 
 Written cases now include crop guides/locked corners/portrait edges/aspects,

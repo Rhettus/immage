@@ -1,0 +1,56 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+name: Linux x86_64 launcher experiment
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: launcher-experiment-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  appimage:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    env:
+      APPIMAGE_EXTRACT_AND_RUN: 1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y patchelf binutils libegl1 libgl1 libgles2
+      - name: headless launcher and packaging tests
+        run: |
+          python3 -I scripts/test_appimage_launcher.py
+          python3 -I scripts/test_webkit_bundle.py
+      - name: download pinned release baseline and output plugin
+        working-directory: ${{ runner.temp }}
+        run: |
+          curl -fL --retry 3 -o Immage-base.AppImage https://github.com/Rhettus/immage/releases/download/v0.41.0/Immage-0.41.0-Linux-x86_64.AppImage
+          echo 'f00be4b3e6e8ee3d59ccc4478a0813bcb3e3fec3655014c5ba5d76b29462f0dd  Immage-base.AppImage' | sha256sum -c
+          curl -fL --retry 3 -o output-plugin.AppImage https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/continuous/linuxdeploy-plugin-appimage-x86_64.AppImage
+          echo '49d6a17160675a6bd1781699aae6bdf7692d98552e02a3671d2183d10547842e  output-plugin.AppImage' | sha256sum -c
+          chmod +x Immage-base.AppImage output-plugin.AppImage
+          ./Immage-base.AppImage --appimage-extract > extract.log
+      - name: install launcher and repack x86_64 AppImage
+        run: |
+          mkdir -p build/launcher-experiment
+          sh app/scripts/repack_appimage.sh "$RUNNER_TEMP/Immage-base.AppImage" \
+            "$RUNNER_TEMP/squashfs-root" "$RUNNER_TEMP/output-plugin.AppImage" \
+            "$PWD/build/launcher-experiment/Immage-0.41.0-launcher-experiment-x86_64.AppImage"
+          python3 -I app/scripts/check_webkit_bundle.py "$RUNNER_TEMP/squashfs-root" 2.54.2 --max-glibc 2.35
+          python3 -I app/scripts/check_appimage_launcher.py "$RUNNER_TEMP/squashfs-root"
+          cd build/launcher-experiment
+          sha256sum *.AppImage > SHA256SUMS
+          printf 'Base: v0.41.0 (016c658e5aec598a2b6502d364eba88463ff6633)\nLauncher commit: %s\nNo application rebuild, GUI test, updater signature or release publication.\n' "$GITHUB_SHA" > BUILD.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: immage-launcher-experiment-linux-x86_64
+          path: build/launcher-experiment/*
+          if-no-files-found: error
