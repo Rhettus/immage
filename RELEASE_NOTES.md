@@ -7,6 +7,8 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- GUI benchmark reports include shared-frame write, reply and WebKit read timings
+  to help diagnose native Linux preview latency.
 - A Linux AI diagnostic script collects model-loading logs and file checksums
   into one report without requiring an application rebuild.
 

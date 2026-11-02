@@ -3,6 +3,7 @@ import { startup, exposure } from './specs/smoke.mjs';
 import { sliderInput, history, rail, sliders } from './specs/controls.mjs';
 import { moduleOptions } from './specs/preferences.mjs';
 import { batchPaste } from './specs/batch-paste.mjs';
+import { guiBenchmark } from './specs/benchmark.mjs';
 import { cases } from './suites.mjs';
 import { cropGuides,cropLocked,cropPortrait,cropOptions } from './specs/crop.mjs';
 import { rangeContract,choiceContract } from './specs/ranges.mjs';
@@ -12,6 +13,9 @@ import * as regressions from './specs/regressions.mjs';
 import { moduleOutput,panorama,immichWorkflow } from './specs/modules.mjs';
 
 const implementations = { 'batch-paste': batchPaste, startup, exposure, 'slider-input': sliderInput, history, rail, sliders, 'module-options': moduleOptions,
+  'gui-benchmark': guiBenchmark,
+  'gui-benchmark-screen': t => guiBenchmark(t, true),
+  'gui-benchmark-whole': t => guiBenchmark(t, false),
   'crop-guides':cropGuides,'crop-locked':cropLocked,'crop-portrait':cropPortrait,'crop-options':cropOptions,
   'native-reset':workflows.nativeReset,curves:workflows.curves,wheels:workflows.wheels,equalizer:workflows.equalizer,
   masks:workflows.masks,heal:workflows.heal,negative:workflows.negative,zones:workflows.zones,

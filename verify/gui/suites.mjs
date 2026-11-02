@@ -3,6 +3,15 @@ import { generated, generatedNames } from './generated.mjs';
 // These are coverage claims for cases, not proof they have passed on a platform.
 export const cases = {
   startup: { scope: 'visible fixture, stable final canvas, isolated profile', liveValidated: true },
+  'gui-benchmark': { scope: 'Preferences Run button, saved schema 9 report, visible stable viewport, restored photo', liveValidated: true,
+    verification: 'Linux ARM64 VM, system WebKitGTK 2.54.2, Wayland DPR 2 run 2026-11-02T15-05-22.535Z_ee28973_5104c5ed; DPR 1 with deferred viewport gate run 2026-11-02T15-20-43.128Z_ee28973_46f49c76.',
+    limitation: 'Runs the app scripted workload, not pointer latency. VM timings are approximate; no compositor presentation or native GPU claim.' },
+  'gui-benchmark-screen': { scope: 'GUI benchmark with screen-scale drafts enabled through Preferences', liveValidated: true,
+    verification: 'Linux ARM64 VM, system WebKitGTK 2.54.2, Wayland 125%, DPR 2, draftScale 0.625; run 2026-11-02T15-34-27.864Z_ee28973_66140df8.',
+    limitation: 'Requires preconfigured fractional output. Does not change display settings.' },
+  'gui-benchmark-whole': { scope: 'GUI benchmark with screen-scale drafts disabled through Preferences', liveValidated: true,
+    verification: 'Linux ARM64 VM, system WebKitGTK 2.54.2, Wayland 125%, DPR 2, draftScale 1; run 2026-11-02T15-40-01.172Z_ee28973_e7cc09e0.',
+    limitation: 'Requires preconfigured fractional output. Does not change display settings.' },
   exposure: { scope: 'pointer drag both directions, brightness, reset pixels', liveValidated: true },
   'slider-input': { scope: 'Exposure keyboard, inline editor, focus and reset', liveValidated: true,
     verification: 'Linux ARM64, system WebKitGTK 2.54.2, Wayland, DPR 2; run 2026-11-01T23-39-31.087Z_f8f31aa_bc0fb5a5. Remaining controls suite stopped at history.' },

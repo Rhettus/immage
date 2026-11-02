@@ -9,6 +9,10 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
+      diagnostic_x64:
+        description: Build only Linux x86_64 plus checks for a native diagnostic run
+        type: boolean
+        default: false
       launcher_experiment:
         description: Repack only the released x86_64 AppImage with the experimental launcher
         type: boolean
@@ -36,7 +40,7 @@ concurrency:
 jobs:
   launcher-experiment:
     if: ${{ inputs.launcher_experiment }}
-    uses: $/.github/workflows/launcher-experiment.yml
+    uses: ./.github/workflows/launcher-experiment.yml
 
   checks:
     if: ${{ !inputs.launcher_experiment }}
@@ -107,7 +111,7 @@ jobs:
           "$RUNNER_TEMP/cargo-audit" audit
 
   macos:
-    if: ${{ !inputs.launcher_experiment }}
+    if: ${{ !inputs.launcher_experiment && !inputs.diagnostic_x64 }}
     runs-on: macos-15
     timeout-minutes: 120
     env:
@@ -157,7 +161,7 @@ jobs:
           if-no-files-found: error
 
   windows:
-    if: ${{ !inputs.launcher_experiment }}
+    if: ${{ !inputs.launcher_experiment && !inputs.diagnostic_x64 }}
     runs-on: windows-2025
     timeout-minutes: 180
     env:
@@ -246,15 +250,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - arch: x64
-            runner: ubuntu-22.04
-            cc: gcc-14
-            cxx: g++-14
-          - arch: arm64
-            runner: ubuntu-22.04-arm
-            cc: gcc-14
-            cxx: g++-14
+        include: ${{ fromJSON(inputs.diagnostic_x64 && '[{"arch":"x64","runner":"ubuntu-22.04","cc":"gcc-14","cxx":"g++-14"}]' || '[{"arch":"x64","runner":"ubuntu-22.04","cc":"gcc-14","cxx":"g++-14"},{"arch":"arm64","runner":"ubuntu-22.04-arm","cc":"gcc-14","cxx":"g++-14"}]') }}
     # Build the bundled WebKit on glibc 2.35, including for Mint 22.x.
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 360
@@ -336,8 +332,28 @@ jobs:
           python3 -I app/scripts/check_webkit_bundle.py \
             app/src-tauri/target/release/bundle/appimage/Immage.AppDir 2.54.2 --max-glibc 2.35
           python3 -I app/scripts/check_appimage_launcher.py app/src-tauri/target/release/bundle/appimage/Immage.AppDir
+      - name: diagnostic build identity and instructions
+        if: ${{ inputs.diagnostic_x64 }}
+        working-directory: app/src-tauri/target/release/bundle/appimage
+        run: |
+          sha256sum *.AppImage > diagnostic-SHA256SUMS.txt
+          printf 'Diagnostic commit: %s\n' "$GITHUB_SHA" > diagnostic-README.txt
+          cat >> diagnostic-README.txt <<'EOF'
+          Unsigned manual-test build; no release or updater publication.
+          Close installed Immage. Extract this archive, then:
+            sha256sum -c diagnostic-SHA256SUMS.txt
+            chmod +x ./*.AppImage
+          Launch the AppImage and open the same copied photo used for 0.41.1.
+          Preferences > Performance > Measuring > GUI benchmark > Run.
+          Run once at 100% and once at 125%; record scale and refresh rate.
+          Keep the app visible, with the same window size and performance settings.
+          Return both JSON reports from the benchmarks folder shown when finished.
+          Preview resolution is unchanged. These reports add transport diagnostics.
+          EOF
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: immage-linux-${{ matrix.arch }}
-          path: app/src-tauri/target/release/bundle/appimage/*.AppImage*
+          path: |
+            app/src-tauri/target/release/bundle/appimage/*.AppImage*
+            app/src-tauri/target/release/bundle/appimage/diagnostic-*.txt
           if-no-files-found: error

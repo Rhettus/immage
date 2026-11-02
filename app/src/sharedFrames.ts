@@ -73,14 +73,27 @@ webview?.addEventListener("sharedbufferreceived", (e) => {
 // shared memory
 export async function renderFrame(args: Record<string, unknown>): Promise<ArrayBuffer> {
   const event = (name: string, data?: Record<string, unknown>) => perf.event(name, { requestId:args.diagnosticRequest, ...data });
+  const call = async (request: Record<string, unknown>) => {
+    const started = performance.now();
+    const reply = await invoke<ArrayBuffer>("render", request);
+    const h = new DataView(reply);
+    event("transport.reply", {
+      elapsedMs: performance.now() - started, bytes: reply.byteLength,
+      lockMs: h.getFloat32(24, true), requestMs: h.getFloat32(28, true),
+      pipelineMs: h.getFloat32(32, true), engineWriteMs: h.getFloat32(36, true),
+      rustReadMs: h.getFloat32(40, true), probeMs: h.getFloat32(44, true),
+      setMs: h.getFloat32(56, true), sharedWriteMs: h.getFloat32(60, true),
+    });
+    return reply;
+  };
   if (!sharedFramesAvailable || failed || !loadSharedFrames()) {
     last = "invoke";
     event("transport.selected", { transport:"invoke", available:sharedFramesAvailable, failed });
-    return invoke<ArrayBuffer>("render", args);
+    return call(args);
   }
   const id = ++next;
   event("transport.selected", { transport:"shared", sharedId:id });
-  const head = await invoke<ArrayBuffer>("render", { ...args, shared: id, ...(shmFrame ? { token } : {}) });
+  const head = await call({ ...args, shared: id, ...(shmFrame ? { token } : {}) });
   const v = new DataView(head);
   const pixels = 4 * v.getUint32(0, true) * v.getUint32(4, true);
   if (head.byteLength !== FRAME_HEAD || pixels === 0) {
@@ -90,7 +103,10 @@ export async function renderFrame(args: Record<string, unknown>): Promise<ArrayB
   }
   last = "shared";
   if (shmFrame) {
+    const started = performance.now();
     const frame = shmFrame(`immage-frame-${token}-${id}`);
+    event("transport.shared-read", { elapsedMs: performance.now() - started,
+      bytes: frame?.byteLength ?? 0, sharedId: id });
     if (frame?.byteLength === FRAME_HEAD + pixels) return frame.buffer as ArrayBuffer;
     // the extension can't reach the file: asked again, through the reply
     // from now on; the pipe's cache makes the second render quick. the
@@ -98,7 +114,7 @@ export async function renderFrame(args: Record<string, unknown>): Promise<ArrayB
     failed = true;
     last = "invoke";
     event("transport.retry", { reason:"shared-file-unavailable", transport:"invoke" });
-    return invoke<ArrayBuffer>("render", { ...args, edits: null });
+    return call({ ...args, edits: null });
   }
   const early = arrived.get(id);
   if (early) {

@@ -151,6 +151,89 @@ operations, not CPU-execution tracks.
 
 ## Measurement boundaries
 
+### Wayland fractional-scale investigation
+
+Compare the same build, copied photo, edits and logical viewer dimensions at
+100% and one fractional output scale (125% or 150%). Record the compositor
+scale separately from `viewport.dpr`: GTK3 can report DPR 2 at both fractional
+scales. Keep preview mode, Balanced preview size, transport, memory limits,
+renderer and all other settings fixed. Do not change compositor settings from
+the app-only GUI runner; prepare each display configuration separately.
+
+Use this sequence, with fresh approval for each automated GUI run where local
+instructions require it:
+
+1. At 100%, run startup/Exposure to establish the production binary, isolated
+   fixture and driver work. Retain app geometry, image dimensions and evidence.
+2. Collect a GUI benchmark through Preferences with the same fixture and window
+   size. Keep the app visible and reject a run with changed viewport or scale.
+3. At fractional scale, repeat with **Drag drafts at the screen's scale** on,
+   then off. This isolates the existing draft optimization from integer-sized
+   settled rendering. The option is available only when the detected screen
+   scale is smaller than the webview DPR.
+4. Repeat measurements in alternating order to distinguish cache warmup and
+   run-to-run variation. Record cold startup separately from warmed edits.
+
+The app-only runner's `gui-benchmark`, `gui-benchmark-screen` and
+`gui-benchmark-whole` cases collect one report per launch through the real
+Preferences button using Tab/Enter. Fractional cases select the existing draft checkbox with Space;
+integer-scale runs use `gui-benchmark`. Each fresh profile starts from defaults.
+Use `--viewport WIDTHxHEIGHT` to enforce the comparison's logical inner window
+size after startup and before benchmarking. External authorized setup must size
+only the dedicated app; the runner observes geometry without compositor calls.
+Waiting until the first photo and tour complete avoids resizing during startup.
+Preparation failures retain app DOM/geometry and a screenshot when the bound
+main URL/handle still match, even if the viewer element disappears.
+`run.mjs` copies reports from the run's fixed profile directory, never an
+arbitrary status-text path, to the case's `benchmark.json`. The validator rejects
+missing phases, invalid dimensions/timings, backgrounding, changed endpoint
+viewport/DPR and mismatched draft configuration. It checks endpoint geometry,
+not continuous resize history. See the [runner guide](../../../verify/gui/README.md#scaling-benchmark-collection)
+and `node verify/gui/benchmark.test.mjs`. The generic keyboard case has a
+Linux ARM64 VM passes at DPR 1 and 2; the screen-scale variant also passed at
+125%/DPR 2, with screen-scale drafts both enabled and disabled.
+Keep output mode, refresh rate and floating/tiled window mode fixed within an
+A/B pair; matching logical viewport alone does not control those variables.
+The benchmark itself scripts edits inside the app; collecting it
+through WebDriver does not turn its samples into pointer-input measurements.
+
+Analyze reports with `benchmarking/diagnose.py`. Compare first-frame, sustained
+drag and release separately, grouped by actual frame dimensions and source.
+Use native render/module costs to identify engine work; inspect transport,
+draw, animation-callback delay, frontend work and resource samples separately.
+The next animation callback does not measure compositor presentation. Similar
+engine costs with slower callbacks suggest a different investigation, not proof
+of a compositor bottleneck. Keep the performance tuner out of these comparisons
+because it changes the configuration being measured.
+
+At 125%, DPR 2 has `(2 / 1.25)^2 = 2.56` times the screen's pixel area;
+at 150% the ratio is about 1.78. These are pixel-count ratios, not predicted
+speedups. `pixelRatio.ts` currently reduces drag drafts only. Settled previews,
+zoom geometry and GTK/WebKit surfaces still follow integer DPR. Its existing
+comment records jagged settled frames when WebKit enlarged a smaller image
+before compositor downsampling; treat sharpness as an acceptance requirement.
+
+The initial 125% VM pair verified smaller ordinary draft dimensions when the
+setting is enabled; detail controls can still use full preview resolution.
+Native pipeline costs fell for ordinary drafts, while a large invoke/transport
+residual remained in both configurations. That residual includes unmeasured
+native work, shared-memory preparation/readout and scheduling/delivery; it is
+not a measurement of copy time alone or proof of a compositor bottleneck.
+Reports used shared transport with no fallback retries. Investigate this
+boundary before accepting a settled-resolution change on performance grounds.
+One run per setting, different adaptive geometries, queue histories and memory
+pressure limit the conclusions. Inspect first/sustained/release groups rather
+than comparing only the whole-run duration or mixed-size medians.
+
+Only prototype smaller settled previews after establishing the baseline. Check
+fit view, 100% zoom, fine detail, masks/crop overlays, alignment, resize and
+moving between outputs before accepting a change. Engine sizing cannot remove
+GTK3's integer surface allocation. A software-rendered VM can establish its own
+scaling costs, but cannot establish NVIDIA or packaged-WebKit performance.
+Treat timings in a VM as approximate comparisons on that VM. Repeat runs and
+retain host-load variability; do not extrapolate absolute throughput to native
+hardware or attribute every delay to display scale.
+
 The native trace covers every acquisition of the app's main engine mutex,
 including auxiliary commands. Tagged thumbnails, imports, exports and AI jobs use
 separate engine threads outside that mutex. Their hardware contention cannot be
@@ -160,3 +243,30 @@ The legacy `paint` field measures the next animation callback, not actual screen
 presentation or input-to-photon latency. Those need platform profiling or external
 measurement. CPU/GPU saturation and memory-bandwidth contention also need platform
 profiling; recorded waiting and module wall times establish where to investigate.
+
+### Native transport diagnostic build
+
+`transport.reply` events join to a render by `data.requestId`. They record the
+frontend invoke duration, returned byte count and native header durations:
+`lockMs`, `requestMs`, `pipelineMs`, `engineWriteMs`, `rustReadMs`, `probeMs`,
+`setMs` and `sharedWriteMs`. Pipeline/write are nested inside request; do not
+add them to request again. The reserved float32 at header byte 60 carries the
+successful Linux shared-file write duration in the reply only. It is zero for
+other paths. The shared file keeps its earlier header; read this timing from
+the reply event, not the reconstructed frame. Header size remains 64 bytes.
+`transport.shared-read` measures the synchronous Linux web-extension call,
+including file read, extraction and deletion, with bytes and shared ID. It is
+separate from invoke duration. Retry replies produce separate reply events.
+Existing draw spans include canvas upload/draw; these events do not isolate
+GPU execution or compositor presentation. Engine writing still combines pixel
+conversion and file output. No settled or draft dimensions change.
+
+For a transportable x86_64 AppImage from this ARM64 development machine,
+dispatch `build.yml` with `diagnostic_x64=true` on the diagnostic branch. Checks
+and the Linux x64 build run; download `immage-linux-x64`. This is an unsigned
+manual-test artifact, not a published release or updater. Verify its commit in
+the benchmark report. Run the user-guide native procedure at 100% and 125% on
+the same hardware. Analyze event durations alongside existing stages and CPU
+samples; compare like frame dimensions and distinguish engine-reused releases.
+Verify with the TypeScript production build, Rust checks, workflow validation
+and `git diff --check`. GUI validation requires separate per-run approval.

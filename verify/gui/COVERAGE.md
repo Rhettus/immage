@@ -14,6 +14,9 @@ This imports pure manifest/math code using Node >= 22.18, without launching an a
 | Case | Checks | Verification status |
 |---|---|---|
 | startup, exposure | Real fixture, final photo, drag lighter/darker, exact reset | Previously passed on Linux system WebKit |
+| gui-benchmark | Run existing benchmark via Preferences, retain/validate report and final pixels | Passed on Linux ARM64 VM, system WebKitGTK 2.54.2, Wayland DPR 2; timings approximate |
+| gui-benchmark-screen | Same benchmark with fractional draft on | Passed on Linux ARM64 VM, Wayland 125%, DPR 2, draftScale 0.625 |
+| gui-benchmark-whole | Same benchmark with fractional draft off | Passed on Linux ARM64 VM, Wayland 125%, DPR 2, draftScale 1 |
 | slider-input | Arrow keys, focus retention, double-click numeric editing, Enter, reset/photo | Passed on Linux system WebKit, Wayland, DPR 2 |
 | batch-paste | Two selected JPEGs, Kodak look/amount, one batch undo/redo, both sidecars, reopening and unselected image | Written; awaiting approved GUI run |
 | history | Slider edit, toolbar undo/redo, value/photo agreement, basic Reset All | Awaiting approved GUI run |
@@ -94,11 +97,11 @@ options did not execute. Preserve the failed report; this was not a suite pass.
 
 ## Expanded implementation status
 
-The registry now contains 541 named declarations. Generated range cases exercise
+The registry now contains 544 named declarations. Generated range cases exercise
 both pointer directions, keyboard limits/steps, typed minimum/maximum clamping,
 Escape and reset; generated choices enumerate mounted options. Global/mask module
 variants exercise a candidate control and rendered effect. These are unverified
-implementations, not 541 passes. Hidden graph controls, RAW-only controls and
+implementations, not 544 passes. Hidden graph controls, RAW-only controls and
 neutral/gated effects can block or need stronger dedicated oracles.
 
 Written cases now include crop guides/locked corners/portrait edges/aspects,

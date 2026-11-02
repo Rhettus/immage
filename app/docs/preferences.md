@@ -172,6 +172,14 @@ performance; results still vary by system.
 - **Shared-memory frames** (Windows and Linux): hands each frame to the
   window in memory both share, rather than copying it. On by default; turn
   it off only to compare the two in the GUI benchmark.
+- **Drag drafts at the screen's scale** (Linux Wayland): appears when the
+  detected screen scale is below the webview's pixel ratio, such as 125% on
+  a window drawn at 200%. On by default, it reduces drag-preview pixels to
+  match the screen. Settled frames still use the full webview resolution.
+  Turn it off to compare GUI benchmarks with the same photo, window size and
+  preview settings. This does not change GTK's window-surface resolution.
+  Benchmarks in a virtual machine give approximate comparisons within that
+  setup; they do not predict native GPU performance.
 
 **Memory**
 
@@ -347,3 +355,16 @@ not installed.
 
 Loupe rendering pauses while selecting or browsing photos in grid view and
 refreshes when you return to the photo view.
+
+### Native Linux diagnostic benchmark
+
+Diagnostic builds include shared-frame write, reply and WebKit read durations in
+GUI benchmark reports. These measurements help locate preview latency; they do
+not change preview resolution or measure compositor presentation. On the native
+machine, close the installed Immage, launch the diagnostic AppImage, open the
+same copied photo and use **Preferences > Performance > Measuring > GUI benchmark**.
+Keep the window size, Balanced preview size and other performance settings the
+same. Collect one report at 100% and one at 125%, recording display scale and
+refresh rate. Keep the app visible and do not resize it during either run.
+Return both JSON reports from the benchmarks directory shown after completion.
+The existing 0.41.1 reports remain the baseline; no further baseline run is needed.

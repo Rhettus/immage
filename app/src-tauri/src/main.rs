@@ -902,8 +902,15 @@ async fn render(
     }
     #[cfg(target_os = "linux")]
     if let (Some(id), Some(token)) = (shared, token) {
+        let shared_start = Instant::now();
         match shm_frame::write(&out, &token, id) {
-            Ok(()) => return Ok(Response::new(out[..FRAME_HEAD].to_vec())),
+            Ok(()) => {
+                // Reserved header word: duration of the shared-file write. The
+                // file already contains the earlier header; the reply owns this
+                // timing and the frontend records it before reading that file.
+                out[60..64].copy_from_slice(&(ms(shared_start) as f32).to_le_bytes());
+                return Ok(Response::new(out[..FRAME_HEAD].to_vec()));
+            },
             Err(e) => eprintln!("shared frame: {e}"),
         }
     }
