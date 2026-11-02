@@ -7,6 +7,8 @@ what Immage's update banner shows under Release Notes.
 
 Performance
 
+- AI Denoise previews transfer their before/after buffers through memory-backed
+  storage, preserving the full linear-float preview data.
 - Generating library thumbnails uses memory-backed intermediate buffers while
   retaining the persistent JPEG cache for subsequent visits.
 - Mask, range and zone overlays use memory-backed intermediate storage,

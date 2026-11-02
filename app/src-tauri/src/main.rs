@@ -724,8 +724,7 @@ async fn ai_denoise_preview(state: State<'_, AppState>, u: f64, v: f64, size: u3
         out.extend_from_slice(&(reply[k].as_f64().unwrap_or(0.0) as f32).to_le_bytes());
     }
     // read while the engine is still ours, so no other preview overwrites it
-    std::fs::File::open(&state.denoise_path)
-        .and_then(|mut f| std::io::Read::read_to_end(&mut f, &mut out))
+    frame_output::FrameOutput::append(&state.denoise_path, &mut out)
         .map_err(|e| format!("denoise preview: {e}"))?;
     drop(engine);
     Ok(Response::new(out))
@@ -2625,7 +2624,7 @@ fn main() {
                 export_cancels: Mutex::new(HashMap::new()),
                 engine: perf_trace::TracedMutex::new(engine),
                 frame_path: frame_output.path("frame.rgba"),
-                denoise_path: runtime.join("denoise-preview.f32"),
+                denoise_path: frame_output.path("denoise-preview.f32"),
                 presets_path: runtime.join("presets.json"),
                 preview_path: frame_output.path("preview.rgba"),
                 range_path: frame_output.path("range.bin"),

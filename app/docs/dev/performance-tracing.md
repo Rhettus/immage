@@ -327,3 +327,12 @@ until its request/read and removal finish, including error paths and detached
 task completion. The engine uses `transient_write`; Rust still sets alpha to 255.
 Persistent JPEG encoding and cache writes stay after the reply. Owner lifetime
 and byte preservation are covered by the storage tests.
+
+### Denoise intermediate storage
+
+`ai_denoise_preview` uses the owned `denoise-preview.f32` destination. The engine
+passes the before/after float RGB arrays as two spans to `transient_write`,
+without assembling another combined buffer. Rust appends the payload directly
+behind the unchanged dimensions/crop metadata header while holding the engine
+lock. The C test verifies two-span concatenation and resize handling; no float
+conversion, denoise strength, crop geometry or saved DNG behavior changes.

@@ -5466,10 +5466,8 @@ static gboolean _ai_denoise_preview(const float u, const float v, const int size
     *err = g_strdup("the denoise model failed on this photo");
     return FALSE;
   }
-  FILE *f = g_fopen(out, "wb");
-  const size_t n = (size_t)w * h * 3;
-  const gboolean written = f && fwrite(before, sizeof(float), n, f) == n && fwrite(after, sizeof(float), n, f) == n;
-  if(f) fclose(f);
+  const size_t n = (size_t)w * h * 3 * sizeof(float);
+  const gboolean written = transient_write(out, before, n, after, n);
   g_free(before);
   g_free(after);
   if(!written)

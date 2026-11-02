@@ -179,6 +179,7 @@ performance; results still vary by system.
   Windows uses pagefile-backed mappings; macOS uses private shared-memory objects.
   Buffer creation or capacity failures cause render errors. Memory-backed pages
   can be paged out under memory pressure.
+  AI Denoise before/after preview buffers use this storage too.
   Newly generated library thumbnails also use memory-backed intermediate
   storage; their reusable JPEG cache stays on disk.
   Mask, range and zone overlays use the same intermediate storage.
