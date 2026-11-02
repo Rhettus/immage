@@ -172,29 +172,6 @@ performance; results still vary by system.
 - **Shared-memory frames** (Windows and Linux): hands each frame to the
   window in memory both share, rather than copying it. On by default; turn
   it off only to compare the two in the GUI benchmark.
-  Intermediate engine frames also use memory-backed storage on Windows, macOS
-  and Linux, including slider drags and settled previews, independently of this
-  setting. Resolution is unchanged. Linux uses private `/dev/shm` files and
-  falls back to its runtime folder if the directory cannot be created at startup.
-  Windows uses pagefile-backed mappings; macOS uses private shared-memory objects.
-  macOS buffers retain capacity for smaller previews and are replaced when they
-  grow, allowing repeated rendering and thumbnail generation without resize errors.
-  Buffer creation or capacity failures cause render errors. Memory-backed pages
-  can be paged out under memory pressure.
-  Drag and settled frames reuse engine output mappings and convert pixels
-  directly into them, avoiding a separate temporary RGBA allocation and copy.
-  Native tests on all three platforms show lower frame-output costs. The effect
-  on slider latency depends on image processing and preview size; lower CPU
-  usage is not established. For a fixed-size benchmark comparison, use Balanced
-  preview size 100% in both builds and match the photo, window and display scale.
-  AI Denoise before/after preview buffers use this storage too.
-  Export dialog previews also use memory-backed transfer, with the same export
-  rendering and sRGB JPEG quality. Actual exports retain their selected metadata.
-  Cache access timestamps refresh at most once a minute to reduce repeated
-  metadata writes. Eviction therefore tracks recency with minute precision.
-  Newly generated library thumbnails also use memory-backed intermediate
-  storage; their reusable JPEG cache stays on disk.
-  Mask, range and zone overlays use the same intermediate storage.
 - **Drag drafts at the screen's scale** (Linux Wayland): appears when the
   detected screen scale is below the webview's pixel ratio, such as 125% on
   a window drawn at 200%. On by default, it reduces drag-preview pixels to
