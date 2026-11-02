@@ -1686,11 +1686,13 @@ async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>, imgid: i64
     let thumbs = state.tagged.clone();
     let tag = thumbs.tag();
     // a file of its own, as several are built at once
-    let out = state.runtime.join(format!("thumb-{tag}.rgba"));
+    let storage = state._frame_output.clone();
+    let out = storage.path(&format!("thumb-{tag}.rgba"));
     let (reply, mut pixels) = tauri::async_runtime::spawn_blocking(move || {
         let got = thumbs.request(tag, json!({ "cmd": "thumb", "imgid": imgid, "size": size, "out": out }))
-            .and_then(|reply| Ok((reply, std::fs::read(&out).map_err(|e| format!("thumb: {e}"))?)));
-        let _ = std::fs::remove_file(&out);
+            .and_then(|reply| Ok((reply, frame_output::FrameOutput::read(&out).map_err(|e| format!("thumb: {e}"))?)));
+        storage.remove(&out);
+        drop(storage);
         got
     })
     .await

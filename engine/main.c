@@ -2108,8 +2108,7 @@ static gboolean _thumb(const dt_imgid_t imgid, const int size, const char *out,
     *err = g_strdup_printf("no thumbnail for image %d", imgid);
     return FALSE;
   }
-  const gboolean ok = g_file_set_contents(out, (const gchar *)buf.buf,
-                                          (gssize)4 * buf.width * buf.height, NULL);
+  const gboolean ok = transient_write(out, buf.buf, (size_t)4 * buf.width * buf.height, NULL, 0);
   json_builder_set_member_name(b, "width");
   json_builder_add_int_value(b, buf.width);
   json_builder_set_member_name(b, "height");

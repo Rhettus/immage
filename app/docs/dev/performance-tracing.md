@@ -318,3 +318,12 @@ All three writers use `transient_write`; regular-file fallback writes in place
 without atomic rename or fsync. Their existing engine locks remain held until
 Rust has read the bytes. Response dimensions, masks and statistics are unchanged.
 The C writer test exercises exact byte transfer, truncation and failure handling.
+
+### Thumbnail intermediate storage
+
+Each tagged `thumb` request uses `FrameOutput::path("thumb-{tag}.rgba")`, preserving
+concurrent worker isolation. The blocking task retains an `Arc<FrameOutput>`
+until its request/read and removal finish, including error paths and detached
+task completion. The engine uses `transient_write`; Rust still sets alpha to 255.
+Persistent JPEG encoding and cache writes stay after the reply. Owner lifetime
+and byte preservation are covered by the storage tests.

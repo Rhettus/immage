@@ -7,6 +7,8 @@ what Immage's update banner shows under Release Notes.
 
 Performance
 
+- Generating library thumbnails uses memory-backed intermediate buffers while
+  retaining the persistent JPEG cache for subsequent visits.
 - Mask, range and zone overlays use memory-backed intermediate storage,
   avoiding regular temporary-file writes during overlay updates.
 - Engine drag and settled preview frames use memory-backed storage on Windows,
