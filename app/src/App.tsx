@@ -3,6 +3,8 @@ import { detailRows } from "./DetailControls";
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
+import { preparePastePhoto } from "./pasteDefaults";
+import { applyClip, pasteTargets, replaceMasks, restorePaste, runPaste, type PasteUpdate } from "./batchPaste";
 import { CaptureTimeDialog } from "./CaptureTimeDialog";
 import { captureMillis, type CaptureTimeEntry, type CaptureTimeUpdate } from "./captureTime";
 import { Profiler, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -334,6 +336,9 @@ export default function App() {
   // the filmstrip's selection, by image: ratings, labels and rejects apply
   // to all of it, as in Lightroom; the open photo is the active one
   const [selection, setSelection] = useState<Set<number>>(new Set());
+  const [pasting, setPasting] = useState<string | null>(null);
+  const pastingRef = useRef(false);
+  const pasteUndoSession = useRef<Session | null>(null);
   const selectionRef = useRef(selection);
   selectionRef.current = selection;
   // Lightroom's Grid (G): the filmstrip spread over the editing area
@@ -3281,10 +3286,11 @@ export default function App() {
 
   // `imgid` picks one of the file's versions (a virtual copy); without it,
   // the original. false when it did not open
-  const openFile = async (path: string, imgid: number | null = null): Promise<boolean> => {
+  const openFile = async (path: string, imgid: number | null = null, reload = false): Promise<boolean> => {
+    if (pastingRef.current && !reload) return false;
     const id = imgid ?? imagesRef.current.find((i) => i.path === path && !i.copy)?.imgid ?? null;
     const cur = currentRef.current;
-    if (cur && cur.path === path && (id === null || cur.imgid === id)) return true;
+    if (!reload && session.current && cur && cur.path === path && (id === null || cur.imgid === id)) return true;
     if (!(await invoke<boolean>("path_exists", { path }))) {
       setStatus(`file not found: ${baseName(path)}. it was moved or deleted outside Immage`);
       if (folderRef.current && !immichRef.current) void showFolder(folderRef.current, true);
@@ -3408,6 +3414,7 @@ export default function App() {
         setValues({ ...s.values });
         setHistoryRev((n) => n + 1);
       };
+      if (reload && pasteUndoSession.current) s.inheritUndo(pasteUndoSession.current);
       session.current = s;
       s.lookPath = looksRef.current.find((l) => l.name === s.look)?.path ?? null;
       setMasks(s.masks);
@@ -3421,7 +3428,10 @@ export default function App() {
       setAmount(null);
       setHoverShown(false);
       previews.current!.clear();
-      undo.current = { past: [], future: [], key: "", at: 0 };
+      if (!reload) {
+        discardPastes([...undo.current.past, ...undo.current.future]);
+        undo.current = { past: [], future: [], key: "", at: 0 };
+      }
       setHistoryRev((n) => n + 1);
       beforeRef.current = false;
       baModeRef.current = "off";
@@ -3521,7 +3531,7 @@ export default function App() {
   type Snap = { values: Values; masks: Mask[]; spots: Spot[]; look: { name: string | null; path: string | null };
                 lookAmount: number; label: string;
                 // the History panel's switched instances, and those deleted
-                modules: Map<string, ModuleState>; deleted: Set<string> };
+                modules: Map<string, ModuleState>; deleted: Set<string>; batch?: { token: number; recovery: boolean } };
   const snapshot = (s: Session, label = ""): Snap => ({
     values: { ...s.values }, masks: structuredClone(s.masks), spots: structuredClone(s.spots),
     look: { name: s.look, path: s.lookPath }, lookAmount: s.lookAmount, label,
@@ -3530,6 +3540,10 @@ export default function App() {
   const undo = useRef<{ past: Snap[]; future: Snap[]; key: string; at: number }>(
     { past: [], future: [], key: "", at: 0 });
   // set while one step makes several changes (Reset all), so they record once
+  const discardPastes = (steps: Snap[]) => {
+    for (const token of new Set(steps.flatMap(s => s.batch ? [s.batch.token] : [])))
+      void invoke("paste_batch", { action: "release", token }).catch(() => {});
+  };
   const holdRecord = useRef(false);
   // the History panel follows the stack, which is kept outside React
   const [historyRev, setHistoryRev] = useState(0);
@@ -3544,11 +3558,12 @@ export default function App() {
     const step = key !== u.key || now - u.at > 1000;
     if (step) {
       u.past.push(snapshot(s, label ?? stepName(ids)));
-      if (u.past.length > 200) u.past.shift();
+      if (u.past.length > 200) discardPastes(u.past.splice(0, 1));
     }
     if (step || u.future.length) setHistoryRev((n) => n + 1);
     u.key = key;
     u.at = now;
+    discardPastes(u.future);
     u.future = [];
   };
   // jump to a recorded state: only what differs is sent
@@ -3585,19 +3600,7 @@ export default function App() {
   const setMasksTo = (target: Mask[]) => {
     const s = session.current;
     if (!s) return;
-    const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
-    for (const m of s.masks) if (!target.some((t) => t.name === m.name)) s.deleteMask(m.name);
-    for (const t of target) {
-      const c = s.masks.find((m) => m.name === t.name);
-      if (!c) s.addMask(t.name, t.shapes);
-      else if (!same(c.shapes, t.shapes)) s.setShapes(t.name, t.shapes);
-      if ((c?.invert ?? false) !== t.invert) s.setInvert(t.name, t.invert);
-      if ((c?.opacity ?? 100) !== (t.opacity ?? 100)) s.setOpacity(t.name, t.opacity ?? 100);
-      if (!!c?.hidden !== !!t.hidden) s.setHidden(t.name, !!t.hidden);
-      if (!same(c?.refine ?? NO_REFINE, t.refine ?? NO_REFINE)) s.setRefine(t.name, t.refine ?? NO_REFINE);
-      for (const [id, v] of Object.entries(t.values))
-        if ((c ? c.values[id] : 0) !== v) s.setLocal(t.name, id, v);
-    }
+    replaceMasks(s, target);
     syncMasks();
     if (!target.some((t) => t.name === maskSel)) setMaskSel(target[0]?.name ?? null);
   };
@@ -3611,33 +3614,82 @@ export default function App() {
   // copied settings onto this image, as one undo step
   const pasteClip = (c: Clip | null, what: string) => {
     const s = session.current;
-    if (!s || !c || croppingRef.current) return;
+    if (!s || !c || croppingRef.current || pastingRef.current) return;
     leaveBefore();
+    setBaMode("off");
     setAmount(null);
     record([what]);
     holdRecord.current = true;
     try {
-      const entries = Object.entries(c.values).filter(([id, v]) => s.values[id] !== v);
-      const converts = c.values.neg_on === 1 && s.values.neg_on !== 1;
-      if (entries.length) changeMany(entries);
-      // a negative's settings pasted onto a roll's other frames convert them too
-      if (converts) negOffUnmapped(s);
-      if (c.look) {
-        if (c.look.name !== s.look) {
-          baseStale.current = true;
-          s.setLook(c.look.path, c.look.name);
-          setLookState(c.look.name);
-        }
-        if (c.look.amount !== s.lookAmount) s.setLookAmount(c.look.amount);
-        setLookAmount(c.look.amount);
-      }
-      if (c.masks) setMasksTo(c.masks);
+      applyClip(s, c);
+      baseStale.current = true;
+      setValues({ ...s.values });
+      setLookState(s.look);
+      setLookAmount(s.lookAmount);
+      syncMasks();
+      if (!s.masks.some(m => m.name === maskSel)) setMaskSel(s.masks[0]?.name ?? null);
+    } catch (e) {
+      setStatus(`paste: ${e}`);
+      return;
     } finally {
       holdRecord.current = false;
     }
     setStatus(keys(`${what}: ⌘Z undoes it`));
   };
-  const pasteSettings = () => pasteClip(clip.current, "settings pasted");
+  const pasteSaved = (i: PasteUpdate) => {
+    loader.current?.invalidate(i.imgid);
+    patchImage(i.imgid, { edited: i.edited });
+    void syncEditedKeywords(i.imgid, i.edited);
+    if (i.edited) void fillEditedMeta(i.imgid);
+  };
+  const pauseForPaste = async () => {
+    window.clearTimeout(baseTimer.current);
+    window.clearTimeout(copyTimer.current);
+    leaveBefore();
+    setBaMode("off");
+    await session.current?.close();
+    pasteUndoSession.current = session.current;
+    session.current = null;
+  };
+  const pasteSettings = async () => {
+    const c = clip.current, active = currentRef.current;
+    if (!c || !active || !session.current || croppingRef.current || pastingRef.current) return;
+    const entry = imagesRef.current.find(i => isOpen(i, active)) ?? openCell;
+    const { targets, skipped } = pasteTargets(imagesRef.current, selectionRef.current, entry, isRemote);
+    if (!targets.length) { setStatus("paste: no local photos selected"); return; }
+    const frozen = structuredClone(c);
+    const preset = [...BUILTIN_PRESETS, ...presetsRef.current].find(p => p.id === newPhotosRef.current);
+    const defaults = { profile: loadNewPhotosProfile(), compensation: loadExposureCompNew(), auto: loadAutoToneNew(),
+      preset: preset ? { values: presetValues(preset), rawOnly: preset.rawOnly } : null };
+    const before = snapshot(session.current, `Paste settings on ${targets.length} photo${targets.length === 1 ? "" : "s"}`);
+    pastingRef.current = true;
+    setPasting("Preparing paste…");
+    let message = "";
+    try {
+      await pauseForPaste();
+      const result = await runPaste(targets, frozen,
+        (done, total) => setPasting(`Pasting settings: ${done} / ${total}`), pasteSaved, s => preparePastePhoto(s, defaults));
+      if (result.token !== null) {
+        discardPastes(undo.current.future);
+        undo.current.future = [];
+        undo.current.key = "";
+        before.batch = { token: result.token, recovery: result.recovery };
+        undo.current.past.push(before);
+        if (undo.current.past.length > 200) discardPastes(undo.current.past.splice(0, 1));
+      }
+      message = result.error ? `paste: ${result.error}`
+        : keys(`settings pasted onto ${targets.length} photo${targets.length === 1 ? "" : "s"}${skipped ? `; ${skipped} remote photo(s) skipped` : ""}: ⌘Z undoes it`);
+    } catch (e) { message = `paste: ${e}`; }
+    finally {
+      // No normal navigation: preserve selection and both undo stacks.
+      if (!session.current && !await openFile(active.path, active.imgid, true))
+        message += "; could not reopen the active photo";
+      pastingRef.current = false;
+      setPasting(null);
+      setHistoryRev(n => n + 1);
+      setStatus(message);
+    }
+  };
   // Lightroom's Previous: the last photo's settings, the parts Copy Settings
   // has ticked
   const pastePrevious = () => {
@@ -3646,23 +3698,58 @@ export default function App() {
   };
   // `steps` at once, as a click in the History panel: only the state
   // arrived at is sent
-  const stepHistory = (back: boolean, steps = 1) => {
-    const s = session.current, u = undo.current;
-    // the crop tool keeps its own rectangle until Done
-    if (!s || croppingRef.current) return;
-    const from = back ? u.past : u.future, to = back ? u.future : u.past;
+  const stepHistory = async (back: boolean, steps = 1) => {
+    if (!session.current || croppingRef.current || pastingRef.current) return;
+    const u = undo.current, from = back ? u.past : u.future, to = back ? u.future : u.past;
     if (!from.length) return;
     leaveBefore();
-    let at = snapshot(s);
     for (let k = 0; k < steps && from.length; k++) {
-      const target = from.pop()!;
-      to.push({ ...at, label: target.label });
-      at = target;
+      const s = session.current;
+      if (!s) break;
+      const target = from[from.length - 1];
+      const at = snapshot(s, target.label);
+      if (target.batch) {
+        const active = currentRef.current!;
+        pastingRef.current = true;
+        setPasting(back ? "Undoing paste…" : "Redoing paste…");
+        let message = back ? "paste undone" : "paste redone";
+        let ok = false;
+        try {
+          await pauseForPaste();
+          const updates = await restorePaste(target.batch.token, target.batch.recovery ? "abort" : back ? "undo" : "redo");
+          updates.forEach(pasteSaved);
+          const failures = updates.filter(i => i.error);
+          if (failures.length) throw Error(`${failures.length} photo(s) could not be restored; Undo/Redo retries`);
+          from.pop();
+          if (target.batch.recovery) discardPastes([target]);
+          else { at.batch = target.batch; to.push(at); }
+          ok = true;
+        } catch (e) { message = `paste: ${e}`; }
+        finally {
+          if (!session.current && !await openFile(active.path, active.imgid, true)) message += "; could not reopen the active photo";
+          pastingRef.current = false;
+          setPasting(null);
+          setStatus(message);
+        }
+        if (!ok) break;
+      } else {
+        from.pop();
+        to.push(at);
+        let next = target;
+        // Ordinary spans still jump straight to their final state. Native
+        // batch edges must be crossed separately, after pending edits settle.
+        while (k + 1 < steps && from.length && !from[from.length - 1].batch) {
+          const following = from.pop()!;
+          to.push({ ...next, label: following.label });
+          next = following;
+          k++;
+        }
+        restore(next);
+        setStatus(back ? "undo" : "redo");
+      }
     }
     u.key = "";
-    restore(at);
-    setHistoryRev((n) => n + 1);
-    setStatus(back ? "undo" : "redo");
+    setHistoryRev(n => n + 1);
   };
   // darktable's compress history stack: one entry per module in the photo's
   // history, which the session's steps fold into. those undone go, as in
@@ -3674,6 +3761,7 @@ export default function App() {
     try {
       const base = await s.compressHistory();
       if (session.current !== s) return;
+      discardPastes([...undo.current.past, ...undo.current.future]);
       undo.current = { past: [], future: [], key: "", at: 0 };
       setHistoryBase(base);
       setHistoryRev((n) => n + 1);
@@ -4649,6 +4737,7 @@ export default function App() {
   // blue labels, X rejects. typing in a field, a focused slider's arrows, or a switch's Space, are left alone
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (pastingRef.current) { e.preventDefault(); return; }
       const t = e.target;
       // a dialog owns the keyboard while it is open
       if (document.querySelector(".modal-backdrop")) return;
@@ -5051,6 +5140,10 @@ export default function App() {
 
   return (
     <div className={`window${preview ? " preview" : ""}`} data-module-choices={JSON.stringify(Object.fromEntries(Object.entries(values).filter(([id]) => id.startsWith("mod_"))))}>
+    {pasting && <div className="modal-backdrop" data-batch-paste="busy" role="dialog" aria-modal="true" aria-label="Pasting settings"
+      onKeyDownCapture={e => { e.preventDefault(); e.stopPropagation(); }} tabIndex={-1} ref={el => el?.focus()}>
+      <div className="modal"><div className="modal-head"><h2>{pasting}</h2></div></div>
+    </div>}
     {/* the window's title bar is hidden (tauri.conf.json); this strip moves
         the window and leaves room for the traffic lights */}
     {/* full screen has no traffic lights to hold, and the photo wants the room */}
@@ -5786,9 +5879,9 @@ export default function App() {
         </div>
         <div className="right-foot">
           <button className="btn small" disabled={!current || cropping} onClick={() => setCopying(true)}
-                  title={keys("choose settings of this photo to copy (⇧⌘C)")}>Copy…</button>
+                  data-action="copy-settings" title={keys("choose settings of this photo to copy (⇧⌘C)")}>Copy…</button>
           <button className="btn small" disabled={!current || cropping || !hasClip} onClick={pasteSettings}
-                  title={keys("paste the copied settings onto this photo (⇧⌘V)")}>Paste</button>
+                  data-action="paste-settings" title={keys("paste the copied settings onto the selected photos (⇧⌘V)")}>Paste</button>
           <button className="btn small" disabled={!current || cropping || !previous.current} onClick={pastePrevious}
                   title={keys("the previous photo's settings, the parts ticked in Copy Settings (⌥⌘V)")}>Previous</button>
         </div>

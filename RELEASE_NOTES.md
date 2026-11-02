@@ -3,6 +3,15 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
+## Unreleased
+
+Improvements
+
+- Paste Settings applies the copied groups to every selected local photo,
+  including virtual copies, while keeping the active photo and selection.
+  Looks retain their strength. One undo or redo restores the whole batch;
+  failures report recovery and sidecar write problems.
+
 ## 0.41.0
 
 Improvements

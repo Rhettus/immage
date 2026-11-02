@@ -88,7 +88,7 @@ export function CopyDialog({ onCopy, onClose }: { onCopy: (on: Set<string>) => v
         <div className="modal-body copy-groups">
           {COPY_GROUPS.map((g) => (
             <label key={g.id} className="row check">
-              <input type="checkbox" checked={on.has(g.id)} onChange={() => toggle(g.id)} />
+              <input type="checkbox" data-copy-group={g.id} checked={on.has(g.id)} onChange={() => toggle(g.id)} />
               {g.label}
             </label>
           ))}

@@ -59,7 +59,7 @@ having to learn darktable:
   already follows darktable's scene-referred AgX workflow before the first
   slider is touched
 - people who want to get through a shoot quickly: one set of panels with
-  a fixed order, settings copied from one photo to the next, and nothing
+  a fixed order, settings copied to selected photos in a batch, and nothing
   to set up before editing. Immage does not render faster than darktable;
   the time it saves is the editor's
 - people who keep their photos in folders, or in an Immich library,

@@ -121,6 +121,7 @@ and constrained resizing.
 | [sharedFrames.ts](../../src/sharedFrames.ts) | Windows: `renderFrame` asks `render` to post the frame in a WebView2 shared buffer tagged with an id, then matches the `sharedbufferreceived` event to the reply, copies the frame out and releases the buffer. Linux: it asks `render` to write the frame to `/dev/shm` and reads it with the web extension's `immageFrame()`. On the Mac, on WebView2 runtimes before 1.0.1661, on Linux without the extension, or with Preferences' "Shared-memory frames" off, the frame comes in `render`'s reply. |
 | [HistoryPanel.tsx](../../src/HistoryPanel.tsx) | darktable's history plus this session's undo steps; a row's switch, delete or reset (`historyChange` in App.tsx, `Session.setModuleState`, the engine's `_module_state`). |
 | [CopySettings.tsx](../../src/CopySettings.tsx) | Copy/Paste Settings: which groups, and the clip. |
+| [batchPaste.ts](../../src/batchPaste.ts) | Exact selection targets; shared single/batch clip application; sequential background Sessions, native snapshot commit and rollback. |
 
 ### Control mapping (pure math, no Tauri)
 
@@ -587,6 +588,54 @@ Folder reads use a token to reject stale progress/results and time out an
 engine batch after 30 seconds. FolderTree loads expanded branches independently.
 Engine shutdown in Rust is bounded to five seconds even without a quit reply;
 Linux parent-death handling also terminates an orphan engine after an app crash.
+
+## Batch settings paste
+
+`App.pasteSettings` freezes the clip and exact selected local imgids (or the
+open photo when selection is empty). It does not expand paired photos; virtual
+copies retain their own ids. `Previous` still calls the single-photo path.
+The modal plus synchronous busy ref block overlapping edits/shortcuts and
+navigation. The viewer leaves Before, drains/saves its Session and clears base
+and copy timers before relinquishing the engine. The same photo is reopened
+in `finally` without clearing the selection or the UI undo stacks.
+`Session.inheritUndo` retains earlier native-module opening states across that
+reload. Each batch appears as one `Snap.batch` edge; multi-step History jumps
+cross batch edges sequentially, and discarded edges release their snapshots.
+Undo remains scoped to the current editor history, not a persistent library log.
+
+`batchPaste.applyClip` uses the same `Session.setMany`, look, negative-module
+and mask operations as single-image Paste. Masks replace the target collection,
+including resetting values absent from a same-named source mask. An unavailable
+look path fails rather than removing the look silently. Each target opens a
+background Session: normal per-image mappings and mask transports run, but
+previews and delayed autosaves do not. Explicit close drains all pending work
+(including native module changes), propagates background pump failures and
+saves before advancing. Before snapshots, `pasteDefaults.preparePastePhoto`
+establishes an unedited baseline for never-opened photos using the frozen
+new-photo profile, exposure compensation, capture sharpening, preset and Auto
+preferences. Existing saved edits are untouched. Auto may request a small
+measurement preview; ordinary target edits do not render full previews.
+
+The Rust `paste_batch` command serializes each engine request. Engine
+`_paste_batch` supports `begin`, `commit`, `undo`, `redo`, `abort`, `release`.
+Begin validates all ids/paths/duplicates before taking private native history
+snapshots with `_snapshot`. Commit records the completed state. Restore copies
+full history, module order and mask data, restores baseline/current hashes and
+the edited tag, invalidates mipmaps and explicitly writes XMP. Sidecar failures
+are returned per image; failed recovery keeps the token so Undo can retry.
+Stale undo/redo is checked for the whole target list before any restore. Snapshot
+versions are excluded from library listings and released with their UI entries
+or at engine shutdown. These tokens do not survive an engine restart.
+
+Verification: `node --test --test-isolation=none verify/batch-paste.test.mjs`
+runs production Session/mapping/batch code through `verify/shim.mjs` and the real
+engine in isolated temporary photo/runtime directories. It covers targeting,
+native look parameters/strength, rendered undo/redo, untouched groups, virtual copies, mask/crop preservation,
+persistence, undo/redo, stale edits and failed sidecar recovery. The separate
+`batch-paste` visible-app case uses actual Copy/Paste controls and modifier
+selection, then checks values, look amount, rendered output, both sidecars,
+undo/redo, reopening and an unselected image. See the GUI coverage ledger for
+execution status; writing the case is not a GUI pass.
 
 ## Keeping this current
 

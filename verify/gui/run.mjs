@@ -141,6 +141,12 @@ try {
     copiedFixture=join(fixtures,generated[fixtureName].file);
     report.syntheticFixture={name:fixtureName,...generated[fixtureName]};
   }
+  if (selectedCases.includes('batch-paste')) {
+    if (!/\.jpe?g$/i.test(copiedFixture)) throw Error('batch-paste requires a JPEG fixture');
+    for (const name of ['batch-target-1.jpg', 'batch-target-2.jpg', 'batch-untouched.jpg'])
+      await copyFile(copiedFixture, join(fixtures, name));
+    report.batchFixtures = ['batch-target-1.jpg', 'batch-target-2.jpg', 'batch-untouched.jpg'];
+  }
   const port = await freePort(); let nativePort = await freePort(); while (nativePort === port) nativePort = await freePort();
   const env = { ...process.env,
     XDG_DATA_HOME: join(profile, 'data'), XDG_CONFIG_HOME: join(profile, 'config'),
@@ -189,6 +195,7 @@ try {
     const t = { driver,
       fixture:{name:fixtureName,generated:fixtureName!=='configured',file:basename(copiedFixture),raw:/\.(?:cr2|cr3|nef|arw|raf|dng|orf|rw2)$/i.test(copiedFixture)},
       sidecars:async()=>Promise.all((await readdir(fixtures)).filter(n=>n.endsWith('.xmp')).map(n=>readFile(join(fixtures,n),'utf8'))),
+      sidecarsNamed:async()=>Promise.all((await readdir(fixtures)).filter(n=>n.endsWith('.xmp')).map(async file=>({file,text:await readFile(join(fixtures,file),'utf8')}))),
       fixtureFiles:()=>readdir(fixtures), engineLog:()=>readFile(join(profile,'data','app.immage','engine.log'),'utf8'),
       measure: m => { c.measurements.push(m); journal.event('measurement', { case: name, ...m }); journal.checkpoint(report); }, evidence: async label => {
       await driver.screenshot(join(caseDir, `${label}.png`));

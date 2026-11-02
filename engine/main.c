@@ -8712,6 +8712,176 @@ static gboolean _save(char **err)
   return TRUE;
 }
 
+// Complete native histories for one frontend batch. These private image versions
+// never appear in listings and are released with their undo entries or on exit.
+typedef struct paste_image_t
+{
+  dt_imgid_t imgid, before, after;
+  dt_history_hash_values_t before_hash, after_hash;
+} paste_image_t;
+typedef struct paste_batch_t
+{
+  GArray *images;
+  gboolean committed;
+} paste_batch_t;
+static GHashTable *_paste_batches = NULL;
+static guint _paste_serial = 0;
+
+static void _paste_free(gpointer data)
+{
+  paste_batch_t *batch = data;
+  for(guint k = 0; k < batch->images->len; k++)
+  {
+    paste_image_t *i = &g_array_index(batch->images, paste_image_t, k);
+    _snapshot_remove(i->before);
+    _snapshot_remove(i->after);
+    dt_history_hash_free(&i->before_hash);
+    dt_history_hash_free(&i->after_hash);
+  }
+  g_array_free(batch->images, TRUE);
+  g_free(batch);
+}
+
+static dt_imgid_t _paste_snapshot(const dt_imgid_t imgid)
+{
+  const dt_imgid_t snap = _snapshot(imgid);
+  // The history API logs raster-copy failures without propagating them.
+  // Verify the data transfer before relying on a snapshot for undo.
+  if(dt_is_valid_imgid(snap) && !dt_dtdata_merge(imgid, snap))
+  { _snapshot_remove(snap); return NO_IMGID; }
+  return snap;
+}
+
+static gboolean _paste_same_hash(const dt_history_hash_values_t *a,
+                                 const dt_history_hash_values_t *b)
+{
+  return a->current_len == b->current_len
+    && (!a->current_len || !memcmp(a->current, b->current, a->current_len));
+}
+
+static gboolean _paste_batch(JsonObject *req, JsonBuilder *b, char **err)
+{
+  const char *action = json_object_get_string_member_with_default(req, "action", "");
+  const guint token = json_object_get_int_member_with_default(req, "token", 0);
+  if(!_paste_batches) _paste_batches = g_hash_table_new_full(g_direct_hash, g_direct_equal, NULL, _paste_free);
+  paste_batch_t *batch = g_hash_table_lookup(_paste_batches, GUINT_TO_POINTER(token));
+  if(!g_strcmp0(action, "begin"))
+  {
+    JsonArray *ids = json_object_get_array_member(req, "imgids");
+    if(!ids || !json_array_get_length(ids)) { *err = g_strdup("no paste targets"); return FALSE; }
+    // Validate the whole list before allocating snapshots or writing anything.
+    for(guint k = 0; k < json_array_get_length(ids); k++)
+    {
+      const dt_imgid_t id = json_array_get_int_element(ids, k);
+      char path[PATH_MAX] = { 0 };
+      gboolean cache = FALSE;
+      if(dt_is_valid_imgid(id) && !_is_snapshot(id)) dt_image_full_path(id, path, sizeof(path), &cache);
+      if(!path[0] || !g_file_test(path, G_FILE_TEST_IS_REGULAR))
+      { *err = g_strdup_printf("paste target %d is missing", id); return FALSE; }
+      for(guint j = 0; j < k; j++) if(json_array_get_int_element(ids, j) == id)
+      { *err = g_strdup("duplicate paste target"); return FALSE; }
+    }
+    if(_s.open && _s.unsaved && !_s.before && !_save(err)) return FALSE;
+    batch = g_new0(paste_batch_t, 1);
+    batch->images = g_array_new(FALSE, TRUE, sizeof(paste_image_t));
+    for(guint k = 0; k < json_array_get_length(ids); k++)
+    {
+      paste_image_t i = { .imgid = json_array_get_int_element(ids, k) };
+      dt_history_hash_read(i.imgid, &i.before_hash);
+      i.before = _paste_snapshot(i.imgid);
+      g_array_append_val(batch->images, i);
+      if(!dt_is_valid_imgid(i.before))
+      { _paste_free(batch); *err = g_strdup("could not snapshot paste targets"); return FALSE; }
+    }
+    const guint made = ++_paste_serial;
+    g_hash_table_insert(_paste_batches, GUINT_TO_POINTER(made), batch);
+    json_builder_set_member_name(b, "token");
+    json_builder_add_int_value(b, made);
+    return TRUE;
+  }
+  if(!batch) { *err = g_strdup("paste undo is no longer available"); return FALSE; }
+  if(!g_strcmp0(action, "release"))
+  { g_hash_table_remove(_paste_batches, GUINT_TO_POINTER(token)); return TRUE; }
+  if(!g_strcmp0(action, "commit"))
+  {
+    if(batch->committed) { *err = g_strdup("paste already committed"); return FALSE; }
+    if(_s.open && _s.unsaved && !_s.before && !_save(err)) return FALSE;
+    for(guint k = 0; k < batch->images->len; k++)
+    {
+      paste_image_t *i = &g_array_index(batch->images, paste_image_t, k);
+      i->after = _paste_snapshot(i->imgid);
+      dt_history_hash_read(i->imgid, &i->after_hash);
+      if(!dt_is_valid_imgid(i->after)) { *err = g_strdup("could not snapshot pasted settings"); return FALSE; }
+    }
+    batch->committed = TRUE;
+    return TRUE;
+  }
+  const gboolean back = !g_strcmp0(action, "undo") || !g_strcmp0(action, "abort");
+  const gboolean aborting = !g_strcmp0(action, "abort");
+  if(!back && g_strcmp0(action, "redo")) { *err = g_strdup("unknown paste action"); return FALSE; }
+  if(!aborting && !batch->committed) { *err = g_strdup("paste is not committed"); return FALSE; }
+  // Refuse stale undo/redo before changing any photo. Retrying a failed sidecar
+  // write is allowed when the database already holds the requested state.
+  if(!aborting && _s.open && _s.unsaved && !_s.before && !_save(err)) return FALSE;
+  for(guint k = 0; !aborting && k < batch->images->len; k++)
+  {
+    paste_image_t *i = &g_array_index(batch->images, paste_image_t, k);
+    dt_history_hash_values_t now = { 0 };
+    dt_history_hash_read(i->imgid, &now);
+    const gboolean same = _paste_same_hash(&now, &i->before_hash) || _paste_same_hash(&now, &i->after_hash);
+    dt_history_hash_free(&now);
+    if(!same) { *err = g_strdup_printf("photo %d changed since the paste; undo stopped", i->imgid); return FALSE; }
+  }
+  if(_s.open)
+    for(guint k = 0; k < batch->images->len; k++)
+      if(g_array_index(batch->images, paste_image_t, k).imgid == _s.imgid) { _close_session(); break; }
+  json_builder_set_member_name(b, "updates");
+  json_builder_begin_array(b);
+  for(guint k = 0; k < batch->images->len; k++)
+  {
+    paste_image_t *i = &g_array_index(batch->images, paste_image_t, k);
+    const dt_imgid_t snap = back ? i->before : i->after;
+    const dt_history_hash_values_t *hash = back ? &i->before_hash : &i->after_hash;
+    _hold_open(i->imgid);
+    const gboolean copied = dt_history_copy_and_paste_on_image(snap, i->imgid, FALSE, NULL, TRUE, TRUE, FALSE)
+      && dt_dtdata_merge(snap, i->imgid);
+    if(copied)
+    {
+      // dt_history_hash_write consumes its buffers despite its const argument.
+      dt_history_hash_values_t owned = *hash;
+      owned.basic = hash->basic_len ? g_malloc(hash->basic_len) : NULL;
+      owned.auto_apply = hash->auto_apply_len ? g_malloc(hash->auto_apply_len) : NULL;
+      owned.current = hash->current_len ? g_malloc(hash->current_len) : NULL;
+      if(hash->basic_len) memcpy(owned.basic, hash->basic, hash->basic_len);
+      if(hash->auto_apply_len) memcpy(owned.auto_apply, hash->auto_apply, hash->auto_apply_len);
+      if(hash->current_len) memcpy(owned.current, hash->current, hash->current_len);
+      dt_history_hash_write(i->imgid, &owned);
+    }
+    const gboolean edited = dt_image_altered(i->imgid);
+    if(copied)
+    {
+      if(edited)
+      {
+        guint tag = 0;
+        dt_tag_new("darktable|changed", &tag);
+        dt_tag_attach(tag, i->imgid, FALSE, FALSE);
+      }
+      else dt_tag_detach_by_string("darktable|changed", i->imgid, FALSE, FALSE);
+    }
+    const gboolean failed = !copied || _write_sidecar(i->imgid);
+    dt_mipmap_cache_remove(i->imgid);
+    json_builder_begin_object(b);
+    json_builder_set_member_name(b, "imgid"); json_builder_add_int_value(b, i->imgid);
+    json_builder_set_member_name(b, "edited"); json_builder_add_boolean_value(b, edited);
+    json_builder_set_member_name(b, "error");
+    if(failed) json_builder_add_string_value(b, copied ? "could not write the XMP sidecar" : "could not restore history");
+    else json_builder_add_null_value(b);
+    json_builder_end_object(b);
+  }
+  json_builder_end_array(b);
+  return TRUE;
+}
+
 // on the way out, the edits the client's own save has not reached yet
 static void _save_pending(void)
 {
@@ -8936,6 +9106,10 @@ static void _handle(JsonObject *req, FILE *out)
     const char *name = json_object_get_string_member_with_default(req, "name", NULL);
     if(!name) goto fail;
     dt_styles_delete_by_name_adv(name, FALSE, FALSE);
+  }
+  else if(!g_strcmp0(cmd, "paste_batch"))
+  {
+    if(!_paste_batch(req, b, &err)) goto fail;
   }
   else if(!_s.open && g_strcmp0(cmd, "quit"))
   {
@@ -9588,6 +9762,7 @@ int main(int argc, char **argv)
 #endif
   _close_session();
   _prefetch_wait();
+  if(_paste_batches) g_hash_table_destroy(_paste_batches);
   dt_cleanup();
   g_ptr_array_free(m, TRUE);
   return 0;
