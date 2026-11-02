@@ -179,6 +179,7 @@ performance; results still vary by system.
   Windows uses pagefile-backed mappings; macOS uses private shared-memory objects.
   Buffer creation or capacity failures cause render errors. Memory-backed pages
   can be paged out under memory pressure.
+  Mask, range and zone overlays use the same intermediate storage.
 - **Drag drafts at the screen's scale** (Linux Wayland): appears when the
   detected screen scale is below the webview's pixel ratio, such as 125% on
   a window drawn at 200%. On by default, it reduces drag-preview pixels to

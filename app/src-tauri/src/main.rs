@@ -251,7 +251,7 @@ async fn range_map(state: State<'_, AppState>, ranges: Value, width: u32, height
     engine.request(json!({ "cmd": "range_map", "ranges": ranges, "width": width, "height": height,
                            "out": state.range_path }))?;
     // read while the engine is still ours, so no other request overwrites it
-    let map = std::fs::read(&state.range_path).map_err(|e| format!("range map: {e}"))?;
+    let map = frame_output::FrameOutput::read(&state.range_path).map_err(|e| format!("range map: {e}"))?;
     drop(engine);
     let mut out = Vec::with_capacity(8 + map.len());
     out.extend_from_slice(&width.to_le_bytes());
@@ -268,7 +268,7 @@ async fn zones(state: State<'_, AppState>, width: u32, height: u32, transition: 
     let mut engine = state.engine("zones");
     let reply = engine.request(json!({ "cmd": "zones", "width": width, "height": height, "transition": transition,
                                        "stage": stage, "out": state.range_path }))?;
-    let map = std::fs::read(&state.range_path).map_err(|e| format!("zones: {e}"))?;
+    let map = frame_output::FrameOutput::read(&state.range_path).map_err(|e| format!("zones: {e}"))?;
     drop(engine);
     let stats = reply.to_string().into_bytes();
     let mut out = Vec::with_capacity(12 + stats.len() + map.len());
@@ -304,7 +304,7 @@ async fn mask_map(state: State<'_, AppState>, name: Option<String>, op: Option<S
     let reply = engine.request(req)?;
     let width = reply["width"].as_u64().map_or(width, |w| w as u32);
     let height = reply["height"].as_u64().map_or(height, |h| h as u32);
-    let map = std::fs::read(&state.range_path).map_err(|e| format!("mask map: {e}"))?;
+    let map = frame_output::FrameOutput::read(&state.range_path).map_err(|e| format!("mask map: {e}"))?;
     drop(engine);
     let mut out = Vec::with_capacity(8 + map.len());
     out.extend_from_slice(&width.to_le_bytes());
@@ -2626,7 +2626,7 @@ fn main() {
                 denoise_path: runtime.join("denoise-preview.f32"),
                 presets_path: runtime.join("presets.json"),
                 preview_path: frame_output.path("preview.rgba"),
-                range_path: runtime.join("range.bin"),
+                range_path: frame_output.path("range.bin"),
                 looks_dir,
                 user_looks_dir: runtime.join("looks"),
                 models_dir,

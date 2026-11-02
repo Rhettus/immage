@@ -7,6 +7,8 @@ what Immage's update banner shows under Release Notes.
 
 Performance
 
+- Mask, range and zone overlays use memory-backed intermediate storage,
+  avoiding regular temporary-file writes during overlay updates.
 - Engine drag and settled preview frames use memory-backed storage on Windows,
   macOS and Linux, reducing temporary file overhead without changing resolution.
 

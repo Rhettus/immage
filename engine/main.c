@@ -7921,7 +7921,7 @@ static gboolean _range_map(JsonArray *ranges, const int width, const int height,
                            params + DEVELOP_BLENDIF_PARAMETER_ITEMS * _chans[c].ch);
     map[k] = (uint8_t)CLAMP(f * 255.0f + 0.5f, 0.0f, 255.0f);
   }
-  const gboolean ok = g_file_set_contents(out, (const gchar *)map, n, NULL);
+  const gboolean ok = transient_write(out, map, n, NULL, 0);
   g_free(map);
   g_free(pts);
   if(!ok) *err = g_strdup_printf("could not write '%s'", out);
@@ -8001,7 +8001,7 @@ static gboolean _zones(const int width, const int height, const float w, const _
     else if(z >= _ZONE_COUNT - 0.5f) above += 1.0;
     else fine[CLAMP((int)((z + 0.5f) * _ZONE_FINE), 0, _ZONE_COUNT * _ZONE_FINE - 1)] += 1.0;
   }
-  const gboolean ok = g_file_set_contents(out, (const gchar *)map, n, NULL);
+  const gboolean ok = transient_write(out, map, n, NULL, 0);
   qsort(zs, n, sizeof(float), _zone_cmp);
 
   json_builder_set_member_name(b, "zones");
@@ -8163,7 +8163,7 @@ static gboolean _mask_map(const char *name, const char *op, int *width, int *hei
     const float v = (top * (1.0f - ay) + bot * ay) / opacity;
     map[k] = (uint8_t)CLAMP(v * 255.0f + 0.5f, 0.0f, 255.0f);
   }
-  const gboolean ok = g_file_set_contents(out, (const gchar *)map, n, NULL);
+  const gboolean ok = transient_write(out, map, n, NULL, 0);
   g_free(map);
   g_free(pts);
   if(!ok) *err = g_strdup_printf("could not write '%s'", out);

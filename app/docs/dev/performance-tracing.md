@@ -310,3 +310,11 @@ use one native 125% run by default; add 100% for scaling changes or unresolved
 findings. Compare `outputMs.file` and total latency without adding nested timings.
 The legacy metric name now measures output transport, including mapping setup
 and copy. No speedup is assumed from VM runs.
+
+### Overlay intermediate storage
+
+`range_map`, `zones` and `mask_map` share `range.bin` within `FrameOutput`.
+All three writers use `transient_write`; regular-file fallback writes in place
+without atomic rename or fsync. Their existing engine locks remain held until
+Rust has read the bytes. Response dimensions, masks and statistics are unchanged.
+The C writer test exercises exact byte transfer, truncation and failure handling.
