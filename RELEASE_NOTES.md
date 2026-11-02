@@ -7,6 +7,8 @@ what Immage's update banner shows under Release Notes.
 
 Performance
 
+- Repeated cache hits update access timestamps at most once a minute, reducing
+  metadata writes while keeping recently used thumbnails and originals cached.
 - Export dialog previews encode JPEG in memory and use memory-backed transfer,
   avoiding temporary-container metadata and regular-file output.
 - AI Denoise previews transfer their before/after buffers through memory-backed

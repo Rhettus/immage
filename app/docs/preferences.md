@@ -182,6 +182,8 @@ performance; results still vary by system.
   AI Denoise before/after preview buffers use this storage too.
   Export dialog previews also use memory-backed transfer, with the same export
   rendering and sRGB JPEG quality. Actual exports retain their selected metadata.
+  Cache access timestamps refresh at most once a minute to reduce repeated
+  metadata writes. Eviction therefore tracks recency with minute precision.
   Newly generated library thumbnails also use memory-backed intermediate
   storage; their reusable JPEG cache stays on disk.
   Mask, range and zone overlays use the same intermediate storage.

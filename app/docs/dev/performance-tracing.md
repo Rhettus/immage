@@ -357,3 +357,19 @@ build. It syntax-checks the engine and runs byte-transfer and JPEG callback test
 without starting the application. JPEG checks decode all five subsampling modes,
 verify dimensions/density/pixel error, and exercise output failure and invalid
 sizes. Native export-dialog appearance and latency still need validation.
+
+### Cache access bookkeeping
+
+`cache.rs::touch` skips the write-open and `set_modified` when the existing
+mtime is less than 60 seconds old. Stale or future timestamps are refreshed;
+missing/failed metadata retains the previous best-effort update behavior.
+Original directories create their `.used` marker once, then use the same throttle.
+There is no growing in-memory path table or background flush queue. Eviction
+still sorts persistent mtimes and protects edited originals, with recency rounded
+to roughly one minute. Cache contents, budgets and intentional writes are unchanged.
+
+`cargo test --manifest-path app/src-tauri/Cargo.toml --offline --bin immage --no-default-features cache::tests`
+covers repeated-hit/marker timestamp stability, stale refresh, eviction ordering,
+known thumbnails, cache path validation and edited-original retention. The policy
+reduces timestamp writes; metadata reads still occur and native browsing impact
+has not yet been measured.
