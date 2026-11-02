@@ -7,9 +7,8 @@ what Immage's update banner shows under Release Notes.
 
 Performance
 
-- Linux uses private memory-backed storage for engine drag and settled preview
-  frames when available, reducing temporary file output overhead without
-  changing image resolution.
+- Engine drag and settled preview frames use memory-backed storage on Windows,
+  macOS and Linux, reducing temporary file overhead without changing resolution.
 
 Improvements
 

@@ -66,7 +66,7 @@ struct AppState {
     // whether the engine started with its edits on the GPU
     gpu_edits: bool,
     // Drop after Engine so it cannot still be writing into this directory.
-    _frame_output: frame_output::FrameOutput,
+    _frame_output: Arc<frame_output::FrameOutput>,
 }
 
 impl AppState {
@@ -866,8 +866,7 @@ async fn render(
     let kept = reply["kept"].as_bool() == Some(true);
     let t2 = Instant::now();
     if !kept {
-        std::fs::File::open(&state.frame_path)
-            .and_then(|mut f| std::io::Read::read_to_end(&mut f, &mut out))
+        frame_output::FrameOutput::append(&state.frame_path, &mut out)
             .map_err(|e| format!("frame: {e}"))?;
     }
     let read_ms = ms(t2);
@@ -2369,8 +2368,10 @@ async fn preview(
     if with_look {
         req["look"] = json!(look);
     }
-    let reply = state.engine("preview").request(req)?;
-    let pixels = std::fs::read(&state.preview_path).map_err(|e| format!("preview: {e}"))?;
+    let mut engine = state.engine("preview");
+    let reply = engine.request(req)?;
+    let pixels = frame_output::FrameOutput::read(&state.preview_path).map_err(|e| format!("preview: {e}"))?;
+    drop(engine);
     let mut out = Vec::with_capacity(8 + pixels.len());
     for k in ["width", "height"] {
         out.extend_from_slice(&(reply[k].as_u64().unwrap_or(0) as u32).to_le_bytes());
@@ -2615,7 +2616,7 @@ fn main() {
             let gpu_edits = engine::gpu_edits(&runtime);
             let engine = Engine::spawn(&bin, &runtime, &models_dir)
                 .map_err(|e| format!("cannot start {}: {e}", bin.display()))?;
-            let frame_output = frame_output::FrameOutput::new(&runtime);
+            let frame_output = Arc::new(frame_output::FrameOutput::new(&runtime));
             app.manage(AppState {
                 base_cancel: engine.base_cancel(),
                 tagged: engine.tagged(),

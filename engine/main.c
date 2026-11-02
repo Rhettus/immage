@@ -1421,6 +1421,8 @@ static gboolean _write_ppm(const char *path, const uint8_t *in, const int w, con
   return TRUE;
 }
 
+#include "transient_output.h"
+
 // headerless RGBA, ready for a canvas ImageData; the size is in the reply.
 // written over the file in place: g_file_set_contents() would write a
 // temporary file, sync it and rename it, for every frame of a slider drag.
@@ -1442,9 +1444,7 @@ static gboolean _write_rgba(const char *path, const uint8_t *in, const int w, co
     rgba[4 * k + 3] = 255;
   }
   const gint64 converted = g_get_monotonic_time();
-  FILE *f = g_fopen(path, "wb");
-  gboolean ok = f && fwrite(rgba, 1, 4 * n, f) == 4 * n;
-  if(f && fclose(f)) ok = FALSE;
+  gboolean ok = transient_write(path, rgba, 4 * n, NULL, 0);
   const gint64 written = g_get_monotonic_time();
   g_free(rgba);
   const gint64 freed = g_get_monotonic_time();

@@ -268,32 +268,45 @@ breakdown (`outputMs: null`). No settled or draft dimensions change.
 
 ### Engine intermediate frame storage
 
-`frame_output.rs` selects the engine output directory independently of persistent
-runtime data. On Linux, `mkdtemp` creates a unique mode-0700 directory under
-`/dev/shm`; both render `frame.rgba` and preview `preview.rgba` live there.
-This covers freshly rendered slider-drag frames and settled frames. It does not
-change engine resolution, RGBA conversion, request serialization or the later
-Rust-to-WebView shared-frame transport. Other platforms retain runtime files.
-The shared-memory preference controls that later transport only.
+`frame_output.rs` owns transient output separately from persistent runtime data.
+Linux uses a unique mode-0700 `/dev/shm` directory, falling back to runtime files
+only if startup directory creation fails. Windows uses pagefile-backed named
+mappings; macOS uses mode-0600 POSIX shared-memory objects. Object names contain
+96 bits derived from a random per-instance UUID and the output name; Darwin
+names fit its length limit. The app creates/owns/unlinks POSIX names. Capacity
+failures surface as request errors, without silently retrying on disk. All three
+mechanisms can page out under memory pressure.
 
-Failure to create the directory logs a warning and retains the runtime paths.
-Once selected, output failures (including exhausted tmpfs space) retain the
-existing render error behavior rather than silently retrying on disk. tmpfs can
-swap under memory pressure. The owning AppState drops the output directory after
-the engine exits; abrupt process termination can leave a private directory until
-reboot or manual cleanup. Persistent configuration and caches remain unchanged.
+Both fresh render frames and previews use this storage. Resolution, BGRA-to-RGBA
+conversion and the later Rust-to-WebView transport remain unchanged; the shared
+frames preference controls only that later transport. JSON replies publish write
+completion. Keep the engine mutex through the complete read, including previews.
+`transient_output.h` writes an eight-byte little-endian payload length before
+Windows/macOS mapping data; regular file output stays headerless. Rust checks
+mapping lengths before copying directly into the response buffer.
 
-Non-GUI unit tests cover private permissions, instance isolation, byte roundtrip
-and cleanup ownership. Validate latency with native 100% and 125% benchmark runs
-using identical photo, viewport and settings; compare `outputMs.file` and total
-latency without adding nested timings twice. No speedup is assumed from VM runs.
+On Windows the engine retains the mapping and a manual-reset consumption event.
+Rust signals that event after closing its view/handle, including read errors.
+The next output write reaps acknowledged handles; live names cannot be overwritten.
+This avoids waiting inside the engine for the consumer and allows concurrent
+thumbnail workers. Process exit closes remaining Windows handles. The AppState
+owner is dropped after Engine and is reference-counted for background work.
+POSIX objects/private directories are removed at normal owner drop; abrupt
+termination may leave POSIX names or Linux files until reboot/manual cleanup.
+Persistent configuration and caches stay in the runtime/cache directories.
 
-For a transportable x86_64 AppImage from this ARM64 development machine,
-dispatch `build.yml` with `diagnostic_x64=true` on the diagnostic branch. Checks
-and the Linux x64 build run; download `immage-linux-x64`. This is an unsigned
-manual-test artifact, not a published release or updater. Verify its commit in
-the benchmark report. Run the user-guide native procedure at 100% and 125% on
-the same hardware. Analyze event durations alongside existing stages and CPU
-samples; compare like frame dimensions and distinguish engine-reused releases.
-Verify with the TypeScript production build, Rust checks, workflow validation
-and `git diff --check`. GUI validation requires separate per-run approval.
+Non-GUI storage tests cover permissions, instance isolation, byte roundtrips,
+growing/shrinking and malformed mappings, ownership and cleanup. The standalone
+`verify/transient-output.c` checks the C POSIX writer and regular-file fallback:
+
+```sh
+cc verify/transient-output.c -o /tmp/immage-transient-test $(pkg-config --cflags --libs glib-2.0)
+/tmp/immage-transient-test
+cargo test --manifest-path app/src-tauri/Cargo.toml --offline --bin immage --no-default-features frame_output::tests
+```
+
+Windows/macOS native validation remains necessary. For file-transport changes,
+use one native 125% run by default; add 100% for scaling changes or unresolved
+findings. Compare `outputMs.file` and total latency without adding nested timings.
+The legacy metric name now measures output transport, including mapping setup
+and copy. No speedup is assumed from VM runs.

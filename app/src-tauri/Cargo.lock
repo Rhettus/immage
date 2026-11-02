@@ -2139,6 +2139,7 @@ dependencies = [
  "tauri-plugin-updater",
  "tauri-plugin-window-state",
  "trash",
+ "uuid",
  "wayland-client",
  "wayland-protocols",
  "webview2-com",
