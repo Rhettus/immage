@@ -410,3 +410,10 @@ capacity/creation errors and exact RGBA bytes (including odd dimensions and alph
 The standalone transport test also passes address/undefined sanitizers; leak
 sanitizer is unavailable under this VM's tracing environment. Native before/after
 measurements remain required; do not extrapolate the earlier tmpfs speedup.
+
+For a real-engine integration smoke after a local engine build, run
+`python3 verify/transient-engine.py`. It creates an isolated synthetic PNG and
+runtime, opens it headlessly, renders four changing sizes, checks RGBA lengths
+and alpha, runs a preview, and requests an in-memory JPEG export. No GUI,
+original photos or user app state are used. This is correctness coverage, not a
+native graphics performance result.
