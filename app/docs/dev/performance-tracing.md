@@ -258,8 +258,13 @@ the reply event, not the reconstructed frame. Header size remains 64 bytes.
 including file read, extraction and deletion, with bytes and shared ID. It is
 separate from invoke duration. Retry replies produce separate reply events.
 Existing draw spans include canvas upload/draw; these events do not isolate
-GPU execution or compositor presentation. Engine writing still combines pixel
-conversion and file output. No settled or draft dimensions change.
+GPU execution or compositor presentation. Native render spans additionally carry
+`outputMs` with `allocate`, `convert`, `file` and `free` durations, joined by
+`requestId`. Conversion includes OpenMP scheduling and first-touch page faults;
+allocation measures only the allocation call. File time includes open, buffered
+write and close, without an explicit durability sync. These four stages nest
+inside `engineWriteMs`; do not add them again. Reused frames have no output
+breakdown (`outputMs: null`). No settled or draft dimensions change.
 
 For a transportable x86_64 AppImage from this ARM64 development machine,
 dispatch `build.yml` with `diagnostic_x64=true` on the diagnostic branch. Checks

@@ -840,6 +840,10 @@ async fn render(
     let set_ms = ms(ts);
     let t1 = Instant::now();
     let reply = engine.request(req)?;
+    if let Some(output) = reply["output_ms"].as_object() {
+        engine.set_output_ms(["allocate_ms", "convert_ms", "file_ms", "free_ms"]
+            .map(|key| output.get(key).and_then(Value::as_f64).unwrap_or(0.0)));
+    }
     let request_ms = ms(t1);
     let field = |k: &str| reply[k].as_u64().unwrap_or(0) as u32;
     // the header, then the frame read straight in behind it: one copy of a
@@ -1063,7 +1067,8 @@ async fn perf_report_write(state: State<'_, AppState>, name: String, mut report:
             "scope": "AppState engine mutex; tagged/background engine traffic is outside this mutex",
             "releaseMarker": "before guard destruction; excludes instrumentation and unlock overhead",
             "spans": spans.iter().map(|s| json!({ "id": s.id, "requestId": s.request, "operation": s.operation,
-                "waitAt": s.wait, "acquiredAt": s.acquired, "releasedAt": s.released })).collect::<Vec<_>>() });
+                "waitAt": s.wait, "acquiredAt": s.acquired, "releasedAt": s.released, "outputMs": s.output_ms.map(|t| json!({
+                    "allocate":t[0], "convert":t[1], "file":t[2], "free":t[3] })) })).collect::<Vec<_>>() });
     }
     let text = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
     std::fs::write(&path, text).map_err(|e| e.to_string())?;

@@ -359,7 +359,8 @@ refreshes when you return to the photo view.
 ### Native Linux diagnostic benchmark
 
 Diagnostic builds include shared-frame write, reply and WebKit read durations in
-GUI benchmark reports. These measurements help locate preview latency; they do
+GUI benchmark reports, plus engine allocation, pixel conversion, file output and
+cleanup timings. These measurements help locate preview latency; they do
 not change preview resolution or measure compositor presentation. On the native
 machine, close the installed Immage, launch the diagnostic AppImage, open the
 same copied photo and use **Preferences > Performance > Measuring > GUI benchmark**.

@@ -1426,11 +1426,13 @@ static gboolean _write_ppm(const char *path, const uint8_t *in, const int w, con
 // temporary file, sync it and rename it, for every frame of a slider drag.
 // the client reads it while the engine is still its own, so no half-written
 // frame is ever read
-static gboolean _write_rgba(const char *path, const uint8_t *in, const int w, const int h)
+static gboolean _write_rgba(const char *path, const uint8_t *in, const int w, const int h, double *timings)
 {
+  const gint64 started = g_get_monotonic_time();
   const size_t n = (size_t)w * h;
   uint8_t *rgba = g_try_malloc(4 * n);
   if(!rgba) return FALSE;
+  const gint64 allocated = g_get_monotonic_time();
   DT_OMP_FOR()
   for(size_t k = 0; k < n; k++)
   {
@@ -1439,10 +1441,20 @@ static gboolean _write_rgba(const char *path, const uint8_t *in, const int w, co
     rgba[4 * k + 2] = in[4 * k + 0];
     rgba[4 * k + 3] = 255;
   }
+  const gint64 converted = g_get_monotonic_time();
   FILE *f = g_fopen(path, "wb");
   gboolean ok = f && fwrite(rgba, 1, 4 * n, f) == 4 * n;
   if(f && fclose(f)) ok = FALSE;
+  const gint64 written = g_get_monotonic_time();
   g_free(rgba);
+  const gint64 freed = g_get_monotonic_time();
+  if(timings)
+  {
+    timings[0] = (allocated - started) / 1000.0;
+    timings[1] = (converted - allocated) / 1000.0;
+    timings[2] = (written - converted) / 1000.0;
+    timings[3] = (freed - written) / 1000.0;
+  }
   return ok;
 }
 
@@ -9267,7 +9279,8 @@ static void _handle(JsonObject *req, FILE *out)
       }
       const char *rgba = json_object_get_string_member_with_default(req, "rgba", NULL);
       const gint64 t1 = g_get_monotonic_time();
-      if(rgba && !_write_rgba(rgba, pipe->backbuf, w, h))
+      double output_ms[4] = {0};
+      if(rgba && !_write_rgba(rgba, pipe->backbuf, w, h, output_ms))
       {
         err = g_strdup_printf("could not write '%s'", rgba);
         goto fail;
@@ -9285,6 +9298,18 @@ static void _handle(JsonObject *req, FILE *out)
       json_builder_add_double_value(b, process_ms);
       json_builder_set_member_name(b, "write_ms");
       json_builder_add_double_value(b, _ms_since(t1));
+      if(rgba)
+      {
+        const char *keys[] = { "allocate_ms", "convert_ms", "file_ms", "free_ms" };
+        json_builder_set_member_name(b, "output_ms");
+        json_builder_begin_object(b);
+        for(size_t k = 0; k < G_N_ELEMENTS(keys); k++)
+        {
+          json_builder_set_member_name(b, keys[k]);
+          json_builder_add_double_value(b, output_ms[k]);
+        }
+        json_builder_end_object(b);
+      }
     }
   }
   else if(!g_strcmp0(cmd, "mask"))
@@ -9485,7 +9510,7 @@ static void _handle(JsonObject *req, FILE *out)
     int w = 0, h = 0;
     const char *rgba = json_object_get_string_member_with_default(req, "rgba", NULL);
     if(!rgba || !_preview(req, &w, &h, &err)) goto fail;
-    if(!_write_rgba(rgba, _s.ppipe.backbuf, w, h))
+    if(!_write_rgba(rgba, _s.ppipe.backbuf, w, h, NULL))
     {
       err = g_strdup_printf("could not write '%s'", rgba);
       goto fail;
