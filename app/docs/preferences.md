@@ -63,8 +63,9 @@ scale (200% at 125% or 150%), which can increase rendering and presentation
 time. Using 100% scaling or `GDK_BACKEND=x11` can reduce this overhead;
 performance depends on the system.
 
-Starting with 0.41.1, the launcher chooses the WebKitGTK installed by your distribution
-when it detects X11 and a loaded NVIDIA driver. Wayland, other GPUs and uncertain
+Starting with 0.41.1, normal AppImage launch handles the resolved NVIDIA/X11
+startup issue automatically: the launcher chooses the WebKitGTK installed by
+your distribution when it detects X11 and a loaded NVIDIA driver. Wayland, other GPUs and uncertain
 backend selections use WebKitGTK 2.54.2 included in the AppImage. The system
 version depends on your installed packages; the launcher does not require or
 select a particular older release such as 2.52. The host must provide compatible WebKitGTK,

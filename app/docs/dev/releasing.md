@@ -152,9 +152,9 @@ A release that moves the darktable pin needs the checks in
 
 The shared Installing and Known issues text in `scripts/release_assets.py`
 is appended to generated GitHub release bodies. Keep it aligned with the
-user guide: NVIDIA/X11 automatic system WebKit and GBM defaults apply from
-0.41.1; the initial-launch/Mesa workaround describes 0.41.0 or forced bundled
-mode. Fractional Wayland scaling still uses integer-sized GTK surfaces and
+user guide. The resolved NVIDIA/X11 startup issue is omitted from future Known
+issues; automatic system WebKit and GBM defaults apply from 0.41.1 and remain
+documented in the user guide. Fractional Wayland scaling still uses integer-sized GTK surfaces and
 full-quality frames; only reduced drag drafts follow the actual screen scale
 when enabled. Do not promise equivalent performance under X11 or at 100%.
 Verify generated release bodies with `python3 -I scripts/test_release_assets.py`.

@@ -85,16 +85,6 @@ Updates), and offers to install it.
 
 ## Known issues
 
-- **Linux with an NVIDIA graphics card**: rendering performance varies by
-  system. On X11, AppImages automatically use compatible system WebKitGTK
-  with GBM disabled, fixing the startup failure and slow rendering reported
-  on Linux Mint. Launch normally; no environment variables or Mesa selection
-  are required on the confirmed system. If the system runtime is incompatible,
-  the launcher falls back to bundled WebKitGTK 2.54.2. Wayland and other GPUs
-  use the bundled runtime by default. Preferences > Performance > Window
-  renderer offers Automatic (the system default), Mesa and NVIDIA. Relaunch
-  after changing it and compare GUI benchmarks. Photo processing uses its
-  own GPU setting. Results on other hardware may vary.
 - **Linux on Wayland with fractional scaling** (125%, 150%, ...): GTK 3
   draws the window at the next whole scale (200% for 125% or 150%) and the
   desktop shrinks it. With "Drag drafts at the screen's scale" enabled,
