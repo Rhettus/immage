@@ -3,6 +3,13 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
+## Unreleased
+
+Improvements
+
+- A Linux AI diagnostic script collects model-loading logs and file checksums
+  into one report without requiring an application rebuild.
+
 ## 0.41.1
 
 Improvements
