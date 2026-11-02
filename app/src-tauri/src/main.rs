@@ -6,13 +6,18 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod cache;
+mod map_tiles;
 mod engine;
 mod immich_search;
 mod immich_upload;
 mod listing;
 mod plugins;
+mod perf_trace;
+mod resources;
 #[cfg(target_os = "linux")]
 mod scale;
+#[cfg(target_os = "linux")]
+mod renderer;
 mod volumes;
 
 use cache::Caches;
@@ -22,13 +27,13 @@ use serde_json::{json, Map, Value};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{ipc::Response, AppHandle, Emitter, Manager, State};
 
 struct AppState {
     // engine(), not this directly
-    engine: Mutex<Engine>,
+    engine: perf_trace::TracedMutex<Engine>,
     // reaches the engine while a request holds it
     base_cancel: BaseCancel,
     frame_path: PathBuf,
@@ -51,6 +56,8 @@ struct AppState {
     // timings while it is on, and its reports are written to perf_dir
     perf_on: AtomicBool,
     perf_last: Mutex<Vec<Timing>>,
+    perf_by_request: Mutex<HashMap<u64, Vec<Timing>>>,
+    perf_modules_dropped: AtomicU64,
     perf_dir: PathBuf,
     runtime: PathBuf,
     // darktable's resource level the engine started with
@@ -61,8 +68,8 @@ struct AppState {
 
 impl AppState {
     // the engine for a request its main loop serves, one at a time
-    fn engine(&self) -> MutexGuard<'_, Engine> {
-        self.engine.lock().unwrap()
+    fn engine(&self, operation: &'static str) -> perf_trace::Guard<'_, Engine> {
+        self.engine.lock(operation, None)
     }
 }
 
@@ -90,14 +97,14 @@ fn webext_dir(app: &AppHandle) -> Option<PathBuf> {
 
 #[tauri::command]
 async fn open_image(state: State<'_, AppState>, path: String, imgid: Option<i64>) -> Result<Value, String> {
-    state.engine().request(json!({ "cmd": "open", "path": path, "imgid": imgid.unwrap_or(-1) }))
+    state.engine("open_image").request(json!({ "cmd": "open", "path": path, "imgid": imgid.unwrap_or(-1) }))
 }
 
 // the open image's darktable history, oldest first; `saved`, as the last
 // save stored it, compressed
 #[tauri::command]
 async fn history(state: State<'_, AppState>, saved: Option<bool>) -> Result<Value, String> {
-    let reply = state.engine().request(json!({ "cmd": "history", "saved": saved.unwrap_or(false) }))?;
+    let reply = state.engine("history").request(json!({ "cmd": "history", "saved": saved.unwrap_or(false) }))?;
     Ok(reply["items"].clone())
 }
 
@@ -121,12 +128,12 @@ async fn module_state(
     if let Some(r) = restore {
         req["restore"] = r;
     }
-    state.engine().request(req)
+    state.engine("module_state").request(req)
 }
 
 #[tauri::command]
 async fn get_params(state: State<'_, AppState>, modules: Value) -> Result<Value, String> {
-    state.engine().request(json!({ "cmd": "get", "modules": modules }))
+    state.engine("get_params").request(json!({ "cmd": "get", "modules": modules }))
 }
 
 #[tauri::command]
@@ -165,13 +172,13 @@ async fn set_params(
             req["refine"] = r;
         }
     }
-    state.engine().request(req).map(|_| ())
+    state.engine("set_params").request(req).map(|_| ())
 }
 
 // replace a mask's shapes (made when missing)
 #[tauri::command]
 async fn mask_shapes(state: State<'_, AppState>, name: String, shapes: Value) -> Result<(), String> {
-    state.engine()
+    state.engine("mask_shapes")
         .request(json!({ "cmd": "mask", "name": name, "shapes": shapes })).map(|_| ())
 }
 
@@ -180,7 +187,7 @@ async fn mask_shapes(state: State<'_, AppState>, name: String, shapes: Value) ->
 // instances (app/src/localMerge.ts)
 #[tauri::command]
 async fn combine(state: State<'_, AppState>, name: String, members: Value, ranges: Option<Value>) -> Result<(), String> {
-    state.engine()
+    state.engine("combine")
         .request(json!({ "cmd": "combine", "name": name, "members": members, "ranges": ranges })).map(|_| ())
 }
 
@@ -188,7 +195,7 @@ async fn combine(state: State<'_, AppState>, name: String, members: Value, range
 // instances
 #[tauri::command]
 async fn masks(state: State<'_, AppState>, fields: Value) -> Result<Value, String> {
-    let reply = state.engine().request(json!({ "cmd": "masks", "fields": fields }))?;
+    let reply = state.engine("masks").request(json!({ "cmd": "masks", "fields": fields }))?;
     Ok(reply["masks"].clone())
 }
 
@@ -197,20 +204,20 @@ async fn masks(state: State<'_, AppState>, fields: Value) -> Result<Value, Strin
 // negadoctor's input, for the Negative panel's pickers
 #[tauri::command]
 async fn sample(state: State<'_, AppState>, x: f64, y: f64, area: Option<Vec<f64>>, stage: Option<String>) -> Result<Value, String> {
-    state.engine().request(json!({ "cmd": "sample", "x": x, "y": y, "box": area, "stage": stage }))
+    state.engine("sample").request(json!({ "cmd": "sample", "x": x, "y": y, "box": area, "stage": stage }))
 }
 
 // the mean log2 luminance the tone mapper gets, for Auto's exposure
 #[tauri::command]
 async fn tone_key(state: State<'_, AppState>) -> Result<Value, String> {
-    state.engine().request(json!({ "cmd": "tone_key" }))
+    state.engine("tone_key").request(json!({ "cmd": "tone_key" }))
 }
 
 // black and white relative exposure for AgX, as darktable's "auto tune
 // levels" picker finds them over the photo
 #[tauri::command]
 async fn agx_auto(state: State<'_, AppState>) -> Result<Value, String> {
-    state.engine().request(json!({ "cmd": "agx_auto" }))
+    state.engine("agx_auto").request(json!({ "cmd": "agx_auto" }))
 }
 
 // Upright's fit of rotate and perspective: { rotation, lensshift_v,
@@ -222,14 +229,14 @@ async fn upright(state: State<'_, AppState>, mode: String, guides: Option<Value>
     if let Some(g) = guides {
         req["guides"] = g;
     }
-    state.engine().request(req)
+    state.engine("upright").request(req)
 }
 
 // points (x, y pairs, 0-1) between the shown image and the input image
 // before any distortion; `to` is "shown" or "input"
 #[tauri::command]
 async fn points(state: State<'_, AppState>, points: Value, to: String) -> Result<Value, String> {
-    let reply = state.engine().request(json!({ "cmd": "points", "points": points, "to": to }))?;
+    let reply = state.engine("points").request(json!({ "cmd": "points", "points": points, "to": to }))?;
     Ok(reply["points"].clone())
 }
 
@@ -237,7 +244,7 @@ async fn points(state: State<'_, AppState>, points: Value, to: String) -> Result
 // image: u32 width and height, then one byte per point
 #[tauri::command]
 async fn range_map(state: State<'_, AppState>, ranges: Value, width: u32, height: u32) -> Result<Response, String> {
-    let mut engine = state.engine();
+    let mut engine = state.engine("range_map");
     engine.request(json!({ "cmd": "range_map", "ranges": ranges, "width": width, "height": height,
                            "out": state.range_path }))?;
     // read while the engine is still ours, so no other request overwrites it
@@ -255,7 +262,7 @@ async fn range_map(state: State<'_, AppState>, ranges: Value, width: u32, height
 // u32 width, height and JSON length, the JSON, then one byte per point
 #[tauri::command]
 async fn zones(state: State<'_, AppState>, width: u32, height: u32, transition: f64, stage: String) -> Result<Response, String> {
-    let mut engine = state.engine();
+    let mut engine = state.engine("zones");
     let reply = engine.request(json!({ "cmd": "zones", "width": width, "height": height, "transition": transition,
                                        "stage": stage, "out": state.range_path }))?;
     let map = std::fs::read(&state.range_path).map_err(|e| format!("zones: {e}"))?;
@@ -278,7 +285,7 @@ async fn zones(state: State<'_, AppState>, width: u32, height: u32, transition: 
 #[tauri::command]
 async fn mask_map(state: State<'_, AppState>, name: Option<String>, op: Option<String>, width: u32, height: u32,
                   view: Option<Value>) -> Result<Response, String> {
-    let mut engine = state.engine();
+    let mut engine = state.engine("mask_map");
     let mut req = json!({ "cmd": "mask_map", "width": width, "height": height, "out": state.range_path });
     if let Some(n) = name {
         req["name"] = json!(n);
@@ -312,7 +319,7 @@ async fn on_engine_thread(state: &AppState, mut req: Value) -> Result<Value, Str
     let tag = tagged.tag();
     req["tag"] = json!(tag);
     let answer = tagged.expect(tag)?;
-    if let Err(e) = state.engine().request(req) {
+    if let Err(e) = state.engine("on_engine_thread").request(req) {
         tagged.forget(tag);
         return Err(e);
     }
@@ -556,11 +563,11 @@ async fn ai_model_ensure(app: AppHandle, state: State<'_, AppState>, id: String)
             .await
             .map_err(|e| e.to_string())?;
     }
-    let reply = state.engine().request(json!({ "cmd": "version" }))?;
+    let reply = state.engine("ai_model_ensure").request(json!({ "cmd": "version" }))?;
     let version = reply["version"].as_str().unwrap_or("").to_string();
     tauri::async_runtime::spawn_blocking(move || {
         let unpack = |archive: &Path, into: &Path| {
-            app.state::<AppState>().engine()
+            app.state::<AppState>().engine("ai_model_unpack")
                 .request(json!({ "cmd": "unpack", "archive": archive, "dir": into }))
                 .map(|_| ())
         };
@@ -632,13 +639,77 @@ async fn ai_denoise(state: State<'_, AppState>, plugins: State<'_, plugins::Plug
     Ok(reply)
 }
 
+// Bake the converted negative into a new positive beside its source.
+// Reserve the name before exporting so repeated requests never overwrite.
+#[tauri::command]
+async fn negative_export(state: State<'_, AppState>, plugins: State<'_, plugins::Plugins>,
+                         imgid: i64, original: String, format: String) -> Result<Value, String> {
+    if format != "dng" && format != "tiff" {
+        return Err("choose DNG or TIFF for converted negatives".into());
+    }
+    let source = Path::new(&original);
+    let dir = source.parent().ok_or("the source has no folder")?;
+    let stem = source.file_stem().ok_or("the source has no filename")?.to_string_lossy();
+    let ext = extension(&format);
+    let mut n = 0;
+    let target = loop {
+        let suffix = if n == 0 { String::new() } else { format!("_{n:02}") };
+        let path = dir.join(format!("{stem}-positive{suffix}.{ext}"));
+        // An orphaned sidecar must not supply an old edit to a new export.
+        if path.with_file_name(format!("{}.xmp", path.file_name().unwrap().to_string_lossy())).exists() {
+            n += 1;
+            continue;
+        }
+        match std::fs::OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(_) => break path,
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => n += 1,
+            Err(e) => return Err(format!("cannot create the positive: {e}")),
+        }
+    };
+    let t = state.tagged.clone();
+    let held = t.tag();
+    if let Err(e) = state.engine("negative_export").request(json!({
+        "cmd": "export_hold", "job": held, "imgids": [imgid],
+    })) {
+        let _ = std::fs::remove_file(&target);
+        return Err(e);
+    }
+    let out = target.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let tag = t.tag();
+        let result = t.request(tag, json!({
+            "cmd": "export", "job": held, "imgid": imgid, "out": out,
+            "format": format, "bpp": 32, "negative_copy": true, "history": false,
+        }));
+        let tag = t.tag();
+        let _ = t.request(tag, json!({ "cmd": "export_release", "job": held }));
+        result
+    }).await.map_err(|e| e.to_string()).and_then(|r| r);
+    // Keep a completed file on an import/sidecar failure for recovery.
+    let mut reply = match result {
+        Ok(reply) => reply,
+        Err(e) => {
+            if std::fs::metadata(&target).map(|m| m.len() == 0).unwrap_or(false) {
+                let _ = std::fs::remove_file(&target);
+            }
+            return Err(e);
+        }
+    };
+    let path = target.to_string_lossy().into_owned();
+    plugins.record(plugins::Return {
+        original: original.clone(), result: path, plugin: "negative-positive".into(), applied: true,
+    })?;
+    reply["original"] = json!(original);
+    Ok(reply)
+}
+
 // AI Denoise's preview: a crop about `size` pixels square centered on (u, v)
 // of the edited photo. replies a header (width, height as u32; the crop's
 // share of the photo across and down as f32), then the crop as float linear
 // RGB without and with the denoise, for the dialog to mix at its Amount
 #[tauri::command]
 async fn ai_denoise_preview(state: State<'_, AppState>, u: f64, v: f64, size: u32) -> Result<Response, String> {
-    let mut engine = state.engine();
+    let mut engine = state.engine("ai_denoise_preview");
     let reply = engine.request(json!({
         "cmd": "ai_denoise_preview", "u": u, "v": v, "size": size, "out": state.denoise_path,
     }))?;
@@ -665,31 +736,31 @@ async fn spots(state: State<'_, AppState>, spots: Option<Value>) -> Result<Value
     if let Some(s) = spots {
         req["spots"] = s;
     }
-    let reply = state.engine().request(req)?;
+    let reply = state.engine("spots").request(req)?;
     Ok(reply["spots"].clone())
 }
 
 // the spots off for the Before view, and back on
 #[tauri::command]
 async fn spots_enable(state: State<'_, AppState>, on: bool) -> Result<(), String> {
-    state.engine().request(json!({ "cmd": "spots_enable", "on": on })).map(|_| ())
+    state.engine("spots_enable").request(json!({ "cmd": "spots_enable", "on": on })).map(|_| ())
 }
 
 // where a new spot should copy from: { sx, sy }
 #[tauri::command]
 async fn spot_source(state: State<'_, AppState>, spot: Value) -> Result<Value, String> {
-    let reply = state.engine().request(json!({ "cmd": "spot_source", "spot": spot }))?;
+    let reply = state.engine("spot_source").request(json!({ "cmd": "spot_source", "spot": spot }))?;
     Ok(json!({ "sx": reply["sx"], "sy": reply["sy"] }))
 }
 
 #[tauri::command]
 async fn mask_delete(state: State<'_, AppState>, name: String) -> Result<(), String> {
-    state.engine().request(json!({ "cmd": "mask_delete", "name": name })).map(|_| ())
+    state.engine("mask_delete").request(json!({ "cmd": "mask_delete", "name": name })).map(|_| ())
 }
 
 #[tauri::command]
 async fn mask_rename(state: State<'_, AppState>, name: String, to: String) -> Result<(), String> {
-    state.engine().request(json!({ "cmd": "mask_rename", "name": name, "to": to })).map(|_| ())
+    state.engine("mask_rename").request(json!({ "cmd": "mask_rename", "name": name, "to": to })).map(|_| ())
 }
 
 const FRAME_HEAD: usize = 64;
@@ -721,8 +792,10 @@ async fn render(
     token: Option<String>,
     have: Option<Vec<String>>,
     edits: Option<Vec<Value>>,
+    diagnostic_request: Option<u64>,
 ) -> Result<Response, String> {
     let mut req = json!({ "cmd": "render", "width": width, "height": height, "rgba": state.frame_path });
+    if let Some(id) = diagnostic_request { req["diagnostic_request"] = json!(id); }
     if let Some(skip) = skip {
         req["skip"] = json!(skip);
     }
@@ -749,7 +822,7 @@ async fn render(
     }
     let ms = |t: Instant| t.elapsed().as_secs_f64() * 1000.0;
     let t0 = Instant::now();
-    let mut engine = state.engine();
+    let mut engine = state.engine.lock(if base == Some(true) { "base" } else { "render" }, diagnostic_request);
     let lock_ms = ms(t0);
     // a move's module edits (Session.moduleEdit), sent as set_params would,
     // under the same lock: one call from the page rather than one each,
@@ -793,7 +866,16 @@ async fn render(
     let read_ms = ms(t2);
     let t3 = Instant::now();
     if state.perf_on.load(Ordering::Relaxed) {
-        *state.perf_last.lock().unwrap() = engine.perf_mark();
+        let modules = engine.perf_mark();
+        *state.perf_last.lock().unwrap() = modules.clone();
+        if let Some(id) = diagnostic_request {
+            let mut requests = state.perf_by_request.lock().unwrap();
+            if requests.len() >= 512 {
+                if let Some(oldest) = requests.keys().copied().min() { requests.remove(&oldest); }
+                state.perf_modules_dropped.fetch_add(1, Ordering::Relaxed);
+            }
+            requests.insert(id, modules);
+        }
     }
     let mark_ms = ms(t3);
     drop(engine);
@@ -925,9 +1007,27 @@ async fn perf_set(state: State<'_, AppState>, on: bool) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+async fn perf_trace_start(state: State<'_, AppState>) -> Result<(), String> {
+    state.perf_by_request.lock().unwrap().clear();
+    state.perf_modules_dropped.store(0, Ordering::Relaxed);
+    state.engine("perf_trace_start").cache_trace(true)?;
+    state.engine.start();
+    Ok(())
+}
+#[tauri::command]
+async fn perf_trace_stop(state: State<'_, AppState>) -> Result<(), String> {
+    state.engine.stop();
+    state.engine("perf_trace_stop").cache_trace(false)?;
+    Ok(())
+}
+
 // the last render's per-module timings, while the overlay is on
 #[tauri::command]
-async fn perf_modules(state: State<'_, AppState>) -> Result<Vec<Timing>, String> {
+async fn perf_modules(state: State<'_, AppState>, request: Option<u64>) -> Result<Vec<Timing>, String> {
+    if let Some(id) = request {
+        return state.perf_by_request.lock().unwrap().remove(&id).ok_or_else(|| "module timings for request unavailable".to_string());
+    }
     Ok(state.perf_last.lock().unwrap().clone())
 }
 
@@ -940,12 +1040,24 @@ async fn perf_ping() -> Result<(), String> {
 
 // a GUI benchmark's report, as <name>.json in the reports folder; its path back
 #[tauri::command]
-async fn perf_report_write(state: State<'_, AppState>, name: String, report: Value) -> Result<String, String> {
+async fn perf_report_write(state: State<'_, AppState>, name: String, mut report: Value) -> Result<String, String> {
     if name.is_empty() || name.contains(['/', '\\']) || name.starts_with('.') {
         return Err("bad report name".into());
     }
     std::fs::create_dir_all(&state.perf_dir).map_err(|e| e.to_string())?;
     let path = state.perf_dir.join(format!("{name}.json"));
+    let (spans, dropped, unfinished) = state.engine.snapshot();
+    report["build"] = json!({ "commit": option_env!("IMMAGE_BUILD_COMMIT"), "dirty": option_env!("IMMAGE_BUILD_DIRTY").map(|s| s == "true") });
+    if report["diagnostics"]["enabled"].as_bool() == Some(true) {
+        report["diagnostics"]["cache"] = state.engine("perf_cache_report").cache_report();
+        report["diagnostics"]["native"] = json!({ "clock": "native monotonic milliseconds; independent of frontend clock",
+            "droppedSpans": dropped, "droppedModuleTimings":state.perf_modules_dropped.load(Ordering::Relaxed),
+            "unfinished": unfinished.iter().map(|s| json!({ "id":s.id, "requestId":s.request, "operation":s.operation, "waitAt":s.wait, "acquiredAt":s.acquired })).collect::<Vec<_>>(),
+            "scope": "AppState engine mutex; tagged/background engine traffic is outside this mutex",
+            "releaseMarker": "before guard destruction; excludes instrumentation and unlock overhead",
+            "spans": spans.iter().map(|s| json!({ "id": s.id, "requestId": s.request, "operation": s.operation,
+                "waitAt": s.wait, "acquiredAt": s.acquired, "releasedAt": s.released })).collect::<Vec<_>>() });
+    }
     let text = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
     std::fs::write(&path, text).map_err(|e| e.to_string())?;
     Ok(path.to_string_lossy().into_owned())
@@ -984,29 +1096,25 @@ fn machine_id() -> Option<String> {
     Some(hash.iter().take(6).map(|b| format!("{b:02x}")).collect())
 }
 
-// NVIDIA's EGL driver held each frame of WebKitGTK's page to about 72 ms,
-// and every reply to the page waited for one, on Wayland and X11 alike and
-// whichever way WebKit's DMA-BUF, compositing or NVIDIA's explicit sync
-// were set; with Mesa's EGL, which draws the page on the CPU there, a reply
-// took 2 ms and a Highlights drag frame 45 ms against 445 (GUI benchmark,
-// RTX 4070 Ti SUPER, driver 595, Ubuntu 26.04; WebKit bug 303811). so the
-// web view gets Mesa's when NVIDIA's driver is loaded and Mesa's is
-// installed, unless the user chose a vendor. `root` is "/" but in the tests
-#[cfg(any(target_os = "linux", test))]
-const EGL_VENDOR: &str = "__EGL_VENDOR_LIBRARY_FILENAMES";
+// the web view's EGL override is kept out of the image engine
+#[cfg(target_os = "linux")]
+static WEBVIEW_EGL_OVERRIDE: AtomicBool = AtomicBool::new(false);
 
-#[cfg(any(target_os = "linux", test))]
-fn mesa_egl(root: &Path) -> Option<PathBuf> {
-    if !root.join("proc/driver/nvidia").exists() {
-        return None;
-    }
-    ["usr/share/glvnd/egl_vendor.d/50_mesa.json", "etc/glvnd/egl_vendor.d/50_mesa.json"]
-        .iter().map(|p| root.join(p)).find(|p| p.exists())
+#[tauri::command]
+fn webview_renderer() -> Value {
+    #[cfg(target_os = "linux")]
+    return renderer::status();
+    #[cfg(not(target_os = "linux"))]
+    json!(null)
 }
 
-// set when the web view was given Mesa's EGL, which the engine doesn't take
-#[cfg(target_os = "linux")]
-static WEBVIEW_MESA: AtomicBool = AtomicBool::new(false);
+#[tauri::command]
+fn webview_renderer_set(mode: String) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    return renderer::set(&mode);
+    #[cfg(not(target_os = "linux"))]
+    { let _ = mode; Err("webview renderer selection is available on Linux".into()) }
+}
 
 // what decides how a frame reaches the screen on Linux: the session
 // (Wayland or X11) and desktop, and the GDK and WebKit settings, as this
@@ -1029,6 +1137,7 @@ fn display_env() -> Value {
         "wayland": var("WAYLAND_DISPLAY").is_some(),
         "x11": var("DISPLAY").is_some(),
         "vars": vars,
+        "renderer": webview_renderer(),
     })
 }
 
@@ -1037,7 +1146,7 @@ fn display_env() -> Value {
 #[tauri::command]
 async fn perf_machine(state: State<'_, AppState>) -> Result<Value, String> {
     use sysinfo::{CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};
-    let opencl = state.engine().request(json!({ "cmd": "opencl" })).ok()
+    let opencl = state.engine("perf_machine").request(json!({ "cmd": "opencl" })).ok()
         .map(|r| json!({ "running": r["running"], "devices": r["devices"] }));
     tauri::async_runtime::spawn_blocking(move || {
         let sys = System::new_with_specifics(RefreshKind::nothing().with_cpu(CpuRefreshKind::nothing())
@@ -1131,7 +1240,10 @@ async fn open_folder(app: AppHandle, state: State<'_, AppState>, path: String, r
         let t = state.tagged.clone();
         let tag = t.tag();
         let start = Instant::now();
-        let reply = tauri::async_runtime::spawn_blocking(move || t.request(tag, json!({ "cmd": "import", "files": list })))
+        let handle = app.clone();
+        let reply = tauri::async_runtime::spawn_blocking(move || t.request_until(
+            tag, json!({ "cmd": "import", "files": list }), Duration::from_secs(30),
+            || handle.state::<AppState>().folder_token.load(Ordering::SeqCst) != token))
             .await
             .map_err(|e| e.to_string())??;
         let took = start.elapsed();
@@ -1325,7 +1437,7 @@ fn display_scale(window: tauri::WebviewWindow) -> Result<Option<f64>, String> {
 async fn trash_files(state: State<'_, AppState>, imgids: Vec<i64>) -> Result<Vec<String>, String> {
     let mut checked = Vec::new();
     for id in imgids {
-        let reply = state.engine().request(json!({ "cmd": "meta", "imgid": id }))?;
+        let reply = state.engine("trash_files").request(json!({ "cmd": "meta", "imgid": id }))?;
         let image = &reply["image"];
         let path = image["path"].as_str().unwrap_or_default().to_string();
         if image["rejected"].as_bool() != Some(true) || path.is_empty() {
@@ -1339,7 +1451,7 @@ async fn trash_files(state: State<'_, AppState>, imgids: Vec<i64>) -> Result<Vec
     let mut forget = Vec::new();
     for (id, path, copy) in checked {
         let cmd = if copy { "remove_copy" } else { "sidecars" };
-        let reply = state.engine().request(json!({ "cmd": cmd, "imgid": id }))?;
+        let reply = state.engine("trash_files").request(json!({ "cmd": cmd, "imgid": id }))?;
         if !copy {
             items.push(PathBuf::from(&path));
             gone.push(path);
@@ -1351,7 +1463,7 @@ async fn trash_files(state: State<'_, AppState>, imgids: Vec<i64>) -> Result<Vec
     // only once the files are gone: a new file at the same path then
     // imports fresh, not as the deleted one, rejected
     for id in forget {
-        state.engine().request(json!({ "cmd": "forget", "imgid": id }))?;
+        state.engine("trash_files").request(json!({ "cmd": "forget", "imgid": id }))?;
     }
     Ok(gone)
 }
@@ -1385,7 +1497,7 @@ async fn trash_existing(mut items: Vec<PathBuf>) -> Result<(), String> {
 // rating, labels, metadata and keywords, with a sidecar of its own
 #[tauri::command]
 async fn create_virtual_copy(state: State<'_, AppState>, imgid: i64) -> Result<Value, String> {
-    let reply = state.engine().request(json!({ "cmd": "copy", "imgid": imgid }))?;
+    let reply = state.engine("create_virtual_copy").request(json!({ "cmd": "copy", "imgid": imgid }))?;
     Ok(reply["image"].clone())
 }
 
@@ -1433,11 +1545,11 @@ async fn hdr_merge(app: AppHandle, state: State<'_, AppState>, job: u64, imgids:
 // whether Merge to HDR can align brackets: the engine built with OpenCV
 #[tauri::command]
 async fn hdr_can_align(state: State<'_, AppState>) -> Result<bool, String> {
-    let reply = state.engine().request(json!({ "cmd": "version" }))?;
+    let reply = state.engine("hdr_can_align").request(json!({ "cmd": "version" }))?;
     Ok(reply["hdr_align"].as_bool().unwrap_or(false))
 }
 
-// Panorama Merge: the raws `imgids` stitched into a DNG beside the first
+// Panorama Merge: the photos `imgids` stitched into a DNG beside the first
 // (<name>-pano.dng), which the folder view then shows after it, as an
 // Edit In result. `projection` is "auto", "spherical", "cylindrical" or
 // "perspective"; `crop` cuts the empty edges. replies { path, original,
@@ -1466,11 +1578,24 @@ async fn pano_merge(app: AppHandle, state: State<'_, AppState>, plugins: State<'
     Ok(reply)
 }
 
+// Reduced-size panorama on the export thread. No file is written or imported;
+// the page crops the returned RGBA coverage locally, and merge_cancel stops it.
+#[tauri::command]
+async fn pano_preview(app: AppHandle, state: State<'_, AppState>, job: u64,
+                      imgids: Vec<i64>, projection: String) -> Result<Value, String> {
+    let t = state.tagged.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        merge(app, t, job, json!({ "cmd": "pano_preview", "imgids": imgids, "projection": projection }))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 // whether Panorama Merge can stitch: the engine built with OpenCV's
 // stitching module
 #[tauri::command]
 async fn pano_can_merge(state: State<'_, AppState>) -> Result<bool, String> {
-    let reply = state.engine().request(json!({ "cmd": "version" }))?;
+    let reply = state.engine("pano_can_merge").request(json!({ "cmd": "version" }))?;
     Ok(reply["pano"].as_bool().unwrap_or(false))
 }
 
@@ -1479,7 +1604,7 @@ async fn pano_can_merge(state: State<'_, AppState>) -> Result<bool, String> {
 // Trash says, so that comes back as a warning rather than an error
 #[tauri::command]
 async fn remove_virtual_copy(state: State<'_, AppState>, imgid: i64) -> Result<Option<String>, String> {
-    let reply = state.engine().request(json!({ "cmd": "remove_copy", "imgid": imgid }))?;
+    let reply = state.engine("remove_virtual_copy").request(json!({ "cmd": "remove_copy", "imgid": imgid }))?;
     let files = reply["files"].as_array().into_iter().flatten().filter_map(|f| f.as_str()).map(PathBuf::from).collect();
     Ok(trash_existing(files).await.err())
 }
@@ -1639,14 +1764,14 @@ async fn cache_clear(caches: State<'_, Caches>, which: String) -> Result<(), Str
 
 #[tauri::command]
 async fn meta(state: State<'_, AppState>, imgid: i64) -> Result<Value, String> {
-    state.engine().request(json!({ "cmd": "meta", "imgid": imgid }))
+    state.engine("meta").request(json!({ "cmd": "meta", "imgid": imgid }))
 }
 
 // the photos likely opened next, their raws decoded ahead in this order on
 // the engine's own thread; the reply does not wait for them
 #[tauri::command]
 async fn prefetch(state: State<'_, AppState>, imgids: Vec<i64>) -> Result<Value, String> {
-    state.engine().request(json!({ "cmd": "prefetch", "imgids": imgids }))
+    state.engine("prefetch").request(json!({ "cmd": "prefetch", "imgids": imgids }))
 }
 
 // Preferences' darktable memory: the level the engine runs at, and the one
@@ -1677,13 +1802,13 @@ fn gpu_edits_set(state: State<'_, AppState>, on: bool) -> Result<(), String> {
 // devices, for Preferences and the Export dialog's AI upscale
 #[tauri::command]
 async fn ai_accel(state: State<'_, AppState>) -> Result<Value, String> {
-    Ok(state.engine().request(json!({ "cmd": "ai_accel" }))?["providers"].clone())
+    Ok(state.engine("ai_accel").request(json!({ "cmd": "ai_accel" }))?["providers"].clone())
 }
 
 // every keyword ever used, for the Keywording panel's suggestions
 #[tauri::command]
 async fn keywords(state: State<'_, AppState>) -> Result<Value, String> {
-    Ok(state.engine().request(json!({ "cmd": "keywords" }))?["keywords"].clone())
+    Ok(state.engine("keywords").request(json!({ "cmd": "keywords" }))?["keywords"].clone())
 }
 
 // keywords added to and removed from an image; its keywords afterwards
@@ -1691,7 +1816,7 @@ async fn keywords(state: State<'_, AppState>) -> Result<Value, String> {
 async fn keywords_set(state: State<'_, AppState>, imgid: i64, add: Vec<String>, remove: Vec<String>)
     -> Result<Value, String> {
     let req = json!({ "cmd": "keywords_set", "imgid": imgid, "add": add, "remove": remove });
-    Ok(state.engine().request(req)?["keywords"].clone())
+    Ok(state.engine("keywords_set").request(req)?["keywords"].clone())
 }
 
 // rating, rejected, labels and text fields; only the ones given are set
@@ -1701,7 +1826,19 @@ async fn meta_set(state: State<'_, AppState>, imgid: i64, fields: Map<String, Va
     for (k, v) in fields {
         req[k] = v;
     }
-    state.engine().request(req).map(|_| ())
+    state.engine("meta_set").request(req).map(|_| ())
+}
+
+#[derive(Deserialize, serde::Serialize)]
+struct CaptureTimeEntry {
+    imgid: i64,
+    before: String,
+    after: String,
+}
+
+#[tauri::command]
+async fn capture_times(state: State<'_, AppState>, entries: Vec<CaptureTimeEntry>) -> Result<Value, String> {
+    state.engine("capture_times").request(json!({ "cmd": "capture_times", "entries": entries }))
 }
 
 #[derive(Deserialize)]
@@ -1858,7 +1995,7 @@ async fn export_images(
     let tagged = state.tagged.clone();
     let held = tagged.tag();
     let imgids: Vec<i64> = items.iter().map(|i| i.imgid).collect();
-    state.engine().request(json!({ "cmd": "export_hold", "job": held, "imgids": imgids }))?;
+    state.engine("export_images").request(json!({ "cmd": "export_hold", "job": held, "imgids": imgids }))?;
     let cancel = Arc::new(AtomicBool::new(false));
     state.export_cancels.lock().unwrap().insert(job, cancel.clone());
     let mut cancelled = false;
@@ -1898,7 +2035,7 @@ async fn export_images(
                     .await.map_err(|e| e.to_string()).and_then(|r| r);
                 if result.is_ok() && tag_original {
                     let req = json!({ "cmd": "keywords_set", "imgid": item.imgid, "add": keywords, "remove": [] });
-                    if let Err(e) = state.engine().request(req) {
+                    if let Err(e) = state.engine("export_images").request(req) {
                         failed.push(json!({ "file": target,
                                             "error": format!("exported, but the keywords were not added to the original: {e}") }));
                     }
@@ -2055,21 +2192,21 @@ async fn immich_resolve(app: AppHandle, id: String, name: String, path: String,
 // the reply says whether the photo now reads as edited (darktable's history hash)
 #[tauri::command]
 async fn save(state: State<'_, AppState>) -> Result<Value, String> {
-    state.engine().request(json!({ "cmd": "save" }))
+    state.engine("save").request(json!({ "cmd": "save" }))
 }
 
 // the user's first change to a new photo: the defaults applied so far become
 // its unedited baseline
 #[tauri::command]
 async fn baseline_end(state: State<'_, AppState>) -> Result<(), String> {
-    state.engine().request(json!({ "cmd": "baseline_end" })).map(|_| ())
+    state.engine("baseline_end").request(json!({ "cmd": "baseline_end" })).map(|_| ())
 }
 
 // whether the engine holds the Before view's settings, which it must not
 // save on quitting
 #[tauri::command]
 async fn before_view(state: State<'_, AppState>, on: bool) -> Result<(), String> {
-    state.engine().request(json!({ "cmd": "before", "on": on })).map(|_| ())
+    state.engine("before_view").request(json!({ "cmd": "before", "on": on })).map(|_| ())
 }
 
 // the darktable styles shipped as looks: "<pack> - <group>_<name>.dtstyle",
@@ -2160,7 +2297,7 @@ async fn look_import(state: State<'_, AppState>, path: String) -> Result<String,
         if !dest.exists() { break }
         dest = state.user_looks_dir.join(format!("{stem} ({n}).dtstyle"));
     }
-    state.engine().request(json!({ "cmd": "style_forget", "name": renamed }))?;
+    state.engine("look_import").request(json!({ "cmd": "style_forget", "name": renamed }))?;
     std::fs::write(&dest, text).map_err(|e| format!("looks: {e}"))?;
     Ok(fresh)
 }
@@ -2185,14 +2322,14 @@ async fn look_delete(state: State<'_, AppState>, path: String) -> Result<(), Str
 // look in use
 #[tauri::command]
 async fn look_apply(state: State<'_, AppState>, path: Option<String>) -> Result<Value, String> {
-    let reply = state.engine().request(json!({ "cmd": "look", "path": path }))?;
+    let reply = state.engine("look_apply").request(json!({ "cmd": "look", "path": path }))?;
     Ok(reply["look"].clone())
 }
 
 // how strongly the look applies, 0-100
 #[tauri::command]
 async fn look_amount(state: State<'_, AppState>, amount: f64) -> Result<(), String> {
-    state.engine().request(json!({ "cmd": "look_amount", "amount": amount })).map(|_| ())
+    state.engine("look_amount").request(json!({ "cmd": "look_amount", "amount": amount })).map(|_| ())
 }
 
 // a small render of the open image with edits and, if `with_look`, `look`
@@ -2210,7 +2347,7 @@ async fn preview(
     if with_look {
         req["look"] = json!(look);
     }
-    let reply = state.engine().request(req)?;
+    let reply = state.engine("preview").request(req)?;
     let pixels = std::fs::read(&state.preview_path).map_err(|e| format!("preview: {e}"))?;
     let mut out = Vec::with_capacity(8 + pixels.len());
     for k in ["width", "height"] {
@@ -2238,14 +2375,14 @@ async fn export_preview(
         "px_long_edge": options.long_edge.unwrap_or(0), "draft": true,
     });
     if let Some(f) = &item.frame { req["frame"] = f.clone(); }
-    state.engine().request(req)?;
+    state.engine("export_preview").request(req)?;
     std::fs::read(&out).map(Response::new).map_err(|e| format!("preview: {e}"))
 }
 
 // the installed font families and their faces, as the engine draws them
 #[tauri::command]
 async fn fonts(state: State<'_, AppState>) -> Result<Value, String> {
-    state.engine().request(json!({ "cmd": "fonts" })).map(|r| r["families"].clone())
+    state.engine("fonts").request(json!({ "cmd": "fonts" })).map(|r| r["families"].clone())
 }
 
 // the Export dialog's presets, a document the front end shapes; none yet is
@@ -2345,7 +2482,7 @@ fn sample_folder(app: AppHandle) -> Result<String, String> {
 // Preferences
 #[tauri::command]
 async fn about(app: AppHandle, state: State<'_, AppState>) -> Result<Value, String> {
-    let reply = state.engine().request(json!({ "cmd": "version" }))?;
+    let reply = state.engine("about").request(json!({ "cmd": "version" }))?;
     Ok(json!({ "app": app.package_info().version.to_string(), "darktable": reply["version"] }))
 }
 
@@ -2377,7 +2514,7 @@ fn licenses(app: AppHandle) -> Result<Value, String> {
 // which Windows will not do while they are in use
 #[tauri::command]
 async fn engine_quit(state: State<'_, AppState>) -> Result<(), String> {
-    state.engine().quit();
+    state.engine("engine_quit").quit();
     Ok(())
 }
 
@@ -2387,16 +2524,11 @@ fn launch_file(launch: State<'_, Launch>) -> Option<String> {
 }
 
 fn main() {
-    // before GTK and WebKit start, and before any other thread
-    #[cfg(target_os = "linux")]
-    if std::env::var_os(EGL_VENDOR).is_none() {
-        if let Some(mesa) = mesa_egl(Path::new("/")) {
-            std::env::set_var(EGL_VENDOR, mesa);
-            WEBVIEW_MESA.store(true, Ordering::Relaxed);
-        }
-    }
     #[allow(unused_mut)]
     let mut context = tauri::generate_context!();
+    // before GTK and WebKit start, and before any other thread
+    #[cfg(target_os = "linux")]
+    renderer::init(&context.config().identifier).expect("cannot select the webview renderer");
     // Linux: setup builds the windows, with the web extension that hands
     // frames over (webext_dir); it has to be in place before their web
     // process starts
@@ -2465,7 +2597,7 @@ fn main() {
                 base_cancel: engine.base_cancel(),
                 tagged: engine.tagged(),
                 export_cancels: Mutex::new(HashMap::new()),
-                engine: Mutex::new(engine),
+                engine: perf_trace::TracedMutex::new(engine),
                 frame_path: runtime.join("frame.rgba"),
                 denoise_path: runtime.join("denoise-preview.f32"),
                 presets_path: runtime.join("presets.json"),
@@ -2477,6 +2609,8 @@ fn main() {
                 folder_token: AtomicU64::new(0),
                 perf_on: AtomicBool::new(false),
                 perf_last: Mutex::new(Vec::new()),
+                perf_by_request: Mutex::new(HashMap::new()),
+                perf_modules_dropped: AtomicU64::new(0),
                 perf_dir,
                 runtime: runtime.clone(),
                 resource_level,
@@ -2490,13 +2624,13 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            open_folder, open_image, get_params, set_params, render, cancel_base, save, baseline_end, before_view, thumb, thumb_cached, thumb_known, cache_limits, cache_usage, cache_clear, meta, meta_set, prefetch, darktable_resources, darktable_resources_set, gpu_edits, gpu_edits_set,
+            map_tiles::map_tile, open_folder, open_image, get_params, set_params, render, cancel_base, save, baseline_end, before_view, thumb, thumb_cached, thumb_known, cache_limits, cache_usage, cache_clear, meta, meta_set, capture_times, prefetch, darktable_resources, darktable_resources_set, gpu_edits, gpu_edits_set, webview_renderer, webview_renderer_set,
             export_images, export_cancel, export_existing, export_preview, fonts, export_presets_load, export_presets_save, preset_file_write, preset_file_read, presets_load, presets_save, looks_list, look_import, look_export, look_delete, look_apply, look_amount, preview,
             mask_shapes, combine, masks, mask_delete, mask_rename, history, module_state, sample, tone_key, agx_auto, upright, points, range_map, zones, mask_map, ai_object,
-            ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, list_subfolders, folder_volumes, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
+            ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, negative_export, list_subfolders, folder_volumes, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
             immich_export_check, immich_search, immich_browse_check, immich_libraries, immich_suggestions, immich_people, immich_tags,
-            immich_thumb, immich_resolve, launch_file, path_exists, path_kind, display_scale, trash_files, create_virtual_copy, remove_virtual_copy, hdr_merge, hdr_can_align, pano_merge, pano_can_merge, merge_cancel, preview_fullscreen, about, licenses, engine_quit, keywords, keywords_set, ai_accel,
-            perf_set, perf_modules, perf_report_write, perf_machine, perf_ping,
+            immich_thumb, immich_resolve, launch_file, path_exists, path_kind, display_scale, trash_files, create_virtual_copy, remove_virtual_copy, hdr_merge, hdr_can_align, pano_merge, pano_preview, pano_can_merge, merge_cancel, preview_fullscreen, about, licenses, engine_quit, keywords, keywords_set, ai_accel,
+            perf_set, perf_trace_start, perf_trace_stop, perf_modules, perf_report_write, perf_machine, perf_ping, resources::perf_resources_start, resources::perf_resources_stop,
             plugins::plugin_find_apps, plugins::plugin_launch, plugins::plugin_watch, plugins::plugin_cancel, plugins::plugin_job,
             plugins::plugin_returns, plugins::plugin_return_applied
         ])
@@ -2557,30 +2691,6 @@ mod tests {
         // the last batch whenever it comes, with those held
         assert_eq!(p.add(vec![json!(5)], ms(1100), false), None);
         assert_eq!(p.add(vec![json!(6)], ms(1200), true), Some(vec![json!(5), json!(6)]));
-    }
-
-    #[test]
-    fn mesa_egl_only_over_nvidia() {
-        let root = std::env::temp_dir().join(format!("immage-egl-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        let touch = |p: &str| {
-            let p = root.join(p);
-            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
-            std::fs::write(p, "{}").unwrap();
-        };
-        // Mesa alone: an AMD or Intel system, whose EGL is Mesa's already
-        touch("etc/glvnd/egl_vendor.d/50_mesa.json");
-        assert_eq!(mesa_egl(&root), None);
-        touch("proc/driver/nvidia/version");
-        assert_eq!(mesa_egl(&root), Some(root.join("etc/glvnd/egl_vendor.d/50_mesa.json")));
-        touch("usr/share/glvnd/egl_vendor.d/50_mesa.json");
-        assert_eq!(mesa_egl(&root), Some(root.join("usr/share/glvnd/egl_vendor.d/50_mesa.json")));
-        // NVIDIA without Mesa's EGL: left to NVIDIA's
-        std::fs::remove_dir_all(root.join("usr")).unwrap();
-        std::fs::remove_dir_all(root.join("etc")).unwrap();
-        assert_eq!(mesa_egl(&root), None);
-        assert_eq!(EGL_VENDOR, "__EGL_VENDOR_LIBRARY_FILENAMES");
-        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]

@@ -17,6 +17,44 @@ The report goes to `verify/results/<date>_<sha>/report.md`, with every
 measurement in `report.json`. Both, and `verify/references/`, are your
 machine's own and stay out of git.
 
+The focused panorama and negative-export regression checks run with the built engine:
+
+```bash
+node --test verify/panorama.test.mjs verify/negative-export.test.mjs
+```
+
+The panorama check also verifies previews for all projections, Auto's resolved
+projection, RGBA coverage and crop bounds, and that previewing writes no DNG.
+Set `IMMAGE_TEST_RAW=/path/to/photo.ORF` to additionally check HDR and all-RAW panorama merges:
+DNG identification and calibration tags survive EXIF copying, the thumbnail
+loads, and pixels render before and after an engine restart. The RAW fixture
+is copied into the temporary workspace; its original is left untouched.
+Run `node verify/panorama-ui.mjs` for the panel's canvas, caching, cancellation,
+stale-reply, retry and merge-settings checks in headless Chromium.
+
+The negative-export check checks compressed DNG and TIFF color metadata, conversion and crop
+round-trips, export snapshots, further exposure edits and reopening after
+an engine restart. It creates its own small fixture and temporary workspace.
+
+The focused GPS check covers camera-embedded coordinates, XMP edits and removal,
+altitude invalidation, invalid input, and persistence after restarting:
+
+```bash
+node --test verify/location.test.mjs
+```
+
+The WebKit preview-placement pixel check needs a desktop display, GTK 3,
+WebKitGTK 4.1 and Python's gi/cairo bindings:
+
+```bash
+GDK_SCALE=2 python verify/preview-placement.py
+```
+
+It renders a synthetic texture at final and 75% preview sizes through the
+production canvas placement helper and checks for position drift. Add `--legacy`
+to reproduce the failure with fractional CSS canvas dimensions. The browser
+test opens a temporary window; it does not need a photo or the engine.
+
 ## What it checks
 
 `run.py` takes the largest raw in `benchmarking/corpus/` and the smallest
@@ -82,6 +120,22 @@ same commit.
 To look into one control: `python3 -I verify/run.py --skip-perf --checks
 sliders --controls usm_amount --images DSC07636`.
 
+For the headless pipeline checkpoint policy, run
+`python3 -I verify/run.py --skip-perf --checks checkpoints --images PHOTO`.
+This checks pipe debug hints for the scaled checkpoint and excludes retention
+of the full-resolution input to scaling. It also checks repeated GPU drags
+for unnecessary demosaicing when OpenCL is available; that portion is reported
+as skipped when no module runs on the GPU.
+
+## Visible-app GUI suite
+
+The separate [visible-app suite in `gui/`](gui/README.md) now checks startup and
+real Exposure pointer drags/reset, CSS/hit-testing and rendered photo pixels in
+the Tauri window. Run `node verify/gui/run.mjs --config verify/gui/local.json
+--suite smoke` after following its setup guide. Results and application screenshots
+live in ignored `verify/results/gui/`. The broader GUI matrix remains planned;
+these smoke checks supplement the pipeline tests below.
+
 ## What it doesn't cover
 
 - The interface itself: whether a click on a slider reaches `change()` in
@@ -92,3 +146,62 @@ sliders --controls usm_amount --images DSC07636`.
 - AI masks and AI Denoise, looks, presets, export settings and Immich.
 - The GUI benchmark (IPC, drawing): run it from Preferences in the app
   ([benchmarking/README.md](../benchmarking/README.md)).
+
+## Folder metadata and embedded thumbnails
+
+Build and run the focused checks with an isolated scratch directory:
+
+```bash
+cmake --build build --target immage-thumbnail-check
+build/bin/immage-thumbnail-check /tmp/immage-thumbnail-check /path/to/camera.CR2 /path/to/camera.NEF
+```
+
+The check generates TIFFs with two embedded JPEG sizes, rotated orientation,
+metadata beyond the prefix limit, and truncated data. It verifies metadata,
+compares extracted JPEG bytes with Exiv2's full-file previews, and decodes
+four thumbnail sizes. Optional RAW paths must contain an embedded preview.
+On Linux it also prints logical bytes read from `/proc/self/io`; these include
+buffering and other reads during each call and do not measure network traffic
+or physical disk reads. Camera fixtures are supplied locally and stay out of git.
+
+
+## Native detail preview checks
+
+Check detail eligibility, native loupe selection, view/release invalidation,
+tuner search, exact frame delivery, and histogram/clipping worker lifecycle:
+
+```bash
+node --test verify/detail-preview.test.mjs verify/performance-tuner.test.mjs verify/preview-handoff.test.mjs verify/pixel-worker.test.mjs
+```
+
+Check histogram endpoint widths and black/white clipping in headless Chromium:
+
+```bash
+node verify/histogram-rendering.mjs
+```
+
+## Scaled checkpoint retention
+
+Exercise cache churn beyond its entry count, the three-checkpoint bound,
+invalidation, memory trimming and the two-buffer fallback:
+
+```bash
+cmake --build build --target immage-checkpoint-check
+build/bin/immage-checkpoint-check
+```
+
+After cache structure changes, rebuild the full tree before rendering so the
+engine and dynamically loaded image-processing modules use the same layout.
+
+
+Independent module preferences: run `node verify/contrast-equalizer.test.mjs`
+for mapping and scoped-choice checks, and `node verify/mask-modules.mjs` with
+the built engine for a render/save/reload check of global AgX alongside masked
+contrast equalizer. The latter uses a temporary copy of the sample photo.
+
+Camera body filtering: after building the engine, run
+`node --test verify/camera-body.test.mjs` (requires the `exiv2` CLI).
+Fixtures cover standard EXIF and DNG body serial tags, leading zeros,
+missing/placeholder serials and lens-only metadata through import and meta
+replies. Filter checks cover identical models with swapped lenses, multiple
+bodies, unknown bodies, combined filters, facet counts and active filter counts.

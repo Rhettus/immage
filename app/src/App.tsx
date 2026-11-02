@@ -1,7 +1,11 @@
+import { ContrastEqualizer } from "./ContrastEqualizer";
+import { detailRows } from "./DetailControls";
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CaptureTimeDialog } from "./CaptureTimeDialog";
+import { captureMillis, type CaptureTimeEntry, type CaptureTimeUpdate } from "./captureTime";
+import { Profiler, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ask, open, save } from "@tauri-apps/plugin-dialog";
@@ -15,11 +19,15 @@ import { BANDS, choiceOn, choiceShows, controlById, GUIDE_IDS, guidesOf, isModul
 import { autoArea, autoBlack, autoDmax, autoDmin, autoExposure as autoPrintExposure, autoOffset, autoWbHigh, autoWbLow,
          FILM_BW, FILM_COLOR, fromValues, PRESETS, toValues, type Stats } from "./negadoctor";
 import { NegativePanel, type NegPick } from "./NegativePanel";
-import { CircleOff, Grid2x2, MoveHorizontal, MoveVertical, PenLine, Sparkles, WandSparkles } from "lucide-react";
+import { CircleOff, Grid2x2, Pipette, MoveHorizontal, MoveVertical, PenLine, Sparkles, WandSparkles } from "lucide-react";
+import { panelValues } from "./panelValues";
+import { FrameUpdates, Snapshot } from "./uiUpdates";
+import { PixelCadence, PixelWorker } from "./pixelWorker";
+import { CanvasFrames, FrameGeneration, layerStyle, placeCanvas, resizeCanvas } from "./canvasLayers";
 import { Session, framePlace, instanceKey, mapOpOf, type Frame, type HistoryItem, type ModuleState, type View } from "./session";
 import { AUTO_TONE_IDS, autoExposure, autoTone, type SceneKey } from "./autoTone";
 import { curve } from "./tonecurve";
-import { clipColor, computeHistogram, DEFAULT_SCOPE, drawScope, HARMONIES, HARMONY_WIDTHS, histogramPath, paintClipping,
+import { clipColor, DEFAULT_SCOPE, drawScope, HARMONIES, HARMONY_WIDTHS, histogramPath,
          type ClipShow, type Histogram, type ScopeMode, type ScopeSettings, type VecSpace } from "./histogram";
 import { applyCacheLimits } from "./CachePrefs";
 import { fetchThumb, fileKind, isCompanion, isPrimaryRaw, LABEL_COLORS, loadIncludeSubfolders, openFolder, pairKey, pairPartners,
@@ -49,11 +57,11 @@ import { Tour, tourSeen } from "./Tour";
 import { UpdateBanner } from "./UpdateBanner";
 import { autoCheck, relaunch } from "./updates";
 import { Chevron, Collapse } from "./Collapse";
-import { loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadNewPhotosProfile, loadOverlayColor, loadGuideColor, guideRgb, loadPins, maskOverlayRgb, loadPreview, loadFrameCacheMb, loadDraftTarget, loadDraftSmallest,loadSliderScroll, loadSliderScrollStep,
+import { loadOpenGenerated, storeOpenGenerated, loadLoupe, storeLoupe, loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadNewPhotosProfile, loadOverlayColor, loadGuideColor, guideRgb, loadPins, maskOverlayRgb, loadPreview, loadBalancedPreviewSize, loadFrameCacheMb, loadDraftTarget, loadDraftSmallest,loadSliderScroll, loadSliderScrollStep,
          loadStackPairs,
          PreferencesDialog, storeOverlayColor, storeGuideColor, storeStackPairs,
          storeAutoHide, storeCanvas, CANVASES, storeFocusMode, storePins, type AccelProvider, type Canvas,
-         loadNegWarn, loadReadAhead, loadThumbMemoryMb, storeNegWarn, type Pins, type PrefsTab, type Preview } from "./Preferences";
+         loadNegWarn, loadNegativeExportFormat, loadReadAhead, loadThumbMemoryMb, storeNegWarn, type Pins, type PrefsTab, type Preview } from "./Preferences";
 import { kindOf, loadPlugins, loadReturns, returnValues, storePlugins, unfit, type PluginConfig,
          type PluginReturn } from "./plugins";
 import { FolderTree, type Volume } from "./FolderTree";
@@ -80,9 +88,14 @@ import { ASPECTS, CropOverlay, customAspect, findAspect, fitAspect, FULL, loadCu
          rememberCustomAspect, type Aspect, type CropRect } from "./CropTool";
 import { ShortcutsDialog } from "./Shortcuts";
 import { cmd, fieldKeeps, keys } from "./keys";
-import { perf, percentiles, pingOnce, roundTrips, STAGES, webviewInfo } from "./perf";
+import { perf, percentiles, pingOnce, roundTrips, STAGES, webviewInfo, observeWebview } from "./perf";
 import { frameTransport } from "./sharedFrames";
 import { draftScale } from "./pixelRatio";
+import { tunerOptions } from "./tunerOptions";
+import { timeTunerWork } from "./tunerWorkload";
+import { hasPendingTuner } from "./PerformanceTuner";
+import { PerformanceTuner } from "./PerformanceTuner";
+import type { TunerRun } from "./previewTuning";
 import { PerfHud } from "./PerfHud";
 import { KeywordingPanel } from "./Keywording";
 import { ImmichPanel } from "./ImmichPanel";
@@ -135,6 +148,7 @@ type Placement = { fullWidth: number; fullHeight: number; scale: number; x: numb
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
 export default function App() {
+  perf.count("react.appRenderAttempts");
   const [folder, setFolder] = useState<string | null>(null);
   const folderRef = useRef(folder);
   folderRef.current = folder;
@@ -220,7 +234,12 @@ export default function App() {
   // the open photo's filmstrip cell, kept while the filmstrip shows another
   // folder or an Immich search, so the tools and panels that need it still work
   const [openCell, setOpenCell] = useState<ImageEntry | null>(null);
-  const [values, setValues] = useState<Record<string, number>>({});
+  const [values, publishValues] = useState<Record<string, number>>({});
+  const valueUpdates = useRef<FrameUpdates<Record<string, number>> | null>(null);
+  valueUpdates.current ??= new FrameUpdates(publishValues);
+  const setValues = (update: React.SetStateAction<Record<string, number>>) =>
+    valueUpdates.current!.immediate(old => typeof update === "function" ? update(old) : update);
+  useEffect(() => () => valueUpdates.current?.dispose(), []);
   const [status, setStatus] = useState("open a folder to start");
   // how far the open folder's reading has got, while it is read
   // `files` lists them all, in the order they are read, once `listed`;
@@ -285,6 +304,8 @@ export default function App() {
   const previous = useRef<Clip | null>(null);
   // the quick start guide: by itself on first start, then from the title bar
   const [touring, setTouring] = useState(() => !tourSeen());
+  const [tunerOpen, setTunerOpen] = useState(false);
+  useEffect(() => { if (current && hasPendingTuner()) setTunerOpen(true); }, [current]);
   const [prefsOpen, setPrefsOpen] = useState<false | true | PrefsTab>(false);
   // the Immich card: shown once Immich is set up (checked again as
   // Preferences closes), with the server's URL for links into its web app.
@@ -357,6 +378,39 @@ export default function App() {
   // a photo's right-click menu, where it was clicked
   // the photos it acts on are the selection when the click is in it, else
   // that photo alone
+  const [captureDialog, setCaptureDialog] = useState<{ targets: ImageEntry[]; reference: ImageEntry; undo?: CaptureTimeEntry[] } | null>(null);
+  const [captureUndo, setCaptureUndo] = useState<CaptureTimeEntry[]>([]);
+  const startCaptureAdjustment = (targets: ImageEntry[], preferred?: ImageEntry) => {
+    const local = targets.filter((i) => !isRemote(i));
+    const valid = (i: ImageEntry) => Number.isFinite(captureMillis(i.exif.datetime));
+    const reference = preferred && local.some((i) => i.imgid === preferred.imgid) && valid(preferred)
+      ? preferred : local.find(valid);
+    if (reference) setCaptureDialog({ targets: local, reference });
+    else setStatus("no selected photos have a recorded capture time");
+  };
+  const startCaptureUndo = () => {
+    const reference = imagesRef.current.find((i) => i.imgid === captureUndo[0]?.imgid);
+    if (reference) setCaptureDialog({ targets: [], reference, undo: captureUndo.map((e) => ({ imgid: e.imgid, before: e.after, after: e.before })) });
+    else setStatus("open the folder containing the adjusted photos to undo their capture times");
+  };
+  const applyCaptureTimes = async (entries: CaptureTimeEntry[]) => {
+    const reply = await invoke<{ updates: CaptureTimeUpdate[] }>("capture_times", { entries });
+    const changed = reply.updates.filter((e) => !e.error);
+    const times = new Map(changed.map((e) => [e.imgid, e.after]));
+    updateImages(byCaptureTime(imagesRef.current.map((i) => times.has(i.imgid)
+      ? { ...i, exif: { ...i.exif, datetime: times.get(i.imgid)! } } : i)));
+    setOpenCell((i) => i && times.has(i.imgid) ? { ...i, exif: { ...i.exif, datetime: times.get(i.imgid)! } } : i);
+    if (captureDialog?.undo) {
+      const restored = new Set(changed.map((e) => e.imgid));
+      setCaptureUndo((old) => old.filter((e) => !restored.has(e.imgid)));
+    } else if (changed.length) setCaptureUndo(changed);
+    const failures = reply.updates.filter((e) => e.error);
+    const message = `${changed.length} photo${changed.length === 1 ? "" : "s"} ${captureDialog?.undo ? "restored" : "adjusted"}.`
+      + (failures.length ? ` ${failures.length} could not be saved; their capture times were left unchanged. ${failures[0].error}.` : "")
+      + (!captureDialog?.undo && changed.length ? " Undo Capture Time Adjustment is available in the photo context menu." : "");
+    setStatus(message);
+    return message;
+  };
   const [fileMenu, setFileMenu] = useState<{ x: number; y: number; imgid: number | null; targets: ImageEntry[] } | null>(null);
   // right-click on the Immich card or the results' empty space: the search
   // in Immich's web app
@@ -802,10 +856,24 @@ export default function App() {
   // a background job's result, opened from the activity line as a double
   // click in the grid opens a photo: out of the grid and Compare, which
   // would otherwise cover it
-  const openResult = (path: string, imgid: number) => {
+  const openResult = (path: string, imgid?: number) => {
     setCompare(null);
+    // Generated files are local and cannot appear in an Immich search.
+    // Show their folder so returning to the grid also reveals the result.
+    if (immichRef.current) {
+      window.clearTimeout(immichTimer.current);
+      void showFolder(parentDir(path));
+    }
     void openFile(path, imgid);
     setGrid(false);
+  };
+  // Use the current preference when a background result arrives.
+  const generatedAction = (path: string, imgid?: number, auto = true) => {
+    if (auto && loadOpenGenerated()) {
+      openResult(path, imgid);
+      return undefined;
+    }
+    return { label: "Open", run: () => openResult(path, imgid) };
   };
   const runDenoise = (amount: number) => {
     const from = currentRef.current?.path;
@@ -829,8 +897,34 @@ export default function App() {
       if (folderRef.current && !immichRef.current && parentDir(r.path) === folderRef.current)
         void showFolder(folderRef.current, true);
       return { text: `AI Denoise: wrote ${baseName(r.path)}`, ok: true,
-               action: { label: "Open", run: () => openResult(r.path, r.image.imgid) } };
+               action: generatedAction(r.path, r.image.imgid) };
     }, "AI Denoise").finally(() => setDenoiseRunning(false));
+  };
+  const [negativeExporting, setNegativeExporting] = useState(false);
+  const negativeExportRunning = useRef(false);
+  const exportNegative = () => {
+    const s = session.current, from = currentRef.current?.path;
+    if (!s || !from || s.values.neg_on !== 1 || negativeExportRunning.current) return;
+    negativeExportRunning.current = true;
+    setNegativeExporting(true);
+    const format = loadNegativeExportFormat();
+    void runInBackground(`Converted positive: ${baseName(from)}`, async () => {
+      s.flushEdits();
+      await s.settled();
+      if (session.current !== s) throw new Error("the open photo changed; export the negative again");
+      return await invoke<{ path: string; original: string; image: { imgid: number } }>("negative_export", {
+        imgid: s.imgid, original: from, format,
+      });
+    }, (r) => {
+      returns.current.set(r.path, { original: r.original, result: r.path, plugin: "negative-positive", applied: true });
+      if (folderRef.current && !immichRef.current && parentDir(r.path) === folderRef.current)
+        void showFolder(folderRef.current, true);
+      return { text: `Converted positive: wrote ${baseName(r.path)}`, ok: true,
+               action: generatedAction(r.path, r.image.imgid) };
+    }, "Export converted negative").finally(() => {
+      negativeExportRunning.current = false;
+      setNegativeExporting(false);
+    });
   };
   // Lightroom's Photo Merge › HDR on darktable's HDR merge: a float DNG
   // beside the first bracket, listed in the folder after it, opened from
@@ -843,7 +937,7 @@ export default function App() {
       if (folderRef.current && !immichRef.current && parentDir(r.path) === folderRef.current)
         void showFolder(folderRef.current, true);
       return { text: `HDR Merge: wrote ${baseName(r.path)}`, ok: true,
-               action: { label: "Open", run: () => openResult(r.path, r.image.imgid) } };
+               action: generatedAction(r.path, r.image.imgid) };
     }, `HDR Merge of ${first?.filename ?? "the photos"}`);
   };
   // Lightroom's Photo Merge › Panorama, stitched by the engine with OpenCV:
@@ -860,7 +954,7 @@ export default function App() {
         void showFolder(folderRef.current, true);
       const left = r.frames - r.used;
       return { text: `Panorama Merge: wrote ${baseName(r.path)}${left ? `, without ${left} photo${left > 1 ? "s" : ""} that overlapped no other` : ""}`,
-               ok: true, action: { label: "Open", run: () => openResult(r.path, r.image.imgid) } };
+               ok: true, action: generatedAction(r.path, r.image.imgid) };
     }, `Panorama Merge of ${first?.filename ?? "the photos"}`);
   };
   // an outline the mask adds is traced inside its edge, so its feather ends
@@ -995,6 +1089,7 @@ export default function App() {
       // not adjustments; the orientation stays too, as in Lightroom
       changeMany(Object.entries(s.neutral).filter(([id]) => !isModuleSetting(id) && id !== "profile"
                                                             && id !== "exp_comp" && id !== "orient"));
+      s.resetModules();
       if (s.look) applyLook(null);
       for (const m of s.masks) s.deleteMask(m.name);
       if (s.spots.length) s.setSpots([]);
@@ -1041,7 +1136,7 @@ export default function App() {
         if (!f || !c || token !== hoverToken.current) return;
         c.width = f.width;
         c.height = f.height;
-        c.getContext("2d")!.putImageData(new ImageData(f.pixels, f.width, f.height), 0, 0);
+        perf.time("pixels.canvasUpload", () => c.getContext("2d")!.putImageData(new ImageData(f.pixels, f.width, f.height), 0, 0));
         placeLayers();
         setHoverShown(from);
       } catch {
@@ -1421,7 +1516,50 @@ export default function App() {
   cropRef.current = { rect: cropRect, aspect: cropAspect, portrait: cropPortrait, choices: cropChoices };
   const [zoom, setZoomState] = useState<Zoom>("fit");
   const [placement, setPlacement] = useState<Placement | null>(null);
-  const [histogram, setHistogram] = useState<Histogram | null>(null);
+  const [histograms] = useState(() => new Snapshot<Histogram | null>(null));
+  const pixelWorker = useRef<PixelWorker | null>(null);
+  const pixelsWorker = () => pixelWorker.current ??= new PixelWorker();
+  const [frameGenerations] = useState(() => ({ sharp: new FrameGeneration(), base: new FrameGeneration(), histogram: new FrameGeneration() }));
+  const [canvasFrames] = useState(() => new CanvasFrames());
+  const [navigatorUpdates] = useState(() => new PixelCadence<{ frame: Frame; owner: Session | null }>(({ frame: f, owner }) => {
+    const t = navThumb.current, bc = baseCanvas.current;
+    if (session.current !== owner || !t || !bc || !canvasFrames.matches(bc, f)) return;
+    resizeCanvas(t, 400, Math.round(400 * f.height / f.width));
+    const ctx = t.getContext("2d")!;
+    ctx.clearRect(0, 0, t.width, t.height);
+    ctx.drawImage(bc, 0, 0, t.width, t.height);
+  }));
+  const resetCanvases = () => {
+    navigatorUpdates.cancel(); canvasFrames.clear();
+    frameGenerations.sharp.next(); frameGenerations.base.next(); frameGenerations.histogram.next();
+  };
+  const histogramWorker = useRef<PixelWorker | null>(null);
+  const [histogramUpdates] = useState(() => new PixelCadence<{ frame: Frame; owner: Session | null; generation: number }>(({ frame: f, owner, generation }) => {
+    if (session.current !== owner || !frameGenerations.histogram.matches(generation)) return;
+    (histogramWorker.current ??= new PixelWorker()).submit("histogram",
+      { kind: "histogram", pixels: f.pixels, width: f.width, height: f.height }, result => {
+        if (session.current === owner && frameGenerations.histogram.matches(generation)) histograms.set(result as Histogram);
+      });
+  }));
+  const resetHistogram = () => {
+    frameGenerations.histogram.next();
+    histogramUpdates.cancel();
+    histogramWorker.current?.dispose(); histogramWorker.current = null;
+  };
+  useEffect(() => () => {
+    pixelWorker.current?.dispose(); pixelWorker.current = null;
+    resetHistogram();
+    resetCanvases();
+  }, []);
+  useEffect(() => {
+    pixelWorker.current?.dispose(); pixelWorker.current = null;
+    resetHistogram();
+    histograms.set(null);
+  }, [current]);
+  const updateHistogram = (f: Frame) => {
+    const generation = frameGenerations.histogram.next();
+    histogramUpdates.submit({ frame: f, owner: session.current, generation }, dragging.current);
+  };
   const placementRef = useRef<Placement | null>(null);
   const session = useRef<Session | null>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -1490,35 +1628,89 @@ export default function App() {
   const clipShown: ClipShow = { low: clipOn.low || clipPeek === "low", high: clipOn.high || clipPeek === "high" };
   const clipRef = useRef(clipShown);
   clipRef.current = clipShown;
-  const paintClip = (layer: "base" | "sharp" | "both") => {
+  const invalidateClip = (layer: "base" | "sharp") => {
+    frameGenerations[layer].next();
+    pixelWorker.current?.cancel(layer === "base" ? "clipBase" : "clipSharp");
+    const dst = layer === "base" ? clipBase.current : clipSharp.current;
+    if (dst) dst.getContext("2d")!.clearRect(0, 0, dst.width, dst.height);
+  };
+  const paintClip = (layer: "base" | "sharp" | "both", frame?: Frame) => {
     const pairs: [HTMLCanvasElement | null, HTMLCanvasElement | null][] = [];
     if (layer !== "sharp") pairs.push([baseCanvas.current, clipBase.current]);
     if (layer !== "base") pairs.push([canvas.current, clipSharp.current]);
-    for (const [src, dst] of pairs) if (src && dst) paintClipping(src, dst, clipRef.current);
+    for (const [src, dst] of pairs) if (src && dst) {
+      const key = dst === clipBase.current ? "clipBase" : "clipSharp";
+      pixelsWorker().cancel(key);
+      const sourceGeneration = dst === clipBase.current ? frameGenerations.base : frameGenerations.sharp;
+      const generation = sourceGeneration.capture();
+      if (dst.width !== src.width || dst.height !== src.height) { dst.width = src.width; dst.height = src.height; }
+      dst.getContext("2d")!.clearRect(0, 0, dst.width, dst.height);
+      const show = { ...clipRef.current }, width = src.width, height = src.height, owner = session.current;
+      if (!width || !height || (!show.low && !show.high)) continue;
+      const pixels = frame?.pixels ?? perf.time("pixels.canvasReadback", () => src.getContext("2d")!.getImageData(0, 0, width, height).data);
+      pixelsWorker().submit(key, { kind: "clipping", pixels, width, height, show }, result => {
+        if (session.current !== owner || !sourceGeneration.matches(generation) || src.width !== width || src.height !== height
+            || show.low !== clipRef.current.low || show.high !== clipRef.current.high) return;
+        perf.time("pixels.clippingUpload", () => dst.getContext("2d")!.putImageData(new ImageData(result as Uint8ClampedArray<ArrayBuffer>, width, height), 0, 0));
+      });
+    }
   };
-  useEffect(() => { paintClip("both"); }, [clipShown.low, clipShown.high]);
+  useEffect(() => {
+    paintClip("both");
+  }, [clipShown.low, clipShown.high]);
   const baseMeta = useRef<Placed | null>(null);
   // a control in the panels, the histogram or the mask editor held down (or
   // a wheel turning one): frames are drafts until it lets go, and then one
   // full frame follows if a draft was shown
   const dragging = useRef(false);
   const draftShown = useRef(false);
+  const [loupeShown, setLoupeShown] = useState(false);
+  const [openGenerated, setOpenGenerated] = useState(loadOpenGenerated);
+  const [loupeEnabled, setLoupeEnabled] = useState(loadLoupe);
+  const [loupePicking, setLoupePicking] = useState(false);
+  const loupeEnabledRef = useRef(true);
+  loupeEnabledRef.current = loupeEnabled;
+  const [loupePosition, setLoupePosition] = useState({ x: 0.5, y: 0.5 });
+  const loupePositionRef = useRef(loupePosition);
+  loupePositionRef.current = loupePosition;
+  const loupeCanvas = useRef<HTMLCanvasElement>(null);
+  const loupeDisplays = useRef(new Map<string, HTMLCanvasElement>());
+
+  useEffect(() => {
+    if (grid) {
+      setLoupePicking(false);
+      return;
+    }
+    if (loupeEnabled) session.current?.requestLoupe();
+  }, [grid, loupeEnabled, loupePosition]);
+  useEffect(() => {
+    if (!loupePicking) return;
+    const cancel = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); setLoupePicking(false); }
+    };
+    window.addEventListener("keydown", cancel, true);
+    return () => window.removeEventListener("keydown", cancel, true);
+  }, [loupePicking]);
+
   useEffect(() => {
     const DRAG_AREAS = ".panels, .histogram, .mask-box";
     let wheelTimer = 0;
     const end = () => {
       if (!dragging.current) return;
+      valueUpdates.current?.flush();
       dragging.current = false;
-      if (draftShown.current) session.current?.requestRender();
+      histogramUpdates.flush();
+      if (draftShown.current || session.current?.pending) session.current?.requestRender();
+      else session.current?.flushEdits();
     };
     const down = (e: PointerEvent) => {
       // a <select>'s native menu takes the pointer on macOS: its pointerup
       // never reaches the page, so a drag begun there would never end
       if ((e.target as Element).closest?.("select")) return;
-      if (e.button === 0 && (e.target as Element).closest?.(DRAG_AREAS) && loadPreview() !== "quality") dragging.current = true;
+      if (e.button === 0 && (e.target as Element).closest?.(DRAG_AREAS)) dragging.current = true;
     };
     const wheel = (e: WheelEvent) => {
-      if (!(e.target as Element).closest?.(".panels, .histogram") || !loadSliderScroll() || loadPreview() === "quality") return;
+      if (!(e.target as Element).closest?.(".panels, .histogram") || !loadSliderScroll()) return;
       dragging.current = true;
       window.clearTimeout(wheelTimer);
       wheelTimer = window.setTimeout(end, 250);
@@ -1526,12 +1718,14 @@ export default function App() {
     window.addEventListener("pointerdown", down, true);
     window.addEventListener("pointerup", end, true);
     window.addEventListener("pointercancel", end, true);
+    window.addEventListener("blur", end);
     window.addEventListener("wheel", wheel, { capture: true, passive: true });
     return () => {
       window.clearTimeout(wheelTimer);
       window.removeEventListener("pointerdown", down, true);
       window.removeEventListener("pointerup", end, true);
       window.removeEventListener("pointercancel", end, true);
+      window.removeEventListener("blur", end);
       window.removeEventListener("wheel", wheel, true);
     };
   }, []);
@@ -1653,21 +1847,21 @@ export default function App() {
     };
     return k === 1 ? view : { ...view, draft: true };
   };
-  // while a control is dragged, half the size each way (a quarter under
-  // Performance): a quarter of the pixels for darktable's modules after the
-  // one that changed, which is most of a frame's time. on a screen drawn
-  // larger than it shows (Wayland at 125%), smaller again by as much
+  // reduced previews also follow the screen scale on displays drawn larger
+  // than they show; full-size Balanced previews keep every pixel
   const draftK = () => {
-    const k = DRAFT[loadPreview()];
+    const preview = loadPreview();
+    const k = preview === "balanced" ? loadBalancedPreviewSize() : DRAFT[preview];
     return k < 1 ? k * draftScale() : 1;
   };
-  const currentView = useCallback((): View => viewAt(dragging.current ? draftK() : 1), []);
+  const currentView = useCallback((): View => dragging.current
+    ? { ...viewAt(draftK()), draft: true } : viewAt(1), []);
 
   const follow = (layer: HTMLCanvasElement, clip: HTMLCanvasElement | null) => {
     if (!clip) return;
-    clip.style.width = layer.style.width;
-    clip.style.height = layer.style.height;
-    clip.style.transform = layer.style.transform;
+    layerStyle(clip, "width", layer.style.width);
+    layerStyle(clip, "height", layer.style.height);
+    layerStyle(clip, "transform", layer.style.transform);
   };
 
   // place both layers for the current view
@@ -1871,26 +2065,25 @@ export default function App() {
     // where the image's top-left corner lands, in device pixels
     const ox = w / 2 - center.current.x * f.w * z, oy = h / 2 - center.current.y * f.h * z;
     const b = baseMeta.current, bc = baseCanvas.current;
+    // A crop/rotation changes the image coordinate system. The old overview
+    // cannot sit underneath the new frame while its replacement renders.
+    const baseCompatible = !!b && b.fullWidth === f.w && b.fullHeight === f.h;
+    if (bc) layerStyle(bc, "visibility", baseCompatible ? "" : "hidden");
+    if (clipBase.current) layerStyle(clipBase.current, "visibility", baseCompatible ? "" : "hidden");
     if (b && bc) {
       const p = framePlace(b, z);
-      bc.style.width = `${b.width / dpr}px`;
-      bc.style.height = `${b.height / dpr}px`;
-      bc.style.transform = `translate(${(ox + p.x) / dpr}px, ${(oy + p.y) / dpr}px) scale(${p.k})`;
+      placeCanvas(bc, b.width, b.height, { x: ox + p.x, y: oy + p.y, k: p.k }, dpr);
       follow(bc, clipBase.current);
     }
     const cm = copyMeta.current, cc = copyCanvas.current;
     if (cm && cc) {
       const p = framePlace(cm, z);
-      cc.style.width = `${cm.width / dpr}px`;
-      cc.style.height = `${cm.height / dpr}px`;
-      cc.style.transform = `translate(${(ox + p.x) / dpr}px, ${(oy + p.y) / dpr}px) scale(${p.k})`;
+      placeCanvas(cc, cm.width, cm.height, { x: ox + p.x, y: oy + p.y, k: p.k }, dpr);
     }
     const s = sharpMeta.current, sc = canvas.current;
     if (s && sc) {
       const p = framePlace(s, z);
-      sc.style.width = `${s.width / dpr}px`;
-      sc.style.height = `${s.height / dpr}px`;
-      sc.style.transform = `translate(${(ox + p.x) / dpr}px, ${(oy + p.y) / dpr}px) scale(${p.k})`;
+      placeCanvas(sc, s.width, s.height, { x: ox + p.x, y: oy + p.y, k: p.k }, dpr);
       follow(sc, clipSharp.current);
     }
     const bm = beforeMeta.current, bcv = beforeCanvas.current;
@@ -1900,25 +2093,23 @@ export default function App() {
       const k = Math.min(f.w / bm.fullWidth, f.h / bm.fullHeight);
       const bx = ox + ((f.w - bm.fullWidth * k) * z) / 2, by = oy + ((f.h - bm.fullHeight * k) * z) / 2;
       const sx = bx + (bm.x / bm.scale) * k * z, sy = by + (bm.y / bm.scale) * k * z;
-      bcv.style.width = `${bm.width / dpr}px`;
-      bcv.style.height = `${bm.height / dpr}px`;
-      bcv.style.transform = `translate(${sx / dpr}px, ${sy / dpr}px) scale(${(z * k) / bm.scale})`;
+      placeCanvas(bcv, bm.width, bm.height, { x: sx, y: sy, k: (z * k) / bm.scale }, dpr);
     }
     zoomShow.current?.(z, zoomRef.current === "fit");
     const hc = hoverCanvas.current;
     if (hc) {
-      hc.style.left = `${ox / dpr}px`;
-      hc.style.top = `${oy / dpr}px`;
-      hc.style.width = `${(f.w * z) / dpr}px`;
-      hc.style.height = `${(f.h * z) / dpr}px`;
+      layerStyle(hc, "left", `${ox / dpr}px`);
+      layerStyle(hc, "top", `${oy / dpr}px`);
+      layerStyle(hc, "width", `${(f.w * z) / dpr}px`);
+      layerStyle(hc, "height", `${(f.h * z) / dpr}px`);
     }
     // the mask editor and the zone overlay cover the whole image, wherever it is
     for (const mb of [maskBox.current, zoneBox.current, detailBox.current, guideBox.current, negBox.current]) {
       if (!mb) continue;
-      mb.style.left = `${ox / dpr}px`;
-      mb.style.top = `${oy / dpr}px`;
-      mb.style.width = `${(f.w * z) / dpr}px`;
-      mb.style.height = `${(f.h * z) / dpr}px`;
+      layerStyle(mb, "left", `${ox / dpr}px`);
+      layerStyle(mb, "top", `${oy / dpr}px`);
+      layerStyle(mb, "width", `${(f.w * z) / dpr}px`);
+      layerStyle(mb, "height", `${(f.h * z) / dpr}px`);
     }
   };
 
@@ -1931,6 +2122,8 @@ export default function App() {
       fullWidth: f.w, fullHeight: f.h, scale: z,
       x: center.current.x * f.w * z - w / 2, y: center.current.y * f.h * z - h / 2, width: w, height: h,
     };
+    const old = placementRef.current;
+    if (old && (Object.keys(pl) as (keyof Placement)[]).every(key => old[key] === pl[key])) return;
     placementRef.current = pl;
     setPlacement(pl);
   };
@@ -1945,9 +2138,8 @@ export default function App() {
     if (f.before && baModeRef.current !== "off") {
       const bc = beforeCanvas.current;
       if (bc) {
-        bc.width = f.width;
-        bc.height = f.height;
-        bc.getContext("2d")!.putImageData(new ImageData(f.pixels, f.width, f.height), 0, 0);
+        resizeCanvas(bc, f.width, f.height);
+        perf.time("pixels.canvasUpload", () => bc.getContext("2d")!.putImageData(new ImageData(f.pixels, f.width, f.height), 0, 0));
         const scale = f.view.scale ?? f.width / f.fullWidth;
         beforeMeta.current = { x: f.x, y: f.y, scale, width: f.width, height: f.height,
                                fullWidth: f.fullWidth, fullHeight: f.fullHeight };
@@ -1956,13 +2148,31 @@ export default function App() {
       placeLayers();
       return;
     }
-    const c = canvas.current!;
-    if (c.width !== f.width || c.height !== f.height) {
-      c.width = f.width;
-      c.height = f.height;
+    if (f.view.loupe) {
+      document.documentElement.dataset.loupeFrames = String(Number(document.documentElement.dataset.loupeFrames ?? 0) + 1);
+      // a late draft must not cover the final frame after release
+      if (gridRef.current || !loupeEnabledRef.current) return;
+      setLoupeShown(true);
+      const lc = loupeCanvas.current ?? (loupeCanvas.current = document.createElement("canvas"));
+      if (lc) {
+        resizeCanvas(lc, f.width, f.height);
+        perf.time("pixels.canvasUpload", () => lc.getContext("2d")!.putImageData(new ImageData(f.pixels, f.width, f.height), 0, 0));
+        for (const display of loupeDisplays.current.values()) {
+          resizeCanvas(display, f.width, f.height);
+          display.getContext("2d")!.drawImage(lc, 0, 0);
+        }
+      }
+      return;
     }
-    c.getContext("2d")!.putImageData(new ImageData(f.pixels, f.width, f.height), 0, 0);
-    if (clipRef.current.low || clipRef.current.high) paintClip("sharp");
+    invalidateClip("sharp");
+    frameGenerations.histogram.next();
+    if (!gridRef.current && loupeEnabledRef.current && !f.view.draft) session.current?.requestLoupe();
+    const c = canvas.current!;
+    // Read-only observation for visible-app verification: distinguish a drag
+    // draft from the final frame without exposing application commands.
+    c.dataset.renderQuality = f.view.draft ? "draft" : "final";
+    perf.time("pixels.canvasUpload", () => canvasFrames.draw(c, f));
+    if (clipRef.current.low || clipRef.current.high) paintClip("sharp", f);
     full.current = { w: f.fullWidth, h: f.fullHeight };
     const scale = f.view.scale ?? f.width / f.fullWidth;
     sharpMeta.current = placed(f);
@@ -1974,7 +2184,7 @@ export default function App() {
         center.current = { x: 0.5, y: 0.5 };
       }
       placeLayers();
-      if (f.view.scale === undefined) setHistogram(perf.histogram(() => computeHistogram(f.pixels, f.width, f.height)));
+      if (f.view.scale === undefined) updateHistogram(f);
       return;
     }
     const fit = f.view.scale === undefined;
@@ -1996,10 +2206,8 @@ export default function App() {
       if (!b || b.x !== f.x || b.y !== f.y || Math.abs(b.scale - (f.view.scale ?? f.width / f.fullWidth)) > 1e-6
           || b.width !== f.width || b.height !== f.height) captureBefore(300);
     }
-    // fade the sharp layer in over the base
-    c.classList.remove("fade-in");
-    void c.offsetWidth;
-    c.classList.add("fade-in");
+    // Present completed edits immediately; fading reveals an older overview
+    // and makes each render flash back to the previous image.
     updatePlacement();
     // a fitted frame is the whole image, so it serves as the base, the
     // histogram and the navigator straight away; the sharper base follows
@@ -2015,7 +2223,9 @@ export default function App() {
       // Performance's base is the viewer's size, which this frame already is
       baseLowRes.current = loadPreview() !== "performance";
       scheduleBase(500);
-    } else if (f.view.scale !== undefined && baseStale.current) {
+    } else if (f.view.scale === undefined) {
+      updateHistogram(f);
+    } else if (baseStale.current) {
       scheduleBase(300);
     }
     if (f.view.scale !== undefined && !f.before) scheduleCopy(600);
@@ -2283,23 +2493,17 @@ export default function App() {
     if (tonePending.current && !session.current?.pending) applyAutoTone(f.pixels, f.width, f.height);
     const bc = baseCanvas.current;
     if (bc) {
-      bc.width = f.width;
-      bc.height = f.height;
-      bc.getContext("2d")!.putImageData(new ImageData(f.pixels, f.width, f.height), 0, 0);
-      if (clipRef.current.low || clipRef.current.high) paintClip("base");
+      const changed = perf.time("pixels.canvasUpload", () => canvasFrames.draw(bc, f, canvas.current));
+      if (changed) invalidateClip("base");
+      if (clipRef.current.low || clipRef.current.high) paintClip("base", f);
       baseMeta.current = placed(f);
-      setBaseTick((t) => t + 1);
+      if (changed) setBaseTick((t) => t + 1);
     }
     full.current = { w: f.fullWidth, h: f.fullHeight };
     if (!viewZ.current) viewZ.current = fitScale();
     placeLayers();
-    const t = navThumb.current;
-    if (t && bc) {
-      t.width = 400;
-      t.height = Math.round((400 * f.height) / f.width);
-      t.getContext("2d")!.drawImage(bc, 0, 0, t.width, t.height);
-    }
-    setHistogram(perf.histogram(() => computeHistogram(f.pixels, f.width, f.height)));
+    navigatorUpdates.submit({ frame: f, owner: session.current }, false);
+    updateHistogram(f);
   }, []);
 
   // the size the base is rendered at: twice the viewer, within reason, and
@@ -2416,7 +2620,10 @@ export default function App() {
     if (next) animateTo(next.z);
   };
 
+  // Refreshes must not restore thumbnails while their Trash job runs.
+  const pendingDeletes = useRef(new Set<(image: ImageEntry) => boolean>());
   const updateImages = (next: ImageEntry[]) => {
+    next = next.filter((image) => ![...pendingDeletes.current].some((gone) => gone(image)));
     imagesRef.current = next;
     setImages(next);
     const open = next.find((i) => isOpen(i));
@@ -2452,13 +2659,18 @@ export default function App() {
   includeSubRef.current = includeSub;
   // a folder's photos, shown batch by batch as they are read. `again` reads
   // the open folder anew (Refresh): its thumbnails stay, and the list is
-  // swapped whole at the end rather than shrinking and growing back
-  const showFolder = async (dir: string, again = false) => {
+  // swapped whole at the end rather than shrinking and growing back.
+  // `seen` has the photos listed so far, after each batch. null when the
+  // folder could not be read
+  const shownGen = useRef(0);
+  const showFolder = async (dir: string, again = false,
+                            seen?: (got: ImageEntry[]) => void): Promise<ImageEntry[] | null> => {
     setImmich(null);
     immichToken.current++;
     setFolder(dir);
     saveLibrary({ current: dir });
     if (!again) {
+      shownGen.current++;
       loader.current!.clear();
       // a new folder starts unfiltered: one left on Rejected only looked empty
       setFilter(NO_FILTER);
@@ -2485,7 +2697,7 @@ export default function App() {
           listed = true;
         }
         got = byCaptureTime([...got, ...batch]);
-        if (!again && batch.length) updateImages(got);
+        if (!again && batch.length) { updateImages(got); seen?.(got); }
         loader.current!.request(batch.map((i) => i.imgid));
         setReading({ done, total, files: again ? [] : files, listed, known });
       });
@@ -2494,17 +2706,20 @@ export default function App() {
       const sorted = byCaptureTime(list);
       updateImages(sorted);
       setStatus(`${list.length} images`);
+      if (!again) saveLibrary({ recent: [dir, ...(loadLibrary().recent ?? []).filter((d) => d !== dir)].slice(0, 10) });
       return sorted;
     } catch (e) {
       // another folder was opened meanwhile, and shows its own progress
       if (String(e) === "superseded") return [];
       setReading(null);
-      if (!(await invoke<boolean>("path_exists", { path: dir }))) {
+      if (String(e).startsWith("Reading photos timed out")) {
+        setStatus(`error: ${e}`);
+      } else if (!(await invoke<boolean>("path_exists", { path: dir }))) {
         updateImages([]);
         setFolderRefresh((n) => n + 1);
         setStatus(`folder not found: ${dir}. it was moved or deleted outside Immage`);
       } else setStatus(`error: ${e}`);
-      return [];
+      return null;
     }
   };
 
@@ -2626,6 +2841,17 @@ export default function App() {
     setFolderRefresh((n) => n + 1);
   };
 
+  const importImmichParent = (path: string) => {
+    const dir = parentDir(path);
+    window.clearTimeout(immichTimer.current);
+    addPathToLibrary(dir);
+    setLeftOpen((old) => new Set([...old, "folders"]));
+    try { localStorage.setItem("immage.folders.open", "1"); } catch { /* not kept */ }
+    setLayout((old) => ({ ...old, left: true }));
+    setGrid(true);
+    void showFolder(dir);
+  };
+
   // the importer's Immich buttons open Preferences there; stable, as the
   // importer keeps it
   const openImmichPrefs = useCallback(() => setPrefsOpen("immich"), []);
@@ -2646,7 +2872,7 @@ export default function App() {
     if (r.root) addPathToLibrary(r.root);
     addPathToLibrary(target);
     void showFolder(target).then((list) => {
-      const photo = list.find((i) => i.path === first) ?? list[0];
+      const photo = list?.find((i) => i.path === first) ?? list?.[0];
       if (photo) void openFile(photo.path);
     });
   };
@@ -2657,6 +2883,7 @@ export default function App() {
     const dir = parentDir(path);
     addPathToLibrary(dir);
     const list = await showFolder(dir);
+    if (!list) return;
     if (list.some((i) => i.path === path)) await openFile(path);
     else setStatus(`not a photo Immage can open: ${path}`);
   };
@@ -2716,19 +2943,57 @@ export default function App() {
         void invoke<string>("sample_folder").then((dir) => {
           addPathToLibrary(dir);
           return showFolder(dir);
-        }).then((list) => { if (list[0]) void openFile(list[0].path); })
+        }).then((list) => { if (list?.[0]) void openFile(list[0].path); })
           .catch((e) => setStatus(`sample photo: ${e}`));
         return;
       }
-      if (!lib.current) return;
-      void showFolder(lib.current).then((list) => {
-        const last = list.find((i) => i.path === lib.image && (i.version ?? 0) === (lib.version ?? 0))
-          ?? list.find((i) => i.path === lib.image && !i.copy);
-        if (last) void openFile(last.path, last.imgid);
-      });
+      void restoreLast(lib);
     });
     return () => { void off.then((f) => f()); };
   }, []);
+  // the folder and photo open when the app last closed, as they were left:
+  // in the grid, or the photo in the editor, opened once its folder lists
+  // it rather than after the whole folder. a photo that does not open
+  // leaves its folder's grid, and a folder that cannot be read the grid of
+  // the last one read that can, rather than an empty viewer
+  const restoreLast = async (lib: Library) => {
+    const dirs = [...new Set([lib.current, ...(lib.recent ?? []), ...lib.folders])].filter((d): d is string => !!d);
+    for (const dir of dirs) {
+      const want = dir === lib.current && !lib.grid ? lib.image : null;
+      const pick = (list: ImageEntry[]) => list.find((i) => i.path === want && (i.version ?? 0) === (lib.version ?? 0))
+        ?? list.find((i) => i.path === want && !i.copy);
+      const opened: { p: Promise<boolean> | null } = { p: null };
+      const tryOpen = (list: ImageEntry[]) => {
+        // not over a photo picked while the folder is read
+        const last = want && !opened.p && !currentRef.current ? pick(list) : undefined;
+        if (last) opened.p = openFile(last.path, last.imgid);
+      };
+      const shown = showFolder(dir, false, tryOpen);
+      const gen = shownGen.current;
+      const list = await shown;
+      // another folder or photo was opened meanwhile, and stays
+      if (shownGen.current !== gen) return;
+      if (!list) continue;
+      tryOpen(list);
+      if (opened.p && await opened.p) return;
+      if (lib.current && dir !== lib.current) setStatus(`could not read ${lib.current}; showing ${dir}`);
+      if (!currentRef.current && !gridRef.current) {
+        autoGrid.current = true;
+        setGrid(true);
+      }
+      return;
+    }
+  };
+  // the grid or the editor, for the next start; not the grid a photo that
+  // did not open there left, so the next start tries it again
+  const autoGrid = useRef(false);
+  const lastGrid = useRef(grid);
+  useEffect(() => {
+    if (lastGrid.current === grid) return;
+    lastGrid.current = grid;
+    if (autoGrid.current) autoGrid.current = false;
+    else saveLibrary({ grid });
+  }, [grid]);
 
   // rating, labels, rejection and text fields: the engine writes the sidecar
   // a rating, reject or label for the photos selected in the filmstrip when
@@ -2786,7 +3051,7 @@ export default function App() {
     }
   };
 
-  // rejected photos to the Trash, once confirmed, with their sidecars. the
+  // Hide confirmed deletions immediately while the Trash job runs. The
   // open photo moves on to the next one first, so the engine is not left
   // writing a sidecar beside a file in the Trash
   const deleteRejected = async (list: ImageEntry[]) => {
@@ -2801,19 +3066,27 @@ export default function App() {
     const ids = new Set(list.map((i) => i.imgid)), files = new Set(list.filter((i) => !i.copy).map((i) => i.path));
     const gone = (i: ImageEntry) => ids.has(i.imgid) || files.has(i.path);
     const cur = imagesRef.current.find((i) => isOpen(i));
-    if (cur && gone(cur)) {
-      const shownNow = shownRef.current, at = shownNow.findIndex((i) => isOpen(i));
-      const next = [...shownNow.slice(at + 1), ...shownNow.slice(0, Math.max(0, at)).reverse()]
-        .find((i) => !gone(i));
-      if (next) await openFile(next.path, next.imgid);
-      else await closePhoto();
-    }
+    const dir = folderRef.current;
+    pendingDeletes.current.add(gone);
+    updateImages(imagesRef.current);
     try {
+      if (cur && gone(cur)) {
+        const shownNow = shownRef.current, at = shownNow.findIndex((i) => isOpen(i));
+        const next = [...shownNow.slice(at + 1), ...shownNow.slice(0, Math.max(0, at)).reverse()]
+          .find((i) => !gone(i));
+        if (next) {
+          if (!await openFile(next.path, next.imgid)) throw new Error("could not leave the open photo");
+        } else await closePhoto();
+      }
       await invoke("trash_files", { imgids: list.map((i) => i.imgid) });
-      updateImages(imagesRef.current.filter((i) => !gone(i)));
       setStatus(`moved ${n === 1 ? list[0].filename : `${n} photos`} to the ${TRASH}`);
     } catch (e) {
+      // Re-read disk: a failed batch may already have moved some files.
+      pendingDeletes.current.delete(gone);
+      if (dir && folderRef.current === dir && !immichRef.current) await showFolder(dir, true);
       setStatus(`delete: ${e}`);
+    } finally {
+      pendingDeletes.current.delete(gone);
     }
   };
   // Lightroom's Create Virtual Copy: another version of each photo, starting
@@ -2875,6 +3148,7 @@ export default function App() {
     setCurrent(null);
     setOpenCell(null);
     setValues({});
+    resetCanvases();
     for (const c of [canvas.current, baseCanvas.current, navThumb.current, clipBase.current, clipSharp.current]) if (c) c.width = 0;
   };
 
@@ -2949,15 +3223,16 @@ export default function App() {
   pluginReturned.current = async (r) => {
     returns.current.set(r.result, { original: r.original, result: r.result, plugin: r.plugin, applied: false });
     const w = waitingRef.current.find((x) => x.token === r.token);
-    setWaiting((all) => all.map((x) => (x.token === r.token ? { ...x, back: x.back + 1, opened: true } : x)));
+    // Claim the first result before awaiting the folder refresh or another return.
+    waitingRef.current = waitingRef.current.map((x) =>
+      x.token === r.token ? { ...x, back: x.back + 1, opened: true } : x);
+    setWaiting(waitingRef.current);
     if (folderRef.current && !immichRef.current && imagesRef.current.some((i) => i.path === r.original))
       await showFolder(folderRef.current, true);
-    if (w && !w.opened) {
-      await openFile(r.result);
-      setStatus(`${w.name}: opened ${baseName(r.result)}`);
-    } else {
-      setStatus(`${w?.name ?? "plugin"}: ${baseName(r.result)} is back`);
-    }
+    void runInBackground(`${w?.name ?? "Plugin"}: result`, async () => r, () => ({
+      text: `${w?.name ?? "Plugin"}: ${baseName(r.result)} is back`, ok: true,
+      action: generatedAction(r.result, undefined, !!w && !w.opened),
+    }), "Plugin result");
   };
   useEffect(() => {
     const offs = [
@@ -3005,15 +3280,15 @@ export default function App() {
   };
 
   // `imgid` picks one of the file's versions (a virtual copy); without it,
-  // the original
-  const openFile = async (path: string, imgid: number | null = null) => {
+  // the original. false when it did not open
+  const openFile = async (path: string, imgid: number | null = null): Promise<boolean> => {
     const id = imgid ?? imagesRef.current.find((i) => i.path === path && !i.copy)?.imgid ?? null;
     const cur = currentRef.current;
-    if (cur && cur.path === path && (id === null || cur.imgid === id)) return;
+    if (cur && cur.path === path && (id === null || cur.imgid === id)) return true;
     if (!(await invoke<boolean>("path_exists", { path }))) {
       setStatus(`file not found: ${baseName(path)}. it was moved or deleted outside Immage`);
       if (folderRef.current && !immichRef.current) void showFolder(folderRef.current, true);
-      return;
+      return false;
     }
     try {
       if (session.current) {
@@ -3022,6 +3297,8 @@ export default function App() {
                              masks: structuredClone(o.masks) };
         await o.close();
       }
+      setLoupeShown(false);
+      if (loupeCanvas.current) loupeCanvas.current.style.display = "none";
       setStatus("opening…");
       const opening = { path, imgid: id };
       setCurrent(opening);
@@ -3041,6 +3318,7 @@ export default function App() {
       copyGen.current++;
       setCopyOn(false);
       overviewHash.current = null;
+      resetCanvases();
       baseStale.current = true;
       for (const c of [baseCanvas.current, clipBase.current, copyCanvas.current, clipSharp.current]) if (c) c.width = 0;
       // the photo's filmstrip thumbnail, fitted, until its first frame takes
@@ -3052,16 +3330,17 @@ export default function App() {
         sc.width = thumb.width;
         sc.height = thumb.height;
         sc.getContext("2d")!.drawImage(thumb, 0, 0);
-        sc.style.width = `${thumb.width / dpr}px`;
-        sc.style.height = `${thumb.height / dpr}px`;
-        sc.style.transform = `translate(${(w - z * thumb.width) / 2 / dpr}px, ${(h - z * thumb.height) / 2 / dpr}px) scale(${z})`;
+        placeCanvas(sc, thumb.width, thumb.height,
+          { x: (w - z * thumb.width) / 2, y: (h - z * thumb.height) / 2, k: z }, dpr);
       }
-      const s = await track(Session.open(path, id, currentView, drawFrame, (e) => setStatus(`error: ${e}`)));
+      const s = await timeTunerWork("Photo open", () => track(Session.open(path, id, currentView, drawFrame, (e) => setStatus(`error: ${e}`))));
       // the engine's id, for a photo opened by its file alone
       const opened = { path, imgid: s.imgid };
       setCurrent(opened);
       currentRef.current = opened;
-      setOpenCell(imagesRef.current.find((i) => isOpen(i, opened)) ?? null);
+      const entry = imagesRef.current.find((i) => isOpen(i, opened))
+        ?? (await invoke<{ image: ImageEntry }>("meta", { imgid: s.imgid })).image;
+      setOpenCell(entry);
       saveLibrary({ image: path, version: imagesRef.current.find((i) => i.imgid === s.imgid)?.version ?? 0 });
       s.onThumb = (f) => {
         perf.drawStart(f.trace);
@@ -3078,22 +3357,41 @@ export default function App() {
           return;
         }
         // off the main thread where the browser can: a copy is 80 MB or more
+        const bitmapWork = perf.begin("copy.bitmap", { ...f.trace?.diagnostic });
         void createImageBitmap(new ImageData(f.pixels, f.width, f.height)).then((bmp) => {
-          if (session.current !== s || gen !== copyGen.current || !cc) { bmp.close(); return; }
-          cc.width = f.width;
-          cc.height = f.height;
-          cc.getContext("2d")!.drawImage(bmp, 0, 0);
-          bmp.close();
-          copyMeta.current = placed(f);
-          placeLayers();
-          setCopyOn(true);
+          perf.finish(bitmapWork);
+          if (session.current !== s || gen !== copyGen.current || !cc) {
+            bmp.close(); perf.discard(f.trace, "copy-bitmap-obsolete"); return;
+          }
+          perf.drawStart(f.trace);
+          try {
+            cc.width = f.width;
+            cc.height = f.height;
+            cc.getContext("2d")!.drawImage(bmp, 0, 0);
+            copyMeta.current = placed(f);
+            placeLayers();
+            setCopyOn(true);
+          } finally { bmp.close(); perf.drawEnd(); }
+        }).catch(() => {
+          perf.finish(bitmapWork, "failed"); perf.discard(f.trace, "copy-bitmap-failed");
         });
       };
       s.thumbSize = baseSize;
       s.previewMode = loadPreview;
+      s.exactView = () => viewAt(1);
+      s.detailView = () => {
+        if (gridRef.current || !loupeEnabledRef.current || beforeRef.current || baModeRef.current !== "off" || !full.current) return null;
+        const f = full.current;
+        const side = 160;
+        const width = Math.min(side, f.w), height = Math.min(side, f.h);
+        const pos = loupePositionRef.current;
+        return { width, height, scale: 1,
+          x: Math.round(Math.max(0, Math.min(f.w - width, pos.x * f.w - width / 2))),
+          y: Math.round(Math.max(0, Math.min(f.h - height, pos.y * f.h - height / 2))) };
+      };
       s.frameBudget = () => loadFrameCacheMb() * 1048576;
-      s.draftSize = () => (loadPreview() === "quality" ? null : viewAt(draftK()));
-      s.draftLimits = () => ({ target: loadDraftTarget(), smallest: loadDraftSmallest() });
+      s.draftSize = () => (loadPreview() === "quality" ? null : { ...viewAt(draftK()), draft: true });
+      s.draftLimits = () => ({ target: loadDraftTarget(), smallest: loadPreview() === "balanced" && loadBalancedPreviewSize() === 1 ? 1 : loadDraftSmallest() });
       s.warmDrafts();
       // a saved edit makes the filmstrip's thumbnail stale; undone back to
       // where it started, the photo reads unedited again
@@ -3209,8 +3507,10 @@ export default function App() {
         void invoke("plugin_return_applied", { result: path });
         changeMany([["nr_luminance", 0], ["nr_color", 0]], "AI Denoise: noise reduction off");
       }
+      return true;
     } catch (e) {
       setStatus(`error: ${e}`);
+      return false;
     }
   };
 
@@ -3232,7 +3532,7 @@ export default function App() {
   // set while one step makes several changes (Reset all), so they record once
   const holdRecord = useRef(false);
   // the History panel follows the stack, which is kept outside React
-  const [, setHistoryRev] = useState(0);
+  const [historyRev, setHistoryRev] = useState(0);
   const [historyBase, setHistoryBase] = useState<HistoryItem[]>([]);
   const record = (ids: string[], label?: string) => {
     const s = session.current;
@@ -3687,6 +3987,9 @@ export default function App() {
   pastePreviousRef.current = () => pastePrevious();
 
   const changeMany = (entries: [string, number][], label?: string) => {
+    const s = session.current;
+    entries = [...new Map(entries)];
+    if (!entries.length || entries.every(([id, v]) => s?.values[id] === v)) return;
     leaveBefore();
     setBaMode("off");
     if (entries.some(([id]) => id.startsWith("grain_"))) setGrainLast(true);
@@ -3698,10 +4001,11 @@ export default function App() {
     record(entries.map(([id]) => id), label);
     baseStale.current = true;
     setValues((old) => ({ ...old, ...Object.fromEntries(entries) }));
-    session.current?.setMany(entries);
+    session.current?.setMany(entries, dragging.current);
   };
 
-  const change = (c: Control, v: number) => {
+  const change = (c: Control, v: number) => perf.time("slider.handler", () => {
+    if (session.current?.values[c.id] === v) return;
     leaveBefore();
     setBaMode("off");
     if (c.id.startsWith("grain_")) setGrainLast(true);
@@ -3710,141 +4014,220 @@ export default function App() {
     setAmount(null);
     record([c.id]);
     baseStale.current = true;
-    setValues((old) => ({ ...old, [c.id]: v }));
-    session.current?.set(c.id, v);
-  };
+    valueUpdates.current!.enqueue(old => old[c.id] === v ? old : ({ ...old, [c.id]: v }));
+    perf.time("slider.sessionSet", () => session.current?.set(c.id, v, dragging.current));
+  });
 
   // Preferences' GUI benchmark: scripted drags of the main sliders through
   // change(), as a hand would make them, then a zoom in and out and the idle
   // base render, each frame timed by the overlay; every control ends where it
   // started. the report goes to benchmarking/results/gui in a dev build
   const benchRunning = useRef(false);
-  const runGuiBenchmark = async (): Promise<string> => {
+  const runGuiBenchmark = async (): Promise<TunerRun> => {
     const s = session.current;
-    if (!s || benchRunning.current) throw new Error("no photo open, or a benchmark is running");
+    if (!s || benchRunning.current || perf.measuring) throw new Error("no photo open, or a benchmark is running");
     benchRunning.current = true;
-    const sleep = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
-    const settle = async () => {
-      await sleep(100);
-      while (!s.idle) await sleep(30);
-      await sleep(300);
-    };
-    const wasOn = perf.enabled;
-    if (!wasOn) { setPerfHud(true); perf.enable(true); }
-    const steps: [string, number][] = [
-      ["exposure", 1.5], ["contrast", 50], ["highlights", -60], ["shadows", 60], ["whites", 40], ["blacks", -40],
-      ["temp", 1500], ["tint", 30], ["texture", 40], ["clarity", 40], ["dehaze", 30], ["vibrance", 30],
-      ["saturation", 30], ["nr_luminance", 40], ["vig_amount", -30], ["grain_amount", 30],
-    ];
-    const preview = loadPreview();
-    const drafts = preview !== "quality";
-    // the web view measured idle, ahead of the run and its timing
-    await settle();
-    const webview = await webviewInfo();
-    const idlePings: number[] = [];
-    for (let i = 0; i < 100; i++) idlePings.push(await pingOnce());
-    perf.recording = [];
-    const t0 = performance.now();
-    // one call in flight at a time while the sliders drag, beside the renders
-    const dragPings: number[] = [];
-    let pinging = false;
-    let pinger: Promise<void> = Promise.resolve();
+    const originalZoom = zoomRef.current;
+    const originalValues = new Map<string, number>();
+    let stopMeasurement: (() => void) | null = null;
     try {
-      await settle();
-      pinging = true;
-      pinger = (async () => {
-        while (pinging) { dragPings.push(await pingOnce().catch(() => NaN)); await sleep(50); }
-      })();
-      for (const [id, delta] of steps) {
-        const c = controlById.get(id);
-        if (!c || session.current !== s) continue;
-        const from = s.values[id] ?? c.neutral ?? 0;
-        const to = Math.min(c.max, Math.max(c.min, from + delta));
-        // 30 moves out and 30 back, at about 60 a second
-        perf.label = `${id} drag`;
-        dragging.current = drafts;
-        for (let i = 1; i <= 60; i++) {
-          const k = i <= 30 ? i / 30 : (60 - i) / 30;
-          change(c, from + (to - from) * k);
-          await sleep(16);
+      stopMeasurement = await perf.startMeasurement();
+      const initialViewport = viewport();
+      const context = { photo:currentRef.current?.path ?? "", width:initialViewport.w, height:initialViewport.h, dpr:window.devicePixelRatio || 1 };
+      const configuration = (await tunerOptions(setPerfHud)).map(({id,current,running}) => ({id,value:current,...(running === undefined ? {} : {running})}));
+      const sleep = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
+      const settle = async () => {
+        await sleep(100);
+        const deadline = performance.now() + 120000;
+        while (!s.idle) {
+          if (session.current !== s) throw new Error("photo changed during benchmark");
+          if (performance.now() > deadline) throw new Error("benchmark timed out waiting for the renderer");
+          await sleep(30);
         }
-        change(c, from);
-        dragging.current = false;
-        perf.label = `${id} release`;
-        if (draftShown.current) s.requestRender();
-        await settle();
-      }
-      pinging = false;
-      await pinger;
-      perf.label = "zoom 100%";
-      setZoom(1);
-      await settle();
-      perf.label = "zoom fit";
+        if (session.current !== s) throw new Error("photo changed during benchmark");
+        await sleep(300);
+      };
+      const steps: [string, number][] = [
+        ["exposure", 1.5], ["contrast", 50], ["highlights", -60], ["shadows", 60], ["whites", 40], ["blacks", -40],
+        ["temp", 1500], ["tint", 30], ["texture", 40], ["clarity", 40], ["dehaze", 30], ["vibrance", 30],
+        ["saturation", 30], ["nr_luminance", 40], ["vig_amount", -30], ["grain_amount", 30],
+      ];
+      const preview = loadPreview();
+      const drafts = preview !== "quality";
+      // the web view measured idle, ahead of the run and its timing
       setZoom("fit");
       await settle();
-      // a drag begun while the base renders, which cancels it: the first
-      // frame shows how long the base still held the engine
-      const ex = controlById.get("exposure");
-      const until = performance.now() + 5000;
-      while (!s.baseRendering && performance.now() < until) await sleep(10);
-      if (ex && s.baseRendering) {
-        const from = s.values.exposure ?? ex.neutral ?? 0;
-        perf.label = "drag during base";
-        dragging.current = drafts;
-        for (let i = 1; i <= 20; i++) {
-          change(ex, from + 0.5 * (i <= 10 ? i / 10 : (20 - i) / 10));
-          await sleep(16);
-        }
-        change(ex, from);
-        dragging.current = false;
-        perf.label = "drag during base, release";
-        if (draftShown.current) s.requestRender();
+      const webview = await webviewInfo();
+      const idlePings: number[] = [];
+      for (let i = 0; i < 100; i++) idlePings.push(await pingOnce());
+      perf.resetFrontend();
+      perf.recording = [];
+      const t0 = performance.now();
+      const longFramesBefore = perf.longFrames;
+      // one call in flight at a time while the sliders drag, beside the renders
+      const dragPings: number[] = [];
+      let pinging = false;
+      let pinger: Promise<void> = Promise.resolve();
+      let resources: Record<string, unknown> | null = null;
+      let stopWebview: ReturnType<typeof observeWebview> | null = null;
+      let webviewTiming: ReturnType<ReturnType<typeof observeWebview>> | null = null;
+      let resourceRecording = false;
+      const phases: { atUnixMs: number; atMs: number; label: string }[] = [];
+      const phase = (label: string) => { perf.label = label; phases.push({ atUnixMs: Date.now(), atMs: performance.now(), label }); };
+      try {
+        await invoke("perf_resources_start").then(() => { resourceRecording = true; })
+          .catch((error) => { resources = { error: String(error) }; });
+        stopWebview = observeWebview(typeof webview.frameRateHz === "number" ? webview.frameRateHz : null);
+        phase("settling");
         await settle();
+        pinging = true;
+        pinger = (async () => {
+          while (pinging) { dragPings.push(await pingOnce().catch(() => NaN)); await sleep(50); }
+        })();
+        for (const [baseId, delta] of steps) {
+          const id = baseId === "clarity" && s.values.mod_clarity === 1 ? "detail_clarity_gain_medium"
+            : baseId === "texture" && s.values.mod_texture === 1 ? "detail_texture_gain_fine" : baseId;
+          const c = controlById.get(id);
+          if (!c || !choiceShows(id, s.values)) continue;
+          if (session.current !== s) throw new Error("photo changed during benchmark");
+          const from = s.values[id] ?? c.neutral ?? 0;
+          originalValues.set(id, from);
+          const to = Math.min(c.max, Math.max(c.min, from + (id === baseId ? delta : (c.max - c.min) * 0.2)));
+          // 30 moves out and 30 back, at about 60 a second
+          phase(`${id} drag`);
+          dragging.current = drafts;
+          for (let i = 1; i <= 60; i++) {
+            const k = i <= 30 ? i / 30 : (60 - i) / 30;
+            if (session.current !== s) throw new Error("photo changed during benchmark");
+            change(c, from + (to - from) * k);
+            await sleep(16);
+          }
+          change(c, from);
+          dragging.current = false;
+          phase(`${id} release`);
+          if (draftShown.current || s.pending) s.requestRender();
+          await settle();
+        }
+        pinging = false;
+        await pinger;
+        phase("zoom 100%");
+        setZoom(1);
+        await settle();
+        phase("zoom fit");
+        setZoom("fit");
+        await settle();
+        // a drag begun while the base renders, which cancels it: the first
+        // frame shows how long the base still held the engine
+        const ex = controlById.get("exposure");
+        const until = performance.now() + 5000;
+        while (!s.baseRendering && performance.now() < until) await sleep(10);
+        if (ex && s.baseRendering) {
+          const from = s.values.exposure ?? ex.neutral ?? 0;
+          phase("drag during base");
+          dragging.current = drafts;
+          for (let i = 1; i <= 20; i++) {
+            if (session.current !== s) throw new Error("photo changed during benchmark");
+            change(ex, from + 0.5 * (i <= 10 ? i / 10 : (20 - i) / 10));
+            await sleep(16);
+          }
+          change(ex, from);
+          dragging.current = false;
+          phase("drag during base, release");
+          if (draftShown.current || s.pending) s.requestRender();
+          await settle();
+        }
+        // the sharper base, once editing has paused (scheduleBase)
+        phase("idle base");
+        await sleep(2500);
+        await settle();
+      } catch (error) {
+        perf.recording = null;
+        throw error;
+      } finally {
+        webviewTiming = stopWebview?.() ?? null;
+        if (resourceRecording) {
+          resources = await invoke<Record<string, unknown>>("perf_resources_stop")
+            .catch((error) => ({ error: String(error) }));
+        }
+        pinging = false;
+        await pinger;
+        dragging.current = false;
+        perf.label = "";
       }
-      // the sharper base, once editing has paused (scheduleBase)
-      perf.label = "idle base";
-      await sleep(2500);
-      await settle();
+      const seconds = (performance.now() - t0) / 1000;
+      // a drag's last draft can finish after the label turns to its release;
+      // it is the drag's, and the release is the full frame (and its wait)
+      const dragOf = (l: string) => (l.endsWith(", release") ? l.slice(0, -", release".length)
+                                                            : l.replace(/ release$/, " drag"));
+      const samples = (perf.recording ?? []).map((x) =>
+        x.draft && x.label?.endsWith(" release") ? { ...x, label: dragOf(x.label) } : x);
+      perf.recording = null;
+      const labels = [...new Set(samples.map((x) => x.label ?? ""))];
+      const summary = labels.map((label) => {
+        const of = samples.filter((x) => (x.label ?? "") === label);
+        const stages = Object.fromEntries(STAGES.map((k) => [k, percentiles(of.map((x) => x.stages[k])).p50]));
+        return { label, frames: of.length, ...percentiles(of.map((x) => x.total)), stages };
+      });
+      const { w, h } = viewport();
+      const at = new Date();
+      const report = {
+        immage: "gui-benchmark", version: 9, at: at.toISOString(),
+        app: await invoke<{ app: string; darktable: string }>("about").catch(() => null),
+        machine: await invoke<Record<string, unknown>>("perf_machine").catch(() => null),
+        frontend: perf.frontendReport(), diagnostics: perf.diagnosticReport(),
+        webview, webviewTiming, resources: { ...resources, phases },
+        photo: (currentRef.current?.path ?? "").split(/[\\/]/).pop(),
+        viewport: { width: w, height: h, dpr: window.devicePixelRatio || 1, draftScale: draftScale() }, dragDrafts: drafts, preview,
+        configuration, transport: frameTransport(), seconds, displayLongFrames: perf.longFrames - longFramesBefore,
+        invokeMs: { idle: roundTrips(idlePings), drag: roundTrips(dragPings.filter(Number.isFinite)) }, summary, samples,
+      };
+      const stamp = at.toISOString().replace(/[:.]/g, "-").slice(0, 19);
+      const path = await invoke<string>("perf_report_write", { name: `gui-${stamp}`, report });
+      return { path, samples, phases, context, valid: !webviewTiming?.backgrounded && w === context.width && h === context.height && (window.devicePixelRatio || 1) === context.dpr };
     } finally {
-      pinging = false;
+      if (session.current === s) {
+        for (const [id, value] of originalValues) {
+          const c = controlById.get(id);
+          if (c && s.values[id] !== value) change(c, value);
+        }
+        setZoom(originalZoom);
+      }
       dragging.current = false;
+      perf.recording = null;
       perf.label = "";
+      stopMeasurement?.();
       benchRunning.current = false;
     }
-    // a drag's last draft can finish after the label turns to its release;
-    // it is the drag's, and the release is the full frame (and its wait)
-    const dragOf = (l: string) => (l.endsWith(", release") ? l.slice(0, -", release".length)
-                                                          : l.replace(/ release$/, " drag"));
-    const samples = (perf.recording ?? []).map((x) =>
-      x.draft && x.label?.endsWith(" release") ? { ...x, label: dragOf(x.label) } : x);
-    perf.recording = null;
-    if (!wasOn) { setPerfHud(false); perf.enable(false); }
-    const labels = [...new Set(samples.map((x) => x.label ?? ""))];
-    const summary = labels.map((label) => {
-      const of = samples.filter((x) => (x.label ?? "") === label);
-      const stages = Object.fromEntries(STAGES.map((k) => [k, percentiles(of.map((x) => x.stages[k])).p50]));
-      return { label, frames: of.length, ...percentiles(of.map((x) => x.total)), stages };
-    });
-    const { w, h } = viewport();
-    const at = new Date();
-    const report = {
-      immage: "gui-benchmark", version: 4, at: at.toISOString(),
-      app: await invoke<{ app: string; darktable: string }>("about").catch(() => null),
-      machine: await invoke<Record<string, unknown>>("perf_machine").catch(() => null),
-      webview,
-      photo: (currentRef.current?.path ?? "").split(/[\\/]/).pop(),
-      viewport: { width: w, height: h, dpr: window.devicePixelRatio || 1, draftScale: draftScale() }, dragDrafts: drafts, preview,
-      transport: frameTransport(), seconds: (performance.now() - t0) / 1000, displayLongFrames: perf.longFrames,
-      invokeMs: { idle: roundTrips(idlePings), drag: roundTrips(dragPings.filter(Number.isFinite)) }, summary, samples,
-    };
-    const stamp = at.toISOString().replace(/[:.]/g, "-").slice(0, 19);
-    return invoke<string>("perf_report_write", { name: `gui-${stamp}`, report });
   };
 
   // ⌥-click opens a panel alone, as Lightroom's solo mode (Preferences' focus
   // mode makes that the plain click)
   // in focus mode a plain click is the solo one, and ⌥ opens a panel
   // alongside the others; either way a click on an open panel closes it
+  const renderLoupe = (id: string) => loupeEnabled ? (
+    <div className="detail-loupe" style={{ padding: "8px 12px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+        <span>100%</span>
+        <button className={`tool${loupePicking ? " on" : ""}`} disabled={!current || cropping || before || baMode !== "off"}
+          aria-label={`Pick ${id} loupe point`} aria-pressed={loupePicking} title="Pick a point on the photo"
+          onClick={() => setLoupePicking((v) => !v)}><Pipette size={16} /></button>
+      </div>
+      <div style={{ width: 160, height: 160, margin: "0 auto", display: "grid", placeItems: "center", background: "#121212", overflow: "hidden", position: "relative" }}>
+        <canvas ref={(display) => {
+          if (!display) { loupeDisplays.current.delete(id); return; }
+          loupeDisplays.current.set(id, display);
+          const source = loupeCanvas.current;
+          if (loupeShown && source) {
+            resizeCanvas(display, source.width, source.height);
+            display.getContext("2d")!.drawImage(source, 0, 0);
+          }
+        }} style={{ display: loupeShown ? "block" : "none" }} />
+        {!loupeShown && <span style={{ position: "absolute", padding: 8, textAlign: "center" }}>{current ? "Preparing preview…" : "Open a photo to preview detail"}</span>}
+      </div>
+      {loupePicking && <div role="status">Click a point on the photo · Escape to cancel</div>}
+    </div>
+  ) : undefined;
+
   const togglePanel = (id: string, alt = false) =>
     setOpenPanels((old) => {
       const solo = focusMode ? !alt && !old.has(id) : alt;
@@ -3977,6 +4360,17 @@ export default function App() {
   }, [zoneData]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const onPointerDown = (e: React.PointerEvent<HTMLElement>) => {
+    if (loupePicking && loupeEnabled) {
+      const { sx, sy } = paneXY(e.clientX, e.clientY);
+      const { ix, iy } = imageAt(sx, sy);
+      if (ix >= 0 && ix <= 1 && iy >= 0 && iy <= 1) {
+        loupePositionRef.current = { x: ix, y: iy };
+        setLoupePosition({ x: ix, y: iy });
+        setLoupePicking(false);
+        session.current?.requestLoupe();
+      }
+      return;
+    }
     if (lineRef.current) return;
     if (!current || croppingRef.current || !viewZ.current) return;
     if (pickingRef.current) {
@@ -4060,12 +4454,43 @@ export default function App() {
     return p ? { w: p.fullWidth, h: p.fullHeight } : { w: 3, h: 2 };
   };
 
+  const prepareCropView = () => {
+    resetCanvases();
+    resetHistogram();
+    pixelWorker.current?.dispose(); pixelWorker.current = null;
+    // Crop bypass changes coordinates. Discard every old image surface before
+    // asking for the replacement, including clipping.
+    for (const layer of [canvas, baseCanvas, clipSharp, clipBase, loupeCanvas]) {
+      const c = layer.current;
+      if (c) c.getContext("2d")?.clearRect(0, 0, c.width, c.height);
+    }
+    for (const display of loupeDisplays.current.values())
+      display.getContext("2d")?.clearRect(0, 0, display.width, display.height);
+    sharpMeta.current = baseMeta.current = null;
+    overviewHash.current = null;
+    setCropBox(null);
+    // The replacement must publish its placement even when bypassing crop
+    // leaves the image dimensions unchanged, so the cleared guides return.
+    placementRef.current = null;
+    // Do not animate using the cropped frame's dimensions: the next fitted
+    // frame must choose its scale from the uncropped dimensions immediately.
+    const a = anim.current;
+    if (a.raf !== null) cancelAnimationFrame(a.raf);
+    a.raf = null;
+    a.end = a.asked = null;
+    zoomRef.current = "fit";
+    setZoomState("fit");
+    center.current = { x: 0.5, y: 0.5 };
+  };
+
   const enterCrop = () => {
     const s = session.current;
     if (!s || croppingRef.current) return;
     setBaMode("off");
     setCompare(null);
-    setZoom("fit");
+    // Preserve the displayed crop orientation before clearing its placement.
+    const p = placementRef.current;
+    prepareCropView();
     const v = s.values;
     const rect = { l: v.crop_l ?? 0, t: v.crop_t ?? 0, r: v.crop_r ?? 1, b: v.crop_b ?? 1 };
     const rd = v.crop_rd ?? 0, rn = v.crop_rn ?? 0;
@@ -4081,7 +4506,6 @@ export default function App() {
       : (ASPECTS.find(same) ?? cropCustoms.find(same) ?? own)?.id ?? "free";
     // the guide starts in the photo's orientation: the image shown until
     // crop is bypassed below is the crop as it stands, or the whole photo
-    const p = placementRef.current;
     setCropRect(rect);
     setCropOwn(own);
     setCropEntry(null);
@@ -4095,6 +4519,7 @@ export default function App() {
   const leaveCrop = (apply: boolean) => {
     const s = session.current;
     if (!s || !croppingRef.current) return;
+    prepareCropView();
     croppingRef.current = false;
     setCropping(false);
     setStraightening(false);
@@ -4153,7 +4578,7 @@ export default function App() {
 
   // the overlay sits exactly over the image as drawn
   useEffect(() => {
-    if (!cropping || !canvas.current || !viewer.current) { setCropBox(null); return; }
+    if (!cropping || !sharpMeta.current || !canvas.current || !viewer.current) { setCropBox(null); return; }
     const c = canvas.current.getBoundingClientRect(), v = viewer.current.getBoundingClientRect();
     setCropBox({ left: c.left - v.left, top: c.top - v.top, width: c.width, height: c.height });
   }, [cropping, placement]);
@@ -4625,7 +5050,7 @@ export default function App() {
   }, [photoDir]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className={`window${preview ? " preview" : ""}`}>
+    <div className={`window${preview ? " preview" : ""}`} data-module-choices={JSON.stringify(Object.fromEntries(Object.entries(values).filter(([id]) => id.startsWith("mod_"))))}>
     {/* the window's title bar is hidden (tauri.conf.json); this strip moves
         the window and leaves room for the traffic lights */}
     {/* full screen has no traffic lights to hold, and the photo wants the room */}
@@ -4647,6 +5072,12 @@ export default function App() {
                      if (done) { updatePlacement(); session.current?.requestRender(); }
                    }} />
         <MetadataPanel image={currentEntry} text={metaText}
+                       onLocationSaved={(location) => currentEntry && patchImage(currentEntry.imgid, { location })}
+                       onCaptureTime={() => { if (currentEntry) {
+                         const sel = selectionRef.current;
+                         startCaptureAdjustment(withPartners(sel.size > 1 && sel.has(currentEntry.imgid)
+                           ? imagesRef.current.filter((i) => sel.has(i.imgid)) : [currentEntry]), currentEntry);
+                       } }}
                        open={leftOpen.has("metadata")} onToggle={(alt) => toggleLeft("metadata", alt)}
                        onMeta={(fields) => currentEntry && setMeta(currentEntry.imgid, fields)}
                        onText={(field, value) => {
@@ -4736,7 +5167,7 @@ export default function App() {
       <Splitter axis="x" value={layout.leftWidth} min={220} max={560} hidden={!docked.left}
                 onChange={(v) => setLayout((l) => ({ ...l, leftWidth: v }))} />
       <section className="center">
-        <main data-tour="viewer" className={`viewer zoom-${zoom === "fit" ? "fit" : "in"}${picking ? " picking" : ""}${aiBusy ? " busy" : ""}${straightening || line || (shiftHeld && current && (cropping || (!masksMode && !healMode)) && !preview) ? " straightening" : ""}${canvasColor !== "dark" ? ` canvas-${canvasColor}` : ""}${baMode === "overlay" ? " hold-view" : ""}${optPreview?.kind === "gray" ? " gray-view" : ""}`} ref={viewer}
+        <main data-tour="viewer" className={`viewer zoom-${zoom === "fit" ? "fit" : "in"}${picking || loupePicking ? " picking" : ""}${aiBusy ? " busy" : ""}${straightening || line || (shiftHeld && current && (cropping || (!masksMode && !healMode)) && !preview) ? " straightening" : ""}${canvasColor !== "dark" ? ` canvas-${canvasColor}` : ""}${baMode === "overlay" ? " hold-view" : ""}${optPreview?.kind === "gray" ? " gray-view" : ""}`} ref={viewer}
               onPointerDownCapture={onStraightenDown}
               onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
               onPointerLeave={leaveProbe}>
@@ -4747,6 +5178,7 @@ export default function App() {
             <canvas ref={copyCanvas} className={`layer copy${current && copyOn && !before && baMode === "off"
                       && !clipShown.low && !clipShown.high ? "" : " empty"}`} />
             <canvas ref={canvas} className={`layer sharp${current ? "" : " empty"}`} />
+
             <canvas ref={clipSharp} className={`layer clip${current && (clipShown.low || clipShown.high) ? "" : " empty"}`} />
             {perfHud && current && <PerfHud onClose={() => { setPerfHud(false); perf.enable(false); }} />}
             <canvas ref={hoverCanvas} className={`hover-preview${(hoverShown === "tiles" && tilesShown)
@@ -5020,10 +5452,10 @@ export default function App() {
             )}
             <ResetAll disabled={!current} onReset={resetAll} />
           </div></div>
-        <HistogramView histogram={histogram} values={values} disabled={!current} exif={currentEntry?.exif ?? null}
+        <Profiler id="histogram" onRender={perf.reactCommit}><HistogramView histograms={histograms} values={values} disabled={!current} exif={currentEntry?.exif ?? null}
                        neutral={(id) => session.current?.neutral[id] ?? controlById.get(id)?.neutral ?? 0}
                        onChange={change} clip={clipOn} onClip={(end) => setClipOn((o) => ({ ...o, [end]: !o[end] }))}
-                       onClipPeek={setClipPeek} scope={scope} onScope={setScope} />
+                       onClipPeek={setClipPeek} scope={scope} onScope={setScope} /></Profiler>
         <div className="panels" data-tour="panels">
           {masksMode && !cropping && (
             <MasksPanel masks={masks} selected={maskSel} shape={shapeSel} tool={maskTool} target={toolTarget}
@@ -5172,6 +5604,7 @@ export default function App() {
           )}
           {rightMode === "negative" && !cropping && (
             <NegativePanel values={values} disabled={!current} converted={values.neg_on === 1} picking={negPick}
+                           onExport={exportNegative} exporting={negativeExporting} exportFormat={loadNegativeExportFormat()}
                            busy={negBusy} hasArea={!!negArea} note={negNote} onPick={setNegPick} onTurnOff={negTurnOff}
                            onResetColor={() => changeMany(["wbl", "wbh"].flatMap((k) => ["r", "g", "b"]
                              .map((c): [string, number] => [`neg_${k}_${c}`, 1])), "Reset Color")}
@@ -5274,9 +5707,11 @@ export default function App() {
             </div>
           )}
           {rightMode === "adjust" && !cropping && panels.filter((p) => !p.hidden && (!p.showIf || p.showIf(values))).map((p) => (
-            <PanelView key={p.id} panel={p} open={openPanels.has(p.id)} onToggle={(solo) => togglePanel(p.id, solo)}
+            <Profiler key={p.id} id={`panel.${p.id}`} onRender={perf.reactCommit}><PanelView sessionRevision={historyRev} panel={p} open={openPanels.has(p.id)} onToggle={(solo) => togglePanel(p.id, solo)}
                        values={values} session={session.current} disabled={!current} onChange={change}
-                       onChangeMany={changeMany} histogram={histogram} onPreview={hoverValues}
+                       detailLoupe={p.id === "detail" ? renderLoupe("detail") : undefined}
+                       presenceLoupe={p.id === "basic" ? renderLoupe("presence") : undefined}
+                       onChangeMany={changeMany} histograms={histograms} onPreview={hoverValues}
                        toneTools={p.id === "basic" ? (
                          <div className="tone-tools">
                            <button className="btn small" disabled={!current || values.neg_on === 1}
@@ -5346,7 +5781,7 @@ export default function App() {
                          autoPending.current = true;
                          baseStale.current = true;
                          session.current.bypass("colorequal", true);
-                       } : undefined} />
+                       } : undefined} /></Profiler>
           ))}
         </div>
         <div className="right-foot">
@@ -5395,6 +5830,7 @@ export default function App() {
       </nav>
     </div>
     {shortcutsOpen && <ShortcutsDialog onClose={() => setShortcutsOpen(false)} />}
+    {captureDialog && <CaptureTimeDialog {...captureDialog} onApply={applyCaptureTimes} onClose={() => setCaptureDialog(null)} />}
     {fileMenu && (() => {
       const hit = images.find((i) => i.imgid === fileMenu.imgid);
       const local = fileMenu.targets.filter((i) => !isRemote(i));
@@ -5404,6 +5840,8 @@ export default function App() {
       const copies = local.filter((i) => i.copy);
       return (
         <FileMenu x={fileMenu.x} y={fileMenu.y}
+                  captureCount={local.length} onCaptureTime={() => startCaptureAdjustment(local, hit)}
+                  canUndoCapture={captureUndo.length > 0} onUndoCapture={startCaptureUndo}
                   copyable={sources.length} copies={copies.length === local.length ? copies.length : 0}
                   onCopy={() => void createCopies(sources)} onRemoveCopies={() => void removeCopies(copies)}
                   mergeable={hdrBrackets(local).length} onMergeHdr={() => setHdrMerging(hdrBrackets(local))}
@@ -5412,6 +5850,8 @@ export default function App() {
                   rejected={hit && !isRemote(hit) ? local.filter((i) => i.rejected).length : null}
                   photo={immichBase && hit?.remote ? photoUrl(immichBase, hit.remote.assetId) : null}
                   results={immichBase && immich ? searchUrl(immichBase, immich.search) : null}
+                  parentFolder={immichBase && hit?.remote ? hit.remote.localPath : undefined}
+                  onImportParent={importImmichParent}
                   onDelete={() => void deleteRejected(local.filter((i) => i.rejected))}
                   editIn={hit && !isRemote(hit) ? plugins.map((cfg) => ({ cfg, why: unfit(cfg, sources) })) : null}
                   onEditIn={(cfg) => void editIn(cfg, sources)} onSetUpPlugins={() => setPrefsOpen("plugins")}
@@ -5419,7 +5859,7 @@ export default function App() {
       );
     })()}
     {prefsOpen && (
-      <PreferencesDialog presets={[...BUILTIN_PRESETS, ...presets]} newPhotos={newPhotos}
+      <PreferencesDialog openGenerated={openGenerated} onOpenGenerated={(on) => { storeOpenGenerated(on); setOpenGenerated(on); }} loupe={loupeEnabled} onLoupe={(on) => { storeLoupe(on); setLoupeEnabled(on); loupeEnabledRef.current = on; setLoupePicking(false); setLoupeShown(false); if (on && !gridRef.current) session.current?.requestLoupe(); }} presets={[...BUILTIN_PRESETS, ...presets]} newPhotos={newPhotos}
                          onNewPhotos={(id) => { setNewPhotos(id); storeNewPhotosPreset(id); }}
                          onSaveCurrent={current ? () => setNewPreset("newPhotos") : null}
                          focus={prefsOpen === true ? undefined : prefsOpen}
@@ -5434,16 +5874,21 @@ export default function App() {
                          perfHud={perfHud} onPerfHud={(on) => { setPerfHud(on); perf.enable(on); }}
                          onBenchmark={current ? () => {
                            setPrefsOpen(false);
-                           runGuiBenchmark().then((path) => setStatus(`benchmark saved: ${path}`))
+                           runGuiBenchmark().then(({ path }) => setStatus(`benchmark saved: ${path}`))
                              .catch((e) => setStatus(`benchmark: ${e}`));
                          } : null}
+                         onTune={current ? () => { setPrefsOpen(false); setTunerOpen(true); } : null}
                          onRelaunch={async () => {
                            await session.current?.close();
                            await invoke("engine_quit");
                            await relaunch();
                          }}
-                         onClose={() => setPrefsOpen(false)} />
+                         onClose={() => { session.current?.refreshModuleChoices(); setPrefsOpen(false); }} />
     )}
+    {tunerOpen && <PerformanceTuner run={runGuiBenchmark} photo={current?.path} raw={session.current?.raw} previewArea={viewport()}
+      onOverlay={setPerfHud}
+      onRelaunch={async () => { await session.current?.close(); await invoke("engine_quit"); await relaunch(); }}
+      onClose={() => { setTunerOpen(false); setPrefsOpen("performance"); }} />}
     <UpdateBanner prepare={async () => {
       // the edit saved now, then the engine stopped, before the installer
       // replaces its files
@@ -5469,7 +5914,7 @@ export default function App() {
     {copying && <CopyDialog onCopy={copySettings} onClose={() => setCopying(false)} />}
     {hdrMerging && <HdrDialog count={hdrMerging.length} onRun={(align) => runHdrMerge(hdrMerging, align)}
                               onClose={() => setHdrMerging(null)} />}
-    {panoMerging && <PanoDialog count={panoMerging.length}
+    {panoMerging && <PanoDialog photos={panoMerging}
                                 onRun={(projection, crop) => runPanoMerge(panoMerging, projection, crop)}
                                 onClose={() => setPanoMerging(null)} />}
     {denoising && <DenoiseDialog thumb={navThumb} center={viewCenter()} prepare={denoiseModel}
@@ -5514,9 +5959,10 @@ export default function App() {
 type Opened = { path: string; imgid: number | null };
 
 // the folders added to the library panel, and the folder and image open
-// last, with its version; remembered between launches
+// last, with its version, whether the grid was showing, and the folders
+// read last, newest first; remembered between launches
 type Library = { folders: string[]; current: string | null; image: string | null; expanded: string[];
-                 hidden: string[]; sampled?: boolean; version?: number;
+                 hidden: string[]; sampled?: boolean; version?: number; grid?: boolean; recent?: string[];
                  volumes?: Record<string, Volume>; foldedVolumes?: string[]; hostNames?: Record<string, string> };
 function loadLibrary(): Library {
   try {
@@ -5822,6 +6268,7 @@ function Filmstrip({ images, partners, pending, empty, current, loader, height, 
   useEffect(() => {
     const root = strip.current;
     if (!root) return;
+    const visible = new Set<number | string>();
     const seen = new IntersectionObserver((entries) => {
       // a known photo's cell by its knownKey()
       const id = (e: IntersectionObserverEntry) => {
@@ -5829,12 +6276,18 @@ function Filmstrip({ images, partners, pending, empty, current, loader, height, 
         return d.imgid !== undefined ? Number(d.imgid) : d.known!;
       };
       const ids = entries.filter((e) => e.isIntersecting).map(id);
+      ids.forEach((id) => visible.add(id));
+      const hidden = entries.filter((e) => !e.isIntersecting).map(id);
+      hidden.forEach((id) => visible.delete(id));
       loader.show(ids, true);
-      loader.show(entries.filter((e) => !e.isIntersecting).map(id), false);
+      loader.show(hidden, false);
       if (ids.length) loader.request(ids, true);
-    }, { root, rootMargin: grid ? "300px 0px" : "0px 300px" });
+    }, { root });
     root.querySelectorAll<HTMLElement>(".thumb[data-imgid], .thumb[data-known]").forEach((el) => seen.observe(el));
-    return () => seen.disconnect();
+    return () => {
+      seen.disconnect();
+      loader.show([...visible], false);
+    };
   }, [images, loader, grid]);
   // a grid's cells are a fixed height, and share each row's width
   // (styles.css, .filmstrip.grid); the strip's follow its height
@@ -6097,16 +6550,20 @@ const hdrBrackets = (list: ImageEntry[]) => {
   const seen = new Set<string>();
   return list.filter((i) => !isRemote(i) && fileKind(i.filename) === "RAW" && !seen.has(i.path) && !!seen.add(i.path));
 };
-// what Panorama Merge stitches: the raws on this computer, each file once,
-// as its DNG holds the camera's own color
-const panoFrames = hdrBrackets;
+// Panorama Merge takes local photos, each source file once.
+const panoFrames = (list: ImageEntry[]) => {
+  const seen = new Set<string>();
+  return list.filter((i) => !isRemote(i) && !seen.has(i.path) && !!seen.add(i.path));
+};
 
 // a photo's right-click menu: Edit In, Show in Finder, as Lightroom's, and
 // Delete, for rejected photos only; for Immich results, the photo or the
 // whole search in Immich's web app. any click elsewhere, a scroll or Escape
 // closes it
-function FileMenu({ x, y, copyable, copies, mergeable, stitchable, reveal, rejected, photo, results, editIn, onCopy,
+function FileMenu({ captureCount, onCaptureTime, canUndoCapture, onUndoCapture, x, y, copyable, copies, mergeable, stitchable, reveal, rejected, photo, results, parentFolder, onImportParent, editIn, onCopy,
                     onRemoveCopies, onMergeHdr, onMergePano, onDelete, onEditIn, onSetUpPlugins, onClose }: {
+  captureCount: number; onCaptureTime: () => void;
+  canUndoCapture: boolean; onUndoCapture: () => void;
   x: number; y: number;
   copyable: number;                       // how many photos a virtual copy can be made of
   mergeable: number;                      // how many raws an HDR merge would take
@@ -6116,6 +6573,8 @@ function FileMenu({ x, y, copyable, copies, mergeable, stitchable, reveal, rejec
   rejected: number | null;                // how many of the photos it acts on are rejected; null, none can be
   photo: string | null;                   // the photo in Immich's web app
   results: string | null;                 // the search it came from, there
+  parentFolder: string | null | undefined; // local Immich file; undefined for ordinary folder entries
+  onImportParent: (path: string) => void;
   editIn: { cfg: PluginConfig; why: string | null }[] | null;  // the plugins, and why one cannot take the photos
   onEditIn: (cfg: PluginConfig) => void; onSetUpPlugins: () => void;
   onCopy: () => void; onRemoveCopies: () => void; onMergeHdr: () => void; onMergePano: () => void;
@@ -6158,6 +6617,8 @@ function FileMenu({ x, y, copyable, copies, mergeable, stitchable, reveal, rejec
         </div>
         <div className="menu-sep" />
       </>}
+      {captureCount > 0 && <button onClick={() => { onClose(); onCaptureTime(); }}>Adjust Capture Time…</button>}
+      {canUndoCapture && <button onClick={() => { onClose(); onUndoCapture(); }}>Undo Capture Time Adjustment…</button>}
       {copyable > 0 && <>
         <button onClick={() => { onClose(); onCopy(); }}>
           {copyable > 1 ? `Create ${copyable} Virtual Copies` : "Create Virtual Copy"}</button>
@@ -6171,6 +6632,9 @@ function FileMenu({ x, y, copyable, copies, mergeable, stitchable, reveal, rejec
         <div className="menu-sep" />
       </>}
       {reveal && <button onClick={() => { onClose(); void revealItemInDir(reveal); }}>Show in {FILE_MANAGER}</button>}
+      {parentFolder !== undefined && <button disabled={!parentFolder}
+        title={parentFolder ? parentDir(parentFolder) : "Set up Opening photos in Preferences > Immich so this file is available on this computer"}
+        onClick={() => { onClose(); if (parentFolder) onImportParent(parentFolder); }}>Import Parent Folder</button>}
       {photo && <button onClick={() => go(photo)}>Show in Immich</button>}
       {results && <button onClick={() => go(results)}>Show Results in Immich</button>}
       {rejected !== null && <>
@@ -6345,12 +6809,13 @@ const SCOPE_MODES: [ScopeMode, string][] = [
 // slider and a double-click resets it; on the RYB vectorscope, dragging
 // turns the color harmony guides. the clipping triangles show their
 // overlay on the photo: a click keeps it, hovering shows it for a while
-function HistogramView({ histogram: h, values, disabled, exif, neutral, onChange, clip, onClip, onClipPeek, scope, onScope: setScope }: {
-  histogram: Histogram | null; values: Record<string, number>; disabled: boolean; exif: Exif | null;
+function HistogramView({ histograms, values, disabled, exif, neutral, onChange, clip, onClip, onClipPeek, scope, onScope: setScope }: {
+  histograms: Snapshot<Histogram | null>; values: Record<string, number>; disabled: boolean; exif: Exif | null;
   neutral: (id: string) => number; onChange: (c: Control, v: number) => void;
   clip: ClipShow; onClip: (end: "low" | "high") => void; onClipPeek: (end: "low" | "high" | null) => void;
   scope: ScopeSettings; onScope: (change: Partial<ScopeSettings>) => void;
 }) {
+  const h = useSyncExternalStore(histograms.subscribe, histograms.get);
   const ref = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState(0);
   useEffect(() => {
@@ -6360,7 +6825,7 @@ function HistogramView({ histogram: h, values, disabled, exif, neutral, onChange
     ro.observe(c);
     return () => ro.disconnect();
   }, []);
-  useEffect(() => { if (ref.current) drawScope(ref.current, h, scope); }, [h, scope, size]);
+  useEffect(() => { if (ref.current) perf.time("pixels.scopeDraw", () => drawScope(ref.current!, h, scope)); }, [h, scope, size]);
   const tones = scope.mode === "histogram";
   const turning = (scope.mode === "vectorscope" || scope.mode === "split")
     && scope.space === "ryb" && scope.harmony > 0;
@@ -6602,12 +7067,17 @@ const UPRIGHT_TITLES = [
 // by the axis they straighten, Full by both
 const UPRIGHT_ICONS = [CircleOff, WandSparkles, PenLine, MoveHorizontal, MoveVertical, Grid2x2];
 
-function PanelView({ panel: p, open, onToggle, values, session, disabled, onChange, onChangeMany, histogram,
-                     onAuto, wbTools, toneTools, denoiseTools, straightenTools, transformTools, onPreview, onOptionPreview }: {
+const noHistogramSubscription = () => () => {};
+const noHistogram = () => null;
+
+type PanelProps = {
+  sessionRevision: number;
   panel: Panel; open: boolean; onToggle: (solo: boolean) => void; values: Record<string, number>;
   session: Session | null; disabled: boolean; onChange: (c: Control, v: number) => void;
-  onChangeMany: (entries: [string, number][]) => void; histogram: Histogram | null;
+  onChangeMany: (entries: [string, number][]) => void; histograms: Snapshot<Histogram | null>;
   onAuto?: () => void;
+  detailLoupe?: React.ReactNode;
+  presenceLoupe?: React.ReactNode;
   wbTools?: React.ReactNode;   // the picker and presets, above Temp
   toneTools?: React.ReactNode;   // Auto, above Exposure
   denoiseTools?: React.ReactNode;   // AI Denoise's button, its section's only content
@@ -6615,7 +7085,34 @@ function PanelView({ panel: p, open, onToggle, values, session, disabled, onChan
   transformTools?: React.ReactNode;   // Upright's buttons, its section's only content
   onPreview: (values: Values | null) => void;   // a swatch under the pointer
   onOptionPreview?: (preview: OptionPreview | null) => void;   // a slider ⌥-dragged
-}) {
+};
+
+// Event bridges retain the latest committed handlers without making every panel
+// and slider render just because the App created another closure.
+function useLiveEvent<A extends unknown[], R>(callback: (...args: A) => R) {
+  const latest = useRef(callback);
+  useLayoutEffect(() => { latest.current = callback; });
+  return useCallback((...args: A) => latest.current(...args), []);
+}
+
+function PanelView(props: PanelProps) {
+  const selected = useRef<Values | undefined>(undefined);
+  const values = panelValues(props.panel, props.values, selected.current);
+  useLayoutEffect(() => { selected.current = values; });
+  const onToggle = useLiveEvent(props.onToggle);
+  const onChange = useLiveEvent(props.onChange);
+  const onChangeMany = useLiveEvent(props.onChangeMany);
+  const onPreview = useLiveEvent(props.onPreview);
+  const auto = useLiveEvent(() => props.onAuto?.());
+  const option = useLiveEvent((preview: OptionPreview | null) => props.onOptionPreview?.(preview));
+  return <PanelWidget {...props} values={values} onToggle={onToggle} onChange={onChange}
+    onChangeMany={onChangeMany} onPreview={onPreview} onAuto={props.onAuto ? auto : undefined}
+    onOptionPreview={props.onOptionPreview ? option : undefined} />;
+}
+
+const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle, values, session, disabled, onChange, onChangeMany, histograms,
+                     onAuto, wbTools, toneTools, denoiseTools, straightenTools, transformTools, detailLoupe, presenceLoupe, onPreview, onOptionPreview }: PanelProps) {
+  const histogram = useSyncExternalStore(p.graph === "tonecurve" ? histograms.subscribe : noHistogramSubscription, p.graph === "tonecurve" ? histograms.get : noHistogram);
   const pointMode = p.graph === "tonecurve" && values.tc_mode === 1;
   // which curve the point editor shows: the master, or one channel
   const [curveChannel, setCurveChannel] = useState<CurveChannel>("rgb");
@@ -6663,7 +7160,7 @@ function PanelView({ panel: p, open, onToggle, values, session, disabled, onChan
   });
   const foreign = p.graph === "tonecurve" && [...(session?.foreign ?? [])].some((m) => m.op === "tonecurve");
   return (
-    <div className="panel adjust">
+    <div className="panel adjust" data-panel-id={p.id}>
       <div className={`panel-title${open ? " open" : ""}`} onClick={(e) => onToggle(e.altKey)}>
         <span>{p.title}</span>
         {curveMark && (
@@ -6683,6 +7180,7 @@ function PanelView({ panel: p, open, onToggle, values, session, disabled, onChan
       </div>
       <Collapse open={open}>
         <div className="panel-body">
+          {detailLoupe}
           {p.graph === "tonecurve" && (
             <div className="segmented tabs">
               <button className={pointMode ? "active" : ""} onClick={() => !pointMode && toPoints()}>Point</button>
@@ -6736,7 +7234,10 @@ function PanelView({ panel: p, open, onToggle, values, session, disabled, onChan
                 {s.title === "AI Denoise" && denoiseTools}
                 {s.title === "Straighten" && straightenTools}
                 {s.title === "Upright" && transformTools}
-                {s.controls.filter((c) => choiceShows(c.id, values)).map((c) => {
+                {detailRows(s.controls.filter((c) => choiceShows(c.id, values)), (c) => {
+                  if (c.id.startsWith("ce_")) return c.id === "ce_0_0"
+                    ? <ContrastEqualizer key="contrast-equalizer" values={values} disabled={disabled} onChange={onChangeMany} />
+                    : null;
                   const props = controlProps(c);
                   return c.kind === "toggle" ? <Toggle key={c.id} {...props} />
                     : c.kind === "choice" ? <Choice key={c.id} {...props} />
@@ -6763,13 +7264,13 @@ function PanelView({ panel: p, open, onToggle, values, session, disabled, onChan
               : content(s);
             const shut = closed.has(`${p.id}/${title}`);
             return (
-              <section key={title}>
+              <section key={title} data-section-id={title}>
                 <h3 className="fold" onClick={() => toggleSection(title)}>
                   {title}
                   {!s.group && s.tag && <span className="tag"><Sparkles size={11} strokeWidth={2} />{s.tag}</span>}
                   <Chevron open={!shut} />
                 </h3>
-                <Collapse open={!shut}><div className="section-body">{body}</div></Collapse>
+                <Collapse open={!shut}><div className="section-body">{s.title === "Presence" && presenceLoupe}{body}</div></Collapse>
               </section>
             );
           })}
@@ -6777,7 +7278,7 @@ function PanelView({ panel: p, open, onToggle, values, session, disabled, onChan
       </Collapse>
     </div>
   );
-}
+});
 
 // buttons that set several controls at once; one with a swatch shows as a
 // colored circle, its label as a tooltip
@@ -6855,10 +7356,20 @@ function isMono(f: Frame): boolean {
 // about one mouse notch of a wheel event's deltaY on macOS
 const WHEEL_NOTCH = 40;
 
-function Slider({ control: c, value, neutral, disabled, onChange, values, glow = 0, rawOnly, onOption }: ControlProps) {
+function Slider({ values, onChange, onOption, ...props }: ControlProps) {
+  const callbacks = useRef({ onChange, onOption });
+  useLayoutEffect(() => { callbacks.current = { onChange, onOption }; });
+  const change = useCallback((value: number) => callbacks.current.onChange(value), []);
+  const option = useCallback((on: boolean) => callbacks.current.onOption?.(on), []);
+  const track = typeof props.control.track === "function" ? props.control.track(values) : props.control.track;
+  return <SliderWidget {...props} track={track} onChange={change} onOption={onOption ? option : undefined} />;
+}
+
+const SliderWidget = memo(function SliderWidget({ control: c, value, neutral, disabled, onChange, track, glow = 0, rawOnly, onOption }:
+  Omit<ControlProps, "values"> & { track?: string }) {
+  perf.count("react.sliderRenderAttempts");
   const s = c.slider;
-  const track = typeof c.track === "function" ? c.track(values) : c.track;
-  const reset = () => !disabled && onChange(neutral);
+  const reset = () => !disabled && send(neutral);
   const m = mapOf.get(c.id);
   const [editing, setEditing] = useState(false);
   const cancel = useRef(false);
@@ -6870,6 +7381,9 @@ function Slider({ control: c, value, neutral, disabled, onChange, values, glow =
   const box = useRef<HTMLDivElement>(null);
   const live = useRef({ value, onChange, disabled });
   live.current = { value, onChange, disabled };
+  // React publication can wait until the next display frame. Relative input
+  // (wheel steps and Shift anchors) must still see every preceding input.
+  const send = (next: number) => { live.current.value = next; onChange(next); };
   useEffect(() => {
     const el = box.current;
     if (!el) return;
@@ -6887,7 +7401,9 @@ function Slider({ control: c, value, neutral, disabled, onChange, values, glow =
       const by = Math.max(step, (hi - lo) * loadSliderScrollStep());
       const pos = Math.min(hi, Math.max(lo, (s ? s.toPos(v) : v) - notches * by));
       const snapped = Math.round(pos / step) * step;
-      change(s ? s.fromPos(snapped) : snapped);
+      const next = s ? s.fromPos(snapped) : snapped;
+      live.current.value = next;
+      change(next);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
@@ -6949,7 +7465,7 @@ function Slider({ control: c, value, neutral, disabled, onChange, values, glow =
   // width under it, as does a label too long for the row
   const compact = !track && c.label.length <= 11;
   return (
-    <div ref={box} className={`slider${compact ? " compact" : ""}${disabled ? " disabled" : ""}`
+    <div ref={box} data-control-id={c.id} className={`slider${compact ? " compact" : ""}${disabled ? " disabled" : ""}`
                               + `${glow > 0.1 ? " probed" : ""}${value === neutral ? " at-neutral" : ""}`}
          style={glow > 0.1 ? { ["--glow" as string]: glow } : undefined}
          title={rawOnly ? "needs a raw photo: darktable makes the detail mask from the raw"
@@ -6968,7 +7484,7 @@ function Slider({ control: c, value, neutral, disabled, onChange, values, glow =
                  const typed = parseFloat(e.target.value.replace(/[^0-9.+-]/g, ""));
                  if (!cancel.current && Number.isFinite(typed)) {
                    const v = Math.min(c.max, Math.max(c.min, Math.round(typed / c.step) * c.step));
-                   onChange(v);
+                   send(v);
                  }
                  cancel.current = false;
                  setEditing(false);
@@ -6991,16 +7507,16 @@ function Slider({ control: c, value, neutral, disabled, onChange, values, glow =
                  const lo = s ? s.min : c.min, hi = s ? s.max : c.max, step = s ? s.step : c.step;
                  n = Math.min(hi, Math.max(lo, Math.round((f.from + (n - f.at) * f.scale) / step) * step));
                }
-               onChange(s ? s.fromPos(n) : n);
+               send(s ? s.fromPos(n) : n);
              }} />
     </div>
   );
-}
+});
 
 // a few named values as a segmented control (Color | Black & White)
 function Choice({ control: c, value, disabled, onChange }: ControlProps) {
   if (c.menu) return (
-    <div className="choice-row">
+    <div className="choice-row" data-control-id={c.id}>
       <span>{c.label}</span>
       <select className="field" value={value} disabled={disabled} onChange={(e) => onChange(Number(e.target.value))}>
         {c.optionGroups
@@ -7013,7 +7529,7 @@ function Choice({ control: c, value, disabled, onChange }: ControlProps) {
     </div>
   );
   const options = (
-    <div className={`${c.inline ? "pills" : "segmented"} choice${disabled ? " disabled" : ""}`}>
+    <div data-control-id={c.id} className={`${c.inline ? "pills" : "segmented"} choice${disabled ? " disabled" : ""}`}>
       {(c.options ?? []).map(([label, v]) => {
         const Icon = c.optionIcons?.[v];
         return (
@@ -7031,7 +7547,7 @@ function Choice({ control: c, value, disabled, onChange }: ControlProps) {
 function Toggle({ control: c, value, disabled, onChange }: ControlProps) {
   const m = mapOf.get(c.id);
   return (
-    <label className={`toggle${disabled ? " disabled" : ""}`}
+    <label data-control-id={c.id} className={`toggle${disabled ? " disabled" : ""}`}
            title={c.note ?? (m ? `darktable: ${moduleName(m.op)}` : "")}>
       <span>{c.label}</span>
       <input type="checkbox" className="switch" checked={value === 1} disabled={disabled}

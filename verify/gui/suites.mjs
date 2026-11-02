@@ -1,0 +1,59 @@
+import { generated, generatedNames } from './generated.mjs';
+// SPDX-License-Identifier: GPL-3.0-or-later
+// These are coverage claims for cases, not proof they have passed on a platform.
+export const cases = {
+  startup: { scope: 'visible fixture, stable final canvas, isolated profile', liveValidated: true },
+  exposure: { scope: 'pointer drag both directions, brightness, reset pixels', liveValidated: true },
+  'slider-input': { scope: 'Exposure keyboard, inline editor, focus and reset', liveValidated: true,
+    verification: 'Linux ARM64, system WebKitGTK 2.54.2, Wayland, DPR 2; run 2026-11-01T23-39-31.087Z_f8f31aa_bc0fb5a5. Remaining controls suite stopped at history.' },
+  history: { scope: 'Exposure undo/redo and basic Reset All value/photo round trip', liveValidated: false,
+    limitation: 'Does not yet cover b1d7c4c native-module Reset All regression.' },
+  rail: { scope: 'Presets/Masks/Zones/Heal/Adjustments activation, geometry and Windows cursor CSS', liveValidated: false,
+    commits: ['fe5dbc2'], limitation: 'Native cursor stacking remains a manual Windows check.' },
+  sliders: { scope: 'currently mounted sliders in available manifest panels; drag and reset', liveValidated: false,
+    limitation: 'Hidden tabs/sections/module choices and RAW-only controls require further scenarios. Pixel changes are recorded for review, not universal image-effect assertions.' },
+  'module-options': { scope: 'each Global/Masks preference option and independent Contrast choices', liveValidated: false,
+    commits: ['faa19d7', '9d956c7'], limitation: 'Does not establish rendered correctness of every engine module.' },
+  'crop-guides': {scope:'first-entry crop guides and handles',commits:['323cfa9'],liveValidated:false},
+  'crop-locked': {scope:'all locked corners, single-axis inward drags',commits:['b22bd4b'],liveValidated:false},
+  'crop-portrait': {scope:'EXIF portrait orientation, resize all edges',commits:['1f2f8b8'],fixture:'portrait',liveValidated:false},
+  'crop-options': {scope:'every aspect, custom entry, cancel, rotation/flip',liveValidated:false},
+  'native-reset': {scope:'native Contrast edit, Reset All and undo with sidecar evidence',commits:['b1d7c4c'],liveValidated:false,limitation:'Does not seed hidden nondefault native parameters; original trigger remains incompletely covered.'},
+  curves:{scope:'point curve channels, drag/add nodes, parametric switch',liveValidated:false},
+  wheels:{scope:'3-way/global wheel changes, reset and slider view',liveValidated:false},
+  equalizer:{scope:'every channel and band keyboard change/reset',liveValidated:false},
+  masks:{scope:'manual shapes/ranges, Exposure effect, delete/reset',liveValidated:false},
+  heal:{scope:'Heal/Clone spot creation/settings/deletion',liveValidated:false},
+  negative:{scope:'negative conversion and turn-off round trip',fixture:'negative',liveValidated:false},
+  zones:{scope:'each zone selection and visible inspection',liveValidated:false},
+  'preferences-matrix':{scope:'local checkbox/menu/segmented preference options; hardware/restart/network actions blocked',liveValidated:false},
+  'slider-wheel':{scope:'wheel disabled/enabled behavior',liveValidated:false},
+  'export-options':{scope:'in-app export option/preview settings without destination chooser or actual export',liveValidated:false},
+  filters:{scope:'every filter category layout',liveValidated:false},
+  presets:{scope:'available preset application and reset',liveValidated:false},
+  shortcuts:{scope:'shortcut dialog open/read/close',liveValidated:false},
+  'histogram-endpoints':{scope:'visible histogram endpoint columns',fixture:'endpoints',commits:['de6adf7'],liveValidated:false},
+  'preview-alignment':{scope:'scaled final frame geometry after drag',commits:['630672c'],liveValidated:false},
+  'loupe-grid':{scope:'loupe delivered-frame counter remains stable in grid',commits:['29b1591'],liveValidated:false},
+  'detail-without-loupe':{scope:'detail effect and final dimensions without loupe',commits:['f023c4f'],liveValidated:false},
+  'camera-body':{scope:'independent same-model body serial options and missing serial',fixture:'camera-a',commits:['7b20937'],liveValidated:false},
+  'rejected-deletion':{scope:'reject copied fixture; deletion blocked by native confirmation boundary',commits:['baa8def'],liveValidated:false},
+  'folder-race':{scope:'controlled slow unrelated folder and stale result protection',commits:['17ac5e6','74cedc9'],liveValidated:false},
+  panorama:{scope:'projection choices and preview with overlapping fixtures',liveValidated:false},
+  'immich-workflow':{scope:'isolated local-service prerequisite; no live account access',commits:['33949b6','22840b4'],liveValidated:false},
+  ...generated,
+};
+export const suites = {
+  smoke: ['startup', 'exposure'],
+  crop: ['startup','crop-guides','crop-locked','crop-options'],
+  workflows: ['startup','curves','wheels','equalizer','masks','heal','zones','preferences-matrix','slider-wheel','export-options','filters','presets','shortcuts'],
+  inventory: ['startup',...generatedNames],
+  regressions: ['startup', 'rail', 'module-options'],
+  controls: ['startup', 'slider-input', 'history', 'rail', 'sliders', 'module-options'],
+};
+export function resolveCases(name) {
+  if (name === 'all') return ['startup',...Object.keys(cases).filter(c=>c!=='startup')];
+  if (Object.hasOwn(suites, name)) return suites[name];
+  if (!Object.hasOwn(cases, name)) throw Error(`Unknown case/suite: ${name}`);
+  return name === 'startup' ? ['startup'] : ['startup', name];
+}

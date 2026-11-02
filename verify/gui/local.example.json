@@ -1,0 +1,8 @@
+{
+  "binary": "app/src-tauri/target/release/immage",
+  "binaryRevision": "replace with the revision actually compiled, or leave unknown",
+  "engine": "build/bin/darktable-engine",
+  "tauriDriver": "/absolute/path/to/tauri-driver",
+  "nativeDriver": "/absolute/path/to/WebKitWebDriver",
+  "fixture": "app/sample/stairs-to-mountain.jpg"
+}

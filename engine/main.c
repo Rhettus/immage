@@ -50,8 +50,8 @@
 #include "develop/masks.h"
 #include "develop/pixelpipe_cache.h"
 #include "hdrmerge.h"
-#ifdef HAVE_PANO
 #include "dng.h"
+#ifdef HAVE_PANO
 #include "pano.h"
 #endif
 #include "strip.h"
@@ -425,7 +425,7 @@ static void _close_session(void)
 // would skip the write and still report success. a global switch flipped
 // around each job can't be used, as the thumbnail threads run beside the
 // main loop. TRUE means it failed, as darktable's
-static gboolean _write_sidecar(const dt_imgid_t imgid)
+static gboolean _write_sidecar_location(const dt_imgid_t imgid, const gboolean location_changed)
 {
   if(!dt_is_valid_imgid(imgid)) return TRUE;
   char filename[PATH_MAX] = { 0 };
@@ -440,6 +440,7 @@ static gboolean _write_sidecar(const dt_imgid_t imgid)
   dt_image_path_append_version(imgid, filename, sizeof(filename));
   g_strlcat(filename, ".xmp", sizeof(filename));
   if(dt_exif_xmp_write(imgid, filename, FALSE)) return TRUE;
+  if(location_changed && !location_sidecar_mark(filename)) return TRUE;
   sqlite3_stmt *stmt;
   DT_DEBUG_SQLITE3_PREPARE_V2(dt_database_get(darktable.db),
                               "UPDATE main.images SET write_timestamp = STRFTIME('%s', 'now') WHERE id = ?1",
@@ -448,6 +449,11 @@ static gboolean _write_sidecar(const dt_imgid_t imgid)
   sqlite3_step(stmt);
   sqlite3_finalize(stmt);
   return FALSE;
+}
+
+static gboolean _write_sidecar(const dt_imgid_t imgid)
+{
+  return _write_sidecar_location(imgid, FALSE);
 }
 
 // an export's copy of a photo's edit as it was when the export was asked
@@ -462,6 +468,8 @@ static dt_imgid_t _real_version(const dt_imgid_t imgid);
 // then inserted when missing, so two imports into one folder at once could
 // make two of either
 static GMutex _import_lock;
+
+static GList *_image_versions(const dt_imgid_t imgid);
 
 // file the image under an in-memory film roll, the way darktable-mcp does;
 // importing reads an existing sidecar, so earlier edits come back
@@ -478,6 +486,30 @@ static dt_imgid_t _import(const char *path)
   // dt_image_get_id()), which can be a snapshot once the version before it
   // has been removed
   const dt_imgid_t imgid = dt_is_valid_filmid(filmid) ? dt_image_import(filmid, path, TRUE, FALSE) : NO_IMGID;
+  if(dt_is_valid_imgid(imgid))
+  {
+    GList *versions = _image_versions(imgid);
+    for(GList *l = versions; l; l = l->next)
+    {
+      const dt_imgid_t id = GPOINTER_TO_INT(l->data);
+      char sidecar[PATH_MAX] = { 0 };
+      gboolean from_cache = FALSE;
+      dt_image_full_path(id, sidecar, sizeof(sidecar), &from_cache);
+      dt_image_path_append_version(id, sidecar, sizeof(sidecar));
+      g_strlcat(sidecar, ".xmp", sizeof(sidecar));
+      if(!g_file_test(sidecar, G_FILE_TEST_EXISTS)) continue;
+      const int missing = location_sidecar_missing(sidecar);
+      if(missing)
+      {
+        dt_image_geoloc_t geo;
+        dt_image_get_location(id, &geo);
+        if(missing & 1) geo.latitude = geo.longitude = NAN;
+        if(missing & 2) geo.elevation = NAN;
+        dt_image_set_location(id, &geo, FALSE, FALSE);
+      }
+    }
+    g_list_free(versions);
+  }
   g_mutex_unlock(&_import_lock);
   return _real_version(imgid);
 }
@@ -819,8 +851,6 @@ static void _saved_history(JsonBuilder *b)
   }
   sqlite3_finalize(stmt);
 }
-
-static GList *_image_versions(const dt_imgid_t imgid);
 
 static gboolean _has_history(const dt_imgid_t imgid)
 {
@@ -1230,8 +1260,8 @@ static gboolean _unbase64_into(const char *text, void *dst, const size_t size)
 // the History panel's switch and delete for one instance of the history,
 // found by op and multi_priority: `enabled` switches it, `reset` puts it
 // back to its defaults, on or off as darktable starts it, and `restore`
-// to a state an earlier reply gave (undo). a module without a switch, or
-// one a mask drives (the Masks panel's), is refused. replies the state
+// to a state an earlier reply gave (undo). modules without a switch and
+// masked modules permit reset/restore, but not an independent switch. replies the state
 // before and after
 static gboolean _module_state(const char *op, const int priority, const gboolean has_enabled,
                               const gboolean enabled, const gboolean reset, JsonObject *restore,
@@ -1243,7 +1273,8 @@ static gboolean _module_state(const char *op, const int priority, const gboolean
     *err = g_strdup_printf("module '%s' %d not in the pipe", op ? op : "(none)", priority);
     return FALSE;
   }
-  if(mod->hide_enable_button || (mod->blend_params && mod->blend_params->mask_id > 0))
+  if(!reset && !restore
+     && (mod->hide_enable_button || (mod->blend_params && mod->blend_params->mask_id > 0)))
   {
     *err = g_strdup_printf("module '%s' cannot be switched here", op);
     return FALSE;
@@ -1252,6 +1283,8 @@ static gboolean _module_state(const char *op, const int priority, const gboolean
   _module_state_json(b, mod);
   void *was = g_malloc(mod->params_size);
   memcpy(was, mod->params, mod->params_size);
+  dt_develop_blend_params_t was_blend = { 0 };
+  if(mod->blend_params) memcpy(&was_blend, mod->blend_params, sizeof(was_blend));
   const gboolean was_enabled = mod->enabled;
   if(restore)
   {
@@ -1270,10 +1303,11 @@ static gboolean _module_state(const char *op, const int priority, const gboolean
   else if(reset)
   {
     dt_iop_load_default_params(mod);
-    mod->enabled = mod->default_enabled;
+    mod->enabled = has_enabled ? enabled : mod->default_enabled;
   }
   else if(has_enabled) mod->enabled = enabled;
-  const gboolean same = mod->enabled == was_enabled && !memcmp(was, mod->params, mod->params_size);
+  const gboolean same = mod->enabled == was_enabled && !memcmp(was, mod->params, mod->params_size)
+    && (!mod->blend_params || !memcmp(&was_blend, mod->blend_params, sizeof(was_blend)));
   g_free(was);
   if(!same)
   {
@@ -1580,11 +1614,23 @@ static void _image_json(JsonBuilder *b, const dt_imgid_t imgid, const gboolean f
   json_builder_add_int_value(b, img->final_width > 0 ? img->final_width : img->width);
   json_builder_set_member_name(b, "height");
   json_builder_add_int_value(b, img->final_height > 0 ? img->final_height : img->height);
+  json_builder_set_member_name(b, "location");
+  if(isfinite(img->geoloc.latitude) && isfinite(img->geoloc.longitude))
+  {
+    json_builder_begin_object(b);
+    _add_double(b, "latitude", img->geoloc.latitude);
+    _add_double(b, "longitude", img->geoloc.longitude);
+    json_builder_end_object(b);
+  }
+  else json_builder_add_null_value(b);
   json_builder_set_member_name(b, "exif");
   json_builder_begin_object(b);
   _add_string(b, "maker", img->camera_maker);
   _add_string(b, "model", img->camera_model);
   _add_string(b, "lens", img->exif_lens);
+  gchar *body_serial = camera_body_serial(path);
+  _add_string(b, "body_serial", body_serial);
+  g_free(body_serial);
   _add_double(b, "exposure", img->exif_exposure);
   _add_double(b, "aperture", img->exif_aperture);
   _add_double(b, "iso", img->exif_iso);
@@ -2131,6 +2177,38 @@ static gboolean _meta_set(const dt_imgid_t imgid, JsonObject *req, char **err)
     *err = g_strdup("no such image");
     return FALSE;
   }
+  if(json_object_has_member(req, "location"))
+  {
+    dt_image_geoloc_t geo = { NAN, NAN, NAN };
+    if(!JSON_NODE_HOLDS_NULL(json_object_get_member(req, "location")))
+    {
+      JsonNode *node = json_object_get_member(req, "location");
+      JsonObject *location = JSON_NODE_HOLDS_OBJECT(node) ? json_node_get_object(node) : NULL;
+      JsonNode *lat = location ? json_object_get_member(location, "latitude") : NULL;
+      JsonNode *lon = location ? json_object_get_member(location, "longitude") : NULL;
+      if(!lat || !lon || !JSON_NODE_HOLDS_VALUE(lat) || !JSON_NODE_HOLDS_VALUE(lon)
+         || (json_node_get_value_type(lat) != G_TYPE_DOUBLE && json_node_get_value_type(lat) != G_TYPE_INT64)
+         || (json_node_get_value_type(lon) != G_TYPE_DOUBLE && json_node_get_value_type(lon) != G_TYPE_INT64))
+      {
+        *err = g_strdup("location needs numeric latitude and longitude");
+        return FALSE;
+      }
+      geo.latitude = json_node_get_double(lat);
+      geo.longitude = json_node_get_double(lon);
+      if(!isfinite(geo.latitude) || !isfinite(geo.longitude)
+         || fabs(geo.latitude) > 90 || fabs(geo.longitude) > 180)
+      {
+        *err = g_strdup("latitude must be between -90 and 90, longitude between -180 and 180");
+        return FALSE;
+      }
+      dt_image_geoloc_t previous;
+      dt_image_get_location(imgid, &previous);
+      // moving a pin invalidates an elevation measured at the previous position
+      if(previous.latitude == geo.latitude && previous.longitude == geo.longitude)
+        geo.elevation = previous.elevation;
+    }
+    dt_image_set_location(imgid, &geo, FALSE, FALSE);
+  }
   if(json_object_has_member(req, "rejected") && json_object_get_boolean_member(req, "rejected"))
     dt_ratings_apply_on_image(imgid, DT_VIEW_REJECT, FALSE, FALSE, FALSE);
   else if(json_object_has_member(req, "rating") || json_object_has_member(req, "rejected"))
@@ -2151,11 +2229,75 @@ static gboolean _meta_set(const dt_imgid_t imgid, JsonObject *req, char **err)
       dt_metadata_set(imgid, _meta_keys[k][1],
                       json_object_get_string_member(req, _meta_keys[k][0]), FALSE);
   // TRUE means it failed
-  if(_write_sidecar(imgid))
+  if(_write_sidecar_location(imgid, json_object_has_member(req, "location")))
   {
     *err = g_strdup("could not write the XMP sidecar");
     return FALSE;
   }
+  return TRUE;
+}
+
+// validate the whole batch before changing anything; stale times also protect undo
+static gboolean _capture_times(JsonObject *req, JsonBuilder *b, char **err)
+{
+  JsonArray *entries = json_object_get_array_member(req, "entries");
+  if(!entries || !json_array_get_length(entries))
+  {
+    *err = g_strdup("no capture times supplied");
+    return FALSE;
+  }
+  GHashTable *seen = g_hash_table_new(g_direct_hash, g_direct_equal);
+  for(guint k = 0; k < json_array_get_length(entries); k++)
+  {
+    JsonObject *entry = json_array_get_object_element(entries, k);
+    const dt_imgid_t imgid = json_object_get_int_member_with_default(entry, "imgid", 0);
+    const char *before = json_object_get_string_member_with_default(entry, "before", "");
+    const char *after = json_object_get_string_member_with_default(entry, "after", "");
+    char current[DT_DATETIME_LENGTH] = { 0 }, canonical[DT_DATETIME_LENGTH] = { 0 };
+    if(dt_is_valid_imgid(imgid)) dt_image_get_datetime(imgid, current);
+    GTimeZone *tz = g_time_zone_new_utc();
+    GDateTime *date = dt_datetime_exif_to_gdatetime(after, tz);
+    g_time_zone_unref(tz);
+    if(date) dt_datetime_gdatetime_to_exif(canonical, sizeof(canonical), date);
+    if(date) g_date_time_unref(date);
+    if(!*current || strcmp(current, before) || strcmp(canonical, after))
+    {
+      g_hash_table_unref(seen);
+      *err = g_strdup_printf("image %d has an invalid or changed capture time; reopen the dialog", imgid);
+      return FALSE;
+    }
+    if(!g_hash_table_add(seen, GINT_TO_POINTER(imgid)))
+    {
+      g_hash_table_unref(seen);
+      *err = g_strdup("duplicate image in capture time batch");
+      return FALSE;
+    }
+  }
+  g_hash_table_unref(seen);
+  json_builder_set_member_name(b, "updates");
+  json_builder_begin_array(b);
+  for(guint k = 0; k < json_array_get_length(entries); k++)
+  {
+    JsonObject *entry = json_array_get_object_element(entries, k);
+    const dt_imgid_t imgid = json_object_get_int_member(entry, "imgid");
+    const char *before = json_object_get_string_member(entry, "before");
+    const char *after = json_object_get_string_member(entry, "after");
+    GList *imgs = g_list_append(NULL, GINT_TO_POINTER(imgid));
+    dt_image_set_datetime(imgs, after, FALSE);
+    const gboolean failed = _write_sidecar(imgid);
+    if(failed) dt_image_set_datetime(imgs, before, FALSE);
+    g_list_free(imgs);
+    if(_s.open && _s.imgid == imgid)
+      dt_datetime_exif_to_img(&_s.dev.image_storage, failed ? before : after);
+    json_builder_begin_object(b);
+    json_builder_set_member_name(b, "imgid");
+    json_builder_add_int_value(b, imgid);
+    _add_string(b, "before", before);
+    _add_string(b, "after", failed ? before : after);
+    if(failed) _add_string(b, "error", "could not write the XMP sidecar");
+    json_builder_end_object(b);
+  }
+  json_builder_end_array(b);
   return TRUE;
 }
 
@@ -3133,6 +3275,30 @@ static int _up_write_image(dt_imageio_module_data_t *data, const char *filename,
 }
 #endif
 
+// A linear DNG uses the normal export pipe, retaining every edit, but
+// stores its rendered RGB with a matching synthetic camera matrix.
+static int _positive_bpp(dt_imageio_module_data_t *data) { return 32; }
+static int _positive_levels(dt_imageio_module_data_t *data) { return IMAGEIO_RGB | IMAGEIO_FLOAT; }
+static int _positive_write(dt_imageio_module_data_t *data, const char *filename, const void *in,
+                           dt_colorspaces_color_profile_type_t over_type, const char *over_filename,
+                           void *exif, int exif_len, dt_imgid_t imgid, int num, int total,
+                           struct dt_dev_pixelpipe_t *pipe, const gboolean export_masks)
+{
+  return dng_write_rendered_half(filename, in, data->width, data->height, exif, exif_len);
+}
+
+static int _positive_tiff_write(dt_imageio_module_data_t *data, const char *filename, const void *in,
+                                dt_colorspaces_color_profile_type_t over_type, const char *over_filename,
+                                void *exif, int exif_len, dt_imgid_t imgid, int num, int total,
+                                struct dt_dev_pixelpipe_t *pipe, const gboolean export_masks)
+{
+  dt_imageio_module_format_t *fmt = dt_imageio_get_format_by_name("tiff");
+  const int res = fmt->write_image(data, filename, in, over_type, over_filename, NULL, 0,
+                                   imgid, num, total, pipe, export_masks);
+  if(res) return res;
+  return rendered_metadata(filename, exif, exif_len, FALSE) ? 0 : 1;
+}
+
 // write one image through darktable's own export, as its export module
 // would: `format` names a format plugin (jpeg, tiff, png, webp...); quality
 // and bit depth go through the plugin's conf keys, which its get_params()
@@ -3146,7 +3312,9 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
     *err = g_strdup("export needs an image and an output file");
     return FALSE;
   }
-  dt_imageio_module_format_t *fmt = dt_imageio_get_format_by_name(format);
+  const gboolean positive = json_object_get_boolean_member_with_default(req, "negative_copy", FALSE);
+  const gboolean positive_dng = positive && !g_strcmp0(format, "dng");
+  dt_imageio_module_format_t *fmt = dt_imageio_get_format_by_name(positive_dng ? "tiff" : format);
   if(!fmt)
   {
     *err = g_strdup_printf("no export format '%s'", format);
@@ -3158,6 +3326,7 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
   const int quality = json_object_get_int_member_with_default(req, "quality", 0);
   const int bpp = json_object_get_int_member_with_default(req, "bpp", 0);
   g_mutex_lock(&_format_conf_lock);
+  const int old_bpp = positive ? dt_conf_get_int("plugins/imageio/format/tiff/bpp") : 0;
   for(int pass = 0; pass < 2; pass++)
   {
     const int value = pass ? bpp : quality;
@@ -3167,7 +3336,16 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
     if(dt_conf_key_exists(key) || dt_confgen_exists(key)) dt_conf_set_int(key, value);
     g_free(key);
   }
+  // Converted TIFFs always use lossless compression; leave ordinary export
+  // preferences as they were after taking this job's parameters.
+  const int old_compress = positive ? dt_conf_get_int("plugins/imageio/format/tiff/compress") : 0;
+  if(positive) dt_conf_set_int("plugins/imageio/format/tiff/compress", 2);
   dt_imageio_module_data_t *fdata = fmt->get_params(fmt);
+  if(positive)
+  {
+    dt_conf_set_int("plugins/imageio/format/tiff/compress", old_compress);
+    dt_conf_set_int("plugins/imageio/format/tiff/bpp", old_bpp);
+  }
   g_mutex_unlock(&_format_conf_lock);
   if(!fdata)
   {
@@ -3216,6 +3394,17 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
   _flags_of = fmt;
   proxy.flags = _no_tmpfile_flags;
   dt_colorspaces_color_profile_type_t render_icc = icc;
+  if(positive)
+  {
+    render_icc = DT_COLORSPACE_LIN_REC2020;
+    if(positive_dng)
+    {
+      proxy.bpp = _positive_bpp;
+      proxy.levels = _positive_levels;
+      proxy.write_image = _positive_write;
+    }
+    else proxy.write_image = _positive_tiff_write;
+  }
   // the stand-in format renders linear Rec.2020 floats for the model and
   // hands the result to the real one. one upscale at a time: the model and
   // the real format are kept in _up
@@ -3394,7 +3583,7 @@ static gboolean _pano_kept(const dt_iop_module_t *m)
   return FALSE;
 }
 
-// one frame at full size, in the camera's color with its white balance
+// one frame at full size (or bounded by max_edge for a preview), in the camera's color with its white balance
 // divided out again, through an export pipe as
 // dt_imageio_export_with_flags() builds one, with the modules _pano_keep
 // leaves out switched off after the history is replayed. lens correction
@@ -3402,8 +3591,10 @@ static gboolean _pano_kept(const dt_iop_module_t *m)
 // lens's distortion gone, and one the user turned off (after DxO PureRAW)
 // stays off. `first` is the first frame's image, filled in by its call:
 // every other must come from the same camera, as the DNG has one color
-// matrix
-static gboolean _pano_frame(pano_t *p, const dt_imgid_t imgid, dt_image_t *first, char **err)
+// matrix. With rendered inputs, colorin and colorout instead convert all
+// frames to linear Rec.2020 and white balance stays applied.
+static gboolean _pano_frame(pano_t *p, const dt_imgid_t imgid, dt_image_t *first, const gboolean rendered,
+                             const int max_edge, char **err)
 {
   dt_develop_t dev;
   dt_dev_init(&dev, FALSE);
@@ -3417,14 +3608,14 @@ static gboolean _pano_frame(pano_t *p, const dt_imgid_t imgid, dt_image_t *first
     *err = g_strdup_printf("cannot read '%s'", img->filename);
     goto early;
   }
-  if(!dt_image_is_raw(img) || (img->flags & DT_IMAGE_4BAYER))
+  if(img->flags & DT_IMAGE_4BAYER)
   {
-    *err = g_strdup_printf("'%s' is not a raw photo; Panorama Merge takes raws only", img->filename);
+    *err = g_strdup_printf("'%s' uses an unsupported four-color sensor", img->filename);
     goto early;
   }
   if(!dt_is_valid_imgid(first->id))
     *first = *img;
-  else if(g_strcmp0(first->camera_makermodel, img->camera_makermodel))
+  else if(!rendered && g_strcmp0(first->camera_makermodel, img->camera_makermodel))
   {
     *err = g_strdup_printf("'%s' is from another camera than '%s'", img->filename, first->filename);
     goto early;
@@ -3435,6 +3626,8 @@ static gboolean _pano_frame(pano_t *p, const dt_imgid_t imgid, dt_image_t *first
     *err = g_strdup("not enough memory for the photo");
     goto early;
   }
+  if(rendered)
+    dt_dev_pixelpipe_set_icc(&pipe, DT_COLORSPACE_LIN_REC2020, "", DT_INTENT_RELATIVE_COLORIMETRIC);
   gboolean lens_set = FALSE;
   for(GList *l = dev.history; l && l != g_list_nth(dev.history, dev.history_end); l = g_list_next(l))
     lens_set |= !g_strcmp0(((dt_dev_history_item_t *)l->data)->op_name, "lens");
@@ -3445,7 +3638,9 @@ static gboolean _pano_frame(pano_t *p, const dt_imgid_t imgid, dt_image_t *first
   for(GList *n = pipe.nodes; n; n = g_list_next(n))
   {
     dt_dev_pixelpipe_iop_t *piece = n->data;
-    if(!_pano_kept(piece->module))
+    if(!_pano_kept(piece->module)
+       && !(rendered && (!g_strcmp0(piece->module->op, "colorin")
+                         || !g_strcmp0(piece->module->op, "colorout"))))
       piece->enabled = FALSE;
     else if(!lens_set && !g_strcmp0(piece->module->op, "lens"))
       piece->enabled = TRUE;
@@ -3453,11 +3648,14 @@ static gboolean _pano_frame(pano_t *p, const dt_imgid_t imgid, dt_image_t *first
   // the white balance temperature applied (its commit_params), divided out
   float unbalance[3];
   for(int c = 0; c < 3; c++)
-    unbalance[c] = dev.chroma.wb_coeffs[c] > 0.0f ? 1.0f / dev.chroma.wb_coeffs[c] : 1.0f;
+    unbalance[c] = !rendered && dev.chroma.wb_coeffs[c] > 0.0f ? 1.0f / dev.chroma.wb_coeffs[c] : 1.0f;
   dt_dev_pixelpipe_get_dimensions(&pipe, &dev, pipe.iwidth, pipe.iheight, &pipe.processed_width,
                                   &pipe.processed_height);
-  const int w = pipe.processed_width, h = pipe.processed_height;
-  if(dt_dev_pixelpipe_process_no_gamma(&pipe, &dev, 0, 0, w, h, 1.0) || !pipe.backbuf)
+  const float scale = max_edge > 0
+    ? fminf(1.0f, (float)max_edge / MAX(pipe.processed_width, pipe.processed_height)) : 1.0f;
+  const int w = MAX(1, (int)(pipe.processed_width * scale));
+  const int h = MAX(1, (int)(pipe.processed_height * scale));
+  if(dt_dev_pixelpipe_process_no_gamma(&pipe, &dev, 0, 0, w, h, scale) || !pipe.backbuf)
     *err = g_strdup_printf("cannot render '%s'", img->filename);
   else
   {
@@ -3488,7 +3686,9 @@ static void _pano_written(const int done, const int total, void *data)
   _merge_report(data, "writing the DNG", done, total, TRUE);
 }
 
-// Photo Merge › Panorama: the raws `imgids` stitched (pano.cc) into a DNG
+static gboolean _positive_import(const char *path, JsonBuilder *b, char **err);
+
+// Photo Merge › Panorama: the photos `imgids` stitched (pano.cc) into a DNG
 // beside the first, <name>-pano.dng or -pano_01.dng..., that opens as the
 // first did (dng.c), with its EXIF. `projection` is "auto", "spherical",
 // "cylindrical" or "perspective"; `crop` cuts the edges the frames leave
@@ -3496,6 +3696,8 @@ static void _pano_written(const int done, const int total, void *data)
 // on the export thread, as HDR Merge
 static gboolean _pano_merge(JsonObject *req, JsonBuilder *b, FILE *out, char **err)
 {
+  const gboolean preview = !g_strcmp0(json_object_get_string_member_with_default(req, "cmd", ""),
+                                      "pano_preview");
   JsonArray *ids = json_object_has_member(req, "imgids") ? json_object_get_array_member(req, "imgids") : NULL;
   GList *imgids = NULL;
   for(guint k = 0; ids && k < json_array_get_length(ids); k++)
@@ -3519,6 +3721,18 @@ static gboolean _pano_merge(JsonObject *req, JsonBuilder *b, FILE *out, char **e
   for(size_t k = 0; k < G_N_ELEMENTS(projections); k++)
     if(!g_strcmp0(asked, projections[k].name)) projection = projections[k].type;
 
+  // A selection containing rendered photos uses one common linear space,
+  // including any RAW frames in that selection.
+  gboolean rendered = preview;
+  for(GList *l = imgids; l; l = g_list_next(l))
+  {
+    const dt_image_t *img = dt_image_cache_get(GPOINTER_TO_INT(l->data), 'r');
+    if(img)
+    {
+      rendered |= !dt_image_is_raw(img);
+      dt_image_cache_read_release(img);
+    }
+  }
   const gint64 t0 = g_get_monotonic_time();
   const dt_imgid_t first = GPOINTER_TO_INT(imgids->data);
   dt_image_t first_img = { 0 };
@@ -3535,9 +3749,35 @@ static gboolean _pano_merge(JsonObject *req, JsonBuilder *b, FILE *out, char **e
       ok = FALSE;
     }
     else
-      ok = _pano_frame(p, GPOINTER_TO_INT(l->data), &first_img, err);
+      ok = _pano_frame(p, GPOINTER_TO_INT(l->data), &first_img, rendered, preview ? 1280 : 0, err);
   }
   g_list_free(imgids);
+  if(preview)
+  {
+    pano_preview_t result = { 0 };
+    ok = ok && pano_preview(p, projection, _pano_step, &progress, &result, err);
+    pano_free(p);
+    if(!ok) return FALSE;
+    gchar *rgba = g_base64_encode(result.rgba, (gsize)result.width * result.height * 4);
+    g_free(result.rgba);
+    json_builder_set_member_name(b, "rgba");
+    json_builder_add_string_value(b, rgba);
+    g_free(rgba);
+    json_builder_set_member_name(b, "width");
+    json_builder_add_int_value(b, result.width);
+    json_builder_set_member_name(b, "height");
+    json_builder_add_int_value(b, result.height);
+    json_builder_set_member_name(b, "used");
+    json_builder_add_int_value(b, result.used);
+    json_builder_set_member_name(b, "projection");
+    for(size_t k = 0; k < G_N_ELEMENTS(projections); k++)
+      if(projections[k].type == result.projection) json_builder_add_string_value(b, projections[k].name);
+    json_builder_set_member_name(b, "crop");
+    json_builder_begin_array(b);
+    for(int k = 0; k < 4; k++) json_builder_add_int_value(b, result.crop[k]);
+    json_builder_end_array(b);
+    return TRUE;
+  }
   int w = 0, h = 0, used = 0;
   float *rgb = ok ? pano_stitch(p, projection, json_object_get_boolean_member_with_default(req, "crop", TRUE),
                                 _pano_step, &progress, &w, &h, &used, err)
@@ -3563,8 +3803,10 @@ static gboolean _pano_merge(JsonObject *req, JsonBuilder *b, FILE *out, char **e
   // written under another name and renamed once whole, so a folder read
   // meanwhile never imports half of it. too late to stop by then
   gchar *part = g_strdup_printf("%s.part", pathname);
-  ok = !dng_write_linear_half(part, rgb, w, h, &first_img, exif, exif_len, _pano_written, &progress)
-       && !g_rename(part, pathname);
+  ok = !(rendered
+    ? dng_write_rendered_rgb_half(part, rgb, w, h, exif, exif_len, _pano_written, &progress)
+    : dng_write_linear_half(part, rgb, w, h, &first_img, exif, exif_len, _pano_written, &progress))
+    && !g_rename(part, pathname);
   free(exif);
   g_free(rgb);
   if(!ok)
@@ -3577,18 +3819,28 @@ static gboolean _pano_merge(JsonObject *req, JsonBuilder *b, FILE *out, char **e
   }
   g_free(part);
 
-  const dt_imgid_t newid = _import(pathname);
-  if(!dt_is_valid_imgid(newid))
+  if(rendered)
   {
+    ok = _positive_import(pathname, b, err);
+    if(ok) _add_string(b, "original", original);
     g_free(original);
-    *err = g_strdup_printf("cannot import %s", pathname);
-    return FALSE;
+    if(!ok) return FALSE;
   }
-  _add_string(b, "path", pathname);
-  _add_string(b, "original", original);
-  g_free(original);
-  json_builder_set_member_name(b, "image");
-  _image_json(b, newid, FALSE);
+  else
+  {
+    const dt_imgid_t newid = _import(pathname);
+    if(!dt_is_valid_imgid(newid))
+    {
+      g_free(original);
+      *err = g_strdup_printf("cannot import %s", pathname);
+      return FALSE;
+    }
+    _add_string(b, "path", pathname);
+    _add_string(b, "original", original);
+    g_free(original);
+    json_builder_set_member_name(b, "image");
+    _image_json(b, newid, FALSE);
+  }
   json_builder_set_member_name(b, "used");
   json_builder_add_int_value(b, used);
   json_builder_set_member_name(b, "frames");
@@ -3598,6 +3850,50 @@ static gboolean _pano_merge(JsonObject *req, JsonBuilder *b, FILE *out, char **e
   return TRUE;
 }
 #endif
+
+// Give a rendered positive a persistent neutral starting history. This
+// prevents import presets, camera exposure and tone mapping from processing
+// the baked conversion twice, including after the app restarts.
+static gboolean _positive_import(const char *path, JsonBuilder *b, char **err)
+{
+  const dt_imgid_t imgid = _import(path);
+  if(!dt_is_valid_imgid(imgid))
+  {
+    *err = g_strdup_printf("wrote '%s', but could not import it", path);
+    return FALSE;
+  }
+  dt_develop_t dev;
+  dt_dev_init(&dev, FALSE);
+  dt_dev_load_image(&dev, imgid);
+  dt_dev_pop_history_items_ext(&dev, dev.history_end);
+  for(GList *l = dev.iop; l; l = g_list_next(l))
+  {
+    dt_iop_module_t *m = l->data;
+    const gboolean essential = !g_strcmp0(m->op, "rawprepare") || !g_strcmp0(m->op, "demosaic")
+      || !g_strcmp0(m->op, "temperature") || !g_strcmp0(m->op, "colorin")
+      || !g_strcmp0(m->op, "colorout") || !g_strcmp0(m->op, "gamma")
+      || !g_strcmp0(m->op, "flip") || !g_strcmp0(m->op, "scalepixels");
+    if(m->enabled && !essential)
+    {
+      m->enabled = FALSE;
+      dt_dev_add_history_item_ext(&dev, m, FALSE, TRUE);
+    }
+  }
+  dt_dev_write_history_ext(&dev, imgid);
+  dt_dev_cleanup(&dev);
+  dt_history_hash_write_from_history(imgid, DT_HISTORY_HASH_AUTO | DT_HISTORY_HASH_CURRENT);
+  if(_write_sidecar(imgid))
+  {
+    *err = g_strdup_printf("wrote '%s', but could not save its starting history", path);
+    return FALSE;
+  }
+  dt_mipmap_cache_remove(imgid);
+  json_builder_set_member_name(b, "path");
+  json_builder_add_string_value(b, path);
+  json_builder_set_member_name(b, "image");
+  _image_json(b, imgid, FALSE);
+  return TRUE;
+}
 
 static void _export_run(gpointer data, gpointer user_data)
 {
@@ -3617,14 +3913,18 @@ static void _export_run(gpointer data, gpointer user_data)
   else if(!g_strcmp0(cmd, "hdr_merge"))
     ok = _hdr_merge(req, b, out, &err);
 #ifdef HAVE_PANO
-  else if(!g_strcmp0(cmd, "pano_merge"))
+  else if(!g_strcmp0(cmd, "pano_merge") || !g_strcmp0(cmd, "pano_preview"))
     ok = _pano_merge(req, b, out, &err);
 #endif
   else
   {
     const dt_imgid_t snap = _hold_take(job, json_object_get_int_member_with_default(req, "imgid", 0));
     if(dt_is_valid_imgid(snap))
+    {
       ok = _export(snap, req, &err);
+      if(ok && json_object_get_boolean_member_with_default(req, "negative_copy", FALSE))
+        ok = _positive_import(json_object_get_string_member(req, "out"), b, &err);
+    }
     else
     {
       ok = FALSE;
@@ -4967,8 +5267,10 @@ static gboolean _denoise_write(const dt_restore_sensor_class_t cls, const dt_ima
   const int exif_len = dt_exif_read_blob(&exif, src, imgid, FALSE, w, h, TRUE);
   dt_imageio_dng_preview_t preview = { 0 };
   uint8_t *jpeg = _denoise_preview(src, &preview);
-  const int res = cfa ? dt_imageio_dng_write_cfa_bayer(out, cfa, w, h, meta, exif, exif_len, jpeg ? &preview : NULL)
-                      : dt_imageio_dng_write_linear(out, rgb, w, h, meta, exif, exif_len, jpeg ? &preview : NULL);
+  int res = cfa ? dt_imageio_dng_write_cfa_bayer(out, cfa, w, h, meta, NULL, 0, jpeg ? &preview : NULL)
+                : dt_imageio_dng_write_linear(out, rgb, w, h, meta, NULL, 0, jpeg ? &preview : NULL);
+  if(!res && !rendered_metadata(out, exif, exif_len, TRUE)) res = 1;
+  if(!res && !denoised_metadata(out)) res = 1;
   g_free(jpeg);
   free(exif);
   g_free(cfa);
@@ -4979,10 +5281,6 @@ static gboolean _denoise_write(const dt_restore_sensor_class_t cls, const dt_ima
     *err = g_strdup_printf("cannot write %s", out);
     return FALSE;
   }
-  // after the writer, which merges the source's exif in over an earlier
-  // stamp. darktable then skips its auto-applied denoise presets on the
-  // file, which keeps the raw's ISO (develop.c, _dev_auto_apply_presets)
-  dt_exif_xmp_write_neural_restore(out, "raw-denoise");
   return TRUE;
 }
 
@@ -6364,7 +6662,7 @@ static void _object_close(JsonBuilder *b, JsonBuilder **edge, JsonBuilder **plai
     json_builder_set_member_name(b, "range");
     json_builder_begin_array(b);
     for(int i = 0; i < 4; i++)
-      json_builder_add_double_value(b, pp->blendif_parameters[4 * ch + i] * exp2f(pp->blendif_boost_factors[ch]));
+      json_builder_add_double_value(b, (double)pp->blendif_parameters[4 * ch + i] * exp2(pp->blendif_boost_factors[ch]));
     json_builder_end_array(b);
     _object_run_close(b, "paths", edge);
     _object_run_close(b, "plain", plain);
@@ -8553,6 +8851,10 @@ static void _handle(JsonObject *req, FILE *out)
   {
     if(!_keywords_set(json_object_get_int_member_with_default(req, "imgid", 0), req, b, &err)) goto fail;
   }
+  else if(!g_strcmp0(cmd, "capture_times"))
+  {
+    if(!_capture_times(req, b, &err)) goto fail;
+  }
   else if(!g_strcmp0(cmd, "meta_set"))
   {
     if(!_meta_set(json_object_get_int_member_with_default(req, "imgid", 0), req, &err)) goto fail;
@@ -8617,7 +8919,7 @@ static void _handle(JsonObject *req, FILE *out)
     if(!_hdr_merge(req, b, NULL, &err)) goto fail;
   }
 #ifdef HAVE_PANO
-  else if(!g_strcmp0(cmd, "pano_merge"))
+  else if(!g_strcmp0(cmd, "pano_merge") || !g_strcmp0(cmd, "pano_preview"))
   {
     if(!_pano_merge(req, b, NULL, &err)) goto fail;
   }
@@ -9103,7 +9405,7 @@ static char _end_of_input[] = "";
 // client while it waits on a base's reply) stops that base at once, and a
 // `merge_cancel` a merge before its next photo. neither gets a reply. a
 // tagged `thumb` goes to the thumbnail threads (_thumb_run), a tagged
-// `export`, `export_release`, `hdr_merge` or `pano_merge` to the export
+// `export`, `export_release`, `hdr_merge`, `pano_merge` or `pano_preview` to the export
 // thread (_export_run), a tagged `import` to the import thread (_import_run);
 // every other line goes to the main loop, in order. a tagged `ai_denoise`,
 // `ai_object`, `ai_mask` or `ai_depth` is among them: the main loop
@@ -9145,7 +9447,8 @@ static gpointer _read_requests(gpointer data)
           taken = TRUE;
         }
         else if((!g_strcmp0(cmd, "export") || !g_strcmp0(cmd, "export_release")
-                 || !g_strcmp0(cmd, "hdr_merge") || !g_strcmp0(cmd, "pano_merge"))
+                 || !g_strcmp0(cmd, "hdr_merge") || !g_strcmp0(cmd, "pano_merge")
+                 || !g_strcmp0(cmd, "pano_preview"))
                 && json_object_has_member(req, "tag"))
         {
           fprintf(stderr, "[engine] export %.*s\n", (int)strcspn(line->str, "\r\n"), line->str);
@@ -9258,7 +9561,15 @@ int main(int argc, char **argv)
     {
       JsonObject *req = json_node_get_object(json_parser_get_root(parser));
       quit = !g_strcmp0(json_object_get_string_member_with_default(req, "cmd", ""), "quit");
+      const gboolean cache_trace = json_object_get_boolean_member_with_default(req, "cache_trace", FALSE);
+      dt_dev_pixelpipe_cache_trace_set(cache_trace);
+      if(cache_trace)
+        fprintf(stderr, "[engine-cache] begin %" G_GINT64_FORMAT " %s\n",
+                json_object_get_int_member_with_default(req, "diagnostic_request", 0),
+                json_object_get_string_member_with_default(req, "cmd", ""));
       _handle(req, out);
+      if(cache_trace) fprintf(stderr, "[engine-cache] end\n");
+      dt_dev_pixelpipe_cache_trace_set(FALSE);
     }
     else
       _reply_error(out, "request is not a JSON object");

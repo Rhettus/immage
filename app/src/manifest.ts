@@ -339,6 +339,52 @@ const clarityMap = (id: string): ModuleMap => ({
   },
 });
 
+const DETAIL_FIELDS = [
+  ["gain_coarse", "Coarse details", -1, 5, 0, 0.01],
+  ["gain_medium", "Medium details", -1, 5, 0, 0.01],
+  ["gain_fine", "Fine details", -1, 5, 0, 0.01],
+  ["detail_level", "Base detail level", 1, 15, 5, 0.01],
+  ["halo_control", "Halo control", -10, 10, 0, 0.01],
+  ["noise_bias", "Noise bias", 0, 1, 0.001, 0.0001],
+  ["gain_shadows", "Shadows", -5, 5, 0, 0.01],
+  ["gain_highlights", "Highlights", -5, 5, 0, 0.01],
+] as const;
+export const detailControlIds = (prefix: string) => DETAIL_FIELDS.map(([field]) => `${prefix}_${field}`);
+const detailControls = (prefix: string, label: string): Control[] =>
+  DETAIL_FIELDS.map(([field, name, min, max, neutral, step]) => ({
+    id: `${prefix}_${field}`, label: `${label}: ${name}`, min, max, neutral, step,
+    format: plain(field === "noise_bias" ? 4 : 2),
+  }));
+
+// separate instances let Clarity and Texture choose their modules independently
+const detailMap = (prefix: string, texture: boolean): ModuleMap => ({
+  op: texture ? "contrastntexture#texture" : "contrastntexture",
+  keepOn: false,
+  controls: detailControlIds(prefix),
+  fields: DETAIL_FIELDS.map(([field]) => field),
+  read: (p) => Object.fromEntries(DETAIL_FIELDS.map(([field]) => [`${prefix}_${field}`, p[field]])),
+  write: (v) => Object.fromEntries(DETAIL_FIELDS.map(([field, , , , neutral]) =>
+    [field, v[`${prefix}_${field}`] ?? neutral])),
+  enabled: (v) => DETAIL_FIELDS.some(([field]) => field.startsWith("gain_") && (v[`${prefix}_${field}`] ?? 0) !== 0),
+});
+
+// Native contrast equalizer: five channels with six spatial-frequency bands.
+export const EQ_CHANNELS = ["Luminance", "Chroma", "Edges", "Luminance noise", "Chroma noise"];
+export const EQ_IDS = EQ_CHANNELS.flatMap((_, c) => Array.from({ length: 6 }, (_, k) => `ce_${c}_${k}`));
+const equalizerControls: Control[] = EQ_IDS.map((id, i) => ({
+  id, label: "Contrast equalizer", min: 0, max: 1, step: 0.001,
+  neutral: Math.floor(i / 6) < 3 ? 0.5 : 0, format: plain(3),
+}));
+const equalizerMap: ModuleMap = {
+  op: "atrous", keepOn: false,
+  controls: EQ_IDS,
+  enabled: (v) => EQ_IDS.some((id, i) => Math.abs((v[id] ?? (i < 18 ? 0.5 : 0)) - (i < 18 ? 0.5 : 0)) > 1e-6),
+  fields: EQ_IDS.map((_, i) => `y[${Math.floor(i / 6)}][${i % 6}]`),
+  read: (p) => Object.fromEntries(EQ_IDS.map((id, i) => [id, p[`y[${Math.floor(i / 6)}][${i % 6}]`]])),
+  write: (v) => Object.fromEntries(EQ_IDS.map((id, i) =>
+    [`y[${Math.floor(i / 6)}][${i % 6}]`, v[id] ?? (i < 18 ? 0.5 : 0)])),
+};
+
 // Sharpening: darktable's "sharpness | normal" diffusion preset
 // (diffuse.c) but for the iterations, radius span and edge sensitivity,
 // which the sliders set
@@ -383,8 +429,9 @@ const shared = (value: number, op: string, name: string, preferred: boolean): Mo
   ({ value, op, name, preferred, controls: [], localControls: [] });
 export const MODULE_CHOICES: ModuleChoice[] = [
   {
-    id: "contrast", label: "Contrast", control: "mod_contrast", covers: ["contrast"],
-    options: [shared(MOD_TM, "agx", "AgX", true), shared(MOD_CBRGB, "colorbalancergb", "color balance rgb", false)],
+    id: "contrast", label: "Contrast", control: "mod_contrast", covers: ["contrast", ...EQ_IDS],
+    options: [shared(MOD_TM, "agx", "AgX", true), shared(MOD_CBRGB, "colorbalancergb", "color balance rgb", false),
+      { ...shared(2, "atrous", "contrast equalizer", false), controls: EQ_IDS }],
   },
   {
     id: "tone_regions", label: "Highlights and Shadows", control: "mod_tone",
@@ -404,6 +451,22 @@ export const MODULE_CHOICES: ModuleChoice[] = [
     id: "bw", label: "Black & White", control: "mod_bw", covers: ["bw_mode"],
     options: [shared(MOD_BW_CALIBRATION, "channelmixerrgb#bw", "color calibration", true),
               shared(MOD_BW_EQUALIZER, "colorequal", "color equalizer", false)],
+  },
+  {
+    id: "clarity", label: "Clarity", control: "mod_clarity",
+    options: [
+      { ...shared(0, "bilat", "local contrast", true), controls: ["clarity"], localControls: ["l_clarity"] },
+      { ...shared(1, "contrastntexture", "contrast & texture", false),
+        controls: detailControlIds("detail_clarity"), localControls: detailControlIds("l_detail_clarity") },
+    ],
+  },
+  {
+    id: "texture", label: "Texture", control: "mod_texture",
+    options: [
+      { ...shared(0, "diffuse", "diffuse or sharpen", true), controls: ["texture"], localControls: ["l_texture"] },
+      { ...shared(1, "contrastntexture#texture", "contrast & texture", false),
+        controls: detailControlIds("detail_texture"), localControls: detailControlIds("l_detail_texture") },
+    ],
   },
   {
     id: "sharpening", label: "Sharpening", control: "mod_sharpening",
@@ -436,6 +499,7 @@ const optionOf = new Map(MODULE_CHOICES.flatMap((c) => c.options.flatMap((o) =>
 // whether a slider is one of the photo's modules' (or belongs to no choice)
 export const choiceShows = (id: string, v: Values) => {
   const at = optionOf.get(id);
+  if (id === "contrast" && v.mod_contrast === 2) return false;
   return !at || v[at.choice.control] === at.option.value;
 };
 export const choiceOn = (m: ModuleMap, v: Values) =>
@@ -959,6 +1023,7 @@ export const modules: ModuleMap[] = [
     }),
     write: (v, d) => ({ black: d.black + bend(v.blacks, BLACKS_POWER) * BLACKS_SCALE * 2 ** -v.exposure }),
   },
+  chosen(equalizerMap, "mod_contrast", 2),
   linear("colorbalancergb", false, [{ id: "vibrance", field: "vibrance", scale: 0.01, base: 0 }]),
   chosen(linear("colorbalancergb", false, [{ id: "contrast", field: "contrast", scale: 0.01, base: 0 }]),
          "mod_contrast", MOD_CBRGB),
@@ -1094,13 +1159,15 @@ export const modules: ModuleMap[] = [
     enabled: (v) => v.tm_mode === 1,
   },
   {
-    op: "diffuse", keepOn: false,
-    controls: ["texture"],
+    op: "diffuse", keepOn: false, choice: { control: "mod_texture", value: 0 },
+    controls: ["texture", "mod_texture"],
     fields: [...Object.keys(TEXTURE_SPEEDS), ...Object.keys(TEXTURE_FIXED)],
-    read: (p) => ({ texture: textureRead(p) }),
+    read: (p) => ({ texture: textureRead(p), mod_texture: 0 }),
     write: (v) => textureWrite(v.texture),
   },
-  clarityMap("clarity"),
+  chosen(clarityMap("clarity"), "mod_clarity", 0),
+  chosen(detailMap("detail_clarity", false), "mod_clarity", 1),
+  chosen(detailMap("detail_texture", true), "mod_texture", 1),
   linear("hazeremoval", false, [{ id: "dehaze", field: "strength", scale: 0.01, base: 0 }]),
 
   {
@@ -1279,6 +1346,14 @@ export const modules: ModuleMap[] = [
     enabled: (v) => v.lens_profile === 1,
   },
   {
+    op: "cacorrectrgb", keepOn: false,
+    controls: ["defringe_amount", "defringe_radius"],
+    fields: ["strength", "radius"],
+    read: (p) => ({ defringe_amount: p.strength * 25, defringe_radius: p.radius }),
+    write: (v) => ({ strength: v.defringe_amount / 25, radius: v.defringe_radius }),
+    enabled: (v) => v.defringe_amount > 0,
+  },
+  {
     op: "hotpixels", keepOn: false,
     controls: ["hp_enable", "hp_strength", "hp_threshold"],
     fields: ["strength", "threshold"],
@@ -1361,6 +1436,7 @@ export const panels: Panel[] = [
         controls: [
           { id: "exposure", label: "Exposure", min: -5, max: 5, step: 0.01, format: signed(2) },
           lr("contrast", "Contrast"),
+          ...equalizerControls,
           lr("highlights", "Highlights"),
           lr("shadows", "Shadows"),
           lr("whites", "Whites"),
@@ -1371,7 +1447,9 @@ export const panels: Panel[] = [
         title: "Presence",
         controls: [
           lr("texture", "Texture"),
+          ...detailControls("detail_texture", "Texture"),
           lr("clarity", "Clarity"),
+          ...detailControls("detail_clarity", "Clarity"),
           lr("dehaze", "Dehaze"),
           lr("vibrance", "Vibrance", { track: GLOBAL_SAT_TRACK }),
           lr("saturation", "Saturation", { track: GLOBAL_SAT_TRACK }),
@@ -1491,6 +1569,15 @@ export const panels: Panel[] = [
           { ...toggle("lens_profile", "Enable Profile Corrections", 0),
             note: "uses the lens darktable detects through lensfun" },
           toggle("lens_ca", "Remove Chromatic Aberration", 1),
+        ],
+      },
+      {
+        title: "Defringe",
+        controls: [
+          { id: "defringe_amount", label: "Amount", min: 0, max: 100, step: 1, neutral: 0,
+            format: plain(0), note: "higher corrects more fringing but can wash out colors; zero switches correction off" },
+          { id: "defringe_radius", label: "Radius", min: 1, max: 500, step: 1, neutral: 5,
+            format: plain(0, " px"), note: "increase until the color fringes disappear" },
         ],
       },
       {
@@ -1698,9 +1785,9 @@ export const mapsWith = (id: string) => modules.filter((m) => m.controls.include
 
 // darktable's names for the modules, as its darkroom lists them
 const MODULE_NAMES: Record<string, string> = {
-  agx: "AgX", ashift: "rotate and perspective", bilat: "local contrast", channelmixerrgb: "color calibration",
+  atrous: "contrast equalizer", agx: "AgX", ashift: "rotate and perspective", bilat: "local contrast", channelmixerrgb: "color calibration",
   cacorrectrgb: "chromatic aberrations", colorbalancergb: "color balance rgb", colorequal: "color equalizer",
-  crop: "crop", defringe: "defringe", demosaic: "demosaic", negadoctor: "negadoctor",
+  contrastntexture: "contrast & texture", crop: "crop", defringe: "defringe", demosaic: "demosaic", negadoctor: "negadoctor",
   denoiseprofile: "denoise (profiled)", diffuse: "diffuse or sharpen", exposure: "exposure", flip: "orientation",
   grain: "grain", hazeremoval: "haze removal", hotpixels: "hot pixels", lens: "lens correction", rgbcurve: "rgb curve",
   shadhi: "shadows and highlights", sharpen: "sharpen", sigmoid: "sigmoid", tonecurve: "tone curve",
@@ -1762,13 +1849,16 @@ export const LOCAL_CONTROLS: Control[] = [
   { ...lr("l_tint", "Tint"), track: "linear-gradient(90deg, #4caf50, #e8e3d0, #d05fd0)" },
   { id: "l_exposure", label: "Exposure", min: -4, max: 4, step: 0.01, neutral: 0, format: signed(2) },
   lr("l_contrast", "Contrast"),
+  ...equalizerControls,
   { id: "l_fulcrum", label: "Contrast pivot", min: -6, max: 6, step: 0.1, neutral: 0, format: signed(1, " EV") },
   lr("l_highlights", "Highlights"),
   lr("l_shadows", "Shadows"),
   lr("l_whites", "Whites"),
   lr("l_blacks", "Blacks"),
   lr("l_texture", "Texture"),
+  ...detailControls("l_detail_texture", "Texture"),
   lr("l_clarity", "Clarity"),
+  ...detailControls("l_detail_clarity", "Clarity"),
   lr("l_dehaze", "Dehaze"),
   { ...lr("l_hue", "Hue"), track: hueRamp(0, 180) },
   lr("l_saturation", "Saturation"),
@@ -1782,7 +1872,16 @@ export const LOCAL_CONTROLS: Control[] = [
   ...RANGES.flatMap(([r]) => gradingControls("l_cg", r)),
 ].map((c) => ({ neutral: 0, ...c }));
 
+const localBalanceMap = withFulcrum(linear("colorbalancergb", false, [
+  { id: "l_contrast", field: "contrast", scale: 0.01, base: 0 },
+  { id: "l_saturation", field: "saturation_global", scale: 0.01, base: 0 },
+  { id: "l_whites", field: "brilliance_highlights", scale: 0.004, base: 0 },
+  { id: "l_hue", field: "hue_angle", scale: 0.3, base: 0 },
+  ...gradingFields("l_cg"),
+]));
+
 export const localMaps: ModuleMap[] = [
+  { ...equalizerMap, choice: { control: "mod_contrast", value: 2 } },
   {
     op: "channelmixerrgb", keepOn: false,
     controls: ["l_temp", "l_tint"],
@@ -1806,13 +1905,9 @@ export const localMaps: ModuleMap[] = [
   // a zone mask sets it to its zones' middle (ZoneSystem.tsx)
   // some 30 ms a mask's draft frame, so its masks share instances
   {
-    ...withFulcrum(linear("colorbalancergb", false, [
-      { id: "l_contrast", field: "contrast", scale: 0.01, base: 0 },
-      { id: "l_saturation", field: "saturation_global", scale: 0.01, base: 0 },
-      { id: "l_whites", field: "brilliance_highlights", scale: 0.004, base: 0 },
-      { id: "l_hue", field: "hue_angle", scale: 0.3, base: 0 },
-      ...gradingFields("l_cg"),
-    ])),
+    ...localBalanceMap,
+    write: (v, d, c) => localBalanceMap.write(
+      { ...v, l_contrast: v.mod_contrast === 2 ? 0 : v.l_contrast }, d, c),
     merge: true,
     fixed: ["l_hue", "l_fulcrum", ...RANGES.map(([r]) => `l_cg_${r}_hue`)],
   },
@@ -1828,7 +1923,7 @@ export const localMaps: ModuleMap[] = [
     merge: true,
     fixed: BANDS.map(([b]) => `l_hsl_hue_${b}`),
   },
-  // Highlights and Shadows as the photo's are: the tone equalizer, or
+  // Highlights and Shadows on the mask's chosen tone equalizer, or
   // shadows and highlights
   {
     ...linear("shadhi", false, [
@@ -1848,13 +1943,15 @@ export const localMaps: ModuleMap[] = [
   // some 40 ms a mask's draft frame, so its masks share instances: the
   // speeds follow the slider in proportion, as a mask's strength scales them
   {
-    op: "diffuse", keepOn: false, merge: true,
+    op: "diffuse", keepOn: false, merge: true, choice: { control: "mod_texture", value: 0 },
     controls: ["l_texture"],
     fields: [...Object.keys(TEXTURE_SPEEDS), ...Object.keys(TEXTURE_FIXED)],
     read: (p) => ({ l_texture: textureRead(p) }),
     write: (v) => textureWrite(v.l_texture),
   },
-  clarityMap("l_clarity"),
+  { ...clarityMap("l_clarity"), choice: { control: "mod_clarity", value: 0 } },
+  { ...detailMap("l_detail_clarity", false), choice: { control: "mod_clarity", value: 1 } },
+  { ...detailMap("l_detail_texture", true), choice: { control: "mod_texture", value: 1 } },
   linear("hazeremoval", false, [{ id: "l_dehaze", field: "strength", scale: 0.01, base: 0 }]),
   {
     // as the global Noise Reduction: darktable's strength 1.0 at 50. Some
@@ -1908,3 +2005,12 @@ export const localControlById = new Map(LOCAL_CONTROLS.map((c) => [c.id, c]));
 export const localMapOf = new Map(localMaps.flatMap((m) => m.controls.map((id) => [id, m] as const)));
 // the fields to read back from each mask's instances
 export const localFields = () => Object.fromEntries(localMaps.map((m) => [m.op, m.fields]));
+
+// Only modules that support local adjustments are offered for masks.
+export const MASK_MODULE_CHOICES: ModuleChoice[] = MODULE_CHOICES.flatMap((c) => {
+  if (c.id === "contrast") return [{ ...c, options: c.options.filter((o) => o.value !== 0)
+    .map((o) => ({ ...o, preferred: o.value === 1 })) }];
+  const options = c.options.filter((o) => localMaps.some((m) =>
+    m.choice?.control === c.control && m.choice.value === o.value));
+  return options.length ? [{ ...c, options }] : [];
+});

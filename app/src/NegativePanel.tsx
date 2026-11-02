@@ -25,13 +25,14 @@ const PICK_HINTS: Record<NegPick, string> = {
 };
 
 export function NegativePanel({ values, disabled, converted, picking, busy, hasArea, note, renderControl,
-                                onPick, onTurnOff, onResetColor }: {
+                                onPick, onTurnOff, onResetColor, onExport, exporting, exportFormat }: {
   values: Record<string, number>; disabled: boolean; converted: boolean;
   picking: NegPick | null; busy: boolean; hasArea: boolean; note: string | null;
   renderControl: (id: string) => React.ReactNode;
   onPick: (kind: NegPick | null) => void;
   onTurnOff: () => void;
   onResetColor: () => void;
+  onExport: () => void; exporting: boolean; exportFormat: "dng" | "tiff";
 }) {
   const [advanced, setAdvanced] = useState(false);
   const off = disabled || busy;
@@ -112,6 +113,13 @@ export function NegativePanel({ values, disabled, converted, picking, busy, hasA
                 {["r", "g", "b"].map((c) => renderControl(`neg_wbh_${c}`))}
               </div>
             </Collapse>
+          </section>
+          <section>
+            <button className="btn small" disabled={off || exporting || !!picking} onClick={onExport}>
+              {exporting ? "Exporting…" : "Export to Library"}
+            </button>
+            <p className="note-plain">Creates a separate positive {exportFormat === "dng" ? "DNG" : "TIFF"} with this edit,
+              ready for the normal editing tools. Choose the format in Preferences.</p>
           </section>
           <section>
             <button className="btn small" disabled={off} onClick={onTurnOff}

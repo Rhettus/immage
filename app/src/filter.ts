@@ -18,16 +18,25 @@ export type Filter = {
   labels: number; unlabeled: boolean;
   // any of each list, as a photo has one of each; keywords all of them;
   // exposure settings as exposureLabel() writes them
-  kinds: string[]; cameras: string[]; lenses: string[]; keywords: string[];
+  kinds: string[]; cameras: string[]; bodies: string[]; lenses: string[]; keywords: string[];
   takenFrom: string; takenTo: string;       // YYYY-MM-DD, "" for open
 } & Record<ExposureKey, string[]>;
 
 export const NO_FILTER: Filter = {
-  minRating: 0, rejected: "all", edited: "all", labels: 0, unlabeled: false, kinds: [], cameras: [], lenses: [],
+  minRating: 0, rejected: "all", edited: "all", labels: 0, unlabeled: false, kinds: [], cameras: [], bodies: [], lenses: [],
   keywords: [], takenFrom: "", takenTo: "", iso: [], aperture: [], focal: [], shutter: [],
 };
 
 export const cameraOf = (i: Known) => `${i.exif.maker} ${i.exif.model}`.trim();
+
+// An empty identity is explicitly unknown; never infer a body from its lens.
+export const bodyOf = (i: Known) => i.exif.body_serial?.trim()
+  ? JSON.stringify([i.exif.maker, i.exif.model, i.exif.body_serial.trim()]) : "";
+export const bodyLabel = (key: string) => {
+  if (!key) return "Serial not recorded";
+  const [maker, model, serial] = JSON.parse(key) as string[];
+  return `${`${maker} ${model}`.trim()} · Serial ${serial}`;
+};
 
 // the exposure value each setting reads; 0 where the camera did not record it
 const value = (i: Known, k: ExposureKey) =>
@@ -56,6 +65,7 @@ export const passes = (i: Known, f: Filter) =>
   // label filters admit an image carrying any of the chosen labels
   && ((!f.labels && !f.unlabeled) || (i.labels & f.labels) !== 0 || (f.unlabeled && i.labels === 0))
   && (!f.cameras.length || f.cameras.includes(cameraOf(i)))
+  && (!f.bodies.length || f.bodies.includes(bodyOf(i)))
   && (!f.lenses.length || f.lenses.includes(i.exif.lens))
   && f.keywords.every((k) => hasKeyword(i, k))
   && (!f.takenFrom || (!!takenAt(i) && day(i) >= f.takenFrom))
@@ -64,7 +74,7 @@ export const passes = (i: Known, f: Filter) =>
 
 // the popup's fields in use, one each, for its button and the toolbar
 export const popupCount = (f: Filter) =>
-  [f.kinds.length, f.cameras.length, f.lenses.length, f.keywords.length, f.takenFrom || f.takenTo]
+  [f.rejected !== "all", f.kinds.length, f.cameras.length, f.bodies.length, f.lenses.length, f.keywords.length, f.takenFrom || f.takenTo]
     .filter(Boolean).length + EXPOSURE.filter((k) => f[k].length).length;
 
 // whether the filter asks for what only reading the file tells: everything
@@ -74,7 +84,7 @@ export const needsRead = (f: Filter) =>
   || popupCount(f) > (f.kinds.length ? 1 : 0);
 
 export type Facets = {
-  kinds: [string, number][]; cameras: [string, number][]; lenses: [string, number][];
+  kinds: [string, number][]; cameras: [string, number][]; bodies: [string, number][]; lenses: [string, number][];
   keywords: [string, number][];
   months: [string, number][];              // YYYY-MM, newest first
 } & Record<ExposureKey, [string, number][]>;
@@ -105,6 +115,11 @@ export function facets(images: ImageEntry[]): Facets {
   };
   return {
     kinds, cameras: byName(counted(images.map(cameraOf))), lenses: byName(counted(images.map((i) => i.exif.lens))),
+    bodies: byName(images.reduce((m, i) => {
+      const key = bodyOf(i);
+      m.set(key, (m.get(key) ?? 0) + 1);
+      return m;
+    }, new Map<string, number>())),
     keywords: byName(keywords),
     months: [...counted(images.map((i) => takenAt(i) && day(i).slice(0, 7)))].sort(([a], [b]) => b.localeCompare(a)),
     iso: settings("iso"), aperture: settings("aperture"), focal: settings("focal"), shutter: settings("shutter"),

@@ -103,3 +103,7 @@ comes back the next time its folder is shown. Immage stops waiting when
 the stack is saved or closed in Macro Studio, when you click **Stop
 waiting**, or if Macro Studio doesn't start or stops responding.
 
+
+The first returned result opens automatically when **Open generated photos**
+is enabled in Preferences › General › Workspace. Turn it off to keep editing
+the current photo and open the result from its completion notification.

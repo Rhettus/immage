@@ -79,6 +79,16 @@ export function storeNegWarn(on: boolean) {
   try { localStorage.setItem(NEG_WARN_KEY, on ? "1" : "0"); } catch { /* not kept */ }
 }
 
+export type NegativeExportFormat = "dng" | "tiff";
+const NEG_EXPORT_KEY = "immage.negativeExportFormat";
+export function loadNegativeExportFormat(): NegativeExportFormat {
+  try { return localStorage.getItem(NEG_EXPORT_KEY) === "tiff" ? "tiff" : "dng"; }
+  catch { return "dng"; }
+}
+function storeNegativeExportFormat(format: NegativeExportFormat) {
+  try { localStorage.setItem(NEG_EXPORT_KEY, format); } catch { /* not kept */ }
+}
+
 // keywords a photo gets once Immage saves it as edited, and loses when it is
 // unedited again, so Immich, which reads them from the sidecar, can filter
 // on them; none unless set
@@ -113,6 +123,20 @@ function storeEditedMeta(v: EditedMeta) {
 export type Canvas = "dark" | "gray" | "white";
 // in the order L steps through them
 export const CANVASES: readonly Canvas[] = ["dark", "gray", "white"];
+const OPEN_GENERATED_KEY = "immage.openGenerated";
+export function loadOpenGenerated(): boolean {
+  try { return localStorage.getItem(OPEN_GENERATED_KEY) !== "0"; } catch { return true; }
+}
+export function storeOpenGenerated(on: boolean) {
+  try { localStorage.setItem(OPEN_GENERATED_KEY, on ? "1" : "0"); } catch { /* not kept */ }
+}
+const LOUPE_KEY = "immage.loupe";
+export function loadLoupe(): boolean {
+  try { return localStorage.getItem(LOUPE_KEY) === "1"; } catch { return false; }
+}
+export function storeLoupe(on: boolean) {
+  try { localStorage.setItem(LOUPE_KEY, on ? "1" : "0"); } catch { /* not kept */ }
+}
 const CANVAS_KEY = "immage.canvas";
 const FOCUS_MODE_KEY = "immage.focusMode";
 export function loadCanvas(): Canvas {
@@ -188,7 +212,7 @@ function storeSliderScrollStep(v: number) {
 }
 
 // how much the photo gives up while it is being edited, for speed. Quality
-// renders every frame in full; Balanced drags at half size and leaves Grain
+// renders every frame in full; Balanced defaults to half size and leaves Grain
 // and diffuse (Texture, Sharpening) out of drag frames and the idle base;
 // Performance drags at quarter size, also without denoise and HSL, and its
 // base is only the viewer's size. export is never affected
@@ -203,8 +227,19 @@ export function loadPreview(): Preview {
     return localStorage.getItem(DRAG_DRAFTS_KEY) === "0" ? "quality" : "balanced";
   } catch { return "balanced"; }
 }
-function storePreview(v: Preview) {
+export function storePreview(v: Preview) {
   try { localStorage.setItem(PREVIEW_KEY, v); } catch { /* not kept */ }
+}
+
+export const BALANCED_PREVIEW_SIZES: readonly number[] = [0.5, 0.75, 1];
+const BALANCED_SIZE_KEY = "immage.balancedPreviewSize";
+export function loadBalancedPreviewSize(): number {
+  try { const size = Number(localStorage.getItem(BALANCED_SIZE_KEY));
+    return BALANCED_PREVIEW_SIZES.includes(size) ? size : 0.5; }
+  catch { return 0.5; }
+}
+export function storeBalancedPreviewSize(v: number) {
+  try { localStorage.setItem(BALANCED_SIZE_KEY, String(v)); } catch { /* not kept */ }
 }
 
 // how long darktable may take on a drag's draft before the next is smaller,
@@ -219,7 +254,7 @@ export function loadDraftTarget(): number {
     return (DRAFT_TARGETS as readonly number[]).includes(v) ? v : 60;
   } catch { return 60; }
 }
-function storeDraftTarget(v: number) {
+export function storeDraftTarget(v: number) {
   try { localStorage.setItem(DRAFT_TARGET_KEY, String(v)); } catch { /* not kept */ }
 }
 export function loadDraftSmallest(): number {
@@ -228,7 +263,7 @@ export function loadDraftSmallest(): number {
     return (DRAFT_SMALLEST as readonly number[]).includes(v) ? v : 0.7;
   } catch { return 0.7; }
 }
-function storeDraftSmallest(v: number) {
+export function storeDraftSmallest(v: number) {
   try { localStorage.setItem(DRAFT_SMALLEST_KEY, String(v)); } catch { /* not kept */ }
 }
 
@@ -248,7 +283,7 @@ export function loadFrameCacheMb(): number {
     return (FRAME_CACHE_MB as readonly number[]).includes(v) ? v : defaultFrameCacheMb();
   } catch { return defaultFrameCacheMb(); }
 }
-function storeFrameCacheMb(v: number) {
+export function storeFrameCacheMb(v: number) {
   try { localStorage.setItem(FRAME_CACHE_KEY, String(v)); } catch { /* not kept */ }
 }
 
@@ -281,13 +316,16 @@ export function loadReadAhead(): ReadAhead {
     return { count: Number.isInteger(count) && count >= 0 && count <= READ_AHEAD_MAX ? count : 1, both: !!v?.both };
   } catch { return { count: 1, both: false }; }
 }
-function storeReadAhead(v: ReadAhead) {
+export function storeReadAhead(v: ReadAhead) {
   try { localStorage.setItem(READ_AHEAD_KEY, JSON.stringify(v)); } catch { /* not kept */ }
 }
 
 // darktable's resource level, kept by the Rust side for the engine's next
 // start (engine.rs, resource_level)
 type Resources = "small" | "default" | "large";
+type RendererMode = "auto" | "mesa" | "nvidia";
+type WebviewRenderer = { running: RendererMode; next: RendererMode; active: string;
+  external: boolean; mesa: boolean; nvidia: boolean };
 
 // a RAW+JPEG pair as one photo in the filmstrip, rated, rejected and
 // deleted together; off, each file stands alone
@@ -411,8 +449,8 @@ function LicenseText({ title, text, onClose }: { title: string; text: string; on
 }
 
 export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurrent, focus, canvas, onCanvas, overlayColor, onOverlayColor, guideColor, onGuideColor,
-                                    focusMode, onFocusMode, autoHide, onAutoHide, stackPairs, onStackPairs,
-                                    accel, plugins, onPlugins, perfHud, onPerfHud, onBenchmark, onRelaunch, onClose }: {
+                                    openGenerated, onOpenGenerated, loupe, onLoupe, focusMode, onFocusMode, autoHide, onAutoHide, stackPairs, onStackPairs,
+                                    accel, plugins, onPlugins, perfHud, onPerfHud, onBenchmark, onTune, onRelaunch, onClose }: {
   presets: Preset[];
   focus?: Tab;                           // a tab to open at
   onSaveCurrent: (() => void) | null;    // a new preset from the open photo, or null with none open
@@ -424,6 +462,10 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   onOverlayColor: (v: OverlayColor) => void;
   guideColor: GuideColor;
   onGuideColor: (v: GuideColor) => void;
+  openGenerated: boolean;
+  onOpenGenerated: (on: boolean) => void;
+  loupe: boolean;
+  onLoupe: (on: boolean) => void;
   focusMode: boolean;
   onFocusMode: (on: boolean) => void;
   autoHide: boolean;
@@ -435,6 +477,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   onPlugins: (list: PluginConfig[]) => void;
   perfHud: boolean;
   onPerfHud: (on: boolean) => void;
+  onTune: (() => void) | null;
   onBenchmark: (() => void) | null;     // null with no photo open
   onRelaunch: () => Promise<void>;       // the edit saved, then Immage started again
   onClose: () => void;
@@ -445,6 +488,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   const [profile, setProfile] = useState(loadNewPhotosProfile);
   const [autoToneNew, setAutoToneNew] = useState(loadAutoToneNew);
   const [negWarn, setNegWarn] = useState(loadNegWarn);
+  const [negativeExportFormat, setNegativeExportFormat] = useState(loadNegativeExportFormat);
   const [expCompOn, setExpCompOn] = useState(loadExposureCompOn);
   const [expCompEv, setExpCompEv] = useState(loadExposureCompEv);
   // as typed, so "-" or "1." can be on the way to a number
@@ -475,6 +519,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   const [sliderScroll, setSliderScroll] = useState(loadSliderScroll);
   const [scrollStep, setScrollStep] = useState(loadSliderScrollStep);
   const [preview, setPreview] = useState(loadPreview);
+  const [balancedSize, setBalancedSize] = useState(loadBalancedPreviewSize);
   const [sharedFrames, setSharedFrames] = useState(loadSharedFrames);
   const [atScreenScale, setAtScreenScale] = useState(loadScreenScale);
   const [draftTarget, setDraftTarget] = useState(loadDraftTarget);
@@ -498,6 +543,20 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   const chooseGpuEdits = (on: boolean) => {
     if (!gpuEdits) return;
     invoke("gpu_edits_set", { on }).then(() => setGpuEdits({ ...gpuEdits, next: on })).catch(() => {});
+  };
+  const [renderer, setRenderer] = useState<WebviewRenderer | null>(null);
+  const [rendererError, setRendererError] = useState("");
+  const [rendererSaving, setRendererSaving] = useState(false);
+  useEffect(() => { invoke<WebviewRenderer | null>("webview_renderer").then(setRenderer).catch(() => {}); }, []);
+  const chooseRenderer = async (mode: RendererMode) => {
+    if (!renderer) return;
+    setRendererSaving(true);
+    setRendererError("");
+    try {
+      await invoke("webview_renderer_set", { mode });
+      setRenderer({ ...renderer, next: mode });
+    } catch (e) { setRendererError(String(e)); }
+    finally { setRendererSaving(false); }
   };
   const [accelChoice, setAccelChoice] = useState(loadAccel);
   const chooseAccel = (v: AccelChoice) => { setAccelChoice(v); storeAccel(v); };
@@ -614,12 +673,18 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                 </PrefCard>
               </>
             )}
-            {tab === "modules" && <ModulePrefs />}
+            {tab === "modules" && <ModulePrefs focusMode={focusMode} />}
             {tab === "immich" && <ImmichPrefs />}
             {tab === "plugins" && <PluginPrefs plugins={plugins} onPlugins={onPlugins} />}
             {tab === "general" && (
               <>
               <PrefCard title="Workspace">
+                <PrefRow label="Open generated photos" hint="switch to editing after HDR or panorama merge, AI denoise, positive export, or the first result from a plugin">
+                  <PrefSwitch checked={openGenerated} onChange={onOpenGenerated} />
+                </PrefRow>
+                <PrefRow label="Detail loupe" hint="show a 100% preview in Adjustments; use its picker to inspect a point on the photo">
+                  <PrefSwitch checked={loupe} onChange={onLoupe} />
+                </PrefRow>
                 <PrefRow label="Canvas" hint="behind the photo, full screen too; neutral gray judges tones without a dark surround, white as on a print. L steps through them">
                   <div className="pref-swatches">
                     {/* the viewer's backgrounds in styles.css */}
@@ -670,6 +735,16 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                          hint="opening the Negative panel says which of Basic's tools a converted negative turns off">
                   <PrefSwitch checked={negWarn} onChange={(on) => { setNegWarn(on); storeNegWarn(on); }} />
                 </PrefRow>
+                <PrefRow label="Converted negative format"
+                         hint="Export to Library saves a separate positive with the conversion and edits baked in; both formats use lossless compression">
+                  <select className="field" aria-label="Converted negative format" value={negativeExportFormat} onChange={(e) => {
+                    const format = e.target.value as NegativeExportFormat;
+                    setNegativeExportFormat(format); storeNegativeExportFormat(format);
+                  }}>
+                    <option value="dng">DNG (16-bit float)</option>
+                    <option value="tiff">TIFF (32-bit float)</option>
+                  </select>
+                </PrefRow>
                 <PrefRow label="Scroll adjusts sliders"
                          hint="off, scrolling over the panels only scrolls them, so an edit cannot change by accident">
                   <PrefSwitch checked={sliderScroll} onChange={(on) => { setSliderScroll(on); storeSliderScroll(on); }} />
@@ -698,6 +773,27 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
             )}
             {tab === "performance" && (
               <>
+              {renderer && (
+                <PrefCard title="Interface rendering">
+                  <PrefRow label="Window renderer"
+                           hint={`draws Immage's interface; photo processing uses Edit on the GPU separately. Automatic uses the system default renderer. running: ${{ mesa: "Mesa", nvidia: "NVIDIA", system: "system default", environment: "environment override" }[renderer.active] ?? renderer.active}${renderer.external
+                             ? ". remove __EGL_VENDOR_LIBRARY_FILENAMES from the launch environment to change this"
+                             : renderer.next !== renderer.running ? ". relaunch to apply the selected renderer" : ""}`}>
+                    <div className="segmented small">
+                      {([["Automatic", "auto"], ["Mesa", "mesa"], ["NVIDIA", "nvidia"]] as const).map(([label, mode]) => (
+                        <button key={mode} className={renderer.next === mode ? "active" : ""}
+                                disabled={renderer.external || rendererSaving || (mode !== "auto" && !renderer[mode])}
+                                onClick={() => void chooseRenderer(mode)}>{label}</button>
+                      ))}
+                    </div>
+                    {renderer.next !== renderer.running && (
+                      <button className="btn small" style={{ marginLeft: 8 }} disabled={rendererSaving}
+                              onClick={() => void onRelaunch()}>Relaunch</button>
+                    )}
+                  </PrefRow>
+                  {rendererError && <p role="alert">{rendererError}</p>}
+                </PrefCard>
+              )}
               <PrefCard title="Editing">
                 <PrefRow label="Edit on the GPU"
                          hint={`renders the photo on the graphics card while you edit, as exports and the whole-photo render behind the viewer already are; off keeps edits on the CPU. without a usable GPU darktable uses the CPU either way. smaller drafts for slow sliders still apply, though on the GPU frames are seldom slow enough${gpuEdits && gpuEdits.next !== gpuEdits.running
@@ -710,7 +806,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                 <PrefRow label="Preview"
                          hint={{
                            quality: "every frame in full while you edit: the slowest, most faithful preview",
-                           balanced: "while a slider, wheel or curve moves, the photo renders at half size without grain, texture and diffuse or sharpen's sharpening, and in full on release. the zoomed-out view behind the photo leaves them out too",
+                           balanced: "while a slider, wheel or curve moves, the photo renders at the selected preview size without grain, texture and diffuse or sharpen's sharpening, and in full on release. the zoomed-out view behind the photo leaves them out too",
                            performance: "as Balanced, at quarter size while dragging and also without noise reduction and HSL; the whole-photo render behind the viewer is only the viewer's size",
                          }[preview]}>
                   <div className="segmented small">
@@ -720,7 +816,18 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                     ))}
                   </div>
                 </PrefRow>
-                {preview !== "quality" && (
+                {preview === "balanced" && (
+                  <PrefRow label="Balanced preview size"
+                           hint="100% keeps drag previews at full size and disables smaller drafts for slow sliders; grain, texture and sharpening shortcuts still apply">
+                    <div className="segmented small">
+                      {BALANCED_PREVIEW_SIZES.map((v) => (
+                        <button key={v} className={balancedSize === v ? "active" : ""}
+                                onClick={() => { setBalancedSize(v); storeBalancedPreviewSize(v); }}>{v * 100}%</button>
+                      ))}
+                    </div>
+                  </PrefRow>
+                )}
+                {preview !== "quality" && !(preview === "balanced" && balancedSize === 1) && (
                   <>
                     <PrefRow label="Smaller drafts for slow sliders"
                              hint="while a slider early in darktable's pipe moves (Exposure, White Balance, noise reduction), the photo renders smaller again, so each frame comes sooner. off keeps Preview's size">
@@ -844,9 +951,13 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                 </PrefRow>
                 <PrefRow label="GUI benchmark"
                          hint={onBenchmark
-                           ? "drags the main sliders on the open photo and back, zooms in and out, and saves a timing report; every slider ends where it started. use a copy of a photo you care about"
+                           ? "drags the main sliders on the open photo and back, zooms in and out, and saves timing, frame pacing and resource usage; every slider ends where it started. use a copy of a photo you care about"
                            : "open a photo to run it"}>
                   <button className="btn" disabled={!onBenchmark} onClick={() => onBenchmark?.()}>Run</button>
+                </PrefRow>
+                <PrefRow label="Performance tuner"
+                         hint="load a representative RAW from your usual work and use your normal window size. finds the highest-quality preview meeting your FPS and latency targets; Apply verifies the result">
+                  <button className="btn" disabled={!onTune} onClick={() => onTune?.()}>Tune…</button>
                 </PrefRow>
               </PrefCard>
               </>
@@ -870,6 +981,16 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                       even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
                       General Public License for more details.
                     </p>
+                  </div>
+                </PrefCard>
+                <PrefCard title="Maps">
+                  <div className="prefs-legal">
+                    <p>Map data © OpenStreetMap contributors, available under the Open Database License (ODbL).
+                      Map tiles provided by the OpenStreetMap Foundation.</p>
+                    <p>Interactive maps use Leaflet, Copyright © 2010–2023 Volodymyr Agafonkin
+                      and © 2010–2011 CloudMade, under the BSD 2-Clause license.</p>
+                    <button className="btn" onClick={() => void openUrl("https://www.openstreetmap.org/copyright")}>OpenStreetMap attribution</button>{" "}
+                    <button className="btn" onClick={() => void openUrl("https://github.com/Leaflet/Leaflet/blob/main/LICENSE")}>Leaflet license</button>
                   </div>
                 </PrefCard>
                 <PrefCard title="Updates">

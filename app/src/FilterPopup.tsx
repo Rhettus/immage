@@ -10,7 +10,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
-import { EXPOSURE, facetsWithin, NO_FILTER, popupCount, type ExposureKey, type Facets, type Filter } from "./filter";
+import { bodyLabel, EXPOSURE, facetsWithin, NO_FILTER, popupCount, type ExposureKey, type Facets, type Filter } from "./filter";
 import type { ImageEntry } from "./library";
 import { immichFilterCount, NO_SEARCH, type ImmichSearch } from "./immich";
 
@@ -75,7 +75,7 @@ export function FilterPopup({ filter: f, images, onFilter, immich, bounds, onSea
   return (
     <div className="kind-filter" ref={box}>
       <button ref={button} className={`tool kind-button${count ? " on" : ""}`}
-              title={immich ? "filter the Immich search" : "filter by file type, camera, lens, keywords, date and exposure"}
+              title={immich ? "filter the Immich search" : "filter by rejected status, file type, camera, camera body, lens, keywords, date and exposure"}
               onClick={() => setOpen(!open)}>{count ? `${count} filter${count > 1 ? "s" : ""}` : "Filters"}</button>
       {/* over everything, as the toolbar's own layer sits under the side panels */}
       {at && createPortal(
@@ -289,11 +289,30 @@ function FolderCategories({ filter: f, images, onFilter, onSearch }: {
 }) {
   const within = (v: Filter, clear: Partial<Filter>) => facetsWithin(images, v, clear);
   const cats: Category<Filter>[] = [
+    { key: "rejected", title: "Rejected", summary: (v) => v.rejected === "all" ? "" : v.rejected === "hide" ? "Hidden" : "Only rejected",
+      clear: { rejected: "all" },
+      body: (v, set) => (
+        <div className="meta-grid filter-immich">
+          <label className="k" htmlFor="filter-rejected">Show</label>
+          <select id="filter-rejected" className="field" value={v.rejected}
+                  onChange={(e) => set({ rejected: e.target.value as Filter["rejected"] })}>
+            <option value="all">All photos</option>
+            <option value="hide">Hide rejected</option>
+            <option value="only">Only rejected</option>
+          </select>
+        </div>
+      ) },
     { key: "kinds", title: "File type", summary: (v) => chosen(v.kinds), clear: { kinds: [] },
       body: (v, set) => <Ticks items={within(v, { kinds: [] }).kinds} chosen={v.kinds} onChange={(kinds) => set({ kinds })} empty="no photos" /> },
     { key: "cameras", title: "Camera", summary: (v) => chosen(v.cameras), clear: { cameras: [] },
       body: (v, set) => <Ticks items={within(v, { cameras: [] }).cameras} chosen={v.cameras} onChange={(cameras) => set({ cameras })}
                                empty="none recorded" /> },
+    { key: "bodies", title: "Camera body", summary: (v) => chosen(v.bodies, bodyLabel), clear: { bodies: [] },
+      body: (v, set) => <div className="filter-bodies">
+        <Ticks items={within(v, { bodies: [] }).bodies} chosen={v.bodies} onChange={(bodies) => set({ bodies })}
+               show={bodyLabel} empty="no photos" find="find a model or serial" />
+        <p className="hint">Identify a body regardless of lens.</p>
+      </div> },
     { key: "lenses", title: "Lens", summary: (v) => chosen(v.lenses), clear: { lenses: [] },
       body: (v, set) => <Ticks items={within(v, { lenses: [] }).lenses} chosen={v.lenses} onChange={(lenses) => set({ lenses })}
                                empty="none recorded" /> },
@@ -311,7 +330,7 @@ function FolderCategories({ filter: f, images, onFilter, onSearch }: {
   ];
   return (
     <Categories title="Filters" value={f} apply={onFilter} cats={cats} onSearch={onSearch}
-                none={{ ...NO_FILTER, minRating: f.minRating, rejected: f.rejected, edited: f.edited, labels: f.labels,
+                none={{ ...NO_FILTER, minRating: f.minRating, edited: f.edited, labels: f.labels,
                         unlabeled: f.unlabeled }} />
   );
 }

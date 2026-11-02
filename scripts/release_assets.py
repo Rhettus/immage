@@ -56,8 +56,9 @@ DOWNLOADS = """\
 | | |
 |---|---|
 | **macOS** (Apple Silicon) | [{dmg}]({url}/{dmg}) |
-| **Windows** (x64) | [{nsis}]({url}/{nsis}), or [{msi}]({url}/{msi}) |
+| **Windows** (x64) | [{nsis}]({url}/{nsis}) |
 | **Linux** (x86-64) | [{appimage}]({url}/{appimage}) |
+| **Linux** (ARM64) | [{appimage_arm64}]({url}/{appimage_arm64}) |
 | **Source** | [{source}]({url}/{source}) |
 """
 
@@ -72,26 +73,29 @@ from inside Immage, without the warning.
   Immage to Applications. Open it once; when macOS says it cannot check it,
   go to System Settings › Privacy & Security and click **Open Anyway**.
   Or, in Terminal: `xattr -dr com.apple.quarantine /Applications/Immage.app`
-- **Windows** (x64): run `{nsis}` (or `{msi}`). When SmartScreen stops
+- **Windows** (x64): run `{nsis}`. When SmartScreen stops
   it, click **More info**, then **Run anyway**
-- **Linux** (x86-64, glibc 2.35 or newer, such as Ubuntu 22.04): make
-  `{appimage}` executable (`chmod +x {appimage}`) and run it
+- **Linux** (x86-64, glibc 2.35 or newer, such as Ubuntu 22.04 or Linux Mint 22.x):
+  make `{appimage}` executable (`chmod +x {appimage}`) and run it
+- **Linux** (ARM64, glibc 2.35 or newer, such as Ubuntu 22.04 or Linux Mint 22.x):
+  make `{appimage_arm64}` executable (`chmod +x {appimage_arm64}`) and run it
 
 Immage checks for a new version once a day (Preferences › About ›
 Updates), and offers to install it.
 
 ## Known issues
 
-- **Linux with an NVIDIA graphics card**: NVIDIA's driver holds Immage's
-  window to a few updates a second, on Wayland and X11 alike (WebKit bug
-  [303811](https://bugs.webkit.org/show_bug.cgi?id=303811)). Immage works
-  around it by having Mesa draw its window on the processor, when Mesa is
-  installed, as it is on most distributions. On a fast processor that is
-  about ten times faster, but it may be slower on a 4K screen or a slow
-  processor; to compare, start Immage with
-  `__EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/10_nvidia.json`
-  for NVIDIA's own drawing. A real fix has to come from NVIDIA's driver or
-  WebKitGTK
+- **Linux with an NVIDIA graphics card**: rendering performance varies by
+  system. Preferences > Performance > Window renderer offers Automatic
+  (the system default), Mesa and NVIDIA. Relaunch after changing it and
+  compare GUI benchmarks. Photo processing uses its own GPU setting.
+  Linux AppImages bundle WebKitGTK 2.54.2. On X11 with NVIDIA, including
+  Linux Mint, launch or rendering issues have been reported. For initial
+  launch, use `GDK_BACKEND=x11 WEBKIT_DISABLE_DMABUF_RENDERER=1 ./Immage.AppImage`
+  (replace the filename), then select Mesa in Preferences > Performance and
+  restart. After selecting Mesa, launch normally without these variables.
+  Ubuntu/Wayland testing showed improved NVIDIA performance, but results
+  still vary by system.
 - **Linux on Wayland with fractional scaling** (125%, 150%, ...): the
   web view Immage is built on draws such a window at 200% and the desktop
   shrinks it. Immage renders the photo for the screen's own scale while a
@@ -125,13 +129,14 @@ def main():
         (one(artifacts, "*.dmg"), f"{p}-macOS-arm64.dmg", []),
         (one(artifacts, "*.app.tar.gz"), f"{p}-macOS-arm64-update.app.tar.gz",
          ["darwin-aarch64", "darwin-aarch64-app"]),
-        # the updater installs with the kind of installer that put this copy
-        # there, from the key for it, and with NSIS when there is none
+        # The generic key also serves copies installed with an older MSI:
+        # Tauri falls back to it when the installer-specific key is absent.
         (one(artifacts, "*-setup.exe"), f"{p}-Windows-x64-setup.exe",
          ["windows-x86_64", "windows-x86_64-nsis"]),
-        (one(artifacts, "*.msi"), f"{p}-Windows-x64.msi", ["windows-x86_64-msi"]),
-        (one(artifacts, "*.AppImage"), f"{p}-Linux-x86_64.AppImage",
+        (one(artifacts, "*_amd64.AppImage"), f"{p}-Linux-x86_64.AppImage",
          ["linux-x86_64", "linux-x86_64-appimage"]),
+        (one(artifacts, "*_aarch64.AppImage"), f"{p}-Linux-arm64.AppImage",
+         ["linux-aarch64", "linux-aarch64-appimage"]),
         (one(artifacts, f"immage-{version}-source.tar.gz"), None, []),
     ]
     platforms = {}
@@ -165,8 +170,8 @@ def main():
     }
     (out / "latest.json").write_text(json.dumps(feed, indent=2) + "\n", encoding="utf-8")
 
-    dmg, _, nsis, msi, appimage, source = names
-    fields = dict(dmg=dmg, nsis=nsis, msi=msi, appimage=appimage, source=source, repo=REPO,
+    dmg, _, nsis, appimage, appimage_arm64, source = names
+    fields = dict(dmg=dmg, nsis=nsis, appimage=appimage, appimage_arm64=appimage_arm64, source=source, repo=REPO,
                   url=f"{REPO}/releases/download/v{version}")
     body = DOWNLOADS.format(**fields) + "\n" + text + "\n\n" + unwrap(INSTALL).format(**fields)
     (out.parent / "body.md").write_text(body, encoding="utf-8")

@@ -24,6 +24,8 @@
 // and so do a title or keywords another program wrote into the EXIF
 
 #include <string>
+#include <map>
+#include <glib/gstdio.h>
 
 // as exif.cc includes it (XCode 15.2)
 #pragma GCC diagnostic push
@@ -198,4 +200,144 @@ char *strip_metadata(const char *path, const strip_t what)
   {
     return g_strdup_printf("could not remove metadata from '%s': %s", path, e.what());
   }
+}
+
+// Read the generated file before merging EXIF, retaining its ICC profile
+// and, for DNG, its version and calibration tags.
+gboolean rendered_metadata(const char *path, const void *blob, const int size, const gboolean dng)
+{
+  if(!blob || size <= 0) return TRUE;
+  try
+  {
+    _lock lock;
+#if defined(_WIN32) && defined(EXV_UNICODE_PATH)
+    gunichar2 *wide = g_utf8_to_utf16(path, -1, NULL, NULL, NULL);
+    auto image = Exiv2::ImageFactory::open(std::wstring((const wchar_t *)wide));
+    g_free(wide);
+#else
+    auto image = Exiv2::ImageFactory::open(path);
+#endif
+    image->readMetadata();
+    Exiv2::ExifData source;
+    Exiv2::ExifParser::decode(source, static_cast<const uint8_t *>(blob), size);
+    auto &dest = image->exifData();
+    for(const auto &d : source)
+    {
+      // The output owns its layout, color calibration and orientation.
+      if(d.groupName() == "Image"
+         && (d.tag() >= 50706 || d.tag() == 34675 || d.tagName() == "Orientation"
+             || d.tagName() == "Software" || (dng && (d.tagName() == "Make" || d.tagName() == "Model")))) continue;
+      const Exiv2::ExifKey key(d.key());
+      auto old = dest.findKey(key);
+      if(old != dest.end()) dest.erase(old);
+      dest.add(key, &d.value());
+    }
+    image->writeMetadata();
+    return TRUE;
+  }
+  catch(const std::exception &)
+  {
+    return FALSE;
+  }
+}
+
+gboolean denoised_metadata(const char *path)
+{
+  try
+  {
+    _lock lock;
+#if defined(_WIN32) && defined(EXV_UNICODE_PATH)
+    gunichar2 *wide = g_utf8_to_utf16(path, -1, NULL, NULL, NULL);
+    auto image = Exiv2::ImageFactory::open(std::wstring((const wchar_t *)wide));
+    g_free(wide);
+#else
+    auto image = Exiv2::ImageFactory::open(path);
+#endif
+    image->readMetadata();
+    // Keep the source ISO, but prevent automatic denoise presets from
+    // processing pixels that the model has already denoised.
+    image->xmpData()["Xmp.darktable.neural_restore"] = "raw-denoise";
+    image->writeMetadata();
+    return TRUE;
+  }
+  catch(const std::exception &) { return FALSE; }
+}
+
+// XMP has no standard deletion value for GPS. Mark Immage sidecars as
+// authoritative so missing fields override GPS embedded in the source.
+gboolean location_sidecar_mark(const char *path)
+{
+  try
+  {
+    _lock lock;
+    Exiv2::XmpProperties::registerNs("https://github.com/Rhettus/immage/ns/1.0/", "immage");
+    auto image = Exiv2::ImageFactory::open(path);
+    if(!image.get()) return FALSE;
+    image->readMetadata();
+    image->xmpData()["Xmp.immage.locationManaged"] = "True";
+    image->writeMetadata();
+    return TRUE;
+  }
+  catch(const std::exception &) { return FALSE; }
+}
+
+int location_sidecar_missing(const char *path)
+{
+  try
+  {
+    _lock lock;
+    Exiv2::XmpProperties::registerNs("https://github.com/Rhettus/immage/ns/1.0/", "immage");
+    auto image = Exiv2::ImageFactory::open(path);
+    if(!image.get()) return 0;
+    image->readMetadata();
+    auto &xmp = image->xmpData();
+    auto managed = xmp.findKey(Exiv2::XmpKey("Xmp.immage.locationManaged"));
+    if(managed == xmp.end() || managed->toString() != "True") return 0;
+    int missing = 0;
+    if(xmp.findKey(Exiv2::XmpKey("Xmp.exif.GPSLatitude")) == xmp.end()
+       || xmp.findKey(Exiv2::XmpKey("Xmp.exif.GPSLongitude")) == xmp.end()) missing |= 1;
+    if(xmp.findKey(Exiv2::XmpKey("Xmp.exif.GPSAltitude")) == xmp.end()) missing |= 2;
+    return missing;
+  }
+  catch(const std::exception &) { return 0; }
+}
+
+// Called on request/import threads. Cache source metadata across virtual copies
+// and repeated meta replies; source changes invalidate it, sidecar edits do not.
+char *camera_body_serial(const char *path)
+{
+  _lock lock; // Protect both Exiv2 and the cache across request/import threads.
+  struct Entry { gint64 mtime; gint64 ctime; gint64 size; std::string serial; };
+  static std::map<std::string, Entry> cache;
+  GStatBuf st;
+  if(g_stat(path, &st)) return g_strdup("");
+  const auto hit = cache.find(path);
+  if(hit != cache.end() && hit->second.mtime == st.st_mtime
+     && hit->second.ctime == st.st_ctime && hit->second.size == st.st_size)
+    return g_strdup(hit->second.serial.c_str());
+  std::string serial;
+  try
+  {
+    auto image = Exiv2::ImageFactory::open(path);
+    if(image)
+    {
+      image->readMetadata();
+      const auto &exif = image->exifData();
+      auto it = exif.findKey(Exiv2::ExifKey("Exif.Photo.BodySerialNumber"));
+      if(it == exif.end()) it = exif.findKey(Exiv2::ExifKey("Exif.Image.CameraSerialNumber"));
+      if(it == exif.end()) it = Exiv2::serialNumber(exif);
+      if(it != exif.end()) serial = it->print(&exif);
+    }
+  }
+  catch(const Exiv2::Error &) { /* Missing or unsupported metadata is unknown. */ }
+  gchar *trimmed = g_strdup(serial.c_str());
+  g_strstrip(trimmed);
+  serial = trimmed;
+  g_free(trimmed);
+  // Common placeholders must not pretend to identify a physical body.
+  if(serial == "n/a" || serial == "Unknown" || serial == "unknown"
+     || (!serial.empty() && serial.find_first_not_of("0 ") == std::string::npos)) serial.clear();
+  if(cache.size() >= 4096) cache.clear();
+  cache[path] = { st.st_mtime, st.st_ctime, st.st_size, serial };
+  return g_strdup(serial.c_str());
 }

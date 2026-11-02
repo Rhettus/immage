@@ -10,6 +10,14 @@ apply as you make them; **Done** closes the window.
 
 **Workspace**
 
+- **Detail loupe**: optional compact 100% previews above Detail and Presence,
+  off by default. Both show the same area. Use the point picker, then click
+  the photo to choose it; Escape cancels. Turning it off stops loupe rendering.
+- **Open generated photos**: automatically opens HDR merges, panoramas, AI
+  denoise results, positive exports and the first plugin result for editing.
+- **Converted negative format**: losslessly compressed DNG (16-bit float,
+  default) or TIFF (32-bit float) for Negative’s **Export to Library**.
+
 - **Canvas**: what is behind the photo, in full screen preview too.
   **Dark**, **Neutral Gray** to judge tones without a dark surround, or
   **White** to see the photo as on a print. L steps through them.
@@ -41,6 +49,42 @@ apply as you make them; **Done** closes the window.
 How fast the photo responds while you edit, and the memory and disk
 Immage keeps to make it so.
 
+**Interface rendering** (Linux)
+
+Official Linux AppImages bundle WebKitGTK and JavaScriptCore 2.54.2 and
+keep the Ubuntu 22.04 runtime baseline, including Linux Mint 22.x. The bundled
+webview retains video and audio support; MPEG-TS and WebRTC are not enabled. GUI benchmark
+reports record the running WebKitGTK version; use a new build when comparing
+renderer behavior after upgrading. On Wayland, **Drag drafts at the screen’s
+scale** still sizes reduced drag previews for the compositor’s actual fractional
+scale (for example, 125%), while release frames keep full quality.
+
+On X11 desktops with NVIDIA, including Linux Mint, launch or rendering issues
+have been reported with the bundled WebKitGTK. If Immage fails to launch, run:
+
+```bash
+GDK_BACKEND=x11 WEBKIT_DISABLE_DMABUF_RENDERER=1 ./Immage.AppImage
+```
+
+Replace the filename with your downloaded AppImage. Select **Mesa** under
+**Preferences → Performance** and restart Immage. Once Mesa is selected,
+normal launches no longer require these environment variables, as confirmed
+on the reported Mint/X11 system. Ubuntu/Wayland testing showed improved NVIDIA
+performance; results still vary by system.
+
+- **Window renderer**: **Automatic** uses the system default renderer, including on NVIDIA;
+  **Mesa** selects Mesa's EGL explicitly, and **NVIDIA** selects NVIDIA's.
+  Only installed drivers can be selected. On NVIDIA, Mesa normally draws
+  the interface on the CPU. This setting is separate from **Edit on the
+  GPU**, which controls darktable's photo processing.
+- The row shows the active EGL selection. **Relaunch** saves the photo and
+  restarts Immage to apply a change. An explicit
+  `__EGL_VENDOR_LIBRARY_FILENAMES` in the launch environment takes priority.
+- For an A/B benchmark, select Mesa, relaunch, open the test photo and run
+  the GUI benchmark. Repeat with NVIDIA on the same build, photo, window
+  size and editing settings. The reports record the selected path,
+  environment, WebKitGTK version and WebGL renderer.
+
 **Editing**
 
 - **Preview**: how much the photo gives up for speed while you edit.
@@ -48,6 +92,8 @@ Immage keeps to make it so.
   - **Quality** renders every frame in full, even while you drag.
   - **Balanced**, the default, renders at half size while a slider, wheel
     or curve moves, about four times as fast, and in full on release.
+    **Balanced preview size** offers 50% (the default), 75%, and 100%. At 100%,
+    drag previews stay full size and automatic smaller drafts are disabled.
     Grain, Texture and Sharpening are left out until release, unless they
     are what you are dragging. They are also left out of the zoomed-out
     picture behind the photo, which the navigator and histogram read and
@@ -114,6 +160,17 @@ The thumbnail caches keep nothing while the disk has under 5 GB free.
   back, zooms in and out, and saves a timing report. Every slider ends where
   it started, but use a copy of a photo you care about.
 
+Use the **Performance tuner** with a representative RAW and your usual window
+size. Set FPS and latency targets, run it, review the recommendation, then
+apply it and verify with another run. Export quality is unaffected.
+
+The performance tuner defaults to an 80 ms latency target. It uses the median
+of the middle 10–90% of measured frame intervals and input-to-paint latencies,
+then tries Balanced 100%, followed by smaller preview sizes and drafts only
+if the targets are missed. The first configuration
+meeting both targets is recommended. Full Quality remains a manual option and
+is excluded from the tuner search.
+
 ## New Photos
 
 What a photo starts with the first time it is opened, if it has no history
@@ -159,21 +216,41 @@ photo's starting point: they don't mark it as edited.
 
 Which darktable module each tool runs on. **Default** uses the module of
 darktable's AgX workflow for each; **Custom** lets you pick one per tool,
-from these:
+under separate collapsible **Global** and **Masks** sections. For example,
+use AgX for global Contrast and contrast equalizer for masks. With **Focus mode**
+on, opening one section closes the other; Alt-click keeps both open. With it off,
+sections open independently, and Alt-click opens one on its own. Global offers:
 
-- **Contrast**, **Blacks**, **Saturation**: AgX (or sigmoid, on a photo
-  started under it), or color balance rgb for Contrast and Saturation and
-  exposure for Blacks
+- **Contrast**: AgX (or sigmoid on a photo started under it), color balance
+  rgb, or contrast equalizer, which replaces the slider with a curve editor
+- **Blacks**: AgX (or sigmoid), or exposure
+- **Saturation**: AgX (or sigmoid), or color balance rgb
+- **Clarity**: local contrast, or contrast & texture
+- **Texture**: diffuse or sharpen, or contrast & texture
 - **Highlights and Shadows**: the tone equalizer, or shadows and
-  highlights. A mask's Highlights and Shadows use the same one
+  highlights
 - **Black & White**: color calibration, or the color equalizer
 - **Sharpening**: sharpen, or diffuse or sharpen
-- **Defringe** (masks only): chromatic aberrations, or defringe
+
+**Masks** independently offers Contrast (color balance rgb or contrast equalizer),
+Highlights and Shadows, Clarity, Texture, Sharpening, and Defringe (chromatic
+aberrations or defringe). Modules without alternatives are also listed. Existing
+mask adjustments keep their modules; unused tools and new masks take these choices.
+
+Clarity and Texture can each use **contrast & texture** under Custom modules.
+Selecting it replaces the corresponding slider with the module's Coarse,
+Medium and Fine details, Base detail level, Halo control, Noise bias, Shadows
+and Highlights sliders, using darktable's ranges and defaults. Medium and Fine
+details stay visible; expand **Advanced** for the other controls. This also
+applies to masks. Clarity and Texture use separate instances. The existing
+modules remain the defaults; contrast & texture currently runs on the CPU.
 
 The tab also lists the module behind each of the other tools. A photo that
 already uses one of a tool's modules keeps it, so its edit looks the same;
-the choice applies to the tools a photo hasn't used yet, from the next
-photo you open.
+closing Preferences applies the choice to unused tools on the current photo
+as well as photos opened later. See [Adjustments](adjustments.md#contrast-equalizer)
+for the equalizer graph. The Defringe choice affects masks only; global
+Defringe always uses chromatic aberrations.
 
 ## Immich
 
@@ -199,3 +276,6 @@ are editing, and opens the new version where you were. **Later** puts the
 card away until Immage next starts; **Skip This Version** waits for the
 one after. Updates are signed, and one whose signature does not match is
 not installed.
+
+Loupe rendering pauses while selecting or browsing photos in grid view and
+refreshes when you return to the photo view.

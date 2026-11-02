@@ -1,6 +1,6 @@
 {
   "bundle": {
-    "targets": ["msi", "nsis"],
+    "targets": ["nsis"],
     "windows": {
       "nsis": {
         "installMode": "both",

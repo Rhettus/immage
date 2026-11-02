@@ -1,5 +1,26 @@
 # Immage
 
+## Status
+
+🟢 **macOS:** Fully functional alpha build. Bugs are still expected.
+
+🟢 **Windows:** Fully functional alpha build. Bugs are still expected.
+
+🟡 **Linux:** Fully functional alpha build, but performance may vary. We’re
+investigating NVIDIA rendering issues.
+
+**X11 desktops with NVIDIA:** If Immage fails to launch, use:
+
+```bash
+GDK_BACKEND=x11 WEBKIT_DISABLE_DMABUF_RENDERER=1 ./Immage.AppImage
+```
+
+Replace `Immage.AppImage` with your downloaded filename. Then select **MESA**
+in **Preferences → Performance** and restart Immage. After selecting MESA,
+you can launch normally without the environment variables.
+
+## What is it
+
 Immage builds on [darktable](https://www.darktable.org/)'s raw processing
 engine, and brings its power to photographers who know other editors. It
 works the way mainstream raw editors do: the familiar panels, slider
@@ -122,7 +143,8 @@ Everything else in this repository is Immage's own.
   - film negative conversion, color or black and white, picked from the
     film border and the photo, in darktable's negadoctor
   - HDR Merge, in darktable's HDR merge, and Panorama Merge, stitched
-    with OpenCV, each into a new DNG
+    with OpenCV, each into a new DNG; panorama projection and crop can be
+    previewed before merging
   - presets, film looks with live preview tiles, undo/redo, a before/after
     view, crop and straighten, a white balance picker, export with
     borders and file-name templates (to a folder or an Immich album), a
@@ -150,7 +172,11 @@ Some tools can run on more than one module. Preferences › Modules picks
 which for the tools a photo has not used yet: Default takes the module
 darktable's [AgX workflow](https://avidandrew.com/agx-workflow.html) uses
 for each, the first one listed below, and Custom lets each be set. A
-photo that already uses one of a tool's modules keeps it.
+photo that already uses one of a tool's modules keeps it. The collapsible
+Global and Masks sections choose modules independently: for example, use AgX
+globally and contrast equalizer inside masks. They follow Focus mode; Alt-click
+keeps both sections open. See the [module preferences guide](app/docs/preferences.md#modules)
+for the available mask alternatives.
 
 | Immage | darktable module |
 |---|---|
@@ -158,14 +184,15 @@ photo that already uses one of a tool's modules keeps it.
 | Treatment (Color, Black & White) | color calibration's gray (`channelmixerrgb`), on an instance of its own after the color equalizer, or the color equalizer (`colorequal`) |
 | White Balance: Temp, Tint, the picker | color calibration (`channelmixerrgb`) |
 | Exposure | exposure (`exposure`) |
-| Contrast | AgX (`agx`), or sigmoid (`sigmoid`) on a photo started under it; or color balance rgb (`colorbalancergb`) |
+| Contrast | AgX (`agx`), or sigmoid (`sigmoid`) on a photo started under it; or color balance rgb (`colorbalancergb`); or contrast equalizer (below) |
+| Contrast equalizer (Contrast option) | contrast equalizer (`atrous`): five channels, each with six coarse-to-fine bands; replaces the global or masked Contrast slider, chosen independently |
 | Highlights, Shadows | tone equalizer (`toneequal`), or shadows and highlights (`shadhi`) |
 | Blacks | AgX's lift, or sigmoid's target black; or exposure's black level (`exposure`) |
 | Vibrance | color balance rgb (`colorbalancergb`) |
 | Saturation | AgX's saturation; or color balance rgb (`colorbalancergb`), which a photo on sigmoid always uses |
 | Whites | AgX (`agx`), with color balance rgb's highlights brilliance (`colorbalancergb`); sigmoid (`sigmoid`) on a photo started under it |
-| Texture | diffuse or sharpen (`diffuse`) |
-| Clarity | local contrast (`bilat`) |
+| Texture | diffuse or sharpen (`diffuse`), or contrast & texture (`contrastntexture`), on its own instance |
+| Clarity | local contrast (`bilat`), or contrast & texture (`contrastntexture`) |
 | Dehaze | haze removal (`hazeremoval`) |
 | **Tone Curve** | |
 | Parametric and point curve | tone curve (`tonecurve`) |
@@ -176,6 +203,7 @@ photo that already uses one of a tool's modules keeps it.
 | Sharpening | sharpen (`sharpen`), or diffuse or sharpen (`diffuse`), its "sharpness \| normal" preset on an instance of its own |
 | Noise Reduction: Luminance | denoise (profiled) (`denoiseprofile`) |
 | **Lens Corrections** | lens correction (`lens`), with the lensfun database |
+| Defringe: Amount, Radius | chromatic aberrations (`cacorrectrgb`) |
 | Hot Pixels | hot pixels (`hotpixels`) |
 | **Transform**: Vertical, Horizontal, Rotate | rotate and perspective (`ashift`) |
 | **Effects** | |
@@ -192,11 +220,11 @@ photo that already uses one of a tool's modules keeps it.
 | Local Exposure, Blacks, Contrast, Whites, Saturation, Hue | an instance of exposure or color balance rgb per mask |
 | Local Highlights, Shadows | an instance of tone equalizer or shadows and highlights (as the photo's) per mask |
 | Local Temp, Tint | an instance of color calibration per mask |
-| Local Texture, Clarity, Dehaze | an instance of diffuse or sharpen, local contrast or haze removal per mask |
+| Local Texture, Clarity, Dehaze | an instance of the chosen Texture or Clarity module (including contrast & texture), or haze removal per mask |
 | Local Noise, Defringe, Sharpness | an instance of denoise (profiled), chromatic aberrations (`cacorrectrgb`) or defringe (`defringe`), or diffuse or sharpen or sharpen (as the photo's Sharpening) per mask |
 | **Heal and Clone** | retouch (`retouch`) |
 | **HDR Merge** | darktable's HDR merge (lighttable's "create HDR"), with its auto-alignment, into a float DNG |
-| **Panorama Merge** | no darktable module: OpenCV's stitching, of raws rendered by darktable up to lens correction (`lens`), into a float DNG |
+| **Panorama Merge** | no darktable module: OpenCV stitches RAW and non-RAW photos rendered by darktable into a float DNG |
 | **Negative** | negadoctor (`negadoctor`); a converted negative switches off color calibration, exposure, the tone equalizer, haze removal and the tone mapper, and runs Contrast and Saturation on color balance rgb, Highlights and Shadows on shadows and highlights |
 | **Looks** | darktable styles, applied as extra module instances |
 | **Export** borders | framing (`borders`), added at export only |
@@ -242,7 +270,10 @@ fill the grid with Immich's thumbnails. Opening one edits the external
 library's own file when this computer has it, mapped from Immich's path
 in Preferences (by default the importer's path prefix and destination),
 and otherwise downloads the original into Immage's cache first.
-Right-click a result to show it, or the whole search, in Immich. A
+Right-click a result to show it, or the whole search, in Immich. With Immich
+configured in Preferences, **Import Parent Folder** adds its locally mapped
+folder to Folders and opens its photos in the grid; it is disabled for
+results without a local file. A
 result shows Immich's rating until it is opened; ratings set after that
 go into the photo's XMP sidecar, as for any other photo.
 
@@ -268,9 +299,10 @@ Each release has builds for:
 
 - **macOS**: Apple silicon, macOS 15 or newer, as a `.dmg`
 - **Windows**: x64, Windows 10 or 11 (and Windows on ARM through its x64
-  emulation), as an NSIS installer (`-setup.exe`) or an `.msi`
-- **Linux**: x86-64, as an AppImage, on any distribution with glibc 2.35
-  or newer (Ubuntu 22.04 and later)
+  emulation), as an NSIS installer (`-setup.exe`)
+- **Linux**: x86-64 and ARM64, as AppImages, on distributions with
+  glibc 2.35 or newer (Ubuntu 22.04 and later, including Linux Mint 22.x),
+  bundling WebKitGTK 2.54.2
 
 The builds are not signed with a developer certificate yet; the release
 page says how to open them the first time. After that, Immage updates
@@ -280,7 +312,10 @@ itself: it checks for a new release once a day and installs it when asked
 macOS is where Immage is developed. All three are built by GitHub Actions
 ([.github/workflows/build.yml](.github/workflows/build.yml)) on every
 change, and a `v*` tag makes a draft release
-([release.yml](.github/workflows/release.yml)). Each build bundles the
+([release.yml](.github/workflows/release.yml)). Release builds can also run
+manually on the release branch to reuse its dependency caches, with the tag
+required to match that exact commit; see [Releasing](app/docs/dev/releasing.md).
+Each build bundles the
 engine with the libraries it links: from Homebrew on macOS, MSYS2 on
 Windows and Ubuntu on Linux (`app/scripts/bundle_engine.py`,
 `app/scripts/bundle_engine_windows.sh`).
@@ -325,32 +360,67 @@ each build, keeping what the last two builds of each profile use
 [app/WINDOWS.md](app/WINDOWS.md) walks through it: darktable's MSYS2
 toolchain for the engine (`scripts/build.sh` in the MSYS2 UCRT64 shell),
 then `npm run tauri build` in PowerShell with the MSVC Rust toolchain. It
-makes the `.msi` and the NSIS installer in
+makes the NSIS `.exe` installer in
 `app/src-tauri/target/release/bundle/`. A Windows on ARM virtual machine
 works, building under x64 emulation.
 
 ### Linux
 
-On Ubuntu 22.04, the system the AppImage is built on (newer releases
-should work, but are not tested):
+On Ubuntu 22.04, the system the release AppImages are built on:
 
 ```sh
-# gcc 12, and darktable's AppImage PPAs for newer image format libraries
-sudo apt-get install gcc-12 g++-12
 sudo add-apt-repository ppa:savoury1/graphics
 sudo add-apt-repository ppa:savoury1/ffmpeg4
 sudo add-apt-repository ppa:savoury1/display
+sudo sed -i 's/^# deb-src /deb-src /' /etc/apt/sources.list
 sudo apt-get update
-sudo apt-get install $(grep -v '^#' .github/ubuntu-packages.txt)
+sudo apt-get install $(grep -v '^#' .github/ubuntu-packages.txt) \
+  lld libgstreamer-plugins-bad1.0-dev flite1-dev
+sudo apt-get build-dep -y webkit2gtk
 
-# libheif and exiv2, which 22.04 has too old, into /usr/local
-app/scripts/build_linux_deps.sh
+# Image-format libraries first: ARM64 also needs their JPEG XL build for WebKit.
+sh app/scripts/build_linux_deps.sh
+# Pinned WebKitGTK / JavaScriptCore 2.54.2 and matching helpers.
+# Building WebKit takes substantial time; CI caches its staged installation.
+CC=gcc-12 CXX=g++-12 sh app/scripts/build_webkitgtk.sh
 
-# plus Rust and Node.js; then the AppImage, in
-# app/src-tauri/target/release/bundle/appimage/
+# With Rust and Node.js installed, build and verify the AppImage.
 (cd app && npm ci)
 CC=gcc-12 CXX=g++-12 scripts/build.sh
+python3 -I app/scripts/check_webkit_bundle.py \
+  app/src-tauri/target/release/bundle/appimage/Immage.AppDir 2.54.2 --max-glibc 2.35
 ```
+
+#### Native ARM64 builds
+
+CI builds Linux natively on Ubuntu 22.04 for x86-64 and ARM64, including
+WebKitGTK, JavaScriptCore and matching helper processes. ARM64 uses GCC 14
+from `ppa:ubuntu-toolchain-r/test` (replace the GCC 12 packages and commands
+above) and builds missing image libraries with `build_linux_deps.sh` instead
+of installing `libjxl-dev`, `libsharpyuv-dev` and `libopenexr-dev`.
+Packaging fails if the bundled WebKit libraries do not report 2.54.2,
+helpers are missing, or any packaged ELF imports glibc newer than 2.35.
+This keeps the runtime baseline compatible with Linux Mint 22.x.
+
+The Linux build scripts also build natively on an ARM64 host. The Rust app,
+darktable engine, OpenCV and ONNX Runtime use the host architecture; the
+AppImage is named `Immage_<version>_aarch64.AppImage`.
+
+On Arch Linux, install the native equivalents of the dependencies above
+instead of adding Ubuntu PPAs or running `build_linux_deps.sh`. The engine
+bundler reads package versions and licenses from pacman. `po4a` also needs
+`perl-pod-parser` to generate darktable's translated manual pages.
+
+With the dependencies, Rust and Node.js installed:
+
+```sh
+(cd app && npm ci)
+CMAKE_BUILD_PARALLEL_LEVEL=2 CARGO_BUILD_JOBS=2 APPIMAGE_EXTRACT_AND_RUN=1 scripts/build.sh
+```
+
+The two-job limit is useful on machines with 8 GB of RAM. An AppImage built
+on Arch requires a sufficiently recent host glibc; it does not establish
+the Ubuntu 22.04 compatibility baseline of the release builds.
 
 ### AI models
 
@@ -456,3 +526,26 @@ and where their source is published. For at least three years after a
 release, anyone may also ask for the complete source of any GPL or LGPL
 library in its binaries, at the version shipped, free of charge: open an
 issue at [github.com/Rhettus/immage/issues](https://github.com/Rhettus/immage/issues).
+
+## Location metadata and map attribution
+
+The Metadata panel's Location section accepts latitude and longitude in decimal
+degrees (latitude first). Use Show map to place or drag a pin, then Apply to
+save it to the photo's XMP sidecar. Remove location clears GPS coordinates and
+altitude in Immage without changing the original photo. An Immage XMP marker
+keeps removed camera GPS from returning on reopen; other photo software may
+still show GPS embedded in the original. Moving a location clears the old altitude. Coordinate editing works
+offline; maps require internet access and no API key. Place-name lookup is not
+included.
+
+Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright),
+available under the [Open Database License (ODbL)](https://opendatacommons.org/licenses/odbl/).
+Map tiles are provided by the OpenStreetMap Foundation and are subject to its
+[tile usage policy](https://operations.osmfoundation.org/policies/tiles/).
+Immage identifies its requests, caches viewed tiles for seven days, and does not
+prefetch areas for offline use. Opening the map sends the viewed area and your
+IP address to the tile service.
+
+Interactive maps use [Leaflet](https://leafletjs.com/), Copyright © 2010–2023
+Volodymyr Agafonkin and © 2010–2011 CloudMade, under the
+[BSD 2-Clause license](https://github.com/Leaflet/Leaflet/blob/main/LICENSE).

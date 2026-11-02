@@ -47,6 +47,45 @@ engine sees them, a fresh copy for each mode. The engine writes XMP sidecars
 next to what it opens, so it never touches the corpus itself, and every
 mode starts from unedited photos.
 
+### Performance tuner
+
+Preferences → Performance → Measuring → **Performance tuner** opens the tuner.
+First load a representative RAW from your typical work, with typical edits,
+modules and masks, and use your normal editing window size. Use a copy: GUI
+benchmark slider moves are added to the photo's history.
+
+Choose the desired rendered-photo FPS and maximum input-to-paint latency (80 ms by default).
+Both metrics use the median after trimming the lowest and highest 10%: frame
+intervals for FPS, and input-to-paint times for latency.
+**Find best preview** tests Quality, full-size Balanced, Balanced 75%, then progressively
+smaller Balanced and Performance drafts. It stops at the first quality level
+meeting both targets across the measured slider drags. It restores your
+preferences and offers the measured configuration for **Apply** or **Cancel**.
+Apply runs the benchmark again; a failed target remains visibly unverified.
+The search is bounded, and reports when none of the tested setups meets the
+targets. Results apply to this photo, edit, display and window size.
+
+The options table also allows measured comparisons of cached detail previews,
+transport, screen scale, frame cache, GPU edits, darktable memory and available
+window renderers. Changes requiring a relaunch save the tuning session and
+resume verification after the photo reopens. Read ahead and the Immich
+originals cache use **Record navigation workload** before and after a change:
+repeat the same photo sequence, including both directions. These operation
+timings are separate from slider FPS. AI acceleration and all thumbnail caches
+are excluded. Cache reductions can evict downloaded originals; edited originals
+are retained.
+
+Each GUI report records the preference values and running native settings.
+Navigation reports include operation timing, frame timing, resource samples
+and cache usage. A backgrounded run or a changed preview area cannot verify the
+editing target. Profiler instrumentation can run with the overlay hidden.
+
+Focused synthetic checks (no machine performance benchmark):
+
+```bash
+node --test verify/performance-tuner.test.mjs verify/detail-preview.test.mjs
+```
+
 ### The GUI benchmark
 
 The engine benchmark cannot see the app's own costs: IPC, drawing, the
@@ -64,6 +103,12 @@ histogram, React. For those:
 4. The report is written to `results/gui/gui-<time>.json` in a dev build
    (in the app's data folder `benchmarks/` in a bundled one). Run
    `report.py` to bring it into SUMMARY.md and the dashboard.
+
+GUI reports include bounded diagnostic events and native engine-lock spans.
+Run `python3 -I benchmarking/diagnose.py <report.json> --json /tmp/analysis.json --trace /tmp/trace.json`
+for slow-frame attribution and independent frontend/native timelines. See
+[GUI performance tracing](../app/docs/dev/performance-tracing.md) for the flow,
+fields, limitations and diagnostics-on/off comparisons.
 
 ## What each scenario measures
 
@@ -177,11 +222,20 @@ session type (`wayland` or `x11`), the desktop, and the GDK, WebKit, EGL and
 NVIDIA environment variables the app ran with, and `machine.webview` the
 web view's own version (WebKitGTK, WebView2 or WKWebView; the user agent's
 is frozen). `webview` holds the user agent, the GPU WebGL reports (the
-card, or a software renderer such as llvmpipe, which means the page is
-drawn without the GPU) and `frameRateHz`, how often the page ran
+card, or a software renderer such as llvmpipe; this describes the WebGL
+context and does not prove the compositor uses the same renderer) and
+`frameRateHz`, how often the page ran
 animation frames while idle before the run: the display's refresh rate,
 or less where WebKit throttles them (macOS halves them in Low Power
 Mode). It bounds the paint stage.
+
+The experimental Linux renderer build also records `machine.display.renderer`:
+`running` is the preference read at startup, `active` the selected EGL vendor
+(or `system` / `environment`), and `next` the saved selection for the next
+launch. The WebGL report above identifies its context's renderer, not the
+compositor's. Compare
+Mesa and NVIDIA after relaunching between runs; keep the photo, window size,
+preview mode and Edit on the GPU setting unchanged.
 
 From 0.37.0 (report version 4), `invokeMs` times the round trip of a
 call that does nothing (`perf_ping`): `idle`, 100 in a row while the page
@@ -189,6 +243,57 @@ is idle before the run, and `drag`, one every 50 ms during the slider
 drags, beside the renders. Each has n, p50, p95, min and max in ms. Slow
 `idle` means the web view's IPC itself is slow; slow `drag` alone means
 the page's drawing holds it up.
+
+From report version 5, `resources` records system and app usage on a background
+thread at a nominal 500 ms interval. `atUnixMs` aligns each sample with the
+`phases` (slider drag/release, zoom and idle) in the same clock. The dashboard's
+GUI tab shows CPU, memory, GPU and per-step peaks, and individual process peaks.
+
+- `cpuPercent` lists system-wide usage for each logical CPU. Each process in
+  Immage's descendant tree records CPU usage and RSS, including darktable and
+  WebKit helpers. CPU 100% means one logical CPU, so a process can exceed 100%.
+- On Linux, `threads` holds the eight busiest app-tree threads each interval,
+  with PID, TID, name and CPU usage from `/proc`. A single thread near 100%
+  during a slow step can reveal serial work even when it migrates between
+  cores. This suggests a bottleneck; it does not establish its cause. Threads
+  that start or exit within an interval may be missed. Other platforms still
+  record CPU per core and per process, but do not report individual threads.
+- Memory includes system RAM used/available, swap used and process RSS in bytes.
+  Summed RSS can count shared pages multiple times. Linux memory PSI is saved
+  as `memoryPressure`; it measures stalls rather than just allocated memory.
+- GPU readings are device-wide, including the desktop and other programs.
+  NVIDIA's persistent `nvidia-smi` query runs once per second and records
+  GPU/memory utilization and VRAM used/total when supported. It does not query
+  clocks, power or temperature. Linux DRM sysfs records
+  GPU busy and VRAM on drivers exposing those counters. Unavailable counters
+  are absent or null, never a fabricated zero. Intel, Apple and other devices
+  without these interfaces may have no GPU readings.
+
+Sampling runs only during the benchmark, stops on success or failure, and is
+capped at ten minutes. `intervalMs` records actual elapsed sample time and
+`collectionMs` records sampler work excluding the asynchronous NVIDIA query.
+Set `IMMAGE_BENCH_RESOURCES=0` before launching the app to disable backend
+resource sampling for an overhead comparison. The sampler adds overhead,
+and sub-500 ms spikes can be missed. Samples are assigned to the phase at the
+end of the interval, so they can include work from a neighboring phase. Compare
+A/B runs with the same instrumentation. App version numbers are unchanged.
+
+Version 5 also includes `webviewTiming`: per-step p50/p95/p99 animation callback
+intervals, estimated missed refresh slots relative to the idle callback rate,
+and event-loop lateness measured by a 100 ms timer. It reuses the existing
+performance overlay's animation callback. These are callback pacing metrics,
+not measurements of actual compositor presentation. Visibility changes are
+recorded; hidden-window samples are excluded from summaries and backgrounded
+runs are flagged for repetition. Raw observations carry phase labels and
+wall-clock timestamps.
+
+`resources.rendererEvidence` captures graphics library basenames and open GPU
+device nodes in the app's Linux process tree at the end of the run, plus the
+loaded NVIDIA driver version when available. Unreadable maps/descriptors are
+flagged. This evidence complements the selected EGL vendor and WebGL context;
+it does not claim to prove WebKit compositor acceleration. Other platforms
+retain the WebGL context and version/environment details without `/proc` data.
+No clock, power, thermal, driver or system settings are changed.
 
 ## For the next session (Claude included)
 
@@ -200,3 +305,34 @@ the page's drawing holds it up.
    comparison by adding a group to `ALTERNATIVES`. Add a control to `CONTROLS`
    with its drag distance.
 4. SUMMARY.md is regenerated; keep conclusions in your own notes.
+
+### GUI frontend metrics (report version 6)
+
+GUI reports include a `frontend` section with overall timing distributions
+(count, median, p95, min, max and total milliseconds) and a breakdown by step.
+It records slider handlers and session updates; React render durations,
+render-to-commit elapsed time and commit counts for the app, histogram and
+adjustment panels; slider render attempts; pixel buffer copies and bytes;
+canvas uploads/readbacks; scope drawing; and worker queue, compute and
+round-trip times. Counts track native render requests, completions and
+stale discards, drawn native/estimated frames, estimated requests/coalescing,
+and worker coalescing, discards and fallback.
+
+`inputToRaf.latestCarriedInput` measures from the newest input carried by a
+frame to its animation-frame callback. Existing sample `total` measures from
+the oldest carried input. Neither proves compositor presentation. Likewise,
+React render-to-commit includes scheduling, not just commit execution, and
+nested profiler durations overlap. Release builds retain React's profiling
+renderer, so compare matching builds and configurations.
+
+Histograms, clipping-overlay generation, adaptive CPU interpolation and
+prediction accuracy checks execute in module Web Workers. The renderer keeps
+its original buffers; dispatched copies are transferred to the workers.
+Accuracy validation uses its own worker queue, is submitted after native frame
+delivery, and never holds the render pump or CPU mixing queue. Only results
+for the current cache and trained anchor pair can change accuracy/recovery.
+Each worker runs one job at a time and retains only the newest pending job
+per surface/task, rejecting superseded results. Worker failure or a ten-second
+response timeout enables synchronous fallback, reported by `workerFallback`
+and `main.<task>.compute`. Worker compute times are separate from the existing
+synchronous frame stages; do not add overlapping timings together.

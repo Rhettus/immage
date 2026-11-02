@@ -4,6 +4,7 @@
 // the Library panel's Immich card: searches the server (immich_search.rs),
 // turns its assets into filmstrip entries, and builds links into Immich's
 // web app. the key stays in the backend; the page only sees the URL
+import { timeTunerWork } from "./tunerWorkload";
 import { invoke } from "@tauri-apps/api/core";
 import { api } from "@immporter/api";
 import type { Exif, ImageEntry } from "./library";
@@ -132,8 +133,10 @@ export async function fetchImmichThumb(imgid: number): Promise<ImageBitmap> {
 
 // the file to open for a result: its own, or the downloaded original
 export async function resolve(i: ImageEntry): Promise<{ path: string; downloaded: boolean }> {
-  const r = i.remote!;
-  return invoke("immich_resolve", { id: r.assetId, name: i.filename, path: r.originalPath, map: await pathMap() });
+  return timeTunerWork("Immich original resolve", async () => {
+    const r = i.remote!;
+    return invoke("immich_resolve", { id: r.assetId, name: i.filename, path: r.originalPath, map: await pathMap() });
+  });
 }
 
 export const photoUrl = (base: string, assetId: string) => `${base}/photos/${assetId}`;

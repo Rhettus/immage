@@ -3,6 +3,167 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
+## 0.41.0
+
+Improvements
+
+- Preferences > Modules adds Contrast equalizer as a Contrast option, replacing
+  the Contrast slider with a draggable graph for luminance, chroma, edges and
+  noise thresholds across coarse-to-fine detail bands.
+- Preferences > Modules offers Contrast & Texture alternatives for Clarity
+  and Texture, with the module's native controls in adjustments and masks.
+  Medium and Fine details stay visible; an Advanced chevron reveals the
+  remaining controls in both adjustments and masks. Existing defaults remain
+  in place.
+- Optional compact 100% loupes above the Detail and Presence controls show
+  the same selected area. It defaults to off; enable it in General > Workspace. Use its point
+  picker, then click the photo to choose the area; Escape cancels picking.
+  Disabling the loupe also disables its rendering. Detail and grain drags
+  preview the selected area directly when the loupe is enabled; otherwise,
+  they keep the visible image at full preview resolution while dragging,
+  including Texture, Sharpening, and luminance and color Denoise. Release
+  updates the full visible view. Contrast and tone adjustments keep their
+  normal whole-image previews.
+- Panorama Merge supports JPEGs and other non-RAW photos, including mixed
+  RAW and non-RAW selections, and saves an editable DNG beside the first photo.
+  A preview above the projection choices lets you compare
+  projections, see which one Auto chooses, and toggle Auto Crop to see the
+  edges it removes before merging.
+- Adjust Capture Time in the photo context menu or Metadata panel shifts
+  selected photos by the same amount to synchronize camera clocks. Preview
+  and confirm the adjustment before saving it to XMP sidecars; the context
+  menu can undo the last batch. Photos without a recorded time are skipped.
+- Metadata adds Location: enter coordinates or drop and drag a pin on an
+  optional OpenStreetMap map, then Apply to save GPS information to the photo's
+  XMP sidecar. Remove location clears GPS coordinates and altitude. Maps offer
+  dark and standard styles and require no API key.
+- Negative adds Export to Library to save a separate positive beside the
+  original, with the conversion and current edits baked in and normal editing
+  tools available. Preferences > General > Workspace chooses losslessly
+  compressed DNG (16-bit float, the default) or TIFF (32-bit float).
+- Filters adds a Rejected category with All photos, Hide rejected and Only
+  rejected options. The selection counts as an active filter and resets with
+  Clear all.
+- Filters adds Camera body: distinguish identical camera models by their body
+  serial numbers, independently of the lens, or find photos without a serial.
+- Immich search results add Import Parent Folder to the right-click menu:
+  add a locally available result's folder to Folders and browse its photos.
+  The action appears only when Immich is configured in Preferences.
+- Generated HDR merges, panoramas, AI denoise results, positive exports and
+  the first result from a plugin open for editing automatically. Preferences >
+  General > Workspace can disable this. Successful completion notifications
+  close after 30 seconds, or immediately when Open or OK is selected.
+- Preferences > Modules groups settings under collapsible Global and Masks
+  sections that follow Focus mode; Alt-click keeps both open. Custom module
+  choices are independent, including contrast equalizer for masks while using
+  AgX globally. Existing adjustments keep their modules.
+- Windows downloads now provide a single `.exe` installer, with a choice of
+  installation for your account or for everyone on the computer.
+- The user guide now includes compact screenshots of the workspace and Basic
+  adjustment controls, with links to the full-size images.
+- User and developer guides now cover all module choices, the contrast equalizer
+  graph, detail previews, metadata editing and generated-photo workflows.
+
+Performance
+
+- Linux AppImages bundle WebKitGTK and JavaScriptCore 2.54.2 while keeping
+  the Ubuntu 22.04 runtime baseline, including Linux Mint 22.x, on x86-64
+  and ARM64. Fractional-scale drag previews remain supported.
+- Detail and Presence loupes pause while browsing or selecting photos in grid
+  view and refresh on return to the photo view, avoiding extra detail renders.
+- Thumbnail loading follows the visible grid or filmstrip as you scroll,
+  rendering on-screen photos before checking the rest of the folder.
+- Deleting rejected photos removes their thumbnails immediately after
+  confirmation while the files move to the Trash in the background.
+- Preview layers reuse canvas allocations and already uploaded frames,
+  skip unchanged placement updates, and defer navigator drawing to reduce
+  work when an exact frame arrives.
+- Histogram, scope and clipping calculations run in background workers,
+  with a fallback where workers are unavailable. Histogram input copies
+  wait until after drawing to reduce work on the window's main thread.
+- The engine retains scaled preview checkpoints on the GPU for reuse by
+  downstream edits. Three recent scaled checkpoints survive ordinary cache
+  replacement, while upstream changes and memory cleanup still invalidate
+  them. This avoids retaining full-resolution demosaiced GPU buffers.
+- Slider drags avoid redundant panel updates. Histograms and scopes update at
+  a reduced cadence during interaction and refresh on release. Slider drags
+  and wheel gestures combine engine edits once per display frame and skip
+  unchanged values, while release immediately submits the final edit.
+- Opening folders reads TIFF-based RAW metadata from small prefixes where
+  possible. Grid thumbnails read suitable embedded JPEGs directly and decode
+  them closer to the grid size, reducing file reads and temporary memory.
+  Other preview layouts retain the full-read fallback.
+- Balanced previews add a 75% size. The tuner uses median timing from the
+  middle 10–90% of frames, defaults to an 80 ms latency target, and groups
+  setup, targets and recommendations with advanced comparisons folded away.
+- Preferences > Performance adds a tuner that starts at full preview quality
+  and finds the highest tested quality meeting your FPS and latency targets.
+  Review its recommended changes, apply them, and verify with another run.
+  Load a representative RAW and use your usual window size for useful results.
+  Other performance settings support measured comparisons and relaunch
+  verification; AI and thumbnail caches are excluded.
+- GUI benchmarks now record CPU usage per core and process, RAM and swap,
+  supported GPU/VRAM counters, and the busiest Linux threads to help identify
+  single-thread bottlenecks. The dashboard shows resource use by step,
+  frame pacing, UI stalls and rendering-path evidence.
+- GUI benchmark diagnostics trace input-to-frame latency, render queues,
+  engine mutex waits, module timings and raw checkpoint cache reuse and
+  eviction. Reports include the build commit and tracked-change status;
+  a bottleneck analysis tool helps interpret the collected traces.
+- Preferences > Performance has a Window renderer choice: Automatic,
+  Mesa or NVIDIA. Relaunch to switch paths, then run the GUI benchmark
+  to compare them on the same build. Photo processing keeps its own
+  GPU setting. Automatic uses the system default renderer on all GPUs,
+  removing the forced Mesa override on NVIDIA.
+
+Bug fixes
+
+- Fix Windows engine linking with the bundled OpenCV used by HDR alignment
+  and Panorama Merge.
+- Fix conflicting Linux build dependencies for the bundled webview on x86-64
+  and ARM64.
+- Windows icon buttons use a consistent arrow cursor so toolbar icons no
+  longer appear to overlap the hand pointer.
+- Windows builds correctly detect the bundled static OpenCV libraries, enabling
+  Panorama Merge and its projection preview. Builds fail if stitching is missing.
+- Opening Crop preserves portrait orientation, so resizing from the top edge
+  no longer snaps a vertical photo to a horizontal crop.
+- HDR, RAW panorama and AI Denoise DNGs retain their format and color
+  calibration metadata, so thumbnails display and the generated photo opens
+  for editing in Immage and darktable.
+- Reset All clears native module settings as well as sliders, including edits
+  imported from darktable that Immage has no controls for. Legacy Filmic and
+  Base Curve tone mappers switch off so they cannot compress highlights after
+  Immage's tone mapper. The reset remains undoable.
+- Histogram graphs give clipped black and white peaks their full bin width,
+  keeping endpoint spikes visible in scopes and tone curves.
+- Preview and final frames stay aligned on scaled displays when adjusting
+  sliders, including 75% previews with odd pixel dimensions.
+- Expanding a folder shows its subfolders without waiting for other expanded
+  folders on slow or disconnected drives to finish loading.
+- Closing Immage stops an unresponsive engine after five seconds, even if
+  it never answers the quit request. On Linux, an Immage crash also stops
+  its engine so it cannot keep the library locked and block relaunching.
+- Folder reads report an error after 30 seconds without an engine batch reply
+  instead of waiting indefinitely. Switching folders ignores the previous
+  read's progress and results.
+- Changes in Preferences > Modules apply to unused tools on the current photo
+  when Preferences closes, without restarting. Tools with edits keep their module.
+- Object mask backdrop ranges use double precision when read back to avoid
+  intermediate overflow with large boost values.
+- Opening a generated positive or other local result from an Immich search
+  switches the grid to its local folder, so the new image is visible there.
+  Generated images also retain their information while the folder loads.
+- Crop corners respond to the first inward drag with a locked aspect ratio,
+  including pulls that are mostly horizontal or vertical.
+- Windows builds compile positive export with or without panorama support
+  and with Exiv2 builds that use UTF-8 paths.
+- Crop guides appear immediately when entering crop and selecting an aspect
+  ratio, including on photos that have not been cropped before.
+- Clipping overlays and histogram/scope updates discard results from
+  replaced frames, including same-sized frames and GPU/CPU transitions.
+  Old clipping overlays clear as their source frame changes.
+
 ## 0.40.0
 
 This release comes early, for one bug big enough to have a release of
@@ -447,11 +608,6 @@ Bug fixes
 - on Linux, sliders respond several times faster when other programs are
   busy, such as on a system drawing in software without its graphics
   driver; before, a slider like Clarity could take over a second a frame
-- on Linux with an NVIDIA graphics card, sliders, zooming and the rest of
-  the window respond about ten times faster; before, NVIDIA's driver held
-  the window to a few updates a second, on Wayland and X11 alike. Immage
-  now has Mesa draw its window, when Mesa is installed and
-  `__EGL_VENDOR_LIBRARY_FILENAMES` isn't set
 
 ## 0.33.0
 

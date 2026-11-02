@@ -12,9 +12,13 @@ darktable's raw processing underneath.
   Immage works with [Immich](immich.md): imports check against it, the
   Library panel searches it, and exports can go straight into an album.
 
+On Windows, download and run the `-setup.exe` installer. Choose installation
+for your account or for everyone on the computer. Windows downloads are
+provided as `.exe` installers only.
+
 New to Immage? Start with [Getting started](getting-started.md).
 
-![Immage editing a photo](images/workspace-labeled.png)
+<a href="images/workspace.png"><img src="images/workspace.png" width="960" alt="Immage editing a photo"></a>
 
 ## Contents
 
@@ -68,6 +72,14 @@ New to Immage? Start with [Getting started](getting-started.md).
 - [Keyboard shortcuts](shortcuts.md)
 
 Working on Immage's code? See the [developer docs](dev/README.md).
+
+## Reporting an interface problem
+
+An application screenshot can show clipped labels, overlapping controls or a
+slider that looks wrong. Include the app version, operating system and display
+scale, and describe the control you moved and what you expected to see.
+Developers can also run a visible-app smoke check against a copied sample photo;
+it checks Exposure dragging and reset without using your photo library.
 
 ## About this guide
 

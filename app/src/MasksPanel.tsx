@@ -1,10 +1,12 @@
+import { ContrastEqualizer } from "./ContrastEqualizer";
+import { detailRows } from "./DetailControls";
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
 // Lightroom's Masks panel: a menu to create a mask, the image's masks with
 // the selected one opened to its shapes, and that mask's settings and own
 // adjustment sliders
-import { BANDS, choiceShows, HSL_TABS, localControlById, RANGES, type Control, type Values } from "./manifest";
+import { BANDS, choiceShows, detailControlIds, HSL_TABS, localControlById, RANGES, type Control, type Values } from "./manifest";
 import { GradingWheels, type WheelMode } from "./ColorWheel";
 import { isRange, maskThumb, NO_REFINE, shapeLabel, type BlendifChannel, type Mask, type ParametricRange,
          type Range, type RangeMap, type Refine, type Shape } from "./masks";
@@ -42,10 +44,10 @@ const RANGE_TOOLS: [MaskTool, string, string][] = [
 const LOCAL_GROUPS: [string, string[]][] = [
   ["White Balance", ["l_temp", "l_tint"]],
   ["Tone", ["l_exposure", "l_contrast", "l_highlights", "l_shadows", "l_whites", "l_blacks"]],
-  ["Presence", ["l_texture", "l_clarity", "l_dehaze", "l_hue", "l_saturation"]],
+  ["Presence", ["l_texture", ...detailControlIds("l_detail_texture"), "l_clarity", ...detailControlIds("l_detail_clarity"), "l_dehaze", "l_hue", "l_saturation"]],
   ["HSL", BANDS.flatMap(([b]) => [`l_hsl_hue_${b}`, `l_hsl_sat_${b}`, `l_hsl_lum_${b}`])],
   ["Color Grading", RANGES.flatMap(([r]) => [`l_cg_${r}_hue`, `l_cg_${r}_sat`, `l_cg_${r}_lum`])],
-  // Sharpening as the photo's module has it (MODULE_CHOICES)
+  // Sharpening as this mask's module has it
   ["Detail", ["l_sharpness", "l_usm", "l_noise", "l_defringe"]],
 ];
 // in black and white a mask's modules run after the conversion (the
@@ -122,7 +124,7 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
   tool: MaskTool | null; target: ToolTarget; brush: BrushSettings; overlay: boolean; disabled: boolean;
   raw: boolean;                              // detail refinement needs a raw
   mono: boolean;                             // the photo is black and white
-  photo: Values;                             // its own values, for which modules it runs on
+  photo: Values;                             // fallback module choices for older mask snapshots
   image: { w: number; h: number } | null;    // the shown image at 100%, for the thumbnails' aspect
   thumbMaps: Record<string, RangeMap>;       // range masks' maps, by mask
   renderSlider: (c: Control, value: number, onChange: (v: number) => void, glow?: number) => React.ReactNode;
@@ -258,7 +260,7 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
           </div>
         ))}
       </>;
-    return ids.map(slider);
+    return detailRows(ids.map((id) => localControlById.get(id)!), (c) => slider(c.id));
   };
   const menu = (t: ToolTarget) => (
     <ShapeMenu target={t} tool={target === t ? tool : null} disabled={disabled} aiBusy={aiBusy}
@@ -458,7 +460,7 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
           </div>
           {(mono ? MONO_GROUPS : LOCAL_GROUPS).map(([title, ids]) => (
             <section key={title}>
-              <h3 className="fold" onClick={(e) => toggle(title, e.altKey)}>
+              <h3 data-mask-group={title} className="fold" onClick={(e) => toggle(title, e.altKey)}>
                 {title}
                 {title === "HSL" && probe && (
                   <span className="probe-chip" title="the color under the pointer, and its band">
@@ -469,7 +471,11 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
                 <Chevron open={open.has(title)} />
               </h3>
               <Collapse open={open.has(title)}>
-                {groupBody(title, ids.filter((id) => choiceShows(id, photo)))}
+                {title === "Tone" && m.values.mod_contrast === 2
+                  ? <>{groupBody(title, ids.filter((id) => id !== "l_contrast"))}
+                      <ContrastEqualizer values={m.values} disabled={disabled}
+                        onChange={(entries) => entries.forEach(([id, v]) => local(id, v))} /></>
+                  : groupBody(title, ids.filter((id) => choiceShows(id, { ...photo, ...m.values })))}
               </Collapse>
             </section>
           ))}

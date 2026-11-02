@@ -22,6 +22,8 @@ benchmarking/__pycache__/
 # release check reports, and the reference edits they compare with
 verify/results/
 verify/references/
+verify/gui/local.json
+verify/gui/__pycache__/
 
 # Obsidian vault settings, from opening a docs folder in Obsidian
 .obsidian/

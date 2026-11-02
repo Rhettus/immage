@@ -57,6 +57,10 @@ beside the type once the photo is edited. Hover over it to see its rating,
 labels and reject button. Once a photo is rated or rejected, those show all
 the time.
 
+Thumbnails load in the background and prioritize the photos currently visible
+in the grid or filmstrip. Scrolling changes that priority; renders already
+running finish before the newly visible photos use their slots.
+
 A photo counts as edited once you change something yourself. What Immage
 gives a photo the first time it opens (the **New Photos** settings in
 [Preferences](preferences.md)) doesn't count, and undoing every change
@@ -115,9 +119,21 @@ The toolbar under the filmstrip filters the folder:
   as many as you like, then click **Search** to filter the folder and show
   it in the grid; **Clear** in the panel takes that one off, at the next
   **Search**.
+  - **Rejected**: **All photos**, **Hide rejected** or **Only rejected**.
+    This counts as an active filter and resets with **Clear all**.
   - **File type**, **Camera** and **Lens**: tick any to show photos of
     those, for example **RAW** and **JPEG**. Each lists what the folder
     holds, with how many photos of each.
+  - **Camera body**: distinguish physical bodies of the same model by their
+    full serial numbers, even when you swap lenses. Entries show the camera
+    model, serial and photo count. Tick multiple bodies to include any of them;
+    combine with Camera, Lens or other filters to narrow the results. Long
+    lists can be searched by model or serial. **Serial not recorded** selects
+    photos without a usable body serial; those cannot be assigned reliably to
+    a particular body. Serials come from the original file's supported metadata,
+    including recognized camera maker notes; lens serials are never used.
+    Changes apply with **Search**, and reset with **Clear** or **Clear all**.
+    This filter is available for folders, not Immich server searches.
   - **Keywords**: tick one or more to show photos with all of them. A
     keyword includes those under it, so **Places** shows photos tagged
     **Places › Norway** too.
@@ -154,6 +170,13 @@ corner, and opens. Each copy has its own sidecar.
 To remove one, right-click it and choose **Remove Virtual Copy**. Its
 sidecar goes to the Trash; the photo file stays.
 
+## Generated photos
+
+Generated photos open for editing automatically, including HDR and panorama
+merges. Turn off **Open generated photos** in Preferences › General › Workspace
+to stay on your current photo and use the completion notification's **Open**.
+Successful notifications close after 30 seconds, or when Open or OK is selected.
+
 ## HDR Merge
 
 HDR Merge combines bracketed raws, the same scene at different
@@ -171,6 +194,10 @@ picture: it opens with the new-photo defaults and is edited like any
 raw, with Exposure, Highlights and Shadows bringing the range in. The
 brackets themselves aren't changed.
 
+HDR DNGs preserve their format identification, color calibration and sensor
+pattern when copying the brackets' EXIF, and can also open in darktable.
+Regenerate an older merge if it shows a **?** thumbnail and cannot open.
+
 The brackets must be raws from the same camera, of the same size and
 orientation. Anything that moves between them, such as people or
 leaves, shows as a ghost: Auto Align lines up the camera's movement,
@@ -178,9 +205,16 @@ not the subject's.
 
 ## Panorama Merge
 
-Panorama Merge stitches overlapping raws into one wide photo. Select the
+Panorama Merge and its projection preview are supported on Windows, macOS and
+Linux. Official Windows builds include the OpenCV stitching support needed for
+both preview and merge. If the dialog says this build cannot stitch panoramas, its engine lacks
+stitching support; install a build that includes it.
+
+Panorama Merge stitches overlapping RAW or non-RAW photos, including mixed
+selections, into one wide photo. Select the
 photos in the filmstrip or grid, then press ⌃M or right-click and choose
-**Panorama Merge…**. Choose a projection:
+**Panorama Merge…**. A preview of your selected photos appears above the
+projection choices. Choose a projection to compare its effect:
 
 - **Auto** picks one from how wide the panorama is
 - **Spherical** suits very wide panoramas, and those of several rows
@@ -188,22 +222,38 @@ photos in the filmstrip or grid, then press ⌃M or right-click and choose
 - **Perspective** keeps straight lines straight, for architecture, up to
   about 100° across
 
-**Auto Crop** cuts away the empty edges the photos leave. Click
-**Merge**.
+With **Auto**, the label below the preview shows the projection chosen.
+**Auto Crop** cuts away the empty edges the photos leave; toggle it to compare
+the crop immediately. With it off, empty edges appear as a checkerboard.
+
+The preview takes a moment to build and updates when you change projection.
+Previously viewed projections are kept while the panel is open. It shows
+geometry at reduced resolution; final detail, alignment and color may differ.
+If some photos do not overlap, the panel shows how many the preview uses.
+If the preview fails, try **Retry** or another projection. You can still click
+**Merge** to attempt the full-resolution stitch. Closing the panel cancels
+preview work. Previewing does not create a file or change your source photos.
+
+Click **Merge** when you are happy with the projection and crop.
 
 Immage writes a new DNG beside the first photo, named `<name>-pano.dng`
 (then `<name>-pano_01.dng` and so on), and lists it after that photo. It
 is stitched in the background while you go on editing, and **Open** at
 the bottom left of the photo opens it. Like Lightroom's, the DNG holds
-the raw data with the lens corrections already made: it opens as the
-first photo would, with the new-photo defaults, white balance as shot
-and Lens Corrections off, and is edited as one photo. The other edits
+linear image data with lens corrections already made. An all-RAW selection
+opens with the new-photo defaults, white balance as shot and Lens Corrections
+off. A selection containing non-RAW photos uses a common linear color space
+and a neutral starting edit. The DNG is edited as one photo. The other edits
 of the photos you merged aren't used, and the photos themselves aren't
 changed.
 
-The photos must be raws from the same camera, overlapping by a third or
-so. A photo that overlaps none of the others is left out, and the
-activity line says so. Stitching runs on OpenCV rather than darktable,
+Panorama DNGs can also be opened in darktable. RAW merges preserve the DNG's
+format identification, camera color matrix and white balance when copying
+the source photo's EXIF. If an older RAW merge shows a **?** thumbnail and
+cannot open, merge the original photos again with the updated version.
+
+The photos should overlap by a third or so. A photo that overlaps none of
+the others is left out, and the activity line says so. Stitching runs on OpenCV rather than darktable,
 which has no panorama tool. It takes from half a minute to a few
 minutes, and a lot of memory for many photos.
 
@@ -213,7 +263,9 @@ Immage only deletes photos you have rejected. Reject them with X, select
 them (or show only rejected photos and press ⌘A), then right-click and
 choose **Delete Rejected Photo…** (with several, **Delete 3 Rejected
 Photos…**). They move to the Trash with their sidecars, after you
-confirm.
+confirm. Thumbnails disappear immediately while the files move in the
+background. If deletion fails, an error appears and the folder refreshes to
+show any files still present.
 
 ## The right-click menu
 
@@ -222,8 +274,12 @@ Right-click a photo, or a selection, for:
 - **Edit In ›**: send it to another application. See [Edit In](edit-in.md).
 - **Create Virtual Copy** / **Remove Virtual Copy**
 - **HDR Merge…**, for two raws or more
-- **Panorama Merge…**, for two raws or more
+- **Panorama Merge…**, for two photos or more
+- **Adjust Capture Time…** / **Undo Capture Time Adjustment…**
 - **Show in Finder**
+- **Import Parent Folder**, for an Immich result when Immich is configured in
+  Preferences: add its locally mapped parent to Folders and browse its photos.
+  Disabled when no local file is available. See [Immich](immich.md).
 - **Show in Immich**, for a photo from an Immich search
 - **Delete Rejected Photo…**
 
@@ -237,6 +293,23 @@ The **Metadata** card shows the open photo's:
 - the rating and color label
 - what the camera recorded: capture date, dimensions, focal length,
   aperture, shutter speed, ISO, exposure bias, flash, lens, camera and more
+
+### Adjust capture time
+
+Select photos, then choose **Adjust Capture Time…** in the context menu or
+Metadata panel. Enter the correct time for the reference photo. The dialog
+previews the offset and number of photos; confirm to shift them all by the
+same amount, preserving relative timing. Photos without a valid recorded
+time are skipped. Changes go to XMP sidecars; original files stay unchanged.
+The context menu can undo the last batch after confirmation.
+
+### Location
+
+In Metadata’s **Location**, enter latitude and longitude or open the optional
+OpenStreetMap map. Click to drop a pin, or drag it, then **Apply** to save GPS
+coordinates to the XMP sidecar. **Remove location** clears coordinates and
+altitude. The map offers dark and standard styles and needs an internet
+connection, with no API key.
 
 ## Keywords
 

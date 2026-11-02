@@ -8,9 +8,9 @@
 # (app/scripts/build_linux_deps.sh), which are built from source rather
 # than installed, and Tauri's
 
-# toolchain; darktable needs gcc 12 or later
-gcc-12
-g++-12
+# toolchain; WebKit ANGLE needs newer template assertion handling
+gcc-14
+g++-14
 cmake
 ninja-build
 ccache
@@ -49,8 +49,9 @@ libxml2-dev
 zlib1g-dev
 libjpeg-turbo8-dev
 libopenjp2-7-dev
-# from the PPAs: Ubuntu 22.04 has no libjxl, and older libavif and openexr
-# than darktable reads
+# from the PPAs: newer image-format libraries than Ubuntu 22.04 ships.
+# on ARM64, build.yml omits libjxl-dev, libsharpyuv-dev and libopenexr-dev;
+# build_linux_deps.sh builds their libraries from source instead
 libavif-dev
 libjxl-dev
 libopenexr-dev
@@ -67,6 +68,8 @@ libopenh264-dev
 libsharpyuv-dev
 libinih-dev
 libbrotli-dev
+# OpenEXR on ARM64 uses the system libdeflate instead of fetching a private copy
+libdeflate-dev
 libexpat1-dev
 
 # Tauri
@@ -75,3 +78,43 @@ libjavascriptcoregtk-4.1-dev
 libsoup-3.0-dev
 libayatana-appindicator3-dev
 libssl-dev
+
+# WebKitGTK 2.54.2 (GTK3): explicit dependencies instead of Jammy's
+# source-package build-deps. In particular, gst-plugins-bad's development
+# package pulls in distribution OpenCV, VTK and FFmpeg, which conflict with
+# the image-library PPAs and the source-built OpenEXR on ARM64.
+lld
+bison
+flex
+gperf
+ruby
+unifdef
+gobject-introspection
+libgirepository1.0-dev
+libgcrypt20-dev
+libxslt1-dev
+libtasn1-6-dev
+libharfbuzz-dev
+libharfbuzz-icu0
+libicu-dev
+libepoxy-dev
+libatk-bridge2.0-dev
+libsecret-1-dev
+libhyphen-dev
+libenchant-2-dev
+libmanette-0.2-dev
+libsystemd-dev
+libdrm-dev
+libgbm-dev
+libegl1-mesa-dev
+libgles2-mesa-dev
+libwayland-dev
+wayland-protocols
+libwoff-dev
+flite1-dev
+libgstreamer1.0-dev
+libgstreamer-plugins-base1.0-dev
+libgstreamer-gl1.0-0
+libseccomp-dev
+bubblewrap
+xdg-dbus-proxy

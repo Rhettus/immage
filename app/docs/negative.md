@@ -94,6 +94,16 @@ unticked), and paste onto the other frames. Each one is converted and its
 modules turned off as if you had converted it. A frame exposed very
 differently may need its own picks.
 
+## Export a positive to the library
+
+**Export to Library** writes a separate positive beside the original, with
+the conversion and current edits baked in. It opens with normal editing
+tools available, so you can continue editing without the negative workflow's
+restrictions. The original keeps its conversion edit. Preferences › General ›
+Workspace › **Converted negative format** chooses losslessly compressed
+**DNG (16-bit float)**, the default, or **TIFF (32-bit float)**.
+The result opens automatically unless **Open generated photos** is off.
+
 ## In darktable
 
 The edit is darktable's negadoctor module, with the modules above

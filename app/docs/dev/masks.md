@@ -131,18 +131,33 @@ instance:
 |---|---|
 | Temp, Tint | color calibration |
 | Exposure, Blacks | exposure |
-| Contrast, Whites, Saturation, Hue, Color Grading | color balance rgb |
+| Contrast | color balance rgb, or contrast equalizer (`atrous`) |
+| Whites, Saturation, Hue, Color Grading | color balance rgb |
 | HSL | color equalizer |
 | Highlights, Shadows | tone equalizer, or shadows and highlights |
-| Texture | diffuse or sharpen |
-| Clarity | local contrast |
+| Texture | diffuse or sharpen, or contrast & texture (`<mask>#texture`) |
+| Clarity | local contrast, or contrast & texture |
 | Dehaze | haze removal |
 | Noise | denoise (profiled) |
 | Defringe | chromatic aberrations, or defringe |
 | Sharpening | sharpen, or a second diffuse or sharpen (`<mask>#sharpen`) |
 
-Where a tool can run on more than one module, the mask uses the same module
-as the photo's global setting (Preferences › Modules).
+Where a tool has alternatives, Preferences › Modules › Masks chooses them
+independently from Global. `MASK_MODULE_CHOICES` lists the supported local
+options; the default masked Contrast is color balance rgb, since AgX cannot
+run inside a mask. Session initializes new masks from these scoped preferences
+and infers loaded masks' choices from their instances. Each mask stores its
+`mod_*` selections in `Mask.values`; rendering and sharing resolve those
+before the photo's global values. Used adjustments keep their modules when
+Preferences closes, while unused tools take the current mask preferences.
+
+For masked contrast equalizer, `mod_contrast = 2` shows ContrastEqualizer in
+the mask's Tone group. `equalizerMap` maps the same 30 `ce_*` controls as the
+global graph to the mask's own atrous instance. Its first three channels are
+neutral at 0.5 and the two noise channels at 0; enablement uses those defaults,
+and reload keeps the values' 0.001 precision. Atrous instances are not merged.
+Color balance rgb still carries the other local controls, with its Contrast
+written at neutral when the mask selects atrous.
 
 Local Whites is color balance rgb's highlights brilliance, not the tone
 mapper's white point: AgX and sigmoid apply to the whole image and cannot be

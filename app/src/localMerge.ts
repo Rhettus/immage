@@ -106,7 +106,7 @@ export function planMerge(masks: Mask[], values: Values, before: boolean, ctx: I
       if (!canMerge(m)) continue;
       if (!merged.has(m.name)) merged.set(m.name, new Set());
       merged.get(m.name)!.add(map.op);
-      const on = !before && !m.hidden && choiceOn(map, values) && map.controls.some((id) => m.values[id] !== 0);
+      const on = !before && !m.hidden && choiceOn(map, { ...values, ...m.values }) && map.controls.some((id) => m.values[id] !== 0);
       if (!on) continue;
       const fk = [blendKey(m), ...fixed.map((id) => key(m.values[id] ?? 0))];
       const s = scaled.map((id) => m.values[id] ?? 0);
