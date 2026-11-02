@@ -1,5 +1,15 @@
 # GUI performance tracing
 
+Slider input batches on `requestAnimationFrame` while Session is idle. While
+the pump is busy, the active job itself coalesces incoming edits: `submitEdits`
+flushes any pending animation callback so the next round can send the latest
+values immediately after completion. This does not start concurrent renders or
+cancel ordinary edit renders. Base cancellation still reaches the busy pump.
+`verify/detail-preview.test.mjs` holds a render open, sends multiple inputs,
+and verifies serialized latest-value delivery without advancing the animation
+clock. Native latency improvement requires a matched benchmark; no gain is
+inferred from the deterministic scheduling check.
+
 The existing [slider sequence](diagrams/slider-sequence.svg) describes the
 three-process rendering flow. This diagram shows the diagnostic points:
 

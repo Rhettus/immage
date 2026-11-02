@@ -390,11 +390,12 @@ export class Session {
   private editFrame: number | null = null;
   private coalesceWait?: number;
   private submitEdits(coalesce: boolean) {
-    if (!coalesce) { this.flushEdits(); return; }
+    // An in-flight job already batches input until it completes. Leave no
+    // animation callback blocking its next round once the engine is free.
+    // flushEdits also lets the busy pump cancel an obsolete base immediately.
+    if (!coalesce || this.busy) { this.flushEdits(); return; }
     if (this.editFrame === null) this.coalesceWait = perf.begin("coalesce", { blockingPump:true });
     this.editFrame ??= window.requestAnimationFrame(() => this.flushEdits());
-    // let the pump cancel an obsolete base render immediately
-    if (this.busy) void this.pump();
   }
   flushEdits() {
     perf.finish(this.coalesceWait); this.coalesceWait = undefined;

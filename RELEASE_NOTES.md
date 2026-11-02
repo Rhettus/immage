@@ -12,6 +12,8 @@ Improvements
 
 Performance
 
+- Slider edits queued during a render can start their next preview as soon as
+  that render finishes, avoiding an extra display-frame wait.
 - Repeated cache hits update access timestamps at most once a minute, reducing
   metadata writes while keeping recently used thumbnails and originals cached.
 - Export dialog previews encode JPEG in memory and use memory-backed transfer,
