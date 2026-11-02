@@ -791,17 +791,15 @@ compatibility test; launch the resulting AppImage on Mint and benchmark it.
 Packaging regressions run with `python3 -I scripts/test_webkit_bundle.py`,
 including missing helpers/libraries, mismatched JavaScriptCore and newer glibc
 imports. GUI reports obtain the runtime version through `tauri::webview_version()`.
-Reported testing shows improved NVIDIA performance on Ubuntu/Wayland and a
-rendering performance regression on Mint/X11 that is resolved by selecting Mesa
-and restarting. For initial launch on the affected X11 system, use
-`GDK_BACKEND=x11 WEBKIT_DISABLE_DMABUF_RENDERER=1 ./Immage.AppImage`, then
-select Mesa in Preferences > Performance. Manual testing on the affected
-Mint/X11 system confirmed that subsequent normal launches need neither variable
-once Mesa is saved. These are system-specific observations, not proof of a
-general NVIDIA fix or of WebKitGTK as the sole cause. Automatic still uses system EGL
-selection, with explicit renderer preferences available. Verify both display
-backends with matching hardware, photos and settings before changing defaults
-or providing different WebKitGTK packages.
+The published 0.41.0 bundled runtime showed a Mint/X11/NVIDIA regression;
+selecting Mesa after an initial launch with
+`GDK_BACKEND=x11 WEBKIT_DISABLE_DMABUF_RENDERER=1 ./Immage.AppImage` was the
+confirmed workaround for that release. Starting with 0.41.1, automatic system
+WebKit selection and the GBM default described below resolve the reported
+Mint startup and rendering issue without requiring Mesa. Manual testing also
+confirmed normal launch on Ubuntu/Wayland. These observations do not establish
+performance on every NVIDIA system. Automatic window renderer selection still
+uses system EGL selection, independently of the launcher's WebKit selection.
 
 Starting with 0.41.1, Linux runtime selection is installed by
 `app/scripts/prepare_appimage_launcher.py` after Tauri deploys the AppDir.

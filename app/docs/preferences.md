@@ -57,7 +57,11 @@ webview retains video and audio support; MPEG-TS and WebRTC are not enabled. GUI
 reports record the running WebKitGTK version; use a new build when comparing
 renderer behavior after upgrading. On Wayland, **Drag drafts at the screen’s
 scale** still sizes reduced drag previews for the compositor’s actual fractional
-scale (for example, 125%), while release frames keep full quality.
+scale (for example, 125%), while release frames keep full quality. GTK 3
+still draws the window and full-quality release frames at the next integer
+scale (200% at 125% or 150%), which can increase rendering and presentation
+time. Using 100% scaling or `GDK_BACKEND=x11` can reduce this overhead;
+performance depends on the system.
 
 Starting with 0.41.1, the launcher chooses the WebKitGTK installed by your distribution
 when it detects X11 and a loaded NVIDIA driver. Wayland, other GPUs and uncertain

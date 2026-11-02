@@ -86,24 +86,23 @@ Updates), and offers to install it.
 ## Known issues
 
 - **Linux with an NVIDIA graphics card**: rendering performance varies by
-  system. Preferences > Performance > Window renderer offers Automatic
-  (the system default), Mesa and NVIDIA. Relaunch after changing it and
-  compare GUI benchmarks. Photo processing uses its own GPU setting.
-  Linux AppImages bundle WebKitGTK 2.54.2. On X11 with NVIDIA, including
-  Linux Mint, launch or rendering issues have been reported. For initial
-  launch, use `GDK_BACKEND=x11 WEBKIT_DISABLE_DMABUF_RENDERER=1 ./Immage.AppImage`
-  (replace the filename), then select Mesa in Preferences > Performance and
-  restart. After selecting Mesa, launch normally without these variables.
-  Ubuntu/Wayland testing showed improved NVIDIA performance, but results
-  still vary by system.
-- **Linux on Wayland with fractional scaling** (125%, 150%, ...): the
-  web view Immage is built on draws such a window at 200% and the desktop
-  shrinks it. Immage renders the photo for the screen's own scale while a
-  slider moves, but the photo after you let go, and the window itself,
-  are still drawn at 200%, so letting go is slower than at 100%. On some
-  computers frames also take longer to reach the window at 200%. At 100%
-  scaling, or started with `GDK_BACKEND=x11`, it is about as fast as
-  elsewhere
+  system. On X11, AppImages automatically use compatible system WebKitGTK
+  with GBM disabled, fixing the startup failure and slow rendering reported
+  on Linux Mint. Launch normally; no environment variables or Mesa selection
+  are required on the confirmed system. If the system runtime is incompatible,
+  the launcher falls back to bundled WebKitGTK 2.54.2. Wayland and other GPUs
+  use the bundled runtime by default. Preferences > Performance > Window
+  renderer offers Automatic (the system default), Mesa and NVIDIA. Relaunch
+  after changing it and compare GUI benchmarks. Photo processing uses its
+  own GPU setting. Results on other hardware may vary.
+- **Linux on Wayland with fractional scaling** (125%, 150%, ...): GTK 3
+  draws the window at the next whole scale (200% for 125% or 150%) and the
+  desktop shrinks it. With "Drag drafts at the screen's scale" enabled,
+  reduced drag previews use the screen's actual scale, but full-quality
+  frames after releasing a slider and the window still use the larger
+  integer scale. This can increase rendering and presentation time.
+  Using 100% scaling or starting with `GDK_BACKEND=x11` can reduce this
+  overhead; performance depends on the system.
 
 ## Source
 

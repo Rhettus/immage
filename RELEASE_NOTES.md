@@ -10,6 +10,12 @@ Improvements
 - A Linux AI diagnostic script collects model-loading logs and file checksums
   into one report without requiring an application rebuild.
 
+Bug fixes
+
+- Release instructions describe automatic NVIDIA/X11 startup handling and
+  the remaining Wayland fractional-scaling overhead without requiring the
+  older Mint launch workaround.
+
 ## 0.41.1
 
 Improvements
