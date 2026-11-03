@@ -51,6 +51,10 @@ export async function reveal(t, selector, text) {
     const c = await t.driver.observe(inspect, selector, text);
     if (!c) throw Error(`Control is not mounted: ${selector}${text == null ? '' : ` "${text}"`}`);
     if (c.visible && c.hit) return c;
+    // a handle on a graph's edge overhangs it sideways and no scrolling can
+    // help: its center taking the hit while vertically inside is enough
+    if (c.hit && !c.scrollX && c.bounds.y >= c.clip.top && c.bounds.y + c.bounds.height <= c.clip.bottom
+        && c.x >= c.clip.left && c.x <= c.clip.right) return c;
     if (stuck >= 4 && !tabbed && text == null && await t.driver.observe(s => document.querySelector(s)?.tabIndex >= 0, selector)) {
       tabbed = true;
       try { await tabTo(t, selector, 400); } catch {}

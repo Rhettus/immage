@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { click, reveal, inspect, openTool } from '../support/controls.mjs';
 import { panel, expandSections, textButton, choose, Blocked, openMaskGroup } from '../support/scenario.mjs';
 import { until } from '../support/webdriver.mjs';
-import { settledPhoto } from './smoke.mjs';
+import { settledPhoto, settledReset } from './smoke.mjs';
 
 async function preferences(t, tab) {
   await click(t, 'button[data-tour="prefs"]');
@@ -61,8 +61,8 @@ export async function wheels(t) {
       const point=await t.driver.observe((s,i)=>{ const e=document.querySelectorAll(`${s} .wheel`)[i-1],r=e.getBoundingClientRect(); return {x:r.x+r.width/2,y:r.y+r.height/2,width:r.width}; },p,i);
       const before=await settledPhoto(t);
       await t.driver.drag(point,{x:point.x+point.width*.2,y:point.y-point.width*.1});
-      await settledPhoto(t,q=>q.hash!==before.hash); await t.evidence(`${mode}-${i}`);
-      await t.driver.point(point.x,point.y,2); await settledPhoto(t,q=>q.hash===before.hash);
+      const edited=await settledPhoto(t,q=>q.hash!==before.hash); await t.evidence(`${mode}-${i}`);
+      await t.driver.point(point.x,point.y,2); await settledReset(t,before,edited,`${mode}-${i}-reset`);
     }
   }
 }

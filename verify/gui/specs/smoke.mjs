@@ -63,6 +63,17 @@ export async function settledPhoto(t, predicate = () => true) {
   }, 'a settled final photo frame', 60000);
 }
 const summary = ({ rgba, ...rest }) => rest;
+// After a reset: wait for a settled frame other than the edited one, then
+// compare it with the baseline by mean absolute error (exact is 0).
+export async function settledReset(t, baseline, edited, label = 'reset') {
+  const reset = await settledPhoto(t, p => p.hash !== edited.hash);
+  let error = 0;
+  for (let i = 0; i < reset.rgba.length; i++) error += Math.abs(reset.rgba[i] - baseline.rgba[i]);
+  error /= reset.rgba.length;
+  t.measure({ name: label, photoHash: reset.hash, baselineHash: baseline.hash, meanAbsoluteError: error });
+  assert(error < 1, `${label}: photo mean pixel error ${error} exceeds 1/255`);
+  return reset;
+}
 
 export async function exposure(t) {
   const title = await t.driver.observe(read.panelTitle);
