@@ -96,7 +96,11 @@ async function tool(t, name) {
   await panelsTop(t);
 }
 
+// SITE_SHOTS=masks,heal runs only those steps (for a retake).
+const only = process.env.SITE_SHOTS?.split(',').map(s => s.trim()).filter(Boolean);
+
 async function attempt(t, name, fn) {
+  if (only && !only.includes(name)) return;
   try { await fn(); }
   catch (error) {
     t.measure({ name, skipped: error.message.split('\n')[0] });
