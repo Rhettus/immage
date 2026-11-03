@@ -29,7 +29,7 @@ The candidate `_lens_grid_eval` extracts doubled factors on the host and its
 `lens_vignette` samples the grid before multiplying RGB. Starting grid construction
 at step 1 can remove interpolation, but does not restore actual-pixel Lensfun
 vignetting. The profile probe also rules out a universal replacement with
-`max(pixel * factor, 0)`: ten sampled profiles disagree. The comment that Lensfun
+`max(pixel * factor, 0)`: twelve profiles disagree in the all-calibration, three-row sample. The comment that Lensfun
 only multiplies factors in `_lens_grid_eval` is therefore insufficient to justify
 old CPU compatibility for installed Lensfun 0.3.4.0.
 
@@ -88,3 +88,15 @@ Local capability check: `clGetPlatformIDs(0, NULL, &count)` through installed
 `libOpenCL.so.1` returned `-1001` (`CL_PLATFORM_NOT_FOUND_KHR`), count 0.
 No device run was attempted. The loader's presence and features-enabled engine
 build are not old OpenCL image references. Native device capture remains open.
+
+
+## Isolated prototype
+
+`verify/pin-lens-direct.py` builds a separate diagnostic plugin from the frozen
+candidate. It forces direct CPU coordinate rows, evaluates vignetting on actual
+pixels in the historical stage order and disables committed Lensfun OpenCL
+readiness. It skips factor-grid construction and per-thread factor allocations.
+The [audit](darktable-update-review.md#all-calibration-lensfun-sampling-and-isolated-direct-cpu-prototype)
+records measured coverage. No parameter layout, import policy or production
+mode is implemented by this diagnostic. Broader image, migration and native
+fallback validation remains necessary.

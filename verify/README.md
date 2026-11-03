@@ -418,7 +418,35 @@ It uses each eligible profile's first vignetting calibration, three row widths,
 both directions and seven constant values. TSV records direct/factor differences,
 zero-clamped differences and nonfinite counts. Missing XML, failed loading,
 inactive vignetting or failed evaluation exits nonzero. Compare library/database
-versions and hashes when interpreting results. This samples the top row only;
+versions and hashes when interpreting results. The default samples the top row only;
 it does not verify engine image output, profile matching, OpenCL or import policy.
 A zero clamp reproduces the original Olympus probe but fails for some other
 profiles; see the developer pin review for measured coverage and exceptions.
+
+Pass `--all-calibrations` to sample every eligible stored calibration at the top,
+center and bottom rows. The TSV appends zero-based `calibration` and `y` columns
+in both modes. Widths, constant values and directions remain the same. This
+expands library sampling; it does not supply whole-image or device references.
+
+### Isolated Lensfun direct CPU diagnostic
+
+Build a separate candidate plugin without changing either source/build tree:
+
+```sh
+python3 verify/pin-lens-direct.py \
+  --source build/darktable-pin-review/source \
+  --build build/darktable-pin-review/cpu \
+  --output build/darktable-pin-review/isolation/lens-direct-reference
+```
+
+The output must be new. This Linux Ninja diagnostic checks source anchors and
+reuses the configured candidate compiler/link flags; it copies deployment trees
+with symlinks and replaces only its own lens plugin. Generated source, build log
+and input/output hashes remain in the output. Use it as `--candidate` in
+`pin-pixels.py`. Hold the source build unchanged while using the symlinked tree.
+
+It forces direct row coordinates, replaces factor-grid vignetting with
+actual-pixel Lensfun calls and disables the committed Lensfun OpenCL readiness
+flag. Unused factor grids and per-thread factor allocations are removed. Metadata
+and manual processing are unchanged. It adds no serialized mode or import default;
+it is an isolated CPU compatibility experiment, not a production pin update.

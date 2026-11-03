@@ -362,6 +362,12 @@ The production pin remains unchanged until the adoption gates pass.
   boundary pixel; cover reverse lens, interpolation modes, tiling and pixel aspect.
 - [x] Broaden the standalone negative-value evaluation to installed calibrated
   Lensfun profiles; identify where the diagnostic zero clamp fails to reproduce direct evaluation.
+- [x] Extend the library probe to all stored vignetting calibrations and top/center/bottom rows.
+- [x] Build a reproducible isolated direct CPU prototype and compare Olympus saved
+  forward/reverse histories at 512 pixels and 4640 pixels with confirmed 6×6 lens
+  tiles, with defaults/metadata as controls.
+- [ ] Validate the direct prototype with broader exceptional-profile images and
+  native device/fallback references before choosing production migration behavior.
 - [x] Trace old CPU/OpenCL Lensfun stage ordering and factor arithmetic; record a
   [compatibility design](lens-compatibility-design.md) and local device availability.
 - [ ] Capture old OpenCL Lensfun device references and select/validate the serialized
@@ -1767,3 +1773,46 @@ No mode, migration default or import policy is implemented or approved.
 The local OpenCL loader reports `CL_PLATFORM_NOT_FOUND_KHR` (-1001), zero
 platforms. Old kernel source confirms unclamped RGB factor multiplication and
 unchanged alpha, but native device image references remain unchecked.
+
+
+### All-calibration Lensfun sampling and isolated direct CPU prototype
+
+`verify/lensfun-profiles.cc --all-calibrations` samples all 23,697 eligible
+stored vignetting calibrations across the same 547 profiles/34 maker labels,
+at top, center and bottom rows. Widths 96/512/4640, both directions and the
+seven previous constant values produce 2,985,822 rows with Lensfun 0.3.4.0.
+All nonnegative direct/factor samples remain exact; all 426,546 negative rows
+differ. No nonfinite values were observed. Zero-clamping fails in 1,488 rows
+across 12 profiles, with maximum float delta 469,292.75. The two additional
+profiles beyond the first-calibration sample are Canon PowerShot G1X Mark II
+and Canon PowerShot SX220 HS with CHDK DNG. These are float library diagnostics,
+not rendered-code tolerances or proof about unsampled pixels/values.
+The default run reproduces all 22,974 original numerical rows exactly; TSV now
+appends zero-based calibration and row coordinates. Ignored evidence under
+`build/darktable-pin-review/lensfun-profiles-broad/` includes reports, summary,
+probe, summarizer and source/binary/library/XML hashes.
+
+`verify/pin-lens-direct.py` makes the isolated actual-pixel prototype reproducible
+from a configured candidate source/build. It requires a new output directory,
+checks exact source anchors and replaces only its copied lens plugin. CPU
+coordinates use direct Lensfun rows; vignetting evaluates actual input/output
+rows in the historical forward/reverse order. It removes unused factor-grid
+construction and per-thread factor buffers, and sets committed Lensfun
+`process_cl_ready` false. Metadata/manual processing retain candidate behavior.
+No serialized mode, migration, import default or production source is changed.
+This is a Linux Ninja diagnostic, not a portable packaging tool.
+
+The new prototype built with the configured candidate flags. Olympus ORF
+512-pixel forward/reverse saved histories, default frame and metadata correction
+match coherent old-cpu exactly; saved histories retain visible edit guards and
+old reloads match. Synthetic default control is exact. Evidence:
+`build/darktable-pin-review/isolation/lens-direct-reference/` (generated source,
+plugin, log and manifest) and `pixel-lens-direct-reference/` (report, frames,
+sidecars and logs). CPU-only execution does not validate device scheduling or
+fallback; no OpenCL platform is locally available. At 4640 pixels with the minimum resource budget, forward/reverse histories and
+metadata correction also match exactly, including old reloads; all edits remain
+visible. Lens logs confirm 6×6 tiles in all nine saved-history processes and no
+lens allocation fallback/failure. Defaults and synthetic controls are exact.
+Evidence: `pixel-lens-direct-reference-minimum/`. This establishes the measured
+fixed-layout comparison only. Broader exceptional-profile images, aspect and
+interpolation combinations for this new prototype remain separate gates.
