@@ -132,13 +132,17 @@ export async function negative(t) {
   await textButton(t,'.negative','Turn Off Conversion'); await settledPhoto(t,p=>p.hash===baseline.hash);
 }
 export async function zones(t) {
+  // the Zone System works on black and white: convert first, back to color after
+  await openTool(t,'adjust'); await textButton(t,await panel(t,'basic'),'B&W'); await settledPhoto(t);
   await openTool(t,'zones');
-  const columns=await t.driver.observe(()=>document.querySelectorAll('.zone-col').length); assert(columns>=10);
+  await until(()=>t.driver.observe(()=>document.querySelectorAll('.zone-col').length>=10),'zone columns');
+  const columns=await t.driver.observe(()=>document.querySelectorAll('.zone-col').length);
   for(let i=1;i<=columns;i++) {
     await click(t,`.zone-col:nth-of-type(${i})`);
     await until(()=>t.driver.observe(()=>!!document.querySelector('.zone-name')),'zone selected');
     await t.evidence(`zone-${i}`);
   }
+  await openTool(t,'adjust'); await textButton(t,await panel(t,'basic'),'Color'); await settledPhoto(t);
 }
 
 export async function prepareNegative(t) {
