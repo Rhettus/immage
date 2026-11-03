@@ -15,6 +15,22 @@ index 726992c267..01d00907fa 100644
  # have a command line utility to generate all the thumbnails
  add_subdirectory(generate-cache)
  
+diff --git a/src/common/database.c b/src/common/database.c
+index 48a99cda71..99394cf925 100644
+--- a/src/common/database.c
++++ b/src/common/database.c
+@@ -3944,7 +3944,10 @@ static gboolean pid_is_alive(int pid)
+     long unsigned int n_filename = sizeof(wfilename);
+     int ret = QueryFullProcessImageNameW(h, 0, wfilename, &n_filename);
+     char *filename = g_utf16_to_utf8(wfilename, -1, NULL, NULL, NULL);
+-    if(ret && n_filename > 0 && filename && g_str_has_suffix(filename, "darktable.exe"))
++    // immage: the engine holds the library as darktable-engine.exe, which
++    // must count as alive too, or a second engine takes over its lock
++    if(ret && n_filename > 0 && filename
++       && (g_str_has_suffix(filename, "darktable.exe") || g_str_has_suffix(filename, "darktable-engine.exe")))
+       pid_is_alive = TRUE;
+     g_free(filename);
+     CloseHandle(h);
 diff --git a/src/common/exif.cc b/src/common/exif.cc
 index 8c82a5efd1..cdf0fc7c07 100644
 --- a/src/common/exif.cc

@@ -29,6 +29,11 @@ check the result.
   full-file preview loader. The mipmap cache passes its requested size to
   `dt_imageio_thumbnail`, which uses JPEG scaled decoding. Existing full-size
   thumbnail entry points retain their behavior.
+  On Windows, darktable's lock check (`src/common/database.c`,
+  `pid_is_alive`) counts only a running `darktable.exe` as the holder of
+  `data.db.lock`; the patch also accepts `darktable-engine.exe`, so a
+  second Immage's engine finds the lock held, as it does on Linux and
+  macOS, instead of taking it over and sharing the first one's database.
   [scripts/patch_darktable.sh](../../../scripts/patch_darktable.sh) applies
   it once (`scripts/build.sh` calls it), and `.gitmodules` sets
   `ignore = dirty`, so the patched submodule does not show as changed.
