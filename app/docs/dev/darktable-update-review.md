@@ -10,6 +10,54 @@ Follow [Pinning darktable](darktable-pin.md). Candidate frozen at
 on 2026-11-03 UTC. Fetch updated master successfully but returned nonzero
 because upstream moved its `nightly` tag; the local tag was preserved.
 
+## Adoption recommendation and bounded next steps
+
+Hold the full pin bump. The source-impact audit is complete, integration repairs
+have headless coverage, and the direct CPU lens prototype has sufficient evidence
+to support its feasibility. These milestones do not resolve import policy or
+establish native device readiness. Do not express the combined work as a percentage.
+
+| Milestone | Disposition | Exit condition or next action |
+| --- | --- | --- |
+| Source inventory and integration API audit | Complete for the frozen range | Reopen only for a changed candidate or a concrete new finding. |
+| Style loader and preview ownership repairs | Implemented; headless fixtures pass | Retain native and broader real-style validation before shipping. |
+| Direct CPU lens feasibility | Established for the documented fixtures | Stop expanding equivalent interpolation/aspect/profile matrices. |
+| Lens compatibility and import policy | Blocks full adoption | Select behavior for existing edits with unknown CPU/OpenCL provenance; implement versioned migration and fallback consistently. |
+| Other changed-module appearance | Blocks full adoption | Resolve the documented vignette policy and assess focused diffuse/denoise, RAW/HDR and saved-edit references. |
+| Native packaging, locking and device behavior | Blocks shipping | Validate supported platforms, packaged kernels, OpenCL parity/fallback/cancellation and first-start locking. |
+| Pin change | Held | Complete the applicable adoption gates before changing the production pin. |
+
+Additional full-size changed-aspect mask matrices, grid-failure injection and
+nonfinite-coordinate diagnostics are deferred prototype hardening. They are not
+the next step toward selecting the compatibility policy. Reopen a diagnostic only
+when it answers a specific implementation or adoption decision. Preserve the
+existing evidence and its stated limitations; deferred coverage is not a pass.
+
+For the original Contrast & Texture performance objective, assess a narrow
+backport separately from the full pin bump. Source inspection identifies
+`7d7dac363d` and its kernel-helper follow-up `8075f03504`: together they affect
+`src/iop/contrastntexture.c`, a new `data/kernels/contrastntexture.cl`, and
+`data/kernels/programs.conf`. The old-to-candidate `toneequal.cl` diff is empty;
+the only `common.h` addition is `fold_mirror`, separate from the helpers named
+by the follow-up. This makes a bounded dependency assessment worthwhile, but
+does not prove that a backport applies, builds or runs correctly.
+
+Initial applicability assessment: the three-file `7d7dac363d` patch passes
+`git apply --check` against the isolated patched old source. The old pin already
+declares `dt_interpolate_bilinear_cl` and `dt_gaussian_mean_blur_cl`, contains
+`toneequal_eigf_pack_2c`, `toneequal_eigf_finish_2c` and
+`toneequal_eigf_blend_no_mask`, and defines `NORM_MIN` and `Areadpixel`.
+Its kernel registry ends at toneequal program 45, leaving program 46 available.
+These are textual applicability and symbol-presence checks, not compilation,
+ABI or numerical validation. The helper follow-up has not been apply-checked
+on a tree containing the initial patch. No source tree was modified.
+
+The next engineering deliverable is an isolated backport build incorporating both
+commits, if implementation is selected. Implementation remains a separate decision,
+consistent with the performance backlog. Even a successful backport still needs real device output,
+fallback and matched native performance evidence; this machine has no available
+OpenCL platform. Keep Texture/Clarity defaults unchanged and make no speedup claim.
+
 ## Findings so far
 
 - Range: 365 commits, including 308 non-merge commits, affecting 235 files.
