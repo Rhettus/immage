@@ -1,0 +1,236 @@
+path	source impact
+.ci/Brewfile	Build / packaging
+.github/pull_request_template.md	Tests / upstream CI
+.github/workflows/ci.yml	Tests / upstream CI
+.github/workflows/nightly.yml	Tests / upstream CI
+.github/workflows/validate-json.yml	Tests / upstream CI
+CMakeLists.txt	Build / packaging
+RELEASE_NOTES.md	Documentation / translation
+data/CMakeLists.txt	Build / packaging
+data/darktableconfig.xml.in	Engine configuration
+data/kernels/agx.cl	Pixels / module compatibility
+data/kernels/basic.cl	Pixels / module compatibility
+data/kernels/bspline.cl	Pixels / module compatibility
+data/kernels/cacorrectrgb.cl	Pixels / module compatibility
+data/kernels/channelmixer.cl	Pixels / module compatibility
+data/kernels/color_conversion.h	Pixels / module compatibility
+data/kernels/colorreconstruction.cl	Pixels / module compatibility
+data/kernels/colorspace.h	Pixels / module compatibility
+data/kernels/common.h	Pixels / module compatibility
+data/kernels/contrastntexture.cl	Pixels / module compatibility
+data/kernels/demosaic_markesteijn.cl	Pixels / module compatibility
+data/kernels/demosaic_ppg.cl	Pixels / module compatibility
+data/kernels/demosaic_vng.cl	Pixels / module compatibility
+data/kernels/denoiseprofile.cl	Pixels / module compatibility
+data/kernels/filmic.cl	Pixels / module compatibility
+data/kernels/grain.cl	Pixels / module compatibility
+data/kernels/grain.h	Pixels / module compatibility
+data/kernels/nlmeans.cl	Pixels / module compatibility
+data/kernels/noise_generator.h	Pixels / module compatibility
+data/kernels/programs.conf	Pixels / module compatibility
+data/kernels/rgbcurve.cl	Pixels / module compatibility
+data/kernels/spektrafilm.cl	Pixels / module compatibility
+data/masks_group_presets.json	Upstream UI / catalog boundary
+data/org.darktable.darktable.appdata.xml.in	Upstream UI / catalog boundary
+data/themes/chunk-colored-accent.css	Upstream UI / catalog boundary
+data/themes/chunk-rounded-header.css	Upstream UI / catalog boundary
+data/themes/darktable.css	Upstream UI / catalog boundary
+dev-doc/Catalog_Access.md	Documentation / translation
+dev-doc/README.md	Documentation / translation
+dev-doc/flexi_masks/modifiers.md	Documentation / translation
+dev-doc/flexi_masks/styling.md	Documentation / translation
+dev-doc/masks_data_model.md	Documentation / translation
+packaging/macosx/3_make_hb_darktable_package.sh	Build / packaging
+packaging/windows/README.md	Build / packaging
+packaging/windows/darktable.iss.in	Build / packaging
+po/darktable.pot	Documentation / translation
+po/de.po	Documentation / translation
+po/en@truecase.po	Documentation / translation
+po/fi.po	Documentation / translation
+po/fr.po	Documentation / translation
+po/ja.po	Documentation / translation
+po/nb.po	Documentation / translation
+po/pt_BR.po	Documentation / translation
+po/ru.po	Documentation / translation
+po/uk.po	Documentation / translation
+src/CMakeLists.txt	Build / packaging
+src/bauhaus/bauhaus.c	Upstream UI / catalog boundary
+src/cli/main.c	Upstream UI / catalog boundary
+src/common/camera_control.c	Upstream UI / catalog boundary
+src/common/collection.c	Upstream UI / catalog boundary
+src/common/colorspaces.c	Engine / saved edits
+src/common/colorspaces.h	Engine / saved edits
+src/common/colorspaces_inline_conversions.h	Engine / saved edits
+src/common/darktable.c	Engine / saved edits
+src/common/darktable.h	Engine / saved edits
+src/common/database.c	Engine / saved edits
+src/common/eaw.c	Engine / saved edits
+src/common/exif.cc	Engine / saved edits
+src/common/filter.c	Upstream UI / catalog boundary
+src/common/filter.h	Upstream UI / catalog boundary
+src/common/focus_peaking.h	Engine / saved edits
+src/common/gpx.c	Upstream UI / catalog boundary
+src/common/hdr_alignment.cc	Engine / saved edits
+src/common/history.c	Engine / saved edits
+src/common/history.h	Engine / saved edits
+src/common/image.h	Engine / saved edits
+src/common/interpolation.c	Engine / saved edits
+src/common/interpolation.h	Engine / saved edits
+src/common/iop_profile.c	Engine / saved edits
+src/common/iop_profile.h	Engine / saved edits
+src/common/math.h	Engine / saved edits
+src/common/nlmeans_core.c	Engine / saved edits
+src/common/nlmeans_core.h	Engine / saved edits
+src/common/opencl.c	Engine / saved edits
+src/common/opencl.h	Engine / saved edits
+src/common/presets.c	Engine / saved edits
+src/common/presets.h	Engine / saved edits
+src/common/spektra_core.c	Engine / saved edits
+src/common/spektra_core.h	Engine / saved edits
+src/common/spektra_sim.c	Engine / saved edits
+src/common/spektra_sim.h	Engine / saved edits
+src/common/styles.c	Engine / saved edits
+src/common/styles.h	Engine / saved edits
+src/common/utility.c	Engine / saved edits
+src/control/control.c	Upstream UI / catalog boundary
+src/control/control.h	Upstream UI / catalog boundary
+src/control/crawler.c	Upstream UI / catalog boundary
+src/control/jobs/control_jobs.c	Upstream UI / catalog boundary
+src/control/jobs/control_jobs.h	Upstream UI / catalog boundary
+src/control/jobs/film_jobs.c	Upstream UI / catalog boundary
+src/develop/blend.c	Engine / saved edits
+src/develop/blend.h	Engine / saved edits
+src/develop/blend_gui.c	Upstream UI / catalog boundary
+src/develop/blend_gui_internal.h	Upstream UI / catalog boundary
+src/develop/develop.c	Engine / saved edits
+src/develop/imageop.c	Engine / saved edits
+src/develop/imageop_math.c	Engine / saved edits
+src/develop/imageop_math.h	Engine / saved edits
+src/develop/lightroom.c	Engine / saved edits
+src/develop/masks.h	Engine / saved edits
+src/develop/masks/blend_blob.c	Engine / saved edits
+src/develop/masks/group.c	Engine / saved edits
+src/develop/masks/lockcheck.c	Engine / saved edits
+src/develop/masks/masks.c	Engine / saved edits
+src/develop/masks/migrate_legacy.c	Engine / saved edits
+src/develop/masks/path.c	Engine / saved edits
+src/develop/masks/pixel_mask.c	Engine / saved edits
+src/develop/masks/raster.c	Engine / saved edits
+src/develop/masks/styleapply.c	Engine / saved edits
+src/develop/masks_gui_panel_host.c	Upstream UI / catalog boundary
+src/develop/masks_gui_presets.c	Upstream UI / catalog boundary
+src/develop/masks_gui_toolbar.c	Upstream UI / catalog boundary
+src/develop/pixelpipe_cache.c	Engine / saved edits
+src/develop/pixelpipe_hb.c	Engine / saved edits
+src/develop/pixelpipe_hb.h	Engine / saved edits
+src/develop/tiling.c	Engine / saved edits
+src/dtgtk/gradientslider.c	Upstream UI / catalog boundary
+src/dtgtk/paint.c	Upstream UI / catalog boundary
+src/dtgtk/paint.h	Upstream UI / catalog boundary
+src/dtgtk/range.c	Upstream UI / catalog boundary
+src/dtgtk/stylemenu.c	Upstream UI / catalog boundary
+src/dtgtk/thumbnail.c	Upstream UI / catalog boundary
+src/gui/accelerators.c	Upstream UI / catalog boundary
+src/gui/accelerators.h	Upstream UI / catalog boundary
+src/gui/gtk.c	Upstream UI / catalog boundary
+src/gui/gtk.h	Upstream UI / catalog boundary
+src/gui/presets.c	Upstream UI / catalog boundary
+src/gui/presets.h	Upstream UI / catalog boundary
+src/gui/styles_dialog.c	Upstream UI / catalog boundary
+src/gui/workspace.c	Upstream UI / catalog boundary
+src/gui/workspace.h	Upstream UI / catalog boundary
+src/imageio/imageio_rawspeed.cc	Engine / saved edits
+src/iop/agx.c	Pixels / module compatibility
+src/iop/ashift.c	Pixels / module compatibility
+src/iop/basecurve.c	Pixels / module compatibility
+src/iop/basicadj.c	Pixels / module compatibility
+src/iop/cacorrect.c	Pixels / module compatibility
+src/iop/cacorrectrgb.c	Pixels / module compatibility
+src/iop/censorize.c	Pixels / module compatibility
+src/iop/colorequal.c	Pixels / module compatibility
+src/iop/colorharmonizer.c	Pixels / module compatibility
+src/iop/colorreconstruction.c	Pixels / module compatibility
+src/iop/contrastntexture.c	Pixels / module compatibility
+src/iop/demosaicing/amaze.cc	Pixels / module compatibility
+src/iop/demosaicing/capture.c	Pixels / module compatibility
+src/iop/demosaicing/dual.c	Pixels / module compatibility
+src/iop/demosaicing/rcd.c	Pixels / module compatibility
+src/iop/demosaicing/xtrans.c	Pixels / module compatibility
+src/iop/denoiseprofile.c	Pixels / module compatibility
+src/iop/diffuse.c	Pixels / module compatibility
+src/iop/enlargecanvas.c	Pixels / module compatibility
+src/iop/filmicrgb.c	Pixels / module compatibility
+src/iop/finalscale.c	Pixels / module compatibility
+src/iop/gamma.c	Pixels / module compatibility
+src/iop/graduatednd.c	Pixels / module compatibility
+src/iop/grain.c	Pixels / module compatibility
+src/iop/hazeremoval.c	Pixels / module compatibility
+src/iop/highlights.c	Pixels / module compatibility
+src/iop/hlreconstruct/opposed.c	Pixels / module compatibility
+src/iop/hlreconstruct/segbased.c	Pixels / module compatibility
+src/iop/lens.cc	Pixels / module compatibility
+src/iop/negadoctor.c	Pixels / module compatibility
+src/iop/nlmeans.c	Pixels / module compatibility
+src/iop/overexposed.c	Pixels / module compatibility
+src/iop/rawprepare.c	Pixels / module compatibility
+src/iop/retouch.c	Pixels / module compatibility
+src/iop/rgblevels.c	Pixels / module compatibility
+src/iop/satcurvergb.c	Pixels / module compatibility
+src/iop/scalepixels.c	Pixels / module compatibility
+src/iop/sigmoid.c	Pixels / module compatibility
+src/iop/spektrafilm.c	Pixels / module compatibility
+src/iop/temperature.c	Pixels / module compatibility
+src/iop/vignette.c	Pixels / module compatibility
+src/libs/collect.c	Upstream UI / catalog boundary
+src/libs/export.c	Upstream UI / catalog boundary
+src/libs/filters/aperture.c	Upstream UI / catalog boundary
+src/libs/filters/date.c	Upstream UI / catalog boundary
+src/libs/filters/duplicates.c	Upstream UI / catalog boundary
+src/libs/filters/exposure.c	Upstream UI / catalog boundary
+src/libs/filters/exposure_bias.c	Upstream UI / catalog boundary
+src/libs/filters/filename.c	Upstream UI / catalog boundary
+src/libs/filters/focal.c	Upstream UI / catalog boundary
+src/libs/filters/history.c	Upstream UI / catalog boundary
+src/libs/filters/iso.c	Upstream UI / catalog boundary
+src/libs/filters/local_copy.c	Upstream UI / catalog boundary
+src/libs/filters/misc.c	Upstream UI / catalog boundary
+src/libs/filters/module_order.c	Upstream UI / catalog boundary
+src/libs/filters/rating_range.c	Upstream UI / catalog boundary
+src/libs/filters/ratio.c	Upstream UI / catalog boundary
+src/libs/history.c	Upstream UI / catalog boundary
+src/libs/lib.c	Upstream UI / catalog boundary
+src/libs/masks_flexi_host.c	Upstream UI / catalog boundary
+src/libs/modulegroups.c	Upstream UI / catalog boundary
+src/libs/neural_restore.c	Upstream UI / catalog boundary
+src/libs/print_settings.c	Upstream UI / catalog boundary
+src/libs/tools/darktable.c	Upstream UI / catalog boundary
+src/libs/tools/global_toolbox.c	Upstream UI / catalog boundary
+src/main.c	Upstream UI / catalog boundary
+src/tests/integration	Tests / upstream CI
+src/tests/unittests/catalog/CMakeLists.txt	Tests / upstream CI
+src/tests/unittests/catalog/test_catalog_filter.c	Tests / upstream CI
+src/tests/unittests/common/CMakeLists.txt	Tests / upstream CI
+src/tests/unittests/common/test_spektra_pack.c	Tests / upstream CI
+src/tests/unittests/common/test_spektra_sim.c	Tests / upstream CI
+src/tests/unittests/masks/CMakeLists.txt	Tests / upstream CI
+src/tests/unittests/masks/README.md	Tests / upstream CI
+src/tests/unittests/masks/flexi_fixture.h	Tests / upstream CI
+src/tests/unittests/masks/test_flexi_cache.c	Tests / upstream CI
+src/tests/unittests/masks/test_flexi_dnd.c	Tests / upstream CI
+src/tests/unittests/masks/test_flexi_groups.c	Tests / upstream CI
+src/tests/unittests/masks/test_flexi_migrate.c	Tests / upstream CI
+src/tests/unittests/masks/test_flexi_model.c	Tests / upstream CI
+src/tests/unittests/masks/test_flexi_panel.c	Tests / upstream CI
+src/tests/unittests/masks/test_flexi_preset_masks.c	Tests / upstream CI
+src/tests/unittests/masks/test_flexi_presets.c	Tests / upstream CI
+src/tests/unittests/masks/test_flexi_raster_hover.c	Tests / upstream CI
+src/tests/unittests/masks/test_flexi_styling.c	Tests / upstream CI
+src/tests/unittests/masks/test_flexi_ui_coverage.c	Tests / upstream CI
+src/tests/unittests/masks/test_path_resize.c	Tests / upstream CI
+src/tests/unittests/masks/test_path_resize_ai_mask.h	Tests / upstream CI
+src/tests/unittests/test_hdr_alignment_internal.cc	Tests / upstream CI
+src/views/darkroom.c	Upstream UI / catalog boundary
+src/views/tethering.c	Upstream UI / catalog boundary
+src/views/view.c	Upstream UI / catalog boundary
+tools/validate_noiseprofiles.sh	Tests / upstream CI
+tools/validate_wb_presets.sh	Tests / upstream CI
