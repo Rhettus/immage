@@ -652,6 +652,16 @@ frame. All 179 evidence hashes were independently verified. Ordinary-aspect
 full-size masks now cover bilinear and bicubic; Lanczos full-size masks,
 changed-aspect full-size masks and the fault/native gates remain open.
 Ignored evidence: `build/darktable-pin-review/pixel-lens-mask-bypass-bilinear-full/`.
+Full-size Lanczos2 CPU mask follow-up: all 24 cases passed at 4640×3472
+under the minimum CPU budget with unchanged diagnostics and deployments.
+Old/direct results match across 487,199 signed RGB rows, 1,461,597 active
+mask rows, 9,720 byte-exact bypass copies per plugin and every final RGBA
+frame. All 179 evidence hashes were independently verified. Ordinary-aspect
+full-size masks now cover bilinear, bicubic and Lanczos2. Full-size Lanczos3,
+changed aspects and the fault/native gates remain open. Synthetic inputs on
+an unrelated RAW do not establish matching-camera accuracy.
+Ignored evidence: `build/darktable-pin-review/pixel-lens-mask-bypass-lanczos2-full/`.
+
 Changed-aspect synthetic preview masks cover all four CPU interpolators.
 Remaining full-size cases, invalid ROIs, grid failure, nonfinite coordinates
 and native OpenCL remain open. No production behavior or pin change.
