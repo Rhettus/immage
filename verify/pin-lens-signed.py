@@ -58,10 +58,47 @@ static void _signed_lens_trace(const float *row, int x, int y, int width, int ch
 '''
 
 
+MASK_HELPER = r'''
+static void _signed_lens_masks(dt_iop_module_t *self, dt_dev_pixelpipe_iop_t *piece,
+                              const dt_iop_roi_t *ri, const dt_iop_roi_t *ro)
+{
+  const size_t ni = (size_t)ri->width * ri->height;
+  const size_t no = (size_t)ro->width * ro->height;
+  float *in = dt_alloc_align_float(ni), *out = dt_alloc_align_float(no);
+  if(!in || !out) abort();
+  for(int pattern = 0; pattern < 3; pattern++)
+  {
+    for(int y = 0; y < ri->height; y++)
+      for(int x = 0; x < ri->width; x++)
+        in[(size_t)y*ri->width+x] = pattern == 0
+          ? ((ri->x+x+3*(ri->y+y)) % 17) / 16.f
+          : pattern == 1 ? (x >= ri->width/2 ? 1.f : 0.f)
+          : ((ri->x+x+ri->y+y) % 3) - .5f;
+    for(size_t i = 0; i < no; i++) out[i] = NAN;
+    _distort_mask_lf(self, piece, in, out, ri, ro);
+    for(int y = 0; y < ro->height; y++)
+    {
+      const float *row = out + (size_t)y*ro->width;
+      for(int x = 0; x < ro->width; x++)
+        if(!isfinite(row[x]) || row[x] < 0.f || row[x] > 1.f) abort();
+      gchar *hash = g_compute_checksum_for_data(G_CHECKSUM_SHA256,
+        (const guchar *)row, (gsize)ro->width*sizeof(float));
+      fprintf(stderr, "MASK_LENS %d %d %d %d %d %s\n", pattern,
+        ((dt_iop_lens_data_t *)piece->data)->inverse, ro->x, ro->y+y, ro->width, hash);
+      g_free(hash);
+    }
+  }
+  dt_free_align(in); dt_free_align(out);
+}
+'''
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--geometry', action='store_true',
                         help='Inject at module input and trace RGB after active geometry')
+    parser.add_argument('--distort-mask', action='store_true',
+                        help='With --geometry, compare separate single-channel mask transforms')
     parser.add_argument('--mask-display', action='store_true',
                         help='With --geometry, inject varying alpha and trace real RGBA')
     parser.add_argument('--source', type=Path, required=True,
@@ -71,8 +108,8 @@ def main():
     parser.add_argument('--build', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
-    if args.mask_display and not args.geometry:
-        parser.error('--mask-display requires --geometry')
+    if (args.mask_display or args.distort_mask) and not args.geometry:
+        parser.error('--mask-display and --distort-mask require --geometry')
     source, build, output = (p.resolve() for p in (args.source, args.build, args.output))
     if output.exists() or output == source or output == build:
         raise ValueError('output must be a new directory')
@@ -86,6 +123,8 @@ def main():
                                 'row[i * ch + 3] = ((x + i + 3*y) % 17) / 16.f;')
         helper = helper.replace('alpha_changed += row[i * ch + 3] != .25f;',
                                 'alpha_changed += !isfinite(row[i * ch + 3]);')
+    if args.distort_mask:
+        helper += 'static void _signed_lens_masks(dt_iop_module_t *, dt_dev_pixelpipe_iop_t *, const dt_iop_roi_t *, const dt_iop_roi_t *);\n'
     text = replace_once(text, anchor, helper + anchor)
     # Restrict substitutions to _process_lf, excluding CPU factor-grid helpers
     # and OpenCL setup. Both forward and reverse actual-pixel calls are required.
@@ -142,7 +181,14 @@ def main():
         process = replace_once(process, 'packed[4*x+3] = .25f;', 'packed[4*x+3] = row[ch*x+3];')
         process = process.replace('// Pack RGB; synthetic alpha excludes unspecified output alpha from the hash.',
                                   '// Trace actual RGBA with the local CPU mask-display branch forced.')
+    if args.distort_mask:
+        process = replace_once(process, '  dt_free_align(signed_input);\n  delete modifier;',
+            '  _signed_lens_masks(self, piece, roi_in, roi_out);\n  dt_free_align(signed_input);\n  delete modifier;')
     text = text[:start] + process + text[end:]
+    if args.distort_mask:
+        mask_start = text.index('static void _distort_mask_lf(')
+        mask_end = text.index('\n}\n', mask_start) + 3
+        text = text[:mask_end] + MASK_HELPER + text[mask_end:]
     intro = build / 'lib/darktable/plugins/introspection_lens.cc'
     entries = json.loads((build / 'compile_commands.json').read_text())
     entry = next(e for e in entries if Path(e['file']) == intro)
@@ -185,7 +231,7 @@ def main():
             subprocess.run(cmd, cwd=cwd, stdout=log, stderr=subprocess.STDOUT, check=True)
     hashes = {str(p): hashlib.sha256(p.read_bytes()).hexdigest()
               for p in (original, input_source, src, generated, plugin, build / 'bin/darktable-engine', Path(__file__))}
-    (output / 'manifest.json').write_text(json.dumps({'diagnostic_only': True, 'geometry': args.geometry, 'mask_display': args.mask_display, 'sha256': hashes,
+    (output / 'manifest.json').write_text(json.dumps({'diagnostic_only': True, 'geometry': args.geometry, 'mask_display': args.mask_display, 'distort_mask': args.distort_mask, 'sha256': hashes,
                                                     'compile': command, 'link': link_args}, indent=2) + '\n')
     print(output)
 

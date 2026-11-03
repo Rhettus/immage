@@ -575,3 +575,14 @@ count measures nonfinite alpha in this mode; zero is required. Plugin manifests
 must agree with the checker mode. This does not exercise the separate
 `distort_mask` entry point or prove end-to-end mask display. Use `--size 128`
 for a disk-conscious first pass and retain manifests with the reports.
+
+Build both plugins with `--geometry --distort-mask`, then pass those flags to
+`pin-lens-signed-check.py` to exercise `_distort_mask_lf` directly using each
+active image transform's ROIs. Three single-channel inputs cover a coordinate
+ramp, hard step, and repeating -0.5/0.5/1.5 values. NaN-initialized output must
+be finite within [0,1]; `MASK_LENS` records hash each actual floating mask row.
+The checker compares exact row multisets and requires all three patterns for
+every image row. `exact_mask_rows` is separate from `exact_float_rows` (image
+RGB or RGBA). This tests active CPU transforms, not mask UI/routing or injected
+bypass/grid-failure cases. The first bicubic 128x95 run matched 24 cases and
+6,840 mask rows; display-alpha previews match all four interpolators.

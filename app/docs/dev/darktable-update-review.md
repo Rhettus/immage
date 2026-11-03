@@ -2179,3 +2179,20 @@ logs, XMP fixtures, original manifests and source/build identities remain. The
 ignored `build/darktable-pin-review/render-cleanup-2026-11-03.json` records each
 deleted frame's path, byte size and SHA-256. Historical manifests describe the
 original run; full byte verification of deleted frames requires regeneration.
+
+CPU mask/alpha preview follow-up: bilinear, Lanczos2 and Lanczos3 display-alpha
+checks each matched all 24 assigned-profile/direction cases at 128x95. Including
+bicubic, all four modes match 9,120 intermediate RGBA rows and final frames.
+The separate `_distort_mask_lf` entry point now has a diagnostic mode exercising
+a spatial ramp, hard step, and repeating -0.5/0.5/1.5 inputs; outputs are
+initialized to NaN and must be finite within [0,1]. Bicubic matched all 24 cases
+and 6,840 single-channel rows exactly, alongside 2,280 image RGB rows. The checker
+requires all three patterns at every image-row coordinate. Each run's 179 hashes
+were independently verified. Ignored evidence is in `pixel-lens-alpha-*-128/`
+and `pixel-lens-mask-bicubic-128/`. Executed scripts are archived under
+`isolation/alpha-interpolation-scripts/` and `isolation/mask-diagnostic-scripts/`;
+manifest script entries refer to these immutable copies. Alpha provenance notes
+record correction of script identities after source edits during execution.
+These remain synthetic unrelated-camera previews. Separate mask alternative
+interpolators/aspects, full-size behavior, bypass/grid failure, nonfinite
+coordinates and native OpenCL remain open. No production or pin change.
