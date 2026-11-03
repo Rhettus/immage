@@ -362,6 +362,10 @@ The production pin remains unchanged until the adoption gates pass.
   boundary pixel; cover reverse lens, interpolation modes, tiling and pixel aspect.
 - [x] Broaden the standalone negative-value evaluation to installed calibrated
   Lensfun profiles; identify where the diagnostic zero clamp fails to reproduce direct evaluation.
+- [x] Trace old CPU/OpenCL Lensfun stage ordering and factor arithmetic; record a
+  [compatibility design](lens-compatibility-design.md) and local device availability.
+- [ ] Capture old OpenCL Lensfun device references and select/validate the serialized
+  compatibility and unknown-provenance import policy.
 - [ ] Assess diffuse and denoise saved-edit appearance differences with broader
   references, including RAW denoise, image borders and full-resolution processing.
 - [ ] Verify production control read/selection semantics, RAW-specific defaults, new
@@ -1749,3 +1753,17 @@ Build/run instructions are in `verify/README.md`. The ignored directory
 `summary.json` and `manifest.json` with source/binary/report/library/XML hashes.
 The probe builds with `-Wall -Wextra` without diagnostics. Original old-cpu,
 candidate plugins, production preferences and pin are unchanged.
+
+### Direct-evaluation compatibility design
+
+The [design proposal](lens-compatibility-design.md) separates actual-pixel CPU,
+old OpenCL factor and adaptive candidate contracts. It records stage ordering,
+CPU fallback requirements, serialization/cache boundaries and validation gates.
+Old CPU compatibility should initially use CPU execution rather than assume a
+factor kernel reproduces direct Lensfun evaluation. A future old OpenCL mode
+would need a CPU implementation of its own contract for deterministic fallback.
+No mode, migration default or import policy is implemented or approved.
+
+The local OpenCL loader reports `CL_PLATFORM_NOT_FOUND_KHR` (-1001), zero
+platforms. Old kernel source confirms unclamped RGB factor multiplication and
+unchanged alpha, but native device image references remain unchecked.
