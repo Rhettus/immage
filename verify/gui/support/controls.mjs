@@ -16,8 +16,11 @@ export function inspect(selector) {
     if (/(auto|scroll|hidden|clip)/.test(ps.overflowX)) {
       clip.left = Math.max(clip.left, pr.left); clip.right = Math.min(clip.right, pr.right);
     }
-    if (!scroll && /(auto|scroll)/.test(ps.overflowY) && p.scrollHeight > p.clientHeight)
-      scroll = { x: pr.right - 6, left: pr.left + 12, y: Math.max(1, Math.min(innerHeight - 1, pr.top + pr.height / 2)), top: p.scrollTop };
+    // a list left scrolled after its content shrank (a section folded) can
+    // report no overflow while scrollTop is still above zero: wheel it too
+    if (!scroll && /(auto|scroll)/.test(ps.overflowY) && (p.scrollHeight > p.clientHeight || p.scrollTop > 0))
+      scroll = { x: pr.right - 6, left: pr.left + 12, y: Math.max(1, Math.min(innerHeight - 1, pr.top + pr.height / 2)), top: p.scrollTop,
+                 height: p.scrollHeight, client: p.clientHeight };
     if (!scrollX && /(auto|scroll)/.test(ps.overflowX) && p.scrollWidth > p.clientWidth)
       scrollX = { x: Math.max(1, Math.min(innerWidth - 1, pr.left + pr.width / 2)), y: pr.bottom - 6, left: p.scrollLeft };
   }
@@ -37,11 +40,19 @@ export function inspect(selector) {
 export async function reveal(t, selector) {
   // WebKitGTK can ignore a wheel over a visible scrollbar: when the list
   // did not move after the last wheel, aim at its left edge instead.
-  let lastTop, stuck = 0;
+  // Some lists (Preferences) never move under WebDriver's wheel at all: after
+  // a few stuck wheels, Tab to a focusable control so the browser scrolls it
+  // into view.
+  let lastTop, stuck = 0, tabbed = false;
   return until(async () => {
     const c = await t.driver.observe(inspect, selector);
     if (!c) throw Error(`Control is not mounted: ${selector}`);
     if (c.visible && c.hit) return c;
+    if (stuck >= 4 && !tabbed && await t.driver.observe(s => document.querySelector(s)?.tabIndex >= 0, selector)) {
+      tabbed = true;
+      try { await tabTo(t, selector, 400); } catch {}
+      throw Error(`Tabbed to ${selector}`);
+    }
     if (c.scroll) {
       const delta = c.bounds.y < c.clip.top ? -180 : c.bounds.y + c.bounds.height > c.clip.bottom ? 180 : 0;
       if (delta) {

@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { until, pause } from '../support/webdriver.mjs';
 import { panel, expandSections, Blocked } from '../support/scenario.mjs';
-import { inspect, reveal, click, rangeSelector } from '../support/controls.mjs';
+import { inspect, reveal, click, rangeSelector, openTool } from '../support/controls.mjs';
 import { settledPhoto } from './smoke.mjs';
 import * as read from '../support/observations.mjs';
 
@@ -61,7 +61,14 @@ export async function history(t) {
   }
   await click(t, 'button[aria-label="reset all"]');
   await until(async () => Math.abs(+(await t.driver.observe(inspect, selector)).value) < .02, 'Reset All Exposure');
-  await settledPhoto(t, p => p.hash === baseline.hash);
+  // Reset All re-renders from the defaults rather than replaying the undo
+  // cache, so compare like the Exposure reset: mean error within 1/255.
+  const reset = await settledPhoto(t, p => p.hash !== changed.hash);
+  let error = 0;
+  for (let i = 0; i < reset.rgba.length; i++) error += Math.abs(reset.rgba[i] - baseline.rgba[i]);
+  error /= reset.rgba.length;
+  t.measure({ name: 'reset-all', photoHash: reset.hash, luma: reset.luma, baselineLuma: baseline.luma, meanAbsoluteError: error });
+  assert(error < 1, `Reset All photo mean pixel error ${error} exceeds 1/255`);
   await t.evidence('reset-all');
 }
 
@@ -92,9 +99,9 @@ export async function rail(t) {
 export async function panelScroll(t) {
   const panels = () => { const p = document.querySelector('.right .panels'), r = p?.getBoundingClientRect();
     return r && { x: r.right - 6, y: r.top + r.height / 2, top: p.scrollTop, room: p.scrollHeight - p.clientHeight }; };
-  const open = async tool => { await click(t, `button[data-tour="${tool}"]`);
-    await until(async () => (await t.driver.observe(inspect, `button[data-tour="${tool}"]`))?.active, `${tool} active`);
-    await pause(400); return t.driver.observe(panels); };
+  // openTool clicks only when the tool is closed: a rail button closes an
+  // open tool, and an earlier case may leave Adjustments open
+  const open = async tool => { await openTool(t, tool); await pause(400); return t.driver.observe(panels); };
   await open('adjust');
   await expandSections(t, await panel(t, 'basic'));
   let s = await t.driver.observe(panels);
