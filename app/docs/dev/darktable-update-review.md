@@ -350,6 +350,10 @@ The production pin remains unchanged until the adoption gates pass.
   using bilinear, bicubic, Lanczos2 and Lanczos3 warp interpolation.
 - [x] Compare Olympus full-size reverse Lensfun and confirmed 2×2 CPU lens
   tiling; compare saved 0.75/1.5 pixel-aspect histories at 96/512 bounds.
+- [x] Isolate old CPU tile-layout sensitivity with split-row Lensfun probes and
+  correction-selector histories, including unit-scale vignetting-only renders.
+- [x] Compare saved Olympus 0.75/1.5 pixel-aspect histories at full-size bounds
+  without lens tiling; direct-coordinate/clamp diagnostic reproduces both frames.
 - [ ] Assess lens and transform appearance deltas, including the isolated rotation
   boundary pixel; cover reverse lens, interpolation modes, tiling and pixel aspect.
 - [ ] Assess diffuse and denoise saved-edit appearance differences with broader
@@ -1554,3 +1558,63 @@ an import policy or establish camera-metadata, full-size aspect or device parity
 Reports, sidecars and per-process logs remain in the named ignored build
 directories. These diagnostics retain the coherent old-cpu baseline, production
 pin/defaults and concurrent worktree. No GUI was launched.
+
+
+### Old CPU tile-layout isolation
+
+`pixel-old-lens-tile-isolation` reloads the preceding saved forward/reverse
+Olympus histories on the unchanged old CPU build at 4640×3472, using `mini`
+and `unrestricted` resource budgets. It saves histories with initialized lens
+parameters and correction selectors 5 (distortion/TCA without vignetting) and
+2 (vignetting with the saved scale retained). Saved v10/356-byte parameter,
+selector, inverse, initialized and scale values are recorded in `guards.json`.
+Logs confirm lens tiling only for `mini`, successful completion and no fallback.
+These selector cases retain scaling; selector 2 alone is not a pure vignetting
+isolation. The differences between layouts are:
+
+| Corrections | Forward changed / max / MAE | Reverse changed / max / MAE |
+| --- | --- | --- |
+| Distortion/TCA, no vignetting | 2,641,451 / 12 / 0.055081 | 2,641,818 / 12 / 0.055090 |
+| Vignetting, saved scale | 2,834,097 / 17 / 0.059084 | 2,393,273 / 15 / 0.049932 |
+| Vignetting, scale explicitly 1 | 16,312 / 1 / 0.000338 | 14,644 / 1 / 0.000303 |
+
+The unit-scale follow-up is `pixel-old-lens-vig-only`; guards verify selector 2
+and scale exactly 1. Thus substantial old-layout sensitivity persists without
+vignetting, while the unit-scale vignetting-only case has a much smaller
+measured difference. These are final RGB observations, not additive module-error
+components or a proof that every changed channel originates inside Lensfun.
+
+The standalone `lensfun-eval/row-split.cc` probe uses the same system Lensfun,
+Olympus profile, crop 2, focal 27, aperture 5.6, distance 1000, unit scale and
+4640×3472 modifier. At rows 0/100/1736/3471, it compares one 4640-pixel call
+with calls at x=0/width=2321 and x=2321/width=2319. Both forward and reverse
+coordinate results differ by up to 0.0522461 pixels despite matching global
+positions; vignetting results on constant 0.5 input differ by up to 0.000016809.
+The source, executable and output hashes are saved in `row-split-manifest.json`.
+This demonstrates library call-partition sensitivity independent of the engine.
+The split is a controlled probe, not a replay of every overlapping tile ROI;
+it does not establish the library's internal arithmetic cause, an accuracy
+ranking, or an acceptable compatibility tolerance. No baseline plugin changed.
+
+
+### Full-size pixel-aspect histories
+
+`pixel-lens-aspect-fullsize` runs `--lens-aspect --size 4640
+--resource-level unrestricted` on the Olympus fixture against the original
+candidate and `isolation/lens-step1-clamp`. Saved enabled `scalepixels` v1
+ratios pass the exact layout/value guard. Defaults and old saved-history reloads
+are exact, and both histories visibly contribute. Lens logs show untiled CPU
+processing without fallback. The report's old build identity matches the prior
+full-size/tiled report exactly; the diagnostic differs from the original
+candidate only in `liblens.so`.
+
+| Saved ratio | Actual output | Original changed RGB channels | Maximum | MAE | Direct coordinates plus clamp |
+| --- | --- | ---: | ---: | ---: | --- |
+| 0.75 | 4640×4630 | 10,617,541 | 42 | 0.170236 | Exact |
+| 1.5 | 4640×2314 | 849,955 | 11 | 0.026389 | Exact |
+
+The evidence extends the diagnostic's old CPU appearance reproduction to these
+constructed full-size non-square-pixel histories. It does not select an import
+policy or cover tiled aspect combinations, reverse combined with aspect,
+camera-metadata-driven aspect, broader profiles, file export or device execution.
+The production pin, defaults, baseline plugins and other worktree are unchanged.
