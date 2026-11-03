@@ -251,6 +251,11 @@ paths; photos and state are temporary. This headless check verifies scalar acces
 and preservation of neighboring mapped values. Use `--snapshot PATH` to save
 initial live/default responses for comparisons. It does not verify UI control responses,
 enum semantics, RAW processing or image compatibility across pins.
+Add `--controls` to exercise actual global/local production map writes at control
+boundaries/neutral values and every declared option on mapped controls. It checks
+all emitted fields and mapped neighbors, allowing float storage rounding, then
+restores original values exactly. This does not test map read-back semantics,
+choice activation, tagged/local instance isolation, rendering or GUI behavior.
 
 ## Candidate masked-look sidecars
 

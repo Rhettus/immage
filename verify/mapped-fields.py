@@ -2,11 +2,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 the Immage authors
 """Read/write every global/local manifest field through the real engine, headlessly."""
-import argparse,json,os,pathlib,selectors,struct,subprocess,tempfile,zlib
+import argparse,json,math,os,pathlib,selectors,struct,subprocess,tempfile,zlib
 root=pathlib.Path(__file__).resolve().parent.parent
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--build',type=pathlib.Path,default=root/'build')
 parser.add_argument('--snapshot',type=pathlib.Path,help='Write initial live/default values for comparison')
+parser.add_argument('--controls',action='store_true',help='Exercise production control writes, including all declared choices')
 args=parser.parse_args()
 build=args.build.resolve()
 fields=json.loads(subprocess.check_output(['node',str(root/'verify/mapped-fields.mjs')],text=True))
@@ -46,6 +47,22 @@ with tempfile.TemporaryDirectory(prefix='immage-mapped-fields-') as tmp:
      restored=req({'cmd':'get','modules':{op:names}})['modules'][op]['params']
      assert restored==current,(op,name,current,restored)
      count+=1
+   if args.controls:
+    seed=p/'snapshot.json';seed.write_text(json.dumps(snapshot))
+    cases=json.loads(subprocess.check_output(['node',str(root/'verify/mapped-fields.mjs'),'--controls',str(seed)],text=True))
+    for case in cases:
+     op=case['op'];params=case['params']
+     names=list(set(fields[op])|set(params))
+     before=req({'cmd':'get','modules':{op:names}})['modules'][op]['params']
+     req({'cmd':'set','op':op,'params':params})
+     after=req({'cmd':'get','modules':{op:names}})['modules'][op]['params']
+     expected=before|params
+     assert set(after)==set(expected),(case,after)
+     assert all(math.isclose(after[k],v,rel_tol=2e-6,abs_tol=2e-6) for k,v in expected.items()),(case,expected,after)
+     req({'cmd':'set','op':op,'params':before})
+     restored=req({'cmd':'get','modules':{op:names}})['modules'][op]['params']
+     assert restored==before,(case,before,restored)
+    print(f"Production control writes passed: {len(cases)} scenarios, {sum(c['choice'] for c in cases)} declared-choice scenarios; global/local maps, boundary/neutral values, neighbor preservation and restoration")
    req({'cmd':'quit'});child.wait(timeout=15);assert child.returncode==0
    if args.snapshot:args.snapshot.write_text(json.dumps(snapshot,indent=2,sort_keys=True)+'\n')
    print(f'Manifest changed-scalar access passed: {count} fields in {len(fields)} modules; global/local union, live/default reads, changed writes, neighbor preservation and restoration')

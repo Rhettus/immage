@@ -23,10 +23,36 @@ registerHooks({
   },
 });
 
-const { modules, localMaps } = await import('../app/src/manifest.ts');
+const { modules, localMaps, allControls, LOCAL_CONTROLS } = await import('../app/src/manifest.ts');
 const fields = {};
 for (const map of [...modules, ...localMaps]) {
   const op = map.op.split('#')[0];
   fields[op] = [...new Set([...(fields[op] ?? []), ...map.fields])];
 }
-process.stdout.write(JSON.stringify(fields));
+if (process.argv[2] === '--controls') {
+  const snapshot = JSON.parse(readFileSync(process.argv[3], 'utf8'));
+  const ctx = {sensorWidth:128, sensorHeight:96, orientation:0, camera:0};
+  const cases = [];
+  for (const [scope, maps, controls] of [['global', modules, allControls], ['local', localMaps, [...allControls, ...LOCAL_CONTROLS]]]) {
+    const byId = new Map(controls.map(c => [c.id,c]));
+    const base = Object.fromEntries(controls.map(c => [c.id, c.neutral ?? c.min]));
+    // Start with production reads so image-dependent defaults seed other controls.
+    for (const m of maps) Object.assign(base,m.read(snapshot[m.op.split('#')[0]].params,snapshot[m.op.split('#')[0]].defaults,ctx,base));
+    for (const [index,m] of maps.entries()) {
+      const op=m.op.split('#')[0], d=snapshot[op].defaults;
+      for (const id of m.controls) {
+        const c=byId.get(id);
+        if (!c) throw Error(`Missing control ${scope}/${id}`);
+        const options=c.options ?? c.optionGroups?.flatMap(g=>g[1]);
+        const values=options?.map(o=>o[1]) ?? [c.min,c.neutral ?? base[id],c.max];
+        for (const value of new Set(values)) {
+          const v={...base,[id]:value};
+          const params=m.write(v,d,ctx);
+          if (Object.values(params).some(x=>!Number.isFinite(x))) throw Error(`Nonfinite ${scope}/${index}/${id}/${value}`);
+          cases.push({scope,index,op,id,value,params,choice:!!options});
+        }
+      }
+    }
+  }
+  process.stdout.write(JSON.stringify(cases));
+} else process.stdout.write(JSON.stringify(fields));

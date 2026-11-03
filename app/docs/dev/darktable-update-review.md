@@ -299,7 +299,10 @@ The production pin remains unchanged until the adoption gates pass.
   both candidate builds and the existing original-pin build.
 - [x] Compare synthetic-PNG mapped live/default values and enabled flags across
   those builds; compare all 14 mapped enum type declarations between pins.
-- [ ] Verify production control mappings/options, RAW-specific defaults, new
+- [x] Write production global/local control boundary/neutral values and every
+  choice declared on mapped controls through both candidate builds and the
+  existing original-pin build (1,280 scenarios, including 86 choice scenarios).
+- [ ] Verify production control read/selection semantics, RAW-specific defaults, new
   unmapped HDR fields and enum processing semantics with reference renders.
 - [x] Verify A→B→A switching between two exported/imported masked exposure looks,
   with distinct geometry, exposure and opacity, in both candidate builds.
@@ -864,3 +867,33 @@ Production `ModuleMap.write/read` control scenarios and all choice values remain
 unverified by this scalar test. RAW/camera defaults, unmapped new AgX/sigmoid HDR
 fields and legacy conversion, output-headroom behavior and old/new image references
 remain open. No production defaults or pin changed; no GUI was launched.
+
+## Production control writes and declared choices
+
+The headless `mapped-fields.py --controls` extension imports the actual global
+and local `ModuleMap.write` functions and control definitions. It seeds values
+with production reads of the synthetic PNG defaults, then exercises each mapped
+control individually at its minimum, neutral (or initial value) and maximum;
+choices exercise every declared option, including grouped options. Parameters
+emitted by each map, including fixed fields outside its read inventory, are
+written through the actual engine and reread alongside neighboring mapped fields.
+Float storage is compared with relative/absolute tolerance 2e-6; restoration is
+exact. Nonfinite map outputs and missing control declarations fail the check.
+
+All 1,280 scenarios (86 declared-choice scenarios) passed in each of the two
+candidate builds and the existing original-pin build, together with the previous
+444 changed-scalar checks:
+
+```sh
+python3 -I verify/mapped-fields.py --build build/darktable-pin-review/cpu --controls
+python3 -I verify/mapped-fields.py --build build/darktable-pin-review/features --controls
+python3 -I verify/mapped-fields.py --build build --controls
+```
+
+These checks verify storage of production write outputs, not useful rendering,
+independent correctness of the mapping formulas, control read-back semantics,
+module-choice activation/ordering, multi-control interactions, tagged/local
+instance isolation or RAW-dependent values. Each map writes to its base module
+in temporary state; no render or GUI is launched. The existing original-pin
+binary remains an existing-build comparison, not a newly certified baseline.
+Those limits keep the broader control/default/image gate unchecked.
