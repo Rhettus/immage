@@ -130,6 +130,23 @@ static void check_legacy_style(const char *dir, dt_iop_module_t *m, int version,
   CHECK(_item_params(m, item, actual, &blend));
   CHECK(!memcmp(actual, expected, m->params_size));
   CHECK(!memcmp(&blend, m->default_blendop_params, sizeof(blend)));
+  GBytes *baseline = preview(NULL);
+  GBytes *tile = preview(path);
+  CHECK(_look(path, &err));
+  dt_iop_module_t *applied = _look_instance(m->op, FALSE);
+  CHECK(applied && applied->enabled);
+  CHECK(!memcmp(applied->params, expected, applied->params_size));
+  CHECK(!memcmp(applied->blend_params, &blend, sizeof(blend)));
+  GBytes *pixels = preview(NULL);
+  CHECK(g_bytes_equal(tile, pixels));
+  CHECK(!g_bytes_equal(baseline, pixels));
+  CHECK(_look(NULL, &err));
+  GBytes *restored = preview(NULL);
+  CHECK(g_bytes_equal(baseline, restored));
+  g_bytes_unref(restored);
+  g_bytes_unref(pixels);
+  g_bytes_unref(tile);
+  g_bytes_unref(baseline);
   g_free(actual);
   g_list_free_full(items, dt_style_item_free);
   dt_styles_delete_by_name(name);
@@ -139,7 +156,7 @@ static void check_legacy_style(const char *dir, dt_iop_module_t *m, int version,
   g_free(name);
   g_free(encoded);
   g_free(encoded_blend);
-  printf("%s v%d: on-disk legacy style import and item conversion passed\n", m->op, version);
+  printf("%s v%d: legacy style import, converted bytes, tile/applied pixels and disable passed\n", m->op, version);
 }
 
 // Test the loaded candidate modules, without mirroring their C parameter structs.

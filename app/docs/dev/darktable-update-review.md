@@ -316,6 +316,8 @@ The production pin remains unchanged until the adoption gates pass.
   builds; all 444 scalar checks pass and snapshots match exactly.
 - [x] Check sigmoid v1/v2 migration chains and on-disk synthetic legacy style
   imports (sigmoid v1/v2/v3 and AgX v7) in both candidate builds.
+- [x] Apply and render those synthetic legacy tone-mapper styles: exact tile/applied
+  pixels and converted bytes, visible contribution and exact disable restoration.
 - [ ] Verify production control read/selection semantics, RAW-specific defaults, new
   unmapped HDR fields and enum processing semantics with reference renders.
 - [x] Verify A→B→A switching between two exported/imported masked exposure looks,
@@ -991,7 +993,12 @@ parameter and blend bytes. These are constructed historical layouts, not a
 user-created style corpus or older blend-format coverage. Full look/sidecar
 regressions still pass both builds. Logs:
 `{cpu,features}-legacy-style{,-build}.log` in the ignored review build folder.
-Legacy XMP loading, applied/rendered legacy tone-mapper styles, HDR output pixels
+Applied-style follow-up checks all four historical layouts through `_preview`
+and `_look`: complete applied parameter/blend bytes match conversion, tile and
+applied pixels match exactly, each style changes the synthetic PNG, and disabling
+it restores baseline pixels exactly. Both full candidate runners pass; logs are
+`{cpu,features}-legacy-applied{,-build}.log`. This establishes internal rendering
+consistency, not agreement with the old pin. Legacy XMP loading, HDR output pixels
 and display-dependent headroom behavior remain unverified.
 
 `verify/mapped-fields.py --photo PATH` copies only the photo into temporary
@@ -1013,5 +1020,5 @@ python3 verify/mapped-fields.py --build build/darktable-pin-review/cpu \
   --photo /path/to/copied-camera.NEF --snapshot /tmp/raw-defaults.json
 ```
 
-Next: legacy XMP and applied legacy tone-mapper validation, then old/new reference
+Next: legacy XMP loading validation, then old/new reference
 pixels. Broader camera coverage and adoption gates remain unchecked.

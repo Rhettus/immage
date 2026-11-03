@@ -300,5 +300,7 @@ also exercises loaded AgX/sigmoid new HDR defaults and previous-version legacy
 conversion, including prefix preservation and the production conversion wrapper.
 Sigmoid v1/v2 chains check preserved old bytes and zero-filled additions. Synthetic
 on-disk styles with sigmoid v1/v2/v3 and AgX v7 parameters exercise the actual
-style importer and Immage item conversion; they do not establish user-style
+style importer and Immage item conversion. Each style also checks complete applied
+parameter/blend bytes, exact preview/applied pixels, a visible pixel contribution
+and exact baseline restoration when disabled. They do not establish user-style
 corpus, legacy XMP or old/new rendered-pixel equivalence.
