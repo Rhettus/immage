@@ -89,6 +89,16 @@ Run `infrastructure.test.mjs`, `memory.test.mjs`, `support.test.mjs`,
 `fixtures.test.py`, inventory freshness and the frontend build without a GUI.
 The README documents the full commands and offline recovery/reference tools.
 
+## Website screenshot case
+
+`site-shots` (`specs/site.mjs`) takes the screenshots for the website and the
+user guide on a copied photo. It presses I to hide the photo info and skips
+any shot whose visible text includes a home, temporary or drive path. Each
+shot records the photo canvas bounds, so a before/after pair can be cropped
+to the photo. `SITE_SHOTS=masks,heal` retakes only those steps. The window
+is floated and sized from outside the runner. Like every visible case, it
+runs only with approval.
+
 ## Batch paste case
 
 `batch-paste` adds copied JPEG targets before launch and uses guarded WebDriver

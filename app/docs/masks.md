@@ -11,8 +11,8 @@ range, O overlay.
 
 Open it with **Masks** on the rail, or press one of the tool keys.
 
-![The Masks panel with a Sky mask and the red overlay](images/masks-panel.png)
-<!-- screenshot: Masks mode, a landscape with a Sky mask selected, overlay on, local sliders visible -->
+![A linear gradient mask from the top of the photo with its overlay on, and the Masks panel with the mask's Exposure at -0.70](images/masks-panel.png)
+<!-- screenshot: Masks mode, a mask selected, overlay on, local sliders visible -->
 
 ## Creating a mask
 

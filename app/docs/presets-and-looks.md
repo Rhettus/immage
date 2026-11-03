@@ -11,8 +11,8 @@ one at a time, with their own amount.
 
 Open them with **Presets** on the rail.
 
-![The Presets panel with film look tiles](images/presets-panel.png)
-<!-- screenshot: Presets mode, Basics expanded, a Film group expanded, one look applied with its chip in the header -->
+![The Presets panel with the Basics tiles previewing the photo, and the Film groups below](images/presets-panel.png)
+<!-- screenshot: Presets mode, Basics expanded, live previews of the photo, the Film groups listed -->
 
 ## Presets
 
