@@ -13,14 +13,17 @@ export async function textButton(t, scope, text) {
   await until(async () => !(await t.driver.observe(inspect, `${scope} button`, text))?.disabled, `enabled button ${scope}/${text}`);
   await t.driver.point(b.x, b.y);
 }
-export async function choose(t, selector, value) {
+// `appears`: an option that opens something (Enter Custom…) rather than
+// staying selected; wait for that element instead of the value
+export async function choose(t, selector, value, appears) {
   const c = await reveal(t, selector);
   if (c.disabled) throw new Blocked(`Disabled prerequisite ${selector}`);
   const index = c.options?.findIndex(o => o.value === String(value));
   assert(index >= 0 && !c.options[index].disabled, `${selector} has enabled option ${value}`);
   await t.driver.point(c.x, c.y);
   await t.driver.keys('\uE011', ...Array(index).fill('\uE015'), '\uE007');
-  await until(async () => (await t.driver.observe(inspect, selector))?.value === String(value), `selected ${value}`);
+  if (appears) await until(() => t.driver.observe(s => !!document.querySelector(s), appears), `${value} opens ${appears}`);
+  else await until(async () => (await t.driver.observe(inspect, selector))?.value === String(value), `selected ${value}`);
 }
 export async function panel(t, id) {
   const selector = `[data-panel-id=${JSON.stringify(id)}]`;
