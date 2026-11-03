@@ -6186,6 +6186,9 @@ static void _set_ranges_group(dt_masks_form_t *root, JsonArray *list)
     _s.dev.forms = g_list_append(_s.dev.forms, grp);
   }
   g_list_free_full(grp->points, free);
+  // cleared first: the marker's new id is checked against every group's
+  // points in the forms, this one's included (masks.c, _id_taken)
+  grp->points = NULL;
   grp->points = g_list_append(NULL, dt_masks_marker_new(_s.dev.forms, grp, DT_MASKS_STATE_FLEXI_PRODUCT));
   if(_has_members(root))
     _member(grp, root->formid, DT_MASKS_STATE_SHOW | DT_MASKS_STATE_USE | DT_MASKS_STATE_UNION, 1.0f);
@@ -6471,6 +6474,7 @@ static gboolean _combine(const char *name, JsonArray *members, JsonArray *ranges
   GHashTable *old = _mask_forms(grp);
   g_hash_table_remove(old, grp);
   g_list_free_full(grp->points, free);
+  grp->points = NULL; // as in _set_ranges_group(), before the marker's id is chosen
   // the first member goes onto the fold's empty start, and the rest add to
   // it, up to 1 (masks/group.c)
   grp->points = g_list_append(NULL, dt_masks_marker_new(_s.dev.forms, grp, DT_MASKS_STATE_FLEXI_SUM));
