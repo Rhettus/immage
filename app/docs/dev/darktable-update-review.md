@@ -340,6 +340,8 @@ The production pin remains unchanged until the adoption gates pass.
 - [x] Isolate measured transform differences to ashift FMA and lens differences
   to the changed lens module, then separate coordinate-grid and vignetting
   contributions using independent diagnostic plugins (details below).
+- [x] Isolate the larger Olympus Lensfun differences to negative-value clipping
+  lost by factor multiplication; verify isolated clamp and step-1 diagnostics.
 - [ ] Assess lens and transform appearance deltas, including the isolated rotation
   boundary pixel; cover reverse lens, interpolation modes, tiling and pixel aspect.
 - [ ] Assess diffuse and denoise saved-edit appearance differences with broader
@@ -1362,7 +1364,54 @@ and candidate `.../isolation/lens-step1`, `.../isolation/lens-step1-direct-vig`
 or `.../isolation/lens-direct-vig`, respectively. Retained scripts reconstruct
 these diagnostic plugins using the original compile database and Ninja link rule.
 
-Recommended sequence: investigate this vignetting-path contribution, then measure full-size
-and interpolation/reverse-mode references before deciding whether to retain the
-optimization or add a compatibility path. Keep the production pin unchanged while
-these acceptance gates and diffuse/vignette policies remain open.
+### Lensfun negative-value evaluation
+
+A standalone probe linked to installed Lensfun 0.3.4.0 loads the same system
+database and selects Olympus Imaging Corp. E-M5MarkII and Panasonic Lumix G Vario
+12-32mm, crop 2, focal 27, aperture 5.6, distance 1000. It compares direct float
+RGBA modification against factors extracted from 0.5 and doubled, as in
+`_lens_grid_eval`. At row widths 96, 512 and 4,640, height three quarters of width,
+and both correction/simulation directions, all tested nonnegative values
+(0, 0.01, 0.5, 1, 2, 10) agree exactly. For input -1, direct RGB becomes zero;
+factor multiplication remains negative at every tested RGB component. This
+demonstrates a nonlinear clipping difference, rather than merely multiplication
+rounding. It is a library probe, not full-resolution image or reverse-pipeline
+coverage. Source, executable, report and hashes remain under ignored
+`build/darktable-pin-review/lensfun-eval/`.
+
+Two independently linked diagnostic plugins change only the CPU factor
+multiplication to `fmaxf(pixel * factor, 0.0f)` in both directions:
+
+- `isolation/lens-clamp` retains adaptive coordinates and vignetting. Nikon keeps
+  160/3,181 changed channels at 96/512, maximum one code. Olympus Lensfun drops
+  from maximum 24/72 to one code, with 125/1,685 changed channels; metadata stays
+  exact. This does not produce exactly the same residual as direct vignetting,
+  because vignetting-grid interpolation remains active.
+- `isolation/lens-step1-clamp` also starts grid construction at step 1. Both RAWs,
+  both selectors and both sizes then match old-cpu exactly. Together with the
+  earlier direct-vignetting experiments, this isolates the larger measured
+  Olympus error to lost negative clipping. It does not establish that every
+  remaining grid error is acceptable.
+
+Both runs use the preceding `pin-pixels.py --lens` command, both RAWs and unchanged
+old-cpu. Reports/logs are `pixel-lens-clamp` and `pixel-lens-step1-clamp`; every
+old saved-history reload and fresh default is exact, and every lens edit visibly
+contributes. Runtime engine/module hashes confirm only `liblens.so` differs from
+the original candidate; old-cpu hashes still match `pixel-lens-methods`.
+Build scripts and copied source remain in `isolation/`, with additional hashes in
+`lensfun-eval/manifest.json`. No original plugin or baseline was overwritten.
+
+There is an appearance policy choice before adopting a correction. The old
+OpenCL `lens_vignette` kernel already multiplies extracted factors without a
+zero clamp; the candidate kernel retains that behavior. The old CPU instead
+delegates actual pixels to Lensfun, whose installed float path clips negatives.
+Therefore a blanket CPU/OpenCL clamp would preserve the measured old CPU behavior
+while changing old OpenCL behavior. Saved module version/backend provenance must
+be considered before choosing a compatibility path; this is separate from the
+remaining grid tolerance decision. No device execution or serialized compatibility
+mode has been validated, and these diagnostic clamps are not production repairs.
+
+Next: decide the intended negative-value semantics and import policy, then cover
+full-size images, reverse operation, interpolation modes and device parity before
+accepting a production correction. Keep the production pin unchanged while these
+acceptance gates and diffuse/vignette policies remain open.
