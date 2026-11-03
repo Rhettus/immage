@@ -344,6 +344,8 @@ The production pin remains unchanged until the adoption gates pass.
   lost by factor multiplication; verify isolated clamp and step-1 diagnostics.
 - [x] Compare Olympus Lensfun and metadata-selected histories at actual
   4640×3472 output; isolate the larger full-size difference with step-1/clamp.
+- [x] Separate full-size Olympus coordinate and vignetting-grid effects: direct
+  coordinates reproduce the old frame exactly without a negative clamp.
 - [x] Compare both RAWs' forward/metadata/reverse lens histories at 96/512
   using bilinear, bicubic, Lanczos2 and Lanczos3 warp interpolation.
 - [ ] Assess lens and transform appearance deltas, including the isolated rotation
@@ -1443,6 +1445,20 @@ be generalized to full-size output or accepted as a one-code bound. These are
 CPU RGBA renders, not tiled export or device execution. Reports, sidecars, engine
 logs and hashed binary identities are retained under the ignored build directory;
 the coherent old-cpu baseline was not rebuilt or modified.
+
+`pixel-lens-fullsize-isolation` separates these effects using the same command
+and fixture, with `isolation/lens-direct-vig` and `isolation/lens-step1` as the
+two candidates. Adaptive coordinates with direct Lensfun vignetting still change
+5,714,351 RGB channels, maximum 14 codes, MAE 0.119886. Direct coordinates with
+the candidate factor-based vignetting reproduce the old Lensfun frame exactly,
+without a clamp. Defaults, metadata-selected frames and old saved-history reloads
+are exact; contribution guards pass. This isolates the dominant measured full-size
+difference to coordinate approximation, while vignetting has a smaller interaction
+with that approximation. It does not establish that the vignetting paths are
+universally equivalent: their negative-value difference remains demonstrated in
+previews and the standalone probe. Old frame hashes match the prior full-size
+report. Only each diagnostic lens plugin differs from the original candidate
+build; old-cpu and the concurrent worktree remain untouched.
 
 ### Reverse lens and interpolation matrix
 
