@@ -150,6 +150,16 @@ try {
       await copyFile(copiedFixture, join(fixtures, name));
     report.batchFixtures = ['batch-target-1.jpg', 'batch-target-2.jpg', 'batch-untouched.jpg'];
   }
+  // the guide's Library grid shot needs a folder of photos: copies of the fixture
+  if (selectedCases.includes('site-shots') && process.env.SITE_SHOTS?.split(',').map(s => s.trim()).includes('library-grid')) {
+    const stem = basename(copiedFixture).replace(/\.[^.]+$/, ''), ext = basename(copiedFixture).slice(stem.length);
+    const m = stem.match(/^(.*?)(\d+)$/);
+    report.gridFixtures = [];
+    for (let i = 1; i <= 5; i++) {
+      const name = m ? `${m[1]}${String(Number(m[2]) + i).padStart(m[2].length, '0')}${ext}` : `${stem}-${i}${ext}`;
+      await copyFile(copiedFixture, join(fixtures, name)); report.gridFixtures.push(name);
+    }
+  }
   const port = await freePort(); let nativePort = await freePort(); while (nativePort === port) nativePort = await freePort();
   const env = { ...process.env,
     XDG_DATA_HOME: join(profile, 'data'), XDG_CONFIG_HOME: join(profile, 'config'),

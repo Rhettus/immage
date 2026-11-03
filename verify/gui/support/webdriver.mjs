@@ -61,6 +61,12 @@ export class AppDriver {
     }
     await this.command('POST', '/actions', { actions: [{ type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' }, actions }] });
   }
+  async move(x, y) {
+    await this.guard();
+    this.log({ action: 'move', x, y });
+    await this.command('POST', '/actions', { actions: [{ type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' },
+      actions: [{ type: 'pointerMove', duration: 120, origin: 'viewport', x: Math.round(x), y: Math.round(y) }] }] });
+  }
   async modifiedPoint(modifier, x, y) {
     if (!['\uE008', '\uE009', '\uE03D'].includes(modifier)) throw Error('Unsupported pointer modifier');
     await this.guard();

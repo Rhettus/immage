@@ -9,7 +9,7 @@
 // measured with every shot so a before/after pair can be cropped to the
 // photo alone.
 import { click, reveal, inspect, rangeSelector } from '../support/controls.mjs';
-import { panel, textButton, openMaskGroup } from '../support/scenario.mjs';
+import { panel, textButton, openMaskGroup, choose } from '../support/scenario.mjs';
 import { until, pause } from '../support/webdriver.mjs';
 import { settledPhoto } from './smoke.mjs';
 import { hideInfo as hideInfoKeys, pathFree } from '../support/privacy.mjs';
@@ -26,14 +26,38 @@ async function hideInfo(t) {
   if (!await hideInfoKeys(t.driver)) throw Error('photo info overlay still shown');
 }
 
-async function shot(t, label) {
+const boundsOf = s => {
+  const r = document.querySelector(s)?.getBoundingClientRect();
+  return r && { x: r.x, y: r.y, width: r.width, height: r.height, scale: devicePixelRatio };
+};
+
+// `element`: also measure that element, for a guide image cropped to it
+async function shot(t, label, element) {
   await settledPhoto(t);
   await hideInfo(t);
   await pause(400); // let panel transitions finish
   const path = await pathFree(t.driver);
   if (path) throw Error(`${path}; shot not taken`);
   await t.evidence(label);
-  t.measure({ name: label, canvas: await t.driver.observe(canvasBounds) });
+  t.measure({ name: label, canvas: await t.driver.observe(canvasBounds),
+    ...(element && { element: await t.driver.observe(boundsOf, element) }) });
+}
+
+// open a left-panel card by its title, if it is closed
+async function card(t, selector) {
+  if (!await t.driver.observe(s => document.querySelector(`${s} > .panel-title`)?.classList.contains('open'), selector))
+    await click(t, `${selector} > .panel-title`);
+  await pause(400);
+}
+
+// a few Basic moves, so the photo and its history show an edit
+async function edit(t) {
+  await tool(t, 'adjust');
+  await panel(t, 'basic');
+  for (const [id, value] of [['contrast', 22], ['highlights', -45], ['shadows', 35], ['vibrance', 28]]) {
+    try { await slide(t, id, value); } catch (error) { t.measure({ name: `edit-${id}`, skipped: error.message.split('\n')[0] }); }
+  }
+  await settledPhoto(t);
 }
 
 // Drag a range control to a value through its visible track.
@@ -92,6 +116,85 @@ export async function siteShots(t) {
   t.measure({ name: 'viewport', size });
   await settledPhoto(t);
   await hideInfo(t);
+
+  // Guide screenshots (app/docs/images), first launch first while the
+  // app is as it opens.
+  await attempt(t, 'first-launch', async () => { await shot(t, 'first-launch'); });
+
+  await attempt(t, 'library-folders', async () => {
+    await card(t, '.folders-panel');
+    await shot(t, 'library-folders', '.folders-panel');
+  });
+
+  // Label and rate the folder's copies (the runner adds them for this
+  // step), two in black and white, then the grid.
+  await attempt(t, 'library-grid', async () => {
+    const marks = [['5', '6'], ['4', 'bw'], ['x'], ['3', '8'], ['2', 'bw'], ['4']];
+    for (const [i, keys] of marks.entries()) {
+      for (const k of keys) {
+        if (k === 'bw') { await tool(t, 'adjust'); await textButton(t, await panel(t, 'basic'), 'B&W'); }
+        else await t.driver.keys(k);
+        await pause(250);
+      }
+      if (i < marks.length - 1) { await t.driver.keys('\uE014'); await settledPhoto(t); } // right arrow
+    }
+    await t.driver.keys('g');
+    await until(() => t.driver.observe(() => !!document.querySelector('.filmstrip.grid')), 'grid view');
+    await pause(2500); // thumbnails
+    await shot(t, 'library-grid');
+    await t.driver.keys('g');
+    await until(() => t.driver.observe(() => !document.querySelector('.filmstrip.grid')), 'loupe view');
+  });
+
+  await attempt(t, 'before-after-split', async () => {
+    await edit(t);
+    for (let i = 0; i < 6 && !await t.driver.observe(() => !!document.querySelector('.split-bar:not(.h)')); i++) {
+      await t.driver.keys('y'); await pause(400);
+    }
+    if (!await t.driver.observe(() => !!document.querySelector('.split-bar:not(.h)'))) throw Error('no split left / right view');
+    await shot(t, 'before-after-split');
+    for (let i = 0; i < 6 && await t.driver.observe(() => !!document.querySelector('.split-bar, .split-label')); i++) {
+      await t.driver.keys('y'); await pause(400);
+    }
+  });
+
+  await attempt(t, 'history', async () => {
+    if (!await t.driver.observe(() => document.querySelectorAll('.history-list li').length > 2)) await edit(t);
+    await card(t, '.panel.history');
+    await shot(t, 'history', '.panel.history');
+  });
+
+  await attempt(t, 'tone-curve', async () => {
+    await tool(t, 'adjust');
+    const p = await panel(t, 'tonecurve');
+    await textButton(t, `${p} .tabs`, 'Point');
+    const g = await reveal(t, `${p} svg.point-curve`), b = g.bounds;
+    const at = (x, y) => ({ x: b.x + b.width * x, y: b.y + b.height * (1 - y) });
+    await t.driver.drag(at(.25, .25), at(.25, .19));
+    await t.driver.drag(at(.75, .75), at(.75, .81));
+    await settledPhoto(t);
+    const photo = await t.driver.observe(canvasBounds);
+    await t.driver.move(photo.x + photo.width * .45, photo.y + photo.height * .55);
+    await pause(600);
+    await shot(t, 'tone-curve', p);
+  });
+
+  await attempt(t, 'scopes-vectorscope', async () => {
+    await click(t, '.scope-button');
+    await textButton(t, '.scope-list', 'Vectorscope');
+    await textButton(t, '.scope-list', 'RYB');
+    await choose(t, '.scope-list select', 4); // complementary
+    await click(t, '.scope-button');
+    await pause(600);
+    await shot(t, 'scopes-vectorscope');
+  });
+
+  await attempt(t, 'preferences-general', async () => {
+    await click(t, 'button[data-tour="prefs"]');
+    await textButton(t, '.prefs-tabs', 'General');
+    await shot(t, 'preferences-general', '.modal.prefs');
+    await textButton(t, '.prefs-foot', 'Done');
+  });
 
   // 1. Before and after a Basic edit, with the Adjustments panel open.
   await attempt(t, 'basic', async () => {
