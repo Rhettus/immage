@@ -30,6 +30,8 @@ export async function locateControl(t, definition) {
   await expandSections(t, p);
   if (id === 'hsl') await textButton(t, `${p} .tabs`, section);
   if (id === 'colorgrading') await textButton(t, `${p} .tabs`, 'Sliders');
+  // the Region and Split Point sliders are the Parametric curve's
+  if (id === 'tonecurve') await textButton(t, `${p} .tabs`, 'Parametric');
   const selector = `${p} [data-control-id=${JSON.stringify(control.id)}]`;
   // Clarity's and Texture's coarse bands sit under their own Advanced fold
   const detail = /^(l_)?detail_(clarity|texture)_/.exec(control.id)?.[0];
