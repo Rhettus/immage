@@ -7,6 +7,12 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Import selects like Lightroom: clicking photos highlights them (⇧-click
+  for a range, ⌘-click to add one), and checking or unchecking any
+  highlighted photo applies to the whole group. Checkboxes are always
+  shown, with Check all and Uncheck all buttons above the grid.
+- Import opens a card's folders expanded down to its camera folders, so
+  FastRawViewer's `_Selected` and `_Rejected` folders are one click away.
 - Add a scripted Mac CPU capture workflow to profile the engine and webview
   alongside GUI benchmarks and investigate busy-core bottlenecks.
 

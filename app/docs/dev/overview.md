@@ -47,6 +47,12 @@ and marks the photos already in the destination or in Immich. After an
 import, the destination joins Immage's folder list and the new photos
 open. Its source is cloned into `immporter/` (ignored by this
 repository's git); `app/immporter.rev` pins the commit Immage builds
-against, and `app/scripts/fetch_immporter.sh` checks it out.
+against, and `app/scripts/fetch_immporter.sh` checks it out. To move to a
+new Immporter version, put its commit in `app/immporter.rev`; the next build
+checks it out, and a clean existing `immporter/` checkout is moved to it.
+Immage uses only Immporter's plugin and its `embed`, `api` and
+`immich-form` modules, so check those for changes when updating the pin.
+The importer's grid, selection and source tree come with it unchanged; the
+user guide's [Import](../import.md) page describes them.
 
 See [Architecture](architecture.md) for code paths and [Building](building.md) for local builds.
