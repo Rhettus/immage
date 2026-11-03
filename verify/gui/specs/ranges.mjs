@@ -70,9 +70,13 @@ export async function rangeContract(t, definition) {
   await click(t, selector); await t.driver.keys('\uE011'); // Home
   // a mapped track (Temp's Kelvin) may land within a step of its end
   await until(async () => Math.abs(+(await t.driver.observe(inspect, selector)).value - s.min) <= (s.step || .001), 'Home minimum');
+  const home = +(await t.driver.observe(inspect, selector)).value;
   await t.driver.keys('\uE014');
-  const step = +(await t.driver.observe(inspect, selector)).value;
-  assert(Math.abs(step - Math.min(s.max, s.min + s.step)) < Math.max(1e-6, s.step / 100), 'ArrowRight follows declared track step');
+  // read once the key has moved it: an immediate read can race the update
+  const step = await until(async () => { const v = +(await t.driver.observe(inspect, selector)).value; return v !== home && { v }; }, 'ArrowRight moves')
+    .then(r => r.v, async () => +(await t.driver.observe(inspect, selector)).value);
+  assert(Math.abs(step - Math.min(s.max, s.min + s.step)) < Math.max(1e-6, s.step / 100),
+    `ArrowRight follows declared track step: ${home} -> ${step}, expected ${Math.min(s.max, s.min + s.step)}`);
   await t.driver.keys('\uE010');
   await until(async () => Math.abs(+(await t.driver.observe(inspect, selector)).value - s.max) <= (s.step || .001), 'End maximum')
     .catch(async e => { const c = await t.driver.observe(inspect, selector);
