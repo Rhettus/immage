@@ -1,7 +1,10 @@
-# Lensfun compatibility design for the pin audit
+# Lensfun processing diagnostics for the pin audit
 
-Status: design proposal, without a selected import default or production change.
-See the [audit evidence and adoption gates](darktable-update-review.md#lensfun-negative-value-evaluation).
+Status: diagnostic evidence retained; custom historical-renderer proposal retired.
+Follow the [pin rendering policy](darktable-pin.md#rendering-compatibility).
+Target upstream is the rendering oracle. No historical CPU/OpenCL mode or
+unknown-provenance import policy is required for adoption. Old/new comparisons
+below explain changes; they do not select a production renderer.
 
 The old pin is `2747ed2a0d162515bd9c91d02201653de895dddb`; the frozen
 candidate is `879067695ea85f42d238a5c1603a021d14d71d3f`. The following contracts
@@ -66,56 +69,19 @@ separately. Do not equate these two mask contracts or mark either runtime gate
 complete from the existing signed RGB results. Manual-vignette mask generation,
 metadata processing and actual device execution remain separate coverage.
 
-## Proposed implementation boundary
+## Production disposition
 
-Use an explicit serialized processing choice if multiple appearances are retained.
-Names below describe contracts, not approved UI labels or enum values:
+Keep target upstream's adaptive processing and compatibility machinery. The
+isolated direct CPU prototype tests a historical processing contract only; it
+is not production code. Its feasibility does not require implementing or shipping
+it. Do not infer a historical backend from module version or add a mode solely
+to match old-pin pixels.
 
-- **Direct CPU reference:** use direct row coordinates and actual-pixel Lensfun
-  vignetting, preserving stage ordering, row width, global ROI origin, channel roles
-  and alpha handling. Initially disable OpenCL for this Lensfun mode through
-  committed `piece->process_cl_ready`, so ordinary scheduling/fallback always uses
-  that same implementation. Do not claim GPU support by substituting a clamp or
-  factor kernel. A later device implementation needs a separately validated
-  equivalent or explicit transfers of actual pixels through the library.
-- **Old OpenCL factor reference:** retain direct row coordinates and factor
-  extraction, without a new clamp. A CPU implementation of this contract is needed
-  before enabling it, so unavailable devices and allocation failures cannot silently
-  switch appearance to old actual-pixel CPU processing. Old geometric kernel
-  behavior, including interpolation changes, still needs device references; direct
-  coordinates alone do not prove whole-frame old OpenCL equivalence.
-- **Adaptive candidate:** keep the candidate grid contract available for evaluation.
-  Its measured changes and device fallback need acceptance independently of the
-  historical contracts.
-
-Keep the choice in versioned module parameters, copy it into committed data and
-include it in cache identity. Review all historical `legacy_params` exits and
-new-module defaults. Module version alone does not identify which backend made
-an old edit. Unknown-provenance imports therefore require a deliberate policy;
-no automatic default or migration value is chosen here. Limit this choice to
-Lensfun so metadata/manual processing is not changed accidentally.
-
-Direct evaluation preserves a processing contract, not a universal historical
-frame. Existing evidence shows old CPU results depend on tile layout. Hold tile
-layout, Lensfun binary/database, image dimensions, ROI, interpolation and module
-history fixed when assessing equivalence. Cross-layout or cross-library identity
-would be a separate requirement and could require a different algorithm.
-
-## Required validation before implementation is accepted
-
-1. Capture old OpenCL references on an actual available device with engine/module,
-   kernel, driver, Lensfun and database identities. Record that the lens module
-   actually executed on OpenCL, plus device/CPU fallback and tile layout.
-2. Compare signed floating intermediate RGB and final frames, both directions,
-   full-size and preview, four interpolation modes, tile budgets and pixel aspect.
-   Include profiles where the zero-clamp diagnostic fails, beyond the two RAWs.
-3. Validate each chosen contract with CPU-only execution, successful device
-   execution where supported, allocation fallback and cancellation/recovery.
-4. Verify migration, styles, applied history, preview, XMP save/reload and fresh
-   process import; switching modes must invalidate cached results. Preserve masks
-   and unrelated parameters. Test metadata/manual modes as unchanged controls.
-5. Approve the unknown-provenance import and new-edit defaults, document user-visible
-   behavior and run platform/performance checks before moving the pin.
+Remaining validation compares Immage to target upstream with equivalent inputs,
+history, profiles, backend, dependencies and settings. Verify device fallback,
+mask handling, saved histories and installed resources where affected. Stop
+additional equivalent historical profile/interpolation/aspect matrices unless
+they answer a concrete integration question.
 
 Local capability check: `clGetPlatformIDs(0, NULL, &count)` through installed
 `libOpenCL.so.1` returned `-1001` (`CL_PLATFORM_NOT_FOUND_KHR`), count 0.

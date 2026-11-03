@@ -51,12 +51,32 @@ git -C darktable tag -l 'release-*' | sort -V | tail -5
 git -C darktable log --oneline HEAD..origin/master | wc -l
 ```
 
+## Rendering compatibility
+
+Immage follows the rendering of its pinned darktable revision, including upstream
+migrations, legacy processing paths, quirks and bugs. Use the target revision as
+the reference for both new and existing edits. Preserve parameter versions,
+module order, masks, profiles and relevant processing settings through the engine.
+
+Old/new render comparisons identify changes to investigate. A difference alone
+is not an adoption blocker: compare Immage against target upstream with matching
+history, profiles, dependencies, backend and render settings. Fix Immage-specific
+deviations; follow intentional upstream changes. Do not add a historical renderer
+or import policy solely to reproduce the previous pin. Any exception requires a
+demonstrated integration regression and an explicit decision.
+
+Inspect upstream GUI changes alongside parameter declarations, defaults and
+conversions. Update exposed controls' mappings, ranges, choices and visibility
+where needed. A new upstream module does not automatically require an Immage UI.
+Stop expanding equivalent diagnostic matrices once they no longer inform adoption.
+
 ## Moving the pin
 
 1. Prepare: a clean tree, a benchmark baseline
    (`python3 -I benchmarking/bench.py --note "before darktable <new>"`),
    and a folder of edited reference photos with exported 16-bit TIFFs, to
-   compare renders against.
+   diagnose changes against. Also prepare an unpatched target-upstream reference
+   for matching render comparisons before adopting the new pin.
 2. Move the submodule, its own submodules, and re-apply the patch:
 
    ```sh
@@ -117,7 +137,7 @@ These break silently, and are the reason this page has a checklist:
   ```
 
   For each module Immage maps (the code map's tables), read its params
-  struct diff and update `manifest.ts` to match.
+  struct, defaults, migration and GUI diffs; update `manifest.ts` where needed.
 - **A module's defaults changed**, for example sigmoid's or AgX's. New
   photos look different.
 - **A conf key was renamed.** The engine's `main()` sets
@@ -137,7 +157,8 @@ These break silently, and are the reason this page has a checklist:
   dropped share's photo" fails then.
 - **Old edits load differently.** A newer darktable reads older params
   through each module's `legacy_params()`, so this direction is usually
-  safe. Compare the reference renders anyway.
+  safe. Check migrations and compare with target upstream; investigate old/new
+  differences without imposing an extra historical-rendering contract.
 
 ## Verify
 
@@ -151,7 +172,8 @@ These break silently, and are the reason this page has a checklist:
   `git -C darktable submodule update --init src/tests/integration`, then
   `cd darktable/src/tests/integration && DARKTABLE_CLI=$PWD/../../../../build/bin/darktable-cli ./run --disable-opencl --no-deltae`
 - The reference photos: each opens with its masks, spots and look, and the
-  re-exported TIFFs match the reference renders.
+  re-exported TIFFs match target upstream under equivalent settings. Old-pin
+  references remain diagnostic evidence, not a universal pixel-identity gate.
 - Look-mask ownership on a pin with `dt_develop_blend_params_read`:
   build `immage-look-check`, the IOP/imageio modules and `deploy`, then run
   `python3 -I verify/look-compat.py --build <candidate-build>`. This checks

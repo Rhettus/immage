@@ -1,6 +1,6 @@
 # darktable update review: 2747ed2 → 8790676
 
-Status: source-impact audit recorded; adoption blocked, pin unchanged.
+Status: source-impact audit recorded; full pin integration in progress, pin unchanged.
 Build, image compatibility and platform validation are separate gates in the
 [progress checklist](#progress-checklist).
 
@@ -10,53 +10,38 @@ Follow [Pinning darktable](darktable-pin.md). Candidate frozen at
 on 2026-11-03 UTC. Fetch updated master successfully but returned nonzero
 because upstream moved its `nightly` tag; the local tag was preserved.
 
-## Adoption recommendation and bounded next steps
+## Adoption direction and remaining work
 
-Hold the full pin bump. The source-impact audit is complete, integration repairs
-have headless coverage, and the direct CPU lens prototype has sufficient evidence
-to support its feasibility. These milestones do not resolve import policy or
-establish native device readiness. Do not express the combined work as a percentage.
+Follow the [rendering compatibility policy](darktable-pin.md#rendering-compatibility):
+target upstream is the oracle for new and existing edits. Keep the integration
+repairs and upstream migrations. Old/new differences below diagnose upstream
+changes; they do not require custom historical lens or vignette modes.
 
-| Milestone | Disposition | Exit condition or next action |
-| --- | --- | --- |
-| Source inventory and integration API audit | Complete for the frozen range | Reopen only for a changed candidate or a concrete new finding. |
-| Style loader and preview ownership repairs | Implemented; headless fixtures pass | Retain native and broader real-style validation before shipping. |
-| Direct CPU lens feasibility | Established for the documented fixtures | Stop expanding equivalent interpolation/aspect/profile matrices. |
-| Lens compatibility and import policy | Blocks full adoption | Select behavior for existing edits with unknown CPU/OpenCL provenance; implement versioned migration and fallback consistently. |
-| Other changed-module appearance | Blocks full adoption | Resolve the documented vignette policy and assess focused diffuse/denoise, RAW/HDR and saved-edit references. |
-| Native packaging, locking and device behavior | Blocks shipping | Validate supported platforms, packaged kernels, OpenCL parity/fallback/cancellation and first-start locking. |
-| Pin change | Held | Complete the applicable adoption gates before changing the production pin. |
+- Source inventory and integration API audit are complete for the frozen range.
+- Style/mask loader and preview ownership repairs have headless coverage.
+- The bounded control review found no required SDR manifest changes. AgX/sigmoid
+  output-follow defaults and migrated values remain upstream-managed; current
+  preview/export profiles have output headroom 1. HDR support would need a
+  separate review of controls, profiles, peak settings and caches.
+- Next, establish an unpatched target reference build and equivalent render
+  settings; compare focused lens, vignette, diffuse, denoise and RAW cases.
+- Complete affected real-style, raster/pixel-mask, AI, foreign-XMP and export
+  integration checks with a concrete risk and exit condition for each.
+- Resolve native locking, installed resources, supported-platform builds and
+  device parity/fallback/cancellation; GPU coverage is unavailable in this VM.
+- Update the pin and integration patch after applicable gates, with final release
+  notes and user/developer documentation. GUI checks remain subject to local
+  execution approval and resource constraints.
 
-Additional full-size changed-aspect mask matrices, grid-failure injection and
-nonfinite-coordinate diagnostics are deferred prototype hardening. They are not
-the next step toward selecting the compatibility policy. Reopen a diagnostic only
-when it answers a specific implementation or adoption decision. Preserve the
-existing evidence and its stated limitations; deferred coverage is not a pass.
+The direct lens prototype remains diagnostic only. Stop equivalent lens matrix
+expansion. No custom serialized compatibility mode or unknown-backend import
+policy is required. A narrow Contrast & Texture backport is optional, not a
+prerequisite for the full move or the next engineering deliverable. No performance
+improvement is claimed without matched native measurements.
 
-For the original Contrast & Texture performance objective, assess a narrow
-backport separately from the full pin bump. Source inspection identifies
-`7d7dac363d` and its kernel-helper follow-up `8075f03504`: together they affect
-`src/iop/contrastntexture.c`, a new `data/kernels/contrastntexture.cl`, and
-`data/kernels/programs.conf`. The old-to-candidate `toneequal.cl` diff is empty;
-the only `common.h` addition is `fold_mirror`, separate from the helpers named
-by the follow-up. This makes a bounded dependency assessment worthwhile, but
-does not prove that a backport applies, builds or runs correctly.
-
-Initial applicability assessment: the three-file `7d7dac363d` patch passes
-`git apply --check` against the isolated patched old source. The old pin already
-declares `dt_interpolate_bilinear_cl` and `dt_gaussian_mean_blur_cl`, contains
-`toneequal_eigf_pack_2c`, `toneequal_eigf_finish_2c` and
-`toneequal_eigf_blend_no_mask`, and defines `NORM_MIN` and `Areadpixel`.
-Its kernel registry ends at toneequal program 45, leaving program 46 available.
-These are textual applicability and symbol-presence checks, not compilation,
-ABI or numerical validation. The helper follow-up has not been apply-checked
-on a tree containing the initial patch. No source tree was modified.
-
-The next engineering deliverable is an isolated backport build incorporating both
-commits, if implementation is selected. Implementation remains a separate decision,
-consistent with the performance backlog. Even a successful backport still needs real device output,
-fallback and matched native performance evidence; this machine has no available
-OpenCL platform. Keep Texture/Clarity defaults unchanged and make no speedup claim.
+The detailed checklist and run narratives below retain historical evidence.
+Their former custom-renderer/import-policy proposals are superseded by this
+section; unchecked historical items are not the current execution queue.
 
 ## Findings so far
 
@@ -312,6 +297,9 @@ approve the candidate pin, pixel parity, performance gains or platform support.
 
 ## Progress checklist
 
+Historical run checklist; the adoption direction above governs remaining work.
+Custom historical-renderer and import-policy items below are retired, not gates.
+
 Checked items have completed evidence described in this review. An unchecked
 item is pending or only partially verified; passing a narrower check does not
 complete its broader adoption gate. Update this checklist as checks finish.
@@ -374,8 +362,8 @@ The production pin remains unchanged until the adoption gates pass.
 - [x] Compare old-created exposure, sigmoid v3, AgX v7 and non-dithered vignette
   histories after fresh-process XMP loading on PNG/NEF/ORF at 96/512 bounds;
   record exact matches and nonzero differences separately (details below).
-- [ ] Resolve saved-edit appearance policy for the measured vignette differences
-  and assess the small AgX RAW deltas before adopting the candidate.
+- Retired: custom vignette appearance policy. Compare the measured deltas with
+  target upstream instead.
 - [x] Trace vignette serialization and CPU/OpenCL falloff semantics, including
   the production mapper's explicit 16-bit dithering (compatibility analysis below).
 - [x] Compare six old-saved vignette variants on PNG/NEF/ORF at 96/512 bounds:
@@ -425,12 +413,11 @@ The production pin remains unchanged until the adoption gates pass.
   with minimum-budget lens tiling and visible-contribution guards.
 - [x] Compare injected signed floating vignetting rows and final frames for all 12
   exceptional assigned profiles, both directions, at preview/full size with minimum-budget tiling.
-- [ ] Validate the direct prototype with broader exceptional-profile images and
-  native device/fallback references before choosing production migration behavior.
+- Retired: additional direct-prototype hardening as a production migration gate.
 - [x] Trace old CPU/OpenCL Lensfun stage ordering and factor arithmetic; record a
-  [compatibility design](lens-compatibility-design.md) and local device availability.
-- [ ] Capture old OpenCL Lensfun device references and select/validate the serialized
-  compatibility and unknown-provenance import policy.
+  [diagnostic record](lens-compatibility-design.md) and local device availability.
+- Retired: serialized historical lens modes and unknown-provenance import policy.
+  Matching target-upstream device behavior remains relevant.
 - [ ] Assess diffuse and denoise saved-edit appearance differences with broader
   references, including RAW denoise, image borders and full-resolution processing.
 - [ ] Verify production control read/selection semantics, RAW-specific defaults, new
@@ -1264,15 +1251,10 @@ introduce a second processing change. Loading external history and applying
 styles still require coverage; this source trace does not prove Session leaves
 every such incoming field untouched.
 
-Recommended repair direction, if preserving old CPU-origin non-dithered edits is
-required: introduce an explicitly serialized falloff mode and a new module
-version, keep smooth falloff for newly created edits, and implement the selected
-legacy semantics consistently in CPU and OpenCL. Migration must cover versions
-1–4, styles, XMP, thumbnails, copied history and save/reload. Unknown-provenance
-version-4 imports need an explicit policy; module version alone cannot select
-the correct historical backend. An engine-only `dithering` rewrite or an
-unversioned upstream revert cannot provide that contract. No such production
-repair or migration policy has been adopted here.
+Disposition: follow target upstream's vignette processing and legacy conversion.
+The earlier proposal for a serialized historical falloff mode is retired.
+Unknown historical backend provenance does not require an Immage import policy.
+Verify that Immage matches target upstream when loading equivalent histories.
 
 Headless follow-up (`pin-pixels.py --vignette`, same old/candidate builds and
 photos as above) tested six independent old-created saved histories at 96/512
@@ -1295,12 +1277,9 @@ summary `pixel-vignette.log`. These are constructed module histories, not edits
 generated by Session or proof of device parity. Python compile/help and diffcheck
 passed. No baseline, candidate binary, pin or production behavior changed.
 
-Next: resolve the remaining imported non-dithered vignette appearance policy,
-then extend changed-module references (lens, highlights and
-transforms). Do not silently bless the measured change or revert upstream
-processing while the compatibility policy is unresolved.
-Broader camera/native/device and adoption gates remain unchecked. No additional
-historical CPU benchmark capture is needed.
+Next: use a focused target-upstream comparison to distinguish upstream vignette
+behavior from integration defects. The measured old/new difference alone is not
+a blocker. Broader native/device coverage remains separate.
 
 ### Diffuse and non-local-means saved histories
 
@@ -1488,25 +1467,11 @@ the original candidate; old-cpu hashes still match `pixel-lens-methods`.
 Build scripts and copied source remain in `isolation/`, with additional hashes in
 `lensfun-eval/manifest.json`. No original plugin or baseline was overwritten.
 
-There is an appearance policy choice before adopting a correction. The old
-OpenCL `lens_vignette` kernel already multiplies extracted factors without a
-zero clamp; the candidate kernel retains that behavior. The old CPU instead
-delegates actual pixels to Lensfun, whose installed float path clips negatives.
-Therefore a blanket CPU/OpenCL clamp would preserve the measured old CPU behavior
-while changing old OpenCL behavior. Saved module version/backend provenance must
-be considered before choosing a compatibility path; this is separate from the
-remaining grid tolerance decision. No device execution or serialized compatibility
-mode has been validated, and these diagnostic clamps are not production repairs.
-
-The proposed import policy is to expose a serialized compatibility choice rather
-than infer the historical backend from the module version. Preserving old CPU
-appearance requires both its negative handling and its direct coordinate path;
-preserving old OpenCL appearance needs its own reference, since its negative
-handling already differed. Unknown-provenance imports cannot satisfy both
-automatically. Keep this decision explicit and unresolved until a default import
-policy is approved. Any compatibility mode would need consistent CPU/device
-behavior, versioned migration, styles, XMP, preview and save/reload validation.
-The diagnostic plugins do not implement such a mode.
+The old CPU and OpenCL paths differ in negative-value handling, so a blanket
+clamp would not reproduce both. These diagnostic plugins are not production
+repairs. Follow the target upstream lens path and its migrations; a historical
+backend mode or unknown-provenance import policy is not an adoption requirement.
+Direct target-upstream parity and native device execution remain to be checked.
 
 ### Full-size Lensfun comparison
 
@@ -1821,13 +1786,9 @@ candidate plugins, production preferences and pin are unchanged.
 
 ### Direct-evaluation compatibility design
 
-The [design proposal](lens-compatibility-design.md) separates actual-pixel CPU,
-old OpenCL factor and adaptive candidate contracts. It records stage ordering,
-CPU fallback requirements, serialization/cache boundaries and validation gates.
-Old CPU compatibility should initially use CPU execution rather than assume a
-factor kernel reproduces direct Lensfun evaluation. A future old OpenCL mode
-would need a CPU implementation of its own contract for deterministic fallback.
-No mode, migration default or import policy is implemented or approved.
+The [diagnostic record](lens-compatibility-design.md) separates old actual-pixel
+CPU, old OpenCL factor and adaptive candidate contracts. Its former custom-mode
+proposal is retired. No production lens mode or migration override was added.
 
 The local OpenCL loader reports `CL_PLATFORM_NOT_FOUND_KHR` (-1001), zero
 platforms. Old kernel source confirms unclamped RGB factor multiplication and
