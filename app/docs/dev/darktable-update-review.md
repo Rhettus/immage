@@ -334,6 +334,11 @@ The production pin remains unchanged until the adoption gates pass.
   both dithered cases exact; non-dithered brightness/saturation/shape cases differ.
 - [x] Compare old-saved anisotropic diffuse smoothing/sharpening on PNG/NEF/ORF
   and non-local-means denoise on PNG at 96/512 bounds; record nonzero differences.
+- [x] Compare old-saved rotation/perspective, lowered-threshold Bayer highlights
+  and Lensfun/metadata-selected lens histories at 96/512 bounds; repeat metrics
+  and frame hashes, recording nonzero differences separately.
+- [ ] Assess lens and transform appearance deltas, including the isolated rotation
+  boundary pixel; cover reverse lens, interpolation modes, tiling and pixel aspect.
 - [ ] Assess diffuse and denoise saved-edit appearance differences with broader
   references, including RAW denoise, image borders and full-resolution processing.
 - [ ] Verify production control read/selection semantics, RAW-specific defaults, new
@@ -1249,3 +1254,54 @@ Python compile/help
 and diffcheck pass. No binary, baseline, production pin
 or defaults changed. Next: lens/highlights/transforms references and assessment
 of the measured diffuse differences; broader camera/native/device gates stay open.
+
+
+### Lens, highlights and transform saved histories
+
+`pin-pixels.py --transforms --highlights` creates independent old-saved ashift
+rotation (+7 degrees), perspective (-3 degrees, shifts vertical 0.2/horizontal
+-0.15, shear 0.05), and RAW highlight clipping/opposed/segmentation histories
+with threshold 0.1. PNG receives the two transforms; Nikon NEF and Olympus ORF
+receive all five cases. At 96/512 bounds every edit contributes, all 24 edited
+old reloads are exact, and both candidates agree in dimensions and bytes.
+A full repeat reproduces all 84 comparison metrics/frame hashes and unchanged
+build identities. Fresh defaults remain exact.
+
+Highlight clipping is exact on both RAWs/sizes. Opposed and segmentation differ
+by at most one RGB code: NEF 0/1 changed channels at 96/512 for each method;
+ORF opposed 3/25, segmentation 4/32. These are two Bayer inputs with ordinary
+white balance; disabled temperature/late chroma correction, invalid white,
+X-Trans and linear RAW paths remain unverified. No reconstruction accuracy or
+accepted appearance tolerance follows from agreement at these preview bounds.
+
+Transform dimensions match across pins. Most nonzero deltas are one code, but
+ORF rotation at 512 bounds has 55 changed RGB channels and maximum delta 118.
+The three changes above one code are a single output pixel at zero-based
+(481, 102) in a 512 × 408 frame: old RGB (1,1,1), candidate (87,119,52).
+Its neighborhood lies on the rotated image/empty-area boundary. This reproduces
+exactly; it is consistent with the changed ashift FMA coordinate accumulation,
+but no isolated-change build proves attribution or accepts the boundary shift.
+Other transform maximums are one code (or exact); automatic fitting, transformed
+masks, tiling, non-square pixels and device parity remain open.
+
+`--lens` separately saves Lensfun method 1 and metadata-selected method 0 on
+both RAWs. All eight edited old reloads are exact; every edit contributes and
+both candidates agree. A full repeat reproduces all 36 comparison metrics/frame
+hashes with unchanged build identities. Nikon changes 160/3,181 RGB channels at 96/512 for either
+selection, maximum one code. Olympus metadata selection is exact; explicit
+Lensfun changes 328/1,994 channels, maximum 24/72 codes, mean absolute difference
+0.031250/0.005679. Above-one deltas occupy 93/150 channels; their cause and
+appearance acceptability are not isolated. The source range changes the Lensfun
+coordinate grid, while the metadata Lanczos fix is device-specific. Metadata
+selection can fall back to Lensfun, so the saved method value does not establish
+executed-path coverage. No reverse-mode, interpolation matrix or full-resolution
+lens acceptance is claimed.
+
+Evidence is retained under ignored `pixel-geometry-highlights{,-repeat}/` and
+`pixel-lens-methods{,-repeat}/`, with corresponding logs, saved XMP, frames and
+binary hashes. System Lensfun is 0.3.4.0; `lensfun-environment.json` records XML
+database hashes beside the first lens-method report. Earlier `pixel-lens/`
+requested only method 0 and must not be treated as explicit Lensfun coverage.
+These constructed CPU histories do not close broader native/device/corpus gates.
+No binary, coherent baseline, production pin or defaults changed; diffuse and
+non-dithered vignette appearance decisions remain unresolved.

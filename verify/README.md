@@ -286,6 +286,24 @@ strength 10000 and full luma/chroma. These cases use the same saved-sidecar and
 visible-contribution checks. They cover CPU output at the requested bounds,
 not full-resolution tiling, profiled denoise, a noise corpus or device parity.
 
+Use `--transforms` for saved ashift rotation (+7 degrees) and perspective
+(rotation -3, vertical shift 0.2, horizontal shift -0.15, shear 0.05).
+Dimensions may change from defaults; old reload and candidate dimensions must
+match the old edited reference. This exercises pixel sampling, not automatic
+line fitting, tiled exports, pixel-aspect transforms or transformed masks.
+
+Use `--highlights` for supplied NEF/ORF photos: clipping, opposed and segmentation
+methods with threshold 0.1 to force visible reconstruction. Use `--lens` for
+independent Lensfun (method 1) and metadata-selected (method 0) histories on
+these RAW formats. Metadata selection can fall back to Lensfun when metadata
+is absent; a saved method value alone does not prove which path executed.
+Lensfun profiles come from the installed database, so retain its identity with
+local evidence. These switches share the fresh-process reload/contribution guards
+and can be combined. PNG receives only the transform cases; unsupported photo
+suffixes receive neither highlight nor lens cases. No X-Trans/linear RAW,
+invalid-white, disabled-temperature, reverse-lens or interpolation-mode matrix
+is established by these fixtures.
+
 These are constructed, unmasked engine histories, not production Session edit
 orchestration, a user-created style corpus, HDR/device output or a broad image
 corpus. In particular, upstream processing fixes can change a saved edit even

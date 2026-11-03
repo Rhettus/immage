@@ -102,6 +102,12 @@ def main():
                         help='Compare saved anisotropic diffuse smoothing/sharpening histories')
     parser.add_argument('--nlmeans', action='store_true',
                         help='Compare a saved non-local-means denoise history')
+    parser.add_argument('--transforms', action='store_true',
+                        help='Compare saved rotation and perspective histories')
+    parser.add_argument('--highlights', action='store_true',
+                        help='Compare lowered-threshold highlights on supplied RAW photos')
+    parser.add_argument('--lens', action='store_true',
+                        help='Compare Lensfun and metadata-selected corrections on supplied RAW photos')
     args = parser.parse_args()
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -183,6 +189,23 @@ def main():
                 cases['nlmeans'] = [{'op': 'nlmeans', 'enabled': True,
                                     'params': {'radius': 2.0, 'strength': 10000.0,
                                                'luma': 1.0, 'chroma': 1.0}}]
+            if args.transforms:
+                for name, params in {
+                    'rotate': {'rotation': 7.0},
+                    'perspective': {'rotation': -3.0, 'lensshift_v': 0.2,
+                                    'lensshift_h': -0.15, 'shear': 0.05},
+                }.items():
+                    cases[f'ashift-{name}'] = [
+                        {'op': 'ashift', 'enabled': True, 'params': params}]
+            if args.highlights and photo.suffix.lower() in ('.nef', '.orf'):
+                for name, mode in {'clip': 0, 'opposed': 5, 'segments': 4}.items():
+                    cases[f'highlights-{name}'] = [
+                        {'op': 'highlights', 'enabled': True,
+                         'params': {'mode': mode, 'clip': 0.1}}]
+            if args.lens and photo.suffix.lower() in ('.nef', '.orf'):
+                for name, method in {'lensfun': 1, 'metadata': 0}.items():
+                    cases[f'lens-{name}'] = [{'op': 'lens', 'enabled': True,
+                                             'params': {'method': method}}]
             record = {'sha256': digest(photo), 'cases': {}}
             default_frames = None
             for case, edits in cases.items():
