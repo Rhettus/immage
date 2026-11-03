@@ -295,7 +295,12 @@ The production pin remains unchanged until the adoption gates pass.
   graceful cleanup and restart with the actual engine name in both builds.
 - [x] Read live/default scalars and individually rewrite initial values for all
   444 global/local mapped fields across 28 modules in both builds.
-- [ ] Verify changed control values, enum semantics and old/new defaults.
+- [x] Change and restore each of 444 mapped scalars, preserving neighbors, in
+  both candidate builds and the existing original-pin build.
+- [x] Compare synthetic-PNG mapped live/default values and enabled flags across
+  those builds; compare all 14 mapped enum type declarations between pins.
+- [ ] Verify production control mappings/options, RAW-specific defaults, new
+  unmapped HDR fields and enum processing semantics with reference renders.
 - [x] Verify A→B→A switching between two exported/imported masked exposure looks,
   with distinct geometry, exposure and opacity, in both candidate builds.
 - [x] Extend B to a two-module look with an independently masked color-balance
@@ -827,3 +832,35 @@ real saved styles remain pending, as do pixel/raster masks and native-device
 validation.
 The preceding output-sink smoke and current-pin engine syntax checks passed
 with the blend-isolation repair; this extension changes only the fixture.
+
+
+## Changed scalar storage, enum declarations and PNG defaults
+
+`verify/mapped-fields.py` now changes each scalar to a distinct exactly
+representable value, checks all mapped neighbors, restores the original and
+checks the entire mapped module again. All 444 fields across 28 modules pass in
+both candidate configurations and the existing original-pin `build/` engine.
+The checker does not render arbitrary scalar values: 0/1 and binary fractions
+are storage probes, not a claim that each probe is a meaningful processing setting.
+
+`--snapshot PATH` records the initial module responses. Comparing snapshots from
+`build/`, `build/darktable-pin-review/cpu` and `features` found identical mapped
+live values, defaults, enabled and default-enabled flags for the synthetic PNG.
+These are existing local original-pin executable results, not a fresh baseline
+build or native-platform certification. Snapshots are ignored build artifacts:
+`build/darktable-pin-review/{old,cpu,features}-defaults.json`.
+
+`python3 -I verify/mapped-enums.py --build build/darktable-pin-review/cpu
+--old 2747ed2a0d --new 879067695e` discovers mapped enum types from generated
+introspection and compares their complete source declarations at both Git
+revisions. All 14 types are unchanged, including enumerator ordering and explicit
+numeric assignments: adaptation, illuminant, orientation, AgX primaries, ashift
+mode, color-balance saturation formula, vignette dithering, exposure mode, lens
+flags, tone-equalizer mask/filter, negative film stock and RGB/tone-curve autoscale.
+This catches declaration changes; it does not prove unchanged implementation of
+those choices. The source check requires both revisions in the local submodule.
+
+Production `ModuleMap.write/read` control scenarios and all choice values remain
+unverified by this scalar test. RAW/camera defaults, unmapped new AgX/sigmoid HDR
+fields and legacy conversion, output-headroom behavior and old/new image references
+remain open. No production defaults or pin changed; no GUI was launched.

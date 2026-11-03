@@ -6,7 +6,9 @@ import argparse,json,os,pathlib,selectors,struct,subprocess,tempfile,zlib
 root=pathlib.Path(__file__).resolve().parent.parent
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--build',type=pathlib.Path,default=root/'build')
-build=parser.parse_args().build.resolve()
+parser.add_argument('--snapshot',type=pathlib.Path,help='Write initial live/default values for comparison')
+args=parser.parse_args()
+build=args.build.resolve()
 fields=json.loads(subprocess.check_output(['node',str(root/'verify/mapped-fields.mjs')],text=True))
 with tempfile.TemporaryDirectory(prefix='immage-mapped-fields-') as tmp:
  p=pathlib.Path(tmp);w,h=128,96
@@ -23,21 +25,30 @@ with tempfile.TemporaryDirectory(prefix='immage-mapped-fields-') as tmp:
   try:
    req({'cmd':'open','path':str(photo)})
    count=0
+   snapshot={}
    for op,names in fields.items():
     state=req({'cmd':'get','modules':{op:names}})['modules'][op]
+    snapshot[op]=state
     current=state['params']
     assert set(current)==set(names),(op,names,current)
     assert set(state['defaults'])==set(names),(op,state)
-    # Write each scalar separately through the production setter. Preserve its
-    # actual initial value, including enum/bool/array elements, then verify all
-    # fields together to detect overwrites of adjacent parameter storage.
+    # Use exactly representable binary fractions for floats, and 0/1 for
+    # integral scalars (including booleans/enums). This checks storage, not
+    # enum meaning or whether an arbitrary value is useful for rendering.
     for name,value in current.items():
-     req({'cmd':'set','op':op,'field':name,'value':value})
+     changed=(0 if value else 1) if float(value).is_integer() else (0.25 if value == 0.5 else 0.5)
+     assert changed != value,(op,name,value)
+     req({'cmd':'set','op':op,'field':name,'value':changed})
      after=req({'cmd':'get','modules':{op:names}})['modules'][op]['params']
-     assert after==current,(op,name,current,after)
+     expected=current|{name:changed}
+     assert after==expected,(op,name,expected,after)
+     req({'cmd':'set','op':op,'field':name,'value':value})
+     restored=req({'cmd':'get','modules':{op:names}})['modules'][op]['params']
+     assert restored==current,(op,name,current,restored)
      count+=1
    req({'cmd':'quit'});child.wait(timeout=15);assert child.returncode==0
-   print(f'Manifest scalar access passed: {count} fields in {len(fields)} modules; global/local union, live/default reads and individual writes')
+   if args.snapshot:args.snapshot.write_text(json.dumps(snapshot,indent=2,sort_keys=True)+'\n')
+   print(f'Manifest changed-scalar access passed: {count} fields in {len(fields)} modules; global/local union, live/default reads, changed writes, neighbor preservation and restoration')
   except BaseException:
    log.flush();print((p/'engine.log').read_text())
    raise

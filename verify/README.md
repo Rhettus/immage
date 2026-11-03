@@ -245,10 +245,11 @@ GPU or visible-app coverage. Run without `--write-corpus` for temporary fixtures
 
 Run `python3 -I verify/mapped-fields.py --build build/darktable-pin-review/cpu`
 (or another complete engine build) to read live/default values and individually
-rewrite every global/local manifest field through the real engine. Node and app
+change and restore every global/local manifest field through the real engine. Node and app
 dependencies are required. The manifest is imported directly, including array
 paths; photos and state are temporary. This headless check verifies scalar access
-and preservation of neighboring mapped values, not changed-control responses,
+and preservation of neighboring mapped values. Use `--snapshot PATH` to save
+initial live/default responses for comparisons. It does not verify UI control responses,
 enum semantics, RAW processing or image compatibility across pins.
 
 ## Candidate masked-look sidecars
@@ -264,3 +265,9 @@ allow one code value in at most 0.1% of bytes; other pixel comparisons are exact
 The copied BGRX buffer’s unused fourth byte is initialized to opaque, matching
 RGBA output; upstream gamma leaves that byte unwritten. Rendering forces CPU;
 this does not establish real-style corpus, pixel/raster-mask or GPU coverage.
+
+
+Run `python3 -I verify/mapped-enums.py --build BUILD --old OLD_REV --new NEW_REV`
+to discover mapped enum types from generated introspection and compare their
+source declarations between local darktable Git revisions. This verifies enum
+names/order/assignments, not processing semantics or pixel equivalence.
