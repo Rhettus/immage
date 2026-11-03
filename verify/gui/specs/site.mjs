@@ -76,6 +76,19 @@ async function panelsTop(t) {
   throw Error('side panel did not scroll to its top');
 }
 
+// A mask menu item's text includes its shortcut ("Linear GradientM"), so
+// match the item's label span instead of the whole button.
+async function menuItem(t, label) {
+  const point = await until(() => t.driver.observe(label => {
+    const e = [...document.querySelectorAll('.shape-menu-list button')]
+      .find(b => b.querySelector('span:not(.key):not(.more)')?.textContent.trim() === label);
+    if (!e || e.disabled) return null;
+    const r = e.getBoundingClientRect(), hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+    return r.width && r.height && (e === hit || e.contains(hit)) && { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  }, label), `mask menu item ${label}`);
+  await t.driver.point(point.x, point.y);
+}
+
 async function tool(t, name) {
   await panelsTop(t);
   await click(t, `button[data-tour="${name}"]`);
@@ -119,7 +132,7 @@ export async function siteShots(t) {
   await attempt(t, 'masks', async () => {
     await tool(t, 'masks');
     await click(t, '.create-mask');
-    await textButton(t, '.shape-menu-list', 'Linear Gradient');
+    await menuItem(t, 'Linear Gradient');
     const photo = await reveal(t, 'svg.mask-svg');
     await t.driver.drag({ x: photo.x, y: photo.bounds.y + photo.bounds.height * .08 },
       { x: photo.x, y: photo.bounds.y + photo.bounds.height * .42 });
