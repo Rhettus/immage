@@ -35,8 +35,11 @@ export async function locateControl(t, definition) {
   const detail = /^(l_)?detail_(clarity|texture)_/.exec(control.id)?.[0];
   if (detail && !await t.driver.observe(s => !!document.querySelector(s), selector)) {
     const fold = `${p} button.detail-advanced[data-detail-id^=${JSON.stringify(detail)}]`;
-    if (await t.driver.observe(s => document.querySelector(s)?.getAttribute('aria-expanded') === 'false', fold)) await click(t, fold);
-    await until(() => t.driver.observe(s => !!document.querySelector(s), selector), `${detail} Advanced open`).catch(() => {});
+    // no fold: the module that has these controls is not chosen
+    if (await t.driver.observe(s => document.querySelector(s)?.getAttribute('aria-expanded') === 'false', fold)) {
+      await click(t, fold);
+      await until(() => t.driver.observe(s => !!document.querySelector(s), selector), `${detail} Advanced open`).catch(() => {});
+    }
   }
   if (!await t.driver.observe(s => !!document.querySelector(s), selector))
     throw new Blocked(`${control.id} needs its module, treatment or graph branch; run the matching module/graph case`);
