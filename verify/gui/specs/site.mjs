@@ -32,8 +32,9 @@ const boundsOf = s => {
 };
 
 // `element`: also measure that element, for a guide image cropped to it
-async function shot(t, label, element) {
-  await settledPhoto(t);
+// `settled: false` for a dialog that covers the photo
+async function shot(t, label, element, { settled = true } = {}) {
+  if (settled) await settledPhoto(t);
   await hideInfo(t);
   await pause(400); // let panel transitions finish
   const path = await pathFree(t.driver);
@@ -85,10 +86,11 @@ async function panelsTop(t) {
   throw Error('side panel did not scroll to its top');
 }
 
+// open a tool; its button closes it again when it is already open
 async function tool(t, name) {
   await panelsTop(t);
-  await click(t, `button[data-tour="${name}"]`);
-  await pause(300);
+  const b = await reveal(t, `button[data-tour="${name}"]`);
+  if (!b.active) { await t.driver.point(b.x, b.y); await pause(300); }
   await panelsTop(t);
 }
 
@@ -192,7 +194,7 @@ export async function siteShots(t) {
   await attempt(t, 'preferences-general', async () => {
     await click(t, 'button[data-tour="prefs"]');
     await textButton(t, '.prefs-tabs', 'General');
-    await shot(t, 'preferences-general', '.modal.prefs');
+    await shot(t, 'preferences-general', '.modal.prefs', { settled: false });
     await textButton(t, '.prefs-foot', 'Done');
   });
 

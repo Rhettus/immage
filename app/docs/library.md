@@ -42,8 +42,8 @@ Open the **Folders** card in the **Library** panel.
 Folders you import into join the list by themselves. The list, the open
 folder and the last photo are remembered when you quit.
 
-![The Folders card with a few folders, one expanded](images/library-folders.png)
-<!-- screenshot: Library panel, Folders card open, Include subfolders off, one folder expanded -->
+![The Folders card with one folder added and Include subfolders off](images/library-folders.png)
+<!-- screenshot: Library panel, Folders card open, Include subfolders off, one folder added -->
 
 ## The filmstrip and the grid
 

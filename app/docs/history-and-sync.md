@@ -49,7 +49,7 @@ dropped, and the steps before cannot be undone any more. Immage saves the
 history compressed in any case, so the photo's sidecar stays small whether
 you press it or not.
 
-![The History card with a few steps](images/history.png)
+![The History card: four slider moves above the steps the photo opened with](images/history.png)
 <!-- screenshot: Library panel, History card open, several steps above the opening stack -->
 
 ## Reset all
