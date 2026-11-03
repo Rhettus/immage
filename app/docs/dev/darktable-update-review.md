@@ -298,6 +298,9 @@ The production pin remains unchanged until the adoption gates pass.
 - [ ] Verify changed control values, enum semantics and old/new defaults.
 - [x] Verify A→B→A switching between two exported/imported masked exposure looks,
   with distinct geometry, exposure and opacity, in both candidate builds.
+- [x] Extend B to a two-module look with an independently masked color-balance
+  item and rotated ellipse; verify exact tile/application/switching pixels and
+  live blend/mask isolation for both modules in both builds.
 - [ ] Verify broader saved styles, other mask shapes and multi-module looks.
 - [ ] Verify pixel-backed masks and external raster-mask cache invalidation.
 - [ ] Verify simultaneous first-start locking and installed/native lock behavior,
@@ -777,8 +780,9 @@ requires Node and the app's installed dependencies to load the actual manifest.
 
 ## Distinct masked-look switching and blend isolation
 
-The extended look checker exports/imports two exposure styles with different
-circle positions, exposure values and blend opacities. With A applied, it previews
+The extended look checker exports/imports two styles with different
+circle positions, exposure values and blend opacities. B also includes color
+balance with an independent rotated ellipse mask. With A applied, it previews
 B, verifies all live blend bytes, referenced mask-tree hashes, form-list identity,
 form count and history position are unchanged, and checks the current frame still
 matches A. It applies B and requires exact tile/applied pixels, then repeats the
@@ -793,7 +797,14 @@ temporary forms. `_preview_commit` now temporarily supplies request-local blend
 storage as well as preview module params, then restores the original pointer.
 The piece retains its own committed blend copy for rendering.
 
-The extended look checks and output-sink smoke pass with AI/OpenCL both off and
-both on on Linux ARM64 (CPU rendering). Current-pin engine syntax also passes.
-This fixture covers two circle-masked, single-module looks; it does not complete
-broader saved-style, pixel/raster-mask or native-device validation.
+The extended look checks pass with AI/OpenCL both off and both on on Linux ARM64
+(CPU rendering). Both applied B modules retain all blend bytes and referenced
+mask hashes while A is previewed; applying A disables B's color-balance item.
+Temporarily disabling color balance changes B's pixels and restoring it returns
+the exact frame, proving the second module contributes to the rendered result.
+Logs are in ignored `build/darktable-pin-review/{cpu,features}-multilook.log`.
+The existing exposure-only save/reopen and fresh-process checks still pass.
+Multi-module sidecar roundtrips, additional shapes/combinations and real saved
+styles remain pending, as do pixel/raster masks and native-device validation.
+The preceding output-sink smoke and current-pin engine syntax checks passed
+with the blend-isolation repair; this extension changes only the fixture.
