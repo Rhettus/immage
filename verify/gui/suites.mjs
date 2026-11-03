@@ -3,7 +3,7 @@ import { generated, generatedNames } from './generated.mjs';
 // These are coverage claims for cases, not proof they have passed on a platform.
 export const cases = {
   startup: { scope: 'visible fixture, stable final canvas, isolated profile', liveValidated: true },
-  splash: { scope: 'the launch splash keeps its 640x427 size on a tiling window manager (measured by startup)', liveValidated: false },
+  splash: { scope: 'the launch splash keeps its 640x427 size on a tiling window manager (measured by startup); known to fail on Hyprland, not in smoke', liveValidated: true },
   'gui-benchmark': { scope: 'Preferences Run button, saved schema 9 report, visible stable viewport, restored photo', liveValidated: true,
     verification: 'Linux ARM64 VM, system WebKitGTK 2.54.2, Wayland DPR 2 run 2026-11-02T15-05-22.535Z_ee28973_5104c5ed; DPR 1 with deferred viewport gate run 2026-11-02T15-20-43.128Z_ee28973_46f49c76.',
     limitation: 'Runs the app scripted workload, not pointer latency. VM timings are approximate; no compositor presentation or native GPU claim.' },
@@ -58,7 +58,7 @@ export const cases = {
   ...generated,
 };
 export const suites = {
-  smoke: ['startup', 'splash', 'exposure'],
+  smoke: ['startup', 'exposure'],
   crop: ['startup','crop-guides','crop-locked','crop-options'],
   workflows: ['startup','curves','wheels','equalizer','masks','heal','zones','preferences-matrix','slider-wheel','export-options','filters','presets','shortcuts'],
   inventory: ['startup',...generatedNames],

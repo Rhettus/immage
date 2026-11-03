@@ -92,8 +92,9 @@ export async function masks(t) {
   for(const name of ['Linear Gradient','Radial Gradient','Brush','Luminance Range','Color Range','Parametric']) {
     const baseline=await settledPhoto(t);
     await click(t,'.create-mask'); await textButton(t,'.shape-menu-list',name);
-    const photo=await reveal(t,'svg.mask-svg');
-    if(name!=='Parametric') await t.driver.drag({x:photo.x-photo.bounds.width*.15,y:photo.y},{x:photo.x+photo.bounds.width*.15,y:photo.y+photo.bounds.height*.12});
+    // a parametric mask has no shape, so no drawing layer to reach
+    if(name!=='Parametric') { const photo=await reveal(t,'svg.mask-svg');
+      await t.driver.drag({x:photo.x-photo.bounds.width*.15,y:photo.y},{x:photo.x+photo.bounds.width*.15,y:photo.y+photo.bounds.height*.12}); }
     await until(()=>t.driver.observe(()=>document.querySelectorAll('.mask-list > li').length>0),'created mask');
     // Open the Tone group through its heading, only if it is closed: the
     // heading toggles, and a later mask can find it already open.

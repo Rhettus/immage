@@ -68,11 +68,13 @@ for incomplete original triggers and service/slow-folder/panorama fixture gaps.
 
 The splash keeps the largest size it was given in localStorage
 (`immage.splashSize`), since the session starts after it has closed. `startup`
-reads it, and the `splash` case (in `smoke`) fails if it grew past 640x427, as
-it does when a tiling window manager tiles it. A blocked or failed case stops
-the run, so list `splash` last when it runs with other cases. The splash fixes its size with equal minimum
-and maximum sizes so those window managers float it. Any external window sizing
-for a run must wait until `startup` has finished, or it hides this.
+reads it, and the `splash` case (by name only, not in `smoke`) fails if it grew
+past 640x427. A blocked or failed case stops the run, so list `splash` last when
+it runs with other cases. The splash sets equal minimum and maximum sizes, which
+makes Hyprland 0.57 float it, but it still opens at the full monitor size there
+(1710x1107 logical on a 3420x2214 screen at scale 2), so the case fails; the
+cause is open. Any external window sizing for a run must wait until `startup`
+has finished, or it hides this.
 
 `--case a,b` runs a list of cases in one launch after startup. `panel-scroll`
 (in `regressions`) checks that a right panel tool opens at its own scroll

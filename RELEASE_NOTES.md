@@ -45,8 +45,6 @@ Performance
 Bug fixes
 
 - Each right panel tool keeps its own scroll position and opens at the top.
-- The startup splash stays a small floating window on tiling window
-  managers such as Hyprland and Sway instead of filling the screen.
 - Mac CPU captures wait for the profiler to save after Ctrl-C, then export
   the recorded trace instead of exiting with a Python interruption.
 - Transform's automatic corrections work on cropped portrait and rotated
