@@ -8,7 +8,7 @@ organized in folders rather than an editor’s catalog.
 A personal, non-commercial project, Immage is available for macOS, Windows
 and Linux. **All builds are alpha; bugs are expected.**
 
-[Website](https://rhettus.github.io/immage-site/) ·
+[Website](https://immage.photo/) ·
 [Download Immage](https://github.com/Rhettus/immage/releases) ·
 [Getting started](app/docs/getting-started.md) ·
 [User guide](app/docs/README.md) ·

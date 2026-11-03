@@ -80,7 +80,7 @@ installer format from the downloaded bytes. Test assembly without an MSI using
 
 ## The website
 
-The [website](https://rhettus.github.io/immage-site/) is built in its own
+The [website](https://immage.photo/) is built in its own
 repository, [immage-site](https://github.com/Rhettus/immage-site). It has no
 copy of the guide: each build takes `app/docs` (without `dev/`) and
 `RELEASE_NOTES.md` from the latest published release's tag, and its download

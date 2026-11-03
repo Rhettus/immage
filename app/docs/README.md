@@ -17,7 +17,7 @@ for your account or for everyone on the computer. Windows downloads are
 provided as `.exe` installers only.
 
 New to Immage? Start with [Getting started](getting-started.md). This guide
-is also on the [Immage website](https://rhettus.github.io/immage-site/guide/).
+is also on the [Immage website](https://immage.photo/guide/).
 
 <a href="images/workspace.png"><img src="images/workspace.png" width="960" alt="Immage editing a photo"></a>
 
