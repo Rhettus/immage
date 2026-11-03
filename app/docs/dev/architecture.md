@@ -470,7 +470,7 @@ darktable is, and it has AI features when darktable is configured with
 | Edit In results | `plugin-returns.json` in the runtime folder | permanent |
 | Macro Studio jobs | `plugin-jobs/` in the runtime folder: each job's manifest and receipt, and `pending.json` | until every stack is saved or closed, or 30 days |
 | Engine config, cache, log | `config/`, `cache/`, `engine.log` in the runtime folder (`build/app-runtime` in dev, the app data folder in a release) | permanent; the log restarts past 5 MB |
-| Frames, thumbnails, previews, maps | `frame.rgba`, `thumb-<tag>.rgba`, `preview.rgba`, `range.bin` in the runtime folder | overwritten per request; a thumbnail's deleted once read |
+| Frames, thumbnails, previews, maps | `frame.rgba`, `thumb-<tag>.rgba`, `preview.rgba`, `range.bin` in `/dev/shm/immage-engine-XXXXXX` on Linux (the runtime folder if it can't be made; shared-memory objects on the Mac and Windows) | overwritten per request; a thumbnail's deleted once read; the folder goes when the app quits, and one a killed app left (no lock held on its `owner.lock`) at the next start |
 | Frames handed to the page (Linux) | `/dev/shm/immage-frame-<token>-<id>` | until the page reads it; left over past a minute, deleted at the next start |
 | AI models | `build/ai-models` (dev) or `<app data>/models` | until deleted |
 | Library thumbnails | `cache/thumbs`: a JPEG named for the photo, its sidecar and their times; a `.last` beside, by path alone, naming the newest | cache |

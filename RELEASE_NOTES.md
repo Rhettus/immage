@@ -69,6 +69,10 @@ Bug fixes
   images instead of reporting that the working-space image is not at hand.
 - Fix macOS intermediate-buffer writes when previews or thumbnails change size,
   respecting the platform’s shared-memory sizing restrictions.
+- On Linux, frames a killed or crashed Immage left in shared memory are
+  cleared at the next start, and a full shared memory fails that render
+  instead of crashing the engine; the leftovers built up until they could
+  crash the engine and other applications, the desktop included.
 
 ## 0.41.1
 

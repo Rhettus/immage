@@ -99,7 +99,14 @@ int main(void)
   assert(g_file_get_contents(file, &got, &length, NULL));
   assert(length == 3 && !memcmp(got, "new", 3));
   uint8_t *direct = rgba_output_acquire(file, 10000);
-  assert(direct); memset(direct, 117, 10000);
+  assert(direct);
+#ifdef __linux__
+  // reserved, not sparse: a full /dev/shm fails here instead of raising
+  // SIGBUS on the first write through the mapping
+  struct stat reserved;
+  assert(!stat(file, &reserved) && (size_t)reserved.st_blocks * 512 >= 10000);
+#endif
+  memset(direct, 117, 10000);
   uint8_t *second = rgba_output_acquire("/dev/null/not-a-file", 32);
   assert(!second);
   char *second_file = NULL;

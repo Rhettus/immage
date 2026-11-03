@@ -37,6 +37,21 @@ static void rgba_output_close(rgba_output_t *slot)
   memset(slot, 0, sizeof(*slot));
 }
 
+#ifndef _WIN32
+// on Linux the file is in /dev/shm, where a page is allocated when the
+// mapping first writes it. past the tmpfs size or the user's /dev/shm quota,
+// that write raises SIGBUS and the engine dies; reserving the pages here makes
+// it a failed output instead
+static gboolean rgba_output_size(int fd, size_t length)
+{
+  if(ftruncate(fd, (off_t)length)) return FALSE;
+#ifdef __linux__
+  if(posix_fallocate(fd, 0, (off_t)length)) return FALSE;
+#endif
+  return TRUE;
+}
+#endif
+
 static uint8_t *rgba_output_acquire(const char *path, size_t bytes)
 {
   const gboolean shared = g_str_has_prefix(path, "shm:");
@@ -86,7 +101,7 @@ static uint8_t *rgba_output_acquire(const char *path, size_t bytes)
 #endif
       fd = shared ? -1 : g_open(path, O_RDWR | O_CREAT | O_CLOEXEC, 0600);
     if(fd < 0) return NULL;
-    if(!shared && ftruncate(fd, (off_t)length)) { close(fd); return NULL; }
+    if(!shared && !rgba_output_size(fd, length)) { close(fd); return NULL; }
     void *view = mmap(NULL, length, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if(view == MAP_FAILED) { close(fd); return NULL; }
     slot->fd = fd; slot->view = view;
@@ -97,7 +112,11 @@ static uint8_t *rgba_output_acquire(const char *path, size_t bytes)
   if(!ResetEvent(slot->done)) return NULL;
 #else
   // Files expose exact length; shared objects publish payload size in header.
-  if(!shared && slot->length != length && ftruncate(slot->fd, (off_t)length)) return NULL;
+  if(!shared && slot->length != length && !rgba_output_size(slot->fd, length))
+  {
+    slot->length = 0; // the file's size is unknown now: resize it on the next output
+    return NULL;
+  }
 #endif
   slot->length = length;
   if(shared)

@@ -9,7 +9,15 @@ pub struct FrameOutput {
     private: bool,
     #[cfg(any(unix, windows))]
     shared: Option<Shared>,
+    // held while this app runs, so another copy can tell its folder is live
+    #[cfg(target_os = "linux")]
+    _lock: Option<std::fs::File>,
 }
+
+#[cfg(target_os = "linux")]
+const PRIVATE_PREFIX: &str = "immage-engine-";
+#[cfg(target_os = "linux")]
+const LOCK: &str = "owner.lock";
 
 impl FrameOutput {
     pub fn new(runtime: &Path) -> Self {
@@ -26,20 +34,28 @@ impl FrameOutput {
         Self { dir: runtime.to_owned(), private: false,
             #[cfg(unix)]
             shared: None,
+            #[cfg(target_os = "linux")]
+            _lock: None,
         }
     }
 
     #[cfg(target_os = "linux")]
     fn private_in(root: &Path) -> std::io::Result<Self> {
         use std::os::unix::ffi::{OsStrExt, OsStringExt};
-        let template = root.join("immage-engine-XXXXXX");
+        sweep(root, std::time::Duration::from_secs(60));
+        let template = root.join(format!("{PRIVATE_PREFIX}XXXXXX"));
         let template = std::ffi::CString::new(template.as_os_str().as_bytes())?;
         let mut bytes = template.into_bytes_with_nul();
         // mkdtemp atomically creates an unpredictable directory with mode 0700.
         let result = unsafe { libc::mkdtemp(bytes.as_mut_ptr().cast()) };
         if result.is_null() { return Err(std::io::Error::last_os_error()); }
         bytes.pop();
-        Ok(Self { dir: std::ffi::OsString::from_vec(bytes).into(), private: true, shared: None })
+        let dir: PathBuf = std::ffi::OsString::from_vec(bytes).into();
+        let lock = match lock_owner(&dir) {
+            Ok(lock) => lock,
+            Err(error) => { let _ = std::fs::remove_dir_all(&dir); return Err(error); }
+        };
+        Ok(Self { dir, private: true, shared: None, _lock: Some(lock) })
     }
 
     pub fn path(&self, name: &str) -> PathBuf {
@@ -96,6 +112,49 @@ impl FrameOutput {
     }
 }
 
+// the folder dies with the app only when Drop runs. a killed or crashed app
+// (the GUI checks stop it with SIGTERM) leaves its frames in /dev/shm, where
+// they count against the user's quota until reboot; enough of them and the
+// next mapped write raises SIGBUS in the engine and in other applications
+#[cfg(target_os = "linux")]
+fn lock_owner(dir: &Path) -> std::io::Result<std::fs::File> {
+    use std::os::fd::AsRawFd;
+    use std::os::unix::fs::OpenOptionsExt;
+    let file = std::fs::OpenOptions::new().read(true).write(true).create_new(true)
+        .mode(0o600).custom_flags(libc::O_CLOEXEC).open(dir.join(LOCK))?;
+    if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(file)
+}
+
+// removes this user's folders that no running app holds. a folder younger
+// than `grace` is left alone: it may belong to an app between mkdtemp and
+// taking its lock, or to an earlier version, which takes none
+#[cfg(target_os = "linux")]
+fn sweep(root: &Path, grace: std::time::Duration) {
+    use std::os::fd::AsRawFd;
+    use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+    let Ok(entries) = std::fs::read_dir(root) else { return };
+    let uid = unsafe { libc::getuid() };
+    let old = std::time::SystemTime::now() - grace;
+    for entry in entries.flatten() {
+        if !entry.file_name().to_string_lossy().starts_with(PRIVATE_PREFIX) { continue; }
+        let dir = entry.path();
+        let Ok(meta) = std::fs::symlink_metadata(&dir) else { continue };
+        if !meta.is_dir() || meta.uid() != uid || !meta.modified().is_ok_and(|t| t < old) { continue; }
+        let held = match std::fs::OpenOptions::new().read(true)
+            .custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW).open(dir.join(LOCK)) {
+            // the lock is released with the file, after the check
+            Ok(file) => (unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) }) != 0,
+            Err(error) => error.kind() != std::io::ErrorKind::NotFound,
+        };
+        if !held {
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+}
+
 impl Drop for FrameOutput {
     fn drop(&mut self) {
         #[cfg(unix)]
@@ -136,10 +195,10 @@ mod tests {
     #[test]
     fn mapped_output_resizes_preserves_bytes_and_cleans_up() {
         use std::os::fd::{AsRawFd, FromRawFd};
-        let owner = std::sync::Arc::new(FrameOutput { dir: PathBuf::new(), private: false,
+        let owner = std::sync::Arc::new(FrameOutput { dir: PathBuf::new(), private: false, _lock: None,
             shared: Some(Shared { id: uuid::Uuid::new_v4().to_string(),
                 names: std::sync::Mutex::new(std::collections::HashSet::new()) }) });
-        let other = FrameOutput { dir: PathBuf::new(), private: false,
+        let other = FrameOutput { dir: PathBuf::new(), private: false, _lock: None,
             shared: Some(Shared { id: uuid::Uuid::new_v4().to_string(),
                 names: std::sync::Mutex::new(std::collections::HashSet::new()) }) };
         let path = owner.path("frame.rgba");
@@ -178,6 +237,36 @@ mod tests {
     }
 
     #[test]
+    fn sweep_removes_only_abandoned_folders() {
+        let root = std::env::temp_dir().join(format!("immage-sweep-{}", uuid::Uuid::new_v4().simple()));
+        std::fs::create_dir(&root).unwrap();
+        let live = FrameOutput::private_in(&root).unwrap();
+        let mut abandoned = FrameOutput::private_in(&root).unwrap();
+        let abandoned_dir = abandoned.dir.clone();
+        // as if killed: the lock goes with the process, the folder stays
+        drop(abandoned._lock.take());
+        std::mem::forget(abandoned);
+        let legacy = root.join(format!("{PRIVATE_PREFIX}legacy"));
+        let fresh = root.join(format!("{PRIVATE_PREFIX}fresh"));
+        let other = root.join("something-else");
+        for dir in [&legacy, &fresh, &other] { std::fs::create_dir(dir).unwrap(); }
+        std::fs::write(legacy.join("frame.rgba"), [0u8; 16]).unwrap();
+        let past = libc::timeval { tv_sec: 1, tv_usec: 0 };
+        for dir in [&live.dir, &abandoned_dir, &legacy, &other] {
+            let c = std::ffi::CString::new(dir.to_str().unwrap()).unwrap();
+            assert_eq!(unsafe { libc::utimes(c.as_ptr(), [past, past].as_ptr()) }, 0);
+        }
+        sweep(&root, std::time::Duration::from_secs(60));
+        assert!(live.dir.exists());
+        assert!(!abandoned_dir.exists());
+        assert!(!legacy.exists());
+        assert!(fresh.exists());
+        assert!(other.exists());
+        drop(live);
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
     fn malformed_mapping_length_is_rejected() {
         let mut out = vec![7];
         assert!(payload([0u8; 7].as_ptr(), 7, &mut out).is_err());
@@ -189,7 +278,7 @@ mod tests {
     fn fallback_does_not_remove_runtime_data() {
         assert!(FrameOutput::private_in(Path::new("/dev/null")).is_err());
         let runtime = std::env::temp_dir();
-        let output = FrameOutput { dir: runtime.clone(), private: false, shared: None };
+        let output = FrameOutput { dir: runtime.clone(), private: false, shared: None, _lock: None };
         assert_eq!(output.path("frame.rgba"), runtime.join("frame.rgba"));
         drop(output);
         assert!(runtime.exists());

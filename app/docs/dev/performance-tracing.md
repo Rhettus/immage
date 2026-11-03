@@ -289,8 +289,18 @@ breakdown (`outputMs: null`). No settled or draft dimensions change.
 ### Engine intermediate frame storage
 
 `frame_output.rs` owns transient output separately from persistent runtime data.
-Linux uses a unique mode-0700 `/dev/shm` directory, falling back to runtime files
-only if startup directory creation fails. Windows uses pagefile-backed named
+Linux uses a unique mode-0700 `/dev/shm/immage-engine-XXXXXX` directory, falling
+back to runtime files only if startup directory creation fails. The app holds an
+`flock` on `owner.lock` inside it while it runs. Drop removes the directory, but a
+killed or crashed app (the GUI checks stop it with SIGTERM) runs no Drop, so at
+startup `sweep` removes this user's `immage-engine-*` directories whose lock is
+free (or, from earlier versions, missing) and that are over a minute old. Left
+behind, they count against the user's `/dev/shm` quota until reboot. The engine
+reserves each mapped output's pages with `posix_fallocate` (`rgba_output_size` in
+`engine/rgba_output.h`): a sparse tmpfs page is allocated on its first write, and
+over the size limit or quota that write raises SIGBUS, which killed the engine
+and other applications; reserved, a full `/dev/shm` fails the request instead.
+`verify/transient-output.c` checks the reservation. Windows uses pagefile-backed named
 mappings; macOS uses mode-0600 POSIX shared-memory objects. Object names contain
 96 bits derived from a random per-instance UUID and the output name; Darwin
 names fit its length limit. The app creates/owns/unlinks POSIX names. Capacity
