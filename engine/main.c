@@ -930,6 +930,18 @@ static gboolean _open_image(const char *path, const dt_imgid_t version, const ch
                              _s.buf.width, _s.buf.height, _s.buf.iscale);
   dt_dev_pixelpipe_create_nodes(&_s.pipe, &_s.dev);
   dt_dev_pixelpipe_synch_all(&_s.pipe, &_s.dev);
+  // colorin's commit marks an image with an sRGB or Adobe RGB input profile
+  // as USER_RGB, in the image cache only (iop_profile.c,
+  // dt_ioppr_set_pipe_input_profile_info). darktable's import thumbnails do
+  // that before the darkroom loads a photo; the engine's import does not, so
+  // a photo's first session would scale its input without gamma correction
+  // (pixelpipe_hb.c, clip&zoom) and render unlike every later session
+  const dt_image_t *cimg = dt_image_cache_get(imgid, 'r');
+  if(cimg)
+  {
+    _s.dev.image_storage.colorspace = cimg->colorspace;
+    dt_image_cache_read_release(cimg);
+  }
   dt_dev_pixelpipe_get_dimensions(&_s.pipe, &_s.dev, _s.pipe.iwidth, _s.pipe.iheight,
                                   &_s.pipe.processed_width, &_s.pipe.processed_height);
   _s.imgid = imgid;

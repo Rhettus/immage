@@ -20,6 +20,10 @@ Bug fixes
 - On Windows, a second Immage window no longer shares the first one's
   darktable library: its engine finds the library in use and stops, as on
   Linux and macOS.
+- A JPEG whose metadata names no color space looks the same the first
+  time it is opened as when reopened. Its first view used to be
+  scaled slightly differently, and undoing a paste onto it did not restore
+  that view.
 
 ## 0.42.0
 

@@ -351,6 +351,14 @@ before loading; the client then applies its new-photo defaults, and every
 first recorded change. So the defaults never mark a photo edited, in
 Immage or in darktable.
 
+`_open` copies the image cache's colorspace into the session after
+`synch_all`. Colorin marks a photo with an sRGB or Adobe RGB input profile
+as `USER_RGB`, in the cache only; darktable's import thumbnails do that
+before the darkroom loads a photo, the engine's import does not. Without
+the copy, a JPEG's first session scaled its input without gamma correction
+and rendered unlike every later session, so a batch paste's undo could not
+match it (`verify/batch-paste.test.mjs`, "a fresh photo renders the same").
+
 | Section | Main functions |
 |---|---|
 | Session, open, close | `_open_image`, `_close_session`, `_import`, `_compress_history` |
