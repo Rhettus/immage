@@ -46,12 +46,18 @@ static GBytes *preview(const char *style)
   int w = 0, h = 0;
   CHECK(_preview(req, &w, &h, &err));
   CHECK(w > 0 && h > 0);
-  GBytes *pixels = g_bytes_new(_s.ppipe.backbuf, (size_t)w * h * 4);
+  const size_t length = (size_t)w * h * 4;
+  uint8_t *copy = g_malloc(length);
+  memcpy(copy, _s.ppipe.backbuf, length);
+  // gamma writes only BGR; the unused fourth byte is uninitialized padding.
+  // Match the engine RGBA output contract rather than comparing allocator data.
+  for(size_t i = 3; i < length; i += 4) copy[i] = 255;
+  GBytes *pixels = g_bytes_new_take(copy, length);
   json_object_unref(req);
   return pixels;
 }
 
-static void check_rebuilt_pixels(GBytes *expected, GBytes *actual)
+static void check_rebuilt_pixels(GBytes *expected, GBytes *actual, const char *context)
 {
   gsize length = 0, actual_length = 0;
   const uint8_t *before = g_bytes_get_data(expected, &length);
@@ -62,12 +68,33 @@ static void check_rebuilt_pixels(GBytes *expected, GBytes *actual)
   for(size_t i = 0; i < length; i++)
   {
     const int difference = abs(before[i] - after[i]);
+    if(difference > 1)
+      fprintf(stderr, "%s: byte %zu changed from %u to %u\n", context, i, before[i], after[i]);
     CHECK(difference <= 1);
     maxdiff = MAX(maxdiff, difference);
     changed += difference != 0;
   }
   CHECK(changed * 1000 <= length);
-  printf("rebuilt frame: %zu/%zu bytes differ, maximum %d code value\n", changed, length, maxdiff);
+  printf("%s: %zu/%zu bytes differ, maximum %d code value\n", context, changed, length, maxdiff);
+}
+
+// Include every blend byte as well as parameter bytes and referenced geometry.
+static void multi_hashes(dt_hash_t hashes[6])
+{
+  const char *ops[] = { "exposure", "colorbalancergb" };
+  dt_mask_id_t ids[2];
+  for(int i = 0; i < 2; i++)
+  {
+    dt_iop_module_t *module = _look_instance(ops[i], FALSE);
+    CHECK(module && module->enabled);
+    ids[i] = module->blend_params->mask_id;
+    dt_masks_form_t *group = dt_masks_get_from_id(&_s.dev, ids[i]);
+    CHECK(group);
+    hashes[3*i] = dt_hash(DT_INITHASH, module->params, module->params_size);
+    hashes[3*i+1] = dt_hash(DT_INITHASH, module->blend_params, sizeof(*module->blend_params));
+    hashes[3*i+2] = dt_masks_group_hash_ext(DT_INITHASH, group, _s.dev.forms);
+  }
+  CHECK(ids[0] != ids[1]);
 }
 
 int main(int argc, char **argv)
@@ -81,6 +108,32 @@ int main(int argc, char **argv)
   dt_conf_set_string("write_sidecar_files", "never");
   dt_conf_set_bool("cache_disk_backend", FALSE);
   dt_conf_set_bool("cache_disk_backend_full", FALSE);
+  if(!strcmp(argv[1], "--reload-multi"))
+  {
+    CHECK(_open_image(argv[2], NO_IMGID, NULL, &err));
+    dt_hash_t actual_hashes[6];
+    multi_hashes(actual_hashes);
+    gchar *path = g_build_filename(argv[3], "multi.hashes", NULL);
+    gchar *bytes = NULL;
+    gsize length = 0;
+    CHECK(g_file_get_contents(path, &bytes, &length, NULL));
+    CHECK(length == sizeof(actual_hashes));
+    CHECK(!memcmp(bytes, actual_hashes, length));
+    g_free(bytes);
+    g_free(path);
+    path = g_build_filename(argv[3], "multi.bgrx", NULL);
+    CHECK(g_file_get_contents(path, &bytes, &length, NULL));
+    GBytes *expected = g_bytes_new_take(bytes, length);
+    GBytes *actual = preview(NULL);
+    check_rebuilt_pixels(expected, actual, "multi-module fresh-process reload");
+    g_bytes_unref(expected);
+    g_bytes_unref(actual);
+    g_free(path);
+    _close_session();
+    dt_cleanup();
+    puts("multi-module sidecar: fresh-process params, blend bytes, geometry and pixels passed");
+    return 0;
+  }
   if(!strcmp(argv[1], "--reload"))
   {
     // This process has a fresh in-memory library: only the XMP carries edits.
@@ -104,7 +157,7 @@ int main(int argc, char **argv)
     CHECK(g_file_get_contents(path, &bytes, &length, NULL));
     GBytes *expected = g_bytes_new_take(bytes, length);
     GBytes *actual = preview(NULL);
-    check_rebuilt_pixels(expected, actual);
+    check_rebuilt_pixels(expected, actual, "single-module fresh-process reload");
     g_bytes_unref(expected);
     g_bytes_unref(actual);
     g_free(path);
@@ -381,7 +434,7 @@ int main(int argc, char **argv)
     dt_masks_get_from_id(&_s.dev, look->blend_params->mask_id), _s.dev.forms) == saved_mask);
   // Reopening rebuilds the float pipeline: allow a one-code-value rounding
   // difference in at most 0.1% of bytes, while params and geometry stay exact.
-  check_rebuilt_pixels(applied, reopened);
+  check_rebuilt_pixels(applied, reopened, "single-module same-process reopen");
 
   // Both the current-version classic fast path and the older-version path migrate.
   look = _look_instance("exposure", FALSE);
@@ -399,6 +452,31 @@ int main(int argc, char **argv)
     CHECK(blend.mask_mode & DEVELOP_MASK_FLEXI);
     CHECK(dt_masks_get_from_id(&_s.dev, blend.mask_id));
   }
+  // Keep A's sidecar intact; use a separate photo for the two-module roundtrip.
+  gchar *multi_path = g_build_filename(argv[3], "multi.png", NULL);
+  CHECK(_open_image(multi_path, NO_IMGID, NULL, &err));
+  CHECK(_look(other_style, &err));
+  GBytes *multi_pixels = preview(NULL);
+  dt_hash_t before_multi[6], after_multi[6];
+  multi_hashes(before_multi);
+  gchar *multi_expected = g_build_filename(argv[3], "multi.hashes", NULL);
+  CHECK(g_file_set_contents(multi_expected, (const char *)before_multi, sizeof(before_multi), NULL));
+  g_free(multi_expected);
+  multi_expected = g_build_filename(argv[3], "multi.bgrx", NULL);
+  gsize multi_length = 0;
+  const char *multi_data = g_bytes_get_data(multi_pixels, &multi_length);
+  CHECK(g_file_set_contents(multi_expected, multi_data, multi_length, NULL));
+  g_free(multi_expected);
+  CHECK(_save(&err));
+  CHECK(_open_image(multi_path, NO_IMGID, NULL, &err));
+  multi_hashes(after_multi);
+  CHECK(!memcmp(before_multi, after_multi, sizeof(before_multi)));
+  GBytes *multi_reopened = preview(NULL);
+  check_rebuilt_pixels(multi_pixels, multi_reopened, "multi-module same-process reopen");
+  g_bytes_unref(multi_pixels);
+  g_bytes_unref(multi_reopened);
+  g_free(multi_path);
+  puts("multi-module sidecar: same-process params, blend bytes, geometry and pixels passed");
   g_free(params);
   g_free(other_style);
   g_free(style);

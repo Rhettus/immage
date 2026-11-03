@@ -301,7 +301,10 @@ The production pin remains unchanged until the adoption gates pass.
 - [x] Extend B to a two-module look with an independently masked color-balance
   item and rotated ellipse; verify exact tile/application/switching pixels and
   live blend/mask isolation for both modules in both builds.
-- [ ] Verify broader saved styles, other mask shapes and multi-module looks.
+- [x] Save/reopen the two-module circle/ellipse look and import its sidecar in a
+  fresh process; compare both modules’ params, all blend bytes, mask hashes and
+  rendered pixels in both candidate builds.
+- [ ] Verify broader real saved styles, additional mask shapes and module combinations.
 - [ ] Verify pixel-backed masks and external raster-mask cache invalidation.
 - [ ] Verify simultaneous first-start locking and installed/native lock behavior,
   including executable-name predicates on Windows/macOS/Linux.
@@ -804,7 +807,23 @@ Temporarily disabling color balance changes B's pixels and restoring it returns
 the exact frame, proving the second module contributes to the rendered result.
 Logs are in ignored `build/darktable-pin-review/{cpu,features}-multilook.log`.
 The existing exposure-only save/reopen and fresh-process checks still pass.
-Multi-module sidecar roundtrips, additional shapes/combinations and real saved
-styles remain pending, as do pixel/raster masks and native-device validation.
+The two-module look now also saves to a separate temporary photo and reopens in
+the same process, then imports its XMP in a fresh process with an empty in-memory
+library. Both enabled modules retain exact parameter bytes, all blend bytes and
+referenced mask hashes; their mask groups remain distinct. Same-process rebuilds
+change 6/27,648 bytes by one code value (within the existing 0.1% bound); fresh
+processes reproduce the frame exactly. Three consecutive complete runs pass in
+each candidate configuration. Logs are in ignored
+`build/darktable-pin-review/{cpu,features}-multi-roundtrip-final{0,1,2}.log`.
+
+An intermittent pixel failure during this extension came from the unused fourth
+BGRX byte: upstream gamma `_copy_output` writes only the three color channels.
+The fixture now copies the buffer and initializes padding to 255, matching the
+engine’s opaque RGBA output contract; all exact and bounded comparisons use that
+normalized copy. RGB values and tolerances are unchanged. Earlier raw-buffer
+comparisons included uninitialized padding and should not be treated as evidence
+about alpha. No production fix was needed. Additional shapes/combinations and
+real saved styles remain pending, as do pixel/raster masks and native-device
+validation.
 The preceding output-sink smoke and current-pin engine syntax checks passed
 with the blend-isolation repair; this extension changes only the fixture.

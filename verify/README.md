@@ -250,3 +250,17 @@ dependencies are required. The manifest is imported directly, including array
 paths; photos and state are temporary. This headless check verifies scalar access
 and preservation of neighboring mapped values, not changed-control responses,
 enum semantics, RAW processing or image compatibility across pins.
+
+## Candidate masked-look sidecars
+
+Run `python3 -I verify/look-compat.py --build build/darktable-pin-review/cpu`
+(or the complete features build) for actual-engine style import, preview isolation,
+A→B→A switching and save/reload checks. Temporary photos include a single-module
+exposure look and a two-module exposure/color-balance look with independent circle
+and rotated-ellipse masks. Both are reopened and imported from XMP in fresh
+processes with empty in-memory libraries. The multi-module case checks exact
+parameters, all blend bytes, mask hashes and distinct mask groups. Rebuilt frames
+allow one code value in at most 0.1% of bytes; other pixel comparisons are exact.
+The copied BGRX buffer’s unused fourth byte is initialized to opaque, matching
+RGBA output; upstream gamma leaves that byte unwritten. Rendering forces CPU;
+this does not establish real-style corpus, pixel/raster-mask or GPU coverage.

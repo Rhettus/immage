@@ -29,7 +29,7 @@ with tempfile.TemporaryDirectory(prefix='immage-look-compat-') as tmp:
     png = (b'\x89PNG\r\n\x1a\n'
            + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0))
            + chunk(b'IDAT', zlib.compress(rows)) + chunk(b'IEND', b''))
-    for name in ('source.png', 'target.png'):
+    for name in ('source.png', 'target.png', 'multi.png'):
         (state / name).write_bytes(png)
     command = [str(build / 'bin/immage-look-check'), str(state / 'source.png'),
                str(state / 'target.png'), str(state), '--library', ':memory:',
@@ -37,10 +37,12 @@ with tempfile.TemporaryDirectory(prefix='immage-look-compat-') as tmp:
                '--datadir', str(build / 'share/darktable'),
                '--moduledir', str(build / 'lib/darktable'),
                '--conf', 'opencl=false', '--conf', 'resourcelevel=0']
-    for reload_sidecar in (False, True):
+    for reload_sidecar in (None, "--reload", "--reload-multi"):
         run = command.copy()
         if reload_sidecar:
-            run[1] = '--reload'
+            run[1] = reload_sidecar
+            if reload_sidecar == '--reload-multi':
+                run[2] = str(state / 'multi.png')
         result = subprocess.run(run, capture_output=True, text=True, timeout=180,
                                 env=os.environ | {'OMP_NUM_THREADS': '2',
                                                   'OMP_WAIT_POLICY': 'passive',
