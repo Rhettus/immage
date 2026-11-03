@@ -135,7 +135,10 @@ vignetting calls. All 12 assigned exceptional profiles, both directions, match
 old CPU exactly at preview/full size under the minimum budget: 48 final frames
 and 489,642 floating-row records. No nonfinite output or fourth-channel change
 was observed. These are deliberately injected values on the unrelated Olympus
-RAW; real-camera inputs and signed interpolation/aspect/device combinations
-remain open. See the [signed boundary evidence](darktable-update-review.md#signed-floating-vignetting-boundary-diagnostic)
+RAW. Another 192 preview comparisons cover ratios 0.75/1.5 and all four warp
+interpolation preferences: 71,004 floating rows and final frames match exactly.
+These fixtures enable vignetting only, so geometric-warp interpolation is not
+exercised by changing preferences. Full-size signed aspect, real-camera inputs
+and native device combinations remain open. See the [signed boundary evidence](darktable-update-review.md#signed-floating-vignetting-boundary-diagnostic)
 and reproduction commands in the verification guide. This does not approve a
 production contract or close the full signed-intermediate acceptance gate.

@@ -2061,7 +2061,23 @@ source, compiler/link commands and hashes remain in
 
 This closes a narrow signed-input CPU boundary gap. It does not establish
 naturally occurring negative intermediate values, matching-camera import,
-interpolation/aspect coverage with signed inputs, OpenCL/device fallback,
+full-size signed aspect or signed geometric-warp coverage, OpenCL/device fallback,
 cancellation, an accuracy ranking or appearance/import policy. The broader
 acceptance gate remains unchecked. No production source/plugin, pin, serialized
 parameter or default changed; no GUI was launched.
+
+
+Signed aspect/configuration extension: the checker now accepts an explicit warp
+interpolation preference and pixel aspect ratio, retaining saved per-engine XMP
+and checking enabled version-1 aspect parameters. All **192 preview comparisons**
+pass across the same 12 assigned profiles, both directions, ratios 0.75/1.5 and
+bilinear/bicubic/Lanczos2/Lanczos3 preferences. Outputs are 512×510 or 512×255.
+All 71,004 floating-row records and final RGBA frames match old CPU exactly;
+outputs remain finite and the fourth channel is unchanged. The eight ignored
+`pixel-lens-signed-aspect-{mode}-{075,15}/` runs retain reports, frames, logs,
+saved XMP and 1,432 reverified manifest entries. The previous 61 dependency
+identities also remain unchanged; `lens-signed-aspect-summary.json` aggregates
+counts. These are vignetting-only fixtures, so preference variation does not
+establish signed geometric lens-warp interpolation coverage. Full-size signed
+aspect, natural negative intermediates, matching cameras and native devices
+remain open. No production behavior or pin changed; no GUI was launched.

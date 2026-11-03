@@ -494,3 +494,12 @@ actual module call sites with signed inputs; it does not establish the occurrenc
 of these values in real photos, matching-camera imports, OpenCL behavior, or a
 production compatibility policy. Hold the underlying builds unchanged while using
 the symlinked deployments. Do not ship these instrumented plugins.
+
+The signed checker also accepts `--interpolation bilinear|bicubic|lanczos2|lanczos3`
+and `--aspect 0.75|1.5`. Use a fresh output directory for each configuration.
+Aspect edits are applied to the assigned sidecar in temporary state, saved as
+per-engine XMP evidence, and checked for enabled version-1 parameters with the
+exact requested ratio. The report records both settings. These assigned fixtures
+enable vignetting only: interpolation preferences do not by themselves test
+geometric lens warping. Signed aspect coverage currently uses 512-pixel bounds;
+the previous full-size signed run uses the original aspect and default preference.
