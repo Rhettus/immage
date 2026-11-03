@@ -280,3 +280,13 @@ Run `python3 -I verify/mapped-enums.py --build BUILD --old OLD_REV --new NEW_REV
 to discover mapped enum types from generated introspection and compare their
 source declarations between local darktable Git revisions. This verifies enum
 names/order/assignments, not processing semantics or pixel equivalence.
+
+### Session choice selection from engine snapshots
+
+Run `node verify/session-choices.mjs SNAPSHOT` with a JSON snapshot produced by
+`mapped-fields.py --snapshot`. This imports actual Session/manifest code and
+checks preference/history choice selection, foreign exclusion, negative
+overrides, neutral snapping, bypasses and combined tone-mapper choices.
+Engine commands use the supplied snapshot; mask loading and rendering are stubbed.
+It launches no GUI or engine and does not verify rendered output or RAW defaults.
+See the darktable update review for the three comparison inputs and limits.

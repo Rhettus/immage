@@ -305,6 +305,9 @@ The production pin remains unchanged until the adoption gates pass.
 - [x] Compare production read-back and recognition/activation/enable/visibility
   predicates for all 1,280 control-write scenarios against the existing original
   build in both candidate builds (synthetic PNG, base modules only).
+- [x] Exercise production session preference/history selection, foreign exclusion,
+  negative overrides, snapping, bypass and combined tone-mapper choices against
+  original/candidate synthetic-PNG snapshots (headless; masks/rendering stubbed).
 - [ ] Verify production control read/selection semantics, RAW-specific defaults, new
   unmapped HDR fields and enum processing semantics with reference renders.
 - [x] Verify A→B→A switching between two exported/imported masked exposure looks,
@@ -927,3 +930,34 @@ moduleEdit orchestration. Preference/history selection, neutral snapping,
 negative overrides, conflicting active modules, combined tone-mapper choices,
 tagged/local-instance isolation and RAW/image processing remain open. No pin,
 default, GUI or rendering behavior changed.
+
+### Headless session choice orchestration
+
+`verify/session-choices.mjs SNAPSHOT` imports the production Session and manifest.
+It supplies saved engine parameters through a command stub to actual
+`Session.open`, while stubbing mask loading and render scheduling. It also calls
+actual `chooseModules`, `snap` and `moduleEdit`; no GUI or engine is launched.
+All 975 assertions pass for each of the original, candidate CPU and candidate
+features snapshots from the mapped-fields checks:
+
+```sh
+node verify/session-choices.mjs build/darktable-pin-review/old-defaults.json
+node verify/session-choices.mjs build/darktable-pin-review/cpu-defaults.json
+node verify/session-choices.mjs build/darktable-pin-review/features-defaults.json
+```
+
+Coverage includes every declared global preference on fresh and unused edited
+photos; 16 constructible nonneutral option cases where edited history wins,
+fresh preferences override history, and foreign maps are excluded; negative
+choice overrides and disabled modules; nonfinite/near-neutral snapping; module
+bypasses; and all 24 combinations of tone mapper, Contrast, Blacks and Saturation
+choices. The latter assert exactly one tone mapper enabled and finite emitted
+parameters. Input parameters are synthesized with production writes, so this is
+an orchestration check, not an independent mapping-formula oracle.
+
+Conflicting simultaneous nonneutral alternatives, preference refresh, masked
+choices, tagged-instance isolation, actual engine edits from this session,
+RAW/HDR defaults and rendered pixels remain unverified by this harness. Existing
+snapshots have identical mapped defaults; this does not extend default coverage
+to RAW cameras or newly added unmapped HDR fields. The broad adoption checkbox
+remains open. No production behavior or pin changed.
