@@ -41,6 +41,9 @@ Performance
 
 Bug fixes
 
+- Each tool in the right panel keeps its own scroll position. A tool you
+  open for the first time starts at the top instead of where the previous
+  one was scrolled to, which could hide Create New Mask or the top of Crop.
 - Mac CPU captures wait for the profiler to save after Ctrl-C, then export
   the recorded trace instead of exiting with a Python interruption.
 - Transform's automatic corrections work on cropped portrait and rotated

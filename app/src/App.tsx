@@ -1269,6 +1269,18 @@ export default function App() {
   // the crop tool: while it is open the crop module is bypassed, so the
   // whole image shows under the rectangle, which is applied on Done
   const [cropping, setCropping] = useState(false);
+  // the side panel scrolls once for every tool: each tool keeps its own
+  // place, and a tool opened for the first time starts at the top
+  const panelsRef = useRef<HTMLDivElement>(null);
+  const panelScroll = useRef(new Map<string, number>());
+  const panelKey = cropping ? "crop" : rightMode;
+  const shownKey = useRef(panelKey);
+  useLayoutEffect(() => {
+    const el = panelsRef.current;
+    if (!el || shownKey.current === panelKey) return;
+    shownKey.current = panelKey;
+    el.scrollTop = panelScroll.current.get(panelKey) ?? 0;
+  }, [panelKey]);
   // the key handler is installed once; it reaches the latest of this
   const pickToolRef = useRef<(t: MaskTool) => void>(() => {});
   const masksModeRef = useRef(false);
@@ -5549,7 +5561,8 @@ export default function App() {
                        neutral={(id) => session.current?.neutral[id] ?? controlById.get(id)?.neutral ?? 0}
                        onChange={change} clip={clipOn} onClip={(end) => setClipOn((o) => ({ ...o, [end]: !o[end] }))}
                        onClipPeek={setClipPeek} scope={scope} onScope={setScope} /></Profiler>
-        <div className="panels" data-tour="panels">
+        <div className="panels" data-tour="panels" ref={panelsRef}
+             onScroll={(e) => panelScroll.current.set(shownKey.current, e.currentTarget.scrollTop)}>
           {masksMode && !cropping && (
             <MasksPanel masks={masks} selected={maskSel} shape={shapeSel} tool={maskTool} target={toolTarget}
                         brush={brush} overlay={maskShown} disabled={!current} mono={values.bw_mode === 1} photo={values}
