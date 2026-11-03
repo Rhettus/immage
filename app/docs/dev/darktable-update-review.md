@@ -2223,8 +2223,19 @@ image RGB matched 3,048 and 1,512 rows, and final frames were exact.
 Each run also passed 288 byte-exact bypass copies per plugin. All 179 hashes
 per run were independently verified with scripts unchanged throughout execution.
 Ignored evidence: `build/darktable-pin-review/pixel-lens-mask-bypass-aspect075-bicubic-128/`
-and `pixel-lens-mask-bypass-aspect150-bicubic-128/`. This covers bicubic synthetic
-preview masks at these aspects; full-size masks, other interpolators at changed
-aspects, invalid ROIs, grid failure and nonfinite coordinates remain unverified.
+and `pixel-lens-mask-bypass-aspect150-bicubic-128/`. This establishes bicubic synthetic
+preview mask coverage at these aspects; the bilinear follow-up and remaining
+gates are recorded below.
 The old pin has no precomputed mask grid, so grid-failure diagnostics need a
 candidate-only assertion rather than an old/direct trace-equality claim.
+
+Bilinear changed-aspect CPU mask follow-up: the expanded bypass deployments
+also passed all 24 cases at each aspect, 0.75 (128x127) and 1.5 (128x63).
+Active mask rows matched 9,144/4,536, image RGB rows matched 3,048/1,512,
+and final frames matched exactly. Each run passed 288 byte-exact bypass copies
+per plugin. All 179 manifest hashes per run were independently verified with
+scripts unchanged during execution. Ignored evidence:
+`build/darktable-pin-review/pixel-lens-mask-bypass-aspect075-bilinear-128/`
+and `pixel-lens-mask-bypass-aspect150-bilinear-128/`. Changed-aspect preview
+masks now cover bilinear and bicubic; Lanczos, full-size masks, invalid ROIs,
+grid failure and nonfinite coordinates remain open. No production or pin change.
