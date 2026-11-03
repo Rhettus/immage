@@ -9,7 +9,9 @@ export async function requireElement(t, selector, reason = selector) {
 export async function textButton(t, scope, text) {
   // Resolve by readonly text observation at interaction time; no DOM mutations.
   const point = await until(() => t.driver.observe((scope, text) => {
-    const e = [...document.querySelectorAll(`${scope} button`)].find(e => e.textContent.trim() === text);
+    // a menu item's shortcut (<span class="key">) is not part of its name
+    const name = b => [...b.childNodes].filter(n => !n.classList?.contains('key')).map(n => n.textContent).join('').trim();
+    const e = [...document.querySelectorAll(`${scope} button`)].find(e => name(e) === text);
     if (!e) return null; const r = e.getBoundingClientRect(), hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
     return r.width && r.height && !e.disabled && (e === hit || e.contains(hit)) && { x: r.x + r.width / 2, y: r.y + r.height / 2 };
   }, scope, text), `button ${scope}/${text}`);

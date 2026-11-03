@@ -13,6 +13,8 @@ Improvements
   shown, with Check all and Uncheck all buttons above the grid.
 - Import opens a card's folders expanded down to its camera folders, so
   FastRawViewer's `_Selected` and `_Rejected` folders are one click away.
+- GUI tests: a case takes the website and guide screenshots, and the
+  mask, range and workflow cases find mask menu items again.
 - Add a scripted Mac CPU capture workflow to profile the engine and webview
   alongside GUI benchmarks and investigate busy-core bottlenecks.
 
@@ -41,9 +43,7 @@ Performance
 
 Bug fixes
 
-- Each tool in the right panel keeps its own scroll position. A tool you
-  open for the first time starts at the top instead of where the previous
-  one was scrolled to, which could hide Create New Mask or the top of Crop.
+- Each right panel tool keeps its own scroll position and opens at the top.
 - Mac CPU captures wait for the profiler to save after Ctrl-C, then export
   the recorded trace instead of exiting with a Python interruption.
 - Transform's automatic corrections work on cropped portrait and rotated
