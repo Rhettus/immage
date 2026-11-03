@@ -3152,8 +3152,13 @@ static void _opencl(JsonBuilder *b)
     _add_int(b, "compute_units", dev->compute_units);
     _add_int(b, "max_global_mem", dev->max_global_mem);
     _add_int(b, "max_mem_alloc", dev->max_mem_alloc);
-    _add_int(b, "memory_in_use", dev->memory_in_use);
-    _add_int(b, "peak_memory", dev->peak_memory);
+    // darktable counts device memory only under -d memory -d opencl
+    // (opencl.c, _opencl_memory_statistics); otherwise both read 0
+    if((darktable.unmuted & DT_DEBUG_MEMORY) && (darktable.unmuted & DT_DEBUG_OPENCL))
+    {
+      _add_int(b, "memory_in_use", dev->memory_in_use);
+      _add_int(b, "peak_memory", dev->peak_memory);
+    }
     _add_int(b, "total_events", dev->totalevents);
     _add_int(b, "lost_events", dev->totallost);
     int programs = 0, kernels = 0;

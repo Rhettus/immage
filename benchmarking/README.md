@@ -139,14 +139,25 @@ time, device and `cl_errors`, the change in darktable's
 `darktable.opencl->error_count`, which rises when a pipe fails on its device
 and reruns on the CPU (`pixelpipe_hb.c`, `dt_dev_pixelpipe_process`). Each
 pass's `-d perf` module timings are returned under `modules.cpu` and
-`modules.gpu`, split by the engine's `[engine] | <pass>` stderr markers, so
+`modules.gpu`, split by the engine's `[engine] | <pass>` stderr markers and
+kept to the check's full pipe (a thumbnail drawn meanwhile is left out), so
 `cpuModules` lists modules that ran on the CPU in the GPU pass. A case passes
-on a device, no fallback, and ΔE p99 < 2; its own module on the CPU is a
-note. The cancel case starts the idle base on the GPU, drags Exposure to
-cancel it, and compares again. `opencl.before` / `after` add each device's
-memory, peak memory, events, settings and the counts of built `programs`
-and used `kernels`, plus `error_count` and `stopped`. `render` replies also
-carry `cl_errors`.
+on a device, no fallback, and ΔE p99 < 2; its own module on the CPU, or any
+instance of it (`contrastntexture.1`), is a note. The cancel case starts the
+idle base on the GPU, drags Exposure to cancel it, and compares again.
+`opencl.before` / `after` add each device's memory, events, settings and the
+counts of built `programs` and used `kernels`, plus `error_count` and
+`stopped`. `memory_in_use` and `peak_memory` are there only when the app runs
+with `-d memory -d opencl`: darktable counts device memory under those flags
+alone (`_opencl_memory_statistics` in `opencl.c`); the first reports
+show a 0 it never counted. `render` replies also carry `cl_errors`.
+
+`gpucheck.py` gives each case's own module time in the CPU and the GPU pass,
+marked `(CPU)` where darktable kept it there, and, given more than one
+report, a last table of those GPU-pass times side by side. Reports from the
+old and the candidate pin on one machine show whether a module moved to
+OpenCL, such as contrast & texture, got faster. They are times at 1024 px,
+from one render each; the full-size difference is bench.py's (below).
 
 Limits: 1024 px, not full resolution; no injected failures, so tiling and
 fallback appear only when they happen; a change of operation order on the

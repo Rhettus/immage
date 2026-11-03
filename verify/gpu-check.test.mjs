@@ -75,3 +75,9 @@ test('verdicts fail on fallback, no device or dE, and note CPU modules',()=>{
   assert.equal(cpu.pass,true);
   assert.deepEqual(cpu.notes,['contrastntexture ran on the CPU']);
 });
+
+test('a second instance of the case\'s module is noted as the module',()=>{
+  const v=verdict(pass({modules:{gpu:[{label:'contrastntexture.1',kind:'module',ms:5,gpu:false,tiled:true}]}}),'contrastntexture');
+  assert.deepEqual(v.notes,['contrastntexture ran on the CPU','contrastntexture was tiled']);
+  assert.deepEqual(verdict(pass({modules:{gpu:[{label:'exposure.1',kind:'module',ms:1,gpu:false,tiled:false}]}}),'exposure.12').notes,[]);
+});

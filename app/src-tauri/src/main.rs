@@ -1069,7 +1069,9 @@ async fn gpu_check_parity(state: State<'_, AppState>, size: Option<u32>, diff: O
             pass = t.label.clone();
             passes.insert(pass.clone(), json!([]));
         } else if let Some(Value::Array(list)) = passes.get_mut(&pass) {
-            list.push(json!(t));
+            // the check pipe is a full pipe; a thumbnail or preview drawn
+            // meanwhile on another thread is not part of its pass
+            if t.pipe.is_empty() || t.pipe == "full" { list.push(json!(t)); }
         }
     }
     reply["modules"] = Value::Object(passes);

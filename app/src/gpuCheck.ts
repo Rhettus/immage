@@ -81,6 +81,9 @@ export const cpuInGpuPass = (p: Parity) =>
 export const tiledInGpuPass = (p: Parity) =>
   [...new Set((p.modules?.gpu ?? []).filter((m) => m.kind === "module" && m.tiled).map((m) => m.label))];
 
+// a module's second instance is timed as `contrastntexture.1`
+export const opOf = (label: string) => label.replace(/\.\d+$/, "");
+
 export type Verdict = { pass: boolean; reasons: string[]; notes: string[] };
 
 // a case passes when the GPU pass ran on a device, without falling back to
@@ -93,7 +96,7 @@ export function verdict(p: Parity, op: string): Verdict {
   if (p.gpu.cl_errors > 0) reasons.push(`OpenCL failed and the pipe reran on the CPU (${p.gpu.cl_errors})`);
   if (p.de.p99 >= 2) reasons.push(`dE p99 ${p.de.p99.toFixed(2)}`);
   const notes: string[] = [];
-  if (op && cpuInGpuPass(p).includes(op)) notes.push(`${op} ran on the CPU`);
-  if (op && tiledInGpuPass(p).includes(op)) notes.push(`${op} was tiled`);
+  if (op && cpuInGpuPass(p).some((l) => opOf(l) === op)) notes.push(`${op} ran on the CPU`);
+  if (op && tiledInGpuPass(p).some((l) => opOf(l) === op)) notes.push(`${op} was tiled`);
   return { pass: reasons.length === 0, reasons, notes };
 }
