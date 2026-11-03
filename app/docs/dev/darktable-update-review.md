@@ -265,7 +265,8 @@ approve the candidate pin, pixel parity, performance gains or platform support.
 1. Complete installed/native lock and simultaneous-start checks; Linux candidate
    live/stale/clean-restart checks pass. Complete native/platform and
    broader-style coverage for the headlessly verified style/mask repair.
-2. Exercise every mapped field through generated introspection; verify old/new
+2. Mapped scalar access passes for all 444 fields across 28 modules in both
+   candidate builds. Still verify changed control values, enum semantics, old/new
    defaults and the saved-edit/image comparison matrix above.
 3. Preserve a headless baseline and exported reference renders before changing
    the pin. Preserve local patched source and the unrelated ONNX CMake delta.
@@ -712,3 +713,19 @@ comparisons remain adoption gates. An unrestricted `all`
 build also encountered a local missing Perl `Pod::Parser` while translating man
 pages; the engine and module targets above do not require that documentation
 target. No system package was installed to bypass it.
+
+## Executed manifest field access
+
+`python3 -I verify/mapped-fields.py --build build/darktable-pin-review/cpu`
+and the same command with `features` pass against the actual candidate engines.
+`verify/mapped-fields.mjs` imports the production TypeScript manifest and unions
+all global/local mapping fields by base operation: 444 unique fields across 28
+modules. The engine reads each live/default scalar through generated introspection,
+then writes each initial value separately and rereads the module's entire mapped
+field set to check preservation of neighboring values. Temporary synthetic PNG,
+configuration and cache are isolated; rendering is CPU configured and no GUI runs.
+
+This is an access/schema check, not a control-response test: writing initial
+values cannot establish changed-value behavior, enum meanings, old/new defaults,
+RAW-specific processing or pixel equivalence. Those gates remain open. The runner
+requires Node and the app's installed dependencies to load the actual manifest.

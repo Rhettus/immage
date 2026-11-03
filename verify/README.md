@@ -240,3 +240,13 @@ The check fits Auto, Level, Vertical and Full before cropping, after cropping
 and after restoring the frame, with intervening renders and applied corrections.
 These fixtures supplement real camera portrait RAWs; they do not establish RAW,
 GPU or visible-app coverage. Run without `--write-corpus` for temporary fixtures.
+
+## Candidate mapped scalar access
+
+Run `python3 -I verify/mapped-fields.py --build build/darktable-pin-review/cpu`
+(or another complete engine build) to read live/default values and individually
+rewrite every global/local manifest field through the real engine. Node and app
+dependencies are required. The manifest is imported directly, including array
+paths; photos and state are temporary. This headless check verifies scalar access
+and preservation of neighboring mapped values, not changed-control responses,
+enum semantics, RAW processing or image compatibility across pins.
