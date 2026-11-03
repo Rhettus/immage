@@ -26,7 +26,11 @@ export async function locateControl(t, definition) {
   } else if (id === 'negative') {
     if (t.fixture.name !== 'negative') throw new Blocked('Negative controls require --fixture negative');
     const { prepareNegative } = await import('./workflows.mjs'); await prepareNegative(t); p='.negative';
-  } else p = await panel(t, id);
+  } else {
+    // the B&W Mix panel shows only in B&W treatment
+    if (id === 'bw') { await textButton(t, await panel(t, 'basic'), 'B&W'); await settledPhoto(t); }
+    p = await panel(t, id);
+  }
   // the Region and Split Point sliders are the Parametric curve's, and
   // their sections mount folded when it is chosen: choose it first
   if (id === 'tonecurve') await textButton(t, `${p} .tabs`, 'Parametric');
