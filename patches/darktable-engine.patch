@@ -618,10 +618,19 @@ index 20358e4796..8ca2e03b66 100644
  void dt_dev_pixelpipe_invalidate_cacheline(const struct dt_dev_pixelpipe_t *pipe, const void *data, const char *info);
 
 diff --git a/src/develop/pixelpipe_hb.c b/src/develop/pixelpipe_hb.c
-index a7e5b88a37..f0d5a295af 100644
+index a7e5b88a37..2c7958cde3 100644
 --- a/src/develop/pixelpipe_hb.c
 +++ b/src/develop/pixelpipe_hb.c
-@@ -2221,6 +2221,19 @@ static gboolean _dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe,
+@@ -289,6 +289,8 @@ static gboolean _dev_pixelpipe_init_cached(dt_dev_pixelpipe_t *pipe,
+   pipe->backbuf_size = size;
+   pipe->cache_obsolete_order = INT_MAX;
+   pipe->backbuf = NULL;
++  pipe->output_sink = NULL;
++  pipe->output_sink_user = NULL;
+   pipe->backbuf_scale = 0.0f;
+   memset(pipe->backbuf_zoom_pos, 0, sizeof(dt_dev_zoom_pos_t));
+   pipe->output_imgid = NO_IMGID;
+@@ -2221,6 +2223,19 @@ static gboolean _dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe,
        && !pipe->nocache
        && dt_dev_pixelpipe_cache_available(pipe, hash, bufsize);
 
@@ -641,7 +650,7 @@ index a7e5b88a37..f0d5a295af 100644
    if(cache_available)
    {
      dt_dev_pixelpipe_cache_get(pipe, hash, bufsize,
-@@ -2550,14 +2563,25 @@ static gboolean _dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe,
+@@ -2550,14 +2565,25 @@ static gboolean _dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe,
 
    */
    const gboolean has_focus = module == dt_dev_gui_module() && module->enabled;
@@ -670,7 +679,7 @@ index a7e5b88a37..f0d5a295af 100644
 
  #ifdef HAVE_OPENCL
 
-@@ -3249,12 +3273,15 @@ static gboolean _dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe,
+@@ -3249,12 +3275,15 @@ static gboolean _dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe,
    if(important_input && input)
    {
      dt_print_pipe(DT_DEBUG_PIPE,
@@ -688,6 +697,51 @@ index a7e5b88a37..f0d5a295af 100644
    }
 
    if(dt_pipe_mask_display(pipe))
+@@ -3667,8 +3696,20 @@ restart:
+   dt_pthread_mutex_lock(&pipe->backbuf_mutex);
+   pipe->backbuf_hash = dt_dev_pixelpipe_cache_hash(&roi, pipe, pos);
+
++  // Consume cache pixels synchronously before cache reporting can reclaim them.
++  // Never leave an older owned backbuf looking like this completed frame.
++  const gboolean use_sink = pipe->output_sink && dt_pipe_is_screen(pipe)
++    && !(pipe->type & DT_DEV_PIXELPIPE_IMAGE_FLOAT);
++  gboolean sink_ok = TRUE;
++  if(use_sink)
++  {
++    g_free(pipe->backbuf);
++    pipe->backbuf = NULL;
++    pipe->backbuf_size = 0;
++    sink_ok = pipe->output_sink(pipe->output_sink_user, buf, width, height);
++  }
+   //FIXME lock/release cache line instead of copying
+-  if(dt_pipe_is_screen(pipe))
++  else if(dt_pipe_is_screen(pipe))
+   {
+     // dt_dev_image(want_float) keeps gamma terminal but lets it pass the
+     // 4-channel linear float working RGB through unpacked. In that case the
+@@ -3700,6 +3741,8 @@ restart:
+   if(!claimed)
+     dt_dev_pixelpipe_cache_report(pipe);
+
++  if(!sink_ok) return TRUE;
++
+   dt_print_pipe(DT_DEBUG_PIPE, "pipe finished",
+                 pipe, NULL, old_devid, &roi, NULL, "'%s' ID=%i",
+                 pipe->image.filename, pipe->image.id);
+diff --git a/src/develop/pixelpipe_hb.h b/src/develop/pixelpipe_hb.h
+index bd97cfca49..751b94d8d5 100644
+--- a/src/develop/pixelpipe_hb.h
++++ b/src/develop/pixelpipe_hb.h
+@@ -246,6 +246,9 @@ typedef struct dt_dev_pixelpipe_t
+   dt_dev_pixelpipe_status_t status;
+   gboolean loading;
+   gboolean input_changed;
++  // Optional synchronous byte-output consumer. Source is valid only during the call.
++  gboolean (*output_sink)(void *user, const uint8_t *pixels, int width, int height);
++  void *output_sink_user;
+   // backbuffer (output)
+   uint8_t *backbuf;
+   size_t backbuf_size;
 diff --git a/src/imageio/imageio.c b/src/imageio/imageio.c
 index d7b5a79ef4..9b8340e4ff 100644
 --- a/src/imageio/imageio.c

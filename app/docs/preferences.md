@@ -238,7 +238,10 @@ The thumbnail caches keep nothing while the disk has under 5 GB free.
   it started, but use a copy of a photo you care about.
   Resource readings are sampled: brief CPU spikes or short-lived helper
   processes can be missed. Compare reports made with the same build and
-  measurement settings when assessing a settings change.
+  measurement settings when assessing a settings change. When comparing app
+  versions, repeat runs with the same photo, viewport and preview settings;
+  compare completed frames and input latency, since time spent in individual
+  processing stages can move between versions.
 
 Use the **Performance tuner** with a representative RAW and your usual window
 size. Set FPS and latency targets, run it, review the recommendation, then

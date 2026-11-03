@@ -1333,7 +1333,16 @@ static dt_hash_t _frame_hash(const dt_hash_t pipe_hash)
   return hash;
 }
 
-// process into the pipe's 8-bit backbuf; returns the output size
+typedef struct preview_output_t {
+  const char *path;
+  double timings[4];
+  double elapsed_ms;
+  gboolean completed;
+} preview_output_t;
+
+static gboolean _preview_output_sink(void *user, const uint8_t *pixels, int w, int h);
+
+// Process byte pixels into the optional output sink or the pipe's backbuf.
 // with scale <= 0, fit the whole image into bw x bh. otherwise render the
 // bw x bh window at (x, y) of the image scaled by `scale` (1 is 100%), the
 // way the darkroom's zoomed view does; the window is clipped to the image
@@ -1341,7 +1350,7 @@ static dt_hash_t _frame_hash(const dt_hash_t pipe_hash)
 // would be one of them, it is not rendered: *kept is set to that hash
 static gboolean _render(dt_dev_pixelpipe_t *pipe, const int devid, const int bw, const int bh,
                         const double req_scale, const int x, const int y, JsonArray *have,
-                        int *ow, int *oh, int *ox_out, int *oy_out, dt_hash_t *kept, char **err)
+                        int *ow, int *oh, int *ox_out, int *oy_out, dt_hash_t *kept, preview_output_t *output, char **err)
 {
   *kept = DT_INVALID_HASH;
   double scale = req_scale;
@@ -1385,8 +1394,12 @@ static gboolean _render(dt_dev_pixelpipe_t *pipe, const int devid, const int bw,
       return TRUE;
     }
   }
-  if(dt_dev_pixelpipe_process(pipe, &_s.dev, ox, oy, w, h, scale, devid)
-     || !pipe->backbuf)
+  pipe->output_sink = output ? _preview_output_sink : NULL;
+  pipe->output_sink_user = output;
+  const gboolean failed = dt_dev_pixelpipe_process(pipe, &_s.dev, ox, oy, w, h, scale, devid);
+  pipe->output_sink = NULL;
+  pipe->output_sink_user = NULL;
+  if(failed || (output ? !output->completed : !pipe->backbuf))
   {
     *err = g_strdup("pixelpipe processing failed or was interrupted");
     return FALSE;
@@ -1467,6 +1480,15 @@ static gboolean _write_rgba(const char *path, const uint8_t *in, const int w, co
     timings[3] = (freed - written) / 1000.0;
   }
   return ok;
+}
+
+static gboolean _preview_output_sink(void *user, const uint8_t *pixels, int w, int h)
+{
+  preview_output_t *output = user;
+  const gint64 started = g_get_monotonic_time();
+  output->completed = _write_rgba(output->path, pixels, w, h, output->timings);
+  output->elapsed_ms = _ms_since(started);
+  return output->completed;
 }
 
 // { op: [field, ...] } ->
@@ -9250,12 +9272,17 @@ static void _handle(JsonObject *req, FILE *out)
       ? json_object_get_array_member(req, "have") : NULL;
     int w = 0, h = 0, ox = 0, oy = 0;
     dt_hash_t kept = DT_INVALID_HASH;
+    const char *ppm = json_object_get_string_member_with_default(req, "out", NULL);
+    const char *rgba = json_object_get_string_member_with_default(req, "rgba", NULL);
+    preview_output_t output = { .path = rgba };
+    // PPM and non-byte consumers retain their ordinary owned back buffer.
+    preview_output_t *sink = rgba && !ppm ? &output : NULL;
     const gboolean ok = _render(pipe, devid, json_object_get_int_member_with_default(req, "width", 2048),
                                 json_object_get_int_member_with_default(req, "height", 2048),
                                 json_object_get_double_member_with_default(req, "scale", 0.0),
                                 json_object_get_int_member_with_default(req, "x", 0),
                                 json_object_get_int_member_with_default(req, "y", 0),
-                                have, &w, &h, &ox, &oy, &kept, &err);
+                                have, &w, &h, &ox, &oy, &kept, sink, &err);
     if(base_id && _base_end() && !ok)
     {
       // a stop on the GPU leaves the previous module's cacheline holding a
@@ -9305,16 +9332,15 @@ static void _handle(JsonObject *req, FILE *out)
     }
     else
     {
-      const char *ppm = json_object_get_string_member_with_default(req, "out", NULL);
       if(ppm && !_write_ppm(ppm, pipe->backbuf, w, h))
       {
         err = g_strdup_printf("could not write '%s'", ppm);
         goto fail;
       }
-      const char *rgba = json_object_get_string_member_with_default(req, "rgba", NULL);
       const gint64 t1 = g_get_monotonic_time();
       double output_ms[4] = {0};
-      if(rgba && !_write_rgba(rgba, pipe->backbuf, w, h, output_ms))
+      if(sink) memcpy(output_ms, output.timings, sizeof(output_ms));
+      if(rgba && !sink && !_write_rgba(rgba, pipe->backbuf, w, h, output_ms))
       {
         err = g_strdup_printf("could not write '%s'", rgba);
         goto fail;
@@ -9332,6 +9358,12 @@ static void _handle(JsonObject *req, FILE *out)
       json_builder_add_double_value(b, process_ms);
       json_builder_set_member_name(b, "write_ms");
       json_builder_add_double_value(b, _ms_since(t1));
+      if(sink)
+      {
+        // This output work is already included in process_ms, not write_ms.
+        json_builder_set_member_name(b, "process_output_ms");
+        json_builder_add_double_value(b, output.elapsed_ms);
+      }
       if(rgba)
       {
         const char *keys[] = { "allocate_ms", "convert_ms", "file_ms", "free_ms" };

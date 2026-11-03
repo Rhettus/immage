@@ -12,6 +12,8 @@ Improvements
 
 Performance
 
+- Drag and settled previews convert finished pixels directly into their output
+  buffer, avoiding an intermediate full-frame copy on all platforms.
 - GUI benchmarks reduce sampler overhead by collecting process CPU and memory
   only for Immage's process tree, with less frequent discovery of new processes.
 - Slider edits queued during a render can start their next preview as soon as
