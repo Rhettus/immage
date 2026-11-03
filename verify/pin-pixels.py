@@ -31,7 +31,7 @@ def chunk(kind, data):
 
 
 def render(build, photo, state, output, sizes, edits=(), sidecar=None, save=None,
-           interpolation=None):
+           interpolation=None, resource_level=None):
     state.mkdir()
     copied = state / photo.name
     shutil.copyfile(photo, copied)
@@ -42,6 +42,8 @@ def render(build, photo, state, output, sizes, edits=(), sidecar=None, save=None
                '--datadir', str(build / 'share/darktable'),
                '--moduledir', str(build / 'lib/darktable'),
                '--conf', 'opencl=false', '--conf', 'resourcelevel=0']
+    if resource_level:
+        command += ['--conf', f'resourcelevel={resource_level}', '-d', 'tiling', '-d', 'pipe']
     if interpolation:
         command += ['--conf',
                     f'plugins/lighttable/export/pixel_interpolator_warp={interpolation}']
@@ -115,6 +117,10 @@ def main():
                         help='Compare Lensfun and metadata-selected corrections on supplied RAW photos')
     parser.add_argument('--lens-reverse', action='store_true',
                         help='Compare saved reverse Lensfun correction with initialized camera defaults')
+    parser.add_argument('--lens-aspect', action='store_true',
+                        help='Compare saved Lensfun histories with pixel aspect ratios 0.75 and 1.5')
+    parser.add_argument('--resource-level', choices=['mini', 'reference', 'unrestricted'],
+                        help='Set identical memory budgets and record pipe/tiling diagnostics; inspect logs for actual tiling')
     parser.add_argument('--interpolation', choices=['bilinear', 'bicubic', 'lanczos2', 'lanczos3'],
                         help='Set the warp interpolation preference identically in every engine')
     args = parser.parse_args()
@@ -126,7 +132,8 @@ def main():
     builds = [('old', args.old.resolve())] + [
         (f'candidate-{i}', path.resolve()) for i, path in enumerate(args.candidate)]
     report = {'schema_version': 2, 'builds': {}, 'inputs': {},
-              'warp_interpolation': args.interpolation}
+              'warp_interpolation': args.interpolation,
+              'resource_level': args.resource_level}
     for label, build in builds:
         # Record all engine/module bytes, rather than assuming timestamps or a
         # source checkout prove binary identity. Includes dynamically loaded IOPs.
@@ -223,6 +230,12 @@ def main():
                 cases['lens-reverse'] = [{'op': 'lens', 'enabled': True,
                                           'params': {'method': 1, 'inverse': 1,
                                                      'has_been_set': 1}}]
+            if args.lens_aspect and photo.suffix.lower() in ('.nef', '.orf'):
+                for ratio in (0.75, 1.5):
+                    cases[f'lens-aspect-{ratio}'] = [
+                        {'op': 'lens', 'enabled': True, 'params': {'method': 1}},
+                        {'op': 'scalepixels', 'enabled': True,
+                         'params': {'pixel_aspect_ratio': ratio}}]
             record = {'sha256': digest(photo), 'cases': {}}
             default_frames = None
             for case, edits in cases.items():
@@ -230,7 +243,7 @@ def main():
                 sidecar = output / f'{prefix}-old.xmp' if edits else None
                 old = render(builds[0][1], photo, state / f'{prefix}-old',
                              output / f'{prefix}-old', sizes, edits=edits, save=sidecar,
-                             interpolation=args.interpolation)
+                             interpolation=args.interpolation, resource_level=args.resource_level)
                 if not edits:
                     default_frames = old
                 comparisons = {}
@@ -238,7 +251,8 @@ def main():
                 for label, build in targets:
                     frames = render(build, photo, state / f'{prefix}-{label}-reload',
                                     output / f'{prefix}-{label}-reload', sizes,
-                                    sidecar=sidecar, interpolation=args.interpolation)
+                                    sidecar=sidecar, interpolation=args.interpolation,
+                                    resource_level=args.resource_level)
                     for size in sizes:
                         dims, before = old[size]
                         after_dims, after = frames[size]
@@ -261,6 +275,19 @@ def main():
                          ('operation', 'modversion', 'enabled', 'blendop_version')}
                         for item in ET.parse(sidecar).iter()
                         if item.get(ns + 'operation') is not None]
+                    if case.startswith('lens-aspect-'):
+                        aspect = next(item for item in ET.parse(sidecar).iter()
+                                      if item.get(ns + 'operation') == 'scalepixels')
+                        encoded = aspect.get(ns + 'params')
+                        params = (zlib.decompress(base64.b64decode(encoded[4:]))
+                                  if encoded.startswith('gz') else bytes.fromhex(encoded))
+                        ratio = edits[1]['params']['pixel_aspect_ratio']
+                        if (aspect.get(ns + 'modversion') != '1'
+                                or aspect.get(ns + 'enabled') != '1'
+                                or len(params) != 4
+                                or struct.unpack('<f', params)[0] != ratio):
+                            raise RuntimeError('pixel aspect fixture lost saved parameters')
+                        result['saved_pixel_aspect_ratio'] = ratio
                     if case == 'lens-reverse':
                         lens = next(item for item in ET.parse(sidecar).iter()
                                     if item.get(ns + 'operation') == 'lens')

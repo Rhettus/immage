@@ -348,6 +348,8 @@ The production pin remains unchanged until the adoption gates pass.
   coordinates reproduce the old frame exactly without a negative clamp.
 - [x] Compare both RAWs' forward/metadata/reverse lens histories at 96/512
   using bilinear, bicubic, Lanczos2 and Lanczos3 warp interpolation.
+- [x] Compare Olympus full-size reverse Lensfun and confirmed 2×2 CPU lens
+  tiling; compare saved 0.75/1.5 pixel-aspect histories at 96/512 bounds.
 - [ ] Assess lens and transform appearance deltas, including the isolated rotation
   boundary pixel; cover reverse lens, interpolation modes, tiling and pixel aspect.
 - [ ] Assess diffuse and denoise saved-edit appearance differences with broader
@@ -1490,8 +1492,9 @@ code in this matrix. Olympus metadata-selected frames are exact; Nikon forward,
 metadata-selected and reverse frames differ by at most one code with or without
 the clamp. These bounds apply only to the measured previews. They are not
 acceptance thresholds or evidence that the full-size grid discrepancy is small.
-Full-size reverse, tiled processing, pixel aspect, other lenses/images and device
-parity remain open, along with the explicit import/appearance decision above.
+Other lenses/images, full-size pixel-aspect combinations, tiled exports and
+device parity remain open, along with the explicit import/appearance decision
+above. Narrow CPU coverage follows.
 
 Reproduce a matrix row with the preceding lens command, adding `--lens-reverse
 --interpolation MODE` and using both `cpu` and `isolation/lens-clamp` as separate
@@ -1499,3 +1502,55 @@ Reproduce a matrix row with the preceding lens command, adding `--lens-reverse
 `--lens --size 4640`, and the candidates named above. No GUI was launched or
 production pin/default changed. Python compilation, runner help and diff checks
 pass; these audit/verification changes do not alter user-facing behavior.
+
+### Full-size reverse, CPU tiling and pixel aspect
+
+`pixel-lens-fullsize-reverse` uses `--lens-reverse --size 4640` on the same
+Olympus fixture, original candidate and `isolation/lens-step1` (no clamp).
+The saved reverse selector, initialized flag and camera/lens names pass the
+existing guard. Actual output is 4640×3472; defaults and old saved-history reload
+are exact, and the history visibly contributes. The original candidate changes
+4,862,506 RGB channels, maximum 13 codes, MAE 0.101825. Direct coordinates reduce
+this to 435 channels, maximum 3, MAE 0.000009125. Coordinate approximation is
+again dominant, but direct coordinates alone do not reproduce this reverse frame.
+
+`pixel-lens-fullsize-mini` adds `--lens --lens-reverse --size 4640
+--resource-level mini`, comparing the original candidate and
+`isolation/lens-step1-clamp`. Lens-specific logs show 2×2 CPU tiles, their four
+individual ROIs and successful completion without tiling fallback, for both
+directions on all three builds and old reloads. This is the engine's full CPU
+pipe, not a file export or device test. Defaults, metadata-selected histories
+and old reloads are exact. Against the tiled old reference:
+
+| Lensfun direction | Original candidate changed channels | Maximum | MAE | Direct coordinates plus clamp |
+| --- | ---: | ---: | ---: | --- |
+| Forward | 3,018,101 | 14 | 0.063116 | Exact |
+| Reverse | 2,564,093 | 13 | 0.053717 | Exact |
+
+`pixel-lens-unrestricted-reference` reloads these same saved sidecars using
+`render()` with `resource_level='unrestricted'` on old, original candidate and
+step-1/clamp builds. Logs show ordinary lens processing without tiles. Old and
+original-candidate hashes reproduce the earlier full-size forward/reverse
+references; step-1/clamp reproduces old exactly in both directions. Tiled output
+differs from untiled output even on the old pin, so tile-layout differences must
+be assessed separately from the update's adaptive-grid difference. Exactness
+against a tiled reference is not proof of tile-layout invariance.
+The saved `versus-prior-reference.json` records old tiled/untiled differences of
+2,861,836 channels/max 12 forward and 2,433,173/max 11 reverse. The original
+candidate differs by 18,377/max 1 and 17,360/max 2 respectively. These observations
+do not establish which layout is more accurate or an acceptable tolerance.
+
+`pixel-lens-aspect` adds `--lens-aspect` at 96/512 bounds on Olympus, original
+candidate and step-1 without clamp. Saved `scalepixels` v1 histories are enabled
+with exact ratios 0.75 and 1.5; output dimensions respectively become 96×95 /
+512×510 and 96×47 / 512×255. Old reloads and defaults are exact, with visible
+edited contributions. Original maximum differences are 32/73 and 25/68 codes;
+step-1 without clamp retains 32/73 and 26/68. The follow-up
+`pixel-lens-aspect-clamp` checks both ratios and reverse at 96/512 against
+step-1/clamp: every frame is exact. This supports the existing negative-value
+diagnosis in these constructed non-square-pixel histories; it does not approve
+an import policy or establish camera-metadata, full-size aspect or device parity.
+
+Reports, sidecars and per-process logs remain in the named ignored build
+directories. These diagnostics retain the coherent old-cpu baseline, production
+pin/defaults and concurrent worktree. No GUI was launched.
