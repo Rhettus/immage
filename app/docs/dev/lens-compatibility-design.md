@@ -127,3 +127,15 @@ in both directions (24 comparisons), with minimum-budget lens tiling and
 visible-correction guards. This extends the fixed-layout diagnostic evidence;
 it does not establish matching-camera imports, signed intermediate behavior
 or native device/fallback compatibility. See the [full-size evidence](darktable-update-review.md#full-size-exceptional-profile-assignments).
+
+
+The isolated signed boundary diagnostic now compares injected negative, zero,
+positive and HDR floating inputs immediately around the actual CPU Lensfun
+vignetting calls. All 12 assigned exceptional profiles, both directions, match
+old CPU exactly at preview/full size under the minimum budget: 48 final frames
+and 489,642 floating-row records. No nonfinite output or fourth-channel change
+was observed. These are deliberately injected values on the unrelated Olympus
+RAW; real-camera inputs and signed interpolation/aspect/device combinations
+remain open. See the [signed boundary evidence](darktable-update-review.md#signed-floating-vignetting-boundary-diagnostic)
+and reproduction commands in the verification guide. This does not approve a
+production contract or close the full signed-intermediate acceptance gate.

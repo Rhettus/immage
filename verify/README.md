@@ -450,3 +450,47 @@ actual-pixel Lensfun calls and disables the committed Lensfun OpenCL readiness
 flag. Unused factor grids and per-thread factor allocations are removed. Metadata
 and manual processing are unchanged. It adds no serialized mode or import default;
 it is an isolated CPU compatibility experiment, not a production pin update.
+
+### Signed Lensfun boundary diagnostic
+
+`pin-lens-signed.py` builds a separate instrumented plugin using either a
+configured old source or the generated direct-prototype source. It supports the
+local Makefiles old build and Ninja candidate build; no original files are
+written. For example:
+
+```sh
+python3 verify/pin-lens-signed.py \
+  --source build/darktable-pin-review/old-source \
+  --build build/darktable-pin-review/old-cpu \
+  --output build/darktable-pin-review/isolation/lens-signed-old
+python3 verify/pin-lens-signed.py \
+  --source build/darktable-pin-review/source \
+  --input-source build/darktable-pin-review/isolation/lens-direct-reference/lens-direct.cc \
+  --build build/darktable-pin-review/cpu \
+  --output build/darktable-pin-review/isolation/lens-signed-direct
+python3 verify/pin-lens-signed-check.py \
+  --old build/darktable-pin-review/isolation/lens-signed-old \
+  --direct build/darktable-pin-review/isolation/lens-signed-direct \
+  --fixtures build/darktable-pin-review/pixel-lens-direct-exceptional-full \
+  --photo /path/to/copied/Sample.ORF \
+  --output build/darktable-pin-review/pixel-lens-signed \
+  --size 512 --size 4640
+```
+
+The checker requires the 24 previously prepared assigned-profile XMP fixtures.
+Immediately before each actual forward/reverse Lensfun color call, the diagnostic
+replaces RGB with a repeating coordinate-based pattern of -1, -0.01, signed zero,
+zero, 0.01, 0.5, 1, 2 and 10, and sets the fourth channel to 0.25. It hashes each
+complete floating output row, including the fourth channel, before subsequent
+pixelpipe stages. `SIGNED_LENS` records retain direction, coordinates, dimensions,
+sign counts, nonfinite counts, fourth-channel changes and SHA256. The checker
+compares record multisets because OpenMP completion order varies, rejects empty
+traces/nonfinite outputs/fourth-channel changes, and requires exact final RGBA.
+Temporary photo/config copies and the minimum CPU budget follow `pin-pixels.py`.
+Reports, frame/log evidence and file identities remain in the new output directory.
+
+This deliberately changes intermediate pixels in diagnostic copies. It tests the
+actual module call sites with signed inputs; it does not establish the occurrence
+of these values in real photos, matching-camera imports, OpenCL behavior, or a
+production compatibility policy. Hold the underlying builds unchanged while using
+the symlinked deployments. Do not ship these instrumented plugins.

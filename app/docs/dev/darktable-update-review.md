@@ -375,6 +375,8 @@ The production pin remains unchanged until the adoption gates pass.
   profiles, both directions, with exact selection and visible-contribution guards.
 - [x] Compare all 12 exceptional assigned profiles at full size in both directions,
   with minimum-budget lens tiling and visible-contribution guards.
+- [x] Compare injected signed floating vignetting rows and final frames for all 12
+  exceptional assigned profiles, both directions, at preview/full size with minimum-budget tiling.
 - [ ] Validate the direct prototype with broader exceptional-profile images and
   native device/fallback references before choosing production migration behavior.
 - [x] Trace old CPU/OpenCL Lensfun stage ordering and factor arithmetic; record a
@@ -2007,8 +2009,9 @@ installed Lensfun library/XML data; old CPU itself can vary with tile layout.
 
 The adaptive candidate differs in every case. These opaque output comparisons
 do not isolate signed intermediates, establish an accuracy ranking or select
-an appearance/import policy. Matching-camera images, signed intermediates,
-native OpenCL, fallback and cancellation remain open.
+an appearance/import policy. Matching-camera images, broader signed-intermediate configurations,
+native OpenCL, fallback and cancellation remain open. The signed boundary
+diagnostic below covers injected inputs for these same assigned profiles.
 
 Ignored evidence: `build/darktable-pin-review/pixel-lens-direct-exceptional-full/`
 contains the 24-case report, assigned/disabled XMP, RGBA frames, logs, scripts
@@ -2016,3 +2019,49 @@ and selection probe. `tile-guards.json` records the 72 enabled-lens log checks;
 `manifest.json` records 524 reverified SHA256 identities, including
 engine/modules and Lensfun library/XML. All owned processes finished. No
 production plugin, pin, serialized parameter or default changed.
+
+
+### Signed floating vignetting boundary diagnostic
+
+`verify/pin-lens-signed.py` builds isolated old CPU and direct-prototype plugins
+with instrumentation at the two actual-pixel Lensfun color-call sites inside
+`_process_lf`. It retains each build's call arguments, modifier initialization,
+forward/reverse stage ordering and tile layout. Immediately before each call,
+RGB is replaced by a coordinate-based repeating pattern of -1, -0.01, signed
+zero, zero, 0.01, 0.5, 1, 2 and 10; the fourth channel is set to 0.25.
+Immediately after the call, the diagnostic hashes the complete floating row
+before later modules or 8-bit conversion. The pattern deliberately exercises
+signed inputs; these are not observed values from the source photo.
+
+`verify/pin-lens-signed-check.py` reuses the 24 exceptional-profile assignment
+XMP fixtures and copied Olympus RAW, both correction directions, with the
+minimum CPU budget at 512×383 and 4640×3472 bounds. All **48 comparisons pass**:
+old CPU and direct prototype have identical floating-row record multisets and
+identical final RGBA frames. The preview comparisons cover 8,894 row records;
+full-size comparisons cover 480,748, including overlapping/repeated tile rows
+(489,642 total, not unique image rows). Full-size cases record 7,002–21,282
+actual-pixel calls each. All outputs are finite; the fourth channel remains
+0.25. No negative output channels remain in these injected cases; that does not
+mean the inputs were nonnegative or that factor multiplication is equivalent.
+
+The checker compares coordinates, dimensions, direction, sign/nonfinite/channel
+counts and SHA256 hashes as a multiset because OpenMP log order varies. Missing
+traces, nonfinite outputs, fourth-channel changes, row mismatches or final-frame
+mismatches fail the run. Build source anchors require exactly two actual-pixel
+call sites. Configurations and photo copies are temporary. Reproduction commands
+are in the [verification guide](../../../verify/README.md#signed-lensfun-boundary-diagnostic).
+
+Ignored evidence: `build/darktable-pin-review/pixel-lens-signed/` contains the
+48-case report, 96 frame/log pairs, dependency identities and a manifest with
+228 reverified SHA256 identities. `dependencies.json` separately retains 61
+reverified identities from the preceding full-size assignment run, including
+old/candidate/direct engines and plugins and Lensfun library/XML. Instrumented
+source, compiler/link commands and hashes remain in
+`build/darktable-pin-review/isolation/lens-signed-{old,direct}/`.
+
+This closes a narrow signed-input CPU boundary gap. It does not establish
+naturally occurring negative intermediate values, matching-camera import,
+interpolation/aspect coverage with signed inputs, OpenCL/device fallback,
+cancellation, an accuracy ranking or appearance/import policy. The broader
+acceptance gate remains unchecked. No production source/plugin, pin, serialized
+parameter or default changed; no GUI was launched.
