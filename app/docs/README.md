@@ -16,7 +16,8 @@ On Windows, download and run the `-setup.exe` installer. Choose installation
 for your account or for everyone on the computer. Windows downloads are
 provided as `.exe` installers only.
 
-New to Immage? Start with [Getting started](getting-started.md).
+New to Immage? Start with [Getting started](getting-started.md). This guide
+is also on the [Immage website](https://rhettus.github.io/immage-site/guide/).
 
 <a href="images/workspace.png"><img src="images/workspace.png" width="960" alt="Immage editing a photo"></a>
 
