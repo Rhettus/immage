@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from 'node:assert/strict';
-import { until } from '../support/webdriver.mjs';
+import { until, pause } from '../support/webdriver.mjs';
+import { panel, expandSections, Blocked } from '../support/scenario.mjs';
 import { inspect, reveal, click, rangeSelector } from '../support/controls.mjs';
 import { settledPhoto } from './smoke.mjs';
 import * as read from '../support/observations.mjs';
@@ -84,6 +85,30 @@ export async function rail(t) {
     assert.equal(c.cursor, 'default'); assert(c.children.every(s => s === 'default'));
   }
   t.measure({ name: 'fe5dbc2-cursor-css', scope: cursor.some(c => c.windows) ? 'Windows CSS only' : 'Windows assertion not applicable on this platform', cursor });
+}
+
+// Regression 81d4441: each right panel tool keeps its own scroll offset and
+// opens at the top the first time, instead of inheriting the last tool's.
+export async function panelScroll(t) {
+  const panels = () => { const p = document.querySelector('.right .panels'), r = p?.getBoundingClientRect();
+    return r && { x: r.right - 6, y: r.top + r.height / 2, top: p.scrollTop, room: p.scrollHeight - p.clientHeight }; };
+  const open = async tool => { await click(t, `button[data-tour="${tool}"]`);
+    await until(async () => (await t.driver.observe(inspect, `button[data-tour="${tool}"]`))?.active, `${tool} active`);
+    await pause(400); return t.driver.observe(panels); };
+  await open('adjust');
+  await expandSections(t, await panel(t, 'basic'));
+  let s = await t.driver.observe(panels);
+  if (s.room < 300) throw new Blocked(`Adjustments panel too short to scroll (${s.room}px)`);
+  for (let i = 0; i < 10 && s.top < 250; i++) { await t.driver.wheel(s.x, s.y, 300); await pause(150); s = await t.driver.observe(panels); }
+  assert(s.top >= 250, `Adjustments scrolled (${s.top})`);
+  const adjusted = s.top;
+  const presets = await open('presets');
+  t.measure({ name: 'presets-first-open', adjustments: adjusted, presets });
+  assert.equal(presets.top, 0, 'Presets opens at its top');
+  const back = await open('adjust');
+  t.measure({ name: 'adjustments-reopened', expected: adjusted, observed: back.top });
+  assert(Math.abs(back.top - adjusted) <= 2, `Adjustments returns to ${adjusted} (got ${back.top})`);
+  await t.evidence('adjustments-reopened');
 }
 
 // Walk all mounted manifest panels and their currently reachable range controls.

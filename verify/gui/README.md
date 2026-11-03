@@ -31,9 +31,11 @@ copied without its sidecar and never opened directly by the test app.
 node verify/gui/run.mjs --config verify/gui/local.json --suite smoke
 node verify/gui/run.mjs --config verify/gui/local.json --case startup
 node verify/gui/run.mjs --config verify/gui/local.json --case exposure
+node verify/gui/run.mjs --config verify/gui/local.json --case masks,panel-scroll
 ```
 
-Exposure includes startup as its prerequisite. The runner launches a new driver
+Exposure includes startup as its prerequisite. A comma list runs several cases
+in one launch, after startup. The runner launches a new driver
 and app, dismisses the tour through
 its Skip button, and uses the app's supported file argument to open the copy.
 XDG data/config/cache/state variables isolate the release app's storage and its

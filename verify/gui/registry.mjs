@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { startup, exposure } from './specs/smoke.mjs';
-import { sliderInput, history, rail, sliders } from './specs/controls.mjs';
+import { sliderInput, history, rail, sliders, panelScroll } from './specs/controls.mjs';
 import { moduleOptions } from './specs/preferences.mjs';
 import { batchPaste } from './specs/batch-paste.mjs';
 import { guiBenchmark } from './specs/benchmark.mjs';
@@ -14,6 +14,7 @@ import { moduleOutput,panorama,immichWorkflow } from './specs/modules.mjs';
 import { siteShots } from './specs/site.mjs';
 
 const implementations = { 'batch-paste': batchPaste, startup, exposure, 'slider-input': sliderInput, history, rail, sliders, 'module-options': moduleOptions,
+  'panel-scroll': panelScroll,
   'gui-benchmark': guiBenchmark,
   'gui-benchmark-screen': t => guiBenchmark(t, true),
   'gui-benchmark-whole': t => guiBenchmark(t, false),

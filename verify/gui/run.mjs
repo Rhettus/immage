@@ -26,7 +26,7 @@ const git = (...args) => {
 };
 const args = process.argv.slice(2);
 if (args.includes('--help')) {
-  console.log('node verify/gui/run.mjs --config verify/gui/local.json [--suite smoke|regressions|controls|crop|workflows|inventory|all | --case NAME] [--fixture NAME] [--viewport WIDTHxHEIGHT] [--list]');
+  console.log('node verify/gui/run.mjs --config verify/gui/local.json [--suite smoke|regressions|controls|crop|workflows|inventory|all | --case NAME[,NAME...]] [--fixture NAME] [--viewport WIDTHxHEIGHT] [--list]');
   process.exit(0);
 }
 if (args.includes('--list')) {

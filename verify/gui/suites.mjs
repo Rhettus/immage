@@ -20,6 +20,7 @@ export const cases = {
     limitation: 'Does not yet cover b1d7c4c native-module Reset All regression.' },
   rail: { scope: 'Presets/Masks/Zones/Heal/Adjustments activation, geometry and Windows cursor CSS', liveValidated: false,
     commits: ['fe5dbc2'], limitation: 'Native cursor stacking remains a manual Windows check.' },
+  'panel-scroll': { scope: 'each right panel tool keeps its own scroll offset; a first open starts at the top', commits: ['81d4441'], liveValidated: false },
   sliders: { scope: 'currently mounted sliders in available manifest panels; drag and reset', liveValidated: false,
     limitation: 'Hidden tabs/sections/module choices and RAW-only controls require further scenarios. Pixel changes are recorded for review, not universal image-effect assertions.' },
   'module-options': { scope: 'each Global/Masks preference option and independent Contrast choices', liveValidated: false,
@@ -60,10 +61,16 @@ export const suites = {
   crop: ['startup','crop-guides','crop-locked','crop-options'],
   workflows: ['startup','curves','wheels','equalizer','masks','heal','zones','preferences-matrix','slider-wheel','export-options','filters','presets','shortcuts'],
   inventory: ['startup',...generatedNames],
-  regressions: ['startup', 'rail', 'module-options', 'batch-paste'],
+  regressions: ['startup', 'rail', 'panel-scroll', 'module-options', 'batch-paste'],
   controls: ['startup', 'slider-input', 'history', 'rail', 'sliders', 'module-options'],
 };
 export function resolveCases(name) {
+  // a comma list runs several cases in one launch: startup,masks,heal
+  if (name.includes(',')) {
+    const names = name.split(',').map(s => s.trim()).filter(Boolean);
+    for (const n of names) if (!Object.hasOwn(cases, n)) throw Error(`Unknown case: ${n}`);
+    return [...new Set(['startup', ...names])];
+  }
   if (name === 'all') return ['startup',...Object.keys(cases).filter(c=>c!=='startup')];
   if (Object.hasOwn(suites, name)) return suites[name];
   if (!Object.hasOwn(cases, name)) throw Error(`Unknown case/suite: ${name}`);
