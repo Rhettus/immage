@@ -55,7 +55,9 @@ export async function reveal(t, selector, text) {
     // help: its center taking the hit while vertically inside is enough
     if (c.hit && !c.scrollX && c.bounds.y >= c.clip.top && c.bounds.y + c.bounds.height <= c.clip.bottom
         && c.x >= c.clip.left && c.x <= c.clip.right) return c;
-    if (stuck >= 4 && !tabbed && text == null && await t.driver.observe(s => document.querySelector(s)?.tabIndex >= 0, selector)) {
+    if (stuck >= 4 && !tabbed && text == null && await t.driver.observe(s => document.querySelector(s)?.tabIndex >= 0
+        // in the main window Tab hides the panels; only a dialog keeps it
+        && !!document.querySelector('.modal-backdrop'), selector)) {
       tabbed = true;
       try { await tabTo(t, selector, 400); } catch {}
       throw Error(`Tabbed to ${selector}`);
