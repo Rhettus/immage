@@ -36,6 +36,10 @@ export function ContrastEqualizer({ values, disabled, onChange }: {
         if (disabled || e.button !== 0) return;
         e.preventDefault();
         const k = Math.max(0, Math.min(5, Math.round(plot(e).x / 52)));
+        // preventDefault keeps the press from taking focus: give it to the
+        // point grabbed, so the arrow keys adjust it next (they went to the
+        // channel menu and changed the channel)
+        (e.currentTarget.querySelectorAll("circle")[k] as SVGCircleElement | undefined)?.focus({ preventScroll: true });
         drag.current = k; e.currentTarget.setPointerCapture(e.pointerId); update(e, k);
       }}
       onPointerMove={(e) => { if (!disabled && drag.current !== null) update(e, drag.current); }}

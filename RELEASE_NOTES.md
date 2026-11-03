@@ -54,6 +54,8 @@ Bug fixes
 - The contrast equalizer draws its end points whole: the first and last
   points, and any point pulled to the top or bottom, were cut in half at the
   graph's edge.
+- Clicking a contrast equalizer point focuses it, so the arrow keys adjust
+  that point instead of switching the channel menu.
 - Mac CPU captures wait for the profiler to save after Ctrl-C, then export
   the recorded trace instead of exiting with a Python interruption.
 - Transform's automatic corrections work on cropped portrait and rotated

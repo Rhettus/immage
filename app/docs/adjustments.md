@@ -104,7 +104,7 @@ noise**. Each channel has six points, from **Coarse** on the left to **Fine**
 on the right, each drawn whole even at the graph's edge. Click near a point
 and drag vertically to change that band.
 Pull up to boost, down to reduce; the noise channels set noise thresholds.
-Focus a point and use Up/Down to adjust it, or Home to restore its neutral
+Click or Tab to a point and use Up/Down to adjust it, or Home to restore its neutral
 value. **Reset** restores all five channels. To use the graph inside masks,
 choose **Masks › Contrast › contrast equalizer** in the same preferences tab.
 Global and mask choices are independent, so global Contrast can use AgX while
