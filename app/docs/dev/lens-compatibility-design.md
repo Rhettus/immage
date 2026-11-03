@@ -119,6 +119,11 @@ The same preview-size assignment diagnostic now covers the remaining ten
 exceptional installed profiles: all 20 additional forward/reverse frames match
 old CPU exactly with the direct prototype. Exact camera/lens selection and a
 visible correction are required in every case. This closes preview assignment
-coverage for all 12 exceptional profiles; matching-camera imports, full-size
-assigned-profile coverage, signed intermediates and native fallback remain open.
+coverage for all 12 exceptional profiles; matching-camera imports, signed intermediates and native fallback remain open.
 See the [broader assignment evidence](darktable-update-review.md#broader-exceptional-profile-assignments).
+
+All 12 assigned exceptional profiles also match old CPU exactly at 4640×3472
+in both directions (24 comparisons), with minimum-budget lens tiling and
+visible-correction guards. This extends the fixed-layout diagnostic evidence;
+it does not establish matching-camera imports, signed intermediate behavior
+or native device/fallback compatibility. See the [full-size evidence](darktable-update-review.md#full-size-exceptional-profile-assignments).

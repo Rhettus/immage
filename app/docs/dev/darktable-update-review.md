@@ -373,6 +373,8 @@ The production pin remains unchanged until the adoption gates pass.
   an unrelated RAW; confirm library selection and visible correction in both directions.
 - [x] Extend preview-size assigned-profile comparisons to all 12 exceptional installed
   profiles, both directions, with exact selection and visible-contribution guards.
+- [x] Compare all 12 exceptional assigned profiles at full size in both directions,
+  with minimum-budget lens tiling and visible-contribution guards.
 - [ ] Validate the direct prototype with broader exceptional-profile images and
   native device/fallback references before choosing production migration behavior.
 - [x] Trace old CPU/OpenCL Lensfun stage ordering and factor arithmetic; record a
@@ -1969,6 +1971,48 @@ Ignored evidence: `build/darktable-pin-review/pixel-lens-direct-exceptional-broa
 contains the 20-case report, assigned/disabled XMP, frames and logs for all four
 runs per case, diagnostic scripts and selection probe. `manifest.json` records
 484 reverified SHA256 identities, including engine/modules, Lensfun library and
-XML data. All owned processes finished successfully. Full-size assigned-profile
-coverage, signed intermediates, matching-camera imports and native OpenCL remain
-open. No production plugin, pin, parameter layout or default changed.
+XML data. All owned processes finished successfully. Full-size assigned-profile coverage is recorded below; signed intermediates,
+matching-camera imports and native OpenCL remain open. No production plugin, pin, parameter layout or default changed.
+
+### Full-size exceptional-profile assignments
+
+All 12 exceptional installed profiles now pass the same explicit-assignment
+diagnostic at **4640×3472**, forward and reverse. All **24 direct-prototype
+comparisons match coherent old CPU exactly in RGB**. Each old CPU frame visibly
+changes when the lens module is disabled. The copied Olympus RAW, calibration
+choices, camera/lens names and original XMP namespace handling are retained from
+the preview matrix. A separate library lookup confirms exact camera/lens selection
+and active vignetting. This is assigned-profile compatibility evidence, not
+matching-camera photography or automatic import validation.
+
+All runs use the diagnostic minimum CPU resource budget. The 72 enabled-lens
+logs (old CPU, direct prototype and adaptive candidate) confirm lens tiling with
+no lens failure or fallback. Exactness applies to these fixed layouts and
+installed Lensfun library/XML data; old CPU itself can vary with tile layout.
+
+| Assigned lens | Adaptive changed RGB channels, forward / reverse | Adaptive maximum difference, forward / reverse |
+| --- | ---: | ---: |
+| Canon EF 35-105mm f/3.5-4.5 | 1,728,458 / 754,929 | 254 / 4 |
+| Canon EF 8-15mm f/4L Fisheye USM | 815,160 / 51,544 | 1 / 3 |
+| Canon G7 X & compatibles | 1,357,578 / 1,013,407 | 254 / 6 |
+| Canon PowerShot G1X Mark II & compatibles | 1,237,356 / 828,919 | 255 / 5 |
+| Canon PowerShot SX220 HS & compatibles, with CHDK's DNG | 1,141,147 / 963,047 | 249 / 5 |
+| Canon PowerShot SX260 HS & compatibles, with CHDK's DNG | 1,127,249 / 974,351 | 3 / 5 |
+| Canon PowerShot SX30 IS & compatibles, with CHDK's DNG | 1,147,289 / 908,206 | 3 / 5 |
+| G5 X Mark II & compatibles | 1,473,915 / 930,814 | 254 / 5 |
+| Sigma 8mm f/3.5 EX DG Circular | 819,429 / 56,278 | 1 / 4 |
+| DSC-RX100 VI & compatibles | 1,365,615 / 1,006,257 | 254 / 5 |
+| E 16-55mm f/2.8 G | 1,398,947 / 977,295 | 4 / 5 |
+| E 18-135mm f/3.5-5.6 OSS | 1,565,335 / 860,366 | 6 / 5 |
+
+The adaptive candidate differs in every case. These opaque output comparisons
+do not isolate signed intermediates, establish an accuracy ranking or select
+an appearance/import policy. Matching-camera images, signed intermediates,
+native OpenCL, fallback and cancellation remain open.
+
+Ignored evidence: `build/darktable-pin-review/pixel-lens-direct-exceptional-full/`
+contains the 24-case report, assigned/disabled XMP, RGBA frames, logs, scripts
+and selection probe. `tile-guards.json` records the 72 enabled-lens log checks;
+`manifest.json` records 524 reverified SHA256 identities, including
+engine/modules and Lensfun library/XML. All owned processes finished. No
+production plugin, pin, serialized parameter or default changed.
