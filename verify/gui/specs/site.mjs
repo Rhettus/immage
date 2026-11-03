@@ -9,9 +9,10 @@
 // measured with every shot so a before/after pair can be cropped to the
 // photo alone.
 import { click, reveal, inspect, rangeSelector } from '../support/controls.mjs';
-import { panel, textButton } from '../support/scenario.mjs';
+import { panel, textButton, openMaskGroup } from '../support/scenario.mjs';
 import { until, pause } from '../support/webdriver.mjs';
 import { settledPhoto } from './smoke.mjs';
+import { hideInfo as hideInfoKeys, pathFree } from '../support/privacy.mjs';
 
 const canvasBounds = () => {
   const c = document.querySelector('canvas.layer.sharp');
@@ -19,34 +20,18 @@ const canvasBounds = () => {
   return r && { x: r.x, y: r.y, width: r.width, height: r.height, scale: devicePixelRatio };
 };
 
-// Website shots must not show file paths: any visible text with a home or
-// temporary directory in it skips the shot rather than saving it.
-const visiblePath = () => {
-  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-    if (!/(^|\s)(\/home\/|\/tmp\/|\/Users\/|[A-Z]:\\)/.test(n.textContent)) continue;
-    const r = n.parentElement?.getBoundingClientRect();
-    const st = n.parentElement && getComputedStyle(n.parentElement);
-    if (r && r.width && r.height && st.visibility !== 'hidden' && st.display !== 'none' && +st.opacity > 0) return n.textContent.trim().slice(0, 80);
-  }
-  return null;
-};
-
-// The info over the photo shows its folder: I cycles it to none.
+// The runner withholds any screenshot that shows a path; here a hidden
+// photo info is required, so a shot fails loudly instead.
 async function hideInfo(t) {
-  for (let i = 0; i < 3 && await t.driver.observe(() => !!document.querySelector('.info-overlay')); i++) {
-    await t.driver.keys('i');
-    await pause(300);
-  }
-  if (await t.driver.observe(() => !!document.querySelector('.info-overlay'))) throw Error('photo info overlay still shown');
+  if (!await hideInfoKeys(t.driver)) throw Error('photo info overlay still shown');
 }
 
 async function shot(t, label) {
   await settledPhoto(t);
   await hideInfo(t);
   await pause(400); // let panel transitions finish
-  const path = await t.driver.observe(visiblePath);
-  if (path) throw Error(`a file path is visible (${path}); shot not taken`);
+  const path = await pathFree(t.driver);
+  if (path) throw Error(`${path}; shot not taken`);
   await t.evidence(label);
   t.measure({ name: label, canvas: await t.driver.observe(canvasBounds) });
 }
@@ -128,9 +113,7 @@ export async function siteShots(t) {
     await t.driver.drag({ x: photo.x, y: photo.bounds.y + photo.bounds.height * .08 },
       { x: photo.x, y: photo.bounds.y + photo.bounds.height * .42 });
     await until(() => t.driver.observe(() => document.querySelectorAll('.mask-list > li').length > 0), 'created mask');
-    const heading = await t.driver.observe(() => [...document.querySelectorAll('.masks-panel h3.fold')]
-      .find(e => e.textContent.trim() === 'Tone')?.getBoundingClientRect().toJSON());
-    if (heading) await t.driver.point(heading.x + heading.width / 2, heading.y + heading.height / 2);
+    await openMaskGroup(t, 'Tone');
     try { await slide(t, 'l_exposure', -0.7); } catch {}
     await panelsTop(t);
     await shot(t, 'masks');

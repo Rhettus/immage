@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from 'node:assert/strict';
 import { click, reveal, inspect } from '../support/controls.mjs';
-import { panel, expandSections, textButton, choose, Blocked } from '../support/scenario.mjs';
+import { panel, expandSections, textButton, choose, Blocked, openMaskGroup } from '../support/scenario.mjs';
 import { until } from '../support/webdriver.mjs';
 import { settledPhoto } from './smoke.mjs';
 
@@ -95,9 +95,9 @@ export async function masks(t) {
     const photo=await reveal(t,'svg.mask-svg');
     if(name!=='Parametric') await t.driver.drag({x:photo.x-photo.bounds.width*.15,y:photo.y},{x:photo.x+photo.bounds.width*.15,y:photo.y+photo.bounds.height*.12});
     await until(()=>t.driver.observe(()=>document.querySelectorAll('.mask-list > li').length>0),'created mask');
-    // Open Tone group through its actual heading.
-    const heading=await t.driver.observe(()=>[...document.querySelectorAll('.masks-panel h3.fold')].find(e=>e.textContent.trim()==='Tone')?.getBoundingClientRect().toJSON());
-    if(heading) await t.driver.point(heading.x+heading.width/2,heading.y+heading.height/2);
+    // Open the Tone group through its heading, only if it is closed: the
+    // heading toggles, and a later mask can find it already open.
+    await openMaskGroup(t,'Tone');
     const s=await reveal(t,'[data-control-id="l_exposure"] input[type=range]');
     await t.driver.drag({x:s.x,y:s.y},{x:s.x+s.bounds.width*.12,y:s.y});
     const changed=await settledPhoto(t,p=>p.hash!==baseline.hash);

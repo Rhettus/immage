@@ -13,8 +13,9 @@ Improvements
   shown, with Check all and Uncheck all buttons above the grid.
 - Import opens a card's folders expanded down to its camera folders, so
   FastRawViewer's `_Selected` and `_Rejected` folders are one click away.
-- GUI tests: a case takes the website and guide screenshots, and the
-  mask, range and workflow cases find mask menu items again.
+- GUI tests: a case takes the website and guide screenshots, the mask,
+  range and workflow cases find mask menu items again, and no test
+  screenshot shows a file path.
 - Add a scripted Mac CPU capture workflow to profile the engine and webview
   alongside GUI benchmarks and investigate busy-core bottlenecks.
 

@@ -51,3 +51,12 @@ export async function expandSections(t, selector) {
   }
   throw Error('Section expansion exceeded limit');
 }
+
+// Open a mask adjustment group (Tone, Presence, ...) if it is closed. Its
+// heading toggles, so clicking an already open group would close it.
+export async function openMaskGroup(t, title) {
+  const heading = `[data-mask-group=${JSON.stringify(title)}]`;
+  await requireElement(t, heading, `${title} mask group`);
+  if (await t.driver.observe(s => !!document.querySelector(`${s} .chevron:not(.open)`), heading)) await click(t, heading);
+  await until(() => t.driver.observe(s => !!document.querySelector(`${s} .chevron.open`), heading), `${title} group open`);
+}

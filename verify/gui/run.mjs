@@ -11,6 +11,7 @@ import { dirname, resolve, join, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AppDriver, until } from './support/webdriver.mjs';
 import { resolveCases, suites, cases } from './suites.mjs';
+import { pathFree } from './support/privacy.mjs';
 import { availableMemory } from './support/memory.mjs';
 import { Journal } from './support/journal.mjs';
 import { sampleProcesses } from './support/process-memory.mjs';
@@ -211,7 +212,7 @@ try {
           viewer: !!document.querySelector('main.viewer'), text: document.body?.innerText.slice(0, 2000) }));
         if (handle === driver.mainHandle && observation.url === driver.mainUrl) {
           report.viewportFailureObservation = observation;
-          await driver.screenshot(join(out, 'viewport-preparation-failure.png'));
+          if (!await pathFree(driver)) await driver.screenshot(join(out, 'viewport-preparation-failure.png'));
         }
       } catch (capture) { report.viewportCaptureError = capture.message; }
       journal.checkpoint(report);
@@ -245,6 +246,8 @@ try {
         return { file: join(caseDir, 'benchmark.json'), report: JSON.parse(bytes) };
       },
       measure: m => { c.measurements.push(m); journal.event('measurement', { case: name, ...m }); journal.checkpoint(report); }, evidence: async label => {
+      const withheld = await pathFree(driver);
+      if (withheld) { c.measurements.push({ name: label, screenshot: `withheld: ${withheld}` }); journal.event('screenshot-withheld', { case: name, label }); return; }
       await driver.screenshot(join(caseDir, `${label}.png`));
       const environment=await driver.observe(()=>({userAgent:navigator.userAgent,viewport:[innerWidth,innerHeight],scale:devicePixelRatio,theme:document.documentElement.className,canvasTheme:document.querySelector('main.viewer')?.className,font:getComputedStyle(document.body).fontFamily,fonts:document.fonts.status}));
       await writeFile(join(caseDir,`${label}.png.json`),JSON.stringify({run:id,case:name,environment:{platform:process.platform,arch:process.arch,webview:report.drivers.installedWebKit,...environment}},null,2)+'\n');
