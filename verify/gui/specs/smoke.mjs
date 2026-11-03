@@ -1,33 +1,26 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 import assert from 'node:assert/strict';
-import { until, pause } from '../support/webdriver.mjs';
+import { until } from '../support/webdriver.mjs';
 import * as read from '../support/observations.mjs';
 import { Blocked } from '../support/scenario.mjs';
 
-// The session starts on the first window, the splash. A tiling window manager
-// that tiles it instead of floating it stretches it over the workspace, so its
-// largest observed size must stay the designed 640x427.
+// A tiling window manager that tiles the splash instead of floating it
+// stretches it over the workspace. The session starts after the splash has
+// closed, so the splash keeps the largest size it was given in localStorage.
 export const SPLASH = { width: 640, height: 427 };
-async function splashSize(t) {
-  let largest = null;
-  for (let i = 0; i < 10; i++) {
-    let now; try { now = await t.driver.observe(() => ({ splash: location.pathname.endsWith('splash.html'), width: innerWidth, height: innerHeight })); }
-    catch { break; }
-    if (!now.splash) break;
-    largest = { width: Math.max(largest?.width ?? 0, now.width), height: Math.max(largest?.height ?? 0, now.height) };
-    await pause(100);
-  }
-  return largest;
-}
+const splashSize = t => t.driver.observe(() => {
+  const m = /^(\d+)x(\d+)$/.exec(localStorage.getItem('immage.splashSize') ?? '');
+  return m && { width: +m[1], height: +m[2] };
+});
 
 let launchSplash;
 export async function startup(t) {
-  // Measured here, at launch; the splash case judges it, so a tiled splash
+  await until(async () => { try { return await t.driver.guard(); } catch { return false; } }, 'Immage main window', 60000);
+  // Read here, at launch; the splash case judges it, so a tiled splash
   // does not stop the cases that follow startup.
   launchSplash = await splashSize(t);
-  t.measure({ name: 'splash', observed: launchSplash ?? 'gone before the first observation', expected: SPLASH });
-  await until(async () => { try { return await t.driver.guard(); } catch { return false; } }, 'Immage main window', 60000);
+  t.measure({ name: 'splash', observed: launchSplash ?? 'not recorded', expected: SPLASH });
   await until(() => t.driver.observe(() => document.fonts.status === 'loaded'), 'fonts');
   // Wait for the first-run tour's actual hit target and animated layout before
   // sending input. The pointer still goes through the real control.
@@ -101,7 +94,7 @@ export async function exposure(t) {
 }
 
 export async function splash(t) {
-  if (!launchSplash) throw new Blocked('the splash closed before the session could observe it');
+  if (!launchSplash) throw new Blocked('the splash did not record its size (immage.splashSize)');
   t.measure({ name: 'splash', observed: launchSplash, expected: SPLASH });
   assert(launchSplash.width <= SPLASH.width + 2 && launchSplash.height <= SPLASH.height + 2,
     `splash keeps its size instead of being tiled (${launchSplash.width}x${launchSplash.height})`);

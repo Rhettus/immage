@@ -66,9 +66,11 @@ cover crop, graphs, masks, dialogs and regression targets. Missing fixture or
 UI prerequisites raise `Blocked`; they are not successes. See the coverage ledger
 for incomplete original triggers and service/slow-folder/panorama fixture gaps.
 
-`startup` first measures the splash, the window the session starts on, and
-the `splash` case (in `smoke`) fails if it grew past 640x427, as it does when a
-tiling window manager tiles it. The splash fixes its size with equal minimum
+The splash keeps the largest size it was given in localStorage
+(`immage.splashSize`), since the session starts after it has closed. `startup`
+reads it, and the `splash` case (in `smoke`) fails if it grew past 640x427, as
+it does when a tiling window manager tiles it. A blocked or failed case stops
+the run, so list `splash` last when it runs with other cases. The splash fixes its size with equal minimum
 and maximum sizes so those window managers float it. Any external window sizing
 for a run must wait until `startup` has finished, or it hides this.
 
