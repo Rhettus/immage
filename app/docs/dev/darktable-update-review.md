@@ -337,6 +337,9 @@ The production pin remains unchanged until the adoption gates pass.
 - [x] Compare old-saved rotation/perspective, lowered-threshold Bayer highlights
   and Lensfun/metadata-selected lens histories at 96/512 bounds; repeat metrics
   and frame hashes, recording nonzero differences separately.
+- [x] Isolate measured transform differences to ashift FMA and lens differences
+  to the changed lens module, then separate coordinate-grid and vignetting
+  contributions using independent diagnostic plugins (details below).
 - [ ] Assess lens and transform appearance deltas, including the isolated rotation
   boundary pixel; cover reverse lens, interpolation modes, tiling and pixel aspect.
 - [ ] Assess diffuse and denoise saved-edit appearance differences with broader
@@ -1280,7 +1283,8 @@ The three changes above one code are a single output pixel at zero-based
 (481, 102) in a 512 × 408 frame: old RGB (1,1,1), candidate (87,119,52).
 Its neighborhood lies on the rotated image/empty-area boundary. This reproduces
 exactly; it is consistent with the changed ashift FMA coordinate accumulation,
-but no isolated-change build proves attribution or accepts the boundary shift.
+and the isolated-change experiment below proves attribution for these fixtures.
+This does not accept the boundary shift.
 Other transform maximums are one code (or exact); automatic fitting, transformed
 masks, tiling, non-square pixels and device parity remain open.
 
@@ -1290,8 +1294,8 @@ both candidates agree. A full repeat reproduces all 36 comparison metrics/frame
 hashes with unchanged build identities. Nikon changes 160/3,181 RGB channels at 96/512 for either
 selection, maximum one code. Olympus metadata selection is exact; explicit
 Lensfun changes 328/1,994 channels, maximum 24/72 codes, mean absolute difference
-0.031250/0.005679. Above-one deltas occupy 93/150 channels; their cause and
-appearance acceptability are not isolated. The source range changes the Lensfun
+0.031250/0.005679. Above-one deltas occupy 93/150 channels; their module-level cause is
+isolated below; appearance acceptability remains open. The source range changes the Lensfun
 coordinate grid, while the metadata Lanczos fix is device-specific. Metadata
 selection can fall back to Lensfun, so the saved method value does not establish
 executed-path coverage. No reverse-mode, interpolation matrix or full-resolution
@@ -1305,3 +1309,60 @@ requested only method 0 and must not be treated as explicit Lensfun coverage.
 These constructed CPU histories do not close broader native/device/corpus gates.
 No binary, coherent baseline, production pin or defaults changed; diffuse and
 non-dithered vignette appearance decisions remain unresolved.
+
+### Isolating lens and transform differences
+
+Independent diagnostic trees under ignored `build/darktable-pin-review/isolation/`
+use the candidate CPU core, generated introspection and compiler/link flags.
+Each replaces only one plugin with its old-pin source: `ashift/` replaces
+`libashift.so`; `lens/` replaces `liblens.so`. No reference source, object or
+binary is overwritten. `pixel-isolation/report.json` verifies that each diagnostic
+tree differs from the candidate in exactly that plugin among all hashed engine
+and module files. The build script, source copies, logs and source-hash manifest
+are retained beside the diagnostic trees. These are attribution experiments,
+not candidate builds proposed for adoption.
+
+Using the same `--transforms --lens` histories, PNG/NEF/ORF and 96/512 bounds,
+restoring ashift makes every transform byte exact against old-cpu, including
+ORF pixel (481,102). Restoring lens makes both methods exact on both RAWs/sizes.
+The untouched plugin retains the original differences in each diagnostic tree.
+Defaults and fresh old-history reloads are exact; all edits visibly contribute.
+This isolates the transform deltas to the sole ashift CPU FMA change, and lens
+deltas to the changed lens module. It does not establish acceptable image error
+or device parity. Upstream explicitly introduced FMA to match OpenCL accumulation;
+reverting it in production would require assessing that parity tradeoff.
+
+A second diagnostic changes only `_lens_grid_build` to start at step 1,
+retaining the candidate vignetting-factor multiplication. Nikon becomes exact;
+Olympus Lensfun still changes 215/325 channels at 96/512, maximum 24/72.
+A third diagnostic also restores direct `ApplyColorModification` on the actual
+image rows instead of multiplying factors evaluated on synthetic 0.5 pixels.
+Both RAWs and both lens selections then become exact. Thus the larger Olympus
+deltas survive removal of coarse interpolation and disappear when the vignetting
+evaluation is restored. This isolates a vignetting-path contribution; it does not
+yet identify the internal Lensfun arithmetic or establish a general correction.
+Evidence: `pixel-lens-step1/`, `pixel-lens-direct-vig/` and their logs; source
+variants/build scripts and hashes are in `isolation/`. All fresh old reloads and
+defaults are exact, every lens edit contributes.
+
+A fourth diagnostic retains adaptive coordinates but restores direct vignetting.
+Nikon retains its original 160/3,181 changed channels, maximum one code; Olympus
+Lensfun drops to 125/1,570 changed channels, maximum one code. Olympus metadata
+remains exact. `pixel-lens-grid-direct-vig/` therefore separates coordinate-grid
+rounding from the larger vignetting-path error for these fixtures. No claim of
+full-resolution, reverse-mode, other lens profiles or device correctness follows.
+
+The original old-cpu and candidate CPU engine/module hashes match the earlier
+`pixel-lens-methods` report exactly. Diagnostic trees reference unchanged candidate
+files except their independently linked plugin. To reproduce the comparison, use
+the preceding `pin-pixels.py --old .../old-cpu --candidate .../cpu` command with
+`--transforms --lens` and both RAWs, adding candidates `.../isolation/ashift` and
+`.../isolation/lens`. For each factor experiment use `--lens` with the same RAWs
+and candidate `.../isolation/lens-step1`, `.../isolation/lens-step1-direct-vig`
+or `.../isolation/lens-direct-vig`, respectively. Retained scripts reconstruct
+these diagnostic plugins using the original compile database and Ninja link rule.
+
+Recommended sequence: investigate this vignetting-path contribution, then measure full-size
+and interpolation/reverse-mode references before deciding whether to retain the
+optimization or add a compatibility path. Keep the production pin unchanged while
+these acceptance gates and diffuse/vignette policies remain open.
