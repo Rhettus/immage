@@ -17,7 +17,7 @@ export function inspect(selector) {
       clip.left = Math.max(clip.left, pr.left); clip.right = Math.min(clip.right, pr.right);
     }
     if (!scroll && /(auto|scroll)/.test(ps.overflowY) && p.scrollHeight > p.clientHeight)
-      scroll = { x: pr.right - 6, y: Math.max(1, Math.min(innerHeight - 1, pr.top + pr.height / 2)), top: p.scrollTop };
+      scroll = { x: pr.right - 6, left: pr.left + 12, y: Math.max(1, Math.min(innerHeight - 1, pr.top + pr.height / 2)), top: p.scrollTop };
     if (!scrollX && /(auto|scroll)/.test(ps.overflowX) && p.scrollWidth > p.clientWidth)
       scrollX = { x: Math.max(1, Math.min(innerWidth - 1, pr.left + pr.width / 2)), y: pr.bottom - 6, left: p.scrollLeft };
   }
@@ -35,13 +35,20 @@ export function inspect(selector) {
   };
 }
 export async function reveal(t, selector) {
+  // WebKitGTK can ignore a wheel over a visible scrollbar: when the list
+  // did not move after the last wheel, aim at its left edge instead.
+  let lastTop, stuck = 0;
   return until(async () => {
     const c = await t.driver.observe(inspect, selector);
     if (!c) throw Error(`Control is not mounted: ${selector}`);
     if (c.visible && c.hit) return c;
     if (c.scroll) {
       const delta = c.bounds.y < c.clip.top ? -180 : c.bounds.y + c.bounds.height > c.clip.bottom ? 180 : 0;
-      if (delta) await t.driver.wheel(c.scroll.x, c.scroll.y, delta);
+      if (delta) {
+        if (lastTop === c.scroll.top) stuck++;
+        lastTop = c.scroll.top;
+        await t.driver.wheel(stuck % 2 ? c.scroll.left : c.scroll.x, c.scroll.y, delta);
+      }
     }
     if (c.scrollX) {
       const delta = c.bounds.x < c.clip.left ? -180 : c.bounds.x + c.bounds.width > c.clip.right ? 180 : 0;
