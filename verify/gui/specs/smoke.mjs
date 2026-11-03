@@ -46,7 +46,11 @@ export async function startup(t) {
 }
 
 export async function settledPhoto(t, predicate = () => true) {
+  // the viewer's working indicator means a render is still on its way (a
+  // native module's second pass can land after three equal frames); after
+  // 20 s of other jobs (thumbnails) it no longer holds the frame back
   let last, same = 0, since = Date.now();
+  const start = Date.now();
   return until(async () => {
     const now = await t.driver.observe(read.photo);
     if (!now || now.alpha < 250 || !predicate(now)) { same = 0; return false; }
@@ -54,7 +58,8 @@ export async function settledPhoto(t, predicate = () => true) {
     last = now;
     // Matching pixels after release plus the production canvas quality marker:
     // a stable drag draft cannot satisfy final-frame readiness.
-    return same >= 3 && Date.now() - since >= 600 && now.quality === 'final' ? now : false;
+    return same >= 3 && Date.now() - since >= 600 && now.quality === 'final'
+      && (!now.working || Date.now() - start > 20000) ? now : false;
   }, 'a settled final photo frame', 60000);
 }
 const summary = ({ rgba, ...rest }) => rest;
