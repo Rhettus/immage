@@ -22,12 +22,10 @@ const blob = (cx, cy, r, n) => ({ points: Array.from({ length: n }, (_, i) => {
 // a walk over freed members can spin rather than crash: a request that
 // takes this long has hung the engine, which is killed so the check fails
 const DEADLINE = 30000;
-let hung = false;
 const request = (req) => {
   let timer;
   const late = new Promise((_, reject) => {
     timer = setTimeout(() => {
-      hung = true;
       process.kill(enginePid(), "SIGKILL");
       reject(new Error(`the engine hung on ${req.cmd}`));
     }, DEADLINE);
@@ -68,8 +66,7 @@ test("a combined mask's members and a mask's ranges can be replaced and released
     const masks = (await request({ cmd: "masks", fields: {} })).masks;
     assert.deepEqual(masks.map((m) => m.name), ["Object"]);
   } finally {
-    // a killed engine takes no quit, which would wait behind its last request
-    if (!hung) await stopEngine();
+    await stopEngine();
     rmSync(dir, { recursive: true, force: true });
   }
 });

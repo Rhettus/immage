@@ -73,6 +73,9 @@ export const enginePid = () => engine?.pid ?? null;
 let chain = Promise.resolve();
 export function request(req) {
   const run = () => new Promise((resolve, reject) => {
+    // an engine that has exited has already failed what it was waiting on,
+    // so a request queued behind those would never be answered
+    if (engine.exitCode !== null || engine.signalCode !== null) return reject(new Error("the engine exited"));
     waiting.push((line) => {
       if (line === null) return reject(new Error("the engine exited"));
       const r = JSON.parse(line);
