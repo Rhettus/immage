@@ -21,6 +21,7 @@ This imports pure manifest/math code using Node >= 22.18, without launching an a
 | batch-paste | Two selected JPEGs, Kodak look/amount, one batch undo/redo, both sidecars, reopening and unselected image | Written; awaiting approved GUI run |
 | history | Slider edit, toolbar undo/redo, value/photo agreement, basic Reset All | Awaiting approved GUI run |
 | rail | Presets, masks, zones, heal, adjustments, active state, hit geometry, screenshots | Awaiting approved GUI run |
+| splash | Launch splash size stays 640x427 (not tiled to fill the workspace) | Awaiting approved GUI run |
 | panel-scroll | 81d4441: a first open of Presets starts at the top; Adjustments returns to its own offset | Awaiting approved GUI run |
 | sliders | Current reachable panel ranges, pointer change, reset, final pixels, CSS, screenshots | Awaiting approved GUI run; hidden branches excluded |
 | module-options | Every available Global/Masks option, independent Contrast choices, folding persistence | Awaiting approved GUI run; preference UI only |
