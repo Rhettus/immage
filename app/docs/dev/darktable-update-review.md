@@ -2061,7 +2061,7 @@ source, compiler/link commands and hashes remain in
 
 This closes a narrow signed-input CPU boundary gap. It does not establish
 naturally occurring negative intermediate values, matching-camera import,
-full-size signed aspect or signed geometric-warp coverage, OpenCL/device fallback,
+signed geometric-warp coverage, OpenCL/device fallback,
 cancellation, an accuracy ranking or appearance/import policy. The broader
 acceptance gate remains unchecked. No production source/plugin, pin, serialized
 parameter or default changed; no GUI was launched.
@@ -2078,6 +2078,21 @@ outputs remain finite and the fourth channel is unchanged. The eight ignored
 saved XMP and 1,432 reverified manifest entries. The previous 61 dependency
 identities also remain unchanged; `lens-signed-aspect-summary.json` aggregates
 counts. These are vignetting-only fixtures, so preference variation does not
-establish signed geometric lens-warp interpolation coverage. Full-size signed
-aspect, natural negative intermediates, matching cameras and native devices
-remain open. No production behavior or pin changed; no GUI was launched.
+establish signed geometric lens-warp interpolation coverage. Natural negative
+intermediates, matching cameras and native devices remain open. No production
+behavior or pin changed; no GUI was launched.
+
+
+Full-size signed aspect extension: all **48 comparisons** pass with bicubic at
+ratios 0.75 and 1.5, covering all 12 assigned profiles in both directions under
+the minimum CPU budget. Outputs are 4640×4630 and 4640×2314 respectively.
+All 920,227 floating-row records and final RGBA frames match old CPU exactly;
+outputs remain finite and the fourth channel is unchanged. No negative output
+channels were observed in this injected matrix. The two ignored
+`pixel-lens-signed-aspect-full-bicubic-{075,15}/` directories retain reports,
+frames, logs, saved XMP and 358 reverified manifest identities. The prior 61
+dependency identities remain unchanged; `lens-signed-aspect-full-summary.json`
+aggregates counts. Other interpolation preferences at these aspect ratios remain
+preview-only. These vignetting-only assignments on an unrelated RAW do not close
+signed geometric-warp, natural-negative, matching-camera or native-device gaps.
+No production behavior or pin changed; no GUI was launched.

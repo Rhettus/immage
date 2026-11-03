@@ -501,5 +501,9 @@ Aspect edits are applied to the assigned sidecar in temporary state, saved as
 per-engine XMP evidence, and checked for enabled version-1 parameters with the
 exact requested ratio. The report records both settings. These assigned fixtures
 enable vignetting only: interpolation preferences do not by themselves test
-geometric lens warping. Signed aspect coverage currently uses 512-pixel bounds;
-the previous full-size signed run uses the original aspect and default preference.
+geometric lens warping. Both ratios pass at 512-pixel bounds with all four
+preferences and at 4640-pixel bounds with bicubic (48 full-size comparisons,
+920,227 matching floating-row records). Reproduce full-size aspect runs by
+adding `--size 4640 --interpolation bicubic --aspect 0.75` or `--aspect 1.5`
+to a fresh checker invocation. Other preferences at these ratios remain
+preview-only. The earlier full-size signed run uses the original aspect.
