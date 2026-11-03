@@ -10,7 +10,7 @@ export async function preferencesMatrix(t) {
   // external links, credential/service actions, native color/file dialogs.
   const unsafe=new Set(['Window renderer','Edit on the GPU','GPU','Device','Shared-memory frames','Check automatically']);
   await click(t,'button[data-tour="prefs"]');
-  for(const tab of ['Photos','General','Performance']) {
+  for(const tab of ['New Photos','General','Performance']) {
     await textButton(t,'.prefs-tabs',tab);
     const labels=await t.driver.observe(()=>[...document.querySelectorAll('.prefs [data-pref-label]')].map(e=>e.dataset.prefLabel));
     for(const label of labels) {
