@@ -61,7 +61,9 @@ export async function rangeContract(t, definition) {
   const step = +(await t.driver.observe(inspect, selector)).value;
   assert(Math.abs(step - Math.min(s.max, s.min + s.step)) < Math.max(1e-6, s.step / 100), 'ArrowRight follows declared track step');
   await t.driver.keys('\uE010');
-  await until(async () => Math.abs(+(await t.driver.observe(inspect, selector)).value - s.max) <= (s.step || .001), 'End maximum');
+  await until(async () => Math.abs(+(await t.driver.observe(inspect, selector)).value - s.max) <= (s.step || .001), 'End maximum')
+    .catch(async e => { const c = await t.driver.observe(inspect, selector);
+      throw Error(`End maximum: track ${c.value} (shows ${c.displayed}), expected ${s.max}; ${e.message}`); });
   await t.evidence('keyboard-limits');
   // Typed maximum clamping and Escape cancellation observe track position for
   // nonlinear sliders rather than comparing track positions with display units.
