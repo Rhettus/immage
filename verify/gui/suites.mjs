@@ -21,7 +21,7 @@ export const cases = {
     limitation: 'Does not yet cover b1d7c4c native-module Reset All regression.' },
   rail: { scope: 'Presets/Masks/Zones/Heal/Adjustments activation, geometry and Windows cursor CSS', liveValidated: false,
     commits: ['fe5dbc2'], limitation: 'Native cursor stacking remains a manual Windows check.' },
-  'panel-scroll': { scope: 'each right panel tool keeps its own scroll offset; a first open starts at the top', commits: ['81d4441'], liveValidated: false },
+  'panel-scroll': { scope: 'each right panel tool keeps its own scroll offset; a first open starts at the top', commits: ['81d4441'], liveValidated: true },
   sliders: { scope: 'currently mounted sliders in available manifest panels; drag and reset', liveValidated: false,
     limitation: 'Hidden tabs/sections/module choices and RAW-only controls require further scenarios. Pixel changes are recorded for review, not universal image-effect assertions.' },
   'module-options': { scope: 'each Global/Masks preference option and independent Contrast choices', liveValidated: false,
@@ -53,7 +53,7 @@ export const cases = {
   'folder-race':{scope:'controlled slow unrelated folder and stale result protection',commits:['17ac5e6','74cedc9'],liveValidated:false},
   panorama:{scope:'projection choices and preview with overlapping fixtures',liveValidated:false},
   'immich-workflow':{scope:'isolated local-service prerequisite; no live account access',commits:['33949b6','22840b4'],liveValidated:false},
-  'site-shots':{scope:'website screenshots: Basic before/after, color grading, mask, presets, heal, crop, Zone System; photo info hidden, shots with a visible path skipped',liveValidated:false,
+  'site-shots':{scope:'website and guide screenshots: Basic before/after, color grading, mask, presets, heal, crop, Zone System, first launch, Folders, Library grid, split before/after, History, point tone curve, RYB vectorscope, Preferences; photo info hidden, shots with a visible path skipped',liveValidated:true,
     limitation:'Captures evidence for the website; asserts only that each tool opened. A shot that cannot be reached is recorded as skipped.'},
   ...generated,
 };
