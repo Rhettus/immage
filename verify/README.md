@@ -584,7 +584,18 @@ be finite within [0,1]; `MASK_LENS` records hash each actual floating mask row.
 The checker compares exact row multisets and requires all three patterns for
 every image row. `exact_mask_rows` is separate from `exact_float_rows` (image
 RGB or RGBA). This tests active CPU transforms, not mask UI/routing or injected
-bypass/grid-failure cases. At 128x95, all four interpolators matched 96 cases and
+grid-failure cases. At 128x95, all four interpolators matched 96 cases and
 27,360 mask rows; display-alpha previews also match all four interpolators.
 Each pattern must cover the exact image-row coordinate multiset, so duplicate
 coordinates cannot hide missing rows.
+
+Add `--mask-bypass` to both builder and checker (requires `--distort-mask`) to
+exercise missing-lens and zero-crop bypasses for every pattern. A local piece/data
+copy and equal input/output ROIs isolate these calls from the active transform.
+The plugin requires byte-exact input copies, including out-of-range samples,
+and emits `MASK_BYPASS` hashes; the checker requires both cases for each pattern
+and reports `exact_bypass_copies` separately. Inactive modifiers, missing lens
+maker, differing ROI shapes, and grid/allocation failure remain untested.
+The bicubic 128x95 bypass run passed 24 profile/direction cases and 144 copies
+per plugin, with 6,840 active mask rows and 2,280 image RGB rows still exact.
+All 179 run hashes verified; an omitted bypass-pattern trace was rejected.

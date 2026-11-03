@@ -2196,5 +2196,21 @@ hashes independently verified. Executed scripts are archived under
 manifest script entries refer to these immutable copies. Alpha provenance notes
 record correction of script identities after source edits during execution.
 These remain synthetic unrelated-camera previews. Separate mask changed
-aspects, full-size behavior, bypass/grid failure, nonfinite
+aspects, full-size behavior, inactive-modifier/grid failure, nonfinite
 coordinates and native OpenCL remain open. No production or pin change.
+
+CPU mask bypass diagnostics: `--geometry --distort-mask --mask-bypass` builds
+isolated plugins that call the actual `_distort_mask_lf` entry with a missing
+lens and, separately, a zero crop factor. Each call uses equal input/output
+ROIs and a local copy of the piece/data, leaving the active image transform
+unchanged. NaN-initialized destinations must match the complete input byte for
+byte, including the -0.5 and 1.5 values that active transforms clip. The checker
+requires both bypass cases for all three patterns and compares `MASK_BYPASS`
+hashes between old and direct-coordinate plugins. This does not exercise
+inactive modifier flags, a missing lens maker, invalid ROI combinations, or
+allocation/grid failure. The bicubic 128x95 run passed all 24 assigned-profile/
+direction cases: 144 byte-exact bypass copies per plugin, 6,840 active mask rows,
+2,280 image RGB rows, and exact final frames. All 179 run-manifest hashes were
+independently verified; removing a bypass-pattern trace was rejected. Evidence:
+`build/darktable-pin-review/pixel-lens-mask-bypass-bicubic-128/` (ignored).
+No production code or pin changes.

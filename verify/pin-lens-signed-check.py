@@ -20,7 +20,7 @@ pixels = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(pixels)
 
 
-def records(log, distort_mask=False):
+def records(log, distort_mask=False, mask_bypass=False):
     rows = []
     for line in log.read_text().splitlines():
         if line.startswith('SIGNED_LENS '):
@@ -55,7 +55,22 @@ def records(log, distort_mask=False):
             raise ValueError('incomplete mask patterns')
     if not rows:
         raise ValueError(f'no actual-pixel Lensfun calls in {log}')
-    return rows + masks
+    bypasses = [line for line in log.read_text().splitlines() if line.startswith('MASK_BYPASS ')]
+    if bool(bypasses) != mask_bypass:
+        raise ValueError('bypass trace presence must match requested mode')
+    if mask_bypass:
+        counts = Counter()
+        for line in bypasses:
+            fields = line.split()
+            if len(fields) != 7 or len(fields[-1]) != 64:
+                raise ValueError(f'invalid bypass trace: {line}')
+            bypass, pattern, inverse, width, height = map(int, fields[1:6])
+            if bypass not in (0, 1) or pattern not in (0, 1, 2) or inverse not in (0, 1) or min(width, height) <= 0:
+                raise ValueError(f'invalid bypass geometry: {line}')
+            counts[bypass, pattern] += 1
+        if set(counts) != {(b, p) for b in range(2) for p in range(3)} or len(set(counts.values())) != 1:
+            raise ValueError('incomplete bypass patterns')
+    return rows + masks + bypasses
 
 
 def main():
@@ -64,6 +79,7 @@ def main():
         parser.add_argument(f'--{name}', type=Path, required=True)
     parser.add_argument('--geometry', action='store_true')
     parser.add_argument('--distort-mask', action='store_true')
+    parser.add_argument('--mask-bypass', action='store_true')
     parser.add_argument('--mask-display', action='store_true')
     parser.add_argument('--size', type=int, action='append', default=[])
     parser.add_argument('--interpolation', choices=['bilinear', 'bicubic', 'lanczos2', 'lanczos3'])
@@ -71,8 +87,12 @@ def main():
     args = parser.parse_args()
     if (args.mask_display or args.distort_mask) and not args.geometry:
         parser.error('--mask-display and --distort-mask require --geometry')
+    if args.mask_bypass and not args.distort_mask:
+        parser.error('--mask-bypass requires --distort-mask')
     for build in (args.old, args.direct):
         manifest = json.loads((build / 'manifest.json').read_text())
+        if bool(manifest.get('mask_bypass')) != args.mask_bypass:
+            raise ValueError('mask-bypass mode must match both plugin manifests')
         if bool(manifest.get('distort_mask')) != args.distort_mask:
             raise ValueError('distort-mask mode must match both plugin manifests')
         if bool(manifest.get('mask_display')) != args.mask_display:
@@ -88,7 +108,7 @@ def main():
         raise ValueError(f'expected 24 assigned fixtures, found {len(fixtures)}')
     sizes = args.size or [512]
     report = {'diagnostic_only': True, 'injection': [-1, -.01, '-0', 0, .01, .5, 1, 2, 10],
-              'geometry': args.geometry, 'mask_display': args.mask_display, 'distort_mask': args.distort_mask, 'photo_sha256': pixels.digest(args.photo), 'interpolation': args.interpolation,
+              'mask_bypass': args.mask_bypass, 'geometry': args.geometry, 'mask_display': args.mask_display, 'distort_mask': args.distort_mask, 'photo_sha256': pixels.digest(args.photo), 'interpolation': args.interpolation,
               'pixel_aspect_ratio': args.aspect, 'cases': {}}
     with tempfile.TemporaryDirectory(prefix='immage-signed-lens-') as tmp:
         for fixture in fixtures:
@@ -129,7 +149,7 @@ def main():
                                 or aspect.get(ns + 'enabled') != '1'
                                 or params != struct.pack('<f', args.aspect)):
                             raise ValueError('saved pixel aspect parameters changed')
-                    traces[label] = records(prefix.with_suffix('.log'), args.distort_mask)
+                    traces[label] = records(prefix.with_suffix('.log'), args.distort_mask, args.mask_bypass)
                 if Counter(traces['old']) != Counter(traces['direct']):
                     raise ValueError(f'floating-row mismatch: {key}')
                 if outputs['old'] != outputs['direct']:
@@ -138,7 +158,8 @@ def main():
                 negative = sum(int(row.split()[6]) for row in rgb_rows)
                 positive = sum(int(row.split()[7]) for row in rgb_rows)
                 report['cases'][key] = {'dimensions': outputs['old'][0],
-                    'exact_float_rows': len(rgb_rows), 'exact_mask_rows': len(traces['old']) - len(rgb_rows), 'negative_output_channels': negative,
+                    'exact_float_rows': len(rgb_rows), 'exact_mask_rows': sum(row.startswith('MASK_LENS ') for row in traces['old']),
+                    'exact_bypass_copies': sum(row.startswith('MASK_BYPASS ') for row in traces['old']), 'negative_output_channels': negative,
                     'positive_output_channels': positive, 'exact_rgba': True}
                 (out / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
                 print(key, report['cases'][key], flush=True)

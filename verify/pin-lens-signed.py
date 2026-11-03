@@ -99,6 +99,8 @@ def main():
                         help='Inject at module input and trace RGB after active geometry')
     parser.add_argument('--distort-mask', action='store_true',
                         help='With --geometry, compare separate single-channel mask transforms')
+    parser.add_argument('--mask-bypass', action='store_true',
+                        help='With --distort-mask, assert missing-lens and invalid-crop copies')
     parser.add_argument('--mask-display', action='store_true',
                         help='With --geometry, inject varying alpha and trace real RGBA')
     parser.add_argument('--source', type=Path, required=True,
@@ -110,6 +112,8 @@ def main():
     args = parser.parse_args()
     if (args.mask_display or args.distort_mask) and not args.geometry:
         parser.error('--mask-display and --distort-mask require --geometry')
+    if args.mask_bypass and not args.distort_mask:
+        parser.error('--mask-bypass requires --distort-mask')
     source, build, output = (p.resolve() for p in (args.source, args.build, args.output))
     if output.exists() or output == source or output == build:
         raise ValueError('output must be a new directory')
@@ -188,7 +192,30 @@ def main():
     if args.distort_mask:
         mask_start = text.index('static void _distort_mask_lf(')
         mask_end = text.index('\n}\n', mask_start) + 3
-        text = text[:mask_end] + MASK_HELPER + text[mask_end:]
+        mask_helper = MASK_HELPER
+        if args.mask_bypass:
+            mask_helper = replace_once(mask_helper, '    for(size_t i = 0; i < no; i++) out[i] = NAN;', r'''    // Use equal input/output ROIs: bypass copies have no resampling contract.
+    for(int bypass = 0; bypass < 2; bypass++)
+    {
+      dt_iop_lens_data_t data = *(dt_iop_lens_data_t *)piece->data;
+      dt_dev_pixelpipe_iop_t local_piece = *piece;
+      local_piece.data = &data;
+      if(bypass == 0) data.lens = NULL;
+      else data.crop = 0.f;
+      float *copy = dt_alloc_align_float(ni);
+      if(!copy) abort();
+      for(size_t i = 0; i < ni; i++) copy[i] = NAN;
+      _distort_mask_lf(self, &local_piece, in, copy, ri, ri);
+      if(memcmp(in, copy, ni*sizeof(float))) abort();
+      gchar *hash = g_compute_checksum_for_data(G_CHECKSUM_SHA256,
+        (const guchar *)copy, ni*sizeof(float));
+      fprintf(stderr, "MASK_BYPASS %d %d %d %d %d %s\n", bypass, pattern,
+        data.inverse, ri->width, ri->height, hash);
+      g_free(hash);
+      dt_free_align(copy);
+    }
+    for(size_t i = 0; i < no; i++) out[i] = NAN;''')
+        text = text[:mask_end] + mask_helper + text[mask_end:]
     intro = build / 'lib/darktable/plugins/introspection_lens.cc'
     entries = json.loads((build / 'compile_commands.json').read_text())
     entry = next(e for e in entries if Path(e['file']) == intro)
@@ -231,7 +258,7 @@ def main():
             subprocess.run(cmd, cwd=cwd, stdout=log, stderr=subprocess.STDOUT, check=True)
     hashes = {str(p): hashlib.sha256(p.read_bytes()).hexdigest()
               for p in (original, input_source, src, generated, plugin, build / 'bin/darktable-engine', Path(__file__))}
-    (output / 'manifest.json').write_text(json.dumps({'diagnostic_only': True, 'geometry': args.geometry, 'mask_display': args.mask_display, 'distort_mask': args.distort_mask, 'sha256': hashes,
+    (output / 'manifest.json').write_text(json.dumps({'diagnostic_only': True, 'geometry': args.geometry, 'mask_display': args.mask_display, 'distort_mask': args.distort_mask, 'mask_bypass': args.mask_bypass, 'sha256': hashes,
                                                     'compile': command, 'link': link_args}, indent=2) + '\n')
     print(output)
 
