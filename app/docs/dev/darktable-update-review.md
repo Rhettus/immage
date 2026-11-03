@@ -2124,6 +2124,19 @@ reverified. Evidence is retained in ignored
 `build/darktable-pin-review/pixel-lens-signed-geometry-full-bicubic/`, with counts
 in `lens-signed-geometry-full-summary.json`. Reproduce using the same geometry
 deployments and checker with a fresh output directory and
-`--geometry --size 4640 --interpolation bicubic`. Full-size alternative
-interpolators, changed aspect ratios, mask/alpha behavior, natural-image negatives,
-matching-camera imports and native devices remain outside this result.
+`--geometry --size 4640 --interpolation bicubic`.
+
+Changed-aspect preview geometry also passes all 192 comparisons across ratios
+0.75 and 1.5, four interpolators, 12 assigned profiles and both directions.
+All 73,440 floating RGB rows and final RGBA frames match exactly at 512×510
+and 512×255 respectively; outputs are finite. Forward bicubic/Lanczos cases
+retain negative RGB; bilinear and all reverse cases have none for this pattern.
+Saved XMP verifies the aspect ratio and geometry flags. All 1,432 run-manifest
+hashes were independently reverified. Evidence is retained in ignored
+`pixel-lens-signed-geometry-aspect-{mode}-{075,15}/` directories under
+`build/darktable-pin-review/`; `lens-signed-geometry-aspect-summary.json`
+aggregates counts. Reproduce with the geometry deployments, a fresh output
+and `--geometry --size 512 --interpolation MODE --aspect 0.75` or `--aspect 1.5`.
+Full-size changed-aspect geometry, full-size alternative interpolators,
+mask/alpha behavior, natural-image negatives, matching-camera imports and native
+devices remain outside these results.
