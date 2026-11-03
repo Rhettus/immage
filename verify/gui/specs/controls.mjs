@@ -39,6 +39,34 @@ export async function sliderInput(t) {
   await until(async () => Math.abs(+(await t.driver.observe(inspect, selector)).value) < .02, 'reset after typing');
   await settledPhoto(t, p => p.hash === baseline.hash);
 }
+// A user report: clicking a slider's track jumps the value (to +20, say)
+// but the photo does not change until the slider is dragged a little.
+// Click without moving, the way a hand jumps a slider, and require the
+// settled photo to follow.
+export async function sliderClick(t) {
+  await basic(t);
+  // linear sliders, so a track fraction is the value's
+  for (const [id, to] of [['exposure', 1], ['shadows', 20], ['contrast', 20]]) {
+    const selector = rangeSelector(id);
+    let s = await reveal(t, selector);
+    await t.driver.point(s.label.x, s.label.y, 2);
+    const baseline = await settledPhoto(t);
+    s = await reveal(t, selector);
+    const neutral = +s.value;
+    const at = { x: s.bounds.x + 8 + (s.bounds.width - 16) * (to - s.min) / (s.max - s.min), y: s.y };
+    const clickedAt = Date.now();
+    await t.driver.point(at.x, at.y);
+    const moved = await until(async () => { const c = await t.driver.observe(inspect, selector); return Math.abs(+c.value - neutral) > (s.step || .001) && c; }, `${id} track click moves the value`);
+    let frame;
+    try { frame = await settledPhoto(t, p => p.hash !== baseline.hash); }
+    catch (e) { throw Error(`${id}: clicked to ${moved.displayed} but the photo did not change: ${e.message}`); }
+    t.measure({ name: id, value: moved.value, displayed: moved.displayed, ms: Date.now() - clickedAt, photoHash: frame.hash, baselineHash: baseline.hash });
+    await t.evidence(`${id}-clicked`);
+    s = await reveal(t, selector);
+    await t.driver.point(s.label.x, s.label.y, 2);
+    await settledPhoto(t, p => p.hash === baseline.hash);
+  }
+}
 export async function history(t) {
   await basic(t);
   // Reset All clears the New Photos preset (a raw's lens corrections) by

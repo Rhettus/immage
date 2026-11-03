@@ -16,6 +16,7 @@ export const cases = {
   exposure: { scope: 'pointer drag both directions, brightness, reset pixels', liveValidated: true },
   'slider-input': { scope: 'Exposure keyboard, inline editor, focus and reset', liveValidated: true,
     verification: 'Linux ARM64, system WebKitGTK 2.54.2, Wayland, DPR 2; run 2026-11-01T23-39-31.087Z_f8f31aa_bc0fb5a5. Remaining controls suite stopped at history.' },
+  'slider-click': { scope: 'a click on Exposure/Shadows/Contrast tracks, without moving, jumps the value and the settled photo follows (user report: no change until dragged)', liveValidated: false },
   'batch-paste': { scope: 'two selected photos, Kodak look and strength, unticked groups, batch undo/redo, persistence and untouched photo', liveValidated: false, limitation: 'Copied JPEG fixtures; backend suite covers virtual copies, masks, failures and negative conversion.' },
   history: { scope: 'Exposure undo/redo and basic Reset All value/photo round trip', liveValidated: false,
     limitation: 'Does not yet cover b1d7c4c native-module Reset All regression.' },
@@ -63,7 +64,7 @@ export const suites = {
   workflows: ['startup','curves','wheels','equalizer','masks','heal','zones','preferences-matrix','slider-wheel','export-options','filters','presets','shortcuts'],
   inventory: ['startup',...generatedNames],
   regressions: ['startup', 'rail', 'panel-scroll', 'module-options', 'batch-paste'],
-  controls: ['startup', 'slider-input', 'history', 'rail', 'sliders', 'module-options'],
+  controls: ['startup', 'slider-input', 'slider-click', 'history', 'rail', 'sliders', 'module-options'],
 };
 export function resolveCases(name) {
   // a comma list runs several cases in one launch: startup,masks,heal
