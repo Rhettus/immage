@@ -631,6 +631,17 @@ with exact final frames and 288 byte-exact bypass copies per plugin per run.
 All 716 manifest hashes across the four runs were independently verified.
 Ignored evidence: `build/darktable-pin-review/pixel-lens-mask-bypass-aspect075-lanczos2-128/`,
 `pixel-lens-mask-bypass-aspect150-lanczos2-128/` and corresponding `lanczos3` directories.
+
+Full-size bicubic CPU mask follow-up: all 24 assigned-profile/direction cases
+passed at 4640×3472 under the minimum CPU budget. Old and direct plugins match
+exactly across 487,199 signed RGB rows, 1,461,597 single-channel mask rows,
+9,720 bypass copies per plugin and all final RGBA frames. All 179 evidence
+manifest hashes were independently verified. This closes ordinary-aspect
+full-size bicubic mask coverage only; full-size alternative interpolators and
+changed aspects, grid failure, nonfinite coordinates and native OpenCL remain
+open. Inputs are synthetic patterns on an unrelated RAW, not camera calibration
+validation. Production pin/defaults remain unchanged.
+Ignored evidence: `build/darktable-pin-review/pixel-lens-mask-bypass-bicubic-full/`.
 Changed-aspect synthetic preview masks now cover all four CPU interpolators.
 Full-size masks, invalid ROIs, grid failure, nonfinite coordinates and native
 OpenCL remain open. No production behavior or pin change.
