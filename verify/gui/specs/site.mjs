@@ -61,11 +61,33 @@ async function slide(t, id, target) {
     <= Math.max((s.max - s.min) * .04, s.step || 0), `${id} near ${target}`);
 }
 
+// A tool panel opens at the previous panel's scroll offset; wheel the
+// shared side panel back to its top so each shot starts there.
+async function panelsTop(t) {
+  for (let i = 0; i < 20; i++) {
+    const s = await t.driver.observe(() => {
+      const p = document.querySelector('.right .panels'), r = p?.getBoundingClientRect();
+      return r && { x: r.right - 6, y: r.top + r.height / 2, top: p.scrollTop };
+    });
+    if (!s || s.top <= 0) return;
+    await t.driver.wheel(s.x, s.y, -600);
+    await pause(150);
+  }
+  throw Error('side panel did not scroll to its top');
+}
+
+async function tool(t, name) {
+  await panelsTop(t);
+  await click(t, `button[data-tour="${name}"]`);
+  await pause(300);
+  await panelsTop(t);
+}
+
 async function attempt(t, name, fn) {
   try { await fn(); }
   catch (error) {
     t.measure({ name, skipped: error.message.split('\n')[0] });
-    try { await t.driver.keys(''); } catch {} // Escape out of any open tool
+    try { await t.driver.keys('\uE00C'); } catch {} // Escape out of any open tool
   }
 }
 
@@ -93,23 +115,9 @@ export async function siteShots(t) {
     await shot(t, 'basic-after');
   });
 
-  // 2. Color grading wheels with a split tone.
-  await attempt(t, 'colorgrading', async () => {
-    const p = await panel(t, 'colorgrading');
-    await textButton(t, `${p} .tabs`, '3-Way');
-    const wheels = await t.driver.observe(s => [...document.querySelectorAll(`${s} .wheel`)]
-      .map(e => { const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width }; }), p);
-    if (wheels.length >= 3) {
-      // shadows toward teal, highlights toward orange
-      await t.driver.drag(wheels[0], { x: wheels[0].x - wheels[0].w * .14, y: wheels[0].y + wheels[0].w * .06 });
-      await t.driver.drag(wheels[2], { x: wheels[2].x + wheels[2].w * .12, y: wheels[2].y - wheels[2].w * .1 });
-    }
-    await shot(t, 'color-grading');
-  });
-
-  // 3. A linear gradient mask from the top, darkened, with its overlay.
+  // 2. A linear gradient mask from the top, darkened, with its overlay.
   await attempt(t, 'masks', async () => {
-    await click(t, 'button[data-tour="masks"]');
+    await tool(t, 'masks');
     await click(t, '.create-mask');
     await textButton(t, '.shape-menu-list', 'Linear Gradient');
     const photo = await reveal(t, 'svg.mask-svg');
@@ -120,52 +128,68 @@ export async function siteShots(t) {
       .find(e => e.textContent.trim() === 'Tone')?.getBoundingClientRect().toJSON());
     if (heading) await t.driver.point(heading.x + heading.width / 2, heading.y + heading.height / 2);
     try { await slide(t, 'l_exposure', -0.7); } catch {}
+    await panelsTop(t);
     await shot(t, 'masks');
     await t.driver.keys('o');
     await shot(t, 'masks-overlay');
     await t.driver.keys('o');
   });
 
-  // 4. Presets and looks, with live previews of this photo.
-  await attempt(t, 'presets', async () => {
-    await click(t, 'button[data-tour="presets"]');
-    await until(() => t.driver.observe(() => document.querySelectorAll('.presets-panel .tiles img, .presets-panel .tiles canvas').length > 3),
-      'preset previews', 60000);
-    await pause(1500);
-    await shot(t, 'presets');
-  });
-
-  // 5. Heal: one spot with its source.
+  // 3. Heal: one spot with its source.
   await attempt(t, 'heal', async () => {
-    await click(t, 'button[data-tour="heal"]');
+    await tool(t, 'heal');
     const canvas = await reveal(t, 'svg.spot-svg');
     await t.driver.point(canvas.bounds.x + canvas.bounds.width * .62, canvas.bounds.y + canvas.bounds.height * .7);
     await until(() => t.driver.observe(() => !!document.querySelector('.spot-sel')), 'spot created');
     await shot(t, 'heal');
   });
 
-  // 6. Crop with its guides.
+  // 4. Crop with its guides.
   await attempt(t, 'crop', async () => {
-    await click(t, 'button[data-tour="crop"]');
+    await tool(t, 'crop');
     await pause(800);
     await shot(t, 'crop');
-    await t.driver.keys('');
+    await t.driver.keys('\uE00C');
   });
 
-  // 7. Black and white, then the Zone System.
+  // 5. Presets and looks, with live previews of this photo.
+  await attempt(t, 'presets', async () => {
+    await tool(t, 'presets');
+    await until(() => t.driver.observe(() => document.querySelectorAll('.presets-panel .tiles img, .presets-panel .tiles canvas').length > 3),
+      'preset previews', 60000);
+    await pause(1500);
+    await shot(t, 'presets');
+  });
+
+  // 6. Black and white, then the Zone System; back to color afterwards.
   await attempt(t, 'zones', async () => {
-    await click(t, 'button[data-tour="adjust"]');
+    await tool(t, 'adjust');
     const p = await panel(t, 'basic');
     await textButton(t, p, 'B&W');
     await settledPhoto(t);
-    await click(t, 'button[data-tour="zones"]');
+    await tool(t, 'zones');
     await until(() => t.driver.observe(() => document.querySelectorAll('.zone-col').length >= 10), 'zone columns');
     await shot(t, 'zones');
   });
+  await attempt(t, 'color', async () => {
+    await tool(t, 'adjust');
+    await textButton(t, await panel(t, 'basic'), 'Color');
+    await settledPhoto(t);
+  });
 
-  // 8. The whole window again, back on Adjustments, for the hero.
-  await attempt(t, 'workspace', async () => {
-    await click(t, 'button[data-tour="adjust"]');
-    await shot(t, 'workspace-bw');
+  // 7. Last, so it tints nothing else: a gentle split tone on the
+  // Shadows (toward teal) and Highlights (toward orange) wheels.
+  await attempt(t, 'colorgrading', async () => {
+    const p = await panel(t, 'colorgrading');
+    await textButton(t, `${p} .tabs`, '3-Way');
+    await reveal(t, `${p} .wheel-cell:last-child .wheel`);
+    const wheels = await t.driver.observe(s => Object.fromEntries([...document.querySelectorAll(`${s} .wheel-cell`)]
+      .map(c => { const r = c.querySelector('.wheel').getBoundingClientRect();
+        return [c.querySelector('.wheel-title')?.textContent.trim(), { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width }]; })), p);
+    const { Shadows: sh, Highlights: hi } = wheels;
+    if (!sh || !hi) throw Error(`wheels not found: ${Object.keys(wheels).join(', ')}`);
+    await t.driver.drag(sh, { x: sh.x - sh.w * .09, y: sh.y + sh.w * .04 });
+    await t.driver.drag(hi, { x: hi.x + hi.w * .08, y: hi.y - hi.w * .06 });
+    await shot(t, 'color-grading');
   });
 }
