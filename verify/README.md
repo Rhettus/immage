@@ -590,12 +590,14 @@ Each pattern must cover the exact image-row coordinate multiset, so duplicate
 coordinates cannot hide missing rows.
 
 Add `--mask-bypass` to both builder and checker (requires `--distort-mask`) to
-exercise missing-lens and zero-crop bypasses for every pattern. A local piece/data
+exercise missing-lens, zero-crop, missing-maker and inactive-modifier bypasses
+for every pattern. The inactive case disables correction flags, sets unit scale
+and matches the lens projection; reported geometry flags must be zero. A local piece/data
 copy and equal input/output ROIs isolate these calls from the active transform.
 The plugin requires byte-exact input copies, including out-of-range samples,
-and emits `MASK_BYPASS` hashes; the checker requires both cases for each pattern
-and reports `exact_bypass_copies` separately. Inactive modifiers, missing lens
-maker, differing ROI shapes, and grid/allocation failure remain untested.
-The bicubic 128x95 bypass run passed 24 profile/direction cases and 144 copies
+and emits `MASK_BYPASS` hashes; the checker requires all four cases for each pattern
+and reports `exact_bypass_copies` separately. Differing ROI shapes and
+grid/allocation failure remain untested.
+The bicubic 128x95 bypass run passed 24 profile/direction cases and 288 copies
 per plugin, with 6,840 active mask rows and 2,280 image RGB rows still exact.
 All 179 run hashes verified; an omitted bypass-pattern trace was rejected.

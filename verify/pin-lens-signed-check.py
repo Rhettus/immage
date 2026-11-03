@@ -65,10 +65,10 @@ def records(log, distort_mask=False, mask_bypass=False):
             if len(fields) != 7 or len(fields[-1]) != 64:
                 raise ValueError(f'invalid bypass trace: {line}')
             bypass, pattern, inverse, width, height = map(int, fields[1:6])
-            if bypass not in (0, 1) or pattern not in (0, 1, 2) or inverse not in (0, 1) or min(width, height) <= 0:
+            if bypass not in (0, 1, 2, 3) or pattern not in (0, 1, 2) or inverse not in (0, 1) or min(width, height) <= 0:
                 raise ValueError(f'invalid bypass geometry: {line}')
             counts[bypass, pattern] += 1
-        if set(counts) != {(b, p) for b in range(2) for p in range(3)} or len(set(counts.values())) != 1:
+        if set(counts) != {(b, p) for b in range(4) for p in range(3)} or len(set(counts.values())) != 1:
             raise ValueError('incomplete bypass patterns')
     return rows + masks + bypasses
 

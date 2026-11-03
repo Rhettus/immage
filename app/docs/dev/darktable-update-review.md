@@ -2201,16 +2201,17 @@ coordinates and native OpenCL remain open. No production or pin change.
 
 CPU mask bypass diagnostics: `--geometry --distort-mask --mask-bypass` builds
 isolated plugins that call the actual `_distort_mask_lf` entry with a missing
-lens and, separately, a zero crop factor. Each call uses equal input/output
-ROIs and a local copy of the piece/data, leaving the active image transform
+lens, a zero crop factor, a lens with no maker, and inactive modifiers.
+The inactive case disables corrections, uses unit scale and the lens projection,
+and independently requires Lensfun to report no geometry flags. Each call uses
+equal input/output ROIs and a local copy of the piece/data, leaving the active image transform
 unchanged. NaN-initialized destinations must match the complete input byte for
 byte, including the -0.5 and 1.5 values that active transforms clip. The checker
-requires both bypass cases for all three patterns and compares `MASK_BYPASS`
+requires all four bypass cases for all three patterns and compares `MASK_BYPASS`
 hashes between old and direct-coordinate plugins. This does not exercise
-inactive modifier flags, a missing lens maker, invalid ROI combinations, or
-allocation/grid failure. The bicubic 128x95 run passed all 24 assigned-profile/
-direction cases: 144 byte-exact bypass copies per plugin, 6,840 active mask rows,
+invalid ROI combinations or allocation/grid failure. The bicubic 128x95 run
+passed all 24 assigned-profile/direction cases: 288 byte-exact bypass copies per plugin, 6,840 active mask rows,
 2,280 image RGB rows, and exact final frames. All 179 run-manifest hashes were
 independently verified; removing a bypass-pattern trace was rejected. Evidence:
-`build/darktable-pin-review/pixel-lens-mask-bypass-bicubic-128/` (ignored).
+`build/darktable-pin-review/pixel-lens-mask-bypass-expanded-bicubic-128/` (ignored).
 No production code or pin changes.

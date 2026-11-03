@@ -195,13 +195,27 @@ def main():
         mask_helper = MASK_HELPER
         if args.mask_bypass:
             mask_helper = replace_once(mask_helper, '    for(size_t i = 0; i < no; i++) out[i] = NAN;', r'''    // Use equal input/output ROIs: bypass copies have no resampling contract.
-    for(int bypass = 0; bypass < 2; bypass++)
+    for(int bypass = 0; bypass < 4; bypass++)
     {
       dt_iop_lens_data_t data = *(dt_iop_lens_data_t *)piece->data;
       dt_dev_pixelpipe_iop_t local_piece = *piece;
       local_piece.data = &data;
+      lfLens missing_maker;
       if(bypass == 0) data.lens = NULL;
-      else data.crop = 0.f;
+      else if(bypass == 1) data.crop = 0.f;
+      else if(bypass == 2) data.lens = &missing_maker;
+      else
+      {
+        data.modify_flags = (dt_iop_lens_modflag_t)0;
+        data.scale = 1.f;
+        data.target_geom = data.lens->Type;
+        int flags;
+        lfModifier *modifier = _get_modifier(&flags,
+          ri->scale * piece->buf_in.width, ri->scale * piece->buf_in.height,
+          &data, LF_MODIFY_DISTORTION | LF_MODIFY_GEOMETRY | LF_MODIFY_SCALE, FALSE);
+        delete modifier;
+        if(flags & (LF_MODIFY_TCA | LF_MODIFY_DISTORTION | LF_MODIFY_GEOMETRY | LF_MODIFY_SCALE)) abort();
+      }
       float *copy = dt_alloc_align_float(ni);
       if(!copy) abort();
       for(size_t i = 0; i < ni; i++) copy[i] = NAN;
