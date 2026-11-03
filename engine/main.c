@@ -8445,6 +8445,16 @@ static gboolean _item_params(dt_iop_module_t *m, const dt_style_item_t *si,
     if(r == 1) return FALSE;
     if(r == -1) memcpy(params, m->default_params, m->params_size);
   }
+#ifdef IMMAGE_STYLE_BLEND_READER
+  const dt_develop_blend_params_t locked = *m->blend_params;
+  if(!si->blendop_params)
+    memcpy(blend, m->default_blendop_params, sizeof(*blend));
+  else if(dt_develop_blend_params_read(m, si->blendop_params, si->blendop_params_size,
+                                      si->blendop_version, blend, -1,
+                                      dt_develop_blend_mask_locked(&locked), NULL))
+    return FALSE;
+  dt_develop_blend_keep_locked_mask(m, blend, &locked);
+#else
   if(si->blendop_params && si->blendop_version == dt_develop_blend_version()
      && si->blendop_params_size == sizeof(dt_develop_blend_params_t))
     memcpy(blend, si->blendop_params, sizeof(dt_develop_blend_params_t));
@@ -8452,6 +8462,7 @@ static gboolean _item_params(dt_iop_module_t *m, const dt_style_item_t *si,
           || dt_develop_blend_legacy_params(m, si->blendop_params, si->blendop_version, blend,
                                             dt_develop_blend_version(), si->blendop_params_size))
     memcpy(blend, m->default_blendop_params, sizeof(dt_develop_blend_params_t));
+#endif
   return TRUE;
 }
 
@@ -8513,7 +8524,7 @@ static gboolean _look(const char *path, char **err)
     }
     g_snprintf(m->multi_name, sizeof(m->multi_name), "%s%s", _LOOK_PREFIX, label);
     m->enabled = si->enabled;
-    dt_dev_add_history_item_ext(&_s.dev, m, m->enabled, TRUE);
+    dt_dev_add_masks_history_item_ext(&_s.dev, m, m->enabled, TRUE);
     used = g_list_prepend(used, m);
   }
   // instances the new look does not use, or every one for no look
@@ -8611,25 +8622,28 @@ static void _preview_commit(dt_iop_module_t *m, void *params, dt_develop_blend_p
   dt_dev_pixelpipe_iop_t *piece = _piece(&_s.ppipe, m);
   if(!piece) return;
   piece->enabled = enabled;
+  // older pins hash module->params; keep the upstream mask-tree and bypass
+  // hashes while giving that path the preview's temporary parameters too
+  void *saved_params = m->params;
+  m->params = params;
   dt_iop_commit_params(m, params, blend, &_s.ppipe, piece);
-  // commit_params hashes module->params (imageop.c), which are the edit's,
-  // not these: without its own hash the piece would reuse the cached output
-  dt_hash_t h = DT_INVALID_HASH;
+  m->params = saved_params;
+  // darktable.develop is not the engine's develop, so hash its own forms
+  // explicitly, as _frame_hash does for retained main frames
   if(enabled)
   {
-    h = dt_hash(DT_INITHASH, m->so->op, strlen(m->so->op));
-    h = dt_hash(h, &m->instance, sizeof(int32_t));
-    h = dt_hash(h, params, m->params_size);
-    h = dt_hash(h, blend, sizeof(dt_develop_blend_params_t));
+    dt_masks_form_t *form = dt_masks_get_from_id_ext(_s.dev.forms, blend->mask_id);
+    if(form) piece->hash = dt_masks_group_hash_ext(piece->hash, form, _s.dev.forms);
+    form = dt_masks_get_from_id_ext(_s.dev.forms, blend->blend_mask_id);
+    if(form) piece->hash = dt_masks_group_hash_ext(piece->hash, form, _s.dev.forms);
   }
-  piece->hash = h;
 }
 
 // the edit as it stands, plus `edits` ([{ op, params: { field: value },
 // enabled, instance, after, before }], a named instance placed as "set"
 // places it) and, when the request has "look", that style (a path) or no
 // look (null), fitted into size x size on the preview pipe
-static gboolean _preview(JsonObject *req, int *ow, int *oh, char **err)
+static gboolean _preview_render(JsonObject *req, int *ow, int *oh, char **err)
 {
   const int size = json_object_get_int_member_with_default(req, "size", 160);
   const gboolean has_look = json_object_has_member(req, "look");
@@ -8745,6 +8759,21 @@ static gboolean _preview(JsonObject *req, int *ow, int *oh, char **err)
   *ow = _s.ppipe.backbuf_width;
   *oh = _s.ppipe.backbuf_height;
   return TRUE;
+}
+
+static gboolean _preview(JsonObject *req, int *ow, int *oh, char **err)
+{
+  const char *look = json_object_get_string_member_with_default(req, "look", NULL);
+  if(!look) return _preview_render(req, ow, oh, err);
+
+  // style conversion imports and migrates forms in dev->forms. A thumbnail
+  // owns those forms only until processing finishes, including failure paths
+  GList *saved_forms = _s.dev.forms;
+  _s.dev.forms = dt_masks_dup_forms_deep(saved_forms, NULL);
+  const gboolean ok = _preview_render(req, ow, oh, err);
+  g_list_free_full(_s.dev.forms, (GDestroyNotify)dt_masks_free_form);
+  _s.dev.forms = saved_forms;
+  return ok;
 }
 
 // the edit into the library and the XMP sidecar

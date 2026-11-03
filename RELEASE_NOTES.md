@@ -35,6 +35,8 @@ Performance
 
 Bug fixes
 
+- Look previews keep temporary masks out of the photo and refresh when mask
+  geometry changes. Applying a look records its masks with the edit history.
 - Mac CPU captures wait for the profiler to save after Ctrl-C, then export
   the recorded trace instead of exiting with a Python interruption.
 - Transform's automatic corrections work on cropped portrait and rotated

@@ -29,11 +29,11 @@ because upstream moved its `nightly` tag; the local tag was preserved.
   false. Output headroom is initialized, derived from the output profile, and
   included in the pipeline cache hash. Existing edit conversion and SDR/HDR
   exports need reference comparisons; textual preservation is not pixel proof.
-- Masks gain variable-length preset/style blend blobs carrying forms. Immage’s
-  `engine/main.c:_item_params` still uses a fixed-size copy or legacy blend
-  conversion. Review this against upstream `dt_develop_blend_params_read` and
-  `dt_styles_apply_style_item` before adopting the pin; masks attached to looks
-  may require an engine compatibility repair.
+- Masks gain variable-length preset/style blend blobs carrying forms. The
+  pre-repair engine discarded these through fixed-size/legacy conversion.
+  The compatibility repair below uses the upstream reader and preserves
+  preview ownership, mask history and cache identity. Candidate headless
+  verification passes; native/platform validation remains required.
 - Linux database lock checking now reads `/proc/<pid>/cmdline` and checks for
   the string `darktable`. Test live and stale locks with the actual packaged
   engine executable name, including concurrent engine startup.
@@ -43,8 +43,8 @@ because upstream moved its `nightly` tag; the local tag was preserved.
 - Lens correction switches to a coarse coordinate grid; diffuse, denoise,
   highlight reconstruction, rawprepare, colorspace arithmetic and final scaling
   also change. These can alter pixels or performance independently of Texture.
-  Ashift changes CPU coordinate accumulation; its copied line-fitting code in
-  `engine/upright.c` needs a targeted audit, not an automatic wholesale copy.
+  Ashift changes CPU coordinate accumulation in pixel processing only; the
+  copied fitting code in `engine/upright.c` needs no change from this range.
 - `src/libs/neural_restore.c` changes wording/formatting in the inspected diff;
   no `src/ai`, `src/common/ai` or external dependency submodule commits occur
   in this range. Integration fixtures advance to `52f404eeab`.
@@ -53,11 +53,12 @@ because upstream moved its `nightly` tag; the local tag was preserved.
 
 ## Focused compatibility audit
 
-These are source findings against the frozen candidate, not runtime passes.
-Line numbers below refer to candidate source unless prefixed with `engine/` or
-`app/`. The complete per-commit review remains open.
+This section records the incompatibilities identified before the repair below.
+Engine line references describe the pre-repair source at `1920a95`; upstream
+line numbers refer to the frozen candidate. Runtime results are recorded
+separately under Style compatibility repair and verification.
 
-### Confirmed adoption blocker: style blend blobs
+### Confirmed incompatibility: style blend blobs (repair verified headlessly)
 
 `engine/main.c:_item_params` (line 8433) copies current blend parameters only
 when the blob is exactly `sizeof(dt_develop_blend_params_t)`. A valid version-15
@@ -76,13 +77,12 @@ Simply accepting a larger blob and copying its prefix would retain foreign
 mask IDs without importing the forms. The engine's existing fixed-size fast
 path also bypasses the new classic-mask migration.
 
-Before adoption, adapt the look loader to this reader and audit its interaction
-with Immage's separate look instances and history insertion. Headless fixtures
-must cover a version-15 style with attached forms, current-version classic
-masks, legacy versions, invalid/truncated tails, repeated application with ID
-collisions, a locked destination mask, switching looks and sidecar reload.
-Check both opacity and rendered mask behavior; a successful JSON reply is
-insufficient. No compatibility repair has been applied yet.
+The repair below adapts the loader and its preview/history interactions.
+Headless fixtures now cover version-15 attached forms, current-version and
+version-14 classic masks, truncated tails, repeated application with ID
+collisions, a locked destination mask, look removal, save/reopen and fresh-process
+sidecar import. Native/platform verification, broader old styles and switching
+between different masked looks remain required before pin adoption.
 
 ### Lock handling: packaged name matches; execution still pending
 
@@ -147,10 +147,10 @@ of every merge found resolution differences in 14 merges, all confined to
    replacing the call without isolating preview forms would contaminate the live
    image merely by generating look tiles. Applied forms must also be recorded
    with `dt_dev_add_masks_history_item_ext`; ordinary history insertion does not
-   snapshot forms. The existing `_preview_commit` overrides the upstream piece
+   snapshot forms. The pre-repair `_preview_commit` overrides the upstream piece
    hash and omits mask-tree content. Preserve mask identity in preview hashes as
-   part of the repair. These are one ownership/serialization repair, not three
-   independent feature additions.
+   part of the repair. These form one ownership/serialization repair, implemented
+   and checked headlessly below.
 2. **AI-disabled build:** an isolated Release Linux ARM64 candidate configure
    with AI/OpenCL off succeeded. Compiling `darktable-engine` compiled `main.c`
    and `upright.c`, but failed in `engine/hdrmerge.c:245` because `M_PI_F` is not
@@ -246,8 +246,8 @@ approve the candidate pin, pixel parity, performance gains or platform support.
 
 ## Remaining review and adoption gates
 
-1. Resolve the style/mask ownership and history blocker and the observed
-   AI-disabled build failure. Validate lock handling with packaged names.
+1. Validate lock handling with packaged names. Complete native/platform and
+   broader-style coverage for the headlessly verified style/mask repair.
 2. Exercise every mapped field through generated introspection; verify old/new
    defaults and the saved-edit/image comparison matrix above.
 3. Preserve a headless baseline and exported reference renders before changing
@@ -630,3 +630,68 @@ approve the candidate pin, pixel parity, performance gains or platform support.
 | [`d06f6805e2`](https://github.com/darktable-org/darktable/commit/d06f6805e233b4c0a644086ad2bef4873be25085) | non-merge | Upstream UI / catalog boundary | modulegroups: scroll to the first matching module when searching |
 | [`b87acdf93c`](https://github.com/darktable-org/darktable/commit/b87acdf93ce4e2e76053b85088d4747e2055716b) | non-merge | Documentation / translation | Update darktable.pot for translators. |
 | [`879067695e`](https://github.com/darktable-org/darktable/commit/879067695ea85f42d238a5c1603a021d14d71d3f) | non-merge | Documentation / translation | Update French translation. |
+
+## Style compatibility repair and verification
+
+The repair is prepared without moving the pin. `engine/CMakeLists.txt` detects
+`dt_develop_blend_params_read` in the bundled header and defines
+`IMMAGE_STYLE_BLEND_READER` for that engine build. Current-pin builds retain the
+older blob conversion path; the candidate uses upstream's decoder, classic-mask
+migration and fresh-ID import. Invalid candidate blend blobs return a look error
+instead of silently substituting defaults. Locked destination look instances keep
+their mask geometry while taking the style's blend mode and opacity.
+
+Applied look items use `dt_dev_add_masks_history_item_ext` so their imported
+forms enter history snapshots. Thumbnail rendering deep-copies the active form
+list and restores the original on every success/failure return. Preview commits
+use upstream's complete parameter/blend/bypass hashing, temporarily supplying the
+preview params as `module->params` for older pins. Because `darktable.develop`
+is not the engine's `_s.dev`, the engine also hashes its own referenced mask
+trees explicitly. The fix does not redirect the process-wide develop pointer.
+HDR merge explicitly includes `common/math.h`, which owns `M_PI_F`.
+
+`verify/look-compat.c` includes the real engine implementation with its program
+entry renamed and links the same supporting sources/libraries. It initializes
+libdarktable with GUI disabled, creates and exports a masked exposure style,
+imports the `.dtstyle` again, and opens a different disposable PNG. It exercises
+ID collisions, repeated previews/application, locked masks, malformed tails,
+a failure after a valid first style item already imported forms, subsequent
+recovery, shape-sensitive cache identity, look removal, save/reopen, fresh-process
+XMP import and version-14/current-version classic-mask migration. The Python runner creates all photos,
+config, cache, data and sidecars in a temporary directory, uses two OpenMP threads,
+and enforces a subprocess timeout. No models or original photos are needed.
+
+Example, after configuring the isolated candidate with `IMMAGE_ROOT` pointing
+to this repository:
+
+```sh
+cmake --build <candidate-build> --target darktable-engine immage-look-check \
+  lib/darktable/plugins/all lib/darktable/plugins/imageio/all deploy --parallel 2
+python3 -I verify/look-compat.py --build <candidate-build>
+python3 -I verify/transient-engine.py --build <candidate-build>
+```
+
+The module aggregate target paths above are Ninja targets. `immage-look-check`
+is excluded from ordinary builds and exists only when the new reader exists.
+`transient-engine.py` retains its default `build/` target when `--build` is omitted.
+
+Linux ARM64 Release results with AI/OpenCL **both disabled and both enabled**:
+engine, IOP and imageio module builds passed after the explicit math include.
+Look-mask checks and the full existing output-sink integration smoke passed in
+both configurations, with CPU rendering forced. Tile/repeated/applied
+pixels match exactly. After save/reopen, module parameter and mask-tree hashes
+match exactly; three of 27,648 byte values differ by one code value when the
+float pipeline is rebuilt. The test explicitly permits at most one code value
+in at most 0.1% of bytes for that rebuild comparison only. This is a bounded
+rounding comparison, not a claim of byte-exact same-process save/reopen output.
+A second process with a fresh in-memory library imports only the saved XMP:
+parameter and geometry hashes match exactly, and all 27,648 output bytes match
+exactly in both configurations. Current-pin `main.c` and `hdrmerge.c` pass syntax
+checks against the original build's flags.
+
+Device OpenCL execution, native Windows/Mac, masks backed by AI pixels, switching
+between different masked looks, and broad old-edit reference/performance
+comparisons remain adoption gates. An unrestricted `all`
+build also encountered a local missing Perl `Pod::Parser` while translating man
+pages; the engine and module targets above do not require that documentation
+target. No system package was installed to bypass it.

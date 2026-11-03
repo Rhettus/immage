@@ -152,6 +152,12 @@ These break silently, and are the reason this page has a checklist:
   `cd darktable/src/tests/integration && DARKTABLE_CLI=$PWD/../../../../build/bin/darktable-cli ./run --disable-opencl --no-deltae`
 - The reference photos: each opens with its masks, spots and look, and the
   re-exported TIFFs match the reference renders.
+- Look-mask ownership on a pin with `dt_develop_blend_params_read`:
+  build `immage-look-check`, the IOP/imageio modules and `deploy`, then run
+  `python3 -I verify/look-compat.py --build <candidate-build>`. This checks
+  actual engine look and thumbnail paths headlessly. See the
+  [current source audit](darktable-update-review.md) for scope and remaining
+  image/platform gates.
 - AI: each mask kind, upscale on export, Detail's Denoise… on a Bayer and an X-Trans raw. Models are picked by darktable's version, so a new version may
   download new models.
 - Performance: `python3 -I benchmarking/bench.py`, then
