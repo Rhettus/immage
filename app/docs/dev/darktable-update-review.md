@@ -323,6 +323,11 @@ The production pin remains unchanged until the adoption gates pass.
 - [x] Build a coherent isolated old-pin engine/module reference; compare fresh
   PNG, Nikon NEF and Olympus ORF CPU pixels at 96/512 bounds against both
   candidate configurations (all RGBA bytes exact).
+- [x] Compare old-created exposure, sigmoid v3, AgX v7 and non-dithered vignette
+  histories after fresh-process XMP loading on PNG/NEF/ORF at 96/512 bounds;
+  record exact matches and nonzero differences separately (details below).
+- [ ] Resolve saved-edit appearance policy for the measured vignette differences
+  and assess the small AgX RAW deltas before adopting the candidate.
 - [ ] Verify production control read/selection semantics, RAW-specific defaults, new
   unmapped HDR fields and enum processing semantics with reference renders.
 - [x] Verify A→B→A switching between two exported/imported masked exposure looks,
@@ -1079,7 +1084,60 @@ python3 verify/pin-pixels.py --old build/darktable-pin-review/old-cpu \
   --output build/darktable-pin-review/pixel-defaults
 ```
 
-Next: broader edited old/new image references, including saved tone-mapper
-history and changed pixel-processing modules. Broader camera/native/device and
-adoption gates remain unchecked. No additional historical CPU benchmark capture
-is needed.
+### Old-created edited histories and measured pixel differences
+
+`verify/pin-pixels.py --edited` adds independent exposure (+1.25 EV), sigmoid
+(contrast 1.9), AgX (contrast 2.5), and vignette (brightness -0.7, scale 50,
+falloff 40, dithering off) cases. Each case starts from a disposable fresh image;
+tone-mapper cases explicitly disable the alternative mappers. The coherent old
+build renders and saves each history, then fresh processes with isolated empty
+state load that same sidecar in all three builds. The retained XMP contains real
+old module versions, including sigmoid v3 and AgX v7 with current blend v15.
+Every edit changes its old reference at both sizes. This is constructed unmasked
+history coverage, not a real saved-style corpus or production Session orchestration.
+
+PNG, Nikon NEF and Olympus ORF at 96/512 bounds give these observations in both
+candidate configurations, all processing on CPU:
+
+| Case | Old fresh-process reload | Candidate versus old applied reference |
+| --- | --- | --- |
+| Fresh defaults | Not a saved history | Exact RGBA on all inputs/sizes |
+| Exposure | Exact RGBA | Exact RGBA on all inputs/sizes |
+| Sigmoid v3 | Exact RGBA | Exact RGBA on all inputs/sizes |
+| AgX v7 | Exact RGBA | Exact on PNG and 96-bound RAW; at 512 bounds, 4 NEF and 5 ORF RGB channels differ by 1 code |
+| Vignette, dithering off | Exact RGBA | Nonzero on every input/size; maximum RGB difference 12–14 codes |
+
+Vignette changed-channel counts at 96/512 bounds are PNG 9,375/16,677,
+NEF 6,934/196,505 and ORF 7,629/207,227. Mean absolute RGB differences are
+1.780093/1.787272, 0.887235/0.880381 and 0.878766/0.847070, respectively.
+Both candidate configurations produce the same frame bytes. The upstream
+`39853a90b0` change applies cosine smoothing to the CPU falloff even when
+no dithering is requested; previously smoothing was conditional on dithering.
+The measured change is consistent with this intentional processing correction,
+but is **not accepted saved-edit appearance compatibility**. Parameter migration
+alone cannot preserve that appearance. AgX also changes curve scale calculations
+from float to double; its tiny RAW deltas have not been isolated to that change
+or accepted under a project tolerance.
+
+Artifacts: ignored `build/darktable-pin-review/pixel-edited/` and
+`pixel-edited-repeat/`, each retaining frames, old sidecars, engine logs and a
+JSON report; corresponding summary logs sit in the review build directory.
+A second complete run reproduced all 84 comparison metrics and frame hashes;
+old reloads were exact throughout and both candidate configurations agreed.
+No production code, defaults or pin changed. The coherent old build and Claude's
+worktree remain untouched; no GUI or device OpenCL ran.
+
+```sh
+python3 verify/pin-pixels.py --old build/darktable-pin-review/old-cpu \
+  --candidate build/darktable-pin-review/cpu \
+  --candidate build/darktable-pin-review/features --edited \
+  --photo /path/to/copied-camera.NEF --photo /path/to/copied-camera.ORF \
+  --output build/darktable-pin-review/pixel-edited
+```
+
+Next: resolve whether saved non-dithered vignette edits must retain their old
+appearance, then extend changed-module references (diffuse, denoise, lens,
+highlights and transforms). Do not silently bless the measured vignette change
+or revert upstream processing while the compatibility policy is unresolved.
+Broader camera/native/device and adoption gates remain unchecked. No additional
+historical CPU benchmark capture is needed.

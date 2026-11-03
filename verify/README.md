@@ -258,8 +258,22 @@ are imported, without adjacent sidecars; each input/build has isolated state.
 CPU processing uses two OMP threads. The output directory retains RGBA frames,
 engine logs and `report.json` with input/binary hashes and RGB difference metrics.
 Nonzero differences are reported for review, not automatically accepted or
-rejected. This covers fresh engine defaults, not app Session edits, saved-history
-compatibility, HDR/device output or a broad image corpus.
+rejected. Without `--edited`, this covers fresh engine defaults.
+
+Add `--edited` to create four independent old-build histories: exposure +1.25 EV,
+sigmoid contrast 1.9, AgX contrast 2.5, and vignette brightness -0.7 / scale 50 /
+falloff 40 / dithering off. Tone-mapper cases explicitly disable the other
+mappers. Each edit must change the old reference at every requested size. The
+old build saves each sidecar; fresh processes with empty state reload the same
+old-created sidecar in the old and every candidate build. Reports retain the
+requests, sidecar hashes and saved module versions alongside RGB metrics. Old
+reload results expose any baseline roundtrip differences separately. Schema v2
+groups comparisons under `inputs` → input → `cases` → case → `comparisons`.
+
+These are constructed, unmasked engine histories, not production Session edit
+orchestration, a user-created style corpus, HDR/device output or a broad image
+corpus. In particular, upstream processing fixes can change a saved edit even
+when its parameters migrate correctly; inspect nonzero metrics before adoption.
 
 Rebuild all IOP/imageio modules after changing shared engine headers. An older
 plugin can load despite an incompatible custom struct layout, producing wrong
