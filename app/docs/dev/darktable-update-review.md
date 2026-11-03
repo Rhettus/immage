@@ -2096,3 +2096,25 @@ aggregates counts. Other interpolation preferences at these aspect ratios remain
 preview-only. These vignetting-only assignments on an unrelated RAW do not close
 signed geometric-warp, natural-negative, matching-camera or native-device gaps.
 No production behavior or pin changed; no GUI was launched.
+
+
+### Signed geometric processing diagnostic
+
+The signed builder/checker now support `--geometry`. This separate mode injects
+coordinate-pattern signed/HDR RGB at module input, requests distortion plus
+vignetting (flags 6), and hashes RGB rows after the complete CPU Lensfun operation.
+The actual active modifier must include geometry; bypass and failed grid setup
+abort instead of supplying evidence. Saved enabled v10 XMP is checked for flags 6.
+The original vignetting-boundary mode remains available. Geometry-mode hashes
+pack a synthetic alpha: they make no claim about output alpha or mask display.
+Reproduction is described in the [verification guide](../../../verify/README.md#signed-lensfun-boundary-diagnostic).
+
+Preview geometry results: all 96 comparisons pass across 12 assigned exceptional
+profiles, both directions and bilinear/bicubic/Lanczos2/Lanczos3 at 512×383.
+All 36,768 floating RGB row records and final RGBA frames match old CPU exactly;
+outputs are finite. Forward output retains negative RGB with bicubic and both
+Lanczos preferences; bilinear and all reverse outputs have none for this pattern.
+Ignored `build/darktable-pin-review/pixel-lens-signed-geometry-{mode}/`
+directories retain reports, frames, logs, saved XMP and identity manifests.
+Full-size geometry, changed aspect ratios, mask/alpha behavior, natural-image
+negatives, matching-camera imports and native devices remain outside this result.

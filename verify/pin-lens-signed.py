@@ -3,7 +3,8 @@
 
 Run the deployed copy with pin-pixels.py and compare SIGNED_LENS records by
 coordinates (OpenMP log order is unspecified). This deliberately replaces RGB
-at the actual vignetting boundary; it does not model real-camera inputs.
+at the actual vignetting boundary, or at module input with --geometry.
+Neither mode models real-camera inputs.
 """
 import argparse
 import hashlib
@@ -59,6 +60,8 @@ static void _signed_lens_trace(const float *row, int x, int y, int width, int ch
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--geometry', action='store_true',
+                        help='Inject at module input and trace RGB after active geometry')
     parser.add_argument('--source', type=Path, required=True,
                         help='Configured source tree for this deployed build')
     parser.add_argument('--input-source', type=Path,
@@ -88,6 +91,40 @@ def main():
     process, count = re.subn(pattern, instrument, process, flags=re.S)
     if count != 2:
         raise ValueError(f'expected two actual-pixel calls, found {count}')
+    if args.geometry:
+        # Geometry output alpha is unspecified outside mask display: hash RGB only.
+        process = re.sub(r'        _signed_lens_(?:input|trace)\([^;]+;\n', '', process)
+        process = replace_once(process, 'const void *const ivoid,', 'const void *const source_void,')
+        process = replace_once(process, '  const int ch_width =', r'''  const size_t signed_count = (size_t)roi_in->width * roi_in->height * ch;
+  float *const signed_input = dt_alloc_align_float(signed_count);
+  if(!signed_input) abort();
+  for(int y = 0; y < roi_in->height; y++)
+    _signed_lens_input(signed_input + (size_t)y * roi_in->width * ch,
+                       roi_in->x, roi_in->y + y, roi_in->width, ch);
+  const void *const ivoid = signed_input;
+  const int ch_width =''')
+        process = process.replace('    return;', '    dt_free_align(signed_input);\n    abort(); // A bypass is invalid geometry evidence.')
+        head, anchor_delete, tail = process.rpartition('  delete modifier;')
+        if not anchor_delete:
+            raise ValueError('missing modifier cleanup')
+        process = head + r'''  if(!(modflags & (LF_MODIFY_TCA | LF_MODIFY_DISTORTION | LF_MODIFY_GEOMETRY | LF_MODIFY_SCALE)))
+    abort(); // Requested flags alone do not prove an active transform.
+  for(int y = 0; y < roi_out->height; y++)
+  {
+    const float *row = (const float *)ovoid + (size_t)y * roi_out->width * ch;
+    // Pack RGB; synthetic alpha excludes unspecified output alpha from the hash.
+    float *packed = dt_alloc_align_float((size_t)roi_out->width * 4);
+    if(!packed) abort();
+    for(int x = 0; x < roi_out->width; x++)
+    {
+      for(int c = 0; c < 3; c++) packed[4*x+c] = row[ch*x+c];
+      packed[4*x+3] = .25f;
+    }
+    _signed_lens_trace(packed, roi_out->x, roi_out->y + y, roi_out->width, 4, d->inverse);
+    dt_free_align(packed);
+  }
+  dt_free_align(signed_input);
+  delete modifier;''' + tail
     text = text[:start] + process + text[end:]
     intro = build / 'lib/darktable/plugins/introspection_lens.cc'
     entries = json.loads((build / 'compile_commands.json').read_text())
@@ -131,7 +168,7 @@ def main():
             subprocess.run(cmd, cwd=cwd, stdout=log, stderr=subprocess.STDOUT, check=True)
     hashes = {str(p): hashlib.sha256(p.read_bytes()).hexdigest()
               for p in (original, input_source, src, generated, plugin, build / 'bin/darktable-engine', Path(__file__))}
-    (output / 'manifest.json').write_text(json.dumps({'diagnostic_only': True, 'sha256': hashes,
+    (output / 'manifest.json').write_text(json.dumps({'diagnostic_only': True, 'geometry': args.geometry, 'sha256': hashes,
                                                     'compile': command, 'link': link_args}, indent=2) + '\n')
     print(output)
 

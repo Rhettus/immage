@@ -507,3 +507,28 @@ preferences and at 4640-pixel bounds with bicubic (48 full-size comparisons,
 adding `--size 4640 --interpolation bicubic --aspect 0.75` or `--aspect 1.5`
 to a fresh checker invocation. Other preferences at these ratios remain
 preview-only. The earlier full-size signed run uses the original aspect.
+
+
+For signed geometric processing, add `--geometry` to **both** plugin-builder
+invocations, choose fresh deployment directories, then pass those deployments
+and `--geometry` to the checker. The checker enables distortion plus vignetting
+(flags 6), saves each engine's XMP and verifies enabled version-10 parameters.
+The builder injects the same pattern into a private module-input buffer instead
+of overwriting values at the vignetting boundary. Bypass, grid failure or absence
+of an active geometry modifier aborts the diagnostic. Floating rows are sampled
+after the complete CPU Lensfun operation, covering the direction-dependent order
+of geometry and vignetting. Only RGB is measured: packed trace alpha is a fixed
+synthetic value because normal geometry output alpha is unspecified outside mask
+display. Thus geometry-mode alpha counts are not alpha-preservation evidence.
+Use `--size 512 --interpolation bicubic` for the initial preview configuration;
+repeat with bilinear, lanczos2 and lanczos3 using fresh output directories.
+
+Preview geometry results: all 96 comparisons pass across 12 assigned exceptional
+profiles, both directions and bilinear/bicubic/Lanczos2/Lanczos3 at 512×383.
+All 36,768 floating RGB row records and final RGBA frames match old CPU exactly;
+outputs are finite. Forward output retains negative RGB with bicubic and both
+Lanczos preferences; bilinear and all reverse outputs have none for this pattern.
+Ignored `build/darktable-pin-review/pixel-lens-signed-geometry-{mode}/`
+directories retain reports, frames, logs, saved XMP and identity manifests.
+Full-size geometry, changed aspect ratios, mask/alpha behavior, natural-image
+negatives, matching-camera imports and native devices remain outside this result.

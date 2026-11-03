@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare isolated signed-input plugins at the floating vignetting boundary.
+"""Compare isolated signed-input plugins at floating vignetting or geometry boundaries.
 
 Requires assigned XMP fixtures from the exceptional-profile diagnostic. These
 are synthetic inputs on an unrelated photo, not matching-camera validation.
@@ -44,10 +44,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('old', 'direct', 'fixtures', 'photo', 'output'):
         parser.add_argument(f'--{name}', type=Path, required=True)
+    parser.add_argument('--geometry', action='store_true')
     parser.add_argument('--size', type=int, action='append', default=[])
     parser.add_argument('--interpolation', choices=['bilinear', 'bicubic', 'lanczos2', 'lanczos3'])
     parser.add_argument('--aspect', type=float, choices=[0.75, 1.5])
     args = parser.parse_args()
+    if args.geometry:
+        for build in (args.old, args.direct):
+            if not json.loads((build / 'manifest.json').read_text()).get('geometry'):
+                raise ValueError('geometry mode requires geometry-instrumented plugins')
     out = args.output.resolve()
     out.mkdir()  # Never overwrite a diagnostic run.
     fixtures = sorted(args.fixtures.resolve().glob('*-assigned.xmp'))
@@ -55,7 +60,7 @@ def main():
         raise ValueError(f'expected 24 assigned fixtures, found {len(fixtures)}')
     sizes = args.size or [512]
     report = {'diagnostic_only': True, 'injection': [-1, -.01, '-0', 0, .01, .5, 1, 2, 10],
-              'photo_sha256': pixels.digest(args.photo), 'interpolation': args.interpolation,
+              'geometry': args.geometry, 'photo_sha256': pixels.digest(args.photo), 'interpolation': args.interpolation,
               'pixel_aspect_ratio': args.aspect, 'cases': {}}
     with tempfile.TemporaryDirectory(prefix='immage-signed-lens-') as tmp:
         for fixture in fixtures:
@@ -64,14 +69,28 @@ def main():
                 outputs, traces = {}, {}
                 for label, build in (('old', args.old), ('direct', args.direct)):
                     prefix = out / f'{key}-{label}'
-                    saved = out / f'{key}-{label}.xmp' if args.aspect else None
+                    saved = out / f'{key}-{label}.xmp' if args.aspect or args.geometry else None
                     edits = ([{'op': 'scalepixels', 'enabled': True,
                                'params': {'pixel_aspect_ratio': args.aspect}}] if args.aspect else [])
+                    if args.geometry:
+                        edits.append({'op': 'lens', 'enabled': True,
+                                      'params': {'modify_flags': 6}})
                     outputs[label] = pixels.render(build.resolve(), args.photo.resolve(),
                         Path(tmp) / f'{key}-{label}', prefix, [size], sidecar=fixture,
                         resource_level='minimum', interpolation=args.interpolation,
                         edits=edits, save=saved)[size]
-                    if saved:
+                    if saved and args.geometry:
+                        ns = '{http://darktable.sf.net/}'
+                        lens = next(item for item in ET.parse(saved).iter()
+                                    if item.get(ns + 'operation') == 'lens')
+                        encoded = lens.get(ns + 'params')
+                        params = (zlib.decompress(base64.b64decode(encoded[4:]))
+                                  if encoded.startswith('gz') else bytes.fromhex(encoded))
+                        if (lens.get(ns + 'modversion') != '10' or len(params) != 356
+                                or lens.get(ns + 'enabled') != '1'
+                                or struct.unpack_from('<i', params, 4)[0] != 6):
+                            raise ValueError('saved geometry flags changed')
+                    if saved and args.aspect:
                         ns = '{http://darktable.sf.net/}'
                         aspect = next(item for item in ET.parse(saved).iter()
                                       if item.get(ns + 'operation') == 'scalepixels')

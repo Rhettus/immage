@@ -142,7 +142,26 @@ exercised by changing preferences. Another 48 full-size comparisons at ratios
 0.75/1.5 with bicubic match exactly: 920,227 floating rows and all final frames
 (4640×4630/4640×2314), finite outputs and unchanged fourth channels. Other
 preferences at these ratios remain preview-only. Real-camera inputs, natural
-negative intermediates, signed geometric warp and native devices remain open.
+negative intermediates and native devices remain open. Signed geometric processing
+has a separate module-input diagnostic described below.
 See the [signed boundary evidence](darktable-update-review.md#signed-floating-vignetting-boundary-diagnostic)
 and reproduction commands in the verification guide. This does not approve a
 production contract or close the full signed-intermediate acceptance gate.
+
+
+The geometry diagnostic injects signed/HDR RGB before CPU Lensfun processing,
+enables distortion plus vignetting and compares RGB after both operations in
+both directions. It rejects bypass, inactive geometry and grid failures; saved
+XMP verifies requested flags. Alpha is excluded from this comparison because
+normal geometry output does not define it outside mask display. This complements
+the vignetting-boundary diagnostic without establishing a production policy.
+
+Preview geometry results: all 96 comparisons pass across 12 assigned exceptional
+profiles, both directions and bilinear/bicubic/Lanczos2/Lanczos3 at 512×383.
+All 36,768 floating RGB row records and final RGBA frames match old CPU exactly;
+outputs are finite. Forward output retains negative RGB with bicubic and both
+Lanczos preferences; bilinear and all reverse outputs have none for this pattern.
+Ignored `build/darktable-pin-review/pixel-lens-signed-geometry-{mode}/`
+directories retain reports, frames, logs, saved XMP and identity manifests.
+Full-size geometry, changed aspect ratios, mask/alpha behavior, natural-image
+negatives, matching-camera imports and native devices remain outside this result.
