@@ -184,6 +184,18 @@ hashes were independently reverified. Evidence is retained in ignored
 `build/darktable-pin-review/`; `lens-signed-geometry-aspect-summary.json`
 aggregates counts. Reproduce with the geometry deployments, a fresh output
 and `--geometry --size 512 --interpolation MODE --aspect 0.75` or `--aspect 1.5`.
-Full-size changed-aspect geometry, full-size alternative interpolators,
+Full-size changed-aspect bicubic geometry at ratio 1.5 also passes all 24
+comparisons at 4640×2314: 163,595 floating RGB rows and every final RGBA frame
+match exactly. Outputs are finite; all forward cases retain negative RGB and
+reverse cases have none for this pattern. Saved XMP verifies the aspect ratio
+and geometry flags; all 179 run-manifest hashes were independently reverified.
+Evidence is retained in ignored
+`build/darktable-pin-review/pixel-lens-signed-geometry-aspect-full-bicubic-15/`,
+with counts in `lens-signed-geometry-aspect-full-summary.json`. Reproduce with
+fresh output and `--geometry --size 4640 --interpolation bicubic --aspect 1.5`.
+The ratio 0.75 full-size run remains pending: only 2.4 GB of disk space remained
+after preserving this evidence.
+
+Full-size ratio 0.75 geometry, full-size alternative interpolators,
 mask/alpha behavior, natural-image negatives, matching-camera imports and native
 devices remain outside these results.
