@@ -48,6 +48,8 @@ Performance
 Bug fixes
 
 - Each right panel tool keeps its own scroll position and opens at the top.
+- Turning a converted JPEG or TIFF negative back to a positive no longer
+  switches exposure on when the photo had not used it.
 - A focused menu keeps its arrow keys, Space and Enter: choosing a crop
   aspect with the keyboard no longer applies the crop.
 - Reset all keeps a raw's Capture Sharpening on, as the photo opened,

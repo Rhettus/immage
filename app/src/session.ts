@@ -408,7 +408,12 @@ export class Session {
   // again, switched off or back as their sliders have them. one darktable
   // set beyond its sliders is switched by the panel (setModuleState)
   private negChanged() {
-    for (const op of NEG_OFF) if (mapsFor(op).some((m) => !this.foreign.has(m))) this.dirty.add(op);
+    // converting leaves a module that is already off alone: an entry
+    // switching it off would read, opened again, as one the negative holds
+    // and turned back would switch it on (open)
+    const converting = this.values.neg_on === 1;
+    for (const op of NEG_OFF)
+      if (mapsFor(op).some((m) => !this.foreign.has(m)) && (!converting || this.info[op]?.enabled)) this.dirty.add(op);
   }
 
   // the image's frame turned: modules after flip write their values for it
