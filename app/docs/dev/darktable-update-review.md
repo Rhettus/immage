@@ -2152,3 +2152,12 @@ after preserving this evidence.
 Full-size ratio 0.75 geometry, full-size alternative interpolators,
 mask/alpha behavior, natural-image negatives, matching-camera imports and native
 devices remain outside these results.
+
+### Lensfun mask and alpha source follow-up
+
+The [mask and alpha contracts](lens-compatibility-design.md#mask-and-alpha-source-contracts)
+now distinguish display alpha, the separate single-channel `distort_mask` path
+and OpenCL alpha sampling. Source review confirms that candidate mask distortion
+also uses the coordinate grid, including an input-copy failure fallback; existing
+RGB diagnostics do not exercise that entry point. Runtime mask/alpha validation
+remains open. No production code, pin, default or user-visible behavior changed.

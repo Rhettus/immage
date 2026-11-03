@@ -33,6 +33,39 @@ vignetting. The profile probe also rules out a universal replacement with
 only multiplies factors in `_lens_grid_eval` is therefore insufficient to justify
 old CPU compatibility for installed Lensfun 0.3.4.0.
 
+## Mask and alpha source contracts
+
+Source review of both frozen trees distinguishes three paths that need separate
+runtime references:
+
+- `_process_lf` writes geometric output alpha only when
+  `mask_display & DT_DEV_PIXELPIPE_DISPLAY_MASK` is set. Both directions sample
+  alpha using the green coordinate pair, clamp coordinates to the input bounds,
+  and write zero for nonfinite green coordinates when checks are enabled. Outside
+  that display mode, active geometry does not initialize output alpha. A final
+  opaque RGBA frame therefore cannot establish intermediate alpha preservation.
+- `_distort_mask_lf`, called through `distort_mask`, transforms a separate
+  single-channel mask. It requests distortion, geometry and scale without TCA or
+  vignetting, samples the green coordinates without the image path's explicit
+  coordinate clamp, then applies `CLIP` to the interpolated value. The old tree
+  calls Lensfun directly per row; the candidate builds a coordinate grid and
+  copies the input mask if grid construction fails. The isolated direct prototype
+  also reaches this grid builder, whose step is forced to one. Its RGB diagnostic
+  does not invoke or validate this separate mask entry point.
+- The OpenCL bilinear geometric kernel samples green and alpha together through
+  `pixel.yw` in both trees, independently of the CPU display-mask condition.
+  Candidate coordinates come from `_lens_grid_sample`; old coordinates come from
+  the uploaded per-pixel array. This is source evidence, not device parity.
+
+A useful next headless diagnostic must explicitly enable CPU mask display and
+hash real, spatially varying alpha after `_process_lf`; constant synthetic alpha
+cannot reveal coordinate errors. Test the separate `distort_mask` entry point
+with gradients, hard edges and values outside [0, 1], including boundary ROIs,
+both directions and all four interpolators. Check bypass and grid failure
+separately. Do not equate these two mask contracts or mark either runtime gate
+complete from the existing signed RGB results. Manual-vignette mask generation,
+metadata processing and actual device execution remain separate coverage.
+
 ## Proposed implementation boundary
 
 Use an explicit serialized processing choice if multiple appearances are retained.
