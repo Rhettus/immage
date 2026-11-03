@@ -29,7 +29,10 @@ It records whether rendered pixels changed, but lacks a universal effect oracle:
 RAW/module dependencies and neutral gating need dedicated cases. Module preference
 coverage checks UI choices and independent scopes, not the output of every
 engine backend. History's basic Reset All case does not reproduce the native
-module reset bug until a dedicated branch scenario is added.
+module reset bug until a dedicated branch scenario is added. On a raw it does
+compare Reset All's render with the opening frame (mean error within 1/255)
+and names any control it changed: Reset All once turned a new raw's Capture
+Sharpening off, as `capture`'s neutral is 0 while a raw opens with it on.
 
 Non-GUI checks (no desktop/app launch):
 

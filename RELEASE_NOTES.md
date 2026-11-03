@@ -47,6 +47,8 @@ Bug fixes
 - Each right panel tool keeps its own scroll position and opens at the top.
 - A focused menu keeps its arrow keys, Space and Enter: choosing a crop
   aspect with the keyboard no longer applies the crop.
+- Reset all keeps a raw's Capture Sharpening on, as the photo opened,
+  instead of turning it off.
 - Mac CPU captures wait for the profiler to save after Ctrl-C, then export
   the recorded trace instead of exiting with a Python interruption.
 - Transform's automatic corrections work on cropped portrait and rotated

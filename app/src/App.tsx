@@ -1092,8 +1092,10 @@ export default function App() {
     try {
       // the modules, profile and exposure compensation are the photo's own,
       // not adjustments; the orientation stays too, as in Lightroom
-      changeMany(Object.entries(s.neutral).filter(([id]) => !isModuleSetting(id) && id !== "profile"
-                                                            && id !== "exp_comp" && id !== "orient"));
+      // a raw starts with capture sharpening on (as it opens), so it keeps it
+      changeMany([...Object.entries(s.neutral).filter(([id]) => !isModuleSetting(id) && id !== "profile"
+                                                                && id !== "exp_comp" && id !== "orient"),
+                  ...(s.raw ? [["capture", 1] as [string, number]] : [])]);
       s.resetModules();
       if (s.look) applyLook(null);
       for (const m of s.masks) s.deleteMask(m.name);
