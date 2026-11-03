@@ -19,7 +19,7 @@ export async function locateControl(t, definition) {
     const group = /^l_(temp|tint)$/.test(control.id) ? 'White Balance'
       : /^(ce_|l_(exposure|contrast|fulcrum|highlights|shadows|whites|blacks)$)/.test(control.id) ? 'Tone'
       : control.id.startsWith('l_hsl') ? 'HSL' : control.id.startsWith('l_cg') ? 'Color Grading'
-      : /^l_(sharpness|usm|noise|defringe)/.test(control.id) ? 'Detail' : 'Presence';
+      : /^l_(sharpness|usm|noise)/.test(control.id) ? 'Detail' : 'Presence';
     const heading=`[data-mask-group=${JSON.stringify(group)}]`;
     // a new mask folds its settings card as it opens, moving the groups up
     // under a click aimed a moment before: click until the group is open
@@ -57,7 +57,21 @@ export async function locateControl(t, definition) {
     throw new Blocked(`${control.id} needs its module, treatment or graph branch; run the matching module/graph case`);
   return selector;
 }
-export async function rangeContract(t, definition) {
+// a control owned by one option of a module choice (contrast equalizer,
+// contrast & texture, diffuse or sharpen) shows only while that module is
+// chosen: choose it in Preferences first, and put the choice back after
+async function withModule(t, definition, run) {
+  const m = definition.module;
+  if (!m) return run();
+  const { chooseModule } = await import('./modules.mjs');
+  const previous = await chooseModule(t, 'global', m.label, m.value);
+  if (String(previous) === String(m.value)) return run();
+  try { return await run(); }
+  finally { await chooseModule(t, 'global', m.label, previous); }
+}
+export const rangeContract = (t, definition) => withModule(t, definition, () => rangeBody(t, definition));
+export const choiceContract = (t, definition) => withModule(t, definition, () => choiceBody(t, definition));
+async function rangeBody(t, definition) {
   const container = await locateControl(t, definition), selector = `${container} input[type=range]`;
   let s = await reveal(t, selector);
   if (s.disabled) throw new Blocked(`Disabled ${definition.control.id}: fixture/module prerequisite`);
@@ -109,7 +123,7 @@ export async function rangeContract(t, definition) {
   await until(async () => Math.abs(+(await t.driver.observe(inspect, selector)).value - neutral) <= s.step, 'double-click reset');
   await settledReset(t, baseline, null, 'reset'); await t.evidence('reset');
 }
-export async function choiceContract(t, definition) {
+async function choiceBody(t, definition) {
   const container = await locateControl(t, definition);
   const select = await t.driver.observe(s => !!document.querySelector(`${s} select`), container);
   if (select) {

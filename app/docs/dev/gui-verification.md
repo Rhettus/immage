@@ -67,7 +67,7 @@ runtime safety; the interrupted slider run needs separate memory investigation.
 
 ## Expanded registry and evidence
 
-`generated.mjs` expands `inventory.json`; `registry.mjs` resolves 314 named
+`generated.mjs` expands `inventory.json`; `registry.mjs` resolves 307 named
 case declarations to implementations. Generated control cases cover visible
 manifest panels only: a hidden panel (point curve, crop, orientation, upright,
 zones, negative, modules, vignette center, exposure compensation, tone mapper)
@@ -87,6 +87,14 @@ keyboard input for limits, steps, typed clamping/cancel and reset. Workflow file
 cover crop, graphs, masks, dialogs and regression targets. Missing fixture or
 UI prerequisites raise `Blocked`; they are not successes. See the coverage ledger
 for incomplete original triggers and service/slow-folder/panorama fixture gaps.
+
+A control that only one option of a module choice shows (the contrast
+equalizer's 30 bands, contrast & texture's Clarity and Texture bands,
+diffuse or sharpen's Amount/Radius/Sensitivity) records that option as
+`module` in its generated case. The case chooses it in Preferences >
+Modules first and restores the previous choice afterwards
+(`withModule` in `specs/ranges.mjs`). Defringe is being removed from the
+app, so its controls, mask control and module choice generate no cases.
 
 The splash keeps the largest size it was given in localStorage
 (`immage.splashSize`), since the session starts after it has closed. `startup`
