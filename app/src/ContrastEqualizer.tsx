@@ -1,6 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { useRef, useState } from "react";
 import { EQ_CHANNELS, EQ_IDS, type Values } from "./manifest";
+// the graph's 260×140 plot, with room round it for a point's handle: a
+// point at either end, or at the top or bottom, was drawn half outside the
+// box, cut in half, and the last one hard to hit
+const PAD = 6, W = 260 + 2 * PAD, H = 140 + 2 * PAD;
+// a pointer's place in plot units
+const plot = (e: React.PointerEvent<SVGSVGElement>) => {
+  const r = e.currentTarget.getBoundingClientRect();
+  return { x: (e.clientX - r.left) / r.width * W - PAD, y: (e.clientY - r.top) / r.height * H - PAD };
+};
 export function ContrastEqualizer({ values, disabled, onChange }: {
   values: Values; disabled: boolean; onChange: (entries: [string, number][]) => void;
 }) {
@@ -10,8 +19,7 @@ export function ContrastEqualizer({ values, disabled, onChange }: {
   const id = (k: number) => `ce_${channel}_${k}`;
   const bands = Array.from({ length: 6 }, (_, k) => values[id(k)] ?? neutral);
   const update = (e: React.PointerEvent<SVGSVGElement>, k: number) => {
-    const r = e.currentTarget.getBoundingClientRect();
-    onChange([[id(k), Math.round(Math.max(0, Math.min(1, 1 - (e.clientY - r.top) / r.height)) * 1000) / 1000]]);
+    onChange([[id(k), Math.round(Math.max(0, Math.min(1, 1 - plot(e).y / 140)) * 1000) / 1000]]);
   };
   const curve = bands.slice(1).reduce((path, y, i) => {
     const previous = bands[Math.max(0, i - 1)], next = bands[Math.min(5, i + 2)];
@@ -23,12 +31,11 @@ export function ContrastEqualizer({ values, disabled, onChange }: {
     <select aria-label="Equalizer channel" disabled={disabled} value={channel} onChange={(e) => setChannel(+e.target.value)}>
       {EQ_CHANNELS.map((label, c) => <option key={c} value={c}>{label}</option>)}
     </select>
-    <svg className="equalizer-graph" viewBox="0 0 260 140" preserveAspectRatio="none" aria-label="Contrast equalizer"
+    <svg className="equalizer-graph" viewBox={`${-PAD} ${-PAD} ${W} ${H}`} preserveAspectRatio="none" aria-label="Contrast equalizer"
       onPointerDown={(e) => {
         if (disabled || e.button !== 0) return;
         e.preventDefault();
-        const r = e.currentTarget.getBoundingClientRect();
-        const k = Math.max(0, Math.min(5, Math.round((e.clientX - r.left) / r.width * 5)));
+        const k = Math.max(0, Math.min(5, Math.round(plot(e).x / 52)));
         drag.current = k; e.currentTarget.setPointerCapture(e.pointerId); update(e, k);
       }}
       onPointerMove={(e) => { if (!disabled && drag.current !== null) update(e, drag.current); }}

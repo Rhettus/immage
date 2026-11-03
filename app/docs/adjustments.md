@@ -101,7 +101,8 @@ the Contrast slider. It adjusts detail by spatial scale rather than tonal range.
 
 Select **Luminance**, **Chroma**, **Edges**, **Luminance noise** or **Chroma
 noise**. Each channel has six points, from **Coarse** on the left to **Fine**
-on the right. Click near a point and drag vertically to change that band.
+on the right, each drawn whole even at the graph's edge. Click near a point
+and drag vertically to change that band.
 Pull up to boost, down to reduce; the noise channels set noise thresholds.
 Focus a point and use Up/Down to adjust it, or Home to restore its neutral
 value. **Reset** restores all five channels. To use the graph inside masks,

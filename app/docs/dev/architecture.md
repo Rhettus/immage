@@ -551,7 +551,9 @@ controls as well as adjustment controls so undo and copied masks retain them.
 when `mod_contrast` is 2. `equalizerMap` maps 30 `ce_<channel>_<band>` values to
 `atrous`'s `y[channel][band]`: five channels, six bands, range 0–1. The first
 three channels are neutral at 0.5, noise channels at 0. Reset restores every
-channel; the module is disabled at neutral. The same map and graph support
+channel; the module is disabled at neutral. The graph's viewBox pads the 260×140 plot by
+a handle's reach (`PAD`), so end and top/bottom points draw whole; pointer
+positions map back to plot units through `plot`. The same map and graph support
 masked Contrast when the mask's `mod_contrast` is 2. Local curve values retain
 their 0.001 precision on reload. Each mask has its own atrous instance; it does
 not participate in shared-instance merging. Color balance rgb continues to

@@ -51,6 +51,9 @@ Bug fixes
   instead of turning it off.
 - Opening a panel after scrolling another no longer leaves the new panel's
   top out of reach above the Adjustments list on Linux.
+- The contrast equalizer draws its end points whole: the first and last
+  points, and any point pulled to the top or bottom, were cut in half at the
+  graph's edge.
 - Mac CPU captures wait for the profiler to save after Ctrl-C, then export
   the recorded trace instead of exiting with a Python interruption.
 - Transform's automatic corrections work on cropped portrait and rotated
