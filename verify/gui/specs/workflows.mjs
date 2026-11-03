@@ -34,18 +34,72 @@ export async function nativeReset(t) {
   assert(sidecars.some(s => s.includes('colorbalancergb')), 'native settings persisted in isolated sidecar');
   t.measure({ name:'b1d7c4c', sidecarCount:sidecars.length });
 }
+// The point curve has no sliders: its points (the hidden tonecurve-points
+// panel) are edited only on this graph, so this case stands in for
+// per-value control cases. Graph units: x 0..1 left to right, y 0..1 bottom
+// to top.
+const CURVE_MAX_NODES = 20; // MAX_NODES in app/src/tonecurve.ts
 export async function curves(t) {
+  // Reset All clears the New Photos preset by design: reset first, so the
+  // closing Reset All can reproduce the baseline (as history does)
+  const opened = await settledPhoto(t);
+  await click(t, 'button[aria-label="reset all"]');
+  try { await settledPhoto(t, q => q.hash !== opened.hash); } catch {}
+  const baseline = await settledPhoto(t);
   const p = await panel(t, 'tonecurve');
   await textButton(t, `${p} .tabs`, 'Point');
+  const svg = `${p} svg.point-curve`;
+  const nodes = () => t.driver.observe(s => [...document.querySelectorAll(`${s} circle.pt`)]
+    .map(c => [+c.getAttribute('cx') / 260, 1 - +c.getAttribute('cy') / 260]), svg);
+  const count = n => until(async () => (await nodes()).length === n, `curve has ${n} points`, 5000);
+  const at = async (x, y) => { const g = await reveal(t, svg);
+    return { x: g.bounds.x + x * g.bounds.width, y: g.bounds.y + (1 - y) * g.bounds.height }; };
+  const hashes = new Set();
   for (const channel of ['RGB','R','G','B']) {
     await textButton(t, `${p} .channels`, channel);
-    const graph = await reveal(t, `${p} svg.curve`);
-    const from = { x:graph.x, y:graph.y }, to = { x:graph.x, y:graph.y - graph.bounds.height * .12 };
-    await t.driver.drag(from,to); const frame=await settledPhoto(t);
-    const path = await t.driver.observe(s => document.querySelector(`${s} svg.curve`)?.outerHTML, p);
-    assert(path?.includes('circle'), 'curve exposes editable nodes');
-    t.measure({ name:channel, photoHash:frame.hash, graph:path }); await t.evidence(`curve-${channel}`);
+    await count(2);
+    // drag from the middle: a click there adds a point, the drag lifts it
+    await t.driver.drag(await at(.5, .5), await at(.5, .62)); await count(3);
+    const edited = await settledPhoto(t, q => q.hash !== baseline.hash);
+    hashes.add(edited.hash);
+    const [, mid] = await nodes();
+    t.measure({ name:channel, photoHash:edited.hash, point:mid }); await t.evidence(`curve-${channel}`);
+    // a double-click on an inner point removes it
+    const m = await at(...mid); await t.driver.point(m.x, m.y, 2); await count(2);
+    await settledReset(t, baseline, edited, `${channel}-remove`);
   }
+  assert.equal(hashes.size, 4, 'RGB and each color channel change the photo differently');
+
+  await textButton(t, `${p} .channels`, 'RGB');
+  // the end points move but stay: lift the black point, then drag it past the
+  // graph's corner, where it clamps back to (0, 0)
+  await t.driver.drag(await at(.01, .01), await at(.01, .2));
+  const lifted = await settledPhoto(t, q => q.hash !== baseline.hash);
+  assert.equal((await nodes()).length, 2, 'an end point is moved, not removed');
+  await t.evidence('black-point-lifted');
+  const corner = await at(.01, .2), g = await reveal(t, svg);
+  await t.driver.drag(corner, { x: g.bounds.x - 20, y: g.bounds.y + g.bounds.height + 20 });
+  await until(async () => { const [[x, y]] = await nodes(); return x === 0 && y === 0; }, 'black point back at its corner', 5000);
+  await settledReset(t, baseline, lifted, 'black-point-corner');
+
+  // fill the graph to its limit, alternating heights so each click lands
+  // clear of its neighbors' hit radius
+  const inner = CURVE_MAX_NODES - 2;
+  for (let i = 1; i <= inner; i++) {
+    const c = await at(i / (inner + 1), i % 2 ? .4 : .6);
+    await t.driver.point(c.x, c.y); await count(2 + i);
+  }
+  const full = await settledPhoto(t, q => q.hash !== baseline.hash); await t.evidence('max-points');
+  const gap = await at(.5, .9); await t.driver.point(gap.x, gap.y);
+  await new Promise(r => setTimeout(r, 500));
+  assert.equal((await nodes()).length, CURVE_MAX_NODES, `no point past the ${CURVE_MAX_NODES}-point limit`);
+  // dragging an inner point well off the graph removes it
+  const [, second] = await nodes(), s0 = await at(...second);
+  await t.driver.drag(s0, { x: s0.x, y: g.bounds.y + g.bounds.height * 1.4 }); await count(CURVE_MAX_NODES - 1);
+  t.measure({ name:'max-points', photoHash:full.hash, limit:CURVE_MAX_NODES });
+
+  await click(t, 'button[aria-label="reset all"]'); await count(2);
+  await settledReset(t, baseline, full, 'reset-all');
   await textButton(t, `${p} .tabs`, 'Parametric'); await expandSections(t,p);
   await t.evidence('parametric');
 }

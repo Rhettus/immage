@@ -32,7 +32,7 @@ export const cases = {
   'crop-portrait': {scope:'EXIF portrait orientation, resize all edges',commits:['1f2f8b8'],fixture:'portrait',liveValidated:false},
   'crop-options': {scope:'every aspect, custom entry, cancel, rotation/flip',liveValidated:false},
   'native-reset': {scope:'native Contrast edit, Reset All and undo with sidecar evidence',commits:['b1d7c4c'],liveValidated:false,limitation:'Does not seed hidden nondefault native parameters; original trigger remains incompletely covered.'},
-  curves:{scope:'point curve channels, drag/add nodes, parametric switch',liveValidated:false},
+  curves:{scope:'point curve: add/lift/double-click removal per channel with distinct photos, black point lift and corner clamp, 20-point limit, drag-off removal, Reset All, parametric switch',liveValidated:true},
   wheels:{scope:'3-way/global wheel changes, reset and slider view',liveValidated:false},
   equalizer:{scope:'every channel and band keyboard change/reset',liveValidated:false},
   masks:{scope:'manual shapes/ranges, Exposure effect, delete/reset',liveValidated:false},

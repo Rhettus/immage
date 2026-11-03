@@ -100,12 +100,19 @@ options did not execute. Preserve the failed report; this was not a suite pass.
 
 ## Expanded implementation status
 
-The registry now contains 544 named declarations. Generated range cases exercise
+The registry now contains 314 named declarations. Generated range cases exercise
 both pointer directions, keyboard limits/steps, typed minimum/maximum clamping,
 Escape and reset; generated choices enumerate mounted options. Global/mask module
 variants exercise a candidate control and rendered effect. These are unverified
-implementations, not 544 passes. Hidden graph controls, RAW-only controls and
-neutral/gated effects can block or need stronger dedicated oracles.
+implementations, not 314 passes. RAW-only controls and neutral/gated effects
+can block or need stronger dedicated oracles.
+
+Hidden panels generate no control cases (their state has no slider):
+`hiddenPanelCoverage` in `generated.mjs` maps the point curve to `curves`,
+crop and orientation to `crop-options`, zones to `zones`, negative to
+`negative` and modules to `module-options`. Upright, vignette center, exposure
+compensation and the tone mapper have no written case yet: a coverage gap,
+not a pass.
 
 Written cases now include crop guides/locked corners/portrait edges/aspects,
 curves, wheels, equalizer bands, masks, heal, negative conversion, zones,

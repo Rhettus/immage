@@ -67,8 +67,22 @@ runtime safety; the interrupted slider run needs separate memory investigation.
 
 ## Expanded registry and evidence
 
-`generated.mjs` expands `inventory.json`; `registry.mjs` resolves 546 named
-case declarations to implementations. Range contracts use physical pointer and
+`generated.mjs` expands `inventory.json`; `registry.mjs` resolves 314 named
+case declarations to implementations. Generated control cases cover visible
+manifest panels only: a hidden panel (point curve, crop, orientation, upright,
+zones, negative, modules, vignette center, exposure compensation, tone mapper)
+stores state that a graph, overlay or tool edits, with no slider for a
+per-control case to drive. `hiddenPanelCoverage` in `generated.mjs` names the
+written case that drives each one, or `null` where none does yet (upright,
+vignette center, exposure compensation, tone mapper);
+`node --test verify/gui/infrastructure.test.mjs` checks the mapping against
+`inventory.json`. `curves` is the point curve's case: on RGB and each color
+channel it adds and lifts a point, checks the four photos differ and that a
+double-click removal restores the photo; it lifts the black point and clamps
+it back at the corner, fills the graph to its 20-point limit, refuses a 21st,
+removes a point by dragging it off the graph, and checks Reset All. Like
+`history`, it presses Reset All first and uses that frame as its baseline.
+Passed live: run 2026-11-03T14-31-08.541Z_1e4e921_f5b9e1b6. Range contracts use physical pointer and
 keyboard input for limits, steps, typed clamping/cancel and reset. Workflow files
 cover crop, graphs, masks, dialogs and regression targets. Missing fixture or
 UI prerequisites raise `Blocked`; they are not successes. See the coverage ledger
