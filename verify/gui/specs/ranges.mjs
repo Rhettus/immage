@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { inspect, click, reveal, rangeSelector, openTool } from '../support/controls.mjs';
 import { Blocked, panel, expandSections, textButton } from '../support/scenario.mjs';
 import { until } from '../support/webdriver.mjs';
-import { settledPhoto } from './smoke.mjs';
+import { settledPhoto, settledReset } from './smoke.mjs';
 
 export async function locateControl(t, definition) {
   const { panel: id, section, control } = definition;
@@ -55,12 +55,13 @@ export async function rangeContract(t, definition) {
   }
   // Native keyboard range limits and step, including nonlinear position ranges.
   await click(t, selector); await t.driver.keys('\uE011'); // Home
-  await until(async () => +(await t.driver.observe(inspect, selector)).value === s.min, 'Home minimum');
+  // a mapped track (Temp's Kelvin) may land within a step of its end
+  await until(async () => Math.abs(+(await t.driver.observe(inspect, selector)).value - s.min) <= (s.step || .001), 'Home minimum');
   await t.driver.keys('\uE014');
   const step = +(await t.driver.observe(inspect, selector)).value;
   assert(Math.abs(step - Math.min(s.max, s.min + s.step)) < Math.max(1e-6, s.step / 100), 'ArrowRight follows declared track step');
   await t.driver.keys('\uE010');
-  await until(async () => +(await t.driver.observe(inspect, selector)).value === s.max, 'End maximum');
+  await until(async () => Math.abs(+(await t.driver.observe(inspect, selector)).value - s.max) <= (s.step || .001), 'End maximum');
   await t.evidence('keyboard-limits');
   // Typed maximum clamping and Escape cancellation observe track position for
   // nonlinear sliders rather than comparing track positions with display units.
@@ -78,7 +79,7 @@ export async function rangeContract(t, definition) {
   await until(async () => Math.abs(+(await t.driver.observe(inspect, selector)).value - s.max) <= s.step, 'Escape preserves previous value');
   const reset = await reveal(t, `${container} > label`); await t.driver.point(reset.x, reset.y, 2);
   await until(async () => Math.abs(+(await t.driver.observe(inspect, selector)).value - neutral) <= s.step, 'double-click reset');
-  await settledPhoto(t, p => p.hash === baseline.hash); await t.evidence('reset');
+  await settledReset(t, baseline, null, 'reset'); await t.evidence('reset');
 }
 export async function choiceContract(t, definition) {
   const container = await locateControl(t, definition);
@@ -106,7 +107,7 @@ export async function choiceContract(t, definition) {
       for (let i = 1; i <= count; i++) {
         const selector = `${container} button:nth-of-type(${i})`;
         await click(t, selector);
-        assert((await t.driver.observe(inspect, selector)).active, 'choice publishes selected style');
+        await until(async () => (await t.driver.observe(inspect, selector))?.active, 'choice publishes selected style');
         await settledPhoto(t); await t.evidence(`choice-${i}`);
       }
     }

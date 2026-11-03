@@ -63,18 +63,19 @@ export async function settledPhoto(t, predicate = () => true) {
   }, 'a settled final photo frame', 60000);
 }
 const summary = ({ rgba, ...rest }) => rest;
-// After a reset: wait for a settled frame other than the edited one, then
-// compare it with the baseline by mean absolute error (exact is 0).
-export async function settledReset(t, baseline, edited, label = 'reset') {
-  const reset = await settledPhoto(t, p => p.hash !== edited.hash);
-  let error = 0;
-  for (let i = 0; i < reset.rgba.length; i++) error += Math.abs(reset.rgba[i] - baseline.rgba[i]);
-  error /= reset.rgba.length;
+// After a reset: wait for a settled frame within 1/255 mean error of the
+// baseline; failing that, measure the settled frame that is there and fail
+// with its error (exact is 0).
+const meanError = (a, b) => { let e = 0; for (let i = 0; i < a.rgba.length; i++) e += Math.abs(a.rgba[i] - b.rgba[i]); return e / a.rgba.length; };
+export async function settledReset(t, baseline, _edited, label = 'reset') {
+  let reset;
+  try { reset = await settledPhoto(t, p => meanError(p, baseline) < 1); }
+  catch { reset = await settledPhoto(t); }
+  const error = meanError(reset, baseline);
   t.measure({ name: label, photoHash: reset.hash, baselineHash: baseline.hash, meanAbsoluteError: error });
   assert(error < 1, `${label}: photo mean pixel error ${error} exceeds 1/255`);
   return reset;
 }
-
 export async function exposure(t) {
   const title = await t.driver.observe(read.panelTitle);
   assert(title, 'Basic panel must exist');
