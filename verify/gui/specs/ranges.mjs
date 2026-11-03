@@ -27,11 +27,12 @@ export async function locateControl(t, definition) {
     if (t.fixture.name !== 'negative') throw new Blocked('Negative controls require --fixture negative');
     const { prepareNegative } = await import('./workflows.mjs'); await prepareNegative(t); p='.negative';
   } else p = await panel(t, id);
+  // the Region and Split Point sliders are the Parametric curve's, and
+  // their sections mount folded when it is chosen: choose it first
+  if (id === 'tonecurve') await textButton(t, `${p} .tabs`, 'Parametric');
   await expandSections(t, p);
   if (id === 'hsl') await textButton(t, `${p} .tabs`, section);
   if (id === 'colorgrading') await textButton(t, `${p} .tabs`, 'Sliders');
-  // the Region and Split Point sliders are the Parametric curve's
-  if (id === 'tonecurve') await textButton(t, `${p} .tabs`, 'Parametric');
   const selector = `${p} [data-control-id=${JSON.stringify(control.id)}]`;
   // Clarity's and Texture's coarse bands sit under their own Advanced fold
   const detail = /^(l_)?detail_(clarity|texture)_/.exec(control.id)?.[0];
