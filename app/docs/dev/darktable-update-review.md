@@ -49,6 +49,85 @@ because upstream moved its `nightly` tag; the local tag was preserved.
 - Grain gains OpenCL as part of upstream. Keep it outside the performance
   initiative and headline comparison, per project scope.
 
+## Focused compatibility audit
+
+These are source findings against the frozen candidate, not runtime passes.
+Line numbers below refer to candidate source unless prefixed with `engine/` or
+`app/`. The complete per-commit review remains open.
+
+### Confirmed adoption blocker: style blend blobs
+
+`engine/main.c:_item_params` (line 8433) copies current blend parameters only
+when the blob is exactly `sizeof(dt_develop_blend_params_t)`. A valid version-15
+blob with an appended mask tree instead reaches
+`dt_develop_blend_legacy_params`. Candidate `src/develop/blend.c:2419–3004`
+converts older versions (through 14), not current-version blobs. The resulting
+failure makes Immage copy default blend parameters and still return success.
+Thus the look can appear to load while losing its blend settings and mask.
+This is a source-confirmed incompatibility, not an observed render failure.
+
+Upstream's `src/common/styles.c:912–925` now uses
+`dt_develop_blend_params_read` (`src/develop/blend.c:3031`). It decodes the
+variable-length blob, imports forms with fresh IDs, migrates classic masks
+in current-version fixed-size blobs, and can preserve a locked target mask.
+Simply accepting a larger blob and copying its prefix would retain foreign
+mask IDs without importing the forms. The engine's existing fixed-size fast
+path also bypasses the new classic-mask migration.
+
+Before adoption, adapt the look loader to this reader and audit its interaction
+with Immage's separate look instances and history insertion. Headless fixtures
+must cover a version-15 style with attached forms, current-version classic
+masks, legacy versions, invalid/truncated tails, repeated application with ID
+collisions, a locked destination mask, switching looks and sidecar reload.
+Check both opacity and rendered mask behavior; a successful JSON reply is
+insufficient. No compatibility repair has been applied yet.
+
+### Lock handling: packaged name matches; execution still pending
+
+Candidate `src/common/database.c:3934–3984` fixes an existing Linux procfs
+lookup to read `/proc/<pid>/cmdline`. `strstr` examines only the first
+NUL-terminated argument, not every command argument. The normal application
+path uses `darktable-engine` plus the platform executable suffix
+(`app/src-tauri/src/main.rs:2607`), which satisfies the Linux substring check.
+The synthetic argv passed to `dt_init` in `engine/main.c:9752` does not change
+procfs argv and is not the reason this is compatible. A renamed executable
+selected through `DT_ENGINE_BIN` can fail the check if its actual argv[0]
+contains no `darktable`.
+
+The engine defaults its library to `:memory:` but passes a persistent config
+folder from Rust; this does not establish that all database locks are absent.
+Run isolated live/stale lock and simultaneous-start checks on the actual
+packaged executable. Windows already requires a `darktable.exe` suffix in this
+function, which `darktable-engine.exe` does not satisfy; that predicate is
+unchanged in this range and needs a separate existing-behavior check. No new
+cross-platform lock regression or successful lock test is claimed.
+
+### Upright, module versions and build inputs
+
+- The entire range diff for `src/iop/ashift.c` only adds an FMA matrix helper
+  and calls it from pixel `process()`. Neither `ashift_lsd.c` nor
+  `ashift_nmsimplex.c` changes. There is no fitting-code change to copy into
+  `engine/upright.c` from this range. CPU/OpenCL transformed pixel parity still
+  needs testing because coordinate rounding changes.
+- Searching all `src/iop` diffs finds introspection version changes only in
+  AgX (7→8) and sigmoid (3→4). Their new output-follow flags default true;
+  legacy conversion sets them false. This does not establish that defaults
+  or parameter meanings in other modules are unchanged.
+- Top-level CMake removes optional JSON-schema validation, adding no build
+  dependency there. `src/CMakeLists.txt` adds `common/filter.c` and
+  `develop/masks/blend_blob.c`. No external dependency gitlink, `src/ai` or
+  `src/common/ai` file changes occur in this range.
+- Kernel program IDs 46, 47 and 48 belong to Contrast & Texture, RGB chromatic
+  aberrations and grain respectively. Candidate `data/kernels/CMakeLists.txt`
+  globs all `.cl` files and copies them at configure time. Reconfigure the
+  candidate build and verify the packaged kernel directory and manifest agree;
+  a stale build-tree copy is insufficient. Grain remains outside this initiative.
+- The cache parameter hash change is specifically in
+  `src/develop/imageop.c:2566`: it hashes the `params` argument supplied to
+  `dt_iop_commit_params` rather than `module->params`. This is not a switch to
+  hashing `piece->data`. Cache invalidation and output-sink execution checks
+  remain required.
+
 ## Remaining review and adoption gates
 
 1. Review every non-merge diff and classify direct engine, mapped module,
