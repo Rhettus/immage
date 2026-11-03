@@ -343,6 +343,16 @@ changed aspects and the fault/native gates remain open. Synthetic inputs on
 an unrelated RAW do not establish matching-camera accuracy.
 Ignored evidence: `build/darktable-pin-review/pixel-lens-mask-bypass-lanczos2-full/`.
 
+Full-size Lanczos3 CPU mask follow-up: all 24 cases passed at 4640×3472
+under the minimum CPU budget with unchanged diagnostics and deployments.
+Old/direct results match across 487,195 signed RGB rows, 1,461,585 active
+mask rows, 9,720 byte-exact bypass copies per plugin and every final RGBA
+frame. All 179 evidence hashes were independently verified. Ordinary-aspect
+full-size masks now cover all four CPU interpolators. Changed-aspect full-size
+masks and the fault/native gates remain open. Synthetic inputs on an unrelated
+RAW do not establish matching-camera accuracy.
+Ignored evidence: `build/darktable-pin-review/pixel-lens-mask-bypass-lanczos3-full/`.
+
 Changed-aspect synthetic preview masks cover all four CPU interpolators.
 Remaining full-size cases, invalid ROIs, grid failure, nonfinite coordinates
 and native OpenCL remain open. No production behavior or pin change.
