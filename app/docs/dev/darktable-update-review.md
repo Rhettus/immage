@@ -360,6 +360,8 @@ The production pin remains unchanged until the adoption gates pass.
   CPU budget; compare 3×3 tiles against the same saved untiled histories.
 - [ ] Assess lens and transform appearance deltas, including the isolated rotation
   boundary pixel; cover reverse lens, interpolation modes, tiling and pixel aspect.
+- [x] Broaden the standalone negative-value evaluation to installed calibrated
+  Lensfun profiles; identify where the diagnostic zero clamp fails to reproduce direct evaluation.
 - [ ] Assess diffuse and denoise saved-edit appearance differences with broader
   references, including RAW denoise, image borders and full-resolution processing.
 - [ ] Verify production control read/selection semantics, RAW-specific defaults, new
@@ -1708,3 +1710,42 @@ This closes the previously untiled ratio-1.5 CPU case for this fixture. It
 reinforces the need to identify the old reference's tile layout; it establishes
 neither an accuracy ranking nor an acceptance threshold. Broader profiles,
 old OpenCL references, exports and the appearance/import policy remain open.
+
+### Broader Lensfun profile evaluation
+
+`verify/lensfun-profiles.cc` extends the CPU library probe to every installed
+profile with vignetting calibration and positive crop/focal/aperture values.
+It loads sorted XML files from an explicitly supplied directory, uses each
+profile's first stored calibration (including distance), and requires active
+vignetting and successful evaluation. This is a library diagnostic, not an
+Immage render, camera/lens matching test or device reference.
+
+With system Lensfun 0.3.4.0 and `/usr/share/lensfun/version_1`, 547 profiles
+from 34 maker labels produce 22,974 rows: widths 96/512/4640, forward/reverse,
+and constant inputs -1, 0, 0.01, 0.5, 1, 2 and 10. Only the top row is sampled,
+with height three quarters of width. Nonnegative direct modification equals
+multiplication by the factor extracted from 0.5 exactly in every sample;
+there are no nonfinite results. Every negative-input RGB component differs
+between direct evaluation and factor multiplication.
+
+Crucially, clamping that multiplication to zero reproduces direct evaluation
+for only 537 of these profiles. Ten profiles have nonzero direct output at
+some negative-input positions; all six width/direction combinations for each
+profile contain mismatches (60 rows). The maximum absolute float difference
+from the clamped result is 7947.5205078125; this is a library float value, not
+an output code or visual error bound. Exceptions include Canon EF 35-105mm,
+Canon EF 8-15mm Fisheye, several Canon compact profiles, Sigma 8mm Circular,
+Sony RX100 VI, Sony E 16-55mm and Sony E 18-135mm. The report retains exact
+profile names and calibration values. No internal arithmetic cause is inferred.
+
+Therefore the earlier Olympus clamp diagnostic must not be generalized into
+a production compatibility fix. Preserving old CPU evaluation more broadly
+needs direct evaluation or a separately validated equivalent; matching the two
+RAW fixtures does not establish profile-wide equivalence. Old OpenCL references
+and the serialized appearance/import policy remain open.
+
+Build/run instructions are in `verify/README.md`. The ignored directory
+`build/darktable-pin-review/lensfun-profiles/` retains the binary, `report.tsv`,
+`summary.json` and `manifest.json` with source/binary/report/library/XML hashes.
+The probe builds with `-Wall -Wextra` without diagnostics. Original old-cpu,
+candidate plugins, production preferences and pin are unchanged.

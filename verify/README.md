@@ -402,3 +402,23 @@ historical parameter layouts then load in separate fresh processes with empty
 libraries: complete converted params/blend and reference pixels must match.
 These use current structured XMP and current blend data; they do not establish
 historical XMP schema, user-style/sidecar corpus or old/new rendered-pixel equivalence.
+
+### Lensfun profile library probe
+
+To compare direct CPU float vignetting with factors extracted from 0.5 across
+installed calibrated profiles, build and run the standalone diagnostic:
+
+```sh
+c++ -std=c++17 -O2 -Wall -Wextra verify/lensfun-profiles.cc \
+  $(pkg-config --cflags --libs lensfun) -o /tmp/lensfun-profiles
+/tmp/lensfun-profiles /usr/share/lensfun/version_1 > /tmp/lensfun-profiles.tsv
+```
+
+It uses each eligible profile's first vignetting calibration, three row widths,
+both directions and seven constant values. TSV records direct/factor differences,
+zero-clamped differences and nonfinite counts. Missing XML, failed loading,
+inactive vignetting or failed evaluation exits nonzero. Compare library/database
+versions and hashes when interpreting results. This samples the top row only;
+it does not verify engine image output, profile matching, OpenCL or import policy.
+A zero clamp reproduces the original Olympus probe but fails for some other
+profiles; see the developer pin review for measured coverage and exceptions.
