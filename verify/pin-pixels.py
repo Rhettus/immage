@@ -48,7 +48,7 @@ def render(build, photo, state, output, sizes, edits=(), sidecar=None, save=None
         command += ['--conf',
                     f'plugins/lighttable/export/pixel_interpolator_warp={interpolation}']
     frames = {}
-    with output.with_suffix('.log').open('w') as log:
+    with (output.parent / f'{output.name}.log').open('w') as log:
         child = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                  stderr=log, text=True, env=os.environ | {
                                      'OMP_NUM_THREADS': '2', 'OMP_WAIT_POLICY': 'passive',
@@ -119,6 +119,8 @@ def main():
                         help='Compare saved reverse Lensfun correction with initialized camera defaults')
     parser.add_argument('--lens-aspect', action='store_true',
                         help='Compare saved Lensfun histories with pixel aspect ratios 0.75 and 1.5')
+    parser.add_argument('--lens-aspect-reverse', action='store_true',
+                        help='Compare saved reverse Lensfun histories with pixel aspect ratios 0.75 and 1.5')
     parser.add_argument('--resource-level', choices=['mini', 'reference', 'unrestricted'],
                         help='Set identical memory budgets and record pipe/tiling diagnostics; inspect logs for actual tiling')
     parser.add_argument('--interpolation', choices=['bilinear', 'bicubic', 'lanczos2', 'lanczos3'],
@@ -236,6 +238,13 @@ def main():
                         {'op': 'lens', 'enabled': True, 'params': {'method': 1}},
                         {'op': 'scalepixels', 'enabled': True,
                          'params': {'pixel_aspect_ratio': ratio}}]
+            if args.lens_aspect_reverse and photo.suffix.lower() in ('.nef', '.orf'):
+                for ratio in (0.75, 1.5):
+                    cases[f'lens-aspect-reverse-{ratio}'] = [
+                        {'op': 'lens', 'enabled': True,
+                         'params': {'method': 1, 'inverse': 1, 'has_been_set': 1}},
+                        {'op': 'scalepixels', 'enabled': True,
+                         'params': {'pixel_aspect_ratio': ratio}}]
             record = {'sha256': digest(photo), 'cases': {}}
             default_frames = None
             for case, edits in cases.items():
@@ -288,7 +297,7 @@ def main():
                                 or struct.unpack('<f', params)[0] != ratio):
                             raise RuntimeError('pixel aspect fixture lost saved parameters')
                         result['saved_pixel_aspect_ratio'] = ratio
-                    if case == 'lens-reverse':
+                    if case == 'lens-reverse' or case.startswith('lens-aspect-reverse-'):
                         lens = next(item for item in ET.parse(sidecar).iter()
                                     if item.get(ns + 'operation') == 'lens')
                         encoded = lens.get(ns + 'params')

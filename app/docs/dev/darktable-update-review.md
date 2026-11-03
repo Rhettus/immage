@@ -354,6 +354,8 @@ The production pin remains unchanged until the adoption gates pass.
   correction-selector histories, including unit-scale vignetting-only renders.
 - [x] Compare saved Olympus 0.75/1.5 pixel-aspect histories at full-size bounds
   without lens tiling; direct-coordinate/clamp diagnostic reproduces both frames.
+- [x] Compare full-size Olympus forward/reverse pixel-aspect histories under
+  mini/unrestricted budgets; confirm 0.75 uses 3×3 lens tiles and 1.5 is untiled.
 - [ ] Assess lens and transform appearance deltas, including the isolated rotation
   boundary pixel; cover reverse lens, interpolation modes, tiling and pixel aspect.
 - [ ] Assess diffuse and denoise saved-edit appearance differences with broader
@@ -1615,6 +1617,51 @@ candidate only in `liblens.so`.
 
 The evidence extends the diagnostic's old CPU appearance reproduction to these
 constructed full-size non-square-pixel histories. It does not select an import
-policy or cover tiled aspect combinations, reverse combined with aspect,
-camera-metadata-driven aspect, broader profiles, file export or device execution.
+policy or cover camera-metadata-driven aspect, broader profiles, file export
+or device execution. Tiled/reverse aspect follow-up is recorded below.
 The production pin, defaults, baseline plugins and other worktree are unchanged.
+
+
+### Full-size reverse/aspect and tile-layout follow-up
+
+`verify/pin-pixels.py --lens-aspect --lens-aspect-reverse --size 4640`
+now constructs both directions at ratios 0.75/1.5. Reverse/aspect histories
+must pass both the existing saved lens v10 initialization/direction guard and
+the saved enabled `scalepixels` v1 exact-ratio guard. Diagnostic log filenames
+now append `.log` to the complete case name: replacing the suffix previously
+collapsed decimal-ratio case names and overwrote process logs.
+
+Ignored `pixel-lens-aspect-fullsize-mini-repeat` and
+`pixel-lens-aspect-reverse-fullsize` run these switches on the Olympus fixture
+with `--resource-level mini` and `unrestricted`, respectively, against the
+original candidate and `isolation/lens-step1-clamp`. Both reports retain identical
+build identities; old CPU matches the prior baseline. All defaults and old
+saved-history reloads are exact, all four edits visibly contribute, and the
+direct-coordinate/clamp diagnostic reproduces every old frame exactly.
+
+| Budget | Direction | Ratio | Actual output | Original changed RGB channels | Maximum | MAE |
+| --- | --- | ---: | --- | ---: | ---: | ---: |
+| mini | Forward | 0.75 | 4640×4630 | 3,527,416 | 23 | 0.054857 |
+| mini | Reverse | 0.75 | 4640×4630 | 3,037,033 | 6 | 0.047202 |
+| unrestricted | Forward | 0.75 | 4640×4630 | 10,617,541 | 42 | 0.170236 |
+| unrestricted | Reverse | 0.75 | 4640×4630 | 9,606,854 | 21 | 0.153432 |
+| Both | Forward | 1.5 | 4640×2314 | 849,955 | 11 | 0.026389 |
+| Both | Reverse | 1.5 | 4640×2314 | 693,269 | 8 | 0.021524 |
+
+Separate logs for old creation/reload and both candidates confirm 3×3 CPU lens
+tiling for ratio 0.75 under mini, in both directions; ratio 1.5 fits untiled
+under mini. Every unrestricted lens render is untiled. No tiling fallback or
+failure is reported. This is CPU full-pipe coverage, not file export or device
+coverage. The first mini run (`pixel-lens-aspect-fullsize-mini`) predates the log
+filename fix; its repeat reproduces every frame hash and metric, build identity
+and saved module history. Whole-XMP hashes differ with save timestamps.
+
+`pixel-lens-aspect-reverse-fullsize/layout-comparison.json` compares matching
+saved module histories between budgets. At ratio 0.75, old CPU and the diagnostic
+each change 7,263,441 RGB channels (max 42, MAE 0.116065) forward and 6,677,592
+(max 21, MAE 0.106909) reverse. The original candidate changes only 27,477
+(max 1, MAE 0.000426) and 24,937 (max 1, MAE 0.000387), respectively. Ratio
+1.5 is exact across budgets for every build, consistent with untiled lens logs.
+These observations reinforce old CPU call-layout dependence; they do not rank
+accuracy or establish a universal candidate tolerance. Appearance/import policy,
+other profiles, metadata aspect, file export and device checks remain open.

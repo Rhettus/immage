@@ -303,10 +303,14 @@ it retains initialized camera/lens defaults and sets `inverse=1` and
 `has_been_set=1`, avoiding autodetection replacing the requested direction.
 Use `--lens-aspect` for Lensfun histories combined with `scalepixels` ratios
 0.75 and 1.5. The saved version, enabled flag and exact ratio are checked before
-reporting coverage. These are constructed histories, not camera metadata tests.
+reporting coverage. Add `--lens-aspect-reverse` for the same ratios combined
+with reverse correction; both saved lens initialization/direction and aspect
+parameters are guarded. These are constructed histories, not camera metadata tests.
 Use `--interpolation bilinear|bicubic|lanczos2|lanczos3` to set the same warp
 interpolation preference in every fresh engine process; run each preference into
 a separate output directory. The report records the requested preference.
+Diagnostic log names retain the complete case name, including decimal ratios,
+so each process has its own log.
 These switches share the fresh-process reload/contribution guards
 and can be combined. PNG receives only the transform cases; unsupported photo
 suffixes receive neither highlight nor lens cases. No X-Trans/linear RAW,
