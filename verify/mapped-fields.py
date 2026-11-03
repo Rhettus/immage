@@ -8,7 +8,9 @@ parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--build',type=pathlib.Path,default=root/'build')
 parser.add_argument('--snapshot',type=pathlib.Path,help='Write initial live/default values for comparison')
 parser.add_argument('--controls',action='store_true',help='Exercise production control writes, including all declared choices')
+parser.add_argument('--read-report',type=pathlib.Path,help='With --controls, save production read/activation results for cross-build comparison')
 args=parser.parse_args()
+if args.read_report and not args.controls:parser.error('--read-report requires --controls')
 build=args.build.resolve()
 fields=json.loads(subprocess.check_output(['node',str(root/'verify/mapped-fields.mjs')],text=True))
 with tempfile.TemporaryDirectory(prefix='immage-mapped-fields-') as tmp:
@@ -50,6 +52,7 @@ with tempfile.TemporaryDirectory(prefix='immage-mapped-fields-') as tmp:
    if args.controls:
     seed=p/'snapshot.json';seed.write_text(json.dumps(snapshot))
     cases=json.loads(subprocess.check_output(['node',str(root/'verify/mapped-fields.mjs'),'--controls',str(seed)],text=True))
+    records=[]
     for case in cases:
      op=case['op'];params=case['params']
      names=list(set(fields[op])|set(params))
@@ -59,9 +62,14 @@ with tempfile.TemporaryDirectory(prefix='immage-mapped-fields-') as tmp:
      expected=before|params
      assert set(after)==set(expected),(case,after)
      assert all(math.isclose(after[k],v,rel_tol=2e-6,abs_tol=2e-6) for k,v in expected.items()),(case,expected,after)
+     if args.read_report:records.append(case|{'params':after,'defaults':snapshot[op]['defaults']})
      req({'cmd':'set','op':op,'params':before})
      restored=req({'cmd':'get','modules':{op:names}})['modules'][op]['params']
      assert restored==before,(case,before,restored)
+    if args.read_report:
+     source=p/'reads.json';source.write_text(json.dumps(records))
+     results=subprocess.check_output(['node',str(root/'verify/mapped-fields.mjs'),'--reads',str(source)],text=True)
+     args.read_report.write_text(results+'\n')
     print(f"Production control writes passed: {len(cases)} scenarios, {sum(c['choice'] for c in cases)} declared-choice scenarios; global/local maps, boundary/neutral values, neighbor preservation and restoration")
    req({'cmd':'quit'});child.wait(timeout=15);assert child.returncode==0
    if args.snapshot:args.snapshot.write_text(json.dumps(snapshot,indent=2,sort_keys=True)+'\n')

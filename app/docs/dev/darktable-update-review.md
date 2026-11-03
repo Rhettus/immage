@@ -302,6 +302,9 @@ The production pin remains unchanged until the adoption gates pass.
 - [x] Write production global/local control boundary/neutral values and every
   choice declared on mapped controls through both candidate builds and the
   existing original-pin build (1,280 scenarios, including 86 choice scenarios).
+- [x] Compare production read-back and recognition/activation/enable/visibility
+  predicates for all 1,280 control-write scenarios against the existing original
+  build in both candidate builds (synthetic PNG, base modules only).
 - [ ] Verify production control read/selection semantics, RAW-specific defaults, new
   unmapped HDR fields and enum processing semantics with reference renders.
 - [x] Verify A→B→A switching between two exported/imported masked exposure looks,
@@ -897,3 +900,30 @@ instance isolation or RAW-dependent values. Each map writes to its base module
 in temporary state; no render or GUI is launched. The existing original-pin
 binary remains an existing-build comparison, not a newly certified baseline.
 Those limits keep the broader control/default/image gate unchecked.
+
+### Production read-back and activation comparison
+
+`mapped-fields.py --controls --read-report PATH` now sends the actual engine's
+stored parameters back through each production `ModuleMap.read`. The report
+records returned controls, recognized controls, `choiceOn`, explicit `enabled`
+and `choiceShows`, using the same input values that produced each write.
+All 1,280 scenarios passed on the existing original-pin build and both candidate
+builds. Their 51,058 returned control values matched with relative/absolute
+2e-6 tolerance; recognition lists and all predicates matched exactly. Existing
+444-scalar changed-write/restore checks also passed in each run.
+
+Reports are ignored local artifacts under `build/darktable-pin-review/`:
+`old-reads.json`, `cpu-reads.json`, `features-reads.json`. Generate each with:
+
+```sh
+python3 -I verify/mapped-fields.py --build BUILD --controls --read-report REPORT
+```
+
+This establishes cross-pin equivalence for these production reads and predicates,
+not an independent formula oracle or exact control-value roundtrip. Some maps
+intentionally return no controls for foreign parameter combinations. Input seeds
+still merge all base-module reads; this is not Session.open/chooseModules or
+moduleEdit orchestration. Preference/history selection, neutral snapping,
+negative overrides, conflicting active modules, combined tone-mapper choices,
+tagged/local-instance isolation and RAW/image processing remain open. No pin,
+default, GUI or rendering behavior changed.

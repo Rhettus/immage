@@ -23,13 +23,25 @@ registerHooks({
   },
 });
 
-const { modules, localMaps, allControls, LOCAL_CONTROLS } = await import('../app/src/manifest.ts');
+const { modules, localMaps, allControls, LOCAL_CONTROLS, choiceOn, choiceShows } = await import('../app/src/manifest.ts');
 const fields = {};
 for (const map of [...modules, ...localMaps]) {
   const op = map.op.split('#')[0];
   fields[op] = [...new Set([...(fields[op] ?? []), ...map.fields])];
 }
-if (process.argv[2] === '--controls') {
+if (process.argv[2] === '--reads') {
+  const records = JSON.parse(readFileSync(process.argv[3], 'utf8'));
+  const ctx = {sensorWidth:128, sensorHeight:96, orientation:0, camera:0};
+  const results = records.map(({scope,index,values,params,defaults}) => {
+    const m = (scope === 'global' ? modules : localMaps)[index];
+    const read = m.read(params,defaults,ctx,values);
+    if (Object.values(read).some(v => !Number.isFinite(v))) throw Error(`Nonfinite read ${scope}/${index}`);
+    return {read, recognized:m.controls.filter(id => read[id] !== undefined),
+      chosen:choiceOn(m,values), enabled:m.enabled ? m.enabled(values) : null,
+      visible:Object.fromEntries(m.controls.map(id => [id,choiceShows(id,values)]))};
+  });
+  process.stdout.write(JSON.stringify(results));
+} else if (process.argv[2] === '--controls') {
   const snapshot = JSON.parse(readFileSync(process.argv[3], 'utf8'));
   const ctx = {sensorWidth:128, sensorHeight:96, orientation:0, camera:0};
   const cases = [];
@@ -49,7 +61,7 @@ if (process.argv[2] === '--controls') {
           const v={...base,[id]:value};
           const params=m.write(v,d,ctx);
           if (Object.values(params).some(x=>!Number.isFinite(x))) throw Error(`Nonfinite ${scope}/${index}/${id}/${value}`);
-          cases.push({scope,index,op,id,value,params,choice:!!options});
+          cases.push({scope,index,op,id,value,params,values:v,choice:!!options});
         }
       }
     }

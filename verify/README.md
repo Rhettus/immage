@@ -254,8 +254,12 @@ enum semantics, RAW processing or image compatibility across pins.
 Add `--controls` to exercise actual global/local production map writes at control
 boundaries/neutral values and every declared option on mapped controls. It checks
 all emitted fields and mapped neighbors, allowing float storage rounding, then
-restores original values exactly. This does not test map read-back semantics,
-choice activation, tagged/local instance isolation, rendering or GUI behavior.
+restores original values exactly. Add `--read-report PATH` to save production reads, recognized controls and
+activation/enable/visibility predicates evaluated on the stored engine parameters
+and original input values. Compare reports across builds using 2e-6 relative/absolute
+tolerance for returned control values and exact recognition/predicate equality.
+This tests cross-build equivalence, not an independent formula oracle, session
+preference/history selection, tagged/local instance isolation, rendering or GUI behavior.
 
 ## Candidate masked-look sidecars
 
