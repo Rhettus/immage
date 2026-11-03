@@ -258,7 +258,7 @@ are imported, without adjacent sidecars; each input/build has isolated state.
 CPU processing uses two OMP threads. The output directory retains RGBA frames,
 engine logs and `report.json` with input/binary hashes and RGB difference metrics.
 Nonzero differences are reported for review, not automatically accepted or
-rejected. Without `--edited`, this covers fresh engine defaults.
+rejected. Without a history switch, this covers fresh engine defaults.
 
 Add `--edited` to create four independent old-build histories: exposure +1.25 EV,
 sigmoid contrast 1.9, AgX contrast 2.5, and vignette brightness -0.7 / scale 50 /
@@ -275,6 +275,16 @@ Use `--vignette` for six independent saved-history variants: dithering off,
 off-center shape. It uses the same old-save/fresh-reload/contribution checks
 and can be combined with `--edited`. This narrows the falloff compatibility
 question; it does not choose a migration policy or exercise an OpenCL device.
+
+Use `--detail` for independent anisotropic diffuse smoothing and sharpening
+histories. Both diffuse cases use five iterations,
+radius 64 and edge sensitivity 1; smoothing sets first/second speeds to 0.5,
+sharpening sets second/fourth speeds to -0.5. Active orders use anisotropy 2
+to exercise the changed diffusion weights. Use `--nlmeans` separately for
+non-local-means denoise with patch size 2,
+strength 10000 and full luma/chroma. These cases use the same saved-sidecar and
+visible-contribution checks. They cover CPU output at the requested bounds,
+not full-resolution tiling, profiled denoise, a noise corpus or device parity.
 
 These are constructed, unmasked engine histories, not production Session edit
 orchestration, a user-created style corpus, HDR/device output or a broad image

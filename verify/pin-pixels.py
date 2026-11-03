@@ -98,6 +98,10 @@ def main():
                         help='Also compare old-created exposure, sigmoid, AgX and vignette histories')
     parser.add_argument('--vignette', action='store_true',
                         help='Compare saved vignette dithering, shape and saturation variants')
+    parser.add_argument('--detail', action='store_true',
+                        help='Compare saved anisotropic diffuse smoothing/sharpening histories')
+    parser.add_argument('--nlmeans', action='store_true',
+                        help='Compare a saved non-local-means denoise history')
     args = parser.parse_args()
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -160,6 +164,25 @@ def main():
                 for name, params in variants.items():
                     cases[f'vignette-{name}'] = [
                         {'op': 'vignette', 'enabled': True, 'params': base | params}]
+            if args.detail:
+                cases |= {
+                    'diffuse-smooth': [{'op': 'diffuse', 'enabled': True,
+                                        'params': {'iterations': 5, 'radius': 64,
+                                                   'first': 0.5, 'second': 0.5,
+                                                   'anisotropy_first': 2.0,
+                                                   'anisotropy_second': 2.0,
+                                                   'regularization': 1.0}}],
+                    'diffuse-sharpen': [{'op': 'diffuse', 'enabled': True,
+                                         'params': {'iterations': 5, 'radius': 64,
+                                                    'second': -0.5, 'fourth': -0.5,
+                                                    'anisotropy_second': 2.0,
+                                                    'anisotropy_fourth': 2.0,
+                                                    'regularization': 1.0}}],
+                }
+            if args.nlmeans:
+                cases['nlmeans'] = [{'op': 'nlmeans', 'enabled': True,
+                                    'params': {'radius': 2.0, 'strength': 10000.0,
+                                               'luma': 1.0, 'chroma': 1.0}}]
             record = {'sha256': digest(photo), 'cases': {}}
             default_frames = None
             for case, edits in cases.items():
