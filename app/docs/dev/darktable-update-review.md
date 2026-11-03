@@ -2116,5 +2116,14 @@ outputs are finite. Forward output retains negative RGB with bicubic and both
 Lanczos preferences; bilinear and all reverse outputs have none for this pattern.
 Ignored `build/darktable-pin-review/pixel-lens-signed-geometry-{mode}/`
 directories retain reports, frames, logs, saved XMP and identity manifests.
-Full-size geometry, changed aspect ratios, mask/alpha behavior, natural-image
-negatives, matching-camera imports and native devices remain outside this result.
+Full-size bicubic geometry also passes all 24 comparisons at 4640×3472 with
+minimum-budget tiling: 487,199 floating RGB rows and all final RGBA frames match
+exactly. Outputs are finite; all forward cases retain negative RGB and reverse
+cases have none for this pattern. All 179 run-manifest file hashes were independently
+reverified. Evidence is retained in ignored
+`build/darktable-pin-review/pixel-lens-signed-geometry-full-bicubic/`, with counts
+in `lens-signed-geometry-full-summary.json`. Reproduce using the same geometry
+deployments and checker with a fresh output directory and
+`--geometry --size 4640 --interpolation bicubic`. Full-size alternative
+interpolators, changed aspect ratios, mask/alpha behavior, natural-image negatives,
+matching-camera imports and native devices remain outside this result.
