@@ -60,16 +60,19 @@ runtime safety; the interrupted slider run needs separate memory investigation.
 ## Expanded registry and evidence
 
 `generated.mjs` expands `inventory.json`; `registry.mjs` resolves 546 named
-case declarations to implementations. `--case a,b` runs a list of cases
-in one launch after startup. `panel-scroll` (in `regressions`) checks that a
-right panel tool opens at its own scroll offset, not the previous tool's.
-`support/privacy.mjs` runs before every screenshot: it presses I to hide the
-photo info (which shows the folder) and withholds any shot that still shows a
-home or temporary path, recording why in the case's measurements. Range contracts use physical pointer and
+case declarations to implementations. Range contracts use physical pointer and
 keyboard input for limits, steps, typed clamping/cancel and reset. Workflow files
 cover crop, graphs, masks, dialogs and regression targets. Missing fixture or
 UI prerequisites raise `Blocked`; they are not successes. See the coverage ledger
 for incomplete original triggers and service/slow-folder/panorama fixture gaps.
+
+`--case a,b` runs a list of cases in one launch after startup. `panel-scroll`
+(in `regressions`) checks that a right panel tool opens at its own scroll
+offset, not the previous tool's.
+
+`support/privacy.mjs` runs before every screenshot. It presses I to hide the
+photo info, which shows the folder, and withholds any shot that still shows a
+home or temporary path, recording why in the case's measurements.
 
 Additional read-only observations identify sections, choices, detail controls,
 preference labels, export fields and mask groups. The root exposes chosen module
