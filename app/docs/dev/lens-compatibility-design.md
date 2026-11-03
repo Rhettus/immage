@@ -301,8 +301,9 @@ per plugin. All 179 manifest hashes per run were independently verified with
 scripts unchanged during execution. Ignored evidence:
 `build/darktable-pin-review/pixel-lens-mask-bypass-aspect075-bilinear-128/`
 and `pixel-lens-mask-bypass-aspect150-bilinear-128/`. Changed-aspect preview
-masks cover bilinear and bicubic here; the Lanczos follow-up is below. Full-size masks, invalid ROIs,
-grid failure and nonfinite coordinates remain open. No production or pin change.
+masks cover bilinear and bicubic here; Lanczos preview and full-size coverage
+are recorded below. Invalid ROIs, grid failure and nonfinite coordinates remain
+open. No production or pin change.
 
 Lanczos changed-aspect CPU mask follow-up: Lanczos2 and Lanczos3 each passed
 24 cases at aspect 0.75 (128x127) and 24 at aspect 1.5 (128x63), using the
@@ -323,6 +324,15 @@ changed aspects, grid failure, nonfinite coordinates and native OpenCL remain
 open. Inputs are synthetic patterns on an unrelated RAW, not camera calibration
 validation. Production pin/defaults remain unchanged.
 Ignored evidence: `build/darktable-pin-review/pixel-lens-mask-bypass-bicubic-full/`.
-Changed-aspect synthetic preview masks now cover all four CPU interpolators.
-Full-size masks, invalid ROIs, grid failure, nonfinite coordinates and native
-OpenCL remain open. No production behavior or pin change.
+
+Full-size bilinear CPU mask follow-up: all 24 cases passed at 4640×3472
+under the minimum CPU budget, using unchanged diagnostics and deployments.
+Old/direct results match across 487,203 signed RGB rows, 1,461,609 active
+mask rows, 9,720 byte-exact bypass copies per plugin and every final RGBA
+frame. All 179 evidence hashes were independently verified. Ordinary-aspect
+full-size masks now cover bilinear and bicubic; Lanczos full-size masks,
+changed-aspect full-size masks and the fault/native gates remain open.
+Ignored evidence: `build/darktable-pin-review/pixel-lens-mask-bypass-bilinear-full/`.
+Changed-aspect synthetic preview masks cover all four CPU interpolators.
+Remaining full-size cases, invalid ROIs, grid failure, nonfinite coordinates
+and native OpenCL remain open. No production behavior or pin change.
