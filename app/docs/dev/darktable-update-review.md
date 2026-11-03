@@ -2172,3 +2172,10 @@ ignored `pixel-lens-alpha-bicubic-128/`; its manifest hashes were independently
 verified. This synthetic unrelated-camera preview does not cover separate
 `distort_mask`, full-size/other-interpolator alpha, or native OpenCL. Production
 behavior and pin remain unchanged.
+
+Audit artifact retention: generated RGBA frames from completed local runs with
+comparison reports were removed on 2026-11-03 to reclaim disk space. Reports,
+logs, XMP fixtures, original manifests and source/build identities remain. The
+ignored `build/darktable-pin-review/render-cleanup-2026-11-03.json` records each
+deleted frame's path, byte size and SHA-256. Historical manifests describe the
+original run; full byte verification of deleted frames requires regeneration.
