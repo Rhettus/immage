@@ -1450,6 +1450,12 @@ export class Session {
           if (stale) {
             perf.count("nativeFramesDiscarded");
             perf.event("frame.discarded", { ...f.trace?.diagnostic, viewportChanged: requestedKey !== this.frameKey(now, !!this.before), draftChanged: !!requestedView.draft !== !!now.draft, reshape: this.reshapeDue });
+            // the photo still waits for this edit: render it again for the
+            // view as it is now. a click on a slider's track let go while
+            // its draft rendered, and the draft, no longer wanted once the
+            // drag was over, was dropped with nothing asking for the final
+            // frame, so the photo kept its old look until the next input
+            this.needRender = true;
           }
           if (!stale) this.onFrame({ ...f, before });
         }

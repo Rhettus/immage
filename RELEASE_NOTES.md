@@ -54,6 +54,8 @@ Bug fixes
 - The contrast equalizer draws its end points whole: the first and last
   points, and any point pulled to the top or bottom, were cut in half at the
   graph's edge.
+- Clicking a slider's track to jump it (to +20, say) changes the photo at
+  once; it could keep its old look until the slider was dragged a little.
 - Clicking a contrast equalizer point focuses it, so the arrow keys adjust
   that point instead of switching the channel menu.
 - Mac CPU captures wait for the profiler to save after Ctrl-C, then export

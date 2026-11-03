@@ -12,7 +12,8 @@ is no process version to choose: the tone mapper, AgX, plays that part.
 
 ## Working with sliders
 
-- **Drag** a slider, or click on its track.
+- **Drag** a slider, or click on its track to jump it there; the photo
+  follows either way.
 - **Double-click** the slider or its name to reset it.
 - **Double-click the number** to type a value; Enter sets it, Esc cancels.
 - **Scroll** over a slider to nudge it, if **Scroll adjusts sliders** is
