@@ -57,6 +57,13 @@ export async function reveal(t, selector) {
     throw Error(`Unreachable control: ${JSON.stringify(c)}`);
   }, `visible, unclipped hit target ${selector}`, 15000);
 }
+// Open a rail tool (data-tour name). Its button toggles: clicking an open
+// tool closes it, so click only when it is not on.
+export async function openTool(t, name) {
+  const b = await reveal(t, `button[data-tour="${name}"]`);
+  if (!b.active) await click(t, `button[data-tour="${name}"]`);
+  await until(async () => (await t.driver.observe(inspect, `button[data-tour="${name}"]`))?.active, `${name} tool open`);
+}
 // Move keyboard focus to a control with Tab; the browser scrolls a focused
 // control into view, for a list the wheel does not scroll under WebDriver.
 export async function tabTo(t, selector, max = 200) {

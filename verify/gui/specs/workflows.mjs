@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from 'node:assert/strict';
-import { click, reveal, inspect } from '../support/controls.mjs';
+import { click, reveal, inspect, openTool } from '../support/controls.mjs';
 import { panel, expandSections, textButton, choose, Blocked, openMaskGroup } from '../support/scenario.mjs';
 import { until } from '../support/webdriver.mjs';
 import { settledPhoto } from './smoke.mjs';
@@ -88,7 +88,7 @@ export async function equalizer(t) {
   await textButton(t,'.equalizer-heading','Reset'); await settledPhoto(t);
 }
 export async function masks(t) {
-  await click(t,'button[data-tour="masks"]');
+  await openTool(t,'masks');
   for(const name of ['Linear Gradient','Radial Gradient','Brush','Luminance Range','Color Range','Parametric']) {
     const baseline=await settledPhoto(t);
     await click(t,'.create-mask'); await textButton(t,'.shape-menu-list',name);
@@ -109,7 +109,7 @@ export async function masks(t) {
   }
 }
 export async function heal(t) {
-  await click(t,'button[data-tour="heal"]');
+  await openTool(t,'heal');
   for(const mode of ['Heal','Clone']) {
     await textButton(t,'.heal-mode',mode);
     const canvas=await reveal(t,'svg.spot-svg');
@@ -132,7 +132,7 @@ export async function negative(t) {
   await textButton(t,'.negative','Turn Off Conversion'); await settledPhoto(t,p=>p.hash===baseline.hash);
 }
 export async function zones(t) {
-  await click(t,'button[data-tour="zones"]');
+  await openTool(t,'zones');
   const columns=await t.driver.observe(()=>document.querySelectorAll('.zone-col').length); assert(columns>=10);
   for(let i=1;i<=columns;i++) {
     await click(t,`.zone-col:nth-of-type(${i})`);
@@ -142,7 +142,7 @@ export async function zones(t) {
 }
 
 export async function prepareNegative(t) {
-  await click(t,'button[data-tour="negative"]');
+  await openTool(t,'negative');
   if(await t.driver.observe(()=>!!document.querySelector('.neg-warn'))) await textButton(t,'.neg-warn','Continue');
   await textButton(t,'.negative','Pick Film Border');
   const c=await reveal(t,'.zone-object-box'); await t.driver.point(c.bounds.x+c.bounds.width*.02,c.bounds.y+c.bounds.height*.02);

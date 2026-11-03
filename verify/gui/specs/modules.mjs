@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 const inventory=JSON.parse(readFileSync(new URL('../inventory.json',import.meta.url),'utf8'));
 import {locateControl} from './ranges.mjs';
-import { click,reveal,inspect,tabTo } from '../support/controls.mjs';
+import { click,reveal,inspect,tabTo, openTool } from '../support/controls.mjs';
 import { choose,textButton,Blocked,panel,expandSections } from '../support/scenario.mjs';
 import { until } from '../support/webdriver.mjs';
 import { settledPhoto } from './smoke.mjs';
@@ -20,7 +20,7 @@ export async function moduleOutput(t,definition){
  const selector=`select[aria-label=${JSON.stringify(`${scope==='global'?'Global':'Masks'} ${choice.label}`)}]`;
  await choose(t,selector,option.value);await textButton(t,'.prefs-foot','Done');
  if(scope==='masks'){
-  await click(t,'button[data-tour="masks"]');await click(t,'.create-mask');await textButton(t,'.shape-menu-list','Radial Gradient');
+  await openTool(t,'masks');await click(t,'.create-mask');await textButton(t,'.shape-menu-list','Radial Gradient');
   const svg=await reveal(t,'svg.mask-svg');await t.driver.drag({x:svg.x-svg.bounds.width*.12,y:svg.y-svg.bounds.height*.12},{x:svg.x+svg.bounds.width*.12,y:svg.y+svg.bounds.height*.12});
   await until(()=>t.driver.observe(()=>!!document.querySelector('.mask-list li.on')),'radial mask created');
  }

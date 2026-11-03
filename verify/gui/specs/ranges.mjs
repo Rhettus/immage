@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from 'node:assert/strict';
-import { inspect, click, reveal, rangeSelector } from '../support/controls.mjs';
+import { inspect, click, reveal, rangeSelector, openTool } from '../support/controls.mjs';
 import { Blocked, panel, expandSections, textButton } from '../support/scenario.mjs';
 import { until } from '../support/webdriver.mjs';
 import { settledPhoto } from './smoke.mjs';
@@ -10,7 +10,7 @@ export async function locateControl(t, definition) {
   if (control.rawOnly && !t.fixture.raw) throw new Blocked(`${control.id} requires an approved RAW fixture`);
   let p;
   if (definition.scope === 'local') {
-    await click(t, 'button[data-tour="masks"]');
+    await openTool(t, 'masks');
     if (!await t.driver.observe(() => !!document.querySelector('.mask-list li.on'))) {
       await click(t,'.create-mask'); await textButton(t,'.shape-menu-list','Radial Gradient');
       const svg=await reveal(t,'svg.mask-svg');

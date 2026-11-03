@@ -8,7 +8,7 @@
 // skipped rather than failing the others. The photo canvas bounds are
 // measured with every shot so a before/after pair can be cropped to the
 // photo alone.
-import { click, reveal, inspect, rangeSelector } from '../support/controls.mjs';
+import { click, reveal, inspect, rangeSelector, openTool } from '../support/controls.mjs';
 import { panel, textButton, openMaskGroup, choose } from '../support/scenario.mjs';
 import { until, pause } from '../support/webdriver.mjs';
 import { settledPhoto } from './smoke.mjs';
@@ -89,8 +89,8 @@ async function panelsTop(t) {
 // open a tool; its button closes it again when it is already open
 async function tool(t, name) {
   await panelsTop(t);
-  const b = await reveal(t, `button[data-tour="${name}"]`);
-  if (!b.active) { await t.driver.point(b.x, b.y); await pause(300); }
+  await openTool(t, name);
+  await pause(300);
   await panelsTop(t);
 }
 
