@@ -12,7 +12,8 @@ is no process version to choose: the tone mapper, AgX, plays that part.
 
 ## Working with sliders
 
-- **Drag** a slider, or click on its track.
+- **Drag** a slider, or click on its track to jump it there; the photo
+  follows either way.
 - **Double-click** the slider or its name to reset it.
 - **Double-click the number** to type a value; Enter sets it, Esc cancels.
 - **Scroll** over a slider to nudge it, if **Scroll adjusts sliders** is
@@ -101,9 +102,10 @@ the Contrast slider. It adjusts detail by spatial scale rather than tonal range.
 
 Select **Luminance**, **Chroma**, **Edges**, **Luminance noise** or **Chroma
 noise**. Each channel has six points, from **Coarse** on the left to **Fine**
-on the right. Click near a point and drag vertically to change that band.
+on the right, each drawn whole even at the graph's edge. Click near a point
+and drag vertically to change that band.
 Pull up to boost, down to reduce; the noise channels set noise thresholds.
-Focus a point and use Up/Down to adjust it, or Home to restore its neutral
+Click or Tab to a point and use Up/Down to adjust it, or Home to restore its neutral
 value. **Reset** restores all five channels. To use the graph inside masks,
 choose **Masks › Contrast › contrast equalizer** in the same preferences tab.
 Global and mask choices are independent, so global Contrast can use AgX while
@@ -172,7 +174,7 @@ On a wheel, the angle is the hue and the distance from the middle is the
 saturation. Drag the dot; double-click a wheel to take its saturation back
 to 0.
 
-![Color Grading, 3-Way view](images/color-grading.png)
+![Color Grading, 3-Way view, with the shadows toward teal and the highlights toward orange](images/color-grading.png)
 <!-- screenshot: Color Grading, 3-Way view, warm highlights and cool shadows set -->
 
 ## Detail
@@ -238,8 +240,8 @@ Raw-only sliders are grayed out on a JPEG.
 
 **Defringe** removes color fringes using darktable's chromatic aberrations:
 **Amount** sets strength and **Radius** sets its reach. Amount 0 switches it
-off. This is separate from Remove Chromatic Aberration and from the module
-choice for a mask's Defringe.
+off. This is separate from Remove Chromatic Aberration. A mask's Defringe
+uses the same module.
 
 - **Enable Profile Corrections**: corrects distortion and vignetting for
   the lens darktable detects (through the lensfun database).

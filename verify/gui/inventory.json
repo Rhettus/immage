@@ -4623,27 +4623,6 @@
                 ]
               ],
               "status": "pending"
-            },
-            {
-              "id": "mod_defringe",
-              "label": "Defringe",
-              "kind": "choice",
-              "rawOnly": false,
-              "min": 0,
-              "max": 1,
-              "step": 1,
-              "nonlinear": false,
-              "options": [
-                [
-                  "chromatic aberrations",
-                  0
-                ],
-                [
-                  "defringe",
-                  1
-                ]
-              ],
-              "status": "pending"
             }
           ]
         }
@@ -5962,30 +5941,6 @@
           ]
         }
       ]
-    },
-    {
-      "id": "defringe",
-      "label": "Defringe",
-      "control": "mod_defringe",
-      "covers": [
-        "l_defringe"
-      ],
-      "options": [
-        {
-          "value": 0,
-          "name": "chromatic aberrations",
-          "op": "cacorrectrgb",
-          "controls": [],
-          "localControls": []
-        },
-        {
-          "value": 1,
-          "name": "defringe",
-          "op": "defringe",
-          "controls": [],
-          "localControls": []
-        }
-      ]
     }
   ],
   "maskModules": [
@@ -6217,30 +6172,6 @@
           "localControls": [
             "l_sharpness"
           ]
-        }
-      ]
-    },
-    {
-      "id": "defringe",
-      "label": "Defringe",
-      "control": "mod_defringe",
-      "covers": [
-        "l_defringe"
-      ],
-      "options": [
-        {
-          "value": 0,
-          "name": "chromatic aberrations",
-          "op": "cacorrectrgb",
-          "controls": [],
-          "localControls": []
-        },
-        {
-          "value": 1,
-          "name": "defringe",
-          "op": "defringe",
-          "controls": [],
-          "localControls": []
         }
       ]
     }

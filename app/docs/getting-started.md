@@ -39,7 +39,7 @@ Immage also:
   keep it from coming back; the **?** button at the bottom of the rail
   starts it again.
 
-![The Immage window on first launch, with the sample photo open](images/first-launch.png)
+![The Immage window on first launch, with a photo open](images/first-launch.png)
 <!-- screenshot: first launch, sample photo open, tour closed, both side panels showing -->
 
 ## The five-minute tour

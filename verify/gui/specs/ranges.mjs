@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from 'node:assert/strict';
-import { inspect, click, reveal, rangeSelector } from '../support/controls.mjs';
+import { inspect, click, reveal, rangeSelector, openTool } from '../support/controls.mjs';
 import { Blocked, panel, expandSections, textButton } from '../support/scenario.mjs';
 import { until } from '../support/webdriver.mjs';
-import { settledPhoto } from './smoke.mjs';
+import { settledPhoto, settledReset } from './smoke.mjs';
 
 export async function locateControl(t, definition) {
   const { panel: id, section, control } = definition;
   if (control.rawOnly && !t.fixture.raw) throw new Blocked(`${control.id} requires an approved RAW fixture`);
   let p;
   if (definition.scope === 'local') {
-    await click(t, 'button[data-tour="masks"]');
+    await openTool(t, 'masks');
     if (!await t.driver.observe(() => !!document.querySelector('.mask-list li.on'))) {
       await click(t,'.create-mask'); await textButton(t,'.shape-menu-list','Radial Gradient');
       const svg=await reveal(t,'svg.mask-svg');
@@ -19,23 +19,59 @@ export async function locateControl(t, definition) {
     const group = /^l_(temp|tint)$/.test(control.id) ? 'White Balance'
       : /^(ce_|l_(exposure|contrast|fulcrum|highlights|shadows|whites|blacks)$)/.test(control.id) ? 'Tone'
       : control.id.startsWith('l_hsl') ? 'HSL' : control.id.startsWith('l_cg') ? 'Color Grading'
-      : /^l_(sharpness|usm|noise|defringe)/.test(control.id) ? 'Detail' : 'Presence';
+      : /^l_(sharpness|usm|noise)/.test(control.id) ? 'Detail' : 'Presence';
     const heading=`[data-mask-group=${JSON.stringify(group)}]`;
-    if(await t.driver.observe(s=>!!document.querySelector(`${s} .chevron:not(.open)`),heading)) await click(t,heading);
+    // a new mask folds its settings card as it opens, moving the groups up
+    // under a click aimed a moment before: click until the group is open
+    await until(async()=>{
+      if(!await t.driver.observe(s=>!!document.querySelector(`${s} .chevron:not(.open)`),heading)) return true;
+      await click(t,heading); return false;
+    },`${group} group open`);
     p='.masks-panel';
   } else if (id === 'negative') {
     if (t.fixture.name !== 'negative') throw new Blocked('Negative controls require --fixture negative');
     const { prepareNegative } = await import('./workflows.mjs'); await prepareNegative(t); p='.negative';
-  } else p = await panel(t, id);
+  } else {
+    // the B&W Mix panel shows only in B&W treatment
+    if (id === 'bw') { await textButton(t, await panel(t, 'basic'), 'B&W'); await settledPhoto(t); }
+    p = await panel(t, id);
+  }
+  // the Region and Split Point sliders are the Parametric curve's, and
+  // their sections mount folded when it is chosen: choose it first
+  if (id === 'tonecurve') await textButton(t, `${p} .tabs`, 'Parametric');
   await expandSections(t, p);
   if (id === 'hsl') await textButton(t, `${p} .tabs`, section);
   if (id === 'colorgrading') await textButton(t, `${p} .tabs`, 'Sliders');
   const selector = `${p} [data-control-id=${JSON.stringify(control.id)}]`;
+  // Clarity's and Texture's coarse bands sit under their own Advanced fold
+  const detail = /^(l_)?detail_(clarity|texture)_/.exec(control.id)?.[0];
+  if (detail && !await t.driver.observe(s => !!document.querySelector(s), selector)) {
+    const fold = `${p} button.detail-advanced[data-detail-id^=${JSON.stringify(detail)}]`;
+    // no fold: the module that has these controls is not chosen
+    if (await t.driver.observe(s => document.querySelector(s)?.getAttribute('aria-expanded') === 'false', fold)) {
+      await click(t, fold);
+      await until(() => t.driver.observe(s => !!document.querySelector(s), selector), `${detail} Advanced open`).catch(() => {});
+    }
+  }
   if (!await t.driver.observe(s => !!document.querySelector(s), selector))
     throw new Blocked(`${control.id} needs its module, treatment or graph branch; run the matching module/graph case`);
   return selector;
 }
-export async function rangeContract(t, definition) {
+// a control owned by one option of a module choice (contrast equalizer,
+// contrast & texture, diffuse or sharpen) shows only while that module is
+// chosen: choose it in Preferences first, and put the choice back after
+async function withModule(t, definition, run) {
+  const m = definition.module;
+  if (!m) return run();
+  const { chooseModule } = await import('./modules.mjs');
+  const previous = await chooseModule(t, 'global', m.label, m.value);
+  if (String(previous) === String(m.value)) return run();
+  try { return await run(); }
+  finally { await chooseModule(t, 'global', m.label, previous); }
+}
+export const rangeContract = (t, definition) => withModule(t, definition, () => rangeBody(t, definition));
+export const choiceContract = (t, definition) => withModule(t, definition, () => choiceBody(t, definition));
+async function rangeBody(t, definition) {
   const container = await locateControl(t, definition), selector = `${container} input[type=range]`;
   let s = await reveal(t, selector);
   if (s.disabled) throw new Blocked(`Disabled ${definition.control.id}: fixture/module prerequisite`);
@@ -55,12 +91,19 @@ export async function rangeContract(t, definition) {
   }
   // Native keyboard range limits and step, including nonlinear position ranges.
   await click(t, selector); await t.driver.keys('\uE011'); // Home
-  await until(async () => +(await t.driver.observe(inspect, selector)).value === s.min, 'Home minimum');
+  // a mapped track (Temp's Kelvin) may land within a step of its end
+  await until(async () => Math.abs(+(await t.driver.observe(inspect, selector)).value - s.min) <= (s.step || .001), 'Home minimum');
+  const home = +(await t.driver.observe(inspect, selector)).value;
   await t.driver.keys('\uE014');
-  const step = +(await t.driver.observe(inspect, selector)).value;
-  assert(Math.abs(step - Math.min(s.max, s.min + s.step)) < Math.max(1e-6, s.step / 100), 'ArrowRight follows declared track step');
+  // read once the key has moved it: an immediate read can race the update
+  const step = await until(async () => { const v = +(await t.driver.observe(inspect, selector)).value; return v !== home && { v }; }, 'ArrowRight moves')
+    .then(r => r.v, async () => +(await t.driver.observe(inspect, selector)).value);
+  assert(Math.abs(step - Math.min(s.max, s.min + s.step)) < Math.max(1e-6, s.step / 100),
+    `ArrowRight follows declared track step: ${home} -> ${step}, expected ${Math.min(s.max, s.min + s.step)}`);
   await t.driver.keys('\uE010');
-  await until(async () => +(await t.driver.observe(inspect, selector)).value === s.max, 'End maximum');
+  await until(async () => Math.abs(+(await t.driver.observe(inspect, selector)).value - s.max) <= (s.step || .001), 'End maximum')
+    .catch(async e => { const c = await t.driver.observe(inspect, selector);
+      throw Error(`End maximum: track ${c.value} (shows ${c.displayed}), expected ${s.max}; ${e.message}`); });
   await t.evidence('keyboard-limits');
   // Typed maximum clamping and Escape cancellation observe track position for
   // nonlinear sliders rather than comparing track positions with display units.
@@ -78,9 +121,9 @@ export async function rangeContract(t, definition) {
   await until(async () => Math.abs(+(await t.driver.observe(inspect, selector)).value - s.max) <= s.step, 'Escape preserves previous value');
   const reset = await reveal(t, `${container} > label`); await t.driver.point(reset.x, reset.y, 2);
   await until(async () => Math.abs(+(await t.driver.observe(inspect, selector)).value - neutral) <= s.step, 'double-click reset');
-  await settledPhoto(t, p => p.hash === baseline.hash); await t.evidence('reset');
+  await settledReset(t, baseline, null, 'reset'); await t.evidence('reset');
 }
-export async function choiceContract(t, definition) {
+async function choiceBody(t, definition) {
   const container = await locateControl(t, definition);
   const select = await t.driver.observe(s => !!document.querySelector(`${s} select`), container);
   if (select) {
@@ -97,7 +140,8 @@ export async function choiceContract(t, definition) {
       const selector = `${container} input[type=checkbox]`, initial = await reveal(t, selector);
       for (let i = 0; i < 2; i++) {
         await click(t, selector);
-        assert.equal((await t.driver.observe(inspect, selector)).checked, i ? initial.checked : !initial.checked);
+        const want = i ? initial.checked : !initial.checked;
+        await until(async () => (await t.driver.observe(inspect, selector)).checked === want, `toggle ${i} checked ${want}`);
         await settledPhoto(t); await t.evidence(`toggle-${i}`);
       }
     } else {
@@ -106,7 +150,7 @@ export async function choiceContract(t, definition) {
       for (let i = 1; i <= count; i++) {
         const selector = `${container} button:nth-of-type(${i})`;
         await click(t, selector);
-        assert((await t.driver.observe(inspect, selector)).active, 'choice publishes selected style');
+        await until(async () => (await t.driver.observe(inspect, selector))?.active, 'choice publishes selected style');
         await settledPhoto(t); await t.evidence(`choice-${i}`);
       }
     }

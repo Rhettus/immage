@@ -186,6 +186,16 @@ These break silently, and are the reason this page has a checklist:
   `python3 -I benchmarking/compare.py`.
 - A GUI pass: every panel, crop, masks, heal, presets, looks, export,
   Immich, Edit In.
+- OpenCL on each GPU machine: Preferences › Performance › Measuring ›
+  **GPU check** on the same copied photo with the old pin's build and the
+  candidate's, then `python3 -I benchmarking/gpucheck.py <reports>`. Look
+  for cases that newly fail, a module newly on the CPU in the GPU pass (a
+  kernel missing or not building: compare each device's `programs` and
+  `kernels`), OpenCL errors, and the canceled-base case. Its last table puts
+  each case's module time in the GPU pass side by side: a module newly on
+  OpenCL (contrast & texture) should lose its `(CPU)` and its time. No agent
+  is needed on the machine; the reports carry the device, driver and machine
+  details.
 
 ## Log
 

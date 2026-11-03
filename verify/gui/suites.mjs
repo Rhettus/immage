@@ -3,6 +3,7 @@ import { generated, generatedNames } from './generated.mjs';
 // These are coverage claims for cases, not proof they have passed on a platform.
 export const cases = {
   startup: { scope: 'visible fixture, stable final canvas, isolated profile', liveValidated: true },
+  splash: { scope: 'the launch splash keeps its 640x427 size on a tiling window manager (measured by startup); known to fail on Hyprland, not in smoke', liveValidated: true },
   'gui-benchmark': { scope: 'Preferences Run button, saved schema 9 report, visible stable viewport, restored photo', liveValidated: true,
     verification: 'Linux ARM64 VM, system WebKitGTK 2.54.2, Wayland DPR 2 run 2026-11-02T15-05-22.535Z_ee28973_5104c5ed; DPR 1 with deferred viewport gate run 2026-11-02T15-20-43.128Z_ee28973_46f49c76.',
     limitation: 'Runs the app scripted workload, not pointer latency. VM timings are approximate; no compositor presentation or native GPU claim.' },
@@ -15,11 +16,13 @@ export const cases = {
   exposure: { scope: 'pointer drag both directions, brightness, reset pixels', liveValidated: true },
   'slider-input': { scope: 'Exposure keyboard, inline editor, focus and reset', liveValidated: true,
     verification: 'Linux ARM64, system WebKitGTK 2.54.2, Wayland, DPR 2; run 2026-11-01T23-39-31.087Z_f8f31aa_bc0fb5a5. Remaining controls suite stopped at history.' },
+  'slider-click': { scope: 'a click on Exposure/Shadows/Contrast tracks, without moving, jumps the value and the settled photo follows (user report: no change until dragged)', liveValidated: false },
   'batch-paste': { scope: 'two selected photos, Kodak look and strength, unticked groups, batch undo/redo, persistence and untouched photo', liveValidated: false, limitation: 'Copied JPEG fixtures; backend suite covers virtual copies, masks, failures and negative conversion.' },
   history: { scope: 'Exposure undo/redo and basic Reset All value/photo round trip', liveValidated: false,
     limitation: 'Does not yet cover b1d7c4c native-module Reset All regression.' },
   rail: { scope: 'Presets/Masks/Zones/Heal/Adjustments activation, geometry and Windows cursor CSS', liveValidated: false,
     commits: ['fe5dbc2'], limitation: 'Native cursor stacking remains a manual Windows check.' },
+  'panel-scroll': { scope: 'each right panel tool keeps its own scroll offset; a first open starts at the top', commits: ['81d4441'], liveValidated: true },
   sliders: { scope: 'currently mounted sliders in available manifest panels; drag and reset', liveValidated: false,
     limitation: 'Hidden tabs/sections/module choices and RAW-only controls require further scenarios. Pixel changes are recorded for review, not universal image-effect assertions.' },
   'module-options': { scope: 'each Global/Masks preference option and independent Contrast choices', liveValidated: false,
@@ -29,7 +32,7 @@ export const cases = {
   'crop-portrait': {scope:'EXIF portrait orientation, resize all edges',commits:['1f2f8b8'],fixture:'portrait',liveValidated:false},
   'crop-options': {scope:'every aspect, custom entry, cancel, rotation/flip',liveValidated:false},
   'native-reset': {scope:'native Contrast edit, Reset All and undo with sidecar evidence',commits:['b1d7c4c'],liveValidated:false,limitation:'Does not seed hidden nondefault native parameters; original trigger remains incompletely covered.'},
-  curves:{scope:'point curve channels, drag/add nodes, parametric switch',liveValidated:false},
+  curves:{scope:'point curve: add/lift/double-click removal per channel with distinct photos, black point lift and corner clamp, 20-point limit, drag-off removal, Reset All, parametric switch',liveValidated:true},
   wheels:{scope:'3-way/global wheel changes, reset and slider view',liveValidated:false},
   equalizer:{scope:'every channel and band keyboard change/reset',liveValidated:false},
   masks:{scope:'manual shapes/ranges, Exposure effect, delete/reset',liveValidated:false},
@@ -51,6 +54,8 @@ export const cases = {
   'folder-race':{scope:'controlled slow unrelated folder and stale result protection',commits:['17ac5e6','74cedc9'],liveValidated:false},
   panorama:{scope:'projection choices and preview with overlapping fixtures',liveValidated:false},
   'immich-workflow':{scope:'isolated local-service prerequisite; no live account access',commits:['33949b6','22840b4'],liveValidated:false},
+  'site-shots':{scope:'website and guide screenshots: Basic before/after, color grading, mask, presets, heal, crop, Zone System, first launch, Folders, Library grid, split before/after, History, point tone curve, RYB vectorscope, Preferences; photo info hidden, shots with a visible path skipped',liveValidated:true,
+    limitation:'Captures evidence for the website; asserts only that each tool opened. A shot that cannot be reached is recorded as skipped.'},
   ...generated,
 };
 export const suites = {
@@ -58,10 +63,16 @@ export const suites = {
   crop: ['startup','crop-guides','crop-locked','crop-options'],
   workflows: ['startup','curves','wheels','equalizer','masks','heal','zones','preferences-matrix','slider-wheel','export-options','filters','presets','shortcuts'],
   inventory: ['startup',...generatedNames],
-  regressions: ['startup', 'rail', 'module-options', 'batch-paste'],
-  controls: ['startup', 'slider-input', 'history', 'rail', 'sliders', 'module-options'],
+  regressions: ['startup', 'rail', 'panel-scroll', 'module-options', 'batch-paste'],
+  controls: ['startup', 'slider-input', 'slider-click', 'history', 'rail', 'sliders', 'module-options'],
 };
 export function resolveCases(name) {
+  // a comma list runs several cases in one launch: startup,masks,heal
+  if (name.includes(',')) {
+    const names = name.split(',').map(s => s.trim()).filter(Boolean);
+    for (const n of names) if (!Object.hasOwn(cases, n)) throw Error(`Unknown case: ${n}`);
+    return [...new Set(['startup', ...names])];
+  }
   if (name === 'all') return ['startup',...Object.keys(cases).filter(c=>c!=='startup')];
   if (Object.hasOwn(suites, name)) return suites[name];
   if (!Object.hasOwn(cases, name)) throw Error(`Unknown case/suite: ${name}`);

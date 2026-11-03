@@ -49,14 +49,16 @@ dropped, and the steps before cannot be undone any more. Immage saves the
 history compressed in any case, so the photo's sidecar stays small whether
 you press it or not.
 
-![The History card with a few steps](images/history.png)
+![The History card: four slider moves above the steps the photo opened with](images/history.png)
 <!-- screenshot: Library panel, History card open, several steps above the opening stack -->
 
 ## Reset all
 
 **Reset all**, in the Adjustments panel's head, takes the photo back to its
-starting point: sliders, crop, look, masks and spots. It is one step, so
-⌘Z brings everything back.
+defaults: sliders, crop, look, masks and spots. It also takes off what the
+New Photos preset gave it (a raw's lens corrections, with the Default
+preset). A raw keeps Capture Sharpening on, as it opens. It is one step,
+so ⌘Z brings everything back.
 
 ## Copying settings to other photos
 

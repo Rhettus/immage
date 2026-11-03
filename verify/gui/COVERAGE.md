@@ -21,8 +21,10 @@ This imports pure manifest/math code using Node >= 22.18, without launching an a
 | batch-paste | Two selected JPEGs, Kodak look/amount, one batch undo/redo, both sidecars, reopening and unselected image | Written; awaiting approved GUI run |
 | history | Slider edit, toolbar undo/redo, value/photo agreement, basic Reset All | Awaiting approved GUI run |
 | rail | Presets, masks, zones, heal, adjustments, active state, hit geometry, screenshots | Awaiting approved GUI run |
+| splash | Launch splash size stays 640x427 (not tiled to fill the workspace) | Fails on Hyprland 0.57: floats but opens 1710x1107 (run 2026-11-03T05-56-54.119Z_f7db416); not in smoke |
+| panel-scroll | 81d4441: a first open of Presets starts at the top; Adjustments returns to its own offset | Passed (run 2026-11-03T06-06-31.255Z_0f9ba08) |
 | sliders | Current reachable panel ranges, pointer change, reset, final pixels, CSS, screenshots | Awaiting approved GUI run; hidden branches excluded |
-| module-options | Every available Global/Masks option, independent Contrast choices, folding persistence | Awaiting approved GUI run; preference UI only |
+| module-options | Every available Global/Masks option, independent Contrast choices, folding persistence | Awaiting a GUI run; preference UI only. Generated module-masks-contrast-1 passed (run 2026-11-03T06-28-57.870Z_8e9b538) |
 
 `node verify/gui/run.mjs --list` lists selections without launching anything.
 `--suite controls` runs all implemented control cases; `--suite regressions`
@@ -98,12 +100,27 @@ options did not execute. Preserve the failed report; this was not a suite pass.
 
 ## Expanded implementation status
 
-The registry now contains 544 named declarations. Generated range cases exercise
+The registry now contains 310 named declarations. Generated range cases exercise
 both pointer directions, keyboard limits/steps, typed minimum/maximum clamping,
 Escape and reset; generated choices enumerate mounted options. Global/mask module
 variants exercise a candidate control and rendered effect. These are unverified
-implementations, not 544 passes. Hidden graph controls, RAW-only controls and
-neutral/gated effects can block or need stronger dedicated oracles.
+implementations, not 310 passes. RAW-only controls and neutral/gated effects
+can block or need stronger dedicated oracles.
+
+A control that only one option of a module choice shows (the contrast
+equalizer's 30 bands, contrast & texture's Clarity and Texture bands,
+diffuse or sharpen's Amount/Radius/Sensitivity) records that option as
+`module` in its generated case. The case chooses it in Preferences >
+Modules first and restores the previous choice afterwards
+(`withModule` in `specs/ranges.mjs`). Defringe has no module choice, so
+its global and mask sliders always run on chromatic aberrations.
+
+Hidden panels generate no control cases (their state has no slider):
+`hiddenPanelCoverage` in `generated.mjs` maps the point curve to `curves`,
+crop and orientation to `crop-options`, zones to `zones`, negative to
+`negative` and modules to `module-options`. Upright, vignette center, exposure
+compensation and the tone mapper have no written case yet: a coverage gap,
+not a pass.
 
 Written cases now include crop guides/locked corners/portrait edges/aspects,
 curves, wheels, equalizer bands, masks, heal, negative conversion, zones,

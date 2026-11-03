@@ -3,20 +3,30 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 const inventory=JSON.parse(readFileSync(new URL('../inventory.json',import.meta.url),'utf8'));
 import {locateControl} from './ranges.mjs';
-import { click,reveal } from '../support/controls.mjs';
+import { click,reveal,inspect,tabTo, openTool } from '../support/controls.mjs';
 import { choose,textButton,Blocked,panel,expandSections } from '../support/scenario.mjs';
 import { until } from '../support/webdriver.mjs';
 import { settledPhoto } from './smoke.mjs';
 
-export async function moduleOutput(t,definition){
- const {scope,choice,option}=definition;
+// sets a module choice in Preferences > Modules and returns the value it had
+export async function chooseModule(t,scope,label,value){
  await click(t,'button[data-tour="prefs"]');await textButton(t,'.prefs-tabs','Modules');await textButton(t,'.prefs','Custom');
  const fold=`button[aria-controls="module-prefs-${scope}"]`;
- if(!await t.driver.observe(s=>document.querySelector(s)?.getAttribute('aria-expanded')==='true',fold))await click(t,fold);
- const selector=`select[aria-label=${JSON.stringify(`${scope==='global'?'Global':'Masks'} ${choice.label}`)}]`;
- await choose(t,selector,option.value);await textButton(t,'.prefs-foot','Done');
+ if(!await t.driver.observe(s=>document.querySelector(s)?.getAttribute('aria-expanded')==='true',fold)){
+  // the Preferences list does not scroll for WebDriver's wheel; Tab to the fold scrolls it into view
+  if(!(await t.driver.observe(inspect,fold))?.visible)await tabTo(t,fold);
+  await click(t,fold);
+ }
+ const selector=`select[aria-label=${JSON.stringify(`${scope==='global'?'Global':'Masks'} ${label}`)}]`;
+ const previous=(await reveal(t,selector)).value;
+ await choose(t,selector,value);await textButton(t,'.prefs-foot','Done');
+ return previous;
+}
+export async function moduleOutput(t,definition){
+ const {scope,choice,option}=definition;
+ await chooseModule(t,scope,choice.label,option.value);
  if(scope==='masks'){
-  await click(t,'button[data-tour="masks"]');await click(t,'.create-mask');await textButton(t,'.shape-menu-list','Radial Gradient');
+  await openTool(t,'masks');await click(t,'.create-mask');await textButton(t,'.shape-menu-list','Radial Gradient');
   const svg=await reveal(t,'svg.mask-svg');await t.driver.drag({x:svg.x-svg.bounds.width*.12,y:svg.y-svg.bounds.height*.12},{x:svg.x+svg.bounds.width*.12,y:svg.y+svg.bounds.height*.12});
   await until(()=>t.driver.observe(()=>!!document.querySelector('.mask-list li.on')),'radial mask created');
  }

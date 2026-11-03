@@ -5,6 +5,9 @@ zones, from pure black to pure white. You can see where every tone in the
 picture falls, move tones to the zones you want them in, and fine-tune any
 band of tones on its own.
 
+![A black and white photo with the Zone System panel: the zones histogram from 0 to X and the placement curve](images/zone-system.png)
+<!-- screenshot: Zone System mode on a black and white photo, zones histogram and Placement curve showing -->
+
 ## What it is
 
 The Zone System was devised by Ansel Adams and Fred Archer in the 1930s to

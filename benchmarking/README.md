@@ -113,6 +113,60 @@ for slow-frame attribution and independent frontend/native timelines. See
 [GUI performance tracing](../app/docs/dev/performance-tracing.md) for the flow,
 fields, limitations and diagnostics-on/off comparisons.
 
+### The GPU check
+
+Preferences → Performance → Measuring → **GPU check → Run** compares
+darktable's CPU and OpenCL renders on any machine with the app, with no agent
+or checkout. It writes `gpu-<time>.json` beside the GUI reports (also matched
+by `results/gui/*.json`, and kept out of the GUI tables); a failing case also
+writes `gpu-<time>-<case>.png`, the difference amplified 8×. Table any number
+of reports, from any machines:
+
+```bash
+python3 -I benchmarking/gpucheck.py                    # results/gui/gpu-*.json
+python3 -I benchmarking/gpucheck.py ~/Downloads/gpu-*.json
+```
+
+`report.py` adds the latest report per machine to SUMMARY.md.
+
+Each case in [gpuCheck.ts](../app/src/gpuCheck.ts) makes its edit through
+the app's `changeMany`, then the engine's `parity` command renders the edit
+at 1024 px on its own follower pipe twice from an empty cache: with OpenCL
+turned off for that render, then on a device locked with export priority.
+It compares the 8-bit sRGB frames: ΔE (CIE76) mean, p99, max and the share
+over 2, and per-channel mean and maximum difference. Each pass records its
+time, device and `cl_errors`, the change in darktable's
+`darktable.opencl->error_count`, which rises when a pipe fails on its device
+and reruns on the CPU (`pixelpipe_hb.c`, `dt_dev_pixelpipe_process`). Each
+pass's `-d perf` module timings are returned under `modules.cpu` and
+`modules.gpu`, split by the engine's `[engine] | <pass>` stderr markers and
+kept to the check's full pipe (a thumbnail drawn meanwhile is left out), so
+`cpuModules` lists modules that ran on the CPU in the GPU pass. A case passes
+on a device, no fallback, and ΔE p99 < 2; its own module on the CPU, or any
+instance of it (`contrastntexture.1`), is a note. The cancel case starts the
+idle base on the GPU, drags Exposure to cancel it, and compares again.
+`opencl.before` / `after` add each device's memory, events, settings and the
+counts of built `programs` and used `kernels`, plus `error_count` and
+`stopped`. `memory_in_use` and `peak_memory` are there only when the app runs
+with `-d memory -d opencl`: darktable counts device memory under those flags
+alone (`_opencl_memory_statistics` in `opencl.c`); the first reports
+show a 0 it never counted. `render` replies also carry `cl_errors`.
+
+`gpucheck.py` gives each case's own module time in the CPU and the GPU pass,
+marked `(CPU)` where darktable kept it there, and, given more than one
+report, a last table of those GPU-pass times side by side. Reports from the
+old and the candidate pin on one machine show whether a module moved to
+OpenCL, such as contrast & texture, got faster. They are times at 1024 px,
+from one render each; the full-size difference is bench.py's (below).
+
+Limits: 1024 px, not full resolution; no injected failures, so tiling and
+fallback appear only when they happen; a change of operation order on the
+GPU and a change of appearance look the same in ΔE. The CPU pass turns
+`darktable.opencl->enabled` off for its render, so an export running at the
+same moment would also stay on the CPU. Check the comparison itself without a
+GPU: `python3 -I verify/gpu-parity.py` (both passes on the CPU, identical
+frames); `--opencl` also compares the GPU where there is one.
+
 ## What each scenario measures
 
 All engine timings are wall time of the request, as the app waits for it.

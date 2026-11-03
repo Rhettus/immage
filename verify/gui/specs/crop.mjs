@@ -67,7 +67,7 @@ export async function cropOptions(t) {
     await choose(t, '.crop-aspect select', value);
     const g = await t.driver.observe(geometry); assert(area(g) > 10); await t.evidence(`aspect-${value.replaceAll(':','-')}`);
   }
-  await choose(t, '.crop-aspect select', 'enter-custom');
+  await choose(t, '.crop-aspect select', 'enter-custom', '.crop-custom');
   for (const [label, number] of [['width','7'], ['height','5']]) {
     await click(t, `.crop-custom input[aria-label="${label}"]`);
     await t.driver.chord('\uE009', 'a'); await t.driver.keys(number);

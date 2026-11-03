@@ -83,7 +83,7 @@ are `localStorage` keys named `immage.*`.
 | [App.tsx](../../src/App.tsx) | Library, viewer, panels, tools, undo, before/after, compare, keyboard, plugins; also the small components `PanelView`, `Slider`, `Filmstrip`, `HistogramView`, `Navigator`, `Toolbar`. |
 | [Tour.tsx](../../src/Tour.tsx), [Shortcuts.tsx](../../src/Shortcuts.tsx) | The quick-start tour; the keyboard shortcuts sheet. |
 | [ImportView.tsx](../../src/ImportView.tsx) | The SD card importer, loaded from `@immporter/embed`. |
-| [Collapse.tsx](../../src/Collapse.tsx), [keys.ts](../../src/keys.ts), [paths.ts](../../src/paths.ts) | Folding panels; ⌘ or Ctrl by platform; path helpers for either separator. |
+| [Collapse.tsx](../../src/Collapse.tsx), [keys.ts](../../src/keys.ts), [paths.ts](../../src/paths.ts) | Folding panels (a fold that shrinks a scrolled list clamps its offset: WebKitGTK left it past the end); ⌘ or Ctrl by platform; path helpers for either separator. |
 | [activity.ts](../../src/activity.ts) | The busy indicator's job store (`begin`, `progress`, `end`, `useWorking`). |
 | [background.ts](../../src/background.ts) | Work in the background, for the activity lines under the photo: exports (`runExport`), HDR and Panorama Merge (`runMerge`: the photos read, then the merge's own stages, from the engine's `_merge_report`) and AI Denoise (`runInBackground`), each one's progress and Stop (`stopJob`: `export_cancel`, `merge_cancel`), then what it did, with a next step such as Open (`useJobs`). |
 | [styles.css](../../src/styles.css) | All styling. |
@@ -102,7 +102,8 @@ are `localStorage` keys named `immage.*`.
 | before/after, compare | `setBaMode`, `setBefore` (`Session.showBefore`), `toggleCompare` |
 | crop and turns | `enterCrop`, `leaveCrop`, `turn` (`Session.turned`) |
 | `runGuiBenchmark` | the GUI benchmark in Preferences |
-| keyboard | one `keydown` handler for every shortcut |
+| `runGpuCheck` | the GPU check in Preferences: [gpuCheck.ts](../../src/gpuCheck.ts) cases through `changeMany`, `gpu_check_parity` for each |
+| keyboard | one `keydown` handler for every shortcut; `fieldKeeps` (`keys.ts`) leaves a focused field its keys: text all, a slider its arrows, a switch Space, a menu its arrows, Home/End, Page Up/Down, Space and Enter |
 | `openLaunched`, `dropped` | a photo handed over (`launch-file`), or photos and folders dragged onto the window (`onDragDropEvent`, `path_kind`) |
 
 `enterCrop` snapshots the displayed placement before `prepareCropView` clears
@@ -151,7 +152,7 @@ and constrained resizing.
 | [localMerge.ts](../../src/localMerge.ts) | `planMerge`: which masks share instances of a `merge` module (color balance rgb, color equalizer for HSL, diffuse for Texture, denoise, chromatic aberrations for Defringe), grouped by direction or by slider and sign, whichever needs fewer; each shared instance's strength and each mask's opacity in its combined mask. Masks share only with masks of the same ranges and refinements, which the shared instance carries; an inverted mask with ranges, ranges alone and refine Contrast keep their own instances (`canMerge`). |
 | [MaskOverlay.tsx](../../src/MaskOverlay.tsx), [MasksPanel.tsx](../../src/MasksPanel.tsx), [ParametricEditor.tsx](../../src/ParametricEditor.tsx) | Drawing shapes on the photo; the Masks panel; darktable's parametric (blendif) editor. |
 | [spots.ts](../../src/spots.ts), [SpotOverlay.tsx](../../src/SpotOverlay.tsx), [HealPanel.tsx](../../src/HealPanel.tsx) | Heal/Clone spots, sent to darktable's retouch module. |
-| [negadoctor.ts](../../src/negadoctor.ts), [NegativePanel.tsx](../../src/NegativePanel.tsx) | Film negatives: negadoctor's presets and its pickers, ported from `src/iop/negadoctor.c` and fed `sample` at negadoctor's input; the Negative panel. A converted photo (`neg_on`) has the modules of `NEG_OFF` (manifest.ts) forced off in `Session.moduleEdit`, read as if on when it opens, and kept in the history by the engine's `_held_for_negative`; `NEG_CHOICES` moves Basic's tools after it. |
+| [negadoctor.ts](../../src/negadoctor.ts), [NegativePanel.tsx](../../src/NegativePanel.tsx) | Film negatives: negadoctor's presets and its pickers, ported from `src/iop/negadoctor.c` and fed `sample` at negadoctor's input; the Negative panel. A converted photo (`neg_on`) has the modules of `NEG_OFF` (manifest.ts) forced off in `Session.moduleEdit`, read as if on when it opens if the history has them, and kept in the history by the engine's `_held_for_negative`. Converting writes the switch-off only for modules that are on (`negChanged`), so one that was never on is not switched on when the photo, opened again, is turned back; `NEG_CHOICES` moves Basic's tools after it. |
 | [zones.ts](../../src/zones.ts), [ZoneSystem.tsx](../../src/ZoneSystem.tsx) | The Zone System: zone statistics, the placement curve (a tone equalizer instance ahead of the [mask anchor](masks.md#where-the-instances-run)), zone masks. |
 
 ### Presets and looks
@@ -203,6 +204,7 @@ identity before drawing, so replacement frames cancel obsolete work.
 | [probe.ts](../../src/probe.ts) | The color under the pointer, for the Tone Curve, HSL and B&W cards. |
 | [PerformanceTuner.tsx](../../src/PerformanceTuner.tsx), [previewTuning.ts](../../src/previewTuning.ts), [tunerOptions.ts](../../src/tunerOptions.ts), [tunerWorkload.ts](../../src/tunerWorkload.ts) | Quality-first preview search with trimmed-median metrics with FPS/latency targets, explicit apply and remeasurement, restart/resume and navigation workload comparisons; AI and thumbnail settings excluded. |
 | [perf.ts](../../src/perf.ts), [PerfHud.tsx](../../src/PerfHud.tsx) | Edit-to-pixels timing by stage, the performance overlay and the GUI benchmark's recording. |
+| [gpuCheck.ts](../../src/gpuCheck.ts) | The GPU check's cases (a module choice, then sliders moved by a share of their range), `resolveCase` and the pass verdict. |
 
 ## Rust layer
 
@@ -369,7 +371,7 @@ The commands `_handle()` serves:
 
 | Group | Commands |
 |---|---|
-| Session | `open`, `history`, `module_state`, `save`, `baseline_end`, `before`, `close`, `quit`, `version`, `unpack`, `ai_accel`, `opencl`, `fonts` |
+| Session | `open`, `history`, `module_state`, `save`, `baseline_end`, `before`, `close`, `quit`, `version`, `unpack`, `ai_accel`, `opencl`, `parity`, `fonts` |
 | Library (no photo needed) | `folder`, `import`, `thumb`, `prefetch`, `meta`, `meta_set`, `capture_times`, `keywords`, `keywords_set`, `copy`, `remove_copy`, `sidecars`, `forget`, `export`, `export_hold`, `export_release`, `hdr_merge`, `pano_merge` |
 | Edit | `set`, `get`, `render`, `preview`, `look`, `look_amount` |
 | Masks and spots | `mask`, `combine`, `masks`, `mask_rename`, `mask_delete`, `mask_map`, `range_map`, `sample`, `spots`, `spots_enable`, `spot_source` |
@@ -414,7 +416,7 @@ darktable is, and it has AI features when darktable is configured with
    4. A never-edited raw then gets the new-photo defaults: tone mapper, profile, exposure compensation (an exposure instance of its own), color noise reduction, the new-photos preset.
 2. **Move a slider.**
    1. `Slider` calls `change()`, which records an undo step, updates `values` and calls `Session.set`.
-   2. During pointer/wheel interaction, `Session` waits until the next display frame before dispatching; discrete keyboard/undo edits dispatch immediately. Release cancels the queued callback and requests the latest exact frame, including when no draft has been shown. `pump()` sends `render` for `currentView()` with each dirty module's edit (`edits`), which Rust sends to the engine as `set`s ahead of the render: one call from the page however many modules moved, as a call cost 20 ms or more on Linux while the page drew. Moves made meanwhile only mark modules dirty, so the next round sends the latest values once.
+   2. During pointer/wheel interaction, `Session` waits until the next display frame before dispatching; discrete keyboard/undo edits dispatch immediately. Release cancels the queued callback and requests the latest exact frame, including when no draft has been shown. A frame whose view changed while it rendered (a draft finishing after release) is discarded and sets `needRender`, so the pump renders the current view: a click on a track, let go while its draft was in flight, left the edit unrendered until the next input. `pump()` sends `render` for `currentView()` with each dirty module's edit (`edits`), which Rust sends to the engine as `set`s ahead of the render: one call from the page however many modules moved, as a call cost 20 ms or more on Linux while the page drew. Moves made meanwhile only mark modules dirty, so the next round sends the latest values once.
    3. In the engine, `_set` writes the fields and adds a history item, then `_render` calls `dt_dev_pixelpipe_process`. Only modules from the changed one onwards run; the rest come from the pipe cache.
    4. The frame is written to `frame.rgba`, read back by Rust and returned with its header (on Windows and Linux, in shared memory beside it).
    5. `drawFrame` puts it on the canvas and computes the histogram. See [the sequence diagram](diagrams/slider-sequence.svg).
@@ -470,7 +472,7 @@ darktable is, and it has AI features when darktable is configured with
 | Edit In results | `plugin-returns.json` in the runtime folder | permanent |
 | Macro Studio jobs | `plugin-jobs/` in the runtime folder: each job's manifest and receipt, and `pending.json` | until every stack is saved or closed, or 30 days |
 | Engine config, cache, log | `config/`, `cache/`, `engine.log` in the runtime folder (`build/app-runtime` in dev, the app data folder in a release) | permanent; the log restarts past 5 MB |
-| Frames, thumbnails, previews, maps | `frame.rgba`, `thumb-<tag>.rgba`, `preview.rgba`, `range.bin` in the runtime folder | overwritten per request; a thumbnail's deleted once read |
+| Frames, thumbnails, previews, maps | `frame.rgba`, `thumb-<tag>.rgba`, `preview.rgba`, `range.bin` in `/dev/shm/immage-engine-XXXXXX` on Linux (the runtime folder if it can't be made; shared-memory objects on the Mac and Windows) | overwritten per request; a thumbnail's deleted once read; the folder goes when the app quits, and one a killed app left (no lock held on its `owner.lock`) at the next start |
 | Frames handed to the page (Linux) | `/dev/shm/immage-frame-<token>-<id>` | until the page reads it; left over past a minute, deleted at the next start |
 | AI models | `build/ai-models` (dev) or `<app data>/models` | until deleted |
 | Library thumbnails | `cache/thumbs`: a JPEG named for the photo, its sidecar and their times; a `.last` beside, by path alone, naming the newest | cache |
@@ -551,7 +553,11 @@ controls as well as adjustment controls so undo and copied masks retain them.
 when `mod_contrast` is 2. `equalizerMap` maps 30 `ce_<channel>_<band>` values to
 `atrous`'s `y[channel][band]`: five channels, six bands, range 0–1. The first
 three channels are neutral at 0.5, noise channels at 0. Reset restores every
-channel; the module is disabled at neutral. The same map and graph support
+channel; the module is disabled at neutral. The graph's viewBox pads the 260×140 plot by
+a handle's reach (`PAD`), so end and top/bottom points draw whole; pointer
+positions map back to plot units through `plot`. A press focuses the point it grabs:
+its `preventDefault` otherwise left focus where it was, and the arrows went
+there. The same map and graph support
 masked Contrast when the mask's `mod_contrast` is 2. Local curve values retain
 their 0.001 precision on reload. Each mask has its own atrous instance; it does
 not participate in shared-instance merging. Color balance rgb continues to
@@ -560,7 +566,10 @@ neutralized while atrous is selected.
 `detailMap` uses separate `contrastntexture` instances for Clarity and Texture,
 with local counterparts; [DetailControls.tsx](../../src/DetailControls.tsx)
 folds everything except Medium and Fine details under Advanced. Global
-Defringe uses `cacorrectrgb`; `mod_defringe` selects only the local module.
+Defringe uses `cacorrectrgb` globally and in masks, with no module choice:
+darktable deprecates `defringe`. A mask saved with the old `defringe` option
+keeps that instance in its history, which still renders and is disabled when
+the mask is deleted, but no slider reads or writes it.
 
 Verification: `node verify/contrast-equalizer.test.mjs` checks parameter round
 trips, independent preference scopes and mask choices in shared rendering.

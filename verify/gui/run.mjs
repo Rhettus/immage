@@ -11,6 +11,7 @@ import { dirname, resolve, join, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AppDriver, until } from './support/webdriver.mjs';
 import { resolveCases, suites, cases } from './suites.mjs';
+import { pathFree } from './support/privacy.mjs';
 import { availableMemory } from './support/memory.mjs';
 import { Journal } from './support/journal.mjs';
 import { sampleProcesses } from './support/process-memory.mjs';
@@ -26,7 +27,7 @@ const git = (...args) => {
 };
 const args = process.argv.slice(2);
 if (args.includes('--help')) {
-  console.log('node verify/gui/run.mjs --config verify/gui/local.json [--suite smoke|regressions|controls|crop|workflows|inventory|all | --case NAME] [--fixture NAME] [--viewport WIDTHxHEIGHT] [--list]');
+  console.log('node verify/gui/run.mjs --config verify/gui/local.json [--suite smoke|regressions|controls|crop|workflows|inventory|all | --case NAME[,NAME...]] [--fixture NAME] [--viewport WIDTHxHEIGHT] [--list]');
   process.exit(0);
 }
 if (args.includes('--list')) {
@@ -149,6 +150,16 @@ try {
       await copyFile(copiedFixture, join(fixtures, name));
     report.batchFixtures = ['batch-target-1.jpg', 'batch-target-2.jpg', 'batch-untouched.jpg'];
   }
+  // the guide's Library grid shot needs a folder of photos: copies of the fixture
+  if (selectedCases.includes('site-shots') && process.env.SITE_SHOTS?.split(',').map(s => s.trim()).includes('library-grid')) {
+    const stem = basename(copiedFixture).replace(/\.[^.]+$/, ''), ext = basename(copiedFixture).slice(stem.length);
+    const m = stem.match(/^(.*?)(\d+)$/);
+    report.gridFixtures = [];
+    for (let i = 1; i <= 5; i++) {
+      const name = m ? `${m[1]}${String(Number(m[2]) + i).padStart(m[2].length, '0')}${ext}` : `${stem}-${i}${ext}`;
+      await copyFile(copiedFixture, join(fixtures, name)); report.gridFixtures.push(name);
+    }
+  }
   const port = await freePort(); let nativePort = await freePort(); while (nativePort === port) nativePort = await freePort();
   const env = { ...process.env,
     XDG_DATA_HOME: join(profile, 'data'), XDG_CONFIG_HOME: join(profile, 'config'),
@@ -211,7 +222,7 @@ try {
           viewer: !!document.querySelector('main.viewer'), text: document.body?.innerText.slice(0, 2000) }));
         if (handle === driver.mainHandle && observation.url === driver.mainUrl) {
           report.viewportFailureObservation = observation;
-          await driver.screenshot(join(out, 'viewport-preparation-failure.png'));
+          if (!await pathFree(driver)) await driver.screenshot(join(out, 'viewport-preparation-failure.png'));
         }
       } catch (capture) { report.viewportCaptureError = capture.message; }
       journal.checkpoint(report);
@@ -245,6 +256,8 @@ try {
         return { file: join(caseDir, 'benchmark.json'), report: JSON.parse(bytes) };
       },
       measure: m => { c.measurements.push(m); journal.event('measurement', { case: name, ...m }); journal.checkpoint(report); }, evidence: async label => {
+      const withheld = await pathFree(driver);
+      if (withheld) { c.measurements.push({ name: label, screenshot: `withheld: ${withheld}` }); journal.event('screenshot-withheld', { case: name, label }); return; }
       await driver.screenshot(join(caseDir, `${label}.png`));
       const environment=await driver.observe(()=>({userAgent:navigator.userAgent,viewport:[innerWidth,innerHeight],scale:devicePixelRatio,theme:document.documentElement.className,canvasTheme:document.querySelector('main.viewer')?.className,font:getComputedStyle(document.body).fontFamily,fonts:document.fonts.status}));
       await writeFile(join(caseDir,`${label}.png.json`),JSON.stringify({run:id,case:name,environment:{platform:process.platform,arch:process.arch,webview:report.drivers.installedWebKit,...environment}},null,2)+'\n');

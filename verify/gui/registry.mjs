@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { startup, exposure } from './specs/smoke.mjs';
-import { sliderInput, history, rail, sliders } from './specs/controls.mjs';
+import { startup, exposure, splash } from './specs/smoke.mjs';
+import { sliderInput, sliderClick, history, rail, sliders, panelScroll } from './specs/controls.mjs';
 import { moduleOptions } from './specs/preferences.mjs';
 import { batchPaste } from './specs/batch-paste.mjs';
 import { guiBenchmark } from './specs/benchmark.mjs';
@@ -11,8 +11,10 @@ import * as workflows from './specs/workflows.mjs';
 import * as dialogs from './specs/dialogs.mjs';
 import * as regressions from './specs/regressions.mjs';
 import { moduleOutput,panorama,immichWorkflow } from './specs/modules.mjs';
+import { siteShots } from './specs/site.mjs';
 
-const implementations = { 'batch-paste': batchPaste, startup, exposure, 'slider-input': sliderInput, history, rail, sliders, 'module-options': moduleOptions,
+const implementations = { 'batch-paste': batchPaste, startup, splash, exposure, 'slider-input': sliderInput, 'slider-click': sliderClick, history, rail, sliders, 'module-options': moduleOptions,
+  'panel-scroll': panelScroll,
   'gui-benchmark': guiBenchmark,
   'gui-benchmark-screen': t => guiBenchmark(t, true),
   'gui-benchmark-whole': t => guiBenchmark(t, false),
@@ -24,6 +26,7 @@ const implementations = { 'batch-paste': batchPaste, startup, exposure, 'slider-
   'histogram-endpoints':regressions.histogramEndpoints,'preview-alignment':regressions.previewAlignment,
   'loupe-grid':regressions.loupeGrid,'detail-without-loupe':regressions.detailWithoutLoupe,'camera-body':regressions.cameraBody,
   'rejected-deletion':regressions.rejectedDeletion,'folder-race':regressions.folderRace,panorama,'immich-workflow':immichWorkflow,
+  'site-shots':siteShots,
 };
 for(const [name,definition] of Object.entries(cases)) if(definition.kind)
   implementations[name] = t => ({range:rangeContract,choice:choiceContract,module:moduleOutput}[definition.kind])(t,definition);

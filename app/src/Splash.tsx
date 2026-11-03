@@ -20,6 +20,7 @@ const MIN_SHOWN_MS = 1200;
 // installing has no record, and is the slow one (the system scans every
 // bundled library, and OpenCL compiles its kernels)
 const STARTUP_KEY = "immage.startupMs";
+const SPLASH_SIZE_KEY = "immage.splashSize";
 const FIRST_START_MS = 20000;
 const SLOW_HINT_MS = 8000;
 
@@ -53,6 +54,20 @@ function Splash() {
   const expected = last || FIRST_START_MS;
   // a first start, or one after an update (which the system scans again)
   const slow = elapsed > SLOW_HINT_MS && (!last || elapsed > 1.5 * last);
+
+  // the largest size this window was given, kept for the GUI tests (their
+  // session starts after the splash has gone): a tiling window manager that
+  // tiles it instead of floating it stretches it over the screen
+  useEffect(() => {
+    let w = 0, h = 0;
+    const note = () => {
+      w = Math.max(w, innerWidth); h = Math.max(h, innerHeight);
+      try { localStorage.setItem(SPLASH_SIZE_KEY, `${w}x${h}`); } catch { /* not kept */ }
+    };
+    note();
+    addEventListener("resize", note);
+    return () => removeEventListener("resize", note);
+  }, []);
 
   useEffect(() => {
     const shown = Date.now();

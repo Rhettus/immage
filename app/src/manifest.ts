@@ -424,7 +424,6 @@ const MOD_TONEEQ = 0, MOD_SHADHI = 1;
 // the tone mapper (AgX, or sigmoid on a photo started under it), or another module
 const MOD_TM = 0, MOD_CBRGB = 1, MOD_EXPOSURE = 1;
 const MOD_BW_CALIBRATION = 0, MOD_BW_EQUALIZER = 1;
-const MOD_CA = 0, MOD_DEFRINGE = 1;
 const shared = (value: number, op: string, name: string, preferred: boolean): ModuleOption =>
   ({ value, op, name, preferred, controls: [], localControls: [] });
 export const MODULE_CHOICES: ModuleChoice[] = [
@@ -476,11 +475,6 @@ export const MODULE_CHOICES: ModuleChoice[] = [
       { value: MOD_DIFFUSE, op: "diffuse#sharpen", name: "diffuse or sharpen", preferred: false,
         controls: ["sharp_amount", "sharp_radius", "sharp_sensitivity"], localControls: ["l_sharpness"] },
     ],
-  },
-  {
-    id: "defringe", label: "Defringe", control: "mod_defringe", covers: ["l_defringe"],
-    options: [shared(MOD_CA, "cacorrectrgb", "chromatic aberrations", true),
-              shared(MOD_DEFRINGE, "defringe", "defringe", false)],
   },
 ];
 // the tools a converted negative runs after negadoctor rather than on a
@@ -1787,7 +1781,7 @@ export const mapsWith = (id: string) => modules.filter((m) => m.controls.include
 const MODULE_NAMES: Record<string, string> = {
   atrous: "contrast equalizer", agx: "AgX", ashift: "rotate and perspective", bilat: "local contrast", channelmixerrgb: "color calibration",
   cacorrectrgb: "chromatic aberrations", colorbalancergb: "color balance rgb", colorequal: "color equalizer",
-  contrastntexture: "contrast & texture", crop: "crop", defringe: "defringe", demosaic: "demosaic", negadoctor: "negadoctor",
+  contrastntexture: "contrast & texture", crop: "crop", demosaic: "demosaic", negadoctor: "negadoctor",
   denoiseprofile: "denoise (profiled)", diffuse: "diffuse or sharpen", exposure: "exposure", flip: "orientation",
   grain: "grain", hazeremoval: "haze removal", hotpixels: "hot pixels", lens: "lens correction", rgbcurve: "rgb curve",
   shadhi: "shadows and highlights", sharpen: "sharpen", sigmoid: "sigmoid", tonecurve: "tone curve",
@@ -1963,22 +1957,14 @@ export const localMaps: ModuleMap[] = [
     write: (v) => ({ strength: Math.max(0.001, v.l_noise / 50) }),
   },
   {
-    // Defringe on chromatic aberrations, as the AgX workflow corrects them.
-    // Some 18 ms a mask's draft frame, so its masks share instances
-    op: "cacorrectrgb", keepOn: false, merge: true, choice: { control: "mod_defringe", value: MOD_CA },
+    // Defringe on chromatic aberrations, as the AgX workflow corrects them
+    // (darktable deprecates defringe for it). Some 18 ms a mask's draft
+    // frame, so its masks share instances
+    op: "cacorrectrgb", keepOn: false, merge: true,
     controls: ["l_defringe"],
     fields: ["strength"],
     read: (p) => ({ l_defringe: (100 * p.strength) / CA_STRENGTH }),
     write: (v) => ({ strength: (CA_STRENGTH * v.l_defringe) / 100 }),
-  },
-  {
-    // or on defringe: more Defringe catches fainter fringes, the threshold
-    // falling from 40 toward 5, at the module's default radius
-    op: "defringe", keepOn: false, choice: { control: "mod_defringe", value: MOD_DEFRINGE },
-    controls: ["l_defringe"],
-    fields: ["thresh"],
-    read: (p) => ({ l_defringe: Math.max(0, ((40 - p.thresh) / 35) * 100) }),
-    write: (v) => ({ thresh: 40 - (35 * v.l_defringe) / 100 }),
   },
   {
     // as the global Sharpening, at its default radius and sensitivity, on a

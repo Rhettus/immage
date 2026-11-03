@@ -29,7 +29,12 @@ It records whether rendered pixels changed, but lacks a universal effect oracle:
 RAW/module dependencies and neutral gating need dedicated cases. Module preference
 coverage checks UI choices and independent scopes, not the output of every
 engine backend. History's basic Reset All case does not reproduce the native
-module reset bug until a dedicated branch scenario is added.
+module reset bug until a dedicated branch scenario is added. On a raw it does
+compare Reset All's render with the opening frame (mean error within 1/255)
+and names any control it changed: Reset All once turned a new raw's Capture
+Sharpening off, as `capture`'s neutral is 0 while a raw opens with it on. Reset All clears the New Photos preset by design (the user's call,
+2026-11-03), so history and presets reset once first and use that frame as
+the baseline.
 
 Non-GUI checks (no desktop/app launch):
 
@@ -52,19 +57,62 @@ validation in a disposable checkout before claiming visual regression coverage.
 inconsistent counters. `run.mjs` records checks before setup and immediately
 before spawning the driver, requiring MemAvailable >= 4 GiB and swap usage <=
 50%. A rejected check yields the normal blocked report and exit 1, without
-launching an app. Limits are fixed and do not treat swap as spare RAM. Verify
+launching an app. The RAM floor is fixed and swap is never treated as spare
+RAM. `IMMAGE_GUI_MAX_SWAP` (a fraction, at most 0.8) raises the swap limit for
+one run: on zram swap the used fraction overstates pressure, since compressed
+pages already count against MemAvailable. Verify
 threshold boundaries, no-swap and malformed readings with
 `node verify/gui/memory.test.mjs` (no GUI). This preflight does not establish
 runtime safety; the interrupted slider run needs separate memory investigation.
 
 ## Expanded registry and evidence
 
-`generated.mjs` expands `inventory.json`; `registry.mjs` resolves 540 named
-case declarations to implementations. Range contracts use physical pointer and
+`generated.mjs` expands `inventory.json`; `registry.mjs` resolves 310 named
+case declarations to implementations. Generated control cases cover visible
+manifest panels only: a hidden panel (point curve, crop, orientation, upright,
+zones, negative, modules, vignette center, exposure compensation, tone mapper)
+stores state that a graph, overlay or tool edits, with no slider for a
+per-control case to drive. `hiddenPanelCoverage` in `generated.mjs` names the
+written case that drives each one, or `null` where none does yet (upright,
+vignette center, exposure compensation, tone mapper);
+`node --test verify/gui/infrastructure.test.mjs` checks the mapping against
+`inventory.json`. `curves` is the point curve's case: on RGB and each color
+channel it adds and lifts a point, checks the four photos differ and that a
+double-click removal restores the photo; it lifts the black point and clamps
+it back at the corner, fills the graph to its 20-point limit, refuses a 21st,
+removes a point by dragging it off the graph, and checks Reset All. Like
+`history`, it presses Reset All first and uses that frame as its baseline.
+Passed live: run 2026-11-03T14-31-08.541Z_1e4e921_f5b9e1b6. Range contracts use physical pointer and
 keyboard input for limits, steps, typed clamping/cancel and reset. Workflow files
 cover crop, graphs, masks, dialogs and regression targets. Missing fixture or
 UI prerequisites raise `Blocked`; they are not successes. See the coverage ledger
 for incomplete original triggers and service/slow-folder/panorama fixture gaps.
+
+A control that only one option of a module choice shows (the contrast
+equalizer's 30 bands, contrast & texture's Clarity and Texture bands,
+diffuse or sharpen's Amount/Radius/Sensitivity) records that option as
+`module` in its generated case. The case chooses it in Preferences >
+Modules first and restores the previous choice afterwards
+(`withModule` in `specs/ranges.mjs`). Defringe has no module choice, so
+its global and mask sliders always run on chromatic aberrations.
+
+The splash keeps the largest size it was given in localStorage
+(`immage.splashSize`), since the session starts after it has closed. `startup`
+reads it, and the `splash` case (by name only, not in `smoke`) fails if it grew
+past 640x427. A blocked or failed case stops the run, so list `splash` last when
+it runs with other cases. The splash sets equal minimum and maximum sizes, which
+makes Hyprland 0.57 float it, but it still opens at the full monitor size there
+(1710x1107 logical on a 3420x2214 screen at scale 2), so the case fails; the
+cause is open. Any external window sizing for a run must wait until `startup`
+has finished, or it hides this.
+
+`--case a,b` runs a list of cases in one launch after startup. `panel-scroll`
+(in `regressions`) checks that a right panel tool opens at its own scroll
+offset, not the previous tool's.
+
+`support/privacy.mjs` runs before every screenshot. It presses I to hide the
+photo info, which shows the folder, and withholds any shot that still shows a
+home or temporary path, recording why in the case's measurements.
 
 Additional read-only observations identify sections, choices, detail controls,
 preference labels, export fields and mask groups. The root exposes chosen module
@@ -88,6 +136,16 @@ comparator fault tests are not an application CSS fault-injection result.
 Run `infrastructure.test.mjs`, `memory.test.mjs`, `support.test.mjs`,
 `fixtures.test.py`, inventory freshness and the frontend build without a GUI.
 The README documents the full commands and offline recovery/reference tools.
+
+## Website screenshot case
+
+`site-shots` (`specs/site.mjs`) takes the screenshots for the website and the
+user guide on a copied photo. It presses I to hide the photo info and skips
+any shot whose visible text includes a home, temporary or drive path. Each
+shot records the photo canvas bounds, so a before/after pair can be cropped
+to the photo. `SITE_SHOTS=masks,heal` retakes only those steps. The window
+is floated and sized from outside the runner. Like every visible case, it
+runs only with approval.
 
 ## Batch paste case
 

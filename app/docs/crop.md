@@ -9,8 +9,8 @@ straighten line.
 Open it with **Crop** on the rail, or R. While cropping, the whole photo
 shows, with the crop on top.
 
-![The crop tool with a 4 x 5 crop and the aspect menu open](images/crop.png)
-<!-- screenshot: Crop tool on a landscape photo, 4 x 5 aspect, aspect menu open -->
+![The crop tool with its rule-of-thirds guides, and the Crop panel with Aspect, Rotate and Rotate & Flip](images/crop.png)
+<!-- screenshot: Crop tool on a landscape photo, guides showing, the Crop panel with Done -->
 
 ## Cropping
 

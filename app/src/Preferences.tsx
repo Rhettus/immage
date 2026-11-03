@@ -450,7 +450,7 @@ function LicenseText({ title, text, onClose }: { title: string; text: string; on
 
 export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurrent, focus, canvas, onCanvas, overlayColor, onOverlayColor, guideColor, onGuideColor,
                                     openGenerated, onOpenGenerated, loupe, onLoupe, focusMode, onFocusMode, autoHide, onAutoHide, stackPairs, onStackPairs,
-                                    accel, plugins, onPlugins, perfHud, onPerfHud, onBenchmark, onTune, onRelaunch, onClose }: {
+                                    accel, plugins, onPlugins, perfHud, onPerfHud, onBenchmark, onGpuCheck, onTune, onRelaunch, onClose }: {
   presets: Preset[];
   focus?: Tab;                           // a tab to open at
   onSaveCurrent: (() => void) | null;    // a new preset from the open photo, or null with none open
@@ -479,6 +479,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   onPerfHud: (on: boolean) => void;
   onTune: (() => void) | null;
   onBenchmark: (() => void) | null;     // null with no photo open
+  onGpuCheck: (() => void) | null;      // null with no photo open
   onRelaunch: () => Promise<void>;       // the edit saved, then Immage started again
   onClose: () => void;
 }) {
@@ -954,6 +955,12 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                            ? "drags the main sliders on the open photo and back, zooms in and out, and saves timing, frame pacing and resource usage; every slider ends where it started. use a copy of a photo you care about"
                            : "open a photo to run it"}>
                   <button className="btn" disabled={!onBenchmark} onClick={() => onBenchmark?.()}>Run</button>
+                </PrefRow>
+                <PrefRow label="GPU check"
+                         hint={onGpuCheck
+                           ? "renders the open photo on the CPU and on the GPU, then with each of several modules turned on, and compares them; records OpenCL errors, fallbacks to the CPU and a canceled GPU render. every control ends where it started. use a copy of a photo you care about, and send the saved report back"
+                           : "open a photo to run it"}>
+                  <button className="btn" disabled={!onGpuCheck} onClick={() => onGpuCheck?.()}>Run</button>
                 </PrefRow>
                 <PrefRow label="Performance tuner"
                          hint="load a representative RAW from your usual work and use your normal window size. finds the highest-quality preview meeting your FPS and latency targets; Apply verifies the result">

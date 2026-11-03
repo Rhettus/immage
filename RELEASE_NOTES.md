@@ -7,8 +7,24 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Import selects like Lightroom: clicking photos highlights them (⇧-click
+  for a range, ⌘-click to add one), and checking or unchecking any
+  highlighted photo applies to the whole group. Checkboxes are always
+  shown, with Check all and Uncheck all buttons above the grid.
+- Import opens a card's folders expanded down to its camera folders, so
+  FastRawViewer's `_Selected` and `_Rejected` folders are one click away.
+- GUI tests: a case takes the website and guide screenshots, the mask,
+  range and workflow cases find mask menu items again, and no test
+  screenshot shows a file path.
 - Add a scripted Mac CPU capture workflow to profile the engine and webview
   alongside GUI benchmarks and investigate busy-core bottlenecks.
+- Preferences › Performance › Measuring › GPU check compares darktable's
+  CPU and GPU renders of the open photo, with and without each of a
+  set of modules, and saves a report of differences, OpenCL errors and
+  fallbacks to the CPU, and a canceled GPU render, for testing GPUs.
+- A mask's Defringe always uses chromatic aberrations, like the global
+  Defringe: Preferences › Modules › Masks no longer offers darktable's
+  deprecated defringe module. Masks already edited with it keep their look.
 
 Performance
 
@@ -38,12 +54,32 @@ Bug fixes
 - Look previews preserve the applied look's mask and blend settings, keep
   temporary masks out of the photo and refresh when mask geometry changes.
   Applying a look records its masks with the edit history.
+- Each right panel tool keeps its own scroll position and opens at the top.
+- Turning a converted JPEG or TIFF negative back to a positive no longer
+  switches exposure on when the photo had not used it.
+- A focused menu keeps its arrow keys, Space and Enter: choosing a crop
+  aspect with the keyboard no longer applies the crop.
+- Reset all keeps a raw's Capture Sharpening on, as the photo opened,
+  instead of turning it off.
+- Opening a panel after scrolling another no longer leaves the new panel's
+  top out of reach above the Adjustments list on Linux.
+- The contrast equalizer draws its end points whole: the first and last
+  points, and any point pulled to the top or bottom, were cut in half at the
+  graph's edge.
+- Clicking a slider's track to jump it (to +20, say) changes the photo at
+  once; it could keep its old look until the slider was dragged a little.
+- Clicking a contrast equalizer point focuses it, so the arrow keys adjust
+  that point instead of switching the channel menu.
 - Mac CPU captures wait for the profiler to save after Ctrl-C, then export
   the recorded trace instead of exiting with a Python interruption.
 - Transform's automatic corrections work on cropped portrait and rotated
   images instead of reporting that the working-space image is not at hand.
 - Fix macOS intermediate-buffer writes when previews or thumbnails change size,
   respecting the platform’s shared-memory sizing restrictions.
+- On Linux, frames a killed or crashed Immage left in shared memory are
+  cleared at the next start, and a full shared memory fails that render
+  instead of crashing the engine; the leftovers built up until they could
+  crash the engine and other applications, the desktop included.
 
 ## 0.41.1
 

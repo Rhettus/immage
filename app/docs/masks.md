@@ -11,8 +11,8 @@ range, O overlay.
 
 Open it with **Masks** on the rail, or press one of the tool keys.
 
-![The Masks panel with a Sky mask and the red overlay](images/masks-panel.png)
-<!-- screenshot: Masks mode, a landscape with a Sky mask selected, overlay on, local sliders visible -->
+![A linear gradient mask from the top of the photo with its overlay on, and the Masks panel with the mask's Exposure at -0.70](images/masks-panel.png)
+<!-- screenshot: Masks mode, a mask selected, overlay on, local sliders visible -->
 
 ## Creating a mask
 
@@ -123,8 +123,8 @@ inside the mask. A new mask opens its **Tone** group.
 
 Choose mask modules independently of global adjustments under
 [Preferences › Modules › Masks](preferences.md#modules). Alternatives are
-available for Contrast, Highlights and Shadows, Clarity, Texture, Sharpening,
-and Defringe. Used mask adjustments keep their modules when preferences change;
+available for Contrast, Highlights and Shadows, Clarity, Texture and
+Sharpening. A mask's Defringe always uses chromatic aberrations. Used mask adjustments keep their modules when preferences change;
 new masks and unused tools take the current mask choices.
 **Whites** is the exception: the photo's Whites moves the top of the tone
 mapper's curve, which can't run inside a mask, so a mask's Whites only

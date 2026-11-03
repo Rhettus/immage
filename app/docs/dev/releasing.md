@@ -78,6 +78,21 @@ installer format from the downloaded bytes. Test assembly without an MSI using
 8. **Merge the pull request** into `main`, then delete the branch. The
    next release starts a new `release-<version>` branch from `main`.
 
+## The website
+
+The [website](https://immage.photo/) is built in its own
+repository, [immage-site](https://github.com/Rhettus/immage-site). It has no
+copy of the guide: each build takes `app/docs` (without `dev/`) and
+`RELEASE_NOTES.md` from the latest published release's tag, and its download
+buttons link to that release's `.dmg`, `-setup.exe` and AppImages, matched
+by file name. Renaming those assets therefore needs a change there too.
+
+A published release reaches the site at its next daily build. To publish it
+straight away, run Actions › Pages in immage-site by hand; its `immage_ref`
+input previews a branch's guide instead. The guide's sidebar follows the
+Contents list in [app/docs/README.md](../README.md), and the build fails on
+a link between guide pages that does not resolve.
+
 ## Cached release builds from a branch
 
 GitHub caches are scoped to refs. A tag run cannot restore caches saved on
