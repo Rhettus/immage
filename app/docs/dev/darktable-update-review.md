@@ -371,6 +371,8 @@ The production pin remains unchanged until the adoption gates pass.
   with confirmed minimum-budget lens tiling at full size.
 - [x] Compare two exceptional compact-camera profiles assigned diagnostically to
   an unrelated RAW; confirm library selection and visible correction in both directions.
+- [x] Extend preview-size assigned-profile comparisons to all 12 exceptional installed
+  profiles, both directions, with exact selection and visible-contribution guards.
 - [ ] Validate the direct prototype with broader exceptional-profile images and
   native device/fallback references before choosing production migration behavior.
 - [x] Trace old CPU/OpenCL Lensfun stage ordering and factor arithmetic; record a
@@ -1917,7 +1919,56 @@ scripts, selection-probe source/binary and SHA256 identities for the engine/modu
 Lensfun library and database. This is an assigned-profile integration check, not
 signed-intermediate validation, proof that every observed adaptive delta comes
 from the exceptional clamp behavior, or acceptance of real-camera imports.
-Matching exceptional-profile photos, the other ten exceptional profiles,
-full-size assigned-profile coverage and native fallback remain open. A fresh
+Matching exceptional-profile photos, full-size assigned-profile coverage and
+native fallback remain open. The other ten profiles are covered below. A fresh
 local `clGetPlatformIDs` check still returns -1001 with zero platforms; old OpenCL
 device references remain pending. No production plugin, pin or default changed.
+
+
+### Broader exceptional-profile assignments
+
+The remaining ten exceptional installed profiles now have the same headless
+512×383 vignetting-only assignment diagnostic, forward and reverse, against the
+coherent old CPU, isolated direct prototype and unmodified adaptive candidate.
+Together with the preceding two compact profiles, all 12 exceptional profiles
+have preview-size whole-frame coverage in both directions. All **20 additional
+direct-prototype comparisons are exact RGB**, and all 20 corrections visibly
+change the old CPU output when compared with disabling the lens module.
+
+| Assigned lens | Assigned camera | Focal / aperture / distance | Adaptive changed RGB channels, forward / reverse | Adaptive maximum difference, forward / reverse |
+| --- | --- | --- | ---: | ---: |
+| Canon EF 35-105mm f/3.5-4.5 | Canon EOS 6D | 40 / 3.5 / 0.85 | 3,757 / 2,319 | 67 / 15 |
+| Canon EF 8-15mm f/4L Fisheye USM | Canon EOS 5DS | 8 / 5.7 / 1000 | 8,214 / 187 | 45 / 181 |
+| Canon G7 X & compatibles | Canon PowerShot G5 X | 8.8 / 3.5 / 10 | 3,308 / 2,735 | 67 / 15 |
+| Canon PowerShot SX260 HS & compatibles, with CHDK's DNG | Canon PowerShot SX240 HS | 4.5 / 4.4 / 10 | 1,728 / 1,449 | 67 / 15 |
+| Canon PowerShot SX30 IS & compatibles, with CHDK's DNG | Canon PowerShot SX30 IS | 4.3 / 2.7 / 10 | 802 / 618 | 67 / 15 |
+| G5 X Mark II & compatibles | Canon PowerShot G5 X Mark II | 8.8 / 2 / 10 | 3,517 / 2,564 | 66 / 16 |
+| Sigma 8mm f/3.5 EX DG Circular | Canon EOS 5DS | 8 / 5.6 / 0.5 | 8,278 / 174 | 45 / 142 |
+| DSC-RX100 VI & compatibles | DSC-RX100M6 | 9 / 8 / 10 | 3,248 / 2,753 | 67 / 15 |
+| E 16-55mm f/2.8 G | NEX-3 | 16 / 4 / 0.33 | 3,423 / 2,628 | 67 / 15 |
+| E 18-135mm f/3.5-5.6 OSS | NEX-3 | 18 / 3.5 / 10 | 3,623 / 2,371 | 67 / 15 |
+
+The plan chooses each profile's strongest observed zero-clamp failure row from
+the all-calibration probe, then a camera sharing its mount with the closest
+installed camera crop factor. A separate Lensfun lookup confirms the exact
+camera/lens names and active vignetting flag in both directions before results
+are accepted. SX30 uses camera crop 5.581 versus calibration crop 5.58; the
+actual-engine comparison retains the selected camera's behavior. These are
+explicit assignments to the same copied Olympus RAW, not matching-camera photos
+or automatic selection tests. Original XML namespace prefixes are preserved.
+
+The adaptive candidate differs in all 20 cases. Changed channels range from
+174 to 8,278, maximum code differences from 15 to 181, and mean absolute RGB
+differences from 0.001261 to 0.016533. Disabling the correction changes between
+392,121 and 572,354 channels. These output measurements do not isolate signed
+intermediate behavior or attribute every adaptive delta to exceptional clamping.
+They establish compatibility with the selected old CPU reference, not an
+accuracy ranking or an approved import policy.
+
+Ignored evidence: `build/darktable-pin-review/pixel-lens-direct-exceptional-broader/`
+contains the 20-case report, assigned/disabled XMP, frames and logs for all four
+runs per case, diagnostic scripts and selection probe. `manifest.json` records
+484 reverified SHA256 identities, including engine/modules, Lensfun library and
+XML data. All owned processes finished successfully. Full-size assigned-profile
+coverage, signed intermediates, matching-camera imports and native OpenCL remain
+open. No production plugin, pin, parameter layout or default changed.

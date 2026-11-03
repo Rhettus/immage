@@ -106,11 +106,19 @@ histories at both 512 pixels and full-size bounds in all four warp interpolators
 with matching 7×7/3×3 minimum-budget lens tiles at full size. See the [measured matrix](darktable-update-review.md#direct-cpu-prototype-pixel-aspect-interpolation-and-full-size-tiling).
 This remains one RAW/profile, not acceptance of exceptional-profile imports or
 native device fallback. All 40 comparisons in the explicit full-size interpolation
-matrix are exact RGB; exceptional-profile whole-image coverage remains pending.
+matrix are exact RGB; matching-camera exceptional-profile coverage remains pending.
 
 
 Two exceptional compact-camera profiles also match old CPU in a 512-pixel
 whole-frame assignment diagnostic, both directions, while the adaptive candidate
 differs. Exact library selection and visible correction are checked. The profiles
-are assigned to an unrelated Olympus RAW, so matching-camera imports and broader
-exceptional-profile coverage remain open. See the [assignment evidence](darktable-update-review.md#exceptional-profile-assignment-diagnostic).
+are assigned to an unrelated Olympus RAW, so matching-camera imports remain open. See the [assignment evidence](darktable-update-review.md#exceptional-profile-assignment-diagnostic).
+
+
+The same preview-size assignment diagnostic now covers the remaining ten
+exceptional installed profiles: all 20 additional forward/reverse frames match
+old CPU exactly with the direct prototype. Exact camera/lens selection and a
+visible correction are required in every case. This closes preview assignment
+coverage for all 12 exceptional profiles; matching-camera imports, full-size
+assigned-profile coverage, signed intermediates and native fallback remain open.
+See the [broader assignment evidence](darktable-update-review.md#broader-exceptional-profile-assignments).
