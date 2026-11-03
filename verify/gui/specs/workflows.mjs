@@ -72,7 +72,8 @@ export async function equalizer(t) {
   if(!await t.driver.observe(s=>document.querySelector(s)?.getAttribute('aria-expanded')==='true',fold)) await click(t,fold);
   const selector='select[aria-label="Global Contrast"]', menu=await reveal(t,selector);
   const option=menu.options.find(o=>o.label.includes('equalizer')); assert(option);
-  await choose(t,selector,option.value); await textButton(t,'.prefs-foot','Done'); await panel(t,'basic');
+  // a folded section's body is unmounted: open them all to reach the graph
+  await choose(t,selector,option.value); await textButton(t,'.prefs-foot','Done'); await expandSections(t,await panel(t,'basic'));
   const channel='select[aria-label="Equalizer channel"]', options=(await reveal(t,channel)).options;
   for(const o of options) {
     await choose(t,channel,o.value);
