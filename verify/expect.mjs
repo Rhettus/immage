@@ -33,6 +33,26 @@ const UPRIGHT = "Upright's values come from its line detection (engine `upright`
 const POINTS = "covered by the point curve checks";
 const CROP = "covered by the crop check";
 
+// the contrast equalizer's bands, global or in a mask: the finest band and
+// the noise channels (3, 4) move fine detail; Edges only changes how the
+// luminance bands are split, so it needs one moved
+const EQUALIZER = Object.fromEntries([0, 1, 2, 3, 4, 5].flatMap((k) => [
+  // a mask's trial moves a band only 0.1 from neutral: try both ends
+  [`ce_0_${k}`, { values: [1, 0], ...(k === 5 ? { detail: true } : {}) }],
+  [`ce_1_${k}`, { values: [1, 0], ...(k === 5 ? { detail: true } : {}) }],
+  [`ce_2_${k}`, { with: { [`ce_0_${k}`]: 1 }, values: [1, 0], detail: true, anyPhoto: k === 5 }],
+  [`ce_3_${k}`, { detail: true, anyPhoto: true }],
+  [`ce_4_${k}`, { detail: true, anyPhoto: true }],
+]));
+
+// contrast & texture is off while every gain is 0 (detailMap), so its
+// other sliders need a detail gain first, global or in a mask
+const DETAIL = Object.fromEntries(["detail_clarity", "detail_texture", "l_detail_clarity", "l_detail_texture"]
+  .flatMap((p) => ["detail_level", "halo_control", "noise_bias"].map((f) =>
+    [`${p}_${f}`, { with: { [`${p}_gain_medium`]: 1 }, detail: true,
+                   // its default 0.001 is next to its lower end
+                   ...(f === "noise_bias" ? { values: [0.6] } : {}) }])));
+
 export const GLOBAL = {
   bw_mode: { values: [1], mono: true },
   temp: { delta: [1500, -1500], expect: { warm: 1 } },
@@ -69,6 +89,10 @@ export const GLOBAL = {
   capture: { toggle: true, detail: true, raw: true },
   usm_amount: { detail: true },
   usm_radius: { with: { usm_amount: 60 }, detail: true },
+  ...DETAIL,
+  ...EQUALIZER,
+  // Radius changes nothing while Amount is 0, which switches Defringe off
+  defringe_radius: { with: { defringe_amount: 50 }, detail: true, anyPhoto: true },
   usm_threshold: { with: { usm_amount: 60 }, detail: true },
   sharp_amount: { detail: true },
   sharp_radius: { with: { sharp_amount: 2 }, detail: true },
@@ -120,7 +144,8 @@ for (const ch of ["", "r_", "g_", "b_"])
   for (let i = 0; i < 20; i++) for (const a of ["x", "y"]) GLOBAL[`tc_${ch}p${i}${a}`] = { skip: POINTS };
 for (const id of ["tf_upright", "tf_base_r", "tf_base_v", "tf_base_h", "tf_gn"]) GLOBAL[id] = { skip: UPRIGHT };
 for (let i = 0; i < 16; i++) GLOBAL[`tf_g${i}`] = { skip: UPRIGHT };
-for (const id of ["mod_contrast", "mod_tone", "mod_blacks", "mod_saturation", "mod_bw", "mod_sharpening", "mod_defringe"])
+for (const id of ["mod_contrast", "mod_tone", "mod_blacks", "mod_saturation", "mod_bw", "mod_clarity", "mod_texture",
+                  "mod_sharpening"])
   GLOBAL[id] = { skip: "covered by the choices check" };
 
 // edits made of several controls at once, as the point curve editor and
@@ -141,8 +166,9 @@ export const LOCAL = {
   l_tint: { values: [60, -60], expect: { magenta: 1 } },
   l_exposure: { values: [1, -1], expect: { lum: 1 } },
   l_fulcrum: { with: { l_contrast: 60 }, values: [2, -2] },
-  l_highlights: { expect: { lumHi: 1 } },
-  l_shadows: { expect: { lumLo: 1 } },
+  // the harness's tones.tif has every tone under the mask (toneRange)
+  l_highlights: { expect: { lumHi: 1 }, anyPhoto: true },
+  l_shadows: { expect: { lumLo: 1 }, anyPhoto: true },
   l_whites: { expect: { lumHi: 1 } },
   l_blacks: { expect: { lumLo: 1 } },
   l_texture: { detail: true },
@@ -151,6 +177,8 @@ export const LOCAL = {
   l_usm: { detail: true },
   l_noise: { detail: true },
   l_defringe: { detail: true, anyPhoto: true },
+  ...EQUALIZER,
+  ...DETAIL,
   ...Object.fromEntries(["red", "orange", "yellow", "green", "cyan", "blue", "lavender", "magenta"].flatMap((b) =>
     ["hue", "sat", "lum"].map((k) => [`l_hsl_${k}_${b}`, { anyPhoto: true }]))),
   ...Object.fromEntries(["shadows", "midtones", "highlights", "global"].flatMap((r) => [
