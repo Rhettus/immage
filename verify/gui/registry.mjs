@@ -11,6 +11,7 @@ import * as workflows from './specs/workflows.mjs';
 import * as dialogs from './specs/dialogs.mjs';
 import * as regressions from './specs/regressions.mjs';
 import { moduleOutput,panorama,immichWorkflow } from './specs/modules.mjs';
+import { siteShots } from './specs/site.mjs';
 
 const implementations = { 'batch-paste': batchPaste, startup, exposure, 'slider-input': sliderInput, history, rail, sliders, 'module-options': moduleOptions,
   'gui-benchmark': guiBenchmark,
@@ -24,6 +25,7 @@ const implementations = { 'batch-paste': batchPaste, startup, exposure, 'slider-
   'histogram-endpoints':regressions.histogramEndpoints,'preview-alignment':regressions.previewAlignment,
   'loupe-grid':regressions.loupeGrid,'detail-without-loupe':regressions.detailWithoutLoupe,'camera-body':regressions.cameraBody,
   'rejected-deletion':regressions.rejectedDeletion,'folder-race':regressions.folderRace,panorama,'immich-workflow':immichWorkflow,
+  'site-shots':siteShots,
 };
 for(const [name,definition] of Object.entries(cases)) if(definition.kind)
   implementations[name] = t => ({range:rangeContract,choice:choiceContract,module:moduleOutput}[definition.kind])(t,definition);

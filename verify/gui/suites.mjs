@@ -51,6 +51,8 @@ export const cases = {
   'folder-race':{scope:'controlled slow unrelated folder and stale result protection',commits:['17ac5e6','74cedc9'],liveValidated:false},
   panorama:{scope:'projection choices and preview with overlapping fixtures',liveValidated:false},
   'immich-workflow':{scope:'isolated local-service prerequisite; no live account access',commits:['33949b6','22840b4'],liveValidated:false},
+  'site-shots':{scope:'website screenshots: Basic before/after, color grading, mask, presets, heal, crop, Zone System; photo info hidden, shots with a visible path skipped',liveValidated:false,
+    limitation:'Captures evidence for the website; asserts only that each tool opened. A shot that cannot be reached is recorded as skipped.'},
   ...generated,
 };
 export const suites = {
