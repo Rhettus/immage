@@ -55,8 +55,10 @@ you press it or not.
 ## Reset all
 
 **Reset all**, in the Adjustments panel's head, takes the photo back to its
-starting point: sliders, crop, look, masks and spots. A raw keeps Capture
-Sharpening on, as it opens. It is one step, so ⌘Z brings everything back.
+defaults: sliders, crop, look, masks and spots. It also takes off what the
+New Photos preset gave it (a raw's lens corrections, with the Default
+preset). A raw keeps Capture Sharpening on, as it opens. It is one step,
+so ⌘Z brings everything back.
 
 ## Copying settings to other photos
 

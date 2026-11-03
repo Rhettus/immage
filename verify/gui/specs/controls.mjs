@@ -41,6 +41,10 @@ export async function sliderInput(t) {
 }
 export async function history(t) {
   await basic(t);
+  // Reset All clears the New Photos preset (a raw's lens corrections) by
+  // design: reset first, so the baseline is the photo's own defaults and the
+  // later Reset All must reproduce it
+  await click(t, 'button[aria-label="reset all"]'); await pause(300);
   const selector = rangeSelector('exposure');
   let s = await reveal(t, selector);
   await t.driver.point(s.label.x, s.label.y, 2);

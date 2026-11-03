@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { click,reveal,inspect, openTool } from '../support/controls.mjs';
 import { textButton,choose,panel,Blocked } from '../support/scenario.mjs';
-import { until } from '../support/webdriver.mjs';
+import { until, pause } from '../support/webdriver.mjs';
 import { settledPhoto, settledReset } from './smoke.mjs';
 
 export async function preferencesMatrix(t) {
@@ -86,6 +86,8 @@ export async function filters(t) {
   await t.driver.keys('\uE00C');
 }
 export async function presets(t) {
+  // the baseline is the photo's defaults: Reset All clears the New Photos preset by design
+  await openTool(t,'adjust');await click(t,'button[aria-label="reset all"]');await pause(300);
   const baseline=await settledPhoto(t);await openTool(t,'presets');
   const tiles=await t.driver.observe(()=>[...document.querySelectorAll('.tile')].map(e=>e.title));
   if(!tiles.length)throw new Blocked('No expanded preset tiles; requires a preset fixture/group');
