@@ -20,10 +20,29 @@ export async function choose(t, selector, value, appears) {
   if (c.disabled) throw new Blocked(`Disabled prerequisite ${selector}`);
   const index = c.options?.findIndex(o => o.value === String(value));
   assert(index >= 0 && !c.options[index].disabled, `${selector} has enabled option ${value}`);
-  await t.driver.point(c.x, c.y);
-  await t.driver.keys('\uE011', ...Array(index).fill('\uE015'), '\uE007');
-  if (appears) await until(() => t.driver.observe(s => !!document.querySelector(s), appears), `${value} opens ${appears}`);
-  else await until(async () => (await t.driver.observe(inspect, selector))?.value === String(value), `selected ${value}`);
+  // GTK's popup can step over a disabled option (a separator) differently
+  // from its index: when the menu lands elsewhere, correct the count by
+  // where it landed and choose again
+  let steps = index, error;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const at = (await t.driver.observe(inspect, selector)).value;
+    await t.driver.point(c.x, c.y);
+    await t.driver.keys('\uE011', ...Array(Math.max(0, steps)).fill('\uE015'), '\uE007');
+    try {
+      if (appears) await until(() => t.driver.observe(s => !!document.querySelector(s), appears), `${value} opens ${appears}`, 3000);
+      else await until(async () => (await t.driver.observe(inspect, selector))?.value === String(value), `selected ${value}`, 3000);
+      return;
+    } catch (e) {
+      error = e;
+      const landed = (await t.driver.observe(inspect, selector)).value;
+      // an option that opens something leaves the value as it was: no move
+      // seen means one step short of the last option was the closest guess
+      const li = c.options.findIndex(o => o.value === landed);
+      steps += landed === at && appears ? 1 : index - li;
+      t.measure({ name: 'choose-retry', selector, value, landed, steps });
+    }
+  }
+  throw error;
 }
 export async function panel(t, id) {
   const selector = `[data-panel-id=${JSON.stringify(id)}]`;
