@@ -57,7 +57,10 @@ validation in a disposable checkout before claiming visual regression coverage.
 inconsistent counters. `run.mjs` records checks before setup and immediately
 before spawning the driver, requiring MemAvailable >= 4 GiB and swap usage <=
 50%. A rejected check yields the normal blocked report and exit 1, without
-launching an app. Limits are fixed and do not treat swap as spare RAM. Verify
+launching an app. The RAM floor is fixed and swap is never treated as spare
+RAM. `IMMAGE_GUI_MAX_SWAP` (a fraction, at most 0.8) raises the swap limit for
+one run: on zram swap the used fraction overstates pressure, since compressed
+pages already count against MemAvailable. Verify
 threshold boundaries, no-swap and malformed readings with
 `node verify/gui/memory.test.mjs` (no GUI). This preflight does not establish
 runtime safety; the interrupted slider run needs separate memory investigation.
