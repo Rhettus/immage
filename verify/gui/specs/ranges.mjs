@@ -121,7 +121,8 @@ export async function choiceContract(t, definition) {
       const selector = `${container} input[type=checkbox]`, initial = await reveal(t, selector);
       for (let i = 0; i < 2; i++) {
         await click(t, selector);
-        assert.equal((await t.driver.observe(inspect, selector)).checked, i ? initial.checked : !initial.checked);
+        const want = i ? initial.checked : !initial.checked;
+        await until(async () => (await t.driver.observe(inspect, selector)).checked === want, `toggle ${i} checked ${want}`);
         await settledPhoto(t); await t.evidence(`toggle-${i}`);
       }
     } else {
