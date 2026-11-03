@@ -84,7 +84,7 @@ collisions, a locked destination mask, look removal, save/reopen and fresh-proce
 sidecar import. Native/platform verification, broader old styles and switching
 between different masked looks remain required before pin adoption.
 
-### Lock handling: packaged name matches; execution still pending
+### Lock handling: Linux executable checks pass; native platforms pending
 
 Candidate `src/common/database.c:3934–3984` fixes an existing Linux procfs
 lookup to read `/proc/<pid>/cmdline`. `strstr` examines only the first
@@ -98,11 +98,27 @@ contains no `darktable`.
 
 The engine defaults its library to `:memory:` but passes a persistent config
 folder from Rust; this does not establish that all database locks are absent.
-Run isolated live/stale lock and simultaneous-start checks on the actual
-packaged executable. Windows already requires a `darktable.exe` suffix in this
+`verify/database-locks.py` passed against both isolated candidate builds
+(AI/OpenCL off and on), invoking their actual `bin/darktable-engine` executable.
+With the default in-memory library, `config/data.db.lock` exists and contains
+the owning engine PID. A second engine using that config exits with a database
+lock error without replacing the lock, while the first remains responsive.
+Killing the owner leaves a stale lock; a new engine replaces it with its own
+PID, responds, and removes the lock on graceful exit. A subsequent clean startup
+also succeeds. The runner uses temporary config/cache/data only and kills only
+its owned children. This verifies sequential live-owner exclusion, not a
+simultaneous first-start race or an installed application bundle.
+
+```sh
+python3 -I verify/database-locks.py --build build/darktable-pin-review/cpu
+python3 -I verify/database-locks.py --build build/darktable-pin-review/features
+```
+
+Windows already requires a `darktable.exe` suffix in this
 function, which `darktable-engine.exe` does not satisfy; that predicate is
-unchanged in this range and needs a separate existing-behavior check. No new
-cross-platform lock regression or successful lock test is claimed.
+unchanged in this range and needs a separate existing-behavior check. Native
+Windows/macOS, renamed overrides and simultaneous first-start checks remain open;
+these Linux results establish no cross-platform lock guarantee.
 
 ### Upright, module versions and build inputs
 
@@ -246,7 +262,8 @@ approve the candidate pin, pixel parity, performance gains or platform support.
 
 ## Remaining review and adoption gates
 
-1. Validate lock handling with packaged names. Complete native/platform and
+1. Complete installed/native lock and simultaneous-start checks; Linux candidate
+   live/stale/clean-restart checks pass. Complete native/platform and
    broader-style coverage for the headlessly verified style/mask repair.
 2. Exercise every mapped field through generated introspection; verify old/new
    defaults and the saved-edit/image comparison matrix above.

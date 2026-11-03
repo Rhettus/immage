@@ -17,6 +17,16 @@ The report goes to `verify/results/<date>_<sha>/report.md`, with every
 measurement in `report.json`. Both, and `verify/references/`, are your
 machine's own and stay out of git.
 
+The headless persistent database lock check uses temporary state and the actual
+engine executable from a selected build:
+
+```bash
+python3 -I verify/database-locks.py --build build
+```
+
+It checks live-owner exclusion, recovery after killing its own owner process,
+lock cleanup and clean restart. It does not test simultaneous first startup.
+
 The focused batch-paste regression check drives production Session and settings
 code through the real engine, with isolated photos and sidecars:
 
