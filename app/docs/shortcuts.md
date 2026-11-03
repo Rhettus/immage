@@ -4,6 +4,7 @@ Press ⌘/ in Immage for this list. On Windows and Linux, ⌘ is Ctrl, ⌥ is Al
 and ⇧ is Shift. Most keys are the ones mainstream editors use.
 
 Keys do nothing while you type in a text field or while a dialog is open.
+A focused menu keeps its arrow keys, Space and Enter for choosing.
 
 ## General
 

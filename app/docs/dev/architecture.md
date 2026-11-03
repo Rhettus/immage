@@ -102,7 +102,7 @@ are `localStorage` keys named `immage.*`.
 | before/after, compare | `setBaMode`, `setBefore` (`Session.showBefore`), `toggleCompare` |
 | crop and turns | `enterCrop`, `leaveCrop`, `turn` (`Session.turned`) |
 | `runGuiBenchmark` | the GUI benchmark in Preferences |
-| keyboard | one `keydown` handler for every shortcut |
+| keyboard | one `keydown` handler for every shortcut; `fieldKeeps` (`keys.ts`) leaves a focused field its keys: text all, a slider its arrows, a switch Space, a menu its arrows, Home/End, Page Up/Down, Space and Enter |
 | `openLaunched`, `dropped` | a photo handed over (`launch-file`), or photos and folders dragged onto the window (`onDragDropEvent`, `path_kind`) |
 
 `enterCrop` snapshots the displayed placement before `prepareCropView` clears

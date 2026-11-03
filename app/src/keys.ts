@@ -27,10 +27,14 @@ export function keys(s: string): string {
 // whether a focused control keeps a key from the app's shortcuts: a text
 // field every key, a slider its arrows, a switch its Space. a switch kept
 // every key once, so O did nothing after one was clicked, and the overlay
-// it had brought up stayed
+// it had brought up stayed. a menu keeps the keys that choose in it: the
+// arrows, Home/End, Page Up/Down, Space and Enter, so picking an aspect with
+// the keyboard no longer applied the crop, nor an arrow moved to the next photo
+const MENU_KEYS = /^(Arrow(Up|Down|Left|Right)|Home|End|PageUp|PageDown|Enter| )$/;
 export function fieldKeeps(t: EventTarget | null, key: string): boolean {
   const el = t as { tagName?: string; type?: string } | null;
   if (el?.tagName === "TEXTAREA") return true;
+  if (el?.tagName === "SELECT") return MENU_KEYS.test(key);
   if (el?.tagName !== "INPUT") return false;
   if (el.type === "range") return key.startsWith("Arrow");
   if (el.type === "checkbox") return key === " ";
