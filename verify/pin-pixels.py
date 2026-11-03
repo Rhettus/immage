@@ -96,6 +96,8 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--edited', action='store_true',
                         help='Also compare old-created exposure, sigmoid, AgX and vignette histories')
+    parser.add_argument('--vignette', action='store_true',
+                        help='Compare saved vignette dithering, shape and saturation variants')
     args = parser.parse_args()
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -144,6 +146,20 @@ def main():
                                   'params': {'brightness': -0.7, 'scale': 50.0,
                                              'falloff_scale': 40.0, 'dithering': 0}}],
                 }
+            if args.vignette:
+                base = {'brightness': -0.7, 'scale': 50.0,
+                        'falloff_scale': 40.0, 'dithering': 0}
+                variants = {
+                    'off': {},
+                    '8bit': {'dithering': 1},
+                    '16bit': {'dithering': 2},
+                    'bright': {'brightness': 0.4},
+                    'saturation': {'brightness': 0.0, 'saturation': -0.8},
+                    'shape': {'shape': 2.0, 'center.x': 0.2, 'center.y': -0.15},
+                }
+                for name, params in variants.items():
+                    cases[f'vignette-{name}'] = [
+                        {'op': 'vignette', 'enabled': True, 'params': base | params}]
             record = {'sha256': digest(photo), 'cases': {}}
             default_frames = None
             for case, edits in cases.items():

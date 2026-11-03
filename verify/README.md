@@ -270,6 +270,12 @@ requests, sidecar hashes and saved module versions alongside RGB metrics. Old
 reload results expose any baseline roundtrip differences separately. Schema v2
 groups comparisons under `inputs` → input → `cases` → case → `comparisons`.
 
+Use `--vignette` for six independent saved-history variants: dithering off,
+8-bit and 16-bit dithering, positive brightness, saturation alone, and an
+off-center shape. It uses the same old-save/fresh-reload/contribution checks
+and can be combined with `--edited`. This narrows the falloff compatibility
+question; it does not choose a migration policy or exercise an OpenCL device.
+
 These are constructed, unmasked engine histories, not production Session edit
 orchestration, a user-created style corpus, HDR/device output or a broad image
 corpus. In particular, upstream processing fixes can change a saved edit even
