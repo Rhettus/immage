@@ -11,9 +11,9 @@ instance, so a darktable user who wants exposure and warmth in the sky makes
 two instances and gives each the same mask. Immage builds exactly that, for
 every slider the mask uses, out of ordinary darktable parts:
 
-- the mask's shapes are a darktable **mask group**
+- the mask's shapes are a darktable **flexi mask group**
 - each module a slider sets gets an **instance named after the mask**, with
-  that group as its drawn mask
+  that group as its mask
 - Immage places those instances in the pipe, after one fixed module, the
   [mask anchor](#where-the-instances-run), in an order the user cannot
   change
@@ -24,7 +24,19 @@ photo with the same instances and masks and renders it the same.
 ## The shapes: one mask group
 
 The engine's `mask` command (`_mask` in [main.c](../../../engine/main.c))
-turns a mask's shapes into a darktable group named `immage: <mask>`. Brush,
+turns a mask's shapes into a darktable flexi group named `immage: <mask>`
+(darktable's `dev-doc/masks_data_model.md`). A flexi group's first point
+is a marker saying how its members combine. Runs of added shapes go into a
+group whose members fold by maximum; a subtracted shape is taken away by a
+flexi difference group. An instance using flexi groups has `mask_mode`
+`DEVELOP_MASK_ENABLED | DEVELOP_MASK_FLEXI`. darktable converts the classic
+groups it finds in older edits (`src/develop/masks/migrate_legacy.c`) when it
+loads them, moving subtraction from each member's state to a marker, so
+the engine writes flexi groups itself, which loading leaves alone. Its
+readers (`_flatten`, `_shape_json`) walk any flexi tree back to the panel's
+list of added and subtracted shapes, so an edit saved under the earlier
+pin, which darktable migrates on load, reopens with the shapes it was made
+with. Brush,
 linear and radial gradients become darktable's brush, gradient and ellipse
 forms. AI selections (Object, Subject, Sky, Depth Range and the rest) are
 traced into path forms, so the model is needed only when the selection is
@@ -32,9 +44,12 @@ made, never to render. A Subject, People or Object selection over a plain,
 colorful background is built so its feather stops at that color; see
 [Selections over a plain background](#selections-over-a-plain-background).
 
-Color and luminance ranges are not shapes in darktable. They are a module's
-parametric (blendif) mask, so the engine keeps each mask's ranges and sets
-them on every instance the mask drives (`_apply_ranges`). The refinements
+Color and luminance ranges are not drawn shapes. The engine builds them as
+darktable converts a classic parametric mask: one parametric element per
+channel, multiplied with the mask's shapes in a flexi product group named
+`immage ranges: <mask>` (`_set_ranges_group`). The instances that blend in
+scene-referred RGB, where the ranges were measured, take that group; the
+rest take the shapes alone (`_apply_ranges`). The refinements
 (feather, blur, detail, contrast) are blend parameters in the same way. The
 mask's Opacity slider is each instance's opacity.
 
@@ -225,8 +240,8 @@ balance rgb's does, that is close to the mask's own instance.
 
 Many masks then fit on one instance: its mask is the sum of theirs, each
 member counted at `s / S` times its own opacity. darktable already has such
-a mask, a group whose members add (`DT_MASKS_STATE_SUM`), and drawing it is
-far cheaper than running the module once per member. Overlapping masks add
+a mask, a flexi group whose members add (`DT_MASKS_STATE_FLEXI_SUM`), and
+drawing it is far cheaper than running the module once per member. Overlapping masks add
 up, as Lightroom's do.
 
 In Immage, for the modules marked `merge` in `localMaps`, `planMerge` in
@@ -297,8 +312,9 @@ over to shared instances.
 
 Opened in darktable, a photo with a mask "Sky" shows:
 
-- in the mask manager, the group `immage: Sky` with its shapes, and a
-  group `immage combined: ...` for each shared instance
+- in the mask manager, the group `immage: Sky` with its shapes, a group
+  `immage ranges: immage: Sky` when the mask has ranges, and a group
+  `immage combined: ...` for each shared instance
 - in the module list, the instances named `Sky` (and `Sky#sharpen`), and
   `immage local: ...` for the shared ones, each with its drawn mask, ranges
   and refinements in its blending panel

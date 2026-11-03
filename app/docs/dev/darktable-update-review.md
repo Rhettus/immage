@@ -1,11 +1,12 @@
 # darktable update review: 2747ed2 → 8790676
 
-Status: source-impact audit recorded; full pin integration in progress, pin unchanged.
-Build, image compatibility and platform validation are separate gates in the
+Status: pin moved to the candidate on `perf/darktable-pin-update`
+(`darktable: pin to master 879067695e`); native platform CI and device
+OpenCL checks are the remaining gates in the
 [progress checklist](#progress-checklist).
 
 Follow [Pinning darktable](darktable-pin.md). Candidate frozen at
-`879067695ea85f42d238a5c1603a021d14d71d3f`; current pin is
+`879067695ea85f42d238a5c1603a021d14d71d3f`; the previous pin was
 `2747ed2a0d162515bd9c91d02201653de895dddb`. Upstream master was fetched
 on 2026-11-03 UTC. Fetch updated master successfully but returned nonzero
 because upstream moved its `nightly` tag; the local tag was preserved.
@@ -23,15 +24,26 @@ changes; they do not require custom historical lens or vignette modes.
   output-follow defaults and migrated values remain upstream-managed; current
   preview/export profiles have output headroom 1. HDR support would need a
   separate review of controls, profiles, peak settings and caches.
-- Next, establish an unpatched target reference build and equivalent render
-  settings; compare focused lens, vignette, diffuse, denoise and RAW cases.
-- Complete affected real-style, raster/pixel-mask, AI, foreign-XMP and export
-  integration checks with a concrete risk and exit condition for each.
-- Resolve native locking, installed resources, supported-platform builds and
-  device parity/fallback/cancellation; GPU coverage is unavailable in this VM.
-- Update the pin and integration patch after applicable gates, with final release
-  notes and user/developer documentation. GUI checks remain subject to local
-  execution approval and resource constraints.
+- Against an unpatched target build linked with flush-to-zero, the candidate
+  engine renders previews and exports byte-exactly on the CPU: synthetic, ORF
+  and NEF photos, old-pin saved edits, drawn masks, ranges, intersections,
+  shared masks, object and depth selections with their backdrops (36 renders
+  and 18 centered windows), and all 53 shipped looks at full and reduced
+  amount (118 renders per engine).
+- The target converts classic mask groups to flexi groups on load, which lost
+  subtracted shapes on reopening. The engine now builds flexi groups and
+  flattens any flexi tree back to the panel's shapes
+  ([masks](masks.md#the-shapes-one-mask-group)); old-pin and new edits render
+  and read back identically.
+- Raster masks were assessed in source only: upstream changes the GUI hover
+  tint, and Immage builds no raster forms.
+- Windows: the engine patch has `pid_is_alive` accept `darktable-engine.exe`,
+  so a second engine finds the lock held, as on Linux and macOS.
+- Remaining: Windows, macOS and Linux CI builds (the Windows lock branch is
+  compiled only there), the GPU check on each GPU machine with the old and new
+  builds (`benchmarking/gpucheck.py`), and a GUI pass with per-run approval.
+  A friendlier second-window behavior than the engine's start error is a
+  separate change.
 
 The direct lens prototype remains diagnostic only. Stop equivalent lens matrix
 expansion. No custom serialized compatibility mode or unknown-backend import
@@ -149,11 +161,12 @@ python3 -I verify/database-locks.py --build build/darktable-pin-review/cpu
 python3 -I verify/database-locks.py --build build/darktable-pin-review/features
 ```
 
-Windows already requires a `darktable.exe` suffix in this
-function, which `darktable-engine.exe` does not satisfy; that predicate is
-unchanged in this range and needs a separate existing-behavior check. Native
-Windows/macOS, renamed overrides and simultaneous first-start checks remain open;
-these Linux results establish no cross-platform lock guarantee.
+Windows requires a `darktable.exe` suffix in this function, which
+`darktable-engine.exe` did not satisfy, at both pins: a second engine treated
+the first one's lock as stale and shared its `data.db`. The engine patch now
+accepts either name. Native Windows/macOS, renamed overrides and simultaneous
+first-start checks remain open; these Linux results establish no
+cross-platform lock guarantee.
 
 ### Upright, module versions and build inputs
 
@@ -303,7 +316,7 @@ Custom historical-renderer and import-policy items below are retired, not gates.
 Checked items have completed evidence described in this review. An unchecked
 item is pending or only partially verified; passing a narrower check does not
 complete its broader adoption gate. Update this checklist as checks finish.
-The production pin remains unchanged until the adoption gates pass.
+The pin moved once CPU parity passed; device and platform gates follow in CI.
 
 ### Source audit and compatibility repair
 
@@ -445,10 +458,10 @@ The production pin remains unchanged until the adoption gates pass.
 - [ ] Run fresh platform CI and native CPU/OpenCL performance comparisons across
   supported Windows/macOS/Linux and x86-64/ARM64 configurations.
 - [ ] Complete any required GUI validation with fresh explicit per-run approval.
-- [ ] Adopt the candidate pin after validation; preserve the original patched
-  source and unrelated ONNX CMake delta, and rebuild/package from a fresh
-  configure/install tree with matching kernel manifest and ABI.
-- [ ] Update release notes and user/developer documentation for the final pin bump.
+- [x] Adopt the candidate pin, with the engine patch regenerated from the
+  reviewed candidate source (its ONNX CMake hunk was already part of it).
+- [ ] Rebuild and package from a fresh configure/install tree in CI.
+- [x] Update release notes and user/developer documentation for the pin bump.
 
 Keep Texture/Clarity defaults unchanged until matched visual-strength tests
 establish the benefit. A checked build or scalar-access item does not establish

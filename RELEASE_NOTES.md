@@ -3,6 +3,24 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
+## Unreleased
+
+Improvements
+
+- Immage is built on a newer darktable development commit, master
+  879067695e (5.7.0+1793). Masks are saved as darktable's flexi masks,
+  and edits made with earlier Immage versions open with the same shapes,
+  ranges and looks, rendering as this darktable renders them.
+
+Bug fixes
+
+- Look previews preserve the applied look's mask and blend settings, keep
+  temporary masks out of the photo and refresh when mask geometry changes.
+  Applying a look records its masks with the edit history.
+- On Windows, a second Immage window no longer shares the first one's
+  darktable library: its engine finds the library in use and stops, as on
+  Linux and macOS.
+
 ## 0.42.0
 
 Improvements
@@ -51,9 +69,6 @@ Performance
 
 Bug fixes
 
-- Look previews preserve the applied look's mask and blend settings, keep
-  temporary masks out of the photo and refresh when mask geometry changes.
-  Applying a look records its masks with the edit history.
 - Each right panel tool keeps its own scroll position and opens at the top.
 - Turning a converted JPEG or TIFF negative back to a positive no longer
   switches exposure on when the photo had not used it.

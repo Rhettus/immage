@@ -10,7 +10,7 @@ check the result.
 
 - **The submodule commit** is the pin. `git submodule status darktable`
   shows it, and `git -C darktable describe --tags --match 'release-*'`
-  names it (`release-5.7.0-1428-g2747ed2a0d` is master, 1,428 commits
+  names it (`release-5.7.0-1793-g879067695e` is master, 1,793 commits
   past the 5.7.0 tag).
 - **[patches/darktable-engine.patch](../../../patches/darktable-engine.patch)**
   is the only change to darktable. It adds the engine to darktable's
@@ -206,4 +206,4 @@ These break silently, and are the reason this page has a checklist:
 
 | Date | darktable from → to | Breaks fixed | Time | Notes |
 | --- | --- | --- | --- | --- |
-| | | | | |
+| 2026-11-03 | master 2747ed2a0d → 879067695e | classic mask groups converted to flexi on load lost subtracted shapes on reopening: the engine builds and reads flexi groups; Windows lock check accepts `darktable-engine.exe` | | CPU renders byte-exact against unpatched target for previews, exports, masks, object masks and all 53 looks; [review](darktable-update-review.md) |
