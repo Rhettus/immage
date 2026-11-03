@@ -601,3 +601,13 @@ grid/allocation failure remain untested.
 The bicubic 128x95 bypass run passed 24 profile/direction cases and 288 copies
 per plugin, with 6,840 active mask rows and 2,280 image RGB rows still exact.
 All 179 run hashes verified; an omitted bypass-pattern trace was rejected.
+
+The expanded mask-bypass deployments also passed bicubic previews with
+`--aspect 0.75` and `--aspect 1.5` (add to the checker). Each run covered
+24 cases and 288 exact bypass copies per plugin. Active mask/image row totals
+were 9,144/3,048 at 128x127 and 4,536/1,512 at 128x63; final frames matched.
+All 179 hashes per run verified. Evidence is under ignored
+`pixel-lens-mask-bypass-aspect075-bicubic-128/` and
+`pixel-lens-mask-bypass-aspect150-bicubic-128/` in the pin-review directory.
+Changed-aspect coverage currently uses bicubic only; full-size masks and
+fault-injected grid failure remain open.

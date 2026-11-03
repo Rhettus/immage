@@ -2195,9 +2195,9 @@ hashes independently verified. Executed scripts are archived under
 `isolation/alpha-interpolation-scripts/` and `isolation/mask-diagnostic-scripts/`;
 manifest script entries refer to these immutable copies. Alpha provenance notes
 record correction of script identities after source edits during execution.
-These remain synthetic unrelated-camera previews. Separate mask changed
-aspects, full-size behavior, inactive-modifier/grid failure, nonfinite
-coordinates and native OpenCL remain open. No production or pin change.
+These remain synthetic unrelated-camera previews. Separate mask full-size behavior, grid failure, nonfinite coordinates and
+native OpenCL remain open; changed-aspect and inactive-modifier follow-ups
+are recorded below. No production or pin change.
 
 CPU mask bypass diagnostics: `--geometry --distort-mask --mask-bypass` builds
 isolated plugins that call the actual `_distort_mask_lf` entry with a missing
@@ -2215,3 +2215,16 @@ passed all 24 assigned-profile/direction cases: 288 byte-exact bypass copies per
 independently verified; removing a bypass-pattern trace was rejected. Evidence:
 `build/darktable-pin-review/pixel-lens-mask-bypass-expanded-bicubic-128/` (ignored).
 No production code or pin changes.
+
+Changed-aspect CPU mask follow-up: the same expanded bypass plugins and
+bicubic checker passed 24 cases each at pixel aspects 0.75 (128x127) and
+1.5 (128x63). Active masks matched 9,144 and 4,536 rows respectively;
+image RGB matched 3,048 and 1,512 rows, and final frames were exact.
+Each run also passed 288 byte-exact bypass copies per plugin. All 179 hashes
+per run were independently verified with scripts unchanged throughout execution.
+Ignored evidence: `build/darktable-pin-review/pixel-lens-mask-bypass-aspect075-bicubic-128/`
+and `pixel-lens-mask-bypass-aspect150-bicubic-128/`. This covers bicubic synthetic
+preview masks at these aspects; full-size masks, other interpolators at changed
+aspects, invalid ROIs, grid failure and nonfinite coordinates remain unverified.
+The old pin has no precomputed mask grid, so grid-failure diagnostics need a
+candidate-only assertion rather than an old/direct trace-equality claim.
