@@ -241,6 +241,31 @@ and after restoring the frame, with intervening renders and applied corrections.
 These fixtures supplement real camera portrait RAWs; they do not establish RAW,
 GPU or visible-app coverage. Run without `--write-corpus` for temporary fixtures.
 
+## Pin image comparisons
+
+Run the headless comparison with coherent engine, core and plugin builds:
+
+```sh
+python3 verify/pin-pixels.py --old build/darktable-pin-review/old-cpu \
+  --candidate build/darktable-pin-review/cpu \
+  --candidate build/darktable-pin-review/features \
+  --photo /path/to/camera.NEF --output build/darktable-pin-review/pixel-defaults
+```
+
+A synthetic colored PNG is always included. Repeat `--photo` for more inputs and
+`--size` for render bounds (defaults: 96 and 512). Only disposable photo copies
+are imported, without adjacent sidecars; each input/build has isolated state.
+CPU processing uses two OMP threads. The output directory retains RGBA frames,
+engine logs and `report.json` with input/binary hashes and RGB difference metrics.
+Nonzero differences are reported for review, not automatically accepted or
+rejected. This covers fresh engine defaults, not app Session edits, saved-history
+compatibility, HDR/device output or a broad image corpus.
+
+Rebuild all IOP/imageio modules after changing shared engine headers. An older
+plugin can load despite an incompatible custom struct layout, producing wrong
+pixels even when scalar field access succeeds. Do not mix freshly linked core
+libraries with stale plugins when constructing references.
+
 ## Candidate mapped scalar access
 
 Run `python3 -I verify/mapped-fields.py --build build/darktable-pin-review/cpu`

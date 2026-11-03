@@ -320,6 +320,9 @@ The production pin remains unchanged until the adoption gates pass.
   pixels and converted bytes, visible contribution and exact disable restoration.
 - [x] Load constructed AgX v7 and sigmoid v1/v2/v3 historical XMP in fresh
   processes; verify complete converted params/blend bytes and exact reference pixels.
+- [x] Build a coherent isolated old-pin engine/module reference; compare fresh
+  PNG, Nikon NEF and Olympus ORF CPU pixels at 96/512 bounds against both
+  candidate configurations (all RGBA bytes exact).
 - [ ] Verify production control read/selection semantics, RAW-specific defaults, new
   unmapped HDR fields and enum processing semantics with reference renders.
 - [x] Verify A→B→A switching between two exported/imported masked exposure looks,
@@ -1032,20 +1035,51 @@ python3 verify/mapped-fields.py --build build/darktable-pin-review/cpu \
   --photo /path/to/copied-camera.NEF --snapshot /tmp/raw-defaults.json
 ```
 
-Initial fresh-image render probe used disposable PNG/NEF/ORF copies and isolated
-state, CPU with two OMP threads, at 96 and 512 pixel bounds. Both candidate
-configurations produce identical RGBA output for every input/size. The existing
-original build does **not** provide a usable reference yet: the colored PNG
-renders grayscale there, with mean absolute RGB differences of about 45 code
-values; RAW differences are about 49–51. Its engine executable is dated Nov 2,
-while its gamma IOP plugin is dated Oct 31. This is an unresolved baseline
-coherence concern, not evidence of a candidate regression or proof of its cause.
-Do not accept these as old/new equivalence results. The probe, JSON metrics,
-RGBA frames and engine logs are retained under the ignored review build folder
-as `default-pixel-comparison.py`, `default-pixel-comparison.{json,log}` and
-`{png,nef,orf}-{old,cpu,features}-*`.
+The initial fresh-image comparison against the existing `build/` was invalid:
+its core library and gamma IOP had incompatible custom pipeline layouts. Debug
+symbols show the old gamma plugin expected `mask_display` at offset 672 and a
+2,816-byte `dt_dev_pixelpipe_t`, without output-sink fields. The core placed
+`mask_display` at 688 and had a 2,832-byte struct; its offset 672 is `shutdown`.
+Thus the plugin read the shutdown field as a display-mask selector, producing
+grayscale output from the colored PNG. This was stale local build state, not a
+candidate pixel regression. Original binaries and failed-probe evidence remain
+untouched. Diagnostic logs: `old-mixed-abi.log` and `old-coherent-abi.log` in the
+ignored review build folder. Rebuild all IOP/imageio modules whenever custom
+shared headers change; successful loading/scalar access is insufficient proof
+of binary compatibility.
 
-Next: establish a coherent isolated old-pin engine/module build, diagnose the
-grayscale reference, then repeat old/new reference pixels. This concerns image
-correctness; no additional historical CPU benchmark capture is needed. Broader
-camera coverage and adoption gates remain unchecked.
+A new isolated `old-source` clone is pinned to
+`2747ed2a0d162515bd9c91d02201653de895dddb`, with the full existing engine patch
+and copied unchanged external sources. The unrelated ONNX finder edit is excluded.
+`old-cpu` uses the candidate CPU build's Release/options, AI/OpenCL disabled,
+local OpenCV, current Immage engine sources and an explicit isolated LibRaw path.
+Engine/core, all plugin targets and deploy data build successfully. Gamma and
+core now agree on offset 688 and struct size 2,832; the grayscale artifact is gone.
+Logs: `configure-old-cpu.log`, `build-old-cpu.log`, `build-old-modules.log`,
+`deploy-old-cpu.log`. The coherent old build also passes the 444 scalar and
+1,280 production-control-write scenarios (86 choices); its mapped PNG snapshot
+still exactly matches the candidate (`old-coherent-controls.log`,
+`old-coherent-defaults.json`).
+
+`verify/pin-pixels.py` runs isolated CPU fresh-default comparisons using disposable
+photo copies without adjacent sidecars, two OMP threads, and 96/512 pixel bounds.
+The synthetic colored PNG, Nikon D3S NEF and Olympus ORF produce **byte-identical
+RGBA output** in the coherent old build and both candidate configurations for
+all six input/size combinations. JSON reports include hashes of inputs, engine,
+core and plugins; frames and logs are retained in ignored
+`build/darktable-pin-review/pixel-defaults/`, with summary `pixel-defaults.log`.
+This validates fresh engine defaults on these inputs, not app Session edits,
+saved-history pixel equivalence, a broader camera corpus, HDR or device output.
+
+```sh
+python3 verify/pin-pixels.py --old build/darktable-pin-review/old-cpu \
+  --candidate build/darktable-pin-review/cpu \
+  --candidate build/darktable-pin-review/features \
+  --photo /path/to/copied-camera.NEF --photo /path/to/copied-camera.ORF \
+  --output build/darktable-pin-review/pixel-defaults
+```
+
+Next: broader edited old/new image references, including saved tone-mapper
+history and changed pixel-processing modules. Broader camera/native/device and
+adoption gates remain unchecked. No additional historical CPU benchmark capture
+is needed.
