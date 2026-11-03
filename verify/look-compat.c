@@ -97,6 +97,50 @@ static void multi_hashes(dt_hash_t hashes[6])
   CHECK(ids[0] != ids[1]);
 }
 
+// Test the loaded candidate modules, without mirroring their C parameter structs.
+static void check_hdr_migration(void)
+{
+  const char *ops[] = { "agx", "sigmoid" };
+  const char *flags[] = { "target_white_from_output", "white_target_from_output" };
+  const int versions[] = { 7, 3 };
+  for(int i = 0; i < 2; i++)
+  {
+    dt_iop_module_t *m = _module(ops[i], &err);
+    CHECK(m && m->so->version() == versions[i] + 1);
+    double value = 0;
+    CHECK(_read_field(m, flags[i], TRUE, &value, &err) && value == 1);
+    dt_introspection_field_t *field = NULL;
+    char *flag = _field_in(m, m->default_params, flags[i], &field, &err);
+    CHECK(flag);
+    const size_t prefix = flag - (char *)m->default_params;
+    void *old = g_malloc(prefix);
+    memcpy(old, m->default_params, prefix);
+    // Distinct valid edits exercise preservation beyond the default blob.
+    CHECK(_write_field_in(m, old, i ? "middle_grey_contrast" : "curve_contrast_around_pivot", 1.25, &err));
+    void *converted = NULL;
+    int32_t size = 0;
+    int version = 0;
+    CHECK(m->legacy_params(m, old, versions[i], &converted, &size, &version) == 0);
+    CHECK(version == versions[i] + 1 && size == m->params_size);
+    CHECK(!memcmp(old, converted, prefix));
+    flag = _field_in(m, converted, flags[i], &field, &err);
+    CHECK(flag && *(gboolean *)flag == FALSE);
+    if(i == 0)
+    {
+      float *purity = _field_in(m, converted, "hdr_purity", &field, &err);
+      CHECK(purity && *purity == 0.5f);
+      CHECK(_read_field(m, "hdr_purity", TRUE, &value, &err) && value == 0.5);
+    }
+    void *chained = g_malloc0(m->params_size);
+    CHECK(dt_iop_legacy_params(m, old, prefix, versions[i], &chained, version) == 0);
+    CHECK(!memcmp(converted, chained, size));
+    g_free(chained);
+    free(converted);
+    g_free(old);
+    printf("%s: new output-follow default, legacy prefix preservation and conversion passed\n", ops[i]);
+  }
+}
+
 int main(int argc, char **argv)
 {
   if(argc < 5)
@@ -167,6 +211,7 @@ int main(int argc, char **argv)
     return 0;
   }
   CHECK(_open_image(argv[1], NO_IMGID, NULL, &err));
+  check_hdr_migration();
   dt_iop_module_t *source = _module("exposure", &err);
   CHECK(source && _write_field(source, "exposure", 1.5, &err));
   source->enabled = TRUE;

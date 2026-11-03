@@ -2,10 +2,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 the Immage authors
 """Read/write every global/local manifest field through the real engine, headlessly."""
-import argparse,json,math,os,pathlib,selectors,struct,subprocess,tempfile,zlib
+import argparse,json,math,os,pathlib,selectors,shutil,struct,subprocess,tempfile,zlib
 root=pathlib.Path(__file__).resolve().parent.parent
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--build',type=pathlib.Path,default=root/'build')
+parser.add_argument('--photo',type=pathlib.Path,help='Copy a local photo without its sidecar into disposable test state')
 parser.add_argument('--snapshot',type=pathlib.Path,help='Write initial live/default values for comparison')
 parser.add_argument('--controls',action='store_true',help='Exercise production control writes, including all declared choices')
 parser.add_argument('--read-report',type=pathlib.Path,help='With --controls, save production read/activation results for cross-build comparison')
@@ -18,6 +19,8 @@ with tempfile.TemporaryDirectory(prefix='immage-mapped-fields-') as tmp:
  def chunk(kind,data):return struct.pack('>I',len(data))+kind+data+struct.pack('>I',zlib.crc32(kind+data)&0xffffffff)
  rows=b''.join(b'\0'+bytes(v for x in range(w) for v in (x*2,y*2,(x+y)%256)) for y in range(h))
  photo=p/'fixture.png';photo.write_bytes(b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('>IIBBBBB',w,h,8,2,0,0,0))+chunk(b'IDAT',zlib.compress(rows))+chunk(b'IEND',b''))
+ if args.photo:
+  photo=p/('fixture'+args.photo.suffix);shutil.copyfile(args.photo,photo)
  with (p/'engine.log').open('w') as log:
   child=subprocess.Popen([str(build/'bin/darktable-engine'),'--core','--configdir',str(p/'config'),'--cachedir',str(p/'cache'),'--datadir',str(build/'share/darktable'),'--moduledir',str(build/'lib/darktable'),'--conf','opencl=false','--conf','resourcelevel=0'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=log,text=True,env=os.environ|{'OMP_NUM_THREADS':'2','OMP_WAIT_POLICY':'passive','XDG_DATA_HOME':str(p/'data')})
   poll=selectors.DefaultSelector();poll.register(child.stdout,selectors.EVENT_READ)
@@ -26,7 +29,8 @@ with tempfile.TemporaryDirectory(prefix='immage-mapped-fields-') as tmp:
    assert poll.select(45),'engine response timed out'
    line=child.stdout.readline();r=json.loads(line);assert bool(r.get('ok')) == ok,r;return r
   try:
-   req({'cmd':'open','path':str(photo)})
+   opened=req({'cmd':'open','path':str(photo)})
+   print('Opened disposable photo:',json.dumps(opened,sort_keys=True))
    count=0
    snapshot={}
    for op,names in fields.items():

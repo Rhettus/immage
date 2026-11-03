@@ -308,6 +308,10 @@ The production pin remains unchanged until the adoption gates pass.
 - [x] Exercise production session preference/history selection, foreign exclusion,
   negative overrides, snapping, bypass and combined tone-mapper choices against
   original/candidate synthetic-PNG snapshots (headless; masks/rendering stubbed).
+- [x] Check candidate AgX/sigmoid output-follow defaults and direct/wrapped legacy
+  conversion with byte-exact old-prefix preservation in both builds.
+- [x] Compare mapped defaults/live values and flags for a disposable Nikon D3S
+  NEF across the existing original build and both candidates (444 scalar checks).
 - [ ] Verify production control read/selection semantics, RAW-specific defaults, new
   unmapped HDR fields and enum processing semantics with reference renders.
 - [x] Verify A→B→A switching between two exported/imported masked exposure looks,
@@ -961,3 +965,35 @@ RAW/HDR defaults and rendered pixels remain unverified by this harness. Existing
 snapshots have identical mapped defaults; this does not extend default coverage
 to RAW cameras or newly added unmapped HDR fields. The broad adoption checkbox
 remains open. No production behavior or pin changed.
+
+
+## RAW defaults and HDR migration checks
+
+`verify/look-compat.c` now checks the actual loaded AgX v8 and sigmoid v4
+modules after opening the synthetic PNG. New default output-follow flags are
+true; converting AgX v7/sigmoid v3 sets them false. A distinct contrast edit
+survives byte-exact preservation of the entire old parameter prefix. Direct
+module conversion and the production `dt_iop_legacy_params` wrapper agree on
+all converted bytes. AgX new and migrated HDR purity is 0.5. Both candidate
+configurations pass, together with the existing look/sidecar regression checks.
+Logs: ignored `build/darktable-pin-review/{cpu,features}-hdr{,-build}.log`.
+This does not test older sigmoid v1/v2 chains, imported legacy XMP/style loading,
+HDR output pixels or display-dependent headroom behavior.
+
+`verify/mapped-fields.py --photo PATH` copies only the photo into temporary
+state, excluding adjacent sidecars. An existing ignored Nikon D3S NEF opens as
+RAW (4288 by 2844); all 444 changed-scalar checks pass in the existing original
+build and both candidates. Their mapped live/default values and enable flags
+are identical (`{old,cpu,features}-raw-defaults.json` in the ignored review build
+folder). Channel mixer, demosaic, exposure and sigmoid differ from the PNG
+snapshot, confirming this exercises a distinct initialization path. This is
+one camera and the mapped field inventory, not full camera/default coverage or
+render equivalence. No originals, production defaults or pin changed; no GUI ran.
+
+```sh
+python3 verify/mapped-fields.py --build build/darktable-pin-review/cpu \
+  --photo /path/to/copied-camera.NEF --snapshot /tmp/raw-defaults.json
+```
+
+Next: broaden RAW camera/default coverage and legacy import paths, then compare
+old/new reference pixels. Keep the broader adoption gates unchecked.

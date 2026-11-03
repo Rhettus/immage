@@ -290,3 +290,11 @@ overrides, neutral snapping, bypasses and combined tone-mapper choices.
 Engine commands use the supplied snapshot; mask loading and rendering are stubbed.
 It launches no GUI or engine and does not verify rendered output or RAW defaults.
 See the darktable update review for the three comparison inputs and limits.
+
+
+`mapped-fields.py --photo PATH` uses a disposable copy of a local input photo
+without its sidecar instead of the generated PNG. Use `--snapshot PATH` to
+compare mapped RAW camera defaults across builds; a single camera does not
+establish broad RAW or pixel equivalence. The candidate `look-compat.py` check
+also exercises loaded AgX/sigmoid new HDR defaults and previous-version legacy
+conversion, including prefix preservation and the production conversion wrapper.
