@@ -367,8 +367,8 @@ The production pin remains unchanged until the adoption gates pass.
   forward/reverse histories at 512 pixels and 4640 pixels with confirmed 6×6 lens
   tiles, with defaults/metadata as controls.
 - [x] Compare the direct prototype with saved Olympus forward/reverse 0.75/1.5
-  aspect histories at 512 pixels in all four warp interpolators and full size
-  with confirmed minimum-budget lens tiling.
+  aspect histories at 512 pixels and full size in all four warp interpolators,
+  with confirmed minimum-budget lens tiling at full size.
 - [ ] Validate the direct prototype with broader exceptional-profile images and
   native device/fallback references before choosing production migration behavior.
 - [x] Trace old CPU/OpenCL Lensfun stage ordering and factor arithmetic; record a
@@ -1848,8 +1848,31 @@ Olympus fixture, `--lens-aspect --lens-aspect-reverse`, and either `--size 512
 
 This adds coverage for the actual-pixel prototype rather than extending the
 invalid general zero-clamp assumption. Matching whole-image references for the
-12 exceptional installed profiles, full-size alternative interpolators, native
-OpenCL, allocation/fallback/cancellation and production migration/import policy
+12 exceptional installed profiles, native OpenCL, allocation/fallback/cancellation
+and production migration/import policy
 remain open. No matching exceptional-profile photos were located in the local
 fixture searches; reassigning a lens to an unrelated image would be diagnostic
 coverage only. No production plugin, original pin, preference or default changed.
+
+#### Full-size interpolation follow-up
+
+The same isolated direct CPU prototype also matches coherent old CPU output at
+4640-pixel bounds with explicit bilinear, bicubic, Lanczos2 and Lanczos3 warp
+interpolation. Each run covers saved forward/reverse Lensfun histories at aspect
+ratios 0.75 and 1.5, old reloads, RAW defaults and the synthetic control: all ten
+comparisons per mode are exact RGB, for 40 exact comparisons overall. All four
+edited histories per mode visibly differ from defaults.
+
+Each mode's 12 saved-history logs confirm the same minimum-budget lens tile
+layouts: 7×7 tiles of 664×663 for 4640×4630 output at aspect 0.75, and 3×3 tiles
+of 1548×773 for 4640×2314 output at aspect 1.5, in both directions. None of these
+48 logs contains failure, fallback or allocation-error strings. This validates
+matching tile partitions; it does not remove the old CPU tile-layout sensitivity.
+
+Reproduce the preceding command with `--size 4640 --resource-level minimum
+--interpolation MODE` for each of the four modes. Ignored evidence directories
+`build/darktable-pin-review/pixel-lens-direct-aspect-full-MODE/` retain reports,
+XMP, RGBA frames, logs, `tile-guards.json` and `evidence-sha256.json`.
+`lens-direct-full-interpolation-summary.json` aggregates the four runs. Broader
+exceptional-profile images, native OpenCL references and migration/import policy
+remain open; no production engine, plugin, pin or default changed.

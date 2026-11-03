@@ -102,8 +102,8 @@ mode is implemented by this diagnostic. Broader image, migration and native
 fallback validation remains necessary.
 
 The direct prototype also matches saved Olympus forward/reverse 0.75/1.5 aspect
-histories at 512 pixels in all four warp interpolators, and at full-size bounds
-with matching 7×7/3×3 minimum-budget lens tiles. See the [measured matrix](darktable-update-review.md#direct-cpu-prototype-pixel-aspect-interpolation-and-full-size-tiling).
+histories at both 512 pixels and full-size bounds in all four warp interpolators,
+with matching 7×7/3×3 minimum-budget lens tiles at full size. See the [measured matrix](darktable-update-review.md#direct-cpu-prototype-pixel-aspect-interpolation-and-full-size-tiling).
 This remains one RAW/profile, not acceptance of exceptional-profile imports or
-native device fallback. Full-size alternative interpolation modes remain untested
-with this prototype.
+native device fallback. All 40 comparisons in the explicit full-size interpolation
+matrix are exact RGB; exceptional-profile whole-image coverage remains pending.
