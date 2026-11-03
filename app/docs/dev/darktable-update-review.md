@@ -1,7 +1,8 @@
 # darktable update review: 2747ed2 → 8790676
 
 Status: source-impact audit recorded; adoption blocked, pin unchanged.
-Build, image compatibility and platform validation are separate gates below.
+Build, image compatibility and platform validation are separate gates in the
+[progress checklist](#progress-checklist).
 
 Follow [Pinning darktable](darktable-pin.md). Candidate frozen at
 `879067695ea85f42d238a5c1603a021d14d71d3f`; current pin is
@@ -260,24 +261,63 @@ selection are unchanged in the range; both AI build modes still require checks.
 The source audit supports starting the compatibility repairs. It does **not**
 approve the candidate pin, pixel parity, performance gains or platform support.
 
-## Remaining review and adoption gates
+## Progress checklist
 
-1. Complete installed/native lock and simultaneous-start checks; Linux candidate
-   live/stale/clean-restart checks pass. Complete native/platform and
-   broader-style coverage for the headlessly verified style/mask repair.
-2. Mapped scalar access passes for all 444 fields across 28 modules in both
-   candidate builds. Still verify changed control values, enum semantics, old/new
-   defaults and the saved-edit/image comparison matrix above.
-3. Preserve a headless baseline and exported reference renders before changing
-   the pin. Preserve local patched source and the unrelated ONNX CMake delta.
-4. Move the pin in an isolated checkout, reapply the full patch, configure and
-   build with AI/OpenCL enabled and disabled; test output sink/cache contracts,
-   sliders, masks, looks, old edits, transforms, AI and exports headlessly.
-5. Run fresh platform CI and native CPU/OpenCL parity/performance comparisons.
-   Any GUI validation requires fresh explicit approval under local instructions.
-6. Record release notes and user/developer documentation for the final bump.
-   Keep Texture/Clarity defaults unchanged until matched visual-strength tests
-   establish the benefit.
+Checked items have completed evidence described in this review. An unchecked
+item is pending or only partially verified; passing a narrower check does not
+complete its broader adoption gate. Update this checklist as checks finish.
+The production pin remains unchanged until the adoption gates pass.
+
+### Source audit and compatibility repair
+
+- [x] Freeze the candidate and account for all 365 commits and 235 changed paths.
+- [x] Review all 57 merge resolutions; source resolutions require no extra repair.
+- [x] Apply the complete engine patch in an isolated candidate source tree.
+- [x] Repair variable-length style blend blobs, mask import, preview isolation,
+  history snapshots and mask-sensitive cache identity.
+- [x] Add the explicit HDR merge math header required by the candidate AI-off build.
+- [x] Update release notes and user/developer guides for the compatibility repair.
+- [x] Check current-pin engine and HDR merge source syntax with original build flags.
+
+### Candidate headless validation (Linux ARM64)
+
+- [x] Build engine, IOP/imageio modules and deploy data with AI/OpenCL both off.
+- [x] Build the same targets with AI/OpenCL both on (render checks force CPU).
+- [x] Verify masked-style import, colliding IDs, repeated previews/application,
+  locked geometry, malformed blobs, failure recovery and classic-mask migration
+  in both builds.
+- [x] Verify look removal, save/reopen and fresh-process XMP import in both builds,
+  using the exact/bounded comparisons documented below.
+- [x] Verify full/drag/base output-sink equality, resize/cache/reuse, output failure
+  recovery, pre-start cancellation, preview and JPEG export in both builds.
+- [x] Verify persistent data-database live-owner exclusion, stale-lock recovery,
+  graceful cleanup and restart with the actual engine name in both builds.
+- [x] Read live/default scalars and individually rewrite initial values for all
+  444 global/local mapped fields across 28 modules in both builds.
+- [ ] Verify changed control values, enum semantics and old/new defaults.
+- [ ] Verify switching between different masked looks and broader saved styles.
+- [ ] Verify pixel-backed masks and external raster-mask cache invalidation.
+- [ ] Verify simultaneous first-start locking and installed/native lock behavior,
+  including executable-name predicates on Windows/macOS/Linux.
+- [ ] Preserve current-pin headless baseline and exported reference renders, then
+  complete the old/new saved-edit and image comparison matrix described above.
+- [ ] Complete broader RAW, transforms, AI, foreign-XMP and export checks.
+
+### Platform, device and final adoption gates
+
+- [ ] Run device OpenCL pixel comparisons, allocation/fallback and mid-render
+  cancellation checks, including the new Contrast & Texture kernel dependencies.
+- [ ] Run fresh platform CI and native CPU/OpenCL performance comparisons across
+  supported Windows/macOS/Linux and x86-64/ARM64 configurations.
+- [ ] Complete any required GUI validation with fresh explicit per-run approval.
+- [ ] Adopt the candidate pin after validation; preserve the original patched
+  source and unrelated ONNX CMake delta, and rebuild/package from a fresh
+  configure/install tree with matching kernel manifest and ABI.
+- [ ] Update release notes and user/developer documentation for the final pin bump.
+
+Keep Texture/Clarity defaults unchanged until matched visual-strength tests
+establish the benefit. A checked build or scalar-access item does not establish
+pixel parity, native platform support or a performance gain.
 
 ## Complete commit inventory
 
