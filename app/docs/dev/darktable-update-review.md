@@ -1032,4 +1032,20 @@ python3 verify/mapped-fields.py --build build/darktable-pin-review/cpu \
   --photo /path/to/copied-camera.NEF --snapshot /tmp/raw-defaults.json
 ```
 
-Next: old/new reference pixels. Broader camera coverage and adoption gates remain unchecked.
+Initial fresh-image render probe used disposable PNG/NEF/ORF copies and isolated
+state, CPU with two OMP threads, at 96 and 512 pixel bounds. Both candidate
+configurations produce identical RGBA output for every input/size. The existing
+original build does **not** provide a usable reference yet: the colored PNG
+renders grayscale there, with mean absolute RGB differences of about 45 code
+values; RAW differences are about 49–51. Its engine executable is dated Nov 2,
+while its gamma IOP plugin is dated Oct 31. This is an unresolved baseline
+coherence concern, not evidence of a candidate regression or proof of its cause.
+Do not accept these as old/new equivalence results. The probe, JSON metrics,
+RGBA frames and engine logs are retained under the ignored review build folder
+as `default-pixel-comparison.py`, `default-pixel-comparison.{json,log}` and
+`{png,nef,orf}-{old,cpu,features}-*`.
+
+Next: establish a coherent isolated old-pin engine/module build, diagnose the
+grayscale reference, then repeat old/new reference pixels. This concerns image
+correctness; no additional historical CPU benchmark capture is needed. Broader
+camera coverage and adoption gates remain unchecked.
