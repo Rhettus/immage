@@ -21,7 +21,12 @@ export async function locateControl(t, definition) {
       : control.id.startsWith('l_hsl') ? 'HSL' : control.id.startsWith('l_cg') ? 'Color Grading'
       : /^l_(sharpness|usm|noise|defringe)/.test(control.id) ? 'Detail' : 'Presence';
     const heading=`[data-mask-group=${JSON.stringify(group)}]`;
-    if(await t.driver.observe(s=>!!document.querySelector(`${s} .chevron:not(.open)`),heading)) await click(t,heading);
+    // a new mask folds its settings card as it opens, moving the groups up
+    // under a click aimed a moment before: click until the group is open
+    await until(async()=>{
+      if(!await t.driver.observe(s=>!!document.querySelector(`${s} .chevron:not(.open)`),heading)) return true;
+      await click(t,heading); return false;
+    },`${group} group open`);
     p='.masks-panel';
   } else if (id === 'negative') {
     if (t.fixture.name !== 'negative') throw new Blocked('Negative controls require --fixture negative');
