@@ -366,6 +366,9 @@ The production pin remains unchanged until the adoption gates pass.
 - [x] Build a reproducible isolated direct CPU prototype and compare Olympus saved
   forward/reverse histories at 512 pixels and 4640 pixels with confirmed 6×6 lens
   tiles, with defaults/metadata as controls.
+- [x] Compare the direct prototype with saved Olympus forward/reverse 0.75/1.5
+  aspect histories at 512 pixels in all four warp interpolators and full size
+  with confirmed minimum-budget lens tiling.
 - [ ] Validate the direct prototype with broader exceptional-profile images and
   native device/fallback references before choosing production migration behavior.
 - [x] Trace old CPU/OpenCL Lensfun stage ordering and factor arithmetic; record a
@@ -1816,3 +1819,37 @@ lens allocation fallback/failure. Defaults and synthetic controls are exact.
 Evidence: `pixel-lens-direct-reference-minimum/`. This establishes the measured
 fixed-layout comparison only. Broader exceptional-profile images, aspect and
 interpolation combinations for this new prototype remain separate gates.
+
+### Direct CPU prototype: pixel aspect, interpolation and full-size tiling
+
+The isolated actual-pixel prototype now reproduces coherent old CPU output for
+saved Olympus forward/reverse Lensfun histories at pixel aspect ratios 0.75 and
+1.5. At a 512-pixel bound, bilinear, bicubic, Lanczos2 and Lanczos3 each produce
+exact RGB results. The respective aspect outputs are 512×510 and 512×255.
+Each run includes exact old saved-history reloads, RAW defaults and the synthetic
+control. All four edited histories have a visible contribution versus defaults.
+
+At a 4640-pixel bound with the minimum resource budget and the default warp
+interpolator, both directions are exact at 4640×4630 (0.75) and 4640×2314 (1.5).
+All 12 saved-history process logs confirm one tiled lens stage: 7×7 tiles of
+664×663 at 0.75, or 3×3 tiles of 1548×773 at 1.5. No failure/allocation/fallback
+strings were found. Each of the five runs has ten exact comparisons, including
+old reloads and controls. This holds tile layout fixed; previous evidence of
+old CPU sensitivity to changing the tile partition still applies.
+
+Evidence is under ignored `build/darktable-pin-review/`:
+`pixel-lens-direct-aspect-{bilinear,bicubic,lanczos2,lanczos3,minimum}/` retains
+reports, saved XMP, frame bytes, logs and evidence SHA256 manifests. The minimum
+run also retains `tile-guards.json`; `lens-direct-aspect-summary.json` aggregates
+the measured results. Reproduce with `verify/pin-pixels.py`, the coherent
+`old-cpu` and isolated `isolation/lens-direct-reference` builds, the existing
+Olympus fixture, `--lens-aspect --lens-aspect-reverse`, and either `--size 512
+--interpolation MODE` or `--size 4640 --resource-level minimum`.
+
+This adds coverage for the actual-pixel prototype rather than extending the
+invalid general zero-clamp assumption. Matching whole-image references for the
+12 exceptional installed profiles, full-size alternative interpolators, native
+OpenCL, allocation/fallback/cancellation and production migration/import policy
+remain open. No matching exceptional-profile photos were located in the local
+fixture searches; reassigning a lens to an unrelated image would be diagnostic
+coverage only. No production plugin, original pin, preference or default changed.

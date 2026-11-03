@@ -100,3 +100,10 @@ The [audit](darktable-update-review.md#all-calibration-lensfun-sampling-and-isol
 records measured coverage. No parameter layout, import policy or production
 mode is implemented by this diagnostic. Broader image, migration and native
 fallback validation remains necessary.
+
+The direct prototype also matches saved Olympus forward/reverse 0.75/1.5 aspect
+histories at 512 pixels in all four warp interpolators, and at full-size bounds
+with matching 7×7/3×3 minimum-budget lens tiles. See the [measured matrix](darktable-update-review.md#direct-cpu-prototype-pixel-aspect-interpolation-and-full-size-tiling).
+This remains one RAW/profile, not acceptance of exceptional-profile imports or
+native device fallback. Full-size alternative interpolation modes remain untested
+with this prototype.
