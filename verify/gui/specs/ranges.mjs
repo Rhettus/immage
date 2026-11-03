@@ -31,6 +31,13 @@ export async function locateControl(t, definition) {
   if (id === 'hsl') await textButton(t, `${p} .tabs`, section);
   if (id === 'colorgrading') await textButton(t, `${p} .tabs`, 'Sliders');
   const selector = `${p} [data-control-id=${JSON.stringify(control.id)}]`;
+  // Clarity's and Texture's coarse bands sit under their own Advanced fold
+  const detail = /^(l_)?detail_(clarity|texture)_/.exec(control.id)?.[0];
+  if (detail && !await t.driver.observe(s => !!document.querySelector(s), selector)) {
+    const fold = `${p} button.detail-advanced[data-detail-id^=${JSON.stringify(detail)}]`;
+    if (await t.driver.observe(s => document.querySelector(s)?.getAttribute('aria-expanded') === 'false', fold)) await click(t, fold);
+    await until(() => t.driver.observe(s => !!document.querySelector(s), selector), `${detail} Advanced open`).catch(() => {});
+  }
   if (!await t.driver.observe(s => !!document.querySelector(s), selector))
     throw new Blocked(`${control.id} needs its module, treatment or graph branch; run the matching module/graph case`);
   return selector;
