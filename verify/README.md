@@ -298,11 +298,18 @@ independent Lensfun (method 1) and metadata-selected (method 0) histories on
 these RAW formats. Metadata selection can fall back to Lensfun when metadata
 is absent; a saved method value alone does not prove which path executed.
 Lensfun profiles come from the installed database, so retain its identity with
-local evidence. These switches share the fresh-process reload/contribution guards
+local evidence. Use `--lens-reverse` for an additional Lensfun simulation history:
+it retains initialized camera/lens defaults and sets `inverse=1` and
+`has_been_set=1`, avoiding autodetection replacing the requested direction.
+Use `--interpolation bilinear|bicubic|lanczos2|lanczos3` to set the same warp
+interpolation preference in every fresh engine process; run each preference into
+a separate output directory. The report records the requested preference.
+These switches share the fresh-process reload/contribution guards
 and can be combined. PNG receives only the transform cases; unsupported photo
 suffixes receive neither highlight nor lens cases. No X-Trans/linear RAW,
-invalid-white, disabled-temperature, reverse-lens or interpolation-mode matrix
-is established by these fixtures.
+invalid-white, disabled-temperature or device coverage is established by these
+fixtures. Explicit `--size` values can request full-size processing; verify the
+actual reported dimensions rather than assuming a large target proves it.
 
 These are constructed, unmasked engine histories, not production Session edit
 orchestration, a user-created style corpus, HDR/device output or a broad image

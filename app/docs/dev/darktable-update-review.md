@@ -342,6 +342,10 @@ The production pin remains unchanged until the adoption gates pass.
   contributions using independent diagnostic plugins (details below).
 - [x] Isolate the larger Olympus Lensfun differences to negative-value clipping
   lost by factor multiplication; verify isolated clamp and step-1 diagnostics.
+- [x] Compare Olympus Lensfun and metadata-selected histories at actual
+  4640×3472 output; isolate the larger full-size difference with step-1/clamp.
+- [x] Compare both RAWs' forward/metadata/reverse lens histories at 96/512
+  using bilinear, bicubic, Lanczos2 and Lanczos3 warp interpolation.
 - [ ] Assess lens and transform appearance deltas, including the isolated rotation
   boundary pixel; cover reverse lens, interpolation modes, tiling and pixel aspect.
 - [ ] Assess diffuse and denoise saved-edit appearance differences with broader
@@ -1411,7 +1415,71 @@ be considered before choosing a compatibility path; this is separate from the
 remaining grid tolerance decision. No device execution or serialized compatibility
 mode has been validated, and these diagnostic clamps are not production repairs.
 
-Next: decide the intended negative-value semantics and import policy, then cover
-full-size images, reverse operation, interpolation modes and device parity before
-accepting a production correction. Keep the production pin unchanged while these
-acceptance gates and diffuse/vignette policies remain open.
+The proposed import policy is to expose a serialized compatibility choice rather
+than infer the historical backend from the module version. Preserving old CPU
+appearance requires both its negative handling and its direct coordinate path;
+preserving old OpenCL appearance needs its own reference, since its negative
+handling already differed. Unknown-provenance imports cannot satisfy both
+automatically. Keep this decision explicit and unresolved until a default import
+policy is approved. Any compatibility mode would need consistent CPU/device
+behavior, versioned migration, styles, XMP, preview and save/reload validation.
+The diagnostic plugins do not implement such a mode.
+
+### Full-size Lensfun comparison
+
+`pixel-lens-fullsize` runs `pin-pixels.py --lens --size 4640` with the Olympus
+fixture, original candidate and isolated adaptive-grid/clamp candidate. Actual
+output is 4640×3472, matching the RAW dimensions, rather than an enlarged preview.
+Defaults and metadata-selected correction are exact. The Lensfun history changes
+5,714,599 of 48,330,240 RGB channels, maximum 14 codes, mean absolute difference
+0.119891; candidate and clamp frames have identical hashes. Old saved-history
+reloads remain exact and each edit visibly contributes.
+
+`pixel-lens-fullsize-step1` repeats against the isolated step-1/clamp candidate:
+every frame is exact, including the Lensfun history. Thus the measured full-size
+difference survives a negative clamp and disappears when grid approximation is
+removed. A clamp alone is insufficient. The smaller preview residuals must not
+be generalized to full-size output or accepted as a one-code bound. These are
+CPU RGBA renders, not tiled export or device execution. Reports, sidecars, engine
+logs and hashed binary identities are retained under the ignored build directory;
+the coherent old-cpu baseline was not rebuilt or modified.
+
+### Reverse lens and interpolation matrix
+
+The runner now accepts `--lens-reverse` and `--interpolation`. Reverse fixtures
+keep initialized camera/lens defaults, explicitly set Lensfun method 1,
+`inverse=1` and `has_been_set=1`, then save with old-cpu and reload in fresh
+processes. The latter flag matters: without it, `commit_params` replaces inverse
+with autodetected defaults. The runner checks the reviewed saved v10/356-byte
+layout, initialized flag, reverse selector and nonempty camera/lens names and
+records them in the report. This targets the reviewed old layout deliberately;
+a changed layout fails rather than silently claiming reverse coverage.
+
+`pixel-lens-{bilinear,bicubic,lanczos2,lanczos3}` each runs both RAWs, both sizes,
+`--lens --lens-reverse`, original candidate and adaptive-grid/clamp candidate.
+The selected `plugins/lighttable/export/pixel_interpolator_warp` preference is
+passed identically to every engine and recorded. All six old saved-history
+reloads per mode are exact at both sizes, all edits visibly contribute, and defaults are exact.
+Runtime binary identities match the full-size report and prior originals.
+
+| Warp interpolator | Olympus forward maximum, 96 / 512 | Olympus reverse maximum, 96 / 512 |
+| --- | --- | --- |
+| Bilinear | 45 / 96 | 6 / 15 |
+| Bicubic | 24 / 72 | 6 / 16 |
+| Lanczos2 | 29 / 70 | 6 / 15 |
+| Lanczos3 | 22 / 69 | 6 / 12 |
+
+The isolated clamp reduces every Olympus forward/reverse preview maximum to one
+code in this matrix. Olympus metadata-selected frames are exact; Nikon forward,
+metadata-selected and reverse frames differ by at most one code with or without
+the clamp. These bounds apply only to the measured previews. They are not
+acceptance thresholds or evidence that the full-size grid discrepancy is small.
+Full-size reverse, tiled processing, pixel aspect, other lenses/images and device
+parity remain open, along with the explicit import/appearance decision above.
+
+Reproduce a matrix row with the preceding lens command, adding `--lens-reverse
+--interpolation MODE` and using both `cpu` and `isolation/lens-clamp` as separate
+`--candidate` arguments. For the full-size checks, use only the Olympus photo,
+`--lens --size 4640`, and the candidates named above. No GUI was launched or
+production pin/default changed. Python compilation, runner help and diff checks
+pass; these audit/verification changes do not alter user-facing behavior.

@@ -7,6 +7,7 @@ Differences are observations, not a pass/fail threshold for pin adoption.
 Original photos and adjacent sidecars are never modified or imported.
 """
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -29,7 +30,8 @@ def chunk(kind, data):
             + struct.pack('>I', zlib.crc32(kind + data) & 0xffffffff))
 
 
-def render(build, photo, state, output, sizes, edits=(), sidecar=None, save=None):
+def render(build, photo, state, output, sizes, edits=(), sidecar=None, save=None,
+           interpolation=None):
     state.mkdir()
     copied = state / photo.name
     shutil.copyfile(photo, copied)
@@ -40,6 +42,9 @@ def render(build, photo, state, output, sizes, edits=(), sidecar=None, save=None
                '--datadir', str(build / 'share/darktable'),
                '--moduledir', str(build / 'lib/darktable'),
                '--conf', 'opencl=false', '--conf', 'resourcelevel=0']
+    if interpolation:
+        command += ['--conf',
+                    f'plugins/lighttable/export/pixel_interpolator_warp={interpolation}']
     frames = {}
     with output.with_suffix('.log').open('w') as log:
         child = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -108,6 +113,10 @@ def main():
                         help='Compare lowered-threshold highlights on supplied RAW photos')
     parser.add_argument('--lens', action='store_true',
                         help='Compare Lensfun and metadata-selected corrections on supplied RAW photos')
+    parser.add_argument('--lens-reverse', action='store_true',
+                        help='Compare saved reverse Lensfun correction with initialized camera defaults')
+    parser.add_argument('--interpolation', choices=['bilinear', 'bicubic', 'lanczos2', 'lanczos3'],
+                        help='Set the warp interpolation preference identically in every engine')
     args = parser.parse_args()
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -116,7 +125,8 @@ def main():
         parser.error('sizes must be positive')
     builds = [('old', args.old.resolve())] + [
         (f'candidate-{i}', path.resolve()) for i, path in enumerate(args.candidate)]
-    report = {'schema_version': 2, 'builds': {}, 'inputs': {}}
+    report = {'schema_version': 2, 'builds': {}, 'inputs': {},
+              'warp_interpolation': args.interpolation}
     for label, build in builds:
         # Record all engine/module bytes, rather than assuming timestamps or a
         # source checkout prove binary identity. Includes dynamically loaded IOPs.
@@ -206,13 +216,21 @@ def main():
                 for name, method in {'lensfun': 1, 'metadata': 0}.items():
                     cases[f'lens-{name}'] = [{'op': 'lens', 'enabled': True,
                                              'params': {'method': method}}]
+            if args.lens_reverse and photo.suffix.lower() in ('.nef', '.orf'):
+                # Module initialization supplies the camera/lens defaults. Mark
+                # these initialized parameters as set so commit_params retains
+                # inverse rather than replacing it with autodetected defaults.
+                cases['lens-reverse'] = [{'op': 'lens', 'enabled': True,
+                                          'params': {'method': 1, 'inverse': 1,
+                                                     'has_been_set': 1}}]
             record = {'sha256': digest(photo), 'cases': {}}
             default_frames = None
             for case, edits in cases.items():
                 prefix = f'{index}-{case}'
                 sidecar = output / f'{prefix}-old.xmp' if edits else None
                 old = render(builds[0][1], photo, state / f'{prefix}-old',
-                             output / f'{prefix}-old', sizes, edits=edits, save=sidecar)
+                             output / f'{prefix}-old', sizes, edits=edits, save=sidecar,
+                             interpolation=args.interpolation)
                 if not edits:
                     default_frames = old
                 comparisons = {}
@@ -220,7 +238,7 @@ def main():
                 for label, build in targets:
                     frames = render(build, photo, state / f'{prefix}-{label}-reload',
                                     output / f'{prefix}-{label}-reload', sizes,
-                                    sidecar=sidecar)
+                                    sidecar=sidecar, interpolation=args.interpolation)
                     for size in sizes:
                         dims, before = old[size]
                         after_dims, after = frames[size]
@@ -243,6 +261,25 @@ def main():
                          ('operation', 'modversion', 'enabled', 'blendop_version')}
                         for item in ET.parse(sidecar).iter()
                         if item.get(ns + 'operation') is not None]
+                    if case == 'lens-reverse':
+                        lens = next(item for item in ET.parse(sidecar).iter()
+                                    if item.get(ns + 'operation') == 'lens')
+                        encoded = lens.get(ns + 'params')
+                        params = (zlib.decompress(base64.b64decode(encoded[4:]))
+                                  if encoded.startswith('gz') else bytes.fromhex(encoded))
+                        # This fixture deliberately targets the reviewed v10
+                        # layout. Fail closed if a future old build changes it.
+                        if lens.get(ns + 'modversion') != '10' or len(params) != 356:
+                            raise RuntimeError('unreviewed reverse lens parameter layout')
+                        method, flags, inverse = struct.unpack_from('<3i', params)
+                        initialized, = struct.unpack_from('<i', params, 332)
+                        camera = params[36:164].split(b'\0')[0].decode()
+                        model = params[164:292].split(b'\0')[0].decode()
+                        if (method, inverse, initialized) != (1, 1, 1) or not camera or not model:
+                            raise RuntimeError('reverse lens fixture lost initialized parameters')
+                        result['saved_lens'] = {'method': method, 'flags': flags,
+                                                'inverse': inverse, 'has_been_set': initialized,
+                                                'camera': camera, 'lens': model}
                     result['changed_from_defaults'] = {
                         str(size): old[size] != default_frames[size] for size in sizes}
                     if not all(result['changed_from_defaults'].values()):
