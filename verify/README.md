@@ -298,3 +298,7 @@ compare mapped RAW camera defaults across builds; a single camera does not
 establish broad RAW or pixel equivalence. The candidate `look-compat.py` check
 also exercises loaded AgX/sigmoid new HDR defaults and previous-version legacy
 conversion, including prefix preservation and the production conversion wrapper.
+Sigmoid v1/v2 chains check preserved old bytes and zero-filled additions. Synthetic
+on-disk styles with sigmoid v1/v2/v3 and AgX v7 parameters exercise the actual
+style importer and Immage item conversion; they do not establish user-style
+corpus, legacy XMP or old/new rendered-pixel equivalence.

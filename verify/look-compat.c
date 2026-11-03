@@ -97,8 +97,53 @@ static void multi_hashes(dt_hash_t hashes[6])
   CHECK(ids[0] != ids[1]);
 }
 
+// Serialize historical bytes to disk, then use the actual style importer and
+// Immage's style-item conversion rather than passing a fabricated item directly.
+static void check_legacy_style(const char *dir, dt_iop_module_t *m, int version,
+                               const void *old, size_t bytes, const void *expected)
+{
+  char *encoded = dt_exif_xmp_encode(old, bytes, NULL);
+  CHECK(encoded);
+  char *encoded_blend = dt_exif_xmp_encode((const unsigned char *)m->default_blendop_params,
+                                          sizeof(*m->default_blendop_params), NULL);
+  CHECK(encoded_blend);
+  char *name = g_strdup_printf("legacy-%s-%d", m->op, version);
+  char *path = g_strdup_printf("%s/%s.dtstyle", dir, name);
+  char *xml = g_strdup_printf(
+    "<?xml version=\"1.0\"?><darktable_style version=\"1.0\">"
+    "<info><name>%s</name><description>synthetic historical parameters</description></info>"
+    "<style><plugin><num>0</num><module>%d</module><operation>%s</operation>"
+    "<op_params>%s</op_params><enabled>1</enabled><blendop_params>%s</blendop_params>"
+    "<blendop_version>%d</blendop_version><multi_priority>0</multi_priority>"
+    "<multi_name></multi_name><multi_name_hand_edited>0</multi_name_hand_edited>"
+    "</plugin></style></darktable_style>",
+    name, version, m->op, encoded, encoded_blend, dt_develop_blend_version());
+  CHECK(g_file_set_contents(path, xml, -1, NULL));
+  char *label = NULL;
+  GList *items = _style_items(path, &label, &err);
+  CHECK(items && !items->next);
+  dt_style_item_t *item = items->data;
+  CHECK(item->module_version == version && item->params_size == bytes);
+  CHECK(!memcmp(item->params, old, bytes));
+  void *actual = g_malloc0(m->params_size);
+  dt_develop_blend_params_t blend;
+  CHECK(_item_params(m, item, actual, &blend));
+  CHECK(!memcmp(actual, expected, m->params_size));
+  CHECK(!memcmp(&blend, m->default_blendop_params, sizeof(blend)));
+  g_free(actual);
+  g_list_free_full(items, dt_style_item_free);
+  dt_styles_delete_by_name(name);
+  g_free(label);
+  g_free(xml);
+  g_free(path);
+  g_free(name);
+  g_free(encoded);
+  g_free(encoded_blend);
+  printf("%s v%d: on-disk legacy style import and item conversion passed\n", m->op, version);
+}
+
 // Test the loaded candidate modules, without mirroring their C parameter structs.
-static void check_hdr_migration(void)
+static void check_hdr_migration(const char *dir)
 {
   const char *ops[] = { "agx", "sigmoid" };
   const char *flags[] = { "target_white_from_output", "white_target_from_output" };
@@ -134,6 +179,42 @@ static void check_hdr_migration(void)
     void *chained = g_malloc0(m->params_size);
     CHECK(dt_iop_legacy_params(m, old, prefix, versions[i], &chained, version) == 0);
     CHECK(!memcmp(converted, chained, size));
+    check_legacy_style(dir, m, versions[i], old, prefix, converted);
+    if(i == 1)
+    {
+      // v1 ends before primaries adjustments; v2 ends before base_primaries.
+      // Derive historical prefix sizes from the loaded module's introspection.
+      const char *ends[] = { "red_inset", "base_primaries" };
+      for(int legacy = 1; legacy <= 2; legacy++)
+      {
+        char *end = _field_in(m, old, ends[legacy - 1], &field, &err);
+        CHECK(end);
+        const size_t bytes = end - (char *)old;
+        void *intermediate = NULL;
+        int32_t intermediate_size = 0;
+        int intermediate_version = 0;
+        CHECK(m->legacy_params(m, old, legacy, &intermediate,
+                               &intermediate_size, &intermediate_version) == 0);
+        CHECK(intermediate_version == 3 && intermediate_size == prefix);
+        CHECK(!memcmp(old, intermediate, bytes));
+        for(size_t j = bytes; j < prefix; j++)
+          CHECK(((unsigned char *)intermediate)[j] == 0);
+        void *expected = NULL;
+        CHECK(m->legacy_params(m, intermediate, 3, &expected, &size, &version) == 0);
+        CHECK(version == 4 && size == m->params_size);
+        void *actual = g_malloc0(m->params_size);
+        CHECK(dt_iop_legacy_params(m, old, bytes, legacy, &actual, 4) == 0);
+        CHECK(!memcmp(actual, expected, size));
+        CHECK(!memcmp(actual, old, bytes));
+        check_legacy_style(dir, m, legacy, old, bytes, expected);
+        flag = _field_in(m, actual, flags[i], &field, &err);
+        CHECK(flag && *(gboolean *)flag == FALSE);
+        g_free(actual);
+        free(expected);
+        free(intermediate);
+        printf("sigmoid v%d: preserved prefix, zero-filled additions and chained v4 conversion passed\n", legacy);
+      }
+    }
     g_free(chained);
     free(converted);
     g_free(old);
@@ -211,7 +292,7 @@ int main(int argc, char **argv)
     return 0;
   }
   CHECK(_open_image(argv[1], NO_IMGID, NULL, &err));
-  check_hdr_migration();
+  check_hdr_migration(argv[3]);
   dt_iop_module_t *source = _module("exposure", &err);
   CHECK(source && _write_field(source, "exposure", 1.5, &err));
   source->enabled = TRUE;

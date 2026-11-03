@@ -312,6 +312,10 @@ The production pin remains unchanged until the adoption gates pass.
   conversion with byte-exact old-prefix preservation in both builds.
 - [x] Compare mapped defaults/live values and flags for a disposable Nikon D3S
   NEF across the existing original build and both candidates (444 scalar checks).
+- [x] Repeat the mapped RAW defaults comparison with an Olympus ORF in all three
+  builds; all 444 scalar checks pass and snapshots match exactly.
+- [x] Check sigmoid v1/v2 migration chains and on-disk synthetic legacy style
+  imports (sigmoid v1/v2/v3 and AgX v7) in both candidate builds.
 - [ ] Verify production control read/selection semantics, RAW-specific defaults, new
   unmapped HDR fields and enum processing semantics with reference renders.
 - [x] Verify A→B→A switching between two exported/imported masked exposure looks,
@@ -977,8 +981,18 @@ module conversion and the production `dt_iop_legacy_params` wrapper agree on
 all converted bytes. AgX new and migrated HDR purity is 0.5. Both candidate
 configurations pass, together with the existing look/sidecar regression checks.
 Logs: ignored `build/darktable-pin-review/{cpu,features}-hdr{,-build}.log`.
-This does not test older sigmoid v1/v2 chains, imported legacy XMP/style loading,
-HDR output pixels or display-dependent headroom behavior.
+The follow-up also checks sigmoid v1/v2: historical prefix lengths come from
+loaded introspection offsets, distinct old edits survive byte-exactly, added
+v3 fields are zero-filled, and the wrapper's conversion to v4 matches explicit
+two-step conversion. Synthetic on-disk `.dtstyle` files carrying AgX v7 and
+sigmoid v1/v2/v3 parameters plus valid current blend data pass the actual style
+importer and Immage `_item_params`, yielding the expected complete current
+parameter and blend bytes. These are constructed historical layouts, not a
+user-created style corpus or older blend-format coverage. Full look/sidecar
+regressions still pass both builds. Logs:
+`{cpu,features}-legacy-style{,-build}.log` in the ignored review build folder.
+Legacy XMP loading, applied/rendered legacy tone-mapper styles, HDR output pixels
+and display-dependent headroom behavior remain unverified.
 
 `verify/mapped-fields.py --photo PATH` copies only the photo into temporary
 state, excluding adjacent sidecars. An existing ignored Nikon D3S NEF opens as
@@ -987,13 +1001,17 @@ build and both candidates. Their mapped live/default values and enable flags
 are identical (`{old,cpu,features}-raw-defaults.json` in the ignored review build
 folder). Channel mixer, demosaic, exposure and sigmoid differ from the PNG
 snapshot, confirming this exercises a distinct initialization path. This is
-one camera and the mapped field inventory, not full camera/default coverage or
-render equivalence. No originals, production defaults or pin changed; no GUI ran.
+the mapped field inventory, not full camera/default coverage or render equivalence.
+An Olympus ORF also opens as RAW (4640 by 3472) and passes all 444 scalar checks
+in all three builds, with exactly identical mapped live/default/enable snapshots
+(`{old,cpu,features}-orf-defaults.json`, corresponding `*-orf.log`). Both camera
+inputs are existing ignored local fixtures. No originals, production defaults
+or pin changed; no GUI ran.
 
 ```sh
 python3 verify/mapped-fields.py --build build/darktable-pin-review/cpu \
   --photo /path/to/copied-camera.NEF --snapshot /tmp/raw-defaults.json
 ```
 
-Next: broaden RAW camera/default coverage and legacy import paths, then compare
-old/new reference pixels. Keep the broader adoption gates unchecked.
+Next: legacy XMP and applied legacy tone-mapper validation, then old/new reference
+pixels. Broader camera coverage and adoption gates remain unchecked.
