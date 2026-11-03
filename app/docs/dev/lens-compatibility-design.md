@@ -107,3 +107,10 @@ with matching 7×7/3×3 minimum-budget lens tiles at full size. See the [measure
 This remains one RAW/profile, not acceptance of exceptional-profile imports or
 native device fallback. All 40 comparisons in the explicit full-size interpolation
 matrix are exact RGB; exceptional-profile whole-image coverage remains pending.
+
+
+Two exceptional compact-camera profiles also match old CPU in a 512-pixel
+whole-frame assignment diagnostic, both directions, while the adaptive candidate
+differs. Exact library selection and visible correction are checked. The profiles
+are assigned to an unrelated Olympus RAW, so matching-camera imports and broader
+exceptional-profile coverage remain open. See the [assignment evidence](darktable-update-review.md#exceptional-profile-assignment-diagnostic).

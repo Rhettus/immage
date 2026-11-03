@@ -369,6 +369,8 @@ The production pin remains unchanged until the adoption gates pass.
 - [x] Compare the direct prototype with saved Olympus forward/reverse 0.75/1.5
   aspect histories at 512 pixels and full size in all four warp interpolators,
   with confirmed minimum-budget lens tiling at full size.
+- [x] Compare two exceptional compact-camera profiles assigned diagnostically to
+  an unrelated RAW; confirm library selection and visible correction in both directions.
 - [ ] Validate the direct prototype with broader exceptional-profile images and
   native device/fallback references before choosing production migration behavior.
 - [x] Trace old CPU/OpenCL Lensfun stage ordering and factor arithmetic; record a
@@ -1876,3 +1878,46 @@ XMP, RGBA frames, logs, `tile-guards.json` and `evidence-sha256.json`.
 `lens-direct-full-interpolation-summary.json` aggregates the four runs. Broader
 exceptional-profile images, native OpenCL references and migration/import policy
 remain open; no production engine, plugin, pin or default changed.
+
+
+### Exceptional-profile assignment diagnostic
+
+Two profiles newly exposed by the all-calibration probe now have a headless
+whole-frame diagnostic: Canon PowerShot G1X Mark II & compatibles and Canon
+PowerShot SX220 HS & compatibles, with CHDK's DNG. These profiles were explicitly
+assigned to the copied Olympus ORF; this does **not** validate photographs from
+those cameras or their automatic profile selection. Vignetting alone is enabled
+(flags 2), with both forward and reverse processing at a 512-pixel bound
+(512×383 output). G1X uses focal 12.5, aperture 2.8, distance 10 (calibration 2);
+SX220 uses focal 5, aperture 7.9, distance 10 (calibration 6). These calibrations
+were selected from rows where the standalone zero-clamp diagnostic fails.
+
+All four direct-prototype frames match coherent old CPU exactly in RGB.
+The unmodified adaptive candidate differs as follows:
+
+| Assigned profile | Direction | Changed RGB channels | Maximum code difference | Mean absolute difference |
+| --- | --- | ---: | ---: | ---: |
+| G1X Mark II | Forward | 1,967 | 67 | 0.005771 |
+| G1X Mark II | Reverse | 1,277 | 15 | 0.002387 |
+| SX220 HS | Forward | 1,652 | 67 | 0.005203 |
+| SX220 HS | Reverse | 1,434 | 15 | 0.002660 |
+
+A separately compiled Lensfun lookup probe confirms the exact camera/lens matches,
+expected camera crop factors (1.93 and 5.6) and enabled vignetting flag for both
+directions. Disabling the lens module changes 491,352/489,397 RGB channels for
+G1X forward/reverse and 464,216/463,526 for SX220; these are active corrections.
+Initial fixtures rewritten with different XML namespace prefixes failed this
+visible-contribution guard and were discarded. The measured fixtures preserve
+the original namespace prefixes. Exact comparisons without this guard would
+have incorrectly counted inactive imports.
+
+Ignored evidence: `build/darktable-pin-review/pixel-lens-direct-exceptional-assigned/`
+contains final reports, assigned/disabled XMP, RGBA frames, logs, diagnostic
+scripts, selection-probe source/binary and SHA256 identities for the engine/modules,
+Lensfun library and database. This is an assigned-profile integration check, not
+signed-intermediate validation, proof that every observed adaptive delta comes
+from the exceptional clamp behavior, or acceptance of real-camera imports.
+Matching exceptional-profile photos, the other ten exceptional profiles,
+full-size assigned-profile coverage and native fallback remain open. A fresh
+local `clGetPlatformIDs` check still returns -1001 with zero platforms; old OpenCL
+device references remain pending. No production plugin, pin or default changed.
