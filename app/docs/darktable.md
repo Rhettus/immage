@@ -84,7 +84,7 @@ for the available mask alternatives.
 | Local Highlights, Shadows | an instance of tone equalizer or shadows and highlights (as the photo's) per mask |
 | Local Temp, Tint | an instance of color calibration per mask |
 | Local Texture, Clarity, Dehaze | an instance of the chosen Texture or Clarity module (including contrast & texture), or haze removal per mask |
-| Local Noise, Defringe, Sharpness | an instance of denoise (profiled), chromatic aberrations (`cacorrectrgb`) or defringe (`defringe`), or diffuse or sharpen or sharpen (as the photo's Sharpening) per mask |
+| Local Noise, Defringe, Sharpness | an instance of denoise (profiled), chromatic aberrations (`cacorrectrgb`), or diffuse or sharpen or sharpen (as the photo's Sharpening) per mask |
 | **Heal and Clone** | retouch (`retouch`) |
 | **HDR Merge** | darktable's HDR merge (lighttable's "create HDR"), with its auto-alignment, into a float DNG |
 | **Panorama Merge** | no darktable module: OpenCV stitches RAW and non-RAW photos rendered by darktable into a float DNG |

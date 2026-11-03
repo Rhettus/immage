@@ -346,8 +346,8 @@ def masks():
         "a local +1 EV is exposure's +1 EV under the mask, and AgX maps it with the rest of the photo.",
         "The order is fixed: Immage places every instance and the user cannot move modules. "
         "darktable opens the same XMP and shows each instance as an ordinary module with its drawn mask.",
-        "Sharpening and Defringe follow the same pattern (sharpen or a second diffuse; chromatic aberrations or "
-        "defringe), on the module the photo's global setting uses.",
+        "Sharpening follows the same pattern (sharpen or a second diffuse), on the module the photo's "
+        "global setting uses; Defringe always runs on chromatic aberrations.",
     ]
     for i, n in enumerate(notes):
         els.append(("text", AX - 20, ny + 26 * i, n, 16, MUTED))

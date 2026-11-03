@@ -67,7 +67,7 @@ runtime safety; the interrupted slider run needs separate memory investigation.
 
 ## Expanded registry and evidence
 
-`generated.mjs` expands `inventory.json`; `registry.mjs` resolves 307 named
+`generated.mjs` expands `inventory.json`; `registry.mjs` resolves 310 named
 case declarations to implementations. Generated control cases cover visible
 manifest panels only: a hidden panel (point curve, crop, orientation, upright,
 zones, negative, modules, vignette center, exposure compensation, tone mapper)
@@ -93,8 +93,8 @@ equalizer's 30 bands, contrast & texture's Clarity and Texture bands,
 diffuse or sharpen's Amount/Radius/Sensitivity) records that option as
 `module` in its generated case. The case chooses it in Preferences >
 Modules first and restores the previous choice afterwards
-(`withModule` in `specs/ranges.mjs`). Defringe is being removed from the
-app, so its controls, mask control and module choice generate no cases.
+(`withModule` in `specs/ranges.mjs`). Defringe has no module choice, so
+its global and mask sliders always run on chromatic aberrations.
 
 The splash keeps the largest size it was given in localStorage
 (`immage.splashSize`), since the session starts after it has closed. `startup`

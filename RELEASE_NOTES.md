@@ -18,6 +18,9 @@ Improvements
   screenshot shows a file path.
 - Add a scripted Mac CPU capture workflow to profile the engine and webview
   alongside GUI benchmarks and investigate busy-core bottlenecks.
+- A mask's Defringe always uses chromatic aberrations, like the global
+  Defringe: Preferences › Modules › Masks no longer offers darktable's
+  deprecated defringe module. Masks already edited with it keep their look.
 
 Performance
 

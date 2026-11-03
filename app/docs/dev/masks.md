@@ -139,7 +139,7 @@ instance:
 | Clarity | local contrast, or contrast & texture |
 | Dehaze | haze removal |
 | Noise | denoise (profiled) |
-| Defringe | chromatic aberrations, or defringe |
+| Defringe | chromatic aberrations |
 | Sharpening | sharpen, or a second diffuse or sharpen (`<mask>#sharpen`) |
 
 Where a tool has alternatives, Preferences › Modules › Masks chooses them

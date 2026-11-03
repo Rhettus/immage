@@ -123,8 +123,8 @@ inside the mask. A new mask opens its **Tone** group.
 
 Choose mask modules independently of global adjustments under
 [Preferences › Modules › Masks](preferences.md#modules). Alternatives are
-available for Contrast, Highlights and Shadows, Clarity, Texture, Sharpening,
-and Defringe. Used mask adjustments keep their modules when preferences change;
+available for Contrast, Highlights and Shadows, Clarity, Texture and
+Sharpening. A mask's Defringe always uses chromatic aberrations. Used mask adjustments keep their modules when preferences change;
 new masks and unused tools take the current mask choices.
 **Whites** is the exception: the photo's Whites moves the top of the tone
 mapper's curve, which can't run inside a mask, so a mask's Whites only

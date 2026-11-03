@@ -1,7 +1,7 @@
 # Visible-app GUI verification plan
 
 Status: startup/Exposure and slider-input have previous Linux live passes.
-The expanded registry contains 307 named cases, including generated control and
+The expanded registry contains 310 named cases, including generated control and
 module variants (visible panels only; hidden panels are covered by written cases). New cases are written but have not run; declarations are not
 coverage passes. Some scenarios block on unsupported fixtures or native dialogs.
 See `COVERAGE.md` for limitations. Real GUI execution is currently paused by

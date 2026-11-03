@@ -316,9 +316,9 @@ sections open independently, and Alt-click opens one on its own. Global offers:
 - **Sharpening**: sharpen, or diffuse or sharpen
 
 **Masks** independently offers Contrast (color balance rgb or contrast equalizer),
-Highlights and Shadows, Clarity, Texture, Sharpening, and Defringe (chromatic
-aberrations or defringe). Modules without alternatives are also listed. Existing
-mask adjustments keep their modules; unused tools and new masks take these choices.
+Highlights and Shadows, Clarity, Texture and Sharpening. Modules without
+alternatives are also listed. Existing mask adjustments keep their modules;
+unused tools and new masks take these choices.
 
 Clarity and Texture can each use **contrast & texture** under Custom modules.
 Selecting it replaces the corresponding slider with the module's Coarse,
@@ -332,8 +332,8 @@ The tab also lists the module behind each of the other tools. A photo that
 already uses one of a tool's modules keeps it, so its edit looks the same;
 closing Preferences applies the choice to unused tools on the current photo
 as well as photos opened later. See [Adjustments](adjustments.md#contrast-equalizer)
-for the equalizer graph. The Defringe choice affects masks only; global
-Defringe always uses chromatic aberrations.
+for the equalizer graph. Defringe, global and in masks, always uses
+chromatic aberrations: darktable deprecates its older defringe module.
 
 ## Immich
 

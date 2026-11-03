@@ -58,7 +58,7 @@ test('mask choices support local modules and remain independent of global prefer
   globalThis.localStorage = {getItem: k => storage.get(k) ?? null, setItem: (k,v) => storage.set(k,v)};
   try {
     assert.deepEqual(MASK_MODULE_CHOICES.map(c => c.id),
-      ['contrast', 'tone_regions', 'clarity', 'texture', 'sharpening', 'defringe']);
+      ['contrast', 'tone_regions', 'clarity', 'texture', 'sharpening']);
     assert.deepEqual(MASK_MODULE_CHOICES[0].options.map(o => o.op), ['colorbalancergb', 'atrous']);
     for (const c of MASK_MODULE_CHOICES) for (const o of c.options) {
       assert.ok(localMaps.some(m => m.op === o.op), o.op);

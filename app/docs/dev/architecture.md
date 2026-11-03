@@ -564,7 +564,10 @@ neutralized while atrous is selected.
 `detailMap` uses separate `contrastntexture` instances for Clarity and Texture,
 with local counterparts; [DetailControls.tsx](../../src/DetailControls.tsx)
 folds everything except Medium and Fine details under Advanced. Global
-Defringe uses `cacorrectrgb`; `mod_defringe` selects only the local module.
+Defringe uses `cacorrectrgb` globally and in masks, with no module choice:
+darktable deprecates `defringe`. A mask saved with the old `defringe` option
+keeps that instance in its history, which still renders and is disabled when
+the mask is deleted, but no slider reads or writes it.
 
 Verification: `node verify/contrast-equalizer.test.mjs` checks parameter round
 trips, independent preference scopes and mask choices in shared rendering.

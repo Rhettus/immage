@@ -240,8 +240,8 @@ Raw-only sliders are grayed out on a JPEG.
 
 **Defringe** removes color fringes using darktable's chromatic aberrations:
 **Amount** sets strength and **Radius** sets its reach. Amount 0 switches it
-off. This is separate from Remove Chromatic Aberration and from the module
-choice for a mask's Defringe.
+off. This is separate from Remove Chromatic Aberration. A mask's Defringe
+uses the same module.
 
 - **Enable Profile Corrections**: corrects distortion and vignetting for
   the lens darktable detects (through the lensfun database).

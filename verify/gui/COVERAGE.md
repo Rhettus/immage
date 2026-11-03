@@ -100,11 +100,11 @@ options did not execute. Preserve the failed report; this was not a suite pass.
 
 ## Expanded implementation status
 
-The registry now contains 307 named declarations. Generated range cases exercise
+The registry now contains 310 named declarations. Generated range cases exercise
 both pointer directions, keyboard limits/steps, typed minimum/maximum clamping,
 Escape and reset; generated choices enumerate mounted options. Global/mask module
 variants exercise a candidate control and rendered effect. These are unverified
-implementations, not 307 passes. RAW-only controls and neutral/gated effects
+implementations, not 310 passes. RAW-only controls and neutral/gated effects
 can block or need stronger dedicated oracles.
 
 A control that only one option of a module choice shows (the contrast
@@ -112,8 +112,8 @@ equalizer's 30 bands, contrast & texture's Clarity and Texture bands,
 diffuse or sharpen's Amount/Radius/Sensitivity) records that option as
 `module` in its generated case. The case chooses it in Preferences >
 Modules first and restores the previous choice afterwards
-(`withModule` in `specs/ranges.mjs`). Defringe is being removed from the
-app, so its controls, mask control and module choice generate no cases.
+(`withModule` in `specs/ranges.mjs`). Defringe has no module choice, so
+its global and mask sliders always run on chromatic aberrations.
 
 Hidden panels generate no control cases (their state has no slider):
 `hiddenPanelCoverage` in `generated.mjs` maps the point curve to `curves`,
