@@ -46,6 +46,12 @@ export async function history(t) {
   await t.driver.point(s.label.x, s.label.y, 2);
   await until(async () => Math.abs(+(await t.driver.observe(inspect, selector)).value) < .02, 'neutral Exposure');
   const baseline = await settledPhoto(t);
+  // every mounted control's value, to name what Reset All changes
+  const controlValues = () => t.driver.observe(() => Object.fromEntries([...document.querySelectorAll('[data-control-id]')].map(e => {
+    const i = e.querySelector('input[type=range], select'), on = e.querySelector('button.active');
+    return [e.dataset.controlId, i ? i.value : on ? on.textContent.trim() : e.querySelector('input[type=checkbox]')?.checked ?? null];
+  })));
+  const before = await controlValues();
   s = await reveal(t, selector);
   const at = v => ({ x: s.bounds.x + 8 + (s.bounds.width - 16) * (v - s.min) / (s.max - s.min), y: s.y });
   await t.driver.drag(at(0), at(1));
@@ -67,7 +73,9 @@ export async function history(t) {
   let error = 0;
   for (let i = 0; i < reset.rgba.length; i++) error += Math.abs(reset.rgba[i] - baseline.rgba[i]);
   error /= reset.rgba.length;
-  t.measure({ name: 'reset-all', photoHash: reset.hash, luma: reset.luma, baselineLuma: baseline.luma, meanAbsoluteError: error });
+  const after = await controlValues();
+  const differs = Object.fromEntries(Object.keys({ ...before, ...after }).filter(k => before[k] !== after[k]).map(k => [k, [before[k], after[k]]]));
+  t.measure({ name: 'reset-all', photoHash: reset.hash, luma: reset.luma, baselineLuma: baseline.luma, meanAbsoluteError: error, controlsChanged: differs });
   assert(error < 1, `Reset All photo mean pixel error ${error} exceeds 1/255`);
   await t.evidence('reset-all');
 }
@@ -105,7 +113,7 @@ export async function panelScroll(t) {
   await open('adjust');
   await expandSections(t, await panel(t, 'basic'));
   let s = await t.driver.observe(panels);
-  if (s.room < 300) throw new Blocked(`Adjustments panel too short to scroll (${s.room}px)`);
+  if (s.room < 260) throw new Blocked(`Adjustments panel too short to scroll (${s.room}px)`);
   for (let i = 0; i < 10 && s.top < 250; i++) { await t.driver.wheel(s.x, s.y, 300); await pause(150); s = await t.driver.observe(panels); }
   assert(s.top >= 250, `Adjustments scrolled (${s.top})`);
   const adjusted = s.top;
