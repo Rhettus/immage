@@ -302,5 +302,8 @@ Sigmoid v1/v2 chains check preserved old bytes and zero-filled additions. Synthe
 on-disk styles with sigmoid v1/v2/v3 and AgX v7 parameters exercise the actual
 style importer and Immage item conversion. Each style also checks complete applied
 parameter/blend bytes, exact preview/applied pixels, a visible pixel contribution
-and exact baseline restoration when disabled. They do not establish user-style
-corpus, legacy XMP or old/new rendered-pixel equivalence.
+and exact baseline restoration when disabled. Real sidecars containing those
+historical parameter layouts then load in separate fresh processes with empty
+libraries: complete converted params/blend and reference pixels must match.
+These use current structured XMP and current blend data; they do not establish
+historical XMP schema, user-style/sidecar corpus or old/new rendered-pixel equivalence.

@@ -318,6 +318,8 @@ The production pin remains unchanged until the adoption gates pass.
   imports (sigmoid v1/v2/v3 and AgX v7) in both candidate builds.
 - [x] Apply and render those synthetic legacy tone-mapper styles: exact tile/applied
   pixels and converted bytes, visible contribution and exact disable restoration.
+- [x] Load constructed AgX v7 and sigmoid v1/v2/v3 historical XMP in fresh
+  processes; verify complete converted params/blend bytes and exact reference pixels.
 - [ ] Verify production control read/selection semantics, RAW-specific defaults, new
   unmapped HDR fields and enum processing semantics with reference renders.
 - [x] Verify A→B→A switching between two exported/imported masked exposure looks,
@@ -998,8 +1000,18 @@ and `_look`: complete applied parameter/blend bytes match conversion, tile and
 applied pixels match exactly, each style changes the synthetic PNG, and disabling
 it restores baseline pixels exactly. Both full candidate runners pass; logs are
 `{cpu,features}-legacy-applied{,-build}.log`. This establishes internal rendering
-consistency, not agreement with the old pin. Legacy XMP loading, HDR output pixels
-and display-dependent headroom behavior remain unverified.
+consistency, not agreement with the old pin.
+
+Historical XMP follow-up serializes actual sidecars after replacing the selected
+operation’s history parameter blob/version with the historical fixture. Each of
+the four sidecars loads in its own fresh process and empty in-memory library:
+complete converted parameters and current blend bytes match the applied-style
+reference, and all 27,648 BGRX bytes match exactly. Both full candidate runners
+pass, including the existing mask and sidecar regressions. Logs:
+`{cpu,features}-legacy-xmp{,-build}.log`. This covers constructed historical
+module layouts inside current structured XMP, not a historical XMP schema,
+user-created sidecar corpus or legacy blend versions. HDR output pixels and
+display-dependent headroom behavior remain unverified.
 
 `verify/mapped-fields.py --photo PATH` copies only the photo into temporary
 state, excluding adjacent sidecars. An existing ignored Nikon D3S NEF opens as
@@ -1020,5 +1032,4 @@ python3 verify/mapped-fields.py --build build/darktable-pin-review/cpu \
   --photo /path/to/copied-camera.NEF --snapshot /tmp/raw-defaults.json
 ```
 
-Next: legacy XMP loading validation, then old/new reference
-pixels. Broader camera coverage and adoption gates remain unchecked.
+Next: old/new reference pixels. Broader camera coverage and adoption gates remain unchecked.

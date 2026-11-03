@@ -29,7 +29,8 @@ with tempfile.TemporaryDirectory(prefix='immage-look-compat-') as tmp:
     png = (b'\x89PNG\r\n\x1a\n'
            + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0))
            + chunk(b'IDAT', zlib.compress(rows)) + chunk(b'IEND', b''))
-    for name in ('source.png', 'target.png', 'multi.png'):
+    for name in ('source.png', 'target.png', 'multi.png', 'legacy-agx-7.png',
+                 'legacy-sigmoid-1.png', 'legacy-sigmoid-2.png', 'legacy-sigmoid-3.png'):
         (state / name).write_bytes(png)
     command = [str(build / 'bin/immage-look-check'), str(state / 'source.png'),
                str(state / 'target.png'), str(state), '--library', ':memory:',
@@ -37,10 +38,15 @@ with tempfile.TemporaryDirectory(prefix='immage-look-compat-') as tmp:
                '--datadir', str(build / 'share/darktable'),
                '--moduledir', str(build / 'lib/darktable'),
                '--conf', 'opencl=false', '--conf', 'resourcelevel=0']
-    for reload_sidecar in (None, "--reload", "--reload-multi"):
+    for reload_sidecar in (None, "--reload", "--reload-multi",
+                           "legacy-agx-7", "legacy-sigmoid-1",
+                           "legacy-sigmoid-2", "legacy-sigmoid-3"):
         run = command.copy()
         if reload_sidecar:
             run[1] = reload_sidecar
+            if reload_sidecar.startswith("legacy-"):
+                run[1] = "--reload-legacy"
+                run[2] = str(state / (reload_sidecar + ".png"))
             if reload_sidecar == '--reload-multi':
                 run[2] = str(state / 'multi.png')
         result = subprocess.run(run, capture_output=True, text=True, timeout=180,

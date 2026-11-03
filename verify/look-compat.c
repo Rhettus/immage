@@ -140,6 +140,36 @@ static void check_legacy_style(const char *dir, dt_iop_module_t *m, int version,
   GBytes *pixels = preview(NULL);
   CHECK(g_bytes_equal(tile, pixels));
   CHECK(!g_bytes_equal(baseline, pixels));
+  // Write a real sidecar with historical module bytes in its history. Reload
+  // happens in another process with an empty library, so no live state can help.
+  CHECK(_save(&err));
+  sqlite3_stmt *stmt = NULL;
+  CHECK(sqlite3_prepare_v2(dt_database_get(darktable.db),
+    "UPDATE main.history SET module=?1, op_params=?2 WHERE imgid=?3 AND operation=?4",
+    -1, &stmt, NULL) == SQLITE_OK);
+  sqlite3_bind_int(stmt, 1, version);
+  sqlite3_bind_blob(stmt, 2, old, bytes, SQLITE_TRANSIENT);
+  sqlite3_bind_int(stmt, 3, _s.imgid);
+  sqlite3_bind_text(stmt, 4, m->op, -1, SQLITE_TRANSIENT);
+  CHECK(sqlite3_step(stmt) == SQLITE_DONE);
+  CHECK(sqlite3_changes(dt_database_get(darktable.db)) > 0);
+  sqlite3_finalize(stmt);
+  char *fixture = g_strdup_printf("%s/%s.png", dir, name);
+  char *sidecar = g_strconcat(fixture, ".xmp", NULL);
+  CHECK(!dt_exif_xmp_write(_s.imgid, sidecar, FALSE));
+  char *reference = g_strconcat(fixture, ".params", NULL);
+  CHECK(g_file_set_contents(reference, expected, m->params_size, NULL));
+  g_free(reference);
+  reference = g_strconcat(fixture, ".blend", NULL);
+  CHECK(g_file_set_contents(reference, (const char *)&blend, sizeof(blend), NULL));
+  g_free(reference);
+  reference = g_strconcat(fixture, ".bgrx", NULL);
+  gsize pixel_bytes = 0;
+  const char *pixel_data = g_bytes_get_data(pixels, &pixel_bytes);
+  CHECK(g_file_set_contents(reference, pixel_data, pixel_bytes, NULL));
+  g_free(reference);
+  g_free(sidecar);
+  g_free(fixture);
   CHECK(_look(NULL, &err));
   GBytes *restored = preview(NULL);
   CHECK(g_bytes_equal(baseline, restored));
@@ -250,6 +280,44 @@ int main(int argc, char **argv)
   dt_conf_set_string("write_sidecar_files", "never");
   dt_conf_set_bool("cache_disk_backend", FALSE);
   dt_conf_set_bool("cache_disk_backend_full", FALSE);
+  if(!strcmp(argv[1], "--reload-legacy"))
+  {
+    CHECK(_open_image(argv[2], NO_IMGID, NULL, &err));
+    char *base = g_path_get_basename(argv[2]);
+    char op[32] = {0};
+    int version = 0;
+    CHECK(sscanf(base, "legacy-%31[^-]-%d.png", op, &version) == 2);
+    dt_iop_module_t *module = _look_instance(op, FALSE);
+    CHECK(module && module->enabled);
+    const char *suffixes[] = { ".params", ".blend", ".bgrx" };
+    for(int i = 0; i < 3; i++)
+    {
+      char *path = g_strconcat(argv[2], suffixes[i], NULL);
+      char *data = NULL;
+      gsize length = 0;
+      CHECK(g_file_get_contents(path, &data, &length, NULL));
+      if(i < 2)
+      {
+        CHECK(length == (i ? sizeof(*module->blend_params) : module->params_size));
+        CHECK(!memcmp(data, i ? (void *)module->blend_params : module->params, length));
+      }
+      else
+      {
+        GBytes *expected = g_bytes_new(data, length);
+        GBytes *actual = preview(NULL);
+        check_rebuilt_pixels(expected, actual, base);
+        g_bytes_unref(expected);
+        g_bytes_unref(actual);
+      }
+      g_free(data);
+      g_free(path);
+    }
+    printf("%s v%d: fresh-process historical XMP params, blend and pixels passed\n", op, version);
+    g_free(base);
+    _close_session();
+    dt_cleanup();
+    return 0;
+  }
   if(!strcmp(argv[1], "--reload-multi"))
   {
     CHECK(_open_image(argv[2], NO_IMGID, NULL, &err));
