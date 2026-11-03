@@ -356,6 +356,8 @@ The production pin remains unchanged until the adoption gates pass.
   without lens tiling; direct-coordinate/clamp diagnostic reproduces both frames.
 - [x] Compare full-size Olympus forward/reverse pixel-aspect histories under
   mini/unrestricted budgets; confirm 0.75 uses 3×3 lens tiles and 1.5 is untiled.
+- [x] Force full-size Olympus 1.5 forward/reverse lens tiling with the minimum
+  CPU budget; compare 3×3 tiles against the same saved untiled histories.
 - [ ] Assess lens and transform appearance deltas, including the isolated rotation
   boundary pixel; cover reverse lens, interpolation modes, tiling and pixel aspect.
 - [ ] Assess diffuse and denoise saved-edit appearance differences with broader
@@ -1665,3 +1667,44 @@ each change 7,263,441 RGB channels (max 42, MAE 0.116065) forward and 6,677,592
 These observations reinforce old CPU call-layout dependence; they do not rank
 accuracy or establish a universal candidate tolerance. Appearance/import policy,
 other profiles, metadata aspect, file export and device checks remain open.
+
+### Minimum-budget full-size aspect tiling
+
+`--resource-level minimum` selects the supported `small` resource level with
+`resource_small=1 1 128 400` in each isolated process. The reviewed engines clamp
+available CPU memory to 512 MiB; single-buffer memory is total memory/1024,
+with a 2 MiB floor (11 MiB on this host). This diagnostic setting leaves the
+application's preferences and all engine binaries unchanged.
+
+Ignored `pixel-lens-aspect-minimum` repeats the preceding Olympus command with
+this budget. Build identities and parsed saved module histories match the
+unrestricted reference. Defaults and old saved-history reloads are exact, all
+four edits visibly contribute, and the direct-coordinate/clamp diagnostic is
+exact for every frame. Saved lens and pixel-aspect guards pass. Lens-specific
+logs and `tile-guards.json` confirm 7×7 tiles at ratio 0.75 and 3×3 at ratio 1.5
+for both directions, old creation/reload and both candidates. All complete;
+no lens tiling fallback or failure is reported. Other modules can decline tiling
+when it saves no memory, so these guards inspect lens records specifically.
+
+| Direction | Ratio | Original changed RGB channels | Maximum | MAE |
+| --- | ---: | ---: | ---: | ---: |
+| Forward | 0.75 | 1,539,901 | 23 | 0.023898 |
+| Reverse | 0.75 | 1,295,711 | 6 | 0.020105 |
+| Forward | 1.5 | 857,960 | 11 | 0.026637 |
+| Reverse | 1.5 | 685,317 | 8 | 0.021276 |
+
+Actual outputs remain 4640×4630 and 4640×2314, respectively. The saved
+`compare-layout.py` verifies matching build identities and parsed histories,
+then compares every RGB channel against unrestricted output. Its standalone
+byte comparator is cross-checked against the runner's old/candidate metrics.
+Old CPU and the diagnostic each change 9,181,939 channels (max 42, MAE 0.146689)
+forward and 8,376,036 (max 21, MAE 0.133687) reverse at ratio 0.75. At ratio 1.5,
+they change 315,064 (max 1, MAE 0.009781) forward and 270,150 (max 3,
+MAE 0.008387) reverse. The original candidate's corresponding layout deltas are
+30,855/max 2, 26,401/max 1, 13,145/max 1 and 12,112/max 1. Reports, comparison
+source/results and separate process logs remain alongside the run.
+
+This closes the previously untiled ratio-1.5 CPU case for this fixture. It
+reinforces the need to identify the old reference's tile layout; it establishes
+neither an accuracy ranking nor an acceptance threshold. Broader profiles,
+old OpenCL references, exports and the appearance/import policy remain open.

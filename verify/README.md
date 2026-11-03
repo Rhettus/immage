@@ -317,10 +317,14 @@ suffixes receive neither highlight nor lens cases. No X-Trans/linear RAW,
 invalid-white, disabled-temperature or device coverage is established by these
 fixtures. Explicit `--size` values can request full-size processing; verify the
 actual reported dimensions rather than assuming a large target proves it.
-Use `--resource-level mini|reference|unrestricted` to apply the same memory budget
+Use `--resource-level minimum|mini|reference|unrestricted` to apply the same memory budget
 to every process and retain pipe/tiling diagnostics. A requested budget is not
 proof of tiled execution: check lens-specific tile-processing logs, successful
 completion and absence of fallback, and compare with an untiled reference.
+`minimum` selects `small` with `resource_small=1 1 128 400`, using the reviewed
+engines' CPU floor of 512 MiB available; single-buffer memory is total/1024,
+with a 2 MiB floor (11 MiB on this audit host). This is an
+isolated diagnostic configuration; it does not change application preferences.
 
 These are constructed, unmasked engine histories, not production Session edit
 orchestration, a user-created style corpus, HDR/device output or a broad image

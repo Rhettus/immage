@@ -43,7 +43,13 @@ def render(build, photo, state, output, sizes, edits=(), sidecar=None, save=None
                '--moduledir', str(build / 'lib/darktable'),
                '--conf', 'opencl=false', '--conf', 'resourcelevel=0']
     if resource_level:
-        command += ['--conf', f'resourcelevel={resource_level}', '-d', 'tiling', '-d', 'pipe']
+        level = 'small' if resource_level == 'minimum' else resource_level
+        command += ['--conf', f'resourcelevel={level}', '-d', 'tiling', '-d', 'pipe']
+        if resource_level == 'minimum':
+            # Supported fractional configuration, clamped by the engine to
+            # 512 MiB available; single-buffer memory is total/1024,
+            # with a 2 MiB floor.
+            command += ['--conf', 'resource_small=1 1 128 400']
     if interpolation:
         command += ['--conf',
                     f'plugins/lighttable/export/pixel_interpolator_warp={interpolation}']
@@ -121,7 +127,7 @@ def main():
                         help='Compare saved Lensfun histories with pixel aspect ratios 0.75 and 1.5')
     parser.add_argument('--lens-aspect-reverse', action='store_true',
                         help='Compare saved reverse Lensfun histories with pixel aspect ratios 0.75 and 1.5')
-    parser.add_argument('--resource-level', choices=['mini', 'reference', 'unrestricted'],
+    parser.add_argument('--resource-level', choices=['minimum', 'mini', 'reference', 'unrestricted'],
                         help='Set identical memory budgets and record pipe/tiling diagnostics; inspect logs for actual tiling')
     parser.add_argument('--interpolation', choices=['bilinear', 'bicubic', 'lanczos2', 'lanczos3'],
                         help='Set the warp interpolation preference identically in every engine')
