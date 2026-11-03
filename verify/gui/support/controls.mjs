@@ -57,6 +57,15 @@ export async function reveal(t, selector) {
     throw Error(`Unreachable control: ${JSON.stringify(c)}`);
   }, `visible, unclipped hit target ${selector}`, 15000);
 }
+// Move keyboard focus to a control with Tab; the browser scrolls a focused
+// control into view, for a list the wheel does not scroll under WebDriver.
+export async function tabTo(t, selector, max = 200) {
+  for (let i = 0; i < max; i++) {
+    if (await t.driver.observe(s => { const e = document.querySelector(s); return !!e && document.activeElement === e; }, selector)) return;
+    await t.driver.keys('\uE004');
+  }
+  throw Error(`Tab did not reach ${selector}`);
+}
 export async function click(t, selector) {
   const c = await reveal(t, selector);
   assert(!c.disabled, `${selector} must be enabled`);

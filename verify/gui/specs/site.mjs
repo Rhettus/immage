@@ -169,6 +169,7 @@ export async function siteShots(t) {
   await attempt(t, 'tone-curve', async () => {
     await tool(t, 'adjust');
     const p = await panel(t, 'tonecurve');
+    await reveal(t, `${p} .tabs button`); // scrolled to; the first is Point
     await textButton(t, `${p} .tabs`, 'Point');
     const g = await reveal(t, `${p} svg.point-curve`), b = g.bounds;
     const at = (x, y) => ({ x: b.x + b.width * x, y: b.y + b.height * (1 - y) });
@@ -182,6 +183,9 @@ export async function siteShots(t) {
   });
 
   await attempt(t, 'scopes-vectorscope', async () => {
+    // the scope button shows while the pointer is over the histogram
+    const h = await reveal(t, '.histogram');
+    await t.driver.move(h.x, h.y); await pause(400);
     await click(t, '.scope-button');
     await textButton(t, '.scope-list', 'Vectorscope');
     await textButton(t, '.scope-list', 'RYB');

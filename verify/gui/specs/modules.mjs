@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 const inventory=JSON.parse(readFileSync(new URL('../inventory.json',import.meta.url),'utf8'));
 import {locateControl} from './ranges.mjs';
-import { click,reveal } from '../support/controls.mjs';
+import { click,reveal,inspect,tabTo } from '../support/controls.mjs';
 import { choose,textButton,Blocked,panel,expandSections } from '../support/scenario.mjs';
 import { until } from '../support/webdriver.mjs';
 import { settledPhoto } from './smoke.mjs';
@@ -12,7 +12,11 @@ export async function moduleOutput(t,definition){
  const {scope,choice,option}=definition;
  await click(t,'button[data-tour="prefs"]');await textButton(t,'.prefs-tabs','Modules');await textButton(t,'.prefs','Custom');
  const fold=`button[aria-controls="module-prefs-${scope}"]`;
- if(!await t.driver.observe(s=>document.querySelector(s)?.getAttribute('aria-expanded')==='true',fold))await click(t,fold);
+ if(!await t.driver.observe(s=>document.querySelector(s)?.getAttribute('aria-expanded')==='true',fold)){
+  // the Preferences list does not scroll for WebDriver's wheel; Tab to the fold scrolls it into view
+  if(!(await t.driver.observe(inspect,fold))?.visible)await tabTo(t,fold);
+  await click(t,fold);
+ }
  const selector=`select[aria-label=${JSON.stringify(`${scope==='global'?'Global':'Masks'} ${choice.label}`)}]`;
  await choose(t,selector,option.value);await textButton(t,'.prefs-foot','Done');
  if(scope==='masks'){
