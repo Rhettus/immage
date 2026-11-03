@@ -39,8 +39,8 @@ def records(log, distort_mask=False):
     if bool(masks) != distort_mask:
         raise ValueError('mask trace presence must match requested mode')
     if distort_mask:
-        counts = Counter()
-        rgb_geometry = {tuple(map(int, row.split()[1:5])) for row in rows}
+        counts = {pattern: Counter() for pattern in (0, 1, 2)}
+        rgb_geometry = Counter(tuple(map(int, row.split()[1:5])) for row in rows)
         for line in masks:
             fields = line.split()
             if len(fields) != 7 or len(fields[-1]) != 64:
@@ -48,10 +48,10 @@ def records(log, distort_mask=False):
             pattern, inverse, x, y, width = map(int, fields[1:6])
             if pattern not in (0, 1, 2) or inverse not in (0, 1) or min(x, y) < 0 or width <= 0:
                 raise ValueError(f'invalid mask geometry: {line}')
-            counts[pattern] += 1
+            counts[pattern][(inverse, x, y, width)] += 1
             if (inverse, x, y, width) not in rgb_geometry:
                 raise ValueError('mask row has no corresponding image row')
-        if set(counts) != {0, 1, 2} or any(n != len(rows) for n in counts.values()):
+        if any(geometry != rgb_geometry for geometry in counts.values()):
             raise ValueError('incomplete mask patterns')
     if not rows:
         raise ValueError(f'no actual-pixel Lensfun calls in {log}')
