@@ -63,7 +63,8 @@ time. While one is on, the panel's head shows its name with **×** to remove
 it, and **Look amount** (0-100) sets its strength.
 
 A look sits on top of your edit: changing sliders afterwards still works.
-Previewing a look leaves the photo's masks unchanged. Masks carried by a
+Previewing another look leaves the applied look's masks and strength unchanged.
+Masks carried by a
 supported look are saved with the edit when you apply it, so they remain
 when you reopen the photo.
 

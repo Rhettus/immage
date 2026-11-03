@@ -8625,8 +8625,15 @@ static void _preview_commit(dt_iop_module_t *m, void *params, dt_develop_blend_p
   // older pins hash module->params; keep the upstream mask-tree and bypass
   // hashes while giving that path the preview's temporary parameters too
   void *saved_params = m->params;
+  dt_develop_blend_params_t *saved_blend = m->blend_params;
+  dt_develop_blend_params_t preview_blend = *blend;
   m->params = params;
+  // The upstream commit copies into module->blend_params as well as the
+  // piece. Give it request-local storage so a tile cannot overwrite the
+  // applied look's mask id, opacity or other blend settings.
+  m->blend_params = &preview_blend;
   dt_iop_commit_params(m, params, blend, &_s.ppipe, piece);
+  m->blend_params = saved_blend;
   m->params = saved_params;
   // darktable.develop is not the engine's develop, so hash its own forms
   // explicitly, as _frame_hash does for retained main frames

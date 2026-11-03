@@ -129,6 +129,24 @@ int main(int argc, char **argv)
   CHECK(g_file_test(style, G_FILE_TEST_EXISTS));
   // Force the file import path instead of using only the already stored style.
   dt_styles_delete_by_name("compat");
+
+  // Export a distinct look with different exposure, geometry and opacity.
+  dt_masks_form_t *other_group = dt_masks_get_from_id(&_s.dev, source_id);
+  dt_masks_point_group_t *other_member = g_list_last(other_group->points)->data;
+  dt_masks_form_t *other_circle = dt_masks_get_from_id(&_s.dev, other_member->formid);
+  dt_masks_point_circle_t *other_point = other_circle->points->data;
+  other_point->center[0] = 0.75f;
+  source->blend_params->opacity = 85.0f;
+  CHECK(_write_field(source, "exposure", -1.0, &err));
+  dt_dev_add_masks_history_item_ext(&_s.dev, source, TRUE, TRUE);
+  dt_dev_write_history_ext(&_s.dev, _s.imgid);
+  rows = g_list_append(NULL, GINT_TO_POINTER(_s.dev.history_end - 1));
+  CHECK(dt_styles_create_from_image("compat-other", "", _s.imgid, rows, FALSE));
+  g_list_free(rows);
+  dt_styles_save_to_file("compat-other", argv[3], TRUE);
+  gchar *other_style = g_build_filename(argv[3], "compat-other.dtstyle", NULL);
+  CHECK(g_file_test(other_style, G_FILE_TEST_EXISTS));
+  dt_styles_delete_by_name("compat-other");
   CHECK(_open_image(argv[2], NO_IMGID, NULL, &err));
   GBytes *baseline = preview(NULL);
   gchar *label = NULL;
@@ -237,6 +255,57 @@ int main(int argc, char **argv)
   CHECK(dt_masks_get_from_id(&_s.dev, first));
   GBytes *again = preview(NULL);
   CHECK(g_bytes_equal(applied, again));
+
+  // Preview B while A is applied, apply B, then preview/apply A again. Check
+  // actual pixels and all live mask trees so cache reuse cannot hide leakage.
+  const dt_hash_t mask_a = dt_masks_group_hash_ext(DT_INITHASH,
+    dt_masks_get_from_id(&_s.dev, look->blend_params->mask_id), _s.dev.forms);
+  const dt_develop_blend_params_t blend_a = *look->blend_params;
+  const dt_hash_t frame_a = _frame_hash(DT_INITHASH);
+  GList *forms_a = _s.dev.forms;
+  const int count_a = g_list_length(forms_a), history_a = _s.dev.history_end;
+  GBytes *tile_b = preview(other_style);
+  CHECK(!g_bytes_equal(tile_b, applied));
+  CHECK(_s.dev.forms == forms_a && g_list_length(forms_a) == count_a);
+  CHECK(_s.dev.history_end == history_a && _frame_hash(DT_INITHASH) == frame_a);
+  CHECK(!memcmp(&blend_a, look->blend_params, sizeof(blend_a)));
+  CHECK(dt_masks_group_hash_ext(DT_INITHASH,
+    dt_masks_get_from_id(&_s.dev, look->blend_params->mask_id), _s.dev.forms) == mask_a);
+  GBytes *still_a = preview(NULL);
+  CHECK(g_bytes_equal(still_a, applied));
+  CHECK(_look(other_style, &err));
+  const dt_mask_id_t id_b = look->blend_params->mask_id;
+  const dt_hash_t mask_b = dt_masks_group_hash_ext(DT_INITHASH,
+    dt_masks_get_from_id(&_s.dev, id_b), _s.dev.forms);
+  CHECK(mask_b != mask_a && look->blend_params->opacity == 85.0f);
+  GBytes *applied_b = preview(NULL);
+  CHECK(g_bytes_equal(tile_b, applied_b));
+  GList *forms_b = _s.dev.forms;
+  const int count_b = g_list_length(forms_b), history_b = _s.dev.history_end;
+  const dt_develop_blend_params_t blend_b = *look->blend_params;
+  const dt_hash_t frame_b = _frame_hash(DT_INITHASH);
+  GBytes *tile_a = preview(style);
+  CHECK(g_bytes_equal(tile_a, applied));
+  CHECK(_s.dev.forms == forms_b && g_list_length(forms_b) == count_b);
+  CHECK(_s.dev.history_end == history_b && _frame_hash(DT_INITHASH) == frame_b);
+  CHECK(look->blend_params->mask_id == id_b);
+  CHECK(!memcmp(&blend_b, look->blend_params, sizeof(blend_b)));
+  CHECK(dt_masks_group_hash_ext(DT_INITHASH,
+    dt_masks_get_from_id(&_s.dev, id_b), _s.dev.forms) == mask_b);
+  GBytes *still_b = preview(NULL);
+  CHECK(g_bytes_equal(still_b, applied_b));
+  CHECK(_look(style, &err));
+  CHECK(look->blend_params->mask_id != id_b);
+  CHECK(dt_masks_get_from_id(&_s.dev, id_b));
+  CHECK(look->blend_params->opacity == 65.0f);
+  GBytes *switched_a = preview(NULL);
+  CHECK(g_bytes_equal(switched_a, applied));
+  g_bytes_unref(tile_b);
+  g_bytes_unref(still_a);
+  g_bytes_unref(applied_b);
+  g_bytes_unref(tile_a);
+  g_bytes_unref(still_b);
+  g_bytes_unref(switched_a);
   CHECK(_look(NULL, &err));
   GBytes *disabled = preview(NULL);
   CHECK(g_bytes_equal(baseline, disabled));
@@ -283,6 +352,7 @@ int main(int argc, char **argv)
     CHECK(dt_masks_get_from_id(&_s.dev, blend.mask_id));
   }
   g_free(params);
+  g_free(other_style);
   g_free(style);
   g_free(label);
   g_list_free_full(items, dt_style_item_free);
@@ -295,6 +365,6 @@ int main(int argc, char **argv)
   g_bytes_unref(disabled);
   _close_session();
   dt_cleanup();
-  puts("look masks: file import, collision remapping, tile/apply pixels, preview isolation, malformed tail, locked mask, cache identity, repeat, disable, save/reopen and classic migration passed");
+  puts("look masks: file import, collision remapping, tile/apply pixels, preview isolation, malformed tail, locked mask, cache identity, repeat, distinct masked-look switching, disable, save/reopen and classic migration passed");
   return 0;
 }

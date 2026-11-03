@@ -82,8 +82,9 @@ The repair below adapts the loader and its preview/history interactions.
 Headless fixtures now cover version-15 attached forms, current-version and
 version-14 classic masks, truncated tails, repeated application with ID
 collisions, a locked destination mask, look removal, save/reopen and fresh-process
-sidecar import. Native/platform verification, broader old styles and switching
-between different masked looks remain required before pin adoption.
+sidecar import. Switching between two distinct circle-masked exposure looks also
+passes. Native/platform verification and broader saved-style coverage remain
+required before pin adoption.
 
 ### Lock handling: Linux executable checks pass; native platforms pending
 
@@ -295,7 +296,9 @@ The production pin remains unchanged until the adoption gates pass.
 - [x] Read live/default scalars and individually rewrite initial values for all
   444 global/local mapped fields across 28 modules in both builds.
 - [ ] Verify changed control values, enum semantics and old/new defaults.
-- [ ] Verify switching between different masked looks and broader saved styles.
+- [x] Verify A→B→A switching between two exported/imported masked exposure looks,
+  with distinct geometry, exposure and opacity, in both candidate builds.
+- [ ] Verify broader saved styles, other mask shapes and multi-module looks.
 - [ ] Verify pixel-backed masks and external raster-mask cache invalidation.
 - [ ] Verify simultaneous first-start locking and installed/native lock behavior,
   including executable-name predicates on Windows/macOS/Linux.
@@ -703,7 +706,9 @@ Applied look items use `dt_dev_add_masks_history_item_ext` so their imported
 forms enter history snapshots. Thumbnail rendering deep-copies the active form
 list and restores the original on every success/failure return. Preview commits
 use upstream's complete parameter/blend/bypass hashing, temporarily supplying the
-preview params as `module->params` for older pins. Because `darktable.develop`
+preview params as `module->params` for older pins and request-local blend storage
+as `module->blend_params` so commits preserve the applied settings.
+Because `darktable.develop`
 is not the engine's `_s.dev`, the engine also hashes its own referenced mask
 trees explicitly. The fix does not redirect the process-wide develop pointer.
 HDR merge explicitly includes `common/math.h`, which owns `M_PI_F`.
@@ -747,8 +752,8 @@ parameter and geometry hashes match exactly, and all 27,648 output bytes match
 exactly in both configurations. Current-pin `main.c` and `hdrmerge.c` pass syntax
 checks against the original build's flags.
 
-Device OpenCL execution, native Windows/Mac, masks backed by AI pixels, switching
-between different masked looks, and broad old-edit reference/performance
+Device OpenCL execution, native Windows/Mac, masks backed by AI pixels, broader
+saved styles and multi-module looks, and broad old-edit reference/performance
 comparisons remain adoption gates. An unrestricted `all`
 build also encountered a local missing Perl `Pod::Parser` while translating man
 pages; the engine and module targets above do not require that documentation
@@ -769,3 +774,26 @@ This is an access/schema check, not a control-response test: writing initial
 values cannot establish changed-value behavior, enum meanings, old/new defaults,
 RAW-specific processing or pixel equivalence. Those gates remain open. The runner
 requires Node and the app's installed dependencies to load the actual manifest.
+
+## Distinct masked-look switching and blend isolation
+
+The extended look checker exports/imports two exposure styles with different
+circle positions, exposure values and blend opacities. With A applied, it previews
+B, verifies all live blend bytes, referenced mask-tree hashes, form-list identity,
+form count and history position are unchanged, and checks the current frame still
+matches A. It applies B and requires exact tile/applied pixels, then repeats the
+reverse preview/application and checks A's exact pixels and opacity return.
+B's forms remain available to history after switching back. Existing removal,
+save/reopen and fresh-process sidecar checks still run afterward.
+
+Before the fix, this test failed because `dt_iop_commit_params` calls
+`dt_iop_commit_blend_params`, which copies preview blending into the module's live
+blend storage. Restoring only the form list left a live mask ID pointing at freed
+temporary forms. `_preview_commit` now temporarily supplies request-local blend
+storage as well as preview module params, then restores the original pointer.
+The piece retains its own committed blend copy for rendering.
+
+The extended look checks and output-sink smoke pass with AI/OpenCL both off and
+both on on Linux ARM64 (CPU rendering). Current-pin engine syntax also passes.
+This fixture covers two circle-masked, single-module looks; it does not complete
+broader saved-style, pixel/raster-mask or native-device validation.
