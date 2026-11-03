@@ -242,6 +242,23 @@ The thumbnail caches keep nothing while the disk has under 5 GB free.
   versions, repeat runs with the same photo, viewport and preview settings;
   compare completed frames and input latency, since time spent in individual
   processing stages can move between versions.
+- **GPU check**: **Run** renders the open photo with darktable on the CPU
+  and on the GPU (OpenCL), compares the two, then repeats with each of
+  several modules turned on in turn: Exposure, both Shadows and Highlights
+  modules, both Texture and both Clarity modules, Dehaze, luminance noise
+  reduction, the lens profile, Sharpening, Vignette, Grain, Vibrance and
+  White Balance. Last, it starts a GPU render, cancels it with an Exposure
+  drag and compares the photo once more. The status bar shows how many cases
+  passed and where the report was saved: a `gpu-<time>.json` file in the app
+  data folder's `benchmarks` folder, beside the GUI benchmark's reports,
+  with a `.png` of the difference for any case that failed. Send the report
+  back to help test GPUs. A case passes when the GPU rendered it without
+  falling back to the CPU, and 99% of its pixels are within ΔE 2 of the
+  CPU's. A module darktable runs on the CPU anyway is noted, not failed.
+  Cases the photo cannot show (a raw-only control on a JPEG) are skipped.
+  Every control ends where it started, but the cases go into the photo's
+  history, so use a copy. Without an OpenCL device the report still saves,
+  saying none was found. The report names the computer and the photo's file.
 
 Use the **Performance tuner** with a representative RAW and your usual window
 size. Set FPS and latency targets, run it, review the recommendation, then

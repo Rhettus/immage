@@ -102,6 +102,7 @@ are `localStorage` keys named `immage.*`.
 | before/after, compare | `setBaMode`, `setBefore` (`Session.showBefore`), `toggleCompare` |
 | crop and turns | `enterCrop`, `leaveCrop`, `turn` (`Session.turned`) |
 | `runGuiBenchmark` | the GUI benchmark in Preferences |
+| `runGpuCheck` | the GPU check in Preferences: [gpuCheck.ts](../../src/gpuCheck.ts) cases through `changeMany`, `gpu_check_parity` for each |
 | keyboard | one `keydown` handler for every shortcut; `fieldKeeps` (`keys.ts`) leaves a focused field its keys: text all, a slider its arrows, a switch Space, a menu its arrows, Home/End, Page Up/Down, Space and Enter |
 | `openLaunched`, `dropped` | a photo handed over (`launch-file`), or photos and folders dragged onto the window (`onDragDropEvent`, `path_kind`) |
 
@@ -203,6 +204,7 @@ identity before drawing, so replacement frames cancel obsolete work.
 | [probe.ts](../../src/probe.ts) | The color under the pointer, for the Tone Curve, HSL and B&W cards. |
 | [PerformanceTuner.tsx](../../src/PerformanceTuner.tsx), [previewTuning.ts](../../src/previewTuning.ts), [tunerOptions.ts](../../src/tunerOptions.ts), [tunerWorkload.ts](../../src/tunerWorkload.ts) | Quality-first preview search with trimmed-median metrics with FPS/latency targets, explicit apply and remeasurement, restart/resume and navigation workload comparisons; AI and thumbnail settings excluded. |
 | [perf.ts](../../src/perf.ts), [PerfHud.tsx](../../src/PerfHud.tsx) | Edit-to-pixels timing by stage, the performance overlay and the GUI benchmark's recording. |
+| [gpuCheck.ts](../../src/gpuCheck.ts) | The GPU check's cases (a module choice, then sliders moved by a share of their range), `resolveCase` and the pass verdict. |
 
 ## Rust layer
 
@@ -369,7 +371,7 @@ The commands `_handle()` serves:
 
 | Group | Commands |
 |---|---|
-| Session | `open`, `history`, `module_state`, `save`, `baseline_end`, `before`, `close`, `quit`, `version`, `unpack`, `ai_accel`, `opencl`, `fonts` |
+| Session | `open`, `history`, `module_state`, `save`, `baseline_end`, `before`, `close`, `quit`, `version`, `unpack`, `ai_accel`, `opencl`, `parity`, `fonts` |
 | Library (no photo needed) | `folder`, `import`, `thumb`, `prefetch`, `meta`, `meta_set`, `capture_times`, `keywords`, `keywords_set`, `copy`, `remove_copy`, `sidecars`, `forget`, `export`, `export_hold`, `export_release`, `hdr_merge`, `pano_merge` |
 | Edit | `set`, `get`, `render`, `preview`, `look`, `look_amount` |
 | Masks and spots | `mask`, `combine`, `masks`, `mask_rename`, `mask_delete`, `mask_map`, `range_map`, `sample`, `spots`, `spots_enable`, `spot_source` |

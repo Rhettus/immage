@@ -18,6 +18,10 @@ Improvements
   screenshot shows a file path.
 - Add a scripted Mac CPU capture workflow to profile the engine and webview
   alongside GUI benchmarks and investigate busy-core bottlenecks.
+- Preferences › Performance › Measuring › GPU check compares darktable's
+  CPU and GPU renders of the open photo, with and without each of a
+  set of modules, and saves a report of differences, OpenCL errors and
+  fallbacks to the CPU, and a canceled GPU render, for testing GPUs.
 - A mask's Defringe always uses chromatic aberrations, like the global
   Defringe: Preferences › Modules › Masks no longer offers darktable's
   deprecated defringe module. Masks already edited with it keep their look.

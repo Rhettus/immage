@@ -1043,6 +1043,40 @@ async fn perf_modules(state: State<'_, AppState>, request: Option<u64>) -> Resul
     Ok(state.perf_last.lock().unwrap().clone())
 }
 
+// the GPU check's comparison of one CPU and one GPU render of the edit
+// (main.c, _parity), with each pass's module timings. a case that differs
+// writes its amplified difference as <diff>.png in the reports folder
+#[tauri::command]
+async fn gpu_check_parity(state: State<'_, AppState>, size: Option<u32>, diff: Option<String>,
+                          self_check: Option<bool>) -> Result<Value, String> {
+    let mut req = json!({ "cmd": "parity", "size": size.unwrap_or(1024), "self": self_check.unwrap_or(false) });
+    if let Some(name) = diff {
+        if name.is_empty() || name.contains(['/', '\\']) || name.starts_with('.') {
+            return Err("bad diff name".into());
+        }
+        std::fs::create_dir_all(&state.perf_dir).map_err(|e| e.to_string())?;
+        req["diff"] = json!(state.perf_dir.join(format!("{name}.png")).to_string_lossy());
+    }
+    let mut engine = state.engine("gpu_check_parity");
+    // the marks around it keep earlier requests' timings out of its own
+    engine.perf_mark();
+    let mut reply = engine.request(req)?;
+    let timings = engine.perf_mark();
+    let mut passes = serde_json::Map::new();
+    let mut pass = String::new();
+    for t in timings {
+        if t.kind == "pass" {
+            pass = t.label.clone();
+            passes.insert(pass.clone(), json!([]));
+        } else if let Some(Value::Array(list)) = passes.get_mut(&pass) {
+            list.push(json!(t));
+        }
+    }
+    reply["modules"] = Value::Object(passes);
+    if let Some(o) = reply.as_object_mut() { o.remove("ok"); }
+    Ok(reply)
+}
+
 // does nothing: the GUI benchmark times a call's round trip on its own,
 // the cost every engine call pays on top of its work
 #[tauri::command]
@@ -1160,7 +1194,7 @@ fn display_env() -> Value {
 async fn perf_machine(state: State<'_, AppState>) -> Result<Value, String> {
     use sysinfo::{CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};
     let opencl = state.engine("perf_machine").request(json!({ "cmd": "opencl" })).ok()
-        .map(|r| json!({ "running": r["running"], "devices": r["devices"] }));
+        .map(|mut r| { if let Some(o) = r.as_object_mut() { o.remove("ok"); } r });
     tauri::async_runtime::spawn_blocking(move || {
         let sys = System::new_with_specifics(RefreshKind::nothing().with_cpu(CpuRefreshKind::nothing())
                                                  .with_memory(MemoryRefreshKind::nothing().with_ram()));
@@ -2660,7 +2694,7 @@ fn main() {
             ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, negative_export, list_subfolders, folder_volumes, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
             immich_export_check, immich_search, immich_browse_check, immich_libraries, immich_suggestions, immich_people, immich_tags,
             immich_thumb, immich_resolve, launch_file, path_exists, path_kind, display_scale, trash_files, create_virtual_copy, remove_virtual_copy, hdr_merge, hdr_can_align, pano_merge, pano_preview, pano_can_merge, merge_cancel, preview_fullscreen, about, licenses, engine_quit, keywords, keywords_set, ai_accel,
-            perf_set, perf_trace_start, perf_trace_stop, perf_modules, perf_report_write, perf_machine, perf_ping, resources::perf_resources_start, resources::perf_resources_stop,
+            perf_set, perf_trace_start, perf_trace_stop, perf_modules, perf_report_write, perf_machine, perf_ping, gpu_check_parity, resources::perf_resources_start, resources::perf_resources_stop,
             plugins::plugin_find_apps, plugins::plugin_launch, plugins::plugin_watch, plugins::plugin_cancel, plugins::plugin_job,
             plugins::plugin_returns, plugins::plugin_return_applied
         ])

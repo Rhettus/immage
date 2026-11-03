@@ -230,3 +230,14 @@ The check fits Auto, Level, Vertical and Full before cropping, after cropping
 and after restoring the frame, with intervening renders and applied corrections.
 These fixtures supplement real camera portrait RAWs; they do not establish RAW,
 GPU or visible-app coverage. Run without `--write-corpus` for temporary fixtures.
+
+## GPU check
+
+`python3 -I verify/gpu-parity.py` runs the engine headless on a synthetic
+TIFF: the `opencl` reply's counters, `cl_errors` on `render`, and `parity`
+with both passes on the CPU, whose frames must be identical, plus its pass
+markers on stderr. Without an OpenCL device it also checks that a GPU
+comparison is refused; with `--opencl` on a machine with one, it compares
+the CPU and the GPU and requires ΔE p99 < 2.
+`node --test verify/gpu-check.test.mjs` checks the app's cases against the
+real manifest controls and the pass verdicts. Neither launches the app.

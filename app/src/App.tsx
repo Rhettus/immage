@@ -94,6 +94,7 @@ import { perf, percentiles, pingOnce, roundTrips, STAGES, webviewInfo, observeWe
 import { frameTransport } from "./sharedFrames";
 import { draftScale } from "./pixelRatio";
 import { tunerOptions } from "./tunerOptions";
+import { GPU_CASES, resolveCase, verdict, cpuInGpuPass, tiledInGpuPass, type Parity } from "./gpuCheck";
 import { timeTunerWork } from "./tunerWorkload";
 import { hasPendingTuner } from "./PerformanceTuner";
 import { PerformanceTuner } from "./PerformanceTuner";
@@ -4302,6 +4303,113 @@ export default function App() {
     }
   };
 
+  // Preferences' GPU check (gpuCheck.ts): each case's edit made through
+  // changeMany(), then the engine's CPU and GPU renders of it compared; a
+  // canceled GPU base, then the edit compared again. every control ends
+  // where it started. the report goes beside the GUI benchmark's
+  const runGpuCheck = async (): Promise<{ path: string; passed: number; total: number }> => {
+    const s = session.current;
+    if (!s || benchRunning.current || perf.measuring) throw new Error("no photo open, or a benchmark is running");
+    benchRunning.current = true;
+    const original = { ...s.values };
+    const touched = new Set<string>();
+    const sleep = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
+    const settle = async () => {
+      await sleep(100);
+      const deadline = performance.now() + 120000;
+      while (!s.idle) {
+        if (session.current !== s) throw new Error("photo changed during the GPU check");
+        if (performance.now() > deadline) throw new Error("GPU check timed out waiting for the renderer");
+        await sleep(30);
+      }
+    };
+    const at = new Date();
+    const stamp = at.toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    const opencl = () => invoke<Record<string, unknown>>("perf_machine").then((m) => m.opencl as Record<string, unknown> | null)
+      .catch(() => null);
+    const parity = async (name: string) => {
+      try {
+        return { parity: await invoke<Parity>("gpu_check_parity", { size: 1024, diff: `gpu-${stamp}-${name}` }) };
+      } catch (e) { return { error: String(e) }; }
+    };
+    const restore = async () => {
+      const back = [...touched].filter((id) => s.values[id] !== original[id]).map((id) => [id, original[id]] as [string, number]);
+      if (back.length) { changeMany(back); await settle(); }
+    };
+    try {
+      setZoom("fit");
+      await settle();
+      const before = await opencl();
+      const machine = await invoke<Record<string, unknown>>("perf_machine").catch(() => null);
+      const cases: Record<string, unknown>[] = [];
+      if (before?.running) {
+        for (const c of GPU_CASES) {
+          if (session.current !== s) throw new Error("photo changed during the GPU check");
+          setStatus(`GPU check: ${c.label}`);
+          const r = resolveCase(c, s.values, (id) => controlById.get(id) ?? (id.startsWith("mod_") ? { min: 0, max: 9 } : undefined), choiceShows);
+          if ("skipped" in r) { cases.push({ id: c.id, label: c.label, op: c.op, skipped: r.skipped }); continue; }
+          if (r.entries.length) {
+            r.entries.forEach(([id]) => touched.add(id));
+            changeMany(r.entries);
+            await settle();
+          }
+          const out = await parity(c.id);
+          cases.push({ id: c.id, label: c.label, op: c.op, edits: r.entries, ...out,
+            ...(out.parity ? { ...verdict(out.parity, c.op), cpuModules: cpuInGpuPass(out.parity),
+                               tiledModules: tiledInGpuPass(out.parity) } : { pass: false, reasons: [out.error] }) });
+          await restore();
+        }
+      }
+      // a base render begun on the GPU and canceled by a drag, as
+      // the GUI benchmark's "drag during base": the engine flushes the base
+      // pipe's cache after a GPU stop (main.c, render). the edit compared
+      // again afterwards shows whether the device still renders it alike
+      let cancel: Record<string, unknown> | null = null;
+      const ex = controlById.get("exposure");
+      if (before?.running && ex) {
+        setStatus("GPU check: canceling a GPU render");
+        const from = s.values.exposure ?? ex.neutral ?? 0;
+        touched.add("exposure");
+        change(ex, from + 0.3);
+        await settle();
+        const until = performance.now() + 8000;
+        while (!s.baseRendering && performance.now() < until) await sleep(10);
+        const started = s.baseRendering;
+        dragging.current = loadPreview() !== "quality";
+        for (let i = 1; i <= 20; i++) { change(ex, from + 0.3 + 0.5 * (i <= 10 ? i / 10 : (20 - i) / 10)); await sleep(16); }
+        dragging.current = false;
+        change(ex, from + 0.3);
+        if (draftShown.current || s.pending) s.requestRender();
+        await settle();
+        await sleep(2500);
+        await settle();
+        await restore();
+        const out = await parity("after-cancel");
+        const first = cases.find((c) => c.id === "edit")?.parity as Parity | undefined;
+        cancel = { baseStarted: started, ...out,
+          sameAsBefore: first && out.parity ? Math.abs(first.de.p99 - out.parity.de.p99) < 0.5 : null,
+          ...(out.parity ? verdict(out.parity, "") : { pass: false, reasons: [out.error] }) };
+      }
+      const after = await opencl();
+      const run = cases.filter((c) => !c.skipped);
+      const report = {
+        immage: "gpu-check", version: 1, at: at.toISOString(),
+        app: await invoke<{ app: string; darktable: string }>("about").catch(() => null),
+        machine, configuration: (await tunerOptions(setPerfHud)).map(({ id, current, running }) => ({ id, value: current, ...(running === undefined ? {} : { running }) })),
+        photo: (currentRef.current?.path ?? "").split(/[\\/]/).pop(), size: 1024,
+        opencl: { before, after }, cases, cancel,
+        passed: run.filter((c) => c.pass).length, total: run.length,
+        ...(before?.running ? {} : { error: "no OpenCL device: darktable found none, or OpenCL is off" }),
+      };
+      const path = await invoke<string>("perf_report_write", { name: `gpu-${stamp}`, report });
+      return { path, passed: report.passed, total: report.total };
+    } finally {
+      if (session.current === s) await restore().catch(() => {});
+      dragging.current = false;
+      benchRunning.current = false;
+    }
+  };
+
   // ⌥-click opens a panel alone, as Lightroom's solo mode (Preferences' focus
   // mode makes that the plain click)
   // in focus mode a plain click is the solo one, and ⌥ opens a panel
@@ -5984,6 +6092,11 @@ export default function App() {
                            setPrefsOpen(false);
                            runGuiBenchmark().then(({ path }) => setStatus(`benchmark saved: ${path}`))
                              .catch((e) => setStatus(`benchmark: ${e}`));
+                         } : null}
+                         onGpuCheck={current ? () => {
+                           setPrefsOpen(false);
+                           runGpuCheck().then(({ path, passed, total }) => setStatus(`GPU check saved: ${path} (${passed} of ${total} passed)`))
+                             .catch((e) => setStatus(`GPU check: ${e}`));
                          } : null}
                          onTune={current ? () => { setPrefsOpen(false); setTunerOpen(true); } : null}
                          onRelaunch={async () => {
