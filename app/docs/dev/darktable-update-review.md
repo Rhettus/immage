@@ -2161,3 +2161,14 @@ and OpenCL alpha sampling. Source review confirms that candidate mask distortion
 also uses the coordinate grid, including an input-copy failure fallback; existing
 RGB diagnostics do not exercise that entry point. Runtime mask/alpha validation
 remains open. No production code, pin, default or user-visible behavior changed.
+
+CPU display-alpha preview diagnostic: the isolated old and direct Lensfun
+plugins now support `--geometry --mask-display`. This forces the local CPU
+display-mask interpolation branch and injects a spatial alpha ramp alongside
+signed RGB; actual intermediate RGBA is hashed, with nonfinite alpha rejected.
+At 128x95 with bicubic interpolation, all 24 assigned-profile/direction cases
+match exactly across 2,280 floating RGBA rows and final frames. Evidence is in
+ignored `pixel-lens-alpha-bicubic-128/`; its manifest hashes were independently
+verified. This synthetic unrelated-camera preview does not cover separate
+`distort_mask`, full-size/other-interpolator alpha, or native OpenCL. Production
+behavior and pin remain unchanged.

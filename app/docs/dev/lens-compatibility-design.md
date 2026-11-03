@@ -232,3 +232,14 @@ after preserving this evidence.
 Full-size ratio 0.75 geometry, full-size alternative interpolators,
 mask/alpha behavior, natural-image negatives, matching-camera imports and native
 devices remain outside these results.
+
+CPU display-alpha preview diagnostic: the isolated old and direct Lensfun
+plugins now support `--geometry --mask-display`. This forces the local CPU
+display-mask interpolation branch and injects a spatial alpha ramp alongside
+signed RGB; actual intermediate RGBA is hashed, with nonfinite alpha rejected.
+At 128x95 with bicubic interpolation, all 24 assigned-profile/direction cases
+match exactly across 2,280 floating RGBA rows and final frames. Evidence is in
+ignored `pixel-lens-alpha-bicubic-128/`; its manifest hashes were independently
+verified. This synthetic unrelated-camera preview does not cover separate
+`distort_mask`, full-size/other-interpolator alpha, or native OpenCL. Production
+behavior and pin remain unchanged.

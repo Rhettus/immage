@@ -566,3 +566,12 @@ after preserving this evidence.
 Full-size ratio 0.75 geometry, full-size alternative interpolators,
 mask/alpha behavior, natural-image negatives, matching-camera imports and native
 devices remain outside these results.
+
+For a small CPU display-alpha diagnostic, build both signed plugins with
+`--geometry --mask-display` and pass the same flags to the checker. This forces
+only the local lens CPU mask-display branch, injects a spatial alpha ramp
+`((x + 3*y) % 17) / 16`, and hashes actual intermediate RGBA. The trace's last
+count measures nonfinite alpha in this mode; zero is required. Plugin manifests
+must agree with the checker mode. This does not exercise the separate
+`distort_mask` entry point or prove end-to-end mask display. Use `--size 128`
+for a disk-conscious first pass and retain manifests with the reports.

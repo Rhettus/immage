@@ -62,6 +62,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--geometry', action='store_true',
                         help='Inject at module input and trace RGB after active geometry')
+    parser.add_argument('--mask-display', action='store_true',
+                        help='With --geometry, inject varying alpha and trace real RGBA')
     parser.add_argument('--source', type=Path, required=True,
                         help='Configured source tree for this deployed build')
     parser.add_argument('--input-source', type=Path,
@@ -69,6 +71,8 @@ def main():
     parser.add_argument('--build', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
+    if args.mask_display and not args.geometry:
+        parser.error('--mask-display requires --geometry')
     source, build, output = (p.resolve() for p in (args.source, args.build, args.output))
     if output.exists() or output == source or output == build:
         raise ValueError('output must be a new directory')
@@ -76,7 +80,13 @@ def main():
     input_source = (args.input_source or original).resolve()
     text = input_source.read_text()
     anchor = 'static void _process_lf(dt_iop_module_t *self,'
-    text = replace_once(text, anchor, HELPER + anchor)
+    helper = HELPER
+    if args.mask_display:
+        helper = helper.replace('row[i * ch + 3] = .25f;',
+                                'row[i * ch + 3] = ((x + i + 3*y) % 17) / 16.f;')
+        helper = helper.replace('alpha_changed += row[i * ch + 3] != .25f;',
+                                'alpha_changed += !isfinite(row[i * ch + 3]);')
+    text = replace_once(text, anchor, helper + anchor)
     # Restrict substitutions to _process_lf, excluding CPU factor-grid helpers
     # and OpenCL setup. Both forward and reverse actual-pixel calls are required.
     start = text.index(anchor)
@@ -125,6 +135,13 @@ def main():
   }
   dt_free_align(signed_input);
   delete modifier;''' + tail
+    if args.mask_display:
+        process = replace_once(process,
+            'const dt_dev_pixelpipe_display_mask_t mask_display = piece->pipe->mask_display;',
+            'const dt_dev_pixelpipe_display_mask_t mask_display = DT_DEV_PIXELPIPE_DISPLAY_MASK;')
+        process = replace_once(process, 'packed[4*x+3] = .25f;', 'packed[4*x+3] = row[ch*x+3];')
+        process = process.replace('// Pack RGB; synthetic alpha excludes unspecified output alpha from the hash.',
+                                  '// Trace actual RGBA with the local CPU mask-display branch forced.')
     text = text[:start] + process + text[end:]
     intro = build / 'lib/darktable/plugins/introspection_lens.cc'
     entries = json.loads((build / 'compile_commands.json').read_text())
@@ -168,7 +185,7 @@ def main():
             subprocess.run(cmd, cwd=cwd, stdout=log, stderr=subprocess.STDOUT, check=True)
     hashes = {str(p): hashlib.sha256(p.read_bytes()).hexdigest()
               for p in (original, input_source, src, generated, plugin, build / 'bin/darktable-engine', Path(__file__))}
-    (output / 'manifest.json').write_text(json.dumps({'diagnostic_only': True, 'geometry': args.geometry, 'sha256': hashes,
+    (output / 'manifest.json').write_text(json.dumps({'diagnostic_only': True, 'geometry': args.geometry, 'mask_display': args.mask_display, 'sha256': hashes,
                                                     'compile': command, 'link': link_args}, indent=2) + '\n')
     print(output)
 

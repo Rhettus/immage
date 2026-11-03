@@ -45,10 +45,17 @@ def main():
     for name in ('old', 'direct', 'fixtures', 'photo', 'output'):
         parser.add_argument(f'--{name}', type=Path, required=True)
     parser.add_argument('--geometry', action='store_true')
+    parser.add_argument('--mask-display', action='store_true')
     parser.add_argument('--size', type=int, action='append', default=[])
     parser.add_argument('--interpolation', choices=['bilinear', 'bicubic', 'lanczos2', 'lanczos3'])
     parser.add_argument('--aspect', type=float, choices=[0.75, 1.5])
     args = parser.parse_args()
+    if args.mask_display and not args.geometry:
+        parser.error('--mask-display requires --geometry')
+    for build in (args.old, args.direct):
+        manifest = json.loads((build / 'manifest.json').read_text())
+        if bool(manifest.get('mask_display')) != args.mask_display:
+            raise ValueError('mask-display mode must match both plugin manifests')
     if args.geometry:
         for build in (args.old, args.direct):
             if not json.loads((build / 'manifest.json').read_text()).get('geometry'):
@@ -60,7 +67,7 @@ def main():
         raise ValueError(f'expected 24 assigned fixtures, found {len(fixtures)}')
     sizes = args.size or [512]
     report = {'diagnostic_only': True, 'injection': [-1, -.01, '-0', 0, .01, .5, 1, 2, 10],
-              'geometry': args.geometry, 'photo_sha256': pixels.digest(args.photo), 'interpolation': args.interpolation,
+              'geometry': args.geometry, 'mask_display': args.mask_display, 'photo_sha256': pixels.digest(args.photo), 'interpolation': args.interpolation,
               'pixel_aspect_ratio': args.aspect, 'cases': {}}
     with tempfile.TemporaryDirectory(prefix='immage-signed-lens-') as tmp:
         for fixture in fixtures:
