@@ -3,8 +3,11 @@ import assert from 'node:assert/strict';
 import { until } from './webdriver.mjs';
 
 // Read only. No scrollIntoView: scrolling must go through real wheel input.
-export function inspect(selector) {
-  const e = document.querySelector(selector);
+// With text, the first match whose own text (a menu item's shortcut,
+// <span class="key">, left out) is that text.
+export function inspect(selector, text) {
+  const own = b => [...b.childNodes].filter(n => !n.classList?.contains('key')).map(n => n.textContent).join('').trim();
+  const e = text == null ? document.querySelector(selector) : [...document.querySelectorAll(selector)].find(b => own(b) === text);
   if (!e) return null;
   const r = e.getBoundingClientRect(), s = getComputedStyle(e);
   let clip = { left: 0, top: 0, right: innerWidth, bottom: innerHeight }, scroll, scrollX;
@@ -37,7 +40,7 @@ export function inspect(selector) {
     options: e.options && [...e.options].map(o => ({ value: o.value, label: o.label, disabled: o.disabled })),
   };
 }
-export async function reveal(t, selector) {
+export async function reveal(t, selector, text) {
   // WebKitGTK can ignore a wheel over a visible scrollbar: when the list
   // did not move after the last wheel, aim at its left edge instead.
   // Some lists (Preferences) never move under WebDriver's wheel at all: after
@@ -45,10 +48,10 @@ export async function reveal(t, selector) {
   // into view.
   let lastTop, stuck = 0, tabbed = false;
   return until(async () => {
-    const c = await t.driver.observe(inspect, selector);
-    if (!c) throw Error(`Control is not mounted: ${selector}`);
+    const c = await t.driver.observe(inspect, selector, text);
+    if (!c) throw Error(`Control is not mounted: ${selector}${text == null ? '' : ` "${text}"`}`);
     if (c.visible && c.hit) return c;
-    if (stuck >= 4 && !tabbed && await t.driver.observe(s => document.querySelector(s)?.tabIndex >= 0, selector)) {
+    if (stuck >= 4 && !tabbed && text == null && await t.driver.observe(s => document.querySelector(s)?.tabIndex >= 0, selector)) {
       tabbed = true;
       try { await tabTo(t, selector, 400); } catch {}
       throw Error(`Tabbed to ${selector}`);
