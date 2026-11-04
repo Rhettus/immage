@@ -77,6 +77,8 @@ Bug fixes
   graph's edge.
 - Clicking a slider's track to jump it (to +20, say) changes the photo at
   once; it could keep its old look until the slider was dragged a little.
+- The End key takes the Temp slider to its warmest setting; it had left
+  the slider where it was.
 - Clicking a contrast equalizer point focuses it, so the arrow keys adjust
   that point instead of switching the channel menu.
 - Transform's automatic corrections work on cropped portrait and rotated

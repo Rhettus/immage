@@ -8128,7 +8128,9 @@ const SliderWidget = memo(function SliderWidget({ control: c, value, neutral, di
              style={track ? { ["--track" as string]: track } : undefined}
              className={track ? "custom-track" : ""}
              min={s ? s.min : c.min} max={s ? s.max : c.max} step={s ? s.step : c.step}
-             value={s ? s.toPos(value) : value}
+             // a mapped track's position on its own step: WebKit's range ignores
+             // End from a position just off one (Temp's 0.99999...)
+             value={s ? Math.round(s.toPos(value) / s.step) * s.step : value}
              onChange={(e) => {
                let n = Number(e.target.value);
                const f = fine.current;
