@@ -56,6 +56,13 @@ export async function moduleOutput(t,definition){
   await until(()=>t.driver.observe(()=>!!document.querySelector('.mask-list li.on')),'radial mask created');
  }
  if(option.op==='satcurvergb')return satcurveOutput(t,scope);
+ // Black & White's modules have no sliders of their own: B&W treatment shows them
+ if(choice.id==='bw'&&scope==='global'){
+  const basic=await panel(t,'basic'),before=await settledPhoto(t);
+  await textButton(t,basic,'B&W');const after=await settledPhoto(t,p=>p.hash!==before.hash);
+  t.measure({name:`global/bw/${option.name}`,photoHash:after.hash});await t.evidence('module-effect');
+  await textButton(t,basic,'Color');await settledPhoto(t,p=>p.hash===before.hash);return;
+ }
  const ids=scope==='masks'?option.localControls:option.controls;
  const candidates=[...(ids??[]),...(choice.covers??[]).map(id=>scope==='masks'&&!id.startsWith('l_')?'l_'+id:id)];
  let control;
@@ -65,7 +72,8 @@ export async function moduleOutput(t,definition){
     if(p){const selector=await panel(t,p.id);await expandSections(t,selector);}
   }else{
     const control=inventory.localControls.find(c=>c.id===id);
-    if(control)await locateControl(t,{scope:'local',panel:'masks',control});
+    // a graph's points are no sliders: skip them for the graph branch below
+    if(control)try{await locateControl(t,{scope:'local',panel:'masks',control});}catch(e){if(!(e instanceof Blocked))throw e;}
   }
   const s=`[data-control-id=${JSON.stringify(id)}] input[type=range]`;
   if(await t.driver.observe(s=>{const e=document.querySelector(s);return e&&!e.disabled;},s)){control=s;break;}

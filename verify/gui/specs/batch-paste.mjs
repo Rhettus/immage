@@ -13,7 +13,10 @@ async function value(t, expected) {
 }
 async function typeValue(t, id, v) {
   const basic=await panel(t,'basic');await expandSections(t,basic);
-  const p=await reveal(t,`[data-control-id="${id}"] .value`);
+  // a fold just opened above can still be pushing the number down: aim once it is still
+  let last=null;
+  const p=await until(async()=>{const c=await reveal(t,`[data-control-id="${id}"] .value`);
+    const still=last&&Math.abs(c.y-last.y)<.5;last=c;return still&&c;},`${id} value settled`);
   await t.driver.point(p.x,p.y,2);
   await until(()=>t.driver.observe(id=>!!document.querySelector(`[data-control-id="${id}"] .value-edit`),id),'numeric editor');
   await t.driver.keys(...String(v),'\uE007');

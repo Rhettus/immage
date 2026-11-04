@@ -68,7 +68,8 @@ export async function cropOptions(t) {
     const g = await t.driver.observe(geometry); assert(area(g) > 10); await t.evidence(`aspect-${value.replaceAll(':','-')}`);
   }
   await choose(t, '.crop-aspect select', 'enter-custom', '.crop-custom');
-  for (const [label, number] of [['width','7'], ['height','5']]) {
+  // 7 x 3 matches no preset: a ratio that does (7 x 5) picks the preset instead
+  for (const [label, number] of [['width','7'], ['height','3']]) {
     await click(t, `.crop-custom input[aria-label="${label}"]`);
     await t.driver.chord('\uE009', 'a'); await t.driver.keys(number);
   }

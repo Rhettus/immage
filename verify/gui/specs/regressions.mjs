@@ -7,6 +7,10 @@ import { settledPhoto } from './smoke.mjs';
 
 export async function histogramEndpoints(t){
  if(t.fixture.name!=='endpoints')throw new Blocked('Requires --fixture endpoints');
+ // the tone mapper puts the white half near 86%: Exposure at its top clips it
+ // to the histogram's last column, and the black half stays in the first
+ await panel(t,'basic');const before=await settledPhoto(t),ev=await reveal(t,'[data-control-id="exposure"] input[type=range]');
+ await t.driver.point(ev.x,ev.y);await t.driver.keys('\uE010');await settledPhoto(t,p=>p.hash!==before.hash);
  const pixels=await until(()=>t.driver.observe(()=>{
   const c=document.querySelector('.hist-area canvas');if(!c?.width)return null;
   const ctx=c.getContext('2d'),d=ctx.getImageData(0,0,c.width,c.height).data;
@@ -71,7 +75,7 @@ export async function detailWithoutLoupe(t){
  await click(t,'button[data-tour="prefs"]');await textButton(t,'.prefs-tabs','General');
  const toggle='[data-pref-label="Detail loupe"] input[type=checkbox]';if((await reveal(t,toggle)).checked)await click(t,toggle);
  await textButton(t,'.prefs-foot','Done');await panel(t,'basic');
- const before=await settledPhoto(t),s=await reveal(t,'[data-control-id="clarity"] input[type=range]');
+ const before=await settledPhoto(t),s=await reveal(t,':is([data-control-id="clarity"],[data-control-id^="detail_clarity_"]) input[type=range]');
  await t.driver.drag({x:s.x,y:s.y},{x:s.x+s.bounds.width*.1,y:s.y});
  const after=await settledPhoto(t,p=>p.hash!==before.hash);
  assert.equal(after.width,before.width);assert.equal(after.height,before.height);assert(!await t.driver.observe(()=>!!document.querySelector('.detail-loupe')));

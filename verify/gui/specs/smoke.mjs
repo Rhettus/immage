@@ -26,17 +26,22 @@ export async function startup(t) {
   // sending input. The pointer still goes through the real control.
   const touring = await t.driver.observe(() => !!document.querySelector('.tour'));
   if (touring) {
-    let previous, matches = 0;
-    const p = await until(async () => {
-      const now = await t.driver.observe(read.button, 'Skip');
-      if (!now) return false;
-      if (previous && Math.abs(now.x - previous.x) < .5 && Math.abs(now.y - previous.y) < .5) matches++;
-      else matches = 0;
-      previous = now;
-      return matches >= 3 && now;
-    }, 'stable, clickable tour Skip button');
-    await t.driver.point(p.x, p.y);
-    await until(() => t.driver.observe(() => !document.querySelector('.tour')), 'tour closed');
+    // a tiling window manager can resize the new window just after Skip
+    // settles, so a click can land where the button was; find it again
+    for (let attempt = 1; ; attempt++) {
+      let previous, matches = 0;
+      const p = await until(async () => {
+        const now = await t.driver.observe(read.button, 'Skip');
+        if (!now) return false;
+        if (previous && Math.abs(now.x - previous.x) < .5 && Math.abs(now.y - previous.y) < .5) matches++;
+        else matches = 0;
+        previous = now;
+        return matches >= 3 && now;
+      }, 'stable, clickable tour Skip button');
+      await t.driver.point(p.x, p.y);
+      try { await until(() => t.driver.observe(() => !document.querySelector('.tour')), 'tour closed', 3000); break; }
+      catch (e) { if (attempt >= 3) throw e; }
+    }
   }
   await t.evidence('opened');
   const initial = await settledPhoto(t);

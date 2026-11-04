@@ -229,7 +229,7 @@ export async function negative(t) {
   const baseline=await settledPhoto(t);
   await prepareNegative(t);
   await settledPhoto(t,p=>p.hash!==baseline.hash); await t.evidence('converted');
-  await textButton(t,'.negative','Turn Off Conversion'); await settledPhoto(t,p=>p.hash===baseline.hash);
+  await textButton(t,'.positive-foot','Turn Off Conversion'); await settledPhoto(t,p=>p.hash===baseline.hash);
 }
 // the Film Simulation panel: on, a preset, a film, then off again to the
 // photo as it was. needs the data pack already installed: the case does not
@@ -275,8 +275,14 @@ export async function zones(t) {
 }
 
 export async function prepareNegative(t) {
+  // the tool opens only after its warning is confirmed, so answer that first
+  const b=await reveal(t,'button[data-tour="negative"]');
+  if(!b.active){
+    await click(t,'button[data-tour="negative"]');
+    const warned=await until(()=>t.driver.observe(()=>document.querySelector('.neg-warn')?'warn':document.querySelector('button[data-tour="negative"]:is(.on,.active)')?'open':''),'negative warning or tool',10000).catch(()=>'');
+    if(warned==='warn') await textButton(t,'.neg-warn','Continue');
+  }
   await openTool(t,'negative');
-  if(await t.driver.observe(()=>!!document.querySelector('.neg-warn'))) await textButton(t,'.neg-warn','Continue');
   await textButton(t,'.negative','Pick Film Border');
   const c=await reveal(t,'.zone-object-box'); await t.driver.point(c.bounds.x+c.bounds.width*.02,c.bounds.y+c.bounds.height*.02);
   await until(()=>t.driver.observe(()=>!!document.querySelector('.neg-swatch')),'negative converted');

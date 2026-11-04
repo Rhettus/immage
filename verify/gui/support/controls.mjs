@@ -4,9 +4,9 @@ import { until } from './webdriver.mjs';
 
 // Read only. No scrollIntoView: scrolling must go through real wheel input.
 // With text, the first match whose own text (a menu item's shortcut,
-// <span class="key">, left out) is that text.
+// <span class="key">, and a filter row's tick and count left out) is that text.
 export function inspect(selector, text) {
-  const own = b => [...b.childNodes].filter(n => !n.classList?.contains('key')).map(n => n.textContent).join('').trim();
+  const own = b => [...b.childNodes].filter(n => !['key', 'tick', 'count'].some(c => n.classList?.contains(c))).map(n => n.textContent).join('').trim();
   const e = text == null ? document.querySelector(selector) : [...document.querySelectorAll(selector)].find(b => own(b) === text);
   if (!e) return null;
   const r = e.getBoundingClientRect(), s = getComputedStyle(e);

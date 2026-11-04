@@ -61,21 +61,33 @@ export async function expandSections(t, selector) {
         return `${s} button[data-detail-id=${JSON.stringify(e.dataset.detailId)}]`;
       return null;
     }, selector);
-    if (!target) return;
+    if (!target) return settledHeight(t, selector);
     // a fold opened a moment ago is still animating its height, moving the
     // folds below it: aim only once the target has stopped moving
+    // a heading can unmount meanwhile (the panel rerendered): look again
     let last = null;
-    await until(async () => {
-      const y = await t.driver.observe(s => document.querySelector(s)?.getBoundingClientRect().top, target);
+    const settled = await until(async () => {
+      const y = await t.driver.observe(s => document.querySelector(s)?.getBoundingClientRect().top ?? null, target);
+      if (y === null) return 'gone';
       const still = last !== null && Math.abs(y - last) < 0.5;
-      last = y; return still;
+      last = y; return still && 'still';
     }, 'section heading settled');
+    if (settled === 'gone') continue;
     await click(t, target);
     await until(() => t.driver.observe(s => {
       const e = document.querySelector(s); return e?.getAttribute('aria-expanded') === 'true' || !!e?.querySelector('.chevron.open');
     }, target), 'section expanded');
   }
   throw Error('Section expansion exceeded limit');
+}
+// the last fold opened animates its height and moves every control below it:
+// wait for the panel's content to stop growing before aiming at one
+async function settledHeight(t, selector) {
+  let last = null;
+  await until(async () => {
+    const h = await t.driver.observe(s => document.querySelector(s)?.scrollHeight ?? 0, selector);
+    const still = last !== null && h === last; last = h; return still;
+  }, 'panel height settled');
 }
 
 // Open a mask adjustment group (Tone, Presence, ...) if it is closed. Its
