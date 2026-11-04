@@ -51,7 +51,11 @@ const DETAIL = Object.fromEntries(["detail_clarity", "detail_texture", "l_detail
   .flatMap((p) => ["detail_level", "halo_control", "noise_bias"].map((f) =>
     [`${p}_${f}`, { with: { [`${p}_gain_medium`]: 1 }, detail: true,
                    // its default 0.001 is next to its lower end
-                   ...(f === "noise_bias" ? { values: [0.6] } : {}) }])));
+                   ...(f === "noise_bias" ? { values: [0.6] } : {}) }]))
+  // a downscaled frame drops the fine levels (contrastntexture.c,
+  // modify_roi_in), so only a 100% crop shows fine details
+  .concat(["detail_clarity", "detail_texture", "l_detail_clarity", "l_detail_texture"]
+    .map((p) => [`${p}_gain_fine`, { detail: true }])));
 
 export const GLOBAL = {
   bw_mode: { values: [1], mono: true },
