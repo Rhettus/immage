@@ -82,6 +82,9 @@ Performance
 
 Bug fixes
 
+- Basic's Auto adds about half as much Contrast to a flat photo. Its
+  Whites and Blacks already widen the photo's tones, and the extra
+  Contrast on top often looked too strong.
 - Switching from a folder on a slow network share to one on your own drive
   no longer waits for the share's photos to finish reading. Before, the new
   folder, and opening a photo, could wait a minute or more over wifi.

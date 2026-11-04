@@ -73,7 +73,9 @@ for **B&W Mix**.
   Such a scene also keeps its shadows unlifted, or its highlights and
   blacks untouched. A photo with nothing dark in it, such as a plane
   against clear sky, keeps its blacks too, rather than its sky being
-  darkened. Under AgX it also sets AgX's range.
+  darkened. A flat photo gets only a moderate Contrast boost, since
+  Whites and Blacks already widen its tones. Under AgX it also sets AgX's
+  range.
 - **Exposure**: -5 to +5 stops.
 - **Contrast**, **Highlights**, **Shadows**, **Whites**, **Blacks**: -100 to
   +100. Whites moves the top of the tone mapper's curve, and under AgX
