@@ -119,7 +119,7 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
                              onInvert, onOpacity, onRefine, onHidden, onDuplicate, onDelete, onRename, onPeek,
                              onBrush, onOverlay, onLocal, onRange, onDepth, onFeather, onAi, aiBusy, focusMode,
                              picked, pickShow, pickSet, onParametric, onPickShow, onPickSet, onPickTab, fresh, mono, photo,
-                             onHslShown }: {
+                             onHslShown, presenceLoupe }: {
   masks: Mask[]; selected: string | null; shape: number;
   tool: MaskTool | null; target: ToolTarget; brush: BrushSettings; overlay: boolean; disabled: boolean;
   raw: boolean;                              // detail refinement needs a raw
@@ -158,6 +158,7 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
   onPickSet: (channel: BlendifChannel | null) => void;
   onPickTab: (channel: BlendifChannel | null) => void;
   fresh: { name: string; n: number } | null;   // the mask just created: its Tone opens
+  presenceLoupe?: React.ReactNode;          // the detail loupe, atop Presence as in the main panel
   onHslShown: (shown: boolean) => void;      // the HSL group is open, so the photo under the pointer is wanted
 }) {
   // a mask's overlay shows once the pointer has rested on its name a
@@ -475,7 +476,8 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
                   ? <>{groupBody(title, ids.filter((id) => id !== "l_contrast"))}
                       <ContrastEqualizer values={m.values} disabled={disabled}
                         onChange={(entries) => entries.forEach(([id, v]) => local(id, v))} /></>
-                  : groupBody(title, ids.filter((id) => choiceShows(id, { ...photo, ...m.values })))}
+                  : <>{title === "Presence" && presenceLoupe}
+                      {groupBody(title, ids.filter((id) => choiceShows(id, { ...photo, ...m.values })))}</>}
               </Collapse>
             </section>
           ))}

@@ -11,7 +11,7 @@ apply as you make them; **Done** closes the window.
 **Workspace**
 
 - **Detail loupe**: optional compact 100% previews above Detail and Presence,
-  off by default. Both show the same area. Use the point picker, then click
+  in Adjustments and in a mask's Presence group, off by default. Both show the same area. Use the point picker, then click
   the photo to choose it; Escape cancels. Turning it off stops loupe rendering.
 - **Open generated photos**: automatically opens HDR merges, panoramas, AI
   denoise results, positive exports and the first plugin result for editing.

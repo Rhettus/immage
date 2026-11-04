@@ -111,7 +111,8 @@ The selected mask's sliders sit below its settings, in six groups:
 - **Tone**: **Exposure** (±4), **Contrast**, **Highlights**, **Shadows**,
   **Whites**, **Blacks**
 - **Presence**: **Texture**, **Clarity**, **Dehaze**, **Hue**,
-  **Saturation**
+  **Saturation**; with **Detail loupe** on in Preferences, the 100% loupe
+  sits at the top, sharing the main panel's area and point picker
 - **HSL**: **Hue**, **Saturation** and **Luminance** tabs, each with the
   eight color bands
 - **Color Grading**: **3-Way**, **Global** or **Sliders**, for shadows,

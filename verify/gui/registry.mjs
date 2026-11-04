@@ -24,7 +24,7 @@ const implementations = { 'batch-paste': batchPaste, startup, splash, exposure, 
   'preferences-matrix':dialogs.preferencesMatrix,'slider-wheel':dialogs.sliderWheel,'export-options':dialogs.exportOptions,
   filters:dialogs.filters,presets:dialogs.presets,shortcuts:dialogs.shortcuts,
   'histogram-endpoints':regressions.histogramEndpoints,'preview-alignment':regressions.previewAlignment,
-  'loupe-grid':regressions.loupeGrid,'detail-without-loupe':regressions.detailWithoutLoupe,'camera-body':regressions.cameraBody,
+  'loupe-grid':regressions.loupeGrid,'mask-loupe':regressions.maskLoupe,'detail-without-loupe':regressions.detailWithoutLoupe,'camera-body':regressions.cameraBody,
   'rejected-deletion':regressions.rejectedDeletion,'folder-race':regressions.folderRace,panorama,'immich-workflow':immichWorkflow,
   'site-shots':siteShots,
 };

@@ -4568,18 +4568,23 @@ export default function App() {
     if (a && zonesOpen) readProbe(a.x, a.y);
   }, [zoneData]);   // eslint-disable-line react-hooks/exhaustive-deps
 
-  const onPointerDown = (e: React.PointerEvent<HTMLElement>) => {
-    if (loupePicking && loupeEnabled) {
-      const { sx, sy } = paneXY(e.clientX, e.clientY);
-      const { ix, iy } = imageAt(sx, sy);
-      if (ix >= 0 && ix <= 1 && iy >= 0 && iy <= 1) {
-        loupePositionRef.current = { x: ix, y: iy };
-        setLoupePosition({ x: ix, y: iy });
-        setLoupePicking(false);
-        session.current?.requestLoupe();
-      }
-      return;
+  // in the capture phase, so a mask tool or handle under the pointer
+  // (MaskOverlay stops propagation) cannot take the loupe's click
+  const onLoupePickDown = (e: React.PointerEvent<HTMLElement>) => {
+    if (!(loupePicking && loupeEnabled)) return false;
+    e.stopPropagation();
+    e.preventDefault();
+    const { sx, sy } = paneXY(e.clientX, e.clientY);
+    const { ix, iy } = imageAt(sx, sy);
+    if (ix >= 0 && ix <= 1 && iy >= 0 && iy <= 1) {
+      loupePositionRef.current = { x: ix, y: iy };
+      setLoupePosition({ x: ix, y: iy });
+      setLoupePicking(false);
+      session.current?.requestLoupe();
     }
+    return true;
+  };
+  const onPointerDown = (e: React.PointerEvent<HTMLElement>) => {
     if (lineRef.current) return;
     if (!current || croppingRef.current || !viewZ.current) return;
     if (pickingRef.current) {
@@ -5382,7 +5387,7 @@ export default function App() {
                 onChange={(v) => setLayout((l) => ({ ...l, leftWidth: v }))} />
       <section className="center">
         <main data-tour="viewer" className={`viewer zoom-${zoom === "fit" ? "fit" : "in"}${picking || loupePicking ? " picking" : ""}${aiBusy ? " busy" : ""}${straightening || line || (shiftHeld && current && (cropping || (!masksMode && !healMode)) && !preview) ? " straightening" : ""}${canvasColor !== "dark" ? ` canvas-${canvasColor}` : ""}${baMode === "overlay" ? " hold-view" : ""}${optPreview?.kind === "gray" ? " gray-view" : ""}`} ref={viewer}
-              onPointerDownCapture={onStraightenDown}
+              onPointerDownCapture={(e) => { if (!onLoupePickDown(e)) onStraightenDown(e); }}
               onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
               onPointerLeave={leaveProbe}>
           <div ref={pane} className={`after-pane${baMode === "side" ? " half" : compare !== null ? " half-left" : ""}`}>
@@ -5685,7 +5690,7 @@ export default function App() {
                           setMaskTool(t); setToolTarget(target);
                         }}
                         onAi={(kind, target) => void selectAi(kind, target)}
-                        aiBusy={aiBusy} focusMode={focusMode}
+                        aiBusy={aiBusy} focusMode={focusMode} presenceLoupe={renderLoupe("mask-presence")}
                         onSelect={(name) => { setMaskSel(name); setShapeSel(0); }}
                         onShape={setShapeSel}
                         onShapeMode={(k) => editShapes((sh) => sh.map((x, i) => (i === k

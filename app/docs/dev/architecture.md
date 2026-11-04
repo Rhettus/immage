@@ -681,6 +681,14 @@ native loupe rendering. Detail and grain drags start directly in the loupe at
 the display scale, without probing whole-image rendering first. Disabling the
 loupe keeps eligible detail drags at full visible preview resolution. Release renders the exact full view.
 
+`renderLoupe(id)` in `App.tsx` builds each loupe; every mounted display
+registers in `loupeDisplays` by id and is redrawn from the shared
+`loupeCanvas`. The main panel passes `detail` and `presence`; MasksPanel
+takes `presenceLoupe` (id `mask-presence`) and shows it atop its Presence
+group. The point pick runs in the viewer's pointer-down capture phase
+(`onLoupePickDown`), ahead of MaskOverlay's handles and brush, which stop
+propagation.
+
 In headless screen pipes, the engine pixelpipe patch retains the last edited
 module's input and the scaled output of `demosaicscale`, identified at the next
 active piece. Three recent scaled checkpoints survive ordinary replacement;

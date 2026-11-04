@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from 'node:assert/strict';
-import { click,reveal,inspect } from '../support/controls.mjs';
-import { panel,textButton,Blocked } from '../support/scenario.mjs';
+import { click,reveal,inspect,openTool } from '../support/controls.mjs';
+import { panel,textButton,Blocked,openMaskGroup } from '../support/scenario.mjs';
 import { until,pause } from '../support/webdriver.mjs';
 import { settledPhoto } from './smoke.mjs';
 
@@ -38,6 +38,33 @@ export async function loupeGrid(t){
  await pause(1000);const before=await count();assert(before>0,'loupe must render before grid assertion');await pause(1500);const after=await count();
  assert.equal(after,before,'grid must not deliver more loupe frames after draining');await t.evidence('loupe-grid-paused');
  await click(t,'.grid-toggle');
+}
+export async function maskLoupe(t){
+ await click(t,'button[data-tour="prefs"]');await textButton(t,'.prefs-tabs','General');
+ const toggle='[data-pref-label="Detail loupe"] input[type=checkbox]';if(!(await reveal(t,toggle)).checked)await click(t,toggle);
+ await textButton(t,'.prefs-foot','Done');
+ await openTool(t,'masks');await click(t,'.create-mask');await textButton(t,'.shape-menu-list','Brush');
+ const svg=await reveal(t,'svg.mask-svg');
+ await t.driver.drag({x:svg.x-svg.bounds.width*.1,y:svg.y},{x:svg.x+svg.bounds.width*.1,y:svg.y});
+ await until(()=>t.driver.observe(()=>document.querySelectorAll('.mask-list > li').length>0),'brush mask created');
+ await openMaskGroup(t,'Presence');
+ const loupe='.masks-panel [data-mask-group="Presence"] ~ * .detail-loupe';
+ await until(()=>t.driver.observe(s=>{const c=document.querySelector(`${s} canvas`);return c?.width>0&&getComputedStyle(c).display!=='none';},loupe),'visible mask loupe');
+ const shown=await reveal(t,`${loupe} canvas`);
+ assert(shown.bounds.width>=100&&shown.bounds.height>=100,'mask loupe canvas has the main panel loupe size');
+ await t.evidence('mask-loupe-shown');
+ // pick a point with the brush still armed: the click must move the loupe, not paint
+ const before=await settledPhoto(t);
+ const count=()=>t.driver.observe(()=>Number(document.documentElement.dataset.loupeFrames??0));
+ const frames=await count();
+ await click(t,`${loupe} button[aria-label="Pick mask-presence loupe point"]`);
+ await until(()=>t.driver.observe(s=>document.querySelector(`${s} button`)?.getAttribute('aria-pressed')==='true',loupe),'picker armed');
+ const at=await reveal(t,'svg.mask-svg');await t.driver.point(at.x+at.bounds.width*.3,at.y+at.bounds.height*.3);
+ await until(()=>t.driver.observe(s=>document.querySelector(`${s} button`)?.getAttribute('aria-pressed')==='false',loupe),'picker released after the click');
+ await until(async()=>await count()>frames,'loupe rendered the picked point');
+ const after=await settledPhoto(t);
+ assert.equal(after.hash,before.hash,'loupe pick must not paint a brush stroke');
+ t.measure({name:'mask-loupe',loupe:shown.bounds,framesBefore:frames,framesAfter:await count()});await t.evidence('mask-loupe-picked');
 }
 async function requireLoupe(t){await until(()=>t.driver.observe(()=>{const c=document.querySelector('.detail-loupe canvas');return c?.width>0&&getComputedStyle(c).display!=='none';}),'visible loupe');}
 export async function detailWithoutLoupe(t){

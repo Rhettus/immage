@@ -48,6 +48,7 @@ export const cases = {
   'histogram-endpoints':{scope:'visible histogram endpoint columns',fixture:'endpoints',commits:['de6adf7'],liveValidated:false},
   'preview-alignment':{scope:'scaled final frame geometry after drag',commits:['630672c'],liveValidated:false},
   'loupe-grid':{scope:'loupe delivered-frame counter remains stable in grid',commits:['29b1591'],liveValidated:false},
+  'mask-loupe':{scope:'loupe atop a mask\'s Presence; picking with the brush armed moves it without painting',liveValidated:true},
   'detail-without-loupe':{scope:'detail effect and final dimensions without loupe',commits:['f023c4f'],liveValidated:false},
   'camera-body':{scope:'independent same-model body serial options and missing serial',fixture:'camera-a',commits:['7b20937'],liveValidated:false},
   'rejected-deletion':{scope:'reject copied fixture; deletion blocked by native confirmation boundary',commits:['baa8def'],liveValidated:false},

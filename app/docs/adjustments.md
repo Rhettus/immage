@@ -181,7 +181,8 @@ to 0.
 ## Detail
 
 Enable **Detail loupe** in Preferences › General › Workspace for compact
-100% previews above Detail and Presence. Their point pickers select the same
+100% previews above Detail and Presence (a mask's Presence group shows
+one too). Their point pickers select the same
 area. Detail and grain drags preview that area directly; with the loupe off,
 they keep the visible image at full preview resolution. Release updates the
 full visible view. Tone and contrast controls retain whole-image previews.
