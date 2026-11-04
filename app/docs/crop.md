@@ -32,6 +32,13 @@ and aspect ratio.
 - Click the straighten button (the ruler), then drag along something that
   should be level or upright.
 - Or hold ⇧ and drag anywhere on the photo.
+- Or click **Auto**, beside the Rotate slider, to level the photo from its
+  own straight lines. It sets Rotate only, using Transform's Upright
+  **Level** fit, and is unavailable while Upright is on, since Upright
+  already sets the angle. A photo without enough straight lines shows a
+  note instead. Auto weighs every straight line it finds, so on a landscape
+  where slopes and ridges outnumber the horizon it can miss; draw a
+  straighten line along the horizon instead.
 - Or use the **Rotate** slider, which is the same as Transform's.
 
 ## Rotating and flipping

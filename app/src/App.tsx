@@ -16,7 +16,7 @@ import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { BANDS, choiceOn, choiceShows, controlById, GUIDE_IDS, guidesOf, isModuleSetting, MAX_GUIDES, parametricOf, UPRIGHT_GUIDED,
-         UPRIGHT_MODES, uprightAspect, mapOf, mapsFor, moduleName, mapsWith, NEG_CHOICES, NEG_GREYED, NEG_OFF,
+         UPRIGHT_MODES, uprightAspect, rotateOf, mapOf, mapsFor, moduleName, mapsWith, NEG_CHOICES, NEG_GREYED, NEG_OFF,
          NEG_OFF_UNMAPPED, SF_CHOICES, SF_GREYED, SF_OFF, SF_OFF_UNMAPPED, panels, pointsOf, pointValues, profileLabel, turnRect, type Control, type ControlPreset, type CurveChannel, type Values,
          type Panel, type Section, type Turn } from "./manifest";
 import { autoArea, autoBlack, autoDmax, autoDmin, autoExposure as autoPrintExposure, autoOffset, autoWbHigh, autoWbLow,
@@ -2383,6 +2383,30 @@ export default function App() {
                   ["tf_vertical", 0], ["tf_horizontal", 0], ["tf_rotate", 0]], `Upright ${UPRIGHT_MODES[mode]}`);
     } catch (e) {
       if (session.current === s) setUprightNote(String(e));
+    } finally {
+      busyUpright(false);
+    }
+  };
+
+  // the crop tool's Auto, as Lightroom's: Upright's Level fit, kept in
+  // Rotate alone, so the Upright section stays Off
+  const [autoAngleNote, setAutoAngleNote] = useState<string | null>(null);
+  const runAutoStraighten = async () => {
+    const s = session.current;
+    if (!s || uprightBusyRef.current || (s.values.tf_upright ?? 0) !== 0) return;
+    setAutoAngleNote(null);
+    busyUpright(true);
+    try {
+      await s.settled();
+      if (session.current !== s) return;
+      const r = await invoke<UprightFit>("upright", { mode: "level", aspect: uprightAspect(s.values, s.context) });
+      if (session.current !== s) return;
+      const c = controlById.get("tf_rotate")!;
+      const to = Math.round(Math.min(c.max, Math.max(c.min, rotateOf(r.rotation, s.values.tf_base_r ?? 0, s.context)))
+                            / c.step) * c.step;
+      if (to !== (s.values.tf_rotate ?? 0)) changeMany([["tf_rotate", to]], "Auto Straighten");
+    } catch (e) {
+      if (session.current === s) setAutoAngleNote(String(e));
     } finally {
       busyUpright(false);
     }
@@ -4825,6 +4849,7 @@ export default function App() {
     croppingRef.current = false;
     setCropping(false);
     setStraightening(false);
+    setAutoAngleNote(null);
     if (apply) {
       const { rect, aspect, choices } = cropRef.current;
       const a = findAspect(aspect, choices);
@@ -6011,7 +6036,12 @@ export default function App() {
                   <Slider control={controlById.get("tf_rotate")!} value={values.tf_rotate ?? 0} neutral={0}
                           disabled={!current} values={values}
                           onChange={(v) => change(controlById.get("tf_rotate")!, v)} />
+                  <button className="btn small" disabled={!current || uprightBusy || (values.tf_upright ?? 0) !== 0}
+                          title={(values.tf_upright ?? 0) !== 0 ? "Upright sets the angle: turn Upright off to level from here"
+                                                                : "level the photo from its straight lines"}
+                          onClick={() => void runAutoStraighten()}>Auto</button>
                 </div>
+                {autoAngleNote && <div className="note-plain">{autoAngleNote}</div>}
                 <div className="row-label">Rotate &amp; Flip</div>
                 <div className="crop-turn">
                   <button className="tool" title={keys("rotate left (⌘[)")} onClick={() => void turn("ccw")}><RotateIcon /></button>

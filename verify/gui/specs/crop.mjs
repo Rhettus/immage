@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from 'node:assert/strict';
-import { click, reveal } from '../support/controls.mjs';
-import { textButton, choose } from '../support/scenario.mjs';
+import { click, inspect, reveal } from '../support/controls.mjs';
+import { Blocked, textButton, choose, panel } from '../support/scenario.mjs';
 import { until } from '../support/webdriver.mjs';
 import { settledPhoto } from './smoke.mjs';
 function geometry() {
@@ -82,4 +82,37 @@ export async function cropOptions(t) {
     await click(t, `.crop-turn button[title^=${JSON.stringify(title)}]`); await t.evidence(title.replace(/[^a-z]/g,'-'));
   }
   await textButton(t, '.crop-buttons', 'Cancel');
+}
+// the crop tool's Auto: Upright's Level fit, kept in Rotate alone. it
+// needs a fixture with straight lines; one without them blocks the case
+export async function cropAutoStraighten(t) {
+  const baseline = await settledPhoto(t); await enter(t);
+  const rotate = '.crop-angle [data-control-id="tf_rotate"] input[type=range]';
+  const before = +(await t.driver.observe(inspect, rotate)).value;
+  await textButton(t, '.crop-angle', 'Auto');
+  const outcome = await until(() => t.driver.observe((s, b) => {
+    const note = document.querySelector('.crop-angle + .note-plain')?.textContent;
+    const v = +document.querySelector(s)?.value;
+    return note ? { note } : v !== b ? { value: v } : false;
+  }, rotate, before), 'Auto sets Rotate or reports why not', 30000);
+  if (outcome.note) throw new Blocked(`fixture has no level fit: ${outcome.note}`);
+  assert(Math.abs(outcome.value) <= 45, 'Rotate stays in its range');
+  t.measure({ name: 'auto-straighten', before, after: outcome.value }); await t.evidence('auto-straighten');
+  // Cancel keeps Rotate, which is not the crop's to undo; Done would add
+  // a Crop step (an uncropped photo gains the Original aspect), and the
+  // one undo below would take that instead of Auto's
+  await textButton(t, '.crop-buttons', 'Cancel');
+  const levelled = await settledPhoto(t, p => p.hash !== baseline.hash); await t.evidence('auto-straighten-applied');
+  await click(t, 'button.tool[title^="undo ("]');
+  await settledPhoto(t, p => p.hash === baseline.hash); await t.evidence('auto-straighten-undone');
+  // with Upright on, the angle is Upright's: Auto is unavailable
+  // Upright's buttons are icons, named by aria-label
+  await panel(t, 'transform'); await click(t, '.upright-tools button[aria-label="Auto"]');
+  await settledPhoto(t, p => p.hash !== baseline.hash && p.hash !== levelled.hash);
+  await enter(t);
+  assert((await t.driver.observe(inspect, '.crop-angle button', 'Auto')).disabled, 'Auto disabled while Upright is on');
+  await t.evidence('auto-straighten-upright');
+  await textButton(t, '.crop-buttons', 'Cancel');
+  await click(t, 'button.tool[title^="undo ("]');
+  await settledPhoto(t, p => p.hash === baseline.hash);
 }

@@ -31,6 +31,9 @@ export const cases = {
   'crop-locked': {scope:'all locked corners, single-axis inward drags',commits:['b22bd4b'],liveValidated:false},
   'crop-portrait': {scope:'EXIF portrait orientation, resize all edges',commits:['1f2f8b8'],fixture:'portrait',liveValidated:false},
   'crop-options': {scope:'every aspect, custom entry, cancel, rotation/flip',liveValidated:false},
+  'crop-auto-straighten': {scope:'crop Auto sets Rotate from the Level fit, kept after Cancel, undone in one step; disabled while Upright is on',liveValidated:true,
+    verification:'Linux ARM64, system WebKitGTK 2.54.2, Wayland, DPR 2, fixture P1030105.RW2 (Rotate +1.9); run 2026-11-04T15-39-13.889Z_73c0bc2_c06b6626.',
+    limitation:'Needs a photo with straight lines (blocked otherwise), such as the corpus street scene P1030105.RW2 (Level fit -1.67, Rotate about +1.7); does not check the angle against a known tilt.'},
   'native-reset': {scope:'native Contrast edit, Reset All and undo with sidecar evidence',commits:['b1d7c4c'],liveValidated:false,limitation:'Does not seed hidden nondefault native parameters; original trigger remains incompletely covered.'},
   curves:{scope:'point curve: add/lift/double-click removal per channel with distinct photos, black point lift and corner clamp, 20-point limit, drag-off removal, Reset All, parametric switch',liveValidated:true},
   wheels:{scope:'3-way/global wheel changes, reset and slider view',liveValidated:false},
@@ -64,7 +67,7 @@ export const cases = {
 };
 export const suites = {
   smoke: ['startup', 'exposure'],
-  crop: ['startup','crop-guides','crop-locked','crop-options'],
+  crop: ['startup','crop-guides','crop-locked','crop-options','crop-auto-straighten'],
   workflows: ['startup','curves','wheels','equalizer','saturation-curve','masks','heal','zones','film','preferences-matrix','slider-wheel','export-options','filters','presets','shortcuts'],
   inventory: ['startup',...generatedNames],
   regressions: ['startup', 'rail', 'panel-scroll', 'module-options', 'batch-paste'],

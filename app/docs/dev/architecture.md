@@ -293,7 +293,11 @@ ashift.c revision it was copied from. Compare the two when taking a new
 darktable release. `upright` in main.c reads the image as it enters
 rotate and perspective from the preview pipe (`_working_at`,
 `_STAGE_ASHIFT`). `points` maps points between the shown image and the
-input, for Guided's guides.
+input, for Guided's guides. The crop tool's Auto (`runAutoStraighten` in
+App.tsx) asks `upright` for the `level` fit and writes only `tf_rotate`,
+converted by `rotateOf` in manifest.ts as `transformMap.read` does, so
+`tf_upright` and the `tf_base_*` fit stay untouched; it is disabled while
+Upright is on.
 
 [`engine/hdrmerge.c`](../../../engine/hdrmerge.c) is HDR Merge:
 darktable's HDR merge of raw brackets into a float DNG, which darktable

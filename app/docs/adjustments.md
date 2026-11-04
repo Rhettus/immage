@@ -290,7 +290,8 @@ darktable's line detection and fit from its rotate and perspective module:
 
 - **Auto**: levels the photo and makes vertical lines plumb. It corrects
   horizontal lines too when the photo has enough of them.
-- **Level**: rotation only.
+- **Level**: rotation only. The crop tool's **Auto** uses the same fit
+  but sets Rotate instead.
 - **Vertical**: level, with vertical lines made plumb.
 - **Full**: level, with vertical and horizontal lines both corrected.
 - **Guided**: drag along two to four lines that should be plumb or level.

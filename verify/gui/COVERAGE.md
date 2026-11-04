@@ -129,6 +129,9 @@ compensation and the tone mapper have no written case yet: a coverage gap,
 not a pass.
 
 Written cases now include crop guides/locked corners/portrait edges/aspects,
+crop Auto straighten (and Auto's being disabled while Upright is on; passed
+live on Linux 2026-11-04 with P1030105.RW2, run
+`2026-11-04T15-39-13.889Z_73c0bc2_c06b6626`),
 curves, wheels, equalizer bands, masks, heal, negative conversion, film
 simulation (on, the Film and Paper menus, a preset, off; the runner copies the
 installed data pack into the run's profile; passed live on Linux 2026-11-03), zones,

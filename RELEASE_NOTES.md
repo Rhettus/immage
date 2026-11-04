@@ -14,6 +14,8 @@ Improvements
   has darktable's presets, film and paper menus, the main exposure, color,
   grain and halation controls, and the rest under Advanced. It replaces the
   tone mapper while it is on, and Export to Library saves a positive copy.
+- The crop tool has an Auto button beside Rotate that levels the photo
+  from its straight lines, with Upright's Level fit.
 - Saturation can run on darktable's new saturation curve module, chosen
   in Preferences › Modules for photos and for masks. A curve editor with
   Saturation and Brilliance curves replaces the slider, changing colors

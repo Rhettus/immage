@@ -768,6 +768,10 @@ const QUAD = (i: number) => `last_quad_lines[${i}]`;
 // Aspect as ashift's aspect adjust, 0.5-2, a stretch across the sensor frame
 export const uprightAspect = (v: Values, ctx: ImageContext) =>
   2 ** (((swapsAxes(ctx) ? -1 : 1) * (v.tf_aspect ?? 0)) / 100);
+// ashift's rotation as the Rotate slider shows it, on top of the Upright
+// fit's own rotation (base)
+export const rotateOf = (rotation: number, base: number, ctx: ImageContext) =>
+  (mirrored(ctx) ? 1 : -1) * (rotation - base);
 // the guides kept, as x1, y1, x2, y2 in the input image (0-1)
 export const guidesOf = (v: Values): [number, number, number, number][] =>
   Array.from({ length: Math.min(MAX_GUIDES, v.tf_gn ?? 0) }, (_, k) =>
@@ -790,7 +794,6 @@ const transformMap: ModuleMap = {
   read: (p, _d, ctx) => {
     const tagged = p[QUAD(0)] === UPRIGHT_TAG;
     const [br, bv, bh] = tagged ? [p[QUAD(2)], p[QUAD(3)], p[QUAD(4)]] : [0, 0, 0];
-    const sign = mirrored(ctx) ? 1 : -1;
     const [lv, lh] = [p.lensshift_v - bv, p.lensshift_h - bh];
     const [v, h] = swapsAxes(ctx) ? [lh, lv] : [lv, lh];
     const [vs, hs] = keystoneSigns(ctx);
@@ -798,7 +801,7 @@ const transformMap: ModuleMap = {
     const gn = tagged ? Math.min(MAX_GUIDES, Math.max(0, Math.round(p.last_drawn_lines_count))) : 0;
     const guides = Object.fromEntries(GUIDE_IDS.map((id, i) => [id, i < 4 * gn
       ? p[DRAWN(i)] / (i % 2 ? ctx.sensorHeight : ctx.sensorWidth) : 0]));
-    return { tf_rotate: sign * (p.rotation - br), tf_vertical: vs * v * 100, tf_horizontal: hs * h * 100,
+    return { tf_rotate: rotateOf(p.rotation, br, ctx), tf_vertical: vs * v * 100, tf_horizontal: hs * h * 100,
              tf_aspect: (swapsAxes(ctx) ? -100 : 100) * Math.log2(aspect),
              tf_upright: tagged ? p[QUAD(1)] : 0, tf_base_r: br, tf_base_v: bv, tf_base_h: bh,
              tf_gn: gn, ...guides };
