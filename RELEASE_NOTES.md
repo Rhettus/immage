@@ -63,6 +63,8 @@ Performance
 
 Bug fixes
 
+- Reset all puts each tool back on the module chosen in Preferences ›
+  Modules, instead of keeping the module the photo had used.
 - Each right panel tool keeps its own scroll position and opens at the top.
 - Turning a converted JPEG or TIFF negative back to a positive no longer
   switches exposure on when the photo had not used it.
