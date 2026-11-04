@@ -85,7 +85,7 @@ for **B&W Mix**.
 **Presence**
 
 - **Texture**: fine detail; negative values smooth it.
-- **Clarity**: midtone contrast (darktable's local contrast).
+- **Clarity**: midtone contrast.
 - **Dehaze**: removes haze; negative values add it.
 - **Vibrance** and **Saturation**.
 
