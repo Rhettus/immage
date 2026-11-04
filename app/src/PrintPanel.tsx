@@ -4,20 +4,20 @@
 // Lightroom's Print module as a right-hand panel: soft proofing, then the
 // printer, its paper and the photo's place on the page, the printer
 // profile, and Print (or Save PDF). the settings are kept between photos
-// and runs (print.ts); the page preview follows them
+// and runs (print.ts); the page they lay out is shown in the viewer (App.tsx)
 import { useState } from "react";
-import { fromUnit, layout, PDF, PDF_DPI, PDF_PAPERS, shown, sourcePpi, toUnit, type Layout, type Margins, type Paper,
+import { fromUnit, layout, PDF, PDF_DPI, PDF_PAPERS, shown, sourcePpi, toUnit, type Margins, type Paper,
          type PrintSettings, type Printer, type PrinterInfo, type Profile, type Proof, type Unit } from "./print";
 
 const ADD_PROFILE = "\u0000add";
 
 export function PrintPanel({ settings: s, onSettings, available, printers, info, infoError, profiles, onAddProfile,
-                             aspect, pixelWidth, thumb, proof, onProof, busy, note, onPrint, disabled }: {
+                             aspect, pixelWidth, proof, onProof, busy, note, onPrint, disabled }: {
   settings: PrintSettings; onSettings: (s: PrintSettings) => void;
   available: boolean | null; printers: Printer[] | null;
   info: PrinterInfo | null; infoError: string | null;
   profiles: Profile[]; onAddProfile: () => void;
-  aspect: number; pixelWidth: number; thumb: string | null;
+  aspect: number; pixelWidth: number;
   proof: Proof; onProof: (mode: Proof["mode"]) => void;
   busy: boolean; note: { text: string; error: boolean } | null;
   onPrint: () => void; disabled: boolean;
@@ -119,7 +119,6 @@ export function PrintPanel({ settings: s, onSettings, available, printers, info,
 
       <section>
         <h3>Layout</h3>
-        {l && <PagePreview l={l} thumb={thumb} onAlign={(alignment) => set({ alignment })} alignment={s.alignment} />}
         {l && (
           <p className="note-plain print-size">
             {l.fits ? <>Prints {shown(l.image.width, s.unit)} × {shown(l.image.height, s.unit)} at {dpi} dpi
@@ -127,6 +126,7 @@ export function PrintPanel({ settings: s, onSettings, available, printers, info,
               : "The margins leave no room for the photo."}
             {l.fits && ppi > 0 && ppi < 180 && " The photo is enlarged to fill it; it may print soft."}
             {l.borderless && " A margin is inside what the printer can reach: it prints borderless if it can."}
+            {l.fits && " Point at the page to place the photo."}
           </p>
         )}
         <div className="choice-row">
@@ -226,35 +226,3 @@ function Length({ mm, unit, disabled, onChange, ...rest }: {
     </span>
   );
 }
-
-// the page to scale: the margins dashed, the photo in its place, and the
-// nine places it can go, clickable
-function PagePreview({ l, thumb, alignment, onAlign }: {
-  l: Layout; thumb: string | null; alignment: number; onAlign: (a: number) => void;
-}) {
-  const { width: W, height: H } = l.page;
-  const a = l.area, im = l.image;
-  return (
-    <div className="print-page" style={{ aspectRatio: `${W} / ${H}` }}>
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet">
-        <rect className="sheet" x={0} y={0} width={W} height={H} />
-        {l.fits && <rect className="area" x={a.x} y={a.y} width={a.width} height={a.height} />}
-        {l.fits && (thumb
-          ? <image href={thumb} x={im.x} y={im.y} width={im.width} height={im.height} preserveAspectRatio="none" />
-          : <rect className="photo" x={im.x} y={im.y} width={im.width} height={im.height} />)}
-      </svg>
-      {l.fits && (
-        <div className="print-align" style={{ left: `${a.x / W * 100}%`, top: `${a.y / H * 100}%`,
-                                              width: `${a.width / W * 100}%`, height: `${a.height / H * 100}%` }}>
-          {Array.from({ length: 9 }, (_, k) => (
-            <button key={k} className={k === alignment ? "on" : ""} aria-label={`place the photo ${PLACES[k]}`}
-                    title={`place the photo ${PLACES[k]}`} onClick={() => onAlign(k)} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-const PLACES = ["top left", "at the top", "top right", "on the left", "in the middle", "on the right",
-                "bottom left", "at the bottom", "bottom right"];

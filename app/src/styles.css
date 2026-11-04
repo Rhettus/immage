@@ -2303,25 +2303,25 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .filter-bodies .hint { margin: 12px 10px; color: var(--text-3); }
 
 /* the Print panel (PrintPanel.tsx) */
+/* its page in the viewer (App.tsx): the sheet, the margins dashed, and the
+   nine places the photo can go over the printable area */
+.viewer .print-sheet { position: absolute; background: #f7f7f5; box-shadow: 0 2px 14px rgba(0, 0, 0, 0.45); }
+.viewer .print-area { position: absolute; border: 1px dashed #a4a4a4; box-sizing: border-box; }
+.viewer .print-align {
+  position: absolute; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr);
+  pointer-events: none;
+}
+.viewer .print-align button {
+  margin: auto; width: 14px; height: 14px; padding: 0; border-radius: 50%; border: 1px solid rgba(0, 0, 0, 0.5);
+  background: rgba(255, 255, 255, 0.7); cursor: pointer; opacity: 0; transition: opacity 0.12s; pointer-events: auto;
+}
+.viewer.print-view:hover .print-align button { opacity: 1; }
+.viewer .print-align button.on { background: #111; border-color: #fff; }
 .panel.print select.field {
   flex: 1; min-width: 0; max-width: 62%; padding: 5px 9px; background: var(--inset); border: 1px solid transparent;
   border-radius: 7px; color: var(--text); font: inherit; font-size: var(--fs-small);
 }
 .panel.print .segmented.small { flex: none; }
-.panel.print .print-page { position: relative; width: 100%; max-height: 260px; margin: 6px auto 4px; }
-.panel.print .print-page svg { display: block; width: 100%; height: 100%; max-height: 260px; }
-.panel.print .print-page .sheet { fill: #f4f4f4; }
-.panel.print .print-page .area { fill: none; stroke: #9a9a9a; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
-.panel.print .print-page .photo { fill: #8a8a8a; }
-.panel.print .print-align {
-  position: absolute; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr);
-}
-.panel.print .print-align button {
-  margin: auto; width: 12px; height: 12px; padding: 0; border-radius: 50%; border: 1px solid rgba(0, 0, 0, 0.45);
-  background: rgba(255, 255, 255, 0.55); cursor: pointer; opacity: 0; transition: opacity 0.12s;
-}
-.panel.print .print-page:hover .print-align button { opacity: 1; }
-.panel.print .print-align button.on { background: #111; border-color: #fff; opacity: 1; }
 .panel.print .print-margins { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; margin: 4px 0 6px; }
 .panel.print .print-margins label { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 .panel.print .print-margins label > span { color: var(--text-2); }

@@ -13,12 +13,35 @@ change to darktable's source.
 | Where | What |
 |---|---|
 | [print.ts](../../src/print.ts) | `PrintSettings` (stored in `localStorage` as `immage.print`), PDF papers (PWG names), `layout()` (page orientation, margins, Fill or a long edge, nine places, borderless against the hardware margins, which turn with the page as `dt_get_print_layout` turns them), `printRequest()`, `applyProof()`. |
-| [PrintPanel.tsx](../../src/PrintPanel.tsx) | The panel: Soft Proofing, Printer, Layout (a to-scale SVG page with the navigator thumbnail, its nine place dots), Color Management, Print / Save PDF. |
-| App.tsx | `RightMode` `"print"`, the rail button after Export, ⌘P, S (`toggleProofRef`), the `proof` state, `changeProof()` and the `Soft Proof:` badge over the photo; the effects that read printers and profiles when the panel opens and the chosen printer's papers; `printNow()`. |
+| [PrintPanel.tsx](../../src/PrintPanel.tsx) | The panel: Soft Proofing, Printer, Layout (print size and pixels per inch, margins, size), Color Management, Print / Save PDF. |
+| App.tsx | `RightMode` `"print"`, the rail button after Export, ⌘P, S (`toggleProofRef`), the `proof` state, `changeProof()` and the `Soft Proof:` badge over the photo; the effects that read printers and profiles when the panel opens and the chosen printer's papers; the page in the viewer (`printPage`, `sheet`, `printViewRef`); `printNow()`. |
 | `Session.redraw()` | After the engine's view changes with no edit: drops the frames kept by view and the zoom copy (`changed()`), and renders. |
 | main.rs | `print_profiles`, `print_profile_add`, `softproof`, `printers`, `printer_info`, and `print_photo` (`export_hold`, a tagged `print` on the export thread, `export_release`, as `export_images` does). |
 | [engine/print.c](../../../engine/print.c) | Profiles, the soft proof, printers and the print job. |
 | main.c | The commands (`print`, `print_profiles`, `print_profile_add`, `printers`, `printer`, `softproof`); a tagged `print` goes to the export pool (`_export_run`) and renders the job's snapshot (`_hold_take`). |
+
+## The page in the viewer
+
+While the panel is open (`printOpen`), App.tsx lays out the page the
+panel's settings describe (`printPage`, from `layout()` with the chosen
+printer's papers and hardware margins) and fits it into the viewer
+(`sheet`, CSS pixels, measured by a `ResizeObserver` on the viewer). The
+`.print-sheet` and its dashed `.print-area` sit under the edit's pane, and
+the nine `.print-align` dots over it.
+
+The photo is not a picture of the photo: the edit's pane (`after-pane`
+`on-page`) is moved to the photo's rectangle on the page, grown by the fit
+margin (`MARGIN`) on each side. The pane's `ResizeObserver` refits and
+re-renders, so the ordinary fitted render fills the rectangle at screen
+resolution, soft proof included.
+A photo smaller than its rectangle on screen renders at 100% and so falls
+short of it, as fit never enlarges. Margins the photo doesn't fit in hide
+the pane.
+
+The page replaces the split views and compare: entering the panel turns
+them off, and `printPage` is null while either is on. `printViewRef` holds
+the zoom at fit (`animateTo` refuses any other zoom, which covers the
+wheel, clicks, Z and the navigator), and the zoom bar is disabled.
 
 ## Printer profiles
 
@@ -112,7 +135,9 @@ Without it, the profiles and soft proof still work and `printers` replies
 - GUI case `print` (`verify/gui/specs/workflows.mjs`): soft proof and
   gamut warning on the photo, the badge, S, the proof kept in Adjustments,
   and the layout controls, with a made-up profile `run.mjs` puts in the run
-  profile (`verify/gui/support/icc.mjs`). The `rail` case opens Print.
+  profile (`verify/gui/support/icc.mjs`). It checks the page in the viewer:
+  orientation, the photo inside the printable area, at the top left once
+  placed there, and the page gone in Adjustments. The `rail` case opens Print.
 - Not automated: printing on a real printer (CUPS, the Windows spooler,
   TurboPrint), the native save dialog, and that the driver leaves the
   colors alone. Check those by hand with a printer and its profile.

@@ -285,7 +285,8 @@ export async function prepareNegative(t) {
 // the Print panel: soft proof and gamut warning against a made-up narrow
 // printer profile (support/icc.mjs, which run.mjs puts in the engine's
 // profiles), S turning the proof off and on, the proof staying on in
-// Adjustments, and the page layout's orientation, margins, size and place.
+// Adjustments, and the page laid out in the viewer: orientation, margins,
+// size and place, with the photo rendered inside the printable area.
 // prints nothing: Print and Save PDF open native dialogs or a real printer,
 // and verify/print.py checks the PDF the engine writes
 const PRINT_PROFILE = 'immage-test-narrow.icc';
@@ -294,9 +295,19 @@ const chromaOf = p => { let c = 0; for (let i = 0; i < p.rgba.length; i += 4)
   return c / (p.rgba.length / 4); };
 const cyanOf = p => { let n = 0; for (let i = 0; i < p.rgba.length; i += 4)
   if (p.rgba[i] < 40 && p.rgba[i + 1] > 200 && p.rgba[i + 2] > 200) n++; return n; };
+// the page in the viewer, and the photo's rectangle on it, in CSS pixels
+const pageView = t => t.driver.observe(() => {
+  const box = s => { const r = document.querySelector(s)?.getBoundingClientRect(); return r && { x: r.x, y: r.y, w: r.width, h: r.height }; };
+  const sheet = box('.viewer .print-sheet');
+  return sheet ? { sheet, area: box('.viewer .print-area'), photo: box('.viewer .after-pane canvas.layer.sharp'),
+                   size: document.querySelector('.panel.print .print-size')?.textContent ?? '' } : null; });
+const inside = (a, b, slack = 3) => a.x >= b.x - slack && a.y >= b.y - slack
+  && a.x + a.w <= b.x + b.w + slack && a.y + a.h <= b.y + b.h + slack;
 export async function print(t) {
-  const baseline = await settledPhoto(t);
   await openTool(t, 'print');
+  await until(async () => !!(await pageView(t)), 'the page in the viewer', 20000);
+  // the photo as the page shows it, before any proof
+  const baseline = await settledPhoto(t);
   const profileMenu = '.panel.print select[data-action="print-profile"]';
   await until(() => t.driver.observe(s => [...(document.querySelector(s)?.options ?? [])]
     .some(o => o.value.endsWith('/immage-test-narrow.icc') || o.value.endsWith('\\immage-test-narrow.icc')), profileMenu),
@@ -308,6 +319,8 @@ export async function print(t) {
     .find(o => o.value.endsWith(name))?.value, profileMenu, PRINT_PROFILE);
   await choose(t, profileMenu, file);
   await until(() => t.driver.observe(() => !document.querySelector('input[data-action="print-softproof"]')?.disabled), 'Soft Proof enabled');
+  { const v = await pageView(t);
+    assert(v.area && v.photo && inside(v.photo, v.area), `the photo inside the printable area: ${JSON.stringify(v)}`); }
   await t.evidence('print-panel');
 
   // soft proof: the photo as the narrow printer prints it, duller, with the badge
@@ -337,8 +350,7 @@ export async function print(t) {
   await openTool(t, 'print');
 
   // layout: the page turns, a margin and the size change the photo's print size, a place is chosen
-  const page = () => t.driver.observe(() => { const r = document.querySelector('.panel.print .print-page svg')?.viewBox.baseVal;
-    return r ? { width: r.width, height: r.height, size: document.querySelector('.panel.print .print-size')?.textContent ?? '' } : null; });
+  const page = async () => { const v = await pageView(t); return v && { width: v.sheet.w, height: v.sheet.h, size: v.size }; };
   await textButton(t, '.panel.print', 'Portrait');
   await until(async () => { const p = await page(); return p && p.height > p.width; }, 'a portrait page');
   await textButton(t, '.panel.print', 'Landscape');
@@ -350,14 +362,23 @@ export async function print(t) {
   await until(async () => (await page()).size !== before, 'a wider left margin changes the print size');
   await textButton(t, '.panel.print', 'Custom');
   await until(() => t.driver.observe(() => !!document.querySelector('.panel.print input[data-margin="size"]')), 'the long edge field');
-  await click(t, '.panel.print .print-align button:nth-child(1)');
-  await until(() => t.driver.observe(() => document.querySelector('.panel.print .print-align button:nth-child(1)')?.classList.contains('on')),
+  await click(t, '.viewer .print-align button:nth-child(1)');
+  await until(() => t.driver.observe(() => document.querySelector('.viewer .print-align button:nth-child(1)')?.classList.contains('on')),
               'top left chosen');
+  await settledPhoto(t);
+  await until(async () => { const v = await pageView(t);
+    return v?.area && v.photo && inside(v.photo, v.area) && Math.abs(v.photo.x - v.area.x) <= 3 && Math.abs(v.photo.y - v.area.y) <= 3; },
+    'the photo at the top left of the printable area');
   assert(await t.driver.observe(() => /Save PDF/.test(document.querySelector('button[data-action="print-go"]')?.textContent ?? '')
     && !document.querySelector('button[data-action="print-go"]').disabled), 'Save PDF ready');
   await t.evidence('layout');
 
-  // off from the panel, back to the photo as it was
+  // off from the panel: the photo unproofed again, at its new place and size
+  const placed = await settledPhoto(t);
   await click(t, 'input[data-action="print-softproof"]');
-  await settledPhoto(t, p => p.hash === baseline.hash);
+  await settledPhoto(t, p => p.hash !== placed.hash);
+  assert(!await t.driver.observe(() => !!document.querySelector('[data-proof-badge]')), 'badge gone with the proof');
+  // leaving the panel puts the photo back over the whole viewer
+  await openTool(t, 'adjust');
+  await until(async () => !(await pageView(t)), 'the page gone in Adjustments');
 }

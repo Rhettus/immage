@@ -2593,7 +2593,10 @@ export default function App() {
              y: clamp01(an.iy - ((an.sy - h / 2 / dpr) * dpr) / (f.h * z)) };
   };
 
+  // the Print panel's page shows the whole photo in its place: no zoom
+  const printViewRef = useRef(false);
   const animateTo = (z: Zoom, anchor: Anchor | null = null, settleDelay = 0, ahead = true) => {
+    if (printViewRef.current && z !== "fit") return;
     const f = full.current;
     if (!f || !viewZ.current) {
       zoomRef.current = z; setZoomState(z); session.current?.requestRender();
@@ -4081,7 +4084,6 @@ export default function App() {
   const [printProfiles, setPrintProfiles] = useState<Profile[]>([]);
   const [printBusy, setPrintBusy] = useState(false);
   const [printNote, setPrintNote] = useState<{ text: string; error: boolean } | null>(null);
-  const [printThumb, setPrintThumb] = useState<string | null>(null);
   const [proof, setProof] = useState<Proof>(NO_PROOF);
   const proofRef = useRef(proof);
   proofRef.current = proof;
@@ -4164,12 +4166,6 @@ export default function App() {
     }).catch((e) => { if (live) setPrintInfo({ name, info: null, error: String(e) }); });
     return () => { live = false; };
   }, [printOpen, printSettings.printer]);
-  // the page preview's photo: the navigator's thumbnail
-  useEffect(() => {
-    if (!printOpen) return;
-    const t = navThumb.current;
-    try { setPrintThumb(t && t.width > 0 ? t.toDataURL("image/jpeg", 0.85) : null); } catch { setPrintThumb(null); }
-  }, [printOpen, placement, current]);
   const addPrintProfile = async () => {
     const path = await open({ multiple: false, filters: [{ name: "ICC profile", extensions: ["icc", "icm", "ICC", "ICM"] }] });
     if (typeof path !== "string") return;
@@ -4264,6 +4260,43 @@ export default function App() {
     compareRef.current = imgid;
     setCompareState(imgid);
   };
+  // the Print panel lays the page out in the viewer, the photo rendered into
+  // its place on it: the edit's pane is sized to the photo's rectangle (plus
+  // the fit margin), so the usual fitted render fills it, soft proof and all.
+  // the page replaces the split views and compare, which turn off on entering
+  const [viewerBox, setViewerBox] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    printViewRef.current = printOpen;
+    if (!printOpen) return;
+    if (baModeRef.current !== "off") setBaMode("off");
+    if (compareRef.current !== null) setCompare(null);
+    if (zoomRef.current !== "fit") animateTo("fit");
+    const el = viewer.current!;
+    const ro = new ResizeObserver(() => setViewerBox({ w: el.clientWidth, h: el.clientHeight }));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [printOpen]);
+  const printPdf = printSettings.printer === PDF;
+  const printPapers = printPdf ? PDF_PAPERS
+    : (printInfo?.name === printSettings.printer ? printInfo.info?.papers : undefined) ?? [];
+  const printPaper = printPapers.find((p) => p.name === printSettings.paper) ?? printPapers[0] ?? null;
+  const printPage = printOpen && current && placement && printPaper && printAvailable !== false
+                    && baMode === "off" && compare === null
+    ? printLayout(printPaper, printSettings, placement.fullWidth / placement.fullHeight,
+                  printPdf ? undefined : printInfo?.info?.margins)
+    : null;
+  const PAGE_PAD = 28; // CSS pixels between the page and the viewer's edge
+  const sheet = (() => {
+    if (!printPage || viewerBox.w <= 0) return null;
+    const { width: W, height: H } = printPage.page;
+    const k = Math.min((viewerBox.w - 2 * PAGE_PAD) / W, (viewerBox.h - 2 * PAGE_PAD) / H);
+    if (!(k > 0)) return null;
+    const x = (viewerBox.w - W * k) / 2, y = (viewerBox.h - H * k) / 2;
+    const at = (r: { x: number; y: number; width: number; height: number }) =>
+      ({ left: x + r.x * k, top: y + r.y * k, width: r.width * k, height: r.height * k });
+    return { page: at({ x: 0, y: 0, width: W, height: H }), area: at(printPage.area), image: at(printPage.image),
+             fits: printPage.fits };
+  })();
   // the candidate on entering: a photo selected besides the open one, else
   // the next photo, else the one before. two selected (in the grid), neither
   // of them open: the first is opened, the second its candidate
@@ -5659,11 +5692,23 @@ export default function App() {
       <Splitter axis="x" value={layout.leftWidth} min={220} max={560} hidden={!docked.left}
                 onChange={(v) => setLayout((l) => ({ ...l, leftWidth: v }))} />
       <section className="center">
-        <main data-tour="viewer" className={`viewer zoom-${zoom === "fit" ? "fit" : "in"}${picking || loupePicking ? " picking" : ""}${aiBusy ? " busy" : ""}${straightening || line || (shiftHeld && current && (cropping || (!masksMode && !healMode)) && !preview) ? " straightening" : ""}${canvasColor !== "dark" ? ` canvas-${canvasColor}` : ""}${baMode === "overlay" ? " hold-view" : ""}${optPreview?.kind === "gray" ? " gray-view" : ""}`} ref={viewer}
+        <main data-tour="viewer" className={`viewer zoom-${zoom === "fit" ? "fit" : "in"}${picking || loupePicking ? " picking" : ""}${aiBusy ? " busy" : ""}${straightening || line || (shiftHeld && current && (cropping || (!masksMode && !healMode)) && !preview) ? " straightening" : ""}${canvasColor !== "dark" ? ` canvas-${canvasColor}` : ""}${baMode === "overlay" ? " hold-view" : ""}${optPreview?.kind === "gray" ? " gray-view" : ""}${sheet ? " print-view" : ""}`} ref={viewer}
               onPointerDownCapture={(e) => { if (!onLoupePickDown(e)) onStraightenDown(e); }}
               onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
               onPointerLeave={leaveProbe}>
-          <div ref={pane} className={`after-pane${baMode === "side" ? " half" : compare !== null ? " half-left" : ""}`}>
+          {sheet && (
+            <div className="print-sheet" data-print-page={`${printPage!.page.width}x${printPage!.page.height}`}
+                 style={sheet.page}>
+              {sheet.fits && <div className="print-area" style={{ left: sheet.area.left - sheet.page.left,
+                                                                    top: sheet.area.top - sheet.page.top,
+                                                                    width: sheet.area.width, height: sheet.area.height }} />}
+            </div>
+          )}
+          <div ref={pane} className={`after-pane${sheet ? " on-page" : baMode === "side" ? " half" : compare !== null ? " half-left" : ""}`}
+               style={sheet ? (sheet.fits ? { left: sheet.image.left - MARGIN, top: sheet.image.top - MARGIN,
+                                              width: sheet.image.width + 2 * MARGIN, height: sheet.image.height + 2 * MARGIN }
+                                          : { left: 0, top: 0, width: "100%", height: "100%", visibility: "hidden" })
+                             : undefined}>
             <canvas ref={baseCanvas} className={`layer base${current ? "" : " empty"}`} />
             <canvas ref={clipBase} className={`layer clip${current && (clipShown.low || clipShown.high) ? "" : " empty"}`} />
             {/* it carries neither the Before view nor the clipping overlay */}
@@ -5762,6 +5807,16 @@ export default function App() {
               </div>
             )}
           </div>
+          {sheet?.fits && (
+            <div className="print-align" style={sheet.area}>
+              {Array.from({ length: 9 }, (_, k) => (
+                <button key={k} className={k === printSettings.alignment ? "on" : ""}
+                        aria-label={`place the photo ${PRINT_PLACES[k]}`} title={`place the photo ${PRINT_PLACES[k]}`}
+                        onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}
+                        onClick={() => setPrintSettings({ ...printSettings, alignment: k })} />
+              ))}
+            </div>
+          )}
           {/* the split views and compare label their halves in this corner */}
           {current && infoMode < 2 && !cropping && compare === null && (baMode === "off" || baMode === "overlay") && (
             <InfoOverlay mode={infoMode} name={`${fileName}${copyName(currentEntry)}`} dir={fileDir ?? ""}
@@ -5926,7 +5981,7 @@ export default function App() {
                  }}
                  onFiltered={() => setGrid(true)}
                  grid={grid} onGrid={cells.length > 0 || pending.length > 0 || grid ? () => setGrid(!grid) : undefined}
-                 zoomBar={<ZoomBar disabled={!current} register={(f) => { zoomShow.current = f; }}
+                 zoomBar={<ZoomBar disabled={!current || !!sheet} register={(f) => { zoomShow.current = f; }}
                                    onZoom={(z) => setZoom(z)}
                                    onToggle={() => setZoom(zoomRef.current === "fit" ? 1 : "fit")}
                                    fit={() => fitScale()} />}
@@ -6134,7 +6189,7 @@ export default function App() {
                         infoError={printInfo?.name === printSettings.printer ? printInfo.error : null}
                         profiles={printProfiles} onAddProfile={() => void addPrintProfile()}
                         aspect={placement ? placement.fullWidth / placement.fullHeight : 1.5}
-                        pixelWidth={placement?.fullWidth ?? 0} thumb={printThumb}
+                        pixelWidth={placement?.fullWidth ?? 0}
                         proof={proof}
                         onProof={(mode) => changeProof({ mode, profile: printSettings.profile, intent: printSettings.intent })}
                         busy={printBusy} note={printNote} onPrint={() => void printNow()} disabled={!current} />
@@ -6577,6 +6632,9 @@ function Splitter({ axis, value, min, max, invert, hidden, onChange }: {
          onPointerUp={() => { start.current = null; }} />
   );
 }
+
+const PRINT_PLACES = ["top left", "at the top", "top right", "on the left", "in the middle", "on the right",
+                      "bottom left", "at the bottom", "bottom right"];
 
 type RightMode = "adjust" | "presets" | "masks" | "heal" | "zones" | "film" | "negative" | "print";
 // the photo area a film border pick reads before one is picked: darktable's

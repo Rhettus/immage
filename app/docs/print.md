@@ -13,7 +13,7 @@ Open it with **Print** on the rail, the last button under Export, or ⌘P.
 The panel's settings stay the same from photo to photo, and between runs.
 
 ![The Print panel: soft proofing, printer, layout and color management](images/print-panel.png)
-<!-- screenshot: Print panel with a printer and a printer profile chosen, Soft Proof on, the page preview showing a landscape photo on Letter paper, the "Soft Proof:" label over the photo -->
+<!-- screenshot: Print panel with a printer and a printer profile chosen, Soft Proof on, the viewer showing a landscape photo on a Letter page with its margins dashed, the "Soft Proof:" label over the photo -->
 
 ## Soft proofing
 
@@ -55,8 +55,12 @@ white or the ink's black.
 
 ## Layout
 
-One photo goes on each page. The preview shows the page to scale, with the
-margins dashed and the photo in its place. Under it, the panel says how
+One photo goes on each page. While the panel is open, the viewer shows the
+page in place of the photo: the paper to scale, the margins dashed, and the
+photo rendered in its place on it, soft proof included. The page fills the
+viewer, so the photo can't be zoomed or compared with another while it is
+shown; Before/After and Compare turn off when you open the panel. Other
+panels show the photo on its own again. Under **Layout**, the panel says how
 big the photo prints, and how many of the photo's pixels go in each inch.
 Below 180 pixels per inch it warns that the photo is enlarged and may
 print soft.
@@ -68,9 +72,10 @@ print soft.
 - **Photo Size**: **Fill** makes the photo as large as the margins allow.
   **Custom** sets its **Long Edge**, and the other edge follows the photo's
   shape. The photo never prints larger than the margins allow.
-- **Place**: point at the page preview to see nine dots, and click one to
+- **Place**: point at the viewer to see nine dots on the page, and click one to
   put the photo at the top left, the middle, the bottom right, and so on,
-  inside the margins.
+  inside the margins. The black dot is the place chosen now. The dots hide
+  again when the pointer leaves the viewer.
 
 The photo prints as it is cropped. Its edit is printed as it is now,
 including edits you haven't stopped making.

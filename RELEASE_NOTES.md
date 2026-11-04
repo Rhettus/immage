@@ -16,9 +16,10 @@ Improvements
   tone mapper while it is on, and Export to Library saves a positive copy.
 - Print, a new tool in the rail below Export (⌘P), prints the photo or
   saves it as a PDF with darktable's print code: printer, paper and media
-  type, orientation, margins, photo size and placement on a to-scale page
-  preview, and color managed by the printer or converted with a printer
-  ICC profile, perceptual or relative, with black point compensation.
+  type, orientation, margins, photo size and placement, shown on a to-scale
+  page in the viewer with the photo rendered in place, and color managed by
+  the printer or converted with a printer ICC profile, perceptual or
+  relative, with black point compensation.
   Printer profiles installed on the computer are listed, and others can be
   added. Soft Proof (S) shows the photo on screen as that profile prints
   it, with a gamut warning that marks unprintable colors cyan; the proof
