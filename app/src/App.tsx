@@ -6031,11 +6031,11 @@ export default function App() {
                 onClick={() => (cropping ? leaveCrop(true) : enterCrop())}><CropIcon /></button>
         <button className={`tool${layout.right && !cropping && masksMode ? " on" : ""}`} title="masks" data-tour="masks"
                 disabled={!current} onClick={() => showRight("masks")}><LayersIcon /></button>
-        <button className={`tool${layout.right && !cropping && rightMode === "zones" ? " on" : ""}`} title="zone system"
-                data-tour="zones" disabled={!current} onClick={() => showRight("zones")}><ZonesIcon /></button>
         <button className={`tool${layout.right && !cropping && healMode ? " on" : ""}`} title="heal and clone (Q)"
                 data-tour="heal"
                 disabled={!current} onClick={() => showRight("heal")}><HealIcon /></button>
+        <button className={`tool${layout.right && !cropping && rightMode === "zones" ? " on" : ""}`} title="zone system"
+                data-tour="zones" disabled={!current} onClick={() => showRight("zones")}><ZonesIcon /></button>
         <button className={`tool${layout.right && !cropping && rightMode === "negative" ? " on" : ""}`}
                 title="film negative" data-tour="negative" disabled={!current} onClick={openNegative}><FilmIcon /></button>
         <button className={`tool${layout.right && !cropping && rightMode === "presets" ? " on" : ""}`} title="presets" data-tour="presets"
