@@ -39,6 +39,16 @@ undo/redo, virtual copies, mask/crop preservation, restart persistence, stale
 undo and sidecar failure recovery. The separate visible-app `batch-paste` case
 is registered in `verify/gui/`; it requires an approved GUI run.
 
+The Print panel's checks run with the built engine and print nothing:
+
+```bash
+python3 -I verify/print.py          # profiles, soft proof and gamut pixels, PDFs; --keep DIR keeps them
+node --test verify/print.test.mjs   # page layout, Session redraw after a proof, a PDF through print_photo
+```
+
+Real printers (CUPS, the Windows spooler) are checked by hand
+([print.md](../app/docs/dev/print.md)); the visible-app `print` case is in `verify/gui/`.
+
 The focused panorama and negative-export regression checks run with the built engine:
 
 ```bash

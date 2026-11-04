@@ -170,6 +170,16 @@ try {
     await cp(src, join(profile, 'data', 'darktable', 'spektrafilm'), { recursive: true });
     report.filmPack = 'copied from the installed data folder';
   }
+  // the print case proofs against a made-up printer profile, put among the
+  // engine's own (engine/print.c reads config/color/out in its runtime folder)
+  if (selectedCases.includes('print')) {
+    const { mkdir, writeFile } = await import('node:fs/promises');
+    const { narrowPrinterProfile } = await import('./support/icc.mjs');
+    const dir = join(profile, 'data', 'app.immage', 'config', 'color', 'out');
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, 'immage-test-narrow.icc'), narrowPrinterProfile());
+    report.printProfile = 'immage-test-narrow.icc, generated';
+  }
   const port = await freePort(); let nativePort = await freePort(); while (nativePort === port) nativePort = await freePort();
   const env = { ...process.env,
     XDG_DATA_HOME: join(profile, 'data'), XDG_CONFIG_HOME: join(profile, 'config'),

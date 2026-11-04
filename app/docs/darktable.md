@@ -96,4 +96,5 @@ for the available mask alternatives.
 | **Film Simulation** | spektrafilm (`spektrafilm`), with its film and paper data downloaded into darktable's data folder; it switches off the tone mapper (AgX, sigmoid, filmic, base curve) and runs Contrast and Saturation on color balance rgb, Blacks on exposure |
 | **Looks** | darktable styles, applied as extra module instances |
 | **Export** borders | framing (`borders`), added at export only |
+| **Print**, **Soft Proof** | the print view's printer profile conversion, PDF and CUPS or Windows printing; output color profile's (`colorout`) soft proof and gamut check. Neither changes the edit |
 | **Keywords** | darktable tags (`dc:subject`, `lr:hierarchicalSubject` in the XMP) |

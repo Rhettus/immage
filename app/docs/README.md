@@ -67,6 +67,8 @@ is also on the [Immage website](https://immage.photo/guide/).
 
 - [Export](export.md): to a folder or an Immich album, with file names,
   borders and captions
+- [Print and soft proofing](print.md): printing or saving a PDF with a
+  printer profile, and seeing the print on screen first
 - [Edit In](edit-in.md): sending photos to DxO PureRAW or Macro Studio and back
 
 **Reference**

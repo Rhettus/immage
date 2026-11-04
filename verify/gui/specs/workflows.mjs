@@ -281,3 +281,83 @@ export async function prepareNegative(t) {
   const c=await reveal(t,'.zone-object-box'); await t.driver.point(c.bounds.x+c.bounds.width*.02,c.bounds.y+c.bounds.height*.02);
   await until(()=>t.driver.observe(()=>!!document.querySelector('.neg-swatch')),'negative converted');
 }
+
+// the Print panel: soft proof and gamut warning against a made-up narrow
+// printer profile (support/icc.mjs, which run.mjs puts in the engine's
+// profiles), S turning the proof off and on, the proof staying on in
+// Adjustments, and the page layout's orientation, margins, size and place.
+// prints nothing: Print and Save PDF open native dialogs or a real printer,
+// and verify/print.py checks the PDF the engine writes
+const PRINT_PROFILE = 'immage-test-narrow.icc';
+const chromaOf = p => { let c = 0; for (let i = 0; i < p.rgba.length; i += 4)
+  c += Math.max(p.rgba[i], p.rgba[i + 1], p.rgba[i + 2]) - Math.min(p.rgba[i], p.rgba[i + 1], p.rgba[i + 2]);
+  return c / (p.rgba.length / 4); };
+const cyanOf = p => { let n = 0; for (let i = 0; i < p.rgba.length; i += 4)
+  if (p.rgba[i] < 40 && p.rgba[i + 1] > 200 && p.rgba[i + 2] > 200) n++; return n; };
+export async function print(t) {
+  const baseline = await settledPhoto(t);
+  await openTool(t, 'print');
+  const profileMenu = '.panel.print select[data-action="print-profile"]';
+  await until(() => t.driver.observe(s => [...(document.querySelector(s)?.options ?? [])]
+    .some(o => o.value.endsWith('/immage-test-narrow.icc') || o.value.endsWith('\\immage-test-narrow.icc')), profileMenu),
+    'the seeded printer profile listed', 20000);
+  const printers = '.panel.print select[data-action="print-printer"]';
+  await until(() => t.driver.observe(s => !!document.querySelector(s)?.querySelector('option[value=""]'), printers), 'Save as PDF offered');
+  await choose(t, printers, '');
+  const file = await t.driver.observe((s, name) => [...document.querySelector(s).options]
+    .find(o => o.value.endsWith(name))?.value, profileMenu, PRINT_PROFILE);
+  await choose(t, profileMenu, file);
+  await until(() => t.driver.observe(() => !document.querySelector('input[data-action="print-softproof"]')?.disabled), 'Soft Proof enabled');
+  await t.evidence('print-panel');
+
+  // soft proof: the photo as the narrow printer prints it, duller, with the badge
+  await click(t, 'input[data-action="print-softproof"]');
+  const proofed = await settledPhoto(t, p => p.hash !== baseline.hash);
+  assert(chromaOf(proofed) < chromaOf(baseline), `proof pulls color in: ${chromaOf(baseline)} -> ${chromaOf(proofed)}`);
+  assert(await t.driver.observe(() => /Immage test narrow printer/.test(document.querySelector('[data-proof-badge]')?.textContent ?? '')),
+         'the badge names the profile');
+  await t.evidence('soft-proof');
+  // gamut warning: what the printer can't reach painted cyan
+  await click(t, 'input[data-action="print-gamut"]');
+  const gamut = await settledPhoto(t, p => p.hash !== proofed.hash);
+  assert(cyanOf(gamut) > cyanOf(proofed), `gamut warning paints cyan: ${cyanOf(proofed)} -> ${cyanOf(gamut)}`);
+  await t.evidence('gamut-warning');
+  await click(t, 'input[data-action="print-gamut"]');
+  await settledPhoto(t, p => p.hash === proofed.hash);
+
+  // S turns it off, to the photo as it was, and on again
+  await t.driver.keys('s');
+  await settledPhoto(t, p => p.hash === baseline.hash);
+  assert(!await t.driver.observe(() => !!document.querySelector('[data-proof-badge]')), 'badge gone with the proof');
+  await t.driver.keys('s');
+  await settledPhoto(t, p => p.hash === proofed.hash);
+  // the proof stays on in another panel
+  await openTool(t, 'adjust');
+  assert(await t.driver.observe(() => !!document.querySelector('[data-proof-badge]')), 'proof kept in Adjustments');
+  await openTool(t, 'print');
+
+  // layout: the page turns, a margin and the size change the photo's print size, a place is chosen
+  const page = () => t.driver.observe(() => { const r = document.querySelector('.panel.print .print-page svg')?.viewBox.baseVal;
+    return r ? { width: r.width, height: r.height, size: document.querySelector('.panel.print .print-size')?.textContent ?? '' } : null; });
+  await textButton(t, '.panel.print', 'Portrait');
+  await until(async () => { const p = await page(); return p && p.height > p.width; }, 'a portrait page');
+  await textButton(t, '.panel.print', 'Landscape');
+  await until(async () => { const p = await page(); return p && p.width > p.height; }, 'a landscape page');
+  await textButton(t, '.panel.print', 'mm');
+  const before = (await page()).size;
+  await click(t, '.panel.print input[data-margin="left"]');
+  await t.driver.chord('', 'a'); await t.driver.keys('6', '0');
+  await until(async () => (await page()).size !== before, 'a wider left margin changes the print size');
+  await textButton(t, '.panel.print', 'Custom');
+  await until(() => t.driver.observe(() => !!document.querySelector('.panel.print input[data-margin="size"]')), 'the long edge field');
+  await click(t, '.panel.print .print-align button:nth-child(1)');
+  await until(() => t.driver.observe(() => document.querySelector('.panel.print .print-align button:nth-child(1)')?.classList.contains('on')),
+              'top left chosen');
+  assert(await t.driver.observe(() => /Save PDF/.test(document.querySelector('button[data-action="print-go"]')?.textContent ?? '')
+    && !document.querySelector('button[data-action="print-go"]').disabled), 'Save PDF ready');
+  await t.evidence('layout');
+
+  // off from the panel, back to the photo as it was
+  await click(t, 'input[data-action="print-softproof"]');
+  await settledPhoto(t, p => p.hash === baseline.hash);
+}

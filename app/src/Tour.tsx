@@ -50,6 +50,8 @@ const STEPS: Step[] = [
     body: keys("Every edit as a step, newest at the top. Click one to go back to it; ⌘Z and ⇧⌘Z step through them.") },
   { target: "export", title: "Export",
     body: keys("Export the photo, or every photo shown, to a folder or straight into an Immich album, with borders and file names of your choosing. ⇧⌘E.") },
+  { target: "print", title: "Print",
+    body: keys("Print the photo, or save it as a PDF, with a printer profile; soft proof it first to see the print on screen (S). ⌘P.") },
   { target: "prefs", title: "Preferences",
     body: keys("What new photos start with (profile and a preset), and your Immich server. ⌘, opens them.") },
 ];

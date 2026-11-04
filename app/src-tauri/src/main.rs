@@ -2489,6 +2489,70 @@ async fn fonts(state: State<'_, AppState>) -> Result<Value, String> {
     state.engine("fonts").request(json!({ "cmd": "fonts" })).map(|r| r["families"].clone())
 }
 
+// the Print panel (engine/print.c): printer profiles, soft proofing,
+// printers and the print itself
+fn without_ok(mut reply: Value) -> Value {
+    if let Some(o) = reply.as_object_mut() {
+        o.remove("ok");
+    }
+    reply
+}
+
+#[tauri::command]
+async fn print_profiles(state: State<'_, AppState>) -> Result<Value, String> {
+    state.engine("print_profiles").request(json!({ "cmd": "print_profiles" })).map(|r| r["profiles"].clone())
+}
+
+// a printer profile the user picked, copied among the engine's own
+#[tauri::command]
+async fn print_profile_add(state: State<'_, AppState>, path: String) -> Result<Value, String> {
+    state.engine("print_profile_add").request(json!({ "cmd": "print_profile_add", "path": path })).map(without_ok)
+}
+
+// `mode` "off", "proof" or "gamut"; replies whether the view changed, and
+// the front end renders again if so
+#[tauri::command]
+async fn softproof(state: State<'_, AppState>, mode: String, profile: Option<String>, intent: Option<i64>)
+    -> Result<bool, String> {
+    let reply = state.engine("softproof").request(json!({
+        "cmd": "softproof", "mode": mode, "profile": profile.unwrap_or_default(), "intent": intent.unwrap_or(0),
+    }))?;
+    Ok(reply["changed"].as_bool().unwrap_or(false))
+}
+
+// { available, printers: [{ name, description, default }] }
+#[tauri::command]
+async fn printers(state: State<'_, AppState>) -> Result<Value, String> {
+    state.engine("printers").request(json!({ "cmd": "printers" })).map(without_ok)
+}
+
+#[tauri::command]
+async fn printer_info(state: State<'_, AppState>, name: String) -> Result<Value, String> {
+    state.engine("printer_info").request(json!({ "cmd": "printer", "name": name })).map(without_ok)
+}
+
+// renders the photo as its edit is now and prints it, or writes `pdf`, on
+// the export thread as an export does (export_images), so editing goes on
+#[tauri::command]
+async fn print_photo(state: State<'_, AppState>, imgid: i64, request: Value) -> Result<Value, String> {
+    let tagged = state.tagged.clone();
+    let held = tagged.tag();
+    state.engine("print_photo").request(json!({ "cmd": "export_hold", "job": held, "imgids": [imgid] }))?;
+    let mut req = request;
+    req["cmd"] = json!("print");
+    req["job"] = json!(held);
+    req["imgid"] = json!(imgid);
+    let t = tagged.clone();
+    let tag = t.tag();
+    let result = tauri::async_runtime::spawn_blocking(move || t.request(tag, req))
+        .await.map_err(|e| e.to_string()).and_then(|r| r);
+    let t = tagged.clone();
+    let tag = t.tag();
+    let _ = tauri::async_runtime::spawn_blocking(move || t.request(tag, json!({ "cmd": "export_release", "job": held })))
+        .await;
+    result.map(without_ok)
+}
+
 // the Export dialog's presets, a document the front end shapes; none yet is
 // null
 #[tauri::command]
@@ -2751,7 +2815,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             map_tiles::map_tile, open_folder, open_image, get_params, set_params, render, cancel_base, save, baseline_end, before_view, thumb, thumb_cached, thumb_known, cache_limits, cache_usage, cache_clear, meta, meta_set, capture_times, prefetch, darktable_resources, darktable_resources_set, gpu_edits, gpu_edits_set, webview_renderer, webview_renderer_set,
-            export_images, export_cancel, export_existing, export_preview, fonts, export_presets_load, export_presets_save, preset_file_write, preset_file_read, presets_load, presets_save, looks_list, look_import, look_export, look_delete, look_apply, look_amount, preview, paste_batch,
+            export_images, export_cancel, export_existing, export_preview, fonts, print_profiles, print_profile_add, softproof, printers, printer_info, print_photo, export_presets_load, export_presets_save, preset_file_write, preset_file_read, presets_load, presets_save, looks_list, look_import, look_export, look_delete, look_apply, look_amount, preview, paste_batch,
             mask_shapes, combine, masks, mask_delete, mask_rename, history, module_state, sample, tone_key, agx_auto, upright, points, range_map, zones, mask_map, ai_object,
             ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, positive_export, spektra_stocks, spektra_fetch, list_subfolders, folder_volumes, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
             immich_export_check, immich_search, immich_browse_check, immich_libraries, immich_suggestions, immich_people, immich_tags,

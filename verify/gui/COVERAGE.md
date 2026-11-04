@@ -79,6 +79,7 @@ do not prove compatibility or installation behavior.
 | Preferences | Every safe local setting, persistence, theme/canvas/font/preview, disabled hardware states | Module tab only; external apps/services/relaunch excluded |
 | Library/filter/history/presets | Every menu and option with disposable folder/metadata fixtures | Pending |
 | Import/export/panorama | In-app settings, validation, format/projection options, preview/output | Pending; native chooser blocked, launch fixture argument only |
+| Print/soft proof | Printer, paper, media, orientation, margins, size, place, profile, intent, BPC; soft proof and gamut warning on the photo; Print and Save PDF | `print` case written, pending live run: soft proof, gamut, S, layout and Save PDF readiness with a seeded profile. Printing and the save dialog are native or need a real printer; `verify/print.py` checks profiles, proof pixels and the engine's PDF headlessly |
 | Visual correctness | Supported OS/webview/theme/scale/viewport, contrast/focus/clipping, approved regional references/diffs | Geometry/CSS and diagnostic screenshots only; approved references pending |
 
 Before marking an area complete, enumerate its options, add suitable fixture

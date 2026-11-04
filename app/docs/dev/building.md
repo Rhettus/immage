@@ -100,6 +100,17 @@ The two-job limit is useful on machines with 8 GB of RAM. An AppImage built
 on Arch requires a sufficiently recent host glibc; it does not establish
 the Ubuntu 22.04 compatibility baseline of the release builds.
 
+## Printing
+
+The Print panel needs darktable's print support, which `scripts/build.sh`
+turns on (`-DBUILD_PRINT=ON`). On Linux it needs CUPS's development files:
+`libcups2-dev` on Ubuntu (in `.github/ubuntu-packages.txt`), `libcups` on
+Arch. macOS has CUPS in its SDK, and Windows prints through its own APIs.
+cmake reports `Print mode: enabled`. A `build/` configured before printing
+was on keeps `BUILD_PRINT=OFF` in its cache: configure it again with
+`cmake -S darktable -B build -DBUILD_PRINT=ON`. Without print support the
+engine still soft proofs, and the panel says it can't print.
+
 ## AI models
 
 AI masks need their ONNX models in `build/ai-models/` (for development)

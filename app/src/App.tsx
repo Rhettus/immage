@@ -23,6 +23,10 @@ import { autoArea, autoBlack, autoDmax, autoDmin, autoExposure as autoPrintExpos
          FILM_BW, FILM_COLOR, fromValues, PRESETS, toValues, type Stats } from "./negadoctor";
 import { NegativePanel, type NegPick } from "./NegativePanel";
 import { FilmPanel } from "./FilmPanel";
+import { PrintPanel } from "./PrintPanel";
+import { applyProof, defaultPrintSettings, hasPrintSettings, layout as printLayout, loadPrintSettings, NO_PROOF, PDF, PDF_PAPERS,
+         printerInfo, printRequest, storePrintSettings, type Printer, type PrinterInfo, type PrintSettings,
+         type Profile, type Proof } from "./print";
 import { PositiveFooter } from "./PositiveFooter";
 import { filmChanges, paperChanges, presetValues as sfPresetValues, SF_PRESETS, type FetchStatus,
          type Stocks } from "./spektrafilm";
@@ -4064,6 +4068,151 @@ export default function App() {
   const beforeCanvas = useRef<HTMLCanvasElement>(null);
   const beforeMeta = useRef<{ x: number; y: number; scale: number; width: number; height: number;
                               fullWidth: number; fullHeight: number } | null>(null);
+  // the Print panel (PrintPanel.tsx) and the soft proof, which stays on in
+  // the other panels until turned off (print.ts)
+  const [printSettings, setPrintSettingsState] = useState<PrintSettings>(loadPrintSettings);
+  const setPrintSettings = (next: PrintSettings) => {
+    setPrintSettingsState(next);
+    storePrintSettings(next);
+  };
+  const [printAvailable, setPrintAvailable] = useState<boolean | null>(null);
+  const [printers, setPrinters] = useState<Printer[] | null>(null);
+  const [printInfo, setPrintInfo] = useState<{ name: string; info: PrinterInfo | null; error: string | null } | null>(null);
+  const [printProfiles, setPrintProfiles] = useState<Profile[]>([]);
+  const [printBusy, setPrintBusy] = useState(false);
+  const [printNote, setPrintNote] = useState<{ text: string; error: boolean } | null>(null);
+  const [printThumb, setPrintThumb] = useState<string | null>(null);
+  const [proof, setProof] = useState<Proof>(NO_PROOF);
+  const proofRef = useRef(proof);
+  proofRef.current = proof;
+  const printOpen = layout.right && !cropping && rightMode === "print";
+  const changeProof = (next: Proof) => {
+    const p = next.profile ? next : NO_PROOF;
+    setProof(p);
+    // the badge names the profile, though the panel may not have listed them yet
+    if (p.mode !== "off" && !printProfiles.some((q) => q.file === p.profile))
+      invoke<Profile[]>("print_profiles").then(setPrintProfiles).catch(() => {});
+    applyProof(p).then((changed) => {
+      if (!changed || proofRef.current !== p) return;
+      session.current?.redraw();
+      if (baModeRef.current !== "off") captureBefore();
+    }).catch((e) => setStatus(`Soft proof: ${e}`));
+  };
+  const toggleProofRef = useRef(() => {});
+  toggleProofRef.current = () => {
+    if (proof.mode !== "off") { changeProof({ ...proof, mode: "off" }); return; }
+    if (!printSettings.profile) {
+      showRight("print");
+      setStatus("Soft proof: choose a printer profile under Color Management");
+      return;
+    }
+    changeProof({ mode: "proof", profile: printSettings.profile, intent: printSettings.intent });
+  };
+  const showRightRef = useRef(showRight);
+  showRightRef.current = showRight;
+  // the proof follows the panel's profile and intent
+  useEffect(() => {
+    if (proof.mode === "off") return;
+    if (proof.profile !== printSettings.profile || proof.intent !== printSettings.intent)
+      changeProof({ ...proof, profile: printSettings.profile, intent: printSettings.intent });
+  }, [printSettings.profile, printSettings.intent]);
+  // printers and profiles, each time the panel opens
+  useEffect(() => {
+    if (!printOpen) return;
+    let live = true;
+    invoke<{ available: boolean; printers: Printer[] }>("printers").then((r) => {
+      if (!live) return;
+      setPrintAvailable(r.available);
+      setPrinters(r.printers);
+      setPrintSettingsState((s) => {
+        const known = r.printers.some((p) => p.name === s.printer);
+        // a printer gone, or the first visit with one to print on: the default
+        const pick = (s.printer !== PDF && !known) || (s.printer === PDF && !hasPrintSettings());
+        if (!pick) return s;
+        const next = { ...s, printer: (r.printers.find((p) => p.default) ?? r.printers[0])?.name ?? PDF };
+        storePrintSettings(next);
+        return next;
+      });
+    }).catch((e) => { if (live) { setPrintAvailable(true); setPrinters([]); setStatus(`Printers: ${e}`); } });
+    invoke<Profile[]>("print_profiles").then((p) => { if (live) setPrintProfiles(p); })
+      .catch((e) => setStatus(`Printer profiles: ${e}`));
+    return () => { live = false; };
+  }, [printOpen]);
+  // the chosen printer's papers; a paper it lacks becomes its own
+  useEffect(() => {
+    if (!printOpen) return;
+    const name = printSettings.printer;
+    if (name === PDF) {
+      if (!PDF_PAPERS.some((p) => p.name === printSettings.paper))
+        setPrintSettings({ ...printSettings, paper: defaultPrintSettings().paper });
+      return;
+    }
+    if (printInfo?.name === name && printInfo.info) return;
+    let live = true;
+    setPrintInfo({ name, info: null, error: null });
+    printerInfo(name).then((info) => {
+      if (!live) return;
+      setPrintInfo({ name, info, error: null });
+      setPrintSettingsState((s) => {
+        if (s.printer !== name || info.papers.some((p) => p.name === s.paper)) return s;
+        const paper = info.papers.find((p) => p.name === info.defaultPaper) ?? info.papers[0];
+        if (!paper) return s;
+        const next = { ...s, paper: paper.name };
+        storePrintSettings(next);
+        return next;
+      });
+    }).catch((e) => { if (live) setPrintInfo({ name, info: null, error: String(e) }); });
+    return () => { live = false; };
+  }, [printOpen, printSettings.printer]);
+  // the page preview's photo: the navigator's thumbnail
+  useEffect(() => {
+    if (!printOpen) return;
+    const t = navThumb.current;
+    try { setPrintThumb(t && t.width > 0 ? t.toDataURL("image/jpeg", 0.85) : null); } catch { setPrintThumb(null); }
+  }, [printOpen, placement, current]);
+  const addPrintProfile = async () => {
+    const path = await open({ multiple: false, filters: [{ name: "ICC profile", extensions: ["icc", "icm", "ICC", "ICM"] }] });
+    if (typeof path !== "string") return;
+    try {
+      const added = await invoke<Profile>("print_profile_add", { path });
+      setPrintProfiles(await invoke<Profile[]>("print_profiles"));
+      setPrintSettings({ ...printSettings, profile: added.file });
+    } catch (e) {
+      setPrintNote({ text: String(e), error: true });
+    }
+  };
+  const printNow = async () => {
+    const s = session.current;
+    if (!s || !current) return;
+    const settings = printSettings;
+    const pdf = settings.printer === PDF;
+    const papers = pdf ? PDF_PAPERS : printInfo?.info?.papers ?? [];
+    const paper = papers.find((p) => p.name === settings.paper) ?? papers[0];
+    if (!paper || !placement) return;
+    const l = printLayout(paper, settings, placement.fullWidth / placement.fullHeight,
+                          pdf ? undefined : printInfo?.info?.margins);
+    if (!l.fits) return;
+    const stem = baseName(current.path).replace(/\.[^.]+$/, "");
+    let out: string | null = null;
+    if (pdf) {
+      out = await save({ defaultPath: `${stem}.pdf`, filters: [{ name: "PDF", extensions: ["pdf"] }] });
+      if (!out) return;
+    }
+    setPrintBusy(true);
+    setPrintNote(null);
+    try {
+      // the edits still on their way go in first: the print renders the photo as the library has it
+      await s.settled();
+      await invoke("print_photo", { imgid: s.imgid,
+                                    request: printRequest(settings, paper, l, baseName(current.path), settings.medium, out) });
+      const where = printers?.find((p) => p.name === settings.printer)?.description ?? settings.printer;
+      setPrintNote({ text: pdf ? `Saved ${out}` : `Sent to ${where}.`, error: false });
+    } catch (e) {
+      setPrintNote({ text: String(e), error: true });
+    } finally {
+      setPrintBusy(false);
+    }
+  };
   const captureTimer = useRef(0);
   const captureBefore = (delay = 0) => {
     window.clearTimeout(captureTimer.current);
@@ -4994,6 +5143,12 @@ export default function App() {
         setExporting(true);
         return;
       }
+      // ⌘P: the Print panel, as Lightroom's Print module
+      if (cmd(e) && !e.shiftKey && !e.altKey && (e.key === "p" || e.key === "P")) {
+        e.preventDefault();
+        showRightRef.current("print");
+        return;
+      }
       // Copy Settings, Paste and Previous, as Lightroom's ⇧⌘C, ⇧⌘V and ⌥⌘V
       if (cmd(e) && (e.key === "c" || e.key === "C" || e.code === "KeyC") && e.shiftKey) {
         e.preventDefault();
@@ -5139,6 +5294,11 @@ export default function App() {
       if ((e.key === "h" || e.key === "H") && !cmd(e) && !e.altKey && session.current) {
         const n = SCOPE_MODES.length;
         setScope((s) => ({ mode: SCOPE_MODES[(SCOPE_MODES.findIndex(([m]) => m === s.mode) + (e.shiftKey ? n - 1 : 1)) % n][0] }));
+        return;
+      }
+      // S turns the soft proof on or off, as in Lightroom
+      if ((e.key === "s" || e.key === "S") && !cmd(e) && !e.altKey && !e.shiftKey && session.current) {
+        toggleProofRef.current();
         return;
       }
       // J shows both clipping overlays, or hides them, as in Lightroom
@@ -5667,6 +5827,11 @@ export default function App() {
                          aspect={pixelAspect(findAspect(cropAspect, cropChoices), cropPortrait, frameSize())} />
           )}
           {(before || holding) && <div className="before-badge">Before</div>}
+          {current && proof.mode !== "off" && (
+            <div className="proof-badge" data-proof-badge>
+              Soft Proof: {printProfiles.find((p) => p.file === proof.profile)?.name ?? "printer profile"}
+              {proof.mode === "gamut" ? ", gamut warning" : ""}</div>
+          )}
           {modeFlash && <div className="mode-flash">{modeFlash}</div>}
           {holdHint && <div className="hold-hint">Click and hold the photo to see the before</div>}
           {line && (
@@ -5963,6 +6128,17 @@ export default function App() {
                            : c.kind === "toggle" ? <Toggle key={id} {...props} /> : <Slider key={id} {...props} />;
                        }} />
           )}
+          {rightMode === "print" && !cropping && (
+            <PrintPanel settings={printSettings} onSettings={setPrintSettings} available={printAvailable}
+                        printers={printers} info={printInfo?.name === printSettings.printer ? printInfo.info : null}
+                        infoError={printInfo?.name === printSettings.printer ? printInfo.error : null}
+                        profiles={printProfiles} onAddProfile={() => void addPrintProfile()}
+                        aspect={placement ? placement.fullWidth / placement.fullHeight : 1.5}
+                        pixelWidth={placement?.fullWidth ?? 0} thumb={printThumb}
+                        proof={proof}
+                        onProof={(mode) => changeProof({ mode, profile: printSettings.profile, intent: printSettings.intent })}
+                        busy={printBusy} note={printNote} onPrint={() => void printNow()} disabled={!current} />
+          )}
           {rightMode === "presets" && !cropping && (
             <PresetsPanel fold={presetFold} onAnyOpen={setPresetGroupsOpen} focusMode={focusMode}
                           presets={[...BUILTIN_PRESETS, ...presets]} looks={looks} look={look} disabled={!current}
@@ -6186,6 +6362,8 @@ export default function App() {
         </div>
         <div className="rail-sep" />
         <button className="tool" title={keys("export (⇧⌘E)")} data-tour="export" onClick={() => setExporting(true)}><ExportIcon /></button>
+        <button className={`tool${layout.right && !cropping && rightMode === "print" ? " on" : ""}`} title={keys("print (⌘P)")}
+                data-tour="print" onClick={() => showRight("print")}><PrintIcon /></button>
         <div className="rail-fill" />
         <button className="tool" title="quick start guide" onClick={() => setTouring(true)}><HelpIcon /></button>
         <button className="tool" title={keys("keyboard shortcuts (⌘/)")} onClick={() => setShortcutsOpen(true)}><KeyboardIcon /></button>
@@ -6400,7 +6578,7 @@ function Splitter({ axis, value, min, max, invert, hidden, onChange }: {
   );
 }
 
-type RightMode = "adjust" | "presets" | "masks" | "heal" | "zones" | "film" | "negative";
+type RightMode = "adjust" | "presets" | "masks" | "heal" | "zones" | "film" | "negative" | "print";
 // the photo area a film border pick reads before one is picked: darktable's
 // default picker box
 const NEG_AREA: [number, number, number, number] = [0.02, 0.02, 0.98, 0.98];
@@ -6416,7 +6594,8 @@ const NEG_PICK_LABELS: Record<NegPick, string> = {
 const LEFT_CARDS = ["metadata", "keywording", "folders", "immich", "history"] as const;
 type LeftCard = typeof LEFT_CARDS[number];
 const RIGHT_TITLES: Record<RightMode, string> = { adjust: "Adjustments", presets: "Presets", masks: "Masks", heal: "Heal",
-                                                  zones: "Zone System", film: "Film Simulation", negative: "Negative" };
+                                                  zones: "Zone System", film: "Film Simulation", negative: "Negative",
+                                                  print: "Print" };
 
 // everything back to the image's defaults, as one undo step
 function ResetAll({ disabled, onReset }: { disabled: boolean; onReset: () => void }) {
@@ -7111,6 +7290,8 @@ const FilmSimIcon = () => icon(<><rect x="3" y="6" width="9" height="13" rx="2" 
 const CropIcon = () => icon(<><path d="M6 2v14a2 2 0 0 0 2 2h14" /><path d="M18 22V8a2 2 0 0 0-2-2H2" /></>);
 const ExportIcon = () => icon(<><path d="M12 15V4" /><path d="m7.5 8.5 4.5-4.5 4.5 4.5" />
                                   <path d="M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5" /></>);
+const PrintIcon = () => icon(<><path d="M7 9V4h10v5" /><rect x="3.5" y="9" width="17" height="7.5" rx="2" />
+                                <path d="M7 14h10v6H7z" /></>);
 const FilterIcon = () => icon(<path d="M4 5h16l-6 7.5V19l-4 2v-8.5z" />);
 const PanelIcon = ({ side }: { side: "left" | "bottom" | "right" }) => icon(<>
   <rect x="3.5" y="4.5" width="17" height="15" rx="2.5" />

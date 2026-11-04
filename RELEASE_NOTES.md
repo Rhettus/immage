@@ -14,6 +14,15 @@ Improvements
   has darktable's presets, film and paper menus, the main exposure, color,
   grain and halation controls, and the rest under Advanced. It replaces the
   tone mapper while it is on, and Export to Library saves a positive copy.
+- Print, a new tool in the rail below Export (⌘P), prints the photo or
+  saves it as a PDF with darktable's print code: printer, paper and media
+  type, orientation, margins, photo size and placement on a to-scale page
+  preview, and color managed by the printer or converted with a printer
+  ICC profile, perceptual or relative, with black point compensation.
+  Printer profiles installed on the computer are listed, and others can be
+  added. Soft Proof (S) shows the photo on screen as that profile prints
+  it, with a gamut warning that marks unprintable colors cyan; the proof
+  stays on while editing in other panels.
 - The crop tool has an Auto button beside Rotate that levels the photo
   from its straight lines, with Upright's Level fit.
 - Saturation can run on darktable's new saturation curve module, chosen

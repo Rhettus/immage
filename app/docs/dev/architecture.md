@@ -181,6 +181,12 @@ and constrained resizing.
 | [exportTokens.ts](../../src/exportTokens.ts) | File name and caption tokens. |
 | [ExportDialog.tsx](../../src/ExportDialog.tsx), [ExportFrame.tsx](../../src/ExportFrame.tsx) | The Export dialog, its live preview, the Immich target; the Frame & Captions editor. The dialog asks what an export needs (the upscale model, names that clash), hands it to `runExport` and closes. |
 
+### Print
+
+| File | Responsibility |
+|---|---|
+| [print.ts](../../src/print.ts), [PrintPanel.tsx](../../src/PrintPanel.tsx) | The Print panel (`RightMode` `"print"`, the rail's last button under Export, ⌘P): settings kept in `localStorage`, PDF papers, the page `layout()`, the request for `print_photo`; the soft proof (`applyProof`), which App.tsx keeps on across panels (S, the `Soft Proof:` badge) and follows with `Session.redraw()`. Design and verification in [print.md](print.md). |
+
 ### Immich and plugins
 
 | File | Responsibility |
@@ -225,7 +231,7 @@ Commands by what they reach:
 | Reaches | Commands |
 |---|---|
 | The open photo, through the engine | `open_image`, `get_params`, `set_params`, `module_state`, `render`, `cancel_base`, `preview`, `save`, `before_view`, `history`, `masks`, `mask_shapes`, `combine`, `mask_delete`, `mask_rename`, `mask_map`, `range_map`, `sample`, `zones`, `tone_key`, `agx_auto`, `spots`, `spots_enable`, `spot_source`, `look_apply`, `look_amount`, `positive_export`, `ai_object`, `ai_mask`, `ai_depth`, `ai_denoise`, `ai_denoise_preview` |
-| The library, through the engine | `open_folder` (engine `import` in batches), `thumb`, `thumb_cached`, `thumb_known`, `prefetch`, `meta`, `meta_set`, `capture_times`, `keywords`, `keywords_set`, `create_virtual_copy`, `remove_virtual_copy`, `hdr_merge`, `hdr_can_align`, `pano_merge`, `pano_can_merge`, `trash_files`, `export_images`, `export_cancel`, `export_preview`, `fonts`, `spektra_stocks`, `spektra_fetch`, `ai_accel`, `about` |
+| The library, through the engine | `open_folder` (engine `import` in batches), `thumb`, `thumb_cached`, `thumb_known`, `prefetch`, `meta`, `meta_set`, `capture_times`, `keywords`, `keywords_set`, `create_virtual_copy`, `remove_virtual_copy`, `hdr_merge`, `hdr_can_align`, `pano_merge`, `pano_can_merge`, `trash_files`, `export_images`, `export_cancel`, `export_preview`, `fonts`, `print_photo`, `print_profiles`, `print_profile_add`, `printers`, `printer_info`, `softproof`, `spektra_stocks`, `spektra_fetch`, `ai_accel`, `about` |
 | Files only | `list_subfolders`, `folder_volumes`, `path_exists`, `path_kind`, `export_existing`, `presets_load`, `presets_save`, `export_presets_load`, `export_presets_save`, `preset_file_read`, `preset_file_write`, `looks_list`, `sample_folder`, `launch_file` |
 | AI models (download, then the engine's `version`) | `ai_model_ensure`, `ai_model_reinstall` |
 | Immich (HTTP) | `immich_albums`, `immich_create_album`, `immich_export_check`, `immich_browse_check`, `immich_search`, `immich_libraries`, `immich_suggestions`, `immich_people`, `immich_tags`, `immich_thumb`, `immich_resolve` |
@@ -253,6 +259,14 @@ holds one session, `_s` (`dt_engine_session_t`): the open image, its develop
 
 The preview pipe exists so trying a setting never touches the edit or the
 main pipe's cache.
+
+Printing and soft proofing are in [engine/print.c](../../../engine/print.c):
+printer profiles added to darktable's output list at run time, colorout's
+soft proof mode (`softproof`, with every pipe recommitted from colorout and
+the proof mixed into `_frame_hash`), CUPS or Windows printers, and a print
+job (`print`, tagged on the export thread) that renders through an in-memory
+format, converts with the printer profile and writes a PDF for CUPS or a
+file, or spools on Windows. See [print.md](print.md).
 
 Film Simulation's engine side is a section of main.c. spektrafilm builds its
 film and paper lists only in its GUI, so `_spektra_stocks` reads the pack's
@@ -535,6 +549,7 @@ darktable is, and it has AI features when darktable is configured with
 | [test_release_assets.py](../../../scripts/test_release_assets.py) | Release assembly checks: both Linux downloads and updater entries, missing bundles or signatures, duplicate architectures and mismatched versions. Run by the build workflow. |
 | `npm run build` in `app/` | Type checking (`tsc --noEmit`) and the production bundle; there is no front-end unit test runner (the release checks run the front end's `Session`). |
 | [verify/](../../../verify/README.md) | The release checks: the app's `Session` run under Node against the engine (`harness.mjs`, with `shim.mjs` for Tauri's invoke), every slider and mask slider measured, an edit saved and opened again, old edits rendered, a check per bug fixed and per decision about Immage's behavior, and the benchmark's main timings against the last run. |
+| [verify/print.py](../../../verify/print.py), [verify/print.test.mjs](../../../verify/print.test.mjs) | Print and soft proof: printer profiles, the proof's and gamut warning's pixels and frame hashes, PDF output and refused requests against the engine; the page layout and `Session.redraw()` after a proof through the app's code ([print.md](print.md)). |
 | [benchmarking/](../../../benchmarking/README.md) | The engine benchmark (driven with the app's own manifest), the GUI benchmark's reports, the dashboard. |
 | `build/spike/*.py` | Untracked, local scripts that drive the engine headless, one per feature (masks, zones, frames, spots, AI). Useful patterns, not a suite. |
 | `darktable/src/tests/integration/` | darktable's pixel tests; run them when a change reaches the pixelpipe or `src/iop/`. |

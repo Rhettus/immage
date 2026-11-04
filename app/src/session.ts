@@ -507,6 +507,14 @@ export class Session {
     return this.spotsDirty || this.spotsOn !== !this.before;
   }
 
+  // the engine's view changed with no edit (the soft proof): the frames
+  // shown so far are of the view before
+  redraw() {
+    this.changed();
+    this.needRender = true;
+    void this.pump();
+  }
+
   setSpots(spots: Spot[]) {
     this.spots = spots;
     this.spotsDirty = true;

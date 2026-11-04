@@ -56,6 +56,7 @@
 #ifdef HAVE_PANO
 #include "pano.h"
 #endif
+#include "print.h"
 #include "strip.h"
 #include "upright.h"
 #ifdef HAVE_AI
@@ -1350,10 +1351,11 @@ static gboolean _module_state(const char *op, const int priority, const gboolean
 // every shape of the edit (drawn masks, spots). darktable takes a piece's
 // mask shapes from darktable.develop (imageop.c, dt_iop_commit_params),
 // which is not this engine's develop, so its hash alone stays the same
-// when a mask is reshaped, and `have` would hand back the frame from before
+// when a mask is reshaped, and `have` would hand back the frame from before.
+// the soft proof is in no params either (print_proof_hash)
 static dt_hash_t _frame_hash(const dt_hash_t pipe_hash)
 {
-  dt_hash_t hash = pipe_hash;
+  dt_hash_t hash = print_proof_hash(pipe_hash);
   for(GList *l = _s.dev.forms; l; l = g_list_next(l))
     hash = dt_masks_group_hash_ext(hash, l->data, _s.dev.forms);
   return hash;
@@ -4089,7 +4091,9 @@ static void _export_run(gpointer data, gpointer user_data)
   else
   {
     const dt_imgid_t snap = _hold_take(job, json_object_get_int_member_with_default(req, "imgid", 0));
-    if(dt_is_valid_imgid(snap))
+    if(dt_is_valid_imgid(snap) && !g_strcmp0(cmd, "print"))
+      ok = print_image(snap, req, b, &err);
+    else if(dt_is_valid_imgid(snap))
     {
       ok = _export(snap, req, &err);
       if(ok && _positive_copy(req))
@@ -4110,6 +4114,7 @@ static void _export_run(gpointer data, gpointer user_data)
     json_builder_add_string_value(b, err                              ? err
                                      : !g_strcmp0(cmd, "hdr_merge")  ? "merging to HDR failed"
                                      : !g_strcmp0(cmd, "pano_merge") ? "merging to a panorama failed"
+                                     : !g_strcmp0(cmd, "print")      ? "printing failed"
                                                                      : "export failed");
   }
   json_builder_end_object(b);
@@ -10052,6 +10057,57 @@ static void _handle(JsonObject *req, FILE *out)
     if(_s.open && _s.imgid == imgid && !_s.before) dt_dev_write_history_ext(&_s.dev, imgid);
     if(!_export(imgid, req, &err)) goto fail;
   }
+  // printing (print.c): an untagged `print` renders in the main loop, as
+  // `export` does; the app's are tagged and run on the export thread
+  else if(!g_strcmp0(cmd, "print"))
+  {
+    const dt_imgid_t imgid = json_object_get_int_member_with_default(req, "imgid", 0);
+    if(_s.open && _s.imgid == imgid && !_s.before) dt_dev_write_history_ext(&_s.dev, imgid);
+    if(!print_image(imgid, req, b, &err)) goto fail;
+  }
+  else if(!g_strcmp0(cmd, "print_profiles"))
+  {
+    json_builder_set_member_name(b, "profiles");
+    print_profiles(b);
+  }
+  else if(!g_strcmp0(cmd, "print_profile_add"))
+  {
+    if(!print_profile_add(json_object_get_string_member_with_default(req, "path", NULL), b, &err)) goto fail;
+  }
+  else if(!g_strcmp0(cmd, "printers"))
+  {
+    json_builder_set_member_name(b, "available");
+    json_builder_add_boolean_value(b, print_available());
+    json_builder_set_member_name(b, "printers");
+    print_printers(b);
+  }
+  else if(!g_strcmp0(cmd, "printer"))
+  {
+    if(!print_printer(json_object_get_string_member_with_default(req, "name", NULL), b, &err)) goto fail;
+  }
+  else if(!g_strcmp0(cmd, "softproof"))
+  {
+    gboolean changed = FALSE;
+    if(!print_softproof(json_object_get_string_member_with_default(req, "mode", "off"),
+                        json_object_get_string_member_with_default(req, "profile", NULL),
+                        json_object_get_int_member_with_default(req, "intent", DT_INTENT_PERCEPTUAL),
+                        &changed, &err))
+      goto fail;
+    // colorout builds its proofing transform when committed, and the mode
+    // is in neither its params nor their hash (colorout.c, commit_params),
+    // so every pipe commits it again and drops what it kept from colorout
+    // on, as darktable's soft proof button does (darkroom.c)
+    char *ignored = NULL;
+    const dt_iop_module_t *cout = changed && _s.open ? _module("colorout", &ignored) : NULL;
+    g_free(ignored);
+    if(cout)
+    {
+      _invalidate_from(cout->iop_order, "softproof ");
+      _changed(DT_DEV_PIPE_SYNCH);
+    }
+    json_builder_set_member_name(b, "changed");
+    json_builder_add_boolean_value(b, changed);
+  }
   // the photos a background export (tagged `export`s of this `job`) is to
   // render, each as its edit is now
   else if(!g_strcmp0(cmd, "export_hold"))
@@ -10668,7 +10724,7 @@ static gpointer _read_requests(gpointer data)
           taken = TRUE;
         }
         else if((!g_strcmp0(cmd, "export") || !g_strcmp0(cmd, "export_release")
-                 || !g_strcmp0(cmd, "hdr_merge") || !g_strcmp0(cmd, "pano_merge")
+                 || !g_strcmp0(cmd, "print") || !g_strcmp0(cmd, "hdr_merge") || !g_strcmp0(cmd, "pano_merge")
                  || !g_strcmp0(cmd, "pano_preview"))
                 && json_object_has_member(req, "tag"))
         {

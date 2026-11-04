@@ -12,6 +12,8 @@ A focused menu keeps its arrow keys, Space and Enter for choosing.
 | --- | --- |
 | ⇧⌘I | Import photos |
 | ⇧⌘E | Export |
+| ⌘P | Print |
+| S | Soft proof on or off, against the Print panel's printer profile |
 | ⌘, | Preferences |
 | ⌘/ | Keyboard shortcuts |
 | ⇧⌘P | Performance overlay |

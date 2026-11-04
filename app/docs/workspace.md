@@ -27,6 +27,7 @@ in, edit them, send them out.
 | **Negative** | a photo of a film negative turned positive. See [Film negatives](negative.md). |
 | **Presets** | presets and film looks. See [Presets and looks](presets-and-looks.md). |
 | **Export** | the export dialog (⇧⌘E). See [Export](export.md). |
+| **Print** | printing, saving a PDF and soft proofing (⌘P). See [Print and soft proofing](print.md). |
 | **?** | the quick start guide |
 | Keyboard | the keyboard shortcuts sheet (⌘/) |
 | Gear | **Preferences** (⌘,) |

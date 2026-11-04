@@ -185,6 +185,8 @@ function sized(width, height) {
   return out;
 }
 
+// print_photo's export jobs, apart from the tests' own numbers
+let printJobs = 0;
 const COMMANDS = {
   display_scale: () => (screen.scale === "error" ? Promise.reject(new Error("not on a screen yet")) : screen.scale),
   meta: ({ imgid }) => request({ cmd: "meta", imgid }),
@@ -290,6 +292,23 @@ const COMMANDS = {
   pano_merge: ({ imgids, projection, crop }) => requestTagged({ cmd: "pano_merge", imgids, projection, crop }),
   pano_can_merge: async () => (await request({ cmd: "version" })).pano ?? false,
   meta_set: ({ imgid, fields }) => request({ cmd: "meta_set", imgid, ...fields }),
+  // the Print panel, as main.rs sends it (engine/print.c)
+  print_profiles: async () => (await request({ cmd: "print_profiles" })).profiles,
+  print_profile_add: async ({ path }) => { const { ok, ms, ...r } = await request({ cmd: "print_profile_add", path }); return r; },
+  softproof: async ({ mode, profile, intent }) =>
+    (await request({ cmd: "softproof", mode, profile: profile ?? "", intent: intent ?? 0 })).changed,
+  printers: async () => { const { ok, ms, ...r } = await request({ cmd: "printers" }); return r; },
+  printer_info: async ({ name }) => { const { ok, ms, ...r } = await request({ cmd: "printer", name }); return r; },
+  print_photo: async ({ imgid, request: req }) => {
+    const job = 900000 + ++printJobs;
+    await request({ cmd: "export_hold", job, imgids: [imgid] });
+    try {
+      const { ok, ms, tag, ...r } = await requestTagged({ ...req, cmd: "print", job, imgid });
+      return r;
+    } finally {
+      await requestTagged({ cmd: "export_release", job });
+    }
+  },
   // as main.rs, with the files removed rather than put in the trash
   trash_files: async ({ imgids }) => {
     const gone = [];

@@ -113,7 +113,7 @@ export async function history(t) {
 }
 
 export async function rail(t) {
-  for (const tool of ['presets', 'masks', 'zones', 'heal', 'adjust']) {
+  for (const tool of ['presets', 'masks', 'zones', 'heal', 'print', 'adjust']) {
     const selector = `button[data-tour="${tool}"]`;
     await click(t, selector);
     await until(async () => (await t.driver.observe(inspect, selector))?.active, `${tool} active`);
