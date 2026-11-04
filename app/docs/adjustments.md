@@ -87,12 +87,13 @@ for **B&W Mix**.
 - **Dehaze**: removes haze; negative values add it.
 - **Vibrance** and **Saturation**.
 
-With **contrast & texture** selected for Clarity or Texture in Preferences ›
-Modules, that slider becomes **Medium details** and **Fine details** (-1 to 5).
+Clarity and Texture run on **contrast & texture** by default, where each
+shows **Medium details** and **Fine details** (-1 to 5) instead of a single
+slider; choose local contrast or diffuse or sharpen in Preferences › Modules
+for the slider.
 **Advanced** reveals Coarse details (-1 to 5), Base detail level (1–15), Halo
 control (-10 to 10), Noise bias (0–1), Shadows and Highlights (-5 to 5).
-Clarity and Texture use separate instances, including on masks. This module
-currently runs on the CPU.
+Clarity and Texture use separate instances, including on masks.
 
 ## Contrast equalizer
 

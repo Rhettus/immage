@@ -537,6 +537,11 @@ overlapping local photos and check the projection preview and Merge action.
 
 `MODULE_CHOICES` in [manifest.ts](../../src/manifest.ts) is the source of truth
 for the alternatives, preferred defaults, global controls and local controls.
+Each choice's `preferred` option follows darktable's AgX workflow except
+Clarity and Texture, which prefer `contrastntexture` for its OpenCL path
+(GPU check: 8 ms against diffuse's 17 on an Apple M4). A new raw no longer
+gets `capture` set on open (App.tsx `openFile`), and Reset all leaves it at
+its neutral 0; `verify/harness.mjs` opens photos the same way.
 `MASK_MODULE_CHOICES` filters these to the alternatives implemented by
 `localMaps`; masked Contrast offers color balance rgb (default) and atrous,
 excluding AgX because tone mappers cannot be masked.

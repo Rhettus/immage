@@ -287,6 +287,10 @@ CONTROLS = [
 # Session.open); the new-photos preset is left out, as it depends on
 # Preferences
 NEW_PHOTO = {"tm_mode": 1}
+# Texture and Clarity's sliders, which CONTROLS and HEAVY move, belong to
+# diffuse and local contrast; new photos take contrast & texture, so the
+# scenarios pin those to keep their work, and their times, comparable
+SLIDER_MODULES = {"mod_texture": 0, "mod_clarity": 0}
 
 # the heavy scenario's edit: the four modules that took the app's idle base
 # render to 4.8 s in an earlier run
@@ -544,6 +548,7 @@ def run_image(eng, edits, rec, mode, img, args, workdir, spawn):
            "orientation": r.get("orientation", 0), "camera": r.get("orientation", 0)}
     controls = edits.call(cmd="init", info=info["modules"], ctx=ctx)["controls"]
     new_photo = {k: v for k, v in NEW_PHOTO.items() if k in controls and (r.get("raw") or k == "tm_mode")}
+    new_photo.update({k: v for k, v in SLIDER_MODULES.items() if k in controls})
     # Preferences' exposure compensation, on its own exposure instance
     if args.exp_comp and r.get("raw"):
         new_photo["exp_comp"] = args.exp_comp

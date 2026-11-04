@@ -36,7 +36,8 @@ leaves its settings alone until one of its sliders is moved.
 Some tools can run on more than one module. Preferences › Modules picks
 which for the tools a photo has not used yet: Default takes the module
 darktable's [AgX workflow](https://avidandrew.com/agx-workflow.html) uses
-for each, the first one listed below, and Custom lets each be set. A
+for each, except contrast & texture for Clarity and Texture: the first one
+listed below. Custom lets each be set. A
 photo that already uses one of a tool's modules keeps it. The collapsible
 Global and Masks sections choose modules independently: for example, use AgX
 globally and contrast equalizer inside masks. They follow Focus mode; Alt-click
@@ -56,8 +57,8 @@ for the available mask alternatives.
 | Vibrance | color balance rgb (`colorbalancergb`) |
 | Saturation | AgX's saturation; or color balance rgb (`colorbalancergb`), which a photo on sigmoid always uses |
 | Whites | AgX (`agx`), with color balance rgb's highlights brilliance (`colorbalancergb`); sigmoid (`sigmoid`) on a photo started under it |
-| Texture | diffuse or sharpen (`diffuse`), or contrast & texture (`contrastntexture`), on its own instance |
-| Clarity | local contrast (`bilat`), or contrast & texture (`contrastntexture`) |
+| Texture | contrast & texture (`contrastntexture`), on its own instance, or diffuse or sharpen (`diffuse`) |
+| Clarity | contrast & texture (`contrastntexture`), or local contrast (`bilat`) |
 | Dehaze | haze removal (`hazeremoval`) |
 | **Tone Curve** | |
 | Parametric and point curve | tone curve (`tonecurve`) |

@@ -315,7 +315,8 @@ photo's starting point: they don't mark it as edited.
 ## Modules
 
 Which darktable module each tool runs on. **Default** uses the module of
-darktable's AgX workflow for each; **Custom** lets you pick one per tool,
+darktable's AgX workflow for each, except Clarity and Texture, which use
+contrast & texture; **Custom** lets you pick one per tool,
 under separate collapsible **Global** and **Masks** sections. For example,
 use AgX for global Contrast and contrast equalizer for masks. With **Focus mode**
 on, opening one section closes the other; Alt-click keeps both open. With it off,
@@ -325,8 +326,8 @@ sections open independently, and Alt-click opens one on its own. Global offers:
   rgb, or contrast equalizer, which replaces the slider with a curve editor
 - **Blacks**: AgX (or sigmoid), or exposure
 - **Saturation**: AgX (or sigmoid), or color balance rgb
-- **Clarity**: local contrast, or contrast & texture
-- **Texture**: diffuse or sharpen, or contrast & texture
+- **Clarity**: contrast & texture, or local contrast
+- **Texture**: contrast & texture, or diffuse or sharpen
 - **Highlights and Shadows**: the tone equalizer, or shadows and
   highlights
 - **Black & White**: color calibration, or the color equalizer
@@ -337,13 +338,14 @@ Highlights and Shadows, Clarity, Texture and Sharpening. Modules without
 alternatives are also listed. Existing mask adjustments keep their modules;
 unused tools and new masks take these choices.
 
-Clarity and Texture can each use **contrast & texture** under Custom modules.
-Selecting it replaces the corresponding slider with the module's Coarse,
-Medium and Fine details, Base detail level, Halo control, Noise bias, Shadows
-and Highlights sliders, using darktable's ranges and defaults. Medium and Fine
-details stay visible; expand **Advanced** for the other controls. This also
-applies to masks. Clarity and Texture use separate instances. The existing
-modules remain the defaults; contrast & texture currently runs on the CPU.
+Clarity and Texture use **contrast & texture** by default, in place of a
+single slider: the module's Coarse, Medium and Fine details, Base detail
+level, Halo control, Noise bias, Shadows and Highlights sliders, using
+darktable's ranges and defaults. Medium and Fine details stay visible; expand
+**Advanced** for the other controls. This also applies to masks. Clarity and
+Texture use separate instances. It runs on the GPU with OpenCL, and faster
+than diffuse or sharpen. Under Custom, choose local contrast for Clarity or
+diffuse or sharpen for Texture to get the single slider back.
 
 The tab also lists the module behind each of the other tools. A photo that
 already uses one of a tool's modules keeps it, so its edit looks the same;

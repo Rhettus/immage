@@ -26,6 +26,10 @@ Improvements
   CPU and GPU renders of the open photo, with and without each of a
   set of modules, and saves a report of differences, OpenCL errors and
   fallbacks to the CPU, and a canceled GPU render, for testing GPUs.
+- Clarity and Texture use contrast & texture by default, globally and in
+  masks; Preferences › Modules › Custom brings back local contrast and
+  diffuse or sharpen. Photos that already use either keep their module.
+- New raws open with Capture Sharpening off, and Reset all turns it off.
 - A mask's Defringe always uses chromatic aberrations, like the global
   Defringe: Preferences › Modules › Masks no longer offers darktable's
   deprecated defringe module. Masks already edited with it keep their look.
@@ -64,8 +68,6 @@ Bug fixes
   switches exposure on when the photo had not used it.
 - A focused menu keeps its arrow keys, Space and Enter: choosing a crop
   aspect with the keyboard no longer applies the crop.
-- Reset all keeps a raw's Capture Sharpening on, as the photo opened,
-  instead of turning it off.
 - Opening a panel after scrolling another no longer leaves the new panel's
   top out of reach above the Adjustments list on Linux.
 - The contrast equalizer draws its end points whole: the first and last

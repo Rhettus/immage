@@ -68,8 +68,8 @@ test('mask choices support local modules and remain independent of global prefer
     storeModuleChoice('contrast', 2, 'masks');
     assert.equal(loadModuleChoice('contrast'), 0);
     assert.equal(loadModuleChoice('contrast', 'masks'), 2);
-    storeModuleChoice('clarity', 1);
-    assert.equal(loadModuleChoice('clarity', 'masks'), 0);
+    storeModuleChoice('clarity', 0);
+    assert.equal(loadModuleChoice('clarity', 'masks'), 1);
     storeModuleMode('default');
     for (const c of MASK_MODULE_CHOICES) {
       assert.equal(loadModuleChoice(c.id, 'masks'), preferredChoice(c));

@@ -408,7 +408,9 @@ const USM_RADIUS = 2;
 // it has not used yet, the one Preferences picks (moduleChoice.ts). each
 // option brings its own sliders, and the panels show only the photo's
 // Preferences' Default picks each tool's `preferred` module, the one
-// darktable's AgX workflow uses (avidandrew.com/agx-workflow.html)
+// darktable's AgX workflow uses (avidandrew.com/agx-workflow.html), except
+// that Clarity and Texture take contrast & texture, which runs on OpenCL
+// and outpaces diffuse or sharpen
 export type ModuleOption = {
   value: number; op: string; name: string;
   preferred: boolean;         // what Preferences' Default picks
@@ -454,16 +456,16 @@ export const MODULE_CHOICES: ModuleChoice[] = [
   {
     id: "clarity", label: "Clarity", control: "mod_clarity",
     options: [
-      { ...shared(0, "bilat", "local contrast", true), controls: ["clarity"], localControls: ["l_clarity"] },
-      { ...shared(1, "contrastntexture", "contrast & texture", false),
+      { ...shared(0, "bilat", "local contrast", false), controls: ["clarity"], localControls: ["l_clarity"] },
+      { ...shared(1, "contrastntexture", "contrast & texture", true),
         controls: detailControlIds("detail_clarity"), localControls: detailControlIds("l_detail_clarity") },
     ],
   },
   {
     id: "texture", label: "Texture", control: "mod_texture",
     options: [
-      { ...shared(0, "diffuse", "diffuse or sharpen", true), controls: ["texture"], localControls: ["l_texture"] },
-      { ...shared(1, "contrastntexture#texture", "contrast & texture", false),
+      { ...shared(0, "diffuse", "diffuse or sharpen", false), controls: ["texture"], localControls: ["l_texture"] },
+      { ...shared(1, "contrastntexture#texture", "contrast & texture", true),
         controls: detailControlIds("detail_texture"), localControls: detailControlIds("l_detail_texture") },
     ],
   },
@@ -1518,7 +1520,7 @@ export const panels: Panel[] = [
         title: "Capture Sharpening",
         controls: [
           { ...toggle("capture", "Enable", 0), rawOnly: true,
-            note: "restores the detail the lens and sensor soften, so less Sharpening is needed; on for new raws" },
+            note: "restores the detail the lens and sensor soften, so less Sharpening is needed" },
         ],
       },
       {

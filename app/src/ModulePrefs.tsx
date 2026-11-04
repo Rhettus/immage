@@ -3,7 +3,8 @@
 
 // Preferences' Modules tab: the darktable module each tool runs on, as
 // README's table lists them. a tool with more than one gets a menu, set by
-// Default (darktable's AgX workflow's module for each) or by hand under Custom
+// Default (darktable's AgX workflow's module for each, but contrast & texture
+// for Clarity and Texture) or by hand under Custom
 import { useState } from "react";
 import { MASK_MODULE_CHOICES, moduleTools, type ModuleChoice } from "./manifest";
 import { loadModuleChoice, loadModuleMode, storeModuleChoice, storeModuleMode, type ModuleMode } from "./moduleChoice";
@@ -46,7 +47,7 @@ export function ModulePrefs({ focusMode }: { focusMode: boolean }) {
       </p>
       <PrefCard title="Modules">
         <PrefRow label="Modules"
-                 hint={mode === "default" ? "the module darktable's AgX workflow uses for each tool"
+                 hint={mode === "default" ? "the module darktable's AgX workflow uses for each tool, and contrast & texture for Clarity and Texture"
                                            : "each tool's module as set below"}>
           <div className="segmented small">
             {([["Default", "default"], ["Custom", "custom"]] as const).map(([label, v]) => (

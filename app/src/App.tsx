@@ -1093,10 +1093,8 @@ export default function App() {
     try {
       // the modules, profile and exposure compensation are the photo's own,
       // not adjustments; the orientation stays too, as in Lightroom
-      // a raw starts with capture sharpening on (as it opens), so it keeps it
-      changeMany([...Object.entries(s.neutral).filter(([id]) => !isModuleSetting(id) && id !== "profile"
-                                                                && id !== "exp_comp" && id !== "orient"),
-                  ...(s.raw ? [["capture", 1] as [string, number]] : [])]);
+      changeMany(Object.entries(s.neutral).filter(([id]) => !isModuleSetting(id) && id !== "profile"
+                                                            && id !== "exp_comp" && id !== "orient"));
       s.resetModules();
       if (s.look) applyLook(null);
       for (const m of s.masks) s.deleteMask(m.name);
@@ -3491,10 +3489,9 @@ export default function App() {
         base.push({ op: "exposure", name: "exposure",
                     label: `compensation ${comp > 0 ? "+" : ""}${comp.toFixed(2)} EV`, enabled: true });
       }
-      // a raw starts with darktable's capture sharpening, and without noise
-      // reduction, which the AgX workflow adds only where a photo needs it;
-      // the preset or an Edit In return below may set them again
-      if (!s.wasEdited && s.raw) s.setMany([["capture", 1]]);
+      // a raw starts without capture sharpening or noise reduction, which
+      // the AgX workflow adds only where a photo needs it; the preset below
+      // may set them
       // a file back from Edit In starts without what its application did
       // already (Lens Corrections after PureRAW), over the preset's values
       // so they are never turned on to be turned off; a panorama, without

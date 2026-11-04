@@ -115,8 +115,7 @@ function fresh(photo) {
 }
 
 // a photo opened as the app opens it (App.tsx, openFile): a new one gets
-// AgX, and a raw darktable's capture sharpening. the new-photos preset and
-// profile are left out, being Preferences'
+// AgX. the new-photos preset and profile are left out, being Preferences'
 async function open(path) {
   let last = null;
   const errors = [];
@@ -128,7 +127,6 @@ async function open(path) {
   if (!s.wasEdited) {
     const defaults = [];
     if (s.values.tm_mode !== 1) defaults.push(["tm_mode", 1]);
-    if (s.raw) defaults.push(["capture", 1]);
     if (defaults.length) s.setMany(defaults);
   }
   // Session stops pumping on an engine error, which it hands to onError,
@@ -632,6 +630,8 @@ async function fixes(photo) {
   // more than ±10 did
   await fix("Clarity at ±1 changes less than at ±10", async () => {
     const o = await open(fresh(photo));
+    // the slider is local contrast's, which new photos no longer default to
+    await o.after(() => o.s.set("mod_clarity", 0));
     const mad = async (v) => compare(await o.after(() => o.s.set("clarity", v)), o.base).mad;
     const [p1, p10, n1, n10] = [await mad(1), await mad(10), await mad(-1), await mad(-10)];
     await o.s.close();
@@ -2026,7 +2026,7 @@ async function decisions(photo) {
   // Default in Preferences › Modules is darktable's AgX workflow (README)
   await decide("default modules", async () => {
     const want = { contrast: "agx", tone_regions: "toneequal", blacks: "agx", saturation: "agx",
-                   bw: "channelmixerrgb#bw", clarity: "bilat", texture: "diffuse",
+                   bw: "channelmixerrgb#bw", clarity: "contrastntexture", texture: "contrastntexture#texture",
                    sharpening: "sharpen" };
     const wrong = m.MODULE_CHOICES.map((c) => [c.id, c.options.find((x) => x.value === m.preferredChoice(c)).op])
       .filter(([id, op]) => want[id] !== op).map(([id, op]) => `${id}: ${op}, not ${want[id] ?? "listed here"}`);
@@ -2316,12 +2316,13 @@ async function choices(photo) {
 // starting again), and the photo opened: the same values and the same frame
 const ROUNDTRIP = {
   exposure: 0.7, contrast: 30, highlights: -40, shadows: 35, whites: 20, blacks: -15, vibrance: 20, saturation: -10,
-  clarity: 25, dehaze: 10, cg_highlights_sat: 30, cg_highlights_hue: 40, cg_shadows_lum: -20, hsl_sat_blue: 30,
+  detail_clarity_gain_medium: 0.5, dehaze: 10, cg_highlights_sat: 30, cg_highlights_hue: 40, cg_shadows_lum: -20, hsl_sat_blue: 30,
   hsl_lum_orange: 15, vig_amount: -20, grain_amount: 15, usm_amount: 40, nr_luminance: 20,
 };
 const ROUNDTRIP_MASKS = [
   { name: "Round", shape: MASK, values: { l_exposure: 0.5, l_highlights: -30, l_shadows: 25, l_whites: 20,
-                                          l_saturation: 15, l_cg_highlights_lum: 20, l_clarity: 15 } },
+                                          l_saturation: 15, l_cg_highlights_lum: 20,
+                                          l_detail_clarity_gain_medium: 0.3 } },
   { name: "Line", shape: { type: "gradient", x: 0.5, y: 0.3, angle: 90, width: 0.2 },
     values: { l_temp: -30, l_contrast: 20, l_blacks: -20, l_hsl_sat_blue: 25 } },
 ];

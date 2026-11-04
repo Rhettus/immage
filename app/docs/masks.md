@@ -149,7 +149,8 @@ Where masks overlap, their adjustments add up. **Contrast**,
 | O | Show or hide the overlay |
 | Esc | Put the tool down |
 
-Clarity and Texture also offer **contrast & texture**, chosen independently in
+Clarity and Texture use **contrast & texture** by default, or local contrast
+and diffuse or sharpen, chosen independently in
 [Preferences › Modules](preferences.md#modules). Medium and Fine details stay
 visible; **Advanced** reveals the remaining native controls. Contrast equalizer
 can also replace mask Contrast: select **Custom**, then **Masks › Contrast ›
