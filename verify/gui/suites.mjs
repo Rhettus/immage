@@ -38,6 +38,7 @@ export const cases = {
   masks:{scope:'manual shapes/ranges, Exposure effect, delete/reset',liveValidated:false},
   heal:{scope:'Heal/Clone spot creation/settings/deletion',liveValidated:false},
   negative:{scope:'negative conversion and turn-off round trip',fixture:'negative',liveValidated:false},
+  film:{scope:'film simulation on, a preset, and turn-off round trip',liveValidated:false,limitation:'Needs the spektrafilm data pack installed; does not test its download.'},
   zones:{scope:'each zone selection and visible inspection',liveValidated:false},
   'preferences-matrix':{scope:'local checkbox/menu/segmented preference options; hardware/restart/network actions blocked',liveValidated:false},
   'slider-wheel':{scope:'wheel disabled/enabled behavior',liveValidated:false},
@@ -62,7 +63,7 @@ export const cases = {
 export const suites = {
   smoke: ['startup', 'exposure'],
   crop: ['startup','crop-guides','crop-locked','crop-options'],
-  workflows: ['startup','curves','wheels','equalizer','masks','heal','zones','preferences-matrix','slider-wheel','export-options','filters','presets','shortcuts'],
+  workflows: ['startup','curves','wheels','equalizer','masks','heal','zones','film','preferences-matrix','slider-wheel','export-options','filters','presets','shortcuts'],
   inventory: ['startup',...generatedNames],
   regressions: ['startup', 'rail', 'panel-scroll', 'module-options', 'batch-paste'],
   controls: ['startup', 'slider-input', 'slider-click', 'history', 'rail', 'sliders', 'module-options'],

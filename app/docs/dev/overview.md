@@ -24,6 +24,9 @@ Everything else in this repository is Immage's own.
     are stored as darktable drawn and parametric masks
   - Heal and Clone spots with an automatically chosen source and a
     Visualize Spots view, stored in darktable's retouch module
+  - film simulation in darktable's spektrafilm: a film stock exposed,
+    developed and printed on a paper or scanned, from measured data
+    downloaded on first use
   - film negative conversion, color or black and white, picked from the
     film border and the photo, in darktable's negadoctor
   - HDR Merge, in darktable's HDR merge, and Panorama Merge, stitched

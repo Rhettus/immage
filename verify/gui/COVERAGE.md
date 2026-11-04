@@ -75,7 +75,7 @@ do not prove compatibility or installation behavior.
 | Curves/wheels/graphs | Drag points, boundaries, channels, reset, photo effect, graph hit targets | Pending |
 | Crop/transform | Free/locked/portrait, corners/edges, aspect options, rotation/flip, guides, cancel/apply, undo | Pending |
 | Portrait automatic Transform | Crop a native/EXIF portrait, click Auto, Level, Vertical and Full; verify a rendered correction without a working-space error, then restore the crop and repeat | GUI case pending; headless CPU sampling covered by `verify/transform-sampling.py` |
-| Masks/heal/negative/zones | Creation and deletion, every shape/option, local module controls, outside-region invariance, reset/undo | Rail opening only; editing pending |
+| Masks/heal/negative/film simulation/zones | Creation and deletion, every shape/option, local module controls, outside-region invariance, reset/undo | Rail opening only; editing pending |
 | Preferences | Every safe local setting, persistence, theme/canvas/font/preview, disabled hardware states | Module tab only; external apps/services/relaunch excluded |
 | Library/filter/history/presets | Every menu and option with disposable folder/metadata fixtures | Pending |
 | Import/export/panorama | In-app settings, validation, format/projection options, preview/output | Pending; native chooser blocked, launch fixture argument only |
@@ -118,12 +118,13 @@ its global and mask sliders always run on chromatic aberrations.
 Hidden panels generate no control cases (their state has no slider):
 `hiddenPanelCoverage` in `generated.mjs` maps the point curve to `curves`,
 crop and orientation to `crop-options`, zones to `zones`, negative to
-`negative` and modules to `module-options`. Upright, vignette center, exposure
+`negative`, film simulation to `film` and modules to `module-options`. Upright, vignette center, exposure
 compensation and the tone mapper have no written case yet: a coverage gap,
 not a pass.
 
 Written cases now include crop guides/locked corners/portrait edges/aspects,
-curves, wheels, equalizer bands, masks, heal, negative conversion, zones,
+curves, wheels, equalizer bands, masks, heal, negative conversion, film
+simulation (on, a preset, off; it needs the data pack installed), zones,
 preferences, wheel settings, export settings, filter layout, presets, shortcuts,
 histogram endpoints, scaled final-frame alignment, loupe frame delivery in grid,
 detail without loupe, camera-body options and native reset. Earlier table entries

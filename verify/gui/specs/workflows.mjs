@@ -186,6 +186,21 @@ export async function negative(t) {
   await settledPhoto(t,p=>p.hash!==baseline.hash); await t.evidence('converted');
   await textButton(t,'.negative','Turn Off Conversion'); await settledPhoto(t,p=>p.hash===baseline.hash);
 }
+// the Film Simulation panel: on, a preset, a film, then off again to the
+// photo as it was. needs the data pack already installed: the case does not
+// download it
+export async function film(t) {
+  const baseline=await settledPhoto(t);
+  await openTool(t,'film');
+  await until(()=>t.driver.observe(()=>!!document.querySelector('.panel.film button, .panel.film select')),'film panel');
+  if(await t.driver.observe(()=>[...document.querySelectorAll('.panel.film button')].some(b=>/Download Film Data|Try Again/.test(b.textContent))))
+    throw new Blocked('Install the spektrafilm data pack first (Film Simulation, Download Film Data)');
+  await textButton(t,'.panel.film','Turn On Film Simulation');
+  const on=await settledPhoto(t,p=>p.hash!==baseline.hash); await t.evidence('simulated');
+  await choose(t,'.panel.film .choice-row:first-child select','film|portrait');
+  await settledPhoto(t,p=>p.hash!==on.hash); await t.evidence('preset');
+  await textButton(t,'.positive-foot','Turn Off Film Simulation'); await settledPhoto(t,p=>p.hash===baseline.hash);
+}
 export async function zones(t) {
   // the Zone System works on black and white: convert first, back to color after
   await openTool(t,'adjust'); await textButton(t,await panel(t,'basic'),'B&W'); await settledPhoto(t);

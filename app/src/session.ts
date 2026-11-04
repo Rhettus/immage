@@ -6,7 +6,7 @@
 // only mark their module dirty, and the next round sends the latest values once
 
 import { boundFields, choiceCovers, choiceOn, controlById, isModuleSetting, localControlById, localFields, localMaps, mapOf, mapsFor,
-         mapsWith, MASK_MODULE_CHOICES, MODULE_CHOICES, modules, NEG_CHOICES, NEG_OFF, turnOrientation, turnRect, type ImageContext,
+         mapsWith, MASK_MODULE_CHOICES, MODULE_CHOICES, modules, CONVERSIONS, conversionsOn, forcedChoice, turnOrientation, turnRect, type ImageContext,
          type ModuleMap, type Params, type Turn, type Values } from "./manifest";
 import { loadModuleChoice } from "./moduleChoice";
 import { isRefined, neutralLocal, type Mask, type Refine, type Shape } from "./masks";
@@ -262,12 +262,14 @@ export class Session {
       orientation: flip?.enabled && flip.params.orientation >= 0 ? flip.params.orientation : opened.orientation,
       camera: opened.orientation,
     };
-    // a negative keeps NEG_OFF's modules off with their settings, for when
-    // it is turned back: their sliders are read as if they were on
-    if (s.info.negadoctor?.enabled) {
+    // a conversion (a negative, a film simulation) keeps its modules off
+    // with their settings, for when it is turned back: their sliders are
+    // read as if they were on
+    for (const conv of CONVERSIONS) {
+      if (!s.info[conv.op]?.enabled) continue;
       // the first instance's entry carries darktable's preset label, if any
       const used = new Set(s.history.flatMap((h) => [mapOpOf(h), h.op]));
-      for (const op of NEG_OFF) if (s.info[op] && used.has(op)) s.info[op] = { ...s.info[op], enabled: true };
+      for (const op of conv.off) if (s.info[op] && used.has(op)) s.info[op] = { ...s.info[op], enabled: true };
     }
     for (const m of modules) {
       const info = s.info[m.op];
@@ -322,9 +324,8 @@ export class Session {
           const r = reads(m);
           return r && covers.some((id) => id in r && Math.abs(r[id] - (this.neutral[id] ?? 0)) > 1e-6);
         }));
-      // a negative's tools run after negadoctor, whatever its modules hold
-      const value = this.values.neg_on === 1 && c.control in NEG_CHOICES ? NEG_CHOICES[c.control]
-        : this.wasEdited && used ? used.value : pick;
+      // a conversion's tools run on modules it keeps, whatever the photo holds
+      const value = forcedChoice(this.values, c.control) ?? (this.wasEdited && used ? used.value : pick);
       this.values[c.control] = value;
       // only the chosen module's maps say what the shared sliders hold
       for (const id of covers) if (id in this.neutral) this.values[id] = this.neutral[id];
@@ -350,7 +351,7 @@ export class Session {
         || controls.some((id) => Math.abs((this.values[id] ?? 0) - (this.neutral[id] ?? 0)) > 1e-6);
       const pick = loadModuleChoice(c.id);
       this.neutral[c.control] = pick;
-      if (!used && !(this.values.neg_on === 1 && c.control in NEG_CHOICES)) this.set(c.control, pick);
+      if (!used && forcedChoice(this.values, c.control) === undefined) this.set(c.control, pick);
     }
     this.masks = this.masks.map((mask) => {
       const values = { ...mask.values };
@@ -383,7 +384,7 @@ export class Session {
     this.onDetailControl?.(this.activeDetailControl);
     this.values[id] = v;
     if (id === "orient") this.orient(v);
-    if (id === "neg_on") this.negChanged();
+    this.conversionChanged(id);
     for (const m of mapsWith(id)) {
       this.foreign.delete(m);
       this.dirty.add(m.op);
@@ -409,15 +410,18 @@ export class Session {
     void this.pump();
   }
 
-  // a negative converted or turned back: the modules it turns off are sent
-  // again, switched off or back as their sliders have them. one darktable
-  // set beyond its sliders is switched by the panel (setModuleState)
-  private negChanged() {
+  // a conversion (a negative, a film simulation) turned on or back: the
+  // modules it turns off are sent again, switched off or back as their
+  // sliders have them. one darktable set beyond its sliders is switched by
+  // the panel (setModuleState)
+  private conversionChanged(id: string) {
+    const conv = CONVERSIONS.find((c) => c.flag === id);
+    if (!conv) return;
     // converting leaves a module that is already off alone: an entry
-    // switching it off would read, opened again, as one the negative holds
+    // switching it off would read, opened again, as one the conversion holds
     // and turned back would switch it on (open)
-    const converting = this.values.neg_on === 1;
-    for (const op of NEG_OFF)
+    const converting = this.values[id] === 1;
+    for (const op of conv.off)
       if (mapsFor(op).some((m) => !this.foreign.has(m)) && (!converting || this.info[op]?.enabled)) this.dirty.add(op);
   }
 
@@ -852,7 +856,7 @@ export class Session {
       if (!mapOf.has(id)) continue;
       this.values[id] = v;
       if (id === "orient") this.orient(v);
-      if (id === "neg_on") this.negChanged();
+      this.conversionChanged(id);
       for (const m of mapsWith(id)) {
         this.foreign.delete(m);
         this.dirty.add(m.op);
@@ -936,7 +940,7 @@ export class Session {
       on ||= chosen && (m.enabled ? m.enabled(values)
                                      : m.controls.some((id) => values[id] !== this.neutral[id]));
     }
-    const enabled = this.bypassed.has(op) || (values.neg_on === 1 && NEG_OFF.has(op)) ? false
+    const enabled = this.bypassed.has(op) || conversionsOn(values).some((c) => c.off.has(op)) ? false
       : keepOn ? info.enabled || on : on;
     // "op#name" is the instance of op so named, made on first use
     const [real, instance] = op.split("#");

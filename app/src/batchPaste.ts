@@ -3,7 +3,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { Clip } from "./CopySettings";
 import { Session, instanceKey, mapOpOf } from "./session";
-import { NEG_OFF, NEG_OFF_UNMAPPED } from "./manifest";
+import { CONVERSIONS } from "./manifest";
 import { NO_REFINE, type Mask } from "./masks";
 
 export type PasteTarget = { imgid: number; path: string };
@@ -39,14 +39,16 @@ export function applyClip(s: Session, c: Clip, reapplyLook = false) {
   if (c.look?.name && !c.look.path && (reapplyLook || c.look.name !== s.look))
     throw Error(`the look "${c.look.name}" is unavailable; restore its style file before pasting`);
   s.endBaseline();
-  const converts = c.values.neg_on === 1 && s.values.neg_on !== 1;
+  // a negative's conversion or a film simulation, pasted onto a photo
+  // without it, turns off the modules it replaces that no slider covers
+  const converts = CONVERSIONS.filter((v) => c.values[v.flag] === 1 && s.values[v.flag] !== 1);
   s.setMany(Object.entries(c.values));
-  if (converts) {
+  if (converts.length) {
     const done = new Set<string>();
     for (const h of s.history) {
       const key = instanceKey(h), op = mapOpOf(h);
       if (done.has(key) || h.priority === undefined || h.masked) continue;
-      if (!NEG_OFF_UNMAPPED.has(h.op) && !(NEG_OFF.has(op) && s.isForeign(op))) continue;
+      if (!converts.some((v) => v.unmapped.has(h.op) || (v.off.has(op) && s.isForeign(op)))) continue;
       done.add(key);
       if (s.moduleStates.get(key)?.enabled ?? h.enabled) s.setModuleState(h, { enabled: false });
     }

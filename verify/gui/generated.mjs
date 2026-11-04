@@ -18,7 +18,7 @@ for(const p of inventory.panels)if(!p.hidden)for(const s of p.sections)for(const
 }
 // which written case drives each hidden panel; null where none does yet
 export const hiddenPanelCoverage={
- 'tonecurve-points':'curves',crop:'crop-options',orientation:'crop-options',zones:'zones',negative:'negative',
+ 'tonecurve-points':'curves',crop:'crop-options',orientation:'crop-options',zones:'zones',negative:'negative',film:'film',
  modules:'module-options',upright:null,'vignette-center':null,'exposure-compensation':null,tonemapper:null,
 };
 for(const control of inventory.localControls)generated[`local-${control.id}`]={kind:control.kind==='slider'?'range':'choice',scope:'local',panel:'masks',control,liveValidated:false,fixture:'configured'};

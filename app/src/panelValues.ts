@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { MODULE_CHOICES, type Panel, type Values } from "./manifest";
 
-const modes = new Set(["neg_on", "bw_mode", "tc_mode", "tm_mode", ...MODULE_CHOICES.map(c => c.control)]);
+const modes = new Set(["neg_on", "sf_on", "bw_mode", "tc_mode", "tm_mode", ...MODULE_CHOICES.map(c => c.control)]);
 const controls = new WeakMap<Panel, Set<string>>();
 // Graph data includes point-curve coordinates that have no slider of their own.
 export function panelValues(panel: Panel, values: Values, previous?: Values): Values {

@@ -189,6 +189,8 @@ const COMMANDS = {
   display_scale: () => (screen.scale === "error" ? Promise.reject(new Error("not on a screen yet")) : screen.scale),
   meta: ({ imgid }) => request({ cmd: "meta", imgid }),
   paste_batch: (args) => request({ cmd: "paste_batch", ...args }),
+  spektra_stocks: async () => { const { ok, ms, ...r } = await request({ cmd: "spektra_stocks" }); return r; },
+  spektra_fetch: async ({ action }) => { const { ok, ms, ...r } = await request({ cmd: "spektra_fetch", action }); return r; },
   open_image: ({ path, imgid }) => request({ cmd: "open", path, imgid: imgid ?? -1 }),
   get_params: ({ modules }) => request({ cmd: "get", modules }),
   history: async ({ saved } = {}) => (await request({ cmd: "history", saved: saved ?? false })).items,

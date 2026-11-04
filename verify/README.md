@@ -58,6 +58,23 @@ The negative-export check checks compressed DNG and TIFF color metadata, convers
 round-trips, export snapshots, further exposure edits and reopening after
 an engine restart. It creates its own small fixture and temporary workspace.
 
+The film simulation check runs the app's Session against the engine:
+
+```bash
+node --test verify/film-simulation.test.mjs
+```
+
+It checks that the panel's stock hashes match the engine's for every stock
+in the pack, that turning the simulation on switches AgX off and leaves
+exposure on, that two films render differently, and that a preset names its
+stock. It also checks that the simulation survives a save and reopen with
+its tools on their film modules, that a positive TIFF exports with a neutral
+history, and that turning the simulation off brings AgX back. It needs
+spektrafilm's data pack: when the pack is missing, it downloads it into
+darktable's shared data folder (`~/.local/share/darktable/spektrafilm`), and
+it skips, saying so, when the download fails. The release decisions in
+`harness.mjs` check the on/off cycle without the pack.
+
 The focused GPS check covers camera-embedded coordinates, XMP edits and removal,
 altitude invalidation, invalid input, and persistence after restarting:
 

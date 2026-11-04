@@ -642,14 +642,21 @@ async fn ai_denoise(state: State<'_, AppState>, plugins: State<'_, plugins::Plug
     Ok(reply)
 }
 
-// Bake the converted negative into a new positive beside its source.
-// Reserve the name before exporting so repeated requests never overwrite.
+// Bake a converted negative (`kind` "negative") or a film simulation
+// ("film") into a new positive beside its source, <name>-positive or
+// <name>-film. Reserve the name before exporting so repeated requests never
+// overwrite.
 #[tauri::command]
-async fn negative_export(state: State<'_, AppState>, plugins: State<'_, plugins::Plugins>,
-                         imgid: i64, original: String, format: String) -> Result<Value, String> {
+async fn positive_export(state: State<'_, AppState>, plugins: State<'_, plugins::Plugins>,
+                         imgid: i64, original: String, format: String, kind: String) -> Result<Value, String> {
     if format != "dng" && format != "tiff" {
-        return Err("choose DNG or TIFF for converted negatives".into());
+        return Err("choose DNG or TIFF for generated positives".into());
     }
+    let (name, plugin) = match kind.as_str() {
+        "negative" => ("positive", "negative-positive"),
+        "film" => ("film", "film-positive"),
+        _ => return Err(format!("no positive kind '{kind}'")),
+    };
     let source = Path::new(&original);
     let dir = source.parent().ok_or("the source has no folder")?;
     let stem = source.file_stem().ok_or("the source has no filename")?.to_string_lossy();
@@ -657,7 +664,7 @@ async fn negative_export(state: State<'_, AppState>, plugins: State<'_, plugins:
     let mut n = 0;
     let target = loop {
         let suffix = if n == 0 { String::new() } else { format!("_{n:02}") };
-        let path = dir.join(format!("{stem}-positive{suffix}.{ext}"));
+        let path = dir.join(format!("{stem}-{name}{suffix}.{ext}"));
         // An orphaned sidecar must not supply an old edit to a new export.
         if path.with_file_name(format!("{}.xmp", path.file_name().unwrap().to_string_lossy())).exists() {
             n += 1;
@@ -671,7 +678,7 @@ async fn negative_export(state: State<'_, AppState>, plugins: State<'_, plugins:
     };
     let t = state.tagged.clone();
     let held = t.tag();
-    if let Err(e) = state.engine("negative_export").request(json!({
+    if let Err(e) = state.engine("positive_export").request(json!({
         "cmd": "export_hold", "job": held, "imgids": [imgid],
     })) {
         let _ = std::fs::remove_file(&target);
@@ -682,7 +689,7 @@ async fn negative_export(state: State<'_, AppState>, plugins: State<'_, plugins:
         let tag = t.tag();
         let result = t.request(tag, json!({
             "cmd": "export", "job": held, "imgid": imgid, "out": out,
-            "format": format, "bpp": 32, "negative_copy": true, "history": false,
+            "format": format, "bpp": 32, "positive_copy": true, "history": false,
         }));
         let tag = t.tag();
         let _ = t.request(tag, json!({ "cmd": "export_release", "job": held }));
@@ -700,9 +707,31 @@ async fn negative_export(state: State<'_, AppState>, plugins: State<'_, plugins:
     };
     let path = target.to_string_lossy().into_owned();
     plugins.record(plugins::Return {
-        original: original.clone(), result: path, plugin: "negative-positive".into(), applied: true,
+        original: original.clone(), result: path, plugin: plugin.into(), applied: true,
     })?;
     reply["original"] = json!(original);
+    Ok(reply)
+}
+
+// the spektrafilm data pack and its films and papers (engine main.c,
+// _spektra_stocks)
+#[tauri::command]
+async fn spektra_stocks(state: State<'_, AppState>) -> Result<Value, String> {
+    let mut reply = state.engine("spektra_stocks").request(json!({ "cmd": "spektra_stocks" }))?;
+    if let Some(o) = reply.as_object_mut() {
+        o.remove("ok");
+    }
+    Ok(reply)
+}
+
+// the pack's download: `action` "start", "cancel" or "status"; none waits
+// for the network (engine main.c, _spektra_fetch)
+#[tauri::command]
+async fn spektra_fetch(state: State<'_, AppState>, action: String) -> Result<Value, String> {
+    let mut reply = state.engine("spektra_fetch").request(json!({ "cmd": "spektra_fetch", "action": action }))?;
+    if let Some(o) = reply.as_object_mut() {
+        o.remove("ok");
+    }
     Ok(reply)
 }
 
@@ -2713,7 +2742,7 @@ fn main() {
             map_tiles::map_tile, open_folder, open_image, get_params, set_params, render, cancel_base, save, baseline_end, before_view, thumb, thumb_cached, thumb_known, cache_limits, cache_usage, cache_clear, meta, meta_set, capture_times, prefetch, darktable_resources, darktable_resources_set, gpu_edits, gpu_edits_set, webview_renderer, webview_renderer_set,
             export_images, export_cancel, export_existing, export_preview, fonts, export_presets_load, export_presets_save, preset_file_write, preset_file_read, presets_load, presets_save, looks_list, look_import, look_export, look_delete, look_apply, look_amount, preview, paste_batch,
             mask_shapes, combine, masks, mask_delete, mask_rename, history, module_state, sample, tone_key, agx_auto, upright, points, range_map, zones, mask_map, ai_object,
-            ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, negative_export, list_subfolders, folder_volumes, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
+            ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, positive_export, spektra_stocks, spektra_fetch, list_subfolders, folder_volumes, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
             immich_export_check, immich_search, immich_browse_check, immich_libraries, immich_suggestions, immich_people, immich_tags,
             immich_thumb, immich_resolve, launch_file, path_exists, path_kind, display_scale, trash_files, create_virtual_copy, remove_virtual_copy, hdr_merge, hdr_can_align, pano_merge, pano_preview, pano_can_merge, merge_cancel, preview_fullscreen, build, about, licenses, engine_quit, keywords, keywords_set, ai_accel,
             perf_set, perf_trace_start, perf_trace_stop, perf_modules, perf_report_write, perf_machine, perf_ping, gpu_check_parity, resources::perf_resources_start, resources::perf_resources_stop,

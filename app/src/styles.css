@@ -2224,16 +2224,24 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .perf-worst { margin-top: 4px; padding-top: 4px; border-top: 1px solid rgba(255, 255, 255, 0.1); }
 
 /* the Negative panel */
-.panel.negative .neg-step { display: flex; align-items: center; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
+.panel.negative .neg-step, .panel.film .neg-step { display: flex; align-items: center; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
 .panel.negative .neg-step .btn svg { margin-right: 5px; vertical-align: -2px; }
 .panel.negative .neg-swatch { width: 22px; height: 22px; border-radius: 6px; border: 1px solid var(--track); }
 .panel.negative .neg-row { display: flex; align-items: center; gap: 6px; }
 .panel.negative .neg-row .neg-slider { flex: 1; min-width: 0; }
 .panel.negative .neg-row .tool { width: 26px; height: 26px; border-radius: 7px; flex: none; }
 .panel.negative .neg-row .tool.on { background: var(--inset); color: var(--accent); }
-.panel.negative .neg-sub { margin: 10px 0 2px; color: var(--text-2); font-size: var(--fs-small); }
+.panel.negative .neg-sub, .panel.film .neg-sub { margin: 10px 0 2px; color: var(--text-2); font-size: var(--fs-small); }
 .neg-area { position: absolute; border: 1.2px dashed rgba(var(--guide), 0.8); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
             pointer-events: none; }
+/* Export to Library and Turn Off, below the Negative and Film Simulation panels */
+.positive-foot { display: flex; flex-direction: column; gap: 6px; padding: 8px; border-top: 1px solid var(--border, #333); }
+.positive-foot .positive-row { display: flex; gap: 6px; align-items: center; }
+.positive-foot .positive-row .btn { flex: 1; }
+.positive-foot > .btn { align-self: stretch; }
+/* the Film Simulation panel's Advanced folds */
+.panel.film .neg-sub.fold { display: flex; align-items: center; justify-content: space-between; cursor: pointer; }
+.panel.film .progress { margin: 8px 0 4px; }
 .modal.neg-warn { width: min(520px, calc(100vw - 32px)); }
 .modal.neg-warn p { margin: 8px 0; line-height: 1.5; color: var(--text-2); }
 

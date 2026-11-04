@@ -152,7 +152,8 @@ and constrained resizing.
 | [localMerge.ts](../../src/localMerge.ts) | `planMerge`: which masks share instances of a `merge` module (color balance rgb, color equalizer for HSL, diffuse for Texture, denoise, chromatic aberrations for Defringe), grouped by direction or by slider and sign, whichever needs fewer; each shared instance's strength and each mask's opacity in its combined mask. Masks share only with masks of the same ranges and refinements, which the shared instance carries; an inverted mask with ranges, ranges alone and refine Contrast keep their own instances (`canMerge`). |
 | [MaskOverlay.tsx](../../src/MaskOverlay.tsx), [MasksPanel.tsx](../../src/MasksPanel.tsx), [ParametricEditor.tsx](../../src/ParametricEditor.tsx) | Drawing shapes on the photo; the Masks panel; darktable's parametric (blendif) editor. |
 | [spots.ts](../../src/spots.ts), [SpotOverlay.tsx](../../src/SpotOverlay.tsx), [HealPanel.tsx](../../src/HealPanel.tsx) | Heal/Clone spots, sent to darktable's retouch module. |
-| [negadoctor.ts](../../src/negadoctor.ts), [NegativePanel.tsx](../../src/NegativePanel.tsx) | Film negatives: negadoctor's presets and its pickers, ported from `src/iop/negadoctor.c` and fed `sample` at negadoctor's input; the Negative panel. A converted photo (`neg_on`) has the modules of `NEG_OFF` (manifest.ts) forced off in `Session.moduleEdit`, read as if on when it opens if the history has them, and kept in the history by the engine's `_held_for_negative`. Converting writes the switch-off only for modules that are on (`negChanged`), so one that was never on is not switched on when the photo, opened again, is turned back; `NEG_CHOICES` moves Basic's tools after it. |
+| [negadoctor.ts](../../src/negadoctor.ts), [NegativePanel.tsx](../../src/NegativePanel.tsx) | Film negatives: negadoctor's presets and its pickers, ported from `src/iop/negadoctor.c` and fed `sample` at negadoctor's input; the Negative panel. A converted photo (`neg_on`) has the modules of `NEG_OFF` (manifest.ts) forced off in `Session.moduleEdit`, read as if on when it opens if the history has them, and kept in the history by the engine's `_held_for_mode`. Converting writes the switch-off only for modules that are on (`Session.conversionChanged`), so one that was never on is not switched on when the photo, opened again, is turned back; `NEG_CHOICES` moves Basic's tools after it. Export to Library and Turn Off sit in [PositiveFooter.tsx](../../src/PositiveFooter.tsx), shared with Film Simulation. |
+| [spektrafilm.ts](../../src/spektrafilm.ts), [FilmPanel.tsx](../../src/FilmPanel.tsx) | Film Simulation: darktable's spektrafilm. `SF_FIELDS` makes one `sf_<field>` control per param (the hidden `film` panel and the `spektrafilm` map in manifest.ts); `SF_PRESETS` is `init_presets()` over `_preset_defaults()` (`PRESET_BASE`), stocks by name; `stockHash` is the module's `_name_hash()` (djb2 xor, folded to 32 bits), which must stay identical or presets name no stock (`verify/film-simulation.test.mjs` compares it with the engine's for every stock); `filmOf`, `autoPaper`, `filmChanges` and `paperChanges` port `_current_film_entry`, `_auto_paper_entry`, `_film_changed` and `_paper_changed`. A simulated photo (`sf_on`) has `SF_OFF` (the tone mappers) off and `SF_CHOICES` moving Contrast, Saturation and Blacks off them. The two conversions are listed in `CONVERSIONS` (manifest.ts), which Session (`conversionChanged`, `moduleEdit`, `open`, `chooseModules`) and `batchPaste.applyClip` read; App.tsx keeps them mutually exclusive (the `exclusive` dialog). The panel reads the pack with `spektra_stocks` when it opens and polls `spektra_fetch` while downloading. |
 | [zones.ts](../../src/zones.ts), [ZoneSystem.tsx](../../src/ZoneSystem.tsx) | The Zone System: zone statistics, the placement curve (a tone equalizer instance ahead of the [mask anchor](masks.md#where-the-instances-run)), zone masks. |
 
 ### Presets and looks
@@ -223,8 +224,8 @@ Commands by what they reach:
 
 | Reaches | Commands |
 |---|---|
-| The open photo, through the engine | `open_image`, `get_params`, `set_params`, `module_state`, `render`, `cancel_base`, `preview`, `save`, `before_view`, `history`, `masks`, `mask_shapes`, `combine`, `mask_delete`, `mask_rename`, `mask_map`, `range_map`, `sample`, `zones`, `tone_key`, `agx_auto`, `spots`, `spots_enable`, `spot_source`, `look_apply`, `look_amount`, `ai_object`, `ai_mask`, `ai_depth`, `ai_denoise`, `ai_denoise_preview` |
-| The library, through the engine | `open_folder` (engine `import` in batches), `thumb`, `thumb_cached`, `thumb_known`, `prefetch`, `meta`, `meta_set`, `capture_times`, `keywords`, `keywords_set`, `create_virtual_copy`, `remove_virtual_copy`, `hdr_merge`, `hdr_can_align`, `pano_merge`, `pano_can_merge`, `trash_files`, `export_images`, `export_cancel`, `export_preview`, `fonts`, `ai_accel`, `about` |
+| The open photo, through the engine | `open_image`, `get_params`, `set_params`, `module_state`, `render`, `cancel_base`, `preview`, `save`, `before_view`, `history`, `masks`, `mask_shapes`, `combine`, `mask_delete`, `mask_rename`, `mask_map`, `range_map`, `sample`, `zones`, `tone_key`, `agx_auto`, `spots`, `spots_enable`, `spot_source`, `look_apply`, `look_amount`, `positive_export`, `ai_object`, `ai_mask`, `ai_depth`, `ai_denoise`, `ai_denoise_preview` |
+| The library, through the engine | `open_folder` (engine `import` in batches), `thumb`, `thumb_cached`, `thumb_known`, `prefetch`, `meta`, `meta_set`, `capture_times`, `keywords`, `keywords_set`, `create_virtual_copy`, `remove_virtual_copy`, `hdr_merge`, `hdr_can_align`, `pano_merge`, `pano_can_merge`, `trash_files`, `export_images`, `export_cancel`, `export_preview`, `fonts`, `spektra_stocks`, `spektra_fetch`, `ai_accel`, `about` |
 | Files only | `list_subfolders`, `folder_volumes`, `path_exists`, `path_kind`, `export_existing`, `presets_load`, `presets_save`, `export_presets_load`, `export_presets_save`, `preset_file_read`, `preset_file_write`, `looks_list`, `sample_folder`, `launch_file` |
 | AI models (download, then the engine's `version`) | `ai_model_ensure`, `ai_model_reinstall` |
 | Immich (HTTP) | `immich_albums`, `immich_create_album`, `immich_export_check`, `immich_browse_check`, `immich_search`, `immich_libraries`, `immich_suggestions`, `immich_people`, `immich_tags`, `immich_thumb`, `immich_resolve` |
@@ -252,6 +253,28 @@ holds one session, `_s` (`dt_engine_session_t`): the open image, its develop
 
 The preview pipe exists so trying a setting never touches the edit or the
 main pipe's cache.
+
+Film Simulation's engine side is a section of main.c. spektrafilm builds its
+film and paper lists only in its GUI, so `_spektra_stocks` reads the pack's
+`profiles/*.json` headers itself with `sf_profile_load()`, from the pack
+`sf_fetch_resolve_pack_dir(0, ...)` resolves for a new edit, and copies the
+module's `_name_hash`, `_shorten_name` and `_nat_cmp` so names, order and
+hashes match its combobox. `_spektra_fetch` wraps darktable's own fetcher
+(`sf_fetch_start(0, 0)`, `sf_fetch_status`, `sf_fetch_cancel`), which runs on
+its own thread and posts nothing back without a GUI. The module notices a new
+pack by `sf_fetch_generation()` and reloads at its next `process()`, but the
+pipes' caches still hold the passthrough it rendered without one under the same
+hashes, so `_sf_follow_pack` invalidates every pipe from spektrafilm's
+`iop_order` when the generation moves. `_held_for_mode` keeps the disabled
+entries of the modules a conversion holds off (negadoctor's list, or
+spektrafilm's tone mappers) through `_prune_off`.
+
+Verified: an engine export of a film edit matches `darktable-cli` on the same
+XMP exactly (16-bit TIFF, CPU, "film|portrait" on the sample photo). It is the
+slowest module Immage runs: a 1600x900 render with "film|portrait" took about
+360 ms on an 8-core ARM CPU without OpenCL, against about 35 ms on AgX, so
+drags lag. Drafts do not skip it, as they skip grain and diffuse, because it
+is the photo's tone mapping.
 
 [`engine/upright.c`](../../../engine/upright.c) is Upright: the
 structure detection and fit of darktable's rotate and perspective
@@ -380,7 +403,7 @@ The commands `_handle()` serves:
 
 | Group | Commands |
 |---|---|
-| Session | `open`, `history`, `module_state`, `save`, `baseline_end`, `before`, `close`, `quit`, `version`, `unpack`, `ai_accel`, `opencl`, `parity`, `fonts` |
+| Session | `open`, `history`, `module_state`, `save`, `baseline_end`, `before`, `close`, `quit`, `version`, `unpack`, `ai_accel`, `opencl`, `parity`, `fonts`, `spektra_stocks`, `spektra_fetch` |
 | Library (no photo needed) | `folder`, `import`, `thumb`, `prefetch`, `meta`, `meta_set`, `capture_times`, `keywords`, `keywords_set`, `copy`, `remove_copy`, `sidecars`, `forget`, `export`, `export_hold`, `export_release`, `hdr_merge`, `pano_merge` |
 | Edit | `set`, `get`, `render`, `preview`, `look`, `look_amount` |
 | Masks and spots | `mask`, `combine`, `masks`, `mask_rename`, `mask_delete`, `mask_map`, `range_map`, `sample`, `spots`, `spots_enable`, `spot_source` |
@@ -488,6 +511,7 @@ darktable is, and it has AI features when darktable is configured with
 | Folder snapshots | `folders/` in the runtime folder: each folder's photos as its last whole read found them | permanent; written again at each read |
 | Immich thumbnails and originals | `cache/immich-thumbs`, `cache/immich-originals` | cache |
 | Import catalog, Immich key | the immporter's SQLite catalog under the app data folder (`immporter/`); the key in the system keychain | permanent |
+| spektrafilm data packs | `<user data>/darktable/spektrafilm/packs/<hash>/` (`~/.local/share` on Linux), downloaded by darktable's `spektra_fetch.c` from darktable-org/darktable-spektrafilm; a hand-installed pack in `<user data>/darktable/spektrafilm` wins | permanent, shared with darktable |
 | Benchmark results | `benchmarking/results/` (see [benchmarking guide](../../../benchmarking/README.md)) (GUI reports under `gui/` in a dev build, `<app data>/benchmarks` in a release) | permanent, tracked |
 | Source photos | wherever the user keeps them | never written, except the sidecar |
 
@@ -604,9 +628,12 @@ engine `_capture_times`, which checks expected times before writing sidecars.
 [LocationEditor.tsx](../../src/LocationEditor.tsx) saves GPS through `meta_set`;
 [map_tiles.rs](../../src-tauri/src/map_tiles.rs) supplies the optional map tiles.
 
-Rust `negative_export` exports a converted negative as a losslessly compressed
-16-bit float DNG or 32-bit float TIFF. Engine `_positive_import` gives the
-baked image a persistent neutral starting history. App.tsx's generated-result
+Rust `positive_export` (`kind` "negative" or "film") exports a converted
+negative or a film simulation as a losslessly compressed 16-bit float DNG or
+32-bit float TIFF, `<name>-positive` or `<name>-film`, with the engine's
+`export` flag `positive_copy` (`negative_copy` is still accepted). Engine
+`_positive_import` gives the baked image a persistent neutral starting
+history. App.tsx's generated-result
 handling observes Open generated photos for merges, AI denoise, positives and
 the first plugin result, and clears incompatible Immich filtering so the result
 can be edited. Successful activity notifications expire after 30 seconds.

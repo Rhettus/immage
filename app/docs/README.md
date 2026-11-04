@@ -47,6 +47,8 @@ is also on the [Immage website](https://immage.photo/guide/).
 - [Masks](masks.md): AI selections, brushes, gradients and ranges, and the
   adjustments inside them
 - [Heal and clone](heal.md): removing spots and distractions
+- [Film Simulation](film-simulation.md): a photo rendered as a film stock,
+  printed on a paper or scanned, from darktable's spektrafilm
 - [Film negatives](negative.md): converting a photo of a film negative,
   color or black and white, and a whole roll from one frame
 - [HDR Merge](library.md#hdr-merge) and

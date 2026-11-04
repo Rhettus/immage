@@ -79,13 +79,16 @@ export function storeNegWarn(on: boolean) {
   try { localStorage.setItem(NEG_WARN_KEY, on ? "1" : "0"); } catch { /* not kept */ }
 }
 
+// what Export to Library writes for a converted negative or a film
+// simulation; the Negative and Film Simulation panels set it too. the key
+// keeps the name it had when only negatives used it
 export type NegativeExportFormat = "dng" | "tiff";
 const NEG_EXPORT_KEY = "immage.negativeExportFormat";
 export function loadNegativeExportFormat(): NegativeExportFormat {
   try { return localStorage.getItem(NEG_EXPORT_KEY) === "tiff" ? "tiff" : "dng"; }
   catch { return "dng"; }
 }
-function storeNegativeExportFormat(format: NegativeExportFormat) {
+export function storeNegativeExportFormat(format: NegativeExportFormat) {
   try { localStorage.setItem(NEG_EXPORT_KEY, format); } catch { /* not kept */ }
 }
 
@@ -738,9 +741,9 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                          hint="opening the Negative panel says which of Basic's tools a converted negative turns off">
                   <PrefSwitch checked={negWarn} onChange={(on) => { setNegWarn(on); storeNegWarn(on); }} />
                 </PrefRow>
-                <PrefRow label="Converted negative format"
-                         hint="Export to Library saves a separate positive with the conversion and edits baked in; both formats use lossless compression">
-                  <select className="field" aria-label="Converted negative format" value={negativeExportFormat} onChange={(e) => {
+                <PrefRow label="Generated positive format"
+                         hint="Export to Library in the Negative and Film Simulation panels saves a separate positive with the conversion and edits baked in; both formats use lossless compression">
+                  <select className="field" aria-label="Generated positive format" value={negativeExportFormat} onChange={(e) => {
                     const format = e.target.value as NegativeExportFormat;
                     setNegativeExportFormat(format); storeNegativeExportFormat(format);
                   }}>

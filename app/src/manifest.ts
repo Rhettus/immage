@@ -21,6 +21,7 @@ import { autoCrop } from "./transform";
 import { fromNodes, toNodes } from "./colorequal";
 import { cbHueTrack, displayHue } from "./colorgrading";
 import { FILM_BW, FILM_COLOR, NEG_RANGES } from "./negadoctor";
+import { DIFFUSION_FILTERS, SF_FIELDS, sfId } from "./spektrafilm";
 import { PLACE_BOOST, PLACE_FIELDS, PLACE_FIRST, PLACE_MAX, PLACEMENT_OP, ROMAN, ZONE_GRAY,
          placeIds } from "./zones";
 
@@ -1379,6 +1380,16 @@ export const modules: ModuleMap[] = [
     }),
     enabled: (v) => v.neg_on === 1,
   },
+  // the Film Simulation panel's spektrafilm (FilmPanel.tsx, spektrafilm.ts),
+  // each control one param; a simulated photo has the modules of SF_OFF off
+  {
+    op: "spektrafilm", keepOn: false,
+    controls: ["sf_on", ...SF_FIELDS.map((x) => sfId(x.field))],
+    fields: SF_FIELDS.map((x) => x.field),
+    read: (p) => ({ sf_on: 1, ...Object.fromEntries(SF_FIELDS.map((x) => [sfId(x.field), p[x.field]])) }),
+    write: (v) => Object.fromEntries(SF_FIELDS.map((x) => [x.field, v[sfId(x.field)]])),
+    enabled: (v) => v.sf_on === 1,
+  },
   transformMap,
   flipMap,
   cropMap,
@@ -1399,6 +1410,34 @@ export const NEG_OFF_UNMAPPED = new Set(["filmicrgb", "basecurve"]);
 // Basic's sliders on those modules, greyed on a negative; Contrast,
 // Saturation, Highlights and Shadows move to modules after it (NEG_CHOICES)
 export const NEG_GREYED = new Set(["temp", "tint", "exposure", "blacks", "whites", "dehaze", "profile"]);
+
+// a film simulation turns off the tone mappers, whose part spektrafilm's
+// print and scan take; exposure and color calibration stay, as the film
+// needs its middle gray placed (darktable's spektrafilm workflow)
+export const SF_OFF = new Set(["agx", "sigmoid"]);
+export const SF_OFF_UNMAPPED = NEG_OFF_UNMAPPED;
+// Basic's sliders on the tone mappers alone, greyed while it is on;
+// Contrast, Saturation and Blacks move to modules after it (SF_CHOICES)
+export const SF_GREYED = new Set(["whites", "profile"]);
+// the tools a film simulation runs on modules other than the tone mapper
+export const SF_CHOICES: Record<string, number> = { mod_contrast: MOD_CBRGB, mod_saturation: MOD_CBRGB,
+                                                    mod_blacks: MOD_EXPOSURE };
+
+// a photo's conversion, which turns other modules off while its switch is
+// on and keeps their settings for when it is turned back: a converted
+// negative, or a film simulation (engine main.c, _held_for_mode())
+export type Conversion = { flag: string; op: string; off: Set<string>; unmapped: Set<string>;
+                           choices: Record<string, number>; greyed: Set<string> };
+export const CONVERSIONS: Conversion[] = [
+  { flag: "neg_on", op: "negadoctor", off: NEG_OFF, unmapped: NEG_OFF_UNMAPPED, choices: NEG_CHOICES,
+    greyed: NEG_GREYED },
+  { flag: "sf_on", op: "spektrafilm", off: SF_OFF, unmapped: SF_OFF_UNMAPPED, choices: SF_CHOICES,
+    greyed: SF_GREYED },
+];
+export const conversionsOn = (v: Values) => CONVERSIONS.filter((c) => v[c.flag] === 1);
+// the module a conversion that is on runs a tool on, whatever the photo holds
+export const forcedChoice = (v: Values, control: string): number | undefined =>
+  conversionsOn(v).find((c) => control in c.choices)?.choices[control];
 
 // --------------------------------------------------------------- the panels
 
@@ -1757,6 +1796,29 @@ export const panels: Panel[] = [
       ],
     }],
   },
+  // the Film Simulation panel's (FilmPanel.tsx): spektrafilm's params, each
+  // labelled for what it does, with darktable's name in the tooltip. no
+  // neutral: the module's defaults
+  {
+    id: "film", title: "Film Simulation", hidden: true,
+    sections: [{
+      title: "Film Simulation",
+      controls: [
+        { id: "sf_on", label: "Film Simulation", kind: "toggle", min: 0, max: 1, step: 1, neutral: 0,
+          format: (v) => (v ? "on" : "off") },
+        ...SF_FIELDS.map((x): Control => x.bool
+          ? { id: sfId(x.field), label: x.label, kind: "toggle", min: 0, max: 1, step: 1,
+              format: (v) => (v ? "on" : "off"), note: x.note }
+          : x.menu
+          ? { id: sfId(x.field), label: x.label, kind: "choice", menu: true, min: 0, max: 3, step: 1,
+              options: DIFFUSION_FILTERS, note: x.note,
+              format: (v) => DIFFUSION_FILTERS.find(([, n]) => n === v)?.[0] ?? "" }
+          : { id: sfId(x.field), label: x.label, min: x.min, max: x.max, step: x.step, note: x.note,
+              readsPast: x.soft || x.field.endsWith("_hash"),
+              format: (x.signed ? signed : plain)(x.digits, x.unit ?? "") }),
+      ],
+    }],
+  },
   // which module each of MODULE_CHOICES' tools runs on for this photo. its
   // neutral is what Preferences picks, set when the photo opens
   {
@@ -1783,7 +1845,7 @@ export const mapsWith = (id: string) => modules.filter((m) => m.controls.include
 const MODULE_NAMES: Record<string, string> = {
   atrous: "contrast equalizer", agx: "AgX", ashift: "rotate and perspective", bilat: "local contrast", channelmixerrgb: "color calibration",
   cacorrectrgb: "chromatic aberrations", colorbalancergb: "color balance rgb", colorequal: "color equalizer",
-  contrastntexture: "contrast & texture", crop: "crop", demosaic: "demosaic", negadoctor: "negadoctor",
+  contrastntexture: "contrast & texture", crop: "crop", demosaic: "demosaic", negadoctor: "negadoctor", spektrafilm: "spektrafilm",
   denoiseprofile: "denoise (profiled)", diffuse: "diffuse or sharpen", exposure: "exposure", flip: "orientation",
   grain: "grain", hazeremoval: "haze removal", hotpixels: "hot pixels", lens: "lens correction", rgbcurve: "rgb curve",
   shadhi: "shadows and highlights", sharpen: "sharpen", sigmoid: "sigmoid", tonecurve: "tone curve",

@@ -4443,6 +4443,848 @@
       ]
     },
     {
+      "id": "film",
+      "title": "Film Simulation",
+      "hidden": true,
+      "conditional": false,
+      "tabs": false,
+      "sections": [
+        {
+          "title": "Film Simulation",
+          "controls": [
+            {
+              "id": "sf_on",
+              "label": "Film Simulation",
+              "kind": "toggle",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_film_hash",
+              "label": "Film Stock",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 4294967295,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_paper_hash",
+              "label": "Print Paper",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 4294967295,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_scan_film",
+              "label": "Scan the Film",
+              "kind": "toggle",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_film_format_mm",
+              "label": "Frame Size",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 8,
+              "max": 130,
+              "step": 0.1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_exposure_ev",
+              "label": "Film Exposure",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -4,
+              "max": 4,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_push_pull_stops",
+              "label": "Push / Pull",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -4,
+              "max": 4,
+              "step": 0.05,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_development_min",
+              "label": "Development Time",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 15,
+              "step": 0.5,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_film_gamma_factor",
+              "label": "Development Gamma",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0.25,
+              "max": 2,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_film_gamma_factor_fast",
+              "label": "Fast Layer Gamma",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0.25,
+              "max": 2,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_film_gamma_factor_slow",
+              "label": "Slow Layer Gamma",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0.25,
+              "max": 2,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_film_developer_exhaustion",
+              "label": "Developer Exhaustion",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_couplers_amount",
+              "label": "DIR Couplers",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_couplers_inhibition_same",
+              "label": "Same-Layer Inhibition",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 3,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_couplers_inhibition_inter",
+              "label": "Interlayer Inhibition",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 3,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_couplers_diffusion_um",
+              "label": "Inhibitor Spread",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 60,
+              "step": 0.1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_couplers_tail_um",
+              "label": "Spread Tail",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 400,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_couplers_tail_weight",
+              "label": "Tail Weight",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_diffusion_on",
+              "label": "Diffusion Filter",
+              "kind": "toggle",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_diffusion_filter_family",
+              "label": "Filter Type",
+              "kind": "choice",
+              "rawOnly": false,
+              "min": 0,
+              "max": 3,
+              "step": 1,
+              "nonlinear": false,
+              "options": [
+                [
+                  "Black Pro-Mist",
+                  0
+                ],
+                [
+                  "Glimmerglass",
+                  1
+                ],
+                [
+                  "Pro-Mist",
+                  2
+                ],
+                [
+                  "CineBloom",
+                  3
+                ]
+              ],
+              "status": "pending"
+            },
+            {
+              "id": "sf_diffusion_strength",
+              "label": "Diffusion Strength",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 2,
+              "step": 0.001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_diffusion_scale",
+              "label": "Diffusion Size",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0.2,
+              "max": 4,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_diffusion_warmth",
+              "label": "Halo Warmth",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -1.5,
+              "max": 1.5,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_adaptation_bandwidth",
+              "label": "Bandwidth Adaptation",
+              "kind": "toggle",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_adaptation_surface",
+              "label": "Surface Adaptation",
+              "kind": "toggle",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_gamut_compress",
+              "label": "Gamut Compression",
+              "kind": "toggle",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_print_exposure_ev",
+              "label": "Print Exposure",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -3,
+              "max": 3,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_print_auto_exposure",
+              "label": "Auto Print Exposure",
+              "kind": "toggle",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_print_contrast",
+              "label": "Print Contrast",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0.5,
+              "max": 2,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_print_development_min",
+              "label": "Print Development Time",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 15,
+              "step": 0.5,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_print_gamma_r",
+              "label": "Red Contrast",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0.5,
+              "max": 2,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_print_gamma_g",
+              "label": "Green Contrast",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0.5,
+              "max": 2,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_print_gamma_b",
+              "label": "Blue Contrast",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0.5,
+              "max": 2,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_filter_m",
+              "label": "Magenta Filtration",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -60,
+              "max": 60,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_filter_y",
+              "label": "Yellow Filtration",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -60,
+              "max": 60,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_preflash_exposure",
+              "label": "Preflash",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 0.5,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_preflash_m_shift",
+              "label": "Preflash Magenta",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -60,
+              "max": 60,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_preflash_y_shift",
+              "label": "Preflash Yellow",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -60,
+              "max": 60,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_print_diffusion_on",
+              "label": "Print Diffusion",
+              "kind": "toggle",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_print_diffusion_filter_family",
+              "label": "Print Filter Type",
+              "kind": "choice",
+              "rawOnly": false,
+              "min": 0,
+              "max": 3,
+              "step": 1,
+              "nonlinear": false,
+              "options": [
+                [
+                  "Black Pro-Mist",
+                  0
+                ],
+                [
+                  "Glimmerglass",
+                  1
+                ],
+                [
+                  "Pro-Mist",
+                  2
+                ],
+                [
+                  "CineBloom",
+                  3
+                ]
+              ],
+              "status": "pending"
+            },
+            {
+              "id": "sf_print_diffusion_strength",
+              "label": "Print Diffusion Strength",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 2,
+              "step": 0.001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_print_diffusion_scale",
+              "label": "Print Diffusion Size",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0.2,
+              "max": 4,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_print_diffusion_warmth",
+              "label": "Print Halo Warmth",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -1.5,
+              "max": 1.5,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_grain_on",
+              "label": "Grain",
+              "kind": "toggle",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_grain_amount",
+              "label": "Grain Strength",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 2,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_grain_granularity",
+              "label": "Grain Size",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0.25,
+              "max": 2.5,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_grain_uniformity",
+              "label": "Uniformity",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0.9,
+              "max": 1.02,
+              "step": 0.001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_grain_sublayer_scale",
+              "label": "Sublayer Particle Scale",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 2,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_grain_density_min",
+              "label": "Density Floor",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0.25,
+              "max": 2.5,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_grain_blur",
+              "label": "Grain Softness",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0.2,
+              "max": 4,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_grain_dye_cloud",
+              "label": "Dye Cloud Size",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 4,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_grain_usm_sigma",
+              "label": "Recovery Radius",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 3,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_grain_usm_amount",
+              "label": "Recovery Strength",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 2,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_halation_on",
+              "label": "Halation",
+              "kind": "toggle",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_halation_amount",
+              "label": "Halation Strength",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 2,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_halation_scale",
+              "label": "Halation Size",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0.2,
+              "max": 4,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_scatter_amount",
+              "label": "Scatter",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_scatter_scale",
+              "label": "Scatter Size",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0.2,
+              "max": 1.5,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_boost_ev",
+              "label": "Highlight Boost",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 10,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_boost_range",
+              "label": "Boost Range",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_protect_ev",
+              "label": "Boost Protect",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 6,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_output_luminance_boost",
+              "label": "Brightness",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0.5,
+              "max": 4,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_output_scale",
+              "label": "Output Level",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0.5,
+              "max": 4,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_scan_blur",
+              "label": "Scanner Blur",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 4,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_scan_usm_sigma",
+              "label": "Sharpen Radius",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 3,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_scan_usm_amount",
+              "label": "Sharpen Strength",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 2,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_glare_percent",
+              "label": "Viewing Glare",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_scan_black_correction",
+              "label": "Black Point Correction",
+              "kind": "toggle",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_scan_black_level",
+              "label": "Black Level",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": -0.1,
+              "max": 1,
+              "step": 0.001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_scan_white_correction",
+              "label": "White Point Correction",
+              "kind": "toggle",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_scan_white_level",
+              "label": "White Level",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 1,
+              "step": 0.001,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "sf_grain_blur_base",
+              "label": "Grain Blur Base",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0.5,
+              "max": 1.5,
+              "step": 0.01,
+              "nonlinear": false,
+              "status": "pending"
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "modules",
       "title": "Modules",
       "hidden": true,

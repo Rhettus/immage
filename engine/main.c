@@ -41,6 +41,8 @@
 #include "common/mipmap_cache.h"
 #include "common/ratings.h"
 #include "common/styles.h"
+#include "common/spektra_fetch.h"
+#include "common/spektra_sim.h"
 #include "common/tags.h"
 #include "control/conf.h"
 #include "common/exif.h"
@@ -713,17 +715,26 @@ static gboolean _holds_mask_settings(const char *op, const char *multi_name)
   return FALSE;
 }
 
-// whether `op` is one a converted negative switches off, keeping its
-// settings for when the photo is turned back (manifest.ts, NEG_OFF and
-// NEG_OFF_UNMAPPED); while negadoctor is on, its entries stay
-static gboolean _held_for_negative(const char *op)
+// whether `op` is one the photo's conversion switches off, keeping its
+// settings for when the photo is turned back (manifest.ts, NEG_OFF, SF_OFF
+// and their _UNMAPPED sets): a converted negative's, while negadoctor is
+// on, or a film simulation's tone mappers, while spektrafilm is. their
+// entries stay
+static gboolean _held_for_mode(const char *op)
 {
-  static const char *held[] = { "channelmixerrgb", "exposure", "toneequal", "hazeremoval", "agx", "sigmoid",
-                                "filmicrgb", "basecurve", NULL };
-  const dt_iop_module_t *neg = dt_iop_get_module_by_op_priority(_s.dev.iop, "negadoctor", 0);
-  if(!neg || !neg->enabled) return FALSE;
-  for(int k = 0; held[k]; k++)
-    if(!g_strcmp0(op, held[k])) return TRUE;
+  static const char *negative[] = { "channelmixerrgb", "exposure", "toneequal", "hazeremoval", "agx", "sigmoid",
+                                    "filmicrgb", "basecurve", NULL };
+  static const char *film[] = { "agx", "sigmoid", "filmicrgb", "basecurve", NULL };
+  static const struct { const char *mode; const char **held; } modes[] = {
+    { "negadoctor", negative }, { "spektrafilm", film },
+  };
+  for(size_t k = 0; k < G_N_ELEMENTS(modes); k++)
+  {
+    const dt_iop_module_t *m = dt_iop_get_module_by_op_priority(_s.dev.iop, modes[k].mode, 0);
+    if(!m || !m->enabled) continue;
+    for(int i = 0; modes[k].held[i]; i++)
+      if(!g_strcmp0(op, modes[k].held[i])) return TRUE;
+  }
   return FALSE;
 }
 
@@ -731,8 +742,8 @@ static gboolean _held_for_negative(const char *op)
 // switched on: they do nothing, and a deleted mask leaves its instances so.
 // the shapes of masks all deleted go too. a mask's own instances that hold
 // its settings stay (_holds_mask_settings()), or a hidden or sharing mask
-// would come back without them, as do those a negative holds
-// (_held_for_negative()).
+// would come back without them, as do those a negative or a film simulation
+// holds (_held_for_mode()).
 // one darktable starts on keeps its entry, or replaying the history would
 // switch it back on. needs the image open, for each module's default.
 // returns whether anything went
@@ -744,7 +755,7 @@ static gboolean _prune_off(const dt_imgid_t imgid)
   for(GList *l = _s.dev.iop; l; l = g_list_next(l))
   {
     const dt_iop_module_t *m = l->data;
-    if(m->default_enabled || g_hash_table_contains(done, m->op) || _held_for_negative(m->op)) continue;
+    if(m->default_enabled || g_hash_table_contains(done, m->op) || _held_for_mode(m->op)) continue;
     g_hash_table_add(done, (gpointer)m->op);
     GArray *drop = g_array_new(FALSE, FALSE, sizeof(int));
     sqlite3_stmt *stmt;
@@ -3407,6 +3418,16 @@ static int _positive_tiff_write(dt_imageio_module_data_t *data, const char *file
 // reads; long_edge bounds both sides (0 keeps the full size)
 #include "preview_jpeg.h"
 
+// whether an export bakes the edit into a positive for the library: a
+// converted negative or a film simulation, rendered to linear Rec.2020
+// floats and imported with a neutral history (_positive_import()).
+// "negative_copy" is the name older clients send
+static gboolean _positive_copy(JsonObject *req)
+{
+  return json_object_get_boolean_member_with_default(req, "positive_copy", FALSE)
+    || json_object_get_boolean_member_with_default(req, "negative_copy", FALSE);
+}
+
 static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
 {
   const char *out = json_object_get_string_member_with_default(req, "out", NULL);
@@ -3421,12 +3442,12 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
       || g_strcmp0(json_object_get_string_member_with_default(req, "color_space", "srgb"), "srgb")
       || json_object_get_int_member_with_default(req, "quality", 0) != 85
       || json_object_get_int_member_with_default(req, "upscale", 0) > 1
-      || json_object_get_boolean_member_with_default(req, "negative_copy", FALSE)))
+      || _positive_copy(req)))
   {
     *err = g_strdup("transient export requires an sRGB JPEG preview at quality 85");
     return FALSE;
   }
-  const gboolean positive = json_object_get_boolean_member_with_default(req, "negative_copy", FALSE);
+  const gboolean positive = _positive_copy(req);
   const gboolean positive_dng = positive && !g_strcmp0(format, "dng");
   dt_imageio_module_format_t *fmt = dt_imageio_get_format_by_name(positive_dng ? "tiff" : format);
   if(!fmt)
@@ -4040,7 +4061,7 @@ static void _export_run(gpointer data, gpointer user_data)
     if(dt_is_valid_imgid(snap))
     {
       ok = _export(snap, req, &err);
-      if(ok && json_object_get_boolean_member_with_default(req, "negative_copy", FALSE))
+      if(ok && _positive_copy(req))
         ok = _positive_import(json_object_get_string_member(req, "out"), b, &err);
     }
     else
@@ -9649,6 +9670,216 @@ static gboolean _parity(JsonObject *req, JsonBuilder *b, char **err)
   return ok;
 }
 
+// ------------------------------------------------------- film simulation
+
+// spektrafilm's identity for a stock (spektrafilm.c, _name_hash()): params
+// name the film and the paper by this hash of the stock's name, so the
+// panel's lists must hash exactly as the module does
+static uint32_t _sf_name_hash(const char *s)
+{
+  const dt_hash_t h = dt_hash(DT_INITHASH, s, strlen(s));
+  const uint32_t h32 = (uint32_t)(h ^ (h >> 32));
+  return h32 ? h32 : 1;
+}
+
+// the module's display names, trimmed as its combobox has them
+// (spektrafilm.c, _shorten_name())
+static void _sf_shorten(char *s)
+{
+  static const char *const filler[] = { " Professional", " Negative Film", " Reversal Film" };
+  for(size_t f = 0; f < G_N_ELEMENTS(filler); f++)
+  {
+    char *at = strstr(s, filler[f]);
+    if(!at) continue;
+    const size_t flen = strlen(filler[f]);
+    memmove(at, at + flen, strlen(at + flen) + 1);
+  }
+}
+
+// natural order, numbers by value, as the module sorts its lists
+// (spektrafilm.c, _nat_cmp())
+static int _sf_nat_cmp(const char *a, const char *b)
+{
+  for(;;)
+  {
+    if(*a == 0) return *b == 0 ? 0 : -1;
+    if(*b == 0) return 1;
+    const int da = (unsigned)*a - '0' < 10u, db = (unsigned)*b - '0' < 10u;
+    if(da && db)
+    {
+      unsigned long va = 0, vb = 0;
+      while((unsigned)*a - '0' < 10u) { va = va * 10 + (*a - '0'); a++; }
+      while((unsigned)*b - '0' < 10u) { vb = vb * 10 + (*b - '0'); b++; }
+      if(va != vb) return va < vb ? -1 : 1;
+    }
+    else if(da != db)
+      return da ? -1 : 1;
+    else
+    {
+      const int ca = g_ascii_tolower(*a), cb = g_ascii_tolower(*b);
+      if(ca != cb) return ca < cb ? -1 : 1;
+      a++;
+      b++;
+    }
+  }
+}
+
+typedef struct _sf_stock_t
+{
+  char stock[128], name[128], target_print[128];
+  gboolean printing, positive, bw;
+  double dev_times[SF_MAX_DEV_TIMES];
+  int n_dev;
+  uint32_t hash;
+} _sf_stock_t;
+
+static gint _sf_stock_cmp(gconstpointer a, gconstpointer b)
+{
+  return _sf_nat_cmp(((const _sf_stock_t *)a)->name, ((const _sf_stock_t *)b)->name);
+}
+
+// a download that finished since the last look: the module loads the new
+// pack at its next process(), but the pipes' caches still hold renders
+// made without it, under the same hashes
+static guint _sf_gen_seen = 0;
+static void _sf_follow_pack(void)
+{
+  const guint gen = sf_fetch_generation();
+  if(gen == _sf_gen_seen) return;
+  _sf_gen_seen = gen;
+  if(!_s.open) return;
+  const dt_iop_module_t *m = dt_iop_get_module_by_op_priority(_s.dev.iop, "spektrafilm", 0);
+  if(!m) return;
+  _invalidate_from(m->iop_order, "spektrafilm pack ");
+  _changed(DT_DEV_PIPE_SYNCH);
+}
+
+// the installed spektrafilm data pack, the one a new edit renders with, and
+// its films and papers, read as the module reads them (spektrafilm.c,
+// _scan_profiles()): { pack: { dir, lut_id, lut_hash, hand_installed } or
+// null, stocks: [{ hash, stock, name, printing, positive, bw,
+// target_print, dev_times }] in the module's order }
+static void _spektra_stocks(JsonBuilder *b)
+{
+  _sf_follow_pack();
+  char dir[1024];
+  gboolean exact = FALSE;
+  const gboolean found = sf_fetch_resolve_pack_dir(0, dir, sizeof dir, &exact);
+  json_builder_set_member_name(b, "pack");
+  GList *list = NULL;
+  if(!found)
+    json_builder_add_null_value(b);
+  else
+  {
+    json_builder_begin_object(b);
+    _add_string(b, "dir", dir);
+    GPtrArray *packs = sf_fetch_list_packs();
+    for(guint k = 0; k < packs->len; k++)
+    {
+      const sf_fetch_pack_t *fp = g_ptr_array_index(packs, k);
+      if(g_strcmp0(fp->dir, dir)) continue;
+      _add_string(b, "lut_id", fp->lut_id);
+      json_builder_set_member_name(b, "lut_hash");
+      json_builder_add_int_value(b, fp->lut_hash);
+      json_builder_set_member_name(b, "hand_installed");
+      json_builder_add_boolean_value(b, fp->hand_installed);
+      break;
+    }
+    g_ptr_array_unref(packs);
+    json_builder_end_object(b);
+
+    gchar *profdir = g_build_filename(dir, "profiles", NULL);
+    GDir *gd = g_dir_open(profdir, 0, NULL);
+    const char *fn;
+    while(gd && (fn = g_dir_read_name(gd)))
+    {
+      if(!g_str_has_suffix(fn, ".json")) continue;
+      gchar *path = g_build_filename(profdir, fn, NULL);
+      char *perr = NULL;
+      sf_profile_t *prof = sf_profile_load(path, 0.5f, &perr);
+      g_free(path);
+      if(!prof)
+      {
+        free(perr);
+        continue;
+      }
+      _sf_stock_t *e = g_malloc0(sizeof(_sf_stock_t));
+      g_strlcpy(e->stock, sf_profile_stock(prof) ? sf_profile_stock(prof) : fn, sizeof e->stock);
+      char *dot = strstr(e->stock, ".json");
+      if(dot) *dot = 0;
+      g_strlcpy(e->name, sf_profile_name(prof) ? sf_profile_name(prof) : e->stock, sizeof e->name);
+      _sf_shorten(e->name);
+      e->printing = !g_strcmp0(sf_profile_stage(prof), "printing");
+      e->positive = !g_strcmp0(sf_profile_type(prof), "positive");
+      e->bw = !g_strcmp0(sf_profile_channel_model(prof), "bw");
+      if(sf_profile_target_print(prof)) g_strlcpy(e->target_print, sf_profile_target_print(prof), sizeof e->target_print);
+      e->n_dev = sf_profile_dev_times(prof, e->dev_times, SF_MAX_DEV_TIMES);
+      e->hash = _sf_name_hash(e->stock);
+      sf_profile_free(prof);
+      list = g_list_prepend(list, e);
+    }
+    if(gd) g_dir_close(gd);
+    g_free(profdir);
+    list = g_list_sort(list, _sf_stock_cmp);
+  }
+  json_builder_set_member_name(b, "stocks");
+  json_builder_begin_array(b);
+  for(GList *l = list; l; l = g_list_next(l))
+  {
+    const _sf_stock_t *e = l->data;
+    json_builder_begin_object(b);
+    json_builder_set_member_name(b, "hash");
+    json_builder_add_int_value(b, e->hash);
+    _add_string(b, "stock", e->stock);
+    _add_string(b, "name", e->name);
+    json_builder_set_member_name(b, "printing");
+    json_builder_add_boolean_value(b, e->printing);
+    json_builder_set_member_name(b, "positive");
+    json_builder_add_boolean_value(b, e->positive);
+    json_builder_set_member_name(b, "bw");
+    json_builder_add_boolean_value(b, e->bw);
+    _add_string(b, "target_print", e->target_print);
+    json_builder_set_member_name(b, "dev_times");
+    json_builder_begin_array(b);
+    for(int k = 0; k < e->n_dev; k++) json_builder_add_double_value(b, e->dev_times[k]);
+    json_builder_end_array(b);
+    json_builder_end_object(b);
+  }
+  json_builder_end_array(b);
+  g_list_free_full(list, g_free);
+}
+
+// the data pack's download, on spektra_fetch.c's own thread: `action`
+// "start" (the repository's default pack), "cancel" or "status". replies
+// { state: idle, running, done or failed, message, progress (0..1, or -1
+// when unknown), started (for start) }. none of them waits for the network
+static gboolean _spektra_fetch(JsonObject *req, JsonBuilder *b, char **err)
+{
+  const char *action = json_object_get_string_member_with_default(req, "action", "status");
+  if(!g_strcmp0(action, "start"))
+  {
+    json_builder_set_member_name(b, "started");
+    json_builder_add_boolean_value(b, sf_fetch_start(0u, 0u));
+  }
+  else if(!g_strcmp0(action, "cancel"))
+    sf_fetch_cancel();
+  else if(g_strcmp0(action, "status"))
+  {
+    *err = g_strdup_printf("unknown spektra_fetch action '%s'", action);
+    return FALSE;
+  }
+  char msg[256] = { 0 };
+  double progress = -1.0;
+  const sf_fetch_state_t state = sf_fetch_status(msg, sizeof msg, &progress);
+  static const char *names[] = { "idle", "running", "done", "failed" };
+  _add_string(b, "state", state <= SF_FETCH_FAILED ? names[state] : "idle");
+  _add_string(b, "message", msg);
+  json_builder_set_member_name(b, "progress");
+  json_builder_add_double_value(b, progress);
+  if(state == SF_FETCH_DONE) _sf_follow_pack();
+  return TRUE;
+}
+
 static void _handle(JsonObject *req, FILE *out)
 {
   const char *cmd = json_object_has_member(req, "cmd")
@@ -9802,6 +10033,12 @@ static void _handle(JsonObject *req, FILE *out)
   else if(!g_strcmp0(cmd, "fonts"))
   {
     _fonts(b);
+  }
+  else if(!g_strcmp0(cmd, "spektra_stocks"))
+    _spektra_stocks(b);
+  else if(!g_strcmp0(cmd, "spektra_fetch"))
+  {
+    if(!_spektra_fetch(req, b, &err)) goto fail;
   }
   else if(!g_strcmp0(cmd, "copy"))
   {

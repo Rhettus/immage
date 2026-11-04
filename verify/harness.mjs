@@ -2182,6 +2182,46 @@ async function decisions(photo) {
       : changed.length ? `turned back, these are not as they were: ${changed.join(", ")}` : null;
   });
 
+  // a film simulation turns the tone mappers off and leaves exposure and
+  // color calibration on; it opens again so, its tools on the modules it
+  // keeps, and turned back the tone mappers are as they were
+  // (film-simulation.md; manifest.ts, SF_OFF and SF_CHOICES). needs no data
+  // pack: without one spektrafilm passes the photo through
+  await decide("a film simulation turns the tone mappers off, and back", async () => {
+    const path = fresh(photo);
+    const ops = [...m.SF_OFF, "spektrafilm", "exposure", "channelmixerrgb"];
+    const fields = m.boundFields();
+    const state = async () => (await invoke("get_params", {
+      modules: Object.fromEntries(ops.map((op) => [op, fields[op]])) })).modules;
+    let o = await open(path);
+    const was = await state();
+    await o.after(() => o.s.setMany([["sf_on", 1], ...Object.entries(m.SF_CHOICES)]));
+    const wrong = (st) => [...m.SF_OFF].filter((op) => st[op]?.enabled)
+      .concat(st.spektrafilm?.enabled ? [] : ["spektrafilm off"])
+      .concat(["exposure", "channelmixerrgb"].filter((op) => was[op].enabled && !st[op].enabled).map((op) => `${op} off`));
+    const simulated = wrong(await state());
+    await o.s.close();
+    o = await open(path);
+    const reopened = wrong(await state());
+    const choices = Object.entries(m.SF_CHOICES).filter(([id, v]) => o.s.values[id] !== v).map(([id]) => id);
+    const sfOn = o.s.values.sf_on;
+    await o.after(() => o.s.setMany([["sf_on", 0],
+                                     ...Object.keys(m.SF_CHOICES).map((id) => [id, o.s.neutral[id]])]));
+    const back = await state();
+    await o.s.close();
+    const changed = [...m.SF_OFF].flatMap((op) => {
+      if (back[op].enabled !== was[op].enabled) return [`${op} ${was[op].enabled ? "on" : "off"} → ${back[op].enabled ? "on" : "off"}`];
+      const moved = was[op].enabled ? Object.keys(was[op].params)
+        .filter((f) => Math.abs(back[op].params[f] - was[op].params[f]) > 1e-5) : [];
+      return moved.length ? [`${op} ${moved.map((f) => `${f} ${was[op].params[f]} → ${back[op].params[f]}`).join(", ")}`] : [];
+    });
+    return simulated.length ? `simulated, these are not as they should be: ${simulated.join(", ")}`
+      : sfOn !== 1 ? "opened again, it is not a film simulation"
+      : reopened.length ? `opened again, these are not as they should be: ${reopened.join(", ")}`
+      : choices.length ? `opened again, these tools are back on the tone mapper: ${choices.join(", ")}`
+      : changed.length ? `turned back, these are not as they were: ${changed.join(", ")}` : null;
+  });
+
   // a camera scan's blue, under the orange mask, reads the film's densest
   // parts as noise around zero: White Point is set from the other channels,
   // not by that one, which darkened the whole print (negadoctor.ts,

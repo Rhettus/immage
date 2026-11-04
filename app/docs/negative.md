@@ -83,8 +83,12 @@ moves the highlights too. Reset Color sets both back. Advanced holds the
 Border Color, Shadow Tint and White Balance as red, green and blue
 sliders.
 
-Turn Off Conversion takes the photo back to the negative, with Basic's
-tools as they were. Undo does the same.
+Turn Off Conversion, at the foot of the panel, takes the photo back to the
+negative, with Basic's tools as they were. Undo does the same.
+
+A photo is either a converted negative or a
+[film simulation](film-simulation.md), not both. Converting a photo that
+has a film simulation asks first, then turns the simulation off.
 
 ## A whole roll
 
@@ -96,12 +100,14 @@ differently may need its own picks.
 
 ## Export a positive to the library
 
-**Export to Library** writes a separate positive beside the original, with
-the conversion and current edits baked in. It opens with normal editing
-tools available, so you can continue editing without the negative workflow's
-restrictions. The original keeps its conversion edit. Preferences › General ›
-Workspace › **Converted negative format** chooses losslessly compressed
-**DNG (16-bit float)**, the default, or **TIFF (32-bit float)**.
+**Export to Library**, at the foot of the panel, writes a separate positive
+beside the original, with the conversion and current edits baked in. It
+opens with normal editing tools available, so you can continue editing
+without the negative workflow's restrictions. The original keeps its
+conversion edit. The **DNG** and **TIFF** buttons beside it choose
+losslessly compressed **DNG (16-bit float)**, the default, or **TIFF (32-bit
+float)**, the same setting as Preferences › General › Workspace ›
+**Generated positive format**.
 The result opens automatically unless **Open generated photos** is off.
 
 ## In darktable

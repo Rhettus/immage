@@ -23,6 +23,8 @@ in, edit them, send them out.
 | **Masks** | local adjustments. See [Masks](masks.md). |
 | **Heal** | heal and clone (Q). See [Heal and clone](heal.md). |
 | **Zone System** | black and white tones as zones. See [Zone System](zone-system.md). |
+| **Film Simulation** | the photo rendered as a film, printed or scanned. See [Film Simulation](film-simulation.md). |
+| **Negative** | a photo of a film negative turned positive. See [Film negatives](negative.md). |
 | **Presets** | presets and film looks. See [Presets and looks](presets-and-looks.md). |
 | **Export** | the export dialog (⇧⌘E). See [Export](export.md). |
 | **?** | the quick start guide |
@@ -30,7 +32,8 @@ in, edit them, send them out.
 | Gear | **Preferences** (⌘,) |
 
 Clicking the button of the panel that is already showing slides the right
-panel shut. Crop, Masks, Heal and Zone System need a photo open.
+panel shut. Crop, Masks, Heal, Zone System, Film Simulation and Negative need
+a photo open.
 
 Each tool remembers how far you scrolled its panel, so going back to
 Adjustments returns you to the same place. A tool opens at its top the

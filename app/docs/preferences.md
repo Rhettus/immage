@@ -15,8 +15,10 @@ apply as you make them; **Done** closes the window.
   the photo to choose it; Escape cancels. Turning it off stops loupe rendering.
 - **Open generated photos**: automatically opens HDR merges, panoramas, AI
   denoise results, positive exports and the first plugin result for editing.
-- **Converted negative format**: losslessly compressed DNG (16-bit float,
-  default) or TIFF (32-bit float) for Negative’s **Export to Library**.
+- **Generated positive format**: losslessly compressed DNG (16-bit float,
+  default) or TIFF (32-bit float) for **Export to Library** in the Negative
+  and Film Simulation panels. The DNG and TIFF buttons beside that button set
+  the same thing.
 
 - **Canvas**: what is behind the photo, in full screen preview too.
   **Dark**, **Neutral Gray** to judge tones without a dark surround, or

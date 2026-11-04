@@ -4,7 +4,7 @@
 // Lightroom's Copy Settings: which parts of an edit to copy, by panel and
 // section, kept between uses; Paste and Previous apply the same parts
 import { useEffect, useState } from "react";
-import { NEG_CHOICES, panels, type Values } from "./manifest";
+import { NEG_CHOICES, panels, SF_CHOICES, type Values } from "./manifest";
 import type { Mask } from "./masks";
 
 export type CopyGroup = { id: string; label: string; ids: string[] };
@@ -24,12 +24,15 @@ export const COPY_GROUPS: CopyGroup[] = [
   // the conversion, with the modules its tools move to: one frame's, pasted
   // onto the rest of the roll
   { id: "negative", label: "Negative", ids: [...controlsOf("negative"), ...Object.keys(NEG_CHOICES)] },
+  // the film simulation, with the modules its tools move to
+  { id: "film", label: "Film Simulation", ids: [...controlsOf("film"), ...Object.keys(SF_CHOICES)] },
   { id: "look", label: "Look", ids: [] },
   { id: "masks", label: "Masks", ids: [] },
 ];
 // left out unless asked for, as in Lightroom: they belong to one framing.
-// so is a negative's conversion, which pasted from a positive would undo it
-const OFF_BY_DEFAULT = ["crop", "masks", "negative"];
+// so is a negative's conversion, which pasted from a positive would undo
+// it, and a film simulation, which replaces the photo's tone mapper
+const OFF_BY_DEFAULT = ["crop", "masks", "negative", "film"];
 
 export type Clip = {
   values: Values;

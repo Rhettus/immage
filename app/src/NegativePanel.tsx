@@ -5,7 +5,8 @@
 // negadoctor, in the order darktable's manual sets it. the film border
 // first, which converts the photo; then the photo area, which sets the
 // rest; then each control on its own, its eyedropper picking a box for it
-// alone (negadoctor.ts)
+// alone (negadoctor.ts). Export to Library and turning the conversion off
+// sit below it, in PositiveFooter.tsx
 import { useState } from "react";
 import { Pipette } from "lucide-react";
 import { Chevron, Collapse } from "./Collapse";
@@ -25,14 +26,12 @@ const PICK_HINTS: Record<NegPick, string> = {
 };
 
 export function NegativePanel({ values, disabled, converted, picking, busy, hasArea, note, renderControl,
-                                onPick, onTurnOff, onResetColor, onExport, exporting, exportFormat }: {
+                                onPick, onResetColor }: {
   values: Record<string, number>; disabled: boolean; converted: boolean;
   picking: NegPick | null; busy: boolean; hasArea: boolean; note: string | null;
   renderControl: (id: string) => React.ReactNode;
   onPick: (kind: NegPick | null) => void;
-  onTurnOff: () => void;
   onResetColor: () => void;
-  onExport: () => void; exporting: boolean; exportFormat: "dng" | "tiff";
 }) {
   const [advanced, setAdvanced] = useState(false);
   const off = disabled || busy;
@@ -113,17 +112,6 @@ export function NegativePanel({ values, disabled, converted, picking, busy, hasA
                 {["r", "g", "b"].map((c) => renderControl(`neg_wbh_${c}`))}
               </div>
             </Collapse>
-          </section>
-          <section>
-            <button className="btn small" disabled={off || exporting || !!picking} onClick={onExport}>
-              {exporting ? "Exporting…" : "Export to Library"}
-            </button>
-            <p className="note-plain">Creates a separate positive {exportFormat === "dng" ? "DNG" : "TIFF"} with this edit,
-              ready for the normal editing tools. Choose the format in Preferences.</p>
-          </section>
-          <section>
-            <button className="btn small" disabled={off} onClick={onTurnOff}
-                    title="the photo back as a negative, with Basic's tools as they were">Turn Off Conversion</button>
           </section>
         </>
       )}

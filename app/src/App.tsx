@@ -16,11 +16,15 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { BANDS, choiceOn, choiceShows, controlById, GUIDE_IDS, guidesOf, isModuleSetting, MAX_GUIDES, parametricOf, UPRIGHT_GUIDED,
          UPRIGHT_MODES, uprightAspect, mapOf, mapsFor, moduleName, mapsWith, NEG_CHOICES, NEG_GREYED, NEG_OFF,
-         NEG_OFF_UNMAPPED, panels, pointsOf, pointValues, profileLabel, turnRect, type Control, type ControlPreset, type CurveChannel, type Values,
+         NEG_OFF_UNMAPPED, SF_CHOICES, SF_GREYED, SF_OFF, SF_OFF_UNMAPPED, panels, pointsOf, pointValues, profileLabel, turnRect, type Control, type ControlPreset, type CurveChannel, type Values,
          type Panel, type Section, type Turn } from "./manifest";
 import { autoArea, autoBlack, autoDmax, autoDmin, autoExposure as autoPrintExposure, autoOffset, autoWbHigh, autoWbLow,
          FILM_BW, FILM_COLOR, fromValues, PRESETS, toValues, type Stats } from "./negadoctor";
 import { NegativePanel, type NegPick } from "./NegativePanel";
+import { FilmPanel } from "./FilmPanel";
+import { PositiveFooter } from "./PositiveFooter";
+import { filmChanges, paperChanges, presetValues as sfPresetValues, SF_PRESETS, type FetchStatus,
+         type Stocks } from "./spektrafilm";
 import { CircleOff, Grid2x2, Pipette, MoveHorizontal, MoveVertical, PenLine, Sparkles, WandSparkles } from "lucide-react";
 import { panelValues } from "./panelValues";
 import { FrameUpdates, Snapshot } from "./uiUpdates";
@@ -63,7 +67,7 @@ import { loadOpenGenerated, storeOpenGenerated, loadLoupe, storeLoupe, loadAutoH
          loadStackPairs,
          PreferencesDialog, storeOverlayColor, storeGuideColor, storeStackPairs,
          storeAutoHide, storeCanvas, CANVASES, storeFocusMode, storePins, type AccelProvider, type Canvas,
-         loadNegWarn, loadNegativeExportFormat, loadReadAhead, loadThumbMemoryMb, storeNegWarn, type Pins, type PrefsTab, type Preview } from "./Preferences";
+         loadNegWarn, loadNegativeExportFormat, loadReadAhead, loadThumbMemoryMb, storeNegWarn, storeNegativeExportFormat, type Pins, type PrefsTab, type Preview } from "./Preferences";
 import { kindOf, loadPlugins, loadReturns, returnValues, storePlugins, unfit, type PluginConfig,
          type PluginReturn } from "./plugins";
 import { FolderTree, type Volume } from "./FolderTree";
@@ -906,30 +910,36 @@ export default function App() {
                action: generatedAction(r.path, r.image.imgid) };
     }, "AI Denoise").finally(() => setDenoiseRunning(false));
   };
-  const [negativeExporting, setNegativeExporting] = useState(false);
-  const negativeExportRunning = useRef(false);
-  const exportNegative = () => {
+  // Export to Library in the Negative and Film Simulation panels: the edit
+  // baked into a positive beside the photo (positive_export in main.rs)
+  const [positiveExporting, setPositiveExporting] = useState(false);
+  const positiveExportRunning = useRef(false);
+  const [positiveFormat, setPositiveFormat] = useState(loadNegativeExportFormat);
+  const exportPositive = (kind: "negative" | "film") => {
     const s = session.current, from = currentRef.current?.path;
-    if (!s || !from || s.values.neg_on !== 1 || negativeExportRunning.current) return;
-    negativeExportRunning.current = true;
-    setNegativeExporting(true);
+    const flag = kind === "negative" ? "neg_on" : "sf_on";
+    if (!s || !from || s.values[flag] !== 1 || positiveExportRunning.current) return;
+    positiveExportRunning.current = true;
+    setPositiveExporting(true);
     const format = loadNegativeExportFormat();
-    void runInBackground(`Converted positive: ${baseName(from)}`, async () => {
+    const title = kind === "negative" ? "Converted positive" : "Film simulation";
+    void runInBackground(`${title}: ${baseName(from)}`, async () => {
       s.flushEdits();
       await s.settled();
-      if (session.current !== s) throw new Error("the open photo changed; export the negative again");
-      return await invoke<{ path: string; original: string; image: { imgid: number } }>("negative_export", {
-        imgid: s.imgid, original: from, format,
+      if (session.current !== s) throw new Error("the open photo changed; export it again");
+      return await invoke<{ path: string; original: string; image: { imgid: number } }>("positive_export", {
+        imgid: s.imgid, original: from, format, kind,
       });
     }, (r) => {
-      returns.current.set(r.path, { original: r.original, result: r.path, plugin: "negative-positive", applied: true });
+      returns.current.set(r.path, { original: r.original, result: r.path,
+                                    plugin: kind === "negative" ? "negative-positive" : "film-positive", applied: true });
       if (folderRef.current && !immichRef.current && parentDir(r.path) === folderRef.current)
         void showFolder(folderRef.current, true);
-      return { text: `Converted positive: wrote ${baseName(r.path)}`, ok: true,
+      return { text: `${title}: wrote ${baseName(r.path)}`, ok: true,
                action: generatedAction(r.path, r.image.imgid) };
-    }, "Export converted negative").finally(() => {
-      negativeExportRunning.current = false;
-      setNegativeExporting(false);
+    }, kind === "negative" ? "Export converted negative" : "Export film simulation").finally(() => {
+      positiveExportRunning.current = false;
+      setPositiveExporting(false);
     });
   };
   // Lightroom's Photo Merge › HDR on darktable's HDR merge: a float DNG
@@ -3867,15 +3877,15 @@ export default function App() {
       if (stopped) resumeBase();
     }
   };
-  // tone mappers from darktable that no slider covers, and modules of
-  // NEG_OFF that darktable set beyond their sliders, which the session
-  // cannot switch through them
-  const negOffUnmapped = (s: Session) => {
+  // tone mappers from darktable that no slider covers, and modules a
+  // conversion turns off (NEG_OFF, SF_OFF) that darktable set beyond their
+  // sliders, which the session cannot switch through them
+  const offUnmapped = (s: Session, off: Set<string>, unmapped: Set<string>) => {
     const done = new Set<string>();
     for (const h of s.history) {
       const key = instanceKey(h), op = mapOpOf(h);
       if (done.has(key) || h.priority === undefined || h.masked) continue;
-      if (!NEG_OFF_UNMAPPED.has(h.op) && !(NEG_OFF.has(op) && s.isForeign(op))) continue;
+      if (!unmapped.has(h.op) && !(off.has(op) && s.isForeign(op))) continue;
       done.add(key);
       if (s.moduleStates.get(key)?.enabled ?? h.enabled) s.setModuleState(h, { enabled: false });
     }
@@ -3885,7 +3895,7 @@ export default function App() {
   // the modules a negative turns off go off first, as negadoctor's input is
   // read without them, then the border and the photo area set its params,
   // all one undo step
-  const negPicked = async (kind: NegPick, box: [number, number, number, number]) => {
+  const negPicked = async (kind: NegPick, box: [number, number, number, number], swap = false) => {
     const s = session.current;
     setNegPick(null);
     if (!s) return;
@@ -3893,14 +3903,22 @@ export default function App() {
     const converting = kind === "border" && s.values.neg_on !== 1;
     // before the conversion the photo area is only kept, for it
     if (!converting && s.values.neg_on !== 1) return;
+    // a photo is a film simulation or a converted negative, not both
+    if (converting && s.values.sf_on === 1 && !swap) {
+      setExclusive({ title: "Convert Negative",
+                     body: "Converting the negative turns off this photo's film simulation, which works on a positive.",
+                     go: () => void negPicked(kind, box, true) });
+      return;
+    }
     setNegBusy(true);
     setNegNote(null);
     try {
       if (converting) {
         const film = s.values.neg_film === FILM_BW ? FILM_BW : FILM_COLOR;
-        changeMany([["neg_on", 1], ...toValues(PRESETS[film]), ...Object.entries(NEG_CHOICES),
+        changeMany([...(s.values.sf_on === 1 ? sfOffEntries(s) : []),
+                    ["neg_on", 1], ...toValues(PRESETS[film]), ...Object.entries(NEG_CHOICES),
                     ...(film === FILM_BW ? [["bw_mode", 1] as [string, number]] : [])], "Negative conversion");
-        negOffUnmapped(s);
+        offUnmapped(s, NEG_OFF, NEG_OFF_UNMAPPED);
       }
       let p = fromValues(s.values);
       if (kind === "border") {
@@ -3928,8 +3946,77 @@ export default function App() {
   const negTurnOff = () => {
     const s = session.current;
     if (!s) return;
-    changeMany([["neg_on", 0], ...Object.keys(NEG_CHOICES).map((id): [string, number] => [id, s.neutral[id]])],
-               "Turn off negative conversion");
+    changeMany(negOffEntries(s), "Turn off negative conversion");
+  };
+
+  // the Film Simulation panel (FilmPanel.tsx): the data pack's films and
+  // papers, read when the panel opens, and its download, followed while it
+  // runs. a photo is a film simulation or a converted negative, not both;
+  // switching asks first
+  const [sfStocks, setSfStocks] = useState<Stocks | null>(null);
+  const [sfFetch, setSfFetch] = useState<FetchStatus | null>(null);
+  const [exclusive, setExclusive] = useState<{ title: string; body: string; go: () => void } | null>(null);
+  const filmView = !!current && layout.right && rightMode === "film";
+  useEffect(() => {
+    if (!filmView || sfStocks?.pack) return;
+    void invoke<Stocks>("spektra_stocks").then(setSfStocks).catch((e) => setStatus(`film data: ${e}`));
+  }, [filmView]);   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (sfFetch?.state !== "running") return;
+    const t = window.setTimeout(() => {
+      void invoke<FetchStatus>("spektra_fetch", { action: "status" }).then((f) => {
+        setSfFetch(f);
+        if (f.state === "done") {
+          void invoke<Stocks>("spektra_stocks").then(setSfStocks);
+          // the module renders with the pack from its next frame
+          session.current?.requestRender();
+        }
+      }).catch((e) => setSfFetch({ state: "failed", message: `${e}`, progress: -1 }));
+    }, 400);
+    return () => window.clearTimeout(t);
+  }, [sfFetch]);
+  const sfDownload = () => void invoke<FetchStatus>("spektra_fetch", { action: "start" }).then((f) =>
+    setSfFetch(f.started === false && f.state !== "running"
+      ? { ...f, state: "failed", message: f.message || "downloads are turned off in darktable's settings" } : f))
+    .catch((e) => setSfFetch({ state: "failed", message: `${e}`, progress: -1 }));
+  const sfCancel = () => void invoke<FetchStatus>("spektra_fetch", { action: "cancel" }).then(setSfFetch);
+  // turning a film simulation off: its tools back on the modules
+  // Preferences picks
+  const sfOffEntries = (s: Session): [string, number][] =>
+    [["sf_on", 0], ...Object.keys(SF_CHOICES).map((id): [string, number] => [id, s.neutral[id]])];
+  const negOffEntries = (s: Session): [string, number][] =>
+    [["neg_on", 0], ...Object.keys(NEG_CHOICES).map((id): [string, number] => [id, s.neutral[id]])];
+  // on, with the module's defaults or a preset's settings, as one undo step
+  const sfTurnOn = (preset?: string, swap = false) => {
+    const s = session.current;
+    if (!s) return;
+    if (s.values.neg_on === 1 && !swap) {
+      setExclusive({ title: "Film Simulation",
+                     body: "Film simulation turns off this photo's negative conversion: the film is exposed from "
+                       + "the photo as a positive.",
+                     go: () => sfTurnOn(preset, true) });
+      return;
+    }
+    // without a preset, the settings it had when last turned off
+    const p = SF_PRESETS.find((x) => x.name === preset);
+    const settings = p ? sfPresetValues(p) : [];
+    changeMany([...(s.values.neg_on === 1 ? negOffEntries(s) : []), ["sf_on", 1], ...settings,
+                ...Object.entries(SF_CHOICES)], p ? `Film Simulation: ${p.name.split("|").pop()}` : "Film Simulation");
+    offUnmapped(s, SF_OFF, SF_OFF_UNMAPPED);
+  };
+  const sfFilm = (hash: number) => {
+    const s = session.current, stock = sfStocks?.stocks.find((x) => !x.printing && x.hash === hash);
+    if (!s || !stock || !sfStocks) return;
+    changeMany(filmChanges(sfStocks.stocks, s.values, stock), "Film Stock");
+  };
+  const sfPaper = (pick: number) => {
+    const s = session.current;
+    if (!s || !sfStocks) return;
+    changeMany(paperChanges(sfStocks.stocks, s.values, pick), "Print Paper");
+  };
+  const sfTurnOff = () => {
+    const s = session.current;
+    if (s) changeMany(sfOffEntries(s), "Turn off film simulation");
   };
 
   // what the Before view keeps of the edit: the crop, the modules chosen,
@@ -5824,8 +5911,7 @@ export default function App() {
           )}
           {rightMode === "negative" && !cropping && (
             <NegativePanel values={values} disabled={!current} converted={values.neg_on === 1} picking={negPick}
-                           onExport={exportNegative} exporting={negativeExporting} exportFormat={loadNegativeExportFormat()}
-                           busy={negBusy} hasArea={!!negArea} note={negNote} onPick={setNegPick} onTurnOff={negTurnOff}
+                           busy={negBusy} hasArea={!!negArea} note={negNote} onPick={setNegPick}
                            onResetColor={() => changeMany(["wbl", "wbh"].flatMap((k) => ["r", "g", "b"]
                              .map((c): [string, number] => [`neg_${k}_${c}`, 1])), "Reset Color")}
                            renderControl={(id) => {
@@ -5836,6 +5922,20 @@ export default function App() {
                                              values, onChange: (v: number) => (id === "neg_film" ? negFilm(v) : change(c, v)) };
                              return c.kind === "choice" ? <Choice key={id} {...props} /> : <Slider key={id} {...props} />;
                            }} />
+          )}
+          {rightMode === "film" && !cropping && (
+            <FilmPanel values={values} disabled={!current} on={values.sf_on === 1} stocks={sfStocks} fetch={sfFetch}
+                       onDownload={sfDownload} onCancel={sfCancel} onTurnOn={() => sfTurnOn()}
+                       onPreset={(name) => sfTurnOn(name)} onFilm={sfFilm} onPaper={sfPaper}
+                       renderControl={(id, override, onChange, value) => {
+                         const c = { ...controlById.get(id)!, ...override };
+                         const props = { control: c, value: value ?? values[id] ?? c.neutral ?? 0,
+                                         neutral: session.current?.neutral[id] ?? c.neutral ?? 0,
+                                         disabled: !current, values,
+                                         onChange: onChange ?? ((v: number) => change(c, v)) };
+                         return c.kind === "choice" ? <Choice key={id} {...props} />
+                           : c.kind === "toggle" ? <Toggle key={id} {...props} /> : <Slider key={id} {...props} />;
+                       }} />
           )}
           {rightMode === "presets" && !cropping && (
             <PresetsPanel fold={presetFold} onAnyOpen={setPresetGroupsOpen} focusMode={focusMode}
@@ -6004,6 +6104,16 @@ export default function App() {
                        } : undefined} /></Profiler>
           ))}
         </div>
+        {!cropping && current && ((rightMode === "negative" && values.neg_on === 1)
+                                  || (rightMode === "film" && values.sf_on === 1)) && (
+          <PositiveFooter format={positiveFormat} exporting={positiveExporting} disabled={negBusy || !!negPick}
+                          onFormat={(f) => { setPositiveFormat(f); storeNegativeExportFormat(f); }}
+                          onExport={() => exportPositive(rightMode === "film" ? "film" : "negative")}
+                          onTurnOff={rightMode === "film" ? sfTurnOff : negTurnOff}
+                          turnOffLabel={rightMode === "film" ? "Turn Off Film Simulation" : "Turn Off Conversion"}
+                          turnOffTitle={rightMode === "film" ? "the photo back on its tone mapper, with Basic's tools as they were"
+                                                             : "the photo back as a negative, with Basic's tools as they were"} />
+        )}
         <div className="right-foot">
           <button className="btn small" disabled={!current || cropping} onClick={() => setCopying(true)}
                   data-action="copy-settings" title={keys("choose settings of this photo to copy (⇧⌘C)")}>Copy…</button>
@@ -6036,6 +6146,8 @@ export default function App() {
                 disabled={!current} onClick={() => showRight("heal")}><HealIcon /></button>
         <button className={`tool${layout.right && !cropping && rightMode === "zones" ? " on" : ""}`} title="zone system"
                 data-tour="zones" disabled={!current} onClick={() => showRight("zones")}><ZonesIcon /></button>
+        <button className={`tool${layout.right && !cropping && rightMode === "film" ? " on" : ""}`}
+                title="film simulation" data-tour="film" disabled={!current} onClick={() => showRight("film")}><FilmSimIcon /></button>
         <button className={`tool${layout.right && !cropping && rightMode === "negative" ? " on" : ""}`}
                 title="film negative" data-tour="negative" disabled={!current} onClick={openNegative}><FilmIcon /></button>
         <button className={`tool${layout.right && !cropping && rightMode === "presets" ? " on" : ""}`} title="presets" data-tour="presets"
@@ -6172,6 +6284,19 @@ export default function App() {
         </div>
       </div>
     )}
+    {exclusive && (
+      <div className="modal-backdrop">
+        <div className="modal neg-warn">
+          <div className="modal-head"><h2>{exclusive.title}</h2></div>
+          <div className="modal-body"><p>{exclusive.body}</p></div>
+          <div className="modal-foot">
+            <button className="btn" onClick={() => setExclusive(null)}>Cancel</button>
+            <button className="btn primary" autoFocus onClick={() => { const go = exclusive.go; setExclusive(null); go(); }}>
+              Continue</button>
+          </div>
+        </div>
+      </div>
+    )}
     {exporting && <ExportDialog current={currentEntry} shown={shown.filter((i) => !isRemote(i))} canUpscale={!!accel?.length}
                                 selected={shown.filter((i) => selection.has(i.imgid) && !isRemote(i))}
                                 onClose={() => setExporting(false)} onKeywordsChanged={reloadKeywords} />}
@@ -6244,7 +6369,7 @@ function Splitter({ axis, value, min, max, invert, hidden, onChange }: {
   );
 }
 
-type RightMode = "adjust" | "presets" | "masks" | "heal" | "zones" | "negative";
+type RightMode = "adjust" | "presets" | "masks" | "heal" | "zones" | "film" | "negative";
 // the photo area a film border pick reads before one is picked: darktable's
 // default picker box
 const NEG_AREA: [number, number, number, number] = [0.02, 0.02, 0.98, 0.98];
@@ -6260,7 +6385,7 @@ const NEG_PICK_LABELS: Record<NegPick, string> = {
 const LEFT_CARDS = ["metadata", "keywording", "folders", "immich", "history"] as const;
 type LeftCard = typeof LEFT_CARDS[number];
 const RIGHT_TITLES: Record<RightMode, string> = { adjust: "Adjustments", presets: "Presets", masks: "Masks", heal: "Heal",
-                                                  zones: "Zone System", negative: "Negative" };
+                                                  zones: "Zone System", film: "Film Simulation", negative: "Negative" };
 
 // everything back to the image's defaults, as one undo step
 function ResetAll({ disabled, onReset }: { disabled: boolean; onReset: () => void }) {
@@ -6949,6 +7074,9 @@ const FlipIcon = ({ vertical = false }: { vertical?: boolean }) => icon(
 // a strip of film with its sprocket holes
 const FilmIcon = () => icon(<><rect x="4" y="2.5" width="16" height="19" rx="2" /><path d="M8 2.5v19M16 2.5v19" />
   <path d="M4 7h4M4 12h4M4 17h4M16 7h4M16 12h4M16 17h4" /></>);
+// a film canister, its leader drawn out
+const FilmSimIcon = () => icon(<><rect x="3" y="6" width="9" height="13" rx="2" /><path d="M5 6V4h5v2M5 19v2h5v-2" />
+  <path d="M12 9h7.5a1.5 1.5 0 0 1 0 3H17v4h-5" /><path d="M14 9v3M16.5 9v3" /></>);
 const CropIcon = () => icon(<><path d="M6 2v14a2 2 0 0 0 2 2h14" /><path d="M18 22V8a2 2 0 0 0-2-2H2" /></>);
 const ExportIcon = () => icon(<><path d="M12 15V4" /><path d="m7.5 8.5 4.5-4.5 4.5 4.5" />
                                   <path d="M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5" /></>);
@@ -7369,10 +7497,14 @@ const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle, values
   const [wheels, setWheels] = useState<WheelMode>("3way");
   const sections = p.tabs ? [p.sections[tab]] : p.sections;
   const showWheels = p.graph === "colorwheels" && wheels !== "sliders";
-  // a converted negative has these modules off (NEG_OFF)
-  const negative = (c: Control) => values.neg_on === 1 && NEG_GREYED.has(c.id);
+  // a converted negative has these modules off (NEG_OFF), a film
+  // simulation its tone mappers (SF_OFF)
+  const negative = (c: Control) => (values.neg_on === 1 && NEG_GREYED.has(c.id))
+    || (values.sf_on === 1 && SF_GREYED.has(c.id));
   const controlProps = (c: Control) => ({
-    control: negative(c) ? { ...c, note: "set in Negative: a converted negative turns this module off" } : c,
+    control: negative(c) ? { ...c, note: values.neg_on === 1
+      ? "set in Negative: a converted negative turns this module off"
+      : "set in Film Simulation: a film simulation turns the tone mapper off" } : c,
     value: values[c.id] ?? c.neutral ?? 0,
     neutral: session?.neutral[c.id] ?? c.neutral ?? 0,
     disabled: disabled || negative(c) || !mapOf.has(c.id) || (!!c.rawOnly && !session?.raw), onChange: (v: number) => onChange(c, v),
