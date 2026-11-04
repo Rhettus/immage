@@ -14,6 +14,10 @@ Improvements
   has darktable's presets, film and paper menus, the main exposure, color,
   grain and halation controls, and the rest under Advanced. It replaces the
   tone mapper while it is on, and Export to Library saves a positive copy.
+- Saturation can run on darktable's new saturation curve module, chosen
+  in Preferences › Modules for photos and for masks. A curve editor with
+  Saturation and Brilliance curves replaces the slider, changing colors
+  by how saturated they already are.
 - The Negative panel's Export to Library and Turn Off Conversion now sit at
   the foot of the panel, with DNG and TIFF buttons for the format. The
   preference they share is now called Generated positive format.
