@@ -2088,20 +2088,51 @@ static gboolean _folder(const char *dir, const gboolean recursive, JsonBuilder *
   return TRUE;
 }
 
+// the folder read whose batch was queued last (its `job`), set by the
+// request reader (_read_requests). a batch of another read stops before its
+// next file: the import thread takes batches in turn, and an open photo
+// waits on _import_lock, so a network share's batches left behind by a
+// change of folder held up the next folder and photo for minutes. the
+// newest rather than the highest, as the client's numbering restarts
+static gint64 _import_latest = 0;
+
 // import these files, as _folder() does a folder's: the client lists the
-// folder itself and sends it in batches, so it can show its progress
-static void _import_files(JsonArray *files, JsonBuilder *b)
+// folder itself and sends it in batches, so it can show its progress. with
+// a `job`, a batch stops once a newer read's is queued; with a `budget` (ms),
+// once that has passed, after a file at least. `done` is how many of the
+// files it went through, so the client sends the rest again
+static void _import_files(JsonObject *req, JsonBuilder *b)
 {
+  JsonArray *files = json_object_has_member(req, "files") ? json_object_get_array_member(req, "files") : NULL;
+  const gint64 job = json_object_get_int_member_with_default(req, "job", 0);
+  const gint64 budget = json_object_get_int_member_with_default(req, "budget", 0) * 1000;
+  const gint64 start = g_get_monotonic_time();
+  const guint n = files ? json_array_get_length(files) : 0;
+  guint k = 0;
   json_builder_set_member_name(b, "images");
   json_builder_begin_array(b);
-  for(guint k = 0; files && k < json_array_get_length(files); k++)
+  for(; k < n; k++)
   {
+    if(job)
+    {
+      g_mutex_lock(&_cancel_lock);
+      const gboolean superseded = _import_latest != job;
+      g_mutex_unlock(&_cancel_lock);
+      if(superseded) break;
+    }
+    if(budget && k && g_get_monotonic_time() - start >= budget) break;
     const char *path = json_array_get_string_element(files, k);
     if(!path || _is_sidecar(path)) continue;
     const dt_imgid_t imgid = g_file_test(path, G_FILE_TEST_IS_REGULAR) ? _import(path) : NO_IMGID;
     if(dt_is_valid_imgid(imgid)) _image_versions_json(b, imgid);
   }
   json_builder_end_array(b);
+  json_builder_set_member_name(b, "done");
+  json_builder_add_int_value(b, k);
+  // the queued line is logged as it comes in (_read_requests); this one
+  // shows how far behind the import thread runs
+  fprintf(stderr, "[engine] imported %u of %u in %.0f ms%s\n", k, n,
+          (g_get_monotonic_time() - start) / 1000.0, k < n ? " (stopped)" : "");
 }
 
 // a tagged `import` runs here rather than in the main loop, so a folder
@@ -2123,7 +2154,7 @@ static void _import_run(gpointer data, gpointer user_data)
   json_builder_add_int_value(b, json_object_get_int_member(req, "tag"));
   json_builder_set_member_name(b, "ok");
   json_builder_add_boolean_value(b, TRUE);
-  _import_files(json_object_has_member(req, "files") ? json_object_get_array_member(req, "files") : NULL, b);
+  _import_files(req, b);
   json_builder_end_object(b);
   _reply(out, b);
   g_object_unref(b);
@@ -9958,7 +9989,7 @@ static void _handle(JsonObject *req, FILE *out)
     if(!dir || !_folder(dir, recursive, b, &err)) goto fail;
   }
   else if(!g_strcmp0(cmd, "import"))
-    _import_files(json_object_has_member(req, "files") ? json_object_get_array_member(req, "files") : NULL, b);
+    _import_files(req, b);
   else if(!g_strcmp0(cmd, "thumb"))
   {
     const char *dest = json_object_get_string_member_with_default(req, "out", NULL);
@@ -10648,6 +10679,13 @@ static gpointer _read_requests(gpointer data)
         else if(!g_strcmp0(cmd, "import") && json_object_has_member(req, "tag"))
         {
           fprintf(stderr, "[engine] import %.*s\n", (int)MIN(300, strcspn(line->str, "\r\n")), line->str);
+          const gint64 job = json_object_get_int_member_with_default(req, "job", 0);
+          if(job)
+          {
+            g_mutex_lock(&_cancel_lock);
+            _import_latest = job;
+            g_mutex_unlock(&_cancel_lock);
+          }
           if(_import_queue(parser)) parser = NULL;
           taken = TRUE;
         }

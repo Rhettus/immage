@@ -1319,20 +1319,31 @@ async fn open_folder(app: AppHandle, state: State<'_, AppState>, path: String, r
         let tag = t.tag();
         let start = Instant::now();
         let handle = app.clone();
+        // `job` stops the batch once another folder's is queued, and
+        // `budget` once it has run that long, so a network share's slow
+        // files hold neither the next folder nor an open photo for long
+        // (main.c, _import_files)
+        let budget = (IMPORT_TARGET * 2).as_millis() as u64;
         let reply = tauri::async_runtime::spawn_blocking(move || t.request_until(
-            tag, json!({ "cmd": "import", "files": list }), Duration::from_secs(30),
+            tag, json!({ "cmd": "import", "files": list, "job": token, "budget": budget }), Duration::from_secs(30),
             || handle.state::<AppState>().folder_token.load(Ordering::SeqCst) != token))
             .await
             .map_err(|e| e.to_string())??;
         let took = start.elapsed();
         let got = reply["images"].as_array().cloned().unwrap_or_default();
+        // the files the batch went through; the rest go in the next. none
+        // when another read's batch came in first, which the token check
+        // above then finds, or which is resent
+        let through = reply["done"].as_u64().map_or(batch.len(), |n| (n as usize).min(batch.len()));
         // a batch of about IMPORT_TARGET, however long a file takes to read
-        if took < IMPORT_TARGET / 2 {
+        if through > 0 && through < batch.len() {
+            size = through.max(IMPORT_BATCH.1);
+        } else if took < IMPORT_TARGET / 2 {
             size = (size * 2).min(IMPORT_BATCH.2);
         } else if took > IMPORT_TARGET * 2 {
             size = (size / 2).max(IMPORT_BATCH.1);
         }
-        done += batch.len();
+        done += through;
         images.extend(got.iter().cloned());
         if let Some(got) = progress.add(got, Instant::now(), done == total) {
             let _ = app.emit("folder-progress", json!({ "token": token, "done": done, "total": total, "images": got }));

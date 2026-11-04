@@ -38,6 +38,9 @@ Open the **Folders** card in the **Library** panel.
   connected by address; double-click the name or address to give it a
   name of your own, and clear it to go back. Click a heading to fold it. A
   folder on a share that isn't connected stays under its share, dimmed.
+- A folder on a slow share fills in gradually. Opening another folder, or a
+  photo from your own drive, doesn't wait for it: the share's reading stops
+  after the file it is on.
 
 Folders you import into join the list by themselves. The list, the open
 folder and the last photo are remembered when you quit.
