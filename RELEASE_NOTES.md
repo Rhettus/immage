@@ -63,6 +63,9 @@ Performance
 
 Bug fixes
 
+- With Detail loupe on, a mask's Presence group shows the 100% loupe,
+  as the main panel's Presence does, and its point picker works over mask
+  tools and handles.
 - Reset all puts each tool back on the module chosen in Preferences ›
   Modules, instead of keeping the module the photo had used.
 - Each right panel tool keeps its own scroll position and opens at the top.
