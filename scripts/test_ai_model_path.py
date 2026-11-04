@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Headless real-model regression; requires a built AI engine and cached SAM model.
 
-DT_ORT_LIBRARY may select a local ONNX Runtime. No downloads or GUI are used.
+DT_ORT_LIBRARY may select a local ONNX Runtime; without it, the one the build
+downloaded is used. No downloads or GUI are used.
 Run: python3 scripts/test_ai_model_path.py
 """
 import json
@@ -17,6 +18,9 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 MODEL = 'mask-object-sam21-small'
 SOURCE = ROOT / 'build/ai-models' / MODEL
+# the dev build's engine has no ONNX Runtime beside it, as a built app has
+# in darktable's plugin folder (bundle_engine.py)
+ORT = ROOT / 'build/_deps/onnxruntime/lib/libonnxruntime.so'
 
 
 def copy_model_file(src, dst):
@@ -29,6 +33,8 @@ def copy_model_file(src, dst):
 def run(work, models, enabled, expected, install_after_open=False):
     env = os.environ | {'XDG_DATA_HOME': str(work / 'data'),
                         'OMP_NUM_THREADS': '2', 'OMP_WAIT_POLICY': 'passive'}
+    if not env.get('DT_ORT_LIBRARY') and ORT.exists():
+        env['DT_ORT_LIBRARY'] = str(ORT)
     args = [str(ROOT / 'build/bin/darktable-engine'), '--models', str(models),
             '--core', '--configdir', str(work / 'config'), '--cachedir', str(work / 'cache'),
             '--conf', 'opencl=false', '--conf', 'resourcelevel=0', '-d', 'ai']

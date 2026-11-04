@@ -10,6 +10,7 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 // main.rs's FRAME_HEAD: six u32 of geometry, six f32 of timings, the u64
 // hash, the edits' f32 timing and padding
@@ -19,6 +20,13 @@ export const FRAME_HEAD = 64;
 // it lacks fails in the app, as mask_rename did before 0.10.1
 const HANDLERS = new Set(readFileSync(new URL("../app/src-tauri/src/main.rs", import.meta.url), "utf8")
   .match(/generate_handler!\[([^\]]*)\]/)[1].split(",").map((s) => s.trim().split("::").pop()).filter(Boolean));
+
+// a built app carries ONNX Runtime in darktable's plugin folder
+// (bundle_engine.py), where the engine looks for it (backend_onnx.c,
+// _init_ort_api); the dev build's engine has none beside it, so it is
+// pointed at the copy the build downloaded
+const ORT = fileURLToPath(new URL("../build/_deps/onnxruntime/lib/libonnxruntime.so", import.meta.url));
+const ortEnv = () => !process.env.DT_ORT_LIBRARY && existsSync(ORT) ? { DT_ORT_LIBRARY: ORT } : {};
 
 let engine = null, frame = null, preview = null, range = null, denoised = null;
 const waiting = [];
@@ -45,7 +53,7 @@ export function startEngine(binary, home, modelsDir = null, { gpu = false, onPer
                             "--conf", `opencl_device_priority=${gpu ? "*//*//" : "//*//"}`,
                             "--conf", "opencl_scheduling_profile=default",
                             ...(onPerf ? ["-d", "perf", ...(pipeTrace ? ["-d", "pipe"] : [])] : [])],
-                   { stdio: ["pipe", "pipe", onPerf ? "pipe" : "ignore"], env: { ...process.env, ...env } });
+                   { stdio: ["pipe", "pipe", onPerf ? "pipe" : "ignore"], env: { ...process.env, ...ortEnv(), ...env } });
   engine = me;
   if (onPerf) createInterface({ input: me.stderr }).on("line", onPerf);
   exited = new Promise((r) => me.on("exit", r));

@@ -358,9 +358,12 @@ folder for their version, reporting a valid model as incompatible version 0.0.
 loading, so downloads after startup are recognized. Minimum model version
 validation remains enforced.
 
-Run `DT_ORT_LIBRARY=/path/to/libonnxruntime.so python3 scripts/test_ai_model_path.py`
-with a built AI engine and the cached model in
-`build/ai-models/mask-object-sam21-small`. This headless regression uses isolated
+Run `python3 scripts/test_ai_model_path.py` with a built AI engine and the
+cached model in `build/ai-models/mask-object-sam21-small`. The dev build's
+engine has no ONNX Runtime in darktable's plugin folder, where a built app
+carries it (`bundle_engine.py`), so this test and `verify/shim.mjs` set
+`DT_ORT_LIBRARY` to the build's own `build/_deps/onnxruntime/lib` copy
+unless it is already set. This headless regression uses isolated
 profiles, copied configuration and read-only references to cached weights. It
 checks enabled/disabled startup settings, a persisted enabled profile, conflicting
 core model paths, paths with spaces, installation after startup, and rejection
