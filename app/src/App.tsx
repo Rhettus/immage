@@ -1091,10 +1091,12 @@ export default function App() {
     record(["reset"]);
     holdRecord.current = true;
     try {
-      // the modules, profile and exposure compensation are the photo's own,
-      // not adjustments; the orientation stays too, as in Lightroom
-      changeMany(Object.entries(s.neutral).filter(([id]) => !isModuleSetting(id) && id !== "profile"
-                                                            && id !== "exp_comp" && id !== "orient"));
+      // the profile, tone mapper and exposure compensation are the photo's
+      // own, not adjustments; the orientation stays too, as in Lightroom.
+      // each tool goes back to the module Preferences picks
+      changeMany([...Object.entries(s.neutral).filter(([id]) => !isModuleSetting(id) && id !== "profile"
+                                                             && id !== "exp_comp" && id !== "orient"),
+                  ...s.preferredModules()]);
       s.resetModules();
       if (s.look) applyLook(null);
       for (const m of s.masks) s.deleteMask(m.name);

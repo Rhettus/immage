@@ -75,6 +75,8 @@ for(const c of MODULE_CHOICES)for(const option of c.options){
     const other=c.options.find(o=>o.value!==option.value);
     storage.set('immage.modules.choices',JSON.stringify({[c.id]:other.value}));
     s=await open();assert.equal(s.values[c.control],option.value,`used history ${c.id}/${option.value}`);checks++;
+    // Reset all takes the tool to the Preferences pick, not the one the history used.
+    assert.equal(new Map(s.preferredModules()).get(c.control),other.value,`reset prefers ${c.id}`);checks++;
     for(const m of maps)s.foreign.add(m);
     s.chooseModules();assert.equal(s.values[c.control],other.value,`foreign excluded ${c.id}`);checks++;
     // Fresh photos obey preference even if supplied modules contain edits.

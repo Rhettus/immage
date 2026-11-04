@@ -335,6 +335,11 @@ export class Session {
     }
   }
 
+  // the modules Preferences picks for each tool, which Reset returns a photo to
+  preferredModules(): [string, number][] {
+    return MODULE_CHOICES.map((c) => [c.control, this.neutral[c.control] = loadModuleChoice(c.id)]);
+  }
+
   // Refresh unused tools without replacing any current global or masked edits.
   refreshModuleChoices() {
     for (const c of MODULE_CHOICES) {

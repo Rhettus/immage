@@ -350,7 +350,8 @@ diffuse or sharpen for Texture to get the single slider back.
 The tab also lists the module behind each of the other tools. A photo that
 already uses one of a tool's modules keeps it, so its edit looks the same;
 closing Preferences applies the choice to unused tools on the current photo
-as well as photos opened later. See [Adjustments](adjustments.md#contrast-equalizer)
+as well as photos opened later. **Reset all** puts every tool back on the
+module chosen here. See [Adjustments](adjustments.md#contrast-equalizer)
 for the equalizer graph. Defringe, global and in masks, always uses
 chromatic aberrations: darktable deprecates its older defringe module.
 
