@@ -526,10 +526,10 @@ static int _flags(dt_imageio_module_data_t *data)
   return 0;
 }
 
-static int _write(dt_imageio_module_data_t *data, const char *filename, const void *in,
-                  dt_colorspaces_color_profile_type_t over_type, const char *over_filename, void *exif,
-                  int exif_len, const dt_imgid_t imgid, const int num, const int total,
-                  struct dt_dev_pixelpipe_t *pipe, const gboolean export_masks)
+static int _write_image(dt_imageio_module_data_t *data, const char *filename, const void *in,
+                        dt_colorspaces_color_profile_type_t over_type, const char *over_filename, void *exif,
+                        int exif_len, const dt_imgid_t imgid, const int num, const int total,
+                        struct dt_dev_pixelpipe_t *pipe, const gboolean export_masks)
 {
   _print_format_t *d = (_print_format_t *)data;
   const size_t bytes = d->bpp / 8, npx = (size_t)d->head.width * d->head.height;
@@ -746,7 +746,7 @@ gboolean print_image(const dt_imgid_t imgid, JsonObject *req, JsonBuilder *b, ch
   fmt.levels = _levels;
   fmt.bpp = _bpp;
   fmt.flags = _flags;
-  fmt.write_image = _write;
+  fmt.write_image = _write_image;
   const dt_colorspaces_color_profile_type_t icc = managed ? DT_COLORSPACE_PROPHOTO_RGB : DT_COLORSPACE_SRGB;
   // NB: returns TRUE on failure. upscaled to fill the area, as the print
   // view does
