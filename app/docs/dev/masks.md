@@ -147,7 +147,7 @@ instance:
 | Temp, Tint | color calibration |
 | Exposure, Blacks | exposure |
 | Contrast | color balance rgb, or contrast equalizer (`atrous`) |
-| Whites, Saturation, Hue, Color Grading | color balance rgb |
+| Whites, Saturation, Hue, Color Grading | color balance rgb; Saturation, or the saturation curve (`satcurvergb`) |
 | HSL | color equalizer |
 | Highlights, Shadows | tone equalizer, or shadows and highlights |
 | Texture | diffuse or sharpen, or contrast & texture (`<mask>#texture`) |
@@ -173,6 +173,12 @@ neutral at 0.5 and the two noise channels at 0; enablement uses those defaults,
 and reload keeps the values' 0.001 precision. Atrous instances are not merged.
 Color balance rgb still carries the other local controls, with its Contrast
 written at neutral when the mask selects atrous.
+
+Masked saturation curve works the same way: `mod_saturation = 2` shows
+SaturationCurve in the mask's Presence group (not in black and white), the
+same `sc_*`/`sb_*` controls as the global curve go to the mask's own
+satcurvergb instance, which is not merged, and color balance rgb writes the
+mask's Saturation at neutral. Reload keeps the points unrounded.
 
 Local Whites is color balance rgb's highlights brilliance, not the tone
 mapper's white point: AgX and sigmoid apply to the whole image and cannot be

@@ -1,4 +1,5 @@
 import { ContrastEqualizer } from "./ContrastEqualizer";
+import { SaturationCurve } from "./SaturationCurve";
 import { detailRows } from "./DetailControls";
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
@@ -477,7 +478,12 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
                       <ContrastEqualizer values={m.values} disabled={disabled}
                         onChange={(entries) => entries.forEach(([id, v]) => local(id, v))} /></>
                   : <>{title === "Presence" && presenceLoupe}
-                      {groupBody(title, ids.filter((id) => choiceShows(id, { ...photo, ...m.values })))}</>}
+                      {groupBody(title, ids.filter((id) => choiceShows(id, { ...photo, ...m.values })
+                        && !(id === "l_saturation" && m.values.mod_saturation === 2)))}
+                      {/* in black and white there is no saturation for it to find (MONO_HIDDEN) */}
+                      {title === "Presence" && !mono && m.values.mod_saturation === 2 && (
+                        <SaturationCurve values={m.values} disabled={disabled}
+                          onChange={(entries) => entries.forEach(([id, v]) => local(id, v))} />)}</>}
               </Collapse>
             </section>
           ))}

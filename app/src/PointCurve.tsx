@@ -24,11 +24,15 @@ export function CurveMarkView({ mark: { x, y }, W, H }: { mark: CurveMark; W: nu
   );
 }
 
-export function PointCurve({ points, disabled, histogram, channel = null, draw = monotone, mark = null, onChange }: {
+export function PointCurve({ points, disabled, histogram, channel = null, draw = monotone, mark = null,
+                             guide = "identity", label, onChange }: {
   points: Point[]; disabled: boolean; histogram: Histogram | null;
   mark?: CurveMark | null;                        // the photo under the pointer, on the curve
   channel?: 0 | 1 | 2 | null;                     // whose histogram, and the curve's color
   draw?: (p: Point[]) => (x: number) => number;   // the curve as it will be applied
+  // the curve that changes nothing: the diagonal, or a factor curve's line at 0.5
+  guide?: "identity" | "flat";
+  label?: string;
   onChange: (p: Point[]) => void;
 }) {
   const hist = histogramPath(histogram, W, H, channel);
@@ -60,6 +64,7 @@ export function PointCurve({ points, disabled, histogram, channel = null, draw =
 
   return (
     <svg ref={svg} className={`curve point-curve${disabled ? " disabled" : ""}`} viewBox={`0 0 ${W} ${H}`}
+         aria-label={label}
          preserveAspectRatio="none"
          onPointerDown={(e) => {
            if (disabled) return;
@@ -104,7 +109,8 @@ export function PointCurve({ points, disabled, histogram, channel = null, draw =
           <line x1={0} y1={g * H} x2={W} y2={g * H} className="grid" />
         </g>
       ))}
-      <line x1={0} y1={H} x2={W} y2={0} className="identity" />
+      {guide === "flat" ? <line x1={0} y1={H / 2} x2={W} y2={H / 2} className="identity" />
+        : <line x1={0} y1={H} x2={W} y2={0} className="identity" />}
       <path d={d} className={`line${channel === null ? "" : ` ch${channel}`}`} />
       {mark && <CurveMarkView mark={mark} W={W} H={H} />}
       {points.map(([x, y], k) => (

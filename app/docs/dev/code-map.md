@@ -97,6 +97,8 @@ unused global and mask tools in the current session.
 [ContrastEqualizer.tsx](../../src/ContrastEqualizer.tsx) edits global or per-mask
 `atrous` curves (`EQ_IDS`, `equalizerMap` in manifest.ts); mask choices live
 in each `Mask.values`, separate from `Session.values`.
+[SaturationCurve.tsx](../../src/SaturationCurve.tsx) edits global or per-mask
+`satcurvergb` saturation and brilliance curves (`SATCURVE_IDS`, `satcurveMap`).
 [DetailControls.tsx](../../src/DetailControls.tsx) groups contrast & texture
 controls, with Medium/Fine visible and the remainder under Advanced.
 

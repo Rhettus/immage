@@ -281,6 +281,7 @@ async function localSliders(o, photo, check, only = null) {
     if ((only && !only.includes(c.id)) || !wanted(c.id)) continue;
     const spec = LOCAL[c.id] ?? {};
     const base = { check, photo, id: c.id };
+    if (spec.skip) { record({ ...base, status: "skip", detail: spec.skip }); continue; }
     if (!activeLocal(o.s, c.id)) { record({ ...base, status: "skip", detail: "not the photo's module: the choices check covers it" }); continue; }
     try { await trialLocal(o, photo, "Verify", c, spec, check); }
     catch (e) { record({ ...base, status: "fail", detail: String(e) }); }

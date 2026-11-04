@@ -327,7 +327,8 @@ sections open independently, and Alt-click opens one on its own. Global offers:
 - **Contrast**: AgX (or sigmoid on a photo started under it), color balance
   rgb, or contrast equalizer, which replaces the slider with a curve editor
 - **Blacks**: AgX (or sigmoid), or exposure
-- **Saturation**: AgX (or sigmoid), or color balance rgb
+- **Saturation**: AgX (or sigmoid), color balance rgb, or saturation curve,
+  which replaces the slider with saturation and brilliance curves
 - **Clarity**: contrast & texture, or local contrast
 - **Texture**: contrast & texture, or diffuse or sharpen
 - **Highlights and Shadows**: the tone equalizer, or shadows and
@@ -336,7 +337,8 @@ sections open independently, and Alt-click opens one on its own. Global offers:
 - **Sharpening**: sharpen, or diffuse or sharpen
 
 **Masks** independently offers Contrast (color balance rgb or contrast equalizer),
-Highlights and Shadows, Clarity, Texture and Sharpening. Modules without
+Highlights and Shadows, Saturation (color balance rgb or saturation curve),
+Clarity, Texture and Sharpening. Modules without
 alternatives are also listed. Existing mask adjustments keep their modules;
 unused tools and new masks take these choices.
 

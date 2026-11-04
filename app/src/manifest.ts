@@ -403,6 +403,65 @@ const USM_AMOUNT = 50;
 const USM_THRESHOLD = 10;
 const USM_RADIUS = 2;
 
+// ---------------------------------------------- Saturation curve (satcurvergb)
+// darktable's saturation and brilliance curves, edited on a graph: x is the
+// pixel's saturation, y half the factor it gets (satcurvergb.c,
+// curve_to_factor), so a curve flat at 0.5 changes nothing. channel 0's
+// points are sc_pn and sc_p<k>x/y, channel 1's (brilliance) sb_
+export const SAT_CHANNELS = ["Saturation", "Brilliance"] as const;
+export type SatChannel = 0 | 1;
+const SAT_PREFIXES = ["sc_", "sb_"] as const;
+const SAT_FLAT = 0.5;
+const satIds = (pre: string) =>
+  [`${pre}pn`, ...Array.from({ length: MAX_NODES }, (_, k) => [`${pre}p${k}x`, `${pre}p${k}y`]).flat()];
+export const SATCURVE_IDS = SAT_PREFIXES.flatMap(satIds);
+export const satPointsOf = (v: Values, ch: SatChannel): Point[] => {
+  const pre = SAT_PREFIXES[ch];
+  return Array.from({ length: Math.max(2, Math.min(MAX_NODES, v[`${pre}pn`] ?? 2)) },
+                    (_, k) => [v[`${pre}p${k}x`] ?? (k ? 1 : 0), v[`${pre}p${k}y`] ?? SAT_FLAT] as Point);
+};
+export const satPointValues = (points: Point[], ch: SatChannel): Values => {
+  const pre = SAT_PREFIXES[ch];
+  const out: Values = { [`${pre}pn`]: points.length };
+  for (let k = 0; k < MAX_NODES; k++) {
+    // unused slots hold the flat curve's end, so they never read as a change
+    const [x, y] = points[k] ?? [1, SAT_FLAT];
+    out[`${pre}p${k}x`] = x;
+    out[`${pre}p${k}y`] = y;
+  }
+  return out;
+};
+const SAT_FLAT_POINTS: Point[] = [[0, SAT_FLAT], [1, SAT_FLAT]];
+export const SATCURVE_NEUTRAL: Values = { ...satPointValues(SAT_FLAT_POINTS, 0), ...satPointValues(SAT_FLAT_POINTS, 1) };
+const satcurveControls: Control[] = SATCURVE_IDS.map((id) => id.endsWith("pn")
+  ? { id, label: "Saturation curve", min: 2, max: MAX_NODES, step: 1, neutral: 2, format: plain(0) }
+  : { id, label: "Saturation curve", min: 0, max: 1, step: 0.0001, neutral: SATCURVE_NEUTRAL[id], format: plain(4) });
+const satField = (ch: number, k: number, a: "x" | "y") => `channel[${ch}].curve[${k}].${a}`;
+const satcurveMap: ModuleMap = {
+  op: "satcurvergb", keepOn: false,
+  controls: SATCURVE_IDS,
+  fields: [0, 1].flatMap((ch) => [`channel[${ch}].curve_num_nodes`,
+    ...Array.from({ length: MAX_NODES }, (_, k) => [satField(ch, k, "x"), satField(ch, k, "y")]).flat()]),
+  read: (p) => Object.assign({}, ...([0, 1] as const).map((ch) => {
+    const n = Math.max(2, Math.min(MAX_NODES, p[`channel[${ch}].curve_num_nodes`] ?? 2));
+    return satPointValues(Array.from({ length: n }, (_, k): Point =>
+      [p[satField(ch, k, "x")] ?? (k ? 1 : 0), p[satField(ch, k, "y")] ?? SAT_FLAT]), ch);
+  })),
+  // the slots past the last point are zeroed, as darktable's own params
+  // leave them (satcurvergb.c, reset_channel_curve)
+  write: (v) => Object.assign({}, ...([0, 1] as const).map((ch) => {
+    const points = satPointsOf(v, ch);
+    const out: Params = { [`channel[${ch}].curve_num_nodes`]: points.length };
+    for (let k = 0; k < MAX_NODES; k++) {
+      const [x, y] = points[k] ?? [0, 0];
+      out[satField(ch, k, "x")] = x;
+      out[satField(ch, k, "y")] = y;
+    }
+    return out;
+  })),
+  enabled: (v) => SATCURVE_IDS.some((id) => Math.abs((v[id] ?? SATCURVE_NEUTRAL[id]) - SATCURVE_NEUTRAL[id]) > 1e-6),
+};
+
 // ------------------------------------------------------- module choices
 // a tool darktable can do with more than one module. the photo's choice
 // control says which it uses: the module it already has on, or for a tool
@@ -426,6 +485,7 @@ const MOD_SHARPEN = 0, MOD_DIFFUSE = 1;
 const MOD_TONEEQ = 0, MOD_SHADHI = 1;
 // the tone mapper (AgX, or sigmoid on a photo started under it), or another module
 const MOD_TM = 0, MOD_CBRGB = 1, MOD_EXPOSURE = 1;
+const MOD_SATCURVE = 2;
 const MOD_BW_CALIBRATION = 0, MOD_BW_EQUALIZER = 1;
 const shared = (value: number, op: string, name: string, preferred: boolean): ModuleOption =>
   ({ value, op, name, preferred, controls: [], localControls: [] });
@@ -446,8 +506,9 @@ export const MODULE_CHOICES: ModuleChoice[] = [
     options: [shared(MOD_TM, "agx", "AgX", true), shared(MOD_EXPOSURE, "exposure", "exposure", false)],
   },
   {
-    id: "saturation", label: "Saturation", control: "mod_saturation", covers: ["saturation"],
-    options: [shared(MOD_TM, "agx", "AgX", true), shared(MOD_CBRGB, "colorbalancergb", "color balance rgb", false)],
+    id: "saturation", label: "Saturation", control: "mod_saturation", covers: ["saturation", ...SATCURVE_IDS],
+    options: [shared(MOD_TM, "agx", "AgX", true), shared(MOD_CBRGB, "colorbalancergb", "color balance rgb", false),
+      { ...shared(MOD_SATCURVE, "satcurvergb", "saturation curve", false), controls: SATCURVE_IDS }],
   },
   {
     id: "bw", label: "Black & White", control: "mod_bw", covers: ["bw_mode"],
@@ -497,6 +558,7 @@ const optionOf = new Map(MODULE_CHOICES.flatMap((c) => c.options.flatMap((o) =>
 export const choiceShows = (id: string, v: Values) => {
   const at = optionOf.get(id);
   if (id === "contrast" && v.mod_contrast === 2) return false;
+  if (id === "saturation" && v.mod_saturation === MOD_SATCURVE) return false;
   return !at || v[at.choice.control] === at.option.value;
 };
 export const choiceOn = (m: ModuleMap, v: Values) =>
@@ -1026,7 +1088,9 @@ export const modules: ModuleMap[] = [
          "mod_contrast", MOD_CBRGB),
   // a photo on sigmoid, which has no saturation, keeps this one
   chosen(linear("colorbalancergb", false, [{ id: "saturation", field: "saturation_global", scale: 0.01, base: 0 }]),
-         "mod_saturation", MOD_CBRGB, { active: (v) => v.mod_saturation === MOD_CBRGB || v.tm_mode !== 1 }),
+         "mod_saturation", MOD_CBRGB,
+         { active: (v) => v.mod_saturation === MOD_CBRGB || (v.mod_saturation === MOD_TM && v.tm_mode !== 1) }),
+  chosen(satcurveMap, "mod_saturation", MOD_SATCURVE),
   chosen(linear("shadhi", false, [
     { id: "highlights", field: "highlights", scale: 1, base: 0 },
     { id: "shadows", field: "shadows", scale: 1, base: 0 },
@@ -1488,6 +1552,7 @@ export const panels: Panel[] = [
           lr("dehaze", "Dehaze"),
           lr("vibrance", "Vibrance", { track: GLOBAL_SAT_TRACK }),
           lr("saturation", "Saturation", { track: GLOBAL_SAT_TRACK }),
+          ...satcurveControls,
         ],
       },
     ],
@@ -1908,6 +1973,7 @@ export const LOCAL_CONTROLS: Control[] = [
   { id: "l_exposure", label: "Exposure", min: -4, max: 4, step: 0.01, neutral: 0, format: signed(2) },
   lr("l_contrast", "Contrast"),
   ...equalizerControls,
+  ...satcurveControls,
   { id: "l_fulcrum", label: "Contrast pivot", min: -6, max: 6, step: 0.1, neutral: 0, format: signed(1, " EV") },
   lr("l_highlights", "Highlights"),
   lr("l_shadows", "Shadows"),
@@ -1940,6 +2006,7 @@ const localBalanceMap = withFulcrum(linear("colorbalancergb", false, [
 
 export const localMaps: ModuleMap[] = [
   { ...equalizerMap, choice: { control: "mod_contrast", value: 2 } },
+  { ...satcurveMap, choice: { control: "mod_saturation", value: MOD_SATCURVE } },
   {
     op: "channelmixerrgb", keepOn: false,
     controls: ["l_temp", "l_tint"],
@@ -1965,7 +2032,8 @@ export const localMaps: ModuleMap[] = [
   {
     ...localBalanceMap,
     write: (v, d, c) => localBalanceMap.write(
-      { ...v, l_contrast: v.mod_contrast === 2 ? 0 : v.l_contrast }, d, c),
+      { ...v, l_contrast: v.mod_contrast === 2 ? 0 : v.l_contrast,
+        l_saturation: v.mod_saturation === MOD_SATCURVE ? 0 : v.l_saturation }, d, c),
     merge: true,
     fixed: ["l_hue", "l_fulcrum", ...RANGES.map(([r]) => `l_cg_${r}_hue`)],
   },
@@ -2058,7 +2126,9 @@ export const localFields = () => Object.fromEntries(localMaps.map((m) => [m.op, 
 
 // Only modules that support local adjustments are offered for masks.
 export const MASK_MODULE_CHOICES: ModuleChoice[] = MODULE_CHOICES.flatMap((c) => {
-  if (c.id === "contrast") return [{ ...c, options: c.options.filter((o) => o.value !== 0)
+  // their color balance rgb option is the mask's shared instance
+  // (localBalanceMap), which carries no choice of its own
+  if (c.id === "contrast" || c.id === "saturation") return [{ ...c, options: c.options.filter((o) => o.value !== 0)
     .map((o) => ({ ...o, preferred: o.value === 1 })) }];
   const options = c.options.filter((o) => localMaps.some((m) =>
     m.choice?.control === c.control && m.choice.value === o.value));

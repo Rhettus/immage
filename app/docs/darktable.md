@@ -55,7 +55,8 @@ for the available mask alternatives.
 | Highlights, Shadows | tone equalizer (`toneequal`), or shadows and highlights (`shadhi`) |
 | Blacks | AgX's lift, or sigmoid's target black; or exposure's black level (`exposure`) |
 | Vibrance | color balance rgb (`colorbalancergb`) |
-| Saturation | AgX's saturation; or color balance rgb (`colorbalancergb`), which a photo on sigmoid always uses |
+| Saturation | AgX's saturation; or color balance rgb (`colorbalancergb`), which the AgX option falls back to on a photo on sigmoid; or saturation curve (below) |
+| Saturation curve (Saturation option) | saturation curve (`satcurvergb`): its saturation and brilliance curves, up to 20 points each, with darktable's default formula and filter; replaces the global or masked Saturation slider, chosen independently |
 | Whites | AgX (`agx`), with color balance rgb's highlights brilliance (`colorbalancergb`); sigmoid (`sigmoid`) on a photo started under it |
 | Texture | contrast & texture (`contrastntexture`), on its own instance, or diffuse or sharpen (`diffuse`) |
 | Clarity | contrast & texture (`contrastntexture`), or local contrast (`bilat`) |
@@ -83,7 +84,7 @@ for the available mask alternatives.
 | Brush, Linear Gradient, Radial Gradient | drawn masks: brush, gradient, ellipse |
 | Color Range, Luminance Range | parametric masks (blending) |
 | Select Object, Subject, Background, Sky, People, Landscape, Depth Range | drawn path masks, traced from the AI model's selection |
-| Local Exposure, Blacks, Contrast, Whites, Saturation, Hue | an instance of exposure or color balance rgb per mask |
+| Local Exposure, Blacks, Contrast, Whites, Saturation, Hue | an instance of exposure or color balance rgb per mask; Contrast and Saturation can instead use their own contrast equalizer or saturation curve instance |
 | Local Highlights, Shadows | an instance of tone equalizer or shadows and highlights (as the photo's) per mask |
 | Local Temp, Tint | an instance of color calibration per mask |
 | Local Texture, Clarity, Dehaze | an instance of the chosen Texture or Clarity module (including contrast & texture), or haze removal per mask |

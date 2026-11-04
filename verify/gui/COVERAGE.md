@@ -115,6 +115,12 @@ Modules first and restores the previous choice afterwards
 (`withModule` in `specs/ranges.mjs`). Defringe has no module choice, so
 its global and mask sliders always run on chromatic aberrations.
 
+The saturation curve's `sc_*`/`sb_*` points are drawn on its graph, so they
+generate no control cases either (`graphCoverage` in `generated.mjs`): the
+`saturation-curve` case drives the global graph (passed live on Linux
+2026-11-04, run `2026-11-04T04-47-50.800Z_0bf0f4f_8df48d28`), and the
+`module-*-saturation-2` variants lift its muted end globally and in a mask.
+
 Hidden panels generate no control cases (their state has no slider):
 `hiddenPanelCoverage` in `generated.mjs` maps the point curve to `curves`,
 crop and orientation to `crop-options`, zones to `zones`, negative to

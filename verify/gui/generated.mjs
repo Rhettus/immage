@@ -11,7 +11,12 @@ const owner=id=>{for(const choice of inventory.globalModules)for(const option of
 // sliders (point curve, crop, upright, zones, negative, ...): no widget
 // exists for a per-control case to drive, so its written case covers it
 // (hiddenPanelCoverage)
+// the saturation curve's points are drawn on its graph, not as sliders:
+// the saturation-curve case and the module-*-saturation-2 variants drive them
+export const graphCoverage={'sc_*, sb_*':'saturation-curve'};
+const onGraph=id=>/^s[cb]_/.test(id);
 for(const p of inventory.panels)if(!p.hidden)for(const s of p.sections)for(const control of s.controls){
+ if(onGraph(control.id))continue;
  const name=`control-${p.id}-${control.id}`;
  generated[name]={kind:control.kind==='slider'?'range':'choice',scope:'global',panel:p.id,section:s.title,control,module:owner(control.id),
   liveValidated:false,fixture:'configured'};
@@ -21,7 +26,7 @@ export const hiddenPanelCoverage={
  'tonecurve-points':'curves',crop:'crop-options',orientation:'crop-options',zones:'zones',negative:'negative',film:'film',
  modules:'module-options',upright:null,'vignette-center':null,'exposure-compensation':null,tonemapper:null,
 };
-for(const control of inventory.localControls)generated[`local-${control.id}`]={kind:control.kind==='slider'?'range':'choice',scope:'local',panel:'masks',control,liveValidated:false,fixture:'configured'};
+for(const control of inventory.localControls)if(!onGraph(control.id))generated[`local-${control.id}`]={kind:control.kind==='slider'?'range':'choice',scope:'local',panel:'masks',control,liveValidated:false,fixture:'configured'};
 for(const [scope,choices] of [['global',inventory.globalModules],['masks',inventory.maskModules]])for(const choice of choices)for(const option of choice.options)
  generated[`module-${scope}-${choice.id}-${option.value}`]={kind:'module',scope,choice,option,liveValidated:false,fixture:'configured'};
 export const generatedNames=Object.keys(generated);

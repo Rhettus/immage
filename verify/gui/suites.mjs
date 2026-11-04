@@ -35,6 +35,7 @@ export const cases = {
   curves:{scope:'point curve: add/lift/double-click removal per channel with distinct photos, black point lift and corner clamp, 20-point limit, drag-off removal, Reset All, parametric switch',liveValidated:true},
   wheels:{scope:'3-way/global wheel changes, reset and slider view',liveValidated:false},
   equalizer:{scope:'every channel and band keyboard change/reset',liveValidated:false},
+  'saturation-curve':{scope:'Global Saturation on satcurvergb: the curve replaces the slider; each channel\'s end lift raises chroma or level, middle point add/double-click removal, Reset',liveValidated:true},
   masks:{scope:'manual shapes/ranges, Exposure effect, delete/reset',liveValidated:false},
   heal:{scope:'Heal/Clone spot creation/settings/deletion',liveValidated:false},
   negative:{scope:'negative conversion and turn-off round trip',fixture:'negative',liveValidated:false},
@@ -64,7 +65,7 @@ export const cases = {
 export const suites = {
   smoke: ['startup', 'exposure'],
   crop: ['startup','crop-guides','crop-locked','crop-options'],
-  workflows: ['startup','curves','wheels','equalizer','masks','heal','zones','film','preferences-matrix','slider-wheel','export-options','filters','presets','shortcuts'],
+  workflows: ['startup','curves','wheels','equalizer','saturation-curve','masks','heal','zones','film','preferences-matrix','slider-wheel','export-options','filters','presets','shortcuts'],
   inventory: ['startup',...generatedNames],
   regressions: ['startup', 'rail', 'panel-scroll', 'module-options', 'batch-paste'],
   controls: ['startup', 'slider-input', 'slider-click', 'history', 'rail', 'sliders', 'module-options'],

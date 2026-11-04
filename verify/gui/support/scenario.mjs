@@ -62,6 +62,14 @@ export async function expandSections(t, selector) {
       return null;
     }, selector);
     if (!target) return;
+    // a fold opened a moment ago is still animating its height, moving the
+    // folds below it: aim only once the target has stopped moving
+    let last = null;
+    await until(async () => {
+      const y = await t.driver.observe(s => document.querySelector(s)?.getBoundingClientRect().top, target);
+      const still = last !== null && Math.abs(y - last) < 0.5;
+      last = y; return still;
+    }, 'section heading settled');
     await click(t, target);
     await until(() => t.driver.observe(s => {
       const e = document.querySelector(s); return e?.getAttribute('aria-expanded') === 'true' || !!e?.querySelector('.chevron.open');

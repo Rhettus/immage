@@ -159,7 +159,11 @@ contrast equalizer**. The mask's Tone group shows the same five-channel,
 six-band graph described in [Adjustments](adjustments.md#contrast-equalizer),
 applied only inside that mask. Global Contrast can still use AgX. Masked
 equalizer instances run separately; the slider-based overlap limits described
-above apply to color balance rgb Contrast.
+above apply to color balance rgb Contrast. Likewise **Masks › Saturation ›
+saturation curve** replaces the mask's Saturation slider, in its Presence
+group, with the [saturation curve](adjustments.md#saturation-curve), on an
+instance of its own per mask. A mask in black and white hides it, as it hides
+Saturation.
 
 Object selections use the same model folder as the other AI tools. A model
 downloaded during the current session is available immediately; restarting the

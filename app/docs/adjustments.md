@@ -112,6 +112,25 @@ choose **Masks › Contrast › contrast equalizer** in the same preferences tab
 Global and mask choices are independent, so global Contrast can use AgX while
 masks use the equalizer. Existing adjustments keep their selected module.
 
+## Saturation curve
+
+Choose **Custom**, then **Global › Saturation › saturation curve** in
+Preferences › Modules for a photo whose Saturation has not been edited. In
+Basic's Presence, a curve replaces the Saturation slider. It changes colors
+by how saturated they already are: across the graph, from **Muted** on the
+left to **Saturated** on the right; up from the middle line adds,
+down takes away. A curve that falls to the right lifts muted colors more
+than vivid ones, much as Vibrance does; one that rises does the opposite.
+
+Select **Saturation** or **Brilliance**. Saturation's curve sets how much
+saturation each color gets, from none at the bottom to twice its own at the
+top. Brilliance's lightens or darkens colors, by the same measure, while
+keeping their saturation. Click to add a point (up to 20), drag to move one,
+and double-click a point or drag it off the graph to remove it; the end
+points stay. **Reset** flattens both curves. To use the curve inside masks,
+choose **Masks › Saturation › saturation curve**. Uses darktable's
+saturation curve module.
+
 ## Tone Curve
 
 Two modes, switched at the top of the panel:

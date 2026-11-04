@@ -142,6 +142,51 @@ export async function equalizer(t) {
   }
   await textButton(t,'.equalizer-heading','Reset'); await settledPhoto(t);
 }
+// a sampled frame's mean chroma (channel spread) and mean level
+const tones = p => { let c = 0, l = 0; const n = p.rgba.length / 4;
+  for (let i = 0; i < p.rgba.length; i += 4) { const [r, g, b] = [p.rgba[i], p.rgba[i + 1], p.rgba[i + 2]];
+    c += Math.max(r, g, b) - Math.min(r, g, b); l += (r + g + b) / 3; }
+  return { chroma: c / n, level: l / n }; };
+export async function saturationCurve(t) {
+  const baseline = await settledPhoto(t);
+  await preferences(t, 'Modules'); await textButton(t, '.prefs', 'Custom');
+  const fold = 'button[aria-controls="module-prefs-global"]';
+  if (!await t.driver.observe(s => document.querySelector(s)?.getAttribute('aria-expanded') === 'true', fold)) await click(t, fold);
+  const selector = 'select[aria-label="Global Saturation"]', menu = await reveal(t, selector);
+  const option = menu.options.find(o => o.label.includes('saturation curve')); assert(option, 'saturation curve offered');
+  await choose(t, selector, option.value); await textButton(t, '.prefs-foot', 'Done');
+  const p = await panel(t, 'basic'); await expandSections(t, p);
+  const svg = `${p} .saturation-curve svg.point-curve`;
+  await reveal(t, svg);
+  assert(!await t.driver.observe(s => !!document.querySelector(`${s} [data-control-id="saturation"]`), p),
+    'the curve replaces the Saturation slider');
+  const nodes = () => t.driver.observe(s => [...document.querySelectorAll(`${s} circle.pt`)]
+    .map(c => [+c.getAttribute('cx') / 260, 1 - +c.getAttribute('cy') / 260]), svg);
+  const count = n => until(async () => (await nodes()).length === n, `curve has ${n} points`, 5000);
+  const at = async (x, y) => { const g = await reveal(t, svg);
+    return { x: g.bounds.x + x * g.bounds.width, y: g.bounds.y + (1 - y) * g.bounds.height }; };
+  const base = tones(baseline);
+  for (const [value, name, metric] of [[0, 'Saturation', 'chroma'], [1, 'Brilliance', 'level']]) {
+    await choose(t, 'select[aria-label="Saturation curve channel"]', value);
+    await count(2);
+    // lift the muted end: more saturation, or brighter colors, across the photo
+    await t.driver.drag(await at(.01, .5), await at(.01, .8));
+    const lifted = await settledPhoto(t, q => q.hash !== baseline.hash);
+    assert.equal((await nodes()).length, 2, `${name}: an end point is moved, not removed`);
+    const after = tones(lifted);
+    t.measure({ name, photoHash: lifted.hash, before: base, after });
+    assert(after[metric] > base[metric], `${name}: lifting the curve raises the photo's ${metric} (${base[metric]} -> ${after[metric]})`);
+    await t.evidence(`satcurve-${name}`);
+    // a drag from the middle adds a point; a double-click removes it
+    await t.driver.drag(await at(.5, .5), await at(.5, .35)); await count(3);
+    const [, mid] = await nodes(), m = await at(...mid);
+    await settledPhoto(t, q => q.hash !== lifted.hash);
+    await t.driver.point(m.x, m.y, 2); await count(2);
+    await textButton(t, `${p} .saturation-curve .equalizer-heading`, 'Reset');
+    await count(2);
+    await settledReset(t, baseline, lifted, `${name}-reset`);
+  }
+}
 export async function masks(t) {
   await openTool(t,'masks');
   for(const name of ['Linear Gradient','Radial Gradient','Brush','Luminance Range','Color Range','Parametric']) {

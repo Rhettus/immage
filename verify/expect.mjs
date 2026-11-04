@@ -33,6 +33,17 @@ const UPRIGHT = "Upright's values come from its line detection (engine `upright`
 const POINTS = "covered by the point curve checks";
 const CROP = "covered by the crop check";
 
+// the saturation curve (satcurvergb), global or in a mask: each channel's
+// end points, raised to 1 (twice the channel) and lowered to 0 (none of
+// it), move the whole curve; the other points and the point count are
+// the curve's shape, which saturation-curve.test.mjs round-trips
+const SATCURVE_SHAPE = "the curve's shape, covered by saturation-curve.test.mjs";
+const SATCURVE = Object.fromEntries(["sc_", "sb_"].flatMap((pre) => [`${pre}pn`,
+  ...Array.from({ length: 20 }, (_, k) => [`${pre}p${k}x`, `${pre}p${k}y`]).flat()].map((id) =>
+  [id, id === `${pre}p0y` || id === `${pre}p1y`
+    ? { values: [1, 0], expect: pre === "sc_" ? { chroma: 1 } : { lum: 1 } }
+    : { skip: SATCURVE_SHAPE }])));
+
 // the contrast equalizer's bands, global or in a mask: the finest band and
 // the noise channels (3, 4) move fine detail; Edges only changes how the
 // luminance bands are split, so it needs one moved
@@ -147,6 +158,7 @@ for (const id of ["tc_mode", "tc_pn", "tc_r_pn", "tc_g_pn", "tc_b_pn"]) GLOBAL[i
 for (const ch of ["", "r_", "g_", "b_"])
   for (let i = 0; i < 20; i++) for (const a of ["x", "y"]) GLOBAL[`tc_${ch}p${i}${a}`] = { skip: POINTS };
 for (const id of ["tf_upright", "tf_base_r", "tf_base_v", "tf_base_h", "tf_gn"]) GLOBAL[id] = { skip: UPRIGHT };
+Object.assign(GLOBAL, SATCURVE);
 for (let i = 0; i < 16; i++) GLOBAL[`tf_g${i}`] = { skip: UPRIGHT };
 for (const id of ["mod_contrast", "mod_tone", "mod_blacks", "mod_saturation", "mod_bw", "mod_clarity", "mod_texture",
                   "mod_sharpening"])
@@ -182,6 +194,7 @@ export const LOCAL = {
   l_noise: { detail: true },
   l_defringe: { detail: true, anyPhoto: true },
   ...EQUALIZER,
+  ...SATCURVE,
   ...DETAIL,
   ...Object.fromEntries(["red", "orange", "yellow", "green", "cyan", "blue", "lavender", "magenta"].flatMap((b) =>
     ["hue", "sat", "lum"].map((k) => [`l_hsl_${k}_${b}`, { anyPhoto: true }]))),

@@ -581,7 +581,12 @@ the tone mapper) but sets each `MODULE_CHOICES` control to
 `changeMany`, so the panels show that module's sliders after a reset.
 `MASK_MODULE_CHOICES` filters these to the alternatives implemented by
 `localMaps`; masked Contrast offers color balance rgb (default) and atrous,
-excluding AgX because tone mappers cannot be masked.
+and masked Saturation color balance rgb (default) and satcurvergb, excluding
+AgX because tone mappers cannot be masked. Their color balance rgb option is
+the shared `localBalanceMap`, which has no choice of its own, so both are
+special-cased there and in Session (`MASK_SHARED_SLIDER`: the slider that
+says the tool is used, and the fallback to 1 for a mask with neither
+module's instance).
 [moduleChoice.ts](../../src/moduleChoice.ts) resolves global and mask scopes
 separately: `immage.modules.choices` and `immage.modules.choices.masks` in
 localStorage share the `immage.modules.mode` Default/Custom switch.
@@ -613,6 +618,22 @@ their 0.001 precision on reload. Each mask has its own atrous instance; it does
 not participate in shared-instance merging. Color balance rgb continues to
 carry the mask's Whites, Hue, Saturation and Color Grading, with its Contrast
 neutralized while atrous is selected.
+[SaturationCurve.tsx](../../src/SaturationCurve.tsx) replaces global Saturation
+when `mod_saturation` is 2 (`MOD_SATCURVE`; `choiceShows` hides the slider).
+`satcurveMap` maps `sc_pn`, `sc_p<k>x/y` (saturation) and `sb_*` (brilliance),
+up to 20 points each as the tone curve's point ids, to `satcurvergb`'s
+`channel[c].curve_num_nodes` and `channel[c].curve[k].x/y`; slots past the last
+point are written as 0, as darktable leaves them. y is half the factor
+satcurvergb applies (`curve_to_factor`), so the neutral curve is flat at 0.5
+and unused control slots hold (1, 0.5). The formula, curve type and guided
+filter keep darktable's defaults. The graph is `PointCurve` with
+`guide="flat"`, drawn with `monotone` (Fritsch-Carlson, as darktable's
+MONOTONE_HERMITE); there is no saturation histogram. Color balance rgb's
+global Saturation is `active` only on its own option, or AgX's on a photo on
+sigmoid, so it never runs beside the curve. Masks reuse the same ids on their
+own satcurvergb instance (not merged) when the mask's `mod_saturation` is 2;
+MasksPanel draws the curve in Presence, hidden in black and white, and
+`localBalanceMap` writes the mask's Saturation at neutral meanwhile.
 `detailMap` uses separate `contrastntexture` instances for Clarity and Texture,
 with local counterparts; [DetailControls.tsx](../../src/DetailControls.tsx)
 folds everything except Medium and Fine details under Advanced. Global
@@ -626,8 +647,12 @@ trips, independent preference scopes and mask choices in shared rendering.
 `node verify/mask-modules.mjs` uses the built engine and a temporary sample
 photo to check global AgX alongside masked atrous, preservation of used mask
 choices, and rendering, saving and reloading the mask's curves and module
-selection. `npm run build --prefix app` checks TypeScript and the front-end
-bundle.
+selection. `node --test verify/saturation-curve.test.mjs` checks the
+saturation curve's choice, its single active Saturation module, both curves'
+round trips and its mask option; `node verify/saturation-curve-engine.mjs`
+renders, saves and reloads global and masked curves with the built engine
+and checks that they raise the frame's chroma. `npm run build --prefix app`
+checks TypeScript and the front-end bundle.
 
 [CaptureTimeDialog.tsx](../../src/CaptureTimeDialog.tsx) builds before/after
 entries for a shared offset, skipping invalid recorded times. App.tsx retains

@@ -92,6 +92,12 @@ const BASE_SKIP: Record<Preview, string[]> = {
 // the modules besides flip that move pixels: an edit to one moves the
 // shown frame that masks and spots are kept in (flip is turn()'s)
 const FRAMING = new Set(["crop", "ashift", "lens"]);
+// mask tools whose color balance rgb option is the slider in the mask's
+// shared instance, with no choice map of its own (manifest.ts,
+// MASK_MODULE_CHOICES): the slider says whether the tool is used, and a mask
+// with neither module's instance was made before the choice, on color
+// balance rgb (1)
+const MASK_SHARED_SLIDER: Record<string, string> = { contrast: "l_contrast", saturation: "l_saturation" };
 
 export type Frame = {
   width: number;
@@ -357,8 +363,8 @@ export class Session {
       const values = { ...mask.values };
       for (const c of MASK_MODULE_CHOICES) {
         const maps = localMaps.filter((m) => m.choice?.control === c.control);
-        const ids = c.id === "contrast" ? ["l_contrast", ...maps.flatMap((m) => m.controls)]
-          : maps.flatMap((m) => m.controls);
+        const shared = MASK_SHARED_SLIDER[c.id];
+        const ids = shared ? [shared, ...maps.flatMap((m) => m.controls)] : maps.flatMap((m) => m.controls);
         const used = ids.some((id) =>
           Math.abs((values[id] ?? 0) - (localControlById.get(id)?.neutral ?? 0)) > 1e-6);
         if (!used) values[c.control] = loadModuleChoice(c.id, "masks");
@@ -531,7 +537,7 @@ export class Session {
           && r.instances[m.op] && (!enabled || r.instances[m.op].enabled));
         const used = c.options.find((o) => hasOption(o.value, true))
           ?? c.options.find((o) => hasOption(o.value, false));
-        values[c.control] = used?.value ?? (c.id === "contrast" ? 1 : loadModuleChoice(c.id, "masks"));
+        values[c.control] = used?.value ?? (MASK_SHARED_SLIDER[c.id] ? 1 : loadModuleChoice(c.id, "masks"));
       }
       // an instance that is off holds neutral values, unless its mask is
       // hidden or shares instances: then all are off and some still hold
@@ -540,7 +546,7 @@ export class Session {
         const inst = r.instances[m.op];
         if (inst) Object.assign(values, m.read(inst.params, {}, this.ctx));
       }
-      for (const [id, v] of Object.entries(values)) values[id] = id.startsWith("l_detail_") || id.startsWith("ce_") ? v : Math.round(v * 100) / 100;
+      for (const [id, v] of Object.entries(values)) values[id] = /^(l_detail_|ce_|sc_|sb_)/.test(id) ? v : Math.round(v * 100) / 100;
       const insts = Object.values(r.instances);
       const hidden = insts.length > 0 && insts.every((i) => !i.enabled) && !r.merged_in?.length
         && Object.entries(values).some(([id, v]) => id in neutral && v !== neutral[id]);
@@ -576,7 +582,7 @@ export class Session {
     this.activeDetailControl = this.size().draft && isDetailControl(id) ? id : null;
     this.onDetailControl?.(this.activeDetailControl);
     const ops = localMaps.filter((m) => m.controls.includes(id) || m.choice?.control === id
-      || (id === "mod_contrast" && m.op === "colorbalancergb")).map((m) => m.op);
+      || ((id === "mod_contrast" || id === "mod_saturation") && m.op === "colorbalancergb")).map((m) => m.op);
     if (!ops.length) return;
     this.masks = this.masks.map((m) => (m.name === name ? { ...m, values: { ...m.values, [id]: v } } : m));
     this.markLocal(name, ops);

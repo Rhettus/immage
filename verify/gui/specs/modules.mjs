@@ -22,6 +22,31 @@ export async function chooseModule(t,scope,label,value){
  await choose(t,selector,value);await textButton(t,'.prefs-foot','Done');
  return previous;
 }
+// samples outside the centered ellipse must stay within quantization noise
+const outsideError=(before,after)=>{let error=0,count=0;for(let y=0;y<64;y++)for(let x=0;x<64;x++)if(x<8||x>55||y<8||y>55){const i=(y*64+x)*4;for(let c=0;c<3;c++){error+=Math.abs(before.rgba[i+c]-after.rgba[i+c]);count++;}}return error/count;};
+// the saturation curve has no slider: lift its muted end on the graph
+async function satcurveOutput(t,scope){
+ const root=scope==='masks'?'.masks-panel':await panel(t,'basic');
+ if(scope==='masks'){
+  // a new mask folds its settings card as it opens, moving the groups up
+  // under a click aimed a moment before: click until the group is open
+  const heading='[data-mask-group="Presence"]';
+  await until(async()=>{
+   if(!await t.driver.observe(s=>!!document.querySelector(`${s} .chevron:not(.open)`),heading))return true;
+   await click(t,heading);return false;
+  },'Presence group open');
+ }else await expandSections(t,root);
+ const g=await reveal(t,`${root} .saturation-curve svg.point-curve`),before=await settledPhoto(t);
+ await t.driver.drag({x:g.bounds.x+2,y:g.bounds.y+g.bounds.height/2},{x:g.bounds.x+2,y:g.bounds.y+g.bounds.height*.2});
+ const after=await settledPhoto(t,p=>p.hash!==before.hash);
+ t.measure({name:`${scope}/saturation/saturation curve`,photoHash:after.hash});await t.evidence('module-graph-effect');
+ if(scope==='masks'){
+  assert(outsideError(before,after)<2,'outside-mask photo region remains unchanged');
+  await click(t,'.mask-list li.on .mask-del');await settledPhoto(t,p=>p.hash===before.hash);
+ }else{
+  await textButton(t,`${root} .saturation-curve .equalizer-heading`,'Reset');await settledPhoto(t,p=>p.hash===before.hash);
+ }
+}
 export async function moduleOutput(t,definition){
  const {scope,choice,option}=definition;
  await chooseModule(t,scope,choice.label,option.value);
@@ -30,6 +55,7 @@ export async function moduleOutput(t,definition){
   const svg=await reveal(t,'svg.mask-svg');await t.driver.drag({x:svg.x-svg.bounds.width*.12,y:svg.y-svg.bounds.height*.12},{x:svg.x+svg.bounds.width*.12,y:svg.y+svg.bounds.height*.12});
   await until(()=>t.driver.observe(()=>!!document.querySelector('.mask-list li.on')),'radial mask created');
  }
+ if(option.op==='satcurvergb')return satcurveOutput(t,scope);
  const ids=scope==='masks'?option.localControls:option.controls;
  const candidates=[...(ids??[]),...(choice.covers??[]).map(id=>scope==='masks'&&!id.startsWith('l_')?'l_'+id:id)];
  let control;
@@ -57,9 +83,7 @@ export async function moduleOutput(t,definition){
  const after=await settledPhoto(t,p=>p.hash!==before.hash);
  t.measure({name:`${scope}/${choice.id}/${option.name}`,control,photoHash:after.hash});await t.evidence('module-effect');
  if(scope==='masks'){
-  // Samples outside the centered ellipse must stay within quantization noise.
-  let error=0,count=0;for(let y=0;y<64;y++)for(let x=0;x<64;x++)if(x<8||x>55||y<8||y>55){const i=(y*64+x)*4;for(let c=0;c<3;c++){error+=Math.abs(before.rgba[i+c]-after.rgba[i+c]);count++;}}
-  assert(error/count<2,'outside-mask photo region remains unchanged');
+  assert(outsideError(before,after)<2,'outside-mask photo region remains unchanged');
   await click(t,'.mask-list li.on .mask-del');await settledPhoto(t,p=>p.hash===before.hash);
  }else{
   const label=await reveal(t,control.replace('input[type=range]','label'));await t.driver.point(label.x,label.y,2);await settledPhoto(t,p=>p.hash===before.hash);

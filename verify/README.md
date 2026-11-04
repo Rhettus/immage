@@ -237,6 +237,9 @@ Independent module preferences: run `node verify/contrast-equalizer.test.mjs`
 for mapping and scoped-choice checks, and `node verify/mask-modules.mjs` with
 the built engine for a render/save/reload check of global AgX alongside masked
 contrast equalizer. The latter uses a temporary copy of the sample photo.
+The saturation curve has the same pair: `node --test
+verify/saturation-curve.test.mjs`, and `node verify/saturation-curve-engine.mjs`
+with the built engine, which also checks that the curves raise the chroma.
 
 Camera body filtering: after building the engine, run
 `node --test verify/camera-body.test.mjs` (requires the `exiv2` CLI).
