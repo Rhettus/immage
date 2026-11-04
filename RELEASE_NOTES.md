@@ -7,6 +7,16 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Film Simulation, a new tool in the rail below the Zone System, renders a
+  photo as a film stock exposed, developed and printed on a paper, or
+  scanned, with darktable's spektrafilm. Its film and paper data (about
+  12 MB) downloads on first use into darktable's own data folder. The panel
+  has darktable's presets, film and paper menus, the main exposure, color,
+  grain and halation controls, and the rest under Advanced. It replaces the
+  tone mapper while it is on, and Export to Library saves a positive copy.
+- The Negative panel's Export to Library and Turn Off Conversion now sit at
+  the foot of the panel, with DNG and TIFF buttons for the format. The
+  preference they share is now called Generated positive format.
 - Immage is built on a newer darktable development commit, master
   879067695e (5.7.0+1793). Masks are saved as darktable's flexi masks,
   and edits made with earlier Immage versions open with the same shapes,
