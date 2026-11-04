@@ -15,6 +15,10 @@ Improvements
   for a range, ⌘-click to add one), and checking or unchecking any
   highlighted photo applies to the whole group. Checkboxes are always
   shown, with Check all and Uncheck all buttons above the grid.
+- The splash, Preferences and Preferences › About show the commit Immage
+  was built from beside its version, so builds can be told apart; GUI
+  benchmark and GPU check summaries and the benchmark dashboard show it
+  for each report.
 - Import opens a card's folders expanded down to its camera folders, so
   FastRawViewer's `_Selected` and `_Rejected` folders are one click away.
 - GUI tests: a case takes the website and guide screenshots, the mask,
