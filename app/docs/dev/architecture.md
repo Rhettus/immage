@@ -276,6 +276,14 @@ slowest module Immage runs: a 1600x900 render with "film|portrait" took about
 drags lag. Drafts do not skip it, as they skip grain and diffuse, because it
 is the photo's tone mapping.
 
+The GUI case `film` (verify/gui) turns the simulation on, checks that Film and
+Paper are menus of stock names, applies "film|portrait" from the Preset menu
+with the keyboard and turns it off again. WebKitGTK fires `change` on each
+arrow step of a closed select, so the Preset menu keeps the last preset as
+its value; a menu that snapped back to its placeholder applied the first
+preset on every step. The runner copies the installed pack into the run's
+isolated profile.
+
 [`engine/upright.c`](../../../engine/upright.c) is Upright: the
 structure detection and fit of darktable's rotate and perspective
 (`src/iop/ashift.c`). darktable runs these only from its GUI, so the

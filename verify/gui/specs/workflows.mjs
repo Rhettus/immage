@@ -189,6 +189,12 @@ export async function negative(t) {
 // the Film Simulation panel: on, a preset, a film, then off again to the
 // photo as it was. needs the data pack already installed: the case does not
 // download it
+// spektrafilm's stock hash, as spektrafilm.ts stockHash() has it
+const stockHash=(stock)=>{
+  let h=5381n;
+  for(const b of new TextEncoder().encode(stock)) h=(((h<<5n)+h)^BigInt(b))&0xffffffffffffffffn;
+  return Number((h^(h>>32n))&0xffffffffn)||1;
+};
 export async function film(t) {
   const baseline=await settledPhoto(t);
   await openTool(t,'film');
@@ -197,7 +203,15 @@ export async function film(t) {
     throw new Blocked('Install the spektrafilm data pack first (Film Simulation, Download Film Data)');
   await textButton(t,'.panel.film','Turn On Film Simulation');
   const on=await settledPhoto(t,p=>p.hash!==baseline.hash); await t.evidence('simulated');
+  // Film and Paper are menus of stock names, not sliders of their hashes
+  const film='.panel.film [data-control-id="sf_film_hash"] select';
+  await until(()=>t.driver.observe(s=>{const e=document.querySelector(s);
+    return !!e && e.selectedIndex>=0 && !/^\d+$/.test(e.options[e.selectedIndex].text);},film),'Film menu naming the stock');
+  assert(await t.driver.observe(()=>!!document.querySelector('.panel.film [data-control-id="sf_paper_hash"] select')),'Paper is a menu');
+  // the preset sets the film too
   await choose(t,'.panel.film .choice-row:first-child select','film|portrait');
+  await until(()=>t.driver.observe(s=>!!document.querySelector(s),
+    `${film} option[value="${stockHash('kodak_portra_400')}"]:checked`),'film|portrait chooses Kodak Portra 400');
   await settledPhoto(t,p=>p.hash!==on.hash); await t.evidence('preset');
   await textButton(t,'.positive-foot','Turn Off Film Simulation'); await settledPhoto(t,p=>p.hash===baseline.hash);
 }

@@ -124,7 +124,8 @@ not a pass.
 
 Written cases now include crop guides/locked corners/portrait edges/aspects,
 curves, wheels, equalizer bands, masks, heal, negative conversion, film
-simulation (on, a preset, off; it needs the data pack installed), zones,
+simulation (on, the Film and Paper menus, a preset, off; the runner copies the
+installed data pack into the run's profile; passed live on Linux 2026-11-03), zones,
 preferences, wheel settings, export settings, filter layout, presets, shortcuts,
 histogram endpoints, scaled final-frame alignment, loupe frame delivery in grid,
 detail without loupe, camera-body options and native reset. Earlier table entries

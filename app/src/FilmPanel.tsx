@@ -57,6 +57,10 @@ export function FilmPanel({ values, disabled, on, stocks, fetch, onDownload, onC
                   value?: number) => React.ReactNode;
 }) {
   const [open, setOpen] = useState<Set<string>>(new Set());
+  // the preset last applied stays shown: a menu that snapped back to its
+  // placeholder would, stepped with the arrow keys (each step a change),
+  // apply its first preset over and over
+  const [preset, setPreset] = useState("");
   const fold = (title: string) => setOpen((o) => {
     const next = new Set(o);
     if (!next.delete(title)) next.add(title);
@@ -98,7 +102,8 @@ export function FilmPanel({ values, disabled, on, stocks, fetch, onDownload, onC
   const presetMenu = (
     <div className="choice-row">
       <span>Preset</span>
-      <select className="field" value="" disabled={disabled} onChange={(e) => e.target.value && onPreset(e.target.value)}>
+      <select className="field" value={on ? preset : ""} disabled={disabled}
+              onChange={(e) => { setPreset(e.target.value); if (e.target.value) onPreset(e.target.value); }}>
         <option value="">{on ? "Apply a preset…" : "Start from a preset…"}</option>
         {["Film", "Look", ""].map((group) => {
           const list = SF_PRESETS.filter((p) => presetLabel(p.name).group === group);
@@ -130,12 +135,12 @@ export function FilmPanel({ values, disabled, on, stocks, fetch, onDownload, onC
     <div className="panel film">
       <section>
         {presetMenu}
-        {renderControl(id("film_hash"), { menu: true, optionGroups: groups(stocks.stocks, false),
+        {renderControl(id("film_hash"), { kind: "choice", menu: true, optionGroups: groups(stocks.stocks, false),
                                           options: undefined, label: "Film" }, onFilm, film?.hash)}
         {film?.positive
           ? <p className="note-plain">a slide film: scanned, with no print</p>
           : renderControl(id("paper_hash"), {
-              menu: true, label: "Paper", options: undefined,
+              kind: "choice", menu: true, label: "Paper", options: undefined,
               optionGroups: [["", [[`Auto${auto ? ` (${auto.name})` : ""}`, PAPER_AUTO],
                                    ["None: scan the film", PAPER_SCAN]]],
                              ...groups(stocks.stocks, true)],

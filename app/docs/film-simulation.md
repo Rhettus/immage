@@ -42,7 +42,8 @@ are greyed out, because they belong to the tone mapper.
 ## The panel
 
 - **Preset**: one of darktable's film and look presets. A preset sets
-  every control below, including the film and paper.
+  every control below, including the film and paper, and the menu keeps
+  showing the preset you applied last.
 - **Film**: the film stock, grouped by color negative, color slide and
   black and white. Choosing a slide film scans it directly, with its black
   and white points fitted. Choosing a negative goes back to a print.

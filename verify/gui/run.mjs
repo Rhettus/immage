@@ -17,6 +17,7 @@ import { Journal } from './support/journal.mjs';
 import { sampleProcesses } from './support/process-memory.mjs';
 import { implementationFor } from './registry.mjs';
 import { benchmarkFilename, parseViewport } from './support/benchmark.mjs';
+import { Blocked } from './support/scenario.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -159,6 +160,15 @@ try {
       const name = m ? `${m[1]}${String(Number(m[2]) + i).padStart(m[2].length, '0')}${ext}` : `${stem}-${i}${ext}`;
       await copyFile(copiedFixture, join(fixtures, name)); report.gridFixtures.push(name);
     }
+  }
+  // the film case needs the spektrafilm data pack, and the isolated profile
+  // has none: copy the installed one in, never the user's folder itself
+  if (selectedCases.includes('film')) {
+    const { cp } = await import('node:fs/promises');
+    const src = join(process.env.XDG_DATA_HOME || join(process.env.HOME, '.local/share'), 'darktable', 'spektrafilm');
+    try { await access(join(src, 'packs')); } catch { throw new Blocked('film needs the spektrafilm data pack installed (Film Simulation, Download Film Data)'); }
+    await cp(src, join(profile, 'data', 'darktable', 'spektrafilm'), { recursive: true });
+    report.filmPack = 'copied from the installed data folder';
   }
   const port = await freePort(); let nativePort = await freePort(); while (nativePort === port) nativePort = await freePort();
   const env = { ...process.env,
