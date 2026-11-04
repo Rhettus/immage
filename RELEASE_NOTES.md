@@ -41,21 +41,8 @@ Improvements
   for a range, ⌘-click to add one), and checking or unchecking any
   highlighted photo applies to the whole group. Checkboxes are always
   shown, with Check all and Uncheck all buttons above the grid.
-- The splash, Preferences and Preferences › About show the commit Immage
-  was built from beside its version, so builds can be told apart; GUI
-  benchmark and GPU check summaries and the benchmark dashboard show it
-  for each report.
 - Import opens a card's folders expanded down to its camera folders, so
   FastRawViewer's `_Selected` and `_Rejected` folders are one click away.
-- GUI tests: a case takes the website and guide screenshots, the mask,
-  range and workflow cases find mask menu items again, and no test
-  screenshot shows a file path.
-- Add a scripted Mac CPU capture workflow to profile the engine and webview
-  alongside GUI benchmarks and investigate busy-core bottlenecks.
-- Preferences › Performance › Measuring › GPU check compares darktable's
-  CPU and GPU renders of the open photo, with and without each of a
-  set of modules, and saves a report of differences, OpenCL errors and
-  fallbacks to the CPU, and a canceled GPU render, for testing GPUs.
 - Clarity and Texture use contrast & texture by default, globally and in
   masks; Preferences › Modules › Custom brings back local contrast and
   diffuse or sharpen. Photos that already use either keep their module.
@@ -64,33 +51,6 @@ Improvements
   Defringe: Preferences › Modules › Masks no longer offers darktable's
   deprecated defringe module. Masks already edited with it keep their look.
 - Heal sits above Zone System in the tool rail.
-
-Performance
-
-- With darktable 879067695e, Grain, and Clarity and Texture set to the
-  contrast & texture module, run on the GPU with OpenCL instead of falling
-  back to the CPU. On an Apple M4, contrast & texture takes 8 ms instead
-  of 20 and Grain 11 ms instead of 181.
-- Drag and settled previews convert finished pixels directly into their output
-  buffer, avoiding an intermediate full-frame copy on all platforms.
-- GUI benchmarks reduce sampler overhead by collecting process CPU and memory
-  only for Immage's process tree, with less frequent discovery of new processes.
-- Slider edits queued during a render can start their next preview as soon as
-  that render finishes, avoiding an extra display-frame wait.
-- Repeated cache hits update access timestamps at most once a minute, reducing
-  metadata writes while keeping recently used thumbnails and originals cached.
-- Export dialog previews encode JPEG in memory and use memory-backed transfer,
-  avoiding temporary-container metadata and regular-file output.
-- AI Denoise previews transfer their before/after buffers through memory-backed
-  storage, preserving the full linear-float preview data.
-- Generating library thumbnails uses memory-backed intermediate buffers while
-  retaining the persistent JPEG cache for subsequent visits.
-- Mask, range and zone overlays use memory-backed intermediate storage,
-  avoiding regular temporary-file writes during overlay updates.
-- Engine drag and settled preview frames use reusable memory-backed output
-  buffers on Windows, macOS and Linux, avoiding temporary RGBA allocations and
-  copies without changing resolution. Native tests confirm lower frame-output
-  costs on all three platforms; slider latency gains vary by workload.
 
 Bug fixes
 
@@ -119,12 +79,8 @@ Bug fixes
   once; it could keep its old look until the slider was dragged a little.
 - Clicking a contrast equalizer point focuses it, so the arrow keys adjust
   that point instead of switching the channel menu.
-- Mac CPU captures wait for the profiler to save after Ctrl-C, then export
-  the recorded trace instead of exiting with a Python interruption.
 - Transform's automatic corrections work on cropped portrait and rotated
   images instead of reporting that the working-space image is not at hand.
-- Fix macOS intermediate-buffer writes when previews or thumbnails change size,
-  respecting the platform’s shared-memory sizing restrictions.
 - On Linux, frames a killed or crashed Immage left in shared memory are
   cleared at the next start, and a full shared memory fails that render
   instead of crashing the engine; the leftovers built up until they could
@@ -139,6 +95,33 @@ Bug fixes
   time it is opened as when reopened. Its first view used to be
   scaled slightly differently, and undoing a paste onto it did not restore
   that view.
+
+Performance
+
+- With darktable 879067695e, Grain, and Clarity and Texture set to the
+  contrast & texture module, run on the GPU with OpenCL instead of falling
+  back to the CPU. On an Apple M4, contrast & texture takes 8 ms instead
+  of 20 and Grain 11 ms instead of 181.
+- Drag and settled previews convert finished pixels directly into their output
+  buffer, avoiding an intermediate full-frame copy on all platforms.
+- GUI benchmarks reduce sampler overhead by collecting process CPU and memory
+  only for Immage's process tree, with less frequent discovery of new processes.
+- Slider edits queued during a render can start their next preview as soon as
+  that render finishes, avoiding an extra display-frame wait.
+- Repeated cache hits update access timestamps at most once a minute, reducing
+  metadata writes while keeping recently used thumbnails and originals cached.
+- Export dialog previews encode JPEG in memory and use memory-backed transfer,
+  avoiding temporary-container metadata and regular-file output.
+- AI Denoise previews transfer their before/after buffers through memory-backed
+  storage, preserving the full linear-float preview data.
+- Generating library thumbnails uses memory-backed intermediate buffers while
+  retaining the persistent JPEG cache for subsequent visits.
+- Mask, range and zone overlays use memory-backed intermediate storage,
+  avoiding regular temporary-file writes during overlay updates.
+- Engine drag and settled preview frames use reusable memory-backed output
+  buffers on Windows, macOS and Linux, avoiding temporary RGBA allocations and
+  copies without changing resolution. Native tests confirm lower frame-output
+  costs on all three platforms; slider latency gains vary by workload.
 
 ## 0.41.1
 
