@@ -29,7 +29,10 @@ white balance picker, \ for before, Y for before / after, X to reject,
 
 ## First launch
 
-A small splash shows while the editing engine starts. The first time,
+A small splash shows while the editing engine starts. It shows Immage's
+version and the commit it was built from at once, and darktable's version
+once the engine is up, so a build can be told apart at a glance. The
+first time,
 Immage also:
 
 - adds a **Sample Photos** folder with one photo in it, and opens that

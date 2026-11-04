@@ -105,6 +105,12 @@ def alternatives(run, mode):
     return out
 
 
+def build_name(b):
+    # the app's commit, from perf_report_write in main.rs; reports from
+    # builds outside Git carry none
+    return f"`{b['commit'][:10]}`" + (" (uncommitted changes)" if b.get("dirty") else "")
+
+
 def gui_reports(folder=GUI):
     out = []
     for p in sorted(glob.glob(os.path.join(folder, "*.json"))):
@@ -235,6 +241,7 @@ def summary(runs, guis, gpu=()):
         L += ["", f"## GUI benchmark `{g['id']}`", "",
               (f"Machine {m.get('host') or '?'}, {m.get('cpu') or '?'} (id {m.get('id') or '?'}). "
                if (m := g.get("machine")) else "") +
+              (f"Build {build_name(b)}. " if (b := g.get("build")) and b.get("commit") else "") +
               f"Photo {g.get('photo')}, viewer {g['viewport']['width']}×{g['viewport']['height']} "
               f"(dpr {g['viewport']['dpr']}), drag drafts {'on' if g.get('dragDrafts') else 'off'}"
               + (f", Preview {g['preview']}" if g.get("preview") else "")

@@ -3,9 +3,10 @@
 
 // the startup splash: a small window of its own, as darktable's, with the
 // artwork and Immage's and darktable's versions, shown while the engine
-// starts. the main window starts hidden (tauri.conf.json); `about` answers
-// only once the engine does (main.rs, about), so its reply is the sign to
-// show the main window and close this one
+// starts. Immage's version and commit show at once (main.rs, build), to
+// tell builds apart before the engine is up. the main window starts hidden
+// (tauri.conf.json); `about` answers only once the engine does (main.rs,
+// about), so its reply is the sign to show the main window and close this one
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
@@ -46,8 +47,11 @@ async function finish() {
   }
 }
 
+type Build = { app: string; commit: string | null };
+
 function Splash() {
-  const [about, setAbout] = useState<{ app: string; darktable: string } | null>(null);
+  const [build, setBuild] = useState<Build | null>(null);
+  const [about, setAbout] = useState<(Build & { darktable: string }) | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [last] = useState(lastMs);
@@ -69,10 +73,12 @@ function Splash() {
     return () => removeEventListener("resize", note);
   }, []);
 
+  useEffect(() => { invoke<Build>("build").then(setBuild).catch(() => {}); }, []);
+
   useEffect(() => {
     const shown = Date.now();
     const tick = setInterval(() => setElapsed(Date.now() - shown), 100);
-    invoke<{ app: string; darktable: string }>("about")
+    invoke<Build & { darktable: string }>("about")
       .then((a) => {
         clearInterval(tick);
         try { localStorage.setItem(STARTUP_KEY, String(Date.now() - shown)); } catch { /* not kept */ }
@@ -85,18 +91,22 @@ function Splash() {
   }, []);
 
   const done = about ? 1 : fraction(elapsed, expected);
+  const ours = about ?? build;
 
   return (
     <div className="splash" data-tauri-drag-region>
       <img src={splashUrl} alt="" draggable={false} data-tauri-drag-region />
       <div className="splash-info" data-tauri-drag-region>
-        {about ? (
-          <div className="splash-versions" title={`darktable ${about.darktable}`}>
-            <span>Immage {about.app}</span>
-            <span className="splash-dot">·</span>
-            <span>darktable {about.darktable.split("~")[0]}</span>
+        {ours && (
+          <div className="splash-versions" title={about ? `darktable ${about.darktable}` : undefined}>
+            <span>Immage {ours.app}{ours.commit && <span className="splash-commit"> ({ours.commit})</span>}</span>
+            {about && <>
+              <span className="splash-dot">·</span>
+              <span>darktable {about.darktable.split("~")[0]}</span>
+            </>}
           </div>
-        ) : (
+        )}
+        {!about && (
           <div className="splash-status">
             {problem ? `the engine did not answer: ${problem}`
               : slow ? "starting the engine: the first start after installing or updating takes longer…"

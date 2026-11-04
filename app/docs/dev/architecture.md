@@ -22,7 +22,7 @@ tooltips, clicks and disabled buttons as well.
 | File | Responsibility |
 |---|---|
 | [index.html](../../index.html), [main.tsx](../../src/main.tsx) | The main window: mounts `App`. |
-| [splash.html](../../splash.html), [Splash.tsx](../../src/Splash.tsx) | The splash window: asks `about`, shows the main window, closes itself. |
+| [splash.html](../../splash.html), [Splash.tsx](../../src/Splash.tsx) | The splash window: shows `build` (version and commit, without the engine) at once, asks `about`, shows the main window, closes itself. |
 | [App.tsx](../../src/App.tsx) | The whole editor's shell and state. See [inside App.tsx](#inside-apptsx). |
 | [main.rs](../../src-tauri/src/main.rs) | `main()`: on Linux selects the web view's EGL before GTK starts (`renderer::init`), migrates the old app name, registers the dialog, opener, updater, process, window state (the main window's size, position and maximized state) and immporter plugins. On Linux `setup()` builds the windows itself, with the frames web extension's folder (`webext_dir`). `setup()` picks the engine: `build/bin/darktable-engine` with runtime state in `build/app-runtime` for a dev build, the bundled `resources/darktable` with the app data folder for a release, or `DT_ENGINE_BIN`. Holds `AppState` and nearly every command. |
 | [renderer.rs](../../src-tauri/src/renderer.rs) | Linux window renderer: Automatic leaves EGL vendor selection to the system on every GPU; explicit Mesa or NVIDIA selects that EGL vendor. Stored as `webview-renderer` in the runtime directory so startup can read it before GTK. An inherited marker allows Relaunch to change the selection, while a user-supplied EGL environment override takes priority. Only the web view receives the override; benchmark display metadata records the running and next selections. |
@@ -231,6 +231,7 @@ Commands by what they reach:
 | Plugins | `plugin_find_apps`, `plugin_launch`, `plugin_watch`, `plugin_job`, `plugin_cancel`, `plugin_returns`, `plugin_return_applied` |
 | Performance | `perf_set`, `perf_modules`, `perf_report_write`, `perf_ping` |
 | The window | `preview_fullscreen`, `display_scale` |
+| The build | `build`: the version and commit, answered without the engine. `build.rs` sets `IMMAGE_BUILD_COMMIT` and `IMMAGE_BUILD_DIRTY` from Git; `build_label` in main.rs shortens the commit to ten digits with `-dirty`, as `about` and `build` return it, and `perf_report_write` stores the full commit and the dirty flag as every report's `build`. Built outside Git, all are absent. |
 
 Events from Rust: `folder-progress`, `export-progress`, `ai-model`,
 `launch-file`, `plugin-returned`, `plugin-watch-end`. The immporter plugin

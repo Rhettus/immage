@@ -564,10 +564,11 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   // the provider the choice comes to: the one chosen if this computer has
   // it, else the first, as the engine resolves "auto"
   const accelProvider = accel?.find((p) => p.id === accelChoice.provider) ?? accel?.[0];
-  const [about, setAbout] = useState<{ app: string; darktable: string } | null>(null);
+  // commit: the one this app was built from (main.rs, build_label), null outside Git
+  const [about, setAbout] = useState<{ app: string; commit: string | null; darktable: string } | null>(null);
   const update = useUpdate();
   const [autoUpdate, setAutoUpdate] = useState(loadAutoCheck);
-  useEffect(() => { invoke<{ app: string; darktable: string }>("about").then(setAbout).catch(() => {}); }, []);
+  useEffect(() => { invoke<{ app: string; commit: string | null; darktable: string }>("about").then(setAbout).catch(() => {}); }, []);
   const [licenses, setLicenses] = useState<Licenses | null>(null);
   useEffect(() => { invoke<Licenses>("licenses").then(setLicenses).catch(() => {}); }, []);
   const [viewing, setViewing] = useState<{ title: string; text: string } | null>(null);
@@ -591,6 +592,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
           {about && (
             <div className="prefs-about" title={`darktable ${about.darktable}`}>
               <span>Immage {about.app}</span>
+              {about.commit && <span>commit {about.commit}</span>}
               <span>darktable {about.darktable.split("~")[0]}</span>
             </div>
           )}
@@ -973,7 +975,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
               <>
                 <PrefCard title="Immage">
                   <div className="prefs-legal">
-                    <p>Immage {about?.app ?? ""}, Copyright © 2026 the Immage authors</p>
+                    <p>Immage {about?.app ?? ""}{about?.commit ? ` (commit ${about.commit})` : ""}, Copyright © 2026 the Immage authors</p>
                     <p>
                       Its raw processing engine is darktable{about ? ` ${about.darktable.split("~")[0]}` : ""},
                       Copyright © 2009–2026 darktable developers.

@@ -1095,7 +1095,7 @@ async fn perf_report_write(state: State<'_, AppState>, name: String, mut report:
     std::fs::create_dir_all(&state.perf_dir).map_err(|e| e.to_string())?;
     let path = state.perf_dir.join(format!("{name}.json"));
     let (spans, dropped, unfinished) = state.engine.snapshot();
-    report["build"] = json!({ "commit": option_env!("IMMAGE_BUILD_COMMIT"), "dirty": option_env!("IMMAGE_BUILD_DIRTY").map(|s| s == "true") });
+    report["build"] = json!({ "commit": BUILD_COMMIT, "dirty": build_dirty() });
     if report["diagnostics"]["enabled"].as_bool() == Some(true) {
         report["diagnostics"]["cache"] = state.engine("perf_cache_report").cache_report();
         report["diagnostics"]["native"] = json!({ "clock": "native monotonic milliseconds; independent of frontend clock",
@@ -2542,12 +2542,32 @@ fn sample_folder(app: AppHandle) -> Result<String, String> {
     Ok(dest.to_string_lossy().into_owned())
 }
 
-// Immage's version and the darktable its engine was built from, for
-// Preferences
+// the commit this app was built from and whether the tree had uncommitted
+// changes (build.rs); both are absent when it was built outside Git
+const BUILD_COMMIT: Option<&str> = option_env!("IMMAGE_BUILD_COMMIT");
+fn build_dirty() -> Option<bool> {
+    option_env!("IMMAGE_BUILD_DIRTY").map(|s| s == "true")
+}
+
+// the commit as shown to people: ten digits, as darktable's version gives
+// its own, and "-dirty" for a tree with changes
+fn build_label() -> Option<String> {
+    BUILD_COMMIT.map(|c| format!("{}{}", &c[..c.len().min(10)], if build_dirty() == Some(true) { "-dirty" } else { "" }))
+}
+
+// Immage's version and commit, for the splash: answered at once, without
+// waiting for the engine as `about` does
+#[tauri::command]
+fn build(app: AppHandle) -> Value {
+    json!({ "app": app.package_info().version.to_string(), "commit": build_label() })
+}
+
+// Immage's version and commit and the darktable its engine was built
+// from, for Preferences and the GPU check's report
 #[tauri::command]
 async fn about(app: AppHandle, state: State<'_, AppState>) -> Result<Value, String> {
     let reply = state.engine("about").request(json!({ "cmd": "version" }))?;
-    Ok(json!({ "app": app.package_info().version.to_string(), "darktable": reply["version"] }))
+    Ok(json!({ "app": app.package_info().version.to_string(), "commit": build_label(), "darktable": reply["version"] }))
 }
 
 // the license texts the GPL requires to travel with the app, for
@@ -2695,7 +2715,7 @@ fn main() {
             mask_shapes, combine, masks, mask_delete, mask_rename, history, module_state, sample, tone_key, agx_auto, upright, points, range_map, zones, mask_map, ai_object,
             ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, negative_export, list_subfolders, folder_volumes, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
             immich_export_check, immich_search, immich_browse_check, immich_libraries, immich_suggestions, immich_people, immich_tags,
-            immich_thumb, immich_resolve, launch_file, path_exists, path_kind, display_scale, trash_files, create_virtual_copy, remove_virtual_copy, hdr_merge, hdr_can_align, pano_merge, pano_preview, pano_can_merge, merge_cancel, preview_fullscreen, about, licenses, engine_quit, keywords, keywords_set, ai_accel,
+            immich_thumb, immich_resolve, launch_file, path_exists, path_kind, display_scale, trash_files, create_virtual_copy, remove_virtual_copy, hdr_merge, hdr_can_align, pano_merge, pano_preview, pano_can_merge, merge_cancel, preview_fullscreen, build, about, licenses, engine_quit, keywords, keywords_set, ai_accel,
             perf_set, perf_trace_start, perf_trace_stop, perf_modules, perf_report_write, perf_machine, perf_ping, gpu_check_parity, resources::perf_resources_start, resources::perf_resources_stop,
             plugins::plugin_find_apps, plugins::plugin_launch, plugins::plugin_watch, plugins::plugin_cancel, plugins::plugin_job,
             plugins::plugin_returns, plugins::plugin_return_applied

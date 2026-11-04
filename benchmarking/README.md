@@ -107,6 +107,11 @@ histogram, React. For those:
    (in the app's data folder `benchmarks/` in a bundled one). Run
    `report.py` to bring it into SUMMARY.md and the dashboard.
 
+Every report the app writes (GUI benchmark, GPU check, tuner) carries
+`build`: the commit the app was built from and whether its tree had
+uncommitted changes. SUMMARY.md, the dashboard (in the report picker and
+the GUI benchmark card) and `gpucheck.py` show it.
+
 GUI reports include bounded diagnostic events and native engine-lock spans.
 Run `python3 -I benchmarking/diagnose.py <report.json> --json /tmp/analysis.json --trace /tmp/trace.json`
 for slow-frame attribution and independent frontend/native timelines. See

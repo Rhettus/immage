@@ -367,7 +367,11 @@ Applications a photo can be sent to with right-click › **Edit In**. See
 
 ## About
 
-Versions, the license, and where the source is. Under **Updates**:
+Versions, the license, and where the source is. Immage's version comes
+with the commit it was built from, ten digits, with `-dirty` for a build
+from a tree with uncommitted changes; the same commit shows under the
+versions at the bottom of every tab, and in GUI benchmark, GPU check and
+tuner reports. Under **Updates**:
 
 - **Check automatically**: once a day, Immage asks its releases on GitHub
   whether a newer version is out, and sends nothing else. On by default.

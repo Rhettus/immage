@@ -66,6 +66,12 @@ def _op_cell(v, gpu=True):
     return "" if v is None else f"{v[0]:.0f}" + (" (CPU)" if gpu and not v[1] else "")
 
 
+def build(r):
+    # the commit perf_report_write (main.rs) adds; none outside Git
+    b = r.get("build") or {}
+    return f" `{b['commit'][:10]}`" + ("-dirty" if b.get("dirty") else "") if b.get("commit") else ""
+
+
 def markdown(reports):
     L = []
     for r in reports:
@@ -75,7 +81,7 @@ def markdown(reports):
         after = (r.get("opencl") or {}).get("after") or {}
         L += [f"### `{r['id']}`: {r.get('passed', 0)} of {r.get('total', 0)} passed", "",
               f"{m.get('host') or '?'} ({m.get('os') or '?'}, {m.get('cpu') or '?'}, id {m.get('id') or '?'}); "
-              f"Immage {app.get('app') or '?'}, darktable {app.get('darktable') or '?'}; device {device(r)}; "
+              f"Immage {app.get('app') or '?'}{build(r)}, darktable {app.get('darktable') or '?'}; device {device(r)}; "
               f"photo {r.get('photo')}; OpenCL errors {before.get('error_count', '?')} → {after.get('error_count', '?')}"
               + ("; **OpenCL stopped for the session**" if after.get("stopped") else "")
               + (f"; {r['error']}" if r.get("error") else "") + ".", ""]
