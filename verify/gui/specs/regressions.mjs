@@ -74,7 +74,9 @@ async function requireLoupe(t){await until(()=>t.driver.observe(()=>{const c=doc
 export async function detailWithoutLoupe(t){
  await click(t,'button[data-tour="prefs"]');await textButton(t,'.prefs-tabs','General');
  const toggle='[data-pref-label="Detail loupe"] input[type=checkbox]';if((await reveal(t,toggle)).checked)await click(t,toggle);
- await textButton(t,'.prefs-foot','Done');await panel(t,'basic');
+ await textButton(t,'.prefs-foot','Done');
+ // an earlier case in the launch can leave another tool (Masks) open
+ await openTool(t,'adjust');await panel(t,'basic');
  const before=await settledPhoto(t),s=await reveal(t,':is([data-control-id="clarity"],[data-control-id^="detail_clarity_"]) input[type=range]');
  await t.driver.drag({x:s.x,y:s.y},{x:s.x+s.bounds.width*.1,y:s.y});
  const after=await settledPhoto(t,p=>p.hash!==before.hash);

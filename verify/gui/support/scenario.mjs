@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from 'node:assert/strict';
 import { inspect, reveal, click } from './controls.mjs';
-import { until } from './webdriver.mjs';
+import { until, pause } from './webdriver.mjs';
 export class Blocked extends Error { constructor(message) { super(message); this.name = 'Blocked'; } }
 export async function requireElement(t, selector, reason = selector) {
   if (!await t.driver.observe(s => !!document.querySelector(s), selector)) throw new Blocked(`Missing prerequisite: ${reason}`);
@@ -95,6 +95,13 @@ async function settledHeight(t, selector) {
 export async function openMaskGroup(t, title) {
   const heading = `[data-mask-group=${JSON.stringify(title)}]`;
   await requireElement(t, heading, `${title} mask group`);
-  if (await t.driver.observe(s => !!document.querySelector(`${s} .chevron:not(.open)`), heading)) await click(t, heading);
-  await until(() => t.driver.observe(s => !!document.querySelector(`${s} .chevron.open`), heading), `${title} group open`);
+  // a click while a new mask's panel is still laying out can miss the
+  // heading, so click again while it stays closed, never while it is open
+  const open = () => t.driver.observe(s => !!document.querySelector(`${s} .chevron.open`), heading);
+  await until(async () => {
+    if (await open()) return true;
+    await click(t, heading);
+    await pause(1000);
+    return open();
+  }, `${title} group open`);
 }
