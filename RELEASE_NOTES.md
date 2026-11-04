@@ -82,6 +82,9 @@ Performance
 
 Bug fixes
 
+- Switching from a folder on a slow network share to one on your own drive
+  no longer waits for the share's photos to finish reading. Before, the new
+  folder, and opening a photo, could wait a minute or more over wifi.
 - With Detail loupe on, a mask's Presence group shows the 100% loupe,
   as the main panel's Presence does, and its point picker works over mask
   tools and handles.
