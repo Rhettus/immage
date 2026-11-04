@@ -3,7 +3,7 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
-## Unreleased
+## 0.42.0
 
 Improvements
 
@@ -11,24 +11,6 @@ Improvements
   879067695e (5.7.0+1793). Masks are saved as darktable's flexi masks,
   and edits made with earlier Immage versions open with the same shapes,
   ranges and looks, rendering as this darktable renders them.
-
-Bug fixes
-
-- Look previews preserve the applied look's mask and blend settings, keep
-  temporary masks out of the photo and refresh when mask geometry changes.
-  Applying a look records its masks with the edit history.
-- On Windows, a second Immage window no longer shares the first one's
-  darktable library: its engine finds the library in use and stops, as on
-  Linux and macOS.
-- A JPEG whose metadata names no color space looks the same the first
-  time it is opened as when reopened. Its first view used to be
-  scaled slightly differently, and undoing a paste onto it did not restore
-  that view.
-
-## 0.42.0
-
-Improvements
-
 - Import selects like Lightroom: clicking photos highlights them (⇧-click
   for a range, ⌘-click to add one), and checking or unchecking any
   highlighted photo applies to the whole group. Checkboxes are always
@@ -50,6 +32,10 @@ Improvements
 
 Performance
 
+- With darktable 879067695e, Grain, and Clarity and Texture set to the
+  contrast & texture module, run on the GPU with OpenCL instead of falling
+  back to the CPU. On an Apple M4, contrast & texture takes 8 ms instead
+  of 20 and Grain 11 ms instead of 181.
 - Drag and settled previews convert finished pixels directly into their output
   buffer, avoiding an intermediate full-frame copy on all platforms.
 - GUI benchmarks reduce sampler overhead by collecting process CPU and memory
@@ -99,6 +85,16 @@ Bug fixes
   cleared at the next start, and a full shared memory fails that render
   instead of crashing the engine; the leftovers built up until they could
   crash the engine and other applications, the desktop included.
+- Look previews preserve the applied look's mask and blend settings, keep
+  temporary masks out of the photo and refresh when mask geometry changes.
+  Applying a look records its masks with the edit history.
+- On Windows, a second Immage window no longer shares the first one's
+  darktable library: its engine finds the library in use and stops, as on
+  Linux and macOS.
+- A JPEG whose metadata names no color space looks the same the first
+  time it is opened as when reopened. Its first view used to be
+  scaled slightly differently, and undoing a paste onto it did not restore
+  that view.
 
 ## 0.41.1
 
