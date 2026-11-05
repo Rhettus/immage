@@ -183,3 +183,16 @@ documented in the user guide. Fractional Wayland scaling still uses integer-size
 full-quality frames; only reduced drag drafts follow the actual screen scale
 when enabled. Do not promise equivalent performance under X11 or at 100%.
 Verify generated release bodies with `python3 -I scripts/test_release_assets.py`.
+
+## Security scanning
+
+The engine CodeQL job in `.github/workflows/codeql.yml` uses the shared Ubuntu
+package list and the Linux build's GCC 14 toolchain repository and libunwind
+package selection. Keep these aligned when changing Linux build dependencies.
+Dependencies and darktable build before tracing; ccache is disabled for the
+traced engine build so CodeQL sees compilation. A successful scan on `main`
+updates existing alerts; a failed setup leaves older findings visible.
+
+Validate workflow edits with actionlint and zizmor, then check the CodeQL run's
+engine analysis and SARIF upload. Compiler setup changes do not require rebuilding
+release installers.
