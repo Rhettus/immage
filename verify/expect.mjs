@@ -68,6 +68,51 @@ const DETAIL = Object.fromEntries(["detail_clarity", "detail_texture", "l_detail
   .concat(["detail_clarity", "detail_texture", "l_detail_clarity", "l_detail_texture"]
     .map((p) => [`${p}_gain_fine`, { detail: true }])));
 
+// the Film Simulation panel's controls, each on a photo the simulation is on
+// for. its modules' own switches (grain, halation, diffusion) come first, and
+// a stock is chosen from the pack's list rather than by a value on its range.
+// fields: SF_FIELDS' names; stocks: spektra_stocks' list
+export function filmSpecs(fields, stocks) {
+  const ON = { sf_on: 1 };
+  const switched = (id) => id.startsWith("grain_") ? { sf_grain_on: 1 } : id.startsWith("halation_") ? { sf_halation_on: 1 }
+    : id.startsWith("print_diffusion_") ? { sf_print_diffusion_on: 1 } : id.startsWith("diffusion_") ? { sf_diffusion_on: 1 } : {};
+  const out = { sf_on: { values: [1] } };
+  for (const f of fields) {
+    const id = `sf_${f}`;
+    out[id] = { with: { ...ON, ...switched(f) }, ...(f.startsWith("grain_") && f !== "grain_on" ? { detail: true } : {}) };
+  }
+  // sizes are in microns on the film: at the 1024 px view they are less than
+  // a pixel, and only a 100% crop shows them
+  const spatial = ["couplers_tail_um", "scan_usm_sigma", "scan_usm_amount", "grain_dye_cloud"];
+  for (const f of fields) if (spatial.includes(f) || /diffusion_(filter_family|strength|scale|warmth)$/.test(f))
+    out[`sf_${f}`].detail = true;
+  // the boost lifts only highlights, and its range and protection act on what
+  // it lifts: a photo with bright enough ones is enough
+  // (a mean over the frame: a few EV on a few pixels, so the lower threshold)
+  out.sf_boost_ev.values = [8]; out.sf_boost_ev.anyPhoto = true; out.sf_boost_ev.detail = true;
+  for (const f of ["boost_range", "protect_ev"])
+    Object.assign(out[`sf_${f}`], { with: { ...ON, sf_boost_ev: 8 }, anyPhoto: true, detail: true });
+  // the film's grain floor and clump size show on some photos' tones only,
+  // and the gamut compression on those with colors beyond the output's
+  for (const f of ["grain_density_min", "grain_dye_cloud", "gamut_compress"]) out[`sf_${f}`].anyPhoto = true;
+  out.sf_grain_dye_cloud.values = [4];
+  // the automatic print exposure follows the film's exposure: at the default
+  // 0 EV the compensated and uncompensated mid gray are the same
+  // (spektra_sim.c, midgray_factor)
+  out.sf_print_auto_exposure.with.sf_exposure_ev = 1;
+  const SEVERAL = "only stocks measured at several development times respond, black and white ones; the corpus is color";
+  out.sf_development_min = { skip: SEVERAL }; out.sf_print_development_min = { skip: SEVERAL };
+  // the preflash's filters tint a preflash that is there
+  for (const f of ["preflash_m_shift", "preflash_y_shift"]) out[`sf_${f}`].with.sf_preflash_exposure = 0.3;
+  // the black and white levels set the points their corrections move to
+  out.sf_scan_black_level.with.sf_scan_black_correction = 1;
+  out.sf_scan_white_level.with.sf_scan_white_correction = 1;
+  const films = stocks.filter((s) => !s.printing), papers = stocks.filter((s) => s.printing);
+  out.sf_film_hash.values = films.slice(0, 3).map((s) => s.hash);
+  out.sf_paper_hash.values = papers.slice(0, 3).map((s) => s.hash);
+  return out;
+}
+
 export const GLOBAL = {
   bw_mode: { values: [1], mono: true },
   temp: { delta: [1500, -1500], expect: { warm: 1 } },

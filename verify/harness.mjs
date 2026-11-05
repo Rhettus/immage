@@ -82,7 +82,8 @@ const { NO_FILTER, exposureLabel, facetsWithin, passes } = await import("../app/
 const z = await import("../app/src/zones.ts");
 const nd = await import("../app/src/negadoctor.ts");
 const { compare, chromaChange, meanChroma, inEllipse, rightOf } = await import("./metrics.mjs");
-const { THRESHOLD, GLOBAL, COMPOSITE, LOCAL, trialValues, judge } = await import("./expect.mjs");
+const { THRESHOLD, GLOBAL, COMPOSITE, LOCAL, trialValues, judge, filmSpecs } = await import("./expect.mjs");
+const { SF_FIELDS } = await import("../app/src/spektrafilm.ts");
 
 const VIEW = { width: 1024, height: 1024 };
 // `controls`: only these, by id, to look into one
@@ -204,11 +205,16 @@ async function trialGlobal(o, photo, c, spec, check) {
 
 async function sliders(photo) {
   const o = await open(fresh(photo));
+  // the film controls need the data pack's stock lists; without the pack
+  // they are skipped, as the simulation passes the photo through
+  const pack = await invoke("spektra_stocks");
+  const film = pack.pack ? filmSpecs(SF_FIELDS.map((x) => x.field), pack.stocks) : {};
   for (const c of controls()) {
     if (!wanted(c.id)) continue;
-    const spec = GLOBAL[c.id] ?? {};
+    const spec = GLOBAL[c.id] ?? film[c.id] ?? {};
     const base = { check: "sliders", photo: basename(photo), id: c.id };
     if (spec.skip) { record({ ...base, status: "skip", detail: spec.skip }); continue; }
+    if (c.id.startsWith("sf_") && !pack.pack) { record({ ...base, status: "skip", detail: "no spektrafilm data pack" }); continue; }
     if (!m.mapOf.has(c.id)) { record({ ...base, status: "fail", detail: "no module map in manifest.ts" }); continue; }
     if ((c.rawOnly || spec.raw) && !o.s.raw) { record({ ...base, status: "skip", detail: "raws only" }); continue; }
     if (!active(o.s, c.id)) { record({ ...base, status: "skip", detail: "not the photo's module: the choices check covers it" }); continue; }
