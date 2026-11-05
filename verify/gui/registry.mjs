@@ -12,13 +12,14 @@ import * as dialogs from './specs/dialogs.mjs';
 import * as regressions from './specs/regressions.mjs';
 import { moduleOutput,panorama,immichWorkflow } from './specs/modules.mjs';
 import { siteShots } from './specs/site.mjs';
+import { zoomReady } from './specs/zoom.mjs';
 
 const implementations = { 'batch-paste': batchPaste, startup, splash, exposure, 'slider-input': sliderInput, 'slider-click': sliderClick, history, rail, sliders, 'module-options': moduleOptions,
   'panel-scroll': panelScroll,
   'gui-benchmark': guiBenchmark,
   'gui-benchmark-screen': t => guiBenchmark(t, true),
   'gui-benchmark-whole': t => guiBenchmark(t, false),
-  'crop-guides':cropGuides,'crop-locked':cropLocked,'crop-portrait':cropPortrait,'crop-options':cropOptions,'crop-auto-straighten':cropAutoStraighten,'crop-undo':cropUndo,
+  'crop-guides':cropGuides,'crop-locked':cropLocked,'crop-portrait':cropPortrait,'crop-options':cropOptions,'crop-auto-straighten':cropAutoStraighten,'crop-undo':cropUndo,'zoom-ready':zoomReady,
   'native-reset':workflows.nativeReset,curves:workflows.curves,wheels:workflows.wheels,equalizer:workflows.equalizer,
   'saturation-curve':workflows.saturationCurve,
   masks:workflows.masks,heal:workflows.heal,negative:workflows.negative,film:workflows.film,zones:workflows.zones,print:workflows.print,

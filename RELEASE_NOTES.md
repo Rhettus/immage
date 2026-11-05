@@ -105,6 +105,10 @@ Bug fixes
 
 Performance
 
+- The first zoom in on a photo no longer waits for a render: once the
+  photo is up and editing pauses, its 100% view renders in the background
+  while it is fitted, and zoomed in the fitted view does, so zooming back
+  out is immediate as well.
 - With darktable 879067695e, Grain, and Clarity and Texture set to the
   contrast & texture module, run on the GPU with OpenCL instead of falling
   back to the CPU. On an Apple M4, contrast & texture takes 8 ms instead

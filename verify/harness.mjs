@@ -1726,6 +1726,31 @@ async function decisions(photo) {
       : copyBack?.pixels.buffer !== first.pixels.buffer ? "back from the Before view, the copy was rendered again" : null;
   });
 
+  // zoomed in, the fitted view is rendered on the base pipe once idle
+  // (Session.requestFit), and zooming back out shows it without a render,
+  // as the main pipe renders it
+  await decide("zoomed in, the fitted view is ready for zooming out", async () => {
+    const o = await open(fresh(photo));
+    o.s.endBaseline();
+    const ref = await o.after(() => o.s.set("exposure", 0.5));
+    await zoomed(o);
+    await o.after(() => o.s.set("exposure", 0.6));
+    await o.after(() => o.s.set("exposure", 0.5));
+    o.s.requestFit(VIEW);
+    await o.frame();
+    o.view = VIEW;
+    const out = await o.after(() => {});
+    await o.s.close();
+    await drained();
+    let diff = 0;
+    if (out && out.width === ref.width && out.height === ref.height)
+      for (let i = 0; i < ref.pixels.length; i++) diff = Math.max(diff, Math.abs(ref.pixels[i] - out.pixels[i]));
+    return !out ? "zooming out showed no frame"
+      : !out.trace?.rust.every((t) => t === 0) ? "zooming out rendered the fitted view again"
+      : out.width !== ref.width || out.height !== ref.height ? "the fitted view rendered at another size"
+      : diff > 2 ? `the fitted view differs from the main pipe's by ${diff}` : null;
+  });
+
   // the photos the arrow keys open next are decoded ahead, a few at once
   // (App.tsx, prefetchNext; main.c, _prefetch). each, opened while its
   // decode is still under way, waits for it, and renders as a photo opened

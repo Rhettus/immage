@@ -492,7 +492,7 @@ export class Session {
   // nothing queued or rendering: the engine is free for other work
   get idle() {
     return !this.busy && !this.dirty.size && !this.needRender && !this.needThumb && !this.needCopy && !this.needWarm
-      && this.wantLook === undefined && !this.masksPending && this.wantLookAmount === undefined
+      && !this.fitView && this.wantLook === undefined && !this.masksPending && this.wantLookAmount === undefined
       && !this.spotsPending && !this.reshapeDue && !this.baselineEnd && !this.baseInFlight
       && !this.modulePending.length && !this.resetModulesPending;
   }
@@ -1180,6 +1180,16 @@ export class Session {
     void this.pump();
   }
 
+  // zoomed in, the fitted view, rendered on the base pipe once the viewer is
+  // idle and kept as the frame that view shows: zooming back out is then
+  // instant. the main pipe keeps its cache of the window shown
+  private fitView: View | null = null;
+  requestFit(view: View) {
+    if (this.before || this.current.has(this.frameKey(view, false))) return;
+    this.fitView = view;
+    void this.pump();
+  }
+
   // the window the engine would render (_render in engine/main.c), cut
   // from the copy
   private cut(c: Frame, view: View, cycle?: Parameters<typeof perf.cached>[2]): Frame {
@@ -1260,7 +1270,7 @@ export class Session {
     let job = begin();
     try {
       while (this.dirty.size || this.needRender || this.needThumb || this.needCopy || this.needWarm || this.needLoupe
-             || this.wantLook !== undefined
+             || this.fitView || this.wantLook !== undefined
              || this.masksPending || this.wantLookAmount !== undefined || this.spotsPending
              || this.reshapeDue || this.baselineEnd || this.modulePending.length || this.resetModulesPending) {
         if (this.editFrame !== null) break;
@@ -1412,6 +1422,17 @@ export class Session {
         if (!this.dirty.size && !this.needRender && this.needThumb) {
           this.needThumb = false;
           await this.idleRender(this.thumbSize(), false, (thumb) => this.onThumb?.(thumb));
+          continue;
+        }
+        if (!this.dirty.size && !this.needRender && this.fitView) {
+          const view = this.fitView, key = this.frameKey(view, false);
+          this.fitView = null;
+          if (this.before || this.current.has(key)) continue;
+          end(job);
+          await this.idleRender(view, true, (f) => {
+            if (!this.before && !this.current.has(key)) this.keepFrame(key, f);
+          }, this.heldFor(key));
+          job = begin();
           continue;
         }
         if (!this.dirty.size && !this.needRender && this.needCopy) {

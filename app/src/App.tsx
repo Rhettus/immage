@@ -1785,15 +1785,23 @@ export default function App() {
       if (baseStale.current || baseLowRes.current) s.requestThumb();
     }, delay);
   };
-  // zoomed in, the whole image at the zoom's scale (100% above it), once
-  // the base and the edits are done with; the session keeps one
+  // the whole image at the zoom's scale (100% above it), once the base and
+  // the edits are done with; the session keeps one. fitted, it is the 100%
+  // one, ready for the first zoom in; zoomed in, the fitted frame is
+  // rendered too, ready for the zoom back out
   const copyTimer = useRef(0);
   const scheduleCopy = (delay: number) => {
     window.clearTimeout(copyTimer.current);
     copyTimer.current = window.setTimeout(() => {
       const s = session.current, f = full.current;
-      if (!s || !f || zoomRef.current === "fit" || anim.current.raf) return;
+      if (!s || !f || anim.current.raf) return;
       if (!s.idle) { scheduleCopy(400); return; }
+      if (zoomRef.current === "fit") {
+        // a photo that fits at 100% already shows every pixel
+        if (fitScale() < 1) s.requestCopy(1, f);
+        return;
+      }
+      s.requestFit(fitView());
       s.requestCopy(Math.min(1, scaleFor(zoomRef.current)), f);
     }, delay);
   };
@@ -1861,6 +1869,12 @@ export default function App() {
     return z === "fill" ? Math.max(w / f.w, h / f.h) : z;
   };
 
+  // the fitted view's box, the engine fitting the whole image into it
+  const fitView = (): View => {
+    const { w, h } = viewport();
+    const m = 2 * MARGIN * (window.devicePixelRatio || 1);
+    return { width: Math.min(MAX_PREVIEW, w - m), height: Math.min(MAX_PREVIEW, h - m) };
+  };
   // the view at k times the full frame's size each way, k < 1 a drag's
   // during a zoom that renders ahead (animateTo), the view it ends on
   const viewAt = (k: number): View => {
@@ -1870,8 +1884,7 @@ export default function App() {
     const ahead = !!a.raf && !!a.end;
     const zoom = ahead ? a.zoom : zoomRef.current, c = ahead ? a.end! : center.current;
     if (zoom === "fit" || !f) {
-      const m = 2 * MARGIN * (window.devicePixelRatio || 1);
-      const width = Math.min(MAX_PREVIEW, w - m), height = Math.min(MAX_PREVIEW, h - m);
+      const { width, height } = fitView();
       return k === 1 ? { width, height } : { width: Math.round(width * k), height: Math.round(height * k), draft: true };
     }
     const scale = scaleFor(zoom) * k;
@@ -2263,7 +2276,7 @@ export default function App() {
     } else if (baseStale.current) {
       scheduleBase(300);
     }
-    if (f.view.scale !== undefined && !f.before) scheduleCopy(600);
+    if (!f.before) scheduleCopy(600);
     setStatus("");
   }, []);
   // timed for the performance overlay

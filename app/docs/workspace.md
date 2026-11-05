@@ -69,6 +69,12 @@ Click a card's title to fold or unfold it. See [Library](library.md) and
 - The zoom slider in the toolbar below the filmstrip zooms from a quarter
   of fit to 400%. Double-click it for fit or 100%.
 - Drag the photo to pan.
+- Once a photo has opened, and again each time you stop editing, Immage
+  renders it at 100% in the background, so the first zoom in shows it at
+  once. Zoomed in, it renders the fitted view the same way, ready for
+  zooming back out. Either waits until the base view is done and stops as
+  soon as you change something. A photo above about 64 megapixels is left
+  out of the 100% render.
 
 **Full screen preview**: F shows the photo alone on the canvas color,
 black for **Dark**. F or Esc comes back.
