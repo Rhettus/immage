@@ -68,6 +68,8 @@ export const cases = {
   'folder-race':{scope:'controlled slow unrelated folder and stale result protection',commits:['17ac5e6','74cedc9'],liveValidated:false},
   panorama:{scope:'projection choices and preview with overlapping fixtures',liveValidated:false},
   'immich-workflow':{scope:'isolated local-service prerequisite; no live account access',commits:['33949b6','22840b4'],liveValidated:false},
+  demo:{scope:'announcement demo clip: records frames and a pointer log of a scripted feature tour (verify/gui/demo-assemble.mjs builds the video); asserts nothing, segments that cannot be reached are skipped',liveValidated:false,
+    limitation:'Records evidence for marketing, not a verification of the features.'},
   'site-shots':{scope:'website and guide screenshots: Basic before/after, color grading, mask, presets, heal, crop, Zone System, first launch, Folders, Library grid, split before/after, History, point tone curve, RYB vectorscope, Preferences; photo info hidden, shots with a visible path skipped',liveValidated:true,
     limitation:'Captures evidence for the website; asserts only that each tool opened. A shot that cannot be reached is recorded as skipped.'},
   ...generated,

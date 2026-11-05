@@ -161,6 +161,14 @@ try {
       await copyFile(copiedFixture, join(fixtures, name)); report.gridFixtures.push(name);
     }
   }
+  // the demo's merge segment needs several photos in the folder: DEMO_PHOTOS
+  // lists copies to add (comma separated paths), never opened in place
+  if (selectedCases.includes('demo') && process.env.DEMO_PHOTOS) {
+    report.demoPhotos = [];
+    for (const path of process.env.DEMO_PHOTOS.split(',').map(s => s.trim()).filter(Boolean)) {
+      await copyFile(resolve(root, path), join(fixtures, basename(path))); report.demoPhotos.push(basename(path));
+    }
+  }
   // the film case needs the spektrafilm data pack, and the isolated profile
   // has none: copy the installed one in, never the user's folder itself
   if (selectedCases.includes('film')) {
