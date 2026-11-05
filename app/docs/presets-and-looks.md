@@ -48,8 +48,10 @@ The preset new photos get carries a **new photos** badge.
 
 ## Looks
 
-Immage comes with 53 film looks from the t3mujinpack collection, in three
-groups:
+Immage comes with 53 film looks from the
+[t3mujinpack](https://github.com/t3mujinpack/t3mujinpack) collection,
+created by João Almeida and shared under the MIT license. The looks are his
+work; Immage only ships them. They come in three groups:
 
 - **Film · Black and White** (12): AGFA APX, Fuji Neopan, Ilford Delta, FP4,
   HP5 and XP2, Kodak T-Max and Tri-X.

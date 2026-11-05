@@ -13,7 +13,6 @@ Open it with **Print** on the rail, the last button under Export, or ⌘P.
 The panel's settings stay the same from photo to photo, and between runs.
 
 ![The Print panel: soft proofing, printer, layout and color management](images/print-panel.png)
-<!-- screenshot: Print panel with a printer and a printer profile chosen, Soft Proof on, the viewer showing a landscape photo on a Letter page with its margins dashed, the "Soft Proof:" label over the photo -->
 
 ## Soft proofing
 

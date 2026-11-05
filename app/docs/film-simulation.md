@@ -10,6 +10,8 @@ imitation of their look.
 Open it from the right-hand rail with the film canister icon, below the
 Zone System.
 
+![The Film Simulation panel: preset, film and paper menus, with the exposure and color controls below](images/film-simulation.png)
+
 ## The film data
 
 The film and paper measurements are not part of Immage. The first time you

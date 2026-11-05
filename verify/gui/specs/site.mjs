@@ -202,15 +202,38 @@ export async function siteShots(t) {
     await textButton(t, '.prefs-foot', 'Done');
   });
 
-  // 1. Before and after a Basic edit, with the Adjustments panel open.
+  // 1. Before: the photo flat (Reset all drops the New Photos preset and
+  // every edit). After: Basic moves and the Kodachrome 64 look.
   await attempt(t, 'basic', async () => {
+    const opened = await settledPhoto(t);
+    await click(t, 'button[aria-label="reset all"]');
+    try { await settledPhoto(t, q => q.hash !== opened.hash); } catch {}
     await panel(t, 'basic');
+    // the New Photos profile outlives Reset all: Unmodified Primaries is the least processed
+    await choose(t, '[data-control-id="profile"] select', 11);
+    await settledPhoto(t);
     await shot(t, 'basic-before');
-    for (const [id, value] of [['contrast', 22], ['highlights', -45], ['shadows', 35], ['whites', 12],
-      ['blacks', -12], ['clarity', 18], ['vibrance', 28]]) {
+    await choose(t, '[data-control-id="profile"] select', 0);
+    for (const [id, value] of [['contrast', 40], ['highlights', -55], ['shadows', 45], ['whites', 15],
+      ['blacks', -18], ['vibrance', 35]]) {
       try { await slide(t, id, value); } catch (error) { t.measure({ name: `basic-${id}`, skipped: error.message.split('\n')[0] }); }
     }
+    await tool(t, 'presets');
+    const nth = await t.driver.observe(() => {
+      const g = [...document.querySelectorAll('.preset-group')].find(e => e.querySelector('.preset-group-title')?.textContent.includes('Color Slide'));
+      return g && !g.querySelector('.tri.open') ? [...g.parentElement.children].indexOf(g) + 1 : 0;
+    });
+    if (nth) await click(t, `.preset-group:nth-child(${nth}) > .preset-group-title`);
+    await click(t, '.tile[title="Kodak Kodakchrome 64"]');
+    await until(() => t.driver.observe(() => /Kodakchrome 64/.test(document.querySelector('.look-chip b')?.textContent ?? '')), 'Kodachrome 64 applied');
+    await tool(t, 'adjust');
+    await panel(t, 'basic');
     await shot(t, 'basic-after');
+    // take the look off again so the other shots show the plain photo
+    await tool(t, 'presets');
+    try { await click(t, '.look-chip button'); } catch {}
+    await tool(t, 'adjust');
+    await settledPhoto(t);
   });
 
   // 2. A linear gradient mask from the top, darkened, with its overlay.
@@ -287,5 +310,54 @@ export async function siteShots(t) {
     await t.driver.drag(sh, { x: sh.x - sh.w * .09, y: sh.y + sh.w * .04 });
     await t.driver.drag(hi, { x: hi.x + hi.w * .08, y: hi.y - hi.w * .06 });
     await shot(t, 'color-grading');
+  });
+
+  // 8. Film Simulation (downloads its film data on first use), then off again.
+  await attempt(t, 'film', async () => {
+    await tool(t, 'film');
+    await until(() => t.driver.observe(() => !!document.querySelector('.panel.film button, .panel.film select')), 'film panel');
+    if (await t.driver.observe(() => [...document.querySelectorAll('.panel.film button')].some(b => /Download Film Data/.test(b.textContent)))) {
+      await textButton(t, '.panel.film', 'Download Film Data');
+      await until(() => t.driver.observe(() => [...document.querySelectorAll('.panel.film button')].some(b => /Turn On Film Simulation/.test(b.textContent))),
+        'film data downloaded', 180000);
+    }
+    await textButton(t, '.panel.film', 'Turn On Film Simulation');
+    await until(() => t.driver.observe(() => { const e = document.querySelector('.panel.film [data-control-id="sf_film_hash"] select');
+      return !!e && e.selectedIndex >= 0 && !/^\d+$/.test(e.options[e.selectedIndex].text); }), 'Film menu naming the stock');
+    await pause(1500);
+    await shot(t, 'film-simulation');
+    await textButton(t, '.positive-foot', 'Turn Off Film Simulation');
+    await settledPhoto(t);
+  });
+
+  // 9. Print: the page in the viewer, saving as PDF (nothing is printed).
+  await attempt(t, 'print', async () => {
+    await tool(t, 'print');
+    await until(() => t.driver.observe(() => !!document.querySelector('.panel.print')), 'print panel');
+    const printers = '.panel.print select[data-action="print-printer"]';
+    await until(() => t.driver.observe(s => !!document.querySelector(s)?.querySelector('option[value=""]'), printers), 'Save as PDF offered');
+    await choose(t, printers, '');
+    await pause(1500);
+    await shot(t, 'print');
+  });
+
+  // 10. The whole workspace, Adjustments open (the guide's overview image).
+  await attempt(t, 'workspace', async () => {
+    await tool(t, 'adjust');
+    await panel(t, 'basic');
+    await shot(t, 'workspace');
+  });
+
+  // 11. Export dialog with Frame with EXIF and its Frame & Captions section.
+  // Nothing is exported: the dialog is cancelled.
+  await attempt(t, 'export', async () => {
+    await click(t, 'button[data-tour="export"]');
+    await until(() => t.driver.observe(() => !!document.querySelector('.modal.export')), 'export dialog');
+    await textButton(t, '.export-presets', 'Frame with EXIF');
+    const open = await t.driver.observe(() => document.querySelector('[data-export-section="Frame & Captions"]')?.classList.contains('open'));
+    if (!open) await click(t, '[data-export-section="Frame & Captions"] > .export-section-head');
+    await pause(2500);
+    await shot(t, 'export-dialog', '.export-preview', { settled: false });
+    await textButton(t, '.export .modal-foot', 'Cancel');
   });
 }

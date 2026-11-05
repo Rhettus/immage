@@ -10,7 +10,6 @@ a photo service is done by **Immich album**.
 Open it with **Export** on the rail, or ⇧⌘E.
 
 ![The Export dialog: presets, sections and preview](images/export-dialog.png)
-<!-- screenshot: Export dialog, Frame with EXIF preset chosen, Frame & Captions open, preview showing the white border and captions -->
 
 The dialog has three columns: presets on the left, settings in the middle,
 and a preview of the first photo on the right, which updates as you change
@@ -112,7 +111,6 @@ exposure compensation and subject distance. If a photo lacks a piece of
 info, text after a comma stands in: `{lens, unknown lens}`.
 
 ![A photo exported with Frame with EXIF](images/export-frame.png)
-<!-- screenshot: an exported image (not the dialog) with the white frame and the three captions -->
 
 ## Keywords
 
