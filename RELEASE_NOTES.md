@@ -7,6 +7,10 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Dropdown menus, such as Profile in Preferences and the export and print
+  options, open in Immage's own menu styling, matching the right-click
+  menus, instead of the system's grey list. They look the same on macOS,
+  Windows and Linux.
 - Film Simulation, a new tool in the rail below the Zone System, renders a
   photo as a film stock exposed, developed and printed on a paper, or
   scanned, with darktable's spektrafilm. Its film and paper data (about

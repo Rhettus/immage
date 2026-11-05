@@ -4,6 +4,7 @@
 import { StrictMode, Profiler } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import SelectMenu from "./SelectMenu";
 import { perf } from "./perf";
 import "@fontsource/poppins/400.css";
 import "@fontsource/poppins/500.css";
@@ -18,5 +19,6 @@ document.documentElement.classList.toggle("windows", navigator.userAgent.include
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <Profiler id="app" onRender={perf.reactCommit}><App /></Profiler>
+    <SelectMenu />
   </StrictMode>,
 );
