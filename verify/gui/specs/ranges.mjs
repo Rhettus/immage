@@ -75,7 +75,7 @@ async function rangeBody(t, definition) {
   const container = await locateControl(t, definition), selector = `${container} input[type=range]`;
   let s = await reveal(t, selector);
   if (s.disabled) throw new Blocked(`Disabled ${definition.control.id}: fixture/module prerequisite`);
-  const label = await reveal(t, `${container} > label`);
+  const label = await reveal(t, `${container} label`);
   await t.driver.point(label.x, label.y, 2);
   const baseline = await settledPhoto(t);
   s = await reveal(t, selector); const neutral = +s.value;
@@ -119,7 +119,7 @@ async function rangeBody(t, definition) {
   await until(async () => Math.abs(+(await t.driver.observe(inspect, selector)).value - s.max) <= s.step, 'typed maximum clamp');
   await edit(definition.control.min); await t.driver.keys('\uE00C'); // Escape
   await until(async () => Math.abs(+(await t.driver.observe(inspect, selector)).value - s.max) <= s.step, 'Escape preserves previous value');
-  const reset = await reveal(t, `${container} > label`); await t.driver.point(reset.x, reset.y, 2);
+  const reset = await reveal(t, `${container} label`); await t.driver.point(reset.x, reset.y, 2);
   await until(async () => Math.abs(+(await t.driver.observe(inspect, selector)).value - neutral) <= s.step, 'double-click reset');
   await settledReset(t, baseline, null, 'reset'); await t.evidence('reset');
 }

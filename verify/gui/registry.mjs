@@ -10,13 +10,13 @@ import { rangeContract,choiceContract } from './specs/ranges.mjs';
 import * as workflows from './specs/workflows.mjs';
 import * as dialogs from './specs/dialogs.mjs';
 import * as regressions from './specs/regressions.mjs';
-import { moduleOutput,panorama,immichWorkflow } from './specs/modules.mjs';
+import { moduleOutput,moduleSwitch,panorama,immichWorkflow } from './specs/modules.mjs';
 import { siteShots } from './specs/site.mjs';
 import { zoomReady } from './specs/zoom.mjs';
 import { demo } from './specs/demo.mjs';
 import { overlayOpacity } from './specs/overlay.mjs';
 
-const implementations = { 'batch-paste': batchPaste, startup, splash, exposure, 'slider-input': sliderInput, 'slider-click': sliderClick, history, rail, sliders, 'module-options': moduleOptions,
+const implementations = { 'batch-paste': batchPaste, startup, splash, exposure, 'slider-input': sliderInput, 'slider-click': sliderClick, history, rail, sliders, 'module-options': moduleOptions, 'module-switch': moduleSwitch,
   'panel-scroll': panelScroll,
   'gui-benchmark': guiBenchmark,
   'gui-benchmark-screen': t => guiBenchmark(t, true),

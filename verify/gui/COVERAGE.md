@@ -24,6 +24,7 @@ This imports pure manifest/math code using Node >= 22.18, without launching an a
 | splash | Launch splash size stays 640x427 (not tiled to fill the workspace) | Fails on Hyprland 0.57: floats but opens 1710x1107 (run 2026-11-03T05-56-54.119Z_f7db416); not in smoke |
 | panel-scroll | 81d4441: a first open of Presets starts at the top; Adjustments returns to its own offset | Passed (run 2026-11-03T06-06-31.255Z_0f9ba08) |
 | sliders | Current reachable panel ranges, pointer change, reset, final pixels, CSS, screenshots | Awaiting approved GUI run; hidden branches excluded |
+| module-switch | Panel icon beside multi-module tools, its menu, pick, Escape and Set as default | Passed, Linux release build (run 2026-11-05T22-18-54.889Z_e76d528_2a7cfb97); global Contrast only, masks not driven |
 | module-options | Every available Global/Masks option, independent Contrast choices, folding persistence | Awaiting a GUI run; preference UI only. Generated module-masks-contrast-1 passed (run 2026-11-03T06-28-57.870Z_8e9b538) |
 
 `node verify/gui/run.mjs --list` lists selections without launching anything.

@@ -7,6 +7,11 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Tools that can run on more than one darktable module (Contrast, Saturation,
+  Highlights and Shadows, Clarity, Texture, Sharpening) have a small icon
+  beside their name, also inside masks. Click it to switch the module for
+  that photo or mask from a menu, or choose **Set as default** to make it the
+  choice in Preferences › Modules.
 - Preferences has an Overlay opacity slider under Overlay color, to make a
   mask's overlay on the photo more or less solid, with a Reset button.
 - Dropdown menus, such as Profile in Preferences and the export and print

@@ -181,7 +181,7 @@ export async function sliders(t) {
         coverage.push(blocked); t.measure({ name: `${id}/${control}`, ...blocked }); continue;
       }
       let s = await reveal(t, selector);
-      const labelSelector = `${panel} [data-control-id=${JSON.stringify(control)}] > label`;
+      const labelSelector = `${panel} [data-control-id=${JSON.stringify(control)}] label`;
       let label = await reveal(t, labelSelector);
       await t.driver.point(label.x, label.y, 2);
       const neutral = await until(async () => {

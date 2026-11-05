@@ -344,7 +344,9 @@ sections open independently, and Alt-click opens one on its own. Global offers:
 **Masks** independently offers Contrast (color balance rgb or contrast equalizer),
 Highlights and Shadows, Saturation (color balance rgb or saturation curve),
 Clarity, Texture and Sharpening. Modules without
-alternatives are also listed. Existing mask adjustments keep their modules;
+alternatives are also listed. The same choice is available from the icon
+beside each tool's name in the panels; its **Set as default** writes the
+choice here (see [darktable modules](darktable.md)). Existing mask adjustments keep their modules;
 unused tools and new masks take these choices.
 
 Clarity and Texture use **contrast & texture** by default, in place of a

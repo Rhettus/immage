@@ -7,7 +7,9 @@ import { detailRows } from "./DetailControls";
 // Lightroom's Masks panel: a menu to create a mask, the image's masks with
 // the selected one opened to its shapes, and that mask's settings and own
 // adjustment sliders
-import { BANDS, choiceShows, detailControlIds, HSL_TABS, localControlById, RANGES, type Control, type Values } from "./manifest";
+import { BANDS, choiceShows, detailControlIds, HSL_TABS, localControlById, MASK_MODULE_CHOICES, preferredChoice, RANGES, type Control,
+         type ModuleChoice, type Values } from "./manifest";
+import { ModuleSwitch } from "./ModuleSwitch";
 import { GradingWheels, type WheelMode } from "./ColorWheel";
 import { isRange, maskThumb, NO_REFINE, shapeLabel, type BlendifChannel, type Mask, type ParametricRange,
          type Range, type RangeMap, type Refine, type Shape } from "./masks";
@@ -128,7 +130,8 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
   photo: Values;                             // fallback module choices for older mask snapshots
   image: { w: number; h: number } | null;    // the shown image at 100%, for the thumbnails' aspect
   thumbMaps: Record<string, RangeMap>;       // range masks' maps, by mask
-  renderSlider: (c: Control, value: number, onChange: (v: number) => void, glow?: number) => React.ReactNode;
+  renderSlider: (c: Control, value: number, onChange: (v: number) => void, glow?: number,
+                 module?: { choice: ModuleChoice; value: number; onPick: (v: number) => void }) => React.ReactNode;
   onTool: (tool: MaskTool | null, target: ToolTarget) => void;
   onSelect: (name: string) => void;
   onShape: (k: number) => void;
@@ -237,8 +240,33 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
   };
   const slider = (id: string) => {
     const c = localControlById.get(id)!;
-    return renderSlider(c, m!.values[c.id] ?? 0, (v) => local(c.id, v), glowOf(c.id));
+    const ch = switchHosts.get(id);
+    return renderSlider(c, m!.values[c.id] ?? 0, (v) => local(c.id, v), glowOf(c.id),
+                        ch && { choice: ch, value: m!.values[ch.control] ?? preferredChoice(ch), onPick: (v) => local(ch.control, v) });
   };
+  // each tool with several modules carries its switch on the first of its
+  // sliders shown; with the equalizer or the curve chosen, on its heading
+  const switchHosts = new Map<string, ModuleChoice>();
+  const moduleOf = (ch: ModuleChoice) => (
+    <ModuleSwitch choice={ch} value={m!.values[ch.control] ?? preferredChoice(ch)} scope="masks" disabled={disabled}
+                  onPick={(v) => local(ch.control, v)} />);
+  const switchSet = (ch: ModuleChoice) => new Set([
+    ...ch.options.flatMap((o) => o.localControls),
+    ...(ch.id === "contrast" ? ["l_contrast"] : ch.id === "saturation" ? ["l_saturation"] : (ch.covers ?? []).filter((id) => id.startsWith("l_"))),
+  ]);
+  if (m) {
+    const shown = (mono ? MONO_GROUPS : LOCAL_GROUPS).flatMap(([, ids]) => ids)
+      .filter((id) => choiceShows(id, { ...photo, ...m.values })
+        && !(id === "l_contrast" && m.values.mod_contrast === 2) && !(id === "l_saturation" && m.values.mod_saturation === 2));
+    for (const ch of MASK_MODULE_CHOICES) {
+      if (ch.options.length < 2) continue;
+      const covers = switchSet(ch);
+      const hosts = shown.filter((id) => covers.has(id));
+      // Clarity and Texture keep only Medium and Fine above their Advanced fold
+      const first = hosts.find((id) => /_gain_(medium|fine)$/.test(id)) ?? hosts[0];
+      if (first) switchHosts.set(first, ch);
+    }
+  }
   const groupBody = (title: string, ids: string[]) => {
     if (title === "HSL") {
       const key = (["hue", "sat", "lum"] as const)[hslTab];
@@ -476,6 +504,7 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
                 {title === "Tone" && m.values.mod_contrast === 2
                   ? <>{groupBody(title, ids.filter((id) => id !== "l_contrast"))}
                       <ContrastEqualizer values={m.values} disabled={disabled}
+                        module={MASK_MODULE_CHOICES.filter((c) => c.id === "contrast" && c.options.length > 1).map(moduleOf)[0]}
                         onChange={(entries) => entries.forEach(([id, v]) => local(id, v))} /></>
                   : <>{title === "Presence" && presenceLoupe}
                       {groupBody(title, ids.filter((id) => choiceShows(id, { ...photo, ...m.values })
@@ -483,6 +512,7 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
                       {/* in black and white there is no saturation for it to find (MONO_HIDDEN) */}
                       {title === "Presence" && !mono && m.values.mod_saturation === 2 && (
                         <SaturationCurve values={m.values} disabled={disabled}
+                          module={MASK_MODULE_CHOICES.filter((c) => c.id === "saturation" && c.options.length > 1).map(moduleOf)[0]}
                           onChange={(entries) => entries.forEach(([id, v]) => local(id, v))} />)}</>}
               </Collapse>
             </section>

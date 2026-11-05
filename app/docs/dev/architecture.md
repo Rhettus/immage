@@ -631,6 +631,20 @@ opens Global only; opening either group closes the other. Alt-click keeps
 both open. With focus mode off, groups toggle independently; Alt-click opens
 one alone (or closes it if it is already the only open group).
 
+[ModuleSwitch.tsx](../../src/ModuleSwitch.tsx) is the icon and fixed-position
+menu beside a tool's name, for a `MODULE_CHOICES` entry with two or more
+options. `PanelView` (App.tsx) finds each choice's host with `switchHosts`:
+the first of `choiceCovers` that `choiceShows`, or `ce_0_0` / `sc_pn` when the
+equalizer or saturation curve replaces the slider (their headings take a
+`module` prop). It passes `moduleChoice`, `moduleValue` and `onModule` as
+primitives and stable callbacks so `SliderWidget` stays memoized. A pick
+calls the hidden `mod_*` control's `onChange`, which reuses the Session
+render path above. In masks, `MasksPanel` builds its own `switchHosts` from
+`MASK_MODULE_CHOICES` and the mask's `localControls`, and a pick is
+`setLocal(mask, mod_*, v)`. **Set as default** calls `storeModuleMode("custom")`
+and `storeModuleChoice` (global or masks scope). GUI case: `module-switch`.
+Choice and toggle controls (Black & White's `bw_mode`) host no icon yet.
+
 Session preserves used global choices in `chooseModules` and infers each
 loaded mask's choices from its module instances in `loadMasks`. New masks
 start with the mask preferences in `Mask.values`. Closing Preferences calls

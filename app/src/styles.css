@@ -418,6 +418,26 @@ section h3 { margin: 7px 0 5px; font-size: var(--fs-body); font-weight: 600; col
 .adjust .slider.compact > input[type="range"] { grid-area: 1 / 2; margin: 0; }
 .adjust .slider.compact > .value, .adjust .slider.compact > .value-edit { grid-area: 1 / 3; }
 .adjust .slider:not(.compact) { margin-bottom: 6px; }
+/* the icon beside a tool's name that switches its darktable module (ModuleSwitch): always there, dim until pointed at */
+.slider .label-line { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.slider .label-line > label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.adjust .slider.compact > .label-line { grid-area: 1 / 1; }
+.module-switch { display: inline-flex; flex: none; }
+.module-switch-btn {
+  display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; padding: 0;
+  border: none; border-radius: 4px; background: none; color: var(--text-3); cursor: pointer;
+}
+.module-switch-btn:hover, .module-switch-btn:focus-visible, .module-switch-btn.on { color: var(--text); background: var(--hover); }
+.module-switch-btn:disabled { cursor: default; opacity: .5; }
+.equalizer-heading .name { display: inline-flex; align-items: center; gap: 5px; }
+.module-menu { min-width: 200px; z-index: 1000; }
+.module-menu .menu-label { padding: 4px 10px 6px; font-size: var(--fs-caption); text-transform: uppercase; letter-spacing: .06em; }
+.context-menu.module-menu button { display: flex; align-items: center; gap: 6px; width: 100%; }
+.context-menu.module-menu button .check { width: 12px; color: var(--text-2); font-size: var(--fs-small); }
+.context-menu.module-menu button .tag { color: var(--text-3); }
+.context-menu.module-menu button .name { flex: 1; text-align: left; }
+.context-menu.module-menu button:disabled { color: var(--text-3); cursor: default; }
+.context-menu.module-menu button:disabled:hover { background: none; }
 
 input[type="range"] {
   -webkit-appearance: none;

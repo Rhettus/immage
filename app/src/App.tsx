@@ -15,10 +15,10 @@ import { ask, open, save } from "@tauri-apps/plugin-dialog";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { BANDS, choiceOn, choiceShows, controlById, GUIDE_IDS, guidesOf, isModuleSetting, MAX_GUIDES, parametricOf, UPRIGHT_GUIDED,
+import { BANDS, choiceCovers, choiceOn, choiceShows, controlById, GUIDE_IDS, guidesOf, isModuleSetting, MAX_GUIDES, MODULE_CHOICES, parametricOf, preferredChoice, UPRIGHT_GUIDED,
          UPRIGHT_MODES, uprightAspect, rotateOf, mapOf, mapsFor, moduleName, mapsWith, NEG_CHOICES, NEG_GREYED, NEG_OFF,
          NEG_OFF_UNMAPPED, SF_CHOICES, SF_GREYED, SF_OFF, SF_OFF_UNMAPPED, panels, pointsOf, pointValues, profileLabel, turnPath, turnRect, type Control, type ControlPreset, type CurveChannel, type Values,
-         type Panel, type Section, type Turn } from "./manifest";
+         type ModuleChoice, type Panel, type Section, type Turn } from "./manifest";
 import { autoArea, autoBlack, autoDmax, autoDmin, autoExposure as autoPrintExposure, autoOffset, autoWbHigh, autoWbLow,
          FILM_BW, FILM_COLOR, fromValues, PRESETS, toValues, type Stats } from "./negadoctor";
 import { NegativePanel, type NegPick } from "./NegativePanel";
@@ -82,6 +82,7 @@ import { ImportView } from "./ImportView";
 import type { ImportResult } from "@immporter/embed";
 import { MaskOverlay, type BrushSettings, type MaskTool, type ObjectPrompt } from "./MaskOverlay";
 import { MasksPanel, useDismiss, type AiKind, type ToolTarget } from "./MasksPanel";
+import { ModuleSwitch } from "./ModuleSwitch";
 import { HealPanel } from "./HealPanel";
 import { LOCAL_TRANSITION, ObjectBox, ZoneAdjust, ZoneSystem, type ZoneMaskInfo } from "./ZoneSystem";
 import { DEFAULT_TRANSITION, loadZoneOverlay, offsetsOf, overlayRgb, paintRange, paintWeights, parseZones, placeIds,
@@ -6173,9 +6174,11 @@ export default function App() {
           {masksMode && !cropping && (
             <MasksPanel masks={masks} selected={maskSel} shape={shapeSel} tool={maskTool} target={toolTarget}
                         brush={brush} overlay={maskShown} disabled={!current} mono={values.bw_mode === 1} photo={values}
-                        renderSlider={(c, v, onChange, glow) => (
+                        renderSlider={(c, v, onChange, glow, module) => (
                           <Slider key={c.id} control={c} value={v} neutral={c.neutral ?? 0} disabled={!current}
-                                  values={selMask?.values ?? values} onChange={onChange} glow={glow} />
+                                  values={selMask?.values ?? values} onChange={onChange} glow={glow}
+                                  moduleChoice={module?.choice} moduleValue={module?.value} onModule={module?.onPick}
+                                  moduleScope="masks" />
                         )}
                         fresh={freshMask} onHslShown={setMaskHslShown}
                         onTool={(t, target) => {
@@ -7931,6 +7934,28 @@ const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle, values
   // simulation its tone mappers (SF_OFF)
   const negative = (c: Control) => (values.neg_on === 1 && NEG_GREYED.has(c.id))
     || (values.sf_on === 1 && SF_GREYED.has(c.id));
+  // each tool with several modules carries its switch on the first of its
+  // controls shown (the equalizer and the curve stand in for theirs)
+  const switchHosts = new Map<string, ModuleChoice>();
+  for (const ch of MODULE_CHOICES) {
+    if (ch.options.length < 2) continue;
+    const covers = new Set(choiceCovers(ch));
+    // Clarity and Texture keep only Medium and Fine above their Advanced fold: the switch goes on those
+    const hosts = p.sections.flatMap((sec) => sec.controls).filter((c) => covers.has(c.id) && choiceShows(c.id, values));
+    const first = hosts.find((c) => /_gain_(medium|fine)$/.test(c.id)) ?? hosts[0];
+    if (first) switchHosts.set(/^ce_/.test(first.id) ? "ce_0_0" : /^s[cb]_/.test(first.id) ? "sc_pn" : first.id, ch);
+  }
+  const switchFor = (id: string) => {
+    const ch = switchHosts.get(id);
+    return ch && {
+      choice: ch, value: values[ch.control] ?? preferredChoice(ch), disabled,
+      onPick: (v: number) => onChange(controlById.get(ch.control)!, v),
+    };
+  };
+  const switchProps = (id: string) => {
+    const sw = switchFor(id);
+    return sw ? { moduleChoice: sw.choice, moduleValue: sw.value, onModule: sw.onPick } : {};
+  };
   const controlProps = (c: Control) => ({
     control: negative(c) ? { ...c, note: values.neg_on === 1
       ? "set in Negative: a converted negative turns this module off"
@@ -7940,6 +7965,7 @@ const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle, values
     disabled: disabled || negative(c) || !mapOf.has(c.id) || (!!c.rawOnly && !session?.raw), onChange: (v: number) => onChange(c, v),
     values, glow: glowOf(c.id),
     rawOnly: !!c.rawOnly && !!session && !session.raw,
+    ...switchProps(c.id),
     onOption: c.optionPreview && onOptionPreview
       ? (on: boolean) => onOptionPreview(!on ? null : c.optionPreview === "gray" ? { kind: "gray" }
                                          : { kind: "mask", op: (mapsWith(c.id).find((m) => choiceOn(m, values)) ?? mapOf.get(c.id)!).op })
@@ -8023,10 +8049,12 @@ const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle, values
                 {s.title === "Upright" && transformTools}
                 {detailRows(s.controls.filter((c) => choiceShows(c.id, values)), (c) => {
                   if (c.id.startsWith("ce_")) return c.id === "ce_0_0"
-                    ? <ContrastEqualizer key="contrast-equalizer" values={values} disabled={disabled} onChange={onChangeMany} />
+                    ? <ContrastEqualizer key="contrast-equalizer" values={values} disabled={disabled} onChange={onChangeMany}
+                       module={switchFor("ce_0_0") && <ModuleSwitch {...switchFor("ce_0_0")!} scope="global" />} />
                     : null;
                   if (c.id.startsWith("sc_") || c.id.startsWith("sb_")) return c.id === "sc_pn"
-                    ? <SaturationCurve key="saturation-curve" values={values} disabled={disabled} onChange={onChangeMany} />
+                    ? <SaturationCurve key="saturation-curve" values={values} disabled={disabled} onChange={onChangeMany}
+                       module={switchFor("sc_pn") && <ModuleSwitch {...switchFor("sc_pn")!} scope="global" />} />
                     : null;
                   const props = controlProps(c);
                   return c.kind === "toggle" ? <Toggle key={c.id} {...props} />
@@ -8107,6 +8135,9 @@ type ControlProps = {
   rawOnly?: boolean;   // disabled for needing a raw
   onOption?: (on: boolean) => void;   // ⌥ held while dragging, or let go
   glow?: number;   // how much the photo under the pointer belongs to this control's color band, 0-1
+  // the module choice this row carries the switch for (ModuleSwitch), its module and the pick
+  moduleChoice?: ModuleChoice; moduleValue?: number; onModule?: (value: number) => void;
+  moduleScope?: "global" | "masks";
 };
 
 // consecutive sections of one group, together; any other section alone
@@ -8146,16 +8177,18 @@ function isMono(f: Frame): boolean {
 // about one mouse notch of a wheel event's deltaY on macOS
 const WHEEL_NOTCH = 40;
 
-function Slider({ values, onChange, onOption, ...props }: ControlProps) {
-  const callbacks = useRef({ onChange, onOption });
-  useLayoutEffect(() => { callbacks.current = { onChange, onOption }; });
+function Slider({ values, onChange, onOption, onModule, ...props }: ControlProps) {
+  const callbacks = useRef({ onChange, onOption, onModule });
+  useLayoutEffect(() => { callbacks.current = { onChange, onOption, onModule }; });
+  const module = useCallback((value: number) => callbacks.current.onModule?.(value), []);
   const change = useCallback((value: number) => callbacks.current.onChange(value), []);
   const option = useCallback((on: boolean) => callbacks.current.onOption?.(on), []);
   const track = typeof props.control.track === "function" ? props.control.track(values) : props.control.track;
-  return <SliderWidget {...props} track={track} onChange={change} onOption={onOption ? option : undefined} />;
+  return <SliderWidget {...props} track={track} onChange={change} onOption={onOption ? option : undefined}
+                       onModule={onModule ? module : undefined} />;
 }
 
-const SliderWidget = memo(function SliderWidget({ control: c, value, neutral, disabled, onChange, track, glow = 0, rawOnly, onOption }:
+const SliderWidget = memo(function SliderWidget({ control: c, value, neutral, disabled, onChange, track, glow = 0, rawOnly, onOption, moduleChoice, moduleValue, moduleScope = "global", onModule }:
   Omit<ControlProps, "values"> & { track?: string }) {
   perf.count("react.sliderRenderAttempts");
   const s = c.slider;
@@ -8261,7 +8294,13 @@ const SliderWidget = memo(function SliderWidget({ control: c, value, neutral, di
          title={rawOnly ? "needs a raw photo: darktable makes the detail mask from the raw"
                 : c.note ? keys(c.note) : m ? `darktable: ${moduleName(m.op)}` : ""}>
       {/* double-click resets, as in Lightroom */}
-      <label onDoubleClick={reset}>{c.label}</label>
+      {moduleChoice && onModule ? (
+        <span className="label-line">
+          <label onDoubleClick={reset}>{c.label}</label>
+          <ModuleSwitch choice={moduleChoice} value={moduleValue ?? preferredChoice(moduleChoice)} scope={moduleScope}
+                        disabled={disabled} onPick={onModule} />
+        </span>
+      ) : <label onDoubleClick={reset}>{c.label}</label>}
       {editing ? (
         <input className="value-edit" autoFocus defaultValue={String(+value.toFixed(4))}
                onFocus={(e) => e.target.select()}

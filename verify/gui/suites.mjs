@@ -27,6 +27,8 @@ export const cases = {
     limitation: 'Hidden tabs/sections/module choices and RAW-only controls require further scenarios. Pixel changes are recorded for review, not universal image-effect assertions.' },
   'module-options': { scope: 'each Global/Masks preference option and independent Contrast choices', liveValidated: false,
     commits: ['faa19d7', '9d956c7'], limitation: 'Does not establish rendered correctness of every engine module.' },
+  'module-switch': { scope: 'panel icon and menu: options, check, Escape, pick, Set as default stored in Preferences', liveValidated: true,
+    limitation: 'Global Contrast only; masks and the other tools share the component.' },
   'crop-guides': {scope:'first-entry crop guides and handles',commits:['323cfa9'],liveValidated:false},
   'crop-locked': {scope:'all locked corners, single-axis inward drags',commits:['b22bd4b'],liveValidated:false},
   'crop-portrait': {scope:'EXIF portrait orientation, resize all edges',commits:['1f2f8b8'],fixture:'portrait',liveValidated:false},
@@ -84,7 +86,7 @@ export const suites = {
   workflows: ['startup','curves','wheels','equalizer','saturation-curve','masks','heal','zones','film','print','preferences-matrix','slider-wheel','export-options','filters','presets','shortcuts'],
   inventory: ['startup',...generatedNames],
   regressions: ['startup', 'rail', 'panel-scroll', 'module-options', 'batch-paste'],
-  controls: ['startup', 'slider-input', 'slider-click', 'history', 'rail', 'sliders', 'module-options'],
+  controls: ['startup', 'slider-input', 'slider-click', 'history', 'rail', 'sliders', 'module-options', 'module-switch'],
 };
 export function resolveCases(name) {
   // a comma list runs several cases in one launch: startup,masks,heal

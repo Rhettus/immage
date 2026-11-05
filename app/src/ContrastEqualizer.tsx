@@ -10,8 +10,9 @@ const plot = (e: React.PointerEvent<SVGSVGElement>) => {
   const r = e.currentTarget.getBoundingClientRect();
   return { x: (e.clientX - r.left) / r.width * W - PAD, y: (e.clientY - r.top) / r.height * H - PAD };
 };
-export function ContrastEqualizer({ values, disabled, onChange }: {
+export function ContrastEqualizer({ values, disabled, onChange, module }: {
   values: Values; disabled: boolean; onChange: (entries: [string, number][]) => void;
+  module?: React.ReactNode;   // the ModuleSwitch beside the name
 }) {
   const [channel, setChannel] = useState(0);
   const drag = useRef<number | null>(null);
@@ -26,7 +27,7 @@ export function ContrastEqualizer({ values, disabled, onChange }: {
     return `${path} C${i * 52 + 52 / 3},${(1 - bands[i] - (y - previous) / 6) * 140} ${(i + 1) * 52 - 52 / 3},${(1 - y + (next - bands[i]) / 6) * 140} ${(i + 1) * 52},${(1 - y) * 140}`;
   }, `M0,${(1 - bands[0]) * 140}`);
   return <div className="contrast-equalizer">
-    <div className="equalizer-heading"><span>Contrast equalizer</span><button disabled={disabled}
+    <div className="equalizer-heading"><span className="name">{"Contrast equalizer"}{module}</span><button disabled={disabled}
       onClick={() => onChange(EQ_IDS.map((id, i) => [id, i < 18 ? .5 : 0]))}>Reset</button></div>
     <select aria-label="Equalizer channel" disabled={disabled} value={channel} onChange={(e) => setChannel(+e.target.value)}>
       {EQ_CHANNELS.map((label, c) => <option key={c} value={c}>{label}</option>)}
