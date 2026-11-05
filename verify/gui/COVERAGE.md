@@ -76,7 +76,7 @@ do not prove compatibility or installation behavior.
 | Crop/transform | Free/locked/portrait, corners/edges, aspect options, rotation/flip, guides, cancel/apply, undo | Pending |
 | Portrait automatic Transform | Crop a native/EXIF portrait, click Auto, Level, Vertical and Full; verify a rendered correction without a working-space error, then restore the crop and repeat | GUI case pending; headless CPU sampling covered by `verify/transform-sampling.py` |
 | Masks/heal/negative/film simulation/zones | Creation and deletion, every shape/option, local module controls, outside-region invariance, reset/undo | Rail opening only; editing pending |
-| Preferences | Every safe local setting, persistence, theme/canvas/font/preview, disabled hardware states | Module tab only; external apps/services/relaunch excluded |
+| Preferences | Every safe local setting, persistence, theme/canvas/font/preview, disabled hardware states | Module tab, and General's Overlay opacity (`overlay-opacity`, live-validated); external apps/services/relaunch excluded |
 | Library/filter/history/presets | Every menu and option with disposable folder/metadata fixtures | Pending |
 | Import/export/panorama | In-app settings, validation, format/projection options, preview/output | Pending; native chooser blocked, launch fixture argument only |
 | Print/soft proof | Printer, paper, media, orientation, margins, size, place, profile, intent, BPC; soft proof and gamut warning on the photo; Print and Save PDF | `print` case written, pending live run: soft proof, gamut, S, layout and Save PDF readiness with a seeded profile. Printing and the save dialog are native or need a real printer; `verify/print.py` checks profiles, proof pixels and the engine's PDF headlessly |

@@ -23,6 +23,11 @@ apply as you make them; **Done** closes the window.
 - **Canvas**: what is behind the photo, in full screen preview too.
   **Dark**, **Neutral Gray** to judge tones without a dark surround, or
   **White** to see the photo as on a print. L steps through them.
+- **Overlay color**: the color a mask's overlay and the heal brush's stroke
+  are drawn in over the photo: **Yellow**, **Red** or a color of your own.
+- **Overlay opacity**: how solid the overlay is where a mask is fully
+  selected, from 10% to 100% (55% by default); a feathered edge fades out
+  from there. **Reset** restores the default.
 - **Guide color**: the color of the lines drawn over the photo: the crop
   frame and its grid, the straighten line, Transform's grid and guides,
   the vignette's guides and a mask shape's outline. **White**, **Yellow**,

@@ -17,7 +17,7 @@ import type { PluginConfig } from "./plugins";
 import { PrefCard, PrefRow, PrefSwitch } from "./PrefsUI";
 import { DEFAULT_PRESET_ID, type Preset } from "./Presets";
 import { setTourSeen, tourSeen } from "./Tour";
-import { OVERLAY_COLORS, type Rgb } from "./masks";
+import { OVERLAY_COLORS, OVERLAY_OPACITY, type Rgb } from "./masks";
 import { loadSharedFrames, sharedFramesAvailable, storeSharedFrames } from "./sharedFrames";
 import { loadScreenScale, screenScale, storeScreenScale } from "./pixelRatio";
 import { checkForUpdate, lastChecked, loadAutoCheck, storeAutoCheck, useUpdate, type UpdateState } from "./updates";
@@ -153,22 +153,23 @@ export function storeCanvas(v: Canvas) {
 }
 // the masks' overlay on the photo: one of OVERLAY_COLORS or the custom
 // color, which is kept while a preset is chosen; darktable's yellow unless set
-export type OverlayColor = { pick: keyof typeof OVERLAY_COLORS | "custom"; custom: string };
+export type OverlayColor = { pick: keyof typeof OVERLAY_COLORS | "custom"; custom: string; opacity: number };
 const OVERLAY_COLOR_KEY = "immage.overlayColor";
 export function loadOverlayColor(): OverlayColor {
   try {
     const v = JSON.parse(localStorage.getItem(OVERLAY_COLOR_KEY) ?? "null");
     return { pick: v?.pick === "red" || v?.pick === "custom" ? v.pick : "yellow",
-             custom: /^#[0-9a-f]{6}$/i.test(v?.custom) ? v.custom : "#33ccff" };
-  } catch { return { pick: "yellow", custom: "#33ccff" }; }
+             custom: /^#[0-9a-f]{6}$/i.test(v?.custom) ? v.custom : "#33ccff",
+             opacity: Number.isFinite(v?.opacity) ? Math.min(100, Math.max(10, Math.round(v.opacity))) : OVERLAY_OPACITY };
+  } catch { return { pick: "yellow", custom: "#33ccff", opacity: OVERLAY_OPACITY }; }
 }
 export function storeOverlayColor(v: OverlayColor) {
   try { localStorage.setItem(OVERLAY_COLOR_KEY, JSON.stringify(v)); } catch { /* not kept */ }
 }
 export function maskOverlayRgb(v: OverlayColor): Rgb {
-  if (v.pick !== "custom") return OVERLAY_COLORS[v.pick];
+  if (v.pick !== "custom") { const [r, g, b] = OVERLAY_COLORS[v.pick]; return [r, g, b, v.opacity]; }
   const n = parseInt(v.custom.slice(1), 16);
-  return [n >> 16, (n >> 8) & 255, n & 255];
+  return [n >> 16, (n >> 8) & 255, n & 255, v.opacity];
 }
 // the guides drawn over the photo (the crop frame and its grid, the
 // straighten line, Transform's grid and guides, the vignette's and a mask
@@ -711,9 +712,15 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                            style={{ "--custom": overlayColor.custom } as React.CSSProperties}>
                       <input type="color" aria-label="Custom color" value={overlayColor.custom}
                              onClick={() => onOverlayColor({ ...overlayColor, pick: "custom" })}
-                             onChange={(e) => onOverlayColor({ pick: "custom", custom: e.target.value })} />
+                             onChange={(e) => onOverlayColor({ ...overlayColor, pick: "custom", custom: e.target.value })} />
                     </label>
                   </div>
+                </PrefRow>
+                <PrefRow label="Overlay opacity" hint={`how solid a mask's overlay is where it is fully selected: ${overlayColor.opacity}%`}>
+                  <input type="range" min={10} max={100} step={5} aria-label="Overlay opacity" value={overlayColor.opacity}
+                         onChange={(e) => onOverlayColor({ ...overlayColor, opacity: Number(e.target.value) })} />
+                  <button className="btn small" style={{ marginLeft: 8 }} disabled={overlayColor.opacity === OVERLAY_OPACITY}
+                          onClick={() => onOverlayColor({ ...overlayColor, opacity: OVERLAY_OPACITY })}>Reset</button>
                 </PrefRow>
                 <PrefRow label="Guide color" hint="the crop frame and grid, the straighten line, Transform's and the vignette's guides, and a mask shape's outline">
                   <div className="pref-swatches">

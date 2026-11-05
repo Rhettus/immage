@@ -7,6 +7,8 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Preferences has an Overlay opacity slider under Overlay color, to make a
+  mask's overlay on the photo more or less solid, with a Reset button.
 - Dropdown menus, such as Profile in Preferences and the export and print
   options, open in Immage's own menu styling, matching the right-click
   menus, instead of the system's grey list. They look the same on macOS,

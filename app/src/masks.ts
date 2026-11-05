@@ -428,7 +428,9 @@ export function overlayStep(t: OverlayToggle, adding: boolean, ev: "key" | "adju
 
 // the overlay's color: darktable's yellow, Lightroom's red or one picked, as
 // chosen in Preferences, or a parametric channel's own while it is edited
-export type Rgb = [number, number, number];
+// an optional fourth entry is the overlay's opacity in percent (Preferences)
+export type Rgb = [number, number, number, number?];
+export const OVERLAY_OPACITY = 55;
 export const OVERLAY_COLORS = { yellow: [250, 220, 20] as Rgb, red: [230, 40, 40] as Rgb };
 const OVERLAY_RED = OVERLAY_COLORS.red;
 
@@ -461,13 +463,13 @@ export function overlayPixels(m: Mask, w: number, W: number, H: number, ranges: 
 export const mapPixels = (map: RangeMap, color = OVERLAY_RED): ImageData =>
   tint(map.width, map.height, (i, j) => map.data[j * map.width + i] / 255, color);
 
-function tint(w: number, h: number, at: (i: number, j: number) => number, [r, g, b]: Rgb): ImageData {
+function tint(w: number, h: number, at: (i: number, j: number) => number, [r, g, b, pct = OVERLAY_OPACITY]: Rgb): ImageData {
   const img = new ImageData(w, h);
   for (let j = 0; j < h; j++)
     for (let i = 0; i < w; i++) {
       const k = 4 * (j * w + i);
       img.data[k] = r; img.data[k + 1] = g; img.data[k + 2] = b;
-      img.data[k + 3] = Math.round(at(i, j) * 140);
+      img.data[k + 3] = Math.round(at(i, j) * 2.55 * pct);
     }
   return img;
 }
