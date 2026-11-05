@@ -61,6 +61,7 @@ Front end ([`app/src`](../../src)):
 - Immich and plugins: [immich.ts](../../src/immich.ts), [ImmichPanel.tsx](../../src/ImmichPanel.tsx), [ImmichPrefs.tsx](../../src/ImmichPrefs.tsx); [plugins.ts](../../src/plugins.ts), [PluginPrefs.tsx](../../src/PluginPrefs.tsx)
 - [PerformanceTuner.tsx](../../src/PerformanceTuner.tsx), [previewTuning.ts](../../src/previewTuning.ts), [tunerOptions.ts](../../src/tunerOptions.ts), [tunerWorkload.ts](../../src/tunerWorkload.ts): quality-first preview search with trimmed-median metrics, performance option comparisons, relaunch verification and navigation workload recording
 - [gpuCheck.ts](../../src/gpuCheck.ts): the GPU check's cases and verdicts (CPU vs OpenCL parity, `parity` in main.c, `gpu_check_parity` in main.rs, [gpucheck.py](../../../benchmarking/gpucheck.py))
+- [SelectMenu.tsx](../../src/SelectMenu.tsx): the app-drawn list every `<select>` opens (see architecture.md)
 - [Preferences.tsx](../../src/Preferences.tsx), [PrefsUI.tsx](../../src/PrefsUI.tsx); [histogram.ts](../../src/histogram.ts), [probe.ts](../../src/probe.ts); [perf.ts](../../src/perf.ts), [PerfHud.tsx](../../src/PerfHud.tsx); [aiModel.ts](../../src/aiModel.ts); [ImportView.tsx](../../src/ImportView.tsx) (the importer); [styles.css](../../src/styles.css)
 
 Rust ([`app/src-tauri/src`](../../src-tauri/src)):

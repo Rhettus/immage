@@ -3,6 +3,15 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
+## 0.43.0
+
+Improvements
+
+- Dropdown menus, such as Profile in Preferences and the export and print
+  options, open in Immage's own menu styling, matching the right-click
+  menus, instead of the system's grey list. They look the same on macOS,
+  Windows and Linux.
+
 ## 0.42.0
 
 Improvements

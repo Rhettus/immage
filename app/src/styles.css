@@ -2336,3 +2336,10 @@ html.windows .tool, html.windows .tool * { cursor: default; }
   position: absolute; top: 10px; right: 12px; padding: 3px 9px; border-radius: 7px; background: rgba(0, 0, 0, 0.62);
   color: #fff; font-size: var(--fs-small); pointer-events: none; z-index: 5;
 }
+
+/* dropdown lists: SelectMenu.tsx draws them like the right-click menu */
+.select-menu { z-index: 1000; overflow-y: auto; white-space: nowrap; }
+.select-menu button { position: relative; padding-left: 24px; }
+.select-menu button.on { background: var(--inset); }
+.select-menu button.chosen::before { content: "\2713"; position: absolute; left: 8px; color: var(--text-3); }
+.select-menu .menu-label { padding: 6px 10px 2px; color: var(--text-3); font-size: var(--fs-small); }

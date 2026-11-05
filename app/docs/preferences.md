@@ -416,3 +416,7 @@ the photo, window and performance settings fixed throughout the run.
 
 Ctrl-C stops a Mac CPU recording early; allow the profiler to finish saving and
 the script to export before closing the terminal.
+
+## Dropdown menus
+
+Every dropdown in Immage opens in the same dark menu as the right-click menus, on every system. Click it, or focus it and press Space or Alt+Down. Arrow keys, Home and End move, Enter chooses and Escape closes. The current choice has a check mark.
