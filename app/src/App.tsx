@@ -2190,7 +2190,7 @@ export default function App() {
         perf.time("pixels.canvasUpload", () => bc.getContext("2d")!.putImageData(new ImageData(f.pixels, f.width, f.height), 0, 0));
         const scale = f.view.scale ?? f.width / f.fullWidth;
         beforeMeta.current = { x: f.x, y: f.y, scale, width: f.width, height: f.height,
-                               fullWidth: f.fullWidth, fullHeight: f.fullHeight };
+                               fullWidth: f.fullWidth, fullHeight: f.fullHeight, edit: editKey.current };
       }
       session.current?.showBefore(null);
       placeLayers();
@@ -2250,9 +2250,12 @@ export default function App() {
     // the split view's before side follows the view: a new view asks for a
     // fresh one, once the view has settled
     if (baModeRef.current !== "off" && !f.before) {
+      // compared by the edit frame it was captured for: the before frame
+      // may differ in size (a crop), and comparing it would capture forever
+      const key = `${f.x},${f.y},${f.view.scale ?? f.width / f.fullWidth},${f.width},${f.height}`;
+      editKey.current = key;
       const b = beforeMeta.current;
-      if (!b || b.x !== f.x || b.y !== f.y || Math.abs(b.scale - (f.view.scale ?? f.width / f.fullWidth)) > 1e-6
-          || b.width !== f.width || b.height !== f.height) captureBefore(300);
+      if (!b || b.edit !== key) captureBefore(300);
     }
     // Present completed edits immediately; fading reveals an older overview
     // and makes each render flash back to the previous image.
@@ -4109,7 +4112,9 @@ export default function App() {
   const hintTimer = useRef(0);
   const beforeCanvas = useRef<HTMLCanvasElement>(null);
   const beforeMeta = useRef<{ x: number; y: number; scale: number; width: number; height: number;
-                              fullWidth: number; fullHeight: number } | null>(null);
+                              fullWidth: number; fullHeight: number; edit: string } | null>(null);
+  // the last edit frame's placement, which the before side is captured for
+  const editKey = useRef("");
   // the Print panel (PrintPanel.tsx) and the soft proof, which stays on in
   // the other panels until turned off (print.ts)
   const [printSettings, setPrintSettingsState] = useState<PrintSettings>(loadPrintSettings);

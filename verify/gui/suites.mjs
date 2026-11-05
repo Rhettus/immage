@@ -36,6 +36,8 @@ export const cases = {
     limitation:'Needs a photo with straight lines (blocked otherwise), such as the corpus street scene P1030105.RW2 (Level fit -1.67, Rotate about +1.7); does not check the angle against a known tilt.'},
   'crop-undo': {scope:'keyboard undo/redo inside the crop tool: a quarter turn (photo and guide) and Rotate; one undo after Done restores the photo',liveValidated:true,
     verification:'Linux, system WebKitGTK 2.54.2, Wayland, fixture 2EM10375.ORF; run 2026-11-05T00-37-41.538Z_d46cfda_acd0ae6a.'},
+  'before-after-idle': {scope:'a Before / After view of a cropped photo settles: the busy spinner goes out',commits:[],liveValidated:true,
+    verification:'Linux, system WebKitGTK 2.54.2, Wayland; spinner on in 0 of 20 idle samples with the fix (not run against the old code); run 2026-11-05T20-05-38.297Z_41692c6_63f20bec.'},
   'zoom-ready': {scope:'fitted, the 100% copy renders in the background and the first click zoom shows its frame within 1.5 s; zoomed in after an Exposure edit, the fitted view renders ahead and the zoom out does too',liveValidated:true,
     verification:'Linux ARM64 VM without GPU, system WebKitGTK 2.54.2, Wayland, DPR 2, viewport 1706x915, fixture 2EM10375.ORF; zoom in 521 ms, zoom out 1395 ms, neither rendered on the main pipe (engine.log); run 2026-11-05T01-06-33.818Z_a8204e5_40ae4cc9.',
     limitation:'Times through WebDriver polling, not compositor presentation; reads readiness from the copy layer, not from engine traces.'},

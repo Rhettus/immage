@@ -15,6 +15,12 @@ Improvements
   importing or its thumbnails are being made. Editing comes first; folder
   reading and thumbnails wait for it.
 
+Bug fixes
+
+- In a Before / After view, the busy spinner no longer spins forever. The
+  before side was fetched again after every render whenever its size
+  differed from the edit's, as with Transform or lens corrections.
+
 ## 0.42.0
 
 Improvements

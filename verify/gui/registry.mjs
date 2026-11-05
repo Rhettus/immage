@@ -5,7 +5,7 @@ import { moduleOptions } from './specs/preferences.mjs';
 import { batchPaste } from './specs/batch-paste.mjs';
 import { guiBenchmark } from './specs/benchmark.mjs';
 import { cases } from './suites.mjs';
-import { cropGuides,cropLocked,cropPortrait,cropOptions,cropAutoStraighten,cropUndo } from './specs/crop.mjs';
+import { cropGuides,cropLocked,cropPortrait,cropOptions,cropAutoStraighten,cropUndo,beforeAfterIdle } from './specs/crop.mjs';
 import { rangeContract,choiceContract } from './specs/ranges.mjs';
 import * as workflows from './specs/workflows.mjs';
 import * as dialogs from './specs/dialogs.mjs';
@@ -20,7 +20,7 @@ const implementations = { 'batch-paste': batchPaste, startup, splash, exposure, 
   'gui-benchmark': guiBenchmark,
   'gui-benchmark-screen': t => guiBenchmark(t, true),
   'gui-benchmark-whole': t => guiBenchmark(t, false),
-  'crop-guides':cropGuides,'crop-locked':cropLocked,'crop-portrait':cropPortrait,'crop-options':cropOptions,'crop-auto-straighten':cropAutoStraighten,'crop-undo':cropUndo,'zoom-ready':zoomReady,
+  'crop-guides':cropGuides,'crop-locked':cropLocked,'crop-portrait':cropPortrait,'crop-options':cropOptions,'crop-auto-straighten':cropAutoStraighten,'crop-undo':cropUndo,'before-after-idle':beforeAfterIdle,'zoom-ready':zoomReady,
   'native-reset':workflows.nativeReset,curves:workflows.curves,wheels:workflows.wheels,equalizer:workflows.equalizer,
   'saturation-curve':workflows.saturationCurve,
   masks:workflows.masks,heal:workflows.heal,negative:workflows.negative,film:workflows.film,zones:workflows.zones,print:workflows.print,
