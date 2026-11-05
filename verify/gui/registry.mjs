@@ -13,6 +13,7 @@ import * as regressions from './specs/regressions.mjs';
 import { moduleOutput,panorama,immichWorkflow } from './specs/modules.mjs';
 import { siteShots } from './specs/site.mjs';
 import { zoomReady } from './specs/zoom.mjs';
+import { demo } from './specs/demo.mjs';
 
 const implementations = { 'batch-paste': batchPaste, startup, splash, exposure, 'slider-input': sliderInput, 'slider-click': sliderClick, history, rail, sliders, 'module-options': moduleOptions,
   'panel-scroll': panelScroll,
@@ -29,6 +30,7 @@ const implementations = { 'batch-paste': batchPaste, startup, splash, exposure, 
   'loupe-grid':regressions.loupeGrid,'mask-loupe':regressions.maskLoupe,'detail-without-loupe':regressions.detailWithoutLoupe,'camera-body':regressions.cameraBody,
   'rejected-deletion':regressions.rejectedDeletion,'folder-race':regressions.folderRace,panorama,'immich-workflow':immichWorkflow,
   'site-shots':siteShots,
+  demo,
 };
 for(const [name,definition] of Object.entries(cases)) if(definition.kind)
   implementations[name] = t => ({range:rangeContract,choice:choiceContract,module:moduleOutput}[definition.kind])(t,definition);
