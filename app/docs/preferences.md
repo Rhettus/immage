@@ -11,12 +11,14 @@ apply as you make them; **Done** closes the window.
 **Workspace**
 
 - **Detail loupe**: optional compact 100% previews above Detail and Presence,
-  off by default. Both show the same area. Use the point picker, then click
+  in Adjustments and in a mask's Presence group, off by default. Both show the same area. Use the point picker, then click
   the photo to choose it; Escape cancels. Turning it off stops loupe rendering.
 - **Open generated photos**: automatically opens HDR merges, panoramas, AI
   denoise results, positive exports and the first plugin result for editing.
-- **Converted negative format**: losslessly compressed DNG (16-bit float,
-  default) or TIFF (32-bit float) for Negative’s **Export to Library**.
+- **Generated positive format**: losslessly compressed DNG (16-bit float,
+  default) or TIFF (32-bit float) for **Export to Library** in the Negative
+  and Film Simulation panels. The DNG and TIFF buttons beside that button set
+  the same thing.
 
 - **Canvas**: what is behind the photo, in full screen preview too.
   **Dark**, **Neutral Gray** to judge tones without a dark surround, or
@@ -57,10 +59,15 @@ webview retains video and audio support; MPEG-TS and WebRTC are not enabled. GUI
 reports record the running WebKitGTK version; use a new build when comparing
 renderer behavior after upgrading. On Wayland, **Drag drafts at the screen’s
 scale** still sizes reduced drag previews for the compositor’s actual fractional
-scale (for example, 125%), while release frames keep full quality.
+scale (for example, 125%), while release frames keep full quality. GTK 3
+still draws the window and full-quality release frames at the next integer
+scale (200% at 125% or 150%), which can increase rendering and presentation
+time. Using 100% scaling or `GDK_BACKEND=x11` can reduce this overhead;
+performance depends on the system.
 
-Starting with 0.41.1, the launcher chooses the WebKitGTK installed by your distribution
-when it detects X11 and a loaded NVIDIA driver. Wayland, other GPUs and uncertain
+Starting with 0.41.1, normal AppImage launch handles the resolved NVIDIA/X11
+startup issue automatically: the launcher chooses the WebKitGTK installed by
+your distribution when it detects X11 and a loaded NVIDIA driver. Wayland, other GPUs and uncertain
 backend selections use WebKitGTK 2.54.2 included in the AppImage. The system
 version depends on your installed packages; the launcher does not require or
 select a particular older release such as 2.52. The host must provide compatible WebKitGTK,
@@ -168,6 +175,14 @@ performance; results still vary by system.
 - **Shared-memory frames** (Windows and Linux): hands each frame to the
   window in memory both share, rather than copying it. On by default; turn
   it off only to compare the two in the GUI benchmark.
+- **Drag drafts at the screen's scale** (Linux Wayland): appears when the
+  detected screen scale is below the webview's pixel ratio, such as 125% on
+  a window drawn at 200%. On by default, it reduces drag-preview pixels to
+  match the screen. Settled frames still use the full webview resolution.
+  Turn it off to compare GUI benchmarks with the same photo, window size and
+  preview settings. This does not change GTK's window-surface resolution.
+  Benchmarks in a virtual machine give approximate comparisons within that
+  setup; they do not predict native GPU performance.
 
 **Memory**
 
@@ -223,6 +238,29 @@ The thumbnail caches keep nothing while the disk has under 5 GB free.
 - **GUI benchmark**: **Run** drags the main sliders on the open photo and
   back, zooms in and out, and saves a timing report. Every slider ends where
   it started, but use a copy of a photo you care about.
+  Resource readings are sampled: brief CPU spikes or short-lived helper
+  processes can be missed. Compare reports made with the same build and
+  measurement settings when assessing a settings change. When comparing app
+  versions, repeat runs with the same photo, viewport and preview settings;
+  compare completed frames and input latency, since time spent in individual
+  processing stages can move between versions.
+- **GPU check**: **Run** renders the open photo with darktable on the CPU
+  and on the GPU (OpenCL), compares the two, then repeats with each of
+  several modules turned on in turn: Exposure, both Shadows and Highlights
+  modules, both Texture and both Clarity modules, Dehaze, luminance noise
+  reduction, the lens profile, Sharpening, Vignette, Grain, Vibrance and
+  White Balance. Last, it starts a GPU render, cancels it with an Exposure
+  drag and compares the photo once more. The status bar shows how many cases
+  passed and where the report was saved: a `gpu-<time>.json` file in the app
+  data folder's `benchmarks` folder, beside the GUI benchmark's reports,
+  with a `.png` of the difference for any case that failed. Send the report
+  back to help test GPUs. A case passes when the GPU rendered it without
+  falling back to the CPU, and 99% of its pixels are within ΔE 2 of the
+  CPU's. A module darktable runs on the CPU anyway is noted, not failed.
+  Cases the photo cannot show (a raw-only control on a JPEG) are skipped.
+  Every control ends where it started, but the cases go into the photo's
+  history, so use a copy. Without an OpenCL device the report still saves,
+  saying none was found. The report names the computer and the photo's file.
 
 Use the **Performance tuner** with a representative RAW and your usual window
 size. Set FPS and latency targets, run it, review the recommendation, then
@@ -279,7 +317,8 @@ photo's starting point: they don't mark it as edited.
 ## Modules
 
 Which darktable module each tool runs on. **Default** uses the module of
-darktable's AgX workflow for each; **Custom** lets you pick one per tool,
+darktable's AgX workflow for each, except Clarity and Texture, which use
+contrast & texture; **Custom** lets you pick one per tool,
 under separate collapsible **Global** and **Masks** sections. For example,
 use AgX for global Contrast and contrast equalizer for masks. With **Focus mode**
 on, opening one section closes the other; Alt-click keeps both open. With it off,
@@ -288,33 +327,37 @@ sections open independently, and Alt-click opens one on its own. Global offers:
 - **Contrast**: AgX (or sigmoid on a photo started under it), color balance
   rgb, or contrast equalizer, which replaces the slider with a curve editor
 - **Blacks**: AgX (or sigmoid), or exposure
-- **Saturation**: AgX (or sigmoid), or color balance rgb
-- **Clarity**: local contrast, or contrast & texture
-- **Texture**: diffuse or sharpen, or contrast & texture
+- **Saturation**: AgX (or sigmoid), color balance rgb, or saturation curve,
+  which replaces the slider with saturation and brilliance curves
+- **Clarity**: contrast & texture, or local contrast
+- **Texture**: contrast & texture, or diffuse or sharpen
 - **Highlights and Shadows**: the tone equalizer, or shadows and
   highlights
 - **Black & White**: color calibration, or the color equalizer
 - **Sharpening**: sharpen, or diffuse or sharpen
 
 **Masks** independently offers Contrast (color balance rgb or contrast equalizer),
-Highlights and Shadows, Clarity, Texture, Sharpening, and Defringe (chromatic
-aberrations or defringe). Modules without alternatives are also listed. Existing
-mask adjustments keep their modules; unused tools and new masks take these choices.
+Highlights and Shadows, Saturation (color balance rgb or saturation curve),
+Clarity, Texture and Sharpening. Modules without
+alternatives are also listed. Existing mask adjustments keep their modules;
+unused tools and new masks take these choices.
 
-Clarity and Texture can each use **contrast & texture** under Custom modules.
-Selecting it replaces the corresponding slider with the module's Coarse,
-Medium and Fine details, Base detail level, Halo control, Noise bias, Shadows
-and Highlights sliders, using darktable's ranges and defaults. Medium and Fine
-details stay visible; expand **Advanced** for the other controls. This also
-applies to masks. Clarity and Texture use separate instances. The existing
-modules remain the defaults; contrast & texture currently runs on the CPU.
+Clarity and Texture use **contrast & texture** by default, in place of a
+single slider: the module's Coarse, Medium and Fine details, Base detail
+level, Halo control, Noise bias, Shadows and Highlights sliders, using
+darktable's ranges and defaults. Medium and Fine details stay visible; expand
+**Advanced** for the other controls. This also applies to masks. Clarity and
+Texture use separate instances. It runs on the GPU with OpenCL, and faster
+than diffuse or sharpen. Under Custom, choose local contrast for Clarity or
+diffuse or sharpen for Texture to get the single slider back.
 
 The tab also lists the module behind each of the other tools. A photo that
 already uses one of a tool's modules keeps it, so its edit looks the same;
 closing Preferences applies the choice to unused tools on the current photo
-as well as photos opened later. See [Adjustments](adjustments.md#contrast-equalizer)
-for the equalizer graph. The Defringe choice affects masks only; global
-Defringe always uses chromatic aberrations.
+as well as photos opened later. **Reset all** puts every tool back on the
+module chosen here. See [Adjustments](adjustments.md#contrast-equalizer)
+for the equalizer graph. Defringe, global and in masks, always uses
+chromatic aberrations: darktable deprecates its older defringe module.
 
 ## Immich
 
@@ -328,7 +371,11 @@ Applications a photo can be sent to with right-click › **Edit In**. See
 
 ## About
 
-Versions, the license, and where the source is. Under **Updates**:
+Versions, the license, and where the source is. Immage's version comes
+with the commit it was built from, ten digits, with `-dirty` for a build
+from a tree with uncommitted changes; the same commit shows under the
+versions at the bottom of every tab, and in GUI benchmark, GPU check and
+tuner reports. Under **Updates**:
 
 - **Check automatically**: once a day, Immage asks its releases on GitHub
   whether a newer version is out, and sends nothing else. On by default.
@@ -343,3 +390,29 @@ not installed.
 
 Loupe rendering pauses while selecting or browsing photos in grid view and
 refreshes when you return to the photo view.
+
+### Native Linux diagnostic benchmark
+
+Diagnostic builds include shared-frame write, reply and WebKit read durations in
+GUI benchmark reports, plus engine allocation, pixel conversion, file output and
+cleanup timings. These measurements help locate preview latency; they do
+not change preview resolution or measure compositor presentation. On the native
+machine, close the installed Immage, launch the diagnostic AppImage, open the
+same copied photo and use **Preferences > Performance > Measuring > GUI benchmark**.
+Keep the window size, Balanced preview size and other performance settings the
+same. Collect one report at 100% and one at 125%, recording display scale and
+refresh rate. Keep the app visible and do not resize it during either run.
+Return both JSON reports from the benchmarks directory shown after completion.
+The existing 0.41.1 reports remain the baseline; no further baseline run is needed.
+
+### Mac CPU profiling alongside a benchmark
+
+To investigate a busy CPU core, run the repository’s
+[Mac CPU capture script](../../benchmarking/MACOS_PROFILING.md), wait for Time
+Profiler to start recording, then run **Performance > Measuring > GUI benchmark**.
+Save the benchmark JSON with the capture. Full Xcode is required. System-wide
+capture includes other applications; the guide explains scope and sharing. Keep
+the photo, window and performance settings fixed throughout the run.
+
+Ctrl-C stops a Mac CPU recording early; allow the profiler to finish saving and
+the script to export before closing the terminal.

@@ -29,7 +29,10 @@ white balance picker, \ for before, Y for before / after, X to reject,
 
 ## First launch
 
-A small splash shows while the editing engine starts. The first time,
+A small splash shows while the editing engine starts. It shows Immage's
+version and the commit it was built from at once, and darktable's version
+once the engine is up, so a build can be told apart at a glance. The
+first time,
 Immage also:
 
 - adds a **Sample Photos** folder with one photo in it, and opens that
@@ -39,7 +42,7 @@ Immage also:
   keep it from coming back; the **?** button at the bottom of the rail
   starts it again.
 
-![The Immage window on first launch, with the sample photo open](images/first-launch.png)
+![The Immage window on first launch, with a photo open](images/first-launch.png)
 <!-- screenshot: first launch, sample photo open, tour closed, both side panels showing -->
 
 ## The five-minute tour
@@ -67,8 +70,10 @@ after you make it, and ⌘Z undoes it.
 Each photo you edit gets a small file beside it, named like the photo with
 `.xmp` added, for example `P9302114.ORF.xmp`. It holds the whole edit,
 plus your rating, labels, title, caption and keywords. darktable opens the
-same file and renders the photo the same way, so you can always finish an
-edit there.
+same file and renders the photo the same way when its module and mask
+versions are compatible. Immage uses a development version of darktable;
+try copies first if you also use stable darktable. See
+[darktable compatibility](darktable.md#compatibility).
 
 Immage never changes the photo file itself.
 

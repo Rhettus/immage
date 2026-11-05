@@ -33,6 +33,86 @@ const UPRIGHT = "Upright's values come from its line detection (engine `upright`
 const POINTS = "covered by the point curve checks";
 const CROP = "covered by the crop check";
 
+// the saturation curve (satcurvergb), global or in a mask: each channel's
+// end points, raised to 1 (twice the channel) and lowered to 0 (none of
+// it), move the whole curve; the other points and the point count are
+// the curve's shape, which saturation-curve.test.mjs round-trips
+const SATCURVE_SHAPE = "the curve's shape, covered by saturation-curve.test.mjs";
+const SATCURVE = Object.fromEntries(["sc_", "sb_"].flatMap((pre) => [`${pre}pn`,
+  ...Array.from({ length: 20 }, (_, k) => [`${pre}p${k}x`, `${pre}p${k}y`]).flat()].map((id) =>
+  [id, id === `${pre}p0y` || id === `${pre}p1y`
+    ? { values: [1, 0], expect: pre === "sc_" ? { chroma: 1 } : { lum: 1 } }
+    : { skip: SATCURVE_SHAPE }])));
+
+// the contrast equalizer's bands, global or in a mask: the finest band and
+// the noise channels (3, 4) move fine detail; Edges only changes how the
+// luminance bands are split, so it needs one moved
+const EQUALIZER = Object.fromEntries([0, 1, 2, 3, 4, 5].flatMap((k) => [
+  // a mask's trial moves a band only 0.1 from neutral: try both ends
+  [`ce_0_${k}`, { values: [1, 0], ...(k === 5 ? { detail: true } : {}) }],
+  [`ce_1_${k}`, { values: [1, 0], ...(k === 5 ? { detail: true } : {}) }],
+  [`ce_2_${k}`, { with: { [`ce_0_${k}`]: 1 }, values: [1, 0], detail: true, anyPhoto: k === 5 }],
+  [`ce_3_${k}`, { detail: true, anyPhoto: true }],
+  [`ce_4_${k}`, { detail: true, anyPhoto: true }],
+]));
+
+// contrast & texture is off while every gain is 0 (detailMap), so its
+// other sliders need a detail gain first, global or in a mask
+const DETAIL = Object.fromEntries(["detail_clarity", "detail_texture", "l_detail_clarity", "l_detail_texture"]
+  .flatMap((p) => ["detail_level", "halo_control", "noise_bias"].map((f) =>
+    [`${p}_${f}`, { with: { [`${p}_gain_medium`]: 1 }, detail: true,
+                   // its default 0.001 is next to its lower end
+                   ...(f === "noise_bias" ? { values: [0.6] } : {}) }]))
+  // a downscaled frame drops the fine levels (contrastntexture.c,
+  // modify_roi_in), so only a 100% crop shows fine details
+  .concat(["detail_clarity", "detail_texture", "l_detail_clarity", "l_detail_texture"]
+    .map((p) => [`${p}_gain_fine`, { detail: true }])));
+
+// the Film Simulation panel's controls, each on a photo the simulation is on
+// for. its modules' own switches (grain, halation, diffusion) come first, and
+// a stock is chosen from the pack's list rather than by a value on its range.
+// fields: SF_FIELDS' names; stocks: spektra_stocks' list
+export function filmSpecs(fields, stocks) {
+  const ON = { sf_on: 1 };
+  const switched = (id) => id.startsWith("grain_") ? { sf_grain_on: 1 } : id.startsWith("halation_") ? { sf_halation_on: 1 }
+    : id.startsWith("print_diffusion_") ? { sf_print_diffusion_on: 1 } : id.startsWith("diffusion_") ? { sf_diffusion_on: 1 } : {};
+  const out = { sf_on: { values: [1] } };
+  for (const f of fields) {
+    const id = `sf_${f}`;
+    out[id] = { with: { ...ON, ...switched(f) }, ...(f.startsWith("grain_") && f !== "grain_on" ? { detail: true } : {}) };
+  }
+  // sizes are in microns on the film: at the 1024 px view they are less than
+  // a pixel, and only a 100% crop shows them
+  const spatial = ["couplers_tail_um", "scan_usm_sigma", "scan_usm_amount", "grain_dye_cloud"];
+  for (const f of fields) if (spatial.includes(f) || /diffusion_(filter_family|strength|scale|warmth)$/.test(f))
+    out[`sf_${f}`].detail = true;
+  // the boost lifts only highlights, and its range and protection act on what
+  // it lifts: a photo with bright enough ones is enough
+  // (a mean over the frame: a few EV on a few pixels, so the lower threshold)
+  out.sf_boost_ev.values = [8]; out.sf_boost_ev.anyPhoto = true; out.sf_boost_ev.detail = true;
+  for (const f of ["boost_range", "protect_ev"])
+    Object.assign(out[`sf_${f}`], { with: { ...ON, sf_boost_ev: 8 }, anyPhoto: true, detail: true });
+  // the film's grain floor and clump size show on some photos' tones only,
+  // and the gamut compression on those with colors beyond the output's
+  for (const f of ["grain_density_min", "grain_dye_cloud", "gamut_compress"]) out[`sf_${f}`].anyPhoto = true;
+  out.sf_grain_dye_cloud.values = [4];
+  // the automatic print exposure follows the film's exposure: at the default
+  // 0 EV the compensated and uncompensated mid gray are the same
+  // (spektra_sim.c, midgray_factor)
+  out.sf_print_auto_exposure.with.sf_exposure_ev = 1;
+  const SEVERAL = "only stocks measured at several development times respond, black and white ones; the corpus is color";
+  out.sf_development_min = { skip: SEVERAL }; out.sf_print_development_min = { skip: SEVERAL };
+  // the preflash's filters tint a preflash that is there
+  for (const f of ["preflash_m_shift", "preflash_y_shift"]) out[`sf_${f}`].with.sf_preflash_exposure = 0.3;
+  // the black and white levels set the points their corrections move to
+  out.sf_scan_black_level.with.sf_scan_black_correction = 1;
+  out.sf_scan_white_level.with.sf_scan_white_correction = 1;
+  const films = stocks.filter((s) => !s.printing), papers = stocks.filter((s) => s.printing);
+  out.sf_film_hash.values = films.slice(0, 3).map((s) => s.hash);
+  out.sf_paper_hash.values = papers.slice(0, 3).map((s) => s.hash);
+  return out;
+}
+
 export const GLOBAL = {
   bw_mode: { values: [1], mono: true },
   temp: { delta: [1500, -1500], expect: { warm: 1 } },
@@ -69,6 +149,10 @@ export const GLOBAL = {
   capture: { toggle: true, detail: true, raw: true },
   usm_amount: { detail: true },
   usm_radius: { with: { usm_amount: 60 }, detail: true },
+  ...DETAIL,
+  ...EQUALIZER,
+  // Radius changes nothing while Amount is 0, which switches Defringe off
+  defringe_radius: { with: { defringe_amount: 50 }, detail: true, anyPhoto: true },
   usm_threshold: { with: { usm_amount: 60 }, detail: true },
   sharp_amount: { detail: true },
   sharp_radius: { with: { sharp_amount: 2 }, detail: true },
@@ -119,8 +203,10 @@ for (const id of ["tc_mode", "tc_pn", "tc_r_pn", "tc_g_pn", "tc_b_pn"]) GLOBAL[i
 for (const ch of ["", "r_", "g_", "b_"])
   for (let i = 0; i < 20; i++) for (const a of ["x", "y"]) GLOBAL[`tc_${ch}p${i}${a}`] = { skip: POINTS };
 for (const id of ["tf_upright", "tf_base_r", "tf_base_v", "tf_base_h", "tf_gn"]) GLOBAL[id] = { skip: UPRIGHT };
+Object.assign(GLOBAL, SATCURVE);
 for (let i = 0; i < 16; i++) GLOBAL[`tf_g${i}`] = { skip: UPRIGHT };
-for (const id of ["mod_contrast", "mod_tone", "mod_blacks", "mod_saturation", "mod_bw", "mod_sharpening", "mod_defringe"])
+for (const id of ["mod_contrast", "mod_tone", "mod_blacks", "mod_saturation", "mod_bw", "mod_clarity", "mod_texture",
+                  "mod_sharpening"])
   GLOBAL[id] = { skip: "covered by the choices check" };
 
 // edits made of several controls at once, as the point curve editor and
@@ -141,8 +227,9 @@ export const LOCAL = {
   l_tint: { values: [60, -60], expect: { magenta: 1 } },
   l_exposure: { values: [1, -1], expect: { lum: 1 } },
   l_fulcrum: { with: { l_contrast: 60 }, values: [2, -2] },
-  l_highlights: { expect: { lumHi: 1 } },
-  l_shadows: { expect: { lumLo: 1 } },
+  // the harness's tones.tif has every tone under the mask (toneRange)
+  l_highlights: { expect: { lumHi: 1 }, anyPhoto: true },
+  l_shadows: { expect: { lumLo: 1 }, anyPhoto: true },
   l_whites: { expect: { lumHi: 1 } },
   l_blacks: { expect: { lumLo: 1 } },
   l_texture: { detail: true },
@@ -151,6 +238,9 @@ export const LOCAL = {
   l_usm: { detail: true },
   l_noise: { detail: true },
   l_defringe: { detail: true, anyPhoto: true },
+  ...EQUALIZER,
+  ...SATCURVE,
+  ...DETAIL,
   ...Object.fromEntries(["red", "orange", "yellow", "green", "cyan", "blue", "lavender", "magenta"].flatMap((b) =>
     ["hue", "sat", "lum"].map((k) => [`l_hsl_${k}_${b}`, { anyPhoto: true }]))),
   ...Object.fromEntries(["shadows", "midtones", "highlights", "global"].flatMap((r) => [

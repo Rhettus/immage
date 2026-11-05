@@ -22,7 +22,7 @@ tooltips, clicks and disabled buttons as well.
 | File | Responsibility |
 |---|---|
 | [index.html](../../index.html), [main.tsx](../../src/main.tsx) | The main window: mounts `App`. |
-| [splash.html](../../splash.html), [Splash.tsx](../../src/Splash.tsx) | The splash window: asks `about`, shows the main window, closes itself. |
+| [splash.html](../../splash.html), [Splash.tsx](../../src/Splash.tsx) | The splash window: shows `build` (version and commit, without the engine) at once, asks `about`, shows the main window, closes itself. |
 | [App.tsx](../../src/App.tsx) | The whole editor's shell and state. See [inside App.tsx](#inside-apptsx). |
 | [main.rs](../../src-tauri/src/main.rs) | `main()`: on Linux selects the web view's EGL before GTK starts (`renderer::init`), migrates the old app name, registers the dialog, opener, updater, process, window state (the main window's size, position and maximized state) and immporter plugins. On Linux `setup()` builds the windows itself, with the frames web extension's folder (`webext_dir`). `setup()` picks the engine: `build/bin/darktable-engine` with runtime state in `build/app-runtime` for a dev build, the bundled `resources/darktable` with the app data folder for a release, or `DT_ENGINE_BIN`. Holds `AppState` and nearly every command. |
 | [renderer.rs](../../src-tauri/src/renderer.rs) | Linux window renderer: Automatic leaves EGL vendor selection to the system on every GPU; explicit Mesa or NVIDIA selects that EGL vendor. Stored as `webview-renderer` in the runtime directory so startup can read it before GTK. An inherited marker allows Relaunch to change the selection, while a user-supplied EGL environment override takes priority. Only the web view receives the override; benchmark display metadata records the running and next selections. |
@@ -83,7 +83,7 @@ are `localStorage` keys named `immage.*`.
 | [App.tsx](../../src/App.tsx) | Library, viewer, panels, tools, undo, before/after, compare, keyboard, plugins; also the small components `PanelView`, `Slider`, `Filmstrip`, `HistogramView`, `Navigator`, `Toolbar`. |
 | [Tour.tsx](../../src/Tour.tsx), [Shortcuts.tsx](../../src/Shortcuts.tsx) | The quick-start tour; the keyboard shortcuts sheet. |
 | [ImportView.tsx](../../src/ImportView.tsx) | The SD card importer, loaded from `@immporter/embed`. |
-| [Collapse.tsx](../../src/Collapse.tsx), [keys.ts](../../src/keys.ts), [paths.ts](../../src/paths.ts) | Folding panels; ⌘ or Ctrl by platform; path helpers for either separator. |
+| [Collapse.tsx](../../src/Collapse.tsx), [keys.ts](../../src/keys.ts), [paths.ts](../../src/paths.ts) | Folding panels (a fold that shrinks a scrolled list clamps its offset: WebKitGTK left it past the end); ⌘ or Ctrl by platform; path helpers for either separator. |
 | [activity.ts](../../src/activity.ts) | The busy indicator's job store (`begin`, `progress`, `end`, `useWorking`). |
 | [background.ts](../../src/background.ts) | Work in the background, for the activity lines under the photo: exports (`runExport`), HDR and Panorama Merge (`runMerge`: the photos read, then the merge's own stages, from the engine's `_merge_report`) and AI Denoise (`runInBackground`), each one's progress and Stop (`stopJob`: `export_cancel`, `merge_cancel`), then what it did, with a next step such as Open (`useJobs`). |
 | [styles.css](../../src/styles.css) | All styling. |
@@ -102,7 +102,8 @@ are `localStorage` keys named `immage.*`.
 | before/after, compare | `setBaMode`, `setBefore` (`Session.showBefore`), `toggleCompare` |
 | crop and turns | `enterCrop`, `leaveCrop`, `turn` (`Session.turned`) |
 | `runGuiBenchmark` | the GUI benchmark in Preferences |
-| keyboard | one `keydown` handler for every shortcut |
+| `runGpuCheck` | the GPU check in Preferences: [gpuCheck.ts](../../src/gpuCheck.ts) cases through `changeMany`, `gpu_check_parity` for each |
+| keyboard | one `keydown` handler for every shortcut; `fieldKeeps` (`keys.ts`) leaves a focused field its keys: text all, a slider its arrows, a switch Space, a menu its arrows, Home/End, Page Up/Down, Space and Enter |
 | `openLaunched`, `dropped` | a photo handed over (`launch-file`), or photos and folders dragged onto the window (`onDragDropEvent`, `path_kind`) |
 
 `enterCrop` snapshots the displayed placement before `prepareCropView` clears
@@ -112,11 +113,24 @@ diagonal can swap it. `node --test verify/crop-transition.test.mjs
 verify/crop-corner.test.mjs` checks orientation initialization, crop view resets
 and constrained resizing.
 
+Undo and redo work while cropping: `stepHistory` restores the step as usual,
+then `followCrop` keeps the tool's own guide (`cropRect`, applied only at
+Done) in line. An orientation change is replayed on the guide with
+`turnPath` (manifest.ts, the fewest `Turn`s between two orientations) and
+`turnRect`, so a dragged guide keeps its shape; any other change to the crop
+settings reloads guide and aspect with `loadCrop`, shared with `enterCrop`.
+Batch paste steps stop with a status message, because restoring them reopens
+the photo. `leaveCrop` keeps `crop_rd`/`crop_rn` at 0:0 on a whole photo left
+at Original. `enterCrop` reads 0:0 as Original there, and the change alone
+would be an invisible Crop step that the next ⌘Z took first. The GUI case
+`crop-undo` checks a turn and Rotate undone by keyboard inside the tool, redo,
+and one undo after Done.
+
 ### Session and engine bridge
 
 | File | Responsibility |
 |---|---|
-| [session.ts](../../src/session.ts) | One open photo. `Session.open` reads every mapped module (`get_params`) into control values. `set`/`setMany` update model values immediately and ignore unchanged values. Interactive calls defer dispatch until the next display frame; discrete edits and release flush it immediately. `pump()` sends each dirty module's merged edit (`moduleEdit`) with one `render`, in the one call, so moves made during a render are coalesced, latest wins. It also holds masks, spots, look and the Before view, and saves 600 ms after the last edit. `renderView` decodes the frame header; `preview` renders one-off settings on the engine's preview pipe. Until the image changes (`changed`), it shows the full frames it was sent (`frames`, by view and darktable's hash) and, zoomed in, a copy of the whole image at the zoom's scale (`requestCopy`, rendered on the base pipe once idle), so a view seen before or a pan's window is shown without the engine; App shows the copy as a layer under the sharp frame (`onCopy`). After a change, a render sends the hashes it holds for the view (`have`), and the engine names one rather than render it when the image is back as it was (the Before view and back, undo); a copy set aside comes back the same way. |
+| [session.ts](../../src/session.ts) | One open photo. `Session.open` reads every mapped module (`get_params`) into control values. `set`/`setMany` update model values immediately and ignore unchanged values. Interactive calls defer dispatch until the next display frame; discrete edits and release flush it immediately. `pump()` sends each dirty module's merged edit (`moduleEdit`) with one `render`, in the one call, so moves made during a render are coalesced, latest wins. It also holds masks, spots, look and the Before view, and saves 600 ms after the last edit. `renderView` decodes the frame header; `preview` renders one-off settings on the engine's preview pipe. Until the image changes (`changed`), it shows the full frames it was sent (`frames`, by view and darktable's hash) and a copy of the whole image at the zoom's scale (`requestCopy`, rendered on the base pipe once idle; at 100% while fitted, so the first zoom in is cut from it), so a view seen before or a pan's window is shown without the engine. Zoomed in, `requestFit` renders the fitted view on the base pipe once idle and keeps it as that view's frame (`current`), so zooming back out needs no render, and the main pipe keeps its cache of the window shown. App's `scheduleCopy` asks for both after each settled frame; App shows the copy as a layer under the sharp frame (`onCopy`). After a change, a render sends the hashes it holds for the view (`have`), and the engine names one rather than render it when the image is back as it was (the Before view and back, undo); a copy set aside comes back the same way. |
 | [pixelRatio.ts](../../src/pixelRatio.ts) | Linux on Wayland at a fractional scale: `draftScale()`, how much smaller drag drafts are (`draftK` in App.tsx), the screen's scale from `display_scale` over `devicePixelRatio`, as GTK 3 draws the window at the next whole scale; Preferences' "Drag drafts at the screen's scale". |
 | [sharedFrames.ts](../../src/sharedFrames.ts) | Windows: `renderFrame` asks `render` to post the frame in a WebView2 shared buffer tagged with an id, then matches the `sharedbufferreceived` event to the reply, copies the frame out and releases the buffer. Linux: it asks `render` to write the frame to `/dev/shm` and reads it with the web extension's `immageFrame()`. On the Mac, on WebView2 runtimes before 1.0.1661, on Linux without the extension, or with Preferences' "Shared-memory frames" off, the frame comes in `render`'s reply. |
 | [HistoryPanel.tsx](../../src/HistoryPanel.tsx) | darktable's history plus this session's undo steps; a row's switch, delete or reset (`historyChange` in App.tsx, `Session.setModuleState`, the engine's `_module_state`). |
@@ -127,13 +141,13 @@ and constrained resizing.
 
 | File | Responsibility |
 |---|---|
-| [manifest.ts](../../src/manifest.ts) | The Lightroom panels and controls (`panels`, `Control`), and the `ModuleMap`s that translate control values to darktable params and back (`modules`, per-mask `localMaps`). `boundFields` lists every field the app reads. `"op#name"` is a named module instance. |
+| [manifest.ts](../../src/manifest.ts) | The panels and controls (`panels`, `Control`), and the `ModuleMap`s that translate control values to darktable params and back (`modules`, per-mask `localMaps`). `boundFields` lists every field the app reads. `"op#name"` is a named module instance. |
 | [wb.ts](../../src/wb.ts) | Temp/Tint and color calibration's illuminant. |
 | [tonecurve.ts](../../src/tonecurve.ts) | Parametric and point curves and tonecurve nodes. |
 | [transform.ts](../../src/transform.ts), [colorgrading.ts](../../src/colorgrading.ts) | Rotate/ashift and auto-crop; color balance hues. |
-| [colorequal.ts](../../src/colorequal.ts) | HSL and the B&W Mix at Lightroom's band hues: the mix of the color equalizer's eight nodes each slider sets (`toNodes`) and back (`fromNodes`), fitted to darktable's own curve through them. |
+| [colorequal.ts](../../src/colorequal.ts) | HSL and the B&W Mix at the hues their bands are named for: the mix of the color equalizer's eight nodes each slider sets (`toNodes`) and back (`fromNodes`), fitted to darktable's own curve through them. |
 | [GuideOverlay.tsx](../../src/GuideOverlay.tsx) | The Transform grid and Guided Upright's guides on the photo. |
-| [autoTone.ts](../../src/autoTone.ts), [bwauto.ts](../../src/bwauto.ts) | Basic's Auto and the B&W Mix's Auto, from the rendered frame. |
+| [autoTone.ts](../../src/autoTone.ts), [bwauto.ts](../../src/bwauto.ts) | Basic's Auto and the B&W Mix's Auto, from the rendered frame. Auto's five tone sliders are all judged from one frame with them at 0, so they compound: Contrast adds at half the gain it removes with (`CONTRAST_ADD_GAIN`), because Whites and Blacks stretch a flat photo's spread about as much again. `benchmarking/autoexp.py` runs Auto over the corpus headless. |
 
 ### Panels and controls
 
@@ -151,7 +165,8 @@ and constrained resizing.
 | [localMerge.ts](../../src/localMerge.ts) | `planMerge`: which masks share instances of a `merge` module (color balance rgb, color equalizer for HSL, diffuse for Texture, denoise, chromatic aberrations for Defringe), grouped by direction or by slider and sign, whichever needs fewer; each shared instance's strength and each mask's opacity in its combined mask. Masks share only with masks of the same ranges and refinements, which the shared instance carries; an inverted mask with ranges, ranges alone and refine Contrast keep their own instances (`canMerge`). |
 | [MaskOverlay.tsx](../../src/MaskOverlay.tsx), [MasksPanel.tsx](../../src/MasksPanel.tsx), [ParametricEditor.tsx](../../src/ParametricEditor.tsx) | Drawing shapes on the photo; the Masks panel; darktable's parametric (blendif) editor. |
 | [spots.ts](../../src/spots.ts), [SpotOverlay.tsx](../../src/SpotOverlay.tsx), [HealPanel.tsx](../../src/HealPanel.tsx) | Heal/Clone spots, sent to darktable's retouch module. |
-| [negadoctor.ts](../../src/negadoctor.ts), [NegativePanel.tsx](../../src/NegativePanel.tsx) | Film negatives: negadoctor's presets and its pickers, ported from `src/iop/negadoctor.c` and fed `sample` at negadoctor's input; the Negative panel. A converted photo (`neg_on`) has the modules of `NEG_OFF` (manifest.ts) forced off in `Session.moduleEdit`, read as if on when it opens, and kept in the history by the engine's `_held_for_negative`; `NEG_CHOICES` moves Basic's tools after it. |
+| [negadoctor.ts](../../src/negadoctor.ts), [NegativePanel.tsx](../../src/NegativePanel.tsx) | Film negatives: negadoctor's presets and its pickers, ported from `src/iop/negadoctor.c` and fed `sample` at negadoctor's input; the Negative panel. A converted photo (`neg_on`) has the modules of `NEG_OFF` (manifest.ts) forced off in `Session.moduleEdit`, read as if on when it opens if the history has them, and kept in the history by the engine's `_held_for_mode`. Converting writes the switch-off only for modules that are on (`Session.conversionChanged`), so one that was never on is not switched on when the photo, opened again, is turned back; `NEG_CHOICES` moves Basic's tools after it. Export to Library and Turn Off sit in [PositiveFooter.tsx](../../src/PositiveFooter.tsx), shared with Film Simulation. |
+| [spektrafilm.ts](../../src/spektrafilm.ts), [FilmPanel.tsx](../../src/FilmPanel.tsx) | Film Simulation: darktable's spektrafilm. `SF_FIELDS` makes one `sf_<field>` control per param (the hidden `film` panel and the `spektrafilm` map in manifest.ts); `SF_PRESETS` is `init_presets()` over `_preset_defaults()` (`PRESET_BASE`), stocks by name; `stockHash` is the module's `_name_hash()` (djb2 xor, folded to 32 bits), which must stay identical or presets name no stock (`verify/film-simulation.test.mjs` compares it with the engine's for every stock); `filmOf`, `autoPaper`, `filmChanges` and `paperChanges` port `_current_film_entry`, `_auto_paper_entry`, `_film_changed` and `_paper_changed`. A simulated photo (`sf_on`) has `SF_OFF` (the tone mappers) off and `SF_CHOICES` moving Contrast, Saturation and Blacks off them. The two conversions are listed in `CONVERSIONS` (manifest.ts), which Session (`conversionChanged`, `moduleEdit`, `open`, `chooseModules`) and `batchPaste.applyClip` read; App.tsx keeps them mutually exclusive (the `exclusive` dialog). The panel reads the pack with `spektra_stocks` when it opens and polls `spektra_fetch` while downloading. |
 | [zones.ts](../../src/zones.ts), [ZoneSystem.tsx](../../src/ZoneSystem.tsx) | The Zone System: zone statistics, the placement curve (a tone equalizer instance ahead of the [mask anchor](masks.md#where-the-instances-run)), zone masks. |
 
 ### Presets and looks
@@ -179,6 +194,12 @@ and constrained resizing.
 | [exportTokens.ts](../../src/exportTokens.ts) | File name and caption tokens. |
 | [ExportDialog.tsx](../../src/ExportDialog.tsx), [ExportFrame.tsx](../../src/ExportFrame.tsx) | The Export dialog, its live preview, the Immich target; the Frame & Captions editor. The dialog asks what an export needs (the upscale model, names that clash), hands it to `runExport` and closes. |
 
+### Print
+
+| File | Responsibility |
+|---|---|
+| [print.ts](../../src/print.ts), [PrintPanel.tsx](../../src/PrintPanel.tsx) | The Print panel (`RightMode` `"print"`, the rail's last button under Export, ⌘P): settings kept in `localStorage`, PDF papers, the page `layout()`, the request for `print_photo`; the soft proof (`applyProof`), which App.tsx keeps on across panels (S, the `Soft Proof:` badge) and follows with `Session.redraw()`. Design and verification in [print.md](print.md). |
+
 ### Immich and plugins
 
 | File | Responsibility |
@@ -203,6 +224,7 @@ identity before drawing, so replacement frames cancel obsolete work.
 | [probe.ts](../../src/probe.ts) | The color under the pointer, for the Tone Curve, HSL and B&W cards. |
 | [PerformanceTuner.tsx](../../src/PerformanceTuner.tsx), [previewTuning.ts](../../src/previewTuning.ts), [tunerOptions.ts](../../src/tunerOptions.ts), [tunerWorkload.ts](../../src/tunerWorkload.ts) | Quality-first preview search with trimmed-median metrics with FPS/latency targets, explicit apply and remeasurement, restart/resume and navigation workload comparisons; AI and thumbnail settings excluded. |
 | [perf.ts](../../src/perf.ts), [PerfHud.tsx](../../src/PerfHud.tsx) | Edit-to-pixels timing by stage, the performance overlay and the GUI benchmark's recording. |
+| [gpuCheck.ts](../../src/gpuCheck.ts) | The GPU check's cases (a module choice, then sliders moved by a share of their range), `resolveCase` and the pass verdict. |
 
 ## Rust layer
 
@@ -221,14 +243,15 @@ Commands by what they reach:
 
 | Reaches | Commands |
 |---|---|
-| The open photo, through the engine | `open_image`, `get_params`, `set_params`, `module_state`, `render`, `cancel_base`, `preview`, `save`, `before_view`, `history`, `masks`, `mask_shapes`, `combine`, `mask_delete`, `mask_rename`, `mask_map`, `range_map`, `sample`, `zones`, `tone_key`, `agx_auto`, `spots`, `spots_enable`, `spot_source`, `look_apply`, `look_amount`, `ai_object`, `ai_mask`, `ai_depth`, `ai_denoise`, `ai_denoise_preview` |
-| The library, through the engine | `open_folder` (engine `import` in batches), `thumb`, `thumb_cached`, `thumb_known`, `prefetch`, `meta`, `meta_set`, `capture_times`, `keywords`, `keywords_set`, `create_virtual_copy`, `remove_virtual_copy`, `hdr_merge`, `hdr_can_align`, `pano_merge`, `pano_can_merge`, `trash_files`, `export_images`, `export_cancel`, `export_preview`, `fonts`, `ai_accel`, `about` |
+| The open photo, through the engine | `open_image`, `get_params`, `set_params`, `module_state`, `render`, `cancel_base`, `preview`, `save`, `before_view`, `history`, `masks`, `mask_shapes`, `combine`, `mask_delete`, `mask_rename`, `mask_map`, `range_map`, `sample`, `zones`, `tone_key`, `agx_auto`, `spots`, `spots_enable`, `spot_source`, `look_apply`, `look_amount`, `positive_export`, `ai_object`, `ai_mask`, `ai_depth`, `ai_denoise`, `ai_denoise_preview` |
+| The library, through the engine | `open_folder` (engine `import` in batches), `thumb`, `thumb_cached`, `thumb_known`, `prefetch`, `meta`, `meta_set`, `capture_times`, `keywords`, `keywords_set`, `create_virtual_copy`, `remove_virtual_copy`, `hdr_merge`, `hdr_can_align`, `pano_merge`, `pano_can_merge`, `trash_files`, `export_images`, `export_cancel`, `export_preview`, `fonts`, `print_photo`, `print_profiles`, `print_profile_add`, `printers`, `printer_info`, `softproof`, `spektra_stocks`, `spektra_fetch`, `ai_accel`, `about` |
 | Files only | `list_subfolders`, `folder_volumes`, `path_exists`, `path_kind`, `export_existing`, `presets_load`, `presets_save`, `export_presets_load`, `export_presets_save`, `preset_file_read`, `preset_file_write`, `looks_list`, `sample_folder`, `launch_file` |
 | AI models (download, then the engine's `version`) | `ai_model_ensure`, `ai_model_reinstall` |
 | Immich (HTTP) | `immich_albums`, `immich_create_album`, `immich_export_check`, `immich_browse_check`, `immich_search`, `immich_libraries`, `immich_suggestions`, `immich_people`, `immich_tags`, `immich_thumb`, `immich_resolve` |
 | Plugins | `plugin_find_apps`, `plugin_launch`, `plugin_watch`, `plugin_job`, `plugin_cancel`, `plugin_returns`, `plugin_return_applied` |
 | Performance | `perf_set`, `perf_modules`, `perf_report_write`, `perf_ping` |
 | The window | `preview_fullscreen`, `display_scale` |
+| The build | `build`: the version and commit, answered without the engine. `build.rs` sets `IMMAGE_BUILD_COMMIT` and `IMMAGE_BUILD_DIRTY` from Git; `build_label` in main.rs shortens the commit to ten digits with `-dirty`, as `about` and `build` return it, and `perf_report_write` stores the full commit and the dirty flag as every report's `build`. Built outside Git, all are absent. |
 
 Events from Rust: `folder-progress`, `export-progress`, `ai-model`,
 `launch-file`, `plugin-returned`, `plugin-watch-end`. The immporter plugin
@@ -250,6 +273,44 @@ holds one session, `_s` (`dt_engine_session_t`): the open image, its develop
 The preview pipe exists so trying a setting never touches the edit or the
 main pipe's cache.
 
+Printing and soft proofing are in [engine/print.c](../../../engine/print.c):
+printer profiles added to darktable's output list at run time, colorout's
+soft proof mode (`softproof`, with every pipe recommitted from colorout and
+the proof mixed into `_frame_hash`), CUPS or Windows printers, and a print
+job (`print`, tagged on the export thread) that renders through an in-memory
+format, converts with the printer profile and writes a PDF for CUPS or a
+file, or spools on Windows. See [print.md](print.md).
+
+Film Simulation's engine side is a section of main.c. spektrafilm builds its
+film and paper lists only in its GUI, so `_spektra_stocks` reads the pack's
+`profiles/*.json` headers itself with `sf_profile_load()`, from the pack
+`sf_fetch_resolve_pack_dir(0, ...)` resolves for a new edit, and copies the
+module's `_name_hash`, `_shorten_name` and `_nat_cmp` so names, order and
+hashes match its combobox. `_spektra_fetch` wraps darktable's own fetcher
+(`sf_fetch_start(0, 0)`, `sf_fetch_status`, `sf_fetch_cancel`), which runs on
+its own thread and posts nothing back without a GUI. The module notices a new
+pack by `sf_fetch_generation()` and reloads at its next `process()`, but the
+pipes' caches still hold the passthrough it rendered without one under the same
+hashes, so `_sf_follow_pack` invalidates every pipe from spektrafilm's
+`iop_order` when the generation moves. `_held_for_mode` keeps the disabled
+entries of the modules a conversion holds off (negadoctor's list, or
+spektrafilm's tone mappers) through `_prune_off`.
+
+Verified: an engine export of a film edit matches `darktable-cli` on the same
+XMP exactly (16-bit TIFF, CPU, "film|portrait" on the sample photo). It is the
+slowest module Immage runs: a 1600x900 render with "film|portrait" took about
+360 ms on an 8-core ARM CPU without OpenCL, against about 35 ms on AgX, so
+drags lag. Drafts do not skip it, as they skip grain and diffuse, because it
+is the photo's tone mapping.
+
+The GUI case `film` (verify/gui) turns the simulation on, checks that Film and
+Paper are menus of stock names, applies "film|portrait" from the Preset menu
+with the keyboard and turns it off again. WebKitGTK fires `change` on each
+arrow step of a closed select, so the Preset menu keeps the last preset as
+its value; a menu that snapped back to its placeholder applied the first
+preset on every step. The runner copies the installed pack into the run's
+isolated profile.
+
 [`engine/upright.c`](../../../engine/upright.c) is Upright: the
 structure detection and fit of darktable's rotate and perspective
 (`src/iop/ashift.c`). darktable runs these only from its GUI, so the
@@ -259,7 +320,11 @@ ashift.c revision it was copied from. Compare the two when taking a new
 darktable release. `upright` in main.c reads the image as it enters
 rotate and perspective from the preview pipe (`_working_at`,
 `_STAGE_ASHIFT`). `points` maps points between the shown image and the
-input, for Guided's guides.
+input, for Guided's guides. The crop tool's Auto (`runAutoStraighten` in
+App.tsx) asks `upright` for the `level` fit and writes only `tf_rotate`,
+converted by `rotateOf` in manifest.ts as `transformMap.read` does, so
+`tf_upright` and the `tf_base_*` fit stay untouched; it is disabled while
+Upright is on.
 
 [`engine/hdrmerge.c`](../../../engine/hdrmerge.c) is HDR Merge:
 darktable's HDR merge of raw brackets into a float DNG, which darktable
@@ -349,6 +414,14 @@ before loading; the client then applies its new-photo defaults, and every
 first recorded change. So the defaults never mark a photo edited, in
 Immage or in darktable.
 
+`_open` copies the image cache's colorspace into the session after
+`synch_all`. Colorin marks a photo with an sRGB or Adobe RGB input profile
+as `USER_RGB`, in the cache only; darktable's import thumbnails do that
+before the darkroom loads a photo, the engine's import does not. Without
+the copy, a JPEG's first session scaled its input without gamma correction
+and rendered unlike every later session, so a batch paste's undo could not
+match it (`verify/batch-paste.test.mjs`, "a fresh photo renders the same").
+
 | Section | Main functions |
 |---|---|
 | Session, open, close | `_open_image`, `_close_session`, `_import`, `_compress_history` |
@@ -358,7 +431,7 @@ Immage or in darktable.
 | HDR Merge | `_hdr_merge` (hdrmerge.c's `hdr_merge`, on the export thread when tagged) |
 | Panorama Merge (`HAVE_PANO`) | `_pano_merge`, `_pano_frame` (pano.cc's `pano_stitch`, dng.c's `dng_write_linear_half`, on the export thread when tagged) |
 | Export | `_export` (darktable's export with flags, then `strip_metadata` in [strip.cc](../../../engine/strip.cc), with exiv2, for what the flags do not reach: serial numbers, camera info, the source's own text fields and keywords); `_frame_style` (borders and a watermark SVG as a temporary style; a fixed canvas as one last border, sized so the file comes out exactly W x H); the AI upscale proxy format (`_upscale_ctx`) |
-| Masks | `_mask` (shapes into a mask group, prefixed `immage: `), `_masks` (with `merged_in`), `_mask_delete`, `_mask_rename`, `_attach_mask`. The [mask anchor](masks.md#where-the-instances-run), `colorbalancergb`, is where every mask's instances run, so a range sampled at its output holds for all of them. `_combine`: a group of masks' groups summed, each at its opacity (prefixed `immage combined: `), with the members' ranges, driving a shared instance, which `_attach_mask` attaches only to a combined mask; `_combined_member_changed` keeps it current when a member is reshaped or deleted. `_prune_off` keeps a mask's own switched-off instances (`_holds_mask_settings`). `_named_instance` places a mask's own instance after the shared ones of its module |
+| Masks | `_mask` (shapes into a darktable flexi mask group, prefixed `immage: `, with its ranges as parametric elements in a product group, prefixed `immage ranges: `; `_flatten` reads any flexi tree back to shapes), `_masks` (with `merged_in`), `_mask_delete`, `_mask_rename`, `_attach_mask`. The [mask anchor](masks.md#where-the-instances-run), `colorbalancergb`, is where every mask's instances run, so a range sampled at its output holds for all of them. `_combine`: a flexi sum of the masks' groups, each at its opacity (prefixed `immage combined: `), with the members' ranges, driving a shared instance, which `_attach_mask` attaches only to a combined mask; `_combined_member_changed` keeps it current when a member is reshaped or deleted. `_prune_off` keeps a mask's own switched-off instances (`_holds_mask_settings`). `_named_instance` places a mask's own instance after the shared ones of its module |
 | AI (`HAVE_AI`) | `_ai_object` (SAM), `_ai_mask` (sky, subject, ...), `_ai_depth` (with a tag, the main loop renders the model's input unless its last result holds, `_ai_job`, and answers; the model runs on the AI thread, `_ai_run`, which answers again with the tag); outlines are traced at `_TRACE_SIZE` against the photo rendered at it (`_guide`, which the models' inputs are made from), moved onto its edges first by `_snap_edges`, a guided filter kept to where the model is unsure (`_trace_json`), `_ai_denoise` (darktable's raw denoise into a DNG, repeating `src/libs/neural_restore.c`'s job on its public calls; with a tag, the main loop snapshots the edit and answers, and the denoise runs on its own thread, `_denoise_run`, answering again with the tag), `_ai_denoise_preview` (its 1:1 before and after, as the lib's raw preview makes them); on Linux, `_ort_exports` keeps darktable from probing a GPU provider the bundled ONNX Runtime lacks, and `main()` sets the provider to CPU when it has none |
 | Spots | `_spots_set`, `_spots_json`, `_spot_source` (the retouch module) |
 | Ranges and zones | `_sample` (at the mask anchor, or with `stage` "negadoctor" at negadoctor's input), `_range_map`, `_zones`, `_mask_map`, `_tone_key`, `_agx_auto` |
@@ -369,7 +442,7 @@ The commands `_handle()` serves:
 
 | Group | Commands |
 |---|---|
-| Session | `open`, `history`, `module_state`, `save`, `baseline_end`, `before`, `close`, `quit`, `version`, `unpack`, `ai_accel`, `opencl`, `fonts` |
+| Session | `open`, `history`, `module_state`, `save`, `baseline_end`, `before`, `close`, `quit`, `version`, `unpack`, `ai_accel`, `opencl`, `parity`, `fonts`, `spektra_stocks`, `spektra_fetch` |
 | Library (no photo needed) | `folder`, `import`, `thumb`, `prefetch`, `meta`, `meta_set`, `capture_times`, `keywords`, `keywords_set`, `copy`, `remove_copy`, `sidecars`, `forget`, `export`, `export_hold`, `export_release`, `hdr_merge`, `pano_merge` |
 | Edit | `set`, `get`, `render`, `preview`, `look`, `look_amount` |
 | Masks and spots | `mask`, `combine`, `masks`, `mask_rename`, `mask_delete`, `mask_map`, `range_map`, `sample`, `spots`, `spots_enable`, `spot_source` |
@@ -414,7 +487,7 @@ darktable is, and it has AI features when darktable is configured with
    4. A never-edited raw then gets the new-photo defaults: tone mapper, profile, exposure compensation (an exposure instance of its own), color noise reduction, the new-photos preset.
 2. **Move a slider.**
    1. `Slider` calls `change()`, which records an undo step, updates `values` and calls `Session.set`.
-   2. During pointer/wheel interaction, `Session` waits until the next display frame before dispatching; discrete keyboard/undo edits dispatch immediately. Release cancels the queued callback and requests the latest exact frame, including when no draft has been shown. `pump()` sends `render` for `currentView()` with each dirty module's edit (`edits`), which Rust sends to the engine as `set`s ahead of the render: one call from the page however many modules moved, as a call cost 20 ms or more on Linux while the page drew. Moves made meanwhile only mark modules dirty, so the next round sends the latest values once.
+   2. During pointer/wheel interaction, `Session` waits until the next display frame before dispatching; discrete keyboard/undo edits dispatch immediately. Release cancels the queued callback and requests the latest exact frame, including when no draft has been shown. A frame whose view changed while it rendered (a draft finishing after release) is discarded and sets `needRender`, so the pump renders the current view: a click on a track, let go while its draft was in flight, left the edit unrendered until the next input. `pump()` sends `render` for `currentView()` with each dirty module's edit (`edits`), which Rust sends to the engine as `set`s ahead of the render: one call from the page however many modules moved, as a call cost 20 ms or more on Linux while the page drew. Moves made meanwhile only mark modules dirty, so the next round sends the latest values once.
    3. In the engine, `_set` writes the fields and adds a history item, then `_render` calls `dt_dev_pixelpipe_process`. Only modules from the changed one onwards run; the rest come from the pipe cache.
    4. The frame is written to `frame.rgba`, read back by Rust and returned with its header (on Windows and Linux, in shared memory beside it).
    5. `drawFrame` puts it on the canvas and computes the histogram. See [the sequence diagram](diagrams/slider-sequence.svg).
@@ -439,7 +512,7 @@ darktable is, and it has AI features when darktable is configured with
 7. **Import a folder.**
    1. `openFolder` calls `open_folder`. For a folder read before, Rust first sends the folder's snapshot (`known`): its photos as the last whole read found them, from the runtime folder, so the filmstrip fills before the folder is even listed. Each known photo shows its last thumbnail (`thumb_known`, by its path alone, without looking at the file, which on a network share is a round trip each) and its rating, labels and capture time, through the filters, in the order the read will end with (`withKnown`), and opens on a click.
    2. Rust walks the folder, skipping packages and sidecars, from the listing alone (`listing.rs`, no look at each file), keeping each file's size and time (`cache::Listed`), and sends engine `import` in batches sized to take about 150 ms, reported as `folder-progress` at most once a second (`Progress`): each event redraws the filmstrip, a cell for every file. The batches are tagged and read on the engine's import thread (`_import_run`), so editing goes on meanwhile. Known photos no longer listed go; a photo read takes its known cell's place, and its thumbnail is then checked against the file's size and time as listed (`thumb_cached`), else rendered again. A thumbnail rendered takes the file as it is then (`cache::refresh`), so an edit saved here is not checked against the listing's sidecar.
-   3. A newer folder request cancels the older one through `folder_token`. A whole read writes the folder's snapshot.
+   3. A newer folder request cancels the older one through `folder_token`. A whole read writes the folder's snapshot. Each batch carries the token as `job` and a `budget` of twice `IMPORT_TARGET`; the engine's `_import_files` stops before its next file once the request reader has queued another read's batch (`_import_latest`, the newest job rather than the highest, as the client's tokens restart on reload) or the budget has passed after at least one file, and replies with `done`, the files it went through. Rust sends the rest in the next batch. Without this, a network share's batches left queued on the single import thread, each holding `_import_lock` per file, held up the next folder's import and `open` (whose `_import` takes the same lock) for minutes on wifi. `[engine] import` in `engine.log` is logged as a batch is queued, `[engine] imported k of n in t ms` as it finishes. Verify headlessly by queuing a large batch with one `job`, then a small one with another: the first replies with `done` below its file count, and a 1 ms `budget` imports one file per batch.
    4. Thumbnails follow from `ThumbLoader` (engine `thumb`) while the editor is idle.
 8. **Edit In.**
    1. `editIn` calls `plugin_launch`, which opens the app with the files, then `plugin_watch`.
@@ -470,13 +543,14 @@ darktable is, and it has AI features when darktable is configured with
 | Edit In results | `plugin-returns.json` in the runtime folder | permanent |
 | Macro Studio jobs | `plugin-jobs/` in the runtime folder: each job's manifest and receipt, and `pending.json` | until every stack is saved or closed, or 30 days |
 | Engine config, cache, log | `config/`, `cache/`, `engine.log` in the runtime folder (`build/app-runtime` in dev, the app data folder in a release) | permanent; the log restarts past 5 MB |
-| Frames, thumbnails, previews, maps | `frame.rgba`, `thumb-<tag>.rgba`, `preview.rgba`, `range.bin` in the runtime folder | overwritten per request; a thumbnail's deleted once read |
+| Frames, thumbnails, previews, maps | `frame.rgba`, `thumb-<tag>.rgba`, `preview.rgba`, `range.bin` in `/dev/shm/immage-engine-XXXXXX` on Linux (the runtime folder if it can't be made; shared-memory objects on the Mac and Windows) | overwritten per request; a thumbnail's deleted once read; the folder goes when the app quits, and one a killed app left (no lock held on its `owner.lock`) at the next start |
 | Frames handed to the page (Linux) | `/dev/shm/immage-frame-<token>-<id>` | until the page reads it; left over past a minute, deleted at the next start |
 | AI models | `build/ai-models` (dev) or `<app data>/models` | until deleted |
 | Library thumbnails | `cache/thumbs`: a JPEG named for the photo, its sidecar and their times; a `.last` beside, by path alone, naming the newest | cache |
 | Folder snapshots | `folders/` in the runtime folder: each folder's photos as its last whole read found them | permanent; written again at each read |
 | Immich thumbnails and originals | `cache/immich-thumbs`, `cache/immich-originals` | cache |
 | Import catalog, Immich key | the immporter's SQLite catalog under the app data folder (`immporter/`); the key in the system keychain | permanent |
+| spektrafilm data packs | `<user data>/darktable/spektrafilm/packs/<hash>/` (`~/.local/share` on Linux), downloaded by darktable's `spektra_fetch.c` from darktable-org/darktable-spektrafilm; a hand-installed pack in `<user data>/darktable/spektrafilm` wins | permanent, shared with darktable |
 | Benchmark results | `benchmarking/results/` (see [benchmarking guide](../../../benchmarking/README.md)) (GUI reports under `gui/` in a dev build, `<app data>/benchmarks` in a release) | permanent, tracked |
 | Source photos | wherever the user keeps them | never written, except the sidecar |
 
@@ -488,6 +562,7 @@ darktable is, and it has AI features when darktable is configured with
 | [test_release_assets.py](../../../scripts/test_release_assets.py) | Release assembly checks: both Linux downloads and updater entries, missing bundles or signatures, duplicate architectures and mismatched versions. Run by the build workflow. |
 | `npm run build` in `app/` | Type checking (`tsc --noEmit`) and the production bundle; there is no front-end unit test runner (the release checks run the front end's `Session`). |
 | [verify/](../../../verify/README.md) | The release checks: the app's `Session` run under Node against the engine (`harness.mjs`, with `shim.mjs` for Tauri's invoke), every slider and mask slider measured, an edit saved and opened again, old edits rendered, a check per bug fixed and per decision about Immage's behavior, and the benchmark's main timings against the last run. |
+| [verify/print.py](../../../verify/print.py), [verify/print.test.mjs](../../../verify/print.test.mjs) | Print and soft proof: printer profiles, the proof's and gamut warning's pixels and frame hashes, PDF output and refused requests against the engine; the page layout and `Session.redraw()` after a proof through the app's code ([print.md](print.md)). |
 | [benchmarking/](../../../benchmarking/README.md) | The engine benchmark (driven with the app's own manifest), the GUI benchmark's reports, the dashboard. |
 | `build/spike/*.py` | Untracked, local scripts that drive the engine headless, one per feature (masks, zones, frames, spots, AI). Useful patterns, not a suite. |
 | `darktable/src/tests/integration/` | darktable's pixel tests; run them when a change reaches the pixelpipe or `src/iop/`. |
@@ -527,9 +602,23 @@ overlapping local photos and check the projection preview and Merge action.
 
 `MODULE_CHOICES` in [manifest.ts](../../src/manifest.ts) is the source of truth
 for the alternatives, preferred defaults, global controls and local controls.
+Each choice's `preferred` option follows darktable's AgX workflow except
+Clarity and Texture, which prefer `contrastntexture` for its OpenCL path
+(GPU check: 8 ms against diffuse's 17 on an Apple M4). A new raw no longer
+gets `capture` set on open (App.tsx `openFile`), and Reset all leaves it at
+its neutral 0; `verify/harness.mjs` opens photos the same way. Reset all
+(`resetAll` in App.tsx) keeps the other module settings (`isModuleSetting`:
+the tone mapper) but sets each `MODULE_CHOICES` control to
+`Session.preferredModules()`, the Preferences pick, in the same
+`changeMany`, so the panels show that module's sliders after a reset.
 `MASK_MODULE_CHOICES` filters these to the alternatives implemented by
 `localMaps`; masked Contrast offers color balance rgb (default) and atrous,
-excluding AgX because tone mappers cannot be masked.
+and masked Saturation color balance rgb (default) and satcurvergb, excluding
+AgX because tone mappers cannot be masked. Their color balance rgb option is
+the shared `localBalanceMap`, which has no choice of its own, so both are
+special-cased there and in Session (`MASK_SHARED_SLIDER`: the slider that
+says the tool is used, and the fallback to 1 for a mask with neither
+module's instance).
 [moduleChoice.ts](../../src/moduleChoice.ts) resolves global and mask scopes
 separately: `immage.modules.choices` and `immage.modules.choices.masks` in
 localStorage share the `immage.modules.mode` Default/Custom switch.
@@ -551,24 +640,51 @@ controls as well as adjustment controls so undo and copied masks retain them.
 when `mod_contrast` is 2. `equalizerMap` maps 30 `ce_<channel>_<band>` values to
 `atrous`'s `y[channel][band]`: five channels, six bands, range 0–1. The first
 three channels are neutral at 0.5, noise channels at 0. Reset restores every
-channel; the module is disabled at neutral. The same map and graph support
+channel; the module is disabled at neutral. The graph's viewBox pads the 260×140 plot by
+a handle's reach (`PAD`), so end and top/bottom points draw whole; pointer
+positions map back to plot units through `plot`. A press focuses the point it grabs:
+its `preventDefault` otherwise left focus where it was, and the arrows went
+there. The same map and graph support
 masked Contrast when the mask's `mod_contrast` is 2. Local curve values retain
 their 0.001 precision on reload. Each mask has its own atrous instance; it does
 not participate in shared-instance merging. Color balance rgb continues to
 carry the mask's Whites, Hue, Saturation and Color Grading, with its Contrast
 neutralized while atrous is selected.
+[SaturationCurve.tsx](../../src/SaturationCurve.tsx) replaces global Saturation
+when `mod_saturation` is 2 (`MOD_SATCURVE`; `choiceShows` hides the slider).
+`satcurveMap` maps `sc_pn`, `sc_p<k>x/y` (saturation) and `sb_*` (brilliance),
+up to 20 points each as the tone curve's point ids, to `satcurvergb`'s
+`channel[c].curve_num_nodes` and `channel[c].curve[k].x/y`; slots past the last
+point are written as 0, as darktable leaves them. y is half the factor
+satcurvergb applies (`curve_to_factor`), so the neutral curve is flat at 0.5
+and unused control slots hold (1, 0.5). The formula, curve type and guided
+filter keep darktable's defaults. The graph is `PointCurve` with
+`guide="flat"`, drawn with `monotone` (Fritsch-Carlson, as darktable's
+MONOTONE_HERMITE); there is no saturation histogram. Color balance rgb's
+global Saturation is `active` only on its own option, or AgX's on a photo on
+sigmoid, so it never runs beside the curve. Masks reuse the same ids on their
+own satcurvergb instance (not merged) when the mask's `mod_saturation` is 2;
+MasksPanel draws the curve in Presence, hidden in black and white, and
+`localBalanceMap` writes the mask's Saturation at neutral meanwhile.
 `detailMap` uses separate `contrastntexture` instances for Clarity and Texture,
 with local counterparts; [DetailControls.tsx](../../src/DetailControls.tsx)
 folds everything except Medium and Fine details under Advanced. Global
-Defringe uses `cacorrectrgb`; `mod_defringe` selects only the local module.
+Defringe uses `cacorrectrgb` globally and in masks, with no module choice:
+darktable deprecates `defringe`. A mask saved with the old `defringe` option
+keeps that instance in its history, which still renders and is disabled when
+the mask is deleted, but no slider reads or writes it.
 
 Verification: `node verify/contrast-equalizer.test.mjs` checks parameter round
 trips, independent preference scopes and mask choices in shared rendering.
 `node verify/mask-modules.mjs` uses the built engine and a temporary sample
 photo to check global AgX alongside masked atrous, preservation of used mask
 choices, and rendering, saving and reloading the mask's curves and module
-selection. `npm run build --prefix app` checks TypeScript and the front-end
-bundle.
+selection. `node --test verify/saturation-curve.test.mjs` checks the
+saturation curve's choice, its single active Saturation module, both curves'
+round trips and its mask option; `node verify/saturation-curve-engine.mjs`
+renders, saves and reloads global and masked curves with the built engine
+and checks that they raise the frame's chroma. `npm run build --prefix app`
+checks TypeScript and the front-end bundle.
 
 [CaptureTimeDialog.tsx](../../src/CaptureTimeDialog.tsx) builds before/after
 entries for a shared offset, skipping invalid recorded times. App.tsx retains
@@ -577,9 +693,12 @@ engine `_capture_times`, which checks expected times before writing sidecars.
 [LocationEditor.tsx](../../src/LocationEditor.tsx) saves GPS through `meta_set`;
 [map_tiles.rs](../../src-tauri/src/map_tiles.rs) supplies the optional map tiles.
 
-Rust `negative_export` exports a converted negative as a losslessly compressed
-16-bit float DNG or 32-bit float TIFF. Engine `_positive_import` gives the
-baked image a persistent neutral starting history. App.tsx's generated-result
+Rust `positive_export` (`kind` "negative" or "film") exports a converted
+negative or a film simulation as a losslessly compressed 16-bit float DNG or
+32-bit float TIFF, `<name>-positive` or `<name>-film`, with the engine's
+`export` flag `positive_copy` (`negative_copy` is still accepted). Engine
+`_positive_import` gives the baked image a persistent neutral starting
+history. App.tsx's generated-result
 handling observes Open generated photos for merges, AI denoise, positives and
 the first plugin result, and clears incompatible Immich filtering so the result
 can be edited. Successful activity notifications expire after 30 seconds.
@@ -654,6 +773,14 @@ The GUI dashboard plots these alongside timing summaries.
 native loupe rendering. Detail and grain drags start directly in the loupe at
 the display scale, without probing whole-image rendering first. Disabling the
 loupe keeps eligible detail drags at full visible preview resolution. Release renders the exact full view.
+
+`renderLoupe(id)` in `App.tsx` builds each loupe; every mounted display
+registers in `loupeDisplays` by id and is redrawn from the shared
+`loupeCanvas`. The main panel passes `detail` and `presence`; MasksPanel
+takes `presenceLoupe` (id `mask-presence`) and shows it atop its Presence
+group. The point pick runs in the viewer's pointer-down capture phase
+(`onLoupePickDown`), ahead of MaskOverlay's handles and brush, which stop
+propagation.
 
 In headless screen pipes, the engine pixelpipe patch retains the last edited
 module's input and the scaled output of `demosaicscale`, identified at the next
@@ -791,17 +918,15 @@ compatibility test; launch the resulting AppImage on Mint and benchmark it.
 Packaging regressions run with `python3 -I scripts/test_webkit_bundle.py`,
 including missing helpers/libraries, mismatched JavaScriptCore and newer glibc
 imports. GUI reports obtain the runtime version through `tauri::webview_version()`.
-Reported testing shows improved NVIDIA performance on Ubuntu/Wayland and a
-rendering performance regression on Mint/X11 that is resolved by selecting Mesa
-and restarting. For initial launch on the affected X11 system, use
-`GDK_BACKEND=x11 WEBKIT_DISABLE_DMABUF_RENDERER=1 ./Immage.AppImage`, then
-select Mesa in Preferences > Performance. Manual testing on the affected
-Mint/X11 system confirmed that subsequent normal launches need neither variable
-once Mesa is saved. These are system-specific observations, not proof of a
-general NVIDIA fix or of WebKitGTK as the sole cause. Automatic still uses system EGL
-selection, with explicit renderer preferences available. Verify both display
-backends with matching hardware, photos and settings before changing defaults
-or providing different WebKitGTK packages.
+The published 0.41.0 bundled runtime showed a Mint/X11/NVIDIA regression;
+selecting Mesa after an initial launch with
+`GDK_BACKEND=x11 WEBKIT_DISABLE_DMABUF_RENDERER=1 ./Immage.AppImage` was the
+confirmed workaround for that release. Starting with 0.41.1, automatic system
+WebKit selection and the GBM default described below resolve the reported
+Mint startup and rendering issue without requiring Mesa. Manual testing also
+confirmed normal launch on Ubuntu/Wayland. These observations do not establish
+performance on every NVIDIA system. Automatic window renderer selection still
+uses system EGL selection, independently of the launcher's WebKit selection.
 
 Starting with 0.41.1, Linux runtime selection is installed by
 `app/scripts/prepare_appimage_launcher.py` after Tauri deploys the AppDir.

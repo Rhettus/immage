@@ -5,8 +5,8 @@
 // Immich's thumbnails and the Immich originals opened here. each folder has
 // a size limit of its own, so one big download does not flush every
 // thumbnail; over it, the entries read least recently go. reading an entry
-// touches its time and nothing else does, so a folder opened every day
-// stays however long ago it was first cached
+// refreshes its time at most once a minute, so a folder opened every day
+// stays however long ago it was first cached. Eviction recency has minute precision
 
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -87,7 +87,9 @@ impl DiskCache {
             if path.is_dir() {
                 // a folder's own time does not change on every system, so a
                 // marker inside it carries the time
-                let _ = std::fs::write(path.join(".used"), b"");
+                let marker = path.join(".used");
+                if !marker.exists() { let _ = std::fs::write(&marker, b""); }
+                else { touch(&marker); }
             } else {
                 touch(&path);
             }
@@ -191,6 +193,12 @@ impl DiskCache {
 }
 
 fn touch(path: &Path) {
+    // Avoid opening for write and changing metadata on every cache hit.
+    // Future timestamps are refreshed too, so a clock change cannot pin entries.
+    if std::fs::metadata(path).and_then(|m| m.modified()).ok()
+        .and_then(|time| time.elapsed().ok()).is_some_and(|age| age < Duration::from_secs(60)) {
+        return;
+    }
     if let Ok(f) = std::fs::OpenOptions::new().write(true).open(path) {
         let _ = f.set_modified(SystemTime::now());
     }
@@ -468,6 +476,38 @@ mod tests {
         assert!(dir.join("c").exists() && dir.join("d").exists());
         assert_eq!(c.usage(), 900);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn repeated_hits_do_not_rewrite_recent_timestamps() {
+        let dir = test_dir("cache-touch");
+        let c = DiskCache::new(dir.clone(), 1 << 20, false);
+        c.write("a", b"bytes").unwrap();
+        age(&dir.join("a"), 10);
+        let before = std::fs::metadata(dir.join("a")).unwrap().modified().unwrap();
+        assert_eq!(c.read("a").as_deref(), Some(&b"bytes"[..]));
+        assert_eq!(std::fs::metadata(dir.join("a")).unwrap().modified().unwrap(), before);
+        age(&dir.join("a"), 120);
+        c.read("a").unwrap();
+        assert!(std::fs::metadata(dir.join("a")).unwrap().modified().unwrap() > before);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn original_access_markers_are_throttled() {
+        let dir = test_dir("cache-marker");
+        let c = DiskCache::new(dir.clone(), 1 << 20, false);
+        std::fs::create_dir_all(dir.join("original")).unwrap();
+        c.touch("original");
+        let marker = dir.join("original/.used");
+        age(&marker, 10);
+        let before = std::fs::metadata(&marker).unwrap().modified().unwrap();
+        c.touch("original");
+        assert_eq!(std::fs::metadata(&marker).unwrap().modified().unwrap(), before);
+        age(&marker, 120);
+        c.touch("original");
+        assert!(std::fs::metadata(&marker).unwrap().modified().unwrap() > before);
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

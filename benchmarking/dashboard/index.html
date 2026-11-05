@@ -480,7 +480,7 @@ const views = {
     const msel = h("select", { onchange: (e) => { state.machine = e.target.value; state.gui = D.gui.findLastIndex((x) => machineOf(x) === state.machine); render(); } },
       machines.map(([id, name]) => h("option", id === state.machine ? { value: id, selected: "" } : { value: id }, id === "unknown" ? name : `${name} (${id})`)));
     const mine = D.gui.map((x, i) => [x, i]).filter(([x]) => machineOf(x) === state.machine);
-    const sel = h("select", { onchange: (e) => { state.gui = +e.target.value; render(); } }, mine.map(([x, i]) => h("option", i === state.gui ? { value: i, selected: "" } : { value: i }, x.id)));
+    const sel = h("select", { onchange: (e) => { state.gui = +e.target.value; render(); } }, mine.map(([x, i]) => h("option", i === state.gui ? { value: i, selected: "" } : { value: i }, x.build?.commit ? `${x.id} · ${x.build.commit.slice(0, 10)}${x.build.dirty ? "-dirty" : ""}` : x.id)));
     const sampleRows = g.samples.slice(-300);
     const pts = h("div", {});
     const W = 1000, H = 220, svg = s("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%" });
@@ -492,7 +492,7 @@ const views = {
       svg.append(c); hover(c, `<b>${x.label ?? ""}</b><br>${x.kind}${x.draft ? " (draft)" : ""} ${x.width}×${x.height}<br>${fmt(x.total)} ms, ${x.edits} moves`); });
     svg.append(s("text", { x: 40, y: 216 }, "time through the run →"));
     return [
-      card("GUI benchmark", `${machineName(g)}${g.machine?.os ? `, ${g.machine.os}` : ""}${g.machine?.display?.sessionType ? ` (${g.machine.display.sessionType})` : ""}${g.webview?.gpu ? `, WebGL renderer ${g.webview.gpu.renderer}` : ""}${g.webview?.frameRateHz ? ` at ${g.webview.frameRateHz} fps` : ""}. Photo ${g.photo}, viewer ${g.viewport.width}×${g.viewport.height} at ${g.viewport.dpr}×, drag drafts ${g.dragDrafts ? "on" : "off"}${g.transport ? `, frames by ${g.transport === "shared" ? "shared memory" : "invoke"}` : ""}, ${g.seconds?.toFixed?.(0) ?? "?"} s. Median per step, slider move to pixels on screen.`,
+      card("GUI benchmark", `${machineName(g)}${g.machine?.os ? `, ${g.machine.os}` : ""}${g.machine?.display?.sessionType ? ` (${g.machine.display.sessionType})` : ""}${g.webview?.gpu ? `, WebGL renderer ${g.webview.gpu.renderer}` : ""}${g.webview?.frameRateHz ? ` at ${g.webview.frameRateHz} fps` : ""}.${g.build?.commit ? ` Build <code>${g.build.commit.slice(0, 10)}</code>${g.build.dirty ? " (uncommitted changes)" : ""}.` : ""} Photo ${g.photo}, viewer ${g.viewport.width}×${g.viewport.height} at ${g.viewport.dpr}×, drag drafts ${g.dragDrafts ? "on" : "off"}${g.transport ? `, frames by ${g.transport === "shared" ? "shared memory" : "invoke"}` : ""}, ${g.seconds?.toFixed?.(0) ?? "?"} s. Median per step, slider move to pixels on screen.`,
         h("label", {}, "machine ", msel), " ", h("label", {}, "report ", sel), legend(groups), stacked(rows, STAGES, colors, { label: 230 })),
       ...webviewCards(g),
       ...resourceCards(g),

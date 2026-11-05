@@ -12,7 +12,8 @@ is no process version to choose: the tone mapper, AgX, plays that part.
 
 ## Working with sliders
 
-- **Drag** a slider, or click on its track.
+- **Drag** a slider, or click on its track to jump it there; the photo
+  follows either way.
 - **Double-click** the slider or its name to reset it.
 - **Double-click the number** to type a value; Enter sets it, Esc cancels.
 - **Scroll** over a slider to nudge it, if **Scroll adjusts sliders** is
@@ -72,7 +73,9 @@ for **B&W Mix**.
   Such a scene also keeps its shadows unlifted, or its highlights and
   blacks untouched. A photo with nothing dark in it, such as a plane
   against clear sky, keeps its blacks too, rather than its sky being
-  darkened. Under AgX it also sets AgX's range.
+  darkened. A flat photo gets only a moderate Contrast boost, since
+  Whites and Blacks already widen its tones. Under AgX it also sets AgX's
+  range.
 - **Exposure**: -5 to +5 stops.
 - **Contrast**, **Highlights**, **Shadows**, **Whites**, **Blacks**: -100 to
   +100. Whites moves the top of the tone mapper's curve, and under AgX
@@ -82,16 +85,17 @@ for **B&W Mix**.
 **Presence**
 
 - **Texture**: fine detail; negative values smooth it.
-- **Clarity**: midtone contrast (darktable's local contrast).
+- **Clarity**: midtone contrast.
 - **Dehaze**: removes haze; negative values add it.
 - **Vibrance** and **Saturation**.
 
-With **contrast & texture** selected for Clarity or Texture in Preferences ›
-Modules, that slider becomes **Medium details** and **Fine details** (-1 to 5).
+Clarity and Texture run on **contrast & texture** by default, where each
+shows **Medium details** and **Fine details** (-1 to 5) instead of a single
+slider; choose local contrast or diffuse or sharpen in Preferences › Modules
+for the slider.
 **Advanced** reveals Coarse details (-1 to 5), Base detail level (1–15), Halo
 control (-10 to 10), Noise bias (0–1), Shadows and Highlights (-5 to 5).
-Clarity and Texture use separate instances, including on masks. This module
-currently runs on the CPU.
+Clarity and Texture use separate instances, including on masks.
 
 ## Contrast equalizer
 
@@ -101,13 +105,33 @@ the Contrast slider. It adjusts detail by spatial scale rather than tonal range.
 
 Select **Luminance**, **Chroma**, **Edges**, **Luminance noise** or **Chroma
 noise**. Each channel has six points, from **Coarse** on the left to **Fine**
-on the right. Click near a point and drag vertically to change that band.
+on the right, each drawn whole even at the graph's edge. Click near a point
+and drag vertically to change that band.
 Pull up to boost, down to reduce; the noise channels set noise thresholds.
-Focus a point and use Up/Down to adjust it, or Home to restore its neutral
+Click or Tab to a point and use Up/Down to adjust it, or Home to restore its neutral
 value. **Reset** restores all five channels. To use the graph inside masks,
 choose **Masks › Contrast › contrast equalizer** in the same preferences tab.
 Global and mask choices are independent, so global Contrast can use AgX while
 masks use the equalizer. Existing adjustments keep their selected module.
+
+## Saturation curve
+
+Choose **Custom**, then **Global › Saturation › saturation curve** in
+Preferences › Modules for a photo whose Saturation has not been edited. In
+Basic's Presence, a curve replaces the Saturation slider. It changes colors
+by how saturated they already are: across the graph, from **Muted** on the
+left to **Saturated** on the right; up from the middle line adds,
+down takes away. A curve that falls to the right lifts muted colors more
+than vivid ones, much as Vibrance does; one that rises does the opposite.
+
+Select **Saturation** or **Brilliance**. Saturation's curve sets how much
+saturation each color gets, from none at the bottom to twice its own at the
+top. Brilliance's lightens or darkens colors, by the same measure, while
+keeping their saturation. Click to add a point (up to 20), drag to move one,
+and double-click a point or drag it off the graph to remove it; the end
+points stay. **Reset** flattens both curves. To use the curve inside masks,
+choose **Masks › Saturation › saturation curve**. Uses darktable's
+saturation curve module.
 
 ## Tone Curve
 
@@ -137,7 +161,7 @@ and **Magenta**. Hue moves each band up to 30° either way. Saturation at
 leaves pale ones nearly as they were.
 
 Each band acts most on its own color and fades out toward the bands
-either side, as in Lightroom. Blue and Purple sit close together, so each
+either side. Blue and Purple sit close together, so each
 also reaches part of the other's colors.
 
 A photo whose HSL was set in darktable, or in Immage before 0.37.0, can
@@ -172,13 +196,14 @@ On a wheel, the angle is the hue and the distance from the middle is the
 saturation. Drag the dot; double-click a wheel to take its saturation back
 to 0.
 
-![Color Grading, 3-Way view](images/color-grading.png)
+![Color Grading, 3-Way view, with the shadows toward teal and the highlights toward orange](images/color-grading.png)
 <!-- screenshot: Color Grading, 3-Way view, warm highlights and cool shadows set -->
 
 ## Detail
 
 Enable **Detail loupe** in Preferences › General › Workspace for compact
-100% previews above Detail and Presence. Their point pickers select the same
+100% previews above Detail and Presence (a mask's Presence group shows
+one too). Their point pickers select the same
 area. Detail and grain drags preview that area directly; with the loupe off,
 they keep the visible image at full preview resolution. Release updates the
 full visible view. Tone and contrast controls retain whole-image previews.
@@ -238,8 +263,8 @@ Raw-only sliders are grayed out on a JPEG.
 
 **Defringe** removes color fringes using darktable's chromatic aberrations:
 **Amount** sets strength and **Radius** sets its reach. Amount 0 switches it
-off. This is separate from Remove Chromatic Aberration and from the module
-choice for a mask's Defringe.
+off. This is separate from Remove Chromatic Aberration. A mask's Defringe
+uses the same module.
 
 - **Enable Profile Corrections**: corrects distortion and vignetting for
   the lens darktable detects (through the lensfun database).
@@ -265,7 +290,8 @@ darktable's line detection and fit from its rotate and perspective module:
 
 - **Auto**: levels the photo and makes vertical lines plumb. It corrects
   horizontal lines too when the photo has enough of them.
-- **Level**: rotation only.
+- **Level**: rotation only. The crop tool's **Auto** uses the same fit
+  but sets Rotate instead.
 - **Vertical**: level, with vertical lines made plumb.
 - **Full**: level, with vertical and horizontal lines both corrected.
 - **Guided**: drag along two to four lines that should be plumb or level.
@@ -275,6 +301,9 @@ darktable's line detection and fit from its rotate and perspective module:
 - **Off**: removes the Upright correction.
 
 Auto, Level, Vertical and Full set the Manual sliders back to 0.
+These modes also work on cropped photos and portraits, including photos turned
+upright by the camera's orientation metadata. Detection uses the available
+photo region; a photo without enough straight lines may still need Guided.
 
 **Manual** adjusts on top of Upright:
 

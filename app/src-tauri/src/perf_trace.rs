@@ -16,6 +16,7 @@ pub struct Span {
     pub wait: f64,
     pub acquired: f64,
     pub released: f64,
+    pub output_ms: Option<[f64; 4]>,
 }
 #[derive(Clone, Debug)]
 pub struct Pending {
@@ -116,6 +117,7 @@ impl<T> TracedMutex<T> {
                     wait,
                     acquired,
                     released: 0.0,
+                    output_ms: None,
                 },
             )
         });
@@ -130,6 +132,13 @@ pub struct Guard<'a, T> {
     inner: MutexGuard<'a, T>,
     trace: &'a TracedMutex<T>,
     span: Option<(u64, Instant, Span)>,
+}
+impl<T> Guard<'_, T> {
+    pub fn set_output_ms(&mut self, timings: [f64; 4]) {
+        if let Some((_, _, span)) = self.span.as_mut() {
+            span.output_ms = Some(timings);
+        }
+    }
 }
 impl<T> Deref for Guard<'_, T> {
     type Target = T;
@@ -175,10 +184,12 @@ mod tests {
         {
             let mut guard = m.lock("render", Some(7));
             *guard = 3;
+            guard.set_output_ms([1.0, 2.0, 3.0, 4.0]);
         }
         let spans = m.snapshot().0;
         assert_eq!(spans.len(), 1);
         assert_eq!(spans[0].request, Some(7));
+        assert_eq!(spans[0].output_ms, Some([1.0, 2.0, 3.0, 4.0]));
         assert!(spans[0].released >= spans[0].acquired && spans[0].acquired >= spans[0].wait);
         m.stop();
         drop(m.lock("off", None));

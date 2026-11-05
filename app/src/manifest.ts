@@ -21,6 +21,7 @@ import { autoCrop } from "./transform";
 import { fromNodes, toNodes } from "./colorequal";
 import { cbHueTrack, displayHue } from "./colorgrading";
 import { FILM_BW, FILM_COLOR, NEG_RANGES } from "./negadoctor";
+import { DIFFUSION_FILTERS, SF_FIELDS, sfId } from "./spektrafilm";
 import { PLACE_BOOST, PLACE_FIELDS, PLACE_FIRST, PLACE_MAX, PLACEMENT_OP, ROMAN, ZONE_GRAY,
          placeIds } from "./zones";
 
@@ -402,13 +403,74 @@ const USM_AMOUNT = 50;
 const USM_THRESHOLD = 10;
 const USM_RADIUS = 2;
 
+// ---------------------------------------------- Saturation curve (satcurvergb)
+// darktable's saturation and brilliance curves, edited on a graph: x is the
+// pixel's saturation, y half the factor it gets (satcurvergb.c,
+// curve_to_factor), so a curve flat at 0.5 changes nothing. channel 0's
+// points are sc_pn and sc_p<k>x/y, channel 1's (brilliance) sb_
+export const SAT_CHANNELS = ["Saturation", "Brilliance"] as const;
+export type SatChannel = 0 | 1;
+const SAT_PREFIXES = ["sc_", "sb_"] as const;
+const SAT_FLAT = 0.5;
+const satIds = (pre: string) =>
+  [`${pre}pn`, ...Array.from({ length: MAX_NODES }, (_, k) => [`${pre}p${k}x`, `${pre}p${k}y`]).flat()];
+export const SATCURVE_IDS = SAT_PREFIXES.flatMap(satIds);
+export const satPointsOf = (v: Values, ch: SatChannel): Point[] => {
+  const pre = SAT_PREFIXES[ch];
+  return Array.from({ length: Math.max(2, Math.min(MAX_NODES, v[`${pre}pn`] ?? 2)) },
+                    (_, k) => [v[`${pre}p${k}x`] ?? (k ? 1 : 0), v[`${pre}p${k}y`] ?? SAT_FLAT] as Point);
+};
+export const satPointValues = (points: Point[], ch: SatChannel): Values => {
+  const pre = SAT_PREFIXES[ch];
+  const out: Values = { [`${pre}pn`]: points.length };
+  for (let k = 0; k < MAX_NODES; k++) {
+    // unused slots hold the flat curve's end, so they never read as a change
+    const [x, y] = points[k] ?? [1, SAT_FLAT];
+    out[`${pre}p${k}x`] = x;
+    out[`${pre}p${k}y`] = y;
+  }
+  return out;
+};
+const SAT_FLAT_POINTS: Point[] = [[0, SAT_FLAT], [1, SAT_FLAT]];
+export const SATCURVE_NEUTRAL: Values = { ...satPointValues(SAT_FLAT_POINTS, 0), ...satPointValues(SAT_FLAT_POINTS, 1) };
+const satcurveControls: Control[] = SATCURVE_IDS.map((id) => id.endsWith("pn")
+  ? { id, label: "Saturation curve", min: 2, max: MAX_NODES, step: 1, neutral: 2, format: plain(0) }
+  : { id, label: "Saturation curve", min: 0, max: 1, step: 0.0001, neutral: SATCURVE_NEUTRAL[id], format: plain(4) });
+const satField = (ch: number, k: number, a: "x" | "y") => `channel[${ch}].curve[${k}].${a}`;
+const satcurveMap: ModuleMap = {
+  op: "satcurvergb", keepOn: false,
+  controls: SATCURVE_IDS,
+  fields: [0, 1].flatMap((ch) => [`channel[${ch}].curve_num_nodes`,
+    ...Array.from({ length: MAX_NODES }, (_, k) => [satField(ch, k, "x"), satField(ch, k, "y")]).flat()]),
+  read: (p) => Object.assign({}, ...([0, 1] as const).map((ch) => {
+    const n = Math.max(2, Math.min(MAX_NODES, p[`channel[${ch}].curve_num_nodes`] ?? 2));
+    return satPointValues(Array.from({ length: n }, (_, k): Point =>
+      [p[satField(ch, k, "x")] ?? (k ? 1 : 0), p[satField(ch, k, "y")] ?? SAT_FLAT]), ch);
+  })),
+  // the slots past the last point are zeroed, as darktable's own params
+  // leave them (satcurvergb.c, reset_channel_curve)
+  write: (v) => Object.assign({}, ...([0, 1] as const).map((ch) => {
+    const points = satPointsOf(v, ch);
+    const out: Params = { [`channel[${ch}].curve_num_nodes`]: points.length };
+    for (let k = 0; k < MAX_NODES; k++) {
+      const [x, y] = points[k] ?? [0, 0];
+      out[satField(ch, k, "x")] = x;
+      out[satField(ch, k, "y")] = y;
+    }
+    return out;
+  })),
+  enabled: (v) => SATCURVE_IDS.some((id) => Math.abs((v[id] ?? SATCURVE_NEUTRAL[id]) - SATCURVE_NEUTRAL[id]) > 1e-6),
+};
+
 // ------------------------------------------------------- module choices
 // a tool darktable can do with more than one module. the photo's choice
 // control says which it uses: the module it already has on, or for a tool
 // it has not used yet, the one Preferences picks (moduleChoice.ts). each
 // option brings its own sliders, and the panels show only the photo's
 // Preferences' Default picks each tool's `preferred` module, the one
-// darktable's AgX workflow uses (avidandrew.com/agx-workflow.html)
+// darktable's AgX workflow uses (avidandrew.com/agx-workflow.html), except
+// that Clarity and Texture take contrast & texture, which runs on OpenCL
+// and outpaces diffuse or sharpen
 export type ModuleOption = {
   value: number; op: string; name: string;
   preferred: boolean;         // what Preferences' Default picks
@@ -423,8 +485,8 @@ const MOD_SHARPEN = 0, MOD_DIFFUSE = 1;
 const MOD_TONEEQ = 0, MOD_SHADHI = 1;
 // the tone mapper (AgX, or sigmoid on a photo started under it), or another module
 const MOD_TM = 0, MOD_CBRGB = 1, MOD_EXPOSURE = 1;
+const MOD_SATCURVE = 2;
 const MOD_BW_CALIBRATION = 0, MOD_BW_EQUALIZER = 1;
-const MOD_CA = 0, MOD_DEFRINGE = 1;
 const shared = (value: number, op: string, name: string, preferred: boolean): ModuleOption =>
   ({ value, op, name, preferred, controls: [], localControls: [] });
 export const MODULE_CHOICES: ModuleChoice[] = [
@@ -444,8 +506,9 @@ export const MODULE_CHOICES: ModuleChoice[] = [
     options: [shared(MOD_TM, "agx", "AgX", true), shared(MOD_EXPOSURE, "exposure", "exposure", false)],
   },
   {
-    id: "saturation", label: "Saturation", control: "mod_saturation", covers: ["saturation"],
-    options: [shared(MOD_TM, "agx", "AgX", true), shared(MOD_CBRGB, "colorbalancergb", "color balance rgb", false)],
+    id: "saturation", label: "Saturation", control: "mod_saturation", covers: ["saturation", ...SATCURVE_IDS],
+    options: [shared(MOD_TM, "agx", "AgX", true), shared(MOD_CBRGB, "colorbalancergb", "color balance rgb", false),
+      { ...shared(MOD_SATCURVE, "satcurvergb", "saturation curve", false), controls: SATCURVE_IDS }],
   },
   {
     id: "bw", label: "Black & White", control: "mod_bw", covers: ["bw_mode"],
@@ -455,16 +518,16 @@ export const MODULE_CHOICES: ModuleChoice[] = [
   {
     id: "clarity", label: "Clarity", control: "mod_clarity",
     options: [
-      { ...shared(0, "bilat", "local contrast", true), controls: ["clarity"], localControls: ["l_clarity"] },
-      { ...shared(1, "contrastntexture", "contrast & texture", false),
+      { ...shared(0, "bilat", "local contrast", false), controls: ["clarity"], localControls: ["l_clarity"] },
+      { ...shared(1, "contrastntexture", "contrast & texture", true),
         controls: detailControlIds("detail_clarity"), localControls: detailControlIds("l_detail_clarity") },
     ],
   },
   {
     id: "texture", label: "Texture", control: "mod_texture",
     options: [
-      { ...shared(0, "diffuse", "diffuse or sharpen", true), controls: ["texture"], localControls: ["l_texture"] },
-      { ...shared(1, "contrastntexture#texture", "contrast & texture", false),
+      { ...shared(0, "diffuse", "diffuse or sharpen", false), controls: ["texture"], localControls: ["l_texture"] },
+      { ...shared(1, "contrastntexture#texture", "contrast & texture", true),
         controls: detailControlIds("detail_texture"), localControls: detailControlIds("l_detail_texture") },
     ],
   },
@@ -476,11 +539,6 @@ export const MODULE_CHOICES: ModuleChoice[] = [
       { value: MOD_DIFFUSE, op: "diffuse#sharpen", name: "diffuse or sharpen", preferred: false,
         controls: ["sharp_amount", "sharp_radius", "sharp_sensitivity"], localControls: ["l_sharpness"] },
     ],
-  },
-  {
-    id: "defringe", label: "Defringe", control: "mod_defringe", covers: ["l_defringe"],
-    options: [shared(MOD_CA, "cacorrectrgb", "chromatic aberrations", true),
-              shared(MOD_DEFRINGE, "defringe", "defringe", false)],
   },
 ];
 // the tools a converted negative runs after negadoctor rather than on a
@@ -500,6 +558,7 @@ const optionOf = new Map(MODULE_CHOICES.flatMap((c) => c.options.flatMap((o) =>
 export const choiceShows = (id: string, v: Values) => {
   const at = optionOf.get(id);
   if (id === "contrast" && v.mod_contrast === 2) return false;
+  if (id === "saturation" && v.mod_saturation === MOD_SATCURVE) return false;
   return !at || v[at.choice.control] === at.option.value;
 };
 export const choiceOn = (m: ModuleMap, v: Values) =>
@@ -709,6 +768,10 @@ const QUAD = (i: number) => `last_quad_lines[${i}]`;
 // Aspect as ashift's aspect adjust, 0.5-2, a stretch across the sensor frame
 export const uprightAspect = (v: Values, ctx: ImageContext) =>
   2 ** (((swapsAxes(ctx) ? -1 : 1) * (v.tf_aspect ?? 0)) / 100);
+// ashift's rotation as the Rotate slider shows it, on top of the Upright
+// fit's own rotation (base)
+export const rotateOf = (rotation: number, base: number, ctx: ImageContext) =>
+  (mirrored(ctx) ? 1 : -1) * (rotation - base);
 // the guides kept, as x1, y1, x2, y2 in the input image (0-1)
 export const guidesOf = (v: Values): [number, number, number, number][] =>
   Array.from({ length: Math.min(MAX_GUIDES, v.tf_gn ?? 0) }, (_, k) =>
@@ -731,7 +794,6 @@ const transformMap: ModuleMap = {
   read: (p, _d, ctx) => {
     const tagged = p[QUAD(0)] === UPRIGHT_TAG;
     const [br, bv, bh] = tagged ? [p[QUAD(2)], p[QUAD(3)], p[QUAD(4)]] : [0, 0, 0];
-    const sign = mirrored(ctx) ? 1 : -1;
     const [lv, lh] = [p.lensshift_v - bv, p.lensshift_h - bh];
     const [v, h] = swapsAxes(ctx) ? [lh, lv] : [lv, lh];
     const [vs, hs] = keystoneSigns(ctx);
@@ -739,7 +801,7 @@ const transformMap: ModuleMap = {
     const gn = tagged ? Math.min(MAX_GUIDES, Math.max(0, Math.round(p.last_drawn_lines_count))) : 0;
     const guides = Object.fromEntries(GUIDE_IDS.map((id, i) => [id, i < 4 * gn
       ? p[DRAWN(i)] / (i % 2 ? ctx.sensorHeight : ctx.sensorWidth) : 0]));
-    return { tf_rotate: sign * (p.rotation - br), tf_vertical: vs * v * 100, tf_horizontal: hs * h * 100,
+    return { tf_rotate: rotateOf(p.rotation, br, ctx), tf_vertical: vs * v * 100, tf_horizontal: hs * h * 100,
              tf_aspect: (swapsAxes(ctx) ? -100 : 100) * Math.log2(aspect),
              tf_upright: tagged ? p[QUAD(1)] : 0, tf_base_r: br, tf_base_v: bv, tf_base_h: bh,
              tf_gn: gn, ...guides };
@@ -979,6 +1041,19 @@ export function turnRect(r: { l: number; t: number; r: number; b: number }, how:
   return { l: r.t, t: 1 - r.r, r: r.b, b: 1 - r.l };
 }
 
+// the fewest turns from one orientation to another, as an undo in the
+// crop tool turns its guide back: two at most, of the eight orientations
+export function turnPath(from: number, to: number): Turn[] {
+  const turns: Turn[] = ["cw", "ccw", "h", "v"];
+  let paths: [number, Turn[]][] = [[from, []]];
+  for (let depth = 0; depth < 3; depth++) {
+    const found = paths.find(([o]) => o === to);
+    if (found) return found[1];
+    paths = paths.flatMap(([o, p]) => turns.map((h): [number, Turn[]] => [turnOrientation(o, h), [...p, h]]));
+  }
+  return [];
+}
+
 // negadoctor's three RGB params, by the controls' names for them
 const NEG_RGB = ["dmin", "wbl", "wbh"] as const;
 const NEG_FIELD: Record<typeof NEG_RGB[number], string> = { dmin: "Dmin", wbl: "wb_low", wbh: "wb_high" };
@@ -1029,7 +1104,9 @@ export const modules: ModuleMap[] = [
          "mod_contrast", MOD_CBRGB),
   // a photo on sigmoid, which has no saturation, keeps this one
   chosen(linear("colorbalancergb", false, [{ id: "saturation", field: "saturation_global", scale: 0.01, base: 0 }]),
-         "mod_saturation", MOD_CBRGB, { active: (v) => v.mod_saturation === MOD_CBRGB || v.tm_mode !== 1 }),
+         "mod_saturation", MOD_CBRGB,
+         { active: (v) => v.mod_saturation === MOD_CBRGB || (v.mod_saturation === MOD_TM && v.tm_mode !== 1) }),
+  chosen(satcurveMap, "mod_saturation", MOD_SATCURVE),
   chosen(linear("shadhi", false, [
     { id: "highlights", field: "highlights", scale: 1, base: 0 },
     { id: "shadows", field: "shadows", scale: 1, base: 0 },
@@ -1383,6 +1460,16 @@ export const modules: ModuleMap[] = [
     }),
     enabled: (v) => v.neg_on === 1,
   },
+  // the Film Simulation panel's spektrafilm (FilmPanel.tsx, spektrafilm.ts),
+  // each control one param; a simulated photo has the modules of SF_OFF off
+  {
+    op: "spektrafilm", keepOn: false,
+    controls: ["sf_on", ...SF_FIELDS.map((x) => sfId(x.field))],
+    fields: SF_FIELDS.map((x) => x.field),
+    read: (p) => ({ sf_on: 1, ...Object.fromEntries(SF_FIELDS.map((x) => [sfId(x.field), p[x.field]])) }),
+    write: (v) => Object.fromEntries(SF_FIELDS.map((x) => [x.field, v[sfId(x.field)]])),
+    enabled: (v) => v.sf_on === 1,
+  },
   transformMap,
   flipMap,
   cropMap,
@@ -1403,6 +1490,34 @@ export const NEG_OFF_UNMAPPED = new Set(["filmicrgb", "basecurve"]);
 // Basic's sliders on those modules, greyed on a negative; Contrast,
 // Saturation, Highlights and Shadows move to modules after it (NEG_CHOICES)
 export const NEG_GREYED = new Set(["temp", "tint", "exposure", "blacks", "whites", "dehaze", "profile"]);
+
+// a film simulation turns off the tone mappers, whose part spektrafilm's
+// print and scan take; exposure and color calibration stay, as the film
+// needs its middle gray placed (darktable's spektrafilm workflow)
+export const SF_OFF = new Set(["agx", "sigmoid"]);
+export const SF_OFF_UNMAPPED = NEG_OFF_UNMAPPED;
+// Basic's sliders on the tone mappers alone, greyed while it is on;
+// Contrast, Saturation and Blacks move to modules after it (SF_CHOICES)
+export const SF_GREYED = new Set(["whites", "profile"]);
+// the tools a film simulation runs on modules other than the tone mapper
+export const SF_CHOICES: Record<string, number> = { mod_contrast: MOD_CBRGB, mod_saturation: MOD_CBRGB,
+                                                    mod_blacks: MOD_EXPOSURE };
+
+// a photo's conversion, which turns other modules off while its switch is
+// on and keeps their settings for when it is turned back: a converted
+// negative, or a film simulation (engine main.c, _held_for_mode())
+export type Conversion = { flag: string; op: string; off: Set<string>; unmapped: Set<string>;
+                           choices: Record<string, number>; greyed: Set<string> };
+export const CONVERSIONS: Conversion[] = [
+  { flag: "neg_on", op: "negadoctor", off: NEG_OFF, unmapped: NEG_OFF_UNMAPPED, choices: NEG_CHOICES,
+    greyed: NEG_GREYED },
+  { flag: "sf_on", op: "spektrafilm", off: SF_OFF, unmapped: SF_OFF_UNMAPPED, choices: SF_CHOICES,
+    greyed: SF_GREYED },
+];
+export const conversionsOn = (v: Values) => CONVERSIONS.filter((c) => v[c.flag] === 1);
+// the module a conversion that is on runs a tool on, whatever the photo holds
+export const forcedChoice = (v: Values, control: string): number | undefined =>
+  conversionsOn(v).find((c) => control in c.choices)?.choices[control];
 
 // --------------------------------------------------------------- the panels
 
@@ -1453,6 +1568,7 @@ export const panels: Panel[] = [
           lr("dehaze", "Dehaze"),
           lr("vibrance", "Vibrance", { track: GLOBAL_SAT_TRACK }),
           lr("saturation", "Saturation", { track: GLOBAL_SAT_TRACK }),
+          ...satcurveControls,
         ],
       },
     ],
@@ -1524,7 +1640,7 @@ export const panels: Panel[] = [
         title: "Capture Sharpening",
         controls: [
           { ...toggle("capture", "Enable", 0), rawOnly: true,
-            note: "restores the detail the lens and sensor soften, so less Sharpening is needed; on for new raws" },
+            note: "restores the detail the lens and sensor soften, so less Sharpening is needed" },
         ],
       },
       {
@@ -1761,6 +1877,29 @@ export const panels: Panel[] = [
       ],
     }],
   },
+  // the Film Simulation panel's (FilmPanel.tsx): spektrafilm's params, each
+  // labelled for what it does, with darktable's name in the tooltip. no
+  // neutral: the module's defaults
+  {
+    id: "film", title: "Film Simulation", hidden: true,
+    sections: [{
+      title: "Film Simulation",
+      controls: [
+        { id: "sf_on", label: "Film Simulation", kind: "toggle", min: 0, max: 1, step: 1, neutral: 0,
+          format: (v) => (v ? "on" : "off") },
+        ...SF_FIELDS.map((x): Control => x.bool
+          ? { id: sfId(x.field), label: x.label, kind: "toggle", min: 0, max: 1, step: 1,
+              format: (v) => (v ? "on" : "off"), note: x.note }
+          : x.menu
+          ? { id: sfId(x.field), label: x.label, kind: "choice", menu: true, min: 0, max: 3, step: 1,
+              options: DIFFUSION_FILTERS, note: x.note,
+              format: (v) => DIFFUSION_FILTERS.find(([, n]) => n === v)?.[0] ?? "" }
+          : { id: sfId(x.field), label: x.label, min: x.min, max: x.max, step: x.step, note: x.note,
+              readsPast: x.soft || x.field.endsWith("_hash"),
+              format: (x.signed ? signed : plain)(x.digits, x.unit ?? "") }),
+      ],
+    }],
+  },
   // which module each of MODULE_CHOICES' tools runs on for this photo. its
   // neutral is what Preferences picks, set when the photo opens
   {
@@ -1787,7 +1926,7 @@ export const mapsWith = (id: string) => modules.filter((m) => m.controls.include
 const MODULE_NAMES: Record<string, string> = {
   atrous: "contrast equalizer", agx: "AgX", ashift: "rotate and perspective", bilat: "local contrast", channelmixerrgb: "color calibration",
   cacorrectrgb: "chromatic aberrations", colorbalancergb: "color balance rgb", colorequal: "color equalizer",
-  contrastntexture: "contrast & texture", crop: "crop", defringe: "defringe", demosaic: "demosaic", negadoctor: "negadoctor",
+  contrastntexture: "contrast & texture", crop: "crop", demosaic: "demosaic", negadoctor: "negadoctor", spektrafilm: "spektrafilm",
   denoiseprofile: "denoise (profiled)", diffuse: "diffuse or sharpen", exposure: "exposure", flip: "orientation",
   grain: "grain", hazeremoval: "haze removal", hotpixels: "hot pixels", lens: "lens correction", rgbcurve: "rgb curve",
   shadhi: "shadows and highlights", sharpen: "sharpen", sigmoid: "sigmoid", tonecurve: "tone curve",
@@ -1850,6 +1989,7 @@ export const LOCAL_CONTROLS: Control[] = [
   { id: "l_exposure", label: "Exposure", min: -4, max: 4, step: 0.01, neutral: 0, format: signed(2) },
   lr("l_contrast", "Contrast"),
   ...equalizerControls,
+  ...satcurveControls,
   { id: "l_fulcrum", label: "Contrast pivot", min: -6, max: 6, step: 0.1, neutral: 0, format: signed(1, " EV") },
   lr("l_highlights", "Highlights"),
   lr("l_shadows", "Shadows"),
@@ -1882,6 +2022,7 @@ const localBalanceMap = withFulcrum(linear("colorbalancergb", false, [
 
 export const localMaps: ModuleMap[] = [
   { ...equalizerMap, choice: { control: "mod_contrast", value: 2 } },
+  { ...satcurveMap, choice: { control: "mod_saturation", value: MOD_SATCURVE } },
   {
     op: "channelmixerrgb", keepOn: false,
     controls: ["l_temp", "l_tint"],
@@ -1907,7 +2048,8 @@ export const localMaps: ModuleMap[] = [
   {
     ...localBalanceMap,
     write: (v, d, c) => localBalanceMap.write(
-      { ...v, l_contrast: v.mod_contrast === 2 ? 0 : v.l_contrast }, d, c),
+      { ...v, l_contrast: v.mod_contrast === 2 ? 0 : v.l_contrast,
+        l_saturation: v.mod_saturation === MOD_SATCURVE ? 0 : v.l_saturation }, d, c),
     merge: true,
     fixed: ["l_hue", "l_fulcrum", ...RANGES.map(([r]) => `l_cg_${r}_hue`)],
   },
@@ -1963,22 +2105,14 @@ export const localMaps: ModuleMap[] = [
     write: (v) => ({ strength: Math.max(0.001, v.l_noise / 50) }),
   },
   {
-    // Defringe on chromatic aberrations, as the AgX workflow corrects them.
-    // Some 18 ms a mask's draft frame, so its masks share instances
-    op: "cacorrectrgb", keepOn: false, merge: true, choice: { control: "mod_defringe", value: MOD_CA },
+    // Defringe on chromatic aberrations, as the AgX workflow corrects them
+    // (darktable deprecates defringe for it). Some 18 ms a mask's draft
+    // frame, so its masks share instances
+    op: "cacorrectrgb", keepOn: false, merge: true,
     controls: ["l_defringe"],
     fields: ["strength"],
     read: (p) => ({ l_defringe: (100 * p.strength) / CA_STRENGTH }),
     write: (v) => ({ strength: (CA_STRENGTH * v.l_defringe) / 100 }),
-  },
-  {
-    // or on defringe: more Defringe catches fainter fringes, the threshold
-    // falling from 40 toward 5, at the module's default radius
-    op: "defringe", keepOn: false, choice: { control: "mod_defringe", value: MOD_DEFRINGE },
-    controls: ["l_defringe"],
-    fields: ["thresh"],
-    read: (p) => ({ l_defringe: Math.max(0, ((40 - p.thresh) / 35) * 100) }),
-    write: (v) => ({ thresh: 40 - (35 * v.l_defringe) / 100 }),
   },
   {
     // as the global Sharpening, at its default radius and sensitivity, on a
@@ -2008,7 +2142,9 @@ export const localFields = () => Object.fromEntries(localMaps.map((m) => [m.op, 
 
 // Only modules that support local adjustments are offered for masks.
 export const MASK_MODULE_CHOICES: ModuleChoice[] = MODULE_CHOICES.flatMap((c) => {
-  if (c.id === "contrast") return [{ ...c, options: c.options.filter((o) => o.value !== 0)
+  // their color balance rgb option is the mask's shared instance
+  // (localBalanceMap), which carries no choice of its own
+  if (c.id === "contrast" || c.id === "saturation") return [{ ...c, options: c.options.filter((o) => o.value !== 0)
     .map((o) => ({ ...o, preferred: o.value === 1 })) }];
   const options = c.options.filter((o) => localMaps.some((m) =>
     m.choice?.control === c.control && m.choice.value === o.value));

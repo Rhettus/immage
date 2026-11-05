@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from 'node:assert/strict';
-import { click, reveal, inspect } from '../support/controls.mjs';
-import { panel, expandSections, textButton, choose, Blocked } from '../support/scenario.mjs';
+import { click, reveal, inspect, openTool } from '../support/controls.mjs';
+import { panel, expandSections, textButton, choose, Blocked, openMaskGroup } from '../support/scenario.mjs';
 import { until } from '../support/webdriver.mjs';
-import { settledPhoto } from './smoke.mjs';
+import { settledPhoto, settledReset } from './smoke.mjs';
 
 async function preferences(t, tab) {
   await click(t, 'button[data-tour="prefs"]');
@@ -34,18 +34,72 @@ export async function nativeReset(t) {
   assert(sidecars.some(s => s.includes('colorbalancergb')), 'native settings persisted in isolated sidecar');
   t.measure({ name:'b1d7c4c', sidecarCount:sidecars.length });
 }
+// The point curve has no sliders: its points (the hidden tonecurve-points
+// panel) are edited only on this graph, so this case stands in for
+// per-value control cases. Graph units: x 0..1 left to right, y 0..1 bottom
+// to top.
+const CURVE_MAX_NODES = 20; // MAX_NODES in app/src/tonecurve.ts
 export async function curves(t) {
+  // Reset All clears the New Photos preset by design: reset first, so the
+  // closing Reset All can reproduce the baseline (as history does)
+  const opened = await settledPhoto(t);
+  await click(t, 'button[aria-label="reset all"]');
+  try { await settledPhoto(t, q => q.hash !== opened.hash); } catch {}
+  const baseline = await settledPhoto(t);
   const p = await panel(t, 'tonecurve');
   await textButton(t, `${p} .tabs`, 'Point');
+  const svg = `${p} svg.point-curve`;
+  const nodes = () => t.driver.observe(s => [...document.querySelectorAll(`${s} circle.pt`)]
+    .map(c => [+c.getAttribute('cx') / 260, 1 - +c.getAttribute('cy') / 260]), svg);
+  const count = n => until(async () => (await nodes()).length === n, `curve has ${n} points`, 5000);
+  const at = async (x, y) => { const g = await reveal(t, svg);
+    return { x: g.bounds.x + x * g.bounds.width, y: g.bounds.y + (1 - y) * g.bounds.height }; };
+  const hashes = new Set();
   for (const channel of ['RGB','R','G','B']) {
     await textButton(t, `${p} .channels`, channel);
-    const graph = await reveal(t, `${p} svg.curve`);
-    const from = { x:graph.x, y:graph.y }, to = { x:graph.x, y:graph.y - graph.bounds.height * .12 };
-    await t.driver.drag(from,to); const frame=await settledPhoto(t);
-    const path = await t.driver.observe(s => document.querySelector(`${s} svg.curve`)?.outerHTML, p);
-    assert(path?.includes('circle'), 'curve exposes editable nodes');
-    t.measure({ name:channel, photoHash:frame.hash, graph:path }); await t.evidence(`curve-${channel}`);
+    await count(2);
+    // drag from the middle: a click there adds a point, the drag lifts it
+    await t.driver.drag(await at(.5, .5), await at(.5, .62)); await count(3);
+    const edited = await settledPhoto(t, q => q.hash !== baseline.hash);
+    hashes.add(edited.hash);
+    const [, mid] = await nodes();
+    t.measure({ name:channel, photoHash:edited.hash, point:mid }); await t.evidence(`curve-${channel}`);
+    // a double-click on an inner point removes it
+    const m = await at(...mid); await t.driver.point(m.x, m.y, 2); await count(2);
+    await settledReset(t, baseline, edited, `${channel}-remove`);
   }
+  assert.equal(hashes.size, 4, 'RGB and each color channel change the photo differently');
+
+  await textButton(t, `${p} .channels`, 'RGB');
+  // the end points move but stay: lift the black point, then drag it past the
+  // graph's corner, where it clamps back to (0, 0)
+  await t.driver.drag(await at(.01, .01), await at(.01, .2));
+  const lifted = await settledPhoto(t, q => q.hash !== baseline.hash);
+  assert.equal((await nodes()).length, 2, 'an end point is moved, not removed');
+  await t.evidence('black-point-lifted');
+  const corner = await at(.01, .2), g = await reveal(t, svg);
+  await t.driver.drag(corner, { x: g.bounds.x - 20, y: g.bounds.y + g.bounds.height + 20 });
+  await until(async () => { const [[x, y]] = await nodes(); return x === 0 && y === 0; }, 'black point back at its corner', 5000);
+  await settledReset(t, baseline, lifted, 'black-point-corner');
+
+  // fill the graph to its limit, alternating heights so each click lands
+  // clear of its neighbors' hit radius
+  const inner = CURVE_MAX_NODES - 2;
+  for (let i = 1; i <= inner; i++) {
+    const c = await at(i / (inner + 1), i % 2 ? .4 : .6);
+    await t.driver.point(c.x, c.y); await count(2 + i);
+  }
+  const full = await settledPhoto(t, q => q.hash !== baseline.hash); await t.evidence('max-points');
+  const gap = await at(.5, .9); await t.driver.point(gap.x, gap.y);
+  await new Promise(r => setTimeout(r, 500));
+  assert.equal((await nodes()).length, CURVE_MAX_NODES, `no point past the ${CURVE_MAX_NODES}-point limit`);
+  // dragging an inner point well off the graph removes it
+  const [, second] = await nodes(), s0 = await at(...second);
+  await t.driver.drag(s0, { x: s0.x, y: g.bounds.y + g.bounds.height * 1.4 }); await count(CURVE_MAX_NODES - 1);
+  t.measure({ name:'max-points', photoHash:full.hash, limit:CURVE_MAX_NODES });
+
+  await click(t, 'button[aria-label="reset all"]'); await count(2);
+  await settledReset(t, baseline, full, 'reset-all');
   await textButton(t, `${p} .tabs`, 'Parametric'); await expandSections(t,p);
   await t.evidence('parametric');
 }
@@ -61,8 +115,8 @@ export async function wheels(t) {
       const point=await t.driver.observe((s,i)=>{ const e=document.querySelectorAll(`${s} .wheel`)[i-1],r=e.getBoundingClientRect(); return {x:r.x+r.width/2,y:r.y+r.height/2,width:r.width}; },p,i);
       const before=await settledPhoto(t);
       await t.driver.drag(point,{x:point.x+point.width*.2,y:point.y-point.width*.1});
-      await settledPhoto(t,q=>q.hash!==before.hash); await t.evidence(`${mode}-${i}`);
-      await t.driver.point(point.x,point.y,2); await settledPhoto(t,q=>q.hash===before.hash);
+      const edited=await settledPhoto(t,q=>q.hash!==before.hash); await t.evidence(`${mode}-${i}`);
+      await t.driver.point(point.x,point.y,2); await settledReset(t,before,edited,`${mode}-${i}-reset`);
     }
   }
 }
@@ -72,7 +126,8 @@ export async function equalizer(t) {
   if(!await t.driver.observe(s=>document.querySelector(s)?.getAttribute('aria-expanded')==='true',fold)) await click(t,fold);
   const selector='select[aria-label="Global Contrast"]', menu=await reveal(t,selector);
   const option=menu.options.find(o=>o.label.includes('equalizer')); assert(option);
-  await choose(t,selector,option.value); await textButton(t,'.prefs-foot','Done'); await panel(t,'basic');
+  // a folded section's body is unmounted: open them all to reach the graph
+  await choose(t,selector,option.value); await textButton(t,'.prefs-foot','Done'); await expandSections(t,await panel(t,'basic'));
   const channel='select[aria-label="Equalizer channel"]', options=(await reveal(t,channel)).options;
   for(const o of options) {
     await choose(t,channel,o.value);
@@ -87,17 +142,63 @@ export async function equalizer(t) {
   }
   await textButton(t,'.equalizer-heading','Reset'); await settledPhoto(t);
 }
+// a sampled frame's mean chroma (channel spread) and mean level
+const tones = p => { let c = 0, l = 0; const n = p.rgba.length / 4;
+  for (let i = 0; i < p.rgba.length; i += 4) { const [r, g, b] = [p.rgba[i], p.rgba[i + 1], p.rgba[i + 2]];
+    c += Math.max(r, g, b) - Math.min(r, g, b); l += (r + g + b) / 3; }
+  return { chroma: c / n, level: l / n }; };
+export async function saturationCurve(t) {
+  const baseline = await settledPhoto(t);
+  await preferences(t, 'Modules'); await textButton(t, '.prefs', 'Custom');
+  const fold = 'button[aria-controls="module-prefs-global"]';
+  if (!await t.driver.observe(s => document.querySelector(s)?.getAttribute('aria-expanded') === 'true', fold)) await click(t, fold);
+  const selector = 'select[aria-label="Global Saturation"]', menu = await reveal(t, selector);
+  const option = menu.options.find(o => o.label.includes('saturation curve')); assert(option, 'saturation curve offered');
+  await choose(t, selector, option.value); await textButton(t, '.prefs-foot', 'Done');
+  const p = await panel(t, 'basic'); await expandSections(t, p);
+  const svg = `${p} .saturation-curve svg.point-curve`;
+  await reveal(t, svg);
+  assert(!await t.driver.observe(s => !!document.querySelector(`${s} [data-control-id="saturation"]`), p),
+    'the curve replaces the Saturation slider');
+  const nodes = () => t.driver.observe(s => [...document.querySelectorAll(`${s} circle.pt`)]
+    .map(c => [+c.getAttribute('cx') / 260, 1 - +c.getAttribute('cy') / 260]), svg);
+  const count = n => until(async () => (await nodes()).length === n, `curve has ${n} points`, 5000);
+  const at = async (x, y) => { const g = await reveal(t, svg);
+    return { x: g.bounds.x + x * g.bounds.width, y: g.bounds.y + (1 - y) * g.bounds.height }; };
+  const base = tones(baseline);
+  for (const [value, name, metric] of [[0, 'Saturation', 'chroma'], [1, 'Brilliance', 'level']]) {
+    await choose(t, 'select[aria-label="Saturation curve channel"]', value);
+    await count(2);
+    // lift the muted end: more saturation, or brighter colors, across the photo
+    await t.driver.drag(await at(.01, .5), await at(.01, .8));
+    const lifted = await settledPhoto(t, q => q.hash !== baseline.hash);
+    assert.equal((await nodes()).length, 2, `${name}: an end point is moved, not removed`);
+    const after = tones(lifted);
+    t.measure({ name, photoHash: lifted.hash, before: base, after });
+    assert(after[metric] > base[metric], `${name}: lifting the curve raises the photo's ${metric} (${base[metric]} -> ${after[metric]})`);
+    await t.evidence(`satcurve-${name}`);
+    // a drag from the middle adds a point; a double-click removes it
+    await t.driver.drag(await at(.5, .5), await at(.5, .35)); await count(3);
+    const [, mid] = await nodes(), m = await at(...mid);
+    await settledPhoto(t, q => q.hash !== lifted.hash);
+    await t.driver.point(m.x, m.y, 2); await count(2);
+    await textButton(t, `${p} .saturation-curve .equalizer-heading`, 'Reset');
+    await count(2);
+    await settledReset(t, baseline, lifted, `${name}-reset`);
+  }
+}
 export async function masks(t) {
-  await click(t,'button[data-tour="masks"]');
+  await openTool(t,'masks');
   for(const name of ['Linear Gradient','Radial Gradient','Brush','Luminance Range','Color Range','Parametric']) {
     const baseline=await settledPhoto(t);
     await click(t,'.create-mask'); await textButton(t,'.shape-menu-list',name);
-    const photo=await reveal(t,'svg.mask-svg');
-    if(name!=='Parametric') await t.driver.drag({x:photo.x-photo.bounds.width*.15,y:photo.y},{x:photo.x+photo.bounds.width*.15,y:photo.y+photo.bounds.height*.12});
+    // a parametric mask has no shape, so no drawing layer to reach
+    if(name!=='Parametric') { const photo=await reveal(t,'svg.mask-svg');
+      await t.driver.drag({x:photo.x-photo.bounds.width*.15,y:photo.y},{x:photo.x+photo.bounds.width*.15,y:photo.y+photo.bounds.height*.12}); }
     await until(()=>t.driver.observe(()=>document.querySelectorAll('.mask-list > li').length>0),'created mask');
-    // Open Tone group through its actual heading.
-    const heading=await t.driver.observe(()=>[...document.querySelectorAll('.masks-panel h3.fold')].find(e=>e.textContent.trim()==='Tone')?.getBoundingClientRect().toJSON());
-    if(heading) await t.driver.point(heading.x+heading.width/2,heading.y+heading.height/2);
+    // Open the Tone group through its heading, only if it is closed: the
+    // heading toggles, and a later mask can find it already open.
+    await openMaskGroup(t,'Tone');
     const s=await reveal(t,'[data-control-id="l_exposure"] input[type=range]');
     await t.driver.drag({x:s.x,y:s.y},{x:s.x+s.bounds.width*.12,y:s.y});
     const changed=await settledPhoto(t,p=>p.hash!==baseline.hash);
@@ -108,7 +209,7 @@ export async function masks(t) {
   }
 }
 export async function heal(t) {
-  await click(t,'button[data-tour="heal"]');
+  await openTool(t,'heal');
   for(const mode of ['Heal','Clone']) {
     await textButton(t,'.heal-mode',mode);
     const canvas=await reveal(t,'svg.spot-svg');
@@ -128,22 +229,162 @@ export async function negative(t) {
   const baseline=await settledPhoto(t);
   await prepareNegative(t);
   await settledPhoto(t,p=>p.hash!==baseline.hash); await t.evidence('converted');
-  await textButton(t,'.negative','Turn Off Conversion'); await settledPhoto(t,p=>p.hash===baseline.hash);
+  await textButton(t,'.positive-foot','Turn Off Conversion'); await settledPhoto(t,p=>p.hash===baseline.hash);
+}
+// the Film Simulation panel: on, a preset, a film, then off again to the
+// photo as it was. needs the data pack already installed: the case does not
+// download it
+// spektrafilm's stock hash, as spektrafilm.ts stockHash() has it
+const stockHash=(stock)=>{
+  let h=5381n;
+  for(const b of new TextEncoder().encode(stock)) h=(((h<<5n)+h)^BigInt(b))&0xffffffffffffffffn;
+  return Number((h^(h>>32n))&0xffffffffn)||1;
+};
+export async function film(t) {
+  const baseline=await settledPhoto(t);
+  await openTool(t,'film');
+  await until(()=>t.driver.observe(()=>!!document.querySelector('.panel.film button, .panel.film select')),'film panel');
+  if(await t.driver.observe(()=>[...document.querySelectorAll('.panel.film button')].some(b=>/Download Film Data|Try Again/.test(b.textContent))))
+    throw new Blocked('Install the spektrafilm data pack first (Film Simulation, Download Film Data)');
+  await textButton(t,'.panel.film','Turn On Film Simulation');
+  const on=await settledPhoto(t,p=>p.hash!==baseline.hash); await t.evidence('simulated');
+  // Film and Paper are menus of stock names, not sliders of their hashes
+  const film='.panel.film [data-control-id="sf_film_hash"] select';
+  await until(()=>t.driver.observe(s=>{const e=document.querySelector(s);
+    return !!e && e.selectedIndex>=0 && !/^\d+$/.test(e.options[e.selectedIndex].text);},film),'Film menu naming the stock');
+  assert(await t.driver.observe(()=>!!document.querySelector('.panel.film [data-control-id="sf_paper_hash"] select')),'Paper is a menu');
+  // the preset sets the film too
+  await choose(t,'.panel.film .choice-row:first-child select','film|portrait');
+  await until(()=>t.driver.observe(s=>!!document.querySelector(s),
+    `${film} option[value="${stockHash('kodak_portra_400')}"]:checked`),'film|portrait chooses Kodak Portra 400');
+  await settledPhoto(t,p=>p.hash!==on.hash); await t.evidence('preset');
+  await textButton(t,'.positive-foot','Turn Off Film Simulation'); await settledPhoto(t,p=>p.hash===baseline.hash);
 }
 export async function zones(t) {
-  await click(t,'button[data-tour="zones"]');
-  const columns=await t.driver.observe(()=>document.querySelectorAll('.zone-col').length); assert(columns>=10);
+  // the Zone System works on black and white: convert first, back to color after
+  await openTool(t,'adjust'); await textButton(t,await panel(t,'basic'),'B&W'); await settledPhoto(t);
+  await openTool(t,'zones');
+  await until(()=>t.driver.observe(()=>document.querySelectorAll('.zone-col').length>=10),'zone columns');
+  const columns=await t.driver.observe(()=>document.querySelectorAll('.zone-col').length);
   for(let i=1;i<=columns;i++) {
     await click(t,`.zone-col:nth-of-type(${i})`);
     await until(()=>t.driver.observe(()=>!!document.querySelector('.zone-name')),'zone selected');
     await t.evidence(`zone-${i}`);
   }
+  await openTool(t,'adjust'); await textButton(t,await panel(t,'basic'),'Color'); await settledPhoto(t);
 }
 
 export async function prepareNegative(t) {
-  await click(t,'button[data-tour="negative"]');
-  if(await t.driver.observe(()=>!!document.querySelector('.neg-warn'))) await textButton(t,'.neg-warn','Continue');
+  // the tool opens only after its warning is confirmed, so answer that first
+  const b=await reveal(t,'button[data-tour="negative"]');
+  if(!b.active){
+    await click(t,'button[data-tour="negative"]');
+    const warned=await until(()=>t.driver.observe(()=>document.querySelector('.neg-warn')?'warn':document.querySelector('button[data-tour="negative"]:is(.on,.active)')?'open':''),'negative warning or tool',10000).catch(()=>'');
+    if(warned==='warn') await textButton(t,'.neg-warn','Continue');
+  }
+  await openTool(t,'negative');
   await textButton(t,'.negative','Pick Film Border');
   const c=await reveal(t,'.zone-object-box'); await t.driver.point(c.bounds.x+c.bounds.width*.02,c.bounds.y+c.bounds.height*.02);
   await until(()=>t.driver.observe(()=>!!document.querySelector('.neg-swatch')),'negative converted');
+}
+
+// the Print panel: soft proof and gamut warning against a made-up narrow
+// printer profile (support/icc.mjs, which run.mjs puts in the engine's
+// profiles), S turning the proof off and on, the proof staying on in
+// Adjustments, and the page laid out in the viewer: orientation, margins,
+// size and place, with the photo rendered inside the printable area.
+// prints nothing: Print and Save PDF open native dialogs or a real printer,
+// and verify/print.py checks the PDF the engine writes
+const PRINT_PROFILE = 'immage-test-narrow.icc';
+const chromaOf = p => { let c = 0; for (let i = 0; i < p.rgba.length; i += 4)
+  c += Math.max(p.rgba[i], p.rgba[i + 1], p.rgba[i + 2]) - Math.min(p.rgba[i], p.rgba[i + 1], p.rgba[i + 2]);
+  return c / (p.rgba.length / 4); };
+const cyanOf = p => { let n = 0; for (let i = 0; i < p.rgba.length; i += 4)
+  if (p.rgba[i] < 40 && p.rgba[i + 1] > 200 && p.rgba[i + 2] > 200) n++; return n; };
+// the page in the viewer, and the photo's rectangle on it, in CSS pixels
+const pageView = t => t.driver.observe(() => {
+  const box = s => { const r = document.querySelector(s)?.getBoundingClientRect(); return r && { x: r.x, y: r.y, w: r.width, h: r.height }; };
+  const sheet = box('.viewer .print-sheet');
+  return sheet ? { sheet, area: box('.viewer .print-area'), photo: box('.viewer .after-pane canvas.layer.sharp'),
+                   size: document.querySelector('.panel.print .print-size')?.textContent ?? '' } : null; });
+const inside = (a, b, slack = 3) => a.x >= b.x - slack && a.y >= b.y - slack
+  && a.x + a.w <= b.x + b.w + slack && a.y + a.h <= b.y + b.h + slack;
+export async function print(t) {
+  await openTool(t, 'print');
+  await until(async () => !!(await pageView(t)), 'the page in the viewer', 20000);
+  // the photo as the page shows it, before any proof
+  const baseline = await settledPhoto(t);
+  const profileMenu = '.panel.print select[data-action="print-profile"]';
+  await until(() => t.driver.observe(s => [...(document.querySelector(s)?.options ?? [])]
+    .some(o => o.value.endsWith('/immage-test-narrow.icc') || o.value.endsWith('\\immage-test-narrow.icc')), profileMenu),
+    'the seeded printer profile listed', 20000);
+  const printers = '.panel.print select[data-action="print-printer"]';
+  await until(() => t.driver.observe(s => !!document.querySelector(s)?.querySelector('option[value=""]'), printers), 'Save as PDF offered');
+  await choose(t, printers, '');
+  const file = await t.driver.observe((s, name) => [...document.querySelector(s).options]
+    .find(o => o.value.endsWith(name))?.value, profileMenu, PRINT_PROFILE);
+  await choose(t, profileMenu, file);
+  await until(() => t.driver.observe(() => !document.querySelector('input[data-action="print-softproof"]')?.disabled), 'Soft Proof enabled');
+  { const v = await pageView(t);
+    assert(v.area && v.photo && inside(v.photo, v.area), `the photo inside the printable area: ${JSON.stringify(v)}`); }
+  await t.evidence('print-panel');
+
+  // soft proof: the photo as the narrow printer prints it, duller, with the badge
+  await click(t, 'input[data-action="print-softproof"]');
+  const proofed = await settledPhoto(t, p => p.hash !== baseline.hash);
+  assert(chromaOf(proofed) < chromaOf(baseline), `proof pulls color in: ${chromaOf(baseline)} -> ${chromaOf(proofed)}`);
+  assert(await t.driver.observe(() => /Immage test narrow printer/.test(document.querySelector('[data-proof-badge]')?.textContent ?? '')),
+         'the badge names the profile');
+  await t.evidence('soft-proof');
+  // gamut warning: what the printer can't reach painted cyan
+  await click(t, 'input[data-action="print-gamut"]');
+  const gamut = await settledPhoto(t, p => p.hash !== proofed.hash);
+  assert(cyanOf(gamut) > cyanOf(proofed), `gamut warning paints cyan: ${cyanOf(proofed)} -> ${cyanOf(gamut)}`);
+  await t.evidence('gamut-warning');
+  await click(t, 'input[data-action="print-gamut"]');
+  await settledPhoto(t, p => p.hash === proofed.hash);
+
+  // S turns it off, to the photo as it was, and on again
+  await t.driver.keys('s');
+  await settledPhoto(t, p => p.hash === baseline.hash);
+  assert(!await t.driver.observe(() => !!document.querySelector('[data-proof-badge]')), 'badge gone with the proof');
+  await t.driver.keys('s');
+  await settledPhoto(t, p => p.hash === proofed.hash);
+  // the proof stays on in another panel
+  await openTool(t, 'adjust');
+  assert(await t.driver.observe(() => !!document.querySelector('[data-proof-badge]')), 'proof kept in Adjustments');
+  await openTool(t, 'print');
+
+  // layout: the page turns, a margin and the size change the photo's print size, a place is chosen
+  const page = async () => { const v = await pageView(t); return v && { width: v.sheet.w, height: v.sheet.h, size: v.size }; };
+  await textButton(t, '.panel.print', 'Portrait');
+  await until(async () => { const p = await page(); return p && p.height > p.width; }, 'a portrait page');
+  await textButton(t, '.panel.print', 'Landscape');
+  await until(async () => { const p = await page(); return p && p.width > p.height; }, 'a landscape page');
+  await textButton(t, '.panel.print', 'mm');
+  const before = (await page()).size;
+  await click(t, '.panel.print input[data-margin="left"]');
+  await t.driver.chord('', 'a'); await t.driver.keys('6', '0');
+  await until(async () => (await page()).size !== before, 'a wider left margin changes the print size');
+  await textButton(t, '.panel.print', 'Custom');
+  await until(() => t.driver.observe(() => !!document.querySelector('.panel.print input[data-margin="size"]')), 'the long edge field');
+  await click(t, '.viewer .print-align button:nth-child(1)');
+  await until(() => t.driver.observe(() => document.querySelector('.viewer .print-align button:nth-child(1)')?.classList.contains('on')),
+              'top left chosen');
+  await settledPhoto(t);
+  await until(async () => { const v = await pageView(t);
+    return v?.area && v.photo && inside(v.photo, v.area) && Math.abs(v.photo.x - v.area.x) <= 3 && Math.abs(v.photo.y - v.area.y) <= 3; },
+    'the photo at the top left of the printable area');
+  assert(await t.driver.observe(() => /Save PDF/.test(document.querySelector('button[data-action="print-go"]')?.textContent ?? '')
+    && !document.querySelector('button[data-action="print-go"]').disabled), 'Save PDF ready');
+  await t.evidence('layout');
+
+  // off from the panel: the photo unproofed again, at its new place and size
+  const placed = await settledPhoto(t);
+  await click(t, 'input[data-action="print-softproof"]');
+  await settledPhoto(t, p => p.hash !== placed.hash);
+  assert(!await t.driver.observe(() => !!document.querySelector('[data-proof-badge]')), 'badge gone with the proof');
+  // leaving the panel puts the photo back over the whole viewer
+  await openTool(t, 'adjust');
+  await until(async () => !(await pageView(t)), 'the page gone in Adjustments');
 }

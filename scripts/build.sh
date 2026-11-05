@@ -44,12 +44,14 @@ sh scripts/patch_darktable.sh
 sh app/scripts/build_opencv.sh
 
 # the engine needs none of darktable's GUI-side features, and each one found
-# installed would otherwise be built in and its libraries bundled
+# installed would otherwise be built in and its libraries bundled. printing
+# stays on: the Print panel uses darktable's printer profiles, PDF writer
+# and CUPS (libcups on Linux, in macOS itself)
 engine_flags="-DCMAKE_BUILD_TYPE=Release -DUSE_AI=ON -DUSE_LUA=OFF
   -DUSE_CAMERA_SUPPORT=OFF -DUSE_COLORD=OFF -DUSE_GMIC=OFF -DUSE_GRAPHICSMAGICK=OFF
   -DUSE_ICU=OFF -DUSE_IMAGEMAGICK=OFF -DUSE_KWALLET=OFF -DUSE_LIBSECRET=OFF
   -DUSE_MAC_INTEGRATION=OFF -DUSE_MAP=OFF -DUSE_OPENCV=ON -DOpenCV_ROOT=$root/build/opencv/install
-  -DUSE_PORTMIDI=OFF -DUSE_SDL2=OFF -DBUILD_PRINT=OFF"
+  -DUSE_PORTMIDI=OFF -DUSE_SDL2=OFF -DBUILD_PRINT=ON"
 
 case "$(uname -s)" in
   Darwin)

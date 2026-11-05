@@ -15,6 +15,7 @@ struct Recording {
 }
 static RECORDING: Mutex<Option<Recording>> = Mutex::new(None);
 const INTERVAL: Duration = Duration::from_millis(500);
+const DISCOVERY_INTERVAL: Duration = Duration::from_secs(2);
 
 fn unix_ms() -> u128 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis()
@@ -56,12 +57,22 @@ fn descendants(sys: &System, root: Pid) -> HashSet<Pid> {
     }
 }
 
-fn refresh(sys: &mut System) {
+fn refresh(sys: &mut System, root: Pid, discover: bool) -> HashSet<Pid> {
     sys.refresh_cpu_usage();
     sys.refresh_memory();
-    // tasks are read only for our process tree on Linux, avoiding a scan of every system thread
-    sys.refresh_processes_specifics(ProcessesToUpdate::All, true,
+    if discover {
+        // Discover parent relationships without collecting CPU/RSS for every
+        // unrelated process. Do not scan system threads on Linux either.
+        sys.refresh_processes_specifics(ProcessesToUpdate::All, true,
+            ProcessRefreshKind::nothing().without_tasks());
+    }
+    let mut selected = descendants(sys, root);
+    let pids: Vec<_> = selected.iter().copied().collect();
+    sys.refresh_processes_specifics(ProcessesToUpdate::Some(&pids), true,
         ProcessRefreshKind::nothing().with_cpu().with_memory().without_tasks());
+    // Some refresh removes dead selected processes between discovery ticks.
+    selected.retain(|pid| sys.process(*pid).is_some());
+    selected
 }
 
 fn collect(stop: mpsc::Receiver<()>) -> Value {
@@ -70,9 +81,10 @@ fn collect(stop: mpsc::Receiver<()>) -> Value {
     let mut sys = System::new();
     let mut threads = Threads::default();
     let mut gpu = Gpus::new();
-    refresh(&mut sys);
-    threads.sample(&descendants(&sys, root), 1.0);
+    let selected = refresh(&mut sys, root, true);
+    threads.sample(&selected, 1.0);
     let mut previous = Instant::now();
+    let mut last_discovery = previous;
     let mut samples = Vec::new();
     // a bound also stops an abandoned recording after a webview reload
     while samples.len() < 1200 {
@@ -81,8 +93,9 @@ fn collect(stop: mpsc::Receiver<()>) -> Value {
             Err(mpsc::RecvTimeoutError::Timeout) => (),
         }
         let tick = Instant::now();
-        refresh(&mut sys);
-        let selected = descendants(&sys, root);
+        let discover = tick.duration_since(last_discovery) >= DISCOVERY_INTERVAL;
+        let selected = refresh(&mut sys, root, discover);
+        if discover { last_discovery = tick; }
         let processes: Vec<Value> = selected.iter().filter_map(|pid| {
             sys.process(*pid).map(|p| json!({ "pid": pid.as_u32(), "name": p.name().to_string_lossy(),
                 "cpuPercent": p.cpu_usage(), "rssBytes": p.memory() }))
@@ -93,6 +106,7 @@ fn collect(stop: mpsc::Receiver<()>) -> Value {
         previous = tick;
         let gpus = gpu.sample();
         let mut sample = json!({ "atUnixMs": unix_ms(), "intervalMs": elapsed,
+            "processDiscovery": discover,
             "cpuPercent": cpu, "processes": processes, "threads": busiest,
             "memory": { "usedBytes": sys.used_memory(), "availableBytes": sys.available_memory(),
                 "swapUsedBytes": sys.used_swap() }, "gpus": gpus,
@@ -101,6 +115,7 @@ fn collect(stop: mpsc::Receiver<()>) -> Value {
         samples.push(sample);
     }
     json!({ "startedUnixMs": started, "intervalMs": INTERVAL.as_millis(),
+        "processDiscoveryIntervalMs": DISCOVERY_INTERVAL.as_millis(),
         "cpuPercentConvention": "100% = one logical CPU; process totals can exceed 100%",
         "threadSupport": cfg!(target_os = "linux"), "gpuSupport": gpu.support,
         "rendererEvidence": renderer_evidence(&sys, &descendants(&sys, root)),
@@ -267,6 +282,30 @@ mod tests {
             Some(("worker (main)".into(), 32)));
     }
     #[test]
+    fn targeted_refresh_discovers_children_and_removes_exits() {
+        let root = Pid::from_u32(std::process::id());
+        let mut sys = System::new();
+        assert!(refresh(&mut sys, root, true).contains(&root));
+        // Reuse a bounded headless test as a portable child process, with no
+        // shell, GUI or platform-specific executable involved.
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "resources::tests::recording_captures_live_cpu_and_memory"])
+            .stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null())
+            .spawn().unwrap();
+        let pid = Pid::from_u32(child.id());
+        let before_discovery = refresh(&mut sys, root, false);
+        let discovered = refresh(&mut sys, root, true);
+        let targeted = refresh(&mut sys, root, false);
+        let status = child.wait().unwrap();
+        let after_exit = refresh(&mut sys, root, false);
+        assert!(!before_discovery.contains(&pid));
+        assert!(discovered.contains(&pid));
+        assert!(targeted.contains(&pid));
+        assert!(status.success());
+        assert!(!after_exit.contains(&pid));
+        assert!(after_exit.contains(&root));
+    }
+    #[test]
     fn recording_captures_live_cpu_and_memory() {
         let (tx, rx) = mpsc::channel();
         let worker = std::thread::spawn(move || collect(rx));
@@ -277,6 +316,7 @@ mod tests {
         println!("resource-smoke-report: {report}");
         let samples = report["samples"].as_array().unwrap();
         assert!(!samples.is_empty());
+        assert_eq!(report["processDiscoveryIntervalMs"], 2000);
         #[cfg(target_os = "linux")]
         assert!(samples.iter().flat_map(|s| s["threads"].as_array().unwrap())
             .any(|t| t["cpuPercent"].as_f64().unwrap_or(0.0) > 0.0));

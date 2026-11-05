@@ -41,6 +41,8 @@
 #include "common/mipmap_cache.h"
 #include "common/ratings.h"
 #include "common/styles.h"
+#include "common/spektra_fetch.h"
+#include "common/spektra_sim.h"
 #include "common/tags.h"
 #include "control/conf.h"
 #include "common/exif.h"
@@ -54,6 +56,7 @@
 #ifdef HAVE_PANO
 #include "pano.h"
 #endif
+#include "print.h"
 #include "strip.h"
 #include "upright.h"
 #ifdef HAVE_AI
@@ -128,6 +131,9 @@ typedef struct dt_engine_session_t
   // when there is one: 2-3x the CPU's speed for a whole pipe. the main and
   // drag pipes keep to the CPU, where the pipe cache serves their edits
   dt_engine_follower_t base;
+  // the GPU check's pipe (`parity`): its cache is flushed between its CPU
+  // and GPU renders, which would otherwise cost the other pipes their lines
+  dt_engine_follower_t check;
   // bumped whenever an instance is added, so each pipe rebuilds its nodes
   int iop_gen, ppipe_gen;
   // edits made since the last save, which quitting saves
@@ -221,6 +227,7 @@ static void _changed(const dt_dev_pixelpipe_change_t flags)
   dt_dev_pixelpipe_change(&_s.pipe, &_s.dev);
   _follow(&_s.drag, flags);
   _follow(&_s.base, flags);
+  _follow(&_s.check, flags);
 }
 
 // FALSE when base `id` was canceled before it could start. a stop request
@@ -408,6 +415,7 @@ static void _close_session(void)
   _s.ppipe_ok = FALSE;
   _follower_cleanup(&_s.drag);
   _follower_cleanup(&_s.base);
+  _follower_cleanup(&_s.check);
   dt_dev_pixelpipe_cleanup(&_s.pipe);
   dt_mipmap_cache_release(&_s.buf);
   dt_dev_cleanup(&_s.dev);
@@ -690,6 +698,7 @@ static gboolean _history_bloated(const dt_imgid_t imgid)
 }
 
 static const char *_mask_name(const char *full);
+static dt_masks_form_t *_instance_group(const dt_iop_module_t *m);
 
 // whether instance `multi_name` of `op` is switched off yet holds a mask's
 // settings: a hidden mask's instances, or those of a mask sharing them
@@ -700,26 +709,33 @@ static gboolean _holds_mask_settings(const char *op, const char *multi_name)
   for(GList *l = _s.dev.iop; l; l = g_list_next(l))
   {
     const dt_iop_module_t *m = l->data;
-    if(m->enabled || !m->blend_params || !m->blend_params->mask_id || g_strcmp0(m->op, op)
-       || g_strcmp0(m->multi_name, multi_name))
-      continue;
-    const dt_masks_form_t *grp = dt_masks_get_from_id(&_s.dev, m->blend_params->mask_id);
-    if(grp && (grp->type & DT_MASKS_GROUP) && _mask_name(grp->name)) return TRUE;
+    if(m->enabled || g_strcmp0(m->op, op) || g_strcmp0(m->multi_name, multi_name)) continue;
+    const dt_masks_form_t *grp = _instance_group(m);
+    if(grp && _mask_name(grp->name)) return TRUE;
   }
   return FALSE;
 }
 
-// whether `op` is one a converted negative switches off, keeping its
-// settings for when the photo is turned back (manifest.ts, NEG_OFF and
-// NEG_OFF_UNMAPPED); while negadoctor is on, its entries stay
-static gboolean _held_for_negative(const char *op)
+// whether `op` is one the photo's conversion switches off, keeping its
+// settings for when the photo is turned back (manifest.ts, NEG_OFF, SF_OFF
+// and their _UNMAPPED sets): a converted negative's, while negadoctor is
+// on, or a film simulation's tone mappers, while spektrafilm is. their
+// entries stay
+static gboolean _held_for_mode(const char *op)
 {
-  static const char *held[] = { "channelmixerrgb", "exposure", "toneequal", "hazeremoval", "agx", "sigmoid",
-                                "filmicrgb", "basecurve", NULL };
-  const dt_iop_module_t *neg = dt_iop_get_module_by_op_priority(_s.dev.iop, "negadoctor", 0);
-  if(!neg || !neg->enabled) return FALSE;
-  for(int k = 0; held[k]; k++)
-    if(!g_strcmp0(op, held[k])) return TRUE;
+  static const char *negative[] = { "channelmixerrgb", "exposure", "toneequal", "hazeremoval", "agx", "sigmoid",
+                                    "filmicrgb", "basecurve", NULL };
+  static const char *film[] = { "agx", "sigmoid", "filmicrgb", "basecurve", NULL };
+  static const struct { const char *mode; const char **held; } modes[] = {
+    { "negadoctor", negative }, { "spektrafilm", film },
+  };
+  for(size_t k = 0; k < G_N_ELEMENTS(modes); k++)
+  {
+    const dt_iop_module_t *m = dt_iop_get_module_by_op_priority(_s.dev.iop, modes[k].mode, 0);
+    if(!m || !m->enabled) continue;
+    for(int i = 0; modes[k].held[i]; i++)
+      if(!g_strcmp0(op, modes[k].held[i])) return TRUE;
+  }
   return FALSE;
 }
 
@@ -727,8 +743,8 @@ static gboolean _held_for_negative(const char *op)
 // switched on: they do nothing, and a deleted mask leaves its instances so.
 // the shapes of masks all deleted go too. a mask's own instances that hold
 // its settings stay (_holds_mask_settings()), or a hidden or sharing mask
-// would come back without them, as do those a negative holds
-// (_held_for_negative()).
+// would come back without them, as do those a negative or a film simulation
+// holds (_held_for_mode()).
 // one darktable starts on keeps its entry, or replaying the history would
 // switch it back on. needs the image open, for each module's default.
 // returns whether anything went
@@ -740,7 +756,7 @@ static gboolean _prune_off(const dt_imgid_t imgid)
   for(GList *l = _s.dev.iop; l; l = g_list_next(l))
   {
     const dt_iop_module_t *m = l->data;
-    if(m->default_enabled || g_hash_table_contains(done, m->op) || _held_for_negative(m->op)) continue;
+    if(m->default_enabled || g_hash_table_contains(done, m->op) || _held_for_mode(m->op)) continue;
     g_hash_table_add(done, (gpointer)m->op);
     GArray *drop = g_array_new(FALSE, FALSE, sizeof(int));
     sqlite3_stmt *stmt;
@@ -926,6 +942,18 @@ static gboolean _open_image(const char *path, const dt_imgid_t version, const ch
                              _s.buf.width, _s.buf.height, _s.buf.iscale);
   dt_dev_pixelpipe_create_nodes(&_s.pipe, &_s.dev);
   dt_dev_pixelpipe_synch_all(&_s.pipe, &_s.dev);
+  // colorin's commit marks an image with an sRGB or Adobe RGB input profile
+  // as USER_RGB, in the image cache only (iop_profile.c,
+  // dt_ioppr_set_pipe_input_profile_info). darktable's import thumbnails do
+  // that before the darkroom loads a photo; the engine's import does not, so
+  // a photo's first session would scale its input without gamma correction
+  // (pixelpipe_hb.c, clip&zoom) and render unlike every later session
+  const dt_image_t *cimg = dt_image_cache_get(imgid, 'r');
+  if(cimg)
+  {
+    _s.dev.image_storage.colorspace = cimg->colorspace;
+    dt_image_cache_read_release(cimg);
+  }
   dt_dev_pixelpipe_get_dimensions(&_s.pipe, &_s.dev, _s.pipe.iwidth, _s.pipe.iheight,
                                   &_s.pipe.processed_width, &_s.pipe.processed_height);
   _s.imgid = imgid;
@@ -1005,7 +1033,7 @@ static gboolean _write_field_in(dt_iop_module_t *mod, void *base, const char *na
 // it acts only through a mask, so a module without one gets a whole-image
 // drawn mask with no shapes (blend.c fills it with 1) while it is non-zero
 #define BLEND_DETAILS "blend.details"
-#define WHOLE_IMAGE_MASK (DEVELOP_MASK_ENABLED | DEVELOP_MASK_MASK)
+#define WHOLE_IMAGE_MASK (DEVELOP_MASK_ENABLED | DEVELOP_MASK_FLEXI)
 
 static gboolean _write_details(dt_iop_module_t *mod, const double num, char **err)
 {
@@ -1074,8 +1102,7 @@ static dt_iop_module_t *_named_instance(const char *op, const char *name, const 
 static dt_iop_module_t *_find_named(const char *op, const char *name);
 static gboolean _ppipe_ready(char **err);
 static dt_dev_pixelpipe_iop_t *_piece(dt_dev_pixelpipe_t *pipe, const dt_iop_module_t *m);
-static void _apply_ranges(dt_iop_module_t *m, const char *name, const gboolean has_shapes,
-                          const gboolean invert);
+static void _apply_ranges(dt_iop_module_t *m, dt_masks_form_t *root, const gboolean invert);
 static void _ranges_json(JsonBuilder *b, const dt_develop_blend_params_t *bp);
 static gboolean _attach_mask(dt_iop_module_t *m, const char *name, const gboolean invert, char **err);
 static void _preview_commit(dt_iop_module_t *m, void *params, dt_develop_blend_params_t *blend,
@@ -1324,16 +1351,26 @@ static gboolean _module_state(const char *op, const int priority, const gboolean
 // every shape of the edit (drawn masks, spots). darktable takes a piece's
 // mask shapes from darktable.develop (imageop.c, dt_iop_commit_params),
 // which is not this engine's develop, so its hash alone stays the same
-// when a mask is reshaped, and `have` would hand back the frame from before
+// when a mask is reshaped, and `have` would hand back the frame from before.
+// the soft proof is in no params either (print_proof_hash)
 static dt_hash_t _frame_hash(const dt_hash_t pipe_hash)
 {
-  dt_hash_t hash = pipe_hash;
+  dt_hash_t hash = print_proof_hash(pipe_hash);
   for(GList *l = _s.dev.forms; l; l = g_list_next(l))
     hash = dt_masks_group_hash_ext(hash, l->data, _s.dev.forms);
   return hash;
 }
 
-// process into the pipe's 8-bit backbuf; returns the output size
+typedef struct preview_output_t {
+  const char *path;
+  double timings[4];
+  double elapsed_ms;
+  gboolean completed;
+} preview_output_t;
+
+static gboolean _preview_output_sink(void *user, const uint8_t *pixels, int w, int h);
+
+// Process byte pixels into the optional output sink or the pipe's backbuf.
 // with scale <= 0, fit the whole image into bw x bh. otherwise render the
 // bw x bh window at (x, y) of the image scaled by `scale` (1 is 100%), the
 // way the darkroom's zoomed view does; the window is clipped to the image
@@ -1341,7 +1378,7 @@ static dt_hash_t _frame_hash(const dt_hash_t pipe_hash)
 // would be one of them, it is not rendered: *kept is set to that hash
 static gboolean _render(dt_dev_pixelpipe_t *pipe, const int devid, const int bw, const int bh,
                         const double req_scale, const int x, const int y, JsonArray *have,
-                        int *ow, int *oh, int *ox_out, int *oy_out, dt_hash_t *kept, char **err)
+                        int *ow, int *oh, int *ox_out, int *oy_out, dt_hash_t *kept, preview_output_t *output, char **err)
 {
   *kept = DT_INVALID_HASH;
   double scale = req_scale;
@@ -1385,8 +1422,12 @@ static gboolean _render(dt_dev_pixelpipe_t *pipe, const int devid, const int bw,
       return TRUE;
     }
   }
-  if(dt_dev_pixelpipe_process(pipe, &_s.dev, ox, oy, w, h, scale, devid)
-     || !pipe->backbuf)
+  pipe->output_sink = output ? _preview_output_sink : NULL;
+  pipe->output_sink_user = output;
+  const gboolean failed = dt_dev_pixelpipe_process(pipe, &_s.dev, ox, oy, w, h, scale, devid);
+  pipe->output_sink = NULL;
+  pipe->output_sink_user = NULL;
+  if(failed || (output ? !output->completed : !pipe->backbuf))
   {
     *err = g_strdup("pixelpipe processing failed or was interrupted");
     return FALSE;
@@ -1421,16 +1462,29 @@ static gboolean _write_ppm(const char *path, const uint8_t *in, const int w, con
   return TRUE;
 }
 
+#include "transient_output.h"
+#include "rgba_output.h"
+
 // headerless RGBA, ready for a canvas ImageData; the size is in the reply.
 // written over the file in place: g_file_set_contents() would write a
 // temporary file, sync it and rename it, for every frame of a slider drag.
 // the client reads it while the engine is still its own, so no half-written
 // frame is ever read
-static gboolean _write_rgba(const char *path, const uint8_t *in, const int w, const int h)
+static gboolean _write_rgba(const char *path, const uint8_t *in, const int w, const int h, double *timings)
 {
+  const gint64 started = g_get_monotonic_time();
+  if(w <= 0 || h <= 0 || (size_t)w > SIZE_MAX / 4 / (size_t)h) return FALSE;
   const size_t n = (size_t)w * h;
-  uint8_t *rgba = g_try_malloc(4 * n);
+#ifdef _WIN32
+  // The CLI can still request an ordinary RGBA file; app output is mapped.
+  const gboolean mapped = g_str_has_prefix(path, "shm:");
+  uint8_t *rgba = mapped ? rgba_output_acquire(path, 4 * n) : g_try_malloc(4 * n);
+#else
+  const gboolean mapped = TRUE;
+  uint8_t *rgba = rgba_output_acquire(path, 4 * n);
+#endif
   if(!rgba) return FALSE;
+  const gint64 allocated = g_get_monotonic_time();
   DT_OMP_FOR()
   for(size_t k = 0; k < n; k++)
   {
@@ -1439,11 +1493,30 @@ static gboolean _write_rgba(const char *path, const uint8_t *in, const int w, co
     rgba[4 * k + 2] = in[4 * k + 0];
     rgba[4 * k + 3] = 255;
   }
-  FILE *f = g_fopen(path, "wb");
-  gboolean ok = f && fwrite(rgba, 1, 4 * n, f) == 4 * n;
-  if(f && fclose(f)) ok = FALSE;
-  g_free(rgba);
+  const gint64 converted = g_get_monotonic_time();
+  // MAP_SHARED writes are visible before the JSON completion reply. No file
+  // write, flush, or intermediate RGBA allocation is needed for mapped output.
+  gboolean ok = mapped || transient_write(path, rgba, 4 * n, NULL, 0);
+  const gint64 written = g_get_monotonic_time();
+  if(!mapped) g_free(rgba);
+  const gint64 freed = g_get_monotonic_time();
+  if(timings)
+  {
+    timings[0] = (allocated - started) / 1000.0;
+    timings[1] = (converted - allocated) / 1000.0;
+    timings[2] = (written - converted) / 1000.0;
+    timings[3] = (freed - written) / 1000.0;
+  }
   return ok;
+}
+
+static gboolean _preview_output_sink(void *user, const uint8_t *pixels, int w, int h)
+{
+  preview_output_t *output = user;
+  const gint64 started = g_get_monotonic_time();
+  output->completed = _write_rgba(output->path, pixels, w, h, output->timings);
+  output->elapsed_ms = _ms_since(started);
+  return output->completed;
 }
 
 // { op: [field, ...] } ->
@@ -2017,20 +2090,51 @@ static gboolean _folder(const char *dir, const gboolean recursive, JsonBuilder *
   return TRUE;
 }
 
+// the folder read whose batch was queued last (its `job`), set by the
+// request reader (_read_requests). a batch of another read stops before its
+// next file: the import thread takes batches in turn, and an open photo
+// waits on _import_lock, so a network share's batches left behind by a
+// change of folder held up the next folder and photo for minutes. the
+// newest rather than the highest, as the client's numbering restarts
+static gint64 _import_latest = 0;
+
 // import these files, as _folder() does a folder's: the client lists the
-// folder itself and sends it in batches, so it can show its progress
-static void _import_files(JsonArray *files, JsonBuilder *b)
+// folder itself and sends it in batches, so it can show its progress. with
+// a `job`, a batch stops once a newer read's is queued; with a `budget` (ms),
+// once that has passed, after a file at least. `done` is how many of the
+// files it went through, so the client sends the rest again
+static void _import_files(JsonObject *req, JsonBuilder *b)
 {
+  JsonArray *files = json_object_has_member(req, "files") ? json_object_get_array_member(req, "files") : NULL;
+  const gint64 job = json_object_get_int_member_with_default(req, "job", 0);
+  const gint64 budget = json_object_get_int_member_with_default(req, "budget", 0) * 1000;
+  const gint64 start = g_get_monotonic_time();
+  const guint n = files ? json_array_get_length(files) : 0;
+  guint k = 0;
   json_builder_set_member_name(b, "images");
   json_builder_begin_array(b);
-  for(guint k = 0; files && k < json_array_get_length(files); k++)
+  for(; k < n; k++)
   {
+    if(job)
+    {
+      g_mutex_lock(&_cancel_lock);
+      const gboolean superseded = _import_latest != job;
+      g_mutex_unlock(&_cancel_lock);
+      if(superseded) break;
+    }
+    if(budget && k && g_get_monotonic_time() - start >= budget) break;
     const char *path = json_array_get_string_element(files, k);
     if(!path || _is_sidecar(path)) continue;
     const dt_imgid_t imgid = g_file_test(path, G_FILE_TEST_IS_REGULAR) ? _import(path) : NO_IMGID;
     if(dt_is_valid_imgid(imgid)) _image_versions_json(b, imgid);
   }
   json_builder_end_array(b);
+  json_builder_set_member_name(b, "done");
+  json_builder_add_int_value(b, k);
+  // the queued line is logged as it comes in (_read_requests); this one
+  // shows how far behind the import thread runs
+  fprintf(stderr, "[engine] imported %u of %u in %.0f ms%s\n", k, n,
+          (g_get_monotonic_time() - start) / 1000.0, k < n ? " (stopped)" : "");
 }
 
 // a tagged `import` runs here rather than in the main loop, so a folder
@@ -2052,7 +2156,7 @@ static void _import_run(gpointer data, gpointer user_data)
   json_builder_add_int_value(b, json_object_get_int_member(req, "tag"));
   json_builder_set_member_name(b, "ok");
   json_builder_add_boolean_value(b, TRUE);
-  _import_files(json_object_has_member(req, "files") ? json_object_get_array_member(req, "files") : NULL, b);
+  _import_files(req, b);
   json_builder_end_object(b);
   _reply(out, b);
   g_object_unref(b);
@@ -2096,8 +2200,7 @@ static gboolean _thumb(const dt_imgid_t imgid, const int size, const char *out,
     *err = g_strdup_printf("no thumbnail for image %d", imgid);
     return FALSE;
   }
-  const gboolean ok = g_file_set_contents(out, (const gchar *)buf.buf,
-                                          (gssize)4 * buf.width * buf.height, NULL);
+  const gboolean ok = transient_write(out, buf.buf, (size_t)4 * buf.width * buf.height, NULL, 0);
   json_builder_set_member_name(b, "width");
   json_builder_add_int_value(b, buf.width);
   json_builder_set_member_name(b, "height");
@@ -3058,14 +3161,34 @@ static gboolean _soft_device(const dt_ai_device_t *d)
 // darktable's OpenCL devices, for the GUI benchmark's report: the idle base
 // render runs on one when OpenCL is up, and its driver differs between
 // systems on the same machine
+static void _add_int(JsonBuilder *b, const char *name, const gint64 value)
+{
+  json_builder_set_member_name(b, name);
+  json_builder_add_int_value(b, value);
+}
+
+static void _add_bool(JsonBuilder *b, const char *name, const gboolean value)
+{
+  json_builder_set_member_name(b, name);
+  json_builder_add_boolean_value(b, value);
+}
+
+// for the GPU check, also each device's memory, its settings and how many
+// of darktable's kernel programs it built: a kernel missing from a package,
+// or one its driver cannot compile, leaves its module on the CPU unseen
 static void _opencl(JsonBuilder *b)
 {
-  json_builder_set_member_name(b, "running");
-  json_builder_add_boolean_value(b, dt_opencl_running());
+  _add_bool(b, "running", dt_opencl_running());
+  const dt_opencl_t *cl = darktable.opencl;
+  _add_bool(b, "inited", cl && cl->inited);
+  // a pipe that failed on a device and restarted on the CPU counts one
+  // error; at DT_OPENCL_MAX_ERRORS darktable stops OpenCL for the session
+  // (pixelpipe_hb.c, dt_dev_pixelpipe_process)
+  _add_int(b, "error_count", cl ? cl->error_count : 0);
+  _add_bool(b, "stopped", cl && cl->stopped);
   json_builder_set_member_name(b, "devices");
   json_builder_begin_array(b);
 #ifdef HAVE_OPENCL
-  const dt_opencl_t *cl = darktable.opencl;
   for(int k = 0; cl && cl->inited && k < cl->num_devs; k++)
   {
     const dt_opencl_device_t *dev = &cl->dev[k];
@@ -3073,8 +3196,30 @@ static void _opencl(JsonBuilder *b)
     _add_string(b, "name", dev->fullname);
     _add_string(b, "platform", dev->platform);
     _add_string(b, "version", dev->device_version);
-    json_builder_set_member_name(b, "disabled");
-    json_builder_add_boolean_value(b, dev->disabled);
+    _add_string(b, "cname", dev->cname);
+    _add_string(b, "options", dev->options);
+    _add_bool(b, "disabled", dev->disabled);
+    _add_bool(b, "unified_memory", dev->unified_memory);
+    _add_bool(b, "tunehead", dev->tunehead);
+    _add_bool(b, "asyncmode", dev->asyncmode);
+    _add_int(b, "headroom", dev->headroom);
+    _add_int(b, "compute_units", dev->compute_units);
+    _add_int(b, "max_global_mem", dev->max_global_mem);
+    _add_int(b, "max_mem_alloc", dev->max_mem_alloc);
+    // darktable counts device memory only under -d memory -d opencl
+    // (opencl.c, _opencl_memory_statistics); otherwise both read 0
+    if((darktable.unmuted & DT_DEBUG_MEMORY) && (darktable.unmuted & DT_DEBUG_OPENCL))
+    {
+      _add_int(b, "memory_in_use", dev->memory_in_use);
+      _add_int(b, "peak_memory", dev->peak_memory);
+    }
+    _add_int(b, "total_events", dev->totalevents);
+    _add_int(b, "lost_events", dev->totallost);
+    int programs = 0, kernels = 0;
+    for(int p = 0; p < DT_OPENCL_MAX_PROGRAMS; p++) programs += dev->program[p] != NULL;
+    for(int q = 0; q < DT_OPENCL_MAX_KERNELS; q++) kernels += dev->kernel_used[q] != 0;
+    _add_int(b, "programs", programs);
+    _add_int(b, "kernels", kernels);
     json_builder_end_object(b);
   }
 #endif
@@ -3304,6 +3449,18 @@ static int _positive_tiff_write(dt_imageio_module_data_t *data, const char *file
 // would: `format` names a format plugin (jpeg, tiff, png, webp...); quality
 // and bit depth go through the plugin's conf keys, which its get_params()
 // reads; long_edge bounds both sides (0 keeps the full size)
+#include "preview_jpeg.h"
+
+// whether an export bakes the edit into a positive for the library: a
+// converted negative or a film simulation, rendered to linear Rec.2020
+// floats and imported with a neutral history (_positive_import()).
+// "negative_copy" is the name older clients send
+static gboolean _positive_copy(JsonObject *req)
+{
+  return json_object_get_boolean_member_with_default(req, "positive_copy", FALSE)
+    || json_object_get_boolean_member_with_default(req, "negative_copy", FALSE);
+}
+
 static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
 {
   const char *out = json_object_get_string_member_with_default(req, "out", NULL);
@@ -3313,7 +3470,17 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
     *err = g_strdup("export needs an image and an output file");
     return FALSE;
   }
-  const gboolean positive = json_object_get_boolean_member_with_default(req, "negative_copy", FALSE);
+  const gboolean transient = json_object_get_boolean_member_with_default(req, "transient", FALSE);
+  if(transient && (g_strcmp0(format, "jpeg")
+      || g_strcmp0(json_object_get_string_member_with_default(req, "color_space", "srgb"), "srgb")
+      || json_object_get_int_member_with_default(req, "quality", 0) != 85
+      || json_object_get_int_member_with_default(req, "upscale", 0) > 1
+      || _positive_copy(req)))
+  {
+    *err = g_strdup("transient export requires an sRGB JPEG preview at quality 85");
+    return FALSE;
+  }
+  const gboolean positive = _positive_copy(req);
   const gboolean positive_dng = positive && !g_strcmp0(format, "dng");
   dt_imageio_module_format_t *fmt = dt_imageio_get_format_by_name(positive_dng ? "tiff" : format);
   if(!fmt)
@@ -3394,6 +3561,7 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
   dt_imageio_module_format_t proxy = *fmt;
   _flags_of = fmt;
   proxy.flags = _no_tmpfile_flags;
+  if(transient) proxy.write_image = preview_jpeg_write;
   dt_colorspaces_color_profile_type_t render_icc = icc;
   if(positive)
   {
@@ -3464,9 +3632,12 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
     strip |= STRIP_KEYWORDS;
   }
 
-  gchar *dir = g_path_get_dirname(out);
-  g_mkdir_with_parents(dir, 0755);
-  g_free(dir);
+  if(!transient)
+  {
+    gchar *dir = g_path_get_dirname(out);
+    g_mkdir_with_parents(dir, 0755);
+    g_free(dir);
+  }
 
   // the export's own keywords: the file takes its tags from the library
   // (exif.cc), so they are attached for the export and taken off after,
@@ -3490,9 +3661,9 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
   // NB: returns FALSE on success
   const gboolean failed = dt_imageio_export_with_flags(
       imgid, out, &proxy, fdata,
-      FALSE /*ignore_exif*/, FALSE /*display_byteorder*/, high_quality,
+      transient /*ignore_exif*/, FALSE /*display_byteorder*/, high_quality,
       FALSE /*upscale*/, FALSE /*is_scaling*/, 1.0, FALSE /*thumbnail*/, NULL /*filter*/,
-      TRUE /*copy_metadata*/, FALSE /*export_masks*/,
+      !transient /*copy_metadata*/, FALSE /*export_masks*/,
       render_icc, NULL, DT_INTENT_PERCEPTUAL, NULL, NULL, 1, 1, &metadata, -1);
   for(GList *t = added; t; t = g_list_next(t))
     dt_tag_detach(GPOINTER_TO_UINT(t->data), imgid, FALSE, FALSE);
@@ -3507,7 +3678,7 @@ static gboolean _export(const dt_imgid_t imgid, JsonObject *req, char **err)
 #endif
   if(failed) return FALSE;
   // a file that keeps what was asked to be left out is not delivered
-  if((*err = strip_metadata(out, strip)))
+  if(!transient && (*err = strip_metadata(out, strip)))
   {
     g_unlink(out);
     return FALSE;
@@ -3920,10 +4091,12 @@ static void _export_run(gpointer data, gpointer user_data)
   else
   {
     const dt_imgid_t snap = _hold_take(job, json_object_get_int_member_with_default(req, "imgid", 0));
-    if(dt_is_valid_imgid(snap))
+    if(dt_is_valid_imgid(snap) && !g_strcmp0(cmd, "print"))
+      ok = print_image(snap, req, b, &err);
+    else if(dt_is_valid_imgid(snap))
     {
       ok = _export(snap, req, &err);
-      if(ok && json_object_get_boolean_member_with_default(req, "negative_copy", FALSE))
+      if(ok && _positive_copy(req))
         ok = _positive_import(json_object_get_string_member(req, "out"), b, &err);
     }
     else
@@ -3941,6 +4114,7 @@ static void _export_run(gpointer data, gpointer user_data)
     json_builder_add_string_value(b, err                              ? err
                                      : !g_strcmp0(cmd, "hdr_merge")  ? "merging to HDR failed"
                                      : !g_strcmp0(cmd, "pano_merge") ? "merging to a panorama failed"
+                                     : !g_strcmp0(cmd, "print")      ? "printing failed"
                                                                      : "export failed");
   }
   json_builder_end_object(b);
@@ -3994,10 +4168,6 @@ static const char *_mask_name(const char *full)
 // the instances masks share are named so (app/src/localMerge.ts SHARED_PREFIX)
 #define _SHARED_PREFIX "immage local: "
 
-// a mask's range components (luminance, color) as last set, by mask name:
-// they live in each instance's blend parameters, so a new instance needs them
-static GHashTable *_ranges = NULL;
-
 static dt_masks_form_t *_mask_group(const char *name)
 {
   for(GList *l = _s.dev.forms; l; l = g_list_next(l))
@@ -4008,6 +4178,226 @@ static dt_masks_form_t *_mask_group(const char *name)
     if(n && !g_strcmp0(n, name)) return f;
   }
   return NULL;
+}
+
+// a combined mask: masks' groups summed, each at an opacity of its own, so
+// one instance can carry the same adjustment for several masks at their
+// own strengths, as Lightroom's local adjustments add up, instead of one
+// instance per mask each running the whole module. not a client mask, so
+// _masks() passes over it
+#define _COMBINED_PREFIX "immage combined: "
+
+static dt_masks_form_t *_combined_group(const char *name)
+{
+  for(GList *l = _s.dev.forms; l; l = g_list_next(l))
+  {
+    dt_masks_form_t *f = l->data;
+    if((f->type & DT_MASKS_GROUP) && g_str_has_prefix(f->name, _COMBINED_PREFIX)
+       && !g_strcmp0(f->name + strlen(_COMBINED_PREFIX), name))
+      return f;
+  }
+  return NULL;
+}
+
+// masks are darktable's flexi masks (dev-doc/masks_data_model.md). a
+// mask's group, "immage: <name>", holds its drawn shapes. its range
+// components are parametric elements multiplied into them, as darktable
+// converts a classic drawn and parametric mask (masks/migrate_legacy.c,
+// _migrate_drawn_and_parametric), in a group of their own named after the
+// mask's: the instances blending in scene-referred RGB, where the ranges
+// were measured, take that one, and the rest the shapes alone
+#define _RANGES_PREFIX "immage ranges: "
+
+static dt_masks_form_t *_group_named(const char *full)
+{
+  for(GList *l = _s.dev.forms; l; l = g_list_next(l))
+  {
+    dt_masks_form_t *f = l->data;
+    if((f->type & DT_MASKS_GROUP) && !g_strcmp0(f->name, full)) return f;
+  }
+  return NULL;
+}
+
+// a mask's group or a combined mask's
+static gboolean _is_root(const dt_masks_form_t *f)
+{
+  return f && (f->type & DT_MASKS_GROUP)
+         && (g_str_has_prefix(f->name, _MASK_PREFIX) || g_str_has_prefix(f->name, _COMBINED_PREFIX));
+}
+
+// the group with the ranges of `root`, or NULL when it has none
+static dt_masks_form_t *_ranges_group(const dt_masks_form_t *root)
+{
+  char full[sizeof(root->name)];
+  g_snprintf(full, sizeof(full), "%s%s", _RANGES_PREFIX, root->name);
+  return _group_named(full);
+}
+
+static const char *_mask_instance_tag(const dt_iop_module_t *m, const char *name);
+
+// the mask (its group, or a combined mask's) instance `m` carries, or NULL.
+// an edit made before flexi masks was converted when it was loaded, which
+// gives every instance with ranges a group of its own, unnamed
+// (migrate_legacy.c): its instances are known by their names then
+static dt_masks_form_t *_instance_group(const dt_iop_module_t *m)
+{
+  const dt_develop_blend_params_t *bp = m->blend_params;
+  if(!bp || !(bp->mask_mode & DEVELOP_MASK_ENABLED)) return NULL;
+  dt_masks_form_t *g = dt_is_valid_maskid(bp->mask_id) ? dt_masks_get_from_id(&_s.dev, bp->mask_id) : NULL;
+  if(g && (g->type & DT_MASKS_GROUP))
+  {
+    if(_is_root(g)) return g;
+    if(g_str_has_prefix(g->name, _RANGES_PREFIX))
+    {
+      dt_masks_form_t *root = _group_named(g->name + strlen(_RANGES_PREFIX));
+      if(root) return root;
+    }
+  }
+  if(!m->multi_name_hand_edited) return NULL;
+  if(g_str_has_prefix(m->multi_name, _SHARED_PREFIX))
+    return _combined_group(m->multi_name + strlen(_SHARED_PREFIX));
+  for(GList *l = _s.dev.forms; l; l = g_list_next(l))
+  {
+    dt_masks_form_t *f = l->data;
+    const char *name = (f->type & DT_MASKS_GROUP) ? _mask_name(f->name) : NULL;
+    if(name && _mask_instance_tag(m, name)) return f;
+  }
+  return NULL;
+}
+
+// whether mask `root` holds anything to fold: an empty one is its marker
+static gboolean _has_members(const dt_masks_form_t *root)
+{
+  for(const GList *l = root ? root->points : NULL; l; l = g_list_next(l))
+    if(!dt_masks_point_is_marker(l->data)) return TRUE;
+  return FALSE;
+}
+
+// `f` and every form under it into `set`
+static void _reach(const dt_masks_form_t *f, GHashTable *set, const int depth)
+{
+  if(!f || depth > DT_MASKS_NESTING_MAX || g_hash_table_contains(set, f)) return;
+  g_hash_table_add(set, (gpointer)f);
+  if(!(f->type & DT_MASKS_GROUP)) return;
+  for(const GList *l = f->points; l; l = g_list_next(l))
+  {
+    const dt_masks_point_group_t *pt = l->data;
+    if(!dt_masks_point_is_marker(pt)) _reach(dt_masks_get_from_id(&_s.dev, pt->formid), set, depth + 1);
+  }
+}
+
+// the forms mask `root` (a mask's group or a combined mask's) renders with:
+// its tree, its ranges' and those of its instances, which for an older
+// edit are trees of their own. darktable's conversion copies a group held
+// twice, under the same name, so those go with it as well
+static GHashTable *_mask_forms(const dt_masks_form_t *root)
+{
+  GHashTable *set = g_hash_table_new(NULL, NULL);
+  _reach(root, set, 0);
+  _reach(_ranges_group(root), set, 0);
+  for(GList *l = _s.dev.iop; l; l = g_list_next(l))
+  {
+    const dt_iop_module_t *m = l->data;
+    if(_instance_group(m) == root) _reach(dt_masks_get_from_id(&_s.dev, m->blend_params->mask_id), set, 0);
+  }
+  for(GList *l = _s.dev.forms; l; l = g_list_next(l))
+  {
+    const dt_masks_form_t *f = l->data;
+    if(f != root && (f->type & DT_MASKS_GROUP) && !g_strcmp0(f->name, root->name)) _reach(f, set, 0);
+  }
+  return set;
+}
+
+// the forms in `old` that nothing uses any more leave the image, and `old`
+// is freed: before a history item is added, which keeps all of the
+// develop's forms. used is what a module renders, a mask's group, a
+// combined mask's and their ranges' (the first of a name), and whatever
+// another group holds
+static void _free_unreached(GHashTable *old)
+{
+  GHashTable *live = g_hash_table_new(NULL, NULL);
+  for(GList *l = _s.dev.iop; l; l = g_list_next(l))
+  {
+    const dt_iop_module_t *m = l->data;
+    if(!m->blend_params) continue;
+    _reach(dt_masks_get_from_id(&_s.dev, m->blend_params->mask_id), live, 0);
+    _reach(dt_masks_get_from_id(&_s.dev, m->blend_params->blend_mask_id), live, 0);
+  }
+  for(GList *l = _s.dev.forms; l; l = g_list_next(l))
+  {
+    const dt_masks_form_t *f = l->data;
+    if(!(f->type & DT_MASKS_GROUP)) continue;
+    const gboolean named = (_is_root(f) || g_str_has_prefix(f->name, _RANGES_PREFIX))
+                           && _group_named(f->name) == f;
+    if(named || !g_hash_table_contains(old, f)) _reach(f, live, 0);
+  }
+  for(GList *l = _s.dev.forms; l;)
+  {
+    GList *next = g_list_next(l);
+    dt_masks_form_t *f = l->data;
+    if(g_hash_table_contains(old, f) && !g_hash_table_contains(live, f))
+    {
+      _s.dev.forms = g_list_delete_link(_s.dev.forms, l);
+      dt_masks_free_form(f);
+    }
+    l = next;
+  }
+  g_hash_table_destroy(live);
+  g_hash_table_destroy(old);
+}
+
+// a member of `grp` referring to form `formid`
+static dt_masks_point_group_t *_member(dt_masks_form_t *grp, const dt_mask_id_t formid, const int state,
+                                       const float opacity)
+{
+  dt_masks_point_group_t *pt = calloc(1, sizeof(dt_masks_point_group_t));
+  pt->formid = formid;
+  pt->parentid = grp->formid;
+  pt->state = state;
+  pt->opacity = opacity;
+  pt->group_opacity = 1.0f;
+  grp->points = g_list_append(grp->points, pt);
+  return pt;
+}
+
+// whether member `pt` of a combined mask is mask `root`: by reference, or,
+// in an older edit, as the shape darktable put there in its place
+static gboolean _holds_mask(const dt_masks_point_group_t *pt, const dt_masks_form_t *root)
+{
+  if(dt_masks_point_is_marker(pt)) return FALSE;
+  if(pt->formid == root->formid) return TRUE;
+  const dt_masks_form_t *f = dt_masks_get_from_id(&_s.dev, pt->formid);
+  const size_t n = strlen(root->name);
+  return f && !strncmp(f->name, root->name, n) && !strncmp(f->name + n, " #", 2);
+}
+
+// the combined masks holding mask `root` in an older edit's way, as one of
+// its shapes, hold its group instead, whatever becomes of its shapes
+static void _combined_adopt(const dt_masks_form_t *root)
+{
+  for(GList *l = _s.dev.forms; l; l = g_list_next(l))
+  {
+    dt_masks_form_t *grp = l->data;
+    if(!(grp->type & DT_MASKS_GROUP) || !g_str_has_prefix(grp->name, _COMBINED_PREFIX)) continue;
+    gboolean held = FALSE;
+    for(GList *p = grp->points; p;)
+    {
+      GList *next = g_list_next(p);
+      dt_masks_point_group_t *pt = p->data;
+      if(_holds_mask(pt, root))
+      {
+        if(held)
+        {
+          grp->points = g_list_delete_link(grp->points, p);
+          free(pt);
+        }
+        else
+          pt->formid = root->formid;
+        held = TRUE;
+      }
+      p = next;
+    }
+  }
 }
 
 // the instance of `op` named `name`, made (switched off) when missing.
@@ -5455,10 +5845,8 @@ static gboolean _ai_denoise_preview(const float u, const float v, const int size
     *err = g_strdup("the denoise model failed on this photo");
     return FALSE;
   }
-  FILE *f = g_fopen(out, "wb");
-  const size_t n = (size_t)w * h * 3;
-  const gboolean written = f && fwrite(before, sizeof(float), n, f) == n && fwrite(after, sizeof(float), n, f) == n;
-  if(f) fclose(f);
+  const size_t n = (size_t)w * h * 3 * sizeof(float);
+  const gboolean written = transient_write(out, before, n, after, n);
   g_free(before);
   g_free(after);
   if(!written)
@@ -5695,7 +6083,9 @@ static void _set_channel(dt_develop_blend_params_t *bp, const int ch, const floa
 
 // component k's backdrop: a parametric shape taking hz window `range` out,
 // named "#k~", or "#k~off" turned off, intersecting what is in `grp` so
-// far, or `disabled`. its polarity follows the instances' (_backdrop_polarity)
+// far, or `disabled`. darktable evaluates a parametric shape with the
+// module's blend parameters (masks/parametric.c), which never invert it
+// (_apply_ranges), so its own channel takes the color out
 static void _backdrop_shape(dt_masks_form_t *grp, JsonArray *range, const char *name, const guint k,
                             const gboolean turned_off, const gboolean disabled)
 {
@@ -5730,24 +6120,6 @@ static gboolean _is_backdrop_shape(const dt_masks_form_t *f)
 {
   const char *hash = strrchr(f->name, '#');
   return (f->type & DT_MASKS_PARAMETRIC) && hash && strchr(hash, '~');
-}
-
-// the backdrop shapes in `grp` take their color out under the instances'
-// mask_combine: darktable evaluates a parametric shape with the module's
-// (masks/parametric.c), and its "inverted" (DEVELOP_COMBINE_INV, a mask
-// with ranges) inverts the shape as well, so the shape's own channel is
-// inverted the other way. every instance of a mask has the same
-// mask_combine, and a mask with it shares none (localMerge.ts, canMerge)
-static void _backdrop_polarity(dt_masks_form_t *grp, const gboolean inv)
-{
-  for(GList *l = grp ? grp->points : NULL; l; l = g_list_next(l))
-  {
-    dt_masks_form_t *f = dt_masks_get_from_id(&_s.dev, ((dt_masks_point_group_t *)l->data)->formid);
-    if(!f || !_is_backdrop_shape(f) || !f->points) continue;
-    dt_masks_point_parametric_t *pp = f->points->data;
-    const uint32_t bit = 1u << (DEVELOP_BLENDIF_hz_in + 16);
-    pp->blendif = inv ? pp->blendif & ~bit : pp->blendif | bit;
-  }
 }
 
 // an "object" component's paths as darktable path shapes, appended to `grp`.
@@ -5841,7 +6213,82 @@ static gboolean _is_range(const char *type)
   return !g_strcmp0(type, "luminance") || !g_strcmp0(type, "color") || !g_strcmp0(type, "parametric");
 }
 
-static void _combined_member_changed(const dt_mask_id_t id, const gboolean removed);
+static void _combined_member_changed(const dt_masks_form_t *root, const gboolean removed);
+static void _ranges_into(dt_develop_blend_params_t *bp, JsonArray *list);
+
+// the ranges `list` of mask `root` as its ranges group (_RANGES_PREFIX):
+// one parametric element per channel, as darktable converts a classic
+// mask's channels (migrate_legacy.c, _build_channel_forms), multiplied
+// together and into `root`'s shapes when it has any. without ranges the
+// group is left unnamed and empty, for _free_unreached()
+static void _set_ranges_group(dt_masks_form_t *root, JsonArray *list)
+{
+  dt_develop_blend_params_t bp = { 0 };
+  _ranges_into(&bp, list);
+  dt_masks_form_t *grp = _ranges_group(root);
+  if(!bp.blendif)
+  {
+    if(grp)
+    {
+      g_list_free_full(grp->points, free);
+      grp->points = NULL;
+      grp->name[0] = '\0';
+    }
+    return;
+  }
+  if(!grp)
+  {
+    grp = dt_masks_create(DT_MASKS_GROUP);
+    g_snprintf(grp->name, sizeof(grp->name), "%s%s", _RANGES_PREFIX, root->name);
+    _s.dev.forms = g_list_append(_s.dev.forms, grp);
+  }
+  g_list_free_full(grp->points, free);
+  // cleared first: the marker's new id is checked against every group's
+  // points in the forms, this one's included (masks.c, _id_taken)
+  grp->points = NULL;
+  grp->points = g_list_append(NULL, dt_masks_marker_new(_s.dev.forms, grp, DT_MASKS_STATE_FLEXI_PRODUCT));
+  if(_has_members(root))
+    _member(grp, root->formid, DT_MASKS_STATE_SHOW | DT_MASKS_STATE_USE | DT_MASKS_STATE_UNION, 1.0f);
+  const dt_iop_gui_blendif_channel_t *chans = dt_develop_blendif_channels_for_csp(DEVELOP_BLEND_CS_RGB_SCENE);
+  for(int c = 0; chans && chans[c].label; c++)
+  {
+    const uint32_t bits = (1u << chans[c].param_channels[0]) | (1u << chans[c].param_channels[1]);
+    if(!(bp.blendif & bits)) continue;
+    dt_masks_form_t *f = dt_masks_create(DT_MASKS_PARAMETRIC);
+    dt_masks_point_parametric_t *p = calloc(1, sizeof(dt_masks_point_parametric_t));
+    p->blendif = bp.blendif & (bits | (bits << 16));
+    memcpy(p->blendif_parameters, bp.blendif_parameters, 4 * DEVELOP_BLENDIF_SIZE * sizeof(float));
+    memcpy(p->blendif_boost_factors, bp.blendif_boost_factors, DEVELOP_BLENDIF_SIZE * sizeof(float));
+    p->colorspace = DEVELOP_BLEND_CS_RGB_SCENE;
+    p->channel = c;
+    f->points = g_list_append(NULL, p);
+    dt_masks_assign_unique_name(&_s.dev, f);
+    _s.dev.forms = g_list_append(_s.dev.forms, f);
+    _member(grp, f->formid, DT_MASKS_STATE_SHOW | DT_MASKS_STATE_USE | DT_MASKS_STATE_UNION, 1.0f);
+  }
+}
+
+// whether instance `m` inverts its mask: as Immage sets it, as classic
+// darktable inverted a drawn and parametric mask, or as darktable's
+// conversion of an older edit leaves a group one module renders, on the
+// group (migrate_legacy.c, _move_history_polarity)
+static gboolean _instance_inverted(const dt_iop_module_t *m)
+{
+  const dt_develop_blend_params_t *bp = m->blend_params;
+  if(bp->mask_combine & (DEVELOP_COMBINE_INV | DEVELOP_COMBINE_MASKS_POS)) return TRUE;
+  const dt_masks_form_t *g = dt_masks_get_from_id(&_s.dev, bp->mask_id);
+  const dt_masks_point_group_t *mk = g && (g->type & DT_MASKS_GROUP) ? dt_masks_group_marker(g) : NULL;
+  return mk && (mk->state & DT_MASKS_STATE_OP_INVERT);
+}
+
+// the dt_dev_pixelpipe_cache_invalidate_later of every pipe the engine runs
+static void _invalidate_from(const int order, const char *why)
+{
+  dt_dev_pixelpipe_cache_invalidate_later(&_s.pipe, order, why);
+  if(_s.ppipe_ok) dt_dev_pixelpipe_cache_invalidate_later(&_s.ppipe, order, why);
+  if(_s.drag.ok) dt_dev_pixelpipe_cache_invalidate_later(&_s.drag.pipe, order, why);
+  if(_s.base.ok) dt_dev_pixelpipe_cache_invalidate_later(&_s.base.pipe, order, why);
+}
 
 // replace the shapes of mask `name` (made when missing); each shape adds
 // to the mask, or with "subtract" takes away from it
@@ -5854,24 +6301,29 @@ static gboolean _mask(const char *name, JsonArray *shapes, char **err)
     g_snprintf(grp->name, sizeof(grp->name), "%s%s", _MASK_PREFIX, name);
     _s.dev.forms = g_list_append(_s.dev.forms, grp);
   }
-  // the old shapes go; a mask is small, and redrawing it whole keeps
-  // the client the only owner of its geometry
-  for(GList *l = grp->points; l; l = g_list_next(l))
+  // the old shapes go, whatever darktable made of an older edit; a mask is
+  // small, and redrawing it whole keeps the client the only owner of its
+  // geometry
+  GHashTable *old = _mask_forms(grp);
+  g_hash_table_remove(old, grp);
+  // its instances, and whether each inverts it, as they had it
+  GPtrArray *users = g_ptr_array_new();
+  GArray *inverts = g_array_new(FALSE, FALSE, sizeof(gboolean));
+  for(GList *l = _s.dev.iop; l; l = g_list_next(l))
   {
-    dt_masks_point_group_t *pt = l->data;
-    dt_masks_form_t *f = dt_masks_get_from_id(&_s.dev, pt->formid);
-    if(f)
-    {
-      _s.dev.forms = g_list_remove(_s.dev.forms, f);
-      dt_masks_free_form(f);
-    }
+    dt_iop_module_t *m = l->data;
+    if(_instance_group(m) != grp) continue;
+    const gboolean inv = _instance_inverted(m);
+    g_ptr_array_add(users, m);
+    g_array_append_val(inverts, inv);
   }
+  _combined_adopt(grp);
   g_list_free_full(grp->points, free);
   grp->points = NULL;
 
-  // range components are not shapes: they go to the instances' blend
-  // parameters, kept here for instances made later
+  // range components are not shapes: they multiply into them
   JsonArray *ranges = json_array_new();
+  gboolean ok = TRUE;
   guint drawn = 0;
   // a shape taking away before any adds takes from the whole image, as it
   // does when only ranges come first; darktable's group starts from its
@@ -5888,7 +6340,7 @@ static gboolean _mask(const char *name, JsonArray *shapes, char **err)
     }
     break;
   }
-  for(guint k = 0; shapes && k < json_array_get_length(shapes); k++)
+  for(guint k = 0; ok && shapes && k < json_array_get_length(shapes); k++)
   {
     JsonObject *o = json_array_get_object_element(shapes, k);
     const char *type = json_object_get_string_member_with_default(o, "type", "");
@@ -5899,19 +6351,15 @@ static gboolean _mask(const char *name, JsonArray *shapes, char **err)
     }
     if(!g_strcmp0(type, "object"))
     {
-      if(!_object_shapes(grp, o, name, k, drawn == 0, err))
-      {
-        json_array_unref(ranges);
-        return FALSE;
-      }
+      ok = _object_shapes(grp, o, name, k, drawn == 0, err);
       drawn++;
       continue;
     }
     dt_masks_form_t *f = _shape(o, err);
     if(!f)
     {
-      json_array_unref(ranges);
-      return FALSE;
+      ok = FALSE;
+      break;
     }
     g_snprintf(f->name, sizeof(f->name), "%s%s #%u", _MASK_PREFIX, name, k + 1);
     _s.dev.forms = g_list_append(_s.dev.forms, f);
@@ -5923,108 +6371,113 @@ static gboolean _mask(const char *name, JsonArray *shapes, char **err)
       pt->state |= !g_strcmp0(json_object_get_string_member_with_default(o, "mode", "add"), "subtract")
         ? DT_MASKS_STATE_DIFFERENCE : DT_MASKS_STATE_UNION;
     pt->opacity = json_object_get_double_member_with_default(o, "opacity", 1.0);
+    pt->group_opacity = 1.0f;
     grp->points = g_list_append(grp->points, pt);
   }
 
-  if(!_ranges)
-    _ranges = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, (GDestroyNotify)json_node_unref);
-  JsonNode *node = json_node_new(JSON_NODE_ARRAY);
-  json_node_take_array(node, ranges);
-  g_hash_table_replace(_ranges, g_strdup(name), node);
+  // the shapes as a classic group lists them, folded as darktable converts
+  // one: where the operator changes, what comes before becomes a group of
+  // its own (dt_masks_group_mark_classic_runs)
+  dt_masks_group_mark_classic_runs(&_s.dev.forms, grp, NULL);
+  if(!dt_masks_group_marker(grp)) grp->points = g_list_prepend(grp->points, dt_masks_marker_new(_s.dev.forms, grp, 0));
+  _set_ranges_group(grp, ranges);
+  json_array_unref(ranges);
 
   // the instances using it take the new shapes and ranges into their history
-  for(GList *l = _s.dev.iop; l; l = g_list_next(l))
+  for(guint i = 0; i < users->len; i++)
+    _apply_ranges(g_ptr_array_index(users, i), grp, g_array_index(inverts, gboolean, i));
+  _free_unreached(old);
+  for(guint i = 0; i < users->len; i++)
   {
-    dt_iop_module_t *m = l->data;
-    if(!m->blend_params || m->blend_params->mask_id != grp->formid) continue;
-    const gboolean invert = (m->blend_params->mask_combine & (DEVELOP_COMBINE_INV | DEVELOP_COMBINE_MASKS_POS)) != 0;
-    _apply_ranges(m, name, grp->points != NULL, invert);
+    dt_iop_module_t *m = g_ptr_array_index(users, i);
     dt_dev_add_masks_history_item_ext(&_s.dev, m, m->enabled, TRUE);
     // a piece's cache hash takes its mask's shapes from darktable.develop
     // (imageop.c, dt_iop_commit_params), which is not this engine's
     // develop, so a reshaped mask would be served the old render
-    dt_dev_pixelpipe_cache_invalidate_later(&_s.pipe, m->iop_order, "mask ");
-    if(_s.ppipe_ok) dt_dev_pixelpipe_cache_invalidate_later(&_s.ppipe, m->iop_order, "mask ");
-    if(_s.drag.ok) dt_dev_pixelpipe_cache_invalidate_later(&_s.drag.pipe, m->iop_order, "mask ");
-    if(_s.base.ok) dt_dev_pixelpipe_cache_invalidate_later(&_s.base.pipe, m->iop_order, "mask ");
+    _invalidate_from(m->iop_order, "mask ");
   }
-  _combined_member_changed(grp->formid, FALSE);
+  g_ptr_array_free(users, TRUE);
+  g_array_free(inverts, TRUE);
+  _combined_member_changed(grp, FALSE);
   _changed(DT_DEV_PIPE_SYNCH);
-  return TRUE;
+  return ok;
 }
 
-// a combined mask: masks' groups summed, each at an opacity of its own, so
-// one instance can carry the same adjustment for several masks at their
-// own strengths, as Lightroom's local adjustments add up, instead of one
-// instance per mask each running the whole module. not a client mask, so
-// _masks() passes over it
-#define _COMBINED_PREFIX "immage combined: "
-
-static dt_masks_form_t *_combined_group(const char *name)
+// a combined mask's members holding an empty mask are disabled: classic's
+// group folded an empty one as nothing, where a flexi group would take it
+// as the whole image (masks/group.c). TRUE when that changed
+static gboolean _combined_sync(dt_masks_form_t *grp)
 {
-  for(GList *l = _s.dev.forms; l; l = g_list_next(l))
+  gboolean changed = FALSE;
+  for(GList *p = grp->points; p; p = g_list_next(p))
   {
-    dt_masks_form_t *f = l->data;
-    if((f->type & DT_MASKS_GROUP) && g_str_has_prefix(f->name, _COMBINED_PREFIX)
-       && !g_strcmp0(f->name + strlen(_COMBINED_PREFIX), name))
-      return f;
+    dt_masks_point_group_t *pt = p->data;
+    const dt_masks_form_t *f = dt_masks_point_is_marker(pt) ? NULL : dt_masks_get_from_id(&_s.dev, pt->formid);
+    if(!_is_root(f)) continue;
+    const int state = _has_members(f) ? pt->state & ~DT_MASKS_STATE_DISABLE : pt->state | DT_MASKS_STATE_DISABLE;
+    changed |= state != pt->state;
+    pt->state = state;
   }
-  return NULL;
+  return changed;
+}
+
+// whether a combined mask has a member to fold
+static gboolean _combined_live(const dt_masks_form_t *grp)
+{
+  for(const GList *p = grp->points; p; p = g_list_next(p))
+  {
+    const dt_masks_point_group_t *pt = p->data;
+    if(!dt_masks_point_is_marker(pt) && !(pt->state & DT_MASKS_STATE_DISABLE)) return TRUE;
+  }
+  return FALSE;
 }
 
 // the instances combined mask `grp` drives, after its members changed:
-// with `record`, into history (the group's new members with them). with no
-// members left they are switched off, since a group without shapes would
-// let them work on the whole image. their cachelines go: all those after
+// with `record`, into history (the group's new members with them), after
+// the forms in `old` nothing uses any more go (_free_unreached). with no
+// members left they are switched off, since a group without any lets them
+// work on the whole image. their cachelines go: all those after
 // the first instance of each one's module, not just from the instance on,
 // because a new mask's instance, put after the anchor or (denoise) after
 // that first instance, moves them later, and a line left at an old
 // iop_order has the same hash (neither the members nor the position are in
 // it). the first instance's own line stays; for color balance rgb that is
 // the anchor
-static void _combined_refresh(dt_masks_form_t *grp, const gboolean record)
+static void _combined_refresh(dt_masks_form_t *grp, const gboolean record, GHashTable *old)
 {
+  const gboolean live = _combined_live(grp);
   int order = INT_MAX;
+  GPtrArray *users = g_ptr_array_new();
+  GArray *write = g_array_new(FALSE, FALSE, sizeof(gboolean));
   for(GList *l = _s.dev.iop; l; l = g_list_next(l))
   {
     dt_iop_module_t *m = l->data;
-    if(!m->blend_params || m->blend_params->mask_id != grp->formid) continue;
+    if(_instance_group(m) != grp) continue;
     const dt_iop_module_t *first = dt_iop_get_module_by_op_priority(_s.dev.iop, m->op, 0);
     order = MIN(order, first && first != m ? first->iop_order + 1 : m->iop_order);
-    if(!grp->points && m->enabled)
-    {
-      m->enabled = FALSE;
-      dt_dev_add_masks_history_item_ext(&_s.dev, m, FALSE, TRUE);
-      continue;
-    }
-    if(!record) continue;
-    _apply_ranges(m, grp->name, grp->points != NULL, FALSE);
-    dt_dev_add_masks_history_item_ext(&_s.dev, m, m->enabled, TRUE);
+    const gboolean off = !live && m->enabled;
+    if(off) m->enabled = FALSE;
+    if(record) _apply_ranges(m, grp, FALSE);
+    const gboolean w = off || record;
+    g_ptr_array_add(users, m);
+    g_array_append_val(write, w);
   }
-  if(order == INT_MAX) return;
-  dt_dev_pixelpipe_cache_invalidate_later(&_s.pipe, order, "combine ");
-  if(_s.ppipe_ok) dt_dev_pixelpipe_cache_invalidate_later(&_s.ppipe, order, "combine ");
-  if(_s.drag.ok) dt_dev_pixelpipe_cache_invalidate_later(&_s.drag.pipe, order, "combine ");
-  if(_s.base.ok) dt_dev_pixelpipe_cache_invalidate_later(&_s.base.pipe, order, "combine ");
-}
-
-// the first member is copied into the group's buffer, which group.c does
-// not clear first; the rest add to it, up to 1
-static void _combined_states(dt_masks_form_t *grp)
-{
-  gboolean first = TRUE;
-  for(GList *l = grp->points; l; l = g_list_next(l))
+  if(old) _free_unreached(old);
+  for(guint i = 0; i < users->len; i++)
   {
-    dt_masks_point_group_t *pt = l->data;
-    pt->state = (pt->state & ~DT_MASKS_STATE_OP) | (first ? 0 : DT_MASKS_STATE_SUM);
-    first = FALSE;
+    dt_iop_module_t *m = g_ptr_array_index(users, i);
+    if(g_array_index(write, gboolean, i)) dt_dev_add_masks_history_item_ext(&_s.dev, m, m->enabled, TRUE);
   }
+  g_ptr_array_free(users, TRUE);
+  g_array_free(write, TRUE);
+  if(order != INT_MAX) _invalidate_from(order, "combine ");
 }
 
-// mask `id` reshaped, or with `removed` deleted: the combined masks holding
-// it let go of it, and their instances render again. a reshape needs no
-// history of their own: the mask's own instances carry the shapes
-static void _combined_member_changed(const dt_mask_id_t id, const gboolean removed)
+// mask `root` reshaped, or with `removed` deleted: the combined masks
+// holding it let go of it, and their instances render again. a reshape
+// needs no history of their own, the mask's own instances carry the
+// shapes, unless it left a member empty or filled one (_combined_sync)
+static void _combined_member_changed(const dt_masks_form_t *root, const gboolean removed)
 {
   for(GList *l = _s.dev.forms; l; l = g_list_next(l))
   {
@@ -6035,7 +6488,7 @@ static void _combined_member_changed(const dt_mask_id_t id, const gboolean remov
     {
       GList *next = g_list_next(p);
       dt_masks_point_group_t *pt = p->data;
-      if(pt->formid == id)
+      if(_holds_mask(pt, root))
       {
         held = TRUE;
         if(removed)
@@ -6047,18 +6500,27 @@ static void _combined_member_changed(const dt_mask_id_t id, const gboolean remov
       p = next;
     }
     if(!held) continue;
-    if(removed) _combined_states(grp);
-    _combined_refresh(grp, removed);
+    const gboolean changed = _combined_sync(grp);
+    _combined_refresh(grp, removed || changed, NULL);
   }
 }
 
 // replace combined mask `name`'s members (made when missing): each
 // {mask, opacity 0-1, invert}. the members are the masks' own groups, which
 // stay theirs; only the references go. `ranges`, the range components the
-// members all have, go to its instances, kept under the group's full name so
-// no client mask's can be taken for them
+// members all have, multiply into the sum (_set_ranges_group)
 static gboolean _combine(const char *name, JsonArray *members, JsonArray *ranges, char **err)
 {
+  for(guint k = 0; members && k < json_array_get_length(members); k++)
+  {
+    JsonObject *o = json_array_get_object_element(members, k);
+    const char *mask = json_object_get_string_member_with_default(o, "mask", NULL);
+    if(!mask || !_mask_group(mask))
+    {
+      *err = g_strdup_printf("no mask '%s'", mask ? mask : "(none)");
+      return FALSE;
+    }
+  }
   dt_masks_form_t *grp = _combined_group(name);
   if(!grp)
   {
@@ -6066,39 +6528,24 @@ static gboolean _combine(const char *name, JsonArray *members, JsonArray *ranges
     g_snprintf(grp->name, sizeof(grp->name), "%s%s", _COMBINED_PREFIX, name);
     _s.dev.forms = g_list_append(_s.dev.forms, grp);
   }
-  if(!_ranges)
-    _ranges = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, (GDestroyNotify)json_node_unref);
-  if(ranges && json_array_get_length(ranges))
-  {
-    JsonNode *node = json_node_new(JSON_NODE_ARRAY);
-    json_node_set_array(node, ranges);
-    g_hash_table_replace(_ranges, g_strdup(grp->name), node);
-  }
-  else
-    g_hash_table_remove(_ranges, grp->name);
+  GHashTable *old = _mask_forms(grp);
+  g_hash_table_remove(old, grp);
   g_list_free_full(grp->points, free);
-  grp->points = NULL;
+  grp->points = NULL; // as in _set_ranges_group(), before the marker's id is chosen
+  // the first member goes onto the fold's empty start, and the rest add to
+  // it, up to 1 (masks/group.c)
+  grp->points = g_list_append(NULL, dt_masks_marker_new(_s.dev.forms, grp, DT_MASKS_STATE_FLEXI_SUM));
   for(guint k = 0; members && k < json_array_get_length(members); k++)
   {
     JsonObject *o = json_array_get_object_element(members, k);
-    const char *mask = json_object_get_string_member_with_default(o, "mask", NULL);
-    dt_masks_form_t *mg = mask ? _mask_group(mask) : NULL;
-    if(!mg)
-    {
-      *err = g_strdup_printf("no mask '%s'", mask ? mask : "(none)");
-      return FALSE;
-    }
-    dt_masks_point_group_t *pt = calloc(1, sizeof(dt_masks_point_group_t));
-    pt->formid = mg->formid;
-    pt->parentid = grp->formid;
-    pt->state = DT_MASKS_STATE_SHOW | DT_MASKS_STATE_USE;
-    if(json_object_get_boolean_member_with_default(o, "invert", FALSE)) pt->state |= DT_MASKS_STATE_INVERSE;
-    pt->opacity = CLAMP(json_object_get_double_member_with_default(o, "opacity", 1.0), 0.0, 1.0);
-    grp->points = g_list_append(grp->points, pt);
+    const dt_masks_form_t *mg = _mask_group(json_object_get_string_member(o, "mask"));
+    int state = DT_MASKS_STATE_SHOW | DT_MASKS_STATE_USE;
+    if(json_object_get_boolean_member_with_default(o, "invert", FALSE)) state |= DT_MASKS_STATE_INVERSE;
+    _member(grp, mg->formid, state, CLAMP(json_object_get_double_member_with_default(o, "opacity", 1.0), 0.0, 1.0));
   }
-  _combined_states(grp);
-
-  _combined_refresh(grp, TRUE);
+  _combined_sync(grp);
+  _set_ranges_group(grp, ranges);
+  _combined_refresh(grp, TRUE, old);
   _changed(DT_DEV_PIPE_SYNCH);
   return TRUE;
 }
@@ -6132,13 +6579,13 @@ static void _add_num(JsonBuilder *b, const char *name, const double v)
 }
 
 // one shape as _shape() takes it
-static void _shape_json(JsonBuilder *b, const dt_masks_form_t *f, const int state)
+static void _shape_json(JsonBuilder *b, const dt_masks_form_t *f, const gboolean subtract)
 {
   const float pw = _s.pipe.processed_width;
   const float imin = MIN(_s.pipe.iwidth, _s.pipe.iheight);
   json_builder_begin_object(b);
   json_builder_set_member_name(b, "mode");
-  json_builder_add_string_value(b, state & DT_MASKS_STATE_DIFFERENCE ? "subtract" : "add");
+  json_builder_add_string_value(b, subtract ? "subtract" : "add");
   float x, y, len, ang;
   if((f->type & DT_MASKS_ELLIPSE) && f->points)
   {
@@ -6678,6 +7125,104 @@ static void _object_close(JsonBuilder *b, JsonBuilder **edge, JsonBuilder **plai
   *edge = *plain = NULL;
 }
 
+// a mask's shape read back: its form, whether it takes away, and whether
+// it is kept switched off (_object_shapes)
+typedef struct _flat_t
+{
+  const dt_masks_form_t *f;
+  gboolean subtract, off;
+} _flat_t;
+
+// the shapes of mask tree `grp` in the order a classic group lists them,
+// each adding or taking away (`sub` for the first), the reverse of
+// dt_masks_group_mark_classic_runs, which nests what comes before an
+// operator's run as its first member. its parametric channels, which
+// multiply into the shapes, go to `chans`. an older edit's tree, as
+// darktable converted it, reads the same way
+static void _flatten(const dt_masks_form_t *grp, const gboolean sub, GArray *shapes, GPtrArray *chans,
+                     const int depth)
+{
+  if(depth > DT_MASKS_NESTING_MAX) return;
+  const dt_masks_point_group_t *mk = dt_masks_group_marker(grp);
+  const gboolean difference = mk && (mk->state & DT_MASKS_STATE_FLEXI_DIFFERENCE);
+  gboolean first = TRUE;
+  for(const GList *l = grp->points; l; l = g_list_next(l))
+  {
+    const dt_masks_point_group_t *pt = l->data;
+    if(dt_masks_point_is_marker(pt)) continue;
+    const dt_masks_form_t *f = dt_masks_get_from_id(&_s.dev, pt->formid);
+    if(!f) continue;
+    const gboolean off = (pt->state & (DT_MASKS_STATE_DISABLE | DT_MASKS_STATE_HIDDEN)) != 0;
+    if((f->type & DT_MASKS_PARAMETRIC) && !_is_backdrop_shape(f))
+    {
+      if(!off) g_ptr_array_add(chans, (gpointer)f);
+      continue;
+    }
+    // a classic group, which a conversion leaves nested in another, keeps
+    // the operator on each member
+    const gboolean s = first ? sub
+                     : mk ? difference : (pt->state & DT_MASKS_STATE_DIFFERENCE) != 0;
+    if(f->type & DT_MASKS_GROUP)
+      _flatten(f, s, shapes, chans, depth + 1);
+    else
+    {
+      const _flat_t e = { f, s, off };
+      g_array_append_val(shapes, e);
+    }
+    if(!off) first = FALSE;
+  }
+}
+
+// the tree mask `grp` is read from: its ranges group, or in an older edit
+// an instance's tree of its own, one blending in scene-referred RGB first
+// (the others have no ranges), else its group
+static const dt_masks_form_t *_mask_tree(const dt_masks_form_t *grp)
+{
+  const dt_masks_form_t *ranged = _ranges_group(grp);
+  if(ranged) return ranged;
+  const dt_masks_form_t *best = grp;
+  int rank = 0;
+  for(GList *l = _s.dev.iop; l; l = g_list_next(l))
+  {
+    const dt_iop_module_t *m = l->data;
+    if(_instance_group(m) != grp) continue;
+    const dt_masks_form_t *f = dt_masks_get_from_id(&_s.dev, m->blend_params->mask_id);
+    if(!f || !(f->type & DT_MASKS_GROUP) || f == grp) continue;
+    const int r = 1 + 2 * (m->blend_params->blend_cst == DEVELOP_BLEND_CS_RGB_SCENE) + m->enabled;
+    if(r > rank)
+    {
+      rank = r;
+      best = f;
+    }
+  }
+  return best;
+}
+
+// parametric channels `chans` as the range components they make
+static void _channels_json(JsonBuilder *b, const GPtrArray *chans)
+{
+  dt_develop_blend_params_t bp = { 0 };
+  bp.blend_cst = DEVELOP_BLEND_CS_RGB_SCENE;
+  for(guint i = 0; i < chans->len; i++)
+  {
+    const dt_masks_form_t *f = g_ptr_array_index(chans, i);
+    const dt_masks_point_parametric_t *p = f->points ? f->points->data : NULL;
+    if(!p || p->colorspace != DEVELOP_BLEND_CS_RGB_SCENE) continue;
+    const dt_iop_gui_blendif_channel_t *table = dt_develop_blendif_channels_for_csp(DEVELOP_BLEND_CS_RGB_SCENE);
+    for(int slot = 0; slot < DEVELOP_BLENDIF_SIZE; slot++)
+    {
+      if(!(p->blendif & (1u << slot))) continue;
+      if(table && (((p->disabled & 1) && table[p->channel].param_channels[0] == slot)
+                   || ((p->disabled & 2) && table[p->channel].param_channels[1] == slot)))
+        continue;
+      bp.blendif |= (1u << slot) | (p->blendif & (1u << (slot + 16)));
+      memcpy(bp.blendif_parameters + 4 * slot, p->blendif_parameters + 4 * slot, 4 * sizeof(float));
+      bp.blendif_boost_factors[slot] = p->blendif_boost_factors[slot];
+    }
+  }
+  if(bp.blendif) _ranges_json(b, &bp);
+}
+
 // every client mask: its shapes, whether it is inverted, and for each
 // instance it drives, whether it is on and the asked-for fields
 // ({ op: [field, ...] } in `fields`; a tagged instance is "op#tag")
@@ -6689,7 +7234,11 @@ static gboolean _masks(JsonObject *fields, JsonBuilder *b, char **err)
   {
     const dt_masks_form_t *grp = l->data;
     const char *name = (grp->type & DT_MASKS_GROUP) ? _mask_name(grp->name) : NULL;
-    if(!name) continue;
+    // a second group of the name is a conversion's copy (_mask_forms)
+    if(!name || _mask_group(name) != grp) continue;
+    GArray *flat = g_array_new(FALSE, FALSE, sizeof(_flat_t));
+    GPtrArray *chans = g_ptr_array_new();
+    _flatten(_mask_tree(grp), FALSE, flat, chans, 0);
     json_builder_begin_object(b);
     json_builder_set_member_name(b, "name");
     json_builder_add_string_value(b, name);
@@ -6701,11 +7250,11 @@ static gboolean _masks(JsonObject *fields, JsonBuilder *b, char **err)
     int open_obj = -1;
     JsonBuilder *edge = NULL, *plain = NULL;
     const dt_masks_form_t *bd = NULL;
-    for(const GList *p = grp->points; p; p = g_list_next(p))
+    for(guint i = 0; i < flat->len; i++)
     {
-      const dt_masks_point_group_t *pt = p->data;
-      const dt_masks_form_t *f = dt_masks_get_from_id(&_s.dev, pt->formid);
-      if(!f || _is_base_shape(f)) continue;
+      const _flat_t *e = &g_array_index(flat, _flat_t, i);
+      const dt_masks_form_t *f = e->f;
+      if(_is_base_shape(f)) continue;
       const char *hash = strrchr(f->name, '#');
       unsigned comp = 0, part = 0;
       const gboolean is_bd = _is_backdrop_shape(f) && hash && sscanf(hash + 1, "%u", &comp) == 1;
@@ -6719,7 +7268,7 @@ static gboolean _masks(JsonObject *fields, JsonBuilder *b, char **err)
       }
       if(!is_obj)
       {
-        _shape_json(b, f, pt->state);
+        _shape_json(b, f, e->subtract);
         continue;
       }
       if(is_bd)
@@ -6734,8 +7283,21 @@ static gboolean _masks(JsonObject *fields, JsonBuilder *b, char **err)
         json_builder_begin_object(b);
         json_builder_set_member_name(b, "type");
         json_builder_add_string_value(b, "object");
+        // the mode from its first path that is not off: darktable's
+        // conversion moves one that is off into the run before it
+        gboolean mode_sub = e->subtract != hole;
+        for(guint j = i; j < flat->len; j++)
+        {
+          const _flat_t *q = &g_array_index(flat, _flat_t, j);
+          const char *qh = strrchr(q->f->name, '#');
+          unsigned qc = 0, qp = 0;
+          if(!(q->f->type & DT_MASKS_PATH) || !qh || sscanf(qh + 1, "%u.%u", &qc, &qp) != 2 || qc != comp) continue;
+          if(q->off) continue;
+          mode_sub = q->subtract != (q->f->name[strlen(q->f->name) - 1] == '-');
+          break;
+        }
         json_builder_set_member_name(b, "mode");
-        json_builder_add_string_value(b, ((pt->state & DT_MASKS_STATE_DIFFERENCE) != 0) != hole ? "subtract" : "add");
+        json_builder_add_string_value(b, mode_sub ? "subtract" : "add");
         const char *at = strchr(hash, '@');
         if(at)
         {
@@ -6771,26 +7333,10 @@ static gboolean _masks(JsonObject *fields, JsonBuilder *b, char **err)
       _object_path_json(run ? *run : b, f, hole);
     }
     if(open_obj >= 0) _object_close(b, &edge, &plain, bd);
-    // the ranges, from the first instance carrying the mask; kept for
-    // instances made later
-    for(GList *m = _s.dev.iop; m; m = g_list_next(m))
-    {
-      const dt_iop_module_t *mod = m->data;
-      if(!mod->blend_params || mod->blend_params->mask_id != grp->formid) continue;
-      JsonBuilder *rb = json_builder_new();
-      json_builder_begin_array(rb);
-      _ranges_json(rb, mod->blend_params);
-      json_builder_end_array(rb);
-      JsonNode *node = json_builder_get_root(rb);
-      g_object_unref(rb);
-      JsonArray *list = json_node_get_array(node);
-      for(guint k = 0; k < json_array_get_length(list); k++)
-        json_builder_add_value(b, json_node_copy(json_array_get_element(list, k)));
-      if(!_ranges)
-        _ranges = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, (GDestroyNotify)json_node_unref);
-      g_hash_table_replace(_ranges, g_strdup(name), node);
-      break;
-    }
+    // the ranges, from its parametric channels
+    _channels_json(b, chans);
+    g_array_free(flat, TRUE);
+    g_ptr_array_free(chans, TRUE);
     json_builder_end_array(b);
     gboolean invert = FALSE;
     double opacity = 100.0;
@@ -6804,9 +7350,9 @@ static gboolean _masks(JsonObject *fields, JsonBuilder *b, char **err)
       if(!tag) continue;
       // an instance that is on, else one that is off: a hidden mask has
       // all of them off, and keeps its settings
-      if(mod->blend_params && mod->blend_params->mask_id == grp->formid && (mod->enabled || !refined))
+      if(_instance_group(mod) == grp && (mod->enabled || !refined))
       {
-        invert = (mod->blend_params->mask_combine & (DEVELOP_COMBINE_MASKS_POS | DEVELOP_COMBINE_INV)) != 0;
+        invert = _instance_inverted(mod);
         opacity = mod->blend_params->opacity;
         refined = mod->blend_params;
       }
@@ -6848,9 +7394,11 @@ static gboolean _masks(JsonObject *fields, JsonBuilder *b, char **err)
     for(GList *c = _s.dev.forms; c; c = g_list_next(c))
     {
       const dt_masks_form_t *cg = c->data;
-      if(!(cg->type & DT_MASKS_GROUP) || !g_str_has_prefix(cg->name, _COMBINED_PREFIX)) continue;
+      if(!(cg->type & DT_MASKS_GROUP) || !g_str_has_prefix(cg->name, _COMBINED_PREFIX)
+         || _combined_group(cg->name + strlen(_COMBINED_PREFIX)) != cg)
+        continue;
       for(const GList *p = cg->points; p; p = g_list_next(p))
-        if(((const dt_masks_point_group_t *)p->data)->formid == grp->formid)
+        if(_holds_mask(p->data, grp))
         {
           json_builder_add_string_value(b, cg->name + strlen(_COMBINED_PREFIX));
           break;
@@ -6873,37 +7421,35 @@ static gboolean _mask_delete(const char *name, char **err)
     *err = g_strdup_printf("no mask '%s'", name);
     return FALSE;
   }
-  const dt_mask_id_t id = grp->formid;
-  _combined_member_changed(id, TRUE);
-  if(_ranges) g_hash_table_remove(_ranges, name);
-  for(GList *l = grp->points; l; l = g_list_next(l))
-  {
-    dt_masks_point_group_t *pt = l->data;
-    dt_masks_form_t *f = dt_masks_get_from_id(&_s.dev, pt->formid);
-    if(f)
-    {
-      _s.dev.forms = g_list_remove(_s.dev.forms, f);
-      dt_masks_free_form(f);
-    }
-  }
-  _s.dev.forms = g_list_remove(_s.dev.forms, grp);
-  dt_masks_free_form(grp);
+  _combined_adopt(grp);
+  _combined_member_changed(grp, TRUE);
+  GHashTable *old = _mask_forms(grp);
+  GPtrArray *users = g_ptr_array_new();
   for(GList *l = _s.dev.iop; l; l = g_list_next(l))
   {
     dt_iop_module_t *m = l->data;
-    if(!m->blend_params || m->blend_params->mask_id != id) continue;
+    if(_instance_group(m) != grp) continue;
     m->enabled = FALSE;
     m->blend_params->mask_mode = DEVELOP_MASK_DISABLED;
     m->blend_params->mask_id = 0;
-    dt_dev_add_masks_history_item_ext(&_s.dev, m, FALSE, TRUE);
+    g_ptr_array_add(users, m);
   }
+  // unnamed, nothing keeps the group or its ranges' (_free_unreached)
+  dt_masks_form_t *ranged = _ranges_group(grp);
+  if(ranged) ranged->name[0] = '\0';
+  grp->name[0] = '\0';
+  _free_unreached(old);
+  for(guint i = 0; i < users->len; i++)
+    dt_dev_add_masks_history_item_ext(&_s.dev, g_ptr_array_index(users, i), FALSE, TRUE);
+  g_ptr_array_free(users, TRUE);
   _changed(DT_DEV_PIPE_SYNCH);
   return TRUE;
 }
 
 // a mask renamed: its group, its shapes (named after it, with their
-// component after the last '#') and the instances carrying its
-// adjustments, all ordinary history, so darktable shows the new name too
+// component after the last '#'), its ranges' group and the instances
+// carrying its adjustments, all ordinary history, so darktable shows the
+// new name too
 static gboolean _mask_rename(const char *name, const char *to, char **err)
 {
   dt_masks_form_t *grp = _mask_group(name);
@@ -6917,24 +7463,28 @@ static gboolean _mask_rename(const char *name, const char *to, char **err)
     *err = g_strdup_printf("there is already a mask named '%s'", to ? to : "");
     return FALSE;
   }
-  // the old prefix or the new, as the group's name has it
-  const size_t old_len = strlen(grp->name) - strlen(name);
-  for(GList *l = grp->points; l; l = g_list_next(l))
+  dt_masks_form_t *ranged = _ranges_group(grp);
+  GHashTable *forms = _mask_forms(grp);
+  gchar *full = g_strdup(grp->name);
+  const size_t n = strlen(full);
+  GHashTableIter it;
+  gpointer key;
+  g_hash_table_iter_init(&it, forms);
+  while(g_hash_table_iter_next(&it, &key, NULL))
   {
-    dt_masks_form_t *f = dt_masks_get_from_id(&_s.dev, ((dt_masks_point_group_t *)l->data)->formid);
-    if(!f || strlen(f->name) < old_len + strlen(name)) continue;
-    gchar *rest = g_strdup(f->name + old_len + strlen(name));
-    g_snprintf(f->name, sizeof(f->name), "%s%s%s", _MASK_PREFIX, to, rest);
-    g_free(rest);
+    dt_masks_form_t *f = key;
+    if(!strcmp(f->name, full))
+      g_snprintf(f->name, sizeof(f->name), "%s%s", _MASK_PREFIX, to);
+    else if(!strncmp(f->name, full, n) && !strncmp(f->name + n, " #", 2))
+    {
+      gchar *rest = g_strdup(f->name + n);
+      g_snprintf(f->name, sizeof(f->name), "%s%s%s", _MASK_PREFIX, to, rest);
+      g_free(rest);
+    }
   }
-  g_snprintf(grp->name, sizeof(grp->name), "%s%s", _MASK_PREFIX, to);
-  JsonNode *ranges = _ranges ? g_hash_table_lookup(_ranges, name) : NULL;
-  if(ranges)
-  {
-    json_node_ref(ranges);
-    g_hash_table_remove(_ranges, name);
-    g_hash_table_insert(_ranges, g_strdup(to), ranges);
-  }
+  g_hash_table_destroy(forms);
+  g_free(full);
+  if(ranged) g_snprintf(ranged->name, sizeof(ranged->name), "%s%s", _RANGES_PREFIX, grp->name);
   gboolean recorded = FALSE;
   for(GList *l = _s.dev.iop; l; l = g_list_next(l))
   {
@@ -7073,7 +7623,14 @@ static gboolean _working_at(_working_t *w, const _stage_t stage, char **err)
   // as a zoomed mask_map's: the second pass makes them run
   for(int pass = 0; pass < 2 && !data; pass++)
   {
-    if(pass) dt_dev_pixelpipe_cache_invalidate_later(&_s.ppipe, piece->module->iop_order, "working ");
+    // upright reads before geometry: crop, orientation and perspective can
+    // request an offset input region. force its producer to run so that a
+    // previous render's region cannot be mistaken for this sample's
+    if(pass || stage == _STAGE_ASHIFT)
+    {
+      if(!piece) piece = _stage_piece(stage, anchor, placement, ashift, negadoctor, NULL);
+      if(piece) dt_dev_pixelpipe_cache_invalidate_later(&_s.ppipe, piece->module->iop_order, "working ");
+    }
     _s.ppipe.changed = DT_DEV_PIPE_UNCHANGED;
     if(reader) _s.dev.history_last_module = reader;
     const int failed = dt_dev_pixelpipe_process(&_s.ppipe, &_s.dev, 0, 0, MAX(1, floor(scale * pw)),
@@ -7094,7 +7651,10 @@ static gboolean _working_at(_working_t *w, const _stage_t stage, char **err)
     // only the whole image at this render's scale: another region's output
     // can still be in the cache, and points outside it are clamped to its
     // edges (the range map's stripes)
-    const gboolean whole = roi.x == 0 && roi.y == 0 && fabs(roi.scale - scale) < 1e-6 * scale;
+    // upright_detect uses the region's origin when locating its lines;
+    // mask sampling still needs an image starting at the origin
+    const gboolean whole = (stage == _STAGE_ASHIFT || (roi.x == 0 && roi.y == 0))
+                           && fabs(roi.scale - scale) < 1e-6 * scale;
     const size_t size = (size_t)roi.width * roi.height * 4 * sizeof(float);
     const dt_hash_t hash = dt_dev_pixelpipe_cache_hash(&roi, &_s.ppipe, piece->module->position);
     data = NULL;
@@ -7759,8 +8319,8 @@ static void _set_channel(dt_develop_blend_params_t *bp, const int ch, const floa
   else bp->blendif &= ~(1u << (ch + 16));
 }
 
-// the ranges of mask `name` into an instance's blend parameters; with
-// shapes as well, the two multiply (darktable's "exclusive" combination)
+// range components `list` as darktable's parametric channels in
+// scene-referred RGB, set in `bp`; the channels multiply
 static void _ranges_into(dt_develop_blend_params_t *bp, JsonArray *list)
 {
   const guint n = list ? json_array_get_length(list) : 0;
@@ -7837,32 +8397,28 @@ static void _ranges_into(dt_develop_blend_params_t *bp, JsonArray *list)
   }
 }
 
-static void _apply_ranges(dt_iop_module_t *m, const char *name, const gboolean has_shapes,
-                          const gboolean invert)
+// instance `m` takes mask `root` (a mask's group or a combined mask's):
+// its ranges group (_set_ranges_group) when it blends in scene-referred
+// RGB, where ranges are measured, else its shapes alone. a module blending
+// in another space (denoise in camera RGB, defringe in Lab) keeps it:
+// forcing it into RGB blacked its output out. `invert` flips the whole
+// mask, as darktable's conversion leaves a group more than one module
+// renders (migrate_legacy.c, _polarity_movable)
+static void _apply_ranges(dt_iop_module_t *m, dt_masks_form_t *root, const gboolean invert)
 {
   dt_develop_blend_params_t *bp = m->blend_params;
-  JsonNode *ranges = _ranges ? g_hash_table_lookup(_ranges, name) : NULL;
-  // ranges are measured in scene-referred RGB; a module blending in another
-  // space (denoise in camera RGB, defringe in Lab) keeps it, and its drawn
-  // shapes alone. forcing it into RGB blacked its output out
   const dt_develop_blend_colorspace_t cst = dt_develop_blend_default_module_blend_colorspace(m);
-  if(cst == DEVELOP_BLEND_CS_RGB_SCENE)
-    _ranges_into(bp, ranges ? json_node_get_array(ranges) : NULL);
-  else
-  {
-    bp->blendif = 0;
-    bp->blend_cst = cst;
-  }
-  const gboolean conditional = bp->blendif != 0;
-  bp->mask_mode = DEVELOP_MASK_ENABLED | (has_shapes ? DEVELOP_MASK_MASK : 0)
-    | (conditional ? DEVELOP_MASK_CONDITIONAL : 0);
-  // darktable inverts a drawn mask alone with MASKS_POS, and a drawn and
-  // parametric one as a whole with INV
+  const dt_masks_form_t *ranges = cst == DEVELOP_BLEND_CS_RGB_SCENE ? _ranges_group(root) : NULL;
+  bp->blend_cst = cst;
+  // the module's own parametric mask would multiply into the group's again
+  // (blend.c), as darktable's conversion clears it (_clear_toplevel_blendif)
+  bp->blendif = 0;
+  memset(bp->blendif_parameters, 0, sizeof(bp->blendif_parameters));
+  memset(bp->blendif_boost_factors, 0, sizeof(bp->blendif_boost_factors));
+  bp->mask_mode = DEVELOP_MASK_ENABLED | DEVELOP_MASK_FLEXI;
+  bp->mask_id = (ranges ? ranges : root)->formid;
   bp->mask_combine &= ~(DEVELOP_COMBINE_INV | DEVELOP_COMBINE_MASKS_POS | DEVELOP_COMBINE_INCL);
-  if(invert) bp->mask_combine |= conditional ? DEVELOP_COMBINE_INV : DEVELOP_COMBINE_MASKS_POS;
-  // a backdrop shape reads no hue in another space, whatever its polarity
-  if(cst == DEVELOP_BLEND_CS_RGB_SCENE)
-    _backdrop_polarity(dt_masks_get_from_id(&_s.dev, bp->mask_id), (bp->mask_combine & DEVELOP_COMBINE_INV) != 0);
+  if(invert) bp->mask_combine |= DEVELOP_COMBINE_MASKS_POS;
 }
 
 // darktable's per-channel factor (blendif_rgb_jzczhz.c), for range_map
@@ -7909,7 +8465,7 @@ static gboolean _range_map(JsonArray *ranges, const int width, const int height,
                            params + DEVELOP_BLENDIF_PARAMETER_ITEMS * _chans[c].ch);
     map[k] = (uint8_t)CLAMP(f * 255.0f + 0.5f, 0.0f, 255.0f);
   }
-  const gboolean ok = g_file_set_contents(out, (const gchar *)map, n, NULL);
+  const gboolean ok = transient_write(out, map, n, NULL, 0);
   g_free(map);
   g_free(pts);
   if(!ok) *err = g_strdup_printf("could not write '%s'", out);
@@ -7989,7 +8545,7 @@ static gboolean _zones(const int width, const int height, const float w, const _
     else if(z >= _ZONE_COUNT - 0.5f) above += 1.0;
     else fine[CLAMP((int)((z + 0.5f) * _ZONE_FINE), 0, _ZONE_COUNT * _ZONE_FINE - 1)] += 1.0;
   }
-  const gboolean ok = g_file_set_contents(out, (const gchar *)map, n, NULL);
+  const gboolean ok = transient_write(out, map, n, NULL, 0);
   qsort(zs, n, sizeof(float), _zone_cmp);
 
   json_builder_set_member_name(b, "zones");
@@ -8069,7 +8625,7 @@ static gboolean _mask_map(const char *name, const char *op, int *width, int *hei
     {
       dt_dev_pixelpipe_iop_t *pc = n->data;
       const dt_develop_blend_params_t *bp = pc->module->blend_params;
-      if(!bp || bp->mask_id != grp->formid || !_mask_instance_tag(pc->module, name)) continue;
+      if(!bp || _instance_group(pc->module) != grp || !_mask_instance_tag(pc->module, name)) continue;
       if(pc->enabled) on = pc;
       else if(!off) off = pc;
     }
@@ -8107,7 +8663,7 @@ static gboolean _mask_map(const char *name, const char *op, int *width, int *hei
       dt_dev_pixelpipe_iop_t *pc = n->data;
       const dt_develop_blend_params_t *bp = pc->module->blend_params;
       if(mod ? pc->enabled && pc->module == mod
-             : pc->enabled && bp && bp->mask_id == grp->formid && _mask_instance_tag(pc->module, name))
+             : pc->enabled && bp && _instance_group(pc->module) == grp && _mask_instance_tag(pc->module, name))
         piece = pc;
     }
     if(!piece)
@@ -8151,7 +8707,7 @@ static gboolean _mask_map(const char *name, const char *op, int *width, int *hei
     const float v = (top * (1.0f - ay) + bot * ay) / opacity;
     map[k] = (uint8_t)CLAMP(v * 255.0f + 0.5f, 0.0f, 255.0f);
   }
-  const gboolean ok = g_file_set_contents(out, (const gchar *)map, n, NULL);
+  const gboolean ok = transient_write(out, map, n, NULL, 0);
   g_free(map);
   g_free(pts);
   if(!ok) *err = g_strdup_printf("could not write '%s'", out);
@@ -8292,8 +8848,7 @@ static gboolean _attach_mask(dt_iop_module_t *m, const char *name, const gboolea
     *err = g_strdup_printf("'%s' cannot take a mask", m->op);
     return FALSE;
   }
-  m->blend_params->mask_id = grp->formid;
-  _apply_ranges(m, shared ? grp->name : name, grp->points != NULL, invert);
+  _apply_ranges(m, grp, invert);
   return TRUE;
 }
 
@@ -8377,6 +8932,16 @@ static gboolean _item_params(dt_iop_module_t *m, const dt_style_item_t *si,
     if(r == 1) return FALSE;
     if(r == -1) memcpy(params, m->default_params, m->params_size);
   }
+#ifdef IMMAGE_STYLE_BLEND_READER
+  const dt_develop_blend_params_t locked = *m->blend_params;
+  if(!si->blendop_params)
+    memcpy(blend, m->default_blendop_params, sizeof(*blend));
+  else if(dt_develop_blend_params_read(m, si->blendop_params, si->blendop_params_size,
+                                      si->blendop_version, blend, -1,
+                                      dt_develop_blend_mask_locked(&locked), NULL))
+    return FALSE;
+  dt_develop_blend_keep_locked_mask(m, blend, &locked);
+#else
   if(si->blendop_params && si->blendop_version == dt_develop_blend_version()
      && si->blendop_params_size == sizeof(dt_develop_blend_params_t))
     memcpy(blend, si->blendop_params, sizeof(dt_develop_blend_params_t));
@@ -8384,6 +8949,7 @@ static gboolean _item_params(dt_iop_module_t *m, const dt_style_item_t *si,
           || dt_develop_blend_legacy_params(m, si->blendop_params, si->blendop_version, blend,
                                             dt_develop_blend_version(), si->blendop_params_size))
     memcpy(blend, m->default_blendop_params, sizeof(dt_develop_blend_params_t));
+#endif
   return TRUE;
 }
 
@@ -8417,7 +8983,10 @@ static void _look_amount(const double amount)
   {
     dt_iop_module_t *m = l->data;
     if(!_is_look(m) || !m->enabled || !m->blend_params) continue;
-    if(m->blend_params->mask_mode == DEVELOP_MASK_DISABLED) m->blend_params->mask_mode = DEVELOP_MASK_ENABLED;
+    // a uniform mask, as darktable converts a classic one (migrate_legacy.c,
+    // _migrate_to_uniform)
+    if(m->blend_params->mask_mode == DEVELOP_MASK_DISABLED)
+      m->blend_params->mask_mode = DEVELOP_MASK_ENABLED | DEVELOP_MASK_FLEXI;
     m->blend_params->opacity = CLAMP(amount, 0.0, 100.0);
     dt_dev_add_history_item_ext(&_s.dev, m, TRUE, TRUE);
   }
@@ -8445,7 +9014,7 @@ static gboolean _look(const char *path, char **err)
     }
     g_snprintf(m->multi_name, sizeof(m->multi_name), "%s%s", _LOOK_PREFIX, label);
     m->enabled = si->enabled;
-    dt_dev_add_history_item_ext(&_s.dev, m, m->enabled, TRUE);
+    dt_dev_add_masks_history_item_ext(&_s.dev, m, m->enabled, TRUE);
     used = g_list_prepend(used, m);
   }
   // instances the new look does not use, or every one for no look
@@ -8543,25 +9112,35 @@ static void _preview_commit(dt_iop_module_t *m, void *params, dt_develop_blend_p
   dt_dev_pixelpipe_iop_t *piece = _piece(&_s.ppipe, m);
   if(!piece) return;
   piece->enabled = enabled;
+  // older pins hash module->params; keep the upstream mask-tree and bypass
+  // hashes while giving that path the preview's temporary parameters too
+  void *saved_params = m->params;
+  dt_develop_blend_params_t *saved_blend = m->blend_params;
+  dt_develop_blend_params_t preview_blend = *blend;
+  m->params = params;
+  // The upstream commit copies into module->blend_params as well as the
+  // piece. Give it request-local storage so a tile cannot overwrite the
+  // applied look's mask id, opacity or other blend settings.
+  m->blend_params = &preview_blend;
   dt_iop_commit_params(m, params, blend, &_s.ppipe, piece);
-  // commit_params hashes module->params (imageop.c), which are the edit's,
-  // not these: without its own hash the piece would reuse the cached output
-  dt_hash_t h = DT_INVALID_HASH;
+  m->blend_params = saved_blend;
+  m->params = saved_params;
+  // darktable.develop is not the engine's develop, so hash its own forms
+  // explicitly, as _frame_hash does for retained main frames
   if(enabled)
   {
-    h = dt_hash(DT_INITHASH, m->so->op, strlen(m->so->op));
-    h = dt_hash(h, &m->instance, sizeof(int32_t));
-    h = dt_hash(h, params, m->params_size);
-    h = dt_hash(h, blend, sizeof(dt_develop_blend_params_t));
+    dt_masks_form_t *form = dt_masks_get_from_id_ext(_s.dev.forms, blend->mask_id);
+    if(form) piece->hash = dt_masks_group_hash_ext(piece->hash, form, _s.dev.forms);
+    form = dt_masks_get_from_id_ext(_s.dev.forms, blend->blend_mask_id);
+    if(form) piece->hash = dt_masks_group_hash_ext(piece->hash, form, _s.dev.forms);
   }
-  piece->hash = h;
 }
 
 // the edit as it stands, plus `edits` ([{ op, params: { field: value },
 // enabled, instance, after, before }], a named instance placed as "set"
 // places it) and, when the request has "look", that style (a path) or no
 // look (null), fitted into size x size on the preview pipe
-static gboolean _preview(JsonObject *req, int *ow, int *oh, char **err)
+static gboolean _preview_render(JsonObject *req, int *ow, int *oh, char **err)
 {
   const int size = json_object_get_int_member_with_default(req, "size", 160);
   const gboolean has_look = json_object_has_member(req, "look");
@@ -8677,6 +9256,21 @@ static gboolean _preview(JsonObject *req, int *ow, int *oh, char **err)
   *ow = _s.ppipe.backbuf_width;
   *oh = _s.ppipe.backbuf_height;
   return TRUE;
+}
+
+static gboolean _preview(JsonObject *req, int *ow, int *oh, char **err)
+{
+  const char *look = json_object_get_string_member_with_default(req, "look", NULL);
+  if(!look) return _preview_render(req, ow, oh, err);
+
+  // style conversion imports and migrates forms in dev->forms. A thumbnail
+  // owns those forms only until processing finishes, including failure paths
+  GList *saved_forms = _s.dev.forms;
+  _s.dev.forms = dt_masks_dup_forms_deep(saved_forms, NULL);
+  const gboolean ok = _preview_render(req, ow, oh, err);
+  g_list_free_full(_s.dev.forms, (GDestroyNotify)dt_masks_free_form);
+  _s.dev.forms = saved_forms;
+  return ok;
 }
 
 // the edit into the library and the XMP sidecar
@@ -8903,6 +9497,425 @@ static gboolean _edits(const char *cmd)
   return FALSE;
 }
 
+// the GPU check: the edit rendered on the CPU and then on an OpenCL device,
+// on a pipe of its own, and the two frames compared. darktable's
+// integration tests accept dE < 2 between the two (src/tests/integration)
+
+static float _srgb_linear(const float v)
+{
+  return v <= 0.04045f ? v / 12.92f : powf((v + 0.055f) / 1.055f, 2.4f);
+}
+
+static float _lab_f(const float t)
+{
+  return t > 216.0f / 24389.0f ? cbrtf(t) : (24389.0f / 27.0f * t + 16.0f) / 116.0f;
+}
+
+// display bytes (BGRA) to CIE Lab, D65
+static void _bgra_lab(const uint8_t *px, float lab[3])
+{
+  const float r = _srgb_linear(px[2] / 255.0f), g = _srgb_linear(px[1] / 255.0f),
+              b = _srgb_linear(px[0] / 255.0f);
+  const float x = (0.4124564f * r + 0.3575761f * g + 0.1804375f * b) / 0.95047f;
+  const float y = 0.2126729f * r + 0.7151522f * g + 0.0721750f * b;
+  const float z = (0.0193339f * r + 0.1191920f * g + 0.9503041f * b) / 1.08883f;
+  const float fx = _lab_f(x), fy = _lab_f(y), fz = _lab_f(z);
+  lab[0] = 116.0f * fy - 16.0f;
+  lab[1] = 500.0f * (fx - fy);
+  lab[2] = 200.0f * (fy - fz);
+}
+
+typedef struct parity_pass_t
+{
+  uint8_t *pixels;
+  int w, h;
+  double ms;
+  int devid;
+  int cl_errors;
+} parity_pass_t;
+
+// one render of the check pipe from an empty cache: without the flush the
+// second pass would reuse the first's cachelines and compare a frame with
+// itself. gpu FALSE turns OpenCL off for the length of the render, as
+// dt_dev_pixelpipe_process() takes the pipe's device from dt_opencl_running()
+static gboolean _parity_pass(const char *name, const gboolean gpu, const int size, parity_pass_t *out, char **err)
+{
+  dt_dev_pixelpipe_t *pipe = &_s.check.pipe;
+  dt_dev_pixelpipe_cache_flush(pipe);
+  dt_opencl_t *cl = darktable.opencl;
+  const gboolean enabled = cl->enabled;
+  int devid = DT_DEVICE_NONE;
+  if(gpu) devid = dt_opencl_lock_device(DT_DEV_PIXELPIPE_EXPORT);
+  else cl->enabled = FALSE;
+  // its marker line splits the request's -d perf module timings by pass
+  // (engine.rs, read_stderr)
+  fprintf(stderr, "[engine] | %s\n", name);
+  fflush(stderr);
+  const int errors = cl->error_count;
+  const gint64 t0 = g_get_monotonic_time();
+  int w = 0, h = 0, ox = 0, oy = 0;
+  dt_hash_t kept = DT_INVALID_HASH;
+  const gboolean ok = _render(pipe, devid, size, size, 0.0, 0, 0, NULL, &w, &h, &ox, &oy, &kept, NULL, err);
+  out->ms = _ms_since(t0);
+  out->cl_errors = cl->error_count - errors;
+  out->devid = devid;
+  if(devid > DT_DEVICE_CPU) dt_opencl_unlock_device(devid);
+  cl->enabled = enabled;
+  if(!ok) return FALSE;
+  out->w = w;
+  out->h = h;
+  out->pixels = g_malloc((size_t)4 * w * h);
+  memcpy(out->pixels, pipe->backbuf, (size_t)4 * w * h);
+  return TRUE;
+}
+
+// the difference, amplified 8x, so a failing case shows where it differs
+static void _parity_diff_png(const char *path, const parity_pass_t *a, const parity_pass_t *b)
+{
+  cairo_surface_t *surf = cairo_image_surface_create(CAIRO_FORMAT_RGB24, a->w, a->h);
+  uint8_t *dst = cairo_image_surface_get_data(surf);
+  const int stride = cairo_image_surface_get_stride(surf);
+  cairo_surface_flush(surf);
+  for(int j = 0; j < a->h; j++)
+    for(int i = 0; i < a->w; i++)
+    {
+      const size_t k = 4 * ((size_t)j * a->w + i);
+      uint8_t *d = dst + (size_t)j * stride + 4 * i;
+      for(int c = 0; c < 3; c++) d[c] = MIN(255, 8 * abs((int)a->pixels[k + c] - (int)b->pixels[k + c]));
+      d[3] = 255;
+    }
+  cairo_surface_mark_dirty(surf);
+  cairo_surface_write_to_png(surf, path);
+  cairo_surface_destroy(surf);
+}
+
+static void _parity_pass_json(JsonBuilder *b, const char *name, const parity_pass_t *p)
+{
+  json_builder_set_member_name(b, name);
+  json_builder_begin_object(b);
+  json_builder_set_member_name(b, "ms");
+  json_builder_add_double_value(b, p->ms);
+  _add_int(b, "devid", p->devid);
+#ifdef HAVE_OPENCL
+  if(p->devid > DT_DEVICE_CPU) _add_string(b, "device", darktable.opencl->dev[p->devid].fullname);
+#endif
+  _add_int(b, "cl_errors", p->cl_errors);
+  json_builder_end_object(b);
+}
+
+static gboolean _parity(JsonObject *req, JsonBuilder *b, char **err)
+{
+  if(!_s.open)
+  {
+    *err = g_strdup("no image open");
+    return FALSE;
+  }
+  const int size = CLAMP(json_object_get_int_member_with_default(req, "size", 1024), 64, 8192);
+  // "self": both passes on the CPU, a check of the comparison itself
+  const gboolean self = json_object_get_boolean_member_with_default(req, "self", FALSE);
+  if(!self && !dt_opencl_running())
+  {
+    *err = g_strdup("no OpenCL device");
+    return FALSE;
+  }
+  if(!_follower_ready(&_s.check, err)) return FALSE;
+  parity_pass_t cpu = { 0 }, gpu = { 0 };
+  gboolean ok = _parity_pass("cpu", FALSE, size, &cpu, err)
+                && _parity_pass("gpu", !self, size, &gpu, err);
+  // a pass whose device failed comes back from the CPU, flushed: the next
+  // render of the check pipe starts clean either way
+  if(ok && (cpu.w != gpu.w || cpu.h != gpu.h))
+  {
+    *err = g_strdup_printf("the passes differ in size: %dx%d and %dx%d", cpu.w, cpu.h, gpu.w, gpu.h);
+    ok = FALSE;
+  }
+  if(ok)
+  {
+    const size_t n = (size_t)cpu.w * cpu.h;
+    float *de = g_malloc(sizeof(float) * n);
+    double sum = 0.0, chan_sum[3] = { 0 };
+    float de_max = 0.0f;
+    int chan_max[3] = { 0 };
+    size_t over = 0;
+    for(size_t k = 0; k < n; k++)
+    {
+      const uint8_t *p = cpu.pixels + 4 * k, *q = gpu.pixels + 4 * k;
+      float l1[3], l2[3];
+      _bgra_lab(p, l1);
+      _bgra_lab(q, l2);
+      const float d = sqrtf((l1[0] - l2[0]) * (l1[0] - l2[0]) + (l1[1] - l2[1]) * (l1[1] - l2[1])
+                            + (l1[2] - l2[2]) * (l1[2] - l2[2]));
+      de[k] = d;
+      sum += d;
+      de_max = fmaxf(de_max, d);
+      over += d > 2.0f;
+      // RGB order out of BGRA
+      for(int c = 0; c < 3; c++)
+      {
+        const int diff = abs((int)p[2 - c] - (int)q[2 - c]);
+        chan_sum[c] += diff;
+        chan_max[c] = MAX(chan_max[c], diff);
+      }
+    }
+    // p99 by a histogram of 0.01 steps up to 100
+    guint *hist = g_malloc0(sizeof(guint) * 10001);
+    for(size_t k = 0; k < n; k++) hist[MIN(10000, (int)(de[k] * 100.0f))]++;
+    size_t seen = 0;
+    int p99 = 0;
+    while(p99 < 10000 && (seen += hist[p99]) < (size_t)ceil(0.99 * n)) p99++;
+    g_free(hist);
+    g_free(de);
+    _add_int(b, "width", cpu.w);
+    _add_int(b, "height", cpu.h);
+    _add_bool(b, "self", self);
+    _parity_pass_json(b, "cpu", &cpu);
+    _parity_pass_json(b, "gpu", &gpu);
+    json_builder_set_member_name(b, "de");
+    json_builder_begin_object(b);
+    json_builder_set_member_name(b, "mean");
+    json_builder_add_double_value(b, sum / n);
+    json_builder_set_member_name(b, "p99");
+    json_builder_add_double_value(b, p99 / 100.0);
+    json_builder_set_member_name(b, "max");
+    json_builder_add_double_value(b, de_max);
+    json_builder_set_member_name(b, "over2");
+    json_builder_add_double_value(b, (double)over / n);
+    json_builder_end_object(b);
+    const char *names[] = { "r", "g", "b" };
+    json_builder_set_member_name(b, "rgb");
+    json_builder_begin_object(b);
+    for(int c = 0; c < 3; c++)
+    {
+      json_builder_set_member_name(b, names[c]);
+      json_builder_begin_object(b);
+      json_builder_set_member_name(b, "mean");
+      json_builder_add_double_value(b, chan_sum[c] / n);
+      _add_int(b, "max", chan_max[c]);
+      json_builder_end_object(b);
+    }
+    json_builder_end_object(b);
+    const char *diff = json_object_get_string_member_with_default(req, "diff", NULL);
+    if(diff && p99 >= 200)
+    {
+      _parity_diff_png(diff, &cpu, &gpu);
+      _add_string(b, "diff", diff);
+    }
+  }
+  g_free(cpu.pixels);
+  g_free(gpu.pixels);
+  return ok;
+}
+
+// ------------------------------------------------------- film simulation
+
+// spektrafilm's identity for a stock (spektrafilm.c, _name_hash()): params
+// name the film and the paper by this hash of the stock's name, so the
+// panel's lists must hash exactly as the module does
+static uint32_t _sf_name_hash(const char *s)
+{
+  const dt_hash_t h = dt_hash(DT_INITHASH, s, strlen(s));
+  const uint32_t h32 = (uint32_t)(h ^ (h >> 32));
+  return h32 ? h32 : 1;
+}
+
+// the module's display names, trimmed as its combobox has them
+// (spektrafilm.c, _shorten_name())
+static void _sf_shorten(char *s)
+{
+  static const char *const filler[] = { " Professional", " Negative Film", " Reversal Film" };
+  for(size_t f = 0; f < G_N_ELEMENTS(filler); f++)
+  {
+    char *at = strstr(s, filler[f]);
+    if(!at) continue;
+    const size_t flen = strlen(filler[f]);
+    memmove(at, at + flen, strlen(at + flen) + 1);
+  }
+}
+
+// natural order, numbers by value, as the module sorts its lists
+// (spektrafilm.c, _nat_cmp())
+static int _sf_nat_cmp(const char *a, const char *b)
+{
+  for(;;)
+  {
+    if(*a == 0) return *b == 0 ? 0 : -1;
+    if(*b == 0) return 1;
+    const int da = (unsigned)*a - '0' < 10u, db = (unsigned)*b - '0' < 10u;
+    if(da && db)
+    {
+      unsigned long va = 0, vb = 0;
+      while((unsigned)*a - '0' < 10u) { va = va * 10 + (*a - '0'); a++; }
+      while((unsigned)*b - '0' < 10u) { vb = vb * 10 + (*b - '0'); b++; }
+      if(va != vb) return va < vb ? -1 : 1;
+    }
+    else if(da != db)
+      return da ? -1 : 1;
+    else
+    {
+      const int ca = g_ascii_tolower(*a), cb = g_ascii_tolower(*b);
+      if(ca != cb) return ca < cb ? -1 : 1;
+      a++;
+      b++;
+    }
+  }
+}
+
+typedef struct _sf_stock_t
+{
+  char stock[128], name[128], target_print[128];
+  gboolean printing, positive, bw;
+  double dev_times[SF_MAX_DEV_TIMES];
+  int n_dev;
+  uint32_t hash;
+} _sf_stock_t;
+
+static gint _sf_stock_cmp(gconstpointer a, gconstpointer b)
+{
+  return _sf_nat_cmp(((const _sf_stock_t *)a)->name, ((const _sf_stock_t *)b)->name);
+}
+
+// a download that finished since the last look: the module loads the new
+// pack at its next process(), but the pipes' caches still hold renders
+// made without it, under the same hashes
+static guint _sf_gen_seen = 0;
+static void _sf_follow_pack(void)
+{
+  const guint gen = sf_fetch_generation();
+  if(gen == _sf_gen_seen) return;
+  _sf_gen_seen = gen;
+  if(!_s.open) return;
+  const dt_iop_module_t *m = dt_iop_get_module_by_op_priority(_s.dev.iop, "spektrafilm", 0);
+  if(!m) return;
+  _invalidate_from(m->iop_order, "spektrafilm pack ");
+  _changed(DT_DEV_PIPE_SYNCH);
+}
+
+// the installed spektrafilm data pack, the one a new edit renders with, and
+// its films and papers, read as the module reads them (spektrafilm.c,
+// _scan_profiles()): { pack: { dir, lut_id, lut_hash, hand_installed } or
+// null, stocks: [{ hash, stock, name, printing, positive, bw,
+// target_print, dev_times }] in the module's order }
+static void _spektra_stocks(JsonBuilder *b)
+{
+  _sf_follow_pack();
+  char dir[1024];
+  gboolean exact = FALSE;
+  const gboolean found = sf_fetch_resolve_pack_dir(0, dir, sizeof dir, &exact);
+  json_builder_set_member_name(b, "pack");
+  GList *list = NULL;
+  if(!found)
+    json_builder_add_null_value(b);
+  else
+  {
+    json_builder_begin_object(b);
+    _add_string(b, "dir", dir);
+    GPtrArray *packs = sf_fetch_list_packs();
+    for(guint k = 0; k < packs->len; k++)
+    {
+      const sf_fetch_pack_t *fp = g_ptr_array_index(packs, k);
+      if(g_strcmp0(fp->dir, dir)) continue;
+      _add_string(b, "lut_id", fp->lut_id);
+      json_builder_set_member_name(b, "lut_hash");
+      json_builder_add_int_value(b, fp->lut_hash);
+      json_builder_set_member_name(b, "hand_installed");
+      json_builder_add_boolean_value(b, fp->hand_installed);
+      break;
+    }
+    g_ptr_array_unref(packs);
+    json_builder_end_object(b);
+
+    gchar *profdir = g_build_filename(dir, "profiles", NULL);
+    GDir *gd = g_dir_open(profdir, 0, NULL);
+    const char *fn;
+    while(gd && (fn = g_dir_read_name(gd)))
+    {
+      if(!g_str_has_suffix(fn, ".json")) continue;
+      gchar *path = g_build_filename(profdir, fn, NULL);
+      char *perr = NULL;
+      sf_profile_t *prof = sf_profile_load(path, 0.5f, &perr);
+      g_free(path);
+      if(!prof)
+      {
+        free(perr);
+        continue;
+      }
+      _sf_stock_t *e = g_malloc0(sizeof(_sf_stock_t));
+      g_strlcpy(e->stock, sf_profile_stock(prof) ? sf_profile_stock(prof) : fn, sizeof e->stock);
+      char *dot = strstr(e->stock, ".json");
+      if(dot) *dot = 0;
+      g_strlcpy(e->name, sf_profile_name(prof) ? sf_profile_name(prof) : e->stock, sizeof e->name);
+      _sf_shorten(e->name);
+      e->printing = !g_strcmp0(sf_profile_stage(prof), "printing");
+      e->positive = !g_strcmp0(sf_profile_type(prof), "positive");
+      e->bw = !g_strcmp0(sf_profile_channel_model(prof), "bw");
+      if(sf_profile_target_print(prof)) g_strlcpy(e->target_print, sf_profile_target_print(prof), sizeof e->target_print);
+      e->n_dev = sf_profile_dev_times(prof, e->dev_times, SF_MAX_DEV_TIMES);
+      e->hash = _sf_name_hash(e->stock);
+      sf_profile_free(prof);
+      list = g_list_prepend(list, e);
+    }
+    if(gd) g_dir_close(gd);
+    g_free(profdir);
+    list = g_list_sort(list, _sf_stock_cmp);
+  }
+  json_builder_set_member_name(b, "stocks");
+  json_builder_begin_array(b);
+  for(GList *l = list; l; l = g_list_next(l))
+  {
+    const _sf_stock_t *e = l->data;
+    json_builder_begin_object(b);
+    json_builder_set_member_name(b, "hash");
+    json_builder_add_int_value(b, e->hash);
+    _add_string(b, "stock", e->stock);
+    _add_string(b, "name", e->name);
+    json_builder_set_member_name(b, "printing");
+    json_builder_add_boolean_value(b, e->printing);
+    json_builder_set_member_name(b, "positive");
+    json_builder_add_boolean_value(b, e->positive);
+    json_builder_set_member_name(b, "bw");
+    json_builder_add_boolean_value(b, e->bw);
+    _add_string(b, "target_print", e->target_print);
+    json_builder_set_member_name(b, "dev_times");
+    json_builder_begin_array(b);
+    for(int k = 0; k < e->n_dev; k++) json_builder_add_double_value(b, e->dev_times[k]);
+    json_builder_end_array(b);
+    json_builder_end_object(b);
+  }
+  json_builder_end_array(b);
+  g_list_free_full(list, g_free);
+}
+
+// the data pack's download, on spektra_fetch.c's own thread: `action`
+// "start" (the repository's default pack), "cancel" or "status". replies
+// { state: idle, running, done or failed, message, progress (0..1, or -1
+// when unknown), started (for start) }. none of them waits for the network
+static gboolean _spektra_fetch(JsonObject *req, JsonBuilder *b, char **err)
+{
+  const char *action = json_object_get_string_member_with_default(req, "action", "status");
+  if(!g_strcmp0(action, "start"))
+  {
+    json_builder_set_member_name(b, "started");
+    json_builder_add_boolean_value(b, sf_fetch_start(0u, 0u));
+  }
+  else if(!g_strcmp0(action, "cancel"))
+    sf_fetch_cancel();
+  else if(g_strcmp0(action, "status"))
+  {
+    *err = g_strdup_printf("unknown spektra_fetch action '%s'", action);
+    return FALSE;
+  }
+  char msg[256] = { 0 };
+  double progress = -1.0;
+  const sf_fetch_state_t state = sf_fetch_status(msg, sizeof msg, &progress);
+  static const char *names[] = { "idle", "running", "done", "failed" };
+  _add_string(b, "state", state <= SF_FETCH_FAILED ? names[state] : "idle");
+  _add_string(b, "message", msg);
+  json_builder_set_member_name(b, "progress");
+  json_builder_add_double_value(b, progress);
+  if(state == SF_FETCH_DONE) _sf_follow_pack();
+  return TRUE;
+}
+
 static void _handle(JsonObject *req, FILE *out)
 {
   const char *cmd = json_object_has_member(req, "cmd")
@@ -8981,7 +9994,7 @@ static void _handle(JsonObject *req, FILE *out)
     if(!dir || !_folder(dir, recursive, b, &err)) goto fail;
   }
   else if(!g_strcmp0(cmd, "import"))
-    _import_files(json_object_has_member(req, "files") ? json_object_get_array_member(req, "files") : NULL, b);
+    _import_files(req, b);
   else if(!g_strcmp0(cmd, "thumb"))
   {
     const char *dest = json_object_get_string_member_with_default(req, "out", NULL);
@@ -9019,6 +10032,10 @@ static void _handle(JsonObject *req, FILE *out)
   }
   else if(!g_strcmp0(cmd, "opencl"))
     _opencl(b);
+  else if(!g_strcmp0(cmd, "parity"))
+  {
+    if(!_parity(req, b, &err)) goto fail;
+  }
   else if(!g_strcmp0(cmd, "keywords_set"))
   {
     if(!_keywords_set(json_object_get_int_member_with_default(req, "imgid", 0), req, b, &err)) goto fail;
@@ -9040,6 +10057,57 @@ static void _handle(JsonObject *req, FILE *out)
     if(_s.open && _s.imgid == imgid && !_s.before) dt_dev_write_history_ext(&_s.dev, imgid);
     if(!_export(imgid, req, &err)) goto fail;
   }
+  // printing (print.c): an untagged `print` renders in the main loop, as
+  // `export` does; the app's are tagged and run on the export thread
+  else if(!g_strcmp0(cmd, "print"))
+  {
+    const dt_imgid_t imgid = json_object_get_int_member_with_default(req, "imgid", 0);
+    if(_s.open && _s.imgid == imgid && !_s.before) dt_dev_write_history_ext(&_s.dev, imgid);
+    if(!print_image(imgid, req, b, &err)) goto fail;
+  }
+  else if(!g_strcmp0(cmd, "print_profiles"))
+  {
+    json_builder_set_member_name(b, "profiles");
+    print_profiles(b);
+  }
+  else if(!g_strcmp0(cmd, "print_profile_add"))
+  {
+    if(!print_profile_add(json_object_get_string_member_with_default(req, "path", NULL), b, &err)) goto fail;
+  }
+  else if(!g_strcmp0(cmd, "printers"))
+  {
+    json_builder_set_member_name(b, "available");
+    json_builder_add_boolean_value(b, print_available());
+    json_builder_set_member_name(b, "printers");
+    print_printers(b);
+  }
+  else if(!g_strcmp0(cmd, "printer"))
+  {
+    if(!print_printer(json_object_get_string_member_with_default(req, "name", NULL), b, &err)) goto fail;
+  }
+  else if(!g_strcmp0(cmd, "softproof"))
+  {
+    gboolean changed = FALSE;
+    if(!print_softproof(json_object_get_string_member_with_default(req, "mode", "off"),
+                        json_object_get_string_member_with_default(req, "profile", NULL),
+                        json_object_get_int_member_with_default(req, "intent", DT_INTENT_PERCEPTUAL),
+                        &changed, &err))
+      goto fail;
+    // colorout builds its proofing transform when committed, and the mode
+    // is in neither its params nor their hash (colorout.c, commit_params),
+    // so every pipe commits it again and drops what it kept from colorout
+    // on, as darktable's soft proof button does (darkroom.c)
+    char *ignored = NULL;
+    const dt_iop_module_t *cout = changed && _s.open ? _module("colorout", &ignored) : NULL;
+    g_free(ignored);
+    if(cout)
+    {
+      _invalidate_from(cout->iop_order, "softproof ");
+      _changed(DT_DEV_PIPE_SYNCH);
+    }
+    json_builder_set_member_name(b, "changed");
+    json_builder_add_boolean_value(b, changed);
+  }
   // the photos a background export (tagged `export`s of this `job`) is to
   // render, each as its edit is now
   else if(!g_strcmp0(cmd, "export_hold"))
@@ -9052,6 +10120,12 @@ static void _handle(JsonObject *req, FILE *out)
   else if(!g_strcmp0(cmd, "fonts"))
   {
     _fonts(b);
+  }
+  else if(!g_strcmp0(cmd, "spektra_stocks"))
+    _spektra_stocks(b);
+  else if(!g_strcmp0(cmd, "spektra_fetch"))
+  {
+    if(!_spektra_fetch(req, b, &err)) goto fail;
   }
   else if(!g_strcmp0(cmd, "copy"))
   {
@@ -9204,12 +10278,18 @@ static void _handle(JsonObject *req, FILE *out)
       ? json_object_get_array_member(req, "have") : NULL;
     int w = 0, h = 0, ox = 0, oy = 0;
     dt_hash_t kept = DT_INVALID_HASH;
+    const char *ppm = json_object_get_string_member_with_default(req, "out", NULL);
+    const char *rgba = json_object_get_string_member_with_default(req, "rgba", NULL);
+    preview_output_t output = { .path = rgba };
+    // PPM and non-byte consumers retain their ordinary owned back buffer.
+    preview_output_t *sink = rgba && !ppm ? &output : NULL;
+    const int cl_errors = darktable.opencl->error_count;
     const gboolean ok = _render(pipe, devid, json_object_get_int_member_with_default(req, "width", 2048),
                                 json_object_get_int_member_with_default(req, "height", 2048),
                                 json_object_get_double_member_with_default(req, "scale", 0.0),
                                 json_object_get_int_member_with_default(req, "x", 0),
                                 json_object_get_int_member_with_default(req, "y", 0),
-                                have, &w, &h, &ox, &oy, &kept, &err);
+                                have, &w, &h, &ox, &oy, &kept, sink, &err);
     if(base_id && _base_end() && !ok)
     {
       // a stop on the GPU leaves the previous module's cacheline holding a
@@ -9233,6 +10313,9 @@ static void _handle(JsonObject *req, FILE *out)
     if(!ok) goto fail;
     // the image's size at 100%, after every geometry change, so a client
     // can place a zoomed window
+    // a pipe that failed on its device and was rerun on the CPU
+    // (pixelpipe_hb.c, dt_dev_pixelpipe_process); the GPU check reads it
+    _add_int(b, "cl_errors", darktable.opencl->error_count - cl_errors);
     json_builder_set_member_name(b, "full_width");
     json_builder_add_int_value(b, pipe->processed_width);
     json_builder_set_member_name(b, "full_height");
@@ -9259,15 +10342,15 @@ static void _handle(JsonObject *req, FILE *out)
     }
     else
     {
-      const char *ppm = json_object_get_string_member_with_default(req, "out", NULL);
       if(ppm && !_write_ppm(ppm, pipe->backbuf, w, h))
       {
         err = g_strdup_printf("could not write '%s'", ppm);
         goto fail;
       }
-      const char *rgba = json_object_get_string_member_with_default(req, "rgba", NULL);
       const gint64 t1 = g_get_monotonic_time();
-      if(rgba && !_write_rgba(rgba, pipe->backbuf, w, h))
+      double output_ms[4] = {0};
+      if(sink) memcpy(output_ms, output.timings, sizeof(output_ms));
+      if(rgba && !sink && !_write_rgba(rgba, pipe->backbuf, w, h, output_ms))
       {
         err = g_strdup_printf("could not write '%s'", rgba);
         goto fail;
@@ -9285,6 +10368,24 @@ static void _handle(JsonObject *req, FILE *out)
       json_builder_add_double_value(b, process_ms);
       json_builder_set_member_name(b, "write_ms");
       json_builder_add_double_value(b, _ms_since(t1));
+      if(sink)
+      {
+        // This output work is already included in process_ms, not write_ms.
+        json_builder_set_member_name(b, "process_output_ms");
+        json_builder_add_double_value(b, output.elapsed_ms);
+      }
+      if(rgba)
+      {
+        const char *keys[] = { "allocate_ms", "convert_ms", "file_ms", "free_ms" };
+        json_builder_set_member_name(b, "output_ms");
+        json_builder_begin_object(b);
+        for(size_t k = 0; k < G_N_ELEMENTS(keys); k++)
+        {
+          json_builder_set_member_name(b, keys[k]);
+          json_builder_add_double_value(b, output_ms[k]);
+        }
+        json_builder_end_object(b);
+      }
     }
   }
   else if(!g_strcmp0(cmd, "mask"))
@@ -9485,7 +10586,7 @@ static void _handle(JsonObject *req, FILE *out)
     int w = 0, h = 0;
     const char *rgba = json_object_get_string_member_with_default(req, "rgba", NULL);
     if(!rgba || !_preview(req, &w, &h, &err)) goto fail;
-    if(!_write_rgba(rgba, _s.ppipe.backbuf, w, h))
+    if(!_write_rgba(rgba, _s.ppipe.backbuf, w, h, NULL))
     {
       err = g_strdup_printf("could not write '%s'", rgba);
       goto fail;
@@ -9623,7 +10724,7 @@ static gpointer _read_requests(gpointer data)
           taken = TRUE;
         }
         else if((!g_strcmp0(cmd, "export") || !g_strcmp0(cmd, "export_release")
-                 || !g_strcmp0(cmd, "hdr_merge") || !g_strcmp0(cmd, "pano_merge")
+                 || !g_strcmp0(cmd, "print") || !g_strcmp0(cmd, "hdr_merge") || !g_strcmp0(cmd, "pano_merge")
                  || !g_strcmp0(cmd, "pano_preview"))
                 && json_object_has_member(req, "tag"))
         {
@@ -9634,6 +10735,13 @@ static gpointer _read_requests(gpointer data)
         else if(!g_strcmp0(cmd, "import") && json_object_has_member(req, "tag"))
         {
           fprintf(stderr, "[engine] import %.*s\n", (int)MIN(300, strcspn(line->str, "\r\n")), line->str);
+          const gint64 job = json_object_get_int_member_with_default(req, "job", 0);
+          if(job)
+          {
+            g_mutex_lock(&_cancel_lock);
+            _import_latest = job;
+            g_mutex_unlock(&_cancel_lock);
+          }
           if(_import_queue(parser)) parser = NULL;
           taken = TRUE;
         }

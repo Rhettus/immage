@@ -73,7 +73,7 @@
 <rect x="1080" y="290" width="250" height="92" rx="10" fill="#a5d8ff" stroke="#1971c2" stroke-width="2"/>
 <text x="1205.0" y="318.5" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">Values</text>
 <text x="1205.0" y="336.0" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">{ control id: number }</text>
-<text x="1205.0" y="353.5" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">Lightroom units</text>
+<text x="1205.0" y="353.5" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">slider units</text>
 <rect x="1420" y="290" width="250" height="92" rx="10" fill="#a5d8ff" stroke="#1971c2" stroke-width="2"/>
 <text x="1545.0" y="318.5" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">View</text>
 <text x="1545.0" y="336.0" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="normal">width · height</text>

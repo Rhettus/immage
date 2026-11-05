@@ -16,8 +16,9 @@ window; **Close** goes back to editing.
 
 ## 1. Choose a source
 
-- Click a card to import its DCIM folder, or use **▸** to pick one folder
-  on it.
+- Click a card to import its DCIM folder, or click one folder in its
+  tree. A card opens with its camera folders (such as `100OMSYS`) showing;
+  **▸** opens or closes a folder.
 - **Choose folder…** imports from any folder.
 - **Include subfolders**, **Skip _Rejected folders** and **Include videos**
   narrow what is shown. If you cull in FastRawViewer first, pick its
@@ -28,11 +29,17 @@ its JPEG show as one tile.
 
 ## 2. Choose what to import
 
-New photos are selected for you. Photos already in your library are grayed
-out and marked **In library**; with Immich set up, ones already on the
-server are marked **In Immich**.
+A checked photo will be imported. New photos are checked for you. Photos
+already in your library are grayed out and marked **In library**; with
+Immich set up, ones already on the server are marked **In Immich**.
 
-- Click or ⇧-click to select; ⌘A selects all and ⌘D none.
+- Click a photo's checkbox to check or uncheck it. **Check all** and
+  **Uncheck all** change every photo shown.
+- Clicking a photo highlights it; ⇧-click highlights a range and ⌘-click
+  adds or removes one. Checking or unchecking any highlighted photo, or
+  pressing Space, does the same to the whole group.
+- ⌘A highlights every photo shown; ⌘D, Esc or a click on empty space
+  clears the highlight.
 - Filter to **All**, **New** or **Duplicates**, or hide duplicates.
 - Sort by capture time, file name or folder.
 

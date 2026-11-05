@@ -266,7 +266,7 @@ impl BaseCancel {
 #[derive(Clone, Serialize)]
 pub struct Timing {
     pub label: String,
-    pub kind: &'static str, // "module", "colorspace" or "other"
+    pub kind: &'static str, // "module", "colorspace", "other" or "pass"
     pub ms: f64,
     pub cpu_ms: f64,
     pub pipe: String,
@@ -389,6 +389,14 @@ fn read_stderr(stderr: ChildStderr, mut log: File, perf: Arc<Perf>) {
                 continue;
             }
             p.current.clear();
+        } else if let Some(pass) = line.strip_prefix("[engine] | ") {
+            // the GPU check's passes (main.c, _parity_pass): the module
+            // timings after each marker are that pass's
+            perf.log.lock().unwrap().current.push(Timing {
+                label: pass.to_string(), kind: "pass", ms: 0.0, cpu_ms: 0.0,
+                pipe: String::new(), gpu: false, tiled: false,
+            });
+            continue;
         } else if let Some(t) = parse_timing(line) {
             perf.log.lock().unwrap().current.push(t);
             continue;

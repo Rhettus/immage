@@ -61,6 +61,12 @@ export class AppDriver {
     }
     await this.command('POST', '/actions', { actions: [{ type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' }, actions }] });
   }
+  async move(x, y) {
+    await this.guard();
+    this.log({ action: 'move', x, y });
+    await this.command('POST', '/actions', { actions: [{ type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' },
+      actions: [{ type: 'pointerMove', duration: 120, origin: 'viewport', x: Math.round(x), y: Math.round(y) }] }] });
+  }
   async modifiedPoint(modifier, x, y) {
     if (!['\uE008', '\uE009', '\uE03D'].includes(modifier)) throw Error('Unsupported pointer modifier');
     await this.guard();
@@ -108,9 +114,15 @@ export class AppDriver {
   async wheel(x, y, deltaY, deltaX = 0) {
     await this.guard();
     this.log({ action: 'wheel', x, y, deltaY, deltaX });
-    await this.command('POST', '/actions', { actions: [{ type: 'wheel', id: 'wheel', actions: [
-      { type: 'scroll', origin: 'viewport', x: Math.round(x), y: Math.round(y), deltaX, deltaY, duration: 180 },
-    ] }] });
+    // WebKitWebDriver keeps a wheel source's scrolled amount between action
+    // sequences, so a second equal scroll moved nothing (lists stuck at 180).
+    // A new source per gesture, released afterwards, starts from zero.
+    const id = `wheel-${this.wheels = (this.wheels ?? 0) + 1}`;
+    try {
+      await this.command('POST', '/actions', { actions: [{ type: 'wheel', id, actions: [
+        { type: 'scroll', origin: 'viewport', x: Math.round(x), y: Math.round(y), deltaX, deltaY, duration: 180 },
+      ] }] });
+    } finally { await this.command('DELETE', '/actions'); }
   }
   async close() { if (this.session) await this.command('DELETE', ''); }
 }

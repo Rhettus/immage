@@ -5,15 +5,15 @@ built that way. The [diagram](diagrams/masks.svg) shows the same for one
 mask. The [code map](code-map.md) says where each part lives; the comments
 beside the code hold the details this page leaves out.
 
-A mask in Immage works the way Lightroom's do: one mask, and every local
+A mask in Immage works the way masks do in most photo editors: one mask, and every local
 slider on it. darktable has no such thing. There, a mask belongs to a module
 instance, so a darktable user who wants exposure and warmth in the sky makes
 two instances and gives each the same mask. Immage builds exactly that, for
 every slider the mask uses, out of ordinary darktable parts:
 
-- the mask's shapes are a darktable **mask group**
+- the mask's shapes are a darktable **flexi mask group**
 - each module a slider sets gets an **instance named after the mask**, with
-  that group as its drawn mask
+  that group as its mask
 - Immage places those instances in the pipe, after one fixed module, the
   [mask anchor](#where-the-instances-run), in an order the user cannot
   change
@@ -24,7 +24,19 @@ photo with the same instances and masks and renders it the same.
 ## The shapes: one mask group
 
 The engine's `mask` command (`_mask` in [main.c](../../../engine/main.c))
-turns a mask's shapes into a darktable group named `immage: <mask>`. Brush,
+turns a mask's shapes into a darktable flexi group named `immage: <mask>`
+(darktable's `dev-doc/masks_data_model.md`). A flexi group's first point
+is a marker saying how its members combine. Runs of added shapes go into a
+group whose members fold by maximum; a subtracted shape is taken away by a
+flexi difference group. An instance using flexi groups has `mask_mode`
+`DEVELOP_MASK_ENABLED | DEVELOP_MASK_FLEXI`. darktable converts the classic
+groups it finds in older edits (`src/develop/masks/migrate_legacy.c`) when it
+loads them, moving subtraction from each member's state to a marker, so
+the engine writes flexi groups itself, which loading leaves alone. Its
+readers (`_flatten`, `_shape_json`) walk any flexi tree back to the panel's
+list of added and subtracted shapes, so an edit saved under the earlier
+pin, which darktable migrates on load, reopens with the shapes it was made
+with. Brush,
 linear and radial gradients become darktable's brush, gradient and ellipse
 forms. AI selections (Object, Subject, Sky, Depth Range and the rest) are
 traced into path forms, so the model is needed only when the selection is
@@ -32,9 +44,12 @@ made, never to render. A Subject, People or Object selection over a plain,
 colorful background is built so its feather stops at that color; see
 [Selections over a plain background](#selections-over-a-plain-background).
 
-Color and luminance ranges are not shapes in darktable. They are a module's
-parametric (blendif) mask, so the engine keeps each mask's ranges and sets
-them on every instance the mask drives (`_apply_ranges`). The refinements
+Color and luminance ranges are not drawn shapes. The engine builds them as
+darktable converts a classic parametric mask: one parametric element per
+channel, multiplied with the mask's shapes in a flexi product group named
+`immage ranges: <mask>` (`_set_ranges_group`). The instances that blend in
+scene-referred RGB, where the ranges were measured, take that group; the
+rest take the shapes alone (`_apply_ranges`). The refinements
 (feather, blur, detail, contrast) are blend parameters in the same way. The
 mask's Opacity slider is each instance's opacity.
 
@@ -132,14 +147,14 @@ instance:
 | Temp, Tint | color calibration |
 | Exposure, Blacks | exposure |
 | Contrast | color balance rgb, or contrast equalizer (`atrous`) |
-| Whites, Saturation, Hue, Color Grading | color balance rgb |
+| Whites, Saturation, Hue, Color Grading | color balance rgb; Saturation, or the saturation curve (`satcurvergb`) |
 | HSL | color equalizer |
 | Highlights, Shadows | tone equalizer, or shadows and highlights |
 | Texture | diffuse or sharpen, or contrast & texture (`<mask>#texture`) |
 | Clarity | local contrast, or contrast & texture |
 | Dehaze | haze removal |
 | Noise | denoise (profiled) |
-| Defringe | chromatic aberrations, or defringe |
+| Defringe | chromatic aberrations |
 | Sharpening | sharpen, or a second diffuse or sharpen (`<mask>#sharpen`) |
 
 Where a tool has alternatives, Preferences › Modules › Masks chooses them
@@ -158,6 +173,12 @@ neutral at 0.5 and the two noise channels at 0; enablement uses those defaults,
 and reload keeps the values' 0.001 precision. Atrous instances are not merged.
 Color balance rgb still carries the other local controls, with its Contrast
 written at neutral when the mask selects atrous.
+
+Masked saturation curve works the same way: `mod_saturation = 2` shows
+SaturationCurve in the mask's Presence group (not in black and white), the
+same `sc_*`/`sb_*` controls as the global curve go to the mask's own
+satcurvergb instance, which is not merged, and color balance rgb writes the
+mask's Saturation at neutral. Reload keeps the points unrounded.
 
 Local Whites is color balance rgb's highlights brilliance, not the tone
 mapper's white point: AgX and sigmoid apply to the whole image and cannot be
@@ -185,7 +206,7 @@ luminance range is sampled from the anchor's output (`sample`,
   range was sampled at (`sample`, read at the anchor's output) are right for
   all of them
 - the global modules ahead of the tone mapper have run, so a mask adjusts
-  the photo as the global sliders left it, as in Lightroom
+  the photo as the global sliders left it
 
 Two modules stay where darktable normally runs them, ahead of the anchor:
 
@@ -225,9 +246,9 @@ balance rgb's does, that is close to the mask's own instance.
 
 Many masks then fit on one instance: its mask is the sum of theirs, each
 member counted at `s / S` times its own opacity. darktable already has such
-a mask, a group whose members add (`DT_MASKS_STATE_SUM`), and drawing it is
-far cheaper than running the module once per member. Overlapping masks add
-up, as Lightroom's do.
+a mask, a flexi group whose members add (`DT_MASKS_STATE_FLEXI_SUM`), and
+drawing it is far cheaper than running the module once per member. Overlapping masks add
+up.
 
 In Immage, for the modules marked `merge` in `localMaps`, `planMerge` in
 [localMerge.ts](../../src/localMerge.ts) does this (the
@@ -297,8 +318,9 @@ over to shared instances.
 
 Opened in darktable, a photo with a mask "Sky" shows:
 
-- in the mask manager, the group `immage: Sky` with its shapes, and a
-  group `immage combined: ...` for each shared instance
+- in the mask manager, the group `immage: Sky` with its shapes, a group
+  `immage ranges: immage: Sky` when the mask has ranges, and a group
+  `immage combined: ...` for each shared instance
 - in the module list, the instances named `Sky` (and `Sky#sharpen`), and
   `immage local: ...` for the shared ones, each with its drawn mask, ranges
   and refinements in its blending panel
@@ -342,9 +364,12 @@ folder for their version, reporting a valid model as incompatible version 0.0.
 loading, so downloads after startup are recognized. Minimum model version
 validation remains enforced.
 
-Run `DT_ORT_LIBRARY=/path/to/libonnxruntime.so python3 scripts/test_ai_model_path.py`
-with a built AI engine and the cached model in
-`build/ai-models/mask-object-sam21-small`. This headless regression uses isolated
+Run `python3 scripts/test_ai_model_path.py` with a built AI engine and the
+cached model in `build/ai-models/mask-object-sam21-small`. The dev build's
+engine has no ONNX Runtime in darktable's plugin folder, where a built app
+carries it (`bundle_engine.py`), so this test and `verify/shim.mjs` set
+`DT_ORT_LIBRARY` to the build's own `build/_deps/onnxruntime/lib` copy
+unless it is already set. This headless regression uses isolated
 profiles, copied configuration and read-only references to cached weights. It
 checks enabled/disabled startup settings, a persisted enabled profile, conflicting
 core model paths, paths with spaces, installation after startup, and rejection

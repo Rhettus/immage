@@ -49,6 +49,8 @@ libxml2-dev
 zlib1g-dev
 libjpeg-turbo8-dev
 libopenjp2-7-dev
+# the Print panel: darktable's print support (CUPS)
+libcups2-dev
 # from the PPAs: newer image-format libraries than Ubuntu 22.04 ships.
 # on ARM64, build.yml omits libjxl-dev, libsharpyuv-dev and libopenexr-dev;
 # build_linux_deps.sh builds their libraries from source instead

@@ -3,12 +3,136 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
-## Unreleased
+## 0.42.0
 
 Improvements
 
-- A Linux AI diagnostic script collects model-loading logs and file checksums
-  into one report without requiring an application rebuild.
+- Film Simulation, a new tool in the rail below the Zone System, renders a
+  photo as a film stock exposed, developed and printed on a paper, or
+  scanned, with darktable's spektrafilm. Its film and paper data (about
+  12 MB) downloads on first use into darktable's own data folder. The panel
+  has darktable's presets, film and paper menus, the main exposure, color,
+  grain and halation controls, and the rest under Advanced. It replaces the
+  tone mapper while it is on, and Export to Library saves a positive copy.
+- Print, a new tool in the rail below Export (⌘P), prints the photo or
+  saves it as a PDF with darktable's print code: printer, paper and media
+  type, orientation, margins, photo size and placement, shown on a to-scale
+  page in the viewer with the photo rendered in place, and color managed by
+  the printer or converted with a printer ICC profile, perceptual or
+  relative, with black point compensation.
+  Printer profiles installed on the computer are listed, and others can be
+  added. Soft Proof (S) shows the photo on screen as that profile prints
+  it, with a gamut warning that marks unprintable colors cyan; the proof
+  stays on while editing in other panels.
+- The crop tool has an Auto button beside Rotate that levels the photo
+  from its straight lines, with Upright's Level fit.
+- Saturation can run on darktable's new saturation curve module, chosen
+  in Preferences › Modules for photos and for masks. A curve editor with
+  Saturation and Brilliance curves replaces the slider, changing colors
+  by how saturated they already are.
+- The Negative panel's Export to Library and Turn Off Conversion now sit at
+  the foot of the panel, with DNG and TIFF buttons for the format. The
+  preference they share is now called Generated positive format.
+- Immage is built on a newer darktable development commit, master
+  879067695e (5.7.0+1793). Masks are saved as darktable's flexi masks,
+  and edits made with earlier Immage versions open with the same shapes,
+  ranges and looks, rendering as this darktable renders them.
+- Import selects like a file browser: clicking photos highlights them
+  (⇧-click for a range, ⌘-click to add one), and checking or unchecking
+  any highlighted photo applies to the whole group. Checkboxes are always
+  shown, with Check all and Uncheck all buttons above the grid.
+- Import opens a card's folders expanded down to its camera folders, so
+  FastRawViewer's `_Selected` and `_Rejected` folders are one click away.
+- Clarity and Texture use contrast & texture by default, globally and in
+  masks; Preferences › Modules › Custom brings back local contrast and
+  diffuse or sharpen. Photos that already use either keep their module.
+- New raws open with Capture Sharpening off, and Reset all turns it off.
+- A mask's Defringe always uses chromatic aberrations, like the global
+  Defringe: Preferences › Modules › Masks no longer offers darktable's
+  deprecated defringe module. Masks already edited with it keep their look.
+- Heal sits above Zone System in the tool rail.
+- The startup splash shows the new Immage logo.
+
+Bug fixes
+
+- ⌘Z and ⇧⌘Z work inside the crop tool: they undo and redo the angle and
+  the turns and flips, and the crop rectangle turns back with the photo.
+  Before, undo did nothing until the tool was closed, and after Done the
+  first ⌘Z on an uncropped photo seemed to do nothing as well.
+- Basic's Auto adds about half as much Contrast to a flat photo. Its
+  Whites and Blacks already widen the photo's tones, and the extra
+  Contrast on top often looked too strong.
+- Switching from a folder on a slow network share to one on your own drive
+  no longer waits for the share's photos to finish reading. Before, the new
+  folder, and opening a photo, could wait a minute or more over wifi.
+- With Detail loupe on, a mask's Presence group shows the 100% loupe,
+  as the main panel's Presence does, and its point picker works over mask
+  tools and handles.
+- Reset all puts each tool back on the module chosen in Preferences ›
+  Modules, instead of keeping the module the photo had used.
+- Each right panel tool keeps its own scroll position and opens at the top.
+- Turning a converted JPEG or TIFF negative back to a positive no longer
+  switches exposure on when the photo had not used it.
+- A focused menu keeps its arrow keys, Space and Enter: choosing a crop
+  aspect with the keyboard no longer applies the crop.
+- Opening a panel after scrolling another no longer leaves the new panel's
+  top out of reach above the Adjustments list on Linux.
+- The contrast equalizer draws its end points whole: the first and last
+  points, and any point pulled to the top or bottom, were cut in half at the
+  graph's edge.
+- Clicking a slider's track to jump it (to +20, say) changes the photo at
+  once; it could keep its old look until the slider was dragged a little.
+- The End key takes the Temp slider to its warmest setting; it had left
+  the slider where it was.
+- Clicking a contrast equalizer point focuses it, so the arrow keys adjust
+  that point instead of switching the channel menu.
+- Transform's automatic corrections work on cropped portrait and rotated
+  images instead of reporting that the working-space image is not at hand.
+- On Linux, frames a killed or crashed Immage left in shared memory are
+  cleared at the next start, and a full shared memory fails that render
+  instead of crashing the engine; the leftovers built up until they could
+  crash the engine and other applications, the desktop included.
+- Look previews preserve the applied look's mask and blend settings, keep
+  temporary masks out of the photo and refresh when mask geometry changes.
+  Applying a look records its masks with the edit history.
+- On Windows, a second Immage window no longer shares the first one's
+  darktable library: its engine finds the library in use and stops, as on
+  Linux and macOS.
+- A JPEG whose metadata names no color space looks the same the first
+  time it is opened as when reopened. Its first view used to be
+  scaled slightly differently, and undoing a paste onto it did not restore
+  that view.
+
+Performance
+
+- The first zoom in on a photo no longer waits for a render: once the
+  photo is up and editing pauses, its 100% view renders in the background
+  while it is fitted, and zoomed in the fitted view does, so zooming back
+  out is immediate as well.
+- With darktable 879067695e, Grain, and Clarity and Texture set to the
+  contrast & texture module, run on the GPU with OpenCL instead of falling
+  back to the CPU. On an Apple M4, contrast & texture takes 8 ms instead
+  of 20 and Grain 11 ms instead of 181.
+- Drag and settled previews convert finished pixels directly into their output
+  buffer, avoiding an intermediate full-frame copy on all platforms.
+- GUI benchmarks reduce sampler overhead by collecting process CPU and memory
+  only for Immage's process tree, with less frequent discovery of new processes.
+- Slider edits queued during a render can start their next preview as soon as
+  that render finishes, avoiding an extra display-frame wait.
+- Repeated cache hits update access timestamps at most once a minute, reducing
+  metadata writes while keeping recently used thumbnails and originals cached.
+- Export dialog previews encode JPEG in memory and use memory-backed transfer,
+  avoiding temporary-container metadata and regular-file output.
+- AI Denoise previews transfer their before/after buffers through memory-backed
+  storage, preserving the full linear-float preview data.
+- Generating library thumbnails uses memory-backed intermediate buffers while
+  retaining the persistent JPEG cache for subsequent visits.
+- Mask, range and zone overlays use memory-backed intermediate storage,
+  avoiding regular temporary-file writes during overlay updates.
+- Engine drag and settled preview frames use reusable memory-backed output
+  buffers on Windows, macOS and Linux, avoiding temporary RGBA allocations and
+  copies without changing resolution. Native tests confirm lower frame-output
+  costs on all three platforms; slider latency gains vary by workload.
 
 ## 0.41.1
 
@@ -380,9 +504,8 @@ Improvements
   left of the photo, and edits like any raw
 - Panorama Merge: select overlapping raws and press ⌃M (Ctrl+M on
   Windows and Linux), or right-click them, to stitch them into one wide
-  DNG, as Lightroom's Photo Merge does. Choose Spherical, Cylindrical or
-  Perspective, or let Auto pick, and Auto Crop cuts the empty edges. The
-  DNG is written beside the first photo while you go on editing, with
+  DNG. Choose Spherical, Cylindrical or Perspective, or let Auto pick,
+  and Auto Crop cuts the empty edges. The DNG is written beside the first photo while you go on editing, with
   each stage's progress and Stop at the bottom left of the photo, and
   opens like that photo's raw, with the lens corrections made. It is
   stitched with OpenCV, as darktable has no panorama tool
@@ -528,8 +651,8 @@ Bug fixes
 - the History card's rows are no longer at times drawn over each other
 - Before/After shows the Before at the same size as the After on a
   photo with lens corrections or Transform; before, it came out larger
-- HSL / Color acts at Lightroom's colors: Blue on blue, which Purple
-  used to gray, and Green on foliage. Saturation -100 turns its color
+- HSL / Color acts at the colors its bands are named for: Blue on blue,
+  which Purple used to gray, and Green on foliage. Saturation -100 turns its color
   gray and no more, where -50 already did and -100 grayed the colors
   around it too, so with Blue at -100 Aqua did nothing to the blues
   between them. Luminance and the B&W Mix at -100 darken a vivid color

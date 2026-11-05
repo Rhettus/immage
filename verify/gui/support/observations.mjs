@@ -44,6 +44,7 @@ export function photo() {
   }
   return { width: canvas.width, height: canvas.height, luma: luma / 4096, alpha: alpha / 4096, hash: hash >>> 0,
     quality: canvas.dataset.renderQuality ?? 'unknown',
+    working: !!document.querySelector('.working.on'),
     rgba: Array.from(rgba) };
 }
 export function panelTitle() {

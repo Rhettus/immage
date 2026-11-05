@@ -10,7 +10,7 @@ check the result.
 
 - **The submodule commit** is the pin. `git submodule status darktable`
   shows it, and `git -C darktable describe --tags --match 'release-*'`
-  names it (`release-5.7.0-1428-g2747ed2a0d` is master, 1,428 commits
+  names it (`release-5.7.0-1793-g879067695e` is master, 1,793 commits
   past the 5.7.0 tag).
 - **[patches/darktable-engine.patch](../../../patches/darktable-engine.patch)**
   is the only change to darktable. It adds the engine to darktable's
@@ -29,6 +29,11 @@ check the result.
   full-file preview loader. The mipmap cache passes its requested size to
   `dt_imageio_thumbnail`, which uses JPEG scaled decoding. Existing full-size
   thumbnail entry points retain their behavior.
+  On Windows, darktable's lock check (`src/common/database.c`,
+  `pid_is_alive`) counts only a running `darktable.exe` as the holder of
+  `data.db.lock`; the patch also accepts `darktable-engine.exe`, so a
+  second Immage's engine finds the lock held, as it does on Linux and
+  macOS, instead of taking it over and sharing the first one's database.
   [scripts/patch_darktable.sh](../../../scripts/patch_darktable.sh) applies
   it once (`scripts/build.sh` calls it), and `.gitmodules` sets
   `ignore = dirty`, so the patched submodule does not show as changed.
@@ -51,12 +56,32 @@ git -C darktable tag -l 'release-*' | sort -V | tail -5
 git -C darktable log --oneline HEAD..origin/master | wc -l
 ```
 
+## Rendering compatibility
+
+Immage follows the rendering of its pinned darktable revision, including upstream
+migrations, legacy processing paths, quirks and bugs. Use the target revision as
+the reference for both new and existing edits. Preserve parameter versions,
+module order, masks, profiles and relevant processing settings through the engine.
+
+Old/new render comparisons identify changes to investigate. A difference alone
+is not an adoption blocker: compare Immage against target upstream with matching
+history, profiles, dependencies, backend and render settings. Fix Immage-specific
+deviations; follow intentional upstream changes. Do not add a historical renderer
+or import policy solely to reproduce the previous pin. Any exception requires a
+demonstrated integration regression and an explicit decision.
+
+Inspect upstream GUI changes alongside parameter declarations, defaults and
+conversions. Update exposed controls' mappings, ranges, choices and visibility
+where needed. A new upstream module does not automatically require an Immage UI.
+Stop expanding equivalent diagnostic matrices once they no longer inform adoption.
+
 ## Moving the pin
 
 1. Prepare: a clean tree, a benchmark baseline
    (`python3 -I benchmarking/bench.py --note "before darktable <new>"`),
    and a folder of edited reference photos with exported 16-bit TIFFs, to
-   compare renders against.
+   diagnose changes against. Also prepare an unpatched target-upstream reference
+   for matching render comparisons before adopting the new pin.
 2. Move the submodule, its own submodules, and re-apply the patch:
 
    ```sh
@@ -117,7 +142,7 @@ These break silently, and are the reason this page has a checklist:
   ```
 
   For each module Immage maps (the code map's tables), read its params
-  struct diff and update `manifest.ts` to match.
+  struct, defaults, migration and GUI diffs; update `manifest.ts` where needed.
 - **A module's defaults changed**, for example sigmoid's or AgX's. New
   photos look different.
 - **A conf key was renamed.** The engine's `main()` sets
@@ -137,7 +162,8 @@ These break silently, and are the reason this page has a checklist:
   dropped share's photo" fails then.
 - **Old edits load differently.** A newer darktable reads older params
   through each module's `legacy_params()`, so this direction is usually
-  safe. Compare the reference renders anyway.
+  safe. Check migrations and compare with target upstream; investigate old/new
+  differences without imposing an extra historical-rendering contract.
 
 ## Verify
 
@@ -151,16 +177,33 @@ These break silently, and are the reason this page has a checklist:
   `git -C darktable submodule update --init src/tests/integration`, then
   `cd darktable/src/tests/integration && DARKTABLE_CLI=$PWD/../../../../build/bin/darktable-cli ./run --disable-opencl --no-deltae`
 - The reference photos: each opens with its masks, spots and look, and the
-  re-exported TIFFs match the reference renders.
+  re-exported TIFFs match target upstream under equivalent settings. Old-pin
+  references remain diagnostic evidence, not a universal pixel-identity gate.
+- Look-mask ownership on a pin with `dt_develop_blend_params_read`:
+  build `immage-look-check`, the IOP/imageio modules and `deploy`, then run
+  `python3 -I verify/look-compat.py --build <candidate-build>`. This checks
+  actual engine look and thumbnail paths headlessly. See the
+  [current source audit](darktable-update-review.md) for scope and remaining
+  image/platform gates.
 - AI: each mask kind, upscale on export, Detail's Denoise… on a Bayer and an X-Trans raw. Models are picked by darktable's version, so a new version may
   download new models.
 - Performance: `python3 -I benchmarking/bench.py`, then
   `python3 -I benchmarking/compare.py`.
 - A GUI pass: every panel, crop, masks, heal, presets, looks, export,
   Immich, Edit In.
+- OpenCL on each GPU machine: Preferences › Performance › Measuring ›
+  **GPU check** on the same copied photo with the old pin's build and the
+  candidate's, then `python3 -I benchmarking/gpucheck.py <reports>`. Look
+  for cases that newly fail, a module newly on the CPU in the GPU pass (a
+  kernel missing or not building: compare each device's `programs` and
+  `kernels`), OpenCL errors, and the canceled-base case. Its last table puts
+  each case's module time in the GPU pass side by side: a module newly on
+  OpenCL (contrast & texture) should lose its `(CPU)` and its time. No agent
+  is needed on the machine; the reports carry the device, driver and machine
+  details.
 
 ## Log
 
 | Date | darktable from → to | Breaks fixed | Time | Notes |
 | --- | --- | --- | --- | --- |
-| | | | | |
+| 2026-11-03 | master 2747ed2a0d → 879067695e | classic mask groups converted to flexi on load lost subtracted shapes on reopening: the engine builds and reads flexi groups; Windows lock check accepts `darktable-engine.exe` | | CPU renders byte-exact against unpatched target for previews, exports, masks, object masks and all 53 looks; [review](darktable-update-review.md) |

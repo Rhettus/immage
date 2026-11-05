@@ -13,6 +13,7 @@ mod immich_upload;
 mod listing;
 mod plugins;
 mod perf_trace;
+mod frame_output;
 mod resources;
 #[cfg(target_os = "linux")]
 mod scale;
@@ -64,6 +65,8 @@ struct AppState {
     resource_level: String,
     // whether the engine started with its edits on the GPU
     gpu_edits: bool,
+    // Drop after Engine so it cannot still be writing into this directory.
+    _frame_output: Arc<frame_output::FrameOutput>,
 }
 
 impl AppState {
@@ -248,7 +251,7 @@ async fn range_map(state: State<'_, AppState>, ranges: Value, width: u32, height
     engine.request(json!({ "cmd": "range_map", "ranges": ranges, "width": width, "height": height,
                            "out": state.range_path }))?;
     // read while the engine is still ours, so no other request overwrites it
-    let map = std::fs::read(&state.range_path).map_err(|e| format!("range map: {e}"))?;
+    let map = frame_output::FrameOutput::read(&state.range_path).map_err(|e| format!("range map: {e}"))?;
     drop(engine);
     let mut out = Vec::with_capacity(8 + map.len());
     out.extend_from_slice(&width.to_le_bytes());
@@ -265,7 +268,7 @@ async fn zones(state: State<'_, AppState>, width: u32, height: u32, transition: 
     let mut engine = state.engine("zones");
     let reply = engine.request(json!({ "cmd": "zones", "width": width, "height": height, "transition": transition,
                                        "stage": stage, "out": state.range_path }))?;
-    let map = std::fs::read(&state.range_path).map_err(|e| format!("zones: {e}"))?;
+    let map = frame_output::FrameOutput::read(&state.range_path).map_err(|e| format!("zones: {e}"))?;
     drop(engine);
     let stats = reply.to_string().into_bytes();
     let mut out = Vec::with_capacity(12 + stats.len() + map.len());
@@ -301,7 +304,7 @@ async fn mask_map(state: State<'_, AppState>, name: Option<String>, op: Option<S
     let reply = engine.request(req)?;
     let width = reply["width"].as_u64().map_or(width, |w| w as u32);
     let height = reply["height"].as_u64().map_or(height, |h| h as u32);
-    let map = std::fs::read(&state.range_path).map_err(|e| format!("mask map: {e}"))?;
+    let map = frame_output::FrameOutput::read(&state.range_path).map_err(|e| format!("mask map: {e}"))?;
     drop(engine);
     let mut out = Vec::with_capacity(8 + map.len());
     out.extend_from_slice(&width.to_le_bytes());
@@ -639,14 +642,21 @@ async fn ai_denoise(state: State<'_, AppState>, plugins: State<'_, plugins::Plug
     Ok(reply)
 }
 
-// Bake the converted negative into a new positive beside its source.
-// Reserve the name before exporting so repeated requests never overwrite.
+// Bake a converted negative (`kind` "negative") or a film simulation
+// ("film") into a new positive beside its source, <name>-positive or
+// <name>-film. Reserve the name before exporting so repeated requests never
+// overwrite.
 #[tauri::command]
-async fn negative_export(state: State<'_, AppState>, plugins: State<'_, plugins::Plugins>,
-                         imgid: i64, original: String, format: String) -> Result<Value, String> {
+async fn positive_export(state: State<'_, AppState>, plugins: State<'_, plugins::Plugins>,
+                         imgid: i64, original: String, format: String, kind: String) -> Result<Value, String> {
     if format != "dng" && format != "tiff" {
-        return Err("choose DNG or TIFF for converted negatives".into());
+        return Err("choose DNG or TIFF for generated positives".into());
     }
+    let (name, plugin) = match kind.as_str() {
+        "negative" => ("positive", "negative-positive"),
+        "film" => ("film", "film-positive"),
+        _ => return Err(format!("no positive kind '{kind}'")),
+    };
     let source = Path::new(&original);
     let dir = source.parent().ok_or("the source has no folder")?;
     let stem = source.file_stem().ok_or("the source has no filename")?.to_string_lossy();
@@ -654,7 +664,7 @@ async fn negative_export(state: State<'_, AppState>, plugins: State<'_, plugins:
     let mut n = 0;
     let target = loop {
         let suffix = if n == 0 { String::new() } else { format!("_{n:02}") };
-        let path = dir.join(format!("{stem}-positive{suffix}.{ext}"));
+        let path = dir.join(format!("{stem}-{name}{suffix}.{ext}"));
         // An orphaned sidecar must not supply an old edit to a new export.
         if path.with_file_name(format!("{}.xmp", path.file_name().unwrap().to_string_lossy())).exists() {
             n += 1;
@@ -668,7 +678,7 @@ async fn negative_export(state: State<'_, AppState>, plugins: State<'_, plugins:
     };
     let t = state.tagged.clone();
     let held = t.tag();
-    if let Err(e) = state.engine("negative_export").request(json!({
+    if let Err(e) = state.engine("positive_export").request(json!({
         "cmd": "export_hold", "job": held, "imgids": [imgid],
     })) {
         let _ = std::fs::remove_file(&target);
@@ -679,7 +689,7 @@ async fn negative_export(state: State<'_, AppState>, plugins: State<'_, plugins:
         let tag = t.tag();
         let result = t.request(tag, json!({
             "cmd": "export", "job": held, "imgid": imgid, "out": out,
-            "format": format, "bpp": 32, "negative_copy": true, "history": false,
+            "format": format, "bpp": 32, "positive_copy": true, "history": false,
         }));
         let tag = t.tag();
         let _ = t.request(tag, json!({ "cmd": "export_release", "job": held }));
@@ -697,9 +707,31 @@ async fn negative_export(state: State<'_, AppState>, plugins: State<'_, plugins:
     };
     let path = target.to_string_lossy().into_owned();
     plugins.record(plugins::Return {
-        original: original.clone(), result: path, plugin: "negative-positive".into(), applied: true,
+        original: original.clone(), result: path, plugin: plugin.into(), applied: true,
     })?;
     reply["original"] = json!(original);
+    Ok(reply)
+}
+
+// the spektrafilm data pack and its films and papers (engine main.c,
+// _spektra_stocks)
+#[tauri::command]
+async fn spektra_stocks(state: State<'_, AppState>) -> Result<Value, String> {
+    let mut reply = state.engine("spektra_stocks").request(json!({ "cmd": "spektra_stocks" }))?;
+    if let Some(o) = reply.as_object_mut() {
+        o.remove("ok");
+    }
+    Ok(reply)
+}
+
+// the pack's download: `action` "start", "cancel" or "status"; none waits
+// for the network (engine main.c, _spektra_fetch)
+#[tauri::command]
+async fn spektra_fetch(state: State<'_, AppState>, action: String) -> Result<Value, String> {
+    let mut reply = state.engine("spektra_fetch").request(json!({ "cmd": "spektra_fetch", "action": action }))?;
+    if let Some(o) = reply.as_object_mut() {
+        o.remove("ok");
+    }
     Ok(reply)
 }
 
@@ -721,8 +753,7 @@ async fn ai_denoise_preview(state: State<'_, AppState>, u: f64, v: f64, size: u3
         out.extend_from_slice(&(reply[k].as_f64().unwrap_or(0.0) as f32).to_le_bytes());
     }
     // read while the engine is still ours, so no other preview overwrites it
-    std::fs::File::open(&state.denoise_path)
-        .and_then(|mut f| std::io::Read::read_to_end(&mut f, &mut out))
+    frame_output::FrameOutput::append(&state.denoise_path, &mut out)
         .map_err(|e| format!("denoise preview: {e}"))?;
     drop(engine);
     Ok(Response::new(out))
@@ -840,6 +871,10 @@ async fn render(
     let set_ms = ms(ts);
     let t1 = Instant::now();
     let reply = engine.request(req)?;
+    if let Some(output) = reply["output_ms"].as_object() {
+        engine.set_output_ms(["allocate_ms", "convert_ms", "file_ms", "free_ms"]
+            .map(|key| output.get(key).and_then(Value::as_f64).unwrap_or(0.0)));
+    }
     let request_ms = ms(t1);
     let field = |k: &str| reply[k].as_u64().unwrap_or(0) as u32;
     // the header, then the frame read straight in behind it: one copy of a
@@ -859,8 +894,7 @@ async fn render(
     let kept = reply["kept"].as_bool() == Some(true);
     let t2 = Instant::now();
     if !kept {
-        std::fs::File::open(&state.frame_path)
-            .and_then(|mut f| std::io::Read::read_to_end(&mut f, &mut out))
+        frame_output::FrameOutput::append(&state.frame_path, &mut out)
             .map_err(|e| format!("frame: {e}"))?;
     }
     let read_ms = ms(t2);
@@ -902,8 +936,15 @@ async fn render(
     }
     #[cfg(target_os = "linux")]
     if let (Some(id), Some(token)) = (shared, token) {
+        let shared_start = Instant::now();
         match shm_frame::write(&out, &token, id) {
-            Ok(()) => return Ok(Response::new(out[..FRAME_HEAD].to_vec())),
+            Ok(()) => {
+                // Reserved header word: duration of the shared-file write. The
+                // file already contains the earlier header; the reply owns this
+                // timing and the frontend records it before reading that file.
+                out[60..64].copy_from_slice(&(ms(shared_start) as f32).to_le_bytes());
+                return Ok(Response::new(out[..FRAME_HEAD].to_vec()));
+            },
             Err(e) => eprintln!("shared frame: {e}"),
         }
     }
@@ -1031,6 +1072,42 @@ async fn perf_modules(state: State<'_, AppState>, request: Option<u64>) -> Resul
     Ok(state.perf_last.lock().unwrap().clone())
 }
 
+// the GPU check's comparison of one CPU and one GPU render of the edit
+// (main.c, _parity), with each pass's module timings. a case that differs
+// writes its amplified difference as <diff>.png in the reports folder
+#[tauri::command]
+async fn gpu_check_parity(state: State<'_, AppState>, size: Option<u32>, diff: Option<String>,
+                          self_check: Option<bool>) -> Result<Value, String> {
+    let mut req = json!({ "cmd": "parity", "size": size.unwrap_or(1024), "self": self_check.unwrap_or(false) });
+    if let Some(name) = diff {
+        if name.is_empty() || name.contains(['/', '\\']) || name.starts_with('.') {
+            return Err("bad diff name".into());
+        }
+        std::fs::create_dir_all(&state.perf_dir).map_err(|e| e.to_string())?;
+        req["diff"] = json!(state.perf_dir.join(format!("{name}.png")).to_string_lossy());
+    }
+    let mut engine = state.engine("gpu_check_parity");
+    // the marks around it keep earlier requests' timings out of its own
+    engine.perf_mark();
+    let mut reply = engine.request(req)?;
+    let timings = engine.perf_mark();
+    let mut passes = serde_json::Map::new();
+    let mut pass = String::new();
+    for t in timings {
+        if t.kind == "pass" {
+            pass = t.label.clone();
+            passes.insert(pass.clone(), json!([]));
+        } else if let Some(Value::Array(list)) = passes.get_mut(&pass) {
+            // the check pipe is a full pipe; a thumbnail or preview drawn
+            // meanwhile on another thread is not part of its pass
+            if t.pipe.is_empty() || t.pipe == "full" { list.push(json!(t)); }
+        }
+    }
+    reply["modules"] = Value::Object(passes);
+    if let Some(o) = reply.as_object_mut() { o.remove("ok"); }
+    Ok(reply)
+}
+
 // does nothing: the GUI benchmark times a call's round trip on its own,
 // the cost every engine call pays on top of its work
 #[tauri::command]
@@ -1047,7 +1124,7 @@ async fn perf_report_write(state: State<'_, AppState>, name: String, mut report:
     std::fs::create_dir_all(&state.perf_dir).map_err(|e| e.to_string())?;
     let path = state.perf_dir.join(format!("{name}.json"));
     let (spans, dropped, unfinished) = state.engine.snapshot();
-    report["build"] = json!({ "commit": option_env!("IMMAGE_BUILD_COMMIT"), "dirty": option_env!("IMMAGE_BUILD_DIRTY").map(|s| s == "true") });
+    report["build"] = json!({ "commit": BUILD_COMMIT, "dirty": build_dirty() });
     if report["diagnostics"]["enabled"].as_bool() == Some(true) {
         report["diagnostics"]["cache"] = state.engine("perf_cache_report").cache_report();
         report["diagnostics"]["native"] = json!({ "clock": "native monotonic milliseconds; independent of frontend clock",
@@ -1056,7 +1133,8 @@ async fn perf_report_write(state: State<'_, AppState>, name: String, mut report:
             "scope": "AppState engine mutex; tagged/background engine traffic is outside this mutex",
             "releaseMarker": "before guard destruction; excludes instrumentation and unlock overhead",
             "spans": spans.iter().map(|s| json!({ "id": s.id, "requestId": s.request, "operation": s.operation,
-                "waitAt": s.wait, "acquiredAt": s.acquired, "releasedAt": s.released })).collect::<Vec<_>>() });
+                "waitAt": s.wait, "acquiredAt": s.acquired, "releasedAt": s.released, "outputMs": s.output_ms.map(|t| json!({
+                    "allocate":t[0], "convert":t[1], "file":t[2], "free":t[3] })) })).collect::<Vec<_>>() });
     }
     let text = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
     std::fs::write(&path, text).map_err(|e| e.to_string())?;
@@ -1147,7 +1225,7 @@ fn display_env() -> Value {
 async fn perf_machine(state: State<'_, AppState>) -> Result<Value, String> {
     use sysinfo::{CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};
     let opencl = state.engine("perf_machine").request(json!({ "cmd": "opencl" })).ok()
-        .map(|r| json!({ "running": r["running"], "devices": r["devices"] }));
+        .map(|mut r| { if let Some(o) = r.as_object_mut() { o.remove("ok"); } r });
     tauri::async_runtime::spawn_blocking(move || {
         let sys = System::new_with_specifics(RefreshKind::nothing().with_cpu(CpuRefreshKind::nothing())
                                                  .with_memory(MemoryRefreshKind::nothing().with_ram()));
@@ -1241,20 +1319,31 @@ async fn open_folder(app: AppHandle, state: State<'_, AppState>, path: String, r
         let tag = t.tag();
         let start = Instant::now();
         let handle = app.clone();
+        // `job` stops the batch once another folder's is queued, and
+        // `budget` once it has run that long, so a network share's slow
+        // files hold neither the next folder nor an open photo for long
+        // (main.c, _import_files)
+        let budget = (IMPORT_TARGET * 2).as_millis() as u64;
         let reply = tauri::async_runtime::spawn_blocking(move || t.request_until(
-            tag, json!({ "cmd": "import", "files": list }), Duration::from_secs(30),
+            tag, json!({ "cmd": "import", "files": list, "job": token, "budget": budget }), Duration::from_secs(30),
             || handle.state::<AppState>().folder_token.load(Ordering::SeqCst) != token))
             .await
             .map_err(|e| e.to_string())??;
         let took = start.elapsed();
         let got = reply["images"].as_array().cloned().unwrap_or_default();
+        // the files the batch went through; the rest go in the next. none
+        // when another read's batch came in first, which the token check
+        // above then finds, or which is resent
+        let through = reply["done"].as_u64().map_or(batch.len(), |n| (n as usize).min(batch.len()));
         // a batch of about IMPORT_TARGET, however long a file takes to read
-        if took < IMPORT_TARGET / 2 {
+        if through > 0 && through < batch.len() {
+            size = through.max(IMPORT_BATCH.1);
+        } else if took < IMPORT_TARGET / 2 {
             size = (size * 2).min(IMPORT_BATCH.2);
         } else if took > IMPORT_TARGET * 2 {
             size = (size / 2).max(IMPORT_BATCH.1);
         }
-        done += batch.len();
+        done += through;
         images.extend(got.iter().cloned());
         if let Some(got) = progress.add(got, Instant::now(), done == total) {
             let _ = app.emit("folder-progress", json!({ "token": token, "done": done, "total": total, "images": got }));
@@ -1672,11 +1761,13 @@ async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>, imgid: i64
     let thumbs = state.tagged.clone();
     let tag = thumbs.tag();
     // a file of its own, as several are built at once
-    let out = state.runtime.join(format!("thumb-{tag}.rgba"));
+    let storage = state._frame_output.clone();
+    let out = storage.path(&format!("thumb-{tag}.rgba"));
     let (reply, mut pixels) = tauri::async_runtime::spawn_blocking(move || {
         let got = thumbs.request(tag, json!({ "cmd": "thumb", "imgid": imgid, "size": size, "out": out }))
-            .and_then(|reply| Ok((reply, std::fs::read(&out).map_err(|e| format!("thumb: {e}"))?)));
-        let _ = std::fs::remove_file(&out);
+            .and_then(|reply| Ok((reply, frame_output::FrameOutput::read(&out).map_err(|e| format!("thumb: {e}"))?)));
+        storage.remove(&out);
+        drop(storage);
         got
     })
     .await
@@ -2354,8 +2445,10 @@ async fn preview(
     if with_look {
         req["look"] = json!(look);
     }
-    let reply = state.engine("preview").request(req)?;
-    let pixels = std::fs::read(&state.preview_path).map_err(|e| format!("preview: {e}"))?;
+    let mut engine = state.engine("preview");
+    let reply = engine.request(req)?;
+    let pixels = frame_output::FrameOutput::read(&state.preview_path).map_err(|e| format!("preview: {e}"))?;
+    drop(engine);
     let mut out = Vec::with_capacity(8 + pixels.len());
     for k in ["width", "height"] {
         out.extend_from_slice(&(reply[k].as_u64().unwrap_or(0) as u32).to_le_bytes());
@@ -2375,21 +2468,89 @@ async fn export_preview(
     options: ExportOptions,
     cap: i64,
 ) -> Result<Response, String> {
-    let out = state.presets_path.with_file_name("export-preview.jpg");
+    let out = state._frame_output.path("export-preview.jpg");
     let mut req = json!({
         "cmd": "export", "imgid": item.imgid, "out": out, "format": "jpeg", "quality": 85,
         "color_space": "srgb", "long_edge": options.long_edge.map_or(cap, |l| l.min(cap)),
-        "px_long_edge": options.long_edge.unwrap_or(0), "draft": true,
+        "px_long_edge": options.long_edge.unwrap_or(0), "draft": true, "transient": true,
     });
     if let Some(f) = &item.frame { req["frame"] = f.clone(); }
-    state.engine("export_preview").request(req)?;
-    std::fs::read(&out).map(Response::new).map_err(|e| format!("preview: {e}"))
+    let mut engine = state.engine("export_preview");
+    let result = engine.request(req).and_then(|_| {
+        frame_output::FrameOutput::read(&out).map(Response::new).map_err(|e| format!("preview: {e}"))
+    });
+    state._frame_output.remove(&out);
+    result
 }
 
 // the installed font families and their faces, as the engine draws them
 #[tauri::command]
 async fn fonts(state: State<'_, AppState>) -> Result<Value, String> {
     state.engine("fonts").request(json!({ "cmd": "fonts" })).map(|r| r["families"].clone())
+}
+
+// the Print panel (engine/print.c): printer profiles, soft proofing,
+// printers and the print itself
+fn without_ok(mut reply: Value) -> Value {
+    if let Some(o) = reply.as_object_mut() {
+        o.remove("ok");
+    }
+    reply
+}
+
+#[tauri::command]
+async fn print_profiles(state: State<'_, AppState>) -> Result<Value, String> {
+    state.engine("print_profiles").request(json!({ "cmd": "print_profiles" })).map(|r| r["profiles"].clone())
+}
+
+// a printer profile the user picked, copied among the engine's own
+#[tauri::command]
+async fn print_profile_add(state: State<'_, AppState>, path: String) -> Result<Value, String> {
+    state.engine("print_profile_add").request(json!({ "cmd": "print_profile_add", "path": path })).map(without_ok)
+}
+
+// `mode` "off", "proof" or "gamut"; replies whether the view changed, and
+// the front end renders again if so
+#[tauri::command]
+async fn softproof(state: State<'_, AppState>, mode: String, profile: Option<String>, intent: Option<i64>)
+    -> Result<bool, String> {
+    let reply = state.engine("softproof").request(json!({
+        "cmd": "softproof", "mode": mode, "profile": profile.unwrap_or_default(), "intent": intent.unwrap_or(0),
+    }))?;
+    Ok(reply["changed"].as_bool().unwrap_or(false))
+}
+
+// { available, printers: [{ name, description, default }] }
+#[tauri::command]
+async fn printers(state: State<'_, AppState>) -> Result<Value, String> {
+    state.engine("printers").request(json!({ "cmd": "printers" })).map(without_ok)
+}
+
+#[tauri::command]
+async fn printer_info(state: State<'_, AppState>, name: String) -> Result<Value, String> {
+    state.engine("printer_info").request(json!({ "cmd": "printer", "name": name })).map(without_ok)
+}
+
+// renders the photo as its edit is now and prints it, or writes `pdf`, on
+// the export thread as an export does (export_images), so editing goes on
+#[tauri::command]
+async fn print_photo(state: State<'_, AppState>, imgid: i64, request: Value) -> Result<Value, String> {
+    let tagged = state.tagged.clone();
+    let held = tagged.tag();
+    state.engine("print_photo").request(json!({ "cmd": "export_hold", "job": held, "imgids": [imgid] }))?;
+    let mut req = request;
+    req["cmd"] = json!("print");
+    req["job"] = json!(held);
+    req["imgid"] = json!(imgid);
+    let t = tagged.clone();
+    let tag = t.tag();
+    let result = tauri::async_runtime::spawn_blocking(move || t.request(tag, req))
+        .await.map_err(|e| e.to_string()).and_then(|r| r);
+    let t = tagged.clone();
+    let tag = t.tag();
+    let _ = tauri::async_runtime::spawn_blocking(move || t.request(tag, json!({ "cmd": "export_release", "job": held })))
+        .await;
+    result.map(without_ok)
 }
 
 // the Export dialog's presets, a document the front end shapes; none yet is
@@ -2485,12 +2646,32 @@ fn sample_folder(app: AppHandle) -> Result<String, String> {
     Ok(dest.to_string_lossy().into_owned())
 }
 
-// Immage's version and the darktable its engine was built from, for
-// Preferences
+// the commit this app was built from and whether the tree had uncommitted
+// changes (build.rs); both are absent when it was built outside Git
+const BUILD_COMMIT: Option<&str> = option_env!("IMMAGE_BUILD_COMMIT");
+fn build_dirty() -> Option<bool> {
+    option_env!("IMMAGE_BUILD_DIRTY").map(|s| s == "true")
+}
+
+// the commit as shown to people: ten digits, as darktable's version gives
+// its own, and "-dirty" for a tree with changes
+fn build_label() -> Option<String> {
+    BUILD_COMMIT.map(|c| format!("{}{}", &c[..c.len().min(10)], if build_dirty() == Some(true) { "-dirty" } else { "" }))
+}
+
+// Immage's version and commit, for the splash: answered at once, without
+// waiting for the engine as `about` does
+#[tauri::command]
+fn build(app: AppHandle) -> Value {
+    json!({ "app": app.package_info().version.to_string(), "commit": build_label() })
+}
+
+// Immage's version and commit and the darktable its engine was built
+// from, for Preferences and the GPU check's report
 #[tauri::command]
 async fn about(app: AppHandle, state: State<'_, AppState>) -> Result<Value, String> {
     let reply = state.engine("about").request(json!({ "cmd": "version" }))?;
-    Ok(json!({ "app": app.package_info().version.to_string(), "darktable": reply["version"] }))
+    Ok(json!({ "app": app.package_info().version.to_string(), "commit": build_label(), "darktable": reply["version"] }))
 }
 
 // the license texts the GPL requires to travel with the app, for
@@ -2600,16 +2781,17 @@ fn main() {
             let gpu_edits = engine::gpu_edits(&runtime);
             let engine = Engine::spawn(&bin, &runtime, &models_dir)
                 .map_err(|e| format!("cannot start {}: {e}", bin.display()))?;
+            let frame_output = Arc::new(frame_output::FrameOutput::new(&runtime));
             app.manage(AppState {
                 base_cancel: engine.base_cancel(),
                 tagged: engine.tagged(),
                 export_cancels: Mutex::new(HashMap::new()),
                 engine: perf_trace::TracedMutex::new(engine),
-                frame_path: runtime.join("frame.rgba"),
-                denoise_path: runtime.join("denoise-preview.f32"),
+                frame_path: frame_output.path("frame.rgba"),
+                denoise_path: frame_output.path("denoise-preview.f32"),
                 presets_path: runtime.join("presets.json"),
-                preview_path: runtime.join("preview.rgba"),
-                range_path: runtime.join("range.bin"),
+                preview_path: frame_output.path("preview.rgba"),
+                range_path: frame_output.path("range.bin"),
                 looks_dir,
                 user_looks_dir: runtime.join("looks"),
                 models_dir,
@@ -2622,6 +2804,7 @@ fn main() {
                 runtime: runtime.clone(),
                 resource_level,
                 gpu_edits,
+                _frame_output: frame_output,
             });
             app.manage(plugins::Plugins::new(runtime.join("plugin-returns.json")));
             // stacks saved in Macro Studio while Immage was closed
@@ -2632,12 +2815,12 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             map_tiles::map_tile, open_folder, open_image, get_params, set_params, render, cancel_base, save, baseline_end, before_view, thumb, thumb_cached, thumb_known, cache_limits, cache_usage, cache_clear, meta, meta_set, capture_times, prefetch, darktable_resources, darktable_resources_set, gpu_edits, gpu_edits_set, webview_renderer, webview_renderer_set,
-            export_images, export_cancel, export_existing, export_preview, fonts, export_presets_load, export_presets_save, preset_file_write, preset_file_read, presets_load, presets_save, looks_list, look_import, look_export, look_delete, look_apply, look_amount, preview, paste_batch,
+            export_images, export_cancel, export_existing, export_preview, fonts, print_profiles, print_profile_add, softproof, printers, printer_info, print_photo, export_presets_load, export_presets_save, preset_file_write, preset_file_read, presets_load, presets_save, looks_list, look_import, look_export, look_delete, look_apply, look_amount, preview, paste_batch,
             mask_shapes, combine, masks, mask_delete, mask_rename, history, module_state, sample, tone_key, agx_auto, upright, points, range_map, zones, mask_map, ai_object,
-            ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, negative_export, list_subfolders, folder_volumes, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
+            ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, positive_export, spektra_stocks, spektra_fetch, list_subfolders, folder_volumes, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
             immich_export_check, immich_search, immich_browse_check, immich_libraries, immich_suggestions, immich_people, immich_tags,
-            immich_thumb, immich_resolve, launch_file, path_exists, path_kind, display_scale, trash_files, create_virtual_copy, remove_virtual_copy, hdr_merge, hdr_can_align, pano_merge, pano_preview, pano_can_merge, merge_cancel, preview_fullscreen, about, licenses, engine_quit, keywords, keywords_set, ai_accel,
-            perf_set, perf_trace_start, perf_trace_stop, perf_modules, perf_report_write, perf_machine, perf_ping, resources::perf_resources_start, resources::perf_resources_stop,
+            immich_thumb, immich_resolve, launch_file, path_exists, path_kind, display_scale, trash_files, create_virtual_copy, remove_virtual_copy, hdr_merge, hdr_can_align, pano_merge, pano_preview, pano_can_merge, merge_cancel, preview_fullscreen, build, about, licenses, engine_quit, keywords, keywords_set, ai_accel,
+            perf_set, perf_trace_start, perf_trace_stop, perf_modules, perf_report_write, perf_machine, perf_ping, gpu_check_parity, resources::perf_resources_start, resources::perf_resources_stop,
             plugins::plugin_find_apps, plugins::plugin_launch, plugins::plugin_watch, plugins::plugin_cancel, plugins::plugin_job,
             plugins::plugin_returns, plugins::plugin_return_applied
         ])

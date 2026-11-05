@@ -1,4 +1,5 @@
 import { ContrastEqualizer } from "./ContrastEqualizer";
+import { SaturationCurve } from "./SaturationCurve";
 import { detailRows } from "./DetailControls";
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
@@ -15,12 +16,20 @@ import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { BANDS, choiceOn, choiceShows, controlById, GUIDE_IDS, guidesOf, isModuleSetting, MAX_GUIDES, parametricOf, UPRIGHT_GUIDED,
-         UPRIGHT_MODES, uprightAspect, mapOf, mapsFor, moduleName, mapsWith, NEG_CHOICES, NEG_GREYED, NEG_OFF,
-         NEG_OFF_UNMAPPED, panels, pointsOf, pointValues, profileLabel, turnRect, type Control, type ControlPreset, type CurveChannel, type Values,
+         UPRIGHT_MODES, uprightAspect, rotateOf, mapOf, mapsFor, moduleName, mapsWith, NEG_CHOICES, NEG_GREYED, NEG_OFF,
+         NEG_OFF_UNMAPPED, SF_CHOICES, SF_GREYED, SF_OFF, SF_OFF_UNMAPPED, panels, pointsOf, pointValues, profileLabel, turnPath, turnRect, type Control, type ControlPreset, type CurveChannel, type Values,
          type Panel, type Section, type Turn } from "./manifest";
 import { autoArea, autoBlack, autoDmax, autoDmin, autoExposure as autoPrintExposure, autoOffset, autoWbHigh, autoWbLow,
          FILM_BW, FILM_COLOR, fromValues, PRESETS, toValues, type Stats } from "./negadoctor";
 import { NegativePanel, type NegPick } from "./NegativePanel";
+import { FilmPanel } from "./FilmPanel";
+import { PrintPanel } from "./PrintPanel";
+import { applyProof, defaultPrintSettings, hasPrintSettings, layout as printLayout, loadPrintSettings, NO_PROOF, PDF, PDF_PAPERS,
+         printerInfo, printRequest, storePrintSettings, type Printer, type PrinterInfo, type PrintSettings,
+         type Profile, type Proof } from "./print";
+import { PositiveFooter } from "./PositiveFooter";
+import { filmChanges, paperChanges, presetValues as sfPresetValues, SF_PRESETS, type FetchStatus,
+         type Stocks } from "./spektrafilm";
 import { CircleOff, Grid2x2, Pipette, MoveHorizontal, MoveVertical, PenLine, Sparkles, WandSparkles } from "lucide-react";
 import { panelValues } from "./panelValues";
 import { FrameUpdates, Snapshot } from "./uiUpdates";
@@ -63,7 +72,7 @@ import { loadOpenGenerated, storeOpenGenerated, loadLoupe, storeLoupe, loadAutoH
          loadStackPairs,
          PreferencesDialog, storeOverlayColor, storeGuideColor, storeStackPairs,
          storeAutoHide, storeCanvas, CANVASES, storeFocusMode, storePins, type AccelProvider, type Canvas,
-         loadNegWarn, loadNegativeExportFormat, loadReadAhead, loadThumbMemoryMb, storeNegWarn, type Pins, type PrefsTab, type Preview } from "./Preferences";
+         loadNegWarn, loadNegativeExportFormat, loadReadAhead, loadThumbMemoryMb, storeNegWarn, storeNegativeExportFormat, type Pins, type PrefsTab, type Preview } from "./Preferences";
 import { kindOf, loadPlugins, loadReturns, returnValues, storePlugins, unfit, type PluginConfig,
          type PluginReturn } from "./plugins";
 import { FolderTree, type Volume } from "./FolderTree";
@@ -94,6 +103,7 @@ import { perf, percentiles, pingOnce, roundTrips, STAGES, webviewInfo, observeWe
 import { frameTransport } from "./sharedFrames";
 import { draftScale } from "./pixelRatio";
 import { tunerOptions } from "./tunerOptions";
+import { GPU_CASES, resolveCase, verdict, cpuInGpuPass, tiledInGpuPass, type Parity } from "./gpuCheck";
 import { timeTunerWork } from "./tunerWorkload";
 import { hasPendingTuner } from "./PerformanceTuner";
 import { PerformanceTuner } from "./PerformanceTuner";
@@ -905,30 +915,36 @@ export default function App() {
                action: generatedAction(r.path, r.image.imgid) };
     }, "AI Denoise").finally(() => setDenoiseRunning(false));
   };
-  const [negativeExporting, setNegativeExporting] = useState(false);
-  const negativeExportRunning = useRef(false);
-  const exportNegative = () => {
+  // Export to Library in the Negative and Film Simulation panels: the edit
+  // baked into a positive beside the photo (positive_export in main.rs)
+  const [positiveExporting, setPositiveExporting] = useState(false);
+  const positiveExportRunning = useRef(false);
+  const [positiveFormat, setPositiveFormat] = useState(loadNegativeExportFormat);
+  const exportPositive = (kind: "negative" | "film") => {
     const s = session.current, from = currentRef.current?.path;
-    if (!s || !from || s.values.neg_on !== 1 || negativeExportRunning.current) return;
-    negativeExportRunning.current = true;
-    setNegativeExporting(true);
+    const flag = kind === "negative" ? "neg_on" : "sf_on";
+    if (!s || !from || s.values[flag] !== 1 || positiveExportRunning.current) return;
+    positiveExportRunning.current = true;
+    setPositiveExporting(true);
     const format = loadNegativeExportFormat();
-    void runInBackground(`Converted positive: ${baseName(from)}`, async () => {
+    const title = kind === "negative" ? "Converted positive" : "Film simulation";
+    void runInBackground(`${title}: ${baseName(from)}`, async () => {
       s.flushEdits();
       await s.settled();
-      if (session.current !== s) throw new Error("the open photo changed; export the negative again");
-      return await invoke<{ path: string; original: string; image: { imgid: number } }>("negative_export", {
-        imgid: s.imgid, original: from, format,
+      if (session.current !== s) throw new Error("the open photo changed; export it again");
+      return await invoke<{ path: string; original: string; image: { imgid: number } }>("positive_export", {
+        imgid: s.imgid, original: from, format, kind,
       });
     }, (r) => {
-      returns.current.set(r.path, { original: r.original, result: r.path, plugin: "negative-positive", applied: true });
+      returns.current.set(r.path, { original: r.original, result: r.path,
+                                    plugin: kind === "negative" ? "negative-positive" : "film-positive", applied: true });
       if (folderRef.current && !immichRef.current && parentDir(r.path) === folderRef.current)
         void showFolder(folderRef.current, true);
-      return { text: `Converted positive: wrote ${baseName(r.path)}`, ok: true,
+      return { text: `${title}: wrote ${baseName(r.path)}`, ok: true,
                action: generatedAction(r.path, r.image.imgid) };
-    }, "Export converted negative").finally(() => {
-      negativeExportRunning.current = false;
-      setNegativeExporting(false);
+    }, kind === "negative" ? "Export converted negative" : "Export film simulation").finally(() => {
+      positiveExportRunning.current = false;
+      setPositiveExporting(false);
     });
   };
   // Lightroom's Photo Merge › HDR on darktable's HDR merge: a float DNG
@@ -1090,10 +1106,12 @@ export default function App() {
     record(["reset"]);
     holdRecord.current = true;
     try {
-      // the modules, profile and exposure compensation are the photo's own,
-      // not adjustments; the orientation stays too, as in Lightroom
-      changeMany(Object.entries(s.neutral).filter(([id]) => !isModuleSetting(id) && id !== "profile"
-                                                            && id !== "exp_comp" && id !== "orient"));
+      // the profile, tone mapper and exposure compensation are the photo's
+      // own, not adjustments; the orientation stays too, as in Lightroom.
+      // each tool goes back to the module Preferences picks
+      changeMany([...Object.entries(s.neutral).filter(([id]) => !isModuleSetting(id) && id !== "profile"
+                                                             && id !== "exp_comp" && id !== "orient"),
+                  ...s.preferredModules()]);
       s.resetModules();
       if (s.look) applyLook(null);
       for (const m of s.masks) s.deleteMask(m.name);
@@ -1269,6 +1287,18 @@ export default function App() {
   // the crop tool: while it is open the crop module is bypassed, so the
   // whole image shows under the rectangle, which is applied on Done
   const [cropping, setCropping] = useState(false);
+  // the side panel scrolls once for every tool: each tool keeps its own
+  // place, and a tool opened for the first time starts at the top
+  const panelsRef = useRef<HTMLDivElement>(null);
+  const panelScroll = useRef(new Map<string, number>());
+  const panelKey = cropping ? "crop" : rightMode;
+  const shownKey = useRef(panelKey);
+  useLayoutEffect(() => {
+    const el = panelsRef.current;
+    if (!el || shownKey.current === panelKey) return;
+    shownKey.current = panelKey;
+    el.scrollTop = panelScroll.current.get(panelKey) ?? 0;
+  }, [panelKey]);
   // the key handler is installed once; it reaches the latest of this
   const pickToolRef = useRef<(t: MaskTool) => void>(() => {});
   const masksModeRef = useRef(false);
@@ -1755,15 +1785,23 @@ export default function App() {
       if (baseStale.current || baseLowRes.current) s.requestThumb();
     }, delay);
   };
-  // zoomed in, the whole image at the zoom's scale (100% above it), once
-  // the base and the edits are done with; the session keeps one
+  // the whole image at the zoom's scale (100% above it), once the base and
+  // the edits are done with; the session keeps one. fitted, it is the 100%
+  // one, ready for the first zoom in; zoomed in, the fitted frame is
+  // rendered too, ready for the zoom back out
   const copyTimer = useRef(0);
   const scheduleCopy = (delay: number) => {
     window.clearTimeout(copyTimer.current);
     copyTimer.current = window.setTimeout(() => {
       const s = session.current, f = full.current;
-      if (!s || !f || zoomRef.current === "fit" || anim.current.raf) return;
+      if (!s || !f || anim.current.raf) return;
       if (!s.idle) { scheduleCopy(400); return; }
+      if (zoomRef.current === "fit") {
+        // a photo that fits at 100% already shows every pixel
+        if (fitScale() < 1) s.requestCopy(1, f);
+        return;
+      }
+      s.requestFit(fitView());
       s.requestCopy(Math.min(1, scaleFor(zoomRef.current)), f);
     }, delay);
   };
@@ -1831,6 +1869,12 @@ export default function App() {
     return z === "fill" ? Math.max(w / f.w, h / f.h) : z;
   };
 
+  // the fitted view's box, the engine fitting the whole image into it
+  const fitView = (): View => {
+    const { w, h } = viewport();
+    const m = 2 * MARGIN * (window.devicePixelRatio || 1);
+    return { width: Math.min(MAX_PREVIEW, w - m), height: Math.min(MAX_PREVIEW, h - m) };
+  };
   // the view at k times the full frame's size each way, k < 1 a drag's
   // during a zoom that renders ahead (animateTo), the view it ends on
   const viewAt = (k: number): View => {
@@ -1840,8 +1884,7 @@ export default function App() {
     const ahead = !!a.raf && !!a.end;
     const zoom = ahead ? a.zoom : zoomRef.current, c = ahead ? a.end! : center.current;
     if (zoom === "fit" || !f) {
-      const m = 2 * MARGIN * (window.devicePixelRatio || 1);
-      const width = Math.min(MAX_PREVIEW, w - m), height = Math.min(MAX_PREVIEW, h - m);
+      const { width, height } = fitView();
       return k === 1 ? { width, height } : { width: Math.round(width * k), height: Math.round(height * k), draft: true };
     }
     const scale = scaleFor(zoom) * k;
@@ -2233,7 +2276,7 @@ export default function App() {
     } else if (baseStale.current) {
       scheduleBase(300);
     }
-    if (f.view.scale !== undefined && !f.before) scheduleCopy(600);
+    if (!f.before) scheduleCopy(600);
     setStatus("");
   }, []);
   // timed for the performance overlay
@@ -2357,6 +2400,30 @@ export default function App() {
                   ["tf_vertical", 0], ["tf_horizontal", 0], ["tf_rotate", 0]], `Upright ${UPRIGHT_MODES[mode]}`);
     } catch (e) {
       if (session.current === s) setUprightNote(String(e));
+    } finally {
+      busyUpright(false);
+    }
+  };
+
+  // the crop tool's Auto, as Lightroom's: Upright's Level fit, kept in
+  // Rotate alone, so the Upright section stays Off
+  const [autoAngleNote, setAutoAngleNote] = useState<string | null>(null);
+  const runAutoStraighten = async () => {
+    const s = session.current;
+    if (!s || uprightBusyRef.current || (s.values.tf_upright ?? 0) !== 0) return;
+    setAutoAngleNote(null);
+    busyUpright(true);
+    try {
+      await s.settled();
+      if (session.current !== s) return;
+      const r = await invoke<UprightFit>("upright", { mode: "level", aspect: uprightAspect(s.values, s.context) });
+      if (session.current !== s) return;
+      const c = controlById.get("tf_rotate")!;
+      const to = Math.round(Math.min(c.max, Math.max(c.min, rotateOf(r.rotation, s.values.tf_base_r ?? 0, s.context)))
+                            / c.step) * c.step;
+      if (to !== (s.values.tf_rotate ?? 0)) changeMany([["tf_rotate", to]], "Auto Straighten");
+    } catch (e) {
+      if (session.current === s) setAutoAngleNote(String(e));
     } finally {
       busyUpright(false);
     }
@@ -2539,7 +2606,10 @@ export default function App() {
              y: clamp01(an.iy - ((an.sy - h / 2 / dpr) * dpr) / (f.h * z)) };
   };
 
+  // the Print panel's page shows the whole photo in its place: no zoom
+  const printViewRef = useRef(false);
   const animateTo = (z: Zoom, anchor: Anchor | null = null, settleDelay = 0, ahead = true) => {
+    if (printViewRef.current && z !== "fit") return;
     const f = full.current;
     if (!f || !viewZ.current) {
       zoomRef.current = z; setZoomState(z); session.current?.requestRender();
@@ -3476,10 +3546,9 @@ export default function App() {
         base.push({ op: "exposure", name: "exposure",
                     label: `compensation ${comp > 0 ? "+" : ""}${comp.toFixed(2)} EV`, enabled: true });
       }
-      // a raw starts with darktable's capture sharpening, and without noise
-      // reduction, which the AgX workflow adds only where a photo needs it;
-      // the preset or an Edit In return below may set them again
-      if (!s.wasEdited && s.raw) s.setMany([["capture", 1]]);
+      // a raw starts without capture sharpening or noise reduction, which
+      // the AgX workflow adds only where a photo needs it; the preset below
+      // may set them
       // a file back from Edit In starts without what its application did
       // already (Lens Corrections after PureRAW), over the preset's values
       // so they are never turned on to be turned off; a panorama, without
@@ -3596,6 +3665,25 @@ export default function App() {
       setSpotSel(null);
     }
   };
+  // an undo or redo in the crop tool, whose guide stays its own until
+  // Done: a turn undone turns the guide back, keeping how it was dragged;
+  // a crop undone puts back the guide and aspect it had
+  const followCrop = (was: Values, now: Values) => {
+    const rectOf = (v: Values) => ({ l: v.crop_l ?? 0, t: v.crop_t ?? 0, r: v.crop_r ?? 1, b: v.crop_b ?? 1 });
+    const path = turnPath(was.orient ?? 0, now.orient ?? 0);
+    const carried = path.reduce(turnRect, rectOf(was)), to = rectOf(now);
+    const quarter = path.filter((h) => h === "cw" || h === "ccw").length % 2 === 1;
+    if ((["l", "t", "r", "b"] as const).every((e) => Math.abs(carried[e] - to[e]) < 1e-6)
+        && (was.crop_rd ?? 0) === (now.crop_rd ?? 0) && (was.crop_rn ?? 0) === (now.crop_rn ?? 0)) {
+      if (!path.length) return;
+      setCropRect((r) => path.reduce(turnRect, r));
+      if (quarter) setCropPortrait((p) => !p);
+      return;
+    }
+    loadCrop(now);
+    const f = frameSize();
+    setCropPortrait((to.b - to.t) * f.h > (to.r - to.l) * f.w);
+  };
   // the image's masks made these: only what differs is sent
   const setMasksTo = (target: Mask[]) => {
     const s = session.current;
@@ -3699,7 +3787,7 @@ export default function App() {
   // `steps` at once, as a click in the History panel: only the state
   // arrived at is sent
   const stepHistory = async (back: boolean, steps = 1) => {
-    if (!session.current || croppingRef.current || pastingRef.current) return;
+    if (!session.current || pastingRef.current) return;
     const u = undo.current, from = back ? u.past : u.future, to = back ? u.future : u.past;
     if (!from.length) return;
     leaveBefore();
@@ -3707,6 +3795,11 @@ export default function App() {
       const s = session.current;
       if (!s) break;
       const target = from[from.length - 1];
+      // a paste is undone by reopening the photo, which would end the crop
+      if (target.batch && croppingRef.current) {
+        setStatus(`finish cropping to ${back ? "undo" : "redo"} the paste`);
+        break;
+      }
       const at = snapshot(s, target.label);
       if (target.batch) {
         const active = currentRef.current!;
@@ -3744,7 +3837,9 @@ export default function App() {
           next = following;
           k++;
         }
+        const was = { ...s.values };
         restore(next);
+        if (croppingRef.current) followCrop(was, { ...was, ...next.values });
         setStatus(back ? "undo" : "redo");
       }
     }
@@ -3853,15 +3948,15 @@ export default function App() {
       if (stopped) resumeBase();
     }
   };
-  // tone mappers from darktable that no slider covers, and modules of
-  // NEG_OFF that darktable set beyond their sliders, which the session
-  // cannot switch through them
-  const negOffUnmapped = (s: Session) => {
+  // tone mappers from darktable that no slider covers, and modules a
+  // conversion turns off (NEG_OFF, SF_OFF) that darktable set beyond their
+  // sliders, which the session cannot switch through them
+  const offUnmapped = (s: Session, off: Set<string>, unmapped: Set<string>) => {
     const done = new Set<string>();
     for (const h of s.history) {
       const key = instanceKey(h), op = mapOpOf(h);
       if (done.has(key) || h.priority === undefined || h.masked) continue;
-      if (!NEG_OFF_UNMAPPED.has(h.op) && !(NEG_OFF.has(op) && s.isForeign(op))) continue;
+      if (!unmapped.has(h.op) && !(off.has(op) && s.isForeign(op))) continue;
       done.add(key);
       if (s.moduleStates.get(key)?.enabled ?? h.enabled) s.setModuleState(h, { enabled: false });
     }
@@ -3871,7 +3966,7 @@ export default function App() {
   // the modules a negative turns off go off first, as negadoctor's input is
   // read without them, then the border and the photo area set its params,
   // all one undo step
-  const negPicked = async (kind: NegPick, box: [number, number, number, number]) => {
+  const negPicked = async (kind: NegPick, box: [number, number, number, number], swap = false) => {
     const s = session.current;
     setNegPick(null);
     if (!s) return;
@@ -3879,14 +3974,22 @@ export default function App() {
     const converting = kind === "border" && s.values.neg_on !== 1;
     // before the conversion the photo area is only kept, for it
     if (!converting && s.values.neg_on !== 1) return;
+    // a photo is a film simulation or a converted negative, not both
+    if (converting && s.values.sf_on === 1 && !swap) {
+      setExclusive({ title: "Convert Negative",
+                     body: "Converting the negative turns off this photo's film simulation, which works on a positive.",
+                     go: () => void negPicked(kind, box, true) });
+      return;
+    }
     setNegBusy(true);
     setNegNote(null);
     try {
       if (converting) {
         const film = s.values.neg_film === FILM_BW ? FILM_BW : FILM_COLOR;
-        changeMany([["neg_on", 1], ...toValues(PRESETS[film]), ...Object.entries(NEG_CHOICES),
+        changeMany([...(s.values.sf_on === 1 ? sfOffEntries(s) : []),
+                    ["neg_on", 1], ...toValues(PRESETS[film]), ...Object.entries(NEG_CHOICES),
                     ...(film === FILM_BW ? [["bw_mode", 1] as [string, number]] : [])], "Negative conversion");
-        negOffUnmapped(s);
+        offUnmapped(s, NEG_OFF, NEG_OFF_UNMAPPED);
       }
       let p = fromValues(s.values);
       if (kind === "border") {
@@ -3914,8 +4017,77 @@ export default function App() {
   const negTurnOff = () => {
     const s = session.current;
     if (!s) return;
-    changeMany([["neg_on", 0], ...Object.keys(NEG_CHOICES).map((id): [string, number] => [id, s.neutral[id]])],
-               "Turn off negative conversion");
+    changeMany(negOffEntries(s), "Turn off negative conversion");
+  };
+
+  // the Film Simulation panel (FilmPanel.tsx): the data pack's films and
+  // papers, read when the panel opens, and its download, followed while it
+  // runs. a photo is a film simulation or a converted negative, not both;
+  // switching asks first
+  const [sfStocks, setSfStocks] = useState<Stocks | null>(null);
+  const [sfFetch, setSfFetch] = useState<FetchStatus | null>(null);
+  const [exclusive, setExclusive] = useState<{ title: string; body: string; go: () => void } | null>(null);
+  const filmView = !!current && layout.right && rightMode === "film";
+  useEffect(() => {
+    if (!filmView || sfStocks?.pack) return;
+    void invoke<Stocks>("spektra_stocks").then(setSfStocks).catch((e) => setStatus(`film data: ${e}`));
+  }, [filmView]);   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (sfFetch?.state !== "running") return;
+    const t = window.setTimeout(() => {
+      void invoke<FetchStatus>("spektra_fetch", { action: "status" }).then((f) => {
+        setSfFetch(f);
+        if (f.state === "done") {
+          void invoke<Stocks>("spektra_stocks").then(setSfStocks);
+          // the module renders with the pack from its next frame
+          session.current?.requestRender();
+        }
+      }).catch((e) => setSfFetch({ state: "failed", message: `${e}`, progress: -1 }));
+    }, 400);
+    return () => window.clearTimeout(t);
+  }, [sfFetch]);
+  const sfDownload = () => void invoke<FetchStatus>("spektra_fetch", { action: "start" }).then((f) =>
+    setSfFetch(f.started === false && f.state !== "running"
+      ? { ...f, state: "failed", message: f.message || "downloads are turned off in darktable's settings" } : f))
+    .catch((e) => setSfFetch({ state: "failed", message: `${e}`, progress: -1 }));
+  const sfCancel = () => void invoke<FetchStatus>("spektra_fetch", { action: "cancel" }).then(setSfFetch);
+  // turning a film simulation off: its tools back on the modules
+  // Preferences picks
+  const sfOffEntries = (s: Session): [string, number][] =>
+    [["sf_on", 0], ...Object.keys(SF_CHOICES).map((id): [string, number] => [id, s.neutral[id]])];
+  const negOffEntries = (s: Session): [string, number][] =>
+    [["neg_on", 0], ...Object.keys(NEG_CHOICES).map((id): [string, number] => [id, s.neutral[id]])];
+  // on, with the module's defaults or a preset's settings, as one undo step
+  const sfTurnOn = (preset?: string, swap = false) => {
+    const s = session.current;
+    if (!s) return;
+    if (s.values.neg_on === 1 && !swap) {
+      setExclusive({ title: "Film Simulation",
+                     body: "Film simulation turns off this photo's negative conversion: the film is exposed from "
+                       + "the photo as a positive.",
+                     go: () => sfTurnOn(preset, true) });
+      return;
+    }
+    // without a preset, the settings it had when last turned off
+    const p = SF_PRESETS.find((x) => x.name === preset);
+    const settings = p ? sfPresetValues(p) : [];
+    changeMany([...(s.values.neg_on === 1 ? negOffEntries(s) : []), ["sf_on", 1], ...settings,
+                ...Object.entries(SF_CHOICES)], p ? `Film Simulation: ${p.name.split("|").pop()}` : "Film Simulation");
+    offUnmapped(s, SF_OFF, SF_OFF_UNMAPPED);
+  };
+  const sfFilm = (hash: number) => {
+    const s = session.current, stock = sfStocks?.stocks.find((x) => !x.printing && x.hash === hash);
+    if (!s || !stock || !sfStocks) return;
+    changeMany(filmChanges(sfStocks.stocks, s.values, stock), "Film Stock");
+  };
+  const sfPaper = (pick: number) => {
+    const s = session.current;
+    if (!s || !sfStocks) return;
+    changeMany(paperChanges(sfStocks.stocks, s.values, pick), "Print Paper");
+  };
+  const sfTurnOff = () => {
+    const s = session.current;
+    if (s) changeMany(sfOffEntries(s), "Turn off film simulation");
   };
 
   // what the Before view keeps of the edit: the crop, the modules chosen,
@@ -3938,6 +4110,144 @@ export default function App() {
   const beforeCanvas = useRef<HTMLCanvasElement>(null);
   const beforeMeta = useRef<{ x: number; y: number; scale: number; width: number; height: number;
                               fullWidth: number; fullHeight: number } | null>(null);
+  // the Print panel (PrintPanel.tsx) and the soft proof, which stays on in
+  // the other panels until turned off (print.ts)
+  const [printSettings, setPrintSettingsState] = useState<PrintSettings>(loadPrintSettings);
+  const setPrintSettings = (next: PrintSettings) => {
+    setPrintSettingsState(next);
+    storePrintSettings(next);
+  };
+  const [printAvailable, setPrintAvailable] = useState<boolean | null>(null);
+  const [printers, setPrinters] = useState<Printer[] | null>(null);
+  const [printInfo, setPrintInfo] = useState<{ name: string; info: PrinterInfo | null; error: string | null } | null>(null);
+  const [printProfiles, setPrintProfiles] = useState<Profile[]>([]);
+  const [printBusy, setPrintBusy] = useState(false);
+  const [printNote, setPrintNote] = useState<{ text: string; error: boolean } | null>(null);
+  const [proof, setProof] = useState<Proof>(NO_PROOF);
+  const proofRef = useRef(proof);
+  proofRef.current = proof;
+  const printOpen = layout.right && !cropping && rightMode === "print";
+  const changeProof = (next: Proof) => {
+    const p = next.profile ? next : NO_PROOF;
+    setProof(p);
+    // the badge names the profile, though the panel may not have listed them yet
+    if (p.mode !== "off" && !printProfiles.some((q) => q.file === p.profile))
+      invoke<Profile[]>("print_profiles").then(setPrintProfiles).catch(() => {});
+    applyProof(p).then((changed) => {
+      if (!changed || proofRef.current !== p) return;
+      session.current?.redraw();
+      if (baModeRef.current !== "off") captureBefore();
+    }).catch((e) => setStatus(`Soft proof: ${e}`));
+  };
+  const toggleProofRef = useRef(() => {});
+  toggleProofRef.current = () => {
+    if (proof.mode !== "off") { changeProof({ ...proof, mode: "off" }); return; }
+    if (!printSettings.profile) {
+      showRight("print");
+      setStatus("Soft proof: choose a printer profile under Color Management");
+      return;
+    }
+    changeProof({ mode: "proof", profile: printSettings.profile, intent: printSettings.intent });
+  };
+  const showRightRef = useRef(showRight);
+  showRightRef.current = showRight;
+  // the proof follows the panel's profile and intent
+  useEffect(() => {
+    if (proof.mode === "off") return;
+    if (proof.profile !== printSettings.profile || proof.intent !== printSettings.intent)
+      changeProof({ ...proof, profile: printSettings.profile, intent: printSettings.intent });
+  }, [printSettings.profile, printSettings.intent]);
+  // printers and profiles, each time the panel opens
+  useEffect(() => {
+    if (!printOpen) return;
+    let live = true;
+    invoke<{ available: boolean; printers: Printer[] }>("printers").then((r) => {
+      if (!live) return;
+      setPrintAvailable(r.available);
+      setPrinters(r.printers);
+      setPrintSettingsState((s) => {
+        const known = r.printers.some((p) => p.name === s.printer);
+        // a printer gone, or the first visit with one to print on: the default
+        const pick = (s.printer !== PDF && !known) || (s.printer === PDF && !hasPrintSettings());
+        if (!pick) return s;
+        const next = { ...s, printer: (r.printers.find((p) => p.default) ?? r.printers[0])?.name ?? PDF };
+        storePrintSettings(next);
+        return next;
+      });
+    }).catch((e) => { if (live) { setPrintAvailable(true); setPrinters([]); setStatus(`Printers: ${e}`); } });
+    invoke<Profile[]>("print_profiles").then((p) => { if (live) setPrintProfiles(p); })
+      .catch((e) => setStatus(`Printer profiles: ${e}`));
+    return () => { live = false; };
+  }, [printOpen]);
+  // the chosen printer's papers; a paper it lacks becomes its own
+  useEffect(() => {
+    if (!printOpen) return;
+    const name = printSettings.printer;
+    if (name === PDF) {
+      if (!PDF_PAPERS.some((p) => p.name === printSettings.paper))
+        setPrintSettings({ ...printSettings, paper: defaultPrintSettings().paper });
+      return;
+    }
+    if (printInfo?.name === name && printInfo.info) return;
+    let live = true;
+    setPrintInfo({ name, info: null, error: null });
+    printerInfo(name).then((info) => {
+      if (!live) return;
+      setPrintInfo({ name, info, error: null });
+      setPrintSettingsState((s) => {
+        if (s.printer !== name || info.papers.some((p) => p.name === s.paper)) return s;
+        const paper = info.papers.find((p) => p.name === info.defaultPaper) ?? info.papers[0];
+        if (!paper) return s;
+        const next = { ...s, paper: paper.name };
+        storePrintSettings(next);
+        return next;
+      });
+    }).catch((e) => { if (live) setPrintInfo({ name, info: null, error: String(e) }); });
+    return () => { live = false; };
+  }, [printOpen, printSettings.printer]);
+  const addPrintProfile = async () => {
+    const path = await open({ multiple: false, filters: [{ name: "ICC profile", extensions: ["icc", "icm", "ICC", "ICM"] }] });
+    if (typeof path !== "string") return;
+    try {
+      const added = await invoke<Profile>("print_profile_add", { path });
+      setPrintProfiles(await invoke<Profile[]>("print_profiles"));
+      setPrintSettings({ ...printSettings, profile: added.file });
+    } catch (e) {
+      setPrintNote({ text: String(e), error: true });
+    }
+  };
+  const printNow = async () => {
+    const s = session.current;
+    if (!s || !current) return;
+    const settings = printSettings;
+    const pdf = settings.printer === PDF;
+    const papers = pdf ? PDF_PAPERS : printInfo?.info?.papers ?? [];
+    const paper = papers.find((p) => p.name === settings.paper) ?? papers[0];
+    if (!paper || !placement) return;
+    const l = printLayout(paper, settings, placement.fullWidth / placement.fullHeight,
+                          pdf ? undefined : printInfo?.info?.margins);
+    if (!l.fits) return;
+    const stem = baseName(current.path).replace(/\.[^.]+$/, "");
+    let out: string | null = null;
+    if (pdf) {
+      out = await save({ defaultPath: `${stem}.pdf`, filters: [{ name: "PDF", extensions: ["pdf"] }] });
+      if (!out) return;
+    }
+    setPrintBusy(true);
+    setPrintNote(null);
+    try {
+      // the edits still on their way go in first: the print renders the photo as the library has it
+      await s.settled();
+      await invoke("print_photo", { imgid: s.imgid,
+                                    request: printRequest(settings, paper, l, baseName(current.path), settings.medium, out) });
+      const where = printers?.find((p) => p.name === settings.printer)?.description ?? settings.printer;
+      setPrintNote({ text: pdf ? `Saved ${out}` : `Sent to ${where}.`, error: false });
+    } catch (e) {
+      setPrintNote({ text: String(e), error: true });
+    } finally {
+      setPrintBusy(false);
+    }
+  };
   const captureTimer = useRef(0);
   const captureBefore = (delay = 0) => {
     window.clearTimeout(captureTimer.current);
@@ -3989,6 +4299,43 @@ export default function App() {
     compareRef.current = imgid;
     setCompareState(imgid);
   };
+  // the Print panel lays the page out in the viewer, the photo rendered into
+  // its place on it: the edit's pane is sized to the photo's rectangle (plus
+  // the fit margin), so the usual fitted render fills it, soft proof and all.
+  // the page replaces the split views and compare, which turn off on entering
+  const [viewerBox, setViewerBox] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    printViewRef.current = printOpen;
+    if (!printOpen) return;
+    if (baModeRef.current !== "off") setBaMode("off");
+    if (compareRef.current !== null) setCompare(null);
+    if (zoomRef.current !== "fit") animateTo("fit");
+    const el = viewer.current!;
+    const ro = new ResizeObserver(() => setViewerBox({ w: el.clientWidth, h: el.clientHeight }));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [printOpen]);
+  const printPdf = printSettings.printer === PDF;
+  const printPapers = printPdf ? PDF_PAPERS
+    : (printInfo?.name === printSettings.printer ? printInfo.info?.papers : undefined) ?? [];
+  const printPaper = printPapers.find((p) => p.name === printSettings.paper) ?? printPapers[0] ?? null;
+  const printPage = printOpen && current && placement && printPaper && printAvailable !== false
+                    && baMode === "off" && compare === null
+    ? printLayout(printPaper, printSettings, placement.fullWidth / placement.fullHeight,
+                  printPdf ? undefined : printInfo?.info?.margins)
+    : null;
+  const PAGE_PAD = 28; // CSS pixels between the page and the viewer's edge
+  const sheet = (() => {
+    if (!printPage || viewerBox.w <= 0) return null;
+    const { width: W, height: H } = printPage.page;
+    const k = Math.min((viewerBox.w - 2 * PAGE_PAD) / W, (viewerBox.h - 2 * PAGE_PAD) / H);
+    if (!(k > 0)) return null;
+    const x = (viewerBox.w - W * k) / 2, y = (viewerBox.h - H * k) / 2;
+    const at = (r: { x: number; y: number; width: number; height: number }) =>
+      ({ left: x + r.x * k, top: y + r.y * k, width: r.width * k, height: r.height * k });
+    return { page: at({ x: 0, y: 0, width: W, height: H }), area: at(printPage.area), image: at(printPage.image),
+             fits: printPage.fits };
+  })();
   // the candidate on entering: a photo selected besides the open one, else
   // the next photo, else the one before. two selected (in the grid), neither
   // of them open: the first is opened, the second its candidate
@@ -4260,7 +4607,7 @@ export default function App() {
       const at = new Date();
       const report = {
         immage: "gui-benchmark", version: 9, at: at.toISOString(),
-        app: await invoke<{ app: string; darktable: string }>("about").catch(() => null),
+        app: await invoke<{ app: string; commit: string | null; darktable: string }>("about").catch(() => null),
         machine: await invoke<Record<string, unknown>>("perf_machine").catch(() => null),
         frontend: perf.frontendReport(), diagnostics: perf.diagnosticReport(),
         webview, webviewTiming, resources: { ...resources, phases },
@@ -4284,6 +4631,113 @@ export default function App() {
       perf.recording = null;
       perf.label = "";
       stopMeasurement?.();
+      benchRunning.current = false;
+    }
+  };
+
+  // Preferences' GPU check (gpuCheck.ts): each case's edit made through
+  // changeMany(), then the engine's CPU and GPU renders of it compared; a
+  // canceled GPU base, then the edit compared again. every control ends
+  // where it started. the report goes beside the GUI benchmark's
+  const runGpuCheck = async (): Promise<{ path: string; passed: number; total: number }> => {
+    const s = session.current;
+    if (!s || benchRunning.current || perf.measuring) throw new Error("no photo open, or a benchmark is running");
+    benchRunning.current = true;
+    const original = { ...s.values };
+    const touched = new Set<string>();
+    const sleep = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
+    const settle = async () => {
+      await sleep(100);
+      const deadline = performance.now() + 120000;
+      while (!s.idle) {
+        if (session.current !== s) throw new Error("photo changed during the GPU check");
+        if (performance.now() > deadline) throw new Error("GPU check timed out waiting for the renderer");
+        await sleep(30);
+      }
+    };
+    const at = new Date();
+    const stamp = at.toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    const opencl = () => invoke<Record<string, unknown>>("perf_machine").then((m) => m.opencl as Record<string, unknown> | null)
+      .catch(() => null);
+    const parity = async (name: string) => {
+      try {
+        return { parity: await invoke<Parity>("gpu_check_parity", { size: 1024, diff: `gpu-${stamp}-${name}` }) };
+      } catch (e) { return { error: String(e) }; }
+    };
+    const restore = async () => {
+      const back = [...touched].filter((id) => s.values[id] !== original[id]).map((id) => [id, original[id]] as [string, number]);
+      if (back.length) { changeMany(back); await settle(); }
+    };
+    try {
+      setZoom("fit");
+      await settle();
+      const before = await opencl();
+      const machine = await invoke<Record<string, unknown>>("perf_machine").catch(() => null);
+      const cases: Record<string, unknown>[] = [];
+      if (before?.running) {
+        for (const c of GPU_CASES) {
+          if (session.current !== s) throw new Error("photo changed during the GPU check");
+          setStatus(`GPU check: ${c.label}`);
+          const r = resolveCase(c, s.values, (id) => controlById.get(id) ?? (id.startsWith("mod_") ? { min: 0, max: 9 } : undefined), choiceShows);
+          if ("skipped" in r) { cases.push({ id: c.id, label: c.label, op: c.op, skipped: r.skipped }); continue; }
+          if (r.entries.length) {
+            r.entries.forEach(([id]) => touched.add(id));
+            changeMany(r.entries);
+            await settle();
+          }
+          const out = await parity(c.id);
+          cases.push({ id: c.id, label: c.label, op: c.op, edits: r.entries, ...out,
+            ...(out.parity ? { ...verdict(out.parity, c.op), cpuModules: cpuInGpuPass(out.parity),
+                               tiledModules: tiledInGpuPass(out.parity) } : { pass: false, reasons: [out.error] }) });
+          await restore();
+        }
+      }
+      // a base render begun on the GPU and canceled by a drag, as
+      // the GUI benchmark's "drag during base": the engine flushes the base
+      // pipe's cache after a GPU stop (main.c, render). the edit compared
+      // again afterwards shows whether the device still renders it alike
+      let cancel: Record<string, unknown> | null = null;
+      const ex = controlById.get("exposure");
+      if (before?.running && ex) {
+        setStatus("GPU check: canceling a GPU render");
+        const from = s.values.exposure ?? ex.neutral ?? 0;
+        touched.add("exposure");
+        change(ex, from + 0.3);
+        await settle();
+        const until = performance.now() + 8000;
+        while (!s.baseRendering && performance.now() < until) await sleep(10);
+        const started = s.baseRendering;
+        dragging.current = loadPreview() !== "quality";
+        for (let i = 1; i <= 20; i++) { change(ex, from + 0.3 + 0.5 * (i <= 10 ? i / 10 : (20 - i) / 10)); await sleep(16); }
+        dragging.current = false;
+        change(ex, from + 0.3);
+        if (draftShown.current || s.pending) s.requestRender();
+        await settle();
+        await sleep(2500);
+        await settle();
+        await restore();
+        const out = await parity("after-cancel");
+        const first = cases.find((c) => c.id === "edit")?.parity as Parity | undefined;
+        cancel = { baseStarted: started, ...out,
+          sameAsBefore: first && out.parity ? Math.abs(first.de.p99 - out.parity.de.p99) < 0.5 : null,
+          ...(out.parity ? verdict(out.parity, "") : { pass: false, reasons: [out.error] }) };
+      }
+      const after = await opencl();
+      const run = cases.filter((c) => !c.skipped);
+      const report = {
+        immage: "gpu-check", version: 1, at: at.toISOString(),
+        app: await invoke<{ app: string; commit: string | null; darktable: string }>("about").catch(() => null),
+        machine, configuration: (await tunerOptions(setPerfHud)).map(({ id, current, running }) => ({ id, value: current, ...(running === undefined ? {} : { running }) })),
+        photo: (currentRef.current?.path ?? "").split(/[\\/]/).pop(), size: 1024,
+        opencl: { before, after }, cases, cancel,
+        passed: run.filter((c) => c.pass).length, total: run.length,
+        ...(before?.running ? {} : { error: "no OpenCL device: darktable found none, or OpenCL is off" }),
+      };
+      const path = await invoke<string>("perf_report_write", { name: `gpu-${stamp}`, report });
+      return { path, passed: report.passed, total: report.total };
+    } finally {
+      if (session.current === s) await restore().catch(() => {});
+      dragging.current = false;
       benchRunning.current = false;
     }
   };
@@ -4447,18 +4901,23 @@ export default function App() {
     if (a && zonesOpen) readProbe(a.x, a.y);
   }, [zoneData]);   // eslint-disable-line react-hooks/exhaustive-deps
 
-  const onPointerDown = (e: React.PointerEvent<HTMLElement>) => {
-    if (loupePicking && loupeEnabled) {
-      const { sx, sy } = paneXY(e.clientX, e.clientY);
-      const { ix, iy } = imageAt(sx, sy);
-      if (ix >= 0 && ix <= 1 && iy >= 0 && iy <= 1) {
-        loupePositionRef.current = { x: ix, y: iy };
-        setLoupePosition({ x: ix, y: iy });
-        setLoupePicking(false);
-        session.current?.requestLoupe();
-      }
-      return;
+  // in the capture phase, so a mask tool or handle under the pointer
+  // (MaskOverlay stops propagation) cannot take the loupe's click
+  const onLoupePickDown = (e: React.PointerEvent<HTMLElement>) => {
+    if (!(loupePicking && loupeEnabled)) return false;
+    e.stopPropagation();
+    e.preventDefault();
+    const { sx, sy } = paneXY(e.clientX, e.clientY);
+    const { ix, iy } = imageAt(sx, sy);
+    if (ix >= 0 && ix <= 1 && iy >= 0 && iy <= 1) {
+      loupePositionRef.current = { x: ix, y: iy };
+      setLoupePosition({ x: ix, y: iy });
+      setLoupePicking(false);
+      session.current?.requestLoupe();
     }
+    return true;
+  };
+  const onPointerDown = (e: React.PointerEvent<HTMLElement>) => {
     if (lineRef.current) return;
     if (!current || croppingRef.current || !viewZ.current) return;
     if (pickingRef.current) {
@@ -4579,7 +5038,17 @@ export default function App() {
     // Preserve the displayed crop orientation before clearing its placement.
     const p = placementRef.current;
     prepareCropView();
-    const v = s.values;
+    loadCrop(s.values);
+    // the guide starts in the photo's orientation: the image shown until
+    // crop is bypassed below is the crop as it stands, or the whole photo
+    setCropPortrait(!!p && p.fullHeight > p.fullWidth);
+    croppingRef.current = true;
+    setCropping(true);
+    s.bypass("crop", true);
+  };
+
+  // the crop tool's guide and aspect from the photo's crop settings
+  const loadCrop = (v: Values) => {
     const rect = { l: v.crop_l ?? 0, t: v.crop_t ?? 0, r: v.crop_r ?? 1, b: v.crop_b ?? 1 };
     const rd = v.crop_rd ?? 0, rn = v.crop_rn ?? 0;
     // darktable's ratio_d:ratio_n back to a preset; 1:0 is the image's own.
@@ -4592,16 +5061,10 @@ export default function App() {
     const own = rd > 0 && rn > 0 && !ASPECTS.some(same) && !cropCustoms.some(same) ? customAspect(rd, rn) : null;
     const preset = rd === 0 && rn === 0 ? (whole ? "original" : "free") : rn === 0 ? "original"
       : (ASPECTS.find(same) ?? cropCustoms.find(same) ?? own)?.id ?? "free";
-    // the guide starts in the photo's orientation: the image shown until
-    // crop is bypassed below is the crop as it stands, or the whole photo
     setCropRect(rect);
     setCropOwn(own);
     setCropEntry(null);
     setCropAspect(preset);
-    setCropPortrait(!!p && p.fullHeight > p.fullWidth);
-    croppingRef.current = true;
-    setCropping(true);
-    s.bypass("crop", true);
   };
 
   const leaveCrop = (apply: boolean) => {
@@ -4611,12 +5074,19 @@ export default function App() {
     croppingRef.current = false;
     setCropping(false);
     setStraightening(false);
+    setAutoAngleNote(null);
     if (apply) {
       const { rect, aspect, choices } = cropRef.current;
       const a = findAspect(aspect, choices);
-      const [rd, rn] = a.ratio === null ? [0, 0] : a.ratio === "original" ? [1, 0] : a.ratio;
-      // one history step for the crop, not one per edge
       const v = s.values;
+      // a photo left whole at Original keeps its "no ratio": entering the
+      // tool reads that as Original anyway, and the change alone would be
+      // a Crop step that changes nothing an undo can show
+      const whole = rect.l === 0 && rect.t === 0 && rect.r === 1 && rect.b === 1;
+      const unset = !(v.crop_rd ?? 0) && !(v.crop_rn ?? 0);
+      const [rd, rn] = a.ratio === null || (a.ratio === "original" && whole && unset) ? [0, 0]
+        : a.ratio === "original" ? [1, 0] : a.ratio;
+      // one history step for the crop, not one per edge
       const entries = ([["crop_l", rect.l], ["crop_t", rect.t], ["crop_r", rect.r], ["crop_b", rect.b],
                         ["crop_rd", rd], ["crop_rn", rn]] as [string, number][]).filter(([id, x]) => v[id] !== x);
       if (entries.length) {
@@ -4753,6 +5223,12 @@ export default function App() {
       if (cmd(e) && e.shiftKey && (e.key === "e" || e.key === "E")) {
         e.preventDefault();
         setExporting(true);
+        return;
+      }
+      // ⌘P: the Print panel, as Lightroom's Print module
+      if (cmd(e) && !e.shiftKey && !e.altKey && (e.key === "p" || e.key === "P")) {
+        e.preventDefault();
+        showRightRef.current("print");
         return;
       }
       // Copy Settings, Paste and Previous, as Lightroom's ⇧⌘C, ⇧⌘V and ⌥⌘V
@@ -4900,6 +5376,11 @@ export default function App() {
       if ((e.key === "h" || e.key === "H") && !cmd(e) && !e.altKey && session.current) {
         const n = SCOPE_MODES.length;
         setScope((s) => ({ mode: SCOPE_MODES[(SCOPE_MODES.findIndex(([m]) => m === s.mode) + (e.shiftKey ? n - 1 : 1)) % n][0] }));
+        return;
+      }
+      // S turns the soft proof on or off, as in Lightroom
+      if ((e.key === "s" || e.key === "S") && !cmd(e) && !e.altKey && !e.shiftKey && session.current) {
+        toggleProofRef.current();
         return;
       }
       // J shows both clipping overlays, or hides them, as in Lightroom
@@ -5260,11 +5741,23 @@ export default function App() {
       <Splitter axis="x" value={layout.leftWidth} min={220} max={560} hidden={!docked.left}
                 onChange={(v) => setLayout((l) => ({ ...l, leftWidth: v }))} />
       <section className="center">
-        <main data-tour="viewer" className={`viewer zoom-${zoom === "fit" ? "fit" : "in"}${picking || loupePicking ? " picking" : ""}${aiBusy ? " busy" : ""}${straightening || line || (shiftHeld && current && (cropping || (!masksMode && !healMode)) && !preview) ? " straightening" : ""}${canvasColor !== "dark" ? ` canvas-${canvasColor}` : ""}${baMode === "overlay" ? " hold-view" : ""}${optPreview?.kind === "gray" ? " gray-view" : ""}`} ref={viewer}
-              onPointerDownCapture={onStraightenDown}
+        <main data-tour="viewer" className={`viewer zoom-${zoom === "fit" ? "fit" : "in"}${picking || loupePicking ? " picking" : ""}${aiBusy ? " busy" : ""}${straightening || line || (shiftHeld && current && (cropping || (!masksMode && !healMode)) && !preview) ? " straightening" : ""}${canvasColor !== "dark" ? ` canvas-${canvasColor}` : ""}${baMode === "overlay" ? " hold-view" : ""}${optPreview?.kind === "gray" ? " gray-view" : ""}${sheet ? " print-view" : ""}`} ref={viewer}
+              onPointerDownCapture={(e) => { if (!onLoupePickDown(e)) onStraightenDown(e); }}
               onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
               onPointerLeave={leaveProbe}>
-          <div ref={pane} className={`after-pane${baMode === "side" ? " half" : compare !== null ? " half-left" : ""}`}>
+          {sheet && (
+            <div className="print-sheet" data-print-page={`${printPage!.page.width}x${printPage!.page.height}`}
+                 style={sheet.page}>
+              {sheet.fits && <div className="print-area" style={{ left: sheet.area.left - sheet.page.left,
+                                                                    top: sheet.area.top - sheet.page.top,
+                                                                    width: sheet.area.width, height: sheet.area.height }} />}
+            </div>
+          )}
+          <div ref={pane} className={`after-pane${sheet ? " on-page" : baMode === "side" ? " half" : compare !== null ? " half-left" : ""}`}
+               style={sheet ? (sheet.fits ? { left: sheet.image.left - MARGIN, top: sheet.image.top - MARGIN,
+                                              width: sheet.image.width + 2 * MARGIN, height: sheet.image.height + 2 * MARGIN }
+                                          : { left: 0, top: 0, width: "100%", height: "100%", visibility: "hidden" })
+                             : undefined}>
             <canvas ref={baseCanvas} className={`layer base${current ? "" : " empty"}`} />
             <canvas ref={clipBase} className={`layer clip${current && (clipShown.low || clipShown.high) ? "" : " empty"}`} />
             {/* it carries neither the Before view nor the clipping overlay */}
@@ -5363,6 +5856,16 @@ export default function App() {
               </div>
             )}
           </div>
+          {sheet?.fits && (
+            <div className="print-align" style={sheet.area}>
+              {Array.from({ length: 9 }, (_, k) => (
+                <button key={k} className={k === printSettings.alignment ? "on" : ""}
+                        aria-label={`place the photo ${PRINT_PLACES[k]}`} title={`place the photo ${PRINT_PLACES[k]}`}
+                        onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}
+                        onClick={() => setPrintSettings({ ...printSettings, alignment: k })} />
+              ))}
+            </div>
+          )}
           {/* the split views and compare label their halves in this corner */}
           {current && infoMode < 2 && !cropping && compare === null && (baMode === "off" || baMode === "overlay") && (
             <InfoOverlay mode={infoMode} name={`${fileName}${copyName(currentEntry)}`} dir={fileDir ?? ""}
@@ -5428,6 +5931,11 @@ export default function App() {
                          aspect={pixelAspect(findAspect(cropAspect, cropChoices), cropPortrait, frameSize())} />
           )}
           {(before || holding) && <div className="before-badge">Before</div>}
+          {current && proof.mode !== "off" && (
+            <div className="proof-badge" data-proof-badge>
+              Soft Proof: {printProfiles.find((p) => p.file === proof.profile)?.name ?? "printer profile"}
+              {proof.mode === "gamut" ? ", gamut warning" : ""}</div>
+          )}
           {modeFlash && <div className="mode-flash">{modeFlash}</div>}
           {holdHint && <div className="hold-hint">Click and hold the photo to see the before</div>}
           {line && (
@@ -5522,7 +6030,7 @@ export default function App() {
                  }}
                  onFiltered={() => setGrid(true)}
                  grid={grid} onGrid={cells.length > 0 || pending.length > 0 || grid ? () => setGrid(!grid) : undefined}
-                 zoomBar={<ZoomBar disabled={!current} register={(f) => { zoomShow.current = f; }}
+                 zoomBar={<ZoomBar disabled={!current || !!sheet} register={(f) => { zoomShow.current = f; }}
                                    onZoom={(z) => setZoom(z)}
                                    onToggle={() => setZoom(zoomRef.current === "fit" ? 1 : "fit")}
                                    fit={() => fitScale()} />}
@@ -5549,7 +6057,8 @@ export default function App() {
                        neutral={(id) => session.current?.neutral[id] ?? controlById.get(id)?.neutral ?? 0}
                        onChange={change} clip={clipOn} onClip={(end) => setClipOn((o) => ({ ...o, [end]: !o[end] }))}
                        onClipPeek={setClipPeek} scope={scope} onScope={setScope} /></Profiler>
-        <div className="panels" data-tour="panels">
+        <div className="panels" data-tour="panels" ref={panelsRef}
+             onScroll={(e) => panelScroll.current.set(shownKey.current, e.currentTarget.scrollTop)}>
           {masksMode && !cropping && (
             <MasksPanel masks={masks} selected={maskSel} shape={shapeSel} tool={maskTool} target={toolTarget}
                         brush={brush} overlay={maskShown} disabled={!current} mono={values.bw_mode === 1} photo={values}
@@ -5563,7 +6072,7 @@ export default function App() {
                           setMaskTool(t); setToolTarget(target);
                         }}
                         onAi={(kind, target) => void selectAi(kind, target)}
-                        aiBusy={aiBusy} focusMode={focusMode}
+                        aiBusy={aiBusy} focusMode={focusMode} presenceLoupe={renderLoupe("mask-presence")}
                         onSelect={(name) => { setMaskSel(name); setShapeSel(0); }}
                         onShape={setShapeSel}
                         onShapeMode={(k) => editShapes((sh) => sh.map((x, i) => (i === k
@@ -5697,8 +6206,7 @@ export default function App() {
           )}
           {rightMode === "negative" && !cropping && (
             <NegativePanel values={values} disabled={!current} converted={values.neg_on === 1} picking={negPick}
-                           onExport={exportNegative} exporting={negativeExporting} exportFormat={loadNegativeExportFormat()}
-                           busy={negBusy} hasArea={!!negArea} note={negNote} onPick={setNegPick} onTurnOff={negTurnOff}
+                           busy={negBusy} hasArea={!!negArea} note={negNote} onPick={setNegPick}
                            onResetColor={() => changeMany(["wbl", "wbh"].flatMap((k) => ["r", "g", "b"]
                              .map((c): [string, number] => [`neg_${k}_${c}`, 1])), "Reset Color")}
                            renderControl={(id) => {
@@ -5709,6 +6217,31 @@ export default function App() {
                                              values, onChange: (v: number) => (id === "neg_film" ? negFilm(v) : change(c, v)) };
                              return c.kind === "choice" ? <Choice key={id} {...props} /> : <Slider key={id} {...props} />;
                            }} />
+          )}
+          {rightMode === "film" && !cropping && (
+            <FilmPanel values={values} disabled={!current} on={values.sf_on === 1} stocks={sfStocks} fetch={sfFetch}
+                       onDownload={sfDownload} onCancel={sfCancel} onTurnOn={() => sfTurnOn()}
+                       onPreset={(name) => sfTurnOn(name)} onFilm={sfFilm} onPaper={sfPaper}
+                       renderControl={(id, override, onChange, value) => {
+                         const c = { ...controlById.get(id)!, ...override };
+                         const props = { control: c, value: value ?? values[id] ?? c.neutral ?? 0,
+                                         neutral: session.current?.neutral[id] ?? c.neutral ?? 0,
+                                         disabled: !current, values,
+                                         onChange: onChange ?? ((v: number) => change(c, v)) };
+                         return c.kind === "choice" ? <Choice key={id} {...props} />
+                           : c.kind === "toggle" ? <Toggle key={id} {...props} /> : <Slider key={id} {...props} />;
+                       }} />
+          )}
+          {rightMode === "print" && !cropping && (
+            <PrintPanel settings={printSettings} onSettings={setPrintSettings} available={printAvailable}
+                        printers={printers} info={printInfo?.name === printSettings.printer ? printInfo.info : null}
+                        infoError={printInfo?.name === printSettings.printer ? printInfo.error : null}
+                        profiles={printProfiles} onAddProfile={() => void addPrintProfile()}
+                        aspect={placement ? placement.fullWidth / placement.fullHeight : 1.5}
+                        pixelWidth={placement?.fullWidth ?? 0}
+                        proof={proof}
+                        onProof={(mode) => changeProof({ mode, profile: printSettings.profile, intent: printSettings.intent })}
+                        busy={printBusy} note={printNote} onPrint={() => void printNow()} disabled={!current} />
           )}
           {rightMode === "presets" && !cropping && (
             <PresetsPanel fold={presetFold} onAnyOpen={setPresetGroupsOpen} focusMode={focusMode}
@@ -5783,7 +6316,12 @@ export default function App() {
                   <Slider control={controlById.get("tf_rotate")!} value={values.tf_rotate ?? 0} neutral={0}
                           disabled={!current} values={values}
                           onChange={(v) => change(controlById.get("tf_rotate")!, v)} />
+                  <button className="btn small" disabled={!current || uprightBusy || (values.tf_upright ?? 0) !== 0}
+                          title={(values.tf_upright ?? 0) !== 0 ? "Upright sets the angle: turn Upright off to level from here"
+                                                                : "level the photo from its straight lines"}
+                          onClick={() => void runAutoStraighten()}>Auto</button>
                 </div>
+                {autoAngleNote && <div className="note-plain">{autoAngleNote}</div>}
                 <div className="row-label">Rotate &amp; Flip</div>
                 <div className="crop-turn">
                   <button className="tool" title={keys("rotate left (⌘[)")} onClick={() => void turn("ccw")}><RotateIcon /></button>
@@ -5877,6 +6415,16 @@ export default function App() {
                        } : undefined} /></Profiler>
           ))}
         </div>
+        {!cropping && current && ((rightMode === "negative" && values.neg_on === 1)
+                                  || (rightMode === "film" && values.sf_on === 1)) && (
+          <PositiveFooter format={positiveFormat} exporting={positiveExporting} disabled={negBusy || !!negPick}
+                          onFormat={(f) => { setPositiveFormat(f); storeNegativeExportFormat(f); }}
+                          onExport={() => exportPositive(rightMode === "film" ? "film" : "negative")}
+                          onTurnOff={rightMode === "film" ? sfTurnOff : negTurnOff}
+                          turnOffLabel={rightMode === "film" ? "Turn Off Film Simulation" : "Turn Off Conversion"}
+                          turnOffTitle={rightMode === "film" ? "the photo back on its tone mapper, with Basic's tools as they were"
+                                                             : "the photo back as a negative, with Basic's tools as they were"} />
+        )}
         <div className="right-foot">
           <button className="btn small" disabled={!current || cropping} onClick={() => setCopying(true)}
                   data-action="copy-settings" title={keys("choose settings of this photo to copy (⇧⌘C)")}>Copy…</button>
@@ -5904,11 +6452,13 @@ export default function App() {
                 onClick={() => (cropping ? leaveCrop(true) : enterCrop())}><CropIcon /></button>
         <button className={`tool${layout.right && !cropping && masksMode ? " on" : ""}`} title="masks" data-tour="masks"
                 disabled={!current} onClick={() => showRight("masks")}><LayersIcon /></button>
-        <button className={`tool${layout.right && !cropping && rightMode === "zones" ? " on" : ""}`} title="zone system"
-                data-tour="zones" disabled={!current} onClick={() => showRight("zones")}><ZonesIcon /></button>
         <button className={`tool${layout.right && !cropping && healMode ? " on" : ""}`} title="heal and clone (Q)"
                 data-tour="heal"
                 disabled={!current} onClick={() => showRight("heal")}><HealIcon /></button>
+        <button className={`tool${layout.right && !cropping && rightMode === "zones" ? " on" : ""}`} title="zone system"
+                data-tour="zones" disabled={!current} onClick={() => showRight("zones")}><ZonesIcon /></button>
+        <button className={`tool${layout.right && !cropping && rightMode === "film" ? " on" : ""}`}
+                title="film simulation" data-tour="film" disabled={!current} onClick={() => showRight("film")}><FilmSimIcon /></button>
         <button className={`tool${layout.right && !cropping && rightMode === "negative" ? " on" : ""}`}
                 title="film negative" data-tour="negative" disabled={!current} onClick={openNegative}><FilmIcon /></button>
         <button className={`tool${layout.right && !cropping && rightMode === "presets" ? " on" : ""}`} title="presets" data-tour="presets"
@@ -5916,6 +6466,8 @@ export default function App() {
         </div>
         <div className="rail-sep" />
         <button className="tool" title={keys("export (⇧⌘E)")} data-tour="export" onClick={() => setExporting(true)}><ExportIcon /></button>
+        <button className={`tool${layout.right && !cropping && rightMode === "print" ? " on" : ""}`} title={keys("print (⌘P)")}
+                data-tour="print" onClick={() => showRight("print")}><PrintIcon /></button>
         <div className="rail-fill" />
         <button className="tool" title="quick start guide" onClick={() => setTouring(true)}><HelpIcon /></button>
         <button className="tool" title={keys("keyboard shortcuts (⌘/)")} onClick={() => setShortcutsOpen(true)}><KeyboardIcon /></button>
@@ -5969,6 +6521,11 @@ export default function App() {
                            setPrefsOpen(false);
                            runGuiBenchmark().then(({ path }) => setStatus(`benchmark saved: ${path}`))
                              .catch((e) => setStatus(`benchmark: ${e}`));
+                         } : null}
+                         onGpuCheck={current ? () => {
+                           setPrefsOpen(false);
+                           runGpuCheck().then(({ path, passed, total }) => setStatus(`GPU check saved: ${path} (${passed} of ${total} passed)`))
+                             .catch((e) => setStatus(`GPU check: ${e}`));
                          } : null}
                          onTune={current ? () => { setPrefsOpen(false); setTunerOpen(true); } : null}
                          onRelaunch={async () => {
@@ -6036,6 +6593,19 @@ export default function App() {
               setNegWarning(false);
               showRight("negative");
             }}>Continue</button>
+          </div>
+        </div>
+      </div>
+    )}
+    {exclusive && (
+      <div className="modal-backdrop">
+        <div className="modal neg-warn">
+          <div className="modal-head"><h2>{exclusive.title}</h2></div>
+          <div className="modal-body"><p>{exclusive.body}</p></div>
+          <div className="modal-foot">
+            <button className="btn" onClick={() => setExclusive(null)}>Cancel</button>
+            <button className="btn primary" autoFocus onClick={() => { const go = exclusive.go; setExclusive(null); go(); }}>
+              Continue</button>
           </div>
         </div>
       </div>
@@ -6112,7 +6682,10 @@ function Splitter({ axis, value, min, max, invert, hidden, onChange }: {
   );
 }
 
-type RightMode = "adjust" | "presets" | "masks" | "heal" | "zones" | "negative";
+const PRINT_PLACES = ["top left", "at the top", "top right", "on the left", "in the middle", "on the right",
+                      "bottom left", "at the bottom", "bottom right"];
+
+type RightMode = "adjust" | "presets" | "masks" | "heal" | "zones" | "film" | "negative" | "print";
 // the photo area a film border pick reads before one is picked: darktable's
 // default picker box
 const NEG_AREA: [number, number, number, number] = [0.02, 0.02, 0.98, 0.98];
@@ -6128,7 +6701,8 @@ const NEG_PICK_LABELS: Record<NegPick, string> = {
 const LEFT_CARDS = ["metadata", "keywording", "folders", "immich", "history"] as const;
 type LeftCard = typeof LEFT_CARDS[number];
 const RIGHT_TITLES: Record<RightMode, string> = { adjust: "Adjustments", presets: "Presets", masks: "Masks", heal: "Heal",
-                                                  zones: "Zone System", negative: "Negative" };
+                                                  zones: "Zone System", film: "Film Simulation", negative: "Negative",
+                                                  print: "Print" };
 
 // everything back to the image's defaults, as one undo step
 function ResetAll({ disabled, onReset }: { disabled: boolean; onReset: () => void }) {
@@ -6817,9 +7391,14 @@ const FlipIcon = ({ vertical = false }: { vertical?: boolean }) => icon(
 // a strip of film with its sprocket holes
 const FilmIcon = () => icon(<><rect x="4" y="2.5" width="16" height="19" rx="2" /><path d="M8 2.5v19M16 2.5v19" />
   <path d="M4 7h4M4 12h4M4 17h4M16 7h4M16 12h4M16 17h4" /></>);
+// a film canister, its leader drawn out
+const FilmSimIcon = () => icon(<><rect x="3" y="6" width="9" height="13" rx="2" /><path d="M5 6V4h5v2M5 19v2h5v-2" />
+  <path d="M12 9h7.5a1.5 1.5 0 0 1 0 3H17v4h-5" /><path d="M14 9v3M16.5 9v3" /></>);
 const CropIcon = () => icon(<><path d="M6 2v14a2 2 0 0 0 2 2h14" /><path d="M18 22V8a2 2 0 0 0-2-2H2" /></>);
 const ExportIcon = () => icon(<><path d="M12 15V4" /><path d="m7.5 8.5 4.5-4.5 4.5 4.5" />
                                   <path d="M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5" /></>);
+const PrintIcon = () => icon(<><path d="M7 9V4h10v5" /><rect x="3.5" y="9" width="17" height="7.5" rx="2" />
+                                <path d="M7 14h10v6H7z" /></>);
 const FilterIcon = () => icon(<path d="M4 5h16l-6 7.5V19l-4 2v-8.5z" />);
 const PanelIcon = ({ side }: { side: "left" | "bottom" | "right" }) => icon(<>
   <rect x="3.5" y="4.5" width="17" height="15" rx="2.5" />
@@ -7237,10 +7816,14 @@ const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle, values
   const [wheels, setWheels] = useState<WheelMode>("3way");
   const sections = p.tabs ? [p.sections[tab]] : p.sections;
   const showWheels = p.graph === "colorwheels" && wheels !== "sliders";
-  // a converted negative has these modules off (NEG_OFF)
-  const negative = (c: Control) => values.neg_on === 1 && NEG_GREYED.has(c.id);
+  // a converted negative has these modules off (NEG_OFF), a film
+  // simulation its tone mappers (SF_OFF)
+  const negative = (c: Control) => (values.neg_on === 1 && NEG_GREYED.has(c.id))
+    || (values.sf_on === 1 && SF_GREYED.has(c.id));
   const controlProps = (c: Control) => ({
-    control: negative(c) ? { ...c, note: "set in Negative: a converted negative turns this module off" } : c,
+    control: negative(c) ? { ...c, note: values.neg_on === 1
+      ? "set in Negative: a converted negative turns this module off"
+      : "set in Film Simulation: a film simulation turns the tone mapper off" } : c,
     value: values[c.id] ?? c.neutral ?? 0,
     neutral: session?.neutral[c.id] ?? c.neutral ?? 0,
     disabled: disabled || negative(c) || !mapOf.has(c.id) || (!!c.rawOnly && !session?.raw), onChange: (v: number) => onChange(c, v),
@@ -7330,6 +7913,9 @@ const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle, values
                 {detailRows(s.controls.filter((c) => choiceShows(c.id, values)), (c) => {
                   if (c.id.startsWith("ce_")) return c.id === "ce_0_0"
                     ? <ContrastEqualizer key="contrast-equalizer" values={values} disabled={disabled} onChange={onChangeMany} />
+                    : null;
+                  if (c.id.startsWith("sc_") || c.id.startsWith("sb_")) return c.id === "sc_pn"
+                    ? <SaturationCurve key="saturation-curve" values={values} disabled={disabled} onChange={onChangeMany} />
                     : null;
                   const props = controlProps(c);
                   return c.kind === "toggle" ? <Toggle key={c.id} {...props} />
@@ -7591,7 +8177,9 @@ const SliderWidget = memo(function SliderWidget({ control: c, value, neutral, di
              style={track ? { ["--track" as string]: track } : undefined}
              className={track ? "custom-track" : ""}
              min={s ? s.min : c.min} max={s ? s.max : c.max} step={s ? s.step : c.step}
-             value={s ? s.toPos(value) : value}
+             // a mapped track's position on its own step: WebKit's range ignores
+             // End from a position just off one (Temp's 0.99999...)
+             value={s ? Math.round(s.toPos(value) / s.step) * s.step : value}
              onChange={(e) => {
                let n = Number(e.target.value);
                const f = fine.current;

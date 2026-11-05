@@ -38,12 +38,15 @@ Open the **Folders** card in the **Library** panel.
   connected by address; double-click the name or address to give it a
   name of your own, and clear it to go back. Click a heading to fold it. A
   folder on a share that isn't connected stays under its share, dimmed.
+- A folder on a slow share fills in gradually. Opening another folder, or a
+  photo from your own drive, doesn't wait for it: the share's reading stops
+  after the file it is on.
 
 Folders you import into join the list by themselves. The list, the open
 folder and the last photo are remembered when you quit.
 
-![The Folders card with a few folders, one expanded](images/library-folders.png)
-<!-- screenshot: Library panel, Folders card open, Include subfolders off, one folder expanded -->
+![The Folders card with one folder added and Include subfolders off](images/library-folders.png)
+<!-- screenshot: Library panel, Folders card open, Include subfolders off, one folder added -->
 
 ## The filmstrip and the grid
 
@@ -239,7 +242,7 @@ Click **Merge** when you are happy with the projection and crop.
 Immage writes a new DNG beside the first photo, named `<name>-pano.dng`
 (then `<name>-pano_01.dng` and so on), and lists it after that photo. It
 is stitched in the background while you go on editing, and **Open** at
-the bottom left of the photo opens it. Like Lightroom's, the DNG holds
+the bottom left of the photo opens it. The DNG holds
 linear image data with lens corrections already made. An all-RAW selection
 opens with the new-photo defaults, white balance as shot and Lens Corrections
 off. A selection containing non-RAW photos uses a common linear color space
@@ -305,11 +308,14 @@ The context menu can undo the last batch after confirmation.
 
 ### Location
 
-In Metadata’s **Location**, enter latitude and longitude or open the optional
-OpenStreetMap map. Click to drop a pin, or drag it, then **Apply** to save GPS
-coordinates to the XMP sidecar. **Remove location** clears coordinates and
-altitude. The map offers dark and standard styles and needs an internet
-connection, with no API key.
+The Metadata panel's Location section accepts latitude and longitude in decimal
+degrees (latitude first). Use Show map to place or drag a pin, then Apply to
+save it to the photo's XMP sidecar. Remove location clears GPS coordinates and
+altitude in Immage without changing the original photo. An Immage XMP marker
+keeps removed camera GPS from returning on reopen; other photo software may
+still show GPS embedded in the original. Moving a location clears the old altitude. Coordinate editing works
+offline; maps require internet access and no API key. Place-name lookup is not
+included.
 
 ## Keywords
 

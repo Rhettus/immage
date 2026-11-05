@@ -11,10 +11,13 @@ import { dirname, resolve, join, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AppDriver, until } from './support/webdriver.mjs';
 import { resolveCases, suites, cases } from './suites.mjs';
+import { pathFree } from './support/privacy.mjs';
 import { availableMemory } from './support/memory.mjs';
 import { Journal } from './support/journal.mjs';
 import { sampleProcesses } from './support/process-memory.mjs';
 import { implementationFor } from './registry.mjs';
+import { benchmarkFilename, parseViewport } from './support/benchmark.mjs';
+import { Blocked } from './support/scenario.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -25,17 +28,18 @@ const git = (...args) => {
 };
 const args = process.argv.slice(2);
 if (args.includes('--help')) {
-  console.log('node verify/gui/run.mjs --config verify/gui/local.json [--suite smoke|regressions|controls|crop|workflows|inventory|all | --case NAME] [--fixture NAME] [--list]');
+  console.log('node verify/gui/run.mjs --config verify/gui/local.json [--suite smoke|regressions|controls|crop|workflows|inventory|all | --case NAME[,NAME...]] [--fixture NAME] [--viewport WIDTHxHEIGHT] [--list]');
   process.exit(0);
 }
 if (args.includes('--list')) {
   console.log(JSON.stringify({ suites, cases: Object.keys(cases) }, null, 2));
   process.exit(0);
 }
-let configFile = 'verify/gui/local.json', selected = 'smoke', fixtureName = 'configured';
+let configFile = 'verify/gui/local.json', selected = 'smoke', fixtureName = 'configured', expectedViewport = null;
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--config' && args[i + 1]) configFile = args[++i];
   else if (args[i] === '--fixture' && args[i + 1]) fixtureName = args[++i];
+  else if (args[i] === '--viewport' && args[i + 1]) expectedViewport = parseViewport(args[++i]);
   else if (['--suite', '--case'].includes(args[i]) && args[i + 1]) selected = args[++i];
   else throw Error(`Unknown argument: ${args[i]}`);
 }
@@ -49,7 +53,7 @@ const report = { id, runnerPid: process.pid, status: 'blocked', started: new Dat
   host: hostname(), platform: process.platform, arch: process.arch,
   display: { wayland: process.env.WAYLAND_DISPLAY, x11: process.env.DISPLAY, backend: process.env.XDG_SESSION_TYPE },
   coverage: 'Visible Linux app using system WebKit. Only selected cases are exercised; see case limitations and COVERAGE.md. New cases await live validation.',
-  selected, selectedCases,
+  selected, selectedCases, expectedViewport,
   actions: [], cases: [], errors: [] };
 const journal = new Journal(out);
 journal.checkpoint(report);
@@ -147,6 +151,35 @@ try {
       await copyFile(copiedFixture, join(fixtures, name));
     report.batchFixtures = ['batch-target-1.jpg', 'batch-target-2.jpg', 'batch-untouched.jpg'];
   }
+  // the guide's Library grid shot needs a folder of photos: copies of the fixture
+  if (selectedCases.includes('site-shots') && process.env.SITE_SHOTS?.split(',').map(s => s.trim()).includes('library-grid')) {
+    const stem = basename(copiedFixture).replace(/\.[^.]+$/, ''), ext = basename(copiedFixture).slice(stem.length);
+    const m = stem.match(/^(.*?)(\d+)$/);
+    report.gridFixtures = [];
+    for (let i = 1; i <= 5; i++) {
+      const name = m ? `${m[1]}${String(Number(m[2]) + i).padStart(m[2].length, '0')}${ext}` : `${stem}-${i}${ext}`;
+      await copyFile(copiedFixture, join(fixtures, name)); report.gridFixtures.push(name);
+    }
+  }
+  // the film case needs the spektrafilm data pack, and the isolated profile
+  // has none: copy the installed one in, never the user's folder itself
+  if (selectedCases.includes('film')) {
+    const { cp } = await import('node:fs/promises');
+    const src = join(process.env.XDG_DATA_HOME || join(process.env.HOME, '.local/share'), 'darktable', 'spektrafilm');
+    try { await access(join(src, 'packs')); } catch { throw new Blocked('film needs the spektrafilm data pack installed (Film Simulation, Download Film Data)'); }
+    await cp(src, join(profile, 'data', 'darktable', 'spektrafilm'), { recursive: true });
+    report.filmPack = 'copied from the installed data folder';
+  }
+  // the print case proofs against a made-up printer profile, put among the
+  // engine's own (engine/print.c reads config/color/out in its runtime folder)
+  if (selectedCases.includes('print')) {
+    const { mkdir, writeFile } = await import('node:fs/promises');
+    const { narrowPrinterProfile } = await import('./support/icc.mjs');
+    const dir = join(profile, 'data', 'app.immage', 'config', 'color', 'out');
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, 'immage-test-narrow.icc'), narrowPrinterProfile());
+    report.printProfile = 'immage-test-narrow.icc, generated';
+  }
   const port = await freePort(); let nativePort = await freePort(); while (nativePort === port) nativePort = await freePort();
   const env = { ...process.env,
     XDG_DATA_HOME: join(profile, 'data'), XDG_CONFIG_HOME: join(profile, 'config'),
@@ -186,7 +219,41 @@ try {
   await driver.command('POST', '/timeouts', { script: 10000, pageLoad: 15000, implicit: 0 });
   console.log(`Visible app launched; evidence: ${out}`);
   report.status = 'running';
+  const prepareViewport = async () => {
+    if (!expectedViewport || report.viewportPrepared) return;
+    // External authorized preparation may size only this test app. The runner
+    // itself only observes and enforces the requested logical viewport.
+    report.preparingViewport = true; journal.checkpoint(report);
+    try { await until(async () => {
+      await driver.guard();
+      const actual = await driver.observe(() => ({ width: innerWidth, height: innerHeight }));
+      if (JSON.stringify(actual) !== JSON.stringify(report.viewportPreparation)) {
+        report.viewportPreparation = actual; journal.checkpoint(report);
+      }
+      return actual.width === expectedViewport.width && actual.height === expectedViewport.height;
+    }, `prepared viewport ${expectedViewport.width}x${expectedViewport.height}`, 30000); }
+    catch (error) {
+      // Retain app-only evidence if the known main URL/handle still match,
+      // even when the viewer disappears during external sizing preparation.
+      try {
+        const handle = await driver.command('GET', '/window');
+        const observation = await driver.observe(() => ({ url: location.href, title: document.title,
+          width: innerWidth, height: innerHeight, ready: document.readyState,
+          viewer: !!document.querySelector('main.viewer'), text: document.body?.innerText.slice(0, 2000) }));
+        if (handle === driver.mainHandle && observation.url === driver.mainUrl) {
+          report.viewportFailureObservation = observation;
+          if (!await pathFree(driver)) await driver.screenshot(join(out, 'viewport-preparation-failure.png'));
+        }
+      } catch (capture) { report.viewportCaptureError = capture.message; }
+      journal.checkpoint(report);
+      throw error;
+    }
+    report.preparingViewport = false; report.viewportPrepared = true; journal.checkpoint(report);
+  };
   for (const name of selectedCases) {
+    // Finish startup/tour/first photo before external sizing. Early sizing can
+    // otherwise race the splash/main-window transition and initial layout.
+    if (name !== 'startup') await prepareViewport();
     const run = implementationFor(name);
     if (resourceFailure) throw resourceFailure;
     const c = { name, definition: cases[name], status: 'running', measurements: [], started: new Date().toISOString() };
@@ -197,7 +264,20 @@ try {
       sidecars:async()=>Promise.all((await readdir(fixtures)).filter(n=>n.endsWith('.xmp')).map(n=>readFile(join(fixtures,n),'utf8'))),
       sidecarsNamed:async()=>Promise.all((await readdir(fixtures)).filter(n=>n.endsWith('.xmp')).map(async file=>({file,text:await readFile(join(fixtures,file),'utf8')}))),
       fixtureFiles:()=>readdir(fixtures), engineLog:()=>readFile(join(profile,'data','app.immage','engine.log'),'utf8'),
+      benchmarkReport: async filename => {
+        // Read only the known report folder inside this run's isolated profile.
+        // Never follow an arbitrary path supplied by the app's status text.
+        const directory = await realpath(join(profile, 'data', 'app.immage', 'benchmarks'));
+        const source = await realpath(join(directory, benchmarkFilename(filename)));
+        if (dirname(source) !== directory) throw Error('Benchmark report escaped its profile directory');
+        const bytes = await readFile(source);
+        await writeFile(join(caseDir, 'benchmark.json'), bytes);
+        journal.event('benchmark-report', { case: name, file: join(caseDir, 'benchmark.json'), sha256: hash(bytes) });
+        return { file: join(caseDir, 'benchmark.json'), report: JSON.parse(bytes) };
+      },
       measure: m => { c.measurements.push(m); journal.event('measurement', { case: name, ...m }); journal.checkpoint(report); }, evidence: async label => {
+      const withheld = await pathFree(driver);
+      if (withheld) { c.measurements.push({ name: label, screenshot: `withheld: ${withheld}` }); journal.event('screenshot-withheld', { case: name, label }); return; }
       await driver.screenshot(join(caseDir, `${label}.png`));
       const environment=await driver.observe(()=>({userAgent:navigator.userAgent,viewport:[innerWidth,innerHeight],scale:devicePixelRatio,theme:document.documentElement.className,canvasTheme:document.querySelector('main.viewer')?.className,font:getComputedStyle(document.body).fontFamily,fonts:document.fonts.status}));
       await writeFile(join(caseDir,`${label}.png.json`),JSON.stringify({run:id,case:name,environment:{platform:process.platform,arch:process.arch,webview:report.drivers.installedWebKit,...environment}},null,2)+'\n');
@@ -210,6 +290,7 @@ try {
       throw e;
     } finally { c.finished = new Date().toISOString(); journal.event('case-finished', { name, status: c.status }); journal.checkpoint(report); }
   }
+  await prepareViewport(); // Also enforce the requirement for startup-only runs.
   // App and engine output must have landed in this run's XDG profile.
   const engineLog = join(profile, 'data', 'app.immage', 'engine.log');
   await access(engineLog);

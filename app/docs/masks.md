@@ -11,8 +11,8 @@ range, O overlay.
 
 Open it with **Masks** on the rail, or press one of the tool keys.
 
-![The Masks panel with a Sky mask and the red overlay](images/masks-panel.png)
-<!-- screenshot: Masks mode, a landscape with a Sky mask selected, overlay on, local sliders visible -->
+![A linear gradient mask from the top of the photo with its overlay on, and the Masks panel with the mask's Exposure at -0.70](images/masks-panel.png)
+<!-- screenshot: Masks mode, a mask selected, overlay on, local sliders visible -->
 
 ## Creating a mask
 
@@ -111,7 +111,8 @@ The selected mask's sliders sit below its settings, in six groups:
 - **Tone**: **Exposure** (±4), **Contrast**, **Highlights**, **Shadows**,
   **Whites**, **Blacks**
 - **Presence**: **Texture**, **Clarity**, **Dehaze**, **Hue**,
-  **Saturation**
+  **Saturation**; with **Detail loupe** on in Preferences, the 100% loupe
+  sits at the top, sharing the main panel's area and point picker
 - **HSL**: **Hue**, **Saturation** and **Luminance** tabs, each with the
   eight color bands
 - **Color Grading**: **3-Way**, **Global** or **Sliders**, for shadows,
@@ -123,8 +124,8 @@ inside the mask. A new mask opens its **Tone** group.
 
 Choose mask modules independently of global adjustments under
 [Preferences › Modules › Masks](preferences.md#modules). Alternatives are
-available for Contrast, Highlights and Shadows, Clarity, Texture, Sharpening,
-and Defringe. Used mask adjustments keep their modules when preferences change;
+available for Contrast, Highlights and Shadows, Clarity, Texture and
+Sharpening. A mask's Defringe always uses chromatic aberrations. Used mask adjustments keep their modules when preferences change;
 new masks and unused tools take the current mask choices.
 **Whites** is the exception: the photo's Whites moves the top of the tone
 mapper's curve, which can't run inside a mask, so a mask's Whites only
@@ -149,7 +150,8 @@ Where masks overlap, their adjustments add up. **Contrast**,
 | O | Show or hide the overlay |
 | Esc | Put the tool down |
 
-Clarity and Texture also offer **contrast & texture**, chosen independently in
+Clarity and Texture use **contrast & texture** by default, or local contrast
+and diffuse or sharpen, chosen independently in
 [Preferences › Modules](preferences.md#modules). Medium and Fine details stay
 visible; **Advanced** reveals the remaining native controls. Contrast equalizer
 can also replace mask Contrast: select **Custom**, then **Masks › Contrast ›
@@ -157,7 +159,11 @@ contrast equalizer**. The mask's Tone group shows the same five-channel,
 six-band graph described in [Adjustments](adjustments.md#contrast-equalizer),
 applied only inside that mask. Global Contrast can still use AgX. Masked
 equalizer instances run separately; the slider-based overlap limits described
-above apply to color balance rgb Contrast.
+above apply to color balance rgb Contrast. Likewise **Masks › Saturation ›
+saturation curve** replaces the mask's Saturation slider, in its Presence
+group, with the [saturation curve](adjustments.md#saturation-curve), on an
+instance of its own per mask. A mask in black and white hides it, as it hides
+Saturation.
 
 Object selections use the same model folder as the other AI tools. A model
 downloaded during the current session is available immediately; restarting the

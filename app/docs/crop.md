@@ -9,8 +9,8 @@ straighten line.
 Open it with **Crop** on the rail, or R. While cropping, the whole photo
 shows, with the crop on top.
 
-![The crop tool with a 4 x 5 crop and the aspect menu open](images/crop.png)
-<!-- screenshot: Crop tool on a landscape photo, 4 x 5 aspect, aspect menu open -->
+![The crop tool with its rule-of-thirds guides, and the Crop panel with Aspect, Rotate and Rotate & Flip](images/crop.png)
+<!-- screenshot: Crop tool on a landscape photo, guides showing, the Crop panel with Done -->
 
 ## Cropping
 
@@ -32,6 +32,13 @@ and aspect ratio.
 - Click the straighten button (the ruler), then drag along something that
   should be level or upright.
 - Or hold ⇧ and drag anywhere on the photo.
+- Or click **Auto**, beside the Rotate slider, to level the photo from its
+  own straight lines. It sets Rotate only, using Transform's Upright
+  **Level** fit, and is unavailable while Upright is on, since Upright
+  already sets the angle. A photo without enough straight lines shows a
+  note instead. Auto weighs every straight line it finds, so on a landscape
+  where slopes and ridges outnumber the horizon it can miss; draw a
+  straighten line along the horizon instead.
 - Or use the **Rotate** slider, which is the same as Transform's.
 
 ## Rotating and flipping
@@ -50,5 +57,11 @@ The crop turns with the photo.
 - **Done**, R or Enter applies the crop.
 - **Cancel** or Esc leaves without applying it.
 - **Reset** takes the crop and angle back to the whole photo.
+
+⌘Z and ⇧⌘Z work inside the crop tool. They undo and redo the angle, the
+turns and flips, and edits made before the tool was opened; the crop
+rectangle turns back with an undone turn. Changes to the rectangle become
+a single step when you press Done. Undoing a settings paste onto several photos waits until you
+leave the crop tool.
 
 A photo that has never been cropped starts with the **Original** aspect.

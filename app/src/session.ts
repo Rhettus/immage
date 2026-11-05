@@ -6,7 +6,7 @@
 // only mark their module dirty, and the next round sends the latest values once
 
 import { boundFields, choiceCovers, choiceOn, controlById, isModuleSetting, localControlById, localFields, localMaps, mapOf, mapsFor,
-         mapsWith, MASK_MODULE_CHOICES, MODULE_CHOICES, modules, NEG_CHOICES, NEG_OFF, turnOrientation, turnRect, type ImageContext,
+         mapsWith, MASK_MODULE_CHOICES, MODULE_CHOICES, modules, CONVERSIONS, conversionsOn, forcedChoice, turnOrientation, turnRect, type ImageContext,
          type ModuleMap, type Params, type Turn, type Values } from "./manifest";
 import { loadModuleChoice } from "./moduleChoice";
 import { isRefined, neutralLocal, type Mask, type Refine, type Shape } from "./masks";
@@ -92,6 +92,12 @@ const BASE_SKIP: Record<Preview, string[]> = {
 // the modules besides flip that move pixels: an edit to one moves the
 // shown frame that masks and spots are kept in (flip is turn()'s)
 const FRAMING = new Set(["crop", "ashift", "lens"]);
+// mask tools whose color balance rgb option is the slider in the mask's
+// shared instance, with no choice map of its own (manifest.ts,
+// MASK_MODULE_CHOICES): the slider says whether the tool is used, and a mask
+// with neither module's instance was made before the choice, on color
+// balance rgb (1)
+const MASK_SHARED_SLIDER: Record<string, string> = { contrast: "l_contrast", saturation: "l_saturation" };
 
 export type Frame = {
   width: number;
@@ -262,12 +268,14 @@ export class Session {
       orientation: flip?.enabled && flip.params.orientation >= 0 ? flip.params.orientation : opened.orientation,
       camera: opened.orientation,
     };
-    // a negative keeps NEG_OFF's modules off with their settings, for when
-    // it is turned back: their sliders are read as if they were on
-    if (s.info.negadoctor?.enabled) {
+    // a conversion (a negative, a film simulation) keeps its modules off
+    // with their settings, for when it is turned back: their sliders are
+    // read as if they were on
+    for (const conv of CONVERSIONS) {
+      if (!s.info[conv.op]?.enabled) continue;
       // the first instance's entry carries darktable's preset label, if any
       const used = new Set(s.history.flatMap((h) => [mapOpOf(h), h.op]));
-      for (const op of NEG_OFF) if (s.info[op] && used.has(op)) s.info[op] = { ...s.info[op], enabled: true };
+      for (const op of conv.off) if (s.info[op] && used.has(op)) s.info[op] = { ...s.info[op], enabled: true };
     }
     for (const m of modules) {
       const info = s.info[m.op];
@@ -322,9 +330,8 @@ export class Session {
           const r = reads(m);
           return r && covers.some((id) => id in r && Math.abs(r[id] - (this.neutral[id] ?? 0)) > 1e-6);
         }));
-      // a negative's tools run after negadoctor, whatever its modules hold
-      const value = this.values.neg_on === 1 && c.control in NEG_CHOICES ? NEG_CHOICES[c.control]
-        : this.wasEdited && used ? used.value : pick;
+      // a conversion's tools run on modules it keeps, whatever the photo holds
+      const value = forcedChoice(this.values, c.control) ?? (this.wasEdited && used ? used.value : pick);
       this.values[c.control] = value;
       // only the chosen module's maps say what the shared sliders hold
       for (const id of covers) if (id in this.neutral) this.values[id] = this.neutral[id];
@@ -333,6 +340,11 @@ export class Session {
         for (const id of covers) if (r && id in r) this.values[id] = this.snap(id, r[id], this.neutral[id]);
       }
     }
+  }
+
+  // the modules Preferences picks for each tool, which Reset returns a photo to
+  preferredModules(): [string, number][] {
+    return MODULE_CHOICES.map((c) => [c.control, this.neutral[c.control] = loadModuleChoice(c.id)]);
   }
 
   // Refresh unused tools without replacing any current global or masked edits.
@@ -345,14 +357,14 @@ export class Session {
         || controls.some((id) => Math.abs((this.values[id] ?? 0) - (this.neutral[id] ?? 0)) > 1e-6);
       const pick = loadModuleChoice(c.id);
       this.neutral[c.control] = pick;
-      if (!used && !(this.values.neg_on === 1 && c.control in NEG_CHOICES)) this.set(c.control, pick);
+      if (!used && forcedChoice(this.values, c.control) === undefined) this.set(c.control, pick);
     }
     this.masks = this.masks.map((mask) => {
       const values = { ...mask.values };
       for (const c of MASK_MODULE_CHOICES) {
         const maps = localMaps.filter((m) => m.choice?.control === c.control);
-        const ids = c.id === "contrast" ? ["l_contrast", ...maps.flatMap((m) => m.controls)]
-          : maps.flatMap((m) => m.controls);
+        const shared = MASK_SHARED_SLIDER[c.id];
+        const ids = shared ? [shared, ...maps.flatMap((m) => m.controls)] : maps.flatMap((m) => m.controls);
         const used = ids.some((id) =>
           Math.abs((values[id] ?? 0) - (localControlById.get(id)?.neutral ?? 0)) > 1e-6);
         if (!used) values[c.control] = loadModuleChoice(c.id, "masks");
@@ -378,7 +390,7 @@ export class Session {
     this.onDetailControl?.(this.activeDetailControl);
     this.values[id] = v;
     if (id === "orient") this.orient(v);
-    if (id === "neg_on") this.negChanged();
+    this.conversionChanged(id);
     for (const m of mapsWith(id)) {
       this.foreign.delete(m);
       this.dirty.add(m.op);
@@ -390,11 +402,12 @@ export class Session {
   private editFrame: number | null = null;
   private coalesceWait?: number;
   private submitEdits(coalesce: boolean) {
-    if (!coalesce) { this.flushEdits(); return; }
+    // An in-flight job already batches input until it completes. Leave no
+    // animation callback blocking its next round once the engine is free.
+    // flushEdits also lets the busy pump cancel an obsolete base immediately.
+    if (!coalesce || this.busy) { this.flushEdits(); return; }
     if (this.editFrame === null) this.coalesceWait = perf.begin("coalesce", { blockingPump:true });
     this.editFrame ??= window.requestAnimationFrame(() => this.flushEdits());
-    // let the pump cancel an obsolete base render immediately
-    if (this.busy) void this.pump();
   }
   flushEdits() {
     perf.finish(this.coalesceWait); this.coalesceWait = undefined;
@@ -403,11 +416,19 @@ export class Session {
     void this.pump();
   }
 
-  // a negative converted or turned back: the modules it turns off are sent
-  // again, switched off or back as their sliders have them. one darktable
-  // set beyond its sliders is switched by the panel (setModuleState)
-  private negChanged() {
-    for (const op of NEG_OFF) if (mapsFor(op).some((m) => !this.foreign.has(m))) this.dirty.add(op);
+  // a conversion (a negative, a film simulation) turned on or back: the
+  // modules it turns off are sent again, switched off or back as their
+  // sliders have them. one darktable set beyond its sliders is switched by
+  // the panel (setModuleState)
+  private conversionChanged(id: string) {
+    const conv = CONVERSIONS.find((c) => c.flag === id);
+    if (!conv) return;
+    // converting leaves a module that is already off alone: an entry
+    // switching it off would read, opened again, as one the conversion holds
+    // and turned back would switch it on (open)
+    const converting = this.values[id] === 1;
+    for (const op of conv.off)
+      if (mapsFor(op).some((m) => !this.foreign.has(m)) && (!converting || this.info[op]?.enabled)) this.dirty.add(op);
   }
 
   // the image's frame turned: modules after flip write their values for it
@@ -471,7 +492,7 @@ export class Session {
   // nothing queued or rendering: the engine is free for other work
   get idle() {
     return !this.busy && !this.dirty.size && !this.needRender && !this.needThumb && !this.needCopy && !this.needWarm
-      && this.wantLook === undefined && !this.masksPending && this.wantLookAmount === undefined
+      && !this.fitView && this.wantLook === undefined && !this.masksPending && this.wantLookAmount === undefined
       && !this.spotsPending && !this.reshapeDue && !this.baselineEnd && !this.baseInFlight
       && !this.modulePending.length && !this.resetModulesPending;
   }
@@ -484,6 +505,14 @@ export class Session {
 
   private get spotsPending() {
     return this.spotsDirty || this.spotsOn !== !this.before;
+  }
+
+  // the engine's view changed with no edit (the soft proof): the frames
+  // shown so far are of the view before
+  redraw() {
+    this.changed();
+    this.needRender = true;
+    void this.pump();
   }
 
   setSpots(spots: Spot[]) {
@@ -516,7 +545,7 @@ export class Session {
           && r.instances[m.op] && (!enabled || r.instances[m.op].enabled));
         const used = c.options.find((o) => hasOption(o.value, true))
           ?? c.options.find((o) => hasOption(o.value, false));
-        values[c.control] = used?.value ?? (c.id === "contrast" ? 1 : loadModuleChoice(c.id, "masks"));
+        values[c.control] = used?.value ?? (MASK_SHARED_SLIDER[c.id] ? 1 : loadModuleChoice(c.id, "masks"));
       }
       // an instance that is off holds neutral values, unless its mask is
       // hidden or shares instances: then all are off and some still hold
@@ -525,7 +554,7 @@ export class Session {
         const inst = r.instances[m.op];
         if (inst) Object.assign(values, m.read(inst.params, {}, this.ctx));
       }
-      for (const [id, v] of Object.entries(values)) values[id] = id.startsWith("l_detail_") || id.startsWith("ce_") ? v : Math.round(v * 100) / 100;
+      for (const [id, v] of Object.entries(values)) values[id] = /^(l_detail_|ce_|sc_|sb_)/.test(id) ? v : Math.round(v * 100) / 100;
       const insts = Object.values(r.instances);
       const hidden = insts.length > 0 && insts.every((i) => !i.enabled) && !r.merged_in?.length
         && Object.entries(values).some(([id, v]) => id in neutral && v !== neutral[id]);
@@ -561,7 +590,7 @@ export class Session {
     this.activeDetailControl = this.size().draft && isDetailControl(id) ? id : null;
     this.onDetailControl?.(this.activeDetailControl);
     const ops = localMaps.filter((m) => m.controls.includes(id) || m.choice?.control === id
-      || (id === "mod_contrast" && m.op === "colorbalancergb")).map((m) => m.op);
+      || ((id === "mod_contrast" || id === "mod_saturation") && m.op === "colorbalancergb")).map((m) => m.op);
     if (!ops.length) return;
     this.masks = this.masks.map((m) => (m.name === name ? { ...m, values: { ...m.values, [id]: v } } : m));
     this.markLocal(name, ops);
@@ -841,7 +870,7 @@ export class Session {
       if (!mapOf.has(id)) continue;
       this.values[id] = v;
       if (id === "orient") this.orient(v);
-      if (id === "neg_on") this.negChanged();
+      this.conversionChanged(id);
       for (const m of mapsWith(id)) {
         this.foreign.delete(m);
         this.dirty.add(m.op);
@@ -925,7 +954,7 @@ export class Session {
       on ||= chosen && (m.enabled ? m.enabled(values)
                                      : m.controls.some((id) => values[id] !== this.neutral[id]));
     }
-    const enabled = this.bypassed.has(op) || (values.neg_on === 1 && NEG_OFF.has(op)) ? false
+    const enabled = this.bypassed.has(op) || conversionsOn(values).some((c) => c.off.has(op)) ? false
       : keepOn ? info.enabled || on : on;
     // "op#name" is the instance of op so named, made on first use
     const [real, instance] = op.split("#");
@@ -1151,6 +1180,16 @@ export class Session {
     void this.pump();
   }
 
+  // zoomed in, the fitted view, rendered on the base pipe once the viewer is
+  // idle and kept as the frame that view shows: zooming back out is then
+  // instant. the main pipe keeps its cache of the window shown
+  private fitView: View | null = null;
+  requestFit(view: View) {
+    if (this.before || this.current.has(this.frameKey(view, false))) return;
+    this.fitView = view;
+    void this.pump();
+  }
+
   // the window the engine would render (_render in engine/main.c), cut
   // from the copy
   private cut(c: Frame, view: View, cycle?: Parameters<typeof perf.cached>[2]): Frame {
@@ -1231,7 +1270,7 @@ export class Session {
     let job = begin();
     try {
       while (this.dirty.size || this.needRender || this.needThumb || this.needCopy || this.needWarm || this.needLoupe
-             || this.wantLook !== undefined
+             || this.fitView || this.wantLook !== undefined
              || this.masksPending || this.wantLookAmount !== undefined || this.spotsPending
              || this.reshapeDue || this.baselineEnd || this.modulePending.length || this.resetModulesPending) {
         if (this.editFrame !== null) break;
@@ -1385,6 +1424,17 @@ export class Session {
           await this.idleRender(this.thumbSize(), false, (thumb) => this.onThumb?.(thumb));
           continue;
         }
+        if (!this.dirty.size && !this.needRender && this.fitView) {
+          const view = this.fitView, key = this.frameKey(view, false);
+          this.fitView = null;
+          if (this.before || this.current.has(key)) continue;
+          end(job);
+          await this.idleRender(view, true, (f) => {
+            if (!this.before && !this.current.has(key)) this.keepFrame(key, f);
+          }, this.heldFor(key));
+          job = begin();
+          continue;
+        }
         if (!this.dirty.size && !this.needRender && this.needCopy) {
           this.needCopy = false;
           const scale = this.copyScale!;
@@ -1449,6 +1499,12 @@ export class Session {
           if (stale) {
             perf.count("nativeFramesDiscarded");
             perf.event("frame.discarded", { ...f.trace?.diagnostic, viewportChanged: requestedKey !== this.frameKey(now, !!this.before), draftChanged: !!requestedView.draft !== !!now.draft, reshape: this.reshapeDue });
+            // the photo still waits for this edit: render it again for the
+            // view as it is now. a click on a slider's track let go while
+            // its draft rendered, and the draft, no longer wanted once the
+            // drag was over, was dropped with nothing asking for the final
+            // frame, so the photo kept its old look until the next input
+            this.needRender = true;
           }
           if (!stale) this.onFrame({ ...f, before });
         }

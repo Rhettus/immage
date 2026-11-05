@@ -10,8 +10,8 @@ settings and paste settings from the previous photo, with the usual keys.
 ## Undo and redo
 
 ⌘Z undoes the last edit; ⇧⌘Z redoes it. The undo and redo buttons in the
-toolbar under the filmstrip do the same. A continuous slider drag counts as
-one step.
+toolbar under the filmstrip do the same, including inside the crop tool. A
+continuous slider drag counts as one step.
 
 ## The History card
 
@@ -49,14 +49,17 @@ dropped, and the steps before cannot be undone any more. Immage saves the
 history compressed in any case, so the photo's sidecar stays small whether
 you press it or not.
 
-![The History card with a few steps](images/history.png)
+![The History card: four slider moves above the steps the photo opened with](images/history.png)
 <!-- screenshot: Library panel, History card open, several steps above the opening stack -->
 
 ## Reset all
 
 **Reset all**, in the Adjustments panel's head, takes the photo back to its
-starting point: sliders, crop, look, masks and spots. It is one step, so
-⌘Z brings everything back.
+defaults: sliders, crop, look, masks and spots. It also takes off what the
+New Photos preset gave it (a raw's lens corrections, with the Default
+preset), and turns Capture Sharpening off. Each tool goes back to the
+module **Preferences › Modules** picks, even one the photo used a
+different module for. It is one step, so ⌘Z brings everything back.
 
 ## Copying settings to other photos
 

@@ -1,5 +1,25 @@
 # GUI performance tracing
 
+Slider input batches on `requestAnimationFrame` while Session is idle. While
+the pump is busy, the active job itself coalesces incoming edits: `submitEdits`
+flushes any pending animation callback so the next round can send the latest
+values immediately after completion. This does not start concurrent renders or
+cancel ordinary edit renders. Base cancellation still reaches the busy pump.
+`verify/detail-preview.test.mjs` holds a render open, sends multiple inputs,
+and verifies serialized latest-value delivery without advancing the animation
+clock. Native latency improvement requires a matched benchmark; no gain is
+inferred from the deterministic scheduling check.
+
+The resource collector uses the same `sysinfo` refresh policy on Windows,
+macOS and Linux: CPU/memory for known descendants every 500 ms; parent/name
+discovery without unrelated-process CPU/RSS every two seconds. Selected exits
+are removed on each tick. Reports expose `processDiscoveryIntervalMs` and
+per-sample `processDiscovery`; processes that live entirely between discovery
+ticks can be missed. macOS launchd-parented webview helpers remain unassigned.
+`cargo test resources::tests` checks live CPU/memory plus child discovery and
+exit removal using a bounded headless Rust subprocess. It does not launch Tauri.
+Lower sampler overhead is distinct from an improvement to photo processing.
+
 The existing [slider sequence](diagrams/slider-sequence.svg) describes the
 three-process rendering flow. This diagram shows the diagnostic points:
 
@@ -151,6 +171,89 @@ operations, not CPU-execution tracks.
 
 ## Measurement boundaries
 
+### Wayland fractional-scale investigation
+
+Compare the same build, copied photo, edits and logical viewer dimensions at
+100% and one fractional output scale (125% or 150%). Record the compositor
+scale separately from `viewport.dpr`: GTK3 can report DPR 2 at both fractional
+scales. Keep preview mode, Balanced preview size, transport, memory limits,
+renderer and all other settings fixed. Do not change compositor settings from
+the app-only GUI runner; prepare each display configuration separately.
+
+Use this sequence, with fresh approval for each automated GUI run where local
+instructions require it:
+
+1. At 100%, run startup/Exposure to establish the production binary, isolated
+   fixture and driver work. Retain app geometry, image dimensions and evidence.
+2. Collect a GUI benchmark through Preferences with the same fixture and window
+   size. Keep the app visible and reject a run with changed viewport or scale.
+3. At fractional scale, repeat with **Drag drafts at the screen's scale** on,
+   then off. This isolates the existing draft optimization from integer-sized
+   settled rendering. The option is available only when the detected screen
+   scale is smaller than the webview DPR.
+4. Repeat measurements in alternating order to distinguish cache warmup and
+   run-to-run variation. Record cold startup separately from warmed edits.
+
+The app-only runner's `gui-benchmark`, `gui-benchmark-screen` and
+`gui-benchmark-whole` cases collect one report per launch through the real
+Preferences button using Tab/Enter. Fractional cases select the existing draft checkbox with Space;
+integer-scale runs use `gui-benchmark`. Each fresh profile starts from defaults.
+Use `--viewport WIDTHxHEIGHT` to enforce the comparison's logical inner window
+size after startup and before benchmarking. External authorized setup must size
+only the dedicated app; the runner observes geometry without compositor calls.
+Waiting until the first photo and tour complete avoids resizing during startup.
+Preparation failures retain app DOM/geometry and a screenshot when the bound
+main URL/handle still match, even if the viewer element disappears.
+`run.mjs` copies reports from the run's fixed profile directory, never an
+arbitrary status-text path, to the case's `benchmark.json`. The validator rejects
+missing phases, invalid dimensions/timings, backgrounding, changed endpoint
+viewport/DPR and mismatched draft configuration. It checks endpoint geometry,
+not continuous resize history. See the [runner guide](../../../verify/gui/README.md#scaling-benchmark-collection)
+and `node verify/gui/benchmark.test.mjs`. The generic keyboard case has a
+Linux ARM64 VM passes at DPR 1 and 2; the screen-scale variant also passed at
+125%/DPR 2, with screen-scale drafts both enabled and disabled.
+Keep output mode, refresh rate and floating/tiled window mode fixed within an
+A/B pair; matching logical viewport alone does not control those variables.
+The benchmark itself scripts edits inside the app; collecting it
+through WebDriver does not turn its samples into pointer-input measurements.
+
+Analyze reports with `benchmarking/diagnose.py`. Compare first-frame, sustained
+drag and release separately, grouped by actual frame dimensions and source.
+Use native render/module costs to identify engine work; inspect transport,
+draw, animation-callback delay, frontend work and resource samples separately.
+The next animation callback does not measure compositor presentation. Similar
+engine costs with slower callbacks suggest a different investigation, not proof
+of a compositor bottleneck. Keep the performance tuner out of these comparisons
+because it changes the configuration being measured.
+
+At 125%, DPR 2 has `(2 / 1.25)^2 = 2.56` times the screen's pixel area;
+at 150% the ratio is about 1.78. These are pixel-count ratios, not predicted
+speedups. `pixelRatio.ts` currently reduces drag drafts only. Settled previews,
+zoom geometry and GTK/WebKit surfaces still follow integer DPR. Its existing
+comment records jagged settled frames when WebKit enlarged a smaller image
+before compositor downsampling; treat sharpness as an acceptance requirement.
+
+The initial 125% VM pair verified smaller ordinary draft dimensions when the
+setting is enabled; detail controls can still use full preview resolution.
+Native pipeline costs fell for ordinary drafts, while a large invoke/transport
+residual remained in both configurations. That residual includes unmeasured
+native work, shared-memory preparation/readout and scheduling/delivery; it is
+not a measurement of copy time alone or proof of a compositor bottleneck.
+Reports used shared transport with no fallback retries. Investigate this
+boundary before accepting a settled-resolution change on performance grounds.
+One run per setting, different adaptive geometries, queue histories and memory
+pressure limit the conclusions. Inspect first/sustained/release groups rather
+than comparing only the whole-run duration or mixed-size medians.
+
+Only prototype smaller settled previews after establishing the baseline. Check
+fit view, 100% zoom, fine detail, masks/crop overlays, alignment, resize and
+moving between outputs before accepting a change. Engine sizing cannot remove
+GTK3's integer surface allocation. A software-rendered VM can establish its own
+scaling costs, but cannot establish NVIDIA or packaged-WebKit performance.
+Treat timings in a VM as approximate comparisons on that VM. Repeat runs and
+retain host-load variability; do not extrapolate absolute throughput to native
+hardware or attribute every delay to display scale.
+
 The native trace covers every acquisition of the app's main engine mutex,
 including auxiliary commands. Tagged thumbnails, imports, exports and AI jobs use
 separate engine threads outside that mutex. Their hardware contention cannot be
@@ -160,3 +263,351 @@ The legacy `paint` field measures the next animation callback, not actual screen
 presentation or input-to-photon latency. Those need platform profiling or external
 measurement. CPU/GPU saturation and memory-bandwidth contention also need platform
 profiling; recorded waiting and module wall times establish where to investigate.
+
+### Native transport diagnostic build
+
+`transport.reply` events join to a render by `data.requestId`. They record the
+frontend invoke duration, returned byte count and native header durations:
+`lockMs`, `requestMs`, `pipelineMs`, `engineWriteMs`, `rustReadMs`, `probeMs`,
+`setMs` and `sharedWriteMs`. Pipeline/write are nested inside request; do not
+add them to request again. The reserved float32 at header byte 60 carries the
+successful Linux shared-file write duration in the reply only. It is zero for
+other paths. The shared file keeps its earlier header; read this timing from
+the reply event, not the reconstructed frame. Header size remains 64 bytes.
+`transport.shared-read` measures the synchronous Linux web-extension call,
+including file read, extraction and deletion, with bytes and shared ID. It is
+separate from invoke duration. Retry replies produce separate reply events.
+Existing draw spans include canvas upload/draw; these events do not isolate
+GPU execution or compositor presentation. Native render spans additionally carry
+`outputMs` with `allocate`, `convert`, `file` and `free` durations, joined by
+`requestId`. Conversion includes OpenMP scheduling and first-touch page faults;
+allocation measures only the allocation call. File time includes open, buffered
+write and close, without an explicit durability sync. These four stages nest
+inside `engineWriteMs`; do not add them again. Reused frames have no output
+breakdown (`outputMs: null`). No settled or draft dimensions change.
+
+### Engine intermediate frame storage
+
+`frame_output.rs` owns transient output separately from persistent runtime data.
+Linux uses a unique mode-0700 `/dev/shm/immage-engine-XXXXXX` directory, falling
+back to runtime files only if startup directory creation fails. The app holds an
+`flock` on `owner.lock` inside it while it runs. Drop removes the directory, but a
+killed or crashed app (the GUI checks stop it with SIGTERM) runs no Drop, so at
+startup `sweep` removes this user's `immage-engine-*` directories whose lock is
+free (or, from earlier versions, missing) and that are over a minute old. Left
+behind, they count against the user's `/dev/shm` quota until reboot. The engine
+reserves each mapped output's pages with `posix_fallocate` (`rgba_output_size` in
+`engine/rgba_output.h`): a sparse tmpfs page is allocated on its first write, and
+over the size limit or quota that write raises SIGBUS, which killed the engine
+and other applications; reserved, a full `/dev/shm` fails the request instead.
+`verify/transient-output.c` checks the reservation. Windows uses pagefile-backed named
+mappings; macOS uses mode-0600 POSIX shared-memory objects. Object names contain
+96 bits derived from a random per-instance UUID and the output name; Darwin
+names fit its length limit. The app creates/owns/unlinks POSIX names. Capacity
+failures surface as request errors, without silently retrying on disk. All three
+mechanisms can page out under memory pressure.
+
+Both fresh render frames and previews use this storage. Resolution, BGRA-to-RGBA
+conversion and the later Rust-to-WebView transport remain unchanged; the shared
+frames preference controls only that later transport. JSON replies publish write
+completion. Keep the engine mutex through the complete read, including previews.
+`transient_output.h` writes an eight-byte little-endian payload length before
+Windows/macOS mapping data; regular file output stays headerless. Rust checks
+mapping lengths before copying directly into the response buffer.
+
+On Windows the engine retains the mapping and a manual-reset consumption event.
+Rust signals that event after closing its view/handle, including read errors.
+The next output write reaps acknowledged handles; live names cannot be overwritten.
+This avoids waiting inside the engine for the consumer and allows concurrent
+thumbnail workers. Process exit closes remaining Windows handles. The AppState
+owner is dropped after Engine and is reference-counted for background work.
+POSIX objects/private directories are removed at normal owner drop; abrupt
+termination may leave POSIX names or Linux files until reboot/manual cleanup.
+Persistent configuration and caches stay in the runtime/cache directories.
+
+Non-GUI storage tests cover permissions, instance isolation, byte roundtrips,
+growing/shrinking and malformed mappings, ownership and cleanup. The standalone
+`verify/transient-output.c` checks the C POSIX writer and regular-file fallback:
+
+```sh
+cc verify/transient-output.c -o /tmp/immage-transient-test $(pkg-config --cflags --libs glib-2.0)
+/tmp/immage-transient-test
+cargo test --manifest-path app/src-tauri/Cargo.toml --offline --bin immage --no-default-features frame_output::tests
+```
+
+Windows/macOS native validation remains necessary. For file-transport changes,
+use one native 125% run by default; add 100% for scaling changes or unresolved
+findings. Compare `outputMs.file` and total latency without adding nested timings.
+The legacy metric name now measures output transport, including mapping setup
+and copy. No speedup is assumed from VM runs.
+
+### Overlay intermediate storage
+
+`range_map`, `zones` and `mask_map` share `range.bin` within `FrameOutput`.
+All three writers use `transient_write`; regular-file fallback writes in place
+without atomic rename or fsync. Their existing engine locks remain held until
+Rust has read the bytes. Response dimensions, masks and statistics are unchanged.
+The C writer test exercises exact byte transfer, truncation and failure handling.
+
+### Thumbnail intermediate storage
+
+Each tagged `thumb` request uses `FrameOutput::path("thumb-{tag}.rgba")`, preserving
+concurrent worker isolation. The blocking task retains an `Arc<FrameOutput>`
+until its request/read and removal finish, including error paths and detached
+task completion. The engine uses `transient_write`; Rust still sets alpha to 255.
+Persistent JPEG encoding and cache writes stay after the reply. Owner lifetime
+and byte preservation are covered by the storage tests.
+
+### Denoise intermediate storage
+
+`ai_denoise_preview` uses the owned `denoise-preview.f32` destination. The engine
+passes the before/after float RGB arrays as two spans to `transient_write`,
+without assembling another combined buffer. Rust appends the payload directly
+behind the unchanged dimensions/crop metadata header while holding the engine
+lock. The C test verifies two-span concatenation and resize handling; no float
+conversion, denoise strength, crop geometry or saved DNG behavior changes.
+
+### Export dialog preview storage
+
+`export_preview` supplies `transient: true` to the ordinary export renderer and
+uses an owned `export-preview.jpg` destination. Rust keeps the engine lock until
+it has read and removed the output, including request/read failures. On Windows
+and macOS that destination is a mapping; Linux uses its private tmpfs directory.
+The transient mode is restricted to sRGB JPEG quality 85 without AI upscaling or
+negative conversion. `preview_jpeg.h` replaces only the format's write callback:
+the export pipe still applies the edits, draft downscaling and frame sizing.
+libjpeg encodes to memory with the JPEG plugin's quality-85 optimizer, chroma
+subsampling and density settings. Preview-only EXIF/XMP/ICC container metadata
+is omitted; the pixels are already sRGB. Actual export format callbacks and
+metadata filtering remain unchanged. This avoids EXIF reads, XMP attachment and
+post-encode metadata stripping for a container that is displayed then discarded.
+
+Run `python3 verify/check-transient-output.py` after configuring the Linux engine
+build. It syntax-checks the engine and runs byte-transfer and JPEG callback tests
+without starting the application. JPEG checks decode all five subsampling modes,
+verify dimensions/density/pixel error, and exercise output failure and invalid
+sizes. Native export-dialog appearance and latency still need validation.
+
+### Cache access bookkeeping
+
+`cache.rs::touch` skips the write-open and `set_modified` when the existing
+mtime is less than 60 seconds old. Stale or future timestamps are refreshed;
+missing/failed metadata retains the previous best-effort update behavior.
+Original directories create their `.used` marker once, then use the same throttle.
+There is no growing in-memory path table or background flush queue. Eviction
+still sorts persistent mtimes and protects edited originals, with recency rounded
+to roughly one minute. Cache contents, budgets and intentional writes are unchanged.
+
+`cargo test --manifest-path app/src-tauri/Cargo.toml --offline --bin immage --no-default-features cache::tests`
+covers repeated-hit/marker timestamp stability, stale refresh, eviction ordering,
+known thumbnails, cache path validation and edited-original retention. The policy
+reduces timestamp writes; metadata reads still occur and native browsing impact
+has not yet been measured.
+
+### Reusable engine render buffers
+
+`rgba_output.h` keeps two output mappings for the serialized `_write_rgba`
+render/preview callers. It reuses each mapping up to its largest successful
+frame size; growth closes the old mapping before replacement. The total retained
+capacity is bounded by those two frame high-water marks, not by render count.
+BGRA-to-RGBA conversion writes directly into the mapped payload. There is no
+per-frame intermediate RGBA allocation, `fwrite` or copy into the mapping.
+Regular-file Windows CLI output retains the existing allocation/write path.
+
+POSIX output descriptors and mappings stay open. Linux files stay headerless;
+`ftruncate` updates their visible length when payload size changes. macOS objects
+retain capacity and publish the current payload length in their eight-byte header.
+Darwin permits only one sizing operation per object: growing an allocated object
+unlinks and recreates its private name with mode 0600 before mapping it. Smaller
+outputs reuse capacity without truncating. The transient thumbnail/overlay/denoise/
+JPEG writer follows the same rule. Readers open the current name after completion;
+the app remains responsible for unlinking it, including after a failed write.
+MAP_SHARED visibility plus the JSON completion reply publishes the pixels without a disk flush. Slots close
+with the engine process before the app's storage owner removes their names.
+
+Windows retains each mapping/view and consumption event. Acquisition requires a
+signalled event before reuse, then resets it. Growth closes the acknowledged
+mapping before creating a larger one under the same private name. Rust closes
+its read view/handle before acknowledgement, so resize cannot invalidate a live
+consumer. This protocol uses the existing engine mutex as its generation boundary;
+thumbnail and other worker outputs use their separate transient writer.
+
+The `allocate` output metric now includes mapping acquisition/resize, `convert`
+includes conversion/page first-touch, and `file`/`free` are normally near zero for
+mapped render output. These stages still nest inside engine output/request time.
+Rust still opens and copies each consumed frame into its response; Linux uses
+file reads, macOS/Windows use mapping views. Eliminating those remaining receiver
+operations and later WebView copies is separate work, not a measured benefit here.
+
+`verify/check-transient-output.py` exercises reuse, shrink/regrow, two-span writes,
+capacity/creation errors and exact RGBA bytes (including odd dimensions and alpha).
+The POSIX transport test rejects any second truncate of an allocated object to
+emulate Darwin on Linux, and reopens names after growth as the app does.
+The standalone transport test also passes address/undefined sanitizers; leak
+sanitizer is unavailable under this VM's tracing environment. Native results and their limits are recorded below; do not extrapolate the
+earlier tmpfs speedup to every output or workload.
+
+For a real-engine integration smoke after a local engine build, run
+`python3 verify/transient-engine.py`. It creates an isolated synthetic PNG and
+runtime, opens it headlessly, renders four changing sizes, checks RGBA lengths
+and alpha, runs a preview, and requests an in-memory JPEG export. No GUI,
+original photos or user app state are used. This is correctness coverage, not a
+native graphics performance result.
+
+
+### Native validation for 0.42.0
+
+The file-operation rollout is retained for 0.42.0 after native Linux x86_64,
+Windows x86_64 and macOS arm64 comparisons. All-platform CI on `2fdaf95`
+passed checks and Linux x86_64/arm64, Windows and macOS builds. The user confirmed
+that the corrected Mac build no longer reports the POSIX shared-memory write
+error. Package version alone does not identify an experimental build: the
+baseline and candidate reports below all identify as 0.41.1. Record the commit.
+
+These are individual native runs of the same approximately 20 MP ORF photo,
+with matching settings and viewport within each platform. They are not a
+cross-platform hardware ranking or a controlled estimate of every commit's gain.
+Windows/Linux used Ryzen 7 9800X3D and NVIDIA RTX 4070 Ti SUPER with OpenCL;
+macOS used Apple M4 with OpenCL. Different platform viewports and draft settings
+make absolute latency comparisons across platforms inappropriate.
+
+| Platform | Baseline → candidate | Clarity frame size | Median engine output stage | Median Clarity drag latency |
+|---|---|---|---|---|
+| Linux, initial memory transfer → mapped output | `1695132` → `ee36459` | 2488 × 1862 | 4.357 → 0.740 ms | 134 → 119 ms |
+| Windows | `d4d7d25` → `ee36459` | 1633 × 1222 | 2.894 → 0.450 ms | 99.7 → 76.05 ms |
+| macOS | `d4d7d25` → `2fdaf95` | 2298 × 1720 | 3.141 → 0.608 ms | 122 → 113.5 ms |
+
+The output column uses the sample's complete `write` stage. The narrower
+`transport.reply.engineWriteMs` has different boundaries; do not mix them when
+calculating percentages. For Linux, the earlier regular-file diagnostic build
+`4f6e647` measured 41.469 ms output and 211 ms Clarity drag latency. Its initial
+move to tmpfs accounts for much of the full Linux improvement. Processing times
+for Clarity remained similar between the initial tmpfs and mapped-output runs.
+Completed Clarity drag frames increased from 10 (regular file), to 18 (tmpfs),
+to 21 (mapped output); Windows increased from 21 to 26, macOS from 18 to 20.
+
+Windows' first candidate run had slower Exposure latency (108.35 → 150.5 ms),
+despite faster output and reads. A second run of the same candidate and settings
+measured 73.8 ms, with processing returning from 67.041 to 31.828 ms, near the
+baseline's 32.115 ms. Several module wall times returned to baseline levels.
+The initial Exposure slowdown did not reproduce; startup background load is a
+plausible explanation, not a confirmed cause. Baseline Windows Texture exercised
+`detail_texture_gain_fine`, while the candidate exercised `texture`; exclude that
+pair, and Contrast, which has no baseline sample, from direct slider comparisons.
+
+On Mac, adaptive preview selected different size distributions despite matching
+preferences. Baseline Exposure used 1206 × 903 throughout; the candidate used
+1723 × 1290 for ten of fifteen frames. Baseline Vibrance was mostly smaller,
+while the candidate was entirely larger. Their raw latency increases do not
+establish regressions at equal work. Clarity, Texture and noise reduction used
+identical dimensions in both builds and show lower output cost; their median
+latencies changed by approximately 7%, 1% and 4%, respectively. Mac Vignette
+remains an observed slowdown (40 → 50 ms), with nearly all frames the same size
+and processing rising from 16.705 to 22.820 ms despite faster output. Investigate
+it with fixed preview sizes before attributing a cause. Use Balanced preview
+size 100% in both builds to disable automatic smaller drafts, and verify actual
+reported frame dimensions as well as preferences in any follow-up.
+
+CPU reduction is not established. Linux and Mac still reached a sampled 100%
+on their busiest logical core. Windows' average engine CPU was about 111% in
+both runs, where 100% means one logical CPU. Windows did not record per-thread
+samples; the Mac reports did not include WebKit process CPU. Aggregate samples
+cannot identify which functions keep a core busy. Symbolized native thread/core
+profiling remains a follow-up, as does reducing remaining receiver/WebView copies.
+
+All compared reports had no main/native/module diagnostic drops, unfinished
+spans, transport retries or backgrounding. Auxiliary frontend work recording
+hit its cap, so late detailed frontend summaries are incomplete. Latency ends at
+an animation callback, not observed compositor presentation. Grain had only one
+to three samples per run and cannot support a robust regression claim. All
+release samples reused engine frames: these reports do not measure fresh settled
+render cost. Slider runs also do not establish performance gains for thumbnails,
+denoise, export-dialog previews or persistent-cache timestamp throttling. Keep
+those workflow measurements separate from byte-transport correctness tests.
+
+Raw report timestamps (UTC, 2026-11-02 unless stated): Linux regular-file
+17:51:43, tmpfs 18:25:34, mapped output 21:13:26; Windows baseline 2026-11-03
+04:19:18, candidate 04:21:36, repeat 04:27:38; Mac candidate 21:33:07 and
+baseline 21:36:45. Mac's baseline ran after its candidate. Reports remain in the
+operator's benchmark archive; machine identifiers and raw diagnostic payloads
+are not needed in the public documentation.
+
+## Native Mac CPU profiling
+
+Use [Mac CPU capture](../../../benchmarking/MACOS_PROFILING.md) to run
+`benchmarking/capture-macos.py` alongside the existing GUI benchmark. It records
+a bounded Time Profiler trace, exports its table of contents and CPU stacks, and
+retains command status, wall-clock bounds, tool versions and process snapshots.
+It launches no app and drives no GUI. All-process capture includes XPC WebKit
+helpers; explicit single-PID capture is also available. Native Mac validation
+is pending. Run `python3 verify/macos-capture.test.py` for mocked orchestration
+checks, including failure evidence and process scope. The capture guide defines
+clock alignment limits, symbol requirements, overhead comparison and the
+evidence table used to prioritize threading and copy-reduction changes.
+
+The capture wrapper leaves terminal SIGINT handling to xctrace while waiting
+for recording to finish, restores its handler afterward, and continues exports
+on a successful early stop. A nonzero profiler exit remains a reported failure.
+
+## Preview output ownership and direct completion
+
+The current output path has distinct lifetimes; a shared address is not enough
+to eliminate a copy safely:
+
+| Boundary | Representation and owner | Lifetime requirement |
+|---|---|---|
+| Gamma output | Byte BGRX, pixelpipe cache | Cache replacement and cleanup own allocation; alpha is not initialized by the ordinary gamma copy |
+| Legacy screen back buffer | Separate BGRX allocation owned by the pipe | `pixelpipe_hb.c` copies the completed cache buffer while holding `backbuf_mutex`; cleanup frees this allocation |
+| Engine output | Opaque RGBA in an `rgba_output.h` mapping | `_write_rgba` swaps channels and supplies alpha 255; the mapping is reused by later serialized requests |
+| Rust response | Header and owned RGBA `Vec` | `render` reads the mapping before releasing the engine lock, protecting against the next render |
+| Retained frontend frame | Owned RGBA bytes | Frames can survive for Before, histogram and cache reuse; Windows copies and releases the WebView2 shared buffer |
+
+Screen pipes without a completion sink take the back-buffer copy; non-screen pipes can point
+`backbuf` at cache storage. Float image requests bypass byte gamma conversion
+and must retain their separate representation. Other BGR consumers include PPM
+output and the preview used by AI models. Mask/channel display uses separate
+gamma writers. Changing gamma globally to RGBA would require all of these
+contracts to change and would still leave transport ownership to solve.
+
+Byte `render` requests with `rgba` and no `out` now install a request-scoped,
+synchronous `output_sink` on the full, drag or base pipe. At the screen back-copy
+boundary, the sink runs `_write_rgba` directly on the terminal cache BGRX bytes,
+before cache reporting can reclaim them. It uses the existing portable channel
+conversion and mapping transport, preserving gamma rounding and opaque alpha.
+No new threads, cache pins or architecture-specific intrinsics are introduced.
+The sink releases any previous owned screen back buffer and leaves `backbuf`
+null; dimensions and hash describe the completed output. The engine checks sink
+completion instead of requiring a back buffer, and clears both callback fields
+on success, processing failure and sink failure. An engine-cache hit still
+passes through the sink; client `have` reuse returns before installing it.
+
+PPM (including simultaneous PPM/RGBA), AI preview, float, mask commands and export
+retain their existing paths. Sink failure returns an error without a completed
+frame reply; cache storage remains owned by the pipe. GPU-to-CPU restart reaches
+the same completion boundary only after successful processing. Consumers still
+read the mapping under the serialized engine lock and retain their own bytes.
+
+`process_ms` now includes direct output conversion. `write_ms` measures only work
+after processing; their sum continues to cover non-overlapping intervals.
+`process_output_ms` identifies the sink's inclusive cost within `process_ms`;
+`output_ms` retains its allocation/conversion/file/free breakdown and also
+**overlaps process time** on this path. Do not add either breakdown to total
+processing time or interpret lower `write_ms` as a speedup. Compare complete
+request time, completed frames and input latency with matching settings.
+
+Headless verification: `python3 -I verify/check-transient-output.py` checks C
+syntax, mapping reuse/exact transport bytes and JPEG paths. After rebuilding
+`darktable-engine`, `python3 -I verify/transient-engine.py` compares direct output
+against simultaneous legacy PPM/RGBA for full/drag/base pipes, odd target sizes,
+resize, repeated cache use, client retained-frame reuse, failed output and
+subsequent recovery, and pre-start cancellation; it also exercises AI preview and transient JPEG export.
+These CPU checks do not establish native GPU fallback or mid-render cancellation behavior or
+cross-platform performance. Native repeated comparisons remain required before
+claiming a gain; preserve the run04 baseline and exclude grain as before.
+
+Build validation currently covers Linux x86-64 and ARM64, macOS ARM64 and
+Windows x86-64. This matrix does not establish Intel macOS or Windows ARM64
+compatibility. Keep the sink independent of architecture intrinsics
+and platform transport details; additional native coverage is still needed
+before claiming validation of those targets. GUI execution remains a separate
+operator-approved step from these headless checks.

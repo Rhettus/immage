@@ -2116,7 +2116,7 @@ dependencies = [
 
 [[package]]
 name = "immage"
-version = "0.41.1"
+version = "0.42.0"
 dependencies = [
  "chrono",
  "dispatch2",
@@ -2139,6 +2139,7 @@ dependencies = [
  "tauri-plugin-updater",
  "tauri-plugin-window-state",
  "trash",
+ "uuid",
  "wayland-client",
  "wayland-protocols",
  "webview2-com",

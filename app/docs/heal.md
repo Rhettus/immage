@@ -7,8 +7,8 @@ with a visualize-spots view on A. Immage picks the source for you, and you can m
 
 Open it with **Heal** on the rail, or Q.
 
-![Heal with a spot selected and its source shown](images/heal.png)
-<!-- screenshot: Heal mode, a sky with dust spots, one spot selected showing its source outline and link line -->
+![Heal with one spot selected on a car's grille, its dashed source circle linked beside it](images/heal.png)
+<!-- screenshot: Heal mode, one spot selected showing its source outline and link line -->
 
 ## Removing a spot
 

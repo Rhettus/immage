@@ -27,6 +27,8 @@ the headless darktable engine. The photographer's guide is
 - [Masks in darktable's pipe](masks.md): how a mask and its local sliders
   become darktable mask groups and module instances, where those run, and
   how masks share them.
+- [Print and soft proofing](print.md): the Print panel on darktable's
+  soft proof and print code, run by the engine without darktable's GUI.
 - [GUI performance tracing](performance-tracing.md): diagnostic events, scheduling flow and slow-frame analysis.
 - [GUI verification architecture](gui-verification.md): observation hooks, expanded
   control inventory, commit-linked coverage and non-GUI checks.
@@ -39,6 +41,9 @@ the headless darktable engine. The photographer's guide is
   publishing the draft, and the updater's signing key.
 - [darktable/dev-doc/](../../../darktable/dev-doc/README.md): darktable's
   own developer docs, for anything the engine calls into darktable for.
+
+- [Building Immage](building.md): platform dependencies, local builds and packaging.
+- [Implementation overview](overview.md): engine, interface and import integration.
 
 ## Editing the diagrams
 

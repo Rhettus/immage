@@ -10,11 +10,22 @@ import {sampleProcesses,parseProcessStat} from './support/process-memory.mjs';
 import {encodePNG,decodePNG,comparePixels} from './support/pixels.mjs';
 import {cases,resolveCases} from './suites.mjs';
 import {implementationFor} from './registry.mjs';
+import {hiddenPanelCoverage} from './generated.mjs';
 const temp=()=>mkdtempSync(join(tmpdir(),'immage-gui-unit-'));
 test('every declared GUI case resolves to an implementation, without executing it',()=>{
  for(const name of Object.keys(cases))assert.equal(typeof implementationFor(name),'function',name);
  assert.equal(new Set(resolveCases('all')).size,Object.keys(cases).length);
  for(const name of ['toString','__proto__','missing'])assert.throws(()=>resolveCases(name));
+});
+test('hidden panels have no generated control cases; each names its written case',()=>{
+ const inventory=JSON.parse(readFileSync(new URL('./inventory.json',import.meta.url),'utf8'));
+ const hidden=inventory.panels.filter(p=>p.hidden).map(p=>p.id);
+ assert.deepEqual([...hidden].sort(),Object.keys(hiddenPanelCoverage).sort());
+ for(const id of hidden){
+  assert.equal(Object.keys(cases).filter(n=>n.startsWith(`control-${id}-`)).length,0,id);
+  const written=hiddenPanelCoverage[id];
+  if(written!==null)assert.ok(cases[written],`${id} -> ${written}`);
+ }
 });
 test('journal retains a valid checkpoint and ordered events after abrupt child death',()=>{
  const directory=temp();try{

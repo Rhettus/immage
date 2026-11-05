@@ -65,9 +65,9 @@ waiting**, or after three hours.
 subject shot at a run of focus distances, into one photo sharp from front
 to back. Immage hands it the bracket and takes back the stack.
 
-**If you've used another editor:** this is Macro Studio's own Lightroom
-plugin: the stack opens in Macro Studio for you to check and retouch, and
-comes back when you save it there.
+**If you've used another editor:** this is the same handoff Macro
+Studio's plugins for other editors use: the stack opens in Macro Studio
+for you to check and retouch, and comes back when you save it there.
 
 ### Setting it up
 

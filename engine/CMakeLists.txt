@@ -4,9 +4,17 @@
 include_directories(${DARKTABLE_BINDIR})
 
 find_package(PkgConfig REQUIRED)
+find_package(JPEG REQUIRED)
 pkg_check_modules(JSON_GLIB REQUIRED json-glib-1.0)
 
-add_executable(darktable-engine main.c upright.c hdrmerge.c strip.cc dng.c)
+add_executable(darktable-engine main.c upright.c hdrmerge.c print.c strip.cc dng.c)
+
+# Keep the compatibility repair buildable before moving the darktable pin.
+file(STRINGS "${CMAKE_SOURCE_DIR}/src/develop/blend.h" IMMAGE_STYLE_BLEND_READER
+     REGEX "^gboolean dt_develop_blend_params_read\\(")
+if(IMMAGE_STYLE_BLEND_READER)
+  target_compile_definitions(darktable-engine PRIVATE IMMAGE_STYLE_BLEND_READER)
+endif()
 
 # strip.cc calls exiv2, darktable's own (src/CMakeLists.txt finds it), so
 # the engine links it and the C++ runtime. dng.c uses darktable's libtiff.
@@ -14,7 +22,7 @@ set_target_properties(darktable-engine PROPERTIES LINKER_LANGUAGE CXX)
 
 target_include_directories(darktable-engine PRIVATE ${JSON_GLIB_INCLUDE_DIRS})
 target_link_directories(darktable-engine PRIVATE ${JSON_GLIB_LIBRARY_DIRS})
-target_link_libraries(darktable-engine lib_darktable ${JSON_GLIB_LIBRARIES} ${Exiv2_LIBRARIES} ${TIFF_LIBRARIES})
+target_link_libraries(darktable-engine lib_darktable ${JSON_GLIB_LIBRARIES} ${Exiv2_LIBRARIES} ${TIFF_LIBRARIES} ${JPEG_LIBRARIES})
 
 # Panorama Merge (pano.cc) stitches with OpenCV's stitching module, which
 # darktable does not link (src/CMakeLists.txt, DT_OPENCV4_MODULES): built
@@ -71,3 +79,19 @@ set_target_properties(immage-thumbnail-check PROPERTIES RUNTIME_OUTPUT_DIRECTORY
 add_executable(immage-checkpoint-check EXCLUDE_FROM_ALL "${CMAKE_CURRENT_SOURCE_DIR}/../verify/checkpoint-cache.c")
 target_link_libraries(immage-checkpoint-check lib_darktable)
 set_target_properties(immage-checkpoint-check PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${DARKTABLE_BINDIR})
+
+if(IMMAGE_STYLE_BLEND_READER)
+  get_target_property(IMMAGE_LOOK_CHECK_SOURCES darktable-engine SOURCES)
+  list(REMOVE_ITEM IMMAGE_LOOK_CHECK_SOURCES main.c)
+  add_executable(immage-look-check EXCLUDE_FROM_ALL
+                 "${CMAKE_CURRENT_SOURCE_DIR}/../verify/look-compat.c" ${IMMAGE_LOOK_CHECK_SOURCES})
+  target_include_directories(immage-look-check PRIVATE
+                             $<TARGET_PROPERTY:darktable-engine,INCLUDE_DIRECTORIES>)
+  target_compile_definitions(immage-look-check PRIVATE
+                              $<TARGET_PROPERTY:darktable-engine,COMPILE_DEFINITIONS>)
+  target_link_directories(immage-look-check PRIVATE ${JSON_GLIB_LIBRARY_DIRS})
+  get_target_property(IMMAGE_LOOK_CHECK_LIBRARIES darktable-engine LINK_LIBRARIES)
+  target_link_libraries(immage-look-check PRIVATE ${IMMAGE_LOOK_CHECK_LIBRARIES})
+  set_target_properties(immage-look-check PROPERTIES LINKER_LANGUAGE CXX
+                         RUNTIME_OUTPUT_DIRECTORY ${DARKTABLE_BINDIR})
+endif()

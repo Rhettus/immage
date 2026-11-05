@@ -16,7 +16,8 @@ On Windows, download and run the `-setup.exe` installer. Choose installation
 for your account or for everyone on the computer. Windows downloads are
 provided as `.exe` installers only.
 
-New to Immage? Start with [Getting started](getting-started.md).
+New to Immage? Start with [Getting started](getting-started.md). This guide
+is also on the [Immage website](https://immage.photo/guide/).
 
 <a href="images/workspace.png"><img src="images/workspace.png" width="960" alt="Immage editing a photo"></a>
 
@@ -46,6 +47,8 @@ New to Immage? Start with [Getting started](getting-started.md).
 - [Masks](masks.md): AI selections, brushes, gradients and ranges, and the
   adjustments inside them
 - [Heal and clone](heal.md): removing spots and distractions
+- [Film Simulation](film-simulation.md): a photo rendered as a film stock,
+  printed on a paper or scanned, from darktable's spektrafilm
 - [Film negatives](negative.md): converting a photo of a film negative,
   color or black and white, and a whole roll from one frame
 - [HDR Merge](library.md#hdr-merge) and
@@ -64,9 +67,15 @@ New to Immage? Start with [Getting started](getting-started.md).
 
 - [Export](export.md): to a folder or an Immich album, with file names,
   borders and captions
+- [Print and soft proofing](print.md): printing or saving a PDF with a
+  printer profile, and seeing the print on screen first
 - [Edit In](edit-in.md): sending photos to DxO PureRAW or Macro Studio and back
 
 **Reference**
+
+- [Working with darktable](darktable.md): compatibility and the tool/module reference.
+- [Credits and licenses](credits.md): acknowledgments, source availability and map attribution.
+
 
 - [Preferences](preferences.md): every setting
 - [Keyboard shortcuts](shortcuts.md)

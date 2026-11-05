@@ -1,8 +1,8 @@
 # Visible-app GUI verification plan
 
 Status: startup/Exposure and slider-input have previous Linux live passes.
-The expanded registry contains 541 named cases, including generated control and
-module variants. New cases are written but have not run; declarations are not
+The expanded registry contains 310 named cases, including generated control and
+module variants (visible panels only; hidden panels are covered by written cases). New cases are written but have not run; declarations are not
 coverage passes. Some scenarios block on unsupported fixtures or native dialogs.
 See `COVERAGE.md` for limitations. Real GUI execution is currently paused by
 local instructions; non-GUI development and checks may continue.
@@ -31,9 +31,11 @@ copied without its sidecar and never opened directly by the test app.
 node verify/gui/run.mjs --config verify/gui/local.json --suite smoke
 node verify/gui/run.mjs --config verify/gui/local.json --case startup
 node verify/gui/run.mjs --config verify/gui/local.json --case exposure
+node verify/gui/run.mjs --config verify/gui/local.json --case masks,panel-scroll
 ```
 
-Exposure includes startup as its prerequisite. The runner launches a new driver
+Exposure includes startup as its prerequisite. A comma list runs several cases
+in one launch, after startup. The runner launches a new driver
 and app, dismisses the tour through
 its Skip button, and uses the app's supported file argument to open the copy.
 XDG data/config/cache/state variables isolate the release app's storage and its
@@ -354,6 +356,7 @@ prove the suite detects a CSS regression in the real application.
 node verify/gui/infrastructure.test.mjs
 node verify/gui/memory.test.mjs
 node verify/gui/support.test.mjs
+node verify/gui/benchmark.test.mjs
 python3 verify/gui/fixtures.test.py
 node verify/gui/inventory.mjs --check
 cd app && npm run build
@@ -373,3 +376,73 @@ selection/active photo, Exposure, look/amount, rendered pixels and both saved
 sidecars, then reopens the second target and the unselected photo. Inspection
 is read-only and limited to the app and this run's fixture sidecars. No system
 clipboard or native dialog is used. This case is written, not live-validated.
+
+## Scaling benchmark collection
+
+The generic case has approved Linux ARM64 VM passes at DPR 1 and 2, and both
+fractional draft variants passed at 125%:
+
+```sh
+# Obtain fresh approval for each GUI run first.
+node verify/gui/run.mjs --config verify/gui/local.json --case gui-benchmark
+node verify/gui/run.mjs --config verify/gui/local.json --case gui-benchmark-screen
+node verify/gui/run.mjs --config verify/gui/local.json --case gui-benchmark-whole
+```
+
+Each includes startup, opens Preferences → Performance, tabs to GUI benchmark →
+Run and presses Enter. The app runs its own existing scripted workload. This is not a test of
+WebDriver drag latency. `gui-benchmark` uses the fresh profile's defaults;
+the other cases set **Drag drafts at the screen's scale** on or off through
+its real checkbox with keyboard focus/Space. They block if that option is absent, including at integer
+scales. No case changes compositor settings. Prepare output scale separately.
+
+Use `--viewport WIDTHxHEIGHT` to require an exact logical inner window size
+after startup and before subsequent cases, for example `--viewport 1979x1171`. This is a read-only
+gate with a 30-second timeout, not a resize command. External authorized setup
+must size only the dedicated test app. The runner records the requirement and
+blocks the measurement if it is not reached; display/compositor changes and
+restoration stay outside the runner.
+Startup completes the tour and first photo before external sizing begins.
+On a preparation failure, the runner retains a DOM/geometry observation and
+app screenshot only if the previously verified main URL and handle still match.
+The deferred gate passed at DPR 1 in run
+`2026-11-02T15-20-43.128Z_ee28973_46f49c76` at 1979x1171 logical pixels.
+An earlier attempt to size before startup completed failed; keep its report
+`2026-11-02T15-16-10.106Z_ee28973_860de160` as preparation failure evidence.
+
+The runner waits up to ten minutes for the app's saved-report status or error,
+copies the report only from its own profile's benchmark folder into the case's
+`benchmark.json`, and validates schema, nonempty phases, frame dimensions and
+timings, unchanged before/after viewport/DPR and recorded visibility. It checks
+that final fit pixels return to baseline. Raw reports survive validation failure.
+For fractional cases it also verifies the recorded setting and effective draft
+scale. It does not establish that viewport geometry stayed fixed between endpoint
+observations. Keep the window unchanged throughout each run.
+
+Use `python3 -I benchmarking/diagnose.py PATH/benchmark.json` for offline
+analysis. Compare like configurations and logical viewport dimensions across
+display scales, separating native pipeline costs, drag frames and release
+frames. See [the investigation procedure](../../app/docs/dev/performance-tracing.md#wayland-fractional-scale-investigation).
+VM results are approximate comparisons within that VM; shared host resources,
+software rendering and virtual display timing prevent predicting native GPU or
+NVIDIA performance. Animation callbacks do not measure compositor presentation.
+
+Two approved collection attempts on the ARM64 VM passed startup but could not
+reach Run using repeated WebDriver wheel input; the scroll position remained
+at 180 pixels. No benchmark ran in either attempt. Keyboard navigation replaces
+that path and passed in run `2026-11-02T15-05-22.535Z_ee28973_5104c5ed`
+on Linux ARM64, Wayland DPR 2, system WebKitGTK 2.54.2. The run retained 805
+samples and restored the photo pixels. Retain both failed reports; neither
+is a performance measurement or proof of a user-facing scrolling defect.
+
+The screen-scale case passed at 125% in run
+`2026-11-02T15-34-27.864Z_ee28973_66140df8`, with DPR 2 and draftScale 0.625.
+Its 1979x1171 logical viewport matched the integer baselines. External setup
+used supported 3840x2160@60 because the earlier custom mode did not accept
+125%; therefore absolute timings are not a controlled comparison against the
+integer runs' display mode. A drafts-off comparison must keep the same
+fractional output mode, refresh rate and floating test-window setup.
+The drafts-off counterpart passed in run
+`2026-11-02T15-40-01.172Z_ee28973_e7cc09e0` with the same supported output
+mode/rate and logical app size. It confirmed screenScale false and draftScale 1.
+These are one VM run per configuration, not repeatability or native-GPU evidence.

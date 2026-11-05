@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Immage",
-  "version": "0.41.1",
+  "version": "0.42.0",
   "identifier": "app.immage",
   "build": {
     "devUrl": "http://localhost:1430",
@@ -29,6 +29,10 @@
         "title": "Immage",
         "width": 640,
         "height": 427,
+        "minWidth": 640,
+        "minHeight": 427,
+        "maxWidth": 640,
+        "maxHeight": 427,
         "center": true,
         "resizable": false,
         "decorations": false,

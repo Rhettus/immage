@@ -79,13 +79,16 @@ export function storeNegWarn(on: boolean) {
   try { localStorage.setItem(NEG_WARN_KEY, on ? "1" : "0"); } catch { /* not kept */ }
 }
 
+// what Export to Library writes for a converted negative or a film
+// simulation; the Negative and Film Simulation panels set it too. the key
+// keeps the name it had when only negatives used it
 export type NegativeExportFormat = "dng" | "tiff";
 const NEG_EXPORT_KEY = "immage.negativeExportFormat";
 export function loadNegativeExportFormat(): NegativeExportFormat {
   try { return localStorage.getItem(NEG_EXPORT_KEY) === "tiff" ? "tiff" : "dng"; }
   catch { return "dng"; }
 }
-function storeNegativeExportFormat(format: NegativeExportFormat) {
+export function storeNegativeExportFormat(format: NegativeExportFormat) {
   try { localStorage.setItem(NEG_EXPORT_KEY, format); } catch { /* not kept */ }
 }
 
@@ -450,7 +453,7 @@ function LicenseText({ title, text, onClose }: { title: string; text: string; on
 
 export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurrent, focus, canvas, onCanvas, overlayColor, onOverlayColor, guideColor, onGuideColor,
                                     openGenerated, onOpenGenerated, loupe, onLoupe, focusMode, onFocusMode, autoHide, onAutoHide, stackPairs, onStackPairs,
-                                    accel, plugins, onPlugins, perfHud, onPerfHud, onBenchmark, onTune, onRelaunch, onClose }: {
+                                    accel, plugins, onPlugins, perfHud, onPerfHud, onBenchmark, onGpuCheck, onTune, onRelaunch, onClose }: {
   presets: Preset[];
   focus?: Tab;                           // a tab to open at
   onSaveCurrent: (() => void) | null;    // a new preset from the open photo, or null with none open
@@ -479,6 +482,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   onPerfHud: (on: boolean) => void;
   onTune: (() => void) | null;
   onBenchmark: (() => void) | null;     // null with no photo open
+  onGpuCheck: (() => void) | null;      // null with no photo open
   onRelaunch: () => Promise<void>;       // the edit saved, then Immage started again
   onClose: () => void;
 }) {
@@ -563,10 +567,11 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   // the provider the choice comes to: the one chosen if this computer has
   // it, else the first, as the engine resolves "auto"
   const accelProvider = accel?.find((p) => p.id === accelChoice.provider) ?? accel?.[0];
-  const [about, setAbout] = useState<{ app: string; darktable: string } | null>(null);
+  // commit: the one this app was built from (main.rs, build_label), null outside Git
+  const [about, setAbout] = useState<{ app: string; commit: string | null; darktable: string } | null>(null);
   const update = useUpdate();
   const [autoUpdate, setAutoUpdate] = useState(loadAutoCheck);
-  useEffect(() => { invoke<{ app: string; darktable: string }>("about").then(setAbout).catch(() => {}); }, []);
+  useEffect(() => { invoke<{ app: string; commit: string | null; darktable: string }>("about").then(setAbout).catch(() => {}); }, []);
   const [licenses, setLicenses] = useState<Licenses | null>(null);
   useEffect(() => { invoke<Licenses>("licenses").then(setLicenses).catch(() => {}); }, []);
   const [viewing, setViewing] = useState<{ title: string; text: string } | null>(null);
@@ -590,6 +595,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
           {about && (
             <div className="prefs-about" title={`darktable ${about.darktable}`}>
               <span>Immage {about.app}</span>
+              {about.commit && <span>commit {about.commit}</span>}
               <span>darktable {about.darktable.split("~")[0]}</span>
             </div>
           )}
@@ -735,9 +741,9 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                          hint="opening the Negative panel says which of Basic's tools a converted negative turns off">
                   <PrefSwitch checked={negWarn} onChange={(on) => { setNegWarn(on); storeNegWarn(on); }} />
                 </PrefRow>
-                <PrefRow label="Converted negative format"
-                         hint="Export to Library saves a separate positive with the conversion and edits baked in; both formats use lossless compression">
-                  <select className="field" aria-label="Converted negative format" value={negativeExportFormat} onChange={(e) => {
+                <PrefRow label="Generated positive format"
+                         hint="Export to Library in the Negative and Film Simulation panels saves a separate positive with the conversion and edits baked in; both formats use lossless compression">
+                  <select className="field" aria-label="Generated positive format" value={negativeExportFormat} onChange={(e) => {
                     const format = e.target.value as NegativeExportFormat;
                     setNegativeExportFormat(format); storeNegativeExportFormat(format);
                   }}>
@@ -955,6 +961,12 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                            : "open a photo to run it"}>
                   <button className="btn" disabled={!onBenchmark} onClick={() => onBenchmark?.()}>Run</button>
                 </PrefRow>
+                <PrefRow label="GPU check"
+                         hint={onGpuCheck
+                           ? "renders the open photo on the CPU and on the GPU, then with each of several modules turned on, and compares them; records OpenCL errors, fallbacks to the CPU and a canceled GPU render. every control ends where it started. use a copy of a photo you care about, and send the saved report back"
+                           : "open a photo to run it"}>
+                  <button className="btn" disabled={!onGpuCheck} onClick={() => onGpuCheck?.()}>Run</button>
+                </PrefRow>
                 <PrefRow label="Performance tuner"
                          hint="load a representative RAW from your usual work and use your normal window size. finds the highest-quality preview meeting your FPS and latency targets; Apply verifies the result">
                   <button className="btn" disabled={!onTune} onClick={() => onTune?.()}>Tune…</button>
@@ -966,7 +978,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
               <>
                 <PrefCard title="Immage">
                   <div className="prefs-legal">
-                    <p>Immage {about?.app ?? ""}, Copyright © 2026 the Immage authors</p>
+                    <p>Immage {about?.app ?? ""}{about?.commit ? ` (commit ${about.commit})` : ""}, Copyright © 2026 the Immage authors</p>
                     <p>
                       Its raw processing engine is darktable{about ? ` ${about.darktable.split("~")[0]}` : ""},
                       Copyright © 2009–2026 darktable developers.

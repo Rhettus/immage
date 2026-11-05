@@ -1,567 +1,66 @@
 # Immage
 
-## Status
-
-🟢 **macOS:** Fully functional alpha build. Bugs are still expected.
-
-🟢 **Windows:** Fully functional alpha build. Bugs are still expected.
-
-🟢 **Linux:** Fully functional alpha build. Bugs are still expected.
-See [Linux setup and troubleshooting](app/docs/preferences.md#performance).
-
-## What is it
-
-Immage builds on [darktable](https://www.darktable.org/)'s raw processing
-engine, and brings its power to photographers who know other editors. It
-works the way mainstream raw editors do: the familiar panels, slider
-names, order and tools.
-
-**Immage adds no image processing of its own.** Every adjustment is one of
-darktable's existing modules, renamed, regrouped and reordered behind a
-new interface (the table under
-[Which darktable module does what](#which-darktable-module-does-what)
-shows each one). Edits are saved as ordinary darktable XMP sidecars.
-Staying out of the pipeline is what keeps Immage compatible with
-darktable: darktable of the same version opens an Immage edit and renders
-it the same, and every improvement to darktable's engine reaches Immage.
-The one exception is Panorama Merge, which darktable doesn't have: it
-stitches raws with OpenCV into a new DNG, which is then edited with
-darktable's modules like any other raw.
-
-It is a personal, non-commercial project, with builds for macOS, Windows
-and Linux on the [Releases](https://github.com/Rhettus/immage/releases)
-page.
-
-Importing is done by **Immporter**, the companion tool that copies photos
-off a card, built into Immage as its import screen. Asset management comes
-from [Immich](https://immich.app/) rather than from a catalog in the
-editor: imports check against an Immich library, and exports can go
-straight into an Immich album.
-
-## Who it is for
-
-Immage is for photographers who want darktable's raw processing without
-having to learn darktable:
-
-- people coming from a mainstream photo editor, who want the panels,
-  slider names and shortcuts they already know
-- people who want good results from sensible defaults, so a new photo
-  already follows darktable's scene-referred AgX workflow before the first
-  slider is touched
-- people who want to get through a shoot quickly: one set of panels with
-  a fixed order, settings copied to selected photos in a batch, and nothing
-  to set up before editing. Immage does not render faster than darktable;
-  the time it saves is the editor's
-- people who keep their photos in folders, or in an Immich library,
-  rather than in an editor's catalog
-
-It is not meant for experienced darktable users who want every control:
-
-- most darktable modules are not shown, and those that are show only the
-  controls Immage's panels need
-- Immage decides which module each tool uses, its defaults and the order
-  of the pipeline; Preferences › Modules offers a choice only between
-  the alternatives Immage supports
-- there is no lighttable or collections, and no way to add module
-  instances or reorder the pipeline by hand
-
-For any of that, use darktable itself. The two work on the same files:
-a darktable of the same version opens Immage's edits and renders them the
-same, so a photo started in Immage can be finished in darktable.
-
-**If you already edit in a stable darktable, try Immage on test images
-first.** Immage is built from darktable's development branch (5.7 at
-present), not from a stable release, so its modules can be newer than
-yours. Once Immage saves an edit, the photo's XMP sidecar may hold module
-versions that a stable darktable cannot read: it then warns of a version
-mismatch and leaves those modules out, or resets them to their defaults,
-so the photo looks different there. Masks are saved in the format of
-darktable's new flexi masks, which no released darktable reads. Work on
-copies, or on photos you have not edited in darktable, until you know how
-the two fit your workflow.
-
-## Design goals
-
-**A simple workflow, at the cost of some flexibility.** Immage is meant
-for a streamlined way of working that darktable beginners feel at home
-in. That involves two compromises:
-
-- not every darktable module or option is shown, only the modules in the
-  [table below](#which-darktable-module-does-what) and the controls of
-  each that Immage's panels need
-- Immage, not the user, settles the default values, which modules a tool
-  uses and how each of them behaves. These choices follow darktable's
-  scene-referred workflow, the one its tone mappers (sigmoid and AgX) are
-  designed for
-
-Immage gives up some of darktable's flexibility in return for a gentler
-learning curve. If you need complete control, use darktable: it opens
-Immage's edits, and Immage keeps whatever darktable adds.
-
-**Fast where the user is waiting.** Immage aims to be as responsive as it
-can be in everything the user does directly, such as moving a slider,
-opening a folder or importing photos. How fast darktable renders is up to
-darktable; what Immage controls is the order of the work around it, and
-there it puts feedback to the user first.
-
-## What it changes from darktable
-
-darktable is a git submodule (`darktable/`), pinned to one commit, and
-built unchanged apart from a few lines that add one new program to its
-build ([patches/darktable-engine.patch](patches/darktable-engine.patch)).
-Everything else in this repository is Immage's own.
-
-- **A headless engine** (`engine/`): a small program that keeps one
-  image open in darktable's pixelpipe and takes JSON requests on stdin.
-  The requests open, set module parameters, render, save and export. They
-  also cover looks (styles), drawn and range masks, AI selections and
-  preview renders. It runs darktable with no GUI and an in-memory
-  library, so the XMP sidecar is the only thing written.
-- **A new interface** (`app/`): a [Tauri 2](https://tauri.app/) app with a
-  Rust backend and a [React](https://react.dev/) front end that drives the
-  engine. It replaces darktable's lighttable and darkroom with:
-  - the familiar panels: Basic, Tone Curve (parametric, point, R/G/B),
-    HSL / Color, B&W Mix, Color Grading wheels, Detail, Lens Corrections,
-    Transform and Effects, each mapped onto darktable modules
-    (`app/src/manifest.ts` holds the mapping)
-  - masks: brush, linear and radial gradients, color, luminance and depth
-    ranges, and AI selection of an object, the subject, the background,
-    people, the sky or parts of a landscape, with local adjustments; they
-    are stored as darktable drawn and parametric masks
-  - Heal and Clone spots with an automatically chosen source and a
-    Visualize Spots view, stored in darktable's retouch module
-  - film negative conversion, color or black and white, picked from the
-    film border and the photo, in darktable's negadoctor
-  - HDR Merge, in darktable's HDR merge, and Panorama Merge, stitched
-    with OpenCV, each into a new DNG; panorama projection and crop can be
-    previewed before merging
-  - presets, film looks with live preview tiles, undo/redo, a before/after
-    view, crop and straighten, a white balance picker, export with
-    borders and file-name templates (to a folder or an Immich album), a
-    filmstrip, and metadata editing
-  - an import screen (Immporter, below), and Preferences for what new
-    photos start with and for the Immich connection
-- **No catalog**: folders are opened directly and browsed as a tree;
-  there are no film rolls and no collections.
-
-## Which darktable module does what
-
-Each Immage tool is a darktable module, or darktable's masking, so the same
-edit opens in darktable as these modules. `app/src/manifest.ts` holds how
-each slider maps onto its module's parameters.
-
-**A photo edited in darktable keeps all of its edit.** Immage loads and
-renders the whole darktable history, including modules it has no controls
-for, and saves them back unchanged. Only the modules in this table can be
-adjusted in Immage; anything else stays as darktable left it, and is still
-edited in darktable. Where darktable set one of these modules in a way
-Immage's sliders cannot show, such as a tone curve drawn by hand, Immage
-leaves its settings alone until one of its sliders is moved.
-
-Some tools can run on more than one module. Preferences › Modules picks
-which for the tools a photo has not used yet: Default takes the module
-darktable's [AgX workflow](https://avidandrew.com/agx-workflow.html) uses
-for each, the first one listed below, and Custom lets each be set. A
-photo that already uses one of a tool's modules keeps it. The collapsible
-Global and Masks sections choose modules independently: for example, use AgX
-globally and contrast equalizer inside masks. They follow Focus mode; Alt-click
-keeps both sections open. See the [module preferences guide](app/docs/preferences.md#modules)
-for the available mask alternatives.
-
-| Immage | darktable module |
-|---|---|
-| **Basic** | |
-| Treatment (Color, Black & White) | color calibration's gray (`channelmixerrgb`), on an instance of its own after the color equalizer, or the color equalizer (`colorequal`) |
-| White Balance: Temp, Tint, the picker | color calibration (`channelmixerrgb`) |
-| Exposure | exposure (`exposure`) |
-| Contrast | AgX (`agx`), or sigmoid (`sigmoid`) on a photo started under it; or color balance rgb (`colorbalancergb`); or contrast equalizer (below) |
-| Contrast equalizer (Contrast option) | contrast equalizer (`atrous`): five channels, each with six coarse-to-fine bands; replaces the global or masked Contrast slider, chosen independently |
-| Highlights, Shadows | tone equalizer (`toneequal`), or shadows and highlights (`shadhi`) |
-| Blacks | AgX's lift, or sigmoid's target black; or exposure's black level (`exposure`) |
-| Vibrance | color balance rgb (`colorbalancergb`) |
-| Saturation | AgX's saturation; or color balance rgb (`colorbalancergb`), which a photo on sigmoid always uses |
-| Whites | AgX (`agx`), with color balance rgb's highlights brilliance (`colorbalancergb`); sigmoid (`sigmoid`) on a photo started under it |
-| Texture | diffuse or sharpen (`diffuse`), or contrast & texture (`contrastntexture`), on its own instance |
-| Clarity | local contrast (`bilat`), or contrast & texture (`contrastntexture`) |
-| Dehaze | haze removal (`hazeremoval`) |
-| **Tone Curve** | |
-| Parametric and point curve | tone curve (`tonecurve`) |
-| Red, green and blue point curves | rgb curve (`rgbcurve`) |
-| **HSL / Color**, **B&W Mix** | color equalizer (`colorequal`) |
-| **Color Grading** | color balance rgb (`colorbalancergb`) |
-| **Detail** | |
-| Sharpening | sharpen (`sharpen`), or diffuse or sharpen (`diffuse`), its "sharpness \| normal" preset on an instance of its own |
-| Noise Reduction: Luminance | denoise (profiled) (`denoiseprofile`) |
-| **Lens Corrections** | lens correction (`lens`), with the lensfun database |
-| Defringe: Amount, Radius | chromatic aberrations (`cacorrectrgb`) |
-| Hot Pixels | hot pixels (`hotpixels`) |
-| **Transform**: Vertical, Horizontal, Rotate | rotate and perspective (`ashift`) |
-| **Effects** | |
-| Post-Crop Vignetting | vignetting (`vignette`) |
-| Grain | grain (`grain`) |
-| **Crop tool** | |
-| Crop and aspect | crop (`crop`) |
-| Angle and Straighten | rotate and perspective (`ashift`) |
-| Rotate and Flip | orientation (`flip`) |
-| **Masks** | |
-| Brush, Linear Gradient, Radial Gradient | drawn masks: brush, gradient, ellipse |
-| Color Range, Luminance Range | parametric masks (blending) |
-| Select Object, Subject, Background, Sky, People, Landscape, Depth Range | drawn path masks, traced from the AI model's selection |
-| Local Exposure, Blacks, Contrast, Whites, Saturation, Hue | an instance of exposure or color balance rgb per mask |
-| Local Highlights, Shadows | an instance of tone equalizer or shadows and highlights (as the photo's) per mask |
-| Local Temp, Tint | an instance of color calibration per mask |
-| Local Texture, Clarity, Dehaze | an instance of the chosen Texture or Clarity module (including contrast & texture), or haze removal per mask |
-| Local Noise, Defringe, Sharpness | an instance of denoise (profiled), chromatic aberrations (`cacorrectrgb`) or defringe (`defringe`), or diffuse or sharpen or sharpen (as the photo's Sharpening) per mask |
-| **Heal and Clone** | retouch (`retouch`) |
-| **HDR Merge** | darktable's HDR merge (lighttable's "create HDR"), with its auto-alignment, into a float DNG |
-| **Panorama Merge** | no darktable module: OpenCV stitches RAW and non-RAW photos rendered by darktable into a float DNG |
-| **Negative** | negadoctor (`negadoctor`); a converted negative switches off color calibration, exposure, the tone equalizer, haze removal and the tone mapper, and runs Contrast and Saturation on color balance rgb, Highlights and Shadows on shadows and highlights |
-| **Looks** | darktable styles, applied as extra module instances |
-| **Export** borders | framing (`borders`), added at export only |
-| **Keywords** | darktable tags (`dc:subject`, `lr:hierarchicalSubject` in the XMP) |
-
-## Importing and Immich
-
-The import screen is [Immporter](https://github.com/Rhettus/immporter),
-a separate project that Immage builds in as a Tauri plugin. It copies
-photos off a card or a folder into dated folders, verifying every copy,
-and marks the photos already in the destination or in Immich. After an
-import, the destination joins Immage's folder list and the new photos
-open. Its source is cloned into `immporter/` (ignored by this
-repository's git); `app/immporter.rev` pins the commit Immage builds
-against, and `app/scripts/fetch_immporter.sh` checks it out.
-
-The Immich server and API key are set in Preferences. The key is kept in
-the operating system's own key store (the macOS Keychain, the Windows
-Credential Manager, or the Secret Service on Linux), never in a file or
-the interface. The key needs these permissions:
-
-| Permission | For |
-|---|---|
-| `asset.read` | checking imports against the library, and searching it |
-| `asset.view` | thumbnails of search results |
-| `asset.download` | downloading a result's original to edit it |
-| `asset.upload` | exporting to Immich |
-| `album.read` | listing albums to export to, and the Albums search filter |
-| `album.create` | creating an album from the Export dialog |
-| `albumAsset.create` | adding exported photos to the album |
-| `person.read`, `tag.read` | the People and Tags search filters (optional) |
-| `library.read` | listing the external libraries one by one (optional; admin keys only) |
-
-Immage keeps its own import history and key, apart from a standalone
-Immporter's.
-
-Once Immich is set up, the Library panel has an Immich card under
-Folders. It searches the external libraries by default, with Immich's
-smart search or by file name, and the toolbar's Filters narrow it by
-date, rating, favorites, RAW, camera, lens, place, people, tags and
-albums. Results
-fill the grid with Immich's thumbnails. Opening one edits the external
-library's own file when this computer has it, mapped from Immich's path
-in Preferences (by default the importer's path prefix and destination),
-and otherwise downloads the original into Immage's cache first.
-Right-click a result to show it, or the whole search, in Immich. With Immich
-configured in Preferences, **Import Parent Folder** adds its locally mapped
-folder to Folders and opens its photos in the grid; it is disabled for
-results without a local file. A
-result shows Immich's rating until it is opened; ratings set after that
-go into the photo's XMP sidecar, as for any other photo.
-
-## Opening a photo from another program
-
-Another program can hand Immage a photo to edit. Immage shows the
-photo's folder and opens the photo, ready for editing. Dragging a photo
-from Finder or Explorer onto the window does the same; dragging a folder
-there adds it under Folders and shows its photos in the grid.
-
-```sh
-open -a Immage /path/to/photo.arw                    # macOS, running or not
-/Applications/Immage.app/Contents/MacOS/immage /path/to/photo.arw
-```
-
-On macOS, prefer `open -a`: it reaches Immage when it is already
-running. Starting the executable directly starts a second copy, which
-cannot share the first one's engine.
-
-## Platforms
-
-Each release has builds for:
-
-- **macOS**: Apple silicon, macOS 15 or newer, as a `.dmg`
-- **Windows**: x64, Windows 10 or 11 (and Windows on ARM through its x64
-  emulation), as an NSIS installer (`-setup.exe`)
-- **Linux**: x86-64 and ARM64, as AppImages, on distributions with
-  glibc 2.35 or newer (Ubuntu 22.04 and later, including Linux Mint 22.x),
-  bundling WebKitGTK 2.54.2
-
-The builds are not signed with a developer certificate yet; the release
-page says how to open them the first time. After that, Immage updates
-itself: it checks for a new release once a day and installs it when asked
-(Preferences › About › Updates).
-
-macOS is where Immage is developed. All three are built by GitHub Actions
-([.github/workflows/build.yml](.github/workflows/build.yml)) on every
-change, and a `v*` tag makes a draft release
-([release.yml](.github/workflows/release.yml)). Release builds can also run
-manually on the release branch to reuse its dependency caches, with the tag
-required to match that exact commit; see [Releasing](app/docs/dev/releasing.md).
-Each build bundles the
-engine with the libraries it links: from Homebrew on macOS, MSYS2 on
-Windows and Ubuntu on Linux (`app/scripts/bundle_engine.py`,
-`app/scripts/bundle_engine_windows.sh`).
-
-### Linux launch options
-
-Replace `Immage.AppImage` with your downloaded filename. Normal launch detects
-Mint/X11 with NVIDIA or Ubuntu/Wayland automatically. NVIDIA/X11 uses your
-system-installed WebKitGTK when compatible; Wayland uses WebKitGTK 2.54.2
-included in the AppImage:
-
-```sh
-./Immage.AppImage
-```
-
-To select either path explicitly:
-
-```sh
-# Mint / X11 / NVIDIA: your installed WebKitGTK, GBM off
-IMMAGE_WEBKIT=system GDK_BACKEND=x11 WEBKIT_DMABUF_RENDERER_DISABLE_GBM=1 ./Immage.AppImage
-
-# Ubuntu / Wayland: bundled WebKitGTK 2.54.2
-IMMAGE_WEBKIT=bundled GDK_BACKEND=wayland ./Immage.AppImage
-```
-
-Use `WEBKIT_DMABUF_RENDERER_DISABLE_GBM=0` to enable GBM or `=1` to disable it.
-Omit the switches to restore automatic selection. These options are available
-starting with 0.41.1; see [Linux troubleshooting](app/docs/preferences.md#performance)
-for older releases and additional overrides.
-
-## Building
-
-`scripts/build.sh` is the one entry point on every platform; what each
-needs installed first is below (OpenCV is not among it: `build.sh` builds
-the few parts of it darktable uses, into `build/opencv`), and the CI workflow
-([build.yml](.github/workflows/build.yml)) does the same steps on a clean
-machine. A release's `immage-<version>-source.tar.gz` builds the same way
-as a clone.
-
-### macOS
-
-You need darktable's build dependencies from Homebrew (the engine's are in
-[.github/Brewfile](.github/Brewfile): `brew bundle install --file
-.github/Brewfile`), plus the Xcode command line tools, Rust and Node.js.
-
-```sh
-git clone https://github.com/Rhettus/immage.git && cd immage
-
-# everything: darktable (the submodule, patched to build the engine), the
-# engine, the importer and a self-contained .dmg in build/dmg/
-scripts/build.sh
-
-# after that, the app in development
-cd app && npm install && npm run tauri dev
-
-# after a change to the engine or a darktable bump
-cmake --build build
-
-```
-
-Cargo never removes earlier builds from `app/src-tauri/target`, which
-grows by gigabytes a day. `npm run tauri ...` prunes it before and after
-each build, keeping what the last two builds of each profile use
-(`app/scripts/prune_target.mjs`; `-n` lists what would go).
-
-### Windows
-
-[app/WINDOWS.md](app/WINDOWS.md) walks through it: darktable's MSYS2
-toolchain for the engine (`scripts/build.sh` in the MSYS2 UCRT64 shell),
-then `npm run tauri build` in PowerShell with the MSVC Rust toolchain. It
-makes the NSIS `.exe` installer in
-`app/src-tauri/target/release/bundle/`. A Windows on ARM virtual machine
-works, building under x64 emulation.
-
-### Linux
-
-On Ubuntu 22.04, the system the release AppImages are built on:
-
-```sh
-sudo add-apt-repository ppa:savoury1/graphics
-sudo add-apt-repository ppa:savoury1/ffmpeg4
-sudo add-apt-repository ppa:savoury1/display
-sudo sed -i 's/^# deb-src /deb-src /' /etc/apt/sources.list
-sudo apt-get update
-sudo apt-get install $(grep -v '^#' .github/ubuntu-packages.txt) \
-  lld libgstreamer-plugins-bad1.0-dev flite1-dev
-sudo apt-get build-dep -y webkit2gtk
-
-# Image-format libraries first: ARM64 also needs their JPEG XL build for WebKit.
-sh app/scripts/build_linux_deps.sh
-# Pinned WebKitGTK / JavaScriptCore 2.54.2 and matching helpers.
-# Building WebKit takes substantial time; CI caches its staged installation.
-CC=gcc-12 CXX=g++-12 sh app/scripts/build_webkitgtk.sh
-
-# With Rust and Node.js installed, build and verify the AppImage.
-(cd app && npm ci)
-CC=gcc-12 CXX=g++-12 scripts/build.sh
-python3 -I app/scripts/check_webkit_bundle.py \
-  app/src-tauri/target/release/bundle/appimage/Immage.AppDir 2.54.2 --max-glibc 2.35
-```
-
-#### Native ARM64 builds
-
-CI builds Linux natively on Ubuntu 22.04 for x86-64 and ARM64, including
-WebKitGTK, JavaScriptCore and matching helper processes. ARM64 uses GCC 14
-from `ppa:ubuntu-toolchain-r/test` (replace the GCC 12 packages and commands
-above) and builds missing image libraries with `build_linux_deps.sh` instead
-of installing `libjxl-dev`, `libsharpyuv-dev` and `libopenexr-dev`.
-Packaging fails if the bundled WebKit libraries do not report 2.54.2,
-helpers are missing, or any packaged ELF imports glibc newer than 2.35.
-This keeps the runtime baseline compatible with Linux Mint 22.x.
-
-The Linux build scripts also build natively on an ARM64 host. The Rust app,
-darktable engine, OpenCV and ONNX Runtime use the host architecture; the
-AppImage is named `Immage_<version>_aarch64.AppImage`.
-
-On Arch Linux, install the native equivalents of the dependencies above
-instead of adding Ubuntu PPAs or running `build_linux_deps.sh`. The engine
-bundler reads package versions and licenses from pacman. `po4a` also needs
-`perl-pod-parser` to generate darktable's translated manual pages.
-
-With the dependencies, Rust and Node.js installed:
-
-```sh
-(cd app && npm ci)
-CMAKE_BUILD_PARALLEL_LEVEL=2 CARGO_BUILD_JOBS=2 APPIMAGE_EXTRACT_AND_RUN=1 scripts/build.sh
-```
-
-The two-job limit is useful on machines with 8 GB of RAM. An AppImage built
-on Arch requires a sufficiently recent host glibc; it does not establish
-the Ubuntu 22.04 compatibility baseline of the release builds.
-
-### AI models
-
-AI masks need their ONNX models in `build/ai-models/` (for development)
-or the app's data folder, and the engine started with `--models <dir>`;
-the app downloads each model on first use. Select Object uses darktable's
-own model from [darktable-ai](https://github.com/darktable-org/darktable-ai);
-Select Subject and Background use BiRefNet, Select Sky, People and Landscape
-use SegFormer, and Depth Range uses Depth Anything V2.
-
-## Documentation
-
-- [User guide](app/docs/README.md): Immage's editing tools, written for
-  photographers.
-- [Developer docs](app/docs/dev/README.md): the
-  [code map](app/docs/dev/code-map.md) (where to start a change, and a
-  line on each file), the [architecture](app/docs/dev/architecture.md)
-  (how an operation moves through the app, the engine's pipes and
-  commands, where data lives) and diagrams of the data flow, the
-  entities and a slider move.
-- [Benchmarks](benchmarking/README.md): the performance suite, its
-  recorded results and an offline dashboard.
-- [darktable/dev-doc/](darktable/dev-doc/README.md): darktable's own
-  developer docs, for anything the engine calls into darktable for.
-- [Pinning darktable](app/docs/dev/darktable-pin.md): which darktable
-  Immage builds, and how to move it.
-
-## Credits
-
-Immage stands on the work of these projects:
-
-- [**darktable**](https://github.com/darktable-org/darktable): the
-  raw processing engine, every image module, masks, styles and the AI
-  segmentation code. GPL-3.0, which Immage inherits.
-- [**Tauri**](https://tauri.app/): the application shell.
-  MIT / Apache-2.0.
-- [**React**](https://react.dev/) and [**Vite**](https://vite.dev/): the
-  interface and its build. MIT.
-- [**RapidRAW**](https://github.com/CyberTimon/RapidRAW): the inspiration
-  for the look of the interface and for building a raw editor on Tauri,
-  React and Rust. Only its appearance was matched, from screenshots; none
-  of its code is used.
-- [**t3mujinpack**](https://github.com/t3mujinpack/t3mujinpack) by João
-  Almeida: the film emulation styles shipped as looks
-  (`app/looks/t3mujinpack/`). MIT.
-- [**Segment Anything 2.1**](https://github.com/facebookresearch/sam2) by
-  Meta: the AI object selection model, as packaged for darktable by
-  [darktable-ai](https://github.com/darktable-org/darktable-ai).
-  Apache-2.0 weights.
-- [**BiRefNet**](https://github.com/ZhengPeng7/BiRefNet) by Peng Zheng
-  et al.: the Select Subject and Background model, in the ONNX export by
-  [onnx-community](https://huggingface.co/onnx-community/BiRefNet_lite-ONNX).
-  MIT.
-- [**SegFormer**](https://github.com/NVlabs/SegFormer) by NVIDIA,
-  trained on [ADE20K](https://groups.csail.mit.edu/vision/datasets/ADE20K/):
-  the Select Sky model, in the ONNX export by
-  [Xenova](https://huggingface.co/Xenova/segformer-b2-finetuned-ade-512-512).
-  NVIDIA Source Code License, for non-commercial use, which is how Immage
-  is used.
-- [**Depth Anything V2**](https://github.com/DepthAnything/Depth-Anything-V2)
-  (Small): the Depth Range model, in the ONNX export by
-  [onnx-community](https://huggingface.co/onnx-community/depth-anything-v2-small).
-  Apache-2.0.
-- [**Immporter**](https://github.com/Rhettus/immporter): the import
-  screen. Its interface uses [Tailwind CSS](https://tailwindcss.com/),
-  [Zustand](https://github.com/pmndrs/zustand) and
-  [TanStack Virtual](https://tanstack.com/virtual) (MIT) and
-  [Lucide](https://lucide.dev/) icons (ISC); its Rust side uses
-  [rawler](https://github.com/dnglab/dnglab), [SQLite](https://sqlite.org/)
-  via rusqlite, [keyring](https://github.com/open-source-cooperative/keyring-rs)
-  and [reqwest](https://github.com/seanmonstar/reqwest), each under its
-  own license.
-- [**ONNX Runtime**](https://github.com/microsoft/onnxruntime): runs the
-  AI models. MIT.
-- [**OpenCV**](https://opencv.org/): aligns the brackets of an HDR Merge,
-  in darktable's HDR merge, and stitches Panorama Merge's photos; built
-  from source with only the parts they need
-  (`app/scripts/build_opencv.sh`). Apache-2.0.
-- [**lensfun**](https://lensfun.github.io/): the lens correction
-  database, bundled with the app. LGPL-3.0 library, CC BY-SA 3.0 data.
-- [**Stairs to mountain**](https://commons.wikimedia.org/wiki/File:Stairs_to_mountain.jpg)
-  by kinkate (from Pixabay): the sample photo Immage opens on its first
-  start (`app/sample/`). CC0.
-- [**Poppins**](https://fonts.google.com/specimen/Poppins) via
-  [Fontsource](https://fontsource.org/): the interface typeface. OFL-1.1.
-- [**Homebrew**](https://brew.sh/) on the Mac,
-  [**MSYS2**](https://www.msys2.org/) on Windows and
-  [**Ubuntu**](https://ubuntu.com/) on Linux: the libraries darktable
-  links against, which the app bundles with their license texts
-  (`app/scripts/bundle_engine.py`, `app/scripts/bundle_engine_windows.sh`).
+Immage is a raw photo editor with familiar panels, sliders and shortcuts,
+powered by [darktable](https://www.darktable.org/). It is for photographers
+who want a straightforward editing workflow, sensible defaults and photos
+organized in folders rather than an editor’s catalog.
+
+A personal, non-commercial project, Immage is available for macOS, Windows
+and Linux. **All builds are alpha; bugs are expected.**
+
+[Website](https://immage.photo/) ·
+[Download Immage](https://github.com/Rhettus/immage/releases) ·
+[Getting started](app/docs/getting-started.md) ·
+[User guide](app/docs/README.md) ·
+[Release notes](RELEASE_NOTES.md)
+
+<a href="app/docs/images/workspace.png"><img src="app/docs/images/workspace.png" width="960" alt="Immage editing a photo"></a>
+
+## What you can do
+
+- Edit with familiar tone, color, detail and lens correction tools.
+- Make local adjustments with brushes, gradients, range masks and AI selections.
+- Heal and clone, simulate film stocks and papers, convert film negatives, and merge HDR photos or panoramas.
+- Apply presets and film looks, compare edits, and copy settings across photos.
+- Browse folders directly, import from a card with the built-in Immporter,
+  and optionally search and export to an [Immich](app/docs/immich.md) library.
+- Export to a folder or an Immich album, with borders and file-name templates.
+- Print or save a PDF with your printer's ICC profile, and
+  [soft proof](app/docs/print.md) the photo on screen first.
+
+Your originals stay untouched. Edits are saved automatically in XMP sidecars
+beside your photos. Immage offers a selected set of darktable’s tools in a
+fixed workflow; photographers who need every module and pipeline control
+can continue editing in a compatible version of darktable.
+
+**Using darktable already?** Try Immage on copies first. Immage uses a
+development version of darktable, and stable releases may not read its newer
+module or mask formats. See [darktable compatibility](app/docs/darktable.md).
+
+## Download and install
+
+Choose your platform on the [Releases page](https://github.com/Rhettus/immage/releases):
+
+| Platform | Requirements | Download |
+| --- | --- | --- |
+| macOS | Apple silicon, macOS 15 or newer | `.dmg` |
+| Windows | Windows 10 or 11, x64; Windows on ARM through x64 emulation | `-setup.exe` installer |
+| Linux | x86-64 or ARM64, glibc 2.35 or newer (Ubuntu 22.04 and later, including Linux Mint 22.x) | AppImage |
+
+Builds are not yet signed with a developer certificate; the release page
+explains how to open them the first time. Immage checks for updates daily;
+you can install them through **Preferences › About › Updates**.
+
+For Linux launch options, see [Linux setup and troubleshooting](app/docs/preferences.md#performance).
+
+## Learn more
+
+- [User guide](app/docs/README.md): getting started, editing tools and settings.
+- [darktable compatibility and module reference](app/docs/darktable.md).
+- [Developer docs](app/docs/dev/README.md): building, architecture and contributing to the code.
+- [Credits and licenses](app/docs/credits.md): projects, AI models and map attribution.
 
 ## License
 
-GPL-3.0-or-later, as darktable. Bundled third-party content keeps its own
-license, listed above and in its folder. Preferences › About lists every
-library bundled with the engine and every Rust crate and npm package built
-into the app, with its license and text (`app/scripts/notices.mjs`).
-
-Each release attaches its source: Immage, with darktable and Immporter at
-the commits it was built from. The libraries bundled from Homebrew, MSYS2
-and Ubuntu are listed in Preferences › About with the version shipped
-and where their source is published. For at least three years after a
-release, anyone may also ask for the complete source of any GPL or LGPL
-library in its binaries, at the version shipped, free of charge: open an
-issue at [github.com/Rhettus/immage/issues](https://github.com/Rhettus/immage/issues).
-
-## Location metadata and map attribution
-
-The Metadata panel's Location section accepts latitude and longitude in decimal
-degrees (latitude first). Use Show map to place or drag a pin, then Apply to
-save it to the photo's XMP sidecar. Remove location clears GPS coordinates and
-altitude in Immage without changing the original photo. An Immage XMP marker
-keeps removed camera GPS from returning on reopen; other photo software may
-still show GPS embedded in the original. Moving a location clears the old altitude. Coordinate editing works
-offline; maps require internet access and no API key. Place-name lookup is not
-included.
-
-Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright),
-available under the [Open Database License (ODbL)](https://opendatacommons.org/licenses/odbl/).
-Map tiles are provided by the OpenStreetMap Foundation and are subject to its
-[tile usage policy](https://operations.osmfoundation.org/policies/tiles/).
-Immage identifies its requests, caches viewed tiles for seven days, and does not
-prefetch areas for offline use. Opening the map sends the viewed area and your
-IP address to the tile service.
-
-Interactive maps use [Leaflet](https://leafletjs.com/), Copyright © 2010–2023
-Volodymyr Agafonkin and © 2010–2011 CloudMade, under the
-[BSD 2-Clause license](https://github.com/Leaflet/Leaflet/blob/main/LICENSE).
+Immage is GPL-3.0-or-later. Bundled third-party content keeps its own license.
+See [license details and source availability](app/docs/credits.md#license).

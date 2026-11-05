@@ -14,12 +14,17 @@ This imports pure manifest/math code using Node >= 22.18, without launching an a
 | Case | Checks | Verification status |
 |---|---|---|
 | startup, exposure | Real fixture, final photo, drag lighter/darker, exact reset | Previously passed on Linux system WebKit |
+| gui-benchmark | Run existing benchmark via Preferences, retain/validate report and final pixels | Passed on Linux ARM64 VM, system WebKitGTK 2.54.2, Wayland DPR 2; timings approximate |
+| gui-benchmark-screen | Same benchmark with fractional draft on | Passed on Linux ARM64 VM, Wayland 125%, DPR 2, draftScale 0.625 |
+| gui-benchmark-whole | Same benchmark with fractional draft off | Passed on Linux ARM64 VM, Wayland 125%, DPR 2, draftScale 1 |
 | slider-input | Arrow keys, focus retention, double-click numeric editing, Enter, reset/photo | Passed on Linux system WebKit, Wayland, DPR 2 |
 | batch-paste | Two selected JPEGs, Kodak look/amount, one batch undo/redo, both sidecars, reopening and unselected image | Written; awaiting approved GUI run |
 | history | Slider edit, toolbar undo/redo, value/photo agreement, basic Reset All | Awaiting approved GUI run |
 | rail | Presets, masks, zones, heal, adjustments, active state, hit geometry, screenshots | Awaiting approved GUI run |
+| splash | Launch splash size stays 640x427 (not tiled to fill the workspace) | Fails on Hyprland 0.57: floats but opens 1710x1107 (run 2026-11-03T05-56-54.119Z_f7db416); not in smoke |
+| panel-scroll | 81d4441: a first open of Presets starts at the top; Adjustments returns to its own offset | Passed (run 2026-11-03T06-06-31.255Z_0f9ba08) |
 | sliders | Current reachable panel ranges, pointer change, reset, final pixels, CSS, screenshots | Awaiting approved GUI run; hidden branches excluded |
-| module-options | Every available Global/Masks option, independent Contrast choices, folding persistence | Awaiting approved GUI run; preference UI only |
+| module-options | Every available Global/Masks option, independent Contrast choices, folding persistence | Awaiting a GUI run; preference UI only. Generated module-masks-contrast-1 passed (run 2026-11-03T06-28-57.870Z_8e9b538) |
 
 `node verify/gui/run.mjs --list` lists selections without launching anything.
 `--suite controls` runs all implemented control cases; `--suite regressions`
@@ -69,10 +74,12 @@ do not prove compatibility or installation behavior.
 | Every module | Global and mask scope, each backend option, effect/reset/undo, keep existing edits, reopen sidecar | Preference options only; output cases pending |
 | Curves/wheels/graphs | Drag points, boundaries, channels, reset, photo effect, graph hit targets | Pending |
 | Crop/transform | Free/locked/portrait, corners/edges, aspect options, rotation/flip, guides, cancel/apply, undo | Pending |
-| Masks/heal/negative/zones | Creation and deletion, every shape/option, local module controls, outside-region invariance, reset/undo | Rail opening only; editing pending |
+| Portrait automatic Transform | Crop a native/EXIF portrait, click Auto, Level, Vertical and Full; verify a rendered correction without a working-space error, then restore the crop and repeat | GUI case pending; headless CPU sampling covered by `verify/transform-sampling.py` |
+| Masks/heal/negative/film simulation/zones | Creation and deletion, every shape/option, local module controls, outside-region invariance, reset/undo | Rail opening only; editing pending |
 | Preferences | Every safe local setting, persistence, theme/canvas/font/preview, disabled hardware states | Module tab only; external apps/services/relaunch excluded |
 | Library/filter/history/presets | Every menu and option with disposable folder/metadata fixtures | Pending |
 | Import/export/panorama | In-app settings, validation, format/projection options, preview/output | Pending; native chooser blocked, launch fixture argument only |
+| Print/soft proof | Printer, paper, media, orientation, margins, size, place, profile, intent, BPC; soft proof and gamut warning on the photo; Print and Save PDF | `print` case written, pending live run: soft proof, gamut, S, layout and Save PDF readiness with a seeded profile. Printing and the save dialog are native or need a real printer; `verify/print.py` checks profiles, proof pixels and the engine's PDF headlessly |
 | Visual correctness | Supported OS/webview/theme/scale/viewport, contrast/focus/clipping, approved regional references/diffs | Geometry/CSS and diagnostic screenshots only; approved references pending |
 
 Before marking an area complete, enumerate its options, add suitable fixture
@@ -94,15 +101,41 @@ options did not execute. Preserve the failed report; this was not a suite pass.
 
 ## Expanded implementation status
 
-The registry now contains 541 named declarations. Generated range cases exercise
+The registry now contains 310 named declarations. Generated range cases exercise
 both pointer directions, keyboard limits/steps, typed minimum/maximum clamping,
 Escape and reset; generated choices enumerate mounted options. Global/mask module
 variants exercise a candidate control and rendered effect. These are unverified
-implementations, not 541 passes. Hidden graph controls, RAW-only controls and
-neutral/gated effects can block or need stronger dedicated oracles.
+implementations, not 310 passes. RAW-only controls and neutral/gated effects
+can block or need stronger dedicated oracles.
+
+A control that only one option of a module choice shows (the contrast
+equalizer's 30 bands, contrast & texture's Clarity and Texture bands,
+diffuse or sharpen's Amount/Radius/Sensitivity) records that option as
+`module` in its generated case. The case chooses it in Preferences >
+Modules first and restores the previous choice afterwards
+(`withModule` in `specs/ranges.mjs`). Defringe has no module choice, so
+its global and mask sliders always run on chromatic aberrations.
+
+The saturation curve's `sc_*`/`sb_*` points are drawn on its graph, so they
+generate no control cases either (`graphCoverage` in `generated.mjs`): the
+`saturation-curve` case drives the global graph (passed live on Linux
+2026-11-04, run `2026-11-04T04-47-50.800Z_0bf0f4f_8df48d28`), and the
+`module-*-saturation-2` variants lift its muted end globally and in a mask.
+
+Hidden panels generate no control cases (their state has no slider):
+`hiddenPanelCoverage` in `generated.mjs` maps the point curve to `curves`,
+crop and orientation to `crop-options`, zones to `zones`, negative to
+`negative`, film simulation to `film` and modules to `module-options`. Upright, vignette center, exposure
+compensation and the tone mapper have no written case yet: a coverage gap,
+not a pass.
 
 Written cases now include crop guides/locked corners/portrait edges/aspects,
-curves, wheels, equalizer bands, masks, heal, negative conversion, zones,
+crop Auto straighten (and Auto's being disabled while Upright is on; passed
+live on Linux 2026-11-04 with P1030105.RW2, run
+`2026-11-04T15-39-13.889Z_73c0bc2_c06b6626`),
+curves, wheels, equalizer bands, masks, heal, negative conversion, film
+simulation (on, the Film and Paper menus, a preset, off; the runner copies the
+installed data pack into the run's profile; passed live on Linux 2026-11-03), zones,
 preferences, wheel settings, export settings, filter layout, presets, shortcuts,
 histogram endpoints, scaled final-frame alignment, loupe frame delivery in grid,
 detail without loupe, camera-body options and native reset. Earlier table entries

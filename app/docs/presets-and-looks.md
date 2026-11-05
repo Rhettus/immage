@@ -11,8 +11,8 @@ one at a time, with their own amount.
 
 Open them with **Presets** on the rail.
 
-![The Presets panel with film look tiles](images/presets-panel.png)
-<!-- screenshot: Presets mode, Basics expanded, a Film group expanded, one look applied with its chip in the header -->
+![The Presets panel with the Basics tiles previewing the photo, and the Film groups below](images/presets-panel.png)
+<!-- screenshot: Presets mode, Basics expanded, live previews of the photo, the Film groups listed -->
 
 ## Presets
 
@@ -48,8 +48,10 @@ The preset new photos get carries a **new photos** badge.
 
 ## Looks
 
-Immage comes with 53 film looks from the t3mujinpack collection, in three
-groups:
+Immage comes with 53 film looks from the
+[t3mujinpack](https://github.com/t3mujinpack/t3mujinpack) collection,
+created by João Almeida and shared under the MIT license. The looks are his
+work; Immage only ships them. They come in three groups:
 
 - **Film · Black and White** (12): AGFA APX, Fuji Neopan, Ilford Delta, FP4,
   HP5 and XP2, Kodak T-Max and Tri-X.
@@ -63,6 +65,10 @@ time. While one is on, the panel's head shows its name with **×** to remove
 it, and **Look amount** (0-100) sets its strength.
 
 A look sits on top of your edit: changing sliders afterwards still works.
+Previewing another look leaves the applied look's masks and strength unchanged.
+Masks carried by a
+supported look are saved with the edit when you apply it, so they remain
+when you reopen the photo.
 
 Looks you import go in **My Looks**. Any darktable style (`.dtstyle`)
 works as a look, though film emulations suit it best.

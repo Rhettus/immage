@@ -82,7 +82,8 @@ const { NO_FILTER, exposureLabel, facetsWithin, passes } = await import("../app/
 const z = await import("../app/src/zones.ts");
 const nd = await import("../app/src/negadoctor.ts");
 const { compare, chromaChange, meanChroma, inEllipse, rightOf } = await import("./metrics.mjs");
-const { THRESHOLD, GLOBAL, COMPOSITE, LOCAL, trialValues, judge } = await import("./expect.mjs");
+const { THRESHOLD, GLOBAL, COMPOSITE, LOCAL, trialValues, judge, filmSpecs } = await import("./expect.mjs");
+const { SF_FIELDS } = await import("../app/src/spektrafilm.ts");
 
 const VIEW = { width: 1024, height: 1024 };
 // `controls`: only these, by id, to look into one
@@ -115,8 +116,7 @@ function fresh(photo) {
 }
 
 // a photo opened as the app opens it (App.tsx, openFile): a new one gets
-// AgX, and a raw darktable's capture sharpening. the new-photos preset and
-// profile are left out, being Preferences'
+// AgX. the new-photos preset and profile are left out, being Preferences'
 async function open(path) {
   let last = null;
   const errors = [];
@@ -128,7 +128,6 @@ async function open(path) {
   if (!s.wasEdited) {
     const defaults = [];
     if (s.values.tm_mode !== 1) defaults.push(["tm_mode", 1]);
-    if (s.raw) defaults.push(["capture", 1]);
     if (defaults.length) s.setMany(defaults);
   }
   // Session stops pumping on an engine error, which it hands to onError,
@@ -206,11 +205,16 @@ async function trialGlobal(o, photo, c, spec, check) {
 
 async function sliders(photo) {
   const o = await open(fresh(photo));
+  // the film controls need the data pack's stock lists; without the pack
+  // they are skipped, as the simulation passes the photo through
+  const pack = await invoke("spektra_stocks");
+  const film = pack.pack ? filmSpecs(SF_FIELDS.map((x) => x.field), pack.stocks) : {};
   for (const c of controls()) {
     if (!wanted(c.id)) continue;
-    const spec = GLOBAL[c.id] ?? {};
+    const spec = GLOBAL[c.id] ?? film[c.id] ?? {};
     const base = { check: "sliders", photo: basename(photo), id: c.id };
     if (spec.skip) { record({ ...base, status: "skip", detail: spec.skip }); continue; }
+    if (c.id.startsWith("sf_") && !pack.pack) { record({ ...base, status: "skip", detail: "no spektrafilm data pack" }); continue; }
     if (!m.mapOf.has(c.id)) { record({ ...base, status: "fail", detail: "no module map in manifest.ts" }); continue; }
     if ((c.rawOnly || spec.raw) && !o.s.raw) { record({ ...base, status: "skip", detail: "raws only" }); continue; }
     if (!active(o.s, c.id)) { record({ ...base, status: "skip", detail: "not the photo's module: the choices check covers it" }); continue; }
@@ -283,6 +287,7 @@ async function localSliders(o, photo, check, only = null) {
     if ((only && !only.includes(c.id)) || !wanted(c.id)) continue;
     const spec = LOCAL[c.id] ?? {};
     const base = { check, photo, id: c.id };
+    if (spec.skip) { record({ ...base, status: "skip", detail: spec.skip }); continue; }
     if (!activeLocal(o.s, c.id)) { record({ ...base, status: "skip", detail: "not the photo's module: the choices check covers it" }); continue; }
     try { await trialLocal(o, photo, "Verify", c, spec, check); }
     catch (e) { record({ ...base, status: "fail", detail: String(e) }); }
@@ -434,14 +439,34 @@ function zip(files) {
 function hueStrip() {
   const path = join(args.work, "strip", "hues.tif");
   if (existsSync(path)) return path;
-  mkdirSync(dirname(path), { recursive: true });
-  const w = 720, h = 120, data = 140;
-  const px = Buffer.alloc(data + w * h * 3);
-  for (let x = 0; x < w; x++) {
+  return rgbTiff(path, 720, 120, (x) => {
     const hue = (x + 0.5) / 2 / 60, s = 0.85, v = 0.8;
     const f = (n) => { const k = (n + hue) % 6; return v - v * s * Math.max(0, Math.min(k, 4 - k, 1)); };
-    for (let y = 0; y < h; y++) [f(5), f(3), f(1)].forEach((c, i) => { px[data + 3 * (y * w + x) + i] = Math.round(255 * c); });
-  }
+    return [f(5), f(3), f(1)];
+  });
+}
+
+// six bands, each a ramp from near black to white down its rows, with every
+// hue across the columns at half saturation: wherever a mask is drawn, it
+// covers the whole tonal range, which a real photo's dark corner may not
+function tonePhoto() {
+  const path = join(args.work, "strip", "tones.tif");
+  if (existsSync(path)) return path;
+  const h = 720, band = h / 6;
+  return rgbTiff(path, 1080, h, (x, y) => {
+    const l = 0.02 + 0.98 * ((y % band) + 0.5) / band, hue = ((x + 0.5) / 1080) * 6;
+    const f = (n) => { const k = (n + hue) % 6; return l - l * 0.5 * Math.max(0, Math.min(k, 4 - k, 1)); };
+    return [f(5), f(3), f(1)];
+  });
+}
+
+// an 8-bit RGB TIFF of color(x, y) -> [r, g, b] in 0..1
+function rgbTiff(path, w, h, color) {
+  mkdirSync(dirname(path), { recursive: true });
+  const data = 140;
+  const px = Buffer.alloc(data + w * h * 3);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++)
+    color(x, y).forEach((c, i) => { px[data + 3 * (y * w + x) + i] = Math.round(255 * c); });
   // the header, one IFD at 8 and the three BitsPerSample at 134
   px.write("II", 0, "latin1");
   px.writeUInt16LE(42, 2);
@@ -612,6 +637,8 @@ async function fixes(photo) {
   // more than ±10 did
   await fix("Clarity at ±1 changes less than at ±10", async () => {
     const o = await open(fresh(photo));
+    // the slider is local contrast's, which new photos no longer default to
+    await o.after(() => o.s.set("mod_clarity", 0));
     const mad = async (v) => compare(await o.after(() => o.s.set("clarity", v)), o.base).mad;
     const [p1, p10, n1, n10] = [await mad(1), await mad(10), await mad(-1), await mad(-10)];
     await o.s.close();
@@ -1705,6 +1732,31 @@ async function decisions(photo) {
       : copyBack?.pixels.buffer !== first.pixels.buffer ? "back from the Before view, the copy was rendered again" : null;
   });
 
+  // zoomed in, the fitted view is rendered on the base pipe once idle
+  // (Session.requestFit), and zooming back out shows it without a render,
+  // as the main pipe renders it
+  await decide("zoomed in, the fitted view is ready for zooming out", async () => {
+    const o = await open(fresh(photo));
+    o.s.endBaseline();
+    const ref = await o.after(() => o.s.set("exposure", 0.5));
+    await zoomed(o);
+    await o.after(() => o.s.set("exposure", 0.6));
+    await o.after(() => o.s.set("exposure", 0.5));
+    o.s.requestFit(VIEW);
+    await o.frame();
+    o.view = VIEW;
+    const out = await o.after(() => {});
+    await o.s.close();
+    await drained();
+    let diff = 0;
+    if (out && out.width === ref.width && out.height === ref.height)
+      for (let i = 0; i < ref.pixels.length; i++) diff = Math.max(diff, Math.abs(ref.pixels[i] - out.pixels[i]));
+    return !out ? "zooming out showed no frame"
+      : !out.trace?.rust.every((t) => t === 0) ? "zooming out rendered the fitted view again"
+      : out.width !== ref.width || out.height !== ref.height ? "the fitted view rendered at another size"
+      : diff > 2 ? `the fitted view differs from the main pipe's by ${diff}` : null;
+  });
+
   // the photos the arrow keys open next are decoded ahead, a few at once
   // (App.tsx, prefetchNext; main.c, _prefetch). each, opened while its
   // decode is still under way, waits for it, and renders as a photo opened
@@ -2006,7 +2058,8 @@ async function decisions(photo) {
   // Default in Preferences › Modules is darktable's AgX workflow (README)
   await decide("default modules", async () => {
     const want = { contrast: "agx", tone_regions: "toneequal", blacks: "agx", saturation: "agx",
-                   bw: "channelmixerrgb#bw", sharpening: "sharpen", defringe: "cacorrectrgb" };
+                   bw: "channelmixerrgb#bw", clarity: "contrastntexture", texture: "contrastntexture#texture",
+                   sharpening: "sharpen" };
     const wrong = m.MODULE_CHOICES.map((c) => [c.id, c.options.find((x) => x.value === m.preferredChoice(c)).op])
       .filter(([id, op]) => want[id] !== op).map(([id, op]) => `${id}: ${op}, not ${want[id] ?? "listed here"}`);
     return wrong.join(", ") || null;
@@ -2161,6 +2214,46 @@ async function decisions(photo) {
       : changed.length ? `turned back, these are not as they were: ${changed.join(", ")}` : null;
   });
 
+  // a film simulation turns the tone mappers off and leaves exposure and
+  // color calibration on; it opens again so, its tools on the modules it
+  // keeps, and turned back the tone mappers are as they were
+  // (film-simulation.md; manifest.ts, SF_OFF and SF_CHOICES). needs no data
+  // pack: without one spektrafilm passes the photo through
+  await decide("a film simulation turns the tone mappers off, and back", async () => {
+    const path = fresh(photo);
+    const ops = [...m.SF_OFF, "spektrafilm", "exposure", "channelmixerrgb"];
+    const fields = m.boundFields();
+    const state = async () => (await invoke("get_params", {
+      modules: Object.fromEntries(ops.map((op) => [op, fields[op]])) })).modules;
+    let o = await open(path);
+    const was = await state();
+    await o.after(() => o.s.setMany([["sf_on", 1], ...Object.entries(m.SF_CHOICES)]));
+    const wrong = (st) => [...m.SF_OFF].filter((op) => st[op]?.enabled)
+      .concat(st.spektrafilm?.enabled ? [] : ["spektrafilm off"])
+      .concat(["exposure", "channelmixerrgb"].filter((op) => was[op].enabled && !st[op].enabled).map((op) => `${op} off`));
+    const simulated = wrong(await state());
+    await o.s.close();
+    o = await open(path);
+    const reopened = wrong(await state());
+    const choices = Object.entries(m.SF_CHOICES).filter(([id, v]) => o.s.values[id] !== v).map(([id]) => id);
+    const sfOn = o.s.values.sf_on;
+    await o.after(() => o.s.setMany([["sf_on", 0],
+                                     ...Object.keys(m.SF_CHOICES).map((id) => [id, o.s.neutral[id]])]));
+    const back = await state();
+    await o.s.close();
+    const changed = [...m.SF_OFF].flatMap((op) => {
+      if (back[op].enabled !== was[op].enabled) return [`${op} ${was[op].enabled ? "on" : "off"} → ${back[op].enabled ? "on" : "off"}`];
+      const moved = was[op].enabled ? Object.keys(was[op].params)
+        .filter((f) => Math.abs(back[op].params[f] - was[op].params[f]) > 1e-5) : [];
+      return moved.length ? [`${op} ${moved.map((f) => `${f} ${was[op].params[f]} → ${back[op].params[f]}`).join(", ")}`] : [];
+    });
+    return simulated.length ? `simulated, these are not as they should be: ${simulated.join(", ")}`
+      : sfOn !== 1 ? "opened again, it is not a film simulation"
+      : reopened.length ? `opened again, these are not as they should be: ${reopened.join(", ")}`
+      : choices.length ? `opened again, these tools are back on the tone mapper: ${choices.join(", ")}`
+      : changed.length ? `turned back, these are not as they were: ${changed.join(", ")}` : null;
+  });
+
   // a camera scan's blue, under the orange mask, reads the film's densest
   // parts as noise around zero: White Point is set from the other channels,
   // not by that one, which darkened the whole print (negadoctor.ts,
@@ -2247,6 +2340,9 @@ async function choices(photo) {
       const tag = `${c.id}=${opt.label ?? opt.value}`;
       localStorage.setItem("immage.modules.mode", "custom");
       localStorage.setItem("immage.modules.choices", JSON.stringify({ [c.id]: opt.value }));
+      // a new mask takes Preferences › Modules › Masks' choice, not the photo's
+      const forMasks = m.MASK_MODULE_CHOICES.some((x) => x.id === c.id && x.options.some((y) => y.value === opt.value));
+      if (forMasks) localStorage.setItem("immage.modules.choices.masks", JSON.stringify({ [c.id]: opt.value }));
       try {
         const o = await maskOpen(photo);
         if (o.s.values[c.control] !== opt.value) {
@@ -2254,10 +2350,16 @@ async function choices(photo) {
                    detail: `a new photo took ${o.s.values[c.control]}, not the module Preferences picked` });
           continue;
         }
+        const maskValue = o.s.masks.find((x) => x.name === "Verify").values[c.control];
+        if (forMasks && maskValue !== opt.value) {
+          record({ check: "choices", photo: name, id: tag, status: "fail",
+                   detail: `a new mask took ${maskValue}, not the module Preferences picked for masks` });
+          continue;
+        }
         const globals = new Set(m.modules.filter((x) => x.choice?.control === c.control && x.choice.value === opt.value)
           .flatMap((x) => x.controls).filter((id) => !m.isModuleSetting(id)));
         for (const cc of controls()) {
-          if (!globals.has(cc.id)) continue;
+          if (!globals.has(cc.id) || !wanted(cc.id)) continue;
           const spec = GLOBAL[cc.id] ?? {};
           if (spec.skip || ((cc.rawOnly || spec.raw) && !o.s.raw)) continue;
           try { await trialGlobal(o, name, cc, spec, `choices ${tag}`); }
@@ -2265,9 +2367,10 @@ async function choices(photo) {
         }
         const locals = m.localMaps.filter((x) => x.choice?.control === c.control && x.choice.value === opt.value)
           .flatMap((x) => x.controls);
-        // a mask's trials are judged against the masked frame, made before the
-        // global trials moved anything
-        o.masked = await o.frame();
+        // a mask's trials are judged against the masked frame, rendered again
+        // at the whole view: a detail tool's global trial last rendered a 100%
+        // crop, and frame() alone would return it
+        o.masked = await o.after(() => {});
         await localSliders(o, name, `choices ${tag}`, locals);
         await o.s.close();
       } catch (e) {
@@ -2275,6 +2378,7 @@ async function choices(photo) {
       } finally {
         localStorage.removeItem("immage.modules.mode");
         localStorage.removeItem("immage.modules.choices");
+        localStorage.removeItem("immage.modules.choices.masks");
       }
     }
   }
@@ -2284,12 +2388,13 @@ async function choices(photo) {
 // starting again), and the photo opened: the same values and the same frame
 const ROUNDTRIP = {
   exposure: 0.7, contrast: 30, highlights: -40, shadows: 35, whites: 20, blacks: -15, vibrance: 20, saturation: -10,
-  clarity: 25, dehaze: 10, cg_highlights_sat: 30, cg_highlights_hue: 40, cg_shadows_lum: -20, hsl_sat_blue: 30,
+  detail_clarity_gain_medium: 0.5, dehaze: 10, cg_highlights_sat: 30, cg_highlights_hue: 40, cg_shadows_lum: -20, hsl_sat_blue: 30,
   hsl_lum_orange: 15, vig_amount: -20, grain_amount: 15, usm_amount: 40, nr_luminance: 20,
 };
 const ROUNDTRIP_MASKS = [
   { name: "Round", shape: MASK, values: { l_exposure: 0.5, l_highlights: -30, l_shadows: 25, l_whites: 20,
-                                          l_saturation: 15, l_cg_highlights_lum: 20, l_clarity: 15 } },
+                                          l_saturation: 15, l_cg_highlights_lum: 20,
+                                          l_detail_clarity_gain_medium: 0.3 } },
   { name: "Line", shape: { type: "gradient", x: 0.5, y: 0.3, angle: 90, width: 0.2 },
     values: { l_temp: -30, l_contrast: 20, l_blacks: -20, l_hsl_sat_blue: 25 } },
 ];
@@ -2470,6 +2575,43 @@ async function checkpoints(photo, check = "checkpoints") {
   }
 }
 
+// Highlights and Shadows, global and in a mask, on each of their modules,
+// over tonePhoto(): a corpus photo may have nothing bright under the mask,
+// so a mask's sliders count as passing on any one photo (LOCAL, anyPhoto)
+// and this one always has every tone there
+async function toneRange() {
+  const photo = tonePhoto(), name = basename(photo);
+  const c = m.MODULE_CHOICES.find((x) => x.id === "tone_regions");
+  for (const opt of c.options) {
+    const preferred = opt.value === m.preferredChoice(c);
+    const tag = `${c.id}=${opt.label ?? opt.value}`;
+    const globalCheck = preferred ? "sliders" : `choices ${tag}`, localCheck = preferred ? "masks" : `choices ${tag}`;
+    const globals = preferred ? args.checks.includes("sliders") : args.checks.includes("choices");
+    const locals = preferred ? args.checks.includes("masks") : args.checks.includes("choices");
+    if (!globals && !locals) continue;
+    localStorage.setItem("immage.modules.mode", "custom");
+    localStorage.setItem("immage.modules.choices", JSON.stringify({ [c.id]: opt.value }));
+    localStorage.setItem("immage.modules.choices.masks", JSON.stringify({ [c.id]: opt.value }));
+    try {
+      const o = await maskOpen(photo);
+      if (globals) for (const id of ["highlights", "shadows"]) {
+        if (!wanted(id)) continue;
+        try { await trialGlobal(o, name, m.controlById.get(id), GLOBAL[id] ?? {}, globalCheck); }
+        catch (e) { record({ check: globalCheck, photo: name, id, status: "fail", detail: String(e) }); }
+      }
+      o.masked = await o.after(() => {});
+      if (locals) await localSliders(o, name, localCheck, ["l_highlights", "l_shadows"]);
+      await o.s.close();
+    } catch (e) {
+      record({ check: localCheck, photo: name, id: tag, status: "fail", detail: String(e) });
+    } finally {
+      localStorage.removeItem("immage.modules.mode");
+      localStorage.removeItem("immage.modules.choices");
+      localStorage.removeItem("immage.modules.choices.masks");
+    }
+  }
+}
+
 const CHECKS = { sliders, masks, choices, fixes, decisions, checkpoints };
 try {
   if (args.rendered) args.photos.push(...await rendered(args.rendered));
@@ -2491,6 +2633,13 @@ try {
       try { await reference(photo, saved); }
       catch (e) { record({ check: "reference", photo: basename(photo), id: "-", status: "fail", detail: String(e?.stack ?? e) }); }
     }
+  }
+  if (["sliders", "masks", "choices"].some((c) => args.checks.includes(c))) {
+    const t0 = performance.now();
+    log("tones.tif: tone range");
+    try { await toneRange(); }
+    catch (e) { record({ check: "tone range", photo: "tones.tif", id: "-", status: "fail", detail: String(e?.stack ?? e) }); }
+    log(`  ${((performance.now() - t0) / 1000).toFixed(0)} s`);
   }
 } finally {
   await stopEngine();

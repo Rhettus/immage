@@ -21,16 +21,24 @@ in, edit them, send them out.
 | **Adjustments** | the develop panels. See [Adjustments](adjustments.md). |
 | **Crop** | the crop tool (R); a second click applies it. See [Crop](crop.md). |
 | **Masks** | local adjustments. See [Masks](masks.md). |
-| **Zone System** | black and white tones as zones. See [Zone System](zone-system.md). |
 | **Heal** | heal and clone (Q). See [Heal and clone](heal.md). |
+| **Zone System** | black and white tones as zones. See [Zone System](zone-system.md). |
+| **Film Simulation** | the photo rendered as a film, printed or scanned. See [Film Simulation](film-simulation.md). |
+| **Negative** | a photo of a film negative turned positive. See [Film negatives](negative.md). |
 | **Presets** | presets and film looks. See [Presets and looks](presets-and-looks.md). |
 | **Export** | the export dialog (⇧⌘E). See [Export](export.md). |
+| **Print** | printing, saving a PDF and soft proofing (⌘P). See [Print and soft proofing](print.md). |
 | **?** | the quick start guide |
 | Keyboard | the keyboard shortcuts sheet (⌘/) |
 | Gear | **Preferences** (⌘,) |
 
 Clicking the button of the panel that is already showing slides the right
-panel shut. Crop, Masks, Zone System and Heal need a photo open.
+panel shut. Crop, Masks, Heal, Zone System, Film Simulation and Negative need
+a photo open.
+
+Each tool remembers how far you scrolled its panel, so going back to
+Adjustments returns you to the same place. A tool opens at its top the
+first time.
 
 On Windows, icon buttons use the standard arrow cursor across the whole
 button, including its icon. Hover highlights and tooltips identify the tool.
@@ -61,6 +69,12 @@ Click a card's title to fold or unfold it. See [Library](library.md) and
 - The zoom slider in the toolbar below the filmstrip zooms from a quarter
   of fit to 400%. Double-click it for fit or 100%.
 - Drag the photo to pan.
+- Once a photo has opened, and again each time you stop editing, Immage
+  renders it at 100% in the background, so the first zoom in shows it at
+  once. Zoomed in, it renders the fitted view the same way, ready for
+  zooming back out. Either waits until the base view is done and stops as
+  soon as you change something. A photo above about 64 megapixels is left
+  out of the 100% render.
 
 **Full screen preview**: F shows the photo alone on the canvas color,
 black for **Dark**. F or Esc comes back.
@@ -80,7 +94,7 @@ the exposure and lens, and nothing.
 "Before" means the photo at its starting point, still with its crop and
 orientation.
 
-![Split left / right before and after view](images/before-after-split.png)
+![Split left / right before and after view of an edited photo](images/before-after-split.png)
 <!-- screenshot: Split left / right on an edited landscape, divider in the middle -->
 
 ## Compare

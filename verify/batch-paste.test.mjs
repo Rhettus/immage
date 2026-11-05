@@ -168,6 +168,24 @@ test('new photos establish defaults before snapshot, preserving unticked preset 
   await batch('release',result.token);
 }));
 
+// The first session of a never-processed JPEG once scaled its input without
+// gamma correction, so undo could not match the frame the viewer had shown.
+test('a fresh photo renders the same in its first session as after paste and undo', {timeout:120000}, async () => fixture(async ({dir}) => {
+  const { preparePastePhoto }=await import('../app/src/pasteDefaults.ts');
+  const path=join(dir,'first.jpg');copyFileSync(join(root,'app/sample/stairs-to-mountain.jpg'),path);
+  const fresh={path,imgid:(await requestTagged({cmd:'import',files:[path]})).images[0].imgid};
+  const pixels=async name=>{const rgba=join(dir,name+'.rgba');await request({cmd:'render',width:96,height:96,rgba});return readFileSync(rgba);};
+  let s=await open(fresh);assert.equal(s.wasEdited,false);s.setMany([['tm_mode',1]]);await s.settled();
+  const first=await pixels('first');await s.close();
+  const lookPath=join(root,'app/looks/t3mujinpack/t3mujinpack - Color Negative_Kodak Gold 200.dtstyle');
+  const result=await runPaste([fresh],{values:{exposure:1},look:{name:'Kodak Gold 200',path:lookPath,amount:35}},()=>{},()=>{},
+    x=>preparePastePhoto(x,{profile:0,compensation:0,auto:false,preset:null}));
+  assert.equal(result.error,null);
+  assert((await restorePaste(result.token,'undo')).every(i=>!i.error));
+  s=await open(fresh);assert.deepEqual(await pixels('undone'),first,'undo restores the first session\'s frame');await s.close();
+  await batch('release',result.token);
+}));
+
 test('negative paste converts every target, disables legacy tone modules, and undo restores those modules', {timeout:120000}, async () => fixture(async ({images}) => {
   const {NEG_CHOICES}=await import('../app/src/manifest.ts');
   for(const i of images.slice(1,3)) {

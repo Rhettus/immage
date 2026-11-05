@@ -62,7 +62,10 @@ const WHITES_GAIN = 300;
 
 const SHADOW_EDGE = 0.25, SHADOW_SHARE = 0.2, SHADOWS_GAIN = 150;     // more dark than this lifts
 const HIGHLIGHT_EDGE = 0.75, HIGHLIGHT_SHARE = 0.1, HIGHLIGHTS_GAIN = 200;  // more bright than this pulls
-const CONTRAST_SPREAD = 0.22, CONTRAST_GAIN = 300;  // a flatter spread than this adds contrast
+// a flatter spread than this adds contrast. added contrast takes half the
+// gain: the spread is measured before Whites and Blacks stretch a flat photo,
+// which raises it about as much again, so the full gain doubled the effect
+const CONTRAST_SPREAD = 0.22, CONTRAST_GAIN = 300, CONTRAST_ADD_GAIN = 150;
 
 const LIMIT = 60;
 const clamp = (v: number, lim = LIMIT) => Math.round(Math.max(-lim, Math.min(lim, v)));
@@ -103,6 +106,6 @@ export function autoTone(px: Uint8ClampedArray, width: number, height: number,
     whites: Math.round(whites < 0 ? whites * pull : whites),
     shadows: Math.round(clamp(Math.max(0, dark / count - SHADOW_SHARE) * SHADOWS_GAIN) * lift),
     highlights: Math.round(clamp(-Math.max(0, bright / count - HIGHLIGHT_SHARE) * HIGHLIGHTS_GAIN) * pull),
-    contrast: clamp((CONTRAST_SPREAD - spread) * CONTRAST_GAIN, 40),
+    contrast: clamp((CONTRAST_SPREAD - spread) * (spread < CONTRAST_SPREAD ? CONTRAST_ADD_GAIN : CONTRAST_GAIN), 40),
   };
 }

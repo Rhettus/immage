@@ -38,6 +38,7 @@
 #include "common/hdr_alignment.h"
 #include "common/image.h"
 #include "common/image_cache.h"
+#include "common/math.h"
 #include "control/conf.h"
 #include "develop/imageop_math.h"
 #include "imageio/imageio_common.h"

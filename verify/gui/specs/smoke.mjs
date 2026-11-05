@@ -3,25 +3,45 @@
 import assert from 'node:assert/strict';
 import { until } from '../support/webdriver.mjs';
 import * as read from '../support/observations.mjs';
+import { Blocked } from '../support/scenario.mjs';
 
+// A tiling window manager that tiles the splash instead of floating it
+// stretches it over the workspace. The session starts after the splash has
+// closed, so the splash keeps the largest size it was given in localStorage.
+export const SPLASH = { width: 640, height: 427 };
+const splashSize = t => t.driver.observe(() => {
+  const m = /^(\d+)x(\d+)$/.exec(localStorage.getItem('immage.splashSize') ?? '');
+  return m && { width: +m[1], height: +m[2] };
+});
+
+let launchSplash;
 export async function startup(t) {
   await until(async () => { try { return await t.driver.guard(); } catch { return false; } }, 'Immage main window', 60000);
+  // Read here, at launch; the splash case judges it, so a tiled splash
+  // does not stop the cases that follow startup.
+  launchSplash = await splashSize(t);
+  t.measure({ name: 'splash', observed: launchSplash ?? 'not recorded', expected: SPLASH });
   await until(() => t.driver.observe(() => document.fonts.status === 'loaded'), 'fonts');
   // Wait for the first-run tour's actual hit target and animated layout before
   // sending input. The pointer still goes through the real control.
   const touring = await t.driver.observe(() => !!document.querySelector('.tour'));
   if (touring) {
-    let previous, matches = 0;
-    const p = await until(async () => {
-      const now = await t.driver.observe(read.button, 'Skip');
-      if (!now) return false;
-      if (previous && Math.abs(now.x - previous.x) < .5 && Math.abs(now.y - previous.y) < .5) matches++;
-      else matches = 0;
-      previous = now;
-      return matches >= 3 && now;
-    }, 'stable, clickable tour Skip button');
-    await t.driver.point(p.x, p.y);
-    await until(() => t.driver.observe(() => !document.querySelector('.tour')), 'tour closed');
+    // a tiling window manager can resize the new window just after Skip
+    // settles, so a click can land where the button was; find it again
+    for (let attempt = 1; ; attempt++) {
+      let previous, matches = 0;
+      const p = await until(async () => {
+        const now = await t.driver.observe(read.button, 'Skip');
+        if (!now) return false;
+        if (previous && Math.abs(now.x - previous.x) < .5 && Math.abs(now.y - previous.y) < .5) matches++;
+        else matches = 0;
+        previous = now;
+        return matches >= 3 && now;
+      }, 'stable, clickable tour Skip button');
+      await t.driver.point(p.x, p.y);
+      try { await until(() => t.driver.observe(() => !document.querySelector('.tour')), 'tour closed', 3000); break; }
+      catch (e) { if (attempt >= 3) throw e; }
+    }
   }
   await t.evidence('opened');
   const initial = await settledPhoto(t);
@@ -31,7 +51,11 @@ export async function startup(t) {
 }
 
 export async function settledPhoto(t, predicate = () => true) {
+  // the viewer's working indicator means a render is still on its way (a
+  // native module's second pass can land after three equal frames); after
+  // 20 s of other jobs (thumbnails) it no longer holds the frame back
   let last, same = 0, since = Date.now();
+  const start = Date.now();
   return until(async () => {
     const now = await t.driver.observe(read.photo);
     if (!now || now.alpha < 250 || !predicate(now)) { same = 0; return false; }
@@ -39,11 +63,24 @@ export async function settledPhoto(t, predicate = () => true) {
     last = now;
     // Matching pixels after release plus the production canvas quality marker:
     // a stable drag draft cannot satisfy final-frame readiness.
-    return same >= 3 && Date.now() - since >= 600 && now.quality === 'final' ? now : false;
+    return same >= 3 && Date.now() - since >= 600 && now.quality === 'final'
+      && (!now.working || Date.now() - start > 20000) ? now : false;
   }, 'a settled final photo frame', 60000);
 }
 const summary = ({ rgba, ...rest }) => rest;
-
+// After a reset: wait for a settled frame within 1/255 mean error of the
+// baseline; failing that, measure the settled frame that is there and fail
+// with its error (exact is 0).
+const meanError = (a, b) => { let e = 0; for (let i = 0; i < a.rgba.length; i++) e += Math.abs(a.rgba[i] - b.rgba[i]); return e / a.rgba.length; };
+export async function settledReset(t, baseline, _edited, label = 'reset') {
+  let reset;
+  try { reset = await settledPhoto(t, p => meanError(p, baseline) < 1); }
+  catch { reset = await settledPhoto(t); }
+  const error = meanError(reset, baseline);
+  t.measure({ name: label, photoHash: reset.hash, baselineHash: baseline.hash, meanAbsoluteError: error });
+  assert(error < 1, `${label}: photo mean pixel error ${error} exceeds 1/255`);
+  return reset;
+}
 export async function exposure(t) {
   const title = await t.driver.observe(read.panelTitle);
   assert(title, 'Basic panel must exist');
@@ -76,4 +113,11 @@ export async function exposure(t) {
   assert(error < 1, `reset photo mean pixel error ${error} exceeds 1/255`);
   t.measure({ name: 'reset', photo: summary(reset), meanAbsoluteError: error });
   await t.evidence('exposure-reset');
+}
+
+export async function splash(t) {
+  if (!launchSplash) throw new Blocked('the splash did not record its size (immage.splashSize)');
+  t.measure({ name: 'splash', observed: launchSplash, expected: SPLASH });
+  assert(launchSplash.width <= SPLASH.width + 2 && launchSplash.height <= SPLASH.height + 2,
+    `splash keeps its size instead of being tiled (${launchSplash.width}x${launchSplash.height})`);
 }

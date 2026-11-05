@@ -22,6 +22,10 @@ Follow the format of previous releases:
   spaces of indentation.
 - Write concise descriptions of what changes for the user. Group related commits
   into one entry where useful; release notes do not need one bullet per commit.
+- Commit the release notes in the same commit as the change they describe, not
+  in a commit of their own. `darktable/AGENTS.md` asks for a separate
+  `RELEASE_NOTES.md` commit; that applies only to darktable's own
+  `RELEASE_NOTES.md`, for changes sent upstream to darktable.
 
 # Documentation
 

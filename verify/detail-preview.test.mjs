@@ -166,3 +166,37 @@ test('module preferences refresh unused tools and preserve global and masked edi
     assert.equal(s.values.mod_texture, 1, 'mask edits do not block unused global tools');
   } finally { globalThis.localStorage = storage; }
 });
+
+test('idle edits batch on animation frames; in-flight edits resume with latest values without another callback',async()=>{
+  const shown=[],edits=[],errors=[];
+  let finish,started;
+  const ready=new Promise(resolve=>{started=resolve;});
+  const s=new Session(()=>({...full,draft:true}),f=>shown.push(f),e=>errors.push(e));
+  s.values={exposure:0};
+  s.scheduleSave=()=>{};
+  s.moduleEdit=op=>({op,params:{exposure:s.values.exposure}});
+  s.renderView=async(view,_kind,_cycle,_base,_have,changes)=>{
+    edits.push(structuredClone(changes));
+    if(edits.length===1){started();await new Promise(resolve=>{finish=resolve;});}
+    return {width:1,height:1,fullWidth:1,fullHeight:1,x:0,y:0,view,
+      pixels:pixels(10,20,30,255),ms:1,hash:BigInt(edits.length)};
+  };
+  s.set('exposure',1,true);
+  s.set('exposure',2,true);
+  assert.equal(edits.length,0,'idle edits wait for the frame');
+  assert.equal(animationFrames.size,1,'idle input burst shares a callback');
+  const callback=[...animationFrames.values()][0];
+  callback();await ready;
+  s.set('exposure',3,true);
+  s.set('exposure',4,true);
+  assert.equal(edits.length,1,'no concurrent render');
+  assert.equal(animationFrames.size,0,'the active render itself coalesces edits');
+  finish();
+  for(let i=0;i<100&&!s.idle;i++)await new Promise(resolve=>setTimeout(resolve,1));
+  assert.deepEqual(errors,[]);
+  assert.equal(s.idle,true);
+  assert.equal(edits.length,2,'latest edits rendered without advancing animation clock');
+  assert.equal(edits[0][0].params.exposure,2);
+  assert.equal(edits[1][0].params.exposure,4);
+  assert.equal(shown.length,2,'continuous dragging continues presenting frames');
+});

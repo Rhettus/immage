@@ -10,6 +10,7 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 // main.rs's FRAME_HEAD: six u32 of geometry, six f32 of timings, the u64
 // hash, the edits' f32 timing and padding
@@ -19,6 +20,13 @@ export const FRAME_HEAD = 64;
 // it lacks fails in the app, as mask_rename did before 0.10.1
 const HANDLERS = new Set(readFileSync(new URL("../app/src-tauri/src/main.rs", import.meta.url), "utf8")
   .match(/generate_handler!\[([^\]]*)\]/)[1].split(",").map((s) => s.trim().split("::").pop()).filter(Boolean));
+
+// a built app carries ONNX Runtime in darktable's plugin folder
+// (bundle_engine.py), where the engine looks for it (backend_onnx.c,
+// _init_ort_api); the dev build's engine has none beside it, so it is
+// pointed at the copy the build downloaded
+const ORT = fileURLToPath(new URL("../build/_deps/onnxruntime/lib/libonnxruntime.so", import.meta.url));
+const ortEnv = () => !process.env.DT_ORT_LIBRARY && existsSync(ORT) ? { DT_ORT_LIBRARY: ORT } : {};
 
 let engine = null, frame = null, preview = null, range = null, denoised = null;
 const waiting = [];
@@ -45,7 +53,7 @@ export function startEngine(binary, home, modelsDir = null, { gpu = false, onPer
                             "--conf", `opencl_device_priority=${gpu ? "*//*//" : "//*//"}`,
                             "--conf", "opencl_scheduling_profile=default",
                             ...(onPerf ? ["-d", "perf", ...(pipeTrace ? ["-d", "pipe"] : [])] : [])],
-                   { stdio: ["pipe", "pipe", onPerf ? "pipe" : "ignore"], env: { ...process.env, ...env } });
+                   { stdio: ["pipe", "pipe", onPerf ? "pipe" : "ignore"], env: { ...process.env, ...ortEnv(), ...env } });
   engine = me;
   if (onPerf) createInterface({ input: me.stderr }).on("line", onPerf);
   exited = new Promise((r) => me.on("exit", r));
@@ -73,6 +81,9 @@ export const enginePid = () => engine?.pid ?? null;
 let chain = Promise.resolve();
 export function request(req) {
   const run = () => new Promise((resolve, reject) => {
+    // an engine that has exited has already failed what it was waiting on,
+    // so a request queued behind those would never be answered
+    if (engine.exitCode !== null || engine.signalCode !== null) return reject(new Error("the engine exited"));
     waiting.push((line) => {
       if (line === null) return reject(new Error("the engine exited"));
       const r = JSON.parse(line);
@@ -174,10 +185,14 @@ function sized(width, height) {
   return out;
 }
 
+// print_photo's export jobs, apart from the tests' own numbers
+let printJobs = 0;
 const COMMANDS = {
   display_scale: () => (screen.scale === "error" ? Promise.reject(new Error("not on a screen yet")) : screen.scale),
   meta: ({ imgid }) => request({ cmd: "meta", imgid }),
   paste_batch: (args) => request({ cmd: "paste_batch", ...args }),
+  spektra_stocks: async () => { const { ok, ms, ...r } = await request({ cmd: "spektra_stocks" }); return r; },
+  spektra_fetch: async ({ action }) => { const { ok, ms, ...r } = await request({ cmd: "spektra_fetch", action }); return r; },
   open_image: ({ path, imgid }) => request({ cmd: "open", path, imgid: imgid ?? -1 }),
   get_params: ({ modules }) => request({ cmd: "get", modules }),
   history: async ({ saved } = {}) => (await request({ cmd: "history", saved: saved ?? false })).items,
@@ -277,6 +292,23 @@ const COMMANDS = {
   pano_merge: ({ imgids, projection, crop }) => requestTagged({ cmd: "pano_merge", imgids, projection, crop }),
   pano_can_merge: async () => (await request({ cmd: "version" })).pano ?? false,
   meta_set: ({ imgid, fields }) => request({ cmd: "meta_set", imgid, ...fields }),
+  // the Print panel, as main.rs sends it (engine/print.c)
+  print_profiles: async () => (await request({ cmd: "print_profiles" })).profiles,
+  print_profile_add: async ({ path }) => { const { ok, ms, ...r } = await request({ cmd: "print_profile_add", path }); return r; },
+  softproof: async ({ mode, profile, intent }) =>
+    (await request({ cmd: "softproof", mode, profile: profile ?? "", intent: intent ?? 0 })).changed,
+  printers: async () => { const { ok, ms, ...r } = await request({ cmd: "printers" }); return r; },
+  printer_info: async ({ name }) => { const { ok, ms, ...r } = await request({ cmd: "printer", name }); return r; },
+  print_photo: async ({ imgid, request: req }) => {
+    const job = 900000 + ++printJobs;
+    await request({ cmd: "export_hold", job, imgids: [imgid] });
+    try {
+      const { ok, ms, tag, ...r } = await requestTagged({ ...req, cmd: "print", job, imgid });
+      return r;
+    } finally {
+      await requestTagged({ cmd: "export_release", job });
+    }
+  },
   // as main.rs, with the files removed rather than put in the trash
   trash_files: async ({ imgids }) => {
     const gone = [];

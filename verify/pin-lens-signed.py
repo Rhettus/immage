@@ -1,0 +1,281 @@
+#!/usr/bin/env python3
+"""Build an isolated signed-input Lensfun diagnostic plugin, never production.
+
+Run the deployed copy with pin-pixels.py and compare SIGNED_LENS records by
+coordinates (OpenMP log order is unspecified). This deliberately replaces RGB
+at the actual vignetting boundary, or at module input with --geometry.
+Neither mode models real-camera inputs.
+"""
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import shlex
+import shutil
+import subprocess
+
+
+def replace_once(text, old, new):
+    if text.count(old) != 1:
+        raise ValueError(f'expected exactly one source anchor: {old[:100]}')
+    return text.replace(old, new)
+
+
+HELPER = r'''// Diagnostic-only signed values at the actual Lensfun vignetting boundary.
+static void _signed_lens_input(float *row, int x, int y, int width, int ch)
+{
+  const float values[] = {-1.f, -.01f, -0.f, 0.f, .01f, .5f, 1.f, 2.f, 10.f};
+  for(int i = 0; i < width; i++)
+  {
+    for(int c = 0; c < 3; c++) row[i * ch + c] = values[(x + i + y + c) % 9];
+    if(ch == 4) row[i * ch + 3] = .25f;
+  }
+}
+
+static void _signed_lens_trace(const float *row, int x, int y, int width, int ch, int inverse)
+{
+  size_t negative = 0, positive = 0, nonfinite = 0, alpha_changed = 0;
+  for(int i = 0; i < width; i++)
+  {
+    for(int c = 0; c < 3; c++)
+    {
+      const float v = row[i * ch + c];
+      negative += v < 0.f;
+      positive += v > 0.f;
+      nonfinite += !isfinite(v);
+    }
+    if(ch == 4) alpha_changed += row[i * ch + 3] != .25f;
+  }
+  gchar *hash = g_compute_checksum_for_data(G_CHECKSUM_SHA256,
+    (const guchar *)row, (gsize)width * ch * sizeof(float));
+  fprintf(stderr, "SIGNED_LENS %d %d %d %d %d %zu %zu %zu %zu %s\n",
+          inverse, x, y, width, ch, negative, positive, nonfinite, alpha_changed, hash);
+  g_free(hash);
+}
+
+'''
+
+
+MASK_HELPER = r'''
+static void _signed_lens_masks(dt_iop_module_t *self, dt_dev_pixelpipe_iop_t *piece,
+                              const dt_iop_roi_t *ri, const dt_iop_roi_t *ro)
+{
+  const size_t ni = (size_t)ri->width * ri->height;
+  const size_t no = (size_t)ro->width * ro->height;
+  float *in = dt_alloc_align_float(ni), *out = dt_alloc_align_float(no);
+  if(!in || !out) abort();
+  for(int pattern = 0; pattern < 3; pattern++)
+  {
+    for(int y = 0; y < ri->height; y++)
+      for(int x = 0; x < ri->width; x++)
+        in[(size_t)y*ri->width+x] = pattern == 0
+          ? ((ri->x+x+3*(ri->y+y)) % 17) / 16.f
+          : pattern == 1 ? (x >= ri->width/2 ? 1.f : 0.f)
+          : ((ri->x+x+ri->y+y) % 3) - .5f;
+    for(size_t i = 0; i < no; i++) out[i] = NAN;
+    _distort_mask_lf(self, piece, in, out, ri, ro);
+    for(int y = 0; y < ro->height; y++)
+    {
+      const float *row = out + (size_t)y*ro->width;
+      for(int x = 0; x < ro->width; x++)
+        if(!isfinite(row[x]) || row[x] < 0.f || row[x] > 1.f) abort();
+      gchar *hash = g_compute_checksum_for_data(G_CHECKSUM_SHA256,
+        (const guchar *)row, (gsize)ro->width*sizeof(float));
+      fprintf(stderr, "MASK_LENS %d %d %d %d %d %s\n", pattern,
+        ((dt_iop_lens_data_t *)piece->data)->inverse, ro->x, ro->y+y, ro->width, hash);
+      g_free(hash);
+    }
+  }
+  dt_free_align(in); dt_free_align(out);
+}
+'''
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--geometry', action='store_true',
+                        help='Inject at module input and trace RGB after active geometry')
+    parser.add_argument('--distort-mask', action='store_true',
+                        help='With --geometry, compare separate single-channel mask transforms')
+    parser.add_argument('--mask-bypass', action='store_true',
+                        help='With --distort-mask, assert missing-lens and invalid-crop copies')
+    parser.add_argument('--mask-display', action='store_true',
+                        help='With --geometry, inject varying alpha and trace real RGBA')
+    parser.add_argument('--source', type=Path, required=True,
+                        help='Configured source tree for this deployed build')
+    parser.add_argument('--input-source', type=Path,
+                        help='Optional isolated direct-prototype lens source')
+    parser.add_argument('--build', type=Path, required=True)
+    parser.add_argument('--output', type=Path, required=True)
+    args = parser.parse_args()
+    if (args.mask_display or args.distort_mask) and not args.geometry:
+        parser.error('--mask-display and --distort-mask require --geometry')
+    if args.mask_bypass and not args.distort_mask:
+        parser.error('--mask-bypass requires --distort-mask')
+    source, build, output = (p.resolve() for p in (args.source, args.build, args.output))
+    if output.exists() or output == source or output == build:
+        raise ValueError('output must be a new directory')
+    original = source / 'src/iop/lens.cc'
+    input_source = (args.input_source or original).resolve()
+    text = input_source.read_text()
+    anchor = 'static void _process_lf(dt_iop_module_t *self,'
+    helper = HELPER
+    if args.mask_display:
+        helper = helper.replace('row[i * ch + 3] = .25f;',
+                                'row[i * ch + 3] = ((x + i + 3*y) % 17) / 16.f;')
+        helper = helper.replace('alpha_changed += row[i * ch + 3] != .25f;',
+                                'alpha_changed += !isfinite(row[i * ch + 3]);')
+    if args.distort_mask:
+        helper += 'static void _signed_lens_masks(dt_iop_module_t *, dt_dev_pixelpipe_iop_t *, const dt_iop_roi_t *, const dt_iop_roi_t *);\n'
+    text = replace_once(text, anchor, helper + anchor)
+    # Restrict substitutions to _process_lf, excluding CPU factor-grid helpers
+    # and OpenCL setup. Both forward and reverse actual-pixel calls are required.
+    start = text.index(anchor)
+    end = text.index('\n}\n', start) + 3
+    process = text[start:end]
+    pattern = r'modifier->ApplyColorModification\((\w+), (roi_(?:in|out))->x, \2->y \+ y,.*?\);'
+    def instrument(match):
+        row, roi = match.group(1, 2)
+        coords = f'{roi}->x, {roi}->y + y, {roi}->width, ch'
+        return (f'_signed_lens_input({row}, {coords});\n        ' + match.group(0)
+                + f'\n        _signed_lens_trace({row}, {coords}, d->inverse);')
+    process, count = re.subn(pattern, instrument, process, flags=re.S)
+    if count != 2:
+        raise ValueError(f'expected two actual-pixel calls, found {count}')
+    if args.geometry:
+        # Geometry output alpha is unspecified outside mask display: hash RGB only.
+        process = re.sub(r'        _signed_lens_(?:input|trace)\([^;]+;\n', '', process)
+        process = replace_once(process, 'const void *const ivoid,', 'const void *const source_void,')
+        process = replace_once(process, '  const int ch_width =', r'''  const size_t signed_count = (size_t)roi_in->width * roi_in->height * ch;
+  float *const signed_input = dt_alloc_align_float(signed_count);
+  if(!signed_input) abort();
+  for(int y = 0; y < roi_in->height; y++)
+    _signed_lens_input(signed_input + (size_t)y * roi_in->width * ch,
+                       roi_in->x, roi_in->y + y, roi_in->width, ch);
+  const void *const ivoid = signed_input;
+  const int ch_width =''')
+        process = process.replace('    return;', '    dt_free_align(signed_input);\n    abort(); // A bypass is invalid geometry evidence.')
+        head, anchor_delete, tail = process.rpartition('  delete modifier;')
+        if not anchor_delete:
+            raise ValueError('missing modifier cleanup')
+        process = head + r'''  if(!(modflags & (LF_MODIFY_TCA | LF_MODIFY_DISTORTION | LF_MODIFY_GEOMETRY | LF_MODIFY_SCALE)))
+    abort(); // Requested flags alone do not prove an active transform.
+  for(int y = 0; y < roi_out->height; y++)
+  {
+    const float *row = (const float *)ovoid + (size_t)y * roi_out->width * ch;
+    // Pack RGB; synthetic alpha excludes unspecified output alpha from the hash.
+    float *packed = dt_alloc_align_float((size_t)roi_out->width * 4);
+    if(!packed) abort();
+    for(int x = 0; x < roi_out->width; x++)
+    {
+      for(int c = 0; c < 3; c++) packed[4*x+c] = row[ch*x+c];
+      packed[4*x+3] = .25f;
+    }
+    _signed_lens_trace(packed, roi_out->x, roi_out->y + y, roi_out->width, 4, d->inverse);
+    dt_free_align(packed);
+  }
+  dt_free_align(signed_input);
+  delete modifier;''' + tail
+    if args.mask_display:
+        process = replace_once(process,
+            'const dt_dev_pixelpipe_display_mask_t mask_display = piece->pipe->mask_display;',
+            'const dt_dev_pixelpipe_display_mask_t mask_display = DT_DEV_PIXELPIPE_DISPLAY_MASK;')
+        process = replace_once(process, 'packed[4*x+3] = .25f;', 'packed[4*x+3] = row[ch*x+3];')
+        process = process.replace('// Pack RGB; synthetic alpha excludes unspecified output alpha from the hash.',
+                                  '// Trace actual RGBA with the local CPU mask-display branch forced.')
+    if args.distort_mask:
+        process = replace_once(process, '  dt_free_align(signed_input);\n  delete modifier;',
+            '  _signed_lens_masks(self, piece, roi_in, roi_out);\n  dt_free_align(signed_input);\n  delete modifier;')
+    text = text[:start] + process + text[end:]
+    if args.distort_mask:
+        mask_start = text.index('static void _distort_mask_lf(')
+        mask_end = text.index('\n}\n', mask_start) + 3
+        mask_helper = MASK_HELPER
+        if args.mask_bypass:
+            mask_helper = replace_once(mask_helper, '    for(size_t i = 0; i < no; i++) out[i] = NAN;', r'''    // Use equal input/output ROIs: bypass copies have no resampling contract.
+    for(int bypass = 0; bypass < 4; bypass++)
+    {
+      dt_iop_lens_data_t data = *(dt_iop_lens_data_t *)piece->data;
+      dt_dev_pixelpipe_iop_t local_piece = *piece;
+      local_piece.data = &data;
+      lfLens missing_maker;
+      if(bypass == 0) data.lens = NULL;
+      else if(bypass == 1) data.crop = 0.f;
+      else if(bypass == 2) data.lens = &missing_maker;
+      else
+      {
+        data.modify_flags = (dt_iop_lens_modflag_t)0;
+        data.scale = 1.f;
+        data.target_geom = data.lens->Type;
+        int flags;
+        lfModifier *modifier = _get_modifier(&flags,
+          ri->scale * piece->buf_in.width, ri->scale * piece->buf_in.height,
+          &data, LF_MODIFY_DISTORTION | LF_MODIFY_GEOMETRY | LF_MODIFY_SCALE, FALSE);
+        delete modifier;
+        if(flags & (LF_MODIFY_TCA | LF_MODIFY_DISTORTION | LF_MODIFY_GEOMETRY | LF_MODIFY_SCALE)) abort();
+      }
+      float *copy = dt_alloc_align_float(ni);
+      if(!copy) abort();
+      for(size_t i = 0; i < ni; i++) copy[i] = NAN;
+      _distort_mask_lf(self, &local_piece, in, copy, ri, ri);
+      if(memcmp(in, copy, ni*sizeof(float))) abort();
+      gchar *hash = g_compute_checksum_for_data(G_CHECKSUM_SHA256,
+        (const guchar *)copy, ni*sizeof(float));
+      fprintf(stderr, "MASK_BYPASS %d %d %d %d %d %s\n", bypass, pattern,
+        data.inverse, ri->width, ri->height, hash);
+      g_free(hash);
+      dt_free_align(copy);
+    }
+    for(size_t i = 0; i < no; i++) out[i] = NAN;''')
+        text = text[:mask_end] + mask_helper + text[mask_end:]
+    intro = build / 'lib/darktable/plugins/introspection_lens.cc'
+    entries = json.loads((build / 'compile_commands.json').read_text())
+    entry = next(e for e in entries if Path(e['file']) == intro)
+    command = shlex.split(entry['command'])
+    if (build / 'build.ninja').exists():
+        commands = subprocess.check_output(['ninja', '-C', str(build), '-t', 'commands',
+                                            'lib/darktable/plugins/liblens.so'], text=True).splitlines()
+        link = next(line for line in reversed(commands) if '-o lib/darktable/plugins/liblens.so' in line)
+        if not (link.startswith(': && ') and link.endswith(' && :')):
+            raise ValueError('unsupported Ninja link wrapper')
+        link_args = shlex.split(link[len(': && '):-len(' && :')])
+        link_cwd = build
+        object_name = 'lib/darktable/plugins/CMakeFiles/lens.dir/introspection_lens.cc.o'
+    else:
+        link_cwd = build / 'lib/darktable/plugins'
+        link_args = shlex.split((link_cwd / 'CMakeFiles/lens.dir/link.txt').read_text())
+        object_name = 'CMakeFiles/lens.dir/introspection_lens.cc.o'
+    output.mkdir(parents=True)
+    for folder in ('bin', 'lib', 'share'):
+        shutil.copytree(build / folder, output / folder,
+                        copy_function=lambda a, b: os.symlink(os.path.realpath(a), b))
+    src = output / 'lens-signed.cc'
+    src.write_text(text)
+    generated = output / 'introspection_lens.cc'
+    generated.write_text(replace_once(intro.read_text(), str(original), str(src)))
+    obj = output / 'lens-signed.o'
+    command[command.index('-o') + 1] = str(obj)
+    if command[-1] != str(intro):
+        raise ValueError('unsupported compilation command')
+    command[-1] = str(generated)
+    plugin = output / 'lib/darktable/plugins/liblens.so'
+    plugin.unlink()  # Only unlink the copied symlink; never overwrite its target.
+    link_args[link_args.index('-o') + 1] = str(plugin)
+    link_args[link_args.index(object_name)] = str(obj)
+    # Keep link dependency output isolated as well.
+    link_args = [f'-Wl,--dependency-file={output / "link.d"}'
+                 if a.startswith('-Wl,--dependency-file=') else a for a in link_args]
+    with (output / 'build.log').open('w') as log:
+        for cmd, cwd in ((command, entry['directory']), (link_args, link_cwd)):
+            subprocess.run(cmd, cwd=cwd, stdout=log, stderr=subprocess.STDOUT, check=True)
+    hashes = {str(p): hashlib.sha256(p.read_bytes()).hexdigest()
+              for p in (original, input_source, src, generated, plugin, build / 'bin/darktable-engine', Path(__file__))}
+    (output / 'manifest.json').write_text(json.dumps({'diagnostic_only': True, 'geometry': args.geometry, 'mask_display': args.mask_display, 'distort_mask': args.distort_mask, 'mask_bypass': args.mask_bypass, 'sha256': hashes,
+                                                    'compile': command, 'link': link_args}, indent=2) + '\n')
+    print(output)
+
+
+if __name__ == '__main__':
+    main()

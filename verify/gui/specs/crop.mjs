@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from 'node:assert/strict';
-import { click, reveal } from '../support/controls.mjs';
-import { textButton, choose } from '../support/scenario.mjs';
+import { click, inspect, reveal } from '../support/controls.mjs';
+import { Blocked, textButton, choose, panel } from '../support/scenario.mjs';
 import { until } from '../support/webdriver.mjs';
 import { settledPhoto } from './smoke.mjs';
 function geometry() {
@@ -67,8 +67,9 @@ export async function cropOptions(t) {
     await choose(t, '.crop-aspect select', value);
     const g = await t.driver.observe(geometry); assert(area(g) > 10); await t.evidence(`aspect-${value.replaceAll(':','-')}`);
   }
-  await choose(t, '.crop-aspect select', 'enter-custom');
-  for (const [label, number] of [['width','7'], ['height','5']]) {
+  await choose(t, '.crop-aspect select', 'enter-custom', '.crop-custom');
+  // 7 x 3 matches no preset: a ratio that does (7 x 5) picks the preset instead
+  for (const [label, number] of [['width','7'], ['height','3']]) {
     await click(t, `.crop-custom input[aria-label="${label}"]`);
     await t.driver.chord('\uE009', 'a'); await t.driver.keys(number);
   }
@@ -82,4 +83,73 @@ export async function cropOptions(t) {
     await click(t, `.crop-turn button[title^=${JSON.stringify(title)}]`); await t.evidence(title.replace(/[^a-z]/g,'-'));
   }
   await textButton(t, '.crop-buttons', 'Cancel');
+}
+// the crop tool's Auto: Upright's Level fit, kept in Rotate alone. it
+// needs a fixture with straight lines; one without them blocks the case
+export async function cropAutoStraighten(t) {
+  const baseline = await settledPhoto(t); await enter(t);
+  const rotate = '.crop-angle [data-control-id="tf_rotate"] input[type=range]';
+  const before = +(await t.driver.observe(inspect, rotate)).value;
+  await textButton(t, '.crop-angle', 'Auto');
+  const outcome = await until(() => t.driver.observe((s, b) => {
+    const note = document.querySelector('.crop-angle + .note-plain')?.textContent;
+    const v = +document.querySelector(s)?.value;
+    return note ? { note } : v !== b ? { value: v } : false;
+  }, rotate, before), 'Auto sets Rotate or reports why not', 30000);
+  if (outcome.note) throw new Blocked(`fixture has no level fit: ${outcome.note}`);
+  assert(Math.abs(outcome.value) <= 45, 'Rotate stays in its range');
+  t.measure({ name: 'auto-straighten', before, after: outcome.value }); await t.evidence('auto-straighten');
+  // Cancel keeps Rotate, which is not the crop's to undo; Done would add
+  // a Crop step (an uncropped photo gains the Original aspect), and the
+  // one undo below would take that instead of Auto's
+  await textButton(t, '.crop-buttons', 'Cancel');
+  const levelled = await settledPhoto(t, p => p.hash !== baseline.hash); await t.evidence('auto-straighten-applied');
+  await click(t, 'button.tool[title^="undo ("]');
+  await settledPhoto(t, p => p.hash === baseline.hash); await t.evidence('auto-straighten-undone');
+  // with Upright on, the angle is Upright's: Auto is unavailable
+  // Upright's buttons are icons, named by aria-label
+  await panel(t, 'transform'); await click(t, '.upright-tools button[aria-label="Auto"]');
+  await settledPhoto(t, p => p.hash !== baseline.hash && p.hash !== levelled.hash);
+  await enter(t);
+  assert((await t.driver.observe(inspect, '.crop-angle button', 'Auto')).disabled, 'Auto disabled while Upright is on');
+  await t.evidence('auto-straighten-upright');
+  await textButton(t, '.crop-buttons', 'Cancel');
+  await click(t, 'button.tool[title^="undo ("]');
+  await settledPhoto(t, p => p.hash === baseline.hash);
+}
+// undo and redo by keyboard inside the crop tool: a quarter turn undone
+// turns the photo and the guide back, and Rotate undone and redone moves
+// the slider and photo. after Done, one undo takes the rotation: a whole
+// photo left at Original adds no Crop step of its own to undo first
+export async function cropUndo(t) {
+  const baseline = await settledPhoto(t);
+  const modifier = await t.driver.observe(() => /Mac/.test(navigator.userAgent) ? '' : '');
+  const close = (a, b) => ['width', 'height'].every(k => Math.abs(a.rect[k] - b.rect[k]) <= 3);
+  await enter(t);
+  const entered = await settledPhoto(t), guide = await t.driver.observe(geometry);
+  await click(t, '.crop-turn button[title^="rotate right ("]');
+  await settledPhoto(t, p => p.hash !== entered.hash);
+  const turned = await until(async () => { const g = await t.driver.observe(geometry); return !close(g, guide) && g; }, 'guide turns');
+  await t.evidence('turned');
+  await t.driver.chord(modifier, 'z');
+  await settledPhoto(t, p => p.hash === entered.hash);
+  const back = await until(async () => { const g = await t.driver.observe(geometry); return close(g, guide) && g; }, 'undo turns the guide back');
+  t.measure({ name: 'turn', guide, turned, back }); await t.evidence('turn-undone');
+  const rotate = '.crop-angle [data-control-id="tf_rotate"] input[type=range]';
+  const s = await reveal(t, rotate);
+  const at = v => ({ x: s.bounds.x + 8 + (s.bounds.width - 16) * (v - s.min) / (s.max - s.min), y: s.y });
+  await t.driver.drag(at(0), at(10));
+  const angle = await until(async () => { const v = +(await t.driver.observe(inspect, rotate)).value; return Math.abs(v) > 3 && v; }, 'Rotate set');
+  const rotated = await settledPhoto(t, p => p.hash !== entered.hash);
+  for (const [action, value, photo] of [['undo', 0, entered], ['redo', angle, rotated]]) {
+    if (action === 'undo') await t.driver.chord(modifier, 'z');
+    else await click(t, 'button.tool[title^="redo ("]');
+    await settledPhoto(t, p => p.hash === photo.hash);
+    await until(async () => Math.abs(+(await t.driver.observe(inspect, rotate)).value - value) < .05, `${action} sets Rotate`);
+    await t.evidence(`rotate-${action}`);
+  }
+  await textButton(t, '.crop-buttons', 'Done');
+  await settledPhoto(t, p => p.hash !== baseline.hash);
+  await t.driver.chord(modifier, 'z');
+  await settledPhoto(t, p => p.hash === baseline.hash); await t.evidence('done-undone');
 }
