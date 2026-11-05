@@ -89,7 +89,7 @@ Drag the top edge of the filmstrip to make it taller or shorter.
 - Click a photo to open it.
 - ⌘-click adds a photo to the selection, or takes it out, without opening
   it.
-- ⇧-click selects the run from the open photo to the one you click.
+- ⇧-click selects the run from the photo you clicked last (else the open one) to the one you click.
 - ⌘A selects every photo the filters leave showing.
 - ← and → step through the photos.
 

@@ -151,6 +151,10 @@ try {
       await copyFile(copiedFixture, join(fixtures, name));
     report.batchFixtures = ['batch-target-1.jpg', 'batch-target-2.jpg', 'batch-untouched.jpg'];
   }
+  if (selectedCases.includes('shift-range')) {
+    if (!/\.jpe?g$/i.test(copiedFixture)) throw Error('shift-range requires a JPEG fixture');
+    for (let i = 1; i <= 8; i++) await copyFile(copiedFixture, join(fixtures, `shift-${i}.jpg`));
+  }
   // the guide's Library grid shot needs a folder of photos: copies of the fixture
   if (selectedCases.includes('site-shots') && process.env.SITE_SHOTS?.split(',').map(s => s.trim()).includes('library-grid')) {
     const stem = basename(copiedFixture).replace(/\.[^.]+$/, ''), ext = basename(copiedFixture).slice(stem.length);

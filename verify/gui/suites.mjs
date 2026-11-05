@@ -68,6 +68,7 @@ export const cases = {
   'mask-loupe':{scope:'loupe atop a mask\'s Presence; picking with the brush armed moves it without painting',liveValidated:true},
   'detail-without-loupe':{scope:'detail effect and final dimensions without loupe',commits:['f023c4f'],liveValidated:false},
   'camera-body':{scope:'independent same-model body serial options and missing serial',fixture:'camera-a',commits:['7b20937'],liveValidated:false},
+  'shift-range':{scope:'five random plain-click then Shift-click ranges in the grid (right, left, right, left, right; 3+ photos), random delays between, each selection exactly the run (SHIFT_SEED repeats a sequence)',liveValidated:false},
   'rejected-deletion':{scope:'reject copied fixture; deletion blocked by native confirmation boundary',commits:['baa8def'],liveValidated:false},
   'folder-race':{scope:'controlled slow unrelated folder and stale result protection',commits:['17ac5e6','74cedc9'],liveValidated:false},
   panorama:{scope:'projection choices and preview with overlapping fixtures',liveValidated:false},
@@ -85,7 +86,7 @@ export const suites = {
   crop: ['startup','crop-guides','crop-locked','crop-options','crop-auto-straighten','crop-undo'],
   workflows: ['startup','curves','wheels','equalizer','saturation-curve','masks','heal','zones','film','print','preferences-matrix','slider-wheel','export-options','filters','presets','shortcuts'],
   inventory: ['startup',...generatedNames],
-  regressions: ['startup', 'rail', 'panel-scroll', 'module-options', 'batch-paste'],
+  regressions: ['startup', 'rail', 'panel-scroll', 'module-options', 'batch-paste', 'shift-range'],
   controls: ['startup', 'slider-input', 'slider-click', 'history', 'rail', 'sliders', 'module-options', 'module-switch'],
 };
 export function resolveCases(name) {

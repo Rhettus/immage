@@ -367,7 +367,7 @@ production executable before a future approved run using the new observations.
 
 ## Batch settings paste
 
-`--case batch-paste` (also in `--suite regressions`) requires a JPEG fixture.
+`--case batch-paste` and `--case shift-range` (both in `--suite regressions`) require a JPEG fixture.
 Before launch the runner makes three more copies in its own fixture directory:
 two targets and one unselected control. The case applies Kodak Gold 200 at 35%,
 copies Tone and Look through Copy Settings, selects two targets with a guarded

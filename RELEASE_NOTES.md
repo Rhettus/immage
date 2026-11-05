@@ -31,6 +31,10 @@ Improvements
 
 Bug fixes
 
+- Shift-click in the grid and filmstrip selects the run from the photo you
+  clicked last, so it works at the first attempt instead of waiting for that
+  photo to finish opening.
+  Holding Shift over the grid no longer arms the straighten tool.
 - In a Before / After view, the busy spinner no longer spins forever. The
   before side was fetched again after every render whenever its size
   differed from the edit's, as with Transform or lens corrections.

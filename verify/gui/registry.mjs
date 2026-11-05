@@ -15,6 +15,7 @@ import { siteShots } from './specs/site.mjs';
 import { zoomReady } from './specs/zoom.mjs';
 import { demo } from './specs/demo.mjs';
 import { overlayOpacity } from './specs/overlay.mjs';
+import { shiftRange } from './specs/shift-range.mjs';
 
 const implementations = { 'batch-paste': batchPaste, startup, splash, exposure, 'slider-input': sliderInput, 'slider-click': sliderClick, history, rail, sliders, 'module-options': moduleOptions, 'module-switch': moduleSwitch,
   'panel-scroll': panelScroll,
@@ -30,7 +31,7 @@ const implementations = { 'batch-paste': batchPaste, startup, splash, exposure, 
   'histogram-endpoints':regressions.histogramEndpoints,'preview-alignment':regressions.previewAlignment,
   'loupe-grid':regressions.loupeGrid,'mask-loupe':regressions.maskLoupe,'detail-without-loupe':regressions.detailWithoutLoupe,'camera-body':regressions.cameraBody,
   'rejected-deletion':regressions.rejectedDeletion,'folder-race':regressions.folderRace,panorama,'immich-workflow':immichWorkflow,
-  'overlay-opacity':overlayOpacity,
+  'overlay-opacity':overlayOpacity,'shift-range':shiftRange,
   'site-shots':siteShots,
   demo,
 };

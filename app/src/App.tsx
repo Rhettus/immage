@@ -3096,8 +3096,13 @@ export default function App() {
   rateSelectionRef.current = rateSelection;
   // a click in the filmstrip: plain opens the photo and selects it alone,
   // ⌘ adds it to the selection or takes it out, ⇧ selects the run from the
-  // open photo to it; neither opens anything
+  // last clicked (else the open) photo to it; neither opens anything
+  // the last cell clicked is the run's start, since the open photo only
+  // follows once its open finishes and a quick second click would find it stale
+  const pickAnchor = useRef<number | null>(null);
   const pickPhoto = (i: ImageEntry, e: React.MouseEvent) => {
+    const from = e.shiftKey && !cmd(e) ? (pickAnchor.current ?? listedEntry?.imgid ?? null) : null;
+    if (!(from !== null && shownRef.current.some((x) => x.imgid === from))) pickAnchor.current = i.imgid;
     if (cmd(e)) {
       setSelection((old) => {
         const next = new Set(old.size ? old : listedEntry ? [listedEntry.imgid] : []);
@@ -3106,9 +3111,9 @@ export default function App() {
       });
       return;
     }
-    if (e.shiftKey && listedEntry) {
+    if (from !== null) {
       const list = shownRef.current;
-      const a = list.findIndex((x) => x.imgid === listedEntry.imgid), b = list.findIndex((x) => x.imgid === i.imgid);
+      const a = list.findIndex((x) => x.imgid === from), b = list.findIndex((x) => x.imgid === i.imgid);
       if (a >= 0 && b >= 0) {
         setSelection(new Set(list.slice(Math.min(a, b), Math.max(a, b) + 1).map((x) => x.imgid)));
         return;
@@ -4839,7 +4844,8 @@ export default function App() {
   // capture phase, so a straighten line wins over the crop, mask and spot
   // editors above the image
   const onStraightenDown = (e: React.PointerEvent<HTMLElement>) => {
-    if (!current || !viewZ.current || pickingRef.current || previewRef.current || e.button !== 0) return;
+    // the grid covers the photo: ⇧ there belongs to selecting a range
+    if (!current || !viewZ.current || pickingRef.current || previewRef.current || gridRef.current || e.button !== 0) return;
     const armed = straighteningRef.current;
     if (!armed && !(e.shiftKey && !masksModeRef.current && !healModeRef.current)) return;
     e.stopPropagation();
@@ -5816,7 +5822,7 @@ export default function App() {
       <Splitter axis="x" value={layout.leftWidth} min={220} max={560} hidden={!docked.left}
                 onChange={(v) => setLayout((l) => ({ ...l, leftWidth: v }))} />
       <section className="center">
-        <main data-tour="viewer" className={`viewer zoom-${zoom === "fit" ? "fit" : "in"}${picking || loupePicking ? " picking" : ""}${aiBusy ? " busy" : ""}${straightening || line || (shiftHeld && current && (cropping || (!masksMode && !healMode)) && !preview) ? " straightening" : ""}${canvasColor !== "dark" ? ` canvas-${canvasColor}` : ""}${baMode === "overlay" ? " hold-view" : ""}${optPreview?.kind === "gray" ? " gray-view" : ""}${sheet ? " print-view" : ""}`} ref={viewer}
+        <main data-tour="viewer" className={`viewer zoom-${zoom === "fit" ? "fit" : "in"}${picking || loupePicking ? " picking" : ""}${aiBusy ? " busy" : ""}${straightening || line || (shiftHeld && current && !grid && (cropping || (!masksMode && !healMode)) && !preview) ? " straightening" : ""}${canvasColor !== "dark" ? ` canvas-${canvasColor}` : ""}${baMode === "overlay" ? " hold-view" : ""}${optPreview?.kind === "gray" ? " gray-view" : ""}${sheet ? " print-view" : ""}`} ref={viewer}
               onPointerDownCapture={(e) => { if (!onLoupePickDown(e)) onStraightenDown(e); }}
               onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
               onPointerLeave={leaveProbe}>
