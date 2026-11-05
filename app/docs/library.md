@@ -41,6 +41,8 @@ Open the **Folders** card in the **Library** panel.
 - A folder on a slow share fills in gradually. Opening another folder, or a
   photo from your own drive, doesn't wait for it: the share's reading stops
   after the file it is on.
+- Editing comes first. While you zoom or adjust an open photo, the folder's
+  reading and thumbnails slow down and catch up when you pause.
 
 Folders you import into join the list by themselves. The list, the open
 folder and the last photo are remembered when you quit.

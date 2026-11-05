@@ -155,6 +155,42 @@ static dt_engine_session_t _s = { 0 };
 static GMutex _cancel_lock;
 static gint64 _base_running, _base_canceled;
 
+// foreground work comes first: the main loop's requests (renders, edits,
+// zoom) are what the user waits on, so the import and thumbnail threads
+// call _background_yield() before each file and wait while the main loop is
+// busy, has requests queued, or finished one moments ago. a bounded wait
+// keeps a long edit session from starving them for good, and a client's
+// batch from outrunning its timeout
+static GAsyncQueue *_requests = NULL;
+static GMutex _fg_lock;
+static gboolean _fg_busy = FALSE;
+static gint64 _fg_last = 0;
+#define _FG_GRACE_US 300000
+#define _FG_MAX_WAIT_US 2000000
+
+static void _foreground(const gboolean busy)
+{
+  g_mutex_lock(&_fg_lock);
+  _fg_busy = busy;
+  _fg_last = g_get_monotonic_time();
+  g_mutex_unlock(&_fg_lock);
+}
+
+static void _background_yield(void)
+{
+  const gint64 start = g_get_monotonic_time();
+  while(TRUE)
+  {
+    const gint64 now = g_get_monotonic_time();
+    g_mutex_lock(&_fg_lock);
+    const gboolean quiet = !_fg_busy && now - _fg_last >= _FG_GRACE_US;
+    g_mutex_unlock(&_fg_lock);
+    if(quiet && (!_requests || g_async_queue_length(_requests) <= 0)) return;
+    if(now - start >= _FG_MAX_WAIT_US) return;
+    g_usleep(15000);
+  }
+}
+
 #ifndef _WIN32
 // a crash leaves its backtrace in the log (stderr), below the request it
 // died on: darktable's own handler is for Linux only
@@ -2123,6 +2159,7 @@ static void _import_files(JsonObject *req, JsonBuilder *b)
       if(superseded) break;
     }
     if(budget && k && g_get_monotonic_time() - start >= budget) break;
+    _background_yield();
     const char *path = json_array_get_string_element(files, k);
     if(!path || _is_sidecar(path)) continue;
     const dt_imgid_t imgid = g_file_test(path, G_FILE_TEST_IS_REGULAR) ? _import(path) : NO_IMGID;
@@ -2227,6 +2264,7 @@ static void _thumb_run(gpointer data, gpointer user_data)
 {
   JsonParser *parser = data;
   FILE *out = user_data;
+  _background_yield();
   JsonObject *req = json_node_get_object(json_parser_get_root(parser));
   const char *dest = json_object_get_string_member_with_default(req, "out", NULL);
   char *err = NULL;
@@ -10845,6 +10883,7 @@ int main(int argc, char **argv)
   g_thread_unref(g_thread_new("ai idle", _ai_idle_watch, NULL));
 #endif
   GAsyncQueue *requests = g_async_queue_new();
+  _requests = requests;
   g_thread_unref(g_thread_new("requests", _read_requests, requests));
   gboolean quit = FALSE;
   char *line;
@@ -10865,7 +10904,9 @@ int main(int argc, char **argv)
         fprintf(stderr, "[engine-cache] begin %" G_GINT64_FORMAT " %s\n",
                 json_object_get_int_member_with_default(req, "diagnostic_request", 0),
                 json_object_get_string_member_with_default(req, "cmd", ""));
+      _foreground(TRUE);
       _handle(req, out);
+      _foreground(FALSE);
       if(cache_trace) fprintf(stderr, "[engine-cache] end\n");
       dt_dev_pixelpipe_cache_trace_set(FALSE);
     }

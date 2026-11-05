@@ -55,6 +55,9 @@ Improvements
 
 Bug fixes
 
+- Zooming into an open photo no longer stalls while a folder is still
+  importing or its thumbnails are being made. Editing comes first; folder
+  reading and thumbnails wait for it.
 - ⌘Z and ⇧⌘Z work inside the crop tool: they undo and redo the angle and
   the turns and flips, and the crop rectangle turns back with the photo.
   Before, undo did nothing until the tool was closed, and after Done the
