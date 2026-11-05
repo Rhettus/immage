@@ -55,6 +55,10 @@ Improvements
 
 Bug fixes
 
+- ⌘Z and ⇧⌘Z work inside the crop tool: they undo and redo the angle and
+  the turns and flips, and the crop rectangle turns back with the photo.
+  Before, undo did nothing until the tool was closed, and after Done the
+  first ⌘Z on an uncropped photo seemed to do nothing as well.
 - Basic's Auto adds about half as much Contrast to a flat photo. Its
   Whites and Blacks already widen the photo's tones, and the extra
   Contrast on top often looked too strong.

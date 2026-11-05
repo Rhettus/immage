@@ -113,6 +113,19 @@ diagonal can swap it. `node --test verify/crop-transition.test.mjs
 verify/crop-corner.test.mjs` checks orientation initialization, crop view resets
 and constrained resizing.
 
+Undo and redo work while cropping: `stepHistory` restores the step as usual,
+then `followCrop` keeps the tool's own guide (`cropRect`, applied only at
+Done) in line. An orientation change is replayed on the guide with
+`turnPath` (manifest.ts, the fewest `Turn`s between two orientations) and
+`turnRect`, so a dragged guide keeps its shape; any other change to the crop
+settings reloads guide and aspect with `loadCrop`, shared with `enterCrop`.
+Batch paste steps stop with a status message, because restoring them reopens
+the photo. `leaveCrop` keeps `crop_rd`/`crop_rn` at 0:0 on a whole photo left
+at Original. `enterCrop` reads 0:0 as Original there, and the change alone
+would be an invisible Crop step that the next ⌘Z took first. The GUI case
+`crop-undo` checks a turn and Rotate undone by keyboard inside the tool, redo,
+and one undo after Done.
+
 ### Session and engine bridge
 
 | File | Responsibility |

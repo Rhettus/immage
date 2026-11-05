@@ -17,7 +17,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { BANDS, choiceOn, choiceShows, controlById, GUIDE_IDS, guidesOf, isModuleSetting, MAX_GUIDES, parametricOf, UPRIGHT_GUIDED,
          UPRIGHT_MODES, uprightAspect, rotateOf, mapOf, mapsFor, moduleName, mapsWith, NEG_CHOICES, NEG_GREYED, NEG_OFF,
-         NEG_OFF_UNMAPPED, SF_CHOICES, SF_GREYED, SF_OFF, SF_OFF_UNMAPPED, panels, pointsOf, pointValues, profileLabel, turnRect, type Control, type ControlPreset, type CurveChannel, type Values,
+         NEG_OFF_UNMAPPED, SF_CHOICES, SF_GREYED, SF_OFF, SF_OFF_UNMAPPED, panels, pointsOf, pointValues, profileLabel, turnPath, turnRect, type Control, type ControlPreset, type CurveChannel, type Values,
          type Panel, type Section, type Turn } from "./manifest";
 import { autoArea, autoBlack, autoDmax, autoDmin, autoExposure as autoPrintExposure, autoOffset, autoWbHigh, autoWbLow,
          FILM_BW, FILM_COLOR, fromValues, PRESETS, toValues, type Stats } from "./negadoctor";
@@ -3652,6 +3652,25 @@ export default function App() {
       setSpotSel(null);
     }
   };
+  // an undo or redo in the crop tool, whose guide stays its own until
+  // Done: a turn undone turns the guide back, keeping how it was dragged;
+  // a crop undone puts back the guide and aspect it had
+  const followCrop = (was: Values, now: Values) => {
+    const rectOf = (v: Values) => ({ l: v.crop_l ?? 0, t: v.crop_t ?? 0, r: v.crop_r ?? 1, b: v.crop_b ?? 1 });
+    const path = turnPath(was.orient ?? 0, now.orient ?? 0);
+    const carried = path.reduce(turnRect, rectOf(was)), to = rectOf(now);
+    const quarter = path.filter((h) => h === "cw" || h === "ccw").length % 2 === 1;
+    if ((["l", "t", "r", "b"] as const).every((e) => Math.abs(carried[e] - to[e]) < 1e-6)
+        && (was.crop_rd ?? 0) === (now.crop_rd ?? 0) && (was.crop_rn ?? 0) === (now.crop_rn ?? 0)) {
+      if (!path.length) return;
+      setCropRect((r) => path.reduce(turnRect, r));
+      if (quarter) setCropPortrait((p) => !p);
+      return;
+    }
+    loadCrop(now);
+    const f = frameSize();
+    setCropPortrait((to.b - to.t) * f.h > (to.r - to.l) * f.w);
+  };
   // the image's masks made these: only what differs is sent
   const setMasksTo = (target: Mask[]) => {
     const s = session.current;
@@ -3755,7 +3774,7 @@ export default function App() {
   // `steps` at once, as a click in the History panel: only the state
   // arrived at is sent
   const stepHistory = async (back: boolean, steps = 1) => {
-    if (!session.current || croppingRef.current || pastingRef.current) return;
+    if (!session.current || pastingRef.current) return;
     const u = undo.current, from = back ? u.past : u.future, to = back ? u.future : u.past;
     if (!from.length) return;
     leaveBefore();
@@ -3763,6 +3782,11 @@ export default function App() {
       const s = session.current;
       if (!s) break;
       const target = from[from.length - 1];
+      // a paste is undone by reopening the photo, which would end the crop
+      if (target.batch && croppingRef.current) {
+        setStatus(`finish cropping to ${back ? "undo" : "redo"} the paste`);
+        break;
+      }
       const at = snapshot(s, target.label);
       if (target.batch) {
         const active = currentRef.current!;
@@ -3800,7 +3824,9 @@ export default function App() {
           next = following;
           k++;
         }
+        const was = { ...s.values };
         restore(next);
+        if (croppingRef.current) followCrop(was, { ...was, ...next.values });
         setStatus(back ? "undo" : "redo");
       }
     }
@@ -4999,7 +5025,17 @@ export default function App() {
     // Preserve the displayed crop orientation before clearing its placement.
     const p = placementRef.current;
     prepareCropView();
-    const v = s.values;
+    loadCrop(s.values);
+    // the guide starts in the photo's orientation: the image shown until
+    // crop is bypassed below is the crop as it stands, or the whole photo
+    setCropPortrait(!!p && p.fullHeight > p.fullWidth);
+    croppingRef.current = true;
+    setCropping(true);
+    s.bypass("crop", true);
+  };
+
+  // the crop tool's guide and aspect from the photo's crop settings
+  const loadCrop = (v: Values) => {
     const rect = { l: v.crop_l ?? 0, t: v.crop_t ?? 0, r: v.crop_r ?? 1, b: v.crop_b ?? 1 };
     const rd = v.crop_rd ?? 0, rn = v.crop_rn ?? 0;
     // darktable's ratio_d:ratio_n back to a preset; 1:0 is the image's own.
@@ -5012,16 +5048,10 @@ export default function App() {
     const own = rd > 0 && rn > 0 && !ASPECTS.some(same) && !cropCustoms.some(same) ? customAspect(rd, rn) : null;
     const preset = rd === 0 && rn === 0 ? (whole ? "original" : "free") : rn === 0 ? "original"
       : (ASPECTS.find(same) ?? cropCustoms.find(same) ?? own)?.id ?? "free";
-    // the guide starts in the photo's orientation: the image shown until
-    // crop is bypassed below is the crop as it stands, or the whole photo
     setCropRect(rect);
     setCropOwn(own);
     setCropEntry(null);
     setCropAspect(preset);
-    setCropPortrait(!!p && p.fullHeight > p.fullWidth);
-    croppingRef.current = true;
-    setCropping(true);
-    s.bypass("crop", true);
   };
 
   const leaveCrop = (apply: boolean) => {
@@ -5035,9 +5065,15 @@ export default function App() {
     if (apply) {
       const { rect, aspect, choices } = cropRef.current;
       const a = findAspect(aspect, choices);
-      const [rd, rn] = a.ratio === null ? [0, 0] : a.ratio === "original" ? [1, 0] : a.ratio;
-      // one history step for the crop, not one per edge
       const v = s.values;
+      // a photo left whole at Original keeps its "no ratio": entering the
+      // tool reads that as Original anyway, and the change alone would be
+      // a Crop step that changes nothing an undo can show
+      const whole = rect.l === 0 && rect.t === 0 && rect.r === 1 && rect.b === 1;
+      const unset = !(v.crop_rd ?? 0) && !(v.crop_rn ?? 0);
+      const [rd, rn] = a.ratio === null || (a.ratio === "original" && whole && unset) ? [0, 0]
+        : a.ratio === "original" ? [1, 0] : a.ratio;
+      // one history step for the crop, not one per edge
       const entries = ([["crop_l", rect.l], ["crop_t", rect.t], ["crop_r", rect.r], ["crop_b", rect.b],
                         ["crop_rd", rd], ["crop_rn", rn]] as [string, number][]).filter(([id, x]) => v[id] !== x);
       if (entries.length) {

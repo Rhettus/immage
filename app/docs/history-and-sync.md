@@ -10,8 +10,8 @@ settings and paste settings from the previous photo, with the usual keys.
 ## Undo and redo
 
 ⌘Z undoes the last edit; ⇧⌘Z redoes it. The undo and redo buttons in the
-toolbar under the filmstrip do the same. A continuous slider drag counts as
-one step.
+toolbar under the filmstrip do the same, including inside the crop tool. A
+continuous slider drag counts as one step.
 
 ## The History card
 

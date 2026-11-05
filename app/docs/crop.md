@@ -58,4 +58,10 @@ The crop turns with the photo.
 - **Cancel** or Esc leaves without applying it.
 - **Reset** takes the crop and angle back to the whole photo.
 
+⌘Z and ⇧⌘Z work inside the crop tool. They undo and redo the angle, the
+turns and flips, and edits made before the tool was opened; the crop
+rectangle turns back with an undone turn. Changes to the rectangle become
+a single step when you press Done. Undoing a settings paste onto several photos waits until you
+leave the crop tool.
+
 A photo that has never been cropped starts with the **Original** aspect.

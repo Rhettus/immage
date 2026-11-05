@@ -1041,6 +1041,19 @@ export function turnRect(r: { l: number; t: number; r: number; b: number }, how:
   return { l: r.t, t: 1 - r.r, r: r.b, b: 1 - r.l };
 }
 
+// the fewest turns from one orientation to another, as an undo in the
+// crop tool turns its guide back: two at most, of the eight orientations
+export function turnPath(from: number, to: number): Turn[] {
+  const turns: Turn[] = ["cw", "ccw", "h", "v"];
+  let paths: [number, Turn[]][] = [[from, []]];
+  for (let depth = 0; depth < 3; depth++) {
+    const found = paths.find(([o]) => o === to);
+    if (found) return found[1];
+    paths = paths.flatMap(([o, p]) => turns.map((h): [number, Turn[]] => [turnOrientation(o, h), [...p, h]]));
+  }
+  return [];
+}
+
 // negadoctor's three RGB params, by the controls' names for them
 const NEG_RGB = ["dmin", "wbl", "wbh"] as const;
 const NEG_FIELD: Record<typeof NEG_RGB[number], string> = { dmin: "Dmin", wbl: "wb_low", wbh: "wb_high" };
