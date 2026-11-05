@@ -4,9 +4,9 @@ import {readFileSync} from 'node:fs';
 const inventory=JSON.parse(readFileSync(new URL('../inventory.json',import.meta.url),'utf8'));
 import {locateControl} from './ranges.mjs';
 import { click,reveal,inspect,tabTo, openTool } from '../support/controls.mjs';
-import { choose,textButton,Blocked,panel,expandSections } from '../support/scenario.mjs';
+import { choose,textButton,Blocked,panel,expandSections,openMaskGroup } from '../support/scenario.mjs';
 import { until } from '../support/webdriver.mjs';
-import { settledPhoto } from './smoke.mjs';
+import { settledPhoto, settledReset } from './smoke.mjs';
 
 // sets a module choice in Preferences > Modules and returns the value it had
 export async function chooseModule(t,scope,label,value){
@@ -27,22 +27,15 @@ const outsideError=(before,after)=>{let error=0,count=0;for(let y=0;y<64;y++)for
 // the saturation curve has no slider: lift its muted end on the graph
 async function satcurveOutput(t,scope){
  const root=scope==='masks'?'.masks-panel':await panel(t,'basic');
- if(scope==='masks'){
-  // a new mask folds its settings card as it opens, moving the groups up
-  // under a click aimed a moment before: click until the group is open
-  const heading='[data-mask-group="Presence"]';
-  await until(async()=>{
-   if(!await t.driver.observe(s=>!!document.querySelector(`${s} .chevron:not(.open)`),heading))return true;
-   await click(t,heading);return false;
-  },'Presence group open');
- }else await expandSections(t,root);
+ if(scope==='masks')await openMaskGroup(t,'Presence');
+ else await expandSections(t,root);
  const g=await reveal(t,`${root} .saturation-curve svg.point-curve`),before=await settledPhoto(t);
  await t.driver.drag({x:g.bounds.x+2,y:g.bounds.y+g.bounds.height/2},{x:g.bounds.x+2,y:g.bounds.y+g.bounds.height*.2});
  const after=await settledPhoto(t,p=>p.hash!==before.hash);
  t.measure({name:`${scope}/saturation/saturation curve`,photoHash:after.hash});await t.evidence('module-graph-effect');
  if(scope==='masks'){
   assert(outsideError(before,after)<2,'outside-mask photo region remains unchanged');
-  await click(t,'.mask-list li.on .mask-del');await settledPhoto(t,p=>p.hash===before.hash);
+  await click(t,'.mask-list li.on .mask-del');await settledReset(t,before,after,'mask-delete');
  }else{
   await textButton(t,`${root} .saturation-curve .equalizer-heading`,'Reset');await settledPhoto(t,p=>p.hash===before.hash);
  }
@@ -92,7 +85,7 @@ export async function moduleOutput(t,definition){
  t.measure({name:`${scope}/${choice.id}/${option.name}`,control,photoHash:after.hash});await t.evidence('module-effect');
  if(scope==='masks'){
   assert(outsideError(before,after)<2,'outside-mask photo region remains unchanged');
-  await click(t,'.mask-list li.on .mask-del');await settledPhoto(t,p=>p.hash===before.hash);
+  await click(t,'.mask-list li.on .mask-del');await settledReset(t,before,after,'mask-delete');
  }else{
   const label=await reveal(t,control.replace('input[type=range]','label'));await t.driver.point(label.x,label.y,2);await settledPhoto(t,p=>p.hash===before.hash);
  }

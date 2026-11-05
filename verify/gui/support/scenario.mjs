@@ -80,6 +80,15 @@ export async function expandSections(t, selector) {
   }
   throw Error('Section expansion exceeded limit');
 }
+// wait for an element to stop moving: two looks 0.5 px apart
+async function still(t, selector) {
+  let last = null;
+  await until(async () => {
+    const y = await t.driver.observe(s => document.querySelector(s)?.getBoundingClientRect().top ?? null, selector);
+    const same = y !== null && last !== null && Math.abs(y - last) < 0.5;
+    last = y; if (!same) await pause(150); return same;
+  }, `${selector} still`);
+}
 // the last fold opened animates its height and moves every control below it:
 // wait for the panel's content to stop growing before aiming at one
 async function settledHeight(t, selector) {
@@ -95,11 +104,14 @@ async function settledHeight(t, selector) {
 export async function openMaskGroup(t, title) {
   const heading = `[data-mask-group=${JSON.stringify(title)}]`;
   await requireElement(t, heading, `${title} mask group`);
-  // a click while a new mask's panel is still laying out can miss the
-  // heading, so click again while it stays closed, never while it is open
+  // a new mask folds its settings card as it opens, moving the groups up:
+  // a click aimed before that lands on a mask control and changes it. aim
+  // only once the heading has stopped moving, and click again while it
+  // stays closed, never while it is open
   const open = () => t.driver.observe(s => !!document.querySelector(`${s} .chevron.open`), heading);
   await until(async () => {
     if (await open()) return true;
+    await still(t, heading);
     await click(t, heading);
     await pause(1000);
     return open();
