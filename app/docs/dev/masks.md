@@ -5,7 +5,7 @@ built that way. The [diagram](diagrams/masks.svg) shows the same for one
 mask. The [code map](code-map.md) says where each part lives; the comments
 beside the code hold the details this page leaves out.
 
-A mask in Immage works the way Lightroom's do: one mask, and every local
+A mask in Immage works the way masks do in most photo editors: one mask, and every local
 slider on it. darktable has no such thing. There, a mask belongs to a module
 instance, so a darktable user who wants exposure and warmth in the sky makes
 two instances and gives each the same mask. Immage builds exactly that, for
@@ -206,7 +206,7 @@ luminance range is sampled from the anchor's output (`sample`,
   range was sampled at (`sample`, read at the anchor's output) are right for
   all of them
 - the global modules ahead of the tone mapper have run, so a mask adjusts
-  the photo as the global sliders left it, as in Lightroom
+  the photo as the global sliders left it
 
 Two modules stay where darktable normally runs them, ahead of the anchor:
 
@@ -248,7 +248,7 @@ Many masks then fit on one instance: its mask is the sum of theirs, each
 member counted at `s / S` times its own opacity. darktable already has such
 a mask, a flexi group whose members add (`DT_MASKS_STATE_FLEXI_SUM`), and
 drawing it is far cheaper than running the module once per member. Overlapping masks add
-up, as Lightroom's do.
+up.
 
 In Immage, for the modules marked `merge` in `localMaps`, `planMerge` in
 [localMerge.ts](../../src/localMerge.ts) does this (the

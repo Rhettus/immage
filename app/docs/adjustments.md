@@ -161,7 +161,7 @@ and **Magenta**. Hue moves each band up to 30° either way. Saturation at
 leaves pale ones nearly as they were.
 
 Each band acts most on its own color and fades out toward the bands
-either side, as in Lightroom. Blue and Purple sit close together, so each
+either side. Blue and Purple sit close together, so each
 also reaches part of the other's colors.
 
 A photo whose HSL was set in darktable, or in Immage before 0.37.0, can

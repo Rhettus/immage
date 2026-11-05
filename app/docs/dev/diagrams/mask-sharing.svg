@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="20 -20 1841 764" width="1841" height="764" font-family="-apple-system, Helvetica, Arial, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="20 -20 1742 764" width="1742" height="764" font-family="-apple-system, Helvetica, Arial, sans-serif">
 <defs><marker id="h" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#343a40"/></marker></defs>
-<rect x="20" y="-20" width="1841" height="764" fill="#ffffff"/>
+<rect x="20" y="-20" width="1742" height="764" fill="#ffffff"/>
 <rect x="40" y="70" width="300" height="526" rx="12" fill="#dbe4ff" fill-opacity="0.6" stroke="#1971c2" stroke-width="1"/>
 <text x="54.0" y="88.0" font-size="17" fill="#1971c2" text-anchor="start" dominant-baseline="middle" font-weight="600">Immage: masks (planMerge)</text>
 <rect x="400" y="70" width="700" height="526" rx="12" fill="#d3f9d8" fill-opacity="0.6" stroke="#2f9e44" stroke-width="1"/>
@@ -70,7 +70,7 @@
 <text x="1380.0" y="538.0" font-size="14" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle" font-weight="600">AgX or sigmoid (tone mapper)</text>
 <text x="40.0" y="634.0" font-size="14" fill="#495057" text-anchor="start" dominant-baseline="middle" font-weight="normal">Each member counts at its strength over the shared one (20 / 40 = 0.5), times its Opacity. darktable blends out = in + mask · (module(in) - in), so Trees gets about Saturation +20.</text>
 <text x="40.0" y="660.0" font-size="14" fill="#495057" text-anchor="start" dominant-baseline="middle" font-weight="normal">Masks are grouped by the direction of their sliders, or by slider and sign: Face, pointing the other way, gets an instance of its own. Ten masks raising Saturation still run the module once.</text>
-<text x="40.0" y="686.0" font-size="14" fill="#495057" text-anchor="start" dominant-baseline="middle" font-weight="normal">Where members overlap the sum adds up, as in Lightroom; the shared strength is set for where it adds up most, as the combined mask stops at 1. Here they do not overlap, so it is the strongest member's.</text>
+<text x="40.0" y="686.0" font-size="14" fill="#495057" text-anchor="start" dominant-baseline="middle" font-weight="normal">Where members overlap the sum adds up; the shared strength is set for where it adds up most, as the combined mask stops at 1. Here they do not overlap, so it is the strongest member's.</text>
 <text x="40.0" y="712.0" font-size="14" fill="#495057" text-anchor="start" dominant-baseline="middle" font-weight="normal">Dragging Trees lifts it out of combined mask 1 onto its own instance, which runs after the shared ones: the drag reruns only that. It joins again on release.</text>
 <rect x="708.5" y="217.5" width="43.0" height="19" rx="4" fill="#ffffff" fill-opacity="0.92"/>
 <text x="730.0" y="227.0" font-size="12" fill="#495057" text-anchor="middle" dominant-baseline="middle" font-weight="normal">x 1.0</text>

@@ -161,7 +161,7 @@ def entities():
     ent("exportset", X[5], A, "ExportSettings", ["format · size · naming", "borders · texts · target"], UI)
     ent("look", X[1], B, "Look", ["name · group", "path (darktable style)"], UI)
     ent("session", X[2], B, "Session", ["imgid · values · info · ctx", "dirty ops · pump()", "masks · spots · look"], UI)
-    ent("values", X[3], B, "Values", ["{ control id: number }", "Lightroom units"], UI)
+    ent("values", X[3], B, "Values", ["{ control id: number }", "slider units"], UI)
     ent("view", X[4], B, "View", ["width · height", "scale · x · y · draft"], UI)
     ent("exportpreset", X[5], B, "ExportPreset", ["name · builtin", "settings: Partial"], UI)
     ent("mask", X[0], C, "Mask", ["name · invert · opacity", "refine · values (l_*)"], UI)
@@ -395,7 +395,7 @@ def mask_sharing():
         "out = in + mask · (module(in) - in), so Trees gets about Saturation +20.",
         "Masks are grouped by the direction of their sliders, or by slider and sign: Face, pointing the other way, "
         "gets an instance of its own. Ten masks raising Saturation still run the module once.",
-        "Where members overlap the sum adds up, as in Lightroom; the shared strength is set for where it adds up "
+        "Where members overlap the sum adds up; the shared strength is set for where it adds up "
         "most, as the combined mask stops at 1. Here they do not overlap, so it is the strongest member's.",
         "Dragging Trees lifts it out of combined mask 1 onto its own instance, which runs after the shared ones: "
         "the drag reruns only that. It joins again on release.",

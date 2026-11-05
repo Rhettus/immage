@@ -255,8 +255,9 @@ of every merge found resolution differences in 14 merges, all confined to
   Immage supplies its own mask UI. Stored path loading, blob decoding and
   migration remain relevant and are included in mask fixtures; upstream panel
   declarations are not claimed as Immage GUI coverage.
-- Lightroom import changes crop/rotation, curves, exposure defaults, working
-  profile, clarity, retouch, split toning and post-crop vignette, and adds a
+- Import of another editor's XMP sidecars (`lightroom.c`) changes
+  crop/rotation, curves, exposure defaults, working profile, clarity,
+  retouch, split toning and post-crop vignette, and adds a
   foreign-XMP-applied image flag. Automatic develop-time import is gated on
   `dev->full.pipe` and `loading`; Immage initializes its render pipe after
   `dt_dev_load_image`. Test foreign sidecars explicitly rather than assuming

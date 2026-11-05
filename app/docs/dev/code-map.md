@@ -1,6 +1,6 @@
 # Code map
 
-Immage is a Lightroom-style editor built on darktable. It runs as three
+Immage is a raw photo editor with familiar panels, built on darktable. It runs as three
 processes:
 
 - **The WebView**: the React front end in [`app/src`](../../src).

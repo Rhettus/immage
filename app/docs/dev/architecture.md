@@ -128,11 +128,11 @@ and constrained resizing.
 
 | File | Responsibility |
 |---|---|
-| [manifest.ts](../../src/manifest.ts) | The Lightroom panels and controls (`panels`, `Control`), and the `ModuleMap`s that translate control values to darktable params and back (`modules`, per-mask `localMaps`). `boundFields` lists every field the app reads. `"op#name"` is a named module instance. |
+| [manifest.ts](../../src/manifest.ts) | The panels and controls (`panels`, `Control`), and the `ModuleMap`s that translate control values to darktable params and back (`modules`, per-mask `localMaps`). `boundFields` lists every field the app reads. `"op#name"` is a named module instance. |
 | [wb.ts](../../src/wb.ts) | Temp/Tint and color calibration's illuminant. |
 | [tonecurve.ts](../../src/tonecurve.ts) | Parametric and point curves and tonecurve nodes. |
 | [transform.ts](../../src/transform.ts), [colorgrading.ts](../../src/colorgrading.ts) | Rotate/ashift and auto-crop; color balance hues. |
-| [colorequal.ts](../../src/colorequal.ts) | HSL and the B&W Mix at Lightroom's band hues: the mix of the color equalizer's eight nodes each slider sets (`toNodes`) and back (`fromNodes`), fitted to darktable's own curve through them. |
+| [colorequal.ts](../../src/colorequal.ts) | HSL and the B&W Mix at the hues their bands are named for: the mix of the color equalizer's eight nodes each slider sets (`toNodes`) and back (`fromNodes`), fitted to darktable's own curve through them. |
 | [GuideOverlay.tsx](../../src/GuideOverlay.tsx) | The Transform grid and Guided Upright's guides on the photo. |
 | [autoTone.ts](../../src/autoTone.ts), [bwauto.ts](../../src/bwauto.ts) | Basic's Auto and the B&W Mix's Auto, from the rendered frame. Auto's five tone sliders are all judged from one frame with them at 0, so they compound: Contrast adds at half the gain it removes with (`CONTRAST_ADD_GAIN`), because Whites and Blacks stretch a flat photo's spread about as much again. `benchmarking/autoexp.py` runs Auto over the corpus headless. |
 

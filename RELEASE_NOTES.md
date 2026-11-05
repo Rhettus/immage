@@ -37,9 +37,9 @@ Improvements
   879067695e (5.7.0+1793). Masks are saved as darktable's flexi masks,
   and edits made with earlier Immage versions open with the same shapes,
   ranges and looks, rendering as this darktable renders them.
-- Import selects like Lightroom: clicking photos highlights them (⇧-click
-  for a range, ⌘-click to add one), and checking or unchecking any
-  highlighted photo applies to the whole group. Checkboxes are always
+- Import selects like a file browser: clicking photos highlights them
+  (⇧-click for a range, ⌘-click to add one), and checking or unchecking
+  any highlighted photo applies to the whole group. Checkboxes are always
   shown, with Check all and Uncheck all buttons above the grid.
 - Import opens a card's folders expanded down to its camera folders, so
   FastRawViewer's `_Selected` and `_Rejected` folders are one click away.
@@ -496,9 +496,8 @@ Improvements
   left of the photo, and edits like any raw
 - Panorama Merge: select overlapping raws and press ⌃M (Ctrl+M on
   Windows and Linux), or right-click them, to stitch them into one wide
-  DNG, as Lightroom's Photo Merge does. Choose Spherical, Cylindrical or
-  Perspective, or let Auto pick, and Auto Crop cuts the empty edges. The
-  DNG is written beside the first photo while you go on editing, with
+  DNG. Choose Spherical, Cylindrical or Perspective, or let Auto pick,
+  and Auto Crop cuts the empty edges. The DNG is written beside the first photo while you go on editing, with
   each stage's progress and Stop at the bottom left of the photo, and
   opens like that photo's raw, with the lens corrections made. It is
   stitched with OpenCV, as darktable has no panorama tool
@@ -644,8 +643,8 @@ Bug fixes
 - the History card's rows are no longer at times drawn over each other
 - Before/After shows the Before at the same size as the After on a
   photo with lens corrections or Transform; before, it came out larger
-- HSL / Color acts at Lightroom's colors: Blue on blue, which Purple
-  used to gray, and Green on foliage. Saturation -100 turns its color
+- HSL / Color acts at the colors its bands are named for: Blue on blue,
+  which Purple used to gray, and Green on foliage. Saturation -100 turns its color
   gray and no more, where -50 already did and -100 grayed the colors
   around it too, so with Blue at -100 Aqua did nothing to the blues
   between them. Luminance and the B&W Mix at -100 darken a vivid color

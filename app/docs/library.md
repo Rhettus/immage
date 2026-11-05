@@ -242,7 +242,7 @@ Click **Merge** when you are happy with the projection and crop.
 Immage writes a new DNG beside the first photo, named `<name>-pano.dng`
 (then `<name>-pano_01.dng` and so on), and lists it after that photo. It
 is stitched in the background while you go on editing, and **Open** at
-the bottom left of the photo opens it. Like Lightroom's, the DNG holds
+the bottom left of the photo opens it. The DNG holds
 linear image data with lens corrections already made. An all-RAW selection
 opens with the new-photo defaults, white balance as shot and Lens Corrections
 off. A selection containing non-RAW photos uses a common linear color space

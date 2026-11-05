@@ -1,7 +1,7 @@
 # Print and soft proofing
 
-The Print panel ([PrintPanel.tsx](../../src/PrintPanel.tsx)) is Lightroom's
-Print module on darktable's: colorout's soft proof, and the print view's
+The Print panel ([PrintPanel.tsx](../../src/PrintPanel.tsx)) is a print
+module built on darktable's: colorout's soft proof, and the print view's
 export, printer profile conversion, PDF writer and CUPS or Windows spooler.
 darktable runs the print job only from its GTK library module
 (`src/libs/print_settings.c`), so [engine/print.c](../../../engine/print.c)
