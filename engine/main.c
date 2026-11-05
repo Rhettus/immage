@@ -4105,6 +4105,29 @@ static gboolean _positive_import(const char *path, JsonBuilder *b, char **err)
   return TRUE;
 }
 
+// print_sheet's photos for a background print: the job's held snapshots,
+// and the progress its Stop reaches (as a merge's, _merge_report)
+typedef struct _sheet_ctx_t
+{
+  gint64 job;
+  _merge_progress_t progress;
+} _sheet_ctx_t;
+
+static dt_imgid_t _sheet_take(gpointer ctx, const dt_imgid_t imgid)
+{
+  return _hold_take(((_sheet_ctx_t *)ctx)->job, imgid);
+}
+
+static void _sheet_release(gpointer ctx, const dt_imgid_t snap)
+{
+  _snapshot_remove(snap);
+}
+
+static gboolean _sheet_step(gpointer ctx, const int done, const int total)
+{
+  return _merge_report(&((_sheet_ctx_t *)ctx)->progress, "photos", done, total, FALSE);
+}
+
 static void _export_run(gpointer data, gpointer user_data)
 {
   JsonParser *parser = data;
@@ -4122,6 +4145,12 @@ static void _export_run(gpointer data, gpointer user_data)
     _hold_release(job);
   else if(!g_strcmp0(cmd, "hdr_merge"))
     ok = _hdr_merge(req, b, out, &err);
+  // a sheet of photos (print.c): each is taken as its page comes to it
+  else if(!g_strcmp0(cmd, "print") && json_object_has_member(req, "pages"))
+  {
+    _sheet_ctx_t ctx = { .job = job, .progress = _merge_progress(req, out, NULL) };
+    ok = print_sheet(req, _sheet_take, _sheet_release, _sheet_step, &ctx, b, &err);
+  }
 #ifdef HAVE_PANO
   else if(!g_strcmp0(cmd, "pano_merge") || !g_strcmp0(cmd, "pano_preview"))
     ok = _pano_merge(req, b, out, &err);
@@ -4148,6 +4177,8 @@ static void _export_run(gpointer data, gpointer user_data)
   json_builder_add_boolean_value(b, ok);
   if(!ok)
   {
+    // the reply carries it to the app; the log keeps it for a report
+    fprintf(stderr, "[engine] %s failed: %s\n", cmd, err ? err : "(no message)");
     json_builder_set_member_name(b, "error");
     json_builder_add_string_value(b, err                              ? err
                                      : !g_strcmp0(cmd, "hdr_merge")  ? "merging to HDR failed"
@@ -10097,6 +10128,12 @@ static void _handle(JsonObject *req, FILE *out)
   }
   // printing (print.c): an untagged `print` renders in the main loop, as
   // `export` does; the app's are tagged and run on the export thread
+  else if(!g_strcmp0(cmd, "print") && json_object_has_member(req, "pages"))
+  {
+    // the open photo's latest edits go to the library first, as for one photo
+    if(_s.open && !_s.before) dt_dev_write_history_ext(&_s.dev, _s.imgid);
+    if(!print_sheet(req, NULL, NULL, NULL, NULL, b, &err)) goto fail;
+  }
   else if(!g_strcmp0(cmd, "print"))
   {
     const dt_imgid_t imgid = json_object_get_int_member_with_default(req, "imgid", 0);

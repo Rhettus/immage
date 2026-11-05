@@ -2553,6 +2553,27 @@ async fn print_photo(state: State<'_, AppState>, imgid: i64, request: Value) -> 
     result.map(without_ok)
 }
 
+// a sheet of photos, each as its edit is now (print_photo's way): the Cells
+// layout's pages of boxes and labels are in `request`, `imgids` the photos
+// they hold, which the engine takes a snapshot of as each page reaches it
+#[tauri::command]
+async fn print_sheet(app: AppHandle, state: State<'_, AppState>, job: u64, imgids: Vec<i64>, request: Value)
+                     -> Result<Value, String> {
+    let tagged = state.tagged.clone();
+    state.engine("print_sheet").request(json!({ "cmd": "export_hold", "job": job, "imgids": imgids }))?;
+    let mut req = request;
+    req["cmd"] = json!("print");
+    let t = tagged.clone();
+    // each photo placed reaches the page as a merge's progress, and Stop as a merge's
+    let result = tauri::async_runtime::spawn_blocking(move || merge(app, t, job, req))
+        .await.map_err(|e| e.to_string()).and_then(|r| r);
+    let t = tagged.clone();
+    let tag = t.tag();
+    let _ = tauri::async_runtime::spawn_blocking(move || t.request(tag, json!({ "cmd": "export_release", "job": job })))
+        .await;
+    result.map(without_ok)
+}
+
 // the Export dialog's presets, a document the front end shapes; none yet is
 // null
 #[tauri::command]
@@ -2815,7 +2836,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             map_tiles::map_tile, open_folder, open_image, get_params, set_params, render, cancel_base, save, baseline_end, before_view, thumb, thumb_cached, thumb_known, cache_limits, cache_usage, cache_clear, meta, meta_set, capture_times, prefetch, darktable_resources, darktable_resources_set, gpu_edits, gpu_edits_set, webview_renderer, webview_renderer_set,
-            export_images, export_cancel, export_existing, export_preview, fonts, print_profiles, print_profile_add, softproof, printers, printer_info, print_photo, export_presets_load, export_presets_save, preset_file_write, preset_file_read, presets_load, presets_save, looks_list, look_import, look_export, look_delete, look_apply, look_amount, preview, paste_batch,
+            export_images, export_cancel, export_existing, export_preview, fonts, print_profiles, print_profile_add, softproof, printers, printer_info, print_photo, print_sheet, export_presets_load, export_presets_save, preset_file_write, preset_file_read, presets_load, presets_save, looks_list, look_import, look_export, look_delete, look_apply, look_amount, preview, paste_batch,
             mask_shapes, combine, masks, mask_delete, mask_rename, history, module_state, sample, tone_key, agx_auto, upright, points, range_map, zones, mask_map, ai_object,
             ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, positive_export, spektra_stocks, spektra_fetch, list_subfolders, folder_volumes, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
             immich_export_check, immich_search, immich_browse_check, immich_libraries, immich_suggestions, immich_people, immich_tags,

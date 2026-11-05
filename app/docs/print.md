@@ -1,11 +1,13 @@
 # Print and soft proofing
 
-The Print panel prints the open photo, or saves it as a PDF. It can convert
-the colors with your printer's ICC profile, and soft proof the photo on
-screen with that profile first, so you see the print before you make it.
+The Print panel prints the open photo, or a sheet of the photos you have
+selected, or saves them as a PDF. It can convert the colors with your
+printer's ICC profile, and soft proof the photo on screen with that profile
+first, so you see the print before you make it.
 
 **If you've used another editor:** it is the Print module's single-photo
-layout plus the soft proofing view, put together in one panel. Soft
+layout and a contact sheet layout, plus the soft proofing view, put together
+in one panel. Soft
 proofing uses darktable's soft proof, and printing uses darktable's print
 code.
 
@@ -50,11 +52,16 @@ white or the ink's black.
   its own resolution, which the panel shows.
 - **Orientation**: **Auto** turns the page to suit the photo: landscape for
   a wide photo, portrait for a tall one. **Portrait** and **Landscape** fix
-  it.
+  it. A sheet of photos (**Cells**) is portrait on **Auto**.
 
 ## Layout
 
-One photo goes on each page. While the panel is open, the viewer shows the
+**Layout** chooses **Single Photo** or **Cells**. Single Photo puts the open
+photo on the page. **Cells** puts the photos you have selected on the page in
+a grid, as a contact sheet does; it is described under
+[Cells](#cells) below.
+
+In Single Photo, one photo goes on each page. While the panel is open, the viewer shows the
 page in place of the photo: the paper to scale, the margins dashed, and the
 photo rendered in its place on it, soft proof included. The page fills the
 viewer, so the photo can't be zoomed or compared with another while it is
@@ -78,6 +85,52 @@ print soft.
 
 The photo prints as it is cropped. Its edit is printed as it is now,
 including edits you haven't stopped making.
+
+## Cells
+
+**Cells** prints the photos selected in the library or filmstrip, in their
+order there, on one or more pages. With none selected it prints the open
+photo. The viewer shows the page with each photo's thumbnail in its cell,
+and **Page 1 of 2** with arrows when the photos take more than one page.
+The thumbnails show the photos as they are in the library, without the soft
+proof; the print itself renders each photo from its edit as it is now.
+
+Choosing Cells leaves the grid view so the page shows; press **G** to pick
+other photos, and the selection is kept. Printing a sheet shows a line under
+the photo counting the photos placed, with **Stop** to cancel it.
+
+By default the panel fills the page: it picks the columns and rows that
+make the photos largest, with 3 mm between cells, and puts each photo's
+file name under it. A Letter page with the default margins holds 38 photos
+in 6 columns and 7 rows. More photos than fit on a page continue on the next
+page, with the same cells, and the last page may have empty cells. Fewer
+photos get larger cells. Photos keep their shape and are centered in their
+cell; with names on, a photo sits at the bottom of its cell, so its name is
+right under it. Photos that are virtual copies show "(copy 1)" and so on
+after their names.
+
+- **Top**, **Bottom**, **Left** and **Right**: the border around the page.
+  The cells stay inside it, so 50 mm on every side leaves a smaller area to
+  fill.
+- **Cells per Page**: **Auto** takes as many as the photos need, up to a
+  full page. **Custom** sets the number, for example 2 for two large
+  photos on a page. The photos fill the cells in order, and the rest go on
+  further pages.
+- **Columns**: **Auto** picks the most that make the photos largest.
+  **Custom** sets the number.
+- **Cell Size**: **Auto** makes the cells as large as the border allows
+  with the **Spacing** between them. **Custom** sets each cell's **Width**
+  and **Height**, kept inside the border; the space that is left is shared
+  equally between the cells and the border, so they stay evenly spaced.
+- **Filenames Under Photos**: prints each file name, centered under its
+  photo, in small type. A name too long for its cell is shortened in the
+  middle, so the extension stays.
+
+The names are printed as part of the page's picture, so they appear on
+paper and in a saved PDF alike; a PDF's text can't be selected.
+
+Save PDF writes all the pages to one file. Printing on Linux and macOS sends
+all the pages as one job. On Windows each page is sent as its own job.
 
 ## Color management
 
@@ -113,7 +166,7 @@ asks the print system to leave the colors alone.
 
 **Print** renders the photo at the printer's resolution and sends it to
 the printer. **Save PDF…** asks where to save the PDF. The PDF holds the
-photo at the chosen resolution, tagged with its color profile: the printer
+photo (or each page of a sheet) at the chosen resolution, tagged with its color profile: the printer
 profile, or sRGB when the printer manages color. The panel says when the
 job is sent or the file is saved, or what went wrong. You can keep editing
 while it renders.

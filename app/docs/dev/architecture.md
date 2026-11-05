@@ -198,7 +198,7 @@ and one undo after Done.
 
 | File | Responsibility |
 |---|---|
-| [print.ts](../../src/print.ts), [PrintPanel.tsx](../../src/PrintPanel.tsx) | The Print panel (`RightMode` `"print"`, the rail's last button under Export, ⌘P): settings kept in `localStorage`, PDF papers, the page `layout()`, the request for `print_photo`; the soft proof (`applyProof`), which App.tsx keeps on across panels (S, the `Soft Proof:` badge) and follows with `Session.redraw()`. Design and verification in [print.md](print.md). |
+| [print.ts](../../src/print.ts), [PrintPanel.tsx](../../src/PrintPanel.tsx) | The Print panel (`RightMode` `"print"`, the rail's last button under Export, ⌘P): settings kept in `localStorage`, PDF papers, the page `layout()` and the Cells grid `cellsLayout()`, the requests for `print_photo` and `print_sheet`; the soft proof (`applyProof`), which App.tsx keeps on across panels (S, the `Soft Proof:` badge) and follows with `Session.redraw()`. Design and verification in [print.md](print.md). |
 
 ### Immich and plugins
 
@@ -280,7 +280,9 @@ soft proof mode (`softproof`, with every pipe recommitted from colorout and
 the proof mixed into `_frame_hash`), CUPS or Windows printers, and a print
 job (`print`, tagged on the export thread) that renders through an in-memory
 format, converts with the printer profile and writes a PDF for CUPS or a
-file, or spools on Windows. See [print.md](print.md).
+file, or spools on Windows. A sheet of photos in cells (`print` with `pages`,
+`print_sheet`) is composed a page at a time into one buffer, filenames
+included, and goes out the same way. See [print.md](print.md).
 
 Film Simulation's engine side is a section of main.c. spektrafilm builds its
 film and paper lists only in its GUI, so `_spektra_stocks` reads the pack's

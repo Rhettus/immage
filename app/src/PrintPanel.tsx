@@ -2,22 +2,24 @@
 // Copyright (C) 2026 the Immage authors
 
 // Lightroom's Print module as a right-hand panel: soft proofing, then the
-// printer, its paper and the photo's place on the page, the printer
+// printer, its paper and the photo's place on the page (or, in the Cells
+// layout, the grid of cells the selected photos fill), the printer
 // profile, and Print (or Save PDF). the settings are kept between photos
 // and runs (print.ts); the page they lay out is shown in the viewer (App.tsx)
 import { useState } from "react";
-import { fromUnit, layout, PDF, PDF_DPI, PDF_PAPERS, shown, sourcePpi, toUnit, type Margins, type Paper,
-         type PrintSettings, type Printer, type PrinterInfo, type Profile, type Proof, type Unit } from "./print";
+import { cellsLayout, fromUnit, layout, PDF, PDF_DPI, PDF_PAPERS, shown, sourcePpi, toUnit, type Margins,
+         type Paper, type PrintLayout, type PrintSettings, type Printer, type PrinterInfo, type Profile, type Proof, type Unit } from "./print";
 
 const ADD_PROFILE = "\u0000add";
 
 export function PrintPanel({ settings: s, onSettings, available, printers, info, infoError, profiles, onAddProfile,
-                             aspect, pixelWidth, proof, onProof, busy, note, onPrint, disabled }: {
+                             aspect, pixelWidth, photos, proof, onProof, busy, note, onPrint, disabled }: {
   settings: PrintSettings; onSettings: (s: PrintSettings) => void;
   available: boolean | null; printers: Printer[] | null;
   info: PrinterInfo | null; infoError: string | null;
   profiles: Profile[]; onAddProfile: () => void;
   aspect: number; pixelWidth: number;
+  photos: number;  // the photos the Cells layout prints: those selected, else the open one
   proof: Proof; onProof: (mode: Proof["mode"]) => void;
   busy: boolean; note: { text: string; error: boolean } | null;
   onPrint: () => void; disabled: boolean;
@@ -26,12 +28,16 @@ export function PrintPanel({ settings: s, onSettings, available, printers, info,
   const pdf = s.printer === PDF;
   const papers: Paper[] = pdf ? PDF_PAPERS : info?.papers ?? [];
   const paper = papers.find((p) => p.name === s.paper) ?? papers[0] ?? null;
-  const l = paper ? layout(paper, s, aspect, pdf ? undefined : info?.margins) : null;
+  const l = paper && s.layout === "single" ? layout(paper, s, aspect, pdf ? undefined : info?.margins) : null;
   const dpi = pdf ? s.dpi : info?.resolution ?? 300;
   const ppi = l ? sourcePpi(pixelWidth, l.image.width) : 0;
+  const unit = s.unit;
   const profileName = profiles.find((p) => p.file === s.profile)?.name;
   const managed = !!s.profile && !!profileName;
-  const ready = !disabled && available === true && !!paper && !!l?.fits && !busy && (pdf || !!info);
+  const cells = s.layout === "cells";
+  const cl = paper && cells ? cellsLayout(paper, s, photos, pdf ? undefined : info?.margins) : null;
+  const noPhoto = cells ? photos === 0 : disabled;
+  const ready = !noPhoto && available === true && !!paper && !!(cells ? cl?.fits : l?.fits) && !busy && (pdf || !!info);
 
   if (available === false) return (
     <div className="panel print">
@@ -119,6 +125,12 @@ export function PrintPanel({ settings: s, onSettings, available, printers, info,
 
       <section>
         <h3>Layout</h3>
+        <div className="segmented print-layout">
+          {([["single", "Single Photo"], ["cells", "Cells"]] as [PrintLayout, string][]).map(([k, label]) => (
+            <button key={k} className={s.layout === k ? "active" : ""} data-action={`print-layout-${k}`} disabled={busy}
+                    onClick={() => set({ layout: k })}>{label}</button>
+          ))}
+        </div>
         {l && (
           <p className="note-plain print-size">
             {l.fits ? <>Prints {shown(l.image.width, s.unit)} × {shown(l.image.height, s.unit)} at {dpi} dpi
@@ -127,6 +139,15 @@ export function PrintPanel({ settings: s, onSettings, available, printers, info,
             {l.fits && ppi > 0 && ppi < 180 && " The photo is enlarged to fill it; it may print soft."}
             {l.borderless && " A margin is inside what the printer can reach: it prints borderless if it can."}
             {l.fits && " Point at the page to place the photo."}
+          </p>
+        )}
+        {cells && (
+          <p className="note-plain print-size" data-print-cells>
+            {!cl?.fits ? "The margins leave no room for the photos."
+              : photos === 0 ? "Select the photos to print."
+              : <>{photos} {photos === 1 ? "photo" : "photos"} on {cl.pages} {cl.pages === 1 ? "page" : "pages"}:
+                {" "}{cl.columns} × {cl.rows} cells, each {shown(cl.cell.width, s.unit)} × {shown(cl.cell.height, s.unit)}.</>}
+            {cl?.fits && cl.borderless && " A margin is inside what the printer can reach: it prints borderless if it can."}
           </p>
         )}
         <div className="choice-row">
@@ -146,20 +167,96 @@ export function PrintPanel({ settings: s, onSettings, available, printers, info,
             </label>
           ))}
         </div>
-        <div className="choice-row">
-          <span>Photo Size</span>
-          <div className="segmented small">
-            <button className={s.size === null ? "active" : ""} disabled={busy} onClick={() => set({ size: null })}>Fill</button>
-            <button className={s.size !== null ? "active" : ""} disabled={busy || !l}
-                    onClick={() => l && set({ size: Math.round(Math.max(l.image.width, l.image.height)) })}>Custom</button>
-          </div>
-        </div>
-        {s.size !== null && (
-          <div className="choice-row">
-            <span>Long Edge</span>
-            <Length mm={s.size} unit={s.unit} disabled={busy} data-margin="size"
-                    onChange={(mm) => set({ size: Math.max(10, mm) })} />
-          </div>
+        {!cells && (
+          <>
+            <div className="choice-row">
+              <span>Photo Size</span>
+              <div className="segmented small">
+                <button className={s.size === null ? "active" : ""} disabled={busy} onClick={() => set({ size: null })}>Fill</button>
+                <button className={s.size !== null ? "active" : ""} disabled={busy || !l}
+                        onClick={() => l && set({ size: Math.round(Math.max(l.image.width, l.image.height)) })}>Custom</button>
+              </div>
+            </div>
+            {s.size !== null && (
+              <div className="choice-row">
+                <span>Long Edge</span>
+                <Length mm={s.size} unit={s.unit} disabled={busy} data-margin="size"
+                        onChange={(mm) => set({ size: Math.max(10, mm) })} />
+              </div>
+            )}
+          </>
+        )}
+        {cells && (
+          <>
+            <div className="choice-row">
+              <span>Cells per Page</span>
+              <div className="segmented small">
+                <button className={s.cellCount === 0 ? "active" : ""} disabled={busy} data-action="print-cells-auto"
+                        onClick={() => set({ cellCount: 0 })}>Auto</button>
+                <button className={s.cellCount > 0 ? "active" : ""} disabled={busy} data-action="print-cells-custom"
+                        onClick={() => set({ cellCount: cl?.perPage ?? 2 })}>Custom</button>
+              </div>
+            </div>
+            {s.cellCount > 0 && (
+              <div className="choice-row print-sub">
+                <span>Cells</span>
+                <Count value={s.cellCount} min={1} max={200} disabled={busy} data-cells="count"
+                       onChange={(n) => set({ cellCount: n })} />
+              </div>
+            )}
+            <div className="choice-row">
+              <span>Columns</span>
+              <div className="segmented small">
+                <button className={s.columns === 0 ? "active" : ""} disabled={busy}
+                        onClick={() => set({ columns: 0 })}>Auto</button>
+                <button className={s.columns > 0 ? "active" : ""} disabled={busy}
+                        onClick={() => set({ columns: cl?.columns ?? 2 })}>Custom</button>
+              </div>
+            </div>
+            {s.columns > 0 && (
+              <div className="choice-row print-sub">
+                <span>Columns</span>
+                <Count value={s.columns} min={1} max={50} disabled={busy} data-cells="columns"
+                       onChange={(n) => set({ columns: n })} />
+              </div>
+            )}
+            <div className="choice-row">
+              <span>Cell Size</span>
+              <div className="segmented small">
+                <button className={s.cellSize === null ? "active" : ""} disabled={busy} data-action="print-size-auto"
+                        onClick={() => set({ cellSize: null })}>Auto</button>
+                <button className={s.cellSize !== null ? "active" : ""} disabled={busy || !cl?.fits}
+                        data-action="print-size-custom"
+                        onClick={() => cl && set({ cellSize: { width: Math.round(cl.cell.width), height: Math.round(cl.cell.height) } })}>Custom</button>
+              </div>
+            </div>
+            {s.cellSize !== null ? (
+              <>
+                <div className="choice-row print-sub">
+                  <span>Width</span>
+                  <Length mm={s.cellSize.width} unit={unit} disabled={busy} data-margin="cell-width"
+                          onChange={(mm) => set({ cellSize: { width: Math.max(5, mm), height: s.cellSize!.height } })} />
+                </div>
+                <div className="choice-row print-sub">
+                  <span>Height</span>
+                  <Length mm={s.cellSize.height} unit={unit} disabled={busy} data-margin="cell-height"
+                          onChange={(mm) => set({ cellSize: { width: s.cellSize!.width, height: Math.max(5, mm) } })} />
+                </div>
+                <p className="note-plain">The space left over is shared equally between the cells and the margins.</p>
+              </>
+            ) : (
+              <div className="choice-row">
+                <span>Spacing</span>
+                <Length mm={s.gap} unit={unit} disabled={busy} data-margin="gap"
+                        onChange={(mm) => set({ gap: mm })} />
+              </div>
+            )}
+            <label className="toggle" title="print each photo's file name under it">
+              <span>Filenames Under Photos</span>
+              <input type="checkbox" className="switch" data-action="print-names" checked={s.names} disabled={busy}
+                     onChange={(e) => set({ names: e.target.checked })} />
+            </label>
+          </>
         )}
       </section>
 
@@ -203,6 +300,24 @@ export function PrintPanel({ settings: s, onSettings, available, printers, info,
         {note && <p className={`note-plain${note.error ? " warn" : ""}`} data-print-note>{note.text}</p>}
       </section>
     </div>
+  );
+}
+
+// a whole number, kept as typed while it is being typed, like Length
+function Count({ value, min, max, disabled, onChange, ...rest }: {
+  value: number; min: number; max: number; disabled: boolean; onChange: (n: number) => void; "data-cells"?: string;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  return (
+    <span className="print-length">
+      <input className="field" type="text" inputMode="numeric" value={draft ?? String(value)} disabled={disabled}
+             {...rest} onFocus={() => setDraft(String(value))} onBlur={() => setDraft(null)}
+             onChange={(e) => {
+               setDraft(e.target.value);
+               const v = parseInt(e.target.value, 10);
+               if (Number.isFinite(v)) onChange(Math.min(max, Math.max(min, v)));
+             }} />
+    </span>
   );
 }
 

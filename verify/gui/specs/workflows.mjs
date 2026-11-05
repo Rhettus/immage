@@ -387,4 +387,33 @@ export async function print(t) {
   // leaving the panel puts the photo back over the whole viewer
   await openTool(t, 'adjust');
   await until(async () => !(await pageView(t)), 'the page gone in Adjustments');
+
+  // Cells layout: the selected photos on a grid, filenames under them, a custom size and border
+  await click(t, 'button[title^="grid view"]'); await t.driver.chord('\uE009', 'a');
+  await openTool(t, 'print');
+  await click(t, 'button[data-action="print-layout-cells"]');
+  // choosing Cells leaves the grid, which would cover the sheet; the selection stays
+  const cells = () => t.driver.observe(() => { const e = document.querySelector('.viewer .print-sheet[data-print-cells]');
+    return e ? { grid: e.dataset.printCells, cells: e.querySelectorAll('.print-cell:not(.empty)').length,
+                 labels: [...e.querySelectorAll('.print-label')].map(l => l.textContent) } : null; });
+  await until(async () => (await cells())?.cells >= 2, 'the selected photos placed in cells');
+  const sheet1 = await cells();
+  assert(sheet1.labels.length === sheet1.cells && sheet1.labels.every(Boolean), `a filename under every photo: ${JSON.stringify(sheet1)}`);
+  assert(await t.driver.observe(() => { const e = document.querySelector('.viewer .after-pane');
+    return !e || getComputedStyle(e).visibility === 'hidden'; }),
+    'the edit pane is hidden while the Cells layout shows');
+  await t.evidence('cells');
+  await click(t, 'input[data-action="print-names"]');
+  await until(async () => (await cells())?.labels.length === 0, 'filenames off');
+  await click(t, 'input[data-action="print-names"]');
+  await until(async () => (await cells())?.labels.length === sheet1.cells, 'filenames on again');
+  await click(t, 'button[data-action="print-cells-custom"]');
+  await until(async () => (await cells())?.cells >= 2, 'a custom cell count keeps the photos');
+  assert(await t.driver.observe(() => /photos? on \d+ pages?/.test(document.querySelector('.panel.print [data-print-cells]')?.textContent ?? '')),
+    'the panel counts photos and pages');
+  assert(await t.driver.observe(() => /Save PDF/.test(document.querySelector('button[data-action="print-go"]')?.textContent ?? '')
+    && !document.querySelector('button[data-action="print-go"]').disabled), 'Save PDF ready for the sheet');
+  await t.evidence('cells-custom');
+  await click(t, 'button[data-action="print-layout-single"]');
+  await until(async () => !(await cells()), 'the Cells sheet gone in Single Photo');
 }

@@ -8,7 +8,7 @@ import { preparePastePhoto } from "./pasteDefaults";
 import { applyClip, pasteTargets, replaceMasks, restorePaste, runPaste, type PasteUpdate } from "./batchPaste";
 import { CaptureTimeDialog } from "./CaptureTimeDialog";
 import { captureMillis, type CaptureTimeEntry, type CaptureTimeUpdate } from "./captureTime";
-import { Profiler, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { Fragment, Profiler, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ask, open, save } from "@tauri-apps/plugin-dialog";
@@ -24,9 +24,10 @@ import { autoArea, autoBlack, autoDmax, autoDmin, autoExposure as autoPrintExpos
 import { NegativePanel, type NegPick } from "./NegativePanel";
 import { FilmPanel } from "./FilmPanel";
 import { PrintPanel } from "./PrintPanel";
-import { applyProof, defaultPrintSettings, hasPrintSettings, layout as printLayout, loadPrintSettings, NO_PROOF, PDF, PDF_PAPERS,
-         printerInfo, printRequest, storePrintSettings, type Printer, type PrinterInfo, type PrintSettings,
-         type Profile, type Proof } from "./print";
+import { applyProof, cellsLayout, defaultPrintSettings, hasPrintSettings, LABEL_POINTS, layout as printLayout,
+         loadPrintSettings, NO_PROOF, PDF, PDF_PAPERS, printerInfo, printRequest, sheetPages, sheetRequest,
+         storePrintSettings, type Paper, type Printer, type PrinterInfo, type PrintSettings, type Profile, type Proof,
+         type SheetPhoto } from "./print";
 import { PositiveFooter } from "./PositiveFooter";
 import { filmChanges, paperChanges, presetValues as sfPresetValues, SF_PRESETS, type FetchStatus,
          type Stocks } from "./spektrafilm";
@@ -4128,10 +4129,15 @@ export default function App() {
   const [printProfiles, setPrintProfiles] = useState<Profile[]>([]);
   const [printBusy, setPrintBusy] = useState(false);
   const [printNote, setPrintNote] = useState<{ text: string; error: boolean } | null>(null);
+  // the page of the Cells layout the viewer shows
+  const [sheetPageNo, setSheetPageNo] = useState(0);
   const [proof, setProof] = useState<Proof>(NO_PROOF);
   const proofRef = useRef(proof);
   proofRef.current = proof;
   const printOpen = layout.right && !cropping && rightMode === "print";
+  // choosing Cells leaves the grid, which covers the sheet; G brings it back to pick other photos
+  const cellsChosen = printOpen && printSettings.layout === "cells";
+  useEffect(() => { if (cellsChosen) setGrid(false); }, [cellsChosen]);
   const changeProof = (next: Proof) => {
     const p = next.profile ? next : NO_PROOF;
     setProof(p);
@@ -4223,11 +4229,12 @@ export default function App() {
   };
   const printNow = async () => {
     const s = session.current;
-    if (!s || !current) return;
     const settings = printSettings;
     const pdf = settings.printer === PDF;
     const papers = pdf ? PDF_PAPERS : printInfo?.info?.papers ?? [];
     const paper = papers.find((p) => p.name === settings.paper) ?? papers[0];
+    if (settings.layout === "cells") return printSheetNow(s, settings, paper, pdf);
+    if (!s || !current) return;
     if (!paper || !placement) return;
     const l = printLayout(paper, settings, placement.fullWidth / placement.fullHeight,
                           pdf ? undefined : printInfo?.info?.margins);
@@ -4247,6 +4254,40 @@ export default function App() {
                                     request: printRequest(settings, paper, l, baseName(current.path), settings.medium, out) });
       const where = printers?.find((p) => p.name === settings.printer)?.description ?? settings.printer;
       setPrintNote({ text: pdf ? `Saved ${out}` : `Sent to ${where}.`, error: false });
+    } catch (e) {
+      setPrintNote({ text: String(e), error: true });
+    } finally {
+      setPrintBusy(false);
+    }
+  };
+  // the Cells layout: the selected photos, each as its edit is now, on pages
+  // of cells (print_sheet in engine/print.c); one that is open has its
+  // pending edits saved first
+  const printSheetNow = async (s: Session | null, settings: PrintSettings, paper: Paper | undefined, pdf: boolean) => {
+    const photos = sheetPhotosRef.current;
+    if (!photos.length || !paper) return;
+    const l = cellsLayout(paper, settings, photos.length, pdf ? undefined : printInfo?.info?.margins);
+    if (!l.fits) return;
+    let out: string | null = null;
+    if (pdf) {
+      out = await save({ defaultPath: `${photos.length > 1 ? "Contact sheet" : photos[0].name.replace(/\.[^.]+$/, "")}.pdf`,
+                         filters: [{ name: "PDF", extensions: ["pdf"] }] });
+      if (!out) return;
+    }
+    setPrintBusy(true);
+    setPrintNote(null);
+    try {
+      await s?.settled();
+      const where = printers?.find((p) => p.name === settings.printer)?.description ?? settings.printer;
+      const pages = `${l.pages} ${l.pages === 1 ? "page" : "pages"}`;
+      const text = pdf ? `Saved ${out} (${pages})` : `Sent ${pages} to ${where}.`;
+      // the activity line under the photo counts the photos placed, and can stop the sheet
+      const done = await runMerge("Printing contact sheet", photos.length, "print_sheet",
+        { imgids: photos.map((p) => p.imgid),
+          request: sheetRequest(settings, paper, l, photos, photos.length > 1 ? "Contact sheet" : photos[0].name,
+                                settings.medium, out) },
+        () => ({ text, ok: true }), "Print failed");
+      if (done) setPrintNote({ text, error: false });
     } catch (e) {
       setPrintNote({ text: String(e), error: true });
     } finally {
@@ -4325,7 +4366,7 @@ export default function App() {
     : (printInfo?.name === printSettings.printer ? printInfo.info?.papers : undefined) ?? [];
   const printPaper = printPapers.find((p) => p.name === printSettings.paper) ?? printPapers[0] ?? null;
   const printPage = printOpen && current && placement && printPaper && printAvailable !== false
-                    && baMode === "off" && compare === null
+                    && baMode === "off" && compare === null && printSettings.layout === "single"
     ? printLayout(printPaper, printSettings, placement.fullWidth / placement.fullHeight,
                   printPdf ? undefined : printInfo?.info?.margins)
     : null;
@@ -5479,6 +5520,34 @@ export default function App() {
   // its entry whichever folder is shown
   const listedEntry = images.find((i) => isOpen(i, current)) ?? null;
   const currentEntry = listedEntry ?? (openCell && isOpen(openCell, current) ? openCell : null);
+  // the Print panel's Cells layout prints the photos selected, in the filmstrip's order, else the open one
+  const sheetPhotos: SheetPhoto[] = (() => {
+    if (!printOpen || printSettings.layout !== "cells") return [];
+    const picked = shown.filter((i) => selection.has(i.imgid) && !isRemote(i));
+    const list: ImageEntry[] = picked.length ? picked
+      : currentEntry && "imgid" in currentEntry && !isRemote(currentEntry as ImageEntry) ? [currentEntry as ImageEntry] : [];
+    return list.map((i) => ({ imgid: i.imgid, name: `${i.filename}${copyName(i)}` }));
+  })();
+  const sheetPhotosRef = useRef<SheetPhoto[]>([]);
+  sheetPhotosRef.current = sheetPhotos;
+  const sheetKey = sheetPhotos.map((p) => p.imgid).join(",");
+  const cellsPage = printOpen && printSettings.layout === "cells" && printPaper && printAvailable !== false
+    ? cellsLayout(printPaper, printSettings, sheetPhotos.length, printPdf ? undefined : printInfo?.info?.margins) : null;
+  const cellPageNo = cellsPage ? Math.min(sheetPageNo, cellsPage.pages - 1) : 0;
+  // their thumbnails, asked for as the sheet shows them
+  useEffect(() => {
+    if (cellsPage && sheetKey) loader.current?.request(sheetKey.split(",").map(Number));
+  }, [!!cellsPage, sheetKey]);
+  const cellsSheet = (() => {
+    if (!cellsPage || viewerBox.w <= 0) return null;
+    const { width: W, height: H } = cellsPage.page;
+    const k = Math.min((viewerBox.w - 2 * PAGE_PAD) / W, (viewerBox.h - 2 * PAGE_PAD - 28) / H);
+    if (!(k > 0)) return null;
+    const x = (viewerBox.w - W * k) / 2, y = (viewerBox.h - 28 - H * k) / 2 + 0;
+    const cells = sheetPages(cellsPage, sheetPhotos)[cellPageNo] ?? [];
+    const filled = new Set(cells.map((c) => cellsPage.slots.indexOf(c.slot)));
+    return { page: { left: x, top: y, width: W * k, height: H * k }, k, cells, filled };
+  })();
   // zoomed in, the part of the image the sharp render shows, for the overlays
   const shownRegion: Region | null = shownView && !shownView.fit && full.current
     ? [shownView.x / (shownView.scale * full.current.w), shownView.y / (shownView.scale * full.current.h),
@@ -5758,11 +5827,48 @@ export default function App() {
                                                                     width: sheet.area.width, height: sheet.area.height }} />}
             </div>
           )}
+          {cellsSheet && cellsPage && (
+            <div className="print-sheet" data-print-page={`${cellsPage.page.width}x${cellsPage.page.height}`}
+                 data-print-cells={`${cellsPage.columns}x${cellsPage.rows}`} style={cellsSheet.page}>
+              <div className="print-area" style={{ left: cellsPage.area.x * cellsSheet.k, top: cellsPage.area.y * cellsSheet.k,
+                                                   width: cellsPage.area.width * cellsSheet.k,
+                                                   height: cellsPage.area.height * cellsSheet.k }} />
+              {cellsPage.slots.map((slot, n) => {
+                const cell = cellsSheet.cells.find((c) => c.slot === slot);
+                const k = cellsSheet.k;
+                return (
+                  <Fragment key={n}>
+                    <div className={`print-cell${cell ? "" : " empty"}${slot.label ? " named" : ""}`} data-print-cell={cell?.photo.imgid}
+                         style={{ left: slot.box.x * k, top: slot.box.y * k, width: slot.box.width * k, height: slot.box.height * k }}>
+                      {cell && <ThumbCanvas loader={loader.current ?? undefined} imgid={cell.photo.imgid} />}
+                    </div>
+                    {cell && slot.label && (
+                      <div className="print-label" style={{ left: slot.label.x * k, top: slot.label.y * k,
+                                                           width: slot.label.width * k, height: slot.label.height * k,
+                                                           fontSize: LABEL_POINTS * 25.4 / 72 * k,
+                                                           lineHeight: `${slot.label.height * k}px` }}>
+                        {cell.photo.name}
+                      </div>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </div>
+          )}
+          {cellsPage && cellsPage.pages > 1 && (
+            <div className="print-pager" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>
+              <button aria-label="previous page" disabled={cellPageNo <= 0}
+                      onClick={() => setSheetPageNo(cellPageNo - 1)}>‹</button>
+              <span data-print-pager>Page {cellPageNo + 1} of {cellsPage.pages}</span>
+              <button aria-label="next page" disabled={cellPageNo >= cellsPage.pages - 1}
+                      onClick={() => setSheetPageNo(cellPageNo + 1)}>›</button>
+            </div>
+          )}
           <div ref={pane} className={`after-pane${sheet ? " on-page" : baMode === "side" ? " half" : compare !== null ? " half-left" : ""}`}
                style={sheet ? (sheet.fits ? { left: sheet.image.left - MARGIN, top: sheet.image.top - MARGIN,
                                               width: sheet.image.width + 2 * MARGIN, height: sheet.image.height + 2 * MARGIN }
                                           : { left: 0, top: 0, width: "100%", height: "100%", visibility: "hidden" })
-                             : undefined}>
+                             : cellsPage ? { visibility: "hidden" } : undefined}>
             <canvas ref={baseCanvas} className={`layer base${current ? "" : " empty"}`} />
             <canvas ref={clipBase} className={`layer clip${current && (clipShown.low || clipShown.high) ? "" : " empty"}`} />
             {/* it carries neither the Before view nor the clipping overlay */}
@@ -6243,7 +6349,7 @@ export default function App() {
                         infoError={printInfo?.name === printSettings.printer ? printInfo.error : null}
                         profiles={printProfiles} onAddProfile={() => void addPrintProfile()}
                         aspect={placement ? placement.fullWidth / placement.fullHeight : 1.5}
-                        pixelWidth={placement?.fullWidth ?? 0}
+                        pixelWidth={placement?.fullWidth ?? 0} photos={sheetPhotos.length}
                         proof={proof}
                         onProof={(mode) => changeProof({ mode, profile: printSettings.profile, intent: printSettings.intent })}
                         busy={printBusy} note={printNote} onPrint={() => void printNow()} disabled={!current} />

@@ -181,6 +181,13 @@ try {
   // the print case proofs against a made-up printer profile, put among the
   // engine's own (engine/print.c reads config/color/out in its runtime folder)
   if (selectedCases.includes('print')) {
+    // the Cells layout needs several photos to select: copies of the fixture
+    const stem = basename(copiedFixture).replace(/\.[^.]+$/, ''), ext = basename(copiedFixture).slice(stem.length);
+    report.printFixtures = [];
+    for (let i = 1; i <= 6; i++) {
+      const name = `${stem}-print-${i}${ext}`;
+      await copyFile(copiedFixture, join(fixtures, name)); report.printFixtures.push(name);
+    }
     const { mkdir, writeFile } = await import('node:fs/promises');
     const { narrowPrinterProfile } = await import('./support/icc.mjs');
     const dir = join(profile, 'data', 'app.immage', 'config', 'color', 'out');

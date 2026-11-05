@@ -25,8 +25,9 @@ and Linux. **All builds are alpha; bugs are expected.**
 - Browse folders directly, import from a card with the built-in Immporter,
   and optionally search and export to an [Immich](app/docs/immich.md) library.
 - Export to a folder or an Immich album, with borders and file-name templates.
-- Print or save a PDF with your printer's ICC profile, and
-  [soft proof](app/docs/print.md) the photo on screen first.
+- Print a photo, or a contact sheet of many with their file names, or save a
+  PDF, with your printer's ICC profile, and [soft proof](app/docs/print.md) the
+  photo on screen first.
 
 Your originals stay untouched. Edits are saved automatically in XMP sidecars
 beside your photos. Immage offers a selected set of darktable’s tools in a

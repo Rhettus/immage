@@ -11,6 +11,11 @@ Improvements
   options, open in Immage's own menu styling, matching the right-click
   menus, instead of the system's grey list. They look the same on macOS,
   Windows and Linux.
+- Print has a Cells layout that puts the photos you have selected on the page
+  in a grid, as a contact sheet does: 38 fit on a Letter page with the
+  default margins, more continue on further pages, and each photo's file
+  name can print under it. Set the border, the cells per page, columns and
+  cell size; custom cells are spaced evenly inside the border.
 - Zooming into an open photo no longer stalls while a folder is still
   importing or its thumbnails are being made. Editing comes first; folder
   reading and thumbnails wait for it.
