@@ -1935,6 +1935,11 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 }
 .prefs-about { margin-top: auto; padding: 0 10px; display: flex; flex-direction: column; gap: 2px;
                color: var(--text-3); font-size: var(--fs-small); user-select: text; }
+.prefs-links { display: flex; gap: 4px; margin: 6px 0 0 -4px; }
+.prefs-links button { display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 0;
+                      border-radius: 5px; background: none; color: var(--text-3); cursor: pointer; }
+.prefs-links button:hover { color: var(--text); background: var(--inset); }
+.prefs-links .icon { width: 16px; height: 16px; }
 .prefs-legal { padding: 8px 0 12px; color: var(--text-2); font-size: var(--fs-small); line-height: 1.5; user-select: text; }
 .prefs-legal p { margin: 0 0 8px; }
 .license-view { width: min(720px, calc(100vw - 32px)); }

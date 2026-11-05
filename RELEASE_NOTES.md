@@ -12,6 +12,8 @@ Improvements
   beside their name, also inside masks. Click it to switch the module for
   that photo or mask from a menu, or choose **Set as default** to make it the
   choice in Preferences › Modules.
+- Preferences has icons under the version in the sidebar that open Immage's
+  homepage, Discord server and GitHub page.
 - Preferences has an Overlay opacity slider under Overlay color, to make a
   mask's overlay on the photo more or less solid, with a Reset button.
 - Dropdown menus, such as Profile in Preferences and the export and print

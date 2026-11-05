@@ -419,6 +419,13 @@ function darktableUrl(version?: string) {
   const release = /^(\d+\.\d+\.\d+)$/.exec(version?.replace(/-dirty$/, "") ?? "");
   return release ? `${DARKTABLE_URL}/tree/release-${release[1]}` : DARKTABLE_URL;
 }
+// Preferences > About: the homepage, Discord and GitHub, as icons under the version
+const ABOUT_LINKS: [string, string, React.ReactNode][] = [
+  ["Immage homepage", "https://immage.photo", svg(<><circle cx="12" cy="12" r="8.5" /><path d="M3.5 12h17M12 3.5c2.5 2.6 3.5 5.4 3.5 8.5s-1 5.900-3.500 8.500c-2.500-2.600-3.500-5.400-3.500-8.500s1-5.900 3.500-8.500z" /></>)],
+  ["Immage on Discord", "https://discord.gg/zm5JwPhdh", svg(<><path d="M7 6.500c3-1.300 7-1.300 10 0 1.800 2.700 2.600 5.400 2.500 8.500-1.200.9-2.400 1.400-3.700 1.800l-.9-1.500M7 6.500C5.200 9.200 4.400 11.900 4.500 15c1.200.9 2.400 1.400 3.700 1.800l.9-1.500" /><circle cx="9.500" cy="12" r=".9" /><circle cx="14.500" cy="12" r=".9" /></>)],
+  ["Immage on GitHub", "https://github.com/Rhettus/immage", svg(<path d="M9 19c-4 1.200-4-2-6-2.500m12 4.500v-3.100a2.700 2.700 0 0 0-.8-2.100c2.600-.3 5.300-1.300 5.300-5.700a4.400 4.400 0 0 0-1.200-3.100 4.100 4.100 0 0 0-.1-3.100s-1-.3-3.200 1.200a11 11 0 0 0-5.800 0C7.100 3.800 6.100 4.100 6.100 4.100a4.100 4.100 0 0 0-.1 3.100A4.400 4.400 0 0 0 4.800 10.300c0 4.400 2.700 5.400 5.300 5.700a2.700 2.700 0 0 0-.8 2.100V21" />)],
+];
+
 // what the last check found, for About's row
 function updateHint(state: UpdateState, app?: string): string {
   switch (state.kind) {
@@ -598,6 +605,11 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
               <span>Immage {about.app}</span>
               {about.commit && <span>commit {about.commit}</span>}
               <span>darktable {about.darktable.split("~")[0]}</span>
+              <div className="prefs-links">
+                {ABOUT_LINKS.map(([label, url, icon]) => (
+                  <button key={label} title={label} aria-label={label} onClick={() => void openUrl(url)}>{icon}</button>
+                ))}
+              </div>
             </div>
           )}
         </nav>

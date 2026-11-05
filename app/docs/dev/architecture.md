@@ -219,7 +219,7 @@ identity before drawing, so replacement frames cancel obsolete work.
 
 | File | Responsibility |
 |---|---|
-| [Preferences.tsx](../../src/Preferences.tsx), [PrefsUI.tsx](../../src/PrefsUI.tsx) | The Preferences dialog and its `load*`/`store*` pairs; `PrefCard`, `PrefRow`, `PrefSwitch`. |
+| [Preferences.tsx](../../src/Preferences.tsx), [PrefsUI.tsx](../../src/PrefsUI.tsx) | The Preferences dialog and its `load*`/`store*` pairs; `PrefCard`, `PrefRow`, `PrefSwitch`; `ABOUT_LINKS` (homepage, Discord, GitHub icons under the sidebar version). |
 | [SelectMenu.tsx](../../src/SelectMenu.tsx) | Mounted once in `main.tsx`. Intercepts `mousedown` on any single-choice `<select>`, shows its options in a `.context-menu.select-menu` (inside the enclosing `.filter-pop`, `.icon-picker`, `.modal` or `.context-menu`, so outside-click handlers don't close it), and writes the choice back to the `<select>` and fires `change`. Handlers and `data-*` test hooks are unchanged. Space and Alt-arrow open it; arrows, Home/End, Enter and Escape drive it. |
 | [histogram.ts](../../src/histogram.ts) | Histogram and scope kernels (worker with main-thread fallback), clipping overlay. |
 | [probe.ts](../../src/probe.ts) | The color under the pointer, for the Tone Curve, HSL and B&W cards. |
