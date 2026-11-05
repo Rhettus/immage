@@ -51,6 +51,7 @@ Improvements
   Defringe: Preferences › Modules › Masks no longer offers darktable's
   deprecated defringe module. Masks already edited with it keep their look.
 - Heal sits above Zone System in the tool rail.
+- The startup splash shows the new Immage logo.
 
 Bug fixes
 
