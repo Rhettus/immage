@@ -92,8 +92,9 @@ including edits you haven't stopped making.
 order there, on one or more pages. With none selected it prints the open
 photo. The viewer shows the page with each photo's thumbnail in its cell,
 and **Page 1 of 2** with arrows when the photos take more than one page.
-The thumbnails show the photos as they are in the library, without the soft
-proof; the print itself renders each photo from its edit as it is now.
+The thumbnails are drawn at the size of their cells, and soft proofed when
+**Soft Proof** is on. They are the library's quick renders of each photo; the
+print itself renders each photo from its edit as it is now.
 
 Choosing Cells leaves the grid view so the page shows; press **G** to pick
 other photos, and the selection is kept. Printing a sheet shows a line under

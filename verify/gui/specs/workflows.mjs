@@ -333,8 +333,8 @@ export async function print(t) {
   await click(t, 'input[data-action="print-softproof"]');
   const proofed = await settledPhoto(t, p => p.hash !== baseline.hash);
   assert(chromaOf(proofed) < chromaOf(baseline), `proof pulls color in: ${chromaOf(baseline)} -> ${chromaOf(proofed)}`);
-  assert(await t.driver.observe(() => /Immage test narrow printer/.test(document.querySelector('[data-proof-badge]')?.textContent ?? '')),
-         'the badge names the profile');
+  assert(!await t.driver.observe(() => !!document.querySelector('[data-proof-badge]')),
+         'no badge in the Print panel, which already names the profile');
   await t.evidence('soft-proof');
   // gamut warning: what the printer can't reach painted cyan
   await click(t, 'input[data-action="print-gamut"]');
@@ -347,12 +347,12 @@ export async function print(t) {
   // S turns it off, to the photo as it was, and on again
   await t.driver.keys('s');
   await settledPhoto(t, p => p.hash === baseline.hash);
-  assert(!await t.driver.observe(() => !!document.querySelector('[data-proof-badge]')), 'badge gone with the proof');
   await t.driver.keys('s');
   await settledPhoto(t, p => p.hash === proofed.hash);
-  // the proof stays on in another panel
+  // the proof stays on in another panel, with the badge naming the profile
   await openTool(t, 'adjust');
-  assert(await t.driver.observe(() => !!document.querySelector('[data-proof-badge]')), 'proof kept in Adjustments');
+  assert(await t.driver.observe(() => /Immage test narrow printer/.test(document.querySelector('[data-proof-badge]')?.textContent ?? '')),
+         'proof kept in Adjustments, the badge naming the profile');
   await openTool(t, 'print');
 
   // layout: the page turns, a margin and the size change the photo's print size, a place is chosen
@@ -383,7 +383,6 @@ export async function print(t) {
   const placed = await settledPhoto(t);
   await click(t, 'input[data-action="print-softproof"]');
   await settledPhoto(t, p => p.hash !== placed.hash);
-  assert(!await t.driver.observe(() => !!document.querySelector('[data-proof-badge]')), 'badge gone with the proof');
   // leaving the panel puts the photo back over the whole viewer
   await openTool(t, 'adjust');
   await until(async () => !(await pageView(t)), 'the page gone in Adjustments');
@@ -403,6 +402,17 @@ export async function print(t) {
     return !e || getComputedStyle(e).visibility === 'hidden'; }),
     'the edit pane is hidden while the Cells layout shows');
   await t.evidence('cells');
+  // soft proof reaches the cells: their pixels change with it on, and come back off
+  const cellSum = () => t.driver.observe(() => { const c = document.querySelector('.viewer .print-cell canvas');
+    if (!c) return 0; const d = c.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, c.width, c.height).data;
+    let n = 0; for (let i = 0; i < d.length; i += 4) n += d[i] * 3 + d[i + 1] * 5 + d[i + 2]; return n; });
+  await until(async () => (await cellSum()) > 0, 'a cell thumbnail drawn', 30000);
+  const cellBefore = await cellSum();
+  await click(t, 'input[data-action="print-softproof"]');
+  await until(async () => (await cellSum()) !== cellBefore, 'the cells soft proofed');
+  await t.evidence('cells-proofed');
+  await click(t, 'input[data-action="print-softproof"]');
+  await until(async () => (await cellSum()) === cellBefore, 'the cells unproofed again');
   await click(t, 'input[data-action="print-names"]');
   await until(async () => (await cells())?.labels.length === 0, 'filenames off');
   await click(t, 'input[data-action="print-names"]');

@@ -51,6 +51,11 @@ Performance
 
 Bug fixes
 
+- Print Cells shows the photos soft proofed when Soft Proof is on, and sharper:
+  they are drawn at the size of their cells instead of as filmstrip
+  thumbnails.
+- The print page in the viewer has no drop shadow, and the Soft Proof badge
+  is hidden while the Print panel is open, where its settings already say it.
 - Shift-click in the grid and filmstrip selects the run from the photo you
   clicked last, so it works at the first attempt instead of waiting for that
   photo to finish opening.

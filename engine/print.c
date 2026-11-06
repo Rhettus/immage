@@ -366,6 +366,43 @@ dt_hash_t print_proof_hash(const dt_hash_t hash)
   return dt_hash(h, cp->softproof_filename, strlen(cp->softproof_filename));
 }
 
+gboolean print_proof_pixels(uint8_t *rgba, const int width, const int height, const int color_space)
+{
+  dt_colorspaces_t *cp = darktable.color_profiles;
+  pthread_rwlock_rdlock(&cp->xprofile_lock);
+  const int mode = cp->mode;
+  const int intent = cp->display_intent;
+  const dt_colorspaces_color_profile_t *prof
+    = mode == DT_PROFILE_NORMAL ? NULL
+      : dt_colorspaces_get_profile(cp->softproof_type, cp->softproof_filename, DT_PROFILE_DIRECTION_OUT);
+  const dt_colorspaces_color_profile_t *in
+    = prof ? dt_colorspaces_get_profile(color_space, "", DT_PROFILE_DIRECTION_ANY) : NULL;
+  const dt_colorspaces_color_profile_t *srgb
+    = prof ? dt_colorspaces_get_profile(DT_COLORSPACE_SRGB, "", DT_PROFILE_DIRECTION_ANY) : NULL;
+  // colorout's flags (colorout.c, commit_params); the temporary profile
+  // is what makes lcms quantize a parametric profile's curves
+  cmsHPROFILE proof = prof && in && srgb ? dt_colorspaces_make_temporary_profile(prof->profile) : NULL;
+  cmsHTRANSFORM xform = NULL;
+  if(proof)
+  {
+    uint32_t flags = cmsFLAGS_SOFTPROOFING | cmsFLAGS_NOCACHE | cmsFLAGS_BLACKPOINTCOMPENSATION;
+    if(mode == DT_PROFILE_GAMUTCHECK) flags |= cmsFLAGS_GAMUTCHECK;
+    xform = cmsCreateProofingTransform(in->profile, TYPE_RGBA_8, srgb->profile, TYPE_RGBA_8, proof, intent,
+                                       INTENT_RELATIVE_COLORIMETRIC, flags);
+    cmsCloseProfile(proof);
+  }
+  pthread_rwlock_unlock(&cp->xprofile_lock);
+  if(!xform) return FALSE;
+  // alpha is the cache's 0 or 255; lcms carries it through only as is
+  for(int y = 0; y < height; y++)
+  {
+    uint8_t *row = rgba + (size_t)4 * width * y;
+    cmsDoTransform(xform, row, row, width);
+  }
+  cmsDeleteTransform(xform);
+  return TRUE;
+}
+
 // ---------------------------------------------------------------- printers
 
 #ifdef HAVE_PRINT

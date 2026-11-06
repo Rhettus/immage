@@ -49,10 +49,17 @@ wheel, clicks, Z and the navigator), and the zoom bar is disabled.
 `settings.layout` is `"single"` or `"cells"`. In Cells, `printPage` is null
 (the live edit's pane stays hidden, `visibility: hidden`) and App.tsx shows
 `cellsSheet` instead: `cellsLayout()` for the selected photos, drawn as
-`.print-cell`s holding `ThumbCanvas` from the filmstrip's `ThumbLoader`
-(asked for with `request()` as the sheet changes) and `.print-label`s, with
+`.print-cell`s holding `CellCanvas` and `.print-label`s, with
 `.print-pager` for the page shown (`sheetPageNo`, clamped). `sheetPhotos` is
 the selection filtered with `!isRemote` in `shown` order, else the open photo.
+`CellCanvas` fetches its own engine thumbnail (`fetchThumb`) at the cell's
+device pixels, in steps of 128 up to 1440, not the filmstrip's 240. With the
+proof on, `thumb` carries `proof: true` and `_thumb` in main.c copies the
+mipmap pixels through `print_proof_pixels` (print.c), colorout's proofing
+transform and flags from the thumbnail's color space to sRGB; Rust does not
+keep a proofed thumbnail in the thumbnail cache. The cell refetches on
+`proofApplied`, set once `softproof` has replied, so it never races the
+engine's old state. The `Soft Proof:` badge is hidden while `printOpen`.
 
 `cellsLayout(paper, settings, photos, hw)` returns one page's `slots` in
 reading order, `columns`, `rows`, `perPage` and `pages`. It works in the

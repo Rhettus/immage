@@ -1754,17 +1754,19 @@ async fn folder_volumes(paths: Vec<String>) -> Vec<volumes::Volume> {
 // so it does not take engine()
 #[tauri::command]
 async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>, imgid: i64, size: u32,
-               path: Option<String>, version: Option<i64>) -> Result<Response, String> {
+               path: Option<String>, version: Option<i64>, proof: Option<bool>) -> Result<Response, String> {
     // named before the render: a sidecar written during it makes the next
-    // look a miss, never a stale hit
-    let name = path.and_then(|p| cache::refresh(&caches.listed, Path::new(&p), version.unwrap_or(0), size).map(|n| (p, n)));
+    // look a miss, never a stale hit. a proofed one is not the photo's
+    // thumbnail, and is not kept
+    let proof = proof.unwrap_or(false);
+    let name = path.filter(|_| !proof).and_then(|p| cache::refresh(&caches.listed, Path::new(&p), version.unwrap_or(0), size).map(|n| (p, n)));
     let thumbs = state.tagged.clone();
     let tag = thumbs.tag();
     // a file of its own, as several are built at once
     let storage = state._frame_output.clone();
     let out = storage.path(&format!("thumb-{tag}.rgba"));
     let (reply, mut pixels) = tauri::async_runtime::spawn_blocking(move || {
-        let got = thumbs.request(tag, json!({ "cmd": "thumb", "imgid": imgid, "size": size, "out": out }))
+        let got = thumbs.request(tag, json!({ "cmd": "thumb", "imgid": imgid, "size": size, "proof": proof, "out": out }))
             .and_then(|reply| Ok((reply, frame_output::FrameOutput::read(&out).map_err(|e| format!("thumb: {e}"))?)));
         storage.remove(&out);
         drop(storage);

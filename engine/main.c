@@ -2225,7 +2225,7 @@ static void _import_wait(void)
 // unedited raw, a processed render of an edited one. the buffer is 8-bit
 // RGBA (views/view.c swaps it to BGRA for cairo); its color space is
 // reported, as it is not always sRGB
-static gboolean _thumb(const dt_imgid_t imgid, const int size, const char *out,
+static gboolean _thumb(const dt_imgid_t imgid, const int size, const gboolean proof, const char *out,
                        JsonBuilder *b, char **err)
 {
   const dt_mipmap_size_t mip = dt_mipmap_cache_get_matching_size(size, size);
@@ -2237,13 +2237,20 @@ static gboolean _thumb(const dt_imgid_t imgid, const int size, const char *out,
     *err = g_strdup_printf("no thumbnail for image %d", imgid);
     return FALSE;
   }
-  const gboolean ok = transient_write(out, buf.buf, (size_t)4 * buf.width * buf.height, NULL, 0);
+  // the print sheet's cells, shown as the soft proof does: a copy, as the
+  // cache's buffer is shared; sRGB once proofed
+  const size_t bytes = (size_t)4 * buf.width * buf.height;
+  uint8_t *copy = proof ? g_try_malloc(bytes) : NULL;
+  if(copy) memcpy(copy, buf.buf, bytes);
+  const gboolean proofed = copy && print_proof_pixels(copy, buf.width, buf.height, buf.color_space);
+  const gboolean ok = transient_write(out, proofed ? copy : buf.buf, bytes, NULL, 0);
+  g_free(copy);
   json_builder_set_member_name(b, "width");
   json_builder_add_int_value(b, buf.width);
   json_builder_set_member_name(b, "height");
   json_builder_add_int_value(b, buf.height);
   json_builder_set_member_name(b, "color_space");
-  json_builder_add_int_value(b, buf.color_space);
+  json_builder_add_int_value(b, proofed ? DT_COLORSPACE_SRGB : buf.color_space);
   dt_mipmap_cache_release(&buf);
   if(!ok) *err = g_strdup_printf("could not write '%s'", out);
   return ok;
@@ -2273,7 +2280,8 @@ static void _thumb_run(gpointer data, gpointer user_data)
   json_builder_set_member_name(b, "tag");
   json_builder_add_int_value(b, json_object_get_int_member(req, "tag"));
   const gboolean ok = dest && _thumb(json_object_get_int_member_with_default(req, "imgid", 0),
-                                     json_object_get_int_member_with_default(req, "size", 256), dest, b, &err);
+                                     json_object_get_int_member_with_default(req, "size", 256),
+                                     json_object_get_boolean_member_with_default(req, "proof", FALSE), dest, b, &err);
   json_builder_set_member_name(b, "ok");
   json_builder_add_boolean_value(b, ok);
   if(!ok)
@@ -10068,7 +10076,8 @@ static void _handle(JsonObject *req, FILE *out)
   {
     const char *dest = json_object_get_string_member_with_default(req, "out", NULL);
     if(!dest || !_thumb(json_object_get_int_member_with_default(req, "imgid", 0),
-                        json_object_get_int_member_with_default(req, "size", 256), dest, b, &err))
+                        json_object_get_int_member_with_default(req, "size", 256),
+                        json_object_get_boolean_member_with_default(req, "proof", FALSE), dest, b, &err))
       goto fail;
   }
   else if(!g_strcmp0(cmd, "prefetch"))

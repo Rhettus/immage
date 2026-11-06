@@ -2337,7 +2337,7 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 /* the Print panel (PrintPanel.tsx) */
 /* its page in the viewer (App.tsx): the sheet, the margins dashed, and the
    nine places the photo can go over the printable area */
-.viewer .print-sheet { position: absolute; background: #f7f7f5; box-shadow: 0 2px 14px rgba(0, 0, 0, 0.45); }
+.viewer .print-sheet { position: absolute; background: #f7f7f5; }
 .viewer .print-area { position: absolute; border: 1px dashed #a4a4a4; box-sizing: border-box; }
 .viewer .print-align {
   position: absolute; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr);
@@ -2348,6 +2348,8 @@ html.windows .tool, html.windows .tool * { cursor: default; }
   background: rgba(255, 255, 255, 0.7); cursor: pointer; opacity: 0; transition: opacity 0.12s; pointer-events: auto;
 }
 .viewer.print-view:hover .print-align button { opacity: 1; }
+/* the page is the photo's backdrop: the base layer's drop shadow would show on it */
+.viewer.print-view .layer.base { box-shadow: none; }
 .viewer .print-align button.on { background: #111; border-color: #fff; }
 /* the Cells layout's page (App.tsx): a thumbnail in each cell's photo box,
    the file name in the strip under it, and a pager when it takes more pages */

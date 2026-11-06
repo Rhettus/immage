@@ -4147,6 +4147,9 @@ export default function App() {
   // choosing Cells leaves the grid, which covers the sheet; G brings it back to pick other photos
   const cellsChosen = printOpen && printSettings.layout === "cells";
   useEffect(() => { if (cellsChosen) setGrid(false); }, [cellsChosen]);
+  // the proof the engine has taken up: the Cells sheet fetches its photos
+  // once it has, not while the old proof is still in force
+  const [proofApplied, setProofApplied] = useState("off");
   const changeProof = (next: Proof) => {
     const p = next.profile ? next : NO_PROOF;
     setProof(p);
@@ -4154,6 +4157,7 @@ export default function App() {
     if (p.mode !== "off" && !printProfiles.some((q) => q.file === p.profile))
       invoke<Profile[]>("print_profiles").then(setPrintProfiles).catch(() => {});
     applyProof(p).then((changed) => {
+      if (proofRef.current === p) setProofApplied(p.mode === "off" ? "off" : `${p.mode}|${p.profile}|${p.intent}`);
       if (!changed || proofRef.current !== p) return;
       session.current?.redraw();
       if (baModeRef.current !== "off") captureBefore();
@@ -5850,7 +5854,10 @@ export default function App() {
                   <Fragment key={n}>
                     <div className={`print-cell${cell ? "" : " empty"}${slot.label ? " named" : ""}`} data-print-cell={cell?.photo.imgid}
                          style={{ left: slot.box.x * k, top: slot.box.y * k, width: slot.box.width * k, height: slot.box.height * k }}>
-                      {cell && <ThumbCanvas loader={loader.current ?? undefined} imgid={cell.photo.imgid} />}
+                      {cell && (cell.photo.imgid >= 0
+                        ? <CellCanvas loader={loader.current ?? undefined} imgid={cell.photo.imgid} proof={proofApplied !== "off"} proofKey={proofApplied}
+                                      pixels={Math.max(slot.box.width, slot.box.height) * k * (window.devicePixelRatio || 1)} />
+                        : <ThumbCanvas loader={loader.current ?? undefined} imgid={cell.photo.imgid} />)}
                     </div>
                     {cell && slot.label && (
                       <div className="print-label" style={{ left: slot.label.x * k, top: slot.label.y * k,
@@ -6052,7 +6059,7 @@ export default function App() {
                          aspect={pixelAspect(findAspect(cropAspect, cropChoices), cropPortrait, frameSize())} />
           )}
           {(before || holding) && <div className="before-badge">Before</div>}
-          {current && proof.mode !== "off" && (
+          {current && proof.mode !== "off" && !printOpen && (
             <div className="proof-badge" data-proof-badge>
               Soft Proof: {printProfiles.find((p) => p.file === proof.profile)?.name ?? "printer profile"}
               {proof.mode === "gamut" ? ", gamut warning" : ""}</div>
@@ -7266,6 +7273,36 @@ function ThumbProgress({ loader }: { loader: ThumbLoader }) {
 }
 
 // the image's thumbnail as the loader has it, redrawn when that changes
+// a print cell's photo: the engine's thumbnail at the size the cell shows it
+// (the filmstrip's is 240 pixels, soft in a big cell), soft proofed when the
+// proof is on. it lasts as long as the cell, so it is not kept in the loader
+function CellCanvas({ loader, imgid, proof, proofKey, pixels }:
+                    { loader?: ThumbLoader; imgid: number; proof: boolean; proofKey: string; pixels: number }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const [ready, setReady] = useState(false);
+  // the engine could not make it: the library's thumbnail stands in, unproofed
+  const [failed, setFailed] = useState(false);
+  // the cached sizes are steps; asking in steps keeps a resize from refetching
+  const size = Math.min(1440, Math.max(256, Math.ceil(pixels / 128) * 128));
+  useEffect(() => {
+    let stale = false;
+    fetchThumb(imgid, size, undefined, proof).then((bitmap) => {
+      const c = ref.current;
+      if (stale || !c) return;
+      c.width = bitmap.width;
+      c.height = bitmap.height;
+      c.getContext("2d", { willReadFrequently: true })!.drawImage(bitmap, 0, 0);
+      setReady(true);
+      setFailed(false);
+    }).catch((e) => { if (!stale) { console.error(`print cell thumbnail ${imgid}: ${e}`); setFailed(true); } });
+    return () => { stale = true; };
+  }, [imgid, size, proofKey]);
+  return <>
+    <canvas ref={ref} style={ready ? undefined : { display: "none" }} />
+    {!ready && <ThumbCanvas loader={failed ? loader : undefined} imgid={failed ? imgid : undefined} />}
+  </>;
+}
+
 function ThumbCanvas({ loader, imgid, dogEar = false }: { loader?: ThumbLoader; imgid?: number | string; dogEar?: boolean }) {
   const [bitmap, setBitmap] = useState(() => (imgid === undefined ? undefined : loader?.get(imgid)));
   useEffect(() => {

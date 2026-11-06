@@ -48,6 +48,11 @@ gboolean print_softproof(const char *mode, const char *file, const int intent, g
 // darktable's hash of the pipe is the same proofed or not
 dt_hash_t print_proof_hash(const dt_hash_t hash);
 
+// the thumbnail pixels (8-bit RGBA in `color_space`) as the soft proof shows
+// them, written over in sRGB; FALSE, and left as they were, when no proof
+// is on
+gboolean print_proof_pixels(uint8_t *rgba, int width, int height, int color_space);
+
 // whether this engine was built with darktable's print support
 gboolean print_available(void);
 
