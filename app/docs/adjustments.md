@@ -112,7 +112,7 @@ Click or Tab to a point and use Up/Down to adjust it, or Home to restore its neu
 value. **Reset** restores all five channels. To use the graph inside masks,
 choose **Masks › Contrast › contrast equalizer** in the same preferences tab.
 Global and mask choices are independent, so global Contrast can use AgX while
-masks use the equalizer. Existing adjustments keep their selected module.
+masks use the equalizer. Existing adjustments keep their selected module. A green dot on a tool's module icon means another module of that tool also holds adjustments, such as Contrast edited on AgX and then moved to the contrast equalizer, which hides that slider and leaves the edit behind. Open the menu: a green dot marks every module that has adjustments. Modules that share one slider, such as AgX and color balance rgb for Contrast, take the value with you when you switch, so they leave no dot.
 
 ## Saturation curve
 

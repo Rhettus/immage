@@ -11,7 +11,11 @@ Improvements
   Highlights and Shadows, Clarity, Texture, Sharpening) have a small icon
   beside their name, also inside masks. Click it to switch the module for
   that photo or mask from a menu, or choose **Set as default** to make it the
-  choice in Preferences › Modules.
+  choice in Preferences › Modules. A green dot on the
+  icon shows when another module of the same tool holds adjustments, and the
+  menu marks each module that has them. This covers a photo opened with edits
+  in several modules and edits left behind by switching, such as Contrast on
+  AgX after moving to the contrast equalizer.
 - Preferences has icons under the version in the sidebar that open Immage's
   homepage, Discord server and GitHub page.
 - Preferences has an Overlay opacity slider under Overlay color, to make a

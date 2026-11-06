@@ -226,6 +226,32 @@ export class Session {
   // every instance asked for, at once: moduleStates follows only the replies
   touched = new Set<string>();
   onModules: (() => void) | null = null;
+  // per tool, the module values that held edits when the photo opened, and
+  // the module chosen then: those edits stay flagged only while it is shown
+  usedModules: Record<string, number[]> = {};
+  private openedModule: Record<string, number> = {};
+  // per tool, the last module shown that shares the tool's sliders
+  private sharedHolder: Record<string, number> = {};
+  // the tool's modules that hold adjustments, the shown one included: those
+  // the photo opened with, and those whose own sliders are away from neutral
+  // (switching away from them leaves those edits unapplied). A tool with its
+  // own sliders hides the shared one (Contrast under the equalizer) without
+  // applying it: the module that held it keeps the edit. Modules that share
+  // the sliders hold them only while shown
+  adjustedModules(control: string): number[] {
+    const c = MODULE_CHOICES.find((x) => x.control === control);
+    if (!c) return [];
+    const cur = this.values[control];
+    const off = (id: string) => Math.abs((this.values[id] ?? 0) - (this.neutral[id] ?? 0)) > 1e-6;
+    const out = new Set<number>(this.openedModule[control] === cur ? this.usedModules[control] ?? [] : []);
+    for (const o of c.options) if (o.controls.some(off)) out.add(o.value);
+    const ownIds = new Set(c.options.flatMap((o) => o.controls));
+    if ((c.covers ?? []).some((id) => !ownIds.has(id) && off(id))) {
+      const here = c.options.find((o) => o.value === cur);
+      out.add(here && !here.controls.length ? cur : this.sharedHolder[control] ?? c.options.find((o) => !o.controls.length)!.value);
+    }
+    return [...out];
+  }
   // a raw file rather than a JPEG, HEIC or other rendered one
   raw = true;
   private spotsDirty = false;
@@ -325,14 +351,17 @@ export class Session {
         return info?.enabled && !this.foreign.has(m) ? m.read(info.params, info.defaults, this.ctx, this.values) : null;
       };
       const ofOption = (o: number) => modules.filter((m) => m.choice?.control === c.control && m.choice.value === o);
-      const used = c.options.find((o) =>
+      const usedAll = c.options.filter((o) =>
         ofOption(o.value).some((m) => {
           const r = reads(m);
           return r && covers.some((id) => id in r && Math.abs(r[id] - (this.neutral[id] ?? 0)) > 1e-6);
         }));
+      const used = usedAll[0];
+      this.usedModules[c.control] = usedAll.map((o) => o.value);
       // a conversion's tools run on modules it keeps, whatever the photo holds
       const value = forcedChoice(this.values, c.control) ?? (this.wasEdited && used ? used.value : pick);
       this.values[c.control] = value;
+      this.openedModule[c.control] = value;
       // only the chosen module's maps say what the shared sliders hold
       for (const id of covers) if (id in this.neutral) this.values[id] = this.neutral[id];
       for (const m of ofOption(value)) {
@@ -388,6 +417,9 @@ export class Session {
     perf.input(id);
     this.activeDetailControl = this.size().draft && isDetailControl(id) ? id : null;
     this.onDetailControl?.(this.activeDetailControl);
+    const choice = MODULE_CHOICES.find((c) => c.control === id);
+    const was = choice?.options.find((o) => o.value === this.values[id]);
+    if (was && !was.controls.length) this.sharedHolder[id] = was.value;
     this.values[id] = v;
     if (id === "orient") this.orient(v);
     this.conversionChanged(id);

@@ -92,7 +92,8 @@ background worker; `App.tsx` attaches phase timestamps to report version 5.
 The GUI dashboard plots these alongside timing summaries.
 
 Module switch: [ModuleSwitch.tsx](../../src/ModuleSwitch.tsx) is the panel icon and menu beside a
-multi-module tool's name (hosts chosen in `PanelView` and `MasksPanel`); its
+multi-module tool's name, with a green dot when `Session.adjustedModules` (masks: `maskAdjusted`) finds
+edits in another module (hosts chosen in `PanelView` and `MasksPanel`); its
 Set as default writes the Preferences choice.
 
 Module options: [moduleChoice.ts](../../src/moduleChoice.ts) resolves saved

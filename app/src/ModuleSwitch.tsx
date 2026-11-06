@@ -14,8 +14,8 @@ import type { ModuleChoice } from "./manifest";
 
 export type ModuleScope = "global" | "masks";
 
-export function ModuleSwitch({ choice, value, scope, disabled, onPick }: {
-  choice: ModuleChoice; value: number; scope: ModuleScope; disabled?: boolean; onPick: (value: number) => void;
+export function ModuleSwitch({ choice, value, scope, disabled, adjusted = [], onPick }: {
+  choice: ModuleChoice; value: number; scope: ModuleScope; disabled?: boolean; adjusted?: number[]; onPick: (value: number) => void;
 }) {
   const [at, setAt] = useState<{ x: number; y: number } | null>(null);
   const box = useRef<HTMLSpanElement>(null);
@@ -34,6 +34,8 @@ export function ModuleSwitch({ choice, value, scope, disabled, onPick }: {
   const current = choice.options.find((o) => o.value === value) ?? choice.options[0];
   // what Preferences holds for this tool now; Set as default is moot once it is the pick
   const isDefault = loadModuleChoice(choice.id, scope) === current.value;
+  // the dot on the icon: some module other than the shown one holds adjustments
+  const otherNames = choice.options.filter((o) => adjusted.includes(o.value) && o.value !== value).map((o) => o.name);
   const open = (el: HTMLElement) => {
     const r = el.getBoundingClientRect();
     setAt({ x: r.left, y: r.bottom + 4 });
@@ -41,9 +43,9 @@ export function ModuleSwitch({ choice, value, scope, disabled, onPick }: {
   const close = () => setAt(null);
   return (
     <span className="module-switch" ref={box}>
-      <button type="button" className={`module-switch-btn${at ? " on" : ""}`} disabled={disabled}
+      <button type="button" className={`module-switch-btn${at ? " on" : ""}${otherNames.length ? " others" : ""}`} disabled={disabled}
               data-module-switch={choice.id} aria-haspopup="menu" aria-expanded={!!at}
-              aria-label={`Module for ${choice.label}`} title={`Module: ${current.name}`}
+              aria-label={`Module for ${choice.label}`} title={`Module: ${current.name}${otherNames.length ? `. Also adjusted in: ${otherNames.join(", ")}` : ""}`}
               onClick={(e) => { e.stopPropagation(); if (at) close(); else open(e.currentTarget); }}
               onDoubleClick={(e) => e.stopPropagation()}>
         <ArrowLeftRight size={11} strokeWidth={2} />
@@ -66,6 +68,7 @@ export function ModuleSwitch({ choice, value, scope, disabled, onPick }: {
               <span className="check">{o.value === current.value ? "✓" : ""}</span>
               <span className="name">{o.name}</span>
               {o.preferred && <span className="tag">preferred</span>}
+              {adjusted.includes(o.value) && <span className="adjusted-dot" title="has adjustments" />}
             </button>
           ))}
           <div className="menu-sep" />

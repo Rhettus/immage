@@ -7955,12 +7955,13 @@ const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle, values
     const ch = switchHosts.get(id);
     return ch && {
       choice: ch, value: values[ch.control] ?? preferredChoice(ch), disabled,
+      adjusted: session?.adjustedModules(ch.control),
       onPick: (v: number) => onChange(controlById.get(ch.control)!, v),
     };
   };
   const switchProps = (id: string) => {
     const sw = switchFor(id);
-    return sw ? { moduleChoice: sw.choice, moduleValue: sw.value, onModule: sw.onPick } : {};
+    return sw ? { moduleChoice: sw.choice, moduleValue: sw.value, moduleAdjusted: sw.adjusted, onModule: sw.onPick } : {};
   };
   const controlProps = (c: Control) => ({
     control: negative(c) ? { ...c, note: values.neg_on === 1
@@ -8143,6 +8144,7 @@ type ControlProps = {
   glow?: number;   // how much the photo under the pointer belongs to this control's color band, 0-1
   // the module choice this row carries the switch for (ModuleSwitch), its module and the pick
   moduleChoice?: ModuleChoice; moduleValue?: number; onModule?: (value: number) => void;
+  moduleAdjusted?: number[];   // the tool's modules that hold edits
   moduleScope?: "global" | "masks";
 };
 
@@ -8194,7 +8196,7 @@ function Slider({ values, onChange, onOption, onModule, ...props }: ControlProps
                        onModule={onModule ? module : undefined} />;
 }
 
-const SliderWidget = memo(function SliderWidget({ control: c, value, neutral, disabled, onChange, track, glow = 0, rawOnly, onOption, moduleChoice, moduleValue, moduleScope = "global", onModule }:
+const SliderWidget = memo(function SliderWidget({ control: c, value, neutral, disabled, onChange, track, glow = 0, rawOnly, onOption, moduleChoice, moduleValue, moduleAdjusted, moduleScope = "global", onModule }:
   Omit<ControlProps, "values"> & { track?: string }) {
   perf.count("react.sliderRenderAttempts");
   const s = c.slider;
@@ -8303,7 +8305,7 @@ const SliderWidget = memo(function SliderWidget({ control: c, value, neutral, di
       {moduleChoice && onModule ? (
         <span className="label-line">
           <label onDoubleClick={reset}>{c.label}</label>
-          <ModuleSwitch choice={moduleChoice} value={moduleValue ?? preferredChoice(moduleChoice)} scope={moduleScope}
+          <ModuleSwitch choice={moduleChoice} value={moduleValue ?? preferredChoice(moduleChoice)} scope={moduleScope} adjusted={moduleAdjusted}
                         disabled={disabled} onPick={onModule} />
         </span>
       ) : <label onDoubleClick={reset}>{c.label}</label>}

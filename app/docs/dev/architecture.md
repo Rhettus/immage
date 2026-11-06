@@ -648,7 +648,7 @@ Choice and toggle controls (Black & White's `bw_mode`) host no icon yet.
 Session preserves used global choices in `chooseModules` and infers each
 loaded mask's choices from its module instances in `loadMasks`. New masks
 start with the mask preferences in `Mask.values`. Closing Preferences calls
-`refreshModuleChoices`, updating unused global and mask tools and notifying
+`Session.adjustedModules` lists, live, every module of a tool that holds edits: those `chooseModules` found on open (`usedModules`, while the opened module stays shown), those whose own sliders (`ModuleOption.controls`) are off neutral, and the shared-slider module holding a value the shown module hides (`sharedHolder`, set in `set()`); headless check `verify/module-others.test.mjs`. `ModuleSwitch`'s `adjusted` prop draws the icon dot (any module but the shown one) and a dot per module in the menu (masks: `maskAdjusted`, from `localControls`). `refreshModuleChoices`, updating unused global and mask tools and notifying
 the UI without replacing used adjustments. Mask rendering, `planMerge` and
 MasksPanel resolve choices from mask values before global values; mask modules
 no longer select the global tool's module. `setLocal` accepts module-choice

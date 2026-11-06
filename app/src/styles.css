@@ -428,9 +428,15 @@ section h3 { margin: 7px 0 5px; font-size: var(--fs-body); font-weight: 600; col
   border: none; border-radius: 4px; background: none; color: var(--text-3); cursor: pointer;
 }
 .module-switch-btn:hover, .module-switch-btn:focus-visible, .module-switch-btn.on { color: var(--text); background: var(--hover); }
+.module-switch-btn { position: relative; }
+.module-switch-btn.others::after {
+  content: ""; position: absolute; top: -2px; right: -2px; width: 8px; height: 8px; border-radius: 50%; background: #5fd068;
+  box-shadow: 0 0 0 1.5px var(--panel, #1c1c1e);
+}
 .module-switch-btn:disabled { cursor: default; opacity: .5; }
 .equalizer-heading .name { display: inline-flex; align-items: center; gap: 5px; }
 .module-menu { min-width: 200px; z-index: 1000; }
+.module-menu .adjusted-dot { width: 7px; height: 7px; margin-left: auto; border-radius: 50%; background: #5fd068; flex: none; }
 .module-menu .menu-label { padding: 4px 10px 6px; font-size: var(--fs-caption); text-transform: uppercase; letter-spacing: .06em; }
 .context-menu.module-menu button { display: flex; align-items: center; gap: 6px; width: 100%; }
 .context-menu.module-menu button .check { width: 12px; color: var(--text-2); font-size: var(--fs-small); }

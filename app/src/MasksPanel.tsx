@@ -247,9 +247,22 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
   // each tool with several modules carries its switch on the first of its
   // sliders shown; with the equalizer or the curve chosen, on its heading
   const switchHosts = new Map<string, ModuleChoice>();
+  // the mask's other modules of this tool that hold a non-neutral value
+  const maskAdjusted = (ch: ModuleChoice) => {
+    const cur = m!.values[ch.control] ?? preferredChoice(ch);
+    const off = (id: string) => Math.abs((m!.values[id] ?? 0) - (localControlById.get(id)?.neutral ?? 0)) > 1e-6;
+    const out = new Set(ch.options.filter((o) => o.localControls.some(off)).map((o) => o.value));
+    // the equalizer or curve hides the shared mask slider without applying it
+    const own = new Set(ch.options.flatMap((o) => o.localControls));
+    if ([...switchSet(ch)].some((id) => !own.has(id) && off(id))) {
+      const here = ch.options.find((o) => o.value === cur);
+      out.add(here && !here.localControls.length ? cur : ch.options.find((o) => !o.localControls.length)!.value);
+    }
+    return [...out];
+  };
   const moduleOf = (ch: ModuleChoice) => (
     <ModuleSwitch choice={ch} value={m!.values[ch.control] ?? preferredChoice(ch)} scope="masks" disabled={disabled}
-                  onPick={(v) => local(ch.control, v)} />);
+                  adjusted={maskAdjusted(ch)} onPick={(v) => local(ch.control, v)} />);
   const switchSet = (ch: ModuleChoice) => new Set([
     ...ch.options.flatMap((o) => o.localControls),
     ...(ch.id === "contrast" ? ["l_contrast"] : ch.id === "saturation" ? ["l_saturation"] : (ch.covers ?? []).filter((id) => id.startsWith("l_"))),
