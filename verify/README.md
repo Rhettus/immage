@@ -27,6 +27,15 @@ python3 -I verify/database-locks.py --build build
 It checks live-owner exclusion, recovery after killing its own owner process,
 lock cleanup and clean restart. It does not test simultaneous first startup.
 
+The import stall check (POSIX, headless, no GUI) makes a sidecar that blocks
+reads like a half-dead network share and checks the import skips the file and
+its folder, reports them as `unanswered`, and leaves `open` and other folders
+unblocked:
+
+```bash
+python3 -I verify/import-stall.py
+```
+
 The focused batch-paste regression check drives production Session and settings
 code through the real engine, with isolated photos and sidecars:
 

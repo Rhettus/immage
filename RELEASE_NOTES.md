@@ -51,6 +51,10 @@ Performance
 
 Bug fixes
 
+- A network share that stops answering in the middle of a folder no longer
+  freezes Immage. Files that don't answer within 5 seconds are skipped, with
+  the rest of that folder for 30 seconds, instead of holding up opening a photo
+  or another folder for minutes.
 - Print Cells shows the photos soft proofed when Soft Proof is on, and sharper:
   they are drawn at the size of their cells instead of as filmstrip
   thumbnails.

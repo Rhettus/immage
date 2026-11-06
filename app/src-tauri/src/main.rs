@@ -1306,6 +1306,7 @@ async fn open_folder(app: AppHandle, state: State<'_, AppState>, path: String, r
     let _ = app.emit("folder-progress", json!({ "token": token, "done": 0, "total": total, "images": [],
                                                 "files": list }));
     let mut images = Vec::new();
+    let mut unanswered: Vec<Value> = Vec::new();
     let mut done = 0;
     let mut size = IMPORT_BATCH.0;
     let mut progress = Progress::default();
@@ -1344,6 +1345,13 @@ async fn open_folder(app: AppHandle, state: State<'_, AppState>, path: String, r
             size = (size / 2).max(IMPORT_BATCH.1);
         }
         done += through;
+        // files the share did not answer for are skipped, not retried, so one
+        // stalled read cannot hold the folder; a batch of one from then on
+        // shows each further stall by itself
+        if let Some(silent) = reply["unanswered"].as_array().filter(|a| !a.is_empty()) {
+            unanswered.extend(silent.iter().cloned());
+            size = IMPORT_BATCH.1;
+        }
         images.extend(got.iter().cloned());
         if let Some(got) = progress.add(got, Instant::now(), done == total) {
             let _ = app.emit("folder-progress", json!({ "token": token, "done": done, "total": total, "images": got }));
@@ -1351,7 +1359,7 @@ async fn open_folder(app: AppHandle, state: State<'_, AppState>, path: String, r
     }
     let kept = images.clone();
     tauri::async_runtime::spawn_blocking(move || write_snapshot(&snapshot, &kept));
-    Ok(json!({ "images": images }))
+    Ok(json!({ "images": images, "unanswered": unanswered }))
 }
 
 // the folder's images as its last whole read found them, for open_folder()
