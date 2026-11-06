@@ -88,7 +88,8 @@ export async function batchPaste(t) {
   for(const s of sidecarsBefore.filter(s=>!s.file.startsWith('batch-target-')))
     assert.equal(after.find(a=>a.file===s.file)?.text,s.text,'unselected source sidecar stays unchanged');
   await click(t,cell('batch-target-2.jpg'));await value(t,1);await look(t,'Kodak Gold 200',35);
-  assert.equal(+(await t.driver.observe(inspect,rangeSelector('vibrance'))).value,17,'unticked Presence stays unchanged');
+  // the reopened photo's values arrive after its thumbnail is selected
+  await until(async()=>+(await t.driver.observe(inspect,rangeSelector('vibrance'))).value===17,'unticked Presence stays unchanged');
   await settledPhoto(t,p=>p.hash!==secondBefore.hash);await t.evidence('second-photo-reopened');
   await click(t,cell('batch-untouched.jpg'));await value(t,0);await look(t,null);
   await settledPhoto(t,p=>p.hash===baseline.hash);await t.evidence('unselected-photo');
