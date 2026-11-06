@@ -176,7 +176,7 @@ operations, not CPU-execution tracks.
 Compare the same build, copied photo, edits and logical viewer dimensions at
 100% and one fractional output scale (125% or 150%). Record the compositor
 scale separately from `viewport.dpr`: GTK3 can report DPR 2 at both fractional
-scales. Keep preview mode, Balanced preview size, transport, memory limits,
+scales. Keep the performance profile, preview size, transport, memory limits,
 renderer and all other settings fixed. Do not change compositor settings from
 the app-only GUI runner; prepare each display configuration separately.
 
@@ -504,7 +504,7 @@ identical dimensions in both builds and show lower output cost; their median
 latencies changed by approximately 7%, 1% and 4%, respectively. Mac Vignette
 remains an observed slowdown (40 → 50 ms), with nearly all frames the same size
 and processing rising from 16.705 to 22.820 ms despite faster output. Investigate
-it with fixed preview sizes before attributing a cause. Use Balanced preview
+it with fixed preview sizes before attributing a cause. Use preview
 size 100% in both builds to disable automatic smaller drafts, and verify actual
 reported frame dimensions as well as preferences in any follow-up.
 

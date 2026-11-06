@@ -33,7 +33,7 @@ export async function previewAlignment(t){
  t.measure({name:'630672c',before,after,scale:env.scale});await t.evidence('scaled-preview-final');
 }
 export async function loupeGrid(t){
- await click(t,'button[data-tour="prefs"]');await textButton(t,'.prefs-tabs','General');
+ await click(t,'button[data-tour="prefs"]');await textButton(t,'.prefs-tabs','Performance');await click(t,'[data-pref-fold="performance-advanced"]');
  const toggle='[data-pref-label="Detail loupe"] input[type=checkbox]';if(!(await reveal(t,toggle)).checked)await click(t,toggle);
  await textButton(t,'.prefs-foot','Done');await panel(t,'detail');await requireLoupe(t);
  await click(t,'.grid-toggle');
@@ -44,7 +44,7 @@ export async function loupeGrid(t){
  await click(t,'.grid-toggle');
 }
 export async function maskLoupe(t){
- await click(t,'button[data-tour="prefs"]');await textButton(t,'.prefs-tabs','General');
+ await click(t,'button[data-tour="prefs"]');await textButton(t,'.prefs-tabs','Performance');await click(t,'[data-pref-fold="performance-advanced"]');
  const toggle='[data-pref-label="Detail loupe"] input[type=checkbox]';if(!(await reveal(t,toggle)).checked)await click(t,toggle);
  await textButton(t,'.prefs-foot','Done');
  await openTool(t,'masks');await click(t,'.create-mask');await textButton(t,'.shape-menu-list','Brush');
@@ -72,7 +72,7 @@ export async function maskLoupe(t){
 }
 async function requireLoupe(t){await until(()=>t.driver.observe(()=>{const c=document.querySelector('.detail-loupe canvas');return c?.width>0&&getComputedStyle(c).display!=='none';}),'visible loupe');}
 export async function detailWithoutLoupe(t){
- await click(t,'button[data-tour="prefs"]');await textButton(t,'.prefs-tabs','General');
+ await click(t,'button[data-tour="prefs"]');await textButton(t,'.prefs-tabs','Performance');await click(t,'[data-pref-fold="performance-advanced"]');
  const toggle='[data-pref-label="Detail loupe"] input[type=checkbox]';if((await reveal(t,toggle)).checked)await click(t,toggle);
  await textButton(t,'.prefs-foot','Done');
  // an earlier case in the launch can leave another tool (Masks) open

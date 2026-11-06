@@ -64,11 +64,12 @@ export type View = {
 // full frame at release: Grain costs about 200 ms a draft frame, Texture and
 // Sharpening (diffuse) about 100 and 50 ms (measured with benchmarking/bench.py).
 // sharpen costs a few ms, but a drag frame is soft either way, so it goes too.
-// Performance also leaves out denoise and HSL (color equalizer)
+// the same for every profile; they differ in draft size, not in what a draft
+// leaves out
 const DRAFT_SKIP: Record<Preview, string[]> = {
-  quality: [],
+  quality: ["grain", "diffuse", "sharpen"],
   balanced: ["grain", "diffuse", "sharpen"],
-  performance: ["grain", "diffuse", "sharpen", "denoiseprofile", "colorequal"],
+  performance: ["grain", "diffuse", "sharpen"],
 };
 // a drag's draft, smaller again each way while darktable takes longer than
 // the target on it: an Exposure draft was 65-70 ms of pipeline at half size
@@ -85,7 +86,7 @@ export type DraftLimits = { target: number; smallest: number };
 // navigator and histogram: with a heavy edit Grain is 1.6 s of it and
 // diffuse another 1.1 s on the CPU (measured with benchmarking/bench.py)
 const BASE_SKIP: Record<Preview, string[]> = {
-  quality: [],
+  quality: ["grain", "diffuse"],
   balanced: ["grain", "diffuse"],
   performance: ["grain", "diffuse"],
 };

@@ -9,6 +9,7 @@ import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { keys } from "./keys";
 import { AGX_PROFILE_DEFAULT, PROFILE_GROUPS, PROFILE_OPTIONS } from "./manifest";
 import { CachePrefs } from "./CachePrefs";
+import { Chevron, Collapse } from "./Collapse";
 import { ImmichPrefs } from "./ImmichPrefs";
 import { ModulePrefs } from "./ModulePrefs";
 import { KeywordChips, KeywordInput, parseKeyword } from "./Keywording";
@@ -135,7 +136,10 @@ export function storeOpenGenerated(on: boolean) {
 }
 const LOUPE_KEY = "immage.loupe";
 export function loadLoupe(): boolean {
-  try { return localStorage.getItem(LOUPE_KEY) === "1"; } catch { return false; }
+  try {
+    const v = localStorage.getItem(LOUPE_KEY);
+    return v === null ? PROFILES[loadPreview()].loupe : v === "1";
+  } catch { return false; }
 }
 export function storeLoupe(on: boolean) {
   try { localStorage.setItem(LOUPE_KEY, on ? "1" : "0"); } catch { /* not kept */ }
@@ -215,11 +219,13 @@ function storeSliderScrollStep(v: number) {
   try { localStorage.setItem(SLIDER_SCROLL_STEP_KEY, String(v)); } catch { /* not kept */ }
 }
 
-// how much the photo gives up while it is being edited, for speed. Quality
-// renders every frame in full; Balanced defaults to half size and leaves Grain
-// and diffuse (Texture, Sharpening) out of drag frames and the idle base;
-// Performance drags at quarter size, also without denoise and HSL, and its
-// base is only the viewer's size. export is never affected
+// how much the photo gives up while it is being edited, for speed. a profile
+// is a set of defaults for a class of machine: Quality drags at full size,
+// Balanced at 75%, Performance at 50% with drafts that may shrink to 50% and
+// the detail loupe on. every profile leaves Grain and diffuse (Texture,
+// Sharpening) out of drag frames and the idle base. each value can then be
+// changed under Advanced, and Reset returns to the profile's. export is never
+// affected
 export type Preview = "quality" | "balanced" | "performance";
 const PREVIEW_KEY = "immage.preview";
 // before Preview, a switch for drag drafts: off is Quality's behavior
@@ -235,19 +241,30 @@ export function storePreview(v: Preview) {
   try { localStorage.setItem(PREVIEW_KEY, v); } catch { /* not kept */ }
 }
 
+// what choosing a profile sets (draft time is the same for all three). a
+// value never stored follows the profile in use
+export const PROFILES: Record<Preview, { size: number; smallest: number; target: number; loupe: boolean }> = {
+  quality: { size: 1, smallest: 1, target: 60, loupe: false },
+  balanced: { size: 0.75, smallest: 1, target: 60, loupe: false },
+  performance: { size: 0.5, smallest: 0.5, target: 60, loupe: true },
+};
+
+// drag frames' size, as a share of the photo's: the profile's, or as set
 export const BALANCED_PREVIEW_SIZES: readonly number[] = [0.5, 0.75, 1];
 const BALANCED_SIZE_KEY = "immage.balancedPreviewSize";
 export function loadBalancedPreviewSize(): number {
   try { const size = Number(localStorage.getItem(BALANCED_SIZE_KEY));
-    return BALANCED_PREVIEW_SIZES.includes(size) ? size : 0.5; }
-  catch { return 0.5; }
+    return BALANCED_PREVIEW_SIZES.includes(size) && localStorage.getItem(BALANCED_SIZE_KEY) !== null
+      ? size : PROFILES[loadPreview()].size; }
+  catch { return PROFILES.balanced.size; }
 }
 export function storeBalancedPreviewSize(v: number) {
   try { localStorage.setItem(BALANCED_SIZE_KEY, String(v)); } catch { /* not kept */ }
 }
 
 // how long darktable may take on a drag's draft before the next is smaller,
-// and how small it may get each way (Session.draftView): 60 ms and 70% unless set
+// and how small it may get each way (Session.draftView): 60 ms and the
+// profile's smallest unless set
 export const DRAFT_TARGETS = [40, 60, 80, 120] as const;
 export const DRAFT_SMALLEST = [1, 0.7, 0.5] as const;
 const DRAFT_TARGET_KEY = "immage.draftTarget";
@@ -264,8 +281,9 @@ export function storeDraftTarget(v: number) {
 export function loadDraftSmallest(): number {
   try {
     const v = Number(localStorage.getItem(DRAFT_SMALLEST_KEY));
-    return (DRAFT_SMALLEST as readonly number[]).includes(v) ? v : 0.7;
-  } catch { return 0.7; }
+    return (DRAFT_SMALLEST as readonly number[]).includes(v) && localStorage.getItem(DRAFT_SMALLEST_KEY) !== null
+      ? v : PROFILES[loadPreview()].smallest;
+  } catch { return PROFILES.balanced.smallest; }
 }
 export function storeDraftSmallest(v: number) {
   try { localStorage.setItem(DRAFT_SMALLEST_KEY, String(v)); } catch { /* not kept */ }
@@ -540,6 +558,20 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   const [frameCache, setFrameCache] = useState(loadFrameCacheMb);
   const [thumbMemory, setThumbMemory] = useState(loadThumbMemoryMb);
   const [readAhead, setReadAhead] = useState(loadReadAhead);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  // choosing a profile sets what it stands for, which Advanced can then change
+  const applyProfile = (p: Preview) => {
+    const d = PROFILES[p];
+    setPreview(p); storePreview(p);
+    setBalancedSize(d.size); storeBalancedPreviewSize(d.size);
+    setDraftSmallest(d.smallest); storeDraftSmallest(d.smallest);
+    setDraftTarget(d.target); storeDraftTarget(d.target);
+    onLoupe(d.loupe);
+  };
+  const customized = (() => {
+    const d = PROFILES[preview];
+    return balancedSize !== d.size || draftSmallest !== d.smallest || draftTarget !== d.target || loupe !== d.loupe;
+  })();
   const chooseReadAhead = (v: Partial<ReadAhead>) => {
     const next = { ...readAhead, ...v };
     setReadAhead(next);
@@ -702,9 +734,6 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                 <PrefRow label="Open generated photos" hint="switch to editing after HDR or panorama merge, AI denoise, positive export, or the first result from a plugin">
                   <PrefSwitch checked={openGenerated} onChange={onOpenGenerated} />
                 </PrefRow>
-                <PrefRow label="Detail loupe" hint="show a 100% preview in Adjustments; use its picker to inspect a point on the photo">
-                  <PrefSwitch checked={loupe} onChange={onLoupe} />
-                </PrefRow>
                 <PrefRow label="Canvas" hint="behind the photo, full screen too; neutral gray judges tones without a dark surround, white as on a print. L steps through them">
                   <div className="pref-swatches">
                     {/* the viewer's backgrounds in styles.css */}
@@ -829,56 +858,59 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                     <button className="btn small" style={{ marginLeft: 8 }} onClick={() => void onRelaunch()}>Relaunch</button>
                   )}
                 </PrefRow>
-                <PrefRow label="Preview"
+                <PrefRow label="Performance profile"
                          hint={{
-                           quality: "every frame in full while you edit: the slowest, most faithful preview",
-                           balanced: "while a slider, wheel or curve moves, the photo renders at the selected preview size without grain, texture and diffuse or sharpen's sharpening, and in full on release. the zoomed-out view behind the photo leaves them out too",
-                           performance: "as Balanced, at quarter size while dragging and also without noise reduction and HSL; the whole-photo render behind the viewer is only the viewer's size",
+                           quality: "for high-end computers: drag previews at full size, without grain, texture and diffuse or sharpen's sharpening, which return in full on release",
+                           balanced: "for decent modern computers: drag previews at 75%, without grain, texture and diffuse or sharpen's sharpening, and in full on release",
+                           performance: "for older computers: drag previews at 50%, smaller again for slow sliders, with the detail loupe on and the whole-photo render behind the viewer only the viewer's size",
                          }[preview]}>
                   <div className="segmented small">
                     {([["Quality", "quality"], ["Balanced", "balanced"], ["Performance", "performance"]] as const).map(([label, v]) => (
-                      <button key={v} className={preview === v ? "active" : ""}
-                              onClick={() => { setPreview(v); storePreview(v); }}>{label}</button>
+                      <button key={v} className={preview === v ? "active" : ""} onClick={() => applyProfile(v)}>{label}</button>
+                    ))}
+                  </div>
+                  <button className="btn small" style={{ marginLeft: 8 }} disabled={!customized}
+                          title={`return Advanced's preview settings to ${preview === "quality" ? "Quality" : preview === "balanced" ? "Balanced" : "Performance"}'s`}
+                          onClick={() => applyProfile(preview)}>Reset</button>
+                </PrefRow>
+                <button className="module-prefs-fold" data-pref-fold="performance-advanced" aria-expanded={advancedOpen} aria-controls="perf-advanced"
+                        onClick={() => setAdvancedOpen(!advancedOpen)}>
+                  Advanced{customized ? " (customized)" : ""} <Chevron open={advancedOpen} />
+                </button>
+                <Collapse open={advancedOpen}>
+                  <div id="perf-advanced">
+                <PrefRow label="Preview size while dragging"
+                         hint="while a slider, wheel or curve moves, the photo renders at this share of its full size, and in full on release. 100% turns off smaller drafts for slow sliders">
+                  <div className="segmented small">
+                    {BALANCED_PREVIEW_SIZES.map((v) => (
+                      <button key={v} className={balancedSize === v ? "active" : ""}
+                              onClick={() => { setBalancedSize(v); storeBalancedPreviewSize(v); }}>{v * 100}%</button>
                     ))}
                   </div>
                 </PrefRow>
-                {preview === "balanced" && (
-                  <PrefRow label="Balanced preview size"
-                           hint="100% keeps drag previews at full size and disables smaller drafts for slow sliders; grain, texture and sharpening shortcuts still apply">
-                    <div className="segmented small">
-                      {BALANCED_PREVIEW_SIZES.map((v) => (
-                        <button key={v} className={balancedSize === v ? "active" : ""}
-                                onClick={() => { setBalancedSize(v); storeBalancedPreviewSize(v); }}>{v * 100}%</button>
-                      ))}
-                    </div>
-                  </PrefRow>
-                )}
-                {preview !== "quality" && !(preview === "balanced" && balancedSize === 1) && (
-                  <>
-                    <PrefRow label="Smaller drafts for slow sliders"
-                             hint="while a slider early in darktable's pipe moves (Exposure, White Balance, noise reduction), the photo renders smaller again, so each frame comes sooner. off keeps Preview's size">
-                      <div className="segmented small">
-                        {DRAFT_SMALLEST.map((v) => (
-                          <button key={v} className={draftSmallest === v ? "active" : ""}
-                                  onClick={() => { setDraftSmallest(v); storeDraftSmallest(v); }}>
-                            {v === 1 ? "Off" : `${v * 100}%`}
-                          </button>
-                        ))}
-                      </div>
-                    </PrefRow>
-                    {draftSmallest < 1 && (
-                      <PrefRow label="Draft time"
-                               hint="how long darktable may take on a frame while a slider moves before the next one is smaller; less is quicker and softer">
-                        <div className="segmented small">
-                          {DRAFT_TARGETS.map((ms) => (
-                            <button key={ms} className={draftTarget === ms ? "active" : ""}
-                                    onClick={() => { setDraftTarget(ms); storeDraftTarget(ms); }}>{ms} ms</button>
-                          ))}
-                        </div>
-                      </PrefRow>
-                    )}
-                  </>
-                )}
+                <PrefRow label="Smaller drafts for slow sliders"
+                         hint="while a slider early in darktable's pipe moves (Exposure, White Balance, noise reduction), the photo renders smaller again, so each frame comes sooner. off keeps the preview size">
+                  <div className="segmented small">
+                    {DRAFT_SMALLEST.map((v) => (
+                      <button key={v} className={draftSmallest === v ? "active" : ""} disabled={balancedSize === 1}
+                              onClick={() => { setDraftSmallest(v); storeDraftSmallest(v); }}>
+                        {v === 1 ? "Off" : `${v * 100}%`}
+                      </button>
+                    ))}
+                  </div>
+                </PrefRow>
+                <PrefRow label="Draft time"
+                         hint="how long darktable may take on a frame while a slider moves before the next one is smaller; less is quicker and softer. applies when smaller drafts are on">
+                  <div className="segmented small">
+                    {DRAFT_TARGETS.map((ms) => (
+                      <button key={ms} className={draftTarget === ms ? "active" : ""} disabled={draftSmallest === 1 || balancedSize === 1}
+                              onClick={() => { setDraftTarget(ms); storeDraftTarget(ms); }}>{ms} ms</button>
+                    ))}
+                  </div>
+                </PrefRow>
+                <PrefRow label="Detail loupe" hint="show a 100% preview in Adjustments; use its picker to inspect a point on the photo">
+                  <PrefSwitch checked={loupe} onChange={onLoupe} />
+                </PrefRow>
                 {sharedFramesAvailable && (
                   <PrefRow label="Shared-memory frames"
                            hint="hands each frame to the window in memory both share, rather than copying it through Tauri. off to compare the two in the GUI benchmark">
@@ -897,25 +929,6 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                     <PrefSwitch checked={settledAtScreen} onChange={(on) => { setSettledAtScreen(on); storeSettledScale(on); }} />
                   </PrefRow>
                 )}
-              </PrefCard>
-              <PrefCard title="Memory">
-                <PrefRow label="darktable memory"
-                         hint={`${{
-                           small: "darktable keeps to about an eighth of this computer's memory, for working beside other large programs; more of each edit is worked out again",
-                           default: "darktable may take about half of this computer's memory for its pipes and caches",
-                           large: "about two thirds, for when Immage is the only large program running",
-                         }[resources?.next ?? "default"]}${resources && resources.next !== resources.running
-                           ? ". applies once Immage starts again" : ""}`}>
-                  <div className="segmented small">
-                    {([["Small", "small"], ["Default", "default"], ["Large", "large"]] as const).map(([label, v]) => (
-                      <button key={v} className={resources?.next === v ? "active" : ""} disabled={!resources}
-                              onClick={() => chooseResources(v)}>{label}</button>
-                    ))}
-                  </div>
-                  {resources && resources.next !== resources.running && (
-                    <button className="btn small" style={{ marginLeft: 8 }} onClick={() => void onRelaunch()}>Relaunch</button>
-                  )}
-                </PrefRow>
                 <PrefRow label="Frame cache"
                          hint="memory for the frames the viewer keeps, so zooming back out or returning to a view seen before shows it without a render. a 100% frame is about 30 MB on a 4K screen and 45 MB on a 5K one">
                   <div className="segmented small">
@@ -952,6 +965,27 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                     <PrefSwitch checked={readAhead.both} onChange={(on) => chooseReadAhead({ both: on })} />
                   </PrefRow>
                 )}
+                  </div>
+                </Collapse>
+              </PrefCard>
+              <PrefCard title="Memory">
+                <PrefRow label="darktable memory"
+                         hint={`${{
+                           small: "darktable keeps to about an eighth of this computer's memory, for working beside other large programs; more of each edit is worked out again",
+                           default: "darktable may take about half of this computer's memory for its pipes and caches",
+                           large: "about two thirds, for when Immage is the only large program running",
+                         }[resources?.next ?? "default"]}${resources && resources.next !== resources.running
+                           ? ". applies once Immage starts again" : ""}`}>
+                  <div className="segmented small">
+                    {([["Small", "small"], ["Default", "default"], ["Large", "large"]] as const).map(([label, v]) => (
+                      <button key={v} className={resources?.next === v ? "active" : ""} disabled={!resources}
+                              onClick={() => chooseResources(v)}>{label}</button>
+                    ))}
+                  </div>
+                  {resources && resources.next !== resources.running && (
+                    <button className="btn small" style={{ marginLeft: 8 }} onClick={() => void onRelaunch()}>Relaunch</button>
+                  )}
+                </PrefRow>
               </PrefCard>
               <CachePrefs />
               <PrefCard title="AI Acceleration">

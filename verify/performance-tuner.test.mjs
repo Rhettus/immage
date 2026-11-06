@@ -82,7 +82,7 @@ test('records only completed work in its own recording', async () => {
 });
 test('recommendations describe preview quality and adaptive sizing changes', () => {
   const changes=tunerChanges(tunerCandidates()[0],tunerCandidates()[3]);
-  assert.ok(changes.some(s=>s.startsWith('Balanced preview size: 50%')));
+  assert.ok(changes.some(s=>s.startsWith('Preview size while dragging: 50%')));
   assert.ok(changes.some(s=>s.startsWith('Smaller drafts for slow sliders: 70%')));
 });
 

@@ -7,6 +7,13 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Preferences > Performance has three profiles by computer: Quality (full-size
+  drag previews), Balanced (75%) and Performance (50%, smaller drafts for slow
+  sliders, detail loupe on). Choosing one sets its defaults. All the individual
+  settings, now including the Detail loupe, are under Advanced, and Reset
+  returns them to the selected profile's. Performance no longer leaves out
+  noise reduction and HSL while dragging, and Quality leaves out Grain,
+  Texture and Sharpening like the others until release.
 - Tools that can run on more than one darktable module (Contrast, Saturation,
   Highlights and Shadows, Clarity, Texture, Sharpening) have a small icon
   beside their name, also inside masks. Click it to switch the module for

@@ -1961,6 +1961,7 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .pref-card h4 { margin: 12px 0 2px; color: var(--text-3); font-size: var(--fs-caption); font-weight: 600; letter-spacing: 0.06em;
                 text-transform: uppercase; }
 .pref-row { display: flex; align-items: center; gap: 16px; min-height: 52px; padding: 10px 0; }
+.pref-card > .module-prefs-fold { border-top: 1px solid #2a2a2a; }
 .pref-row + .pref-row { border-top: 1px solid #2a2a2a; }
 .pref-label { flex: 0 0 210px; display: flex; flex-direction: column; gap: 3px; font-size: var(--fs-body); }
 .pref-hint { color: var(--text-3); font-size: var(--fs-small); line-height: 1.4; }

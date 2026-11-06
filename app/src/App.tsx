@@ -124,9 +124,6 @@ const MAX_PREVIEW = 2560;
 type Placed = Pick<Frame, "x" | "y" | "view" | "fullWidth" | "fullHeight" | "width" | "height">;
 const placed = (f: Frame): Placed => ({ x: f.x, y: f.y, view: f.view, fullWidth: f.fullWidth, fullHeight: f.fullHeight,
                                         width: f.width, height: f.height });
-// a drag's frames, as a share of the full frame's width and height, by the
-// Preview preference; Quality has no drag frames
-const DRAFT: Record<Preview, number> = { quality: 1, balanced: 0.5, performance: 0.25 };
 
 // the before/after views, in the order the button and Y step through them
 type BaMode = "off" | "side" | "vsplit" | "hsplit" | "overlay";
@@ -1901,14 +1898,14 @@ export default function App() {
     };
     return k === 1 ? view : { ...view, draft: true };
   };
-  // drag drafts follow the screen scale on displays drawn larger than they
-  // show, full-size ones too (100% Balanced, the detail sliders' whole-view
-  // draft). Quality keeps every pixel
+  // a drag's frames, as a share of the full frame's width and height, by the
+  // preview size preference. reduced previews also follow the screen scale on
+  // displays drawn larger than they show, full-size drafts too (the detail
+  // sliders' whole-view draft); Quality keeps every pixel
   const fullDraftK = () => loadPreview() === "quality" ? 1 : draftScale();
   const draftK = () => {
-    const preview = loadPreview();
-    const k = preview === "balanced" ? loadBalancedPreviewSize() : DRAFT[preview];
-    return preview === "quality" ? 1 : k * draftScale();
+    const k = loadBalancedPreviewSize();
+    return k < 1 ? k * draftScale() : 1;
   };
   const currentView = useCallback((): View => dragging.current
     ? { ...viewAt(draftK()), draft: true } : viewAt(1), []);
@@ -3482,8 +3479,8 @@ export default function App() {
           y: Math.round(Math.max(0, Math.min(f.h - height, pos.y * f.h - height / 2))) };
       };
       s.frameBudget = () => loadFrameCacheMb() * 1048576;
-      s.draftSize = () => (loadPreview() === "quality" ? null : { ...viewAt(draftK()), draft: true });
-      s.draftLimits = () => ({ target: loadDraftTarget(), smallest: loadPreview() === "balanced" && loadBalancedPreviewSize() === 1 ? 1 : loadDraftSmallest() });
+      s.draftSize = () => ({ ...viewAt(draftK()), draft: true });
+      s.draftLimits = () => ({ target: loadDraftTarget(), smallest: loadBalancedPreviewSize() === 1 ? 1 : loadDraftSmallest() });
       s.warmDrafts();
       // a saved edit makes the filmstrip's thumbnail stale; undone back to
       // where it started, the photo reads unedited again
@@ -4546,7 +4543,7 @@ export default function App() {
         ["saturation", 30], ["nr_luminance", 40], ["vig_amount", -30], ["grain_amount", 30],
       ];
       const preview = loadPreview();
-      const drafts = preview !== "quality";
+      const drafts = true;
       // the web view measured idle, ahead of the run and its timing
       setZoom("fit");
       await settle();
@@ -4765,7 +4762,7 @@ export default function App() {
         const until = performance.now() + 8000;
         while (!s.baseRendering && performance.now() < until) await sleep(10);
         const started = s.baseRendering;
-        dragging.current = loadPreview() !== "quality";
+        dragging.current = true;
         for (let i = 1; i <= 20; i++) { change(ex, from + 0.3 + 0.5 * (i <= 10 ? i / 10 : (20 - i) / 10)); await sleep(16); }
         dragging.current = false;
         change(ex, from + 0.3);
