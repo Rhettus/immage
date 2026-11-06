@@ -2242,7 +2242,7 @@ static gboolean _file_answers(const char *path, const gint64 timeout_us)
 // a `job`, a batch stops once a newer read's is queued; with a `budget` (ms),
 // once that has passed, after a file at least. `done` is how many of the
 // files it went through, so the client sends the rest again
-static void _import_files(JsonObject *req, JsonBuilder *b)
+static void _import_files(JsonObject *req, JsonBuilder *b, const gboolean background)
 {
   JsonArray *files = json_object_has_member(req, "files") ? json_object_get_array_member(req, "files") : NULL;
   const gint64 job = json_object_get_int_member_with_default(req, "job", 0);
@@ -2264,7 +2264,7 @@ static void _import_files(JsonObject *req, JsonBuilder *b)
       if(superseded) break;
     }
     if(budget && k && g_get_monotonic_time() - start >= budget) break;
-    _background_yield();
+    if(background) _background_yield(); // the main loop's own import is the foreground work
     const char *path = json_array_get_string_element(files, k);
     if(!path || _is_sidecar(path)) continue;
     if(!g_file_test(path, G_FILE_TEST_IS_REGULAR)) continue;
@@ -2309,7 +2309,7 @@ static void _import_run(gpointer data, gpointer user_data)
   json_builder_add_int_value(b, json_object_get_int_member(req, "tag"));
   json_builder_set_member_name(b, "ok");
   json_builder_add_boolean_value(b, TRUE);
-  _import_files(req, b);
+  _import_files(req, b, TRUE);
   json_builder_end_object(b);
   _reply(out, b);
   g_object_unref(b);
@@ -10187,7 +10187,7 @@ static void _handle(JsonObject *req, FILE *out)
     if(!dir || !_folder(dir, recursive, b, &err)) goto fail;
   }
   else if(!g_strcmp0(cmd, "import"))
-    _import_files(req, b);
+    _import_files(req, b, FALSE);
   else if(!g_strcmp0(cmd, "thumb"))
   {
     const char *dest = json_object_get_string_member_with_default(req, "out", NULL);
