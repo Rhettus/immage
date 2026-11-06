@@ -183,7 +183,9 @@ performance; results still vary by system.
 - **Drag drafts at the screen's scale** (Linux Wayland): appears when the
   detected screen scale is below the webview's pixel ratio, such as 125% on
   a window drawn at 200%. On by default, it reduces drag-preview pixels to
-  match the screen. Settled frames still use the full webview resolution.
+  match the screen, including full-size drag previews (100% Balanced, and
+  the whole-view preview of Texture, Clarity, Luminance NR and Grain; Quality
+  keeps every pixel). Settled frames still use the full webview resolution.
   Turn it off to compare GUI benchmarks with the same photo, window size and
   preview settings. This does not change GTK's window-surface resolution.
   Benchmarks in a virtual machine give approximate comparisons within that

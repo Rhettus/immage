@@ -35,10 +35,13 @@ Improvements
 
 Performance
 
-- Linux on Wayland at a fractional scale has an experimental Preferences >
-  Performance switch, **Fit frames at the screen's scale**, that renders the
-  settled Fit frame for the screen's own scale instead of the window's. It is
-  off by default.
+- Linux on Wayland at a fractional scale: drag previews that were full size,
+  100% Balanced previews and the whole-view preview of Texture, Clarity,
+  Luminance NR and Grain, now render at the screen's scale like other drag
+  previews, which makes those slider drags about 2.5 times faster on a 125%
+  screen. An experimental Preferences > Performance switch, **Fit frames at
+  the screen's scale**, does the same for the settled Fit frame; it is off by
+  default.
 
 Bug fixes
 

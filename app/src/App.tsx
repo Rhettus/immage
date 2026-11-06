@@ -1901,12 +1901,14 @@ export default function App() {
     };
     return k === 1 ? view : { ...view, draft: true };
   };
-  // reduced previews also follow the screen scale on displays drawn larger
-  // than they show; full-size Balanced previews keep every pixel
+  // drag drafts follow the screen scale on displays drawn larger than they
+  // show, full-size ones too (100% Balanced, the detail sliders' whole-view
+  // draft). Quality keeps every pixel
+  const fullDraftK = () => loadPreview() === "quality" ? 1 : draftScale();
   const draftK = () => {
     const preview = loadPreview();
     const k = preview === "balanced" ? loadBalancedPreviewSize() : DRAFT[preview];
-    return k < 1 ? k * draftScale() : 1;
+    return preview === "quality" ? 1 : k * draftScale();
   };
   const currentView = useCallback((): View => dragging.current
     ? { ...viewAt(draftK()), draft: true } : viewAt(1), []);
@@ -3468,7 +3470,7 @@ export default function App() {
       };
       s.thumbSize = baseSize;
       s.previewMode = loadPreview;
-      s.exactView = () => viewAt(1);
+      s.exactView = () => viewAt(fullDraftK());
       s.detailView = () => {
         if (gridRef.current || !loupeEnabledRef.current || beforeRef.current || baModeRef.current !== "off" || !full.current) return null;
         const f = full.current;
