@@ -39,9 +39,8 @@ Performance
   100% Balanced previews and the whole-view preview of Texture, Clarity,
   Luminance NR and Grain, now render at the screen's scale like other drag
   previews, which makes those slider drags about 2.5 times faster on a 125%
-  screen. An experimental Preferences > Performance switch, **Fit frames at
-  the screen's scale**, does the same for the settled Fit frame; it is off by
-  default.
+  screen. Preferences > Performance **Fit frames at the screen's
+  scale** does the same for the settled Fit frame; it is on by default.
 
 Bug fixes
 

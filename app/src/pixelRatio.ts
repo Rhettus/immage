@@ -33,11 +33,11 @@ export function draftScale(): number {
   return s !== null && loadScreenScale() ? s / (window.devicePixelRatio || 1) : 1;
 }
 
-// prototype: the same factor for the settled Fit frame, off until judged by
-// eye (the jagged result above). 1:1 and zoomed frames never use it
+// the same factor for the settled Fit frame. on by default: judged by eye at
+// 125% it shows no difference. 1:1 and zoomed frames never use it
 const SETTLED_KEY = "immage.screenScaleFrames";
 export function loadSettledScale(): boolean {
-  try { return localStorage.getItem(SETTLED_KEY) === "1"; } catch { return false; }
+  try { return localStorage.getItem(SETTLED_KEY) !== "0"; } catch { return true; }
 }
 export function storeSettledScale(on: boolean) {
   try { localStorage.setItem(SETTLED_KEY, on ? "1" : "0"); } catch { /* not kept */ }

@@ -892,8 +892,8 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                   </PrefRow>
                 )}
                 {screenScale() !== null && (
-                  <PrefRow label="Fit frames at the screen's scale (experimental)"
-                           hint="renders the settled Fit frame for this screen's scale and lets the page enlarge it; judge sharpness by eye. takes effect on the next frame">
+                  <PrefRow label="Fit frames at the screen's scale"
+                           hint="renders the settled Fit frame for this screen's scale and lets the page enlarge it. turn it off if the photo looks soft. takes effect on the next frame">
                     <PrefSwitch checked={settledAtScreen} onChange={(on) => { setSettledAtScreen(on); storeSettledScale(on); }} />
                   </PrefRow>
                 )}
