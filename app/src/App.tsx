@@ -103,7 +103,7 @@ import { ShortcutsDialog } from "./Shortcuts";
 import { cmd, fieldKeeps, keys } from "./keys";
 import { perf, percentiles, pingOnce, roundTrips, STAGES, webviewInfo, observeWebview } from "./perf";
 import { frameTransport } from "./sharedFrames";
-import { draftScale } from "./pixelRatio";
+import { draftScale, settledScale } from "./pixelRatio";
 import { tunerOptions } from "./tunerOptions";
 import { GPU_CASES, resolveCase, verdict, cpuInGpuPass, tiledInGpuPass, type Parity } from "./gpuCheck";
 import { timeTunerWork } from "./tunerWorkload";
@@ -1887,7 +1887,11 @@ export default function App() {
     const zoom = ahead ? a.zoom : zoomRef.current, c = ahead ? a.end! : center.current;
     if (zoom === "fit" || !f) {
       const { width, height } = fitView();
-      return k === 1 ? { width, height } : { width: Math.round(width * k), height: Math.round(height * k), draft: true };
+      if (k === 1) {
+        const s = settledScale();
+        return s === 1 ? { width, height } : { width: Math.round(width * s), height: Math.round(height * s) };
+      }
+      return { width: Math.round(width * k), height: Math.round(height * k), draft: true };
     }
     const scale = scaleFor(zoom) * k;
     const view = {

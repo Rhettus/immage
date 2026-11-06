@@ -188,6 +188,10 @@ performance; results still vary by system.
   preview settings. This does not change GTK's window-surface resolution.
   Benchmarks in a virtual machine give approximate comparisons within that
   setup; they do not predict native GPU performance.
+- **Fit frames at the screen's scale (experimental)** (same condition): off
+  by default. Renders the settled Fit frame for the screen's scale and lets
+  the page enlarge it, which cuts pixels but may look less sharp; judge by
+  eye. Zoomed and 1:1 frames are unaffected. It takes effect on the next frame.
 
 **Memory**
 

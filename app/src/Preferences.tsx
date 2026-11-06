@@ -19,7 +19,7 @@ import { DEFAULT_PRESET_ID, type Preset } from "./Presets";
 import { setTourSeen, tourSeen } from "./Tour";
 import { OVERLAY_COLORS, OVERLAY_OPACITY, type Rgb } from "./masks";
 import { loadSharedFrames, sharedFramesAvailable, storeSharedFrames } from "./sharedFrames";
-import { loadScreenScale, screenScale, storeScreenScale } from "./pixelRatio";
+import { loadScreenScale, screenScale, storeScreenScale, loadSettledScale, storeSettledScale } from "./pixelRatio";
 import { checkForUpdate, lastChecked, loadAutoCheck, storeAutoCheck, useUpdate, type UpdateState } from "./updates";
 
 // the profile a new raw gets (manifest.ts, PROFILE_GROUPS): AgX's default unless set
@@ -534,6 +534,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   const [balancedSize, setBalancedSize] = useState(loadBalancedPreviewSize);
   const [sharedFrames, setSharedFrames] = useState(loadSharedFrames);
   const [atScreenScale, setAtScreenScale] = useState(loadScreenScale);
+  const [settledAtScreen, setSettledAtScreen] = useState(loadSettledScale);
   const [draftTarget, setDraftTarget] = useState(loadDraftTarget);
   const [draftSmallest, setDraftSmallest] = useState(loadDraftSmallest);
   const [frameCache, setFrameCache] = useState(loadFrameCacheMb);
@@ -888,6 +889,12 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                   <PrefRow label="Drag drafts at the screen's scale"
                            hint={`while a slider moves, renders the photo for this screen's ${Math.round(screenScale()! * 100)}%, not the ${Math.round((window.devicePixelRatio || 1) * 100)}% the window is drawn at and shrunk from: fewer pixels for darktable. the frame after letting go is full size either way. off to compare the two in the GUI benchmark`}>
                     <PrefSwitch checked={atScreenScale} onChange={(on) => { setAtScreenScale(on); storeScreenScale(on); }} />
+                  </PrefRow>
+                )}
+                {screenScale() !== null && (
+                  <PrefRow label="Fit frames at the screen's scale (experimental)"
+                           hint="renders the settled Fit frame for this screen's scale and lets the page enlarge it; judge sharpness by eye. takes effect on the next frame">
+                    <PrefSwitch checked={settledAtScreen} onChange={(on) => { setSettledAtScreen(on); storeSettledScale(on); }} />
                   </PrefRow>
                 )}
               </PrefCard>

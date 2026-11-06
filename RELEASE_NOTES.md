@@ -33,6 +33,13 @@ Improvements
   importing or its thumbnails are being made. Editing comes first; folder
   reading and thumbnails wait for it.
 
+Performance
+
+- Linux on Wayland at a fractional scale has an experimental Preferences >
+  Performance switch, **Fit frames at the screen's scale**, that renders the
+  settled Fit frame for the screen's own scale instead of the window's. It is
+  off by default.
+
 Bug fixes
 
 - Shift-click in the grid and filmstrip selects the run from the photo you
