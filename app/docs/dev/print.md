@@ -15,8 +15,9 @@ change to darktable's source.
 | [print.ts](../../src/print.ts) | `PrintSettings` (stored in `localStorage` as `immage.print`), PDF papers (PWG names), `layout()` (page orientation, margins, Fill or a long edge, nine places, borderless against the hardware margins, which turn with the page as `dt_get_print_layout` turns them), `printRequest()`, `applyProof()`. |
 | [PrintPanel.tsx](../../src/PrintPanel.tsx) | The panel: Soft Proofing, Printer, Layout (print size and pixels per inch, margins, size), Color Management, Print / Save PDF. |
 | App.tsx | `RightMode` `"print"`, the rail button after Export, ⌘P, S (`toggleProofRef`), the `proof` state, `changeProof()` and the `Soft Proof:` badge over the photo; the effects that read printers and profiles when the panel opens and the chosen printer's papers; the page in the viewer (`printPage`, `sheet`, `printViewRef`); `printNow()`. |
+| [print.ts](../../src/print.ts), Cells | `cellsLayout()` (grid, pages), `sheetPages()` and `sheetRequest()`: a page is a list of cells, each a photo box and an optional label rectangle in millimeters; the engine knows nothing of columns, so another generator (user-drawn cells) can follow. |
 | `Session.redraw()` | After the engine's view changes with no edit: drops the frames kept by view and the zoom copy (`changed()`), and renders. |
-| main.rs | `print_profiles`, `print_profile_add`, `softproof`, `printers`, `printer_info`, and `print_photo` (`export_hold`, a tagged `print` on the export thread, `export_release`, as `export_images` does). |
+| main.rs | `print_profiles`, `print_profile_add`, `softproof`, `printers`, `printer_info`, and `print_sheet` and `print_photo` (`export_hold`, a tagged `print` on the export thread, `export_release`, as `export_images` does). |
 | [engine/print.c](../../../engine/print.c) | Profiles, the soft proof, printers and the print job. |
 | main.c | The commands (`print`, `print_profiles`, `print_profile_add`, `printers`, `printer`, `softproof`); a tagged `print` goes to the export pool (`_export_run`) and renders the job's snapshot (`_hold_take`). |
 
@@ -42,6 +43,38 @@ The page replaces the split views and compare: entering the panel turns
 them off, and `printPage` is null while either is on. `printViewRef` holds
 the zoom at fit (`animateTo` refuses any other zoom, which covers the
 wheel, clicks, Z and the navigator), and the zoom bar is disabled.
+
+## The Cells layout
+
+`settings.layout` is `"single"` or `"cells"`. In Cells, `printPage` is null
+(the live edit's pane stays hidden, `visibility: hidden`) and App.tsx shows
+`cellsSheet` instead: `cellsLayout()` for the selected photos, drawn as
+`.print-cell`s holding `CellCanvas` and `.print-label`s, with
+`.print-pager` for the page shown (`sheetPageNo`, clamped). `sheetPhotos` is
+the selection filtered with `!isRemote` in `shown` order, else the open photo.
+`CellCanvas` fetches its own engine thumbnail (`fetchThumb`) at the cell's
+device pixels, in steps of 128 up to 1440, not the filmstrip's 240. With the
+proof on, `thumb` carries `proof: true` and `_thumb` in main.c copies the
+mipmap pixels through `print_proof_pixels` (print.c), colorout's proofing
+transform and flags from the thumbnail's color space to sRGB; Rust does not
+keep a proofed thumbnail in the thumbnail cache. The cell refetches on
+`proofApplied`, set once `softproof` has replied, so it never races the
+engine's old state. The `Soft Proof:` badge is hidden while `printOpen`.
+
+`cellsLayout(paper, settings, photos, hw)` returns one page's `slots` in
+reading order, `columns`, `rows`, `perPage` and `pages`. It works in the
+area inside the margins (`settings.margins`, the Cells border). Auto size
+tries every column count for the cells wanted (`cellCount`, else the photos
+up to `CONTACT_CAPACITY` = 38) and keeps the one with the largest smaller
+side of its photo box; `gap` is the space between, equal both ways.
+Each slot reserves `LABEL_HEIGHT` (4 mm) under its box when `names` is on.
+Custom `cellSize` keeps the box, clamped to the area, and shares what is
+left equally between cells and edges (space-evenly). An Auto page fills its
+grid, so the last row's empty cells are slots too (`perPage` =
+columns x rows); a counted page holds `cellCount`. Tests: `print cells
+layout` in `verify/print.test.mjs` (38 on Letter is 6 x 7, equal gaps,
+no overlap, no escape from the margins, the 2 cells in a 50 mm border,
+paging).
 
 ## Printer profiles
 
@@ -113,6 +146,38 @@ Export and thumbnail pipes never do.
 6. Save PDF writes the same page to the chosen file, tagged with the
    printer profile or sRGB.
 
+`print_sheet` prints the Cells layout. darktable's page holds 20 image
+boxes (`MAX_IMAGE_PER_PAGE`), too few for 38 photos and their names, so the
+engine puts each page together in one buffer and sends it as the one image
+of its page through the same PDF, CUPS and spooler code (`_job_setup`,
+`_pdf_*`, `_win_print_page`, shared with `print_image`). For each page it
+fills the buffer white in the page's space (16-bit ProPhoto with a profile,
+8-bit sRGB without), renders each cell's photo with the same export call as
+`print_image` (`_render_photo`, upscaled to fill its box, the full-size pass
+only for boxes of 800 pixels or more), centers it across its box (at the bottom when the cell has `valign: "bottom"`, which
+`sheetRequest()` sends for cells with a name), and draws the
+filename with Pango as a black alpha mask over the page (`_draw_label`,
+7 pt at the job's dpi, middle-ellipsized). The printer profile is applied
+once to the whole page. Names are raster, not PDF text, because Windows'
+spooler takes image boxes only and never sees PDF content; they are as sharp
+as the resolution. `dt_pdf_add_image` writes a page's pixels to the file as
+it is called, so one page's buffer is in memory at a time (about 50 MB for
+Letter at 300 dpi in 16 bits, and four times that at 600 dpi).
+Windows' `dt_win_print_file` writes one fixed page, so each page is a job.
+
+The request holds `pages: [[{ imgid, box, label? }]]`, `label_points` and
+the job's fields. `print_sheet` in main.rs holds all the imgids
+(`export_hold`), sends one tagged `print` to the export thread, which gives
+`print_sheet` take and release callbacks (`_sheet_take` is `_hold_take`, and
+`_sheet_release` removes the snapshot) so each photo is copied as its page
+reaches it; an untagged `print` with `pages` renders the photos as they are.
+The frontend job id is the hold id. A third callback, `print_step_f`
+(`_sheet_step`, which is `_merge_report`), is called before the first photo
+and after each is placed; its `merge-progress` lines (the `merge` helper in
+main.rs, `runMerge` in background.ts) drive the activity line, and a
+`merge_cancel` makes the next step return FALSE, which ends the print with
+"stopped". App.tsx leaves the grid when Cells is chosen (`cellsChosen`).
+
 The paper is looked up again in the printer's own list (`dt_get_papers`),
 for what the client does not carry, such as Windows' `dm_paper_id`.
 
@@ -129,7 +194,12 @@ Without it, the profiles and soft proof still work and `printers` replies
   returning a proofed frame for an unproofed one, PDFs with the right page,
   size at the resolution, bit depth and embedded profile, and bad requests
   refused. `--keep <dir>` keeps the PDFs to look at.
-- `node --test verify/print.test.mjs`: `layout()`, and the app's `Session`
+- Cells: `python3 -I verify/print.py` also writes sheets: a PDF page the
+  size of the paper, the decoded page image white in the gutters and below
+  the labels, a 3:2 photo filling the width of its 4:3 box and centered, dark
+  pixels in each label strip and none beyond its cell, 16 bits tagged when a
+  profile is chosen, one PDF page per sheet page, and bad requests refused.
+- `node --test verify/print.test.mjs`: `layout()`, `cellsLayout()`, and the app's `Session`
   redrawing after `applyProof` and back to the same frame, and a PDF through
   `print_photo` as the panel requests it.
 - GUI case `print` (`verify/gui/specs/workflows.mjs`): soft proof and
@@ -137,7 +207,12 @@ Without it, the profiles and soft proof still work and `printers` replies
   and the layout controls, with a made-up profile `run.mjs` puts in the run
   profile (`verify/gui/support/icc.mjs`). It checks the page in the viewer:
   orientation, the photo inside the printable area, at the top left once
-  placed there, and the page gone in Adjustments. The `rail` case opens Print.
+  placed there, and the page gone in Adjustments. It then selects several
+  photos and checks the Cells sheet: a filename under each photo, names off
+  and on, a custom cell count, and back to Single Photo. The case never clicks
+  Save PDF or Print, since the save dialog is native and outside the app-only
+  boundary (a known gap; the PDF is checked by `verify/print.py`). The `rail`
+  case opens Print.
 - Not automated: printing on a real printer (CUPS, the Windows spooler,
   TurboPrint), the native save dialog, and that the driver leaves the
   colors alone. Check those by hand with a printer and its profile.

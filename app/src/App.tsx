@@ -8,25 +8,26 @@ import { preparePastePhoto } from "./pasteDefaults";
 import { applyClip, pasteTargets, replaceMasks, restorePaste, runPaste, type PasteUpdate } from "./batchPaste";
 import { CaptureTimeDialog } from "./CaptureTimeDialog";
 import { captureMillis, type CaptureTimeEntry, type CaptureTimeUpdate } from "./captureTime";
-import { Profiler, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { Fragment, Profiler, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ask, open, save } from "@tauri-apps/plugin-dialog";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { BANDS, choiceOn, choiceShows, controlById, GUIDE_IDS, guidesOf, isModuleSetting, MAX_GUIDES, parametricOf, UPRIGHT_GUIDED,
+import { BANDS, choiceCovers, choiceOn, choiceShows, controlById, GUIDE_IDS, guidesOf, isModuleSetting, MAX_GUIDES, MODULE_CHOICES, parametricOf, preferredChoice, UPRIGHT_GUIDED,
          UPRIGHT_MODES, uprightAspect, rotateOf, mapOf, mapsFor, moduleName, mapsWith, NEG_CHOICES, NEG_GREYED, NEG_OFF,
          NEG_OFF_UNMAPPED, SF_CHOICES, SF_GREYED, SF_OFF, SF_OFF_UNMAPPED, panels, pointsOf, pointValues, profileLabel, turnPath, turnRect, type Control, type ControlPreset, type CurveChannel, type Values,
-         type Panel, type Section, type Turn } from "./manifest";
+         type ModuleChoice, type Panel, type Section, type Turn } from "./manifest";
 import { autoArea, autoBlack, autoDmax, autoDmin, autoExposure as autoPrintExposure, autoOffset, autoWbHigh, autoWbLow,
          FILM_BW, FILM_COLOR, fromValues, PRESETS, toValues, type Stats } from "./negadoctor";
 import { NegativePanel, type NegPick } from "./NegativePanel";
 import { FilmPanel } from "./FilmPanel";
 import { PrintPanel } from "./PrintPanel";
-import { applyProof, defaultPrintSettings, hasPrintSettings, layout as printLayout, loadPrintSettings, NO_PROOF, PDF, PDF_PAPERS,
-         printerInfo, printRequest, storePrintSettings, type Printer, type PrinterInfo, type PrintSettings,
-         type Profile, type Proof } from "./print";
+import { applyProof, cellsLayout, defaultPrintSettings, hasPrintSettings, LABEL_POINTS, layout as printLayout,
+         loadPrintSettings, NO_PROOF, PDF, PDF_PAPERS, printerInfo, printRequest, sheetPages, sheetRequest,
+         storePrintSettings, type Paper, type Printer, type PrinterInfo, type PrintSettings, type Profile, type Proof,
+         type SheetPhoto } from "./print";
 import { PositiveFooter } from "./PositiveFooter";
 import { filmChanges, paperChanges, presetValues as sfPresetValues, SF_PRESETS, type FetchStatus,
          type Stocks } from "./spektrafilm";
@@ -81,6 +82,7 @@ import { ImportView } from "./ImportView";
 import type { ImportResult } from "@immporter/embed";
 import { MaskOverlay, type BrushSettings, type MaskTool, type ObjectPrompt } from "./MaskOverlay";
 import { MasksPanel, useDismiss, type AiKind, type ToolTarget } from "./MasksPanel";
+import { ModuleSwitch } from "./ModuleSwitch";
 import { HealPanel } from "./HealPanel";
 import { LOCAL_TRANSITION, ObjectBox, ZoneAdjust, ZoneSystem, type ZoneMaskInfo } from "./ZoneSystem";
 import { DEFAULT_TRANSITION, loadZoneOverlay, offsetsOf, overlayRgb, paintRange, paintWeights, parseZones, placeIds,
@@ -101,7 +103,7 @@ import { ShortcutsDialog } from "./Shortcuts";
 import { cmd, fieldKeeps, keys } from "./keys";
 import { perf, percentiles, pingOnce, roundTrips, STAGES, webviewInfo, observeWebview } from "./perf";
 import { frameTransport } from "./sharedFrames";
-import { draftScale } from "./pixelRatio";
+import { draftScale, settledScale } from "./pixelRatio";
 import { tunerOptions } from "./tunerOptions";
 import { GPU_CASES, resolveCase, verdict, cpuInGpuPass, tiledInGpuPass, type Parity } from "./gpuCheck";
 import { timeTunerWork } from "./tunerWorkload";
@@ -122,9 +124,6 @@ const MAX_PREVIEW = 2560;
 type Placed = Pick<Frame, "x" | "y" | "view" | "fullWidth" | "fullHeight" | "width" | "height">;
 const placed = (f: Frame): Placed => ({ x: f.x, y: f.y, view: f.view, fullWidth: f.fullWidth, fullHeight: f.fullHeight,
                                         width: f.width, height: f.height });
-// a drag's frames, as a share of the full frame's width and height, by the
-// Preview preference; Quality has no drag frames
-const DRAFT: Record<Preview, number> = { quality: 1, balanced: 0.5, performance: 0.25 };
 
 // the before/after views, in the order the button and Y step through them
 type BaMode = "off" | "side" | "vsplit" | "hsplit" | "overlay";
@@ -1885,7 +1884,11 @@ export default function App() {
     const zoom = ahead ? a.zoom : zoomRef.current, c = ahead ? a.end! : center.current;
     if (zoom === "fit" || !f) {
       const { width, height } = fitView();
-      return k === 1 ? { width, height } : { width: Math.round(width * k), height: Math.round(height * k), draft: true };
+      if (k === 1) {
+        const s = settledScale();
+        return s === 1 ? { width, height } : { width: Math.round(width * s), height: Math.round(height * s) };
+      }
+      return { width: Math.round(width * k), height: Math.round(height * k), draft: true };
     }
     const scale = scaleFor(zoom) * k;
     const view = {
@@ -1895,11 +1898,13 @@ export default function App() {
     };
     return k === 1 ? view : { ...view, draft: true };
   };
-  // reduced previews also follow the screen scale on displays drawn larger
-  // than they show; full-size Balanced previews keep every pixel
+  // a drag's frames, as a share of the full frame's width and height, by the
+  // preview size preference. reduced previews also follow the screen scale on
+  // displays drawn larger than they show, full-size drafts too (the detail
+  // sliders' whole-view draft); Quality keeps every pixel
+  const fullDraftK = () => loadPreview() === "quality" ? 1 : draftScale();
   const draftK = () => {
-    const preview = loadPreview();
-    const k = preview === "balanced" ? loadBalancedPreviewSize() : DRAFT[preview];
+    const k = loadBalancedPreviewSize();
     return k < 1 ? k * draftScale() : 1;
   };
   const currentView = useCallback((): View => dragging.current
@@ -2190,7 +2195,7 @@ export default function App() {
         perf.time("pixels.canvasUpload", () => bc.getContext("2d")!.putImageData(new ImageData(f.pixels, f.width, f.height), 0, 0));
         const scale = f.view.scale ?? f.width / f.fullWidth;
         beforeMeta.current = { x: f.x, y: f.y, scale, width: f.width, height: f.height,
-                               fullWidth: f.fullWidth, fullHeight: f.fullHeight };
+                               fullWidth: f.fullWidth, fullHeight: f.fullHeight, edit: editKey.current };
       }
       session.current?.showBefore(null);
       placeLayers();
@@ -2250,9 +2255,12 @@ export default function App() {
     // the split view's before side follows the view: a new view asks for a
     // fresh one, once the view has settled
     if (baModeRef.current !== "off" && !f.before) {
+      // compared by the edit frame it was captured for: the before frame
+      // may differ in size (a crop), and comparing it would capture forever
+      const key = `${f.x},${f.y},${f.view.scale ?? f.width / f.fullWidth},${f.width},${f.height}`;
+      editKey.current = key;
       const b = beforeMeta.current;
-      if (!b || b.x !== f.x || b.y !== f.y || Math.abs(b.scale - (f.view.scale ?? f.width / f.fullWidth)) > 1e-6
-          || b.width !== f.width || b.height !== f.height) captureBefore(300);
+      if (!b || b.edit !== key) captureBefore(300);
     }
     // Present completed edits immediately; fading reveals an older overview
     // and makes each render flash back to the previous image.
@@ -3091,8 +3099,13 @@ export default function App() {
   rateSelectionRef.current = rateSelection;
   // a click in the filmstrip: plain opens the photo and selects it alone,
   // ⌘ adds it to the selection or takes it out, ⇧ selects the run from the
-  // open photo to it; neither opens anything
+  // last clicked (else the open) photo to it; neither opens anything
+  // the last cell clicked is the run's start, since the open photo only
+  // follows once its open finishes and a quick second click would find it stale
+  const pickAnchor = useRef<number | null>(null);
   const pickPhoto = (i: ImageEntry, e: React.MouseEvent) => {
+    const from = e.shiftKey && !cmd(e) ? (pickAnchor.current ?? listedEntry?.imgid ?? null) : null;
+    if (!(from !== null && shownRef.current.some((x) => x.imgid === from))) pickAnchor.current = i.imgid;
     if (cmd(e)) {
       setSelection((old) => {
         const next = new Set(old.size ? old : listedEntry ? [listedEntry.imgid] : []);
@@ -3101,9 +3114,9 @@ export default function App() {
       });
       return;
     }
-    if (e.shiftKey && listedEntry) {
+    if (from !== null) {
       const list = shownRef.current;
-      const a = list.findIndex((x) => x.imgid === listedEntry.imgid), b = list.findIndex((x) => x.imgid === i.imgid);
+      const a = list.findIndex((x) => x.imgid === from), b = list.findIndex((x) => x.imgid === i.imgid);
       if (a >= 0 && b >= 0) {
         setSelection(new Set(list.slice(Math.min(a, b), Math.max(a, b) + 1).map((x) => x.imgid)));
         return;
@@ -3454,7 +3467,7 @@ export default function App() {
       };
       s.thumbSize = baseSize;
       s.previewMode = loadPreview;
-      s.exactView = () => viewAt(1);
+      s.exactView = () => viewAt(fullDraftK());
       s.detailView = () => {
         if (gridRef.current || !loupeEnabledRef.current || beforeRef.current || baModeRef.current !== "off" || !full.current) return null;
         const f = full.current;
@@ -3466,8 +3479,8 @@ export default function App() {
           y: Math.round(Math.max(0, Math.min(f.h - height, pos.y * f.h - height / 2))) };
       };
       s.frameBudget = () => loadFrameCacheMb() * 1048576;
-      s.draftSize = () => (loadPreview() === "quality" ? null : { ...viewAt(draftK()), draft: true });
-      s.draftLimits = () => ({ target: loadDraftTarget(), smallest: loadPreview() === "balanced" && loadBalancedPreviewSize() === 1 ? 1 : loadDraftSmallest() });
+      s.draftSize = () => ({ ...viewAt(draftK()), draft: true });
+      s.draftLimits = () => ({ target: loadDraftTarget(), smallest: loadBalancedPreviewSize() === 1 ? 1 : loadDraftSmallest() });
       s.warmDrafts();
       // a saved edit makes the filmstrip's thumbnail stale; undone back to
       // where it started, the photo reads unedited again
@@ -4109,7 +4122,9 @@ export default function App() {
   const hintTimer = useRef(0);
   const beforeCanvas = useRef<HTMLCanvasElement>(null);
   const beforeMeta = useRef<{ x: number; y: number; scale: number; width: number; height: number;
-                              fullWidth: number; fullHeight: number } | null>(null);
+                              fullWidth: number; fullHeight: number; edit: string } | null>(null);
+  // the last edit frame's placement, which the before side is captured for
+  const editKey = useRef("");
   // the Print panel (PrintPanel.tsx) and the soft proof, which stays on in
   // the other panels until turned off (print.ts)
   const [printSettings, setPrintSettingsState] = useState<PrintSettings>(loadPrintSettings);
@@ -4123,10 +4138,18 @@ export default function App() {
   const [printProfiles, setPrintProfiles] = useState<Profile[]>([]);
   const [printBusy, setPrintBusy] = useState(false);
   const [printNote, setPrintNote] = useState<{ text: string; error: boolean } | null>(null);
+  // the page of the Cells layout the viewer shows
+  const [sheetPageNo, setSheetPageNo] = useState(0);
   const [proof, setProof] = useState<Proof>(NO_PROOF);
   const proofRef = useRef(proof);
   proofRef.current = proof;
   const printOpen = layout.right && !cropping && rightMode === "print";
+  // choosing Cells leaves the grid, which covers the sheet; G brings it back to pick other photos
+  const cellsChosen = printOpen && printSettings.layout === "cells";
+  useEffect(() => { if (cellsChosen) setGrid(false); }, [cellsChosen]);
+  // the proof the engine has taken up: the Cells sheet fetches its photos
+  // once it has, not while the old proof is still in force
+  const [proofApplied, setProofApplied] = useState("off");
   const changeProof = (next: Proof) => {
     const p = next.profile ? next : NO_PROOF;
     setProof(p);
@@ -4134,6 +4157,7 @@ export default function App() {
     if (p.mode !== "off" && !printProfiles.some((q) => q.file === p.profile))
       invoke<Profile[]>("print_profiles").then(setPrintProfiles).catch(() => {});
     applyProof(p).then((changed) => {
+      if (proofRef.current === p) setProofApplied(p.mode === "off" ? "off" : `${p.mode}|${p.profile}|${p.intent}`);
       if (!changed || proofRef.current !== p) return;
       session.current?.redraw();
       if (baModeRef.current !== "off") captureBefore();
@@ -4218,11 +4242,12 @@ export default function App() {
   };
   const printNow = async () => {
     const s = session.current;
-    if (!s || !current) return;
     const settings = printSettings;
     const pdf = settings.printer === PDF;
     const papers = pdf ? PDF_PAPERS : printInfo?.info?.papers ?? [];
     const paper = papers.find((p) => p.name === settings.paper) ?? papers[0];
+    if (settings.layout === "cells") return printSheetNow(s, settings, paper, pdf);
+    if (!s || !current) return;
     if (!paper || !placement) return;
     const l = printLayout(paper, settings, placement.fullWidth / placement.fullHeight,
                           pdf ? undefined : printInfo?.info?.margins);
@@ -4242,6 +4267,40 @@ export default function App() {
                                     request: printRequest(settings, paper, l, baseName(current.path), settings.medium, out) });
       const where = printers?.find((p) => p.name === settings.printer)?.description ?? settings.printer;
       setPrintNote({ text: pdf ? `Saved ${out}` : `Sent to ${where}.`, error: false });
+    } catch (e) {
+      setPrintNote({ text: String(e), error: true });
+    } finally {
+      setPrintBusy(false);
+    }
+  };
+  // the Cells layout: the selected photos, each as its edit is now, on pages
+  // of cells (print_sheet in engine/print.c); one that is open has its
+  // pending edits saved first
+  const printSheetNow = async (s: Session | null, settings: PrintSettings, paper: Paper | undefined, pdf: boolean) => {
+    const photos = sheetPhotosRef.current;
+    if (!photos.length || !paper) return;
+    const l = cellsLayout(paper, settings, photos.length, pdf ? undefined : printInfo?.info?.margins);
+    if (!l.fits) return;
+    let out: string | null = null;
+    if (pdf) {
+      out = await save({ defaultPath: `${photos.length > 1 ? "Contact sheet" : photos[0].name.replace(/\.[^.]+$/, "")}.pdf`,
+                         filters: [{ name: "PDF", extensions: ["pdf"] }] });
+      if (!out) return;
+    }
+    setPrintBusy(true);
+    setPrintNote(null);
+    try {
+      await s?.settled();
+      const where = printers?.find((p) => p.name === settings.printer)?.description ?? settings.printer;
+      const pages = `${l.pages} ${l.pages === 1 ? "page" : "pages"}`;
+      const text = pdf ? `Saved ${out} (${pages})` : `Sent ${pages} to ${where}.`;
+      // the activity line under the photo counts the photos placed, and can stop the sheet
+      const done = await runMerge("Printing contact sheet", photos.length, "print_sheet",
+        { imgids: photos.map((p) => p.imgid),
+          request: sheetRequest(settings, paper, l, photos, photos.length > 1 ? "Contact sheet" : photos[0].name,
+                                settings.medium, out) },
+        () => ({ text, ok: true }), "Print failed");
+      if (done) setPrintNote({ text, error: false });
     } catch (e) {
       setPrintNote({ text: String(e), error: true });
     } finally {
@@ -4320,7 +4379,7 @@ export default function App() {
     : (printInfo?.name === printSettings.printer ? printInfo.info?.papers : undefined) ?? [];
   const printPaper = printPapers.find((p) => p.name === printSettings.paper) ?? printPapers[0] ?? null;
   const printPage = printOpen && current && placement && printPaper && printAvailable !== false
-                    && baMode === "off" && compare === null
+                    && baMode === "off" && compare === null && printSettings.layout === "single"
     ? printLayout(printPaper, printSettings, placement.fullWidth / placement.fullHeight,
                   printPdf ? undefined : printInfo?.info?.margins)
     : null;
@@ -4488,7 +4547,7 @@ export default function App() {
         ["saturation", 30], ["nr_luminance", 40], ["vig_amount", -30], ["grain_amount", 30],
       ];
       const preview = loadPreview();
-      const drafts = preview !== "quality";
+      const drafts = true;
       // the web view measured idle, ahead of the run and its timing
       setZoom("fit");
       await settle();
@@ -4707,7 +4766,7 @@ export default function App() {
         const until = performance.now() + 8000;
         while (!s.baseRendering && performance.now() < until) await sleep(10);
         const started = s.baseRendering;
-        dragging.current = loadPreview() !== "quality";
+        dragging.current = true;
         for (let i = 1; i <= 20; i++) { change(ex, from + 0.3 + 0.5 * (i <= 10 ? i / 10 : (20 - i) / 10)); await sleep(16); }
         dragging.current = false;
         change(ex, from + 0.3);
@@ -4792,7 +4851,8 @@ export default function App() {
   // capture phase, so a straighten line wins over the crop, mask and spot
   // editors above the image
   const onStraightenDown = (e: React.PointerEvent<HTMLElement>) => {
-    if (!current || !viewZ.current || pickingRef.current || previewRef.current || e.button !== 0) return;
+    // the grid covers the photo: ⇧ there belongs to selecting a range
+    if (!current || !viewZ.current || pickingRef.current || previewRef.current || gridRef.current || e.button !== 0) return;
     const armed = straighteningRef.current;
     if (!armed && !(e.shiftKey && !masksModeRef.current && !healModeRef.current)) return;
     e.stopPropagation();
@@ -5474,6 +5534,34 @@ export default function App() {
   // its entry whichever folder is shown
   const listedEntry = images.find((i) => isOpen(i, current)) ?? null;
   const currentEntry = listedEntry ?? (openCell && isOpen(openCell, current) ? openCell : null);
+  // the Print panel's Cells layout prints the photos selected, in the filmstrip's order, else the open one
+  const sheetPhotos: SheetPhoto[] = (() => {
+    if (!printOpen || printSettings.layout !== "cells") return [];
+    const picked = shown.filter((i) => selection.has(i.imgid) && !isRemote(i));
+    const list: ImageEntry[] = picked.length ? picked
+      : currentEntry && "imgid" in currentEntry && !isRemote(currentEntry as ImageEntry) ? [currentEntry as ImageEntry] : [];
+    return list.map((i) => ({ imgid: i.imgid, name: `${i.filename}${copyName(i)}` }));
+  })();
+  const sheetPhotosRef = useRef<SheetPhoto[]>([]);
+  sheetPhotosRef.current = sheetPhotos;
+  const sheetKey = sheetPhotos.map((p) => p.imgid).join(",");
+  const cellsPage = printOpen && printSettings.layout === "cells" && printPaper && printAvailable !== false
+    ? cellsLayout(printPaper, printSettings, sheetPhotos.length, printPdf ? undefined : printInfo?.info?.margins) : null;
+  const cellPageNo = cellsPage ? Math.min(sheetPageNo, cellsPage.pages - 1) : 0;
+  // their thumbnails, asked for as the sheet shows them
+  useEffect(() => {
+    if (cellsPage && sheetKey) loader.current?.request(sheetKey.split(",").map(Number));
+  }, [!!cellsPage, sheetKey]);
+  const cellsSheet = (() => {
+    if (!cellsPage || viewerBox.w <= 0) return null;
+    const { width: W, height: H } = cellsPage.page;
+    const k = Math.min((viewerBox.w - 2 * PAGE_PAD) / W, (viewerBox.h - 2 * PAGE_PAD - 28) / H);
+    if (!(k > 0)) return null;
+    const x = (viewerBox.w - W * k) / 2, y = (viewerBox.h - 28 - H * k) / 2 + 0;
+    const cells = sheetPages(cellsPage, sheetPhotos)[cellPageNo] ?? [];
+    const filled = new Set(cells.map((c) => cellsPage.slots.indexOf(c.slot)));
+    return { page: { left: x, top: y, width: W * k, height: H * k }, k, cells, filled };
+  })();
   // zoomed in, the part of the image the sharp render shows, for the overlays
   const shownRegion: Region | null = shownView && !shownView.fit && full.current
     ? [shownView.x / (shownView.scale * full.current.w), shownView.y / (shownView.scale * full.current.h),
@@ -5741,7 +5829,7 @@ export default function App() {
       <Splitter axis="x" value={layout.leftWidth} min={220} max={560} hidden={!docked.left}
                 onChange={(v) => setLayout((l) => ({ ...l, leftWidth: v }))} />
       <section className="center">
-        <main data-tour="viewer" className={`viewer zoom-${zoom === "fit" ? "fit" : "in"}${picking || loupePicking ? " picking" : ""}${aiBusy ? " busy" : ""}${straightening || line || (shiftHeld && current && (cropping || (!masksMode && !healMode)) && !preview) ? " straightening" : ""}${canvasColor !== "dark" ? ` canvas-${canvasColor}` : ""}${baMode === "overlay" ? " hold-view" : ""}${optPreview?.kind === "gray" ? " gray-view" : ""}${sheet ? " print-view" : ""}`} ref={viewer}
+        <main data-tour="viewer" className={`viewer zoom-${zoom === "fit" ? "fit" : "in"}${picking || loupePicking ? " picking" : ""}${aiBusy ? " busy" : ""}${straightening || line || (shiftHeld && current && !grid && (cropping || (!masksMode && !healMode)) && !preview) ? " straightening" : ""}${canvasColor !== "dark" ? ` canvas-${canvasColor}` : ""}${baMode === "overlay" ? " hold-view" : ""}${optPreview?.kind === "gray" ? " gray-view" : ""}${sheet ? " print-view" : ""}`} ref={viewer}
               onPointerDownCapture={(e) => { if (!onLoupePickDown(e)) onStraightenDown(e); }}
               onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
               onPointerLeave={leaveProbe}>
@@ -5753,11 +5841,51 @@ export default function App() {
                                                                     width: sheet.area.width, height: sheet.area.height }} />}
             </div>
           )}
+          {cellsSheet && cellsPage && (
+            <div className="print-sheet" data-print-page={`${cellsPage.page.width}x${cellsPage.page.height}`}
+                 data-print-cells={`${cellsPage.columns}x${cellsPage.rows}`} style={cellsSheet.page}>
+              <div className="print-area" style={{ left: cellsPage.area.x * cellsSheet.k, top: cellsPage.area.y * cellsSheet.k,
+                                                   width: cellsPage.area.width * cellsSheet.k,
+                                                   height: cellsPage.area.height * cellsSheet.k }} />
+              {cellsPage.slots.map((slot, n) => {
+                const cell = cellsSheet.cells.find((c) => c.slot === slot);
+                const k = cellsSheet.k;
+                return (
+                  <Fragment key={n}>
+                    <div className={`print-cell${cell ? "" : " empty"}${slot.label ? " named" : ""}`} data-print-cell={cell?.photo.imgid}
+                         style={{ left: slot.box.x * k, top: slot.box.y * k, width: slot.box.width * k, height: slot.box.height * k }}>
+                      {cell && (cell.photo.imgid >= 0
+                        ? <CellCanvas loader={loader.current ?? undefined} imgid={cell.photo.imgid} proof={proofApplied !== "off"} proofKey={proofApplied}
+                                      pixels={Math.max(slot.box.width, slot.box.height) * k * (window.devicePixelRatio || 1)} />
+                        : <ThumbCanvas loader={loader.current ?? undefined} imgid={cell.photo.imgid} />)}
+                    </div>
+                    {cell && slot.label && (
+                      <div className="print-label" style={{ left: slot.label.x * k, top: slot.label.y * k,
+                                                           width: slot.label.width * k, height: slot.label.height * k,
+                                                           fontSize: LABEL_POINTS * 25.4 / 72 * k,
+                                                           lineHeight: `${slot.label.height * k}px` }}>
+                        {cell.photo.name}
+                      </div>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </div>
+          )}
+          {cellsPage && cellsPage.pages > 1 && (
+            <div className="print-pager" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>
+              <button aria-label="previous page" disabled={cellPageNo <= 0}
+                      onClick={() => setSheetPageNo(cellPageNo - 1)}>‹</button>
+              <span data-print-pager>Page {cellPageNo + 1} of {cellsPage.pages}</span>
+              <button aria-label="next page" disabled={cellPageNo >= cellsPage.pages - 1}
+                      onClick={() => setSheetPageNo(cellPageNo + 1)}>›</button>
+            </div>
+          )}
           <div ref={pane} className={`after-pane${sheet ? " on-page" : baMode === "side" ? " half" : compare !== null ? " half-left" : ""}`}
                style={sheet ? (sheet.fits ? { left: sheet.image.left - MARGIN, top: sheet.image.top - MARGIN,
                                               width: sheet.image.width + 2 * MARGIN, height: sheet.image.height + 2 * MARGIN }
                                           : { left: 0, top: 0, width: "100%", height: "100%", visibility: "hidden" })
-                             : undefined}>
+                             : cellsPage ? { visibility: "hidden" } : undefined}>
             <canvas ref={baseCanvas} className={`layer base${current ? "" : " empty"}`} />
             <canvas ref={clipBase} className={`layer clip${current && (clipShown.low || clipShown.high) ? "" : " empty"}`} />
             {/* it carries neither the Before view nor the clipping overlay */}
@@ -5931,7 +6059,7 @@ export default function App() {
                          aspect={pixelAspect(findAspect(cropAspect, cropChoices), cropPortrait, frameSize())} />
           )}
           {(before || holding) && <div className="before-badge">Before</div>}
-          {current && proof.mode !== "off" && (
+          {current && proof.mode !== "off" && !printOpen && (
             <div className="proof-badge" data-proof-badge>
               Soft Proof: {printProfiles.find((p) => p.file === proof.profile)?.name ?? "printer profile"}
               {proof.mode === "gamut" ? ", gamut warning" : ""}</div>
@@ -6062,9 +6190,11 @@ export default function App() {
           {masksMode && !cropping && (
             <MasksPanel masks={masks} selected={maskSel} shape={shapeSel} tool={maskTool} target={toolTarget}
                         brush={brush} overlay={maskShown} disabled={!current} mono={values.bw_mode === 1} photo={values}
-                        renderSlider={(c, v, onChange, glow) => (
+                        renderSlider={(c, v, onChange, glow, module) => (
                           <Slider key={c.id} control={c} value={v} neutral={c.neutral ?? 0} disabled={!current}
-                                  values={selMask?.values ?? values} onChange={onChange} glow={glow} />
+                                  values={selMask?.values ?? values} onChange={onChange} glow={glow}
+                                  moduleChoice={module?.choice} moduleValue={module?.value} onModule={module?.onPick}
+                                  moduleScope="masks" />
                         )}
                         fresh={freshMask} onHslShown={setMaskHslShown}
                         onTool={(t, target) => {
@@ -6238,7 +6368,7 @@ export default function App() {
                         infoError={printInfo?.name === printSettings.printer ? printInfo.error : null}
                         profiles={printProfiles} onAddProfile={() => void addPrintProfile()}
                         aspect={placement ? placement.fullWidth / placement.fullHeight : 1.5}
-                        pixelWidth={placement?.fullWidth ?? 0}
+                        pixelWidth={placement?.fullWidth ?? 0} photos={sheetPhotos.length}
                         proof={proof}
                         onProof={(mode) => changeProof({ mode, profile: printSettings.profile, intent: printSettings.intent })}
                         busy={printBusy} note={printNote} onPrint={() => void printNow()} disabled={!current} />
@@ -7143,6 +7273,36 @@ function ThumbProgress({ loader }: { loader: ThumbLoader }) {
 }
 
 // the image's thumbnail as the loader has it, redrawn when that changes
+// a print cell's photo: the engine's thumbnail at the size the cell shows it
+// (the filmstrip's is 240 pixels, soft in a big cell), soft proofed when the
+// proof is on. it lasts as long as the cell, so it is not kept in the loader
+function CellCanvas({ loader, imgid, proof, proofKey, pixels }:
+                    { loader?: ThumbLoader; imgid: number; proof: boolean; proofKey: string; pixels: number }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const [ready, setReady] = useState(false);
+  // the engine could not make it: the library's thumbnail stands in, unproofed
+  const [failed, setFailed] = useState(false);
+  // the cached sizes are steps; asking in steps keeps a resize from refetching
+  const size = Math.min(1440, Math.max(256, Math.ceil(pixels / 128) * 128));
+  useEffect(() => {
+    let stale = false;
+    fetchThumb(imgid, size, undefined, proof).then((bitmap) => {
+      const c = ref.current;
+      if (stale || !c) return;
+      c.width = bitmap.width;
+      c.height = bitmap.height;
+      c.getContext("2d", { willReadFrequently: true })!.drawImage(bitmap, 0, 0);
+      setReady(true);
+      setFailed(false);
+    }).catch((e) => { if (!stale) { console.error(`print cell thumbnail ${imgid}: ${e}`); setFailed(true); } });
+    return () => { stale = true; };
+  }, [imgid, size, proofKey]);
+  return <>
+    <canvas ref={ref} style={ready ? undefined : { display: "none" }} />
+    {!ready && <ThumbCanvas loader={failed ? loader : undefined} imgid={failed ? imgid : undefined} />}
+  </>;
+}
+
 function ThumbCanvas({ loader, imgid, dogEar = false }: { loader?: ThumbLoader; imgid?: number | string; dogEar?: boolean }) {
   const [bitmap, setBitmap] = useState(() => (imgid === undefined ? undefined : loader?.get(imgid)));
   useEffect(() => {
@@ -7820,6 +7980,29 @@ const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle, values
   // simulation its tone mappers (SF_OFF)
   const negative = (c: Control) => (values.neg_on === 1 && NEG_GREYED.has(c.id))
     || (values.sf_on === 1 && SF_GREYED.has(c.id));
+  // each tool with several modules carries its switch on the first of its
+  // controls shown (the equalizer and the curve stand in for theirs)
+  const switchHosts = new Map<string, ModuleChoice>();
+  for (const ch of MODULE_CHOICES) {
+    if (ch.options.length < 2) continue;
+    const covers = new Set(choiceCovers(ch));
+    // Clarity and Texture keep only Medium and Fine above their Advanced fold: the switch goes on those
+    const hosts = p.sections.flatMap((sec) => sec.controls).filter((c) => covers.has(c.id) && choiceShows(c.id, values));
+    const first = hosts.find((c) => /_gain_(medium|fine)$/.test(c.id)) ?? hosts[0];
+    if (first) switchHosts.set(/^ce_/.test(first.id) ? "ce_0_0" : /^s[cb]_/.test(first.id) ? "sc_pn" : first.id, ch);
+  }
+  const switchFor = (id: string) => {
+    const ch = switchHosts.get(id);
+    return ch && {
+      choice: ch, value: values[ch.control] ?? preferredChoice(ch), disabled,
+      adjusted: session?.adjustedModules(ch.control),
+      onPick: (v: number) => onChange(controlById.get(ch.control)!, v),
+    };
+  };
+  const switchProps = (id: string) => {
+    const sw = switchFor(id);
+    return sw ? { moduleChoice: sw.choice, moduleValue: sw.value, moduleAdjusted: sw.adjusted, onModule: sw.onPick } : {};
+  };
   const controlProps = (c: Control) => ({
     control: negative(c) ? { ...c, note: values.neg_on === 1
       ? "set in Negative: a converted negative turns this module off"
@@ -7829,6 +8012,7 @@ const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle, values
     disabled: disabled || negative(c) || !mapOf.has(c.id) || (!!c.rawOnly && !session?.raw), onChange: (v: number) => onChange(c, v),
     values, glow: glowOf(c.id),
     rawOnly: !!c.rawOnly && !!session && !session.raw,
+    ...switchProps(c.id),
     onOption: c.optionPreview && onOptionPreview
       ? (on: boolean) => onOptionPreview(!on ? null : c.optionPreview === "gray" ? { kind: "gray" }
                                          : { kind: "mask", op: (mapsWith(c.id).find((m) => choiceOn(m, values)) ?? mapOf.get(c.id)!).op })
@@ -7912,10 +8096,12 @@ const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle, values
                 {s.title === "Upright" && transformTools}
                 {detailRows(s.controls.filter((c) => choiceShows(c.id, values)), (c) => {
                   if (c.id.startsWith("ce_")) return c.id === "ce_0_0"
-                    ? <ContrastEqualizer key="contrast-equalizer" values={values} disabled={disabled} onChange={onChangeMany} />
+                    ? <ContrastEqualizer key="contrast-equalizer" values={values} disabled={disabled} onChange={onChangeMany}
+                       module={switchFor("ce_0_0") && <ModuleSwitch {...switchFor("ce_0_0")!} scope="global" />} />
                     : null;
                   if (c.id.startsWith("sc_") || c.id.startsWith("sb_")) return c.id === "sc_pn"
-                    ? <SaturationCurve key="saturation-curve" values={values} disabled={disabled} onChange={onChangeMany} />
+                    ? <SaturationCurve key="saturation-curve" values={values} disabled={disabled} onChange={onChangeMany}
+                       module={switchFor("sc_pn") && <ModuleSwitch {...switchFor("sc_pn")!} scope="global" />} />
                     : null;
                   const props = controlProps(c);
                   return c.kind === "toggle" ? <Toggle key={c.id} {...props} />
@@ -7996,6 +8182,10 @@ type ControlProps = {
   rawOnly?: boolean;   // disabled for needing a raw
   onOption?: (on: boolean) => void;   // ⌥ held while dragging, or let go
   glow?: number;   // how much the photo under the pointer belongs to this control's color band, 0-1
+  // the module choice this row carries the switch for (ModuleSwitch), its module and the pick
+  moduleChoice?: ModuleChoice; moduleValue?: number; onModule?: (value: number) => void;
+  moduleAdjusted?: number[];   // the tool's modules that hold edits
+  moduleScope?: "global" | "masks";
 };
 
 // consecutive sections of one group, together; any other section alone
@@ -8035,16 +8225,18 @@ function isMono(f: Frame): boolean {
 // about one mouse notch of a wheel event's deltaY on macOS
 const WHEEL_NOTCH = 40;
 
-function Slider({ values, onChange, onOption, ...props }: ControlProps) {
-  const callbacks = useRef({ onChange, onOption });
-  useLayoutEffect(() => { callbacks.current = { onChange, onOption }; });
+function Slider({ values, onChange, onOption, onModule, ...props }: ControlProps) {
+  const callbacks = useRef({ onChange, onOption, onModule });
+  useLayoutEffect(() => { callbacks.current = { onChange, onOption, onModule }; });
+  const module = useCallback((value: number) => callbacks.current.onModule?.(value), []);
   const change = useCallback((value: number) => callbacks.current.onChange(value), []);
   const option = useCallback((on: boolean) => callbacks.current.onOption?.(on), []);
   const track = typeof props.control.track === "function" ? props.control.track(values) : props.control.track;
-  return <SliderWidget {...props} track={track} onChange={change} onOption={onOption ? option : undefined} />;
+  return <SliderWidget {...props} track={track} onChange={change} onOption={onOption ? option : undefined}
+                       onModule={onModule ? module : undefined} />;
 }
 
-const SliderWidget = memo(function SliderWidget({ control: c, value, neutral, disabled, onChange, track, glow = 0, rawOnly, onOption }:
+const SliderWidget = memo(function SliderWidget({ control: c, value, neutral, disabled, onChange, track, glow = 0, rawOnly, onOption, moduleChoice, moduleValue, moduleAdjusted, moduleScope = "global", onModule }:
   Omit<ControlProps, "values"> & { track?: string }) {
   perf.count("react.sliderRenderAttempts");
   const s = c.slider;
@@ -8150,7 +8342,13 @@ const SliderWidget = memo(function SliderWidget({ control: c, value, neutral, di
          title={rawOnly ? "needs a raw photo: darktable makes the detail mask from the raw"
                 : c.note ? keys(c.note) : m ? `darktable: ${moduleName(m.op)}` : ""}>
       {/* double-click resets, as in Lightroom */}
-      <label onDoubleClick={reset}>{c.label}</label>
+      {moduleChoice && onModule ? (
+        <span className="label-line">
+          <label onDoubleClick={reset}>{c.label}</label>
+          <ModuleSwitch choice={moduleChoice} value={moduleValue ?? preferredChoice(moduleChoice)} scope={moduleScope} adjusted={moduleAdjusted}
+                        disabled={disabled} onPick={onModule} />
+        </span>
+      ) : <label onDoubleClick={reset}>{c.label}</label>}
       {editing ? (
         <input className="value-edit" autoFocus defaultValue={String(+value.toFixed(4))}
                onFocus={(e) => e.target.select()}

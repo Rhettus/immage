@@ -1306,6 +1306,7 @@ async fn open_folder(app: AppHandle, state: State<'_, AppState>, path: String, r
     let _ = app.emit("folder-progress", json!({ "token": token, "done": 0, "total": total, "images": [],
                                                 "files": list }));
     let mut images = Vec::new();
+    let mut unanswered: Vec<Value> = Vec::new();
     let mut done = 0;
     let mut size = IMPORT_BATCH.0;
     let mut progress = Progress::default();
@@ -1344,6 +1345,13 @@ async fn open_folder(app: AppHandle, state: State<'_, AppState>, path: String, r
             size = (size / 2).max(IMPORT_BATCH.1);
         }
         done += through;
+        // files the share did not answer for are skipped, not retried, so one
+        // stalled read cannot hold the folder; a batch of one from then on
+        // shows each further stall by itself
+        if let Some(silent) = reply["unanswered"].as_array().filter(|a| !a.is_empty()) {
+            unanswered.extend(silent.iter().cloned());
+            size = IMPORT_BATCH.1;
+        }
         images.extend(got.iter().cloned());
         if let Some(got) = progress.add(got, Instant::now(), done == total) {
             let _ = app.emit("folder-progress", json!({ "token": token, "done": done, "total": total, "images": got }));
@@ -1351,7 +1359,7 @@ async fn open_folder(app: AppHandle, state: State<'_, AppState>, path: String, r
     }
     let kept = images.clone();
     tauri::async_runtime::spawn_blocking(move || write_snapshot(&snapshot, &kept));
-    Ok(json!({ "images": images }))
+    Ok(json!({ "images": images, "unanswered": unanswered }))
 }
 
 // the folder's images as its last whole read found them, for open_folder()
@@ -1754,17 +1762,19 @@ async fn folder_volumes(paths: Vec<String>) -> Vec<volumes::Volume> {
 // so it does not take engine()
 #[tauri::command]
 async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>, imgid: i64, size: u32,
-               path: Option<String>, version: Option<i64>) -> Result<Response, String> {
+               path: Option<String>, version: Option<i64>, proof: Option<bool>) -> Result<Response, String> {
     // named before the render: a sidecar written during it makes the next
-    // look a miss, never a stale hit
-    let name = path.and_then(|p| cache::refresh(&caches.listed, Path::new(&p), version.unwrap_or(0), size).map(|n| (p, n)));
+    // look a miss, never a stale hit. a proofed one is not the photo's
+    // thumbnail, and is not kept
+    let proof = proof.unwrap_or(false);
+    let name = path.filter(|_| !proof).and_then(|p| cache::refresh(&caches.listed, Path::new(&p), version.unwrap_or(0), size).map(|n| (p, n)));
     let thumbs = state.tagged.clone();
     let tag = thumbs.tag();
     // a file of its own, as several are built at once
     let storage = state._frame_output.clone();
     let out = storage.path(&format!("thumb-{tag}.rgba"));
     let (reply, mut pixels) = tauri::async_runtime::spawn_blocking(move || {
-        let got = thumbs.request(tag, json!({ "cmd": "thumb", "imgid": imgid, "size": size, "out": out }))
+        let got = thumbs.request(tag, json!({ "cmd": "thumb", "imgid": imgid, "size": size, "proof": proof, "out": out }))
             .and_then(|reply| Ok((reply, frame_output::FrameOutput::read(&out).map_err(|e| format!("thumb: {e}"))?)));
         storage.remove(&out);
         drop(storage);
@@ -2553,6 +2563,27 @@ async fn print_photo(state: State<'_, AppState>, imgid: i64, request: Value) -> 
     result.map(without_ok)
 }
 
+// a sheet of photos, each as its edit is now (print_photo's way): the Cells
+// layout's pages of boxes and labels are in `request`, `imgids` the photos
+// they hold, which the engine takes a snapshot of as each page reaches it
+#[tauri::command]
+async fn print_sheet(app: AppHandle, state: State<'_, AppState>, job: u64, imgids: Vec<i64>, request: Value)
+                     -> Result<Value, String> {
+    let tagged = state.tagged.clone();
+    state.engine("print_sheet").request(json!({ "cmd": "export_hold", "job": job, "imgids": imgids }))?;
+    let mut req = request;
+    req["cmd"] = json!("print");
+    let t = tagged.clone();
+    // each photo placed reaches the page as a merge's progress, and Stop as a merge's
+    let result = tauri::async_runtime::spawn_blocking(move || merge(app, t, job, req))
+        .await.map_err(|e| e.to_string()).and_then(|r| r);
+    let t = tagged.clone();
+    let tag = t.tag();
+    let _ = tauri::async_runtime::spawn_blocking(move || t.request(tag, json!({ "cmd": "export_release", "job": job })))
+        .await;
+    result.map(without_ok)
+}
+
 // the Export dialog's presets, a document the front end shapes; none yet is
 // null
 #[tauri::command]
@@ -2815,7 +2846,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             map_tiles::map_tile, open_folder, open_image, get_params, set_params, render, cancel_base, save, baseline_end, before_view, thumb, thumb_cached, thumb_known, cache_limits, cache_usage, cache_clear, meta, meta_set, capture_times, prefetch, darktable_resources, darktable_resources_set, gpu_edits, gpu_edits_set, webview_renderer, webview_renderer_set,
-            export_images, export_cancel, export_existing, export_preview, fonts, print_profiles, print_profile_add, softproof, printers, printer_info, print_photo, export_presets_load, export_presets_save, preset_file_write, preset_file_read, presets_load, presets_save, looks_list, look_import, look_export, look_delete, look_apply, look_amount, preview, paste_batch,
+            export_images, export_cancel, export_existing, export_preview, fonts, print_profiles, print_profile_add, softproof, printers, printer_info, print_photo, print_sheet, export_presets_load, export_presets_save, preset_file_write, preset_file_read, presets_load, presets_save, looks_list, look_import, look_export, look_delete, look_apply, look_amount, preview, paste_batch,
             mask_shapes, combine, masks, mask_delete, mask_rename, history, module_state, sample, tone_key, agx_auto, upright, points, range_map, zones, mask_map, ai_object,
             ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, positive_export, spektra_stocks, spektra_fetch, list_subfolders, folder_volumes, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
             immich_export_check, immich_search, immich_browse_check, immich_libraries, immich_suggestions, immich_people, immich_tags,

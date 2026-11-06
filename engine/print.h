@@ -48,6 +48,11 @@ gboolean print_softproof(const char *mode, const char *file, const int intent, g
 // darktable's hash of the pipe is the same proofed or not
 dt_hash_t print_proof_hash(const dt_hash_t hash);
 
+// the thumbnail pixels (8-bit RGBA in `color_space`) as the soft proof shows
+// them, written over in sRGB; FALSE, and left as they were, when no proof
+// is on
+gboolean print_proof_pixels(uint8_t *rgba, int width, int height, int color_space);
+
 // whether this engine was built with darktable's print support
 gboolean print_available(void);
 
@@ -60,4 +65,18 @@ gboolean print_printer(const char *name, JsonBuilder *b, char **err);
 // render `imgid` for the page `req` describes and print it, or with `pdf`
 // write it to that file instead
 gboolean print_image(const dt_imgid_t imgid, JsonObject *req, JsonBuilder *b, char **err);
+
+// the photo `take` gives to render for `imgid` (a snapshot of its edit the
+// caller keeps until `release`), or NO_IMGID when the print was not asked
+// for it
+typedef dt_imgid_t (*print_take_f)(gpointer ctx, dt_imgid_t imgid);
+typedef void (*print_release_f)(gpointer ctx, dt_imgid_t snap);
+// called as each photo is placed: `done` of `total`. FALSE stops the print
+typedef gboolean (*print_step_f)(gpointer ctx, int done, int total);
+
+// the Cells layout: `pages` of cells, each a photo box and an optional label
+// in millimeters on the page, composed a page at a time and written as one
+// PDF or sent to the printer. a NULL `take` renders the photos as they are
+gboolean print_sheet(JsonObject *req, print_take_f take, print_release_f release, print_step_f step, gpointer ctx,
+                     JsonBuilder *b, char **err);
 

@@ -151,6 +151,10 @@ try {
       await copyFile(copiedFixture, join(fixtures, name));
     report.batchFixtures = ['batch-target-1.jpg', 'batch-target-2.jpg', 'batch-untouched.jpg'];
   }
+  if (selectedCases.includes('shift-range')) {
+    if (!/\.jpe?g$/i.test(copiedFixture)) throw Error('shift-range requires a JPEG fixture');
+    for (let i = 1; i <= 8; i++) await copyFile(copiedFixture, join(fixtures, `shift-${i}.jpg`));
+  }
   // the guide's Library grid shot needs a folder of photos: copies of the fixture
   if (selectedCases.includes('site-shots') && process.env.SITE_SHOTS?.split(',').map(s => s.trim()).includes('library-grid')) {
     const stem = basename(copiedFixture).replace(/\.[^.]+$/, ''), ext = basename(copiedFixture).slice(stem.length);
@@ -159,6 +163,14 @@ try {
     for (let i = 1; i <= 5; i++) {
       const name = m ? `${m[1]}${String(Number(m[2]) + i).padStart(m[2].length, '0')}${ext}` : `${stem}-${i}${ext}`;
       await copyFile(copiedFixture, join(fixtures, name)); report.gridFixtures.push(name);
+    }
+  }
+  // the demo's merge segment needs several photos in the folder: DEMO_PHOTOS
+  // lists copies to add (comma separated paths), never opened in place
+  if (selectedCases.includes('demo') && process.env.DEMO_PHOTOS) {
+    report.demoPhotos = [];
+    for (const path of process.env.DEMO_PHOTOS.split(',').map(s => s.trim()).filter(Boolean)) {
+      await copyFile(resolve(root, path), join(fixtures, basename(path))); report.demoPhotos.push(basename(path));
     }
   }
   // the film case needs the spektrafilm data pack, and the isolated profile
@@ -173,6 +185,13 @@ try {
   // the print case proofs against a made-up printer profile, put among the
   // engine's own (engine/print.c reads config/color/out in its runtime folder)
   if (selectedCases.includes('print')) {
+    // the Cells layout needs several photos to select: copies of the fixture
+    const stem = basename(copiedFixture).replace(/\.[^.]+$/, ''), ext = basename(copiedFixture).slice(stem.length);
+    report.printFixtures = [];
+    for (let i = 1; i <= 6; i++) {
+      const name = `${stem}-print-${i}${ext}`;
+      await copyFile(copiedFixture, join(fixtures, name)); report.printFixtures.push(name);
+    }
     const { mkdir, writeFile } = await import('node:fs/promises');
     const { narrowPrinterProfile } = await import('./support/icc.mjs');
     const dir = join(profile, 'data', 'app.immage', 'config', 'color', 'out');

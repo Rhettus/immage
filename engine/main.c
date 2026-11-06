@@ -155,6 +155,42 @@ static dt_engine_session_t _s = { 0 };
 static GMutex _cancel_lock;
 static gint64 _base_running, _base_canceled;
 
+// foreground work comes first: the main loop's requests (renders, edits,
+// zoom) are what the user waits on, so the import and thumbnail threads
+// call _background_yield() before each file and wait while the main loop is
+// busy, has requests queued, or finished one moments ago. a bounded wait
+// keeps a long edit session from starving them for good, and a client's
+// batch from outrunning its timeout
+static GAsyncQueue *_requests = NULL;
+static GMutex _fg_lock;
+static gboolean _fg_busy = FALSE;
+static gint64 _fg_last = 0;
+#define _FG_GRACE_US 300000
+#define _FG_MAX_WAIT_US 2000000
+
+static void _foreground(const gboolean busy)
+{
+  g_mutex_lock(&_fg_lock);
+  _fg_busy = busy;
+  _fg_last = g_get_monotonic_time();
+  g_mutex_unlock(&_fg_lock);
+}
+
+static void _background_yield(void)
+{
+  const gint64 start = g_get_monotonic_time();
+  while(TRUE)
+  {
+    const gint64 now = g_get_monotonic_time();
+    g_mutex_lock(&_fg_lock);
+    const gboolean quiet = !_fg_busy && now - _fg_last >= _FG_GRACE_US;
+    g_mutex_unlock(&_fg_lock);
+    if(quiet && (!_requests || g_async_queue_length(_requests) <= 0)) return;
+    if(now - start >= _FG_MAX_WAIT_US) return;
+    g_usleep(15000);
+  }
+}
+
 #ifndef _WIN32
 // a crash leaves its backtrace in the log (stderr), below the request it
 // died on: darktable's own handler is for Linux only
@@ -2098,19 +2134,124 @@ static gboolean _folder(const char *dir, const gboolean recursive, JsonBuilder *
 // newest rather than the highest, as the client's numbering restarts
 static gint64 _import_latest = 0;
 
+// a read of a network share can block for minutes (a half-dead SMB mount
+// took 129 s on one file) and cannot be interrupted, and _import() holds
+// _import_lock while it reads, which held up every open photo and the next
+// folder with it. so a file is first read for its first bytes, and its
+// sidecar's, on a throwaway thread that is waited on for a while only; the
+// import then finds both in the client's cache. a file that does not answer
+// is skipped, and so is its folder for a while, as every file there waits
+// the same way. the abandoned thread ends when the mount answers or fails
+#define _PROBE_TIMEOUT_US (5 * G_USEC_PER_SEC)
+#define _PROBE_QUARANTINE_US (30 * G_USEC_PER_SEC)
+
+typedef struct _probe_t
+{
+  GMutex lock;
+  GCond done;
+  gboolean finished;
+  gint refs;
+  char *path;
+} _probe_t;
+
+static void _probe_unref(_probe_t *p)
+{
+  if(!g_atomic_int_dec_and_test(&p->refs)) return;
+  g_mutex_clear(&p->lock);
+  g_cond_clear(&p->done);
+  g_free(p->path);
+  g_free(p);
+}
+
+static void _probe_read(const char *path)
+{
+  FILE *f = g_fopen(path, "rb");
+  if(!f) return;
+  char buf[4096];
+  if(fread(buf, 1, sizeof(buf), f)) {} // the bytes themselves are not used
+  fclose(f);
+}
+
+static gpointer _probe_run(gpointer data)
+{
+  _probe_t *p = data;
+  _probe_read(p->path);
+  gchar *xmp = g_strconcat(p->path, ".xmp", NULL);
+  _probe_read(xmp);
+  g_free(xmp);
+  g_mutex_lock(&p->lock);
+  p->finished = TRUE;
+  g_cond_signal(&p->done);
+  g_mutex_unlock(&p->lock);
+  _probe_unref(p);
+  return NULL;
+}
+
+static GMutex _quarantine_lock;
+static GHashTable *_quarantine = NULL; // folder -> monotonic time it is skipped until
+
+// FALSE when the file did not answer within `timeout_us`, or its folder
+// did not a moment ago
+static gboolean _file_answers(const char *path, const gint64 timeout_us)
+{
+  gchar *dir = g_path_get_dirname(path);
+  const gint64 now = g_get_monotonic_time();
+  g_mutex_lock(&_quarantine_lock);
+  if(!_quarantine) _quarantine = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
+  const gint64 *until = g_hash_table_lookup(_quarantine, dir);
+  const gboolean held = until && *until > now;
+  g_mutex_unlock(&_quarantine_lock);
+  if(held)
+  {
+    g_free(dir);
+    return FALSE;
+  }
+
+  _probe_t *p = g_new0(_probe_t, 1);
+  g_mutex_init(&p->lock);
+  g_cond_init(&p->done);
+  p->refs = 2; // this call and the thread
+  p->path = g_strdup(path);
+  GThread *t = g_thread_new("import-probe", _probe_run, p);
+  g_thread_unref(t);
+
+  const gint64 deadline = now + timeout_us;
+  g_mutex_lock(&p->lock);
+  while(!p->finished && g_cond_wait_until(&p->done, &p->lock, deadline)) {}
+  const gboolean answered = p->finished;
+  g_mutex_unlock(&p->lock);
+  _probe_unref(p);
+
+  if(!answered)
+  {
+    gint64 *when = g_new(gint64, 1);
+    *when = g_get_monotonic_time() + _PROBE_QUARANTINE_US;
+    g_mutex_lock(&_quarantine_lock);
+    g_hash_table_replace(_quarantine, dir, when); // takes `dir`
+    g_mutex_unlock(&_quarantine_lock);
+    fprintf(stderr, "[engine] %s did not answer in %.1f s; skipped, as is its folder for %d s\n", path,
+            timeout_us / 1e6, (int)(_PROBE_QUARANTINE_US / G_USEC_PER_SEC));
+  }
+  else
+    g_free(dir);
+  return answered;
+}
+
 // import these files, as _folder() does a folder's: the client lists the
 // folder itself and sends it in batches, so it can show its progress. with
 // a `job`, a batch stops once a newer read's is queued; with a `budget` (ms),
 // once that has passed, after a file at least. `done` is how many of the
 // files it went through, so the client sends the rest again
-static void _import_files(JsonObject *req, JsonBuilder *b)
+static void _import_files(JsonObject *req, JsonBuilder *b, const gboolean background)
 {
   JsonArray *files = json_object_has_member(req, "files") ? json_object_get_array_member(req, "files") : NULL;
   const gint64 job = json_object_get_int_member_with_default(req, "job", 0);
   const gint64 budget = json_object_get_int_member_with_default(req, "budget", 0) * 1000;
+  const gint64 probe = json_object_get_int_member_with_default(req, "probe_ms", _PROBE_TIMEOUT_US / 1000) * 1000;
   const gint64 start = g_get_monotonic_time();
   const guint n = files ? json_array_get_length(files) : 0;
   guint k = 0;
+  GPtrArray *silent = g_ptr_array_new(); // paths that did not answer, owned by `files`
   json_builder_set_member_name(b, "images");
   json_builder_begin_array(b);
   for(; k < n; k++)
@@ -2123,12 +2264,24 @@ static void _import_files(JsonObject *req, JsonBuilder *b)
       if(superseded) break;
     }
     if(budget && k && g_get_monotonic_time() - start >= budget) break;
+    if(background) _background_yield(); // the main loop's own import is the foreground work
     const char *path = json_array_get_string_element(files, k);
     if(!path || _is_sidecar(path)) continue;
-    const dt_imgid_t imgid = g_file_test(path, G_FILE_TEST_IS_REGULAR) ? _import(path) : NO_IMGID;
+    if(!g_file_test(path, G_FILE_TEST_IS_REGULAR)) continue;
+    if(!_file_answers(path, probe))
+    {
+      g_ptr_array_add(silent, (gpointer)path);
+      continue;
+    }
+    const dt_imgid_t imgid = _import(path);
     if(dt_is_valid_imgid(imgid)) _image_versions_json(b, imgid);
   }
   json_builder_end_array(b);
+  json_builder_set_member_name(b, "unanswered");
+  json_builder_begin_array(b);
+  for(guint i = 0; i < silent->len; i++) json_builder_add_string_value(b, g_ptr_array_index(silent, i));
+  json_builder_end_array(b);
+  g_ptr_array_free(silent, TRUE);
   json_builder_set_member_name(b, "done");
   json_builder_add_int_value(b, k);
   // the queued line is logged as it comes in (_read_requests); this one
@@ -2156,7 +2309,7 @@ static void _import_run(gpointer data, gpointer user_data)
   json_builder_add_int_value(b, json_object_get_int_member(req, "tag"));
   json_builder_set_member_name(b, "ok");
   json_builder_add_boolean_value(b, TRUE);
-  _import_files(req, b);
+  _import_files(req, b, TRUE);
   json_builder_end_object(b);
   _reply(out, b);
   g_object_unref(b);
@@ -2188,7 +2341,7 @@ static void _import_wait(void)
 // unedited raw, a processed render of an edited one. the buffer is 8-bit
 // RGBA (views/view.c swaps it to BGRA for cairo); its color space is
 // reported, as it is not always sRGB
-static gboolean _thumb(const dt_imgid_t imgid, const int size, const char *out,
+static gboolean _thumb(const dt_imgid_t imgid, const int size, const gboolean proof, const char *out,
                        JsonBuilder *b, char **err)
 {
   const dt_mipmap_size_t mip = dt_mipmap_cache_get_matching_size(size, size);
@@ -2200,13 +2353,20 @@ static gboolean _thumb(const dt_imgid_t imgid, const int size, const char *out,
     *err = g_strdup_printf("no thumbnail for image %d", imgid);
     return FALSE;
   }
-  const gboolean ok = transient_write(out, buf.buf, (size_t)4 * buf.width * buf.height, NULL, 0);
+  // the print sheet's cells, shown as the soft proof does: a copy, as the
+  // cache's buffer is shared; sRGB once proofed
+  const size_t bytes = (size_t)4 * buf.width * buf.height;
+  uint8_t *copy = proof ? g_try_malloc(bytes) : NULL;
+  if(copy) memcpy(copy, buf.buf, bytes);
+  const gboolean proofed = copy && print_proof_pixels(copy, buf.width, buf.height, buf.color_space);
+  const gboolean ok = transient_write(out, proofed ? copy : buf.buf, bytes, NULL, 0);
+  g_free(copy);
   json_builder_set_member_name(b, "width");
   json_builder_add_int_value(b, buf.width);
   json_builder_set_member_name(b, "height");
   json_builder_add_int_value(b, buf.height);
   json_builder_set_member_name(b, "color_space");
-  json_builder_add_int_value(b, buf.color_space);
+  json_builder_add_int_value(b, proofed ? DT_COLORSPACE_SRGB : buf.color_space);
   dt_mipmap_cache_release(&buf);
   if(!ok) *err = g_strdup_printf("could not write '%s'", out);
   return ok;
@@ -2227,6 +2387,7 @@ static void _thumb_run(gpointer data, gpointer user_data)
 {
   JsonParser *parser = data;
   FILE *out = user_data;
+  _background_yield();
   JsonObject *req = json_node_get_object(json_parser_get_root(parser));
   const char *dest = json_object_get_string_member_with_default(req, "out", NULL);
   char *err = NULL;
@@ -2235,7 +2396,8 @@ static void _thumb_run(gpointer data, gpointer user_data)
   json_builder_set_member_name(b, "tag");
   json_builder_add_int_value(b, json_object_get_int_member(req, "tag"));
   const gboolean ok = dest && _thumb(json_object_get_int_member_with_default(req, "imgid", 0),
-                                     json_object_get_int_member_with_default(req, "size", 256), dest, b, &err);
+                                     json_object_get_int_member_with_default(req, "size", 256),
+                                     json_object_get_boolean_member_with_default(req, "proof", FALSE), dest, b, &err);
   json_builder_set_member_name(b, "ok");
   json_builder_add_boolean_value(b, ok);
   if(!ok)
@@ -4067,6 +4229,29 @@ static gboolean _positive_import(const char *path, JsonBuilder *b, char **err)
   return TRUE;
 }
 
+// print_sheet's photos for a background print: the job's held snapshots,
+// and the progress its Stop reaches (as a merge's, _merge_report)
+typedef struct _sheet_ctx_t
+{
+  gint64 job;
+  _merge_progress_t progress;
+} _sheet_ctx_t;
+
+static dt_imgid_t _sheet_take(gpointer ctx, const dt_imgid_t imgid)
+{
+  return _hold_take(((_sheet_ctx_t *)ctx)->job, imgid);
+}
+
+static void _sheet_release(gpointer ctx, const dt_imgid_t snap)
+{
+  _snapshot_remove(snap);
+}
+
+static gboolean _sheet_step(gpointer ctx, const int done, const int total)
+{
+  return _merge_report(&((_sheet_ctx_t *)ctx)->progress, "photos", done, total, FALSE);
+}
+
 static void _export_run(gpointer data, gpointer user_data)
 {
   JsonParser *parser = data;
@@ -4084,6 +4269,12 @@ static void _export_run(gpointer data, gpointer user_data)
     _hold_release(job);
   else if(!g_strcmp0(cmd, "hdr_merge"))
     ok = _hdr_merge(req, b, out, &err);
+  // a sheet of photos (print.c): each is taken as its page comes to it
+  else if(!g_strcmp0(cmd, "print") && json_object_has_member(req, "pages"))
+  {
+    _sheet_ctx_t ctx = { .job = job, .progress = _merge_progress(req, out, NULL) };
+    ok = print_sheet(req, _sheet_take, _sheet_release, _sheet_step, &ctx, b, &err);
+  }
 #ifdef HAVE_PANO
   else if(!g_strcmp0(cmd, "pano_merge") || !g_strcmp0(cmd, "pano_preview"))
     ok = _pano_merge(req, b, out, &err);
@@ -4110,6 +4301,8 @@ static void _export_run(gpointer data, gpointer user_data)
   json_builder_add_boolean_value(b, ok);
   if(!ok)
   {
+    // the reply carries it to the app; the log keeps it for a report
+    fprintf(stderr, "[engine] %s failed: %s\n", cmd, err ? err : "(no message)");
     json_builder_set_member_name(b, "error");
     json_builder_add_string_value(b, err                              ? err
                                      : !g_strcmp0(cmd, "hdr_merge")  ? "merging to HDR failed"
@@ -9994,12 +10187,13 @@ static void _handle(JsonObject *req, FILE *out)
     if(!dir || !_folder(dir, recursive, b, &err)) goto fail;
   }
   else if(!g_strcmp0(cmd, "import"))
-    _import_files(req, b);
+    _import_files(req, b, FALSE);
   else if(!g_strcmp0(cmd, "thumb"))
   {
     const char *dest = json_object_get_string_member_with_default(req, "out", NULL);
     if(!dest || !_thumb(json_object_get_int_member_with_default(req, "imgid", 0),
-                        json_object_get_int_member_with_default(req, "size", 256), dest, b, &err))
+                        json_object_get_int_member_with_default(req, "size", 256),
+                        json_object_get_boolean_member_with_default(req, "proof", FALSE), dest, b, &err))
       goto fail;
   }
   else if(!g_strcmp0(cmd, "prefetch"))
@@ -10059,6 +10253,12 @@ static void _handle(JsonObject *req, FILE *out)
   }
   // printing (print.c): an untagged `print` renders in the main loop, as
   // `export` does; the app's are tagged and run on the export thread
+  else if(!g_strcmp0(cmd, "print") && json_object_has_member(req, "pages"))
+  {
+    // the open photo's latest edits go to the library first, as for one photo
+    if(_s.open && !_s.before) dt_dev_write_history_ext(&_s.dev, _s.imgid);
+    if(!print_sheet(req, NULL, NULL, NULL, NULL, b, &err)) goto fail;
+  }
   else if(!g_strcmp0(cmd, "print"))
   {
     const dt_imgid_t imgid = json_object_get_int_member_with_default(req, "imgid", 0);
@@ -10845,6 +11045,7 @@ int main(int argc, char **argv)
   g_thread_unref(g_thread_new("ai idle", _ai_idle_watch, NULL));
 #endif
   GAsyncQueue *requests = g_async_queue_new();
+  _requests = requests;
   g_thread_unref(g_thread_new("requests", _read_requests, requests));
   gboolean quit = FALSE;
   char *line;
@@ -10865,7 +11066,9 @@ int main(int argc, char **argv)
         fprintf(stderr, "[engine-cache] begin %" G_GINT64_FORMAT " %s\n",
                 json_object_get_int_member_with_default(req, "diagnostic_request", 0),
                 json_object_get_string_member_with_default(req, "cmd", ""));
+      _foreground(TRUE);
       _handle(req, out);
+      _foreground(FALSE);
       if(cache_trace) fprintf(stderr, "[engine-cache] end\n");
       dt_dev_pixelpipe_cache_trace_set(FALSE);
     }

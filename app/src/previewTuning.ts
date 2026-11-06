@@ -42,7 +42,7 @@ export function measureTuner(run: TunerRun): TunerMeasurement {
 export function tunerChanges(from: TunerSettings, to: TunerSettings): string[] {
   const changes: string[] = [];
   if (from.preview !== to.preview) changes.push(`Preview: ${from.preview} → ${to.preview}`);
-  if (to.preview === "balanced" && from.balancedSize !== to.balancedSize) changes.push(`Balanced preview size: ${to.balancedSize * 100}%`);
+  if (from.balancedSize !== to.balancedSize) changes.push(`Preview size while dragging: ${to.balancedSize * 100}%`);
   if (from.smallest !== to.smallest) changes.push(`Smaller drafts for slow sliders: ${to.smallest * 100}% of the selected preview size`);
   if (from.draftTarget !== to.draftTarget) changes.push(`Draft time: ${to.draftTarget} ms`);
   return changes;

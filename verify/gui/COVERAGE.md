@@ -18,12 +18,14 @@ This imports pure manifest/math code using Node >= 22.18, without launching an a
 | gui-benchmark-screen | Same benchmark with fractional draft on | Passed on Linux ARM64 VM, Wayland 125%, DPR 2, draftScale 0.625 |
 | gui-benchmark-whole | Same benchmark with fractional draft off | Passed on Linux ARM64 VM, Wayland 125%, DPR 2, draftScale 1 |
 | slider-input | Arrow keys, focus retention, double-click numeric editing, Enter, reset/photo | Passed on Linux system WebKit, Wayland, DPR 2 |
+| shift-range | Five random plain-click then Shift-click ranges in the grid with random delays; selection must be exactly the run | Written; awaiting approved GUI run |
 | batch-paste | Two selected JPEGs, Kodak look/amount, one batch undo/redo, both sidecars, reopening and unselected image | Written; awaiting approved GUI run |
 | history | Slider edit, toolbar undo/redo, value/photo agreement, basic Reset All | Awaiting approved GUI run |
 | rail | Presets, masks, zones, heal, adjustments, active state, hit geometry, screenshots | Awaiting approved GUI run |
 | splash | Launch splash size stays 640x427 (not tiled to fill the workspace) | Fails on Hyprland 0.57: floats but opens 1710x1107 (run 2026-11-03T05-56-54.119Z_f7db416); not in smoke |
 | panel-scroll | 81d4441: a first open of Presets starts at the top; Adjustments returns to its own offset | Passed (run 2026-11-03T06-06-31.255Z_0f9ba08) |
 | sliders | Current reachable panel ranges, pointer change, reset, final pixels, CSS, screenshots | Awaiting approved GUI run; hidden branches excluded |
+| module-switch | Panel icon beside multi-module tools, its menu, pick, Escape and Set as default | Passed, Linux release build (run 2026-11-05T22-18-54.889Z_e76d528_2a7cfb97); global Contrast only, masks not driven |
 | module-options | Every available Global/Masks option, independent Contrast choices, folding persistence | Awaiting a GUI run; preference UI only. Generated module-masks-contrast-1 passed (run 2026-11-03T06-28-57.870Z_8e9b538) |
 
 `node verify/gui/run.mjs --list` lists selections without launching anything.
@@ -76,7 +78,7 @@ do not prove compatibility or installation behavior.
 | Crop/transform | Free/locked/portrait, corners/edges, aspect options, rotation/flip, guides, cancel/apply, undo | Pending |
 | Portrait automatic Transform | Crop a native/EXIF portrait, click Auto, Level, Vertical and Full; verify a rendered correction without a working-space error, then restore the crop and repeat | GUI case pending; headless CPU sampling covered by `verify/transform-sampling.py` |
 | Masks/heal/negative/film simulation/zones | Creation and deletion, every shape/option, local module controls, outside-region invariance, reset/undo | Rail opening only; editing pending |
-| Preferences | Every safe local setting, persistence, theme/canvas/font/preview, disabled hardware states | Module tab only; external apps/services/relaunch excluded |
+| Preferences | Every safe local setting, persistence, theme/canvas/font/preview, disabled hardware states | Module tab, and General's Overlay opacity (`overlay-opacity`, live-validated); external apps/services/relaunch excluded |
 | Library/filter/history/presets | Every menu and option with disposable folder/metadata fixtures | Pending |
 | Import/export/panorama | In-app settings, validation, format/projection options, preview/output | Pending; native chooser blocked, launch fixture argument only |
 | Print/soft proof | Printer, paper, media, orientation, margins, size, place, profile, intent, BPC; soft proof and gamut warning on the photo; Print and Save PDF | `print` case written, pending live run: soft proof, gamut, S, layout and Save PDF readiness with a seeded profile. Printing and the save dialog are native or need a real printer; `verify/print.py` checks profiles, proof pixels and the engine's PDF headlessly |

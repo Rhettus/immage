@@ -45,7 +45,7 @@ globalThis.requestAnimationFrame = (f) => setTimeout(() => f(performance.now()),
 globalThis.cancelAnimationFrame = clearTimeout;
 const { Session } = await import("../app/src/session.ts");
 const P = await import("../app/src/print.ts");
-const { startEngine, stopEngine, request, invoke } = await import("./shim.mjs");
+const { startEngine, stopEngine, request, requestTagged, invoke, progressLog } = await import("./shim.mjs");
 
 const near = (a, b, what, tol = 0.01) => assert.ok(Math.abs(a - b) <= tol, `${what}: ${a} is not ${b}`);
 const A4 = P.PDF_PAPERS.find((p) => p.label === "A4");
@@ -82,6 +82,79 @@ test("print layout: orientation, margins, size, place and borderless", () => {
   P.storePrintSettings({ ...s, dpi: 360 });
   assert.equal(P.loadPrintSettings().dpi, 360);
   assert.ok(P.hasPrintSettings());
+});
+
+test("print cells layout: 38 on a Letter page, spacing, counts, custom size, pages", () => {
+  const letter = P.PDF_PAPERS.find((p) => p.label === "Letter");
+  const s = { ...P.defaultPrintSettings(), layout: "cells", orientation: "portrait",
+              margins: { top: 12.7, bottom: 12.7, left: 12.7, right: 12.7 } };
+  const inside = (l, what) => {
+    for (const { box, label } of l.slots) {
+      for (const r of [box, ...(label ? [label] : [])]) {
+        assert.ok(r.x >= l.area.x - 1e-6 && r.y >= l.area.y - 1e-6 && r.x + r.width <= l.area.x + l.area.width + 1e-6
+                  && r.y + r.height <= l.area.y + l.area.height + 1e-6, `${what}: inside the margins`);
+      }
+    }
+    for (let i = 0; i < l.slots.length; i++) for (let j = i + 1; j < l.slots.length; j++) {
+      const a = l.slots[i].box, b = l.slots[j].box;
+      assert.ok(a.x + a.width <= b.x + 1e-6 || b.x + b.width <= a.x + 1e-6 || a.y + a.height <= b.y + 1e-6
+                || b.y + b.height <= a.y + 1e-6, `${what}: cells ${i} and ${j} do not touch`);
+    }
+  };
+  // 38 photos, names on: one Letter page, a grid that holds them all
+  let l = P.cellsLayout(letter, s, 38);
+  assert.equal(l.pages, 1); assert.ok(l.perPage >= 38, `holds 38: ${l.perPage}`);
+  assert.equal(`${l.columns}x${l.rows}`, "6x7");
+  inside(l, "38 up");
+  // equal gaps both ways, 3 mm by default
+  const [a, b] = [l.slots[0].box, l.slots[1].box];
+  near(b.x - (a.x + a.width), 3, "horizontal gap");
+  const below = l.slots[l.columns].box;
+  near(below.y - (a.y + a.height + P.LABEL_HEIGHT), 3, "vertical gap, past the filename strip");
+  // the names add a strip, off they do not
+  assert.ok(l.slots[0].label);
+  assert.equal(P.cellsLayout(letter, { ...s, names: false }, 38).slots[0].label, null);
+  // more than a page goes on to the next, a page per grid
+  l = P.cellsLayout(letter, s, 80);
+  assert.equal(l.perPage, 42); assert.equal(l.pages, 2);
+  const pages = P.sheetPages(l, Array.from({ length: 80 }, (_, i) => ({ imgid: i, name: `p${i}` })));
+  assert.deepEqual(pages.map((p) => p.length), [42, 38]);
+  assert.equal(pages[1][0].photo.imgid, 42);
+  // a few photos get big cells; every one fits its photo box
+  l = P.cellsLayout(letter, s, 4);
+  assert.equal(l.pages, 1); assert.ok(l.cell.width > 60, `bigger cells: ${l.cell.width}`);
+  inside(l, "4 up");
+  // a count of cells asked for, and a column count
+  l = P.cellsLayout(letter, { ...s, cellCount: 6, columns: 2 }, 20);
+  assert.equal(l.slots.length, 6); assert.equal(l.columns, 2); assert.equal(l.pages, 4);
+  inside(l, "6 in 2 columns");
+  // the user's case: 2 cells in a 50 mm border, sized by hand, shared out evenly
+  const border = { top: 50, bottom: 50, left: 50, right: 50 };
+  l = P.cellsLayout(letter, { ...s, margins: border, cellCount: 2, cellSize: { width: 80, height: 60 }, names: false }, 2);
+  assert.equal(l.slots.length, 2); assert.equal(l.columns, 1);
+  inside(l, "2 cells");
+  const [c0, c1] = l.slots.map((x) => x.box);
+  near(c0.width, 80, "the width asked for"); near(c0.height, 60, "the height asked for");
+  const top = c0.y - l.area.y, mid = c1.y - (c0.y + c0.height), bottom = l.area.y + l.area.height - (c1.y + c1.height);
+  near(top, mid, "even: top edge and between"); near(mid, bottom, "even: between and bottom edge");
+  near(c0.x - l.area.x, l.area.x + l.area.width - (c0.x + c0.width), "centered across");
+  // a size too big for the border is held inside it
+  l = P.cellsLayout(letter, { ...s, margins: border, cellCount: 2, cellSize: { width: 300, height: 300 } }, 2);
+  inside(l, "oversized");
+  // margins that leave no room
+  assert.ok(!P.cellsLayout(letter, { ...s, margins: { top: 10, bottom: 10, left: 150, right: 150 } }, 5).fits);
+  // the request: boxes and labels per page, in millimeters
+  const req = P.sheetRequest({ ...s, printer: P.PDF }, letter, P.cellsLayout(letter, s, 3),
+                             [{ imgid: 1, name: "a.CR3" }, { imgid: 2, name: "b.CR3" }, { imgid: 3, name: "c.CR3" }],
+                             "Contact sheet", "", "/tmp/x.pdf");
+  assert.equal(req.pages.length, 1); assert.equal(req.pages[0].length, 3);
+  assert.equal(req.pages[0][2].label.text, "c.CR3");
+  assert.equal(req.pdf, "/tmp/x.pdf");
+  // settings saved by an earlier version load with the new fields' defaults
+  store.set("immage.print", JSON.stringify({ dpi: 240 }));
+  const old = P.loadPrintSettings();
+  assert.equal(old.layout, "single"); assert.equal(old.names, true); assert.equal(old.cellSize, null);
+  store.delete("immage.print");
 });
 
 test("soft proof through the Session, and a PDF through print_photo", { timeout: 300000 }, async () => {
@@ -142,7 +215,43 @@ test("soft proof through the Session, and a PDF through print_photo", { timeout:
     const page = l.landscape ? "/MediaBox [0 0 842 595]" : "/MediaBox [0 0 595 842]";
     assert.ok(data.includes(page), `the page ${page}`);
     assert.ok(data.includes("/ICCBased"), "tagged with the printer profile");
+
     await s.close();
+
+    // the Cells layout through print_sheet, as the panel asks: a dozen distinct photos on a Letter page,
+    // each held like an export's (a photo is taken once per job)
+    const letter = P.PDF_PAPERS.find((p) => p.label === "Letter");
+    const cellSettings = { ...P.defaultPrintSettings(), layout: "cells", printer: P.PDF, paper: letter.name, dpi: 100,
+                           orientation: "portrait", margins: { top: 12.7, bottom: 12.7, left: 12.7, right: 12.7 } };
+    const photos = [];
+    for (let i = 0; i < 12; i++) {
+      const copy = join(dir, `sheet-${i}.jpg`);
+      copyFileSync(path, copy);
+      photos.push({ imgid: (await request({ cmd: "open", path: copy })).imgid, name: `IMG_${String(i + 1).padStart(4, "0")}.CR3` });
+    }
+    const cl = P.cellsLayout(letter, cellSettings, photos.length);
+    assert.equal(cl.pages, 1);
+    const sheetPdf = join(dir, "sheet.pdf");
+    const sheetRun = invoke("print_sheet", { imgids: photos.map((p) => p.imgid),
+                                             request: P.sheetRequest(cellSettings, letter, cl, photos, "Contact sheet", "", sheetPdf) });
+    // thumbnails asked for meanwhile, as the preview does: each whole, the size its reply says
+    const thumbs = [];
+    for (const [n, p] of photos.entries()) {
+      const out = join(dir, `thumb-${n}.rgba`);
+      const t = await requestTagged({ cmd: "thumb", imgid: p.imgid, size: 240, out });
+      thumbs.push({ t, bytes: readFileSync(out).length });
+    }
+    for (const { t, bytes } of thumbs) assert.equal(bytes, t.width * t.height * 4, `a whole thumbnail: ${JSON.stringify(t)} ${bytes}`);
+    const sr = await sheetRun;
+    assert.equal(sr.pages, 1); assert.equal(sr.photos, 12);
+    // one progress line before the first photo and one as each is placed, for the activity line
+    const steps = progressLog.filter((p) => p.stage === "photos").map((p) => p.done);
+    assert.deepEqual(steps, Array.from({ length: 13 }, (_, i) => i), `progress per photo: ${steps}`);
+    assert.ok(progressLog.every((p) => p.total === 12));
+    const sdata = readFileSync(sheetPdf);
+    assert.ok(sdata.subarray(0, 4).toString() === "%PDF", "a sheet PDF");
+    assert.ok(sdata.includes("/MediaBox [0 0 612 792]"), "a Letter page");
+
   } finally {
     await stopEngine();
     rmSync(dir, { recursive: true, force: true });

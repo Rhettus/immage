@@ -83,7 +83,7 @@ export function PerformanceTuner({ run, onClose, onRelaunch, onOverlay, photo, r
           await option.set(String(value));
         }
       };
-      const best = await searchTuner(original,{fps,latency},applySettings,run,(s,i,total) => setProgress(`Testing ${i}/${total}: ${s.preview}${s.preview === "balanced" ? ` ${s.balancedSize*100}%` : ""}, smallest draft ${s.smallest*100}%`));
+      const best = await searchTuner(original,{fps,latency},applySettings,run,(s,i,total) => setProgress(`Testing ${i}/${total}: ${s.preview} ${s.balancedSize*100}%, smallest draft ${s.smallest*100}%`));
       setTrials(best.trials); setResult(best.trial.measurement); setPath(best.trial.path); setTestedSettings(best.trial.settings); setVerified(false);
       const adjustments = tunerChanges(original,best.trial.settings);
       setProposal(adjustments.length ? best.trial.settings : null); setChanges(adjustments);

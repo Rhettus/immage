@@ -154,8 +154,8 @@ const THUMB_SIZE = 240; // device pixels; the engine picks the next cached size 
 // an image as darktable's thumbnail pipe renders it, edits and all, at the
 // cached size next up from this one. given its entry, the thumbnail is also
 // kept on disk for fetchCachedThumb()
-export async function fetchThumb(imgid: number, size: number, entry?: ImageEntry): Promise<ImageBitmap> {
-  const buf = await invoke<ArrayBuffer>("thumb", { imgid, size, path: entry?.path ?? null, version: entry?.version ?? 0 });
+export async function fetchThumb(imgid: number, size: number, entry?: ImageEntry, proof = false): Promise<ImageBitmap> {
+  const buf = await invoke<ArrayBuffer>("thumb", { imgid, size, path: entry?.path ?? null, version: entry?.version ?? 0, proof });
   const head = new DataView(buf, 0, 8);
   const w = head.getUint32(0, true), h = head.getUint32(4, true);
   return createImageBitmap(new ImageData(new Uint8ClampedArray(buf, 8), w, h));

@@ -153,3 +153,24 @@ export async function cropUndo(t) {
   await t.driver.chord(modifier, 'z');
   await settledPhoto(t, p => p.hash === baseline.hash); await t.evidence('done-undone');
 }
+
+// the Before / After view re-fetched its before side after every render when
+// its frame differed in size from the edit's (a crop), so the busy spinner
+// never went out
+export async function beforeAfterIdle(t) {
+  await enter(t);
+  const g = await t.driver.observe(geometry), h = g.handles.nw;
+  await t.driver.drag({ x: h.x + h.width / 2, y: h.y + h.height / 2 }, { x: h.x + h.width / 2 + 60, y: h.y + h.height / 2 + 40 });
+  await textButton(t, '.crop-buttons', 'Done');
+  await settledPhoto(t);
+  // the view tool's Y shortcut: the first mode is the overlay, the next the split
+  await t.driver.keys('y'); await t.driver.keys('y');
+  await until(() => t.driver.observe(() => !!document.querySelector('.before-clip')), 'before/after view');
+  await new Promise(r => setTimeout(r, 2500));
+  let on = 0; const samples = 20;
+  for (let i = 0; i < samples; i++) { if (await t.driver.observe(() => !!document.querySelector('.working.on'))) on++; await new Promise(r => setTimeout(r, 200)); }
+  t.measure({ name: 'before-after-idle', samples, spinnerOn: on });
+  await t.evidence('before-after-idle');
+  assert(on <= 2, `the busy spinner is on in ${on} of ${samples} idle samples`);
+  await t.driver.keys('y'); await t.driver.keys('y'); await t.driver.keys('y');
+}

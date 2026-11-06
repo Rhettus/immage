@@ -10,9 +10,6 @@ apply as you make them; **Done** closes the window.
 
 **Workspace**
 
-- **Detail loupe**: optional compact 100% previews above Detail and Presence,
-  in Adjustments and in a mask's Presence group, off by default. Both show the same area. Use the point picker, then click
-  the photo to choose it; Escape cancels. Turning it off stops loupe rendering.
 - **Open generated photos**: automatically opens HDR merges, panoramas, AI
   denoise results, positive exports and the first plugin result for editing.
 - **Generated positive format**: losslessly compressed DNG (16-bit float,
@@ -23,6 +20,11 @@ apply as you make them; **Done** closes the window.
 - **Canvas**: what is behind the photo, in full screen preview too.
   **Dark**, **Neutral Gray** to judge tones without a dark surround, or
   **White** to see the photo as on a print. L steps through them.
+- **Overlay color**: the color a mask's overlay and the heal brush's stroke
+  are drawn in over the photo: **Yellow**, **Red** or a color of your own.
+- **Overlay opacity**: how solid the overlay is where a mask is fully
+  selected, from 10% to 100% (55% by default); a feathered edge fades out
+  from there. **Reset** restores the default.
 - **Guide color**: the color of the lines drawn over the photo: the crop
   frame and its grid, the straighten line, Transform's grid and guides,
   the vignette's guides and a mask shape's outline. **White**, **Yellow**,
@@ -158,31 +160,52 @@ performance; results still vary by system.
 
 **Editing**
 
-- **Preview**: how much the photo gives up for speed while you edit.
-  Export is never affected.
-  - **Quality** renders every frame in full, even while you drag.
-  - **Balanced**, the default, renders at half size while a slider, wheel
-    or curve moves, about four times as fast, and in full on release.
-    **Balanced preview size** offers 50% (the default), 75%, and 100%. At 100%,
-    drag previews stay full size and automatic smaller drafts are disabled.
-    Grain, Texture and Sharpening are left out until release, unless they
-    are what you are dragging. They are also left out of the zoomed-out
-    picture behind the photo, which the navigator and histogram read and
-    you see at the edges while zooming and panning.
-  - **Performance** drags at quarter size, also without noise reduction and
-    HSL, and renders the picture behind the photo only at the viewer's
-    size, so zooming in shows it softer until the sharp view arrives.
+- **Performance profile**: how much the photo gives up for speed while you
+  edit, chosen by the kind of computer. Export is never affected. Each
+  profile sets its defaults, which **Advanced** can change; **Reset** next to
+  the profiles returns them to the selected profile's, and Advanced reads
+  "(customized)" while they differ.
+  - **Quality**, for high-end computers, drags at full size.
+  - **Balanced**, the default, for decent modern computers, drags at 75%
+    with automatic smaller drafts off.
+  - **Performance**, for older computers, drags at 50%, lets slow sliders
+    shrink the draft to 50%, and turns the detail loupe on.
+
+  Every profile leaves Grain, Texture and Sharpening out of the photo
+  while a slider, wheel or curve moves, until release, unless they are what
+  you are dragging. They are also left out of the zoomed-out picture behind
+  the photo, which the navigator and histogram read and you see at the edges
+  while zooming and panning. Performance also renders that picture only at
+  the viewer's size, so zooming in shows it softer until the sharp view
+  arrives.
+- **Advanced** (closed by default) holds the individual settings:
+  - **Preview size while dragging**: 50%, 75% or 100%. At 100% automatic
+    smaller drafts are disabled.
+  - **Smaller drafts for slow sliders**: Off, 70% or 50%.
+  - **Draft time**: how long a frame may take before the next is smaller.
+  - **Detail loupe**: optional compact 100% previews above Detail and
+    Presence, in Adjustments and in a mask's Presence group. Both show the
+    same area. Use the point picker, then click the photo to choose it;
+    Escape cancels. Turning it off stops loupe rendering.
+  - **Shared-memory frames**, **Drag drafts at the screen's scale**, **Frame
+    cache**, **Thumbnail memory** and **Read ahead**, described below.
 - **Shared-memory frames** (Windows and Linux): hands each frame to the
   window in memory both share, rather than copying it. On by default; turn
   it off only to compare the two in the GUI benchmark.
 - **Drag drafts at the screen's scale** (Linux Wayland): appears when the
   detected screen scale is below the webview's pixel ratio, such as 125% on
   a window drawn at 200%. On by default, it reduces drag-preview pixels to
-  match the screen. Settled frames still use the full webview resolution.
+  match the screen, including full-size drag previews (100% Balanced, and
+  the whole-view preview of Texture, Clarity, Luminance NR and Grain; Quality
+  keeps every pixel). Settled frames still use the full webview resolution.
   Turn it off to compare GUI benchmarks with the same photo, window size and
   preview settings. This does not change GTK's window-surface resolution.
   Benchmarks in a virtual machine give approximate comparisons within that
   setup; they do not predict native GPU performance.
+- **Fit frames at the screen's scale** (same condition): on by default.
+  Renders the settled Fit frame for the screen's scale and lets the page
+  enlarge it, which cuts pixels; turn it off if the photo looks soft. Zoomed
+  and 1:1 frames are unaffected. It takes effect on the next frame.
 
 **Memory**
 
@@ -268,10 +291,9 @@ apply it and verify with another run. Export quality is unaffected.
 
 The performance tuner defaults to an 80 ms latency target. It uses the median
 of the middle 10–90% of measured frame intervals and input-to-paint latencies,
-then tries Balanced 100%, followed by smaller preview sizes and drafts only
+then tries 100%, followed by smaller preview sizes and drafts only
 if the targets are missed. The first configuration
-meeting both targets is recommended. Full Quality remains a manual option and
-is excluded from the tuner search.
+meeting both targets is recommended. 
 
 ## New Photos
 
@@ -339,7 +361,9 @@ sections open independently, and Alt-click opens one on its own. Global offers:
 **Masks** independently offers Contrast (color balance rgb or contrast equalizer),
 Highlights and Shadows, Saturation (color balance rgb or saturation curve),
 Clarity, Texture and Sharpening. Modules without
-alternatives are also listed. Existing mask adjustments keep their modules;
+alternatives are also listed. The same choice is available from the icon
+beside each tool's name in the panels; its **Set as default** writes the
+choice here (see [darktable modules](darktable.md)). Existing mask adjustments keep their modules;
 unused tools and new masks take these choices.
 
 Clarity and Texture use **contrast & texture** by default, in place of a
@@ -375,7 +399,9 @@ Versions, the license, and where the source is. Immage's version comes
 with the commit it was built from, ten digits, with `-dirty` for a build
 from a tree with uncommitted changes; the same commit shows under the
 versions at the bottom of every tab, and in GUI benchmark, GPU check and
-tuner reports. Under **Updates**:
+tuner reports. Below the versions, three icons open Immage's homepage
+(immage.photo), its Discord server and its GitHub page in your browser.
+Under **Updates**:
 
 - **Check automatically**: once a day, Immage asks its releases on GitHub
   whether a newer version is out, and sends nothing else. On by default.
@@ -399,7 +425,7 @@ cleanup timings. These measurements help locate preview latency; they do
 not change preview resolution or measure compositor presentation. On the native
 machine, close the installed Immage, launch the diagnostic AppImage, open the
 same copied photo and use **Preferences > Performance > Measuring > GUI benchmark**.
-Keep the window size, Balanced preview size and other performance settings the
+Keep the window size, preview size and other performance settings the
 same. Collect one report at 100% and one at 125%, recording display scale and
 refresh rate. Keep the app visible and do not resize it during either run.
 Return both JSON reports from the benchmarks directory shown after completion.
@@ -416,3 +442,7 @@ the photo, window and performance settings fixed throughout the run.
 
 Ctrl-C stops a Mac CPU recording early; allow the profiler to finish saving and
 the script to export before closing the terminal.
+
+## Dropdown menus
+
+Every dropdown in Immage opens in the same dark menu as the right-click menus, on every system. Click it, or focus it and press Space or Alt+Down. Arrow keys, Home and End move, Enter chooses and Escape closes. The current choice has a check mark.

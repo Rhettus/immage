@@ -52,6 +52,7 @@
 
 #include <glib/gstdio.h>
 #include <lcms2.h>
+#include <pango/pangocairo.h>
 #include <string.h>
 
 static void _member_string(JsonBuilder *b, const char *name, const char *value)
@@ -365,6 +366,43 @@ dt_hash_t print_proof_hash(const dt_hash_t hash)
   return dt_hash(h, cp->softproof_filename, strlen(cp->softproof_filename));
 }
 
+gboolean print_proof_pixels(uint8_t *rgba, const int width, const int height, const int color_space)
+{
+  dt_colorspaces_t *cp = darktable.color_profiles;
+  pthread_rwlock_rdlock(&cp->xprofile_lock);
+  const int mode = cp->mode;
+  const int intent = cp->display_intent;
+  const dt_colorspaces_color_profile_t *prof
+    = mode == DT_PROFILE_NORMAL ? NULL
+      : dt_colorspaces_get_profile(cp->softproof_type, cp->softproof_filename, DT_PROFILE_DIRECTION_OUT);
+  const dt_colorspaces_color_profile_t *in
+    = prof ? dt_colorspaces_get_profile(color_space, "", DT_PROFILE_DIRECTION_ANY) : NULL;
+  const dt_colorspaces_color_profile_t *srgb
+    = prof ? dt_colorspaces_get_profile(DT_COLORSPACE_SRGB, "", DT_PROFILE_DIRECTION_ANY) : NULL;
+  // colorout's flags (colorout.c, commit_params); the temporary profile
+  // is what makes lcms quantize a parametric profile's curves
+  cmsHPROFILE proof = prof && in && srgb ? dt_colorspaces_make_temporary_profile(prof->profile) : NULL;
+  cmsHTRANSFORM xform = NULL;
+  if(proof)
+  {
+    uint32_t flags = cmsFLAGS_SOFTPROOFING | cmsFLAGS_NOCACHE | cmsFLAGS_BLACKPOINTCOMPENSATION;
+    if(mode == DT_PROFILE_GAMUTCHECK) flags |= cmsFLAGS_GAMUTCHECK;
+    xform = cmsCreateProofingTransform(in->profile, TYPE_RGBA_8, srgb->profile, TYPE_RGBA_8, proof, intent,
+                                       INTENT_RELATIVE_COLORIMETRIC, flags);
+    cmsCloseProfile(proof);
+  }
+  pthread_rwlock_unlock(&cp->xprofile_lock);
+  if(!xform) return FALSE;
+  // alpha is the cache's 0 or 255; lcms carries it through only as is
+  for(int y = 0; y < height; y++)
+  {
+    uint8_t *row = rgba + (size_t)4 * width * y;
+    cmsDoTransform(xform, row, row, width);
+  }
+  cmsDeleteTransform(xform);
+  return TRUE;
+}
+
 // ---------------------------------------------------------------- printers
 
 #ifdef HAVE_PRINT
@@ -572,42 +610,72 @@ static guint8 *_icc_data(const char *profile, size_t *len)
   return data;
 }
 
-// the page as a PDF, as _create_pdf writes it. `embed`: the pixels tagged
-// with their profile, as a saved PDF and macOS's printing want them; on
-// Linux the CUPS filters would convert tagged pixels back to sRGB
-// (print_settings.c, _create_pdf)
-static gboolean _write_pdf(const char *path, const dt_images_box *imgs, const float page_w, const float page_h,
-                           const int dpi, const char *profile, const gboolean embed)
+// a PDF written a page at a time, as _create_pdf writes it. `embed`: the
+// pixels tagged with their profile, as a saved PDF and macOS's printing want
+// them; on Linux the CUPS filters would convert tagged pixels back to sRGB
+// (print_settings.c, _create_pdf). dt_pdf_add_image writes the pixels to the
+// file as it is called, so a page's buffer can go as soon as it is added
+typedef struct _pdf_out_t
 {
-  dt_pdf_t *pdf = dt_pdf_start(path, dt_pdf_mm_to_point(page_w), dt_pdf_mm_to_point(page_h), dpi,
-                               DT_PDF_STREAM_ENCODER_FLATE);
-  if(!pdf) return FALSE;
-  int icc_id = 0;
+  dt_pdf_t *pdf;
+  int icc_id, dpi;
+  GPtrArray *pages;
+} _pdf_out_t;
+
+static gboolean _pdf_open(_pdf_out_t *o, const char *path, const float page_w, const float page_h, const int dpi,
+                          const char *profile, const gboolean embed)
+{
+  memset(o, 0, sizeof(*o));
+  o->pdf = dt_pdf_start(path, dt_pdf_mm_to_point(page_w), dt_pdf_mm_to_point(page_h), dpi,
+                        DT_PDF_STREAM_ENCODER_FLATE);
+  if(!o->pdf) return FALSE;
+  o->dpi = dpi;
+  o->pages = g_ptr_array_new_with_free_func(free);
   if(embed)
   {
     size_t len = 0;
     guint8 *icc = _icc_data(profile, &len);
-    if(icc) icc_id = dt_pdf_add_icc_from_data(pdf, icc, len);
+    if(icc) o->icc_id = dt_pdf_add_icc_from_data(o->pdf, icc, len);
     free(icc);
   }
-  const dt_image_box *box = &imgs->box[0];
-  dt_pdf_image_t *image = dt_pdf_add_image(pdf, box->buf, box->exp_width, box->exp_height, box->img_bpp, icc_id, 0.0);
-  if(!image)
-  {
-    dt_pdf_finish(pdf, NULL, 0);
-    return FALSE;
-  }
+  return TRUE;
+}
+
+// `box`'s pixels as the next page, at its print position
+static gboolean _pdf_page(_pdf_out_t *o, const dt_image_box *box)
+{
+  dt_pdf_image_t *image = dt_pdf_add_image(o->pdf, box->buf, box->exp_width, box->exp_height, box->img_bpp,
+                                           o->icc_id, 0.0);
+  if(!image) return FALSE;
   image->rotate_to_fit = FALSE;
   // the PDF's origin is at the bottom left, as box->print's
-  image->bb_x = dt_pdf_pixel_to_point(box->print.x, dpi);
-  image->bb_y = dt_pdf_pixel_to_point(box->print.y, dpi);
-  image->bb_width = dt_pdf_pixel_to_point(box->print.width, dpi);
-  image->bb_height = dt_pdf_pixel_to_point(box->print.height, dpi);
-  dt_pdf_page_t *page = dt_pdf_add_page(pdf, &image, 1);
-  dt_pdf_finish(pdf, &page, page ? 1 : 0);
+  image->bb_x = dt_pdf_pixel_to_point(box->print.x, o->dpi);
+  image->bb_y = dt_pdf_pixel_to_point(box->print.y, o->dpi);
+  image->bb_width = dt_pdf_pixel_to_point(box->print.width, o->dpi);
+  image->bb_height = dt_pdf_pixel_to_point(box->print.height, o->dpi);
+  dt_pdf_page_t *page = dt_pdf_add_page(o->pdf, &image, 1);
   free(image);
-  free(page);
-  return page != NULL;
+  if(!page) return FALSE;
+  g_ptr_array_add(o->pages, page);
+  return TRUE;
+}
+
+// the file, with the pages added; it is finished whatever came before
+static gboolean _pdf_close(_pdf_out_t *o)
+{
+  const gboolean ok = o->pages->len > 0;
+  dt_pdf_finish(o->pdf, (dt_pdf_page_t **)o->pages->pdata, o->pages->len);
+  g_ptr_array_free(o->pages, TRUE);
+  return ok;
+}
+
+static gboolean _write_pdf(const char *path, const dt_images_box *imgs, const float page_w, const float page_h,
+                           const int dpi, const char *profile, const gboolean embed)
+{
+  _pdf_out_t out;
+  if(!_pdf_open(&out, path, page_w, page_h, dpi, profile, embed)) return FALSE;
+  const gboolean added = _pdf_page(&out, &imgs->box[0]);
+  return _pdf_close(&out) && added;
 }
 
 #ifdef _WIN32
@@ -657,66 +725,120 @@ static gboolean _win_ticket(dt_win32_print_ctx_t *ctx, void **out, size_t *size)
 }
 #endif
 
-gboolean print_image(const dt_imgid_t imgid, JsonObject *req, JsonBuilder *b, char **err)
+// what a print job is, from the request: where it goes, the page, the
+// printer's paper and the resolution. print_image and print_sheet share it
+typedef struct _job_t
 {
-  const char *pdf_path = json_object_get_string_member_with_default(req, "pdf", NULL);
-  const char *printer = json_object_get_string_member_with_default(req, "printer", NULL);
-  const char *profile = json_object_get_string_member_with_default(req, "profile", "");
-  const char *title = json_object_get_string_member_with_default(req, "title", "Immage");
-  const int intent = json_object_get_int_member_with_default(req, "intent", DT_INTENT_PERCEPTUAL);
-  const gboolean bpc = json_object_get_boolean_member_with_default(req, "bpc", TRUE);
+  const char *pdf_path, *printer, *profile, *title;
+  int intent, dpi;
+  gboolean bpc;
+  float page_w, page_h;
+  dt_print_info_t prt;
+} _job_t;
+
+static gboolean _job_setup(JsonObject *req, _job_t *job, char **err)
+{
+  memset(job, 0, sizeof(*job));
+  job->pdf_path = json_object_get_string_member_with_default(req, "pdf", NULL);
+  job->printer = json_object_get_string_member_with_default(req, "printer", NULL);
+  job->profile = json_object_get_string_member_with_default(req, "profile", "");
+  job->title = json_object_get_string_member_with_default(req, "title", "Immage");
+  job->intent = json_object_get_int_member_with_default(req, "intent", DT_INTENT_PERCEPTUAL);
+  job->bpc = json_object_get_boolean_member_with_default(req, "bpc", TRUE);
   JsonObject *page = json_object_has_member(req, "page") ? json_object_get_object_member(req, "page") : NULL;
-  JsonObject *area = json_object_has_member(req, "area") ? json_object_get_object_member(req, "area") : NULL;
   // the page as it is laid out, landscape already turned
-  const float page_w = _number(page, "width"), page_h = _number(page, "height");
-  const float ax = _number(area, "x"), ay = _number(area, "y"), aw = _number(area, "width"),
-              ah = _number(area, "height");
-  if(!pdf_path && !(printer && *printer))
+  job->page_w = _number(page, "width");
+  job->page_h = _number(page, "height");
+  if(!job->pdf_path && !(job->printer && *job->printer))
   {
     *err = g_strdup("print needs a printer or a PDF to write");
     return FALSE;
   }
-  if(page_w <= 0.0f || page_h <= 0.0f || aw <= 0.0f || ah <= 0.0f || ax < 0.0f || ay < 0.0f
-     || ax + aw > page_w + 0.01f || ay + ah > page_h + 0.01f)
+  if(job->page_w <= 0.0f || job->page_h <= 0.0f)
   {
-    *err = g_strdup("the photo's area does not fit on the page");
+    *err = g_strdup("the page has no size");
     return FALSE;
   }
 
-  dt_print_info_t prt;
-  dt_init_print_info(&prt);
-  if(!pdf_path)
+  dt_print_info_t *prt = &job->prt;
+  dt_init_print_info(prt);
+  if(!job->pdf_path)
   {
-    dt_get_printer_info(printer, &prt.printer);
-    if(!*prt.printer.name)
+    dt_get_printer_info(job->printer, &prt->printer);
+    if(!*prt->printer.name)
     {
-      *err = g_strdup_printf("no printer '%s'", printer);
+      *err = g_strdup_printf("no printer '%s'", job->printer);
       return FALSE;
     }
     JsonObject *paper = json_object_has_member(req, "paper") ? json_object_get_object_member(req, "paper") : NULL;
     // the printer's own entry for the paper, with what the client does not
     // know (Windows' DEVMODE paper id)
-    GList *papers = dt_get_papers(&prt.printer);
+    GList *papers = dt_get_papers(&prt->printer);
     const dt_paper_info_t *known = dt_get_paper(papers, _string(paper, "name", ""));
-    if(known) prt.paper = *known;
+    if(known) prt->paper = *known;
     g_list_free_full(papers, free);
     if(!known)
     {
-      g_strlcpy(prt.paper.name, _string(paper, "name", ""), sizeof(prt.paper.name));
-      g_strlcpy(prt.paper.common_name, _string(paper, "common_name", prt.paper.name),
-                sizeof(prt.paper.common_name));
-      prt.paper.width = _number(paper, "width");
-      prt.paper.height = _number(paper, "height");
+      g_strlcpy(prt->paper.name, _string(paper, "name", ""), sizeof(prt->paper.name));
+      g_strlcpy(prt->paper.common_name, _string(paper, "common_name", prt->paper.name),
+                sizeof(prt->paper.common_name));
+      prt->paper.width = _number(paper, "width");
+      prt->paper.height = _number(paper, "height");
     }
-    g_strlcpy(prt.medium.name, json_object_get_string_member_with_default(req, "medium", ""),
-              sizeof(prt.medium.name));
-    prt.page.landscape = page_w > page_h;
-    prt.printer.intent = intent;
-    if(profile && *profile) g_strlcpy(prt.printer.profile, profile, sizeof(prt.printer.profile));
+    g_strlcpy(prt->medium.name, json_object_get_string_member_with_default(req, "medium", ""),
+              sizeof(prt->medium.name));
+    prt->page.landscape = job->page_w > job->page_h;
+    prt->printer.intent = job->intent;
+    if(job->profile && *job->profile) g_strlcpy(prt->printer.profile, job->profile, sizeof(prt->printer.profile));
   }
   int dpi = json_object_get_int_member_with_default(req, "dpi", 0);
-  if(dpi <= 0) dpi = prt.printer.resolution > 0 ? prt.printer.resolution : 300;
-  dpi = CLAMP(dpi, 72, 1440);
+  if(dpi <= 0) dpi = prt->printer.resolution > 0 ? prt->printer.resolution : 300;
+  job->dpi = CLAMP(dpi, 72, 1440);
+  return TRUE;
+}
+
+#ifdef _WIN32
+// one page to the spooler; its imgs hold the page's one box
+static gboolean _win_print_page(_job_t *job, const dt_images_box *imgs)
+{
+  dt_win32_print_ctx_t *ctx = dt_win32_print_ctx_new(&job->prt);
+  void *ticket = NULL;
+  size_t ticket_size = 0;
+  if(ctx && ctx->cached_dm)
+  {
+    dt_sync_print_settings_to_dm(ctx->cached_dm, &job->prt);
+    _win_ticket(ctx, &ticket, &ticket_size);
+  }
+  size_t icc_len = 0;
+  guint8 *icc_data = _icc_data(job->profile, &icc_len);
+  const gboolean ok = dt_win_print_file(imgs, job->title, &job->prt, ticket, ticket_size, icc_data, icc_len,
+                                        ctx ? ctx->is_color_device : TRUE, job->page_w, job->page_h);
+  free(icc_data);
+  free(ticket);
+  if(ctx) dt_win32_print_ctx_free(ctx);
+  return ok;
+}
+#endif
+
+gboolean print_image(const dt_imgid_t imgid, JsonObject *req, JsonBuilder *b, char **err)
+{
+  _job_t job;
+  if(!_job_setup(req, &job, err)) return FALSE;
+  const char *pdf_path = job.pdf_path;
+  const char *printer = job.printer;
+  const char *profile = job.profile;
+  const int intent = job.intent;
+  const gboolean bpc = job.bpc;
+  const float page_w = job.page_w, page_h = job.page_h;
+  const int dpi = job.dpi;
+  JsonObject *area = json_object_has_member(req, "area") ? json_object_get_object_member(req, "area") : NULL;
+  const float ax = _number(area, "x"), ay = _number(area, "y"), aw = _number(area, "width"),
+              ah = _number(area, "height");
+  if(aw <= 0.0f || ah <= 0.0f || ax < 0.0f || ay < 0.0f || ax + aw > page_w + 0.01f || ay + ah > page_h + 0.01f)
+  {
+    *err = g_strdup("the photo's area does not fit on the page");
+    return FALSE;
+  }
 
   // one image on the page, at its area (printing.c lays the boxes out)
   dt_images_box *imgs = calloc(1, sizeof(dt_images_box));
@@ -795,21 +917,7 @@ gboolean print_image(const dt_imgid_t imgid, JsonObject *req, JsonBuilder *b, ch
 #ifdef _WIN32
   if(!pdf_path)
   {
-    dt_win32_print_ctx_t *ctx = dt_win32_print_ctx_new(&prt);
-    void *ticket = NULL;
-    size_t ticket_size = 0;
-    if(ctx && ctx->cached_dm)
-    {
-      dt_sync_print_settings_to_dm(ctx->cached_dm, &prt);
-      _win_ticket(ctx, &ticket, &ticket_size);
-    }
-    size_t icc_len = 0;
-    guint8 *icc_data = _icc_data(profile, &icc_len);
-    const gboolean ok = dt_win_print_file(imgs, title, &prt, ticket, ticket_size, icc_data, icc_len,
-                                          ctx ? ctx->is_color_device : TRUE, page_w, page_h);
-    free(icc_data);
-    free(ticket);
-    if(ctx) dt_win32_print_ctx_free(ctx);
+    const gboolean ok = _win_print_page(&job, imgs);
     g_free(box->buf);
     free(imgs);
     if(!ok) *err = g_strdup_printf("printing on '%s' failed", printer);
@@ -858,7 +966,7 @@ gboolean print_image(const dt_imgid_t imgid, JsonObject *req, JsonBuilder *b, ch
       else
       {
         // dt_print_file says nothing back; CUPS keeps the last error
-        dt_print_file(imgid, file, title, &prt);
+        dt_print_file(imgid, file, job.title, &job.prt);
         if(cupsLastError() > IPP_STATUS_OK_EVENTS_COMPLETE)
         {
           ok = FALSE;
@@ -872,6 +980,360 @@ gboolean print_image(const dt_imgid_t imgid, JsonObject *req, JsonBuilder *b, ch
 #endif
   g_free(box->buf);
   free(imgs);
+  return ok;
+}
+
+// ------------------------------------------------------------ the Cells layout
+
+// the sheet's pages: each is a list of cells, a photo box and the text under
+// it, in millimeters from the page's top left (app/src/print.ts, cellsLayout).
+// darktable's page holds 20 boxes (MAX_IMAGE_PER_PAGE), so the page is put
+// together here in one buffer and goes out as the one image of its page,
+// through the same PDF, CUPS and spooler code as a single photo
+
+static int _px(const double mm, const int dpi)
+{
+  return (int)lround(mm / 25.4 * dpi);
+}
+
+// `text` in black over the page's pixels, centered in the strip at x, y, w, h
+// (pixels). its edges are the layout's alpha, taken from a mask Pango draws
+static void _draw_label(void *page, const int pw, const int ph, const int bpp, const int x, const int y,
+                        const int w, const int h, const char *text, const double points, const int dpi)
+{
+  if(w < 2 || h < 2 || !text || !*text) return;
+  cairo_surface_t *mask = cairo_image_surface_create(CAIRO_FORMAT_A8, w, h);
+  if(cairo_surface_status(mask) != CAIRO_STATUS_SUCCESS)
+  {
+    cairo_surface_destroy(mask);
+    return;
+  }
+  cairo_t *cr = cairo_create(mask);
+  PangoLayout *layout = pango_cairo_create_layout(cr);
+  pango_cairo_context_set_resolution(pango_layout_get_context(layout), dpi);
+  PangoFontDescription *font = pango_font_description_from_string("Sans");
+  pango_font_description_set_size(font, (gint)(points * PANGO_SCALE));
+  pango_layout_set_font_description(layout, font);
+  pango_layout_set_width(layout, w * PANGO_SCALE);
+  // the middle goes, so a long name keeps its extension
+  pango_layout_set_ellipsize(layout, PANGO_ELLIPSIZE_MIDDLE);
+  pango_layout_set_alignment(layout, PANGO_ALIGN_CENTER);
+  pango_layout_set_text(layout, text, -1);
+  int tw = 0, th = 0;
+  pango_layout_get_pixel_size(layout, &tw, &th);
+  cairo_set_source_rgba(cr, 0.0, 0.0, 0.0, 1.0);
+  cairo_move_to(cr, 0.0, MAX(0.0, (h - th) / 2.0));
+  pango_cairo_show_layout(cr, layout);
+  cairo_surface_flush(mask);
+  const guint8 *alpha = cairo_image_surface_get_data(mask);
+  const int stride = cairo_image_surface_get_stride(mask);
+  for(int j = 0; j < h; j++)
+  {
+    if(y + j < 0 || y + j >= ph) continue;
+    for(int i = 0; i < w; i++)
+    {
+      if(x + i < 0 || x + i >= pw) continue;
+      const int a = alpha[(size_t)j * stride + i];
+      if(!a) continue;
+      const size_t px = 3 * ((size_t)(y + j) * pw + x + i);
+      for(int c = 0; c < 3; c++)
+      {
+        if(bpp == 16)
+          ((guint16 *)page)[px + c] = (guint16)((guint32)((guint16 *)page)[px + c] * (255 - a) / 255);
+        else
+          ((guint8 *)page)[px + c] = (guint8)((guint32)((guint8 *)page)[px + c] * (255 - a) / 255);
+      }
+    }
+  }
+  pango_font_description_free(font);
+  g_object_unref(layout);
+  cairo_destroy(cr);
+  cairo_surface_destroy(mask);
+}
+
+// `snap`'s photo, fitted inside max_w x max_h and upscaled to fill it as
+// print_image does, in `data`: RGB, 16 bits in ProPhoto when a printer
+// profile is to follow, else 8 in sRGB. the caller g_free()s data->buf
+static gboolean _render_photo(const dt_imgid_t snap, const int max_w, const int max_h, const gboolean managed,
+                              _print_format_t *data)
+{
+  memset(data, 0, sizeof(*data));
+  data->bpp = managed ? 16 : 8;
+  data->head.max_width = max_w;
+  data->head.max_height = max_h;
+  data->head.style_append = TRUE;
+  dt_imageio_module_format_t fmt;
+  memset(&fmt, 0, sizeof(fmt));
+  fmt.mime = _mime;
+  fmt.levels = _levels;
+  fmt.bpp = _bpp;
+  fmt.flags = _flags;
+  fmt.write_image = _write_image;
+  const dt_colorspaces_color_profile_type_t icc = managed ? DT_COLORSPACE_PROPHOTO_RGB : DT_COLORSPACE_SRGB;
+  // a small box is not worth the full-size pass the high quality scaling
+  // makes; NB: the export returns TRUE on failure
+  const gboolean failed = dt_imageio_export_with_flags(
+      snap, "unused", &fmt, &data->head, TRUE /*ignore_exif*/, FALSE, MAX(max_w, max_h) >= 800 /*high_quality*/,
+      TRUE /*upscale*/, FALSE, 1.0, FALSE, NULL, FALSE, FALSE, icc, NULL, DT_INTENT_PERCEPTUAL, NULL, NULL, 1, 1,
+      NULL, -1);
+  if(failed || !data->buf || data->head.width <= 0 || data->head.height <= 0)
+  {
+    g_free(data->buf);
+    data->buf = NULL;
+    return FALSE;
+  }
+  return TRUE;
+}
+
+gboolean print_sheet(JsonObject *req, print_take_f take, print_release_f release, print_step_f step, gpointer ctx,
+                     JsonBuilder *b, char **err)
+{
+  _job_t job;
+  if(!_job_setup(req, &job, err)) return FALSE;
+  JsonArray *pages = json_object_has_member(req, "pages") ? json_object_get_array_member(req, "pages") : NULL;
+  const guint n_pages = pages ? json_array_get_length(pages) : 0;
+  if(!n_pages)
+  {
+    *err = g_strdup("there is nothing to print");
+    return FALSE;
+  }
+  const double points = json_object_has_member(req, "label_points")
+                            ? json_object_get_double_member(req, "label_points") : 7.0;
+  const gboolean managed = job.profile && *job.profile;
+  const int dpi = job.dpi, pw = _px(job.page_w, dpi), ph = _px(job.page_h, dpi);
+  const int bpp = managed ? 16 : 8;
+  const size_t bytes = (size_t)3 * (bpp / 8) * pw * ph;
+  cmsHPROFILE out_profile = NULL;
+  const dt_colorspaces_color_profile_t *in_profile = NULL;
+  const dt_colorspaces_color_profile_type_t icc = managed ? DT_COLORSPACE_PROPHOTO_RGB : DT_COLORSPACE_SRGB;
+  if(managed)
+  {
+    out_profile = cmsOpenProfileFromFile(job.profile, "r");
+    in_profile = dt_colorspaces_get_profile(icc, "", DT_PROFILE_DIRECTION_OUT);
+    if(!out_profile || !in_profile)
+    {
+      if(out_profile) cmsCloseProfile(out_profile);
+      *err = g_strdup_printf("could not read the profile '%s'", job.profile);
+      return FALSE;
+    }
+  }
+
+  // where the pages go: a PDF, written as they are made, which CUPS or a Mac
+  // then prints; or, on Windows, a job to the spooler for each
+  _pdf_out_t pdf = { 0 };
+  gboolean pdf_open = FALSE;
+  gchar *file = NULL;
+  gboolean ok = TRUE;
+  if(job.pdf_path)
+  {
+    gchar *dir = g_path_get_dirname(job.pdf_path);
+    g_mkdir_with_parents(dir, 0755);
+    g_free(dir);
+    pdf_open = _pdf_open(&pdf, job.pdf_path, job.page_w, job.page_h, dpi, job.profile, TRUE);
+    if(!pdf_open)
+    {
+      *err = g_strdup_printf("could not write '%s'", job.pdf_path);
+      ok = FALSE;
+    }
+  }
+#ifndef _WIN32
+  else
+  {
+    char tmp[PATH_MAX] = { 0 };
+    dt_loc_get_tmp_dir(tmp, sizeof(tmp));
+    file = g_build_filename(tmp, "immage-print-XXXXXX.pdf", NULL);
+    const gint fd = g_mkstemp(file);
+    if(fd == -1)
+    {
+      *err = g_strdup("could not make a file to print");
+      ok = FALSE;
+    }
+    else
+    {
+      close(fd);
+#ifdef __APPLE__
+      const gboolean embed = managed;
+#else
+      const gboolean embed = FALSE;
+#endif
+      pdf_open = _pdf_open(&pdf, file, job.page_w, job.page_h, dpi, job.profile, embed);
+      if(!pdf_open)
+      {
+        *err = g_strdup("could not write the page to print");
+        ok = FALSE;
+      }
+    }
+  }
+#endif
+
+  dt_imgid_t first = NO_IMGID;
+  int photos = 0, total = 0;
+  for(guint p = 0; p < n_pages; p++) total += json_array_get_length(json_array_get_array_element(pages, p));
+  if(step) step(ctx, 0, total);
+  for(guint p = 0; ok && p < n_pages; p++)
+  {
+    JsonArray *cells = json_array_get_array_element(pages, p);
+    guint8 *page = g_try_malloc(bytes);
+    if(!page)
+    {
+      *err = g_strdup("out of memory");
+      ok = FALSE;
+      break;
+    }
+    // white in the page's color space: nothing for the printer to lay down
+    memset(page, 0xff, bytes);
+    for(guint c = 0; ok && cells && c < json_array_get_length(cells); c++)
+    {
+      JsonObject *cell = json_array_get_object_element(cells, c);
+      const dt_imgid_t imgid = json_object_get_int_member_with_default(cell, "imgid", 0);
+      JsonObject *box = json_object_has_member(cell, "box") ? json_object_get_object_member(cell, "box") : NULL;
+      const int bx = _px(_number(box, "x"), dpi), by = _px(_number(box, "y"), dpi);
+      const int bw = _px(_number(box, "width"), dpi), bh = _px(_number(box, "height"), dpi);
+      if(bw < 1 || bh < 1) continue;
+      const dt_imgid_t snap = take ? take(ctx, imgid) : imgid;
+      if(!dt_is_valid_imgid(snap))
+      {
+        *err = g_strdup("the print was not asked for this photo");
+        ok = FALSE;
+        break;
+      }
+      _print_format_t data;
+      const gboolean rendered = _render_photo(snap, bw, bh, managed, &data);
+      if(release) release(ctx, snap);
+      if(!rendered)
+      {
+        *err = g_strdup_printf("could not render photo %d", (int)imgid);
+        ok = FALSE;
+        break;
+      }
+      if(!dt_is_valid_imgid(first)) first = imgid;
+      photos++;
+      if(step && !step(ctx, photos, total))
+      {
+        g_free(data.buf);
+        *err = g_strdup("stopped");
+        ok = FALSE;
+        break;
+      }
+      // centered across its box, and down it unless `valign` says "bottom", where
+      // a name sits right under the photo
+      const int ix = bx + (bw - data.head.width) / 2;
+      const int iy = by + (!g_strcmp0(_string(cell, "valign", "center"), "bottom") ? bh - data.head.height
+                                                                                  : (bh - data.head.height) / 2);
+      const size_t px_bytes = (size_t)3 * (bpp / 8);
+      for(int j = 0; j < data.head.height; j++)
+      {
+        const int y = iy + j;
+        if(y < 0 || y >= ph) continue;
+        const int x0 = MAX(0, ix), x1 = MIN(pw, ix + data.head.width);
+        if(x1 <= x0) continue;
+        memcpy(page + ((size_t)y * pw + x0) * px_bytes, (guint8 *)data.buf + ((size_t)j * data.head.width + (x0 - ix)) * px_bytes,
+               (size_t)(x1 - x0) * px_bytes);
+      }
+      g_free(data.buf);
+      JsonObject *label = json_object_has_member(cell, "label") ? json_object_get_object_member(cell, "label") : NULL;
+      if(label)
+        _draw_label(page, pw, ph, bpp, _px(_number(label, "x"), dpi), _px(_number(label, "y"), dpi),
+                    _px(_number(label, "width"), dpi), _px(_number(label, "height"), dpi),
+                    _string(label, "text", ""), points, dpi);
+    }
+
+    if(ok && managed)
+    {
+      // converted once for the whole page, as a single photo is
+      void *buf = page;
+      const int bad = dt_apply_printer_profile(&buf, pw, ph, 16, in_profile->profile, out_profile, job.intent, job.bpc);
+      if(bad)
+      {
+        *err = g_strdup_printf("could not convert the page with the profile '%s'", job.profile);
+        ok = FALSE;
+      }
+      else
+        page = buf;  // the buffer is replaced, the old one freed
+    }
+
+    if(ok)
+    {
+      dt_images_box *imgs = calloc(1, sizeof(dt_images_box));
+      if(!imgs)
+      {
+        *err = g_strdup("out of memory");
+        ok = FALSE;
+      }
+      else
+      {
+        imgs->count = 1;
+        dt_image_box *box = &imgs->box[0];
+        box->buf = (uint16_t *)page;
+        box->img_bpp = bpp;
+        box->exp_width = pw;
+        box->exp_height = ph;
+        box->print = (dt_image_pos){ 0.0f, 0.0f, (float)pw, (float)ph };
+#ifdef _WIN32
+        if(!job.pdf_path)
+        {
+          // a spooler job to the page, a job for each
+          if(!_win_print_page(&job, imgs))
+          {
+            *err = g_strdup_printf("printing on '%s' failed", job.printer);
+            ok = FALSE;
+          }
+        }
+        else
+#endif
+        {
+          // the PDF wants 16 bits big endian
+          if(bpp == 16)
+          {
+            guint16 *px = (guint16 *)page;
+            for(size_t k = 0; k < (size_t)3 * pw * ph; k++) px[k] = GUINT16_TO_BE(px[k]);
+          }
+          if(!_pdf_page(&pdf, box))
+          {
+            *err = g_strdup("could not write the page to print");
+            ok = FALSE;
+          }
+        }
+        free(imgs);
+      }
+    }
+    g_free(page);
+  }
+
+  if(out_profile) cmsCloseProfile(out_profile);
+  (void)first;  // only a CUPS job names a photo
+  if(pdf_open)
+  {
+    const gboolean written = _pdf_close(&pdf);
+    if(ok && !written)
+    {
+      *err = g_strdup(job.pdf_path ? "could not write the PDF" : "could not write the page to print");
+      ok = FALSE;
+    }
+  }
+#ifndef _WIN32
+  if(ok && file)
+  {
+    // dt_print_file says nothing back; CUPS keeps the last error
+    dt_print_file(first, file, job.title, &job.prt);
+    if(cupsLastError() > IPP_STATUS_OK_EVENTS_COMPLETE)
+    {
+      ok = FALSE;
+      *err = g_strdup_printf("printing on '%s' failed: %s", job.printer, cupsLastErrorString());
+    }
+  }
+  if(file) g_unlink(file);
+#endif
+  g_free(file);
+  if(ok)
+  {
+    json_builder_set_member_name(b, "pages");
+    json_builder_add_int_value(b, n_pages);
+    json_builder_set_member_name(b, "photos");
+    json_builder_add_int_value(b, photos);
+    json_builder_set_member_name(b, "dpi");
+    json_builder_add_int_value(b, dpi);
+  }
   return ok;
 }
 
@@ -895,6 +1357,13 @@ gboolean print_printer(const char *name, JsonBuilder *b, char **err)
 }
 
 gboolean print_image(const dt_imgid_t imgid, JsonObject *req, JsonBuilder *b, char **err)
+{
+  *err = g_strdup("this engine was built without printing");
+  return FALSE;
+}
+
+gboolean print_sheet(JsonObject *req, print_take_f take, print_release_f release, print_step_f step, gpointer ctx,
+                     JsonBuilder *b, char **err)
 {
   *err = g_strdup("this engine was built without printing");
   return FALSE;

@@ -30,6 +30,8 @@ export async function guiBenchmark(t, screenDrafts = null) {
   await click(t, 'button[data-tour="prefs"]');
   await textButton(t, '.prefs-tabs', 'Performance');
   if (screenDrafts !== null) {
+    // the setting sits under Advanced, whose body is unmounted while shut
+    if (await t.driver.observe(inspect, '[data-pref-fold="performance-advanced"][aria-expanded="false"]')) await click(t, '[data-pref-fold="performance-advanced"]');
     const selector = `[data-pref-label="Drag drafts at the screen's scale"] input[type=checkbox]`;
     const toggle = await t.driver.observe(inspect, selector);
     if (!toggle) throw new Blocked('Requires a preconfigured fractional-scale output with screen scale below webview DPR');

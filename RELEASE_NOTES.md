@@ -3,6 +3,71 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
+## 0.43.0
+
+Improvements
+
+- Preferences > Performance has three profiles by computer: Quality (full-size
+  drag previews), Balanced (75%) and Performance (50%, smaller drafts for slow
+  sliders, detail loupe on). Choosing one sets its defaults. All the individual
+  settings, now including the Detail loupe, are under Advanced, and Reset
+  returns them to the selected profile's. Performance no longer leaves out
+  noise reduction and HSL while dragging, and Quality leaves out Grain,
+  Texture and Sharpening like the others until release.
+- Tools that can run on more than one darktable module (Contrast, Saturation,
+  Highlights and Shadows, Clarity, Texture, Sharpening) have a small icon
+  beside their name, also inside masks. Click it to switch the module for
+  that photo or mask from a menu, or choose **Set as default** to make it the
+  choice in Preferences › Modules. A green dot on the
+  icon shows when another module of the same tool holds adjustments, and the
+  menu marks each module that has them. This covers a photo opened with edits
+  in several modules and edits left behind by switching, such as Contrast on
+  AgX after moving to the contrast equalizer.
+- Preferences has icons under the version in the sidebar that open Immage's
+  homepage, Discord server and GitHub page.
+- Preferences has an Overlay opacity slider under Overlay color, to make a
+  mask's overlay on the photo more or less solid, with a Reset button.
+- Dropdown menus, such as Profile in Preferences and the export and print
+  options, open in Immage's own menu styling, matching the right-click
+  menus, instead of the system's grey list. They look the same on macOS,
+  Windows and Linux.
+- Print has a Cells layout that puts the photos you have selected on the page
+  in a grid, as a contact sheet does: 38 fit on a Letter page with the
+  default margins, more continue on further pages, and each photo's file
+  name can print under it. Set the border, the cells per page, columns and
+  cell size; custom cells are spaced evenly inside the border.
+- Zooming into an open photo no longer stalls while a folder is still
+  importing or its thumbnails are being made. Editing comes first; folder
+  reading and thumbnails wait for it.
+
+Performance
+
+- Linux on Wayland at a fractional scale: drag previews that were full size,
+  100% Balanced previews and the whole-view preview of Texture, Clarity,
+  Luminance NR and Grain, now render at the screen's scale like other drag
+  previews, which makes those slider drags about 2.5 times faster on a 125%
+  screen. Preferences > Performance **Fit frames at the screen's
+  scale** does the same for the settled Fit frame; it is on by default.
+
+Bug fixes
+
+- A network share that stops answering in the middle of a folder no longer
+  freezes Immage. Files that don't answer within 5 seconds are skipped, with
+  the rest of that folder for 30 seconds, instead of holding up opening a photo
+  or another folder for minutes.
+- Print Cells shows the photos soft proofed when Soft Proof is on, and sharper:
+  they are drawn at the size of their cells instead of as filmstrip
+  thumbnails.
+- The print page in the viewer has no drop shadow, and the Soft Proof badge
+  is hidden while the Print panel is open, where its settings already say it.
+- Shift-click in the grid and filmstrip selects the run from the photo you
+  clicked last, so it works at the first attempt instead of waiting for that
+  photo to finish opening.
+  Holding Shift over the grid no longer arms the straighten tool.
+- In a Before / After view, the busy spinner no longer spins forever. The
+  before side was fetched again after every render whenever its size
+  differed from the edit's, as with Transform or lens corrections.
+
 ## 0.42.0
 
 Improvements

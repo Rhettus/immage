@@ -14,7 +14,9 @@ import selectors
 import struct
 import subprocess
 import sys
+import re
 import tempfile
+import zlib
 
 ROOT = Path(__file__).resolve().parent.parent
 D50 = (0.9642, 1.0, 0.8249)
@@ -89,6 +91,17 @@ def band(frame, k):
 
 def chroma(rgb):
     return max(rgb) - min(rgb)
+
+
+def pdf_images(data):
+    """The PDF's images, in order, as (width, height, raw bytes); flate streams only."""
+    found = []
+    for m in re.finditer(rb'/Subtype /Image', data):
+        w = int(re.search(rb'/Width (\d+)', data[m.start():]).group(1))
+        h = int(re.search(rb'/Height (\d+)', data[m.start():]).group(1))
+        start = data.index(b'stream\n', m.start()) + len(b'stream\n')
+        found.append((w, h, zlib.decompressobj().decompress(data[start:])))
+    return found
 
 
 def main():
@@ -197,6 +210,52 @@ def main():
                         args.keep.mkdir(parents=True, exist_ok=True)
                         (args.keep / pdf.name).write_bytes(data)
                 print('PDF: page, size at the resolution, bit depth and profile', flush=True)
+
+                # the Cells layout: boxes and labels per page, composed in the engine
+                dpi = 100
+                px = lambda mm: round(mm / 25.4 * dpi)
+                cell = lambda x, name: {'imgid': imgid, 'valign': 'bottom', 'box': {'x': x, 'y': 20, 'width': 80, 'height': 60},
+                                        'label': {'x': x, 'y': 80, 'width': 80, 'height': 4, 'text': name}}
+                sheet = {'cmd': 'print', 'page': page, 'dpi': dpi, 'profile': '', 'title': 'sheet',
+                         'label_points': 7, 'pages': [[cell(20, 'IMG_0001.CR3'), cell(110, 'IMG_0002_a_rather_long_name.CR3')]]}
+                done = request(sheet | {'pdf': str(work / 'sheet.pdf')})
+                assert done['pages'] == 1 and done['photos'] == 2 and done['dpi'] == dpi, done
+                data = (work / 'sheet.pdf').read_bytes()
+                assert data.startswith(b'%PDF') and b'/MediaBox [0 0 595 842]' in data, 'sheet PDF'
+                [(w, h, raw)] = pdf_images(data)
+                assert (w, h) == (px(210), px(297)) and len(raw) == w * h * 3, (w, h, len(raw))
+                at = lambda x, y: tuple(raw[(px(y) * w + px(x)) * 3:(px(y) * w + px(x)) * 3 + 3])
+                white = lambda x, y: min(at(x, y)) >= 250
+                # the page is white where nothing is put, the gutter between the cells included
+                assert white(5, 5) and white(105, 50) and white(60, 95) and white(150, 200), 'white page'
+                # a 3:2 photo in a 4:3 box fills its width and sits at the bottom, with its name: the red band tops it
+                r, g, b = at(60, 30)
+                assert r > 200 and g < 80 and b < 80, at(60, 30)
+                r, g, b = at(150, 30)
+                assert r > 200 and g < 80 and b < 80, at(150, 30)
+                # above the photo, inside the box, stays white (the photo is 53 mm high in 60, at the bottom)
+                assert white(60, 21), 'letterbox'
+                # a named photo sits at the bottom of its box, its name right under it: the box's
+                # top 6 mm are white and the photo reaches the strip
+                assert white(60, 25) and not white(60, 79) and not white(150, 79), 'bottom aligned'
+                # the label strips hold dark pixels, the long name's no wider than its cell
+                dark = lambda x0, x1: sum(1 for yy in range(px(80), px(84)) for xx in range(px(x0), px(x1))
+                                          if max(raw[(yy * w + xx) * 3:(yy * w + xx) * 3 + 3]) < 100)
+                assert dark(20, 100) > 40 and dark(110, 190) > 40, (dark(20, 100), dark(110, 190))
+                assert dark(100, 110) == 0 and dark(190, 205) == 0, 'the text stays in its cell'
+                # a managed sheet: 16 bits, tagged, converted once for the page
+                done = request(sheet | {'pdf': str(work / 'sheet-managed.pdf'), 'profile': profile})
+                data = (work / 'sheet-managed.pdf').read_bytes()
+                assert b'/ICCBased' in data and b'/BitsPerComponent 16' in data, 'managed sheet'
+                # two pages: a PDF page each
+                done = request(sheet | {'pdf': str(work / 'sheet2.pdf'), 'pages': sheet['pages'] * 2})
+                assert done['pages'] == 2 and done['photos'] == 4, done
+                data = (work / 'sheet2.pdf').read_bytes()
+                assert len(re.findall(rb'/Type /Page\b(?!s)', data)) == 2 and len(pdf_images(data)) == 2, 'two pages'
+                refused(sheet | {'pdf': str(work / 'x.pdf'), 'pages': []}, 'nothing to print')
+                refused(sheet | {'pdf': None, 'printer': None}, 'needs a printer')
+                refused(sheet | {'pdf': str(work / 'x.pdf'), 'page': {'width': 0, 'height': 297}}, 'no size')
+                print('Cells sheet: boxes, gutters, labels in their strips, 16 bits when managed, a page each', flush=True)
 
                 refused({'cmd': 'print', 'imgid': imgid, 'pdf': str(work / 'x.pdf'), 'page': page,
                          'area': {'x': 100, 'y': 10, 'width': 190, 'height': 277}}, 'does not fit')

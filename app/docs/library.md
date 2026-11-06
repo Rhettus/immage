@@ -41,6 +41,12 @@ Open the **Folders** card in the **Library** panel.
 - A folder on a slow share fills in gradually. Opening another folder, or a
   photo from your own drive, doesn't wait for it: the share's reading stops
   after the file it is on.
+- A share that stops answering mid-folder doesn't freeze Immage. A file that
+  doesn't answer within 5 seconds is skipped, with the rest of that folder for
+  30 seconds, so photos on your own drive still open. Open the folder again
+  once the share is back to read the skipped files.
+- Editing comes first. While you zoom or adjust an open photo, the folder's
+  reading and thumbnails slow down and catch up when you pause.
 
 Folders you import into join the list by themselves. The list, the open
 folder and the last photo are remembered when you quit.
@@ -87,7 +93,7 @@ Drag the top edge of the filmstrip to make it taller or shorter.
 - Click a photo to open it.
 - ⌘-click adds a photo to the selection, or takes it out, without opening
   it.
-- ⇧-click selects the run from the open photo to the one you click.
+- ⇧-click selects the run from the photo you clicked last (else the open one) to the one you click.
 - ⌘A selects every photo the filters leave showing.
 - ← and → step through the photos.
 

@@ -38,7 +38,7 @@ the app, where data lives, and the frame formats. Diagrams are in
 | A preference | [Preferences.tsx](../../src/Preferences.tsx) (a `load*`/`store*` pair and a `PrefRow`) | [PrefsUI.tsx](../../src/PrefsUI.tsx); the consumer calls `load*()` live |
 | An Immich call | [immich_search.rs](../../src-tauri/src/immich_search.rs) or [immich_upload.rs](../../src-tauri/src/immich_upload.rs) | `immich_*` commands in [main.rs](../../src-tauri/src/main.rs); [immich.ts](../../src/immich.ts), [ImmichPanel.tsx](../../src/ImmichPanel.tsx) |
 | An Edit In plugin kind | `KINDS` in [plugins.ts](../../src/plugins.ts) | [plugins.rs](../../src-tauri/src/plugins.rs); `editIn` in [App.tsx](../../src/App.tsx) |
-| Printing, soft proofing | [print.md](print.md); [PrintPanel.tsx](../../src/PrintPanel.tsx), [print.ts](../../src/print.ts) | [engine/print.c](../../../engine/print.c); `print_*`, `printers`, `printer_info`, `softproof` in [main.rs](../../src-tauri/src/main.rs); `_frame_hash` in [main.c](../../../engine/main.c); `Session.redraw` |
+| Printing, soft proofing | [print.md](print.md); [PrintPanel.tsx](../../src/PrintPanel.tsx), [print.ts](../../src/print.ts) | [engine/print.c](../../../engine/print.c); `print_*` (`print_photo`, `print_sheet`), `printers`, `printer_info`, `softproof` in [main.rs](../../src-tauri/src/main.rs); `_frame_hash` in [main.c](../../../engine/main.c); `Session.redraw` |
 | Performance | [benchmarking/README.md](../../../benchmarking/README.md), [tracing flow](performance-tracing.md) | [perf.ts](../../src/perf.ts), [perfDiagnostics.ts](../../src/perfDiagnostics.ts), [PerfHud.tsx](../../src/PerfHud.tsx); `perf_*` in [main.rs](../../src-tauri/src/main.rs), [perf_trace.rs](../../src-tauri/src/perf_trace.rs); [diagnose.py](../../../benchmarking/diagnose.py) |
 | Move to another darktable commit or release | [darktable-pin.md](darktable-pin.md) | [patches/darktable-engine.patch](../../../patches/darktable-engine.patch) |
 | A release | the five version files ([package.json](../../package.json), `package-lock.json`, [Cargo.toml](../../src-tauri/Cargo.toml), `Cargo.lock`, [tauri.conf.json](../../src-tauri/tauri.conf.json)) | [releasing.md](releasing.md): the work on `release-X.Y.Z`, tagged `vX.Y.Z` there; [build_dmg.sh](../../scripts/build_dmg.sh) |
@@ -56,11 +56,12 @@ Front end ([`app/src`](../../src)):
 - frames to the page: [sharedFrames.ts](../../src/sharedFrames.ts) (Windows and Linux shared memory), [pixelRatio.ts](../../src/pixelRatio.ts) (Wayland draft scale)
 - library: [library.ts](../../src/library.ts), [FolderTree.tsx](../../src/FolderTree.tsx), [filter.ts](../../src/filter.ts), [FilterPopup.tsx](../../src/FilterPopup.tsx); merges in [HdrDialog.tsx](../../src/HdrDialog.tsx), [PanoDialog.tsx](../../src/PanoDialog.tsx)
 - export: [exportSettings.ts](../../src/exportSettings.ts), [exportTokens.ts](../../src/exportTokens.ts), [ExportDialog.tsx](../../src/ExportDialog.tsx), [ExportFrame.tsx](../../src/ExportFrame.tsx); background work in [background.ts](../../src/background.ts), [activity.ts](../../src/activity.ts)
-- print: [print.ts](../../src/print.ts) (settings, papers, page layout, soft proof), [PrintPanel.tsx](../../src/PrintPanel.tsx); the engine's [print.c](../../../engine/print.c)
+- print: [print.ts](../../src/print.ts) (settings, papers, single and Cells page layouts, soft proof), [PrintPanel.tsx](../../src/PrintPanel.tsx); the engine's [print.c](../../../engine/print.c)
 - [Presets.tsx](../../src/Presets.tsx) (presets, looks), [HistoryPanel.tsx](../../src/HistoryPanel.tsx), [CopySettings.tsx](../../src/CopySettings.tsx), [ColorWheel.tsx](../../src/ColorWheel.tsx), [PointCurve.tsx](../../src/PointCurve.tsx), [CropTool.tsx](../../src/CropTool.tsx), [VignetteOverlay.tsx](../../src/VignetteOverlay.tsx), [GuideOverlay.tsx](../../src/GuideOverlay.tsx), [MetadataPanel.tsx](../../src/MetadataPanel.tsx), [Keywording.tsx](../../src/Keywording.tsx)
 - Immich and plugins: [immich.ts](../../src/immich.ts), [ImmichPanel.tsx](../../src/ImmichPanel.tsx), [ImmichPrefs.tsx](../../src/ImmichPrefs.tsx); [plugins.ts](../../src/plugins.ts), [PluginPrefs.tsx](../../src/PluginPrefs.tsx)
 - [PerformanceTuner.tsx](../../src/PerformanceTuner.tsx), [previewTuning.ts](../../src/previewTuning.ts), [tunerOptions.ts](../../src/tunerOptions.ts), [tunerWorkload.ts](../../src/tunerWorkload.ts): quality-first preview search with trimmed-median metrics, performance option comparisons, relaunch verification and navigation workload recording
 - [gpuCheck.ts](../../src/gpuCheck.ts): the GPU check's cases and verdicts (CPU vs OpenCL parity, `parity` in main.c, `gpu_check_parity` in main.rs, [gpucheck.py](../../../benchmarking/gpucheck.py))
+- [SelectMenu.tsx](../../src/SelectMenu.tsx): the app-drawn list every `<select>` opens (see architecture.md)
 - [Preferences.tsx](../../src/Preferences.tsx), [PrefsUI.tsx](../../src/PrefsUI.tsx); [histogram.ts](../../src/histogram.ts), [probe.ts](../../src/probe.ts); [perf.ts](../../src/perf.ts), [PerfHud.tsx](../../src/PerfHud.tsx); [aiModel.ts](../../src/aiModel.ts); [ImportView.tsx](../../src/ImportView.tsx) (the importer); [styles.css](../../src/styles.css)
 
 Rust ([`app/src-tauri/src`](../../src-tauri/src)):
@@ -89,6 +90,11 @@ GUI benchmark resource sampling: [resources.rs](../../src-tauri/src/resources.rs
 records CPU, process memory, Linux threads and available GPU counters on a
 background worker; `App.tsx` attaches phase timestamps to report version 5.
 The GUI dashboard plots these alongside timing summaries.
+
+Module switch: [ModuleSwitch.tsx](../../src/ModuleSwitch.tsx) is the panel icon and menu beside a
+multi-module tool's name, with a green dot when `Session.adjustedModules` (masks: `maskAdjusted`) finds
+edits in another module (hosts chosen in `PanelView` and `MasksPanel`); its
+Set as default writes the Preferences choice.
 
 Module options: [moduleChoice.ts](../../src/moduleChoice.ts) resolves saved
 choices and preferences; [ModulePrefs.tsx](../../src/ModulePrefs.tsx) displays

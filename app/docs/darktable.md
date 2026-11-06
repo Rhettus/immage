@@ -44,6 +44,16 @@ globally and contrast equalizer inside masks. They follow Focus mode; Alt-click
 keeps both sections open. See the [module preferences guide](preferences.md#modules)
 for the available mask alternatives.
 
+A tool with more than one module also has a small icon beside its name
+(Contrast, Saturation, Highlights and Shadows, Clarity, Texture, Sharpening,
+in the panels and inside masks). It is always shown, dim until you point at
+it. Click it for a menu of the tool's modules, with a check on the current
+one: picking another changes the module for this photo (or this mask), and
+the slider's value carries over. **Set as default** in the same menu also
+stores that module as the tool's choice in Preferences › Modules, switching
+it to Custom. When the contrast equalizer or saturation curve is chosen, the
+icon sits on that editor's heading, since the slider is replaced.
+
 | Immage | darktable module |
 |---|---|
 | **Basic** | |

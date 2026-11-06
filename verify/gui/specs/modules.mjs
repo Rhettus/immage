@@ -103,3 +103,112 @@ export async function panorama(t){
 export async function immichWorkflow(t){
  throw new Blocked('Requires an isolated local Immich fixture server and test credentials, with explicit service scope; no user account or external application is used');
 }
+// the icon beside a tool's name that switches its module in the panel (ModuleSwitch)
+const choices=t=>t.driver.observe(()=>JSON.parse(document.querySelector('.window').dataset.moduleChoices));
+const menuOptions=t=>t.driver.observe(()=>[...document.querySelectorAll('.module-menu [data-module-option]')]
+  .map(e=>({value:+e.dataset.moduleOption,checked:e.getAttribute('aria-checked')==='true',text:e.textContent})));
+export async function moduleSwitch(t){
+ const basic=await panel(t,'basic');await expandSections(t,basic);
+ const icon=id=>`[data-module-switch=${JSON.stringify(id)}]`;
+ // every tool with several modules has one icon, dim until pointed at; a tool with one module has none
+ const first=await reveal(t,icon('contrast'));
+ assert(first.visible&&first.hit,'Contrast module icon is visible and clickable');
+ assert(await t.driver.observe(()=>document.querySelectorAll('[data-control-id="exposure"] [data-module-switch]').length===0),'Exposure has a single module and no icon');
+ // Clarity and Texture keep Medium and Fine above their Advanced fold: their switch sits on that top slider
+ for(const id of ['clarity','texture']){
+  const host=await t.driver.observe(i=>document.querySelector(`[data-module-switch="${i}"]`)?.closest('[data-control-id]')?.dataset.controlId,id);
+  assert(/^detail_(clarity|texture)_gain_medium$/.test(host)||host===id,`${id} switch is on its top slider, not under Advanced (found ${host})`);
+ }
+ await t.evidence('module-switch-closed');
+ // the menu lists the options, the current one checked
+ const before=await choices(t);
+ await click(t,icon('contrast'));
+ await until(()=>t.driver.observe(()=>!!document.querySelector('.module-menu')),'module menu open');
+ const listed=await menuOptions(t);
+ assert(listed.length>=2,'menu lists the options');
+ assert.equal(listed.filter(o=>o.checked).length,1,'exactly one option is checked');
+ assert.equal(listed.find(o=>o.checked).value,before.mod_contrast,'the checked option is the photo\'s module');
+ await t.evidence('module-switch-open');
+ // Escape closes it without a change
+ await t.driver.keys('');
+ await until(()=>t.driver.observe(()=>!document.querySelector('.module-menu')),'menu closed by Escape');
+ assert.equal((await choices(t)).mod_contrast,before.mod_contrast,'Escape changes nothing');
+ // picking another module changes the photo's choice and the rendered photo
+ const other=listed.find(o=>!o.checked).value,photo=await settledPhoto(t);
+ await click(t,icon('contrast'));
+ await click(t,`.module-menu [data-module-option="${other}"]`);
+ await until(async()=>(await choices(t)).mod_contrast===other,'module picked');
+ await t.evidence('module-switch-picked');
+ // a module sharing the tool's sliders takes the edits along, so no other module is flagged
+ assert(await t.driver.observe(i=>!document.querySelector(`[data-module-switch="${i}"]`)?.classList.contains('others'),'contrast'),'the Contrast icon shows no dot after a switch between modules sharing its slider');
+ // the switch stays reachable when the new module hides the slider: it moves to the equalizer's or curve's heading
+ await reveal(t,icon('contrast'));
+ // Set as default stores the Preferences choice, in Custom
+ const store=await t.driver.observe(()=>({mode:localStorage.getItem('immage.modules.mode'),choices:localStorage.getItem('immage.modules.choices')}));
+ let failure;
+ try{
+  await click(t,icon('contrast'));
+  await click(t,'.module-menu [data-module-default]');
+  const saved=await t.driver.observe(()=>({mode:localStorage.getItem('immage.modules.mode'),choices:JSON.parse(localStorage.getItem('immage.modules.choices')||'{}')}));
+  assert.equal(saved.mode,'custom','Set as default switches Preferences to Custom');
+  assert.equal(saved.choices.contrast,other,'Set as default stores the module');
+  await click(t,'button[data-tour="prefs"]');await textButton(t,'.prefs-tabs','Modules');
+  const sel=await reveal(t,'select[aria-label="Global Contrast"]');
+  assert.equal(Number(sel.value),other,'Preferences > Modules shows the new default');
+  await textButton(t,'.prefs-foot','Done');
+ }catch(e){failure=e;}
+ // put Preferences' storage and the photo's module back, then report the first failure
+ await t.driver.observe(s=>{for(const [k,v] of Object.entries(s))v===null?localStorage.removeItem('immage.modules.'+k):localStorage.setItem('immage.modules.'+k,v);},store);
+ if(failure){
+  if(await t.driver.observe(()=>!!document.querySelector('.module-menu')))await t.driver.keys('\uE00C');
+  throw failure;
+ }
+ await click(t,icon('contrast'));await click(t,`.module-menu [data-module-option="${before.mod_contrast}"]`);
+ await settledPhoto(t,p=>p.hash===photo.hash);
+ // Contrast edited on AgX, then the equalizer too: both modules are marked in the menu, and the icon shows a dot whichever is shown
+ {
+  const cs='[data-control-id="contrast"]',cv=await reveal(t,`${cs} .value`);
+  const dots=()=>t.driver.observe(()=>[...document.querySelectorAll('.module-menu [data-module-option]')].filter(e=>e.querySelector('.adjusted-dot')).map(e=>+e.dataset.moduleOption).sort());
+  const iconDot=()=>t.driver.observe(()=>!!document.querySelector('[data-module-switch="contrast"]')?.classList.contains('others'));
+  await t.driver.point(cv.x,cv.y,2);
+  await until(()=>t.driver.observe(s=>!!document.querySelector(s+' .value-edit'),cs),'Contrast numeric editor');
+  await t.driver.keys('3','0','\uE007');
+  await click(t,icon('contrast'));await click(t,'.module-menu [data-module-option="2"]');
+  await until(async()=>(await choices(t)).mod_contrast===2,'equalizer picked');
+  await until(iconDot,'dot on the Contrast icon under the equalizer');
+  await click(t,icon('contrast'));
+  assert.deepEqual(await dots(),[0],'AgX alone is marked after leaving it');
+  await t.driver.keys('\uE00C');
+  const p=await reveal(t,'.equalizer-graph circle:nth-of-type(3)');
+  await t.driver.point(p.x,p.y);await t.driver.keys('\uE013');
+  await click(t,icon('contrast'));
+  await until(async()=>(await dots()).join()==='0,2','AgX and the equalizer both marked');
+  await t.evidence('module-switch-dot-equalizer');
+  await click(t,`.module-menu [data-module-option="0"]`);
+  await until(async()=>(await choices(t)).mod_contrast===0,'AgX picked back');
+  await until(iconDot,'dot on the Contrast icon on AgX, the equalizer being adjusted');
+  await click(t,icon('contrast'));
+  assert.deepEqual(await dots(),[0,2],'both stay marked with AgX shown');
+  await t.driver.keys('\uE00C');
+  const cl=await reveal(t,`${cs} label`);await t.driver.point(cl.x,cl.y,2);
+ }
+ // an edit left in a module the tool is switched away from is flagged on the icon and in the menu
+ const sel='[data-control-id="detail_clarity_gain_medium"]',dot=()=>t.driver.observe(()=>document.querySelector('[data-module-switch="clarity"]')?.classList.contains('others'));
+ assert(!await dot(),'Clarity icon shows no dot before it is edited');
+ const val=await reveal(t,`${sel} .value`);
+ await t.driver.point(val.x,val.y,2);
+ await until(()=>t.driver.observe(s=>!!document.querySelector(s+' .value-edit'),sel),'Clarity numeric editor');
+ await t.driver.keys('1','\uE007');
+ const clarity=(await choices(t)).mod_clarity,otherClarity=clarity===0?1:0;
+ await click(t,icon('clarity'));await click(t,`.module-menu [data-module-option="${otherClarity}"]`);
+ await until(async()=>(await choices(t)).mod_clarity===otherClarity,'Clarity module switched');
+ await until(dot,'dot on the Clarity icon once its edited module is switched away from');
+ await click(t,icon('clarity'));
+ await until(()=>t.driver.observe(c=>[...document.querySelectorAll('.module-menu [data-module-option]')].some(e=>+e.dataset.moduleOption===c&&!!e.querySelector('.adjusted-dot')),clarity),'dot on the edited module in the menu');
+ await t.evidence('module-switch-dot');
+ await t.driver.keys('\uE00C');
+ // put Clarity back: switch to the edited module and reset the slider
+ await click(t,icon('clarity'));await click(t,`.module-menu [data-module-option="${clarity}"]`);
+ const lab=await reveal(t,`${sel} label`);await t.driver.point(lab.x,lab.y,2);
+ await until(()=>t.driver.observe(()=>!document.querySelector('[data-module-switch="clarity"]')?.classList.contains('others')),'dot gone after reset');
+}

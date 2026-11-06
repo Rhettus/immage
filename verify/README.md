@@ -27,6 +27,15 @@ python3 -I verify/database-locks.py --build build
 It checks live-owner exclusion, recovery after killing its own owner process,
 lock cleanup and clean restart. It does not test simultaneous first startup.
 
+The import stall check (POSIX, headless, no GUI) makes a sidecar that blocks
+reads like a half-dead network share and checks the import skips the file and
+its folder, reports them as `unanswered`, and leaves `open` and other folders
+unblocked:
+
+```bash
+python3 -I verify/import-stall.py
+```
+
 The focused batch-paste regression check drives production Session and settings
 code through the real engine, with isolated photos and sidecars:
 
@@ -243,6 +252,7 @@ After cache structure changes, rebuild the full tree before rendering so the
 engine and dynamically loaded image-processing modules use the same layout.
 
 
+Module switch dot (`Session.adjustedModules`): run `node verify/module-others.test.mjs`.
 Independent module preferences: run `node verify/contrast-equalizer.test.mjs`
 for mapping and scoped-choice checks, and `node verify/mask-modules.mjs` with
 the built engine for a render/save/reload check of global AgX alongside masked

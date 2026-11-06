@@ -367,7 +367,7 @@ production executable before a future approved run using the new observations.
 
 ## Batch settings paste
 
-`--case batch-paste` (also in `--suite regressions`) requires a JPEG fixture.
+`--case batch-paste` and `--case shift-range` (both in `--suite regressions`) require a JPEG fixture.
 Before launch the runner makes three more copies in its own fixture directory:
 two targets and one unselected control. The case applies Kodak Gold 200 at 35%,
 copies Tone and Look through Copy Settings, selects two targets with a guarded
@@ -446,3 +446,31 @@ The drafts-off counterpart passed in run
 `2026-11-02T15-40-01.172Z_ee28973_e7cc09e0` with the same supported output
 mode/rate and logical app size. It confirmed screenScale false and draftScale 1.
 These are one VM run per configuration, not repeatability or native-GPU evidence.
+
+## Demo clip
+
+The `demo` case records the announcement clip: a scripted tour of the layout
+(auto-hide with a pinned right column, focus mode), Basic sliders, masks, the
+contrast equalizer, panorama and HDR merge, presets, Film Simulation, the Zone
+System and Print. It is evidence capture, not a feature check: it asserts
+nothing, and a segment it cannot reach is recorded as skipped.
+
+```sh
+DEMO_PHOTOS=benchmarking/corpus/a.ARW,benchmarking/corpus/b.ARW \
+DEMO_SEGMENTS=sliders,masks \
+node verify/gui/run.mjs --config verify/gui/local.json --case demo
+node verify/gui/demo-assemble.mjs verify/results/gui/demo
+```
+
+`support/recorder.mjs` takes webview screenshots through the run's WebDriver
+session and logs the scripted pointer's path; nothing is injected into the page
+and no desktop capture is used. `demo-assemble.mjs` runs afterwards with ffmpeg:
+it draws a cursor and a click ring from the log, adds each segment's caption and
+writes `immage-demo.mp4` (`--width`, `--fps`). Setup a viewer would not enjoy (Preferences, module
+choices) runs with recording paused and is cut. `DEMO_PHOTOS` copies extra
+photos into the fixture folder for the merge segment; `DEMO_SEGMENTS` retakes
+only the named segments (`layout`, `focus`, `sliders`, `masks`, `equalizer`,
+`merge`, `presets`, `film`, `zones`, `print`). Output goes to the ignored
+`verify/results/gui/demo/`. The Film segment needs the spektrafilm data pack and
+Print needs no profile for the tour. Like every GUI run, it needs approval and
+the workspace and memory preparation above.

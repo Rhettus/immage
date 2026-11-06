@@ -9,6 +9,7 @@ import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { keys } from "./keys";
 import { AGX_PROFILE_DEFAULT, PROFILE_GROUPS, PROFILE_OPTIONS } from "./manifest";
 import { CachePrefs } from "./CachePrefs";
+import { Chevron, Collapse } from "./Collapse";
 import { ImmichPrefs } from "./ImmichPrefs";
 import { ModulePrefs } from "./ModulePrefs";
 import { KeywordChips, KeywordInput, parseKeyword } from "./Keywording";
@@ -17,9 +18,9 @@ import type { PluginConfig } from "./plugins";
 import { PrefCard, PrefRow, PrefSwitch } from "./PrefsUI";
 import { DEFAULT_PRESET_ID, type Preset } from "./Presets";
 import { setTourSeen, tourSeen } from "./Tour";
-import { OVERLAY_COLORS, type Rgb } from "./masks";
+import { OVERLAY_COLORS, OVERLAY_OPACITY, type Rgb } from "./masks";
 import { loadSharedFrames, sharedFramesAvailable, storeSharedFrames } from "./sharedFrames";
-import { loadScreenScale, screenScale, storeScreenScale } from "./pixelRatio";
+import { loadScreenScale, screenScale, storeScreenScale, loadSettledScale, storeSettledScale } from "./pixelRatio";
 import { checkForUpdate, lastChecked, loadAutoCheck, storeAutoCheck, useUpdate, type UpdateState } from "./updates";
 
 // the profile a new raw gets (manifest.ts, PROFILE_GROUPS): AgX's default unless set
@@ -135,7 +136,10 @@ export function storeOpenGenerated(on: boolean) {
 }
 const LOUPE_KEY = "immage.loupe";
 export function loadLoupe(): boolean {
-  try { return localStorage.getItem(LOUPE_KEY) === "1"; } catch { return false; }
+  try {
+    const v = localStorage.getItem(LOUPE_KEY);
+    return v === null ? PROFILES[loadPreview()].loupe : v === "1";
+  } catch { return false; }
 }
 export function storeLoupe(on: boolean) {
   try { localStorage.setItem(LOUPE_KEY, on ? "1" : "0"); } catch { /* not kept */ }
@@ -153,22 +157,23 @@ export function storeCanvas(v: Canvas) {
 }
 // the masks' overlay on the photo: one of OVERLAY_COLORS or the custom
 // color, which is kept while a preset is chosen; darktable's yellow unless set
-export type OverlayColor = { pick: keyof typeof OVERLAY_COLORS | "custom"; custom: string };
+export type OverlayColor = { pick: keyof typeof OVERLAY_COLORS | "custom"; custom: string; opacity: number };
 const OVERLAY_COLOR_KEY = "immage.overlayColor";
 export function loadOverlayColor(): OverlayColor {
   try {
     const v = JSON.parse(localStorage.getItem(OVERLAY_COLOR_KEY) ?? "null");
     return { pick: v?.pick === "red" || v?.pick === "custom" ? v.pick : "yellow",
-             custom: /^#[0-9a-f]{6}$/i.test(v?.custom) ? v.custom : "#33ccff" };
-  } catch { return { pick: "yellow", custom: "#33ccff" }; }
+             custom: /^#[0-9a-f]{6}$/i.test(v?.custom) ? v.custom : "#33ccff",
+             opacity: Number.isFinite(v?.opacity) ? Math.min(100, Math.max(10, Math.round(v.opacity))) : OVERLAY_OPACITY };
+  } catch { return { pick: "yellow", custom: "#33ccff", opacity: OVERLAY_OPACITY }; }
 }
 export function storeOverlayColor(v: OverlayColor) {
   try { localStorage.setItem(OVERLAY_COLOR_KEY, JSON.stringify(v)); } catch { /* not kept */ }
 }
 export function maskOverlayRgb(v: OverlayColor): Rgb {
-  if (v.pick !== "custom") return OVERLAY_COLORS[v.pick];
+  if (v.pick !== "custom") { const [r, g, b] = OVERLAY_COLORS[v.pick]; return [r, g, b, v.opacity]; }
   const n = parseInt(v.custom.slice(1), 16);
-  return [n >> 16, (n >> 8) & 255, n & 255];
+  return [n >> 16, (n >> 8) & 255, n & 255, v.opacity];
 }
 // the guides drawn over the photo (the crop frame and its grid, the
 // straighten line, Transform's grid and guides, the vignette's and a mask
@@ -214,11 +219,13 @@ function storeSliderScrollStep(v: number) {
   try { localStorage.setItem(SLIDER_SCROLL_STEP_KEY, String(v)); } catch { /* not kept */ }
 }
 
-// how much the photo gives up while it is being edited, for speed. Quality
-// renders every frame in full; Balanced defaults to half size and leaves Grain
-// and diffuse (Texture, Sharpening) out of drag frames and the idle base;
-// Performance drags at quarter size, also without denoise and HSL, and its
-// base is only the viewer's size. export is never affected
+// how much the photo gives up while it is being edited, for speed. a profile
+// is a set of defaults for a class of machine: Quality drags at full size,
+// Balanced at 75%, Performance at 50% with drafts that may shrink to 50% and
+// the detail loupe on. every profile leaves Grain and diffuse (Texture,
+// Sharpening) out of drag frames and the idle base. each value can then be
+// changed under Advanced, and Reset returns to the profile's. export is never
+// affected
 export type Preview = "quality" | "balanced" | "performance";
 const PREVIEW_KEY = "immage.preview";
 // before Preview, a switch for drag drafts: off is Quality's behavior
@@ -234,19 +241,30 @@ export function storePreview(v: Preview) {
   try { localStorage.setItem(PREVIEW_KEY, v); } catch { /* not kept */ }
 }
 
+// what choosing a profile sets (draft time is the same for all three). a
+// value never stored follows the profile in use
+export const PROFILES: Record<Preview, { size: number; smallest: number; target: number; loupe: boolean }> = {
+  quality: { size: 1, smallest: 1, target: 60, loupe: false },
+  balanced: { size: 0.75, smallest: 1, target: 60, loupe: false },
+  performance: { size: 0.5, smallest: 0.5, target: 60, loupe: true },
+};
+
+// drag frames' size, as a share of the photo's: the profile's, or as set
 export const BALANCED_PREVIEW_SIZES: readonly number[] = [0.5, 0.75, 1];
 const BALANCED_SIZE_KEY = "immage.balancedPreviewSize";
 export function loadBalancedPreviewSize(): number {
   try { const size = Number(localStorage.getItem(BALANCED_SIZE_KEY));
-    return BALANCED_PREVIEW_SIZES.includes(size) ? size : 0.5; }
-  catch { return 0.5; }
+    return BALANCED_PREVIEW_SIZES.includes(size) && localStorage.getItem(BALANCED_SIZE_KEY) !== null
+      ? size : PROFILES[loadPreview()].size; }
+  catch { return PROFILES.balanced.size; }
 }
 export function storeBalancedPreviewSize(v: number) {
   try { localStorage.setItem(BALANCED_SIZE_KEY, String(v)); } catch { /* not kept */ }
 }
 
 // how long darktable may take on a drag's draft before the next is smaller,
-// and how small it may get each way (Session.draftView): 60 ms and 70% unless set
+// and how small it may get each way (Session.draftView): 60 ms and the
+// profile's smallest unless set
 export const DRAFT_TARGETS = [40, 60, 80, 120] as const;
 export const DRAFT_SMALLEST = [1, 0.7, 0.5] as const;
 const DRAFT_TARGET_KEY = "immage.draftTarget";
@@ -263,8 +281,9 @@ export function storeDraftTarget(v: number) {
 export function loadDraftSmallest(): number {
   try {
     const v = Number(localStorage.getItem(DRAFT_SMALLEST_KEY));
-    return (DRAFT_SMALLEST as readonly number[]).includes(v) ? v : 0.7;
-  } catch { return 0.7; }
+    return (DRAFT_SMALLEST as readonly number[]).includes(v) && localStorage.getItem(DRAFT_SMALLEST_KEY) !== null
+      ? v : PROFILES[loadPreview()].smallest;
+  } catch { return PROFILES.balanced.smallest; }
 }
 export function storeDraftSmallest(v: number) {
   try { localStorage.setItem(DRAFT_SMALLEST_KEY, String(v)); } catch { /* not kept */ }
@@ -418,6 +437,13 @@ function darktableUrl(version?: string) {
   const release = /^(\d+\.\d+\.\d+)$/.exec(version?.replace(/-dirty$/, "") ?? "");
   return release ? `${DARKTABLE_URL}/tree/release-${release[1]}` : DARKTABLE_URL;
 }
+// Preferences > About: the homepage, Discord and GitHub, as icons under the version
+const ABOUT_LINKS: [string, string, React.ReactNode][] = [
+  ["Immage homepage", "https://immage.photo", svg(<><circle cx="12" cy="12" r="8.5" /><path d="M3.5 12h17M12 3.5c2.5 2.6 3.5 5.4 3.5 8.5s-1 5.900-3.500 8.500c-2.500-2.600-3.500-5.400-3.500-8.500s1-5.900 3.500-8.500z" /></>)],
+  ["Immage on Discord", "https://discord.gg/zm5JwPhdh", svg(<><path d="M7 6.500c3-1.300 7-1.300 10 0 1.800 2.700 2.600 5.400 2.500 8.500-1.200.9-2.400 1.400-3.700 1.800l-.9-1.500M7 6.500C5.200 9.200 4.400 11.900 4.500 15c1.200.9 2.400 1.400 3.700 1.800l.9-1.500" /><circle cx="9.500" cy="12" r=".9" /><circle cx="14.500" cy="12" r=".9" /></>)],
+  ["Immage on GitHub", "https://github.com/Rhettus/immage", svg(<path d="M9 19c-4 1.200-4-2-6-2.500m12 4.500v-3.100a2.700 2.700 0 0 0-.8-2.100c2.600-.3 5.300-1.300 5.300-5.700a4.400 4.400 0 0 0-1.200-3.100 4.100 4.100 0 0 0-.1-3.100s-1-.3-3.200 1.200a11 11 0 0 0-5.800 0C7.100 3.800 6.100 4.100 6.100 4.100a4.100 4.100 0 0 0-.1 3.100A4.400 4.400 0 0 0 4.800 10.300c0 4.400 2.700 5.400 5.300 5.700a2.700 2.700 0 0 0-.8 2.100V21" />)],
+];
+
 // what the last check found, for About's row
 function updateHint(state: UpdateState, app?: string): string {
   switch (state.kind) {
@@ -526,11 +552,26 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   const [balancedSize, setBalancedSize] = useState(loadBalancedPreviewSize);
   const [sharedFrames, setSharedFrames] = useState(loadSharedFrames);
   const [atScreenScale, setAtScreenScale] = useState(loadScreenScale);
+  const [settledAtScreen, setSettledAtScreen] = useState(loadSettledScale);
   const [draftTarget, setDraftTarget] = useState(loadDraftTarget);
   const [draftSmallest, setDraftSmallest] = useState(loadDraftSmallest);
   const [frameCache, setFrameCache] = useState(loadFrameCacheMb);
   const [thumbMemory, setThumbMemory] = useState(loadThumbMemoryMb);
   const [readAhead, setReadAhead] = useState(loadReadAhead);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  // choosing a profile sets what it stands for, which Advanced can then change
+  const applyProfile = (p: Preview) => {
+    const d = PROFILES[p];
+    setPreview(p); storePreview(p);
+    setBalancedSize(d.size); storeBalancedPreviewSize(d.size);
+    setDraftSmallest(d.smallest); storeDraftSmallest(d.smallest);
+    setDraftTarget(d.target); storeDraftTarget(d.target);
+    onLoupe(d.loupe);
+  };
+  const customized = (() => {
+    const d = PROFILES[preview];
+    return balancedSize !== d.size || draftSmallest !== d.smallest || draftTarget !== d.target || loupe !== d.loupe;
+  })();
   const chooseReadAhead = (v: Partial<ReadAhead>) => {
     const next = { ...readAhead, ...v };
     setReadAhead(next);
@@ -597,6 +638,11 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
               <span>Immage {about.app}</span>
               {about.commit && <span>commit {about.commit}</span>}
               <span>darktable {about.darktable.split("~")[0]}</span>
+              <div className="prefs-links">
+                {ABOUT_LINKS.map(([label, url, icon]) => (
+                  <button key={label} title={label} aria-label={label} onClick={() => void openUrl(url)}>{icon}</button>
+                ))}
+              </div>
             </div>
           )}
         </nav>
@@ -688,9 +734,6 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                 <PrefRow label="Open generated photos" hint="switch to editing after HDR or panorama merge, AI denoise, positive export, or the first result from a plugin">
                   <PrefSwitch checked={openGenerated} onChange={onOpenGenerated} />
                 </PrefRow>
-                <PrefRow label="Detail loupe" hint="show a 100% preview in Adjustments; use its picker to inspect a point on the photo">
-                  <PrefSwitch checked={loupe} onChange={onLoupe} />
-                </PrefRow>
                 <PrefRow label="Canvas" hint="behind the photo, full screen too; neutral gray judges tones without a dark surround, white as on a print. L steps through them">
                   <div className="pref-swatches">
                     {/* the viewer's backgrounds in styles.css */}
@@ -711,9 +754,15 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                            style={{ "--custom": overlayColor.custom } as React.CSSProperties}>
                       <input type="color" aria-label="Custom color" value={overlayColor.custom}
                              onClick={() => onOverlayColor({ ...overlayColor, pick: "custom" })}
-                             onChange={(e) => onOverlayColor({ pick: "custom", custom: e.target.value })} />
+                             onChange={(e) => onOverlayColor({ ...overlayColor, pick: "custom", custom: e.target.value })} />
                     </label>
                   </div>
+                </PrefRow>
+                <PrefRow label="Overlay opacity" hint={`how solid a mask's overlay is where it is fully selected: ${overlayColor.opacity}%`}>
+                  <input type="range" min={10} max={100} step={5} aria-label="Overlay opacity" value={overlayColor.opacity}
+                         onChange={(e) => onOverlayColor({ ...overlayColor, opacity: Number(e.target.value) })} />
+                  <button className="btn small" style={{ marginLeft: 8 }} disabled={overlayColor.opacity === OVERLAY_OPACITY}
+                          onClick={() => onOverlayColor({ ...overlayColor, opacity: OVERLAY_OPACITY })}>Reset</button>
                 </PrefRow>
                 <PrefRow label="Guide color" hint="the crop frame and grid, the straighten line, Transform's and the vignette's guides, and a mask shape's outline">
                   <div className="pref-swatches">
@@ -809,56 +858,59 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                     <button className="btn small" style={{ marginLeft: 8 }} onClick={() => void onRelaunch()}>Relaunch</button>
                   )}
                 </PrefRow>
-                <PrefRow label="Preview"
+                <PrefRow label="Performance profile"
                          hint={{
-                           quality: "every frame in full while you edit: the slowest, most faithful preview",
-                           balanced: "while a slider, wheel or curve moves, the photo renders at the selected preview size without grain, texture and diffuse or sharpen's sharpening, and in full on release. the zoomed-out view behind the photo leaves them out too",
-                           performance: "as Balanced, at quarter size while dragging and also without noise reduction and HSL; the whole-photo render behind the viewer is only the viewer's size",
+                           quality: "for high-end computers: drag previews at full size, without grain, texture and diffuse or sharpen's sharpening, which return in full on release",
+                           balanced: "for decent modern computers: drag previews at 75%, without grain, texture and diffuse or sharpen's sharpening, and in full on release",
+                           performance: "for older computers: drag previews at 50%, smaller again for slow sliders, with the detail loupe on and the whole-photo render behind the viewer only the viewer's size",
                          }[preview]}>
                   <div className="segmented small">
                     {([["Quality", "quality"], ["Balanced", "balanced"], ["Performance", "performance"]] as const).map(([label, v]) => (
-                      <button key={v} className={preview === v ? "active" : ""}
-                              onClick={() => { setPreview(v); storePreview(v); }}>{label}</button>
+                      <button key={v} className={preview === v ? "active" : ""} onClick={() => applyProfile(v)}>{label}</button>
+                    ))}
+                  </div>
+                  <button className="btn small" style={{ marginLeft: 8 }} disabled={!customized}
+                          title={`return Advanced's preview settings to ${preview === "quality" ? "Quality" : preview === "balanced" ? "Balanced" : "Performance"}'s`}
+                          onClick={() => applyProfile(preview)}>Reset</button>
+                </PrefRow>
+                <button className="module-prefs-fold" data-pref-fold="performance-advanced" aria-expanded={advancedOpen} aria-controls="perf-advanced"
+                        onClick={() => setAdvancedOpen(!advancedOpen)}>
+                  Advanced{customized ? " (customized)" : ""} <Chevron open={advancedOpen} />
+                </button>
+                <Collapse open={advancedOpen}>
+                  <div id="perf-advanced">
+                <PrefRow label="Preview size while dragging"
+                         hint="while a slider, wheel or curve moves, the photo renders at this share of its full size, and in full on release. 100% turns off smaller drafts for slow sliders">
+                  <div className="segmented small">
+                    {BALANCED_PREVIEW_SIZES.map((v) => (
+                      <button key={v} className={balancedSize === v ? "active" : ""}
+                              onClick={() => { setBalancedSize(v); storeBalancedPreviewSize(v); }}>{v * 100}%</button>
                     ))}
                   </div>
                 </PrefRow>
-                {preview === "balanced" && (
-                  <PrefRow label="Balanced preview size"
-                           hint="100% keeps drag previews at full size and disables smaller drafts for slow sliders; grain, texture and sharpening shortcuts still apply">
-                    <div className="segmented small">
-                      {BALANCED_PREVIEW_SIZES.map((v) => (
-                        <button key={v} className={balancedSize === v ? "active" : ""}
-                                onClick={() => { setBalancedSize(v); storeBalancedPreviewSize(v); }}>{v * 100}%</button>
-                      ))}
-                    </div>
-                  </PrefRow>
-                )}
-                {preview !== "quality" && !(preview === "balanced" && balancedSize === 1) && (
-                  <>
-                    <PrefRow label="Smaller drafts for slow sliders"
-                             hint="while a slider early in darktable's pipe moves (Exposure, White Balance, noise reduction), the photo renders smaller again, so each frame comes sooner. off keeps Preview's size">
-                      <div className="segmented small">
-                        {DRAFT_SMALLEST.map((v) => (
-                          <button key={v} className={draftSmallest === v ? "active" : ""}
-                                  onClick={() => { setDraftSmallest(v); storeDraftSmallest(v); }}>
-                            {v === 1 ? "Off" : `${v * 100}%`}
-                          </button>
-                        ))}
-                      </div>
-                    </PrefRow>
-                    {draftSmallest < 1 && (
-                      <PrefRow label="Draft time"
-                               hint="how long darktable may take on a frame while a slider moves before the next one is smaller; less is quicker and softer">
-                        <div className="segmented small">
-                          {DRAFT_TARGETS.map((ms) => (
-                            <button key={ms} className={draftTarget === ms ? "active" : ""}
-                                    onClick={() => { setDraftTarget(ms); storeDraftTarget(ms); }}>{ms} ms</button>
-                          ))}
-                        </div>
-                      </PrefRow>
-                    )}
-                  </>
-                )}
+                <PrefRow label="Smaller drafts for slow sliders"
+                         hint="while a slider early in darktable's pipe moves (Exposure, White Balance, noise reduction), the photo renders smaller again, so each frame comes sooner. off keeps the preview size">
+                  <div className="segmented small">
+                    {DRAFT_SMALLEST.map((v) => (
+                      <button key={v} className={draftSmallest === v ? "active" : ""} disabled={balancedSize === 1}
+                              onClick={() => { setDraftSmallest(v); storeDraftSmallest(v); }}>
+                        {v === 1 ? "Off" : `${v * 100}%`}
+                      </button>
+                    ))}
+                  </div>
+                </PrefRow>
+                <PrefRow label="Draft time"
+                         hint="how long darktable may take on a frame while a slider moves before the next one is smaller; less is quicker and softer. applies when smaller drafts are on">
+                  <div className="segmented small">
+                    {DRAFT_TARGETS.map((ms) => (
+                      <button key={ms} className={draftTarget === ms ? "active" : ""} disabled={draftSmallest === 1 || balancedSize === 1}
+                              onClick={() => { setDraftTarget(ms); storeDraftTarget(ms); }}>{ms} ms</button>
+                    ))}
+                  </div>
+                </PrefRow>
+                <PrefRow label="Detail loupe" hint="show a 100% preview in Adjustments; use its picker to inspect a point on the photo">
+                  <PrefSwitch checked={loupe} onChange={onLoupe} />
+                </PrefRow>
                 {sharedFramesAvailable && (
                   <PrefRow label="Shared-memory frames"
                            hint="hands each frame to the window in memory both share, rather than copying it through Tauri. off to compare the two in the GUI benchmark">
@@ -871,25 +923,12 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                     <PrefSwitch checked={atScreenScale} onChange={(on) => { setAtScreenScale(on); storeScreenScale(on); }} />
                   </PrefRow>
                 )}
-              </PrefCard>
-              <PrefCard title="Memory">
-                <PrefRow label="darktable memory"
-                         hint={`${{
-                           small: "darktable keeps to about an eighth of this computer's memory, for working beside other large programs; more of each edit is worked out again",
-                           default: "darktable may take about half of this computer's memory for its pipes and caches",
-                           large: "about two thirds, for when Immage is the only large program running",
-                         }[resources?.next ?? "default"]}${resources && resources.next !== resources.running
-                           ? ". applies once Immage starts again" : ""}`}>
-                  <div className="segmented small">
-                    {([["Small", "small"], ["Default", "default"], ["Large", "large"]] as const).map(([label, v]) => (
-                      <button key={v} className={resources?.next === v ? "active" : ""} disabled={!resources}
-                              onClick={() => chooseResources(v)}>{label}</button>
-                    ))}
-                  </div>
-                  {resources && resources.next !== resources.running && (
-                    <button className="btn small" style={{ marginLeft: 8 }} onClick={() => void onRelaunch()}>Relaunch</button>
-                  )}
-                </PrefRow>
+                {screenScale() !== null && (
+                  <PrefRow label="Fit frames at the screen's scale"
+                           hint="renders the settled Fit frame for this screen's scale and lets the page enlarge it. turn it off if the photo looks soft. takes effect on the next frame">
+                    <PrefSwitch checked={settledAtScreen} onChange={(on) => { setSettledAtScreen(on); storeSettledScale(on); }} />
+                  </PrefRow>
+                )}
                 <PrefRow label="Frame cache"
                          hint="memory for the frames the viewer keeps, so zooming back out or returning to a view seen before shows it without a render. a 100% frame is about 30 MB on a 4K screen and 45 MB on a 5K one">
                   <div className="segmented small">
@@ -926,6 +965,27 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                     <PrefSwitch checked={readAhead.both} onChange={(on) => chooseReadAhead({ both: on })} />
                   </PrefRow>
                 )}
+                  </div>
+                </Collapse>
+              </PrefCard>
+              <PrefCard title="Memory">
+                <PrefRow label="darktable memory"
+                         hint={`${{
+                           small: "darktable keeps to about an eighth of this computer's memory, for working beside other large programs; more of each edit is worked out again",
+                           default: "darktable may take about half of this computer's memory for its pipes and caches",
+                           large: "about two thirds, for when Immage is the only large program running",
+                         }[resources?.next ?? "default"]}${resources && resources.next !== resources.running
+                           ? ". applies once Immage starts again" : ""}`}>
+                  <div className="segmented small">
+                    {([["Small", "small"], ["Default", "default"], ["Large", "large"]] as const).map(([label, v]) => (
+                      <button key={v} className={resources?.next === v ? "active" : ""} disabled={!resources}
+                              onClick={() => chooseResources(v)}>{label}</button>
+                    ))}
+                  </div>
+                  {resources && resources.next !== resources.running && (
+                    <button className="btn small" style={{ marginLeft: 8 }} onClick={() => void onRelaunch()}>Relaunch</button>
+                  )}
+                </PrefRow>
               </PrefCard>
               <CachePrefs />
               <PrefCard title="AI Acceleration">

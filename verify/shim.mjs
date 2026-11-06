@@ -61,7 +61,7 @@ export function startEngine(binary, home, modelsDir = null, { gpu = false, onPer
     const tag = /^\{"tag":(\d+)/.exec(line)?.[1];
     // a merge's progress lines come ahead of its answer, with its tag
     // (main.c, _merge_report); the app shows them (engine.rs, read_stdout)
-    if (tag && /^\{"tag":\d+,"progress":true/.test(line)) return;
+    if (tag && /^\{"tag":\d+,"progress":true/.test(line)) { progressLog.push(JSON.parse(line)); return; }
     const w = tag && tagged.get(Number(tag));
     if (w) { tagged.delete(Number(tag)); w(line); } else waiting.shift()?.(line);
   });
@@ -74,6 +74,8 @@ export function startEngine(binary, home, modelsDir = null, { gpu = false, onPer
   });
 }
 let exited = Promise.resolve();
+// the progress lines heard, for the checks that count them
+export const progressLog = [];
 // the running engine's process, for the checks that measure it
 export const enginePid = () => engine?.pid ?? null;
 
@@ -304,6 +306,16 @@ const COMMANDS = {
     await request({ cmd: "export_hold", job, imgids: [imgid] });
     try {
       const { ok, ms, tag, ...r } = await requestTagged({ ...req, cmd: "print", job, imgid });
+      return r;
+    } finally {
+      await requestTagged({ cmd: "export_release", job });
+    }
+  },
+  print_sheet: async ({ imgids, request: req }) => {
+    const job = 900000 + ++printJobs;
+    await request({ cmd: "export_hold", job, imgids });
+    try {
+      const { ok, ms, tag, ...r } = await requestTagged({ ...req, cmd: "print", job });
       return r;
     } finally {
       await requestTagged({ cmd: "export_release", job });
