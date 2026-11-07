@@ -60,11 +60,11 @@ keep the Ubuntu 22.04 runtime baseline, including Linux Mint 22.x. The bundled
 webview retains video and audio support; MPEG-TS and WebRTC are not enabled. GUI benchmark
 reports record the running WebKitGTK version; use a new build when comparing
 renderer behavior after upgrading. On Wayland, **Drag drafts at the screen’s
-scale** still sizes reduced drag previews for the compositor’s actual fractional
-scale (for example, 125%), while release frames keep full quality. GTK 3
-still draws the window and full-quality release frames at the next integer
-scale (200% at 125% or 150%), which can increase rendering and presentation
-time. Using 100% scaling or `GDK_BACKEND=x11` can reduce this overhead;
+scale** sizes reduced drag previews for the compositor’s actual fractional
+scale (for example, 125%), and **Fit frames at the screen’s scale** does the
+same for the settled Fit frame. GTK 3 still draws the window, and frames of a
+zoomed-in photo, at the next integer scale (200% at 125% or 150%), which can
+increase rendering and presentation time. Using 100% scaling or `GDK_BACKEND=x11` can reduce this overhead;
 performance depends on the system.
 
 Starting with 0.41.1, normal AppImage launch handles the resolved NVIDIA/X11
@@ -197,7 +197,8 @@ performance; results still vary by system.
   a window drawn at 200%. On by default, it reduces drag-preview pixels to
   match the screen, including full-size drag previews (100% Balanced, and
   the whole-view preview of Texture, Clarity, Luminance NR and Grain; Quality
-  keeps every pixel). Settled frames still use the full webview resolution.
+  keeps every pixel). The settled Fit frame follows **Fit frames at the screen's
+scale**; zoomed-in frames still use the full webview resolution.
   Turn it off to compare GUI benchmarks with the same photo, window size and
   preview settings. This does not change GTK's window-surface resolution.
   Benchmarks in a virtual machine give approximate comparisons within that

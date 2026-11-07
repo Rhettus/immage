@@ -87,12 +87,12 @@ Updates), and offers to install it.
 
 - **Linux on Wayland with fractional scaling** (125%, 150%, ...): GTK 3
   draws the window at the next whole scale (200% for 125% or 150%) and the
-  desktop shrinks it. With "Drag drafts at the screen's scale" enabled,
-  reduced drag previews use the screen's actual scale, but full-quality
-  frames after releasing a slider and the window still use the larger
-  integer scale. This can increase rendering and presentation time.
-  Using 100% scaling or starting with `GDK_BACKEND=x11` can reduce this
-  overhead; performance depends on the system.
+  desktop shrinks it. Drag previews and the settled Fit frame use the
+  screen's actual scale (Preferences › Performance), but the window itself
+  and frames of a zoomed-in photo still use the larger integer scale. This
+  can increase rendering and presentation time when zoomed in. Using 100%
+  scaling or starting with `GDK_BACKEND=x11` can reduce this overhead;
+  performance depends on the system.
 
 ## Source
 
