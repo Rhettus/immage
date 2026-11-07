@@ -35,7 +35,8 @@ takes the photo back to its starting point (⌘Z undoes it).
 
 **Preset rows:** some sections have a row of swatches or buttons, such as
 the B&W filters or the grain amounts. Hover over one to preview it on the
-photo; click to apply it.
+photo, rendered at the size the photo is shown (up to 3200 pixels on the
+long edge) so grain previews as sharp as it will be; click to apply it.
 
 ## Basic
 

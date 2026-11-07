@@ -80,7 +80,7 @@ are `localStorage` keys named `immage.*`.
 
 | File | Responsibility |
 |---|---|
-| [App.tsx](../../src/App.tsx) | Library, viewer, panels, tools, undo, before/after, compare, keyboard, plugins; also the small components `PanelView`, `Slider`, `Filmstrip`, `HistogramView`, `Navigator`, `Toolbar`. |
+| [App.tsx](../../src/App.tsx) | Library, viewer, panels, tools, undo, before/after, compare, keyboard, plugins; also the small components `PanelView`, `Slider`, `Filmstrip`, `HistogramView`, `Navigator`, `Toolbar`. Hover previews (`showHover`) render on the preview pipe: Presets tiles at up to 1600 pixels, a panel's swatches (`hoverValues`; grain, B&W filters) at the displayed size up to 3200, so grain is not stretched. |
 | [Tour.tsx](../../src/Tour.tsx), [Shortcuts.tsx](../../src/Shortcuts.tsx) | The quick-start tour; the keyboard shortcuts sheet. |
 | [ImportView.tsx](../../src/ImportView.tsx) | The SD card importer, loaded from `@immporter/embed`. |
 | [Collapse.tsx](../../src/Collapse.tsx), [keys.ts](../../src/keys.ts), [paths.ts](../../src/paths.ts) | Folding panels (a fold that shrinks a scrolled list clamps its offset: WebKitGTK left it past the end); ⌘ or Ctrl by platform; path helpers for either separator. |

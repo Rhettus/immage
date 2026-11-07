@@ -1150,7 +1150,12 @@ export default function App() {
       const s = session.current;
       if (!s || token !== hoverToken.current) return;
       const { w, h } = viewport();
-      const size = Math.min(1600, Math.max(w, h));
+      // tiles stay small; a panel's swatches (grain above all, whose look
+      // depends on the pixels) render at the size the image is shown at,
+      // so the hover is as sharp as the edit and not stretched
+      const f0 = full.current, z0 = viewZ.current;
+      const shown = from === "panel" && f0 && z0 ? Math.round(Math.max(f0.w, f0.h) * z0) : 0;
+      const size = Math.min(from === "panel" ? 3200 : 1600, Math.max(shown, Math.min(1600, Math.max(w, h))));
       try {
         const r = render(s, size);
         const f = r && await track(r);

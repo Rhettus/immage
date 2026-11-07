@@ -3,6 +3,14 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
+## 0.44.0
+
+Bug fixes
+
+- Hovering a grain amount or a B&W filter swatch now previews at the size the
+  photo is shown, instead of a smaller render stretched over it, so grain no
+  longer looks soft while you hover.
+
 ## 0.43.0
 
 Improvements
