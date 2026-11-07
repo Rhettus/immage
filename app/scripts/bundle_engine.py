@@ -92,18 +92,17 @@ if LINUX:
     for f in glob.glob(os.path.join(dst, "lib", "darktable", "libonnxruntime.so.*")):
         os.remove(f)
 # darktable on macOS loads lensfun's database only from share/lensfun beside
-# its own data (iop/lens.cc), so the bundle carries Homebrew's copy. on
-# Linux that is where it looks when the system has no database of its own;
-# the copy is the latest lensfun-update-data fetched, if it was run
-if LINUX:
-    lensfun_pkg = "/usr/share/lensfun"
-    lensfun = next((d for d in ("/var/lib/lensfun-updates", lensfun_pkg)
-                    if os.path.isdir(os.path.join(d, "version_1"))), lensfun_pkg)
-else:
-    lensfun = os.path.realpath("/opt/homebrew/share/lensfun")
+# its own data (iop/lens.cc); on Linux that is where it looks when the system
+# has no database of its own. the bundle carries the current snapshot from
+# lensfun's site, not the package's, which dates from the 0.3.4 release and
+# lacks newer cameras. the package (Homebrew keg) still names the license
+lensfun_pkg = "/usr/share/lensfun"
+lensfun = lensfun_pkg if LINUX else os.path.realpath("/opt/homebrew/share/lensfun")
 if not os.path.isdir(os.path.join(lensfun, "version_1")):
     sys.exit(f"no lensfun database at {lensfun}")
-shutil.copytree(lensfun, os.path.join(dst, "share", "lensfun"))
+lensfun_snapshot = os.path.join(repo, "build", "lensfun-db")
+subprocess.run([sys.executable, "-I", os.path.join(os.path.dirname(__file__), "fetch_lensfun_db.py"), lensfun_snapshot], check=True)
+shutil.copytree(lensfun_snapshot, os.path.join(dst, "share", "lensfun"))
 os.makedirs(deps_dir, exist_ok=True)
 
 if LINUX:

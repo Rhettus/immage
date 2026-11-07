@@ -7,6 +7,12 @@ what Immage's update banner shows under Release Notes.
 
 Bug fixes
 
+- Lens Corrections now knows cameras added to the lensfun database since 2023,
+  such as the Sony ZV-1; the bundled lens database was the old one from
+  lensfun 0.3.4, so those photos got no profile correction. Each build now
+  bundles the current database. On Linux, as in darktable, a lensfun
+  database installed on the system is used instead; update it with
+  `lensfun-update-data`.
 - Hovering a grain amount or a B&W filter swatch now previews at the size the
   photo is shown, instead of a smaller render stretched over it, so grain no
   longer looks soft while you hover.

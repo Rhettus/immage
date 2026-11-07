@@ -133,3 +133,8 @@ Each build bundles the
 engine with the libraries it links: from Homebrew on macOS, MSYS2 on
 Windows and Ubuntu on Linux (`app/scripts/bundle_engine.py`,
 `app/scripts/bundle_engine_windows.sh`).
+The lens database is the exception: both scripts download the current lensfun
+snapshot (`app/scripts/fetch_lensfun_db.py`, needs network access) rather than
+take the package's, which is from 2023. The engine uses the bundled copy only when no system
+database loads (`lens.cc`, the same as darktable), so
+on Linux a system lensfun package takes precedence.

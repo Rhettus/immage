@@ -21,8 +21,11 @@ cp "$src"/bin/*.dll "$dst/bin/" 2>/dev/null || true
 cp -r "$src/lib/darktable" "$dst/lib/darktable"
 cp -r "$src/share/darktable" "$dst/share/darktable"
 # darktable falls back to share/lensfun beside its own data when lensfun's
-# built-in location (inside MSYS2) is missing, as on a user's machine
-cp -r /ucrt64/share/lensfun "$dst/share/lensfun"
+# built-in location (inside MSYS2) is missing, as on a user's machine. the
+# current snapshot from lensfun's site, not the package's from the 0.3.4
+# release, which lacks newer cameras
+python3 -I "$root/app/scripts/fetch_lensfun_db.py" "$root/build/lensfun-db"
+cp -r "$root/build/lensfun-db" "$dst/share/lensfun"
 
 # where a needed DLL may come from, after the bundle itself
 dirs="/ucrt64/bin $(find "$root/build" -iname 'onnxruntime*.dll' -exec dirname {} \; 2>/dev/null | sort -u | tr '\n' ' ')"

@@ -268,7 +268,12 @@ off. This is separate from Remove Chromatic Aberration. A mask's Defringe
 uses the same module.
 
 - **Enable Profile Corrections**: corrects distortion and vignetting for
-  the lens darktable detects (through the lensfun database).
+  the lens darktable detects (through the lensfun database). Immage bundles
+  a current snapshot of that database, so recent cameras, including fixed-lens
+  compacts like the Sony ZV-1, have profiles. The Windows and macOS builds always use it; on Linux, as in darktable,
+  a lensfun database installed on the system is used instead (update it with
+  `lensfun-update-data`). A camera or lens still missing from the database
+  gets no correction.
 - **Remove Chromatic Aberration**: on by default.
 
 The **Default** preset that new raws get turns profile corrections on.
