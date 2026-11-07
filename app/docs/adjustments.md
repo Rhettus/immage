@@ -274,6 +274,16 @@ uses the same module.
   a lensfun database installed on the system is used instead (update it with
   `lensfun-update-data`). A camera or lens still missing from the database
   gets no correction.
+- **Lens**: **Auto** uses the lens matched from the photo's EXIF, shown
+  beside it. Open the drop-down to pick another from the lensfun lenses that
+  fit the camera (all of them when the camera is not in the database). Type in
+  the search box at its top to filter; every word you type must appear in
+  the lens's maker or name, in any order, so `12-32` finds the Panasonic
+  12-32mm and `pana 12-32` narrows it to Panasonic. Up and Down move, Enter
+  chooses and Esc closes. Choosing a lens uses its lensfun profile, even on a
+  raw whose own embedded correction Auto would use. The choice follows the photo's edits: undo, copy
+  and paste, presets and Reset include it. It needs Enable Profile
+  Corrections to be on.
 - **Remove Chromatic Aberration**: on by default.
 
 The **Default** preset that new raws get turns profile corrections on.

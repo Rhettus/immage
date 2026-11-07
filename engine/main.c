@@ -56,6 +56,7 @@
 #ifdef HAVE_PANO
 #include "pano.h"
 #endif
+#include "lenses.h"
 #include "print.h"
 #include "strip.h"
 #include "upright.h"
@@ -1092,10 +1093,50 @@ static gboolean _write_details(dt_iop_module_t *mod, const double num, char **er
   return TRUE;
 }
 
+// "lens_pick" of the lens module, besides its params: 0 for the lens
+// darktable matched from the EXIF (the default params'), else lenses_hash()
+// of the Lensfun lens chosen in its place. the params keep the lens's name
+// and its geometry, as the module's own lens menu sets them, and the method
+// is Lensfun's: a raw that carries its own correction defaults to the
+// embedded one, which has no use for a lens of the database
+#define LENS_PICK "lens_pick"
+#define LENS_METHOD_LENSFUN 1
+
+static gboolean _write_lens_pick(dt_iop_module_t *mod, const double num, char **err)
+{
+  dt_introspection_field_t *f = NULL;
+  char *lens = _field_in(mod, mod->params, "lens", &f, err);
+  const char *auto_lens = lens ? _field_in(mod, mod->default_params, "lens", &f, err) : NULL;
+  int *geom = _field_in(mod, mod->params, "target_geom", &f, err);
+  const int *auto_geom = geom ? _field_in(mod, mod->default_params, "target_geom", &f, err) : NULL;
+  int *method = _field_in(mod, mod->params, "method", &f, err);
+  const int *auto_method = method ? _field_in(mod, mod->default_params, "method", &f, err) : NULL;
+  if(!lens || !auto_lens || !geom || !auto_geom || !method || !auto_method) return FALSE;
+  if(num <= 0.0)
+  {
+    g_strlcpy(lens, auto_lens, 128);
+    *geom = *auto_geom;
+    *method = *auto_method;
+    return TRUE;
+  }
+  char model[128];
+  int type = 0;
+  if(!lenses_find((unsigned)num, model, sizeof model, &type))
+  {
+    *err = g_strdup("no such lens in the Lensfun database");
+    return FALSE;
+  }
+  g_strlcpy(lens, model, 128);
+  *geom = type ? type : *auto_geom;
+  *method = LENS_METHOD_LENSFUN;
+  return TRUE;
+}
+
 static gboolean _write_field(dt_iop_module_t *mod, const char *name, const double num,
                              char **err)
 {
   if(!g_strcmp0(name, BLEND_DETAILS)) return _write_details(mod, num, err);
+  if(!g_strcmp0(name, LENS_PICK) && !g_strcmp0(mod->op, "lens")) return _write_lens_pick(mod, num, err);
   return _write_field_in(mod, mod->params, name, num, err);
 }
 
@@ -1107,6 +1148,14 @@ static gboolean _read_field(dt_iop_module_t *mod, const char *name,
   {
     const dt_develop_blend_params_t *bp = from_defaults ? mod->default_blendop_params : mod->blend_params;
     *num = bp ? bp->details : 0.0;
+    return TRUE;
+  }
+  if(!g_strcmp0(name, LENS_PICK) && !g_strcmp0(mod->op, "lens"))
+  {
+    dt_introspection_field_t *lf = NULL;
+    const char *lens = from_defaults ? NULL : _field_in(mod, mod->params, "lens", &lf, err);
+    const char *auto_lens = from_defaults ? NULL : _field_in(mod, mod->default_params, "lens", &lf, err);
+    *num = lens && auto_lens && g_strcmp0(lens, auto_lens) ? lenses_hash(lens) : 0.0;
     return TRUE;
   }
   dt_introspection_field_t *f = NULL;
@@ -1609,6 +1658,56 @@ static gboolean _get(JsonObject *ops, JsonBuilder *b, char **err)
   }
   g_list_free(names);
   json_builder_end_object(b);
+  return TRUE;
+}
+
+// the lenses the open photo's Lens Corrections can use, `auto` being the one
+// darktable matched from the EXIF and `pick` the one chosen in its place
+// (lens_pick): { auto, pick, lenses: [{ name, maker, hash }] } in name order,
+// the chosen one included even when it does not fit the camera
+static void _add_string(JsonBuilder *b, const char *name, const char *value);
+typedef struct { JsonBuilder *b; GHashTable *seen; } _lens_menu_t;
+
+static void _lens_menu_add(const char *maker, const char *model, void *user)
+{
+  _lens_menu_t *m = user;
+  if(!model || !*model || g_hash_table_contains(m->seen, model)) return;
+  g_hash_table_add(m->seen, g_strdup(model));
+  json_builder_begin_object(m->b);
+  _add_string(m->b, "name", model);
+  _add_string(m->b, "maker", maker);
+  json_builder_set_member_name(m->b, "hash");
+  json_builder_add_int_value(m->b, lenses_hash(model));
+  json_builder_end_object(m->b);
+}
+
+static gboolean _lens_menu(JsonBuilder *b, char **err)
+{
+  dt_iop_module_t *mod = _module("lens", err);
+  if(!mod) return FALSE;
+  dt_introspection_field_t *f = NULL;
+  const char *lens = _field_in(mod, mod->params, "lens", &f, err);
+  const char *auto_lens = lens ? _field_in(mod, mod->default_params, "lens", &f, err) : NULL;
+  if(!lens || !auto_lens) return FALSE;
+  // the database's name for the lens the file names, as the module matches it
+  const dt_image_t *img = &_s.dev.image_storage;
+  char matched[128];
+  g_strlcpy(matched, auto_lens, sizeof matched);
+  lenses_match(img->exif_maker, img->exif_model, auto_lens, matched, sizeof matched);
+  _add_string(b, "auto", matched);
+  double pick = 0.0;
+  if(!_read_field(mod, LENS_PICK, FALSE, &pick, err)) return FALSE;
+  json_builder_set_member_name(b, "pick");
+  json_builder_add_int_value(b, (gint64)pick);
+  json_builder_set_member_name(b, "lenses");
+  json_builder_begin_array(b);
+  _lens_menu_t m = { b, g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL) };
+  lenses_list(img->exif_maker, img->exif_model, _lens_menu_add, &m);
+  // a lens kept from another camera's edit, or the matched one, is listed
+  if(*lens && g_strcmp0(lens, auto_lens)) _lens_menu_add("", lens, &m);
+  if(*matched) _lens_menu_add("", matched, &m);
+  g_hash_table_destroy(m.seen);
+  json_builder_end_array(b);
   return TRUE;
 }
 
@@ -10412,6 +10511,10 @@ static void _handle(JsonObject *req, FILE *out)
     if(!op || !_set(op, field, value, params, has_enabled, enabled, after, before, instance, mask, invert, opacity,
                     refine, &err))
       goto fail;
+  }
+  else if(!g_strcmp0(cmd, "lenses"))
+  {
+    if(!_lens_menu(b, &err)) goto fail;
   }
   else if(!g_strcmp0(cmd, "module_state"))
   {

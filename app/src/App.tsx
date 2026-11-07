@@ -23,6 +23,7 @@ import { autoArea, autoBlack, autoDmax, autoDmin, autoExposure as autoPrintExpos
          FILM_BW, FILM_COLOR, fromValues, PRESETS, toValues, type Stats } from "./negadoctor";
 import { NegativePanel, type NegPick } from "./NegativePanel";
 import { FilmPanel } from "./FilmPanel";
+import { LensPicker } from "./LensPicker";
 import { PrintPanel } from "./PrintPanel";
 import { applyProof, cellsLayout, defaultPrintSettings, hasPrintSettings, LABEL_POINTS, layout as printLayout,
          loadPrintSettings, NO_PROOF, PDF, PDF_PAPERS, printerInfo, printRequest, sheetPages, sheetRequest,
@@ -8108,6 +8109,8 @@ const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle, values
                     ? <SaturationCurve key="saturation-curve" values={values} disabled={disabled} onChange={onChangeMany}
                        module={switchFor("sc_pn") && <ModuleSwitch {...switchFor("sc_pn")!} scope="global" />} />
                     : null;
+                  if (c.id === "lens_pick") return <LensPicker key={c.id} value={values.lens_pick ?? 0} photo={session}
+                    disabled={disabled || values.lens_profile !== 1} onChange={(v) => onChange(c, v)} />;
                   const props = controlProps(c);
                   return c.kind === "toggle" ? <Toggle key={c.id} {...props} />
                     : c.kind === "choice" ? <Choice key={c.id} {...props} />

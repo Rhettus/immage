@@ -1412,14 +1412,16 @@ export const modules: ModuleMap[] = [
   },
   {
     op: "lens", keepOn: false,
-    controls: ["lens_profile", "lens_ca"],
-    fields: ["modify_flags", "has_been_set"],
+    controls: ["lens_profile", "lens_ca", "lens_pick"],
+    // lens_pick is the engine's own field: 0 for the lens matched from the
+    // EXIF, else the hash of the Lensfun lens chosen in its place
+    fields: ["modify_flags", "has_been_set", "lens_pick"],
     // flags: TCA 1, vignetting 2, distortion 4 (lens.cc). until has_been_set,
     // commit_params ignores the params for the defaults, as darktable's GUI
     // sets it on the first change; the method stays the one the defaults
     // picked for the photo
-    read: (p) => ({ lens_profile: 1, lens_ca: p.modify_flags & 1 ? 1 : 0 }),
-    write: (v) => ({ modify_flags: v.lens_ca ? 7 : 6, has_been_set: 1 }),
+    read: (p) => ({ lens_profile: 1, lens_ca: p.modify_flags & 1 ? 1 : 0, lens_pick: p.lens_pick }),
+    write: (v) => ({ modify_flags: v.lens_ca ? 7 : 6, has_been_set: 1, lens_pick: v.lens_pick }),
     enabled: (v) => v.lens_profile === 1,
   },
   {
@@ -1684,6 +1686,10 @@ export const panels: Panel[] = [
         controls: [
           { ...toggle("lens_profile", "Enable Profile Corrections", 0),
             note: "uses the lens darktable detects through lensfun" },
+          // drawn by LensPicker, which lists the database's lenses
+          { id: "lens_pick", label: "Lens", kind: "choice", options: [["Auto", 0]], menu: true, min: 0, max: 16777215,
+            step: 1, neutral: 0, format: (v) => (v ? "chosen" : "auto"),
+            note: "the lens whose profile corrects the photo; Auto uses the one the file names" },
           toggle("lens_ca", "Remove Chromatic Aberration", 1),
         ],
       },

@@ -5,6 +5,15 @@ what Immage's update banner shows under Release Notes.
 
 ## 0.44.0
 
+Improvements
+
+- Lens Corrections has a Lens drop-down under Enable Profile Corrections. It
+  shows the lens matched from the file (Auto) and lists the lenses that fit
+  the camera, so a lens the file does not name, or names wrongly, can be
+  chosen by hand (raws that carry their own correction switch to the lensfun
+  profile when you do). Type in its search box to filter: "12-32" finds the
+  Panasonic 12-32mm.
+
 Bug fixes
 
 - Lens Corrections now knows cameras added to the lensfun database since 2023,

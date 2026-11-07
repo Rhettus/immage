@@ -2397,3 +2397,15 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .select-menu button.on { background: var(--inset); }
 .select-menu button.chosen::before { content: "\2713"; position: absolute; left: 8px; color: var(--text-3); }
 .select-menu .menu-label { padding: 6px 10px 2px; color: var(--text-3); font-size: var(--fs-small); }
+
+/* Lens Corrections' lens drop-down: a button, and a menu with a search above the list */
+.lens-pick { align-items: flex-start; }
+.lens-field { position: relative; flex: 1; min-width: 0; }
+.lens-button { width: 100%; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.context-menu.lens-menu { z-index: 1000; min-width: 0; box-sizing: border-box; }
+.lens-menu > input.field { width: 100%; margin-bottom: 4px; box-sizing: border-box; }
+.lens-list { overflow-y: auto; }
+.lens-list button { position: relative; padding-left: 24px; }
+.lens-list button.on { background: var(--inset); }
+.lens-list button.chosen::before { content: "\2713"; position: absolute; left: 8px; color: var(--text-3); }
+.lens-list .menu-label { padding: 6px 10px; color: var(--text-3); font-size: var(--fs-small); }

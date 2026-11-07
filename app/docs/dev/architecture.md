@@ -244,7 +244,7 @@ Commands by what they reach:
 
 | Reaches | Commands |
 |---|---|
-| The open photo, through the engine | `open_image`, `get_params`, `set_params`, `module_state`, `render`, `cancel_base`, `preview`, `save`, `before_view`, `history`, `masks`, `mask_shapes`, `combine`, `mask_delete`, `mask_rename`, `mask_map`, `range_map`, `sample`, `zones`, `tone_key`, `agx_auto`, `spots`, `spots_enable`, `spot_source`, `look_apply`, `look_amount`, `positive_export`, `ai_object`, `ai_mask`, `ai_depth`, `ai_denoise`, `ai_denoise_preview` |
+| The open photo, through the engine | `open_image`, `get_params`, `set_params`, `module_state`, `render`, `cancel_base`, `preview`, `save`, `before_view`, `history`, `masks`, `mask_shapes`, `combine`, `mask_delete`, `mask_rename`, `mask_map`, `range_map`, `sample`, `zones`, `tone_key`, `lenses`, `agx_auto`, `spots`, `spots_enable`, `spot_source`, `look_apply`, `look_amount`, `positive_export`, `ai_object`, `ai_mask`, `ai_depth`, `ai_denoise`, `ai_denoise_preview` |
 | The library, through the engine | `open_folder` (engine `import` in batches), `thumb`, `thumb_cached`, `thumb_known`, `prefetch`, `meta`, `meta_set`, `capture_times`, `keywords`, `keywords_set`, `create_virtual_copy`, `remove_virtual_copy`, `hdr_merge`, `hdr_can_align`, `pano_merge`, `pano_can_merge`, `trash_files`, `export_images`, `export_cancel`, `export_preview`, `fonts`, `print_photo`, `print_profiles`, `print_profile_add`, `printers`, `printer_info`, `softproof`, `spektra_stocks`, `spektra_fetch`, `ai_accel`, `about` |
 | Files only | `list_subfolders`, `folder_volumes`, `path_exists`, `path_kind`, `export_existing`, `presets_load`, `presets_save`, `export_presets_load`, `export_presets_save`, `preset_file_read`, `preset_file_write`, `looks_list`, `sample_folder`, `launch_file` |
 | AI models (download, then the engine's `version`) | `ai_model_ensure`, `ai_model_reinstall` |
@@ -450,6 +450,7 @@ The commands `_handle()` serves:
 | Edit | `set`, `get`, `render`, `preview`, `look`, `look_amount` |
 | Masks and spots | `mask`, `combine`, `masks`, `mask_rename`, `mask_delete`, `mask_map`, `range_map`, `sample`, `spots`, `spots_enable`, `spot_source` |
 | Tone | `tone_key`, `agx_auto`, `zones` |
+| Lens Corrections | `lenses` (`_lens_menu`: the matched lens and the camera's Lensfun lenses, from [lenses.cc](../../../engine/lenses.cc), which loads its own lfDatabase the way lens.cc's `init_global()` does); the virtual field `lens_pick` of the `lens` module (`_write_lens_pick`, `_read_field`): 0 is the EXIF match (default params), else `lenses_hash()` of the chosen lens, written as the params' `lens` name and `target_geom`, with `method` set to Lensfun (a raw with embedded correction defaults to the embedded method, which ignores the database); 0 restores the default params' three. Shown by [LensPicker.tsx](../../src/LensPicker.tsx) (`matchLenses` filters by words), which refetches when the photo or the pick changes |
 | AI | `ai_object`, `ai_mask`, `ai_depth`, `ai_denoise`, `ai_denoise_preview` |
 
 It relies on these parts of darktable (paths inside `darktable/`):
