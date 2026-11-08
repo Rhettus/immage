@@ -60,13 +60,11 @@ icon sits on that editor's heading, since the slider is replaced.
 | Treatment (Color, Black & White) | color calibration's gray (`channelmixerrgb`), on an instance of its own after the color equalizer, or the color equalizer (`colorequal`) |
 | White Balance: Temp, Tint, the picker | color calibration (`channelmixerrgb`) |
 | Exposure | exposure (`exposure`) |
-| Contrast | AgX (`agx`), or sigmoid (`sigmoid`) on a photo started under it; or color balance rgb (`colorbalancergb`); or contrast equalizer (below) |
-| Contrast equalizer (Contrast option) | contrast equalizer (`atrous`): five channels, each with six coarse-to-fine bands; replaces the global or masked Contrast slider, chosen independently |
+| Contrast | AgX (`agx`), or sigmoid (`sigmoid`) on a photo started under it; or color balance rgb (`colorbalancergb`); or contrast equalizer (`atrous`), which replaces the global or masked slider with five channels of six coarse-to-fine bands, chosen independently |
 | Highlights, Shadows | tone equalizer (`toneequal`), or shadows and highlights (`shadhi`) |
 | Blacks | AgX's lift, or sigmoid's target black; or exposure's black level (`exposure`) |
 | Vibrance | color balance rgb (`colorbalancergb`) |
-| Saturation | AgX's saturation; or color balance rgb (`colorbalancergb`), which the AgX option falls back to on a photo on sigmoid; or saturation curve (below) |
-| Saturation curve (Saturation option) | saturation curve (`satcurvergb`): its saturation and brilliance curves, up to 20 points each, with darktable's default formula and filter; replaces the global or masked Saturation slider, chosen independently |
+| Saturation | AgX's saturation; or color balance rgb (`colorbalancergb`), which the AgX option falls back to on a photo on sigmoid; or saturation curve (`satcurvergb`), which replaces the global or masked slider with saturation and brilliance curves of up to 20 points each, using darktable's default formula and filter, chosen independently |
 | Whites | AgX (`agx`), with color balance rgb's highlights brilliance (`colorbalancergb`); sigmoid (`sigmoid`) on a photo started under it |
 | Texture | contrast & texture (`contrastntexture`), on its own instance, or diffuse or sharpen (`diffuse`) |
 | Clarity | contrast & texture (`contrastntexture`), or local contrast (`bilat`) |
@@ -98,7 +96,7 @@ icon sits on that editor's heading, since the slider is replaced.
 | Local Highlights, Shadows | an instance of tone equalizer or shadows and highlights (as the photo's) per mask |
 | Local Temp, Tint | an instance of color calibration per mask |
 | Local Texture, Clarity, Dehaze | an instance of the chosen Texture or Clarity module (including contrast & texture), or haze removal per mask |
-| Local Noise, Defringe, Sharpness | an instance of denoise (profiled), chromatic aberrations (`cacorrectrgb`), or diffuse or sharpen or sharpen (as the photo's Sharpening) per mask |
+| Local Noise, Defringe, Sharpness | an instance of denoise (profiled), chromatic aberrations (`cacorrectrgb`), or sharpen or diffuse or sharpen (as the photo's Sharpening) per mask |
 | **Heal and Clone** | retouch (`retouch`) |
 | **HDR Merge** | darktable's HDR merge (lighttable's "create HDR"), with its auto-alignment, into a float DNG |
 | **Panorama Merge** | no darktable module: OpenCV stitches RAW and non-RAW photos rendered by darktable into a float DNG |
