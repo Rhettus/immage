@@ -29,9 +29,11 @@ Follow the format of previous releases:
 
 # Documentation
 
-Whenever adding or changing a feature, update both the user guide in
-`app/docs/` and the developer documentation in `app/docs/dev/` as part of
-the same change. Describe the final behavior, settings and interactions for
-users, and the relevant architecture, code paths and verification for developers.
-Revise or remove outdated descriptions in related guides and the project README.
+Whenever adding or changing a feature, update the user guide in `app/docs/`
+as part of the same change. Describe the final behavior, settings and
+interactions for users, and revise outdated related guides and the project README.
 Documentation updates are required alongside the release notes.
+
+Keep agent implementation notes, status, verification run notes and handoffs in
+the gitignored `notes/` directory. Do not add these to `app/docs/`; that directory
+is reserved for user-facing documentation.

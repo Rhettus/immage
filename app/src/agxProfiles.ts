@@ -3,7 +3,8 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { useSyncExternalStore } from "react";
-import { AGX_FIELDS, AGX_USER_FIRST, setUserProfiles, type UserProfile } from "./manifest";
+import { loadNewPhotosProfile, storeNewPhotosProfile } from "./profileDefault";
+import { AGX_FIELDS, AGX_USER_FIRST, PROFILE_OPTIONS, setUserProfiles, type UserProfile } from "./manifest";
 
 // the AgX presets loaded from darktable, kept in agx-profiles.json and shown
 // in the Profile menu's My Presets group (manifest.ts, setUserProfiles)
@@ -86,13 +87,25 @@ export async function addAgxProfiles(found: FoundPreset[]): Promise<number[]> {
 
 // Keep the parameter bases for photos already using a removed profile, and never
 // reuse its ID. Only active imported entries may be deleted, never built-ins.
-export async function deleteAgxProfiles(values: number[]): Promise<void> {
+export async function deleteAgxProfiles(values: number[], replacement?: number): Promise<void> {
   const selected = new Set(values);
   if ([...selected].some((value) => !userProfiles().some((p) => p.value === value)))
     throw new Error("Only user-loaded AgX presets can be deleted");
   if (!selected.size) return;
   const next = profiles.map((p) => selected.has(p.value) ? { ...p, deleted: true } : p);
-  await store(next);
+  const previousDefault = loadNewPhotosProfile();
+  const replacingDefault = selected.has(previousDefault);
+  if (replacingDefault) {
+    if (replacement === undefined || selected.has(replacement) || !PROFILE_OPTIONS.some(([, v]) => v === replacement))
+      throw new Error("Choose another default profile before deleting this preset");
+    // Store the explicit replacement first. Restore it if saving deletion fails.
+    storeNewPhotosProfile(replacement);
+  }
+  try { await store(next); }
+  catch (error) {
+    if (replacingDefault) storeNewPhotosProfile(previousDefault);
+    throw error;
+  }
   profiles = next;
   publish();
 }

@@ -3,6 +3,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { PROFILE_GROUPS } from "./manifest";
+import { loadNewPhotosProfile } from "./profileDefault";
 import { addAgxProfiles, deleteAgxProfiles, findAgxPresets, DELETE_AGX_PRESET_EVENT, LOAD_AGX_PRESET_EVENT, useAgxProfiles, userProfiles,
          type FoundPreset } from "./agxProfiles";
 
@@ -29,8 +31,15 @@ function AgxPresetDialog({ mode, ready, onPick, onClose }: { mode: "load" | "del
   const [chosen, setChosen] = useState<Set<number>>(new Set());
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [replacement, setReplacement] = useState<number | null>(null);
   const box = useRef<HTMLDivElement>(null);
   const listed = removing ? userProfiles().map((p) => ({ name: p.label, params: p.params })) : found ?? [];
+
+  const deleting = userProfiles().filter((_, i) => chosen.has(i)).map((p) => p.value);
+  const needsReplacement = removing && deleting.includes(loadNewPhotosProfile());
+  const replacements = PROFILE_GROUPS.map(([name, options]) =>
+    [name, options.filter(([, value]) => !deleting.includes(value))] as [string, [string, number][]]);
+  const replacementValid = replacement !== null && replacements.some(([, opts]) => opts.some(([, v]) => v === replacement));
 
   const search = async (file?: string) => {
     setBusy(true); setError("");
@@ -52,7 +61,7 @@ function AgxPresetDialog({ mode, ready, onPick, onClose }: { mode: "load" | "del
     if (!chosen.size) return;
     setBusy(true);
     try {
-      if (removing) await deleteAgxProfiles(userProfiles().filter((_, i) => chosen.has(i)).map((p) => p.value));
+      if (removing) await deleteAgxProfiles(deleting, replacement ?? undefined);
       else {
         const values = await addAgxProfiles(listed.filter((_, i) => chosen.has(i)));
         if (values.length) onPick(values[0]);
@@ -72,7 +81,7 @@ function AgxPresetDialog({ mode, ready, onPick, onClose }: { mode: "load" | "del
       e.stopPropagation();
       if (e.key === "Escape") { e.preventDefault(); if (!busy) onClose(); }
       if (e.key === "Tab") {
-        const items = Array.from(box.current?.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled)") ?? []);
+        const items = Array.from(box.current?.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled), select:not(:disabled)") ?? []);
         const first = items[0], last = items.at(-1);
         if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
         else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
@@ -92,6 +101,16 @@ function AgxPresetDialog({ mode, ready, onPick, onClose }: { mode: "load" | "del
             {" "}{p.name.replace(/^_builtin_/, "")}
           </label>)}
         </>}
+        {needsReplacement && <label className="row">
+          This preset is the default for new raw photos. Choose another default before deleting it.
+          <select className="field" data-action="agx-replacement-default" disabled={busy}
+            value={replacementValid ? replacement! : ""} onChange={(e) => setReplacement(Number(e.target.value))}>
+            <option value="" disabled>Choose a default profile…</option>
+            {replacements.filter(([, options]) => options.length).map(([name, options]) => <optgroup key={name} label={name}>
+              {options.map(([name, value]) => <option key={value} value={value}>{name}</option>)}
+            </optgroup>)}
+          </select>
+        </label>}
         {error && <p role="alert">{error}</p>}
 
       </div>
@@ -101,7 +120,7 @@ function AgxPresetDialog({ mode, ready, onPick, onClose }: { mode: "load" | "del
           <button className="btn" disabled={busy || !ready} onClick={() => void choose()}>From file…</button>
         </>}
         <button className="btn" disabled={busy} onClick={onClose}>Close</button>
-        <button className="btn primary" disabled={busy || chosen.size === 0} onClick={() => void apply()}>{removing ? "Delete" : "Add"}</button>
+        <button className="btn primary" disabled={busy || chosen.size === 0 || (needsReplacement && !replacementValid)} onClick={() => void apply()}>{removing ? "Delete" : "Add"}</button>
       </div>
     </div>
   </div>;
