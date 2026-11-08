@@ -40,6 +40,8 @@
 #include "common/metadata.h"
 #include "common/mipmap_cache.h"
 #include "common/ratings.h"
+#include <libxml/parser.h>
+#include <sqlite3.h>
 #include "common/styles.h"
 #include "common/spektra_fetch.h"
 #include "common/spektra_sim.h"
@@ -9245,6 +9247,171 @@ static gboolean _item_params(dt_iop_module_t *m, const dt_style_item_t *si,
   return TRUE;
 }
 
+// one darktable AgX preset's settings in this darktable's version, as the
+// requested fields ({ field: number }) in `b`; FALSE when it cannot convert
+static gboolean _agx_preset_fields(dt_iop_module_t *m, const void *blob, const int size,
+                                   const int version, JsonArray *fields, JsonBuilder *b)
+{
+  void *params = g_malloc0(m->params_size);
+  gboolean ok = blob && size > 0 && version > 0 && version <= m->version();
+  if(!ok || (version == m->version() && size != m->params_size)
+     || (version == 7 && size != 37 * 4))
+  {
+    g_free(params);
+    json_builder_add_null_value(b);
+    return FALSE;
+  }
+  if(version == m->version() && size == m->params_size)
+    memcpy(params, blob, m->params_size);
+  else
+  {
+    void *p = params;
+    const int r = dt_iop_legacy_params(m, blob, size, version, &p, m->version());
+    if(r == 1) ok = FALSE;
+    else if(r == -1) memcpy(params, m->default_params, m->params_size);
+  }
+  json_builder_begin_object(b);
+  for(guint i = 0; ok && i < json_array_get_length(fields); i++)
+  {
+    const char *name = json_array_get_string_element(fields, i);
+    char *e = NULL;
+    dt_introspection_field_t *f = NULL;
+    const void *p = _field_in(m, params, name, &f, &e);
+    g_free(e);
+    double num = 0.0;
+    if(!p) { ok = FALSE; break; }
+    switch(f->header.type)
+    {
+      case DT_INTROSPECTION_TYPE_FLOAT: num = *(const float *)p; break;
+      case DT_INTROSPECTION_TYPE_INT:
+      case DT_INTROSPECTION_TYPE_ENUM:  num = *(const int *)p; break;
+      case DT_INTROSPECTION_TYPE_BOOL:  num = *(const gboolean *)p ? 1.0 : 0.0; break;
+      default: ok = FALSE; continue;
+    }
+    if(!isfinite(num)) { ok = FALSE; break; }
+    json_builder_set_member_name(b, name);
+    json_builder_add_double_value(b, num);
+  }
+  json_builder_end_object(b);
+  g_free(params);
+  return ok;
+}
+
+// the AgX presets of a darktable `data.db` (read only), a `.dtpreset` or a
+// `.dtstyle`, as { presets: [{ name, params: { field: number } }] }. the
+// params are converted to this darktable's AgX version here, so the app
+// never sees a blob or a version. one that cannot convert has incomplete
+// params, which the app leaves out
+static gboolean _agx_presets(JsonObject *req, JsonBuilder *b, char **err)
+{
+  dt_iop_module_t *m = _module("agx", err);
+  if(!m) return FALSE;
+  JsonArray *fields = json_object_has_member(req, "fields")
+    ? json_object_get_array_member(req, "fields") : NULL;
+  if(!fields)
+  {
+    *err = g_strdup("no fields");
+    return FALSE;
+  }
+  const char *file = json_object_get_string_member_with_default(req, "file", NULL);
+  const char *db = json_object_get_string_member_with_default(req, "db", NULL);
+
+  json_builder_set_member_name(b, "presets");
+  json_builder_begin_array(b);
+
+  if(file && (g_str_has_suffix(file, ".dtstyle") || g_str_has_suffix(file, ".xml")))
+  {
+    gchar *label = NULL;
+    GList *items = _style_items(file, &label, err);
+    if(!items) { g_free(label); return FALSE; }
+    for(GList *l = items; l; l = g_list_next(l))
+    {
+      const dt_style_item_t *si = l->data;
+      if(g_strcmp0(si->operation, "agx")) continue;
+      json_builder_begin_object(b);
+      json_builder_set_member_name(b, "name");
+      json_builder_add_string_value(b, label);
+      json_builder_set_member_name(b, "params");
+      _agx_preset_fields(m, si->params, si->params_size, si->module_version, fields, b);
+      json_builder_end_object(b);
+    }
+    g_free(label);
+    g_list_free_full(items, dt_style_item_free);
+  }
+  else if(file)
+  {
+    xmlDocPtr doc = xmlReadFile(file, NULL, XML_PARSE_NONET);
+    xmlNodePtr root = doc ? xmlDocGetRootElement(doc) : NULL;
+    if(!root || xmlStrcmp(root->name, BAD_CAST "darktable_preset"))
+    {
+      if(doc) xmlFreeDoc(doc);
+      *err = g_strdup_printf("'%s' is not a darktable preset", file);
+      return FALSE;
+    }
+    gchar *name = NULL, *op = NULL, *hex = NULL;
+    int version = 0;
+    for(xmlNodePtr n = root->children; n; n = n->next)
+      for(xmlNodePtr c = n->children; c; c = c->next)
+      {
+        xmlChar *t = xmlNodeGetContent(c);
+        if(!t) continue;
+        if(!xmlStrcmp(c->name, BAD_CAST "name")) name = g_strdup((gchar *)t);
+        else if(!xmlStrcmp(c->name, BAD_CAST "operation")) op = g_strdup((gchar *)t);
+        else if(!xmlStrcmp(c->name, BAD_CAST "op_params")) hex = g_strdup((gchar *)t);
+        else if(!xmlStrcmp(c->name, BAD_CAST "op_version")) version = atoi((gchar *)t);
+        xmlFree(t);
+      }
+    xmlFreeDoc(doc);
+    int len = 0;
+    unsigned char *blob = !g_strcmp0(op, "agx") && hex
+      ? dt_exif_xmp_decode(hex, strlen(hex), &len) : NULL;
+    if(blob)
+    {
+      json_builder_begin_object(b);
+      json_builder_set_member_name(b, "name");
+      json_builder_add_string_value(b, name ? name : "Preset");
+      json_builder_set_member_name(b, "params");
+      _agx_preset_fields(m, blob, len, version, fields, b);
+      json_builder_end_object(b);
+      g_free(blob);
+    }
+    g_free(name);
+    g_free(op);
+    g_free(hex);
+  }
+  else
+  {
+    gchar *path = db ? g_strdup(db) : g_build_filename(g_get_user_config_dir(), "darktable", "data.db", NULL);
+    sqlite3 *h = NULL;
+    sqlite3_stmt *st = NULL;
+    if(sqlite3_open_v2(path, &h, SQLITE_OPEN_READONLY, NULL) != SQLITE_OK
+       || sqlite3_prepare_v2(h, "SELECT name, op_version, op_params FROM presets "
+                                "WHERE operation = 'agx' AND writeprotect = 0 ORDER BY name",
+                             -1, &st, NULL) != SQLITE_OK)
+    {
+      *err = g_strdup_printf("cannot read the presets in '%s'", path);
+      sqlite3_close(h);
+      g_free(path);
+      return FALSE;
+    }
+    while(sqlite3_step(st) == SQLITE_ROW)
+    {
+      json_builder_begin_object(b);
+      json_builder_set_member_name(b, "name");
+      json_builder_add_string_value(b, (const char *)sqlite3_column_text(st, 0));
+      json_builder_set_member_name(b, "params");
+      _agx_preset_fields(m, sqlite3_column_blob(st, 2), sqlite3_column_bytes(st, 2),
+                         sqlite3_column_int(st, 1), fields, b);
+      json_builder_end_object(b);
+    }
+    sqlite3_finalize(st);
+    sqlite3_close(h);
+    g_free(path);
+  }
+  json_builder_end_array(b);
+  return TRUE;
+}
+
 // the look in use, or NULL
 static const char *_look_name(void)
 {
@@ -10881,6 +11048,10 @@ static void _handle(JsonObject *req, FILE *out)
     json_builder_set_member_name(b, "look");
     const char *name = _look_name();
     if(name) json_builder_add_string_value(b, name); else json_builder_add_null_value(b);
+  }
+  else if(!g_strcmp0(cmd, "agx_presets"))
+  {
+    if(!_agx_presets(req, b, &err)) goto fail;
   }
   else if(!g_strcmp0(cmd, "look_amount"))
     _look_amount(json_object_get_double_member_with_default(req, "amount", 100.0));

@@ -1,3 +1,6 @@
+import { AgxPresetLoader } from "./AgxPresetDialog";
+import { LOAD_AGX_PRESET_EVENT, useAgxProfiles } from "./agxProfiles";
+import { profileSelection, AGX_USER_FIRST, LOAD_PRESET } from "./manifest";
 import { ContrastEqualizer } from "./ContrastEqualizer";
 import { SaturationCurve } from "./SaturationCurve";
 import { detailRows } from "./DetailControls";
@@ -160,6 +163,7 @@ type Placement = { fullWidth: number; fullHeight: number; scale: number; x: numb
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
 export default function App() {
+  useAgxProfiles();
   perf.count("react.appRenderAttempts");
   const [folder, setFolder] = useState<string | null>(null);
   const folderRef = useRef(folder);
@@ -3553,7 +3557,7 @@ export default function App() {
       // and a raw with the profile chosen in Preferences
       const profile = loadNewPhotosProfile();
       if (!s.wasEdited && raw && profile !== 0 && s.values.profile !== profile) {
-        s.setMany([["profile", profile]]);
+        s.setMany(Object.entries(profileSelection(profile)));
         base.push({ op: "profile", name: profileLabel(profile).toLowerCase(),
                     label: "profile", enabled: true });
       }
@@ -4505,6 +4509,10 @@ export default function App() {
   };
 
   const change = (c: Control, v: number) => perf.time("slider.handler", () => {
+    if (c.id === "profile" && v >= AGX_USER_FIRST) {
+      changeMany(Object.entries(profileSelection(v)), "Profile");
+      return;
+    }
     if (session.current?.values[c.id] === v) return;
     leaveBefore();
     setBaMode("off");
@@ -6639,6 +6647,7 @@ export default function App() {
                   onClose={() => setFileMenu(null)} />
       );
     })()}
+    <AgxPresetLoader ready={!!current} onPick={(v) => change(controlById.get("profile")!, v)} />
     {prefsOpen && (
       <PreferencesDialog openGenerated={openGenerated} onOpenGenerated={(on) => { storeOpenGenerated(on); setOpenGenerated(on); }} loupe={loupeEnabled} onLoupe={(on) => { storeLoupe(on); setLoupeEnabled(on); loupeEnabledRef.current = on; setLoupePicking(false); setLoupeShown(false); if (on && !gridRef.current) session.current?.requestLoupe(); }} presets={[...BUILTIN_PRESETS, ...presets]} newPhotos={newPhotos}
                          onNewPhotos={(id) => { setNewPhotos(id); storeNewPhotosPreset(id); }}
@@ -8405,13 +8414,20 @@ function Choice({ control: c, value, disabled, onChange }: ControlProps) {
   if (c.menu) return (
     <div className="choice-row" data-control-id={c.id}>
       <span>{c.label}</span>
-      <select className="field" value={value} disabled={disabled} onChange={(e) => onChange(Number(e.target.value))}>
+      <select className="field" value={value} disabled={disabled} onChange={(e) => {
+        const v = Number(e.target.value);
+        if (c.loadPreset && v === LOAD_PRESET) {
+          e.target.value = String(value);
+          window.dispatchEvent(new Event(LOAD_AGX_PRESET_EVENT));
+        } else onChange(v);
+      }}>
         {c.optionGroups
           ? c.optionGroups.map(([group, opts]) => (
             <optgroup key={group} label={group}>
               {opts.map(([label, v]) => <option key={v} value={v}>{label}</option>)}
             </optgroup>))
           : (c.options ?? []).map(([label, v]) => <option key={v} value={v}>{label}</option>)}
+        {c.loadPreset && <option value={LOAD_PRESET}>Load preset…</option>}
       </select>
     </div>
   );

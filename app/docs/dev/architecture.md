@@ -1049,3 +1049,37 @@ both directions, and resets through a label double-click. Expected mean pixel
 error after reset is below 1/255. See `verify/gui/README.md` for setup, evidence,
 coverage limits and remaining scenarios. Results stay in `verify/results/gui/`;
 fixture originals and the user's running app are not test state.
+
+### Imported AgX profiles
+
+`agxProfiles.ts` loads `agx-profiles.json` through the Rust commands
+`agx_profiles_load/save` before mounting the main React tree. The file lives
+beside `presets.json`; saves use a temporary file and rename. Stable numeric
+IDs start at 100. `setUserProfiles` updates the manifest arrays in place and
+an external-store subscription refreshes the viewer and Preferences. Failed
+saves do not publish changes; invalid saved lists are protected from overwrite.
+
+The Profile menu's action opens `AgxPresetDialog.tsx`. `agx_presets` delegates
+to the engine with the manifest's `AGX_FIELDS`. The engine reads darktable's
+standard `data.db` read-only (only AgX rows with `writeprotect = 0`), or reads
+an exported `.dtpreset` / `.dtstyle`. It decodes darktable's XMP parameter
+encoding and uses the pinned module's legacy conversion and introspection.
+Unsupported versions, malformed current blobs and nonfinite fields are excluded.
+Import reads parameters without applying them to the photo. Only AgX parameters
+are retained; style modules, blending, masks and auto-apply rules are excluded.
+
+Imported profiles include all AgX parameters. The profile map writes them ahead
+of the slider maps; Blacks, Contrast, Whites and Saturation use the selected
+profile's bases. The range map retains the profile's pivot exposure when the
+range changes. `profileSelection` supplies the imported range and enables AgX
+for viewer selection, new-photo defaults and batch-paste defaults. Native AgX
+parameters remain in XMP; profile recognition on reopening uses parameter
+matching, as with the built-in looks. Identical looks can share a match.
+
+Verification: `node --test verify/agx-profiles.test.mjs` covers persistence,
+names, menu updates and parameter mapping. `python3 verify/agx-presets.py
+--build build` exercises real engine database/file imports and invalid inputs
+against disposable fixtures. Outstanding: create and run GUI case `agx-presets`
+for the visible loader, selection, duplicate naming and restart persistence.
+Seed darktable data.db in the isolated test profile before launch; the suite
+cannot operate native file choosers. No GUI verification has run for this change.
