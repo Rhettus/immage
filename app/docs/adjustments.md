@@ -50,6 +50,22 @@ values. The second group is darktable's color balance rgb: **Standard**,
 colorfulness on top of AgX Default. New raws get the profile set in
 Preferences (AgX Default unless you change it).
 
+Choose **Load preset…** at the bottom of Profile to bring in your own AgX
+presets. Open a photo first. The dialog lists user presets from darktable's
+standard configuration folder; **From darktable** refreshes that list.
+Alternatively, choose **From file…** and open an exported darktable
+`.dtpreset` or `.dtstyle` file. Only AgX settings are imported from a style;
+other modules and blending settings are excluded. Check the presets you want
+and click **Add**. The first added preset is applied to the open photo.
+
+Added presets appear under **My Presets** and remain available after restarting
+Immage. Duplicate names get a numbered suffix. Selecting one switches to AgX,
+loads its curve, color look and black/white relative exposure, and keeps your
+other adjustments. Contrast, Whites, Blacks and Saturation work from the
+preset's values. You can also choose an imported profile in Preferences as
+the default for new raw photos. If darktable uses a custom configuration
+folder, export the preset from darktable and use **From file…**.
+
 **Treatment**: **Color** or **B&W**. Black and white swaps **HSL / Color**
 for **B&W Mix**.
 

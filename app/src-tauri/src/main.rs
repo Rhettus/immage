@@ -2612,6 +2612,36 @@ async fn export_presets_save(state: State<'_, AppState>, presets: Value) -> Resu
     std::fs::rename(&tmp, &path).map_err(|e| format!("export presets: {e}"))
 }
 
+// the AgX presets in a darktable `.dtpreset` or `.dtstyle` (`file`) or, with
+// none, in the `data.db` (a path, or darktable's own in the config folder),
+// converted by the engine to the current version: { presets: [{ name, params }] }
+#[tauri::command]
+async fn agx_presets(state: State<'_, AppState>, file: Option<String>, db: Option<String>,
+                     fields: Vec<String>) -> Result<Value, String> {
+    state.engine("agx_presets").request(json!({ "cmd": "agx_presets", "file": file, "db": db, "fields": fields }))
+}
+
+// the AgX presets the user loaded into the Profile menu, a document the
+// front end shapes; none yet is an empty list
+#[tauri::command]
+async fn agx_profiles_load(state: State<'_, AppState>) -> Result<Value, String> {
+    let path = state.presets_path.with_file_name("agx-profiles.json");
+    match std::fs::read_to_string(&path) {
+        Ok(text) => serde_json::from_str(&text).map_err(|e| format!("AgX presets: {e}")),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(json!([])),
+        Err(e) => Err(format!("AgX presets: {e}")),
+    }
+}
+
+#[tauri::command]
+async fn agx_profiles_save(state: State<'_, AppState>, profiles: Value) -> Result<(), String> {
+    let path = state.presets_path.with_file_name("agx-profiles.json");
+    let tmp = path.with_extension("json.tmp");
+    let text = serde_json::to_string_pretty(&profiles).map_err(|e| e.to_string())?;
+    std::fs::write(&tmp, text).map_err(|e| format!("AgX presets: {e}"))?;
+    std::fs::rename(&tmp, &path).map_err(|e| format!("AgX presets: {e}"))
+}
+
 // export presets shared as a file: written where the save dialog chose,
 // and read back from one the open dialog chose. a preset file is small, so
 // anything larger is not one
@@ -2853,7 +2883,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             map_tiles::map_tile, open_folder, open_image, get_params, set_params, render, cancel_base, save, baseline_end, before_view, thumb, thumb_cached, thumb_known, cache_limits, cache_usage, cache_clear, meta, meta_set, capture_times, prefetch, darktable_resources, darktable_resources_set, gpu_edits, gpu_edits_set, webview_renderer, webview_renderer_set,
-            export_images, export_cancel, export_existing, export_preview, fonts, print_profiles, print_profile_add, softproof, printers, printer_info, print_photo, print_sheet, export_presets_load, export_presets_save, preset_file_write, preset_file_read, presets_load, presets_save, looks_list, look_import, look_export, look_delete, look_apply, look_amount, preview, paste_batch,
+            export_images, export_cancel, export_existing, export_preview, fonts, print_profiles, print_profile_add, softproof, printers, printer_info, print_photo, print_sheet, export_presets_load, export_presets_save, preset_file_write, preset_file_read, presets_load, presets_save, agx_presets, agx_profiles_load, agx_profiles_save, looks_list, look_import, look_export, look_delete, look_apply, look_amount, preview, paste_batch,
             mask_shapes, combine, masks, mask_delete, mask_rename, history, module_state, sample, tone_key, lenses, agx_auto, upright, points, range_map, zones, mask_map, ai_object,
             ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, positive_export, spektra_stocks, spektra_fetch, list_subfolders, folder_volumes, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
             immich_export_check, immich_search, immich_browse_check, immich_libraries, immich_suggestions, immich_people, immich_tags,

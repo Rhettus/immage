@@ -1,3 +1,4 @@
+import { useAgxProfiles } from "./agxProfiles";
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
@@ -512,6 +513,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   onRelaunch: () => Promise<void>;       // the edit saved, then Immage started again
   onClose: () => void;
 }) {
+  useAgxProfiles();
   const [tab, setTab] = useState<Tab>(focus ?? "general");
   // the guide's own "don't show" box sets the same thing
   const [showTour, setShowTour] = useState(() => !tourSeen());
