@@ -5161,6 +5161,40 @@
           "title": "Negative",
           "controls": [
             {
+              "id": "neg_input_profile",
+              "label": "Input Profile",
+              "kind": "choice",
+              "rawOnly": false,
+              "min": 0,
+              "max": 4294967551,
+              "step": 1,
+              "nonlinear": false,
+              "options": [
+                [
+                  "Default for Photo",
+                  0
+                ]
+              ],
+              "status": "pending"
+            },
+            {
+              "id": "neg_working_profile",
+              "label": "Working Profile",
+              "kind": "choice",
+              "rawOnly": false,
+              "min": 0,
+              "max": 4294967551,
+              "step": 1,
+              "nonlinear": false,
+              "options": [
+                [
+                  "Default for Photo",
+                  0
+                ]
+              ],
+              "status": "pending"
+            },
+            {
               "id": "neg_on",
               "label": "Convert Negative",
               "kind": "toggle",

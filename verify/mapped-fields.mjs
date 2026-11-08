@@ -52,6 +52,9 @@ if (process.argv[2] === '--reads') {
     for (const m of maps) Object.assign(base,m.read(snapshot[m.op.split('#')[0]].params,snapshot[m.op.split('#')[0]].defaults,ctx,base));
     for (const [index,m] of maps.entries()) {
       const op=m.op.split('#')[0], d=snapshot[op].defaults;
+      // Dynamic ICC choices need the engine's role-specific menu, not the
+      // manifest's loading placeholder; covered by color-profiles.py.
+      if (op === 'colorin') continue;
       for (const id of m.controls) {
         const c=byId.get(id);
         if (!c) throw Error(`Missing control ${scope}/${id}`);

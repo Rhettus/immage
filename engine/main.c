@@ -1134,9 +1134,88 @@ static gboolean _write_lens_pick(dt_iop_module_t *mod, const double num, char **
   return TRUE;
 }
 
+// Scalar choices for colorin's (type, filename) pairs. Zero restores this
+// image's defaults; built-ins use type + 1, ICC files a stable filename hash.
+// Keep the filename in native params/XMP, never the menu index.
+static guint64 _profile_id(const int type, const char *filename)
+{
+  // Match darktable's basename-based ICC lookup, including sidecars copied
+  // between operating systems with different path separators.
+  const char *base = filename;
+  for(const char *c = filename; *c; c++) if(*c == '/' || *c == '\\') base = c + 1;
+  return type == DT_COLORSPACE_FILE ? 256ULL + g_str_hash(base) : (guint64)type + 1;
+}
+
+static gboolean _profile_fields(dt_iop_module_t *mod, void *params, const gboolean work,
+                                 int **type, char **filename, char **err)
+{
+  dt_introspection_field_t *f = NULL;
+  *type = _field_in(mod, params, work ? "type_work" : "type", &f, err);
+  *filename = *type ? _field_in(mod, params, work ? "filename_work" : "filename", &f, err) : NULL;
+  return *type && *filename;
+}
+
+static gboolean _read_profile(dt_iop_module_t *mod, const gboolean defaults, const gboolean work,
+                              double *num, char **err)
+{
+  int *type; char *filename;
+  if(!_profile_fields(mod, defaults ? mod->default_params : mod->params, work, &type, &filename, err))
+    return FALSE;
+  *num = _profile_id(*type, filename);
+  return TRUE;
+}
+
+static gboolean _write_profile(dt_iop_module_t *mod, const gboolean work, const double num, char **err)
+{
+  int *type; char *filename;
+  if(!_profile_fields(mod, mod->params, work, &type, &filename, err)) return FALSE;
+  if(num == 0)
+  {
+    int *def_type; char *def_filename;
+    if(!_profile_fields(mod, mod->default_params, work, &def_type, &def_filename, err)) return FALSE;
+    *type = *def_type;
+    g_strlcpy(filename, def_filename, DT_IOP_COLOR_ICC_LEN);
+    return TRUE;
+  }
+  // Unavailable profiles kept in a sidecar must survive edits to the other
+  // choice. Choosing a different unavailable file is an error.
+  if(num == _profile_id(*type, filename)) return TRUE;
+  const dt_colorspaces_color_profile_t *chosen = NULL;
+  for(const GList *l = darktable.color_profiles->profiles; l; l = l->next)
+  {
+    const dt_colorspaces_color_profile_t *p = l->data;
+    if((work ? p->work_pos : p->in_pos) < 0 || num != _profile_id(p->type, p->filename)) continue;
+    if(chosen && (p->type != chosen->type || strcmp(p->filename, chosen->filename)))
+    {
+      *err = g_strdup("ambiguous color profile identifier");
+      return FALSE;
+    }
+    chosen = p;
+  }
+  // Camera profiles are image-specific, outside the global profile list.
+  if(!chosen && !work && (num == DT_COLORSPACE_STANDARD_MATRIX + 1
+                         || num == DT_COLORSPACE_ENHANCED_MATRIX + 1))
+  {
+    *type = (int)num - 1;
+    filename[0] = '\0';
+    return TRUE;
+  }
+  if(!chosen)
+  {
+    *err = g_strdup("color profile unavailable or unsuitable for this role");
+    return FALSE;
+  }
+  *type = chosen->type;
+  g_strlcpy(filename, chosen->filename, DT_IOP_COLOR_ICC_LEN);
+  return TRUE;
+}
+
 static gboolean _write_field(dt_iop_module_t *mod, const char *name, const double num,
                              char **err)
 {
+  if(!g_strcmp0(mod->op, "colorin")
+     && (!g_strcmp0(name, "input_profile") || !g_strcmp0(name, "working_profile")))
+    return _write_profile(mod, !strcmp(name, "working_profile"), num, err);
   if(!g_strcmp0(name, BLEND_DETAILS)) return _write_details(mod, num, err);
   if(!g_strcmp0(name, LENS_PICK) && !g_strcmp0(mod->op, "lens")) return _write_lens_pick(mod, num, err);
   return _write_field_in(mod, mod->params, name, num, err);
@@ -1146,6 +1225,9 @@ static gboolean _write_field(dt_iop_module_t *mod, const char *name, const doubl
 static gboolean _read_field(dt_iop_module_t *mod, const char *name,
                             const gboolean from_defaults, double *num, char **err)
 {
+  if(!g_strcmp0(mod->op, "colorin")
+     && (!g_strcmp0(name, "input_profile") || !g_strcmp0(name, "working_profile")))
+    return _read_profile(mod, from_defaults, !strcmp(name, "working_profile"), num, err);
   if(!g_strcmp0(name, BLEND_DETAILS))
   {
     const dt_develop_blend_params_t *bp = from_defaults ? mod->default_blendop_params : mod->blend_params;
@@ -1710,6 +1792,52 @@ static gboolean _lens_menu(JsonBuilder *b, char **err)
   if(*matched) _lens_menu_add("", matched, &m);
   g_hash_table_destroy(m.seen);
   json_builder_end_array(b);
+  return TRUE;
+}
+
+static void _profile_option(JsonBuilder *b, const char *label, const guint64 id)
+{
+  json_builder_begin_array(b);
+  json_builder_add_string_value(b, label);
+  json_builder_add_int_value(b, id);
+  json_builder_end_array(b);
+}
+
+static gboolean _color_profiles(JsonBuilder *b, char **err)
+{
+  dt_iop_module_t *mod = _module("colorin", err);
+  if(!mod) return FALSE;
+  for(int work = 0; work < 2; work++)
+  {
+    json_builder_set_member_name(b, work ? "working" : "input");
+    json_builder_begin_array(b);
+    _profile_option(b, "Default for Photo", 0);
+    if(!work)
+    {
+      _profile_option(b, "Camera Standard Matrix", DT_COLORSPACE_STANDARD_MATRIX + 1);
+      _profile_option(b, "Camera Enhanced Matrix", DT_COLORSPACE_ENHANCED_MATRIX + 1);
+    }
+    int *type; char *filename;
+    if(!_profile_fields(mod, mod->params, work, &type, &filename, err)) return FALSE;
+    const guint64 current = _profile_id(*type, filename);
+    gboolean found = !work && (*type == DT_COLORSPACE_STANDARD_MATRIX || *type == DT_COLORSPACE_ENHANCED_MATRIX);
+    for(const GList *l = darktable.color_profiles->profiles; l; l = l->next)
+    {
+      const dt_colorspaces_color_profile_t *p = l->data;
+      if((work ? p->work_pos : p->in_pos) < 0) continue;
+      const guint64 id = _profile_id(p->type, p->filename);
+      _profile_option(b, p->name, id);
+      found |= id == current;
+    }
+    if(!found)
+    {
+      gchar *label = g_strdup_printf("%s (current)",
+        *type == DT_COLORSPACE_FILE ? filename : dt_colorspaces_get_name(*type, filename));
+      _profile_option(b, label, current);
+      g_free(label);
+    }
+    json_builder_end_array(b);
+  }
   return TRUE;
 }
 
@@ -10678,6 +10806,10 @@ static void _handle(JsonObject *req, FILE *out)
     if(!op || !_set(op, field, value, params, has_enabled, enabled, after, before, instance, mask, invert, opacity,
                     refine, &err))
       goto fail;
+  }
+  else if(!g_strcmp0(cmd, "color_profiles"))
+  {
+    if(!_color_profiles(b, &err)) goto fail;
   }
   else if(!g_strcmp0(cmd, "lenses"))
   {

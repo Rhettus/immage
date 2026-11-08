@@ -223,6 +223,12 @@ async fn lenses(state: State<'_, AppState>) -> Result<Value, String> {
     state.engine("lenses").request(json!({ "cmd": "lenses" }))
 }
 
+// Input and working profiles supported by the pinned darktable engine.
+#[tauri::command]
+async fn color_profiles(state: State<'_, AppState>) -> Result<Value, String> {
+    state.engine("color_profiles").request(json!({ "cmd": "color_profiles" }))
+}
+
 // black and white relative exposure for AgX, as darktable's "auto tune
 // levels" picker finds them over the photo
 #[tauri::command]
@@ -2884,7 +2890,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             map_tiles::map_tile, open_folder, open_image, get_params, set_params, render, cancel_base, save, baseline_end, before_view, thumb, thumb_cached, thumb_known, cache_limits, cache_usage, cache_clear, meta, meta_set, capture_times, prefetch, darktable_resources, darktable_resources_set, gpu_edits, gpu_edits_set, webview_renderer, webview_renderer_set,
             export_images, export_cancel, export_existing, export_preview, fonts, print_profiles, print_profile_add, softproof, printers, printer_info, print_photo, print_sheet, export_presets_load, export_presets_save, preset_file_write, preset_file_read, presets_load, presets_save, agx_presets, agx_profiles_load, agx_profiles_save, looks_list, look_import, look_export, look_delete, look_apply, look_amount, preview, paste_batch,
-            mask_shapes, combine, masks, mask_delete, mask_rename, history, module_state, sample, tone_key, lenses, agx_auto, upright, points, range_map, zones, mask_map, ai_object,
+            mask_shapes, combine, masks, mask_delete, mask_rename, history, module_state, sample, tone_key, lenses, color_profiles, agx_auto, upright, points, range_map, zones, mask_map, ai_object,
             ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, positive_export, spektra_stocks, spektra_fetch, list_subfolders, folder_volumes, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
             immich_export_check, immich_search, immich_browse_check, immich_libraries, immich_suggestions, immich_people, immich_tags,
             immich_thumb, immich_resolve, launch_file, path_exists, path_kind, display_scale, trash_files, create_virtual_copy, remove_virtual_copy, hdr_merge, hdr_can_align, pano_merge, pano_preview, pano_can_merge, merge_cancel, preview_fullscreen, build, about, licenses, engine_quit, keywords, keywords_set, ai_accel,

@@ -7,10 +7,11 @@
 // rest; then each control on its own, its eyedropper picking a box for it
 // alone (negadoctor.ts). Export to Library and turning the conversion off
 // sit below it, in PositiveFooter.tsx
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Pipette } from "lucide-react";
 import { Chevron, Collapse } from "./Collapse";
 import { FILM_BW } from "./negadoctor";
+import { colorProfiles, type ColorProfiles } from "./session";
 
 export type NegPick = "border" | "area" | "dmax" | "offset" | "black" | "exposure" | "shadows" | "highlights";
 
@@ -25,14 +26,30 @@ const PICK_HINTS: Record<NegPick, string> = {
   highlights: "drag over something white or gray, or the whole photo",
 };
 
-export function NegativePanel({ values, disabled, converted, picking, busy, hasArea, note, renderControl,
+export function NegativePanel({ photo, values, disabled, converted, picking, busy, hasArea, note, renderControl,
                                 onPick, onResetColor }: {
-  values: Record<string, number>; disabled: boolean; converted: boolean;
+  photo: object | null; values: Record<string, number>; disabled: boolean; converted: boolean;
   picking: NegPick | null; busy: boolean; hasArea: boolean; note: string | null;
-  renderControl: (id: string) => React.ReactNode;
+  renderControl: (id: string, options?: [string, number][]) => React.ReactNode;
   onPick: (kind: NegPick | null) => void;
   onResetColor: () => void;
 }) {
+  const [profiles, setProfiles] = useState<ColorProfiles | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    setProfiles(null);
+    setProfileError(null);
+    if (photo) colorProfiles().then((p) => { if (live) setProfiles(p); })
+      .catch((e) => { if (live) setProfileError(String(e)); });
+    return () => { live = false; };
+  }, [photo, values.neg_input_profile, values.neg_working_profile]);
+  const profileOptions = (role: "input" | "working") => {
+    const options = profiles?.[role] ?? [];
+    const value = values[`neg_${role}_profile`];
+    return value !== undefined && !options.some(([, id]) => id === value)
+      ? [...options, ["Current Profile", value] as [string, number]] : options;
+  };
   const [advanced, setAdvanced] = useState(false);
   const off = disabled || busy;
   const pickButton = (kind: NegPick, label: string, title: string) => (
@@ -56,6 +73,13 @@ export function NegativePanel({ values, disabled, converted, picking, busy, hasA
   return (
     <div className="panel negative">
       <div className="panel-title"><span>Negative</span></div>
+      <section>
+        <h3>Color Management</h3>
+        {renderControl("neg_input_profile", profileOptions("input"))}
+        {renderControl("neg_working_profile", profileOptions("working"))}
+        <div className="note-plain">{profileError ? `Profiles unavailable: ${profileError}`
+          : "Choose profiles before picking the film border. After changing either profile, pick the border and photo area again."}</div>
+      </section>
       <section>
         {renderControl("neg_film")}
         <div className="neg-step">
