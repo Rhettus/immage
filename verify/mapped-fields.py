@@ -43,6 +43,9 @@ with tempfile.TemporaryDirectory(prefix='immage-mapped-fields-') as tmp:
     # integral scalars (including booleans/enums). This checks storage, not
     # enum meaning or whether an arbitrary value is useful for rendering.
     for name,value in current.items():
+     # Dynamic profile choices are compound type/filename values; their
+     # supported domains, defaults and renders are checked by color-profiles.py.
+     if (op == 'colorin' and name in ('input_profile','working_profile')) or (op == 'lens' and name == 'lens_pick'):continue
      changed=(0 if value else 1) if float(value).is_integer() else (0.25 if value == 0.5 else 0.5)
      assert changed != value,(op,name,value)
      req({'cmd':'set','op':op,'field':name,'value':changed})

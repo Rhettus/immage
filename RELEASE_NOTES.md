@@ -7,6 +7,9 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Negative has independent Input Profile and Working Profile menus, including
+  installed ICC profiles. Choose profiles before sampling the film; settings
+  are saved with the photo and included in Negative copies and presets.
 - Profile > Load AgX Preset imports your AgX presets from darktable or exported
   preset and style files, including compatible older AgX presets. Added looks
   stay in My Presets after restarting and can also be chosen as the profile
@@ -23,6 +26,8 @@ Improvements
 
 Bug fixes
 
+- Undo after Reset all restores the previous negative conversion and color
+  profiles, including after reopening the photo.
 - Lens Corrections now knows cameras added to the lensfun database since 2023,
   such as the Sony ZV-1; the bundled lens database was the old one from
   lensfun 0.3.4, so those photos got no profile correction. Each build now

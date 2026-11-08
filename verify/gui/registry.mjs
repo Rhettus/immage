@@ -1,3 +1,4 @@
+import { colorProfiles } from "./specs/color-profiles.mjs";
 import { agxPresets } from './specs/agx-presets.mjs';
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { startup, exposure, splash } from './specs/smoke.mjs';
@@ -22,6 +23,7 @@ import { lensProfile, lensPick } from './specs/lens.mjs';
 const implementations = { 'batch-paste': batchPaste, startup, splash, exposure, 'slider-input': sliderInput, 'slider-click': sliderClick, history, rail, sliders, 'module-options': moduleOptions, 'module-switch': moduleSwitch,
   'panel-scroll': panelScroll,
   'agx-presets': agxPresets,
+  'color-profiles': colorProfiles,
   'gui-benchmark': guiBenchmark,
   'gui-benchmark-screen': t => guiBenchmark(t, true),
   'gui-benchmark-whole': t => guiBenchmark(t, false),

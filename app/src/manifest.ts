@@ -1478,6 +1478,14 @@ export const modules: ModuleMap[] = [
     write: (v) => ({ strength: v.hp_strength / 100, threshold: v.hp_threshold / 100 }),
     enabled: (v) => v.hp_enable === 1,
   },
+  {
+    op: "colorin", keepOn: true,
+    controls: ["neg_input_profile", "neg_working_profile"],
+    fields: ["input_profile", "working_profile"],
+    read: (p) => ({ neg_input_profile: p.input_profile, neg_working_profile: p.working_profile }),
+    write: (v) => ({ input_profile: v.neg_input_profile, working_profile: v.neg_working_profile }),
+    enabled: () => true,
+  },
   // the Negative panel's film negative conversion (NegativePanel.tsx,
   // negadoctor.ts); a converted photo has the modules of NEG_OFF off
   {
@@ -1892,6 +1900,11 @@ export const panels: Panel[] = [
     sections: [{
       title: "Negative",
       controls: [
+        ...[ ["neg_input_profile", "Input Profile"], ["neg_working_profile", "Working Profile"] ].map(([id, label]): Control => ({
+          id, label, kind: "choice", menu: true, min: 0, max: 4294967551, step: 1,
+          options: [["Default for Photo", 0]], format: (v) => String(v),
+          note: `darktable: input color profile — ${label.toLowerCase()}; choose before sampling the film`,
+        })),
         toggle("neg_on", "Convert Negative", 0),
         { id: "neg_film", label: "Film Type", kind: "choice", min: 0, max: 1, step: 1, inline: true,
           options: [["Color", FILM_COLOR], ["Black & White", FILM_BW]],

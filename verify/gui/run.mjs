@@ -145,6 +145,15 @@ try {
     copiedFixture=join(fixtures,generated[fixtureName].file);
     report.syntheticFixture={name:fixtureName,...generated[fixtureName]};
   }
+  if (selectedCases.includes('color-profiles')) {
+    const { narrowPrinterProfile } = await import('./support/icc.mjs');
+    for (const [role, name] of [['in', 'scanner'], ['out', 'working']]) {
+      const dir = join(profile, 'data', 'app.immage', 'config', 'color', role);
+      await mkdir(dir, { recursive: true });
+      await writeFile(join(dir, `immage-test-${name}.icc`), narrowPrinterProfile(`Immage test ${name}`));
+    }
+    report.colorProfilesFixture = 'Generated RGB matrix ICC files for input and working roles';
+  }
   if (selectedCases.includes('agx-presets')) {
     execFileSync('python3', [join(root, 'verify/gui/support/agx-fixture.py'),
       join(profile, 'config', 'darktable', 'data.db')], { stdio: 'pipe' });

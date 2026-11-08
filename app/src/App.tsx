@@ -1110,13 +1110,15 @@ export default function App() {
     record(["reset"]);
     holdRecord.current = true;
     try {
+      // Capture native state before any reset slider writes, so undo has
+      // the pre-reset conversion and profiles as well as unexposed params.
+      s.resetModules();
       // the profile, tone mapper and exposure compensation are the photo's
       // own, not adjustments; the orientation stays too, as in Lightroom.
       // each tool goes back to the module Preferences picks
       changeMany([...Object.entries(s.neutral).filter(([id]) => !isModuleSetting(id) && id !== "profile"
                                                              && id !== "exp_comp" && id !== "orient"),
                   ...s.preferredModules()]);
-      s.resetModules();
       if (s.look) applyLook(null);
       for (const m of s.masks) s.deleteMask(m.name);
       if (s.spots.length) s.setSpots([]);
@@ -6349,16 +6351,26 @@ export default function App() {
             </div>
           )}
           {rightMode === "negative" && !cropping && (
-            <NegativePanel values={values} disabled={!current} converted={values.neg_on === 1} picking={negPick}
+            <NegativePanel photo={session.current} values={values} disabled={!current} converted={values.neg_on === 1} picking={negPick}
                            busy={negBusy} hasArea={!!negArea} note={negNote} onPick={setNegPick}
                            onResetColor={() => changeMany(["wbl", "wbh"].flatMap((k) => ["r", "g", "b"]
                              .map((c): [string, number] => [`neg_${k}_${c}`, 1])), "Reset Color")}
-                           renderControl={(id) => {
-                             const c = controlById.get(id)!;
+                           renderControl={(id, options) => {
+                             const c = { ...controlById.get(id)!, ...(options ? { options } : {}) };
+                             const profile = id === "neg_input_profile" || id === "neg_working_profile";
                              const props = { control: c, value: values[id] ?? c.neutral ?? 0,
                                              neutral: session.current?.neutral[id] ?? c.neutral ?? 0,
-                                             disabled: !current || negBusy || (id !== "neg_film" && values.neg_on !== 1),
-                                             values, onChange: (v: number) => (id === "neg_film" ? negFilm(v) : change(c, v)) };
+                                             disabled: !current || negBusy || (profile ? !options?.length : id !== "neg_film" && values.neg_on !== 1),
+                                             values, onChange: (v: number) => {
+                                               if (id === "neg_film") negFilm(v);
+                                               else {
+                                                 change(c, v);
+                                                 if (profile) {
+                                                   setNegPick(null); setNegArea(null);
+                                                   setNegNote("Profile changed: pick the film border and photo area again.");
+                                                 }
+                                               }
+                                             } };
                              return c.kind === "choice" ? <Choice key={id} {...props} /> : <Slider key={id} {...props} />;
                            }} />
           )}
@@ -8414,8 +8426,8 @@ function Choice({ control: c, value, disabled, onChange }: ControlProps) {
   useAgxProfiles();
   if (c.menu) return (
     <div className="choice-row" data-control-id={c.id}>
-      <span>{c.label}</span>
-      <select className="field" value={value} disabled={disabled} onChange={(e) => {
+      <span title={c.note}>{c.label}</span>
+      <select title={c.note} className="field" value={value} disabled={disabled} onChange={(e) => {
         const v = Number(e.target.value);
         if (c.loadPreset && (v === LOAD_PRESET || v === DELETE_PRESET)) {
           e.target.value = String(value);

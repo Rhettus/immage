@@ -100,7 +100,7 @@ icon sits on that editor's heading, since the slider is replaced.
 | **Heal and Clone** | retouch (`retouch`) |
 | **HDR Merge** | darktable's HDR merge (lighttable's "create HDR"), with its auto-alignment, into a float DNG |
 | **Panorama Merge** | no darktable module: OpenCV stitches RAW and non-RAW photos rendered by darktable into a float DNG |
-| **Negative** | negadoctor (`negadoctor`); a converted negative switches off color calibration, exposure, the tone equalizer, haze removal and the tone mapper, and runs Contrast and Saturation on color balance rgb, Highlights and Shadows on shadows and highlights |
+| **Negative** | input color profile (`colorin`) for Input Profile and Working Profile; negadoctor (`negadoctor`); a converted negative switches off color calibration, exposure, the tone equalizer, haze removal and the tone mapper, and runs Contrast and Saturation on color balance rgb, Highlights and Shadows on shadows and highlights |
 | **Film Simulation** | spektrafilm (`spektrafilm`), with its film and paper data downloaded into darktable's data folder; it switches off the tone mapper (AgX, sigmoid, filmic, base curve) and runs Contrast and Saturation on color balance rgb, Blacks on exposure |
 | **Looks** | darktable styles, applied as extra module instances |
 | **Export** borders | framing (`borders`), added at export only |
