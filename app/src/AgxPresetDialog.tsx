@@ -3,28 +3,34 @@
 
 import { useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { addAgxProfiles, findAgxPresets, LOAD_AGX_PRESET_EVENT, useAgxProfiles,
+import { addAgxProfiles, deleteAgxProfiles, findAgxPresets, DELETE_AGX_PRESET_EVENT, LOAD_AGX_PRESET_EVENT, useAgxProfiles, userProfiles,
          type FoundPreset } from "./agxProfiles";
 
-// Profile > Load preset: pick AgX presets from darktable's own presets or from
+// Profile > Load AgX Preset: pick AgX presets from darktable's own presets or from
 // a preset (.dtpreset) or style (.dtstyle) file, to keep in the Profile menu
 export function AgxPresetLoader({ ready, onPick }: { ready: boolean; onPick: (value: number) => void }) {
-  const [shown, setShown] = useState(false);
+  const [mode, setMode] = useState<"load" | "delete" | null>(null);
   useEffect(() => {
-    const show = () => setShown(true);
-    window.addEventListener(LOAD_AGX_PRESET_EVENT, show);
-    return () => window.removeEventListener(LOAD_AGX_PRESET_EVENT, show);
+    const load = () => setMode("load"), remove = () => setMode("delete");
+    window.addEventListener(LOAD_AGX_PRESET_EVENT, load);
+    window.addEventListener(DELETE_AGX_PRESET_EVENT, remove);
+    return () => {
+      window.removeEventListener(LOAD_AGX_PRESET_EVENT, load);
+      window.removeEventListener(DELETE_AGX_PRESET_EVENT, remove);
+    };
   }, []);
-  return shown ? <AgxPresetDialog ready={ready} onPick={onPick} onClose={() => setShown(false)} /> : null;
+  return mode ? <AgxPresetDialog key={mode} mode={mode} ready={ready} onPick={onPick} onClose={() => setMode(null)} /> : null;
 }
 
-function AgxPresetDialog({ ready, onPick, onClose }: { ready: boolean; onPick: (value: number) => void; onClose: () => void }) {
+function AgxPresetDialog({ mode, ready, onPick, onClose }: { mode: "load" | "delete"; ready: boolean; onPick: (value: number) => void; onClose: () => void }) {
   useAgxProfiles();
+  const removing = mode === "delete";
   const [found, setFound] = useState<FoundPreset[] | null>(null);
   const [chosen, setChosen] = useState<Set<number>>(new Set());
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const box = useRef<HTMLDivElement>(null);
+  const listed = removing ? userProfiles().map((p) => ({ name: p.label, params: p.params })) : found ?? [];
 
   const search = async (file?: string) => {
     setBusy(true); setError("");
@@ -42,12 +48,15 @@ function AgxPresetDialog({ ready, onPick, onClose }: { ready: boolean; onPick: (
       if (typeof file === "string") await search(file);
     } catch (e) { setError(String(e)); }
   };
-  const add = async () => {
-    if (!found) return;
+  const apply = async () => {
+    if (!chosen.size) return;
     setBusy(true);
     try {
-      const values = await addAgxProfiles(found.filter((_, i) => chosen.has(i)));
-      if (values.length) onPick(values[0]);
+      if (removing) await deleteAgxProfiles(userProfiles().filter((_, i) => chosen.has(i)).map((p) => p.value));
+      else {
+        const values = await addAgxProfiles(listed.filter((_, i) => chosen.has(i)));
+        if (values.length) onPick(values[0]);
+      }
       onClose();
     } catch (e) { setError(String(e)); setBusy(false); }
   };
@@ -56,7 +65,7 @@ function AgxPresetDialog({ ready, onPick, onClose }: { ready: boolean; onPick: (
     box.current?.querySelector<HTMLElement>("button:not(:disabled)")?.focus();
     return () => previous?.focus();
   }, []);
-  useEffect(() => { if (ready) void search(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (ready && !removing) void search(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return <div className="modal-backdrop" onPointerDown={(e) => { if (!busy && e.target === e.currentTarget) onClose(); }}
     onKeyDown={(e) => {
@@ -69,13 +78,15 @@ function AgxPresetDialog({ ready, onPick, onClose }: { ready: boolean; onPick: (
         else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
       }
     }}>
-    <div ref={box} className="modal" data-dialog="agx-presets" role="dialog" aria-modal="true" aria-labelledby="agx-preset-title">
-      <div className="modal-head"><h2 id="agx-preset-title">Load AgX Preset</h2></div>
+    <div ref={box} className="modal" data-dialog={removing ? "agx-presets-delete" : "agx-presets"} role="dialog" aria-modal="true" aria-labelledby="agx-preset-title">
+      <div className="modal-head"><h2 id="agx-preset-title">{removing ? "Delete AgX Preset" : "Load AgX Preset"}</h2></div>
       <div className="modal-body">
-        {!ready && <p className="note-plain">Open a photo to load presets.</p>}
-        {found && found.length > 0 && <>
-          <p>Presets found:</p>
-          {found.map((p, i) => <label key={i} className="row">
+        {!ready && !removing && <p className="note-plain">Open a photo to load presets.</p>}
+        {removing && <p>Delete presets from My Presets. Photos already using them keep their adjustments.</p>}
+        {removing && !listed.length && <p>No user-loaded AgX presets.</p>}
+        {listed.length > 0 && <>
+          <p>{removing ? "Your presets:" : "Presets found:"}</p>
+          {listed.map((p, i) => <label key={i} className="row">
             <input type="checkbox" disabled={busy} checked={chosen.has(i)}
                    onChange={(e) => setChosen((c) => { const n = new Set(c); if (e.target.checked) n.add(i); else n.delete(i); return n; })} />
             {" "}{p.name.replace(/^_builtin_/, "")}
@@ -85,10 +96,12 @@ function AgxPresetDialog({ ready, onPick, onClose }: { ready: boolean; onPick: (
 
       </div>
       <div className="modal-foot">
-        <button className="btn" disabled={busy || !ready} onClick={() => void search()}>From darktable</button>
-        <button className="btn" disabled={busy || !ready} onClick={() => void choose()}>From file…</button>
+        {!removing && <>
+          <button className="btn" disabled={busy || !ready} onClick={() => void search()}>From darktable</button>
+          <button className="btn" disabled={busy || !ready} onClick={() => void choose()}>From file…</button>
+        </>}
         <button className="btn" disabled={busy} onClick={onClose}>Close</button>
-        <button className="btn primary" disabled={busy || !found || chosen.size === 0} onClick={() => void add()}>Add</button>
+        <button className="btn primary" disabled={busy || chosen.size === 0} onClick={() => void apply()}>{removing ? "Delete" : "Add"}</button>
       </div>
     </div>
   </div>;

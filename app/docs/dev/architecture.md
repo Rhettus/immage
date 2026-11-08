@@ -1086,3 +1086,18 @@ and persistence across a dedicated app restart. The runner seeds only its
 isolated darktable `data.db` before launch and rechecks memory admission before
 restarting. The GUI case is written but not live validated. Native file chooser
 interaction remains manual under the suite's app-only boundary.
+
+The Profile action group has an empty optgroup heading to create the same
+spacing as the other profile groups. It ends with `Load AgX Preset` and
+`Delete AgX Preset` (sentinels -1 and -2, intercepted before slider changes).
+Deletion reuses the dialog with an explicit unchecked selection of active
+imported profiles; builtins cannot enter that list or the deletion API.
+`deleteAgxProfiles` persists before publishing and archives deleted records
+with `deleted: true`. Their IDs and parameter bases remain available for
+existing photos, while `PROFILE_OPTIONS`, `PROFILE_GROUPS` and `userProfiles()`
+exclude them. The current photo can display a hidden selected option with a
+`(deleted)` label without offering it for selection. New-raw preferences fall
+back to AgX Default if their saved profile is no longer selectable. Deletion
+does not rerender the photo or touch darktable's own presets. Unit and GUI
+cases cover protection of builtins, persistent removal and preserved pixels;
+the GUI case still awaits a live run.

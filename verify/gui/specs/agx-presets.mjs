@@ -9,13 +9,28 @@ const menu = '[data-control-id="profile"] select';
 const dialog = '[data-dialog="agx-presets"]';
 const checks = `${dialog} input[type=checkbox]`;
 const label = 'AgX test look';
-const options = t => t.driver.observe(s => [...document.querySelector(s).options].map(o => ({ value: o.value, label: o.label })), menu);
+const options = t => t.driver.observe(s => [...document.querySelector(s).options].filter(o => !o.hidden).map(o => ({ value: o.value, label: o.label })), menu);
 const selected = t => t.driver.observe(s => document.querySelector(s)?.selectedOptions[0]?.label, menu);
 const closed = t => until(() => t.driver.observe(s => !document.querySelector(s), dialog), 'AgX loader closed');
 
 export async function agxPresets(t) {
   const root = await panel(t, 'basic');
   await expandSections(t, root);
+  await click(t, menu);
+  await until(() => t.driver.observe(() => !!document.querySelector('.select-menu')), 'Profile menu open');
+  const actions = await t.driver.observe(() => {
+    const buttons = [...document.querySelectorAll('.select-menu button')];
+    const load = buttons.find(b => b.textContent === 'Load AgX Preset');
+    const remove = buttons.find(b => b.textContent === 'Delete AgX Preset');
+    const spacer = load?.previousElementSibling;
+    return { names: buttons.slice(-2).map(b => b.textContent), deleteDisabled: remove?.disabled,
+      spacer: spacer?.classList.contains('menu-label') && !spacer.textContent.trim() };
+  });
+  assert.deepEqual(actions.names, ['Load AgX Preset', 'Delete AgX Preset']);
+  assert(actions.spacer, 'preset actions follow a group spacer');
+  assert(actions.deleteDisabled, 'Delete disabled without imported presets');
+  await t.evidence('agx-menu-actions');
+  await t.driver.keys('\uE00C');
   const initial = await settledPhoto(t);
   const original = (await t.driver.observe(inspect, menu)).value;
   const open = async () => {
@@ -70,5 +85,29 @@ export async function agxPresets(t) {
   await until(async () => (await selected(t)) === label, 'photo reopens on imported profile');
   assert.equal((await settledPhoto(t)).hash, imported.hash, 'restart restores the saved render');
   await t.evidence('agx-after-restart');
+  const removeDialog = '[data-dialog="agx-presets-delete"]';
+  const removeChecks = `${removeDialog} input[type=checkbox]`;
+  await choose(t, menu, -2, removeDialog);
+  await until(() => t.driver.observe(s => document.querySelectorAll(s).length === 2, removeChecks), 'only two imported presets offered for deletion');
+  const names = await t.driver.observe(s => [...document.querySelectorAll(`${s} label`)].map(e => e.textContent.trim()), removeDialog);
+  assert.deepEqual(names, [label, `${label} (2)`], 'builtins absent from delete dialog');
+  const deleteDisabled = () => t.driver.observe(s => [...document.querySelectorAll(`${s} button`)].find(b => b.textContent === 'Delete')?.disabled, removeDialog);
+  assert(await deleteDisabled(), 'deletion requires an explicit selection');
+  await click(t, `${removeDialog} label:first-of-type input[type=checkbox]`);
+  await t.evidence('agx-delete-selection');
+  await textButton(t, removeDialog, 'Delete');
+  await until(() => t.driver.observe(s => !document.querySelector(s), removeDialog), 'delete dialog closed');
+  assert(!(await options(t)).some(o => o.value === first.value), 'deleted profile absent from menu');
+  assert((await options(t)).some(o => o.value === duplicate.value), 'unselected profile remains');
+  assert.equal(await selected(t), `${label} (deleted)`);
+  assert.equal((await settledPhoto(t)).hash, imported.hash, 'deleting applied preset preserves pixels');
+  await t.restart();
+  await startup(t);
+  await panel(t, 'basic');
+  await expandSections(t, root);
+  assert(!(await options(t)).some(o => o.value === first.value), 'deleted entry stays absent after restart');
+  assert((await options(t)).some(o => o.value === duplicate.value));
+  assert.equal((await settledPhoto(t)).hash, imported.hash, 'deleted preset still preserves saved photo');
+  await t.evidence('agx-deleted-after-restart');
   t.measure({ name: 'agx-presets', profiles: [first, duplicate], hashes: [initial.hash, imported.hash] });
 }

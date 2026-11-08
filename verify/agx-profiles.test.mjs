@@ -73,3 +73,32 @@ test('imported profile retains full native settings and slider bases on reopen',
   assert.equal(profile.read(edited, params).profile, 100);
   assert.deepEqual(M.profileSelection(11), { profile: 11 });
 });
+
+test('delete only imported profiles, preserve existing photo bases and never reuse IDs', async () => {
+  await P.loadAgxProfiles();
+  await assert.rejects(P.deleteAgxProfiles([0]), /Only user-loaded/);
+  await assert.rejects(P.deleteAgxProfiles([11]), /Only user-loaded/);
+  await assert.rejects(P.deleteAgxProfiles([100, 999]), /Only user-loaded/);
+  assert.equal(P.userProfiles().length, 2, 'invalid mixed deletion is atomic');
+  failSave = true;
+  await assert.rejects(P.deleteAgxProfiles([100]), /disk full/);
+  assert.equal(P.userProfiles().length, 2, 'failed delete leaves menu intact');
+  failSave = false;
+  const profile = M.modules.find(m => m.op === 'agx' && m.controls.includes('profile'));
+  const values = M.profileSelection(100);
+  const before = profile.write(values, params);
+  await P.deleteAgxProfiles([100]);
+  assert.deepEqual(P.userProfiles().map(p => p.value), [101]);
+  assert(!M.PROFILE_OPTIONS.some(([, value]) => value === 100));
+  assert.equal(M.profileLabel(100), 'My look (deleted)');
+  assert.deepEqual(profile.write(values, params), before, 'deletion preserves an applied profile');
+  assert(saved.find(p => p.value === 100).deleted);
+  await P.loadAgxProfiles();
+  assert.deepEqual(profile.write(values, params), before, 'bases survive restart');
+  assert.deepEqual(P.userProfiles().map(p => p.value), [101]);
+  assert.deepEqual(await P.addAgxProfiles([{ name: 'My look', params }]), [102]);
+  await P.deleteAgxProfiles([101, 102]);
+  assert.equal(P.userProfiles().length, 0);
+  assert(!M.PROFILE_GROUPS.some(([label]) => label === 'My Presets'));
+  assert.deepEqual(await P.addAgxProfiles([{ name: 'Fresh', params }]), [103]);
+});

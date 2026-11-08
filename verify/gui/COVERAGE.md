@@ -19,7 +19,7 @@ This imports pure manifest/math code using Node >= 22.18, without launching an a
 | gui-benchmark-whole | Same benchmark with fractional draft off | Passed on Linux ARM64 VM, Wayland 125%, DPR 2, draftScale 1 |
 | slider-input | Arrow keys, focus retention, double-click numeric editing, Enter, reset/photo | Passed on Linux system WebKit, Wayland, DPR 2 |
 | shift-range | Five random plain-click then Shift-click ranges in the grid with random delays; selection must be exactly the run | Written; awaiting approved GUI run |
-| agx-presets | Profile loader, database filtering, checkbox/Add state, cancel, rendered import, duplicates, profile switching, restart persistence | Written; not live validated. Native file chooser remains manual |
+| agx-presets | Profile loader, database filtering, checkbox/Add state, cancel, rendered import, duplicates, profile switching, user-only deletion preserving pixels, restart persistence | Written; not live validated. Native file chooser remains manual |
 | batch-paste | Two selected JPEGs, Kodak look/amount, one batch undo/redo, both sidecars, reopening and unselected image | Written; awaiting approved GUI run |
 | history | Slider edit, toolbar undo/redo, value/photo agreement, basic Reset All | Awaiting approved GUI run |
 | rail | Presets, masks, zones, heal, adjustments, active state, hit geometry, screenshots | Awaiting approved GUI run |

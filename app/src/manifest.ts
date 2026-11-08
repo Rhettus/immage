@@ -713,7 +713,8 @@ const BLENDER_LOOK = { ...AGX_LOOK, curve_gamma: 2.4, curve_toe_power: 1.5, curv
                        curve_contrast_around_pivot: 2.4535247 };
 export const AGX_PROFILE_DEFAULT = 0;
 export const LOAD_PRESET = -1;
-export const AGX_PROFILES: { value: number; label: string; params: Params }[] = [
+export const DELETE_PRESET = -2;
+export const AGX_PROFILES: UserProfile[] = [
   { value: AGX_PROFILE_DEFAULT, label: "AgX Default", params: { ...AGX_LOOK, ...BLENDER_PRIMARIES } },
   { value: 11, label: "Unmodified Primaries", params: { ...AGX_LOOK, ...UNMODIFIED_PRIMARIES } },
   { value: 12, label: "Blender", params: { ...BLENDER_LOOK, ...BLENDER_PRIMARIES } },
@@ -740,7 +741,9 @@ export const PROFILE_GROUPS: [string, [string, number][]][] = [
   ["Color Balance RGB", PROFILES.map((p) => [p.label, p.value])],
 ];
 export const PROFILE_OPTIONS: [string, number][] = PROFILE_GROUPS.flatMap(([, o]) => o);
-export const profileLabel = (v: number) => PROFILE_OPTIONS.find(([, x]) => x === v)?.[0] ?? "AgX Default";
+export const profileLabel = (v: number) => PROFILE_OPTIONS.find(([, x]) => x === v)?.[0]
+  ?? (AGX_PROFILES.find((p) => p.value === v)?.deleted
+    ? `${AGX_PROFILES.find((p) => p.value === v)!.label} (deleted)` : "AgX Default");
 
 // AgX presets the user loaded from darktable (agxProfiles.ts), after the
 // built-in ones in AGX_PROFILES and as a last Profile group; the list is
@@ -751,13 +754,14 @@ export const AGX_FIELDS = [...AGX_PROFILE_FIELDS, "look_lift", "look_slope", "dy
   "range_black_relative_ev", "range_white_relative_ev", "curve_pivot_x", "curve_pivot_y_linear_output",
   "curve_linear_ratio_below_pivot", "curve_linear_ratio_above_pivot", "auto_gamma",
   "curve_target_display_black_ratio", "curve_target_display_white_ratio", "target_white_from_output", "hdr_purity"];
-export type UserProfile = { value: number; label: string; params: Params };
+export type UserProfile = { value: number; label: string; params: Params; deleted?: boolean };
 const AGX_BUILTIN = AGX_PROFILES.length;
 export function setUserProfiles(list: UserProfile[]) {
   AGX_PROFILES.length = AGX_BUILTIN;
   AGX_PROFILES.push(...list);
   PROFILE_GROUPS.length = 2;
-  if (list.length) PROFILE_GROUPS.push(["My Presets", list.map((p) => [p.label, p.value])]);
+  const active = list.filter((p) => !p.deleted);
+  if (active.length) PROFILE_GROUPS.push(["My Presets", active.map((p) => [p.label, p.value])]);
   PROFILE_OPTIONS.length = 0;
   PROFILE_OPTIONS.push(...PROFILE_GROUPS.flatMap(([, o]) => o));
 }
