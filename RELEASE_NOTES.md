@@ -8,7 +8,8 @@ what Immage's update banner shows under Release Notes.
 Improvements
 
 - Profile > Load preset imports your AgX presets from darktable or exported
-  preset and style files. Added looks stay in My Presets after restarting and
+  preset and style files, including compatible older AgX presets. Added looks
+  stay in My Presets after restarting and
   can also be chosen as the profile for new raw photos.
 - Lens Corrections has a Lens drop-down under Enable Profile Corrections. It
   shows the lens matched from the file (Auto) and lists the lenses that fit

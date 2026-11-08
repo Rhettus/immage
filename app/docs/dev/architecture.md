@@ -1079,7 +1079,10 @@ matching, as with the built-in looks. Identical looks can share a match.
 Verification: `node --test verify/agx-profiles.test.mjs` covers persistence,
 names, menu updates and parameter mapping. `python3 verify/agx-presets.py
 --build build` exercises real engine database/file imports and invalid inputs
-against disposable fixtures. Outstanding: create and run GUI case `agx-presets`
-for the visible loader, selection, duplicate naming and restart persistence.
-Seed darktable data.db in the isolated test profile before launch; the suite
-cannot operate native file choosers. No GUI verification has run for this change.
+against disposable fixtures, including the generated GUI database and a valid
+v7 preset migration. GUI case `agx-presets` covers the visible loader, checkbox
+selection, cancel, import, duplicate naming, rendered output, switching profiles
+and persistence across a dedicated app restart. The runner seeds only its
+isolated darktable `data.db` before launch and rechecks memory admission before
+restarting. The GUI case is written but not live validated. Native file chooser
+interaction remains manual under the suite's app-only boundary.

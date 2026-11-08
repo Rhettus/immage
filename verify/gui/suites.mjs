@@ -77,6 +77,9 @@ export const cases = {
   'immich-workflow':{scope:'isolated local-service prerequisite; no live account access',commits:['33949b6','22840b4'],liveValidated:false},
   demo:{scope:'announcement demo clip: records frames and a pointer log of a scripted feature tour (verify/gui/demo-assemble.mjs builds the video); asserts nothing, segments that cannot be reached are skipped',liveValidated:false,
     limitation:'Records evidence for marketing, not a verification of the features.'},
+  'agx-presets': {scope:'Profile Load preset dialog: isolated darktable database filtering, Add enabled state, cancel without edits, import and rendered effect, duplicate labels, built-in/profile switching and restart persistence',
+    commits:['765a0ba'],liveValidated:false,
+    limitation:'Written, not live validated. Seeds a synthetic AgX v8 preset before launch. Native file chooser remains manual; file decoding is covered by verify/agx-presets.py.'},
   'lens-pick':{scope:'Lens Corrections > Lens: Auto shows the matched lens, the search box filters (12-32 keeps the 12-32mm lenses), choosing a fisheye changes the picture and Auto restores it',liveValidated:true,
     verification:'Linux, system WebKitGTK 2.54.2, Wayland, Panasonic raw P1030105.RW2; pass, run 2026-11-07T23-31-28.418Z_809a4a5_435ce7b1 (after fixing a clipped menu and a search box that was not focused).',
     limitation:'Needs a raw fixture from a camera in the lensfun database.'},
@@ -92,7 +95,7 @@ export const cases = {
 export const suites = {
   smoke: ['startup', 'exposure'],
   crop: ['startup','crop-guides','crop-locked','crop-options','crop-auto-straighten','crop-undo'],
-  workflows: ['startup','curves','wheels','equalizer','saturation-curve','masks','heal','zones','film','print','preferences-matrix','slider-wheel','export-options','filters','presets','shortcuts'],
+  workflows: ['startup','agx-presets','curves','wheels','equalizer','saturation-curve','masks','heal','zones','film','print','preferences-matrix','slider-wheel','export-options','filters','presets','shortcuts'],
   inventory: ['startup',...generatedNames],
   regressions: ['startup', 'rail', 'panel-scroll', 'module-options', 'batch-paste', 'shift-range'],
   controls: ['startup', 'slider-input', 'slider-click', 'history', 'rail', 'sliders', 'module-options', 'module-switch'],

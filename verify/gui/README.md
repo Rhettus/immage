@@ -474,3 +474,20 @@ only the named segments (`layout`, `focus`, `sliders`, `masks`, `equalizer`,
 `verify/results/gui/demo/`. The Film segment needs the spektrafilm data pack and
 Print needs no profile for the tour. Like every GUI run, it needs approval and
 the workspace and memory preparation above.
+
+## AgX preset import
+
+`node verify/gui/run.mjs --config verify/gui/local.json --case agx-presets`
+runs the visible Profile > Load preset workflow on the copied photo. Before
+launch, `support/agx-fixture.py` generates an AgX v8 user preset and two rows
+that must be excluded (a builtin and a different module) in the run's isolated
+darktable `data.db`. It never reads or changes the user's darktable database.
+
+The case checks checkbox/Add enablement, cancel without changing the photo,
+import and visible rendering, duplicate names, switching to a builtin and back,
+and the saved menu entries and photo after restarting only the test app with
+the same isolated profile. Restart performs fresh memory admission checks.
+Evidence stays in the usual run directory. The case is **written, not live
+validated**. Run it with a release app and engine built from this change.
+Native `.dtpreset`/`.dtstyle` chooser interaction remains a manual check;
+`verify/agx-presets.py` checks file decoding headlessly.

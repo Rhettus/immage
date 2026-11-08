@@ -9255,7 +9255,7 @@ static gboolean _agx_preset_fields(dt_iop_module_t *m, const void *blob, const i
   void *params = g_malloc0(m->params_size);
   gboolean ok = blob && size > 0 && version > 0 && version <= m->version();
   if(!ok || (version == m->version() && size != m->params_size)
-     || (version == 7 && size != 37 * 4))
+     || (version == 7 && size != 36 * 4))
   {
     g_free(params);
     json_builder_add_null_value(b);
