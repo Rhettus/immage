@@ -55,7 +55,8 @@ presets. Open a photo first. The dialog lists user presets from darktable's
 standard configuration folder; **From darktable** refreshes that list.
 Alternatively, choose **From file…** and open an exported darktable
 `.dtpreset` or `.dtstyle` file. Only AgX settings are imported from a style;
-other modules and blending settings are excluded. Check the presets you want
+other modules and blending settings are excluded. Compatible older AgX
+presets are converted by the bundled darktable engine. Check the presets you want
 and click **Add**. The first added preset is applied to the open photo.
 
 Added presets appear under **My Presets** and remain available after restarting

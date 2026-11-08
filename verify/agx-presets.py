@@ -47,7 +47,7 @@ with tempfile.TemporaryDirectory(prefix='immage-agx-') as tmp:
             state = req({'cmd': 'module_state', 'op': 'agx'})
             # Fetch the actual current module blob rather than copying its layout.
             params = req({'cmd': 'get', 'modules': {'agx': fields}})['modules']['agx']['params']
-            # module_state returns before/after; use its unchanged current state.
+            # module_state returns was/now; use its unchanged current state.
             raw = base64.b64decode(state['now']['params'])
             db = p / 'presets.db'
             with sqlite3.connect(db) as conn:
@@ -55,17 +55,32 @@ with tempfile.TemporaryDirectory(prefix='immage-agx-') as tmp:
                 conn.executemany('INSERT INTO presets VALUES(?,?,?,?,?)', [
                     ('My AgX', 8, raw, 'agx', 0), ('Builtin', 8, raw, 'agx', 1),
                     ('Other', 8, raw, 'exposure', 0), ('Future', 999, raw, 'agx', 0),
-                    ('Truncated', 8, b'x', 'agx', 0), ('Old truncated', 7, b'x', 'agx', 0)])
+                    ('Truncated', 8, b'x', 'agx', 0), ('Previous', 7, raw[:-8], 'agx', 0), ('Old truncated', 7, b'x', 'agx', 0)])
             before = req({'cmd': 'module_state', 'op': 'agx'})['now']
             found = req({'cmd': 'agx_presets', 'db': str(db), 'fields': fields})['presets']
             good = [x for x in found if x['params'] is not None]
-            assert good == [{'name': 'My AgX', 'params': params}], found
+            assert [x['name'] for x in good] == ['My AgX', 'Previous'], found
+            assert good[0]['params'] == params
+            assert good[1]['params']['look_brightness'] == params['look_brightness']
+            gui_db = p / 'gui-darktable' / 'data.db'
+            subprocess.run(['python3', 'verify/gui/support/agx-fixture.py', str(gui_db)], check=True, stdout=subprocess.DEVNULL)
+            gui_presets = req({'cmd': 'agx_presets', 'db': str(gui_db), 'fields': fields})['presets']
+            assert len(gui_presets) == 1 and gui_presets[0]['name'] == 'GUI|AgX test look', gui_presets
+            assert abs(gui_presets[0]['params']['look_brightness'] - .65) < 1e-6, gui_presets
             preset = p / 'test.dtpreset'
             preset.write_text('<darktable_preset version="1.0"><preset><name>My &amp; AgX</name>'
                 '<operation>agx</operation><op_version>8</op_version><op_params>' + raw.hex()
                 + '</op_params></preset></darktable_preset>')
             imported = req({'cmd': 'agx_presets', 'file': str(preset), 'fields': fields})['presets']
             assert imported == [{'name': 'My & AgX', 'params': params}], imported
+            compressed = zlib.compress(raw)
+            factor = min(len(raw) // len(compressed) + 1, 99)
+            encoded = f'gz{factor:02d}' + base64.b64encode(compressed).decode()
+            preset.write_text('<darktable_preset version="1.0"><preset><name>Compressed</name>'
+                '<operation>agx</operation><op_version>8</op_version><op_params>' + encoded
+                + '</op_params></preset></darktable_preset>')
+            assert req({'cmd': 'agx_presets', 'file': str(preset), 'fields': fields})['presets'] == [
+                {'name': 'Compressed', 'params': params}]
             preset.write_text('<wrong/>')
             req({'cmd': 'agx_presets', 'file': str(preset), 'fields': fields}, ok=False)
             assert req({'cmd': 'module_state', 'op': 'agx'})['now'] == before, 'Import changed photo'

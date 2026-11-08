@@ -17,7 +17,7 @@
               "kind": "choice",
               "rawOnly": false,
               "min": 0,
-              "max": 16,
+              "max": 99999,
               "step": 1,
               "nonlinear": false,
               "options": [
@@ -2603,6 +2603,23 @@
               "max": 1,
               "step": 1,
               "nonlinear": false,
+              "status": "pending"
+            },
+            {
+              "id": "lens_pick",
+              "label": "Lens",
+              "kind": "choice",
+              "rawOnly": false,
+              "min": 0,
+              "max": 16777215,
+              "step": 1,
+              "nonlinear": false,
+              "options": [
+                [
+                  "Auto",
+                  0
+                ]
+              ],
               "status": "pending"
             },
             {

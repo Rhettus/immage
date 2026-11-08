@@ -145,6 +145,11 @@ try {
     copiedFixture=join(fixtures,generated[fixtureName].file);
     report.syntheticFixture={name:fixtureName,...generated[fixtureName]};
   }
+  if (selectedCases.includes('agx-presets')) {
+    execFileSync('python3', [join(root, 'verify/gui/support/agx-fixture.py'),
+      join(profile, 'config', 'darktable', 'data.db')], { stdio: 'pipe' });
+    report.agxFixture = 'Generated AgX v8 database: user preset plus excluded builtin and non-AgX rows';
+  }
   if (selectedCases.includes('batch-paste')) {
     if (!/\.jpe?g$/i.test(copiedFixture)) throw Error('batch-paste requires a JPEG fixture');
     for (const name of ['batch-target-1.jpg', 'batch-target-2.jpg', 'batch-untouched.jpg'])
@@ -279,6 +284,17 @@ try {
     report.cases.push(c); journal.event('case-start', { name }); journal.checkpoint(report);
     const caseDir = join(out, name); await mkdir(caseDir);
     const t = { driver,
+      restart: async () => {
+        // Only this runner's app/session, preserving its isolated profile.
+        await memoryPreflight('before-restart');
+        await driver.close();
+        driver.mainHandle = null; driver.mainUrl = null;
+        await memoryPreflight('before-restart-launch');
+        await driver.open(binary, copiedFixture);
+        await driver.command('POST', '/timeouts', { script: 10000, pageLoad: 15000, implicit: 0 });
+        report.viewportPrepared = false;
+        journal.event('app-restarted', { case: name });
+      },
       fixture:{name:fixtureName,generated:fixtureName!=='configured',file:basename(copiedFixture),raw:/\.(?:cr2|cr3|nef|arw|raf|dng|orf|rw2)$/i.test(copiedFixture)},
       sidecars:async()=>Promise.all((await readdir(fixtures)).filter(n=>n.endsWith('.xmp')).map(n=>readFile(join(fixtures,n),'utf8'))),
       sidecarsNamed:async()=>Promise.all((await readdir(fixtures)).filter(n=>n.endsWith('.xmp')).map(async file=>({file,text:await readFile(join(fixtures,file),'utf8')}))),
