@@ -22,6 +22,12 @@ registerHooks({
   },
 });
 let saved = [], failSave = false;
+const settings = new Map();
+let failStorage = false;
+globalThis.localStorage = {
+  getItem: key => settings.get(key) ?? null,
+  setItem: (key, value) => { if (failStorage) throw Error('settings unavailable'); settings.set(key, String(value)); },
+};
 globalThis.agxInvoke = async (cmd, args) => {
   if (cmd === 'agx_profiles_load') return structuredClone(saved);
   if (cmd === 'agx_profiles_save') {
@@ -101,4 +107,32 @@ test('delete only imported profiles, preserve existing photo bases and never reu
   assert.equal(P.userProfiles().length, 0);
   assert(!M.PROFILE_GROUPS.some(([label]) => label === 'My Presets'));
   assert.deepEqual(await P.addAgxProfiles([{ name: 'Fresh', params }]), [103]);
+});
+
+
+test('deleting the new-raw default requires an explicit surviving replacement', async () => {
+  const defaults = await import('../app/src/profileDefault.ts');
+  const [other] = await P.addAgxProfiles([{ name: 'Replacement', params }]);
+  defaults.storeNewPhotosProfile(103);
+  await assert.rejects(P.deleteAgxProfiles([103]), /Choose another default/);
+  await assert.rejects(P.deleteAgxProfiles([103], 103), /Choose another default/);
+  await assert.rejects(P.deleteAgxProfiles([103, other], other), /Choose another default/);
+  await assert.rejects(P.deleteAgxProfiles([103], 999), /Choose another default/);
+  assert.equal(defaults.loadNewPhotosProfile(), 103);
+  failSave = true;
+  await assert.rejects(P.deleteAgxProfiles([103], other), /disk full/);
+  failSave = false;
+  assert.equal(defaults.loadNewPhotosProfile(), 103, 'failed deletion restores previous default');
+  assert(P.userProfiles().some(p => p.value === 103));
+  failStorage = true;
+  await assert.rejects(P.deleteAgxProfiles([103], other), /settings unavailable/);
+  failStorage = false;
+  assert(P.userProfiles().some(p => p.value === 103), 'cannot delete if replacement cannot be saved');
+  await P.deleteAgxProfiles([103], other);
+  assert.equal(defaults.loadNewPhotosProfile(), other);
+  assert(!P.userProfiles().some(p => p.value === 103));
+  await P.loadAgxProfiles();
+  assert.equal(defaults.loadNewPhotosProfile(), other, 'replacement persists');
+  await P.deleteAgxProfiles([other], 0);
+  assert.equal(defaults.loadNewPhotosProfile(), 0, 'builtin default allowed when explicitly chosen');
 });

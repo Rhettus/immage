@@ -87,6 +87,12 @@ export async function agxPresets(t) {
   await until(async () => (await selected(t)) === label, 'photo reopens on imported profile');
   assert.equal((await settledPhoto(t)).hash, imported.hash, 'restart restores the saved render');
   await t.evidence('agx-after-restart');
+  // Use a real preference selection to make deletion exercise the default gate.
+  const defaultMenu = '.prefs [data-pref-label="Profile"] select';
+  await click(t, 'button[data-tour="prefs"]');
+  await textButton(t, '.prefs-tabs', 'New Photos');
+  await choose(t, defaultMenu, first.value);
+  await textButton(t, '.prefs-foot', 'Done');
   const removeDialog = '[data-dialog="agx-presets-delete"]';
   const removeChecks = `${removeDialog} input[type=checkbox]`;
   await choose(t, menu, -2, removeDialog);
@@ -96,13 +102,26 @@ export async function agxPresets(t) {
   const deleteDisabled = () => t.driver.observe(s => [...document.querySelectorAll(`${s} button`)].find(b => b.textContent === 'Delete')?.disabled, removeDialog);
   assert(await deleteDisabled(), 'deletion requires an explicit selection');
   await click(t, `${removeDialog} label:first-of-type input[type=checkbox]`);
+  const replacementMenu = `${removeDialog} select[data-action="agx-replacement-default"]`;
+  await until(() => t.driver.observe(s => !!document.querySelector(s), replacementMenu), 'default replacement required');
+  assert(await deleteDisabled(), 'default cannot be deleted without an explicit replacement');
+  const replacements = await t.driver.observe(s => [...document.querySelector(s).options].map(o => o.value), replacementMenu);
+  assert(!replacements.includes(first.value), 'preset being deleted cannot replace itself');
+  assert(replacements.includes(duplicate.value), 'surviving user preset can replace default');
+  await choose(t, replacementMenu, duplicate.value);
   await t.evidence('agx-delete-selection');
   await textButton(t, removeDialog, 'Close');
   await until(() => t.driver.observe(s => !document.querySelector(s), removeDialog), 'cancel deletion');
   assert((await options(t)).some(o => o.value === first.value), 'cancel keeps selected preset');
   assert.equal((await settledPhoto(t)).hash, imported.hash, 'cancel deletion preserves pixels');
+  await click(t, 'button[data-tour="prefs"]');
+  await textButton(t, '.prefs-tabs', 'New Photos');
+  assert.equal((await t.driver.observe(inspect, defaultMenu)).value, first.value, 'cancel did not change the default');
+  await textButton(t, '.prefs-foot', 'Done');
   await choose(t, menu, -2, removeDialog);
   await click(t, `${removeDialog} label:first-of-type input[type=checkbox]`);
+  assert(await deleteDisabled(), 'replacement must be explicitly chosen again after cancel');
+  await choose(t, replacementMenu, duplicate.value);
   await textButton(t, removeDialog, 'Delete');
   await until(() => t.driver.observe(s => !document.querySelector(s), removeDialog), 'delete dialog closed');
   assert(!(await options(t)).some(o => o.value === first.value), 'deleted profile absent from menu');
@@ -117,9 +136,16 @@ export async function agxPresets(t) {
   assert((await options(t)).some(o => o.value === duplicate.value));
   assert.equal((await settledPhoto(t)).hash, imported.hash, 'deleted preset still preserves saved photo');
   await t.evidence('agx-deleted-after-restart');
+  await click(t, 'button[data-tour="prefs"]');
+  await textButton(t, '.prefs-tabs', 'New Photos');
+  assert.equal((await t.driver.observe(inspect, defaultMenu)).value, duplicate.value, 'chosen replacement persists after restart');
+  await textButton(t, '.prefs-foot', 'Done');
+
   await choose(t, menu, -2, removeDialog);
   await until(() => t.driver.observe(s => document.querySelectorAll(s).length === 1, removeChecks), 'only remaining imported preset listed');
   await click(t, removeChecks);
+  assert(await deleteDisabled(), 'last user preset is now the default and also requires a replacement');
+  await choose(t, replacementMenu, 0);
   await textButton(t, removeDialog, 'Delete');
   await until(() => t.driver.observe(s => !document.querySelector(s), removeDialog), 'last preset deleted');
   assert(!(await options(t)).some(o => Number(o.value) >= 100), 'all imported entries removed');

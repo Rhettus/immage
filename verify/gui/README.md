@@ -499,3 +499,10 @@ viewport/restart cleanup and Exposure scrolling fixes. Use a release app and
 engine built from this change.
 Native `.dtpreset`/`.dtstyle` chooser interaction remains a manual check;
 `verify/agx-presets.py` checks file decoding headlessly.
+
+The default-replacement extension also passed in run
+`2026-11-08T23-16-29.185Z_3c1857f_6d3f975a` (Linux ARM64/system-WebKit, maximized 1596x840 at DPR 2).
+Through Preferences, the test makes an imported preset the new-raw default,
+checks that deletion requires an explicit surviving replacement, verifies that
+cancel leaves the old default intact, and verifies the chosen replacement after
+restart. Deleting the last user preset explicitly selects AgX Default.

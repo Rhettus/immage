@@ -24,17 +24,8 @@ import { loadSharedFrames, sharedFramesAvailable, storeSharedFrames } from "./sh
 import { loadScreenScale, screenScale, storeScreenScale, loadSettledScale, storeSettledScale } from "./pixelRatio";
 import { checkForUpdate, lastChecked, loadAutoCheck, storeAutoCheck, useUpdate, type UpdateState } from "./updates";
 
-// the profile a new raw gets (manifest.ts, PROFILE_GROUPS): AgX's default unless set
-const PROFILE_KEY = "immage.newPhotosProfile";
-export function loadNewPhotosProfile(): number {
-  try {
-    const v = Number(localStorage.getItem(PROFILE_KEY) ?? AGX_PROFILE_DEFAULT);
-    return PROFILE_OPTIONS.some(([, x]) => x === v) ? v : AGX_PROFILE_DEFAULT;
-  } catch { return AGX_PROFILE_DEFAULT; }
-}
-function storeNewPhotosProfile(v: number) {
-  try { localStorage.setItem(PROFILE_KEY, String(v)); } catch { /* not kept */ }
-}
+import { loadNewPhotosProfile, storeNewPhotosProfile } from "./profileDefault";
+export { loadNewPhotosProfile } from "./profileDefault";
 
 // EV a new raw's exposure gets on an instance of its own (manifest.ts,
 // exp_comp), so Exposure still starts at 0; off unless set. the amount is

@@ -73,7 +73,9 @@ AgX and Color Balance RGB profiles cannot be deleted. The action is disabled
 when there are no user-loaded presets. Deletion removes the entries from
 **My Presets** and from the new-raw default choices, and leaves photos already
 using them unchanged. An applied deleted preset is labelled **(deleted)** on
-that photo. If it was the default for new raws, new raws use AgX Default.
+that photo. If a selected preset is the default for new raws, choose a replacement in the
+delete dialog before **Delete** becomes available. Presets selected for deletion
+are excluded from that menu. The replacement is saved for new raw photos.
 Deleting a preset in Immage does not delete it from darktable or its source file.
 
 **Treatment**: **Color** or **B&W**. Black and white swaps **HSL / Color**
