@@ -487,8 +487,15 @@ The case checks checkbox/Add enablement, cancel without changing the photo,
 import and visible rendering, duplicate names, switching to a builtin and back,
 the action spacer and labels, user-only deletion without changing the photo,
 and the saved menu entries and photo after restarting only the test app with
-the same isolated profile. Restart performs fresh memory admission checks.
-Evidence stays in the usual run directory. The case is **written, not live
-validated**. Run it with a release app and engine built from this change.
+the same isolated profile. Restart waits for the previous test app's engine and webview processes to exit,
+performs fresh memory admission checks, and requires the original viewport to be
+restored before comparing pixels. Maximize each restarted window too.
+Evidence stays in the usual run directory. The case **passed** on Linux ARM64,
+system WebKitGTK 2.54.2, Wayland DPR 2, maximized 1276x660 viewport, with the
+sample JPEG: run `2026-11-08T23-06-46.100Z_3890fc3_2fe8198f`. Startup and Exposure
+also passed in that run. It covers refresh, cancel deletion and deletion of the
+last preset. Earlier failed runs are retained; the final run includes the
+viewport/restart cleanup and Exposure scrolling fixes. Use a release app and
+engine built from this change.
 Native `.dtpreset`/`.dtstyle` chooser interaction remains a manual check;
 `verify/agx-presets.py` checks file decoding headlessly.

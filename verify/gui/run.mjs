@@ -14,7 +14,7 @@ import { resolveCases, suites, cases } from './suites.mjs';
 import { pathFree } from './support/privacy.mjs';
 import { availableMemory } from './support/memory.mjs';
 import { Journal } from './support/journal.mjs';
-import { sampleProcesses } from './support/process-memory.mjs';
+import { parseProcessStat, sampleProcesses } from './support/process-memory.mjs';
 import { implementationFor } from './registry.mjs';
 import { benchmarkFilename, parseViewport } from './support/benchmark.mjs';
 import { Blocked } from './support/scenario.mjs';
@@ -286,12 +286,32 @@ try {
     const t = { driver,
       restart: async () => {
         // Only this runner's app/session, preserving its isolated profile.
-        await memoryPreflight('before-restart');
+        const viewport = await driver.observe(() => ({ width: innerWidth, height: innerHeight }));
+        const closing = (await sampleProcesses(processDriver.pid, '/proc', driverStart)).processes
+          .filter(p => !['tauri-driver', 'WebKitWebDriver'].includes(p.name));
         await driver.close();
+        // DELETE session returns before all of its old engine/webview children
+        // have exited. Do not admit another app while those still own RAM.
+        await until(async () => (await Promise.all(closing.map(async p => {
+          try {
+            const stat = await readFile(`/proc/${p.pid}/stat`, 'utf8');
+            return parseProcessStat(stat).started !== p.started
+              || stat.slice(stat.lastIndexOf(')') + 2).startsWith('Z ');
+          } catch (error) {
+            if (error.code === 'ENOENT' || error.code === 'ESRCH') return true;
+            throw error;
+          }
+        }))).every(Boolean), 'previous test app processes to exit', 15000);
         driver.mainHandle = null; driver.mainUrl = null;
         await memoryPreflight('before-restart-launch');
         await driver.open(binary, copiedFixture);
         await driver.command('POST', '/timeouts', { script: 10000, pageLoad: 15000, implicit: 0 });
+        await until(async () => {
+          try {
+            await driver.guard();
+            return driver.observe(v => innerWidth === v.width && innerHeight === v.height, viewport);
+          } catch { return false; }
+        }, 'original test viewport restored after restart', 30000);
         report.viewportPrepared = false;
         journal.event('app-restarted', { case: name });
       },
