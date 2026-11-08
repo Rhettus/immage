@@ -138,3 +138,11 @@ snapshot (`app/scripts/fetch_lensfun_db.py`, needs network access) rather than
 take the package's, which is from 2023. The engine uses the bundled copy only when no system
 database loads (`lens.cc`, the same as darktable), so
 on Linux a system lensfun package takes precedence.
+
+### Local worktrees with linked dependencies
+
+The Vite development server permits the resolved `app/node_modules` directory
+in its filesystem allow list. This lets a worktree reuse a local dependency
+installation through a symlink while still serving bundled fonts. Release
+builds are unchanged. Keep native app builds tied to the worktree's source;
+a shared Cargo target directory is only a compilation cache.
