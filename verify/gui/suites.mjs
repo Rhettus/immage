@@ -77,7 +77,7 @@ export const cases = {
   'immich-workflow':{scope:'isolated local-service prerequisite; no live account access',commits:['33949b6','22840b4'],liveValidated:false},
   demo:{scope:'announcement demo clip: records frames and a pointer log of a scripted feature tour (verify/gui/demo-assemble.mjs builds the video); asserts nothing, segments that cannot be reached are skipped',liveValidated:false,
     limitation:'Records evidence for marketing, not a verification of the features.'},
-  'agx-presets': {scope:'Profile Load preset dialog: isolated darktable database filtering, Add enabled state, cancel without edits, import and rendered effect, duplicate labels, built-in/profile switching and restart persistence',
+  'agx-presets': {scope:'Profile Load AgX Preset and Delete AgX Preset dialogs: isolated darktable database filtering, Add enabled state, cancel without edits, import and rendered effect, duplicate labels, built-in/profile switching, user-only deletion preserving pixels and restart persistence',
     commits:['765a0ba'],liveValidated:false,
     limitation:'Written, not live validated. Seeds a synthetic AgX v8 preset before launch. Native file chooser remains manual; file decoding is covered by verify/agx-presets.py.'},
   'lens-pick':{scope:'Lens Corrections > Lens: Auto shows the matched lens, the search box filters (12-32 keeps the 12-32mm lenses), choosing a fisheye changes the picture and Auto restores it',liveValidated:true,

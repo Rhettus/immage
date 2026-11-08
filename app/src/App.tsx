@@ -1,6 +1,6 @@
 import { AgxPresetLoader } from "./AgxPresetDialog";
-import { LOAD_AGX_PRESET_EVENT, useAgxProfiles } from "./agxProfiles";
-import { profileSelection, AGX_USER_FIRST, LOAD_PRESET } from "./manifest";
+import { DELETE_AGX_PRESET_EVENT, LOAD_AGX_PRESET_EVENT, useAgxProfiles, userProfiles } from "./agxProfiles";
+import { profileSelection, AGX_USER_FIRST, DELETE_PRESET, LOAD_PRESET } from "./manifest";
 import { ContrastEqualizer } from "./ContrastEqualizer";
 import { SaturationCurve } from "./SaturationCurve";
 import { detailRows } from "./DetailControls";
@@ -8411,14 +8411,15 @@ const SliderWidget = memo(function SliderWidget({ control: c, value, neutral, di
 
 // a few named values as a segmented control (Color | Black & White)
 function Choice({ control: c, value, disabled, onChange }: ControlProps) {
+  useAgxProfiles();
   if (c.menu) return (
     <div className="choice-row" data-control-id={c.id}>
       <span>{c.label}</span>
       <select className="field" value={value} disabled={disabled} onChange={(e) => {
         const v = Number(e.target.value);
-        if (c.loadPreset && v === LOAD_PRESET) {
+        if (c.loadPreset && (v === LOAD_PRESET || v === DELETE_PRESET)) {
           e.target.value = String(value);
-          window.dispatchEvent(new Event(LOAD_AGX_PRESET_EVENT));
+          window.dispatchEvent(new Event(v === DELETE_PRESET ? DELETE_AGX_PRESET_EVENT : LOAD_AGX_PRESET_EVENT));
         } else onChange(v);
       }}>
         {c.optionGroups
@@ -8427,7 +8428,14 @@ function Choice({ control: c, value, disabled, onChange }: ControlProps) {
               {opts.map(([label, v]) => <option key={v} value={v}>{label}</option>)}
             </optgroup>))
           : (c.options ?? []).map(([label, v]) => <option key={v} value={v}>{label}</option>)}
-        {c.loadPreset && <option value={LOAD_PRESET}>Load preset…</option>}
+        {c.loadPreset && <>
+          {!c.options?.some(([, v]) => v === value) && value >= AGX_USER_FIRST
+            && <option hidden value={value}>{profileLabel(value)}</option>}
+          <optgroup label="">
+            <option value={LOAD_PRESET}>Load AgX Preset</option>
+            <option value={DELETE_PRESET} disabled={!userProfiles().length}>Delete AgX Preset</option>
+          </optgroup>
+        </>}
       </select>
     </div>
   );

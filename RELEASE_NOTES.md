@@ -7,10 +7,12 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
-- Profile > Load preset imports your AgX presets from darktable or exported
+- Profile > Load AgX Preset imports your AgX presets from darktable or exported
   preset and style files, including compatible older AgX presets. Added looks
   stay in My Presets after restarting and
-  can also be chosen as the profile for new raw photos.
+  can also be chosen as the profile for new raw photos. Delete AgX Preset
+  removes imported entries while keeping existing photo adjustments; built-in
+  profiles cannot be deleted.
 - Lens Corrections has a Lens drop-down under Enable Profile Corrections. It
   shows the lens matched from the file (Auto) and lists the lenses that fit
   the camera, so a lens the file does not name, or names wrongly, can be
