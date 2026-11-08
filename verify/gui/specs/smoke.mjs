@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { until } from '../support/webdriver.mjs';
 import * as read from '../support/observations.mjs';
 import { Blocked } from '../support/scenario.mjs';
+import { reveal, rangeSelector } from '../support/controls.mjs';
 
 // A tiling window manager that tiles the splash instead of floating it
 // stretches it over the workspace. The session starts after the splash has
@@ -85,7 +86,11 @@ export async function exposure(t) {
   const title = await t.driver.observe(read.panelTitle);
   assert(title, 'Basic panel must exist');
   if (!title.open) await t.driver.point(title.x, title.y);
-  let slider = await until(async () => { const s = await t.driver.observe(read.exposure); return s?.visible && !s.disabled && s; }, 'visible Exposure slider');
+  // Earlier cases can leave the panel scrolled to Profile. Scroll through
+  // actual wheel input before measuring or aiming at Exposure.
+  await reveal(t, '[data-control-id="exposure"] label');
+  await reveal(t, rangeSelector('exposure'));
+  let slider = await until(async () => { const s = await t.driver.observe(read.exposure); return s?.visible && s.hit && !s.disabled && s; }, 'visible Exposure slider');
   assert(slider.hit, 'Exposure track must receive hit testing');
   // Reset with a real double click, then establish a final neutral baseline.
   await t.driver.point(slider.label.x, slider.label.y, 2);

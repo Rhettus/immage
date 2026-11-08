@@ -1084,7 +1084,9 @@ v7 preset migration. GUI case `agx-presets` covers the visible loader, checkbox
 selection, cancel, import, duplicate naming, rendered output, switching profiles
 and persistence across a dedicated app restart. The runner seeds only its
 isolated darktable `data.db` before launch and rechecks memory admission before
-restarting. The GUI case is written but not live validated. Native file chooser
+restarting. The GUI case passed on Linux ARM64 with system WebKitGTK 2.54.2, Wayland
+DPR 2 and a maximized viewport; run
+`2026-11-08T23-06-46.100Z_3890fc3_2fe8198f`. Native file chooser
 interaction remains manual under the suite's app-only boundary.
 
 The Profile action group has an empty optgroup heading to create the same
@@ -1100,4 +1102,12 @@ exclude them. The current photo can display a hidden selected option with a
 back to AgX Default if their saved profile is no longer selectable. Deletion
 does not rerender the photo or touch darktable's own presets. Unit and GUI
 cases cover protection of builtins, persistent removal and preserved pixels;
-the GUI case still awaits a live run.
+the GUI case passed alongside Startup and Exposure on 2026-11-08.
+
+The GUI runner's restart waits for its previous app/engine/webview processes to
+exit (checking PID/start identity) before the unchanged RAM/swap admission gate,
+and waits for the original viewport size after reopening. The desktop wrapper
+must maximize every restarted main window, rather than treating a reused window
+address as already prepared. Exposure smoke scrolls its label and track into
+view through normal input before asserting hit testing, so it can follow cases
+that leave Basic scrolled to Profile.

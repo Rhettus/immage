@@ -51,6 +51,8 @@ export async function agxPresets(t) {
   assert.equal((await settledPhoto(t)).hash, initial.hash);
 
   await open();
+  await textButton(t, dialog, 'From darktable');
+  await until(() => t.driver.observe(s => document.querySelectorAll(s).length === 1, checks), 'refresh keeps the user AgX preset');
   await until(async () => !(await addDisabled()), 'Add enabled');
   await t.evidence('agx-found');
   await textButton(t, dialog, 'Add');
@@ -95,6 +97,12 @@ export async function agxPresets(t) {
   assert(await deleteDisabled(), 'deletion requires an explicit selection');
   await click(t, `${removeDialog} label:first-of-type input[type=checkbox]`);
   await t.evidence('agx-delete-selection');
+  await textButton(t, removeDialog, 'Close');
+  await until(() => t.driver.observe(s => !document.querySelector(s), removeDialog), 'cancel deletion');
+  assert((await options(t)).some(o => o.value === first.value), 'cancel keeps selected preset');
+  assert.equal((await settledPhoto(t)).hash, imported.hash, 'cancel deletion preserves pixels');
+  await choose(t, menu, -2, removeDialog);
+  await click(t, `${removeDialog} label:first-of-type input[type=checkbox]`);
   await textButton(t, removeDialog, 'Delete');
   await until(() => t.driver.observe(s => !document.querySelector(s), removeDialog), 'delete dialog closed');
   assert(!(await options(t)).some(o => o.value === first.value), 'deleted profile absent from menu');
@@ -109,5 +117,19 @@ export async function agxPresets(t) {
   assert((await options(t)).some(o => o.value === duplicate.value));
   assert.equal((await settledPhoto(t)).hash, imported.hash, 'deleted preset still preserves saved photo');
   await t.evidence('agx-deleted-after-restart');
+  await choose(t, menu, -2, removeDialog);
+  await until(() => t.driver.observe(s => document.querySelectorAll(s).length === 1, removeChecks), 'only remaining imported preset listed');
+  await click(t, removeChecks);
+  await textButton(t, removeDialog, 'Delete');
+  await until(() => t.driver.observe(s => !document.querySelector(s), removeDialog), 'last preset deleted');
+  assert(!(await options(t)).some(o => Number(o.value) >= 100), 'all imported entries removed');
+  assert.equal((await settledPhoto(t)).hash, imported.hash, 'deleting last preset preserves current photo');
+  await click(t, menu);
+  await until(() => t.driver.observe(() => !!document.querySelector('.select-menu')), 'menu after last deletion');
+  assert(await t.driver.observe(() => [...document.querySelectorAll('.select-menu button')]
+    .find(b => b.textContent === 'Delete AgX Preset')?.disabled), 'Delete disabled again after last preset');
+  await t.evidence('agx-all-deleted');
+  await t.driver.keys('\uE00C');
+
   t.measure({ name: 'agx-presets', profiles: [first, duplicate], hashes: [initial.hash, imported.hash] });
 }
