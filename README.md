@@ -58,6 +58,7 @@ For Linux launch options, see [Linux setup and troubleshooting](app/docs/prefere
 
 - [User guide](app/docs/README.md): getting started, editing tools and settings.
 - [darktable compatibility and module reference](app/docs/darktable.md).
+- [Troubleshooting and reporting issues](app/docs/troubleshooting.md): diagnostics and the bug report form.
 - [Developer docs](app/docs/dev/README.md): building, architecture and contributing to the code.
 - [Credits and licenses](app/docs/credits.md): projects, AI models and map attribution.
 

@@ -3,6 +3,14 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
+## 0.44.0
+
+Improvements
+
+- The user guide now includes troubleshooting and issue-reporting instructions,
+  with GUI benchmark and crash-log locations and guided GitHub forms for bug
+  reports and feature requests.
+
 ## 0.43.0
 
 Improvements

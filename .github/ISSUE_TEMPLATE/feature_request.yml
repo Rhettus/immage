@@ -1,0 +1,39 @@
+name: Feature request
+description: Suggest an improvement for Immage to consider.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Feature requests are reviewed for their benefit to Immage and prioritized accordingly. Submitting a request does not guarantee that it will be included or provide a timeline for implementation.
+        Please search existing issues first. If the same idea has already been suggested, add your use case there.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe your workflow, what you are trying to achieve, and where Immage falls short.
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: What would you like to change?
+      description: Describe the feature or improvement and how you would use it.
+    validations:
+      required: true
+  - type: textarea
+    id: benefit
+    attributes:
+      label: How would this benefit Immage users?
+      description: Explain who would benefit and how it would improve their photo editing workflow.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives or workarounds
+      description: Describe any alternatives you have tried or other ways to solve the problem.
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add examples or screenshots that help explain the idea. Only share material you are comfortable posting publicly.
