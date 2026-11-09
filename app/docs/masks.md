@@ -79,8 +79,7 @@ is over the panels, so the adjustment can be seen.
   - **Contrast**: hardens or softens the mask's falloff
 - A part's own settings: **Feather** for brushes, radial gradients and
   objects; **Near**, **Far** and **Feather** for depth; **Low (EV)**,
-  **High (EV)** and **Smoothness** for luminance; **Refine** and
-  **Smoothness** for color.
+  **High (EV)** and **Smoothness** for luminance; **Hue**, **Hue Range**, **Minimum Chroma** and **Smoothness** for color.
 
 ## The brush
 
@@ -193,3 +192,19 @@ file sizes, checksums and configuration. It contains no photos or model weights.
 Logs can include local file paths. The debug switch applies only to this launch;
 the script does not change saved preferences or delete model files. The app's
 normal automatic model recovery can still download the model during the test.
+
+## Adjusting a color range
+
+After picking a color, select its component in the mask to adjust **Hue**
+(the center color), **Hue Range** (how many neighboring hues are included),
+and **Smoothness** (the soft transition at the edges). Increase Hue Range
+to expand the selection or lower it to narrow it. Hue wraps around the
+color circle. Very broad ranges limit their effective soft edge to fit.
+
+**Minimum Chroma** excludes nearly neutral pixels: lower it to include less
+colorful areas, or raise it to restrict the mask to stronger colors. Its
+scale represents scene chroma multiplied by 1000.
+
+The selected mask overlay appears automatically while adjusting these controls,
+including keyboard and numeric edits, and stays briefly afterward while the
+preview catches up. Your normal overlay setting is preserved.

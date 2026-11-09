@@ -509,13 +509,20 @@ export default function App() {
   const refiningRef = useRef(false);
   refiningRef.current = refining;
   const refineTimer = useRef(0);
+  const rangeInteracting = useRef(false);
   const refined = () => {
     setRefining(true);
     window.clearTimeout(refineTimer.current);
-    refineTimer.current = window.setTimeout(() => setRefining(false), 1500);
+    refineTimer.current = window.setTimeout(() => { if (!rangeInteracting.current) setRefining(false); }, 1500);
   };
   const maskBox = useRef<HTMLDivElement>(null);
   const masksMode = rightMode === "masks";
+  useEffect(() => {
+    rangeInteracting.current = false;
+    window.clearTimeout(refineTimer.current);
+    setRefining(false);
+    return () => { rangeInteracting.current = false; window.clearTimeout(refineTimer.current); };
+  }, [maskSel, current, masksMode]);
   const syncMasks = () => setMasks(session.current?.masks ?? []);
   // Heal and Clone: the image's spots, the selected one, the brush for new
   // ones, and Visualize Spots' threshold (null when off)
@@ -6213,10 +6220,16 @@ export default function App() {
             <MasksPanel masks={masks} selected={maskSel} shape={shapeSel} tool={maskTool} target={toolTarget}
                         brush={brush} overlay={maskShown} disabled={!current} mono={values.bw_mode === 1} photo={values}
                         renderSlider={(c, v, onChange, glow, module) => (
-                          <Slider key={c.id} control={c} value={v} neutral={c.neutral ?? 0} disabled={!current}
+                          <div key={c.id}
+                               onPointerDownCapture={() => { if (c.id.startsWith("r_c")) { rangeInteracting.current = true; refined(); } }}
+                               onPointerUpCapture={() => { if (c.id.startsWith("r_c")) { rangeInteracting.current = false; refined(); } }}
+                               onPointerCancelCapture={() => { rangeInteracting.current = false; refined(); }}
+                               onFocusCapture={() => { if (c.id.startsWith("r_c")) { rangeInteracting.current = true; refined(); } }}
+                               onBlurCapture={() => { if (c.id.startsWith("r_c")) { rangeInteracting.current = false; refined(); } }}>
+                          <Slider control={c} value={v} neutral={c.neutral ?? 0} disabled={!current}
                                   values={selMask?.values ?? values} onChange={onChange} glow={glow}
                                   moduleChoice={module?.choice} moduleValue={module?.value} onModule={module?.onPick}
-                                  moduleScope="masks" />
+                                  moduleScope="masks" /></div>
                         )}
                         fresh={freshMask} onHslShown={setMaskHslShown}
                         onTool={(t, target) => {
