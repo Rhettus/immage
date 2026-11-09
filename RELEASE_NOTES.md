@@ -32,6 +32,12 @@ Improvements
 
 Bug fixes
 
+- Pasting settings, including Previous settings, recalculates AI masks for each
+  destination photo while preserving local adjustments and manual mask parts.
+  Older AI selections without saved tool information must be recreated once
+  on the source photo before copying. Preset previews also preserve paste
+  undo/redo when the photo already has masks.
+
 - Windows installer packaging resolves the bundled UAC plugin and scope includes
   correctly when built on Windows.
 - Quality and Balanced retain more fine detail and sharpening in settled Fit

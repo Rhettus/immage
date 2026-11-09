@@ -39,6 +39,11 @@ export async function batchPaste(t) {
   if(t.fixture.raw) throw new Blocked('batch-paste needs the isolated JPEG fixture');
   for(const name of ['batch-target-1.jpg','batch-target-2.jpg','batch-untouched.jpg'])
     await until(()=>t.driver.observe(s=>!!document.querySelector(s),cell(name)),`imported ${name}`,60000);
+  // A preceding case may have edited a target's masks. Compare the
+  // untouched photo with its own original rendering, not another target.
+  await click(t,cell('batch-untouched.jpg'));
+  const untouchedBefore=await settledPhoto(t);
+  await click(t,cell(t.fixture.file));await settledPhoto(t);
   await typeValue(t,'exposure',1);
   await presets(t);
   // Open the film group through a real pointer click if it was folded.
@@ -92,6 +97,6 @@ export async function batchPaste(t) {
   await until(async()=>+(await t.driver.observe(inspect,rangeSelector('vibrance'))).value===17,'unticked Presence stays unchanged');
   await settledPhoto(t,p=>p.hash!==secondBefore.hash);await t.evidence('second-photo-reopened');
   await click(t,cell('batch-untouched.jpg'));await value(t,0);await look(t,null);
-  await settledPhoto(t,p=>p.hash===baseline.hash);await t.evidence('unselected-photo');
+  await settledPhoto(t,p=>p.hash===untouchedBefore.hash);await t.evidence('unselected-photo');
   t.measure({name:'batch-paste',selected:selection,baseline:baseline.hash,pasted:edited.hash,sidecars:after.map(s=>s.file)});
 }

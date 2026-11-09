@@ -86,14 +86,17 @@ were. **Look**, ticked by default, includes the film style's own module
 settings and **Look amount**. It reapplies the saved style definition, rather
 than copying manual changes to its individual History instances. The style
 file must remain available. **Masks**, when ticked, replaces the target's
-masks; **Crop** and **Negative** also need to be explicitly ticked.
+masks, recalculating AI selections for each destination (see
+[Copying AI masks](masks.md#copying-ai-masks-between-photos)); **Crop** and
+**Negative** also need to be explicitly ticked.
 
 Virtual copies are independent targets. Paste does not automatically include
 an unselected RAW/JPEG partner. Remote results that have not been opened into
 the local library are skipped and counted in the status message.
 
 Each paste is one step: ⌘Z undoes it, and ⇧⌘Z redoes it. A batch step restores
-all of its targets, including their native look and mask settings. Undo is
+all of its targets, including their native look and mask settings. Browsing
+preset previews leaves the paste step available for undo and redo. Undo is
 part of the current photo's editing history; switching photos or compressing
 history clears it, as with other editing steps. Previous remains a single-photo
 action. Paste requires an open photo and is unavailable while cropping.

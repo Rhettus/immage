@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire, registerHooks } from 'node:module';
-import { mkdtempSync, copyFileSync, existsSync, readFileSync, rmSync, mkdirSync, renameSync } from 'node:fs';
+import { mkdtempSync, copyFileSync, existsSync, readFileSync, rmSync, mkdirSync, renameSync, cpSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -44,11 +44,13 @@ async function open(i) {
   await s.settled(); assert.equal(failure, undefined);
   return s;
 }
-async function fixture(fn) {
+async function fixture(fn, ai = false) {
   const dir = mkdtempSync(join(tmpdir(), 'immage-batch-'));
   const paths = ['source','one','two','untouched'].map(n => join(dir,n+'.jpg'));
   paths.forEach(p => copyFileSync(join(root,'app/sample/stairs-to-mountain.jpg'),p));
-  startEngine(join(root,'build/bin/darktable-engine'),join(dir,'runtime'));
+  const modelDir = ai ? join(dir,'models') : null;
+  if(ai) cpSync(join(root,'build/ai-models/mask-object-sam21-small'),join(modelDir,'mask-object-sam21-small'),{recursive:true});
+  startEngine(join(root,'build/bin/darktable-engine'),join(dir,'runtime'),modelDir);
   try {
     const images=[];
     for (const path of paths) {
@@ -213,5 +215,102 @@ test('reloading after batch undo retains native module states from earlier editi
   const reopened=await open(images[1]);reopened.inheritUndo(pasted);
   reopened.setModuleState(h,{restore:'opened'});await reopened.close();
   const restored=await open(images[1]);assert(restored.history.some(h=>h.op==='basecurve'&&h.enabled));await restored.close();
+  await batch('release',result.token);
+}));
+
+test('AI recipes survive mask persistence, rename and duplication, and legacy masks block before edits', {timeout:120000}, async () => fixture(async ({images,dir}) => {
+  const s=await open(images[0]);
+  const paths=[{hole:false,points:[[.2,.2,.2,.2,.2,.2],[.8,.2,.8,.2,.8,.2],[.5,.8,.5,.8,.5,.8]]}];
+  const ai={kind:'object',points:[[.5,.4,1]],box:[.2,.2,.8,.8],inset:true,backdrop:true};
+  s.addMask('renamable',[{type:'object',paths,ai}]);s.setLocal('renamable','l_exposure',.5);await s.close();
+  const reopened=await open(images[0]);
+  const pixels=async name=>{const rgba=join(dir,name+'.rgba');await request({cmd:'render',width:64,height:64,rgba});return readFileSync(rgba);};
+  const withRecipe=await pixels('with-recipe');
+  reopened.setShapes('renamable',[{type:'object',paths}]);await reopened.settled();
+  assert.deepEqual(await pixels('without-recipe'),withRecipe,'metadata groups do not change rendered pixels');
+  reopened.setShapes('renamable',[{type:'object',paths,ai}]);await reopened.settled();
+  const recipe=reopened.masks.find(m=>m.name==='renamable').shapes[0].ai;
+  assert.equal(recipe.kind,'object');assert.equal(recipe.inset,true);
+  assert.ok(Math.abs(recipe.points[0][0]-.5)<1e-5);
+  reopened.setMany([['crop_l',.1]]);await reopened.close();
+  const cropped=await open(images[0]);
+  const moved=cropped.masks.find(m=>m.name==='renamable').shapes[0].ai;
+  assert.ok(Math.abs(moved.points[0][0]-(.5-.1)/.9)<.002,'object prompt follows crop');
+  cropped.setMany([['crop_l',0]]);await cropped.close();
+  const uncropped=await open(images[0]);
+  assert.ok(Math.abs(uncropped.masks[0].shapes[0].ai.points[0][0]-.5)<.002,'prompt returns after uncrop');
+  await uncropped.close();
+  const toRename=await open(images[0]);
+  toRename.renameMask('renamable','renamed');
+  toRename.duplicateMask('renamed','duplicate');
+  toRename.setShapes('duplicate',[{type:'object',paths,ai:{...ai,points:[[.3,.6,1]]}}]);
+  toRename.setLocal('duplicate','l_exposure',.4);
+  await toRename.close();
+  const renamed=await open(images[0]);
+  assert.equal(renamed.masks.find(m=>m.name==='renamed').shapes[0].ai.kind,'object');
+  assert.equal(renamed.masks.find(m=>m.name==='duplicate').shapes[0].ai.kind,'object');
+  assert.ok(Math.abs(renamed.masks.find(m=>m.name==='duplicate').shapes[0].ai.points[0][0]-.3)<1e-5);
+  assert.ok(Math.abs(renamed.masks.find(m=>m.name==='renamed').shapes[0].ai.points[0][0]-.5)<1e-5);
+  await renamed.close();
+  const legacy={values:{exposure:9},masks:[{name:'old sky',invert:false,values:{},shapes:[{type:'object',paths}]}]};
+  await assert.rejects(runPaste([images[1]],legacy,()=>{},()=>{}),/recreate it on the source/);
+  const untouched=await open(images[1]);assert.equal(untouched.values.exposure,.2);await untouched.close();
+  await stopEngine();startEngine(join(root,'build/bin/darktable-engine'),join(dir,'restart-runtime'));
+  const fromXmp=await Session.open(images[0].path,null,view,()=>{},()=>{},true);
+  assert.equal(fromXmp.masks.find(m=>m.name==='duplicate').shapes[0].ai.kind,'object');
+  await fromXmp.close();
+}));
+
+
+test('Select Object paste reruns inference per destination, preserves manual components, undo/redo and failure rollback',
+  {timeout:180000, skip:!existsSync(join(root,'build/ai-models/mask-object-sam21-small/config.json'))}, async () => fixture(async ({images}) => {
+  const s=await open(images[0]);
+  const paths=[{hole:false,points:[[.1,.1,.1,.1,.1,.1],[.2,.1,.2,.1,.2,.1],[.15,.2,.15,.2,.15,.2]]}];
+  const manual={type:'ellipse',x:.3,y:.3,rx:.1,ry:.1,angle:0,feather:.1};
+  s.addMask('Object',[{type:'object',paths,ai:{kind:'object',points:[[.5,.5,1]],inset:true,backdrop:false}},manual]);
+  s.setLocal('Object','l_exposure',.6);await s.close();
+  const source=await open(images[0]);const masks=structuredClone(source.masks);await source.close();
+  let calls=0; sent.hook=cmd=>{if(cmd==='ai_object')calls++;};
+  const before=calls;
+  const result=await runPaste(images.slice(1,3),{values:{exposure:.9},masks},()=>{},()=>{});
+  assert.equal(result.error,null);
+  assert.equal(calls-before,2);
+  for(const image of images.slice(1,3)) {
+    const pasted=await open(image);const mask=pasted.masks.find(m=>m.name==='Object');
+    assert.equal(mask.shapes[0].ai.kind,'object');assert.notDeepEqual(mask.shapes[0].paths,paths);
+    assert.equal(mask.shapes[1].type,'ellipse');assert.ok(Math.abs(mask.values.l_exposure-.6)<1e-5);
+    await pasted.close();
+  }
+  const count=calls;
+  await restorePaste(result.token,'undo');await restorePaste(result.token,'redo');
+  assert.equal(calls,count);
+  await batch('release',result.token);
+  let attempts=0;sent.hook=cmd=>{if(cmd==='ai_object'&&++attempts===2)throw Error('injected second destination inference failure');};
+  const failed=await runPaste(images.slice(1,3),{values:{exposure:4},masks},()=>{},()=>{});
+  assert.match(failed.error,/rolled back/);
+  assert.equal(attempts,2);sent.hook=null;
+  for(const image of images.slice(1,3)) {const restored=await open(image);assert.equal(restored.values.exposure,.9);assert.equal(restored.masks[0].shapes[0].ai.kind,'object');await restored.close();}
+},true));
+
+test('tone and look paste undo/redo preserves existing AI masks', {timeout:120000}, async () => fixture(async ({images,dir}) => {
+  const paths=[{hole:false,points:[[.2,.2,.2,.2,.2,.2],[.8,.2,.8,.2,.8,.2],[.5,.8,.5,.8,.5,.8]]}];
+  for(const image of images.slice(1,3)) {
+    const s=await open(image);s.setMany([['exposure',0]]);
+    s.addMask('Object',[{type:'object',paths,ai:{kind:'object',points:[[.5,.4,1]],inset:true,backdrop:true}}]);
+    s.setLocal('Object','l_exposure',.1);await s.close();
+  }
+  const result=await runPaste(images.slice(1,3),{values:{exposure:1},look:{name:'Kodak Gold 200',path:join(root,'app/looks/t3mujinpack/t3mujinpack - Color Negative_Kodak Gold 200.dtstyle'),amount:35}},()=>{},()=>{});
+  assert.equal(result.error,null);
+  let s=await open(images[1]);assert.equal(s.values.exposure,1);await s.close();
+  await restorePaste(result.token,'undo');
+  s=await open(images[1]);assert.equal(s.values.exposure,0);
+  const {BUILTIN_PRESETS}=await import('../app/src/Presets.tsx');
+  for(const p of BUILTIN_PRESETS.filter(p=>!p.rawOnly))await s.preview(32,p.values);
+  await s.preview(32,{},join(root,'app/looks/t3mujinpack/t3mujinpack - Color Negative_Kodak Gold 200.dtstyle'));
+  await s.preview(32,{},null);
+  await assert.rejects(request({cmd:'preview',size:32,rgba:join(dir,'failed-preview.rgba'),edits:[{op:'channelmixerrgb',instance:'failed preview',enabled:true,params:{invalid_field:1}}]}),/has no field/);
+  await s.close();
+  await restorePaste(result.token,'redo');
+  s=await open(images[1]);assert.equal(s.values.exposure,1);assert.equal(s.masks[0].shapes[0].ai.kind,'object');await s.close();
   await batch('release',result.token);
 }));
