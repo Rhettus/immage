@@ -13,6 +13,7 @@ This imports pure manifest/math code using Node >= 22.18, without launching an a
 
 | Case | Checks | Verification status |
 |---|---|---|
+| color-range | Hue, Hue Range, Minimum Chroma and Smoothness: pointer/keyboard/numeric edits, overlay pixels and restoration, Escape, undo/redo, saved values and render after restart | Passed Linux ARM64 system WebKitGTK, maximized isolated floating workspace, run 2026-11-09T05-02-48.236Z_761252a_11ce1c3e |
 | startup, exposure | Real fixture, final photo, drag lighter/darker, exact reset | Previously passed on Linux system WebKit |
 | gui-benchmark | Run existing benchmark via Preferences, retain/validate report and final pixels | Passed on Linux ARM64 VM, system WebKitGTK 2.54.2, Wayland DPR 2; timings approximate |
 | gui-benchmark-screen | Same benchmark with fractional draft on | Passed on Linux ARM64 VM, Wayland 125%, DPR 2, draftScale 0.625 |

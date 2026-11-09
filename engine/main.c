@@ -8771,7 +8771,7 @@ static void _ranges_into(dt_develop_blend_params_t *bp, JsonArray *list)
     {
       const float h = json_object_get_double_member_with_default(r, "hue", 0.0);
       const float w = CLAMP(json_object_get_double_member_with_default(r, "width", 0.05), 0.005, 0.45);
-      const float f = CLAMP(json_object_get_double_member_with_default(r, "feather", 0.05), 0.002, 0.25);
+      const float f = fminf(0.5f - w, CLAMP(json_object_get_double_member_with_default(r, "feather", 0.05), 0.002, 0.25));
       float lim[4] = { h - w - f, h - w, h + w, h + w + f };
       // a band across 0/1 cannot be one window; its complement can, inverted
       if(lim[0] < 0.0f || lim[3] > 1.0f)

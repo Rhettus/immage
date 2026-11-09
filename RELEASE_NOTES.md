@@ -7,6 +7,9 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Color Range masks now offer Hue, a wider Hue Range, Minimum Chroma and
+  Smoothness controls, with the mask overlay visible while adjusting them.
+
 - The user guide now includes troubleshooting and issue-reporting instructions,
   with GUI benchmark and crash-log locations and guided GitHub forms for bug
   reports and feature requests.

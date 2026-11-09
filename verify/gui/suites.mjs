@@ -2,6 +2,7 @@ import { generated, generatedNames } from './generated.mjs';
 // SPDX-License-Identifier: GPL-3.0-or-later
 // These are coverage claims for cases, not proof they have passed on a platform.
 export const cases = {
+  'color-range': {scope:'four color controls, pointer/keyboard/numeric edits, overlay, Escape, undo/redo and restart persistence',liveValidated:true, verification:'Linux ARM64, system WebKitGTK, maximized isolated floating workspace; run 2026-11-09T05-02-48.236Z_761252a_11ce1c3e. Saved controls and rendered pixels survive app restart.'},
   startup: { scope: 'visible fixture, stable final canvas, isolated profile', liveValidated: true },
   splash: { scope: 'the launch splash keeps its 640x427 size on a tiling window manager (measured by startup); known to fail on Hyprland, not in smoke', liveValidated: true },
   'gui-benchmark': { scope: 'Preferences Run button, saved schema 9 report, visible stable viewport, restored photo', liveValidated: true,
@@ -99,7 +100,7 @@ export const cases = {
 export const suites = {
   smoke: ['startup', 'exposure'],
   crop: ['startup','crop-guides','crop-locked','crop-options','crop-auto-straighten','crop-undo'],
-  workflows: ['startup','agx-presets','curves','wheels','equalizer','saturation-curve','masks','heal','zones','film','print','preferences-matrix','slider-wheel','export-options','filters','presets','shortcuts'],
+  workflows: ['startup','agx-presets','curves','wheels','equalizer','saturation-curve','masks','color-range','heal','zones','film','print','preferences-matrix','slider-wheel','export-options','filters','presets','shortcuts'],
   inventory: ['startup',...generatedNames],
   regressions: ['startup', 'rail', 'panel-scroll', 'module-options', 'batch-paste', 'shift-range'],
   controls: ['startup', 'slider-input', 'slider-click', 'history', 'rail', 'sliders', 'module-options', 'module-switch'],
