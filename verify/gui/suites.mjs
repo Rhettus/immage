@@ -2,6 +2,9 @@ import { generated, generatedNames } from './generated.mjs';
 // SPDX-License-Identifier: GPL-3.0-or-later
 // These are coverage claims for cases, not proof they have passed on a platform.
 export const cases = {
+  'fit-detail': {scope:'settled Balanced Fit resolution with screen-scale reduction disabled, sharpening off/on changes native canvas detail',liveValidated:true,
+    verification:'Linux ARM64, system WebKitGTK 2.54.2, Wayland DPR 2, Balanced/Small memory; run 2026-11-09T03-53-00.042Z_a530015_0e46e367. Startup, fit-detail, Exposure/reset, alignment and zoom-ready passed. Fit canvas 3072x2052; sharpening changes detail; zoom in/out 217/284 ms.',
+    limitation:'Requires a fixture larger than 3072 pixels; uses Small native memory with Balanced previews. Does not establish perceptual parity with darktable or cover other display backends.'},
   startup: { scope: 'visible fixture, stable final canvas, isolated profile', liveValidated: true },
   splash: { scope: 'the launch splash keeps its 640x427 size on a tiling window manager (measured by startup); known to fail on Hyprland, not in smoke', liveValidated: true },
   'gui-benchmark': { scope: 'Preferences Run button, saved schema 9 report, visible stable viewport, restored photo', liveValidated: true,

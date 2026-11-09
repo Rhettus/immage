@@ -171,13 +171,20 @@ performance; results still vary by system.
   - **Performance**, for older computers, drags at 50%, lets slow sliders
     shrink the draft to 50%, and turns the detail loupe on.
 
+  Quality and Balanced process settled Fit previews at up to 3072 pixels on
+  the long edge before fitting them to the viewer, preserving more fine detail
+  and sharpening at small display sizes. This uses more processing time and
+  memory than Performance's viewer-sized previews. Small photos keep their
+  native resolution. The screen-scale option below can reduce this limit.
+
   Every profile leaves Grain, Texture and Sharpening out of the photo
   while a slider, wheel or curve moves, until release, unless they are what
-  you are dragging. They are also left out of the zoomed-out picture behind
-  the photo, which the navigator and histogram read and you see at the edges
-  while zooming and panning. Performance also renders that picture only at
-  the viewer's size, so zooming in shows it softer until the sharp view
-  arrives.
+  you are dragging. A completed Fit frame also supplies the zoomed-out
+  picture behind the photo, which the navigator and histogram read and you
+  see at the edges while zooming and panning. When that picture needs a
+  separate background render, expensive detail effects are omitted for speed.
+  Performance renders it only at the viewer's size, so zooming in shows it
+  softer until the sharp view arrives.
 - **Advanced** (closed by default) holds the individual settings:
   - **Preview size while dragging**: 50%, 75% or 100%. At 100% automatic
     smaller drafts are disabled.
@@ -204,8 +211,9 @@ scale**; zoomed-in frames still use the full webview resolution.
   Benchmarks in a virtual machine give approximate comparisons within that
   setup; they do not predict native GPU performance.
 - **Fit frames at the screen's scale** (same condition): on by default.
-  Renders the settled Fit frame for the screen's scale and lets the page
-  enlarge it, which cuts pixels; turn it off if the photo looks soft. Zoomed
+  Reduces the settled Fit processing dimensions by the screen-to-webview scale
+  ratio, including the 3072-pixel limit in Quality and Balanced. Turn it off
+  to retain more fine detail at the cost of processing time and memory. Zoomed
   and 1:1 frames are unaffected. It takes effect on the next frame.
 
 **Memory**

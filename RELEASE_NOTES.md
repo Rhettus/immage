@@ -29,6 +29,11 @@ Improvements
 
 Bug fixes
 
+- Windows installer packaging resolves the bundled UAC plugin and scope includes
+  correctly when built on Windows.
+- Quality and Balanced retain more fine detail and sharpening in settled Fit
+  previews by processing at up to 3072 pixels on the long edge before display.
+  Performance and drag previews keep their smaller sizes.
 - Windows setup requests administrator permission only when installing for
   everyone. Just for me installs without elevation under
   `%LOCALAPPDATA%\Programs\Immage`; updates keep the existing scope and location.

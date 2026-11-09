@@ -14,7 +14,7 @@ import * as dialogs from './specs/dialogs.mjs';
 import * as regressions from './specs/regressions.mjs';
 import { moduleOutput,moduleSwitch,panorama,immichWorkflow } from './specs/modules.mjs';
 import { siteShots } from './specs/site.mjs';
-import { zoomReady } from './specs/zoom.mjs';
+import { zoomReady, fitDetail } from './specs/zoom.mjs';
 import { demo } from './specs/demo.mjs';
 import { overlayOpacity } from './specs/overlay.mjs';
 import { shiftRange } from './specs/shift-range.mjs';
@@ -27,7 +27,7 @@ const implementations = { 'batch-paste': batchPaste, startup, splash, exposure, 
   'gui-benchmark': guiBenchmark,
   'gui-benchmark-screen': t => guiBenchmark(t, true),
   'gui-benchmark-whole': t => guiBenchmark(t, false),
-  'crop-guides':cropGuides,'crop-locked':cropLocked,'crop-portrait':cropPortrait,'crop-options':cropOptions,'crop-auto-straighten':cropAutoStraighten,'crop-undo':cropUndo,'before-after-idle':beforeAfterIdle,'zoom-ready':zoomReady,
+  'crop-guides':cropGuides,'crop-locked':cropLocked,'crop-portrait':cropPortrait,'crop-options':cropOptions,'crop-auto-straighten':cropAutoStraighten,'crop-undo':cropUndo,'before-after-idle':beforeAfterIdle,'zoom-ready':zoomReady,'fit-detail':fitDetail,
   'native-reset':workflows.nativeReset,curves:workflows.curves,wheels:workflows.wheels,equalizer:workflows.equalizer,
   'saturation-curve':workflows.saturationCurve,
   masks:workflows.masks,heal:workflows.heal,negative:workflows.negative,film:workflows.film,zones:workflows.zones,print:workflows.print,

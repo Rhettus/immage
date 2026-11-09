@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { until } from '../support/webdriver.mjs';
 import * as read from '../support/observations.mjs';
-import { Blocked } from '../support/scenario.mjs';
+import { Blocked, panel } from '../support/scenario.mjs';
 import { reveal, rangeSelector } from '../support/controls.mjs';
 
 // A tiling window manager that tiles the splash instead of floating it
@@ -83,9 +83,9 @@ export async function settledReset(t, baseline, _edited, label = 'reset') {
   return reset;
 }
 export async function exposure(t) {
-  const title = await t.driver.observe(read.panelTitle);
-  assert(title, 'Basic panel must exist');
-  if (!title.open) await t.driver.point(title.x, title.y);
+  // A preceding case can leave Detail open and Basic outside the scroller.
+  // Resolve and reveal its actual hit target before expanding it.
+  await panel(t, 'basic');
   // Earlier cases can leave the panel scrolled to Profile. Scroll through
   // actual wheel input before measuring or aiming at Exposure.
   await reveal(t, '[data-control-id="exposure"] label');
