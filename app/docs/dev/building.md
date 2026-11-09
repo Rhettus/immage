@@ -7,6 +7,12 @@ the few parts of it darktable uses, into `build/opencv`), and the CI workflow
 machine. A release's `immage-<version>-source.tar.gz` builds the same way
 as a clone.
 
+The importer revision is pinned in `app/immporter.rev`. Its bundled SQLite
+comes through `rusqlite`; the current pin uses `rusqlite` 0.41.1 and
+`libsqlite3-sys` 0.39.1 (SQLite 3.54.1), addressing RUSTSEC-2026-0459.
+Keep the app lockfile consistent with the importer pin and run `cargo audit`
+after dependency updates. These dependencies require Rust 1.89 or newer.
+
 ## macOS
 
 You need darktable's build dependencies from Homebrew (the engine's are in

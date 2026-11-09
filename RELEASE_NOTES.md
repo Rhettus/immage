@@ -34,6 +34,8 @@ Improvements
 
 Bug fixes
 
+- Updated the importer's bundled SQLite to fix a database memory disclosure
+  vulnerability, preserving existing import history.
 - Tool module menus, including Clarity and Texture, stay inside the window
   when opened near an edge, keeping their options reachable.
 - AI Denoise and HDR Merge retain the camera's portrait or rotated orientation

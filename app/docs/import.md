@@ -80,4 +80,6 @@ problem never stops an import.
 
 - The importer keeps its own record of what it has imported, apart from
   the standalone Immporter app if you have that too.
+  Updating Immage preserves this import history; you do not need to import
+  your photos again after an update.
 - Its Immich settings are the same ones as in **Preferences › Immich**.
