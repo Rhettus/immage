@@ -110,6 +110,7 @@ import { perf, percentiles, pingOnce, roundTrips, STAGES, webviewInfo, observeWe
 import { frameTransport } from "./sharedFrames";
 import { renderDimensions } from "./renderDimensions";
 import { draftScale, settledScale } from "./pixelRatio";
+import { settledFitView } from "./fitPreview";
 import { tunerOptions } from "./tunerOptions";
 import { GPU_CASES, resolveCase, verdict, cpuInGpuPass, tiledInGpuPass, type Parity } from "./gpuCheck";
 import { timeTunerWork } from "./tunerWorkload";
@@ -1821,7 +1822,7 @@ export default function App() {
         if (fitScale() < 1) s.requestCopy(1, f);
         return;
       }
-      s.requestFit(fitView());
+      s.requestFit(settledFit());
       s.requestCopy(Math.min(1, scaleFor(zoomRef.current)), f);
     }, delay);
   };
@@ -1895,9 +1896,10 @@ export default function App() {
     const m = 2 * MARGIN * (window.devicePixelRatio || 1);
     return renderDimensions(w - m, h - m, MAX_PREVIEW);
   };
+  const settledFit = (): View => settledFitView(fitView(), loadPreview(), settledScale());
   // the view at k times the full frame's size each way, k < 1 a drag's
   // during a zoom that renders ahead (animateTo), the view it ends on
-  const viewAt = (k: number): View => {
+  const viewAt = (k: number, draft = false): View => {
     const { w, h } = viewport();
     const f = full.current;
     const a = anim.current;
@@ -1906,8 +1908,7 @@ export default function App() {
     if (zoom === "fit" || !f) {
       const { width, height } = fitView();
       if (k === 1) {
-        const s = settledScale();
-        return s === 1 ? { width, height } : { width: Math.round(width * s), height: Math.round(height * s) };
+        return draft ? settledFitView(fitView(), loadPreview(), settledScale(), false) : settledFit();
       }
       return { width: Math.round(width * k), height: Math.round(height * k), draft: true };
     }
@@ -1929,7 +1930,7 @@ export default function App() {
     return k < 1 ? k * draftScale() : 1;
   };
   const currentView = useCallback((): View => dragging.current
-    ? { ...viewAt(draftK()), draft: true } : viewAt(1), []);
+    ? { ...viewAt(draftK(), true), draft: true } : viewAt(1), []);
 
   const follow = (layer: HTMLCanvasElement, clip: HTMLCanvasElement | null) => {
     if (!clip) return;
@@ -2297,8 +2298,13 @@ export default function App() {
     if (f.view.scale === undefined && !again) {
       showOverview(f);
       overviewHash.current = f.hash ?? null;
-      // Performance's base is the viewer's size, which this frame already is
-      baseLowRes.current = loadPreview() !== "performance";
+      // Keep this completed frame as the overview when it already meets
+      // the background preview's resolution, including native-size photos.
+      const box = baseSize();
+      const scale = Math.min(1, box.width / f.fullWidth, box.height / f.fullHeight);
+      baseLowRes.current = loadPreview() !== "performance"
+        && (f.width + 1 < Math.floor(f.fullWidth * scale)
+          || f.height + 1 < Math.floor(f.fullHeight * scale));
       scheduleBase(500);
     } else if (f.view.scale === undefined) {
       updateHistogram(f);
@@ -3488,7 +3494,7 @@ export default function App() {
       };
       s.thumbSize = baseSize;
       s.previewMode = loadPreview;
-      s.exactView = () => viewAt(fullDraftK());
+      s.exactView = () => viewAt(fullDraftK(), true);
       s.detailView = () => {
         if (gridRef.current || !loupeEnabledRef.current || beforeRef.current || baModeRef.current !== "off" || !full.current) return null;
         const f = full.current;
@@ -3500,7 +3506,7 @@ export default function App() {
           y: Math.round(Math.max(0, Math.min(f.h - height, pos.y * f.h - height / 2))) };
       };
       s.frameBudget = () => loadFrameCacheMb() * 1048576;
-      s.draftSize = () => ({ ...viewAt(draftK()), draft: true });
+      s.draftSize = () => ({ ...viewAt(draftK(), true), draft: true });
       s.draftLimits = () => ({ target: loadDraftTarget(), smallest: loadBalancedPreviewSize() === 1 ? 1 : loadDraftSmallest() });
       s.warmDrafts();
       // a saved edit makes the filmstrip's thumbnail stale; undone back to

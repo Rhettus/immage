@@ -3,6 +3,9 @@ import { generated, generatedNames } from './generated.mjs';
 // These are coverage claims for cases, not proof they have passed on a platform.
 export const cases = {
   'color-range': {scope:'four color controls, pointer/keyboard/numeric edits, overlay, Escape, undo/redo and restart persistence',liveValidated:true, verification:'Linux ARM64, system WebKitGTK, maximized isolated floating workspace; run 2026-11-09T05-02-48.236Z_761252a_11ce1c3e. Saved controls and rendered pixels survive app restart.'},
+  'fit-detail': {scope:'settled Balanced Fit resolution with screen-scale reduction disabled, sharpening off/on changes native canvas detail',liveValidated:true,
+    verification:'Linux ARM64, system WebKitGTK 2.54.2, Wayland DPR 2, Balanced/Small memory; run 2026-11-09T03-53-00.042Z_a530015_0e46e367. Startup, fit-detail, Exposure/reset, alignment and zoom-ready passed. Fit canvas 3072x2052; sharpening changes detail; zoom in/out 217/284 ms.',
+    limitation:'Requires a fixture larger than 3072 pixels; uses Small native memory with Balanced previews. Does not establish perceptual parity with darktable or cover other display backends.'},
   startup: { scope: 'visible fixture, stable final canvas, isolated profile', liveValidated: true },
   themes: { scope: 'Dark, Darktable Grey and Light swatches; accessible selection, panel, filmstrip and histogram graph colors, unchanged photo pixels, Exposure operation and Light persistence after app restart', liveValidated: true,
     verification: 'Linux ARM64, system WebKitGTK, maximized 2048x1094 test webview on empty workspace 9; startup and themes pass in run 2026-11-09T09-20-58.442Z_5f02a8f_05cb3e40. Workspace 3 restored. Includes corrected light filmstrip background.',

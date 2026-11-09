@@ -64,6 +64,10 @@ Click a card's title to fold or unfold it. See [Library](library.md) and
 - Scroll, or pinch, to zoom around the pointer, from fit up to 400%. The
   zoom pauses at 100% on the way.
 - Z switches between fit and 100%.
+- Quality and Balanced process settled Fit views at up to 3072 pixels on the
+  long edge to preserve fine detail when displayed smaller. Performance uses
+  viewer-sized previews. The screen-scale preference can reduce the processing
+  size; use 100% to judge detail at native resolution.
 - The **Navigator** has **FIT**, **FILL**, **1:1** and **2:1**. When you
   are zoomed in it shows the visible part as a rectangle; drag it to pan.
 - The zoom slider in the toolbar below the filmstrip zooms from a quarter
