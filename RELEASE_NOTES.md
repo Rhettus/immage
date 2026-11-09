@@ -29,6 +29,9 @@ Improvements
 
 Bug fixes
 
+- Windows installer packaging resolves the bundled UAC plugin and scope includes
+  correctly when built on Windows.
+
 - Windows setup requests administrator permission only when installing for
   everyone. Just for me installs without elevation under
   `%LOCALAPPDATA%\Programs\Immage`; updates keep the existing scope and location.

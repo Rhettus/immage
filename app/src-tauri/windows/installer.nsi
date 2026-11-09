@@ -109,9 +109,9 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
   !error "Immage's custom installer requires installMode both"
 !endif
 RequestExecutionLevel user
-!addplugindir "${IMMAGE_INSTALLER_DIR}/uac/Plugins/x86-unicode"
-!include "${IMMAGE_INSTALLER_DIR}/uac/UAC.nsh"
-!include "${IMMAGE_INSTALLER_DIR}/install-scope.nsh"
+!addplugindir "${IMMAGE_INSTALLER_DIR}\uac\Plugins\x86-unicode"
+!include "${IMMAGE_INSTALLER_DIR}\uac\UAC.nsh"
+!include "${IMMAGE_INSTALLER_DIR}\install-scope.nsh"
 
 ; Installer icon
 !if "${INSTALLERICON}" != ""

@@ -29,7 +29,9 @@ deferred elevation. When upgrading the CLI, compare the custom template with
 upstream, retaining its WebView2, updater, signing and resource handling changes.
 The vendored NSIS UAC plugin brokers callbacks to the original account, including
 when another administrator's credentials are used. Its source, license and
-checksums are documented in `app/src-tauri/windows/uac/README.md`.
+checksums are documented in `app/src-tauri/windows/uac/README.md`. Keep the
+custom template’s sibling include and plugin paths in Windows backslash form:
+NSIS on Windows does not resolve the mixed separators accepted by Linux builds.
 
 `verify/windows-installer.test.cjs` renders and compiles the installer and
 uninstaller for all four WebView2 installation modes, including file associations

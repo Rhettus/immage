@@ -61,8 +61,13 @@ export async function zoomReady(t) {
   const zoomed = await settledPhoto(t);
   await panel(t, 'basic');
   const ev = await reveal(t, '[data-control-id="exposure"] input[type=range]');
-  await t.driver.point(ev.x, ev.y);
-  await t.driver.keys('', '', '', '', '');
+  // Clicking the track center resets Exposure before incrementing it. Start
+  // from its current thumb and make an explicit edit large enough to observe.
+  const value = Number(ev.value), target = Math.min(ev.max, value + 0.5);
+  assert(target > value, 'Exposure needs room for a brighter edit');
+  const point = v => ({x: ev.bounds.x + 8 + (ev.bounds.width - 16)
+    * (v - ev.min) / (ev.max - ev.min), y: ev.y});
+  await t.driver.drag(point(value), point(target));
   const edited = await settledPhoto(t, p => p.hash !== zoomed.hash);
   await until(async () => !(await t.driver.observe(viewState)).copy, 'copy dropped by the edit', 10000).catch(() => {});
   const t1 = Date.now();
