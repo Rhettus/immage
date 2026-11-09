@@ -27,6 +27,8 @@ the headless darktable engine. The photographer's guide is
 - [Masks in darktable's pipe](masks.md): how a mask and its local sliders
   become darktable mask groups and module instances, where those run, and
   how masks share them.
+- [Immage XMP conventions](xmp-conventions.md): custom metadata and naming
+  conventions, their encodings, and the darktable compatibility contract.
 - [Print and soft proofing](print.md): the Print panel on darktable's
   soft proof and print code, run by the engine without darktable's GUI.
 - [GUI performance tracing](performance-tracing.md): diagnostic events, scheduling flow and slow-frame analysis.

@@ -7,6 +7,8 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Documented Immage's XMP conventions and how they preserve loading and rendering
+  in compatible darktable versions.
 - Color Range masks now offer Hue, a wider Hue Range, Minimum Chroma and
   Smoothness controls, with the mask overlay visible while adjusting them.
 - The user guide now includes troubleshooting and issue-reporting instructions,

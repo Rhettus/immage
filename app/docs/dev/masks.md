@@ -20,6 +20,8 @@ every slider the mask uses, out of ordinary darktable parts:
 
 Everything is ordinary history, saved in the XMP sidecar. darktable opens the
 photo with the same instances and masks and renders it the same.
+The [XMP conventions inventory](xmp-conventions.md) records Immage's naming
+and recipe encodings and their compatibility contract.
 
 ## The shapes: one mask group
 

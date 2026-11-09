@@ -19,6 +19,21 @@ in the flexi format once it is edited again. Work on
 copies, or on photos you have not edited in darktable, until you know how
 the two fit your workflow.
 
+## Immage information in sidecars
+
+Immage also saves information for its own editing controls, such as the AI tool
+used to create a selection. Most of this uses names in ordinary darktable mask
+and module history. A custom `immage:locationManaged` metadata property records
+when missing sidecar GPS fields mean the location was deliberately removed.
+
+These conventions do not prevent a compatible darktable from loading the photo
+and sidecar or change its rendering of the saved edit. AI selections are saved
+as native paths; darktable does not need the AI recipe to render them. Editing
+or renaming these structures in darktable may affect Immage's ability to recover
+its controls, and other applications need not interpret the GPS removal marker.
+The version requirements above still apply. Developers can consult the
+[XMP conventions inventory](dev/xmp-conventions.md) for the encodings.
+
 ## Tool and module reference
 
 Each Immage tool is a darktable module, or darktable's masking, so the same

@@ -40,6 +40,8 @@ can continue editing in a compatible version of darktable.
 **Using darktable already?** Try Immage on copies first. Immage uses a
 development version of darktable, and stable releases may not read its newer
 module or mask formats. See [darktable compatibility](app/docs/darktable.md).
+Immage-specific sidecar conventions are documented in the
+[developer XMP inventory](app/docs/dev/xmp-conventions.md).
 
 ## Download and install
 
