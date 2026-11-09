@@ -34,6 +34,8 @@ Improvements
 
 Bug fixes
 
+- AI Denoise and HDR Merge retain the camera's portrait or rotated orientation
+  in their generated DNGs, so they open upright in other photo applications.
 - Fit previews now use valid whole-pixel dimensions at fractional display
   scaling, avoiding render errors for some window sizes.
 - Pasting settings, including Previous settings, recalculates AI masks for each

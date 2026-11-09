@@ -276,8 +276,9 @@ isn't changed. Raws only, in a folder on this computer, one at a time.
 To try another Amount, run it again on the raw; the next DNG is
 `<name>_raw-denoise_1.dng`.
 
-The DNG retains its format identification, color calibration and sensor layout
-when the source EXIF and denoise marker are added, so it also opens in darktable.
+The DNG retains its format identification, color calibration, sensor layout
+and the camera's orientation when the source EXIF and denoise marker are added,
+so it opens upright in darktable and other photo applications.
 Run AI Denoise again to replace an older result that cannot open.
 
 **Profiled Denoise** (darktable's profiled denoise)

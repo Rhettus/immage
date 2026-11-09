@@ -204,7 +204,9 @@ raw, with Exposure, Highlights and Shadows bringing the range in. The
 brackets themselves aren't changed.
 
 HDR DNGs preserve their format identification, color calibration and sensor
-pattern when copying the brackets' EXIF, and can also open in darktable.
+pattern when copying the brackets' EXIF, and retain the camera's orientation
+so portrait and rotated brackets open upright in darktable and other photo
+applications.
 Regenerate an older merge if it shows a **?** thumbnail and cannot open.
 
 The brackets must be raws from the same camera, of the same size and

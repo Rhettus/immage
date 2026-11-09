@@ -26,6 +26,7 @@
 #include <string>
 #include <map>
 #include <glib/gstdio.h>
+#include "common/image.h"
 
 // as exif.cc includes it (XCode 15.2)
 #pragma GCC diagnostic push
@@ -241,7 +242,24 @@ gboolean rendered_metadata(const char *path, const void *blob, const int size, c
   }
 }
 
-gboolean denoised_metadata(const char *path)
+static uint16_t _exif_orientation(const int orientation)
+{
+  // darktable's flip bits, in EXIF's orientation order.
+  switch(orientation)
+  {
+    case ORIENTATION_NONE: return 1; // top-left
+    case ORIENTATION_FLIP_X: return 2; // top-right
+    case ORIENTATION_ROTATE_180_DEG: return 3; // bottom-right
+    case ORIENTATION_FLIP_Y: return 4; // bottom-left
+    case ORIENTATION_TRANSPOSE: return 5; // left-top
+    case ORIENTATION_ROTATE_CW_90_DEG: return 6; // right-top
+    case ORIENTATION_TRANSVERSE: return 7; // right-bottom
+    case ORIENTATION_ROTATE_CCW_90_DEG: return 8; // left-bottom
+    default: return 1;
+  }
+}
+
+gboolean dng_orientation_metadata(const char *path, const int orientation)
 {
   try
   {
@@ -254,6 +272,27 @@ gboolean denoised_metadata(const char *path)
     auto image = Exiv2::ImageFactory::open(path);
 #endif
     image->readMetadata();
+    image->exifData()["Exif.Image.Orientation"] = _exif_orientation(orientation);
+    image->writeMetadata();
+    return TRUE;
+  }
+  catch(const std::exception &) { return FALSE; }
+}
+
+gboolean denoised_metadata(const char *path, const int orientation)
+{
+  try
+  {
+    _lock lock;
+#if defined(_WIN32) && defined(EXV_UNICODE_PATH)
+    gunichar2 *wide = g_utf8_to_utf16(path, -1, NULL, NULL, NULL);
+    auto image = Exiv2::ImageFactory::open(std::wstring((const wchar_t *)wide));
+    g_free(wide);
+#else
+    auto image = Exiv2::ImageFactory::open(path);
+#endif
+    image->readMetadata();
+    image->exifData()["Exif.Image.Orientation"] = _exif_orientation(orientation);
     // Keep the source ISO, but prevent automatic denoise presets from
     // processing pixels that the model has already denoised.
     image->xmpData()["Xmp.darktable.neural_restore"] = "raw-denoise";

@@ -6084,7 +6084,7 @@ static gboolean _denoise_write(const dt_restore_sensor_class_t cls, const dt_ima
   int res = cfa ? dt_imageio_dng_write_cfa_bayer(out, cfa, w, h, meta, NULL, 0, jpeg ? &preview : NULL)
                 : dt_imageio_dng_write_linear(out, rgb, w, h, meta, NULL, 0, jpeg ? &preview : NULL);
   if(!res && !rendered_metadata(out, exif, exif_len, TRUE)) res = 1;
-  if(!res && !denoised_metadata(out)) res = 1;
+  if(!res && !denoised_metadata(out, dt_image_orientation(meta))) res = 1;
   g_free(jpeg);
   free(exif);
   g_free(cfa);

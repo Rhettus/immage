@@ -340,16 +340,19 @@ when taking a new darktable release. `_hdr_merge` in main.c imports the
 DNG; a tagged one runs on the export thread (`_export_run`), as it reads
 each bracket through an export pipe.
 The float writer receives no EXIF; `hdr_merge` then merges it through
-`rendered_metadata` so the generated DNG tags and CFA pattern survive.
+`rendered_metadata` so the generated DNG tags and CFA pattern survive, and
+stamps the source camera orientation explicitly because the TIFF writer's
+top-left default is not the camera's orientation.
 An EXIF-write failure removes the temporary output instead of importing it.
 The RAW regression in `verify/panorama.test.mjs` checks HDR as well as panorama
 thumbnails, rendering and reopening after engine restart.
 
 AI Denoise's `_denoise_write` likewise calls the CFA or linear DNG writer
 without EXIF, then uses `rendered_metadata` and `denoised_metadata` in
-`strip.cc`. The latter reads existing metadata before adding the
-`Xmp.darktable.neural_restore` marker, preserving DNG tags and previews while
-preventing automatic denoise presets. Either metadata failure deletes the output.
+`strip.cc`. The latter reads existing metadata before stamping the source
+camera orientation and adding the `Xmp.darktable.neural_restore` marker,
+preserving DNG tags and previews while preventing automatic denoise presets.
+Either metadata failure deletes the output.
 
 [`engine/pano.cc`](../../../engine/pano.cc) is Panorama Merge, which
 darktable doesn't have: OpenCV's stitching pipeline (`cv::detail`, as
