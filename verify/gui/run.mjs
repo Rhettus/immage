@@ -159,7 +159,14 @@ try {
       join(profile, 'config', 'darktable', 'data.db')], { stdio: 'pipe' });
     report.agxFixture = 'Generated AgX v8 database: user preset plus excluded builtin and non-AgX rows';
   }
-  if (selectedCases.includes('batch-paste')) {
+  if (selectedCases.includes('ai-mask-paste')) {
+    const { cp } = await import('node:fs/promises');
+    const model = 'mask-object-sam21-small';
+    await cp(join(root,'build/ai-models',model),join(profile,'data','app.immage','models',model),{recursive:true,dereference:true});
+    report.aiMaskModel = model;
+    report.aiMaskRuntime = process.env.DT_ORT_LIBRARY ?? 'engine default';
+  }
+  if (selectedCases.includes('batch-paste') || selectedCases.includes('ai-mask-paste')) {
     if (!/\.jpe?g$/i.test(copiedFixture)) throw Error('batch-paste requires a JPEG fixture');
     for (const name of ['batch-target-1.jpg', 'batch-target-2.jpg', 'batch-untouched.jpg'])
       await copyFile(copiedFixture, join(fixtures, name));

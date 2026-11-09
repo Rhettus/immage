@@ -6712,6 +6712,67 @@ static void _invalidate_from(const int order, const char *why)
   if(_s.base.ok) dt_dev_pixelpipe_cache_invalidate_later(&_s.base.pipe, order, why);
 }
 
+// Disabled, marker-only groups carry recipe chunks in ordinary mask history/XMP.
+// They render nothing, and avoid a separate metadata store drifting from history.
+#define _AI_RECIPE "immage-ai-v1:"
+static void _recipe_coordinates(JsonObject *o, void (*transform)(float, float, float *, float *))
+{
+  JsonArray *points = json_object_has_member(o, "points") ? json_object_get_array_member(o, "points") : NULL;
+  if(points)
+  {
+    JsonArray *to = json_array_new();
+    for(guint i = 0; i < json_array_get_length(points); i++)
+    {
+      JsonArray *point = json_array_get_array_element(points, i);
+      if(!point || json_array_get_length(point) != 3) continue;
+      float x, y;
+      transform(json_array_get_double_element(point, 0), json_array_get_double_element(point, 1), &x, &y);
+      JsonArray *v = json_array_new();
+      json_array_add_double_element(v, x); json_array_add_double_element(v, y);
+      json_array_add_double_element(v, json_array_get_double_element(point, 2));
+      json_array_add_array_element(to, v);
+    }
+    json_object_set_array_member(o, "points", to);
+  }
+  JsonArray *box = json_object_has_member(o, "box") ? json_object_get_array_member(o, "box") : NULL;
+  if(box && json_array_get_length(box) == 4)
+  {
+    float x0, y0, x1, y1;
+    transform(json_array_get_double_element(box, 0), json_array_get_double_element(box, 1), &x0, &y0);
+    transform(json_array_get_double_element(box, 2), json_array_get_double_element(box, 3), &x1, &y1);
+    JsonArray *to = json_array_new();
+    json_array_add_double_element(to, MIN(x0,x1)); json_array_add_double_element(to, MIN(y0,y1));
+    json_array_add_double_element(to, MAX(x0,x1)); json_array_add_double_element(to, MAX(y0,y1));
+    json_object_set_array_member(o, "box", to);
+  }
+}
+
+static void _store_recipes(dt_masks_form_t *grp, JsonArray *shapes)
+{
+  for(guint k = 0; shapes && k < json_array_get_length(shapes); k++)
+  {
+    JsonObject *shape = json_array_get_object_element(shapes, k);
+    if(!json_object_has_member(shape, "ai")) continue;
+    // Copy deeply: coordinate conversion must not mutate the incoming request.
+    gchar *original = json_to_string(json_object_get_member(shape, "ai"), FALSE);
+    JsonNode *copy = json_from_string(original, NULL);
+    g_free(original);
+    if(!copy || !JSON_NODE_HOLDS_OBJECT(copy)) { if(copy) json_node_free(copy); continue; }
+    _recipe_coordinates(json_node_get_object(copy), _to_input);
+    gchar *json = json_to_string(copy, FALSE);
+    gchar *encoded = g_base64_encode((const guchar *)json, strlen(json));
+    for(guint offset = 0, chunk = 0; offset < strlen(encoded); offset += 80, chunk++)
+    {
+      dt_masks_form_t *f = dt_masks_create(DT_MASKS_GROUP);
+      g_snprintf(f->name, sizeof(f->name), _AI_RECIPE "%u:%u:%.80s", k + 1, chunk, encoded + offset);
+      _s.dev.forms = g_list_append(_s.dev.forms, f);
+      f->points = g_list_append(NULL, dt_masks_marker_new(_s.dev.forms, f, 0));
+      _member(grp, f->formid, DT_MASKS_STATE_USE | DT_MASKS_STATE_DISABLE | DT_MASKS_STATE_UNION, 1.0f);
+    }
+    g_free(encoded); g_free(json); json_node_free(copy);
+  }
+}
+
 // replace the shapes of mask `name` (made when missing); each shape adds
 // to the mask, or with "subtract" takes away from it
 static gboolean _mask(const char *name, JsonArray *shapes, char **err)
@@ -6802,6 +6863,7 @@ static gboolean _mask(const char *name, JsonArray *shapes, char **err)
   // its own (dt_masks_group_mark_classic_runs)
   dt_masks_group_mark_classic_runs(&_s.dev.forms, grp, NULL);
   if(!dt_masks_group_marker(grp)) grp->points = g_list_prepend(grp->points, dt_masks_marker_new(_s.dev.forms, grp, 0));
+  _store_recipes(grp, shapes);
   _set_ranges_group(grp, ranges);
   json_array_unref(ranges);
 
@@ -7595,6 +7657,40 @@ static void _flatten(const dt_masks_form_t *grp, const gboolean sub, GArray *sha
   }
 }
 
+static void _read_recipe(JsonBuilder *b, const dt_masks_form_t *grp, const guint component)
+{
+  GHashTable *forms = _mask_forms(grp);
+  GString *encoded = g_string_new(NULL);
+  for(guint chunk = 0; chunk < 4096; chunk++)
+  {
+    gchar prefix[64];
+    g_snprintf(prefix, sizeof(prefix), _AI_RECIPE "%u:%u:", component, chunk);
+    GHashTableIter it; gpointer key; const char *part = NULL;
+    g_hash_table_iter_init(&it, forms);
+    while(g_hash_table_iter_next(&it, &key, NULL))
+    {
+      const dt_masks_form_t *f = key;
+      if(g_str_has_prefix(f->name, prefix)) { part = f->name + strlen(prefix); break; }
+    }
+    if(!part) break;
+    g_string_append(encoded, part);
+  }
+  if(encoded->len)
+  {
+    gsize size; guchar *json = g_base64_decode(encoded->str, &size);
+    gchar *terminated = g_strndup((const gchar *)json, size);
+    JsonNode *node = json_from_string(terminated, NULL);
+    if(node && JSON_NODE_HOLDS_OBJECT(node))
+    {
+      _recipe_coordinates(json_node_get_object(node), _to_shown);
+      json_builder_set_member_name(b, "ai"); json_builder_add_value(b, node);
+    }
+    else if(node) json_node_free(node);
+    g_free(terminated); g_free(json);
+  }
+  g_string_free(encoded, TRUE); g_hash_table_destroy(forms);
+}
+
 // the tree mask `grp` is read from: its ranges group, or in an older edit
 // an instance's tree of its own, one blending in scene-referred RGB first
 // (the others have no ranges), else its group
@@ -7705,6 +7801,7 @@ static gboolean _masks(JsonObject *fields, JsonBuilder *b, char **err)
         json_builder_begin_object(b);
         json_builder_set_member_name(b, "type");
         json_builder_add_string_value(b, "object");
+        _read_recipe(b, grp, comp);
         // the mode from its first path that is not off: darktable's
         // conversion moves one that is off into the run before it
         gboolean mode_sub = e->subtract != hole;
@@ -9847,16 +9944,49 @@ static gboolean _preview_render(JsonObject *req, int *ow, int *oh, char **err)
 
 static gboolean _preview(JsonObject *req, int *ow, int *oh, char **err)
 {
+  // Creating a missing preview instance changes module order. Keep those
+  // instances request-local too: saving after a preview must not change the
+  // edit's hash and invalidate a paste's Undo/Redo snapshot.
+  GList *saved_iop = g_list_copy(_s.dev.iop);
+  GList *saved_order = dt_ioppr_iop_order_copy_deep(_s.dev.iop_order_list);
+  const int gen = _s.iop_gen;
   const char *look = json_object_get_string_member_with_default(req, "look", NULL);
-  if(!look) return _preview_render(req, ow, oh, err);
-
-  // style conversion imports and migrates forms in dev->forms. A thumbnail
-  // owns those forms only until processing finishes, including failure paths
   GList *saved_forms = _s.dev.forms;
-  _s.dev.forms = dt_masks_dup_forms_deep(saved_forms, NULL);
+  if(look) _s.dev.forms = dt_masks_dup_forms_deep(saved_forms, NULL);
   const gboolean ok = _preview_render(req, ow, oh, err);
-  g_list_free_full(_s.dev.forms, (GDestroyNotify)dt_masks_free_form);
-  _s.dev.forms = saved_forms;
+  if(look)
+  {
+    g_list_free_full(_s.dev.forms, (GDestroyNotify)dt_masks_free_form);
+    _s.dev.forms = saved_forms;
+  }
+  if(gen != _s.iop_gen)
+  {
+    // Drop nodes before freeing modules they reference. cleanup_nodes keeps
+    // the preview backbuffer, which the caller still needs to write out.
+    dt_dev_pixelpipe_cleanup_nodes(&_s.pipe);
+    if(_s.ppipe_ok) dt_dev_pixelpipe_cleanup_nodes(&_s.ppipe);
+    _follower_cleanup(&_s.drag);
+    _follower_cleanup(&_s.base);
+    _follower_cleanup(&_s.check);
+    for(GList *l = _s.dev.iop; l; l = g_list_next(l))
+      if(!g_list_find(saved_iop, l->data))
+      {
+        dt_iop_cleanup_module(l->data);
+        free(l->data);
+      }
+    g_list_free(_s.dev.iop);
+    _s.dev.iop = saved_iop;
+    g_list_free_full(_s.dev.iop_order_list, free);
+    _s.dev.iop_order_list = saved_order;
+    dt_ioppr_resync_modules_order(&_s.dev);
+    _s.iop_gen++;
+    _changed(DT_DEV_PIPE_REMOVE);
+  }
+  else
+  {
+    g_list_free(saved_iop);
+    g_list_free_full(saved_order, free);
+  }
   return ok;
 }
 

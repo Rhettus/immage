@@ -34,6 +34,13 @@ node verify/gui/run.mjs --config verify/gui/local.json --case exposure
 node verify/gui/run.mjs --config verify/gui/local.json --case masks,panel-scroll
 ```
 
+The `ai-mask-paste` case needs an installed
+`build/ai-models/mask-object-sam21-small/` model. The runner copies it into the
+isolated test profile before launch; it exercises real Select Object inference,
+batch paste, Previous, undo/redo and saved-mask reopening. When using a development
+engine, set `DT_ORT_LIBRARY` to its installed ONNX Runtime library if that library
+is outside the engine's normal search path. The report records this selection.
+
 Exposure includes startup as its prerequisite. A comma list runs several cases
 in one launch, after startup. The runner launches a new driver
 and app, dismisses the tour through

@@ -20,6 +20,7 @@ and Linux. **All builds are alpha; bugs are expected.**
 
 - Edit with familiar tone, color, detail and lens correction tools.
 - Make local adjustments with brushes, gradients, range masks and AI selections.
+  Copied AI masks are recalculated for each destination photo.
 - Heal and clone, simulate film stocks and papers, convert film negatives with input and working color profiles, and merge HDR photos or panoramas.
 - Apply presets and film looks, compare edits, and copy settings across photos.
 - Browse folders directly, import from a card with the built-in Immporter,

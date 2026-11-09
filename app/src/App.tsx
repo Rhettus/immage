@@ -8,7 +8,7 @@ import { detailRows } from "./DetailControls";
 // Copyright (C) 2026 the Immage authors
 
 import { preparePastePhoto } from "./pasteDefaults";
-import { applyClip, pasteTargets, replaceMasks, restorePaste, runPaste, type PasteUpdate } from "./batchPaste";
+import { pasteTargets, replaceMasks, restorePaste, runPaste, type PasteUpdate } from "./batchPaste";
 import { CaptureTimeDialog } from "./CaptureTimeDialog";
 import { captureMillis, type CaptureTimeEntry, type CaptureTimeUpdate } from "./captureTime";
 import { Fragment, Profiler, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -1009,7 +1009,7 @@ export default function App() {
     return runAi("mask-object-sam21-small", "finding the object…",
       () => outline("ai_object", { points: prompt.points ?? [], box: prompt.box ?? null, inset: toolTarget !== "subtract" },
                     startsMask(toolTarget), (b) => { backdrop = b; }),
-      (paths) => aiShown(createShape({ type: "object", paths, ...(backdrop && { backdrop }) })));
+      (paths) => aiShown(createShape({ type: "object", paths, ai: { kind: "object", ...structuredClone(prompt), inset: toolTarget !== "subtract", backdrop: startsMask(toolTarget) }, ...(backdrop && { backdrop }) })));
   };
   // the one-click selections: Subject, Background, which is the subject's
   // outline in a new mask, inverted, and People and the parts of a
@@ -1037,7 +1037,7 @@ export default function App() {
                     (k === "subject" || k === "people") && startsMask(target), (b) => { backdrop = b; }),
       (paths) => {
         const had = new Set(session.current?.masks.map((m) => m.name));
-        const name = createShape({ type: "object", paths, ...(backdrop && { backdrop }) },
+        const name = createShape({ type: "object", paths, ai: { kind: a.kind, inset: k !== "background" && target !== "subtract", backdrop: (k === "subject" || k === "people") && startsMask(target) }, ...(backdrop && { backdrop }) },
                                  k === "background" ? "new" : target, a.label);
         if (k === "background" && name) session.current?.setInvert(name, true);
         const refine = aiRefine(k);
@@ -3731,31 +3731,6 @@ export default function App() {
     setHasClip(true);
     setStatus("settings copied");
   };
-  // copied settings onto this image, as one undo step
-  const pasteClip = (c: Clip | null, what: string) => {
-    const s = session.current;
-    if (!s || !c || croppingRef.current || pastingRef.current) return;
-    leaveBefore();
-    setBaMode("off");
-    setAmount(null);
-    record([what]);
-    holdRecord.current = true;
-    try {
-      applyClip(s, c);
-      baseStale.current = true;
-      setValues({ ...s.values });
-      setLookState(s.look);
-      setLookAmount(s.lookAmount);
-      syncMasks();
-      if (!s.masks.some(m => m.name === maskSel)) setMaskSel(s.masks[0]?.name ?? null);
-    } catch (e) {
-      setStatus(`paste: ${e}`);
-      return;
-    } finally {
-      holdRecord.current = false;
-    }
-    setStatus(keys(`${what}: ⌘Z undoes it`));
-  };
   const pasteSaved = (i: PasteUpdate) => {
     loader.current?.invalidate(i.imgid);
     patchImage(i.imgid, { edited: i.edited });
@@ -3767,15 +3742,16 @@ export default function App() {
     window.clearTimeout(copyTimer.current);
     leaveBefore();
     setBaMode("off");
+    setAmount(null);
     await session.current?.close();
     pasteUndoSession.current = session.current;
     session.current = null;
   };
-  const pasteSettings = async () => {
-    const c = clip.current, active = currentRef.current;
-    if (!c || !active || !session.current || croppingRef.current || pastingRef.current) return;
+  const pasteSettings = async (previousClip?: Clip) => {
+    const c = previousClip ?? clip.current, active = currentRef.current;
+    if (!c || !active || !session.current || croppingRef.current || pastingRef.current || aiBusy) return;
     const entry = imagesRef.current.find(i => isOpen(i, active)) ?? openCell;
-    const { targets, skipped } = pasteTargets(imagesRef.current, selectionRef.current, entry, isRemote);
+    const { targets, skipped } = pasteTargets(imagesRef.current, previousClip ? new Set<number>() : selectionRef.current, entry, isRemote);
     if (!targets.length) { setStatus("paste: no local photos selected"); return; }
     const frozen = structuredClone(c);
     const preset = [...BUILTIN_PRESETS, ...presetsRef.current].find(p => p.id === newPhotosRef.current);
@@ -3814,7 +3790,7 @@ export default function App() {
   // has ticked
   const pastePrevious = () => {
     const p = previous.current;
-    if (p) pasteClip(makeClip(loadCopyGroups(), p.values, p.look, p.masks ?? []), "previous settings");
+    if (p) void pasteSettings(makeClip(loadCopyGroups(), p.values, p.look, p.masks ?? []));
   };
   // `steps` at once, as a click in the History panel: only the state
   // arrived at is sent
@@ -6597,7 +6573,7 @@ export default function App() {
         <div className="right-foot">
           <button className="btn small" disabled={!current || cropping} onClick={() => setCopying(true)}
                   data-action="copy-settings" title={keys("choose settings of this photo to copy (⇧⌘C)")}>Copy…</button>
-          <button className="btn small" disabled={!current || cropping || !hasClip} onClick={pasteSettings}
+          <button className="btn small" disabled={!current || cropping || !hasClip} onClick={() => void pasteSettings()}
                   data-action="paste-settings" title={keys("paste the copied settings onto the selected photos (⇧⌘V)")}>Paste</button>
           <button className="btn small" disabled={!current || cropping || !previous.current} onClick={pastePrevious}
                   title={keys("the previous photo's settings, the parts ticked in Copy Settings (⌥⌘V)")}>Previous</button>

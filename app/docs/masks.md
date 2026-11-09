@@ -38,6 +38,27 @@ Click **Create New Mask** and choose:
 A new mask is named after its kind, such as **Sky** or **Radial**. Make a
 second of the same kind and they become **Radial 1** and **Radial 2**.
 
+## Copying AI masks between photos
+
+When **Masks** is ticked in **Copy Settings**, Paste and Previous settings
+recalculate AI selections from each destination photo. Subject, Background,
+People and landscape selections find the corresponding area again. Select
+Object uses the same relative clicks or box, so the intended object should be
+in a similar position. Depth Range recalculates the saved near/far band.
+
+The mask's adjustments, inversion, opacity, visibility, refinement and
+add/subtract parts are preserved. Manual brush, gradient and range parts keep
+their copied settings. Fit to Background uses the destination's detected color.
+
+The first use of a model may download it. Editing and navigation pause during
+paste. If a selection finds nothing or AI fails, the whole paste is rolled
+back; no source outline is substituted. Undo and redo restore the saved mask
+results without running AI again.
+
+Older AI masks lack the selection information needed for recalculation. Paste
+explains which mask must be recreated once on the source photo before copying.
+Older Depth Range masks already retain their range and can be recalculated.
+
 ## Shaping a mask
 
 Select a mask, then use **+** to add to it or **−** to subtract from it,

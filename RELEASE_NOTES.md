@@ -9,7 +9,6 @@ Improvements
 
 - Color Range masks now offer Hue, a wider Hue Range, Minimum Chroma and
   Smoothness controls, with the mask overlay visible while adjusting them.
-
 - The user guide now includes troubleshooting and issue-reporting instructions,
   with GUI benchmark and crash-log locations and guided GitHub forms for bug
   reports and feature requests.
@@ -32,9 +31,13 @@ Improvements
 
 Bug fixes
 
+- Pasting settings, including Previous settings, recalculates AI masks for each
+  destination photo while preserving local adjustments and manual mask parts.
+  Older AI selections without saved tool information must be recreated once
+  on the source photo before copying. Preset previews also preserve paste
+  undo/redo when the photo already has masks.
 - Windows installer packaging resolves the bundled UAC plugin and scope includes
   correctly when built on Windows.
-
 - Windows setup requests administrator permission only when installing for
   everyone. Just for me installs without elevation under
   `%LOCALAPPDATA%\Programs\Immage`; updates keep the existing scope and location.

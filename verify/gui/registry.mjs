@@ -1,3 +1,4 @@
+import { aiMaskPaste } from "./specs/ai-mask-paste.mjs";
 import { colorRange } from './specs/color-range.mjs';
 import { colorProfiles } from "./specs/color-profiles.mjs";
 import { agxPresets } from './specs/agx-presets.mjs';
@@ -21,7 +22,7 @@ import { overlayOpacity } from './specs/overlay.mjs';
 import { shiftRange } from './specs/shift-range.mjs';
 import { lensProfile, lensPick } from './specs/lens.mjs';
 
-const implementations = { 'color-range': colorRange, 'batch-paste': batchPaste, startup, splash, exposure, 'slider-input': sliderInput, 'slider-click': sliderClick, history, rail, sliders, 'module-options': moduleOptions, 'module-switch': moduleSwitch,
+const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRange, 'batch-paste': batchPaste, startup, splash, exposure, 'slider-input': sliderInput, 'slider-click': sliderClick, history, rail, sliders, 'module-options': moduleOptions, 'module-switch': moduleSwitch,
   'panel-scroll': panelScroll,
   'agx-presets': agxPresets,
   'color-profiles': colorProfiles,
