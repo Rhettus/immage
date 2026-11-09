@@ -57,6 +57,8 @@ jobs:
           fetch-depth: 0
       - name: release asset checks
         run: python3 -I scripts/test_release_assets.py
+      - name: ONNX Runtime download checks
+        run: python3 -I scripts/test_onnx_download.py
       - name: gitleaks
         run: |
           v=8.30.1

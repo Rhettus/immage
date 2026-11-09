@@ -7,6 +7,11 @@ the few parts of it darktable uses, into `build/opencv`), and the CI workflow
 machine. A release's `immage-<version>-source.tar.gz` builds the same way
 as a clone.
 
+ONNX Runtime is downloaded during engine configuration. Downloads retry up to
+four times on macOS and Linux, with checksum verification before extraction.
+If all attempts fail, configuration stops with the download URL and error;
+rerun `scripts/build.sh` after connectivity to GitHub releases is restored.
+
 ## macOS
 
 You need darktable's build dependencies from Homebrew (the engine's are in

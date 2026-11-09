@@ -31,6 +31,8 @@ Improvements
 
 Bug fixes
 
+- macOS and Linux builds retry failed ONNX Runtime downloads and stop cleanly
+  if the download remains unavailable, while still verifying its checksum.
 - Fit previews now use valid whole-pixel dimensions at fractional display
   scaling, avoiding render errors for some window sizes.
 - Pasting settings, including Previous settings, recalculates AI masks for each

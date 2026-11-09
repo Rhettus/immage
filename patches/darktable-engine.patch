@@ -947,3 +947,52 @@ index 6827133a6d..2cd7c9f630 100644
    else()
      set(_ORT_URL "https://github.com/microsoft/onnxruntime/releases/download/v${_ORT_VER}/${_ORT_PACKAGE}")
    endif()
+@@ -282,19 +282,35 @@
+   if(NOT EXISTS "${_ORT_ARCHIVE}")
+     message(STATUS "Downloading ONNX Runtime ${_ORT_VER} (${_ORT_PACKAGE})...")
+-    file(DOWNLOAD
+-      "${_ORT_URL}"
+-      "${_ORT_ARCHIVE}"
+-      STATUS _ORT_DL_STATUS
+-      SHOW_PROGRESS
+-      EXPECTED_HASH "${_ORT_HASH_ALGO}=${_ORT_HASH}"
+-    )
+-    list(GET _ORT_DL_STATUS 0 _ORT_DL_CODE)
+-    list(GET _ORT_DL_STATUS 1 _ORT_DL_MSG)
++    # Retry transient release-host failures without EXPECTED_HASH: CMake
++    # records a configure error for a failed hashed download even if a later
++    # attempt succeeds. Verify the completed archive explicitly instead.
++    foreach(_ORT_ATTEMPT RANGE 1 4)
++      file(DOWNLOAD
++        "${_ORT_URL}"
++        "${_ORT_ARCHIVE}"
++        STATUS _ORT_DL_STATUS
++        SHOW_PROGRESS
++        TIMEOUT 300
++        INACTIVITY_TIMEOUT 60
++      )
++      list(GET _ORT_DL_STATUS 0 _ORT_DL_CODE)
++      list(GET _ORT_DL_STATUS 1 _ORT_DL_MSG)
++      if(_ORT_DL_CODE EQUAL 0)
++        break()
++      endif()
++      file(REMOVE "${_ORT_ARCHIVE}")
++      if(_ORT_ATTEMPT LESS 4)
++        message(STATUS "ONNX Runtime download attempt ${_ORT_ATTEMPT} failed: ${_ORT_DL_MSG}; retrying...")
++        math(EXPR _ORT_RETRY_DELAY "${_ORT_ATTEMPT} * 3")
++        execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep "${_ORT_RETRY_DELAY}")
++      endif()
++    endforeach()
+     if(NOT _ORT_DL_CODE EQUAL 0)
++      message(FATAL_ERROR "Failed to download ONNX Runtime after 4 attempts from ${_ORT_URL}: ${_ORT_DL_MSG}")
++    endif()
++    file(${_ORT_HASH_ALGO} "${_ORT_ARCHIVE}" _ORT_DOWNLOADED_HASH)
++    if(NOT _ORT_DOWNLOADED_HASH STREQUAL "${_ORT_HASH}")
+       file(REMOVE "${_ORT_ARCHIVE}")
+-      message(WARNING
+-        "Failed to download ONNX Runtime from ${_ORT_URL}: ${_ORT_DL_MSG}. "
+-        "Install ONNX Runtime manually or download from: "
+-        "https://github.com/microsoft/onnxruntime/releases")
++      message(FATAL_ERROR "ONNX Runtime archive checksum mismatch for ${_ORT_URL}")
+     endif()
+   endif()
