@@ -9,6 +9,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { keys } from "./keys";
 import { AGX_PROFILE_DEFAULT, PROFILE_GROUPS, PROFILE_OPTIONS } from "./manifest";
+import { ThemePrefs } from "./ThemePrefs";
 import { CachePrefs } from "./CachePrefs";
 import { Chevron, Collapse } from "./Collapse";
 import { ImmichPrefs } from "./ImmichPrefs";
@@ -724,6 +725,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
             {tab === "general" && (
               <>
               <PrefCard title="Workspace">
+                <ThemePrefs />
                 <PrefRow label="Open generated photos" hint="switch to editing after HDR or panorama merge, AI denoise, positive export, or the first result from a plugin">
                   <PrefSwitch checked={openGenerated} onChange={onOpenGenerated} />
                 </PrefRow>

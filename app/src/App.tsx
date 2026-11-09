@@ -1,3 +1,4 @@
+import { useThemes } from "./themes";
 import { AgxPresetLoader } from "./AgxPresetDialog";
 import { DELETE_AGX_PRESET_EVENT, LOAD_AGX_PRESET_EVENT, useAgxProfiles, userProfiles } from "./agxProfiles";
 import { profileSelection, AGX_USER_FIRST, DELETE_PRESET, LOAD_PRESET } from "./manifest";
@@ -7664,6 +7665,7 @@ function HistogramView({ histograms, values, disabled, exif, neutral, onChange, 
   clip: ClipShow; onClip: (end: "low" | "high") => void; onClipPeek: (end: "low" | "high" | null) => void;
   scope: ScopeSettings; onScope: (change: Partial<ScopeSettings>) => void;
 }) {
+  const themeRevision = useThemes();
   const h = useSyncExternalStore(histograms.subscribe, histograms.get);
   const ref = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState(0);
@@ -7674,7 +7676,7 @@ function HistogramView({ histograms, values, disabled, exif, neutral, onChange, 
     ro.observe(c);
     return () => ro.disconnect();
   }, []);
-  useEffect(() => { if (ref.current) perf.time("pixels.scopeDraw", () => drawScope(ref.current!, h, scope)); }, [h, scope, size]);
+  useEffect(() => { if (ref.current) perf.time("pixels.scopeDraw", () => drawScope(ref.current!, h, scope)); }, [h, scope, size, themeRevision]);
   const tones = scope.mode === "histogram";
   const turning = (scope.mode === "vectorscope" || scope.mode === "split")
     && scope.space === "ryb" && scope.harmony > 0;

@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Immage color theme",
+  "description": "A custom interface theme imported through Preferences > General > Theme. The importer also limits files to 64 KiB.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "name", "colorScheme", "colors"],
+  "properties": {
+    "version": {
+      "const": 1,
+      "description": "Theme format version."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "pattern": "^(?=.*\\S)[^\\u0000-\\u001F]+$",
+      "description": "A non-blank name of up to 80 characters, with no control characters."
+    },
+    "colorScheme": {
+      "enum": ["dark", "light"],
+      "description": "Selects the dark or light native color scheme for interface controls."
+    },
+    "colors": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "window", "panel", "card", "inset", "hover", "text", "text-2",
+        "text-3", "track", "thumb", "accent", "border", "on-accent",
+        "focus", "error", "success", "graph-bg", "graph-grid"
+      ],
+      "properties": {
+        "window": { "$ref": "#/$defs/color", "description": "Main application window background." },
+        "panel": { "$ref": "#/$defs/color", "description": "Side panels and primary interface surfaces." },
+        "card": { "$ref": "#/$defs/color", "description": "Raised cards and controls." },
+        "inset": { "$ref": "#/$defs/color", "description": "Inset surfaces and fields." },
+        "hover": { "$ref": "#/$defs/color", "description": "Hovered and selected interface items." },
+        "text": { "$ref": "#/$defs/color", "description": "Primary text." },
+        "text-2": { "$ref": "#/$defs/color", "description": "Secondary text." },
+        "text-3": { "$ref": "#/$defs/color", "description": "Muted text." },
+        "track": { "$ref": "#/$defs/color", "description": "Slider tracks and graph backgrounds." },
+        "thumb": { "$ref": "#/$defs/color", "description": "Slider thumbs." },
+        "accent": { "$ref": "#/$defs/color", "description": "Accent controls and highlights." },
+        "border": { "$ref": "#/$defs/color", "description": "Separators and control borders." },
+        "on-accent": { "$ref": "#/$defs/color", "description": "Text or symbols drawn on accent surfaces." },
+        "focus": { "$ref": "#/$defs/color", "description": "Keyboard focus indicators." },
+        "error": { "$ref": "#/$defs/color", "description": "Error messages and indicators." },
+        "success": { "$ref": "#/$defs/color", "description": "Success messages and indicators." },
+        "graph-bg": { "$ref": "#/$defs/color", "description": "Histogram and graph background." },
+        "graph-grid": { "$ref": "#/$defs/color", "description": "Histogram and graph grid lines." }
+      }
+    }
+  },
+  "$defs": {
+    "color": {
+      "type": "string",
+      "pattern": "^#[0-9A-Fa-f]{6}$",
+      "description": "An sRGB color in six-digit hexadecimal #RRGGBB form."
+    }
+  }
+}

@@ -4,6 +4,9 @@ import { generated, generatedNames } from './generated.mjs';
 export const cases = {
   'color-range': {scope:'four color controls, pointer/keyboard/numeric edits, overlay, Escape, undo/redo and restart persistence',liveValidated:true, verification:'Linux ARM64, system WebKitGTK, maximized isolated floating workspace; run 2026-11-09T05-02-48.236Z_761252a_11ce1c3e. Saved controls and rendered pixels survive app restart.'},
   startup: { scope: 'visible fixture, stable final canvas, isolated profile', liveValidated: true },
+  themes: { scope: 'Dark, Darktable Grey and Light swatches; accessible selection, panel, filmstrip and histogram graph colors, unchanged photo pixels, Exposure operation and Light persistence after app restart', liveValidated: true,
+    verification: 'Linux ARM64, system WebKitGTK, maximized 2048x1094 test webview on empty workspace 9; startup and themes pass in run 2026-11-09T09-20-58.442Z_5f02a8f_05cb3e40. Workspace 3 restored. Includes corrected light filmstrip background.',
+    limitation: 'Custom theme import/removal is covered headlessly; the native file chooser is outside the app-only GUI boundary.' },
   splash: { scope: 'the launch splash keeps its 640x427 size on a tiling window manager (measured by startup); known to fail on Hyprland, not in smoke', liveValidated: true },
   'gui-benchmark': { scope: 'Preferences Run button, saved schema 9 report, visible stable viewport, restored photo', liveValidated: true,
     verification: 'Linux ARM64 VM, system WebKitGTK 2.54.2, Wayland DPR 2 run 2026-11-02T15-05-22.535Z_ee28973_5104c5ed; DPR 1 with deferred viewport gate run 2026-11-02T15-20-43.128Z_ee28973_46f49c76.',

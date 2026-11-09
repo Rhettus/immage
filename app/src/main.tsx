@@ -5,6 +5,7 @@ import { StrictMode, Profiler } from "react";
 import { createRoot } from "react-dom/client";
 import { loadAgxProfiles } from "./agxProfiles";
 import App from "./App";
+import { loadThemes } from "./themes";
 import SelectMenu from "./SelectMenu";
 import { perf } from "./perf";
 import "@fontsource/poppins/400.css";
@@ -17,6 +18,7 @@ import "./styles.css";
 // Use the standard desktop-button arrow for icon tools on Windows.
 document.documentElement.classList.toggle("windows", navigator.userAgent.includes("Windows"));
 
+loadThemes();
 await loadAgxProfiles();
 
 createRoot(document.getElementById("root")!).render(

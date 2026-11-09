@@ -1,3 +1,4 @@
+import { selectedTheme } from "./themes";
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
@@ -140,7 +141,7 @@ function prepare(canvas: HTMLCanvasElement) {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalCompositeOperation = "source-over";
   ctx.globalAlpha = 1;
-  ctx.fillStyle = "#181818";
+  ctx.fillStyle = selectedTheme().colors["graph-bg"];
   ctx.fillRect(0, 0, W, H);
   return { ctx, W, H, dpr };
 }
@@ -160,7 +161,7 @@ export function drawScope(canvas: HTMLCanvasElement, h: Histogram | null, s: Sco
 
 function histogramInto(ctx: CanvasRenderingContext2D, x0: number, y0: number, W: number, H: number,
                        h: Histogram | null, s: ScopeSettings) {
-  ctx.strokeStyle = "#262626";
+  ctx.strokeStyle = selectedTheme().colors["graph-grid"];
   for (const q of [0.25, 0.5, 0.75]) {
     ctx.beginPath(); ctx.moveTo(x0 + q * W, y0); ctx.lineTo(x0 + q * W, y0 + H); ctx.stroke();
   }
@@ -172,7 +173,7 @@ function histogramInto(ctx: CanvasRenderingContext2D, x0: number, y0: number, W:
   h.bins.forEach((b, c) => {
     if (s.channels[c]) for (let i = 2; i < 254; i++) peak = Math.max(peak, f(b[i]));
   });
-  ctx.globalCompositeOperation = "screen";
+  ctx.globalCompositeOperation = selectedTheme().colorScheme === "light" ? "multiply" : "screen";
   h.bins.forEach((b, c) => {
     if (!s.channels[c]) return;
     ctx.fillStyle = COLORS[c];
@@ -270,7 +271,7 @@ function waveformInto(ctx: CanvasRenderingContext2D, x0: number, y0: number, W: 
   }
   // guides at 0, 25, 50, 75 and 100% of the tones, and between the parade's
   // channels
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.09)";
+  ctx.strokeStyle = selectedTheme().id === "dark" ? "rgba(255, 255, 255, 0.09)" : selectedTheme().colors["graph-grid"];
   ctx.lineWidth = 1;
   for (const q of [0.25, 0.5, 0.75]) {
     ctx.beginPath();
@@ -279,7 +280,7 @@ function waveformInto(ctx: CanvasRenderingContext2D, x0: number, y0: number, W: 
     ctx.stroke();
   }
   if (parade) {
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.18)";
+    ctx.strokeStyle = selectedTheme().id === "dark" ? "rgba(255, 255, 255, 0.18)" : selectedTheme().colors["graph-grid"];
     for (const q of [1 / 3, 2 / 3]) {
       ctx.beginPath();
       if (vertical) { ctx.moveTo(x0, y0 + q * H); ctx.lineTo(x0 + W, y0 + q * H); }
@@ -430,12 +431,12 @@ function vectorscopeInto(ctx: CanvasRenderingContext2D, x0: number, y0: number, 
   ctx.save();
   ctx.beginPath(); ctx.rect(x0, y0, W, H); ctx.clip();
   const bg = ctx.createRadialGradient(cx, cy, radius, cx, cy, Math.hypot(W, H) / 2);
-  bg.addColorStop(0, "#1c1c1c"); bg.addColorStop(1, "#141414");
+  bg.addColorStop(0, selectedTheme().id === "dark" ? "#1c1c1c" : selectedTheme().colors["graph-bg"]); bg.addColorStop(1, selectedTheme().id === "dark" ? "#141414" : selectedTheme().colors["graph-bg"]);
   ctx.fillStyle = bg; ctx.fillRect(x0, y0, W, H);
 
   // concentric circles as a scale
   const step = s.space === "luv" ? 100 : 0.01;
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
+  ctx.strokeStyle = selectedTheme().id === "dark" ? "rgba(255, 255, 255, 0.08)" : selectedTheme().colors["graph-grid"];
   ctx.lineWidth = dpr;
   for (let i = 1; i < 1 + Math.ceil(R / step); i++) {
     let r = step * i;
@@ -515,7 +516,7 @@ function vectorscopeInto(ctx: CanvasRenderingContext2D, x0: number, y0: number, 
 
   if (graph) {
     ctx.imageSmoothingEnabled = true;
-    ctx.globalCompositeOperation = "lighter";
+    ctx.globalCompositeOperation = selectedTheme().colorScheme === "light" ? "source-over" : "lighter";
     const drawGraph = () => ctx.drawImage(graph!, cx - radius, cy - radius, 2 * radius, 2 * radius);
     if (sectors && hw > 0) {
       // full strength inside the sectors, dimmed outside (darktable's 0.7)
@@ -549,15 +550,15 @@ function vectorscopeInto(ctx: CanvasRenderingContext2D, x0: number, y0: number, 
     ctx.beginPath(); ctx.arc(p.xy[0], p.xy[1], 2.5 * dpr, 0, 2 * Math.PI);
     ctx.fillStyle = `rgb(${p.rgb.map((c) => Math.round(c * 255)).join(",")})`;
     ctx.fill();
-    ctx.strokeStyle = "#555"; ctx.lineWidth = dpr; ctx.stroke();
+    ctx.strokeStyle = selectedTheme().id === "dark" ? "#555" : selectedTheme().colors.border; ctx.lineWidth = dpr; ctx.stroke();
   }
   if (sectors) {
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.7)";
+    ctx.strokeStyle = selectedTheme().id === "dark" ? "rgba(255, 255, 255, 0.7)" : selectedTheme().colors.text;
     ctx.lineWidth = dpr;
     ctx.stroke(sectors);
   }
   // the center
-  ctx.fillStyle = "#666";
+  ctx.fillStyle = selectedTheme().id === "dark" ? "#666" : selectedTheme().colors["text-3"];
   ctx.beginPath(); ctx.arc(cx, cy, 2 * dpr, 0, 2 * Math.PI); ctx.fill();
   ctx.restore();
 }

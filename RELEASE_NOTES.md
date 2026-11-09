@@ -28,6 +28,9 @@ Improvements
   chosen by hand (raws that carry their own correction switch to the lensfun
   profile when you do). Type in its search box to filter: "12-32" finds the
   Panasonic 12-32mm.
+- Preferences > General lets you choose the Dark (default), Darktable Grey or
+  Light interface theme, or import a custom theme from a JSON file. Themes
+  apply immediately and are remembered; imported themes can be removed.
 
 Bug fixes
 

@@ -17,6 +17,53 @@ apply as you make them; **Done** closes the window.
   and Film Simulation panels. The DNG and TIFF buttons beside that button set
   the same thing.
 
+- **Theme**: choose **Dark** (the default), **Darktable Grey** (the bundled
+  `darktable-elegant-grey` palette) or **Light** with the swatches. The
+  interface changes immediately and remembers your choice. **Import theme…**
+  loads a JSON theme and selects it after it is saved. An imported theme with
+  the same name as an existing one is given a numbered name. **Remove theme**
+  appears for the selected imported theme; removing it returns the interface
+  to Dark. Built-in themes cannot be removed.
+
+  A theme file is UTF-8 JSON no larger than 64 KiB. It must contain exactly
+  these top-level fields: `version` (the number `1`), `name` (1–80 printable
+  characters), `colorScheme` (`"dark"` or `"light"`) and `colors`. `colors`
+  must contain every token below, each with a six-digit `#RRGGBB` color; extra
+  fields or tokens, missing tokens, and other color formats are rejected.
+  Immage does not check contrast, so choose colors that keep text and controls
+  readable.
+
+  Download the [JSON Schema](themes/schema.json) for editor validation or the
+  [editable theme example](themes/example.json) to use as a starting point.
+
+  ```json
+  {
+    "version": 1,
+    "name": "My Theme",
+    "colorScheme": "dark",
+    "colors": {
+      "window": "#0e0e0e",
+      "panel": "#181818",
+      "card": "#1f1f1f",
+      "inset": "#262626",
+      "hover": "#2a2a2a",
+      "text": "#f0f0f0",
+      "text-2": "#a3a3a3",
+      "text-3": "#6b6b6b",
+      "track": "#2e2e2e",
+      "thumb": "#f5f5f5",
+      "accent": "#ffffff",
+      "border": "#333333",
+      "on-accent": "#111111",
+      "focus": "#a3a3a3",
+      "error": "#ef7777",
+      "success": "#78bb87",
+      "graph-bg": "#181818",
+      "graph-grid": "#262626"
+    }
+  }
+  ```
+
 - **Canvas**: what is behind the photo, in full screen preview too.
   **Dark**, **Neutral Gray** to judge tones without a dark surround, or
   **White** to see the photo as on a print. L steps through them.

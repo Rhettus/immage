@@ -23,6 +23,8 @@ and Linux. **All builds are alpha; bugs are expected.**
   Copied AI masks are recalculated for each destination photo.
 - Heal and clone, simulate film stocks and papers, convert film negatives with input and working color profiles, and merge HDR photos or panoramas.
 - Apply presets and film looks, compare edits, and copy settings across photos.
+- Choose the Dark, Darktable Grey or Light interface theme, or import a custom
+  color theme.
 - Browse folders directly, import from a card with the built-in Immporter,
   and optionally search and export to an [Immich](app/docs/immich.md) library.
 - Export to a folder or an Immich album, with borders and file-name templates.
