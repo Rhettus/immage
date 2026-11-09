@@ -2805,7 +2805,20 @@ fn main() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin({
+            let updater = tauri_plugin_updater::Builder::new();
+            // NSIS /D must be last and unquoted, including paths with spaces.
+            // Pin updates to the running installation when both scopes exist.
+            #[cfg(target_os = "windows")]
+            let updater = match std::env::current_exe() {
+                Ok(exe) => match exe.parent() {
+                    Some(dir) => updater.installer_arg(format!("/D={}", dir.display())),
+                    None => updater,
+                },
+                Err(_) => updater,
+            };
+            updater.build()
+        })
         .plugin(tauri_plugin_process::init())
         // the main window opens as it was last closed. not its visibility, which
         // the splash sets (Splash.tsx), nor full screen, which only Full Screen

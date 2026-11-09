@@ -29,6 +29,9 @@ Improvements
 
 Bug fixes
 
+- Windows setup requests administrator permission only when installing for
+  everyone. Just for me installs without elevation under
+  `%LOCALAPPDATA%\Programs\Immage`; updates keep the existing scope and location.
 - Undo after Reset all restores the previous negative conversion and color
   profiles, including after reopening the photo.
 - Lens Corrections now knows cameras added to the lensfun database since 2023,
