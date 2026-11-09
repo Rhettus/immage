@@ -107,6 +107,7 @@ import { ShortcutsDialog } from "./Shortcuts";
 import { cmd, fieldKeeps, keys } from "./keys";
 import { perf, percentiles, pingOnce, roundTrips, STAGES, webviewInfo, observeWebview } from "./perf";
 import { frameTransport } from "./sharedFrames";
+import { renderDimensions } from "./renderDimensions";
 import { draftScale, settledScale } from "./pixelRatio";
 import { tunerOptions } from "./tunerOptions";
 import { GPU_CASES, resolveCase, verdict, cpuInGpuPass, tiledInGpuPass, type Parity } from "./gpuCheck";
@@ -1891,7 +1892,7 @@ export default function App() {
   const fitView = (): View => {
     const { w, h } = viewport();
     const m = 2 * MARGIN * (window.devicePixelRatio || 1);
-    return { width: Math.min(MAX_PREVIEW, w - m), height: Math.min(MAX_PREVIEW, h - m) };
+    return renderDimensions(w - m, h - m, MAX_PREVIEW);
   };
   // the view at k times the full frame's size each way, k < 1 a drag's
   // during a zoom that renders ahead (animateTo), the view it ends on

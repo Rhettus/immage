@@ -31,6 +31,8 @@ Improvements
 
 Bug fixes
 
+- Fit previews now use valid whole-pixel dimensions at fractional display
+  scaling, avoiding render errors for some window sizes.
 - Pasting settings, including Previous settings, recalculates AI masks for each
   destination photo while preserving local adjustments and manual mask parts.
   Older AI selections without saved tool information must be recreated once
