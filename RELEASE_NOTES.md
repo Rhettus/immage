@@ -7,6 +7,9 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- The user guide now includes troubleshooting and issue-reporting instructions,
+  with GUI benchmark and crash-log locations and guided GitHub forms for bug
+  reports and feature requests.
 - Negative has independent Input Profile and Working Profile menus, including
   installed ICC profiles. Choose profiles before sampling the film; settings
   are saved with the photo and included in Negative copies and presets.

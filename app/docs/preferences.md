@@ -259,7 +259,8 @@ The thumbnail caches keep nothing while the disk has under 5 GB free.
   Session tab keeps the slowest response so far and each module
   instance's runs, last, average, slowest and total times, until Reset or
   quitting. × or ⇧⌘P closes it.
-- **GUI benchmark**: **Run** drags the main sliders on the open photo and
+- **GUI benchmark**: see [reporting performance problems](troubleshooting.md#performance-problems)
+  for collecting and sharing a report. **Run** drags the main sliders on the open photo and
   back, zooms in and out, and saves a timing report. Every slider ends where
   it started, but use a copy of a photo you care about.
   Resource readings are sampled: brief CPU spikes or short-lived helper
