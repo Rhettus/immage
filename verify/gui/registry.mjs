@@ -5,7 +5,7 @@ import { agxPresets } from './specs/agx-presets.mjs';
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { startup, exposure, splash } from './specs/smoke.mjs';
 import { sliderInput, sliderClick, history, rail, sliders, panelScroll } from './specs/controls.mjs';
-import { moduleOptions } from './specs/preferences.mjs';
+import { moduleOptions, preferencesHelp } from './specs/preferences.mjs';
 import { batchPaste } from './specs/batch-paste.mjs';
 import { guiBenchmark } from './specs/benchmark.mjs';
 import { cases } from './suites.mjs';
@@ -21,7 +21,7 @@ import { demo } from './specs/demo.mjs';
 import { overlayOpacity } from './specs/overlay.mjs';
 import { shiftRange } from './specs/shift-range.mjs';
 import { lensProfile, lensPick } from './specs/lens.mjs';
-import { themes } from './specs/themes.mjs';
+import { themes, workspaceLayout } from './specs/themes.mjs';
 
 const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRange, 'batch-paste': batchPaste, startup, splash, exposure, 'slider-input': sliderInput, 'slider-click': sliderClick, history, rail, sliders, 'module-options': moduleOptions, 'module-switch': moduleSwitch,
   'panel-scroll': panelScroll,
@@ -43,6 +43,8 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'site-shots':siteShots,
   demo,
   themes,
+  'workspace-layout': workspaceLayout,
+  'preferences-help': preferencesHelp,
 };
 for(const [name,definition] of Object.entries(cases)) if(definition.kind)
   implementations[name] = t => ({range:rangeContract,choice:choiceContract,module:moduleOutput}[definition.kind])(t,definition);

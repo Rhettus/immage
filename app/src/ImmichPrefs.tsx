@@ -200,6 +200,7 @@ export function ImmichPrefs() {
                  onChange={(e) => updateMap({ immich: e.target.value })} />
         </PrefRow>
         <PrefRow label="On this computer"
+                 summary="Local results open directly; other results download first."
                  hint="the same folder here: a search result found in it opens directly, anything else is downloaded first">
           <div className="pref-inline">
             <input className="field" placeholder={mapDefault.local || "/Volumes/photos"} value={map.local ?? ""} spellCheck={false}

@@ -7,6 +7,13 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Module preferences show module names as plain text in Default mode;
+  selection dropdowns appear only in Custom mode.
+- The GPU selection section is now at the top of Performance preferences.
+- Preferences use shorter descriptions, with full help available by hovering
+  over or focusing the question-mark buttons. Status and restart notices stay visible.
+- Workspace preferences group color controls first, keep related settings together,
+  and place theme import actions below right-aligned swatches without overlap.
 - Documented Immage's XMP conventions and how they preserve loading and rendering
   in compatible darktable versions.
 - Color Range masks now offer Hue, a wider Hue Range, Minimum Chroma and

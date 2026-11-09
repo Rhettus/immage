@@ -3,6 +3,10 @@
 Open **Preferences** with ⌘, or the gear at the bottom of the rail. Changes
 apply as you make them; **Done** closes the window.
 
+Rows use short descriptions. Hover over the **?** beside a setting or focus it
+with Tab for the full explanation. Escape dismisses the help without closing
+Preferences. Warnings, current values and restart notices stay visible.
+
 ![Preferences, General tab](images/preferences-general.png)
 <!-- screenshot: Preferences > General -->
 
@@ -10,15 +14,10 @@ apply as you make them; **Done** closes the window.
 
 **Workspace**
 
-- **Open generated photos**: automatically opens HDR merges, panoramas, AI
-  denoise results, positive exports and the first plugin result for editing.
-- **Generated positive format**: losslessly compressed DNG (16-bit float,
-  default) or TIFF (32-bit float) for **Export to Library** in the Negative
-  and Film Simulation panels. The DNG and TIFF buttons beside that button set
-  the same thing.
-
 - **Theme**: choose **Dark** (the default), **Darktable Grey** (the bundled
-  `darktable-elegant-grey` palette) or **Light** with the swatches. The
+  `darktable-elegant-grey` palette) or **Light** with the swatches.
+  The selected name and **Import theme…** action appear below the swatches;
+  **Remove theme** appears beside Import for custom themes. The
   interface changes immediately and remembers your choice. **Import theme…**
   loads a JSON theme and selects it after it is saved. An imported theme with
   the same name as an existing one is given a numbered name. **Remove theme**
@@ -84,6 +83,16 @@ apply as you make them; **Done** closes the window.
   bottom edge below the toolbar. A pin keeps one open.
 - **Scroll adjusts sliders**: off by default, so scrolling over the panels
   only scrolls them and an edit can't change by accident.
+- **Scroll amount**: appears when scrolling adjusts sliders; sets how far each
+  wheel click moves a slider as a percentage of its range.
+- **Open generated photos**: automatically opens HDR merges, panoramas, AI
+  denoise results, positive exports and the first plugin result for editing.
+- **Generated positive format**: losslessly compressed DNG (16-bit float,
+  default) or TIFF (32-bit float) for **Export to Library** in the Negative
+  and Film Simulation panels. The DNG and TIFF buttons beside that button set
+  the same thing.
+- **Warn before converting a negative**: show which Basic tools a converted
+  negative turns off when opening the Negative panel.
 
 **Library**
 
@@ -99,6 +108,13 @@ apply as you make them; **Done** closes the window.
 
 How fast the photo responds while you edit, and the memory and disk
 Immage keeps to make it so.
+
+**GPU**
+
+- **GPU**: what AI upscaling at export runs on. **Automatic** picks the
+  first one found. If none is found, AI upscaling isn't offered.
+- **Device**: which graphics card, when there is more than one.
+
 
 **Interface rendering** (Linux)
 
@@ -300,12 +316,6 @@ empties one.
 
 The thumbnail caches keep nothing while the disk has under 5 GB free.
 
-**AI Acceleration**
-
-- **GPU**: what AI upscaling at export runs on. **Automatic** picks the
-  first one found. If none is found, AI upscaling isn't offered.
-- **Device**: which graphics card, when there is more than one.
-
 **Measuring**
 
 - **Performance overlay**: shows, over the photo, the frame rate, the time
@@ -397,7 +407,8 @@ photo's starting point: they don't mark it as edited.
 
 Which darktable module each tool runs on. **Default** uses the module of
 darktable's AgX workflow for each, except Clarity and Texture, which use
-contrast & texture; **Custom** lets you pick one per tool,
+contrast & texture. Default shows module names as plain text; **Custom**
+shows dropdowns so you can pick one per tool,
 under separate collapsible **Global** and **Masks** sections. For example,
 use AgX for global Contrast and contrast equalizer for masks. With **Focus mode**
 on, opening one section closes the other; Alt-click keeps both open. With it off,

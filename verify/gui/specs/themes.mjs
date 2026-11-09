@@ -18,6 +18,31 @@ async function preferences(t) {
   }), 'Preferences General tab');
   await t.driver.point(general.x, general.y);
   await until(() => t.driver.observe(() => !!document.querySelector('[role="group"][aria-label="Theme"] button[aria-label="Dark"]')), 'theme swatches');
+  const layout = await t.driver.observe(() => {
+    const row = document.querySelector('[data-pref-label="Theme"]');
+    const card = row.closest('.pref-card');
+    const swatches = row.querySelector('.pref-swatches').getBoundingClientRect();
+    const actions = row.querySelector('.theme-prefs-actions').getBoundingClientRect();
+    const buttons = [...row.querySelectorAll('.swatch, .theme-prefs-actions button')];
+    const hittable = buttons.every(button => {
+      const r = button.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+      return hit === button || button.contains(hit);
+    });
+    const canvas = card.querySelector('[data-pref-label="Canvas"] .pref-swatches').getBoundingClientRect();
+    return { hittable, labels: [...card.querySelectorAll('.pref-row')].map(e => e.dataset.prefLabel),
+      aligned: Math.abs(swatches.right - canvas.right) <= 1,
+      separated: actions.top >= swatches.bottom,
+      contained: actions.right <= row.getBoundingClientRect().right + 1 };
+  });
+  assert(layout.hittable && layout.aligned && layout.separated && layout.contained, 'theme swatches align right with actions below');
+  assert.deepEqual(layout.labels.filter(label => label !== 'Scroll amount'), [
+    'Theme', 'Canvas', 'Overlay color', 'Overlay opacity', 'Guide color',
+    'Focus mode', 'Auto-hide panels', 'Scroll adjusts sliders', 'Open generated photos',
+    'Generated positive format', 'Warn before converting a negative',
+  ]);
+  if (layout.labels.includes('Scroll amount')) assert.equal(layout.labels.indexOf('Scroll amount'), layout.labels.indexOf('Scroll adjusts sliders') + 1);
+
 }
 
 async function closePreferences(t) {
@@ -108,4 +133,27 @@ export async function themes(t) {
   await closePreferences(t);
   t.measure({ name: 'themes', initialPhoto: baseline.hash, restartTheme: 'light', finalTheme: 'dark',
     coverage: ['accessible swatch selection', 'panel and graph colors', 'photo pixel invariance', 'Exposure in each theme', 'restart persistence'] });
+}
+
+// Focused layout regression: stay within General > Workspace.
+export async function workspaceLayout(t) {
+  await preferences(t);
+  for (const name of ['Darktable Grey', 'Light', 'Dark']) {
+    await click(t, `[role="group"][aria-label="Theme"] button[aria-label=${JSON.stringify(name)}]`);
+    await preferences(t);
+    assert.equal(await t.driver.observe(n => document.querySelector(`[role="group"][aria-label="Theme"] button[aria-label=${JSON.stringify(n)}]`).getAttribute('aria-pressed'), name), 'true');
+    await t.evidence(`workspace-${name.toLowerCase().replaceAll(' ', '-')}`);
+  }
+  const scroll = '[data-pref-label="Scroll adjusts sliders"] input';
+  const original = await t.driver.observe(s => document.querySelector(s).checked, scroll);
+  try {
+    await click(t, scroll);
+    const labels = await t.driver.observe(() => [...document.querySelector('[data-pref-label="Theme"]').closest('.pref-card').querySelectorAll('.pref-row')].map(e => e.dataset.prefLabel));
+    if (!original) assert.equal(labels.indexOf('Scroll amount'), labels.indexOf('Scroll adjusts sliders') + 1);
+    assert.equal(await t.driver.observe(() => !!document.querySelector('[data-pref-label="Scroll amount"]')), !original);
+  } finally {
+    await click(t, scroll);
+  }
+  await closePreferences(t);
+  t.measure({ name: 'workspace-layout', coverage: ['Workspace row order', 'conditional scroll amount order', 'right aligned theme swatches', 'theme actions below swatches', 'theme selection'] });
 }

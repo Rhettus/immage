@@ -79,7 +79,7 @@ export function CachePrefs() {
     <PrefCard title="Cache">
       <div className="cache-rows">
         {ROWS.map(([which, label, hint]) => (
-          <PrefRow key={which} label={label} title={tip(which, hint)}>
+          <PrefRow key={which} label={label} summary={usage ? `${size(usage[which])} of ${size(limits[which])}` : "Measuring…"} hint={hint}>
             <UsageBar used={usage?.[which] ?? null} limit={limits[which]} title={tip(which, hint)} />
             <select className="field cache-size" value={limits[which]} onChange={(e) => choose(which, Number(e.target.value))}>
               {[...new Set([...SIZES[which], limits[which]])].sort((a, b) => a - b)

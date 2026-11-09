@@ -2,6 +2,8 @@ import { generated, generatedNames } from './generated.mjs';
 // SPDX-License-Identifier: GPL-3.0-or-later
 // These are coverage claims for cases, not proof they have passed on a platform.
 export const cases = {
+  'preferences-help': { scope: 'Short descriptions, hover/focus help, tooltip bounds, ARIA description and Escape/blur dismissal in Preferences', liveValidated: false },
+  'workspace-layout': { scope: 'General Workspace row order, conditional scroll amount, theme alignment and actions below swatches in all built-in themes', liveValidated: true, verification: 'Linux ARM64 system WebKitGTK, isolated floating/maximized workspace 9, viewport 2044x1092; run 2026-11-09T21-37-52.837Z_e47ad0c_edc54e26. Workspace 3 and workspace 9 layout restored.' },
   'color-range': {scope:'four color controls, pointer/keyboard/numeric edits, overlay, Escape, undo/redo and restart persistence',liveValidated:true, verification:'Linux ARM64, system WebKitGTK, maximized isolated floating workspace; run 2026-11-09T05-02-48.236Z_761252a_11ce1c3e. Saved controls and rendered pixels survive app restart.'},
   'fit-detail': {scope:'settled Balanced Fit resolution with screen-scale reduction disabled, sharpening off/on changes native canvas detail',liveValidated:true,
     verification:'Linux ARM64, system WebKitGTK 2.54.2, Wayland DPR 2, Balanced/Small memory; run 2026-11-09T03-53-00.042Z_a530015_0e46e367. Startup, fit-detail, Exposure/reset, alignment and zoom-ready passed. Fit canvas 3072x2052; sharpening changes detail; zoom in/out 217/284 ms.',

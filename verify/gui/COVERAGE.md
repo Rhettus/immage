@@ -13,6 +13,8 @@ This imports pure manifest/math code using Node >= 22.18, without launching an a
 
 | Case | Checks | Verification status |
 |---|---|---|
+| preferences-help | Short descriptions, hover and keyboard help, tooltip bounds, ARIA and dismissal | Written; awaiting approved GUI run |
+| workspace-layout | General Workspace row order, conditional Scroll amount, right-aligned theme swatches, separate import actions and hit targets across built-in themes | Passed Linux ARM64 system WebKitGTK, isolated floating/maximized workspace, run 2026-11-09T21-37-52.837Z_e47ad0c_edc54e26; native import chooser remains manual |
 | color-range | Hue, Hue Range, Minimum Chroma and Smoothness: pointer/keyboard/numeric edits, overlay pixels and restoration, Escape, undo/redo, saved values and render after restart | Passed Linux ARM64 system WebKitGTK, maximized isolated floating workspace, run 2026-11-09T05-02-48.236Z_761252a_11ce1c3e |
 | startup, exposure | Real fixture, final photo, drag lighter/darker, exact reset | Previously passed on Linux system WebKit |
 | gui-benchmark | Run existing benchmark via Preferences, retain/validate report and final pixels | Passed on Linux ARM64 VM, system WebKitGTK 2.54.2, Wayland DPR 2; timings approximate |

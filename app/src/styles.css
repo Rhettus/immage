@@ -2450,3 +2450,14 @@ html.windows .tool, html.windows .tool * { cursor: default; }
   --ui-window-161616: var(--window);
   --ui-window-171717: var(--window);
 }
+
+/* Theme choices share the color controls’ right edge; actions occupy their own line. */
+.theme-prefs { width: 100%; min-width: 0; display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
+.theme-prefs .pref-swatches { justify-content: flex-end; flex-wrap: wrap; gap: 4px; }
+.theme-prefs-name { text-align: right; overflow-wrap: anywhere; }
+.theme-prefs-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+
+.pref-label-heading { display: flex; align-items: baseline; gap: 6px; }
+.pref-help { flex: none; width: 16px; height: 16px; padding: 0; border: 1px solid var(--text-3); border-radius: 50%; background: transparent; color: var(--text-3); font: inherit; font-size: 11px; line-height: 14px; cursor: help; }
+.pref-help:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.pref-help-tip { position: fixed; z-index: 10000; width: max-content; max-width: min(320px, calc(100vw - 16px)); max-height: calc(100vh - 16px); overflow: auto; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); box-shadow: 0 4px 16px #0006; font-size: var(--fs-small); line-height: 1.5; overflow-wrap: anywhere; }
