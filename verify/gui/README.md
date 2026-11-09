@@ -68,6 +68,21 @@ Failed assertions also exit 1. Signals clean up only the run's own process group
 reports and copied fixtures remain available. No automatic retries or reference
 acceptance are provided.
 
+## Positive hot-pixel fixture
+
+Ordinary RAW photos may have no visible hot pixels. Generate an isolated,
+sample-derived Bayer DNG with known defective sensor sites for the hot-pixel
+Strength and Threshold rendered-effect contracts (requires ImageMagick):
+
+```sh
+python3 verify/gui/hotpixels-fixture.py --output verify/results/gui-fixtures/hotpixel-positive.dng
+```
+
+Set a local GUI config's fixture to that DNG. Its JSON companion records the
+source and output checksums, defect locations, and sensor values. This fixture
+validates the controls on deliberately introduced defects; it does not establish
+that any particular camera photo contains hot pixels. The source is read only.
+
 ## What a run must exercise
 
 Launch the actual Tauri app on a visible desktop, with its real engine and

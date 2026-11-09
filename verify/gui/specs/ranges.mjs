@@ -191,8 +191,10 @@ async function rangeBody(t, definition) {
   s = await reveal(t, selector); const neutral = +s.value;
   const at = v => ({ x: s.bounds.x + 8 + (s.bounds.width - 16) * (v - s.min) / (s.max - s.min), y: s.y });
   let renderedChanged = false;
+  // Coarse sliders still need an actual edit: 8% can be less than one step.
+  const dragDistance = Math.max(s.step || .001, (s.max - s.min) * .08);
   for (const sign of [-1, 1]) {
-    const target = Math.min(s.max, Math.max(s.min, neutral + sign * (s.max - s.min) * .08));
+    const target = Math.min(s.max, Math.max(s.min, neutral + sign * dragDistance));
     if (Math.abs(target - neutral) < (s.step || .001)) continue;
     await t.driver.drag(at(+(await t.driver.observe(inspect, selector)).value), at(target));
     const changed = await until(async () => { const c = await t.driver.observe(inspect, selector); return Math.abs(+c.value - neutral) >= (s.step || .001) && c; }, 'pointer range change');
@@ -202,6 +204,21 @@ async function rangeBody(t, definition) {
     await t.evidence(`drag-${sign}`);
   }
   const stateOnly=definition.control.id==='lens_ca'&&!t.fixture.raw;
+  // A secondary effect can have no quantized output at small settings. Probe
+  // the full supported range before deciding this fixture shows no effect.
+  if (!renderedChanged && !stateOnly) for (const [name, endpoint] of [['minimum', +s.min], ['maximum', +s.max]]) {
+    s = await reveal(t, selector);
+    await t.driver.drag(at(+s.value), at(endpoint));
+    const changed = await until(async () => {
+      const c = await t.driver.observe(inspect, selector);
+      return Math.abs(+c.value - endpoint) <= (s.step || .001) && c;
+    }, `pointer range ${name}`);
+    const photo = await settledPhoto(t);
+    renderedChanged ||= photo.hash !== baseline.hash;
+    t.measure({ name: `endpoint-${name}`, value: changed.value, displayed: changed.displayed,
+      photoChanged: photo.hash !== baseline.hash, css: changed.css });
+    await t.evidence(`endpoint-${name}`);
+  }
   if(!stateOnly)assert(renderedChanged,`${definition.control.id} changes rendered pixels with its effect enabled`);
   else t.measure({name:'render-effect',status:'unverified',reason:'configured JPEG does not guarantee a matched lens profile for chromatic-aberration rendering'});
   // Native keyboard range limits and step, including nonlinear position ranges.

@@ -435,7 +435,10 @@ section h3 { margin: 7px 0 5px; font-size: var(--fs-body); font-weight: 600; col
 }
 .module-switch-btn:disabled { cursor: default; opacity: .5; }
 .equalizer-heading .name { display: inline-flex; align-items: center; gap: 5px; }
-.module-menu { min-width: 200px; z-index: 1000; }
+.module-menu {
+  min-width: min(200px, calc(100vw - 16px)); max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px); overflow: auto; box-sizing: border-box; z-index: 1000;
+}
 .module-menu .adjusted-dot { width: 7px; height: 7px; margin-left: auto; border-radius: 50%; background: #5fd068; flex: none; }
 .module-menu .menu-label { padding: 4px 10px 6px; font-size: var(--fs-caption); text-transform: uppercase; letter-spacing: .06em; }
 .context-menu.module-menu button { display: flex; align-items: center; gap: 6px; width: 100%; }

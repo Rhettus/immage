@@ -53,6 +53,8 @@ the slider's value carries over. **Set as default** in the same menu also
 stores that module as the tool's choice in Preferences › Modules, switching
 it to Custom. When the contrast equalizer or saturation curve is chosen, the
 icon sits on that editor's heading, since the slider is replaced.
+Menus open above the icon when there is not enough room below, stay inside
+the window, and scroll if the available height is too small for all options.
 
 | Immage | darktable module |
 |---|---|

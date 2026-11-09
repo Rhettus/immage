@@ -51,6 +51,16 @@ scope/environment. Do not infer visual correctness from value changes, claim
 unrun tests passed, or accept references automatically. Add a negative CSS-fault
 validation in a disposable checkout before claiming visual regression coverage.
 
+## Module menu placement
+
+`module-switch` exercises Clarity after the surrounding adjustments have been
+expanded and scrolled. It records the anchor, menu, option rectangles and viewport
+and requires the menu and its options to remain inside the window before picking
+another module. `ModuleSwitch` measures the rendered menu in a layout effect,
+opens above its anchor when needed, and clamps both axes. CSS bounds its size
+and enables scrolling on small windows. Scrolling the panel or resizing closes
+the menu; scrolling within the menu keeps it open.
+
 ## Memory admission
 
 `support/memory.mjs` parses Linux `/proc/meminfo` and fails closed for missing or

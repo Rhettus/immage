@@ -48,6 +48,11 @@ graph cases record `photoChanged` without asserting it; lens CA on a JPEG
 explicitly leaves rendering unverified. Those interaction passes must not be
 reported as rendered-effect coverage.
 
+Slider drags move by at least one declared step. When the initial small edits
+show no rendered change, range cases also probe both endpoints before requiring
+a pixel difference. The report records each probe; reset and owner-restoration
+assertions still apply.
+
 For rendered-effect coverage, first establish the owning effect, capture a
 baseline, change the control, and assert a pixel/frame difference when that
 control is expected to affect the selected photo. Restore both the control and

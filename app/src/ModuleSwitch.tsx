@@ -5,7 +5,7 @@
 // modules it can run on (manifest.ts, MODULE_CHOICES), as Preferences'
 // Modules tab lists them. Picking one changes the module for this photo (or
 // mask); "Set as default" also stores it as the Preferences choice
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ArrowLeftRight } from "lucide-react";
 import { useDismiss } from "./MasksPanel";
@@ -17,12 +17,21 @@ export type ModuleScope = "global" | "masks";
 export function ModuleSwitch({ choice, value, scope, disabled, adjusted = [], onPick }: {
   choice: ModuleChoice; value: number; scope: ModuleScope; disabled?: boolean; adjusted?: number[]; onPick: (value: number) => void;
 }) {
-  const [at, setAt] = useState<{ x: number; y: number } | null>(null);
+  const [at, setAt] = useState<{ x: number; y: number; above: number } | null>(null);
   const box = useRef<HTMLSpanElement>(null);
   const menu = useRef<HTMLDivElement>(null);
   // the menu is drawn on the page, outside the scrolling panel, so a press in it is not "away"
   const within = useRef({ contains: (n: Node) => !!(box.current?.contains(n) || menu.current?.contains(n)) } as unknown as HTMLElement);
   useDismiss(!!at, () => setAt(null), within);
+  // Measure the actual menu, including scaled fonts, before its first paint.
+  useLayoutEffect(() => {
+    if (!at || !menu.current) return;
+    const { width, height } = menu.current.getBoundingClientRect();
+    const gap = 8;
+    const top = at.y + height <= window.innerHeight - gap ? at.y : at.above - height - 4;
+    menu.current.style.left = `${Math.max(gap, Math.min(at.x, window.innerWidth - width - gap))}px`;
+    menu.current.style.top = `${Math.max(gap, Math.min(top, window.innerHeight - height - gap))}px`;
+  }, [at]);
   // the menu stays where it opened: scrolling the panel under it closes it
   useEffect(() => {
     if (!at) return;
@@ -38,7 +47,7 @@ export function ModuleSwitch({ choice, value, scope, disabled, adjusted = [], on
   const otherNames = choice.options.filter((o) => adjusted.includes(o.value) && o.value !== value).map((o) => o.name);
   const open = (el: HTMLElement) => {
     const r = el.getBoundingClientRect();
-    setAt({ x: r.left, y: r.bottom + 4 });
+    setAt({ x: r.left, y: r.bottom + 4, above: r.top });
   };
   const close = () => setAt(null);
   return (

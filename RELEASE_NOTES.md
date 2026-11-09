@@ -34,6 +34,8 @@ Improvements
 
 Bug fixes
 
+- Tool module menus, including Clarity and Texture, stay inside the window
+  when opened near an edge, keeping their options reachable.
 - AI Denoise and HDR Merge retain the camera's portrait or rotated orientation
   in their generated DNGs, so they open upright in other photo applications.
 - Fit previews now use valid whole-pixel dimensions at fractional display
