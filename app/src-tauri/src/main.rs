@@ -3005,13 +3005,14 @@ mod tests {
         folder_files(&dir, true, &HashSet::new(), &mut got, &mut cache::Listed::default());
         let names: Vec<String> = got.iter().map(|p| p.strip_prefix(&dir).unwrap().to_string_lossy().into_owned()).collect();
         let _ = std::fs::remove_dir_all(&dir);
-        // macOS knows .photoslibrary for a package; elsewhere it is a folder
+        // Files in the current folder come first. Then folders are traversed
+        // in case-insensitive name order (link, Photos Library, sub).
         let mut want = vec!["A.CR3", "b.jpg"];
-        if !cfg!(target_os = "macos") {
-            want.push("Photos Library.photoslibrary/d.jpg");
-        }
         if cfg!(unix) {
             want.push("link/c.jpg");
+        }
+        if !cfg!(target_os = "macos") {
+            want.push("Photos Library.photoslibrary/d.jpg");
         }
         want.push("sub/c.jpg");
         assert_eq!(names, want);

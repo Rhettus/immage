@@ -43,6 +43,7 @@ async function satcurveOutput(t,scope){
 export async function moduleOutput(t,definition){
  const {scope,choice,option}=definition;
  await chooseModule(t,scope,choice.label,option.value);
+ if(scope==='global')await openTool(t,'adjust');
  if(scope==='masks'){
   await openTool(t,'masks');await click(t,'.create-mask');await textButton(t,'.shape-menu-list','Radial Gradient');
   const svg=await reveal(t,'svg.mask-svg');await t.driver.drag({x:svg.x-svg.bounds.width*.12,y:svg.y-svg.bounds.height*.12},{x:svg.x+svg.bounds.width*.12,y:svg.y+svg.bounds.height*.12});

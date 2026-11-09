@@ -48,6 +48,14 @@ undo/redo, virtual copies, mask/crop preservation, restart persistence, stale
 undo and sidecar failure recovery. The separate visible-app `batch-paste` case
 is registered in `verify/gui/`; it requires an approved GUI run.
 
+The Negative panel's color-profile check uses installed profile menus and verifies
+the values through Session, Copy Settings, Reset and reopening the photo from its
+sidecar:
+
+```bash
+node --test verify/color-profiles.test.mjs
+```
+
 The Print panel's checks run with the built engine and print nothing:
 
 ```bash
@@ -129,7 +137,7 @@ GPU off. Without an OpenCL device, both render on the CPU.
 
 | check | what passes |
 |---|---|
-| `sliders` | every control in `panels` (`manifest.ts`), moved 60% of the way to each end, changes the frame, in the expected direction where one is known (Exposure up, brighter; Saturation up, more chroma; ...), and the frame comes back when it is reset. Point curves and the crop are tried as the editors send them. Sharpening, noise and grain are judged on a 100% crop |
+| `sliders` | every control in `panels` (`manifest.ts`), moved 60% of the way to each end, changes the frame, in the expected direction where one is known (Exposure up, brighter; Saturation up, more chroma; ...), and the frame comes back when it is reset. Negative input and working profiles use the installed choices returned by the engine; at least one choice must change the frame, since the default and some profile pairs can render identically. The dedicated color-profile test checks profile values through Session, Reset and sidecar reopening. Point curves and the crop are tried as the editors send them. Sharpening, noise and grain are judged on a 100% crop |
 | `masks` | every mask slider changes the middle of an ellipse on the left of the photo, and leaves the right of the photo alone; three masks sharing instances each change only their own ellipse; an inverted mask changes the rest; a luminance range darkens the highlights more than the shadows. A mask's Highlights and Shadows pass on any one photo, as a photo may have nothing bright or dark under the ellipse; the harness's own `tones.tif`, six black-to-white ramps across every hue, always has both |
 | `choices` | each Preferences › Modules option other than the default: a new photo and a new mask take it, and the tool's sliders, global and on a mask, work on that module. Highlights and Shadows are also tried on `tones.tif` on each of their modules. `--controls` limits these trials too |
 | `fixes` | bugs fixed before these checks existed, each as the release that fixed it left it: a renamed mask, a deleted one, the last edit before quitting, subtracting from a range, a warm daylight white balance, masks over a crop and its undo, a stopped base render, export in the Before view, a refined mask with no adjustment, a range map after zooming in, range masks on a JPEG or TIFF, Clarity at ±1 changing less than at ±10, AI models unpacked without a system unzip, a model that won't load downloaded again (with Select Object's model from `build/ai-models`, else skipped), Auto, sampling, the zones and Upright with edits on the GPU (skipped without OpenCL); on a strip of every hue, HSL's Blue graying blue more than Purple does, Aqua still working with Blue at -100, Luminance and the B&W Mix at -100 leaving a saturated red visible, and an older HSL band unchanged at the next edit |

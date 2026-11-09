@@ -1,11 +1,11 @@
 # Visible-app GUI verification plan
 
-Status: startup/Exposure and slider-input have previous Linux live passes.
-The expanded registry contains 310 named cases, including generated control and
-module variants (visible panels only; hidden panels are covered by written cases). New cases are written but have not run; declarations are not
-coverage passes. Some scenarios block on unsupported fixtures or native dialogs.
-See `COVERAGE.md` for limitations. Real GUI execution is currently paused by
-local instructions; non-GUI development and checks may continue.
+The registry combines named workflows with generated control and module cases.
+Use `--list` for the current matrix; declarations are not coverage passes. A run
+covers only the cases it executes, with its recorded fixtures and environment.
+Some scenarios require additional fixtures or native interactions outside this
+suite. Follow local approval rules before each run and see `COVERAGE.md` for
+limitations.
 
 ## Setup and execution (Linux)
 
@@ -274,6 +274,24 @@ controls as blocked, and captures changes and reset frames. It does not reach
 hidden tabs/sections/module branches or establish every slider's image effect.
 Module-options exercises preference selection, not every engine implementation.
 Diagnostic screenshots require review and are not approved visual baselines.
+
+## Generated control prerequisites
+
+Generated cases select the module that owns each control. Mask module defaults
+apply to newly created masks, so module-specific local cases create a temporary
+mask after selecting the default, then remove that mask and restore the prior
+default. Ordinary range cases exercise pointer changes, keyboard limits and
+steps, typed clamping, cancellation and reset.
+
+Contrast Equalizer values are SVG graph points. Their per-band cases select the
+channel, focus the point through its pointer action, use Home to restore its
+neutral value, and check arrow-key adjustment and exact value/pixel restoration.
+The point remains a separately reported case in both global and mask scope.
+
+Choice cases restore their initial selection. Profile selection excludes the
+Load/Delete command entries, whose flows belong to the dedicated AgX preset
+case; it retains installed profile options. Cases explicitly open their required
+tool before finding its panels, so a previous case can leave another tool open.
 
 ## Memory admission check
 

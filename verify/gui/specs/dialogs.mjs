@@ -39,7 +39,7 @@ export async function sliderWheel(t) {
   await click(t,'button[data-tour="prefs"]');await textButton(t,'.prefs-tabs','General');
   const toggle='.prefs [data-pref-label="Scroll adjusts sliders"] input[type=checkbox]';
   if((await reveal(t,toggle)).checked)await click(t,toggle);
-  await textButton(t,'.prefs-foot','Done');await panel(t,'basic');
+  await textButton(t,'.prefs-foot','Done');await openTool(t,'adjust');await panel(t,'basic');
   const selector='[data-control-id="exposure"] input[type=range]';let s=await reveal(t,selector);
   const before=+s.value;await t.driver.wheel(s.x,s.y,-40);
   assert.equal(+(await t.driver.observe(inspect,selector)).value,before,'wheel off scrolls rather than changes value');
