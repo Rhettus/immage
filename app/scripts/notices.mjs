@@ -71,6 +71,11 @@ function packages() {
 }
 
 const groups = [["Rust crates", crates()], ["npm packages", packages()]];
+if (process.platform === "win32") groups.push(["Installer components", [{
+  name: "NSIS UAC plug-in", version: "0.2.4c", license: "Zlib",
+  authors: "Anders", source: "https://nsis.sourceforge.io/UAC_plug-in",
+  texts: texts(join(app, "src-tauri", "windows", "uac")),
+}]]);
 // the same text (an Apache license, say) is printed once, under the first
 // package that ships it, and the others point to it
 const printed = new Map();

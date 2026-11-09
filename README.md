@@ -48,6 +48,11 @@ Choose your platform on the [Releases page](https://github.com/Rhettus/immage/re
 | Windows | Windows 10 or 11, x64; Windows on ARM through x64 emulation | `-setup.exe` installer |
 | Linux | x86-64 or ARM64, glibc 2.35 or newer (Ubuntu 22.04 and later, including Linux Mint 22.x) | AppImage |
 
+The Windows installer offers **Just for me** (under
+`%LOCALAPPDATA%\Programs\Immage`, without administrator permissions) or
+**Everyone on this computer** (under Program Files, requesting permission after
+selection). Updates preserve the installation's location and scope.
+
 Builds are not yet signed with a developer certificate; the release page
 explains how to open them the first time. Immage checks for updates daily;
 you can install them through **Preferences › About › Updates**.
