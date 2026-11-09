@@ -1,0 +1,68 @@
+name: Bug report
+description: Report a problem, performance issue, or crash in Immage.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please search existing issues first. See the [troubleshooting guide](https://github.com/Rhettus/immage/blob/main/app/docs/troubleshooting.md) for benchmark and crash-log instructions.
+        Review logs and reports for private paths or machine details before posting. Report the problem even if diagnostics are unavailable; tell us why.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the problem, how often it happens, and approximately when it happened.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: What were you doing?
+      description: List steps to reproduce, including the tool, control, photo type or folder involved. If it happened only once, describe the actions before it.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+      description: What did you expect, and what happened instead? Include exact error messages.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Immage version and build commit
+      description: Copy from Preferences → About. If Immage cannot start, give the downloaded filename or release version.
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system and version
+      description: Include the distribution and version on Linux.
+    validations:
+      required: true
+  - type: input
+    id: desktop
+    attributes:
+      label: Desktop environment and display session
+      description: On Linux, include your desktop (such as GNOME or KDE Plasma) and Wayland or X11. Include display scaling for interface or performance problems.
+  - type: textarea
+    id: hardware
+    attributes:
+      label: Hardware and performance settings
+      description: For performance problems, include CPU, GPU, RAM, and relevant Preferences → Performance settings.
+  - type: textarea
+    id: benchmark
+    attributes:
+      label: GUI benchmark report (performance problems)
+      description: Run Preferences → Performance → Measuring → GUI benchmark → Run on a copied photo. Attach the JSON report saved at the path shown in the status bar. If unavailable, explain why.
+  - type: textarea
+    id: crash
+    attributes:
+      label: engine.log (crashes)
+      description: Attach engine.log using the locations in the troubleshooting guide. Include the last action and whether the whole app closed or the engine stopped. If unavailable, explain why.
+  - type: textarea
+    id: attachments
+    attributes:
+      label: Screenshots and other details
+      description: Attach screenshots for interface problems and any other relevant details. Only share photos or sidecars you are comfortable posting publicly.
