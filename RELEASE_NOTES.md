@@ -14,6 +14,10 @@ Improvements
   again.
 - When the engine takes much longer than usual to answer, Immage offers Wait
   or Restart, so a stuck engine can be restarted without closing Immage.
+- The saved Immich API key is used only with the server it was saved for.
+  Changing the server URL or the self-signed certificate setting asks for the
+  key again, and Immich requests no longer follow redirects, so a redirected
+  server address must be entered as its final address.
 
 ## 0.44.1
 

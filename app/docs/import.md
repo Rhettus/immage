@@ -82,4 +82,5 @@ problem never stops an import.
   the standalone Immporter app if you have that too.
   Updating Immage preserves this import history; you do not need to import
   your photos again after an update.
-- Its Immich settings are the same ones as in **Preferences › Immich**.
+- Its Immich settings are the same ones as in **Preferences › Immich**, so
+  the same rules for the API key apply (see [Immich](immich.md)).

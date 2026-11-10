@@ -8,7 +8,7 @@
 // and when the dialog closes
 import { useEffect, useRef, useState } from "react";
 import { api, type ImmichSettings, type ImmichTestResult } from "@immporter/api";
-import { EMPTY, insecureRemote, suggestPrefix } from "@immporter/immich-form";
+import { EMPTY, insecureRemote, serverChanged, suggestPrefix } from "@immporter/immich-form";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { importerPathMap, storedPathMap, storePathMap, type PathMap } from "./immich";
@@ -23,6 +23,9 @@ const KEY_STORE = /Mac/.test(navigator.userAgent) ? "the macOS Keychain"
 export function ImmichPrefs() {
   const [form, setForm] = useState<ImmichSettings>(EMPTY);
   const [hasKey, setHasKey] = useState(false);
+  // the URL the saved key belongs to
+  const [savedUrl, setSavedUrl] = useState("");
+  const [savedCerts, setSavedCerts] = useState(false);
   const [permission, setPermission] = useState("asset.read");
   const [apiKey, setApiKey] = useState("");
   const [replacingKey, setReplacingKey] = useState(false);
@@ -47,6 +50,8 @@ export function ImmichPrefs() {
   useEffect(() => {
     api.getImmichSettings().then(({ hasKey, requiredPermission, ...s }) => {
       setForm(s);
+      setSavedUrl(s.url);
+      setSavedCerts(s.acceptInvalidCerts);
       setHasKey(hasKey);
       setPermission(requiredPermission);
     }).catch((e) => setMessage(String(e)));
@@ -55,7 +60,10 @@ export function ImmichPrefs() {
       .then((e) => setExampleRel(e.path.replace(/\\/g, "/"))).catch(() => {});
   }, []);
 
-  const keyInput = !hasKey || replacingKey;
+  const newServer = hasKey && serverChanged(savedUrl, form.url);
+  const newCerts = hasKey && form.acceptInvalidCerts !== savedCerts;
+  const keyRequired = newServer || newCerts;
+  const keyInput = !hasKey || replacingKey || keyRequired;
   const keyToSend = keyInput && apiKey.trim() ? apiKey.trim() : null;
 
   const persist = async (p: { form: ImmichSettings; key: string | null }) => {
@@ -63,6 +71,8 @@ export function ImmichPrefs() {
     try {
       await api.saveImmichSettings(p.form, p.key);
       if (p.key) setHasKey(true);
+      setSavedUrl(p.form.url);
+      if (p.key) setSavedCerts(p.form.acceptInvalidCerts);
       setMessage("saved");
       // an importer already loaded checks the connection again
       void import("@immporter/embed").then((m) => m.reloadImmich());
@@ -71,6 +81,14 @@ export function ImmichPrefs() {
     }
   };
   const schedule = (form: ImmichSettings, key: string | null) => {
+    // the saved key is not sent to a new server: wait for the key of that one
+    const moved = serverChanged(savedUrl, form.url);
+    if (!key && hasKey && (moved || form.acceptInvalidCerts !== savedCerts)) {
+      pending.current = null;
+      window.clearTimeout(timer.current);
+      setMessage(moved ? "enter the API key for this server to save" : "enter the API key again to change the certificate setting");
+      return;
+    }
     pending.current = { form, key };
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => { if (pending.current) void persist(pending.current); }, 700);
@@ -158,7 +176,7 @@ export function ImmichPrefs() {
         </PrefRow>
         <PrefRow label="API key" hint={`kept in ${KEY_STORE}; needs ${permission}`}>
           {keyInput ? (
-            <input className="field" type="password" placeholder="paste the key from Immich" value={apiKey}
+            <input className="field" type="password" placeholder={keyRequired ? "enter the key again" : "paste the key from Immich"} value={apiKey}
                    onChange={(e) => updateKey(e.target.value)} />
           ) : (
             <div className="pref-inline">
@@ -172,7 +190,7 @@ export function ImmichPrefs() {
           <PrefSwitch checked={form.acceptInvalidCerts} onChange={(v) => update({ acceptInvalidCerts: v })} />
         </PrefRow>
         <PrefRow label="Connection" hint={testLine}>
-          <button className="btn small" disabled={!!busy || !form.url.trim()} onClick={() => void runTest()}>
+          <button className="btn small" disabled={!!busy || !form.url.trim() || (keyRequired && !keyToSend)} onClick={() => void runTest()}>
             {busy === "testing" ? "Testing…" : "Test"}</button>
         </PrefRow>
       </PrefCard>

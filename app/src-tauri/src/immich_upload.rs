@@ -63,6 +63,8 @@ impl Immich {
         headers.insert("x-api-key", key);
         let http = Client::builder()
             .default_headers(headers)
+            // a redirect would carry the key to wherever it points
+            .redirect(reqwest::redirect::Policy::none())
             .danger_accept_invalid_certs(c.accept_invalid_certs)
             // an upload of a large TIFF over a slow link takes a while
             .timeout(Duration::from_secs(300))
