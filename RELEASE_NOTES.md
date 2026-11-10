@@ -14,6 +14,11 @@ Improvements
   over or focusing the question-mark buttons. Status and restart notices stay visible.
 - Workspace preferences group color controls first, keep related settings together,
   and place theme import actions below right-aligned swatches without overlap.
+- The location map expands over the photo area and supports mouse-wheel zoom.
+  Optional Geoapify place search moves the map; set the pin and Apply to save
+  coordinates. Search keys are stored in the system keyring. Dialogs and menus
+  remain accessible above the expanded map.
+  Add a search key in General preferences; tiles and manual pin placement need no key.
 - Documented Immage's XMP conventions and how they preserve loading and rendering
   in compatible darktable versions.
 - Color Range masks now offer Hue, a wider Hue Range, Minimum Chroma and

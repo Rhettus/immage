@@ -1,3 +1,4 @@
+import { locationMap } from './specs/location.mjs';
 import { aiMaskPaste } from "./specs/ai-mask-paste.mjs";
 import { colorRange } from './specs/color-range.mjs';
 import { colorProfiles } from "./specs/color-profiles.mjs";
@@ -45,6 +46,7 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   themes,
   'workspace-layout': workspaceLayout,
   'preferences-help': preferencesHelp,
+  'location-map': locationMap,
 };
 for(const [name,definition] of Object.entries(cases)) if(definition.kind)
   implementations[name] = t => ({range:rangeContract,choice:choiceContract,module:moduleOutput}[definition.kind])(t,definition);

@@ -2,6 +2,7 @@ import { generated, generatedNames } from './generated.mjs';
 // SPDX-License-Identifier: GPL-3.0-or-later
 // These are coverage claims for cases, not proof they have passed on a platform.
 export const cases = {
+  'location-map': { scope: 'Metadata map expansion, wheel zoom, Escape collapse, dialog stacking and unchanged location draft', liveValidated: true, verification: 'Linux ARM64 system WebKitGTK; empty workspace 9 floating/maximized, original workspace 3 restored. Run 2026-11-09T23-59-45.887Z_ab0c885_6005ea2f. Search provider/keyring integration not exercised.' },
   'preferences-help': { scope: 'Short descriptions, hover/focus help, tooltip bounds, ARIA description and Escape/blur dismissal in Preferences', liveValidated: false },
   'workspace-layout': { scope: 'General Workspace row order, conditional scroll amount, theme alignment and actions below swatches in all built-in themes', liveValidated: true, verification: 'Linux ARM64 system WebKitGTK, isolated floating/maximized workspace 9, viewport 2044x1092; run 2026-11-09T21-37-52.837Z_e47ad0c_edc54e26. Workspace 3 and workspace 9 layout restored.' },
   'color-range': {scope:'four color controls, pointer/keyboard/numeric edits, overlay, Escape, undo/redo and restart persistence',liveValidated:true, verification:'Linux ARM64, system WebKitGTK, maximized isolated floating workspace; run 2026-11-09T05-02-48.236Z_761252a_11ce1c3e. Saved controls and rendered pixels survive app restart.'},

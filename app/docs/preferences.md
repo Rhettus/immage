@@ -94,6 +94,15 @@ Preferences. Warnings, current values and restart notices stay visible.
 - **Warn before converting a negative**: show which Basic tools a converted
   negative turns off when opening the Negative panel.
 
+**Map search**
+
+- **Place search**: optional Geoapify search for the Location map. Add a key
+  here and choose **Save**; it is stored in the system keyring and never shown
+  after saving. Enter and save another key to replace it, or choose **Remove**.
+  Search results move the map but do not set photo coordinates. Place the pin
+  and choose **Apply** to save a location. Map tiles and manual pin placement
+  work without a search key.
+
 **Library**
 
 - **Stack RAW+JPEG pairs as one photo**: a raw and the JPEG, HEIF or OM

@@ -25,6 +25,8 @@ and Linux. **All builds are alpha; bugs are expected.**
 - Apply presets and film looks, compare edits, and copy settings across photos.
 - Choose the Dark, Darktable Grey or Light interface theme, or import a custom
   color theme.
+- Add optional Geoapify place-name search to the location map; map tiles and
+  manual pin placement work without a search key.
 - Browse folders directly, import from a card with the built-in Immporter,
   and optionally search and export to an [Immich](app/docs/immich.md) library.
 - Export to a folder or an Immich album, with borders and file-name templates.

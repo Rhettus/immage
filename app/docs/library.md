@@ -317,13 +317,25 @@ The context menu can undo the last batch after confirmation.
 ### Location
 
 The Metadata panel's Location section accepts latitude and longitude in decimal
-degrees (latitude first). Use Show map to place or drag a pin, then Apply to
-save it to the photo's XMP sidecar. Remove location clears GPS coordinates and
-altitude in Immage without changing the original photo. An Immage XMP marker
+degrees (latitude first). **Show map** opens a compact map beside the location
+controls. Choose **Expand** to cover the photo area; use the mouse wheel to
+zoom, drag the map to pan, or place and drag the pin. Choose **Collapse** to
+return to the compact map. Choose **Apply** in either view to save the pin's
+coordinates to the photo's XMP sidecar. Moving a location clears the old altitude.
+**Remove location** clears GPS coordinates
+and altitude in Immage without changing the original photo. An Immage XMP marker
 keeps removed camera GPS from returning on reopen; other photo software may
-still show GPS embedded in the original. Moving a location clears the old altitude. Coordinate editing works
-offline; maps require internet access and no API key. Place-name lookup is not
-included.
+still show GPS embedded in the original.
+
+Preferences and other dialogs open above the expanded map. Close a dialog
+before using Escape to collapse the map.
+
+Place-name search is optional and requires a Geoapify API key saved in
+[Preferences › General › Map search](preferences.md#general). Search results
+move the map to the matching place; they do not set the photo coordinates. Set
+the pin and choose **Apply** to save a location. Map tiles and manual pin
+placement need an internet connection but no search key. Coordinate editing
+works offline.
 
 ## Keywords
 

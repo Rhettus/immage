@@ -1742,6 +1742,7 @@ export default function App() {
   useEffect(() => {
     if (!loupePicking) return;
     const cancel = (e: KeyboardEvent) => {
+      if (document.querySelector(".location-map-region.expanded")) return;
       if (e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); setLoupePicking(false); }
     };
     window.addEventListener("keydown", cancel, true);
