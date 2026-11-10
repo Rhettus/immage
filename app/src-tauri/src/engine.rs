@@ -166,10 +166,9 @@ impl RestartBudget {
 // engine is slow, by the operation AppState::engine was given. None: slow
 // by nature (a merge, an export, AI, a base render), no deadline
 pub fn soft_deadline(op: &str, req: &Value) -> Option<Duration> {
-    let secs = if req["base"].as_bool() == Some(true) {
-        return None;
-    } else if matches!(op, "base" | "hdr_merge" | "pano_merge" | "engine_respawn" | "engine_quit" | "unpack"
-                           | "on_engine_thread" | "positive_export")
+    let secs = if req["base"].as_bool() == Some(true)
+        || matches!(op, "base" | "hdr_merge" | "pano_merge" | "engine_respawn" | "engine_quit" | "unpack"
+                        | "on_engine_thread" | "positive_export")
         || ["gpu_check", "ai_", "export", "print"].iter().any(|p| op.starts_with(p)) {
         return None;
     } else if matches!(op, "render" | "module_state")
