@@ -7,28 +7,12 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
-- Module preferences show module names as plain text in Default mode;
-  selection dropdowns appear only in Custom mode.
-- The GPU selection section is now at the top of Performance preferences.
-- Preferences use shorter descriptions, with full help available by hovering
-  over or focusing the question-mark buttons. Status and restart notices stay visible.
-- Workspace preferences group color controls first, keep related settings together,
-  and place theme import actions below right-aligned swatches without overlap.
-- The location map expands over the photo area and supports mouse-wheel zoom.
-  Optional Geoapify place search moves the map; set the pin and Apply to save
-  coordinates. Search keys are stored in the system keyring. Dialogs and menus
-  remain accessible above the expanded map.
-  Add a search key in General preferences; tiles and manual pin placement need no key.
-- Documented Immage's XMP conventions and how they preserve loading and rendering
-  in compatible darktable versions.
-- Color Range masks now offer Hue, a wider Hue Range, Minimum Chroma and
-  Smoothness controls, with the mask overlay visible while adjusting them.
-- The user guide now includes troubleshooting and issue-reporting instructions,
-  with GUI benchmark and crash-log locations and guided GitHub forms for bug
-  reports and feature requests.
-- Negative has independent Input Profile and Working Profile menus, including
-  installed ICC profiles. Choose profiles before sampling the film; settings
-  are saved with the photo and included in Negative copies and presets.
+- Lens Corrections has a Lens drop-down under Enable Profile Corrections. It
+  shows the lens matched from the file (Auto) and lists the lenses that fit
+  the camera, so a lens the file does not name, or names wrongly, can be
+  chosen by hand (raws that carry their own correction switch to the lensfun
+  profile when you do). Type in its search box to filter: "12-32" finds the
+  Panasonic 12-32mm.
 - Profile > Load AgX Preset imports your AgX presets from darktable or exported
   preset and style files, including compatible older AgX presets. Added looks
   stay in My Presets after restarting and can also be chosen as the profile
@@ -36,15 +20,17 @@ Improvements
   removes imported entries while keeping existing photo adjustments; built-in
   profiles cannot be deleted. Deleting the default requires choosing a replacement
   for new raw photos.
-- Lens Corrections has a Lens drop-down under Enable Profile Corrections. It
-  shows the lens matched from the file (Auto) and lists the lenses that fit
-  the camera, so a lens the file does not name, or names wrongly, can be
-  chosen by hand (raws that carry their own correction switch to the lensfun
-  profile when you do). Type in its search box to filter: "12-32" finds the
-  Panasonic 12-32mm.
+- Color Range masks now offer Hue, a wider Hue Range, Minimum Chroma and
+  Smoothness controls, with the mask overlay visible while adjusting them.
 - Preferences > General lets you choose the Dark (default), Darktable Grey or
   Light interface theme, or import a custom theme from a JSON file. Themes
   apply immediately and are remembered; imported themes can be removed.
+- Location maps expand over the photo area, support wheel zoom and offer
+  place-name search with a Geoapify key saved in General preferences.
+- Negative has independent Input Profile and Working Profile menus, including
+  installed ICC profiles. Choose profiles before sampling the film; settings
+  are saved with the photo and included in Negative copies and presets.
+- Refined Preferences layout, spacing, descriptions, help tooltips and module selectors.
 
 Bug fixes
 
