@@ -41,7 +41,7 @@ import { panelValues } from "./panelValues";
 import { FrameUpdates, Snapshot } from "./uiUpdates";
 import { PixelCadence, PixelWorker } from "./pixelWorker";
 import { CanvasFrames, FrameGeneration, layerStyle, placeCanvas, resizeCanvas } from "./canvasLayers";
-import { Session, framePlace, instanceKey, mapOpOf, type Frame, type HistoryItem, type ModuleState, type View } from "./session";
+import { Session, colorProfiles, framePlace, instanceKey, mapOpOf, type Frame, type HistoryItem, type ModuleState, type View } from "./session";
 import { AUTO_TONE_IDS, autoExposure, autoTone, type SceneKey } from "./autoTone";
 import { curve } from "./tonecurve";
 import { clipColor, DEFAULT_SCOPE, drawScope, HARMONIES, HARMONY_WIDTHS, histogramPath,
@@ -78,7 +78,7 @@ import { loadOpenGenerated, storeOpenGenerated, loadLoupe, storeLoupe, loadAutoH
          loadStackPairs,
          PreferencesDialog, storeOverlayColor, storeGuideColor, storeStackPairs,
          storeAutoHide, storeCanvas, CANVASES, storeFocusMode, storePins, type AccelProvider, type Canvas,
-         loadNegWarn, loadNegativeExportFormat, loadReadAhead, loadThumbMemoryMb, storeNegWarn, storeNegativeExportFormat, type Pins, type PrefsTab, type Preview } from "./Preferences";
+         loadNegWarn, loadNegProfiles, storeNegProfile, loadNegativeExportFormat, loadReadAhead, loadThumbMemoryMb, storeNegWarn, storeNegativeExportFormat, type Pins, type PrefsTab, type Preview } from "./Preferences";
 import { kindOf, loadPlugins, loadReturns, returnValues, storePlugins, unfit, type PluginConfig,
          type PluginReturn } from "./plugins";
 import { FolderTree, type Volume } from "./FolderTree";
@@ -4014,6 +4014,19 @@ export default function App() {
     }
     setHistoryRev((n) => n + 1);
   };
+  // the profiles last chosen in the panel, for a conversion: each only where
+  // the photo is still on its default and the profile is still installed
+  const negRemembered = async (s: Session): Promise<[string, number][]> => {
+    const last = loadNegProfiles();
+    if (last.input === undefined && last.working === undefined) return [];
+    const available = await colorProfiles().catch(() => null);
+    if (!available) return [];
+    return (["input", "working"] as const).flatMap((role): [string, number][] => {
+      const id = `neg_${role}_profile`, v = last[role];
+      return v !== undefined && v !== 0 && s.values[id] === s.neutral[id] && s.values[id] !== v
+        && available[role].some(([, p]) => p === v) ? [[id, v]] : [];
+    });
+  };
   // a box picked for the panel. the first film border converts the photo:
   // the modules a negative turns off go off first, as negadoctor's input is
   // read without them, then the border and the photo area set its params,
@@ -4038,7 +4051,9 @@ export default function App() {
     try {
       if (converting) {
         const film = s.values.neg_film === FILM_BW ? FILM_BW : FILM_COLOR;
-        changeMany([...(s.values.sf_on === 1 ? sfOffEntries(s) : []),
+        const profiles = await negRemembered(s);
+        if (session.current !== s) return;
+        changeMany([...(s.values.sf_on === 1 ? sfOffEntries(s) : []), ...profiles,
                     ["neg_on", 1], ...toValues(PRESETS[film]), ...Object.entries(NEG_CHOICES),
                     ...(film === FILM_BW ? [["bw_mode", 1] as [string, number]] : [])], "Negative conversion");
         offUnmapped(s, NEG_OFF, NEG_OFF_UNMAPPED);
@@ -5387,7 +5402,7 @@ export default function App() {
       "reject": () => { const cur = openPhoto(); if (cur) rateSelection(cur, { rejected: !cur.rejected }); },
       // menu-only items
       "add-folder": () => { void addFolderRef.current(); },
-      "user-guide": () => { void openUrl("https://github.com/Rhettus/immage/blob/main/app/docs/README.md"); },
+      "user-guide": () => { void openUrl("https://immage.photo/guide/"); },
       "about": () => { setPrefsOpen("about"); },
       "quit": () => { void getCurrentWindow().close(); },
       "cut": () => { document.execCommand("cut"); },
@@ -6484,6 +6499,7 @@ export default function App() {
                                                else {
                                                  change(c, v);
                                                  if (profile) {
+                                                   storeNegProfile(id === "neg_input_profile" ? "input" : "working", v);
                                                    setNegPick(null); setNegArea(null);
                                                    setNegNote("Profile changed: pick the film border and photo area again.");
                                                  }

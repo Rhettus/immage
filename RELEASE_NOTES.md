@@ -3,7 +3,7 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
-## 0.44.0
+## 0.44.1
 
 Improvements
 
@@ -16,6 +16,7 @@ Improvements
 - File, Edit, Photo, View and Help menus list Immage's commands with their
   keyboard shortcuts. On macOS they are in the menu bar; on Windows and
   Linux they are always in the window's title strip, adding no height.
+  Help > User Guide opens the guide on the Immage website.
 - Profile > Load AgX Preset imports your AgX presets from darktable or exported
   preset and style files, including compatible older AgX presets. Added looks
   stay in My Presets after restarting and can also be chosen as the profile
@@ -25,6 +26,9 @@ Improvements
   for new raw photos.
 - Color Range masks now offer Hue, a wider Hue Range, Minimum Chroma and
   Smoothness controls, with the mask overlay visible while adjusting them.
+- Each mask in the Masks panel has a chevron that folds its list of shapes
+  away, so a mask with many brush strokes no longer has to stay open while
+  it is selected.
 - Preferences > General lets you choose the Dark (default), Darktable Grey or
   Light interface theme, or import a custom theme from a JSON file. Themes
   apply immediately and are remembered; imported themes can be removed.
@@ -33,6 +37,10 @@ Improvements
 - Negative has independent Input Profile and Working Profile menus, including
   installed ICC profiles. Choose profiles before sampling the film; settings
   are saved with the photo and included in Negative copies and presets.
+  Negative remembers the profiles you chose last: picking the film border on a
+  photo still on its default profiles sets them as part of the conversion, so
+  each frame of a roll no longer needs them chosen again. Photos with profiles
+  already set keep theirs.
 - Refined Preferences layout, spacing, descriptions, help tooltips and module selectors.
 - Immage accepts a folder on the command line, as well as a photo: the
   folder joins the library and shows as a grid, as a folder dropped on the
@@ -48,6 +56,7 @@ Performance
 
 Bug fixes
 
+- An adjustment made to a hidden mask now shows when the mask is shown again.
 - Updated the importer's bundled SQLite to fix a database memory disclosure
   vulnerability, preserving existing import history.
 - On Windows and Linux, the Keyboard Shortcuts sheet shows Zoom Out as
@@ -71,6 +80,13 @@ Bug fixes
 - Windows setup requests administrator permission only when installing for
   everyone. Just for me installs without elevation under
   `%LOCALAPPDATA%\Programs\Immage`; updates keep the existing scope and location.
+- Windows setup no longer stops with an uninstall error when an earlier
+  install for everyone lost its uninstaller. It removes the leftover entry and
+  installs normally. Setup also tells older uninstallers which copy to remove,
+  so upgrading a computer with both a per-user and an all-users copy no longer
+  leaves an entry in Installed apps that cannot be uninstalled.
+- Windows setup installs for everyone again after the administrator prompt.
+  It could show a blank page and go straight to Finish without installing.
 - Undo after Reset all restores the previous negative conversion and color
   profiles, including after reopening the photo.
 - Lens Corrections now knows cameras added to the lensfun database since 2023,

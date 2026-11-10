@@ -74,6 +74,24 @@ export function storeNegWarn(on: boolean) {
   try { localStorage.setItem(NEG_WARN_KEY, on ? "1" : "0"); } catch { /* not kept */ }
 }
 
+// the Input and Working Profiles last chosen in the Negative panel, each on
+// its own; a conversion of a photo still on its default profiles uses them
+export type NegProfiles = { input?: number; working?: number };
+const NEG_PROFILES_KEY = "immage.negProfiles";
+export function loadNegProfiles(): NegProfiles {
+  try {
+    const v = JSON.parse(localStorage.getItem(NEG_PROFILES_KEY) ?? "{}");
+    const out: NegProfiles = {};
+    for (const role of ["input", "working"] as const)
+      if (Number.isFinite(v?.[role])) out[role] = v[role];
+    return out;
+  } catch { return {}; }
+}
+export function storeNegProfile(role: "input" | "working", id: number) {
+  try { localStorage.setItem(NEG_PROFILES_KEY, JSON.stringify({ ...loadNegProfiles(), [role]: id })); }
+  catch { /* not kept */ }
+}
+
 // what Export to Library writes for a converted negative or a film
 // simulation; the Negative and Film Simulation panels set it too. the key
 // keeps the name it had when only negatives used it

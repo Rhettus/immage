@@ -19,6 +19,10 @@ SHA-256:
 
 Only the include, Unicode DLL and license are vendored. The DLL is unmodified;
 text files have line endings and trailing whitespace normalized. No download is needed
-at build time. Follow the original archive's `UAC_DualMode.nsi` for the page
-resume and original-user callback protocol. The app's Windows license notices
+at build time. Follow the original archive's `UAC_DualMode.nsi` for the
+original-user callback protocol, but not its automatic page jump
+(`UAC_PageElevation_OnGuiInit`): the jump repeats its offset after each page
+skipped on the way, and with the installer's skippable reinstall and Start
+Menu pages it landed past the install pages. The elevated instance skips the
+pages before the scope page itself instead. The app's Windows license notices
 include this component.

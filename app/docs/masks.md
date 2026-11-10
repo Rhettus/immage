@@ -77,6 +77,9 @@ is over the panels, so the adjustment can be seen.
 
 ## The mask list
 
+- The selected mask opens to its shapes and its **Add** and **Subtract**
+  buttons. The chevron at the start of a row folds them away or opens them
+  again; on another mask it selects that mask open. Each mask keeps its fold.
 - The eye shows or hides the mask's adjustments.
 - Hover over a name for a moment to see that mask in red.
 - Double-click a name to rename it.

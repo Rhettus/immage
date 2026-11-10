@@ -64,6 +64,14 @@ they affect the whole photo, including when conversion is off.
 - **Default for Photo** restores darktable's default for that setting on this
   photo. Raw files and rendered scans can have different input defaults.
 
+Immage remembers the last profile you chose in each menu. When Pick Film
+Border converts a photo whose profile is still its default, that profile is
+set first, as part of the same undo step, so a roll scanned with one setup
+needs its profiles chosen only once. A photo with a profile already set
+keeps it, as does any photo you only open or view in Negative. Choosing
+**Default for Photo** is remembered too, and stops the earlier choice being
+applied. A remembered ICC file that is no longer installed is skipped.
+
 For camera scans with excessive saturation or color casts, try **linear Rec2020
 RGB in both menus**, then sample the film again and compare. Users in the
 [Input color profile to use for negatives discussion](https://discuss.pixls.us/t/input-color-profile-to-use-for-negatives/20271)

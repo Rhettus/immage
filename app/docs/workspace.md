@@ -172,6 +172,9 @@ system:
 - **Windows and Linux**: the menus are always in the strip at the top of
   the window that shows "Immage", so they add no height.
 
+**Help > User Guide** opens this guide on the
+[Immage website](https://immage.photo/guide/) in your browser.
+
 On Windows and Linux, click a menu to open it. While one is open, moving the
 pointer over another menu opens that one. The arrow keys move through the
 items, Enter chooses the highlighted one and Escape closes the menu.

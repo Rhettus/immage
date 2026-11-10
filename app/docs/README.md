@@ -22,6 +22,8 @@ also requires administrator permission. Existing per-user installations keep
 their location when updated. When switching to Everyone, setup removes your
 earlier per-user copy while keeping your settings and caches. If setup cannot remove an older copy, uninstall that copy first and run setup
 again; older uninstallers may still require administrator permission.
+If Installed apps lists an Immage whose uninstaller is missing, run setup:
+it removes the leftover entry and installs normally.
 Windows downloads are provided as `.exe` installers only. For scripted setup,
 use `/CurrentUser` or `/AllUsers` to select the scope and `/S` to hide the
 wizard. All-users setup still requires Windows administrator permission.

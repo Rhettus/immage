@@ -78,7 +78,7 @@ export function NegativePanel({ photo, values, disabled, converted, picking, bus
         {renderControl("neg_input_profile", profileOptions("input"))}
         {renderControl("neg_working_profile", profileOptions("working"))}
         <div className="note-plain">{profileError ? `Profiles unavailable: ${profileError}`
-          : "Choose profiles before picking the film border. After changing either profile, pick the border and photo area again."}</div>
+          : "Choose profiles before picking the film border; a photo still on its defaults gets the profiles you chose last when it converts. After changing either profile, pick the border and photo area again."}</div>
       </section>
       <section>
         {renderControl("neg_film")}

@@ -176,6 +176,43 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
   };
   useEffect(() => () => window.clearTimeout(peekTimer.current), []);
   const [renaming, setRenaming] = useState<string | null>(null);
+  // masks whose list of shapes the user folded away; only the selected mask
+  // shows its shapes, as Add and Subtract work on it
+  const [folded, setFolded] = useState<Set<string>>(() => new Set());
+  const unfold = (name: string, on: boolean) => setFolded((old) => {
+    if (old.has(name) !== on) return old;
+    const next = new Set(old);
+    if (on) next.delete(name); else next.add(name);
+    return next;
+  });
+  // a fold follows its mask through a rename, including the "Linear" that
+  // becomes "Linear 1" when a second linear mask arrives: a mask keeps its
+  // place in the list, so a name gone from one place and new in it is the
+  // same mask
+  const lastNames = useRef<string[]>([]);
+  useEffect(() => {
+    const before = lastNames.current, now = masks.map((x) => x.name);
+    lastNames.current = now;
+    setFolded((old) => {
+      if (!old.size) return old;
+      const next = new Set([...old].filter((n) => now.includes(n)));
+      before.forEach((n, i) => {
+        if (old.has(n) && !now.includes(n) && i < now.length && !before.includes(now[i])) next.add(now[i]);
+      });
+      return next.size === old.size && [...next].every((n) => old.has(n)) ? old : next;
+    });
+  }, [masks]);
+  const chevron = (x: Mask) => {
+    const open = x.name === selected && !folded.has(x.name);
+    return (
+      <button className="mask-fold" title={open ? "hide this mask's shapes" : "show this mask's shapes"}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (x.name !== selected) { onSelect(x.name); unfold(x.name, true); }
+                else unfold(x.name, !open);
+              }}>
+        <Chevron open={open} /></button>);
+  };
   const m = masks.find((x) => x.name === selected) ?? null;
   // the selected mask's card and its adjustment groups fold as the edit
   // panels do: in focus mode opening one shuts the others, ⌥ keeps them
@@ -329,6 +366,7 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
                 <li key={x.name} className={`${x.name === selected ? "on" : ""}${x.hidden ? " off" : ""}`}>
                   <div className="mask-row" onClick={() => onSelect(x.name)}
                        onMouseEnter={() => peekSoon(x.name)} onMouseLeave={() => peekSoon(null)}>
+                    {chevron(x)}
                     {/* the eye compares with and without the mask, so the overlay keeps out of the way */}
                     <button className="eye" title={x.hidden ? "show this mask's adjustments" : "hide this mask's adjustments"}
                             onMouseEnter={() => peekSoon(null)} onMouseLeave={() => peekSoon(x.name)}
@@ -343,7 +381,7 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
                     <button className="mask-del" title="delete this mask"
                             onClick={(e) => { e.stopPropagation(); onDelete(x.name); }}>×</button>
                   </div>
-                  {x.name === selected && (
+                  {x.name === selected && !folded.has(x.name) && (
                     <div className="mask-parts">
                       {/* one part is the mask itself, named on its row */}
                       {x.shapes.length > 1 && <ul className="shape-list">
