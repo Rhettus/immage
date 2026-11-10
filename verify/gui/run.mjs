@@ -331,6 +331,25 @@ try {
         report.viewportPrepared = false;
         journal.event('app-restarted', { case: name });
       },
+      // SIGKILL this run's own darktable-engine child (never another process):
+      // it must be a descendant of the runner's tauri-driver and its exe must
+      // be the configured engine. Exactly one such process, or throw.
+      killEngine: async () => {
+        const wanted = await realpath(engine);
+        const owned = (await sampleProcesses(processDriver.pid, '/proc', driverStart)).processes;
+        const matches = [];
+        for (const p of owned) {
+          try { if (await realpath(`/proc/${p.pid}/exe`) === wanted) matches.push(p); } catch {}
+        }
+        if (matches.length !== 1) throw Error(`Expected exactly one test engine process, found ${matches.length}`);
+        const [victim] = matches;
+        // recheck identity just before the signal against PID reuse
+        const now = parseProcessStat(await readFile(`/proc/${victim.pid}/stat`, 'utf8'));
+        if (now.started !== victim.started) throw Error('Test engine process changed before it was stopped');
+        process.kill(victim.pid, 'SIGKILL');
+        journal.event('engine-killed', { case: name, pid: victim.pid });
+        return victim.pid;
+      },
       fixture:{name:fixtureName,generated:fixtureName!=='configured',file:basename(copiedFixture),raw:/\.(?:cr2|cr3|nef|arw|raf|dng|orf|rw2)$/i.test(copiedFixture)},
       sidecars:async()=>Promise.all((await readdir(fixtures)).filter(n=>n.endsWith('.xmp')).map(n=>readFile(join(fixtures,n),'utf8'))),
       sidecarsNamed:async()=>Promise.all((await readdir(fixtures)).filter(n=>n.endsWith('.xmp')).map(async file=>({file,text:await readFile(join(fixtures,file),'utf8')}))),

@@ -118,6 +118,8 @@ export const cases = {
     verification:'Linux, system WebKitGTK 2.54.2, Wayland, fixture app/sample/stairs-to-mountain.jpg; alpha 140, 255, 26 and 140 after Reset; run 2026-11-05T21-27-25.638Z_c271f34_8d505752.'},
   'site-shots':{scope:'website and guide screenshots: Basic before/after, color grading, mask, presets, heal, crop, Zone System, first launch, Folders, Library grid, split before/after, History, point tone curve, RYB vectorscope, Preferences; photo info hidden, shots with a visible path skipped',liveValidated:true,
     limitation:'Captures evidence for the website; asserts only that each tool opened. A shot that cannot be reached is recorded as skipped.'},
+  'engine-restart': { scope: 'killing the test app\'s own darktable-engine after an edit: the "Restarting the engine" status, the final "The engine restarted" message, the photo reopened from its sidecar with the edited Exposure and a rendered canvas, a further edit rendering and saving, no "The engine keeps stopping" message and engine.log present', liveValidated: true, verification: 'Linux ARM64 system WebKitGTK; empty workspace 9 floating/maximized, viewport 1596x840, original workspace 3 restored. Run 2026-11-10T19-45-36.448Z_9992675_a85072c3.',
+    limitation: 'Stops only the runner\'s own engine process (SIGKILL). Does not cover repeated crashes or a photo that crashes the engine; the same-photo check is the Exposure value and rendered pixels, not a file name.' },
   ...generated,
 };
 export const suites = {
@@ -125,6 +127,7 @@ export const suites = {
   crop: ['startup','crop-guides','crop-locked','crop-options','crop-auto-straighten','crop-undo'],
   workflows: ['startup','agx-presets','curves','wheels','equalizer','saturation-curve','masks','color-range','heal','zones','film','print','preferences-matrix','slider-wheel','export-options','filters','presets','shortcuts','menus','menus-guards'],
   inventory: ['startup',...generatedNames],
+  engine: ['startup', 'engine-restart'],
   regressions: ['startup', 'rail', 'panel-scroll', 'module-options', 'batch-paste', 'shift-range'],
   controls: ['startup', 'slider-input', 'slider-click', 'history', 'rail', 'sliders', 'module-options', 'module-switch'],
 };
