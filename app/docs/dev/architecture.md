@@ -37,7 +37,13 @@ exports are the exceptions: the engine builds thumbnails on two threads
 of its own (`_thumb_run`), and reads folders (`_import_run`), exports
 (`_export_run`), runs AI Denoise (`_denoise_run`) and the AI selections'
 models (`_ai_run`) on one each, beside
-whatever the mutex's holder is doing. Large results are binary and travel as
+whatever the mutex's holder is doing. Most commands are async and wait for
+the mutex on the async runtime's worker that runs them, so `main()` gives
+Tauri a tokio runtime of its own (`tauri::async_runtime::set`) with
+`ENGINE_WAITERS` (8) workers more than cores (`async_workers`): a slow
+request with commands queued behind it then leaves workers free for
+commands that never touch the engine. The runtime is leaked, as Tauri's
+default is a static it never drops. Large results are binary and travel as
 `tauri::ipc::Response`:
 
 | Result | Format |

@@ -3137,6 +3137,21 @@ async fn menu_set(app: AppHandle, menus: Vec<NativeMenu>) -> Result<(), String> 
     Ok(())
 }
 
+// workers for Tauri's async runtime. most commands are async and wait for
+// the engine on the std mutex inside AppState::engine, which parks the
+// worker running them: with only one worker per core, as Tauri's default
+// runtime has, a slow request (a save, a large open) with a few commands
+// queued behind it would park every worker, and commands that never touch
+// the engine (folder listings, thumbnails from the cache, Immich) would wait
+// too. the margin covers the engine commands the page has in flight at once.
+// the runtime lives until the process exits, as Tauri's own default does
+// (a static it never drops), so shutdown is unchanged
+const ENGINE_WAITERS: usize = 8;
+
+fn async_workers(cores: usize) -> usize {
+    cores.max(1) + ENGINE_WAITERS
+}
+
 fn main() {
     #[allow(unused_mut)]
     let mut context = tauri::generate_context!();
@@ -3150,6 +3165,15 @@ fn main() {
     for w in &mut context.config_mut().app.windows {
         w.create = false;
     }
+    // after renderer::init, which needs to run before any other thread
+    let runtime = Box::leak(Box::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(async_workers(std::thread::available_parallelism().map_or(4, |n| n.get())))
+            .enable_all()
+            .build()
+            .expect("cannot start the async runtime"),
+    ));
+    tauri::async_runtime::set(runtime.handle().clone());
     // the first argument naming a file or folder; macOS adds -psn_... to apps it starts
     let arg = std::env::args_os().skip(1)
         .filter(|a| !a.to_string_lossy().starts_with('-'))
@@ -3316,6 +3340,12 @@ fn preview_fullscreen(app: AppHandle, on: bool) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn async_workers_leave_room_beside_engine_waiters() {
+        assert_eq!(async_workers(0), 1 + ENGINE_WAITERS);
+        assert_eq!(async_workers(4), 4 + ENGINE_WAITERS);
+    }
 
     #[test]
     fn native_menu_spec_parses() {
