@@ -36,6 +36,22 @@ unblocked:
 python3 -I verify/import-stall.py
 ```
 
+The background-priority check (headless, no GUI) times foreground renders while
+the engine imports, exports, prefetches or denoises. `--load all` is stage 0 of
+the background-priority plan: for each load it times a 100% zoom render and a
+slider edit at fit size idle and under the load, times the load alone and under
+renders, flags busy/idle above 1.2x, and tallies from the engine's `-d perf`
+lines whether the foreground modules ran on the GPU or the CPU. Run it on bare
+metal; timing in a VM is indicative only:
+
+```bash
+python3 -I verify/background-priority.py --load all --opencl --raw PHOTO.ARW \
+  --models ~/.local/share/app.immage/models --report background-priority.json
+```
+
+Without `--load` it is the original import check. Prefetch has no completion
+reply, so its decode time is read from the engine's CPU use (Linux and macOS).
+
 The focused batch-paste regression check drives production Session and settings
 code through the real engine, with isolated photos and sidecars:
 
