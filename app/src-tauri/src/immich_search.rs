@@ -14,7 +14,7 @@ use crate::immich_upload::{status, Immich};
 
 // what darktable opens as raw; Immich has no raw flag, so these go to the
 // server as file name endings, upper and lower case
-const RAW_EXTENSIONS: &[&str] = &[
+pub const RAW_EXTENSIONS: &[&str] = &[
     "3fr", "ari", "arw", "bay", "cr2", "cr3", "crw", "dcr", "dcs", "dng", "erf", "fff", "iiq", "k25", "kdc",
     "mdc", "mef", "mos", "mrw", "nef", "nrw", "orf", "ori", "pef", "raf", "raw", "rw2", "rwl", "sr2", "srf",
     "srw", "x3f",

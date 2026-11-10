@@ -3409,8 +3409,9 @@ export default function App() {
   // Edit In: photos handed to another application (plugins.ts), which is
   // then watched for the files it saves (plugins.rs). each comes back beside
   // its photo, and the first of a hand-off opens
-  const [plugins, setPluginsState] = useState<PluginConfig[]>(loadPlugins);
-  const setPlugins = (list: PluginConfig[]) => { setPluginsState(list); storePlugins(list); };
+  const [plugins, setPluginsState] = useState<PluginConfig[]>([]);
+  useEffect(() => { void loadPlugins().then(setPluginsState); }, []);
+  const setPlugins = (list: PluginConfig[]) => { setPluginsState(list); void storePlugins(list); };
   // the files taken back, by path, for the settings of their first open
   const returns = useRef(new Map<string, PluginReturn>());
   useEffect(() => { void loadReturns().then((l) => { for (const r of l) returns.current.set(r.result, r); }); }, []);
@@ -3446,7 +3447,7 @@ export default function App() {
         // a TIFF names its photo, so the stack is named and placed from it
         const tiffs = send !== originals;
         await invoke("plugin_job", { job: {
-          token, plugin: cfg.id, app_path: cfg.app, mode: tiffs ? "rendered" : "original-raw",
+          token, plugin: cfg.id, mode: tiffs ? "rendered" : "original-raw",
           files: send.map((path, i) => ({ path, origin_path: tiffs ? originals[i] : null })),
           look: cfg.look || null,
         } });
@@ -3461,7 +3462,7 @@ export default function App() {
       setWaiting((w) => [...w, { token, name: cfg.name, back: 0,
                                  total: kind.returns.match === "any" ? 1 : originals.length, opened: false }]);
       try {
-        await invoke("plugin_launch", { appPath: cfg.app, files: send });
+        await invoke("plugin_launch", { id: cfg.id, files: send });
       } catch (e) {
         void invoke("plugin_cancel", { token });
         throw e;

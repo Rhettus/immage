@@ -15,9 +15,19 @@ use std::time::{Duration, Instant, SystemTime};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_dialog::DialogExt;
 
 pub struct Plugins {
     returns_path: PathBuf,
+    // the plugins the user set up (plugins.json). only Rust writes it, and
+    // the program path in it is set by nothing the page can fake: see
+    // set_app, store_app and the migration in config
+    config_path: PathBuf,
+    // the applications plugin_find_apps returned this run, the only paths
+    // plugin_set_app takes
+    offered: Mutex<HashSet<String>>,
+    // one reader or writer of the configuration at a time
+    config_io: Mutex<()>,
     // Macro Studio's jobs, each in a folder of its own, and the ledger of
     // those whose results may still come (pending.json)
     jobs_dir: PathBuf,
@@ -32,8 +42,93 @@ pub struct Plugins {
 impl Plugins {
     pub fn new(returns_path: PathBuf) -> Self {
         let jobs_dir = returns_path.with_file_name("plugin-jobs");
-        Plugins { returns_path, jobs_dir, live: Mutex::new(HashSet::new()), io: Mutex::new(()),
-                  jobs_io: Mutex::new(()) }
+        let config_path = returns_path.with_file_name("plugins.json");
+        Plugins { returns_path, config_path, offered: Mutex::new(HashSet::new()), config_io: Mutex::new(()),
+                  jobs_dir, live: Mutex::new(HashSet::new()), io: Mutex::new(()), jobs_io: Mutex::new(()) }
+    }
+
+    // None when there is no file yet; a file that does not parse is as good
+    // as an empty one, but still there, so nothing is migrated over it
+    fn config_read(&self) -> Option<Vec<PluginConfig>> {
+        let text = std::fs::read_to_string(&self.config_path).ok()?;
+        Some(serde_json::from_str(&text).unwrap_or_default())
+    }
+
+    fn config_write(&self, list: &[PluginConfig]) -> Result<(), String> {
+        let tmp = self.config_path.with_extension("json.tmp");
+        let text = serde_json::to_string_pretty(list).map_err(|e| e.to_string())?;
+        std::fs::write(&tmp, text).map_err(|e| format!("plugin settings: {e}"))?;
+        std::fs::rename(&tmp, &self.config_path).map_err(|e| format!("plugin settings: {e}"))
+    }
+
+    // the plugins. the page's old localStorage list (`legacy`) is taken once,
+    // when there is no plugins.json yet, and the file is made even when the
+    // page has none, so the program paths in a later call are never believed.
+    // a file there already is never overwritten
+    pub fn config(&self, legacy: Option<Vec<PluginConfig>>) -> Result<Vec<PluginConfig>, String> {
+        let _io = self.config_io.lock().unwrap();
+        if let Some(list) = self.config_read() {
+            return Ok(list);
+        }
+        let mut list: Vec<PluginConfig> = Vec::new();
+        for p in legacy.unwrap_or_default() {
+            if !p.id.is_empty() && !list.iter().any(|o| o.id == p.id) {
+                list.push(p);
+            }
+        }
+        self.config_write(&list)?;
+        Ok(list)
+    }
+
+    // the page's edits to the list (names, choices, additions, removals). a
+    // program path is kept from what is stored, by id, and is empty for a
+    // new plugin: the page cannot set one here
+    pub fn config_save(&self, list: Vec<PluginConfig>) -> Result<Vec<PluginConfig>, String> {
+        let _io = self.config_io.lock().unwrap();
+        let stored = self.config_read().unwrap_or_default();
+        let mut out: Vec<PluginConfig> = Vec::new();
+        for mut p in list {
+            if p.id.is_empty() || out.iter().any(|o| o.id == p.id) {
+                continue;
+            }
+            p.app = stored.iter().find(|o| o.id == p.id).map(|o| o.app.clone()).unwrap_or_default();
+            out.push(p);
+        }
+        self.config_write(&out)?;
+        Ok(out)
+    }
+
+    fn put_app(&self, id: &str, path: &str) -> Result<Vec<PluginConfig>, String> {
+        let _io = self.config_io.lock().unwrap();
+        let mut list = self.config_read().unwrap_or_default();
+        list.iter_mut().find(|p| p.id == id).ok_or_else(|| format!("unknown plugin {id}"))?.app = path.into();
+        self.config_write(&list)?;
+        Ok(list)
+    }
+
+    // an application plugin_find_apps returned this run
+    pub fn set_app(&self, id: &str, path: &str) -> Result<Vec<PluginConfig>, String> {
+        if !self.offered.lock().unwrap().contains(path) {
+            return Err(format!("{path} was not found as an application"));
+        }
+        self.put_app(id, path)
+    }
+
+    fn ready_id(&self, id: &str) -> Result<(), String> {
+        let _io = self.config_io.lock().unwrap();
+        self.config_read().unwrap_or_default().iter().any(|p| p.id == id).then_some(())
+            .ok_or_else(|| format!("unknown plugin {id}"))
+    }
+
+    // the plugin an id names, with its application chosen
+    fn ready(&self, id: &str) -> Result<PluginConfig, String> {
+        let _io = self.config_io.lock().unwrap();
+        let p = self.config_read().unwrap_or_default().into_iter().find(|p| p.id == id)
+            .ok_or_else(|| format!("unknown plugin {id}"))?;
+        if p.app.is_empty() {
+            return Err("choose its application in Preferences".into());
+        }
+        Ok(p)
     }
 
     fn load(&self) -> Vec<Return> {
@@ -100,6 +195,22 @@ impl Plugins {
             files.insert(at, result.to_path_buf());
         }
     }
+}
+
+// a plugin as Preferences shows it (plugins.ts, PluginConfig)
+#[derive(Serialize, Deserialize, Clone, Default, Debug, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct PluginConfig {
+    pub id: String,
+    pub kind: String,
+    pub name: String,
+    // the application's path; "" until chosen
+    pub app: String,
+    pub send: String,
+    pub output_dir: String,
+    pub on_return: HashMap<String, bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub look: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -174,7 +285,7 @@ fn app_folders() -> Vec<PathBuf> {
 // the installed applications a plugin kind can use, newest version first
 // (the highest name: "DxO PureRAW 5" before "DxO PureRAW 4")
 #[tauri::command]
-pub fn plugin_find_apps(patterns: Vec<String>) -> Vec<String> {
+pub fn plugin_find_apps(state: State<'_, Plugins>, patterns: Vec<String>) -> Vec<String> {
     let mut out = Vec::new();
     for base in app_folders() {
         for p in &patterns {
@@ -185,13 +296,79 @@ pub fn plugin_find_apps(patterns: Vec<String>) -> Vec<String> {
     let mut out: Vec<String> = out.into_iter().map(|p| p.to_string_lossy().into_owned()).collect();
     out.sort_by_key(|a| std::cmp::Reverse(a.to_lowercase()));
     out.dedup();
+    state.offered.lock().unwrap().extend(out.iter().cloned());
     out
+}
+
+// the page's plugins, from plugins.json. `legacy` is what it kept in
+// localStorage before Rust owned them: used only for the first run
+#[tauri::command]
+pub fn plugin_config(state: State<'_, Plugins>, legacy: Option<Vec<PluginConfig>>) -> Result<Vec<PluginConfig>, String> {
+    state.config(legacy)
+}
+
+#[tauri::command]
+pub fn plugin_config_save(state: State<'_, Plugins>, list: Vec<PluginConfig>) -> Result<Vec<PluginConfig>, String> {
+    state.config_save(list)
+}
+
+#[tauri::command]
+pub fn plugin_set_app(state: State<'_, Plugins>, id: String, path: String) -> Result<Vec<PluginConfig>, String> {
+    state.set_app(&id, &path)
+}
+
+// the file dialog is opened here, so what is stored is what the user picked
+// and not a path the page names. none when it is cancelled
+#[tauri::command]
+pub async fn plugin_choose_app(app: AppHandle, state: State<'_, Plugins>, id: String)
+    -> Result<Option<Vec<PluginConfig>>, String> {
+    state.ready_id(&id)?;
+    let handle = app.clone();
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        let mut dialog = handle.dialog().file();
+        dialog = if cfg!(windows) {
+            dialog.add_filter("Applications", &["exe"])
+        } else {
+            dialog.set_directory("/Applications").add_filter("Applications", &["app"])
+        };
+        dialog.blocking_pick_file().and_then(|f| f.into_path().ok())
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    match picked {
+        Some(path) => app.state::<Plugins>().put_app(&id, &path.to_string_lossy()).map(Some),
+        None => Ok(None),
+    }
+}
+
+const PHOTO_EXTENSIONS: &[&str] = &[
+    "jpg", "jpeg", "jpe", "tif", "tiff", "heic", "heif", "hif", "png", "avif", "webp", "jxl", "exr", "pfm",
+    "ppm", "pgm", "pnm", "gif", "j2k", "jp2", "qoi", "bmp",
+];
+
+// a file a plugin may be given: an existing regular file with a photo
+// extension. symlinks are resolved first, so a link named like a photo
+// that points at a folder or another kind of file is refused
+fn photo_file(path: &str) -> Result<(), String> {
+    let real = std::fs::canonicalize(path).map_err(|e| format!("{path}: {e}"))?;
+    if !real.is_file() {
+        return Err(format!("{path} is not a file"));
+    }
+    let ext = real.extension().map(|x| x.to_string_lossy().to_lowercase()).unwrap_or_default();
+    if !PHOTO_EXTENSIONS.contains(&ext.as_str()) && !crate::immich_search::RAW_EXTENSIONS.contains(&ext.as_str()) {
+        return Err(format!("{path} is not a photo"));
+    }
+    Ok(())
 }
 
 // the application started with the files, or given them when it runs
 // already: on macOS through `open -a`, as a drop on its Dock icon is
 #[tauri::command]
-pub async fn plugin_launch(app_path: String, files: Vec<String>) -> Result<(), String> {
+pub async fn plugin_launch(state: State<'_, Plugins>, id: String, files: Vec<String>) -> Result<(), String> {
+    let app_path = state.ready(&id)?.app;
+    for f in &files {
+        photo_file(f)?;
+    }
     let name = app_path.clone();
     tauri::async_runtime::spawn_blocking(move || {
         if cfg!(target_os = "macos") {
@@ -277,7 +454,8 @@ fn scan(dirs: &[PathBuf], exts: &[String], ignore: &HashSet<PathBuf>) -> HashMap
 // still for a poll, and "plugin-watch-end" says why the wait ended
 // (done, cancelled or timeout)
 #[tauri::command]
-pub fn plugin_watch(app: AppHandle, state: State<'_, Plugins>, watch: Watch) {
+pub fn plugin_watch(app: AppHandle, state: State<'_, Plugins>, watch: Watch) -> Result<(), String> {
+    state.ready(&watch.plugin)?;
     state.live.lock().unwrap().insert(watch.token);
     std::thread::spawn(move || {
         let plugins = app.state::<Plugins>();
@@ -354,6 +532,7 @@ pub fn plugin_watch(app: AppHandle, state: State<'_, Plugins>, watch: Watch) {
         plugins.live.lock().unwrap().remove(&watch.token);
         let _ = app.emit("plugin-watch-end", json!({ "token": watch.token, "reason": reason }));
     });
+    Ok(())
 }
 
 #[tauri::command]
@@ -411,7 +590,6 @@ pub struct StackFile {
 pub struct Job {
     token: u64,
     plugin: String,
-    app_path: String,
     // "original-raw" or "rendered" (TIFFs)
     mode: String,
     files: Vec<StackFile>,
@@ -584,7 +762,14 @@ pub fn plugin_job(app: AppHandle, state: State<'_, Plugins>, job: Job) -> Result
     if job.mode != "original-raw" && job.mode != "rendered" {
         return Err(format!("unknown mode {}", job.mode));
     }
-    let exe = ms_executable(&job.app_path).ok_or("Macro Studio was not found; choose it in Preferences")?;
+    let cfg = state.ready(&job.plugin)?;
+    if cfg.kind != "macro-studio" {
+        return Err(format!("{} does not take jobs", cfg.name));
+    }
+    for f in &job.files {
+        photo_file(&f.path)?;
+    }
+    let exe = ms_executable(&cfg.app).ok_or("Macro Studio was not found; choose it in Preferences")?;
     let job_id = format!("immage-{}", job.token);
     let dir = state.jobs_dir.join(&job_id);
     std::fs::create_dir_all(&dir).map_err(|e| format!("plugin job: {e}"))?;
@@ -669,6 +854,134 @@ pub fn plugin_job(app: AppHandle, state: State<'_, Plugins>, job: Job) -> Result
 mod tests {
     use super::*;
 
+    fn scratch(name: &str) -> PathBuf {
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target").join(name);
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn cfg(id: &str, app: &str) -> PluginConfig {
+        PluginConfig { id: id.into(), kind: "dxo-pureraw".into(), name: "DxO PureRAW".into(), app: app.into(),
+                       send: "original".into(), ..Default::default() }
+    }
+
+    #[test]
+    fn unknown_ids() {
+        let dir = scratch("test-plugin-ids");
+        let p = Plugins::new(dir.join("returns.json"));
+        p.config(Some(vec![cfg("a", "/Applications/A.app"), cfg("b", "")])).unwrap();
+        assert_eq!(p.ready("a").unwrap().app, "/Applications/A.app");
+        assert!(p.ready("nope").unwrap_err().contains("unknown plugin"));
+        assert!(p.ready("b").unwrap_err().contains("choose its application"));
+        assert!(p.ready_id("nope").is_err() && p.ready_id("b").is_ok());
+        assert!(p.set_app("nope", "/x").is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn app_allow_list() {
+        let dir = scratch("test-plugin-apps");
+        let p = Plugins::new(dir.join("returns.json"));
+        p.config(Some(vec![cfg("a", "")])).unwrap();
+        // a path find_apps never returned is refused, and nothing is stored
+        assert!(p.set_app("a", "/bin/sh").is_err());
+        assert_eq!(p.ready("a").unwrap_err(), "choose its application in Preferences");
+        p.offered.lock().unwrap().insert("/Applications/A.app".into());
+        assert_eq!(p.set_app("a", "/Applications/A.app").unwrap()[0].app, "/Applications/A.app");
+        assert_eq!(p.ready("a").unwrap().app, "/Applications/A.app");
+        // and a path offered is still refused for an id that does not exist
+        assert!(p.set_app("zz", "/Applications/A.app").is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn page_cannot_set_the_program() {
+        let dir = scratch("test-plugin-save");
+        let p = Plugins::new(dir.join("returns.json"));
+        p.config(Some(vec![cfg("a", "/Applications/A.app")])).unwrap();
+        // an edit keeps the stored program; a new plugin or a changed path gets none
+        let mut edited = cfg("a", "/bin/sh");
+        edited.name = "Mine".into();
+        let saved = p.config_save(vec![edited, cfg("b", "/bin/sh"), cfg("b", "x"), cfg("", "y")]).unwrap();
+        assert_eq!(saved.len(), 2);
+        assert_eq!((saved[0].name.as_str(), saved[0].app.as_str()), ("Mine", "/Applications/A.app"));
+        assert_eq!(saved[1].app, "");
+        // removed from the page's list, removed
+        assert_eq!(p.config_save(vec![]).unwrap().len(), 0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn migration_once() {
+        let dir = scratch("test-plugin-migrate");
+        let p = Plugins::new(dir.join("returns.json"));
+        let old = vec![cfg("a", "/Applications/A.app"), cfg("a", "dup"), cfg("b", "")];
+        let list = p.config(Some(old)).unwrap();
+        assert_eq!(list.len(), 2);
+        // existing plugins keep working: the program, and a later start reads the file
+        assert_eq!(Plugins::new(dir.join("returns.json")).ready("a").unwrap().app, "/Applications/A.app");
+        // a second offer is ignored, even from a page that has lost its own copy
+        let again = p.config(Some(vec![cfg("evil", "/bin/sh")])).unwrap();
+        assert_eq!(again, list);
+        assert!(p.ready("evil").is_err());
+        // the file is made with no legacy list too, so a later offer is refused
+        let dir2 = scratch("test-plugin-migrate-none");
+        let q = Plugins::new(dir2.join("returns.json"));
+        assert!(q.config(None).unwrap().is_empty());
+        assert!(q.config(Some(vec![cfg("evil", "/bin/sh")])).unwrap().is_empty());
+        // a file that does not parse is kept, not migrated over
+        std::fs::write(dir2.join("plugins.json"), "{").unwrap();
+        assert!(q.config(Some(vec![cfg("evil", "/bin/sh")])).unwrap().is_empty());
+        assert_eq!(std::fs::read_to_string(dir2.join("plugins.json")).unwrap(), "{");
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&dir2);
+    }
+
+    #[test]
+    fn legacy_shape() {
+        // localStorage's entries, which may lack the newer fields
+        let l: Vec<PluginConfig> = serde_json::from_str(r#"[{"id":"x:1","kind":"dxo-pureraw","name":"N","app":"/A.app",
+            "send":"original","outputDir":"/o","onReturn":{"lens":true}}]"#).unwrap();
+        assert_eq!(l[0].output_dir, "/o");
+        assert_eq!(l[0].on_return["lens"], true);
+        assert!(l[0].look.is_none());
+        assert!(serde_json::to_value(&l[0]).unwrap().get("look").is_none());
+    }
+
+    #[test]
+    fn photo_files() {
+        let dir = scratch("test-plugin-files");
+        let f = |n: &str| dir.join(n).to_string_lossy().into_owned();
+        std::fs::write(dir.join("a.ARW"), b"x").unwrap();
+        std::fs::write(dir.join("b.tif"), b"x").unwrap();
+        std::fs::write(dir.join("c.txt"), b"x").unwrap();
+        std::fs::write(dir.join("noext"), b"x").unwrap();
+        std::fs::create_dir(dir.join("d.jpg")).unwrap();
+        assert!(photo_file(&f("a.ARW")).is_ok());
+        assert!(photo_file(&f("b.tif")).is_ok());
+        assert!(photo_file(&f("c.txt")).is_err());
+        assert!(photo_file(&f("noext")).is_err());
+        // a folder named like a photo, and a file that is not there
+        assert!(photo_file(&f("d.jpg")).is_err());
+        assert!(photo_file(&f("missing.jpg")).is_err());
+        assert!(photo_file(&dir.to_string_lossy()).is_err());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::symlink;
+            symlink(dir.join("a.ARW"), dir.join("link.jpg")).unwrap();
+            // named like a photo but a folder, or a file of another kind
+            symlink(dir.join("d.jpg"), dir.join("dirlink.png")).unwrap();
+            symlink(dir.join("c.txt"), dir.join("textlink.jpg")).unwrap();
+            symlink(dir.join("gone"), dir.join("dangling.jpg")).unwrap();
+            assert!(photo_file(&f("link.jpg")).is_ok());
+            assert!(photo_file(&f("dirlink.png")).is_err());
+            assert!(photo_file(&f("textlink.jpg")).is_err());
+            assert!(photo_file(&f("dangling.jpg")).is_err());
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn globs() {
         assert!(glob("DxO PureRAW*.app", "DxO PureRAW 4.app"));
@@ -727,7 +1040,7 @@ mod tests {
     #[test]
     fn manifest() {
         let job = Job {
-            token: 1, plugin: "macro-studio:x".into(), app_path: "".into(), mode: "rendered".into(),
+            token: 1, plugin: "macro-studio:x".into(), mode: "rendered".into(),
             files: vec![StackFile { path: "/p/a-Edit.tif".into(), origin_path: Some("/p/a.orf".into()) },
                         StackFile { path: "/p/b.orf".into(), origin_path: None }],
             look: Some("".into()),

@@ -95,16 +95,34 @@ export type PluginConfig = {
   look?: "" | "natural" | "enhanced";  // Macro Studio's Look; "" for its own default
 };
 
-const PLUGINS_KEY = "immage.plugins";
-export function loadPlugins(): PluginConfig[] {
+// the plugins live in plugins.json, which only Rust writes (plugins.rs). the
+// page keeps edits to names and choices; the application of each is set by
+// chooseApp and setApp alone, so a path the page names is never launched
+const LEGACY_KEY = "immage.plugins";
+function legacyPlugins(): PluginConfig[] | null {
   try {
-    const v = JSON.parse(localStorage.getItem(PLUGINS_KEY) ?? "[]");
-    return Array.isArray(v) ? v.filter((p) => p && kindOf(p.kind)) : [];
+    const v = JSON.parse(localStorage.getItem(LEGACY_KEY) ?? "null");
+    return Array.isArray(v) ? v.filter((p) => p && kindOf(p.kind)) : null;
+  } catch { return null; }
+}
+// the first start after plugins moved to Rust hands over what localStorage
+// held; Rust takes it only when it has no plugins.json yet, and it is
+// dropped here once that is answered
+export async function loadPlugins(): Promise<PluginConfig[]> {
+  try {
+    const list = (await invoke<PluginConfig[]>("plugin_config", { legacy: legacyPlugins() })).filter((p) => kindOf(p.kind));
+    try { localStorage.removeItem(LEGACY_KEY); } catch { /* not kept */ }
+    return list;
   } catch { return []; }
 }
-export function storePlugins(list: PluginConfig[]) {
-  try { localStorage.setItem(PLUGINS_KEY, JSON.stringify(list)); } catch { /* not kept */ }
-}
+export const storePlugins = (list: PluginConfig[]) =>
+  invoke<PluginConfig[]>("plugin_config_save", { list }).catch(() => null);
+// an application plugin_find_apps returned, or the one the user picks in the
+// dialog Rust opens (null if cancelled); the plugins as stored after
+export const setPluginApp = (id: string, path: string) =>
+  invoke<PluginConfig[]>("plugin_set_app", { id, path }).catch(() => null);
+export const choosePluginApp = (id: string) =>
+  invoke<PluginConfig[] | null>("plugin_choose_app", { id }).catch(() => null);
 
 export function newPlugin(kind: PluginKind, app: string): PluginConfig {
   return {
