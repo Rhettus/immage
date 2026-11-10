@@ -1068,6 +1068,23 @@ async fn perf_set(state: State<'_, AppState>, on: bool) -> Result<(), String> {
     Ok(())
 }
 
+// a content security policy violation the page saw (tauri.conf.json, csp),
+// one line in webview.log in the runtime folder. the page dedupes and caps
+// what it sends; the file is also capped here, so a page cannot fill the disk
+#[tauri::command]
+fn csp_violation(state: State<'_, AppState>, directive: String, blocked: String, source: String, line: u32, sample: String) {
+    use std::io::Write;
+    let path = state.runtime.join("webview.log");
+    if std::fs::metadata(&path).map(|m| m.len() > 1_000_000).unwrap_or(false) {
+        return;
+    }
+    let clip = |t: &str| t.chars().take(300).map(|c| if c.is_control() { ' ' } else { c }).collect::<String>();
+    let since = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    if let Ok(mut log) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+        let _ = writeln!(log, "[{since}] csp violation: {} blocked={} source={}:{} sample={}", clip(&directive), clip(&blocked), clip(&source), line, clip(&sample));
+    }
+}
+
 #[tauri::command]
 async fn perf_trace_start(state: State<'_, AppState>) -> Result<(), String> {
     state.perf_by_request.lock().unwrap().clear();
@@ -3056,7 +3073,7 @@ fn main() {
             ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, positive_export, spektra_stocks, spektra_fetch, list_subfolders, folder_volumes, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
             immich_export_check, immich_search, immich_browse_check, immich_libraries, immich_suggestions, immich_people, immich_tags,
             immich_thumb, immich_resolve, launch_file, path_exists, path_kind, display_scale, trash_files, create_virtual_copy, remove_virtual_copy, hdr_merge, hdr_can_align, pano_merge, pano_preview, pano_can_merge, merge_cancel, preview_fullscreen, build, about, licenses, engine_quit, engine_restart, keywords, keywords_set, ai_accel,
-            menu_set, perf_set, perf_trace_start, perf_trace_stop, perf_modules, perf_report_write, perf_machine, perf_ping, gpu_check_parity, resources::perf_resources_start, resources::perf_resources_stop,
+            menu_set, csp_violation, perf_set, perf_trace_start, perf_trace_stop, perf_modules, perf_report_write, perf_machine, perf_ping, gpu_check_parity, resources::perf_resources_start, resources::perf_resources_stop,
             plugins::plugin_find_apps, plugins::plugin_launch, plugins::plugin_watch, plugins::plugin_cancel, plugins::plugin_job,
             plugins::plugin_returns, plugins::plugin_return_applied
         ])

@@ -781,6 +781,35 @@ selection, then checks values, look amount, rendered output, both sidecars,
 undo/redo, reopening and an unselected image. See the GUI coverage ledger for
 execution status; writing the case is not a GUI pass.
 
+## Content security policy
+
+`app.security.csp` in [tauri.conf.json](../../src-tauri/tauri.conf.json) limits
+what the page may load, and `devCsp` is the same plus Vite's server and
+websocket for `npm run tauri dev` (and `'unsafe-inline'` scripts, for React
+refresh's inline preamble). `freezePrototype` freezes `Object.prototype`, so
+no dependency may patch a built-in prototype. The policy is an object of
+directive to sources. Scripts and workers come from the page's own origin
+only; there is no `eval`, WebAssembly or inline script. Tauri adds nonces and
+hashes to `script-src` and `style-src` only for inline `<script>` and
+`<style>` in the built HTML; the built pages have none, which keeps
+`'unsafe-inline'` in `style-src` effective for the `style` attributes React
+writes. Adding an inline `<style>` or `<script>` to `index.html` or
+`splash.html` would break that: check the built `dist/*.html`.
+
+Connections are `ipc:` and `http://ipc.localhost` (Tauri's commands); the
+importer's `thumb` and `media` protocols are in `img-src` and `media-src`
+(`thumb://localhost` on Linux and macOS, `http://thumb.localhost` on Windows,
+which holds while `useHttpsScheme` is unset). Images made from bytes use
+`blob:` and `data:`.
+
+Each violation is logged: [cspLog.ts](../../src/cspLog.ts), called from
+`main.tsx` and `Splash.tsx`, listens for `securitypolicyviolation`, drops
+repeats of one directive and target, stops after 50, and calls `csp_violation`
+in main.rs, which appends a line to `webview.log` in the runtime folder (capped
+at 1 MB). Custom commands need no capability for the splash window. To add a
+source, widen the one directive in both `csp` and `devCsp`, and say why in the
+commit; a clean run shows no `csp violation` lines in `webview.log`.
+
 ## Keeping this current
 
 - Update the entry when a file is added, moved or changes its job, here

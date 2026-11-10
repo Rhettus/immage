@@ -8,6 +8,7 @@ import App from "./App";
 import { loadThemes } from "./themes";
 import SelectMenu from "./SelectMenu";
 import { perf } from "./perf";
+import { logCspViolations } from "./cspLog";
 import "@fontsource/poppins/400.css";
 import "@fontsource/poppins/500.css";
 import "@fontsource/poppins/600.css";
@@ -18,6 +19,7 @@ import "./styles.css";
 // Use the standard desktop-button arrow for icon tools on Windows.
 document.documentElement.classList.toggle("windows", navigator.userAgent.includes("Windows"));
 
+logCspViolations();
 loadThemes();
 await loadAgxProfiles();
 

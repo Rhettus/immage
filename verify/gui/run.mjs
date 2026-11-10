@@ -396,6 +396,17 @@ try {
   if (monitor) clearInterval(monitor);
   if (driver?.session) { try { await driver.close(); } catch (e) { report.errors.push(`Session cleanup: ${e.message}`); if (report.status === 'pass') report.status = 'failure'; } }
   if (processDriver?.pid) { try { process.kill(-processDriver.pid, 'SIGTERM'); } catch {} }
+  // Content security policy violations (main.rs, csp_violation) fail the run,
+  // checked whatever the outcome, so a blocked or failed run still reports them.
+  {
+    const violations = (await readFile(join(out, 'profile', 'data', 'app.immage', 'webview.log'), 'utf8').catch(() => ''))
+      .split('\n').filter(l => l.includes('csp violation'));
+    report.cspViolations = violations;
+    if (violations.length) {
+      report.errors.push(`${violations.length} content security policy violation(s):\n${violations.join('\n')}`);
+      report.status = 'failure';
+    }
+  }
   await logHandle?.close();
   if (acquired) lock.stdin.end();
   await finishReport();

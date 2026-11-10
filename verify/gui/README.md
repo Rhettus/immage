@@ -47,7 +47,9 @@ and app, dismisses the tour through
 its Skip button, and uses the app's supported file argument to open the copy.
 XDG data/config/cache/state variables isolate the release app's storage and its
 webview profile. A successful run also checks that `engine.log` was created in
-that profile and verifies the original fixture's checksum. Use release binaries;
+that profile and verifies the original fixture's checksum. Any content security
+policy violation the app logged to that profile's `webview.log` fails the run,
+whatever its other outcome (`cspViolations` in the report). Use release binaries;
 debug builds use shared development runtime paths and are blocked. Initially
 only this checkout’s `app/src-tauri/target/release/immage` is accepted.
 

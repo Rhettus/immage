@@ -14,6 +14,9 @@ import { Window, getCurrentWindow } from "@tauri-apps/api/window";
 import "@fontsource/poppins/500.css";
 import "./styles.css";
 import splashUrl from "./splash.jpg";
+import { logCspViolations } from "./cspLog";
+
+logCspViolations();
 
 const MIN_SHOWN_MS = 1200;
 // darktable reports nothing from inside dt_init, where the wait is, so the
