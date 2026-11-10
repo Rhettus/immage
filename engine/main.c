@@ -98,6 +98,11 @@
 #ifndef _WIN32
 #include <signal.h>
 #endif
+#if defined(__linux__)
+#include <sys/resource.h>
+#elif defined(__APPLE__)
+#include <pthread/qos.h>
+#endif
 #include <archive.h>
 #include <archive_entry.h>
 #include <json-glib/json-glib.h>
@@ -203,6 +208,38 @@ static void _background_yield(void)
     if(now - start >= _FG_MAX_WAIT_US) return;
     g_usleep(15000);
   }
+}
+
+// exports, merges, prints, prefetch decodes and denoise run at a
+// lower priority than the main loop, so a render the user waits on gets the
+// cores first and the background work takes what is left; with nothing in
+// the foreground it runs as fast as before. their pools are exclusive
+// (main): GLib shares a non-exclusive pool's threads with every other such
+// pool, and Linux lets an ordinary process lower a thread's priority but
+// never raise it back. imports and thumbnails stay at normal priority, as
+// they already yield (_background_yield) and starve without it, and so do
+// AI masks (_ai_run), which the user is waiting on. OpenMP
+// workers created by a lowered thread inherit it on Linux (libgomp keeps a
+// team per thread); libomp (macOS) shares its workers and Windows does not
+// inherit, so there only the thread itself is lowered
+static void _background_priority(void)
+{
+  static _Thread_local gboolean lowered = FALSE;
+  if(lowered) return;
+  lowered = TRUE;
+#if defined(__linux__)
+  // nice is per thread on Linux, and who = 0 is the calling thread (kernel/sys.c)
+  if(setpriority(PRIO_PROCESS, 0, 10))
+    fprintf(stderr, "[engine] cannot lower a background thread's priority: %s\n", g_strerror(errno));
+#elif defined(__APPLE__)
+  const int rc = pthread_set_qos_class_self_np(QOS_CLASS_UTILITY, 0);
+  if(rc) fprintf(stderr, "[engine] cannot lower a background thread's priority: %s\n", g_strerror(rc));
+#elif defined(_WIN32)
+  // not THREAD_MODE_BACKGROUND_BEGIN: it also lowers I/O and memory
+  // priority, and exports would crawl
+  if(!SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL))
+    fprintf(stderr, "[engine] cannot lower a background thread's priority: error %lu\n", GetLastError());
+#endif
 }
 
 #ifndef _WIN32
@@ -379,6 +416,7 @@ static gboolean _merge_report(const _merge_progress_t *pr, const char *stage, co
 static gboolean _merge_step(const int done, const int total, void *data)
 {
   const _merge_progress_t *pr = data;
+  if(done < total) _background_yield();
   return done < total ? _merge_report(pr, "photos", done, total, FALSE) : _merge_report(pr, pr->after, 0, 1, TRUE);
 }
 
@@ -408,6 +446,8 @@ static GArray *_prefetch_queue = NULL;
 // task left over from a list since replaced finds the new one, or nothing
 static void _prefetch_run(gpointer data, gpointer user_data)
 {
+  _background_priority();
+  _background_yield();
   g_mutex_lock(&_prefetch_lock);
   if(!_prefetch_queue->len)
   {
@@ -427,7 +467,7 @@ static void _prefetch(const dt_imgid_t *imgids, const guint n)
   if(!_prefetch_pool)
   {
     _prefetch_queue = g_array_new(FALSE, FALSE, sizeof(dt_imgid_t));
-    _prefetch_pool = g_thread_pool_new(_prefetch_run, NULL, _PREFETCH_THREADS, FALSE, NULL);
+    _prefetch_pool = g_thread_pool_new(_prefetch_run, NULL, _PREFETCH_THREADS, TRUE, NULL);
   }
   g_mutex_lock(&_prefetch_lock);
   g_array_set_size(_prefetch_queue, 0);
@@ -4324,6 +4364,7 @@ static gboolean _pano_merge(JsonObject *req, JsonBuilder *b, FILE *out, char **e
   int done = 0;
   for(GList *l = imgids; ok && l; l = g_list_next(l), done++)
   {
+    _background_yield();
     if(!_merge_report(&progress, "photos", done, frames, FALSE))
     {
       *err = g_strdup("stopped");
@@ -4486,6 +4527,7 @@ typedef struct _sheet_ctx_t
 
 static dt_imgid_t _sheet_take(gpointer ctx, const dt_imgid_t imgid)
 {
+  _background_yield();
   return _hold_take(((_sheet_ctx_t *)ctx)->job, imgid);
 }
 
@@ -4506,6 +4548,7 @@ static void _export_run(gpointer data, gpointer user_data)
   JsonObject *req = json_node_get_object(json_parser_get_root(parser));
   const gint64 job = json_object_get_int_member_with_default(req, "job", 0);
   const char *cmd = json_object_get_string_member_with_default(req, "cmd", "");
+  _background_priority();
   char *err = NULL;
   gboolean ok = TRUE;
   JsonBuilder *b = json_builder_new();
@@ -4528,6 +4571,8 @@ static void _export_run(gpointer data, gpointer user_data)
 #endif
   else
   {
+    // before each photo: a batch export is one request per photo
+    _background_yield();
     const dt_imgid_t snap = _hold_take(job, json_object_get_int_member_with_default(req, "imgid", 0));
     if(dt_is_valid_imgid(snap) && !g_strcmp0(cmd, "print"))
       ok = print_image(snap, req, b, &err);
@@ -6372,6 +6417,9 @@ static void _denoise_run(gpointer data, gpointer user_data)
 {
   _denoise_job_t *job = data;
   FILE *out = user_data;
+  _background_priority();
+  // once, before the model starts: dt_restore_raw_* take no per-tile hook
+  _background_yield();
   char *err = NULL;
   JsonBuilder *b = json_builder_new();
   json_builder_begin_object(b);
@@ -11688,10 +11736,10 @@ int main(int argc, char **argv)
   }
 
   _thumb_pool = g_thread_pool_new(_thumb_run, out, _THUMB_THREADS, FALSE, NULL);
-  _export_pool = g_thread_pool_new(_export_run, out, 1, FALSE, NULL);
+  _export_pool = g_thread_pool_new(_export_run, out, 1, TRUE, NULL);
   _import_pool = g_thread_pool_new(_import_run, out, 1, FALSE, NULL);
 #ifdef HAVE_AI
-  _denoise_pool = g_thread_pool_new(_denoise_run, out, 1, FALSE, NULL);
+  _denoise_pool = g_thread_pool_new(_denoise_run, out, 1, TRUE, NULL);
   _ai_pool = g_thread_pool_new(_ai_run, out, 1, FALSE, NULL);
   g_thread_unref(g_thread_new("ai idle", _ai_idle_watch, NULL));
 #endif

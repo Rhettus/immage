@@ -22,6 +22,15 @@ Improvements
   writes only into destinations you chose. Of the destinations you used
   before, only the current one is kept; choose the others again once.
 
+Performance
+
+- Exports, merges, prints, AI Denoise and the read-ahead of nearby raws give
+  way to your editing: they pause briefly between photos while you work and
+  run at a lower priority, so the photo responds faster. With an export
+  running on Linux, renders while editing took about half as long as before;
+  the export itself takes longer while you edit, and runs at full speed when
+  you stop.
+
 ## 0.44.1
 
 Improvements

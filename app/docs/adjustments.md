@@ -267,7 +267,8 @@ part, which takes a moment.
 Immage writes a new DNG beside the raw, named `<name>_raw-denoise.dng`.
 This takes up to a minute, and the model downloads on first use. It runs
 in the background: you go on editing, this photo or another, while the
-bottom left of the photo shows it under way. When it's done, **Open**
+bottom left of the photo shows it under way. Your editing comes first, so
+it takes longer while you work. When it's done, **Open**
 there opens the DNG. The DNG starts with the raw's edit as it was when
 you clicked Denoise, and the first time it opens, Profiled Denoise's
 Luminance and Color go to 0, since the AI took the noise out. It is a

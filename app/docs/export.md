@@ -151,7 +151,8 @@ several selected, the dialog opens on Selected.
 
 Click **Export**. The dialog closes and the export goes on while you
 edit: the bottom left of the photo shows how far it has got, and **Stop**
-ends it after the photo it is on. Each photo is exported as it was when
+ends it after the photo it is on. Your editing comes first, so the export
+slows down while you work on a photo and picks up again when you stop. Each photo is exported as it was when
 you clicked Export, even if you edit it meanwhile. When the export is
 done, the same place says what happened. That goes away by itself if
 nothing went wrong; otherwise **OK** dismisses it.
