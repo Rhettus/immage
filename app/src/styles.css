@@ -2344,7 +2344,7 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .location-search-results { position: absolute; z-index: 1200; top: 42px; right: 7px; width: min(360px, 45vw); max-width: calc(100% - 14px); max-height: min(40vh, 280px); overflow: auto; display: flex; flex-direction: column; background: var(--window, #252525); border: 1px solid var(--border, #444); box-shadow: 0 5px 16px #0008; }
 .location-search-result { padding: 8px 10px; text-align: left; color: var(--text); border: 0; border-bottom: 1px solid var(--border, #444); background: transparent; cursor: pointer; }
 .location-search-result:hover, .location-search-result:focus-visible { background: var(--ui-inset-303030, #303030); }
-.location-map.dark .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.8) contrast(.85); }
+.location-map-region.dark .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.8) contrast(.85); }
 .location-pin span { display: block; width: 16px; height: 16px; background: #f08032; border: 2px solid white; border-radius: 50%; box-shadow: 0 1px 5px var(--ui-border-000000, #000); }
 .location-attribution { flex: none; text-align: right; font-size: 10px; padding: 4px 7px; opacity: .8; }
 .location-attribution button { color: inherit; font: inherit; padding: 0; background: none; border: 0; text-decoration: underline; cursor: pointer; }

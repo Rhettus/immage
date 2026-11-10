@@ -189,7 +189,7 @@ export function LocationEditor({ image, onSaved }: {
   };
 
   const disabled = !loaded || busy || !!image.remote;
-  const mapUi = showMap && createPortal(<div ref={mapRegion} className={`location-map-region${expanded ? " expanded" : ""}`} style={mapBounds}
+  const mapUi = showMap && createPortal(<div ref={mapRegion} className={`location-map-region${expanded ? " expanded" : ""}${dark ? " dark" : ""}`} style={mapBounds}
     onWheel={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
     <div className="location-map-toolbar">
       <span>Click or drag the pin, then Apply</span>
@@ -218,7 +218,7 @@ export function LocationEditor({ image, onSaved }: {
       <button className="btn" disabled={disabled || !valid} onClick={() => void save({ latitude, longitude })}>{busy ? "Saving…" : "Apply"}</button>
       <button className="btn" disabled={disabled || !saved} onClick={() => void save(null)}>Remove location</button>
     </div>}
-    <div ref={host} className={`location-map${dark ? " dark" : ""}`} data-map-zoom={map.current?.getZoom() ?? ""}
+    <div ref={host} className="location-map" data-map-zoom={map.current?.getZoom() ?? ""}
       aria-label="Location map" />
     <div className="location-attribution">© <button onClick={() => void openUrl(osmCopyright)}>OpenStreetMap contributors</button>
       <span> · Search by <button onClick={() => void openUrl("https://www.geoapify.com/")}>Geoapify</button></span></div>
