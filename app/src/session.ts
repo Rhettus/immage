@@ -644,7 +644,10 @@ export class Session {
 
   setHidden(name: string, hidden: boolean) {
     this.masks = this.masks.map((m) => (m.name === name ? { ...m, hidden } : m));
-    this.markLocal(name, [...(this.maskOps.get(name) ?? [])]);
+    // a module first adjusted while hidden was never sent, being off: showing
+    // the mask goes over every module, and sendMaskQueues skips those that
+    // stay off and it never had
+    this.markLocal(name, [...new Set([...(this.maskOps.get(name) ?? []), ...localMaps.map((l) => l.op)])]);
   }
 
   setRefine(name: string, refine: Refine) {

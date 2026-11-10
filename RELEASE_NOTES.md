@@ -56,6 +56,7 @@ Performance
 
 Bug fixes
 
+- An adjustment made to a hidden mask now shows when the mask is shown again.
 - Updated the importer's bundled SQLite to fix a database memory disclosure
   vulnerability, preserving existing import history.
 - On Windows and Linux, the Keyboard Shortcuts sheet shows Zoom Out as
