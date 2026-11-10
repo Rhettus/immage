@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { open, save } from "@tauri-apps/plugin-dialog";
+import { open } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import type { ImageEntry } from "./library";
 import { loadAccel, loadFocusMode } from "./Preferences";
@@ -231,15 +231,14 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
   // sharing: the chosen preset to a file, or a file's presets into My Presets
   const exportPreset = async () => {
     if (!chosen) return;
-    const path = await save({ defaultPath: `${chosen.name.replace(/[/\\:*?"<>|]+/g, "_")}.json`,
-                              filters: [{ name: "Immage export preset", extensions: ["json"] }] });
-    if (path) await invoke("preset_file_write", { path, contents: sharedFile(chosen) }).catch((e) => setError(String(e)));
+    await invoke("export_presets_export", { contents: sharedFile(chosen), name: chosen.name.replace(/[/\\:*?"<>|]+/g, "_"),
+                                            label: "Immage export preset" }).catch((e) => setError(String(e)));
   };
   const importPresets = async () => {
-    const path = await open({ multiple: false, filters: [{ name: "Immage export preset", extensions: ["json"] }] });
-    if (typeof path !== "string") return;
     try {
-      const added = readShared(await invoke("preset_file_read", { path }),
+      const file = await invoke<unknown>("export_presets_import", { label: "Immage export preset" });
+      if (file === null) return;
+      const added = readShared(file,
                                [...BUILTINS, ...presets].map((p) => p.name));
       if (!added.length) throw new Error("this file has no presets in it");
       storePresets([...presets, ...added]);

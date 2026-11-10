@@ -55,11 +55,13 @@ const store = (next: UserProfile[]) => {
 
 export type FoundPreset = { name: string; params: Record<string, number> };
 
-// the AgX presets in a darktable preset or style file, or with no file in the
-// user's darktable data.db; the engine converts them to this version and needs
-// a photo open
-export async function findAgxPresets(file?: string): Promise<FoundPreset[]> {
-  const r = await invoke<{ presets: FoundPreset[] }>("agx_presets", { file: file ?? null, db: null, fields: AGX_FIELDS });
+// the AgX presets in a darktable preset or style file the user picks (the
+// dialog opens in Rust), or with `pick` false in the user's darktable
+// data.db; the engine converts them to this version and needs a photo open.
+// null when the dialog is cancelled
+export async function findAgxPresets(pick = false): Promise<FoundPreset[] | null> {
+  const r = await invoke<{ presets: FoundPreset[] } | null>(pick ? "agx_presets_pick" : "agx_presets", { fields: AGX_FIELDS });
+  if (!r) return null;
   return r.presets.filter((p) => AGX_FIELDS.every((f) => Number.isFinite(p.params?.[f])));
 }
 

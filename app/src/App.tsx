@@ -1276,17 +1276,12 @@ export default function App() {
     setLooks(l);
   };
   const exportPreset = async (p: Preset) => {
-    const path = await save({ defaultPath: `${safeName(p.name)}.json`, filters: [{ name: "Immage preset", extensions: ["json"] }] });
-    if (!path) return;
-    await invoke("preset_file_write", { path, contents: sharedPresets([p]) })
-      .then(() => setStatus(`exported "${p.name}"`), (e) => setStatus(`export preset: ${e}`));
+    await invoke<boolean>("export_presets_export", { contents: sharedPresets([p]), name: safeName(p.name), label: "Immage preset" })
+      .then((saved) => { if (saved) setStatus(`exported "${p.name}"`); }, (e) => setStatus(`export preset: ${e}`));
   };
   const exportLook = async (l: Look) => {
-    const path = await save({ defaultPath: `${safeName(l.name)}.dtstyle`,
-                              filters: [{ name: "darktable style", extensions: ["dtstyle"] }] });
-    if (!path) return;
-    await invoke("look_export", { from: l.path, to: path })
-      .then(() => setStatus(`exported "${l.name}"`), (e) => setStatus(`export look: ${e}`));
+    await invoke<boolean>("look_export", { from: l.path, name: safeName(l.name) })
+      .then((saved) => { if (saved) setStatus(`exported "${l.name}"`); }, (e) => setStatus(`export look: ${e}`));
   };
   const deleteLook = async (l: Look) => {
     try {
@@ -1298,23 +1293,18 @@ export default function App() {
     } catch (e) { setStatus(`delete look: ${e}`); }
   };
   const importShared = async () => {
-    const picked = await open({ multiple: true, filters: [{ name: "Presets and looks", extensions: ["json", "dtstyle"] }] });
-    const paths = Array.isArray(picked) ? picked : picked ? [picked] : [];
+    const got = await invoke<{ presets: unknown[]; looks: number; failed: string[] }>("shared_import")
+      .catch((e) => ({ presets: [], looks: 0, failed: [String(e)] }));
     let added: Preset[] = [];
-    let looksIn = 0;
-    const failed: string[] = [];
-    for (const path of paths) {
+    const looksIn = got.looks;
+    const failed = [...got.failed];
+    for (const doc of got.presets) {
       try {
-        if (/\.dtstyle$/i.test(path)) {
-          await invoke<string>("look_import", { path });
-          looksIn++;
-        } else {
-          const got = readSharedPresets(await invoke("preset_file_read", { path }), [...BUILTIN_PRESETS, ...presets, ...added]);
-          if (!got.length) throw new Error("it has no presets this version can use");
-          added = [...added, ...got];
-        }
+        const more = readSharedPresets(doc, [...BUILTIN_PRESETS, ...presets, ...added]);
+        if (!more.length) throw new Error("it has no presets this version can use");
+        added = [...added, ...more];
       } catch (e) {
-        failed.push(`${path.split(/[/\\]/).pop()}: ${e instanceof Error ? e.message : e}`);
+        failed.push(`preset file: ${e instanceof Error ? e.message : e}`);
       }
     }
     if (added.length) storePresets([...presets, ...added]);
@@ -4388,10 +4378,9 @@ export default function App() {
     return () => { live = false; };
   }, [printOpen, printSettings.printer]);
   const addPrintProfile = async () => {
-    const path = await open({ multiple: false, filters: [{ name: "ICC profile", extensions: ["icc", "icm", "ICC", "ICM"] }] });
-    if (typeof path !== "string") return;
     try {
-      const added = await invoke<Profile>("print_profile_add", { path });
+      const added = await invoke<Profile | null>("print_profile_add");
+      if (!added) return;
       setPrintProfiles(await invoke<Profile[]>("print_profiles"));
       setPrintSettings({ ...printSettings, profile: added.file });
     } catch (e) {

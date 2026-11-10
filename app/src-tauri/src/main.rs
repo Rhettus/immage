@@ -32,6 +32,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{ipc::Response, AppHandle, Emitter, Manager, State};
+use tauri_plugin_dialog::DialogExt;
 
 struct AppState {
     // engine(), not this directly
@@ -2454,20 +2455,88 @@ async fn looks_list(state: State<'_, AppState>) -> Result<Value, String> {
     list_looks(&state).map(Value::from)
 }
 
+// the file dialogs of the commands below are opened here, so a path the
+// page names is never read or written; none when the dialog is cancelled
+async fn pick_files(app: &AppHandle, title: &str, exts: &[&str], multiple: bool) -> Result<Vec<PathBuf>, String> {
+    let handle = app.clone();
+    let (title, exts) = (title.to_string(), exts.iter().map(|e| e.to_string()).collect::<Vec<_>>());
+    tauri::async_runtime::spawn_blocking(move || {
+        let exts: Vec<&str> = exts.iter().map(String::as_str).collect();
+        let dialog = handle.dialog().file().add_filter(title, &exts);
+        let picked = if multiple {
+            dialog.blocking_pick_files().unwrap_or_default()
+        } else {
+            dialog.blocking_pick_file().into_iter().collect()
+        };
+        picked.into_iter().filter_map(|f| f.into_path().ok()).collect()
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+async fn pick_save(app: &AppHandle, title: &str, exts: &[&str], name: &str) -> Result<Option<PathBuf>, String> {
+    let handle = app.clone();
+    let (title, name) = (title.to_string(), safe_file_name(name));
+    let exts = exts.iter().map(|e| e.to_string()).collect::<Vec<_>>();
+    tauri::async_runtime::spawn_blocking(move || {
+        let exts: Vec<&str> = exts.iter().map(String::as_str).collect();
+        handle.dialog().file().add_filter(title, &exts).set_file_name(name)
+            .blocking_save_file().and_then(|f| f.into_path().ok())
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+// a name the page suggests for a save dialog, with path separators and the
+// characters Windows refuses taken out
+fn safe_file_name(name: &str) -> String {
+    let cleaned: String = name.chars().map(|c| if "/\\:*?\"<>|".contains(c) || c.is_control() { '_' } else { c }).collect();
+    cleaned.trim_matches(['.', ' ']).to_string()
+}
+
+// the canonical form of `path` when it lies inside one of `dirs`, which are
+// compared canonical too, component by component, so a sibling sharing a
+// prefix, `..` and a link out of the folder do not pass
+fn path_inside(path: &Path, dirs: &[&Path]) -> Result<PathBuf, String> {
+    let real = std::fs::canonicalize(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let inside = dirs.iter().filter_map(|d| std::fs::canonicalize(d).ok()).any(|d| real.starts_with(d));
+    if inside { Ok(real) } else { Err("this is not one of the looks".into()) }
+}
+
+// look files the user picked, each added to the user's looks, and presets
+// files they picked beside them; the page gets the presets' documents (it
+// stores them), the number of looks added and what failed
+#[tauri::command]
+async fn shared_import(app: AppHandle, state: State<'_, AppState>) -> Result<Value, String> {
+    let picked = pick_files(&app, "Presets and looks", &["json", "dtstyle"], true).await?;
+    let (mut presets, mut looks, mut failed) = (Vec::new(), 0, Vec::new());
+    for path in picked {
+        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let is_look = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("dtstyle"));
+        let done = if is_look {
+            import_look(&state, &path).map(|_| looks += 1)
+        } else {
+            read_preset_file(&path).map(|v| presets.push(v))
+        };
+        if let Err(e) = done { failed.push(format!("{name}: {e}")) }
+    }
+    Ok(json!({ "presets": presets, "looks": looks, "failed": failed }))
+}
+
 // a darktable style file added to the user's looks, renamed "<name> (2)"
 // where a look has its name already, as a photo knows its look by name;
 // returns the name it took
-#[tauri::command]
-async fn look_import(state: State<'_, AppState>, path: String) -> Result<String, String> {
-    let size = std::fs::metadata(&path).map_err(|e| format!("{path}: {e}"))?.len();
+fn import_look(state: &AppState, path: &Path) -> Result<String, String> {
+    let shown = path.display();
+    let size = std::fs::metadata(path).map_err(|e| format!("{shown}: {e}"))?.len();
     if size > 4 << 20 {
         return Err("this file is too large to be a look".into());
     }
-    let text = std::fs::read_to_string(&path).map_err(|e| format!("{path}: {e}"))?;
+    let text = std::fs::read_to_string(path).map_err(|e| format!("{shown}: {e}"))?;
     let name = style_name(&text)
         .filter(|_| text.contains("<darktable_style"))
         .ok_or("this file is not a darktable style")?;
-    let taken: std::collections::HashSet<String> = list_looks(&state)?
+    let taken: std::collections::HashSet<String> = list_looks(state)?
         .iter().filter_map(|l| l["name"].as_str().map(str::to_owned)).collect();
     let label = style_label(&name).trim();
     let label = if label.is_empty() { "Imported look" } else { label };
@@ -2498,19 +2567,23 @@ async fn look_import(state: State<'_, AppState>, path: String) -> Result<String,
     Ok(fresh)
 }
 
-// a look's style file, copied where the save dialog chose
+// a look's style file, copied where the save dialog asks; false when it is
+// cancelled. `from` must be one of the looks
 #[tauri::command]
-async fn look_export(from: String, to: String) -> Result<(), String> {
-    std::fs::copy(&from, &to).map(|_| ()).map_err(|e| format!("{to}: {e}"))
+async fn look_export(app: AppHandle, state: State<'_, AppState>, from: String, name: String) -> Result<bool, String> {
+    let from = path_inside(Path::new(&from), &[&state.looks_dir, &state.user_looks_dir])?;
+    let Some(to) = pick_save(&app, "darktable style", &["dtstyle"], &format!("{name}.dtstyle")).await? else {
+        return Ok(false);
+    };
+    std::fs::copy(&from, &to).map_err(|e| format!("{}: {e}", to.display()))?;
+    Ok(true)
 }
 
 // one of the user's own looks; the shipped ones stay
 #[tauri::command]
 async fn look_delete(state: State<'_, AppState>, path: String) -> Result<(), String> {
-    let path = PathBuf::from(path);
-    if path.parent() != Some(state.user_looks_dir.as_path()) {
-        return Err("only an imported look can be deleted".into());
-    }
+    let path = path_inside(Path::new(&path), &[&state.user_looks_dir])
+        .map_err(|_| "only an imported look can be deleted".to_string())?;
     std::fs::remove_file(&path).map_err(|e| format!("looks: {e}"))
 }
 
@@ -2518,6 +2591,10 @@ async fn look_delete(state: State<'_, AppState>, path: String) -> Result<(), Str
 // look in use
 #[tauri::command]
 async fn look_apply(state: State<'_, AppState>, path: Option<String>) -> Result<Value, String> {
+    let path = match path {
+        Some(p) => Some(path_inside(Path::new(&p), &[&state.looks_dir, &state.user_looks_dir])?),
+        None => None,
+    };
     let reply = state.engine("look_apply").request(json!({ "cmd": "look", "path": path }))?;
     Ok(reply["look"].clone())
 }
@@ -2601,9 +2678,12 @@ async fn print_profiles(state: State<'_, AppState>) -> Result<Value, String> {
     state.engine("print_profiles").request(json!({ "cmd": "print_profiles" })).map(|r| r["profiles"].clone())
 }
 
-// a printer profile the user picked, copied among the engine's own
+// a printer profile the user picks in the dialog opened here, copied among
+// the engine's own; null when it is cancelled
 #[tauri::command]
-async fn print_profile_add(state: State<'_, AppState>, path: String) -> Result<Value, String> {
+async fn print_profile_add(app: AppHandle, state: State<'_, AppState>) -> Result<Value, String> {
+    let picked = pick_files(&app, "ICC profile", &["icc", "icm", "ICC", "ICM"], false).await?;
+    let Some(path) = picked.first() else { return Ok(Value::Null) };
     state.engine("print_profile_add").request(json!({ "cmd": "print_profile_add", "path": path })).map(without_ok)
 }
 
@@ -2693,13 +2773,20 @@ async fn export_presets_save(state: State<'_, AppState>, presets: Value) -> Resu
     std::fs::rename(&tmp, &path).map_err(|e| format!("export presets: {e}"))
 }
 
-// the AgX presets in a darktable `.dtpreset` or `.dtstyle` (`file`) or, with
-// none, in the `data.db` (a path, or darktable's own in the config folder),
+// the AgX presets in darktable's own `data.db` in the config folder,
 // converted by the engine to the current version: { presets: [{ name, params }] }
 #[tauri::command]
-async fn agx_presets(state: State<'_, AppState>, file: Option<String>, db: Option<String>,
-                     fields: Vec<String>) -> Result<Value, String> {
-    state.engine("agx_presets").request(json!({ "cmd": "agx_presets", "file": file, "db": db, "fields": fields }))
+async fn agx_presets(state: State<'_, AppState>, fields: Vec<String>) -> Result<Value, String> {
+    state.engine("agx_presets").request(json!({ "cmd": "agx_presets", "fields": fields }))
+}
+
+// the same from a `.dtpreset` or `.dtstyle` the user picks in the dialog
+// opened here; null when it is cancelled
+#[tauri::command]
+async fn agx_presets_pick(app: AppHandle, state: State<'_, AppState>, fields: Vec<String>) -> Result<Value, String> {
+    let picked = pick_files(&app, "darktable preset or style", &["dtpreset", "dtstyle"], false).await?;
+    let Some(file) = picked.first() else { return Ok(Value::Null) };
+    state.engine("agx_presets").request(json!({ "cmd": "agx_presets", "file": file, "fields": fields }))
 }
 
 // the AgX presets the user loaded into the Profile menu, a document the
@@ -2723,22 +2810,34 @@ async fn agx_profiles_save(state: State<'_, AppState>, profiles: Value) -> Resul
     std::fs::rename(&tmp, &path).map_err(|e| format!("AgX presets: {e}"))
 }
 
-// export presets shared as a file: written where the save dialog chose,
-// and read back from one the open dialog chose. a preset file is small, so
+// presets shared as a file: written where the save dialog opened here
+// asks (false when it is cancelled), and read back from a file its open
+// dialog picks (null when it is cancelled). a preset file is small, so
 // anything larger is not one
 #[tauri::command]
-async fn preset_file_write(path: String, contents: Value) -> Result<(), String> {
-    let text = serde_json::to_string_pretty(&contents).map_err(|e| e.to_string())?;
-    std::fs::write(&path, text).map_err(|e| format!("{path}: {e}"))
+async fn export_presets_export(app: AppHandle, contents: Value, name: String, label: String) -> Result<bool, String> {
+    let Some(path) = pick_save(&app, &label, &["json"], &format!("{name}.json")).await? else { return Ok(false) };
+    write_preset_file(&path, &contents).map(|_| true)
 }
 
 #[tauri::command]
-async fn preset_file_read(path: String) -> Result<Value, String> {
-    let size = std::fs::metadata(&path).map_err(|e| format!("{path}: {e}"))?.len();
+async fn export_presets_import(app: AppHandle, label: String) -> Result<Option<Value>, String> {
+    let picked = pick_files(&app, &label, &["json"], false).await?;
+    picked.first().map(|p| read_preset_file(p)).transpose()
+}
+
+fn write_preset_file(path: &Path, contents: &Value) -> Result<(), String> {
+    let text = serde_json::to_string_pretty(contents).map_err(|e| e.to_string())?;
+    std::fs::write(path, text).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+fn read_preset_file(path: &Path) -> Result<Value, String> {
+    let shown = path.display();
+    let size = std::fs::metadata(path).map_err(|e| format!("{shown}: {e}"))?.len();
     if size > 1 << 20 {
         return Err("this file is too large to be a preset".into());
     }
-    let text = std::fs::read_to_string(&path).map_err(|e| format!("{path}: {e}"))?;
+    let text = std::fs::read_to_string(path).map_err(|e| format!("{shown}: {e}"))?;
     serde_json::from_str(&text).map_err(|_| "this file is not a preset".into())
 }
 
@@ -3119,7 +3218,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             map_tiles::map_tile, map_search::map_search, map_search::map_search_key_status, map_search::map_search_key_save, map_search::map_search_key_remove, open_folder, open_image, get_params, set_params, render, cancel_base, save, baseline_end, before_view, thumb, thumb_cached, thumb_known, cache_limits, cache_usage, cache_clear, meta, meta_set, capture_times, prefetch, darktable_resources, darktable_resources_set, gpu_edits, gpu_edits_set, webview_renderer, webview_renderer_set,
-            export_images, export_cancel, export_existing, export_preview, fonts, print_profiles, print_profile_add, softproof, printers, printer_info, print_photo, print_sheet, export_presets_load, export_presets_save, preset_file_write, preset_file_read, presets_load, presets_save, agx_presets, agx_profiles_load, agx_profiles_save, looks_list, look_import, look_export, look_delete, look_apply, look_amount, preview, paste_batch,
+            export_images, export_cancel, export_existing, export_preview, fonts, print_profiles, print_profile_add, softproof, printers, printer_info, print_photo, print_sheet, export_presets_load, export_presets_save, export_presets_export, export_presets_import, presets_load, presets_save, agx_presets, agx_presets_pick, agx_profiles_load, agx_profiles_save, looks_list, shared_import, look_export, look_delete, look_apply, look_amount, preview, paste_batch,
             mask_shapes, combine, masks, mask_delete, mask_rename, history, module_state, sample, tone_key, lenses, color_profiles, agx_auto, upright, points, range_map, zones, mask_map, ai_object,
             ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, positive_export, spektra_stocks, spektra_fetch, list_subfolders, folder_volumes, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
             immich_export_check, immich_search, immich_browse_check, immich_libraries, immich_suggestions, immich_people, immich_tags,
@@ -3306,5 +3405,75 @@ mod tests {
         drop(engine);
         let _ = std::fs::remove_dir_all(&runtime);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn scratch(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("immage-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn path_inside_accepts_only_the_folder() {
+        let root = scratch("inside");
+        let looks = root.join("looks");
+        std::fs::create_dir_all(looks.join("pack")).unwrap();
+        std::fs::create_dir_all(root.join("looksX")).unwrap();
+        std::fs::write(looks.join("pack/a.dtstyle"), "x").unwrap();
+        std::fs::write(root.join("looksX/b.dtstyle"), "x").unwrap();
+        std::fs::write(root.join("c.dtstyle"), "x").unwrap();
+        let dirs = [looks.as_path()];
+        assert!(path_inside(&looks.join("pack/a.dtstyle"), &dirs).is_ok());
+        // a sibling that shares the folder name as a prefix
+        assert!(path_inside(&root.join("looksX/b.dtstyle"), &dirs).is_err());
+        assert!(path_inside(&root.join("c.dtstyle"), &dirs).is_err());
+        // `..` out of the folder
+        assert!(path_inside(&looks.join("../c.dtstyle"), &dirs).is_err());
+        // nothing there
+        assert!(path_inside(&looks.join("missing.dtstyle"), &dirs).is_err());
+        // a folder that is missing allows nothing
+        assert!(path_inside(&root.join("c.dtstyle"), &[root.join("nope").as_path()]).is_err());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn path_inside_refuses_a_link_out() {
+        let root = scratch("link");
+        let looks = root.join("looks");
+        std::fs::create_dir_all(&looks).unwrap();
+        std::fs::write(root.join("secret"), "x").unwrap();
+        std::os::unix::fs::symlink(root.join("secret"), looks.join("l.dtstyle")).unwrap();
+        std::os::unix::fs::symlink(&root, looks.join("up")).unwrap();
+        assert!(path_inside(&looks.join("l.dtstyle"), &[looks.as_path()]).is_err());
+        assert!(path_inside(&looks.join("up/secret"), &[looks.as_path()]).is_err());
+        // the folder itself may be reached through a link
+        let alias = root.join("alias");
+        std::os::unix::fs::symlink(&looks, &alias).unwrap();
+        std::fs::write(looks.join("ok.dtstyle"), "x").unwrap();
+        assert!(path_inside(&alias.join("ok.dtstyle"), &[looks.as_path()]).is_ok());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn preset_files_round_trip_and_refuse_bad_input() {
+        let dir = scratch("preset");
+        let file = dir.join("p.json");
+        write_preset_file(&file, &json!({ "presets": [1, 2] })).unwrap();
+        assert_eq!(read_preset_file(&file).unwrap(), json!({ "presets": [1, 2] }));
+        std::fs::write(&file, "not json").unwrap();
+        assert_eq!(read_preset_file(&file).unwrap_err(), "this file is not a preset");
+        std::fs::write(&file, vec![b' '; (1 << 20) + 1]).unwrap();
+        assert!(read_preset_file(&file).unwrap_err().contains("too large"));
+        assert!(read_preset_file(&dir.join("missing.json")).is_err());
+        assert!(write_preset_file(&dir.join("no/such/dir.json"), &json!({})).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn suggested_save_names_lose_separators() {
+        assert_eq!(safe_file_name("a/b\\c:d"), "a_b_c_d");
+        assert_eq!(safe_file_name(" ..x.json"), "x.json");
     }
 }
