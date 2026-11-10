@@ -450,9 +450,15 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
                 }
                 return (
                   <>
-                    {renderSlider({ id: "r_cw", label: "Refine", min: 0, max: 100, step: 1, neutral: 27,
+                    {renderSlider({ id: "r_ch", label: "Hue", min: 0, max: 360, step: 1, neutral: 0,
+                                    format: (v) => `${Math.round(v)}°` },
+                                  r.hue * 360, (v) => onRange(shape, { hue: (v % 360) / 360 }))}
+                    {renderSlider({ id: "r_cw", label: "Hue Range", min: 0, max: 100, step: 1, neutral: (0.04 - 0.005) / 0.00445,
                                     format: (v) => `${Math.round(v)}` },
-                                  (r.width - 0.005) / 0.0013, (v) => onRange(shape, { width: 0.005 + v * 0.0013 }))}
+                                  (r.width - 0.005) / 0.00445, (v) => onRange(shape, { width: 0.005 + v * 0.00445 }))}
+                    {renderSlider({ id: "r_cc", label: "Minimum Chroma", min: 0, max: Math.max(100, Math.ceil(r.chroma * 1000)), step: 0.1, neutral: 2,
+                                    format: (v) => v.toFixed(1) },
+                                  r.chroma * 1000, (v) => onRange(shape, { chroma: v / 1000 }))}
                     {renderSlider({ id: "r_cf", label: "Smoothness", min: 0, max: 100, step: 1, neutral: 19,
                                     format: (v) => `${Math.round(v)}` },
                                   (r.feather - 0.002) / 0.002, (v) => onRange(shape, { feather: 0.002 + v * 0.002 }))}

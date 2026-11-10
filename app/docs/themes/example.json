@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "name": "My Theme",
+  "colorScheme": "dark",
+  "colors": {
+    "window": "#0e0e0e",
+    "panel": "#181818",
+    "card": "#1f1f1f",
+    "inset": "#262626",
+    "hover": "#2a2a2a",
+    "text": "#f0f0f0",
+    "text-2": "#a3a3a3",
+    "text-3": "#6b6b6b",
+    "track": "#2e2e2e",
+    "thumb": "#f5f5f5",
+    "accent": "#ffffff",
+    "border": "#333333",
+    "on-accent": "#111111",
+    "focus": "#a3a3a3",
+    "error": "#ef7777",
+    "success": "#78bb87",
+    "graph-bg": "#181818",
+    "graph-grid": "#262626"
+  }
+}

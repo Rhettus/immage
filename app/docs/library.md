@@ -204,7 +204,9 @@ raw, with Exposure, Highlights and Shadows bringing the range in. The
 brackets themselves aren't changed.
 
 HDR DNGs preserve their format identification, color calibration and sensor
-pattern when copying the brackets' EXIF, and can also open in darktable.
+pattern when copying the brackets' EXIF, and retain the camera's orientation
+so portrait and rotated brackets open upright in darktable and other photo
+applications.
 Regenerate an older merge if it shows a **?** thumbnail and cannot open.
 
 The brackets must be raws from the same camera, of the same size and
@@ -315,13 +317,25 @@ The context menu can undo the last batch after confirmation.
 ### Location
 
 The Metadata panel's Location section accepts latitude and longitude in decimal
-degrees (latitude first). Use Show map to place or drag a pin, then Apply to
-save it to the photo's XMP sidecar. Remove location clears GPS coordinates and
-altitude in Immage without changing the original photo. An Immage XMP marker
+degrees (latitude first). **Show map** opens a compact map beside the location
+controls. Choose **Expand** to cover the photo area; use the mouse wheel to
+zoom, drag the map to pan, or place and drag the pin. Choose **Collapse** to
+return to the compact map. Choose **Apply** in either view to save the pin's
+coordinates to the photo's XMP sidecar. Moving a location clears the old altitude.
+**Remove location** clears GPS coordinates
+and altitude in Immage without changing the original photo. An Immage XMP marker
 keeps removed camera GPS from returning on reopen; other photo software may
-still show GPS embedded in the original. Moving a location clears the old altitude. Coordinate editing works
-offline; maps require internet access and no API key. Place-name lookup is not
-included.
+still show GPS embedded in the original.
+
+Preferences and other dialogs open above the expanded map. Close a dialog
+before using Escape to collapse the map.
+
+Place-name search is optional and requires a Geoapify API key saved in
+[Preferences › General › Map search](preferences.md#general). Search results
+move the map to the matching place; they do not set the photo coordinates. Set
+the pin and choose **Apply** to save a location. Map tiles and manual pin
+placement need an internet connection but no search key. Coordinate editing
+works offline.
 
 ## Keywords
 
@@ -331,15 +345,22 @@ Type a hierarchy as `Places > Paris`. Suggestions come from the keywords you
 have used before, and **Recent keywords** holds the last few: click one to
 add it or take it off.
 
-## Opening a photo from another program
+## Opening a photo or folder from another program
 
-Another application, or Terminal, can hand Immage a photo:
+Another application, or a terminal, can hand Immage a photo or a folder:
 
 ```sh
-open -a Immage /path/to/photo.arw
+open -a Immage /path/to/photo.arw     # macOS
+/path/to/Immage.AppImage /path/to/photo.arw     # Linux
+/path/to/Immage.AppImage /path/to/folder
 ```
 
-Immage shows the photo's folder and opens the photo. Dragging a photo from
-Finder or Explorer onto Immage's window does the same, and so should
-dropping it on Immage's Dock icon.
+For a photo, Immage adds its folder to the library, shows the folder and
+opens the photo. For a folder, Immage adds it to the library and shows it
+as a grid; the photos stay where they are, nothing is copied. Dragging a
+photo or folder from Finder or Explorer onto Immage's window does the same,
+and so should dropping it on Immage's Dock icon. Only the first path is
+used. A program that sends photos with **Open With**, such as digiKam,
+works the same way: choose **Other Application** and give it the path to
+Immage.
 <!-- check: dropping a file on the Dock icon, and whether Immage appears in Finder's Open With menu -->

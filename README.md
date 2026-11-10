@@ -19,9 +19,15 @@ and Linux. **All builds are alpha; bugs are expected.**
 ## What you can do
 
 - Edit with familiar tone, color, detail and lens correction tools.
+- Find commands in File, Edit, Photo, View and Help menus that show their keyboard shortcuts.
 - Make local adjustments with brushes, gradients, range masks and AI selections.
-- Heal and clone, simulate film stocks and papers, convert film negatives, and merge HDR photos or panoramas.
+  Copied AI masks are recalculated for each destination photo.
+- Heal and clone, simulate film stocks and papers, convert film negatives with input and working color profiles, and merge HDR photos or panoramas.
 - Apply presets and film looks, compare edits, and copy settings across photos.
+- Choose the Dark, Darktable Grey or Light interface theme, or import a custom
+  color theme.
+- Add optional Geoapify place-name search to the location map; map tiles and
+  manual pin placement work without a search key.
 - Browse folders directly, import from a card with the built-in Immporter,
   and optionally search and export to an [Immich](app/docs/immich.md) library.
 - Export to a folder or an Immich album, with borders and file-name templates.
@@ -37,6 +43,8 @@ can continue editing in a compatible version of darktable.
 **Using darktable already?** Try Immage on copies first. Immage uses a
 development version of darktable, and stable releases may not read its newer
 module or mask formats. See [darktable compatibility](app/docs/darktable.md).
+Immage-specific sidecar conventions are documented in the
+[developer XMP inventory](app/docs/dev/xmp-conventions.md).
 
 ## Download and install
 
@@ -47,6 +55,11 @@ Choose your platform on the [Releases page](https://github.com/Rhettus/immage/re
 | macOS | Apple silicon, macOS 15 or newer | `.dmg` |
 | Windows | Windows 10 or 11, x64; Windows on ARM through x64 emulation | `-setup.exe` installer |
 | Linux | x86-64 or ARM64, glibc 2.35 or newer (Ubuntu 22.04 and later, including Linux Mint 22.x) | AppImage |
+
+The Windows installer offers **Just for me** (under
+`%LOCALAPPDATA%\Programs\Immage`, without administrator permissions) or
+**Everyone on this computer** (under Program Files, requesting permission after
+selection). Updates preserve the installation's location and scope.
 
 Builds are not yet signed with a developer certificate; the release page
 explains how to open them the first time. Immage checks for updates daily;

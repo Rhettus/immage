@@ -3,6 +3,10 @@
 Press ⌘/ in Immage for this list. On Windows and Linux, ⌘ is Ctrl, ⌥ is Alt
 and ⇧ is Shift. Most keys are the ones mainstream editors use.
 
+The File, Edit, Photo, View and Help menus show each command's shortcut
+beside it, so the menus are another place to find a key. See
+[The workspace](workspace.md#menus) for where the menus appear.
+
 Keys do nothing while you type in a text field or while a dialog is open.
 A focused menu keeps its arrow keys, Space and Enter for choosing.
 

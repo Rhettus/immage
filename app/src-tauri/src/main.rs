@@ -7,6 +7,7 @@
 
 mod cache;
 mod map_tiles;
+mod map_search;
 mod engine;
 mod immich_search;
 mod immich_upload;
@@ -214,6 +215,19 @@ async fn sample(state: State<'_, AppState>, x: f64, y: f64, area: Option<Vec<f64
 #[tauri::command]
 async fn tone_key(state: State<'_, AppState>) -> Result<Value, String> {
     state.engine("tone_key").request(json!({ "cmd": "tone_key" }))
+}
+
+// the Lensfun lenses Lens Corrections can use for the open photo, and the
+// one matched from its EXIF (the engine's _lens_menu)
+#[tauri::command]
+async fn lenses(state: State<'_, AppState>) -> Result<Value, String> {
+    state.engine("lenses").request(json!({ "cmd": "lenses" }))
+}
+
+// Input and working profiles supported by the pinned darktable engine.
+#[tauri::command]
+async fn color_profiles(state: State<'_, AppState>) -> Result<Value, String> {
+    state.engine("color_profiles").request(json!({ "cmd": "color_profiles" }))
 }
 
 // black and white relative exposure for AgX, as darktable's "auto tune
@@ -2605,6 +2619,36 @@ async fn export_presets_save(state: State<'_, AppState>, presets: Value) -> Resu
     std::fs::rename(&tmp, &path).map_err(|e| format!("export presets: {e}"))
 }
 
+// the AgX presets in a darktable `.dtpreset` or `.dtstyle` (`file`) or, with
+// none, in the `data.db` (a path, or darktable's own in the config folder),
+// converted by the engine to the current version: { presets: [{ name, params }] }
+#[tauri::command]
+async fn agx_presets(state: State<'_, AppState>, file: Option<String>, db: Option<String>,
+                     fields: Vec<String>) -> Result<Value, String> {
+    state.engine("agx_presets").request(json!({ "cmd": "agx_presets", "file": file, "db": db, "fields": fields }))
+}
+
+// the AgX presets the user loaded into the Profile menu, a document the
+// front end shapes; none yet is an empty list
+#[tauri::command]
+async fn agx_profiles_load(state: State<'_, AppState>) -> Result<Value, String> {
+    let path = state.presets_path.with_file_name("agx-profiles.json");
+    match std::fs::read_to_string(&path) {
+        Ok(text) => serde_json::from_str(&text).map_err(|e| format!("AgX presets: {e}")),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(json!([])),
+        Err(e) => Err(format!("AgX presets: {e}")),
+    }
+}
+
+#[tauri::command]
+async fn agx_profiles_save(state: State<'_, AppState>, profiles: Value) -> Result<(), String> {
+    let path = state.presets_path.with_file_name("agx-profiles.json");
+    let tmp = path.with_extension("json.tmp");
+    let text = serde_json::to_string_pretty(&profiles).map_err(|e| e.to_string())?;
+    std::fs::write(&tmp, text).map_err(|e| format!("AgX presets: {e}"))?;
+    std::fs::rename(&tmp, &path).map_err(|e| format!("AgX presets: {e}"))
+}
+
 // export presets shared as a file: written where the save dialog chose,
 // and read back from one the open dialog chose. a preset file is small, so
 // anything larger is not one
@@ -2643,16 +2687,16 @@ async fn presets_save(state: State<'_, AppState>, presets: Value) -> Result<(), 
     std::fs::rename(&tmp, &state.presets_path).map_err(|e| format!("presets: {e}"))
 }
 
-// a photo handed to the app from outside, waiting for the window to take
-// it: a path on the command line (`Immage /path/photo.arw`), or on macOS a
-// file sent by `open -a Immage photo.arw` or Finder, which also reaches an
-// app that is already running
+// a photo or folder handed to the app from outside, waiting for the window
+// to take it: a path on the command line (`Immage /path/photo.arw`,
+// `Immage /path/folder`), or on macOS one sent by `open -a Immage ...` or
+// Finder, which also reaches an app that is already running
 #[derive(Default)]
 struct Launch(Mutex<Option<String>>);
 
 fn launch_path(arg: &Path) -> Option<String> {
     let p = std::fs::canonicalize(arg).ok()?;
-    p.is_file().then(|| p.to_string_lossy().into_owned())
+    (p.is_file() || p.is_dir()).then(|| p.to_string_lossy().into_owned())
 }
 
 // the sample photo (app/sample, CC0) copied into a "Sample Photos" folder in
@@ -2742,6 +2786,94 @@ fn launch_file(launch: State<'_, Launch>) -> Option<String> {
     launch.0.lock().unwrap().take()
 }
 
+// the menu spec lives in app/src/menu.ts so the drawn Windows/Linux menu and
+// this native one list the same items; Windows and Linux draw it in the title
+// bar strip, as a native row there would take extra height
+#[derive(Deserialize)]
+struct NativeMenu {
+    label: String,
+    items: Vec<NativeItem>,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+enum NativeItem {
+    Item { id: String, label: String, accel: Option<String> },
+    Separator,
+    Submenu { label: String, items: Vec<NativeItem> },
+    Predefined { role: NativeRole },
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum NativeRole {
+    About, Services, Hide, HideOthers, ShowAll, Quit, CloseWindow,
+    Cut, Copy, Paste, Minimize, Zoom, Fullscreen,
+}
+
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn native_items(app: &AppHandle, items: &[NativeItem]) -> tauri::Result<Vec<Box<dyn tauri::menu::IsMenuItem<tauri::Wry>>>> {
+    use tauri::menu::{MenuItemBuilder, PredefinedMenuItem as P, Submenu};
+    let mut out: Vec<Box<dyn tauri::menu::IsMenuItem<tauri::Wry>>> = Vec::new();
+    for it in items {
+        out.push(match it {
+            NativeItem::Item { id, label, accel } => {
+                let mut b = MenuItemBuilder::with_id(id.as_str(), label);
+                if let Some(a) = accel { b = b.accelerator(a); }
+                Box::new(b.build(app)?)
+            }
+            NativeItem::Separator => Box::new(P::separator(app)?),
+            NativeItem::Submenu { label, items } => {
+                let kids = native_items(app, items)?;
+                let refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = kids.iter().map(|k| k.as_ref()).collect();
+                Box::new(Submenu::with_items(app, label, true, &refs)?)
+            }
+            NativeItem::Predefined { role } => match role {
+                NativeRole::About => Box::new(P::about(app, None, None)?),
+                NativeRole::Services => Box::new(P::services(app, None)?),
+                NativeRole::Hide => Box::new(P::hide(app, None)?),
+                NativeRole::HideOthers => Box::new(P::hide_others(app, None)?),
+                NativeRole::ShowAll => Box::new(P::show_all(app, None)?),
+                NativeRole::Quit => Box::new(P::quit(app, None)?),
+                NativeRole::CloseWindow => Box::new(P::close_window(app, None)?),
+                NativeRole::Cut => Box::new(P::cut(app, None)?),
+                NativeRole::Copy => Box::new(P::copy(app, None)?),
+                NativeRole::Paste => Box::new(P::paste(app, None)?),
+                NativeRole::Minimize => Box::new(P::minimize(app, None)?),
+                NativeRole::Zoom => Box::new(P::maximize(app, None)?),
+                NativeRole::Fullscreen => Box::new(P::fullscreen(app, None)?),
+            },
+        });
+    }
+    Ok(out)
+}
+
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn build_menu(app: &AppHandle, menus: &[NativeMenu]) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
+    use tauri::menu::{Menu, Submenu};
+    let mut tops = Vec::new();
+    for m in menus {
+        let kids = native_items(app, &m.items)?;
+        let refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = kids.iter().map(|k| k.as_ref()).collect();
+        tops.push(Submenu::with_items(app, &m.label, true, &refs)?);
+    }
+    let refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = tops.iter().map(|t| t as _).collect();
+    Menu::with_items(app, &refs)
+}
+
+// async so it runs off the main thread: the menu API hops to it and waits
+#[tauri::command]
+async fn menu_set(app: AppHandle, menus: Vec<NativeMenu>) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let menu = build_menu(&app, &menus).map_err(|e| e.to_string())?;
+        app.set_menu(menu).map_err(|e| e.to_string())?;
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (app, menus);
+    Ok(())
+}
+
 fn main() {
     #[allow(unused_mut)]
     let mut context = tauri::generate_context!();
@@ -2755,14 +2887,27 @@ fn main() {
     for w in &mut context.config_mut().app.windows {
         w.create = false;
     }
-    // the first argument naming a file; macOS adds -psn_... to apps it starts
+    // the first argument naming a file or folder; macOS adds -psn_... to apps it starts
     let arg = std::env::args_os().skip(1)
         .filter(|a| !a.to_string_lossy().starts_with('-'))
         .find_map(|a| launch_path(Path::new(&a)));
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin({
+            let updater = tauri_plugin_updater::Builder::new();
+            // NSIS /D must be last and unquoted, including paths with spaces.
+            // Pin updates to the running installation when both scopes exist.
+            #[cfg(target_os = "windows")]
+            let updater = match std::env::current_exe() {
+                Ok(exe) => match exe.parent() {
+                    Some(dir) => updater.installer_arg(format!("/D={}", dir.display())),
+                    None => updater,
+                },
+                Err(_) => updater,
+            };
+            updater.build()
+        })
         .plugin(tauri_plugin_process::init())
         // the main window opens as it was last closed. not its visibility, which
         // the splash sets (Splash.tsx), nor full screen, which only Full Screen
@@ -2779,6 +2924,10 @@ fn main() {
             keychain_from: None,
         }))
         .manage(Launch(Mutex::new(arg)))
+        // custom items reach the page by id; predefined ones act natively
+        .on_menu_event(|app, event| {
+            let _ = app.emit("menu", event.id().as_ref());
+        })
         .setup(|app| {
             #[cfg(target_os = "linux")]
             {
@@ -2845,13 +2994,13 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            map_tiles::map_tile, open_folder, open_image, get_params, set_params, render, cancel_base, save, baseline_end, before_view, thumb, thumb_cached, thumb_known, cache_limits, cache_usage, cache_clear, meta, meta_set, capture_times, prefetch, darktable_resources, darktable_resources_set, gpu_edits, gpu_edits_set, webview_renderer, webview_renderer_set,
-            export_images, export_cancel, export_existing, export_preview, fonts, print_profiles, print_profile_add, softproof, printers, printer_info, print_photo, print_sheet, export_presets_load, export_presets_save, preset_file_write, preset_file_read, presets_load, presets_save, looks_list, look_import, look_export, look_delete, look_apply, look_amount, preview, paste_batch,
-            mask_shapes, combine, masks, mask_delete, mask_rename, history, module_state, sample, tone_key, agx_auto, upright, points, range_map, zones, mask_map, ai_object,
+            map_tiles::map_tile, map_search::map_search, map_search::map_search_key_status, map_search::map_search_key_save, map_search::map_search_key_remove, open_folder, open_image, get_params, set_params, render, cancel_base, save, baseline_end, before_view, thumb, thumb_cached, thumb_known, cache_limits, cache_usage, cache_clear, meta, meta_set, capture_times, prefetch, darktable_resources, darktable_resources_set, gpu_edits, gpu_edits_set, webview_renderer, webview_renderer_set,
+            export_images, export_cancel, export_existing, export_preview, fonts, print_profiles, print_profile_add, softproof, printers, printer_info, print_photo, print_sheet, export_presets_load, export_presets_save, preset_file_write, preset_file_read, presets_load, presets_save, agx_presets, agx_profiles_load, agx_profiles_save, looks_list, look_import, look_export, look_delete, look_apply, look_amount, preview, paste_batch,
+            mask_shapes, combine, masks, mask_delete, mask_rename, history, module_state, sample, tone_key, lenses, color_profiles, agx_auto, upright, points, range_map, zones, mask_map, ai_object,
             ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, positive_export, spektra_stocks, spektra_fetch, list_subfolders, folder_volumes, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
             immich_export_check, immich_search, immich_browse_check, immich_libraries, immich_suggestions, immich_people, immich_tags,
             immich_thumb, immich_resolve, launch_file, path_exists, path_kind, display_scale, trash_files, create_virtual_copy, remove_virtual_copy, hdr_merge, hdr_can_align, pano_merge, pano_preview, pano_can_merge, merge_cancel, preview_fullscreen, build, about, licenses, engine_quit, keywords, keywords_set, ai_accel,
-            perf_set, perf_trace_start, perf_trace_stop, perf_modules, perf_report_write, perf_machine, perf_ping, gpu_check_parity, resources::perf_resources_start, resources::perf_resources_stop,
+            menu_set, perf_set, perf_trace_start, perf_trace_stop, perf_modules, perf_report_write, perf_machine, perf_ping, gpu_check_parity, resources::perf_resources_start, resources::perf_resources_stop,
             plugins::plugin_find_apps, plugins::plugin_launch, plugins::plugin_watch, plugins::plugin_cancel, plugins::plugin_job,
             plugins::plugin_returns, plugins::plugin_return_applied
         ])
@@ -2898,6 +3047,22 @@ fn preview_fullscreen(app: AppHandle, on: bool) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_menu_spec_parses() {
+        let spec = json!([{"label": "Immage", "items": [
+            {"type": "predefined", "role": "hideOthers"},
+            {"type": "separator"},
+            {"type": "item", "id": "export", "label": "Export", "accel": "CmdOrCtrl+E"},
+            {"type": "item", "id": "undo", "label": "Undo"},
+            {"type": "submenu", "label": "More", "items": [{"type": "predefined", "role": "zoom"}]}
+        ]}]);
+        let m: Vec<NativeMenu> = serde_json::from_value(spec).unwrap();
+        assert_eq!(m[0].items.len(), 5);
+        assert!(matches!(&m[0].items[2], NativeItem::Item { id, accel: Some(_), .. } if id == "export"));
+        assert!(matches!(&m[0].items[3], NativeItem::Item { accel: None, .. }));
+        assert!(matches!(&m[0].items[0], NativeItem::Predefined { role: NativeRole::HideOthers }));
+    }
 
     #[test]
     fn folder_progress_once_a_second() {
@@ -2949,13 +3114,14 @@ mod tests {
         folder_files(&dir, true, &HashSet::new(), &mut got, &mut cache::Listed::default());
         let names: Vec<String> = got.iter().map(|p| p.strip_prefix(&dir).unwrap().to_string_lossy().into_owned()).collect();
         let _ = std::fs::remove_dir_all(&dir);
-        // macOS knows .photoslibrary for a package; elsewhere it is a folder
+        // Files in the current folder come first. Then folders are traversed
+        // in case-insensitive name order (link, Photos Library, sub).
         let mut want = vec!["A.CR3", "b.jpg"];
-        if !cfg!(target_os = "macos") {
-            want.push("Photos Library.photoslibrary/d.jpg");
-        }
         if cfg!(unix) {
             want.push("link/c.jpg");
+        }
+        if !cfg!(target_os = "macos") {
+            want.push("Photos Library.photoslibrary/d.jpg");
         }
         want.push("sub/c.jpg");
         assert_eq!(names, want);

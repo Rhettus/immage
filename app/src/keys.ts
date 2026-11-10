@@ -15,7 +15,8 @@ export const cmd = (e: { metaKey: boolean; ctrlKey: boolean }) => (IS_MAC ? e.me
 const NAMES: [string, string][] = [["⌘", "Ctrl"], ["⌃", "Ctrl"], ["⌥", "Alt"], ["⇧", "Shift"]];
 export function keys(s: string): string {
   if (IS_MAC) return s;
-  return s.replace(/[⇧⌥⌘⌃]+(-?)/g, (m: string, dash: string, at: number) => {
+  // a dash before a word joins it ("⌥-click"); one alone is the key ("⌘-")
+  return s.replace(/[⇧⌥⌘⌃]+(-(?=[a-z])|)/g, (m: string, dash: string, at: number) => {
     const names = NAMES.filter(([g]) => m.includes(g)).map(([, n]) => n).join("+");
     if (dash) return `${names}-`;
     // a key follows ("⌘Z", "⌘,") or none does ("hold ⌥)", "⇧ its")

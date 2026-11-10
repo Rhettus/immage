@@ -13,8 +13,18 @@ darktable's raw processing underneath.
   Library panel searches it, and exports can go straight into an album.
 
 On Windows, download and run the `-setup.exe` installer. Choose installation
-for your account or for everyone on the computer. Windows downloads are
-provided as `.exe` installers only.
+for **Just for me** or **Everyone on this computer**. Just for me installs
+under `%LOCALAPPDATA%\Programs\Immage` without administrator permissions.
+Everyone installs under Windows' Program Files folder and asks for administrator
+permission after you select it. Cancelling that request returns to the choice.
+Updates keep the existing location and scope; uninstalling an all-users copy
+also requires administrator permission. Existing per-user installations keep
+their location when updated. When switching to Everyone, setup removes your
+earlier per-user copy while keeping your settings and caches. If setup cannot remove an older copy, uninstall that copy first and run setup
+again; older uninstallers may still require administrator permission.
+Windows downloads are provided as `.exe` installers only. For scripted setup,
+use `/CurrentUser` or `/AllUsers` to select the scope and `/S` to hide the
+wizard. All-users setup still requires Windows administrator permission.
 
 New to Immage? Start with [Getting started](getting-started.md). This guide
 is also on the [Immage website](https://immage.photo/guide/).

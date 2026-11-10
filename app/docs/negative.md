@@ -44,6 +44,61 @@ detail, effects, masks, crop) works as on any photo.
 The warning has a "Don't warn me again" box; Preferences › General ›
 Warn before converting a negative turns it back on.
 
+## Color management
+
+Choose **Input Profile** and **Working Profile** at the top of Negative before
+picking the film border. These are darktable's input color profile settings;
+they affect the whole photo, including when conversion is off.
+
+- **Input Profile** describes the RGB supplied by your camera or scanner.
+  Camera Standard Matrix and Camera Enhanced Matrix are intended for camera
+  raw files, as described in the
+  [darktable negadoctor guide](https://docs.darktable.org/usermanual/development/en/module-reference/processing-modules/negadoctor/).
+  For rendered scans, use the embedded/default profile, the
+  scanner's ICC profile, or the color space the scanner exported, such as
+  sRGB or Adobe RGB.
+- **Working Profile** is the RGB space in which negadoctor measures and
+  converts film densities. Linear Rec2020 is a useful starting point; a
+  suitable matrix ICC profile of the film emulsion is another option.
+  The menu includes only profiles darktable supports as a working space.
+- **Default for Photo** restores darktable's default for that setting on this
+  photo. Raw files and rendered scans can have different input defaults.
+
+For camera scans with excessive saturation or color casts, try **linear Rec2020
+RGB in both menus**, then sample the film again and compare. Users in the
+[Input color profile to use for negatives discussion](https://discuss.pixls.us/t/input-color-profile-to-use-for-negatives/20271)
+and its [comparison thread](https://discuss.pixls.us/t/negatives-and-color-profiles/20293)
+reported improvements from a linear Rec2020 input profile with some scanning
+lights, while others preferred a camera matrix. These are setup-dependent
+experiments, not a universal recommendation or a change to the defaults.
+
+There is no single profile pair that suits every scanning setup. Changing
+either profile changes the RGB values measured by the film pickers: pick
+**Film Border**, then **Photo Area**, and redo neutral shadow/highlight picks
+as needed after changing profiles. Existing conversion values stay in place
+until you pick again. Undo restores a profile change; Reset all restores
+both profiles along with the other adjustments; Undo after Reset all restores
+the conversion and profiles together. Turn Off Conversion leaves the selected
+profiles in place.
+
+To install ICC files, put `.icc` or `.icm` files under Immage's engine
+configuration directory: `color/in` for Input Profile and `color/out` for
+Working Profile, then restart Immage. The configuration directory is:
+
+- Linux: `~/.local/share/app.immage/config` (or `$XDG_DATA_HOME/app.immage/config`).
+- macOS: `~/Library/Application Support/app.immage/config`.
+- Windows: `%APPDATA%/app.immage/config`.
+
+A development build uses `build/app-runtime/config` in the checkout.
+These directories are separate from standalone darktable's configuration.
+Working profiles must be RGB matrix profiles; installing an
+unsupported profile does not make it appear in that menu.
+
+Select **Negative** in Copy Settings to copy both profiles with the conversion.
+The New Preset dialog also offers a Negative group, unchecked by default.
+ICC files themselves are not bundled in copied settings, presets or sidecars;
+install the same named files on the destination computer.
+
 ## Converting a negative
 
 1. **Film Type.** Choose Color or Black & White. Black & White also sets
@@ -63,7 +118,7 @@ Crop the border out with the Crop tool when you are done.
 
 ## The controls
 
-Each control has an eyedropper beside it that sets that control alone
+The eyedropper beside a conversion control sets that control alone
 from a box you drag. The tooltips give darktable's own names, to match
 its manual and tutorials.
 

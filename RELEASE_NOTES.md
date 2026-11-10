@@ -7,9 +7,81 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
-- The user guide now includes troubleshooting and issue-reporting instructions,
-  with GUI benchmark and crash-log locations and guided GitHub forms for bug
-  reports and feature requests.
+- Lens Corrections has a Lens drop-down under Enable Profile Corrections. It
+  shows the lens matched from the file (Auto) and lists the lenses that fit
+  the camera, so a lens the file does not name, or names wrongly, can be
+  chosen by hand (raws that carry their own correction switch to the lensfun
+  profile when you do). Type in its search box to filter: "12-32" finds the
+  Panasonic 12-32mm.
+- File, Edit, Photo, View and Help menus list Immage's commands with their
+  keyboard shortcuts. On macOS they are in the menu bar; on Windows and
+  Linux they are always in the window's title strip, adding no height.
+- Profile > Load AgX Preset imports your AgX presets from darktable or exported
+  preset and style files, including compatible older AgX presets. Added looks
+  stay in My Presets after restarting and can also be chosen as the profile
+  for new raw photos. Delete AgX Preset
+  removes imported entries while keeping existing photo adjustments; built-in
+  profiles cannot be deleted. Deleting the default requires choosing a replacement
+  for new raw photos.
+- Color Range masks now offer Hue, a wider Hue Range, Minimum Chroma and
+  Smoothness controls, with the mask overlay visible while adjusting them.
+- Preferences > General lets you choose the Dark (default), Darktable Grey or
+  Light interface theme, or import a custom theme from a JSON file. Themes
+  apply immediately and are remembered; imported themes can be removed.
+- Location maps expand over the photo area, support wheel zoom and offer
+  place-name search with a Geoapify key saved in General preferences.
+- Negative has independent Input Profile and Working Profile menus, including
+  installed ICC profiles. Choose profiles before sampling the film; settings
+  are saved with the photo and included in Negative copies and presets.
+- Refined Preferences layout, spacing, descriptions, help tooltips and module selectors.
+- Immage accepts a folder on the command line, as well as a photo: the
+  folder joins the library and shows as a grid, as a folder dropped on the
+  window does.
+
+Performance
+
+- Immage uses less memory without slowing editing. After 20 seconds without
+  an edit, and sooner when the computer runs short of memory, darktable's
+  caches give most of their memory back (about 2 GB for a 60-megapixel raw).
+  Whole-image renders keep a smaller cache, and library thumbnails scrolled
+  out of memory free it at once.
+
+Bug fixes
+
+- Updated the importer's bundled SQLite to fix a database memory disclosure
+  vulnerability, preserving existing import history.
+- On Windows and Linux, the Keyboard Shortcuts sheet shows Zoom Out as
+  Ctrl+- instead of "Ctrl-".
+- Tool module menus, including Clarity and Texture, stay inside the window
+  when opened near an edge, keeping their options reachable.
+- AI Denoise and HDR Merge retain the camera's portrait or rotated orientation
+  in their generated DNGs, so they open upright in other photo applications.
+- Fit previews now use valid whole-pixel dimensions at fractional display
+  scaling, avoiding render errors for some window sizes.
+- Pasting settings, including Previous settings, recalculates AI masks for each
+  destination photo while preserving local adjustments and manual mask parts.
+  Older AI selections without saved tool information must be recreated once
+  on the source photo before copying. Preset previews also preserve paste
+  undo/redo when the photo already has masks.
+- Windows installer packaging resolves the bundled UAC plugin and scope includes
+  correctly when built on Windows.
+- Quality and Balanced retain more fine detail and sharpening in settled Fit
+  previews by processing at up to 3072 pixels on the long edge before display.
+  Performance and drag previews keep their smaller sizes.
+- Windows setup requests administrator permission only when installing for
+  everyone. Just for me installs without elevation under
+  `%LOCALAPPDATA%\Programs\Immage`; updates keep the existing scope and location.
+- Undo after Reset all restores the previous negative conversion and color
+  profiles, including after reopening the photo.
+- Lens Corrections now knows cameras added to the lensfun database since 2023,
+  such as the Sony ZV-1; the bundled lens database was the old one from
+  lensfun 0.3.4, so those photos got no profile correction. Each build now
+  bundles the current database. On Linux, as in darktable, a lensfun
+  database installed on the system is used instead; update it with
+  `lensfun-update-data`.
+- Hovering a grain amount or a B&W filter swatch now previews at the size the
+  photo is shown, instead of a smaller render stretched over it, so grain no
+  longer looks soft while you hover.
 
 ## 0.43.0
 

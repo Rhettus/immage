@@ -14,7 +14,7 @@ import { resolveCases, suites, cases } from './suites.mjs';
 import { pathFree } from './support/privacy.mjs';
 import { availableMemory } from './support/memory.mjs';
 import { Journal } from './support/journal.mjs';
-import { sampleProcesses } from './support/process-memory.mjs';
+import { parseProcessStat, sampleProcesses } from './support/process-memory.mjs';
 import { implementationFor } from './registry.mjs';
 import { benchmarkFilename, parseViewport } from './support/benchmark.mjs';
 import { Blocked } from './support/scenario.mjs';
@@ -145,7 +145,28 @@ try {
     copiedFixture=join(fixtures,generated[fixtureName].file);
     report.syntheticFixture={name:fixtureName,...generated[fixtureName]};
   }
-  if (selectedCases.includes('batch-paste')) {
+  if (selectedCases.includes('color-profiles')) {
+    const { narrowPrinterProfile } = await import('./support/icc.mjs');
+    for (const [role, name] of [['in', 'scanner'], ['out', 'working']]) {
+      const dir = join(profile, 'data', 'app.immage', 'config', 'color', role);
+      await mkdir(dir, { recursive: true });
+      await writeFile(join(dir, `immage-test-${name}.icc`), narrowPrinterProfile(`Immage test ${name}`));
+    }
+    report.colorProfilesFixture = 'Generated RGB matrix ICC files for input and working roles';
+  }
+  if (selectedCases.includes('agx-presets')) {
+    execFileSync('python3', [join(root, 'verify/gui/support/agx-fixture.py'),
+      join(profile, 'config', 'darktable', 'data.db')], { stdio: 'pipe' });
+    report.agxFixture = 'Generated AgX v8 database: user preset plus excluded builtin and non-AgX rows';
+  }
+  if (selectedCases.includes('ai-mask-paste')) {
+    const { cp } = await import('node:fs/promises');
+    const model = 'mask-object-sam21-small';
+    await cp(join(root,'build/ai-models',model),join(profile,'data','app.immage','models',model),{recursive:true,dereference:true});
+    report.aiMaskModel = model;
+    report.aiMaskRuntime = process.env.DT_ORT_LIBRARY ?? 'engine default';
+  }
+  if (selectedCases.includes('batch-paste') || selectedCases.includes('ai-mask-paste')) {
     if (!/\.jpe?g$/i.test(copiedFixture)) throw Error('batch-paste requires a JPEG fixture');
     for (const name of ['batch-target-1.jpg', 'batch-target-2.jpg', 'batch-untouched.jpg'])
       await copyFile(copiedFixture, join(fixtures, name));
@@ -279,6 +300,37 @@ try {
     report.cases.push(c); journal.event('case-start', { name }); journal.checkpoint(report);
     const caseDir = join(out, name); await mkdir(caseDir);
     const t = { driver,
+      restart: async () => {
+        // Only this runner's app/session, preserving its isolated profile.
+        const viewport = await driver.observe(() => ({ width: innerWidth, height: innerHeight }));
+        const closing = (await sampleProcesses(processDriver.pid, '/proc', driverStart)).processes
+          .filter(p => !['tauri-driver', 'WebKitWebDriver'].includes(p.name));
+        await driver.close();
+        // DELETE session returns before all of its old engine/webview children
+        // have exited. Do not admit another app while those still own RAM.
+        await until(async () => (await Promise.all(closing.map(async p => {
+          try {
+            const stat = await readFile(`/proc/${p.pid}/stat`, 'utf8');
+            return parseProcessStat(stat).started !== p.started
+              || stat.slice(stat.lastIndexOf(')') + 2).startsWith('Z ');
+          } catch (error) {
+            if (error.code === 'ENOENT' || error.code === 'ESRCH') return true;
+            throw error;
+          }
+        }))).every(Boolean), 'previous test app processes to exit', 15000);
+        driver.mainHandle = null; driver.mainUrl = null;
+        await memoryPreflight('before-restart-launch');
+        await driver.open(binary, copiedFixture);
+        await driver.command('POST', '/timeouts', { script: 10000, pageLoad: 15000, implicit: 0 });
+        await until(async () => {
+          try {
+            await driver.guard();
+            return driver.observe(v => innerWidth === v.width && innerHeight === v.height, viewport);
+          } catch { return false; }
+        }, 'original test viewport restored after restart', 30000);
+        report.viewportPrepared = false;
+        journal.event('app-restarted', { case: name });
+      },
       fixture:{name:fixtureName,generated:fixtureName!=='configured',file:basename(copiedFixture),raw:/\.(?:cr2|cr3|nef|arw|raf|dng|orf|rw2)$/i.test(copiedFixture)},
       sidecars:async()=>Promise.all((await readdir(fixtures)).filter(n=>n.endsWith('.xmp')).map(n=>readFile(join(fixtures,n),'utf8'))),
       sidecarsNamed:async()=>Promise.all((await readdir(fixtures)).filter(n=>n.endsWith('.xmp')).map(async file=>({file,text:await readFile(join(fixtures,file),'utf8')}))),

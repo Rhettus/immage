@@ -20,6 +20,8 @@ every slider the mask uses, out of ordinary darktable parts:
 
 Everything is ordinary history, saved in the XMP sidecar. darktable opens the
 photo with the same instances and masks and renders it the same.
+The [XMP conventions inventory](xmp-conventions.md) records Immage's naming
+and recipe encodings and their compatibility contract.
 
 ## The shapes: one mask group
 
@@ -374,3 +376,28 @@ profiles, copied configuration and read-only references to cached weights. It
 checks enabled/disabled startup settings, a persisted enabled profile, conflicting
 core model paths, paths with spaces, installation after startup, and rejection
 of an incompatible version. It uses no GUI or downloads.
+
+## AI recipes and paste
+
+Object components carry an optional `ai` recipe containing the selection kind,
+normalized object prompts, and the outline/backdrop options. Depth components
+already carry their near/far range. The engine converts object prompts to input
+coordinates when storing recipes and back to shown coordinates when reading them.
+
+Recipes live in disabled, marker-only mask groups named `immage-ai-v1:`, with
+base64 JSON split into bounded name chunks by component and chunk number. These
+groups have no rendered shapes; ordinary darktable mask history and XMP preserve
+them with the mask, including virtual copies and paste snapshots. Renaming masks
+does not affect recipe association. Replacing a mask's shapes replaces its recipe
+groups too.
+
+`runPaste` validates recipes before preparing targets, settles copied image
+settings, then regenerates each AI component on the active destination engine
+session before replacing its masks. Previous settings uses the same transaction
+for its single target. Undo/redo restores generated results from snapshots.
+Legacy object components without recipes are rejected rather than inferred from
+editable mask names; legacy depth components remain regenerable.
+
+Preset previews restore module topology after rendering, including removing
+instances created only for a preview. This keeps module order out of the saved
+edit and prevents preview tiles from invalidating paste snapshot hashes.

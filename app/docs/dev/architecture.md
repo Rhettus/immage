@@ -80,8 +80,9 @@ are `localStorage` keys named `immage.*`.
 
 | File | Responsibility |
 |---|---|
-| [App.tsx](../../src/App.tsx) | Library, viewer, panels, tools, undo, before/after, compare, keyboard, plugins; also the small components `PanelView`, `Slider`, `Filmstrip`, `HistogramView`, `Navigator`, `Toolbar`. |
+| [App.tsx](../../src/App.tsx) | Library, viewer, panels, tools, undo, before/after, compare, keyboard, plugins; also the small components `PanelView`, `Slider`, `Filmstrip`, `HistogramView`, `Navigator`, `Toolbar`. Hover previews (`showHover`) render on the preview pipe: Presets tiles at up to 1600 pixels, a panel's swatches (`hoverValues`; grain, B&W filters) at the displayed size up to 3200, so grain is not stretched. |
 | [Tour.tsx](../../src/Tour.tsx), [Shortcuts.tsx](../../src/Shortcuts.tsx) | The quick-start tour; the keyboard shortcuts sheet. |
+| [menu.ts](../../src/menu.ts), [MenuBar.tsx](../../src/MenuBar.tsx) | The File, Edit, Photo, View and Help menus, defined once for both platforms (`forPlatform`; `nativeSpec` for the macOS bar). MenuBar always draws them in the existing title strip on Windows and Linux. Menu items use the same `ActionId`s as the keys. On macOS, `menu_set` in main.rs builds the menu bar from the native description; a click emits the `menu` event, which `runMenuAction` in App.tsx handles. |
 | [ImportView.tsx](../../src/ImportView.tsx) | The SD card importer, loaded from `@immporter/embed`. |
 | [Collapse.tsx](../../src/Collapse.tsx), [keys.ts](../../src/keys.ts), [paths.ts](../../src/paths.ts) | Folding panels (a fold that shrinks a scrolled list clamps its offset: WebKitGTK left it past the end); ⌘ or Ctrl by platform; path helpers for either separator. |
 | [activity.ts](../../src/activity.ts) | The busy indicator's job store (`begin`, `progress`, `end`, `useWorking`). |
@@ -165,7 +166,7 @@ and one undo after Done.
 | [localMerge.ts](../../src/localMerge.ts) | `planMerge`: which masks share instances of a `merge` module (color balance rgb, color equalizer for HSL, diffuse for Texture, denoise, chromatic aberrations for Defringe), grouped by direction or by slider and sign, whichever needs fewer; each shared instance's strength and each mask's opacity in its combined mask. Masks share only with masks of the same ranges and refinements, which the shared instance carries; an inverted mask with ranges, ranges alone and refine Contrast keep their own instances (`canMerge`). |
 | [MaskOverlay.tsx](../../src/MaskOverlay.tsx), [MasksPanel.tsx](../../src/MasksPanel.tsx), [ParametricEditor.tsx](../../src/ParametricEditor.tsx) | Drawing shapes on the photo; the Masks panel; darktable's parametric (blendif) editor. |
 | [spots.ts](../../src/spots.ts), [SpotOverlay.tsx](../../src/SpotOverlay.tsx), [HealPanel.tsx](../../src/HealPanel.tsx) | Heal/Clone spots, sent to darktable's retouch module. |
-| [negadoctor.ts](../../src/negadoctor.ts), [NegativePanel.tsx](../../src/NegativePanel.tsx) | Film negatives: negadoctor's presets and its pickers, ported from `src/iop/negadoctor.c` and fed `sample` at negadoctor's input; the Negative panel. A converted photo (`neg_on`) has the modules of `NEG_OFF` (manifest.ts) forced off in `Session.moduleEdit`, read as if on when it opens if the history has them, and kept in the history by the engine's `_held_for_mode`. Converting writes the switch-off only for modules that are on (`Session.conversionChanged`), so one that was never on is not switched on when the photo, opened again, is turned back; `NEG_CHOICES` moves Basic's tools after it. Export to Library and Turn Off sit in [PositiveFooter.tsx](../../src/PositiveFooter.tsx), shared with Film Simulation. |
+| [negadoctor.ts](../../src/negadoctor.ts), [NegativePanel.tsx](../../src/NegativePanel.tsx) | Film negatives: input and working profile choices on `colorin`, plus negadoctor's presets and its pickers, ported from `src/iop/negadoctor.c` and fed `sample` at negadoctor's input; the Negative panel. A converted photo (`neg_on`) has the modules of `NEG_OFF` (manifest.ts) forced off in `Session.moduleEdit`, read as if on when it opens if the history has them, and kept in the history by the engine's `_held_for_mode`. Converting writes the switch-off only for modules that are on (`Session.conversionChanged`), so one that was never on is not switched on when the photo, opened again, is turned back; `NEG_CHOICES` moves Basic's tools after it. Export to Library and Turn Off sit in [PositiveFooter.tsx](../../src/PositiveFooter.tsx), shared with Film Simulation. |
 | [spektrafilm.ts](../../src/spektrafilm.ts), [FilmPanel.tsx](../../src/FilmPanel.tsx) | Film Simulation: darktable's spektrafilm. `SF_FIELDS` makes one `sf_<field>` control per param (the hidden `film` panel and the `spektrafilm` map in manifest.ts); `SF_PRESETS` is `init_presets()` over `_preset_defaults()` (`PRESET_BASE`), stocks by name; `stockHash` is the module's `_name_hash()` (djb2 xor, folded to 32 bits), which must stay identical or presets name no stock (`verify/film-simulation.test.mjs` compares it with the engine's for every stock); `filmOf`, `autoPaper`, `filmChanges` and `paperChanges` port `_current_film_entry`, `_auto_paper_entry`, `_film_changed` and `_paper_changed`. A simulated photo (`sf_on`) has `SF_OFF` (the tone mappers) off and `SF_CHOICES` moving Contrast, Saturation and Blacks off them. The two conversions are listed in `CONVERSIONS` (manifest.ts), which Session (`conversionChanged`, `moduleEdit`, `open`, `chooseModules`) and `batchPaste.applyClip` read; App.tsx keeps them mutually exclusive (the `exclusive` dialog). The panel reads the pack with `spektra_stocks` when it opens and polls `spektra_fetch` while downloading. |
 | [zones.ts](../../src/zones.ts), [ZoneSystem.tsx](../../src/ZoneSystem.tsx) | The Zone System: zone statistics, the placement curve (a tone equalizer instance ahead of the [mask anchor](masks.md#where-the-instances-run)), zone masks. |
 
@@ -244,7 +245,7 @@ Commands by what they reach:
 
 | Reaches | Commands |
 |---|---|
-| The open photo, through the engine | `open_image`, `get_params`, `set_params`, `module_state`, `render`, `cancel_base`, `preview`, `save`, `before_view`, `history`, `masks`, `mask_shapes`, `combine`, `mask_delete`, `mask_rename`, `mask_map`, `range_map`, `sample`, `zones`, `tone_key`, `agx_auto`, `spots`, `spots_enable`, `spot_source`, `look_apply`, `look_amount`, `positive_export`, `ai_object`, `ai_mask`, `ai_depth`, `ai_denoise`, `ai_denoise_preview` |
+| The open photo, through the engine | `open_image`, `get_params`, `set_params`, `module_state`, `render`, `cancel_base`, `preview`, `save`, `before_view`, `history`, `masks`, `mask_shapes`, `combine`, `mask_delete`, `mask_rename`, `mask_map`, `range_map`, `sample`, `zones`, `tone_key`, `lenses`, `agx_auto`, `spots`, `spots_enable`, `spot_source`, `look_apply`, `look_amount`, `positive_export`, `ai_object`, `ai_mask`, `ai_depth`, `ai_denoise`, `ai_denoise_preview` |
 | The library, through the engine | `open_folder` (engine `import` in batches), `thumb`, `thumb_cached`, `thumb_known`, `prefetch`, `meta`, `meta_set`, `capture_times`, `keywords`, `keywords_set`, `create_virtual_copy`, `remove_virtual_copy`, `hdr_merge`, `hdr_can_align`, `pano_merge`, `pano_can_merge`, `trash_files`, `export_images`, `export_cancel`, `export_preview`, `fonts`, `print_photo`, `print_profiles`, `print_profile_add`, `printers`, `printer_info`, `softproof`, `spektra_stocks`, `spektra_fetch`, `ai_accel`, `about` |
 | Files only | `list_subfolders`, `folder_volumes`, `path_exists`, `path_kind`, `export_existing`, `presets_load`, `presets_save`, `export_presets_load`, `export_presets_save`, `preset_file_read`, `preset_file_write`, `looks_list`, `sample_folder`, `launch_file` |
 | AI models (download, then the engine's `version`) | `ai_model_ensure`, `ai_model_reinstall` |
@@ -340,16 +341,19 @@ when taking a new darktable release. `_hdr_merge` in main.c imports the
 DNG; a tagged one runs on the export thread (`_export_run`), as it reads
 each bracket through an export pipe.
 The float writer receives no EXIF; `hdr_merge` then merges it through
-`rendered_metadata` so the generated DNG tags and CFA pattern survive.
+`rendered_metadata` so the generated DNG tags and CFA pattern survive, and
+stamps the source camera orientation explicitly because the TIFF writer's
+top-left default is not the camera's orientation.
 An EXIF-write failure removes the temporary output instead of importing it.
 The RAW regression in `verify/panorama.test.mjs` checks HDR as well as panorama
 thumbnails, rendering and reopening after engine restart.
 
 AI Denoise's `_denoise_write` likewise calls the CFA or linear DNG writer
 without EXIF, then uses `rendered_metadata` and `denoised_metadata` in
-`strip.cc`. The latter reads existing metadata before adding the
-`Xmp.darktable.neural_restore` marker, preserving DNG tags and previews while
-preventing automatic denoise presets. Either metadata failure deletes the output.
+`strip.cc`. The latter reads existing metadata before stamping the source
+camera orientation and adding the `Xmp.darktable.neural_restore` marker,
+preserving DNG tags and previews while preventing automatic denoise presets.
+Either metadata failure deletes the output.
 
 [`engine/pano.cc`](../../../engine/pano.cc) is Panorama Merge, which
 darktable doesn't have: OpenCV's stitching pipeline (`cv::detail`, as
@@ -450,6 +454,7 @@ The commands `_handle()` serves:
 | Edit | `set`, `get`, `render`, `preview`, `look`, `look_amount` |
 | Masks and spots | `mask`, `combine`, `masks`, `mask_rename`, `mask_delete`, `mask_map`, `range_map`, `sample`, `spots`, `spots_enable`, `spot_source` |
 | Tone | `tone_key`, `agx_auto`, `zones` |
+| Lens Corrections | `lenses` (`_lens_menu`: the matched lens and the camera's Lensfun lenses, from [lenses.cc](../../../engine/lenses.cc), which loads its own lfDatabase the way lens.cc's `init_global()` does); the virtual field `lens_pick` of the `lens` module (`_write_lens_pick`, `_read_field`): 0 is the EXIF match (default params), else `lenses_hash()` of the chosen lens, written as the params' `lens` name and `target_geom`, with `method` set to Lensfun (a raw with embedded correction defaults to the embedded method, which ignores the database); 0 restores the default params' three. Shown by [LensPicker.tsx](../../src/LensPicker.tsx) (`matchLenses` filters by words), which refetches when the photo or the pick changes |
 | AI | `ai_object`, `ai_mask`, `ai_depth`, `ai_denoise`, `ai_denoise_preview` |
 
 It relies on these parts of darktable (paths inside `darktable/`):
@@ -579,6 +584,7 @@ darktable is, and it has AI features when darktable is configured with
 | [package.json](../../package.json) | `npm run tauri dev` (dev build, engine from `build/bin`), `npm run tauri build`. |
 | [webext/frames.c](../../src-tauri/webext/frames.c) | The Linux web extension for shared-memory frames, built by [build_appimage.sh](../../scripts/build_appimage.sh) into `src-tauri/resources/webext` (gitignored). |
 | [bundle_engine.py](../../scripts/bundle_engine.py), [build_dmg.sh](../../scripts/build_dmg.sh) | The engine and its libraries copied into `src-tauri/resources/darktable` (gitignored) and made relocatable; the macOS disk image. |
+| [fetch_lensfun_db.py](../../scripts/fetch_lensfun_db.py) | Downloads the current lensfun database from lensfun's site into `build/lensfun-db`; both bundle scripts ship it as `share/lensfun` instead of the package copy (0.3.4, from 2023, which lacks newer cameras such as the Sony ZV-1). It fails the build if the download fails or `ZV-1` is missing, and writes `timestamp.txt` (the snapshot's date). |
 | [build_engine_windows.sh](../../scripts/build_engine_windows.sh), [bundle_engine_windows.sh](../../scripts/bundle_engine_windows.sh), [WINDOWS.md](../../WINDOWS.md) | The Windows (MSYS2 UCRT64) build. |
 | [prune_target.mjs](../../scripts/prune_target.mjs) | Frees `src-tauri/target` of earlier builds, which cargo never removes: keeps what the last two builds of each profile use, as cargo lists it. npm runs it before and after every `npm run tauri ...`. |
 | [build_opencv.sh](../../scripts/build_opencv.sh) | OpenCV for HDR Merge's alignment and Panorama Merge: the five modules darktable links and stitching, which the engine links, static, into `build/opencv/install`, which `scripts/build.sh` and `build_engine_windows.sh` hand darktable as `OpenCV_ROOT`. |

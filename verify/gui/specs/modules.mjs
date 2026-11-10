@@ -43,6 +43,7 @@ async function satcurveOutput(t,scope){
 export async function moduleOutput(t,definition){
  const {scope,choice,option}=definition;
  await chooseModule(t,scope,choice.label,option.value);
+ if(scope==='global')await openTool(t,'adjust');
  if(scope==='masks'){
   await openTool(t,'masks');await click(t,'.create-mask');await textButton(t,'.shape-menu-list','Radial Gradient');
   const svg=await reveal(t,'svg.mask-svg');await t.driver.drag({x:svg.x-svg.bounds.width*.12,y:svg.y-svg.bounds.height*.12},{x:svg.x+svg.bounds.width*.12,y:svg.y+svg.bounds.height*.12});
@@ -158,7 +159,13 @@ export async function moduleSwitch(t){
   await textButton(t,'.prefs-foot','Done');
  }catch(e){failure=e;}
  // put Preferences' storage and the photo's module back, then report the first failure
- await t.driver.observe(s=>{for(const [k,v] of Object.entries(s))v===null?localStorage.removeItem('immage.modules.'+k):localStorage.setItem('immage.modules.'+k,v);},store);
+ // Restore effective defaults through the same real Preferences controls.
+ // Read-only observations must never write localStorage to reset the app.
+ await chooseModule(t,'global','Contrast',JSON.parse(store.choices||'{}').contrast??before.mod_contrast);
+ if(store.mode!=='custom'){
+  await click(t,'button[data-tour="prefs"]');await textButton(t,'.prefs-tabs','Modules');
+  await textButton(t,'.prefs','Default');await textButton(t,'.prefs-foot','Done');
+ }
  if(failure){
   if(await t.driver.observe(()=>!!document.querySelector('.module-menu')))await t.driver.keys('\uE00C');
   throw failure;
@@ -200,7 +207,19 @@ export async function moduleSwitch(t){
  await until(()=>t.driver.observe(s=>!!document.querySelector(s+' .value-edit'),sel),'Clarity numeric editor');
  await t.driver.keys('1','\uE007');
  const clarity=(await choices(t)).mod_clarity,otherClarity=clarity===0?1:0;
- await click(t,icon('clarity'));await click(t,`.module-menu [data-module-option="${otherClarity}"]`);
+ await click(t,icon('clarity'));
+ const placement=await t.driver.observe(()=>{
+  const menu=document.querySelector('.module-menu'),anchor=document.querySelector('[data-module-switch="clarity"]');
+  const rect=e=>{const r=e.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom};};
+  return {menu:rect(menu),anchor:rect(anchor),viewport:{width:innerWidth,height:innerHeight},
+    options:[...menu.querySelectorAll('[data-module-option]')].map(rect)};
+ });
+ t.measure({name:'clarity-menu-placement',...placement});
+ assert(placement.menu.left>=0&&placement.menu.right<=placement.viewport.width
+  &&placement.menu.top>=0&&placement.menu.bottom<=placement.viewport.height,'Clarity menu stays inside the viewport');
+ for(const option of placement.options)assert(option.top>=0&&option.bottom<=placement.viewport.height,'Clarity module options remain reachable');
+ await t.evidence('clarity-menu-at-edge');
+ await click(t,`.module-menu [data-module-option="${otherClarity}"]`);
  await until(async()=>(await choices(t)).mod_clarity===otherClarity,'Clarity module switched');
  await until(dot,'dot on the Clarity icon once its edited module is switched away from');
  await click(t,icon('clarity'));

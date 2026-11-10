@@ -19,6 +19,21 @@ in the flexi format once it is edited again. Work on
 copies, or on photos you have not edited in darktable, until you know how
 the two fit your workflow.
 
+## Immage information in sidecars
+
+Immage also saves information for its own editing controls, such as the AI tool
+used to create a selection. Most of this uses names in ordinary darktable mask
+and module history. A custom `immage:locationManaged` metadata property records
+when missing sidecar GPS fields mean the location was deliberately removed.
+
+These conventions do not prevent a compatible darktable from loading the photo
+and sidecar or change its rendering of the saved edit. AI selections are saved
+as native paths; darktable does not need the AI recipe to render them. Editing
+or renaming these structures in darktable may affect Immage's ability to recover
+its controls, and other applications need not interpret the GPS removal marker.
+The version requirements above still apply. Developers can consult the
+[XMP conventions inventory](dev/xmp-conventions.md) for the encodings.
+
 ## Tool and module reference
 
 Each Immage tool is a darktable module, or darktable's masking, so the same
@@ -53,6 +68,8 @@ the slider's value carries over. **Set as default** in the same menu also
 stores that module as the tool's choice in Preferences › Modules, switching
 it to Custom. When the contrast equalizer or saturation curve is chosen, the
 icon sits on that editor's heading, since the slider is replaced.
+Menus open above the icon when there is not enough room below, stay inside
+the window, and scroll if the available height is too small for all options.
 
 | Immage | darktable module |
 |---|---|
@@ -60,13 +77,11 @@ icon sits on that editor's heading, since the slider is replaced.
 | Treatment (Color, Black & White) | color calibration's gray (`channelmixerrgb`), on an instance of its own after the color equalizer, or the color equalizer (`colorequal`) |
 | White Balance: Temp, Tint, the picker | color calibration (`channelmixerrgb`) |
 | Exposure | exposure (`exposure`) |
-| Contrast | AgX (`agx`), or sigmoid (`sigmoid`) on a photo started under it; or color balance rgb (`colorbalancergb`); or contrast equalizer (below) |
-| Contrast equalizer (Contrast option) | contrast equalizer (`atrous`): five channels, each with six coarse-to-fine bands; replaces the global or masked Contrast slider, chosen independently |
+| Contrast | AgX (`agx`), or sigmoid (`sigmoid`) on a photo started under it; or color balance rgb (`colorbalancergb`); or contrast equalizer (`atrous`), which replaces the global or masked slider with five channels of six coarse-to-fine bands, chosen independently |
 | Highlights, Shadows | tone equalizer (`toneequal`), or shadows and highlights (`shadhi`) |
 | Blacks | AgX's lift, or sigmoid's target black; or exposure's black level (`exposure`) |
 | Vibrance | color balance rgb (`colorbalancergb`) |
-| Saturation | AgX's saturation; or color balance rgb (`colorbalancergb`), which the AgX option falls back to on a photo on sigmoid; or saturation curve (below) |
-| Saturation curve (Saturation option) | saturation curve (`satcurvergb`): its saturation and brilliance curves, up to 20 points each, with darktable's default formula and filter; replaces the global or masked Saturation slider, chosen independently |
+| Saturation | AgX's saturation; or color balance rgb (`colorbalancergb`), which the AgX option falls back to on a photo on sigmoid; or saturation curve (`satcurvergb`), which replaces the global or masked slider with saturation and brilliance curves of up to 20 points each, using darktable's default formula and filter, chosen independently |
 | Whites | AgX (`agx`), with color balance rgb's highlights brilliance (`colorbalancergb`); sigmoid (`sigmoid`) on a photo started under it |
 | Texture | contrast & texture (`contrastntexture`), on its own instance, or diffuse or sharpen (`diffuse`) |
 | Clarity | contrast & texture (`contrastntexture`), or local contrast (`bilat`) |
@@ -98,11 +113,11 @@ icon sits on that editor's heading, since the slider is replaced.
 | Local Highlights, Shadows | an instance of tone equalizer or shadows and highlights (as the photo's) per mask |
 | Local Temp, Tint | an instance of color calibration per mask |
 | Local Texture, Clarity, Dehaze | an instance of the chosen Texture or Clarity module (including contrast & texture), or haze removal per mask |
-| Local Noise, Defringe, Sharpness | an instance of denoise (profiled), chromatic aberrations (`cacorrectrgb`), or diffuse or sharpen or sharpen (as the photo's Sharpening) per mask |
+| Local Noise, Defringe, Sharpness | an instance of denoise (profiled), chromatic aberrations (`cacorrectrgb`), or sharpen or diffuse or sharpen (as the photo's Sharpening) per mask |
 | **Heal and Clone** | retouch (`retouch`) |
 | **HDR Merge** | darktable's HDR merge (lighttable's "create HDR"), with its auto-alignment, into a float DNG |
 | **Panorama Merge** | no darktable module: OpenCV stitches RAW and non-RAW photos rendered by darktable into a float DNG |
-| **Negative** | negadoctor (`negadoctor`); a converted negative switches off color calibration, exposure, the tone equalizer, haze removal and the tone mapper, and runs Contrast and Saturation on color balance rgb, Highlights and Shadows on shadows and highlights |
+| **Negative** | input color profile (`colorin`) for Input Profile and Working Profile; negadoctor (`negadoctor`); a converted negative switches off color calibration, exposure, the tone equalizer, haze removal and the tone mapper, and runs Contrast and Saturation on color balance rgb, Highlights and Shadows on shadows and highlights |
 | **Film Simulation** | spektrafilm (`spektrafilm`), with its film and paper data downloaded into darktable's data folder; it switches off the tone mapper (AgX, sigmoid, filmic, base curve) and runs Contrast and Saturation on color balance rgb, Blacks on exposure |
 | **Looks** | darktable styles, applied as extra module instances |
 | **Export** borders | framing (`borders`), added at export only |

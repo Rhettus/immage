@@ -17,7 +17,7 @@
               "kind": "choice",
               "rawOnly": false,
               "min": 0,
-              "max": 16,
+              "max": 99999,
               "step": 1,
               "nonlinear": false,
               "options": [
@@ -2606,6 +2606,23 @@
               "status": "pending"
             },
             {
+              "id": "lens_pick",
+              "label": "Lens",
+              "kind": "choice",
+              "rawOnly": false,
+              "min": 0,
+              "max": 16777215,
+              "step": 1,
+              "nonlinear": false,
+              "options": [
+                [
+                  "Auto",
+                  0
+                ]
+              ],
+              "status": "pending"
+            },
+            {
               "id": "lens_ca",
               "label": "Remove Chromatic Aberration",
               "kind": "toggle",
@@ -5143,6 +5160,40 @@
         {
           "title": "Negative",
           "controls": [
+            {
+              "id": "neg_input_profile",
+              "label": "Input Profile",
+              "kind": "choice",
+              "rawOnly": false,
+              "min": 0,
+              "max": 4294967551,
+              "step": 1,
+              "nonlinear": false,
+              "options": [
+                [
+                  "Default for Photo",
+                  0
+                ]
+              ],
+              "status": "pending"
+            },
+            {
+              "id": "neg_working_profile",
+              "label": "Working Profile",
+              "kind": "choice",
+              "rawOnly": false,
+              "min": 0,
+              "max": 4294967551,
+              "step": 1,
+              "nonlinear": false,
+              "options": [
+                [
+                  "Default for Photo",
+                  0
+                ]
+              ],
+              "status": "pending"
+            },
             {
               "id": "neg_on",
               "label": "Convert Negative",

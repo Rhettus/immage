@@ -64,6 +64,10 @@ Click a card's title to fold or unfold it. See [Library](library.md) and
 - Scroll, or pinch, to zoom around the pointer, from fit up to 400%. The
   zoom pauses at 100% on the way.
 - Z switches between fit and 100%.
+- Quality and Balanced process settled Fit views at up to 3072 pixels on the
+  long edge to preserve fine detail when displayed smaller. Performance uses
+  viewer-sized previews. The screen-scale preference can reduce the processing
+  size; use 100% to judge detail at native resolution.
 - The **Navigator** has **FIT**, **FILL**, **1:1** and **2:1**. When you
   are zoomed in it shows the visible part as a rectangle; drag it to pan.
 - The zoom slider in the toolbar below the filmstrip zooms from a quarter
@@ -154,6 +158,27 @@ the photo:
 
 The toolbar under the filmstrip also has buttons to show or hide the
 Library panel, the filmstrip and the Adjustments panel.
+
+## Menus
+
+The **File**, **Edit**, **Photo**, **View** and **Help** menus list Immage's
+commands with their keyboard shortcuts. Where they appear depends on the
+system:
+
+- **macOS**: the menus are in the system menu bar at the top of the screen,
+  beside the Immage and Window menus. They take no room in the window.
+  An item with a single-key shortcut shows the key in brackets, as in
+  "Grid View (G)".
+- **Windows and Linux**: the menus are always in the strip at the top of
+  the window that shows "Immage", so they add no height.
+
+On Windows and Linux, click a menu to open it. While one is open, moving the
+pointer over another menu opens that one. The arrow keys move through the
+items, Enter chooses the highlighted one and Escape closes the menu.
+
+Menu items do nothing while a dialog is open, as the keys do. While you type
+in a text field, Edit's Undo, Redo, Cut, Copy, Paste and Select All act on
+the text.
 
 ## Undo and redo
 

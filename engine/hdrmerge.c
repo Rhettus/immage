@@ -556,7 +556,8 @@ gchar *hdr_merge(GList *imgids, const gboolean align, hdr_merge_step_t step, voi
   // Preserve the writer's DNG/CFA tags. It supplies no Make/Model, so
   // copy those from the source rather than protecting them as rendered DNGs do.
   const gboolean metadata_ok = g_file_test(part, G_FILE_TEST_IS_REGULAR)
-    && rendered_metadata(part, exif, exif_len, FALSE);
+    && rendered_metadata(part, exif, exif_len, FALSE)
+    && dng_orientation_metadata(part, d.orientation);
   free(exif);
   if(!metadata_ok || g_rename(part, pathname))
   {

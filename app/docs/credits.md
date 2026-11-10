@@ -89,6 +89,10 @@ Immage identifies its requests, caches viewed tiles for seven days, and does not
 prefetch areas for offline use. Opening the map sends the viewed area and your
 IP address to the tile service.
 
+Optional place-name search is provided by [Geoapify](https://www.geoapify.com/)
+and requires a user-supplied API key. Searching sends the entered place name and
+the key to Geoapify; Immage stores the key in the operating system keyring.
+
 Interactive maps use [Leaflet](https://leafletjs.com/), Copyright © 2010–2023
 Volodymyr Agafonkin and © 2010–2011 CloudMade, under the
 [BSD 2-Clause license](https://github.com/Leaflet/Leaflet/blob/main/LICENSE).

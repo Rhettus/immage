@@ -20,6 +20,9 @@ import type { Preview } from "./Preferences";
 const invoke = <T = unknown>(command: string, args?: Parameters<typeof perf.command>[1]) => perf.command<T>(command, args);
 
 
+export type ColorProfiles = { input: [string, number][]; working: [string, number][] };
+export const colorProfiles = () => invoke<ColorProfiles>("color_profiles");
+
 type OpenReply = { imgid: number; sensor_width: number; sensor_height: number; orientation: number;
                    look: string | null; look_amount: number; edited: boolean; raw: boolean;
                    fresh?: boolean };
@@ -1324,6 +1327,32 @@ export class Session {
           this.engineBefore = true;
           this.changed();
         }
+        // Capture the native state before reset controls (including framing)
+        // are written; undo restores this state after its mapped values.
+        if (this.resetModulesPending) {
+          this.resetModulesPending = false;
+          const seen = new Set<string>();
+          for (const h of this.history) {
+            if (h.priority === undefined) continue;
+            const key = instanceKey(h);
+            if (seen.has(key)) continue;
+            seen.add(key);
+            const legacy = ["filmicrgb", "filmic", "basecurve"].includes(h.op);
+            const r = await this.pumpCommand<{ was: ModuleState; now: ModuleState }>("module_state",
+              { op: h.op, priority: h.priority, reset: true, ...(legacy ? { enabled: false } : {}) });
+            this.touched.add(key);
+            if (!this.modulesOpened.has(key)) this.modulesOpened.set(key, r.was);
+            this.moduleStates.set(key, r.now);
+          }
+          this.foreign.clear();
+          for (const m of modules) this.dirty.add(m.op);
+          this.deleted.clear();
+          this.changed();
+          this.onModules?.();
+          if (!this.before) { this.unsaved = true; this.scheduleSave(); }
+          this.needRender = true;
+          continue;
+        }
         // a turn or a reframing goes first: masks and spots restored with
         // it (undo) are in its frame
         const framing = [...this.dirty].some((op) => FRAMING.has(op.split("#")[0]));
@@ -1373,30 +1402,6 @@ export class Session {
           this.wantLook = undefined;
           await this.pumpCommand("look_apply", { path });
           this.changed();
-          if (!this.before) { this.unsaved = true; this.scheduleSave(); }
-          this.needRender = true;
-          continue;
-        }
-        if (this.resetModulesPending) {
-          this.resetModulesPending = false;
-          const seen = new Set<string>();
-          for (const h of this.history) {
-            if (h.priority === undefined) continue;
-            const key = instanceKey(h);
-            if (seen.has(key)) continue;
-            seen.add(key);
-            const legacy = ["filmicrgb", "filmic", "basecurve"].includes(h.op);
-            const r = await this.pumpCommand<{ was: ModuleState; now: ModuleState }>("module_state",
-              { op: h.op, priority: h.priority, reset: true, ...(legacy ? { enabled: false } : {}) });
-            this.touched.add(key);
-            if (!this.modulesOpened.has(key)) this.modulesOpened.set(key, r.was);
-            this.moduleStates.set(key, r.now);
-          }
-          this.foreign.clear();
-          for (const m of modules) this.dirty.add(m.op);
-          this.deleted.clear();
-          this.changed();
-          this.onModules?.();
           if (!this.before) { this.unsaved = true; this.scheduleSave(); }
           this.needRender = true;
           continue;

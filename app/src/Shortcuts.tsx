@@ -3,6 +3,7 @@
 
 // Lightroom's Keyboard Shortcuts sheet (⌘/): every key the app answers,
 // by where it works. the handlers live in App.tsx; keep this list with them
+// (the menus in menu.ts list these shortcuts too)
 import { useEffect } from "react";
 import { cmd, keys } from "./keys";
 

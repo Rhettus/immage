@@ -10,6 +10,7 @@
 // window's web extension reads it in (main.rs, shm_frame; webext/frames.c)
 import { perf } from "./perf";
 import { invoke } from "@tauri-apps/api/core";
+import { normalizeRenderArgs } from "./renderDimensions";
 
 type SharedBufferEvent = { getBuffer(): ArrayBuffer; additionalData: { frame?: number } | null };
 type WebView2 = {
@@ -72,6 +73,9 @@ webview?.addEventListener("sharedbufferreceived", (e) => {
 // render's reply, with the frame put back behind the header when it came by
 // shared memory
 export async function renderFrame(args: Record<string, unknown>): Promise<ArrayBuffer> {
+  // Only the fit view has a preview-size cap. Zoomed viewport requests can be
+  // larger, so this boundary enforces u32 dimensions without changing them.
+  args = normalizeRenderArgs(args, 0xFFFF_FFFF);
   const event = (name: string, data?: Record<string, unknown>) => perf.event(name, { requestId:args.diagnosticRequest, ...data });
   const call = async (request: Record<string, unknown>) => {
     const started = performance.now();

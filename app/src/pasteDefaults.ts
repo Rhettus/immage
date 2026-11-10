@@ -2,7 +2,7 @@
 // Copyright (C) 2026 the Immage authors
 import { invoke } from "@tauri-apps/api/core";
 import type { Session } from "./session";
-import type { Values } from "./manifest";
+import { profileSelection, type Values } from "./manifest";
 import { AUTO_TONE_IDS, autoExposure, autoTone } from "./autoTone";
 import { DEFAULT_TRANSITION, parseZones } from "./zones";
 
@@ -16,7 +16,7 @@ export async function preparePastePhoto(s: Session, defaults: PasteDefaults) {
   if (s.wasEdited) return;
   const values: Values = { tm_mode: 1 };
   if (s.raw) {
-    if (defaults.profile) values.profile = defaults.profile;
+    if (defaults.profile) Object.assign(values, profileSelection(defaults.profile));
     if (defaults.compensation) values.exp_comp = defaults.compensation;
     values.capture = 1;
   }

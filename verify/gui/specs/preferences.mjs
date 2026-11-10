@@ -10,6 +10,13 @@ async function modules(t) {
     if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
   }), 'Modules tab');
   await t.driver.point(tab.x, tab.y);
+  const defaultMode = await t.driver.observe(() => {
+    const e = [...document.querySelectorAll('.prefs button')].find(e => e.textContent.trim() === 'Default');
+    const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  });
+  await t.driver.point(defaultMode.x, defaultMode.y);
+  await until(() => t.driver.observe(() => !document.querySelector('#module-prefs-global select, #module-prefs-masks select')), 'Default uses plain module names');
+  assert(await t.driver.observe(() => !!document.querySelector('#module-prefs-global .pref-value, #module-prefs-masks .pref-value')), 'Default module names remain visible');
   const custom = await until(() => t.driver.observe(() => {
     const e = [...document.querySelectorAll('.prefs button')].find(e => e.textContent.trim() === 'Custom');
     if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
@@ -74,4 +81,48 @@ export async function moduleOptions(t) {
   await selectIndex(t, global, g.options.findIndex(o => o.value === g.value));
   await click(t, '.prefs-foot button');
   await until(() => t.driver.observe(() => !document.querySelector('.prefs')), 'Preferences closed');
+}
+
+// Help uses real pointer/keyboard input; inspection only reads DOM and geometry.
+export async function preferencesHelp(t) {
+  const { tabTo } = await import('../support/controls.mjs');
+  await click(t, 'button[data-tour="prefs"]');
+  const tab = await t.driver.observe(() => {
+    const e = [...document.querySelectorAll('.prefs-tabs button')].find(e => e.textContent.trim() === 'General');
+    const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  });
+  await t.driver.point(tab.x, tab.y);
+  const selector = '[data-pref-label="Canvas"] .pref-help';
+  const help = await reveal(t, selector);
+  await t.driver.move(help.x, help.y);
+  await until(() => t.driver.observe(() => !!document.querySelector('[role="tooltip"]')), 'hover help');
+  const hover = await t.driver.observe(() => {
+    const tip = document.querySelector('[role="tooltip"]');
+    const r = tip.getBoundingClientRect();
+    return { text: tip.textContent, contained: r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight,
+      hint: document.querySelector('[data-pref-label="Canvas"] .pref-hint').textContent };
+  });
+  assert(hover.contained, 'help fits within the webview');
+  assert(hover.text.length > hover.hint.length, 'short visible copy retains full help');
+  await t.evidence('preferences-hover-help');
+  await t.driver.keys('\uE00C');
+  await until(() => t.driver.observe(() => !document.querySelector('[role="tooltip"]')), 'Escape dismisses help');
+  assert(await t.driver.observe(() => !!document.querySelector('.prefs')), 'Escape leaves Preferences open');
+  await t.driver.move(tab.x, tab.y);
+  await tabTo(t, selector);
+  await until(() => t.driver.observe(() => {
+    const e = document.activeElement;
+    return e?.getAttribute('aria-describedby') === document.querySelector('[role="tooltip"]')?.id;
+  }), 'focused help is described by tooltip');
+  await t.evidence('preferences-keyboard-help');
+  await t.driver.keys('\uE004');
+  await until(() => t.driver.observe(() => !document.querySelector('[role="tooltip"]')), 'blur dismisses help');
+  const performance = await t.driver.observe(() => {
+    const e = [...document.querySelectorAll('.prefs-tabs button')].find(e => e.textContent.trim() === 'Performance');
+    const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  });
+  await t.driver.point(performance.x, performance.y);
+  await until(() => t.driver.observe(() => document.querySelector('.prefs .pref-card h4')?.textContent === 'GPU'), 'GPU section first in Performance');
+  await click(t, '.prefs-foot button');
+  t.measure({ name: 'preferences-help', coverage: ['short copy', 'hover help', 'focus help', 'tooltip bounds', 'Escape', 'blur', 'ARIA description', 'GPU section first in Performance'] });
 }

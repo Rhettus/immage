@@ -40,6 +40,8 @@
 #include "common/metadata.h"
 #include "common/mipmap_cache.h"
 #include "common/ratings.h"
+#include <libxml/parser.h>
+#include <sqlite3.h>
 #include "common/styles.h"
 #include "common/spektra_fetch.h"
 #include "common/spektra_sim.h"
@@ -56,6 +58,7 @@
 #ifdef HAVE_PANO
 #include "pano.h"
 #endif
+#include "lenses.h"
 #include "print.h"
 #include "strip.h"
 #include "upright.h"
@@ -82,6 +85,17 @@
 #include <glib/gstdio.h>
 #ifndef _WIN32
 #include <execinfo.h>
+#endif
+#if defined(__GLIBC__)
+#include <malloc.h>
+#elif defined(__APPLE__)
+#include <dispatch/dispatch.h>
+#include <malloc/malloc.h>
+#elif defined(_WIN32)
+#include <malloc.h>
+#include <windows.h>
+#endif
+#ifndef _WIN32
 #include <signal.h>
 #endif
 #include <archive.h>
@@ -1092,10 +1106,129 @@ static gboolean _write_details(dt_iop_module_t *mod, const double num, char **er
   return TRUE;
 }
 
+// "lens_pick" of the lens module, besides its params: 0 for the lens
+// darktable matched from the EXIF (the default params'), else lenses_hash()
+// of the Lensfun lens chosen in its place. the params keep the lens's name
+// and its geometry, as the module's own lens menu sets them, and the method
+// is Lensfun's: a raw that carries its own correction defaults to the
+// embedded one, which has no use for a lens of the database
+#define LENS_PICK "lens_pick"
+#define LENS_METHOD_LENSFUN 1
+
+static gboolean _write_lens_pick(dt_iop_module_t *mod, const double num, char **err)
+{
+  dt_introspection_field_t *f = NULL;
+  char *lens = _field_in(mod, mod->params, "lens", &f, err);
+  const char *auto_lens = lens ? _field_in(mod, mod->default_params, "lens", &f, err) : NULL;
+  int *geom = _field_in(mod, mod->params, "target_geom", &f, err);
+  const int *auto_geom = geom ? _field_in(mod, mod->default_params, "target_geom", &f, err) : NULL;
+  int *method = _field_in(mod, mod->params, "method", &f, err);
+  const int *auto_method = method ? _field_in(mod, mod->default_params, "method", &f, err) : NULL;
+  if(!lens || !auto_lens || !geom || !auto_geom || !method || !auto_method) return FALSE;
+  if(num <= 0.0)
+  {
+    g_strlcpy(lens, auto_lens, 128);
+    *geom = *auto_geom;
+    *method = *auto_method;
+    return TRUE;
+  }
+  char model[128];
+  int type = 0;
+  if(!lenses_find((unsigned)num, model, sizeof model, &type))
+  {
+    *err = g_strdup("no such lens in the Lensfun database");
+    return FALSE;
+  }
+  g_strlcpy(lens, model, 128);
+  *geom = type ? type : *auto_geom;
+  *method = LENS_METHOD_LENSFUN;
+  return TRUE;
+}
+
+// Scalar choices for colorin's (type, filename) pairs. Zero restores this
+// image's defaults; built-ins use type + 1, ICC files a stable filename hash.
+// Keep the filename in native params/XMP, never the menu index.
+static guint64 _profile_id(const int type, const char *filename)
+{
+  // Match darktable's basename-based ICC lookup, including sidecars copied
+  // between operating systems with different path separators.
+  const char *base = filename;
+  for(const char *c = filename; *c; c++) if(*c == '/' || *c == '\\') base = c + 1;
+  return type == DT_COLORSPACE_FILE ? 256ULL + g_str_hash(base) : (guint64)type + 1;
+}
+
+static gboolean _profile_fields(dt_iop_module_t *mod, void *params, const gboolean work,
+                                 int **type, char **filename, char **err)
+{
+  dt_introspection_field_t *f = NULL;
+  *type = _field_in(mod, params, work ? "type_work" : "type", &f, err);
+  *filename = *type ? _field_in(mod, params, work ? "filename_work" : "filename", &f, err) : NULL;
+  return *type && *filename;
+}
+
+static gboolean _read_profile(dt_iop_module_t *mod, const gboolean defaults, const gboolean work,
+                              double *num, char **err)
+{
+  int *type; char *filename;
+  if(!_profile_fields(mod, defaults ? mod->default_params : mod->params, work, &type, &filename, err))
+    return FALSE;
+  *num = _profile_id(*type, filename);
+  return TRUE;
+}
+
+static gboolean _write_profile(dt_iop_module_t *mod, const gboolean work, const double num, char **err)
+{
+  int *type; char *filename;
+  if(!_profile_fields(mod, mod->params, work, &type, &filename, err)) return FALSE;
+  if(num == 0)
+  {
+    int *def_type; char *def_filename;
+    if(!_profile_fields(mod, mod->default_params, work, &def_type, &def_filename, err)) return FALSE;
+    *type = *def_type;
+    g_strlcpy(filename, def_filename, DT_IOP_COLOR_ICC_LEN);
+    return TRUE;
+  }
+  // Unavailable profiles kept in a sidecar must survive edits to the other
+  // choice. Choosing a different unavailable file is an error.
+  if(num == _profile_id(*type, filename)) return TRUE;
+  const dt_colorspaces_color_profile_t *chosen = NULL;
+  for(const GList *l = darktable.color_profiles->profiles; l; l = l->next)
+  {
+    const dt_colorspaces_color_profile_t *p = l->data;
+    if((work ? p->work_pos : p->in_pos) < 0 || num != _profile_id(p->type, p->filename)) continue;
+    if(chosen && (p->type != chosen->type || strcmp(p->filename, chosen->filename)))
+    {
+      *err = g_strdup("ambiguous color profile identifier");
+      return FALSE;
+    }
+    chosen = p;
+  }
+  // Camera profiles are image-specific, outside the global profile list.
+  if(!chosen && !work && (num == DT_COLORSPACE_STANDARD_MATRIX + 1
+                         || num == DT_COLORSPACE_ENHANCED_MATRIX + 1))
+  {
+    *type = (int)num - 1;
+    filename[0] = '\0';
+    return TRUE;
+  }
+  if(!chosen)
+  {
+    *err = g_strdup("color profile unavailable or unsuitable for this role");
+    return FALSE;
+  }
+  *type = chosen->type;
+  g_strlcpy(filename, chosen->filename, DT_IOP_COLOR_ICC_LEN);
+  return TRUE;
+}
+
 static gboolean _write_field(dt_iop_module_t *mod, const char *name, const double num,
                              char **err)
 {
+  if(!g_strcmp0(mod->op, "colorin")
+     && (!g_strcmp0(name, "input_profile") || !g_strcmp0(name, "working_profile")))
+    return _write_profile(mod, !strcmp(name, "working_profile"), num, err);
   if(!g_strcmp0(name, BLEND_DETAILS)) return _write_details(mod, num, err);
+  if(!g_strcmp0(name, LENS_PICK) && !g_strcmp0(mod->op, "lens")) return _write_lens_pick(mod, num, err);
   return _write_field_in(mod, mod->params, name, num, err);
 }
 
@@ -1103,10 +1236,21 @@ static gboolean _write_field(dt_iop_module_t *mod, const char *name, const doubl
 static gboolean _read_field(dt_iop_module_t *mod, const char *name,
                             const gboolean from_defaults, double *num, char **err)
 {
+  if(!g_strcmp0(mod->op, "colorin")
+     && (!g_strcmp0(name, "input_profile") || !g_strcmp0(name, "working_profile")))
+    return _read_profile(mod, from_defaults, !strcmp(name, "working_profile"), num, err);
   if(!g_strcmp0(name, BLEND_DETAILS))
   {
     const dt_develop_blend_params_t *bp = from_defaults ? mod->default_blendop_params : mod->blend_params;
     *num = bp ? bp->details : 0.0;
+    return TRUE;
+  }
+  if(!g_strcmp0(name, LENS_PICK) && !g_strcmp0(mod->op, "lens"))
+  {
+    dt_introspection_field_t *lf = NULL;
+    const char *lens = from_defaults ? NULL : _field_in(mod, mod->params, "lens", &lf, err);
+    const char *auto_lens = from_defaults ? NULL : _field_in(mod, mod->default_params, "lens", &lf, err);
+    *num = lens && auto_lens && g_strcmp0(lens, auto_lens) ? lenses_hash(lens) : 0.0;
     return TRUE;
   }
   dt_introspection_field_t *f = NULL;
@@ -1609,6 +1753,102 @@ static gboolean _get(JsonObject *ops, JsonBuilder *b, char **err)
   }
   g_list_free(names);
   json_builder_end_object(b);
+  return TRUE;
+}
+
+// the lenses the open photo's Lens Corrections can use, `auto` being the one
+// darktable matched from the EXIF and `pick` the one chosen in its place
+// (lens_pick): { auto, pick, lenses: [{ name, maker, hash }] } in name order,
+// the chosen one included even when it does not fit the camera
+static void _add_string(JsonBuilder *b, const char *name, const char *value);
+typedef struct { JsonBuilder *b; GHashTable *seen; } _lens_menu_t;
+
+static void _lens_menu_add(const char *maker, const char *model, void *user)
+{
+  _lens_menu_t *m = user;
+  if(!model || !*model || g_hash_table_contains(m->seen, model)) return;
+  g_hash_table_add(m->seen, g_strdup(model));
+  json_builder_begin_object(m->b);
+  _add_string(m->b, "name", model);
+  _add_string(m->b, "maker", maker);
+  json_builder_set_member_name(m->b, "hash");
+  json_builder_add_int_value(m->b, lenses_hash(model));
+  json_builder_end_object(m->b);
+}
+
+static gboolean _lens_menu(JsonBuilder *b, char **err)
+{
+  dt_iop_module_t *mod = _module("lens", err);
+  if(!mod) return FALSE;
+  dt_introspection_field_t *f = NULL;
+  const char *lens = _field_in(mod, mod->params, "lens", &f, err);
+  const char *auto_lens = lens ? _field_in(mod, mod->default_params, "lens", &f, err) : NULL;
+  if(!lens || !auto_lens) return FALSE;
+  // the database's name for the lens the file names, as the module matches it
+  const dt_image_t *img = &_s.dev.image_storage;
+  char matched[128];
+  g_strlcpy(matched, auto_lens, sizeof matched);
+  lenses_match(img->exif_maker, img->exif_model, auto_lens, matched, sizeof matched);
+  _add_string(b, "auto", matched);
+  double pick = 0.0;
+  if(!_read_field(mod, LENS_PICK, FALSE, &pick, err)) return FALSE;
+  json_builder_set_member_name(b, "pick");
+  json_builder_add_int_value(b, (gint64)pick);
+  json_builder_set_member_name(b, "lenses");
+  json_builder_begin_array(b);
+  _lens_menu_t m = { b, g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL) };
+  lenses_list(img->exif_maker, img->exif_model, _lens_menu_add, &m);
+  // a lens kept from another camera's edit, or the matched one, is listed
+  if(*lens && g_strcmp0(lens, auto_lens)) _lens_menu_add("", lens, &m);
+  if(*matched) _lens_menu_add("", matched, &m);
+  g_hash_table_destroy(m.seen);
+  json_builder_end_array(b);
+  return TRUE;
+}
+
+static void _profile_option(JsonBuilder *b, const char *label, const guint64 id)
+{
+  json_builder_begin_array(b);
+  json_builder_add_string_value(b, label);
+  json_builder_add_int_value(b, id);
+  json_builder_end_array(b);
+}
+
+static gboolean _color_profiles(JsonBuilder *b, char **err)
+{
+  dt_iop_module_t *mod = _module("colorin", err);
+  if(!mod) return FALSE;
+  for(int work = 0; work < 2; work++)
+  {
+    json_builder_set_member_name(b, work ? "working" : "input");
+    json_builder_begin_array(b);
+    _profile_option(b, "Default for Photo", 0);
+    if(!work)
+    {
+      _profile_option(b, "Camera Standard Matrix", DT_COLORSPACE_STANDARD_MATRIX + 1);
+      _profile_option(b, "Camera Enhanced Matrix", DT_COLORSPACE_ENHANCED_MATRIX + 1);
+    }
+    int *type; char *filename;
+    if(!_profile_fields(mod, mod->params, work, &type, &filename, err)) return FALSE;
+    const guint64 current = _profile_id(*type, filename);
+    gboolean found = !work && (*type == DT_COLORSPACE_STANDARD_MATRIX || *type == DT_COLORSPACE_ENHANCED_MATRIX);
+    for(const GList *l = darktable.color_profiles->profiles; l; l = l->next)
+    {
+      const dt_colorspaces_color_profile_t *p = l->data;
+      if((work ? p->work_pos : p->in_pos) < 0) continue;
+      const guint64 id = _profile_id(p->type, p->filename);
+      _profile_option(b, p->name, id);
+      found |= id == current;
+    }
+    if(!found)
+    {
+      gchar *label = g_strdup_printf("%s (current)",
+        *type == DT_COLORSPACE_FILE ? filename : dt_colorspaces_get_name(*type, filename));
+      _profile_option(b, label, current);
+      g_free(label);
+    }
+    json_builder_end_array(b);
+  }
   return TRUE;
 }
 
@@ -5855,7 +6095,7 @@ static gboolean _denoise_write(const dt_restore_sensor_class_t cls, const dt_ima
   int res = cfa ? dt_imageio_dng_write_cfa_bayer(out, cfa, w, h, meta, NULL, 0, jpeg ? &preview : NULL)
                 : dt_imageio_dng_write_linear(out, rgb, w, h, meta, NULL, 0, jpeg ? &preview : NULL);
   if(!res && !rendered_metadata(out, exif, exif_len, TRUE)) res = 1;
-  if(!res && !denoised_metadata(out)) res = 1;
+  if(!res && !denoised_metadata(out, dt_image_orientation(meta))) res = 1;
   g_free(jpeg);
   free(exif);
   g_free(cfa);
@@ -6483,6 +6723,67 @@ static void _invalidate_from(const int order, const char *why)
   if(_s.base.ok) dt_dev_pixelpipe_cache_invalidate_later(&_s.base.pipe, order, why);
 }
 
+// Disabled, marker-only groups carry recipe chunks in ordinary mask history/XMP.
+// They render nothing, and avoid a separate metadata store drifting from history.
+#define _AI_RECIPE "immage-ai-v1:"
+static void _recipe_coordinates(JsonObject *o, void (*transform)(float, float, float *, float *))
+{
+  JsonArray *points = json_object_has_member(o, "points") ? json_object_get_array_member(o, "points") : NULL;
+  if(points)
+  {
+    JsonArray *to = json_array_new();
+    for(guint i = 0; i < json_array_get_length(points); i++)
+    {
+      JsonArray *point = json_array_get_array_element(points, i);
+      if(!point || json_array_get_length(point) != 3) continue;
+      float x, y;
+      transform(json_array_get_double_element(point, 0), json_array_get_double_element(point, 1), &x, &y);
+      JsonArray *v = json_array_new();
+      json_array_add_double_element(v, x); json_array_add_double_element(v, y);
+      json_array_add_double_element(v, json_array_get_double_element(point, 2));
+      json_array_add_array_element(to, v);
+    }
+    json_object_set_array_member(o, "points", to);
+  }
+  JsonArray *box = json_object_has_member(o, "box") ? json_object_get_array_member(o, "box") : NULL;
+  if(box && json_array_get_length(box) == 4)
+  {
+    float x0, y0, x1, y1;
+    transform(json_array_get_double_element(box, 0), json_array_get_double_element(box, 1), &x0, &y0);
+    transform(json_array_get_double_element(box, 2), json_array_get_double_element(box, 3), &x1, &y1);
+    JsonArray *to = json_array_new();
+    json_array_add_double_element(to, MIN(x0,x1)); json_array_add_double_element(to, MIN(y0,y1));
+    json_array_add_double_element(to, MAX(x0,x1)); json_array_add_double_element(to, MAX(y0,y1));
+    json_object_set_array_member(o, "box", to);
+  }
+}
+
+static void _store_recipes(dt_masks_form_t *grp, JsonArray *shapes)
+{
+  for(guint k = 0; shapes && k < json_array_get_length(shapes); k++)
+  {
+    JsonObject *shape = json_array_get_object_element(shapes, k);
+    if(!json_object_has_member(shape, "ai")) continue;
+    // Copy deeply: coordinate conversion must not mutate the incoming request.
+    gchar *original = json_to_string(json_object_get_member(shape, "ai"), FALSE);
+    JsonNode *copy = json_from_string(original, NULL);
+    g_free(original);
+    if(!copy || !JSON_NODE_HOLDS_OBJECT(copy)) { if(copy) json_node_free(copy); continue; }
+    _recipe_coordinates(json_node_get_object(copy), _to_input);
+    gchar *json = json_to_string(copy, FALSE);
+    gchar *encoded = g_base64_encode((const guchar *)json, strlen(json));
+    for(guint offset = 0, chunk = 0; offset < strlen(encoded); offset += 80, chunk++)
+    {
+      dt_masks_form_t *f = dt_masks_create(DT_MASKS_GROUP);
+      g_snprintf(f->name, sizeof(f->name), _AI_RECIPE "%u:%u:%.80s", k + 1, chunk, encoded + offset);
+      _s.dev.forms = g_list_append(_s.dev.forms, f);
+      f->points = g_list_append(NULL, dt_masks_marker_new(_s.dev.forms, f, 0));
+      _member(grp, f->formid, DT_MASKS_STATE_USE | DT_MASKS_STATE_DISABLE | DT_MASKS_STATE_UNION, 1.0f);
+    }
+    g_free(encoded); g_free(json); json_node_free(copy);
+  }
+}
+
 // replace the shapes of mask `name` (made when missing); each shape adds
 // to the mask, or with "subtract" takes away from it
 static gboolean _mask(const char *name, JsonArray *shapes, char **err)
@@ -6573,6 +6874,7 @@ static gboolean _mask(const char *name, JsonArray *shapes, char **err)
   // its own (dt_masks_group_mark_classic_runs)
   dt_masks_group_mark_classic_runs(&_s.dev.forms, grp, NULL);
   if(!dt_masks_group_marker(grp)) grp->points = g_list_prepend(grp->points, dt_masks_marker_new(_s.dev.forms, grp, 0));
+  _store_recipes(grp, shapes);
   _set_ranges_group(grp, ranges);
   json_array_unref(ranges);
 
@@ -7366,6 +7668,40 @@ static void _flatten(const dt_masks_form_t *grp, const gboolean sub, GArray *sha
   }
 }
 
+static void _read_recipe(JsonBuilder *b, const dt_masks_form_t *grp, const guint component)
+{
+  GHashTable *forms = _mask_forms(grp);
+  GString *encoded = g_string_new(NULL);
+  for(guint chunk = 0; chunk < 4096; chunk++)
+  {
+    gchar prefix[64];
+    g_snprintf(prefix, sizeof(prefix), _AI_RECIPE "%u:%u:", component, chunk);
+    GHashTableIter it; gpointer key; const char *part = NULL;
+    g_hash_table_iter_init(&it, forms);
+    while(g_hash_table_iter_next(&it, &key, NULL))
+    {
+      const dt_masks_form_t *f = key;
+      if(g_str_has_prefix(f->name, prefix)) { part = f->name + strlen(prefix); break; }
+    }
+    if(!part) break;
+    g_string_append(encoded, part);
+  }
+  if(encoded->len)
+  {
+    gsize size; guchar *json = g_base64_decode(encoded->str, &size);
+    gchar *terminated = g_strndup((const gchar *)json, size);
+    JsonNode *node = json_from_string(terminated, NULL);
+    if(node && JSON_NODE_HOLDS_OBJECT(node))
+    {
+      _recipe_coordinates(json_node_get_object(node), _to_shown);
+      json_builder_set_member_name(b, "ai"); json_builder_add_value(b, node);
+    }
+    else if(node) json_node_free(node);
+    g_free(terminated); g_free(json);
+  }
+  g_string_free(encoded, TRUE); g_hash_table_destroy(forms);
+}
+
 // the tree mask `grp` is read from: its ranges group, or in an older edit
 // an instance's tree of its own, one blending in scene-referred RGB first
 // (the others have no ranges), else its group
@@ -7476,6 +7812,7 @@ static gboolean _masks(JsonObject *fields, JsonBuilder *b, char **err)
         json_builder_begin_object(b);
         json_builder_set_member_name(b, "type");
         json_builder_add_string_value(b, "object");
+        _read_recipe(b, grp, comp);
         // the mode from its first path that is not off: darktable's
         // conversion moves one that is off into the run before it
         gboolean mode_sub = e->subtract != hole;
@@ -8542,7 +8879,7 @@ static void _ranges_into(dt_develop_blend_params_t *bp, JsonArray *list)
     {
       const float h = json_object_get_double_member_with_default(r, "hue", 0.0);
       const float w = CLAMP(json_object_get_double_member_with_default(r, "width", 0.05), 0.005, 0.45);
-      const float f = CLAMP(json_object_get_double_member_with_default(r, "feather", 0.05), 0.002, 0.25);
+      const float f = fminf(0.5f - w, CLAMP(json_object_get_double_member_with_default(r, "feather", 0.05), 0.002, 0.25));
       float lim[4] = { h - w - f, h - w, h + w, h + w + f };
       // a band across 0/1 cannot be one window; its complement can, inverted
       if(lim[0] < 0.0f || lim[3] > 1.0f)
@@ -9146,6 +9483,171 @@ static gboolean _item_params(dt_iop_module_t *m, const dt_style_item_t *si,
   return TRUE;
 }
 
+// one darktable AgX preset's settings in this darktable's version, as the
+// requested fields ({ field: number }) in `b`; FALSE when it cannot convert
+static gboolean _agx_preset_fields(dt_iop_module_t *m, const void *blob, const int size,
+                                   const int version, JsonArray *fields, JsonBuilder *b)
+{
+  void *params = g_malloc0(m->params_size);
+  gboolean ok = blob && size > 0 && version > 0 && version <= m->version();
+  if(!ok || (version == m->version() && size != m->params_size)
+     || (version == 7 && size != 36 * 4))
+  {
+    g_free(params);
+    json_builder_add_null_value(b);
+    return FALSE;
+  }
+  if(version == m->version() && size == m->params_size)
+    memcpy(params, blob, m->params_size);
+  else
+  {
+    void *p = params;
+    const int r = dt_iop_legacy_params(m, blob, size, version, &p, m->version());
+    if(r == 1) ok = FALSE;
+    else if(r == -1) memcpy(params, m->default_params, m->params_size);
+  }
+  json_builder_begin_object(b);
+  for(guint i = 0; ok && i < json_array_get_length(fields); i++)
+  {
+    const char *name = json_array_get_string_element(fields, i);
+    char *e = NULL;
+    dt_introspection_field_t *f = NULL;
+    const void *p = _field_in(m, params, name, &f, &e);
+    g_free(e);
+    double num = 0.0;
+    if(!p) { ok = FALSE; break; }
+    switch(f->header.type)
+    {
+      case DT_INTROSPECTION_TYPE_FLOAT: num = *(const float *)p; break;
+      case DT_INTROSPECTION_TYPE_INT:
+      case DT_INTROSPECTION_TYPE_ENUM:  num = *(const int *)p; break;
+      case DT_INTROSPECTION_TYPE_BOOL:  num = *(const gboolean *)p ? 1.0 : 0.0; break;
+      default: ok = FALSE; continue;
+    }
+    if(!isfinite(num)) { ok = FALSE; break; }
+    json_builder_set_member_name(b, name);
+    json_builder_add_double_value(b, num);
+  }
+  json_builder_end_object(b);
+  g_free(params);
+  return ok;
+}
+
+// the AgX presets of a darktable `data.db` (read only), a `.dtpreset` or a
+// `.dtstyle`, as { presets: [{ name, params: { field: number } }] }. the
+// params are converted to this darktable's AgX version here, so the app
+// never sees a blob or a version. one that cannot convert has incomplete
+// params, which the app leaves out
+static gboolean _agx_presets(JsonObject *req, JsonBuilder *b, char **err)
+{
+  dt_iop_module_t *m = _module("agx", err);
+  if(!m) return FALSE;
+  JsonArray *fields = json_object_has_member(req, "fields")
+    ? json_object_get_array_member(req, "fields") : NULL;
+  if(!fields)
+  {
+    *err = g_strdup("no fields");
+    return FALSE;
+  }
+  const char *file = json_object_get_string_member_with_default(req, "file", NULL);
+  const char *db = json_object_get_string_member_with_default(req, "db", NULL);
+
+  json_builder_set_member_name(b, "presets");
+  json_builder_begin_array(b);
+
+  if(file && (g_str_has_suffix(file, ".dtstyle") || g_str_has_suffix(file, ".xml")))
+  {
+    gchar *label = NULL;
+    GList *items = _style_items(file, &label, err);
+    if(!items) { g_free(label); return FALSE; }
+    for(GList *l = items; l; l = g_list_next(l))
+    {
+      const dt_style_item_t *si = l->data;
+      if(g_strcmp0(si->operation, "agx")) continue;
+      json_builder_begin_object(b);
+      json_builder_set_member_name(b, "name");
+      json_builder_add_string_value(b, label);
+      json_builder_set_member_name(b, "params");
+      _agx_preset_fields(m, si->params, si->params_size, si->module_version, fields, b);
+      json_builder_end_object(b);
+    }
+    g_free(label);
+    g_list_free_full(items, dt_style_item_free);
+  }
+  else if(file)
+  {
+    xmlDocPtr doc = xmlReadFile(file, NULL, XML_PARSE_NONET);
+    xmlNodePtr root = doc ? xmlDocGetRootElement(doc) : NULL;
+    if(!root || xmlStrcmp(root->name, BAD_CAST "darktable_preset"))
+    {
+      if(doc) xmlFreeDoc(doc);
+      *err = g_strdup_printf("'%s' is not a darktable preset", file);
+      return FALSE;
+    }
+    gchar *name = NULL, *op = NULL, *hex = NULL;
+    int version = 0;
+    for(xmlNodePtr n = root->children; n; n = n->next)
+      for(xmlNodePtr c = n->children; c; c = c->next)
+      {
+        xmlChar *t = xmlNodeGetContent(c);
+        if(!t) continue;
+        if(!xmlStrcmp(c->name, BAD_CAST "name")) name = g_strdup((gchar *)t);
+        else if(!xmlStrcmp(c->name, BAD_CAST "operation")) op = g_strdup((gchar *)t);
+        else if(!xmlStrcmp(c->name, BAD_CAST "op_params")) hex = g_strdup((gchar *)t);
+        else if(!xmlStrcmp(c->name, BAD_CAST "op_version")) version = atoi((gchar *)t);
+        xmlFree(t);
+      }
+    xmlFreeDoc(doc);
+    int len = 0;
+    unsigned char *blob = !g_strcmp0(op, "agx") && hex
+      ? dt_exif_xmp_decode(hex, strlen(hex), &len) : NULL;
+    if(blob)
+    {
+      json_builder_begin_object(b);
+      json_builder_set_member_name(b, "name");
+      json_builder_add_string_value(b, name ? name : "Preset");
+      json_builder_set_member_name(b, "params");
+      _agx_preset_fields(m, blob, len, version, fields, b);
+      json_builder_end_object(b);
+      g_free(blob);
+    }
+    g_free(name);
+    g_free(op);
+    g_free(hex);
+  }
+  else
+  {
+    gchar *path = db ? g_strdup(db) : g_build_filename(g_get_user_config_dir(), "darktable", "data.db", NULL);
+    sqlite3 *h = NULL;
+    sqlite3_stmt *st = NULL;
+    if(sqlite3_open_v2(path, &h, SQLITE_OPEN_READONLY, NULL) != SQLITE_OK
+       || sqlite3_prepare_v2(h, "SELECT name, op_version, op_params FROM presets "
+                                "WHERE operation = 'agx' AND writeprotect = 0 ORDER BY name",
+                             -1, &st, NULL) != SQLITE_OK)
+    {
+      *err = g_strdup_printf("cannot read the presets in '%s'", path);
+      sqlite3_close(h);
+      g_free(path);
+      return FALSE;
+    }
+    while(sqlite3_step(st) == SQLITE_ROW)
+    {
+      json_builder_begin_object(b);
+      json_builder_set_member_name(b, "name");
+      json_builder_add_string_value(b, (const char *)sqlite3_column_text(st, 0));
+      json_builder_set_member_name(b, "params");
+      _agx_preset_fields(m, sqlite3_column_blob(st, 2), sqlite3_column_bytes(st, 2),
+                         sqlite3_column_int(st, 1), fields, b);
+      json_builder_end_object(b);
+    }
+    sqlite3_finalize(st);
+    sqlite3_close(h);
+    g_free(path);
+  }
+  json_builder_end_array(b);
+  return TRUE;
+}
+
 // the look in use, or NULL
 static const char *_look_name(void)
 {
@@ -9239,6 +9741,16 @@ static dt_dev_pixelpipe_iop_t *_piece(dt_dev_pixelpipe_t *pipe, const dt_iop_mod
   return NULL;
 }
 
+// the pipe cache the base and check pipes may keep, as a fraction of
+// darktable's memory (pixelpipe_cache.c, dt_dev_pixelpipe_cache_checkmem):
+// the darkroom's preview pipe's 1/32 rather than a full pipe's 1/8. both
+// render the whole image, a 1 GB line at 60 megapixels, so even 1/8 kept
+// few lines: a base reran as many modules either way (benchmark, heavy
+// edit, 11 GB of memory), while its lines stayed until the next. the
+// drag and preview pipes keep the full pipe's share: their small lines are
+// what a drag draws from, and with less a rotate drag reran 13 modules, not 9
+#define _WHOLE_PIPE_FRACTION 32
+
 // the preview pipe, made on first use, with nodes for every instance and
 // the edit as it stands
 static gboolean _ppipe_ready(char **err)
@@ -9285,6 +9797,7 @@ static gboolean _follower_ready(dt_engine_follower_t *f, char **err)
     *err = g_strdup("could not allocate a pixelpipe");
     return FALSE;
   }
+  if(f != &_s.drag) f->pipe.cache.mem_fraction = _WHOLE_PIPE_FRACTION;
   dt_dev_pixelpipe_set_icc(&f->pipe, DT_COLORSPACE_SRGB, NULL, DT_INTENT_LAST);
   dt_dev_pixelpipe_set_input(&f->pipe, &_s.dev, (float *)_s.buf.buf,
                              _s.buf.width, _s.buf.height, _s.buf.iscale);
@@ -9453,16 +9966,49 @@ static gboolean _preview_render(JsonObject *req, int *ow, int *oh, char **err)
 
 static gboolean _preview(JsonObject *req, int *ow, int *oh, char **err)
 {
+  // Creating a missing preview instance changes module order. Keep those
+  // instances request-local too: saving after a preview must not change the
+  // edit's hash and invalidate a paste's Undo/Redo snapshot.
+  GList *saved_iop = g_list_copy(_s.dev.iop);
+  GList *saved_order = dt_ioppr_iop_order_copy_deep(_s.dev.iop_order_list);
+  const int gen = _s.iop_gen;
   const char *look = json_object_get_string_member_with_default(req, "look", NULL);
-  if(!look) return _preview_render(req, ow, oh, err);
-
-  // style conversion imports and migrates forms in dev->forms. A thumbnail
-  // owns those forms only until processing finishes, including failure paths
   GList *saved_forms = _s.dev.forms;
-  _s.dev.forms = dt_masks_dup_forms_deep(saved_forms, NULL);
+  if(look) _s.dev.forms = dt_masks_dup_forms_deep(saved_forms, NULL);
   const gboolean ok = _preview_render(req, ow, oh, err);
-  g_list_free_full(_s.dev.forms, (GDestroyNotify)dt_masks_free_form);
-  _s.dev.forms = saved_forms;
+  if(look)
+  {
+    g_list_free_full(_s.dev.forms, (GDestroyNotify)dt_masks_free_form);
+    _s.dev.forms = saved_forms;
+  }
+  if(gen != _s.iop_gen)
+  {
+    // Drop nodes before freeing modules they reference. cleanup_nodes keeps
+    // the preview backbuffer, which the caller still needs to write out.
+    dt_dev_pixelpipe_cleanup_nodes(&_s.pipe);
+    if(_s.ppipe_ok) dt_dev_pixelpipe_cleanup_nodes(&_s.ppipe);
+    _follower_cleanup(&_s.drag);
+    _follower_cleanup(&_s.base);
+    _follower_cleanup(&_s.check);
+    for(GList *l = _s.dev.iop; l; l = g_list_next(l))
+      if(!g_list_find(saved_iop, l->data))
+      {
+        dt_iop_cleanup_module(l->data);
+        free(l->data);
+      }
+    g_list_free(_s.dev.iop);
+    _s.dev.iop = saved_iop;
+    g_list_free_full(_s.dev.iop_order_list, free);
+    _s.dev.iop_order_list = saved_order;
+    dt_ioppr_resync_modules_order(&_s.dev);
+    _s.iop_gen++;
+    _changed(DT_DEV_PIPE_REMOVE);
+  }
+  else
+  {
+    g_list_free(saved_iop);
+    g_list_free_full(saved_order, free);
+  }
   return ok;
 }
 
@@ -10413,6 +10959,14 @@ static void _handle(JsonObject *req, FILE *out)
                     refine, &err))
       goto fail;
   }
+  else if(!g_strcmp0(cmd, "color_profiles"))
+  {
+    if(!_color_profiles(b, &err)) goto fail;
+  }
+  else if(!g_strcmp0(cmd, "lenses"))
+  {
+    if(!_lens_menu(b, &err)) goto fail;
+  }
   else if(!g_strcmp0(cmd, "module_state"))
   {
     if(!_module_state(json_object_get_string_member_with_default(req, "op", NULL),
@@ -10779,6 +11333,10 @@ static void _handle(JsonObject *req, FILE *out)
     const char *name = _look_name();
     if(name) json_builder_add_string_value(b, name); else json_builder_add_null_value(b);
   }
+  else if(!g_strcmp0(cmd, "agx_presets"))
+  {
+    if(!_agx_presets(req, b, &err)) goto fail;
+  }
   else if(!g_strcmp0(cmd, "look_amount"))
     _look_amount(json_object_get_double_member_with_default(req, "amount", 100.0));
   else if(!g_strcmp0(cmd, "preview"))
@@ -10877,6 +11435,92 @@ static gboolean _read_line(GString *s, GString *rest)
 
 // the end of input, on the request queue
 static char _end_of_input[] = "";
+
+// after this long without a request, the session's pipes give back most
+// of their cache, as darktable's do on leaving the darkroom (darkroom.c,
+// _clear_pipecache), and the C library its freed pages: the base pipe's
+// whole-image lines otherwise stay until the next edit. under memory
+// pressure the same trim comes before a request, at most once a while
+#define _IDLE_TRIM_US (20 * G_USEC_PER_SEC)
+#define _PRESSURE_POLL_US (2 * G_USEC_PER_SEC)
+#define _PRESSURE_TRIM_US (5 * G_USEC_PER_SEC)
+
+#if defined(__APPLE__)
+// the system's memory pressure level, from a dispatch source on a queue of
+// its own (_pressure_watch)
+static gint _pressure_level = 0;
+
+static void _pressure_event(void *source)
+{
+  const unsigned long level = dispatch_source_get_data((dispatch_source_t)source);
+  g_atomic_int_set(&_pressure_level,
+                   level & (DISPATCH_MEMORYPRESSURE_WARN | DISPATCH_MEMORYPRESSURE_CRITICAL) ? 1 : 0);
+}
+#elif defined(_WIN32)
+static HANDLE _low_memory = NULL;
+#endif
+
+static void _pressure_watch(void)
+{
+#if defined(__APPLE__)
+  dispatch_source_t source =
+    dispatch_source_create(DISPATCH_SOURCE_TYPE_MEMORYPRESSURE, 0,
+                           DISPATCH_MEMORYPRESSURE_NORMAL | DISPATCH_MEMORYPRESSURE_WARN
+                           | DISPATCH_MEMORYPRESSURE_CRITICAL,
+                           dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0));
+  if(!source) return;
+  dispatch_set_context(source, source);
+  dispatch_source_set_event_handler_f(source, _pressure_event);
+  dispatch_resume(source);
+#elif defined(_WIN32)
+  _low_memory = CreateMemoryResourceNotification(LowMemoryResourceNotification);
+#endif
+}
+
+// whether the system is short of memory: on Linux, less than a tenth of
+// it available (the kernel's MemAvailable, which counts reclaimable cache)
+static gboolean _memory_pressure(void)
+{
+#if defined(__APPLE__)
+  return g_atomic_int_get(&_pressure_level) != 0;
+#elif defined(_WIN32)
+  BOOL low = FALSE;
+  return _low_memory && QueryMemoryResourceNotification(_low_memory, &low) && low;
+#elif defined(__linux__)
+  FILE *f = g_fopen("/proc/meminfo", "r");
+  if(!f) return FALSE;
+  unsigned long long total = 0, avail = 0, v;
+  char key[64];
+  while((!total || !avail) && fscanf(f, "%63s %llu kB\n", key, &v) == 2)
+  {
+    if(!strcmp(key, "MemTotal:")) total = v;
+    else if(!strcmp(key, "MemAvailable:")) avail = v;
+  }
+  fclose(f);
+  return total && avail && avail < total / 10;
+#else
+  return FALSE;
+#endif
+}
+
+static void _trim(void)
+{
+  if(_s.open)
+  {
+    dt_dev_pixelpipe_cache_checkmem(&_s.pipe, TRUE);
+    if(_s.ppipe_ok) dt_dev_pixelpipe_cache_checkmem(&_s.ppipe, TRUE);
+    if(_s.drag.ok) dt_dev_pixelpipe_cache_checkmem(&_s.drag.pipe, TRUE);
+    if(_s.base.ok) dt_dev_pixelpipe_cache_checkmem(&_s.base.pipe, TRUE);
+    if(_s.check.ok) dt_dev_pixelpipe_cache_checkmem(&_s.check.pipe, TRUE);
+  }
+#if defined(__GLIBC__)
+  malloc_trim(0);
+#elif defined(__APPLE__)
+  malloc_zone_pressure_relief(NULL, 0);
+#elif defined(_WIN32)
+  _heapmin();
+#endif
+}
 
 // stdin is read on a thread of its own, so a `cancel_base` (written by the
 // client while it waits on a base's reply) stops that base at once, and a
@@ -11047,10 +11691,32 @@ int main(int argc, char **argv)
   GAsyncQueue *requests = g_async_queue_new();
   _requests = requests;
   g_thread_unref(g_thread_new("requests", _read_requests, requests));
-  gboolean quit = FALSE;
+  _pressure_watch();
+  gboolean quit = FALSE, trimmed = TRUE;
+  gint64 last_request = g_get_monotonic_time(), last_trim = 0;
   char *line;
-  while(!quit && (line = g_async_queue_pop(requests)) != _end_of_input)
+  while(!quit)
   {
+    line = g_async_queue_timeout_pop(requests, _PRESSURE_POLL_US);
+    const gint64 now = g_get_monotonic_time();
+    const gboolean due = now - last_trim >= _PRESSURE_TRIM_US;
+    if(!line)
+    {
+      if((!trimmed && now - last_request >= _IDLE_TRIM_US) || (due && _memory_pressure()))
+      {
+        _trim();
+        trimmed = TRUE;
+        last_trim = now;
+      }
+      continue;
+    }
+    if(line == _end_of_input) break;
+    if(due && _memory_pressure())
+    {
+      _trim();
+      last_trim = now;
+    }
+    trimmed = FALSE;
     // each request's start, which a crash's backtrace then follows; shapes
     // can run to megabytes
     fprintf(stderr, "[engine] > %.*s\n", (int)MIN(300, strcspn(line, "\r\n")), line);
@@ -11076,6 +11742,8 @@ int main(int argc, char **argv)
       _reply_error(out, "request is not a JSON object");
     g_object_unref(parser);
     g_free(line);
+    // idle counts from a request's end: a long export is not idle time
+    last_request = g_get_monotonic_time();
   }
   // the client gone without a quit: its edits are kept all the same
   if(!quit) _save_pending();

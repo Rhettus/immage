@@ -201,14 +201,14 @@ const MY_LOOKS = "My Looks";
 // sections, every other panel whole. the point curve goes with the Tone
 // Curve, and crop is never part of one, as in Lightroom
 type Part = { id: string; label: string; controls: string[]; on: boolean };
-const OFF_BY_DEFAULT = new Set(["basic:White Balance", "transform"]);
+const OFF_BY_DEFAULT = new Set(["basic:White Balance", "transform", "negative"]);
 
 const PARTS: Part[] = (() => {
   const ids = (sections: { controls: { id: string }[] }[]) =>
     [...new Set(sections.flatMap((s) => s.controls.map((c) => c.id)))];
   const parts: Part[] = [];
   for (const p of panels) {
-    if (p.hidden) continue;
+    if (p.hidden && p.id !== "negative") continue;
     if (p.id === "basic") {
       for (const s of p.sections) {
         const id = `basic:${s.title}`;

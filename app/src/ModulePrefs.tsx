@@ -28,25 +28,31 @@ export function ModulePrefs({ focusMode }: { focusMode: boolean }) {
   // bumped on a pick, so the menus read their stored values again
   const [, setPicked] = useState(0);
   const chooseMode = (v: ModuleMode) => { setMode(v); storeModuleMode(v); };
-  const menu = (choice: ModuleChoice, scope: "global" | "masks") => (
-    <select className="field" aria-label={`${scope === "global" ? "Global" : "Masks"} ${choice.label}`}
-            value={loadModuleChoice(choice.id, scope)} disabled={mode === "default"}
-            onChange={(e) => { storeModuleChoice(choice.id, Number(e.target.value), scope); setPicked((n) => n + 1); }}>
-      {choice.options.map((o) => (
-        <option key={o.value} value={o.value}>{o.name}{o.preferred ? " (default)" : ""}</option>
-      ))}
-    </select>
-  );
+  const menu = (choice: ModuleChoice, scope: "global" | "masks") => {
+    const label = `${scope === "global" ? "Global" : "Masks"} ${choice.label}`;
+    const selected = loadModuleChoice(choice.id, scope);
+    if (mode === "default") {
+      const name = choice.options.find((o) => o.value === selected)?.name ?? "";
+      return <span className="pref-value" aria-label={label} title={name}>{name}</span>;
+    }
+    return (
+      <select className="field" aria-label={label} value={selected}
+              onChange={(e) => { storeModuleChoice(choice.id, Number(e.target.value), scope); setPicked((n) => n + 1); }}>
+        {choice.options.map((o) => (
+          <option key={o.value} value={o.value}>{o.name}{o.preferred ? " (default)" : ""}</option>
+        ))}
+      </select>
+    );
+  };
   return (
     <>
       <p className="prefs-lead">
-        Which darktable module each tool runs on, and so which sliders it shows. Photos that already use one of a
-        tool's modules keep it, so their edits look the same; the choice here applies to tools a photo has not used
-        yet, as soon as Preferences closes. Global and Masks have separate choices;
-        existing mask adjustments keep their modules.
+        Choose which darktable module each tool uses; it determines the sliders shown. Existing edits keep their
+        modules, and new choices apply when Preferences closes. Global and Masks have separate choices.
       </p>
       <PrefCard title="Modules">
         <PrefRow label="Modules"
+                 summary={mode === "default" ? "darktable's AgX workflow defaults" : "custom module choices below"}
                  hint={mode === "default" ? "the module darktable's AgX workflow uses for each tool, and contrast & texture for Clarity and Texture"
                                            : "each tool's module as set below"}>
           <div className="segmented small">

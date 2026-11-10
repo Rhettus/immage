@@ -35,7 +35,8 @@ takes the photo back to its starting point (⌘Z undoes it).
 
 **Preset rows:** some sections have a row of swatches or buttons, such as
 the B&W filters or the grain amounts. Hover over one to preview it on the
-photo; click to apply it.
+photo, rendered at the size the photo is shown (up to 3200 pixels on the
+long edge) so grain previews as sharp as it will be; click to apply it.
 
 ## Basic
 
@@ -48,6 +49,34 @@ values. The second group is darktable's color balance rgb: **Standard**,
 **Natural Skin**, **Vibrant Colors** and **Legacy**, which add
 colorfulness on top of AgX Default. New raws get the profile set in
 Preferences (AgX Default unless you change it).
+
+Choose **Load AgX Preset** below the spacer at the bottom of Profile to bring in your own AgX
+presets. Open a photo first. The dialog lists user presets from darktable's
+standard configuration folder; **From darktable** refreshes that list.
+Alternatively, choose **From file…** and open an exported darktable
+`.dtpreset` or `.dtstyle` file. Only AgX settings are imported from a style;
+other modules and blending settings are excluded. Compatible older AgX
+presets are converted by the bundled darktable engine. Check the presets you want
+and click **Add**. The first added preset is applied to the open photo.
+
+Added presets appear under **My Presets** and remain available after restarting
+Immage. Duplicate names get a numbered suffix. Selecting one switches to AgX,
+loads its curve, color look and black/white relative exposure, and keeps your
+other adjustments. Contrast, Whites, Blacks and Saturation work from the
+preset's values. You can also choose an imported profile in Preferences as
+the default for new raw photos. If darktable uses a custom configuration
+folder, export the preset from darktable and use **From file…**.
+
+**Delete AgX Preset**, directly below **Load AgX Preset**, opens a list of
+presets you imported. Check the ones to remove and click **Delete**. Built-in
+AgX and Color Balance RGB profiles cannot be deleted. The action is disabled
+when there are no user-loaded presets. Deletion removes the entries from
+**My Presets** and from the new-raw default choices, and leaves photos already
+using them unchanged. An applied deleted preset is labelled **(deleted)** on
+that photo. If a selected preset is the default for new raws, choose a replacement in the
+delete dialog before **Delete** becomes available. Presets selected for deletion
+are excluded from that menu. The replacement is saved for new raw photos.
+Deleting a preset in Immage does not delete it from darktable or its source file.
 
 **Treatment**: **Color** or **B&W**. Black and white swaps **HSL / Color**
 for **B&W Mix**.
@@ -247,8 +276,9 @@ isn't changed. Raws only, in a folder on this computer, one at a time.
 To try another Amount, run it again on the raw; the next DNG is
 `<name>_raw-denoise_1.dng`.
 
-The DNG retains its format identification, color calibration and sensor layout
-when the source EXIF and denoise marker are added, so it also opens in darktable.
+The DNG retains its format identification, color calibration, sensor layout
+and the camera's orientation when the source EXIF and denoise marker are added,
+so it opens upright in darktable and other photo applications.
 Run AI Denoise again to replace an older result that cannot open.
 
 **Profiled Denoise** (darktable's profiled denoise)
@@ -267,7 +297,22 @@ off. This is separate from Remove Chromatic Aberration. A mask's Defringe
 uses the same module.
 
 - **Enable Profile Corrections**: corrects distortion and vignetting for
-  the lens darktable detects (through the lensfun database).
+  the lens darktable detects (through the lensfun database). Immage bundles
+  a current snapshot of that database, so recent cameras, including fixed-lens
+  compacts like the Sony ZV-1, have profiles. The Windows and macOS builds always use it; on Linux, as in darktable,
+  a lensfun database installed on the system is used instead (update it with
+  `lensfun-update-data`). A camera or lens still missing from the database
+  gets no correction.
+- **Lens**: **Auto** uses the lens matched from the photo's EXIF, shown
+  beside it. Open the drop-down to pick another from the lensfun lenses that
+  fit the camera (all of them when the camera is not in the database). Type in
+  the search box at its top to filter; every word you type must appear in
+  the lens's maker or name, in any order, so `12-32` finds the Panasonic
+  12-32mm and `pana 12-32` narrows it to Panasonic. Up and Down move, Enter
+  chooses and Esc closes. Choosing a lens uses its lensfun profile, even on a
+  raw whose own embedded correction Auto would use. The choice follows the photo's edits: undo, copy
+  and paste, presets and Reset include it. It needs Enable Profile
+  Corrections to be on.
 - **Remove Chromatic Aberration**: on by default.
 
 The **Default** preset that new raws get turns profile corrections on.

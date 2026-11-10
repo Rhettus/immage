@@ -112,3 +112,32 @@ export async function folderRace(t){
  await until(()=>t.driver.observe(()=>document.querySelector('.folder.current')?.textContent.includes('fast-target')),'target folder appears before unrelated load');
  await pause(2000);assert(await t.driver.observe(()=>document.querySelector('.folder.current')?.textContent.includes('fast-target')),'stale folder response cannot replace target');await t.evidence('folder-race');
 }
+
+// Hovering a Grain swatch previews on the engine's preview pipe. The preview must be
+// rendered at the size the photo is shown, not a 1600-pixel image stretched over it.
+export async function grainHover(t){
+ // collapse the library panel and the filmstrip with their toolbar buttons, so the photo is large
+ // the toolbar slides while a panel closes: wait until it stops before the next click,
+ // or the click lands on its neighbour (Grid)
+ const still=async sel=>{let last;await until(async()=>{const b=await t.driver.observe(x=>JSON.stringify(document.querySelector(x)?.getBoundingClientRect()),sel);const ok=b===last;last=b;return ok&&b;},`${sel} stopped moving`);};
+ for(const title of ['library panel','filmstrip']){
+  const sel=`button.tool[title="${title}"]`;await still(sel);
+  if(await t.driver.observe(x=>document.querySelector(x)?.classList.contains('on'),sel)){await click(t,sel);await until(()=>t.driver.observe(x=>!document.querySelector(x)?.classList.contains('on'),sel),`${title} collapsed`);}
+ }
+ await still('button.tool.grid-toggle');
+ assert(!await t.driver.observe(()=>document.querySelector('button.tool.grid-toggle')?.classList.contains('on')),'grid view must be off');
+ assert(await t.driver.observe(()=>document.querySelector('.strip-slot')?.classList.contains('closed')),'filmstrip must be collapsed');
+ await settledPhoto(t);
+ await panel(t,'effects');
+ const swatch='[data-panel-id="effects"] section[data-section-id="Grain"] .presets button[aria-label="Heavy"]';
+ const s=await reveal(t,swatch);
+ await t.driver.move(s.x,s.y);
+ const shown=await until(()=>t.driver.observe(()=>{
+  const c=document.querySelector('canvas.hover-preview');if(!c||c.classList.contains('off')||!c.width)return null;
+  const r=c.getBoundingClientRect();return{width:c.width,height:c.height,cssWidth:r.width,cssHeight:r.height,dpr:devicePixelRatio};
+ }),'grain hover preview shown');
+ // device pixels the image occupies; the render is capped at 3200 on the long edge
+ const wanted=Math.min(3200,Math.round(Math.max(shown.cssWidth,shown.cssHeight)*shown.dpr)),got=Math.max(shown.width,shown.height);
+ t.measure({name:'grain-hover',...shown,wanted,got});await t.evidence('grain-hover');
+ assert(got>=wanted*.95||wanted<=1600,`hover render ${got}px must match the shown size ${wanted}px`);
+}

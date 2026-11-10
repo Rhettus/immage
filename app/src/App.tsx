@@ -1,3 +1,7 @@
+import { useThemes } from "./themes";
+import { AgxPresetLoader } from "./AgxPresetDialog";
+import { DELETE_AGX_PRESET_EVENT, LOAD_AGX_PRESET_EVENT, useAgxProfiles, userProfiles } from "./agxProfiles";
+import { profileSelection, AGX_USER_FIRST, DELETE_PRESET, LOAD_PRESET } from "./manifest";
 import { ContrastEqualizer } from "./ContrastEqualizer";
 import { SaturationCurve } from "./SaturationCurve";
 import { detailRows } from "./DetailControls";
@@ -5,7 +9,7 @@ import { detailRows } from "./DetailControls";
 // Copyright (C) 2026 the Immage authors
 
 import { preparePastePhoto } from "./pasteDefaults";
-import { applyClip, pasteTargets, replaceMasks, restorePaste, runPaste, type PasteUpdate } from "./batchPaste";
+import { pasteTargets, replaceMasks, restorePaste, runPaste, type PasteUpdate } from "./batchPaste";
 import { CaptureTimeDialog } from "./CaptureTimeDialog";
 import { captureMillis, type CaptureTimeEntry, type CaptureTimeUpdate } from "./captureTime";
 import { Fragment, Profiler, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -23,6 +27,7 @@ import { autoArea, autoBlack, autoDmax, autoDmin, autoExposure as autoPrintExpos
          FILM_BW, FILM_COLOR, fromValues, PRESETS, toValues, type Stats } from "./negadoctor";
 import { NegativePanel, type NegPick } from "./NegativePanel";
 import { FilmPanel } from "./FilmPanel";
+import { LensPicker } from "./LensPicker";
 import { PrintPanel } from "./PrintPanel";
 import { applyProof, cellsLayout, defaultPrintSettings, hasPrintSettings, LABEL_POINTS, layout as printLayout,
          loadPrintSettings, NO_PROOF, PDF, PDF_PAPERS, printerInfo, printRequest, sheetPages, sheetRequest,
@@ -100,10 +105,14 @@ import { BUILTIN_PRESETS, loadLooks, loadNewPhotosPreset, loadPresets, NewPreset
 import { ASPECTS, CropOverlay, customAspect, findAspect, fitAspect, FULL, loadCustomAspects, pixelAspect,
          rememberCustomAspect, type Aspect, type CropRect } from "./CropTool";
 import { ShortcutsDialog } from "./Shortcuts";
-import { cmd, fieldKeeps, keys } from "./keys";
+import { cmd, fieldKeeps, IS_MAC, keys } from "./keys";
+import { MenuBar } from "./MenuBar";
+import { forPlatform, MENUS, nativeSpec, type ActionId } from "./menu";
 import { perf, percentiles, pingOnce, roundTrips, STAGES, webviewInfo, observeWebview } from "./perf";
 import { frameTransport } from "./sharedFrames";
+import { renderDimensions } from "./renderDimensions";
 import { draftScale, settledScale } from "./pixelRatio";
+import { settledFitView } from "./fitPreview";
 import { tunerOptions } from "./tunerOptions";
 import { GPU_CASES, resolveCase, verdict, cpuInGpuPass, tiledInGpuPass, type Parity } from "./gpuCheck";
 import { timeTunerWork } from "./tunerWorkload";
@@ -120,6 +129,7 @@ import { FilterPopup, type Bounds as FilterBounds, type ImmichFilters } from "./
 
 
 const MAX_PREVIEW = 2560;
+const OTHER_MENUS = forPlatform(MENUS, false);
 // what a layer keeps of its frame to be placed (framePlace)
 type Placed = Pick<Frame, "x" | "y" | "view" | "fullWidth" | "fullHeight" | "width" | "height">;
 const placed = (f: Frame): Placed => ({ x: f.x, y: f.y, view: f.view, fullWidth: f.fullWidth, fullHeight: f.fullHeight,
@@ -159,6 +169,7 @@ type Placement = { fullWidth: number; fullHeight: number; scale: number; x: numb
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
 export default function App() {
+  useAgxProfiles();
   perf.count("react.appRenderAttempts");
   const [folder, setFolder] = useState<string | null>(null);
   const folderRef = useRef(folder);
@@ -347,6 +358,9 @@ export default function App() {
   const [selection, setSelection] = useState<Set<number>>(new Set());
   const [pasting, setPasting] = useState<string | null>(null);
   const pastingRef = useRef(false);
+  const menuActionsRef = useRef<Partial<Record<ActionId, () => void>>>({});
+  const lastKeyActionRef = useRef<{ id: ActionId; t: number } | null>(null);
+  const addFolderRef = useRef<() => void | Promise<void>>(() => {});
   const pasteUndoSession = useRef<Session | null>(null);
   const selectionRef = useRef(selection);
   selectionRef.current = selection;
@@ -503,13 +517,20 @@ export default function App() {
   const refiningRef = useRef(false);
   refiningRef.current = refining;
   const refineTimer = useRef(0);
+  const rangeInteracting = useRef(false);
   const refined = () => {
     setRefining(true);
     window.clearTimeout(refineTimer.current);
-    refineTimer.current = window.setTimeout(() => setRefining(false), 1500);
+    refineTimer.current = window.setTimeout(() => { if (!rangeInteracting.current) setRefining(false); }, 1500);
   };
   const maskBox = useRef<HTMLDivElement>(null);
   const masksMode = rightMode === "masks";
+  useEffect(() => {
+    rangeInteracting.current = false;
+    window.clearTimeout(refineTimer.current);
+    setRefining(false);
+    return () => { rangeInteracting.current = false; window.clearTimeout(refineTimer.current); };
+  }, [maskSel, current, masksMode]);
   const syncMasks = () => setMasks(session.current?.masks ?? []);
   // Heal and Clone: the image's spots, the selected one, the brush for new
   // ones, and Visualize Spots' threshold (null when off)
@@ -997,7 +1018,7 @@ export default function App() {
     return runAi("mask-object-sam21-small", "finding the object…",
       () => outline("ai_object", { points: prompt.points ?? [], box: prompt.box ?? null, inset: toolTarget !== "subtract" },
                     startsMask(toolTarget), (b) => { backdrop = b; }),
-      (paths) => aiShown(createShape({ type: "object", paths, ...(backdrop && { backdrop }) })));
+      (paths) => aiShown(createShape({ type: "object", paths, ai: { kind: "object", ...structuredClone(prompt), inset: toolTarget !== "subtract", backdrop: startsMask(toolTarget) }, ...(backdrop && { backdrop }) })));
   };
   // the one-click selections: Subject, Background, which is the subject's
   // outline in a new mask, inverted, and People and the parts of a
@@ -1025,7 +1046,7 @@ export default function App() {
                     (k === "subject" || k === "people") && startsMask(target), (b) => { backdrop = b; }),
       (paths) => {
         const had = new Set(session.current?.masks.map((m) => m.name));
-        const name = createShape({ type: "object", paths, ...(backdrop && { backdrop }) },
+        const name = createShape({ type: "object", paths, ai: { kind: a.kind, inset: k !== "background" && target !== "subtract", backdrop: (k === "subject" || k === "people") && startsMask(target) }, ...(backdrop && { backdrop }) },
                                  k === "background" ? "new" : target, a.label);
         if (k === "background" && name) session.current?.setInvert(name, true);
         const refine = aiRefine(k);
@@ -1105,13 +1126,15 @@ export default function App() {
     record(["reset"]);
     holdRecord.current = true;
     try {
+      // Capture native state before any reset slider writes, so undo has
+      // the pre-reset conversion and profiles as well as unexposed params.
+      s.resetModules();
       // the profile, tone mapper and exposure compensation are the photo's
       // own, not adjustments; the orientation stays too, as in Lightroom.
       // each tool goes back to the module Preferences picks
       changeMany([...Object.entries(s.neutral).filter(([id]) => !isModuleSetting(id) && id !== "profile"
                                                              && id !== "exp_comp" && id !== "orient"),
                   ...s.preferredModules()]);
-      s.resetModules();
       if (s.look) applyLook(null);
       for (const m of s.masks) s.deleteMask(m.name);
       if (s.spots.length) s.setSpots([]);
@@ -1150,7 +1173,12 @@ export default function App() {
       const s = session.current;
       if (!s || token !== hoverToken.current) return;
       const { w, h } = viewport();
-      const size = Math.min(1600, Math.max(w, h));
+      // tiles stay small; a panel's swatches (grain above all, whose look
+      // depends on the pixels) render at the size the image is shown at,
+      // so the hover is as sharp as the edit and not stretched
+      const f0 = full.current, z0 = viewZ.current;
+      const shown = from === "panel" && f0 && z0 ? Math.round(Math.max(f0.w, f0.h) * z0) : 0;
+      const size = Math.min(from === "panel" ? 3200 : 1600, Math.max(shown, Math.min(1600, Math.max(w, h))));
       try {
         const r = render(s, size);
         const f = r && await track(r);
@@ -1720,6 +1748,7 @@ export default function App() {
   useEffect(() => {
     if (!loupePicking) return;
     const cancel = (e: KeyboardEvent) => {
+      if (document.querySelector(".location-map-region.expanded")) return;
       if (e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); setLoupePicking(false); }
     };
     window.addEventListener("keydown", cancel, true);
@@ -1800,7 +1829,7 @@ export default function App() {
         if (fitScale() < 1) s.requestCopy(1, f);
         return;
       }
-      s.requestFit(fitView());
+      s.requestFit(settledFit());
       s.requestCopy(Math.min(1, scaleFor(zoomRef.current)), f);
     }, delay);
   };
@@ -1872,11 +1901,12 @@ export default function App() {
   const fitView = (): View => {
     const { w, h } = viewport();
     const m = 2 * MARGIN * (window.devicePixelRatio || 1);
-    return { width: Math.min(MAX_PREVIEW, w - m), height: Math.min(MAX_PREVIEW, h - m) };
+    return renderDimensions(w - m, h - m, MAX_PREVIEW);
   };
+  const settledFit = (): View => settledFitView(fitView(), loadPreview(), settledScale());
   // the view at k times the full frame's size each way, k < 1 a drag's
   // during a zoom that renders ahead (animateTo), the view it ends on
-  const viewAt = (k: number): View => {
+  const viewAt = (k: number, draft = false): View => {
     const { w, h } = viewport();
     const f = full.current;
     const a = anim.current;
@@ -1885,8 +1915,7 @@ export default function App() {
     if (zoom === "fit" || !f) {
       const { width, height } = fitView();
       if (k === 1) {
-        const s = settledScale();
-        return s === 1 ? { width, height } : { width: Math.round(width * s), height: Math.round(height * s) };
+        return draft ? settledFitView(fitView(), loadPreview(), settledScale(), false) : settledFit();
       }
       return { width: Math.round(width * k), height: Math.round(height * k), draft: true };
     }
@@ -1908,7 +1937,7 @@ export default function App() {
     return k < 1 ? k * draftScale() : 1;
   };
   const currentView = useCallback((): View => dragging.current
-    ? { ...viewAt(draftK()), draft: true } : viewAt(1), []);
+    ? { ...viewAt(draftK(), true), draft: true } : viewAt(1), []);
 
   const follow = (layer: HTMLCanvasElement, clip: HTMLCanvasElement | null) => {
     if (!clip) return;
@@ -2276,8 +2305,13 @@ export default function App() {
     if (f.view.scale === undefined && !again) {
       showOverview(f);
       overviewHash.current = f.hash ?? null;
-      // Performance's base is the viewer's size, which this frame already is
-      baseLowRes.current = loadPreview() !== "performance";
+      // Keep this completed frame as the overview when it already meets
+      // the background preview's resolution, including native-size photos.
+      const box = baseSize();
+      const scale = Math.min(1, box.width / f.fullWidth, box.height / f.fullHeight);
+      baseLowRes.current = loadPreview() !== "performance"
+        && (f.width + 1 < Math.floor(f.fullWidth * scale)
+          || f.height + 1 < Math.floor(f.fullHeight * scale));
       scheduleBase(500);
     } else if (f.view.scale === undefined) {
       updateHistogram(f);
@@ -2970,8 +3004,6 @@ export default function App() {
     if (list.some((i) => i.path === path)) await openFile(path);
     else setStatus(`not a photo Immage can open: ${path}`);
   };
-  const openLaunchedRef = useRef(openLaunched);
-  openLaunchedRef.current = openLaunched;
 
   // files dragged onto the window from Finder or Explorer: folders join the
   // library and the first shows as a grid; otherwise the first photo opens,
@@ -3003,20 +3035,51 @@ export default function App() {
     return () => { void off.then((f) => f()); };
   }, []);
 
-  // at start, a photo handed over, or else the folder and image open when
-  // the app last closed; later, a photo handed to the running app
+  addFolderRef.current = addFolder;
+
+  // the application menus: a drawn strip on Windows and Linux, the native
+  // menu bar on macOS; both run the same actions as the keys
+  const runMenuAction = useCallback((id: ActionId) => {
+    if (pastingRef.current) return;
+    const el = document.activeElement as HTMLInputElement | null;
+    if (fieldKeeps(el, "a")) {
+      const editing = ["undo", "redo", "select-all", "cut", "copy", "paste"];
+      if (editing.includes(id)) {
+        if (id === "undo") document.execCommand("undo");
+        else if (id === "redo") document.execCommand("redo");
+        else if (id === "select-all") el?.select?.();
+        else menuActionsRef.current[id]?.();
+        return;
+      }
+    }
+    if (document.querySelector(".modal-backdrop") && id !== "quit" && id !== "about" && id !== "user-guide") return;
+    if (importOpenRef.current && !["preferences", "shortcuts", "quit", "about", "user-guide"].includes(id)) return;
+    const last = lastKeyActionRef.current;
+    if (last && last.id === id && performance.now() - last.t < 150) return;
+    menuActionsRef.current[id]?.();
+  }, []);
+  useEffect(() => {
+    if (!IS_MAC) return;
+    void invoke("menu_set", { menus: nativeSpec(MENUS) }).catch(() => {});
+    const off = listen<string>("menu", (e) => runMenuAction(e.payload as ActionId));
+    return () => { void off.then((f) => f()); };
+  }, [runMenuAction]);
+
+  // at start, a photo or folder handed over, or else the folder and image
+  // open when the app last closed; later, one handed to the running app.
+  // both go the way a drop does: a folder shows as a grid
   const started = useRef(false);
   useEffect(() => {
     const off = listen("launch-file", async () => {
       const path = await invoke<string | null>("launch_file");
-      if (path) void openLaunchedRef.current(path);
+      if (path) void droppedRef.current([path]);
     });
     // once: React's development mode runs effects twice, which listed the
     // folder twice while the engine was still starting
     if (started.current) return () => { void off.then((f) => f()); };
     started.current = true;
     void invoke<string | null>("launch_file").then((path) => {
-      if (path) { void openLaunchedRef.current(path); return; }
+      if (path) { void droppedRef.current([path]); return; }
       const lib = loadLibrary();
       // the very first start: a sample photo, so there is something to edit
       // and the quick start has something to point at. once only, so a
@@ -3413,7 +3476,7 @@ export default function App() {
       // the photo's filmstrip thumbnail, fitted, until its first frame takes
       // its place, rather than the last photo
       const thumb = id !== null ? loader.current?.get(id) : undefined, sc = canvas.current;
-      if (thumb && sc) {
+      if (thumb?.width && sc) {
         const dpr = window.devicePixelRatio || 1, { w, h } = viewport(), m = 2 * MARGIN * dpr;
         const z = Math.min((w - m) / thumb.width, (h - m) / thumb.height);
         sc.width = thumb.width;
@@ -3467,7 +3530,7 @@ export default function App() {
       };
       s.thumbSize = baseSize;
       s.previewMode = loadPreview;
-      s.exactView = () => viewAt(fullDraftK());
+      s.exactView = () => viewAt(fullDraftK(), true);
       s.detailView = () => {
         if (gridRef.current || !loupeEnabledRef.current || beforeRef.current || baModeRef.current !== "off" || !full.current) return null;
         const f = full.current;
@@ -3479,7 +3542,7 @@ export default function App() {
           y: Math.round(Math.max(0, Math.min(f.h - height, pos.y * f.h - height / 2))) };
       };
       s.frameBudget = () => loadFrameCacheMb() * 1048576;
-      s.draftSize = () => ({ ...viewAt(draftK()), draft: true });
+      s.draftSize = () => ({ ...viewAt(draftK(), true), draft: true });
       s.draftLimits = () => ({ target: loadDraftTarget(), smallest: loadBalancedPreviewSize() === 1 ? 1 : loadDraftSmallest() });
       s.warmDrafts();
       // a saved edit makes the filmstrip's thumbnail stale; undone back to
@@ -3547,7 +3610,7 @@ export default function App() {
       // and a raw with the profile chosen in Preferences
       const profile = loadNewPhotosProfile();
       if (!s.wasEdited && raw && profile !== 0 && s.values.profile !== profile) {
-        s.setMany([["profile", profile]]);
+        s.setMany(Object.entries(profileSelection(profile)));
         base.push({ op: "profile", name: profileLabel(profile).toLowerCase(),
                     label: "profile", enabled: true });
       }
@@ -3712,31 +3775,6 @@ export default function App() {
     setHasClip(true);
     setStatus("settings copied");
   };
-  // copied settings onto this image, as one undo step
-  const pasteClip = (c: Clip | null, what: string) => {
-    const s = session.current;
-    if (!s || !c || croppingRef.current || pastingRef.current) return;
-    leaveBefore();
-    setBaMode("off");
-    setAmount(null);
-    record([what]);
-    holdRecord.current = true;
-    try {
-      applyClip(s, c);
-      baseStale.current = true;
-      setValues({ ...s.values });
-      setLookState(s.look);
-      setLookAmount(s.lookAmount);
-      syncMasks();
-      if (!s.masks.some(m => m.name === maskSel)) setMaskSel(s.masks[0]?.name ?? null);
-    } catch (e) {
-      setStatus(`paste: ${e}`);
-      return;
-    } finally {
-      holdRecord.current = false;
-    }
-    setStatus(keys(`${what}: ⌘Z undoes it`));
-  };
   const pasteSaved = (i: PasteUpdate) => {
     loader.current?.invalidate(i.imgid);
     patchImage(i.imgid, { edited: i.edited });
@@ -3748,15 +3786,16 @@ export default function App() {
     window.clearTimeout(copyTimer.current);
     leaveBefore();
     setBaMode("off");
+    setAmount(null);
     await session.current?.close();
     pasteUndoSession.current = session.current;
     session.current = null;
   };
-  const pasteSettings = async () => {
-    const c = clip.current, active = currentRef.current;
-    if (!c || !active || !session.current || croppingRef.current || pastingRef.current) return;
+  const pasteSettings = async (previousClip?: Clip) => {
+    const c = previousClip ?? clip.current, active = currentRef.current;
+    if (!c || !active || !session.current || croppingRef.current || pastingRef.current || aiBusy) return;
     const entry = imagesRef.current.find(i => isOpen(i, active)) ?? openCell;
-    const { targets, skipped } = pasteTargets(imagesRef.current, selectionRef.current, entry, isRemote);
+    const { targets, skipped } = pasteTargets(imagesRef.current, previousClip ? new Set<number>() : selectionRef.current, entry, isRemote);
     if (!targets.length) { setStatus("paste: no local photos selected"); return; }
     const frozen = structuredClone(c);
     const preset = [...BUILTIN_PRESETS, ...presetsRef.current].find(p => p.id === newPhotosRef.current);
@@ -3795,7 +3834,7 @@ export default function App() {
   // has ticked
   const pastePrevious = () => {
     const p = previous.current;
-    if (p) pasteClip(makeClip(loadCopyGroups(), p.values, p.look, p.masks ?? []), "previous settings");
+    if (p) void pasteSettings(makeClip(loadCopyGroups(), p.values, p.look, p.masks ?? []));
   };
   // `steps` at once, as a click in the History panel: only the state
   // arrived at is sent
@@ -4499,6 +4538,10 @@ export default function App() {
   };
 
   const change = (c: Control, v: number) => perf.time("slider.handler", () => {
+    if (c.id === "profile" && v >= AGX_USER_FIRST) {
+      changeMany(Object.entries(profileSelection(v)), "Profile");
+      return;
+    }
     if (session.current?.values[c.id] === v) return;
     leaveBefore();
     setBaMode("off");
@@ -5266,6 +5309,105 @@ export default function App() {
   // step through the folder, 0-5 rate, 6-9 toggle the red, yellow, green and
   // blue labels, X rejects. typing in a field, a focused slider's arrows, or a switch's Space, are left alone
   useEffect(() => {
+    // the open photo among those showing, for the keys and menu items that rate it
+    const openPhoto = () => shownRef.current.find((i) => isOpen(i)) ?? null;
+    const rate = (n: number) => () => { const cur = openPhoto(); if (cur) rateSelection(cur, { rating: n, rejected: false }); };
+    const label = (n: number) => () => { const cur = openPhoto(); if (cur) rateSelection(cur, { labels: 1 << n }); };
+    const actions: Record<ActionId, () => void> = {
+      "perf-overlay": () => {
+        setPerfHud(!perf.enabled);
+        perf.enable(!perf.enabled);
+      },
+      "export": () => { setExporting(true); },
+      "print": () => { showRightRef.current("print"); },
+      "copy-settings": () => { if (session.current) setCopying(true); },
+      "paste-settings": () => { pasteSettingsRef.current(); },
+      "paste-previous": () => { pastePreviousRef.current(); },
+      "shortcuts": () => { setShortcutsOpen(true); },
+      "virtual-copy": () => {
+        const sel = selectionRef.current, all = imagesRef.current;
+        const list = sel.size ? all.filter((i) => sel.has(i.imgid)) : all.filter((i) => isOpen(i));
+        void createCopiesRef.current(list);
+      },
+      "hdr-merge": () => {
+        const sel = selectionRef.current;
+        const list = hdrBrackets(imagesRef.current.filter((i) => sel.has(i.imgid)));
+        if (list.length > 1) setHdrMerging(list);
+        else setStatus("HDR Merge: select two raw exposures or more");
+      },
+      "pano-merge": () => {
+        const sel = selectionRef.current;
+        const list = panoFrames(imagesRef.current.filter((i) => sel.has(i.imgid)));
+        if (list.length > 1) setPanoMerging(list);
+        else setStatus("Panorama Merge: select two raw photos or more");
+      },
+      "preferences": () => { setPrefsOpen(true); },
+      "import": () => { setImportOpen(true); },
+      "undo": () => { stepHistory(true); },
+      "redo": () => { stepHistory(false); },
+      "zoom-in": () => { if (session.current && !croppingRef.current) stepZoom(1); },
+      "zoom-out": () => { if (session.current && !croppingRef.current) stepZoom(-1); },
+      "rotate-left": () => { void turn("ccw"); },
+      "rotate-right": () => { void turn("cw"); },
+      "select-all": () => { setSelection(new Set(shownRef.current.map((i) => i.imgid))); },
+      "fullscreen-preview": () => {
+        if (previewRef.current) setPreview(false);
+        else if (session.current) setPreview(true);
+      },
+      "info-overlay": () => { if (session.current) setInfoMode((m) => (m + 1) % 3); },
+      "canvas": () => {
+        if (!session.current) return;
+        setCanvasColor((c) => {
+          const next = CANVASES[(CANVASES.indexOf(c) + 1) % CANVASES.length];
+          storeCanvas(next);
+          return next;
+        });
+      },
+      "hide-panels": () => { hidePanels(["left", "right"]); },
+      "grid": () => { if (!croppingRef.current) setGrid(!gridRef.current); },
+      "before-after": () => { if (!croppingRef.current) cycleBaModeRef.current(); },
+      "compare": () => { if (!croppingRef.current) toggleCompareRef.current(); },
+      "wb-picker": () => {
+        if (session.current && session.current.values.neg_on !== 1) setPicking(!pickingRef.current);
+      },
+      "next-scope": () => {
+        if (!session.current) return;
+        const n = SCOPE_MODES.length;
+        setScope((s) => ({ mode: SCOPE_MODES[(SCOPE_MODES.findIndex(([m]) => m === s.mode) + 1) % n][0] }));
+      },
+      "soft-proof": () => { if (session.current) toggleProofRef.current(); },
+      "clipping": () => {
+        setClipOn((o) => (o.low && o.high ? { low: false, high: false } : { low: true, high: true }));
+      },
+      "crop": () => { enterCrop(); },
+      "heal": () => { if (session.current) showHealRef.current(); },
+      "zoom-toggle": () => { setZoom(zoomRef.current === "fit" ? navZoom.current : "fit"); },
+      "rate-0": rate(0), "rate-1": rate(1), "rate-2": rate(2), "rate-3": rate(3), "rate-4": rate(4), "rate-5": rate(5),
+      "label-red": label(0), "label-yellow": label(1), "label-green": label(2), "label-blue": label(3),
+      "reject": () => { const cur = openPhoto(); if (cur) rateSelection(cur, { rejected: !cur.rejected }); },
+      // menu-only items
+      "add-folder": () => { void addFolderRef.current(); },
+      "user-guide": () => { void openUrl("https://github.com/Rhettus/immage/blob/main/app/docs/README.md"); },
+      "about": () => { setPrefsOpen("about"); },
+      "quit": () => { void getCurrentWindow().close(); },
+      "cut": () => { document.execCommand("cut"); },
+      "copy": () => { document.execCommand("copy"); },
+      "paste": () => {
+        if (document.execCommand("paste")) return;
+        const el = document.activeElement as HTMLInputElement | HTMLTextAreaElement | null;
+        if (!el?.setRangeText) return;
+        void navigator.clipboard.readText().then((text) => {
+          el.setRangeText(text, el.selectionStart ?? el.value.length, el.selectionEnd ?? el.value.length, "end");
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+        }).catch(() => {});
+      },
+    };
+    menuActionsRef.current = actions;
+    // a key that runs an action is noted, so the native menu's echo of it is ignored
+    const run = (id: ActionId) => {
+      lastKeyActionRef.current = { id, t: performance.now() };
+      actions[id]();
+    };
     const onKey = (e: KeyboardEvent) => {
       if (pastingRef.current) { e.preventDefault(); return; }
       const t = e.target;
@@ -5276,95 +5418,86 @@ export default function App() {
       if (importOpenRef.current && !(cmd(e) && (e.key === "," || e.code === "Slash"))) return;
       if (cmd(e) && e.shiftKey && e.code === "KeyP") {
         e.preventDefault();
-        setPerfHud(!perf.enabled);
-        perf.enable(!perf.enabled);
+        run("perf-overlay");
         return;
       }
       if (cmd(e) && e.shiftKey && (e.key === "e" || e.key === "E")) {
         e.preventDefault();
-        setExporting(true);
+        run("export");
         return;
       }
       // ⌘P: the Print panel, as Lightroom's Print module
       if (cmd(e) && !e.shiftKey && !e.altKey && (e.key === "p" || e.key === "P")) {
         e.preventDefault();
-        showRightRef.current("print");
+        run("print");
         return;
       }
       // Copy Settings, Paste and Previous, as Lightroom's ⇧⌘C, ⇧⌘V and ⌥⌘V
       if (cmd(e) && (e.key === "c" || e.key === "C" || e.code === "KeyC") && e.shiftKey) {
         e.preventDefault();
-        if (session.current) setCopying(true);
+        run("copy-settings");
         return;
       }
       if (cmd(e) && e.code === "KeyV" && (e.shiftKey || e.altKey)) {
         e.preventDefault();
-        if (e.altKey) pastePreviousRef.current(); else pasteSettingsRef.current();
+        if (e.altKey) run("paste-previous"); else run("paste-settings");
         return;
       }
       if (cmd(e) && e.code === "Slash") {
         e.preventDefault();
-        setShortcutsOpen(true);
+        run("shortcuts");
         return;
       }
       // Create Virtual Copy, as Lightroom's ⌘': of the selection, else the open photo
       if (cmd(e) && e.code === "Quote") {
         e.preventDefault();
-        const sel = selectionRef.current, all = imagesRef.current;
-        const list = sel.size ? all.filter((i) => sel.has(i.imgid)) : all.filter((i) => isOpen(i));
-        void createCopiesRef.current(list);
+        run("virtual-copy");
         return;
       }
       // HDR Merge, as Lightroom's ⌃H: of the selection's raws, two or more
       if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.code === "KeyH") {
         e.preventDefault();
-        const sel = selectionRef.current;
-        const list = hdrBrackets(imagesRef.current.filter((i) => sel.has(i.imgid)));
-        if (list.length > 1) setHdrMerging(list);
-        else setStatus("HDR Merge: select two raw exposures or more");
+        run("hdr-merge");
         return;
       }
       // Panorama Merge, as Lightroom's ⌃M: of the selection, two or more
       if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.code === "KeyM") {
         e.preventDefault();
-        const sel = selectionRef.current;
-        const list = panoFrames(imagesRef.current.filter((i) => sel.has(i.imgid)));
-        if (list.length > 1) setPanoMerging(list);
-        else setStatus("Panorama Merge: select two raw photos or more");
+        run("pano-merge");
         return;
       }
       // Preferences, as every Mac app's ⌘,
       if (cmd(e) && e.key === ",") {
         e.preventDefault();
-        setPrefsOpen(true);
+        run("preferences");
         return;
       }
       if (cmd(e) && e.shiftKey && (e.key === "i" || e.key === "I")) {
         e.preventDefault();
-        setImportOpen(true);
+        run("import");
         return;
       }
       if (cmd(e) && (e.key === "z" || e.key === "Z")) {
         e.preventDefault();
-        stepHistory(!e.shiftKey);
+        run(e.shiftKey ? "redo" : "undo");
         return;
       }
       // zoom in and out, as Lightroom's ⌘= and ⌘-; by code, so ⇧⌘= (⌘+) zooms
       // too. marked used, so WebView2 does not zoom the page
       if (cmd(e) && (e.code === "Equal" || e.code === "Minus") && !e.altKey) {
         e.preventDefault();
-        if (session.current && !croppingRef.current) stepZoom(e.code === "Equal" ? 1 : -1);
+        run(e.code === "Equal" ? "zoom-in" : "zoom-out");
         return;
       }
       if (cmd(e) && (e.code === "BracketLeft" || e.code === "BracketRight")) {
         e.preventDefault();
-        void turn(e.code === "BracketLeft" ? "ccw" : "cw");
+        run(e.code === "BracketLeft" ? "rotate-left" : "rotate-right");
         return;
       }
       // ⌘A selects every photo the filters leave showing
       if (cmd(e) && e.code === "KeyA" && !e.shiftKey && !e.altKey) {
         e.preventDefault();
-        setSelection(new Set(shownRef.current.map((i) => i.imgid)));
+        run("select-all");
         return;
       }
       if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -5373,31 +5506,27 @@ export default function App() {
       // the key is marked used: macOS beeps at one left unhandled while the
       // window changes style
       if (previewRef.current) {
-        if (e.key === "f" || e.key === "F" || e.key === "Escape") { e.preventDefault(); setPreview(false); return; }
+        if (e.key === "f" || e.key === "F" || e.key === "Escape") { e.preventDefault(); e.key === "Escape" ? setPreview(false) : run("fullscreen-preview"); return; }
         if (!/^([zZyYxXiIlL\\0-9]|ArrowLeft|ArrowRight)$/.test(e.key)) return;
-      } else if ((e.key === "f" || e.key === "F") && session.current) { e.preventDefault(); setPreview(true); return; }
+      } else if ((e.key === "f" || e.key === "F") && session.current) { e.preventDefault(); run("fullscreen-preview"); return; }
       // I cycles the info over the photo: file, exposure, none, as Lightroom's
-      if ((e.key === "i" || e.key === "I") && session.current) { setInfoMode((m) => (m + 1) % 3); return; }
+      if ((e.key === "i" || e.key === "I") && session.current) { run("info-overlay"); return; }
       // L steps the canvas: dark, neutral gray, white. Lightroom sets it only
       // from the surround's context menu; its L (Lights Out) is the nearest key
       if ((e.key === "l" || e.key === "L") && session.current) {
-        setCanvasColor((c) => {
-          const next = CANVASES[(CANVASES.indexOf(c) + 1) % CANVASES.length];
-          storeCanvas(next);
-          return next;
-        });
+        run("canvas");
         return;
       }
       if (e.key === "Tab") {
         e.preventDefault();
-        hidePanels(e.shiftKey ? ["left", "right", "strip"] : ["left", "right"]);
+        if (e.shiftKey) hidePanels(["left", "right", "strip"]); else run("hide-panels");
         return;
       }
-      if ((e.key === "g" || e.key === "G") && !croppingRef.current) { setGrid(!gridRef.current); return; }
+      if ((e.key === "g" || e.key === "G") && !croppingRef.current) { run("grid"); return; }
       if (e.key === "Escape" && gridRef.current) { setGrid(false); return; }
       if (e.key === "\\" && !croppingRef.current) { setBaModeRef.current("off"); setBefore(!beforeRef.current); return; }
-      if ((e.key === "y" || e.key === "Y") && !croppingRef.current) { cycleBaModeRef.current(); return; }
-      if ((e.key === "c" || e.key === "C") && !croppingRef.current) { toggleCompareRef.current(); return; }
+      if ((e.key === "y" || e.key === "Y") && !croppingRef.current) { run("before-after"); return; }
+      if ((e.key === "c" || e.key === "C") && !croppingRef.current) { run("compare"); return; }
       if (e.key === "Escape" && compareRef.current !== null) { setCompareRef.current(null); return; }
       if (straighteningRef.current && e.key === "Escape") { setStraightening(false); return; }
       if (guidingRef.current && e.key === "Escape") { setGuiding(false); return; }
@@ -5412,7 +5541,7 @@ export default function App() {
       if (pickingRef.current && e.key === "Escape") { setPicking(false); return; }
       // W picks white balance from the image, as in Lightroom
       if ((e.key === "w" || e.key === "W") && session.current && session.current.values.neg_on !== 1) {
-        setPicking(!pickingRef.current);
+        run("wb-picker");
         return;
       }
       if (healModeRef.current && healKeyRef.current(e)) return;
@@ -5434,29 +5563,31 @@ export default function App() {
       if (e.shiftKey && (e.key === "j" || e.key === "J")) { pickToolRef.current("color"); return; }
       // H steps the scope as its corner menu lists them, ⇧H back
       if ((e.key === "h" || e.key === "H") && !cmd(e) && !e.altKey && session.current) {
-        const n = SCOPE_MODES.length;
-        setScope((s) => ({ mode: SCOPE_MODES[(SCOPE_MODES.findIndex(([m]) => m === s.mode) + (e.shiftKey ? n - 1 : 1)) % n][0] }));
+        if (e.shiftKey) {
+          const n = SCOPE_MODES.length;
+          setScope((s) => ({ mode: SCOPE_MODES[(SCOPE_MODES.findIndex(([m]) => m === s.mode) + n - 1) % n][0] }));
+        } else run("next-scope");
         return;
       }
       // S turns the soft proof on or off, as in Lightroom
       if ((e.key === "s" || e.key === "S") && !cmd(e) && !e.altKey && !e.shiftKey && session.current) {
-        toggleProofRef.current();
+        run("soft-proof");
         return;
       }
       // J shows both clipping overlays, or hides them, as in Lightroom
       if (e.key === "j" && !cmd(e) && !e.altKey) {
-        setClipOn((o) => (o.low && o.high ? { low: false, high: false } : { low: true, high: true }));
+        run("clipping");
         return;
       }
       if (e.shiftKey && (e.key === "q" || e.key === "Q")) { pickToolRef.current("luminance"); return; }
       if (e.key === "k" || e.key === "K") { pickToolRef.current("brush"); return; }
       if (e.key === "m" || e.key === "M") { pickToolRef.current(e.shiftKey ? "ellipse" : "gradient"); return; }
-      if (e.key === "r" || e.key === "R") { enterCrop(); return; }
-      if ((e.key === "q" || e.key === "Q") && session.current) { showHealRef.current(); return; }
+      if (e.key === "r" || e.key === "R") { run("crop"); return; }
+      if ((e.key === "q" || e.key === "Q") && session.current) { run("heal"); return; }
       const list = shownRef.current;
       const at = list.findIndex((i) => isOpen(i));
       const cur = at >= 0 ? list[at] : null;
-      if (e.key === "z" || e.key === "Z") setZoom(zoomRef.current === "fit" ? navZoom.current : "fit");
+      if (e.key === "z" || e.key === "Z") run("zoom-toggle");
       else if ((e.key === "ArrowRight" || e.key === "ArrowLeft") && compareRef.current !== null) {
         // comparing, the arrows step the candidate, past the open photo
         e.preventDefault();
@@ -5471,12 +5602,9 @@ export default function App() {
         if (next) { e.preventDefault(); void openEntry(next); }
       }
       else if (!cur) return;
-      else if (e.key >= "0" && e.key <= "5") rateSelection(cur, { rating: Number(e.key), rejected: false });
-      else if (e.key >= "6" && e.key <= "9") {
-        const bit = 1 << (Number(e.key) - 6);
-        rateSelection(cur, { labels: bit });
-      }
-      else if (e.key === "x" || e.key === "X") rateSelection(cur, { rejected: !cur.rejected });
+      else if (e.key >= "0" && e.key <= "5") run(`rate-${e.key}` as ActionId);
+      else if (e.key >= "6" && e.key <= "9") run((["label-red", "label-yellow", "label-green", "label-blue"] as const)[Number(e.key) - 6]);
+      else if (e.key === "x" || e.key === "X") run("reject");
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -5716,7 +5844,7 @@ export default function App() {
     {/* the window's title bar is hidden (tauri.conf.json); this strip moves
         the window and leaves room for the traffic lights */}
     {/* full screen has no traffic lights to hold, and the photo wants the room */}
-    {!fullscreen && <div className="titlebar" data-tauri-drag-region><span data-tauri-drag-region>Immage</span></div>}
+    {!fullscreen && <div className={`titlebar${!IS_MAC ? " with-menus" : ""}`} data-tauri-drag-region><span data-tauri-drag-region>Immage</span>{!IS_MAC && <MenuBar menus={OTHER_MENUS} onAction={runMenuAction} />}</div>}
     <div className={`app${sliding ? " sliding" : ""}`} style={{
       gridTemplateColumns: preview ? "0px 0px minmax(0, 1fr) 0px 0px 0px 0px"
         : `${docked.left ? layout.leftWidth : 0}px ${docked.left ? 8 : 0}px minmax(0, 1fr)`
@@ -6191,10 +6319,16 @@ export default function App() {
             <MasksPanel masks={masks} selected={maskSel} shape={shapeSel} tool={maskTool} target={toolTarget}
                         brush={brush} overlay={maskShown} disabled={!current} mono={values.bw_mode === 1} photo={values}
                         renderSlider={(c, v, onChange, glow, module) => (
-                          <Slider key={c.id} control={c} value={v} neutral={c.neutral ?? 0} disabled={!current}
+                          <div key={c.id}
+                               onPointerDownCapture={() => { if (c.id.startsWith("r_c")) { rangeInteracting.current = true; refined(); } }}
+                               onPointerUpCapture={() => { if (c.id.startsWith("r_c")) { rangeInteracting.current = false; refined(); } }}
+                               onPointerCancelCapture={() => { rangeInteracting.current = false; refined(); }}
+                               onFocusCapture={() => { if (c.id.startsWith("r_c")) { rangeInteracting.current = true; refined(); } }}
+                               onBlurCapture={() => { if (c.id.startsWith("r_c")) { rangeInteracting.current = false; refined(); } }}>
+                          <Slider control={c} value={v} neutral={c.neutral ?? 0} disabled={!current}
                                   values={selMask?.values ?? values} onChange={onChange} glow={glow}
                                   moduleChoice={module?.choice} moduleValue={module?.value} onModule={module?.onPick}
-                                  moduleScope="masks" />
+                                  moduleScope="masks" /></div>
                         )}
                         fresh={freshMask} onHslShown={setMaskHslShown}
                         onTool={(t, target) => {
@@ -6335,16 +6469,26 @@ export default function App() {
             </div>
           )}
           {rightMode === "negative" && !cropping && (
-            <NegativePanel values={values} disabled={!current} converted={values.neg_on === 1} picking={negPick}
+            <NegativePanel photo={session.current} values={values} disabled={!current} converted={values.neg_on === 1} picking={negPick}
                            busy={negBusy} hasArea={!!negArea} note={negNote} onPick={setNegPick}
                            onResetColor={() => changeMany(["wbl", "wbh"].flatMap((k) => ["r", "g", "b"]
                              .map((c): [string, number] => [`neg_${k}_${c}`, 1])), "Reset Color")}
-                           renderControl={(id) => {
-                             const c = controlById.get(id)!;
+                           renderControl={(id, options) => {
+                             const c = { ...controlById.get(id)!, ...(options ? { options } : {}) };
+                             const profile = id === "neg_input_profile" || id === "neg_working_profile";
                              const props = { control: c, value: values[id] ?? c.neutral ?? 0,
                                              neutral: session.current?.neutral[id] ?? c.neutral ?? 0,
-                                             disabled: !current || negBusy || (id !== "neg_film" && values.neg_on !== 1),
-                                             values, onChange: (v: number) => (id === "neg_film" ? negFilm(v) : change(c, v)) };
+                                             disabled: !current || negBusy || (profile ? !options?.length : id !== "neg_film" && values.neg_on !== 1),
+                                             values, onChange: (v: number) => {
+                                               if (id === "neg_film") negFilm(v);
+                                               else {
+                                                 change(c, v);
+                                                 if (profile) {
+                                                   setNegPick(null); setNegArea(null);
+                                                   setNegNote("Profile changed: pick the film border and photo area again.");
+                                                 }
+                                               }
+                                             } };
                              return c.kind === "choice" ? <Choice key={id} {...props} /> : <Slider key={id} {...props} />;
                            }} />
           )}
@@ -6558,7 +6702,7 @@ export default function App() {
         <div className="right-foot">
           <button className="btn small" disabled={!current || cropping} onClick={() => setCopying(true)}
                   data-action="copy-settings" title={keys("choose settings of this photo to copy (⇧⌘C)")}>Copy…</button>
-          <button className="btn small" disabled={!current || cropping || !hasClip} onClick={pasteSettings}
+          <button className="btn small" disabled={!current || cropping || !hasClip} onClick={() => void pasteSettings()}
                   data-action="paste-settings" title={keys("paste the copied settings onto the selected photos (⇧⌘V)")}>Paste</button>
           <button className="btn small" disabled={!current || cropping || !previous.current} onClick={pastePrevious}
                   title={keys("the previous photo's settings, the parts ticked in Copy Settings (⌥⌘V)")}>Previous</button>
@@ -6633,6 +6777,7 @@ export default function App() {
                   onClose={() => setFileMenu(null)} />
       );
     })()}
+    <AgxPresetLoader ready={!!current} onPick={(v) => change(controlById.get("profile")!, v)} />
     {prefsOpen && (
       <PreferencesDialog openGenerated={openGenerated} onOpenGenerated={(on) => { storeOpenGenerated(on); setOpenGenerated(on); }} loupe={loupeEnabled} onLoupe={(on) => { storeLoupe(on); setLoupeEnabled(on); loupeEnabledRef.current = on; setLoupePicking(false); setLoupeShown(false); if (on && !gridRef.current) session.current?.requestLoupe(); }} presets={[...BUILTIN_PRESETS, ...presets]} newPhotos={newPhotos}
                          onNewPhotos={(id) => { setNewPhotos(id); storeNewPhotosPreset(id); }}
@@ -7313,7 +7458,7 @@ function ThumbCanvas({ loader, imgid, dogEar = false }: { loader?: ThumbLoader; 
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const c = ref.current;
-    if (!c || !bitmap) return;
+    if (!c || !bitmap?.width) return;
     c.width = bitmap.width;
     c.height = bitmap.height;
     // WebKitGTK stops showing GPU-backed thumbnail canvases once a photo is
@@ -7647,6 +7792,7 @@ function HistogramView({ histograms, values, disabled, exif, neutral, onChange, 
   clip: ClipShow; onClip: (end: "low" | "high") => void; onClipPeek: (end: "low" | "high" | null) => void;
   scope: ScopeSettings; onScope: (change: Partial<ScopeSettings>) => void;
 }) {
+  const themeRevision = useThemes();
   const h = useSyncExternalStore(histograms.subscribe, histograms.get);
   const ref = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState(0);
@@ -7657,7 +7803,7 @@ function HistogramView({ histograms, values, disabled, exif, neutral, onChange, 
     ro.observe(c);
     return () => ro.disconnect();
   }, []);
-  useEffect(() => { if (ref.current) perf.time("pixels.scopeDraw", () => drawScope(ref.current!, h, scope)); }, [h, scope, size]);
+  useEffect(() => { if (ref.current) perf.time("pixels.scopeDraw", () => drawScope(ref.current!, h, scope)); }, [h, scope, size, themeRevision]);
   const tones = scope.mode === "histogram";
   const turning = (scope.mode === "vectorscope" || scope.mode === "split")
     && scope.space === "ryb" && scope.harmony > 0;
@@ -8103,6 +8249,8 @@ const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle, values
                     ? <SaturationCurve key="saturation-curve" values={values} disabled={disabled} onChange={onChangeMany}
                        module={switchFor("sc_pn") && <ModuleSwitch {...switchFor("sc_pn")!} scope="global" />} />
                     : null;
+                  if (c.id === "lens_pick") return <LensPicker key={c.id} value={values.lens_pick ?? 0} photo={session}
+                    disabled={disabled || values.lens_profile !== 1} onChange={(v) => onChange(c, v)} />;
                   const props = controlProps(c);
                   return c.kind === "toggle" ? <Toggle key={c.id} {...props} />
                     : c.kind === "choice" ? <Choice key={c.id} {...props} />
@@ -8394,16 +8542,31 @@ const SliderWidget = memo(function SliderWidget({ control: c, value, neutral, di
 
 // a few named values as a segmented control (Color | Black & White)
 function Choice({ control: c, value, disabled, onChange }: ControlProps) {
+  useAgxProfiles();
   if (c.menu) return (
     <div className="choice-row" data-control-id={c.id}>
-      <span>{c.label}</span>
-      <select className="field" value={value} disabled={disabled} onChange={(e) => onChange(Number(e.target.value))}>
+      <span title={c.note}>{c.label}</span>
+      <select title={c.note} className="field" value={value} disabled={disabled} onChange={(e) => {
+        const v = Number(e.target.value);
+        if (c.loadPreset && (v === LOAD_PRESET || v === DELETE_PRESET)) {
+          e.target.value = String(value);
+          window.dispatchEvent(new Event(v === DELETE_PRESET ? DELETE_AGX_PRESET_EVENT : LOAD_AGX_PRESET_EVENT));
+        } else onChange(v);
+      }}>
         {c.optionGroups
           ? c.optionGroups.map(([group, opts]) => (
             <optgroup key={group} label={group}>
               {opts.map(([label, v]) => <option key={v} value={v}>{label}</option>)}
             </optgroup>))
           : (c.options ?? []).map(([label, v]) => <option key={v} value={v}>{label}</option>)}
+        {c.loadPreset && <>
+          {!c.options?.some(([, v]) => v === value) && value >= AGX_USER_FIRST
+            && <option hidden value={value}>{profileLabel(value)}</option>}
+          <optgroup label="">
+            <option value={LOAD_PRESET}>Load AgX Preset</option>
+            <option value={DELETE_PRESET} disabled={!userProfiles().length}>Delete AgX Preset</option>
+          </optgroup>
+        </>}
       </select>
     </div>
   );

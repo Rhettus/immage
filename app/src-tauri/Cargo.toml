@@ -1,6 +1,6 @@
 [package]
 name = "immage"
-version = "0.43.0"
+version = "0.44.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
 
@@ -22,7 +22,8 @@ tauri-plugin-window-state = "2"
 # the SD card importer, cloned into the repo's immporter/ (app/scripts/fetch_immporter.sh)
 tauri-plugin-immporter = { path = "../../immporter/src-tauri/plugin" }
 # exports uploaded to Immich (immich_upload.rs); the same version the importer uses
-reqwest = { version = "0.13", features = ["blocking", "json", "multipart"] }
+reqwest = { version = "0.13", features = ["blocking", "json", "multipart", "query"] }
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
 # capture times with the local offset Immich requires (already in the tree, via the importer)
 chrono = "0.4"
 # model download checksums (already in the tree, via tauri)

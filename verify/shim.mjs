@@ -197,6 +197,7 @@ const COMMANDS = {
   spektra_fetch: async ({ action }) => { const { ok, ms, ...r } = await request({ cmd: "spektra_fetch", action }); return r; },
   open_image: ({ path, imgid }) => request({ cmd: "open", path, imgid: imgid ?? -1 }),
   get_params: ({ modules }) => request({ cmd: "get", modules }),
+  color_profiles: () => request({ cmd: "color_profiles" }),
   history: async ({ saved } = {}) => (await request({ cmd: "history", saved: saved ?? false })).items,
   module_state: ({ op, priority, enabled, reset, restore }) => {
     const req = { cmd: "module_state", op, priority, reset: reset ?? false };

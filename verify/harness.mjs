@@ -191,8 +191,10 @@ async function trialGlobal(o, photo, c, spec, check) {
     const err = spec.mono ? (meanChroma(f) < 1.5 ? null : `still in color (mean chroma ${meanChroma(f).toFixed(2)})`)
       : judge(c.kind === "choice" ? {} : spec, d, v > current ? 1 : -1);
     trials.push({ value: v, ...d, ...(err ? { error: err } : {}) });
-    failed ??= err && `${v}: ${err}`;
+    if (!spec.anyChoice) failed ??= err && `${v}: ${err}`;
   }
+  if (spec.anyChoice && !trials.some((t) => !t.error))
+    failed = `no available choice changed the photo (tried ${trials.length} values)`;
   const back = await o.after(() => s.setMany(Object.entries(prior)));
   const r = compare(back, start);
   if (!failed && !(r.mad <= THRESHOLD.reset)) failed = `put back, the frame stays different (mean |Δ| ${r.mad})`;
@@ -209,9 +211,27 @@ async function sliders(photo) {
   // they are skipped, as the simulation passes the photo through
   const pack = await invoke("spektra_stocks");
   const film = pack.pack ? filmSpecs(SF_FIELDS.map((x) => x.field), pack.stocks) : {};
-  for (const c of controls()) {
+  // NegativePanel supplies the installed color profile choices at runtime;
+  // they are not static manifest options. Mirror its menu so the release
+  // harness tests real profile changes instead of the manifest's placeholder
+  // "Default for Photo" value (which is the current value on ordinary photos).
+  const profiles = await invoke("color_profiles");
+  for (const control of controls()) {
+    let c = control;
+    let spec = GLOBAL[c.id] ?? film[c.id] ?? {};
+    if (c.id === "neg_input_profile" || c.id === "neg_working_profile") {
+      const role = c.id === "neg_input_profile" ? "input" : "working";
+      const options = profiles?.[role] ?? [];
+      const current = o.s.values[c.id];
+      c = { ...c, options: current !== undefined && !options.some(([, value]) => value === current)
+        ? [...options, ["Current Profile", current]] : options };
+      // Some installed profiles intentionally resolve to the same output as
+      // the photo's default or another profile. The dedicated color-profiles
+      // test verifies values round-trip; here require at least one real visual
+      // change from the dynamically populated menu.
+      spec = { ...spec, anyChoice: true };
+    }
     if (!wanted(c.id)) continue;
-    const spec = GLOBAL[c.id] ?? film[c.id] ?? {};
     const base = { check: "sliders", photo: basename(photo), id: c.id };
     if (spec.skip) { record({ ...base, status: "skip", detail: spec.skip }); continue; }
     if (c.id.startsWith("sf_") && !pack.pack) { record({ ...base, status: "skip", detail: "no spektrafilm data pack" }); continue; }

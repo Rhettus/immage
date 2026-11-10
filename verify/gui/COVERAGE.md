@@ -13,19 +13,24 @@ This imports pure manifest/math code using Node >= 22.18, without launching an a
 
 | Case | Checks | Verification status |
 |---|---|---|
+| location-map | Photo-area expansion, wheel zoom, Escape collapse, dialog stacking, unchanged location draft | Passed Linux ARM64 system WebKitGTK, run 2026-11-09T23-59-45.887Z_ab0c885_6005ea2f. Provider/keyring integration unverified |
+| preferences-help | Short descriptions, hover and keyboard help, tooltip bounds, ARIA and dismissal | Written; awaiting approved GUI run |
+| workspace-layout | General Workspace row order, conditional Scroll amount, right-aligned theme swatches, separate import actions and hit targets across built-in themes | Passed Linux ARM64 system WebKitGTK, isolated floating/maximized workspace, run 2026-11-09T21-37-52.837Z_e47ad0c_edc54e26; native import chooser remains manual |
+| color-range | Hue, Hue Range, Minimum Chroma and Smoothness: pointer/keyboard/numeric edits, overlay pixels and restoration, Escape, undo/redo, saved values and render after restart | Passed Linux ARM64 system WebKitGTK, maximized isolated floating workspace, run 2026-11-09T05-02-48.236Z_761252a_11ce1c3e |
 | startup, exposure | Real fixture, final photo, drag lighter/darker, exact reset | Previously passed on Linux system WebKit |
 | gui-benchmark | Run existing benchmark via Preferences, retain/validate report and final pixels | Passed on Linux ARM64 VM, system WebKitGTK 2.54.2, Wayland DPR 2; timings approximate |
 | gui-benchmark-screen | Same benchmark with fractional draft on | Passed on Linux ARM64 VM, Wayland 125%, DPR 2, draftScale 0.625 |
 | gui-benchmark-whole | Same benchmark with fractional draft off | Passed on Linux ARM64 VM, Wayland 125%, DPR 2, draftScale 1 |
 | slider-input | Arrow keys, focus retention, double-click numeric editing, Enter, reset/photo | Passed on Linux system WebKit, Wayland, DPR 2 |
 | shift-range | Five random plain-click then Shift-click ranges in the grid with random delays; selection must be exactly the run | Written; awaiting approved GUI run |
+| agx-presets | Profile loader, database filtering, checkbox/Add state, cancel, rendered import, duplicates, profile switching, user-only deletion preserving pixels, restart persistence | Passed on Linux ARM64, system WebKitGTK 2.54.2, maximized, 2026-11-08T23-06-46.100Z_3890fc3_2fe8198f. Default-replacement extension passed in 2026-11-08T23-16-29.185Z_3c1857f_6d3f975a. Native file chooser remains manual |
 | batch-paste | Two selected JPEGs, Kodak look/amount, one batch undo/redo, both sidecars, reopening and unselected image | Written; awaiting approved GUI run |
 | history | Slider edit, toolbar undo/redo, value/photo agreement, basic Reset All | Awaiting approved GUI run |
 | rail | Presets, masks, zones, heal, adjustments, active state, hit geometry, screenshots | Awaiting approved GUI run |
-| splash | Launch splash size stays 640x427 (not tiled to fill the workspace) | Fails on Hyprland 0.57: floats but opens 1710x1107 (run 2026-11-03T05-56-54.119Z_f7db416); not in smoke |
+| splash | Launch splash size stays 640x427 (not tiled to fill the workspace) | Environment-unverified: per-window floating behavior was not captured, and compositor sizing is not confirmed as an app bug |
 | panel-scroll | 81d4441: a first open of Presets starts at the top; Adjustments returns to its own offset | Passed (run 2026-11-03T06-06-31.255Z_0f9ba08) |
 | sliders | Current reachable panel ranges, pointer change, reset, final pixels, CSS, screenshots | Awaiting approved GUI run; hidden branches excluded |
-| module-switch | Panel icon beside multi-module tools, its menu, pick, Escape and Set as default | Passed, Linux release build (run 2026-11-05T22-18-54.889Z_e76d528_2a7cfb97); global Contrast only, masks not driven |
+| module-switch | Panel icon beside multi-module tools, its menu, pick, Escape and Set as default | Older pass covered global Contrast only; current Clarity clipping finding and mask behavior remain unverified |
 | module-options | Every available Global/Masks option, independent Contrast choices, folding persistence | Awaiting a GUI run; preference UI only. Generated module-masks-contrast-1 passed (run 2026-11-03T06-28-57.870Z_8e9b538) |
 
 `node verify/gui/run.mjs --list` lists selections without launching anything.
@@ -36,6 +41,56 @@ A successful suite means only that selection passed. Review per-control
 option, a RAW, suitable image content, or a different module. Such observations
 are not assertions of correct effect. Disabled controls are recorded as blocked
 for the fixture, never as successfully exercised.
+
+## Interaction versus rendered-effect coverage
+
+Generated slider cases validate pointer movement, keyboard limits and step,
+typed clamping/cancel, reset, and the reported value. Ordinary range cases also
+require a rendered-frame change with the effect enabled. Contrast Equalizer
+graph cases record `photoChanged` without asserting it; lens CA on a JPEG
+explicitly leaves rendering unverified. Those interaction passes must not be
+reported as rendered-effect coverage.
+
+Slider drags move by at least one declared step. When the initial small edits
+show no rendered change, range cases also probe both endpoints before requiring
+a pixel difference. The report records each probe; reset and owner-restoration
+assertions still apply.
+
+For rendered-effect coverage, first establish the owning effect, capture a
+baseline, change the control, and assert a pixel/frame difference when that
+control is expected to affect the selected photo. Restore both the control and
+the owner parameter, then verify the baseline is restored. If a control changes
+state without necessarily changing pixels (for example, an overlay coordinate),
+assert the relevant state or overlay instead. Use an appropriate fixture when
+RAW-only behavior, image content, or an available profile is required. These
+requirements describe intended coverage; they do not claim that unrun cases
+have passed.
+
+Some controls are secondary parameters of an effect that is neutral or disabled
+at the default values. Seed the owner effect before requiring a rendered delta:
+
+| Secondary controls | Owner prerequisite |
+|---|---|
+| Vignette midpoint, roundness, feather, and center | `vig_amount > 0` |
+| Grain size | `grain_amount > 0` |
+| Global/local Clarity and Texture detail level, halo control, and noise bias | At least one corresponding `gain_*` band is nonzero |
+| Diffuse sharpening radius, sensitivity, and masking | `sharp_amount > 0` |
+| Unsharp Mask radius, threshold, and masking | `usm_amount > 0` |
+| Profiled denoise detail | `nr_luminance > 0` or `nr_color > 0` |
+| Defringe radius | `defringe_amount > 0` |
+| Hot-pixel strength and threshold | `hp_enable = 1` (RAW fixture) |
+| Lens chromatic-aberration correction | `lens_profile = 1`; use a matched profile for a rendered-effect assertion |
+
+Mode-selected controls also need their intended mode or treatment selected;
+examples include parametric Tone Curve, B&W Mix, AgX versus sigmoid controls,
+negative conversion, and spektrafilm. Record which branch the case exercised.
+
+Local range cases wait for the selected mask's adjustment groups to mount,
+then open the appropriate group. HSL cases select Hue, Saturation or Luminance;
+Color Grading cases select Sliders. Defringe belongs to Detail. Sharpening
+masking seeds the amount control actually mounted by the selected module.
+The manifest also contains internal state such as `l_fulcrum`, which has no
+independent mask slider and must not be counted as an untested visible control.
 
 ## Commit regressions
 
@@ -70,7 +125,7 @@ do not prove compatibility or installation behavior.
 
 | Area | Required coverage and prerequisites | State |
 |---|---|---|
-| Every manifest slider | Neutral, both directions, limits, step, nonlinear track mapping, keyboard, typed commit/cancel/clamp, wheel on/off, reset; actual effect on suitable photo | Reachable drag/reset scaffold; Exposure stronger oracle |
+| Every manifest slider | Neutral, both directions, limits, step, nonlinear track mapping, keyboard, typed commit/cancel/clamp, wheel on/off, reset; separate interaction and rendered-effect assertions on a suitable photo | Ordinary ranges assert frame change and reset; CE graph bands and unmatched lens CA have explicit rendering limits |
 | Panel/section/tab variants | Expand/collapse, focus mode/Alt, advanced controls, each tab, every module-controlled branch | Panel walk implemented; branches pending |
 | Choices, menus and toggles | Every option, disabled states, selected label, persistence, keyboard, popup placement and clipping | Module preferences implemented; other choices pending |
 | Every module | Global and mask scope, each backend option, effect/reset/undo, keep existing edits, reopen sidecar | Preference options only; output cases pending |
@@ -79,6 +134,7 @@ do not prove compatibility or installation behavior.
 | Portrait automatic Transform | Crop a native/EXIF portrait, click Auto, Level, Vertical and Full; verify a rendered correction without a working-space error, then restore the crop and repeat | GUI case pending; headless CPU sampling covered by `verify/transform-sampling.py` |
 | Masks/heal/negative/film simulation/zones | Creation and deletion, every shape/option, local module controls, outside-region invariance, reset/undo | Rail opening only; editing pending |
 | Preferences | Every safe local setting, persistence, theme/canvas/font/preview, disabled hardware states | Module tab, and General's Overlay opacity (`overlay-opacity`, live-validated); external apps/services/relaunch excluded |
+| Application menus (Windows/Linux) | Title strip, open/hover/Escape/outside click, item labels and shortcuts, effects of items, modal and text-field guards, drag region | `menus`, `menus-guards` live-validated on Linux (run 2026-11-10T02-59-06.431Z); Quit, Add Folder and User Guide are outside the app-only boundary; macOS uses the native menu |
 | Library/filter/history/presets | Every menu and option with disposable folder/metadata fixtures | Pending |
 | Import/export/panorama | In-app settings, validation, format/projection options, preview/output | Pending; native chooser blocked, launch fixture argument only |
 | Print/soft proof | Printer, paper, media, orientation, margins, size, place, profile, intent, BPC; soft proof and gamut warning on the photo; Print and Save PDF | `print` case written, pending live run: soft proof, gamut, S, layout and Save PDF readiness with a seeded profile. Printing and the save dialog are native or need a real printer; `verify/print.py` checks profiles, proof pixels and the engine's PDF headlessly |
@@ -103,11 +159,11 @@ options did not execute. Preserve the failed report; this was not a suite pass.
 
 ## Expanded implementation status
 
-The registry now contains 310 named declarations. Generated range cases exercise
+The registry now contains 335 named and generated declarations. Generated range cases exercise
 both pointer directions, keyboard limits/steps, typed minimum/maximum clamping,
 Escape and reset; generated choices enumerate mounted options. Global/mask module
-variants exercise a candidate control and rendered effect. These are unverified
-implementations, not 310 passes. RAW-only controls and neutral/gated effects
+variants exercise a candidate control and rendered effect. Declarations do not
+establish 335 passes: consult retained run reports. RAW-only controls and neutral/gated effects
 can block or need stronger dedicated oracles.
 
 A control that only one option of a module choice shows (the contrast

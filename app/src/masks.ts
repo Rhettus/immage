@@ -44,7 +44,9 @@ export type Range = LuminanceRange | ColorRange | ParametricRange;
 export type ObjectPath = { hole: boolean; points: number[][] };
 export type Backdrop = { range: [number, number, number, number]; paths: ObjectPath[]; plain?: ObjectPath[];
                          off?: boolean };
-export type ObjectShape = { type: "object"; paths: ObjectPath[]; depth?: [number, number]; feather?: number;
+export type AiRecipe = { kind: string; points?: [number, number, number][];
+                         box?: [number, number, number, number]; inset: boolean; backdrop: boolean };
+export type ObjectShape = { type: "object"; paths: ObjectPath[]; ai?: AiRecipe; depth?: [number, number]; feather?: number;
                             backdrop?: Backdrop } & Mode;
 export type Shape = Ellipse | Gradient | Brush | Range | ObjectShape;
 export const isRange = (s: Shape): s is Range => s.type === "luminance" || s.type === "color" || s.type === "parametric";
@@ -76,7 +78,7 @@ export function rangeChannels(r: LuminanceRange | ColorRange): ParametricRange["
                  r.hi === null ? 2 ** 20 : 2 ** r.hi, r.hi === null ? 2 ** 20 : 2 ** (r.hi + f)];
     return { g: channel(lim, false) };
   }
-  const w = Math.min(0.45, Math.max(0.005, r.width)), f = Math.min(0.25, Math.max(0.002, r.feather));
+  const w = Math.min(0.45, Math.max(0.005, r.width)), f = Math.min(0.25, 0.5 - w, Math.max(0.002, r.feather));
   let hz = channel([r.hue - w - f, r.hue - w, r.hue + w, r.hue + w + f], false);
   if (r.hue - w - f < 0 || r.hue + w + f > 1) {
     // a band across 0/1 cannot be one window; its complement can, inverted

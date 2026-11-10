@@ -35,8 +35,7 @@ export function PluginPrefs({ plugins, onPlugins }: {
   return (
     <>
       <p className="prefs-lead">
-        Applications a photo can be sent to with right-click › Edit In, for what Immage does not do itself.
-        The file each one saves comes back beside its photo, ready to edit.
+        Send photos to external editors with right-click › Edit In. Returned files appear beside their photo, ready to edit.
       </p>
       {plugins.map((p) => {
         const kind = kindOf(p.kind)!;
@@ -54,7 +53,10 @@ export function PluginPrefs({ plugins, onPlugins }: {
               </div>
             </PrefRow>
             {kind.send === "choice" && (
-              <PrefRow label="Send" hint={kind.rawOriginals
+              <PrefRow label="Send" summary={kind.rawOriginals
+                ? "RAWs return without edits; TIFFs bake edits and may clip saturated colors."
+                : "TIFFs include edits; originals suit raw-aware apps."}
+                hint={kind.rawOriginals
                 ? "raws keep the most color and come back as a raw DNG, without the edit; TIFFs carry the edit so far, but very saturated colors can clip"
                 : "TIFFs carry the edit so far; originals suit applications that read raws"}>
                 <div className="segmented small">
@@ -65,7 +67,8 @@ export function PluginPrefs({ plugins, onPlugins }: {
               </PrefRow>
             )}
             {kind.handoff === "macrostudio" && (
-              <PrefRow label="Look" hint="Macro Studio's finish on the stack; Enhanced sharpens and adds clarity">
+              <PrefRow label="Look" summary="Macro Studio finish; Enhanced adds sharpness and clarity."
+                       hint="Macro Studio's finish on the stack; Enhanced sharpens and adds clarity">
                 <div className="segmented small">
                   {([["Natural", "natural"], ["Enhanced", "enhanced"], ["Default", ""]] as const).map(([label, v]) => (
                     <button key={v} className={(p.look ?? "") === v ? "active" : ""} onClick={() => update(p.id, { look: v })}>{label}</button>
@@ -73,7 +76,7 @@ export function PluginPrefs({ plugins, onPlugins }: {
                 </div>
               </PrefRow>
             )}
-            {kind.handoff !== "macrostudio" && <PrefRow label="Results folder"
+            {kind.handoff !== "macrostudio" && <PrefRow label="Results folder" summary="Override the usual location for returned files."
                      hint={`where ${appName(p.app || kind.label)} saves, if not ${kind.returns.subfolders
                        .map((s) => (s ? `a "${s}" folder beside the photo` : "beside the photo")).join(" or ")}`}>
               <div className="pref-inline">
@@ -83,12 +86,16 @@ export function PluginPrefs({ plugins, onPlugins }: {
               </div>
             </PrefRow>}
             {kind.onReturn.map((o) => (
-              <PrefRow key={o.id} label={o.label} hint={`on a returned file, the first time it opens: ${o.hint}`}>
+              <PrefRow key={o.id} label={o.label} summary={`On first open: ${o.hint}`}
+                       hint={`on a returned file, the first time it opens: ${o.hint}`}>
                 <PrefSwitch checked={!!p.onReturn[o.id]}
                             onChange={(on) => update(p.id, { onReturn: { ...p.onReturn, [o.id]: on } })} />
               </PrefRow>
             ))}
-            <PrefRow label="" hint={kind.note}>
+            <PrefRow label="" summary={kind.id === "dxo-pureraw"
+              ? "Save DNGs; Immage opens each when ready."
+              : "Choose a focus bracket; saved stacks return as DNG."}
+              hint={kind.note}>
               <button className="btn small danger" onClick={() => onPlugins(plugins.filter((q) => q.id !== p.id))}>
                 Remove</button>
             </PrefRow>

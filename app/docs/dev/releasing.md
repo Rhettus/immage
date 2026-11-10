@@ -21,6 +21,46 @@ fallback lookup from older MSI-installed copies; the updater detects the
 installer format from the downloaded bytes. Test assembly without an MSI using
 `python3 -I scripts/test_release_assets.py`.
 
+### Windows installer maintenance
+
+The Windows configuration uses `windows/installer.nsi`, based on Tauri CLI
+2.12.4's NSIS template, and `windows/install-scope.nsh` for scope selection and
+deferred elevation. When upgrading the CLI, compare the custom template with
+upstream, retaining its WebView2, updater, signing and resource handling changes.
+The vendored NSIS UAC plugin brokers callbacks to the original account, including
+when another administrator's credentials are used. Its source, license and
+checksums are documented in `app/src-tauri/windows/uac/README.md`. Keep the
+custom template’s sibling include and plugin paths in Windows backslash form:
+NSIS on Windows does not resolve the mixed separators accepted by Linux builds.
+
+`verify/windows-installer.test.cjs` renders and compiles the installer and
+uninstaller for all four WebView2 installation modes, including file associations
+and deep links, and checks the built installer's unelevated manifest. It needs
+Handlebars 4.7.8 (install in a temporary npm prefix), `makensis`, and Tauri CLI
+2.12.4's `utils.nsh`, `FileAssociation.nsh`, `English.nsh` plus its pinned
+`nsis_tauri_utils.dll` in a `plugins/` subdirectory. Set `IMMAGE_HANDLEBARS` to
+the Handlebars module path, `IMMAGE_TAURI_NSIS` to that helper directory, and
+optionally `MAKENSIS`/`NSISDIR` for a compiler outside PATH, then run
+`node --test verify/windows-installer.test.cjs`. This compiles fixture payloads;
+it does not run Windows installers or validate UAC interaction.
+
+Before releasing installer changes, test on Windows 10 and 11 using both standard
+and administrator accounts:
+
+- Fresh current-user and all-users installs, with WebView2 present and absent.
+- UAC cancellation, followed by selecting current-user installation.
+- Elevation using a different administrator's credentials; migration must remove
+  only the invoking user's earlier copy and preserve settings and caches.
+- Current-user and all-users updates through Preferences, including paths with
+  spaces and machines with both scopes installed; test `/S` and `/P` too.
+- Failed migration stops installation; current-user uninstall needs no UAC and
+  all-users uninstall requests it, preserving data unless explicitly selected.
+- Shortcuts and registry entries belong to the chosen scope; launch Immage from
+  setup and verify the application runs without administrator privileges.
+
+The update from an older release may still use that release's elevating
+uninstaller. Verify that transition separately from updates between new builds.
+
 ## Cutting a release
 
 1. **Bump the version** everywhere it is kept. The tag run fails if any

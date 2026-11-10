@@ -4,7 +4,8 @@ import { invoke } from "@tauri-apps/api/core";
 import type { Clip } from "./CopySettings";
 import { Session, instanceKey, mapOpOf } from "./session";
 import { CONVERSIONS } from "./manifest";
-import { NO_REFINE, type Mask } from "./masks";
+import { withModel } from "./aiModel";
+import { NO_REFINE, type ObjectShape, type Backdrop, type Mask } from "./masks";
 
 export type PasteTarget = { imgid: number; path: string };
 export type PasteUpdate = { imgid: number; edited: boolean; error: string | null };
@@ -60,6 +61,38 @@ export function applyClip(s: Session, c: Clip, reapplyLook = false) {
   if (c.masks) replaceMasks(s, c.masks);
 }
 
+// Recipes are required: a mask name is user-editable and cannot identify its AI tool.
+export function validateAiPaste(c: Clip) {
+  for (const m of c.masks ?? []) for (const shape of m.shapes)
+    if (shape.type === "object" && !shape.depth && !shape.ai)
+      throw Error(`mask "${m.name}" has no saved AI selection; recreate it on the source photo before copying`);
+}
+
+export async function recalculateAiMasks(c: Clip): Promise<Clip> {
+  validateAiPaste(c);
+  const result = structuredClone(c);
+  for (const m of result.masks ?? []) for (const [i, shape] of m.shapes.entries()) {
+    if (shape.type !== "object") continue;
+    const recipe = shape.ai;
+    const kind = shape.depth ? "depth" : recipe!.kind;
+    const model = kind === "depth" ? "mask-depth-da2-small" : kind === "object" ? "mask-object-sam21-small"
+      : kind === "subject" ? "mask-subject-birefnet-lite" : "mask-scene-segformer-b2";
+    try {
+      const args = kind === "depth" ? { kind, range: shape.depth } : kind === "object"
+        ? { points: recipe!.points ?? [], box: recipe!.box ?? null, inset: recipe!.inset, backdrop: recipe!.backdrop }
+        : { kind, inset: recipe!.inset, backdrop: recipe!.backdrop };
+      const reply = await withModel(model, () => invoke<ObjectShape["paths"] | { paths: ObjectShape["paths"]; backdrop: Backdrop | null }>(
+        kind === "object" ? "ai_object" : "ai_mask", args));
+      const paths = Array.isArray(reply) ? reply : reply.paths;
+      if (!paths.length) throw Error("nothing found");
+      const { backdrop: oldBackdrop, ...rest } = shape;
+      const backdrop = Array.isArray(reply) ? null : reply.backdrop;
+      m.shapes[i] = { ...rest, paths, ...(backdrop && { backdrop: { ...backdrop, off: oldBackdrop?.off } }) };
+    } catch (e) { throw Error(`AI mask "${m.name}": ${e}`); }
+  }
+  return result;
+}
+
 export async function restorePaste(token: number, action: "undo" | "redo" | "abort") {
   const r = await invoke<{ updates: PasteUpdate[] }>("paste_batch", { action, token });
   return r.updates;
@@ -73,6 +106,7 @@ export async function runPaste(targets: PasteTarget[], clip: Clip,
                                saved: (update: PasteUpdate) => void,
                                prepare?: (s: Session) => Promise<void>) {
   const c = structuredClone(clip);
+  validateAiPaste(c);
   if (prepare) {
     for (const [n, target] of targets.entries()) {
       progress(n, targets.length);
@@ -88,7 +122,13 @@ export async function runPaste(targets: PasteTarget[], clip: Clip,
       let failure: string | null = null;
       const s = await Session.open(target.path, target.imgid, () => ({ width: 1, height: 1 }),
         () => {}, e => { failure ??= e; }, true);
-      try { applyClip(s, c, true); }
+      try {
+        applyClip(s, { ...c, masks: undefined }, true);
+        await s.settled();
+        if (failure) throw Error(failure);
+        const calculated = await recalculateAiMasks(c).catch(e => { throw Error(`${target.path}: ${e}`); });
+        if (calculated.masks) replaceMasks(s, calculated.masks);
+      }
       finally { await s.settled(); }
       if (failure) throw Error(failure);
       await s.close();

@@ -40,8 +40,12 @@ char *strip_metadata(const char *path, strip_t what);
 // Merge export EXIF while preserving the rendered file's layout and color tags.
 gboolean rendered_metadata(const char *path, const void *blob, int size, gboolean dng);
 
-// Stamp raw denoise without replacing the generated DNG's existing metadata.
-gboolean denoised_metadata(const char *path);
+// Stamp the source orientation and raw denoise marker without replacing the
+// generated DNG's existing metadata. orientation is darktable's flip bits.
+gboolean denoised_metadata(const char *path, int orientation);
+
+// Stamp a source orientation on a generated DNG while preserving its metadata.
+gboolean dng_orientation_metadata(const char *path, int orientation);
 
 // marks a sidecar's GPS as authoritative, including removed source fields
 // missing returns bit 1 for coordinates and bit 2 for altitude, or 0 if unmanaged

@@ -56,6 +56,8 @@ export type Control = {
   menu?: boolean;
   // the drop-down's options under headings, in place of `options`
   optionGroups?: [string, [string, number][]][];
+  // a last menu entry that opens the loader of darktable's AgX presets (value LOAD_PRESET)
+  loadPreset?: boolean;
   // needs the raw's detail mask (darktable makes it in demosaic)
   rawOnly?: boolean;
   // what ⌥-dragging it shows, as Lightroom's sharpening sliders do: the
@@ -710,7 +712,9 @@ const AGX_LOOK: Params = { look_brightness: 1, look_original_hue_mix_ratio: 0.6,
 const BLENDER_LOOK = { ...AGX_LOOK, curve_gamma: 2.4, curve_toe_power: 1.5, curve_shoulder_power: 1.5,
                        curve_contrast_around_pivot: 2.4535247 };
 export const AGX_PROFILE_DEFAULT = 0;
-export const AGX_PROFILES: { value: number; label: string; params: Params }[] = [
+export const LOAD_PRESET = -1;
+export const DELETE_PRESET = -2;
+export const AGX_PROFILES: UserProfile[] = [
   { value: AGX_PROFILE_DEFAULT, label: "AgX Default", params: { ...AGX_LOOK, ...BLENDER_PRIMARIES } },
   { value: 11, label: "Unmodified Primaries", params: { ...AGX_LOOK, ...UNMODIFIED_PRIMARIES } },
   { value: 12, label: "Blender", params: { ...BLENDER_LOOK, ...BLENDER_PRIMARIES } },
@@ -737,7 +741,37 @@ export const PROFILE_GROUPS: [string, [string, number][]][] = [
   ["Color Balance RGB", PROFILES.map((p) => [p.label, p.value])],
 ];
 export const PROFILE_OPTIONS: [string, number][] = PROFILE_GROUPS.flatMap(([, o]) => o);
-export const profileLabel = (v: number) => PROFILE_OPTIONS.find(([, x]) => x === v)?.[0] ?? "AgX Default";
+export const profileLabel = (v: number) => PROFILE_OPTIONS.find(([, x]) => x === v)?.[0]
+  ?? (AGX_PROFILES.find((p) => p.value === v)?.deleted
+    ? `${AGX_PROFILES.find((p) => p.value === v)!.label} (deleted)` : "AgX Default");
+
+// AgX presets the user loaded from darktable (agxProfiles.ts), after the
+// built-in ones in AGX_PROFILES and as a last Profile group; the list is
+// replaced in place, as the menu, the photo's profile match (the AgX map's
+// read) and the sliders' bases (agxBase) all look at these arrays
+export const AGX_USER_FIRST = 100;
+export const AGX_FIELDS = [...AGX_PROFILE_FIELDS, "look_lift", "look_slope", "dynamic_range_scaling",
+  "range_black_relative_ev", "range_white_relative_ev", "curve_pivot_x", "curve_pivot_y_linear_output",
+  "curve_linear_ratio_below_pivot", "curve_linear_ratio_above_pivot", "auto_gamma",
+  "curve_target_display_black_ratio", "curve_target_display_white_ratio", "target_white_from_output", "hdr_purity"];
+export type UserProfile = { value: number; label: string; params: Params; deleted?: boolean };
+const AGX_BUILTIN = AGX_PROFILES.length;
+export function setUserProfiles(list: UserProfile[]) {
+  AGX_PROFILES.length = AGX_BUILTIN;
+  AGX_PROFILES.push(...list);
+  PROFILE_GROUPS.length = 2;
+  const active = list.filter((p) => !p.deleted);
+  if (active.length) PROFILE_GROUPS.push(["My Presets", active.map((p) => [p.label, p.value])]);
+  PROFILE_OPTIONS.length = 0;
+  PROFILE_OPTIONS.push(...PROFILE_GROUPS.flatMap(([, o]) => o));
+}
+
+// Selection is shared by the viewer and new-photo defaults, including batch paste.
+export function profileSelection(value: number): Values {
+  const p = value >= AGX_USER_FIRST ? AGX_PROFILES.find((p) => p.value === value)?.params : undefined;
+  return p ? { profile: value, tm_mode: 1, agx_black: p.range_black_relative_ev,
+    agx_white: p.range_white_relative_ev } : { profile: value };
+}
 
 // ------------------------------------------------- Transform (ashift)
 
@@ -1129,17 +1163,20 @@ export const modules: ModuleMap[] = [
   {
     op: "agx", keepOn: false,
     controls: ["profile"],
-    fields: AGX_PROFILE_FIELDS,
+    fields: AGX_FIELDS,
     read: (p, d): Values => {
-      const same = (want: Params) => [...AGX_PRIMARY_FIELDS, ...AGX_LOOK_FIELDS]
-        .every((f) => Math.abs(p[f] - want[f]) < 1e-4);
-      const pr = AGX_PROFILES.find((x) => x.value !== AGX_PROFILE_DEFAULT && same(x.params));
+      const same = (want: Params) => [...AGX_PRIMARY_FIELDS, ...AGX_LOOK_FIELDS,
+        ...AGX_FIELDS.filter((f) => !AGX_PROFILE_FIELDS.includes(f) && !["look_lift", "range_black_relative_ev", "range_white_relative_ev", "curve_pivot_x"].includes(f))]
+        .every((f) => Math.abs(p[f] - (want[f] ?? d[f])) < 1e-4);
+      const candidates = AGX_PROFILES.filter((x) => x.value !== AGX_PROFILE_DEFAULT && same(x.params));
+      const pr = candidates.find((x) => AGX_FIELDS.every((f) => Math.abs(p[f] - (x.params[f] ?? d[f])) < 1e-4))
+        ?? candidates[0];
       return pr ? { profile: pr.value } : same(d) ? { profile: AGX_PROFILE_DEFAULT } : {};
     },
     // the sliders' fields at the profile's, which their own maps then move
     write: (v, d) => {
       const pr = AGX_PROFILES.find((x) => x.value === v.profile && x.value !== AGX_PROFILE_DEFAULT);
-      return Object.fromEntries(AGX_PROFILE_FIELDS.map((f) => [f, pr ? pr.params[f] : d[f]]));
+      return Object.fromEntries(AGX_FIELDS.map((f) => [f, pr?.params[f] ?? d[f]]));
     },
     enabled: (v) => v.tm_mode === 1,
   },
@@ -1206,8 +1243,8 @@ export const modules: ModuleMap[] = [
     op: "agx", keepOn: false,
     controls: ["blacks", "tm_mode"],
     fields: ["look_lift"],
-    read: (p, d) => ({ tm_mode: 1, blacks: (100 * (p.look_lift - d.look_lift)) / AGX_LIFT }),
-    write: (v, d) => ({ look_lift: d.look_lift + (AGX_LIFT * v.blacks) / 100 }),
+    read: (p, d, _c, v) => ({ tm_mode: 1, blacks: (100 * (p.look_lift - agxBase("look_lift", v, d))) / AGX_LIFT }),
+    write: (v, d) => ({ look_lift: agxBase("look_lift", v, d) + (AGX_LIFT * v.blacks) / 100 }),
     enabled: (v) => v.tm_mode === 1,
   }, "mod_blacks", MOD_TM, { active: (v) => v.mod_blacks === MOD_TM && v.tm_mode === 1 }),
   // AgX's saturation, from gray to twice the profile's, as Lightroom's -100..+100
@@ -1228,7 +1265,8 @@ export const modules: ModuleMap[] = [
     fields: ["range_black_relative_ev", "range_white_relative_ev", "curve_pivot_x"],
     read: (p) => ({ tm_mode: 1, agx_black: p.range_black_relative_ev, agx_white: p.range_white_relative_ev }),
     write: (v, d) => {
-      const pivot = d.range_black_relative_ev + d.curve_pivot_x * (d.range_white_relative_ev - d.range_black_relative_ev);
+      const pivot = agxBase("range_black_relative_ev", v, d) + agxBase("curve_pivot_x", v, d)
+        * (agxBase("range_white_relative_ev", v, d) - agxBase("range_black_relative_ev", v, d));
       const at = Math.min(Math.max(pivot, v.agx_black), v.agx_white);
       return { range_black_relative_ev: v.agx_black, range_white_relative_ev: v.agx_white,
                curve_pivot_x: (at - v.agx_black) / (v.agx_white - v.agx_black) };
@@ -1412,14 +1450,16 @@ export const modules: ModuleMap[] = [
   },
   {
     op: "lens", keepOn: false,
-    controls: ["lens_profile", "lens_ca"],
-    fields: ["modify_flags", "has_been_set"],
+    controls: ["lens_profile", "lens_ca", "lens_pick"],
+    // lens_pick is the engine's own field: 0 for the lens matched from the
+    // EXIF, else the hash of the Lensfun lens chosen in its place
+    fields: ["modify_flags", "has_been_set", "lens_pick"],
     // flags: TCA 1, vignetting 2, distortion 4 (lens.cc). until has_been_set,
     // commit_params ignores the params for the defaults, as darktable's GUI
     // sets it on the first change; the method stays the one the defaults
     // picked for the photo
-    read: (p) => ({ lens_profile: 1, lens_ca: p.modify_flags & 1 ? 1 : 0 }),
-    write: (v) => ({ modify_flags: v.lens_ca ? 7 : 6, has_been_set: 1 }),
+    read: (p) => ({ lens_profile: 1, lens_ca: p.modify_flags & 1 ? 1 : 0, lens_pick: p.lens_pick }),
+    write: (v) => ({ modify_flags: v.lens_ca ? 7 : 6, has_been_set: 1, lens_pick: v.lens_pick }),
     enabled: (v) => v.lens_profile === 1,
   },
   {
@@ -1437,6 +1477,14 @@ export const modules: ModuleMap[] = [
     read: (p) => ({ hp_enable: 1, hp_strength: p.strength * 100, hp_threshold: p.threshold * 100 }),
     write: (v) => ({ strength: v.hp_strength / 100, threshold: v.hp_threshold / 100 }),
     enabled: (v) => v.hp_enable === 1,
+  },
+  {
+    op: "colorin", keepOn: true,
+    controls: ["neg_input_profile", "neg_working_profile"],
+    fields: ["input_profile", "working_profile"],
+    read: (p) => ({ neg_input_profile: p.input_profile, neg_working_profile: p.working_profile }),
+    write: (v) => ({ input_profile: v.neg_input_profile, working_profile: v.neg_working_profile }),
+    enabled: () => true,
   },
   // the Negative panel's film negative conversion (NegativePanel.tsx,
   // negadoctor.ts); a converted photo has the modules of NEG_OFF off
@@ -1527,9 +1575,9 @@ export const panels: Panel[] = [
     sections: [
       {
         title: "Profile",
-        controls: [{ id: "profile", label: "Profile", kind: "choice", min: 0, max: 16, step: 1,
+        controls: [{ id: "profile", label: "Profile", kind: "choice", min: 0, max: 99999, step: 1,
                      neutral: AGX_PROFILE_DEFAULT, inline: true, menu: true, options: PROFILE_OPTIONS,
-                     optionGroups: PROFILE_GROUPS, format: profileLabel }],
+                     optionGroups: PROFILE_GROUPS, loadPreset: true, format: profileLabel }],
       },
       {
         title: "Treatment",
@@ -1684,6 +1732,10 @@ export const panels: Panel[] = [
         controls: [
           { ...toggle("lens_profile", "Enable Profile Corrections", 0),
             note: "uses the lens darktable detects through lensfun" },
+          // drawn by LensPicker, which lists the database's lenses
+          { id: "lens_pick", label: "Lens", kind: "choice", options: [["Auto", 0]], menu: true, min: 0, max: 16777215,
+            step: 1, neutral: 0, format: (v) => (v ? "chosen" : "auto"),
+            note: "the lens whose profile corrects the photo; Auto uses the one the file names" },
           toggle("lens_ca", "Remove Chromatic Aberration", 1),
         ],
       },
@@ -1848,6 +1900,11 @@ export const panels: Panel[] = [
     sections: [{
       title: "Negative",
       controls: [
+        ...[ ["neg_input_profile", "Input Profile"], ["neg_working_profile", "Working Profile"] ].map(([id, label]): Control => ({
+          id, label, kind: "choice", menu: true, min: 0, max: 4294967551, step: 1,
+          options: [["Default for Photo", 0]], format: (v) => String(v),
+          note: `darktable: input color profile — ${label.toLowerCase()}; choose before sampling the film`,
+        })),
         toggle("neg_on", "Convert Negative", 0),
         { id: "neg_film", label: "Film Type", kind: "choice", min: 0, max: 1, step: 1, inline: true,
           options: [["Color", FILM_COLOR], ["Black & White", FILM_BW]],

@@ -5,7 +5,11 @@
 #include "common/exif.h"
 #include "common/image.h"
 #include "imageio/imageio_common.h"
+extern "C" {
+#include "imageio/imageio_dng.h"
+}
 #include "imageio/imageio_jpeg.h"
+#include "strip.h"
 #include <exiv2/exiv2.hpp>
 #include <fstream>
 #include <iostream>
@@ -145,6 +149,65 @@ static void check(const std::string &path, bool synthetic)
             << ", preview read chars=" << preview_bytes << std::endl;
 }
 
+static void check_dng_orientation(const std::string &path)
+{
+  for(int exif = 1; exif <= 8; exif++)
+  {
+    const auto bits = dt_image_orientation_to_flip_bits(exif);
+
+    // Simulate the DNG writer's TOPLEFT tag independently of the metadata
+    // helper, so this check fails if denoise stamping stops preserving source orientation.
+    auto reset = Exiv2::ImageFactory::open(path);
+    reset->readMetadata();
+    reset->exifData()["Exif.Image.Orientation"] = static_cast<uint16_t>(1);
+    reset->writeMetadata();
+    require(denoised_metadata(path.c_str(), bits), "could not stamp denoise orientation");
+    auto image = Exiv2::ImageFactory::open(path);
+    image->readMetadata();
+    const auto found = image->exifData().findKey(Exiv2::ExifKey("Exif.Image.Orientation"));
+    require(found != image->exifData().end() && found->toInt64() == exif,
+            "denoised DNG orientation does not match the source");
+    const auto marker = image->xmpData().findKey(Exiv2::XmpKey("Xmp.darktable.neural_restore"));
+    require(marker != image->xmpData().end() && marker->toString() == "raw-denoise",
+            "denoised DNG marker was lost");
+    require(image->exifData().findKey(Exiv2::ExifKey("Exif.Image.DNGVersion")) != image->exifData().end(),
+            "DNG version was lost while stamping denoise metadata");
+    require(image->exifData().findKey(Exiv2::ExifKey("Exif.Image.ColorMatrix1")) != image->exifData().end(),
+            "DNG color matrix was lost while stamping denoise metadata");
+
+    dt_image_t decoded;
+    dt_image_init(&decoded);
+    require(!dt_exif_read(&decoded, path.c_str()), "stamped DNG metadata read failed");
+    require(decoded.orientation == bits, "DNG importer did not read the stamped orientation");
+
+    auto hdr_reset = Exiv2::ImageFactory::open(path);
+    hdr_reset->readMetadata();
+    hdr_reset->exifData()["Exif.Image.Orientation"] = static_cast<uint16_t>(exif == 8 ? 1 : exif + 1);
+    hdr_reset->writeMetadata();
+    require(dng_orientation_metadata(path.c_str(), bits), "could not stamp HDR orientation");
+    auto hdr = Exiv2::ImageFactory::open(path);
+    hdr->readMetadata();
+    const auto hdr_orientation = hdr->exifData().findKey(Exiv2::ExifKey("Exif.Image.Orientation"));
+    require(hdr_orientation != hdr->exifData().end() && hdr_orientation->toInt64() == exif,
+            "HDR DNG orientation does not match the source");
+  }
+  std::cout << path << ": all eight denoise/HDR DNG orientations and metadata preserved" << std::endl;
+}
+
+static void dng_fixture(const std::string &path)
+{
+  dt_image_t meta;
+  dt_image_init(&meta);
+  meta.buf_dsc.filters = 0x94949494;
+  meta.raw_white_point = 65535;
+  for(int i = 0; i < 4; i++) meta.wb_coeffs[i] = 1.0f;
+  std::strcpy(meta.camera_maker, "Fixture");
+  std::strcpy(meta.camera_model, "Orientation Test");
+  const uint16_t cfa[16] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 };
+  require(!dt_imageio_dng_write_cfa_bayer(path.c_str(), cfa, 4, 4, &meta, nullptr, 0, nullptr),
+          "could not write orientation DNG fixture");
+}
+
 int main(int argc, char **argv)
 {
   if(argc < 2) return 2;
@@ -164,6 +227,9 @@ int main(int argc, char **argv)
       fixture(path, late);
       check(path, true);
     }
+    const auto dng = dir + "/orientation.dng";
+    dng_fixture(dng);
+    check_dng_orientation(dng);
     for(int i = 2; i < argc; i++) check(argv[i], false);
     const auto broken = dir + "/truncated.tif";
     write(broken, {'I', 'I', 42, 0, 8, 0, 0, 0, 255, 255});

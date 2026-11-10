@@ -5,6 +5,7 @@ import { defineConfig, searchForWorkspaceRoot } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath } from "node:url";
+import { realpathSync } from "node:fs";
 
 // the SD card importer's UI, cloned into the repo's immporter/
 const immporter = fileURLToPath(new URL("../immporter/src", import.meta.url));
@@ -31,6 +32,6 @@ export default defineConfig({
     port: 1430,
     strictPort: true,
     watch: { ignored: ["**/src-tauri/**"] },
-    fs: { allow: [searchForWorkspaceRoot(process.cwd()), immporter] },
+    fs: { allow: [searchForWorkspaceRoot(process.cwd()), immporter, realpathSync(fileURLToPath(new URL("./node_modules", import.meta.url)))] },
   },
 });

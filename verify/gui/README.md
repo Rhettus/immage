@@ -1,11 +1,11 @@
 # Visible-app GUI verification plan
 
-Status: startup/Exposure and slider-input have previous Linux live passes.
-The expanded registry contains 310 named cases, including generated control and
-module variants (visible panels only; hidden panels are covered by written cases). New cases are written but have not run; declarations are not
-coverage passes. Some scenarios block on unsupported fixtures or native dialogs.
-See `COVERAGE.md` for limitations. Real GUI execution is currently paused by
-local instructions; non-GUI development and checks may continue.
+The registry combines named workflows with generated control and module cases.
+Use `--list` for the current matrix; declarations are not coverage passes. A run
+covers only the cases it executes, with its recorded fixtures and environment.
+Some scenarios require additional fixtures or native interactions outside this
+suite. Follow local approval rules before each run and see `COVERAGE.md` for
+limitations.
 
 ## Setup and execution (Linux)
 
@@ -34,6 +34,13 @@ node verify/gui/run.mjs --config verify/gui/local.json --case exposure
 node verify/gui/run.mjs --config verify/gui/local.json --case masks,panel-scroll
 ```
 
+The `ai-mask-paste` case needs an installed
+`build/ai-models/mask-object-sam21-small/` model. The runner copies it into the
+isolated test profile before launch; it exercises real Select Object inference,
+batch paste, Previous, undo/redo and saved-mask reopening. When using a development
+engine, set `DT_ORT_LIBRARY` to its installed ONNX Runtime library if that library
+is outside the engine's normal search path. The report records this selection.
+
 Exposure includes startup as its prerequisite. A comma list runs several cases
 in one launch, after startup. The runner launches a new driver
 and app, dismisses the tour through
@@ -60,6 +67,21 @@ Missing tools/display/config or a busy lock yield a blocked report and exit 1.
 Failed assertions also exit 1. Signals clean up only the run's own process group;
 reports and copied fixtures remain available. No automatic retries or reference
 acceptance are provided.
+
+## Positive hot-pixel fixture
+
+Ordinary RAW photos may have no visible hot pixels. Generate an isolated,
+sample-derived Bayer DNG with known defective sensor sites for the hot-pixel
+Strength and Threshold rendered-effect contracts (requires ImageMagick):
+
+```sh
+python3 verify/gui/hotpixels-fixture.py --output verify/results/gui-fixtures/hotpixel-positive.dng
+```
+
+Set a local GUI config's fixture to that DNG. Its JSON companion records the
+source and output checksums, defect locations, and sensor values. This fixture
+validates the controls on deliberately introduced defects; it does not establish
+that any particular camera photo contains hot pixels. The source is read only.
 
 ## What a run must exercise
 
@@ -268,6 +290,24 @@ hidden tabs/sections/module branches or establish every slider's image effect.
 Module-options exercises preference selection, not every engine implementation.
 Diagnostic screenshots require review and are not approved visual baselines.
 
+## Generated control prerequisites
+
+Generated cases select the module that owns each control. Mask module defaults
+apply to newly created masks, so module-specific local cases create a temporary
+mask after selecting the default, then remove that mask and restore the prior
+default. Ordinary range cases exercise pointer changes, keyboard limits and
+steps, typed clamping, cancellation and reset.
+
+Contrast Equalizer values are SVG graph points. Their per-band cases select the
+channel, focus the point through its pointer action, use Home to restore its
+neutral value, and check arrow-key adjustment and exact value/pixel restoration.
+The point remains a separately reported case in both global and mask scope.
+
+Choice cases restore their initial selection. Profile selection excludes the
+Load/Delete command entries, whose flows belong to the dedicated AgX preset
+case; it retains installed profile options. Cases explicitly open their required
+tool before finding its panels, so a previous case can leave another tool open.
+
 ## Memory admission check
 
 Before setup and again immediately before starting the driver/app, the Linux
@@ -474,3 +514,35 @@ only the named segments (`layout`, `focus`, `sliders`, `masks`, `equalizer`,
 `verify/results/gui/demo/`. The Film segment needs the spektrafilm data pack and
 Print needs no profile for the tour. Like every GUI run, it needs approval and
 the workspace and memory preparation above.
+
+## AgX preset import
+
+`node verify/gui/run.mjs --config verify/gui/local.json --case agx-presets`
+runs the visible Profile > Load AgX Preset workflow on the copied photo. Before
+launch, `support/agx-fixture.py` generates an AgX v8 user preset and two rows
+that must be excluded (a builtin and a different module) in the run's isolated
+darktable `data.db`. It never reads or changes the user's darktable database.
+
+The case checks checkbox/Add enablement, cancel without changing the photo,
+import and visible rendering, duplicate names, switching to a builtin and back,
+the action spacer and labels, user-only deletion without changing the photo,
+and the saved menu entries and photo after restarting only the test app with
+the same isolated profile. Restart waits for the previous test app's engine and webview processes to exit,
+performs fresh memory admission checks, and requires the original viewport to be
+restored before comparing pixels. Maximize each restarted window too.
+Evidence stays in the usual run directory. The case **passed** on Linux ARM64,
+system WebKitGTK 2.54.2, Wayland DPR 2, maximized 1276x660 viewport, with the
+sample JPEG: run `2026-11-08T23-06-46.100Z_3890fc3_2fe8198f`. Startup and Exposure
+also passed in that run. It covers refresh, cancel deletion and deletion of the
+last preset. Earlier failed runs are retained; the final run includes the
+viewport/restart cleanup and Exposure scrolling fixes. Use a release app and
+engine built from this change.
+Native `.dtpreset`/`.dtstyle` chooser interaction remains a manual check;
+`verify/agx-presets.py` checks file decoding headlessly.
+
+The default-replacement extension also passed in run
+`2026-11-08T23-16-29.185Z_3c1857f_6d3f975a` (Linux ARM64/system-WebKit, maximized 1596x840 at DPR 2).
+Through Preferences, the test makes an imported preset the new-raw default,
+checks that deletion requires an explicit surviving replacement, verifies that
+cancel leaves the old default intact, and verifies the chosen replacement after
+restart. Deleting the last user preset explicitly selects AgX Default.

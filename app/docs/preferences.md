@@ -3,6 +3,10 @@
 Open **Preferences** with ⌘, or the gear at the bottom of the rail. Changes
 apply as you make them; **Done** closes the window.
 
+Rows use short descriptions. Hover over the **?** beside a setting or focus it
+with Tab for the full explanation. Escape dismisses the help without closing
+Preferences. Warnings, current values and restart notices stay visible.
+
 ![Preferences, General tab](images/preferences-general.png)
 <!-- screenshot: Preferences > General -->
 
@@ -10,12 +14,54 @@ apply as you make them; **Done** closes the window.
 
 **Workspace**
 
-- **Open generated photos**: automatically opens HDR merges, panoramas, AI
-  denoise results, positive exports and the first plugin result for editing.
-- **Generated positive format**: losslessly compressed DNG (16-bit float,
-  default) or TIFF (32-bit float) for **Export to Library** in the Negative
-  and Film Simulation panels. The DNG and TIFF buttons beside that button set
-  the same thing.
+- **Theme**: choose **Dark** (the default), **Darktable Grey** (the bundled
+  `darktable-elegant-grey` palette) or **Light** with the swatches.
+  The selected name and **Import theme…** action appear below the swatches;
+  **Remove theme** appears beside Import for custom themes. The
+  interface changes immediately and remembers your choice. **Import theme…**
+  loads a JSON theme and selects it after it is saved. An imported theme with
+  the same name as an existing one is given a numbered name. **Remove theme**
+  appears for the selected imported theme; removing it returns the interface
+  to Dark. Built-in themes cannot be removed.
+
+  A theme file is UTF-8 JSON no larger than 64 KiB. It must contain exactly
+  these top-level fields: `version` (the number `1`), `name` (1–80 printable
+  characters), `colorScheme` (`"dark"` or `"light"`) and `colors`. `colors`
+  must contain every token below, each with a six-digit `#RRGGBB` color; extra
+  fields or tokens, missing tokens, and other color formats are rejected.
+  Immage does not check contrast, so choose colors that keep text and controls
+  readable.
+
+  Download the [JSON Schema](themes/schema.json) for editor validation or the
+  [editable theme example](themes/example.json) to use as a starting point.
+
+  ```json
+  {
+    "version": 1,
+    "name": "My Theme",
+    "colorScheme": "dark",
+    "colors": {
+      "window": "#0e0e0e",
+      "panel": "#181818",
+      "card": "#1f1f1f",
+      "inset": "#262626",
+      "hover": "#2a2a2a",
+      "text": "#f0f0f0",
+      "text-2": "#a3a3a3",
+      "text-3": "#6b6b6b",
+      "track": "#2e2e2e",
+      "thumb": "#f5f5f5",
+      "accent": "#ffffff",
+      "border": "#333333",
+      "on-accent": "#111111",
+      "focus": "#a3a3a3",
+      "error": "#ef7777",
+      "success": "#78bb87",
+      "graph-bg": "#181818",
+      "graph-grid": "#262626"
+    }
+  }
+  ```
 
 - **Canvas**: what is behind the photo, in full screen preview too.
   **Dark**, **Neutral Gray** to judge tones without a dark surround, or
@@ -37,6 +83,25 @@ apply as you make them; **Done** closes the window.
   bottom edge below the toolbar. A pin keeps one open.
 - **Scroll adjusts sliders**: off by default, so scrolling over the panels
   only scrolls them and an edit can't change by accident.
+- **Scroll amount**: appears when scrolling adjusts sliders; sets how far each
+  wheel click moves a slider as a percentage of its range.
+- **Open generated photos**: automatically opens HDR merges, panoramas, AI
+  denoise results, positive exports and the first plugin result for editing.
+- **Generated positive format**: losslessly compressed DNG (16-bit float,
+  default) or TIFF (32-bit float) for **Export to Library** in the Negative
+  and Film Simulation panels. The DNG and TIFF buttons beside that button set
+  the same thing.
+- **Warn before converting a negative**: show which Basic tools a converted
+  negative turns off when opening the Negative panel.
+
+**Map search**
+
+- **Place search**: optional Geoapify search for the Location map. Add a key
+  here and choose **Save**; it is stored in the system keyring and never shown
+  after saving. Enter and save another key to replace it, or choose **Remove**.
+  Search results move the map but do not set photo coordinates. Place the pin
+  and choose **Apply** to save a location. Map tiles and manual pin placement
+  work without a search key.
 
 **Library**
 
@@ -53,6 +118,13 @@ apply as you make them; **Done** closes the window.
 How fast the photo responds while you edit, and the memory and disk
 Immage keeps to make it so.
 
+**GPU**
+
+- **GPU**: what AI upscaling at export runs on. **Automatic** picks the
+  first one found. If none is found, AI upscaling isn't offered.
+- **Device**: which graphics card, when there is more than one.
+
+
 **Interface rendering** (Linux)
 
 Official Linux AppImages bundle WebKitGTK and JavaScriptCore 2.54.2 and
@@ -60,11 +132,11 @@ keep the Ubuntu 22.04 runtime baseline, including Linux Mint 22.x. The bundled
 webview retains video and audio support; MPEG-TS and WebRTC are not enabled. GUI benchmark
 reports record the running WebKitGTK version; use a new build when comparing
 renderer behavior after upgrading. On Wayland, **Drag drafts at the screen’s
-scale** still sizes reduced drag previews for the compositor’s actual fractional
-scale (for example, 125%), while release frames keep full quality. GTK 3
-still draws the window and full-quality release frames at the next integer
-scale (200% at 125% or 150%), which can increase rendering and presentation
-time. Using 100% scaling or `GDK_BACKEND=x11` can reduce this overhead;
+scale** sizes reduced drag previews for the compositor’s actual fractional
+scale (for example, 125%), and **Fit frames at the screen’s scale** does the
+same for the settled Fit frame. GTK 3 still draws the window, and frames of a
+zoomed-in photo, at the next integer scale (200% at 125% or 150%), which can
+increase rendering and presentation time. Using 100% scaling or `GDK_BACKEND=x11` can reduce this overhead;
 performance depends on the system.
 
 Starting with 0.41.1, normal AppImage launch handles the resolved NVIDIA/X11
@@ -171,13 +243,20 @@ performance; results still vary by system.
   - **Performance**, for older computers, drags at 50%, lets slow sliders
     shrink the draft to 50%, and turns the detail loupe on.
 
+  Quality and Balanced process settled Fit previews at up to 3072 pixels on
+  the long edge before fitting them to the viewer, preserving more fine detail
+  and sharpening at small display sizes. This uses more processing time and
+  memory than Performance's viewer-sized previews. Small photos keep their
+  native resolution. The screen-scale option below can reduce this limit.
+
   Every profile leaves Grain, Texture and Sharpening out of the photo
   while a slider, wheel or curve moves, until release, unless they are what
-  you are dragging. They are also left out of the zoomed-out picture behind
-  the photo, which the navigator and histogram read and you see at the edges
-  while zooming and panning. Performance also renders that picture only at
-  the viewer's size, so zooming in shows it softer until the sharp view
-  arrives.
+  you are dragging. A completed Fit frame also supplies the zoomed-out
+  picture behind the photo, which the navigator and histogram read and you
+  see at the edges while zooming and panning. When that picture needs a
+  separate background render, expensive detail effects are omitted for speed.
+  Performance renders it only at the viewer's size, so zooming in shows it
+  softer until the sharp view arrives.
 - **Advanced** (closed by default) holds the individual settings:
   - **Preview size while dragging**: 50%, 75% or 100%. At 100% automatic
     smaller drafts are disabled.
@@ -197,14 +276,16 @@ performance; results still vary by system.
   a window drawn at 200%. On by default, it reduces drag-preview pixels to
   match the screen, including full-size drag previews (100% Balanced, and
   the whole-view preview of Texture, Clarity, Luminance NR and Grain; Quality
-  keeps every pixel). Settled frames still use the full webview resolution.
+  keeps every pixel). The settled Fit frame follows **Fit frames at the screen's
+scale**; zoomed-in frames still use the full webview resolution.
   Turn it off to compare GUI benchmarks with the same photo, window size and
   preview settings. This does not change GTK's window-surface resolution.
   Benchmarks in a virtual machine give approximate comparisons within that
   setup; they do not predict native GPU performance.
 - **Fit frames at the screen's scale** (same condition): on by default.
-  Renders the settled Fit frame for the screen's scale and lets the page
-  enlarge it, which cuts pixels; turn it off if the photo looks soft. Zoomed
+  Reduces the settled Fit processing dimensions by the screen-to-webview scale
+  ratio, including the 3072-pixel limit in Quality and Balanced. Turn it off
+  to retain more fine detail at the cost of processing time and memory. Zoomed
   and 1:1 frames are unaffected. It takes effect on the next frame.
 
 **Memory**
@@ -214,7 +295,10 @@ performance; results still vary by system.
   working beside other large programs, though more of each edit is then
   worked out again; **Default** about half; **Large** about two thirds,
   for when Immage is the only large program running. It applies once
-  Immage starts again: **Relaunch** saves the photo and restarts.
+  Immage starts again: **Relaunch** saves the photo and restarts. Whatever
+  the level, after 20 seconds without an edit, and sooner when the computer
+  runs short of memory, darktable gives most of its cache memory back; the
+  next edit takes about as long as one made without the pause.
 - **Frame cache**: memory for the views of the photo already shown, so
   zooming back out or going back to a view seen before shows it at once,
   without a render. A view at 100% is about 30 MB on a 4K screen and 45 MB
@@ -243,12 +327,6 @@ empties one.
   kept whatever the limit, as its edit is beside it. 10 GB by default.
 
 The thumbnail caches keep nothing while the disk has under 5 GB free.
-
-**AI Acceleration**
-
-- **GPU**: what AI upscaling at export runs on. **Automatic** picks the
-  first one found. If none is found, AI upscaling isn't offered.
-- **Device**: which graphics card, when there is more than one.
 
 **Measuring**
 
@@ -341,7 +419,8 @@ photo's starting point: they don't mark it as edited.
 
 Which darktable module each tool runs on. **Default** uses the module of
 darktable's AgX workflow for each, except Clarity and Texture, which use
-contrast & texture; **Custom** lets you pick one per tool,
+contrast & texture. Default shows module names as plain text; **Custom**
+shows dropdowns so you can pick one per tool,
 under separate collapsible **Global** and **Masks** sections. For example,
 use AgX for global Contrast and contrast equalizer for masks. With **Focus mode**
 on, opening one section closes the other; Alt-click keeps both open. With it off,
