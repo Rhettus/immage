@@ -7,26 +7,6 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
-- Negative remembers the Input and Working Profiles you chose last. Picking
-  the film border on a photo still on its default profiles sets them as part
-  of the conversion, so each frame of a roll no longer needs them chosen
-  again. Photos with profiles already set keep theirs.
-- Each mask in the Masks panel has a chevron that folds its list of shapes
-  away, so a mask with many brush strokes no longer has to stay open while
-  it is selected.
-
-Bug fixes
-
-- Windows setup no longer stops with an uninstall error when an earlier
-  install for everyone lost its uninstaller. It removes the leftover entry and
-  installs normally. Setup also tells older uninstallers which copy to remove,
-  so upgrading a computer with both a per-user and an all-users copy no longer
-  leaves an entry in Installed apps that cannot be uninstalled.
-
-## 0.44.0
-
-Improvements
-
 - Lens Corrections has a Lens drop-down under Enable Profile Corrections. It
   shows the lens matched from the file (Auto) and lists the lenses that fit
   the camera, so a lens the file does not name, or names wrongly, can be
@@ -45,6 +25,9 @@ Improvements
   for new raw photos.
 - Color Range masks now offer Hue, a wider Hue Range, Minimum Chroma and
   Smoothness controls, with the mask overlay visible while adjusting them.
+- Each mask in the Masks panel has a chevron that folds its list of shapes
+  away, so a mask with many brush strokes no longer has to stay open while
+  it is selected.
 - Preferences > General lets you choose the Dark (default), Darktable Grey or
   Light interface theme, or import a custom theme from a JSON file. Themes
   apply immediately and are remembered; imported themes can be removed.
@@ -53,6 +36,10 @@ Improvements
 - Negative has independent Input Profile and Working Profile menus, including
   installed ICC profiles. Choose profiles before sampling the film; settings
   are saved with the photo and included in Negative copies and presets.
+  Negative remembers the profiles you chose last: picking the film border on a
+  photo still on its default profiles sets them as part of the conversion, so
+  each frame of a roll no longer needs them chosen again. Photos with profiles
+  already set keep theirs.
 - Refined Preferences layout, spacing, descriptions, help tooltips and module selectors.
 - Immage accepts a folder on the command line, as well as a photo: the
   folder joins the library and shows as a grid, as a folder dropped on the
@@ -91,6 +78,11 @@ Bug fixes
 - Windows setup requests administrator permission only when installing for
   everyone. Just for me installs without elevation under
   `%LOCALAPPDATA%\Programs\Immage`; updates keep the existing scope and location.
+- Windows setup no longer stops with an uninstall error when an earlier
+  install for everyone lost its uninstaller. It removes the leftover entry and
+  installs normally. Setup also tells older uninstallers which copy to remove,
+  so upgrading a computer with both a per-user and an all-users copy no longer
+  leaves an entry in Installed apps that cannot be uninstalled.
 - Undo after Reset all restores the previous negative conversion and color
   profiles, including after reopening the photo.
 - Lens Corrections now knows cameras added to the lensfun database since 2023,
