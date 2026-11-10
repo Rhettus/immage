@@ -18,6 +18,9 @@ Improvements
   Changing the server URL or the self-signed certificate setting asks for the
   key again, and Immich requests no longer follow redirects, so a redirected
   server address must be entered as its final address.
+- The importer reads only from cards, drives and folders you chose, and
+  writes only into destinations you chose. Of the destinations you used
+  before, only the current one is kept; choose the others again once.
 
 ## 0.44.1
 
