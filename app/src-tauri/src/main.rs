@@ -2687,16 +2687,16 @@ async fn presets_save(state: State<'_, AppState>, presets: Value) -> Result<(), 
     std::fs::rename(&tmp, &state.presets_path).map_err(|e| format!("presets: {e}"))
 }
 
-// a photo handed to the app from outside, waiting for the window to take
-// it: a path on the command line (`Immage /path/photo.arw`), or on macOS a
-// file sent by `open -a Immage photo.arw` or Finder, which also reaches an
-// app that is already running
+// a photo or folder handed to the app from outside, waiting for the window
+// to take it: a path on the command line (`Immage /path/photo.arw`,
+// `Immage /path/folder`), or on macOS one sent by `open -a Immage ...` or
+// Finder, which also reaches an app that is already running
 #[derive(Default)]
 struct Launch(Mutex<Option<String>>);
 
 fn launch_path(arg: &Path) -> Option<String> {
     let p = std::fs::canonicalize(arg).ok()?;
-    p.is_file().then(|| p.to_string_lossy().into_owned())
+    (p.is_file() || p.is_dir()).then(|| p.to_string_lossy().into_owned())
 }
 
 // the sample photo (app/sample, CC0) copied into a "Sample Photos" folder in
@@ -2887,7 +2887,7 @@ fn main() {
     for w in &mut context.config_mut().app.windows {
         w.create = false;
     }
-    // the first argument naming a file; macOS adds -psn_... to apps it starts
+    // the first argument naming a file or folder; macOS adds -psn_... to apps it starts
     let arg = std::env::args_os().skip(1)
         .filter(|a| !a.to_string_lossy().starts_with('-'))
         .find_map(|a| launch_path(Path::new(&a)));

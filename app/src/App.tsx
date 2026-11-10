@@ -3004,8 +3004,6 @@ export default function App() {
     if (list.some((i) => i.path === path)) await openFile(path);
     else setStatus(`not a photo Immage can open: ${path}`);
   };
-  const openLaunchedRef = useRef(openLaunched);
-  openLaunchedRef.current = openLaunched;
 
   // files dragged onto the window from Finder or Explorer: folders join the
   // library and the first shows as a grid; otherwise the first photo opens,
@@ -3067,20 +3065,21 @@ export default function App() {
     return () => { void off.then((f) => f()); };
   }, [runMenuAction]);
 
-  // at start, a photo handed over, or else the folder and image open when
-  // the app last closed; later, a photo handed to the running app
+  // at start, a photo or folder handed over, or else the folder and image
+  // open when the app last closed; later, one handed to the running app.
+  // both go the way a drop does: a folder shows as a grid
   const started = useRef(false);
   useEffect(() => {
     const off = listen("launch-file", async () => {
       const path = await invoke<string | null>("launch_file");
-      if (path) void openLaunchedRef.current(path);
+      if (path) void droppedRef.current([path]);
     });
     // once: React's development mode runs effects twice, which listed the
     // folder twice while the engine was still starting
     if (started.current) return () => { void off.then((f) => f()); };
     started.current = true;
     void invoke<string | null>("launch_file").then((path) => {
-      if (path) { void openLaunchedRef.current(path); return; }
+      if (path) { void droppedRef.current([path]); return; }
       const lib = loadLibrary();
       // the very first start: a sample photo, so there is something to edit
       // and the quick start has something to point at. once only, so a

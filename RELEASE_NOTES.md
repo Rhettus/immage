@@ -34,6 +34,9 @@ Improvements
   installed ICC profiles. Choose profiles before sampling the film; settings
   are saved with the photo and included in Negative copies and presets.
 - Refined Preferences layout, spacing, descriptions, help tooltips and module selectors.
+- Immage accepts a folder on the command line, as well as a photo: the
+  folder joins the library and shows as a grid, as a folder dropped on the
+  window does.
 
 Performance
 

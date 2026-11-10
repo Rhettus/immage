@@ -345,15 +345,22 @@ Type a hierarchy as `Places > Paris`. Suggestions come from the keywords you
 have used before, and **Recent keywords** holds the last few: click one to
 add it or take it off.
 
-## Opening a photo from another program
+## Opening a photo or folder from another program
 
-Another application, or Terminal, can hand Immage a photo:
+Another application, or a terminal, can hand Immage a photo or a folder:
 
 ```sh
-open -a Immage /path/to/photo.arw
+open -a Immage /path/to/photo.arw     # macOS
+/path/to/Immage.AppImage /path/to/photo.arw     # Linux
+/path/to/Immage.AppImage /path/to/folder
 ```
 
-Immage shows the photo's folder and opens the photo. Dragging a photo from
-Finder or Explorer onto Immage's window does the same, and so should
-dropping it on Immage's Dock icon.
+For a photo, Immage adds its folder to the library, shows the folder and
+opens the photo. For a folder, Immage adds it to the library and shows it
+as a grid; the photos stay where they are, nothing is copied. Dragging a
+photo or folder from Finder or Explorer onto Immage's window does the same,
+and so should dropping it on Immage's Dock icon. Only the first path is
+used. A program that sends photos with **Open With**, such as digiKam,
+works the same way: choose **Other Application** and give it the path to
+Immage.
 <!-- check: dropping a file on the Dock icon, and whether Immage appears in Finder's Open With menu -->
