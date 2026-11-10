@@ -6,6 +6,23 @@ Var MultiUser.InstallMode
 Var ImmageAllUsersRadio
 Var ImmageNeedsAdmin
 Var ImmageRequestedDir
+Var ImmageQuote
+
+; Sets OUT to the uninstaller ROOT registers, or to "" when there is no
+; registration or its uninstaller no longer exists. Uninstallers from 0.43 and
+; earlier could delete themselves but leave the machine registration (#31).
+!macro ImmageRegisteredUninstaller ROOT OUT
+  ReadRegStr ${OUT} ${ROOT} "${UNINSTKEY}" "UninstallString"
+  StrCpy $ImmageQuote ${OUT} 1
+  ${If} $ImmageQuote == '$\"'
+    StrCpy ${OUT} ${OUT} "" 1
+    StrCpy ${OUT} ${OUT} -1
+  ${EndIf}
+  ${If} ${OUT} != ""
+  ${AndIfNot} ${FileExists} "${OUT}"
+    StrCpy ${OUT} ""
+  ${EndIf}
+!macroend
 
 Function ImmageSetScope
   StrCpy $ImmageNeedsAdmin false
@@ -23,8 +40,10 @@ FunctionEnd
 Function ImmageScopeInit
   StrCpy $ImmageRequestedDir $INSTDIR
   StrCpy $MultiUser.InstallMode CurrentUser
-  ; Prefer the invoking user's install, otherwise the machine install.
-  ReadRegStr $0 HKCU "${UNINSTKEY}" "UninstallString"
+  ; Prefer the invoking user's install, otherwise the machine install. A
+  ; leftover machine registration still selects Everyone, so the reinstall
+  ; page can remove it once elevated.
+  !insertmacro ImmageRegisteredUninstaller HKCU $0
   ${If} $0 == ""
     ReadRegStr $0 HKLM "${UNINSTKEY}" "UninstallString"
     ${IfThen} $0 != "" ${|} StrCpy $MultiUser.InstallMode AllUsers ${|}
@@ -146,6 +165,13 @@ Function ImmageRemovePerUser
   ReadRegStr $1 HKCU "${UNINSTKEY}" "UninstallString"
   ReadRegStr $2 HKCU "${UNINSTKEY}" "InstallLocation"
   StrCpy $0 0
+  !insertmacro ImmageRegisteredUninstaller HKCU $3
+  ${If} $1 != ""
+  ${AndIf} $3 == ""
+    ; Only the registration is left; its uninstaller is gone.
+    DeleteRegKey HKCU "${UNINSTKEY}"
+    StrCpy $1 ""
+  ${EndIf}
   ${If} $1 != ""
   ${AndIf} $2 != ""
     StrCpy $3 $2 1
@@ -154,7 +180,8 @@ Function ImmageRemovePerUser
       StrCpy $2 $2 -1
     ${EndIf}
     ClearErrors
-    ExecWait '$1 /S _?=$2' $0
+    ; /CurrentUser: see reinst_uninstall in installer.nsi.
+    ExecWait '$1 /S /CurrentUser _?=$2' $0
     ${If} ${Errors}
       StrCpy $0 2
     ${EndIf}

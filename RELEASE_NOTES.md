@@ -3,6 +3,16 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
+## 0.44.1
+
+Bug fixes
+
+- Windows setup no longer stops with an uninstall error when an earlier
+  install for everyone lost its uninstaller. It removes the leftover entry and
+  installs normally. Setup also tells older uninstallers which copy to remove,
+  so upgrading a computer with both a per-user and an all-users copy no longer
+  leaves an entry in Installed apps that cannot be uninstalled.
+
 ## 0.44.0
 
 Improvements

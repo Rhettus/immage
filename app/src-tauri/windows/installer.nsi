@@ -220,6 +220,14 @@ Function PageReinstall
   ReadRegStr $R1 SHCTX "${UNINSTKEY}" "UninstallString"
   ${IfThen} "$R0$R1" == "" ${|} Abort ${|}
 
+  ; A registration whose uninstaller is gone cannot be uninstalled: remove it
+  ; and install afresh. The page runs elevated when SHCTX is HKLM.
+  !insertmacro ImmageRegisteredUninstaller SHCTX $R1
+  ${If} $R1 == ""
+    DeleteRegKey SHCTX "${UNINSTKEY}"
+    Abort
+  ${EndIf}
+
   ; Compare this installar version with the existing installation
   ; and modify the messages presented to the user accordingly
   compare_version:
@@ -364,6 +372,15 @@ Function PageLeaveReinstall
       ReadRegStr $R1 SHCTX "${UNINSTKEY}" "UninstallString"
       ${IfThen} $UpdateMode = 1 ${|} StrCpy $R1 "$R1 /UPDATE" ${|} ; append /UPDATE
       ${IfThen} $PassiveMode = 1 ${|} StrCpy $R1 "$R1 /P" ${|} ; append /P
+      ; Name the scope. Uninstallers from 0.43 and earlier (MultiUser.nsh)
+      ; otherwise choose the per-user scope whenever one is registered, even
+      ; run on the Program Files copy: they removed those files and the
+      ; per-user registration, and left the machine one behind (#31).
+      ${If} $MultiUser.InstallMode == "AllUsers"
+        StrCpy $R1 "$R1 /AllUsers"
+      ${Else}
+        StrCpy $R1 "$R1 /CurrentUser"
+      ${EndIf}
       StrCpy $R1 "$R1 _?=$4" ; append uninstall directory
       ExecWait '$R1' $0
     ${EndIf}
