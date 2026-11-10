@@ -85,6 +85,8 @@ jobs:
         working-directory: app
       - run: npx tsc --noEmit
         working-directory: app
+      - name: no HTML or code injection sinks
+        run: sh scripts/check_web_sinks.sh
       - name: performance tuner and portable module checks
         run: node --test verify/performance-tuner.test.mjs verify/detail-preview.test.mjs verify/fit-preview.test.mjs
       - run: npm audit --omit=dev --audit-level=high

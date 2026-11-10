@@ -61,7 +61,8 @@ its timings.
 Linux does the same through `/dev/shm`. WebKitGTK delivers a reply at
 about 25 ms a megapixel, and more while a page at 2× draws. `render`
 writes the frame to a file there named for the page's token and the
-frame's id (`shm_frame` in main.rs). A WebKit web extension loaded into
+frame's id (`shm_frame` in main.rs), created new with mode 0600 and
+without following a symlink. A WebKit web extension loaded into
 the window's web process,
 [webext/frames.c](../../src-tauri/webext/frames.c), gives the page
 `immageFrame()`, which copies the file in and deletes it. It can't hand
@@ -571,6 +572,7 @@ darktable is, and it has AI features when darktable is configured with
 | `#[cfg(test)]` in [main.rs](../../src-tauri/src/main.rs), [engine.rs](../../src-tauri/src/engine.rs) | `cargo test` in `app/src-tauri`: model release lookup, folder listing, sha256, the `-d perf` parser, the window renderer's selection (including Automatic with NVIDIA loaded and both vendors installed), persistence and inherited environment handling. |
 | [test_release_assets.py](../../../scripts/test_release_assets.py) | Release assembly checks: both Linux downloads and updater entries, missing bundles or signatures, duplicate architectures and mismatched versions. Run by the build workflow. |
 | `npm run build` in `app/` | Type checking (`tsc --noEmit`) and the production bundle; there is no front-end unit test runner (the release checks run the front end's `Session`). |
+| `scripts/check_web_sinks.sh` | CI `checks` job and locally: fails on `innerHTML`, `dangerouslySetInnerHTML`, `eval(`, `new Function` and `document.write` in `app/src` and `immporter/src`. |
 | [verify/](../../../verify/README.md) | The release checks: the app's `Session` run under Node against the engine (`harness.mjs`, with `shim.mjs` for Tauri's invoke), every slider and mask slider measured, an edit saved and opened again, old edits rendered, a check per bug fixed and per decision about Immage's behavior, and the benchmark's main timings against the last run. |
 | [verify/print.py](../../../verify/print.py), [verify/print.test.mjs](../../../verify/print.test.mjs) | Print and soft proof: printer profiles, the proof's and gamut warning's pixels and frame hashes, PDF output and refused requests against the engine; the page layout and `Session.redraw()` after a proof through the app's code ([print.md](print.md)). |
 | [benchmarking/](../../../benchmarking/README.md) | The engine benchmark (driven with the app's own manifest), the GUI benchmark's reports, the dashboard. |

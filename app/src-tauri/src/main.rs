@@ -996,7 +996,58 @@ mod shm_frame {
 
     pub fn write(frame: &[u8], token: &str, id: u32) -> Result<(), String> {
         let path = path(token, id).ok_or("bad token")?;
-        std::fs::write(&path, frame).map_err(|e| format!("{}: {e}", path.display()))
+        write_file(&path, frame).map_err(|e| format!("{}: {e}", path.display()))
+    }
+
+    // a new file only, owner-readable (the web extension runs as the same
+    // user), and never through a symlink planted at the name in the shared
+    // directory: an existing entry is removed (remove_file does not follow
+    // a link) and the create retried once
+    fn write_file(path: &Path, frame: &[u8]) -> std::io::Result<()> {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let open = || {
+            std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .custom_flags(libc::O_NOFOLLOW)
+                .open(path)
+        };
+        let mut file = match open() {
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                std::fs::remove_file(path)?;
+                open()?
+            }
+            other => other?,
+        };
+        file.write_all(frame)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use std::os::unix::fs::{symlink, PermissionsExt};
+
+        #[test]
+        fn shm_write_is_private_and_ignores_symlinks() {
+            let dir = std::env::temp_dir().join(format!("immage-shm-test-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            let victim = dir.join("victim");
+            std::fs::write(&victim, b"keep").unwrap();
+            let target = dir.join("frame");
+            symlink(&victim, &target).unwrap();
+            write_file(&target, b"frame").unwrap();
+            assert_eq!(std::fs::read(&victim).unwrap(), b"keep");
+            assert_eq!(std::fs::read(&target).unwrap(), b"frame");
+            assert!(!std::fs::symlink_metadata(&target).unwrap().file_type().is_symlink());
+            assert_eq!(std::fs::metadata(&target).unwrap().permissions().mode() & 0o777, 0o600);
+            // an existing regular file is replaced too
+            write_file(&target, b"next").unwrap();
+            assert_eq!(std::fs::read(&target).unwrap(), b"next");
+            let _ = std::fs::remove_dir_all(&dir);
+        }
     }
 
     // frames a page never read (it closed, or the app was killed) stay in
