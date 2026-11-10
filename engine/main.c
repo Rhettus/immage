@@ -229,10 +229,17 @@ static double _ms_since(const gint64 t0)
 // the main loop and the thumbnail, export and denoise threads all reply
 static GMutex _reply_lock;
 
+// the "rid" of the request being handled; only the main loop sets it, so
+// replies from pool threads never echo it (Engine::request in engine.rs
+// matches untagged replies by it)
+static _Thread_local gint64 _request_rid = -1;
+
 static void _reply(FILE *out, JsonBuilder *b)
 {
   JsonGenerator *gen = json_generator_new();
   JsonNode *root = json_builder_get_root(b);
+  if(_request_rid >= 0 && JSON_NODE_HOLDS_OBJECT(root))
+    json_object_set_int_member(json_node_get_object(root), "rid", _request_rid);
   json_generator_set_root(gen, root);
   gchar *s = json_generator_to_data(gen, NULL);
   g_mutex_lock(&_reply_lock);
@@ -11733,7 +11740,11 @@ int main(int argc, char **argv)
                 json_object_get_int_member_with_default(req, "diagnostic_request", 0),
                 json_object_get_string_member_with_default(req, "cmd", ""));
       _foreground(TRUE);
+      if(json_object_has_member(req, "rid")
+         && json_node_get_value_type(json_object_get_member(req, "rid")) == G_TYPE_INT64)
+        _request_rid = json_object_get_int_member(req, "rid");
       _handle(req, out);
+      _request_rid = -1;
       _foreground(FALSE);
       if(cache_trace) fprintf(stderr, "[engine-cache] end\n");
       dt_dev_pixelpipe_cache_trace_set(FALSE);

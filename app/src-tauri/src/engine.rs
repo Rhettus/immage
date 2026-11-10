@@ -24,6 +24,10 @@ pub struct Engine {
     base: BaseCancel,
     tagged: Tagged,
     cache_trace: bool,
+    // last request rid sent (not "id", which render uses for base cancel); ids are never reused
+    last_id: u64,
+    // set once the engine has echoed a rid; old engines never do
+    echoes_ids: bool,
 }
 
 // requests the engine serves on threads of its own beside its main loop:
@@ -530,7 +534,7 @@ impl Engine {
         std::thread::spawn(move || read_stdout(stdout, tx, shared, following));
         let base = BaseCancel { stdin: stdin.clone(), last: Arc::new(AtomicU64::new(0)) };
         let tagged = Tagged { stdin: stdin.clone(), waiting, progress, last: Arc::new(AtomicU64::new(0)) };
-        Ok(Self { child, stdin, replies, perf, base, tagged, cache_trace: false })
+        Ok(Self { child, stdin, replies, perf, base, tagged, cache_trace: false, last_id: 0, echoes_ids: false })
     }
 
     // darktable's timings of the request just made: a cheap request after it
@@ -583,13 +587,31 @@ impl Engine {
 
     pub fn request(&mut self, mut req: Value) -> Result<Value, String> {
         if self.cache_trace { req["cache_trace"] = json!(true); }
+        self.last_id += 1;
+        let id = self.last_id;
+        req["rid"] = json!(id);
         {
             let mut stdin = self.stdin.lock().unwrap();
             writeln!(stdin, "{req}").map_err(|e| format!("engine write: {e}"))?;
             stdin.flush().map_err(|e| format!("engine write: {e}"))?;
         }
-        let reply = self.replies.recv().map_err(|_| ENGINE_EXITED.to_string())?;
-        outcome(reply)
+        // a late reply to an abandoned request must not answer this one
+        loop {
+            let reply = self.replies.recv().map_err(|_| ENGINE_EXITED.to_string())?;
+            match reply.get("rid").and_then(Value::as_u64) {
+                Some(got) if got == id => {
+                    self.echoes_ids = true;
+                    return outcome(reply);
+                }
+                Some(got) => {
+                    self.echoes_ids = true;
+                    eprintln!("engine: dropped reply with stale rid {got} (waiting for {id})");
+                }
+                // an engine that has echoed ids and now does not is out of step
+                None if self.echoes_ids => return Err("engine reply without rid".into()),
+                None => return outcome(reply),
+            }
+        }
     }
 
     // the engine saves the open photo and exits; requests after it fail
@@ -680,6 +702,64 @@ mod tests {
         // Explicit quit followed by Drop must not wait again.
         drop(engine);
         assert!(started.elapsed() < Duration::from_secs(8));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    fn fake_engine(name: &str, script: &str) -> (std::path::PathBuf, super::Engine) {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!("immage-{name}-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let bin = root.join("engine");
+        std::fs::write(&bin, format!("#!/bin/sh\n{script}\n")).unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let engine = super::Engine::spawn_once(&bin, &root, &root).unwrap();
+        (root, engine)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn request_skips_reply_with_stale_id() {
+        let (root, mut engine) = fake_engine("stale-id", "read line\necho '{\"ok\":true,\"rid\":999,\"which\":\"stale\"}'\necho '{\"ok\":true,\"rid\":1,\"which\":\"right\"}'\nexec sleep 60");
+        let reply = engine.request(serde_json::json!({ "cmd": "x" })).unwrap();
+        assert_eq!(reply["which"], "right");
+        let _ = engine.child.kill();
+        drop(engine);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn request_keeps_caller_id() {
+        // the fake engine saves the request line it receives
+        let (root, mut engine) = fake_engine("keep-id", "read line\necho \"$line\" > \"$(dirname \"$0\")/seen\"\necho '{\"ok\":true,\"rid\":1}'\nexec sleep 60");
+        engine.request(serde_json::json!({ "cmd": "render", "id": 42 })).unwrap();
+        let seen: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(root.join("seen")).unwrap()).unwrap();
+        assert_eq!(seen["id"], 42);
+        assert_eq!(seen["rid"], 1);
+        let _ = engine.child.kill();
+        drop(engine);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn request_accepts_untagged_reply_from_old_engine() {
+        let (root, mut engine) = fake_engine("old-engine", "read line\necho '{\"ok\":true}'\nexec sleep 60");
+        assert!(engine.request(serde_json::json!({ "cmd": "x" })).is_ok());
+        let _ = engine.child.kill();
+        drop(engine);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn request_rejects_reply_without_id_after_ids_seen() {
+        let (root, mut engine) = fake_engine("id-lost", "read line\necho '{\"ok\":true,\"rid\":1}'\nread line\necho '{\"ok\":true}'\nexec sleep 60");
+        assert!(engine.request(serde_json::json!({ "cmd": "x" })).is_ok());
+        assert!(engine.request(serde_json::json!({ "cmd": "y" })).is_err());
+        let _ = engine.child.kill();
+        drop(engine);
         std::fs::remove_dir_all(root).unwrap();
     }
 
