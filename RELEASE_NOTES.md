@@ -16,6 +16,7 @@ Improvements
 - File, Edit, Photo, View and Help menus list Immage's commands with their
   keyboard shortcuts. On macOS they are in the menu bar; on Windows and
   Linux they are always in the window's title strip, adding no height.
+  Help > User Guide opens the guide on the Immage website.
 - Profile > Load AgX Preset imports your AgX presets from darktable or exported
   preset and style files, including compatible older AgX presets. Added looks
   stay in My Presets after restarting and can also be chosen as the profile

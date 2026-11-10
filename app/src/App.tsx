@@ -5402,7 +5402,7 @@ export default function App() {
       "reject": () => { const cur = openPhoto(); if (cur) rateSelection(cur, { rejected: !cur.rejected }); },
       // menu-only items
       "add-folder": () => { void addFolderRef.current(); },
-      "user-guide": () => { void openUrl("https://github.com/Rhettus/immage/blob/main/app/docs/README.md"); },
+      "user-guide": () => { void openUrl("https://immage.photo/guide/"); },
       "about": () => { setPrefsOpen("about"); },
       "quit": () => { void getCurrentWindow().close(); },
       "cut": () => { document.execCommand("cut"); },
