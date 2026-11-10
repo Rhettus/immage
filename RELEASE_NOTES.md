@@ -85,6 +85,8 @@ Bug fixes
   installs normally. Setup also tells older uninstallers which copy to remove,
   so upgrading a computer with both a per-user and an all-users copy no longer
   leaves an entry in Installed apps that cannot be uninstalled.
+- Windows setup installs for everyone again after the administrator prompt.
+  It could show a blank page and go straight to Finish without installing.
 - Undo after Reset all restores the previous negative conversion and color
   profiles, including after reopening the photo.
 - Lens Corrections now knows cameras added to the lensfun database since 2023,

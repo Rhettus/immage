@@ -150,16 +150,14 @@ RequestExecutionLevel user
 !define MUI_LANGDLL_REGISTRY_KEY "${MANUPRODUCTKEY}"
 !define MUI_LANGDLL_REGISTRY_VALUENAME "Installer Language"
 
-!define MUI_CUSTOMFUNCTION_GUIINIT ImmageGuiInit
-
 ; Installer pages, must be ordered as they appear
 ; 1. Welcome Page
-!define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfPassive
+!define MUI_PAGE_CUSTOMFUNCTION_PRE ImmageSkipBeforeScope
 !insertmacro MUI_PAGE_WELCOME
 
 ; 2. License Page (if defined)
 !if "${LICENSE}" != ""
-  !define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfPassive
+  !define MUI_PAGE_CUSTOMFUNCTION_PRE ImmageSkipBeforeScope
   !insertmacro MUI_PAGE_LICENSE "${LICENSE}"
 !endif
 

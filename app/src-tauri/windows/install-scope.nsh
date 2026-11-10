@@ -85,8 +85,16 @@ Function ImmageScopeInit
   ${EndIf}
 FunctionEnd
 
-Function ImmageGuiInit
-  !insertmacro UAC_PageElevation_OnGuiInit
+; The elevated instance starts over at the first page; the outer one has
+; shown everything before the scope page. The plugin's page jump
+; (UAC_PageElevation_OnGuiInit) is not used: it repeats its offset after
+; each page skipped on the way, and landed past the install pages whenever
+; the reinstall page had nothing to show.
+Function ImmageSkipBeforeScope
+  ${If} $PassiveMode = 1
+  ${OrIf} ${UAC_IsInnerInstance}
+    Abort
+  ${EndIf}
 FunctionEnd
 
 Function ImmageScopePage
@@ -123,12 +131,16 @@ FunctionEnd
 Function ImmageElevate
   ${If} $MultiUser.InstallMode == "AllUsers"
   ${AndIfNot} ${UAC_IsAdmin}
+    ; the elevated instance shows its own window; this one comes back only
+    ; when elevation fails or is canceled
+    HideWindow
     !insertmacro UAC_PageElevation_RunElevated
     ${If} $0 = 0
     ${AndIf} $1 = 1
       SetErrorLevel $2
       Quit
     ${EndIf}
+    BringToFront
     ${If} $0 != 1223
       MessageBox MB_ICONSTOP|MB_OK "Unable to obtain administrator permissions. Setup has not installed ${PRODUCTNAME}." /SD IDOK
     ${EndIf}
