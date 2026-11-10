@@ -52,11 +52,16 @@ const start = (what: string, total: number, cancel: string | null) => {
   return id;
 };
 
-const track = async <R,>(id: number, run: () => Promise<R>, summarize: (r: R) => Outcome,
+const track = async <R,>(id: number, run: () => Promise<R>, summarize: (r: R) => Outcome | null,
                          failed: string): Promise<R | null> => {
   try {
     const r = await run();
     const s = summarize(r);
+    // nothing to report (a print's save dialog cancelled): the job leaves quietly
+    if (!s) {
+      dismissJob(id);
+      return r;
+    }
     update(id, { summary: s.text, failed: !s.ok, action: s.action ?? null });
     if (s.ok) window.setTimeout(() => dismissJob(id), SUMMARY_MS);
     return r;
@@ -92,7 +97,7 @@ let merging: Promise<unknown> | null = null;
 // merge's own stages, which the engine names and counts (main.c,
 // _merge_report). past its last stop it can no longer be stopped
 export async function runMerge<R>(what: string, total: number, command: string, args: Record<string, unknown>,
-                                  summarize: (r: R) => Outcome, failed: string): Promise<R | null> {
+                                  summarize: (r: R) => Outcome | null, failed: string): Promise<R | null> {
   merging ??= listen<{ job: number; done: number; total: number; stage: string; last: boolean }>("merge-progress",
     (e) => {
       const { job, done, total, stage, last } = e.payload;

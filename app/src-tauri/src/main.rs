@@ -2709,14 +2709,50 @@ async fn printer_info(state: State<'_, AppState>, name: String) -> Result<Value,
     state.engine("printer_info").request(json!({ "cmd": "printer", "name": name })).map(without_ok)
 }
 
-// renders the photo as its edit is now and prints it, or writes `pdf`, on
-// the export thread as an export does (export_images), so editing goes on
+// `request` without any `pdf` the page sent: the engine writes a PDF to that
+// path, so only the one Rust gets from its own save dialog may reach it
+fn without_pdf(mut request: Value) -> Value {
+    if let Some(o) = request.as_object_mut() {
+        o.remove("pdf");
+    }
+    request
+}
+
+// the save dialog for a print's PDF, named `pdf_name` as the page suggests;
+// None when there is no PDF to write, Some(None) when the user cancelled
+async fn pick_pdf(app: &AppHandle, pdf_name: Option<&str>) -> Result<Option<Option<PathBuf>>, String> {
+    match pdf_name {
+        Some(name) => Ok(Some(pick_save(app, "PDF", &["pdf"], name).await?)),
+        None => Ok(None),
+    }
+}
+
+// the reply with the path of the PDF written, for the page to show
+fn with_pdf(mut reply: Value, pdf: Option<&Path>) -> Value {
+    if let (Some(p), Some(o)) = (pdf, reply.as_object_mut()) {
+        o.insert("pdf".into(), json!(p.to_string_lossy()));
+    }
+    reply
+}
+
+// renders the photo as its edit is now and prints it, or, given `pdf_name`,
+// writes a PDF where the user picks (null when they cancel), on the export
+// thread as an export does (export_images), so editing goes on
 #[tauri::command]
-async fn print_photo(state: State<'_, AppState>, imgid: i64, request: Value) -> Result<Value, String> {
+async fn print_photo(app: AppHandle, state: State<'_, AppState>, imgid: i64, request: Value,
+                     pdf_name: Option<String>) -> Result<Value, String> {
+    let mut req = without_pdf(request);
+    let pdf = match pick_pdf(&app, pdf_name.as_deref()).await? {
+        Some(None) => return Ok(Value::Null),
+        Some(Some(p)) => {
+            req["pdf"] = json!(p.to_string_lossy());
+            Some(p)
+        }
+        None => None,
+    };
     let tagged = state.tagged.clone();
     let held = tagged.tag();
     state.engine("print_photo").request(json!({ "cmd": "export_hold", "job": held, "imgids": [imgid] }))?;
-    let mut req = request;
     req["cmd"] = json!("print");
     req["job"] = json!(held);
     req["imgid"] = json!(imgid);
@@ -2728,18 +2764,28 @@ async fn print_photo(state: State<'_, AppState>, imgid: i64, request: Value) -> 
     let tag = t.tag();
     let _ = tauri::async_runtime::spawn_blocking(move || t.request(tag, json!({ "cmd": "export_release", "job": held })))
         .await;
-    result.map(without_ok)
+    result.map(without_ok).map(|r| with_pdf(r, pdf.as_deref()))
 }
 
 // a sheet of photos, each as its edit is now (print_photo's way): the Cells
 // layout's pages of boxes and labels are in `request`, `imgids` the photos
-// they hold, which the engine takes a snapshot of as each page reaches it
+// they hold, which the engine takes a snapshot of as each page reaches it.
+// `pdf_name` is print_photo's: the PDF goes where the user picks, null when
+// they cancel
 #[tauri::command]
-async fn print_sheet(app: AppHandle, state: State<'_, AppState>, job: u64, imgids: Vec<i64>, request: Value)
-                     -> Result<Value, String> {
+async fn print_sheet(app: AppHandle, state: State<'_, AppState>, job: u64, imgids: Vec<i64>, request: Value,
+                     pdf_name: Option<String>) -> Result<Value, String> {
+    let mut req = without_pdf(request);
+    let pdf = match pick_pdf(&app, pdf_name.as_deref()).await? {
+        Some(None) => return Ok(Value::Null),
+        Some(Some(p)) => {
+            req["pdf"] = json!(p.to_string_lossy());
+            Some(p)
+        }
+        None => None,
+    };
     let tagged = state.tagged.clone();
     state.engine("print_sheet").request(json!({ "cmd": "export_hold", "job": job, "imgids": imgids }))?;
-    let mut req = request;
     req["cmd"] = json!("print");
     let t = tagged.clone();
     // each photo placed reaches the page as a merge's progress, and Stop as a merge's
@@ -2749,7 +2795,7 @@ async fn print_sheet(app: AppHandle, state: State<'_, AppState>, job: u64, imgid
     let tag = t.tag();
     let _ = tauri::async_runtime::spawn_blocking(move || t.request(tag, json!({ "cmd": "export_release", "job": job })))
         .await;
-    result.map(without_ok)
+    result.map(without_ok).map(|r| with_pdf(r, pdf.as_deref()))
 }
 
 // the Export dialog's presets, a document the front end shapes; none yet is
@@ -3475,5 +3521,14 @@ mod tests {
     fn suggested_save_names_lose_separators() {
         assert_eq!(safe_file_name("a/b\\c:d"), "a_b_c_d");
         assert_eq!(safe_file_name(" ..x.json"), "x.json");
+    }
+
+    #[test]
+    fn a_print_request_loses_the_pages_pdf_path() {
+        let req = without_pdf(json!({ "pdf": "/home/u/.bashrc", "dpi": 300 }));
+        assert_eq!(req, json!({ "dpi": 300 }));
+        let reply = with_pdf(json!({}), Some(Path::new("/tmp/a.pdf")));
+        assert_eq!(reply["pdf"], "/tmp/a.pdf");
+        assert_eq!(with_pdf(json!({}), None), json!({}));
     }
 }

@@ -15,7 +15,7 @@ import { captureMillis, type CaptureTimeEntry, type CaptureTimeUpdate } from "./
 import { Fragment, Profiler, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { ask, open, save } from "@tauri-apps/plugin-dialog";
+import { ask, open } from "@tauri-apps/plugin-dialog";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -4400,20 +4400,18 @@ export default function App() {
                           pdf ? undefined : printInfo?.info?.margins);
     if (!l.fits) return;
     const stem = baseName(current.path).replace(/\.[^.]+$/, "");
-    let out: string | null = null;
-    if (pdf) {
-      out = await save({ defaultPath: `${stem}.pdf`, filters: [{ name: "PDF", extensions: ["pdf"] }] });
-      if (!out) return;
-    }
     setPrintBusy(true);
     setPrintNote(null);
     try {
       // the edits still on their way go in first: the print renders the photo as the library has it
       await s.settled();
-      await invoke("print_photo", { imgid: s.imgid,
-                                    request: printRequest(settings, paper, l, baseName(current.path), settings.medium, out) });
+      // Rust asks where the PDF goes; null is the dialog cancelled
+      const done = await invoke<{ pdf?: string } | null>("print_photo", {
+        imgid: s.imgid, pdfName: pdf ? `${stem}.pdf` : null,
+        request: printRequest(settings, paper, l, baseName(current.path), settings.medium, pdf) });
+      if (!done) return;
       const where = printers?.find((p) => p.name === settings.printer)?.description ?? settings.printer;
-      setPrintNote({ text: pdf ? `Saved ${out}` : `Sent to ${where}.`, error: false });
+      setPrintNote({ text: pdf ? `Saved ${done.pdf}` : `Sent to ${where}.`, error: false });
     } catch (e) {
       setPrintNote({ text: String(e), error: true });
     } finally {
@@ -4428,26 +4426,22 @@ export default function App() {
     if (!photos.length || !paper) return;
     const l = cellsLayout(paper, settings, photos.length, pdf ? undefined : printInfo?.info?.margins);
     if (!l.fits) return;
-    let out: string | null = null;
-    if (pdf) {
-      out = await save({ defaultPath: `${photos.length > 1 ? "Contact sheet" : photos[0].name.replace(/\.[^.]+$/, "")}.pdf`,
-                         filters: [{ name: "PDF", extensions: ["pdf"] }] });
-      if (!out) return;
-    }
     setPrintBusy(true);
     setPrintNote(null);
     try {
       await s?.settled();
       const where = printers?.find((p) => p.name === settings.printer)?.description ?? settings.printer;
       const pages = `${l.pages} ${l.pages === 1 ? "page" : "pages"}`;
-      const text = pdf ? `Saved ${out} (${pages})` : `Sent ${pages} to ${where}.`;
       // the activity line under the photo counts the photos placed, and can stop the sheet
-      const done = await runMerge("Printing contact sheet", photos.length, "print_sheet",
+      // Rust asks where the PDF goes; null is the dialog cancelled, which leaves quietly
+      const text = (r: { pdf?: string }) => pdf ? `Saved ${r.pdf} (${pages})` : `Sent ${pages} to ${where}.`;
+      const done = await runMerge<{ pdf?: string } | null>("Printing contact sheet", photos.length, "print_sheet",
         { imgids: photos.map((p) => p.imgid),
+          pdfName: pdf ? `${photos.length > 1 ? "Contact sheet" : photos[0].name.replace(/\.[^.]+$/, "")}.pdf` : null,
           request: sheetRequest(settings, paper, l, photos, photos.length > 1 ? "Contact sheet" : photos[0].name,
-                                settings.medium, out) },
-        () => ({ text, ok: true }), "Print failed");
-      if (done) setPrintNote({ text, error: false });
+                                settings.medium, pdf) },
+        (r) => r ? { text: text(r), ok: true } : null, "Print failed");
+      if (done) setPrintNote({ text: text(done), error: false });
     } catch (e) {
       setPrintNote({ text: String(e), error: true });
     } finally {

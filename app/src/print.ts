@@ -255,7 +255,7 @@ export const sourcePpi = (pixelWidth: number, printedWidthMm: number) =>
 
 // what the engine is sent (print_image in engine/print.c)
 export function printRequest(s: PrintSettings, paper: Paper, l: Layout, title: string, medium: string,
-                             pdf: string | null) {
+                             pdf: boolean) {
   return {
     page: l.page,
     area: l.image,
@@ -264,8 +264,9 @@ export function printRequest(s: PrintSettings, paper: Paper, l: Layout, title: s
     intent: s.intent,
     bpc: s.bpc,
     title,
-    ...(pdf !== null
-      ? { pdf, dpi: s.dpi }
+    // the PDF's path is not sent: Rust asks for it (print_photo, print_sheet)
+    ...(pdf
+      ? { dpi: s.dpi }
       : { printer: s.printer, paper: { name: paper.name, common_name: paper.label, width: paper.width,
                                        height: paper.height }, medium }),
   };
@@ -274,7 +275,7 @@ export function printRequest(s: PrintSettings, paper: Paper, l: Layout, title: s
 // what the engine is sent for the Cells layout (print_sheet in engine/print.c):
 // the pages' boxes and labels in millimeters, from the page's top left
 export function sheetRequest(s: PrintSettings, paper: Paper, l: CellsLayout, photos: SheetPhoto[], title: string,
-                             medium: string, pdf: string | null) {
+                             medium: string, pdf: boolean) {
   return {
     page: l.page,
     profile: s.profile,
@@ -287,8 +288,9 @@ export function sheetRequest(s: PrintSettings, paper: Paper, l: CellsLayout, pho
       // a photo with a name sits at the bottom of its box, so the name is right under it
       ...(slot.label ? { valign: "bottom", label: { ...slot.label, text: photo.name } } : {}),
     }))),
-    ...(pdf !== null
-      ? { pdf, dpi: s.dpi }
+    // the PDF's path is not sent: Rust asks for it (print_photo, print_sheet)
+    ...(pdf
+      ? { dpi: s.dpi }
       : { printer: s.printer, paper: { name: paper.name, common_name: paper.label, width: paper.width,
                                        height: paper.height }, medium }),
   };
