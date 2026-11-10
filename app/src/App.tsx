@@ -105,7 +105,9 @@ import { BUILTIN_PRESETS, loadLooks, loadNewPhotosPreset, loadPresets, NewPreset
 import { ASPECTS, CropOverlay, customAspect, findAspect, fitAspect, FULL, loadCustomAspects, pixelAspect,
          rememberCustomAspect, type Aspect, type CropRect } from "./CropTool";
 import { ShortcutsDialog } from "./Shortcuts";
-import { cmd, fieldKeeps, keys } from "./keys";
+import { cmd, fieldKeeps, IS_MAC, keys } from "./keys";
+import { MenuBar } from "./MenuBar";
+import { forPlatform, MENUS, nativeSpec, type ActionId } from "./menu";
 import { perf, percentiles, pingOnce, roundTrips, STAGES, webviewInfo, observeWebview } from "./perf";
 import { frameTransport } from "./sharedFrames";
 import { renderDimensions } from "./renderDimensions";
@@ -127,6 +129,7 @@ import { FilterPopup, type Bounds as FilterBounds, type ImmichFilters } from "./
 
 
 const MAX_PREVIEW = 2560;
+const OTHER_MENUS = forPlatform(MENUS, false);
 // what a layer keeps of its frame to be placed (framePlace)
 type Placed = Pick<Frame, "x" | "y" | "view" | "fullWidth" | "fullHeight" | "width" | "height">;
 const placed = (f: Frame): Placed => ({ x: f.x, y: f.y, view: f.view, fullWidth: f.fullWidth, fullHeight: f.fullHeight,
@@ -355,6 +358,9 @@ export default function App() {
   const [selection, setSelection] = useState<Set<number>>(new Set());
   const [pasting, setPasting] = useState<string | null>(null);
   const pastingRef = useRef(false);
+  const menuActionsRef = useRef<Partial<Record<ActionId, () => void>>>({});
+  const lastKeyActionRef = useRef<{ id: ActionId; t: number } | null>(null);
+  const addFolderRef = useRef<() => void | Promise<void>>(() => {});
   const pasteUndoSession = useRef<Session | null>(null);
   const selectionRef = useRef(selection);
   selectionRef.current = selection;
@@ -3031,6 +3037,36 @@ export default function App() {
     return () => { void off.then((f) => f()); };
   }, []);
 
+  addFolderRef.current = addFolder;
+
+  // the application menus: a drawn strip on Windows and Linux, the native
+  // menu bar on macOS; both run the same actions as the keys
+  const runMenuAction = useCallback((id: ActionId) => {
+    if (pastingRef.current) return;
+    const el = document.activeElement as HTMLInputElement | null;
+    if (fieldKeeps(el, "a")) {
+      const editing = ["undo", "redo", "select-all", "cut", "copy", "paste"];
+      if (editing.includes(id)) {
+        if (id === "undo") document.execCommand("undo");
+        else if (id === "redo") document.execCommand("redo");
+        else if (id === "select-all") el?.select?.();
+        else menuActionsRef.current[id]?.();
+        return;
+      }
+    }
+    if (document.querySelector(".modal-backdrop") && id !== "quit" && id !== "about" && id !== "user-guide") return;
+    if (importOpenRef.current && !["preferences", "shortcuts", "quit", "about", "user-guide"].includes(id)) return;
+    const last = lastKeyActionRef.current;
+    if (last && last.id === id && performance.now() - last.t < 150) return;
+    menuActionsRef.current[id]?.();
+  }, []);
+  useEffect(() => {
+    if (!IS_MAC) return;
+    void invoke("menu_set", { menus: nativeSpec(MENUS) }).catch(() => {});
+    const off = listen<string>("menu", (e) => runMenuAction(e.payload as ActionId));
+    return () => { void off.then((f) => f()); };
+  }, [runMenuAction]);
+
   // at start, a photo handed over, or else the folder and image open when
   // the app last closed; later, a photo handed to the running app
   const started = useRef(false);
@@ -5274,6 +5310,105 @@ export default function App() {
   // step through the folder, 0-5 rate, 6-9 toggle the red, yellow, green and
   // blue labels, X rejects. typing in a field, a focused slider's arrows, or a switch's Space, are left alone
   useEffect(() => {
+    // the open photo among those showing, for the keys and menu items that rate it
+    const openPhoto = () => shownRef.current.find((i) => isOpen(i)) ?? null;
+    const rate = (n: number) => () => { const cur = openPhoto(); if (cur) rateSelection(cur, { rating: n, rejected: false }); };
+    const label = (n: number) => () => { const cur = openPhoto(); if (cur) rateSelection(cur, { labels: 1 << n }); };
+    const actions: Record<ActionId, () => void> = {
+      "perf-overlay": () => {
+        setPerfHud(!perf.enabled);
+        perf.enable(!perf.enabled);
+      },
+      "export": () => { setExporting(true); },
+      "print": () => { showRightRef.current("print"); },
+      "copy-settings": () => { if (session.current) setCopying(true); },
+      "paste-settings": () => { pasteSettingsRef.current(); },
+      "paste-previous": () => { pastePreviousRef.current(); },
+      "shortcuts": () => { setShortcutsOpen(true); },
+      "virtual-copy": () => {
+        const sel = selectionRef.current, all = imagesRef.current;
+        const list = sel.size ? all.filter((i) => sel.has(i.imgid)) : all.filter((i) => isOpen(i));
+        void createCopiesRef.current(list);
+      },
+      "hdr-merge": () => {
+        const sel = selectionRef.current;
+        const list = hdrBrackets(imagesRef.current.filter((i) => sel.has(i.imgid)));
+        if (list.length > 1) setHdrMerging(list);
+        else setStatus("HDR Merge: select two raw exposures or more");
+      },
+      "pano-merge": () => {
+        const sel = selectionRef.current;
+        const list = panoFrames(imagesRef.current.filter((i) => sel.has(i.imgid)));
+        if (list.length > 1) setPanoMerging(list);
+        else setStatus("Panorama Merge: select two raw photos or more");
+      },
+      "preferences": () => { setPrefsOpen(true); },
+      "import": () => { setImportOpen(true); },
+      "undo": () => { stepHistory(true); },
+      "redo": () => { stepHistory(false); },
+      "zoom-in": () => { if (session.current && !croppingRef.current) stepZoom(1); },
+      "zoom-out": () => { if (session.current && !croppingRef.current) stepZoom(-1); },
+      "rotate-left": () => { void turn("ccw"); },
+      "rotate-right": () => { void turn("cw"); },
+      "select-all": () => { setSelection(new Set(shownRef.current.map((i) => i.imgid))); },
+      "fullscreen-preview": () => {
+        if (previewRef.current) setPreview(false);
+        else if (session.current) setPreview(true);
+      },
+      "info-overlay": () => { if (session.current) setInfoMode((m) => (m + 1) % 3); },
+      "canvas": () => {
+        if (!session.current) return;
+        setCanvasColor((c) => {
+          const next = CANVASES[(CANVASES.indexOf(c) + 1) % CANVASES.length];
+          storeCanvas(next);
+          return next;
+        });
+      },
+      "hide-panels": () => { hidePanels(["left", "right"]); },
+      "grid": () => { if (!croppingRef.current) setGrid(!gridRef.current); },
+      "before-after": () => { if (!croppingRef.current) cycleBaModeRef.current(); },
+      "compare": () => { if (!croppingRef.current) toggleCompareRef.current(); },
+      "wb-picker": () => {
+        if (session.current && session.current.values.neg_on !== 1) setPicking(!pickingRef.current);
+      },
+      "next-scope": () => {
+        if (!session.current) return;
+        const n = SCOPE_MODES.length;
+        setScope((s) => ({ mode: SCOPE_MODES[(SCOPE_MODES.findIndex(([m]) => m === s.mode) + 1) % n][0] }));
+      },
+      "soft-proof": () => { if (session.current) toggleProofRef.current(); },
+      "clipping": () => {
+        setClipOn((o) => (o.low && o.high ? { low: false, high: false } : { low: true, high: true }));
+      },
+      "crop": () => { enterCrop(); },
+      "heal": () => { if (session.current) showHealRef.current(); },
+      "zoom-toggle": () => { setZoom(zoomRef.current === "fit" ? navZoom.current : "fit"); },
+      "rate-0": rate(0), "rate-1": rate(1), "rate-2": rate(2), "rate-3": rate(3), "rate-4": rate(4), "rate-5": rate(5),
+      "label-red": label(0), "label-yellow": label(1), "label-green": label(2), "label-blue": label(3),
+      "reject": () => { const cur = openPhoto(); if (cur) rateSelection(cur, { rejected: !cur.rejected }); },
+      // menu-only items
+      "add-folder": () => { void addFolderRef.current(); },
+      "user-guide": () => { void openUrl("https://github.com/Rhettus/immage/blob/main/app/docs/README.md"); },
+      "about": () => { setPrefsOpen("about"); },
+      "quit": () => { void getCurrentWindow().close(); },
+      "cut": () => { document.execCommand("cut"); },
+      "copy": () => { document.execCommand("copy"); },
+      "paste": () => {
+        if (document.execCommand("paste")) return;
+        const el = document.activeElement as HTMLInputElement | HTMLTextAreaElement | null;
+        if (!el?.setRangeText) return;
+        void navigator.clipboard.readText().then((text) => {
+          el.setRangeText(text, el.selectionStart ?? el.value.length, el.selectionEnd ?? el.value.length, "end");
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+        }).catch(() => {});
+      },
+    };
+    menuActionsRef.current = actions;
+    // a key that runs an action is noted, so the native menu's echo of it is ignored
+    const run = (id: ActionId) => {
+      lastKeyActionRef.current = { id, t: performance.now() };
+      actions[id]();
+    };
     const onKey = (e: KeyboardEvent) => {
       if (pastingRef.current) { e.preventDefault(); return; }
       const t = e.target;
@@ -5284,95 +5419,86 @@ export default function App() {
       if (importOpenRef.current && !(cmd(e) && (e.key === "," || e.code === "Slash"))) return;
       if (cmd(e) && e.shiftKey && e.code === "KeyP") {
         e.preventDefault();
-        setPerfHud(!perf.enabled);
-        perf.enable(!perf.enabled);
+        run("perf-overlay");
         return;
       }
       if (cmd(e) && e.shiftKey && (e.key === "e" || e.key === "E")) {
         e.preventDefault();
-        setExporting(true);
+        run("export");
         return;
       }
       // ⌘P: the Print panel, as Lightroom's Print module
       if (cmd(e) && !e.shiftKey && !e.altKey && (e.key === "p" || e.key === "P")) {
         e.preventDefault();
-        showRightRef.current("print");
+        run("print");
         return;
       }
       // Copy Settings, Paste and Previous, as Lightroom's ⇧⌘C, ⇧⌘V and ⌥⌘V
       if (cmd(e) && (e.key === "c" || e.key === "C" || e.code === "KeyC") && e.shiftKey) {
         e.preventDefault();
-        if (session.current) setCopying(true);
+        run("copy-settings");
         return;
       }
       if (cmd(e) && e.code === "KeyV" && (e.shiftKey || e.altKey)) {
         e.preventDefault();
-        if (e.altKey) pastePreviousRef.current(); else pasteSettingsRef.current();
+        if (e.altKey) run("paste-previous"); else run("paste-settings");
         return;
       }
       if (cmd(e) && e.code === "Slash") {
         e.preventDefault();
-        setShortcutsOpen(true);
+        run("shortcuts");
         return;
       }
       // Create Virtual Copy, as Lightroom's ⌘': of the selection, else the open photo
       if (cmd(e) && e.code === "Quote") {
         e.preventDefault();
-        const sel = selectionRef.current, all = imagesRef.current;
-        const list = sel.size ? all.filter((i) => sel.has(i.imgid)) : all.filter((i) => isOpen(i));
-        void createCopiesRef.current(list);
+        run("virtual-copy");
         return;
       }
       // HDR Merge, as Lightroom's ⌃H: of the selection's raws, two or more
       if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.code === "KeyH") {
         e.preventDefault();
-        const sel = selectionRef.current;
-        const list = hdrBrackets(imagesRef.current.filter((i) => sel.has(i.imgid)));
-        if (list.length > 1) setHdrMerging(list);
-        else setStatus("HDR Merge: select two raw exposures or more");
+        run("hdr-merge");
         return;
       }
       // Panorama Merge, as Lightroom's ⌃M: of the selection, two or more
       if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.code === "KeyM") {
         e.preventDefault();
-        const sel = selectionRef.current;
-        const list = panoFrames(imagesRef.current.filter((i) => sel.has(i.imgid)));
-        if (list.length > 1) setPanoMerging(list);
-        else setStatus("Panorama Merge: select two raw photos or more");
+        run("pano-merge");
         return;
       }
       // Preferences, as every Mac app's ⌘,
       if (cmd(e) && e.key === ",") {
         e.preventDefault();
-        setPrefsOpen(true);
+        run("preferences");
         return;
       }
       if (cmd(e) && e.shiftKey && (e.key === "i" || e.key === "I")) {
         e.preventDefault();
-        setImportOpen(true);
+        run("import");
         return;
       }
       if (cmd(e) && (e.key === "z" || e.key === "Z")) {
         e.preventDefault();
-        stepHistory(!e.shiftKey);
+        run(e.shiftKey ? "redo" : "undo");
         return;
       }
       // zoom in and out, as Lightroom's ⌘= and ⌘-; by code, so ⇧⌘= (⌘+) zooms
       // too. marked used, so WebView2 does not zoom the page
       if (cmd(e) && (e.code === "Equal" || e.code === "Minus") && !e.altKey) {
         e.preventDefault();
-        if (session.current && !croppingRef.current) stepZoom(e.code === "Equal" ? 1 : -1);
+        run(e.code === "Equal" ? "zoom-in" : "zoom-out");
         return;
       }
       if (cmd(e) && (e.code === "BracketLeft" || e.code === "BracketRight")) {
         e.preventDefault();
-        void turn(e.code === "BracketLeft" ? "ccw" : "cw");
+        run(e.code === "BracketLeft" ? "rotate-left" : "rotate-right");
         return;
       }
       // ⌘A selects every photo the filters leave showing
       if (cmd(e) && e.code === "KeyA" && !e.shiftKey && !e.altKey) {
         e.preventDefault();
-        setSelection(new Set(shownRef.current.map((i) => i.imgid)));
+        run("select-all");
         return;
       }
       if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -5381,31 +5507,27 @@ export default function App() {
       // the key is marked used: macOS beeps at one left unhandled while the
       // window changes style
       if (previewRef.current) {
-        if (e.key === "f" || e.key === "F" || e.key === "Escape") { e.preventDefault(); setPreview(false); return; }
+        if (e.key === "f" || e.key === "F" || e.key === "Escape") { e.preventDefault(); e.key === "Escape" ? setPreview(false) : run("fullscreen-preview"); return; }
         if (!/^([zZyYxXiIlL\\0-9]|ArrowLeft|ArrowRight)$/.test(e.key)) return;
-      } else if ((e.key === "f" || e.key === "F") && session.current) { e.preventDefault(); setPreview(true); return; }
+      } else if ((e.key === "f" || e.key === "F") && session.current) { e.preventDefault(); run("fullscreen-preview"); return; }
       // I cycles the info over the photo: file, exposure, none, as Lightroom's
-      if ((e.key === "i" || e.key === "I") && session.current) { setInfoMode((m) => (m + 1) % 3); return; }
+      if ((e.key === "i" || e.key === "I") && session.current) { run("info-overlay"); return; }
       // L steps the canvas: dark, neutral gray, white. Lightroom sets it only
       // from the surround's context menu; its L (Lights Out) is the nearest key
       if ((e.key === "l" || e.key === "L") && session.current) {
-        setCanvasColor((c) => {
-          const next = CANVASES[(CANVASES.indexOf(c) + 1) % CANVASES.length];
-          storeCanvas(next);
-          return next;
-        });
+        run("canvas");
         return;
       }
       if (e.key === "Tab") {
         e.preventDefault();
-        hidePanels(e.shiftKey ? ["left", "right", "strip"] : ["left", "right"]);
+        if (e.shiftKey) hidePanels(["left", "right", "strip"]); else run("hide-panels");
         return;
       }
-      if ((e.key === "g" || e.key === "G") && !croppingRef.current) { setGrid(!gridRef.current); return; }
+      if ((e.key === "g" || e.key === "G") && !croppingRef.current) { run("grid"); return; }
       if (e.key === "Escape" && gridRef.current) { setGrid(false); return; }
       if (e.key === "\\" && !croppingRef.current) { setBaModeRef.current("off"); setBefore(!beforeRef.current); return; }
-      if ((e.key === "y" || e.key === "Y") && !croppingRef.current) { cycleBaModeRef.current(); return; }
-      if ((e.key === "c" || e.key === "C") && !croppingRef.current) { toggleCompareRef.current(); return; }
+      if ((e.key === "y" || e.key === "Y") && !croppingRef.current) { run("before-after"); return; }
+      if ((e.key === "c" || e.key === "C") && !croppingRef.current) { run("compare"); return; }
       if (e.key === "Escape" && compareRef.current !== null) { setCompareRef.current(null); return; }
       if (straighteningRef.current && e.key === "Escape") { setStraightening(false); return; }
       if (guidingRef.current && e.key === "Escape") { setGuiding(false); return; }
@@ -5420,7 +5542,7 @@ export default function App() {
       if (pickingRef.current && e.key === "Escape") { setPicking(false); return; }
       // W picks white balance from the image, as in Lightroom
       if ((e.key === "w" || e.key === "W") && session.current && session.current.values.neg_on !== 1) {
-        setPicking(!pickingRef.current);
+        run("wb-picker");
         return;
       }
       if (healModeRef.current && healKeyRef.current(e)) return;
@@ -5442,29 +5564,31 @@ export default function App() {
       if (e.shiftKey && (e.key === "j" || e.key === "J")) { pickToolRef.current("color"); return; }
       // H steps the scope as its corner menu lists them, ⇧H back
       if ((e.key === "h" || e.key === "H") && !cmd(e) && !e.altKey && session.current) {
-        const n = SCOPE_MODES.length;
-        setScope((s) => ({ mode: SCOPE_MODES[(SCOPE_MODES.findIndex(([m]) => m === s.mode) + (e.shiftKey ? n - 1 : 1)) % n][0] }));
+        if (e.shiftKey) {
+          const n = SCOPE_MODES.length;
+          setScope((s) => ({ mode: SCOPE_MODES[(SCOPE_MODES.findIndex(([m]) => m === s.mode) + n - 1) % n][0] }));
+        } else run("next-scope");
         return;
       }
       // S turns the soft proof on or off, as in Lightroom
       if ((e.key === "s" || e.key === "S") && !cmd(e) && !e.altKey && !e.shiftKey && session.current) {
-        toggleProofRef.current();
+        run("soft-proof");
         return;
       }
       // J shows both clipping overlays, or hides them, as in Lightroom
       if (e.key === "j" && !cmd(e) && !e.altKey) {
-        setClipOn((o) => (o.low && o.high ? { low: false, high: false } : { low: true, high: true }));
+        run("clipping");
         return;
       }
       if (e.shiftKey && (e.key === "q" || e.key === "Q")) { pickToolRef.current("luminance"); return; }
       if (e.key === "k" || e.key === "K") { pickToolRef.current("brush"); return; }
       if (e.key === "m" || e.key === "M") { pickToolRef.current(e.shiftKey ? "ellipse" : "gradient"); return; }
-      if (e.key === "r" || e.key === "R") { enterCrop(); return; }
-      if ((e.key === "q" || e.key === "Q") && session.current) { showHealRef.current(); return; }
+      if (e.key === "r" || e.key === "R") { run("crop"); return; }
+      if ((e.key === "q" || e.key === "Q") && session.current) { run("heal"); return; }
       const list = shownRef.current;
       const at = list.findIndex((i) => isOpen(i));
       const cur = at >= 0 ? list[at] : null;
-      if (e.key === "z" || e.key === "Z") setZoom(zoomRef.current === "fit" ? navZoom.current : "fit");
+      if (e.key === "z" || e.key === "Z") run("zoom-toggle");
       else if ((e.key === "ArrowRight" || e.key === "ArrowLeft") && compareRef.current !== null) {
         // comparing, the arrows step the candidate, past the open photo
         e.preventDefault();
@@ -5479,12 +5603,9 @@ export default function App() {
         if (next) { e.preventDefault(); void openEntry(next); }
       }
       else if (!cur) return;
-      else if (e.key >= "0" && e.key <= "5") rateSelection(cur, { rating: Number(e.key), rejected: false });
-      else if (e.key >= "6" && e.key <= "9") {
-        const bit = 1 << (Number(e.key) - 6);
-        rateSelection(cur, { labels: bit });
-      }
-      else if (e.key === "x" || e.key === "X") rateSelection(cur, { rejected: !cur.rejected });
+      else if (e.key >= "0" && e.key <= "5") run(`rate-${e.key}` as ActionId);
+      else if (e.key >= "6" && e.key <= "9") run((["label-red", "label-yellow", "label-green", "label-blue"] as const)[Number(e.key) - 6]);
+      else if (e.key === "x" || e.key === "X") run("reject");
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -5724,7 +5845,7 @@ export default function App() {
     {/* the window's title bar is hidden (tauri.conf.json); this strip moves
         the window and leaves room for the traffic lights */}
     {/* full screen has no traffic lights to hold, and the photo wants the room */}
-    {!fullscreen && <div className="titlebar" data-tauri-drag-region><span data-tauri-drag-region>Immage</span></div>}
+    {!fullscreen && <div className={`titlebar${!IS_MAC ? " with-menus" : ""}`} data-tauri-drag-region><span data-tauri-drag-region>Immage</span>{!IS_MAC && <MenuBar menus={OTHER_MENUS} onAction={runMenuAction} />}</div>}
     <div className={`app${sliding ? " sliding" : ""}`} style={{
       gridTemplateColumns: preview ? "0px 0px minmax(0, 1fr) 0px 0px 0px 0px"
         : `${docked.left ? layout.leftWidth : 0}px ${docked.left ? 8 : 0}px minmax(0, 1fr)`

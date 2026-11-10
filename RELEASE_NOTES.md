@@ -13,6 +13,9 @@ Improvements
   chosen by hand (raws that carry their own correction switch to the lensfun
   profile when you do). Type in its search box to filter: "12-32" finds the
   Panasonic 12-32mm.
+- File, Edit, Photo, View and Help menus list Immage's commands with their
+  keyboard shortcuts. On macOS they are in the menu bar; on Windows and
+  Linux they are always in the window's title strip, adding no height.
 - Profile > Load AgX Preset imports your AgX presets from darktable or exported
   preset and style files, including compatible older AgX presets. Added looks
   stay in My Presets after restarting and can also be chosen as the profile
@@ -44,6 +47,8 @@ Bug fixes
 
 - Updated the importer's bundled SQLite to fix a database memory disclosure
   vulnerability, preserving existing import history.
+- On Windows and Linux, the Keyboard Shortcuts sheet shows Zoom Out as
+  Ctrl+- instead of "Ctrl-".
 - Tool module menus, including Clarity and Texture, stay inside the window
   when opened near an edge, keeping their options reachable.
 - AI Denoise and HDR Merge retain the camera's portrait or rotated orientation

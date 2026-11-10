@@ -2,6 +2,10 @@ import { generated, generatedNames } from './generated.mjs';
 // SPDX-License-Identifier: GPL-3.0-or-later
 // These are coverage claims for cases, not proof they have passed on a platform.
 export const cases = {
+  menus: { scope: 'Windows/Linux drawn menus: five titles inside the 34px title bar, click open, hover switch, Escape and outside click, label and shortcut text of every item, and the effects of Export, Print, Keyboard Shortcuts, Preferences, Import Photos, Undo/Redo, Zoom In, Grid View, Show Clipping and Create Virtual Copy', liveValidated: true, verification: 'Linux ARM64 system WebKitGTK; empty workspace 9 floating/maximized, viewport 1596x840, original workspace 3 restored. Run 2026-11-10T02-59-06.431Z_113e595_340e02b9.',
+    limitation: 'Quit and Add Folder (native dialog or closing the app) and User Guide (opens a browser) are outside the app-only boundary. The virtual copy stays in the run fixture folder.' },
+  'menus-guards': { scope: 'menu items do nothing behind the Preferences modal; with a text field focused Edit > Select All selects the text and not the photos, and Edit > Undo does not step photo history; the title bar keeps data-tauri-drag-region and the menu buttons do not', liveValidated: true, verification: 'Linux ARM64 system WebKitGTK; empty workspace 9 floating/maximized, viewport 1596x840, original workspace 3 restored. Run 2026-11-10T02-59-06.431Z_113e595_340e02b9.',
+    limitation: 'DOM attribute check only; window dragging is not exercised. Fails if clicking a menu title moves focus off the text field.' },
   'location-map': { scope: 'Metadata map expansion, wheel zoom, Escape collapse, dialog stacking and unchanged location draft', liveValidated: true, verification: 'Linux ARM64 system WebKitGTK; empty workspace 9 floating/maximized, original workspace 3 restored. Run 2026-11-09T23-59-45.887Z_ab0c885_6005ea2f. Search provider/keyring integration not exercised.' },
   'preferences-help': { scope: 'Short descriptions, hover/focus help, tooltip bounds, ARIA description and Escape/blur dismissal in Preferences', liveValidated: false },
   'workspace-layout': { scope: 'General Workspace row order, conditional scroll amount, theme alignment and actions below swatches in all built-in themes', liveValidated: true, verification: 'Linux ARM64 system WebKitGTK, isolated floating/maximized workspace 9, viewport 2044x1092; run 2026-11-09T21-37-52.837Z_e47ad0c_edc54e26. Workspace 3 and workspace 9 layout restored.' },
@@ -112,7 +116,7 @@ export const cases = {
 export const suites = {
   smoke: ['startup', 'exposure'],
   crop: ['startup','crop-guides','crop-locked','crop-options','crop-auto-straighten','crop-undo'],
-  workflows: ['startup','agx-presets','curves','wheels','equalizer','saturation-curve','masks','color-range','heal','zones','film','print','preferences-matrix','slider-wheel','export-options','filters','presets','shortcuts'],
+  workflows: ['startup','agx-presets','curves','wheels','equalizer','saturation-curve','masks','color-range','heal','zones','film','print','preferences-matrix','slider-wheel','export-options','filters','presets','shortcuts','menus','menus-guards'],
   inventory: ['startup',...generatedNames],
   regressions: ['startup', 'rail', 'panel-scroll', 'module-options', 'batch-paste', 'shift-range'],
   controls: ['startup', 'slider-input', 'slider-click', 'history', 'rail', 'sliders', 'module-options', 'module-switch'],

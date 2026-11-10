@@ -2786,6 +2786,94 @@ fn launch_file(launch: State<'_, Launch>) -> Option<String> {
     launch.0.lock().unwrap().take()
 }
 
+// the menu spec lives in app/src/menu.ts so the drawn Windows/Linux menu and
+// this native one list the same items; Windows and Linux draw it in the title
+// bar strip, as a native row there would take extra height
+#[derive(Deserialize)]
+struct NativeMenu {
+    label: String,
+    items: Vec<NativeItem>,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+enum NativeItem {
+    Item { id: String, label: String, accel: Option<String> },
+    Separator,
+    Submenu { label: String, items: Vec<NativeItem> },
+    Predefined { role: NativeRole },
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum NativeRole {
+    About, Services, Hide, HideOthers, ShowAll, Quit, CloseWindow,
+    Cut, Copy, Paste, Minimize, Zoom, Fullscreen,
+}
+
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn native_items(app: &AppHandle, items: &[NativeItem]) -> tauri::Result<Vec<Box<dyn tauri::menu::IsMenuItem<tauri::Wry>>>> {
+    use tauri::menu::{MenuItemBuilder, PredefinedMenuItem as P, Submenu};
+    let mut out: Vec<Box<dyn tauri::menu::IsMenuItem<tauri::Wry>>> = Vec::new();
+    for it in items {
+        out.push(match it {
+            NativeItem::Item { id, label, accel } => {
+                let mut b = MenuItemBuilder::with_id(id.as_str(), label);
+                if let Some(a) = accel { b = b.accelerator(a); }
+                Box::new(b.build(app)?)
+            }
+            NativeItem::Separator => Box::new(P::separator(app)?),
+            NativeItem::Submenu { label, items } => {
+                let kids = native_items(app, items)?;
+                let refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = kids.iter().map(|k| k.as_ref()).collect();
+                Box::new(Submenu::with_items(app, label, true, &refs)?)
+            }
+            NativeItem::Predefined { role } => match role {
+                NativeRole::About => Box::new(P::about(app, None, None)?),
+                NativeRole::Services => Box::new(P::services(app, None)?),
+                NativeRole::Hide => Box::new(P::hide(app, None)?),
+                NativeRole::HideOthers => Box::new(P::hide_others(app, None)?),
+                NativeRole::ShowAll => Box::new(P::show_all(app, None)?),
+                NativeRole::Quit => Box::new(P::quit(app, None)?),
+                NativeRole::CloseWindow => Box::new(P::close_window(app, None)?),
+                NativeRole::Cut => Box::new(P::cut(app, None)?),
+                NativeRole::Copy => Box::new(P::copy(app, None)?),
+                NativeRole::Paste => Box::new(P::paste(app, None)?),
+                NativeRole::Minimize => Box::new(P::minimize(app, None)?),
+                NativeRole::Zoom => Box::new(P::maximize(app, None)?),
+                NativeRole::Fullscreen => Box::new(P::fullscreen(app, None)?),
+            },
+        });
+    }
+    Ok(out)
+}
+
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn build_menu(app: &AppHandle, menus: &[NativeMenu]) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
+    use tauri::menu::{Menu, Submenu};
+    let mut tops = Vec::new();
+    for m in menus {
+        let kids = native_items(app, &m.items)?;
+        let refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = kids.iter().map(|k| k.as_ref()).collect();
+        tops.push(Submenu::with_items(app, &m.label, true, &refs)?);
+    }
+    let refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = tops.iter().map(|t| t as _).collect();
+    Menu::with_items(app, &refs)
+}
+
+// async so it runs off the main thread: the menu API hops to it and waits
+#[tauri::command]
+async fn menu_set(app: AppHandle, menus: Vec<NativeMenu>) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let menu = build_menu(&app, &menus).map_err(|e| e.to_string())?;
+        app.set_menu(menu).map_err(|e| e.to_string())?;
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (app, menus);
+    Ok(())
+}
+
 fn main() {
     #[allow(unused_mut)]
     let mut context = tauri::generate_context!();
@@ -2836,6 +2924,10 @@ fn main() {
             keychain_from: None,
         }))
         .manage(Launch(Mutex::new(arg)))
+        // custom items reach the page by id; predefined ones act natively
+        .on_menu_event(|app, event| {
+            let _ = app.emit("menu", event.id().as_ref());
+        })
         .setup(|app| {
             #[cfg(target_os = "linux")]
             {
@@ -2908,7 +3000,7 @@ fn main() {
             ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, positive_export, spektra_stocks, spektra_fetch, list_subfolders, folder_volumes, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
             immich_export_check, immich_search, immich_browse_check, immich_libraries, immich_suggestions, immich_people, immich_tags,
             immich_thumb, immich_resolve, launch_file, path_exists, path_kind, display_scale, trash_files, create_virtual_copy, remove_virtual_copy, hdr_merge, hdr_can_align, pano_merge, pano_preview, pano_can_merge, merge_cancel, preview_fullscreen, build, about, licenses, engine_quit, keywords, keywords_set, ai_accel,
-            perf_set, perf_trace_start, perf_trace_stop, perf_modules, perf_report_write, perf_machine, perf_ping, gpu_check_parity, resources::perf_resources_start, resources::perf_resources_stop,
+            menu_set, perf_set, perf_trace_start, perf_trace_stop, perf_modules, perf_report_write, perf_machine, perf_ping, gpu_check_parity, resources::perf_resources_start, resources::perf_resources_stop,
             plugins::plugin_find_apps, plugins::plugin_launch, plugins::plugin_watch, plugins::plugin_cancel, plugins::plugin_job,
             plugins::plugin_returns, plugins::plugin_return_applied
         ])
@@ -2955,6 +3047,22 @@ fn preview_fullscreen(app: AppHandle, on: bool) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_menu_spec_parses() {
+        let spec = json!([{"label": "Immage", "items": [
+            {"type": "predefined", "role": "hideOthers"},
+            {"type": "separator"},
+            {"type": "item", "id": "export", "label": "Export", "accel": "CmdOrCtrl+E"},
+            {"type": "item", "id": "undo", "label": "Undo"},
+            {"type": "submenu", "label": "More", "items": [{"type": "predefined", "role": "zoom"}]}
+        ]}]);
+        let m: Vec<NativeMenu> = serde_json::from_value(spec).unwrap();
+        assert_eq!(m[0].items.len(), 5);
+        assert!(matches!(&m[0].items[2], NativeItem::Item { id, accel: Some(_), .. } if id == "export"));
+        assert!(matches!(&m[0].items[3], NativeItem::Item { accel: None, .. }));
+        assert!(matches!(&m[0].items[0], NativeItem::Predefined { role: NativeRole::HideOthers }));
+    }
 
     #[test]
     fn folder_progress_once_a_second() {

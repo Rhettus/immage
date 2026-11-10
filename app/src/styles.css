@@ -1763,6 +1763,31 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .prefs-tabs button:hover { background: var(--hover); color: var(--text); }
 .prefs-tabs button.on { background: var(--inset); color: var(--text); }
 
+/* the menus in the title strip (Windows and Linux, always shown): the 84px left pad
+   is room for the macOS window buttons, so the menus start at the edge */
+.titlebar.with-menus { padding-left: 12px; }
+.menubar { display: flex; align-items: stretch; align-self: stretch; margin-left: 8px; font-weight: 400; }
+.menubar-slot { position: relative; display: flex; }
+.menubar-title {
+  padding: 0 8px; background: none; border: none; color: inherit; font: inherit; font-size: var(--fs-body); cursor: pointer;
+}
+.menubar-title:hover, .menubar-title.open { background: var(--hover); color: var(--text); }
+.menubar-menu {
+  position: absolute; z-index: 60; top: 100%; left: 0; min-width: 200px; padding: 4px;
+  background: var(--panel); border: 1px solid var(--border, #333); border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+.menubar-menu.sub { top: -5px; left: 100%; }
+.menubar-menu.sub.flip { left: auto; right: 100%; }
+.menubar-menu button {
+  display: flex; justify-content: space-between; align-items: center; gap: 24px; width: 100%; padding: 6px 10px;
+  background: none; border: none; border-radius: 5px; color: var(--text); font: inherit; font-size: var(--fs-body);
+  text-align: left; white-space: nowrap; cursor: pointer;
+}
+.menubar-menu button.on { background: var(--inset); }
+.menubar-keys, .menubar-arrow { color: var(--text-3); }
+.menubar-sep { height: 1px; margin: 4px 6px; background: var(--border, #333); }
+.menubar-has-sub { position: relative; }
+
 /* a photo's right-click menu */
 .context-menu {
   position: fixed; z-index: 60; min-width: 180px; padding: 4px;
