@@ -85,6 +85,17 @@
 #include <glib/gstdio.h>
 #ifndef _WIN32
 #include <execinfo.h>
+#endif
+#if defined(__GLIBC__)
+#include <malloc.h>
+#elif defined(__APPLE__)
+#include <dispatch/dispatch.h>
+#include <malloc/malloc.h>
+#elif defined(_WIN32)
+#include <malloc.h>
+#include <windows.h>
+#endif
+#ifndef _WIN32
 #include <signal.h>
 #endif
 #include <archive.h>
@@ -9730,6 +9741,16 @@ static dt_dev_pixelpipe_iop_t *_piece(dt_dev_pixelpipe_t *pipe, const dt_iop_mod
   return NULL;
 }
 
+// the pipe cache the base and check pipes may keep, as a fraction of
+// darktable's memory (pixelpipe_cache.c, dt_dev_pixelpipe_cache_checkmem):
+// the darkroom's preview pipe's 1/32 rather than a full pipe's 1/8. both
+// render the whole image, a 1 GB line at 60 megapixels, so even 1/8 kept
+// few lines: a base reran as many modules either way (benchmark, heavy
+// edit, 11 GB of memory), while its lines stayed until the next. the
+// drag and preview pipes keep the full pipe's share: their small lines are
+// what a drag draws from, and with less a rotate drag reran 13 modules, not 9
+#define _WHOLE_PIPE_FRACTION 32
+
 // the preview pipe, made on first use, with nodes for every instance and
 // the edit as it stands
 static gboolean _ppipe_ready(char **err)
@@ -9776,6 +9797,7 @@ static gboolean _follower_ready(dt_engine_follower_t *f, char **err)
     *err = g_strdup("could not allocate a pixelpipe");
     return FALSE;
   }
+  if(f != &_s.drag) f->pipe.cache.mem_fraction = _WHOLE_PIPE_FRACTION;
   dt_dev_pixelpipe_set_icc(&f->pipe, DT_COLORSPACE_SRGB, NULL, DT_INTENT_LAST);
   dt_dev_pixelpipe_set_input(&f->pipe, &_s.dev, (float *)_s.buf.buf,
                              _s.buf.width, _s.buf.height, _s.buf.iscale);
@@ -11414,6 +11436,92 @@ static gboolean _read_line(GString *s, GString *rest)
 // the end of input, on the request queue
 static char _end_of_input[] = "";
 
+// after this long without a request, the session's pipes give back most
+// of their cache, as darktable's do on leaving the darkroom (darkroom.c,
+// _clear_pipecache), and the C library its freed pages: the base pipe's
+// whole-image lines otherwise stay until the next edit. under memory
+// pressure the same trim comes before a request, at most once a while
+#define _IDLE_TRIM_US (20 * G_USEC_PER_SEC)
+#define _PRESSURE_POLL_US (2 * G_USEC_PER_SEC)
+#define _PRESSURE_TRIM_US (5 * G_USEC_PER_SEC)
+
+#if defined(__APPLE__)
+// the system's memory pressure level, from a dispatch source on a queue of
+// its own (_pressure_watch)
+static gint _pressure_level = 0;
+
+static void _pressure_event(void *source)
+{
+  const unsigned long level = dispatch_source_get_data((dispatch_source_t)source);
+  g_atomic_int_set(&_pressure_level,
+                   level & (DISPATCH_MEMORYPRESSURE_WARN | DISPATCH_MEMORYPRESSURE_CRITICAL) ? 1 : 0);
+}
+#elif defined(_WIN32)
+static HANDLE _low_memory = NULL;
+#endif
+
+static void _pressure_watch(void)
+{
+#if defined(__APPLE__)
+  dispatch_source_t source =
+    dispatch_source_create(DISPATCH_SOURCE_TYPE_MEMORYPRESSURE, 0,
+                           DISPATCH_MEMORYPRESSURE_NORMAL | DISPATCH_MEMORYPRESSURE_WARN
+                           | DISPATCH_MEMORYPRESSURE_CRITICAL,
+                           dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0));
+  if(!source) return;
+  dispatch_set_context(source, source);
+  dispatch_source_set_event_handler_f(source, _pressure_event);
+  dispatch_resume(source);
+#elif defined(_WIN32)
+  _low_memory = CreateMemoryResourceNotification(LowMemoryResourceNotification);
+#endif
+}
+
+// whether the system is short of memory: on Linux, less than a tenth of
+// it available (the kernel's MemAvailable, which counts reclaimable cache)
+static gboolean _memory_pressure(void)
+{
+#if defined(__APPLE__)
+  return g_atomic_int_get(&_pressure_level) != 0;
+#elif defined(_WIN32)
+  BOOL low = FALSE;
+  return _low_memory && QueryMemoryResourceNotification(_low_memory, &low) && low;
+#elif defined(__linux__)
+  FILE *f = g_fopen("/proc/meminfo", "r");
+  if(!f) return FALSE;
+  unsigned long long total = 0, avail = 0, v;
+  char key[64];
+  while((!total || !avail) && fscanf(f, "%63s %llu kB\n", key, &v) == 2)
+  {
+    if(!strcmp(key, "MemTotal:")) total = v;
+    else if(!strcmp(key, "MemAvailable:")) avail = v;
+  }
+  fclose(f);
+  return total && avail && avail < total / 10;
+#else
+  return FALSE;
+#endif
+}
+
+static void _trim(void)
+{
+  if(_s.open)
+  {
+    dt_dev_pixelpipe_cache_checkmem(&_s.pipe, TRUE);
+    if(_s.ppipe_ok) dt_dev_pixelpipe_cache_checkmem(&_s.ppipe, TRUE);
+    if(_s.drag.ok) dt_dev_pixelpipe_cache_checkmem(&_s.drag.pipe, TRUE);
+    if(_s.base.ok) dt_dev_pixelpipe_cache_checkmem(&_s.base.pipe, TRUE);
+    if(_s.check.ok) dt_dev_pixelpipe_cache_checkmem(&_s.check.pipe, TRUE);
+  }
+#if defined(__GLIBC__)
+  malloc_trim(0);
+#elif defined(__APPLE__)
+  malloc_zone_pressure_relief(NULL, 0);
+#elif defined(_WIN32)
+  _heapmin();
+#endif
+}
+
 // stdin is read on a thread of its own, so a `cancel_base` (written by the
 // client while it waits on a base's reply) stops that base at once, and a
 // `merge_cancel` a merge before its next photo. neither gets a reply. a
@@ -11583,10 +11691,32 @@ int main(int argc, char **argv)
   GAsyncQueue *requests = g_async_queue_new();
   _requests = requests;
   g_thread_unref(g_thread_new("requests", _read_requests, requests));
-  gboolean quit = FALSE;
+  _pressure_watch();
+  gboolean quit = FALSE, trimmed = TRUE;
+  gint64 last_request = g_get_monotonic_time(), last_trim = 0;
   char *line;
-  while(!quit && (line = g_async_queue_pop(requests)) != _end_of_input)
+  while(!quit)
   {
+    line = g_async_queue_timeout_pop(requests, _PRESSURE_POLL_US);
+    const gint64 now = g_get_monotonic_time();
+    const gboolean due = now - last_trim >= _PRESSURE_TRIM_US;
+    if(!line)
+    {
+      if((!trimmed && now - last_request >= _IDLE_TRIM_US) || (due && _memory_pressure()))
+      {
+        _trim();
+        trimmed = TRUE;
+        last_trim = now;
+      }
+      continue;
+    }
+    if(line == _end_of_input) break;
+    if(due && _memory_pressure())
+    {
+      _trim();
+      last_trim = now;
+    }
+    trimmed = FALSE;
     // each request's start, which a crash's backtrace then follows; shapes
     // can run to megabytes
     fprintf(stderr, "[engine] > %.*s\n", (int)MIN(300, strcspn(line, "\r\n")), line);
@@ -11612,6 +11742,8 @@ int main(int argc, char **argv)
       _reply_error(out, "request is not a JSON object");
     g_object_unref(parser);
     g_free(line);
+    // idle counts from a request's end: a long export is not idle time
+    last_request = g_get_monotonic_time();
   }
   // the client gone without a quit: its edits are kept all the same
   if(!quit) _save_pending();

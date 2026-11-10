@@ -32,6 +32,14 @@ Improvements
   are saved with the photo and included in Negative copies and presets.
 - Refined Preferences layout, spacing, descriptions, help tooltips and module selectors.
 
+Performance
+
+- Immage uses less memory without slowing editing. After 20 seconds without
+  an edit, and sooner when the computer runs short of memory, darktable's
+  caches give most of their memory back (about 2 GB for a 60-megapixel raw).
+  Whole-image renders keep a smaller cache, and library thumbnails scrolled
+  out of memory free it at once.
+
 Bug fixes
 
 - Updated the importer's bundled SQLite to fix a database memory disclosure

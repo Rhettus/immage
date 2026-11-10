@@ -3441,7 +3441,7 @@ export default function App() {
       // the photo's filmstrip thumbnail, fitted, until its first frame takes
       // its place, rather than the last photo
       const thumb = id !== null ? loader.current?.get(id) : undefined, sc = canvas.current;
-      if (thumb && sc) {
+      if (thumb?.width && sc) {
         const dpr = window.devicePixelRatio || 1, { w, h } = viewport(), m = 2 * MARGIN * dpr;
         const z = Math.min((w - m) / thumb.width, (h - m) / thumb.height);
         sc.width = thumb.width;
@@ -7338,7 +7338,7 @@ function ThumbCanvas({ loader, imgid, dogEar = false }: { loader?: ThumbLoader; 
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const c = ref.current;
-    if (!c || !bitmap) return;
+    if (!c || !bitmap?.width) return;
     c.width = bitmap.width;
     c.height = bitmap.height;
     // WebKitGTK stops showing GPU-backed thumbnail canvases once a photo is

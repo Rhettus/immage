@@ -313,6 +313,7 @@ export class ThumbLoader {
     this.tried.clear();
     this.asked.clear();
     this.done.clear();
+    this.cache.forEach((b) => b.close());
     this.cache.clear();
     this.bytes = 0;
     this.visible.clear();
@@ -352,6 +353,7 @@ export class ThumbLoader {
     const old = this.cache.get(id);
     if (old) this.bytes -= old.width * old.height * 4;
     this.cache.set(id, bitmap);
+    if (old && old !== bitmap) old.close();
     this.bytes += bitmap.width * bitmap.height * 4;
     if (typeof id === "number" && this.asked.has(id)) this.done.add(id);
     this.changed(id);
@@ -370,6 +372,10 @@ export class ThumbLoader {
       const b = this.cache.get(id)!;
       this.bytes -= b.width * b.height * 4;
       this.cache.delete(id);
+      // its pixels go now rather than at the next garbage collection, which
+      // the small script heap gives WebKit little reason to run. a closed
+      // bitmap measures 0 x 0, which the canvases that draw them skip
+      b.close();
       // read from disk again when it is next asked for
       this.tried.delete(id);
       this.changed(id);
