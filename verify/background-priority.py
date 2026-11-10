@@ -58,11 +58,12 @@ class Engine:
     def __init__(self, binary, work, opencl=False, perf=False, models=None):
         self.log_path = work / 'engine.log'
         self.log = self.log_path.open('w')
-        args = [str(binary.resolve()), '--core', '--configdir', str(work / 'config'),
-                '--cachedir', str(work / 'cache'), '--conf', f'opencl={"true" if opencl else "false"}',
-                '--conf', 'resourcelevel=0']
-        if models:
-            args += ['--models', str(models)]
+        # the engine's own options go before --core: everything after it goes
+        # to dt_init, which exits on an option it does not know
+        args = [str(binary.resolve())] + (['--models', str(models)] if models else [])
+        args += ['--core', '--configdir', str(work / 'config'),
+                 '--cachedir', str(work / 'cache'), '--conf', f'opencl={"true" if opencl else "false"}',
+                 '--conf', 'resourcelevel=0']
         if perf:
             # the app's own flag: per-module timings, with the pipe and the device
             args += ['-d', 'perf']
@@ -106,7 +107,9 @@ class Engine:
         if not self.replies and self.sel.select(timeout):
             data = os.read(self.fd, 1 << 16)
             if not data:
-                raise AssertionError('engine closed its output')
+                self.log.flush()
+                tail = self.log_path.read_text(errors='replace').splitlines()[-20:]
+                raise AssertionError('engine closed its output; its log ends:\n' + '\n'.join(tail))
             self.pending += data
             self._lines()
         return self.replies.popleft() if self.replies else None
