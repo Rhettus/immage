@@ -8,40 +8,191 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 pub struct Engine {
-    child: Child,
-    stdin: Arc<Mutex<ChildStdin>>,
+    conn: Arc<Conn>,
+    link: Arc<Link>,
     // replies to request(), in order; read_stdout passes them on
     replies: Receiver<Value>,
     perf: Arc<Perf>,
-    base: BaseCancel,
-    tagged: Tagged,
     cache_trace: bool,
     // last request rid sent (not "id", which render uses for base cancel); ids are never reused
     last_id: u64,
     // set once the engine has echoed a rid; old engines never do
     echoes_ids: bool,
+    // the arguments to start the engine again with
+    bin: PathBuf,
+    runtime: PathBuf,
+    models: PathBuf,
+    // what the request under way is (AppState::engine), for its soft deadline
+    operation: &'static str,
+    #[cfg(test)]
+    deadline_override: Option<Duration>,
+    // set once respawn() has replaced this one, so dropping it is not a quit
+    retired: bool,
 }
 
-// requests the engine serves on threads of its own beside its main loop:
+// one engine child and its pipes. a respawn makes a new one with the next epoch
+pub struct Conn {
+    epoch: u64,
+    stdin: Arc<Mutex<ChildStdin>>,
+    waiting: Waiting,
+    progress: Progress,
+    // shared so that a restart can kill the child without the engine lock
+    child: Arc<Mutex<Child>>,
+    dead: AtomicBool,
+}
+
+// what outlives a respawn: the current Conn, the counters (never reset, so a
+// number from an old epoch cannot meet a new one), whether the app means to
+// stop the engine, and where the page hears of the engine's state
+pub struct Link {
+    current: Mutex<Arc<Conn>>,
+    changed: Condvar,
+    tags: AtomicU64,
+    bases: AtomicU64,
+    quitting: AtomicBool,
+    // a restart the user asked for: not a crash, and not counted against the limit
+    manual: AtomicBool,
+    exited: String,
+    events: Mutex<Arc<dyn Fn(Value) + Send + Sync>>,
+}
+
+impl Link {
+    fn new(conn: Arc<Conn>, runtime: &Path) -> Arc<Self> {
+        Arc::new(Link {
+            current: Mutex::new(conn),
+            changed: Condvar::new(),
+            tags: AtomicU64::new(0),
+            bases: AtomicU64::new(0),
+            quitting: AtomicBool::new(false),
+            manual: AtomicBool::new(false),
+            exited: format!("the engine exited; see {}", runtime.join("engine.log").display()),
+            events: Mutex::new(Arc::new(|_| {})),
+        })
+    }
+
+    fn current(&self) -> Arc<Conn> {
+        self.current.lock().unwrap().clone()
+    }
+
+    fn install(&self, conn: Arc<Conn>) {
+        *self.current.lock().unwrap() = conn;
+        self.changed.notify_all();
+    }
+
+    pub fn set_events(&self, f: impl Fn(Value) + Send + Sync + 'static) {
+        *self.events.lock().unwrap() = Arc::new(f);
+    }
+
+    pub fn emit(&self, event: Value) {
+        let f = self.events.lock().unwrap().clone();
+        f(event);
+    }
+
+    pub fn quitting(&self) -> bool {
+        self.quitting.load(Ordering::SeqCst)
+    }
+
+    // the app is stopping the engine for good: no respawn after this
+    fn begin_quit(&self) {
+        self.quitting.store(true, Ordering::SeqCst);
+        // the lock orders this after a waiter's check, so no wake-up is missed
+        drop(self.current.lock().unwrap());
+        self.changed.notify_all();
+    }
+
+    // blocks until the current engine has gone, and returns its epoch; None
+    // once the app is quitting
+    pub fn wait_dead(&self) -> Option<u64> {
+        let mut cur = self.current.lock().unwrap();
+        loop {
+            if self.quitting() {
+                return None;
+            }
+            if cur.dead.load(Ordering::SeqCst) {
+                return Some(cur.epoch);
+            }
+            cur = self.changed.wait(cur).unwrap();
+        }
+    }
+
+    // a restart on request: kills the engine, whatever it is doing, and the
+    // supervisor starts another. needs no engine lock
+    pub fn restart(&self) {
+        self.manual.store(true, Ordering::SeqCst);
+        let conn = self.current();
+        let _ = conn.child.lock().unwrap().kill();
+    }
+
+    // whether the last death was asked for with restart()
+    pub fn take_manual(&self) -> bool {
+        self.manual.swap(false, Ordering::SeqCst)
+    }
+}
+
+// at most `max` respawns in `window`: past that the engine is crashing in a
+// loop, and the app stops trying
+pub struct RestartBudget {
+    times: Vec<Instant>,
+    max: usize,
+    window: Duration,
+}
+
+impl RestartBudget {
+    pub fn new(max: usize, window: Duration) -> Self {
+        Self { times: Vec::new(), max, window }
+    }
+
+    // whether a respawn at `now` is allowed; counts it if so
+    pub fn allow(&mut self, now: Instant) -> bool {
+        let window = self.window;
+        self.times.retain(|t| now.duration_since(*t) < window);
+        if self.times.len() >= self.max {
+            return false;
+        }
+        self.times.push(now);
+        true
+    }
+}
+
+// how long a request may wait for its reply before the page is told the
+// engine is slow, by the operation AppState::engine was given. None: slow
+// by nature (a merge, an export, AI, a base render), no deadline
+pub fn soft_deadline(op: &str, req: &Value) -> Option<Duration> {
+    let secs = if req["base"].as_bool() == Some(true) {
+        return None;
+    } else if matches!(op, "base" | "hdr_merge" | "pano_merge" | "engine_respawn" | "engine_quit" | "unpack"
+                           | "on_engine_thread" | "positive_export")
+        || ["gpu_check", "ai_", "export", "print"].iter().any(|p| op.starts_with(p)) {
+        return None;
+    } else if matches!(op, "render" | "module_state")
+        || ["set", "mask", "before", "look"].iter().any(|p| op.starts_with(p)) {
+        10
+    } else if matches!(op, "open_image" | "save" | "paste_batch") || op.starts_with("close") {
+        30
+    } else {
+        20
+    };
+    Some(Duration::from_secs(secs))
+}
+
+// the requests the engine serves on threads of its own beside its main loop:
 // thumbnails (main.c, _thumb_run), folder imports (_import_run),
 // background exports (_export_run), AI denoise (_denoise_run) and the AI
 // selections' models (_ai_run).
 // they are sent and answered while a request holds the engine. each is
-// tagged, and read_stdout hands its reply to the caller waiting on that tag
+// tagged, and read_stdout hands its reply to the caller waiting on that tag.
+// they follow the current engine, so a respawn needs no new handle
 #[derive(Clone)]
 pub struct Tagged {
-    stdin: Arc<Mutex<ChildStdin>>,
-    waiting: Waiting,
-    progress: Progress,
-    last: Arc<AtomicU64>,
+    link: Arc<Link>,
 }
 
 // the tagged requests sent and not yet answered, by tag; None once the
@@ -53,21 +204,22 @@ type Waiting = Arc<Mutex<Option<HashMap<u64, Sender<Value>>>>>;
 type Progress = Arc<Mutex<HashMap<u64, Box<dyn Fn(&Value) + Send>>>>;
 
 impl Tagged {
-    // a tag for the next request, unique for the engine's run
+    // a tag for the next request, unique for the app's run
     pub fn tag(&self) -> u64 {
-        self.last.fetch_add(1, Ordering::SeqCst) + 1
+        self.link.tags.fetch_add(1, Ordering::SeqCst) + 1
     }
 
     // blocks until the engine replies
     pub fn request(&self, tag: u64, mut req: Value) -> Result<Value, String> {
         req["tag"] = json!(tag);
-        let answer = self.expect(tag)?;
+        let conn = self.link.current();
+        let answer = self.expect_on(&conn, tag)?;
         let sent = {
-            let mut stdin = self.stdin.lock().unwrap();
+            let mut stdin = conn.stdin.lock().unwrap();
             writeln!(stdin, "{req}").and_then(|_| stdin.flush())
         };
         if let Err(e) = sent {
-            self.forget(tag);
+            Self::forget_on(&conn, tag);
             return Err(format!("engine write: {e}"));
         }
         answer.wait()
@@ -78,16 +230,17 @@ impl Tagged {
     pub fn request_until(&self, tag: u64, mut req: Value, timeout: Duration,
                          cancelled: impl Fn() -> bool) -> Result<Value, String> {
         req["tag"] = json!(tag);
-        let answer = self.expect(tag)?;
+        let conn = self.link.current();
+        let answer = self.expect_on(&conn, tag)?;
         let result = (|| {
             {
-                let mut stdin = self.stdin.lock().unwrap();
+                let mut stdin = conn.stdin.lock().unwrap();
                 writeln!(stdin, "{req}").and_then(|_| stdin.flush())
                     .map_err(|e| format!("engine write: {e}"))?;
             }
             answer.wait_until(timeout, cancelled)
         })();
-        self.forget(tag);
+        Self::forget_on(&conn, tag);
         result
     }
 
@@ -96,35 +249,47 @@ impl Tagged {
     // first, and a thread of the engine's later (ai_denoise), asks it
     // through Engine::request()
     pub fn expect(&self, tag: u64) -> Result<Answer, String> {
+        self.expect_on(&self.link.current(), tag)
+    }
+
+    fn expect_on(&self, conn: &Conn, tag: u64) -> Result<Answer, String> {
         let (tx, rx) = channel();
-        self.waiting.lock().unwrap().as_mut().ok_or(ENGINE_EXITED)?.insert(tag, tx);
-        Ok(Answer(rx))
+        let mut waiting = conn.waiting.lock().unwrap();
+        waiting.as_mut().ok_or_else(|| self.link.exited.clone())?.insert(tag, tx);
+        Ok(Answer(rx, self.link.exited.clone()))
     }
 
     // `tag` no longer waited for, as its request failed
     pub fn forget(&self, tag: u64) {
-        self.waiting.lock().unwrap().as_mut().map(|w| w.remove(&tag));
+        Self::forget_on(&self.link.current(), tag);
+    }
+
+    fn forget_on(conn: &Conn, tag: u64) {
+        conn.waiting.lock().unwrap().as_mut().map(|w| w.remove(&tag));
     }
 
     // request() with each progress line of its handed to `progress`, on the
     // thread reading the engine's replies
     pub fn request_with_progress(&self, tag: u64, req: Value, progress: impl Fn(&Value) + Send + 'static)
                                  -> Result<Value, String> {
-        self.progress.lock().unwrap().insert(tag, Box::new(progress));
+        let conn = self.link.current();
+        conn.progress.lock().unwrap().insert(tag, Box::new(progress));
         let reply = self.request(tag, req);
-        self.progress.lock().unwrap().remove(&tag);
+        conn.progress.lock().unwrap().remove(&tag);
         reply
     }
 
     // a line that gets no reply, written while others wait on theirs, as
     // `merge_cancel` (main.c, _read_requests)
     pub fn send(&self, req: Value) -> Result<(), String> {
-        let mut stdin = self.stdin.lock().unwrap();
+        let conn = self.link.current();
+        let mut stdin = conn.stdin.lock().unwrap();
         writeln!(stdin, "{req}").and_then(|_| stdin.flush()).map_err(|e| format!("engine write: {e}"))
     }
 }
 
-pub struct Answer(Receiver<Value>);
+// the answer, and what to say if the engine goes first
+pub struct Answer(Receiver<Value>, String);
 
 impl Answer {
     fn wait_until(self, timeout: Duration, cancelled: impl Fn() -> bool) -> Result<Value, String> {
@@ -138,7 +303,7 @@ impl Answer {
             match self.0.recv_timeout(left.min(Duration::from_millis(100))) {
                 Ok(reply) => return outcome(reply),
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {},
-                Err(_) => return Err(ENGINE_EXITED.into()),
+                Err(_) => return Err(self.1),
             }
         }
     }
@@ -146,12 +311,10 @@ impl Answer {
     // blocks until the engine replies
     pub fn wait(self) -> Result<Value, String> {
         // the sender is dropped unanswered when the engine exits
-        let reply = self.0.recv().map_err(|_| ENGINE_EXITED.to_string())?;
+        let reply = self.0.recv().map_err(|_| self.1.clone())?;
         outcome(reply)
     }
 }
-
-const ENGINE_EXITED: &str = "the engine exited; see build/app-runtime/engine.log";
 
 fn outcome(reply: Value) -> Result<Value, String> {
     if reply["ok"].as_bool() == Some(true) {
@@ -164,7 +327,8 @@ fn outcome(reply: Value) -> Result<Value, String> {
 // the engine's replies: a tagged one to the caller waiting on it, a tagged
 // request's progress to what follows it, the rest to request() in order.
 // at the end both sides' waits fail
-fn read_stdout(stdout: ChildStdout, replies: Sender<Value>, waiting: Waiting, progress: Progress) {
+fn read_stdout(stdout: ChildStdout, replies: Sender<Value>, conn: Arc<Conn>, link: Arc<Link>) {
+    let (waiting, progress) = (&conn.waiting, &conn.progress);
     let mut reader = BufReader::new(stdout);
     let mut line = String::new();
     loop {
@@ -194,6 +358,11 @@ fn read_stdout(stdout: ChildStdout, replies: Sender<Value>, waiting: Waiting, pr
         }
     }
     *waiting.lock().unwrap() = None;
+    // the supervisor learns the engine has gone; the lock orders this after
+    // its check, so the wake-up is not missed
+    conn.dead.store(true, Ordering::SeqCst);
+    drop(link.current.lock().unwrap());
+    link.changed.notify_all();
 }
 
 // stops the engine's idle base render while a request holds the engine: an
@@ -202,8 +371,7 @@ fn read_stdout(stdout: ChildStdout, replies: Sender<Value>, waiting: Waiting, pr
 // _read_requests). bases are numbered, and a cancel stops every one so far
 #[derive(Clone)]
 pub struct BaseCancel {
-    stdin: Arc<Mutex<ChildStdin>>,
-    last: Arc<AtomicU64>,
+    link: Arc<Link>,
 }
 
 // darktable's resource level, from Preferences: how much memory its caches
@@ -251,15 +419,16 @@ pub fn set_gpu_edits(runtime: &Path, on: bool) -> Result<(), String> {
 impl BaseCancel {
     // the id of a base about to be sent
     pub fn next_id(&self) -> u64 {
-        self.last.fetch_add(1, Ordering::SeqCst) + 1
+        self.link.bases.fetch_add(1, Ordering::SeqCst) + 1
     }
 
     pub fn cancel(&self) -> Result<(), String> {
-        let id = self.last.load(Ordering::SeqCst);
+        let id = self.link.bases.load(Ordering::SeqCst);
         if id == 0 {
             return Ok(());
         }
-        let mut stdin = self.stdin.lock().unwrap();
+        let conn = self.link.current();
+        let mut stdin = conn.stdin.lock().unwrap();
         writeln!(stdin, "{}", json!({ "cmd": "cancel_base", "id": id })).map_err(|e| format!("engine write: {e}"))?;
         stdin.flush().map_err(|e| format!("engine write: {e}"))
     }
@@ -432,21 +601,28 @@ impl Engine {
     // hold darktable's database lock, and a new one then gives up at once;
     // it is started again until the old one has gone, for a few seconds
     pub fn spawn(bin: &Path, runtime: &Path, models: &Path) -> std::io::Result<Self> {
+        Self::spawn_with(bin, runtime, models, 1, None)
+    }
+
+    fn spawn_with(bin: &Path, runtime: &Path, models: &Path, epoch: u64, link: Option<&Arc<Link>>) -> std::io::Result<Self> {
+        let mut link = link.cloned();
         for attempt in 0..10 {
-            let mut engine = Self::spawn_once(bin, runtime, models)?;
+            let mut engine = Self::spawn_once(bin, runtime, models, epoch, link.as_ref())?;
+            // later attempts replace this one's Conn in the same Link
+            link = Some(engine.link.clone());
             std::thread::sleep(std::time::Duration::from_millis(400));
-            match engine.child.try_wait()? {
-                None => return Ok(engine),
-                Some(_) if attempt < 9 => std::thread::sleep(std::time::Duration::from_millis(600)),
-                Some(status) => {
-                    return Err(std::io::Error::other(format!("the engine exited at start ({status})")))
-                }
+            let Some(status) = engine.conn.child.lock().unwrap().try_wait()? else { return Ok(engine) };
+            // a start that failed is not a quit
+            engine.retired = true;
+            if attempt == 9 {
+                return Err(std::io::Error::other(format!("the engine exited at start ({status})")));
             }
+            std::thread::sleep(std::time::Duration::from_millis(600));
         }
         unreachable!()
     }
 
-    fn spawn_once(bin: &Path, runtime: &Path, models: &Path) -> std::io::Result<Self> {
+    fn spawn_once(bin: &Path, runtime: &Path, models: &Path, epoch: u64, link: Option<&Arc<Link>>) -> std::io::Result<Self> {
         std::fs::create_dir_all(runtime)?;
         std::fs::create_dir_all(models)?;
         // kept across restarts, so a crash's backtrace survives the engine
@@ -527,14 +703,63 @@ impl Engine {
         let shared = perf.clone();
         std::thread::spawn(move || read_stderr(stderr, log, shared));
         let (tx, replies) = channel();
-        let waiting = Arc::new(Mutex::new(Some(HashMap::new())));
-        let shared = waiting.clone();
-        let progress: Progress = Arc::new(Mutex::new(HashMap::new()));
-        let following = progress.clone();
-        std::thread::spawn(move || read_stdout(stdout, tx, shared, following));
-        let base = BaseCancel { stdin: stdin.clone(), last: Arc::new(AtomicU64::new(0)) };
-        let tagged = Tagged { stdin: stdin.clone(), waiting, progress, last: Arc::new(AtomicU64::new(0)) };
-        Ok(Self { child, stdin, replies, perf, base, tagged, cache_trace: false, last_id: 0, echoes_ids: false })
+        let conn = Arc::new(Conn {
+            epoch,
+            stdin,
+            waiting: Arc::new(Mutex::new(Some(HashMap::new()))),
+            progress: Arc::new(Mutex::new(HashMap::new())),
+            child: Arc::new(Mutex::new(child)),
+            dead: AtomicBool::new(false),
+        });
+        let link = match link {
+            Some(link) => {
+                link.install(conn.clone());
+                link.clone()
+            }
+            None => Link::new(conn.clone(), runtime),
+        };
+        let (reading, shared) = (conn.clone(), link.clone());
+        std::thread::spawn(move || read_stdout(stdout, tx, reading, shared));
+        Ok(Self {
+            conn, link, replies, perf, cache_trace: false, last_id: 0, echoes_ids: false,
+            bin: bin.to_path_buf(), runtime: runtime.to_path_buf(), models: models.to_path_buf(),
+            operation: "",
+            #[cfg(test)]
+            deadline_override: None,
+            retired: false,
+        })
+    }
+
+    // starts the engine again after it has gone, with the arguments it
+    // started with. the Link, and so every Tagged and BaseCancel handed out,
+    // follows to the new one. request ids keep counting
+    pub fn respawn(&mut self) -> std::io::Result<()> {
+        // a dead child is reaped; one that is not (a closed pipe, a hang) is killed
+        {
+            let mut child = self.conn.child.lock().unwrap();
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        let mut new = Self::spawn_with(&self.bin, &self.runtime, &self.models, self.conn.epoch + 1, Some(&self.link))?;
+        new.last_id = self.last_id;
+        new.operation = self.operation;
+        std::mem::swap(self, &mut new);
+        // the old one has nothing left to stop, and its drop is no quit
+        new.retired = true;
+        Ok(())
+    }
+
+    pub fn epoch(&self) -> u64 {
+        self.conn.epoch
+    }
+
+    pub fn link(&self) -> Arc<Link> {
+        self.link.clone()
+    }
+
+    // the request being served, for its deadline
+    pub fn set_operation(&mut self, op: &'static str) {
+        self.operation = op;
     }
 
     // darktable's timings of the request just made: a cheap request after it
@@ -557,11 +782,11 @@ impl Engine {
     }
 
     pub fn base_cancel(&self) -> BaseCancel {
-        self.base.clone()
+        BaseCancel { link: self.link.clone() }
     }
 
     pub fn tagged(&self) -> Tagged {
-        self.tagged.clone()
+        Tagged { link: self.link.clone() }
     }
 
     pub fn cache_trace(&mut self, on: bool) -> Result<(), String> {
@@ -590,27 +815,52 @@ impl Engine {
         self.last_id += 1;
         let id = self.last_id;
         req["rid"] = json!(id);
+        #[cfg(test)]
+        let deadline = self.deadline_override.or_else(|| soft_deadline(self.operation, &req));
+        #[cfg(not(test))]
+        let deadline = soft_deadline(self.operation, &req);
         {
-            let mut stdin = self.stdin.lock().unwrap();
+            let mut stdin = self.conn.stdin.lock().unwrap();
             writeln!(stdin, "{req}").map_err(|e| format!("engine write: {e}"))?;
             stdin.flush().map_err(|e| format!("engine write: {e}"))?;
         }
+        let started = Instant::now();
+        let mut slow = false;
         // a late reply to an abandoned request must not answer this one
         loop {
-            let reply = self.replies.recv().map_err(|_| ENGINE_EXITED.to_string())?;
-            match reply.get("rid").and_then(Value::as_u64) {
+            let waited = match deadline {
+                Some(d) if !slow => self.replies.recv_timeout(d.saturating_sub(started.elapsed())),
+                _ => self.replies.recv().map_err(|_| std::sync::mpsc::RecvTimeoutError::Disconnected),
+            };
+            let reply = match waited {
+                Ok(reply) => reply,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    // one message; the request keeps waiting, since it cannot be cancelled
+                    slow = true;
+                    self.link.emit(json!({ "state": "slow", "op": self.operation,
+                                           "seconds": deadline.map_or(0, |d| d.as_secs()) }));
+                    continue;
+                }
+                Err(_) => return Err(self.link.exited.clone()),
+            };
+            let result = match reply.get("rid").and_then(Value::as_u64) {
                 Some(got) if got == id => {
                     self.echoes_ids = true;
-                    return outcome(reply);
+                    outcome(reply)
                 }
                 Some(got) => {
                     self.echoes_ids = true;
                     eprintln!("engine: dropped reply with stale rid {got} (waiting for {id})");
+                    continue;
                 }
                 // an engine that has echoed ids and now does not is out of step
-                None if self.echoes_ids => return Err("engine reply without rid".into()),
-                None => return outcome(reply),
+                None if self.echoes_ids => Err("engine reply without rid".into()),
+                None => outcome(reply),
+            };
+            if slow {
+                self.link.emit(json!({ "state": "ready", "epoch": self.conn.epoch }));
             }
+            return result;
         }
     }
 
@@ -619,18 +869,20 @@ impl Engine {
     // dt_cleanup(), which can hang on some drivers (NVIDIA's OpenCL on Linux
     // held an update on "installing" for good), so it gets a few seconds
     pub fn quit(&mut self) {
-        if !matches!(self.child.try_wait(), Ok(None)) { return; }
+        // first, so the supervisor never respawns what is being stopped
+        self.link.begin_quit();
+        if !matches!(self.conn.child.lock().unwrap().try_wait(), Ok(None)) { return; }
         // Writing can also block behind another writer or a full pipe. Let
         // the child exit normally, but enforce the deadline independently
         // of both the write and the reply (which a stalled engine never sends).
-        let stdin = self.stdin.clone();
+        let stdin = self.conn.stdin.clone();
         std::thread::spawn(move || {
             if let Ok(mut stdin) = stdin.lock() {
                 let _ = writeln!(stdin, "{}", json!({ "cmd": "quit" }))
                     .and_then(|_| stdin.flush());
             }
         });
-        reap(&mut self.child, QUIT_WAIT);
+        reap(&self.conn.child, QUIT_WAIT);
     }
 }
 
@@ -661,22 +913,26 @@ fn kill_with_parent(cmd: &mut Command) {
     let _ = cmd;
 }
 
-// waits for the child to exit, and kills it after `wait`
-fn reap(child: &mut Child, wait: Duration) {
+// waits for the child to exit, and kills it after `wait`. the lock is held
+// only for a check, so a restart can still kill the child meanwhile
+fn reap(child: &Mutex<Child>, wait: Duration) {
     let until = Instant::now() + wait;
     while Instant::now() < until {
-        match child.try_wait() {
+        match child.lock().unwrap().try_wait() {
             Ok(None) => std::thread::sleep(Duration::from_millis(50)),
             _ => return,
         }
     }
+    let mut child = child.lock().unwrap();
     let _ = child.kill();
     let _ = child.wait();
 }
 
 impl Drop for Engine {
     fn drop(&mut self) {
-        self.quit();
+        if !self.retired {
+            self.quit();
+        }
     }
 }
 
@@ -694,11 +950,11 @@ mod tests {
         let bin = root.join("engine");
         std::fs::write(&bin, "#!/bin/sh\nexec sleep 60\n").unwrap();
         std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o700)).unwrap();
-        let mut engine = super::Engine::spawn_once(&bin, &root, &root).unwrap();
+        let mut engine = super::Engine::spawn_once(&bin, &root, &root, 1, None).unwrap();
         let started = Instant::now();
         engine.quit();
         assert!(started.elapsed() < Duration::from_secs(8));
-        assert!(engine.child.try_wait().unwrap().is_some());
+        assert!(engine.conn.child.lock().unwrap().try_wait().unwrap().is_some());
         // Explicit quit followed by Drop must not wait again.
         drop(engine);
         assert!(started.elapsed() < Duration::from_secs(8));
@@ -713,7 +969,7 @@ mod tests {
         let bin = root.join("engine");
         std::fs::write(&bin, format!("#!/bin/sh\n{script}\n")).unwrap();
         std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o700)).unwrap();
-        let engine = super::Engine::spawn_once(&bin, &root, &root).unwrap();
+        let engine = super::Engine::spawn_once(&bin, &root, &root, 1, None).unwrap();
         (root, engine)
     }
 
@@ -723,7 +979,7 @@ mod tests {
         let (root, mut engine) = fake_engine("stale-id", "read line\necho '{\"ok\":true,\"rid\":999,\"which\":\"stale\"}'\necho '{\"ok\":true,\"rid\":1,\"which\":\"right\"}'\nexec sleep 60");
         let reply = engine.request(serde_json::json!({ "cmd": "x" })).unwrap();
         assert_eq!(reply["which"], "right");
-        let _ = engine.child.kill();
+        let _ = engine.conn.child.lock().unwrap().kill();
         drop(engine);
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -737,7 +993,7 @@ mod tests {
         let seen: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(root.join("seen")).unwrap()).unwrap();
         assert_eq!(seen["id"], 42);
         assert_eq!(seen["rid"], 1);
-        let _ = engine.child.kill();
+        let _ = engine.conn.child.lock().unwrap().kill();
         drop(engine);
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -747,7 +1003,7 @@ mod tests {
     fn request_accepts_untagged_reply_from_old_engine() {
         let (root, mut engine) = fake_engine("old-engine", "read line\necho '{\"ok\":true}'\nexec sleep 60");
         assert!(engine.request(serde_json::json!({ "cmd": "x" })).is_ok());
-        let _ = engine.child.kill();
+        let _ = engine.conn.child.lock().unwrap().kill();
         drop(engine);
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -758,8 +1014,159 @@ mod tests {
         let (root, mut engine) = fake_engine("id-lost", "read line\necho '{\"ok\":true,\"rid\":1}'\nread line\necho '{\"ok\":true}'\nexec sleep 60");
         assert!(engine.request(serde_json::json!({ "cmd": "x" })).is_ok());
         assert!(engine.request(serde_json::json!({ "cmd": "y" })).is_err());
-        let _ = engine.child.kill();
+        let _ = engine.conn.child.lock().unwrap().kill();
         drop(engine);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    fn script_engine(name: &str, script: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!("immage-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let bin = root.join("engine");
+        std::fs::write(&bin, format!("#!/bin/sh\n{script}\n")).unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o700)).unwrap();
+        (root, bin)
+    }
+
+    // dies on its first run, after a request; answers on the second and later
+    #[cfg(unix)]
+    const DIE_ONCE: &str = "d=$(dirname \"$0\")\necho x >> \"$d/runs\"\nif [ $(wc -l < \"$d/runs\") -eq 1 ]; then read line; exit 1; fi\nwhile read line; do echo \"$line\" >> \"$d/seen\"; case \"$line\" in *'\"rid\"'*) echo '{\"ok\":true,\"rid\":'$(echo \"$line\" | sed 's/.*\"rid\":\\([0-9]*\\).*/\\1/')'}';; esac; done";
+
+    #[cfg(unix)]
+    #[test]
+    fn request_fails_at_exit_and_works_after_respawn() {
+        let (root, bin) = script_engine("respawn", DIE_ONCE);
+        let mut engine = super::Engine::spawn_once(&bin, &root, &root, 1, None).unwrap();
+        let err = engine.request(serde_json::json!({ "cmd": "x" })).unwrap_err();
+        assert!(err.contains("engine.log"), "{err}");
+        assert!(err.contains(&root.display().to_string()), "{err}");
+        let link = engine.link();
+        assert_eq!(link.wait_dead(), Some(1));
+        engine.respawn().unwrap();
+        assert_eq!(engine.epoch(), 2);
+        engine.request(serde_json::json!({ "cmd": "y" })).unwrap();
+        // ids go on counting across the respawn
+        let seen = std::fs::read_to_string(root.join("seen")).unwrap();
+        assert!(seen.contains("\"rid\":2"), "{seen}");
+        engine.quit();
+        assert!(link.quitting());
+        assert_eq!(link.wait_dead(), None);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn tagged_and_base_cancel_follow_a_respawn() {
+        // the first run holds still until killed; later runs log what they read
+        let (root, bin) = script_engine("follow", "d=$(dirname \"$0\")\necho x >> \"$d/runs\"\nif [ $(wc -l < \"$d/runs\") -eq 1 ]; then exec sleep 60; fi\nwhile read line; do echo \"$line\" >> \"$d/seen\"; case \"$line\" in *'\"tag\":'*) echo '{\"ok\":true,\"tag\":'$(echo \"$line\" | sed 's/.*\"tag\":\\([0-9]*\\).*/\\1/')'}';; esac; done");
+        let mut engine = super::Engine::spawn_once(&bin, &root, &root, 1, None).unwrap();
+        let (tagged, base, link) = (engine.tagged(), engine.base_cancel(), engine.link());
+        let tag = tagged.tag();
+        let answer = tagged.expect(tag).unwrap();
+        // the first run counts itself before it is killed
+        while !root.join("runs").exists() { std::thread::sleep(Duration::from_millis(10)); }
+        link.restart();
+        let err = answer.wait().unwrap_err();
+        assert!(err.contains("engine.log"), "{err}");
+        assert_eq!(link.wait_dead(), Some(1));
+        assert!(link.take_manual());
+        assert!(tagged.expect(tagged.tag()).is_err());
+        engine.respawn().unwrap();
+        let tag = tagged.tag();
+        assert_eq!(tag, 3);
+        tagged.request(tag, serde_json::json!({ "cmd": "x" })).unwrap();
+        base.next_id();
+        base.cancel().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !std::fs::read_to_string(root.join("seen")).is_ok_and(|s| s.contains("cancel_base")) {
+            assert!(Instant::now() < deadline, "cancel never reached the new engine");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        engine.quit();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn restart_budget_allows_three_in_a_window() {
+        let mut b = super::RestartBudget::new(3, Duration::from_secs(60));
+        let t = Instant::now();
+        assert!(b.allow(t));
+        assert!(b.allow(t + Duration::from_secs(10)));
+        assert!(b.allow(t + Duration::from_secs(20)));
+        assert!(!b.allow(t + Duration::from_secs(30)));
+        // the first has aged out
+        assert!(b.allow(t + Duration::from_secs(61)));
+        assert!(!b.allow(t + Duration::from_secs(62)));
+    }
+
+    #[test]
+    fn soft_deadlines_by_class() {
+        use super::soft_deadline as d;
+        let none = serde_json::json!({});
+        let secs = |op, req: &serde_json::Value| d(op, req).map(|x| x.as_secs());
+        assert_eq!(secs("render", &none), Some(10));
+        assert_eq!(secs("render", &serde_json::json!({ "base": true })), None);
+        assert_eq!(secs("base", &none), None);
+        assert_eq!(secs("set_params", &none), Some(10));
+        assert_eq!(secs("open_image", &none), Some(30));
+        assert_eq!(secs("history", &none), Some(20));
+        assert_eq!(secs("ai_model_ensure", &none), None);
+        assert_eq!(secs("export_images", &none), None);
+        assert_eq!(secs("print_photo", &none), None);
+        assert_eq!(secs("engine_respawn", &none), None);
+        assert_eq!(secs("", &none), Some(20));
+    }
+
+    // replies after a sleep of 1.2 s; the first run only
+    #[cfg(unix)]
+    const SLOW: &str = "read line\nsleep 1.2\necho '{\"ok\":true,\"rid\":1}'\nexec sleep 60";
+
+    #[cfg(unix)]
+    fn recording(engine: &super::Engine) -> std::sync::Arc<std::sync::Mutex<Vec<serde_json::Value>>> {
+        let events = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink = events.clone();
+        engine.link().set_events(move |e| sink.lock().unwrap().push(e));
+        events
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn slow_request_says_so_once_then_ready() {
+        let (root, bin) = script_engine("slow", SLOW);
+        let mut engine = super::Engine::spawn_once(&bin, &root, &root, 1, None).unwrap();
+        let events = recording(&engine);
+        engine.set_operation("set_params");
+        engine.deadline_override = Some(Duration::from_millis(300));
+        engine.request(serde_json::json!({ "cmd": "x" })).unwrap();
+        let events = events.lock().unwrap().clone();
+        assert_eq!(events, vec![serde_json::json!({ "state": "slow", "op": "set_params", "seconds": 0 }),
+                                serde_json::json!({ "state": "ready", "epoch": 1 })]);
+        drop(events);
+        let _ = engine.conn.child.lock().unwrap().kill();
+        drop(engine);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn restart_during_a_slow_request_releases_it() {
+        let (root, bin) = script_engine("slow-kill", "read line\nexec sleep 60");
+        let mut engine = super::Engine::spawn_once(&bin, &root, &root, 1, None).unwrap();
+        let events = recording(&engine);
+        engine.deadline_override = Some(Duration::from_millis(200));
+        let link = engine.link();
+        let killer = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(600));
+            link.restart();
+        });
+        let started = Instant::now();
+        assert!(engine.request(serde_json::json!({ "cmd": "x" })).is_err());
+        assert!(started.elapsed() < Duration::from_secs(3));
+        killer.join().unwrap();
+        assert_eq!(events.lock().unwrap().len(), 1);
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -802,18 +1209,18 @@ mod tests {
     fn folder_wait_times_out_cancels_and_handles_replies() {
         let (tx, rx) = std::sync::mpsc::channel();
         let started = Instant::now();
-        assert!(super::Answer(rx).wait_until(Duration::from_millis(10), || false)
+        assert!(super::Answer(rx, "gone".into()).wait_until(Duration::from_millis(10), || false)
             .unwrap_err().starts_with("Reading photos timed out"));
         assert!(started.elapsed() < Duration::from_secs(1));
         drop(tx);
         let (_tx, rx) = std::sync::mpsc::channel();
-        assert_eq!(super::Answer(rx).wait_until(Duration::from_secs(30), || true).unwrap_err(), "superseded");
+        assert_eq!(super::Answer(rx, "gone".into()).wait_until(Duration::from_secs(30), || true).unwrap_err(), "superseded");
         let (tx, rx) = std::sync::mpsc::channel();
         tx.send(serde_json::json!({"ok":true,"images":[]})).unwrap();
-        assert!(super::Answer(rx).wait_until(Duration::from_secs(1), || false).is_ok());
+        assert!(super::Answer(rx, "gone".into()).wait_until(Duration::from_secs(1), || false).is_ok());
         let (tx, rx) = std::sync::mpsc::channel();
         drop(tx);
-        assert_eq!(super::Answer(rx).wait_until(Duration::from_secs(1), || false).unwrap_err(), super::ENGINE_EXITED);
+        assert_eq!(super::Answer(rx, "gone".into()).wait_until(Duration::from_secs(1), || false).unwrap_err(), "gone");
     }
 
     #[test]
@@ -877,11 +1284,11 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn reap_kills_a_child_that_stays() {
-        let mut child = std::process::Command::new("sleep").arg("30").spawn().unwrap();
+        let child = std::sync::Mutex::new(std::process::Command::new("sleep").arg("30").spawn().unwrap());
         let t = Instant::now();
-        reap(&mut child, Duration::from_millis(300));
+        reap(&child, Duration::from_millis(300));
         assert!(t.elapsed() < Duration::from_secs(5));
-        assert!(child.try_wait().unwrap().is_some());
+        assert!(child.lock().unwrap().try_wait().unwrap().is_some());
     }
 
     #[test]

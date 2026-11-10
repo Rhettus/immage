@@ -62,10 +62,12 @@ struct AppState {
     perf_modules_dropped: AtomicU64,
     perf_dir: PathBuf,
     runtime: PathBuf,
-    // darktable's resource level the engine started with
-    resource_level: String,
+    // darktable's resource level the engine started with (a respawn reads it again)
+    resource_level: Mutex<String>,
     // whether the engine started with its edits on the GPU
-    gpu_edits: bool,
+    gpu_edits: AtomicBool,
+    // the engine's connection, for restart and its state events
+    engine_link: Arc<engine::Link>,
     // Drop after Engine so it cannot still be writing into this directory.
     _frame_output: Arc<frame_output::FrameOutput>,
 }
@@ -73,7 +75,9 @@ struct AppState {
 impl AppState {
     // the engine for a request its main loop serves, one at a time
     fn engine(&self, operation: &'static str) -> perf_trace::Guard<'_, Engine> {
-        self.engine.lock(operation, None)
+        let mut guard = self.engine.lock(operation, None);
+        guard.set_operation(operation);
+        guard
     }
 }
 
@@ -867,7 +871,9 @@ async fn render(
     }
     let ms = |t: Instant| t.elapsed().as_secs_f64() * 1000.0;
     let t0 = Instant::now();
-    let mut engine = state.engine.lock(if base == Some(true) { "base" } else { "render" }, diagnostic_request);
+    let operation = if base == Some(true) { "base" } else { "render" };
+    let mut engine = state.engine.lock(operation, diagnostic_request);
+    engine.set_operation(operation);
     let lock_ms = ms(t0);
     // a move's module edits (Session.moduleEdit), sent as set_params would,
     // under the same lock: one call from the page rather than one each,
@@ -1893,7 +1899,7 @@ async fn prefetch(state: State<'_, AppState>, imgids: Vec<i64>) -> Result<Value,
 // its next start takes
 #[tauri::command]
 fn darktable_resources(state: State<'_, AppState>) -> Value {
-    json!({ "running": state.resource_level, "next": engine::resource_level(&state.runtime) })
+    json!({ "running": *state.resource_level.lock().unwrap(), "next": engine::resource_level(&state.runtime) })
 }
 
 #[tauri::command]
@@ -1905,7 +1911,7 @@ fn darktable_resources_set(state: State<'_, AppState>, level: String) -> Result<
 // its next start will
 #[tauri::command]
 fn gpu_edits(state: State<'_, AppState>) -> Value {
-    json!({ "running": state.gpu_edits, "next": engine::gpu_edits(&state.runtime) })
+    json!({ "running": state.gpu_edits.load(Ordering::Relaxed), "next": engine::gpu_edits(&state.runtime) })
 }
 
 #[tauri::command]
@@ -2781,6 +2787,50 @@ async fn engine_quit(state: State<'_, AppState>) -> Result<(), String> {
     Ok(())
 }
 
+// the user's restart of an engine that is not answering: kills it without
+// the engine lock, which its request holds. the request fails with the exit
+// error and the supervisor starts another (engine-state down, then ready)
+#[tauri::command]
+fn engine_restart(state: State<'_, AppState>) {
+    state.engine_link.restart();
+}
+
+// keeps the engine running: when it exits, tells the page, starts another
+// and tells the page again. three restarts within a minute are a crash
+// loop, and it gives up (state "failed"); a restart asked for does not count
+fn supervise(app: AppHandle) {
+    let state = app.state::<AppState>();
+    let link = state.engine_link.clone();
+    let mut budget = engine::RestartBudget::new(3, Duration::from_secs(60));
+    while let Some(epoch) = link.wait_dead() {
+        let manual = link.take_manual();
+        link.emit(json!({ "state": "down", "epoch": epoch }));
+        // exports in flight have lost their engine
+        state.export_cancels.lock().unwrap().clear();
+        if !manual && !budget.allow(Instant::now()) {
+            link.emit(json!({ "state": "failed" }));
+            return;
+        }
+        // the failed request has released the lock by now
+        let mut engine = state.engine("engine_respawn");
+        if link.quitting() {
+            return;
+        }
+        match engine.respawn() {
+            Ok(()) => {
+                *state.resource_level.lock().unwrap() = engine::resource_level(&state.runtime);
+                state.gpu_edits.store(engine::gpu_edits(&state.runtime), Ordering::Relaxed);
+                link.emit(json!({ "state": "ready", "epoch": engine.epoch() }));
+            }
+            Err(e) => {
+                eprintln!("engine respawn failed: {e}");
+                link.emit(json!({ "state": "failed" }));
+                return;
+            }
+        }
+    }
+}
+
 #[tauri::command]
 fn launch_file(launch: State<'_, Launch>) -> Option<String> {
     launch.0.lock().unwrap().take()
@@ -2962,6 +3012,9 @@ fn main() {
             let engine = Engine::spawn(&bin, &runtime, &models_dir)
                 .map_err(|e| format!("cannot start {}: {e}", bin.display()))?;
             let frame_output = Arc::new(frame_output::FrameOutput::new(&runtime));
+            let engine_link = engine.link();
+            let events = app.handle().clone();
+            engine_link.set_events(move |event| { let _ = events.emit("engine-state", event); });
             app.manage(AppState {
                 base_cancel: engine.base_cancel(),
                 tagged: engine.tagged(),
@@ -2982,10 +3035,13 @@ fn main() {
                 perf_modules_dropped: AtomicU64::new(0),
                 perf_dir,
                 runtime: runtime.clone(),
-                resource_level,
-                gpu_edits,
+                resource_level: Mutex::new(resource_level),
+                gpu_edits: AtomicBool::new(gpu_edits),
+                engine_link,
                 _frame_output: frame_output,
             });
+            let handle = app.handle().clone();
+            std::thread::spawn(move || supervise(handle));
             app.manage(plugins::Plugins::new(runtime.join("plugin-returns.json")));
             // stacks saved in Macro Studio while Immage was closed
             let handle = app.handle().clone();
@@ -2999,7 +3055,7 @@ fn main() {
             mask_shapes, combine, masks, mask_delete, mask_rename, history, module_state, sample, tone_key, lenses, color_profiles, agx_auto, upright, points, range_map, zones, mask_map, ai_object,
             ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, positive_export, spektra_stocks, spektra_fetch, list_subfolders, folder_volumes, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
             immich_export_check, immich_search, immich_browse_check, immich_libraries, immich_suggestions, immich_people, immich_tags,
-            immich_thumb, immich_resolve, launch_file, path_exists, path_kind, display_scale, trash_files, create_virtual_copy, remove_virtual_copy, hdr_merge, hdr_can_align, pano_merge, pano_preview, pano_can_merge, merge_cancel, preview_fullscreen, build, about, licenses, engine_quit, keywords, keywords_set, ai_accel,
+            immich_thumb, immich_resolve, launch_file, path_exists, path_kind, display_scale, trash_files, create_virtual_copy, remove_virtual_copy, hdr_merge, hdr_can_align, pano_merge, pano_preview, pano_can_merge, merge_cancel, preview_fullscreen, build, about, licenses, engine_quit, engine_restart, keywords, keywords_set, ai_accel,
             menu_set, perf_set, perf_trace_start, perf_trace_stop, perf_modules, perf_report_write, perf_machine, perf_ping, gpu_check_parity, resources::perf_resources_start, resources::perf_resources_stop,
             plugins::plugin_find_apps, plugins::plugin_launch, plugins::plugin_watch, plugins::plugin_cancel, plugins::plugin_job,
             plugins::plugin_returns, plugins::plugin_return_applied

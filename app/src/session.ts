@@ -162,6 +162,8 @@ export class Session {
   // edits not yet in the sidecar; saving also drops the cached thumbnail,
   // so an untouched image is not saved on close
   private unsaved = false;
+  // the engine this session opened its photo in is gone (abandon)
+  private dead = false;
   // modules switched off for the moment without touching their settings,
   // such as crop while the crop tool shows the whole image
   private bypassed = new Set<string>();
@@ -508,7 +510,7 @@ export class Session {
 
   // nothing queued or in flight
   async settled() {
-    while (!this.idle) {
+    while (!this.idle && !this.dead) {
       if (this.backgroundFailure && !this.busy) throw Error(this.backgroundFailure);
       await new Promise((r) => setTimeout(r, 20));
     }
@@ -1283,7 +1285,7 @@ export class Session {
   }
 
   private async pump() {
-    if (this.backgroundFailure) return;
+    if (this.backgroundFailure || this.dead) return;
     if (this.busy) {
       perf.event("pump.busy", { base: !!this.base, editPending: this.editPending });
       // the base can take seconds and would be stale: stopped, it is
@@ -1567,7 +1569,7 @@ export class Session {
   }
 
   private scheduleSave() {
-    if (this.background) return; // the batch explicitly saves/checks each target
+    if (this.background || this.dead) return; // the batch explicitly saves/checks each target
     window.clearTimeout(this.saveTimer);
     this.saveTimer = window.setTimeout(() => {
       // the engine holds the Before view's settings; save once it is gone
@@ -1596,7 +1598,17 @@ export class Session {
     return this.history;
   }
 
+  // the engine restarted: this session's photo is not open in the new one,
+  // so nothing more is sent for it, and closing it asks the engine nothing.
+  // what was not yet saved is lost
+  abandon() {
+    this.dead = true;
+    window.clearTimeout(this.saveTimer);
+    this.unsaved = false;
+  }
+
   async close() {
+    if (this.dead) return;
     this.requestRender();
     window.clearTimeout(this.saveTimer);
     if (this.before) this.showBefore(null);

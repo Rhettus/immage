@@ -71,3 +71,38 @@ For installed builds:
 
 Development builds keep the log at `build/app-runtime/engine.log` and GUI
 benchmark reports in `benchmarking/results/gui`, relative to the checkout.
+
+## The engine stops or does not answer
+
+Photo editing runs in a separate engine. If it stops, Immage starts a new one
+by itself and shows "Restarting the engine…" while it does. Afterwards it
+reopens the folder or search you were viewing, with its filter, the soft proof
+setting and the Before view. It also reopens the photo you had open, from its
+last save, and then shows one of these messages:
+
+- "The engine restarted. The photo was reopened from its last save; undo
+  history was cleared." This is shown when a photo was open.
+- "The engine restarted." This is shown when no photo was open.
+
+Edits made in the last second or so before the stop may be lost, because they
+had not been saved yet. Exports that were running fail with "the engine
+restarted" and can be run again. Export holds and printer profiles you added
+while Immage was running are not restored; add them again.
+
+If the engine stops again while the same photo is reopening, that photo is not
+opened again, and Immage shows "The engine stopped again while opening <file>.
+It was not reopened." Open it again yourself once you have checked the file.
+
+If the engine keeps stopping, Immage stops restarting it and shows "The engine
+keeps stopping. Restart Immage to continue editing." Close Immage and open it
+again. Then attach **engine.log** as described in [Crashes](#crashes).
+
+Sometimes the engine is working but takes much longer than usual to answer,
+for example while rendering a very large photo. Immage then shows "The engine is not
+answering." with two buttons:
+
+- **Wait** keeps waiting. The message goes away when the engine answers.
+- **Restart** stops the engine and starts a new one, reopening the photo as
+  described above. Running exports fail and can be run again.
+
+Nothing is stopped automatically, so use **Wait** unless the work seems stuck.

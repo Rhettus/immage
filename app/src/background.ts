@@ -9,6 +9,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
+import { engineText } from "./engineState";
 
 export type Action = { label: string; run: () => void };
 
@@ -66,7 +67,8 @@ const track = async <R,>(id: number, run: () => Promise<R>, summarize: (r: R) =>
       window.setTimeout(() => dismissJob(id), SUMMARY_MS);
       return null;
     }
-    update(id, { summary: `${failed}: ${e}`, failed: true });
+    // an engine that exited meanwhile is restarted; the rest of the job is not resumed
+    update(id, { summary: `${failed}: ${engineText(e)}`, failed: true });
     return null;
   }
 };

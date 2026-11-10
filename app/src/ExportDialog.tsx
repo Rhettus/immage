@@ -19,6 +19,7 @@ import { ColorPick, FrameEditor } from "./ExportFrame";
 import { KeywordChips, KeywordInput, parseKeyword } from "./Keywording";
 import { expand, TOKENS, EMPTY_META, type Meta } from "./exportTokens";
 import { runExport } from "./background";
+import { engineText } from "./engineState";
 import {
   BUILTINS, DEFAULTS, PERSONAL_KEYS, frameFor, readShared, sharedFile, loadPresets, loadSettings, newId, presetEdited, presetOf, savePresets, saveSettings,
   type ExportPreset, type Settings,
@@ -449,7 +450,7 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
       const album = albums?.find((a) => a.id === s.album)?.name ?? "the album";
       const total = items.length;
       const summarize = (r: Result) => {
-        const failed = r.failed.length ? `, ${r.failed.length} failed: ${r.failed[0].error}` : "";
+        const failed = r.failed.length ? `, ${r.failed.length} failed: ${engineText(r.failed[0].error)}` : "";
         const stopped = r.cancelled ? "stopped: " : "";
         const text = r.uploaded !== undefined
           ? `Upload ${stopped}${r.uploaded} of ${total} to ${album}`

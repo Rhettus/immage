@@ -83,6 +83,8 @@ import { kindOf, loadPlugins, loadReturns, returnValues, storePlugins, unfit, ty
          type PluginReturn } from "./plugins";
 import { FolderTree, type Volume } from "./FolderTree";
 import { baseName, parentDir, within } from "./paths";
+import { isEngineExit, reopenPlan, reopening, START as ENGINE_START, step as engineStep, wait as engineWait,
+         type EngineEvent, type EngineState, type Notice as EngineNotice } from "./engineState";
 import { ImportView } from "./ImportView";
 import type { ImportResult } from "@immporter/embed";
 import { MaskOverlay, type BrushSettings, type MaskTool, type ObjectPrompt } from "./MaskOverlay";
@@ -262,7 +264,18 @@ export default function App() {
   const setValues = (update: React.SetStateAction<Record<string, number>>) =>
     valueUpdates.current!.immediate(old => typeof update === "function" ? update(old) : update);
   useEffect(() => () => valueUpdates.current?.dispose(), []);
-  const [status, setStatus] = useState("open a folder to start");
+  const [status, setStatusRaw] = useState("open a folder to start");
+  // a command the engine's exit cut off reports it as an error; while the
+  // engine restarts, and just after, that goes to the console: the restart
+  // has its own words (engineEvent)
+  const quietUntil = useRef(0);
+  const setStatus = useCallback((s: React.SetStateAction<string>) => {
+    if (typeof s === "string" && isEngineExit(s) && performance.now() < quietUntil.current) {
+      console.warn(s);
+      return;
+    }
+    setStatusRaw(s);
+  }, []);
   // how far the open folder's reading has got, while it is read
   // `files` lists them all, in the order they are read, once `listed`;
   // `known` are the photos the folder's last read found, shown until read
@@ -3064,6 +3077,96 @@ export default function App() {
     const off = listen<string>("menu", (e) => runMenuAction(e.payload as ActionId));
     return () => { void off.then((f) => f()); };
   }, [runMenuAction]);
+
+  // the engine's supervision (Rust's engine-state): a wait past its deadline
+  // offers Wait and Restart; a restart gives a new engine with an empty
+  // library, so the page reads the folder, the soft proof, the open photo and
+  // the Before view into it again, in that order. the undo history is lost
+  const engine = useRef<EngineState>(ENGINE_START);
+  const [engineNotice, setEngineNotice] = useState<EngineNotice>(null);
+  // what the page had open when the engine went down, until a restore is done
+  const lost = useRef<{ path: string | null; copy: number | null; before: boolean; proof: Proof;
+                        folder: string | null; search: ImmichSearch | null; filter: Filter } | null>(null);
+  const restoreGen = useRef(0);
+  const engineEventRef = useRef<(e: EngineEvent) => void>(() => {});
+  engineEventRef.current = (e) => {
+    const now = Date.now();
+    if (e.state === "down") {
+      quietUntil.current = Infinity;
+      const cur = currentRef.current;
+      lost.current ??= {
+        path: cur?.path ?? null,
+        copy: cur && imagesRef.current.find((i) => isOpen(i, cur))?.copy ? imagesRef.current.find((i) => isOpen(i, cur))?.version ?? null : null,
+        before: beforeRef.current, proof: proofRef.current, folder: folderRef.current, search: immichRef.current?.search ?? null, filter,
+      };
+      // nothing more goes to an engine that is gone
+      session.current?.abandon();
+      restoreGen.current++;
+      setStatusRaw("Restarting the engine…");
+    }
+    if (e.state === "failed") quietUntil.current = 0;
+    const r = engineStep(engine.current, e, now);
+    engine.current = r.state;
+    setEngineNotice(r.state.notice);
+    if (r.restore) void restoreEngine();
+  };
+  const restoreEngine = async () => {
+    const gen = ++restoreGen.current;
+    const l = lost.current;
+    // a newer death or restart took over
+    const stale = () => gen !== restoreGen.current;
+    if (!l) { quietUntil.current = performance.now() + 3000; return; }
+    setStatusRaw("Restarting the engine…");
+    // every image id the page holds is of the old library
+    setSelection(new Set());
+    setCompare(null);
+    try {
+      if (l.search) await searchImmich(l.search);
+      else if (l.folder) {
+        await showFolder(l.folder);
+        // a new folder starts unfiltered; this is the same one, read again
+        setFilter(l.filter);
+      }
+      if (stale()) return;
+      if (l.proof.mode !== "off") {
+        await applyProof(l.proof);
+        if (stale()) return;
+        setProofApplied(`${l.proof.mode}|${l.proof.profile}|${l.proof.intent}`);
+      }
+      const plan = reopenPlan(engine.current, l.path);
+      let reopened = false;
+      if (plan.reopen) {
+        engine.current = reopening(engine.current, plan.reopen, Date.now());
+        // the photo is not open in this engine, though the page still shows it
+        currentRef.current = null;
+        const copy = l.copy;
+        const id = copy === null ? null
+          : imagesRef.current.find((i) => i.path === plan.reopen && i.version === copy)?.imgid ?? null;
+        reopened = await openFile(plan.reopen, id);
+        if (stale()) return;
+        if (reopened && l.before) setBefore(true);
+      } else if (plan.refused) {
+        await closePhoto();
+        setStatusRaw(`The engine stopped again while opening ${baseName(plan.refused)}. It was not reopened.`);
+      }
+      if (plan.reopen) {
+        if (reopened) setStatusRaw("The engine restarted. The photo was reopened from its last save; undo history was cleared.");
+      } else if (!plan.refused) setStatusRaw("The engine restarted.");
+    } catch (e) {
+      if (stale()) return;
+      setStatusRaw(`The engine restarted, but the library could not be read again: ${e}`);
+    }
+    lost.current = null;
+    quietUntil.current = performance.now() + 3000;
+  };
+  useEffect(() => {
+    const off = listen<EngineEvent>("engine-state", (e) => engineEventRef.current(e.payload));
+    return () => { void off.then((f) => f()); };
+  }, []);
+  const hideEngineNotice = () => {
+    engine.current = engineWait(engine.current);
+    setEngineNotice(engine.current.notice);
+  };
 
   // at start, a photo or folder handed over, or else the folder and image
   // open when the app last closed; later, one handed to the running app.
@@ -6218,6 +6321,17 @@ export default function App() {
           <div className="status">{status}</div>
           <div className="activities">
           {backgroundJobs.map((j) => <JobActivity key={j.id} job={j} />)}
+          {engineNotice?.kind === "slow" && (
+            <div className="activity waiting" onPointerDown={(e) => e.stopPropagation()}
+                 onPointerUp={(e) => e.stopPropagation()}>
+              <span>The engine is not answering.</span>
+              <button onClick={hideEngineNotice}>Wait</button>
+              <button onClick={() => { hideEngineNotice(); void invoke("engine_restart").catch((e) => setStatusRaw(`error: ${e}`)); }}>Restart</button>
+            </div>
+          )}
+          {engineNotice?.kind === "failed" && (
+            <div className="activity"><span className="failed">The engine keeps stopping. Restart Immage to continue editing.</span></div>
+          )}
           {(() => {
             // the folder's reading, then its thumbnails
             if (immich?.busy) return <div className="activity"><span>Searching Immich…</span></div>;

@@ -47,7 +47,7 @@ the app, where data lives, and the frame formats. Diagrams are in
 
 Front end ([`app/src`](../../src)):
 
-- [App.tsx](../../src/App.tsx): the editor's shell and state; [session.ts](../../src/session.ts): one open photo, edits to the engine, renders, saves
+- [App.tsx](../../src/App.tsx): the editor's shell and state; [session.ts](../../src/session.ts): one open photo, edits to the engine, renders, saves; [engineState.ts](../../src/engineState.ts): engine restarts and the restore after one
 - [manifest.ts](../../src/manifest.ts): panels, controls, and their mapping to darktable params; math in [wb.ts](../../src/wb.ts), [tonecurve.ts](../../src/tonecurve.ts), [transform.ts](../../src/transform.ts), [colorgrading.ts](../../src/colorgrading.ts), [colorequal.ts](../../src/colorequal.ts), [autoTone.ts](../../src/autoTone.ts), [bwauto.ts](../../src/bwauto.ts)
 - masks: [masks.ts](../../src/masks.ts) (shapes, overlay pixels), [localMerge.ts](../../src/localMerge.ts) (shared instances), [MaskOverlay.tsx](../../src/MaskOverlay.tsx), [MasksPanel.tsx](../../src/MasksPanel.tsx), [ParametricEditor.tsx](../../src/ParametricEditor.tsx); design in [masks.md](masks.md)
 - heal, negatives, zones: [spots.ts](../../src/spots.ts), [SpotOverlay.tsx](../../src/SpotOverlay.tsx), [HealPanel.tsx](../../src/HealPanel.tsx); [negadoctor.ts](../../src/negadoctor.ts), [NegativePanel.tsx](../../src/NegativePanel.tsx) (including input and working color profiles); [zones.ts](../../src/zones.ts), [ZoneSystem.tsx](../../src/ZoneSystem.tsx)
@@ -76,7 +76,7 @@ Engine ([`engine/`](../../../engine)):
 - [main.c](../../../engine/main.c): `_handle()` serves every command; four pipes (main, preview, drag, base) over the open photo; sections for library, export, masks, AI (`HAVE_AI`), spots, ranges and zones, looks, save
 - [print.c](../../../engine/print.c) (printer profiles, soft proof, printers, print jobs and PDFs, from darktable's print view), [upright.c](../../../engine/upright.c) (Upright, from ashift.c), [hdrmerge.c](../../../engine/hdrmerge.c) (HDR Merge), [pano.cc](../../../engine/pano.cc) and [dng.c](../../../engine/dng.c) (Panorama Merge), [strip.cc](../../../engine/strip.cc) (export metadata)
 
-Checks and tools: [release asset tests](../../../scripts/test_release_assets.py) (`python3 -I scripts/test_release_assets.py`), [verify/](../../../verify/README.md) (the release checks: `Session` under Node against the engine), [benchmarking/](../../../benchmarking/README.md), `cargo test` in `app/src-tauri`, `npm run build` (type check), [darktable-pin.md](darktable-pin.md), and darktable's own [dev-doc/](../../../darktable/dev-doc/README.md).
+Checks and tools: [release asset tests](../../../scripts/test_release_assets.py) (`python3 -I scripts/test_release_assets.py`), [engine-state tests](../../../verify/engine-state.test.mjs) (`node --test verify/engine-state.test.mjs`), [verify/](../../../verify/README.md) (the release checks: `Session` under Node against the engine), [benchmarking/](../../../benchmarking/README.md), `cargo test` in `app/src-tauri`, `npm run build` (type check), [darktable-pin.md](darktable-pin.md), and darktable's own [dev-doc/](../../../darktable/dev-doc/README.md).
 
 [verify/thumbnail-io.cc](../../../verify/thumbnail-io.cc) is the optional
 `immage-thumbnail-check` CMake target: metadata prefixes, late metadata

@@ -3,6 +3,18 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
+## 0.45.0
+
+Improvements
+
+- If the editing engine stops or crashes, Immage starts it again by itself
+  and reopens the folder or search you were viewing, with its filter, and the
+  photo you had open as of its last save. Edits from the last second or so
+  before the crash may be lost, and exports that were running can be run
+  again.
+- When the engine takes much longer than usual to answer, Immage offers Wait
+  or Restart, so a stuck engine can be restarted without closing Immage.
+
 ## 0.44.1
 
 Improvements
