@@ -11,6 +11,9 @@ Improvements
   the film border on a photo still on its default profiles sets them as part
   of the conversion, so each frame of a roll no longer needs them chosen
   again. Photos with profiles already set keep theirs.
+- Each mask in the Masks panel has a chevron that folds its list of shapes
+  away, so a mask with many brush strokes no longer has to stay open while
+  it is selected.
 
 Bug fixes
 

@@ -1438,7 +1438,14 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 }
 .mask-row:hover .mask-del, .mask-list > li.on .mask-del { visibility: visible; }
 .mask-row .mask-del:hover { background: var(--hover); color: var(--text); }
-.mask-parts { padding: 0 6px 6px 35px; }
+.mask-row .mask-fold {
+  display: grid; place-items: center; flex: none; width: 16px; height: 22px; margin-right: -4px; padding: 0; border: none;
+  border-radius: 5px; background: none; color: var(--text-3); cursor: pointer;
+}
+.mask-row .mask-fold:hover { background: var(--hover); color: var(--text); }
+.mask-row .mask-fold .chevron { width: 14px; height: 14px; color: inherit; transform: rotate(90deg); }
+.mask-row .mask-fold .chevron.open { transform: rotate(180deg); }
+.mask-parts { padding: 0 6px 6px 54px; }
 .mask-parts .shape-list { margin: 0 0 4px; }
 .shape-list li {
   display: flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 6px; cursor: pointer; font-size: var(--fs-small);

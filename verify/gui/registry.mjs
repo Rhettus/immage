@@ -2,6 +2,8 @@ import { locationMap } from './specs/location.mjs';
 import { aiMaskPaste } from "./specs/ai-mask-paste.mjs";
 import { colorRange } from './specs/color-range.mjs';
 import { colorProfiles } from "./specs/color-profiles.mjs";
+import { maskFold } from './specs/mask-fold.mjs';
+import { negativeProfileMemory } from './specs/negative-profile-memory.mjs';
 import { agxPresets } from './specs/agx-presets.mjs';
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { startup, exposure, splash } from './specs/smoke.mjs';
@@ -29,6 +31,8 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'panel-scroll': panelScroll,
   'agx-presets': agxPresets,
   'color-profiles': colorProfiles,
+  'mask-fold': maskFold,
+  'negative-profile-memory': negativeProfileMemory,
   'gui-benchmark': guiBenchmark,
   'gui-benchmark-screen': t => guiBenchmark(t, true),
   'gui-benchmark-whole': t => guiBenchmark(t, false),
