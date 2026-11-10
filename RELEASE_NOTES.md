@@ -5,6 +5,13 @@ what Immage's update banner shows under Release Notes.
 
 ## 0.44.1
 
+Improvements
+
+- Negative remembers the Input and Working Profiles you chose last. Picking
+  the film border on a photo still on its default profiles sets them as part
+  of the conversion, so each frame of a roll no longer needs them chosen
+  again. Photos with profiles already set keep theirs.
+
 Bug fixes
 
 - Windows setup no longer stops with an uninstall error when an earlier
