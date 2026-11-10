@@ -13,6 +13,7 @@ This imports pure manifest/math code using Node >= 22.18, without launching an a
 
 | Case | Checks | Verification status |
 |---|---|---|
+| hostile-text | Markup in the photo name, Title, Caption, Creator, Copyright, Make, Model and keywords shown as text in the grid, Metadata panel and keyword chips: no element or script made from it, `window.__pwned` undefined; run with `--fixture hostile` | Live-validated on Linux 2026-11-10 |
 | location-map | Photo-area expansion, wheel zoom, Escape collapse, dialog stacking, unchanged location draft | Passed Linux ARM64 system WebKitGTK, run 2026-11-09T23-59-45.887Z_ab0c885_6005ea2f. Provider/keyring integration unverified |
 | preferences-help | Short descriptions, hover and keyboard help, tooltip bounds, ARIA and dismissal | Written; awaiting approved GUI run |
 | workspace-layout | General Workspace row order, conditional Scroll amount, right-aligned theme swatches, separate import actions and hit targets across built-in themes | Passed Linux ARM64 system WebKitGTK, isolated floating/maximized workspace, run 2026-11-09T21-37-52.837Z_e47ad0c_edc54e26; native import chooser remains manual |

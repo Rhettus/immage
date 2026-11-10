@@ -28,6 +28,7 @@ import { lensProfile, lensPick } from './specs/lens.mjs';
 import { themes, workspaceLayout } from './specs/themes.mjs';
 import { engineRestart } from './specs/engine-restart.mjs';
 import { menus, menusGuards } from './specs/menus.mjs';
+import { hostileText } from './specs/hostile-text.mjs';
 
 const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRange, 'batch-paste': batchPaste, startup, splash, exposure, 'slider-input': sliderInput, 'slider-click': sliderClick, history, rail, sliders, 'module-options': moduleOptions, 'module-switch': moduleSwitch,
   'panel-scroll': panelScroll,
@@ -58,6 +59,7 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   menus,
   'engine-restart': engineRestart,
   'menus-guards': menusGuards,
+  'hostile-text': hostileText,
 };
 for(const [name,definition] of Object.entries(cases)) if(definition.kind)
   implementations[name] = t => ({range:rangeContract,choice:choiceContract,module:moduleOutput}[definition.kind])(t,definition);

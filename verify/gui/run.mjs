@@ -44,7 +44,7 @@ for (let i = 0; i < args.length; i++) {
   else throw Error(`Unknown argument: ${args[i]}`);
 }
 const selectedCases = resolveCases(selected);
-if (!['configured','landscape','portrait','endpoints','negative','camera-a','camera-b','camera-missing'].includes(fixtureName)) throw Error('Unknown synthetic fixture');
+if (!['configured','landscape','portrait','endpoints','negative','camera-a','camera-b','camera-missing','hostile'].includes(fixtureName)) throw Error('Unknown synthetic fixture');
 const id = `${new Date().toISOString().replaceAll(':', '-')}_${git('rev-parse', '--short', 'HEAD')}_${randomUUID().slice(0, 8)}`;
 const out = join(root, 'verify/results/gui', id);
 await mkdir(out, { recursive: true });

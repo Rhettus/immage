@@ -351,7 +351,7 @@ node verify/gui/run.mjs --config verify/gui/local.json --case negative --fixture
 ```
 
 The default `configured` fixture copies the configured photo. Synthetic choices
-are `landscape`, `portrait`, `endpoints`, `negative`, `camera-a`, `camera-b`, and
+are `landscape`, `portrait`, `endpoints`, `negative`, `camera-a`, `camera-b`, `hostile` (markup in the file name and metadata, for `hostile-text`), and
 `camera-missing`; the runner generates TIFFs inside its own results directory
 using Python 3's standard library. These do not replace RAW, overlapping panorama,
 slow-folder or isolated service fixtures. Missing prerequisites block the case.

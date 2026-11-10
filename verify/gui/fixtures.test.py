@@ -42,6 +42,17 @@ class Fixtures(unittest.TestCase):
             self.assertEqual(first["camera-missing"]["serial"], "")
             self.assertEqual(first["portrait"]["orientation"], 6)
 
+    def test_hostile_fixture_carries_markup_in_name_and_metadata(self):
+        data = fixtures.tiff(64, 48, "color", 1, "", True)
+        for text in [fixtures.HOSTILE["make"], fixtures.HOSTILE["model"], fixtures.HOSTILE["creator"],
+                     fixtures.HOSTILE["description"], fixtures.HOSTILE["rights"]]:
+            self.assertIn(text.encode() + b"\0", data)
+        xmp = fixtures.hostile_xmp()
+        self.assertIn("&lt;script&gt;", xmp)
+        self.assertEqual(xmp.count("<rdf:li>"), len(fixtures.HOSTILE["keywords"]) + 1)
+        for ch in '/\\':
+            self.assertNotIn(ch, fixtures.hostile_name())
+
 
 if __name__ == "__main__":
     unittest.main()
