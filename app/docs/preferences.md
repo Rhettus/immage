@@ -296,9 +296,10 @@ scale**; zoomed-in frames still use the full webview resolution.
   worked out again; **Default** about half; **Large** about two thirds,
   for when Immage is the only large program running. It applies once
   Immage starts again: **Relaunch** saves the photo and restarts. Whatever
-  the level, after 20 seconds without an edit, and sooner when the computer
-  runs short of memory, darktable gives most of its cache memory back; the
-  next edit takes about as long as one made without the pause.
+  the level, each cache shrinks back to its limit as soon as a frame is
+  done, and when the computer runs short of memory the caches are cut to
+  half their limit; a pause does not empty them, so the next edit takes
+  about as long as one made without the pause.
 - **Frame cache**: memory for the views of the photo already shown, so
   zooming back out or going back to a view seen before shows it at once,
   without a render. A view at 100% is about 30 MB on a 4K screen and 45 MB

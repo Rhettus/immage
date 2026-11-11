@@ -60,6 +60,10 @@ Performance
 - The location map downloads two tiles at a time instead of one, reuses its
   connection to the map server, and shows tiles it already has without
   waiting for downloads.
+- Editing uses less memory: Immage gives back what a full-size view or a
+  GPU check needed as soon as it is done, and a pause no longer clears the
+  work it keeps for the next edit, so the first edit after a pause is as
+  quick as the rest.
 
 Bug fixes
 

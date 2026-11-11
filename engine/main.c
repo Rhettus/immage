@@ -1702,6 +1702,17 @@ typedef struct preview_output_t {
 
 static gboolean _preview_output_sink(void *user, const uint8_t *pixels, int w, int h);
 
+// darktable checks a pipe's cache against its limit only when the next run
+// starts (pixelpipe_hb.c, dt_dev_pixelpipe_process), so a pipe keeps what its
+// last run needed until then: a base pipe holds about 2 GB after a 16
+// megapixel frame against a limit of a few hundred MB. called once the frame
+// is out of the backbuf and any device is released. the newest line, which
+// is the backbuf, is never evicted (pixelpipe_cache.c, _get_oldest_cacheline)
+static void _settle(dt_dev_pixelpipe_t *pipe)
+{
+  dt_dev_pixelpipe_cache_checkmem(pipe, FALSE);
+}
+
 // Process byte pixels into the optional output sink or the pipe's backbuf.
 // with scale <= 0, fit the whole image into bw x bh. otherwise render the
 // bw x bh window at (x, y) of the image scaled by `scale` (1 is 100%), the
@@ -9906,9 +9917,10 @@ static dt_dev_pixelpipe_iop_t *_piece(dt_dev_pixelpipe_t *pipe, const dt_iop_mod
 // the darkroom's preview pipe's 1/32 rather than a full pipe's 1/8. both
 // render the whole image, a 1 GB line at 60 megapixels, so even 1/8 kept
 // few lines: a base reran as many modules either way (benchmark, heavy
-// edit, 11 GB of memory), while its lines stayed until the next. the
-// drag and preview pipes keep the full pipe's share: their small lines are
-// what a drag draws from, and with less a rotate drag reran 13 modules, not 9
+// edit, 11 GB of memory), while its lines stayed until the next (_settle
+// now cuts them back after each frame). the drag and preview pipes keep
+// the full pipe's share: their small lines are what a drag draws from, and
+// with less a rotate drag reran 13 modules, not 9
 #define _WHOLE_PIPE_FRACTION 32
 
 // the preview pipe, made on first use, with nodes for every instance and
@@ -10602,6 +10614,10 @@ static gboolean _parity(JsonObject *req, JsonBuilder *b, char **err)
   }
   g_free(cpu.pixels);
   g_free(gpu.pixels);
+  // the check pipe's cache holds two full passes (about 500 MB after a 1024
+  // pixel check on 16 megapixels) and a check is rare: the next one makes it
+  // again (_follower_ready)
+  _follower_cleanup(&_s.check);
   return ok;
 }
 
@@ -11301,6 +11317,7 @@ static void _handle(JsonObject *req, FILE *out)
         json_builder_end_object(b);
       }
     }
+    _settle(pipe);
   }
   else if(!g_strcmp0(cmd, "mask"))
   {
@@ -11509,6 +11526,7 @@ static void _handle(JsonObject *req, FILE *out)
       err = g_strdup_printf("could not write '%s'", rgba);
       goto fail;
     }
+    _settle(&_s.ppipe);
     json_builder_set_member_name(b, "width");
     json_builder_add_int_value(b, w);
     json_builder_set_member_name(b, "height");
@@ -11596,11 +11614,10 @@ static gboolean _read_line(GString *s, GString *rest)
 // the end of input, on the request queue
 static char _end_of_input[] = "";
 
-// after this long without a request, the session's pipes give back most
-// of their cache, as darktable's do on leaving the darkroom (darkroom.c,
-// _clear_pipecache), and the C library its freed pages: the base pipe's
-// whole-image lines otherwise stay until the next edit. under memory
-// pressure the same trim comes before a request, at most once a while
+// after this long without a request, the session's pipes drop invalid and
+// over-limit cachelines, and the C library gives back its freed pages; the
+// lines the next edit reuses stay. under memory pressure the caches shrink
+// to half their limit before a request, at most once a while (_trim)
 #define _IDLE_TRIM_US (20 * G_USEC_PER_SEC)
 #define _PRESSURE_POLL_US (2 * G_USEC_PER_SEC)
 #define _PRESSURE_TRIM_US (5 * G_USEC_PER_SEC)
@@ -11663,15 +11680,28 @@ static gboolean _memory_pressure(void)
 #endif
 }
 
-static void _trim(void)
+// idle: only what is invalid or over its limit goes, so a pause leaves the
+// lines the next edit reuses. pressure: each cache shrinks to half its limit,
+// oldest lines first, by doubling its fraction for the check. darktable's own
+// trim (checkmem with trim set) empties every cache below 6 GB of available
+// memory, which is why it is not used
+static void _trim_pipe(dt_dev_pixelpipe_t *pipe, const gboolean pressure)
+{
+  const int fraction = pipe->cache.mem_fraction;
+  if(pressure && fraction) pipe->cache.mem_fraction = fraction * 2;
+  dt_dev_pixelpipe_cache_checkmem(pipe, FALSE);
+  pipe->cache.mem_fraction = fraction;
+}
+
+static void _trim(const gboolean pressure)
 {
   if(_s.open)
   {
-    dt_dev_pixelpipe_cache_checkmem(&_s.pipe, TRUE);
-    if(_s.ppipe_ok) dt_dev_pixelpipe_cache_checkmem(&_s.ppipe, TRUE);
-    if(_s.drag.ok) dt_dev_pixelpipe_cache_checkmem(&_s.drag.pipe, TRUE);
-    if(_s.base.ok) dt_dev_pixelpipe_cache_checkmem(&_s.base.pipe, TRUE);
-    if(_s.check.ok) dt_dev_pixelpipe_cache_checkmem(&_s.check.pipe, TRUE);
+    _trim_pipe(&_s.pipe, pressure);
+    if(_s.ppipe_ok) _trim_pipe(&_s.ppipe, pressure);
+    if(_s.drag.ok) _trim_pipe(&_s.drag.pipe, pressure);
+    if(_s.base.ok) _trim_pipe(&_s.base.pipe, pressure);
+    if(_s.check.ok) _trim_pipe(&_s.check.pipe, pressure);
   }
 #if defined(__GLIBC__)
   malloc_trim(0);
@@ -11862,9 +11892,10 @@ int main(int argc, char **argv)
     const gboolean due = now - last_trim >= _PRESSURE_TRIM_US;
     if(!line)
     {
-      if((!trimmed && now - last_request >= _IDLE_TRIM_US) || (due && _memory_pressure()))
+      const gboolean pressure = due && _memory_pressure();
+      if((!trimmed && now - last_request >= _IDLE_TRIM_US) || pressure)
       {
-        _trim();
+        _trim(pressure);
         trimmed = TRUE;
         last_trim = now;
       }
@@ -11873,7 +11904,7 @@ int main(int argc, char **argv)
     if(line == _end_of_input) break;
     if(due && _memory_pressure())
     {
-      _trim();
+      _trim(TRUE);
       last_trim = now;
     }
     trimmed = FALSE;
