@@ -47,7 +47,8 @@ const groups = (stocks: Stock[], printing: boolean): [string, [string, number][]
 };
 
 export function FilmPanel({ values, disabled, on, stocks, fetch, onDownload, onCancel, onTurnOn, onPreset,
-                            onFilm, onPaper, renderControl }: {
+                            onFilm, onPaper, renderControl, advanced }: {
+  advanced: boolean;
   values: Record<string, number>; disabled: boolean; on: boolean;
   stocks: Stocks | null; fetch: FetchStatus | null;
   onDownload: () => void; onCancel: () => void;
@@ -171,9 +172,8 @@ export function FilmPanel({ values, disabled, on, stocks, fetch, onDownload, onC
         {renderControl(id("halation_on"))}
         {values.sf_halation_on === 1 && renderControl(id("halation_amount"))}
       </section>
-      <section>
-        <h3 className="fold" onClick={() => fold("advanced")}>Advanced<Chevron open={open.has("advanced")} /></h3>
-        <Collapse open={open.has("advanced")}>
+      {advanced && (
+        <section>
           <div className="section-body">
             {ADVANCED.filter((g) => !g.print || !scan).map((g) => (
               <div key={g.title}>
@@ -184,8 +184,8 @@ export function FilmPanel({ values, disabled, on, stocks, fetch, onDownload, onC
               </div>
             ))}
           </div>
-        </Collapse>
-      </section>
+        </section>
+      )}
       {credit}
     </div>
   );

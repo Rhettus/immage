@@ -57,8 +57,6 @@ export async function expandSections(t, selector) {
     const target = await t.driver.observe(s => {
       for (const e of document.querySelectorAll(`${s} section[data-section-id] > h3.fold`))
         if (e.querySelector('.chevron:not(.open)')) return `${s} section[data-section-id=${JSON.stringify(e.parentElement.dataset.sectionId)}] > h3.fold`;
-      for (const e of document.querySelectorAll(`${s} button.detail-advanced[aria-expanded="false"]`))
-        return `${s} button[data-detail-id=${JSON.stringify(e.dataset.detailId)}]`;
       return null;
     }, selector);
     if (!target) return settledHeight(t, selector);

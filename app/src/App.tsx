@@ -4,7 +4,8 @@ import { DELETE_AGX_PRESET_EVENT, LOAD_AGX_PRESET_EVENT, useAgxProfiles, userPro
 import { profileSelection, AGX_USER_FIRST, DELETE_PRESET, LOAD_PRESET } from "./manifest";
 import { ContrastEqualizer } from "./ContrastEqualizer";
 import { SaturationCurve } from "./SaturationCurve";
-import { detailRows } from "./DetailControls";
+import { detailRows, isAdvancedControl } from "./DetailControls";
+import { AdvancedToggle, advancedEdited, useAdvanced } from "./advanced";
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
@@ -494,6 +495,9 @@ export default function App() {
   }, [touring]);
   // what the right-hand panel shows: the adjustments, or the presets
   const [rightMode, setRightMode] = useState<RightMode>("adjust");
+  const [zonesAdvanced, toggleZonesAdvanced] = useAdvanced("zones");
+  const [negAdvanced, toggleNegAdvanced] = useAdvanced("negative");
+  const [filmAdvanced, toggleFilmAdvanced] = useAdvanced("film");
   // masks: the session's, mirrored for rendering, the one being edited, and
   // the drawing tool
   const [masks, setMasks] = useState<Mask[]>([]);
@@ -6415,6 +6419,12 @@ export default function App() {
         <div className="panel-head"><h1>{cropping ? "Crop" : RIGHT_TITLES[rightMode]}</h1>
           <div className="head-tools">
             {pinButton("right")}
+            {!cropping && rightMode === "negative" && values.neg_on === 1 && (
+              <AdvancedToggle on={negAdvanced} onToggle={toggleNegAdvanced} />
+            )}
+            {!cropping && rightMode === "film" && values.sf_on === 1 && (
+              <AdvancedToggle on={filmAdvanced} onToggle={toggleFilmAdvanced} />
+            )}
             {(rightMode === "adjust" || rightMode === "presets") && !cropping && (
               <button className="tool" onClick={toggleAllPanels}
                       title={anyOpen ? keys("collapse all panels (⌥-click a panel to open it alone)") : "expand all panels"}>
@@ -6517,9 +6527,11 @@ export default function App() {
           )}
           {rightMode === "zones" && !cropping && (
             <div className="panel">
-              <div className="panel-title"><span>Zone System</span></div>
+              <div className="panel-title"><span>Zone System</span>
+                {values.bw_mode === 1 && <AdvancedToggle on={zonesAdvanced} onToggle={toggleZonesAdvanced} />}
+              </div>
               {values.bw_mode === 1 ? (
-                <ZoneSystem data={zoneData} unplaced={zoneUnplaced} stale={zoneStale} error={zoneError}
+                <ZoneSystem advanced={zonesAdvanced} data={zoneData} unplaced={zoneUnplaced} stale={zoneStale} error={zoneError}
                             disabled={!current} pinned={zonePinned} onPin={setZonePinned} onHover={setZoneHover}
                             transition={zoneMaskOf(zonePinned)?.w ?? DEFAULT_TRANSITION} cover={zoneCover}
                             reach={placeReach}
@@ -6582,7 +6594,7 @@ export default function App() {
             </div>
           )}
           {rightMode === "negative" && !cropping && (
-            <NegativePanel photo={session.current} values={values} disabled={!current} converted={values.neg_on === 1} picking={negPick}
+            <NegativePanel advanced={negAdvanced} photo={session.current} values={values} disabled={!current} converted={values.neg_on === 1} picking={negPick}
                            busy={negBusy} hasArea={!!negArea} note={negNote} onPick={setNegPick}
                            onResetColor={() => changeMany(["wbl", "wbh"].flatMap((k) => ["r", "g", "b"]
                              .map((c): [string, number] => [`neg_${k}_${c}`, 1])), "Reset Color")}
@@ -6607,7 +6619,7 @@ export default function App() {
                            }} />
           )}
           {rightMode === "film" && !cropping && (
-            <FilmPanel values={values} disabled={!current} on={values.sf_on === 1} stocks={sfStocks} fetch={sfFetch}
+            <FilmPanel advanced={filmAdvanced} values={values} disabled={!current} on={values.sf_on === 1} stocks={sfStocks} fetch={sfFetch}
                        onDownload={sfDownload} onCancel={sfCancel} onTurnOn={() => sfTurnOn()}
                        onPreset={(name) => sfTurnOn(name)} onFilm={sfFilm} onPaper={sfPaper}
                        renderControl={(id, override, onChange, value) => {
@@ -8232,6 +8244,10 @@ const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle, values
   };
   const [closed, setClosed] = useState(loadClosedSections);
   const toggleSection = (title: string) => setClosed(toggleClosedSection(`${p.id}/${title}`));
+  const [advanced, toggleAdvanced] = useAdvanced(p.id);
+  // Whites: Advanced is AgX's
+  const shown = (c: Control) => choiceShows(c.id, values) && (c.id !== "whites_brilliance" || values.tm_mode === 1);
+  const advancedIds = p.sections.flatMap((sec) => sec.controls).filter((c) => isAdvancedControl(c.id) && shown(c)).map((c) => c.id);
   const [tab, setTab] = useState(0);
   const [wheels, setWheels] = useState<WheelMode>("3way");
   const sections = p.tabs ? [p.sections[tab]] : p.sections;
@@ -8296,6 +8312,10 @@ const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle, values
             {!bandSrc ? "…" : weights ? BANDS[weights.indexOf(Math.max(...weights))][1] : "neutral"}
           </span>
         )}
+        {advancedIds.length > 0 && (
+          <AdvancedToggle on={advanced} onToggle={toggleAdvanced}
+                          edited={advancedEdited(advancedIds, values, session?.neutral ?? {})} />
+        )}
         <Chevron open={open} />
       </div>
       <Collapse open={open}>
@@ -8354,9 +8374,7 @@ const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle, values
                 {s.title === "AI Denoise" && denoiseTools}
                 {s.title === "Straighten" && straightenTools}
                 {s.title === "Upright" && transformTools}
-                {detailRows(s.controls.filter((c) => choiceShows(c.id, values)
-                    // Whites: Advanced is AgX's
-                    && (c.id !== "whites_brilliance" || values.tm_mode === 1)), (c) => {
+                {detailRows(s.controls.filter(shown), (c) => {
                   if (c.id.startsWith("ce_")) return c.id === "ce_0_0"
                     ? <ContrastEqualizer key="contrast-equalizer" values={values} disabled={disabled} onChange={onChangeMany}
                        module={switchFor("ce_0_0") && <ModuleSwitch {...switchFor("ce_0_0")!} scope="global" />} />
@@ -8371,7 +8389,7 @@ const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle, values
                   return c.kind === "toggle" ? <Toggle key={c.id} {...props} />
                     : c.kind === "choice" ? <Choice key={c.id} {...props} />
                     : <Slider key={c.id} {...props} />;
-                })}
+                }, advanced)}
               </>
             );
             const s = run[0];

@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 const inventory=JSON.parse(readFileSync(new URL('../inventory.json',import.meta.url),'utf8'));
-import {locateControl} from './ranges.mjs';
+import {locateControl,restoreAdvanced} from './ranges.mjs';
 import { click,reveal,inspect,tabTo, openTool } from '../support/controls.mjs';
 import { choose,textButton,Blocked,panel,expandSections,openMaskGroup } from '../support/scenario.mjs';
 import { until } from '../support/webdriver.mjs';
@@ -67,7 +67,7 @@ export async function moduleOutput(t,definition){
   }else{
     const control=inventory.localControls.find(c=>c.id===id);
     // a graph's points are no sliders: skip them for the graph branch below
-    if(control)try{await locateControl(t,{scope:'local',panel:'masks',control});}catch(e){if(!(e instanceof Blocked))throw e;}
+    if(control)try{await locateControl(t,{scope:'local',panel:'masks',control});}catch(e){if(!(e instanceof Blocked))throw e;}finally{await restoreAdvanced(t);}
   }
   const s=`[data-control-id=${JSON.stringify(id)}] input[type=range]`;
   if(await t.driver.observe(s=>{const e=document.querySelector(s);return e&&!e.disabled;},s)){control=s;break;}
@@ -115,7 +115,7 @@ export async function moduleSwitch(t){
  const first=await reveal(t,icon('contrast'));
  assert(first.visible&&first.hit,'Contrast module icon is visible and clickable');
  assert(await t.driver.observe(()=>document.querySelectorAll('[data-control-id="exposure"] [data-module-switch]').length===0),'Exposure has a single module and no icon');
- // Clarity and Texture keep Medium and Fine above their Advanced fold: their switch sits on that top slider
+ // Clarity and Texture keep Medium and Fine always shown, the rest behind the panel's Advanced toggle: their switch sits on that top slider
  for(const id of ['clarity','texture']){
   const host=await t.driver.observe(i=>document.querySelector(`[data-module-switch="${i}"]`)?.closest('[data-control-id]')?.dataset.controlId,id);
   assert(/^detail_(clarity|texture)_gain_medium$/.test(host)||host===id,`${id} switch is on its top slider, not under Advanced (found ${host})`);

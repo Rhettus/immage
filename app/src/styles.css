@@ -271,6 +271,16 @@ button { font: inherit; color: inherit; }
   font-weight: 600;
   cursor: pointer;
 }
+/* a panel's Advanced switch: quiet until on */
+.advanced-toggle {
+  position: relative; display: grid; place-items: center; flex: none; width: 24px; height: 24px; padding: 0;
+  margin: 0 4px 0 auto; border: none; border-radius: 5px; background: none; color: var(--text-2); cursor: pointer;
+}
+.advanced-toggle svg { width: 15px; height: 15px; }
+.advanced-toggle:hover { color: var(--text); }
+.advanced-toggle.on { color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.advanced-dot { position: absolute; top: 3px; right: 3px; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+.panel-head .advanced-toggle { margin: 0; }
 /* the photo under the pointer, as the open Tone Curve, HSL or B&W Mix card reads it */
 .probe-chip {
   display: flex; align-items: center; gap: 6px;
@@ -2222,8 +2232,6 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .zone-hint { color: var(--text-3); }
 .zone-image { color: var(--text-3); margin-top: 2px; }
 .zone-probe { color: var(--accent); }
-.zone-advanced { margin: 2px 0 4px; padding: 2px 0; border: 0; background: none; color: var(--text-2); font-size: var(--fs-small); cursor: pointer; }
-.zone-advanced:hover { color: var(--text); }
 .zone-adv { padding: 2px 0 4px; }
 .zone-adv-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 4px 0; font-size: var(--fs-small); color: var(--text-2); }
 .zone-adv-row .presets { padding: 0; }
@@ -2357,8 +2365,6 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .location-attribution button { color: inherit; font: inherit; padding: 0; background: none; border: 0; text-decoration: underline; cursor: pointer; }
 .location-error { color: #f3a184; }
 
-.detail-advanced { display: flex; align-items: center; justify-content: space-between; width: 100%; border: 0; background: none; color: var(--text-2); padding: 6px 0; font: inherit; cursor: pointer; }
-.detail-advanced:hover { color: var(--text); }
 
 .contrast-equalizer { margin: 10px 0 14px; }
 .equalizer-heading, .equalizer-scale { display: flex; justify-content: space-between; align-items: center; }

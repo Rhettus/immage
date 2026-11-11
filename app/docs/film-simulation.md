@@ -61,11 +61,11 @@ are greyed out, because they belong to the tone mapper.
 - **Grain & Halation**: grain strength and size, and the red glow halation
   puts around bright edges.
 
-**Advanced** contains the rest of darktable's controls, in folds that
-follow its tabs: Development, DIR Couplers, Lens Diffusion, Print, Print
-Diffusion, Grain, Halation, Scanner and Color Science. The Print folds are
-hidden while the film is scanned. Each control's tooltip gives darktable's
-name for it.
+The sliders icon beside the pin in the panel heading shows the rest of
+darktable's controls, in folds that follow its tabs: Development, DIR
+Couplers, Lens Diffusion, Print, Print Diffusion, Grain, Halation, Scanner
+and Color Science. The Print folds are hidden while the film is scanned.
+Each control's tooltip gives darktable's name for it.
 
 Film Simulation is slow to render, especially with grain and halation on,
 so sliders can lag behind your drags.

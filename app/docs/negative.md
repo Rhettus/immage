@@ -142,9 +142,9 @@ its manual and tutorials.
 | Highlight Roll-off | where the brightest tones start to compress: lower is gentler | |
 
 Set Neutral Shadows before Neutral Highlights: the shadows' correction
-moves the highlights too. Reset Color sets both back. Advanced holds the
-Border Color, Shadow Tint and White Balance as red, green and blue
-sliders.
+moves the highlights too. Reset Color sets both back. The sliders icon beside
+the pin in the panel heading shows the advanced settings: Border Color, Shadow
+Tint and White Balance as red, green and blue sliders.
 
 Turn Off Conversion, at the foot of the panel, takes the photo back to the
 negative, with Basic's tools as they were. Undo does the same.

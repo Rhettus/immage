@@ -703,7 +703,8 @@ MasksPanel draws the curve in Presence, hidden in black and white, and
 `localBalanceMap` writes the mask's Saturation at neutral meanwhile.
 `detailMap` uses separate `contrastntexture` instances for Clarity and Texture,
 with local counterparts; [DetailControls.tsx](../../src/DetailControls.tsx)
-folds everything except Medium and Fine details under Advanced. Whites on
+shows everything except Medium and Fine details only while the panel's advanced
+toggle is on ([advanced.tsx](../../src/advanced.tsx) holds that state). Whites on
 AgX writes AgX's shoulder power and color balance rgb's highlights
 brilliance; `whites_brilliance` scales the brilliance (100% as before), and
 its map reads after the tone mappers so the share reads against their

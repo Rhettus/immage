@@ -110,8 +110,9 @@ for **B&W Mix**.
   +100. Whites moves the top of the tone mapper's curve, and under AgX
   also brightens or darkens the brightest tones ahead of it; Blacks moves
   the black point, and works the same at any Exposure.
-- **Whites: Advanced** (AgX only): **Highlight Brilliance**, 0% to 200%,
-  sets how much of that brightening Whites adds; 100% is the usual amount.
+- **Highlight Brilliance** (AgX only, among Basic's advanced settings),
+  0% to 200%, sets how much of that brightening Whites adds; 100% is the
+  usual amount.
   Lower it when bright areas such as snow or clouds clip as you raise
   Exposure or Whites: at 0% Whites only reshapes the top of the curve, so
   you can brighten further before anything reaches pure white.
@@ -127,9 +128,13 @@ Clarity and Texture run on **contrast & texture** by default, where each
 shows **Medium details** and **Fine details** (-1 to 5) instead of a single
 slider; choose local contrast or diffuse or sharpen in Preferences › Modules
 for the slider.
-**Advanced** reveals Coarse details (-1 to 5), Base detail level (1–15), Halo
-control (-10 to 10), Noise bias (0–1), Shadows and Highlights (-5 to 5).
-Clarity and Texture use separate instances, including on masks.
+Each panel with advanced settings has a sliders icon in its title row. It is
+off by default and blends into the title; click it to show the panel's
+advanced settings inline, and click again to hide them. Each panel remembers
+its setting. A dot on the icon means a hidden setting has been changed.
+For Clarity and Texture these are Coarse details (-1 to 5), Base detail level
+(1–15), Halo control (-10 to 10), Noise bias (0–1), and Shadows and Highlights
+(-5 to 5). Clarity and Texture use separate instances, including on masks.
 
 ## Contrast equalizer
 

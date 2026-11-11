@@ -1,6 +1,7 @@
 import { ContrastEqualizer } from "./ContrastEqualizer";
 import { SaturationCurve } from "./SaturationCurve";
-import { detailRows } from "./DetailControls";
+import { detailRows, isAdvancedControl } from "./DetailControls";
+import { AdvancedToggle, advancedEdited, useAdvanced } from "./advanced";
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
@@ -263,6 +264,7 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
   }, [tool]);
   const [hslTab, setHslTab] = useState(0);
   const [wheels, setWheels] = useState<WheelMode>("3way");
+  const [advanced, toggleAdvanced] = useAdvanced("masks");
   // the color bands the photo under the pointer falls in light their
   // sliders, as in the main HSL card
   const hslShown = !!m && !mono && open.has("HSL");
@@ -317,6 +319,8 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
       if (first) switchHosts.set(first, ch);
     }
   }
+  const advancedIds = m ? (mono ? MONO_GROUPS : LOCAL_GROUPS).flatMap(([, ids]) => ids)
+    .filter((id) => isAdvancedControl(id) && choiceShows(id, { ...photo, ...m.values })) : [];
   const groupBody = (title: string, ids: string[]) => {
     if (title === "HSL") {
       const key = (["hue", "sat", "lum"] as const)[hslTab];
@@ -340,7 +344,7 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
           </div>
         ))}
       </>;
-    return detailRows(ids.map((id) => localControlById.get(id)!), (c) => slider(c.id));
+    return detailRows(ids.map((id) => localControlById.get(id)!), (c) => slider(c.id), advanced);
   };
   const menu = (t: ToolTarget) => (
     <ShapeMenu target={t} tool={target === t ? tool : null} disabled={disabled} aiBusy={aiBusy}
@@ -544,6 +548,11 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
         <div className="panel adjust">
           <div className="panel-title adj-title">
             <span>Adjustments <span className="of">· {m.name.replace(/^mask/, "Mask")}</span></span>
+            {advancedIds.length > 0 && (
+              <AdvancedToggle on={advanced} onToggle={toggleAdvanced}
+                edited={advancedEdited(advancedIds, m.values,
+                  Object.fromEntries(advancedIds.map((id) => [id, localControlById.get(id)?.neutral ?? 0])))} />
+            )}
           </div>
           {(mono ? MONO_GROUPS : LOCAL_GROUPS).map(([title, ids]) => (
             <section key={title}>

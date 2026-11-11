@@ -23,9 +23,13 @@ Improvements
   before, only the current one is kept; choose the others again once.
 - Preferences › Modules lists tools in the order of their sliders in the
   panels and in a mask, under both Global and Masks.
-- Whites has an Advanced setting under AgX, Highlight Brilliance, for how
-  much Whites brightens the brightest tones. Lowering it lets bright scenes
-  such as snow get brighter before they clip.
+- Advanced settings are hidden behind a sliders icon in each panel's title,
+  off by default, instead of separate Advanced folds under Clarity, Texture,
+  Whites, Film Simulation, Negative and Zone System. Each panel remembers
+  whether it shows them.
+- Whites has a Highlight Brilliance setting under AgX, among Basic's advanced
+  settings, for how much Whites brightens the brightest tones. Lowering it
+  lets bright scenes such as snow get brighter before they clip.
 
 Performance
 

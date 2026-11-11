@@ -9,7 +9,6 @@
 // sit below it, in PositiveFooter.tsx
 import { useEffect, useState } from "react";
 import { Pipette } from "lucide-react";
-import { Chevron, Collapse } from "./Collapse";
 import { FILM_BW } from "./negadoctor";
 import { colorProfiles, type ColorProfiles } from "./session";
 
@@ -27,7 +26,8 @@ const PICK_HINTS: Record<NegPick, string> = {
 };
 
 export function NegativePanel({ photo, values, disabled, converted, picking, busy, hasArea, note, renderControl,
-                                onPick, onResetColor }: {
+                                onPick, onResetColor, advanced }: {
+  advanced: boolean;
   photo: object | null; values: Record<string, number>; disabled: boolean; converted: boolean;
   picking: NegPick | null; busy: boolean; hasArea: boolean; note: string | null;
   renderControl: (id: string, options?: [string, number][]) => React.ReactNode;
@@ -50,7 +50,6 @@ export function NegativePanel({ photo, values, disabled, converted, picking, bus
     return value !== undefined && !options.some(([, id]) => id === value)
       ? [...options, ["Current Profile", value] as [string, number]] : options;
   };
-  const [advanced, setAdvanced] = useState(false);
   const off = disabled || busy;
   const pickButton = (kind: NegPick, label: string, title: string) => (
     <button className={`btn small${picking === kind ? " on" : ""}`} disabled={off} title={title}
@@ -124,9 +123,8 @@ export function NegativePanel({ photo, values, disabled, converted, picking, bus
             {withPick("neg_black", "black", "pick what should be pure black")}
             {renderControl("neg_gloss")}
           </section>
+          {advanced && (
           <section>
-            <h3 className="fold" onClick={() => setAdvanced(!advanced)}>Advanced<Chevron open={advanced} /></h3>
-            <Collapse open={advanced}>
               <div className="section-body">
                 <div className="neg-sub">Border Color</div>
                 {(color ? ["r", "g", "b"] : ["r"]).map((c) => renderControl(`neg_dmin_${c}`))}
@@ -135,8 +133,8 @@ export function NegativePanel({ photo, values, disabled, converted, picking, bus
                 <div className="neg-sub">White Balance</div>
                 {["r", "g", "b"].map((c) => renderControl(`neg_wbh_${c}`))}
               </div>
-            </Collapse>
           </section>
+          )}
         </>
       )}
     </div>

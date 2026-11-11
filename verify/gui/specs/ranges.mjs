@@ -54,21 +54,32 @@ export async function locateControl(t, definition) {
   if (id === 'hsl') await textButton(t, `${p} .tabs`, section);
   if (id === 'colorgrading') await textButton(t, `${p} .tabs`, 'Sliders');
   const selector = `${p} [data-control-id=${JSON.stringify(control.id)}]`;
-  // Clarity's and Texture's coarse bands, and Whites' Highlight Brilliance,
-  // sit under their own Advanced fold
-  const detail = /^(l_)?detail_(clarity|texture)_/.exec(control.id)?.[0]
-    ?? (control.id === 'whites_brilliance' ? control.id : undefined);
-  if (detail && !await t.driver.observe(s => !!document.querySelector(s), selector)) {
-    const fold = `${p} button.detail-advanced[data-detail-id^=${JSON.stringify(detail)}]`;
-    // no fold: the module that has these controls is not chosen
-    if (await t.driver.observe(s => document.querySelector(s)?.getAttribute('aria-expanded') === 'false', fold)) {
-      await click(t, fold);
-      await until(() => t.driver.observe(s => !!document.querySelector(s), selector), `${detail} Advanced open`).catch(() => {});
+  // advanced controls (Clarity's and Texture's coarse bands, Whites' Highlight
+  // Brilliance, Negative and Film's) are not mounted until the panel's
+  // Advanced toggle is on; the toggle is remembered, so restoreAdvanced puts it back
+  if (!await t.driver.observe(s => !!document.querySelector(s), selector)) {
+    const toggle = definition.scope === 'local' ? '.masks-panel .panel-title.adj-title [data-advanced-toggle]'
+      : id === 'negative' || id === 'film' ? '.panel-head .head-tools [data-advanced-toggle]'
+      : `${p} > .panel-title [data-advanced-toggle]`;
+    // no toggle: the module or treatment that has this control is not chosen
+    if (await t.driver.observe(s => document.querySelector(s)?.getAttribute('aria-pressed') === 'false', toggle)) {
+      (t.advancedOn ??= []).push(toggle);
+      await click(t, toggle);
+      await until(() => t.driver.observe(s => !!document.querySelector(s), selector), `${control.id} Advanced on`).catch(() => {});
     }
   }
   if (!await t.driver.observe(s => !!document.querySelector(s), selector))
     throw new Blocked(`${control.id} needs its module, treatment or graph branch; run the matching module/graph case`);
   return selector;
+}
+// turn back off the Advanced toggles a case switched on
+export async function restoreAdvanced(t) {
+  const on = t.advancedOn ?? []; t.advancedOn = [];
+  for (const toggle of on.reverse())
+    if (await t.driver.observe(s => document.querySelector(s)?.getAttribute('aria-pressed') === 'true', toggle)) {
+      await click(t, toggle);
+      await until(() => t.driver.observe(s => document.querySelector(s)?.getAttribute('aria-pressed') === 'false', toggle), 'Advanced off');
+    }
 }
 // a control owned by one option of a module choice (contrast equalizer,
 // contrast & texture, diffuse or sharpen) shows only while that module is
@@ -111,9 +122,10 @@ async function withModule(t, definition, run) {
   try { return await scoped(); }
   finally { await chooseModule(t, scope, m.label, previous); }
 }
-export const rangeContract = (t, definition) => withModule(t, definition, () =>
-  /^ce_\d_\d$/.test(definition.control.id) ? equalizerBand(t, definition) : rangeBody(t, definition));
-export const choiceContract = (t, definition) => withModule(t, definition, () => choiceBody(t, definition));
+const withAdvanced = async (t, run) => { try { return await run(); } finally { await restoreAdvanced(t); } };
+export const rangeContract = (t, definition) => withModule(t, definition, () => withAdvanced(t, () =>
+  /^ce_\d_\d$/.test(definition.control.id) ? equalizerBand(t, definition) : rangeBody(t, definition)));
+export const choiceContract = (t, definition) => withModule(t, definition, () => withAdvanced(t, () => choiceBody(t, definition)));
 const prerequisiteFor = id => {
   if (/^vig_(midpoint|roundness|feather)$/.test(id)) return 'vig_amount';
   if (id === 'grain_size') return 'grain_amount';
