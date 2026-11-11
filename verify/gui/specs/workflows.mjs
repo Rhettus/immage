@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { click, reveal, inspect, openTool } from '../support/controls.mjs';
 import { panel, expandSections, textButton, choose, Blocked, openMaskGroup, openStep } from '../support/scenario.mjs';
-import { until } from '../support/webdriver.mjs';
+import { until, pause } from '../support/webdriver.mjs';
 import { settledPhoto, settledReset } from './smoke.mjs';
 
 async function preferences(t, tab) {
@@ -313,6 +313,7 @@ export async function film(t) {
   // Back returns to Stock, a folded step opens by its heading
   await textButton(t,'.panel.film .step.open','Back');
   await until(async()=>await open()==='stock','Back returns to Stock');
+  await pause(600); // the Stock step finishes folding, so Grain's heading stops moving
   await openStep(t,'.panel.film','grain');
   assert.equal(await open(),'grain','a folded step opens by its heading');
   await textButton(t,'.positive-foot','Turn Off Film Simulation'); await settledPhoto(t,p=>p.hash===baseline.hash);

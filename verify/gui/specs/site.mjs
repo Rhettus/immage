@@ -323,7 +323,17 @@ export async function siteShots(t) {
     }
     await textButton(t, '.panel.film', 'Turn On Film Simulation');
     await until(() => t.driver.observe(() => !!document.querySelector('.panel.film .step[data-step="stock"] .tile.on')), 'a film tile selected');
-    await pause(1500);
+    // tiles render one by one while the engine is idle: wait until none in view is still a blank placeholder
+    await until(() => t.driver.observe(() => {
+      const foot = document.querySelector('.positive-foot')?.getBoundingClientRect().top ?? innerHeight;
+      const tiles = [...document.querySelectorAll('.panel.film .step[data-step="stock"] .tile-img')].filter(c => {
+        const r = c.getBoundingClientRect();
+        return r.height > 0 && r.bottom > 0 && r.top < foot;
+      });
+      return tiles.length > 0 && tiles.every(c => !c.classList.contains('empty'));
+    }), 'film tiles in view rendered', 120000);
+    await settledPhoto(t);
+    await pause(1000);
     await shot(t, 'film-simulation');
     await textButton(t, '.positive-foot', 'Turn Off Film Simulation');
     await settledPhoto(t);
