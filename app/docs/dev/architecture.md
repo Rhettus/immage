@@ -120,8 +120,7 @@ are `localStorage` keys named `immage.*`.
 | undo (`record`, `restore`, `Snap`) | snapshots of values, masks, spots and look |
 | before/after, compare | `setBaMode`, `setBefore` (`Session.showBefore`), `toggleCompare` |
 | crop and turns | `enterCrop`, `leaveCrop`, `turn` (`Session.turned`) |
-| `runGuiBenchmark` | the GUI benchmark in Preferences |
-| `runGpuCheck` | the GPU check in Preferences: [gpuCheck.ts](../../src/gpuCheck.ts) cases through `changeMany`, `gpu_check_parity` for each |
+| `runGuiBenchmark`, `runGpuCheck` | thin wrappers that hand App's refs and callbacks (`benchCtx`) to the drivers in [benchDrivers.ts](../../src/benchDrivers.ts) |
 | keyboard | one `keydown` handler for every shortcut; `fieldKeeps` (`keys.ts`) leaves a focused field its keys: text all, a slider its arrows, a switch Space, a menu its arrows, Home/End, Page Up/Down, Space and Enter |
 | `openLaunched`, `dropped` | a photo handed over (`launch-file`), or photos and folders dragged onto the window (`onDragDropEvent`, `path_kind`) |
 
@@ -246,6 +245,7 @@ identity before drawing, so replacement frames cancel obsolete work.
 | [probe.ts](../../src/probe.ts) | The color under the pointer, for the Tone Curve, HSL and B&W cards. |
 | [PerformanceTuner.tsx](../../src/PerformanceTuner.tsx), [previewTuning.ts](../../src/previewTuning.ts), [tunerOptions.ts](../../src/tunerOptions.ts), [tunerWorkload.ts](../../src/tunerWorkload.ts) | Performance profiles (`PROFILES` in Preferences.tsx: preview size, smallest draft, draft time and loupe defaults; `applyProfile` stores them, Reset re-applies the selected one; one drag-draft path in App.tsx `draftK`, `DRAFT_SKIP` in session.ts is the same for all three) and quality-first preview search with trimmed-median metrics with FPS/latency targets, explicit apply and remeasurement, restart/resume and navigation workload comparisons; AI and thumbnail settings excluded. |
 | [perf.ts](../../src/perf.ts), [PerfHud.tsx](../../src/PerfHud.tsx) | Edit-to-pixels timing by stage, the performance overlay and the GUI benchmark's recording. |
+| [benchDrivers.ts](../../src/benchDrivers.ts) | The Preferences GUI benchmark (`runGuiBenchmark`: scripted slider drags through `change`, zooms, the idle base, timed by the overlay) and GPU check (`runGpuCheck`: [gpuCheck.ts](../../src/gpuCheck.ts) cases through `changeMany`, `gpu_check_parity` for each). They take a `BenchContext` of App's refs and callbacks. |
 | [gpuCheck.ts](../../src/gpuCheck.ts) | The GPU check's cases (a module choice, then sliders moved by a share of their range), `resolveCase` and the pass verdict. |
 
 ## Rust layer
