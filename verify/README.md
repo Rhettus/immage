@@ -36,6 +36,17 @@ unblocked:
 python3 -I verify/import-stall.py
 ```
 
+The export metadata check (headless, no GUI, needs the `exiv2` command) gives a
+TIFF every field the export dialog's Metadata section decides (GPS, serial
+numbers and owner, camera and exposure, title, description, creator, rights,
+keywords and an edit history), exports it with each of the 64 combinations of
+those options, and reads each file back. A field must be there exactly when it
+was asked for, and the capture date always:
+
+```bash
+python3 -I verify/export-metadata.py
+```
+
 The background-priority check (headless, no GUI) times foreground renders while
 the engine imports, exports, prefetches or denoises. `--load all` is stage 0 of
 the background-priority plan: for each load it times a 100% zoom render and a
