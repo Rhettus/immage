@@ -408,20 +408,34 @@ fn no_console(_cmd: &mut std::process::Command) {
 
 // the error, and whether trying again may help: a dropped connection or a
 // server's 5xx or 429 may, a 404 will not
-fn fetch_once(http: &reqwest::blocking::Client, url: &str, dest: &Path) -> Result<(), (String, bool)> {
-    let mut r = http.get(url).send().map_err(|e| (e.to_string(), true))?;
+fn fetch_once(http: &reqwest::blocking::Client, url: &str, dest: &Path, limit: Option<u64>)
+              -> Result<(), (String, bool)> {
+    let r = http.get(url).send().map_err(|e| (e.to_string(), true))?;
     let status = r.status();
     if !status.is_success() {
         return Err((status.to_string(), status.is_server_error() || status.as_u16() == 429));
     }
+    let larger = || (format!("{url} was larger than expected"), false);
+    if let (Some(limit), Some(len)) = (limit, r.content_length()) {
+        if len > limit {
+            return Err(larger());
+        }
+    }
     let mut file = std::fs::File::create(dest).map_err(|e| (format!("{}: {e}", dest.display()), false))?;
-    r.copy_to(&mut file).map(|_| ()).map_err(|e| (e.to_string(), true))
+    // one byte past the limit is enough to know the body is too big
+    let mut body = std::io::Read::take(r, limit.map_or(u64::MAX, |l| l.saturating_add(1)));
+    let copied = std::io::copy(&mut body, &mut file).map_err(|e| (e.to_string(), true))?;
+    if limit.is_some_and(|l| copied > l) {
+        return Err(larger());
+    }
+    Ok(())
 }
 
 // tried three times. the timeout bounds each read
 // of the body (reqwest's blocking Response::read), not the whole download,
-// so only a stalled one gives up
-fn fetch(url: &str, dest: &Path) -> Result<(), String> {
+// so only a stalled one gives up. a body past `limit` bytes is cut off
+// and not tried again
+fn fetch(url: &str, dest: &Path, limit: Option<u64>) -> Result<(), String> {
     let http = reqwest::blocking::Client::builder()
         .connect_timeout(Duration::from_secs(30))
         .timeout(Duration::from_secs(60))
@@ -432,7 +446,7 @@ fn fetch(url: &str, dest: &Path) -> Result<(), String> {
         if attempt > 0 {
             std::thread::sleep(Duration::from_secs(attempt));
         }
-        match fetch_once(&http, url, dest) {
+        match fetch_once(&http, url, dest, limit) {
             Ok(()) => return Ok(()),
             Err((e, again)) => {
                 last = e;
@@ -542,11 +556,11 @@ fn pinned_model(pins: &[ModelRelease], short: &str, id: &str) -> Option<Result<M
 // as darktable's own download reads them
 fn published_model(site: &ModelSite, dl: &Path, short: &str, id: &str) -> Result<ModelSource, String> {
     let index = dl.join("releases-index.json");
-    fetch(&format!("{}/releases-index.json", site.index), &index)?;
+    fetch(&format!("{}/releases-index.json", site.index), &index, Some(1_000_000))?;
     let releases = read_json(&index)?;
     let tag = model_release(&releases["compatible_releases"], short)?;
     let versions = dl.join("versions.json");
-    fetch(&format!("{}/{tag}/versions.json", site.releases), &versions)?;
+    fetch(&format!("{}/{tag}/versions.json", site.releases), &versions, Some(1_000_000))?;
     let entry = read_json(&versions)?["models"][id].clone();
     let sha256 = entry["sha256"].as_str().and_then(|s| s.strip_prefix("sha256:"))
         .ok_or_else(|| format!("model '{id}' is not in release {tag}"))?
@@ -579,9 +593,11 @@ fn install_model(progress: &dyn Fn(Value), unpack: Unpack, site: &ModelSite, dir
     };
     progress(json!({ "id": id, "stage": "downloading", "mb": source.size / 1_000_000 }));
     let archive = dl.join(format!("{id}.dtmodel"));
-    fetch(&format!("{}/{}/{id}.dtmodel", site.releases, source.tag), &archive)?;
-    if sha256_file(&archive)? != source.sha256 {
-        let _ = std::fs::remove_file(&archive);
+    let part = dl.join(format!("{id}.dtmodel.part"));
+    let limit = if source.size > 0 { Some(source.size) } else { None };
+    fetch(&format!("{}/{}/{id}.dtmodel", site.releases, source.tag), &part, limit)?;
+    if sha256_file(&part)? != source.sha256 {
+        let _ = std::fs::remove_file(&part);
         return Err(if source.pinned {
             format!("the AI model '{id}' offered for download is not the one this version of Immage \
                      was made with, so it was not installed: an update of Immage is needed")
@@ -589,6 +605,7 @@ fn install_model(progress: &dyn Fn(Value), unpack: Unpack, site: &ModelSite, dir
             format!("the downloaded model '{id}' failed its checksum")
         });
     }
+    std::fs::rename(&part, &archive).map_err(|e| e.to_string())?;
     progress(json!({ "id": id, "stage": "installing" }));
     let unpacked = unpack(&archive, dir);
     let _ = std::fs::remove_file(&archive);
@@ -600,12 +617,13 @@ fn install_model(progress: &dyn Fn(Value), unpack: Unpack, site: &ModelSite, dir
     Ok(())
 }
 
-// models that are not darktable's: one ONNX file, pinned by checksum, and
-// the config.json darktable's model registry reads, written beside it
+// models that are not darktable's: one ONNX file, pinned by checksum and
+// size, fetched from a fixed commit of its repository, and the config.json darktable's model registry reads, written beside it
 struct ExtraModel {
     id: &'static str,
     url: &'static str,
     sha256: &'static str,
+    size: u64,
     mb: u64,
     config: &'static str,
 }
@@ -614,8 +632,9 @@ const EXTRA_MODELS: &[ExtraModel] = &[ExtraModel {
     id: "mask-subject-birefnet-lite",
     // BiRefNet lite, MIT (https://github.com/ZhengPeng7/BiRefNet), as
     // exported to ONNX by onnx-community
-    url: "https://huggingface.co/onnx-community/BiRefNet_lite-ONNX/resolve/main/onnx/model.onnx",
+    url: "https://huggingface.co/onnx-community/BiRefNet_lite-ONNX/resolve/de15b22ba131738a16dff04aab8bdf8dc32e3ac1/onnx/model.onnx",
     sha256: "5600024376f572a557870a5eb0afb1e5961636bef4e1e22132025467d0f03333",
+    size: 224005088,
     mb: 224,
     config: r#"{ "id": "mask-subject-birefnet-lite", "name": "mask birefnet lite",
   "description": "BiRefNet lite salient object segmentation, for Select Subject and Background",
@@ -624,8 +643,9 @@ const EXTRA_MODELS: &[ExtraModel] = &[ExtraModel {
     id: "mask-scene-segformer-b2",
     // SegFormer B2 trained on ADE20K (NVIDIA's license, non-commercial
     // use), as exported to ONNX for transformers.js by Xenova
-    url: "https://huggingface.co/Xenova/segformer-b2-finetuned-ade-512-512/resolve/main/onnx/model.onnx",
+    url: "https://huggingface.co/Xenova/segformer-b2-finetuned-ade-512-512/resolve/df795789e70f4089c8658907679c6fd2367c89a5/onnx/model.onnx",
     sha256: "819c15e6af8c4de3359c1de7ab0a17d0dde495df1d16f8908a7163f8038e0fa0",
+    size: 110445327,
     mb: 110,
     config: r#"{ "id": "mask-scene-segformer-b2", "name": "mask segformer b2 ade20k",
   "description": "SegFormer B2 scene segmentation (ADE20K, 150 classes), for Select Sky and Landscape",
@@ -635,9 +655,10 @@ const EXTRA_MODELS: &[ExtraModel] = &[ExtraModel {
     // Depth Anything V2 Small, Apache 2.0
     // (https://github.com/DepthAnything/Depth-Anything-V2), as exported to
     // ONNX for transformers.js by onnx-community
-    url: "https://huggingface.co/onnx-community/depth-anything-v2-small/resolve/main/onnx/model.onnx",
+    url: "https://huggingface.co/onnx-community/depth-anything-v2-small/resolve/4472b7362082ad9968fee890ca0f1e5aca36b93d/onnx/model.onnx",
     sha256: "afb6a5c28f3b6bf1618c6e43f02073ef9dfdc70e937502d51603e57b0a1df10c",
-    mb: 95,
+    size: 99060839,
+    mb: 99,
     config: r#"{ "id": "mask-depth-da2-small", "name": "mask depth anything v2 small",
   "description": "Depth Anything V2 Small relative depth, for Depth Range",
   "task": "mask", "arch": "depthanything", "backend": "onnx", "version": "1.0" }"#,
@@ -648,7 +669,7 @@ fn install_extra(progress: &dyn Fn(Value), dir: &Path, m: &ExtraModel) -> Result
     std::fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
     progress(json!({ "id": m.id, "stage": "downloading", "mb": m.mb }));
     let part = dest.join("model.onnx.part");
-    fetch(m.url, &part)?;
+    fetch(m.url, &part, Some(m.size))?;
     if sha256_file(&part)? != m.sha256 {
         let _ = std::fs::remove_file(&part);
         return Err(format!("the downloaded model '{}' failed its checksum", m.id));
@@ -3591,11 +3612,41 @@ mod tests {
         let site = model_site(&url, &pins);
         let unpack = |_: &Path, _: &Path| -> Result<(), String> { panic!("unpacked a refused archive") };
         let err = install_model(&|_| {}, &unpack, &site, &dir, "m", "5.7.0+1~gtest").unwrap_err();
-        let left = dir.join("_dl/m.dtmodel").exists();
+        let left = dir.join("_dl/m.dtmodel").exists() || dir.join("_dl/m.dtmodel.part").exists();
         let _ = std::fs::remove_dir_all(&dir);
         assert!(err.contains("'m'") && err.contains("update of Immage"), "{err}");
         assert!(!left);
         index.assert();
+    }
+
+    #[test]
+    fn fetch_stops_past_the_limit() {
+        let dir = scratch("fetch-limit");
+        let mut server = mockito::Server::new();
+        let big = server.mock("GET", "/big").with_body("0123456789").expect(1).create();
+        let dest = dir.join("big.bin");
+        let err = fetch(&format!("{}/big", server.url()), &dest, Some(3)).unwrap_err();
+        let left = dest.exists();
+        let _small = server.mock("GET", "/small").with_body("abc").create();
+        let ok = dir.join("small.bin");
+        let got = fetch(&format!("{}/small", server.url()), &ok, Some(3));
+        let kept = std::fs::read(&ok).ok();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(err.contains("/big") && err.contains("larger than expected"), "{err}");
+        assert!(!left);
+        big.assert();
+        got.unwrap();
+        assert_eq!(kept.as_deref(), Some(&b"abc"[..]));
+    }
+
+    #[test]
+    fn extra_models_are_pinned_to_a_commit() {
+        for m in EXTRA_MODELS {
+            let rest = m.url.split("/resolve/").nth(1).unwrap_or_else(|| panic!("{}: no /resolve/", m.id));
+            let commit = rest.split('/').next().unwrap();
+            assert!(commit.len() == 40 && commit.bytes().all(|b| b.is_ascii_hexdigit()), "{}: {}", m.id, m.url);
+            assert!(m.size > 0, "{}", m.id);
+        }
     }
 
     #[test]
@@ -3649,7 +3700,7 @@ mod tests {
         // a 404 is not tried again, and leaves no file
         let missing = dir.join("missing");
         let start = Instant::now();
-        assert!(fetch(&format!("{}/none/none.dtmodel", DARKTABLE_AI.releases), &missing).is_err());
+        assert!(fetch(&format!("{}/none/none.dtmodel", DARKTABLE_AI.releases), &missing, None).is_err());
         assert!(start.elapsed() < Duration::from_secs(10) && !missing.exists());
         drop(engine);
         let _ = std::fs::remove_dir_all(&runtime);
