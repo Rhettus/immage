@@ -60,7 +60,9 @@ The steps are:
   paper, and the menu keeps showing the preset you applied last. Under it,
   a tile for each film stock, grouped as color negative, color slide, and
   black and white. Each tile shows a small render of the current photo with
-  that film, refreshed as you edit. Choosing a slide film scans it directly,
+  that film, refreshed as you edit. Hold the pointer over a tile, film or
+  paper, to preview it over the whole photo, as preset tiles do; moving
+  away puts the photo back. Choosing a slide film scans it directly,
   with its black and white points fitted. Choosing a negative goes back to a
   print.
 - **Paper**: tiles for **Auto**, which follows the film's own print stock and
@@ -75,11 +77,11 @@ The steps are:
   of correcting a print's color. It is hidden while the film is scanned.
 - **Grain & Halation**: grain strength and size, and the red glow halation
   puts around bright edges.
-- **Advanced**: shown when the panel's sliders icon in its heading is on. It
-  holds the rest of darktable's controls, in folds that follow its tabs:
+- **Darkroom**: the last step, always listed. It holds the rest of darktable's controls, in folds that follow its tabs:
   Development, DIR Couplers, Lens Diffusion, Print, Print Diffusion, Grain,
   Halation, Scanner and Color Science. The Print folds are hidden while the
-  film is scanned. Each control's tooltip gives darktable's name for it.
+  film is scanned. Each control's tooltip gives darktable's name for it. Its
+  summary ends with "changed" when any of these settings has been edited.
 
 Film Simulation is slow to render, especially with grain and halation on,
 so sliders can lag behind your drags.

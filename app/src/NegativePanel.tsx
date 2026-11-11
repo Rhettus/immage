@@ -36,8 +36,8 @@ export function negAdvancedIds(values: Record<string, number>): string[] {
 }
 
 export function NegativePanel({ photo, values, disabled, converted, picking, busy, hasArea, note, renderControl,
-                                onPick, onResetColor, advanced, footer }: {
-  advanced: boolean; footer: React.ReactNode;
+                                onPick, onResetColor, fineColorChanged, footer }: {
+  fineColorChanged: boolean; footer: React.ReactNode;
   photo: object | null; values: Record<string, number>; disabled: boolean; converted: boolean;
   picking: NegPick | null; busy: boolean; hasArea: boolean; note: string | null;
   renderControl: (id: string, options?: [string, number][]) => React.ReactNode;
@@ -147,7 +147,8 @@ export function NegativePanel({ photo, values, disabled, converted, picking, bus
           {renderControl("neg_gloss")}
         </>
       ) },
-    { id: "advanced", title: "Advanced", hidden: !advanced || !converted, summary: "Border Color, Shadow Tint, White Balance",
+    { id: "finecolor", title: "Fine Color", hidden: !converted, locked, lockNote,
+      summary: `Border Color, Shadow Tint, White Balance${fineColorChanged ? " · changed" : ""}`,
       content: (
         <div className="section-body">
           <div className="neg-sub">Border Color</div>

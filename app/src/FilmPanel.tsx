@@ -38,9 +38,9 @@ const ADVANCED: { title: string; ids: string[]; print?: boolean }[] = [
 const id = (field: string) => `sf_${field}`;
 
 // the steps by what decides which can be opened, for the tiles wanted
-const stepLayout = (slide: boolean, scan: boolean, advanced: boolean) => [
+const stepLayout = (slide: boolean, scan: boolean) => [
   { id: "stock" }, { id: "paper", skipped: slide }, { id: "exposure" }, { id: "color", hidden: scan },
-  { id: "grain" }, { id: "advanced", hidden: !advanced },
+  { id: "grain" }, { id: "darkroom" },
 ];
 
 // the controls the advanced section renders, for its edited dot; the print
@@ -65,10 +65,12 @@ export const filmTileKey = (hash: number) => `film:${hash}`;
 export const paperTileKey = (film: number, pick: number) => `paper:${film}:${pick}`;
 
 export function FilmPanel({ values, disabled, on, stocks, fetch, onDownload, onCancel, onTurnOn, onPreset,
-                            onFilm, onPaper, renderControl, advanced, preview, onWant }: {
-  advanced: boolean;
+                            onFilm, onPaper, renderControl, darkroomChanged, preview, onWant, onHover }: {
+  darkroomChanged: boolean;
   preview: (key: string) => ImageBitmap | undefined;
   onWant: (keys: string[]) => void;
+  // a tile under the pointer, previewed over the photo
+  onHover: (key: string | null) => void;
   values: Record<string, number>; disabled: boolean; on: boolean;
   stocks: Stocks | null; fetch: FetchStatus | null;
   onDownload: () => void; onCancel: () => void;
@@ -93,13 +95,13 @@ export function FilmPanel({ values, disabled, on, stocks, fetch, onDownload, onC
   const film = filmOf(allStocks, values.sf_film_hash ?? 0);
   const scan = values.sf_scan_film === 1;
   const slide = !!film?.positive;
-  const stepNow = on ? openStep(stepLayout(slide, scan, advanced), stepOpen) : "";
+  const stepNow = on ? openStep(stepLayout(slide, scan), stepOpen) : "";
   const wanted = stepNow === "stock" ? allStocks.filter((x) => !x.printing).map((x) => filmTileKey(x.hash))
     : stepNow === "paper" ? [PAPER_AUTO, PAPER_SCAN, ...allStocks.filter((x) => x.printing).map((x) => x.hash)]
         .map((p) => paperTileKey(film?.hash ?? 0, p)) : [];
   const wantedKey = wanted.join(",");
   useEffect(() => { onWant(wanted); }, [wantedKey]);
-  useEffect(() => () => onWant([]), []);
+  useEffect(() => () => { onWant([]); onHover(null); }, []);
   const running = fetch?.state === "running";
   const credit = (
     <p className="note-plain">spektrafilm by Andrea Volpato, in darktable; its film data is under CC BY-SA 4.0 and
@@ -165,7 +167,9 @@ export function FilmPanel({ values, disabled, on, stocks, fetch, onDownload, onC
     "filter_m", "filter_y"].includes(field) ? null : renderControl(id(field)));
   const tile = (key: string, name: string, picked: boolean, click: () => void, title = name) => (
     <button key={key} type="button" className={`tile${picked ? " on" : ""}`} title={title} disabled={disabled}
-            data-tile={key} aria-pressed={picked} onClick={click}>
+            data-tile={key} aria-pressed={picked}
+            onMouseEnter={() => { if (!disabled) onHover(key); }} onMouseLeave={() => onHover(null)}
+            onClick={() => { onHover(null); click(); }}>
       <Tile bitmap={preview(key)} /><span className="tile-name">{name}</span>
     </button>
   );
@@ -233,7 +237,8 @@ export function FilmPanel({ values, disabled, on, stocks, fetch, onDownload, onC
           {values.sf_halation_on === 1 && renderControl(id("halation_amount"))}
         </>
       ) },
-    { id: "advanced", title: "Advanced", hidden: !advanced, summary: "Development, couplers, print, scanner…",
+    { id: "darkroom", title: "Darkroom",
+      summary: `Development, couplers, print, scanner…${darkroomChanged ? " · changed" : ""}`,
       content: (
         <div className="section-body">
           {ADVANCED.filter((g) => !g.print || !scan).map((g) => (

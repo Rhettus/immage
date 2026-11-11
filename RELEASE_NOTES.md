@@ -25,15 +25,17 @@ Improvements
   panels and in a mask, under both Global and Masks.
 - Advanced settings are hidden behind a sliders icon in each panel's title,
   off by default, instead of separate Advanced folds under Clarity, Texture,
-  Whites, Film Simulation, Negative and Zone System. Each panel remembers
-  whether it shows them.
+  Whites and Zone System. Each panel remembers whether it shows them. Film
+  Simulation and Negative show theirs as a step instead: Darkroom and Fine
+  Color.
 - Whites has a Highlight Brilliance setting under AgX, among Basic's advanced
   settings, for how much Whites brightens the brightest tones. Lowering it
   lets bright scenes such as snow get brighter before they clip.
 - Film Simulation and Negative are numbered steps: one is open at a time and
   the others fold to a line of their settings. Film Simulation's Stock and
   Paper steps show a small preview of your photo with each film and paper, so
-  you can compare them before choosing.
+  you can compare them before choosing; hold the pointer over one to preview
+  it over the whole photo.
 - Negative's steps after the film border stay locked until you pick the border,
   so the conversion is set up first. Export to Library and Turn Off Conversion
   are in the last step.

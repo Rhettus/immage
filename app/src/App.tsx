@@ -496,8 +496,6 @@ export default function App() {
   // what the right-hand panel shows: the adjustments, or the presets
   const [rightMode, setRightMode] = useState<RightMode>("adjust");
   const [zonesAdvanced, toggleZonesAdvanced] = useAdvanced("zones");
-  const [negAdvanced, toggleNegAdvanced] = useAdvanced("negative");
-  const [filmAdvanced, toggleFilmAdvanced] = useAdvanced("film");
   // masks: the session's, mirrored for rendering, the one being edited, and
   // the drawing tool
   const [masks, setMasks] = useState<Mask[]>([]);
@@ -627,6 +625,17 @@ export default function App() {
   // the film panel's tiles share the cache: only one of the two panels is on
   // show, and each asks for its own keys when it opens
   const sfStocksRef = useRef<Stocks | null>(null);
+  // a film or paper tile's edit: what choosing the stock would change, on
+  // the edit as it is (film:<hash>, paper:<film hash>:<pick>)
+  const isStockKey = (key: string) => key.startsWith("film:") || key.startsWith("paper:");
+  const stockValues = (s: Session, key: string): Values | null => {
+    const stocks = sfStocksRef.current?.stocks;
+    if (!stocks) return null;
+    const parts = key.split(":");
+    if (key.startsWith("paper:")) return Object.fromEntries(paperChanges(stocks, s.values, Number(parts[2])));
+    const film = stocks.find((x) => !x.printing && x.hash === Number(parts[1]));
+    return film ? Object.fromEntries(filmChanges(stocks, s.values, film)) : null;
+  };
   // looks by path: true for a black and white one, found from its tile.
   // a .dtstyle says nothing of Treatment, and users add their own
   const lookMono = useRef(new Map<string, boolean>());
@@ -646,16 +655,9 @@ export default function App() {
           return f;
         } }];
       }
-      // film and paper tiles: what choosing the stock would change, on the
-      // edit as it is (film:<hash>, paper:<film hash>:<pick>)
-      if (key.startsWith("film:") || key.startsWith("paper:")) {
-        const stocks = sfStocksRef.current?.stocks;
-        if (!stocks) return [];
-        const parts = key.split(":");
-        const film = key.startsWith("film:") ? stocks.find((x) => !x.printing && x.hash === Number(parts[1])) : null;
-        if (key.startsWith("film:") && !film) return [];
-        const changes = film ? filmChanges(stocks, s.values, film) : paperChanges(stocks, s.values, Number(parts[2]));
-        return [{ key, run: () => s.preview(PREVIEW_SIZE, Object.fromEntries(changes)) }];
+      if (isStockKey(key)) {
+        const v = stockValues(s, key);
+        return v ? [{ key, run: () => s.preview(PREVIEW_SIZE, v) }] : [];
       }
       const p = all.find((q) => `p:${q.id}` === key);
       return p ? [{ key, run: () => s.preview(PREVIEW_SIZE, p.values) }] : [];
@@ -1190,9 +1192,11 @@ export default function App() {
     // a color look as it will be once chosen; a black and white one over
     // the photo's own B&W Mix
     const lookValues = (path: string): Values => (lookMono.current.get(path) === false ? { bw_mode: 0 } : {});
-    showHover(!key ? null : "tiles", (s, size) =>
-      key!.startsWith("l:") ? s.preview(size, lookValues(key!.slice(2)), key!.slice(2))
-        : p ? s.preview(size, p.values) : null);
+    showHover(!key ? null : "tiles", (s, size) => {
+      if (key!.startsWith("l:")) return s.preview(size, lookValues(key!.slice(2)), key!.slice(2));
+      if (isStockKey(key!)) { const v = stockValues(s, key!); return v ? s.preview(size, v) : null; }
+      return p ? s.preview(size, p.values) : null;
+    });
   };
   const hoverValues = (values: Values | null) =>
     showHover(values && "panel", (s, size) => s.preview(size, values!));
@@ -6434,14 +6438,6 @@ export default function App() {
         <div className="panel-head"><h1>{cropping ? "Crop" : RIGHT_TITLES[rightMode]}</h1>
           <div className="head-tools">
             {pinButton("right")}
-            {!cropping && rightMode === "negative" && values.neg_on === 1 && (
-              <AdvancedToggle on={negAdvanced} onToggle={toggleNegAdvanced}
-                              edited={advancedEdited(negAdvancedIds(values), values, session.current?.neutral ?? {})} />
-            )}
-            {!cropping && rightMode === "film" && values.sf_on === 1 && (
-              <AdvancedToggle on={filmAdvanced} onToggle={toggleFilmAdvanced}
-                              edited={advancedEdited(filmAdvancedIds(values), values, session.current?.neutral ?? {})} />
-            )}
             {(rightMode === "adjust" || rightMode === "presets") && !cropping && (
               <button className="tool" onClick={toggleAllPanels}
                       title={anyOpen ? keys("collapse all panels (⌥-click a panel to open it alone)") : "expand all panels"}>
@@ -6611,7 +6607,7 @@ export default function App() {
             </div>
           )}
           {rightMode === "negative" && !cropping && (
-            <NegativePanel advanced={negAdvanced}
+            <NegativePanel fineColorChanged={advancedEdited(negAdvancedIds(values), values, session.current?.neutral ?? {})}
                            footer={<PositiveFooter format={positiveFormat} exporting={positiveExporting} disabled={negBusy || !!negPick}
                                      onFormat={(f) => { setPositiveFormat(f); storeNegativeExportFormat(f); }}
                                      onExport={() => exportPositive("negative")} onTurnOff={negTurnOff}
@@ -6641,11 +6637,11 @@ export default function App() {
                            }} />
           )}
           {rightMode === "film" && !cropping && (
-            <FilmPanel advanced={filmAdvanced} values={values} disabled={!current} on={values.sf_on === 1} stocks={sfStocks} fetch={sfFetch}
+            <FilmPanel darkroomChanged={advancedEdited(filmAdvancedIds(values), values, session.current?.neutral ?? {})} values={values} disabled={!current} on={values.sf_on === 1} stocks={sfStocks} fetch={sfFetch}
                        onDownload={sfDownload} onCancel={sfCancel} onTurnOn={() => sfTurnOn()}
                        onPreset={(name) => sfTurnOn(name)} onFilm={sfFilm} onPaper={sfPaper}
                        preview={(key) => previews.current!.get(key)}
-                       onWant={(keys) => { wantedTiles.current = keys; requestTiles(); }}
+                       onWant={(keys) => { wantedTiles.current = keys; requestTiles(); }} onHover={hoverTile}
                        renderControl={(id, override, onChange, value) => {
                          const c = { ...controlById.get(id)!, ...override };
                          const props = { control: c, value: value ?? values[id] ?? c.neutral ?? 0,

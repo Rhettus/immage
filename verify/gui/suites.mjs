@@ -70,7 +70,7 @@ export const cases = {
   heal:{scope:'Heal/Clone spot creation/settings/deletion',liveValidated:false},
   negative:{scope:'negative steps: Film Base, Color, Tone and Export locked before the border pick and unlocked by it, Next and Back, conversion and turn-off round trip',fixture:'negative',liveValidated:false},
   film:{scope:'film simulation on, a preset, a film and a paper by their preview tiles, Next, Back and opening a folded step, the Color step hidden when scanning, and turn-off round trip',liveValidated:true,
-        limitation:'Copies the installed spektrafilm data pack into the run profile; does not test its download, the Advanced toggle or Export to Library.'},
+        limitation:'Copies the installed spektrafilm data pack into the run profile; does not test its download, the Darkroom step or Export to Library.'},
   zones:{scope:'each zone selection and visible inspection',liveValidated:false},
   print:{scope:'Print panel: a seeded printer profile chosen, soft proof and gamut warning change the photo and badge, S off and on, proof kept in Adjustments, orientation, margin, size and place, Save PDF ready, then Cells: the selected photos on a grid with filenames, names off and on, custom cell count, back to Single Photo',liveValidated:false,
          limitation:'Testing gap: the GUI never clicks Save PDF or Print (the save dialog is native, outside the app-only boundary), so the button flow, the Saved note and the written contact sheet are not covered here; verify/print.py and verify/print.test.mjs check the engine\'s PDF. Real printers, CUPS and the Windows spooler are checked by hand.'},

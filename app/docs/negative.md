@@ -62,9 +62,9 @@ The steps are:
 4. **Color**: Neutral Shadows, Neutral Highlights and **Reset Color**. It is
    listed only for color film.
 5. **Tone**: Exposure, Contrast, Blacks and Highlight Roll-off.
-6. **Advanced**: Border Color, Shadow Tint and White Balance. It appears only
-   when the panel's sliders icon in its heading is on, and once the photo is
-   converted.
+6. **Fine Color**: Border Color, Shadow Tint and White Balance, locked until
+   the photo is converted. Its summary ends with "changed" when any of these
+   has been edited.
 7. **Export Positive**: **Export to Library**, its DNG and TIFF buttons, and
    **Turn Off Conversion**.
 
@@ -169,9 +169,8 @@ its manual and tutorials.
 | Highlight Roll-off | where the brightest tones start to compress: lower is gentler | |
 
 Set Neutral Shadows before Neutral Highlights: the shadows' correction
-moves the highlights too. Reset Color sets both back. The Advanced step, shown
-when the sliders icon beside the pin in the panel heading is on, holds Border
-Color, Shadow Tint and White Balance as red, green and blue sliders.
+moves the highlights too. Reset Color sets both back. The Fine Color step holds
+Border Color, Shadow Tint and White Balance as red, green and blue sliders.
 
 Turn Off Conversion, in the Export Positive step, takes the photo back to the
 negative, with Basic's tools as they were. Undo does the same.

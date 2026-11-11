@@ -59,8 +59,8 @@ export async function locateControl(t, definition) {
   // Advanced toggle is on; the toggle is remembered, so restoreAdvanced puts it back
   // Negative's controls sit in steps (GuidedSteps.tsx), one open at a time:
   // open the unlocked steps in turn until the control mounts
-  if (id === 'negative' && !await t.driver.observe(s => !!document.querySelector(s), selector)) {
-    const ids = await t.driver.observe(() => [...document.querySelectorAll('.negative .step:not(.locked)')].map(e => e.dataset.step));
+  if ((id === 'negative' || id === 'film') && !await t.driver.observe(s => !!document.querySelector(s), selector)) {
+    const ids = await t.driver.observe(c => [...document.querySelectorAll(`.${c} .step:not(.locked)`)].map(e => e.dataset.step), id);
     for (const step of ids) {
       await openStep(t, p, step);
       if (await t.driver.observe(s => !!document.querySelector(s), selector)) break;
@@ -68,13 +68,11 @@ export async function locateControl(t, definition) {
   }
   if (!await t.driver.observe(s => !!document.querySelector(s), selector)) {
     const toggle = definition.scope === 'local' ? '.masks-panel .panel-title.adj-title [data-advanced-toggle]'
-      : id === 'negative' || id === 'film' ? '.panel-head .head-tools [data-advanced-toggle]'
       : `${p} > .panel-title [data-advanced-toggle]`;
     // no toggle: the module or treatment that has this control is not chosen
     if (await t.driver.observe(s => document.querySelector(s)?.getAttribute('aria-pressed') === 'false', toggle)) {
       (t.advancedOn ??= []).push(toggle);
       await click(t, toggle);
-      if (id === 'negative') await openStep(t, p, 'advanced').catch(() => {});
       await until(() => t.driver.observe(s => !!document.querySelector(s), selector), `${control.id} Advanced on`).catch(() => {});
     }
   }
