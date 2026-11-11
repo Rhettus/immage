@@ -193,6 +193,11 @@ Object selections use the same model folder as the other AI tools. A model
 downloaded during the current session is available immediately; restarting the
 app is unnecessary. Existing valid models are reused.
 
+Each download is checked against the exact model file this version of Immage
+expects. If the file on the download server has changed, the model is not
+installed and the message says an update of Immage is needed; updating Immage
+fixes it.
+
 ## Reporting an AI model loading error on Linux
 
 If an AI tool repeatedly downloads its model and then says it cannot load it,

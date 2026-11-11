@@ -42,6 +42,10 @@ Improvements
 - Film Simulation opens straight into its numbered steps. Its first step
   downloads the film data, or converts the photo once the data is there, and
   a "Start from a preset" menu can convert it with a preset instead.
+- AI models for masks, AI Denoise and upscaling are installed only if they
+  match the exact files this version of Immage expects. A model
+  changed on the download server is refused, with a message that an update
+  of Immage is needed.
 
 Performance
 

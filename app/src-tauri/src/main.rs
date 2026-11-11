@@ -385,8 +385,8 @@ async fn ai_outline(state: &AppState, mut req: Value, backdrop: Option<bool>) ->
 // for this darktable version, as darktable's own download does
 // (src/common/ai_models.c). they are downloaded here and the engine unpacks
 // them with darktable's libarchive, so no curl or unzip of the system's is
-// needed: a fresh Linux install can lack either (Arch has no unzip)
-const MODEL_REPO: &str = "darktable-org/darktable-ai";
+// needed: a fresh Linux install can lack either (Arch has no unzip).
+// the pinned checksums and the repository are below, at MODEL_RELEASES
 
 fn sha256_file(path: &Path) -> Result<String, String> {
     use sha2::{Digest, Sha256};
@@ -469,12 +469,98 @@ fn model_release(compatible: &Value, short: &str) -> Result<String, String> {
         .ok_or_else(|| "no AI model release listed".to_string())
 }
 
+// the model archives this Immage trusts, per darktable version: the model
+// repository's release tag and each archive's sha256 and size, copied from
+// that release's versions.json when the darktable pin moved. a pinned
+// version reads neither releases-index.json nor versions.json, so an
+// archive changed upstream under the same tag is refused rather than
+// installed. scripts/pin_models.py writes the block; moving the pin runs
+// it (app/docs/dev/darktable-pin.md)
+struct ModelPin {
+    id: &'static str,
+    sha256: &'static str,
+    size: u64,
+}
+
+struct ModelRelease {
+    darktable: &'static str,
+    tag: &'static str,
+    models: &'static [ModelPin],
+}
+
+// BEGIN scripts/pin_models.py
+const MODEL_RELEASES: &[ModelRelease] = &[ModelRelease {
+    darktable: "5.7.0",
+    tag: "nightly-5.7.0",
+    models: &[
+        ModelPin { id: "denoise-nafnet", sha256: "027961b3e6d1d4d2ba2d7a412688c0542e6a6e2cf7ec2f8e16030cf0a311fb0a", size: 108413592 },
+        ModelPin { id: "denoise-nind", sha256: "a516197e62681d80ee886f535fa1a45b0f0ef28c3a578f706b71cfce61cfe56e", size: 55008210 },
+        ModelPin { id: "mask-object-sam21-base-plus", sha256: "e953844fd4c0a035422cdb2fe27d7390bce3dbb0c810daefc10170c1a82994e8", size: 308511140 },
+        ModelPin { id: "mask-object-sam21-small", sha256: "2c317a5e7f622f12ab916c1bb248b0383675d8ba6e4bccd3d0c9ddb7decc9ab8", size: 169639526 },
+        ModelPin { id: "mask-object-sam21-tiny", sha256: "6aa57644bed82fcbdc851e17c23dd71f0880a0c4da689c5e560a11834a32f1bb", size: 143293697 },
+        ModelPin { id: "mask-object-segnext-b2hq", sha256: "ab63af19216ad233792dca98087dc9ec7aebe301288f69eed59563d468cfd6f3", size: 422711159 },
+        ModelPin { id: "rawdenoise-nind", sha256: "1a0db3dc4a4db13ce5eee7aa2fed097914be28a3f628dc6071dc6aa8d16377bc", size: 57700134 },
+        ModelPin { id: "upscale-bsrgan", sha256: "b3a96b407a628c5de1618843e9832b872996f24166aad6a849ae9b8532851f33", size: 124072128 },
+        ModelPin { id: "upscale-realplksr", sha256: "b88744faa595bd75f2455bf980d95e8d8f249875c211357c6809bf4e4ecfb1ea", size: 54935127 },
+    ],
+}];
+// END scripts/pin_models.py
+
+// where darktable's models are fetched from, and the pins they are held
+// to; tests swap in a local server and their own pins
+struct ModelSite<'a> {
+    index: &'a str,
+    releases: &'a str,
+    pins: &'a [ModelRelease],
+}
+
+const DARKTABLE_AI: ModelSite<'static> = ModelSite {
+    index: "https://raw.githubusercontent.com/darktable-org/darktable-ai/HEAD",
+    releases: "https://github.com/darktable-org/darktable-ai/releases/download",
+    pins: MODEL_RELEASES,
+};
+
+// a model archive to download: its release, sha256 and size, and whether
+// they came from the pins or from the release's own versions.json
+struct ModelSource {
+    tag: String,
+    sha256: String,
+    size: u64,
+    pinned: bool,
+}
+
+// None for a darktable version with no pins: a dev build on a checkout
+// without release tags, or a pin moved without running pin_models.py
+fn pinned_model(pins: &[ModelRelease], short: &str, id: &str) -> Option<Result<ModelSource, String>> {
+    let release = pins.iter().find(|r| r.darktable == short)?;
+    Some(release.models.iter().find(|m| m.id == id)
+        .map(|m| ModelSource { tag: release.tag.into(), sha256: m.sha256.into(), size: m.size, pinned: true })
+        .ok_or_else(|| format!("model '{id}' is not in release {}", release.tag)))
+}
+
+// the release and checksum as the model repository publishes them now,
+// as darktable's own download reads them
+fn published_model(site: &ModelSite, dl: &Path, short: &str, id: &str) -> Result<ModelSource, String> {
+    let index = dl.join("releases-index.json");
+    fetch(&format!("{}/releases-index.json", site.index), &index)?;
+    let releases = read_json(&index)?;
+    let tag = model_release(&releases["compatible_releases"], short)?;
+    let versions = dl.join("versions.json");
+    fetch(&format!("{}/{tag}/versions.json", site.releases), &versions)?;
+    let entry = read_json(&versions)?["models"][id].clone();
+    let sha256 = entry["sha256"].as_str().and_then(|s| s.strip_prefix("sha256:"))
+        .ok_or_else(|| format!("model '{id}' is not in release {tag}"))?
+        .to_string();
+    Ok(ModelSource { tag, sha256, size: entry["size"].as_u64().unwrap_or(0), pinned: false })
+}
+
 // `progress` hears each stage ({ id, stage, mb? }); the app passes them on
 // to the window as "ai-model" events. `unpack` unpacks an archive into a
 // folder: the engine's unpack
 type Unpack<'a> = &'a dyn Fn(&Path, &Path) -> Result<(), String>;
 
-fn install_model(progress: &dyn Fn(Value), unpack: Unpack, dir: &Path, id: &str, version: &str) -> Result<(), String> {
+fn install_model(progress: &dyn Fn(Value), unpack: Unpack, site: &ModelSite, dir: &Path, id: &str,
+                 version: &str) -> Result<(), String> {
     let dl = dir.join("_dl");
     std::fs::create_dir_all(&dl).map_err(|e| e.to_string())?;
     // "5.7.0+1252~g0967d3653e" is release 5.7.0's. a checkout without
@@ -482,23 +568,26 @@ fn install_model(progress: &dyn Fn(Value), unpack: Unpack, dir: &Path, id: &str,
     // them) reports no darktable version, as on the Windows build; then
     // the newest release darktable lists is the one
     let short = version.split(['+', '~', '-']).next().unwrap_or("");
-    let index = dl.join("releases-index.json");
-    fetch(&format!("https://raw.githubusercontent.com/{MODEL_REPO}/HEAD/releases-index.json"), &index)?;
-    let releases = read_json(&index)?;
-    let tag = model_release(&releases["compatible_releases"], short)?;
-    let versions = dl.join("versions.json");
-    fetch(&format!("https://github.com/{MODEL_REPO}/releases/download/{tag}/versions.json"), &versions)?;
-    let entry = read_json(&versions)?["models"][id].clone();
-    let sha = entry["sha256"].as_str().and_then(|s| s.strip_prefix("sha256:"))
-        .ok_or_else(|| format!("model '{id}' is not in release {tag}"))?
-        .to_string();
-    let mb = entry["size"].as_u64().unwrap_or(0) / 1_000_000;
-    progress(json!({ "id": id, "stage": "downloading", "mb": mb }));
+    let source = match pinned_model(site.pins, short, id) {
+        Some(pinned) => pinned?,
+        None => {
+            let s = published_model(site, &dl, short, id)?;
+            eprintln!("AI model '{id}': no pinned checksum for darktable '{version}'; \
+                       using {}'s published one", s.tag);
+            s
+        }
+    };
+    progress(json!({ "id": id, "stage": "downloading", "mb": source.size / 1_000_000 }));
     let archive = dl.join(format!("{id}.dtmodel"));
-    fetch(&format!("https://github.com/{MODEL_REPO}/releases/download/{tag}/{id}.dtmodel"), &archive)?;
-    if sha256_file(&archive)? != sha {
+    fetch(&format!("{}/{}/{id}.dtmodel", site.releases, source.tag), &archive)?;
+    if sha256_file(&archive)? != source.sha256 {
         let _ = std::fs::remove_file(&archive);
-        return Err(format!("the downloaded model '{id}' failed its checksum"));
+        return Err(if source.pinned {
+            format!("the AI model '{id}' offered for download is not the one this version of Immage \
+                     was made with, so it was not installed: an update of Immage is needed")
+        } else {
+            format!("the downloaded model '{id}' failed its checksum")
+        });
     }
     progress(json!({ "id": id, "stage": "installing" }));
     let unpacked = unpack(&archive, dir);
@@ -593,7 +682,7 @@ async fn ai_model_ensure(app: AppHandle, state: State<'_, AppState>, id: String)
                 .request(json!({ "cmd": "unpack", "archive": archive, "dir": into }))
                 .map(|_| ())
         };
-        install_model(&|v| { let _ = app.emit("ai-model", v); }, &unpack, &dir, &id, &version)
+        install_model(&|v| { let _ = app.emit("ai-model", v); }, &unpack, &DARKTABLE_AI, &dir, &id, &version)
     })
         .await
         .map_err(|e| e.to_string())?
@@ -3451,6 +3540,90 @@ mod tests {
     }
 
     #[test]
+    fn pinned_model_lookup() {
+        let pins = [ModelRelease { darktable: "5.7.0", tag: "t1", models: &[
+            ModelPin { id: "m", sha256: "ab", size: 3 }] }];
+        let got = pinned_model(&pins, "5.7.0", "m").unwrap().unwrap();
+        assert_eq!((got.tag.as_str(), got.sha256.as_str(), got.size, got.pinned), ("t1", "ab", 3, true));
+        assert!(pinned_model(&pins, "5.7.0", "other").unwrap().is_err());
+        for v in ["5.8.0", "immage", ""] {
+            assert!(pinned_model(&pins, v, "m").is_none(), "{v:?}");
+        }
+    }
+
+    #[test]
+    fn model_releases_hold_the_apps_models() {
+        for id in ["mask-object-sam21-small", "rawdenoise-nind", "upscale-realplksr"] {
+            for r in MODEL_RELEASES {
+                assert!(r.models.iter().any(|m| m.id == id), "{id} missing from {}", r.tag);
+            }
+        }
+        for r in MODEL_RELEASES {
+            for m in r.models {
+                assert!(m.sha256.len() == 64 && m.sha256.bytes().all(|c| matches!(c, b'0'..=b'9' | b'a'..=b'f')),
+                        "{}: bad sha256", m.id);
+            }
+        }
+    }
+
+    fn model_site<'a>(url: &'a str, pins: &'a [ModelRelease]) -> ModelSite<'a> {
+        ModelSite { index: url, releases: url, pins }
+    }
+
+    fn sha_of(bytes: &[u8], dir: &Path) -> String {
+        let p = dir.join("x.bin");
+        std::fs::write(&p, bytes).unwrap();
+        sha256_file(&p).unwrap()
+    }
+
+    #[test]
+    fn pinned_model_refuses_changed_archive() {
+        let dir = scratch("pin-changed");
+        let sha = sha_of(b"xxx", &dir);
+        // the pins hold 'static data, so the test's are leaked
+        let models: &'static [ModelPin] = Box::leak(Box::new([
+            ModelPin { id: "m", sha256: Box::leak(sha.into_boxed_str()), size: 3 }]));
+        let pins = [ModelRelease { darktable: "5.7.0", tag: "t1", models }];
+        let mut server = mockito::Server::new();
+        let _archive = server.mock("GET", "/t1/m.dtmodel").with_body("yyy").create();
+        let index = server.mock("GET", "/releases-index.json").expect(0).create();
+        let url = server.url();
+        let site = model_site(&url, &pins);
+        let unpack = |_: &Path, _: &Path| -> Result<(), String> { panic!("unpacked a refused archive") };
+        let err = install_model(&|_| {}, &unpack, &site, &dir, "m", "5.7.0+1~gtest").unwrap_err();
+        let left = dir.join("_dl/m.dtmodel").exists();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(err.contains("'m'") && err.contains("update of Immage"), "{err}");
+        assert!(!left);
+        index.assert();
+    }
+
+    #[test]
+    fn unpinned_model_uses_published_checksum() {
+        let dir = scratch("pin-published");
+        let sha = sha_of(b"xxx", &dir);
+        let pins = [ModelRelease { darktable: "5.7.0", tag: "t1", models: &[] }];
+        let mut server = mockito::Server::new();
+        let _index = server.mock("GET", "/releases-index.json")
+            .with_body(r#"{"compatible_releases":{"5.8.0":"t2"}}"#).create();
+        let _versions = server.mock("GET", "/t2/versions.json")
+            .with_body(format!(r#"{{"models":{{"m":{{"sha256":"sha256:{sha}","size":3}}}}}}"#)).create();
+        let _archive = server.mock("GET", "/t2/m.dtmodel").with_body("xxx").create();
+        let url = server.url();
+        let site = model_site(&url, &pins);
+        let calls = std::cell::Cell::new(0);
+        let unpack = |_: &Path, into: &Path| -> Result<(), String> {
+            calls.set(calls.get() + 1);
+            std::fs::create_dir_all(into.join("m")).map_err(|e| e.to_string())?;
+            std::fs::write(into.join("m/config.json"), "{}").map_err(|e| e.to_string())
+        };
+        let got = install_model(&|_| {}, &unpack, &site, &dir, "m", "5.8.0+1");
+        let _ = std::fs::remove_dir_all(&dir);
+        got.unwrap();
+        assert_eq!(calls.get(), 1);
+    }
+
+    #[test]
     #[ignore]
     fn models_download() {
         let dir = std::env::temp_dir().join(format!("immage-models-{}", std::process::id()));
@@ -3464,8 +3637,8 @@ mod tests {
         let unpack = |archive: &Path, into: &Path| {
             engine.lock().unwrap().request(json!({ "cmd": "unpack", "archive": archive, "dir": into })).map(|_| ())
         };
-        install_model(&log, &unpack, &dir, "mask-object-sam21-small", "5.7.0+1~gtest").expect("darktable's model");
-        install_model(&log, &unpack, &dir, "rawdenoise-nind", "5.7.0+1~gtest").expect("darktable's raw denoise model");
+        install_model(&log, &unpack, &DARKTABLE_AI, &dir, "mask-object-sam21-small", "5.7.0+1~gtest").expect("darktable's model");
+        install_model(&log, &unpack, &DARKTABLE_AI, &dir, "rawdenoise-nind", "5.7.0+1~gtest").expect("darktable's raw denoise model");
         for m in EXTRA_MODELS {
             install_extra(&log, &dir, m).expect(m.id);
         }
@@ -3476,7 +3649,7 @@ mod tests {
         // a 404 is not tried again, and leaves no file
         let missing = dir.join("missing");
         let start = Instant::now();
-        assert!(fetch(&format!("https://github.com/{MODEL_REPO}/releases/download/none/none.dtmodel"), &missing).is_err());
+        assert!(fetch(&format!("{}/none/none.dtmodel", DARKTABLE_AI.releases), &missing).is_err());
         assert!(start.elapsed() < Duration::from_secs(10) && !missing.exists());
         drop(engine);
         let _ = std::fs::remove_dir_all(&runtime);
