@@ -732,7 +732,7 @@ entries for a shared offset, skipping invalid recorded times. App.tsx retains
 the last batch for confirmed restoration. Rust `capture_times` forwards to
 engine `_capture_times`, which checks expected times before writing sidecars.
 [LocationEditor.tsx](../../src/LocationEditor.tsx) saves GPS through `meta_set`;
-[map_tiles.rs](../../src-tauri/src/map_tiles.rs) supplies the optional map tiles.
+[map_tiles.rs](../../src-tauri/src/map_tiles.rs) supplies the optional map tiles from a seven-day disk cache, with one shared HTTP client, a lock per tile (so a tile asked for twice is fetched once) and at most two downloads at a time.
 
 Rust `positive_export` (`kind` "negative" or "film") exports a converted
 negative or a film simulation as a losslessly compressed 16-bit float DNG or

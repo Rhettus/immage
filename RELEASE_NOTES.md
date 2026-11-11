@@ -53,6 +53,9 @@ Performance
   you stop.
 - Immage opens a little sooner: it no longer waits a fixed moment for the
   editing engine to start.
+- The location map downloads two tiles at a time instead of one, reuses its
+  connection to the map server, and shows tiles it already has without
+  waiting for downloads.
 
 Bug fixes
 
