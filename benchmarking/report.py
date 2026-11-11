@@ -239,7 +239,7 @@ def summary(runs, guis, gpu=()):
     if guis:
         g = guis[-1]
         L += ["", f"## GUI benchmark `{g['id']}`", "",
-              (f"Machine {m.get('host') or '?'}, {m.get('cpu') or '?'} (id {m.get('id') or '?'}). "
+              (f"Machine {m.get('id') or '?'}, {m.get('cpu') or '?'}. "
                if (m := g.get("machine")) else "") +
               (f"Build {build_name(b)}. " if (b := g.get("build")) and b.get("commit") else "") +
               f"Photo {g.get('photo')}, viewer {g['viewport']['width']}×{g['viewport']['height']} "
@@ -264,7 +264,7 @@ def summary(runs, guis, gpu=()):
     L += ["", "## Reading these results next time", "",
           "1. This file first.",
           "2. `python3 -I benchmarking/compare.py` diffs the last two runs; every run is",
-          "   `results/<date>_<git sha>_<host>/run.json` (`records`: one per mode, photo,",
+          "   `results/<date>_<git sha>_<machine id>/run.json` (`records`: one per mode, photo,",
           "   scenario and step, with p50/p95 wall, pipeline, write and set times and",
           "   per-module ms).",
           "3. GUI reports are `results/gui/gui-*.json`: per-frame stage timings from the app.",

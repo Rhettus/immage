@@ -939,6 +939,36 @@ def machine_id():
     return hashlib.sha256(f"immage-bench:{raw}".encode()).hexdigest()[:12] if raw else None
 
 
+# the id a run carries: the system's, or, where there is none, a random one
+# made once per install and kept under the user's cache dir. Never the host name
+def report_machine_id():
+    mid = machine_id()
+    if mid:
+        return mid
+    if platform.system() == "Windows":
+        base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+    elif platform.system() == "Darwin":
+        base = os.path.expanduser("~/Library/Caches")
+    else:
+        base = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
+    path = os.path.join(base, "immage-bench-id")
+    try:
+        with open(path) as f:
+            saved = f.read().strip()
+        if len(saved) == 12 and all(c in "0123456789abcdef" for c in saved):
+            return saved
+    except OSError:
+        pass
+    new = hashlib.sha256(f"immage-install:{time.time_ns()}:{os.getpid()}:{os.urandom(8).hex()}".encode()).hexdigest()[:12]
+    try:
+        os.makedirs(base, exist_ok=True)
+        with open(path, "w") as f:
+            f.write(new)
+    except OSError:
+        pass
+    return new
+
+
 def git(*a):
     try:
         return subprocess.run(["git", "-C", REPO, *a], capture_output=True, text=True, timeout=10).stdout.strip()
@@ -964,7 +994,7 @@ def environment(args, binary):
                 sysinfo[key] = v
     return {
         "schema": SCHEMA, "at": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
-        "host": platform.node().split(".")[0], "machine_id": machine_id(), "os": f"{platform.system()} {platform.release()}",
+        "machine_id": report_machine_id(), "os": f"{platform.system()} {platform.release()}",
         "machine": platform.machine(), "python": platform.python_version(), "sysinfo": sysinfo,
         "git": {"sha": git("rev-parse", "--short", "HEAD"), "branch": git("rev-parse", "--abbrev-ref", "HEAD"),
                 "dirty": bool(git("status", "--porcelain", "--untracked-files=no"))},
@@ -1040,7 +1070,7 @@ def main():
         opencl, extra = mode_engine(m)
         engines[m] = Engine(args.engine, os.path.join(WORK, m), opencl=opencl, extra=extra)
     stamp = datetime.datetime.now().strftime("%Y-%m-%d_%H%M")
-    run_dir = os.path.join(args.out, f"{stamp}_{env['git']['sha'] or 'nogit'}_{env['host']}")
+    run_dir = os.path.join(args.out, f"{stamp}_{env['git']['sha'] or 'nogit'}_{env['machine_id']}")
 
     def save(complete):
         """after every photo, so a run stopped early keeps what it measured"""

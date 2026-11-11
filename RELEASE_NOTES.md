@@ -7,6 +7,9 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- GUI benchmark reports no longer record the computer's name. They identify
+  the computer by an anonymous id instead, so a report can be shared without
+  naming it.
 - Preferences has one Memory setting instead of three: it sizes the render
   caches, the views already shown and the thumbnails from the computer's
   memory, so a 32 GB computer keeps more and an 8 GB one less, without setting

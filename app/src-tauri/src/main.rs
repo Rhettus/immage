@@ -1374,6 +1374,29 @@ fn machine_id() -> Option<String> {
     Some(hash.iter().take(6).map(|b| format!("{b:02x}")).collect())
 }
 
+// the id reports carry: the hashed system id, or, where the system gives none,
+// a random one made once per install and kept in `dir`. Never the host name.
+fn report_machine_id(dir: Option<&Path>) -> Option<String> {
+    if let Some(id) = machine_id() {
+        return Some(id);
+    }
+    let file = dir?.join("machine-id");
+    if let Ok(text) = std::fs::read_to_string(&file) {
+        let t = text.trim();
+        if t.len() == 12 && t.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Some(t.to_string());
+        }
+    }
+    use sha2::{Digest, Sha256};
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+    let local = 0u8;
+    let hash = Sha256::digest(format!("immage-install:{now}:{}:{:p}", std::process::id(), &local));
+    let id: String = hash.iter().take(6).map(|b| format!("{b:02x}")).collect();
+    std::fs::create_dir_all(dir?).ok()?;
+    std::fs::write(&file, &id).ok()?;
+    Some(id)
+}
+
 // the web view's EGL override is kept out of the image engine
 #[cfg(target_os = "linux")]
 static WEBVIEW_EGL_OVERRIDE: AtomicBool = AtomicBool::new(false);
@@ -1422,16 +1445,16 @@ fn display_env() -> Value {
 // the machine a GUI benchmark ran on: a stable id to group reports by, and
 // what it is
 #[tauri::command]
-async fn perf_machine(state: State<'_, AppState>) -> Result<Value, String> {
+async fn perf_machine(app: AppHandle, state: State<'_, AppState>) -> Result<Value, String> {
     use sysinfo::{CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};
     let opencl = state.engine("perf_machine").request(json!({ "cmd": "opencl" })).ok()
         .map(|mut r| { if let Some(o) = r.as_object_mut() { o.remove("ok"); } r });
+    let dir = app.path().app_data_dir().ok();
     tauri::async_runtime::spawn_blocking(move || {
         let sys = System::new_with_specifics(RefreshKind::nothing().with_cpu(CpuRefreshKind::nothing())
                                                  .with_memory(MemoryRefreshKind::nothing().with_ram()));
         json!({
-            "id": machine_id(),
-            "host": System::host_name().map(|h| h.split('.').next().unwrap_or_default().to_string()),
+            "id": report_machine_id(dir.as_deref()),
             "os": System::long_os_version(),
             "arch": System::cpu_arch(),
             "cpu": sys.cpus().first().map(|c| c.brand().trim().to_string()),
@@ -3497,6 +3520,18 @@ mod tests {
         assert!(id.chars().all(|c| c.is_ascii_hexdigit()));
         assert_eq!(machine_id().as_deref(), Some(id.as_str()));
         println!("machine id {id}");
+    }
+
+    #[test]
+    fn report_machine_id_without_a_system_id_is_kept() {
+        if machine_id().is_some() {
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!("immage-mid-{}", std::process::id()));
+        let first = report_machine_id(Some(&dir)).expect("no id");
+        assert_eq!(first.len(), 12);
+        assert_eq!(report_machine_id(Some(&dir)), Some(first));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -80,7 +80,7 @@ def markdown(reports):
         before = (r.get("opencl") or {}).get("before") or {}
         after = (r.get("opencl") or {}).get("after") or {}
         L += [f"### `{r['id']}`: {r.get('passed', 0)} of {r.get('total', 0)} passed", "",
-              f"{m.get('host') or '?'} ({m.get('os') or '?'}, {m.get('cpu') or '?'}, id {m.get('id') or '?'}); "
+              f"{m.get('id') or '?'} ({m.get('os') or '?'}, {m.get('cpu') or '?'}); "
               f"Immage {app.get('app') or '?'}{build(r)}, darktable {app.get('darktable') or '?'}; device {device(r)}; "
               f"photo {r.get('photo')}; OpenCL errors {before.get('error_count', '?')} → {after.get('error_count', '?')}"
               + ("; **OpenCL stopped for the session**" if after.get("stopped") else "")

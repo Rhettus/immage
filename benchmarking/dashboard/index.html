@@ -113,7 +113,7 @@ const hover = (el, html) => { el.addEventListener("mousemove", (e) => { tip.inne
 const state = { tab: !D.runs.length && D.gui.length ? "gui" : "overview", run: D.runs.length - 1, mode: null, image: "all", compareWith: null, gui: D.gui.length - 1, step: null, machine: null };
 // GUI reports from before 0.32.0 carry no machine
 const machineOf = (g) => g.machine?.id ?? "unknown";
-const machineName = (g) => g.machine ? `${g.machine.host ?? "?"} · ${g.machine.cpu ?? "?"}` : "unknown machine";
+const machineName = (g) => g.machine ? `${g.machine.id ?? "?"} · ${g.machine.cpu ?? "?"}` : "unknown machine";
 const run = () => D.runs[state.run];
 const modes = () => run() ? run().env.modes : [];
 const images = () => run() ? run().corpus.map((c) => c.name) : [];
