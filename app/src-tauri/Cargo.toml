@@ -34,6 +34,8 @@ trash = "5"
 # the versions the importer uses (already in the tree)
 image = { version = "0.25.10", default-features = false, features = ["jpeg"] }
 sysinfo = "0.39.6"
+# the support bundle scrubber (scrub.rs); already in the tree via other crates
+regex = "1"
 # Tauri's async runtime, built with more workers than cores (async_workers
 # in main.rs); the version Tauri itself uses (already in the tree)
 tokio = { version = "1", features = ["rt-multi-thread"] }

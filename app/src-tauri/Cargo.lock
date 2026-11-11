@@ -2126,6 +2126,7 @@ dependencies = [
  "mockito",
  "objc2-app-kit",
  "objc2-foundation",
+ "regex",
  "reqwest",
  "serde",
  "serde_json",

@@ -22,6 +22,7 @@ mod scale;
 #[cfg(target_os = "linux")]
 mod renderer;
 mod volumes;
+mod scrub;
 
 use cache::Caches;
 use engine::{BaseCancel, Engine, Tagged, Timing};
