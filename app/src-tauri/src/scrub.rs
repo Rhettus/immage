@@ -371,6 +371,12 @@ fn allowed(e: &Entry, prev: Option<char>, next: Option<char>) -> bool {
     match e.kind {
         Kind::Home => true,
         Kind::Photo => !an(prev) && !an(next),
+        // a lone folder name (a path component, no separator in its canon)
+        // matches only as a whole token; full paths match anywhere
+        Kind::Folder if !e.canon.contains('/') => {
+            let asc = |c: Option<char>| c.is_some_and(|c| c.is_ascii_alphanumeric());
+            !asc(prev) && !asc(next)
+        }
         _ if e.chars < 3 => !an(prev) && !an(next),
         _ if e.chars <= 5 => !(al(prev) && al(next)),
         _ => true,
@@ -863,6 +869,27 @@ mod tests {
         });
         let out = s.scrub("/home/rhett/Pictures/Trip/a.txt /home/rhett/other");
         assert_eq!(out, "folder-1/a.txt ~/other");
+    }
+
+    #[test]
+    fn folder_names_match_whole_tokens_only() {
+        let mut s = Scrubber::new(Known {
+            folders: vec![
+                "/home/u/Documents/Git/immage".into(),
+                "/home/u/Pictures/Ice".into(),
+            ],
+            home: vec!["/home/u".into()],
+            ..Known::default()
+        });
+        let keep = "See https://github.com/darktable-org/darktable/issues/new/choose and Iceland";
+        let out = s.scrub(&format!(
+            "{keep} /home/u/Documents/Git/immage/x.ARW \"Git\" Git/immage"
+        ));
+        assert!(out.starts_with(keep), "{out}");
+        assert!(!out.contains("Documents"), "{out}");
+        assert!(!out.contains("\"Git\""), "{out}");
+        assert!(!out.contains("immage"), "{out}");
+        assert!(out.contains("\"folder-"), "{out}");
     }
 
     #[test]
