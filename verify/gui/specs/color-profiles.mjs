@@ -7,6 +7,8 @@ import { startup, settledPhoto, settledReset } from './smoke.mjs';
 import { prepareNegative } from './workflows.mjs';
 
 const input = '[data-control-id="neg_input_profile"] select';
+// the border swatch sits in a folded step; the later steps unlock with the conversion
+const converted = () => !document.querySelector('.negative .step[data-step="base"].locked');
 const working = '[data-control-id="neg_working_profile"] select';
 export async function colorProfiles(t) {
   await prepareNegative(t);
@@ -24,7 +26,11 @@ export async function colorProfiles(t) {
   await choose(t, input, 3); // Adobe RGB
   const changed = await settledPhoto(t, p => p.hash !== original.hash);
   assert.equal((await values())[1], defaults[1], 'input choice preserves working profile');
-  assert(await t.driver.observe(() => document.querySelector('.negative').textContent.includes('Profile changed: pick the film border')), 'repick guidance shown');
+  // Profiles step keeps its standing guidance; the change note is shown in Border & Photo Area
+  assert(await t.driver.observe(() => document.querySelector('.negative .step.open').textContent.includes('pick the border and photo area again')), 'repick guidance in Profiles step');
+  await openStep(t, '.negative', 'border');
+  assert(await t.driver.observe(() => document.querySelector('.negative .step.open').textContent.includes('Profile changed: pick the film border')), 'repick note in Border step');
+  await openStep(t, '.negative', 'profiles');
   await t.evidence('input-profile');
   await click(t, 'button.tool[title^="undo ("]');
   await settledReset(t, original, changed, 'profile-undo');
@@ -49,13 +55,13 @@ export async function colorProfiles(t) {
   await t.evidence('profiles-after-restart');
   // Reset all includes both profiles, and undo brings back the conversion.
   await click(t, 'button[aria-label="reset all"]');
-  await until(async () => !(await t.driver.observe(() => !!document.querySelector('.neg-swatch'))), 'Reset all turns conversion off');
+  await until(async () => !(await t.driver.observe(converted)), 'Reset all turns conversion off');
   assert.deepEqual(await values(), defaults, 'Reset all restores profile defaults');
   await settledPhoto(t, p => p.hash !== icc.hash);
   await t.evidence('profiles-reset');
   await click(t, 'button.tool[title^="undo ("]');
   await until(async () => (await values()).every((v, i) => v === Number([scanner, work][i]))
-    && await t.driver.observe(() => !!document.querySelector('.neg-swatch')),
+    && await t.driver.observe(converted),
     'Undo Reset all restores conversion and profile selections', 10000);
   await settledPhoto(t, p => p.hash === icc.hash);
   assert.deepEqual(await values(), [Number(scanner), Number(work)]);

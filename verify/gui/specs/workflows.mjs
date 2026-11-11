@@ -236,7 +236,8 @@ export async function negative(t) {
   if(!b.active){
     await click(t,'button[data-tour="negative"]');
     const warned=await until(()=>t.driver.observe(()=>document.querySelector('.neg-warn')?'warn':document.querySelector('button[data-tour="negative"]:is(.on,.active)')?'open':''),'negative warning or tool',10000).catch(()=>'');
-    if(warned==='warn') await textButton(t,'.neg-warn','Continue');
+    // the dialog can render a frame after the button turns active
+    if(warned==='warn'||await until(()=>t.driver.observe(()=>!!document.querySelector('.neg-warn')),'negative warning',3000).then(()=>true,()=>false)) await textButton(t,'.neg-warn','Continue');
   }
   await openTool(t,'negative');
   await until(()=>t.driver.observe(()=>!!document.querySelector('.negative .step')),'negative steps');
@@ -336,7 +337,8 @@ export async function prepareNegative(t) {
   if(!b.active){
     await click(t,'button[data-tour="negative"]');
     const warned=await until(()=>t.driver.observe(()=>document.querySelector('.neg-warn')?'warn':document.querySelector('button[data-tour="negative"]:is(.on,.active)')?'open':''),'negative warning or tool',10000).catch(()=>'');
-    if(warned==='warn') await textButton(t,'.neg-warn','Continue');
+    // the dialog can render a frame after the button turns active
+    if(warned==='warn'||await until(()=>t.driver.observe(()=>!!document.querySelector('.neg-warn')),'negative warning',3000).then(()=>true,()=>false)) await textButton(t,'.neg-warn','Continue');
   }
   await openTool(t,'negative');
   await openStep(t,'.negative','border');
