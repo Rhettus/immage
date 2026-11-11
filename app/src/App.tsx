@@ -1196,24 +1196,26 @@ export default function App() {
       if (key!.startsWith("l:")) return s.preview(size, lookValues(key!.slice(2)), key!.slice(2));
       if (isStockKey(key!)) { const v = stockValues(s, key!); return v ? s.preview(size, v) : null; }
       return p ? s.preview(size, p.values) : null;
-    });
+    }, !!key && isStockKey(key));
   };
   const hoverValues = (values: Values | null) =>
-    showHover(values && "panel", (s, size) => s.preview(size, values!));
+    showHover(values && "panel", (s, size) => s.preview(size, values!), true);
   const showHover = (from: "tiles" | "panel" | null,
-                     render: (s: Session, size: number) => Promise<Frame> | null) => {
+                     render: (s: Session, size: number) => Promise<Frame> | null,
+                     sharp: boolean) => {
     const token = ++hoverToken.current;
     if (!from) { setHoverShown(false); return; }
     window.setTimeout(async () => {
       const s = session.current;
       if (!s || token !== hoverToken.current) return;
       const { w, h } = viewport();
-      // tiles stay small; a panel's swatches (grain above all, whose look
-      // depends on the pixels) render at the size the image is shown at,
-      // so the hover is as sharp as the edit and not stretched
+      // tiles stay small except film and paper tiles, which like a panel's
+      // swatches (grain above all, whose look depends on the pixels) render
+      // at the size the image is shown at, so the hover is as sharp as the
+      // edit and not stretched
       const f0 = full.current, z0 = viewZ.current;
-      const shown = from === "panel" && f0 && z0 ? Math.round(Math.max(f0.w, f0.h) * z0) : 0;
-      const size = Math.min(from === "panel" ? 3200 : 1600, Math.max(shown, Math.min(1600, Math.max(w, h))));
+      const shown = sharp && f0 && z0 ? Math.round(Math.max(f0.w, f0.h) * z0) : 0;
+      const size = Math.min(sharp ? 3200 : 1600, Math.max(shown, Math.min(1600, Math.max(w, h))));
       try {
         const r = render(s, size);
         const f = r && await track(r);

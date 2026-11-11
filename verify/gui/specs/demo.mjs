@@ -179,7 +179,7 @@ export async function demo(t) {
     await segment('film', 'Film simulation', async () => {
       await tool(t, 'film');
       await until(() => t.driver.observe(() => !!document.querySelector('.panel.film button, .panel.film select')), 'film panel');
-      await textButton(t, '.panel.film', 'Turn On Film Simulation');
+      await textButton(t, '.panel.film', 'Convert to Film');
       await settledPhoto(t, () => true);
       await pause(1200);
       await choose(t, '.panel.film [data-action="film-preset"]', 'film|portrait');

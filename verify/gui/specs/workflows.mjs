@@ -280,7 +280,7 @@ export async function film(t) {
   await until(()=>t.driver.observe(()=>!!document.querySelector('.panel.film button, .panel.film select')),'film panel');
   if(await t.driver.observe(()=>[...document.querySelectorAll('.panel.film button')].some(b=>/Download Film Data|Try Again/.test(b.textContent))))
     throw new Blocked('Install the spektrafilm data pack first (Film Simulation, Download Film Data)');
-  await textButton(t,'.panel.film','Turn On Film Simulation');
+  await textButton(t,'.panel.film','Convert to Film');
   const on=await settledPhoto(t,p=>p.hash!==baseline.hash); await t.evidence('simulated');
   const open=()=>t.driver.observe(()=>document.querySelector('.panel.film .step.open')?.dataset.step);
   const tiles=step=>`.panel.film .step[data-step="${step}"] .tile`;

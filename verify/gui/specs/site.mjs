@@ -318,10 +318,10 @@ export async function siteShots(t) {
     await until(() => t.driver.observe(() => !!document.querySelector('.panel.film button, .panel.film select')), 'film panel');
     if (await t.driver.observe(() => [...document.querySelectorAll('.panel.film button')].some(b => /Download Film Data/.test(b.textContent)))) {
       await textButton(t, '.panel.film', 'Download Film Data');
-      await until(() => t.driver.observe(() => [...document.querySelectorAll('.panel.film button')].some(b => /Turn On Film Simulation/.test(b.textContent))),
+      await until(() => t.driver.observe(() => [...document.querySelectorAll('.panel.film button')].some(b => /Convert to Film/.test(b.textContent))),
         'film data downloaded', 180000);
     }
-    await textButton(t, '.panel.film', 'Turn On Film Simulation');
+    await textButton(t, '.panel.film', 'Convert to Film');
     await until(() => t.driver.observe(() => !!document.querySelector('.panel.film .step[data-step="stock"] .tile.on')), 'a film tile selected');
     // tiles render one by one while the engine is idle: wait until none in view is still a blank placeholder
     await until(() => t.driver.observe(() => {

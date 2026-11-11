@@ -2,10 +2,12 @@
 // Copyright (C) 2026 the Immage authors
 
 // the Film Simulation panel: darktable's spektrafilm, a spectral model of a
-// film exposed, developed and printed, or scanned. its data pack comes
-// first, downloaded on first use; then turning it on, a preset, the film
-// and paper, the controls most photos need, and the rest of darktable's
-// tabs folded under Advanced (spektrafilm.ts)
+// film exposed, developed and printed, or scanned. one stepped panel: while
+// the module is off its first step converts the photo, downloading the data
+// pack on first use, turning Film Simulation on or starting from a preset;
+// the other steps stay locked until then. once on, that step hides and the
+// film and paper, the controls most photos need, and the rest of darktable's
+// tabs folded under Advanced follow (spektrafilm.ts)
 import { useEffect, useState } from "react";
 import type { Control } from "./manifest";
 import { Chevron, Collapse } from "./Collapse";
@@ -38,9 +40,10 @@ const ADVANCED: { title: string; ids: string[]; print?: boolean }[] = [
 const id = (field: string) => `sf_${field}`;
 
 // the steps by what decides which can be opened, for the tiles wanted
-const stepLayout = (slide: boolean, scan: boolean) => [
-  { id: "stock" }, { id: "paper", skipped: slide }, { id: "exposure" }, { id: "color", hidden: scan },
-  { id: "grain" }, { id: "darkroom" },
+const stepLayout = (on: boolean, slide: boolean, scan: boolean) => [
+  { id: "convert", hidden: on }, { id: "stock", locked: !on }, { id: "paper", locked: !on, skipped: slide },
+  { id: "exposure", locked: !on }, { id: "color", locked: !on, hidden: scan }, { id: "grain", locked: !on },
+  { id: "darkroom", locked: !on },
 ];
 
 // the controls the advanced section renders, for its edited dot; the print
@@ -95,8 +98,8 @@ export function FilmPanel({ values, disabled, on, stocks, fetch, onDownload, onC
   const film = filmOf(allStocks, values.sf_film_hash ?? 0);
   const scan = values.sf_scan_film === 1;
   const slide = !!film?.positive;
-  const stepNow = on ? openStep(stepLayout(slide, scan), stepOpen) : "";
-  const wanted = stepNow === "stock" ? allStocks.filter((x) => !x.printing).map((x) => filmTileKey(x.hash))
+  const stepNow = openStep(stepLayout(on, slide, scan), stepOpen);
+  const wanted = !on ? [] : stepNow === "stock" ? allStocks.filter((x) => !x.printing).map((x) => filmTileKey(x.hash))
     : stepNow === "paper" ? [PAPER_AUTO, PAPER_SCAN, ...allStocks.filter((x) => x.printing).map((x) => x.hash)]
         .map((p) => paperTileKey(film?.hash ?? 0, p)) : [];
   const wantedKey = wanted.join(",");
@@ -108,29 +111,7 @@ export function FilmPanel({ values, disabled, on, stocks, fetch, onDownload, onC
       shared with darktable on this computer.</p>
   );
   if (!stocks) return <div className="panel film"><section><p className="note-plain">Reading the film data…</p></section></div>;
-  if (!stocks.pack || !stocks.stocks.length) return (
-    <div className="panel film">
-      <section>
-        <p className="note-plain">Film Simulation renders the photo as a film would: exposed, developed and printed on
-          a paper, or scanned. It needs the measured data of the films and papers, about 12 MB, downloaded once.</p>
-        {running ? (
-          <>
-            <div className="progress"><div className="bar" style={{ width: `${Math.max(0, fetch.progress) * 100}%` }} /></div>
-            <p className="note-plain">{fetch.message}</p>
-            <button className="btn small" onClick={onCancel}>Cancel</button>
-          </>
-        ) : (
-          <>
-            <button className="btn small" disabled={disabled} onClick={onDownload}>
-              {fetch?.state === "failed" ? "Try Again" : "Download Film Data"}</button>
-            {fetch?.state === "failed" && <p className="note-plain">The download failed: {fetch.message}</p>}
-          </>
-        )}
-        {credit}
-      </section>
-    </div>
-  );
-
+  const hasPack = stocks.pack && stocks.stocks.length > 0;
   const auto = autoPaper(stocks.stocks, film);
   const paper = paperOf(stocks.stocks, values.sf_paper_hash ?? 0, film);
   const presetMenu = (
@@ -148,21 +129,6 @@ export function FilmPanel({ values, disabled, on, stocks, fetch, onDownload, onC
       </select>
     </div>
   );
-  if (!on) return (
-    <div className="panel film">
-      <section>
-        <p className="note-plain">Film Simulation takes the place of the tone mapper: the photo's light exposes a film,
-          which is developed and printed on a paper, or scanned. Exposure and white balance still set what the film
-          sees.</p>
-        <div className="neg-step">
-          <button className="btn small" disabled={disabled} onClick={onTurnOn}>Turn On Film Simulation</button>
-        </div>
-        {presetMenu}
-        {credit}
-      </section>
-    </div>
-  );
-
   const shown = (field: string) => (scan && ["print_exposure_ev", "print_auto_exposure", "print_contrast",
     "filter_m", "filter_y"].includes(field) ? null : renderControl(id(field)));
   const tile = (key: string, name: string, picked: boolean, click: () => void, title = name) => (
@@ -179,8 +145,41 @@ export function FilmPanel({ values, disabled, on, stocks, fetch, onDownload, onC
   const paperName = scan ? "Scanned" : paperPick === PAPER_AUTO ? "Auto paper" : paper?.name ?? "";
   const printTile = (pick: number, name: string, title?: string) =>
     tile(paperTileKey(film?.hash ?? 0, pick), name, paperPick === pick, () => onPaper(pick), title);
+  const locked = !on;
+  const lockNote = hasPack ? "convert first" : "download the film data first";
   const steps: Step[] = [
-    { id: "stock", title: "Stock", summary: `${film?.name ?? ""} · ${slide ? "Scanned" : paperName}`,
+    { id: "convert", title: "Convert", hidden: on,
+      summary: hasPack ? "turn on, or start from a preset" : "download the film data, about 12 MB",
+      content: !hasPack ? (
+        <>
+          <p className="note-plain">Film Simulation renders the photo as a film would: exposed, developed and printed on
+            a paper, or scanned. It needs the measured data of the films and papers, about 12 MB, downloaded once.</p>
+          {running ? (
+            <>
+              <div className="progress"><div className="bar" style={{ width: `${Math.max(0, fetch.progress) * 100}%` }} /></div>
+              <p className="note-plain">{fetch.message}</p>
+              <button className="btn small" onClick={onCancel}>Cancel</button>
+            </>
+          ) : (
+            <>
+              <button className="btn small" disabled={disabled} onClick={onDownload}>
+                {fetch?.state === "failed" ? "Try Again" : "Download Film Data"}</button>
+              {fetch?.state === "failed" && <p className="note-plain">The download failed: {fetch.message}</p>}
+            </>
+          )}
+        </>
+      ) : (
+        <>
+          <p className="note-plain">Film Simulation takes the place of the tone mapper: the photo's light exposes a film,
+            which is developed and printed on a paper, or scanned. Exposure and white balance still set what the film
+            sees.</p>
+          <div className="neg-step">
+            <button className="btn small primary" disabled={disabled} onClick={onTurnOn}>Convert to Film</button>
+          </div>
+          {presetMenu}
+        </>
+      ) },
+    { id: "stock", title: "Stock", locked, lockNote, summary: `${film?.name ?? ""} · ${slide ? "Scanned" : paperName}`,
       content: (
         <>
           {presetMenu}
@@ -194,7 +193,7 @@ export function FilmPanel({ values, disabled, on, stocks, fetch, onDownload, onC
           ))}
         </>
       ) },
-    { id: "paper", title: "Paper", skipped: slide,
+    { id: "paper", title: "Paper", locked, lockNote, skipped: slide,
       summary: slide ? "a slide film: scanned, with no print" : scan ? "None: scan the film"
         : paperPick === PAPER_AUTO ? `Auto (${auto?.name ?? ""})` : paperName,
       content: (
@@ -211,7 +210,7 @@ export function FilmPanel({ values, disabled, on, stocks, fetch, onDownload, onC
           ))}
         </>
       ) },
-    { id: "exposure", title: "Exposure",
+    { id: "exposure", title: "Exposure", locked, lockNote,
       summary: `Exposure ${signed(values.sf_exposure_ev, 1)} · Push ${signed(values.sf_push_pull_stops, 0)}`,
       content: (
         <>
@@ -223,9 +222,9 @@ export function FilmPanel({ values, disabled, on, stocks, fetch, onDownload, onC
           {shown("output_luminance_boost")}
         </>
       ) },
-    { id: "color", title: "Color", hidden: scan, summary: `M ${signed(values.sf_filter_m, 0)} · Y ${signed(values.sf_filter_y, 0)}`,
+    { id: "color", title: "Color", hidden: scan, locked, lockNote, summary: `M ${signed(values.sf_filter_m, 0)} · Y ${signed(values.sf_filter_y, 0)}`,
       content: <>{shown("filter_m")}{shown("filter_y")}</> },
-    { id: "grain", title: "Grain & Halation",
+    { id: "grain", title: "Grain & Halation", locked, lockNote,
       summary: `${values.sf_grain_on === 1 ? `Grain ${num(values.sf_grain_amount, 2)}` : "Grain off"} · `
         + `${values.sf_halation_on === 1 ? `Halation ${num(values.sf_halation_amount, 2)}` : "Halation off"}`,
       content: (
@@ -237,7 +236,7 @@ export function FilmPanel({ values, disabled, on, stocks, fetch, onDownload, onC
           {values.sf_halation_on === 1 && renderControl(id("halation_amount"))}
         </>
       ) },
-    { id: "darkroom", title: "Darkroom",
+    { id: "darkroom", title: "Darkroom", locked, lockNote,
       summary: `Development, couplers, print, scanner…${darkroomChanged ? " · changed" : ""}`,
       content: (
         <div className="section-body">
@@ -254,7 +253,7 @@ export function FilmPanel({ values, disabled, on, stocks, fetch, onDownload, onC
   ];
   return (
     <div className="panel film">
-      <div className="film-format">{renderControl(id("film_format_mm"))}</div>
+      {on && <div className="film-format">{renderControl(id("film_format_mm"))}</div>}
       <GuidedSteps steps={steps} open={stepOpen} onOpen={setStepOpen} />
       {credit}
     </div>
