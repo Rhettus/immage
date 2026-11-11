@@ -2327,6 +2327,8 @@ async fn export_images(
     state.engine("export_images").request(json!({ "cmd": "export_hold", "job": held, "imgids": imgids }))?;
     let cancel = Arc::new(AtomicBool::new(false));
     state.export_cancels.lock().unwrap().insert(job, cancel.clone());
+    // removed on every exit, including an early return, a panic or a dropped future
+    let _registered = CancelEntry { map: &state.export_cancels, job };
     let mut cancelled = false;
     for (n, item) in items.iter().enumerate() {
         if cancel.load(Ordering::SeqCst) {
@@ -2393,7 +2395,7 @@ async fn export_images(
     }
     // the photos not reached, and their snapshots; after the last export,
     // on the same thread
-    state.export_cancels.lock().unwrap().remove(&job);
+    drop(_registered);
     let t = tagged.clone();
     let tag = t.tag();
     let _ = tauri::async_runtime::spawn_blocking(move || t.request(tag, json!({ "cmd": "export_release", "job": held })))
@@ -2409,6 +2411,19 @@ async fn export_images(
                           "duplicates": duplicates, "album": options.immich_album, "cancelled": cancelled }));
     }
     Ok(json!({ "written": written, "skipped": skipped, "failed": failed, "dir": dir, "cancelled": cancelled }))
+}
+
+// removes an export job's cancel flag when it goes out of scope
+struct CancelEntry<'a> {
+    map: &'a Mutex<HashMap<u64, Arc<AtomicBool>>>,
+    job: u64,
+}
+
+impl Drop for CancelEntry<'_> {
+    fn drop(&mut self) {
+        // a poisoned lock still holds a usable map
+        self.map.lock().unwrap_or_else(|e| e.into_inner()).remove(&self.job);
+    }
 }
 
 // stops export_images' `job` before its next image
@@ -3481,6 +3496,20 @@ fn preview_fullscreen(app: AppHandle, on: bool) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cancel_entry_removes_on_drop_and_unwind() {
+        let map = Mutex::new(HashMap::new());
+        map.lock().unwrap().insert(7, Arc::new(AtomicBool::new(false)));
+        drop(CancelEntry { map: &map, job: 7 });
+        assert!(map.lock().unwrap().is_empty());
+        map.lock().unwrap().insert(8, Arc::new(AtomicBool::new(false)));
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _g = CancelEntry { map: &map, job: 8 };
+            panic!("boom");
+        }));
+        assert!(r.is_err() && map.lock().unwrap().is_empty());
+    }
 
     #[test]
     fn async_workers_leave_room_beside_engine_waiters() {

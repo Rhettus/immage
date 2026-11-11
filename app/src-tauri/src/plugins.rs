@@ -410,6 +410,21 @@ pub struct Watch {
 
 const POLL: Duration = Duration::from_secs(2);
 const GIVE_UP: Duration = Duration::from_secs(3 * 3600);
+// watches running at once; each holds a polling thread for up to GIVE_UP
+const MAX_WATCHES: usize = 16;
+
+impl Plugins {
+    // a watch for `token`, unless too many are running; a token already
+    // watched does not count twice
+    fn start_watch(&self, token: u64) -> Result<(), String> {
+        let mut live = self.live.lock().unwrap();
+        if !live.contains(&token) && live.len() >= MAX_WATCHES {
+            return Err(format!("too many plugin watches are running ({MAX_WATCHES}); wait for one to finish or close an application"));
+        }
+        live.insert(token);
+        Ok(())
+    }
+}
 
 fn stem(p: &Path) -> String {
     p.file_stem().map(|s| s.to_string_lossy().to_lowercase()).unwrap_or_default()
@@ -456,7 +471,7 @@ fn scan(dirs: &[PathBuf], exts: &[String], ignore: &HashSet<PathBuf>) -> HashMap
 #[tauri::command]
 pub fn plugin_watch(app: AppHandle, state: State<'_, Plugins>, watch: Watch) -> Result<(), String> {
     state.ready(&watch.plugin)?;
-    state.live.lock().unwrap().insert(watch.token);
+    state.start_watch(watch.token)?;
     std::thread::spawn(move || {
         let plugins = app.state::<Plugins>();
         let sources: Vec<PathBuf> = watch.sources.iter().map(PathBuf::from).collect();
@@ -766,6 +781,13 @@ pub fn plugin_job(app: AppHandle, state: State<'_, Plugins>, job: Job) -> Result
     if cfg.kind != "macro-studio" {
         return Err(format!("{} does not take jobs", cfg.name));
     }
+    // refused before anything is written or started; the insert below follows
+    {
+        let live = state.live.lock().unwrap();
+        if !live.contains(&job.token) && live.len() >= MAX_WATCHES {
+            return Err(format!("too many plugin watches are running ({MAX_WATCHES}); wait for one to finish or close an application"));
+        }
+    }
     for f in &job.files {
         photo_file(&f.path)?;
     }
@@ -876,6 +898,21 @@ mod tests {
         assert!(p.ready("b").unwrap_err().contains("choose its application"));
         assert!(p.ready_id("nope").is_err() && p.ready_id("b").is_ok());
         assert!(p.set_app("nope", "/x").is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn watches_are_capped() {
+        let dir = scratch("test-plugin-cap");
+        let p = Plugins::new(dir.join("returns.json"));
+        for t in 0..MAX_WATCHES as u64 {
+            p.start_watch(t).unwrap();
+        }
+        assert!(p.start_watch(MAX_WATCHES as u64).unwrap_err().contains("too many"));
+        // a token already watched is not a new watch
+        p.start_watch(0).unwrap();
+        p.live.lock().unwrap().remove(&1);
+        p.start_watch(MAX_WATCHES as u64).unwrap();
         let _ = std::fs::remove_dir_all(&dir);
     }
 
