@@ -50,6 +50,11 @@ export async function panel(t, id) {
   if (!await t.driver.observe(s => document.querySelector(`${s} > .panel-title`)?.classList.contains('open'), selector))
     await click(t, `${selector} > .panel-title`);
   await until(() => t.driver.observe(s => !!document.querySelector(`${s} > .collapse.open`), selector), `${id} open`);
+  // the open class comes before the layout settles: panels slide open and
+  // (in focus mode) others slide shut over 0.22 s (.collapse in styles.css).
+  // a control measured mid-slide is clicked where it no longer is
+  await until(() => t.driver.observe(() => !document.getAnimations().some(a =>
+    a.playState === 'running' && a.effect?.target?.closest?.('.collapse'))), `${id} settled`);
   return selector;
 }
 // open a guided step (GuidedSteps.tsx) of a panel by its id, through a real
