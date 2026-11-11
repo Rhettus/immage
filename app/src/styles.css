@@ -2557,3 +2557,24 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .step .tile:disabled { opacity: 0.45; cursor: default; }
 .step .tile:focus-visible { outline: 2px solid var(--focus, #7aa7ff); outline-offset: 2px; }
 .step-body .positive-foot { padding: 0; border-top: 0; }
+
+/* Create Support Bundle: the scrubbed text, one row per line, only the visible rows drawn */
+.modal.support-bundle { width: min(860px, calc(100vw - 32px)); }
+.sb-tabs { display: flex; gap: 4px; margin: 8px 0 6px; flex-wrap: wrap; }
+.sb-tab {
+  padding: 3px 10px; background: none; border: 1px solid var(--inset, #262626); border-radius: 6px;
+  color: var(--text-2); font: inherit; font-size: var(--fs-small); cursor: pointer;
+}
+.sb-tab.on { background: var(--hover); color: var(--text); }
+.sb-lines {
+  overflow: auto; background: var(--inset, #1a1a1a); border-radius: 6px; margin-bottom: 8px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: var(--fs-small);
+  -webkit-user-select: text; user-select: text;
+}
+.sb-line { position: absolute; left: 0; right: 0; padding: 0 8px; line-height: 18px; white-space: pre; overflow: hidden; text-overflow: ellipsis; cursor: pointer; color: var(--text-2); }
+.sb-line:hover { background: var(--hover); }
+.sb-line.gone { text-decoration: line-through; opacity: 0.45; }
+.status .status-action, .activity .status-action {
+  margin-left: 8px; padding: 1px 8px; background: var(--hover, #2a2a2a); border: none; border-radius: 5px;
+  color: var(--text); font: inherit; cursor: pointer; pointer-events: auto;
+}

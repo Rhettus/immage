@@ -402,7 +402,7 @@ fn stage2_res() -> &'static Stage2 {
             )
             .unwrap(),
             user_path: Regex::new(&format!(
-                r"(?i)(?P<pre>^|[^\w.\-~])(?P<root>(?:[A-Za-z]:)?{sep}(?:home|users)|{sep}run{sep}media|{sep}media|{sep}volumes)(?P<sep>{sep})(?P<name>{comp}+)(?P<tail>(?:{sep}{comp}*)*)"
+                r"(?i)(?P<pre>^|[^\w.\-~])(?P<root>(?:[A-Za-z]:)?{sep}(?:home|users)|{sep}run{sep}media|{sep}media|{sep}mnt|{sep}volumes)(?P<sep>{sep})(?P<name>{comp}+)(?P<tail>(?:{sep}{comp}*)*)"
             ))
             .unwrap(),
             unc: Regex::new(
@@ -891,6 +891,12 @@ mod tests {
             out,
             "/home/<user>/<path> /Users/<user> C:\\Users\\<user>\\<path> C:\\\\Users\\\\<user>\\\\<path> /run/media/<path> /media/<path> /usr/share /Users/Shared/x C:\\Users\\Public\\p /Library/Caches /home"
         );
+    }
+
+    #[test]
+    fn mnt_mounts_are_private() {
+        let mut s = Scrubber::new(Known::default());
+        assert_eq!(s.scrub("/mnt/nas/Photos/a.txt /mnt"), "/mnt/<path> /mnt");
     }
 
     #[test]

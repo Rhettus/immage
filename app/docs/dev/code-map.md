@@ -88,6 +88,11 @@ fallback, embedded JPEG equality, orientation and scaled decoding.
 - Add a file to its line here and its entry in [architecture.md](architecture.md); keep this map short, as it is read at the start of every session.
 - Refer to code by symbol, not line number.
 
+Support bundle: [scrub.rs](../../src-tauri/src/scrub.rs) (the scrubber),
+[support_bundle.rs](../../src-tauri/src/support_bundle.rs) (`support_bundle_*` commands, zip),
+[SupportBundleDialog.tsx](../../src/SupportBundleDialog.tsx) (review and remove lines); opened from Help
+(`support-bundle` in menu.ts) and from the engine-exit status in App.tsx.
+
 GUI benchmark resource sampling: [resources.rs](../../src-tauri/src/resources.rs)
 records CPU, process memory, Linux threads and available GPU counters on a
 background worker; `App.tsx` attaches phase timestamps to report version 5.

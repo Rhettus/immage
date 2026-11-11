@@ -174,6 +174,8 @@ system:
 
 **Help > User Guide** opens this guide on the
 [Immage website](https://immage.photo/guide/) in your browser.
+**Help > Create Support Bundle…** saves a scrubbed .zip of diagnostics for a
+bug report; see [Troubleshooting](troubleshooting.md#support-bundle).
 
 On Windows and Linux, click a menu to open it. While one is open, moving the
 pointer over another menu opens that one. The arrow keys move through the

@@ -28,6 +28,8 @@ Submitting a request does not guarantee inclusion or an implementation timeline.
 - [ ] **GUI benchmark JSON** for performance problems (instructions below).
 - [ ] **engine.log** for crashes (instructions below).
 
+The easiest way to gather the last three is a [support bundle](#support-bundle).
+
 Report the problem even if you cannot collect all this information. Say which
 diagnostics are unavailable and why. Logs and benchmark reports may contain
 local file paths and machine details; review attachments before posting them
@@ -52,6 +54,36 @@ identify the app version and settings used for each report.
 See [Performance preferences](preferences.md#performance) for settings and
 Linux launch and rendering troubleshooting. If the benchmark fails, include its
 error and describe the slow action instead.
+
+## Support bundle
+
+**Help > Create Support Bundle…** collects what a bug report needs into one
+.zip file. The same button appears beside the "the engine exited" message and
+the "The engine keeps stopping" notice.
+
+The bundle holds:
+
+- **engine.log**, the whole log of the photo engine;
+- **system.json**: Immage's version and build, the darktable version, an
+  anonymous computer id, the operating system, processor, memory, graphics
+  and OpenCL details;
+- **preferences.json**: the preferences you have set;
+- **benchmark.json**, only when you add a GUI benchmark report with
+  **Add GUI Benchmark Report…** (pick one from the GUI benchmark folder).
+
+Before anything is saved, Immage replaces private information with
+placeholders: your user and computer names (`<user>`, `<host>`), your home
+folder (`~`), folder and photo names (`folder-1`, `photo-1.ARW`), email
+addresses, web addresses with credentials or private hosts, serial numbers and
+other paths in user folders. The same name always gets the same placeholder, so
+the log still reads sensibly. Timestamps are left alone.
+
+The dialog shows the text of each file and how many replacements were made.
+Click a line to leave it out of the bundle (it is struck through; click again to
+bring it back), or Shift-click to leave out a range. **Save…** asks where to
+put the file, named `immage-support-<date>.zip`. Nothing is uploaded; attach
+the file to your issue yourself. Check the text before you save: the
+replacement finds what it can, and you decide what is shared.
 
 ## Crashes
 

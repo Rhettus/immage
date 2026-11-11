@@ -23,6 +23,7 @@ mod scale;
 mod renderer;
 mod volumes;
 mod scrub;
+mod support_bundle;
 
 use cache::Caches;
 use engine::{BaseCancel, Engine, Tagged, Timing};
@@ -1443,31 +1444,34 @@ fn display_env() -> Value {
     })
 }
 
+// the machine block of a GUI benchmark report and the support bundle
+fn machine_block(dir: Option<&Path>, opencl: Option<Value>) -> Value {
+    use sysinfo::{CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};
+    let sys = System::new_with_specifics(RefreshKind::nothing().with_cpu(CpuRefreshKind::nothing())
+                                             .with_memory(MemoryRefreshKind::nothing().with_ram()));
+    json!({
+        "id": report_machine_id(dir),
+        "os": System::long_os_version(),
+        "arch": System::cpu_arch(),
+        "cpu": sys.cpus().first().map(|c| c.brand().trim().to_string()),
+        "cores": sys.cpus().len(),
+        "memoryGb": (sys.total_memory() as f64 / (1u64 << 30) as f64).round(),
+        "opencl": opencl,
+        "display": display_env(),
+        // the user agent's version is frozen; this is WebKitGTK's,
+        // WebView2's or WKWebView's own
+        "webview": tauri::webview_version().ok(),
+    })
+}
+
 // the machine a GUI benchmark ran on: a stable id to group reports by, and
 // what it is
 #[tauri::command]
 async fn perf_machine(app: AppHandle, state: State<'_, AppState>) -> Result<Value, String> {
-    use sysinfo::{CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};
     let opencl = state.engine("perf_machine").request(json!({ "cmd": "opencl" })).ok()
         .map(|mut r| { if let Some(o) = r.as_object_mut() { o.remove("ok"); } r });
     let dir = app.path().app_data_dir().ok();
-    tauri::async_runtime::spawn_blocking(move || {
-        let sys = System::new_with_specifics(RefreshKind::nothing().with_cpu(CpuRefreshKind::nothing())
-                                                 .with_memory(MemoryRefreshKind::nothing().with_ram()));
-        json!({
-            "id": report_machine_id(dir.as_deref()),
-            "os": System::long_os_version(),
-            "arch": System::cpu_arch(),
-            "cpu": sys.cpus().first().map(|c| c.brand().trim().to_string()),
-            "cores": sys.cpus().len(),
-            "memoryGb": (sys.total_memory() as f64 / (1u64 << 30) as f64).round(),
-            "opencl": opencl,
-            "display": display_env(),
-            // the user agent's version is frozen; this is WebKitGTK's,
-            // WebView2's or WKWebView's own
-            "webview": tauri::webview_version().ok(),
-        })
-    })
+    tauri::async_runtime::spawn_blocking(move || machine_block(dir.as_deref(), opencl))
     .await
     .map_err(|e| e.to_string())
 }
@@ -3419,6 +3423,7 @@ fn main() {
             // stacks saved in Macro Studio while Immage was closed
             let handle = app.handle().clone();
             std::thread::spawn(move || handle.state::<plugins::Plugins>().drain_jobs());
+            app.manage(support_bundle::BundleState::default());
             app.manage(Caches::new(&app.path().app_cache_dir()?));
             Ok(())
         })
@@ -3429,7 +3434,7 @@ fn main() {
             ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, positive_export, spektra_stocks, spektra_fetch, list_subfolders, folder_volumes, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
             immich_export_check, immich_search, immich_browse_check, immich_libraries, immich_suggestions, immich_people, immich_tags,
             immich_thumb, immich_resolve, launch_file, path_exists, path_kind, display_scale, trash_files, create_virtual_copy, remove_virtual_copy, hdr_merge, hdr_can_align, pano_merge, pano_preview, pano_can_merge, merge_cancel, preview_fullscreen, build, about, licenses, engine_quit, engine_restart, keywords, keywords_set, ai_accel,
-            menu_set, csp_violation, perf_set, perf_trace_start, perf_trace_stop, perf_modules, perf_report_write, perf_machine, perf_ping, gpu_check_parity, resources::perf_resources_start, resources::perf_resources_stop,
+            menu_set, csp_violation, perf_set, perf_trace_start, perf_trace_stop, perf_modules, perf_report_write, perf_machine, perf_ping, support_bundle::support_bundle_preview, support_bundle::support_bundle_add_benchmark, support_bundle::support_bundle_save, support_bundle::support_bundle_discard, gpu_check_parity, resources::perf_resources_start, resources::perf_resources_stop,
             plugins::plugin_find_apps, plugins::plugin_config, plugins::plugin_config_save, plugins::plugin_set_app, plugins::plugin_choose_app, plugins::plugin_launch, plugins::plugin_watch, plugins::plugin_cancel, plugins::plugin_job,
             plugins::plugin_returns, plugins::plugin_return_applied
         ])

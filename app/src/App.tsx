@@ -109,6 +109,7 @@ import { BUILTIN_PRESETS, loadLooks, loadNewPhotosPreset, loadPresets, NewPreset
 import { ASPECTS, CropOverlay, customAspect, findAspect, fitAspect, FULL, loadCustomAspects, pixelAspect,
          rememberCustomAspect, type Aspect, type CropRect } from "./CropTool";
 import { ShortcutsDialog } from "./Shortcuts";
+import { SupportBundleDialog, supportValues, type SupportValues } from "./SupportBundleDialog";
 import { cmd, fieldKeeps, IS_MAC, keys } from "./keys";
 import { MenuBar } from "./MenuBar";
 import { forPlatform, MENUS, nativeSpec, type ActionId } from "./menu";
@@ -375,6 +376,15 @@ export default function App() {
   const [pasting, setPasting] = useState<string | null>(null);
   const pastingRef = useRef(false);
   const menuActionsRef = useRef<Partial<Record<ActionId, () => void>>>({});
+  const [supportBundle, setSupportBundle] = useState<SupportValues | null>(null);
+  const openSupportBundleRef = useRef<() => Promise<void>>(async () => {});
+  // the dialog scrubs the engine's log, so it is told the folders and photo names the app has shown
+  openSupportBundleRef.current = async () => {
+    setSupportBundle(await supportValues({
+      folders: [folder, ...folders],
+      photos: images.flatMap((i) => [i.filename, i.path]),
+    }));
+  };
   const lastKeyActionRef = useRef<{ id: ActionId; t: number } | null>(null);
   const addFolderRef = useRef<() => void | Promise<void>>(() => {});
   const pasteUndoSession = useRef<Session | null>(null);
@@ -5537,6 +5547,7 @@ export default function App() {
       // menu-only items
       "add-folder": () => { void addFolderRef.current(); },
       "user-guide": () => { void openUrl("https://immage.photo/guide/"); },
+      "support-bundle": () => { void openSupportBundleRef.current(); },
       "about": () => { setPrefsOpen("about"); },
       "quit": () => { void getCurrentWindow().close(); },
       "cut": () => { document.execCommand("cut"); },
@@ -6349,7 +6360,9 @@ export default function App() {
             </svg>
           )}
           <div className={`working${working ? " on" : ""}`} title="working…" aria-hidden={!working}><span /></div>
-          <div className="status">{status}</div>
+          <div className="status">{status}{isEngineExit(status) && <button className="status-action"
+            onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}
+            onClick={() => void openSupportBundleRef.current()}>Create Support Bundle…</button>}</div>
           <div className="activities">
           {backgroundJobs.map((j) => <JobActivity key={j.id} job={j} />)}
           {engineNotice?.kind === "slow" && (
@@ -6364,7 +6377,8 @@ export default function App() {
             <div className="activity" data-save-error><span className="failed">Edits are not being saved. {saveError}</span></div>
           )}
           {engineNotice?.kind === "failed" && (
-            <div className="activity"><span className="failed">The engine keeps stopping. Restart Immage to continue editing.</span></div>
+            <div className="activity"><span className="failed">The engine keeps stopping. Restart Immage to continue editing.</span>
+              <button className="status-action" onClick={() => void openSupportBundleRef.current()}>Create Support Bundle…</button></div>
           )}
           {(() => {
             // the folder's reading, then its thumbnails
@@ -6920,6 +6934,7 @@ export default function App() {
       </nav>
     </div>
     {shortcutsOpen && <ShortcutsDialog onClose={() => setShortcutsOpen(false)} />}
+    {supportBundle && <SupportBundleDialog values={supportBundle} onClose={() => setSupportBundle(null)} />}
     {captureDialog && <CaptureTimeDialog {...captureDialog} onApply={applyCaptureTimes} onClose={() => setCaptureDialog(null)} />}
     {fileMenu && (() => {
       const hit = images.find((i) => i.imgid === fileMenu.imgid);

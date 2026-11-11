@@ -16,7 +16,7 @@ export type ActionId =
   | "label-red" | "label-yellow" | "label-green" | "label-blue" | "reject"
   | "zoom-in" | "zoom-out" | "zoom-toggle" | "fullscreen-preview" | "grid" | "before-after" | "compare"
   | "hide-panels" | "clipping" | "next-scope" | "info-overlay" | "canvas" | "soft-proof" | "perf-overlay"
-  | "shortcuts" | "user-guide" | "about";
+  | "shortcuts" | "user-guide" | "support-bundle" | "about";
 
 export type Platform = "mac" | "other";
 export type Role = "about" | "services" | "hide" | "hideOthers" | "showAll" | "quit" | "closeWindow" | "cut" | "copy" | "paste" | "minimize" | "zoom" | "fullscreen";
@@ -38,7 +38,7 @@ export const ACTION_IDS: readonly ActionId[] = [
   "label-red", "label-yellow", "label-green", "label-blue", "reject",
   "zoom-in", "zoom-out", "zoom-toggle", "fullscreen-preview", "grid", "before-after", "compare",
   "hide-panels", "clipping", "next-scope", "info-overlay", "canvas", "soft-proof", "perf-overlay",
-  "shortcuts", "user-guide", "about",
+  "shortcuts", "user-guide", "support-bundle", "about",
 ];
 
 const item = (id: ActionId, label: string, shortcut?: string, platform?: Platform): MenuItem =>
@@ -129,6 +129,7 @@ export const MENUS: Menu[] = [
     label: "Help", items: [
       item("shortcuts", "Keyboard Shortcuts", "⌘/"),
       item("user-guide", "User Guide"),
+      item("support-bundle", "Create Support Bundle…"),
       sep("other"), item("about", "About Immage", undefined, "other"),
     ],
   },

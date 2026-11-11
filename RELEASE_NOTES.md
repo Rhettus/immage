@@ -10,6 +10,11 @@ Improvements
 - GUI benchmark reports no longer record the computer's name. They identify
   the computer by an anonymous id instead, so a report can be shared without
   naming it.
+- Help > Create Support Bundle… (also offered when the engine stops) saves a
+  .zip with the engine log, versions, machine details and the preferences you
+  set, for a bug report. User and computer names, folders, photo names, emails and
+  credentialed addresses are replaced first, you can review the text and leave
+  out any line, and nothing is uploaded.
 - Preferences has one Memory setting instead of three: it sizes the render
   caches, the views already shown and the thumbnails from the computer's
   memory, so a 32 GB computer keeps more and an 8 GB one less, without setting

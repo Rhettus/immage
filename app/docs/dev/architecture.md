@@ -835,6 +835,17 @@ commit; a clean run shows no `csp violation` lines in `webview.log`.
 - Contracts belong in comments beside the code. Measured results belong in [benchmarking/](../../../benchmarking/README.md), and decisions about darktable internals belong in darktable's `dev-doc/`. This file only says where things are and how they connect.
 - After changing a diagram's spec in [`diagrams/build_diagrams.py`](diagrams/build_diagrams.py), rerun it so the `.excalidraw` and `.svg` files agree.
 
+Support bundle: [scrub.rs](../../src-tauri/src/scrub.rs) replaces private values
+(`Known` from `known_from_system()` plus the page's folders, photo names and
+Immich host; then path, URL, email and serial patterns) with stable placeholders.
+[support_bundle.rs](../../src-tauri/src/support_bundle.rs) scrubs engine.log,
+a system block (`machine_block` in main.rs, plus versions) and the page's
+`immage.*` localStorage preferences with one `Scrubber`, keeps the text in
+`BundleState`, and writes a zip from it. The page
+([SupportBundleDialog.tsx](../../src/SupportBundleDialog.tsx)) only receives
+lines and returns removed line indexes, never text. `support_bundle_add_benchmark`
+scrubs a report picked from the GUI benchmark folder with the same scrubber.
+
 GUI benchmark resource sampling: [resources.rs](../../src-tauri/src/resources.rs)
 records CPU, process memory, Linux threads and available GPU counters on a
 background worker; `App.tsx` attaches phase timestamps to report version 5.
