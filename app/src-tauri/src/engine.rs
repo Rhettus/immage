@@ -600,16 +600,21 @@ impl Engine {
     // hold darktable's database lock, and a new one then gives up at once;
     // it is started again until the old one has gone, for a few seconds
     pub fn spawn(bin: &Path, runtime: &Path, models: &Path) -> std::io::Result<Self> {
-        Self::spawn_with(bin, runtime, models, 1, None)
+        Self::spawn_with(bin, runtime, models, 1, None, 0)
     }
 
-    fn spawn_with(bin: &Path, runtime: &Path, models: &Path, epoch: u64, link: Option<&Arc<Link>>) -> std::io::Result<Self> {
+    // `last_id` carries request ids on across a respawn
+    fn spawn_with(bin: &Path, runtime: &Path, models: &Path, epoch: u64, link: Option<&Arc<Link>>,
+                  last_id: u64) -> std::io::Result<Self> {
         let mut link = link.cloned();
+        let mut last_id = last_id;
         for attempt in 0..10 {
             let mut engine = Self::spawn_once(bin, runtime, models, epoch, link.as_ref())?;
             // later attempts replace this one's Conn in the same Link
             link = Some(engine.link.clone());
-            std::thread::sleep(std::time::Duration::from_millis(400));
+            engine.last_id = last_id;
+            if engine.started(Duration::from_millis(400)) { return Ok(engine) }
+            last_id = engine.last_id;
             let Some(status) = engine.conn.child.lock().unwrap().try_wait()? else { return Ok(engine) };
             // a start that failed is not a quit
             engine.retired = true;
@@ -619,6 +624,29 @@ impl Engine {
             std::thread::sleep(std::time::Duration::from_millis(600));
         }
         unreachable!()
+    }
+
+    // whether the engine got through dt_init, which is where a lock held by
+    // an engine still exiting makes it give up: true once it answers a
+    // `version` (main.c answers only after dt_init), false when it has not
+    // by `limit` or has gone. a late answer carries a stale rid, which
+    // request() drops
+    fn started(&mut self, limit: Duration) -> bool {
+        let deadline = Instant::now() + limit;
+        self.last_id += 1;
+        let req = json!({ "cmd": "version", "rid": self.last_id });
+        let sent = {
+            let mut stdin = self.conn.stdin.lock().unwrap();
+            writeln!(stdin, "{req}").and_then(|_| stdin.flush()).is_ok()
+        };
+        if sent && self.replies.recv_timeout(limit).is_ok() { return true }
+        // a closed pipe comes before the exit is reaped; wait out the limit
+        // for the status, as a failed start is told by it
+        while Instant::now() < deadline {
+            if !matches!(self.conn.child.lock().unwrap().try_wait(), Ok(None)) { break }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        false
     }
 
     fn spawn_once(bin: &Path, runtime: &Path, models: &Path, epoch: u64, link: Option<&Arc<Link>>) -> std::io::Result<Self> {
@@ -739,8 +767,8 @@ impl Engine {
             let _ = child.kill();
             let _ = child.wait();
         }
-        let mut new = Self::spawn_with(&self.bin, &self.runtime, &self.models, self.conn.epoch + 1, Some(&self.link))?;
-        new.last_id = self.last_id;
+        let mut new = Self::spawn_with(&self.bin, &self.runtime, &self.models, self.conn.epoch + 1, Some(&self.link),
+                                       self.last_id)?;
         new.operation = self.operation;
         std::mem::swap(self, &mut new);
         // the old one has nothing left to stop, and its drop is no quit
@@ -1053,6 +1081,24 @@ mod tests {
         engine.quit();
         assert!(link.quitting());
         assert_eq!(link.wait_dead(), None);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    // a start that is answered goes on at once, without the 400 ms limit;
+    // the second start follows one that gave up (an old engine's lock)
+    #[cfg(unix)]
+    #[test]
+    fn spawn_goes_on_once_answered() {
+        let (root, bin) = script_engine("answered", DIE_ONCE);
+        let t = Instant::now();
+        let mut engine = super::Engine::spawn(&bin, &root, &root).unwrap();
+        // the first run's wait for its exit, the 600 ms pause, then an answer
+        assert!(t.elapsed() < Duration::from_millis(1300), "{:?}", t.elapsed());
+        engine.request(serde_json::json!({ "cmd": "x" })).unwrap();
+        let seen = std::fs::read_to_string(root.join("seen")).unwrap();
+        // the second run's probe; ids go on from the first run's
+        assert!(seen.contains("\"rid\":2") && seen.contains("\"rid\":3"), "{seen}");
+        engine.quit();
         std::fs::remove_dir_all(root).unwrap();
     }
 

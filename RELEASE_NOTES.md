@@ -51,6 +51,8 @@ Performance
   running on Linux, renders while editing took about half as long as before;
   the export itself takes longer while you edit, and runs at full speed when
   you stop.
+- Immage opens a little sooner: it no longer waits a fixed moment for the
+  editing engine to start.
 
 Bug fixes
 
