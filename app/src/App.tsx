@@ -100,6 +100,7 @@ import { ASPECTS, CropOverlay, customAspect, findAspect, fitAspect, FULL, loadCu
 import { ShortcutsDialog } from "./Shortcuts";
 import { SupportBundleDialog, supportValues, type SupportValues } from "./SupportBundleDialog";
 import { cmd, fieldKeeps, IS_MAC, keys } from "./keys";
+import { chordAction } from "./actions";
 import { MenuBar } from "./MenuBar";
 import { forPlatform, MENUS, nativeSpec, type ActionId } from "./menu";
 import { perf } from "./perf";
@@ -5274,88 +5275,10 @@ export default function App() {
       if (fieldKeeps(t, e.key)) return;
       // the import screen has its own keys; Preferences still opens over it
       if (importOpenRef.current && !(cmd(e) && (e.key === "," || e.code === "Slash"))) return;
-      if (cmd(e) && e.shiftKey && e.code === "KeyP") {
-        e.preventDefault();
-        run("perf-overlay");
-        return;
-      }
-      if (cmd(e) && e.shiftKey && (e.key === "e" || e.key === "E")) {
-        e.preventDefault();
-        run("export");
-        return;
-      }
-      // ⌘P: the Print panel, as Lightroom's Print module
-      if (cmd(e) && !e.shiftKey && !e.altKey && (e.key === "p" || e.key === "P")) {
-        e.preventDefault();
-        run("print");
-        return;
-      }
-      // Copy Settings, Paste and Previous, as Lightroom's ⇧⌘C, ⇧⌘V and ⌥⌘V
-      if (cmd(e) && (e.key === "c" || e.key === "C" || e.code === "KeyC") && e.shiftKey) {
-        e.preventDefault();
-        run("copy-settings");
-        return;
-      }
-      if (cmd(e) && e.code === "KeyV" && (e.shiftKey || e.altKey)) {
-        e.preventDefault();
-        if (e.altKey) run("paste-previous"); else run("paste-settings");
-        return;
-      }
-      if (cmd(e) && e.code === "Slash") {
-        e.preventDefault();
-        run("shortcuts");
-        return;
-      }
-      // Create Virtual Copy, as Lightroom's ⌘': of the selection, else the open photo
-      if (cmd(e) && e.code === "Quote") {
-        e.preventDefault();
-        run("virtual-copy");
-        return;
-      }
-      // HDR Merge, as Lightroom's ⌃H: of the selection's raws, two or more
-      if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.code === "KeyH") {
-        e.preventDefault();
-        run("hdr-merge");
-        return;
-      }
-      // Panorama Merge, as Lightroom's ⌃M: of the selection, two or more
-      if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.code === "KeyM") {
-        e.preventDefault();
-        run("pano-merge");
-        return;
-      }
-      // Preferences, as every Mac app's ⌘,
-      if (cmd(e) && e.key === ",") {
-        e.preventDefault();
-        run("preferences");
-        return;
-      }
-      if (cmd(e) && e.shiftKey && (e.key === "i" || e.key === "I")) {
-        e.preventDefault();
-        run("import");
-        return;
-      }
-      if (cmd(e) && (e.key === "z" || e.key === "Z")) {
-        e.preventDefault();
-        run(e.shiftKey ? "redo" : "undo");
-        return;
-      }
-      // zoom in and out, as Lightroom's ⌘= and ⌘-; by code, so ⇧⌘= (⌘+) zooms
-      // too. marked used, so WebView2 does not zoom the page
-      if (cmd(e) && (e.code === "Equal" || e.code === "Minus") && !e.altKey) {
-        e.preventDefault();
-        run(e.code === "Equal" ? "zoom-in" : "zoom-out");
-        return;
-      }
-      if (cmd(e) && (e.code === "BracketLeft" || e.code === "BracketRight")) {
-        e.preventDefault();
-        run(e.code === "BracketLeft" ? "rotate-left" : "rotate-right");
-        return;
-      }
-      // ⌘A selects every photo the filters leave showing
-      if (cmd(e) && e.code === "KeyA" && !e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        run("select-all");
+      const chord = chordAction(e);
+      if (chord) {
+        if (!chord.keep) e.preventDefault();
+        run(chord.id);
         return;
       }
       if (e.metaKey || e.ctrlKey || e.altKey) return;

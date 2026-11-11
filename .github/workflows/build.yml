@@ -97,6 +97,7 @@ jobs:
           node --test \
             verify/agx-profiles.test.mjs \
             verify/ai-mask-paste.test.mjs \
+            verify/chord-actions.test.mjs \
             verify/color-range.test.mjs \
             verify/contrast-equalizer.test.mjs \
             verify/crop-corner.test.mjs \

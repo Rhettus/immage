@@ -102,6 +102,7 @@ are `localStorage` keys named `immage.*`.
 | [Tour.tsx](../../src/Tour.tsx), [Shortcuts.tsx](../../src/Shortcuts.tsx) | The quick-start tour; the keyboard shortcuts sheet. |
 | [menu.ts](../../src/menu.ts), [MenuBar.tsx](../../src/MenuBar.tsx) | The File, Edit, Photo, View and Help menus, defined once for both platforms (`forPlatform`; `nativeSpec` for the macOS bar). MenuBar always draws them in the existing title strip on Windows and Linux. Menu items use the same `ActionId`s as the keys. On macOS, `menu_set` in main.rs builds the menu bar from the native description; a click emits the `menu` event, which `runMenuAction` in App.tsx handles. |
 | [ImportView.tsx](../../src/ImportView.tsx) | The SD card importer, loaded from `@immporter/embed`. |
+| [actions.ts](../../src/actions.ts) | The key chords (⌘ or Ctrl held) as an ordered table of matcher and `ActionId` (`chordAction`); App's keydown handler runs the match through the same action table the menus use (`menuActionsRef`, `runMenuAction`). |
 | [Collapse.tsx](../../src/Collapse.tsx), [keys.ts](../../src/keys.ts), [paths.ts](../../src/paths.ts) | Folding panels (a fold that shrinks a scrolled list clamps its offset: WebKitGTK left it past the end); ⌘ or Ctrl by platform; path helpers for either separator. |
 | [activity.ts](../../src/activity.ts) | The busy indicator's job store (`begin`, `progress`, `end`, `useWorking`). |
 | [background.ts](../../src/background.ts) | Work in the background, for the activity lines under the photo: exports (`runExport`), HDR and Panorama Merge (`runMerge`: the photos read, then the merge's own stages, from the engine's `_merge_report`) and AI Denoise (`runInBackground`), each one's progress and Stop (`stopJob`: `export_cancel`, `merge_cancel`), then what it did, with a next step such as Open (`useJobs`). |
@@ -121,7 +122,7 @@ are `localStorage` keys named `immage.*`.
 | before/after, compare | `setBaMode`, `setBefore` (`Session.showBefore`), `toggleCompare` |
 | crop and turns | `enterCrop`, `leaveCrop`, `turn` (`Session.turned`) |
 | `runGuiBenchmark`, `runGpuCheck` | thin wrappers that hand App's refs and callbacks (`benchCtx`) to the drivers in [benchDrivers.ts](../../src/benchDrivers.ts) |
-| keyboard | one `keydown` handler for every shortcut; `fieldKeeps` (`keys.ts`) leaves a focused field its keys: text all, a slider its arrows, a switch Space, a menu its arrows, Home/End, Page Up/Down, Space and Enter |
+| keyboard | one `keydown` handler for every shortcut; the ⌘/Ctrl chords are looked up in `CHORDS` (`actions.ts`), the plain keys, which depend on App state, stay in the handler; `fieldKeeps` (`keys.ts`) leaves a focused field its keys: text all, a slider its arrows, a switch Space, a menu its arrows, Home/End, Page Up/Down, Space and Enter |
 | `openLaunched`, `dropped` | a photo handed over (`launch-file`), or photos and folders dragged onto the window (`onDragDropEvent`, `path_kind`) |
 
 `enterCrop` snapshots the displayed placement before `prepareCropView` clears
