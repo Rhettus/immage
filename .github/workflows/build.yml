@@ -87,8 +87,30 @@ jobs:
         working-directory: app
       - name: no HTML or code injection sinks
         run: sh scripts/check_web_sinks.sh
-      - name: performance tuner and portable module checks
-        run: node --test verify/performance-tuner.test.mjs verify/detail-preview.test.mjs verify/fit-preview.test.mjs
+      # the other verify/*.test.mjs need a built engine; list new engine-free ones here
+      - name: front-end checks that need no engine
+        run: |
+          node --test \
+            verify/agx-profiles.test.mjs \
+            verify/ai-mask-paste.test.mjs \
+            verify/color-range.test.mjs \
+            verify/contrast-equalizer.test.mjs \
+            verify/crop-corner.test.mjs \
+            verify/crop-transition.test.mjs \
+            verify/detail-preview.test.mjs \
+            verify/engine-state.test.mjs \
+            verify/fit-preview.test.mjs \
+            verify/gpu-check.test.mjs \
+            verify/menus.test.mjs \
+            verify/module-others.test.mjs \
+            verify/perf-diagnostics.test.mjs \
+            verify/performance-tuner.test.mjs \
+            verify/perf-tracing.test.mjs \
+            verify/pixel-worker.test.mjs \
+            verify/preview-handoff.test.mjs \
+            verify/saturation-curve.test.mjs \
+            verify/theme.test.mjs \
+            verify/ui-updates.test.mjs
       - run: npm audit --omit=dev --audit-level=high
         working-directory: app
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
@@ -102,6 +124,9 @@ jobs:
           mkdir -p resources/darktable resources/webext
           touch resources/notices.txt
           cargo clippy --locked -- -D warnings
+      - name: cargo test
+        working-directory: app/src-tauri
+        run: cargo test --locked
       # fails on a RustSec vulnerability in Cargo.lock; unmaintained and
       # unsound crates (all from tauri and gtk-rs) are only reported
       - name: cargo audit
