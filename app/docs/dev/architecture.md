@@ -87,7 +87,18 @@ are `localStorage` keys named `immage.*`.
 
 | File | Responsibility |
 |---|---|
-| [App.tsx](../../src/App.tsx) | Library, viewer, panels, tools, undo, before/after, compare, keyboard, plugins; also the small components `PanelView`, `Slider`, `Filmstrip`, `HistogramView`, `Navigator`, `Toolbar`. Hover previews (`showHover`) render on the preview pipe: Presets tiles at up to 1600 pixels, a panel's swatches (`hoverValues`; grain, B&W filters) at the displayed size up to 3200, so grain is not stretched. |
+| [App.tsx](../../src/App.tsx) | Library, viewer, panels, tools, undo, before/after, compare, keyboard, plugins. Its top-level components live in the files below. Hover previews (`showHover`) render on the preview pipe: Presets tiles at up to 1600 pixels, a panel's swatches (`hoverValues`; grain, B&W filters) at the displayed size up to 3200, so grain is not stretched. |
+| [layoutPrefs.ts](../../src/layoutPrefs.ts) | `loadLibrary`/`saveLibrary` (the library panel's folders and last photo) and `loadLayout`/`saveLayout` (which panels show, and their sizes), in `localStorage`. |
+| [zoom.ts](../../src/zoom.ts) | The `Zoom` levels and the `Placement` type that App.tsx, Toolbar and Navigator share. |
+| [icons.tsx](../../src/icons.tsx) | `icon()` and every outline icon component (`FolderIcon`, `SlidersIcon`, `PanelIcon`, ...). |
+| [Toolbar.tsx](../../src/Toolbar.tsx) | The bar under the filmstrip (`Toolbar`), `ZoomBar`, `ResetAll` and the panel `Splitter`. |
+| [Filmstrip.tsx](../../src/Filmstrip.tsx) | The filmstrip and grid (`Filmstrip`, `FilmCell`, `KnownCell`, `GhostCell`), the thumbnail canvases (`ThumbCanvas`, `CellCanvas`), `ThumbProgress`, `InfoOverlay` and `pairedRaws`. |
+| [ActivityBar.tsx](../../src/ActivityBar.tsx) | The activity line's progress bar and a background job's row (`ActivityBar`, `JobActivity`). |
+| [FileMenu.tsx](../../src/FileMenu.tsx) | A photo's right-click menu, with `hdrBrackets` and `panoFrames` for its merge items. |
+| [HistogramView.tsx](../../src/HistogramView.tsx) | The histogram and darktable's other scopes, and the scope menu (`HistogramView`, `ScopeMenu`, `loadScope`). |
+| [Navigator.tsx](../../src/Navigator.tsx) | The navigator: whole-image thumbnail, zoom levels and the pan rectangle. |
+| [PanelView.tsx](../../src/PanelView.tsx) | `PanelView` and `PanelWidget` (the adjustment panels), `PresetRow`, `WBTools`, `useLiveEvent`, the folded-section helpers. |
+| [Controls.tsx](../../src/Controls.tsx) | The panel controls: `Slider`, `SliderWidget`, `Choice`, `Toggle`, `CurveGraph`. |
 | [Tour.tsx](../../src/Tour.tsx), [Shortcuts.tsx](../../src/Shortcuts.tsx) | The quick-start tour; the keyboard shortcuts sheet. |
 | [menu.ts](../../src/menu.ts), [MenuBar.tsx](../../src/MenuBar.tsx) | The File, Edit, Photo, View and Help menus, defined once for both platforms (`forPlatform`; `nativeSpec` for the macOS bar). MenuBar always draws them in the existing title strip on Windows and Linux. Menu items use the same `ActionId`s as the keys. On macOS, `menu_set` in main.rs builds the menu bar from the native description; a click emits the `menu` event, which `runMenuAction` in App.tsx handles. |
 | [ImportView.tsx](../../src/ImportView.tsx) | The SD card importer, loaded from `@immporter/embed`. |
@@ -653,7 +664,7 @@ one alone (or closes it if it is already the only open group).
 
 [ModuleSwitch.tsx](../../src/ModuleSwitch.tsx) is the icon and fixed-position
 menu beside a tool's name, for a `MODULE_CHOICES` entry with two or more
-options. `PanelView` (App.tsx) finds each choice's host with `switchHosts`:
+options. `PanelView` (PanelView.tsx) finds each choice's host with `switchHosts`:
 the first of `choiceCovers` that `choiceShows`, or `ce_0_0` / `sc_pn` when the
 equalizer or saturation curve replaces the slider (their headings take a
 `module` prop). It passes `moduleChoice`, `moduleValue` and `onModule` as
