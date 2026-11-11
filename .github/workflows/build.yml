@@ -59,6 +59,8 @@ jobs:
         run: python3 -I scripts/test_release_assets.py
       - name: model pin checks
         run: python3 -I scripts/test_pin_models.py
+      - name: upstream copy checks
+        run: python3 -I scripts/test_check_upstream_copies.py
       - name: gitleaks
         run: |
           v=8.30.1

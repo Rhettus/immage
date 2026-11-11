@@ -20,7 +20,7 @@
 // darktable's HDR merge, which it runs only as a lighttable job on the
 // selection (dt_control_merge_hdr): the job is static, and the engine
 // starts no job threads. darktable's source is left as it is, so the merge
-// is copied here from src/control/jobs/control_jobs.c at fecc1b00e2
+// is copied here from src/control/jobs/control_jobs.c at 879067695e
 // (dt_control_merge_hdr_t, the format callbacks, _envelope,
 // _control_merge_hdr_process, _control_merge_hdr_validate) with only its
 // messages changed: dt_control_log() becomes the error handed back. the
