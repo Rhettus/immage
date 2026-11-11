@@ -27,6 +27,7 @@ import { shiftRange } from './specs/shift-range.mjs';
 import { lensProfile, lensPick } from './specs/lens.mjs';
 import { themes, workspaceLayout } from './specs/themes.mjs';
 import { engineRestart } from './specs/engine-restart.mjs';
+import { saveFailure } from './specs/save-failure.mjs';
 import { menus, menusGuards } from './specs/menus.mjs';
 import { hostileText } from './specs/hostile-text.mjs';
 
@@ -58,6 +59,7 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'location-map': locationMap,
   menus,
   'engine-restart': engineRestart,
+  'save-failure': saveFailure,
   'menus-guards': menusGuards,
   'hostile-text': hostileText,
 };

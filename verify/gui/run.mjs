@@ -4,7 +4,7 @@
 import { spawn, execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { createServer } from 'node:net';
-import { readFile, writeFile, mkdir, copyFile, stat, access, realpath, readdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, copyFile, stat, access, realpath, readdir, chmod } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { hostname, tmpdir } from 'node:os';
 import { dirname, resolve, join, basename } from 'node:path';
@@ -353,6 +353,8 @@ try {
       fixture:{name:fixtureName,generated:fixtureName!=='configured',file:basename(copiedFixture),raw:/\.(?:cr2|cr3|nef|arw|raf|dng|orf|rw2)$/i.test(copiedFixture)},
       sidecars:async()=>Promise.all((await readdir(fixtures)).filter(n=>n.endsWith('.xmp')).map(n=>readFile(join(fixtures,n),'utf8'))),
       sidecarsNamed:async()=>Promise.all((await readdir(fixtures)).filter(n=>n.endsWith('.xmp')).map(async file=>({file,text:await readFile(join(fixtures,file),'utf8')}))),
+      // only this run's copied fixture folder and its sidecars: a save into it then fails as on a read-only share
+      fixturesWritable:async on=>{ if(on) await chmod(fixtures,0o755); for(const n of (await readdir(fixtures)).filter(n=>n.endsWith('.xmp'))) await chmod(join(fixtures,n),on?0o644:0o444); if(!on) await chmod(fixtures,0o555); journal.event('fixtures-writable',{case:name,on}); },
       fixtureFiles:()=>readdir(fixtures), engineLog:()=>readFile(join(profile,'data','app.immage','engine.log'),'utf8'),
       benchmarkReport: async filename => {
         // Read only the known report folder inside this run's isolated profile.

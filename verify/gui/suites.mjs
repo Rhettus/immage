@@ -122,6 +122,8 @@ export const cases = {
     limitation: 'Reads the places the Library and editor show by default; does not type hostile text into fields or open every dialog. The content security policy violation check is the runner\'s (webview.log), not this case\'s. Linux file name only has < > " (Windows gets a name without them).' },
   'engine-restart': { scope: 'killing the test app\'s own darktable-engine after an edit: the "Restarting the engine" status, the final "The engine restarted" message, the photo reopened from its sidecar with the edited Exposure and a rendered canvas, a further edit rendering and saving, no "The engine keeps stopping" message and engine.log present', liveValidated: true, verification: 'Linux ARM64 system WebKitGTK; empty workspace 9 floating/maximized, viewport 1596x840, original workspace 3 restored. Run 2026-11-10T19-45-36.448Z_9992675_a85072c3.',
     limitation: 'Stops only the runner\'s own engine process (SIGKILL). Does not cover repeated crashes or a photo that crashes the engine; the same-photo check is the Exposure value and rendered pixels, not a file name.' },
+  'save-failure': { scope: 'an Exposure edit saved, then the copied fixture folder and its sidecar made read-only: the next edit\'s save fails, a visible, uncovered notice names the sidecar and the reason and is still shown 4 s later, the old sidecar is byte for byte unchanged and no .immage-tmp copy is left; with the folder writable again the next edit saves and the notice goes', liveValidated: true, verification: 'Linux ARM64 system WebKitGTK; empty workspace 9 floating, viewport 1276x660 (maximize reported ok but did not enlarge the webview), original workspace 4 restored. Run 2026-11-11T11-18-02.911Z_ca0b670_98cf6f7c.',
+    limitation: 'Read-only folder only: the full disk and engine-killed-mid-save cases are covered headlessly by verify/sidecar-safety.py. The runner changes permissions only on its own fixture folder.' },
   ...generated,
 };
 export const suites = {
@@ -129,7 +131,7 @@ export const suites = {
   crop: ['startup','crop-guides','crop-locked','crop-options','crop-auto-straighten','crop-undo'],
   workflows: ['startup','agx-presets','curves','wheels','equalizer','saturation-curve','masks','color-range','heal','zones','film','print','preferences-matrix','slider-wheel','export-options','filters','presets','shortcuts','menus','menus-guards'],
   inventory: ['startup',...generatedNames],
-  engine: ['startup', 'engine-restart'],
+  engine: ['startup', 'engine-restart', 'save-failure'],
   regressions: ['startup', 'rail', 'panel-scroll', 'module-options', 'batch-paste', 'shift-range'],
   controls: ['startup', 'slider-input', 'slider-click', 'history', 'rail', 'sliders', 'module-options', 'module-switch'],
 };

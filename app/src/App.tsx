@@ -3098,6 +3098,8 @@ export default function App() {
   // the Before view into it again, in that order. the undo history is lost
   const engine = useRef<EngineState>(ENGINE_START);
   const [engineNotice, setEngineNotice] = useState<EngineNotice>(null);
+  // the last background save's failure, until a save works
+  const [saveError, setSaveError] = useState<string | null>(null);
   // what the page had open when the engine went down, until a restore is done
   const lost = useRef<{ path: string | null; copy: number | null; before: boolean; proof: Proof;
                         folder: string | null; search: ImmichSearch | null; filter: Filter } | null>(null);
@@ -3666,10 +3668,18 @@ export default function App() {
       // a saved edit makes the filmstrip's thumbnail stale; undone back to
       // where it started, the photo reads unedited again
       s.onSaved = (edited) => {
+        setSaveError(null);
         loader.current!.invalidate(s.imgid);
         patchImage(s.imgid, { edited });
         void syncEditedKeywords(s.imgid, edited);
         if (edited) void fillEditedMeta(s.imgid);
+      };
+      // kept on screen until a save works: the status line is cleared by the
+      // next frame painted, which follows a failed save within a second
+      s.onSaveError = (e) => {
+        if (session.current !== s) return;
+        const why = e.replace(/^error:\s*/i, "");
+        setSaveError(why.charAt(0).toUpperCase() + why.slice(1));
       };
       s.onShapes = () => { syncMasks(); syncSpots(); };
       // a module the History panel changed: its sliders, if it has any
@@ -6337,6 +6347,9 @@ export default function App() {
               <button onClick={hideEngineNotice}>Wait</button>
               <button onClick={() => { hideEngineNotice(); void invoke("engine_restart").catch((e) => setStatusRaw(`error: ${e}`)); }}>Restart</button>
             </div>
+          )}
+          {saveError && (
+            <div className="activity" data-save-error><span className="failed">Edits are not being saved. {saveError}</span></div>
           )}
           {engineNotice?.kind === "failed" && (
             <div className="activity"><span className="failed">The engine keeps stopping. Restart Immage to continue editing.</span></div>

@@ -143,6 +143,9 @@ export class Session {
   // after the image's sidecar is written, so its thumbnail can be refreshed;
   // `edited` is whether darktable now counts the photo as altered
   onSaved: ((edited: boolean) => void) | null = null;
+  // a background save failed (a read-only folder, a full disk): the edit is
+  // not in the sidecar until a later save works. without it, onError
+  onSaveError: ((error: string) => void) | null = null;
   // what the engine was last told of the Before view
   private engineBefore = false;
   // maps whose module settings the controls cannot represent, such as a tone
@@ -1576,7 +1579,7 @@ export class Session {
       if (this.before) { this.scheduleSave(); return; }
       this.unsaved = false;
       invoke<{ edited: boolean }>("save").then((r) => this.onSaved?.(r.edited))
-        .catch((e) => this.onError(String(e)));
+        .catch((e) => this.onSaveError ? this.onSaveError(String(e)) : this.onError(String(e)));
     }, 600);
   }
 

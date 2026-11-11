@@ -66,8 +66,9 @@ Bug fixes
 - A save that fails no longer damages the photo's sidecar. A full disk could
   leave it cut short while the save reported success, and a crash during a
   save could leave it empty, losing the edit. The old sidecar now stays whole
-  until the new one is complete, and a failed save names the sidecar and the
-  reason, such as a read-only folder or a full disk.
+  until the new one is complete. A failed save shows a notice over the photo,
+  naming the sidecar and the reason, such as a read-only folder or a full
+  disk, until a save works.
 - Hovering a film or paper tile previews it at the size the photo is shown
   at, so grain and detail look as they will once chosen, instead of soft.
 
