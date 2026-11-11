@@ -110,6 +110,11 @@ for **B&W Mix**.
   +100. Whites moves the top of the tone mapper's curve, and under AgX
   also brightens or darkens the brightest tones ahead of it; Blacks moves
   the black point, and works the same at any Exposure.
+- **Whites: Advanced** (AgX only): **Highlight Brilliance**, 0% to 200%,
+  sets how much of that brightening Whites adds; 100% is the usual amount.
+  Lower it when bright areas such as snow or clouds clip as you raise
+  Exposure or Whites: at 0% Whites only reshapes the top of the curve, so
+  you can brighten further before anything reaches pure white.
 
 **Presence**
 

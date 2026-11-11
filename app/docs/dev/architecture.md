@@ -703,7 +703,11 @@ MasksPanel draws the curve in Presence, hidden in black and white, and
 `localBalanceMap` writes the mask's Saturation at neutral meanwhile.
 `detailMap` uses separate `contrastntexture` instances for Clarity and Texture,
 with local counterparts; [DetailControls.tsx](../../src/DetailControls.tsx)
-folds everything except Medium and Fine details under Advanced. Global
+folds everything except Medium and Fine details under Advanced. Whites on
+AgX writes AgX's shoulder power and color balance rgb's highlights
+brilliance; `whites_brilliance` scales the brilliance (100% as before), and
+its map reads after the tone mappers so the share reads against their
+Whites. An edit from before it reads as the share it rendered with. Global
 Defringe uses `cacorrectrgb` globally and in masks, with no module choice:
 darktable deprecates `defringe`. A mask saved with the old `defringe` option
 keeps that instance in its history, which still renders and is disabled when

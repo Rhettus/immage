@@ -54,8 +54,10 @@ export async function locateControl(t, definition) {
   if (id === 'hsl') await textButton(t, `${p} .tabs`, section);
   if (id === 'colorgrading') await textButton(t, `${p} .tabs`, 'Sliders');
   const selector = `${p} [data-control-id=${JSON.stringify(control.id)}]`;
-  // Clarity's and Texture's coarse bands sit under their own Advanced fold
-  const detail = /^(l_)?detail_(clarity|texture)_/.exec(control.id)?.[0];
+  // Clarity's and Texture's coarse bands, and Whites' Highlight Brilliance,
+  // sit under their own Advanced fold
+  const detail = /^(l_)?detail_(clarity|texture)_/.exec(control.id)?.[0]
+    ?? (control.id === 'whites_brilliance' ? control.id : undefined);
   if (detail && !await t.driver.observe(s => !!document.querySelector(s), selector)) {
     const fold = `${p} button.detail-advanced[data-detail-id^=${JSON.stringify(detail)}]`;
     // no fold: the module that has these controls is not chosen
@@ -125,6 +127,7 @@ const prerequisiteFor = id => {
   if (/^(l_)?usm_(radius|threshold)$/.test(id)) return `${id.startsWith('l_')?'l_':''}usm_amount`;
   if (/^(l_)?nr_detail$/.test(id)) return `${id.startsWith('l_')?'l_':''}nr_luminance`;
   if (id === 'defringe_radius') return 'defringe_amount';
+  if (id === 'whites_brilliance') return 'whites';
   if (/^(hp_strength|hp_threshold)$/.test(id)) return 'hp_enable';
   if (id === 'lens_ca') return 'lens_profile';
   return null;

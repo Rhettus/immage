@@ -239,6 +239,8 @@ const WHITES_STOPS = 0.6;
 // Whites moves twice as far: the shoulder alone reshapes the top end but
 // leaves where AgX clips, and more dims the midtones at -100
 const WHITES_BRILLIANCE = 0.002;
+// Highlight Brilliance: the share of that brilliance Whites adds, in percent
+const WHITES_BRILLIANCE_MAX = 200;
 
 // Contrast on the tone mapper: AgX's contrast, or sigmoid's, ±100 doubling
 // or halving it from the photo's default
@@ -1184,11 +1186,6 @@ export const modules: ModuleMap[] = [
     },
     enabled: (v) => v.tm_mode === 1,
   },
-  // Whites' brilliance on AgX, ahead of the tone mappers' Whites so that
-  // theirs is the value read: an edit from before it opens as it was
-  { ...linear("colorbalancergb", false, [{ id: "whites", field: "brilliance_highlights",
-                                             scale: WHITES_BRILLIANCE, base: 0 }]),
-    active: (v) => v.tm_mode === 1 },
   // the tone mapper: AgX, which new photos get, or sigmoid, which photos
   // started earlier or in darktable may have; one on and the other off.
   // Whites moves the top end under both: sigmoid's white
@@ -1212,6 +1209,23 @@ export const modules: ModuleMap[] = [
                               whites: 100 * Math.log2(p.curve_shoulder_power / agxBase("curve_shoulder_power", v, d)) }),
     write: (v, d) => ({ curve_shoulder_power: agxBase("curve_shoulder_power", v, d) * 2 ** (v.whites / 100) }),
     enabled: (v) => v.tm_mode === 1,
+  },
+  // Whites' brilliance on AgX, Highlight Brilliance percent of it, after
+  // the tone mappers so that Whites is theirs (echoed here) and the share
+  // reads against it. an edit from before the share reads as the share it
+  // rendered with, 0% when it had no brilliance
+  {
+    op: "colorbalancergb", keepOn: false,
+    controls: ["whites", "whites_brilliance"],
+    fields: ["brilliance_highlights"],
+    read: (p, _d, _c, v) => {
+      const whites = v?.whites ?? 0;
+      const share = v?.tm_mode === 1 && Math.abs(whites) > 1e-6
+        ? (100 * p.brilliance_highlights) / (whites * WHITES_BRILLIANCE) : 100;
+      return { whites, whites_brilliance: Math.min(Math.max(share, 0), WHITES_BRILLIANCE_MAX) };
+    },
+    write: (v) => ({ brilliance_highlights: (v.whites * WHITES_BRILLIANCE * (v.whites_brilliance ?? 100)) / 100 }),
+    active: (v) => v.tm_mode === 1,
   },
   // Contrast, Blacks and Saturation on the tone mapper, the modules the AgX
   // workflow sets them with; sigmoid has no saturation
@@ -1607,6 +1621,10 @@ export const panels: Panel[] = [
           lr("highlights", "Highlights"),
           lr("shadows", "Shadows"),
           lr("whites", "Whites"),
+          // under Whites: Advanced, on AgX
+          { id: "whites_brilliance", label: "Highlight Brilliance", min: 0, max: WHITES_BRILLIANCE_MAX, step: 1,
+            neutral: 100, format: (v) => `${Math.round(v)}%`,
+            note: "darktable: color balance rgb — brilliance highlights, the share Whites adds on AgX" },
           lr("blacks", "Blacks"),
         ],
       },

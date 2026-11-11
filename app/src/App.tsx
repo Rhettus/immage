@@ -8354,7 +8354,9 @@ const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle, values
                 {s.title === "AI Denoise" && denoiseTools}
                 {s.title === "Straighten" && straightenTools}
                 {s.title === "Upright" && transformTools}
-                {detailRows(s.controls.filter((c) => choiceShows(c.id, values)), (c) => {
+                {detailRows(s.controls.filter((c) => choiceShows(c.id, values)
+                    // Whites: Advanced is AgX's
+                    && (c.id !== "whites_brilliance" || values.tm_mode === 1)), (c) => {
                   if (c.id.startsWith("ce_")) return c.id === "ce_0_0"
                     ? <ContrastEqualizer key="contrast-equalizer" values={values} disabled={disabled} onChange={onChangeMany}
                        module={switchFor("ce_0_0") && <ModuleSwitch {...switchFor("ce_0_0")!} scope="global" />} />
