@@ -753,3 +753,11 @@ comparison is refused; with `--opencl` on a machine with one, it compares
 the CPU and the GPU and requires ΔE p99 < 2.
 `node --test verify/gpu-check.test.mjs` checks the app's cases against the
 real manifest controls and the pass verdicts. Neither launches the app.
+
+## Unpack containment
+
+`python3 -I verify/unpack-containment.py [--engine path]` runs the real engine
+without a GUI and sends `unpack` crafted zips (`.dtmodel` is a zip): `../`
+and absolute entries, a symlink followed by a file through it, a symlink
+overwritten by a file, and a benign control. It fails if anything outside the
+target folder is created or changed; tar archives must be refused.
