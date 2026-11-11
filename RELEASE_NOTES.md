@@ -30,6 +30,13 @@ Improvements
 - Whites has a Highlight Brilliance setting under AgX, among Basic's advanced
   settings, for how much Whites brightens the brightest tones. Lowering it
   lets bright scenes such as snow get brighter before they clip.
+- Film Simulation and Negative are numbered steps: one is open at a time and
+  the others fold to a line of their settings. Film Simulation's Stock and
+  Paper steps show a small preview of your photo with each film and paper, so
+  you can compare them before choosing.
+- Negative's steps after the film border stay locked until you pick the border,
+  so the conversion is set up first. Export to Library and Turn Off Conversion
+  are in the last step.
 
 Performance
 

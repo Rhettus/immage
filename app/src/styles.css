@@ -2520,3 +2520,40 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .pref-help { flex: none; width: 16px; height: 16px; padding: 0; border: 1px solid var(--text-3); border-radius: 50%; background: transparent; color: var(--text-3); font: inherit; font-size: 11px; line-height: 14px; cursor: help; }
 .pref-help:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .pref-help-tip { position: fixed; z-index: 10000; width: max-content; max-width: min(320px, calc(100vw - 16px)); max-height: calc(100vh - 16px); overflow: auto; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); box-shadow: 0 4px 16px #0006; font-size: var(--fs-small); line-height: 1.5; overflow-wrap: anywhere; }
+
+/* guided steps (GuidedSteps.tsx) and the film stock and paper tiles */
+.film-format { display: flex; justify-content: flex-end; padding: 0 14px; }
+.steps { padding: 4px 6px 6px; display: flex; flex-direction: column; gap: 2px; }
+.step { border-radius: 10px; }
+.step.open { background: var(--panel); box-shadow: inset 0 0 0 1px var(--track); }
+.step-head { display: flex; align-items: center; gap: 9px; padding: 7px 8px; width: 100%; cursor: pointer;
+             background: none; border: 0; border-radius: 10px; text-align: left; color: inherit; font: inherit; }
+.step:not(.open):not(.locked):not(.skipped) .step-head:hover { background: var(--hover); }
+.step .num { flex: none; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center;
+             font-size: var(--fs-micro); font-weight: 700; background: var(--inset); color: var(--text-2);
+             font-variant-numeric: tabular-nums; }
+.step.open .num { background: var(--accent); color: var(--on-accent, #111); }
+.step.done:not(.open) .num { background: #2c3a2e; color: #5fd068; }
+.step-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.step-title { font-weight: 600; font-size: var(--fs-body); }
+.step-sum { color: var(--text-2); font-size: var(--fs-small); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.step.open .step-sum { display: none; }
+.step-chev { flex: none; display: grid; color: var(--text-3); }
+.step-chev .chevron { width: 16px; height: 16px; }
+.step.open .step-chev { color: var(--text); }
+.step.locked, .step.skipped { opacity: 0.5; }
+.step.locked .step-head, .step.skipped .step-head { cursor: default; }
+.step.locked .step-sum { color: var(--text-3); display: flex; align-items: center; gap: 4px; }
+.step.locked .step-sum svg { flex: none; }
+.step-body { padding: 2px 10px 10px 37px; }
+.step-body .tile-grid { margin-right: -4px; }
+.step-nav { display: flex; justify-content: space-between; gap: 8px; margin-top: 10px; padding-top: 8px;
+            border-top: 1px solid var(--track); }
+.tile-group { color: var(--text-3); font-size: var(--fs-caption); font-weight: 600; letter-spacing: 0.06em;
+              text-transform: uppercase; margin: 10px 0 6px; }
+.tile-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 7px; }
+.step .tile { background: none; border: 0; padding: 0; text-align: left; color: inherit; font: inherit; }
+.step .tile-img.empty { min-height: 0; }
+.step .tile:disabled { opacity: 0.45; cursor: default; }
+.step .tile:focus-visible { outline: 2px solid var(--focus, #7aa7ff); outline-offset: 2px; }
+.step-body .positive-foot { padding: 0; border-top: 0; }

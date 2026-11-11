@@ -6,9 +6,11 @@
 // first, downloaded on first use; then turning it on, a preset, the film
 // and paper, the controls most photos need, and the rest of darktable's
 // tabs folded under Advanced (spektrafilm.ts)
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Control } from "./manifest";
 import { Chevron, Collapse } from "./Collapse";
+import { GuidedSteps, openStep, useStepOpen, type Step } from "./GuidedSteps";
+import { Tile } from "./Presets";
 import { autoPaper, filmOf, PAPER_AUTO, PAPER_SCAN, paperOf, presetLabel, SF_PRESETS, type FetchStatus,
          type Stock, type Stocks } from "./spektrafilm";
 
@@ -35,6 +37,12 @@ const ADVANCED: { title: string; ids: string[]; print?: boolean }[] = [
 ];
 const id = (field: string) => `sf_${field}`;
 
+// the steps by what decides which can be opened, for the tiles wanted
+const stepLayout = (slide: boolean, scan: boolean, advanced: boolean) => [
+  { id: "stock" }, { id: "paper", skipped: slide }, { id: "exposure" }, { id: "color", hidden: scan },
+  { id: "grain" }, { id: "advanced", hidden: !advanced },
+];
+
 // the controls the advanced section renders, for its edited dot; the print
 // folds are hidden for a scan
 export const filmAdvancedIds = (values: Record<string, number>): string[] =>
@@ -51,9 +59,16 @@ const groups = (stocks: Stock[], printing: boolean): [string, [string, number][]
   return g.filter(([, list]) => list.length);
 };
 
+// the keys of the tiles the panel shows, for the preview cache: a film's by
+// its hash, a paper's by the film it is printed with and its pick
+export const filmTileKey = (hash: number) => `film:${hash}`;
+export const paperTileKey = (film: number, pick: number) => `paper:${film}:${pick}`;
+
 export function FilmPanel({ values, disabled, on, stocks, fetch, onDownload, onCancel, onTurnOn, onPreset,
-                            onFilm, onPaper, renderControl, advanced }: {
+                            onFilm, onPaper, renderControl, advanced, preview, onWant }: {
   advanced: boolean;
+  preview: (key: string) => ImageBitmap | undefined;
+  onWant: (keys: string[]) => void;
   values: Record<string, number>; disabled: boolean; on: boolean;
   stocks: Stocks | null; fetch: FetchStatus | null;
   onDownload: () => void; onCancel: () => void;
@@ -72,6 +87,19 @@ export function FilmPanel({ values, disabled, on, stocks, fetch, onDownload, onC
     if (!next.delete(title)) next.add(title);
     return next;
   });
+  const [stepOpen, setStepOpen] = useStepOpen("film");
+  // only the open step's tiles are rendered
+  const allStocks = stocks?.stocks ?? [];
+  const film = filmOf(allStocks, values.sf_film_hash ?? 0);
+  const scan = values.sf_scan_film === 1;
+  const slide = !!film?.positive;
+  const stepNow = on ? openStep(stepLayout(slide, scan, advanced), stepOpen) : "";
+  const wanted = stepNow === "stock" ? allStocks.filter((x) => !x.printing).map((x) => filmTileKey(x.hash))
+    : stepNow === "paper" ? [PAPER_AUTO, PAPER_SCAN, ...allStocks.filter((x) => x.printing).map((x) => x.hash)]
+        .map((p) => paperTileKey(film?.hash ?? 0, p)) : [];
+  const wantedKey = wanted.join(",");
+  useEffect(() => { onWant(wanted); }, [wantedKey]);
+  useEffect(() => () => onWant([]), []);
   const running = fetch?.state === "running";
   const credit = (
     <p className="note-plain">spektrafilm by Andrea Volpato, in darktable; its film data is under CC BY-SA 4.0 and
@@ -101,14 +129,12 @@ export function FilmPanel({ values, disabled, on, stocks, fetch, onDownload, onC
     </div>
   );
 
-  const film = filmOf(stocks.stocks, values.sf_film_hash ?? 0);
-  const scan = values.sf_scan_film === 1;
   const auto = autoPaper(stocks.stocks, film);
   const paper = paperOf(stocks.stocks, values.sf_paper_hash ?? 0, film);
   const presetMenu = (
     <div className="choice-row">
       <span>Preset</span>
-      <select className="field" value={on ? preset : ""} disabled={disabled}
+      <select className="field" data-action="film-preset" value={on ? preset : ""} disabled={disabled}
               onChange={(e) => { setPreset(e.target.value); if (e.target.value) onPreset(e.target.value); }}>
         <option value="">{on ? "Apply a preset…" : "Start from a preset…"}</option>
         {["Film", "Look", ""].map((group) => {
@@ -137,60 +163,94 @@ export function FilmPanel({ values, disabled, on, stocks, fetch, onDownload, onC
 
   const shown = (field: string) => (scan && ["print_exposure_ev", "print_auto_exposure", "print_contrast",
     "filter_m", "filter_y"].includes(field) ? null : renderControl(id(field)));
+  const tile = (key: string, name: string, picked: boolean, click: () => void, title = name) => (
+    <button key={key} type="button" className={`tile${picked ? " on" : ""}`} title={title} disabled={disabled}
+            data-tile={key} aria-pressed={picked} onClick={click}>
+      <Tile bitmap={preview(key)} /><span className="tile-name">{name}</span>
+    </button>
+  );
+  const num = (v: number | undefined, d: number) => (v ?? 0).toFixed(d);
+  const signed = (v: number | undefined, d: number) => `${(v ?? 0) > 0 ? "+" : ""}${num(v, d)}`;
+  const paperPick = scan ? PAPER_SCAN : values.sf_paper_hash ? paper?.hash ?? PAPER_AUTO : PAPER_AUTO;
+  const paperName = scan ? "Scanned" : paperPick === PAPER_AUTO ? "Auto paper" : paper?.name ?? "";
+  const printTile = (pick: number, name: string, title?: string) =>
+    tile(paperTileKey(film?.hash ?? 0, pick), name, paperPick === pick, () => onPaper(pick), title);
+  const steps: Step[] = [
+    { id: "stock", title: "Stock", summary: `${film?.name ?? ""} · ${slide ? "Scanned" : paperName}`,
+      content: (
+        <>
+          {presetMenu}
+          {groups(stocks.stocks, false).map(([title, list]) => (
+            <div key={title}>
+              <div className="tile-group">{title}</div>
+              <div className="tile-grid">
+                {list.map(([name, hash]) => tile(filmTileKey(hash), name, film?.hash === hash, () => onFilm(hash)))}
+              </div>
+            </div>
+          ))}
+        </>
+      ) },
+    { id: "paper", title: "Paper", skipped: slide,
+      summary: slide ? "a slide film: scanned, with no print" : scan ? "None: scan the film"
+        : paperPick === PAPER_AUTO ? `Auto (${auto?.name ?? ""})` : paperName,
+      content: (
+        <>
+          <div className="tile-grid">
+            {printTile(PAPER_AUTO, `Auto${auto ? ` (${auto.name})` : ""}`)}
+            {printTile(PAPER_SCAN, "None: scan the film")}
+          </div>
+          {groups(stocks.stocks, true).map(([title, list]) => (
+            <div key={title}>
+              <div className="tile-group">{title}</div>
+              <div className="tile-grid">{list.map(([name, hash]) => printTile(hash, name))}</div>
+            </div>
+          ))}
+        </>
+      ) },
+    { id: "exposure", title: "Exposure",
+      summary: `Exposure ${signed(values.sf_exposure_ev, 1)} · Push ${signed(values.sf_push_pull_stops, 0)}`,
+      content: (
+        <>
+          {shown("exposure_ev")}
+          {shown("push_pull_stops")}
+          {shown("print_exposure_ev")}
+          {shown("print_auto_exposure")}
+          {shown("print_contrast")}
+          {shown("output_luminance_boost")}
+        </>
+      ) },
+    { id: "color", title: "Color", hidden: scan, summary: `M ${signed(values.sf_filter_m, 0)} · Y ${signed(values.sf_filter_y, 0)}`,
+      content: <>{shown("filter_m")}{shown("filter_y")}</> },
+    { id: "grain", title: "Grain & Halation",
+      summary: `${values.sf_grain_on === 1 ? `Grain ${num(values.sf_grain_amount, 2)}` : "Grain off"} · `
+        + `${values.sf_halation_on === 1 ? `Halation ${num(values.sf_halation_amount, 2)}` : "Halation off"}`,
+      content: (
+        <>
+          {renderControl(id("grain_on"))}
+          {values.sf_grain_on === 1 && renderControl(id("grain_amount"))}
+          {values.sf_grain_on === 1 && renderControl(id("grain_granularity"))}
+          {renderControl(id("halation_on"))}
+          {values.sf_halation_on === 1 && renderControl(id("halation_amount"))}
+        </>
+      ) },
+    { id: "advanced", title: "Advanced", hidden: !advanced, summary: "Development, couplers, print, scanner…",
+      content: (
+        <div className="section-body">
+          {ADVANCED.filter((g) => !g.print || !scan).map((g) => (
+            <div key={g.title}>
+              <div className="neg-sub fold" onClick={() => fold(g.title)}>{g.title}<Chevron open={open.has(g.title)} /></div>
+              <Collapse open={open.has(g.title)}>
+                <div>{g.ids.map((f) => renderControl(id(f)))}</div>
+              </Collapse>
+            </div>
+          ))}
+        </div>
+      ) },
+  ];
   return (
     <div className="panel film">
-      <section>
-        {presetMenu}
-        {renderControl(id("film_hash"), { kind: "choice", menu: true, optionGroups: groups(stocks.stocks, false),
-                                          options: undefined, label: "Film" }, onFilm, film?.hash)}
-        {film?.positive
-          ? <p className="note-plain">a slide film: scanned, with no print</p>
-          : renderControl(id("paper_hash"), {
-              kind: "choice", menu: true, label: "Paper", options: undefined,
-              optionGroups: [["", [[`Auto${auto ? ` (${auto.name})` : ""}`, PAPER_AUTO],
-                                   ["None: scan the film", PAPER_SCAN]]],
-                             ...groups(stocks.stocks, true)],
-            }, onPaper, scan ? PAPER_SCAN : values.sf_paper_hash ? paper?.hash ?? PAPER_AUTO : PAPER_AUTO)}
-        {renderControl(id("film_format_mm"))}
-      </section>
-      <section>
-        <h3>Exposure</h3>
-        {shown("exposure_ev")}
-        {shown("push_pull_stops")}
-        {shown("print_exposure_ev")}
-        {shown("print_auto_exposure")}
-        {shown("print_contrast")}
-        {shown("output_luminance_boost")}
-      </section>
-      {!scan && (
-        <section>
-          <h3>Color</h3>
-          {shown("filter_m")}
-          {shown("filter_y")}
-        </section>
-      )}
-      <section>
-        <h3>Grain &amp; Halation</h3>
-        {renderControl(id("grain_on"))}
-        {values.sf_grain_on === 1 && renderControl(id("grain_amount"))}
-        {values.sf_grain_on === 1 && renderControl(id("grain_granularity"))}
-        {renderControl(id("halation_on"))}
-        {values.sf_halation_on === 1 && renderControl(id("halation_amount"))}
-      </section>
-      {advanced && (
-        <section>
-          <div className="section-body">
-            {ADVANCED.filter((g) => !g.print || !scan).map((g) => (
-              <div key={g.title}>
-                <div className="neg-sub fold" onClick={() => fold(g.title)}>{g.title}<Chevron open={open.has(g.title)} /></div>
-                <Collapse open={open.has(g.title)}>
-                  <div>{g.ids.map((f) => renderControl(id(f)))}</div>
-                </Collapse>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
+      <div className="film-format">{renderControl(id("film_format_mm"))}</div>
+      <GuidedSteps steps={steps} open={stepOpen} onOpen={setStepOpen} />
       {credit}
     </div>
   );

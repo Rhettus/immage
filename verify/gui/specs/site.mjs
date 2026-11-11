@@ -322,8 +322,7 @@ export async function siteShots(t) {
         'film data downloaded', 180000);
     }
     await textButton(t, '.panel.film', 'Turn On Film Simulation');
-    await until(() => t.driver.observe(() => { const e = document.querySelector('.panel.film [data-control-id="sf_film_hash"] select');
-      return !!e && e.selectedIndex >= 0 && !/^\d+$/.test(e.options[e.selectedIndex].text); }), 'Film menu naming the stock');
+    await until(() => t.driver.observe(() => !!document.querySelector('.panel.film .step[data-step="stock"] .tile.on')), 'a film tile selected');
     await pause(1500);
     await shot(t, 'film-simulation');
     await textButton(t, '.positive-foot', 'Turn Off Film Simulation');

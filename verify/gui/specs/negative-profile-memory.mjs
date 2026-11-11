@@ -4,13 +4,14 @@
 // the conversion, one undo step, and the memory survives a restart
 import assert from 'node:assert/strict';
 import { click, inspect, openTool, reveal } from '../support/controls.mjs';
-import { choose, Blocked, textButton } from '../support/scenario.mjs';
+import { choose, Blocked, textButton, openStep } from '../support/scenario.mjs';
 import { until } from '../support/webdriver.mjs';
 import { startup, settledPhoto } from './smoke.mjs';
 
 const input = '[data-control-id="neg_input_profile"] select';
 const working = '[data-control-id="neg_working_profile"] select';
-const converted = () => !!document.querySelector('.neg-swatch');
+// the steps after the border unlock with the conversion
+const converted = () => !document.querySelector('.negative .step[data-step="base"].locked');
 
 async function openNegative(t) {
   const b = await reveal(t, 'button[data-tour="negative"]');
@@ -21,13 +22,16 @@ async function openNegative(t) {
     if (warned === 'warn') await textButton(t, '.neg-warn', 'Continue');
   }
   await openTool(t, 'negative');
+  await openStep(t, '.negative', 'profiles');
   await until(() => t.driver.observe(s => !!document.querySelector(s), input), 'Negative profile menus');
 }
 async function pickBorder(t) {
+  await openStep(t, '.negative', 'border');
   await textButton(t, '.negative', 'Pick Film Border');
   const c = await reveal(t, '.zone-object-box');
   await t.driver.point(c.bounds.x + c.bounds.width * .02, c.bounds.y + c.bounds.height * .02);
   await until(() => t.driver.observe(converted), 'negative converted');
+  await openStep(t, '.negative', 'profiles');
 }
 
 export async function negativeProfileMemory(t) {

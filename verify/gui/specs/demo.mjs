@@ -182,7 +182,7 @@ export async function demo(t) {
       await textButton(t, '.panel.film', 'Turn On Film Simulation');
       await settledPhoto(t, () => true);
       await pause(1200);
-      await choose(t, '.panel.film .choice-row:first-child select', 'film|portrait');
+      await choose(t, '.panel.film [data-action="film-preset"]', 'film|portrait');
       await settledPhoto(t); await pause(900);
     });
 

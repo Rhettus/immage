@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from 'node:assert/strict';
 import { click, inspect, openTool } from '../support/controls.mjs';
-import { choose } from '../support/scenario.mjs';
+import { choose, openStep } from '../support/scenario.mjs';
 import { until } from '../support/webdriver.mjs';
 import { startup, settledPhoto, settledReset } from './smoke.mjs';
 import { prepareNegative } from './workflows.mjs';
@@ -10,6 +10,7 @@ const input = '[data-control-id="neg_input_profile"] select';
 const working = '[data-control-id="neg_working_profile"] select';
 export async function colorProfiles(t) {
   await prepareNegative(t);
+  await openStep(t, '.negative', 'profiles');
   const original = await settledPhoto(t);
   const values = async () => [Number((await t.driver.observe(inspect, input)).value),
     Number((await t.driver.observe(inspect, working)).value)];

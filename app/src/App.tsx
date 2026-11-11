@@ -624,6 +624,9 @@ export default function App() {
     previews.current = new PreviewCache(() => session.current?.idle ?? false, () => setPreviewTick((t) => t + 1));
   const wantedTiles = useRef<string[]>([]);
   const PREVIEW_SIZE = 220;
+  // the film panel's tiles share the cache: only one of the two panels is on
+  // show, and each asks for its own keys when it opens
+  const sfStocksRef = useRef<Stocks | null>(null);
   // looks by path: true for a black and white one, found from its tile.
   // a .dtstyle says nothing of Treatment, and users add their own
   const lookMono = useRef(new Map<string, boolean>());
@@ -642,6 +645,17 @@ export default function App() {
           lookMono.current.set(path, isMono(f));
           return f;
         } }];
+      }
+      // film and paper tiles: what choosing the stock would change, on the
+      // edit as it is (film:<hash>, paper:<film hash>:<pick>)
+      if (key.startsWith("film:") || key.startsWith("paper:")) {
+        const stocks = sfStocksRef.current?.stocks;
+        if (!stocks) return [];
+        const parts = key.split(":");
+        const film = key.startsWith("film:") ? stocks.find((x) => !x.printing && x.hash === Number(parts[1])) : null;
+        if (key.startsWith("film:") && !film) return [];
+        const changes = film ? filmChanges(stocks, s.values, film) : paperChanges(stocks, s.values, Number(parts[2]));
+        return [{ key, run: () => s.preview(PREVIEW_SIZE, Object.fromEntries(changes)) }];
       }
       const p = all.find((q) => `p:${q.id}` === key);
       return p ? [{ key, run: () => s.preview(PREVIEW_SIZE, p.values) }] : [];
@@ -1527,7 +1541,7 @@ export default function App() {
   // the editor needs placing as soon as it appears
   // tiles show the image as edited, so an edit makes them stale; they are
   // redone once editing pauses, and only while the panel is on show
-  const tilesShown = layout.right && rightMode === "presets" && !cropping;
+  const tilesShown = layout.right && (rightMode === "presets" || rightMode === "film") && !cropping;
   useEffect(() => {
     previews.current!.invalidate();
     if (!tilesShown) return;
@@ -4190,6 +4204,7 @@ export default function App() {
   // runs. a photo is a film simulation or a converted negative, not both;
   // switching asks first
   const [sfStocks, setSfStocks] = useState<Stocks | null>(null);
+  sfStocksRef.current = sfStocks;
   const [sfFetch, setSfFetch] = useState<FetchStatus | null>(null);
   const [exclusive, setExclusive] = useState<{ title: string; body: string; go: () => void } | null>(null);
   const filmView = !!current && layout.right && rightMode === "film";
@@ -6596,7 +6611,12 @@ export default function App() {
             </div>
           )}
           {rightMode === "negative" && !cropping && (
-            <NegativePanel advanced={negAdvanced} photo={session.current} values={values} disabled={!current} converted={values.neg_on === 1} picking={negPick}
+            <NegativePanel advanced={negAdvanced}
+                           footer={<PositiveFooter format={positiveFormat} exporting={positiveExporting} disabled={negBusy || !!negPick}
+                                     onFormat={(f) => { setPositiveFormat(f); storeNegativeExportFormat(f); }}
+                                     onExport={() => exportPositive("negative")} onTurnOff={negTurnOff}
+                                     turnOffLabel="Turn Off Conversion"
+                                     turnOffTitle="the photo back as a negative, with Basic's tools as they were" />} photo={session.current} values={values} disabled={!current} converted={values.neg_on === 1} picking={negPick}
                            busy={negBusy} hasArea={!!negArea} note={negNote} onPick={setNegPick}
                            onResetColor={() => changeMany(["wbl", "wbh"].flatMap((k) => ["r", "g", "b"]
                              .map((c): [string, number] => [`neg_${k}_${c}`, 1])), "Reset Color")}
@@ -6624,6 +6644,8 @@ export default function App() {
             <FilmPanel advanced={filmAdvanced} values={values} disabled={!current} on={values.sf_on === 1} stocks={sfStocks} fetch={sfFetch}
                        onDownload={sfDownload} onCancel={sfCancel} onTurnOn={() => sfTurnOn()}
                        onPreset={(name) => sfTurnOn(name)} onFilm={sfFilm} onPaper={sfPaper}
+                       preview={(key) => previews.current!.get(key)}
+                       onWant={(keys) => { wantedTiles.current = keys; requestTiles(); }}
                        renderControl={(id, override, onChange, value) => {
                          const c = { ...controlById.get(id)!, ...override };
                          const props = { control: c, value: value ?? values[id] ?? c.neutral ?? 0,
@@ -6817,15 +6839,13 @@ export default function App() {
                        } : undefined} /></Profiler>
           ))}
         </div>
-        {!cropping && current && ((rightMode === "negative" && values.neg_on === 1)
-                                  || (rightMode === "film" && values.sf_on === 1)) && (
+        {!cropping && current && rightMode === "film" && values.sf_on === 1 && (
           <PositiveFooter format={positiveFormat} exporting={positiveExporting} disabled={negBusy || !!negPick}
                           onFormat={(f) => { setPositiveFormat(f); storeNegativeExportFormat(f); }}
-                          onExport={() => exportPositive(rightMode === "film" ? "film" : "negative")}
-                          onTurnOff={rightMode === "film" ? sfTurnOff : negTurnOff}
-                          turnOffLabel={rightMode === "film" ? "Turn Off Film Simulation" : "Turn Off Conversion"}
-                          turnOffTitle={rightMode === "film" ? "the photo back on its tone mapper, with Basic's tools as they were"
-                                                             : "the photo back as a negative, with Basic's tools as they were"} />
+                          onExport={() => exportPositive("film")}
+                          onTurnOff={sfTurnOff}
+                          turnOffLabel="Turn Off Film Simulation"
+                          turnOffTitle="the photo back on its tone mapper, with Basic's tools as they were" />
         )}
         <div className="right-foot">
           <button className="btn small" disabled={!current || cropping} onClick={() => setCopying(true)}

@@ -173,7 +173,7 @@ export class PreviewCache {
   }
 }
 
-function Tile({ bitmap }: { bitmap: ImageBitmap | undefined }) {
+export function Tile({ bitmap }: { bitmap: ImageBitmap | undefined }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const c = ref.current;

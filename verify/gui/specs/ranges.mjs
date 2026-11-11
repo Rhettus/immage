@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from 'node:assert/strict';
 import { inspect, click, reveal, rangeSelector, openTool } from '../support/controls.mjs';
-import { Blocked, panel, expandSections, textButton, choose } from '../support/scenario.mjs';
+import { Blocked, panel, expandSections, textButton, choose, openStep } from '../support/scenario.mjs';
 import { until } from '../support/webdriver.mjs';
 import { settledPhoto, settledReset } from './smoke.mjs';
 
@@ -57,6 +57,15 @@ export async function locateControl(t, definition) {
   // advanced controls (Clarity's and Texture's coarse bands, Whites' Highlight
   // Brilliance, Negative and Film's) are not mounted until the panel's
   // Advanced toggle is on; the toggle is remembered, so restoreAdvanced puts it back
+  // Negative's controls sit in steps (GuidedSteps.tsx), one open at a time:
+  // open the unlocked steps in turn until the control mounts
+  if (id === 'negative' && !await t.driver.observe(s => !!document.querySelector(s), selector)) {
+    const ids = await t.driver.observe(() => [...document.querySelectorAll('.negative .step:not(.locked)')].map(e => e.dataset.step));
+    for (const step of ids) {
+      await openStep(t, p, step);
+      if (await t.driver.observe(s => !!document.querySelector(s), selector)) break;
+    }
+  }
   if (!await t.driver.observe(s => !!document.querySelector(s), selector)) {
     const toggle = definition.scope === 'local' ? '.masks-panel .panel-title.adj-title [data-advanced-toggle]'
       : id === 'negative' || id === 'film' ? '.panel-head .head-tools [data-advanced-toggle]'
@@ -65,6 +74,7 @@ export async function locateControl(t, definition) {
     if (await t.driver.observe(s => document.querySelector(s)?.getAttribute('aria-pressed') === 'false', toggle)) {
       (t.advancedOn ??= []).push(toggle);
       await click(t, toggle);
+      if (id === 'negative') await openStep(t, p, 'advanced').catch(() => {});
       await until(() => t.driver.observe(s => !!document.querySelector(s), selector), `${control.id} Advanced on`).catch(() => {});
     }
   }

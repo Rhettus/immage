@@ -52,6 +52,15 @@ export async function panel(t, id) {
   await until(() => t.driver.observe(s => !!document.querySelector(`${s} > .collapse.open`), selector), `${id} open`);
   return selector;
 }
+// open a guided step (GuidedSteps.tsx) of a panel by its id, through a real
+// click on its heading, unless it is already open; a locked step cannot open
+export async function openStep(t, scope, id) {
+  const step = `${scope} .step[data-step=${JSON.stringify(id)}]`;
+  if (!await t.driver.observe(s => document.querySelector(s)?.classList.contains('open'), step)) {
+    await click(t, `${step} > .step-head`);
+    await until(() => t.driver.observe(s => document.querySelector(s)?.classList.contains('open'), step), `${id} step open`);
+  }
+}
 export async function expandSections(t, selector) {
   for (let pass = 0; pass < 100; pass++) {
     const target = await t.driver.observe(s => {
