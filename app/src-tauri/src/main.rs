@@ -3327,6 +3327,7 @@ fn main() {
             let _ = app.emit("menu", event.id().as_ref());
         })
         .setup(|app| {
+            memory_budget::watch(app.handle().clone());
             #[cfg(target_os = "linux")]
             {
                 let dir = webext_dir(app.handle());

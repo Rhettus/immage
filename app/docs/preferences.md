@@ -306,11 +306,16 @@ scale**; zoomed-in frames still use the full webview resolution.
   each render cache shrinks back to its limit as soon as a frame is done,
   and when the computer runs short of memory the caches are cut to half
   their limit; a pause does not empty them, so the next edit takes about as
-  long as one made without the pause.
+  long as one made without the pause. When the computer runs short of
+  memory Immage also lets go of views already shown and of thumbnails
+  scrolled out of sight (the photo on screen and the visible thumbnails
+  stay); they are rendered or read again if you go back to them.
 - **Read ahead**: how many photos have their raws decoded while you edit,
   in the direction you last stepped, so the arrow keys open them without
   waiting for the decode. Up to three are decoded at once. Each holds its
   raw in memory, about 50 MB for a 24-megapixel photo. One by default.
+  Reading ahead pauses while an export runs and while the computer is
+  short of memory.
 - **Read ahead both ways**: as many photos behind the open one too, for
   stepping back. Off by default.
 

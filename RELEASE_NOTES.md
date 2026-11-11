@@ -67,7 +67,9 @@ Performance
 - Editing uses less memory: Immage gives back what a full-size view or a
   GPU check needed as soon as it is done, and a pause no longer clears the
   work it keeps for the next edit, so the first edit after a pause is as
-  quick as the rest.
+  quick as the rest. Reading ahead pauses during exports and when the
+  computer is short of memory, and then Immage also lets go of views
+  already shown and of thumbnails scrolled out of sight.
 
 Bug fixes
 

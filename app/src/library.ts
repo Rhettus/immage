@@ -360,11 +360,16 @@ export class ThumbLoader {
     this.trim();
   }
 
+  // the computer is short of memory: every bitmap off screen goes, whatever
+  // the limit; those on screen stay. they come back from disk when scrolled to
+  release() {
+    this.trim(0);
+  }
+
   // over the limit, down to 90% of it, so a folder being read does not
   // sort the cache for every thumbnail; never one on screen
-  private trim() {
-    const limit = this.limit();
-    if (this.bytes <= limit) return;
+  private trim(limit = this.limit()) {
+    if (this.bytes <= limit && limit > 0) return;
     const gone = [...this.cache.keys()].filter((id) => !this.visible.has(id))
       .sort((a, b) => (this.seen.get(a) ?? 0) - (this.seen.get(b) ?? 0));
     for (const id of gone) {

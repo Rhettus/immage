@@ -5,7 +5,9 @@
 //! its thumbnails all scale together.
 
 use serde::Serialize;
-use tauri::State;
+use std::time::{Duration, Instant};
+
+use tauri::{AppHandle, Emitter, State};
 
 use crate::{engine, AppState};
 
@@ -49,6 +51,38 @@ pub fn memory_budget(state: State<'_, AppState>) -> MemoryBudget {
     compute(sys.total_memory() / (1 << 20), &engine::resource_level(&state.runtime))
 }
 
+const CHECK_EVERY: Duration = Duration::from_secs(5);
+const REPEAT_AFTER: Duration = Duration::from_secs(30);
+
+/// whether to tell the page the computer is short of memory: less than a
+/// tenth available (the engine's Linux rule), and not within 30 s of the
+/// last notice, so a lasting shortage trims again but not in a loop
+pub fn should_emit(available: u64, total: u64, last_emit: Option<Instant>, now: Instant) -> bool {
+    total > 0
+        && available < total / 10
+        && last_emit.map_or(true, |t| now.saturating_duration_since(t) >= REPEAT_AFTER)
+}
+
+/// polls available memory and emits `memory-pressure` for the page to let go
+/// of what it keeps (shown views, off-screen thumbnails); nothing is
+/// trimmed while memory is plentiful
+pub fn watch(app: AppHandle) {
+    use sysinfo::{MemoryRefreshKind, RefreshKind, System};
+    std::thread::spawn(move || {
+        let mut sys = System::new_with_specifics(RefreshKind::nothing().with_memory(MemoryRefreshKind::nothing().with_ram()));
+        let mut last = None;
+        loop {
+            std::thread::sleep(CHECK_EVERY);
+            sys.refresh_memory_specifics(MemoryRefreshKind::nothing().with_ram());
+            let now = Instant::now();
+            if should_emit(sys.available_memory(), sys.total_memory(), last, now) {
+                last = Some(now);
+                let _ = app.emit("memory-pressure", ());
+            }
+        }
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -84,5 +118,16 @@ mod tests {
         let b = compute(1 << 20, "large");
         assert_eq!((b.frame_cache_mb, b.thumb_memory_mb), (2048, 4096));
         assert_eq!(compute(16384, "bogus"), compute(16384, "default"));
+    }
+
+    #[test]
+    fn pressure_notice_rules() {
+        let t0 = Instant::now();
+        let later = t0 + Duration::from_secs(31);
+        assert!(!should_emit(2000, 10000, None, t0));
+        assert!(should_emit(999, 10000, None, t0));
+        assert!(!should_emit(999, 10000, Some(t0), t0 + Duration::from_secs(10)));
+        assert!(should_emit(999, 10000, Some(t0), later));
+        assert!(!should_emit(0, 0, None, t0));
     }
 }

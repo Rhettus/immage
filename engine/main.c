@@ -438,8 +438,16 @@ static _merge_progress_t _merge_progress(JsonObject *req, FILE *out, const char 
 // under way. the cache keeps 2 * dt_worker_threads() full raws, at least 8
 // (mipmap_cache.c, dt_mipmap_cache_init), so a list longer than 7 pushes
 // out the open photo's neighbors it decoded first
+//
+// a decode starts only while memory is not short and no export, merge or
+// print runs: the task is dropped otherwise, with the list, since the page
+// sends a new one on its next step. dropping never blocks a shutdown, as
+// waiting on an export would in _prefetch_wait
 #define _PREFETCH_THREADS 3
 static GThreadPool *_prefetch_pool = NULL;
+static gboolean _memory_pressure(void);
+// export pool jobs queued or running
+static gint _export_jobs = 0;
 static GMutex _prefetch_lock;
 static GArray *_prefetch_queue = NULL;
 
@@ -450,6 +458,10 @@ static void _prefetch_run(gpointer data, gpointer user_data)
   _background_priority();
   _background_yield();
   g_mutex_lock(&_prefetch_lock);
+  // _memory_pressure is safe here: it keeps no state of its own on Linux
+  // (a local FILE), and reads an atomic on macOS and a kernel handle on
+  // Windows
+  if(g_atomic_int_get(&_export_jobs) > 0 || _memory_pressure()) g_array_set_size(_prefetch_queue, 0);
   if(!_prefetch_queue->len)
   {
     g_mutex_unlock(&_prefetch_lock);
@@ -2813,6 +2825,7 @@ static void _thumb_run(gpointer data, gpointer user_data)
   g_object_unref(b);
   g_free(err);
   g_object_unref(parser);
+  g_atomic_int_add(&_export_jobs, -1);
 }
 
 // FALSE once the pool has stopped; the request then gets no reply
@@ -4730,7 +4743,11 @@ static gboolean _export_queue(JsonParser *parser)
 {
   g_mutex_lock(&_export_pool_lock);
   const gboolean queued = _export_pool != NULL;
-  if(queued) g_thread_pool_push(_export_pool, parser, NULL);
+  if(queued)
+  {
+    g_atomic_int_inc(&_export_jobs);
+    g_thread_pool_push(_export_pool, parser, NULL);
+  }
   g_mutex_unlock(&_export_pool_lock);
   return queued;
 }

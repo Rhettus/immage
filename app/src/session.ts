@@ -1176,6 +1176,8 @@ export class Session {
     if (this.frames.has(at)) this.frames.delete(at);
     else this.framesBytes += f.pixels.byteLength;
     this.frames.set(at, f);
+    // delete first so the newest frame is last, which trimFrames keeps
+    this.current.delete(key);
     this.current.set(key, f);
     for (const [k, old] of this.frames) {
       if (this.framesBytes <= this.frameBudget() || old === f) break;
@@ -1184,6 +1186,20 @@ export class Session {
       const shown = k.slice(0, k.lastIndexOf("|"));
       if (this.current.get(shown) === old) this.current.delete(shown);
     }
+  }
+  // the computer is short of memory: every kept frame goes but the one
+  // shown last (the one on screen); the engine names the others by their
+  // hash again, or renders them, when a view comes back
+  trimFrames() {
+    const last = [...this.current.entries()].pop();
+    this.frames.clear();
+    this.current.clear();
+    this.framesBytes = 0;
+    if (!last) return;
+    const [key, f] = last;
+    this.frames.set(`${key}|${f.hash}`, f);
+    this.current.set(key, f);
+    this.framesBytes = f.pixels.byteLength;
   }
   private heldFor(key: string) {
     return [...this.frames].filter(([k]) => k.startsWith(`${key}|`)).map(([, f]) => f);

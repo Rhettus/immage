@@ -3189,6 +3189,16 @@ export default function App() {
   // at start, a photo or folder handed over, or else the folder and image
   // open when the app last closed; later, one handed to the running app.
   // both go the way a drop does: a folder shows as a grid
+  // the computer is short of memory (memory_budget.rs): let go of the views
+  // already shown and the thumbnails off screen, keeping what is on show
+  useEffect(() => {
+    const off = listen("memory-pressure", () => {
+      session.current?.trimFrames();
+      loader.current?.release();
+    });
+    return () => { void off.then((f) => f()); };
+  }, []);
+
   const started = useRef(false);
   useEffect(() => {
     const off = listen("launch-file", async () => {
