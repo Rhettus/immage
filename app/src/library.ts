@@ -180,7 +180,7 @@ async function fetchKnownThumb(key: string, size: number): Promise<ImageBitmap |
 // fetches thumbnails: those kept on disk first, several at a time, then
 // the rest from the engine, ENGINE_THUMBS at a time. the engine builds them
 // on threads of its own (main.c, _thumb_run), so they come in while a photo
-// is edited, and no render waits behind one. past `limit` bytes (Preferences' Thumbnail memory), those off screen
+// is edited, and no render waits behind one. past `limit` bytes (the memory budget), those off screen
 // longest are let go, and come back from disk when scrolled to.
 // a known image's thumbnail goes by its knownKey() until the image has an
 // imgid, then stands in for it until checked (fetchKnownThumb)

@@ -1163,7 +1163,7 @@ export class Session {
   // rendering it (`have`, _render in engine/main.c)
   private frames = new Map<string, Frame>();
   private framesBytes = 0;
-  // the Frame cache preference, in bytes, read at each frame kept
+  // the memory budget's frame cache, in bytes, read at each frame kept
   frameBudget: () => number = () => 256 * 1048576;
   // the frame each view shows, until the image changes: shown without
   // asking the engine

@@ -266,8 +266,8 @@ performance; results still vary by system.
     Presence, in Adjustments and in a mask's Presence group. Both show the
     same area. Use the point picker, then click the photo to choose it;
     Escape cancels. Turning it off stops loupe rendering.
-  - **Shared-memory frames**, **Drag drafts at the screen's scale**, **Frame
-    cache**, **Thumbnail memory** and **Read ahead**, described below.
+  - **Shared-memory frames**, **Drag drafts at the screen's scale** and
+    **Read ahead**, described below.
 - **Shared-memory frames** (Windows and Linux): hands each frame to the
   window in memory both share, rather than copying it. On by default; turn
   it off only to compare the two in the GUI benchmark.
@@ -290,24 +290,23 @@ scale**; zoomed-in frames still use the full webview resolution.
 
 **Memory**
 
-- **darktable memory**: how much of this computer's memory darktable may
-  take for its pipes and caches. **Small** keeps to about an eighth, for
+- **Memory**: how much memory Immage's caches use in total, from this
+  computer's memory: the render caches, the views of the photo already
+  shown (so zooming back out or going back to a view seen before shows it
+  at once, without a render) and the library's thumbnails (past their share,
+  those scrolled out of sight longest are let go and read from the disk
+  cache again). **Small** is about an eighth of the computer's memory, for
   working beside other large programs, though more of each edit is then
-  worked out again; **Default** about half; **Large** about two thirds,
-  for when Immage is the only large program running. It applies once
-  Immage starts again: **Relaunch** saves the photo and restarts. Whatever
-  the level, each cache shrinks back to its limit as soon as a frame is
-  done, and when the computer runs short of memory the caches are cut to
-  half their limit; a pause does not empty them, so the next edit takes
-  about as long as one made without the pause.
-- **Frame cache**: memory for the views of the photo already shown, so
-  zooming back out or going back to a view seen before shows it at once,
-  without a render. A view at 100% is about 30 MB on a 4K screen and 45 MB
-  on a 5K one. 512 MB on a 4K screen or larger, 256 MB on a smaller one.
-- **Thumbnail memory**: for the library's thumbnails. Past it, those
-  scrolled out of sight longest are let go and read from the disk cache
-  again when you scroll back. A thumbnail takes about 1 MB, so the
-  default, 1 GB, holds some 900.
+  worked out again; **Default** about half; **Large** about two thirds, for
+  when Immage is the only large program running. A 32 GB computer
+  therefore keeps more than an 8 GB one. Under the buttons the setting
+  shows the sizes it gives views and thumbnails. Views and thumbnails
+  follow a change at once; the render caches apply once Immage starts
+  again: **Relaunch** saves the photo and restarts. Whatever the level,
+  each render cache shrinks back to its limit as soon as a frame is done,
+  and when the computer runs short of memory the caches are cut to half
+  their limit; a pause does not empty them, so the next edit takes about as
+  long as one made without the pause.
 - **Read ahead**: how many photos have their raws decoded while you edit,
   in the direction you last stepped, so the arrow keys open them without
   waiting for the decode. Up to three are decoded at once. Each holds its

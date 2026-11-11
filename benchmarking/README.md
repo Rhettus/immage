@@ -69,7 +69,7 @@ The search is bounded, and reports when none of the tested setups meets the
 targets. Results apply to this photo, edit, display and window size.
 
 The options table also allows measured comparisons of cached detail previews,
-transport, screen scale, frame cache, GPU edits, darktable memory and available
+transport, screen scale, GPU edits, memory level and available
 window renderers. Changes requiring a relaunch save the tuning session and
 resume verification after the photo reopens. Read ahead and the Immich
 originals cache use **Record navigation workload** before and after a change:

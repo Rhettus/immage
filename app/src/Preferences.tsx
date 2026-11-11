@@ -6,6 +6,7 @@ import { useAgxProfiles } from "./agxProfiles";
 // to the app rather than to any photo, a tab per subject
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { currentMemoryBudget, refreshMemoryBudget } from "./memoryBudget";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { keys } from "./keys";
 import { AGX_PROFILE_DEFAULT, PROFILE_GROUPS, PROFILE_OPTIONS } from "./manifest";
@@ -301,41 +302,6 @@ export function storeDraftSmallest(v: number) {
   try { localStorage.setItem(DRAFT_SMALLEST_KEY, String(v)); } catch { /* not kept */ }
 }
 
-// memory for the full frames the viewer keeps (Session.frames), so zooming
-// back out or returning to a view seen before needs no render. a 100% frame
-// is the viewer's size: some 30 MB on a 4K screen, 45 on a 5K, against 10
-// on a 2K, so the smallest fits only a few on a large screen
-export const FRAME_CACHE_MB = [256, 512, 1024, 2048] as const;
-const FRAME_CACHE_KEY = "immage.frameCache";
-function defaultFrameCacheMb(): number {
-  const dpr = window.devicePixelRatio || 1;
-  return screen.width * dpr * screen.height * dpr >= 3840 * 2160 ? 512 : 256;
-}
-export function loadFrameCacheMb(): number {
-  try {
-    const v = Number(localStorage.getItem(FRAME_CACHE_KEY));
-    return (FRAME_CACHE_MB as readonly number[]).includes(v) ? v : defaultFrameCacheMb();
-  } catch { return defaultFrameCacheMb(); }
-}
-export function storeFrameCacheMb(v: number) {
-  try { localStorage.setItem(FRAME_CACHE_KEY, String(v)); } catch { /* not kept */ }
-}
-
-// memory for the library's thumbnails (library.ts, ThumbLoader); past it,
-// those off screen longest go, and come back from the disk cache. one is
-// about 600 x 450, 1 MB, so 1 GB holds some 900
-export const THUMB_MEMORY_MB = [256, 512, 1024, 2048, 4096] as const;
-const THUMB_MEMORY_KEY = "immage.thumbMemory";
-export function loadThumbMemoryMb(): number {
-  try {
-    const v = Number(localStorage.getItem(THUMB_MEMORY_KEY));
-    return (THUMB_MEMORY_MB as readonly number[]).includes(v) ? v : 1024;
-  } catch { return 1024; }
-}
-function storeThumbMemoryMb(v: number) {
-  try { localStorage.setItem(THUMB_MEMORY_KEY, String(v)); } catch { /* not kept */ }
-}
-
 // how many photos have their raws decoded ahead (App.tsx, prefetchNext):
 // in the direction last stepped, and as many behind it with `both`.
 // darktable's cache keeps at least 8 decoded raws (main.c, _prefetch), so
@@ -568,8 +534,6 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   const [settledAtScreen, setSettledAtScreen] = useState(loadSettledScale);
   const [draftTarget, setDraftTarget] = useState(loadDraftTarget);
   const [draftSmallest, setDraftSmallest] = useState(loadDraftSmallest);
-  const [frameCache, setFrameCache] = useState(loadFrameCacheMb);
-  const [thumbMemory, setThumbMemory] = useState(loadThumbMemoryMb);
   const [readAhead, setReadAhead] = useState(loadReadAhead);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   // choosing a profile sets what it stands for, which Advanced can then change
@@ -592,9 +556,14 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   };
   const [resources, setResources] = useState<{ running: Resources; next: Resources } | null>(null);
   useEffect(() => { invoke<{ running: Resources; next: Resources }>("darktable_resources").then(setResources).catch(() => {}); }, []);
+  const [budget, setBudget] = useState(currentMemoryBudget);
+  useEffect(() => { void refreshMemoryBudget().then(setBudget); }, []);
+  const gb = (mb: number) => mb >= 1024 ? `${Math.round(mb / 102.4) / 10} GB` : `${mb} MB`;
   const chooseResources = (level: Resources) => {
     if (!resources) return;
-    invoke("darktable_resources_set", { level }).then(() => setResources({ ...resources, next: level })).catch(() => {});
+    invoke("darktable_resources_set", { level })
+      .then(() => { setResources({ ...resources, next: level }); return refreshMemoryBudget(); })
+      .then((b) => setBudget(b)).catch(() => {});
   };
   const [gpuEdits, setGpuEdits] = useState<{ running: boolean; next: boolean } | null>(null);
   useEffect(() => { invoke<{ running: boolean; next: boolean }>("gpu_edits").then(setGpuEdits).catch(() => {}); }, []);
@@ -966,28 +935,6 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                     <PrefSwitch checked={settledAtScreen} onChange={(on) => { setSettledAtScreen(on); storeSettledScale(on); }} />
                   </PrefRow>
                 )}
-                <PrefRow label="Frame cache" summary="Memory for recently viewed frames."
-                         hint="memory for the frames the viewer keeps, so zooming back out or returning to a view seen before shows it without a render. a 100% frame is about 30 MB on a 4K screen and 45 MB on a 5K one">
-                  <div className="segmented small">
-                    {FRAME_CACHE_MB.map((mb) => (
-                      <button key={mb} className={frameCache === mb ? "active" : ""}
-                              onClick={() => { setFrameCache(mb); storeFrameCacheMb(mb); }}>
-                        {mb >= 1024 ? `${mb / 1024} GB` : `${mb} MB`}
-                      </button>
-                    ))}
-                  </div>
-                </PrefRow>
-                <PrefRow label="Thumbnail memory" summary="Memory for library thumbnails."
-                         hint="for the library's thumbnails; past it, those scrolled out of sight longest are let go, and read from the disk cache again when scrolled back. a thumbnail takes about 1 MB">
-                  <div className="segmented small">
-                    {THUMB_MEMORY_MB.map((mb) => (
-                      <button key={mb} className={thumbMemory === mb ? "active" : ""}
-                              onClick={() => { setThumbMemory(mb); storeThumbMemoryMb(mb); }}>
-                        {mb >= 1024 ? `${mb / 1024} GB` : `${mb} MB`}
-                      </button>
-                    ))}
-                  </div>
-                </PrefRow>
                 <PrefRow label="Read ahead" summary="Decode nearby RAW photos in advance."
                          hint="photos whose raws are decoded while you edit, in the direction you last stepped, so the arrow keys open them without the decode (some 300 ms for a compressed raw). each holds its raw in memory, about 50 MB for 24 megapixels">
                   <div className="segmented small">
@@ -1006,13 +953,12 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                 </Collapse>
               </PrefCard>
               <PrefCard title="Memory">
-                <PrefRow label="darktable memory" summary={`${{ small: "About ⅛ of system memory.", default: "About ½ of system memory.", large: "About ⅔ of system memory." }[resources?.next ?? "default"]}${resources && resources.next !== resources.running ? " Relaunch to apply." : ""}`}
-                         hint={`${{
-                           small: "darktable keeps to about an eighth of this computer's memory, for working beside other large programs; more of each edit is worked out again",
-                           default: "darktable may take about half of this computer's memory for its pipes and caches",
-                           large: "about two thirds, for when Immage is the only large program running",
-                         }[resources?.next ?? "default"]}${resources && resources.next !== resources.running
-                           ? ". applies once Immage starts again" : ""}`}>
+                <PrefRow label="Memory" summary={`${{ small: "About ⅛ of system memory.", default: "About ½ of system memory.", large: "About ⅔ of system memory." }[resources?.next ?? "default"]}${budget ? ` About ${gb(budget.frameCacheMb)} for views, ${gb(budget.thumbMemoryMb)} for thumbnails.` : ""}${resources && resources.next !== resources.running ? " Relaunch to apply." : ""}`}
+                         hint={`how much memory Immage's caches use in total: the render caches, the views of the photo already shown and the library's thumbnails. ${{
+                           small: "Small keeps to about an eighth of this computer's memory, for working beside other large programs; more of each edit is worked out again",
+                           default: "Default uses about half of this computer's memory",
+                           large: "Large uses about two thirds, for when Immage is the only large program running",
+                         }[resources?.next ?? "default"]}. the render part applies once Immage starts again; views and thumbnails follow at once`}>
                   <div className="segmented small">
                     {([["Small", "small"], ["Default", "default"], ["Large", "large"]] as const).map(([label, v]) => (
                       <button key={v} className={resources?.next === v ? "active" : ""} disabled={!resources}

@@ -69,7 +69,7 @@ Front end ([`app/src`](../../src)):
 Rust ([`app/src-tauri/src`](../../src-tauri/src)):
 
 - [main.rs](../../src-tauri/src/main.rs): `AppState` and nearly every command; [engine.rs](../../src-tauri/src/engine.rs): the engine child and its protocol
-- [immich_search.rs](../../src-tauri/src/immich_search.rs), [immich_upload.rs](../../src-tauri/src/immich_upload.rs); [plugins.rs](../../src-tauri/src/plugins.rs) (Edit In); [listing.rs](../../src-tauri/src/listing.rs) (folder listings with sizes and times); [volumes.rs](../../src-tauri/src/volumes.rs) (drives, and whether each answers); [scale.rs](../../src-tauri/src/scale.rs) (Wayland scale); [renderer.rs](../../src-tauri/src/renderer.rs) (Linux interface EGL selection before GTK starts); [webext/frames.c](../../src-tauri/webext/frames.c) (Linux shared frames)
+- [memory_budget.rs](../../src-tauri/src/memory_budget.rs) (the one memory budget from RAM x the Memory level; page side [memoryBudget.ts](../../src/memoryBudget.ts)); [immich_search.rs](../../src-tauri/src/immich_search.rs), [immich_upload.rs](../../src-tauri/src/immich_upload.rs); [plugins.rs](../../src-tauri/src/plugins.rs) (Edit In); [listing.rs](../../src-tauri/src/listing.rs) (folder listings with sizes and times); [volumes.rs](../../src-tauri/src/volumes.rs) (drives, and whether each answers); [scale.rs](../../src-tauri/src/scale.rs) (Wayland scale); [renderer.rs](../../src-tauri/src/renderer.rs) (Linux interface EGL selection before GTK starts); [webext/frames.c](../../src-tauri/webext/frames.c) (Linux shared frames)
 
 Engine ([`engine/`](../../../engine)):
 

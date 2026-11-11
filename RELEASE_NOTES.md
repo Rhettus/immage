@@ -7,6 +7,10 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Preferences has one Memory setting instead of three: it sizes the render
+  caches, the views already shown and the thumbnails from the computer's
+  memory, so a 32 GB computer keeps more and an 8 GB one less, without setting
+  each by hand.
 - If the editing engine stops or crashes, Immage starts it again by itself
   and reopens the folder or search you were viewing, with its filter, and the
   photo you had open as of its last save. Edits from the last second or so

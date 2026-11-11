@@ -106,7 +106,7 @@ export async function fitDetail(t) {
   }
   // Bound native pipe caches for this VM run while retaining Balanced image
   // quality. The supported memory preference applies after an app restart.
-  await textButton(t, '[data-pref-label="darktable memory"]', 'Small');
+  await textButton(t, '[data-pref-label="Memory"]', 'Small');
   await textButton(t, '.prefs-foot', 'Done');
   await t.restart();
   // Reuse startup's font/layout/Skip readiness after the native restart.

@@ -39,7 +39,7 @@ white balance picker, \ for before, Y for before / after, X to reject,
 | Storage | 2 GB free for Immage and its caches | an SSD, with room for the AI models and the Immich cache if you use them |
 
 With 8 GB, photos up to about 24 megapixels edit smoothly once other large
-programs are closed; set **darktable memory** to **Small** in
+programs are closed; set **Memory** to **Small** in
 [Preferences](preferences.md#performance) if the computer starts to run short.
 Larger photos need more memory while a full-size view or export renders.
 
