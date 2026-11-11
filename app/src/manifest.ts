@@ -554,6 +554,10 @@ export const preferredChoice = (c: ModuleChoice) => (c.options.find((o) => o.pre
 // the controls whose module a choice decides
 export const choiceCovers = (c: ModuleChoice) =>
   c.covers ?? c.options.flatMap((o) => [...o.controls, ...o.localControls]);
+// the same, less the curve editors (contrast equalizer, saturation curve)
+// that stand in for a slider: what places a choice among the sliders
+const EDITOR_IDS = new Set([...EQ_IDS, ...SATCURVE_IDS]);
+const sliderCovers = (c: ModuleChoice) => choiceCovers(c).filter((id) => !EDITOR_IDS.has(id));
 const optionOf = new Map(MODULE_CHOICES.flatMap((c) => c.options.flatMap((o) =>
   [...o.controls, ...o.localControls].map((id) => [id, { choice: c, option: o }] as const))));
 // whether a slider is one of the photo's modules' (or belongs to no choice)
@@ -2008,10 +2012,15 @@ export const moduleTools = (): { panel: string; tools: ModuleTool[] }[] => {
       choices.forEach((c) => listed.add(c));
       const covered = new Set(choices.flatMap(choiceCovers));
       // sigmoid runs only on photos started under it; new ones get AgX
-      const modules = [...new Set(ids.filter((id) => !covered.has(id))
+      const plain = ids.filter((id) => !covered.has(id))
+        .filter((id) => mapsWith(id).some((m) => !m.choice && m.op !== "sigmoid"));
+      const modules = [...new Set(plain
         .flatMap((id) => mapsWith(id).filter((m) => !m.choice && m.op !== "sigmoid").map((m) => moduleName(m.op))))];
-      return [...(modules.length ? [{ title: s.title, modules }] : []),
-              ...choices.map((c) => ({ title: c.label, modules: [], choice: c }))];
+      // in the order of the section's sliders: each tool at its first one
+      const first = (cover: string[]) => Math.min(...cover.map((id) => ids.indexOf(id)).filter((i) => i >= 0));
+      return [...(modules.length ? [{ at: first(plain), tool: { title: s.title, modules } }] : []),
+              ...choices.map((c) => ({ at: first(sliderCovers(c)), tool: { title: c.label, modules: [], choice: c } }))]
+        .sort((a, b) => a.at - b.at).map(({ tool }) => tool);
     }),
   })).filter((p) => p.tools.length);
   const masks = MODULE_CHOICES.filter((c) => !listed.has(c));
@@ -2206,4 +2215,9 @@ export const MASK_MODULE_CHOICES: ModuleChoice[] = MODULE_CHOICES.flatMap((c) =>
   const options = c.options.filter((o) => localMaps.some((m) =>
     m.choice?.control === c.control && m.choice.value === o.value));
   return options.length ? [{ ...c, options }] : [];
-});
+}).map((c) => {
+  // listed in the order of the mask's sliders: a choice sits at its first
+  const ids = new Set(sliderCovers(c).flatMap((id) => [id, `l_${id}`]));
+  const at = LOCAL_CONTROLS.findIndex((l) => ids.has(l.id));
+  return { c, at: at < 0 ? Infinity : at };
+}).sort((a, b) => a.at - b.at).map(({ c }) => c);

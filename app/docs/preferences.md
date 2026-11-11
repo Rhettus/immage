@@ -424,23 +424,25 @@ shows dropdowns so you can pick one per tool,
 under separate collapsible **Global** and **Masks** sections. For example,
 use AgX for global Contrast and contrast equalizer for masks. With **Focus mode**
 on, opening one section closes the other; Alt-click keeps both open. With it off,
-sections open independently, and Alt-click opens one on its own. Global offers:
+sections open independently, and Alt-click opens one on its own. Tools are
+listed by panel, in the order of their sliders. Global offers:
 
+- **Black & White**: color calibration, or the color equalizer
 - **Contrast**: AgX (or sigmoid on a photo started under it), color balance
   rgb, or contrast equalizer, which replaces the slider with a curve editor
-- **Blacks**: AgX (or sigmoid), or exposure
-- **Saturation**: AgX (or sigmoid), color balance rgb, or saturation curve,
-  which replaces the slider with saturation and brilliance curves
-- **Clarity**: contrast & texture, or local contrast
-- **Texture**: contrast & texture, or diffuse or sharpen
 - **Highlights and Shadows**: the tone equalizer, or shadows and
   highlights
-- **Black & White**: color calibration, or the color equalizer
+- **Blacks**: AgX (or sigmoid), or exposure
+- **Texture**: contrast & texture, or diffuse or sharpen
+- **Clarity**: contrast & texture, or local contrast
+- **Saturation**: AgX (or sigmoid), color balance rgb, or saturation curve,
+  which replaces the slider with saturation and brilliance curves
 - **Sharpening**: sharpen, or diffuse or sharpen
 
-**Masks** independently offers Contrast (color balance rgb or contrast equalizer),
-Highlights and Shadows, Saturation (color balance rgb or saturation curve),
-Clarity, Texture and Sharpening. Modules without
+**Masks** independently offers, in the order of a mask's sliders, Contrast
+(color balance rgb or contrast equalizer), Highlights and Shadows, Texture,
+Clarity, Saturation (color balance rgb or saturation curve) and Sharpening.
+Modules without
 alternatives are also listed. The same choice is available from the icon
 beside each tool's name in the panels; its **Set as default** writes the
 choice here (see [darktable modules](darktable.md)). Existing mask adjustments keep their modules;

@@ -21,6 +21,8 @@ Improvements
 - The importer reads only from cards, drives and folders you chose, and
   writes only into destinations you chose. Of the destinations you used
   before, only the current one is kept; choose the others again once.
+- Preferences › Modules lists tools in the order of their sliders in the
+  panels and in a mask, under both Global and Masks.
 
 Performance
 
