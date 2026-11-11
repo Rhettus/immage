@@ -74,6 +74,19 @@ export function SupportBundleDialog({ values, onClose }: { values: SupportValues
     if (!saved) void invoke("support_bundle_discard").catch(() => {});
     onClose();
   };
+  // on the window, not the backdrop: opened from the menu, focus is not in
+  // the dialog yet, and Escape should not also reach the editor's shortcuts
+  const closeRef = useRef(close);
+  closeRef.current = close;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault(); e.stopPropagation();
+      closeRef.current();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
   const file = bundle?.files[tab];
   const gone = (file && removed[file.name]) || new Set<number>();
   const select = (i: number, shift: boolean) => {
@@ -117,10 +130,7 @@ export function SupportBundleDialog({ values, onClose }: { values: SupportValues
   const end = Math.min(lines.length, first + Math.ceil(VIEW / ROW) + 20);
 
   return <div className="modal-backdrop" onPointerDown={(e) => { if (e.target === e.currentTarget) close(); }}
-    onKeyDown={(e) => {
-      e.stopPropagation();
-      if (e.key === "Escape") { e.preventDefault(); close(); }
-    }}>
+    onKeyDown={(e) => e.stopPropagation()}>
     <div ref={box} className="modal support-bundle" role="dialog" aria-modal="true" aria-labelledby="support-bundle-title">
       <div className="modal-head"><h2 id="support-bundle-title">Create Support Bundle</h2></div>
       <div className="modal-body">

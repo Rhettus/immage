@@ -28,6 +28,7 @@ import { lensProfile, lensPick } from './specs/lens.mjs';
 import { themes, workspaceLayout } from './specs/themes.mjs';
 import { engineRestart } from './specs/engine-restart.mjs';
 import { saveFailure } from './specs/save-failure.mjs';
+import { supportBundle } from './specs/support-bundle.mjs';
 import { menus, menusGuards } from './specs/menus.mjs';
 import { hostileText } from './specs/hostile-text.mjs';
 
@@ -60,6 +61,7 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   menus,
   'engine-restart': engineRestart,
   'save-failure': saveFailure,
+  'support-bundle': supportBundle,
   'menus-guards': menusGuards,
   'hostile-text': hostileText,
 };
