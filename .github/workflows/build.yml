@@ -115,9 +115,14 @@ jobs:
             verify/ui-updates.test.mjs
       - run: npm audit --omit=dev --audit-level=high
         working-directory: app
+      # rust-cache saves nothing after an exact hit, so an entry saved before
+      # `cargo test` joined this job (clippy's output only) was restored and
+      # kept forever, and the tests compiled from cold every run (~9 min).
+      # change this key when the job's cargo steps change
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: app/src-tauri
+          key: clippy-test
       - name: cargo clippy
         working-directory: app/src-tauri
         # tauri's build script checks that the bundled resources exist; the
