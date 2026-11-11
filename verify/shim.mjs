@@ -8,8 +8,9 @@
 // below does the same
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 // main.rs's FRAME_HEAD: six u32 of geometry, six f32 of timings, the u64
@@ -189,6 +190,13 @@ function sized(width, height) {
 
 // print_photo's export jobs, apart from the tests' own numbers
 let printJobs = 0;
+// the save dialog's answer in main.rs (pick_pdf): the suggested name, in a directory of its own
+let pdfDir = null;
+const pdfChoice = (name) => {
+  if (!name) return null;
+  pdfDir ??= mkdtempSync(join(tmpdir(), "immage-pdf-"));
+  return join(pdfDir, name);
+};
 const COMMANDS = {
   display_scale: () => (screen.scale === "error" ? Promise.reject(new Error("not on a screen yet")) : screen.scale),
   meta: ({ imgid }) => request({ cmd: "meta", imgid }),
@@ -302,22 +310,26 @@ const COMMANDS = {
     (await request({ cmd: "softproof", mode, profile: profile ?? "", intent: intent ?? 0 })).changed,
   printers: async () => { const { ok, ms, ...r } = await request({ cmd: "printers" }); return r; },
   printer_info: async ({ name }) => { const { ok, ms, ...r } = await request({ cmd: "printer", name }); return r; },
-  print_photo: async ({ imgid, request: req }) => {
+  print_photo: async ({ imgid, request: req, pdf_name }) => {
+    const pdf = pdfChoice(pdf_name);
+    if (pdf) req = { ...req, pdf };
     const job = 900000 + ++printJobs;
     await request({ cmd: "export_hold", job, imgids: [imgid] });
     try {
       const { ok, ms, tag, ...r } = await requestTagged({ ...req, cmd: "print", job, imgid });
-      return r;
+      return pdf ? { ...r, pdf } : r;
     } finally {
       await requestTagged({ cmd: "export_release", job });
     }
   },
-  print_sheet: async ({ imgids, request: req }) => {
+  print_sheet: async ({ imgids, request: req, pdf_name }) => {
+    const pdf = pdfChoice(pdf_name);
+    if (pdf) req = { ...req, pdf };
     const job = 900000 + ++printJobs;
     await request({ cmd: "export_hold", job, imgids });
     try {
       const { ok, ms, tag, ...r } = await requestTagged({ ...req, cmd: "print", job });
-      return r;
+      return pdf ? { ...r, pdf } : r;
     } finally {
       await requestTagged({ cmd: "export_release", job });
     }

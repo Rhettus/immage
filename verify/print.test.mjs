@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import { createRequire, registerHooks } from "node:module";
 import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { narrowPrinterProfile } from "./gui/support/icc.mjs";
 
@@ -146,10 +146,11 @@ test("print cells layout: 38 on a Letter page, spacing, counts, custom size, pag
   // the request: boxes and labels per page, in millimeters
   const req = P.sheetRequest({ ...s, printer: P.PDF }, letter, P.cellsLayout(letter, s, 3),
                              [{ imgid: 1, name: "a.CR3" }, { imgid: 2, name: "b.CR3" }, { imgid: 3, name: "c.CR3" }],
-                             "Contact sheet", "", "/tmp/x.pdf");
+                             "Contact sheet", "", true);
   assert.equal(req.pages.length, 1); assert.equal(req.pages[0].length, 3);
   assert.equal(req.pages[0][2].label.text, "c.CR3");
-  assert.equal(req.pdf, "/tmp/x.pdf");
+  assert.equal(req.pdf, undefined, "the path is asked for by Rust, not sent by the page");
+  assert.equal(req.dpi, s.dpi);
   // settings saved by an earlier version load with the new fields' defaults
   store.set("immage.print", JSON.stringify({ dpi: 240 }));
   const old = P.loadPrintSettings();
@@ -207,8 +208,10 @@ test("soft proof through the Session, and a PDF through print_photo", { timeout:
     const settings = { ...P.defaultPrintSettings(), printer: P.PDF, paper: A4.name, profile: added.file, dpi: 150,
                        margins: { top: 10, bottom: 10, left: 10, right: 10 } };
     const l = P.layout(A4, settings, plain.fullWidth / plain.fullHeight);
-    const pdf = join(dir, "photo.pdf");
-    const r = await invoke("print_photo", { imgid, request: P.printRequest(settings, A4, l, "photo.jpg", "", pdf) });
+    const r = await invoke("print_photo", { imgid, request: P.printRequest(settings, A4, l, "photo.jpg", "", true),
+                                            pdf_name: "photo.pdf" });
+    const pdf = r.pdf;
+    assert.equal(basename(pdf), "photo.pdf", "written where the save dialog's answer says");
     near(r.width, Math.round(l.image.width / 25.4 * 150), "rendered at the area's size", 2);
     const data = readFileSync(pdf);
     assert.ok(data.subarray(0, 4).toString() === "%PDF", "a PDF");
@@ -231,9 +234,9 @@ test("soft proof through the Session, and a PDF through print_photo", { timeout:
     }
     const cl = P.cellsLayout(letter, cellSettings, photos.length);
     assert.equal(cl.pages, 1);
-    const sheetPdf = join(dir, "sheet.pdf");
     const sheetRun = invoke("print_sheet", { imgids: photos.map((p) => p.imgid),
-                                             request: P.sheetRequest(cellSettings, letter, cl, photos, "Contact sheet", "", sheetPdf) });
+                                             request: P.sheetRequest(cellSettings, letter, cl, photos, "Contact sheet", "", true),
+                                             pdf_name: "sheet.pdf" });
     // thumbnails asked for meanwhile, as the preview does: each whole, the size its reply says
     const thumbs = [];
     for (const [n, p] of photos.entries()) {
@@ -248,7 +251,7 @@ test("soft proof through the Session, and a PDF through print_photo", { timeout:
     const steps = progressLog.filter((p) => p.stage === "photos").map((p) => p.done);
     assert.deepEqual(steps, Array.from({ length: 13 }, (_, i) => i), `progress per photo: ${steps}`);
     assert.ok(progressLog.every((p) => p.total === 12));
-    const sdata = readFileSync(sheetPdf);
+    const sdata = readFileSync(sr.pdf);
     assert.ok(sdata.subarray(0, 4).toString() === "%PDF", "a sheet PDF");
     assert.ok(sdata.includes("/MediaBox [0 0 612 792]"), "a Letter page");
 
