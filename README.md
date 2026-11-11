@@ -56,6 +56,9 @@ Choose your platform on the [Releases page](https://github.com/Rhettus/immage/re
 | Windows | Windows 10 or 11, x64; Windows on ARM through x64 emulation | `-setup.exe` installer |
 | Linux | x86-64 or ARM64, glibc 2.35 or newer (Ubuntu 22.04 and later, including Linux Mint 22.x) | AppImage |
 
+Immage needs at least 8 GB of memory; 16 GB and a GPU with OpenCL are
+recommended. See [System requirements](app/docs/getting-started.md#system-requirements).
+
 The Windows installer offers **Just for me** (under
 `%LOCALAPPDATA%\Programs\Immage`, without administrator permissions) or
 **Everyone on this computer** (under Program Files, requesting permission after
