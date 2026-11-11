@@ -11633,8 +11633,8 @@ static char _end_of_input[] = "";
 
 // after this long without a request, the session's pipes drop invalid and
 // over-limit cachelines, and the C library gives back its freed pages; the
-// lines the next edit reuses stay. under memory pressure the caches shrink
-// to half their limit before a request, at most once a while (_trim)
+// lines the next edit reuses stay. under memory pressure the caches are
+// emptied before a request, at most once a while (_trim)
 #define _IDLE_TRIM_US (20 * G_USEC_PER_SEC)
 #define _PRESSURE_POLL_US (2 * G_USEC_PER_SEC)
 #define _PRESSURE_TRIM_US (5 * G_USEC_PER_SEC)
@@ -11698,16 +11698,13 @@ static gboolean _memory_pressure(void)
 }
 
 // idle: only what is invalid or over its limit goes, so a pause leaves the
-// lines the next edit reuses. pressure: each cache shrinks to half its limit,
-// oldest lines first, by doubling its fraction for the check. darktable's own
-// trim (checkmem with trim set) empties every cache below 6 GB of available
-// memory, which is why it is not used
+// lines the next edit reuses. pressure: darktable's own trim, which empties
+// every cache but the lines in use below 6 GB of available memory. halving
+// the limits instead kept about 2.5 GB through a film render on a 12 GB
+// computer, and the next render's 2 GB peak then left under 1 GB free
 static void _trim_pipe(dt_dev_pixelpipe_t *pipe, const gboolean pressure)
 {
-  const int fraction = pipe->cache.mem_fraction;
-  if(pressure && fraction) pipe->cache.mem_fraction = fraction * 2;
-  dt_dev_pixelpipe_cache_checkmem(pipe, FALSE);
-  pipe->cache.mem_fraction = fraction;
+  dt_dev_pixelpipe_cache_checkmem(pipe, pressure);
 }
 
 static void _trim(const gboolean pressure)

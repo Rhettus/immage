@@ -304,8 +304,8 @@ scale**; zoomed-in frames still use the full webview resolution.
   follow a change at once; the render caches apply once Immage starts
   again: **Relaunch** saves the photo and restarts. Whatever the level,
   each render cache shrinks back to its limit as soon as a frame is done,
-  and when the computer runs short of memory the caches are cut to half
-  their limit; a pause does not empty them, so the next edit takes about as
+  and they are emptied only when the computer runs short of memory; a
+  pause does not empty them, so the next edit takes about as
   long as one made without the pause. When the computer runs short of
   memory Immage also lets go of views already shown and of thumbnails
   scrolled out of sight (the photo on screen and the visible thumbnails
