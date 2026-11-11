@@ -25,6 +25,14 @@ const PICK_HINTS: Record<NegPick, string> = {
   highlights: "drag over something white or gray, or the whole photo",
 };
 
+// the controls the advanced section renders, for its edited dot
+export function negAdvancedIds(values: Record<string, number>): string[] {
+  const color = values.neg_film !== FILM_BW;
+  return [...(color ? ["r", "g", "b"] : ["r"]).map((c) => `neg_dmin_${c}`),
+          ...(color ? ["r", "g", "b"].map((c) => `neg_wbl_${c}`) : []),
+          ...["r", "g", "b"].map((c) => `neg_wbh_${c}`)];
+}
+
 export function NegativePanel({ photo, values, disabled, converted, picking, busy, hasArea, note, renderControl,
                                 onPick, onResetColor, advanced }: {
   advanced: boolean;

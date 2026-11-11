@@ -35,6 +35,11 @@ const ADVANCED: { title: string; ids: string[]; print?: boolean }[] = [
 ];
 const id = (field: string) => `sf_${field}`;
 
+// the controls the advanced section renders, for its edited dot; the print
+// folds are hidden for a scan
+export const filmAdvancedIds = (values: Record<string, number>): string[] =>
+  ADVANCED.filter((g) => !g.print || values.sf_scan_film !== 1).flatMap((g) => g.ids.map(id));
+
 // the stocks under headings, as darktable's lists file them
 const groups = (stocks: Stock[], printing: boolean): [string, [string, number][]][] => {
   const of = (bw: boolean, positive: boolean) => stocks.filter((s) => s.printing === printing && s.bw === bw

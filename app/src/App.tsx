@@ -26,8 +26,8 @@ import { BANDS, choiceCovers, choiceOn, choiceShows, controlById, GUIDE_IDS, gui
          type ModuleChoice, type Panel, type Section, type Turn } from "./manifest";
 import { autoArea, autoBlack, autoDmax, autoDmin, autoExposure as autoPrintExposure, autoOffset, autoWbHigh, autoWbLow,
          FILM_BW, FILM_COLOR, fromValues, PRESETS, toValues, type Stats } from "./negadoctor";
-import { NegativePanel, type NegPick } from "./NegativePanel";
-import { FilmPanel } from "./FilmPanel";
+import { NegativePanel, negAdvancedIds, type NegPick } from "./NegativePanel";
+import { FilmPanel, filmAdvancedIds } from "./FilmPanel";
 import { LensPicker } from "./LensPicker";
 import { PrintPanel } from "./PrintPanel";
 import { applyProof, cellsLayout, defaultPrintSettings, hasPrintSettings, LABEL_POINTS, layout as printLayout,
@@ -6420,10 +6420,12 @@ export default function App() {
           <div className="head-tools">
             {pinButton("right")}
             {!cropping && rightMode === "negative" && values.neg_on === 1 && (
-              <AdvancedToggle on={negAdvanced} onToggle={toggleNegAdvanced} />
+              <AdvancedToggle on={negAdvanced} onToggle={toggleNegAdvanced}
+                              edited={advancedEdited(negAdvancedIds(values), values, session.current?.neutral ?? {})} />
             )}
             {!cropping && rightMode === "film" && values.sf_on === 1 && (
-              <AdvancedToggle on={filmAdvanced} onToggle={toggleFilmAdvanced} />
+              <AdvancedToggle on={filmAdvanced} onToggle={toggleFilmAdvanced}
+                              edited={advancedEdited(filmAdvancedIds(values), values, session.current?.neutral ?? {})} />
             )}
             {(rightMode === "adjust" || rightMode === "presets") && !cropping && (
               <button className="tool" onClick={toggleAllPanels}
