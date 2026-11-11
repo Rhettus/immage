@@ -41,7 +41,7 @@ export async function guiBenchmark(t, screenDrafts = null) {
     }
     await until(async () => (await t.driver.observe(inspect, selector))?.checked === screenDrafts, 'draft scale setting');
   }
-  const run = '[data-pref-label="GUI benchmark"] button';
+  const run = '[data-pref-label="GUI benchmark"] .pref-control button';
   await tabTo(t, run);
   const target = await t.driver.observe(inspect, run);
   assert(target?.visible && target.hit && !target.disabled, 'focused Run button must be visible and enabled');
