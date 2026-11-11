@@ -47,6 +47,17 @@ was asked for, and the capture date always:
 python3 -I verify/export-metadata.py
 ```
 
+The sidecar safety check (headless, no GUI, needs exiv2 and a C compiler)
+fails a save in each way it can fail: a read-only folder and sidecar, a full
+disk while the copy is made and while darktable writes it, and the engine
+killed while each of those files is half written. The old sidecar must stay
+byte for byte as it was, the error must name it, and the next save must work.
+The full disk and kill cases run on Linux only:
+
+```bash
+python3 -I verify/sidecar-safety.py
+```
+
 The background-priority check (headless, no GUI) times foreground renders while
 the engine imports, exports, prefetches or denoises. `--load all` is stage 0 of
 the background-priority plan: for each load it times a 100% zoom render and a

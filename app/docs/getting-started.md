@@ -75,6 +75,12 @@ versions are compatible. Immage uses a development version of darktable;
 try copies first if you also use stable darktable. See
 [darktable compatibility](darktable.md#compatibility).
 
+Immage writes the new sidecar beside the old one and puts it in place only
+once it is complete, so a full disk or a crash during a save leaves the
+previous edit's sidecar whole. Saving needs a folder you can create files
+in. If a save fails, the status bar names the sidecar and says why, such as
+a read-only folder or a full disk.
+
 Immage never changes the photo file itself.
 
 ## What new photos start with

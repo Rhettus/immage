@@ -108,6 +108,7 @@
 #include <json-glib/json-glib.h>
 #include <pango/pangocairo.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <inttypes.h>
 #include <limits.h>
 #include <stdio.h>
@@ -523,6 +524,111 @@ static void _close_session(void)
   _s.baseline = FALSE;
 }
 
+// why the last sidecar write failed, for _save's reply
+static gchar *_sidecar_error = NULL;
+
+static gboolean _sidecar_failed(const char *filename, const char *what, const int code)
+{
+  gchar *name = g_path_get_basename(filename);
+  g_free(_sidecar_error);
+  _sidecar_error = code ? g_strdup_printf("could not save the edit to %s: %s (%s)", name, what, g_strerror(code))
+                        : g_strdup_printf("could not save the edit to %s: %s", name, what);
+  g_free(name);
+  dt_print(DT_DEBUG_ALWAYS, "[engine] %s", _sidecar_error);
+  return TRUE;
+}
+
+// darktable's writer (exif.cc, dt_exif_xmp_write) empties the sidecar, then
+// writes the new one without checking the writes: a full disk, or the engine
+// killed in between, leaves an empty or cut XMP, the edit lost, and a full
+// disk is even reported as saved. so the new sidecar is made in a copy beside
+// it, checked whole, flushed, and renamed over the old one, as dtdata.c
+// replaces its file: until then the old sidecar is untouched. TRUE on failure
+static gboolean _write_xmp_whole(const dt_imgid_t imgid, const char *filename, const gboolean location_changed)
+{
+  // one fixed name, so a copy left by a killed engine is reused, not piled up
+  gchar *tmp = g_strconcat(filename, ".immage-tmp", NULL);
+  gchar *old = NULL, *now = NULL;
+  gsize old_len = 0, now_len = 0;
+  GError *error = NULL;
+  gboolean failed = TRUE;
+  GStatBuf st;
+  const gboolean existed = g_stat(filename, &st) == 0;
+  // the old sidecar is the copy's start: darktable keeps the keys it does not
+  // know (_remove_known_keys) and skips a write that changes nothing
+  if(existed && !g_file_get_contents(filename, &old, &old_len, &error))
+  {
+    _sidecar_failed(filename, error->message, 0);
+    goto done;
+  }
+  g_unlink(tmp);
+  if(existed)
+  {
+    FILE *f = g_fopen(tmp, "wb");
+    if(!f)
+    {
+      _sidecar_failed(filename, "could not make a copy beside it", errno);
+      goto done;
+    }
+    const gboolean wrote = fwrite(old, 1, old_len, f) == old_len;
+    const int code = errno;
+    if(fclose(f) != 0 || !wrote)
+    {
+      _sidecar_failed(filename, "could not make a copy beside it", wrote ? errno : code);
+      goto done;
+    }
+  }
+  if(dt_exif_xmp_write(imgid, tmp, FALSE))
+  {
+    _sidecar_failed(filename, "darktable could not write it", errno);
+    goto done;
+  }
+  if(location_changed && !location_sidecar_mark(tmp))
+  {
+    _sidecar_failed(filename, "could not mark its location", 0);
+    goto done;
+  }
+  // a write cut short loses the packet's end
+  if(!g_file_get_contents(tmp, &now, &now_len, NULL) || !g_strstr_len(now, now_len, "</x:xmpmeta>"))
+  {
+    _sidecar_failed(filename, "the new sidecar came out incomplete (is the disk full?)", 0);
+    goto done;
+  }
+  if(existed && now_len == old_len && !memcmp(now, old, now_len))
+  {
+    // unchanged: the old file stays as it is, its time too, as darktable leaves it
+    failed = FALSE;
+    goto done;
+  }
+  {
+    // on to the disk before it takes the old one's place, or a power cut
+    // after the rename can leave an empty file under the sidecar's name
+    const int fd = g_open(tmp, O_RDWR, 0);
+    const gboolean synced = fd >= 0 && g_fsync(fd) == 0;
+    const int code = errno;
+    if(fd >= 0) close(fd);
+    if(!synced)
+    {
+      _sidecar_failed(filename, "could not write it to the disk", code);
+      goto done;
+    }
+  }
+  if(existed) g_chmod(tmp, st.st_mode & 07777);
+  if(g_rename(tmp, filename) != 0)
+  {
+    _sidecar_failed(filename, "could not replace the old sidecar", errno);
+    goto done;
+  }
+  failed = FALSE;
+done:
+  if(failed || g_file_test(tmp, G_FILE_TEST_EXISTS)) g_unlink(tmp);
+  g_clear_error(&error);
+  g_free(old);
+  g_free(now);
+  g_free(tmp);
+  return failed;
+}
+
 // darktable writes sidecars as a side effect of importing, loading a
 // develop and exporting, which would leave an .xmp beside every image
 // merely looked at, so its setting stays "never" (main()). the engine
@@ -545,8 +651,7 @@ static gboolean _write_sidecar_location(const dt_imgid_t imgid, const gboolean l
   }
   dt_image_path_append_version(imgid, filename, sizeof(filename));
   g_strlcat(filename, ".xmp", sizeof(filename));
-  if(dt_exif_xmp_write(imgid, filename, FALSE)) return TRUE;
-  if(location_changed && !location_sidecar_mark(filename)) return TRUE;
+  if(_write_xmp_whole(imgid, filename, location_changed)) return TRUE;
   sqlite3_stmt *stmt;
   DT_DEBUG_SQLITE3_PREPARE_V2(dt_database_get(darktable.db),
                               "UPDATE main.images SET write_timestamp = STRFTIME('%s', 'now') WHERE id = ?1",
@@ -10094,7 +10199,7 @@ static gboolean _save(char **err)
   // background job this process may outlive. TRUE means it failed
   if(_write_sidecar(_s.imgid))
   {
-    *err = g_strdup("could not write the XMP sidecar");
+    *err = g_strdup(_sidecar_error ? _sidecar_error : "could not write the XMP sidecar");
     return FALSE;
   }
   dt_mipmap_cache_remove(_s.imgid);

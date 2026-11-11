@@ -454,7 +454,7 @@ match it (`verify/batch-paste.test.mjs`, "a fresh photo renders the same").
 | Spots | `_spots_set`, `_spots_json`, `_spot_source` (the retouch module) |
 | Ranges and zones | `_sample` (at the mask anchor, or with `stage` "negadoctor" at negadoctor's input), `_range_map`, `_zones`, `_mask_map`, `_tone_key`, `_agx_auto` |
 | Looks | `_look`, `_look_amount` (a darktable style, its instances scaled) |
-| Save | `_save` (history to the database, compressed, history hash and `darktable\|changed`, XMP sidecar written) |
+| Save | `_save` (history to the database, compressed, history hash and `darktable\|changed`, XMP sidecar written). Every engine sidecar write goes through `_write_xmp_whole`: darktable's `dt_exif_xmp_write` empties the file and leaves its writes unchecked, so it writes into a copy (`<name>.xmp.immage-tmp`, seeded with the old sidecar so unknown keys survive), checks the packet's end, fsyncs, and renames it over the old one. The error names the file and the reason (`_sidecar_error`). `verify/sidecar-safety.py` tests this |
 
 The commands `_handle()` serves:
 
