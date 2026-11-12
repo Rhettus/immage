@@ -32,6 +32,7 @@ import { saveFailure } from './specs/save-failure.mjs';
 import { supportBundle } from './specs/support-bundle.mjs';
 import { menus, menusGuards } from './specs/menus.mjs';
 import { hostileText } from './specs/hostile-text.mjs';
+import { settingsStore } from './specs/settings-store.mjs';
 
 const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRange, 'batch-paste': batchPaste, startup, splash, exposure, 'slider-input': sliderInput, 'slider-click': sliderClick, history, rail, sliders, 'module-options': moduleOptions, 'module-switch': moduleSwitch,
   'panel-scroll': panelScroll,
@@ -66,6 +67,7 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'support-bundle': supportBundle,
   'menus-guards': menusGuards,
   'hostile-text': hostileText,
+  'settings-store': settingsStore,
 };
 for(const [name,definition] of Object.entries(cases)) if(definition.kind)
   implementations[name] = t => ({range:rangeContract,choice:choiceContract,module:moduleOutput}[definition.kind])(t,definition);

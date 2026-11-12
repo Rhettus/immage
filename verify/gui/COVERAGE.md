@@ -13,6 +13,7 @@ This imports pure manifest/math code using Node >= 22.18, without launching an a
 
 | Case | Checks | Verification status |
 |---|---|---|
+| settings-store | settings.json upgrade from localStorage and loose files (marker in both stores, localStorage kept), Preferences showing migrated values, UI change written to settings.json and kept across relaunch, reset by moving settings.json away | Live-validated, run 2026-11-12T07-14-54.365Z_3fc4903_91c5644c |
 | hostile-text | Markup in the photo name, Title, Caption, Creator, Copyright, Make, Model and keywords shown as text in the grid, Metadata panel and keyword chips: no element or script made from it, `window.__pwned` undefined; run with `--fixture hostile` | Live-validated on Linux 2026-11-10 |
 | location-map | Photo-area expansion, wheel zoom, Escape collapse, dialog stacking, unchanged location draft | Passed Linux ARM64 system WebKitGTK, run 2026-11-09T23-59-45.887Z_ab0c885_6005ea2f. Provider/keyring integration unverified |
 | preferences-help | Short descriptions, hover and keyboard help, tooltip bounds, ARIA and dismissal | Written; awaiting approved GUI run |

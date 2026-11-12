@@ -4,7 +4,7 @@
 import { spawn, execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { createServer } from 'node:net';
-import { readFile, writeFile, mkdir, copyFile, stat, access, realpath, readdir, chmod } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, copyFile, stat, access, realpath, readdir, chmod, rename } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { hostname, tmpdir } from 'node:os';
 import { dirname, resolve, join, basename } from 'node:path';
@@ -220,6 +220,20 @@ try {
     await writeFile(join(dir, 'immage-test-narrow.icc'), narrowPrinterProfile());
     report.printProfile = 'immage-test-narrow.icc, generated';
   }
+  // settings-store starts from a profile made by an older build: values in the
+  // web view's localStorage and loose one-value files in the data folder. Seeded
+  // here, in this run's own profile, before the first launch.
+  if (selectedCases.includes('settings-store')) {
+    const { SEED, LOCAL_STORAGE_FILE } = await import('./specs/settings-store.mjs');
+    const runtime = join(profile, 'data', 'app.immage');
+    await mkdir(runtime, { recursive: true });
+    const values = join(out, 'seed-localstorage.json');
+    await writeFile(values, JSON.stringify(SEED.localStorage, null, 2));
+    execFileSync('python3', ['-I', join(root, 'verify/gui/support/seed-localstorage.py'),
+      join(runtime, 'localstorage', LOCAL_STORAGE_FILE), values], { stdio: 'pipe' });
+    for (const [name, text] of Object.entries(SEED.loose)) await writeFile(join(runtime, name), text);
+    report.settingsStoreSeed = { localStorage: Object.keys(SEED.localStorage), loose: Object.keys(SEED.loose) };
+  }
   const port = await freePort(); let nativePort = await freePort(); while (nativePort === port) nativePort = await freePort();
   const env = { ...process.env,
     XDG_DATA_HOME: join(profile, 'data'), XDG_CONFIG_HOME: join(profile, 'config'),
@@ -300,7 +314,7 @@ try {
     report.cases.push(c); journal.event('case-start', { name }); journal.checkpoint(report);
     const caseDir = join(out, name); await mkdir(caseDir);
     const t = { driver,
-      restart: async () => {
+      restart: async between => {
         // Only this runner's app/session, preserving its isolated profile.
         const viewport = await driver.observe(() => ({ width: innerWidth, height: innerHeight }));
         const closing = (await sampleProcesses(processDriver.pid, '/proc', driverStart)).processes
@@ -319,6 +333,7 @@ try {
           }
         }))).every(Boolean), 'previous test app processes to exit', 15000);
         driver.mainHandle = null; driver.mainUrl = null;
+        if (between) await between();
         await memoryPreflight('before-restart-launch');
         await driver.open(binary, copiedFixture);
         await driver.command('POST', '/timeouts', { script: 10000, pageLoad: 15000, implicit: 0 });
@@ -355,6 +370,11 @@ try {
       sidecarsNamed:async()=>Promise.all((await readdir(fixtures)).filter(n=>n.endsWith('.xmp')).map(async file=>({file,text:await readFile(join(fixtures,file),'utf8')}))),
       // only this run's copied fixture folder and its sidecars: a save into it then fails as on a read-only share
       fixturesWritable:async on=>{ if(on) await chmod(fixtures,0o755); for(const n of (await readdir(fixtures)).filter(n=>n.endsWith('.xmp'))) await chmod(join(fixtures,n),on?0o644:0o444); if(!on) await chmod(fixtures,0o555); journal.event('fixtures-writable',{case:name,on}); },
+      // plain file names in this run's own app data folder (app.immage), nothing else
+      runtimeFile: file => { if (!/^[A-Za-z0-9._-]+$/.test(file) || file.startsWith('..')) throw Error(`Not a plain file name: ${file}`); return join(profile, 'data', 'app.immage', file); },
+      runtimeRead: async function (file) { try { return await readFile(this.runtimeFile(file), 'utf8'); } catch (e) { if (e.code === 'ENOENT') return null; throw e; } },
+      // move one such file into this case's evidence folder (the profile is on the same filesystem)
+      runtimeAside: async function (file, to) { const dest = join(caseDir, to); await rename(this.runtimeFile(file), dest); journal.event('runtime-file-moved', { case: name, file, to: dest }); return dest; },
       fixtureFiles:()=>readdir(fixtures), engineLog:()=>readFile(join(profile,'data','app.immage','engine.log'),'utf8'),
       benchmarkReport: async filename => {
         // Read only the known report folder inside this run's isolated profile.
