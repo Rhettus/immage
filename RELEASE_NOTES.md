@@ -62,6 +62,11 @@ Improvements
 - Masks: the … menu can duplicate a mask, or duplicate and invert it,
   without its adjustments, and Reset Mask Adjustments clears a mask's
   adjustments while keeping its shapes and settings.
+- Immage's settings, including preferences, library folders, panel layout,
+  export and print settings, themes and the tour, are kept in one settings.json
+  file in the app data folder. The file survives a reset of the web view's
+  storage and can be copied as a backup. Settings from earlier versions carry
+  over on first start.
 
 Performance
 

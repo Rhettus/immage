@@ -8,6 +8,7 @@ import { baseName } from "./paths";
 import { captureDate, known, shutter } from "./MetadataPanel";
 import { end } from "./activity";
 import { isRemote } from "./immich";
+import { settings } from "./settings";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 
@@ -300,7 +301,7 @@ export function ThumbCanvas({ loader, imgid, dogEar = false }: { loader?: ThumbL
 // folder, capture time and size), 1 the exposure and lens, 2 none
 export const INFO_MODE_KEY = "immage.infoMode";
 export function loadInfoMode(): number {
-  try { const v = Number(localStorage.getItem(INFO_MODE_KEY)); return v >= 0 && v <= 2 ? v : 0; } catch { return 0; }
+  try { const v = Number(settings.get(INFO_MODE_KEY)); return v >= 0 && v <= 2 ? v : 0; } catch { return 0; }
 }
 export function InfoOverlay({ mode, name, dir, entry }: { mode: number; name: string; dir: string; entry: ImageEntry | null }) {
   const e = entry?.exif;

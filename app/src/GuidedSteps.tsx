@@ -8,6 +8,7 @@
 import { useState } from "react";
 import { Check, Lock } from "lucide-react";
 import { Chevron, Collapse } from "./Collapse";
+import { settings } from "./settings";
 
 export type Step = {
   id: string; title: string; summary: string;
@@ -20,7 +21,7 @@ export type Step = {
 
 const KEY = "immage.steps.open";
 function load(): Record<string, string> {
-  try { return JSON.parse(localStorage.getItem(KEY) ?? "{}") ?? {}; } catch { return {}; }
+  try { return JSON.parse(settings.get(KEY) ?? "{}") ?? {}; } catch { return {}; }
 }
 
 // the open step of a panel, "" for all folded; read again before writing,
@@ -30,7 +31,7 @@ export function useStepOpen(panel: string): [string | null, (id: string) => void
   const set = (id: string) => {
     const all = load();
     all[panel] = id;
-    try { localStorage.setItem(KEY, JSON.stringify(all)); } catch { /* not kept */ }
+    try { settings.set(KEY, JSON.stringify(all)); } catch { /* not kept */ }
     setOpen(id);
   };
   return [open, set];

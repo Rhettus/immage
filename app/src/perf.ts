@@ -5,14 +5,15 @@
 // moving to its pixels on screen, stage by stage, and the GUI benchmark's
 // recordings. while the overlay is off every hook returns at once
 import { PerfDiagnostics } from "./perfDiagnostics";
+import { settings } from "./settings";
 import { invoke } from "@tauri-apps/api/core";
 
 const KEY = "immage.perfHud";
 export function loadPerfHud(): boolean {
-  try { return localStorage.getItem(KEY) === "1"; } catch { return false; }
+  try { return settings.get(KEY) === "1"; } catch { return false; }
 }
 export function storePerfHud(on: boolean) {
-  try { localStorage.setItem(KEY, on ? "1" : "0"); } catch { /* not kept */ }
+  try { settings.set(KEY, on ? "1" : "0"); } catch { /* not kept */ }
 }
 
 // darktable's -d perf line for one module (engine.rs, Timing)
@@ -209,7 +210,7 @@ class Perf {
   // collect timings without changing the user's overlay preference
   async startMeasurement(diagnostics?: boolean): Promise<() => void> {
     if (this.measuring) throw new Error("another performance measurement is running");
-    try { this.diagnosticsEnabled = diagnostics ?? (localStorage.getItem("immage.perfDiagnostics") !== "0"); }
+    try { this.diagnosticsEnabled = diagnostics ?? (settings.get("immage.perfDiagnostics") !== "0"); }
     catch { this.diagnosticsEnabled = diagnostics ?? true; }
     this.measurement++;
     this.measuring = true;

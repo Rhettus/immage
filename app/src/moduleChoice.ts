@@ -6,22 +6,23 @@
 // workflow uses for each, or Custom, each tool's as Preferences' Modules
 // tab sets it
 import { MODULE_CHOICES, MASK_MODULE_CHOICES, preferredChoice } from "./manifest";
+import { settings } from "./settings";
 
 export type ModuleMode = "default" | "custom";
 const MODE_KEY = "immage.modules.mode";
 const CHOICES_KEY = "immage.modules.choices";
 
 export function loadModuleMode(): ModuleMode {
-  try { return localStorage.getItem(MODE_KEY) === "custom" ? "custom" : "default"; } catch { return "default"; }
+  try { return settings.get(MODE_KEY) === "custom" ? "custom" : "default"; } catch { return "default"; }
 }
 export function storeModuleMode(v: ModuleMode) {
-  try { localStorage.setItem(MODE_KEY, v); } catch { /* not kept */ }
+  try { settings.set(MODE_KEY, v); } catch { /* not kept */ }
 }
 
 // Custom's picks, by choice id
 function loadCustom(scope: "global" | "masks" = "global"): Record<string, number> {
   try {
-    const v = JSON.parse(localStorage.getItem(scope === "masks" ? CHOICES_KEY + ".masks" : CHOICES_KEY) ?? "{}");
+    const v = JSON.parse(settings.get(scope === "masks" ? CHOICES_KEY + ".masks" : CHOICES_KEY) ?? "{}");
     return v && typeof v === "object" ? v : {};
   } catch { return {}; }
 }
@@ -38,5 +39,5 @@ export function loadModuleChoice(id: string, scope: "global" | "masks" = "global
   return preferredChoice(c);
 }
 export function storeModuleChoice(id: string, v: number, scope: "global" | "masks" = "global") {
-  try { localStorage.setItem(scope === "masks" ? CHOICES_KEY + ".masks" : CHOICES_KEY, JSON.stringify({ ...loadCustom(scope), [id]: v })); } catch { /* not kept */ }
+  try { settings.set(scope === "masks" ? CHOICES_KEY + ".masks" : CHOICES_KEY, JSON.stringify({ ...loadCustom(scope), [id]: v })); } catch { /* not kept */ }
 }

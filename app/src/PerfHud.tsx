@@ -8,6 +8,7 @@
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { perf, percentiles, STAGES, type Sample, type Stage, type Timing } from "./perf";
+import { settings } from "./settings";
 
 // by kind of work, as the benchmark dashboard shows them: waiting, set_params,
 // darktable's pipeline, moving the frame, the page's own work, the histogram
@@ -24,7 +25,7 @@ const long = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(1)}s` : ms(v));
 const TAB_KEY = "immage.perfHudTab";
 type Tab = "now" | "session";
 function loadTab(): Tab {
-  try { return localStorage.getItem(TAB_KEY) === "session" ? "session" : "now"; } catch { return "now"; }
+  try { return settings.get(TAB_KEY) === "session" ? "session" : "now"; } catch { return "now"; }
 }
 
 // from how long ago, in ms
@@ -158,7 +159,7 @@ export function PerfHud({ onClose }: { onClose: () => void }) {
   }, []);
   const pick = (t: Tab) => {
     setTab(t);
-    try { localStorage.setItem(TAB_KEY, t); } catch { /* not kept */ }
+    try { settings.set(TAB_KEY, t); } catch { /* not kept */ }
   };
   return (
     // the viewer's pointerdown zooms; the tabs, close and lists are not the photo

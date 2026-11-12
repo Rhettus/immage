@@ -3,6 +3,7 @@
 
 // the darktable-engine child process: one JSON request per line on its stdin,
 // one JSON reply per line on its stdout
+use crate::settings::Settings;
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -378,21 +379,19 @@ pub struct BaseCancel {
 // it once, as it starts (dt_init sizes the mipmap cache from it), so a new
 // level waits for the engine's next start
 pub const RESOURCE_LEVELS: [&str; 3] = ["small", "default", "large"];
-const RESOURCE_FILE: &str = "darktable-resources";
 
 pub fn resource_level(runtime: &Path) -> String {
-    std::fs::read_to_string(runtime.join(RESOURCE_FILE))
-        .ok()
+    crate::settings::read_key(runtime, crate::settings::RESOURCES)
         .map(|s| s.trim().to_string())
         .filter(|s| RESOURCE_LEVELS.contains(&s.as_str()))
         .unwrap_or_else(|| "default".into())
 }
 
-pub fn set_resource_level(runtime: &Path, level: &str) -> Result<(), String> {
+pub fn set_resource_level(settings: &Settings, level: &str) -> Result<(), String> {
     if !RESOURCE_LEVELS.contains(&level) {
         return Err(format!("no resource level '{level}'"));
     }
-    std::fs::write(runtime.join(RESOURCE_FILE), level).map_err(|e| e.to_string())
+    settings.set(crate::settings::RESOURCES, level)
 }
 
 // edits on the GPU, from Preferences: the engine's edit pipes get OpenCL as
@@ -401,18 +400,16 @@ pub fn set_resource_level(runtime: &Path, level: &str) -> Result<(), String> {
 // on an RTX 4070 Ti SUPER under Windows and Linux (GUI benchmark). without
 // a usable GPU darktable runs them on the CPU anyway; a weak one is what
 // the switch is for
-const GPU_EDITS_FILE: &str = "gpu-edits";
-
 pub fn gpu_edits(runtime: &Path) -> bool {
-    match std::fs::read_to_string(runtime.join(GPU_EDITS_FILE)).ok().as_deref().map(str::trim) {
+    match crate::settings::read_key(runtime, crate::settings::GPU_EDITS).as_deref().map(str::trim) {
         Some("on") => true,
         Some("off") => false,
         _ => true,
     }
 }
 
-pub fn set_gpu_edits(runtime: &Path, on: bool) -> Result<(), String> {
-    std::fs::write(runtime.join(GPU_EDITS_FILE), if on { "on" } else { "off" }).map_err(|e| e.to_string())
+pub fn set_gpu_edits(settings: &Settings, on: bool) -> Result<(), String> {
+    settings.set(crate::settings::GPU_EDITS, if on { "on" } else { "off" })
 }
 
 impl BaseCancel {
@@ -965,7 +962,8 @@ impl Drop for Engine {
 
 #[cfg(test)]
 mod tests {
-    use super::{gpu_edits, parse_timing, reap, rocm_only, set_gpu_edits, CacheLog, CACHE_RECORD_LIMIT};
+    use super::{gpu_edits, parse_timing, resource_level, set_resource_level, reap, rocm_only, set_gpu_edits, CacheLog, CACHE_RECORD_LIMIT};
+    use crate::settings::Settings;
     use std::time::{Duration, Instant};
 
     #[cfg(unix)]
@@ -1358,11 +1356,30 @@ mod tests {
         let root = std::env::temp_dir().join(format!("immage-gpu-edits-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
+        let settings = Settings::load(&root);
         assert!(gpu_edits(&root));
-        set_gpu_edits(&root, false).unwrap();
+        set_gpu_edits(&settings, false).unwrap();
         assert!(!gpu_edits(&root));
-        set_gpu_edits(&root, true).unwrap();
+        set_gpu_edits(&settings, true).unwrap();
         assert!(gpu_edits(&root));
+        // anything but on and off is the default
+        settings.set(crate::settings::GPU_EDITS, "bogus").unwrap();
+        assert!(gpu_edits(&root));
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn resource_level_validates() {
+        let root = std::env::temp_dir().join(format!("immage-resources-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let settings = Settings::load(&root);
+        assert_eq!(resource_level(&root), "default");
+        set_resource_level(&settings, "large").unwrap();
+        assert_eq!(resource_level(&root), "large");
+        assert!(set_resource_level(&settings, "huge").is_err());
+        settings.set(crate::settings::RESOURCES, "huge").unwrap();
+        assert_eq!(resource_level(&root), "default");
         std::fs::remove_dir_all(&root).unwrap();
     }
 

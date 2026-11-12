@@ -7,6 +7,8 @@
 // mask anchor, before the tone mapper), so what the histogram counts, what
 // the overlay shows and what a zone mask selects are the same pixels
 
+import { settings } from "./settings";
+
 export const ZONE_GRAY = 0.1845;
 export const ZONE_COUNT = 11;
 export const ROMAN = ["0", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
@@ -136,11 +138,11 @@ export const ZONE_COLORS: [string, [number, number, number]][] = [
 const DEFAULT_OVERLAY: ZoneOverlay = { show: true, color: "Blue", opacity: 0.6 };
 const OVERLAY_KEY = "immage.zoneOverlay";
 export function loadZoneOverlay(): ZoneOverlay {
-  try { return { ...DEFAULT_OVERLAY, ...JSON.parse(localStorage.getItem(OVERLAY_KEY) ?? "{}") }; }
+  try { return { ...DEFAULT_OVERLAY, ...JSON.parse(settings.get(OVERLAY_KEY) ?? "{}") }; }
   catch { return DEFAULT_OVERLAY; }
 }
 export function saveZoneOverlay(o: ZoneOverlay) {
-  try { localStorage.setItem(OVERLAY_KEY, JSON.stringify(o)); } catch { /* not kept */ }
+  try { settings.set(OVERLAY_KEY, JSON.stringify(o)); } catch { /* not kept */ }
 }
 export const overlayRgb = (o: ZoneOverlay) => (ZONE_COLORS.find(([n]) => n === o.color) ?? ZONE_COLORS[0])[1];
 

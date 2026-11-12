@@ -85,6 +85,15 @@ put the file, named `immage-support-<date>.zip`. Nothing is uploaded; attach
 the file to your issue yourself. Check the text before you save: the
 replacement finds what it can, and you decide what is shared.
 
+## Resetting settings
+
+To start Immage with default settings, quit Immage and move `settings.json`
+out of the app data folder (see
+[Where settings are kept](preferences.md#where-settings-are-kept)), then start
+Immage again. Keep the moved file if you may want those settings back: put it
+back, with Immage closed, to restore them. Your photos and their edits are not
+affected.
+
 ## Crashes
 
 Attach **engine.log** and describe the last action before the crash, the time,

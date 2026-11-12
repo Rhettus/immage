@@ -17,6 +17,7 @@ mod perf_trace;
 mod frame_output;
 mod resources;
 mod memory_budget;
+mod settings;
 #[cfg(target_os = "linux")]
 mod scale;
 #[cfg(target_os = "linux")]
@@ -1412,11 +1413,11 @@ fn webview_renderer() -> Value {
 }
 
 #[tauri::command]
-fn webview_renderer_set(mode: String) -> Result<(), String> {
+fn webview_renderer_set(settings: State<'_, settings::Settings>, mode: String) -> Result<(), String> {
     #[cfg(target_os = "linux")]
-    return renderer::set(&mode);
+    return renderer::set(&settings, &mode);
     #[cfg(not(target_os = "linux"))]
-    { let _ = mode; Err("webview renderer selection is available on Linux".into()) }
+    { let _ = (settings, mode); Err("webview renderer selection is available on Linux".into()) }
 }
 
 // what decides how a frame reaches the screen on Linux: the session
@@ -2111,8 +2112,8 @@ fn darktable_resources(state: State<'_, AppState>) -> Value {
 }
 
 #[tauri::command]
-fn darktable_resources_set(state: State<'_, AppState>, level: String) -> Result<(), String> {
-    engine::set_resource_level(&state.runtime, &level)
+fn darktable_resources_set(settings: State<'_, settings::Settings>, level: String) -> Result<(), String> {
+    engine::set_resource_level(&settings, &level)
 }
 
 // Preferences' GPU edits: whether the engine runs with them, and whether
@@ -2123,8 +2124,8 @@ fn gpu_edits(state: State<'_, AppState>) -> Value {
 }
 
 #[tauri::command]
-fn gpu_edits_set(state: State<'_, AppState>, on: bool) -> Result<(), String> {
-    engine::set_gpu_edits(&state.runtime, on)
+fn gpu_edits_set(settings: State<'_, settings::Settings>, on: bool) -> Result<(), String> {
+    engine::set_gpu_edits(&settings, on)
 }
 
 // the GPU execution providers this computer can use for AI, with their
@@ -3399,6 +3400,13 @@ fn main() {
                  data.join("benchmarks"))
             };
             let bin = std::env::var_os("DT_ENGINE_BIN").map(PathBuf::from).unwrap_or(default_bin);
+            // one-time move of the old loose files; the engine flags below
+            // then read settings.json
+            let settings = settings::Settings::load(&runtime);
+            if let Err(e) = settings.migrate() {
+                eprintln!("settings: cannot move the old preference files: {e}");
+            }
+            app.manage(settings);
             let resource_level = engine::resource_level(&runtime);
             let gpu_edits = engine::gpu_edits(&runtime);
             let engine = Engine::spawn(&bin, &runtime, &models_dir)
@@ -3443,7 +3451,7 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            map_tiles::map_tile, map_search::map_search, map_search::map_search_key_status, map_search::map_search_key_save, map_search::map_search_key_remove, open_folder, open_image, get_params, set_params, render, cancel_base, save, baseline_end, before_view, thumb, thumb_cached, thumb_known, cache_limits, cache_usage, cache_clear, meta, meta_set, capture_times, prefetch, darktable_resources, darktable_resources_set, memory_budget::memory_budget, gpu_edits, gpu_edits_set, webview_renderer, webview_renderer_set,
+            map_tiles::map_tile, map_search::map_search, map_search::map_search_key_status, map_search::map_search_key_save, map_search::map_search_key_remove, open_folder, open_image, get_params, set_params, render, cancel_base, save, baseline_end, before_view, thumb, thumb_cached, thumb_known, cache_limits, cache_usage, cache_clear, meta, meta_set, capture_times, prefetch, darktable_resources, darktable_resources_set, memory_budget::memory_budget, gpu_edits, gpu_edits_set, settings::settings_all, settings::settings_set, webview_renderer, webview_renderer_set,
             export_images, export_cancel, export_existing, export_preview, fonts, print_profiles, print_profile_add, softproof, printers, printer_info, print_photo, print_sheet, export_presets_load, export_presets_save, export_presets_export, export_presets_import, presets_load, presets_save, agx_presets, agx_presets_pick, agx_profiles_load, agx_profiles_save, looks_list, shared_import, look_export, look_delete, look_apply, look_amount, preview, paste_batch,
             mask_shapes, combine, masks, mask_delete, mask_rename, history, module_state, sample, tone_key, lenses, color_profiles, agx_auto, upright, points, range_map, zones, mask_map, ai_object,
             ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, positive_export, spektra_stocks, spektra_fetch, list_subfolders, folder_volumes, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,

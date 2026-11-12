@@ -106,8 +106,8 @@ Modules first and restores the previous choice afterwards
 (`withModule` in `specs/ranges.mjs`). Defringe has no module choice, so
 its global and mask sliders always run on chromatic aberrations.
 
-The splash keeps the largest size it was given in localStorage
-(`immage.splashSize`), since the session starts after it has closed. `startup`
+The splash keeps the largest size it was given in the settings store
+(`immage.splashSize`, in `settings.json`), since the session starts after it has closed. `startup`
 reads it, and the `splash` case (by name only, not in `smoke`) fails if it grew
 past 640x427. A blocked or failed case stops the run, so list `splash` last when
 it runs with other cases. The splash sets equal minimum and maximum sizes, which

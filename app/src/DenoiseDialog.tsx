@@ -9,11 +9,12 @@
 // small photo beside it moves the piece, as the Navigator moves the view
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { settings } from "./settings";
 
 const AMOUNT_KEY = "immage.denoiseAmount";
 function loadAmount(): number {
   try {
-    const v = Number(localStorage.getItem(AMOUNT_KEY));
+    const v = Number(settings.get(AMOUNT_KEY));
     return Number.isFinite(v) && v > 0 && v <= 100 ? v : 100;
   } catch { return 100; }
 }
@@ -119,7 +120,7 @@ export function DenoiseDialog({ thumb, center, prepare, onRun, onClose }: {
   }, [piece, amount, holding]);
 
   const run = () => {
-    try { localStorage.setItem(AMOUNT_KEY, String(amount)); } catch { /* not kept */ }
+    try { settings.set(AMOUNT_KEY, String(amount)); } catch { /* not kept */ }
     onRun(amount);
     onClose();
   };

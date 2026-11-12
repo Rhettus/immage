@@ -11,6 +11,7 @@
 import { perf } from "./perf";
 import { invoke } from "@tauri-apps/api/core";
 import { normalizeRenderArgs } from "./renderDimensions";
+import { settings } from "./settings";
 
 type SharedBufferEvent = { getBuffer(): ArrayBuffer; additionalData: { frame?: number } | null };
 type WebView2 = {
@@ -33,10 +34,10 @@ export const sharedFramesAvailable = (!!webview && typeof webview.releaseBuffer 
 
 const KEY = "immage.sharedFrames";
 export function loadSharedFrames(): boolean {
-  try { return localStorage.getItem(KEY) !== "0"; } catch { return true; }
+  try { return settings.get(KEY) !== "0"; } catch { return true; }
 }
 export function storeSharedFrames(on: boolean) {
-  try { localStorage.setItem(KEY, on ? "1" : "0"); } catch { /* not kept */ }
+  try { settings.set(KEY, on ? "1" : "0"); } catch { /* not kept */ }
   failed = false;
 }
 

@@ -7,6 +7,7 @@
 // OpenCV's stitching module (pano_can_merge)
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { settings } from "./settings";
 
 export type Projection = "auto" | "spherical" | "cylindrical" | "perspective";
 
@@ -35,12 +36,12 @@ const PROJECTION_KEY = "immage.panoProjection";
 const CROP_KEY = "immage.panoCrop";
 function loadProjection(): Projection {
   try {
-    const v = localStorage.getItem(PROJECTION_KEY);
+    const v = settings.get(PROJECTION_KEY);
     return PROJECTIONS.some((p) => p.id === v) ? v as Projection : "auto";
   } catch { return "auto"; }
 }
 function loadCrop(): boolean {
-  try { return localStorage.getItem(CROP_KEY) !== "false"; } catch { return true; }
+  try { return settings.get(CROP_KEY) !== "false"; } catch { return true; }
 }
 
 export function PanoDialog({ photos, onRun, onClose }: {
@@ -113,8 +114,8 @@ export function PanoDialog({ photos, onRun, onClose }: {
   useEffect(() => { invoke<boolean>("pano_can_merge").then(setCan).catch(() => setCan(false)); }, []);
   const run = () => {
     try {
-      localStorage.setItem(PROJECTION_KEY, projection);
-      localStorage.setItem(CROP_KEY, String(crop));
+      settings.set(PROJECTION_KEY, projection);
+      settings.set(CROP_KEY, String(crop));
     } catch { /* not kept */ }
     onClose();
     onRun(projection, crop);

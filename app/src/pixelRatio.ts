@@ -12,13 +12,14 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { settings } from "./settings";
 
 const KEY = "immage.screenScaleDrafts";
 export function loadScreenScale(): boolean {
-  try { return localStorage.getItem(KEY) !== "0"; } catch { return true; }
+  try { return settings.get(KEY) !== "0"; } catch { return true; }
 }
 export function storeScreenScale(on: boolean) {
-  try { localStorage.setItem(KEY, on ? "1" : "0"); } catch { /* not kept */ }
+  try { settings.set(KEY, on ? "1" : "0"); } catch { /* not kept */ }
 }
 
 let real: number | null = null;
@@ -37,10 +38,10 @@ export function draftScale(): number {
 // disabling it retains more fine detail. 1:1 and zoomed frames never use it
 const SETTLED_KEY = "immage.screenScaleFrames";
 export function loadSettledScale(): boolean {
-  try { return localStorage.getItem(SETTLED_KEY) !== "0"; } catch { return true; }
+  try { return settings.get(SETTLED_KEY) !== "0"; } catch { return true; }
 }
 export function storeSettledScale(on: boolean) {
-  try { localStorage.setItem(SETTLED_KEY, on ? "1" : "0"); } catch { /* not kept */ }
+  try { settings.set(SETTLED_KEY, on ? "1" : "0"); } catch { /* not kept */ }
 }
 export function settledScale(): number {
   const s = screenScale();

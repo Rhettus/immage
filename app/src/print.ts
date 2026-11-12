@@ -8,6 +8,7 @@
 // of its own, at one of nine places; the Cells layout puts many on a page in a
 // grid of cells (a contact sheet by default)
 import { invoke } from "@tauri-apps/api/core";
+import { settings } from "./settings";
 
 export type Unit = "mm" | "in";
 export type Orientation = "auto" | "portrait" | "landscape";
@@ -90,7 +91,7 @@ export function defaultPrintSettings(): PrintSettings {
 export function loadPrintSettings(): PrintSettings {
   const d = defaultPrintSettings();
   try {
-    const saved = JSON.parse(localStorage.getItem(KEY) ?? "null");
+    const saved = JSON.parse(settings.get(KEY) ?? "null");
     if (!saved || typeof saved !== "object") return d;
     const size = saved.cellSize && saved.cellSize.width > 0 && saved.cellSize.height > 0 ? saved.cellSize : null;
     return { ...d, ...saved, cellSize: size, margins: { ...d.margins, ...(saved.margins ?? {}) } };
@@ -99,11 +100,11 @@ export function loadPrintSettings(): PrintSettings {
 
 // whether the panel has been used: a first visit picks the default printer
 export function hasPrintSettings(): boolean {
-  try { return localStorage.getItem(KEY) !== null; } catch { return false; }
+  try { return settings.get(KEY) !== null; } catch { return false; }
 }
 
 export function storePrintSettings(s: PrintSettings) {
-  try { localStorage.setItem(KEY, JSON.stringify(s)); } catch { /* not kept */ }
+  try { settings.set(KEY, JSON.stringify(s)); } catch { /* not kept */ }
 }
 
 // a length for the panel, in its unit

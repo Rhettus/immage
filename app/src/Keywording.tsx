@@ -6,18 +6,19 @@
 // darktable's tags, "|" between the levels of a hierarchy; the engine keeps
 // them in the sidecar and remembers every one ever used
 import { useEffect, useMemo, useRef, useState } from "react";
+import { settings } from "./settings";
 
 const RECENT_KEY = "immage.recentKeywords";
 const RECENT_MAX = 9;
 
 function loadRecent(): string[] {
   try {
-    const v = JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]");
+    const v = JSON.parse(settings.get(RECENT_KEY) ?? "[]");
     return Array.isArray(v) ? v.filter((k) => typeof k === "string") : [];
   } catch { return []; }
 }
 function storeRecent(v: string[]) {
-  try { localStorage.setItem(RECENT_KEY, JSON.stringify(v)); } catch { /* not kept */ }
+  try { settings.set(RECENT_KEY, JSON.stringify(v)); } catch { /* not kept */ }
 }
 
 // what was typed as darktable's tag: Lightroom's "Places > Paris" or

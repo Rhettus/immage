@@ -9,6 +9,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { Values } from "./manifest";
 import { fileKind, type ImageEntry } from "./library";
+import { settings } from "./settings";
 
 export type PluginKind = {
   id: string;
@@ -101,7 +102,7 @@ export type PluginConfig = {
 const LEGACY_KEY = "immage.plugins";
 function legacyPlugins(): PluginConfig[] | null {
   try {
-    const v = JSON.parse(localStorage.getItem(LEGACY_KEY) ?? "null");
+    const v = JSON.parse(settings.get(LEGACY_KEY) ?? "null");
     return Array.isArray(v) ? v.filter((p) => p && kindOf(p.kind)) : null;
   } catch { return null; }
 }
@@ -111,7 +112,7 @@ function legacyPlugins(): PluginConfig[] | null {
 export async function loadPlugins(): Promise<PluginConfig[]> {
   try {
     const list = (await invoke<PluginConfig[]>("plugin_config", { legacy: legacyPlugins() })).filter((p) => kindOf(p.kind));
-    try { localStorage.removeItem(LEGACY_KEY); } catch { /* not kept */ }
+    try { settings.remove(LEGACY_KEY); } catch { /* not kept */ }
     return list;
   } catch { return []; }
 }

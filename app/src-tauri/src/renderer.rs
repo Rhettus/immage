@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
-// EGL must be selected before GTK starts, so this preference lives outside
-// localStorage. the marker distinguishes our inherited override on relaunch
+// EGL must be selected before GTK starts, so this preference is read straight
+// from settings.json (settings::read_key), not through the page. the marker distinguishes our inherited override on relaunch
 // from a vendor explicitly chosen by the user in their environment
 use serde_json::{json, Value};
 use std::ffi::OsStr;
@@ -15,7 +15,7 @@ const MODES: [&str; 3] = ["auto", "mesa", "nvidia"];
 static START: OnceLock<Started> = OnceLock::new();
 
 struct Started {
-    file: PathBuf,
+    runtime: PathBuf,
     mode: String,
     active: &'static str,
     external: bool,
@@ -31,8 +31,8 @@ fn vendor(root: &Path, mode: &str) -> Option<PathBuf> {
         .iter().map(|p| root.join(p).join(name)).find(|p| p.is_file())
 }
 
-fn load(file: &Path) -> String {
-    std::fs::read_to_string(file).ok().map(|s| s.trim().to_string())
+fn load(runtime: &Path) -> String {
+    crate::settings::read_key(runtime, crate::settings::RENDERER).map(|s| s.trim().to_string())
         .filter(|s| MODES.contains(&s.as_str())).unwrap_or_else(|| "auto".into())
 }
 
@@ -58,8 +58,9 @@ pub fn init(identifier: &str) -> Result<(), String> {
             .ok_or("cannot find the app data directory")?;
         data.join(identifier)
     };
-    let file = runtime.join("webview-renderer");
-    let mode = load(&file);
+    // read_key also finds a choice still in the old loose file, as the
+    // store's migration only runs once Tauri has started
+    let mode = load(&runtime);
     let value = std::env::var_os(EGL_VENDOR);
     let marker = std::env::var_os(MARKER);
     let external = external(value.as_deref(), marker.as_deref());
@@ -76,17 +77,17 @@ pub fn init(identifier: &str) -> Result<(), String> {
     if !crate::WEBVIEW_EGL_OVERRIDE.load(Ordering::Relaxed) {
         std::env::remove_var(MARKER);
     }
-    START.set(Started { file, mode, active, external }).map_err(|_| "renderer initialized twice".to_string())
+    START.set(Started { runtime, mode, active, external }).map_err(|_| "renderer initialized twice".to_string())
 }
 
 pub fn status() -> Value {
     let Some(s) = START.get() else { return Value::Null; };
-    json!({ "running": s.mode, "next": load(&s.file), "active": s.active,
+    json!({ "running": s.mode, "next": load(&s.runtime), "active": s.active,
         "external": s.external, "mesa": vendor(Path::new("/"), "mesa").is_some(),
         "nvidia": Path::new("/proc/driver/nvidia").exists() && vendor(Path::new("/"), "nvidia").is_some() })
 }
 
-pub fn set(mode: &str) -> Result<(), String> {
+pub fn set(settings: &crate::settings::Settings, mode: &str) -> Result<(), String> {
     let s = START.get().ok_or("renderer has not started")?;
     if s.external { return Err("the renderer is set by __EGL_VENDOR_LIBRARY_FILENAMES".into()); }
     if !MODES.contains(&mode) { return Err(format!("unknown renderer '{mode}'")); }
@@ -96,8 +97,7 @@ pub fn set(mode: &str) -> Result<(), String> {
     if mode == "nvidia" && !Path::new("/proc/driver/nvidia").exists() {
         return Err("the NVIDIA driver is not loaded".into());
     }
-    std::fs::create_dir_all(s.file.parent().ok_or("no preference directory")?).map_err(|e| e.to_string())?;
-    std::fs::write(&s.file, mode).map_err(|e| e.to_string())
+    settings.set(crate::settings::RENDERER, mode)
 }
 
 #[cfg(test)]
@@ -122,14 +122,15 @@ mod tests {
         touch("usr/share/glvnd/egl_vendor.d/10_nvidia.json");
         assert_eq!(selection(&root, "nvidia").unwrap().0, "nvidia");
         assert_eq!(selection(&root, "auto"), None);
-        let file = root.join("webview-renderer");
-        assert_eq!(load(&file), "auto");
+        std::fs::create_dir_all(&root).unwrap();
+        let settings = crate::settings::Settings::load(&root);
+        assert_eq!(load(&root), "auto");
         for mode in MODES {
-            std::fs::write(&file, mode).unwrap();
-            assert_eq!(load(&file), mode);
+            settings.set(crate::settings::RENDERER, mode).unwrap();
+            assert_eq!(load(&root), mode);
         }
-        std::fs::write(&file, "invalid").unwrap();
-        assert_eq!(load(&file), "auto");
+        settings.set(crate::settings::RENDERER, "invalid").unwrap();
+        assert_eq!(load(&root), "auto");
         std::fs::remove_dir_all(root).unwrap();
     }
 

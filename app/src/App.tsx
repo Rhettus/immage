@@ -1,5 +1,6 @@
 
 import { AgxPresetLoader } from "./AgxPresetDialog";
+import { settings } from "./settings";
 import { useAgxProfiles } from "./agxProfiles";
 import { profileSelection, AGX_USER_FIRST } from "./manifest";
 
@@ -146,9 +147,9 @@ const BA_NAMES: Record<BaMode, string> = {
 // the overlay view explains its hold the first few times it opens
 const bumpHoldHint = () => {
   try {
-    const n = Number(localStorage.getItem("immage.holdHintSeen") ?? 0);
+    const n = Number(settings.get("immage.holdHintSeen") ?? 0);
     if (n >= 3) return false;
-    localStorage.setItem("immage.holdHintSeen", String(n + 1));
+    settings.set("immage.holdHintSeen", String(n + 1));
   } catch { /* shown every time */ }
   return true;
 };
@@ -1734,7 +1735,7 @@ export default function App() {
   const [scope, setScopeState] = useState<ScopeSettings>(loadScope);
   const setScope = useCallback((change: Partial<ScopeSettings> | ((s: ScopeSettings) => Partial<ScopeSettings>)) => setScopeState((s) => {
     const next = { ...s, ...(typeof change === "function" ? change(s) : change) };
-    try { localStorage.setItem("immage.scope", JSON.stringify(next)); } catch { /* not kept */ }
+    try { settings.set("immage.scope", JSON.stringify(next)); } catch { /* not kept */ }
     return next;
   }), []);
   const [clipPeek, setClipPeek] = useState<"low" | "high" | null>(null);
@@ -2807,7 +2808,7 @@ export default function App() {
   // folded, the others shut until opened
   const [leftOpen, setLeftOpen] = useState(() => new Set(LEFT_CARDS.filter((id) => {
     try {
-      const v = localStorage.getItem(`immage.${id}.open`);
+      const v = settings.get(`immage.${id}.open`);
       return id === "folders" || id === "immich" ? v !== "0" : v === "1";
     } catch { return id === "folders" || id === "immich"; }
   })));
@@ -2817,7 +2818,7 @@ export default function App() {
     let next: Set<LeftCard>;
     if (solo) next = new Set(old.has(id) && old.size === 1 ? [] : [id]);
     else { next = new Set(old); if (next.has(id)) next.delete(id); else next.add(id); }
-    try { for (const c of LEFT_CARDS) localStorage.setItem(`immage.${c}.open`, next.has(c) ? "1" : "0"); } catch { /* not kept */ }
+    try { for (const c of LEFT_CARDS) settings.set(`immage.${c}.open`, next.has(c) ? "1" : "0"); } catch { /* not kept */ }
     return next;
   });
   const foldersOpen = leftOpen.has("folders");
@@ -3014,7 +3015,7 @@ export default function App() {
     window.clearTimeout(immichTimer.current);
     addPathToLibrary(dir);
     setLeftOpen((old) => new Set([...old, "folders"]));
-    try { localStorage.setItem("immage.folders.open", "1"); } catch { /* not kept */ }
+    try { settings.set("immage.folders.open", "1"); } catch { /* not kept */ }
     setLayout((old) => ({ ...old, left: true }));
     setGrid(true);
     void showFolder(dir);
@@ -5278,7 +5279,7 @@ export default function App() {
       "user-guide": () => { void openUrl("https://immage.photo/guide/"); },
       "support-bundle": () => { void openSupportBundleRef.current(); },
       "about": () => { setPrefsOpen("about"); },
-      "quit": () => { void getCurrentWindow().close(); },
+      "quit": () => { void settings.flush().finally(() => getCurrentWindow().close()); },
       "cut": () => { document.execCommand("cut"); },
       "copy": () => { document.execCommand("copy"); },
       "paste": () => {
@@ -5626,7 +5627,7 @@ export default function App() {
   }, [shown]);
 
   const [infoMode, setInfoMode] = useState(loadInfoMode);
-  useEffect(() => { try { localStorage.setItem(INFO_MODE_KEY, String(infoMode)); } catch { /* not kept */ } }, [infoMode]);
+  useEffect(() => { try { settings.set(INFO_MODE_KEY, String(infoMode)); } catch { /* not kept */ } }, [infoMode]);
   const fileName = current ? baseName(current.path) : null;
   const fileDir = current ? current.path.slice(0, current.path.length - (fileName?.length ?? 0) - 1) : null;
   // the folder tree opens down to the open photo's folder, once for each

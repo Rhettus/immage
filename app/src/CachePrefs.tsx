@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Trash } from "lucide-react";
 import { PrefCard, PrefRow } from "./PrefsUI";
+import { settings } from "./settings";
 
 type Limits = { thumbs: number; immichThumbs: number; immichOriginals: number };
 type Which = keyof Limits;
@@ -32,12 +33,12 @@ const ROWS: [Which, string, string][] = [
 
 const LIMITS_KEY = "immage.cacheLimits";
 export function loadLimits(): Limits {
-  try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(LIMITS_KEY) ?? "{}") }; } catch { return DEFAULTS; }
+  try { return { ...DEFAULTS, ...JSON.parse(settings.get(LIMITS_KEY) ?? "{}") }; } catch { return DEFAULTS; }
 }
 
 export async function storeLimits(limits: Limits) {
   await invoke("cache_limits", { limits });
-  localStorage.setItem(LIMITS_KEY, JSON.stringify(limits));
+  settings.set(LIMITS_KEY, JSON.stringify(limits));
 }
 
 // the stored limits to the caches; at startup and on each change
@@ -68,7 +69,7 @@ export function CachePrefs() {
   const choose = (which: Which, v: number) => {
     const next = { ...limits, [which]: v };
     setLimits(next);
-    try { localStorage.setItem(LIMITS_KEY, JSON.stringify(next)); } catch { /* not kept */ }
+    try { settings.set(LIMITS_KEY, JSON.stringify(next)); } catch { /* not kept */ }
     // a lower limit evicts at once, which the usage then shows
     void invoke("cache_limits", { limits: next }).then(measure).catch(() => {});
   };

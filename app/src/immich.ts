@@ -8,6 +8,7 @@ import { timeTunerWork } from "./tunerWorkload";
 import { invoke } from "@tauri-apps/api/core";
 import { api } from "@immporter/api";
 import type { Exif, ImageEntry } from "./library";
+import { settings } from "./settings";
 
 export type ImmichSearch = {
   mode: "smart" | "filename";
@@ -36,10 +37,10 @@ export const immichFilterCount = (s: ImmichSearch) =>
 
 const SEARCH_KEY = "immage.immichSearch";
 export function loadSearch(): ImmichSearch {
-  try { return { ...NO_SEARCH, ...JSON.parse(localStorage.getItem(SEARCH_KEY) ?? "{}") }; } catch { return NO_SEARCH; }
+  try { return { ...NO_SEARCH, ...JSON.parse(settings.get(SEARCH_KEY) ?? "{}") }; } catch { return NO_SEARCH; }
 }
 export function storeSearch(s: ImmichSearch) {
-  try { localStorage.setItem(SEARCH_KEY, JSON.stringify(s)); } catch { /* not kept */ }
+  try { settings.set(SEARCH_KEY, JSON.stringify(s)); } catch { /* not kept */ }
 }
 
 // where the server's paths are on this computer. unset, it is the
@@ -47,10 +48,10 @@ export function storeSearch(s: ImmichSearch) {
 export type PathMap = { immich: string; local: string };
 const MAP_KEY = "immage.immichPathMap";
 export function storedPathMap(): Partial<PathMap> {
-  try { return JSON.parse(localStorage.getItem(MAP_KEY) ?? "{}"); } catch { return {}; }
+  try { return JSON.parse(settings.get(MAP_KEY) ?? "{}"); } catch { return {}; }
 }
 export function storePathMap(m: Partial<PathMap>) {
-  try { localStorage.setItem(MAP_KEY, JSON.stringify(m)); } catch { /* not kept */ }
+  try { settings.set(MAP_KEY, JSON.stringify(m)); } catch { /* not kept */ }
 }
 export async function importerPathMap(): Promise<PathMap> {
   const [immich, ui] = await Promise.all([api.getImmichSettings().catch(() => null), api.getSettings().catch(() => null)]);

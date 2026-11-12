@@ -1,31 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
-import { StrictMode, Profiler } from "react";
-import { createRoot } from "react-dom/client";
-import { loadAgxProfiles } from "./agxProfiles";
-import App from "./App";
-import { loadThemes } from "./themes";
-import SelectMenu from "./SelectMenu";
-import { perf } from "./perf";
-import { logCspViolations } from "./cspLog";
-import "@fontsource/poppins/400.css";
-import "@fontsource/poppins/500.css";
-import "@fontsource/poppins/600.css";
-import "@fontsource/poppins/700.css";
-import "./styles.css";
+// settings come from the Rust layer asynchronously, and many modules read them
+// as they load or first render, so the app is imported only once they are in
+import { ready } from "./settings";
 
-// Native Windows hand cursors can show icon strokes through their outline.
-// Use the standard desktop-button arrow for icon tools on Windows.
-document.documentElement.classList.toggle("windows", navigator.userAgent.includes("Windows"));
-
-logCspViolations();
-loadThemes();
-await loadAgxProfiles();
-
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <Profiler id="app" onRender={perf.reactCommit}><App /></Profiler>
-    <SelectMenu />
-  </StrictMode>,
-);
+await ready;
+await import("./boot");

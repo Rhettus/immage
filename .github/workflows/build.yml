@@ -116,6 +116,7 @@ jobs:
             verify/pixel-worker.test.mjs \
             verify/preview-handoff.test.mjs \
             verify/saturation-curve.test.mjs \
+            verify/settings-store.test.mjs \
             verify/theme.test.mjs \
             verify/ui-updates.test.mjs
       - run: npm audit --omit=dev --audit-level=high

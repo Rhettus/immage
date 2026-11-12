@@ -6,6 +6,7 @@
 import { useEffect, useState } from "react";
 import { NEG_CHOICES, panels, SF_CHOICES, type Values } from "./manifest";
 import type { Mask } from "./masks";
+import { settings } from "./settings";
 
 export type CopyGroup = { id: string; label: string; ids: string[] };
 
@@ -43,13 +44,13 @@ export type Clip = {
 const KEY = "immage.copy.groups";
 export const loadCopyGroups = (): Set<string> => {
   try {
-    const v = JSON.parse(localStorage.getItem(KEY) ?? "null");
+    const v = JSON.parse(settings.get(KEY) ?? "null");
     if (Array.isArray(v)) return new Set(v);
   } catch { /* the defaults */ }
   return new Set(COPY_GROUPS.map((g) => g.id).filter((id) => !OFF_BY_DEFAULT.includes(id)));
 };
 const saveCopyGroups = (on: Set<string>) => {
-  try { localStorage.setItem(KEY, JSON.stringify([...on])); } catch { /* not remembered */ }
+  try { settings.set(KEY, JSON.stringify([...on])); } catch { /* not remembered */ }
 };
 
 // the chosen parts of an edit

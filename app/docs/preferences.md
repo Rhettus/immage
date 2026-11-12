@@ -10,6 +10,35 @@ Preferences. Warnings, current values and restart notices stay visible.
 ![Preferences, General tab](images/preferences-general.png)
 <!-- screenshot: Preferences > General -->
 
+## Where settings are kept
+
+Everything you set in Immage is saved in one file, `settings.json`, in the app
+data folder:
+
+| Platform | Location |
+| --- | --- |
+| Linux | `~/.local/share/app.immage/settings.json` (or `$XDG_DATA_HOME/app.immage/settings.json` when `XDG_DATA_HOME` is set) |
+| macOS | `~/Library/Application Support/app.immage/settings.json` |
+| Windows | `%APPDATA%\app.immage\settings.json` |
+
+Development builds use `build/app-runtime/settings.json` in the checkout.
+
+The file holds your preferences, library folders and the last photo in each,
+panel layout and sizes, export and print settings, themes, the tour and splash
+state, and the performance HUD. It is kept apart from the web view's own
+storage, so it survives a reset of that storage, and you can copy it to keep a
+backup.
+
+On the first start of this version, Immage copies settings from the web view's
+storage into `settings.json`. That storage is left as it was, so an older
+version of Immage still finds its own settings.
+
+Edit `settings.json` only with Immage closed. Immage writes its settings while
+it runs and overwrites any change made to the file during that time. If the
+file is damaged, Immage moves it aside as `settings.json.corrupt-<time>` and
+starts with default settings. To start with defaults on purpose, see
+[Troubleshooting](troubleshooting.md#resetting-settings).
+
 ## General
 
 **Workspace**

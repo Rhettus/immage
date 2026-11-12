@@ -2,6 +2,7 @@
 // Copyright (C) 2026 the Immage authors
 
 import { type Volume } from "./FolderTree";
+import { settings } from "./settings";
 
 // the folders added to the library panel, and the folder and image open
 // last, with its version, whether the grid was showing, and the folders
@@ -12,14 +13,14 @@ export type Library = { folders: string[]; current: string | null; image: string
 export function loadLibrary(): Library {
   try {
     return { folders: [], current: null, image: null, expanded: [], hidden: [],
-             ...JSON.parse(localStorage.getItem("immage.library") ?? "{}") };
+             ...JSON.parse(settings.get("immage.library") ?? "{}") };
   } catch {
     return { folders: [], current: null, image: null, expanded: [], hidden: [] };
   }
 }
 
 export function saveLibrary(change: Partial<Library>) {
-  try { localStorage.setItem("immage.library", JSON.stringify({ ...loadLibrary(), ...change })); }
+  try { settings.set("immage.library", JSON.stringify({ ...loadLibrary(), ...change })); }
   catch { /* not kept */ }
 }
 
@@ -32,11 +33,11 @@ export const DEFAULT_LAYOUT: Layout = { left: true, strip: true, right: true,
                                  leftWidth: 300, rightWidth: 360, stripHeight: 150 };
 export function loadLayout(): Layout {
   try {
-    return { ...DEFAULT_LAYOUT, ...JSON.parse(localStorage.getItem("immage.layout") ?? "{}") };
+    return { ...DEFAULT_LAYOUT, ...JSON.parse(settings.get("immage.layout") ?? "{}") };
   } catch {
     return DEFAULT_LAYOUT;
   }
 }
 export function saveLayout(l: Layout) {
-  try { localStorage.setItem("immage.layout", JSON.stringify(l)); } catch { /* not kept */ }
+  try { settings.set("immage.layout", JSON.stringify(l)); } catch { /* not kept */ }
 }

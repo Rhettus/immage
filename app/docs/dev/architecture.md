@@ -25,7 +25,7 @@ tooltips, clicks and disabled buttons as well.
 | [splash.html](../../splash.html), [Splash.tsx](../../src/Splash.tsx) | The splash window: shows `build` (version and commit, without the engine) at once, asks `about`, shows the main window, closes itself. |
 | [App.tsx](../../src/App.tsx) | The whole editor's shell and state. See [inside App.tsx](#inside-apptsx). |
 | [main.rs](../../src-tauri/src/main.rs) | `main()`: on Linux selects the web view's EGL before GTK starts (`renderer::init`), migrates the old app name, registers the dialog, opener, updater, process, window state (the main window's size, position and maximized state) and immporter plugins. On Linux `setup()` builds the windows itself, with the frames web extension's folder (`webext_dir`). `setup()` picks the engine: `build/bin/darktable-engine` with runtime state in `build/app-runtime` for a dev build, the bundled `resources/darktable` with the app data folder for a release, or `DT_ENGINE_BIN`. Holds `AppState` and nearly every command. A `supervise` thread waits for a dead engine connection (`Link::wait_dead`), emits `engine-state` `down{epoch}`, clears export cancels, checks `RestartBudget` (skipped for a manual restart), respawns under the engine lock as `engine_respawn`, re-applies the resource level and Edit on the GPU, and emits `ready{epoch}`; a refused budget or a failed respawn emits `failed` and stops. `engine_restart` (no engine lock) asks for a manual restart, and `AppState.engine(op)` records the operation name that sets each request's soft deadline. |
-| [renderer.rs](../../src-tauri/src/renderer.rs) | Linux window renderer: Automatic leaves EGL vendor selection to the system on every GPU; explicit Mesa or NVIDIA selects that EGL vendor. Stored as `webview-renderer` in the runtime directory so startup can read it before GTK. An inherited marker allows Relaunch to change the selection, while a user-supplied EGL environment override takes priority. Only the web view receives the override; benchmark display metadata records the running and next selections. |
+| [renderer.rs](../../src-tauri/src/renderer.rs) | Linux window renderer: Automatic leaves EGL vendor selection to the system on every GPU; explicit Mesa or NVIDIA selects that EGL vendor. Stored as `native.webview-renderer` in `settings.json` (see [settings.rs](../../src-tauri/src/settings.rs)) so startup can read it before GTK. An inherited marker allows Relaunch to change the selection, while a user-supplied EGL environment override takes priority. Only the web view receives the override; benchmark display metadata records the running and next selections. |
 | [engine.rs](../../src-tauri/src/engine.rs) | The engine child. Spawns it (`--core --configdir --cachedir -d perf`, darktable's resource level from Preferences (`resource_level`), OpenCL on with export's pipe type allowed the GPU, which the base borrows, and the full pipes (edits and drags) too with Preferences' Edit on the GPU (`gpu_edits`, on by default); on Linux, ROCm's platform on and its kernels built as OpenCL C 2.0 when no RustiCL is installed, `rocm_only`), retrying while an old one holds darktable's database lock: each start sends a `version` request and goes on as soon as it is answered (after `dt_init`), or after 400 ms if the engine is still alive (`started`). `request()` writes one JSON line with a request number (`rid`, never reused) and reads replies until the one echoing it, dropping a late reply to an earlier request; an engine that never echoes `rid` (an old build) is read in order. `rid` is not `id`, which `render` uses for a base's number. Thumbnails and background exports (`Tagged`) are tagged and sent without the engine's mutex, and AI Denoise's DNG and the AI selections' outlines come as a tagged answer after the main loop's own (`expect`, `on_engine_thread` in main.rs); a stdout thread (`read_stdout`) hands each tagged reply to its caller, a merge's progress lines to what follows them (`request_with_progress`, as `merge-progress`), and the rest to `request()`. A stderr thread writes the log and keeps darktable's `-d perf` timings apart for the performance overlay. `Engine` holds the current connection, a `Conn` (stdin, the waiting reply channel, progress, the child, a `dead` flag) numbered by an `epoch`, inside a shared `Link` (the current conn, a condvar, the tagged-reply and base-cancel tables, `quitting`, the manual restart flag, events). `Tagged` and `BaseCancel` hold the `Link`, so they follow a respawn. `respawn()` starts a new child with the same arguments, and `read_stdout` marks its conn dead when stdout closes. `request()` waits with `recv_timeout` against `soft_deadline(op, req)`; past it, it emits one `slow{op,seconds}` event, and the reply still arrives as `ready` with the same epoch. `RestartBudget(3, 60 s)` limits crash loops. |
 | [engine/main.c](../../../engine/main.c) | `main()`: keeps the real stdout for replies, starts darktable with an in-memory library (`dt_init`), sets its confs, then starts `_read_requests`, which reads a line and hands it to `_handle()` through the `_commands[]` table, and replies. The other engine files are listed under Engine below. |
 
@@ -81,14 +81,17 @@ State lives in React `useState` and refs, mostly in `App`, plus four small
 module stores: [activity.ts](../../src/activity.ts),
 [background.ts](../../src/background.ts), [probe.ts](../../src/probe.ts) and
 [perf.ts](../../src/perf.ts). Preferences
-are `localStorage` keys named `immage.*`.
+are keys named `immage.*` in the settings store
+([settings.ts](../../src/settings.ts)), which is kept in `settings.json` by
+Rust (see Where data lives).
 
 ### Shell
 
 | File | Responsibility |
 |---|---|
+| [main.tsx](../../src/main.tsx), [boot.tsx](../../src/boot.tsx) | `main.tsx` only waits for the settings to load (`ready` from [settings.ts](../../src/settings.ts)), then imports `boot.tsx`, which holds the start-up code `main.tsx` had before. The splash waits for `ready` before it renders. |
 | [App.tsx](../../src/App.tsx) | Library, viewer, panels, tools, undo, before/after, compare, keyboard, plugins. Its top-level components live in the files below. Hover previews (`showHover`) render on the preview pipe: Presets tiles at up to 1600 pixels, a panel's swatches (`hoverValues`; grain, B&W filters) at the displayed size up to 3200, so grain is not stretched. |
-| [layoutPrefs.ts](../../src/layoutPrefs.ts) | `loadLibrary`/`saveLibrary` (the library panel's folders and last photo) and `loadLayout`/`saveLayout` (which panels show, and their sizes), in `localStorage`. |
+| [layoutPrefs.ts](../../src/layoutPrefs.ts) | `loadLibrary`/`saveLibrary` (the library panel's folders and last photo) and `loadLayout`/`saveLayout` (which panels show, and their sizes), in the settings store. |
 | [zoom.ts](../../src/zoom.ts) | The `Zoom` levels and the `Placement` type that App.tsx, Toolbar and Navigator share. |
 | [icons.tsx](../../src/icons.tsx) | `icon()` and every outline icon component (`FolderIcon`, `SlidersIcon`, `PanelIcon`, ...). |
 | [Toolbar.tsx](../../src/Toolbar.tsx) | The bar under the filmstrip (`Toolbar`), `ZoomBar`, `ResetAll` and the panel `Splitter`. |
@@ -219,7 +222,7 @@ and one undo after Done.
 
 | File | Responsibility |
 |---|---|
-| [print.ts](../../src/print.ts), [PrintPanel.tsx](../../src/PrintPanel.tsx) | The Print panel (`RightMode` `"print"`, the rail's last button under Export, ⌘P): settings kept in `localStorage`, PDF papers, the page `layout()` and the Cells grid `cellsLayout()`, the requests for `print_photo` and `print_sheet`; the soft proof (`applyProof`), which App.tsx keeps on across panels (S, the `Soft Proof:` badge) and follows with `Session.redraw()`. Design and verification in [print.md](print.md). |
+| [print.ts](../../src/print.ts), [PrintPanel.tsx](../../src/PrintPanel.tsx) | The Print panel (`RightMode` `"print"`, the rail's last button under Export, ⌘P): settings kept in the settings store, PDF papers, the page `layout()` and the Cells grid `cellsLayout()`, the requests for `print_photo` and `print_sheet`; the soft proof (`applyProof`), which App.tsx keeps on across panels (S, the `Soft Proof:` badge) and follows with `Session.redraw()`. Design and verification in [print.md](print.md). |
 
 ### Immich and plugins
 
@@ -240,6 +243,7 @@ identity before drawing, so replacement frames cancel obsolete work.
 
 | File | Responsibility |
 |---|---|
+| [settings.ts](../../src/settings.ts) | The synchronous settings store every module uses in place of `localStorage` (`get`, `set`, `remove`, `keys`), over an in-memory copy. Changes go to Rust (`settings_set`) in batches about 250 ms apart, flushed before relaunch and Quit. Copies the web view's `localStorage` in once, marked `immage.settings-migrated`. `ready` resolves when loaded; there is no top-level await, because the pixel worker bundle reaches this module through perf.ts. |
 | [Preferences.tsx](../../src/Preferences.tsx), [PrefsUI.tsx](../../src/PrefsUI.tsx) | The Preferences dialog and its `load*`/`store*` pairs; `PrefCard`, `PrefRow`, `PrefSwitch`; `ABOUT_LINKS` (homepage, Discord, GitHub icons under the sidebar version). |
 | [SelectMenu.tsx](../../src/SelectMenu.tsx) | Mounted once in `main.tsx`. Intercepts `mousedown` on any single-choice `<select>`, shows its options in a `.context-menu.select-menu` (inside the enclosing `.filter-pop`, `.icon-picker`, `.modal` or `.context-menu`, so outside-click handlers don't close it), and writes the choice back to the `<select>` and fires `change`. Handlers and `data-*` test hooks are unchanged. Space and Alt-arrow open it; arrows, Home/End, Enter and Escape drive it. |
 | [histogram.ts](../../src/histogram.ts) | Histogram and scope kernels (worker with main-thread fallback), clipping overlay. |
@@ -261,6 +265,7 @@ identity before drawing, so replacement frames cancel obsolete work.
 | [volumes.rs](../../src-tauri/src/volumes.rs) | The drive a library folder is on, its name and whether it is a network share (the mount table on macOS and Linux, the volume calls on Windows), for the folder tree's headings. `answering()`: whether a path's drive answers a stat within 3 s, tried on a thread of its own, as a share whose server has gone away holds a stat in the kernel for good; a drive that doesn't is skipped until that stat returns. `open_folder`, `list_subfolders`, `folder_volumes` and `path_exists` ask it first. |
 | [scale.rs](../../src-tauri/src/scale.rs) | Linux on Wayland: the screen's real scale, its output's mode over its xdg-output logical size on a Wayland connection of its own, for `display_scale`. |
 | [plugins.rs](../../src-tauri/src/plugins.rs) | Edit In: owns the plugin configuration (`plugins.json`; `config`, `config_save`, `set_app`, `ready`), finds apps, launches by plugin id with files checked by `photo_file`, polls their output folders, remembers each result (`plugin-returns.json`). Macro Studio's protocol (`plugin_job`): a job manifest in `plugin-jobs/<id>/`, its receipt read until every stack is saved or closed, and a ledger (`plugin-jobs/pending.json`) drained at start and on each `open_folder` (`drain_jobs`), for stacks saved later. |
+| [settings.rs](../../src-tauri/src/settings.rs) | The settings store: `settings.json` in the runtime folder, written atomically; `settings_all` and `settings_set` for the page; `native.*` keys (`native.darktable-resources`, `native.gpu-edits`, `native.webview-renderer`) written only here. On first start it moves the old `darktable-resources`, `gpu-edits` and `webview-renderer` files into those keys and deletes them. `read_key` lets renderer::init read `native.webview-renderer` before Tauri starts. A damaged file is moved aside as `settings.json.corrupt-<time>` and defaults are used. |
 | [Cargo.toml](../../src-tauri/Cargo.toml), [tauri.conf.json](../../src-tauri/tauri.conf.json), [capabilities/](../../src-tauri/capabilities) | Dependencies (each with its reason); windows, bundle resources (`resources/darktable`, `looks`, `sample`); window permissions. |
 
 Commands by what they reach:
@@ -273,7 +278,7 @@ Commands by what they reach:
 | Files the user picks (the dialog opens in Rust, so the page never names the path; each returns null or false on cancel) | `export_presets_export`, `export_presets_import`, `shared_import` (presets and looks), `look_export`, `print_profile_add`, `agx_presets_pick`, and the PDF of `print_photo` and `print_sheet` (the page sends only a suggested `pdf_name`, any `pdf` in the request is dropped by `without_pdf`, and the reply carries the chosen path as `pdf`; the capability grants `dialog:allow-open` and `allow-message` but not `allow-save`) (and `agx_presets` for darktable's own data.db). `look_apply`, `look_export` and `look_delete` accept only a path inside the looks folders (`path_inside`) |
 | AI models (download, then the engine's `version`) | `ai_model_ensure`, `ai_model_reinstall` |
 | Immich (HTTP) | `immich_albums`, `immich_create_album`, `immich_export_check`, `immich_browse_check`, `immich_search`, `immich_libraries`, `immich_suggestions`, `immich_people`, `immich_tags`, `immich_thumb`, `immich_resolve` |
-| Plugins | `plugin_find_apps` (also the allow-list for `plugin_set_app`), `plugin_config` (read, and the one-time migration of the old `localStorage` list), `plugin_config_save` (never takes a program path), `plugin_set_app`, `plugin_choose_app` (the dialog opens from Rust), `plugin_launch(id, files)`, `plugin_watch`, `plugin_job`, `plugin_cancel`, `plugin_returns`, `plugin_return_applied` |
+| Plugins | `plugin_find_apps` (also the allow-list for `plugin_set_app`), `plugin_config` (read, and the one-time migration of the old `immage.plugins` list, which the page reads through the settings store, itself copied once from localStorage), `plugin_config_save` (never takes a program path), `plugin_set_app`, `plugin_choose_app` (the dialog opens from Rust), `plugin_launch(id, files)`, `plugin_watch`, `plugin_job`, `plugin_cancel`, `plugin_returns`, `plugin_return_applied` |
 | Performance | `perf_set`, `perf_modules`, `perf_report_write`, `perf_ping` |
 | The window | `preview_fullscreen`, `display_scale` |
 | The build | `build`: the version and commit, answered without the engine. `build.rs` sets `IMMAGE_BUILD_COMMIT` and `IMMAGE_BUILD_DIRTY` from Git; `build_label` in main.rs shortens the commit to ten digits with `-dirty`, as `about` and `build` return it, and `perf_report_write` stores the full commit and the dirty flag as every report's `build`. Built outside Git, all are absent. |
@@ -603,10 +608,10 @@ darktable is, and it has AI features when darktable is configured with
 |---|---|---|
 | Edits (history, masks, spots, looks) | the photo's XMP sidecar, written by the engine's `save` | permanent, beside the photo |
 | darktable's library | in memory (`--library :memory:`) | the engine's run; rebuilt from sidecars on import |
-| Preferences, layout, library folders, export settings | `localStorage`, keys `immage.*` (for example `immage.preview`, `immage.export`, `immage.library`) | permanent, per WebView profile |
+| Preferences, layout, library folders, export settings | `settings.json` in the runtime folder, written only by Rust ([settings.rs](../../src-tauri/src/settings.rs)); keys `immage.*` from the page (for example `immage.preview`, `immage.export`, `immage.library`) and `native.*` from Rust only. The page reads and writes it through [settings.ts](../../src/settings.ts). On first start the web view's `localStorage` is copied in once (marked `immage.settings-migrated`) and left as it was | permanent; survives a reset of the web view's storage |
 | Develop presets | `presets.json` in the runtime folder | permanent |
 | Export presets | `export-presets.json` in the runtime folder; shared files from Import…/Export… | permanent |
-| Edit In plugins and their applications | `plugins.json` in the runtime folder, written only by Rust; an old `immage.plugins` `localStorage` list is handed over once, when the file does not exist, then removed | permanent |
+| Edit In plugins and their applications | `plugins.json` in the runtime folder, written only by Rust; an old `immage.plugins` list in the settings store is handed over once, when the file does not exist, then removed | permanent |
 | Edit In results | `plugin-returns.json` in the runtime folder | permanent |
 | Macro Studio jobs | `plugin-jobs/` in the runtime folder: each job's manifest and receipt, and `pending.json` | until every stack is saved or closed, or 30 days |
 | Engine config, cache, log | `config/`, `cache/`, `engine.log` in the runtime folder (`build/app-runtime` in dev, the app data folder in a release) | permanent; the log restarts past 5 MB |
@@ -692,7 +697,7 @@ says the tool is used, and the fallback to 1 for a mask with neither
 module's instance).
 [moduleChoice.ts](../../src/moduleChoice.ts) resolves global and mask scopes
 separately: `immage.modules.choices` and `immage.modules.choices.masks` in
-localStorage share the `immage.modules.mode` Default/Custom switch.
+the settings store share the `immage.modules.mode` Default/Custom switch.
 [ModulePrefs.tsx](../../src/ModulePrefs.tsx) renders Global and Masks chevrons
 using the `focusMode` prop passed by PreferencesDialog. Focus mode initially
 opens Global only; opening either group closes the other. Alt-click keeps
@@ -888,7 +893,7 @@ Support bundle: [scrub.rs](../../src-tauri/src/scrub.rs) replaces private values
 Immich host; then path, URL, email and serial patterns) with stable placeholders.
 [support_bundle.rs](../../src-tauri/src/support_bundle.rs) scrubs engine.log,
 a system block (`machine_block` in main.rs, plus versions) and the page's
-`immage.*` localStorage preferences with one `Scrubber`, keeps the text in
+`immage.*` preferences from the settings store with one `Scrubber`, keeps the text in
 `BundleState`, and writes a zip from it. The page
 ([SupportBundleDialog.tsx](../../src/SupportBundleDialog.tsx)) only receives
 lines and returns removed line indexes, never text. `support_bundle_add_benchmark`

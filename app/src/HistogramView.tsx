@@ -15,6 +15,7 @@ import { useDismiss } from "./MasksPanel";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useThemes } from "./themes";
 import { zoneAt } from "./zones";
+import { settings } from "./settings";
 
 // Lightroom's histogram regions, left to right, and how far a drag across
 // the whole histogram moves each
@@ -27,7 +28,7 @@ export const HIST_ZONES: { id: string; from: number; to: number; span: number }[
 ];
 
 export function loadScope(): ScopeSettings {
-  try { return { ...DEFAULT_SCOPE, ...JSON.parse(localStorage.getItem("immage.scope") ?? "{}") }; }
+  try { return { ...DEFAULT_SCOPE, ...JSON.parse(settings.get("immage.scope") ?? "{}") }; }
   catch { return DEFAULT_SCOPE; }
 }
 

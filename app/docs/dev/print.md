@@ -12,7 +12,7 @@ change to darktable's source.
 
 | Where | What |
 |---|---|
-| [print.ts](../../src/print.ts) | `PrintSettings` (stored in `localStorage` as `immage.print`), PDF papers (PWG names), `layout()` (page orientation, margins, Fill or a long edge, nine places, borderless against the hardware margins, which turn with the page as `dt_get_print_layout` turns them), `printRequest()`, `applyProof()`. |
+| [print.ts](../../src/print.ts) | `PrintSettings` (stored in the settings store as `immage.print`), PDF papers (PWG names), `layout()` (page orientation, margins, Fill or a long edge, nine places, borderless against the hardware margins, which turn with the page as `dt_get_print_layout` turns them), `printRequest()`, `applyProof()`. |
 | [PrintPanel.tsx](../../src/PrintPanel.tsx) | The panel: Soft Proofing, Printer, Layout (print size and pixels per inch, margins, size), Color Management, Print / Save PDF. |
 | App.tsx | `RightMode` `"print"`, the rail button after Export, ⌘P, S (`toggleProofRef`), the `proof` state, `changeProof()` and the `Soft Proof:` badge over the photo; the effects that read printers and profiles when the panel opens and the chosen printer's papers; the page in the viewer (`printPage`, `sheet`, `printViewRef`); `printNow()`. |
 | [print.ts](../../src/print.ts), Cells | `cellsLayout()` (grid, pages), `sheetPages()` and `sheetRequest()`: a page is a list of cells, each a photo box and an optional label rectangle in millimeters; the engine knows nothing of columns, so another generator (user-drawn cells) can follow. |

@@ -47,6 +47,7 @@ the app, where data lives, and the frame formats. Diagrams are in
 
 Front end ([`app/src`](../../src)):
 
+- [settings.ts](../../src/settings.ts): the synchronous settings store every module uses instead of localStorage; [main.tsx](../../src/main.tsx) waits for it, then [boot.tsx](../../src/boot.tsx) starts the app
 - [App.tsx](../../src/App.tsx): the editor's shell and state, with its components in [Toolbar.tsx](../../src/Toolbar.tsx), [Filmstrip.tsx](../../src/Filmstrip.tsx), [ActivityBar.tsx](../../src/ActivityBar.tsx), [FileMenu.tsx](../../src/FileMenu.tsx), [HistogramView.tsx](../../src/HistogramView.tsx), [Navigator.tsx](../../src/Navigator.tsx), [PanelView.tsx](../../src/PanelView.tsx), [Controls.tsx](../../src/Controls.tsx), [icons.tsx](../../src/icons.tsx), [layoutPrefs.ts](../../src/layoutPrefs.ts) and [zoom.ts](../../src/zoom.ts); [session.ts](../../src/session.ts): one open photo, edits to the engine, renders, saves; [engineState.ts](../../src/engineState.ts): engine restarts and the restore after one
 - [manifest.ts](../../src/manifest.ts): panels, controls, and their mapping to darktable params; math in [wb.ts](../../src/wb.ts), [tonecurve.ts](../../src/tonecurve.ts), [transform.ts](../../src/transform.ts), [colorgrading.ts](../../src/colorgrading.ts), [colorequal.ts](../../src/colorequal.ts), [autoTone.ts](../../src/autoTone.ts), [bwauto.ts](../../src/bwauto.ts)
 - masks: [masks.ts](../../src/masks.ts) (shapes, overlay pixels), [localMerge.ts](../../src/localMerge.ts) (shared instances), [MaskOverlay.tsx](../../src/MaskOverlay.tsx), [MasksPanel.tsx](../../src/MasksPanel.tsx), [ParametricEditor.tsx](../../src/ParametricEditor.tsx); design in [masks.md](masks.md)
@@ -68,6 +69,7 @@ Front end ([`app/src`](../../src)):
 
 Rust ([`app/src-tauri/src`](../../src-tauri/src)):
 
+- [settings.rs](../../src-tauri/src/settings.rs): the settings store (`settings.json`; `settings_all`, `settings_set`)
 - [main.rs](../../src-tauri/src/main.rs): `AppState` and nearly every command; [engine.rs](../../src-tauri/src/engine.rs): the engine child and its protocol
 - [memory_budget.rs](../../src-tauri/src/memory_budget.rs) (the one memory budget from RAM x the Memory level; page side [memoryBudget.ts](../../src/memoryBudget.ts)); [immich_search.rs](../../src-tauri/src/immich_search.rs), [immich_upload.rs](../../src-tauri/src/immich_upload.rs); [plugins.rs](../../src-tauri/src/plugins.rs) (Edit In); [listing.rs](../../src-tauri/src/listing.rs) (folder listings with sizes and times); [volumes.rs](../../src-tauri/src/volumes.rs) (drives, and whether each answers); [scale.rs](../../src-tauri/src/scale.rs) (Wayland scale); [renderer.rs](../../src-tauri/src/renderer.rs) (Linux interface EGL selection before GTK starts); [webext/frames.c](../../src-tauri/webext/frames.c) (Linux shared frames)
 

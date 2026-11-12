@@ -10,6 +10,7 @@ import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import type { ImageEntry } from "./library";
+import { settings } from "./settings";
 import { loadAccel, loadFocusMode } from "./Preferences";
 import { Chevron, Collapse } from "./Collapse";
 import { Aperture, Archive, BookOpen, Briefcase, Camera, CloudUpload, FileDown, Frame, Globe, Heart, Image, Mail,
@@ -63,7 +64,7 @@ const FILE_TOKEN_NAMES: Record<string, string> = {
 };
 const loadOpen = (): Record<SectionId, boolean> => {
   try {
-    const raw = JSON.parse(localStorage.getItem("immage.export.open") ?? "{}");
+    const raw = JSON.parse(settings.get("immage.export.open") ?? "{}");
     // Metadata was Privacy before 0.37.0
     if ("privacy" in raw && !("metadata" in raw)) raw.metadata = raw.privacy;
     return Object.fromEntries((Object.keys(OPEN_DEFAULT) as SectionId[])
@@ -174,13 +175,13 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
     const n = solo
       ? Object.fromEntries(Object.keys(o).map((k) => [k, k === id && !o[id]])) as Record<SectionId, boolean>
       : { ...o, [id]: !o[id] };
-    try { localStorage.setItem("immage.export.open", JSON.stringify(n)); } catch { /* not kept */ }
+    try { settings.set("immage.export.open", JSON.stringify(n)); } catch { /* not kept */ }
     return n;
   });
 
   // ---------------------------------------------------------- presets
   const [presets, setPresets] = useState<ExportPreset[]>([]);
-  const [presetId, setPresetId] = useState<string | null>(() => localStorage.getItem("immage.export.preset"));
+  const [presetId, setPresetId] = useState<string | null>(() => settings.get("immage.export.preset"));
   const [naming, setNaming] = useState<{ id: string | null; name: string } | null>(null);
   // the preset whose icon is being chosen; a click elsewhere closes it
   const [iconFor, setIconFor] = useState<string | null>(null);
@@ -200,18 +201,18 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
   };
   // the preset groups folded shut, kept between uses
   const [closedGroups, setClosedGroups] = useState<Set<string>>(() => {
-    try { return new Set(JSON.parse(localStorage.getItem(GROUPS_KEY) ?? "[]")); } catch { return new Set(); }
+    try { return new Set(JSON.parse(settings.get(GROUPS_KEY) ?? "[]")); } catch { return new Set(); }
   });
   const toggleGroup = (id: string) => setClosedGroups((old) => {
     const next = new Set(old);
     if (!next.delete(id)) next.add(id);
-    try { localStorage.setItem(GROUPS_KEY, JSON.stringify([...next])); } catch { /* not kept */ }
+    try { settings.set(GROUPS_KEY, JSON.stringify([...next])); } catch { /* not kept */ }
     return next;
   });
   useEffect(() => { void loadPresets().then(setPresets); }, []);
   const choosePreset = (id: string | null) => {
     setPresetId(id);
-    try { id ? localStorage.setItem("immage.export.preset", id) : localStorage.removeItem("immage.export.preset"); }
+    try { id ? settings.set("immage.export.preset", id) : settings.remove("immage.export.preset"); }
     catch { /* not kept */ }
   };
   const storePresets = (list: ExportPreset[]) => { setPresets(list); void savePresets(list).catch((e) => setError(String(e))); };

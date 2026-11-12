@@ -8,6 +8,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { ImageEntry } from "./library";
 import { expandText, type Meta } from "./exportTokens";
+import { settings as store } from "./settings";
 
 // one LRMogrify outer border: widths in % of the photo's short or long
 // edge, or pixels of the exported file; items stack from the inside out
@@ -165,14 +166,14 @@ const sane = (s: Settings): Settings => ({
 
 export const loadSettings = (): Settings => {
   try {
-    const raw = JSON.parse(localStorage.getItem("immage.export") ?? "{}");
+    const raw = JSON.parse(store.get("immage.export") ?? "{}");
     const s = sane({ ...DEFAULTS, ...migrate(raw) });
     if (!raw.askMigrated) saveSettings(s);
     return s;
   } catch { return DEFAULTS; }
 };
 export const saveSettings = (s: Settings) => {
-  try { localStorage.setItem("immage.export", JSON.stringify({ ...s, askMigrated: true })); } catch { /* not kept */ }
+  try { store.set("immage.export", JSON.stringify({ ...s, askMigrated: true })); } catch { /* not kept */ }
 };
 
 // ------------------------------------------------------------- presets

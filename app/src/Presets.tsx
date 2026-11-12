@@ -11,6 +11,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { FileDown, Plus, Save, Share, Trash } from "lucide-react";
 import { blacksFromLinear, controlById, panels, type Values } from "./manifest";
 import type { Frame } from "./session";
+import { settings } from "./settings";
 
 // rawOnly: applied to raw files only, as Lightroom's import defaults are
 export type Preset = { id: string; name: string; group: string; values: Values; builtin?: boolean;
@@ -95,12 +96,12 @@ const NEW_PHOTOS_KEY = "immage.newPhotosPreset";
 // new photos get Default until Preferences says otherwise; "" is None
 export function loadNewPhotosPreset(): string | null {
   try {
-    const v = localStorage.getItem(NEW_PHOTOS_KEY);
+    const v = settings.get(NEW_PHOTOS_KEY);
     return v === null ? DEFAULT_PRESET_ID : v || null;
   } catch { return DEFAULT_PRESET_ID; }
 }
 export function storeNewPhotosPreset(id: string | null) {
-  try { localStorage.setItem(NEW_PHOTOS_KEY, id ?? ""); } catch { /* not kept */ }
+  try { settings.set(NEW_PHOTOS_KEY, id ?? ""); } catch { /* not kept */ }
 }
 
 // a few to start from, always there and not deletable
@@ -188,7 +189,7 @@ export function Tile({ bitmap }: { bitmap: ImageBitmap | undefined }) {
 const SHUT_KEY = "immage.presets.shut";
 const loadShut = (groups: string[]) => {
   try {
-    const kept = localStorage.getItem(SHUT_KEY);
+    const kept = settings.get(SHUT_KEY);
     if (kept) return new Set<string>(JSON.parse(kept));
   } catch { /* first run */ }
   return new Set(groups);
@@ -279,7 +280,7 @@ export function PresetsPanel({ presets, looks, look, disabled, preview, onWant, 
     if (!fold.n) return;
     const next = new Set(fold.open ? [] : groups.map((g) => g.title));
     setShut(next);
-    try { localStorage.setItem(SHUT_KEY, JSON.stringify([...next])); } catch { /* not kept */ }
+    try { settings.set(SHUT_KEY, JSON.stringify([...next])); } catch { /* not kept */ }
   }, [fold.n]);
   useEffect(() => { onAnyOpen(groups.some((g) => !shut.has(g.title))); }, [shut, groups]);
   // the tile last clicked, which the tools above act on, as the Export
@@ -311,7 +312,7 @@ export function PresetsPanel({ presets, looks, look, disabled, preview, onWant, 
       n = new Set(s);
       if (n.has(g)) n.delete(g); else n.add(g);
     }
-    try { localStorage.setItem(SHUT_KEY, JSON.stringify([...n])); } catch { /* not kept */ }
+    try { settings.set(SHUT_KEY, JSON.stringify([...n])); } catch { /* not kept */ }
     return n;
   });
 

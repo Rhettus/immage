@@ -7,6 +7,7 @@ import { loadPreview, loadBalancedPreviewSize, loadDraftSmallest, loadDraftTarge
 import { measureTuner, searchTuner, trimmedMedian, tunerChanges, type TunerSettings, type TunerRun, type TunerMeasurement, type TunerContext, type TunerTrial } from "./previewTuning";
 import { tunerOptions, type TunerOption } from "./tunerOptions";
 import { startTunerWork, stopTunerWork, type WorkSample } from "./tunerWorkload";
+import { settings as store } from "./settings";
 
 
 const PENDING = "immage.performanceTuner.pending";
@@ -14,7 +15,7 @@ type WorkResult = { settings: Record<string,string>; samples: WorkSample[]; path
 type Pending = { fps: number; latency: number; work: WorkResult[]; navigationPending: boolean; context?:TunerContext };
 function loadPending(): Pending | null {
   try {
-    const v = JSON.parse(localStorage.getItem(PENDING) ?? "null");
+    const v = JSON.parse(store.get(PENDING) ?? "null");
     return v && [15,30,60].includes(v.fps) && [50,80,100,200].includes(v.latency) && Array.isArray(v.work) ? v : null;
   } catch { return null; }
 }
@@ -66,7 +67,7 @@ export function PerformanceTuner({ run, onClose, onRelaunch, onOverlay, photo, r
   const startMeasure = async () => {
     if (lock.current) return;
     lock.current = true; setBusy(true); setError("");
-    try { await measure(); setVerified(!!pending.current); pending.current = null; localStorage.removeItem(PENDING); }
+    try { await measure(); setVerified(!!pending.current); pending.current = null; store.remove(PENDING); }
     catch (e) { setError(String(e)); }
     finally { lock.current = false; setBusy(false); }
   };
@@ -127,7 +128,7 @@ export function PerformanceTuner({ run, onClose, onRelaunch, onOverlay, photo, r
       const navPending = changed.some((o) => o.workload === "navigation");
       setNavigationPending(navPending);
       if (changed.some((o) => o.restart)) {
-        localStorage.setItem(PENDING,JSON.stringify({fps,latency,work,navigationPending:navPending,context} satisfies Pending));
+        store.set(PENDING,JSON.stringify({fps,latency,work,navigationPending:navPending,context} satisfies Pending));
         await onRelaunch(); return;
       }
       const appliedOptions = await reload();
@@ -138,7 +139,7 @@ export function PerformanceTuner({ run, onClose, onRelaunch, onOverlay, photo, r
       for (const option of [...applied].reverse()) {
         try { await option.set(prior[option.id]); } catch { failures.push(option.label); }
       }
-      localStorage.removeItem(PENDING); setResult(null); setVerified(false);
+      store.remove(PENDING); setResult(null); setVerified(false);
       setError(`${e}. ${failures.length ? `Could not restore: ${failures.join(", ")}` : "Previous settings restored."}`);
       await reload();
     } finally { lock.current = false; setBusy(false); }
@@ -179,7 +180,7 @@ export function PerformanceTuner({ run, onClose, onRelaunch, onOverlay, photo, r
     } catch (e) { setError(String(e)); }
     finally { lock.current = false; setBusy(false); }
   };
-  const close = () => { localStorage.removeItem(PENDING); onClose(); };
+  const close = () => { store.remove(PENDING); onClose(); };
   if (recording) return <div role="status" style={{position:"fixed",bottom:24,left:24,zIndex:1000,background:"var(--panel)",padding:16,maxWidth:440,border:"1px solid currentColor"}}>
     <p>Recording navigation. Step through the same photos in both directions, pausing for read ahead. Reopen the same Immich originals to compare their disk cache.</p>
     <button className="btn" onClick={() => void finish()}>Stop and compare</button>

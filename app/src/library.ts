@@ -6,6 +6,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { fetchImmichThumb } from "./immich";
+import { settings } from "./settings";
 
 export type Exif = {
   maker: string; model: string; lens: string;
@@ -143,10 +144,10 @@ export function pairPartners(images: ImageEntry[]): Map<number, ImageEntry[]> {
 
 const SUBFOLDERS_KEY = "immage.includeSubfolders";
 export function loadIncludeSubfolders(): boolean {
-  try { return localStorage.getItem(SUBFOLDERS_KEY) === "1"; } catch { return false; }
+  try { return settings.get(SUBFOLDERS_KEY) === "1"; } catch { return false; }
 }
 export function storeIncludeSubfolders(on: boolean) {
-  try { localStorage.setItem(SUBFOLDERS_KEY, on ? "1" : "0"); } catch { /* not kept */ }
+  try { settings.set(SUBFOLDERS_KEY, on ? "1" : "0"); } catch { /* not kept */ }
 }
 
 const THUMB_SIZE = 240; // device pixels; the engine picks the next cached size up

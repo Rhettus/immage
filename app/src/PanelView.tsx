@@ -24,6 +24,7 @@ import { detailRows, isAdvancedControl } from "./DetailControls";
 import { memo, useCallback, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { panelValues } from "./panelValues";
+import { settings } from "./settings";
 
 // a preset's values but the photo's modules: the tone mapper, which presets
 // made when it was a slider may hold
@@ -389,13 +390,13 @@ export function sectionRuns(sections: Section[]): Section[][] {
 // the sections folded shut, "<panel id>/<section title>", kept between sessions
 export const CLOSED_SECTIONS_KEY = "immage.sections.closed";
 export function loadClosedSections(): Set<string> {
-  try { return new Set(JSON.parse(localStorage.getItem(CLOSED_SECTIONS_KEY) ?? "[]")); } catch { return new Set(); }
+  try { return new Set(JSON.parse(settings.get(CLOSED_SECTIONS_KEY) ?? "[]")); } catch { return new Set(); }
 }
 // read again before writing: every card keeps its own copy
 export function toggleClosedSection(key: string): Set<string> {
   const closed = loadClosedSections();
   if (!closed.delete(key)) closed.add(key);
-  try { localStorage.setItem(CLOSED_SECTIONS_KEY, JSON.stringify([...closed])); } catch { /* not kept */ }
+  try { settings.set(CLOSED_SECTIONS_KEY, JSON.stringify([...closed])); } catch { /* not kept */ }
   return closed;
 }
 

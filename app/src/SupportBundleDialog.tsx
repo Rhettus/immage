@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { immichUrl } from "./immich";
+import { settings } from "./settings";
 
 // what only the page knows and the scrubber must find in the text: folders,
 // photo names, the Immich server, and the preferences the user has set
@@ -15,10 +16,9 @@ const SECRET = /token|password|passwd|secret|api[-_.]?key|credential|auth/i;
 export async function supportValues(known: { folders: (string | null | undefined)[]; photos: string[] }): Promise<SupportValues> {
   const prefs: Record<string, unknown> = {};
   try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (!k || !k.startsWith("immage.") || SECRET.test(k)) continue;
-      const v = localStorage.getItem(k);
+    for (const k of settings.keys()) {
+      if (!k.startsWith("immage.") || SECRET.test(k)) continue;
+      const v = settings.get(k);
       if (v === null) continue;
       let parsed: unknown = v;
       try { parsed = JSON.parse(v); } catch { /* a plain string */ }

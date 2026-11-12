@@ -2,11 +2,12 @@
 // Copyright (C) 2026 the Immage authors
 import { useState } from "react";
 import { SlidersHorizontal } from "lucide-react";
+import { settings } from "./settings";
 
 // the panels showing their advanced controls, kept between sessions
 const KEY = "immage.advanced.on";
 function load(): Set<string> {
-  try { return new Set(JSON.parse(localStorage.getItem(KEY) ?? "[]")); } catch { return new Set(); }
+  try { return new Set(JSON.parse(settings.get(KEY) ?? "[]")); } catch { return new Set(); }
 }
 
 // read again before writing: every panel keeps its own copy
@@ -16,7 +17,7 @@ export function useAdvanced(key: string): [boolean, () => void] {
     const set = load();
     const next = !set.delete(key);
     if (next) set.add(key);
-    try { localStorage.setItem(KEY, JSON.stringify([...set])); } catch { /* not kept */ }
+    try { settings.set(KEY, JSON.stringify([...set])); } catch { /* not kept */ }
     setOn(next);
   };
   return [on, toggle];

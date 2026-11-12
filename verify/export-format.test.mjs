@@ -24,6 +24,7 @@ registerHooks({
   },
 });
 
+const { settings } = await import('../app/src/settings.ts');
 const { bitDepths, exportOptionsFor, loadSettings, DEFAULTS } = await import('../app/src/exportSettings.ts');
 
 test('JPEG XL sends quality and its own bit depth', () => {
@@ -49,12 +50,13 @@ test('JPEG and WebP send quality only, and no bit depth', () => {
 
 test('saved export settings accept jxl and its bit depths, and fall back on invalid values', () => {
   const saved = (o) => {
-    globalThis.localStorage = { getItem: () => JSON.stringify(o), setItem() {} };
+    for (const k of settings.keys()) settings.remove(k);
+    settings.set('immage.export', JSON.stringify(o));
     return loadSettings();
   };
   assert.equal(saved({ format: 'jxl', bpp: 12, askMigrated: true }).format, 'jxl');
   assert.equal(saved({ format: 'jxl', bpp: 12, askMigrated: true }).bpp, 12);
   assert.equal(saved({ format: 'bogus', bpp: 9, askMigrated: true }).format, DEFAULTS.format);
   assert.equal(saved({ format: 'bogus', bpp: 9, askMigrated: true }).bpp, DEFAULTS.bpp);
-  delete globalThis.localStorage;
+  for (const k of settings.keys()) settings.remove(k);
 });
