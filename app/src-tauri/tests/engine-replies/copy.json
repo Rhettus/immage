@@ -1,0 +1,49 @@
+[
+ {
+  "label": "2 library / copy a",
+  "reply": {
+   "image": {
+    "copy": true,
+    "edited": false,
+    "exif": {
+     "aperture": 0.0,
+     "body_serial": "",
+     "crop_factor": 0.0,
+     "datetime": "",
+     "exposure": 0.0,
+     "exposure_bias": -3.4028234663852886e+38,
+     "exposure_program": "",
+     "file_datetime": "2000-01-01 00:00:00",
+     "file_height": 48,
+     "file_width": 64,
+     "flash": "",
+     "focal_length": 0.0,
+     "focus_distance": 0.0,
+     "iso": 0.0,
+     "lens": "",
+     "maker": "",
+     "metering_mode": "",
+     "model": "",
+     "sensor_height": 48,
+     "sensor_width": 64,
+     "white_balance": ""
+    },
+    "filename": "a.tif",
+    "height": 48,
+    "imgid": 3,
+    "keywords": [
+     "one"
+    ],
+    "labels": 0,
+    "location": null,
+    "path": "/tmp/immage-fixture/photos/a.tif",
+    "rating": 0,
+    "rejected": false,
+    "version": 1,
+    "width": 64
+   },
+   "ms": 0.0,
+   "ok": true
+  }
+ }
+]

@@ -28,6 +28,23 @@ pub fn commands() -> Commands<tauri::Wry> {
         crate::build,
         crate::about,
         crate::map_tiles::map_tile,
+        // the open-photo path
+        crate::open_image,
+        crate::history,
+        crate::module_state,
+        crate::get_params,
+        crate::set_params,
+        crate::sample,
+        crate::tone_key,
+        crate::color_profiles,
+        crate::agx_auto,
+        crate::render,
+        crate::cancel_base,
+        crate::save,
+        crate::baseline_end,
+        crate::before_view,
+        crate::preview,
+        crate::paste_batch,
     ]
 }
 
@@ -222,8 +239,63 @@ mod tests {
         assert_eq!(generate(), generate());
     }
 
+    use crate::typed_session::*;
+    use serde::de::DeserializeOwned;
+
+    type ReplyCheck = fn(serde_json::Value) -> Result<(), serde_json::Error>;
+
+    fn reads<T: DeserializeOwned>(reply: serde_json::Value) -> Result<(), serde_json::Error> {
+        serde_json::from_value::<T>(reply).map(|_| ())
+    }
+
+    // every engine command whose reply the Rust layer reads into a typed
+    // struct, with that struct: the commands that pass an engine reply
+    // through. each needs a file of real replies in tests/engine-replies,
+    // which verify/engine-protocol.py --fixtures writes from the built
+    // engine. a new entry without a file fails below, and an engine reply
+    // that no longer fits its type fails here rather than in the app
+    const ENGINE_REPLIES: &[(&str, ReplyCheck)] = &[
+        ("meta", reads::<MetaReply>),
+        ("open", reads::<OpenReply>),
+        ("history", reads::<HistoryReply>),
+        ("module_state", reads::<ModuleStateReply>),
+        ("get", reads::<GetReply>),
+        ("sample", reads::<SampleReply>),
+        ("tone_key", reads::<ToneKeyReply>),
+        ("color_profiles", reads::<ColorProfiles>),
+        ("agx_auto", reads::<AgxAutoReply>),
+        ("save", reads::<SaveReply>),
+        ("paste_batch", reads::<PasteBatchReply>),
+        ("render", reads::<RenderReply>),
+        ("preview", reads::<PreviewReply>),
+    ];
+
     #[test]
-    fn meta_reply_reads_the_engines_json() {
+    fn typed_engine_replies_read_the_engines_fixtures() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/engine-replies");
+        for (command, check) in ENGINE_REPLIES {
+            let file = dir.join(format!("{command}.json"));
+            let text = std::fs::read_to_string(&file).unwrap_or_else(|_| {
+                panic!(
+                    "no fixture for the engine's {command} reply ({}). write them with:\n  \
+                     python3 -I verify/engine-protocol.py --fixtures app/src-tauri/tests/engine-replies",
+                    file.display()
+                )
+            });
+            let fixtures: Vec<serde_json::Value> = serde_json::from_str(&text).expect("a fixture file is a JSON list");
+            assert!(!fixtures.is_empty(), "{command}: no replies in its fixture file");
+            for fixture in fixtures {
+                let label = fixture["label"].clone();
+                if let Err(e) = check(fixture["reply"].clone()) {
+                    panic!("the engine's {command} reply ({label}) no longer fits its type: {e}");
+                }
+            }
+        }
+    }
+
+    // the same typed replies, for a field the fixtures do not carry
+    #[test]
+    fn meta_reply_ignores_fields_it_does_not_know() {
         let reply: MetaReply = serde_json::from_value(serde_json::json!({
             "image": { "imgid": 3, "path": "/a.nef", "filename": "a.nef", "rating": 2, "rejected": false,
                 "width": 10, "height": 8, "location": null,

@@ -737,7 +737,7 @@ export default function App() {
     if (tool === "depth") { pickDepth(x, y); return; }
     if (!s || (tool !== "color" && tool !== "luminance")) return;
     try {
-      const v = await invoke<{ ev: number; hue: number; chroma: number }>("sample", { x, y });
+      const v = await commands.sample(x, y, null, null);
       const r: Range = tool === "luminance"
         ? { type: "luminance", lo: v.ev - 1, hi: v.ev + 1, feather: 1 }
         : { type: "color", hue: v.hue, width: 0.04, feather: 0.04, chroma: v.chroma * 0.5 };
@@ -803,7 +803,7 @@ export default function App() {
     const k = m?.shapes.findIndex((q) => q.type === "parametric") ?? -1;
     if (!m || k < 0) return;
     try {
-      const v = await invoke<{ channels: Picked }>("sample", { x, y, area });
+      const v = await commands.sample(x, y, area, null);
       const r = v.channels[pickChan];
       const par = m.shapes[k] as ParametricRange;
       if (!r) return;
@@ -836,7 +836,7 @@ export default function App() {
       try {
         while (hoverAt.current) {
           const [x, y] = hoverAt.current;
-          const v = await invoke<{ channels: Picked }>("sample", { x, y });
+          const v = await commands.sample(x, y, null, null);
           if (hoverAt.current) setPicked(v.channels);
           if (hoverAt.current && hoverAt.current[0] === x && hoverAt.current[1] === y) break;
         }
@@ -2424,7 +2424,7 @@ export default function App() {
       if (s.values.tm_mode === 1) {
         await s.settled();
         if (gone()) return;
-        const r = await invoke<{ black_ev: number; white_ev: number }>("agx_auto");
+        const r = await commands.agxAuto();
         if (gone()) return;
         range = [["agx_black", r.black_ev], ["agx_white", r.white_ev]];
       }
@@ -3851,7 +3851,7 @@ export default function App() {
   // set while one step makes several changes (Reset all), so they record once
   const discardPastes = (steps: Snap[]) => {
     for (const token of new Set(steps.flatMap(s => s.batch ? [s.batch.token] : [])))
-      void invoke("paste_batch", { action: "release", token }).catch(() => {});
+      void commands.pasteBatch("release", token, null).catch(() => {});
   };
   const holdRecord = useRef(false);
   // the History panel follows the stack, which is kept outside React
@@ -4086,7 +4086,7 @@ export default function App() {
   // Immage's sliders is reset through them, so the next slider move cannot
   // switch it back; one darktable set beyond what they show, in the engine
   const historyAction = (h: HistoryItem): "toggle" | "reset" | null => {
-    if (h.priority === undefined || h.fixed || h.masked) return null;
+    if (h.priority == null || h.fixed || h.masked) return null;
     return mapsFor(mapOpOf(h)).length ? "reset" : "toggle";
   };
   const historyChange = (h: HistoryItem, how: "toggle" | "delete" | "reset") => {
@@ -4158,8 +4158,7 @@ export default function App() {
       await new Promise((r) => setTimeout(r, 30));
     }
     try {
-      return (await invoke<{ picker: Stats }>("sample", {
-        x: (box[0] + box[2]) / 2, y: (box[1] + box[3]) / 2, area: box, stage: "negadoctor" })).picker;
+      return (await commands.sample((box[0] + box[2]) / 2, (box[1] + box[3]) / 2, box, "negadoctor")).picker!;
     } finally {
       if (stopped) resumeBase();
     }
@@ -4171,7 +4170,7 @@ export default function App() {
     const done = new Set<string>();
     for (const h of s.history) {
       const key = instanceKey(h), op = mapOpOf(h);
-      if (done.has(key) || h.priority === undefined || h.masked) continue;
+      if (done.has(key) || h.priority == null || h.masked) continue;
       if (!unmapped.has(h.op) && !(off.has(op) && s.isForeign(op))) continue;
       done.add(key);
       if (s.moduleStates.get(key)?.enabled ?? h.enabled) s.setModuleState(h, { enabled: false });

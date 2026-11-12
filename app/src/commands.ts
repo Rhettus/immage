@@ -11,6 +11,4 @@
 //
 // binary replies (mapTile, later frames) come back as an ArrayBuffer
 export { commands } from "./bindings";
-export type {
-  AboutInfo, BuildInfo, Location, MetaExif, MetaImage, MetaReply, MetaText, Value,
-} from "./bindings";
+export type * from "./bindings";

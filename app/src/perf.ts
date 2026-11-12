@@ -121,9 +121,13 @@ class Perf {
   }
   request(data: Record<string, unknown>) { return this.begin("render", data); }
   command<T>(command: string, args?: Parameters<typeof invoke>[1], details?: Record<string, unknown>): Promise<T> {
-    if (!this.tracing) return invoke<T>(command, args);
+    return this.traced(command, () => invoke<T>(command, args), details);
+  }
+  // a typed command (commands.ts), traced under its Rust name as `command` is
+  traced<T>(command: string, call: () => Promise<T>, details?: Record<string, unknown>): Promise<T> {
+    if (!this.tracing) return call();
     const id = this.begin("command", { command, ...details });
-    return invoke<T>(command, args).then(result => {
+    return call().then(result => {
       this.finish(id); return result;
     }, error => {
       this.finish(id, "failed"); throw error;

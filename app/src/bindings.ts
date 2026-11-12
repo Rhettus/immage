@@ -13,6 +13,22 @@ export const commands = {
 	build: () => __TAURI_INVOKE<BuildInfo>("build"),
 	about: () => __TAURI_INVOKE<AboutInfo>("about"),
 	mapTile: (z: number, x: number, y: number) => __TAURI_INVOKE<ArrayBuffer>("map_tile", { z, x, y }),
+	openImage: (path: string, imgid: number | null) => __TAURI_INVOKE<OpenReply>("open_image", { path, imgid }),
+	history: (saved: boolean | null) => __TAURI_INVOKE<HistoryItem[]>("history", { saved }),
+	moduleState: (op: string, priority: number, enabled: boolean | null, reset: boolean | null, restore: Restore | null) => __TAURI_INVOKE<ModuleStateReply>("module_state", { op, priority, enabled, reset, restore }),
+	getParams: (modules: { [key in string]: string[] }) => __TAURI_INVOKE<GetReply>("get_params", { modules }),
+	setParams: (edit: ModuleEdit) => __TAURI_INVOKE<null>("set_params", { edit }),
+	sample: (x: number, y: number, area: number[] | null, stage: string | null) => __TAURI_INVOKE<SampleReply>("sample", { x, y, area, stage }),
+	toneKey: () => __TAURI_INVOKE<ToneKeyReply>("tone_key"),
+	colorProfiles: () => __TAURI_INVOKE<ColorProfiles>("color_profiles"),
+	agxAuto: () => __TAURI_INVOKE<AgxAutoReply>("agx_auto"),
+	render: (request: RenderRequest) => __TAURI_INVOKE<ArrayBuffer>("render", { request }),
+	cancelBase: () => __TAURI_INVOKE<null>("cancel_base"),
+	save: () => __TAURI_INVOKE<SaveReply>("save"),
+	baselineEnd: () => __TAURI_INVOKE<null>("baseline_end"),
+	beforeView: (on: boolean) => __TAURI_INVOKE<null>("before_view", { on }),
+	preview: (size: number, edits: ModuleEdit[], withLook: boolean, look: string | null) => __TAURI_INVOKE<ArrayBuffer>("preview", { size, edits, withLook, look }),
+	pasteBatch: (action: string, token: number | null, imgids: number[] | null) => __TAURI_INVOKE<PasteBatchReply>("paste_batch", { action, token, imgids }),
 };
 
 /* Types */
@@ -22,9 +38,40 @@ export type AboutInfo = {
 	darktable: string,
 };
 
+export type AgxAutoReply = {
+	black_ev: number,
+	white_ev: number,
+};
+
 export type BuildInfo = {
 	app: string,
 	commit: string | null,
+};
+
+export type ChannelStats = {
+	min: number,
+	mean: number,
+	max: number,
+};
+
+export type ColorProfiles = {
+	input: ([string, number])[],
+	working: ([string, number])[],
+};
+
+export type GetReply = {
+	modules: { [key in string]: ModuleInfo },
+};
+
+export type HistoryItem = {
+	op: string,
+	name: string,
+	label: string | null,
+	enabled: boolean,
+	priority?: number | null,
+	default_enabled?: boolean | null,
+	fixed?: boolean | null,
+	masked?: boolean | null,
 };
 
 export type Location = {
@@ -85,6 +132,109 @@ export type MetaText = {
 	publisher: string,
 	rights: string,
 	notes: string,
+};
+
+export type ModuleEdit = {
+	op: string,
+	params: { [key in string]: number },
+	enabled: boolean,
+	after?: string | null,
+	before?: string | null,
+	instance?: string | null,
+	mask?: string | null,
+	invert?: boolean | null,
+	opacity?: number | null,
+	refine?: Refine | null,
+};
+
+export type ModuleInfo = {
+	enabled: boolean,
+	default_enabled: boolean,
+	params: { [key in string]: number },
+	defaults: { [key in string]: number },
+};
+
+export type ModuleState = {
+	enabled: boolean,
+	params: string,
+	blend: string | null,
+};
+
+export type ModuleStateReply = {
+	was: ModuleState,
+	now: ModuleState,
+};
+
+export type OpenReply = {
+	imgid: number,
+	sensor_width: number,
+	sensor_height: number,
+	orientation: number,
+	look: string | null,
+	look_amount: number,
+	edited: boolean,
+	raw: boolean,
+	fresh: boolean,
+};
+
+export type PasteBatchReply = {
+	token?: number | null,
+	updates?: PasteUpdate[] | null,
+};
+
+export type PasteUpdate = {
+	imgid: number,
+	edited: boolean,
+	error: string | null,
+};
+
+export type PickerStats = {
+	min: [number, number, number],
+	mean: [number, number, number],
+	max: [number, number, number],
+};
+
+export type Refine = {
+	feather: number,
+	blur: number,
+	detail: number,
+	contrast: number,
+};
+
+export type RenderRequest = {
+	width: number,
+	height: number,
+	scale?: number | null,
+	x?: number | null,
+	y?: number | null,
+	skip?: string[] | null,
+	draft?: boolean | null,
+	base?: boolean | null,
+	shared?: number | null,
+	token?: string | null,
+	have?: string[] | null,
+	edits?: ModuleEdit[] | null,
+	diagnosticRequest?: number | null,
+};
+
+export type Restore = string | ModuleState;
+
+export type SampleReply = {
+	luminance: number,
+	ev: number,
+	jz: number,
+	chroma: number,
+	hue: number,
+	channels: { [key in string]: ChannelStats },
+	picker?: PickerStats | null,
+};
+
+export type SaveReply = {
+	edited: boolean,
+};
+
+export type ToneKeyReply = {
+	ev: number,
 };
 
 export type Value = null | boolean | number | string | Value[] | { [key in string]: Value };

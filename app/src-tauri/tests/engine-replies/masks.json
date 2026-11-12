@@ -1,0 +1,52 @@
+[
+ {
+  "label": "3 open / masks none",
+  "reply": {
+   "masks": [
+    {
+     "instances": {},
+     "invert": false,
+     "merged_in": [
+      "c1"
+     ],
+     "name": "m1",
+     "opacity": 100.0,
+     "refine": {
+      "blur": 0.0,
+      "contrast": 0.0,
+      "detail": 0.0,
+      "feather": 0.0
+     },
+     "shapes": [
+      {
+       "angle": 0.0,
+       "feather": 0.5,
+       "mode": "add",
+       "rx": 0.20000004768371582,
+       "ry": 0.19999998807907104,
+       "type": "ellipse",
+       "x": 0.5,
+       "y": 0.5
+      }
+     ]
+    },
+    {
+     "instances": {},
+     "invert": false,
+     "merged_in": [],
+     "name": "m2",
+     "opacity": 100.0,
+     "refine": {
+      "blur": 0.0,
+      "contrast": 0.0,
+      "detail": 0.0,
+      "feather": 0.0
+     },
+     "shapes": []
+    }
+   ],
+   "ms": 0.0,
+   "ok": true
+  }
+ }
+]

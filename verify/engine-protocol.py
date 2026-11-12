@@ -25,8 +25,14 @@ run only their error path), heavy work (HDR and panorama merges, Denoise,
 Upload) beyond argument errors, nor timing. `quit` is sent last. No GUI is
 launched and nothing is written outside a temporary folder.
 
+`--fixtures DIR` writes the raw `ok` replies, per command, to DIR/<command>.json
+(a list of {label, reply}) for the Rust layer's reply-type tests
+(app/src-tauri/src/bindings.rs). Types stay real: only the temporary folder,
+timings, hashes, ids and the build's version string are replaced, and long
+arrays are cut to a few elements, so a run on any machine writes the same files.
+
     python3 -I verify/engine-protocol.py [--engine build/bin/darktable-engine]
-        [--record FILE | --compare FILE]"""
+        [--record FILE | --compare FILE | --fixtures DIR]"""
 import argparse
 import collections
 import hashlib
@@ -83,6 +89,20 @@ def source_commands(engine_c):
         i = text.index(start)
         names |= set(re.findall(r'g_strcmp0\(cmd, "([^"]+)"\)', text[i:text.index('\n}\n', i)]))
     return sorted(names)
+
+
+FIXTURE_TMP = '/tmp/immage-fixture'
+FIXTURE_KEEP = 4       # distinct reply shapes kept per command
+FIXTURE_ITEMS = 3      # elements kept of a long array
+
+
+def shape(value):
+    """The member names and types of a reply, to keep fixtures that differ."""
+    if isinstance(value, dict):
+        return {k: shape(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [shape(value[0])] if value else []
+    return type(value).__name__
 
 
 class Req:
@@ -230,7 +250,8 @@ def photo_edits(img):
           label='spot_source circle'),
         R('sample', label='sample default'),
         R('sample', x=0.25, y=0.75, box=[0.2, 0.2, 0.4, 0.4], label='sample box'),
-        R('tone_key'), R('agx_auto'),
+        R('tone_key'), R('agx_auto', label='agx_auto without agx'),
+        R('set', op='agx', enabled=True, params={}, label='set agx'), R('agx_auto'),
         R('upright', label='upright default'),
         R('upright', mode='bogus', label='upright bogus mode'),
         R('points', label='points none'),
@@ -407,6 +428,8 @@ class Run:
         self.counts = collections.Counter()
         self.commands = set()
         self.hashes = {}
+        self.fixtures = {}
+        self.last_token = 0
 
     def norm(self, value, key=None):
         if isinstance(value, dict):
@@ -419,6 +442,36 @@ class Run:
         if isinstance(value, str):
             return VOLATILE.get(key, value.replace(self.tmp, '<TMP>'))
         return VOLATILE.get(key, value) if key in VOLATILE else value
+
+    def fixture(self, value, key=None):
+        """A reply as a fixture: real member types, run-specific values fixed."""
+        if isinstance(value, dict):
+            return {k: self.fixture(v, k) for k, v in value.items() if k not in ('rid', 'tag')}
+        if isinstance(value, list):
+            return [self.fixture(v) for v in value[:FIXTURE_ITEMS]]
+        if key == 'hash' and isinstance(value, str):
+            n = self.hashes.setdefault(value, f'<HASH-{len(self.hashes) + 1}>')
+            return f'{int(n[6:-1]):016x}'
+        if isinstance(value, float) and key and TIMING.search(key):
+            return 0.0
+        if isinstance(value, str):
+            if key == 'version':
+                return '<version>'
+            if key == 'file_datetime':
+                return '2000-01-01 00:00:00'
+            return value.replace(self.tmp, FIXTURE_TMP)
+        if isinstance(value, int) and not isinstance(value, bool) and key and TIMING.search(key):
+            return 0
+        return value
+
+    def keep_fixture(self, cmd, label, reply):
+        if not cmd or reply.get('ok') is not True:
+            return
+        reply = self.fixture(reply)
+        kept = self.fixtures.setdefault(cmd, [])
+        sig = json.dumps(shape(reply), sort_keys=True)
+        if len(kept) < FIXTURE_KEEP and all(sig != k[0] for k in kept):
+            kept.append((sig, {'label': label, 'reply': reply}))
 
     def fill(self, value):
         if isinstance(value, dict):
@@ -450,6 +503,8 @@ class Run:
             self.engine.write(req.req)
             return
         data = self.fill(req.req)
+        if data.get('token') == '<last-token>':
+            data['token'] = self.last_token
         if not req.silent:
             self.rid += 1
             if data.get('rid') is None and 'rid' not in data:
@@ -487,6 +542,8 @@ class Run:
             self.commands.add(cmd)
         self.send(req)
         replies = self.collect(req)
+        if cmd == 'paste_batch' and replies and 'token' in replies[0]:
+            self.last_token = replies[0]['token']
         record = {'replies': [self.norm(r) for r in replies]}
         if req.files:
             record['files'] = self.files(req.files)
@@ -494,6 +551,8 @@ class Run:
             shutil.rmtree(self.out)
             self.out.mkdir()
         key = f'{state} / {req.label}'
+        for r in replies:
+            self.keep_fixture(cmd, key, r)
         while key in self.results:
             key += ' again'
         self.results[key] = record
@@ -520,6 +579,15 @@ class Run:
         self.state('2 library', library_work(1, 2, copy)[3:6])
         # the original stays: the photo opened below is its id
         self.state('2 library', library_work(1, 2, copy)[6:])
+        # a paste batch's whole life, with the token the begin reply gave
+        last = '<last-token>'
+        self.state('2 library', [
+            R('paste_batch', action='begin', token=0, imgids=[1], label='paste_batch begin'),
+            R('paste_batch', action='commit', token=last, label='paste_batch commit'),
+            R('paste_batch', action='undo', token=last, label='paste_batch undo'),
+            R('paste_batch', action='redo', token=last, label='paste_batch redo'),
+            R('paste_batch', action='release', token=last, label='paste_batch release'),
+        ])
         # a photo open
         self.state('3 open', [R('open', path=str(a)), R('open', path=str(a), imgid=1, pipe='preview',
                                                          label='open preview pipe'),
@@ -558,6 +626,7 @@ def main():
     parser.add_argument('--timeout', type=float, default=60, help='seconds a reply may take')
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument('--record', type=Path, metavar='FILE', help='write the normalized replies')
+    mode.add_argument('--fixtures', type=Path, metavar='DIR', help='write the raw replies, per command')
     mode.add_argument('--compare', type=Path, metavar='FILE', help='diff against a recording; exit 1 on a difference')
     args = parser.parse_args()
 
@@ -598,6 +667,14 @@ def main():
     if args.record:
         args.record.write_text(json.dumps(results, indent=1, sort_keys=True) + '\n')
         print(f'recorded to {args.record}')
+    elif args.fixtures:
+        args.fixtures.mkdir(parents=True, exist_ok=True)
+        for old in args.fixtures.glob('*.json'):
+            old.unlink()
+        for cmd, kept in sorted(run.fixtures.items()):
+            text = json.dumps([k[1] for k in kept], indent=1, sort_keys=True) + '\n'
+            (args.fixtures / f'{cmd}.json').write_text(text)
+        print(f'wrote fixtures for {len(run.fixtures)} commands to {args.fixtures}')
     elif args.compare:
         problems = diff(json.loads(args.compare.read_text()), results)
         for p in problems:

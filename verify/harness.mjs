@@ -868,7 +868,7 @@ async function fixes(photo) {
     let shown = 0;
     o.s.onThumb = () => shown++;
     sent.hook = (cmd, a) => {
-      if (cmd !== "render" || !a.base) return;
+      if (cmd !== "render" || !a.request.base) return;
       sent.hook = null;
       o.s.set("exposure", 1);
     };
@@ -1199,7 +1199,7 @@ async function decisions(photo) {
   await decide("a move's edits go with its render", async () => {
     const o = await open(fresh(photo));
     const calls = [];
-    sent.hook = (cmd, a) => { calls.push({ cmd, ops: (a.edits ?? []).map((e) => e.op) }); };
+    sent.hook = (cmd, a) => { calls.push({ cmd, ops: (a.request?.edits ?? []).map((e) => e.op) }); };
     let f;
     try {
       f = await o.after(() => o.s.setMany([["exposure", 0.5], ["vibrance", 30]]));
@@ -1786,7 +1786,7 @@ async function decisions(photo) {
     const { images } = await request({ cmd: "import", files: [cold, ...ahead] });
     const pixels = async (path) => {
       await request({ cmd: "open", path, imgid: -1 });
-      const px = new Uint8Array((await invoke("render", { width: 512, height: 512 })).slice(FRAME_HEAD));
+      const px = new Uint8Array((await invoke("render", { request: { width: 512, height: 512 } })).slice(FRAME_HEAD));
       await request({ cmd: "close" });
       return px;
     };

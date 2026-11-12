@@ -1,0 +1,12 @@
+[
+ {
+  "label": "1 empty / spektra_fetch status",
+  "reply": {
+   "message": "",
+   "ms": 0.0,
+   "ok": true,
+   "progress": 0.0,
+   "state": "idle"
+  }
+ }
+]

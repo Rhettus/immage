@@ -1,0 +1,21 @@
+[
+ {
+  "label": "3 open / thumb unknown",
+  "reply": {
+   "color_space": 8,
+   "height": 27,
+   "ms": 0.0,
+   "ok": true,
+   "width": 20
+  }
+ },
+ {
+  "label": "3 open / thumb (tagged)",
+  "reply": {
+   "color_space": 2,
+   "height": 48,
+   "ok": true,
+   "width": 64
+  }
+ }
+]

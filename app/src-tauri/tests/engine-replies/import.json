@@ -1,0 +1,161 @@
+[
+ {
+  "label": "1 empty / import none",
+  "reply": {
+   "done": 0,
+   "images": [],
+   "ms": 0.0,
+   "ok": true,
+   "unanswered": []
+  }
+ },
+ {
+  "label": "1 empty / import tagged missing",
+  "reply": {
+   "done": 1,
+   "images": [],
+   "ok": true,
+   "unanswered": []
+  }
+ },
+ {
+  "label": "2 library / import a",
+  "reply": {
+   "done": 1,
+   "images": [
+    {
+     "copy": false,
+     "edited": false,
+     "exif": {
+      "aperture": 0.0,
+      "body_serial": "",
+      "crop_factor": 0.0,
+      "datetime": "",
+      "exposure": 0.0,
+      "exposure_bias": -3.4028234663852886e+38,
+      "exposure_program": "",
+      "file_datetime": "2000-01-01 00:00:00",
+      "file_height": 48,
+      "file_width": 64,
+      "flash": "",
+      "focal_length": 0.0,
+      "focus_distance": 0.0,
+      "iso": 0.0,
+      "lens": "",
+      "maker": "",
+      "metering_mode": "",
+      "model": "",
+      "sensor_height": 0,
+      "sensor_width": 0,
+      "white_balance": ""
+     },
+     "filename": "a.tif",
+     "height": 48,
+     "imgid": 1,
+     "keywords": [],
+     "labels": 0,
+     "location": null,
+     "path": "/tmp/immage-fixture/photos/a.tif",
+     "rating": 0,
+     "rejected": false,
+     "version": 0,
+     "width": 64
+    }
+   ],
+   "ms": 0.0,
+   "ok": true,
+   "unanswered": []
+  }
+ },
+ {
+  "label": "3 open / import (tagged)",
+  "reply": {
+   "done": 1,
+   "images": [
+    {
+     "copy": false,
+     "edited": false,
+     "exif": {
+      "aperture": 0.0,
+      "body_serial": "",
+      "crop_factor": 0.0,
+      "datetime": "",
+      "exposure": 0.0,
+      "exposure_bias": -3.4028234663852886e+38,
+      "exposure_program": "",
+      "file_datetime": "2000-01-01 00:00:00",
+      "file_height": 48,
+      "file_width": 64,
+      "flash": "",
+      "focal_length": 0.0,
+      "focus_distance": 0.0,
+      "iso": 0.0,
+      "lens": "",
+      "maker": "",
+      "metering_mode": "",
+      "model": "",
+      "sensor_height": 48,
+      "sensor_width": 64,
+      "white_balance": ""
+     },
+     "filename": "a.tif",
+     "height": 48,
+     "imgid": 1,
+     "keywords": [
+      "golden/child",
+      "one"
+     ],
+     "labels": 0,
+     "location": null,
+     "path": "/tmp/immage-fixture/photos/a.tif",
+     "rating": 0,
+     "rejected": false,
+     "version": 0,
+     "width": 64
+    },
+    {
+     "copy": true,
+     "edited": false,
+     "exif": {
+      "aperture": 0.0,
+      "body_serial": "",
+      "crop_factor": 0.0,
+      "datetime": "",
+      "exposure": 0.0,
+      "exposure_bias": -3.4028234663852886e+38,
+      "exposure_program": "",
+      "file_datetime": "2000-01-01 00:00:00",
+      "file_height": 48,
+      "file_width": 64,
+      "flash": "",
+      "focal_length": 0.0,
+      "focus_distance": 0.0,
+      "iso": 0.0,
+      "lens": "",
+      "maker": "",
+      "metering_mode": "",
+      "model": "",
+      "sensor_height": 48,
+      "sensor_width": 64,
+      "white_balance": ""
+     },
+     "filename": "a.tif",
+     "height": 48,
+     "imgid": 4,
+     "keywords": [
+      "one"
+     ],
+     "labels": 0,
+     "location": null,
+     "path": "/tmp/immage-fixture/photos/a.tif",
+     "rating": 0,
+     "rejected": false,
+     "version": 1,
+     "width": 64
+    }
+   ],
+   "ok": true,
+   "unanswered": []
+  }
+ }
+]

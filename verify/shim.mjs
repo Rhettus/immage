@@ -17,10 +17,13 @@ import { fileURLToPath } from "node:url";
 // hash, the edits' f32 timing and padding
 export const FRAME_HEAD = 64;
 
-// the commands the Rust layer registers (main.rs, generate_handler!): one
-// it lacks fails in the app, as mask_rename did before 0.10.1
-const HANDLERS = new Set(readFileSync(new URL("../app/src-tauri/src/main.rs", import.meta.url), "utf8")
-  .match(/generate_handler!\[([^\]]*)\]/)[1].split(",").map((s) => s.trim().split("::").pop()).filter(Boolean));
+// the commands the Rust layer registers (main.rs, generate_handler!, and the
+// typed ones in bindings.rs, collect_commands!): one it lacks fails in the
+// app, as mask_rename did before 0.10.1
+const registered = (file, macro) => readFileSync(new URL(`../app/src-tauri/src/${file}`, import.meta.url), "utf8")
+  .match(new RegExp(`${macro}!\\[([^\\]]*)\\]`))[1].replace(/\/\/[^\n]*/g, "")
+  .split(",").map((s) => s.trim().split("::").pop()).filter(Boolean);
+const HANDLERS = new Set([...registered("main.rs", "generate_handler"), ...registered("bindings.rs", "collect_commands")]);
 
 // a built app carries ONNX Runtime in darktable's plugin folder
 // (bundle_engine.py), where the engine looks for it (backend_onnx.c,
@@ -220,7 +223,7 @@ const COMMANDS = {
   mask_rename: ({ name, to }) => request({ cmd: "mask_rename", name, to }),
   mask_delete: ({ name }) => request({ cmd: "mask_delete", name }),
   combine: ({ name, members, ranges }) => request({ cmd: "combine", name, members, ranges: ranges ?? null }),
-  set_params: ({ op, params, enabled, after, before, instance, mask, invert, opacity, refine }) => {
+  set_params: ({ edit: { op, params, enabled, after, before, instance, mask, invert, opacity, refine } }) => {
     const req = { cmd: "set", op, params, enabled };
     if (after != null) req.after = after;
     if (before != null) req.before = before;
@@ -234,7 +237,7 @@ const COMMANDS = {
     return request(req);
   },
   // a move's module edits go first, as set_params would send them
-  render: async ({ width, height, scale, x, y, skip, draft, have, edits }) => {
+  render: async ({ request: { width, height, scale, x, y, skip, draft, have, edits } }) => {
     for (const e of edits ?? []) {
       const set = { cmd: "set" };
       for (const k of ["op", "params", "enabled", "after", "before", "instance"]) if (e[k] != null) set[k] = e[k];

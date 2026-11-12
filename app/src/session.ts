@@ -17,40 +17,21 @@ import { perf, type Trace } from "./perf";
 import { FRAME_HEAD, renderFrame } from "./sharedFrames";
 import { isDetailControl } from "./detailPreview";
 import type { Preview } from "./Preferences";
+import { commands, type GetReply, type HistoryItem, type ModuleState } from "./commands";
+export type { ColorProfiles, HistoryItem, ModuleState } from "./commands";
 const invoke = <T = unknown>(command: string, args?: Parameters<typeof perf.command>[1]) => perf.command<T>(command, args);
+// the typed commands, traced under their Rust names as `invoke` traces the rest
+const traced = <T>(command: string, call: () => Promise<T>) => perf.traced<T>(command, call);
 
+export const colorProfiles = () => traced("color_profiles", () => commands.colorProfiles());
 
-export type ColorProfiles = { input: [string, number][]; working: [string, number][] };
-export const colorProfiles = () => invoke<ColorProfiles>("color_profiles");
-
-type OpenReply = { imgid: number; sensor_width: number; sensor_height: number; orientation: number;
-                   look: string | null; look_amount: number; edited: boolean; raw: boolean;
-                   fresh?: boolean };
-
-// an item of the image's darktable history, as darktable's history module
-// names it. `priority` picks the instance; `fixed` ones have no switch in
-// darktable, and `masked` ones are the Masks panel's. the new-photo rows
-// Immage adds have none of these
-export type HistoryItem = {
-  op: string; name: string; label: string | null; enabled: boolean;
-  priority?: number; default_enabled?: boolean; fixed?: boolean; masked?: boolean;
-};
-
-// an instance's whole state as the engine's `module_state` gives it, for
-// undoing the History panel's switches
-export type ModuleState = { enabled: boolean; params: string; blend: string | null };
 type ModuleRequest = { enabled?: boolean; reset?: boolean; restore?: ModuleState | "opened" };
 
 // the instance a history item is for, and the ModuleMap op its sliders use:
 // Immage's own named instances carry their name, as manifest's "op#name"
 export const instanceKey = (h: HistoryItem) => `${h.op}#${h.priority}`;
 export const mapOpOf = (h: HistoryItem) => h.label ? `${h.op}#${h.label}` : h.op;
-type ModuleInfo = {
-  enabled: boolean;
-  default_enabled: boolean;
-  params: Params;
-  defaults: Params;
-};
+type ModuleInfo = GetReply["modules"][string];
 
 // what to render: the whole image fitted into width x height, or, with a
 // scale (1 is 100%), the width x height window at (x, y) of the scaled image
@@ -282,19 +263,17 @@ export class Session {
   // `imgid` picks one of the file's versions; without it, the original
   static async open(path: string, imgid: number | null, size: Session["size"], onFrame: Session["onFrame"],
                     onError: Session["onError"], background = false): Promise<Session> {
-    const opened = await invoke<OpenReply>("open_image", { path, imgid: imgid !== null && imgid > 0 ? imgid : null });
+    const opened = await traced("open_image", () => commands.openImage(path, imgid !== null && imgid > 0 ? imgid : null));
     const s = new Session(size, onFrame, onError, background);
     s.imgid = opened.imgid;
-    // an engine without "fresh" knows only whether the photo is altered
-    s.wasEdited = opened.fresh === undefined ? opened.edited : !opened.fresh;
-    s.baseline = opened.fresh ?? false;
-    s.raw = opened.raw ?? true;
+    s.wasEdited = !opened.fresh;
+    s.baseline = opened.fresh;
+    s.raw = opened.raw;
     s.look = opened.look;
-    s.lookAmount = opened.look_amount ?? 100;
-    const reply = await invoke<{ modules: Record<string, ModuleInfo> }>("get_params",
-      { modules: boundFields() });
+    s.lookAmount = opened.look_amount;
+    const reply = await traced("get_params", () => commands.getParams(boundFields()));
     s.info = reply.modules;
-    s.history = await invoke<HistoryItem[]>("history");
+    s.history = await traced("history", () => commands.history(null));
     // flip's own setting wins; -1 means "as the camera recorded it"
     const flip = s.info.flip;
     s.ctx = {
@@ -831,9 +810,10 @@ export class Session {
         // "op#tag" is the mask's instance named "<mask>#tag"
         const [real, tag] = op.split("#");
         this.draftKeep.add(real);
-        await invoke("set_params", { op: real, params: map.write(m.values, {}, this.ctx), enabled: on,
-                                     instance: tag ? `${name}#${tag}` : name, mask: name, invert: m.invert,
-                                     opacity: m.opacity ?? 100, refine: m.refine ?? null });
+        await traced("set_params", () => commands.setParams({
+          op: real, params: map.write(m.values, {}, this.ctx), enabled: on,
+          instance: tag ? `${name}#${tag}` : name, mask: name, invert: m.invert,
+          opacity: m.opacity ?? 100, refine: m.refine ?? null }));
         have.add(op);
         sent = true;
       }
@@ -856,8 +836,9 @@ export class Session {
       if (was?.params !== params) {
         const [real] = s.op.split("#");
         this.draftKeep.add(real);
-        await invoke("set_params", { op: real, params: s.params, enabled: true, instance: s.instance,
-                                     mask: s.group, invert: false, opacity: 100, refine: s.refine });
+        await traced("set_params", () => commands.setParams({
+          op: real, params: s.params, enabled: true, instance: s.instance,
+          mask: s.group, invert: false, opacity: 100, refine: s.refine }));
       }
       sent ||= was?.members !== members || was?.params !== params;
       this.sentShared.set(s.group, { members, params });
@@ -895,9 +876,7 @@ export class Session {
     // switches it on
     const edits = ops.map((op) => this.moduleEdit(op, merged, (m) => this.foreign.has(m) && !touched.has(m)));
     const t0 = performance.now();
-    const buf = await invoke<ArrayBuffer>("preview", {
-      size, edits, withLook: look !== undefined, look: look ?? null,
-    });
+    const buf = await traced("preview", () => commands.preview(size, edits, look !== undefined, look ?? null));
     const head = new DataView(buf, 0, 8);
     const width = head.getUint32(0, true), height = head.getUint32(4, true);
     return { width, height, fullWidth: width, fullHeight: height, x: 0, y: 0, view: { width, height },
@@ -972,7 +951,7 @@ export class Session {
   // a history item's instance switched, reset, or restored for undo
   // ("opened": as the photo opened)
   setModuleState(h: HistoryItem, req: ModuleRequest) {
-    if (h.priority === undefined) return;
+    if (h.priority == null) return;
     this.touched.add(instanceKey(h));
     this.modulePending.push({ key: instanceKey(h), op: h.op, priority: h.priority, req });
     void this.pump();
@@ -988,8 +967,7 @@ export class Session {
   private async reread(op: string) {
     const fields = boundFields()[op];
     if (!fields) return;
-    const reply = await invoke<{ modules: Record<string, ModuleInfo> }>("get_params",
-      { modules: { [op]: fields } });
+    const reply = await traced("get_params", () => commands.getParams({ [op]: fields }));
     const info = this.info[op] = reply.modules[op];
     for (const m of mapsFor(op)) {
       this.foreign.delete(m);
@@ -1127,7 +1105,7 @@ export class Session {
     if (!this.base || this.base.stale) return false;
     this.base.stale = true;
     this.base.wake();
-    invoke("cancel_base").catch(() => {});
+    traced("cancel_base", () => commands.cancelBase()).catch(() => {});
     return true;
   }
 
@@ -1327,6 +1305,10 @@ export class Session {
   private pumpCommand<T = unknown>(command: string, args?: Parameters<typeof perf.command>[1]) {
     return perf.command<T>(command, args, { blockingPump:true });
   }
+  // a typed command run by the pump, traced as pumpCommand traces the rest
+  private pumpTyped<T>(command: string, call: () => Promise<T>) {
+    return perf.traced<T>(command, call, { blockingPump:true });
+  }
 
   private async pump() {
     if (this.backgroundFailure || this.dead) return;
@@ -1344,7 +1326,7 @@ export class Session {
         this.base.wake();
         const requestIds = perf.activeRenderIds("base");
         perf.event("base.cancelRequested", { requestIds });
-        invoke("cancel_base").then(() => perf.event("base.cancelSignalSent", { requestIds }))
+        traced("cancel_base", () => commands.cancelBase()).then(() => perf.event("base.cancelSignalSent", { requestIds }))
           .catch(() => perf.event("base.cancelSignalFailed", { requestIds }));
       }
       return;
@@ -1366,13 +1348,13 @@ export class Session {
             window.clearTimeout(this.saveTimer);
             this.unsaved = false;
           }
-          await this.pumpCommand("baseline_end");
+          await this.pumpTyped("baseline_end", () => commands.baselineEnd());
           continue;
         }
         // the engine saves on quitting, but never the Before view's settings:
         // it hears of the view before they go
         if (this.before && !this.engineBefore) {
-          await this.pumpCommand("before_view", { on: true });
+          await this.pumpTyped("before_view", () => commands.beforeView(true));
           this.engineBefore = true;
           this.changed();
         }
@@ -1382,13 +1364,14 @@ export class Session {
           this.resetModulesPending = false;
           const seen = new Set<string>();
           for (const h of this.history) {
-            if (h.priority === undefined) continue;
+            const priority = h.priority;
+            if (priority == null) continue;
             const key = instanceKey(h);
             if (seen.has(key)) continue;
             seen.add(key);
             const legacy = ["filmicrgb", "filmic", "basecurve"].includes(h.op);
-            const r = await this.pumpCommand<{ was: ModuleState; now: ModuleState }>("module_state",
-              { op: h.op, priority: h.priority, reset: true, ...(legacy ? { enabled: false } : {}) });
+            const r = await this.pumpTyped("module_state", () =>
+              commands.moduleState(h.op, priority, legacy ? false : null, true, null));
             this.touched.add(key);
             if (!this.modulesOpened.has(key)) this.modulesOpened.set(key, r.was);
             this.moduleStates.set(key, r.now);
@@ -1408,7 +1391,7 @@ export class Session {
         if (this.dirty.has("flip") || framing) {
           const ops = [...this.dirty];
           this.dirty.clear();
-          for (const op of ops) await this.pumpCommand("set_params", this.moduleEdit(op));
+          for (const op of ops) await this.pumpTyped("set_params", () => commands.setParams(this.moduleEdit(op)));
           this.changed();
           if (framing) this.reshape = true;
           if (!this.before) { this.unsaved = true; this.scheduleSave(); }
@@ -1461,8 +1444,8 @@ export class Session {
           const { key, op, priority, req } = this.modulePending.shift()!;
           const restore = req.restore === "opened" ? this.modulesOpened.get(key) : req.restore;
           if (req.restore === "opened" && !restore) continue;
-          const r = await this.pumpCommand<{ was: ModuleState; now: ModuleState }>("module_state",
-            { op, priority, enabled: req.enabled, reset: req.reset, restore });
+          const r = await this.pumpTyped("module_state", () =>
+            commands.moduleState(op, priority, req.enabled ?? null, req.reset ?? null, restore ?? null));
           this.changed();
           if (!this.modulesOpened.has(key)) this.modulesOpened.set(key, r.was);
           this.moduleStates.set(key, r.now);
@@ -1557,7 +1540,7 @@ export class Session {
         // Batch edits use the same module maps and mask transport, without
         // rendering previews for photos that are not on screen.
         if (this.background) {
-          for (const edit of edits) await this.pumpCommand("set_params", edit);
+          for (const edit of edits) await this.pumpTyped("set_params", () => commands.setParams(edit));
           continue;
         }
         // what the render shows is settled by now, whatever changes during it
@@ -1599,7 +1582,7 @@ export class Session {
       }
       // and that it is over only once the edit is back in it
       if (!this.before && this.engineBefore) {
-        await this.pumpCommand("before_view", { on: false });
+        await this.pumpTyped("before_view", () => commands.beforeView(false));
         this.engineBefore = false;
         this.changed();
       }
@@ -1619,7 +1602,7 @@ export class Session {
       // the engine holds the Before view's settings; save once it is gone
       if (this.before) { this.scheduleSave(); return; }
       this.unsaved = false;
-      invoke<{ edited: boolean }>("save").then((r) => this.onSaved?.(r.edited))
+      traced("save", () => commands.save()).then((r) => this.onSaved?.(r.edited))
         .catch((e) => this.onSaveError ? this.onSaveError(String(e)) : this.onError(String(e)));
     }, 600);
   }
@@ -1631,9 +1614,9 @@ export class Session {
     await this.settled();
     window.clearTimeout(this.saveTimer);
     this.unsaved = false;
-    const r = await invoke<{ edited: boolean }>("save");
+    const r = await traced("save", () => commands.save());
     this.onSaved?.(r.edited);
-    this.history = await invoke<HistoryItem[]>("history", { saved: true });
+    this.history = await traced("history", () => commands.history(true));
     // nothing is left to undo, and a deleted instance is gone from it
     this.moduleStates.clear();
     this.modulesOpened.clear();
@@ -1659,7 +1642,7 @@ export class Session {
     await this.settled();
     if (!this.unsaved) return;
     this.unsaved = false;
-    const r = await invoke<{ edited: boolean }>("save");
+    const r = await traced("save", () => commands.save());
     this.onSaved?.(r.edited);
   }
 }

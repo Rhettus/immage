@@ -27,6 +27,7 @@ mod scrub;
 mod support_bundle;
 mod backup;
 mod bindings;
+mod typed_session;
 
 use cache::Caches;
 use engine::{BaseCancel, Engine, Tagged, Timing};
@@ -37,6 +38,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use typed_session::{AgxAutoReply, ColorProfiles, GetReply, PasteBatchReply, PreviewReply, RenderReply, RenderRequest, SampleReply, SaveReply, ToneKeyReply, HistoryItem, HistoryReply, ModuleEdit, ModuleStateReply, OpenReply, Restore};
 use tauri::{ipc::Response, AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
@@ -111,16 +113,20 @@ fn webext_dir(app: &AppHandle) -> Option<PathBuf> {
 // commands are async so a render runs off the main thread
 
 #[tauri::command]
-async fn open_image(state: State<'_, AppState>, path: String, imgid: Option<i64>) -> Result<Value, String> {
-    state.engine("open_image").request(json!({ "cmd": "open", "path": path, "imgid": imgid.unwrap_or(-1) }))
+#[specta::specta]
+async fn open_image(state: State<'_, AppState>, path: String, imgid: Option<i64>) -> Result<OpenReply, String> {
+    let reply = state.engine("open_image").request(json!({ "cmd": "open", "path": path, "imgid": imgid.unwrap_or(-1) }))?;
+    serde_json::from_value(reply).map_err(|e| format!("open: unexpected reply: {e}"))
 }
 
 // the open image's darktable history, oldest first; `saved`, as the last
 // save stored it, compressed
 #[tauri::command]
-async fn history(state: State<'_, AppState>, saved: Option<bool>) -> Result<Value, String> {
+#[specta::specta]
+async fn history(state: State<'_, AppState>, saved: Option<bool>) -> Result<Vec<HistoryItem>, String> {
     let reply = state.engine("history").request(json!({ "cmd": "history", "saved": saved.unwrap_or(false) }))?;
-    Ok(reply["items"].clone())
+    let reply: HistoryReply = serde_json::from_value(reply).map_err(|e| format!("history: unexpected reply: {e}"))?;
+    Ok(reply.items)
 }
 
 // the History panel's switch and delete for one instance in the history:
@@ -128,66 +134,38 @@ async fn history(state: State<'_, AppState>, saved: Option<bool>) -> Result<Valu
 // `restore` to a state an earlier reply gave. replies the state before and
 // after, `was` and `now`
 #[tauri::command]
+#[specta::specta]
 async fn module_state(
     state: State<'_, AppState>,
     op: String,
     priority: i64,
     enabled: Option<bool>,
     reset: Option<bool>,
-    restore: Option<Value>,
-) -> Result<Value, String> {
+    restore: Option<Restore>,
+) -> Result<ModuleStateReply, String> {
     let mut req = json!({ "cmd": "module_state", "op": op, "priority": priority, "reset": reset.unwrap_or(false) });
     if let Some(e) = enabled {
         req["enabled"] = json!(e);
     }
     if let Some(r) = restore {
-        req["restore"] = r;
+        req["restore"] = json!(r);
     }
-    state.engine("module_state").request(req)
+    let reply = state.engine("module_state").request(req)?;
+    serde_json::from_value(reply).map_err(|e| format!("module_state: unexpected reply: {e}"))
+}
+
+// the fields ({ op: [field] }) of these modules' instances
+#[tauri::command]
+#[specta::specta]
+async fn get_params(state: State<'_, AppState>, modules: std::collections::BTreeMap<String, Vec<String>>) -> Result<GetReply, String> {
+    let reply = state.engine("get_params").request(json!({ "cmd": "get", "modules": modules }))?;
+    serde_json::from_value(reply).map_err(|e| format!("get: unexpected reply: {e}"))
 }
 
 #[tauri::command]
-async fn get_params(state: State<'_, AppState>, modules: Value) -> Result<Value, String> {
-    state.engine("get_params").request(json!({ "cmd": "get", "modules": modules }))
-}
-
-#[tauri::command]
-#[allow(clippy::too_many_arguments)]
-async fn set_params(
-    state: State<'_, AppState>,
-    op: String,
-    params: Map<String, Value>,
-    enabled: bool,
-    after: Option<String>,
-    before: Option<String>,
-    instance: Option<String>,
-    mask: Option<String>,
-    invert: Option<bool>,
-    opacity: Option<f64>,
-    refine: Option<Value>,
-) -> Result<(), String> {
-    let mut req = json!({ "cmd": "set", "op": op, "params": params, "enabled": enabled });
-    if let Some(a) = after {
-        req["after"] = json!(a);
-    }
-    if let Some(b) = before {
-        req["before"] = json!(b);
-    }
-    // a mask's adjustments go to its own instance of the module
-    if let Some(i) = instance {
-        req["instance"] = json!(i);
-    }
-    if let Some(m) = mask {
-        req["mask"] = json!(m);
-        req["invert"] = json!(invert.unwrap_or(false));
-        if let Some(o) = opacity {
-            req["opacity"] = json!(o);
-        }
-        if let Some(r) = refine {
-            req["refine"] = r;
-        }
-    }
-    state.engine("set_params").request(req).map(|_| ())
+#[specta::specta]
+async fn set_params(state: State<'_, AppState>, edit: ModuleEdit) -> Result<(), String> {
+    state.engine("set_params").request(edit.request(false)).map(|_| ())
 }
 
 // replace a mask's shapes (made when missing)
@@ -218,14 +196,18 @@ async fn masks(state: State<'_, AppState>, fields: Value) -> Result<Value, Strin
 // it [x0, y0, x1, y1], for range masks; with `stage` "negadoctor", at
 // negadoctor's input, for the Negative panel's pickers
 #[tauri::command]
-async fn sample(state: State<'_, AppState>, x: f64, y: f64, area: Option<Vec<f64>>, stage: Option<String>) -> Result<Value, String> {
-    state.engine("sample").request(json!({ "cmd": "sample", "x": x, "y": y, "box": area, "stage": stage }))
+#[specta::specta]
+async fn sample(state: State<'_, AppState>, x: serde_json::Number, y: serde_json::Number, area: Option<Vec<serde_json::Number>>, stage: Option<String>) -> Result<SampleReply, String> {
+    let reply = state.engine("sample").request(json!({ "cmd": "sample", "x": x, "y": y, "box": area, "stage": stage }))?;
+    serde_json::from_value(reply).map_err(|e| format!("sample: unexpected reply: {e}"))
 }
 
 // the mean log2 luminance the tone mapper gets, for Auto's exposure
 #[tauri::command]
-async fn tone_key(state: State<'_, AppState>) -> Result<Value, String> {
-    state.engine("tone_key").request(json!({ "cmd": "tone_key" }))
+#[specta::specta]
+async fn tone_key(state: State<'_, AppState>) -> Result<ToneKeyReply, String> {
+    let reply = state.engine("tone_key").request(json!({ "cmd": "tone_key" }))?;
+    serde_json::from_value(reply).map_err(|e| format!("tone_key: unexpected reply: {e}"))
 }
 
 // the Lensfun lenses Lens Corrections can use for the open photo, and the
@@ -237,15 +219,19 @@ async fn lenses(state: State<'_, AppState>) -> Result<Value, String> {
 
 // Input and working profiles supported by the pinned darktable engine.
 #[tauri::command]
-async fn color_profiles(state: State<'_, AppState>) -> Result<Value, String> {
-    state.engine("color_profiles").request(json!({ "cmd": "color_profiles" }))
+#[specta::specta]
+async fn color_profiles(state: State<'_, AppState>) -> Result<ColorProfiles, String> {
+    let reply = state.engine("color_profiles").request(json!({ "cmd": "color_profiles" }))?;
+    serde_json::from_value(reply).map_err(|e| format!("color_profiles: unexpected reply: {e}"))
 }
 
 // black and white relative exposure for AgX, as darktable's "auto tune
 // levels" picker finds them over the photo
 #[tauri::command]
-async fn agx_auto(state: State<'_, AppState>) -> Result<Value, String> {
-    state.engine("agx_auto").request(json!({ "cmd": "agx_auto" }))
+#[specta::specta]
+async fn agx_auto(state: State<'_, AppState>) -> Result<AgxAutoReply, String> {
+    let reply = state.engine("agx_auto").request(json!({ "cmd": "agx_auto" }))?;
+    serde_json::from_value(reply).map_err(|e| format!("agx_auto: unexpected reply: {e}"))
 }
 
 // Upright's fit of rotate and perspective: { rotation, lensshift_v,
@@ -943,24 +929,13 @@ const FRAME_HEAD: usize = 64;
 // (FRAME_HEAD bytes in all), then RGBA. ops in skip are left out of this frame. a
 // frame of no size, with no RGBA, is the one in `have` of that hash
 #[tauri::command]
-#[allow(clippy::too_many_arguments)]
+#[specta::specta]
 async fn render(
     state: State<'_, AppState>,
     webview: tauri::Webview,
-    width: u32,
-    height: u32,
-    scale: Option<f64>,
-    x: Option<i64>,
-    y: Option<i64>,
-    skip: Option<Vec<String>>,
-    draft: Option<bool>,
-    base: Option<bool>,
-    shared: Option<u32>,
-    token: Option<String>,
-    have: Option<Vec<String>>,
-    edits: Option<Vec<Value>>,
-    diagnostic_request: Option<u64>,
-) -> Result<Response, String> {
+    request: RenderRequest,
+) -> Result<bindings::Frame, String> {
+    let RenderRequest { width, height, scale, x, y, skip, draft, base, shared, token, have, edits, diagnostic_request } = request;
     let mut req = json!({ "cmd": "render", "width": width, "height": height, "rgba": state.frame_path });
     if let Some(id) = diagnostic_request { req["diagnostic_request"] = json!(id); }
     if let Some(skip) = skip {
@@ -998,23 +973,24 @@ async fn render(
     // which cost 20 ms or more a call on Linux while the page draws
     let ts = Instant::now();
     for e in edits.unwrap_or_default() {
-        let mut set = json!({ "cmd": "set" });
-        for k in ["op", "params", "enabled", "after", "before", "instance"] {
-            if !e[k].is_null() {
-                set[k] = e[k].clone();
-            }
-        }
-        engine.request(set)?;
+        engine.request(e.request(true))?;
     }
     let set_ms = ms(ts);
     let t1 = Instant::now();
     let reply = engine.request(req)?;
-    if let Some(output) = reply["output_ms"].as_object() {
-        engine.set_output_ms(["allocate_ms", "convert_ms", "file_ms", "free_ms"]
-            .map(|key| output.get(key).and_then(Value::as_f64).unwrap_or(0.0)));
+    let reply: RenderReply = serde_json::from_value(reply).map_err(|e| format!("render: unexpected reply: {e}"))?;
+    if let Some(output) = &reply.output_ms {
+        engine.set_output_ms([output.allocate_ms, output.convert_ms, output.file_ms, output.free_ms]);
     }
     let request_ms = ms(t1);
-    let field = |k: &str| reply[k].as_u64().unwrap_or(0) as u32;
+    let field = |k: &str| match k {
+        "width" => reply.width,
+        "height" => reply.height,
+        "full_width" => reply.full_width,
+        "full_height" => reply.full_height,
+        "x" => reply.x.max(0) as u64,
+        _ => reply.y.max(0) as u64,
+    } as u32;
     // the header, then the frame read straight in behind it: one copy of a
     // frame that can be 17 MB, read while the engine is still ours so no
     // other render overwrites it
@@ -1025,11 +1001,11 @@ async fn render(
     }
     let timings = 24;
     out.resize(48, 0);
-    let hash = reply["hash"].as_str().and_then(|h| u64::from_str_radix(h, 16).ok()).unwrap_or(0);
+    let hash = u64::from_str_radix(&reply.hash, 16).unwrap_or(0);
     out.extend_from_slice(&hash.to_le_bytes());
     out.extend_from_slice(&(set_ms as f32).to_le_bytes());
     out.resize(FRAME_HEAD, 0);
-    let kept = reply["kept"].as_bool() == Some(true);
+    let kept = reply.kept;
     let t2 = Instant::now();
     if !kept {
         frame_output::FrameOutput::append(&state.frame_path, &mut out)
@@ -1051,13 +1027,12 @@ async fn render(
     }
     let mark_ms = ms(t3);
     drop(engine);
-    let f = |k: &str| reply[k].as_f64().unwrap_or(0.0);
-    for (i, v) in [lock_ms, request_ms, f("process_ms"), f("write_ms"), read_ms, mark_ms].into_iter().enumerate() {
+    for (i, v) in [lock_ms, request_ms, reply.process_ms, reply.write_ms, read_ms, mark_ms].into_iter().enumerate() {
         out[timings + 4 * i..timings + 4 * i + 4].copy_from_slice(&(v as f32).to_le_bytes());
     }
     // the header alone, of no size: the page's own frame of that hash
     if kept {
-        return Ok(Response::new(out));
+        return Ok(bindings::Frame(Response::new(out)));
     }
     // the header alone says the frame went by shared memory, tagged `shared`;
     // where that can't be done, it comes back whole as before
@@ -1065,10 +1040,10 @@ async fn render(
     if let Some(id) = shared {
         let out = std::sync::Arc::new(out);
         match shared_frame::post(&webview, out.clone(), id) {
-            Ok(()) => return Ok(Response::new(out[..FRAME_HEAD].to_vec())),
+            Ok(()) => return Ok(bindings::Frame(Response::new(out[..FRAME_HEAD].to_vec()))),
             Err(e) => {
                 eprintln!("shared frame: {e}");
-                return Ok(Response::new(std::sync::Arc::try_unwrap(out).unwrap_or_else(|a| (*a).clone())));
+                return Ok(bindings::Frame(Response::new(std::sync::Arc::try_unwrap(out).unwrap_or_else(|a| (*a).clone()))));
             }
         }
     }
@@ -1081,7 +1056,7 @@ async fn render(
                 // file already contains the earlier header; the reply owns this
                 // timing and the frontend records it before reading that file.
                 out[60..64].copy_from_slice(&(ms(shared_start) as f32).to_le_bytes());
-                return Ok(Response::new(out[..FRAME_HEAD].to_vec()));
+                return Ok(bindings::Frame(Response::new(out[..FRAME_HEAD].to_vec())));
             },
             Err(e) => eprintln!("shared frame: {e}"),
         }
@@ -1090,7 +1065,7 @@ async fn render(
     let _ = (shared, token);
     #[cfg(not(windows))]
     let _ = webview;
-    Ok(Response::new(out))
+    Ok(bindings::Frame(Response::new(out)))
 }
 
 // Linux: a frame handed to the page through /dev/shm, which the window's
@@ -1226,6 +1201,7 @@ mod shared_frame {
 // stop the base render under way, or about to be: its render then fails
 // with "canceled". no engine lock, as that render holds it
 #[tauri::command]
+#[specta::specta]
 async fn cancel_base(state: State<'_, AppState>) -> Result<(), String> {
     state.base_cancel.cancel()
 }
@@ -2543,20 +2519,25 @@ async fn immich_resolve(app: AppHandle, id: String, name: String, path: String,
 
 // the reply says whether the photo now reads as edited (darktable's history hash)
 #[tauri::command]
-async fn save(state: State<'_, AppState>) -> Result<Value, String> {
-    state.engine("save").request(json!({ "cmd": "save" }))
+#[specta::specta]
+async fn save(state: State<'_, AppState>) -> Result<SaveReply, String> {
+    let reply = state.engine("save").request(json!({ "cmd": "save" }))?;
+    serde_json::from_value(reply).map_err(|e| format!("save: unexpected reply: {e}"))
 }
 
 // Native history snapshots owned by the frontend's batch undo entries.
 #[tauri::command]
-async fn paste_batch(state: State<'_, AppState>, action: String, token: Option<u64>, imgids: Option<Vec<i64>>) -> Result<Value, String> {
-    state.engine("paste_batch").request(json!({ "cmd": "paste_batch", "action": action,
-        "token": token.unwrap_or(0), "imgids": imgids.unwrap_or_default() }))
+#[specta::specta]
+async fn paste_batch(state: State<'_, AppState>, action: String, token: Option<u64>, imgids: Option<Vec<i64>>) -> Result<PasteBatchReply, String> {
+    let reply = state.engine("paste_batch").request(json!({ "cmd": "paste_batch", "action": action,
+        "token": token.unwrap_or(0), "imgids": imgids.unwrap_or_default() }))?;
+    serde_json::from_value(reply).map_err(|e| format!("paste_batch: unexpected reply: {e}"))
 }
 
 // the user's first change to a new photo: the defaults applied so far become
 // its unedited baseline
 #[tauri::command]
+#[specta::specta]
 async fn baseline_end(state: State<'_, AppState>) -> Result<(), String> {
     state.engine("baseline_end").request(json!({ "cmd": "baseline_end" })).map(|_| ())
 }
@@ -2564,6 +2545,7 @@ async fn baseline_end(state: State<'_, AppState>) -> Result<(), String> {
 // whether the engine holds the Before view's settings, which it must not
 // save on quitting
 #[tauri::command]
+#[specta::specta]
 async fn before_view(state: State<'_, AppState>, on: bool) -> Result<(), String> {
     state.engine("before_view").request(json!({ "cmd": "before", "on": on })).map(|_| ())
 }
@@ -2771,27 +2753,30 @@ async fn look_amount(state: State<'_, AppState>, amount: f64) -> Result<(), Stri
 // (a path, or none) on top, leaving the edit as it is: u32 width and
 // height, then RGBA
 #[tauri::command]
+#[specta::specta]
 async fn preview(
     state: State<'_, AppState>,
     size: u32,
-    edits: Value,
+    edits: Vec<ModuleEdit>,
     with_look: bool,
     look: Option<String>,
-) -> Result<Response, String> {
+) -> Result<bindings::Frame, String> {
+    let edits: Vec<Value> = edits.iter().filter_map(|e| serde_json::to_value(e).ok()).collect();
     let mut req = json!({ "cmd": "preview", "size": size, "edits": edits, "rgba": state.preview_path });
     if with_look {
         req["look"] = json!(look);
     }
     let mut engine = state.engine("preview");
     let reply = engine.request(req)?;
+    let reply: PreviewReply = serde_json::from_value(reply).map_err(|e| format!("preview: unexpected reply: {e}"))?;
     let pixels = frame_output::FrameOutput::read(&state.preview_path).map_err(|e| format!("preview: {e}"))?;
     drop(engine);
     let mut out = Vec::with_capacity(8 + pixels.len());
-    for k in ["width", "height"] {
-        out.extend_from_slice(&(reply[k].as_u64().unwrap_or(0) as u32).to_le_bytes());
+    for v in [reply.width, reply.height] {
+        out.extend_from_slice(&(v as u32).to_le_bytes());
     }
     out.extend_from_slice(&pixels);
-    Ok(Response::new(out))
+    Ok(bindings::Frame(Response::new(out)))
 }
 
 // the Export dialog's preview: one image exported as the dialog would, as
@@ -3464,9 +3449,8 @@ fn main() {
             Ok(())
         })
         .invoke_handler(bindings::handler(tauri::generate_handler![
-            map_search::map_search, map_search::map_search_key_status, map_search::map_search_key_save, map_search::map_search_key_remove, open_folder, open_image, get_params, set_params, render, cancel_base, save, baseline_end, before_view, thumb, thumb_cached, thumb_known, cache_limits, cache_usage, cache_clear, capture_times, prefetch, darktable_resources, darktable_resources_set, memory_budget::memory_budget, gpu_edits, gpu_edits_set, webview_renderer, webview_renderer_set,
-            export_images, export_cancel, export_existing, export_preview, fonts, print_profiles, print_profile_add, softproof, printers, printer_info, print_photo, print_sheet, export_presets_load, export_presets_save, export_presets_export, export_presets_import, presets_load, presets_save, agx_presets, agx_presets_pick, agx_profiles_load, agx_profiles_save, looks_list, shared_import, look_export, look_delete, look_apply, look_amount, preview, paste_batch,
-            mask_shapes, combine, masks, mask_delete, mask_rename, history, module_state, sample, tone_key, lenses, color_profiles, agx_auto, upright, range_map, zones, mask_map, ai_object,
+            map_search::map_search, map_search::map_search_key_status, map_search::map_search_key_save, map_search::map_search_key_remove, open_folder, thumb, thumb_cached, thumb_known, cache_limits, cache_usage, cache_clear, capture_times, prefetch, darktable_resources, darktable_resources_set, memory_budget::memory_budget, gpu_edits, gpu_edits_set, webview_renderer, webview_renderer_set,
+            export_images, export_cancel, export_existing, export_preview, fonts, print_profiles, print_profile_add, softproof, printers, printer_info, print_photo, print_sheet, export_presets_load, export_presets_save, export_presets_export, export_presets_import, presets_load, presets_save, agx_presets, agx_presets_pick, agx_profiles_load, agx_profiles_save, looks_list, shared_import, look_export, look_delete, look_apply, look_amount,             mask_shapes, combine, masks, mask_delete, mask_rename, lenses, upright, range_map, zones, mask_map, ai_object,
             ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, positive_export, spektra_stocks, spektra_fetch, list_subfolders, folder_volumes, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
             immich_export_check, immich_search, immich_browse_check, immich_libraries, immich_suggestions, immich_people, immich_tags,
             immich_thumb, immich_resolve, launch_file, path_exists, display_scale, trash_files, create_virtual_copy, remove_virtual_copy, hdr_merge, hdr_can_align, pano_merge, pano_preview, pano_can_merge, merge_cancel, preview_fullscreen, licenses, engine_quit, engine_restart, keywords, keywords_set, ai_accel,

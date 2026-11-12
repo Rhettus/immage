@@ -1,0 +1,21 @@
+[
+ {
+  "label": "3 open / get exposure",
+  "reply": {
+   "modules": {
+    "exposure": {
+     "default_enabled": false,
+     "defaults": {
+      "exposure": 0.0
+     },
+     "enabled": false,
+     "params": {
+      "exposure": 0.0
+     }
+    }
+   },
+   "ms": 0.0,
+   "ok": true
+  }
+ }
+]

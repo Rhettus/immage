@@ -1,0 +1,42 @@
+[
+ {
+  "label": "3 open / parity self",
+  "reply": {
+   "cpu": {
+    "cl_errors": 0,
+    "devid": -2,
+    "ms": 0.0
+   },
+   "de": {
+    "max": 0.0,
+    "mean": 0.0,
+    "over2": 0.0,
+    "p99": 0.0
+   },
+   "gpu": {
+    "cl_errors": 0,
+    "devid": -2,
+    "ms": 0.0
+   },
+   "height": 48,
+   "ms": 0.0,
+   "ok": true,
+   "rgb": {
+    "b": {
+     "max": 0,
+     "mean": 0.0
+    },
+    "g": {
+     "max": 0,
+     "mean": 0.0
+    },
+    "r": {
+     "max": 0,
+     "mean": 0.0
+    }
+   },
+   "self": true,
+   "width": 64
+  }
+ }
+]

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 import { invoke } from "@tauri-apps/api/core";
+import { commands } from "./commands";
 import type { Session } from "./session";
 import { profileSelection, type Values } from "./manifest";
 import { AUTO_TONE_IDS, autoExposure, autoTone } from "./autoTone";
@@ -32,7 +33,7 @@ export async function preparePastePhoto(s: Session, defaults: PasteDefaults) {
     s.setMany([["exposure", exposure]]);
     await s.settled();
     if (s.values.tm_mode === 1) {
-      const range = await invoke<{ black_ev: number; white_ev: number }>("agx_auto");
+      const range = await commands.agxAuto();
       s.setMany([["agx_black", range.black_ev], ["agx_white", range.white_ev]]);
       await s.settled();
     }

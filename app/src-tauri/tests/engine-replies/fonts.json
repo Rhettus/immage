@@ -1,0 +1,71 @@
+[
+ {
+  "label": "1 empty / fonts",
+  "reply": {
+   "families": [
+    {
+     "faces": [
+      {
+       "italic": false,
+       "name": "Regular",
+       "weight": 400
+      },
+      {
+       "italic": false,
+       "name": "Bold",
+       "weight": 700
+      },
+      {
+       "italic": true,
+       "name": "Italic",
+       "weight": 400
+      }
+     ],
+     "name": "Adwaita Mono"
+    },
+    {
+     "faces": [
+      {
+       "italic": false,
+       "name": "Thin",
+       "weight": 100
+      },
+      {
+       "italic": false,
+       "name": "ExtraLight",
+       "weight": 200
+      },
+      {
+       "italic": false,
+       "name": "Light",
+       "weight": 300
+      }
+     ],
+     "name": "Adwaita Sans"
+    },
+    {
+     "faces": [
+      {
+       "italic": false,
+       "name": "Roman",
+       "weight": 400
+      },
+      {
+       "italic": false,
+       "name": "Bold",
+       "weight": 700
+      },
+      {
+       "italic": true,
+       "name": "Italic",
+       "weight": 400
+      }
+     ],
+     "name": "C059"
+    }
+   ],
+   "ms": 0.0,
+   "ok": true
+  }
+ }
+]

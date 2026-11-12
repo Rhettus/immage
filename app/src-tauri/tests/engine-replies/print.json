@@ -1,0 +1,22 @@
+[
+ {
+  "label": "3 open / print pdf",
+  "reply": {
+   "dpi": 300,
+   "height": 35,
+   "ms": 0.0,
+   "ok": true,
+   "width": 46
+  }
+ },
+ {
+  "label": "3 open / print sheet pdf",
+  "reply": {
+   "dpi": 300,
+   "ms": 0.0,
+   "ok": true,
+   "pages": 1,
+   "photos": 0
+  }
+ }
+]

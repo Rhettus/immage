@@ -1,0 +1,11 @@
+[
+ {
+  "label": "1 empty / printers",
+  "reply": {
+   "available": true,
+   "ms": 0.0,
+   "ok": true,
+   "printers": []
+  }
+ }
+]
