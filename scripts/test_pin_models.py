@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 the Immage authors
 
-"""pin_models.py must write the AI model table main.rs checks downloads against"""
+"""pin_models.py must write the AI model table ai_cmds.rs checks downloads against"""
 
 import json
 import re
@@ -13,7 +13,7 @@ import unittest
 from pathlib import Path
 
 SCRIPT = Path(__file__).with_name("pin_models.py").resolve()
-MAIN_RS = SCRIPT.parents[1] / "app/src-tauri/src/main.rs"
+AI_RS = SCRIPT.parents[1] / "app/src-tauri/src/ai_cmds.rs"
 BEGIN = "// BEGIN scripts/pin_models.py"
 END = "// END scripts/pin_models.py"
 SHA_A = "a" * 64
@@ -54,8 +54,8 @@ class PinModels(unittest.TestCase):
         r = self.run_script({"m": {"sha256": "sha256:xyz", "size": 1}})
         self.assertNotEqual(r.returncode, 0)
 
-    def test_main_rs_block_is_well_formed(self):
-        src = MAIN_RS.read_text()
+    def test_ai_rs_block_is_well_formed(self):
+        src = AI_RS.read_text()
         block = src[src.index(BEGIN):src.index(END)]
         pins = re.findall(r'ModelPin \{ id: "([^"]+)", sha256: "([^"]+)", size: (\d+) \}', block)
         self.assertTrue(pins)
