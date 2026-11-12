@@ -707,13 +707,13 @@ pub async fn backup_components(app: AppHandle) -> Result<Vec<ComponentInfo>, Str
 #[specta::specta]
 pub async fn backup_pick_save(app: AppHandle) -> Result<Option<String>, String> {
     let name = format!("Immage Backup {}.zip", chrono::Local::now().format("%Y-%m-%d"));
-    Ok(crate::pick_save(&app, "Immage backup", &["zip"], &name).await?.map(|p| p.to_string_lossy().into_owned()))
+    Ok(crate::export_cmds::pick_save(&app, "Immage backup", &["zip"], &name).await?.map(|p| p.to_string_lossy().into_owned()))
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn backup_pick_open(app: AppHandle) -> Result<Option<String>, String> {
-    let picked = crate::pick_files(&app, "Immage backup", &["zip"], false).await?;
+    let picked = crate::export_cmds::pick_files(&app, "Immage backup", &["zip"], false).await?;
     Ok(picked.into_iter().next().map(|p| p.to_string_lossy().into_owned()))
 }
 

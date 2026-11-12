@@ -197,7 +197,7 @@ pub async fn support_bundle_add_benchmark(
     .await
     .map_err(|e| e.to_string())?;
     let Some(path) = picked else { return Ok(None) };
-    let real = crate::path_inside(&path, &[&state.perf_dir]).map_err(|_| "pick a report from the GUI benchmark folder".to_string())?;
+    let real = crate::export_cmds::path_inside(&path, &[&state.perf_dir]).map_err(|_| "pick a report from the GUI benchmark folder".to_string())?;
     if std::fs::metadata(&real).map_err(|e| e.to_string())?.len() > 64 << 20 {
         return Err("that report is too large".into());
     }
@@ -216,7 +216,7 @@ pub async fn support_bundle_save(
     removed: HashMap<String, Vec<usize>>,
 ) -> Result<Option<String>, String> {
     let name = format!("immage-support-{}.zip", chrono::Local::now().format("%Y-%m-%d"));
-    let Some(path) = crate::pick_save(&app, "Support bundle", &["zip"], &name).await? else { return Ok(None) };
+    let Some(path) = crate::export_cmds::pick_save(&app, "Support bundle", &["zip"], &name).await? else { return Ok(None) };
     let entries = bundle.0.lock().unwrap().as_ref().ok_or("the bundle was not started")?.kept(&removed);
     tauri::async_runtime::spawn_blocking({
         let path = path.clone();
