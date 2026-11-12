@@ -16,8 +16,15 @@ export async function textButton(t, scope, text) {
 // `appears`: an option that opens something (Enter Custom…) rather than
 // staying selected; wait for that element instead of the value
 export async function choose(t, selector, value, appears) {
-  const c = await reveal(t, selector);
+  let c = await reveal(t, selector);
   if (c.disabled) throw new Blocked(`Disabled prerequisite ${selector}`);
+  // a list can be refilled after an earlier choice (the Negative panel reloads
+  // its profiles from the engine on each change): wait for the option first
+  const ready = o => o?.options?.some(x => x.value === String(value) && !x.disabled);
+  if (!ready(c)) {
+    await until(async () => ready(await t.driver.observe(inspect, selector)), `${selector} lists ${value}`, 5000).catch(() => {});
+    c = await reveal(t, selector);
+  }
   const index = c.options?.findIndex(o => o.value === String(value));
   assert(index >= 0 && !c.options[index].disabled, `${selector} has enabled option ${value}`);
   // GTK's popup can step over a disabled option (a separator) differently
