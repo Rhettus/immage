@@ -103,6 +103,7 @@ jobs:
             verify/crop-corner.test.mjs \
             verify/crop-transition.test.mjs \
             verify/detail-preview.test.mjs \
+            verify/engine-commands.test.mjs \
             verify/engine-state.test.mjs \
             verify/fit-preview.test.mjs \
             verify/gpu-check.test.mjs \

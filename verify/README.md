@@ -27,6 +27,22 @@ python3 -I verify/database-locks.py --build build
 It checks live-owner exclusion, recovery after killing its own owner process,
 lock cleanup and clean restart. It does not test simultaneous first startup.
 
+The engine protocol check (headless, no GUI, stdlib only) sends every engine
+command, with small safe arguments, to an engine with temporary state in four
+states (empty library, two photos, a photo open, after `close`), plus an
+unknown or missing command, bad JSON, tagged pool requests and the reader's
+cancels. It normalizes the replies (timings, temporary paths, the build's
+version, file times, frame hashes numbered by first use) and records or
+compares them as JSON, to prove a refactor of `engine/main.c` changes no reply.
+It also fails when the commands in `main.c` differ from the script's list.
+Heavy commands (AI, HDR and panorama merges) run only their argument-error
+path, and exported JPEG, TIFF and PDF files are compared by size only:
+
+```bash
+python3 -I verify/engine-protocol.py --record /tmp/golden.json   # on the known-good engine
+python3 -I verify/engine-protocol.py --compare /tmp/golden.json  # exits 1 on any difference
+```
+
 The import stall check (POSIX, headless, no GUI) makes a sidecar that blocks
 reads like a half-dead network share and checks the import skips the file and
 its folder, reports them as `unanswered`, and leaves `open` and other folders
