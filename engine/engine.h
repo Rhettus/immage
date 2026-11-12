@@ -168,9 +168,24 @@ void engine_add_string(JsonBuilder *b, const char *name, const char *value);
 
 // session.c
 void session_changed(const dt_dev_pixelpipe_change_t flags);
+dt_iop_module_t *session_module(const char *op, char **err);
+void *session_field_in(dt_iop_module_t *mod, void *base, const char *path,
+                       dt_introspection_field_t **f, char **err);
 
 // masks.c
 void masks_invalidate_from(const int order, const char *why);
+
+// looks.c
+gboolean looks_is_look(const dt_iop_module_t *m);
+GList *looks_style_items(const char *path, gchar **label, char **err);
+dt_iop_module_t *looks_look_instance(const char *op, const gboolean create);
+gboolean looks_item_params(dt_iop_module_t *m, const dt_style_item_t *si,
+                           void *params, dt_develop_blend_params_t *blend);
+gboolean looks_agx_presets(JsonObject *req, JsonBuilder *b, char **err);
+const char *looks_look_name(void);
+double looks_look_amount_value(void);
+void looks_look_amount(const double amount);
+gboolean looks_look(const char *path, char **err);
 
 // film.c
 void film_spektra_stocks(JsonBuilder *b);

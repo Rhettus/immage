@@ -1040,7 +1040,7 @@ static gboolean _open_image(const char *path, const dt_imgid_t version, const ch
   return TRUE;
 }
 
-static dt_iop_module_t *_module(const char *op, char **err)
+dt_iop_module_t *session_module(const char *op, char **err)
 {
   dt_iop_module_t *mod = op ? dt_iop_get_module_by_op_priority(_s.dev.iop, op, 0) : NULL;
   if(!mod) *err = g_strdup_printf("module '%s' not in the pipe", op ? op : "(none)");
@@ -1051,7 +1051,7 @@ static dt_iop_module_t *_module(const char *op, char **err)
 // "tonecurve[0][3].x" inside `base` (params or default_params). get_f()
 // describes an array element only as its first one, so indices and members
 // are walked with the introspection helpers instead (introspection.md)
-static void *_field_in(dt_iop_module_t *mod, void *base, const char *path,
+void *session_field_in(dt_iop_module_t *mod, void *base, const char *path,
                        dt_introspection_field_t **f, char **err)
 {
   *f = NULL;
@@ -1089,7 +1089,7 @@ static gboolean _write_field_in(dt_iop_module_t *mod, void *base, const char *na
                                 const double num, char **err)
 {
   dt_introspection_field_t *f = NULL;
-  void *p = _field_in(mod, base, name, &f, err);
+  void *p = session_field_in(mod, base, name, &f, err);
   if(!p) return FALSE;
   switch(f->header.type)
   {
@@ -1146,12 +1146,12 @@ static gboolean _write_details(dt_iop_module_t *mod, const double num, char **er
 static gboolean _write_lens_pick(dt_iop_module_t *mod, const double num, char **err)
 {
   dt_introspection_field_t *f = NULL;
-  char *lens = _field_in(mod, mod->params, "lens", &f, err);
-  const char *auto_lens = lens ? _field_in(mod, mod->default_params, "lens", &f, err) : NULL;
-  int *geom = _field_in(mod, mod->params, "target_geom", &f, err);
-  const int *auto_geom = geom ? _field_in(mod, mod->default_params, "target_geom", &f, err) : NULL;
-  int *method = _field_in(mod, mod->params, "method", &f, err);
-  const int *auto_method = method ? _field_in(mod, mod->default_params, "method", &f, err) : NULL;
+  char *lens = session_field_in(mod, mod->params, "lens", &f, err);
+  const char *auto_lens = lens ? session_field_in(mod, mod->default_params, "lens", &f, err) : NULL;
+  int *geom = session_field_in(mod, mod->params, "target_geom", &f, err);
+  const int *auto_geom = geom ? session_field_in(mod, mod->default_params, "target_geom", &f, err) : NULL;
+  int *method = session_field_in(mod, mod->params, "method", &f, err);
+  const int *auto_method = method ? session_field_in(mod, mod->default_params, "method", &f, err) : NULL;
   if(!lens || !auto_lens || !geom || !auto_geom || !method || !auto_method) return FALSE;
   if(num <= 0.0)
   {
@@ -1189,8 +1189,8 @@ static gboolean _profile_fields(dt_iop_module_t *mod, void *params, const gboole
                                  int **type, char **filename, char **err)
 {
   dt_introspection_field_t *f = NULL;
-  *type = _field_in(mod, params, work ? "type_work" : "type", &f, err);
-  *filename = *type ? _field_in(mod, params, work ? "filename_work" : "filename", &f, err) : NULL;
+  *type = session_field_in(mod, params, work ? "type_work" : "type", &f, err);
+  *filename = *type ? session_field_in(mod, params, work ? "filename_work" : "filename", &f, err) : NULL;
   return *type && *filename;
 }
 
@@ -1276,13 +1276,13 @@ static gboolean _read_field(dt_iop_module_t *mod, const char *name,
   if(!g_strcmp0(name, LENS_PICK) && !g_strcmp0(mod->op, "lens"))
   {
     dt_introspection_field_t *lf = NULL;
-    const char *lens = from_defaults ? NULL : _field_in(mod, mod->params, "lens", &lf, err);
-    const char *auto_lens = from_defaults ? NULL : _field_in(mod, mod->default_params, "lens", &lf, err);
+    const char *lens = from_defaults ? NULL : session_field_in(mod, mod->params, "lens", &lf, err);
+    const char *auto_lens = from_defaults ? NULL : session_field_in(mod, mod->default_params, "lens", &lf, err);
     *num = lens && auto_lens && g_strcmp0(lens, auto_lens) ? lenses_hash(lens) : 0.0;
     return TRUE;
   }
   dt_introspection_field_t *f = NULL;
-  const void *p = _field_in(mod, from_defaults ? mod->default_params : mod->params,
+  const void *p = session_field_in(mod, from_defaults ? mod->default_params : mod->params,
                             name, &f, err);
   if(!p) return FALSE;
   switch(f->header.type)
@@ -1396,7 +1396,7 @@ static gboolean _set(const char *op, const char *field, JsonNode *value,
   // an instance placed by `after` or `before` is not also put after the
   // mask anchor, which would leave it behind modules it must precede
   dt_iop_module_t *mod = instance ? _named_instance(op, instance, !after && !before, err)
-                                  : _module(op, err);
+                                  : session_module(op, err);
   if(!mod) return FALSE;
   // kept to tell a request that changes nothing (_named_instance() bumps
   // iop_gen for a new instance, which always gets its history item)
@@ -1763,7 +1763,7 @@ static gboolean _get(JsonObject *ops, JsonBuilder *b, char **err)
     const char *key = n->data, *hash = strchr(key, '#');
     gchar *op = hash ? g_strndup(key, hash - key) : g_strdup(key);
     dt_iop_module_t *named = hash ? _find_named(op, hash + 1) : NULL;
-    dt_iop_module_t *mod = named ? named : _module(op, err);
+    dt_iop_module_t *mod = named ? named : session_module(op, err);
     g_free(op);
     if(!mod) { g_list_free(names); return FALSE; }
     const gboolean missing = hash && !named;
@@ -1812,11 +1812,11 @@ static void _lens_menu_add(const char *maker, const char *model, void *user)
 
 static gboolean _lens_menu(JsonBuilder *b, char **err)
 {
-  dt_iop_module_t *mod = _module("lens", err);
+  dt_iop_module_t *mod = session_module("lens", err);
   if(!mod) return FALSE;
   dt_introspection_field_t *f = NULL;
-  const char *lens = _field_in(mod, mod->params, "lens", &f, err);
-  const char *auto_lens = lens ? _field_in(mod, mod->default_params, "lens", &f, err) : NULL;
+  const char *lens = session_field_in(mod, mod->params, "lens", &f, err);
+  const char *auto_lens = lens ? session_field_in(mod, mod->default_params, "lens", &f, err) : NULL;
   if(!lens || !auto_lens) return FALSE;
   // the database's name for the lens the file names, as the module matches it
   const dt_image_t *img = &_s.dev.image_storage;
@@ -1850,7 +1850,7 @@ static void _profile_option(JsonBuilder *b, const char *label, const guint64 id)
 
 static gboolean _color_profiles(JsonBuilder *b, char **err)
 {
-  dt_iop_module_t *mod = _module("colorin", err);
+  dt_iop_module_t *mod = session_module("colorin", err);
   if(!mod) return FALSE;
   for(int work = 0; work < 2; work++)
   {
@@ -2890,7 +2890,7 @@ static int _no_tmpfile_flags(dt_imageio_module_data_t *data)
 static gboolean _write_text(dt_iop_module_t *mod, const char *name, const char *value, char **err)
 {
   dt_introspection_field_t *f = NULL;
-  char *p = _field_in(mod, mod->params, name, &f, err);
+  char *p = session_field_in(mod, mod->params, name, &f, err);
   if(!p) return FALSE;
   if(f->header.type != DT_INTROSPECTION_TYPE_ARRAY || f->Array.type != DT_INTROSPECTION_TYPE_CHAR)
   {
@@ -7305,7 +7305,7 @@ static dt_masks_form_t *_spot_shape(JsonObject *o, char **err)
 
 static gboolean _spots_set(JsonArray *spots, char **err)
 {
-  dt_iop_module_t *m = _module("retouch", err);
+  dt_iop_module_t *m = session_module("retouch", err);
   if(!m) return FALSE;
   size_t esize = 0, count = 0;
   uint8_t *rt = _rt_forms(m, &esize, &count);
@@ -7401,7 +7401,7 @@ static gboolean _spots_set(JsonArray *spots, char **err)
 // the spots as _spot_shape() takes them, and whether the module is on
 static gboolean _spots_json(JsonBuilder *b, char **err)
 {
-  dt_iop_module_t *m = _module("retouch", err);
+  dt_iop_module_t *m = session_module("retouch", err);
   if(!m) return FALSE;
   size_t esize = 0, count = 0;
   if(!_rt_forms(m, &esize, &count))
@@ -7481,7 +7481,7 @@ static gboolean _spots_json(JsonBuilder *b, char **err)
 // the retouch module off and on again, shapes kept (the Before view)
 static gboolean _spots_enable(const gboolean on, char **err)
 {
-  dt_iop_module_t *m = _module("retouch", err);
+  dt_iop_module_t *m = session_module("retouch", err);
   if(!m) return FALSE;
   const dt_masks_form_t *grp = _spots_group(m);
   const gboolean want = on && grp && grp->points;
@@ -8689,7 +8689,7 @@ static gboolean _sample(const float x, const float y, JsonArray *box, const _sta
 // the darkest and brightest channel as black and white relative exposure
 static gboolean _agx_auto(JsonBuilder *b, char **err)
 {
-  dt_iop_module_t *agx = _module("agx", err);
+  dt_iop_module_t *agx = session_module("agx", err);
   if(!agx) return FALSE;
   if(!agx->enabled)
   {
@@ -8722,7 +8722,7 @@ static gboolean _agx_auto(JsonBuilder *b, char **err)
 static gboolean _upright(const char *mode, JsonArray *guides, const double aspect, JsonBuilder *b,
                          char **err)
 {
-  dt_iop_module_t *ashift = _module("ashift", err);
+  dt_iop_module_t *ashift = session_module("ashift", err);
   if(!ashift) return FALSE;
   _working_t w;
   if(!_working_at(&w, _STAGE_ASHIFT, err)) return FALSE;
@@ -9169,7 +9169,7 @@ static gboolean _mask_map(const char *name, const char *op, int *width, int *hei
   {
     const char *hash = strchr(op, '#');
     gchar *base = hash ? g_strndup(op, hash - op) : g_strdup(op);
-    mod = hash ? _find_named(base, hash + 1) : _module(base, err);
+    mod = hash ? _find_named(base, hash + 1) : session_module(base, err);
     g_free(base);
     if(!mod)
     {
@@ -9429,353 +9429,6 @@ static gboolean _attach_mask(dt_iop_module_t *m, const char *name, const gboolea
   return TRUE;
 }
 
-// ------------------------------------------------------------------ looks
-// a darktable style applied as a "look": its modules become extra
-// instances named "look: <style>", after the client's own, so a film
-// emulation's tone curve or channel mixer never overwrites the instance the
-// client edits. a later look reuses those instances, and no look disables
-// them. they are ordinary history, so the sidecar keeps the look
-#define _LOOK_PREFIX "look: "
-
-static gboolean _is_look(const dt_iop_module_t *m)
-{
-  return g_str_has_prefix(m->multi_name, _LOOK_PREFIX);
-}
-
-// the style in a .dtstyle file, imported into the library's styles under
-// its own name; the name's last "|" segment is how it is shown
-static GList *_style_items(const char *path, gchar **label, char **err)
-{
-  gchar *text = NULL;
-  if(!g_file_get_contents(path, &text, NULL, NULL))
-  {
-    *err = g_strdup_printf("cannot read '%s'", path);
-    return NULL;
-  }
-  gchar *a = strstr(text, "<name>"), *z = a ? strstr(a, "</name>") : NULL;
-  gchar *name = a && z ? g_strndup(a + 6, z - a - 6) : NULL;
-  g_free(text);
-  if(!name)
-  {
-    *err = g_strdup_printf("'%s' is not a darktable style", path);
-    return NULL;
-  }
-  // the one entity a film name is likely to carry
-  gchar **amp = g_strsplit(name, "&amp;", -1);
-  g_free(name);
-  name = g_strjoinv("&", amp);
-  g_strfreev(amp);
-
-  if(!dt_styles_exists(name)) dt_styles_import_from_file(path);
-  GList *items = dt_styles_exists(name) ? dt_styles_get_item_list(name, FALSE, NO_IMGID, FALSE) : NULL;
-  if(!items) *err = g_strdup_printf("could not load the style in '%s'", path);
-  const gchar *bar = strrchr(name, '|');
-  *label = g_strdup(bar ? bar + 1 : name);
-  g_free(name);
-  return items;
-}
-
-// the look instance of `op`, made (switched off) when there is none yet
-static dt_iop_module_t *_look_instance(const char *op, const gboolean create)
-{
-  for(GList *l = _s.dev.iop; l; l = g_list_next(l))
-  {
-    dt_iop_module_t *m = l->data;
-    if(!g_strcmp0(m->op, op) && _is_look(m)) return m;
-  }
-  dt_iop_module_t *base = create ? dt_iop_get_module_by_op_priority(_s.dev.iop, op, 0) : NULL;
-  dt_iop_module_t *m = base ? dt_dev_module_duplicate_ext(&_s.dev, base, TRUE) : NULL;
-  if(!m) return NULL;
-  g_strlcpy(m->multi_name, _LOOK_PREFIX, sizeof(m->multi_name));
-  m->multi_name_hand_edited = TRUE;
-  m->enabled = FALSE;
-  _s.iop_gen++;
-  session_changed(DT_DEV_PIPE_REMOVE);
-  return m;
-}
-
-// a style item's settings in this darktable's versions, as
-// dt_styles_apply_style_item() converts them
-static gboolean _item_params(dt_iop_module_t *m, const dt_style_item_t *si,
-                             void *params, dt_develop_blend_params_t *blend)
-{
-  if(si->module_version == m->version() && si->params_size == m->params_size)
-    memcpy(params, si->params, m->params_size);
-  else
-  {
-    void *p = params;
-    const int r = dt_iop_legacy_params(m, si->params, si->params_size, si->module_version,
-                                       &p, m->version());
-    if(r == 1) return FALSE;
-    if(r == -1) memcpy(params, m->default_params, m->params_size);
-  }
-#ifdef IMMAGE_STYLE_BLEND_READER
-  const dt_develop_blend_params_t locked = *m->blend_params;
-  if(!si->blendop_params)
-    memcpy(blend, m->default_blendop_params, sizeof(*blend));
-  else if(dt_develop_blend_params_read(m, si->blendop_params, si->blendop_params_size,
-                                      si->blendop_version, blend, -1,
-                                      dt_develop_blend_mask_locked(&locked), NULL))
-    return FALSE;
-  dt_develop_blend_keep_locked_mask(m, blend, &locked);
-#else
-  if(si->blendop_params && si->blendop_version == dt_develop_blend_version()
-     && si->blendop_params_size == sizeof(dt_develop_blend_params_t))
-    memcpy(blend, si->blendop_params, sizeof(dt_develop_blend_params_t));
-  else if(!si->blendop_params
-          || dt_develop_blend_legacy_params(m, si->blendop_params, si->blendop_version, blend,
-                                            dt_develop_blend_version(), si->blendop_params_size))
-    memcpy(blend, m->default_blendop_params, sizeof(dt_develop_blend_params_t));
-#endif
-  return TRUE;
-}
-
-// one darktable AgX preset's settings in this darktable's version, as the
-// requested fields ({ field: number }) in `b`; FALSE when it cannot convert
-static gboolean _agx_preset_fields(dt_iop_module_t *m, const void *blob, const int size,
-                                   const int version, JsonArray *fields, JsonBuilder *b)
-{
-  void *params = g_malloc0(m->params_size);
-  gboolean ok = blob && size > 0 && version > 0 && version <= m->version();
-  if(!ok || (version == m->version() && size != m->params_size)
-     || (version == 7 && size != 36 * 4))
-  {
-    g_free(params);
-    json_builder_add_null_value(b);
-    return FALSE;
-  }
-  if(version == m->version() && size == m->params_size)
-    memcpy(params, blob, m->params_size);
-  else
-  {
-    void *p = params;
-    const int r = dt_iop_legacy_params(m, blob, size, version, &p, m->version());
-    if(r == 1) ok = FALSE;
-    else if(r == -1) memcpy(params, m->default_params, m->params_size);
-  }
-  json_builder_begin_object(b);
-  for(guint i = 0; ok && i < json_array_get_length(fields); i++)
-  {
-    const char *name = json_array_get_string_element(fields, i);
-    char *e = NULL;
-    dt_introspection_field_t *f = NULL;
-    const void *p = _field_in(m, params, name, &f, &e);
-    g_free(e);
-    double num = 0.0;
-    if(!p) { ok = FALSE; break; }
-    switch(f->header.type)
-    {
-      case DT_INTROSPECTION_TYPE_FLOAT: num = *(const float *)p; break;
-      case DT_INTROSPECTION_TYPE_INT:
-      case DT_INTROSPECTION_TYPE_ENUM:  num = *(const int *)p; break;
-      case DT_INTROSPECTION_TYPE_BOOL:  num = *(const gboolean *)p ? 1.0 : 0.0; break;
-      default: ok = FALSE; continue;
-    }
-    if(!isfinite(num)) { ok = FALSE; break; }
-    json_builder_set_member_name(b, name);
-    json_builder_add_double_value(b, num);
-  }
-  json_builder_end_object(b);
-  g_free(params);
-  return ok;
-}
-
-// the AgX presets of a darktable `data.db` (read only), a `.dtpreset` or a
-// `.dtstyle`, as { presets: [{ name, params: { field: number } }] }. the
-// params are converted to this darktable's AgX version here, so the app
-// never sees a blob or a version. one that cannot convert has incomplete
-// params, which the app leaves out
-static gboolean _agx_presets(JsonObject *req, JsonBuilder *b, char **err)
-{
-  dt_iop_module_t *m = _module("agx", err);
-  if(!m) return FALSE;
-  JsonArray *fields = json_object_has_member(req, "fields")
-    ? json_object_get_array_member(req, "fields") : NULL;
-  if(!fields)
-  {
-    *err = g_strdup("no fields");
-    return FALSE;
-  }
-  const char *file = json_object_get_string_member_with_default(req, "file", NULL);
-  const char *db = json_object_get_string_member_with_default(req, "db", NULL);
-
-  json_builder_set_member_name(b, "presets");
-  json_builder_begin_array(b);
-
-  if(file && (g_str_has_suffix(file, ".dtstyle") || g_str_has_suffix(file, ".xml")))
-  {
-    gchar *label = NULL;
-    GList *items = _style_items(file, &label, err);
-    if(!items) { g_free(label); return FALSE; }
-    for(GList *l = items; l; l = g_list_next(l))
-    {
-      const dt_style_item_t *si = l->data;
-      if(g_strcmp0(si->operation, "agx")) continue;
-      json_builder_begin_object(b);
-      json_builder_set_member_name(b, "name");
-      json_builder_add_string_value(b, label);
-      json_builder_set_member_name(b, "params");
-      _agx_preset_fields(m, si->params, si->params_size, si->module_version, fields, b);
-      json_builder_end_object(b);
-    }
-    g_free(label);
-    g_list_free_full(items, dt_style_item_free);
-  }
-  else if(file)
-  {
-    xmlDocPtr doc = xmlReadFile(file, NULL, XML_PARSE_NONET);
-    xmlNodePtr root = doc ? xmlDocGetRootElement(doc) : NULL;
-    if(!root || xmlStrcmp(root->name, BAD_CAST "darktable_preset"))
-    {
-      if(doc) xmlFreeDoc(doc);
-      *err = g_strdup_printf("'%s' is not a darktable preset", file);
-      return FALSE;
-    }
-    gchar *name = NULL, *op = NULL, *hex = NULL;
-    int version = 0;
-    for(xmlNodePtr n = root->children; n; n = n->next)
-      for(xmlNodePtr c = n->children; c; c = c->next)
-      {
-        xmlChar *t = xmlNodeGetContent(c);
-        if(!t) continue;
-        if(!xmlStrcmp(c->name, BAD_CAST "name")) name = g_strdup((gchar *)t);
-        else if(!xmlStrcmp(c->name, BAD_CAST "operation")) op = g_strdup((gchar *)t);
-        else if(!xmlStrcmp(c->name, BAD_CAST "op_params")) hex = g_strdup((gchar *)t);
-        else if(!xmlStrcmp(c->name, BAD_CAST "op_version")) version = atoi((gchar *)t);
-        xmlFree(t);
-      }
-    xmlFreeDoc(doc);
-    int len = 0;
-    unsigned char *blob = !g_strcmp0(op, "agx") && hex
-      ? dt_exif_xmp_decode(hex, strlen(hex), &len) : NULL;
-    if(blob)
-    {
-      json_builder_begin_object(b);
-      json_builder_set_member_name(b, "name");
-      json_builder_add_string_value(b, name ? name : "Preset");
-      json_builder_set_member_name(b, "params");
-      _agx_preset_fields(m, blob, len, version, fields, b);
-      json_builder_end_object(b);
-      g_free(blob);
-    }
-    g_free(name);
-    g_free(op);
-    g_free(hex);
-  }
-  else
-  {
-    gchar *path = db ? g_strdup(db) : g_build_filename(g_get_user_config_dir(), "darktable", "data.db", NULL);
-    sqlite3 *h = NULL;
-    sqlite3_stmt *st = NULL;
-    if(sqlite3_open_v2(path, &h, SQLITE_OPEN_READONLY, NULL) != SQLITE_OK
-       || sqlite3_prepare_v2(h, "SELECT name, op_version, op_params FROM presets "
-                                "WHERE operation = 'agx' AND writeprotect = 0 ORDER BY name",
-                             -1, &st, NULL) != SQLITE_OK)
-    {
-      *err = g_strdup_printf("cannot read the presets in '%s'", path);
-      sqlite3_close(h);
-      g_free(path);
-      return FALSE;
-    }
-    while(sqlite3_step(st) == SQLITE_ROW)
-    {
-      json_builder_begin_object(b);
-      json_builder_set_member_name(b, "name");
-      json_builder_add_string_value(b, (const char *)sqlite3_column_text(st, 0));
-      json_builder_set_member_name(b, "params");
-      _agx_preset_fields(m, sqlite3_column_blob(st, 2), sqlite3_column_bytes(st, 2),
-                         sqlite3_column_int(st, 1), fields, b);
-      json_builder_end_object(b);
-    }
-    sqlite3_finalize(st);
-    sqlite3_close(h);
-    g_free(path);
-  }
-  json_builder_end_array(b);
-  return TRUE;
-}
-
-// the look in use, or NULL
-static const char *_look_name(void)
-{
-  for(GList *l = _s.dev.iop; l; l = g_list_next(l))
-  {
-    const dt_iop_module_t *m = l->data;
-    if(_is_look(m) && m->enabled) return m->multi_name + strlen(_LOOK_PREFIX);
-  }
-  return NULL;
-}
-
-// how strongly the look applies, 0-100: its instances' blend opacity,
-// which darktable applies only with blending on
-static double _look_amount_value(void)
-{
-  for(GList *l = _s.dev.iop; l; l = g_list_next(l))
-  {
-    const dt_iop_module_t *m = l->data;
-    if(_is_look(m) && m->enabled && m->blend_params)
-      return m->blend_params->mask_mode == DEVELOP_MASK_DISABLED ? 100.0 : m->blend_params->opacity;
-  }
-  return 100.0;
-}
-
-static void _look_amount(const double amount)
-{
-  for(GList *l = _s.dev.iop; l; l = g_list_next(l))
-  {
-    dt_iop_module_t *m = l->data;
-    if(!_is_look(m) || !m->enabled || !m->blend_params) continue;
-    // a uniform mask, as darktable converts a classic one (migrate_legacy.c,
-    // _migrate_to_uniform)
-    if(m->blend_params->mask_mode == DEVELOP_MASK_DISABLED)
-      m->blend_params->mask_mode = DEVELOP_MASK_ENABLED | DEVELOP_MASK_FLEXI;
-    m->blend_params->opacity = CLAMP(amount, 0.0, 100.0);
-    dt_dev_add_history_item_ext(&_s.dev, m, TRUE, TRUE);
-  }
-  session_changed(DT_DEV_PIPE_SYNCH);
-}
-
-// apply the style in `path` as the look, or with NULL, switch the look off
-static gboolean _look(const char *path, char **err)
-{
-  gchar *label = NULL;
-  GList *items = path ? _style_items(path, &label, err) : NULL;
-  if(path && !items) { g_free(label); return FALSE; }
-
-  GList *used = NULL;
-  gboolean ok = TRUE;
-  for(GList *l = items; l && ok; l = g_list_next(l))
-  {
-    const dt_style_item_t *si = l->data;
-    dt_iop_module_t *m = _look_instance(si->operation, TRUE);
-    if(!m || !_item_params(m, si, m->params, m->blend_params))
-    {
-      *err = g_strdup_printf("cannot apply the style's '%s'", si->operation);
-      ok = FALSE;
-      break;
-    }
-    g_snprintf(m->multi_name, sizeof(m->multi_name), "%s%s", _LOOK_PREFIX, label);
-    m->enabled = si->enabled;
-    dt_dev_add_masks_history_item_ext(&_s.dev, m, m->enabled, TRUE);
-    used = g_list_prepend(used, m);
-  }
-  // instances the new look does not use, or every one for no look
-  for(GList *l = _s.dev.iop; l && ok; l = g_list_next(l))
-  {
-    dt_iop_module_t *m = l->data;
-    if(_is_look(m) && m->enabled && !g_list_find(used, m))
-    {
-      m->enabled = FALSE;
-      dt_dev_add_history_item_ext(&_s.dev, m, FALSE, TRUE);
-    }
-  }
-  g_list_free(used);
-  g_list_free_full(items, dt_style_item_free);
-  g_free(label);
-  session_changed(DT_DEV_PIPE_SYNCH);
-  return ok;
-}
-
 // ---------------------------------------------------------------- previews
 
 static dt_dev_pixelpipe_iop_t *_piece(dt_dev_pixelpipe_t *pipe, const dt_iop_module_t *m)
@@ -9902,11 +9555,11 @@ static gboolean _preview_render(JsonObject *req, int *ow, int *oh, char **err)
 
   // the look's instances must exist before the preview pipe's nodes do
   gchar *label = NULL;
-  GList *items = look ? _style_items(look, &label, err) : NULL;
+  GList *items = look ? looks_style_items(look, &label, err) : NULL;
   g_free(label);
   if(look && !items) return FALSE;
   for(GList *l = items; l; l = g_list_next(l))
-    if(!_look_instance(((dt_style_item_t *)l->data)->operation, TRUE))
+    if(!looks_look_instance(((dt_style_item_t *)l->data)->operation, TRUE))
     {
       g_list_free_full(items, dt_style_item_free);
       *err = g_strdup("cannot add the look's modules");
@@ -9949,7 +9602,7 @@ static gboolean _preview_render(JsonObject *req, int *ow, int *oh, char **err)
     const char *op = json_object_get_string_member_with_default(e, "op", NULL);
     const char *instance = json_object_get_string_member_with_default(e, "instance", NULL);
     if(instance && op && !_find_named(op, instance)) continue;
-    dt_iop_module_t *m = instance ? _find_named(op, instance) : _module(op, err);
+    dt_iop_module_t *m = instance ? _find_named(op, instance) : session_module(op, err);
     if(!m) { ok = FALSE; break; }
     void *params = g_malloc(m->params_size);
     memcpy(params, m->params, m->params_size);
@@ -9970,10 +9623,10 @@ static gboolean _preview_render(JsonObject *req, int *ow, int *oh, char **err)
     for(GList *l = items; ok && l; l = g_list_next(l))
     {
       const dt_style_item_t *si = l->data;
-      dt_iop_module_t *m = _look_instance(si->operation, FALSE);
+      dt_iop_module_t *m = looks_look_instance(si->operation, FALSE);
       void *params = g_malloc(m->params_size);
       dt_develop_blend_params_t *blend = g_malloc(sizeof(dt_develop_blend_params_t));
-      ok = _item_params(m, si, params, blend);
+      ok = looks_item_params(m, si, params, blend);
       if(ok) _preview_commit(m, params, blend, si->enabled);
       else *err = g_strdup_printf("cannot apply the style's '%s'", si->operation);
       g_free(params);
@@ -9983,7 +9636,7 @@ static gboolean _preview_render(JsonObject *req, int *ow, int *oh, char **err)
     for(GList *l = _s.dev.iop; l; l = g_list_next(l))
     {
       dt_iop_module_t *m = l->data;
-      dt_dev_pixelpipe_iop_t *piece = _is_look(m) && !g_list_find(used, m) ? _piece(&_s.ppipe, m) : NULL;
+      dt_dev_pixelpipe_iop_t *piece = looks_is_look(m) && !g_list_find(used, m) ? _piece(&_s.ppipe, m) : NULL;
       if(piece) piece->enabled = FALSE;
     }
     g_list_free(used);
@@ -10531,10 +10184,10 @@ static gboolean _cmd_open(JsonObject *req, JsonBuilder *b, char **err)
   json_builder_set_member_name(b, "raw");
   json_builder_add_boolean_value(b, dt_image_is_raw(&_s.dev.image_storage));
   json_builder_set_member_name(b, "look");
-  const char *look = _look_name();
+  const char *look = looks_look_name();
   if(look) json_builder_add_string_value(b, look); else json_builder_add_null_value(b);
   json_builder_set_member_name(b, "look_amount");
-  json_builder_add_double_value(b, _look_amount_value());
+  json_builder_add_double_value(b, looks_look_amount_value());
 // whether its history holds anything yet, here or in darktable
   json_builder_set_member_name(b, "edited");
   json_builder_add_boolean_value(b, dt_image_altered(_s.imgid));
@@ -10731,7 +10384,7 @@ static gboolean _cmd_softproof(JsonObject *req, JsonBuilder *b, char **err)
 // so every pipe commits it again and drops what it kept from colorout
 // on, as darktable's soft proof button does (darkroom.c)
   char *ignored = NULL;
-  const dt_iop_module_t *cout = changed && _s.open ? _module("colorout", &ignored) : NULL;
+  const dt_iop_module_t *cout = changed && _s.open ? session_module("colorout", &ignored) : NULL;
   g_free(ignored);
   if(cout)
   {
@@ -10836,7 +10489,7 @@ static gboolean _cmd_unpack(JsonObject *req, JsonBuilder *b, char **err)
   return TRUE;
 }
 
-// the styles outlive this process (data.db), and _style_items() keeps the
+// the styles outlive this process (data.db), and looks_style_items() keeps the
 // one it has by a name: a look imported under that name must replace it
 static gboolean _cmd_style_forget(JsonObject *req, JsonBuilder *b, char **err)
 {
@@ -11297,22 +10950,22 @@ static gboolean _cmd_mask_delete(JsonObject *req, JsonBuilder *b, char **err)
 static gboolean _cmd_look(JsonObject *req, JsonBuilder *b, char **err)
 {
   const char *path = json_object_get_string_member_with_default(req, "path", NULL);
-  if(!_look(path, err)) return FALSE;
+  if(!looks_look(path, err)) return FALSE;
   json_builder_set_member_name(b, "look");
-  const char *name = _look_name();
+  const char *name = looks_look_name();
   if(name) json_builder_add_string_value(b, name); else json_builder_add_null_value(b);
   return TRUE;
 }
 
 static gboolean _cmd_agx_presets(JsonObject *req, JsonBuilder *b, char **err)
 {
-  if(!_agx_presets(req, b, err)) return FALSE;
+  if(!looks_agx_presets(req, b, err)) return FALSE;
   return TRUE;
 }
 
 static gboolean _cmd_look_amount(JsonObject *req, JsonBuilder *b, char **err)
 {
-  _look_amount(json_object_get_double_member_with_default(req, "amount", 100.0));
+  looks_look_amount(json_object_get_double_member_with_default(req, "amount", 100.0));
   return TRUE;
 }
 
