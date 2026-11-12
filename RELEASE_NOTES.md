@@ -71,6 +71,9 @@ Bug fixes
   and size, and a small photo fills a large canvas exactly.
 - A brush mask painted with a single click adjusts only that spot, not the
   whole photo, including masks saved by earlier versions.
+- The preset for new photos applies to raws only, so JPEGs no longer get Lens
+  Corrections on top of the camera's own. Preferences > Presets > Also apply
+  to JPEGs gives them the preset too, without lens or raw-only settings.
 
 ## 0.44.1
 

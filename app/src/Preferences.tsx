@@ -63,6 +63,14 @@ const AUTO_TONE_KEY = "immage.autoToneNew";
 export function loadAutoToneNew(): boolean {
   try { return settings.get(AUTO_TONE_KEY) === "1"; } catch { return false; }
 }
+// the new-photos preset on JPEGs and other non-raw photos too; off by default
+const PRESET_NON_RAW_KEY = "immage.newPhotosNonRaw";
+export function loadNewPhotosNonRaw(): boolean {
+  try { return settings.get(PRESET_NON_RAW_KEY) === "1"; } catch { return false; }
+}
+function storeNewPhotosNonRaw(on: boolean) {
+  try { settings.set(PRESET_NON_RAW_KEY, on ? "1" : "0"); } catch { /* not kept */ }
+}
 function storeAutoToneNew(on: boolean) {
   try { settings.set(AUTO_TONE_KEY, on ? "1" : "0"); } catch { /* not kept */ }
 }
@@ -494,6 +502,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   const [showTour, setShowTour] = useState(() => !tourSeen());
   const [profile, setProfile] = useState(loadNewPhotosProfile);
   const [autoToneNew, setAutoToneNew] = useState(loadAutoToneNew);
+  const [presetNonRaw, setPresetNonRaw] = useState(loadNewPhotosNonRaw);
   const [negWarn, setNegWarn] = useState(loadNegWarn);
   const [negativeExportFormat, setNegativeExportFormat] = useState(loadNegativeExportFormat);
   const [expCompOn, setExpCompOn] = useState(loadExposureCompOn);
@@ -668,7 +677,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                 </PrefCard>
                 <PrefCard title="Preset">
                   <PrefRow label="Apply preset" summary="Starting edits for new photos."
-                           hint="Default gives a raw lens corrections; JPEGs get nothing">
+                           hint="applied to new raw photos; Default gives them lens corrections">
                     <select className="field" value={newPhotos ?? ""} onChange={(e) => onNewPhotos(e.target.value || null)}>
                       <option value="">None</option>
                       {[...presets].sort((a, b) => Number(b.id === DEFAULT_PRESET_ID) - Number(a.id === DEFAULT_PRESET_ID)
@@ -676,6 +685,11 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                         <option key={p.id} value={p.id}>{p.name}</option>
                       ))}
                     </select>
+                  </PrefRow>
+                  <PrefRow label="Also apply to JPEGs" summary="Apply the preset to new non-raw photos too."
+                           hint="JPEGs, TIFFs and other non-raw photos get the preset without Lens Corrections, which the camera did already, or settings that need a raw">
+                    <PrefSwitch checked={presetNonRaw} disabled={!newPhotos}
+                                onChange={(on) => { setPresetNonRaw(on); storeNewPhotosNonRaw(on); }} />
                   </PrefRow>
                   <PrefRow label="New preset" summary="Save selected settings from this photo." hint="from the open photo, with only the settings you tick">
                     <button className="btn small" disabled={!onSaveCurrent} onClick={() => onSaveCurrent?.()}

@@ -475,8 +475,15 @@ photo's starting point: they don't mark it as edited.
   Off by default; the amount starts at +1.
 - **Apply Auto** (Auto Tone): runs Basic's **Auto** once a raw has
   rendered. Off by default.
-- **Apply preset**: **Default** gives a raw lens corrections; JPEGs get
-  nothing. Or **None**, or any preset.
+- **Apply preset**: the starting edits for new raw photos. **Default** gives
+  them lens corrections. Or **None**, or any preset. JPEGs, TIFFs and other
+  non-raw photos get nothing, unless **Also apply to JPEGs** is on.
+- **Also apply to JPEGs**: gives new non-raw photos the preset too, without
+  its Lens Corrections, which the camera has done already, or settings that
+  need a raw, such as Capture Sharpening and Remove Hot Pixels. You can still
+  turn those on by hand. The built-in **Default** preset stays raw-only. Off
+  by default. Both settings also apply when you paste settings onto photos
+  not yet edited.
 - **Save current settings…**: makes a preset from the open photo, with only
   the settings you tick.
 - **Keywords for edited photos**: keywords a photo gets once you edit it,

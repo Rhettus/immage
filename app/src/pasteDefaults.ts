@@ -2,14 +2,26 @@
 // Copyright (C) 2026 the Immage authors
 import { commands } from "./commands";
 import type { Session } from "./session";
-import { profileSelection, type Values } from "./manifest";
+import { controlById, profileSelection, type Values } from "./manifest";
 import { AUTO_TONE_IDS, autoExposure, autoTone } from "./autoTone";
 import { DEFAULT_TRANSITION, parseZones } from "./zones";
 
 export type PasteDefaults = {
   profile: number; compensation: number; auto: boolean;
-  preset: { values: Values; rawOnly?: boolean } | null;
+  preset: { values: Values; rawOnly?: boolean; nonRaw?: boolean } | null;
 };
+// the new-photos preset is a raw's starting point. a JPEG, TIFF or other
+// rendered file gets it only when Preferences' Also apply to JPEGs is on,
+// and then without what needs a raw (the controls marked rawOnly) or what
+// the camera did already (Lens Corrections). null: nothing to apply
+const LENS_IDS = new Set(["lens_profile", "lens_ca", "lens_pick"]);
+export function newPhotoPresetValues(values: Values, raw: boolean, nonRaw: boolean): Values | null {
+  if (raw) return values;
+  if (!nonRaw) return null;
+  return Object.fromEntries(Object.entries(values)
+    .filter(([id]) => !LENS_IDS.has(id) && !controlById.get(id)?.rawOnly));
+}
+
 // Establish the same new-photo baseline as opening it in the viewer, before
 // taking a batch's undo snapshot. Never change an existing saved edit.
 export async function preparePastePhoto(s: Session, defaults: PasteDefaults) {
@@ -20,7 +32,9 @@ export async function preparePastePhoto(s: Session, defaults: PasteDefaults) {
     if (defaults.compensation) values.exp_comp = defaults.compensation;
     values.capture = 1;
   }
-  if (defaults.preset && (s.raw || !defaults.preset.rawOnly)) Object.assign(values, defaults.preset.values);
+  const preset = defaults.preset && (s.raw || !defaults.preset.rawOnly)
+    ? newPhotoPresetValues(defaults.preset.values, s.raw, !!defaults.preset.nonRaw) : null;
+  if (preset) Object.assign(values, preset);
   s.setMany(Object.entries(values));
   await s.settled();
   if (s.raw && defaults.auto) {

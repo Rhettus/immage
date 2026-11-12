@@ -10,7 +10,7 @@ import { AdvancedToggle, advancedEdited, useAdvanced } from "./advanced";
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
-import { preparePastePhoto } from "./pasteDefaults";
+import { newPhotoPresetValues, preparePastePhoto } from "./pasteDefaults";
 import { pasteTargets, replaceMasks, restorePaste, runPaste, type PasteUpdate } from "./batchPaste";
 import { CaptureTimeDialog } from "./CaptureTimeDialog";
 import { captureMillis, type CaptureTimeEntry, type CaptureTimeUpdate } from "./captureTime";
@@ -69,7 +69,7 @@ import { UpdateBanner } from "./UpdateBanner";
 import { autoCheck, relaunch } from "./updates";
 
 import { loadFrameCacheMb, loadThumbMemoryMb, refreshMemoryBudget } from "./memoryBudget";
-import { loadOpenGenerated, storeOpenGenerated, loadLoupe, storeLoupe, loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadNewPhotosProfile, loadOverlayColor, loadGuideColor, guideRgb, loadPins, maskOverlayRgb, loadPreview, loadBalancedPreviewSize, loadDraftTarget, loadDraftSmallest, loadSliderScroll, loadStackPairs, PreferencesDialog, storeOverlayColor, storeGuideColor, storeStackPairs, storeAutoHide, storeCanvas, CANVASES, storeFocusMode, storePins, type AccelProvider, type Canvas, loadNegWarn, loadNegProfiles, storeNegProfile, loadNegativeExportFormat, loadReadAhead, storeNegWarn, storeNegativeExportFormat, type Pins, type PrefsTab, type Preview } from "./Preferences";
+import { loadOpenGenerated, storeOpenGenerated, loadLoupe, storeLoupe, loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadNewPhotosNonRaw, loadNewPhotosProfile, loadOverlayColor, loadGuideColor, guideRgb, loadPins, maskOverlayRgb, loadPreview, loadBalancedPreviewSize, loadDraftTarget, loadDraftSmallest, loadSliderScroll, loadStackPairs, PreferencesDialog, storeOverlayColor, storeGuideColor, storeStackPairs, storeAutoHide, storeCanvas, CANVASES, storeFocusMode, storePins, type AccelProvider, type Canvas, loadNegWarn, loadNegProfiles, storeNegProfile, loadNegativeExportFormat, loadReadAhead, storeNegWarn, storeNegativeExportFormat, type Pins, type PrefsTab, type Preview } from "./Preferences";
 import { kindOf, loadPlugins, loadReturns, returnValues, storePlugins, unfit, type PluginConfig,
          type PluginReturn } from "./plugins";
 import { FolderTree, type Volume } from "./FolderTree";
@@ -3797,8 +3797,10 @@ export default function App() {
       const plugin = pano ? { values: { lens_profile: 0, lens_ca: 0 }, labels: [] }
         : !denoised && !s.wasEdited && back && !back.applied
         ? returnValues(back.plugin.split(":")[0], plugins.find((p) => p.id === back.plugin)) : null;
-      if (preset && (raw || !preset.rawOnly)) {
-        s.setMany(Object.entries({ ...presetValues(preset), ...plugin?.values }));
+      const presetVals = preset && (raw || !preset.rawOnly)
+        ? newPhotoPresetValues(presetValues(preset), raw, loadNewPhotosNonRaw()) : null;
+      if (preset && presetVals) {
+        s.setMany(Object.entries({ ...presetVals, ...plugin?.values }));
         setStatus(`new photo: applied "${preset.name}"`);
         base.push({ op: "preset", name: preset.name, label: "new photos preset", enabled: true });
       } else if (plugin && Object.keys(plugin.values).length) {
@@ -3963,7 +3965,7 @@ export default function App() {
     const frozen = structuredClone(c);
     const preset = [...BUILTIN_PRESETS, ...presetsRef.current].find(p => p.id === newPhotosRef.current);
     const defaults = { profile: loadNewPhotosProfile(), compensation: loadExposureCompNew(), auto: loadAutoToneNew(),
-      preset: preset ? { values: presetValues(preset), rawOnly: preset.rawOnly } : null };
+      preset: preset ? { values: presetValues(preset), rawOnly: preset.rawOnly, nonRaw: loadNewPhotosNonRaw() } : null };
     const before = snapshot(session.current, `Paste settings on ${targets.length} photo${targets.length === 1 ? "" : "s"}`);
     pastingRef.current = true;
     setPasting("Preparing paste…");
