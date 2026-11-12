@@ -120,6 +120,9 @@ Bug fixes
   and reopened the photo you had.
 - Importing a damaged or non-image file, such as random bytes named .NEF or
   .png, no longer crashes the editing engine.
+- Adobe RGB, Display P3 and ProPhoto exports to JPEG, TIFF and WebP now embed
+  their color profile, so other apps show the right colors. They were saved
+  without one and looked wrong where the app assumed sRGB.
 
 ## 0.44.1
 

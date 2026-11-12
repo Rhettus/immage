@@ -79,7 +79,8 @@ be called.
 - **Size**: **Original size**, **Fit long edge to…** a number of pixels,
   **Fixed canvas…**, or **AI upscale 2×** / **4×**.
 - **Color space**: **sRGB**, **Adobe RGB (1998)**, **Display P3** or
-  **ProPhoto RGB**.
+  **ProPhoto RGB**. A file in any space other than sRGB carries its color
+  profile, so other apps show its colors correctly.
 
 **Fixed canvas** makes every file exactly the width and height you give,
 filled with the canvas color. Each photo, with any frame from Frame &

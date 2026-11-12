@@ -370,6 +370,31 @@ char *strip_jxl(const char *path, const strip_t what)
   }
 }
 
+char *embed_profile(const char *path, const void *icc, const size_t size)
+{
+  if(!icc || !size) return NULL;
+  try
+  {
+    _lock lock;
+#if defined(_WIN32) && defined(EXV_UNICODE_PATH)
+    gunichar2 *wide = g_utf8_to_utf16(path, -1, NULL, NULL, NULL);
+    auto image = Exiv2::ImageFactory::open(std::wstring((const wchar_t *)wide));
+    g_free(wide);
+#else
+    auto image = Exiv2::ImageFactory::open(path);
+#endif
+    image->readMetadata();
+    if(image->iccProfileDefined()) return NULL;
+    image->setIccProfile(Exiv2::DataBuf(static_cast<const Exiv2::byte *>(icc), size));
+    image->writeMetadata();
+    return NULL;
+  }
+  catch(const std::exception &e)
+  {
+    return g_strdup_printf("could not embed the color profile in '%s': %s", path, e.what());
+  }
+}
+
 // Read the generated file before merging EXIF, retaining its ICC profile
 // and, for DNG, its version and calibration tags.
 gboolean rendered_metadata(const char *path, const void *blob, const int size, const gboolean dng)

@@ -44,6 +44,12 @@ char *strip_metadata(const char *path, strip_t what);
 // compressed. NULL when done, else a message to g_free()
 char *strip_jxl(const char *path, strip_t what);
 
+// puts an ICC profile into an exported JPEG, TIFF or WebP that has none:
+// darktable's format writers embed it, then its EXIF writer reopens the file
+// without reading its metadata and rewrites it without the profile
+// (exif.cc, dt_exif_write_blob). NULL when done, else a message to g_free()
+char *embed_profile(const char *path, const void *icc, size_t size);
+
 // Merge export EXIF while preserving the rendered file's layout and color tags.
 gboolean rendered_metadata(const char *path, const void *blob, int size, gboolean dng);
 

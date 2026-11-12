@@ -1205,6 +1205,27 @@ gboolean export_export(const dt_imgid_t imgid, JsonObject *req, char **err)
   if(failed) return FALSE;
   // a file that keeps what was asked to be left out is not delivered
   // history and location are darktable's to leave out, except in a JPEG XL
+  // darktable's EXIF writer drops the profile the JPEG, TIFF and WebP writers
+  // embedded (strip.h), so a non-sRGB export gets it back; sRGB is the
+  // default for an untagged file and stays as darktable writes it
+  if(!transient && !positive && icc != DT_COLORSPACE_SRGB
+     && (!g_strcmp0(format, "jpeg") || !g_strcmp0(format, "tiff") || !g_strcmp0(format, "webp")))
+  {
+    cmsHPROFILE prof = dt_colorspaces_get_output_profile(imgid, icc, "")->profile;
+    uint32_t len = 0;
+    if(prof && cmsSaveProfileToMem(prof, NULL, &len) && len)
+    {
+      void *buf = g_malloc(len);
+      char *perr = cmsSaveProfileToMem(prof, buf, &len) ? embed_profile(out, buf, len) : NULL;
+      g_free(buf);
+      if(perr)
+      {
+        g_unlink(out);
+        *err = perr;
+        return FALSE;
+      }
+    }
+  }
   if(!transient && (*err = jxl ? strip_jxl(out, strip) : strip_metadata(out, (strip_t)(strip & ~(STRIP_HISTORY | STRIP_LOCATION)))))
   {
     g_unlink(out);
