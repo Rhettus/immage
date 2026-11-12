@@ -374,6 +374,16 @@ export function storeFocusMode(on: boolean) {
   try { settings.set(FOCUS_MODE_KEY, on ? "1" : "0"); } catch { /* not kept */ }
 }
 
+// Simple's sliders, or Advanced's darktable modules; Simple unless chosen
+export type EditMode = "simple" | "advanced";
+const EDIT_MODE_KEY = "immage.editMode";
+export function loadEditMode(): EditMode {
+  try { return settings.get(EDIT_MODE_KEY) === "advanced" ? "advanced" : "simple"; } catch { return "simple"; }
+}
+export function storeEditMode(v: EditMode) {
+  try { settings.set(EDIT_MODE_KEY, v); } catch { /* not kept */ }
+}
+
 // AI acceleration: the GPU provider and device AI upscaling runs on, as
 // darktable's own setting; the engine lists what this computer has
 export type { AccelProvider } from "./commands";
@@ -462,7 +472,7 @@ function LicenseText({ title, text, onClose }: { title: string; text: string; on
 }
 
 export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurrent, focus, canvas, onCanvas, overlayColor, onOverlayColor, guideColor, onGuideColor,
-                                    openGenerated, onOpenGenerated, loupe, onLoupe, focusMode, onFocusMode, autoHide, onAutoHide, stackPairs, onStackPairs,
+                                    openGenerated, onOpenGenerated, loupe, onLoupe, focusMode, onFocusMode, editMode, onEditMode, autoHide, onAutoHide, stackPairs, onStackPairs,
                                     accel, plugins, onPlugins, perfHud, onPerfHud, onBenchmark, onGpuCheck, onTune, onRelaunch, onClose }: {
   presets: Preset[];
   focus?: Tab;                           // a tab to open at
@@ -481,6 +491,8 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   onLoupe: (on: boolean) => void;
   focusMode: boolean;
   onFocusMode: (on: boolean) => void;
+  editMode: EditMode;
+  onEditMode: (v: EditMode) => void;
   autoHide: boolean;
   onAutoHide: (on: boolean) => void;
   stackPairs: boolean;
@@ -725,6 +737,16 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
             {tab === "plugins" && <PluginPrefs plugins={plugins} onPlugins={onPlugins} />}
             {tab === "general" && (
               <>
+              <PrefCard title="Editing">
+                <PrefRow label="Editing mode" summary="Simple sliders, or darktable's modules."
+                         hint="Simple shows Immage's sliders. Advanced shows the same groups with darktable's own modules. The photo and its edits do not change">
+                  <div className="segmented small">
+                    {([["Simple", "simple"], ["Advanced", "advanced"]] as const).map(([label, v]) => (
+                      <button key={v} className={editMode === v ? "active" : ""} onClick={() => onEditMode(v)}>{label}</button>
+                    ))}
+                  </div>
+                </PrefRow>
+              </PrefCard>
               <PrefCard title="Workspace">
                 <ThemePrefs />
                 <PrefRow label="Canvas" summary="Background behind the photo. L cycles colors." hint="behind the photo, full screen too; neutral gray judges tones without a dark surround, white as on a print. L steps through them">

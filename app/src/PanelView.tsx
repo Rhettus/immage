@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
+import { AdvancedGroup } from "./AdvancedPanel";
+import type { EditMode } from "./Preferences";
 import { AdvancedToggle, advancedEdited, useAdvanced } from "./advanced";
 import { BANDS, type Control, type ControlPreset, type CurveChannel, MODULE_CHOICES, type ModuleChoice, NEG_GREYED, type Panel, SF_GREYED, type Section, type Values, choiceCovers, choiceOn, choiceShows, controlById, isModuleSetting, mapOf, mapsWith, parametricOf, pointValues, pointsOf, preferredChoice } from "./manifest";
 import { Chevron, Collapse } from "./Collapse";
@@ -96,6 +98,7 @@ export const noHistogramSubscription = () => () => {};
 export const noHistogram = () => null;
 
 export type PanelProps = {
+  editMode?: EditMode;   // Advanced shows darktable modules in place of the sliders
   sessionRevision: number;
   panel: Panel; open: boolean; onToggle: (solo: boolean) => void; values: Record<string, number>;
   session: Session | null; disabled: boolean; onChange: (c: Control, v: number) => void;
@@ -121,6 +124,7 @@ export function useLiveEvent<A extends unknown[], R>(callback: (...args: A) => R
 }
 
 export function PanelView(props: PanelProps) {
+  const advancedMode = props.editMode === "advanced";
   const selected = useRef<Values | undefined>(undefined);
   const values = panelValues(props.panel, props.values, selected.current);
   useLayoutEffect(() => { selected.current = values; });
@@ -130,6 +134,7 @@ export function PanelView(props: PanelProps) {
   const onPreview = useLiveEvent(props.onPreview);
   const auto = useLiveEvent(() => props.onAuto?.());
   const option = useLiveEvent((preview: OptionPreview | null) => props.onOptionPreview?.(preview));
+  if (advancedMode) return <AdvancedGroup id={props.panel.id} title={props.panel.title} open={props.open} onToggle={onToggle} />;
   return <PanelWidget {...props} values={values} onToggle={onToggle} onChange={onChange}
     onChangeMany={onChangeMany} onPreview={onPreview} onAuto={props.onAuto ? auto : undefined}
     onOptionPreview={props.onOptionPreview ? option : undefined} />;

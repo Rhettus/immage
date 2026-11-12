@@ -6,6 +6,7 @@ import { profileSelection, AGX_USER_FIRST } from "./manifest";
 
 
 
+import { AdvancedSearch, AdvancedGroup, TECHNICAL_ID } from "./AdvancedPanel";
 import { AdvancedToggle, advancedEdited, useAdvanced } from "./advanced";
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
@@ -69,7 +70,7 @@ import { UpdateBanner } from "./UpdateBanner";
 import { autoCheck, relaunch } from "./updates";
 
 import { loadFrameCacheMb, loadThumbMemoryMb, refreshMemoryBudget } from "./memoryBudget";
-import { loadOpenGenerated, storeOpenGenerated, loadLoupe, storeLoupe, loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadNewPhotosNonRaw, loadNewPhotosProfile, loadOverlayColor, loadGuideColor, guideRgb, loadPins, maskOverlayRgb, loadPreview, loadBalancedPreviewSize, loadDraftTarget, loadDraftSmallest, loadSliderScroll, loadStackPairs, PreferencesDialog, storeOverlayColor, storeGuideColor, storeStackPairs, storeAutoHide, storeCanvas, CANVASES, storeFocusMode, storePins, type AccelProvider, type Canvas, loadNegWarn, loadNegProfiles, storeNegProfile, loadNegativeExportFormat, loadReadAhead, storeNegWarn, storeNegativeExportFormat, type Pins, type PrefsTab, type Preview } from "./Preferences";
+import { loadOpenGenerated, storeOpenGenerated, loadLoupe, storeLoupe, loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadEditMode, storeEditMode, loadNewPhotosNonRaw, loadNewPhotosProfile, loadOverlayColor, loadGuideColor, guideRgb, loadPins, maskOverlayRgb, loadPreview, loadBalancedPreviewSize, loadDraftTarget, loadDraftSmallest, loadSliderScroll, loadStackPairs, PreferencesDialog, storeOverlayColor, storeGuideColor, storeStackPairs, storeAutoHide, storeCanvas, CANVASES, storeFocusMode, storePins, type AccelProvider, type Canvas, loadNegWarn, loadNegProfiles, storeNegProfile, loadNegativeExportFormat, loadReadAhead, storeNegWarn, storeNegativeExportFormat, type Pins, type PrefsTab, type Preview } from "./Preferences";
 import { kindOf, loadPlugins, loadReturns, returnValues, storePlugins, unfit, type PluginConfig,
          type PluginReturn } from "./plugins";
 import { FolderTree, type Volume } from "./FolderTree";
@@ -466,6 +467,7 @@ export default function App() {
   };
   const [canvasColor, setCanvasColor] = useState<Canvas>(loadCanvas);
   const [focusMode, setFocusMode] = useState(loadFocusMode);
+  const [editMode, setEditMode] = useState(loadEditMode);
   const [overlayColor, setOverlayColor] = useState(loadOverlayColor);
   // the guides' color, for the stylesheet (styles.css, --guide)
   const [guideColor, setGuideColor] = useState(loadGuideColor);
@@ -4831,7 +4833,7 @@ export default function App() {
   const anyOpen = rightMode === "presets" ? presetGroupsOpen : openPanels.size > 0;
   const toggleAllPanels = () => {
     if (rightMode === "presets") setPresetFold((f) => ({ open: !presetGroupsOpen, n: f.n + 1 }));
-    else setOpenPanels(openPanels.size ? new Set() : new Set(panels.filter((p) => !p.hidden).map((p) => p.id)));
+    else setOpenPanels(openPanels.size ? new Set() : new Set([...panels.filter((p) => !p.hidden).map((p) => p.id), ...(editMode === "advanced" ? [TECHNICAL_ID] : [])]));
   };
 
   // click zooms to 100% on the clicked point, or back to fit; a drag pans,
@@ -6521,8 +6523,9 @@ export default function App() {
               </section>
             </div>
           )}
+          {rightMode === "adjust" && !cropping && editMode === "advanced" && <AdvancedSearch />}
           {rightMode === "adjust" && !cropping && panels.filter((p) => !p.hidden && (!p.showIf || p.showIf(values))).map((p) => (
-            <Profiler key={p.id} id={`panel.${p.id}`} onRender={perf.reactCommit}><PanelView sessionRevision={historyRev} panel={p} open={openPanels.has(p.id)} onToggle={(solo) => togglePanel(p.id, solo)}
+            <Profiler key={p.id} id={`panel.${p.id}`} onRender={perf.reactCommit}><PanelView editMode={editMode} sessionRevision={historyRev} panel={p} open={openPanels.has(p.id)} onToggle={(solo) => togglePanel(p.id, solo)}
                        values={values} session={session.current} disabled={!current} onChange={change}
                        detailLoupe={p.id === "detail" ? renderLoupe("detail") : undefined}
                        presenceLoupe={p.id === "basic" ? renderLoupe("presence") : undefined}
@@ -6598,6 +6601,9 @@ export default function App() {
                          session.current.bypass("colorequal", true);
                        } : undefined} /></Profiler>
           ))}
+          {rightMode === "adjust" && !cropping && editMode === "advanced" && (
+            <AdvancedGroup id={TECHNICAL_ID} title="Technical" open={openPanels.has(TECHNICAL_ID)} onToggle={(solo) => togglePanel(TECHNICAL_ID, solo)} />
+          )}
         </div>
         {!cropping && current && rightMode === "film" && values.sf_on === 1 && (
           <PositiveFooter format={positiveFormat} exporting={positiveExporting} disabled={negBusy || !!negPick}
@@ -6697,6 +6703,7 @@ export default function App() {
                          overlayColor={overlayColor} onOverlayColor={(v) => { setOverlayColor(v); storeOverlayColor(v); }}
                          guideColor={guideColor} onGuideColor={(v) => { setGuideColor(v); storeGuideColor(v); }}
                          focusMode={focusMode} onFocusMode={(on) => { setFocusMode(on); storeFocusMode(on); }}
+                         editMode={editMode} onEditMode={(v) => { setEditMode(v); storeEditMode(v); }}
                          accel={accel}
                          autoHide={autoHide} onAutoHide={(on) => { setAutoHide(on); storeAutoHide(on); }}
                          stackPairs={stackPairs} onStackPairs={(on) => { setStackPairs(on); storeStackPairs(on); }}

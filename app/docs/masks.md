@@ -185,7 +185,7 @@ Where masks overlap, their adjustments add up. **Contrast**,
 Clarity and Texture use **contrast & texture** by default, or local contrast
 and diffuse or sharpen, chosen independently in
 [Preferences › Modules](preferences.md#modules). Medium and Fine details stay
-visible; the sliders icon in the panel's title row shows the remaining native
+visible; the More controls icon (sliders) in the panel's title row shows the remaining native
 controls. Contrast equalizer
 can also replace mask Contrast: select **Custom**, then **Masks › Contrast ›
 contrast equalizer**. The mask's Tone group shows the same five-channel,

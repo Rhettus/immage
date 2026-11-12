@@ -3,6 +3,16 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
+## 0.46.0
+
+Improvements
+
+- Preferences > General has an Editing mode. Advanced shows Adjustments' groups
+  with a Technical group and a module search; darktable's module cards are not
+  there yet. Switching does not change your photo.
+- The sliders icon on panels is now called More controls, and appears only in
+  Simple.
+
 ## 0.45.0
 
 Improvements

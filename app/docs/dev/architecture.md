@@ -759,6 +759,15 @@ opens Global only; opening either group closes the other. Alt-click keeps
 both open. With focus mode off, groups toggle independently; Alt-click opens
 one alone (or closes it if it is already the only open group).
 
+[AdvancedPanel.tsx](../../src/AdvancedPanel.tsx) is Advanced editing mode
+(`loadEditMode` / `storeEditMode` in Preferences.tsx; App holds the state and
+passes it to `PanelView` and the Preferences dialog). In Advanced, `PanelView`
+renders `AdvancedGroup` in place of the sliders (same title row, folding and
+Focus mode through `togglePanel`, no More controls icon). App adds the
+Technical group (`TECHNICAL_ID`, open state in `openPanels`) and
+`AdvancedSearch` above the groups. Both are placeholders until module cards
+exist.
+
 [ModuleSwitch.tsx](../../src/ModuleSwitch.tsx) is the icon and fixed-position
 menu beside a tool's name, for a `MODULE_CHOICES` entry with two or more
 options. `PanelView` (PanelView.tsx) finds each choice's host with `switchHosts`:

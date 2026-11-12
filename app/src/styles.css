@@ -2588,3 +2588,8 @@ html.windows .tool, html.windows .tool * { cursor: default; }
   margin-left: 8px; padding: 1px 8px; background: var(--hover, #2a2a2a); border: none; border-radius: 5px;
   color: var(--text); font: inherit; cursor: pointer; pointer-events: auto;
 }
+
+/* Advanced mode: the module search and a group with no modules yet */
+.advanced-search { padding: 8px 14px; }
+.advanced-search .field { width: 100%; box-sizing: border-box; }
+.advanced-empty { margin: 4px 16px 8px; color: var(--muted, #8a8a8a); font-size: var(--fs-small); }
