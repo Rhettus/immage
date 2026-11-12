@@ -180,12 +180,40 @@ static const struct { dt_ai_provider_t p; const char *id; } _gpu_providers[] = {
   { DT_AI_PROVIDER_COREML, "CoreML" }, { DT_AI_PROVIDER_DIRECTML, "DirectML" },
   { DT_AI_PROVIDER_CUDA, "CUDA" }, { DT_AI_PROVIDER_MIGRAPHX, "MIGraphX" },
 };
+
 #endif
+// an object component's feather when none is given: a path's border, as
+// a share of the image's shorter side (path.c)
+#define _OBJECT_FEATHER 0.003
+
+// ------------------------------------------------------------ range masks
+// Lightroom's Color Range and Luminance Range as darktable's parametric
+// masks in the scene-referred RGB blend space, multiplied into the drawn
+// mask. their values come from `sample`: the working-space pixel at the
+// mask instances' input, the anchor's output
+
+// the working-space image the mask instances get, small, from the preview
+// pipe's cache: its buffer, region, size of the shown image it maps to,
+// the piece that made it, and the masking profile for its values
+typedef struct _working_t
+{
+  const float *data;
+  dt_iop_roi_t roi;
+  int pw, ph;
+  dt_dev_pixelpipe_iop_t *piece;
+  dt_iop_buffer_dsc_t *dsc;
+  dt_iop_order_iccprofile_info_t profile;
+} _working_t;
 
 extern dt_engine_session_t _s;
 
 // main.c
+gboolean engine_transient_write(const char *path, const void *first, size_t a,
+                                const void *second, size_t b);
+void engine_background_yield(void);
+void engine_background_priority(void);
 double engine_ms_since(const gint64 t0);
+void engine_reply(FILE *out, JsonBuilder *b);
 void engine_add_string(JsonBuilder *b, const char *name, const char *value);
 void engine_add_int(JsonBuilder *b, const char *name, const gint64 value);
 void engine_add_bool(JsonBuilder *b, const char *name, const gboolean value);
@@ -199,10 +227,47 @@ void *session_field_in(dt_iop_module_t *mod, void *base, const char *path,
 gboolean session_render(dt_dev_pixelpipe_t *pipe, const int devid, const int bw, const int bh,
                         const double req_scale, const int x, const int y, JsonArray *have,
                         int *ow, int *oh, int *ox_out, int *oy_out, dt_hash_t *kept, preview_output_t *output, char **err);
+gboolean session_ppipe_ready(char **err);
 gboolean session_follower_ready(dt_engine_follower_t *f, char **err);
+gboolean session_save(char **err);
 
 // masks.c
 void masks_invalidate_from(const int order, const char *why);
+void masks_add_num(JsonBuilder *b, const char *name, const double v);
+gboolean masks_working(_working_t *w, char **err);
+void masks_to_working(const _working_t *w, float *pts, const size_t n);
+void masks_blend_values(const _working_t *w, const float *rgb_in, float *Y, dt_aligned_pixel_t JzCzhz);
+
+// library.c
+gboolean library_write_sidecar(const dt_imgid_t imgid);
+dt_imgid_t library_import(const char *path);
+dt_imgid_t library_snapshot(const dt_imgid_t imgid);
+void library_snapshot_remove(const dt_imgid_t snap);
+void library_image_json(JsonBuilder *b, const dt_imgid_t imgid, const gboolean full);
+
+// export.c
+#ifdef HAVE_AI
+extern GMutex export_ai_load_lock;
+#endif
+
+// ai.c
+uint8_t *ai_shown_rgb(const int size, const gboolean color, int *w, int *h, char **err);
+
+#ifdef HAVE_AI
+extern const char *ai_models_dir;
+extern GThreadPool *ai_pool;
+gpointer ai_idle_watch(gpointer data);
+void ai_run(gpointer data, gpointer user_data);
+void ai_wait(void);
+gboolean ai_select(JsonObject *req, JsonBuilder *b, char **err);
+void ai_denoise_forget(void);
+gboolean ai_denoise_preview(const float u, const float v, const int size, const char *out,
+                            JsonBuilder *b, char **err);
+extern GThreadPool *ai_denoise_pool;
+void ai_denoise_run(gpointer data, gpointer user_data);
+void ai_denoise_wait(void);
+gboolean ai_denoise(const float strength, const gint64 tag, JsonBuilder *b, char **err);
+#endif
 
 // device.c
 #ifdef HAVE_AI
