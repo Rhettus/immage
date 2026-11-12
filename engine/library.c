@@ -1138,7 +1138,6 @@ void library_thumb_run(gpointer data, gpointer user_data)
   g_object_unref(b);
   g_free(err);
   g_object_unref(parser);
-  g_atomic_int_add(&export_jobs, -1);
 }
 
 // FALSE once the pool has stopped; the request then gets no reply
