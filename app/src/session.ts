@@ -661,13 +661,38 @@ export class Session {
     this.markLocal(name, ops?.size ? [...ops] : [REFINE_CARRIER]);
   }
 
-  // a copy of mask `name` as `to`, with its own instances
-  duplicateMask(name: string, to: string) {
+  // a copy of mask `name` as `to`, with its own instances. without
+  // `adjustments` only the mask is copied (shape, invert, opacity, refine),
+  // its adjustments starting as those of a new mask
+  duplicateMask(name: string, to: string, adjustments = true) {
     const m = this.mask(name);
     if (!m) return;
-    this.masks = [...this.masks, { ...structuredClone(m), name: to }];
+    if (adjustments) {
+      this.masks = [...this.masks, { ...structuredClone(m), name: to }];
+      this.dirtyShapes.add(to);
+      this.markLocal(to, [...(this.maskOps.get(name) ?? [])]);
+      return;
+    }
+    const { shapes, invert, opacity, refine } = structuredClone(m);
+    this.masks = [...this.masks, { name: to, shapes, invert, opacity, ...(refine ? { refine } : {}),
+      values: { ...neutralLocal(), ...Object.fromEntries(
+        MASK_MODULE_CHOICES.map((c) => [c.control, loadModuleChoice(c.id, "masks")])) } }];
+    this.edited = true;
     this.dirtyShapes.add(to);
-    this.markLocal(to, [...(this.maskOps.get(name) ?? [])]);
+    // the refinement rides on an instance's blend parameters
+    if (isRefined(m)) { this.markLocal(to, [REFINE_CARRIER]); return; }
+    this.needRender = true;
+    void this.pump();
+  }
+
+  // every adjustment of the mask back to neutral, its tool choices, shape,
+  // invert, opacity, refine and hidden kept
+  resetMaskAdjustments(name: string) {
+    const m = this.mask(name);
+    if (!m) return;
+    const keep = Object.fromEntries(MASK_MODULE_CHOICES.map((c) => [c.control, m.values[c.control]]));
+    this.masks = this.masks.map((x) => (x.name === name ? { ...x, values: { ...neutralLocal(), ...keep } } : x));
+    this.markLocal(name, [...(this.maskOps.get(name) ?? [])]);
   }
 
   // a mask under a new name; one the engine has not yet heard of is only

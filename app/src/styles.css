@@ -1715,6 +1715,7 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 }
 .tile-menu button:hover { background: var(--hover); }
 .tile-menu button.danger { color: #ff6b6b; }
+.tile-menu button:disabled { opacity: 0.4; cursor: default; background: none; }
 /* the masks panel's adjustments card, named for the mask it acts through */
 .masks-panel .adj-title { cursor: default; }
 .masks-panel .adj-title > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

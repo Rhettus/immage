@@ -1127,16 +1127,24 @@ export default function App() {
     if (maskSel === name) { setMaskSel(null); setMaskTool(null); }
   };
   // a copy of a mask, inverted or not, to add to and take from on its own
-  const duplicateMask = (name: string, invert: boolean) => {
+  const duplicateMask = (name: string, invert: boolean, adjustments = true) => {
     const s = session.current;
     if (!s) return;
     record(["mask:create"]);
     const to = nextMaskName(s.masks, `${name} copy`);
-    s.duplicateMask(name, to);
+    s.duplicateMask(name, to, adjustments);
     if (invert) s.setInvert(to, !s.masks.find((m) => m.name === to)!.invert);
     syncMasks();
     setMaskSel(to);
     setShapeSel(0);
+  };
+  // a mask's adjustments back to neutral, the mask itself kept
+  const resetMaskAdjustments = (name: string) => {
+    const s = session.current;
+    if (!s) return;
+    record([`mask:reset:${name}`], "Reset Mask Adjustments");
+    s.resetMaskAdjustments(name);
+    syncMasks();
   };
   // K and M pick a tool from anywhere, as in Lightroom
   const pickMaskTool = (t: MaskTool) => {
@@ -6157,6 +6165,7 @@ export default function App() {
                         }}
                         onHidden={(name, hidden) => { record([`mask:${name}:hidden`]); session.current?.setHidden(name, hidden); syncMasks(); }}
                         onDuplicate={duplicateMask}
+                        onResetAdjustments={resetMaskAdjustments}
                         raw={session.current?.raw ?? true} image={full.current} thumbMaps={thumbMaps}
                         onDelete={deleteMask}
                         onPeek={setPeekName}

@@ -83,8 +83,13 @@ is over the panels, so the adjustment can be seen.
 - The eye shows or hides the mask's adjustments.
 - Hover over a name for a moment to see that mask in red.
 - Double-click a name to rename it.
-- The **…** menu has **Duplicate Mask**, **Duplicate and Invert Mask**,
-  **Rename Mask** and **Delete Mask**.
+- The **…** menu has **Duplicate Mask**, **Duplicate Mask Only**,
+  **Duplicate and Invert Mask**, **Duplicate and Invert Mask Only**,
+  **Reset Mask Adjustments**, **Rename Mask** and **Delete Mask**.
+  The **Only** copies keep the mask's shapes, Invert, Opacity and Refine
+  but start with no adjustments. **Reset Mask Adjustments** returns every
+  adjustment of the mask to neutral and keeps the mask itself; it is
+  unavailable while the mask has no adjustments.
 - O, or the eye in the panel's title, shows or hides the red overlay.
   While you add to or subtract from a mask, its overlay shows even with
   the toggle off; O hides it until you put the tool down, and moving one

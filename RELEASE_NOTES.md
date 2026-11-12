@@ -59,6 +59,9 @@ Improvements
   changed on the download server is refused, with a message that an update
   of Immage is needed.
 - Export to JPEG XL, with quality (100 for lossless) and 8 to 16 bit depth.
+- Masks: the … menu can duplicate a mask, or duplicate and invert it,
+  without its adjustments, and Reset Mask Adjustments clears a mask's
+  adjustments while keeping its shapes and settings.
 
 Performance
 
