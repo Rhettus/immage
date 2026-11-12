@@ -46,9 +46,12 @@ export async function moduleOutput(t,definition){
  await chooseModule(t,scope,choice.label,option.value);
  if(scope==='global')await openTool(t,'adjust');
  if(scope==='masks'){
-  await openTool(t,'masks');await click(t,'.create-mask');await textButton(t,'.shape-menu-list','Radial Gradient');
+  await openTool(t,'masks');const clean=await settledPhoto(t);t.measure({name:'mask-clean',photoHash:clean.hash});await click(t,'.create-mask');await textButton(t,'.shape-menu-list','Radial Gradient');
   const svg=await reveal(t,'svg.mask-svg');await t.driver.drag({x:svg.x-svg.bounds.width*.12,y:svg.y-svg.bounds.height*.12},{x:svg.x+svg.bounds.width*.12,y:svg.y+svg.bounds.height*.12});
   await until(()=>t.driver.observe(()=>!!document.querySelector('.mask-list li.on')),'radial mask created');
+  // a new mask with neutral adjustments leaves the photo as it was; these and
+  // mask-before-edit say which step changed it when mask-delete misses
+  const created=await settledPhoto(t);t.measure({name:'mask-created',photoHash:created.hash});
  }
  if(option.op==='satcurvergb')return satcurveOutput(t,scope);
  // Black & White's modules have no sliders of their own: B&W treatment shows them
@@ -83,6 +86,7 @@ export async function moduleOutput(t,definition){
  }
  if(!control)throw new Blocked(`${scope}/${choice.id}/${option.name}: no enabled control; needs matching RAW/treatment/section prerequisite`);
  const s=await reveal(t,control),before=await settledPhoto(t);
+ if(scope==='masks')t.measure({name:'mask-before-edit',photoHash:before.hash});
  const start=Number(s.value),target=Math.min(s.max,start+(s.max-s.min)*.15);
  const at=value=>({x:s.bounds.x+8+(s.bounds.width-16)*(value-s.min)/(s.max-s.min),y:s.y});
  await t.driver.drag(at(start),at(target));

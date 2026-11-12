@@ -83,7 +83,8 @@ export async function settledReset(t, baseline, _edited, label = 'reset') {
   try { reset = await settledPhoto(t, p => meanError(p, baseline) < 1); }
   catch { reset = await settledPhoto(t); }
   const error = meanError(reset, baseline);
-  t.measure({ name: label, photoHash: reset.hash, baselineHash: baseline.hash, meanAbsoluteError: error });
+  t.measure({ name: label, photoHash: reset.hash, baselineHash: baseline.hash, meanAbsoluteError: error,
+    photo: summary(reset), baseline: summary(baseline) });
   assert(error < 1, `${label}: photo mean pixel error ${error} exceeds 1/255`);
   return reset;
 }
