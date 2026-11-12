@@ -66,6 +66,11 @@ ROOT, tiff = engine_session.ROOT, engine_session.tiff
 # key is dropped here when it is
 KNOWN = {
     'crash|xmp-bad-params-hex': 'a thumbnail of a photo whose sidecar has non-hex parameters crashes',
+    # darktable's own bug, inherited: claims-huge.tif's failed full-size allocation
+    # leaves its mipmap cache entry on the static dead image, and a later eviction
+    # free()s it (mipmap_cache.c _mipmap_cache_deallocate_dynamic). It lands on
+    # whichever case evicts that entry, xmp-nul-bytes in this corpus order.
+    'crash|xmp-nul-bytes': 'a later thumbnail crashes after a photo claiming a huge size failed to load',
 }
 
 # not fuzzed: real printing, network, ends the session
