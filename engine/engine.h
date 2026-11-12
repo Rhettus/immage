@@ -210,6 +210,7 @@ extern dt_engine_session_t _s;
 // main.c
 gboolean engine_transient_write(const char *path, const void *first, size_t a,
                                 const void *second, size_t b);
+extern GMutex engine_cancel_lock;
 void engine_background_yield(void);
 void engine_background_priority(void);
 double engine_ms_since(const gint64 t0);
@@ -221,9 +222,15 @@ void engine_add_bool(JsonBuilder *b, const char *name, const gboolean value);
 // session.c
 void session_changed(const dt_dev_pixelpipe_change_t flags);
 void session_follower_cleanup(dt_engine_follower_t *f);
+extern GMutex session_hold_lock;
+extern GHashTable *session_holds;
+dt_imgid_t session_hold_take(const gint64 job, const dt_imgid_t imgid);
+void session_hold_release(const gint64 job);
 dt_iop_module_t *session_module(const char *op, char **err);
 void *session_field_in(dt_iop_module_t *mod, void *base, const char *path,
                        dt_introspection_field_t **f, char **err);
+gboolean session_write_field(dt_iop_module_t *mod, const char *name, const double num,
+                             char **err);
 gboolean session_render(dt_dev_pixelpipe_t *pipe, const int devid, const int bw, const int bh,
                         const double req_scale, const int x, const int y, JsonArray *have,
                         int *ow, int *oh, int *ox_out, int *oy_out, dt_hash_t *kept, preview_output_t *output, char **err);
@@ -246,13 +253,24 @@ void library_snapshot_remove(const dt_imgid_t snap);
 void library_image_json(JsonBuilder *b, const dt_imgid_t imgid, const gboolean full);
 
 // export.c
+void export_merge_cancel(const gint64 job);
+extern gint export_jobs;
 #ifdef HAVE_AI
 extern GMutex export_ai_load_lock;
 #endif
+void export_fonts(JsonBuilder *b);
+gboolean export_export(const dt_imgid_t imgid, JsonObject *req, char **err);
+extern GThreadPool *export_pool;
+gboolean export_hdr_merge(JsonObject *req, JsonBuilder *b, FILE *out, char **err);
+#ifdef HAVE_PANO
+gboolean export_pano_merge(JsonObject *req, JsonBuilder *b, FILE *out, char **err);
+#endif
+void export_run(gpointer data, gpointer user_data);
+gboolean export_queue(JsonParser *parser);
+void export_wait(void);
 
 // ai.c
 uint8_t *ai_shown_rgb(const int size, const gboolean color, int *w, int *h, char **err);
-
 #ifdef HAVE_AI
 extern const char *ai_models_dir;
 extern GThreadPool *ai_pool;
@@ -273,16 +291,12 @@ gboolean ai_denoise(const float strength, const gint64 tag, JsonBuilder *b, char
 #ifdef HAVE_AI
 #ifdef __linux__
 gboolean device_ort_exports(const dt_ai_provider_t p);
-
 #endif
 gboolean device_gpu_usable(const dt_ai_provider_t p);
-
 #endif
 void device_opencl(JsonBuilder *b);
-
 #ifdef HAVE_AI
 void device_ai_accel(JsonBuilder *b);
-
 #endif
 gboolean device_parity(JsonObject *req, JsonBuilder *b, char **err);
 
