@@ -251,6 +251,13 @@ gboolean engine_transient_write(const char *path, const void *first, size_t a,
   return transient_write(path, first, a, second, b);
 }
 
+#if defined(__APPLE__) || defined(IMMAGE_TEST_POSIX_OUTPUT)
+int engine_transient_shared_open(const char *name, size_t length)
+{
+  return transient_shared_open(name, length);
+}
+#endif
+
 void engine_add_string(JsonBuilder *b, const char *name, const char *value)
 {
   json_builder_set_member_name(b, name);

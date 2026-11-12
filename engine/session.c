@@ -1051,7 +1051,11 @@ gboolean session_write_ppm(const char *path, const uint8_t *in, const int w, con
   return TRUE;
 }
 
+// rgba_output.h opens macOS shared frames through transient_output.h, whose
+// state main.c owns
+#define transient_shared_open engine_transient_shared_open
 #include "rgba_output.h"
+#undef transient_shared_open
 
 // headerless RGBA, ready for a canvas ImageData; the size is in the reply.
 // written over the file in place: g_file_set_contents() would write a

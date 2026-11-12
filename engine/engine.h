@@ -300,6 +300,9 @@ extern dt_engine_session_t _s;
 // main.c
 gboolean engine_transient_write(const char *path, const void *first, size_t a,
                                 const void *second, size_t b);
+#if defined(__APPLE__) || defined(IMMAGE_TEST_POSIX_OUTPUT)
+int engine_transient_shared_open(const char *name, size_t length);
+#endif
 extern GMutex engine_cancel_lock;
 void engine_background_yield(void);
 void engine_background_priority(void);

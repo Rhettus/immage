@@ -60,7 +60,7 @@ const REPEAT_AFTER: Duration = Duration::from_secs(30);
 pub fn should_emit(available: u64, total: u64, last_emit: Option<Instant>, now: Instant) -> bool {
     total > 0
         && available < total / 10
-        && last_emit.map_or(true, |t| now.saturating_duration_since(t) >= REPEAT_AFTER)
+        && last_emit.is_none_or(|t| now.saturating_duration_since(t) >= REPEAT_AFTER)
 }
 
 /// polls available memory and emits `memory-pressure` for the page to let go
