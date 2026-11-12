@@ -115,6 +115,9 @@ Bug fixes
 - Moving a photo to the Trash now also takes its duplicate-version sidecars
   when the file name contains [, *, ? or a backslash. They were left behind,
   and a later photo with the same name could pick them up as its own edits.
+- Asking for the details of a photo that is no longer in the library no
+  longer leaves the editing engine stuck, which then restarted by itself
+  and reopened the photo you had.
 
 ## 0.44.1
 

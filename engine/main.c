@@ -407,8 +407,16 @@ static gboolean _cmd_prefetch(JsonObject *req, JsonBuilder *b, char **err)
 
 static gboolean _cmd_meta(JsonObject *req, JsonBuilder *b, char **err)
 {
+  // an id that is not in the library has no row for the image cache to read:
+  // it answers an error, as the other commands do
+  const dt_imgid_t imgid = json_object_get_int_member_with_default(req, "imgid", 0);
+  if(!dt_is_valid_imgid(imgid) || !dt_image_exists(imgid))
+  {
+    *err = g_strdup("no such image");
+    return FALSE;
+  }
   json_builder_set_member_name(b, "image");
-  library_image_json(b, json_object_get_int_member_with_default(req, "imgid", 0), TRUE);
+  library_image_json(b, imgid, TRUE);
   return TRUE;
 }
 
