@@ -107,6 +107,7 @@ jobs:
             verify/engine-state.test.mjs \
             verify/export-format.test.mjs \
             verify/fit-preview.test.mjs \
+            verify/front-logic.test.mjs \
             verify/gpu-check.test.mjs \
             verify/menus.test.mjs \
             verify/module-others.test.mjs \
@@ -119,7 +120,8 @@ jobs:
             verify/settings-store.test.mjs \
             verify/theme.test.mjs \
             verify/typed-commands.test.mjs \
-            verify/ui-updates.test.mjs
+            verify/ui-updates.test.mjs \
+            verify/upgrade-paths.test.mjs
       - run: npm audit --omit=dev --audit-level=high
         working-directory: app
       # rust-cache saves nothing after an exact hit, so an entry saved before
