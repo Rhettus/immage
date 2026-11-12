@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { click, inspect, openTool, reveal } from '../support/controls.mjs';
 import { choose, Blocked, textButton, openStep } from '../support/scenario.mjs';
 import { until } from '../support/webdriver.mjs';
-import { startup, settledPhoto } from './smoke.mjs';
+import { startup, settledPhoto, settledReset } from './smoke.mjs';
 
 const input = '[data-control-id="neg_input_profile"] select';
 const working = '[data-control-id="neg_working_profile"] select';
@@ -51,6 +51,10 @@ export async function negativeProfileMemory(t) {
   t.measure({ name: 'menus', input: (await t.driver.observe(inspect, input)).options, working: (await t.driver.observe(inspect, working)).options });
   assert(chosen.every((v, i) => v !== defaults[i]), `chosen profiles differ from the defaults (${defaults})`);
   await choose(t, input, chosen[0]);
+  // the Working menu is rebuilt while the Input change applies: wait for
+  // its option to be offered again
+  await until(async () => (await t.driver.observe(inspect, working))?.options
+    ?.some(o => o.value === String(chosen[1]) && !o.disabled), 'working option offered again');
   await choose(t, working, chosen[1]);
   await until(async () => (await values()).every((v, i) => v === chosen[i]), 'both profiles chosen');
   await settledPhoto(t, p => p.hash !== original.hash);
@@ -115,7 +119,9 @@ export async function negativeProfileMemory(t) {
   assert(!(await t.driver.observe(converted)), 'photo reopens unconverted');
   await pickBorder(t);
   await until(async () => (await values()).every((v, i) => v === chosen[i]), 'remembered profiles after restart', 10000);
-  assert.equal((await settledPhoto(t, p => p.hash !== original.hash)).hash, withMemory.hash, 'same conversion after restart');
+  // within 1/255 rather than the same hash: after a restart the converted
+  // frame can differ from the first session's by a level in a few pixels
+  await settledReset(t, withMemory, null, 'same conversion after restart');
   await t.evidence('after-restart');
   t.measure({ name: 'negative-profile-memory', defaults, chosen, keep, convertedHash: withMemory.hash });
 }

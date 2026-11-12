@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from 'node:assert/strict';
-import { click, reveal, inspect } from '../support/controls.mjs';
+import { click, reveal, inspect, openTool } from '../support/controls.mjs';
 import { Blocked, panel, expandSections, textButton } from '../support/scenario.mjs';
 import { until } from '../support/webdriver.mjs';
 import { settledPhoto } from './smoke.mjs';
@@ -12,6 +12,8 @@ import { settledPhoto } from './smoke.mjs';
 // config's fixture
 export async function lensProfile(t) {
   if (!t.fixture.raw) throw new Blocked('Lens profile needs a raw fixture whose camera is in the lensfun database (a Sony ZV-1 raw)');
+  // a case before may have left another tool open (the mask cases leave Masks)
+  await openTool(t, 'adjust');
   const root = await panel(t, 'lens');
   await expandSections(t, root);
   const selector = `${root} [data-control-id="lens_profile"] input[type=checkbox]`;
@@ -37,6 +39,8 @@ export async function lensProfile(t) {
 // very different lens changes the picture, and Auto restores it
 export async function lensPick(t) {
   if (!t.fixture.raw) throw new Blocked('Lens pick needs a raw fixture whose camera is in the lensfun database');
+  // a case before may have left another tool open (the mask cases leave Masks)
+  await openTool(t, 'adjust');
   const root = await panel(t, 'lens');
   await expandSections(t, root);
   const toggle = `${root} [data-control-id="lens_profile"] input[type=checkbox]`;

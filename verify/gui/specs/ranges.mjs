@@ -109,6 +109,10 @@ async function withTemporaryMask(t, run) {
   try {
     const selected = await t.driver.observe(() => document.querySelector('.mask-list li.on .name')?.textContent);
     if (selected === name) {
+      // the row's × shows only on hover, and an advanced control opened in
+      // run() can scroll the row out of view: bring it back and hover it
+      const row = await reveal(t, '.mask-list li.on .name');
+      await t.driver.point(row.x, row.y, 2);
       await click(t, '.mask-list li.on .mask-del');
       await until(() => t.driver.observe((n) => document.querySelectorAll('.mask-list li').length === n, previousCount),
                   'temporary mask removed');

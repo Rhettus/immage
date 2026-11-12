@@ -61,9 +61,15 @@ export async function panel(t, id) {
 // click on its heading, unless it is already open; a locked step cannot open
 export async function openStep(t, scope, id) {
   const step = `${scope} .step[data-step=${JSON.stringify(id)}]`;
-  if (!await t.driver.observe(s => document.querySelector(s)?.classList.contains('open'), step)) {
+  const isOpen = () => t.driver.observe(s => document.querySelector(s)?.classList.contains('open'), step);
+  // a step shutting above slides the headings below it (.collapse): a click
+  // measured mid-slide lands on another step's heading, so let it settle
+  // and click again while this one is still shut
+  for (let attempt = 0; attempt < 3 && !await isOpen(); attempt++) {
+    await until(() => t.driver.observe(() => !document.getAnimations().some(a =>
+      a.playState === 'running' && a.effect?.target?.closest?.('.collapse'))), `${id} steps settled`);
     await click(t, `${step} > .step-head`);
-    await until(() => t.driver.observe(s => document.querySelector(s)?.classList.contains('open'), step), `${id} step open`);
+    try { await until(isOpen, `${id} step open`, 3000); } catch (e) { if (attempt === 2) throw e; }
   }
 }
 export async function expandSections(t, selector) {
