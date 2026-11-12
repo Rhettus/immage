@@ -174,7 +174,13 @@ static gboolean _write_xmp_whole(const dt_imgid_t imgid, const char *filename, c
     // on to the disk before it takes the old one's place, or a power cut
     // after the rename can leave an empty file under the sidecar's name
     const int fd = g_open(tmp, O_RDWR, 0);
-    const gboolean synced = fd >= 0 && g_fsync(fd) == 0;
+    // fsync/_commit, not g_fsync: darktable caps GLib at 2.56
+    // (src/CMakeLists.txt) and g_fsync needs 2.64, an error on Windows
+#ifdef _WIN32
+    const gboolean synced = fd >= 0 && _commit(fd) == 0;
+#else
+    const gboolean synced = fd >= 0 && fsync(fd) == 0;
+#endif
     const int code = errno;
     if(fd >= 0) close(fd);
     if(!synced)
