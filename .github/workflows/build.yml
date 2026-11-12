@@ -118,6 +118,7 @@ jobs:
             verify/saturation-curve.test.mjs \
             verify/settings-store.test.mjs \
             verify/theme.test.mjs \
+            verify/typed-commands.test.mjs \
             verify/ui-updates.test.mjs
       - run: npm audit --omit=dev --audit-level=high
         working-directory: app
