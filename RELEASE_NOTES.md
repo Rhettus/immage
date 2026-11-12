@@ -118,6 +118,8 @@ Bug fixes
 - Asking for the details of a photo that is no longer in the library no
   longer leaves the editing engine stuck, which then restarted by itself
   and reopened the photo you had.
+- Importing a damaged or non-image file, such as random bytes named .NEF or
+  .png, no longer crashes the editing engine.
 
 ## 0.44.1
 
