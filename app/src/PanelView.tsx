@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
-import { AdvancedGroup } from "./AdvancedPanel";
+import { AdvancedGroup, type AdvancedEdit } from "./AdvancedPanel";
 import type { EditMode } from "./Preferences";
 import { AdvancedToggle, advancedEdited, useAdvanced } from "./advanced";
 import { BANDS, type Control, type ControlPreset, type CurveChannel, MODULE_CHOICES, type ModuleChoice, NEG_GREYED, type Panel, SF_GREYED, type Section, type Values, choiceCovers, choiceOn, choiceShows, controlById, isModuleSetting, mapOf, mapsWith, parametricOf, pointValues, pointsOf, preferredChoice } from "./manifest";
@@ -113,6 +113,7 @@ export type PanelProps = {
   transformTools?: React.ReactNode;   // Upright's buttons, its section's only content
   onPreview: (values: Values | null) => void;   // a swatch under the pointer
   onOptionPreview?: (preview: OptionPreview | null) => void;   // a slider ⌥-dragged
+  onAdvancedEdit?: AdvancedEdit;   // records an Advanced card edit for undo
 };
 
 // Event bridges retain the latest committed handlers without making every panel
@@ -134,7 +135,8 @@ export function PanelView(props: PanelProps) {
   const onPreview = useLiveEvent(props.onPreview);
   const auto = useLiveEvent(() => props.onAuto?.());
   const option = useLiveEvent((preview: OptionPreview | null) => props.onOptionPreview?.(preview));
-  if (advancedMode) return <AdvancedGroup id={props.panel.id} title={props.panel.title} open={props.open} onToggle={onToggle} />;
+  if (advancedMode) return <AdvancedGroup id={props.panel.id} title={props.panel.title} open={props.open} onToggle={onToggle}
+                                       session={props.session} revision={props.sessionRevision} record={props.onAdvancedEdit} />;
   return <PanelWidget {...props} values={values} onToggle={onToggle} onChange={onChange}
     onChangeMany={onChangeMany} onPreview={onPreview} onAuto={props.onAuto ? auto : undefined}
     onOptionPreview={props.onOptionPreview ? option : undefined} />;

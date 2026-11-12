@@ -2593,3 +2593,13 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .advanced-search { padding: 8px 14px; }
 .advanced-search .field { width: 100%; box-sizing: border-box; }
 .advanced-empty { margin: 4px 16px 8px; color: var(--muted, #8a8a8a); font-size: var(--fs-small); }
+
+/* Advanced mode's module cards: a header row (switch, name, reset) over the
+   module's own controls */
+.module-card { border-top: 1px solid var(--border, rgba(128, 128, 128, 0.25)); }
+.module-card-head { display: flex; align-items: center; gap: 8px; padding: 6px 14px; cursor: pointer; }
+.module-card-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.module-card.off .module-card-title { color: var(--text-3); }
+.module-card-reset { display: flex; padding: 2px; background: none; border: none; border-radius: 4px; color: var(--text-2); cursor: pointer; }
+.module-card-reset:hover { background: var(--hover); color: var(--text); }
+.module-card-body { padding: 0 14px 6px; }

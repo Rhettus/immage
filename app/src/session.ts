@@ -17,7 +17,10 @@ import { perf, type Trace } from "./perf";
 import { FRAME_HEAD, renderFrame } from "./sharedFrames";
 import { isDetailControl } from "./detailPreview";
 import type { Preview } from "./Preferences";
-import { commands, type GetReply, type HistoryItem, type ModuleState, type Value } from "./commands";
+import { commands, type GetReply, type HistoryItem, type Instance, type ModuleState, type Value } from "./commands";
+
+// one Advanced card's instance: its darktable fields as the client has them
+export type AdvancedState = { op: string; priority: number; enabled: boolean; params: Params; defaults: Params };
 export type { ColorProfiles, HistoryItem, ModuleState } from "./commands";
 // the typed commands, traced under their Rust names as `invoke` traces the rest
 const traced = <T>(command: string, call: () => Promise<T>) => perf.traced<T>(command, call);
@@ -28,7 +31,7 @@ type ModuleRequest = { enabled?: boolean; reset?: boolean; restore?: ModuleState
 
 // the instance a history item is for, and the ModuleMap op its sliders use:
 // Immage's own named instances carry their name, as manifest's "op#name"
-export const instanceKey = (h: HistoryItem) => `${h.op}#${h.priority}`;
+export const instanceKey = (h: { op: string; priority?: number | null }) => `${h.op}#${h.priority}`;
 export const mapOpOf = (h: HistoryItem) => h.label ? `${h.op}#${h.label}` : h.op;
 type ModuleInfo = GetReply["modules"][string];
 
@@ -948,11 +951,85 @@ export class Session {
 
   // a history item's instance switched, reset, or restored for undo
   // ("opened": as the photo opened)
-  setModuleState(h: HistoryItem, req: ModuleRequest) {
+  setModuleState(h: { op: string; priority?: number | null }, req: ModuleRequest) {
     if (h.priority == null) return;
     this.touched.add(instanceKey(h));
     this.modulePending.push({ key: instanceKey(h), op: h.op, priority: h.priority, req });
     void this.pump();
+  }
+
+  // Advanced mode's module cards: the open photo's instances (pipe order),
+  // and the settings of each card loaded, by instanceKey, as darktable's own
+  // introspection fields. kept here rather than in React so undo snapshots
+  // them like `values`, and edits reach the engine through the pump
+  instances: Instance[] = [];
+  advanced = new Map<string, AdvancedState>();
+  private advancedFields = new Map<string, string[]>();
+  private advancedDirty = new Map<string, { op: string; priority: number; params: Params }>();
+  // cards whose instance another edit changed (a Simple slider on the same
+  // module, a reset): read back once the engine has it
+  private advancedStale = new Set<string>();
+
+  // once per photo, however many groups ask
+  private instancesLoad: Promise<Instance[]> | null = null;
+  loadInstances() {
+    return this.instancesLoad ??= traced("instances", () => commands.instances()).then((list) => this.instances = list);
+  }
+
+  // a card's settings from the engine; fields are the schema's paths
+  async loadAdvanced(op: string, priority: number, fields: string[]) {
+    const key = `${op}#${priority}`;
+    this.advancedFields.set(key, fields);
+    const reply = await traced("get_params", () => commands.getParams({ [`${op}@${priority}`]: fields }));
+    const info = reply.modules[`${op}@${priority}`];
+    if (info) this.advanced.set(key, { op, priority, enabled: info.enabled, params: { ...info.params }, defaults: { ...info.defaults } });
+    return this.advanced.get(key);
+  }
+
+  // one darktable field of an instance; moving it switches the module on,
+  // as in darktable
+  setField(op: string, priority: number, path: string, v: number, coalesce = false) {
+    this.setAdvanced(op, priority, { [path]: v }, true, coalesce);
+  }
+
+  setAdvancedEnabled(op: string, priority: number, on: boolean) {
+    this.setAdvanced(op, priority, {}, on);
+  }
+
+  // undo: put the cards back as a snapshot had them, after any module
+  // state it restores (the pump sends module_state first)
+  restoreAdvanced(target: Map<string, AdvancedState>) {
+    for (const [key, want] of target) {
+      const now = this.advanced.get(key);
+      if (!now) continue;
+      const params = Object.fromEntries(Object.entries(want.params).filter(([p, x]) => now.params[p] !== x));
+      if (Object.keys(params).length || want.enabled !== now.enabled)
+        this.setAdvanced(want.op, want.priority, params, want.enabled);
+    }
+  }
+
+  private setAdvanced(op: string, priority: number, params: Params, enabled: boolean, coalesce = false) {
+    const key = `${op}#${priority}`;
+    const card = this.advanced.get(key);
+    if (card) this.advanced.set(key, { ...card, enabled, params: { ...card.params, ...params } });
+    const queued = this.advancedDirty.get(key);
+    this.advancedDirty.set(key, { op, priority, params: { ...queued?.params, ...params } });
+    this.needRender = true;
+    this.submitEdits(coalesce);
+  }
+
+  // a card's instance reset to darktable's defaults: module_state, so the
+  // History panel's undo bookkeeping (modulesOpened) covers it. it stays on,
+  // as darktable's reset button leaves it (imageop.c, _gui_reset_callback);
+  // default_enabled would switch off exposure, which an auto preset turns on
+  resetAdvanced(op: string, priority: number) {
+    this.setModuleState({ op, priority }, { reset: true, enabled: true });
+  }
+
+  // after a Simple slider sent its module: cards on that module read back
+  private staleAdvanced(op: string) {
+    const real = op.split("#")[0];
+    for (const [key, card] of this.advanced) if (card.op === real) this.advancedStale.add(key);
   }
 
   // whether darktable set the module in a way its sliders cannot show
@@ -968,6 +1045,10 @@ export class Session {
     const reply = await traced("get_params", () => commands.getParams({ [op]: fields }));
     const info = this.info[op] = reply.modules[op];
     for (const m of mapsFor(op)) {
+      // a tool's other module (Blacks on exposure while it runs on the tone
+      // mapper) does not hold its sliders: read, it would claim the tool, as
+      // chooseModules avoids at open
+      if (!choiceOn(m, this.values)) continue;
       this.foreign.delete(m);
       const current = info.enabled ? m.read(info.params, info.defaults, this.ctx, this.values) : {};
       for (const id of m.controls) {
@@ -1334,7 +1415,8 @@ export class Session {
       while (this.dirty.size || this.needRender || this.needThumb || this.needCopy || this.needWarm || this.needLoupe
              || this.fitView || this.wantLook !== undefined
              || this.masksPending || this.wantLookAmount !== undefined || this.spotsPending
-             || this.reshapeDue || this.baselineEnd || this.modulePending.length || this.resetModulesPending) {
+             || this.reshapeDue || this.baselineEnd || this.modulePending.length || this.resetModulesPending
+             || this.advancedDirty.size || this.advancedStale.size) {
         if (this.editFrame !== null) break;
         // before the change that ended it; a save it makes is the one due
         if (this.baselineEnd) {
@@ -1444,14 +1526,47 @@ export class Session {
           this.changed();
           if (!this.modulesOpened.has(key)) this.modulesOpened.set(key, r.was);
           this.moduleStates.set(key, r.now);
+          // an instance first set from an Advanced card is not in the
+          // history read at open; its first instance is what Simple maps
           const item = this.history.find((h) => instanceKey(h) === key);
-          if (item) {
+          const mapOp = item ? mapOpOf(item) : priority === 0 ? op : null;
+          if (mapOp) {
             const task = perf.begin("pump.task", { operation:"reread", blockingPump:true });
-            try { await this.reread(mapOpOf(item)); } finally { perf.finish(task); }
+            try { await this.reread(mapOp); } finally { perf.finish(task); }
           }
+          if (this.advanced.has(key)) this.advancedStale.add(key);
           this.onModules?.();
           if (!this.before) { this.unsaved = true; this.scheduleSave(); }
           this.needRender = true;
+          continue;
+        }
+        // Advanced cards' edits: after the sliders' and module states, so an
+        // undo restores whole instances first and the cards' fields last
+        if (this.advancedDirty.size && !this.dirty.size) {
+          const sent = [...this.advancedDirty.values()];
+          this.advancedDirty.clear();
+          for (const { op, priority, params } of sent) {
+            const key = `${op}#${priority}`;
+            const enabled = this.advanced.get(key)?.enabled ?? true;
+            this.draftKeep.add(op);
+            await this.pumpTyped("set_params", () => commands.setParams({ op, priority, params, enabled }));
+            // Simple's sliders on the same instance read it again
+            if (priority === 0 && boundFields()[op]) await this.reread(op);
+          }
+          this.changed();
+          this.onModules?.();
+          if (!this.before) { this.unsaved = true; this.scheduleSave(); }
+          this.needRender = true;
+          continue;
+        }
+        if (this.advancedStale.size && !this.dirty.size && !this.advancedDirty.size) {
+          const keys = [...this.advancedStale];
+          this.advancedStale.clear();
+          for (const key of keys) {
+            const card = this.advanced.get(key), fields = this.advancedFields.get(key);
+            if (card && fields) await this.loadAdvanced(card.op, card.priority, fields);
+          }
+          this.onModules?.();
           continue;
         }
         if (this.reshapeDue && !this.dirty.size) {
@@ -1526,6 +1641,7 @@ export class Session {
         // took 20 ms or more while the page drew (FINDINGS, "KDE on AMD")
         const edits = ops.map((op) => {
           this.draftKeep.add(op.split("#")[0]);
+          this.staleAdvanced(op);
           return this.moduleEdit(op);
         });
         if (ops.length) this.changed();

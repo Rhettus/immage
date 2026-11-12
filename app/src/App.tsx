@@ -41,7 +41,7 @@ import { FrameUpdates, Snapshot } from "./uiUpdates";
 import { PixelCadence, PixelWorker } from "./pixelWorker";
 import { CanvasFrames, FrameGeneration, layerStyle, placeCanvas, resizeCanvas } from "./canvasLayers";
 import { KEY_ZOOMS, ZOOMS, type Placement, type Zoom } from "./zoom";
-import { Session, colorProfiles, framePlace, instanceKey, mapOpOf, type Frame, type HistoryItem, type ModuleState, type View } from "./session";
+import { Session, colorProfiles, framePlace, instanceKey, mapOpOf, type AdvancedState, type Frame, type HistoryItem, type ModuleState, type View } from "./session";
 import { AUTO_TONE_IDS, autoExposure, autoTone, type SceneKey } from "./autoTone";
 
 import { type ClipShow, type Histogram, type ScopeSettings } from "./histogram";
@@ -3898,11 +3898,13 @@ export default function App() {
   type Snap = { values: Values; masks: Mask[]; spots: Spot[]; look: { name: string | null; path: string | null };
                 lookAmount: number; label: string;
                 // the History panel's switched instances, and those deleted
-                modules: Map<string, ModuleState>; deleted: Set<string>; batch?: { token: number; recovery: boolean } };
+                modules: Map<string, ModuleState>; deleted: Set<string>; batch?: { token: number; recovery: boolean };
+                // Advanced cards' instances, as their fields stood
+                advanced: Map<string, AdvancedState> };
   const snapshot = (s: Session, label = ""): Snap => ({
     values: { ...s.values }, masks: structuredClone(s.masks), spots: structuredClone(s.spots),
     look: { name: s.look, path: s.lookPath }, lookAmount: s.lookAmount, label,
-    modules: new Map(s.moduleStates), deleted: new Set(s.deleted),
+    modules: new Map(s.moduleStates), deleted: new Set(s.deleted), advanced: new Map(s.advanced),
   });
   const undo = useRef<{ past: Snap[]; future: Snap[]; key: string; at: number }>(
     { past: [], future: [], key: "", at: 0 });
@@ -3953,9 +3955,12 @@ export default function App() {
     for (const key of s.touched) {
       const want = target.modules.get(key), now = s.moduleStates.get(key);
       if (now && JSON.stringify(want ?? null) === JSON.stringify(now)) continue;
-      const h = s.history.find((x) => instanceKey(x) === key);
+      // an Advanced card's instance may be missing from the history read at
+      // open; any other key is restored only from that history, as before
+      const h = s.history.find((x) => instanceKey(x) === key) ?? s.advanced.get(key);
       if (h) s.setModuleState(h, { restore: want ?? "opened" });
     }
+    s.restoreAdvanced(target.advanced);
     s.deleted = new Set(target.deleted);
     if (JSON.stringify(target.spots) !== JSON.stringify(s.spots)) {
       s.setSpots(target.spots);
@@ -6525,7 +6530,7 @@ export default function App() {
           )}
           {rightMode === "adjust" && !cropping && editMode === "advanced" && <AdvancedSearch />}
           {rightMode === "adjust" && !cropping && panels.filter((p) => !p.hidden && (!p.showIf || p.showIf(values))).map((p) => (
-            <Profiler key={p.id} id={`panel.${p.id}`} onRender={perf.reactCommit}><PanelView editMode={editMode} sessionRevision={historyRev} panel={p} open={openPanels.has(p.id)} onToggle={(solo) => togglePanel(p.id, solo)}
+            <Profiler key={p.id} id={`panel.${p.id}`} onRender={perf.reactCommit}><PanelView editMode={editMode} sessionRevision={historyRev} onAdvancedEdit={record} panel={p} open={openPanels.has(p.id)} onToggle={(solo) => togglePanel(p.id, solo)}
                        values={values} session={session.current} disabled={!current} onChange={change}
                        detailLoupe={p.id === "detail" ? renderLoupe("detail") : undefined}
                        presenceLoupe={p.id === "basic" ? renderLoupe("presence") : undefined}
@@ -6602,7 +6607,7 @@ export default function App() {
                        } : undefined} /></Profiler>
           ))}
           {rightMode === "adjust" && !cropping && editMode === "advanced" && (
-            <AdvancedGroup id={TECHNICAL_ID} title="Technical" open={openPanels.has(TECHNICAL_ID)} onToggle={(solo) => togglePanel(TECHNICAL_ID, solo)} />
+            <AdvancedGroup id={TECHNICAL_ID} title="Technical" session={session.current} revision={historyRev} record={record} open={openPanels.has(TECHNICAL_ID)} onToggle={(solo) => togglePanel(TECHNICAL_ID, solo)} />
           )}
         </div>
         {!cropping && current && rightMode === "film" && values.sf_on === 1 && (

@@ -25,7 +25,7 @@ const layout = t => t.driver.observe(() => ({
   history: document.querySelector('.history-list') ? document.querySelectorAll('.history-list li').length : null,
 }));
 
-async function setMode(t, label) {
+export async function setMode(t, label) {
   await click(t, 'button[data-tour="prefs"]');
   const tab = await until(() => t.driver.observe(() => {
     const e = [...document.querySelectorAll('.prefs-tabs button')].find(e => e.textContent.trim() === 'General');

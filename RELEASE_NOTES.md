@@ -8,8 +8,9 @@ what Immage's update banner shows under Release Notes.
 Improvements
 
 - Preferences > General has an Editing mode. Advanced shows Adjustments' groups
-  with a Technical group and a module search; darktable's module cards are not
-  there yet. Switching does not change your photo.
+  with a Technical group and a module search. It now shows darktable's exposure
+  module as a card in Basic, with its own settings, on/off and reset; other
+  modules follow in later versions. Switching does not change your photo.
 - The sliders icon on panels is now called More controls, and appears only in
   Simple.
 

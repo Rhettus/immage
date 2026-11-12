@@ -766,8 +766,14 @@ passes it to `PanelView` and the Preferences dialog). In Advanced, `PanelView`
 renders `AdvancedGroup` in place of the sliders (same title row, folding and
 Focus mode through `togglePanel`, no More controls icon). App adds the
 Technical group (`TECHNICAL_ID`, open state in `openPanels`) and
-`AdvancedSearch` above the groups. Both are placeholders until module cards
-exist.
+`AdvancedSearch` above the groups. The search and the Technical group are still
+placeholders. Session keeps `instances` (loaded once per photo) and `advanced`,
+each card's darktable fields by `op#priority`. `setField` and
+`setAdvancedEnabled` queue `set_params` with `priority`, which the pump sends
+after Simple's edits and module states; a priority-0 edit rereads Simple's
+sliders, and a Simple edit rereads the cards on that module. Reset uses
+`module_state`, and undo snapshots `advanced` and restores it after module
+states. Headless check: `node --test verify/advanced-modules.test.mjs`.
 
 [ModuleSwitch.tsx](../../src/ModuleSwitch.tsx) is the icon and fixed-position
 menu beside a tool's name, for a `MODULE_CHOICES` entry with two or more
