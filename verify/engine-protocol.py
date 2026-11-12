@@ -92,6 +92,7 @@ def source_commands(engine_c):
 
 
 FIXTURE_TMP = '/tmp/immage-fixture'
+DATED = '2026:10:31 23:59:58.125'
 FIXTURE_KEEP = 4       # distinct reply shapes kept per command
 FIXTURE_ITEMS = 3      # elements kept of a long array
 
@@ -600,7 +601,14 @@ class Run:
         self.state('4 closed', [R('close'), R('close', label='close again')])
         self.state('4 closed', anywhere(1) + photo_files(1) + photo_edits(1) + tagged(1)
                    + malformed())
-        self.state('4 closed', [R('quit')])
+        # a photo with a capture time (a sidecar's, as capture-time.test.mjs does), whose
+        # change is the one capture_times reply that says ok
+        dated = Path(self.tmp) / 'dated' / 'c.tif'
+        self.state('5 dated', [R('import', files=[str(dated)], label='import dated')])
+        c = self.results['5 dated / import dated']['replies'][0]['images'][0]['imgid']
+        self.state('5 dated', [R('capture_times', entries=[{'imgid': c, 'before': DATED, 'after': '2026:10:31 23:59:59.625'}],
+                                 label='capture_times dated')])
+        self.state('5 dated', [R('quit')])
 
 
 def summary(results):
@@ -644,6 +652,12 @@ def main():
         (work / 'empty').mkdir()
         files = [photos / 'a.tif', photos / 'b.tif']
         files[0].write_bytes(background.tiff(64, 48))
+        (work / 'dated').mkdir()
+        (work / 'dated' / 'c.tif').write_bytes(background.tiff(64, 48))
+        (work / 'dated' / 'c.tif.xmp').write_text(
+            '<?xml version="1.0"?><x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF '
+            'xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" '
+            f'xmlns:exif="http://ns.adobe.com/exif/1.0/" exif:DateTimeOriginal="{DATED}"/></rdf:RDF></x:xmpmeta>')
         files[1].write_bytes(background.tiff(48, 64))
         run = Run(args, work)
         try:

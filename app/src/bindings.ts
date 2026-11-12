@@ -29,6 +29,30 @@ export const commands = {
 	beforeView: (on: boolean) => __TAURI_INVOKE<null>("before_view", { on }),
 	preview: (size: number, edits: ModuleEdit[], withLook: boolean, look: string | null) => __TAURI_INVOKE<ArrayBuffer>("preview", { size, edits, withLook, look }),
 	pasteBatch: (action: string, token: number | null, imgids: number[] | null) => __TAURI_INVOKE<PasteBatchReply>("paste_batch", { action, token, imgids }),
+	openFolder: (path: string, recursive: boolean | null, skip: string[] | null, token: number) => __TAURI_INVOKE<FolderReply>("open_folder", { path, recursive, skip, token }),
+	listSubfolders: (path: string) => __TAURI_INVOKE<SubFolder[]>("list_subfolders", { path }),
+	folderVolumes: (paths: string[]) => __TAURI_INVOKE<Volume[]>("folder_volumes", { paths }),
+	thumb: (imgid: number, size: number, path: string | null, version: number | null, proof: boolean | null) => __TAURI_INVOKE<ArrayBuffer>("thumb", { imgid, size, path, version, proof }),
+	thumbCached: (path: string, version: number, size: number) => __TAURI_INVOKE<ArrayBuffer>("thumb_cached", { path, version, size }),
+	thumbKnown: (path: string, version: number, size: number) => __TAURI_INVOKE<ArrayBuffer>("thumb_known", { path, version, size }),
+	prefetch: (imgids: number[]) => __TAURI_INVOKE<null>("prefetch", { imgids }),
+	keywords: () => __TAURI_INVOKE<string[]>("keywords"),
+	keywordsSet: (imgid: number, add: string[], remove: string[]) => __TAURI_INVOKE<string[]>("keywords_set", { imgid, add, remove }),
+	captureTimes: (entries: CaptureTimeEntry[]) => __TAURI_INVOKE<CaptureTimesReply>("capture_times", { entries }),
+	sampleFolder: () => __TAURI_INVOKE<string>("sample_folder"),
+	trashFiles: (imgids: number[]) => __TAURI_INVOKE<string[]>("trash_files", { imgids }),
+	createVirtualCopy: (imgid: number) => __TAURI_INVOKE<LibraryImage>("create_virtual_copy", { imgid }),
+	removeVirtualCopy: (imgid: number) => __TAURI_INVOKE<string | null>("remove_virtual_copy", { imgid }),
+	pathExists: (path: string) => __TAURI_INVOKE<boolean>("path_exists", { path }),
+	cacheLimits: (limits: Limits) => __TAURI_INVOKE<null>("cache_limits", { limits }),
+	cacheUsage: () => __TAURI_INVOKE<Limits>("cache_usage"),
+	cacheClear: (which: string) => __TAURI_INVOKE<null>("cache_clear", { which }),
+	launchFile: () => __TAURI_INVOKE<string | null>("launch_file"),
+	displayScale: () => __TAURI_INVOKE<number | null>("display_scale"),
+	mapSearch: (query: string) => __TAURI_INVOKE<Place[]>("map_search", { query }),
+	mapSearchKeyStatus: () => __TAURI_INVOKE<boolean>("map_search_key_status"),
+	mapSearchKeySave: (key: string) => __TAURI_INVOKE<null>("map_search_key_save", { key }),
+	mapSearchKeyRemove: () => __TAURI_INVOKE<null>("map_search_key_remove"),
 };
 
 /* Types */
@@ -48,6 +72,23 @@ export type BuildInfo = {
 	commit: string | null,
 };
 
+export type CaptureTimeEntry = {
+	imgid: number,
+	before: string,
+	after: string,
+};
+
+export type CaptureTimeUpdate = {
+	imgid: number,
+	before: string,
+	after: string,
+	error?: string | null,
+};
+
+export type CaptureTimesReply = {
+	updates: CaptureTimeUpdate[],
+};
+
 export type ChannelStats = {
 	min: number,
 	mean: number,
@@ -57,6 +98,11 @@ export type ChannelStats = {
 export type ColorProfiles = {
 	input: ([string, number])[],
 	working: ([string, number])[],
+};
+
+export type FolderReply = {
+	images: LibraryImage[],
+	unanswered?: Value[],
 };
 
 export type GetReply = {
@@ -72,6 +118,29 @@ export type HistoryItem = {
 	default_enabled?: boolean | null,
 	fixed?: boolean | null,
 	masked?: boolean | null,
+};
+
+export type LibraryImage = {
+	imgid: number,
+	path: string,
+	filename: string,
+	rating: number,
+	rejected: boolean,
+	labels: number,
+	edited: boolean,
+	width: number,
+	height: number,
+	location: Location | null,
+	exif: MetaExif,
+	keywords: string[],
+	version: number,
+	copy: boolean,
+};
+
+export type Limits = {
+	thumbs: number,
+	immichThumbs: number,
+	immichOriginals: number,
 };
 
 export type Location = {
@@ -194,6 +263,13 @@ export type PickerStats = {
 	max: [number, number, number],
 };
 
+export type Place = {
+	label: string,
+	latitude: number,
+	longitude: number,
+	bounds?: [number, number, number, number] | null,
+};
+
 export type Refine = {
 	feather: number,
 	blur: number,
@@ -233,8 +309,23 @@ export type SaveReply = {
 	edited: boolean,
 };
 
+export type SubFolder = {
+	name: string,
+	path: string,
+	has_children: boolean,
+};
+
 export type ToneKeyReply = {
 	ev: number,
 };
 
 export type Value = null | boolean | number | string | Value[] | { [key in string]: Value };
+
+export type Volume = {
+	path: string,
+	mount: string,
+	name: string,
+	host: string | null,
+	network: boolean,
+	online: boolean,
+};

@@ -2,6 +2,7 @@
 // Copyright (C) 2026 the Immage authors
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { commands } from "./commands";
 import { perf, observeWebview } from "./perf";
 import { loadPreview, loadBalancedPreviewSize, loadDraftSmallest, loadDraftTarget } from "./Preferences";
 import { measureTuner, searchTuner, trimmedMedian, tunerChanges, type TunerSettings, type TunerRun, type TunerMeasurement, type TunerContext, type TunerTrial } from "./previewTuning";
@@ -171,7 +172,7 @@ export function PerformanceTuner({ run, onClose, onRelaunch, onOverlay, photo, r
       const resources = await invoke("perf_resources_stop");
       const currentOptions = await tunerOptions(onOverlay);
       if (currentOptions.some((o) => c.settings[o.id] !== o.current)) throw new Error("Settings changed during recording. Repeat the workload without changing preferences.");
-      const cacheUsage = await invoke("cache_usage").catch(() => null);
+      const cacheUsage = await commands.cacheUsage().catch(() => null);
       const at = new Date();
       const reportPath = await invoke<string>("perf_report_write", {name:`tuner-${at.toISOString().replace(/[:.]/g,"-")}`,report:{immage:"performance-tuner-workload",version:1,at:at.toISOString(),workload:"navigation",settings:c.settings,seconds:(performance.now()-c.start)/1000,samples,frames,webviewTiming,resources,cacheUsage}});
       setWork((old) => [...old,{settings:c.settings,samples,path:reportPath}]);

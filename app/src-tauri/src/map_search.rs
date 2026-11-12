@@ -91,6 +91,7 @@ fn parse_response(body: &str) -> Result<Vec<MapSearchResult>, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn map_search_key_status(app: AppHandle) -> Result<bool, String> {
     match entry(&app)?.get_password() {
         Ok(s) => Ok(!s.trim().is_empty()),
@@ -100,6 +101,7 @@ pub fn map_search_key_status(app: AppHandle) -> Result<bool, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn map_search_key_save(app: AppHandle, key: String) -> Result<(), String> {
     let key = key.trim();
     if key.is_empty() {
@@ -111,6 +113,7 @@ pub fn map_search_key_save(app: AppHandle, key: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn map_search_key_remove(app: AppHandle) -> Result<(), String> {
     match entry(&app)?.delete_credential() {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
@@ -119,7 +122,8 @@ pub fn map_search_key_remove(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn map_search(app: AppHandle, query: String) -> Result<Vec<MapSearchResult>, String> {
+#[specta::specta]
+pub async fn map_search(app: AppHandle, query: String) -> Result<Vec<crate::typed_library::Place>, String> {
     let query = query.trim().to_string();
     if query.is_empty() {
         return Ok(Vec::new());
@@ -141,7 +145,21 @@ pub async fn map_search(app: AppHandle, query: String) -> Result<Vec<MapSearchRe
     })
     .await
     .map_err(|_| "Map search task failed".to_string())?;
-    result
+    result.map(|found| found.into_iter().map(Into::into).collect())
+}
+
+// coordinates are finite here (parse_response drops the rest), which the
+// exported type needs: serde_json's Number is a plain `number` for the page
+impl From<MapSearchResult> for crate::typed_library::Place {
+    fn from(r: MapSearchResult) -> Self {
+        let n = |v: f64| serde_json::Number::from_f64(v).unwrap_or_else(|| 0.into());
+        Self {
+            label: r.label,
+            latitude: n(r.latitude),
+            longitude: n(r.longitude),
+            bounds: r.bounds.map(|b| (n(b[0]), n(b[1]), n(b[2]), n(b[3]))),
+        }
+    }
 }
 
 fn request(

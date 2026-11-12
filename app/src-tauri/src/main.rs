@@ -27,6 +27,7 @@ mod scrub;
 mod support_bundle;
 mod backup;
 mod bindings;
+mod typed_library;
 mod typed_session;
 
 use cache::Caches;
@@ -38,6 +39,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use typed_library::{CaptureTimeEntry, CaptureTimesReply, CopyReply, FilesReply, FolderReply, KeywordsReply, LibraryImage, SubFolder, ThumbReply};
 use typed_session::{AgxAutoReply, ColorProfiles, GetReply, PasteBatchReply, PreviewReply, RenderReply, RenderRequest, SampleReply, SaveReply, ToneKeyReply, HistoryItem, HistoryReply, ModuleEdit, ModuleStateReply, OpenReply, Restore};
 use tauri::{ipc::Response, AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
@@ -1470,8 +1472,9 @@ async fn perf_machine(app: AppHandle, state: State<'_, AppState>) -> Result<Valu
 // `skip` names subfolders taken off the folder tree, which `recursive`
 // leaves out with their own subfolders
 #[tauri::command]
+#[specta::specta]
 async fn open_folder(app: AppHandle, state: State<'_, AppState>, path: String, recursive: Option<bool>,
-                     skip: Option<Vec<String>>, token: u64) -> Result<Value, String> {
+                     skip: Option<Vec<String>>, token: u64) -> Result<FolderReply, String> {
     state.folder_token.store(token, Ordering::SeqCst);
     let recursive = recursive.unwrap_or(false);
     let snapshot = snapshot_path(&state.runtime, &path, recursive, skip.as_deref().unwrap_or_default());
@@ -1567,7 +1570,8 @@ async fn open_folder(app: AppHandle, state: State<'_, AppState>, path: String, r
     }
     let kept = images.clone();
     tauri::async_runtime::spawn_blocking(move || write_snapshot(&snapshot, &kept));
-    Ok(json!({ "images": images, "unanswered": unanswered }))
+    serde_json::from_value(json!({ "images": images, "unanswered": unanswered }))
+        .map_err(|e| format!("open_folder: unexpected reply: {e}"))
 }
 
 // the folder's images as its last whole read found them, for open_folder()
@@ -1698,6 +1702,7 @@ fn is_package(_path: &Path) -> bool {
 // a folder on a drive that is not answering counts as there, so it is not
 // taken for one moved or deleted
 #[tauri::command]
+#[specta::specta]
 async fn path_exists(path: String) -> bool {
     tauri::async_runtime::spawn_blocking(move || !volumes::answering(Path::new(&path)) || Path::new(&path).exists())
         .await
@@ -1718,14 +1723,15 @@ fn path_kind(path: String) -> Option<&'static str> {
 // screen, as at start: the page asks again. not async: GTK's monitor is
 // read on the main thread
 #[tauri::command]
-fn display_scale(window: tauri::WebviewWindow) -> Result<Option<f64>, String> {
+#[specta::specta]
+fn display_scale(window: tauri::WebviewWindow) -> Result<Option<serde_json::Number>, String> {
     #[cfg(target_os = "linux")]
     {
         let monitor = window.current_monitor().ok().flatten().ok_or("not on a screen yet")?;
         let whole = monitor.scale_factor();
         let p = monitor.position();
         let at = ((p.x as f64 / whole).round() as i32, (p.y as f64 / whole).round() as i32);
-        Ok(scale::output_scale(at).filter(|s| *s < whole - 0.01))
+        Ok(scale::output_scale(at).filter(|s| *s < whole - 0.01).and_then(serde_json::Number::from_f64))
     }
     #[cfg(not(target_os = "linux"))]
     {
@@ -1740,6 +1746,7 @@ fn display_scale(window: tauri::WebviewWindow) -> Result<Option<f64>, String> {
 // the other versions; an original takes the file and every version's
 // sidecars, as darktable deletes them. returns the trashed files' paths
 #[tauri::command]
+#[specta::specta]
 async fn trash_files(state: State<'_, AppState>, imgids: Vec<i64>) -> Result<Vec<String>, String> {
     let mut checked = Vec::new();
     for id in imgids {
@@ -1802,9 +1809,10 @@ async fn trash_existing(mut items: Vec<PathBuf>) -> Result<(), String> {
 // a virtual copy of a photo: a new darktable version carrying its edit,
 // rating, labels, metadata and keywords, with a sidecar of its own
 #[tauri::command]
-async fn create_virtual_copy(state: State<'_, AppState>, imgid: i64) -> Result<Value, String> {
+#[specta::specta]
+async fn create_virtual_copy(state: State<'_, AppState>, imgid: i64) -> Result<LibraryImage, String> {
     let reply = state.engine("create_virtual_copy").request(json!({ "cmd": "copy", "imgid": imgid }))?;
-    Ok(reply["image"].clone())
+    serde_json::from_value::<CopyReply>(reply).map(|r| r.image).map_err(|e| format!("copy: unexpected reply: {e}"))
 }
 
 // a merge on the engine's export thread as the page's job `job`, its
@@ -1909,22 +1917,14 @@ async fn pano_can_merge(state: State<'_, AppState>) -> Result<bool, String> {
 // once the engine has removed it, it is gone from the library whatever the
 // Trash says, so that comes back as a warning rather than an error
 #[tauri::command]
+#[specta::specta]
 async fn remove_virtual_copy(state: State<'_, AppState>, imgid: i64) -> Result<Option<String>, String> {
     let reply = state.engine("remove_virtual_copy").request(json!({ "cmd": "remove_copy", "imgid": imgid }))?;
-    let files = reply["files"].as_array().into_iter().flatten().filter_map(|f| f.as_str()).map(PathBuf::from).collect();
-    Ok(trash_existing(files).await.err())
+    let reply: FilesReply = serde_json::from_value(reply).map_err(|e| format!("remove_copy: unexpected reply: {e}"))?;
+    Ok(trash_existing(reply.files.into_iter().map(PathBuf::from).collect()).await.err())
 }
 
-// a folder's subfolders for the library panel's tree: name, path and
-// whether it has subfolders of its own (for the twisty). dot folders and
-// packages are left out; a folder that cannot be read has none
-#[derive(serde::Serialize)]
-struct SubFolder {
-    name: String,
-    path: String,
-    has_children: bool,
-}
-
+// dot folders and packages are left out of the library panel's tree
 fn subdirs(path: &Path) -> Vec<PathBuf> {
     let Ok(rd) = std::fs::read_dir(path) else { return Vec::new() };
     rd.flatten()
@@ -1936,6 +1936,7 @@ fn subdirs(path: &Path) -> Vec<PathBuf> {
 }
 
 #[tauri::command]
+#[specta::specta]
 async fn list_subfolders(path: String) -> Vec<SubFolder> {
     tauri::async_runtime::spawn_blocking(move || {
         if !volumes::answering(Path::new(&path)) {
@@ -1959,6 +1960,7 @@ async fn list_subfolders(path: String) -> Vec<SubFolder> {
 // the drive each library folder is on, for the folder tree's headings. off
 // the main thread: a share whose server is gone can hold statfs a while
 #[tauri::command]
+#[specta::specta]
 async fn folder_volumes(paths: Vec<String>) -> Vec<volumes::Volume> {
     tauri::async_runtime::spawn_blocking(move || paths.iter().map(|p| volumes::volume(p)).collect())
         .await
@@ -1970,8 +1972,9 @@ async fn folder_volumes(paths: Vec<String>) -> Vec<volumes::Volume> {
 // the engine builds it on a thread of its own, beside any edit or render,
 // so it does not take engine()
 #[tauri::command]
+#[specta::specta]
 async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>, imgid: i64, size: u32,
-               path: Option<String>, version: Option<i64>, proof: Option<bool>) -> Result<Response, String> {
+               path: Option<String>, version: Option<i64>, proof: Option<bool>) -> Result<bindings::Frame, String> {
     // named before the render: a sidecar written during it makes the next
     // look a miss, never a stale hit. a proofed one is not the photo's
     // thumbnail, and is not kept
@@ -1996,7 +1999,7 @@ async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>, imgid: i64
     for a in pixels.iter_mut().skip(3).step_by(4) {
         *a = 255;
     }
-    let (width, height) = (reply["width"].as_u64().unwrap_or(0) as u32, reply["height"].as_u64().unwrap_or(0) as u32);
+    let ThumbReply { width, height } = serde_json::from_value(reply).map_err(|e| format!("thumb: unexpected reply: {e}"))?;
     let mut out = Vec::with_capacity(8 + pixels.len());
     out.extend_from_slice(&width.to_le_bytes());
     out.extend_from_slice(&height.to_le_bytes());
@@ -2012,14 +2015,15 @@ async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>, imgid: i64
             }
         });
     }
-    Ok(Response::new(out))
+    Ok(bindings::Frame(Response::new(out)))
 }
 
 // a library thumbnail from the cache, as JPEG, or nothing when it has none
 // for the photo as it is now: as the open folder's listing found it, else
 // as a stat finds it. the engine is not asked
 #[tauri::command]
-async fn thumb_cached(caches: State<'_, Caches>, path: String, version: i64, size: u32) -> Result<Response, String> {
+#[specta::specta]
+async fn thumb_cached(caches: State<'_, Caches>, path: String, version: i64, size: u32) -> Result<bindings::Frame, String> {
     let (thumbs, listed) = (caches.thumbs.clone(), caches.listed.clone());
     let bytes = tauri::async_runtime::spawn_blocking(move || {
         let photo = Path::new(&path);
@@ -2029,22 +2033,24 @@ async fn thumb_cached(caches: State<'_, Caches>, path: String, version: i64, siz
         thumbs.set_known(photo, version, size, &name);
         Some(bytes)
     }).await.map_err(|e| e.to_string())?;
-    Ok(Response::new(bytes.unwrap_or_default()))
+    Ok(bindings::Frame(Response::new(bytes.unwrap_or_default())))
 }
 
 // the photo's last thumbnail as JPEG, or nothing, found by its path alone:
 // the photo is not looked at, so this is quick on a network share, but it
 // may be of the photo as it was. thumb_cached() is the one to trust
 #[tauri::command]
-async fn thumb_known(caches: State<'_, Caches>, path: String, version: i64, size: u32) -> Result<Response, String> {
+#[specta::specta]
+async fn thumb_known(caches: State<'_, Caches>, path: String, version: i64, size: u32) -> Result<bindings::Frame, String> {
     let thumbs = caches.thumbs.clone();
     let bytes = tauri::async_runtime::spawn_blocking(move || thumbs.read_known(Path::new(&path), version, size))
         .await.map_err(|e| e.to_string())?;
-    Ok(Response::new(bytes.unwrap_or_default()))
+    Ok(bindings::Frame(Response::new(bytes.unwrap_or_default())))
 }
 
 // Preferences' size limits for the caches, in bytes; lowering one evicts at once
 #[tauri::command]
+#[specta::specta]
 async fn cache_limits(caches: State<'_, Caches>, limits: cache::Limits) -> Result<(), String> {
     let list = [(caches.thumbs.clone(), limits.thumbs), (caches.immich_thumbs.clone(), limits.immich_thumbs),
                 (caches.immich_originals.clone(), limits.immich_originals)];
@@ -2057,6 +2063,7 @@ async fn cache_limits(caches: State<'_, Caches>, limits: cache::Limits) -> Resul
 
 // how much each cache holds, in bytes
 #[tauri::command]
+#[specta::specta]
 async fn cache_usage(caches: State<'_, Caches>) -> Result<cache::Limits, String> {
     let (a, b, c) = (caches.thumbs.clone(), caches.immich_thumbs.clone(), caches.immich_originals.clone());
     tauri::async_runtime::spawn_blocking(move || cache::Limits {
@@ -2067,6 +2074,7 @@ async fn cache_usage(caches: State<'_, Caches>) -> Result<cache::Limits, String>
 // empties one cache ("thumbs", "immichThumbs" or "immichOriginals"); an
 // edited original stays
 #[tauri::command]
+#[specta::specta]
 async fn cache_clear(caches: State<'_, Caches>, which: String) -> Result<(), String> {
     let c = caches.by_name(&which).ok_or_else(|| format!("no cache {which}"))?.clone();
     tauri::async_runtime::spawn_blocking(move || c.clear()).await.map_err(|e| e.to_string())
@@ -2082,8 +2090,9 @@ async fn meta(state: State<'_, AppState>, imgid: i64) -> Result<bindings::MetaRe
 // the photos likely opened next, their raws decoded ahead in this order on
 // the engine's own thread; the reply does not wait for them
 #[tauri::command]
-async fn prefetch(state: State<'_, AppState>, imgids: Vec<i64>) -> Result<Value, String> {
-    state.engine("prefetch").request(json!({ "cmd": "prefetch", "imgids": imgids }))
+#[specta::specta]
+async fn prefetch(state: State<'_, AppState>, imgids: Vec<i64>) -> Result<(), String> {
+    state.engine("prefetch").request(json!({ "cmd": "prefetch", "imgids": imgids })).map(|_| ())
 }
 
 // Preferences' darktable memory: the level the engine runs at, and the one
@@ -2119,16 +2128,20 @@ async fn ai_accel(state: State<'_, AppState>) -> Result<Value, String> {
 
 // every keyword ever used, for the Keywording panel's suggestions
 #[tauri::command]
-async fn keywords(state: State<'_, AppState>) -> Result<Value, String> {
-    Ok(state.engine("keywords").request(json!({ "cmd": "keywords" }))?["keywords"].clone())
+#[specta::specta]
+async fn keywords(state: State<'_, AppState>) -> Result<Vec<String>, String> {
+    let reply = state.engine("keywords").request(json!({ "cmd": "keywords" }))?;
+    serde_json::from_value::<KeywordsReply>(reply).map(|r| r.keywords).map_err(|e| format!("keywords: unexpected reply: {e}"))
 }
 
 // keywords added to and removed from an image; its keywords afterwards
 #[tauri::command]
+#[specta::specta]
 async fn keywords_set(state: State<'_, AppState>, imgid: i64, add: Vec<String>, remove: Vec<String>)
-    -> Result<Value, String> {
+    -> Result<Vec<String>, String> {
     let req = json!({ "cmd": "keywords_set", "imgid": imgid, "add": add, "remove": remove });
-    Ok(state.engine("keywords_set").request(req)?["keywords"].clone())
+    let reply = state.engine("keywords_set").request(req)?;
+    serde_json::from_value::<KeywordsReply>(reply).map(|r| r.keywords).map_err(|e| format!("keywords_set: unexpected reply: {e}"))
 }
 
 // rating, rejected, labels and text fields; only the ones given are set
@@ -2142,16 +2155,11 @@ async fn meta_set(state: State<'_, AppState>, imgid: i64, fields: Map<String, Va
     state.engine("meta_set").request(req).map(|_| ())
 }
 
-#[derive(Deserialize, serde::Serialize)]
-struct CaptureTimeEntry {
-    imgid: i64,
-    before: String,
-    after: String,
-}
-
 #[tauri::command]
-async fn capture_times(state: State<'_, AppState>, entries: Vec<CaptureTimeEntry>) -> Result<Value, String> {
-    state.engine("capture_times").request(json!({ "cmd": "capture_times", "entries": entries }))
+#[specta::specta]
+async fn capture_times(state: State<'_, AppState>, entries: Vec<CaptureTimeEntry>) -> Result<CaptureTimesReply, String> {
+    let reply = state.engine("capture_times").request(json!({ "cmd": "capture_times", "entries": entries }))?;
+    serde_json::from_value(reply).map_err(|e| format!("capture_times: unexpected reply: {e}"))
 }
 
 #[derive(Deserialize)]
@@ -3069,6 +3077,7 @@ fn launch_path(arg: &Path) -> Option<String> {
 // the app's data, where edits can be saved beside it; made once, then left
 // as the user has it. its path
 #[tauri::command]
+#[specta::specta]
 fn sample_folder(app: AppHandle) -> Result<String, String> {
     let src = if cfg!(debug_assertions) {
         repo_root().join("app/sample")
@@ -3198,6 +3207,7 @@ fn supervise(app: AppHandle) {
 }
 
 #[tauri::command]
+#[specta::specta]
 fn launch_file(launch: State<'_, Launch>) -> Option<String> {
     launch.0.lock().unwrap().take()
 }
@@ -3449,11 +3459,11 @@ fn main() {
             Ok(())
         })
         .invoke_handler(bindings::handler(tauri::generate_handler![
-            map_search::map_search, map_search::map_search_key_status, map_search::map_search_key_save, map_search::map_search_key_remove, open_folder, thumb, thumb_cached, thumb_known, cache_limits, cache_usage, cache_clear, capture_times, prefetch, darktable_resources, darktable_resources_set, memory_budget::memory_budget, gpu_edits, gpu_edits_set, webview_renderer, webview_renderer_set,
+            darktable_resources, darktable_resources_set, memory_budget::memory_budget, gpu_edits, gpu_edits_set, webview_renderer, webview_renderer_set,
             export_images, export_cancel, export_existing, export_preview, fonts, print_profiles, print_profile_add, softproof, printers, printer_info, print_photo, print_sheet, export_presets_load, export_presets_save, export_presets_export, export_presets_import, presets_load, presets_save, agx_presets, agx_presets_pick, agx_profiles_load, agx_profiles_save, looks_list, shared_import, look_export, look_delete, look_apply, look_amount,             mask_shapes, combine, masks, mask_delete, mask_rename, lenses, upright, range_map, zones, mask_map, ai_object,
-            ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, positive_export, spektra_stocks, spektra_fetch, list_subfolders, folder_volumes, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
+            ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, positive_export, spektra_stocks, spektra_fetch, spots, spots_enable, spot_source, immich_albums, immich_create_album,
             immich_export_check, immich_search, immich_browse_check, immich_libraries, immich_suggestions, immich_people, immich_tags,
-            immich_thumb, immich_resolve, launch_file, path_exists, display_scale, trash_files, create_virtual_copy, remove_virtual_copy, hdr_merge, hdr_can_align, pano_merge, pano_preview, pano_can_merge, merge_cancel, preview_fullscreen, licenses, engine_quit, engine_restart, keywords, keywords_set, ai_accel,
+            immich_thumb, immich_resolve, hdr_merge, hdr_can_align, pano_merge, pano_preview, pano_can_merge, merge_cancel, preview_fullscreen, licenses, engine_quit, engine_restart, ai_accel,
             menu_set, csp_violation, perf_set, perf_trace_start, perf_trace_stop, perf_modules, perf_report_write, perf_machine, perf_ping, support_bundle::support_bundle_preview, support_bundle::support_bundle_add_benchmark, support_bundle::support_bundle_save, support_bundle::support_bundle_discard, backup::backup_components, backup::backup_pick_save, backup::backup_pick_open, backup::backup_create, backup::backup_inspect, backup::backup_restore, gpu_check_parity, resources::perf_resources_start, resources::perf_resources_stop,
             plugins::plugin_find_apps, plugins::plugin_config, plugins::plugin_config_save, plugins::plugin_set_app, plugins::plugin_choose_app, plugins::plugin_launch, plugins::plugin_watch, plugins::plugin_cancel, plugins::plugin_job,
             plugins::plugin_returns, plugins::plugin_return_applied

@@ -205,7 +205,7 @@ export default function App() {
   // that comes back has its folders' subfolders read again
   useEffect(() => {
     let stale = false;
-    const read = () => void invoke<Volume[]>("folder_volumes", { paths: folders }).then((list) => {
+    const read = () => void commands.folderVolumes(folders).then((list) => {
       if (stale) return;
       const next = new Map<string, Volume>();
       let back = false;
@@ -432,7 +432,7 @@ export default function App() {
     else setStatus("open the folder containing the adjusted photos to undo their capture times");
   };
   const applyCaptureTimes = async (entries: CaptureTimeEntry[]) => {
-    const reply = await invoke<{ updates: CaptureTimeUpdate[] }>("capture_times", { entries });
+    const reply = await commands.captureTimes(entries);
     const changed = reply.updates.filter((e) => !e.error);
     const times = new Map(changed.map((e) => [e.imgid, e.after]));
     updateImages(byCaptureTime(imagesRef.current.map((i) => times.has(i.imgid)
@@ -2884,7 +2884,7 @@ export default function App() {
       setReading(null);
       if (String(e).startsWith("Reading photos timed out")) {
         setStatus(`error: ${e}`);
-      } else if (!(await invoke<boolean>("path_exists", { path: dir }))) {
+      } else if (!(await commands.pathExists(dir))) {
         updateImages([]);
         setFolderRefresh((n) => n + 1);
         setStatus(`folder not found: ${dir}. it was moved or deleted outside Immage`);
@@ -3226,14 +3226,14 @@ export default function App() {
   const started = useRef(false);
   useEffect(() => {
     const off = listen("launch-file", async () => {
-      const path = await invoke<string | null>("launch_file");
+      const path = await commands.launchFile();
       if (path) void droppedRef.current([path]);
     });
     // once: React's development mode runs effects twice, which listed the
     // folder twice while the engine was still starting
     if (started.current) return () => { void off.then((f) => f()); };
     started.current = true;
-    void invoke<string | null>("launch_file").then((path) => {
+    void commands.launchFile().then((path) => {
       if (path) { void droppedRef.current([path]); return; }
       const lib = loadLibrary();
       // the very first start: a sample photo, so there is something to edit
@@ -3241,7 +3241,7 @@ export default function App() {
       // removed sample stays removed
       if (!lib.folders.length && !lib.sampled) {
         saveLibrary({ sampled: true });
-        void invoke<string>("sample_folder").then((dir) => {
+        void commands.sampleFolder().then((dir) => {
           addPathToLibrary(dir);
           return showFolder(dir);
         }).then((list) => { if (list?.[0]) void openFile(list[0].path); })
@@ -3384,7 +3384,7 @@ export default function App() {
           if (!await openFile(next.path, next.imgid)) throw new Error("could not leave the open photo");
         } else await closePhoto();
       }
-      await invoke("trash_files", { imgids: list.map((i) => i.imgid) });
+      await commands.trashFiles(list.map((i) => i.imgid));
       setStatus(`moved ${n === 1 ? list[0].filename : `${n} photos`} to the ${TRASH}`);
     } catch (e) {
       // Re-read disk: a failed batch may already have moved some files.
@@ -3403,7 +3403,7 @@ export default function App() {
     for (const src of list.filter((i) => !isRemote(i))) {
       try {
         // the engine saves the open photo's edit first, which its thumbnail then shows
-        const copy = await invoke<ImageEntry>("create_virtual_copy", { imgid: src.imgid });
+        const copy = await commands.createVirtualCopy(src.imgid);
         if (session.current?.imgid === src.imgid) loader.current!.invalidate(src.imgid);
         const all = imagesRef.current;
         const last = all.reduce((at, i, k) => (i.path === src.path ? k : at), -1);
@@ -3431,7 +3431,7 @@ export default function App() {
     let problem: string | null = null;
     for (const c of copies) {
       try {
-        const trashed = await invoke<string | null>("remove_virtual_copy", { imgid: c.imgid });
+        const trashed = await commands.removeVirtualCopy(c.imgid);
         gone.add(c.imgid);
         if (trashed) problem = `the sidecar of ${c.filename} (copy ${c.version}) could not go to the ${TRASH}: ${trashed}`;
       } catch (e) {
@@ -3583,7 +3583,7 @@ export default function App() {
     }
     if (ids.join() === prefetched.current) return;
     prefetched.current = ids.join();
-    invoke("prefetch", { imgids: ids }).catch(() => {});
+    commands.prefetch(ids).catch(() => {});
   };
 
   // `imgid` picks one of the file's versions (a virtual copy); without it,
@@ -3593,7 +3593,7 @@ export default function App() {
     const id = imgid ?? imagesRef.current.find((i) => i.path === path && !i.copy)?.imgid ?? null;
     const cur = currentRef.current;
     if (!reload && session.current && cur && cur.path === path && (id === null || cur.imgid === id)) return true;
-    if (!(await invoke<boolean>("path_exists", { path }))) {
+    if (!(await commands.pathExists(path))) {
       setStatus(`file not found: ${baseName(path)}. it was moved or deleted outside Immage`);
       if (folderRef.current && !immichRef.current) void showFolder(folderRef.current, true);
       return false;
@@ -5524,7 +5524,7 @@ export default function App() {
         setKeywords(r.image.keywords);
       })
       .catch((e) => setStatus(`error: ${e}`));
-    invoke<string[]>("keywords").then((k) => { if (!stale) setKnownKeywords(k); }).catch(() => {});
+    commands.keywords().then((k) => { if (!stale) setKnownKeywords(k); }).catch(() => {});
     return () => { stale = true; };
   }, [currentId]);
   // keywords added by something other than the Keywording card: an export
@@ -5533,7 +5533,7 @@ export default function App() {
     if (currentId !== undefined)
       commands.meta(currentId)
         .then((r) => setKeywords(r.image.keywords)).catch(() => {});
-    invoke<string[]>("keywords").then(setKnownKeywords).catch(() => {});
+    commands.keywords().then(setKnownKeywords).catch(() => {});
   };
   // the open photo's keywords, for a save made after the render they came
   // from (Session.onSaved)
@@ -5557,7 +5557,7 @@ export default function App() {
       const add = edited ? wanted.filter((k) => !known.includes(k)) : [];
       const remove = edited ? [] : wanted.filter((k) => known.includes(k));
       if (!add.length && !remove.length) return;
-      const now = await invoke<string[]>("keywords_set", { imgid, add, remove });
+      const now = await commands.keywordsSet(imgid, add, remove);
       if (session.current?.imgid === imgid) setKeywords(now);
       patchImage(imgid, { keywords: now });
       if (add.length) setKnownKeywords((k) => [...new Set([...k, ...add])].sort((a, b) => a.localeCompare(b)));
@@ -5595,7 +5595,7 @@ export default function App() {
   const setPhotoKeywords = async (add: string[], remove: string[]) => {
     if (currentId === undefined || (!add.length && !remove.length)) return;
     try {
-      setKeywords(await invoke<string[]>("keywords_set", { imgid: currentId, add, remove }));
+      setKeywords(await commands.keywordsSet(currentId, add, remove));
       if (add.length) setKnownKeywords((k) => [...new Set([...k, ...add])].sort((a, b) => a.localeCompare(b)));
     } catch (e) {
       setStatus(`error: ${e}`);

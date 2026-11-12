@@ -5,12 +5,11 @@
 // may take (src-tauri/src/cache.rs), a bar of what each holds, and
 // emptying one
 import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { commands, type Limits } from "./commands";
 import { Trash } from "lucide-react";
 import { PrefCard, PrefRow } from "./PrefsUI";
 import { settings } from "./settings";
 
-type Limits = { thumbs: number; immichThumbs: number; immichOriginals: number };
 type Which = keyof Limits;
 
 const MB = 1024 * 1024;
@@ -37,13 +36,13 @@ export function loadLimits(): Limits {
 }
 
 export async function storeLimits(limits: Limits) {
-  await invoke("cache_limits", { limits });
+  await commands.cacheLimits(limits);
   settings.set(LIMITS_KEY, JSON.stringify(limits));
 }
 
 // the stored limits to the caches; at startup and on each change
 export function applyCacheLimits(limits = loadLimits()) {
-  invoke("cache_limits", { limits }).catch(() => {});
+  commands.cacheLimits(limits).catch(() => {});
 }
 
 const size = (n: number) => (n >= GB ? `${+(n / GB).toFixed(1)} GB` : `${Math.round(n / MB)} MB`);
@@ -64,14 +63,14 @@ function UsageBar({ used, limit, title }: { used: number | null; limit: number; 
 export function CachePrefs() {
   const [limits, setLimits] = useState(loadLimits);
   const [usage, setUsage] = useState<Limits | null>(null);
-  const measure = () => invoke<Limits>("cache_usage").then(setUsage).catch(() => {});
+  const measure = () => commands.cacheUsage().then(setUsage).catch(() => {});
   useEffect(() => { void measure(); }, []);
   const choose = (which: Which, v: number) => {
     const next = { ...limits, [which]: v };
     setLimits(next);
     try { settings.set(LIMITS_KEY, JSON.stringify(next)); } catch { /* not kept */ }
     // a lower limit evicts at once, which the usage then shows
-    void invoke("cache_limits", { limits: next }).then(measure).catch(() => {});
+    void commands.cacheLimits(next).then(measure).catch(() => {});
   };
   // what the cache holds of its limit, then what it is for
   const tip = (which: Which, hint: string) =>
@@ -87,7 +86,7 @@ export function CachePrefs() {
                 .map((v) => <option key={v} value={v}>{size(v)}</option>)}
             </select>
             <button className="tool" style={{ marginLeft: 8 }} disabled={!usage?.[which]} title={`clear ${label.toLowerCase()}`}
-                    onClick={() => void invoke("cache_clear", { which }).then(measure)}>
+                    onClick={() => void commands.cacheClear(which).then(measure)}>
               <Trash className="icon" strokeWidth={1.8} /></button>
           </PrefRow>
         ))}

@@ -1,0 +1,16 @@
+[
+ {
+  "label": "5 dated / capture_times dated",
+  "reply": {
+   "ms": 0.0,
+   "ok": true,
+   "updates": [
+    {
+     "after": "2026:10:31 23:59:59.625",
+     "before": "2026:10:31 23:59:58.125",
+     "imgid": 8
+    }
+   ]
+  }
+ }
+]

@@ -45,6 +45,31 @@ pub fn commands() -> Commands<tauri::Wry> {
         crate::before_view,
         crate::preview,
         crate::paste_batch,
+        // the library
+        crate::open_folder,
+        crate::list_subfolders,
+        crate::folder_volumes,
+        crate::thumb,
+        crate::thumb_cached,
+        crate::thumb_known,
+        crate::prefetch,
+        crate::keywords,
+        crate::keywords_set,
+        crate::capture_times,
+        crate::sample_folder,
+        crate::trash_files,
+        crate::create_virtual_copy,
+        crate::remove_virtual_copy,
+        crate::path_exists,
+        crate::cache_limits,
+        crate::cache_usage,
+        crate::cache_clear,
+        crate::launch_file,
+        crate::display_scale,
+        crate::map_search::map_search,
+        crate::map_search::map_search_key_status,
+        crate::map_search::map_search_key_save,
+        crate::map_search::map_search_key_remove,
     ]
 }
 
@@ -239,6 +264,7 @@ mod tests {
         assert_eq!(generate(), generate());
     }
 
+    use crate::typed_library::*;
     use crate::typed_session::*;
     use serde::de::DeserializeOwned;
 
@@ -268,6 +294,14 @@ mod tests {
         ("paste_batch", reads::<PasteBatchReply>),
         ("render", reads::<RenderReply>),
         ("preview", reads::<PreviewReply>),
+        ("import", reads::<FolderReply>),
+        ("copy", reads::<CopyReply>),
+        ("sidecars", reads::<FilesReply>),
+        ("remove_copy", reads::<FilesReply>),
+        ("keywords", reads::<KeywordsReply>),
+        ("keywords_set", reads::<KeywordsReply>),
+        ("thumb", reads::<ThumbReply>),
+        ("capture_times", reads::<CaptureTimesReply>),
     ];
 
     #[test]

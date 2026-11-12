@@ -10,7 +10,7 @@
 // the screen comes out jagged, enlarged by WebKit and then shrunk by the
 // compositor
 
-import { invoke } from "@tauri-apps/api/core";
+import { commands } from "./commands";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { settings } from "./settings";
 
@@ -52,7 +52,7 @@ export function settledScale(): number {
 // and ask again
 export async function refreshScreenScale(tries = 20) {
   try {
-    real = await invoke<number | null>("display_scale");
+    real = await commands.displayScale();
   } catch {
     if (tries > 0) window.setTimeout(() => void refreshScreenScale(tries - 1), 250);
   }

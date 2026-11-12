@@ -527,7 +527,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   };
   // every keyword ever used, for the suggestions
   const [knownKeywords, setKnownKeywords] = useState<string[]>([]);
-  useEffect(() => { invoke<string[]>("keywords").then(setKnownKeywords).catch(() => {}); }, []);
+  useEffect(() => { commands.keywords().then(setKnownKeywords).catch(() => {}); }, []);
   const [sliderScroll, setSliderScroll] = useState(loadSliderScroll);
   const [scrollStep, setScrollStep] = useState(loadSliderScrollStep);
   const [preview, setPreview] = useState(loadPreview);

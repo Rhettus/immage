@@ -8,10 +8,9 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { ImageEntry } from "./library";
-import { commands } from "./commands";
+import { commands, type Place } from "./commands";
 
 type Location = NonNullable<ImageEntry["location"]>;
-type Place = { label: string; latitude: number; longitude: number; bounds?: [number, number, number, number] };
 const osmCopyright = "https://www.openstreetmap.org/copyright";
 const pin = L.divIcon({ className: "location-pin", html: "<span></span>", iconSize: [20, 20], iconAnchor: [10, 10] });
 
@@ -176,7 +175,7 @@ export function LocationEditor({ image, onSaved }: {
     const request = ++placeRequest.current;
     setSearching(true); setError("");
     try {
-      const results = await invoke<Place[]>("map_search", { query: term });
+      const results = await commands.mapSearch(term);
       if (request !== placeRequest.current) return;
       setPlaces(results);
       if (!results.length) setError("No places found.");

@@ -303,7 +303,7 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
 
   // every keyword ever used, for the Keywords section's suggestions
   const [knownKeywords, setKnownKeywords] = useState<string[]>([]);
-  useEffect(() => { invoke<string[]>("keywords").then(setKnownKeywords).catch(() => {}); }, []);
+  useEffect(() => { commands.keywords().then(setKnownKeywords).catch(() => {}); }, []);
   const addKeywords = (names: string[]) => {
     const fresh = names.map(parseKeyword).filter((k) => k && !s.keywords.includes(k));
     if (fresh.length) set("keywords", [...s.keywords, ...new Set(fresh)]);

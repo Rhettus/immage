@@ -416,7 +416,7 @@ pub struct Caches {
 // the limits until Preferences sends its own, the same as its defaults
 pub const DEFAULT_LIMITS: Limits = Limits { thumbs: GB, immich_thumbs: 512 * MB, immich_originals: 10 * GB };
 
-#[derive(Clone, Copy, Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Serialize, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Limits {
     pub thumbs: u64,
