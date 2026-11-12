@@ -40,6 +40,11 @@ export type TextItem = {
   beforeBorders: boolean;
 };
 
+export type ExportFormat = "jpeg" | "tiff" | "png" | "webp" | "jxl";
+export type BitDepth = 8 | 10 | 12 | 16;
+export const EXPORT_FORMATS: readonly ExportFormat[] = ["jpeg", "tiff", "png", "webp", "jxl"];
+const BIT_DEPTHS: readonly BitDepth[] = [8, 10, 12, 16];
+
 export type Settings = {
   dir: string;
   useSubfolder: boolean;
@@ -47,9 +52,9 @@ export type Settings = {
   naming: "original" | "custom" | "template";
   customName: string;
   template: string;
-  format: "jpeg" | "tiff" | "png" | "webp";
+  format: ExportFormat;
   quality: number;
-  bpp: 8 | 16;
+  bpp: BitDepth;
   colorSpace: "srgb" | "adobergb" | "displayp3" | "prophoto";
   resize: boolean;
   longEdge: number;
@@ -132,10 +137,36 @@ function migrate(raw: Record<string, unknown>): Partial<Settings> {
   return out as Partial<Settings>;
 }
 
+// the formats that take a quality (JPEG XL's 100 is lossless)
+export const hasQuality = (format: ExportFormat) => format === "jpeg" || format === "webp" || format === "jxl";
+
+// the bit depths a format offers; none for JPEG and WebP
+export const bitDepths = (format: ExportFormat): readonly BitDepth[] =>
+  format === "jxl" ? BIT_DEPTHS : format === "tiff" || format === "png" ? [8, 16] : [];
+
+// the bit depth an export of this format is written at: TIFF and PNG take
+// only 8 or 16, so a 10 or 12 chosen for JPEG XL writes 16
+export const depthOf = (format: ExportFormat, bpp: number): BitDepth =>
+  format === "jxl" ? (BIT_DEPTHS.includes(bpp as BitDepth) ? bpp as BitDepth : 8)
+    : bitDepths(format).length ? (bpp === 8 ? 8 : 16) : 8;
+
+// the quality and bit depth an export request sends for these settings
+export const exportOptionsFor = (s: Pick<Settings, "format" | "quality" | "bpp">) => ({
+  quality: hasQuality(s.format) ? s.quality : null,
+  bpp: bitDepths(s.format).length ? depthOf(s.format, s.bpp) : null,
+});
+
+// a saved value that no longer means anything falls back to the default
+const sane = (s: Settings): Settings => ({
+  ...s,
+  format: EXPORT_FORMATS.includes(s.format) ? s.format : DEFAULTS.format,
+  bpp: BIT_DEPTHS.includes(s.bpp) ? s.bpp : DEFAULTS.bpp,
+});
+
 export const loadSettings = (): Settings => {
   try {
     const raw = JSON.parse(localStorage.getItem("immage.export") ?? "{}");
-    const s = { ...DEFAULTS, ...migrate(raw) };
+    const s = sane({ ...DEFAULTS, ...migrate(raw) });
     if (!raw.askMigrated) saveSettings(s);
     return s;
   } catch { return DEFAULTS; }

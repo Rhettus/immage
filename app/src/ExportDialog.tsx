@@ -21,8 +21,8 @@ import { expand, TOKENS, EMPTY_META, type Meta } from "./exportTokens";
 import { runExport } from "./background";
 import { engineText } from "./engineState";
 import {
-  BUILTINS, DEFAULTS, PERSONAL_KEYS, frameFor, readShared, sharedFile, loadPresets, loadSettings, newId, presetEdited, presetOf, savePresets, saveSettings,
-  type ExportPreset, type Settings,
+  BUILTINS, DEFAULTS, PERSONAL_KEYS, bitDepths, depthOf, exportOptionsFor, frameFor, hasQuality, readShared, sharedFile, loadPresets, loadSettings,
+  newId, presetEdited, presetOf, savePresets, saveSettings, type BitDepth, type ExportPreset, type Settings,
 } from "./exportSettings";
 
 export const FILE_MANAGER = navigator.userAgent.includes("Windows") ? "Explorer"
@@ -468,8 +468,7 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
           dir: s.dir,
           subfolder: s.useSubfolder ? s.subfolder : null,
           format: s.format,
-          quality: s.format === "jpeg" || s.format === "webp" ? s.quality : null,
-          bpp: s.format === "tiff" || s.format === "png" ? s.bpp : null,
+          ...exportOptionsFor(s),
           colorSpace: s.colorSpace,
           longEdge,
           upscale: upscale || null,
@@ -503,7 +502,7 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
     && (s.naming !== "custom" || !!s.customName.trim()) && (s.naming !== "template" || !!s.template.trim());
 
   const conflictNames = { ask: "Ask me", unique: "Add a number", overwrite: "Replace it", skip: "Skip it" };
-  const formatNames = { jpeg: "JPEG", tiff: "TIFF", png: "PNG", webp: "WebP" };
+  const formatNames = { jpeg: "JPEG", tiff: "TIFF", png: "PNG", webp: "WebP", jxl: "JPEG XL" };
   const spaceNames = { srgb: "sRGB", adobergb: "Adobe RGB (1998)", displayp3: "Display P3", prophoto: "ProPhoto RGB" };
 
   const presetRow = (p: ExportPreset) => {
@@ -709,7 +708,7 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
             </Section>
 
             <Section title="Format & Size" open={openSections.format} onToggle={(alt) => toggle("format", alt)}
-                     summary={`${formatNames[s.format]}${s.format === "jpeg" || s.format === "webp" ? ` ${s.quality}` : ""}, `
+                     summary={`${formatNames[s.format]}${hasQuality(s.format) ? ` ${s.quality}` : ""}, `
                        + `${upscale ? `AI ${upscale}×` : canvas ? `canvas ${s.canvasW} × ${s.canvasH}` : s.resize ? `${s.longEdge} px` : "original size"}`}>
               <div className="row">
                 <span className="k">Format</span>
@@ -717,20 +716,20 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
                   {Object.entries(formatNames).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                 </select>
               </div>
-              {(s.format === "jpeg" || s.format === "webp") && (
+              {hasQuality(s.format) && (
                 <div className="row">
                   <span className="k">Quality</span>
                   <input type="range" min={10} max={100} value={s.quality}
                          onChange={(e) => set("quality", Number(e.target.value))} />
                   <span className="num">{s.quality}</span>
+                  {s.format === "jxl" && s.quality === 100 && <span className="note-plain">Lossless</span>}
                 </div>
               )}
-              {(s.format === "tiff" || s.format === "png") && (
+              {bitDepths(s.format).length > 0 && (
                 <div className="row">
                   <span className="k">Bit depth</span>
-                  <select data-export-field="bpp" value={s.bpp} onChange={(e) => set("bpp", Number(e.target.value) as 8 | 16)}>
-                    <option value={8}>8 bit</option>
-                    <option value={16}>16 bit</option>
+                  <select data-export-field="bpp" value={depthOf(s.format, s.bpp)} onChange={(e) => set("bpp", Number(e.target.value) as BitDepth)}>
+                    {bitDepths(s.format).map((b) => <option key={b} value={b}>{b} bit</option>)}
                   </select>
                 </div>
               )}

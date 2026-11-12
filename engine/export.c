@@ -994,7 +994,9 @@ gboolean export_export(const dt_imgid_t imgid, JsonObject *req, char **err)
   }
   const gboolean positive = _positive_copy(req);
   const gboolean positive_dng = positive && !g_strcmp0(format, "dng");
-  dt_imageio_module_format_t *fmt = dt_imageio_get_format_by_name(positive_dng ? "tiff" : format);
+  // the plugin is named jpegxl, its settings jxl
+  const gboolean jxl = !g_strcmp0(format, "jxl");
+  dt_imageio_module_format_t *fmt = dt_imageio_get_format_by_name(positive_dng ? "tiff" : jxl ? "jpegxl" : format);
   if(!fmt)
   {
     *err = g_strdup_printf("no export format '%s'", format);
@@ -1011,7 +1013,7 @@ gboolean export_export(const dt_imgid_t imgid, JsonObject *req, char **err)
   {
     const int value = pass ? bpp : quality;
     if(value <= 0) continue;
-    gchar *key = g_strdup_printf("plugins/imageio/format/%s/%s", fmt->plugin_name,
+    gchar *key = g_strdup_printf("plugins/imageio/format/%s/%s", jxl ? "jxl" : fmt->plugin_name,
                                  pass ? "bpp" : "quality");
     if(dt_conf_key_exists(key) || dt_confgen_exists(key)) dt_conf_set_int(key, value);
     g_free(key);
@@ -1133,6 +1135,9 @@ gboolean export_export(const dt_imgid_t imgid, JsonObject *req, char **err)
   strip_t strip = 0;
   if(!json_object_get_boolean_member_with_default(req, "serials", TRUE)) strip |= STRIP_SERIALS;
   if(!json_object_get_boolean_member_with_default(req, "camera", TRUE)) strip |= STRIP_CAMERA;
+  // the JPEG XL encoder embeds the whole sidecar XMP, history and GPS included
+  if(!json_object_get_boolean_member_with_default(req, "location", TRUE)) strip |= STRIP_LOCATION;
+  if(!json_object_get_boolean_member_with_default(req, "history", FALSE)) strip |= STRIP_HISTORY;
   if(!json_object_get_boolean_member_with_default(req, "description", TRUE))
   {
     metadata.flags &= ~DT_META_METADATA;
@@ -1143,6 +1148,15 @@ gboolean export_export(const dt_imgid_t imgid, JsonObject *req, char **err)
     metadata.flags &= ~DT_META_TAG;
     strip |= STRIP_KEYWORDS;
   }
+
+  // the JPEG XL encoder writes its EXIF and the whole sidecar XMP, history and
+  // GPS included, only when every metadata flag is set (imageio.c, near
+  // md_flags_set), so they are all set and strip_jxl() takes out what was
+  // not asked for
+  if(jxl)
+    metadata.flags |= DT_META_EXIF | DT_META_METADATA | DT_META_GEOTAG | DT_META_TAG
+                      | DT_META_HIERARCHICAL_TAG | DT_META_DT_HISTORY | DT_META_PRIVATE_TAG
+                      | DT_META_SYNONYMS_TAG | DT_META_OMIT_HIERARCHY;
 
   if(!transient)
   {
@@ -1190,7 +1204,8 @@ gboolean export_export(const dt_imgid_t imgid, JsonObject *req, char **err)
 #endif
   if(failed) return FALSE;
   // a file that keeps what was asked to be left out is not delivered
-  if(!transient && (*err = strip_metadata(out, strip)))
+  // history and location are darktable's to leave out, except in a JPEG XL
+  if(!transient && (*err = jxl ? strip_jxl(out, strip) : strip_metadata(out, (strip_t)(strip & ~(STRIP_HISTORY | STRIP_LOCATION)))))
   {
     g_unlink(out);
     return FALSE;

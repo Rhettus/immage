@@ -58,6 +58,7 @@ Improvements
   match the exact files this version of Immage expects. A model
   changed on the download server is refused, with a message that an update
   of Immage is needed.
+- Export to JPEG XL, with quality (100 for lossless) and 8 to 16 bit depth.
 
 Performance
 

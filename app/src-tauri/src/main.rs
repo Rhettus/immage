@@ -3498,6 +3498,13 @@ mod tests {
     use super::*;
 
     #[test]
+    fn export_extensions_follow_the_format() {
+        assert_eq!(extension("jxl"), "jxl");
+        assert_eq!(extension("jpeg"), "jpg");
+        assert_eq!(extension("tiff"), "tif");
+    }
+
+    #[test]
     fn cancel_entry_removes_on_drop_and_unwind() {
         let map = Mutex::new(HashMap::new());
         map.lock().unwrap().insert(7, Arc::new(AtomicBool::new(false)));

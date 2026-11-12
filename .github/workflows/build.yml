@@ -105,6 +105,7 @@ jobs:
             verify/detail-preview.test.mjs \
             verify/engine-commands.test.mjs \
             verify/engine-state.test.mjs \
+            verify/export-format.test.mjs \
             verify/fit-preview.test.mjs \
             verify/gpu-check.test.mjs \
             verify/menus.test.mjs \

@@ -73,9 +73,9 @@ be called.
 
 ## Format & Size
 
-- **Format**: **JPEG**, **TIFF**, **PNG** or **WebP**.
-- **Quality**: 10-100 (JPEG and WebP).
-- **Bit depth**: 8 or 16 bit (TIFF and PNG).
+- **Format**: **JPEG**, **TIFF**, **PNG**, **WebP** or **JPEG XL**.
+- **Quality**: 10-100 (JPEG, WebP and JPEG XL). For JPEG XL, 100 is lossless.
+- **Bit depth**: 8 or 16 bit (TIFF and PNG), or 8, 10, 12 or 16 bit (JPEG XL).
 - **Size**: **Original size**, **Fit long edge to…** a number of pixels,
   **Fixed canvas…**, or **AI upscale 2×** / **4×**.
 - **Color space**: **sRGB**, **Adobe RGB (1998)**, **Display P3** or
