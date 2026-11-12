@@ -7,6 +7,7 @@ import { click,reveal,inspect,tabTo, openTool } from '../support/controls.mjs';
 import { choose,textButton,Blocked,panel,expandSections,openMaskGroup } from '../support/scenario.mjs';
 import { until } from '../support/webdriver.mjs';
 import { settledPhoto, settledReset } from './smoke.mjs';
+import { readSetting, waitSetting } from '../support/settings.mjs';
 
 // sets a module choice in Preferences > Modules and returns the value it had
 export async function chooseModule(t,scope,label,value){
@@ -148,12 +149,13 @@ export async function moduleSwitch(t){
  // the switch stays reachable when the new module hides the slider: it moves to the equalizer's or curve's heading
  await reveal(t,icon('contrast'));
  // Set as default stores the Preferences choice, in Custom
- const store=await t.driver.observe(()=>({mode:localStorage.getItem('immage.modules.mode'),choices:localStorage.getItem('immage.modules.choices')}));
+ const store={mode:await readSetting(t,'immage.modules.mode'),choices:await readSetting(t,'immage.modules.choices')};
  let failure;
  try{
   await click(t,icon('contrast'));
   await click(t,'.module-menu [data-module-default]');
-  const saved=await t.driver.observe(()=>({mode:localStorage.getItem('immage.modules.mode'),choices:JSON.parse(localStorage.getItem('immage.modules.choices')||'{}')}));
+  await waitSetting(t,'immage.modules.choices',v=>{try{return JSON.parse(v||'{}').contrast===other;}catch{return false;}},'module default saved to settings.json');
+  const saved={mode:await waitSetting(t,'immage.modules.mode',v=>v==='custom','Custom mode saved to settings.json'),choices:JSON.parse(await readSetting(t,'immage.modules.choices')||'{}')};
   assert.equal(saved.mode,'custom','Set as default switches Preferences to Custom');
   assert.equal(saved.choices.contrast,other,'Set as default stores the module');
   await click(t,'button[data-tour="prefs"]');await textButton(t,'.prefs-tabs','Modules');
@@ -163,7 +165,7 @@ export async function moduleSwitch(t){
  }catch(e){failure=e;}
  // put Preferences' storage and the photo's module back, then report the first failure
  // Restore effective defaults through the same real Preferences controls.
- // Read-only observations must never write localStorage to reset the app.
+ // Read-only observations must never write the settings to reset the app.
  await chooseModule(t,'global','Contrast',JSON.parse(store.choices||'{}').contrast??before.mod_contrast);
  if(store.mode!=='custom'){
   await click(t,'button[data-tour="prefs"]');await textButton(t,'.prefs-tabs','Modules');

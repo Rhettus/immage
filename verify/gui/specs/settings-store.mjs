@@ -5,11 +5,11 @@ import { until } from '../support/webdriver.mjs';
 import { inspect, click } from '../support/controls.mjs';
 import { textButton } from '../support/scenario.mjs';
 import { settledPhoto, startup } from './smoke.mjs';
+import { SETTINGS, settingsFile, waitSettings } from '../support/settings.mjs';
 
 // WebKitGTK's file for the release app's origin (tauri://localhost), as found in
 // a real profile: <data>/app.immage/localstorage/tauri_localhost_0.localstorage
 export const LOCAL_STORAGE_FILE = 'tauri_localhost_0.localstorage';
-const SETTINGS = 'settings.json';
 const MARKER = 'immage.settings-migrated';
 const THEME_KEY = 'immage.themes.v1', SCROLL_KEY = 'immage.sliderScroll', PROBE_KEY = 'immage.seed-probe';
 // what an older build left behind, non-default and visible in Preferences:
@@ -65,14 +65,7 @@ async function readPreferences(t) {
 }
 const selectedSwatch = p => Object.entries(p.swatches).filter(([, v]) => v === 'true').map(([k]) => k);
 
-// settings.json as the app wrote it; null while absent
-async function settingsFile(t) {
-  const text = await t.runtimeRead(SETTINGS);
-  if (text === null) return null;
-  try { return JSON.parse(text); } catch { return null; }   // a write in flight is not expected (atomic rename), so retry
-}
 const themeSelected = map => { try { return JSON.parse(map[THEME_KEY]).selected; } catch { return undefined; } };
-const waitSettings = (t, label, ok, timeout = 15000) => until(async () => { const m = await settingsFile(t); return m && ok(m) && m; }, label, timeout);
 const local = t => t.driver.observe((marker, ...keys) => ({
   marker: localStorage.getItem(marker), values: Object.fromEntries(keys.map(k => [k, localStorage.getItem(k)])) }), MARKER, THEME_KEY, SCROLL_KEY, PROBE_KEY);
 

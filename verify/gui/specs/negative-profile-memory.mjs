@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { click, inspect, openTool, reveal } from '../support/controls.mjs';
 import { choose, Blocked, textButton, openStep } from '../support/scenario.mjs';
 import { until } from '../support/webdriver.mjs';
+import { readSetting, waitSetting } from '../support/settings.mjs';
 import { startup, settledPhoto, settledReset } from './smoke.mjs';
 
 const input = '[data-control-id="neg_input_profile"] select';
@@ -58,7 +59,8 @@ export async function negativeProfileMemory(t) {
   await choose(t, working, chosen[1]);
   await until(async () => (await values()).every((v, i) => v === chosen[i]), 'both profiles chosen');
   await settledPhoto(t, p => p.hash !== original.hash);
-  const stored = await t.driver.observe(() => localStorage.getItem('immage.negProfiles'));
+  const sameProfiles = v => { try { const o = JSON.parse(v); return o.input === chosen[0] && o.working === chosen[1]; } catch { return false; } };
+  const stored = await waitSetting(t, 'immage.negProfiles', sameProfiles, 'remembered profiles saved to settings.json');
   t.measure({ name: 'remembered', stored, defaults, chosen });
   assert.deepEqual(JSON.parse(stored), { input: chosen[0], working: chosen[1] }, 'choices remembered');
   // back to the defaults by undo: the photo is on its defaults again, the
@@ -99,7 +101,7 @@ export async function negativeProfileMemory(t) {
   await until(async () => (await values()).every((v, i) => v === [chosen[0], keep][i]), 'undo the second working choice');
   await click(t, 'button.tool[title^="undo ("]');
   await until(async () => (await values()).every((v, i) => v === [defaults[0], keep][i]), 'input on default, working set by hand');
-  assert.deepEqual(JSON.parse(await t.driver.observe(() => localStorage.getItem('immage.negProfiles'))),
+  assert.deepEqual(JSON.parse(await readSetting(t, 'immage.negProfiles')),
     { input: chosen[0], working: chosen[1] }, 'memory differs from the photo\'s working profile');
   await pickBorder(t);
   await until(async () => (await values()).every((v, i) => v === [chosen[0], keep][i]), 'only the default input takes the remembered one', 10000);
