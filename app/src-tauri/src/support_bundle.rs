@@ -159,10 +159,10 @@ pub async fn support_bundle_preview(
     let app_version = app.package_info().version.to_string();
     let built = tauri::async_runtime::spawn_blocking(move || {
         let (darktable, opencl) = engine_facts(&app);
-        let mut machine = crate::machine_block(dir.as_deref(), opencl);
+        let mut machine = crate::app_cmds::machine_block(dir.as_deref(), opencl);
         if let Some(o) = machine.as_object_mut() {
             o.insert("app".into(), json!(app_version));
-            o.insert("build".into(), json!(crate::build_label()));
+            o.insert("build".into(), json!(crate::app_cmds::build_label()));
             o.insert("darktable".into(), darktable);
         }
         collect(known_with(&page), &page.prefs, &read_log(&runtime), &machine)

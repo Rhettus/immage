@@ -71,11 +71,11 @@ pub fn init(identifier: &str) -> Result<(), String> {
         if let Some((name, path)) = selection(Path::new("/"), &mode) {
             std::env::set_var(EGL_VENDOR, &path);
             std::env::set_var(MARKER, &path);
-            crate::WEBVIEW_EGL_OVERRIDE.store(true, Ordering::Relaxed);
+            crate::app_cmds::WEBVIEW_EGL_OVERRIDE.store(true, Ordering::Relaxed);
             active = name;
         }
     }
-    if !crate::WEBVIEW_EGL_OVERRIDE.load(Ordering::Relaxed) {
+    if !crate::app_cmds::WEBVIEW_EGL_OVERRIDE.load(Ordering::Relaxed) {
         std::env::remove_var(MARKER);
     }
     START.set(Started { runtime, mode, active, external }).map_err(|_| "renderer initialized twice".to_string())

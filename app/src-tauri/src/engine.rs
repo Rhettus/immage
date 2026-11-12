@@ -717,7 +717,7 @@ impl Engine {
         }
         // the web view's EGL selection is not the engine's
         #[cfg(target_os = "linux")]
-        if crate::WEBVIEW_EGL_OVERRIDE.load(Ordering::Relaxed) {
+        if crate::app_cmds::WEBVIEW_EGL_OVERRIDE.load(Ordering::Relaxed) {
             cmd.env_remove(crate::renderer::EGL_VENDOR);
             cmd.env_remove("IMMAGE_WEBVIEW_EGL_VENDOR");
         }
