@@ -25,7 +25,7 @@ import {
   BUILTINS, DEFAULTS, PERSONAL_KEYS, bitDepths, depthOf, exportOptionsFor, frameFor, hasQuality, readShared, sharedFile, loadPresets, loadSettings,
   newId, presetEdited, presetOf, savePresets, saveSettings, type BitDepth, type ExportPreset, type Settings,
 } from "./exportSettings";
-import { commands } from "./commands";
+import { commands, type ExportReply, type Value } from "./commands";
 
 export const FILE_MANAGER = navigator.userAgent.includes("Windows") ? "Explorer"
   : navigator.userAgent.includes("Mac") ? "Finder" : "File Manager";
@@ -48,8 +48,6 @@ const PREVIEWS_KEPT = 8;
 type Choice = "unique" | "overwrite" | "skip" | "cancel";
 type Ask = { name: string; dir: string; inBatch: boolean; left: number; all: boolean };
 
-type Result = { written: string[]; skipped: string[]; failed: { file: string; error: string }[]; dir?: string;
-                uploaded?: number; duplicates?: number; cancelled: boolean };
 
 // which sections are open, remembered
 type SectionId = "destination" | "name" | "format" | "frame" | "keywords" | "metadata";
@@ -233,12 +231,12 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
   // sharing: the chosen preset to a file, or a file's presets into My Presets
   const exportPreset = async () => {
     if (!chosen) return;
-    await invoke("export_presets_export", { contents: sharedFile(chosen), name: chosen.name.replace(/[/\\:*?"<>|]+/g, "_"),
-                                            label: "Immage export preset" }).catch((e) => setError(String(e)));
+    await commands.exportPresetsExport(sharedFile(chosen), chosen.name.replace(/[/\\:*?"<>|]+/g, "_"),
+                                       "Immage export preset").catch((e) => setError(String(e)));
   };
   const importPresets = async () => {
     try {
-      const file = await invoke<unknown>("export_presets_import", { label: "Immage export preset" });
+      const file = await commands.exportPresetsImport("Immage export preset");
       if (file === null) return;
       const added = readShared(file,
                                [...BUILTINS, ...presets].map((p) => p.name));
@@ -365,11 +363,10 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
     }
     const t = window.setTimeout(async () => {
       try {
-        const bytes = await invoke<ArrayBuffer>("export_preview", {
-          item: { imgid: shownImage.imgid, stem: "preview", frame: previewFrame },
-          options: { dir: "", format: "jpeg", colorSpace: "srgb", conflict: "overwrite", longEdge },
-          cap: PREVIEW_EDGE,
-        });
+        const bytes = await commands.exportPreview(
+          { imgid: shownImage.imgid, stem: "preview", frame: previewFrame as Value },
+          { dir: "", format: "jpeg", colorSpace: "srgb", conflict: "overwrite", longEdge },
+          PREVIEW_EDGE);
         if (seq !== previewSeq.current) return;
         const url = URL.createObjectURL(new Blob([bytes], { type: "image/jpeg" }));
         const cache = previewCache.current;
@@ -408,7 +405,7 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
           setNote(p.stage === "downloading" ? `downloading the upscale model (${p.mb ?? "?"} MB), first use only…`
                 : p.stage === "installing" ? "installing the upscale model…" : null);
         });
-        try { await invoke("ai_model_ensure", { id: UPSCALE_MODEL }); } finally { stop(); }
+        try { await commands.aiModelEnsure(UPSCALE_MODEL); } finally { stop(); }
         setNote(null);
       }
       // each image's metadata, when its name or its frame's text needs it
@@ -420,10 +417,8 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
       // with each, asked one at a time unless applied to all the rest
       const conflicts: (Choice | null)[] = items.map(() => null);
       if (!toImmich && s.conflict === "ask") {
-        const files = await invoke<{ path: string; exists: boolean }[]>("export_existing", {
-          items: items.map((i, k) => ({ imgid: i.imgid, stem: stems[k] })),
-          dir: s.dir, subfolder: s.useSubfolder ? s.subfolder : null, format: s.format,
-        });
+        const files = await commands.exportExisting(items.map((i, k) => ({ imgid: i.imgid, stem: stems[k] })),
+          s.dir, s.useSubfolder ? s.subfolder : null, s.format);
         // macOS and Windows file names ignore case
         const seen = new Set<string>();
         const clash = files.map((f) => {
@@ -450,10 +445,10 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
       }
       const album = albums?.find((a) => a.id === s.album)?.name ?? "the album";
       const total = items.length;
-      const summarize = (r: Result) => {
+      const summarize = (r: ExportReply) => {
         const failed = r.failed.length ? `, ${r.failed.length} failed: ${engineText(r.failed[0].error)}` : "";
         const stopped = r.cancelled ? "stopped: " : "";
-        const text = r.uploaded !== undefined
+        const text = r.uploaded != null
           ? `Upload ${stopped}${r.uploaded} of ${total} to ${album}`
             + (r.duplicates ? `, ${r.duplicates} already in Immich (added to the album)` : "") + failed
           : `Export ${stopped}${r.written.length} of ${total} to ${r.dir}`
@@ -462,11 +457,11 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
       };
       const what = upscale ? `Upscaling ${upscale}× and exporting` : toImmich ? "Uploading" : "Exporting";
       const reveal = s.reveal && !toImmich, keywordsChanged = s.keywordsOnOriginal && s.keywords.length > 0;
-      void runExport<Result>(what, total, {
-        items: items.map((i, k) => ({ imgid: i.imgid, stem: stems[k], created: i.exif.datetime || null,
+      void runExport(what, total, (job) => commands.exportImages(job,
+        items.map((i, k) => ({ imgid: i.imgid, stem: stems[k], created: i.exif.datetime || null,
                                       conflict: conflicts[k] ?? (s.conflict === "ask" ? "unique" : null),
-                                      frame: frameFor(s, i, metas[k]) })),
-        options: {
+                                      frame: frameFor(s, i, metas[k]) as Value })),
+        {
           dir: s.dir,
           subfolder: s.useSubfolder ? s.subfolder : null,
           format: s.format,
@@ -486,8 +481,7 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
           history: s.includeHistory,
           keywords: s.keywords,
           keywordsOnOriginal: s.keywordsOnOriginal,
-        },
-      }, summarize).then((r) => {
+        }), summarize).then((r) => {
         if (!r) return;
         if (keywordsChanged) onKeywordsChanged?.();
         if (reveal && r.written.length) void revealItemInDir(r.written).catch(() => {});

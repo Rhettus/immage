@@ -53,6 +53,64 @@ export const commands = {
 	mapSearchKeyStatus: () => __TAURI_INVOKE<boolean>("map_search_key_status"),
 	mapSearchKeySave: (key: string) => __TAURI_INVOKE<null>("map_search_key_save", { key }),
 	mapSearchKeyRemove: () => __TAURI_INVOKE<null>("map_search_key_remove"),
+	exportImages: (job: number, items: ExportItem[], options: ExportOptions) => __TAURI_INVOKE<ExportReply>("export_images", { job, items, options }),
+	exportCancel: (job: number) => __TAURI_INVOKE<void>("export_cancel", { job }),
+	exportExisting: (items: ExportItem[], dir: string, subfolder: string | null, format: string) => __TAURI_INVOKE<ExistingFile[]>("export_existing", { items, dir, subfolder, format }),
+	exportPreview: (item: ExportItem, options: ExportOptions, cap: number) => __TAURI_INVOKE<ArrayBuffer>("export_preview", { item, options, cap }),
+	exportPresetsLoad: () => __TAURI_INVOKE<PresetsFile | null>("export_presets_load"),
+	exportPresetsSave: (presets: PresetsFile) => __TAURI_INVOKE<null>("export_presets_save", { presets }),
+	exportPresetsExport: (contents: Value, name: string, label: string) => __TAURI_INVOKE<boolean>("export_presets_export", { contents, name, label }),
+	exportPresetsImport: (label: string) => __TAURI_INVOKE<Value | null>("export_presets_import", { label }),
+	presetsLoad: () => __TAURI_INVOKE<PresetsDoc>("presets_load"),
+	presetsSave: (presets: PresetsFile) => __TAURI_INVOKE<null>("presets_save", { presets }),
+	printProfiles: () => __TAURI_INVOKE<PrintProfile[]>("print_profiles"),
+	printProfileAdd: () => __TAURI_INVOKE<PrintProfile | null>("print_profile_add"),
+	softproof: (mode: string, profile: string | null, intent: number | null) => __TAURI_INVOKE<boolean>("softproof", { mode, profile, intent }),
+	printers: () => __TAURI_INVOKE<PrintersReply>("printers"),
+	printerInfo: (name: string) => __TAURI_INVOKE<PrinterInfoReply>("printer_info", { name }),
+	printPhoto: (imgid: number, request: { [key in string]: Value }, pdfName: string | null) => __TAURI_INVOKE<PrintReply | null>("print_photo", { imgid, request, pdfName }),
+	printSheet: (job: number, imgids: number[], request: { [key in string]: Value }, pdfName: string | null) => __TAURI_INVOKE<PrintReply | null>("print_sheet", { job, imgids, request, pdfName }),
+	fonts: () => __TAURI_INVOKE<FontFamily[]>("fonts"),
+	hdrMerge: (job: number, imgids: number[], align: boolean) => __TAURI_INVOKE<HdrReply>("hdr_merge", { job, imgids, align }),
+	hdrCanAlign: () => __TAURI_INVOKE<boolean>("hdr_can_align"),
+	panoMerge: (job: number, imgids: number[], projection: string, crop: boolean) => __TAURI_INVOKE<PanoReply>("pano_merge", { job, imgids, projection, crop }),
+	panoPreview: (job: number, imgids: number[], projection: string) => __TAURI_INVOKE<PanoPreview>("pano_preview", { job, imgids, projection }),
+	panoCanMerge: () => __TAURI_INVOKE<boolean>("pano_can_merge"),
+	mergeCancel: (job: number) => __TAURI_INVOKE<null>("merge_cancel", { job }),
+	aiObject: (points: number[][], box: number[] | null, inset: boolean | null, backdrop: boolean | null) => __TAURI_INVOKE<Value>("ai_object", { points, box, inset, backdrop }),
+	aiModelEnsure: (id: string) => __TAURI_INVOKE<null>("ai_model_ensure", { id }),
+	aiModelReinstall: (id: string) => __TAURI_INVOKE<null>("ai_model_reinstall", { id }),
+	aiMask: (kind: string, range: [number, number] | null, inset: boolean | null, backdrop: boolean | null) => __TAURI_INVOKE<Value>("ai_mask", { kind, range, inset, backdrop }),
+	aiDepth: (size: number) => __TAURI_INVOKE<DepthMap>("ai_depth", { size }),
+	aiDenoise: (strength: number) => __TAURI_INVOKE<GeneratedReply>("ai_denoise", { strength }),
+	aiDenoisePreview: (u: number, v: number, size: number) => __TAURI_INVOKE<ArrayBuffer>("ai_denoise_preview", { u, v, size }),
+	aiAccel: () => __TAURI_INVOKE<AccelProvider[]>("ai_accel"),
+	maskShapes: (name: string, shapes: Value[]) => __TAURI_INVOKE<null>("mask_shapes", { name, shapes }),
+	combine: (name: string, members: CombineMember[], ranges: Value[] | null) => __TAURI_INVOKE<null>("combine", { name, members, ranges }),
+	masks: (fields: { [key in string]: string[] }) => __TAURI_INVOKE<MaskInfo[]>("masks", { fields }),
+	maskDelete: (name: string) => __TAURI_INVOKE<null>("mask_delete", { name }),
+	maskRename: (name: string, to: string) => __TAURI_INVOKE<null>("mask_rename", { name, to }),
+	maskMap: (name: string | null, op: string | null, width: number, height: number, view: MapView | null) => __TAURI_INVOKE<ArrayBuffer>("mask_map", { name, op, width, height, view }),
+	rangeMap: (ranges: Value[], width: number, height: number) => __TAURI_INVOKE<ArrayBuffer>("range_map", { ranges, width, height }),
+	zones: (width: number, height: number, transition: number, stage: string) => __TAURI_INVOKE<ArrayBuffer>("zones", { width, height, transition, stage }),
+	spots: (spots: Spot[] | null) => __TAURI_INVOKE<Spot[]>("spots", { spots }),
+	spotsEnable: (on: boolean) => __TAURI_INVOKE<null>("spots_enable", { on }),
+	spotSource: (spot: NewSpot) => __TAURI_INVOKE<SpotSource>("spot_source", { spot }),
+	upright: (mode: string, guides: number[] | null, aspect: number) => __TAURI_INVOKE<UprightReply>("upright", { mode, guides, aspect }),
+	looksList: () => __TAURI_INVOKE<LookInfo[]>("looks_list"),
+	sharedImport: () => __TAURI_INVOKE<SharedImport>("shared_import"),
+	lookExport: (from: string, name: string) => __TAURI_INVOKE<boolean>("look_export", { from, name }),
+	lookDelete: (path: string) => __TAURI_INVOKE<null>("look_delete", { path }),
+	lookApply: (path: string | null) => __TAURI_INVOKE<string | null>("look_apply", { path }),
+	lookAmount: (amount: number) => __TAURI_INVOKE<null>("look_amount", { amount }),
+	agxPresets: (fields: string[]) => __TAURI_INVOKE<AgxPresetsReply>("agx_presets", { fields }),
+	agxPresetsPick: (fields: string[]) => __TAURI_INVOKE<AgxPresetsReply | null>("agx_presets_pick", { fields }),
+	agxProfilesLoad: () => __TAURI_INVOKE<AgxProfile[]>("agx_profiles_load"),
+	agxProfilesSave: (profiles: AgxProfile[]) => __TAURI_INVOKE<null>("agx_profiles_save", { profiles }),
+	positiveExport: (imgid: number, original: string, format: string, kind: string) => __TAURI_INVOKE<GeneratedReply>("positive_export", { imgid, original, format, kind }),
+	spektraStocks: () => __TAURI_INVOKE<FilmStocks>("spektra_stocks"),
+	spektraFetch: (action: string) => __TAURI_INVOKE<FilmFetch>("spektra_fetch", { action }),
+	lenses: () => __TAURI_INVOKE<LensMenu>("lenses"),
 };
 
 /* Types */
@@ -62,9 +120,31 @@ export type AboutInfo = {
 	darktable: string,
 };
 
+export type AccelDevice = {
+	id: number,
+	name: string,
+};
+
+export type AccelProvider = {
+	id: string,
+	name: string,
+	devices: AccelDevice[],
+};
+
 export type AgxAutoReply = {
 	black_ev: number,
 	white_ev: number,
+};
+
+export type AgxPresetsReply = {
+	presets: FoundPreset[],
+};
+
+export type AgxProfile = {
+	value: number,
+	label: string,
+	params: { [key in string]: number },
+	deleted?: boolean | null,
 };
 
 export type BuildInfo = {
@@ -100,13 +180,136 @@ export type ColorProfiles = {
 	working: ([string, number])[],
 };
 
+export type CombineMember = {
+	mask: string,
+	opacity: number,
+	invert: boolean,
+};
+
+export type DepthMap = {
+	width: number,
+	height: number,
+	data: number[],
+};
+
+export type ExistingFile = {
+	path: string,
+	exists: boolean,
+};
+
+export type ExportFailure = {
+	file: string,
+	error: string,
+};
+
+export type ExportItem = {
+	imgid: number,
+	stem: string,
+	created?: string | null,
+	conflict?: string | null,
+	frame?: Value | null,
+};
+
+export type ExportOptions = {
+	dir: string,
+	subfolder?: string | null,
+	format: string,
+	quality?: number | null,
+	bpp?: number | null,
+	colorSpace: string,
+	longEdge?: number | null,
+	conflict: string,
+	immichAlbum?: string | null,
+	upscale?: number | null,
+	aiProvider?: string | null,
+	aiDevice?: number | null,
+	location?: boolean | null,
+	camera?: boolean | null,
+	serials?: boolean | null,
+	description?: boolean | null,
+	tags?: boolean | null,
+	history?: boolean | null,
+	keywords?: string[] | null,
+	keywordsOnOriginal?: boolean | null,
+};
+
+export type ExportReply = {
+	written: string[],
+	skipped: string[],
+	failed: ExportFailure[],
+	dir?: string | null,
+	cancelled: boolean,
+	uploaded?: number | null,
+	duplicates?: number | null,
+	album?: string | null,
+};
+
+export type FetchState = "idle" | "running" | "done" | "failed";
+
+export type FilmFetch = {
+	state: FetchState,
+	message: string,
+	progress: number,
+	started?: boolean | null,
+};
+
+export type FilmPack = {
+	dir: string,
+	lut_id?: string,
+	lut_hash?: number,
+	hand_installed?: boolean,
+};
+
+export type FilmStock = {
+	hash: number,
+	stock: string,
+	name: string,
+	printing: boolean,
+	positive: boolean,
+	bw: boolean,
+	target_print: string,
+	dev_times: number[],
+};
+
+export type FilmStocks = {
+	pack: FilmPack | null,
+	stocks: FilmStock[],
+};
+
 export type FolderReply = {
 	images: LibraryImage[],
 	unanswered?: Value[],
 };
 
+export type FontFace = {
+	name: string,
+	weight: number,
+	italic: boolean,
+};
+
+export type FontFamily = {
+	name: string,
+	faces: FontFace[],
+};
+
+export type FoundPreset = {
+	name: string,
+	params: { [key in string]: number },
+};
+
+export type GeneratedReply = {
+	path: string,
+	original: string,
+	image: LibraryImage,
+};
+
 export type GetReply = {
 	modules: { [key in string]: ModuleInfo },
+};
+
+export type HdrReply = {
+	path: string,
+	image: LibraryImage,
 };
 
 export type HistoryItem = {
@@ -118,6 +321,18 @@ export type HistoryItem = {
 	default_enabled?: boolean | null,
 	fixed?: boolean | null,
 	masked?: boolean | null,
+};
+
+export type Lens = {
+	name: string,
+	maker: string,
+	hash: number,
+};
+
+export type LensMenu = {
+	auto: string,
+	pick: number,
+	lenses: Lens[],
 };
 
 export type LibraryImage = {
@@ -146,6 +361,34 @@ export type Limits = {
 export type Location = {
 	latitude: number,
 	longitude: number,
+};
+
+export type LookInfo = {
+	name: string,
+	group: string,
+	path: string,
+	user?: boolean | null,
+};
+
+export type MapView = {
+	x: number,
+	y: number,
+	scale: number,
+};
+
+export type MaskInfo = {
+	name: string,
+	shapes: Value[],
+	invert: boolean,
+	opacity: number,
+	refine?: Refine | null,
+	instances: { [key in string]: MaskInstance },
+	merged_in?: string[] | null,
+};
+
+export type MaskInstance = {
+	enabled: boolean,
+	params: { [key in string]: number },
 };
 
 export type MetaExif = {
@@ -234,6 +477,8 @@ export type ModuleStateReply = {
 	now: ModuleState,
 };
 
+export type NewSpot = { type: "circle"; x: number; y: number; r: number; mode: SpotMode; feather: number; opacity: number } | { type: "brush"; points: ([number, number])[]; size: number; mode: SpotMode; feather: number; opacity: number };
+
 export type OpenReply = {
 	imgid: number,
 	sensor_width: number,
@@ -244,6 +489,25 @@ export type OpenReply = {
 	edited: boolean,
 	raw: boolean,
 	fresh: boolean,
+};
+
+export type PanoPreview = {
+	rgba: string,
+	width: number,
+	height: number,
+	crop: [number, number, number, number],
+	projection: PanoProjection,
+	used: number,
+};
+
+export type PanoProjection = "spherical" | "cylindrical" | "perspective";
+
+export type PanoReply = {
+	path: string,
+	original: string,
+	image: LibraryImage,
+	used: number,
+	frames: number,
 };
 
 export type PasteBatchReply = {
@@ -268,6 +532,65 @@ export type Place = {
 	latitude: number,
 	longitude: number,
 	bounds?: [number, number, number, number] | null,
+};
+
+export type PresetsDoc = PresetsFile | Value[];
+
+export type PresetsFile = {
+	version: number,
+	presets: Value[],
+};
+
+export type PrintProfile = {
+	name: string,
+	file: string,
+};
+
+export type PrintReply = {
+	dpi?: number | null,
+	width?: number | null,
+	height?: number | null,
+	pages?: number | null,
+	photos?: number | null,
+	pdf?: string | null,
+};
+
+export type Printer = {
+	name: string,
+	description: string,
+	default: boolean,
+};
+
+export type PrinterInfoReply = {
+	resolution: number,
+	margins: PrinterMargins,
+	default_paper: string,
+	papers: PrinterPaper[],
+	media: PrinterMedium[],
+};
+
+export type PrinterMargins = {
+	top: number,
+	bottom: number,
+	left: number,
+	right: number,
+};
+
+export type PrinterMedium = {
+	name: string,
+	common_name: string,
+};
+
+export type PrinterPaper = {
+	name: string,
+	common_name: string,
+	width: number,
+	height: number,
+};
+
+export type PrintersReply = {
+	available: boolean,
+	printers: Printer[],
 };
 
 export type Refine = {
@@ -309,6 +632,21 @@ export type SaveReply = {
 	edited: boolean,
 };
 
+export type SharedImport = {
+	presets: Value[],
+	looks: number,
+	failed: string[],
+};
+
+export type Spot = { type: "circle"; x: number; y: number; r: number; mode: SpotMode; sx: number; sy: number; feather: number; opacity: number } | { type: "brush"; points: ([number, number])[]; size: number; mode: SpotMode; sx: number; sy: number; feather: number; opacity: number };
+
+export type SpotMode = "heal" | "clone";
+
+export type SpotSource = {
+	sx: number,
+	sy: number,
+};
+
 export type SubFolder = {
 	name: string,
 	path: string,
@@ -317,6 +655,13 @@ export type SubFolder = {
 
 export type ToneKeyReply = {
 	ev: number,
+};
+
+export type UprightReply = {
+	rotation: number,
+	lensshift_v: number,
+	lensshift_h: number,
+	fit?: string | null,
 };
 
 export type Value = null | boolean | number | string | Value[] | { [key in string]: Value };

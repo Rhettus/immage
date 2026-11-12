@@ -6,9 +6,9 @@
 // Merge, on the engine's export thread, and AI Denoise on its thread, while
 // the photo is edited. each shows its progress, then what it did: for a
 // while, or until dismissed when anything went wrong
-import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
+import { commands, type ExportReply } from "./commands";
 import { engineText } from "./engineState";
 
 export type Action = { label: string; run: () => void };
@@ -19,7 +19,7 @@ export type Job = {
   done: number;
   total: number;           // 0 for work with no count, as a denoise
   stage: string | null;    // past the count, as a panorama's "blending"
-  cancel: string | null;   // the command that stops it, if any
+  cancel: "export" | "merge" | null;   // the kind of command that stops it, if any
   stopping: boolean;
   summary: string | null;  // set once it is over
   failed: boolean;
@@ -44,7 +44,7 @@ const update = (id: number, change: Partial<Job>) => {
 // export still runs in Rust
 let next = Date.now();
 
-const start = (what: string, total: number, cancel: string | null) => {
+const start = (what: string, total: number, cancel: Job["cancel"]) => {
   const id = next++;
   jobs = [...jobs, { id, what, done: 0, total, stage: null, cancel, stopping: false, summary: null, failed: false,
                      action: null }];
@@ -80,23 +80,25 @@ const track = async <R,>(id: number, run: () => Promise<R>, summarize: (r: R) =>
 
 let progress: Promise<unknown> | null = null;
 
-// runs export_images with `args` as job `what` of `total` images, and
-// returns its result; `summarize` says what it did
-export async function runExport<R>(what: string, total: number, args: Record<string, unknown>,
-                                   summarize: (r: R) => Outcome): Promise<R | null> {
+// runs `run`, which starts export_images under the job number it is given,
+// as job `what` of `total` images, and returns its result; `summarize` says
+// what it did
+export async function runExport(what: string, total: number, run: (job: number) => Promise<ExportReply>,
+                                summarize: (r: ExportReply) => Outcome): Promise<ExportReply | null> {
   progress ??= listen<{ job: number; done: number }>("export-progress", (e) => update(e.payload.job, { done: e.payload.done }));
   await progress;
-  const id = start(what, total, "export_cancel");
-  return track(id, () => invoke<R>("export_images", { job: id, ...args }), summarize, "Export failed");
+  const id = start(what, total, "export");
+  return track(id, () => run(id), summarize, "Export failed");
 }
 
 let merging: Promise<unknown> | null = null;
 
-// runs the merge `command` (hdr_merge, pano_merge) with `args` as job
-// `what` of `total` photos: their count as the engine reads them, then the
+// runs `run`, which starts a merge command (hdr_merge, pano_merge, print_sheet)
+// under the job number it is given, as job `what` of `total` photos: their
+// count as the engine reads them, then the
 // merge's own stages, which the engine names and counts (main.c,
 // _merge_report). past its last stop it can no longer be stopped
-export async function runMerge<R>(what: string, total: number, command: string, args: Record<string, unknown>,
+export async function runMerge<R>(what: string, total: number, run: (job: number) => Promise<R>,
                                   summarize: (r: R) => Outcome | null, failed: string): Promise<R | null> {
   merging ??= listen<{ job: number; done: number; total: number; stage: string; last: boolean }>("merge-progress",
     (e) => {
@@ -104,8 +106,8 @@ export async function runMerge<R>(what: string, total: number, command: string, 
       update(job, { done, total, stage: stage === "photos" ? null : stage, ...(last ? { cancel: null } : {}) });
     });
   await merging;
-  const id = start(what, total, "merge_cancel");
-  return track(id, () => invoke<R>(command, { job: id, ...args }), summarize, failed);
+  const id = start(what, total, "merge");
+  return track(id, () => run(id), summarize, failed);
 }
 
 // `run` as job `what`, which cannot be stopped; `failed` heads its error
@@ -118,7 +120,7 @@ export function runInBackground<R>(what: string, run: () => Promise<R>, summariz
 export function stopJob(job: Job) {
   if (!job.cancel) return;
   update(job.id, { stopping: true });
-  void invoke(job.cancel, { job: job.id });
+  void (job.cancel === "export" ? commands.exportCancel(job.id) : commands.mergeCancel(job.id));
 }
 
 export function dismissJob(id: number) {

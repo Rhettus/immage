@@ -30,7 +30,7 @@ import { checkForUpdate, lastChecked, loadAutoCheck, storeAutoCheck, useUpdate, 
 
 import { loadNewPhotosProfile, storeNewPhotosProfile } from "./profileDefault";
 import { settings } from "./settings";
-import { commands } from "./commands";
+import { commands, type AccelProvider } from "./commands";
 export { loadNewPhotosProfile } from "./profileDefault";
 
 // EV a new raw's exposure gets on an instance of its own (manifest.ts,
@@ -371,7 +371,7 @@ export function storeFocusMode(on: boolean) {
 
 // AI acceleration: the GPU provider and device AI upscaling runs on, as
 // darktable's own setting; the engine lists what this computer has
-export type AccelProvider = { id: string; name: string; devices: { id: number; name: string }[] };
+export type { AccelProvider } from "./commands";
 export type AccelChoice = { provider: string; device: number };
 const ACCEL_KEY = "immage.aiAccel";
 export function loadAccel(): AccelChoice {

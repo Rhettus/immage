@@ -5,7 +5,7 @@
 // named sets of settings in a list. a preset stores only the settings it
 // was saved with and is read over the defaults, so settings added later
 // need no migration: an older preset simply lacks them
-import { invoke } from "@tauri-apps/api/core";
+import { commands, type Value } from "./commands";
 import type { ImageEntry } from "./library";
 import { expandText, type Meta } from "./exportTokens";
 import { settings as store } from "./settings";
@@ -180,7 +180,6 @@ export const saveSettings = (s: Settings) => {
 // `icon` names the one the user chose for it (ExportDialog's PRESET_ICONS);
 // without it, the dialog picks one from what the preset does
 export type ExportPreset = { id: string; name: string; builtin?: boolean; icon?: string; settings: Partial<Settings> };
-type PresetsFile = { version: 1; presets: ExportPreset[] };
 
 // what a preset holds: everything but which photos are exported
 export const PRESET_KEYS = (Object.keys(DEFAULTS) as (keyof Settings)[]).filter((k) => k !== "scope");
@@ -223,12 +222,12 @@ export const BUILTINS: ExportPreset[] = [
 
 export async function loadPresets(): Promise<ExportPreset[]> {
   try {
-    const f = await invoke<PresetsFile | null>("export_presets_load");
-    return Array.isArray(f?.presets) ? f.presets : [];
+    const f = await commands.exportPresetsLoad();
+    return Array.isArray(f?.presets) ? f.presets as unknown as ExportPreset[] : [];
   } catch { return []; }
 }
 export const savePresets = (presets: ExportPreset[]) =>
-  invoke("export_presets_save", { presets: { version: 1, presets } satisfies PresetsFile });
+  commands.exportPresetsSave({ version: 1, presets: presets as unknown as Value[] });
 
 export const presetOf = (s: Settings): Partial<Settings> =>
   Object.fromEntries(PRESET_KEYS.map((k) => [k, s[k]])) as Partial<Settings>;

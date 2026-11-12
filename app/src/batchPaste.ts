@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
-import { invoke } from "@tauri-apps/api/core";
 import type { Clip } from "./CopySettings";
 import { Session, instanceKey, mapOpOf } from "./session";
 import { CONVERSIONS } from "./manifest";
@@ -79,11 +78,11 @@ export async function recalculateAiMasks(c: Clip): Promise<Clip> {
     const model = kind === "depth" ? "mask-depth-da2-small" : kind === "object" ? "mask-object-sam21-small"
       : kind === "subject" ? "mask-subject-birefnet-lite" : "mask-scene-segformer-b2";
     try {
-      const args = kind === "depth" ? { kind, range: shape.depth } : kind === "object"
-        ? { points: recipe!.points ?? [], box: recipe!.box ?? null, inset: recipe!.inset, backdrop: recipe!.backdrop }
-        : { kind, inset: recipe!.inset, backdrop: recipe!.backdrop };
-      const reply = await withModel(model, () => invoke<ObjectShape["paths"] | { paths: ObjectShape["paths"]; backdrop: Backdrop | null }>(
-        kind === "object" ? "ai_object" : "ai_mask", args));
+      const select = () => kind === "depth" ? commands.aiMask(kind, shape.depth!, null, null)
+        : kind === "object"
+          ? commands.aiObject(recipe!.points ?? [], recipe!.box ?? null, recipe!.inset, recipe!.backdrop)
+          : commands.aiMask(kind, null, recipe!.inset, recipe!.backdrop);
+      const reply = await withModel(model, select) as ObjectShape["paths"] | { paths: ObjectShape["paths"]; backdrop: Backdrop | null };
       const paths = Array.isArray(reply) ? reply : reply.paths;
       if (!paths.length) throw Error("nothing found");
       const { backdrop: oldBackdrop, ...rest } = shape;

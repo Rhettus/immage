@@ -313,8 +313,8 @@ const COMMANDS = {
     (await request({ cmd: "softproof", mode, profile: profile ?? "", intent: intent ?? 0 })).changed,
   printers: async () => { const { ok, ms, ...r } = await request({ cmd: "printers" }); return r; },
   printer_info: async ({ name }) => { const { ok, ms, ...r } = await request({ cmd: "printer", name }); return r; },
-  print_photo: async ({ imgid, request: req, pdf_name }) => {
-    const pdf = pdfChoice(pdf_name);
+  print_photo: async ({ imgid, request: req, pdfName }) => {
+    const pdf = pdfChoice(pdfName);
     if (pdf) req = { ...req, pdf };
     const job = 900000 + ++printJobs;
     await request({ cmd: "export_hold", job, imgids: [imgid] });
@@ -325,8 +325,8 @@ const COMMANDS = {
       await requestTagged({ cmd: "export_release", job });
     }
   },
-  print_sheet: async ({ imgids, request: req, pdf_name }) => {
-    const pdf = pdfChoice(pdf_name);
+  print_sheet: async ({ imgids, request: req, pdfName }) => {
+    const pdf = pdfChoice(pdfName);
     if (pdf) req = { ...req, pdf };
     const job = 900000 + ++printJobs;
     await request({ cmd: "export_hold", job, imgids });

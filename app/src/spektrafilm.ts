@@ -7,17 +7,15 @@
 // lists are made by its GUI alone, so the engine reads the data pack's
 // profiles for them (`spektra_stocks`, engine main.c)
 
+import type { FilmFetch, FilmPack, FilmStock, FilmStocks } from "./commands";
 import type { Values } from "./manifest";
 
-// a profile in the pack: a film (printing false) or a paper
-export type Stock = {
-  hash: number; stock: string; name: string; printing: boolean; positive: boolean; bw: boolean;
-  target_print: string; dev_times: number[];
-};
-export type Pack = { dir: string; lut_id: string; lut_hash: number; hand_installed: boolean };
-export type Stocks = { pack: Pack | null; stocks: Stock[] };
-export type FetchStatus = { state: "idle" | "running" | "done" | "failed"; message: string; progress: number;
-                            started?: boolean };
+// a profile in the pack: a film (printing false) or a paper (the Rust
+// layer's types)
+export type Stock = FilmStock;
+export type Pack = FilmPack;
+export type Stocks = FilmStocks;
+export type FetchStatus = FilmFetch;
 
 // the module's _name_hash(): darktable's dt_hash (djb2, xor variant) of the
 // stock name, folded to 32 bits, 0 kept for "the default stock"

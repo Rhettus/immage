@@ -128,7 +128,7 @@ import { HistogramView, SCOPE_MODES, loadScope } from "./HistogramView";
 import { Navigator } from "./Navigator";
 import { PanelView, UPRIGHT_ICONS, UPRIGHT_TITLES, WBTools, isMono, presetValues, sampleSpot } from "./PanelView";
 import { Choice, OptionPreview, Slider, Toggle } from "./Controls";
-import { commands, type Value } from "./commands";
+import { commands, type PrintReply, type Value } from "./commands";
 
 const MAX_PREVIEW = 2560;
 const OTHER_MENUS = forPlatform(MENUS, false);
@@ -410,7 +410,7 @@ export default function App() {
   );
   // the GPU providers this computer has for AI, asked of the engine once
   const [accel, setAccel] = useState<AccelProvider[] | null>(null);
-  useEffect(() => { invoke<AccelProvider[]>("ai_accel").then(setAccel).catch(() => setAccel([])); }, []);
+  useEffect(() => { commands.aiAccel().then(setAccel).catch(() => setAccel([])); }, []);
   // Preferences' cache limits, which the app's caches start without
   useEffect(() => { applyCacheLimits(); }, []);
   // a photo's right-click menu, where it was clicked
@@ -708,7 +708,7 @@ export default function App() {
     if (!s) return;
     leaveBefore();
     try {
-      const { sx, sy } = await invoke<{ sx: number; sy: number }>("spot_source", { spot });
+      const { sx, sy } = await commands.spotSource(spot);
       record(["spot:create"]);
       s.setSpots([...s.spots, { ...spot, sx, sy } as Spot]);
       setSpotSel(s.spots.length - 1);
@@ -904,7 +904,7 @@ export default function App() {
               : p.stage === "installing" ? "installing the AI model…" : "");
     });
     try {
-      await invoke("ai_model_ensure", { id: "rawdenoise-nind" });
+      await commands.aiModelEnsure("rawdenoise-nind");
     } finally {
       stop();
     }
@@ -950,8 +950,7 @@ export default function App() {
                 : p.stage === "installing" ? "installing the AI model…" : "");
       });
       try {
-        return await withModel("rawdenoise-nind", () => invoke<{ path: string; original: string; image: { imgid: number } }>(
-          "ai_denoise", { strength: amount / 100 }));
+        return await withModel("rawdenoise-nind", () => commands.aiDenoise(amount / 100));
       } finally {
         stop();
       }
@@ -981,9 +980,7 @@ export default function App() {
       s.flushEdits();
       await s.settled();
       if (session.current !== s) throw new Error("the open photo changed; export it again");
-      return await invoke<{ path: string; original: string; image: { imgid: number } }>("positive_export", {
-        imgid: s.imgid, original: from, format, kind,
-      });
+      return await commands.positiveExport(s.imgid, from, format, kind);
     }, (r) => {
       returns.current.set(r.path, { original: r.original, result: r.path,
                                     plugin: kind === "negative" ? "negative-positive" : "film-positive", applied: true });
@@ -1001,8 +998,7 @@ export default function App() {
   // the activity line. the engine merges on its export thread
   const runHdrMerge = (list: ImageEntry[], align: boolean) => {
     const first = list[0];
-    void runMerge<{ path: string; image: ImageEntry }>("HDR Merge", list.length, "hdr_merge",
-      { imgids: list.map((i) => i.imgid), align },
+    void runMerge("HDR Merge", list.length, (job) => commands.hdrMerge(job, list.map((i) => i.imgid), align),
     (r) => {
       if (folderRef.current && !immichRef.current && parentDir(r.path) === folderRef.current)
         void showFolder(folderRef.current, true);
@@ -1016,8 +1012,8 @@ export default function App() {
   // export thread
   const runPanoMerge = (list: ImageEntry[], projection: Projection, crop: boolean) => {
     const first = list[0];
-    void runMerge<{ path: string; original: string; image: ImageEntry; used: number; frames: number }>(
-      "Panorama Merge", list.length, "pano_merge", { imgids: list.map((i) => i.imgid), projection, crop },
+    void runMerge("Panorama Merge", list.length,
+      (job) => commands.panoMerge(job, list.map((i) => i.imgid), projection, crop),
     (r) => {
       returns.current.set(r.path, { original: r.original, result: r.path, plugin: "panorama", applied: false });
       if (folderRef.current && !immichRef.current && parentDir(r.path) === folderRef.current)
@@ -1035,17 +1031,18 @@ export default function App() {
   // (masks.ts, ObjectShape): the engine uses them in a mask's first shape
   const startsMask = (target: ToolTarget) =>
     target === "new" || (target !== "subtract" && !session.current?.masks.some((m) => m.name === maskSel));
-  const outline = async (cmd: string, args: Record<string, unknown>, backdrop: boolean,
+  // `select` runs the AI command with the `backdrop` flag it is given
+  const outline = async (select: (backdrop: boolean | null) => Promise<Value>, backdrop: boolean,
                          got: (b: Backdrop | undefined) => void) => {
-    if (!backdrop) return invoke<ObjectShape["paths"]>(cmd, args);
-    const r = await invoke<{ paths: ObjectShape["paths"]; backdrop: Backdrop | null }>(cmd, { ...args, backdrop });
+    if (!backdrop) return await select(null) as ObjectShape["paths"];
+    const r = await select(true) as { paths: ObjectShape["paths"]; backdrop: Backdrop | null };
     got(r.backdrop ? { range: r.backdrop.range, paths: r.backdrop.paths, plain: r.backdrop.plain } : undefined);
     return r.paths;
   };
   const selectObject = (prompt: ObjectPrompt) => {
     let backdrop: Backdrop | undefined;
     return runAi("mask-object-sam21-small", "finding the object…",
-      () => outline("ai_object", { points: prompt.points ?? [], box: prompt.box ?? null, inset: toolTarget !== "subtract" },
+      () => outline((bd) => commands.aiObject(prompt.points ?? [], prompt.box ?? null, toolTarget !== "subtract", bd),
                     startsMask(toolTarget), (b) => { backdrop = b; }),
       (paths) => aiShown(createShape({ type: "object", paths, ai: { kind: "object", ...structuredClone(prompt), inset: toolTarget !== "subtract", backdrop: startsMask(toolTarget) }, ...(backdrop && { backdrop }) })));
   };
@@ -1071,7 +1068,7 @@ export default function App() {
     const a = AI_KINDS[k];
     let backdrop: Backdrop | undefined;
     return runAi(a.model, a.working,
-      () => outline("ai_mask", { kind: a.kind, inset: k !== "background" && target !== "subtract" },
+      () => outline((bd) => commands.aiMask(a.kind, null, k !== "background" && target !== "subtract", bd),
                     (k === "subject" || k === "people") && startsMask(target), (b) => { backdrop = b; }),
       (paths) => {
         const had = new Set(session.current?.masks.map((m) => m.name));
@@ -1090,11 +1087,11 @@ export default function App() {
   const pickDepth = (x: number, y: number) => {
     let depth: [number, number] = [0, 1];
     void runAi(DEPTH_MODEL, "finding depth…", async () => {
-      const map = await track(invoke<{ width: number; height: number; data: number[] }>("ai_depth", { size: 256 }));
+      const map = await track(commands.aiDepth(256));
       const i = Math.min(map.width - 1, Math.floor(x * map.width)), j = Math.min(map.height - 1, Math.floor(y * map.height));
       const d = map.data[j * map.width + i] / 255;
       depth = [Math.max(0, d - 0.15), Math.min(1, d + 0.15)];
-      return invoke<ObjectShape["paths"]>("ai_mask", { kind: "depth", range: depth });
+      return commands.aiMask("depth", depth, null, null).then((r) => r as ObjectShape["paths"]);
     }, (paths) => aiShown(createShape({ type: "object", paths, depth, feather: 0.01 })));
   };
   // a Depth Range's sliders: the band traced again (a few ms once the
@@ -1105,7 +1102,7 @@ export default function App() {
     if (!s || !name) return;
     const token = ++depthToken.current;
     try {
-      const paths = await invoke<ObjectShape["paths"]>("ai_mask", { kind: "depth", range: depth });
+      const paths = await commands.aiMask("depth", depth, null, null) as ObjectShape["paths"];
       const m = s.masks.find((x) => x.name === name);
       if (token !== depthToken.current || !m || m.shapes[k]?.type !== "object") return;
       record([`mask:depth:${name}`]);
@@ -1304,16 +1301,16 @@ export default function App() {
     setLooks(l);
   };
   const exportPreset = async (p: Preset) => {
-    await invoke<boolean>("export_presets_export", { contents: sharedPresets([p]), name: safeName(p.name), label: "Immage preset" })
+    await commands.exportPresetsExport(sharedPresets([p]), safeName(p.name), "Immage preset")
       .then((saved) => { if (saved) setStatus(`exported "${p.name}"`); }, (e) => setStatus(`export preset: ${e}`));
   };
   const exportLook = async (l: Look) => {
-    await invoke<boolean>("look_export", { from: l.path, name: safeName(l.name) })
+    await commands.lookExport(l.path, safeName(l.name))
       .then((saved) => { if (saved) setStatus(`exported "${l.name}"`); }, (e) => setStatus(`export look: ${e}`));
   };
   const deleteLook = async (l: Look) => {
     try {
-      await invoke("look_delete", { path: l.path });
+      await commands.lookDelete(l.path);
       // a photo wearing it keeps it, as its edit holds the look; only putting
       // it back on after the Before view needs the file
       if (session.current?.lookPath === l.path) session.current.lookPath = null;
@@ -1321,7 +1318,7 @@ export default function App() {
     } catch (e) { setStatus(`delete look: ${e}`); }
   };
   const importShared = async () => {
-    const got = await invoke<{ presets: unknown[]; looks: number; failed: string[] }>("shared_import")
+    const got = await commands.sharedImport()
       .catch((e) => ({ presets: [], looks: 0, failed: [String(e)] }));
     let added: Preset[] = [];
     const looksIn = got.looks;
@@ -1470,7 +1467,7 @@ export default function App() {
       }
       const width = 320, height = Math.max(1, Math.round((width * f.h) / f.w));
       try {
-        const buf = await track(invoke<ArrayBuffer>("range_map", { ranges, width, height }));
+        const buf = await track(commands.rangeMap(ranges as unknown as Value[], width, height));
         if (!stale) {
           setRangeMap({ width, height, data: new Uint8Array(buf, 8) });
           setRangeFor(target!.name);
@@ -1519,8 +1516,7 @@ export default function App() {
           // the window the sharp render shows, at its scale, so the
           // refinements come out as they did in it
           try {
-            const buf = await track(invoke<ArrayBuffer>("mask_map", { name, width: v.width, height: v.height,
-                                                                      view: { x: v.x, y: v.y, scale: v.scale } }));
+            const buf = await track(commands.maskMap(name, null, v.width, v.height, { x: v.x, y: v.y, scale: v.scale }));
             const head = new DataView(buf, 0, 8);
             const width = head.getUint32(0, true), height = head.getUint32(4, true);
             const fw = v.scale * f.w, fh = v.scale * f.h;
@@ -1559,7 +1555,7 @@ export default function App() {
         if (stale) return;
         const ranges = m.shapes.filter(isRange), width = 64, height = Math.max(1, Math.round((width * f.h) / f.w));
         try {
-          const buf = await track(invoke<ArrayBuffer>("range_map", { ranges, width, height }));
+          const buf = await track(commands.rangeMap(ranges as unknown as Value[], width, height));
           if (stale) return;
           thumbKeys.current[m.name] = JSON.stringify(ranges);
           setThumbMaps((o) => ({ ...o, [m.name]: { width, height, data: new Uint8Array(buf, 8) } }));
@@ -2035,10 +2031,10 @@ export default function App() {
       }
       const width = 512, height = Math.max(1, Math.round((width * f.h) / f.w));
       try {
-        const buf = await track(invoke<ArrayBuffer>("zones", { width, height, transition: DEFAULT_TRANSITION, stage: "before" }));
+        const buf = await track(commands.zones(width, height, DEFAULT_TRANSITION, "before"));
         const placed = offsetsOf(s.values).some((o) => o !== 0);
         const unplaced = placed
-          ? await track(invoke<ArrayBuffer>("zones", { width, height, transition: DEFAULT_TRANSITION, stage: "unplaced" }))
+          ? await track(commands.zones(width, height, DEFAULT_TRANSITION, "unplaced"))
           : null;
         if (stale || s !== session.current) return;
         setZoneData(parseZones(buf));
@@ -2077,7 +2073,7 @@ export default function App() {
     if (partPaths(kind)) { setZonePart({ kind, invert }); return; }
     const a = AI_KINDS[kind as AiKind];
     if (!a) return;
-    void runAi(a.model, a.working, () => invoke<ObjectShape["paths"]>("ai_mask", { kind: a.kind }), (paths) => {
+    void runAi(a.model, a.working, () => commands.aiMask(a.kind, null, null, null).then((r) => r as ObjectShape["paths"]), (paths) => {
       setZoneAiPaths((old) => ({ ...old, [kind]: paths }));
       setZonePart({ kind, invert });
     });
@@ -2091,7 +2087,7 @@ export default function App() {
     if (!kind) { setStatus("no more objects on this photo"); return; }
     const invert = zonePart?.invert ?? false;
     void runAi("mask-object-sam21-small", "finding the object…",
-      () => invoke<ObjectShape["paths"]>("ai_object", { points: prompt.points ?? [], box: prompt.box ?? null }),
+      () => commands.aiObject(prompt.points ?? [], prompt.box ?? null, null, null).then((r) => r as ObjectShape["paths"]),
       (paths) => {
         setZoneAiPaths((old) => ({ ...old, [kind]: paths }));
         setZonePart({ kind, invert });
@@ -2169,7 +2165,7 @@ export default function App() {
           const width = 640, height = Math.max(1, Math.round((width * f.h) / f.w));
           let data: Uint8Array;
           try {
-            data = new Uint8Array(await invoke<ArrayBuffer>("mask_map", { op: maskOp, width, height }), 8);
+            data = new Uint8Array(await commands.maskMap(null, maskOp, width, height, null), 8);
           } catch {
             // no mask of its own (masking at 0): all of it, or none when off
             const on = mapsFor(maskOp).some((m) => m.enabled?.(s.values));
@@ -2415,8 +2411,7 @@ export default function App() {
       await s.settled();
       if (gone()) return;
       // the scene's tones at the tone mapper's input, where exposure lands
-      const z = parseZones(await invoke<ArrayBuffer>("zones", { width: 320, height: 320, transition: DEFAULT_TRANSITION,
-                                                                 stage: "after" }));
+      const z = parseZones(await commands.zones(320, 320, DEFAULT_TRANSITION, "after"));
       if (gone()) return;
       const { exposure, ...key } = autoExposure(s.values.exposure, z);
       if (exposure !== s.values.exposure) quietly(() => changeMany([["exposure", exposure]]));
@@ -2489,7 +2484,7 @@ export default function App() {
     try {
       await s.settled();
       if (session.current !== s) return;
-      const r = await invoke<UprightFit>("upright", { mode: UPRIGHT_FITS[mode], aspect: uprightAspect(s.values, s.context) });
+      const r = await commands.upright(UPRIGHT_FITS[mode], null, uprightAspect(s.values, s.context));
       if (session.current !== s) return;
       changeMany([["tf_upright", mode], ...baseOf(r), ["tf_gn", 0],
                   ["tf_vertical", 0], ["tf_horizontal", 0], ["tf_rotate", 0]], `Upright ${UPRIGHT_MODES[mode]}`);
@@ -2511,7 +2506,7 @@ export default function App() {
     try {
       await s.settled();
       if (session.current !== s) return;
-      const r = await invoke<UprightFit>("upright", { mode: "level", aspect: uprightAspect(s.values, s.context) });
+      const r = await commands.upright("level", null, uprightAspect(s.values, s.context));
       if (session.current !== s) return;
       const c = controlById.get("tf_rotate")!;
       const to = Math.round(Math.min(c.max, Math.max(c.min, rotateOf(r.rotation, s.values.tf_base_r ?? 0, s.context)))
@@ -2533,8 +2528,7 @@ export default function App() {
     let note: string | null = null;
     if (next.length >= 2) {
       try {
-        base = baseOf(await invoke<UprightFit>("upright", { mode: "guided", guides: next.flat(),
-                                                             aspect: uprightAspect(s.values, s.context) }));
+        base = baseOf(await commands.upright("guided", next.flat(), uprightAspect(s.values, s.context)));
       } catch (e) { note = String(e); }
     } else {
       base = baseOf({ rotation: 0, lensshift_v: 0, lensshift_h: 0 });
@@ -3486,10 +3480,9 @@ export default function App() {
         setStatus(`${cfg.name}: writing TIFFs…`);
         send = [];
         for (const [path, t] of photos) {
-          const r = await track(invoke<{ written: string[]; failed: { error: string }[] }>("export_images", {
-            items: [{ imgid: t.imgid, stem: `${baseName(path).replace(/\.[^.]+$/, "")}-Edit` }],
-            options: { dir: parentDir(path), format: "tiff", bpp: 16, colorSpace: "prophoto", conflict: "unique" },
-          }));
+          const r = await track(commands.exportImages(Date.now(),
+            [{ imgid: t.imgid, stem: `${baseName(path).replace(/\.[^.]+$/, "")}-Edit` }],
+            { dir: parentDir(path), format: "tiff", bpp: 16, colorSpace: "prophoto", conflict: "unique" }));
           if (r.failed.length) throw new Error(r.failed[0].error);
           send.push(...r.written);
         }
@@ -4261,15 +4254,15 @@ export default function App() {
   const filmView = !!current && layout.right && rightMode === "film";
   useEffect(() => {
     if (!filmView || sfStocks?.pack) return;
-    void invoke<Stocks>("spektra_stocks").then(setSfStocks).catch((e) => setStatus(`film data: ${e}`));
+    void commands.spektraStocks().then(setSfStocks).catch((e) => setStatus(`film data: ${e}`));
   }, [filmView]);   // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (sfFetch?.state !== "running") return;
     const t = window.setTimeout(() => {
-      void invoke<FetchStatus>("spektra_fetch", { action: "status" }).then((f) => {
+      void commands.spektraFetch("status").then((f) => {
         setSfFetch(f);
         if (f.state === "done") {
-          void invoke<Stocks>("spektra_stocks").then(setSfStocks);
+          void commands.spektraStocks().then(setSfStocks);
           // the module renders with the pack from its next frame
           session.current?.requestRender();
         }
@@ -4277,11 +4270,11 @@ export default function App() {
     }, 400);
     return () => window.clearTimeout(t);
   }, [sfFetch]);
-  const sfDownload = () => void invoke<FetchStatus>("spektra_fetch", { action: "start" }).then((f) =>
+  const sfDownload = () => void commands.spektraFetch("start").then((f) =>
     setSfFetch(f.started === false && f.state !== "running"
       ? { ...f, state: "failed", message: f.message || "downloads are turned off in darktable's settings" } : f))
     .catch((e) => setSfFetch({ state: "failed", message: `${e}`, progress: -1 }));
-  const sfCancel = () => void invoke<FetchStatus>("spektra_fetch", { action: "cancel" }).then(setSfFetch);
+  const sfCancel = () => void commands.spektraFetch("cancel").then(setSfFetch);
   // turning a film simulation off: its tools back on the modules
   // Preferences picks
   const sfOffEntries = (s: Session): [string, number][] =>
@@ -4373,7 +4366,7 @@ export default function App() {
     setProof(p);
     // the badge names the profile, though the panel may not have listed them yet
     if (p.mode !== "off" && !printProfiles.some((q) => q.file === p.profile))
-      invoke<Profile[]>("print_profiles").then(setPrintProfiles).catch(() => {});
+      commands.printProfiles().then(setPrintProfiles).catch(() => {});
     applyProof(p).then((changed) => {
       if (proofRef.current === p) setProofApplied(p.mode === "off" ? "off" : `${p.mode}|${p.profile}|${p.intent}`);
       if (!changed || proofRef.current !== p) return;
@@ -4403,7 +4396,7 @@ export default function App() {
   useEffect(() => {
     if (!printOpen) return;
     let live = true;
-    invoke<{ available: boolean; printers: Printer[] }>("printers").then((r) => {
+    commands.printers().then((r) => {
       if (!live) return;
       setPrintAvailable(r.available);
       setPrinters(r.printers);
@@ -4417,7 +4410,7 @@ export default function App() {
         return next;
       });
     }).catch((e) => { if (live) { setPrintAvailable(true); setPrinters([]); setStatus(`Printers: ${e}`); } });
-    invoke<Profile[]>("print_profiles").then((p) => { if (live) setPrintProfiles(p); })
+    commands.printProfiles().then((p) => { if (live) setPrintProfiles(p); })
       .catch((e) => setStatus(`Printer profiles: ${e}`));
     return () => { live = false; };
   }, [printOpen]);
@@ -4449,9 +4442,9 @@ export default function App() {
   }, [printOpen, printSettings.printer]);
   const addPrintProfile = async () => {
     try {
-      const added = await invoke<Profile | null>("print_profile_add");
+      const added = await commands.printProfileAdd();
       if (!added) return;
-      setPrintProfiles(await invoke<Profile[]>("print_profiles"));
+      setPrintProfiles(await commands.printProfiles());
       setPrintSettings({ ...printSettings, profile: added.file });
     } catch (e) {
       setPrintNote({ text: String(e), error: true });
@@ -4476,9 +4469,9 @@ export default function App() {
       // the edits still on their way go in first: the print renders the photo as the library has it
       await s.settled();
       // Rust asks where the PDF goes; null is the dialog cancelled
-      const done = await invoke<{ pdf?: string } | null>("print_photo", {
-        imgid: s.imgid, pdfName: pdf ? `${stem}.pdf` : null,
-        request: printRequest(settings, paper, l, baseName(current.path), settings.medium, pdf) });
+      const done = await commands.printPhoto(s.imgid,
+        printRequest(settings, paper, l, baseName(current.path), settings.medium, pdf) as { [key in string]: Value },
+        pdf ? `${stem}.pdf` : null);
       if (!done) return;
       const where = printers?.find((p) => p.name === settings.printer)?.description ?? settings.printer;
       setPrintNote({ text: pdf ? `Saved ${done.pdf}` : `Sent to ${where}.`, error: false });
@@ -4504,12 +4497,12 @@ export default function App() {
       const pages = `${l.pages} ${l.pages === 1 ? "page" : "pages"}`;
       // the activity line under the photo counts the photos placed, and can stop the sheet
       // Rust asks where the PDF goes; null is the dialog cancelled, which leaves quietly
-      const text = (r: { pdf?: string }) => pdf ? `Saved ${r.pdf} (${pages})` : `Sent ${pages} to ${where}.`;
-      const done = await runMerge<{ pdf?: string } | null>("Printing contact sheet", photos.length, "print_sheet",
-        { imgids: photos.map((p) => p.imgid),
-          pdfName: pdf ? `${photos.length > 1 ? "Contact sheet" : photos[0].name.replace(/\.[^.]+$/, "")}.pdf` : null,
-          request: sheetRequest(settings, paper, l, photos, photos.length > 1 ? "Contact sheet" : photos[0].name,
-                                settings.medium, pdf) },
+      const text = (r: PrintReply) => pdf ? `Saved ${r.pdf} (${pages})` : `Sent ${pages} to ${where}.`;
+      const done = await runMerge("Printing contact sheet", photos.length, (job) => commands.printSheet(job,
+        photos.map((p) => p.imgid),
+        sheetRequest(settings, paper, l, photos, photos.length > 1 ? "Contact sheet" : photos[0].name,
+                     settings.medium, pdf) as { [key in string]: Value },
+        pdf ? `${photos.length > 1 ? "Contact sheet" : photos[0].name.replace(/\.[^.]+$/, "")}.pdf` : null),
         (r) => r ? { text: text(r), ok: true } : null, "Print failed");
       if (done) setPrintNote({ text: text(done), error: false });
     } catch (e) {

@@ -27,18 +27,22 @@ mod scrub;
 mod support_bundle;
 mod backup;
 mod bindings;
+mod typed_edit;
+mod typed_export;
 mod typed_library;
 mod typed_session;
 
 use cache::Caches;
 use engine::{BaseCancel, Engine, Tagged, Timing};
 use serde::Deserialize;
-use serde_json::{json, Map, Value};
+use serde_json::{json, Map, Number, Value};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use typed_edit::{AccelProvider, AgxPresetsReply, AgxProfile, AiAccelReply, CombineMember, DepthMap, FilmFetch, FilmStocks, FontFamily, FontsReply, LensMenu, LookReply, MapView, MaskInfo, MasksReply, NewSpot, Spot, SpotSource, SpotsReply, UprightReply};
+use typed_export::{ExportFailure, ExportItem, ExportOptions, ExportReply, ExistingFile, GeneratedReply, HdrReply, LookInfo, PanoPreview, PanoReply, PresetsDoc, PresetsFile, PrintProfile, PrintProfilesReply, PrintReply, PrinterInfoReply, PrintersReply, SharedImport};
 use typed_library::{CaptureTimeEntry, CaptureTimesReply, CopyReply, FilesReply, FolderReply, KeywordsReply, LibraryImage, SubFolder, ThumbReply};
 use typed_session::{AgxAutoReply, ColorProfiles, GetReply, PasteBatchReply, PreviewReply, RenderReply, RenderRequest, SampleReply, SaveReply, ToneKeyReply, HistoryItem, HistoryReply, ModuleEdit, ModuleStateReply, OpenReply, Restore};
 use tauri::{ipc::Response, AppHandle, Emitter, Manager, State};
@@ -172,7 +176,8 @@ async fn set_params(state: State<'_, AppState>, edit: ModuleEdit) -> Result<(), 
 
 // replace a mask's shapes (made when missing)
 #[tauri::command]
-async fn mask_shapes(state: State<'_, AppState>, name: String, shapes: Value) -> Result<(), String> {
+#[specta::specta]
+async fn mask_shapes(state: State<'_, AppState>, name: String, shapes: Vec<Value>) -> Result<(), String> {
     state.engine("mask_shapes")
         .request(json!({ "cmd": "mask", "name": name, "shapes": shapes })).map(|_| ())
 }
@@ -181,7 +186,9 @@ async fn mask_shapes(state: State<'_, AppState>, name: String, shapes: Value) ->
 // the range components its instances take, which drives masks' shared
 // instances (app/src/localMerge.ts)
 #[tauri::command]
-async fn combine(state: State<'_, AppState>, name: String, members: Value, ranges: Option<Value>) -> Result<(), String> {
+#[specta::specta]
+async fn combine(state: State<'_, AppState>, name: String, members: Vec<CombineMember>, ranges: Option<Vec<Value>>)
+    -> Result<(), String> {
     state.engine("combine")
         .request(json!({ "cmd": "combine", "name": name, "members": members, "ranges": ranges })).map(|_| ())
 }
@@ -189,9 +196,10 @@ async fn combine(state: State<'_, AppState>, name: String, members: Value, range
 // the open image's masks, with these fields ({ op: [field] }) of their
 // instances
 #[tauri::command]
-async fn masks(state: State<'_, AppState>, fields: Value) -> Result<Value, String> {
+#[specta::specta]
+async fn masks(state: State<'_, AppState>, fields: std::collections::BTreeMap<String, Vec<String>>) -> Result<Vec<MaskInfo>, String> {
     let reply = state.engine("masks").request(json!({ "cmd": "masks", "fields": fields }))?;
-    Ok(reply["masks"].clone())
+    serde_json::from_value::<MasksReply>(reply).map(|r| r.masks).map_err(|e| format!("masks: unexpected reply: {e}"))
 }
 
 // the working-space values at a point of the shown image, or over a box of
@@ -215,8 +223,10 @@ async fn tone_key(state: State<'_, AppState>) -> Result<ToneKeyReply, String> {
 // the Lensfun lenses Lens Corrections can use for the open photo, and the
 // one matched from its EXIF (the engine's _lens_menu)
 #[tauri::command]
-async fn lenses(state: State<'_, AppState>) -> Result<Value, String> {
-    state.engine("lenses").request(json!({ "cmd": "lenses" }))
+#[specta::specta]
+async fn lenses(state: State<'_, AppState>) -> Result<LensMenu, String> {
+    let reply = state.engine("lenses").request(json!({ "cmd": "lenses" }))?;
+    serde_json::from_value(reply).map_err(|e| format!("lenses: unexpected reply: {e}"))
 }
 
 // Input and working profiles supported by the pinned darktable engine.
@@ -240,12 +250,15 @@ async fn agx_auto(state: State<'_, AppState>) -> Result<AgxAutoReply, String> {
 // lensshift_h, fit }. Guided passes its drawn lines (x1, y1, x2, y2 in the
 // input image, 0-1)
 #[tauri::command]
-async fn upright(state: State<'_, AppState>, mode: String, guides: Option<Value>, aspect: f64) -> Result<Value, String> {
+#[specta::specta]
+async fn upright(state: State<'_, AppState>, mode: String, guides: Option<Vec<Number>>, aspect: Number)
+    -> Result<UprightReply, String> {
     let mut req = json!({ "cmd": "upright", "mode": mode, "aspect": aspect });
     if let Some(g) = guides {
-        req["guides"] = g;
+        req["guides"] = json!(g);
     }
-    state.engine("upright").request(req)
+    let reply = state.engine("upright").request(req)?;
+    serde_json::from_value(reply).map_err(|e| format!("upright: unexpected reply: {e}"))
 }
 
 // points (x, y pairs, 0-1) between the shown image and the input image
@@ -260,7 +273,8 @@ async fn points(state: State<'_, AppState>, points: Value, to: String) -> Result
 // how much range components select over a width x height grid of the shown
 // image: u32 width and height, then one byte per point
 #[tauri::command]
-async fn range_map(state: State<'_, AppState>, ranges: Value, width: u32, height: u32) -> Result<Response, String> {
+#[specta::specta]
+async fn range_map(state: State<'_, AppState>, ranges: Vec<Value>, width: u32, height: u32) -> Result<bindings::Frame, String> {
     let mut engine = state.engine("range_map");
     engine.request(json!({ "cmd": "range_map", "ranges": ranges, "width": width, "height": height,
                            "out": state.range_path }))?;
@@ -271,14 +285,16 @@ async fn range_map(state: State<'_, AppState>, ranges: Value, width: u32, height
     out.extend_from_slice(&width.to_le_bytes());
     out.extend_from_slice(&height.to_le_bytes());
     out.extend_from_slice(&map);
-    Ok(Response::new(out))
+    Ok(bindings::Frame(Response::new(out)))
 }
 
 // the zone (Zone System, scene-referred) of each point of a width x height
 // grid of the shown image, as (z + 1) * 20, and the zones' statistics:
 // u32 width, height and JSON length, the JSON, then one byte per point
 #[tauri::command]
-async fn zones(state: State<'_, AppState>, width: u32, height: u32, transition: f64, stage: String) -> Result<Response, String> {
+#[specta::specta]
+async fn zones(state: State<'_, AppState>, width: u32, height: u32, transition: Number, stage: String)
+    -> Result<bindings::Frame, String> {
     let mut engine = state.engine("zones");
     let reply = engine.request(json!({ "cmd": "zones", "width": width, "height": height, "transition": transition,
                                        "stage": stage, "out": state.range_path }))?;
@@ -291,7 +307,7 @@ async fn zones(state: State<'_, AppState>, width: u32, height: u32, transition: 
     out.extend_from_slice(&(stats.len() as u32).to_le_bytes());
     out.extend_from_slice(&stats);
     out.extend_from_slice(&map);
-    Ok(Response::new(out))
+    Ok(bindings::Frame(Response::new(out)))
 }
 
 // a mask as darktable makes it, refinements and all, over a width x height
@@ -300,8 +316,9 @@ async fn zones(state: State<'_, AppState>, width: u32, height: u32, transition: 
 // ({ x, y, scale }, as a render's), the grid is that window of the image at
 // that scale, width x height pixels or what of it lies on the image
 #[tauri::command]
+#[specta::specta]
 async fn mask_map(state: State<'_, AppState>, name: Option<String>, op: Option<String>, width: u32, height: u32,
-                  view: Option<Value>) -> Result<Response, String> {
+                  view: Option<MapView>) -> Result<bindings::Frame, String> {
     let mut engine = state.engine("mask_map");
     let mut req = json!({ "cmd": "mask_map", "width": width, "height": height, "out": state.range_path });
     if let Some(n) = name {
@@ -311,9 +328,9 @@ async fn mask_map(state: State<'_, AppState>, name: Option<String>, op: Option<S
         req["op"] = json!(o);
     }
     if let Some(v) = view {
-        for k in ["x", "y", "scale"] {
-            req[k] = v[k].clone();
-        }
+        req["x"] = json!(v.x);
+        req["y"] = json!(v.y);
+        req["scale"] = json!(v.scale);
     }
     let reply = engine.request(req)?;
     let width = reply["width"].as_u64().map_or(width, |w| w as u32);
@@ -324,7 +341,7 @@ async fn mask_map(state: State<'_, AppState>, name: Option<String>, op: Option<S
     out.extend_from_slice(&width.to_le_bytes());
     out.extend_from_slice(&height.to_le_bytes());
     out.extend_from_slice(&map);
-    Ok(Response::new(out))
+    Ok(bindings::Frame(Response::new(out)))
 }
 
 // a request the engine's main loop answers once it has what it needs of
@@ -348,12 +365,14 @@ async fn on_engine_thread(state: &AppState, mut req: Value) -> Result<Value, Str
 // `inset` false traces it on its edge, for a selection the mask takes away
 // (main.c, _trace_json). with `backdrop`, replies { paths, backdrop }: the
 // hue range of a plain background to take out, or null (main.c, _backdrop)
+// the reply is free-form because its shape follows `backdrop`
 #[tauri::command]
-async fn ai_object(state: State<'_, AppState>, points: Value, r#box: Option<Value>, inset: Option<bool>,
+#[specta::specta]
+async fn ai_object(state: State<'_, AppState>, points: Vec<Vec<Number>>, r#box: Option<Vec<Number>>, inset: Option<bool>,
                    backdrop: Option<bool>) -> Result<Value, String> {
     let mut req = json!({ "cmd": "ai_object", "points": points });
     if let Some(b) = r#box {
-        req["box"] = b;
+        req["box"] = json!(b);
     }
     if let Some(i) = inset {
         req["inset"] = json!(i);
@@ -678,6 +697,7 @@ fn install_extra(progress: &dyn Fn(Value), dir: &Path, m: &ExtraModel) -> Result
 
 // make sure an AI model is installed, downloading it on first use
 #[tauri::command]
+#[specta::specta]
 async fn ai_model_ensure(app: AppHandle, state: State<'_, AppState>, id: String) -> Result<(), String> {
     let dir = state.models_dir.clone();
     if dir.join(&id).join("config.json").exists() {
@@ -708,6 +728,7 @@ async fn ai_model_ensure(app: AppHandle, state: State<'_, AppState>, id: String)
 // an unpack cut short leaves its config.json, which ai_model_ensure takes
 // for a whole model, so nothing else ever replaces it
 #[tauri::command]
+#[specta::specta]
 async fn ai_model_reinstall(app: AppHandle, state: State<'_, AppState>, id: String) -> Result<(), String> {
     if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
         return Err(format!("not a model id: {id}"));
@@ -721,9 +742,10 @@ async fn ai_model_reinstall(app: AppHandle, state: State<'_, AppState>, id: Stri
 
 // a one-click AI mask ("subject"): its outline, as ai_object replies, and
 // `inset` as there. "depth" takes the band of depth it covers, [near, far]
-// in 0-1. `backdrop` as there too
+// in 0-1. `backdrop` as there too, and the reply as free-form
 #[tauri::command]
-async fn ai_mask(state: State<'_, AppState>, kind: String, range: Option<[f64; 2]>, inset: Option<bool>,
+#[specta::specta]
+async fn ai_mask(state: State<'_, AppState>, kind: String, range: Option<[Number; 2]>, inset: Option<bool>,
                  backdrop: Option<bool>) -> Result<Value, String> {
     let mut req = json!({ "cmd": "ai_mask", "kind": kind });
     if let Some(r) = range {
@@ -738,13 +760,10 @@ async fn ai_mask(state: State<'_, AppState>, kind: String, range: Option<[f64; 2
 // the depth map, about `size` across: { width, height, data } with data
 // 0 (nearest) to 255 by rows
 #[tauri::command]
-async fn ai_depth(state: State<'_, AppState>, size: u32) -> Result<Value, String> {
-    let mut reply = on_engine_thread(&state, json!({ "cmd": "ai_depth", "size": size })).await?;
-    if let Some(o) = reply.as_object_mut() {
-        o.remove("ok");
-        o.remove("tag");
-    }
-    Ok(reply)
+#[specta::specta]
+async fn ai_depth(state: State<'_, AppState>, size: u32) -> Result<DepthMap, String> {
+    let reply = on_engine_thread(&state, json!({ "cmd": "ai_depth", "size": size })).await?;
+    serde_json::from_value(reply).map_err(|e| format!("ai_depth: unexpected reply: {e}"))
 }
 
 // AI Denoise of the open raw at `strength` (0-1): a new DNG beside it with
@@ -752,18 +771,17 @@ async fn ai_depth(state: State<'_, AppState>, size: u32) -> Result<Value, String
 // result. replies { path, original, image }; the engine takes the edit,
 // then denoises on a thread of its own
 #[tauri::command]
-async fn ai_denoise(state: State<'_, AppState>, plugins: State<'_, plugins::Plugins>, strength: f64) -> Result<Value, String> {
-    let mut reply = on_engine_thread(&state, json!({ "cmd": "ai_denoise", "strength": strength })).await?;
+#[specta::specta]
+async fn ai_denoise(state: State<'_, AppState>, plugins: State<'_, plugins::Plugins>, strength: Number)
+    -> Result<GeneratedReply, String> {
+    let reply = on_engine_thread(&state, json!({ "cmd": "ai_denoise", "strength": strength })).await?;
     let (Some(original), Some(result)) = (reply["original"].as_str(), reply["path"].as_str()) else {
         return Err("the engine gave no DNG".into());
     };
     plugins.record(plugins::Return {
         original: original.into(), result: result.into(), plugin: "ai-denoise".into(), applied: false,
     })?;
-    if let Some(o) = reply.as_object_mut() {
-        o.remove("ok");
-    }
-    Ok(reply)
+    serde_json::from_value(reply).map_err(|e| format!("ai_denoise: unexpected reply: {e}"))
 }
 
 // Bake a converted negative (`kind` "negative") or a film simulation
@@ -771,8 +789,9 @@ async fn ai_denoise(state: State<'_, AppState>, plugins: State<'_, plugins::Plug
 // <name>-film. Reserve the name before exporting so repeated requests never
 // overwrite.
 #[tauri::command]
+#[specta::specta]
 async fn positive_export(state: State<'_, AppState>, plugins: State<'_, plugins::Plugins>,
-                         imgid: i64, original: String, format: String, kind: String) -> Result<Value, String> {
+                         imgid: i64, original: String, format: String, kind: String) -> Result<GeneratedReply, String> {
     if format != "dng" && format != "tiff" {
         return Err("choose DNG or TIFF for generated positives".into());
     }
@@ -834,29 +853,25 @@ async fn positive_export(state: State<'_, AppState>, plugins: State<'_, plugins:
         original: original.clone(), result: path, plugin: plugin.into(), applied: true,
     })?;
     reply["original"] = json!(original);
-    Ok(reply)
+    serde_json::from_value(reply).map_err(|e| format!("positive_export: unexpected reply: {e}"))
 }
 
 // the spektrafilm data pack and its films and papers (engine main.c,
 // _spektra_stocks)
 #[tauri::command]
-async fn spektra_stocks(state: State<'_, AppState>) -> Result<Value, String> {
-    let mut reply = state.engine("spektra_stocks").request(json!({ "cmd": "spektra_stocks" }))?;
-    if let Some(o) = reply.as_object_mut() {
-        o.remove("ok");
-    }
-    Ok(reply)
+#[specta::specta]
+async fn spektra_stocks(state: State<'_, AppState>) -> Result<FilmStocks, String> {
+    let reply = state.engine("spektra_stocks").request(json!({ "cmd": "spektra_stocks" }))?;
+    serde_json::from_value(reply).map_err(|e| format!("spektra_stocks: unexpected reply: {e}"))
 }
 
 // the pack's download: `action` "start", "cancel" or "status"; none waits
 // for the network (engine main.c, _spektra_fetch)
 #[tauri::command]
-async fn spektra_fetch(state: State<'_, AppState>, action: String) -> Result<Value, String> {
-    let mut reply = state.engine("spektra_fetch").request(json!({ "cmd": "spektra_fetch", "action": action }))?;
-    if let Some(o) = reply.as_object_mut() {
-        o.remove("ok");
-    }
-    Ok(reply)
+#[specta::specta]
+async fn spektra_fetch(state: State<'_, AppState>, action: String) -> Result<FilmFetch, String> {
+    let reply = state.engine("spektra_fetch").request(json!({ "cmd": "spektra_fetch", "action": action }))?;
+    serde_json::from_value(reply).map_err(|e| format!("spektra_fetch: unexpected reply: {e}"))
 }
 
 // AI Denoise's preview: a crop about `size` pixels square centered on (u, v)
@@ -864,7 +879,8 @@ async fn spektra_fetch(state: State<'_, AppState>, action: String) -> Result<Val
 // share of the photo across and down as f32), then the crop as float linear
 // RGB without and with the denoise, for the dialog to mix at its Amount
 #[tauri::command]
-async fn ai_denoise_preview(state: State<'_, AppState>, u: f64, v: f64, size: u32) -> Result<Response, String> {
+#[specta::specta]
+async fn ai_denoise_preview(state: State<'_, AppState>, u: Number, v: Number, size: u32) -> Result<bindings::Frame, String> {
     let mut engine = state.engine("ai_denoise_preview");
     let reply = engine.request(json!({
         "cmd": "ai_denoise_preview", "u": u, "v": v, "size": size, "out": state.denoise_path,
@@ -880,40 +896,45 @@ async fn ai_denoise_preview(state: State<'_, AppState>, u: f64, v: f64, size: u3
     frame_output::FrameOutput::append(&state.denoise_path, &mut out)
         .map_err(|e| format!("denoise preview: {e}"))?;
     drop(engine);
-    Ok(Response::new(out))
+    Ok(bindings::Frame(Response::new(out)))
 }
 
 // the image's heal and clone spots: replaced by `spots` when given, and
 // replied as the engine keeps them
 #[tauri::command]
-async fn spots(state: State<'_, AppState>, spots: Option<Value>) -> Result<Value, String> {
+#[specta::specta]
+async fn spots(state: State<'_, AppState>, spots: Option<Vec<Spot>>) -> Result<Vec<Spot>, String> {
     let mut req = json!({ "cmd": "spots" });
     if let Some(s) = spots {
-        req["spots"] = s;
+        req["spots"] = json!(s);
     }
     let reply = state.engine("spots").request(req)?;
-    Ok(reply["spots"].clone())
+    serde_json::from_value::<SpotsReply>(reply).map(|r| r.spots).map_err(|e| format!("spots: unexpected reply: {e}"))
 }
 
 // the spots off for the Before view, and back on
 #[tauri::command]
+#[specta::specta]
 async fn spots_enable(state: State<'_, AppState>, on: bool) -> Result<(), String> {
     state.engine("spots_enable").request(json!({ "cmd": "spots_enable", "on": on })).map(|_| ())
 }
 
 // where a new spot should copy from: { sx, sy }
 #[tauri::command]
-async fn spot_source(state: State<'_, AppState>, spot: Value) -> Result<Value, String> {
+#[specta::specta]
+async fn spot_source(state: State<'_, AppState>, spot: NewSpot) -> Result<SpotSource, String> {
     let reply = state.engine("spot_source").request(json!({ "cmd": "spot_source", "spot": spot }))?;
-    Ok(json!({ "sx": reply["sx"], "sy": reply["sy"] }))
+    serde_json::from_value(reply).map_err(|e| format!("spot_source: unexpected reply: {e}"))
 }
 
 #[tauri::command]
+#[specta::specta]
 async fn mask_delete(state: State<'_, AppState>, name: String) -> Result<(), String> {
     state.engine("mask_delete").request(json!({ "cmd": "mask_delete", "name": name })).map(|_| ())
 }
 
 #[tauri::command]
+#[specta::specta]
 async fn mask_rename(state: State<'_, AppState>, name: String, to: String) -> Result<(), String> {
     state.engine("mask_rename").request(json!({ "cmd": "mask_rename", "name": name, "to": to })).map(|_| ())
 }
@@ -1832,6 +1853,7 @@ fn merge(app: AppHandle, t: engine::Tagged, job: u64, mut req: Value) -> Result<
 // stops the page's merge `job` at its next step. the line gets no reply;
 // the merge answers "stopped"
 #[tauri::command]
+#[specta::specta]
 fn merge_cancel(state: State<'_, AppState>, job: u64) -> Result<(), String> {
     state.tagged.send(json!({ "cmd": "merge_cancel", "job": job }))
 }
@@ -1841,23 +1863,21 @@ fn merge_cancel(state: State<'_, AppState>, job: u64) -> Result<(), String> {
 // replies { path, image }. the engine merges on its export thread, so the
 // photo is edited meanwhile
 #[tauri::command]
+#[specta::specta]
 async fn hdr_merge(app: AppHandle, state: State<'_, AppState>, job: u64, imgids: Vec<i64>, align: bool)
-                   -> Result<Value, String> {
+                   -> Result<HdrReply, String> {
     let t = state.tagged.clone();
-    let mut reply = tauri::async_runtime::spawn_blocking(move || {
+    let reply = tauri::async_runtime::spawn_blocking(move || {
         merge(app, t, job, json!({ "cmd": "hdr_merge", "imgids": imgids, "align": align }))
     })
     .await
     .map_err(|e| e.to_string())??;
-    if let Some(o) = reply.as_object_mut() {
-        o.remove("ok");
-        o.remove("tag");
-    }
-    Ok(reply)
+    serde_json::from_value(reply).map_err(|e| format!("hdr_merge: unexpected reply: {e}"))
 }
 
 // whether Merge to HDR can align brackets: the engine built with OpenCV
 #[tauri::command]
+#[specta::specta]
 async fn hdr_can_align(state: State<'_, AppState>) -> Result<bool, String> {
     let reply = state.engine("hdr_can_align").request(json!({ "cmd": "version" }))?;
     Ok(reply["hdr_align"].as_bool().unwrap_or(false))
@@ -1871,10 +1891,11 @@ async fn hdr_can_align(state: State<'_, AppState>) -> Result<bool, String> {
 // the engine stitches on its export thread, so the photo is edited
 // meanwhile
 #[tauri::command]
+#[specta::specta]
 async fn pano_merge(app: AppHandle, state: State<'_, AppState>, plugins: State<'_, plugins::Plugins>, job: u64,
-                    imgids: Vec<i64>, projection: String, crop: bool) -> Result<Value, String> {
+                    imgids: Vec<i64>, projection: String, crop: bool) -> Result<PanoReply, String> {
     let t = state.tagged.clone();
-    let mut reply = tauri::async_runtime::spawn_blocking(move || {
+    let reply = tauri::async_runtime::spawn_blocking(move || {
         merge(app, t, job, json!({ "cmd": "pano_merge", "imgids": imgids, "projection": projection, "crop": crop }))
     })
     .await
@@ -1885,29 +1906,28 @@ async fn pano_merge(app: AppHandle, state: State<'_, AppState>, plugins: State<'
     plugins.record(plugins::Return {
         original: original.into(), result: result.into(), plugin: "panorama".into(), applied: false,
     })?;
-    if let Some(o) = reply.as_object_mut() {
-        o.remove("ok");
-        o.remove("tag");
-    }
-    Ok(reply)
+    serde_json::from_value(reply).map_err(|e| format!("pano_merge: unexpected reply: {e}"))
 }
 
 // Reduced-size panorama on the export thread. No file is written or imported;
 // the page crops the returned RGBA coverage locally, and merge_cancel stops it.
 #[tauri::command]
+#[specta::specta]
 async fn pano_preview(app: AppHandle, state: State<'_, AppState>, job: u64,
-                      imgids: Vec<i64>, projection: String) -> Result<Value, String> {
+                      imgids: Vec<i64>, projection: String) -> Result<PanoPreview, String> {
     let t = state.tagged.clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    let reply = tauri::async_runtime::spawn_blocking(move || {
         merge(app, t, job, json!({ "cmd": "pano_preview", "imgids": imgids, "projection": projection }))
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())??;
+    serde_json::from_value(reply).map_err(|e| format!("pano_preview: unexpected reply: {e}"))
 }
 
 // whether Panorama Merge can stitch: the engine built with OpenCV's
 // stitching module
 #[tauri::command]
+#[specta::specta]
 async fn pano_can_merge(state: State<'_, AppState>) -> Result<bool, String> {
     let reply = state.engine("pano_can_merge").request(json!({ "cmd": "version" }))?;
     Ok(reply["pano"].as_bool().unwrap_or(false))
@@ -2122,8 +2142,10 @@ fn gpu_edits_set(settings: State<'_, settings::Settings>, on: bool) -> Result<()
 // the GPU execution providers this computer can use for AI, with their
 // devices, for Preferences and the Export dialog's AI upscale
 #[tauri::command]
-async fn ai_accel(state: State<'_, AppState>) -> Result<Value, String> {
-    Ok(state.engine("ai_accel").request(json!({ "cmd": "ai_accel" }))?["providers"].clone())
+#[specta::specta]
+async fn ai_accel(state: State<'_, AppState>) -> Result<Vec<AccelProvider>, String> {
+    let reply = state.engine("ai_accel").request(json!({ "cmd": "ai_accel" }))?;
+    serde_json::from_value::<AiAccelReply>(reply).map(|r| r.providers).map_err(|e| format!("ai_accel: unexpected reply: {e}"))
 }
 
 // every keyword ever used, for the Keywording panel's suggestions
@@ -2162,70 +2184,6 @@ async fn capture_times(state: State<'_, AppState>, entries: Vec<CaptureTimeEntry
     serde_json::from_value(reply).map_err(|e| format!("capture_times: unexpected reply: {e}"))
 }
 
-#[derive(Deserialize)]
-struct ExportItem {
-    imgid: i64,
-    // the file name without extension, already expanded from any template
-    stem: String,
-    // when it was taken (EXIF, "2026:10:08 14:03:22"), for Immich
-    #[serde(default)]
-    created: Option<String>,
-    // what to do when the file is already there, when it was asked for
-    // this image; otherwise the options' conflict
-    #[serde(default)]
-    conflict: Option<String>,
-    // borders and text drawn around and over this image, its text already
-    // expanded from its metadata: { borders: [...], texts: [...] } (engine)
-    #[serde(default)]
-    frame: Option<Value>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ExportOptions {
-    dir: String,
-    subfolder: Option<String>,
-    format: String,
-    quality: Option<i64>,
-    bpp: Option<i64>,
-    color_space: String,
-    long_edge: Option<i64>,
-    // "unique" adds -1, -2...; "overwrite"; "skip"
-    conflict: String,
-    // instead of the folder: uploaded to this Immich album
-    #[serde(default)]
-    immich_album: Option<String>,
-    // AI upscaling, 2 or 4 times the width and height, on this GPU
-    // provider and device (Preferences)
-    #[serde(default)]
-    upscale: Option<i64>,
-    #[serde(default)]
-    ai_provider: Option<String>,
-    #[serde(default)]
-    ai_device: Option<i64>,
-    // false leaves GPS out of the file, as Lightroom's Remove Location Info
-    #[serde(default)]
-    location: Option<bool>,
-    // the rest of the dialog's Metadata section: false leaves each out of
-    // the file (the engine's export)
-    #[serde(default)]
-    camera: Option<bool>,
-    #[serde(default)]
-    serials: Option<bool>,
-    #[serde(default)]
-    description: Option<bool>,
-    #[serde(default)]
-    tags: Option<bool>,
-    #[serde(default)]
-    history: Option<bool>,
-    // added to each exported file's keywords, and with keywords_on_original
-    // to the original photo's as well
-    #[serde(default)]
-    keywords: Option<Vec<String>>,
-    #[serde(default)]
-    keywords_on_original: Option<bool>,
-}
-
 fn extension(format: &str) -> &str {
     match format {
         "jpeg" => "jpg",
@@ -2253,12 +2211,13 @@ fn export_stem(item: &ExportItem) -> String {
 // each image's file in a folder export, and whether it is already there,
 // so that the dialog can ask what to do before exporting
 #[tauri::command]
-fn export_existing(items: Vec<ExportItem>, dir: String, subfolder: Option<String>, format: String) -> Vec<Value> {
+#[specta::specta]
+fn export_existing(items: Vec<ExportItem>, dir: String, subfolder: Option<String>, format: String) -> Vec<ExistingFile> {
     let dir = export_dir(&dir, subfolder.as_deref());
     let ext = extension(&format);
     items.iter().map(|item| {
         let path = dir.join(format!("{}.{ext}", export_stem(item)));
-        json!({ "path": path, "exists": path.exists() })
+        ExistingFile { exists: path.exists(), path: path.to_string_lossy().into_owned() }
     }).collect()
 }
 
@@ -2280,13 +2239,14 @@ fn export_target(dir: &Path, stem: &str, ext: &str, conflict: &str) -> Option<Pa
 // engine holds for `job` (export_hold). progress goes to the window as
 // "export-progress"; export_cancel stops before the next image
 #[tauri::command]
+#[specta::specta]
 async fn export_images(
     app: AppHandle,
     state: State<'_, AppState>,
     job: u64,
     items: Vec<ExportItem>,
     options: ExportOptions,
-) -> Result<Value, String> {
+) -> Result<ExportReply, String> {
     // to Immich: rendered into a folder of the cache, each file uploaded and
     // deleted, then the lot added to the album
     let immich = match &options.immich_album {
@@ -2308,8 +2268,9 @@ async fn export_images(
     }
     let conflict = if immich.is_some() { "unique" } else { options.conflict.as_str() };
     let ext = extension(&options.format);
-    let (mut written, mut skipped, mut failed) = (vec![], vec![], vec![]);
-    let (mut uploaded, mut duplicates, mut ids) = (0, 0, Vec::<String>::new());
+    let path_text = |p: &Path| p.to_string_lossy().into_owned();
+    let (mut written, mut skipped, mut failed) = (Vec::<String>::new(), Vec::<String>::new(), Vec::<ExportFailure>::new());
+    let (mut uploaded, mut duplicates, mut ids) = (0u64, 0u64, Vec::<String>::new());
     let total = items.len();
     let keywords = options.keywords.clone().unwrap_or_default();
     let tag_original = options.keywords_on_original.unwrap_or(false) && !keywords.is_empty();
@@ -2333,7 +2294,7 @@ async fn export_images(
             _ => conflict,
         };
         match export_target(&dir, &stem, ext, conflict) {
-            None => skipped.push(json!(dir.join(format!("{stem}.{ext}")))),
+            None => skipped.push(path_text(&dir.join(format!("{stem}.{ext}")))),
             Some(target) => {
                 let mut req = json!({
                     "cmd": "export", "job": held, "imgid": item.imgid, "out": target, "format": options.format,
@@ -2359,12 +2320,12 @@ async fn export_images(
                 if result.is_ok() && tag_original {
                     let req = json!({ "cmd": "keywords_set", "imgid": item.imgid, "add": keywords, "remove": [] });
                     if let Err(e) = state.engine("export_images").request(req) {
-                        failed.push(json!({ "file": target,
-                                            "error": format!("exported, but the keywords were not added to the original: {e}") }));
+                        failed.push(ExportFailure { file: path_text(&target),
+                            error: format!("exported, but the keywords were not added to the original: {e}") });
                     }
                 }
                 match (result, &immich) {
-                    (Ok(_), None) => written.push(json!(target)),
+                    (Ok(_), None) => written.push(path_text(&target)),
                     (Ok(_), Some(c)) => {
                         let (c, file) = (c.clone(), target.clone());
                         let created = immich_upload::iso_time(item.created.as_deref());
@@ -2376,10 +2337,10 @@ async fn export_images(
                                 if dup { duplicates += 1 } else { uploaded += 1 }
                                 ids.push(id);
                             }
-                            Err(e) => failed.push(json!({ "file": target, "error": e })),
+                            Err(e) => failed.push(ExportFailure { file: path_text(&target), error: e }),
                         }
                     }
-                    (Err(e), _) => failed.push(json!({ "file": target, "error": e })),
+                    (Err(e), _) => failed.push(ExportFailure { file: path_text(&target), error: e }),
                 }
             }
         }
@@ -2397,12 +2358,13 @@ async fn export_images(
         let added = tauri::async_runtime::spawn_blocking(move || c.add_to_album(&album, &ids))
             .await.map_err(|e| e.to_string()).and_then(|r| r);
         if let Err(e) = added {
-            failed.push(json!({ "file": "", "error": e }));
+            failed.push(ExportFailure { file: String::new(), error: e });
         }
-        return Ok(json!({ "written": [], "skipped": skipped, "failed": failed, "uploaded": uploaded,
-                          "duplicates": duplicates, "album": options.immich_album, "cancelled": cancelled }));
+        return Ok(ExportReply { written: vec![], skipped, failed, dir: None, cancelled, uploaded: Some(uploaded),
+                                duplicates: Some(duplicates), album: options.immich_album, });
     }
-    Ok(json!({ "written": written, "skipped": skipped, "failed": failed, "dir": dir, "cancelled": cancelled }))
+    Ok(ExportReply { written, skipped, failed, dir: Some(path_text(&dir)), cancelled, uploaded: None, duplicates: None,
+                     album: None })
 }
 
 // removes an export job's cancel flag when it goes out of scope
@@ -2420,6 +2382,7 @@ impl Drop for CancelEntry<'_> {
 
 // stops export_images' `job` before its next image
 #[tauri::command]
+#[specta::specta]
 fn export_cancel(state: State<'_, AppState>, job: u64) {
     if let Some(c) = state.export_cancels.lock().unwrap().get(&job) {
         c.store(true, Ordering::SeqCst);
@@ -2560,7 +2523,7 @@ async fn before_view(state: State<'_, AppState>, on: bool) -> Result<(), String>
 
 // the darktable styles shipped as looks: "<pack> - <group>_<name>.dtstyle",
 // then the user's own, by the name the engine shows them under
-fn list_looks(state: &AppState) -> Result<Vec<Value>, String> {
+fn list_looks(state: &AppState) -> Result<Vec<LookInfo>, String> {
     let mut looks = Vec::new();
     let packs = std::fs::read_dir(&state.looks_dir).map_err(|e| format!("looks: {e}"))?;
     for pack in packs.flatten() {
@@ -2573,10 +2536,10 @@ fn list_looks(state: &AppState) -> Result<Vec<Value>, String> {
             let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or_default();
             let title = stem.split_once(" - ").map_or(stem, |(_, t)| t);
             let (group, name) = title.split_once('_').unwrap_or(("Looks", title));
-            looks.push(json!({ "name": name, "group": group, "path": path }));
+            looks.push(LookInfo { name: name.into(), group: group.into(), path: path.to_string_lossy().into_owned(), user: None });
         }
     }
-    looks.sort_by_key(|l| (l["group"].to_string(), l["name"].to_string()));
+    looks.sort_by_key(|l| (l.group.clone(), l.name.clone()));
     let Ok(files) = std::fs::read_dir(&state.user_looks_dir) else { return Ok(looks) };
     for file in files.flatten() {
         let path = file.path();
@@ -2584,7 +2547,8 @@ fn list_looks(state: &AppState) -> Result<Vec<Value>, String> {
             continue;
         }
         let Some(name) = std::fs::read_to_string(&path).ok().as_deref().and_then(style_name) else { continue };
-        looks.push(json!({ "name": style_label(&name), "group": "My Looks", "path": path, "user": true }));
+        looks.push(LookInfo { name: style_label(&name).into(), group: "My Looks".into(),
+                              path: path.to_string_lossy().into_owned(), user: Some(true) });
     }
     Ok(looks)
 }
@@ -2603,8 +2567,9 @@ fn style_label(name: &str) -> &str {
 }
 
 #[tauri::command]
-async fn looks_list(state: State<'_, AppState>) -> Result<Value, String> {
-    list_looks(&state).map(Value::from)
+#[specta::specta]
+async fn looks_list(state: State<'_, AppState>) -> Result<Vec<LookInfo>, String> {
+    list_looks(&state)
 }
 
 // the file dialogs of the commands below are opened here, so a path the
@@ -2659,7 +2624,8 @@ fn path_inside(path: &Path, dirs: &[&Path]) -> Result<PathBuf, String> {
 // files they picked beside them; the page gets the presets' documents (it
 // stores them), the number of looks added and what failed
 #[tauri::command]
-async fn shared_import(app: AppHandle, state: State<'_, AppState>) -> Result<Value, String> {
+#[specta::specta]
+async fn shared_import(app: AppHandle, state: State<'_, AppState>) -> Result<SharedImport, String> {
     let picked = pick_files(&app, "Presets and looks", &["json", "dtstyle"], true).await?;
     let (mut presets, mut looks, mut failed) = (Vec::new(), 0, Vec::new());
     for path in picked {
@@ -2672,7 +2638,7 @@ async fn shared_import(app: AppHandle, state: State<'_, AppState>) -> Result<Val
         };
         if let Err(e) = done { failed.push(format!("{name}: {e}")) }
     }
-    Ok(json!({ "presets": presets, "looks": looks, "failed": failed }))
+    Ok(SharedImport { presets, looks, failed })
 }
 
 // a darktable style file added to the user's looks, renamed "<name> (2)"
@@ -2689,7 +2655,7 @@ fn import_look(state: &AppState, path: &Path) -> Result<String, String> {
         .filter(|_| text.contains("<darktable_style"))
         .ok_or("this file is not a darktable style")?;
     let taken: std::collections::HashSet<String> = list_looks(state)?
-        .iter().filter_map(|l| l["name"].as_str().map(str::to_owned)).collect();
+        .iter().map(|l| l.name.clone()).collect();
     let label = style_label(&name).trim();
     let label = if label.is_empty() { "Imported look" } else { label };
     let mut fresh = label.to_string();
@@ -2722,6 +2688,7 @@ fn import_look(state: &AppState, path: &Path) -> Result<String, String> {
 // a look's style file, copied where the save dialog asks; false when it is
 // cancelled. `from` must be one of the looks
 #[tauri::command]
+#[specta::specta]
 async fn look_export(app: AppHandle, state: State<'_, AppState>, from: String, name: String) -> Result<bool, String> {
     let from = path_inside(Path::new(&from), &[&state.looks_dir, &state.user_looks_dir])?;
     let Some(to) = pick_save(&app, "darktable style", &["dtstyle"], &format!("{name}.dtstyle")).await? else {
@@ -2733,6 +2700,7 @@ async fn look_export(app: AppHandle, state: State<'_, AppState>, from: String, n
 
 // one of the user's own looks; the shipped ones stay
 #[tauri::command]
+#[specta::specta]
 async fn look_delete(state: State<'_, AppState>, path: String) -> Result<(), String> {
     let path = path_inside(Path::new(&path), &[&state.user_looks_dir])
         .map_err(|_| "only an imported look can be deleted".to_string())?;
@@ -2742,18 +2710,20 @@ async fn look_delete(state: State<'_, AppState>, path: String) -> Result<(), Str
 // apply a look to the open image, or with no path take it off; returns the
 // look in use
 #[tauri::command]
-async fn look_apply(state: State<'_, AppState>, path: Option<String>) -> Result<Value, String> {
+#[specta::specta]
+async fn look_apply(state: State<'_, AppState>, path: Option<String>) -> Result<Option<String>, String> {
     let path = match path {
         Some(p) => Some(path_inside(Path::new(&p), &[&state.looks_dir, &state.user_looks_dir])?),
         None => None,
     };
     let reply = state.engine("look_apply").request(json!({ "cmd": "look", "path": path }))?;
-    Ok(reply["look"].clone())
+    serde_json::from_value::<LookReply>(reply).map(|r| r.look).map_err(|e| format!("look: unexpected reply: {e}"))
 }
 
 // how strongly the look applies, 0-100
 #[tauri::command]
-async fn look_amount(state: State<'_, AppState>, amount: f64) -> Result<(), String> {
+#[specta::specta]
+async fn look_amount(state: State<'_, AppState>, amount: Number) -> Result<(), String> {
     state.engine("look_amount").request(json!({ "cmd": "look_amount", "amount": amount })).map(|_| ())
 }
 
@@ -2792,12 +2762,13 @@ async fn preview(
 // is the export's own, capped so the preview stays quick; the frame's pixel
 // sizes follow it, so the preview is a scaled copy of the export
 #[tauri::command]
+#[specta::specta]
 async fn export_preview(
     state: State<'_, AppState>,
     item: ExportItem,
     options: ExportOptions,
     cap: i64,
-) -> Result<Response, String> {
+) -> Result<bindings::Frame, String> {
     let out = state._frame_output.path("export-preview.jpg");
     let mut req = json!({
         "cmd": "export", "imgid": item.imgid, "out": out, "format": "jpeg", "quality": 85,
@@ -2807,7 +2778,7 @@ async fn export_preview(
     if let Some(f) = &item.frame { req["frame"] = f.clone(); }
     let mut engine = state.engine("export_preview");
     let result = engine.request(req).and_then(|_| {
-        frame_output::FrameOutput::read(&out).map(Response::new).map_err(|e| format!("preview: {e}"))
+        frame_output::FrameOutput::read(&out).map(|b| bindings::Frame(Response::new(b))).map_err(|e| format!("preview: {e}"))
     });
     state._frame_output.remove(&out);
     result
@@ -2815,8 +2786,10 @@ async fn export_preview(
 
 // the installed font families and their faces, as the engine draws them
 #[tauri::command]
-async fn fonts(state: State<'_, AppState>) -> Result<Value, String> {
-    state.engine("fonts").request(json!({ "cmd": "fonts" })).map(|r| r["families"].clone())
+#[specta::specta]
+async fn fonts(state: State<'_, AppState>) -> Result<Vec<FontFamily>, String> {
+    let reply = state.engine("fonts").request(json!({ "cmd": "fonts" }))?;
+    serde_json::from_value::<FontsReply>(reply).map(|r| r.families).map_err(|e| format!("fonts: unexpected reply: {e}"))
 }
 
 // the Print panel (engine/print.c): printer profiles, soft proofing,
@@ -2829,22 +2802,28 @@ fn without_ok(mut reply: Value) -> Value {
 }
 
 #[tauri::command]
-async fn print_profiles(state: State<'_, AppState>) -> Result<Value, String> {
-    state.engine("print_profiles").request(json!({ "cmd": "print_profiles" })).map(|r| r["profiles"].clone())
+#[specta::specta]
+async fn print_profiles(state: State<'_, AppState>) -> Result<Vec<PrintProfile>, String> {
+    let reply = state.engine("print_profiles").request(json!({ "cmd": "print_profiles" }))?;
+    serde_json::from_value::<PrintProfilesReply>(reply).map(|r| r.profiles)
+        .map_err(|e| format!("print_profiles: unexpected reply: {e}"))
 }
 
 // a printer profile the user picks in the dialog opened here, copied among
 // the engine's own; null when it is cancelled
 #[tauri::command]
-async fn print_profile_add(app: AppHandle, state: State<'_, AppState>) -> Result<Value, String> {
+#[specta::specta]
+async fn print_profile_add(app: AppHandle, state: State<'_, AppState>) -> Result<Option<PrintProfile>, String> {
     let picked = pick_files(&app, "ICC profile", &["icc", "icm", "ICC", "ICM"], false).await?;
-    let Some(path) = picked.first() else { return Ok(Value::Null) };
-    state.engine("print_profile_add").request(json!({ "cmd": "print_profile_add", "path": path })).map(without_ok)
+    let Some(path) = picked.first() else { return Ok(None) };
+    let reply = state.engine("print_profile_add").request(json!({ "cmd": "print_profile_add", "path": path }))?;
+    serde_json::from_value(reply).map(Some).map_err(|e| format!("print_profile_add: unexpected reply: {e}"))
 }
 
 // `mode` "off", "proof" or "gamut"; replies whether the view changed, and
 // the front end renders again if so
 #[tauri::command]
+#[specta::specta]
 async fn softproof(state: State<'_, AppState>, mode: String, profile: Option<String>, intent: Option<i64>)
     -> Result<bool, String> {
     let reply = state.engine("softproof").request(json!({
@@ -2855,13 +2834,17 @@ async fn softproof(state: State<'_, AppState>, mode: String, profile: Option<Str
 
 // { available, printers: [{ name, description, default }] }
 #[tauri::command]
-async fn printers(state: State<'_, AppState>) -> Result<Value, String> {
-    state.engine("printers").request(json!({ "cmd": "printers" })).map(without_ok)
+#[specta::specta]
+async fn printers(state: State<'_, AppState>) -> Result<PrintersReply, String> {
+    let reply = state.engine("printers").request(json!({ "cmd": "printers" }))?;
+    serde_json::from_value(reply).map_err(|e| format!("printers: unexpected reply: {e}"))
 }
 
 #[tauri::command]
-async fn printer_info(state: State<'_, AppState>, name: String) -> Result<Value, String> {
-    state.engine("printer_info").request(json!({ "cmd": "printer", "name": name })).map(without_ok)
+#[specta::specta]
+async fn printer_info(state: State<'_, AppState>, name: String) -> Result<PrinterInfoReply, String> {
+    let reply = state.engine("printer_info").request(json!({ "cmd": "printer", "name": name }))?;
+    serde_json::from_value(reply).map_err(|e| format!("printer: unexpected reply: {e}"))
 }
 
 // `request` without any `pdf` the page sent: the engine writes a PDF to that
@@ -2890,15 +2873,22 @@ fn with_pdf(mut reply: Value, pdf: Option<&Path>) -> Value {
     reply
 }
 
+// the engine's print reply with the PDF's path, as the page gets it
+fn print_reply(result: Result<Value, String>, pdf: Option<&Path>) -> Result<Option<PrintReply>, String> {
+    let reply = with_pdf(without_ok(result?), pdf);
+    serde_json::from_value(reply).map(Some).map_err(|e| format!("print: unexpected reply: {e}"))
+}
+
 // renders the photo as its edit is now and prints it, or, given `pdf_name`,
 // writes a PDF where the user picks (null when they cancel), on the export
 // thread as an export does (export_images), so editing goes on
 #[tauri::command]
-async fn print_photo(app: AppHandle, state: State<'_, AppState>, imgid: i64, request: Value,
-                     pdf_name: Option<String>) -> Result<Value, String> {
-    let mut req = without_pdf(request);
+#[specta::specta]
+async fn print_photo(app: AppHandle, state: State<'_, AppState>, imgid: i64, request: Map<String, Value>,
+                     pdf_name: Option<String>) -> Result<Option<PrintReply>, String> {
+    let mut req = without_pdf(Value::Object(request));
     let pdf = match pick_pdf(&app, pdf_name.as_deref()).await? {
-        Some(None) => return Ok(Value::Null),
+        Some(None) => return Ok(None),
         Some(Some(p)) => {
             req["pdf"] = json!(p.to_string_lossy());
             Some(p)
@@ -2919,7 +2909,7 @@ async fn print_photo(app: AppHandle, state: State<'_, AppState>, imgid: i64, req
     let tag = t.tag();
     let _ = tauri::async_runtime::spawn_blocking(move || t.request(tag, json!({ "cmd": "export_release", "job": held })))
         .await;
-    result.map(without_ok).map(|r| with_pdf(r, pdf.as_deref()))
+    print_reply(result, pdf.as_deref())
 }
 
 // a sheet of photos, each as its edit is now (print_photo's way): the Cells
@@ -2928,11 +2918,12 @@ async fn print_photo(app: AppHandle, state: State<'_, AppState>, imgid: i64, req
 // `pdf_name` is print_photo's: the PDF goes where the user picks, null when
 // they cancel
 #[tauri::command]
-async fn print_sheet(app: AppHandle, state: State<'_, AppState>, job: u64, imgids: Vec<i64>, request: Value,
-                     pdf_name: Option<String>) -> Result<Value, String> {
-    let mut req = without_pdf(request);
+#[specta::specta]
+async fn print_sheet(app: AppHandle, state: State<'_, AppState>, job: u64, imgids: Vec<i64>, request: Map<String, Value>,
+                     pdf_name: Option<String>) -> Result<Option<PrintReply>, String> {
+    let mut req = without_pdf(Value::Object(request));
     let pdf = match pick_pdf(&app, pdf_name.as_deref()).await? {
-        Some(None) => return Ok(Value::Null),
+        Some(None) => return Ok(None),
         Some(Some(p)) => {
             req["pdf"] = json!(p.to_string_lossy());
             Some(p)
@@ -2950,23 +2941,25 @@ async fn print_sheet(app: AppHandle, state: State<'_, AppState>, job: u64, imgid
     let tag = t.tag();
     let _ = tauri::async_runtime::spawn_blocking(move || t.request(tag, json!({ "cmd": "export_release", "job": job })))
         .await;
-    result.map(without_ok).map(|r| with_pdf(r, pdf.as_deref()))
+    print_reply(result, pdf.as_deref())
 }
 
 // the Export dialog's presets, a document the front end shapes; none yet is
 // null
 #[tauri::command]
-async fn export_presets_load(state: State<'_, AppState>) -> Result<Value, String> {
+#[specta::specta]
+async fn export_presets_load(state: State<'_, AppState>) -> Result<Option<PresetsFile>, String> {
     let path = state.presets_path.with_file_name("export-presets.json");
     match std::fs::read_to_string(&path) {
-        Ok(text) => serde_json::from_str(&text).map_err(|e| format!("export presets: {e}")),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Value::Null),
+        Ok(text) => serde_json::from_str(&text).map(Some).map_err(|e| format!("export presets: {e}")),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(format!("export presets: {e}")),
     }
 }
 
 #[tauri::command]
-async fn export_presets_save(state: State<'_, AppState>, presets: Value) -> Result<(), String> {
+#[specta::specta]
+async fn export_presets_save(state: State<'_, AppState>, presets: PresetsFile) -> Result<(), String> {
     let path = state.presets_path.with_file_name("export-presets.json");
     let tmp = path.with_extension("json.tmp");
     let text = serde_json::to_string_pretty(&presets).map_err(|e| e.to_string())?;
@@ -2977,33 +2970,40 @@ async fn export_presets_save(state: State<'_, AppState>, presets: Value) -> Resu
 // the AgX presets in darktable's own `data.db` in the config folder,
 // converted by the engine to the current version: { presets: [{ name, params }] }
 #[tauri::command]
-async fn agx_presets(state: State<'_, AppState>, fields: Vec<String>) -> Result<Value, String> {
-    state.engine("agx_presets").request(json!({ "cmd": "agx_presets", "fields": fields }))
+#[specta::specta]
+async fn agx_presets(state: State<'_, AppState>, fields: Vec<String>) -> Result<AgxPresetsReply, String> {
+    let reply = state.engine("agx_presets").request(json!({ "cmd": "agx_presets", "fields": fields }))?;
+    serde_json::from_value(reply).map_err(|e| format!("agx_presets: unexpected reply: {e}"))
 }
 
 // the same from a `.dtpreset` or `.dtstyle` the user picks in the dialog
 // opened here; null when it is cancelled
 #[tauri::command]
-async fn agx_presets_pick(app: AppHandle, state: State<'_, AppState>, fields: Vec<String>) -> Result<Value, String> {
+#[specta::specta]
+async fn agx_presets_pick(app: AppHandle, state: State<'_, AppState>, fields: Vec<String>)
+    -> Result<Option<AgxPresetsReply>, String> {
     let picked = pick_files(&app, "darktable preset or style", &["dtpreset", "dtstyle"], false).await?;
-    let Some(file) = picked.first() else { return Ok(Value::Null) };
-    state.engine("agx_presets").request(json!({ "cmd": "agx_presets", "file": file, "fields": fields }))
+    let Some(file) = picked.first() else { return Ok(None) };
+    let reply = state.engine("agx_presets").request(json!({ "cmd": "agx_presets", "file": file, "fields": fields }))?;
+    serde_json::from_value(reply).map(Some).map_err(|e| format!("agx_presets: unexpected reply: {e}"))
 }
 
 // the AgX presets the user loaded into the Profile menu, a document the
 // front end shapes; none yet is an empty list
 #[tauri::command]
-async fn agx_profiles_load(state: State<'_, AppState>) -> Result<Value, String> {
+#[specta::specta]
+async fn agx_profiles_load(state: State<'_, AppState>) -> Result<Vec<AgxProfile>, String> {
     let path = state.presets_path.with_file_name("agx-profiles.json");
     match std::fs::read_to_string(&path) {
         Ok(text) => serde_json::from_str(&text).map_err(|e| format!("AgX presets: {e}")),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(json!([])),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
         Err(e) => Err(format!("AgX presets: {e}")),
     }
 }
 
 #[tauri::command]
-async fn agx_profiles_save(state: State<'_, AppState>, profiles: Value) -> Result<(), String> {
+#[specta::specta]
+async fn agx_profiles_save(state: State<'_, AppState>, profiles: Vec<AgxProfile>) -> Result<(), String> {
     let path = state.presets_path.with_file_name("agx-profiles.json");
     let tmp = path.with_extension("json.tmp");
     let text = serde_json::to_string_pretty(&profiles).map_err(|e| e.to_string())?;
@@ -3016,12 +3016,14 @@ async fn agx_profiles_save(state: State<'_, AppState>, profiles: Value) -> Resul
 // dialog picks (null when it is cancelled). a preset file is small, so
 // anything larger is not one
 #[tauri::command]
+#[specta::specta]
 async fn export_presets_export(app: AppHandle, contents: Value, name: String, label: String) -> Result<bool, String> {
     let Some(path) = pick_save(&app, &label, &["json"], &format!("{name}.json")).await? else { return Ok(false) };
     write_preset_file(&path, &contents).map(|_| true)
 }
 
 #[tauri::command]
+#[specta::specta]
 async fn export_presets_import(app: AppHandle, label: String) -> Result<Option<Value>, String> {
     let picked = pick_files(&app, &label, &["json"], false).await?;
     picked.first().map(|p| read_preset_file(p)).transpose()
@@ -3044,17 +3046,19 @@ fn read_preset_file(path: &Path) -> Result<Value, String> {
 
 // the user's presets, as the front end shapes them; none yet is an empty list
 #[tauri::command]
-async fn presets_load(state: State<'_, AppState>) -> Result<Value, String> {
+#[specta::specta]
+async fn presets_load(state: State<'_, AppState>) -> Result<PresetsDoc, String> {
     match std::fs::read_to_string(&state.presets_path) {
         Ok(text) => serde_json::from_str(&text).map_err(|e| format!("presets: {e}")),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(json!([])),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(PresetsDoc::List(Vec::new())),
         Err(e) => Err(format!("presets: {e}")),
     }
 }
 
 // written beside and renamed over, so a crash never leaves half a file
 #[tauri::command]
-async fn presets_save(state: State<'_, AppState>, presets: Value) -> Result<(), String> {
+#[specta::specta]
+async fn presets_save(state: State<'_, AppState>, presets: PresetsFile) -> Result<(), String> {
     let tmp = state.presets_path.with_extension("json.tmp");
     let text = serde_json::to_string_pretty(&presets).map_err(|e| e.to_string())?;
     std::fs::write(&tmp, text).map_err(|e| format!("presets: {e}"))?;
@@ -3460,10 +3464,9 @@ fn main() {
         })
         .invoke_handler(bindings::handler(tauri::generate_handler![
             darktable_resources, darktable_resources_set, memory_budget::memory_budget, gpu_edits, gpu_edits_set, webview_renderer, webview_renderer_set,
-            export_images, export_cancel, export_existing, export_preview, fonts, print_profiles, print_profile_add, softproof, printers, printer_info, print_photo, print_sheet, export_presets_load, export_presets_save, export_presets_export, export_presets_import, presets_load, presets_save, agx_presets, agx_presets_pick, agx_profiles_load, agx_profiles_save, looks_list, shared_import, look_export, look_delete, look_apply, look_amount,             mask_shapes, combine, masks, mask_delete, mask_rename, lenses, upright, range_map, zones, mask_map, ai_object,
-            ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, positive_export, spektra_stocks, spektra_fetch, spots, spots_enable, spot_source, immich_albums, immich_create_album,
+            immich_albums, immich_create_album,
             immich_export_check, immich_search, immich_browse_check, immich_libraries, immich_suggestions, immich_people, immich_tags,
-            immich_thumb, immich_resolve, hdr_merge, hdr_can_align, pano_merge, pano_preview, pano_can_merge, merge_cancel, preview_fullscreen, licenses, engine_quit, engine_restart, ai_accel,
+            immich_thumb, immich_resolve, preview_fullscreen, licenses, engine_quit, engine_restart,
             menu_set, csp_violation, perf_set, perf_trace_start, perf_trace_stop, perf_modules, perf_report_write, perf_machine, perf_ping, support_bundle::support_bundle_preview, support_bundle::support_bundle_add_benchmark, support_bundle::support_bundle_save, support_bundle::support_bundle_discard, backup::backup_components, backup::backup_pick_save, backup::backup_pick_open, backup::backup_create, backup::backup_inspect, backup::backup_restore, gpu_check_parity, resources::perf_resources_start, resources::perf_resources_stop,
             plugins::plugin_find_apps, plugins::plugin_config, plugins::plugin_config_save, plugins::plugin_set_app, plugins::plugin_choose_app, plugins::plugin_launch, plugins::plugin_watch, plugins::plugin_cancel, plugins::plugin_job,
             plugins::plugin_returns, plugins::plugin_return_applied

@@ -7,7 +7,7 @@
 // layout puts one photo on each page, fitted inside the margins or at a size
 // of its own, at one of nine places; the Cells layout puts many on a page in a
 // grid of cells (a contact sheet by default)
-import { invoke } from "@tauri-apps/api/core";
+import { commands, type Printer as PrinterEntry, type PrintProfile } from "./commands";
 import { settings } from "./settings";
 
 export type Unit = "mm" | "in";
@@ -20,8 +20,8 @@ export type Margins = { top: number; bottom: number; left: number; right: number
 // a paper, portrait, in millimeters; `name` is what the printer calls it
 export type Paper = { name: string; label: string; width: number; height: number };
 export type Medium = { name: string; label: string };
-export type Profile = { name: string; file: string };
-export type Printer = { name: string; description: string; default: boolean };
+export type Profile = PrintProfile;
+export type Printer = PrinterEntry;
 export type PrinterInfo = {
   resolution: number; margins: Margins; defaultPaper: string; papers: Paper[]; media: Medium[];
 };
@@ -297,12 +297,8 @@ export function sheetRequest(s: PrintSettings, paper: Paper, l: CellsLayout, pho
   };
 }
 
-type RawInfo = { resolution: number; margins: Margins; default_paper: string;
-                 papers: { name: string; common_name: string; width: number; height: number }[];
-                 media: { name: string; common_name: string }[] };
-
 export async function printerInfo(name: string): Promise<PrinterInfo> {
-  const r = await invoke<RawInfo>("printer_info", { name });
+  const r = await commands.printerInfo(name);
   return {
     resolution: r.resolution, margins: r.margins, defaultPaper: r.default_paper,
     papers: r.papers.map((p) => ({ name: p.name, label: p.common_name || p.name, width: p.width, height: p.height })),
@@ -315,5 +311,5 @@ export type Proof = { mode: ProofMode; profile: string; intent: Intent };
 export const NO_PROOF: Proof = { mode: "off", profile: "", intent: 0 };
 
 export async function applyProof(p: Proof): Promise<boolean> {
-  return invoke<boolean>("softproof", { mode: p.profile ? p.mode : "off", profile: p.profile, intent: p.intent });
+  return commands.softproof(p.profile ? p.mode : "off", p.profile, p.intent);
 }

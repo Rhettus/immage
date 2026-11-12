@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
-import { invoke } from "@tauri-apps/api/core";
 import { commands } from "./commands";
 import type { Session } from "./session";
 import { profileSelection, type Values } from "./manifest";
@@ -27,8 +26,7 @@ export async function preparePastePhoto(s: Session, defaults: PasteDefaults) {
   if (s.raw && defaults.auto) {
     s.setMany(AUTO_TONE_IDS.map(id => [id, 0]));
     await s.settled();
-    const zones = parseZones(await invoke<ArrayBuffer>("zones", { width: 320, height: 320,
-      transition: DEFAULT_TRANSITION, stage: "after" }));
+    const zones = parseZones(await commands.zones(320, 320, DEFAULT_TRANSITION, "after"));
     const { exposure, ...key } = autoExposure(s.values.exposure, zones);
     s.setMany([["exposure", exposure]]);
     await s.settled();

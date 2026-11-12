@@ -7,9 +7,9 @@
 // beside them, looks: darktable styles (film emulations) the engine puts on
 // extra module instances, one look at a time. both can be shared as files
 import { useEffect, useMemo, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { FileDown, Plus, Save, Share, Trash } from "lucide-react";
 import { blacksFromLinear, controlById, panels, type Values } from "./manifest";
+import { commands, type Value } from "./commands";
 import type { Frame } from "./session";
 import { settings } from "./settings";
 
@@ -24,7 +24,6 @@ export type Look = { name: string; group: string; path: string; user?: boolean }
 // presets to version n + 1, keeping what each one does to a photo. version
 // 1 was the bare list
 const PRESETS_VERSION = 3;
-type PresetsFile = { version: number; presets: Preset[] };
 const mapValues = (presets: Preset[], f: (v: Values) => Values) =>
   presets.map((p) => ({ ...p, values: f(p.values) }));
 const MIGRATIONS: Record<number, (presets: Preset[]) => Preset[]> = {
@@ -44,15 +43,15 @@ const MIGRATIONS: Record<number, (presets: Preset[]) => Preset[]> = {
 };
 
 export async function loadPresets(): Promise<Preset[]> {
-  const raw = await invoke<PresetsFile | Preset[]>("presets_load");
-  let { version, presets } = Array.isArray(raw) ? { version: 1, presets: raw } : raw;
+  const raw = await commands.presetsLoad();
+  let { version, presets } = (Array.isArray(raw) ? { version: 1, presets: raw } : raw) as { version: number; presets: Preset[] };
   if (version > PRESETS_VERSION) throw new Error("presets.json is from a newer Immage");
   for (; version < PRESETS_VERSION; version++) presets = MIGRATIONS[version](presets);
   return presets;
 }
 export const savePresets = (presets: Preset[]) =>
-  invoke("presets_save", { presets: { version: PRESETS_VERSION, presets } satisfies PresetsFile });
-export const loadLooks = () => invoke<Look[]>("looks_list");
+  commands.presetsSave({ version: PRESETS_VERSION, presets: presets as unknown as Value[] });
+export const loadLooks = (): Promise<Look[]> => commands.looksList() as Promise<Look[]>;
 
 // presets as a file to give someone, as the Export dialog's are
 // (exportSettings.ts): its version says which scale the values are on

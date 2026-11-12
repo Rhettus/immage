@@ -17,9 +17,8 @@ import { perf, type Trace } from "./perf";
 import { FRAME_HEAD, renderFrame } from "./sharedFrames";
 import { isDetailControl } from "./detailPreview";
 import type { Preview } from "./Preferences";
-import { commands, type GetReply, type HistoryItem, type ModuleState } from "./commands";
+import { commands, type GetReply, type HistoryItem, type ModuleState, type Value } from "./commands";
 export type { ColorProfiles, HistoryItem, ModuleState } from "./commands";
-const invoke = <T = unknown>(command: string, args?: Parameters<typeof perf.command>[1]) => perf.command<T>(command, args);
 // the typed commands, traced under their Rust names as `invoke` traces the rest
 const traced = <T>(command: string, call: () => Promise<T>) => perf.traced<T>(command, call);
 
@@ -308,7 +307,7 @@ export class Session {
     }
     await s.loadMasks();
     s.chooseModules();
-    s.spots = await invoke<Spot[]>("spots", {});
+    s.spots = await traced("spots", () => commands.spots(null));
     s.requestRender();
     return s;
   }
@@ -550,9 +549,7 @@ export class Session {
 
   // the masks the image's history holds, as the client shows them
   private async loadMasks() {
-    type Raw = { name: string; shapes: Shape[]; invert: boolean; opacity: number; refine?: Refine;
-                 instances: Record<string, { enabled: boolean; params: Params }>; merged_in?: string[] };
-    const raw = await invoke<Raw[]>("masks", { fields: localFields() });
+    const raw = await traced("masks", () => commands.masks(localFields()));
     // the combined masks the photo has, sent again (or emptied) on its
     // first mask edit
     for (const r of raw) for (const g of r.merged_in ?? []) this.sentShared.set(g, { members: "", params: "" });
@@ -580,7 +577,7 @@ export class Session {
         && Object.entries(values).some(([id, v]) => id in neutral && v !== neutral[id]);
       this.maskOps.set(r.name, new Set(Object.keys(r.instances)));
       this.sentMasks.add(r.name);
-      return { name: r.name, shapes: r.shapes, invert: r.invert, opacity: Math.round(r.opacity ?? 100),
+      return { name: r.name, shapes: r.shapes as Shape[], invert: r.invert, opacity: Math.round(r.opacity ?? 100),
                ...(hidden ? { hidden } : {}), ...(r.refine ? { refine: r.refine } : {}), values };
     });
   }
@@ -735,12 +732,12 @@ export class Session {
     // is there before the instances below attach to it
     do {
       for (const [name, to] of this.renames.splice(0)) {
-        await invoke("mask_rename", { name, to });
+        await traced("mask_rename", () => commands.maskRename(name, to));
         sent = true;
       }
       for (const name of this.deletedMasks.splice(0)) {
         this.sentMasks.delete(name);
-        await invoke("mask_delete", { name });
+        await traced("mask_delete", () => commands.maskDelete(name));
         sent = true;
       }
       for (const name of [...this.dirtyShapes]) {
@@ -748,7 +745,7 @@ export class Session {
         const m = this.mask(name);
         if (!m) continue;
         reshaped.add(name);
-        await invoke("mask_shapes", { name, shapes: m.shapes });
+        await traced("mask_shapes", () => commands.maskShapes(name, m.shapes as unknown as Value[]));
         this.sentMasks.add(name);
         sent = true;
       }
@@ -824,7 +821,7 @@ export class Session {
     const want = new Set(plan.shared.map((s) => s.group));
     for (const group of [...this.sentShared.keys()]) {
       if (want.has(group)) continue;
-      await invoke("combine", { name: group, members: [] });
+      await traced("combine", () => commands.combine(group, [], null));
       this.sentShared.delete(group);
       sent = true;
     }
@@ -832,7 +829,8 @@ export class Session {
       const was = this.sentShared.get(s.group);
       const members = JSON.stringify([s.members, s.ranges]), params = JSON.stringify([s.params, s.refine]);
       // the members first: the instance's mask must be there to attach to
-      if (was?.members !== members) await invoke("combine", { name: s.group, members: s.members, ranges: s.ranges });
+      if (was?.members !== members)
+        await traced("combine", () => commands.combine(s.group, s.members, s.ranges as unknown as Value[]));
       if (was?.params !== params) {
         const [real] = s.op.split("#");
         this.draftKeep.add(real);
@@ -1302,10 +1300,7 @@ export class Session {
   // wait is the user's, so it shows the busy indicator
   private copyWait: ReturnType<typeof begin> | null = null;
 
-  private pumpCommand<T = unknown>(command: string, args?: Parameters<typeof perf.command>[1]) {
-    return perf.command<T>(command, args, { blockingPump:true });
-  }
-  // a typed command run by the pump, traced as pumpCommand traces the rest
+  // a command run by the pump, traced under its Rust name
   private pumpTyped<T>(command: string, call: () => Promise<T>) {
     return perf.traced<T>(command, call, { blockingPump:true });
   }
@@ -1401,10 +1396,10 @@ export class Session {
         if (this.spotsPending) {
           const dirty = this.spotsDirty, on = !this.before;
           this.spotsDirty = false;
-          if (dirty) await this.pumpCommand("spots", { spots: this.spots });
+          if (dirty) await this.pumpTyped("spots", () => commands.spots(this.spots));
           // a new set of spots comes on with them; the Before view turns
           // them off after
-          if (dirty || on !== this.spotsOn) await this.pumpCommand("spots_enable", { on });
+          if (dirty || on !== this.spotsOn) await this.pumpTyped("spots_enable", () => commands.spotsEnable(on));
           this.spotsOn = on;
           this.changed();
           if (dirty && !this.before) { this.unsaved = true; this.scheduleSave(); }
@@ -1414,7 +1409,7 @@ export class Session {
         if (this.wantLookAmount !== undefined && this.wantLook === undefined) {
           const amount = this.wantLookAmount;
           this.wantLookAmount = undefined;
-          await this.pumpCommand("look_amount", { amount });
+          await this.pumpTyped("look_amount", () => commands.lookAmount(amount));
           this.changed();
           if (!this.before) { this.unsaved = true; this.scheduleSave(); }
           this.needRender = true;
@@ -1432,7 +1427,7 @@ export class Session {
         if (this.wantLook !== undefined) {
           const path = this.wantLook;
           this.wantLook = undefined;
-          await this.pumpCommand("look_apply", { path });
+          await this.pumpTyped("look_apply", () => commands.lookApply(path));
           this.changed();
           if (!this.before) { this.unsaved = true; this.scheduleSave(); }
           this.needRender = true;
@@ -1463,7 +1458,7 @@ export class Session {
           this.reshape = false;
           const task = perf.begin("pump.task", { operation:"loadMasks", blockingPump:true });
           try { await this.loadMasks(); } finally { perf.finish(task); }
-          this.spots = await this.pumpCommand<Spot[]>("spots", {});
+          this.spots = await this.pumpTyped("spots", () => commands.spots(null));
           this.onShapes?.();
           continue;
         }

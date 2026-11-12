@@ -209,7 +209,7 @@ test("soft proof through the Session, and a PDF through print_photo", { timeout:
                        margins: { top: 10, bottom: 10, left: 10, right: 10 } };
     const l = P.layout(A4, settings, plain.fullWidth / plain.fullHeight);
     const r = await invoke("print_photo", { imgid, request: P.printRequest(settings, A4, l, "photo.jpg", "", true),
-                                            pdf_name: "photo.pdf" });
+                                            pdfName: "photo.pdf" });
     const pdf = r.pdf;
     assert.equal(basename(pdf), "photo.pdf", "written where the save dialog's answer says");
     near(r.width, Math.round(l.image.width / 25.4 * 150), "rendered at the area's size", 2);
@@ -236,7 +236,7 @@ test("soft proof through the Session, and a PDF through print_photo", { timeout:
     assert.equal(cl.pages, 1);
     const sheetRun = invoke("print_sheet", { imgids: photos.map((p) => p.imgid),
                                              request: P.sheetRequest(cellSettings, letter, cl, photos, "Contact sheet", "", true),
-                                             pdf_name: "sheet.pdf" });
+                                             pdfName: "sheet.pdf" });
     // thumbnails asked for meanwhile, as the preview does: each whole, the size its reply says
     const thumbs = [];
     for (const [n, p] of photos.entries()) {
