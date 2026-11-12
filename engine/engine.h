@@ -228,6 +228,73 @@ typedef enum _stage_t
   _STAGE_NEGADOCTOR,
 } _stage_t;
 
+// lock order. every engine mutex has a rank; a thread takes locks in
+// ascending rank only, so no two threads can wait on each other in a cycle.
+// debug builds (no NDEBUG, or -DENG_LOCK_DEBUG) keep each thread's held ranks
+// and abort on a take that is not above all of them; release builds compile
+// eng_lock to a plain g_mutex_lock. same-rank locks are never held together
+// (the check rejects it). the engine's locks sit outside darktable's: no
+// darktable lock is held when an engine lock is taken, apart from callbacks
+// that only reach the leaf locks (cancel, reply).
+//
+//   1  up              the AI upscale state, for a whole export. outer to the
+//                      AI load lock: export -> _upscale_ctx loads a model
+//   2  import          film roll and image lookup and insert
+//   3  hold            per-job photo snapshots
+//   4  format_conf     darktable format conf keys around get_params
+//   5  ai_load         AI provider conf while a model loads (slow)
+//   6  ai_cache        segmentation and mask caches
+//   7  pool            the five thread-pool pointers, and the prefetch queue
+//   8  probe           quarantine table; a folder probe's finished flag
+//   9  cancel, fg      base and merge cancel flags; foreground busy flag
+//   10 reply           stdout line writes (taken from everywhere, leaf)
+typedef enum eng_lock_rank_t
+{
+  ENG_LOCK_UP = 1,
+  ENG_LOCK_IMPORT,
+  ENG_LOCK_HOLD,
+  ENG_LOCK_FORMAT_CONF,
+  ENG_LOCK_AI_LOAD,
+  ENG_LOCK_AI_CACHE,
+  ENG_LOCK_POOL,
+  ENG_LOCK_PROBE,
+  ENG_LOCK_CANCEL,
+  ENG_LOCK_FG = ENG_LOCK_CANCEL,
+  ENG_LOCK_REPLY,
+} eng_lock_rank_t;
+
+#if !defined(NDEBUG) || defined(ENG_LOCK_DEBUG)
+// main.c: the per-thread stack of held ranks
+void engine_lock_taking(const eng_lock_rank_t rank);
+void engine_lock_taken(const eng_lock_rank_t rank);
+void engine_lock_dropping(const eng_lock_rank_t rank);
+
+static inline void eng_lock(GMutex *m, const eng_lock_rank_t rank)
+{
+  engine_lock_taking(rank);
+  g_mutex_lock(m);
+  engine_lock_taken(rank);
+}
+
+static inline void eng_unlock(GMutex *m, const eng_lock_rank_t rank)
+{
+  engine_lock_dropping(rank);
+  g_mutex_unlock(m);
+}
+#else
+static inline void eng_lock(GMutex *m, const eng_lock_rank_t rank)
+{
+  (void)rank;
+  g_mutex_lock(m);
+}
+
+static inline void eng_unlock(GMutex *m, const eng_lock_rank_t rank)
+{
+  (void)rank;
+  g_mutex_unlock(m);
+}
+#endif
+
 extern dt_engine_session_t _s;
 
 // main.c

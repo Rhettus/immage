@@ -150,11 +150,11 @@ static gboolean _seg_ready(const _ai_job_t *job, char **err)
   // the model may have been downloaded since the folder was last looked at
   if(!_seg && _ai_env)
   {
-    g_mutex_lock(&export_ai_load_lock);
+    eng_lock(&export_ai_load_lock, ENG_LOCK_AI_LOAD);
     dt_ai_env_refresh(_ai_env);
     dt_ai_models_refresh_status();
     _seg = dt_seg_load(_ai_env, _SEG_MODEL);
-    g_mutex_unlock(&export_ai_load_lock);
+    eng_unlock(&export_ai_load_lock, ENG_LOCK_AI_LOAD);
   }
   if(!_seg)
   {
@@ -163,27 +163,27 @@ static gboolean _seg_ready(const _ai_job_t *job, char **err)
   }
   // the encoding holds for this image at this size; color edits do not
   // move objects, geometry edits do
-  g_mutex_lock(&_ai_cache_lock);
+  eng_lock(&_ai_cache_lock, ENG_LOCK_AI_CACHE);
   const gboolean held = _seg_imgid == job->imgid && job->pw == _seg_pw && job->ph == _seg_ph;
-  g_mutex_unlock(&_ai_cache_lock);
+  eng_unlock(&_ai_cache_lock, ENG_LOCK_AI_CACHE);
   if(held) return TRUE;
   if(!_ai_input(job, err)) return FALSE;
-  g_mutex_lock(&_ai_cache_lock);
+  eng_lock(&_ai_cache_lock, ENG_LOCK_AI_CACHE);
   _seg_imgid = NO_IMGID;
-  g_mutex_unlock(&_ai_cache_lock);
+  eng_unlock(&_ai_cache_lock, ENG_LOCK_AI_CACHE);
   dt_seg_reset_encoding(_seg);
   if(!dt_seg_encode_image(_seg, job->rgb, job->w, job->h))
   {
     *err = g_strdup("the model could not encode the image");
     return FALSE;
   }
-  g_mutex_lock(&_ai_cache_lock);
+  eng_lock(&_ai_cache_lock, ENG_LOCK_AI_CACHE);
   _seg_imgid = job->imgid;
   _seg_w = job->w;
   _seg_h = job->h;
   _seg_pw = job->pw;
   _seg_ph = job->ph;
-  g_mutex_unlock(&_ai_cache_lock);
+  eng_unlock(&_ai_cache_lock, ENG_LOCK_AI_CACHE);
   return TRUE;
 }
 
@@ -640,20 +640,20 @@ static const _mask_kind_t *_mask_run(const _ai_job_t *job, char **err)
   if(!_ai_env) _ai_env = _ai_env_new();
   if(!_mask_ctx[k] && _ai_env)
   {
-    g_mutex_lock(&export_ai_load_lock);
+    eng_lock(&export_ai_load_lock, ENG_LOCK_AI_LOAD);
     dt_ai_env_refresh(_ai_env);
     _mask_ctx[k] = dt_ai_load_model(_ai_env, mm->id, NULL, DT_AI_PROVIDER_CPU);
-    g_mutex_unlock(&export_ai_load_lock);
+    eng_unlock(&export_ai_load_lock, ENG_LOCK_AI_LOAD);
   }
   if(!_mask_ctx[k])
   {
     *err = g_strdup_printf("cannot load the '%s' model from %s", mm->id, ai_models_dir);
     return NULL;
   }
-  g_mutex_lock(&_ai_cache_lock);
+  eng_lock(&_ai_cache_lock, ENG_LOCK_AI_CACHE);
   const gboolean held = _mask_cache[k].p && _mask_cache[k].imgid == job->imgid
                         && _mask_cache[k].pw == job->pw && _mask_cache[k].ph == job->ph;
-  g_mutex_unlock(&_ai_cache_lock);
+  eng_unlock(&_ai_cache_lock, ENG_LOCK_AI_CACHE);
   if(!held)
   {
     if(!_ai_input(job, err)) return NULL;
@@ -661,7 +661,7 @@ static const _mask_kind_t *_mask_run(const _ai_job_t *job, char **err)
     if(!p) return NULL;
     // only this thread reads the probabilities: the main loop looks at the
     // rest
-    g_mutex_lock(&_ai_cache_lock);
+    eng_lock(&_ai_cache_lock, ENG_LOCK_AI_CACHE);
     g_free(_mask_cache[k].p);
     _mask_cache[k].p = p;
     _mask_cache[k].w = job->w;
@@ -669,7 +669,7 @@ static const _mask_kind_t *_mask_run(const _ai_job_t *job, char **err)
     _mask_cache[k].pw = job->pw;
     _mask_cache[k].ph = job->ph;
     _mask_cache[k].imgid = job->imgid;
-    g_mutex_unlock(&_ai_cache_lock);
+    eng_unlock(&_ai_cache_lock, ENG_LOCK_AI_CACHE);
   }
   return mk;
 }
@@ -764,14 +764,14 @@ static _ai_job_t *_ai_job(JsonObject *req, char **err)
   job->imgid = _s.imgid;
   dt_dev_pixelpipe_get_dimensions(&_s.ppipe, &_s.dev, _s.ppipe.iwidth, _s.ppipe.iheight, &job->pw, &job->ph);
   const int model = kind < 0 ? -1 : _mask_kinds[kind].model;
-  g_mutex_lock(&_ai_cache_lock);
+  eng_lock(&_ai_cache_lock, ENG_LOCK_AI_CACHE);
   _ai_used = g_get_monotonic_time();
   const gboolean held = model < 0
     ? _seg_imgid == job->imgid && _seg_pw == job->pw && _seg_ph == job->ph
     : _mask_cache[model].p && _mask_cache[model].imgid == job->imgid
       && _mask_cache[model].pw == job->pw && _mask_cache[model].ph == job->ph;
   const gboolean guide_held = _guide.rgb && _guide.imgid == job->imgid && _guide.pw == job->pw && _guide.ph == job->ph;
-  g_mutex_unlock(&_ai_cache_lock);
+  eng_unlock(&_ai_cache_lock, ENG_LOCK_AI_CACHE);
   // a model that runs again sees the photo as it is now, as before the guide
   if(!held || !guide_held)
   {
@@ -782,7 +782,7 @@ static _ai_job_t *_ai_job(JsonObject *req, char **err)
       _ai_job_free(job);
       return NULL;
     }
-    g_mutex_lock(&_ai_cache_lock);
+    eng_lock(&_ai_cache_lock, ENG_LOCK_AI_CACHE);
     if(_guide.rgb) g_bytes_unref(_guide.rgb);
     _guide.rgb = g_bytes_new_take(rgb, (size_t)3 * gw * gh);
     _guide.w = gw;
@@ -790,13 +790,13 @@ static _ai_job_t *_ai_job(JsonObject *req, char **err)
     _guide.pw = job->pw;
     _guide.ph = job->ph;
     _guide.imgid = job->imgid;
-    g_mutex_unlock(&_ai_cache_lock);
+    eng_unlock(&_ai_cache_lock, ENG_LOCK_AI_CACHE);
   }
-  g_mutex_lock(&_ai_cache_lock);
+  eng_lock(&_ai_cache_lock, ENG_LOCK_AI_CACHE);
   job->guide = g_bytes_ref(_guide.rgb);
   job->gw = _guide.w;
   job->gh = _guide.h;
-  g_mutex_unlock(&_ai_cache_lock);
+  eng_unlock(&_ai_cache_lock, ENG_LOCK_AI_CACHE);
   if(json_object_get_boolean_member_with_default(req, "backdrop", FALSE) && !job->map)
   {
     // without the map, the selection is made as it would be without asking
@@ -838,16 +838,16 @@ static gint _ai_release_queued = 0;
 // click after this renders the photo for it again (_ai_job)
 static void _ai_release(void)
 {
-  g_mutex_lock(&_ai_cache_lock);
+  eng_lock(&_ai_cache_lock, ENG_LOCK_AI_CACHE);
   const gboolean idle = _ai_used != _ai_released && g_get_monotonic_time() - _ai_used >= _AI_IDLE_US;
   if(idle)
   {
     _ai_released = _ai_used;
     _seg_imgid = NO_IMGID;
   }
-  g_mutex_unlock(&_ai_cache_lock);
+  eng_unlock(&_ai_cache_lock, ENG_LOCK_AI_CACHE);
   if(!idle) return;
-  g_mutex_lock(&export_ai_load_lock);
+  eng_lock(&export_ai_load_lock, ENG_LOCK_AI_LOAD);
   if(_seg) dt_seg_free(_seg);
   _seg = NULL;
   for(size_t k = 0; k < G_N_ELEMENTS(_mask_ctx); k++)
@@ -855,7 +855,7 @@ static void _ai_release(void)
     if(_mask_ctx[k]) dt_ai_unload_model(_mask_ctx[k]);
     _mask_ctx[k] = NULL;
   }
-  g_mutex_unlock(&export_ai_load_lock);
+  eng_unlock(&export_ai_load_lock, ENG_LOCK_AI_LOAD);
 }
 
 // queues _ai_release() once the models have been idle long enough,
@@ -865,14 +865,14 @@ gpointer ai_idle_watch(gpointer data)
   for(;;)
   {
     g_usleep(5 * G_USEC_PER_SEC);
-    g_mutex_lock(&_ai_cache_lock);
+    eng_lock(&_ai_cache_lock, ENG_LOCK_AI_CACHE);
     const gboolean due = _ai_used != _ai_released && g_get_monotonic_time() - _ai_used >= _AI_IDLE_US;
-    g_mutex_unlock(&_ai_cache_lock);
-    g_mutex_lock(&_ai_pool_lock);
+    eng_unlock(&_ai_cache_lock, ENG_LOCK_AI_CACHE);
+    eng_lock(&_ai_pool_lock, ENG_LOCK_POOL);
     const gboolean running = ai_pool != NULL;
     if(running && due && g_atomic_int_compare_and_exchange(&_ai_release_queued, 0, 1))
       g_thread_pool_push(ai_pool, &_ai_release_job, NULL);
-    g_mutex_unlock(&_ai_pool_lock);
+    eng_unlock(&_ai_pool_lock, ENG_LOCK_POOL);
     if(!running) return NULL;
   }
 }
@@ -910,10 +910,10 @@ void ai_run(gpointer data, gpointer user_data)
 // before darktable's caches go: the selections asked for finish
 void ai_wait(void)
 {
-  g_mutex_lock(&_ai_pool_lock);
+  eng_lock(&_ai_pool_lock, ENG_LOCK_POOL);
   GThreadPool *pool = ai_pool;
   ai_pool = NULL;
-  g_mutex_unlock(&_ai_pool_lock);
+  eng_unlock(&_ai_pool_lock, ENG_LOCK_POOL);
   if(pool) g_thread_pool_free(pool, FALSE, TRUE);
 }
 
@@ -931,10 +931,10 @@ gboolean ai_select(JsonObject *req, JsonBuilder *b, char **err)
     _ai_job_free(job);
     return ok;
   }
-  g_mutex_lock(&_ai_pool_lock);
+  eng_lock(&_ai_pool_lock, ENG_LOCK_POOL);
   const gboolean queued = ai_pool != NULL;
   if(queued) g_thread_pool_push(ai_pool, job, NULL);
-  g_mutex_unlock(&_ai_pool_lock);
+  eng_unlock(&_ai_pool_lock, ENG_LOCK_POOL);
   if(!queued)
   {
     _ai_job_free(job);
@@ -996,7 +996,7 @@ static dt_restore_context_t *_denoise_ctx(const dt_restore_sensor_class_t cls, c
     _dn.env = g_new0(dt_restore_env_t, 1);
     _dn.env->ai_env = dt_ai_env_init(ai_models_dir);
   }
-  g_mutex_lock(&export_ai_load_lock);
+  eng_lock(&export_ai_load_lock, ENG_LOCK_AI_LOAD);
   dt_ai_env_refresh(_dn.env->ai_env);
   // restore finds its model through darktable's active-model and provider
   // settings rather than taking them as arguments
@@ -1005,7 +1005,7 @@ static dt_restore_context_t *_denoise_ctx(const dt_restore_sensor_class_t cls, c
   _dn.ctx = cls == DT_RESTORE_SENSOR_CLASS_BAYER  ? dt_restore_load_rawdenoise_bayer(_dn.env)
           : cls == DT_RESTORE_SENSOR_CLASS_XTRANS ? dt_restore_load_rawdenoise_xtrans(_dn.env)
                                                   : dt_restore_load_rawdenoise_linear(_dn.env);
-  g_mutex_unlock(&export_ai_load_lock);
+  eng_unlock(&export_ai_load_lock, ENG_LOCK_AI_LOAD);
   if(!_dn.ctx)
   {
     *err = g_strdup_printf("cannot load the '%s' model from %s", _DENOISE_MODEL, ai_models_dir);
@@ -1400,10 +1400,10 @@ void ai_denoise_run(gpointer data, gpointer user_data)
 // before darktable's caches go: a denoise under way finishes
 void ai_denoise_wait(void)
 {
-  g_mutex_lock(&_denoise_pool_lock);
+  eng_lock(&_denoise_pool_lock, ENG_LOCK_POOL);
   GThreadPool *pool = ai_denoise_pool;
   ai_denoise_pool = NULL;
-  g_mutex_unlock(&_denoise_pool_lock);
+  eng_unlock(&_denoise_pool_lock, ENG_LOCK_POOL);
   if(pool) g_thread_pool_free(pool, FALSE, TRUE);
 }
 
@@ -1451,14 +1451,14 @@ gboolean ai_denoise(const float strength, const gint64 tag, JsonBuilder *b, char
   }
   // the job is the thread's once queued
   gchar *name = g_strdup(job->out);
-  g_mutex_lock(&_denoise_pool_lock);
+  eng_lock(&_denoise_pool_lock, ENG_LOCK_POOL);
   const gboolean queued = ai_denoise_pool != NULL;
   if(queued)
   {
     g_atomic_int_set(&_dn_busy, 1);
     g_thread_pool_push(ai_denoise_pool, job, NULL);
   }
-  g_mutex_unlock(&_denoise_pool_lock);
+  eng_unlock(&_denoise_pool_lock, ENG_LOCK_POOL);
   if(!queued)
   {
     _denoise_job_free(job);

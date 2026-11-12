@@ -31,9 +31,9 @@ static gint64 _merge_canceled = 0;
 
 void export_merge_cancel(const gint64 job)
 {
-  g_mutex_lock(&engine_cancel_lock);
+  eng_lock(&engine_cancel_lock, ENG_LOCK_CANCEL);
   _merge_canceled = job;
-  g_mutex_unlock(&engine_cancel_lock);
+  eng_unlock(&engine_cancel_lock, ENG_LOCK_CANCEL);
 }
 
 typedef struct _merge_progress_t
@@ -49,9 +49,9 @@ typedef struct _merge_progress_t
 static gboolean _merge_report(const _merge_progress_t *pr, const char *stage, const int done, const int total,
                               const gboolean last)
 {
-  g_mutex_lock(&engine_cancel_lock);
+  eng_lock(&engine_cancel_lock, ENG_LOCK_CANCEL);
   const gboolean stopped = pr->job && _merge_canceled == pr->job;
-  g_mutex_unlock(&engine_cancel_lock);
+  eng_unlock(&engine_cancel_lock, ENG_LOCK_CANCEL);
   if(stopped || !pr->out) return !stopped;
   JsonBuilder *b = json_builder_new();
   json_builder_begin_object(b);
@@ -810,7 +810,7 @@ static dt_restore_context_t *_upscale_ctx(const int scale, const char *asked, co
     _up.env = g_new0(dt_restore_env_t, 1);
     _up.env->ai_env = dt_ai_env_init(ai_models_dir);
   }
-  g_mutex_lock(&export_ai_load_lock);
+  eng_lock(&export_ai_load_lock, ENG_LOCK_AI_LOAD);
   dt_ai_env_refresh(_up.env->ai_env);
   // restore finds its model through darktable's active-model and provider
   // settings rather than taking them as arguments
@@ -819,7 +819,7 @@ static dt_restore_context_t *_upscale_ctx(const int scale, const char *asked, co
   const char *device_key = dt_ai_device_conf_key_for_provider(dt_ai_provider_from_string(provider));
   if(device_key && device >= 0) dt_conf_set_int(device_key, device);
   _up.ctx = scale == 4 ? dt_restore_load_upscale_x4(_up.env) : dt_restore_load_upscale_x2(_up.env);
-  g_mutex_unlock(&export_ai_load_lock);
+  eng_unlock(&export_ai_load_lock, ENG_LOCK_AI_LOAD);
   if(!_up.ctx)
   {
     *err = g_strdup_printf("cannot load the '%s' model from %s", _UPSCALE_MODEL, ai_models_dir);
@@ -1005,7 +1005,7 @@ gboolean export_export(const dt_imgid_t imgid, JsonObject *req, char **err)
   // export and the main loop's (the dialog's preview) share
   const int quality = json_object_get_int_member_with_default(req, "quality", 0);
   const int bpp = json_object_get_int_member_with_default(req, "bpp", 0);
-  g_mutex_lock(&_format_conf_lock);
+  eng_lock(&_format_conf_lock, ENG_LOCK_FORMAT_CONF);
   const int old_bpp = positive ? dt_conf_get_int("plugins/imageio/format/tiff/bpp") : 0;
   for(int pass = 0; pass < 2; pass++)
   {
@@ -1026,7 +1026,7 @@ gboolean export_export(const dt_imgid_t imgid, JsonObject *req, char **err)
     dt_conf_set_int("plugins/imageio/format/tiff/compress", old_compress);
     dt_conf_set_int("plugins/imageio/format/tiff/bpp", old_bpp);
   }
-  g_mutex_unlock(&_format_conf_lock);
+  eng_unlock(&_format_conf_lock, ENG_LOCK_FORMAT_CONF);
   if(!fdata)
   {
     *err = g_strdup_printf("format '%s' gave no parameters", format);
@@ -1097,12 +1097,12 @@ gboolean export_export(const dt_imgid_t imgid, JsonObject *req, char **err)
     fmt->free_params(fmt, fdata);
     return FALSE;
 #else
-    g_mutex_lock(&_up_lock);
+    eng_lock(&_up_lock, ENG_LOCK_UP);
     const char *asked = json_object_get_string_member_with_default(req, "ai_provider", "auto");
     const int device = json_object_get_int_member_with_default(req, "ai_device", -1);
     if(!_upscale_ctx(upscale == 4 ? 4 : 2, asked, device, err))
     {
-      g_mutex_unlock(&_up_lock);
+      eng_unlock(&_up_lock, ENG_LOCK_UP);
       if(framed) _frame_done(frame_id, frame_svg);
       fmt->free_params(fmt, fdata);
       return FALSE;
@@ -1184,7 +1184,7 @@ gboolean export_export(const dt_imgid_t imgid, JsonObject *req, char **err)
   fmt->free_params(fmt, fdata);
 #ifdef HAVE_AI
   if(failed) *err = _up.err && upscale > 1 ? g_strdup(_up.err) : g_strdup_printf("could not write '%s'", out);
-  if(upscale > 1) g_mutex_unlock(&_up_lock);
+  if(upscale > 1) eng_unlock(&_up_lock, ENG_LOCK_UP);
 #else
   if(failed) *err = g_strdup_printf("could not write '%s'", out);
 #endif
@@ -1677,14 +1677,14 @@ void export_run(gpointer data, gpointer user_data)
 // FALSE once the pool has stopped; the request then gets no reply
 gboolean export_queue(JsonParser *parser)
 {
-  g_mutex_lock(&_export_pool_lock);
+  eng_lock(&_export_pool_lock, ENG_LOCK_POOL);
   const gboolean queued = export_pool != NULL;
   if(queued)
   {
     g_atomic_int_inc(&export_jobs);
     g_thread_pool_push(export_pool, parser, NULL);
   }
-  g_mutex_unlock(&_export_pool_lock);
+  eng_unlock(&_export_pool_lock, ENG_LOCK_POOL);
   return queued;
 }
 
@@ -1692,12 +1692,12 @@ gboolean export_queue(JsonParser *parser)
 // waiting are dropped, and every snapshot left goes with its holds
 void export_wait(void)
 {
-  g_mutex_lock(&_export_pool_lock);
+  eng_lock(&_export_pool_lock, ENG_LOCK_POOL);
   GThreadPool *pool = export_pool;
   export_pool = NULL;
-  g_mutex_unlock(&_export_pool_lock);
+  eng_unlock(&_export_pool_lock, ENG_LOCK_POOL);
   if(pool) g_thread_pool_free(pool, TRUE, TRUE);
-  g_mutex_lock(&session_hold_lock);
+  eng_lock(&session_hold_lock, ENG_LOCK_HOLD);
   g_clear_pointer(&session_holds, g_hash_table_destroy);
-  g_mutex_unlock(&session_hold_lock);
+  eng_unlock(&session_hold_lock, ENG_LOCK_HOLD);
 }

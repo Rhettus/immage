@@ -47,19 +47,19 @@ static void _prefetch_run(gpointer data, gpointer user_data)
 {
   engine_background_priority();
   engine_background_yield();
-  g_mutex_lock(&_prefetch_lock);
+  eng_lock(&_prefetch_lock, ENG_LOCK_POOL);
   // engine_memory_pressure is safe here: it keeps no state of its own on Linux
   // (a local FILE), and reads an atomic on macOS and a kernel handle on
   // Windows
   if(g_atomic_int_get(&export_jobs) > 0 || engine_memory_pressure()) g_array_set_size(_prefetch_queue, 0);
   if(!_prefetch_queue->len)
   {
-    g_mutex_unlock(&_prefetch_lock);
+    eng_unlock(&_prefetch_lock, ENG_LOCK_POOL);
     return;
   }
   const dt_imgid_t imgid = g_array_index(_prefetch_queue, dt_imgid_t, 0);
   g_array_remove_index(_prefetch_queue, 0);
-  g_mutex_unlock(&_prefetch_lock);
+  eng_unlock(&_prefetch_lock, ENG_LOCK_POOL);
   dt_mipmap_buffer_t buf;
   dt_mipmap_cache_get(&buf, imgid, DT_MIPMAP_FULL, DT_MIPMAP_BLOCKING, 'r');
   dt_mipmap_cache_release(&buf);
@@ -72,12 +72,12 @@ void library_prefetch(const dt_imgid_t *imgids, const guint n)
     _prefetch_queue = g_array_new(FALSE, FALSE, sizeof(dt_imgid_t));
     _prefetch_pool = g_thread_pool_new(_prefetch_run, NULL, _PREFETCH_THREADS, TRUE, NULL);
   }
-  g_mutex_lock(&_prefetch_lock);
+  eng_lock(&_prefetch_lock, ENG_LOCK_POOL);
   g_array_set_size(_prefetch_queue, 0);
   for(guint k = 0; k < n; k++)
     if(dt_is_valid_imgid(imgids[k]) && imgids[k] != _s.imgid) g_array_append_val(_prefetch_queue, imgids[k]);
   const guint queued = _prefetch_queue->len;
-  g_mutex_unlock(&_prefetch_lock);
+  eng_unlock(&_prefetch_lock, ENG_LOCK_POOL);
   // the pool takes no NULL task
   for(guint k = 0; k < queued; k++) g_thread_pool_push(_prefetch_pool, GINT_TO_POINTER(1), NULL);
 }
@@ -87,9 +87,9 @@ void library_prefetch(const dt_imgid_t *imgids, const guint n)
 void library_prefetch_wait(void)
 {
   if(!_prefetch_pool) return;
-  g_mutex_lock(&_prefetch_lock);
+  eng_lock(&_prefetch_lock, ENG_LOCK_POOL);
   g_array_set_size(_prefetch_queue, 0);
-  g_mutex_unlock(&_prefetch_lock);
+  eng_unlock(&_prefetch_lock, ENG_LOCK_POOL);
   g_thread_pool_free(_prefetch_pool, TRUE, TRUE);
   _prefetch_pool = NULL;
 }
@@ -255,7 +255,7 @@ static GMutex _import_lock;
 dt_imgid_t library_import(const char *path)
 {
   gchar *dir = g_path_get_dirname(path);
-  g_mutex_lock(&_import_lock);
+  eng_lock(&_import_lock, ENG_LOCK_IMPORT);
   dt_film_t film;
   dt_film_init(&film); // holds a mutex; dt_film_new() does not set it up
   const dt_filmid_t filmid = dt_film_new(&film, dir);
@@ -289,7 +289,7 @@ dt_imgid_t library_import(const char *path)
     }
     g_list_free(versions);
   }
-  g_mutex_unlock(&_import_lock);
+  eng_unlock(&_import_lock, ENG_LOCK_IMPORT);
   return _real_version(imgid);
 }
 
@@ -915,10 +915,10 @@ static gpointer _probe_run(gpointer data)
   gchar *xmp = g_strconcat(p->path, ".xmp", NULL);
   _probe_read(xmp);
   g_free(xmp);
-  g_mutex_lock(&p->lock);
+  eng_lock(&p->lock, ENG_LOCK_PROBE);
   p->finished = TRUE;
   g_cond_signal(&p->done);
-  g_mutex_unlock(&p->lock);
+  eng_unlock(&p->lock, ENG_LOCK_PROBE);
   _probe_unref(p);
   return NULL;
 }
@@ -932,11 +932,11 @@ static gboolean _file_answers(const char *path, const gint64 timeout_us)
 {
   gchar *dir = g_path_get_dirname(path);
   const gint64 now = g_get_monotonic_time();
-  g_mutex_lock(&_quarantine_lock);
+  eng_lock(&_quarantine_lock, ENG_LOCK_PROBE);
   if(!_quarantine) _quarantine = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
   const gint64 *until = g_hash_table_lookup(_quarantine, dir);
   const gboolean held = until && *until > now;
-  g_mutex_unlock(&_quarantine_lock);
+  eng_unlock(&_quarantine_lock, ENG_LOCK_PROBE);
   if(held)
   {
     g_free(dir);
@@ -952,19 +952,19 @@ static gboolean _file_answers(const char *path, const gint64 timeout_us)
   g_thread_unref(t);
 
   const gint64 deadline = now + timeout_us;
-  g_mutex_lock(&p->lock);
+  eng_lock(&p->lock, ENG_LOCK_PROBE);
   while(!p->finished && g_cond_wait_until(&p->done, &p->lock, deadline)) {}
   const gboolean answered = p->finished;
-  g_mutex_unlock(&p->lock);
+  eng_unlock(&p->lock, ENG_LOCK_PROBE);
   _probe_unref(p);
 
   if(!answered)
   {
     gint64 *when = g_new(gint64, 1);
     *when = g_get_monotonic_time() + _PROBE_QUARANTINE_US;
-    g_mutex_lock(&_quarantine_lock);
+    eng_lock(&_quarantine_lock, ENG_LOCK_PROBE);
     g_hash_table_replace(_quarantine, dir, when); // takes `dir`
-    g_mutex_unlock(&_quarantine_lock);
+    eng_unlock(&_quarantine_lock, ENG_LOCK_PROBE);
     fprintf(stderr, "[engine] %s did not answer in %.1f s; skipped, as is its folder for %d s\n", path,
             timeout_us / 1e6, (int)(_PROBE_QUARANTINE_US / G_USEC_PER_SEC));
   }
@@ -994,9 +994,9 @@ void library_import_files(JsonObject *req, JsonBuilder *b, const gboolean backgr
   {
     if(job)
     {
-      g_mutex_lock(&engine_cancel_lock);
+      eng_lock(&engine_cancel_lock, ENG_LOCK_CANCEL);
       const gboolean superseded = library_import_latest != job;
-      g_mutex_unlock(&engine_cancel_lock);
+      eng_unlock(&engine_cancel_lock, ENG_LOCK_CANCEL);
       if(superseded) break;
     }
     if(budget && k && g_get_monotonic_time() - start >= budget) break;
@@ -1055,10 +1055,10 @@ void library_import_run(gpointer data, gpointer user_data)
 // FALSE once the pool has stopped; the request then gets no reply
 gboolean library_import_queue(JsonParser *parser)
 {
-  g_mutex_lock(&_import_pool_lock);
+  eng_lock(&_import_pool_lock, ENG_LOCK_POOL);
   const gboolean queued = library_import_pool != NULL;
   if(queued) g_thread_pool_push(library_import_pool, parser, NULL);
-  g_mutex_unlock(&_import_pool_lock);
+  eng_unlock(&_import_pool_lock, ENG_LOCK_POOL);
   return queued;
 }
 
@@ -1066,10 +1066,10 @@ gboolean library_import_queue(JsonParser *parser)
 // waiting are dropped
 void library_import_wait(void)
 {
-  g_mutex_lock(&_import_pool_lock);
+  eng_lock(&_import_pool_lock, ENG_LOCK_POOL);
   GThreadPool *pool = library_import_pool;
   library_import_pool = NULL;
-  g_mutex_unlock(&_import_pool_lock);
+  eng_unlock(&_import_pool_lock, ENG_LOCK_POOL);
   if(pool) g_thread_pool_free(pool, TRUE, TRUE);
 }
 
@@ -1143,10 +1143,10 @@ void library_thumb_run(gpointer data, gpointer user_data)
 // FALSE once the pool has stopped; the request then gets no reply
 gboolean library_thumb_queue(JsonParser *parser)
 {
-  g_mutex_lock(&_thumb_lock);
+  eng_lock(&_thumb_lock, ENG_LOCK_POOL);
   const gboolean queued = library_thumb_pool != NULL;
   if(queued) g_thread_pool_push(library_thumb_pool, parser, NULL);
-  g_mutex_unlock(&_thumb_lock);
+  eng_unlock(&_thumb_lock, ENG_LOCK_POOL);
   return queued;
 }
 
@@ -1154,10 +1154,10 @@ gboolean library_thumb_queue(JsonParser *parser)
 // waiting are dropped
 void library_thumb_wait(void)
 {
-  g_mutex_lock(&_thumb_lock);
+  eng_lock(&_thumb_lock, ENG_LOCK_POOL);
   GThreadPool *pool = library_thumb_pool;
   library_thumb_pool = NULL;
-  g_mutex_unlock(&_thumb_lock);
+  eng_unlock(&_thumb_lock, ENG_LOCK_POOL);
   if(pool) g_thread_pool_free(pool, TRUE, TRUE);
 }
 

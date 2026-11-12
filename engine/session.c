@@ -88,7 +88,7 @@ static void _hold_free(gpointer data)
 // library, or NO_IMGID
 void session_hold(const gint64 job, JsonArray *imgids, const dt_imgid_t open_imgid)
 {
-  g_mutex_lock(&session_hold_lock);
+  eng_lock(&session_hold_lock, ENG_LOCK_HOLD);
   if(!session_holds) session_holds = g_hash_table_new_full(g_int64_hash, g_int64_equal, g_free, _hold_free);
   gint64 *key = g_new(gint64, 1);
   *key = job;
@@ -101,14 +101,14 @@ void session_hold(const gint64 job, JsonArray *imgids, const dt_imgid_t open_img
                         GINT_TO_POINTER(imgid == open_imgid ? library_snapshot(imgid) : NO_IMGID));
   }
   g_hash_table_replace(session_holds, key, held);
-  g_mutex_unlock(&session_hold_lock);
+  eng_unlock(&session_hold_lock, ENG_LOCK_HOLD);
 }
 
 // a photo about to be opened: every export still to render it gets its
 // edit before the editor can change it
 static void _hold_open(const dt_imgid_t imgid)
 {
-  g_mutex_lock(&session_hold_lock);
+  eng_lock(&session_hold_lock, ENG_LOCK_HOLD);
   GHashTableIter it;
   gpointer key, held;
   if(session_holds) g_hash_table_iter_init(&it, session_holds);
@@ -119,14 +119,14 @@ static void _hold_open(const dt_imgid_t imgid)
        && !dt_is_valid_imgid(GPOINTER_TO_INT(snap)))
       g_hash_table_insert(held, GINT_TO_POINTER(imgid), GINT_TO_POINTER(library_snapshot(imgid)));
   }
-  g_mutex_unlock(&session_hold_lock);
+  eng_unlock(&session_hold_lock, ENG_LOCK_HOLD);
 }
 
 // the snapshot job's export of `imgid` renders, now the caller's to remove;
 // NO_IMGID when the job does not hold the photo
 dt_imgid_t session_hold_take(const gint64 job, const dt_imgid_t imgid)
 {
-  g_mutex_lock(&session_hold_lock);
+  eng_lock(&session_hold_lock, ENG_LOCK_HOLD);
   GHashTable *held = session_holds ? g_hash_table_lookup(session_holds, &job) : NULL;
   gpointer snap = NULL;
   dt_imgid_t taken = NO_IMGID;
@@ -136,16 +136,16 @@ dt_imgid_t session_hold_take(const gint64 job, const dt_imgid_t imgid)
     taken = dt_is_valid_imgid(GPOINTER_TO_INT(snap)) ? GPOINTER_TO_INT(snap) : library_snapshot(imgid);
     g_hash_table_remove(held, GINT_TO_POINTER(imgid));
   }
-  g_mutex_unlock(&session_hold_lock);
+  eng_unlock(&session_hold_lock, ENG_LOCK_HOLD);
   return taken;
 }
 
 // the job's photos it will not export after all, with their snapshots
 void session_hold_release(const gint64 job)
 {
-  g_mutex_lock(&session_hold_lock);
+  eng_lock(&session_hold_lock, ENG_LOCK_HOLD);
   if(session_holds) g_hash_table_remove(session_holds, &job);
-  g_mutex_unlock(&session_hold_lock);
+  eng_unlock(&session_hold_lock, ENG_LOCK_HOLD);
 }
 
 // whether the history holds entries a later one of the same module

@@ -33,6 +33,39 @@
 
 dt_engine_session_t _s = { 0 };
 
+#if !defined(NDEBUG) || defined(ENG_LOCK_DEBUG)
+// the ranks this thread holds, in the order taken (see the lock order in
+// engine.h). unlocks may come in any order, so a drop removes its entry
+#define _LOCK_DEPTH 16
+static _Thread_local int _held[_LOCK_DEPTH];
+static _Thread_local int _nheld = 0;
+
+void engine_lock_taking(const eng_lock_rank_t rank)
+{
+  for(int i = 0; i < _nheld; i++)
+    if(_held[i] >= (int)rank)
+      g_error("lock order: taking rank %d while holding rank %d", (int)rank, _held[i]);
+}
+
+void engine_lock_taken(const eng_lock_rank_t rank)
+{
+  if(_nheld >= _LOCK_DEPTH) g_error("lock order: more than %d locks held", _LOCK_DEPTH);
+  _held[_nheld++] = (int)rank;
+}
+
+void engine_lock_dropping(const eng_lock_rank_t rank)
+{
+  for(int i = _nheld - 1; i >= 0; i--)
+    if(_held[i] == (int)rank)
+    {
+      memmove(&_held[i], &_held[i + 1], (_nheld - i - 1) * sizeof(int));
+      _nheld--;
+      return;
+    }
+  g_error("lock order: dropping rank %d, which this thread does not hold", (int)rank);
+}
+#endif
+
 // the base render a `cancel_base` can stop, by its client id, and the
 // latest id canceled: a cancel can come in before its base has started.
 // the request reader (_read_requests) and the main thread share them
@@ -54,10 +87,10 @@ static gint64 _fg_last = 0;
 
 static void _foreground(const gboolean busy)
 {
-  g_mutex_lock(&_fg_lock);
+  eng_lock(&_fg_lock, ENG_LOCK_FG);
   _fg_busy = busy;
   _fg_last = g_get_monotonic_time();
-  g_mutex_unlock(&_fg_lock);
+  eng_unlock(&_fg_lock, ENG_LOCK_FG);
 }
 
 void engine_background_yield(void)
@@ -66,9 +99,9 @@ void engine_background_yield(void)
   while(TRUE)
   {
     const gint64 now = g_get_monotonic_time();
-    g_mutex_lock(&_fg_lock);
+    eng_lock(&_fg_lock, ENG_LOCK_FG);
     const gboolean quiet = !_fg_busy && now - _fg_last >= _FG_GRACE_US;
-    g_mutex_unlock(&_fg_lock);
+    eng_unlock(&_fg_lock, ENG_LOCK_FG);
     if(quiet && (!_requests || g_async_queue_length(_requests) <= 0)) return;
     if(now - start >= _FG_MAX_WAIT_US) return;
     g_usleep(15000);
@@ -144,10 +177,10 @@ void engine_reply(FILE *out, JsonBuilder *b)
     json_object_set_int_member(json_node_get_object(root), "rid", _request_rid);
   json_generator_set_root(gen, root);
   gchar *s = json_generator_to_data(gen, NULL);
-  g_mutex_lock(&_reply_lock);
+  eng_lock(&_reply_lock, ENG_LOCK_REPLY);
   fprintf(out, "%s\n", s);
   fflush(out);
-  g_mutex_unlock(&_reply_lock);
+  eng_unlock(&_reply_lock, ENG_LOCK_REPLY);
   g_free(s);
   json_node_unref(root);
   g_object_unref(gen);
@@ -177,22 +210,22 @@ static void _reply_error(FILE *out, const char *fmt, ...)
 // (pixelpipe_hb.c), so only one left from an earlier run is cleared here
 static gboolean _base_start(const gint64 id)
 {
-  g_mutex_lock(&engine_cancel_lock);
+  eng_lock(&engine_cancel_lock, ENG_LOCK_CANCEL);
   dt_atomic_set_int(&_s.base.pipe.shutdown, DT_DEV_PIXELPIPE_STOP_NO);
   const gboolean go = id > _base_canceled;
   _base_running = go ? id : 0;
-  g_mutex_unlock(&engine_cancel_lock);
+  eng_unlock(&engine_cancel_lock, ENG_LOCK_CANCEL);
   return go;
 }
 
 // whether the base just rendered was canceled meanwhile
 static gboolean _base_end(void)
 {
-  g_mutex_lock(&engine_cancel_lock);
+  eng_lock(&engine_cancel_lock, ENG_LOCK_CANCEL);
   const gboolean canceled = _base_running && _base_running <= _base_canceled;
   _base_running = 0;
   dt_atomic_set_int(&_s.base.pipe.shutdown, DT_DEV_PIXELPIPE_STOP_NO);
-  g_mutex_unlock(&engine_cancel_lock);
+  eng_unlock(&engine_cancel_lock, ENG_LOCK_CANCEL);
   return canceled;
 }
 
@@ -201,11 +234,11 @@ static gboolean _base_end(void)
 // all the same (pixelpipe_hb.c, _module_pipe_stop)
 static void _cancel_base(const gint64 id)
 {
-  g_mutex_lock(&engine_cancel_lock);
+  eng_lock(&engine_cancel_lock, ENG_LOCK_CANCEL);
   _base_canceled = MAX(_base_canceled, id);
   if(_base_running && _base_running <= id)
     dt_atomic_set_int(&_s.base.pipe.shutdown, DT_DEV_PIXELPIPE_STOP_NODES);
-  g_mutex_unlock(&engine_cancel_lock);
+  eng_unlock(&engine_cancel_lock, ENG_LOCK_CANCEL);
 }
 
 #include "transient_output.h"
@@ -1458,9 +1491,9 @@ static gpointer _read_requests(gpointer data)
           const gint64 job = json_object_get_int_member_with_default(req, "job", 0);
           if(job)
           {
-            g_mutex_lock(&engine_cancel_lock);
+            eng_lock(&engine_cancel_lock, ENG_LOCK_CANCEL);
             library_import_latest = job;
-            g_mutex_unlock(&engine_cancel_lock);
+            eng_unlock(&engine_cancel_lock, ENG_LOCK_CANCEL);
           }
           if(library_import_queue(parser)) parser = NULL;
           taken = TRUE;
