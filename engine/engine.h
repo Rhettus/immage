@@ -214,6 +214,20 @@ typedef struct _working_t
   dt_iop_order_iccprofile_info_t profile;
 } _working_t;
 
+// where _working_at() reads: the mask instances' input (the anchor's
+// output); the tone mapper's input, with every mask instance's adjustment
+// in it; the Zone System placement's input, which it has not placed yet;
+// rotate and perspective's input, larger, for Upright's line detection; or
+// negadoctor's input, the negative as its pickers read it
+typedef enum _stage_t
+{
+  _STAGE_ANCHOR,
+  _STAGE_TONEMAPPER,
+  _STAGE_UNPLACED,
+  _STAGE_ASHIFT,
+  _STAGE_NEGADOCTOR,
+} _stage_t;
+
 extern dt_engine_session_t _s;
 
 // main.c
@@ -243,19 +257,52 @@ void *session_field_in(dt_iop_module_t *mod, void *base, const char *path,
                        dt_introspection_field_t **f, char **err);
 gboolean session_write_field(dt_iop_module_t *mod, const char *name, const double num,
                              char **err);
+gboolean session_read_field(dt_iop_module_t *mod, const char *name,
+                            const gboolean from_defaults, double *num, char **err);
 gboolean session_render(dt_dev_pixelpipe_t *pipe, const int devid, const int bw, const int bh,
                         const double req_scale, const int x, const int y, JsonArray *have,
                         int *ow, int *oh, int *ox_out, int *oy_out, dt_hash_t *kept, preview_output_t *output, char **err);
+dt_iop_module_t *session_find_named(const char *op, const char *name);
+dt_dev_pixelpipe_iop_t *session_piece(dt_dev_pixelpipe_t *pipe, const dt_iop_module_t *m);
 gboolean session_ppipe_ready(char **err);
 gboolean session_follower_ready(dt_engine_follower_t *f, char **err);
+void session_preview_commit(dt_iop_module_t *m, void *params, dt_develop_blend_params_t *blend,
+                            const gboolean enabled);
 gboolean session_save(char **err);
 
 // masks.c
+const char *masks_mask_name(const char *full);
+dt_masks_form_t *masks_instance_group(const dt_iop_module_t *m);
+dt_iop_module_t *masks_named_instance(const char *op, const char *name, const gboolean anchored,
+                                      char **err);
 void masks_invalidate_from(const int order, const char *why);
+gboolean masks_mask(const char *name, JsonArray *shapes, char **err);
+gboolean masks_combine(const char *name, JsonArray *members, JsonArray *ranges, char **err);
 void masks_add_num(JsonBuilder *b, const char *name, const double v);
+gboolean masks_spots_set(JsonArray *spots, char **err);
+gboolean masks_spots_json(JsonBuilder *b, char **err);
+gboolean masks_spots_enable(const gboolean on, char **err);
+gboolean masks_spot_source(JsonObject *o, JsonBuilder *b, char **err);
+gboolean masks_masks(JsonObject *fields, JsonBuilder *b, char **err);
+gboolean masks_mask_delete(const char *name, char **err);
+gboolean masks_mask_rename(const char *name, const char *to, char **err);
 gboolean masks_working(_working_t *w, char **err);
 void masks_to_working(const _working_t *w, float *pts, const size_t n);
 void masks_blend_values(const _working_t *w, const float *rgb_in, float *Y, dt_aligned_pixel_t JzCzhz);
+gboolean masks_sample(const float x, const float y, JsonArray *box, const _stage_t stage, JsonBuilder *b,
+                      char **err);
+gboolean masks_agx_auto(JsonBuilder *b, char **err);
+gboolean masks_upright(const char *mode, JsonArray *guides, const double aspect, JsonBuilder *b,
+                       char **err);
+void masks_points(JsonArray *pts, const gboolean to_shown, JsonBuilder *b);
+gboolean masks_tone_key(JsonBuilder *b, char **err);
+gboolean masks_range_map(JsonArray *ranges, const int width, const int height, const char *out,
+                         char **err);
+gboolean masks_zones(const int width, const int height, const float w, const _stage_t stage,
+                     const char *out, JsonBuilder *b, char **err);
+gboolean masks_mask_map(const char *name, const char *op, int *width, int *height,
+                        const double vscale, const int vx, const int vy, const char *out, char **err);
+gboolean masks_attach_mask(dt_iop_module_t *m, const char *name, const gboolean invert, char **err);
 
 // library.c
 void library_prefetch(const dt_imgid_t *imgids, const guint n);
