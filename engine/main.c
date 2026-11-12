@@ -10415,16 +10415,6 @@ static void _save_pending(void)
   g_free(err);
 }
 
-// the commands that change the edit
-static gboolean _edits(const char *cmd)
-{
-  static const char *edits[] = { "set", "mask", "combine", "mask_rename", "mask_delete", "spots", "spots_enable",
-                                 "look", "look_amount" };
-  for(size_t k = 0; k < G_N_ELEMENTS(edits); k++)
-    if(!g_strcmp0(cmd, edits[k])) return TRUE;
-  return FALSE;
-}
-
 // the GPU check: the edit rendered on the CPU and then on an OpenCL device,
 // on a pipe of its own, and the two frames compared. darktable's
 // integration tests accept dE < 2 between the two (src/tests/integration)
@@ -10848,742 +10838,1017 @@ static gboolean _spektra_fetch(JsonObject *req, JsonBuilder *b, char **err)
   return TRUE;
 }
 
+// the commands, by name. _CMD_NEEDS_OPEN ones answer "no image open" before
+// they run; _CMD_EDITS ones leave the open photo unsaved
+#define _CMD_NEEDS_OPEN 1
+#define _CMD_EDITS 2
+
+typedef gboolean (*_cmd_fn)(JsonObject *req, JsonBuilder *b, char **err);
+
+typedef struct eng_cmd_t
+{
+  const char *name;
+  _cmd_fn fn;
+  int flags;
+} eng_cmd_t;
+
+// when _handle() took the request, for the render reply's process_ms, which
+// the handler writes (a handler has no access to _handle()'s locals)
+static _Thread_local gint64 _req_t0;
+
+static gboolean _cmd_open(JsonObject *req, JsonBuilder *b, char **err)
+{
+  const char *path = json_object_get_string_member_with_default(req, "path", NULL);
+// the full pipe's larger cache keeps demosaic output across edits, which
+// the preview pipe's budget does not
+  const char *kind = json_object_get_string_member_with_default(req, "pipe", "full");
+  const dt_imgid_t version = json_object_get_int_member_with_default(req, "imgid", NO_IMGID);
+  if(!path || !_open_image(path, version, kind, err)) return FALSE;
+  json_builder_set_member_name(b, "imgid");
+  json_builder_add_int_value(b, _s.imgid);
+  json_builder_set_member_name(b, "width");
+  json_builder_add_int_value(b, _s.pipe.processed_width);
+  json_builder_set_member_name(b, "height");
+  json_builder_add_int_value(b, _s.pipe.processed_height);
+// the geometry modules ahead of flip (ashift, lens) work on the sensor
+// frame after rawprepare's crop, in the camera's own orientation
+  json_builder_set_member_name(b, "sensor_width");
+  json_builder_add_int_value(b, _s.dev.image_storage.p_width);
+  json_builder_set_member_name(b, "sensor_height");
+  json_builder_add_int_value(b, _s.dev.image_storage.p_height);
+  json_builder_set_member_name(b, "orientation");
+  json_builder_add_int_value(b, _s.dev.image_storage.orientation);
+// a raw gets the client's raw-only defaults, as Lightroom's do
+  json_builder_set_member_name(b, "raw");
+  json_builder_add_boolean_value(b, dt_image_is_raw(&_s.dev.image_storage));
+  json_builder_set_member_name(b, "look");
+  const char *look = _look_name();
+  if(look) json_builder_add_string_value(b, look); else json_builder_add_null_value(b);
+  json_builder_set_member_name(b, "look_amount");
+  json_builder_add_double_value(b, _look_amount_value());
+// whether its history holds anything yet, here or in darktable
+  json_builder_set_member_name(b, "edited");
+  json_builder_add_boolean_value(b, dt_image_altered(_s.imgid));
+// no history at all before this open: the client's new-photo defaults
+// apply. a photo stamped with them reads unedited, so "edited" cannot say
+  json_builder_set_member_name(b, "fresh");
+  json_builder_add_boolean_value(b, _s.fresh);
+  return TRUE;
+}
+
+static gboolean _cmd_history(JsonObject *req, JsonBuilder *b, char **err)
+{
+// the open image's darktable history, oldest first, as darktable's
+// history module lists it: the module, its instance label, on or off
+  if(!_s.open) { *err = g_strdup("no image open"); return FALSE; }
+  json_builder_set_member_name(b, "items");
+  json_builder_begin_array(b);
+// with "saved", the history as the last save stored it, compressed; the
+// develop's own keeps every change of the session (_save())
+  if(json_object_get_boolean_member_with_default(req, "saved", FALSE))
+    _saved_history(b);
+  else
+  {
+    int k = 0;
+    for(GList *l = _s.dev.history; l && k < _s.dev.history_end; l = g_list_next(l), k++)
+    {
+      const dt_dev_history_item_t *h = l->data;
+      _history_item(b, h->op_name, h->module->name(), h->multi_name, h->multi_name_hand_edited,
+                    h->enabled, h->multi_priority, h->module);
+    }
+  }
+  json_builder_end_array(b);
+  return TRUE;
+}
+
+static gboolean _cmd_folder(JsonObject *req, JsonBuilder *b, char **err)
+{
+  const char *dir = json_object_get_string_member_with_default(req, "path", NULL);
+  const gboolean recursive = json_object_get_boolean_member_with_default(req, "recursive", FALSE);
+  if(!dir || !_folder(dir, recursive, b, err)) return FALSE;
+  return TRUE;
+}
+
+static gboolean _cmd_import(JsonObject *req, JsonBuilder *b, char **err)
+{
+  _import_files(req, b, FALSE);
+  return TRUE;
+}
+
+static gboolean _cmd_thumb(JsonObject *req, JsonBuilder *b, char **err)
+{
+  const char *dest = json_object_get_string_member_with_default(req, "out", NULL);
+  if(!dest || !_thumb(json_object_get_int_member_with_default(req, "imgid", 0),
+                      json_object_get_int_member_with_default(req, "size", 256),
+                      json_object_get_boolean_member_with_default(req, "proof", FALSE), dest, b, err))
+    return FALSE;
+  return TRUE;
+}
+
+static gboolean _cmd_prefetch(JsonObject *req, JsonBuilder *b, char **err)
+{
+// the reply does not wait for the decode. `imgids` in the order to
+// decode them, or one `imgid`
+  JsonArray *ids = json_object_has_member(req, "imgids") ? json_object_get_array_member(req, "imgids") : NULL;
+  const guint n = ids ? MIN(json_array_get_length(ids), 16) : 1;
+  dt_imgid_t list[16];
+  for(guint k = 0; k < n; k++)
+    list[k] = ids ? json_array_get_int_element(ids, k) : json_object_get_int_member_with_default(req, "imgid", 0);
+  _prefetch(list, n);
+  return TRUE;
+}
+
+static gboolean _cmd_meta(JsonObject *req, JsonBuilder *b, char **err)
+{
+  json_builder_set_member_name(b, "image");
+  _image_json(b, json_object_get_int_member_with_default(req, "imgid", 0), TRUE);
+  return TRUE;
+}
+
+static gboolean _cmd_keywords(JsonObject *req, JsonBuilder *b, char **err)
+{
+  _all_keywords(b);
+  return TRUE;
+}
+
+static gboolean _cmd_ai_accel(JsonObject *req, JsonBuilder *b, char **err)
+{
+#ifdef HAVE_AI
+  _ai_accel(b);
+#else
+  json_builder_set_member_name(b, "providers");
+  json_builder_begin_array(b);
+  json_builder_end_array(b);
+#endif
+  return TRUE;
+}
+
+static gboolean _cmd_opencl(JsonObject *req, JsonBuilder *b, char **err)
+{
+  _opencl(b);
+  return TRUE;
+}
+
+static gboolean _cmd_parity(JsonObject *req, JsonBuilder *b, char **err)
+{
+  if(!_parity(req, b, err)) return FALSE;
+  return TRUE;
+}
+
+static gboolean _cmd_keywords_set(JsonObject *req, JsonBuilder *b, char **err)
+{
+  if(!_keywords_set(json_object_get_int_member_with_default(req, "imgid", 0), req, b, err)) return FALSE;
+  return TRUE;
+}
+
+static gboolean _cmd_capture_times(JsonObject *req, JsonBuilder *b, char **err)
+{
+  if(!_capture_times(req, b, err)) return FALSE;
+  return TRUE;
+}
+
+static gboolean _cmd_meta_set(JsonObject *req, JsonBuilder *b, char **err)
+{
+  if(!_meta_set(json_object_get_int_member_with_default(req, "imgid", 0), req, err)) return FALSE;
+  return TRUE;
+}
+
+static gboolean _cmd_export(JsonObject *req, JsonBuilder *b, char **err)
+{
+  const dt_imgid_t imgid = json_object_get_int_member_with_default(req, "imgid", 0);
+// the open image's latest edits may not be in the library yet, and
+// export reads its history from there; the frame's size needs its crop.
+// in the Before view they went in as it came on ("before" below)
+  if(_s.open && _s.imgid == imgid && !_s.before) dt_dev_write_history_ext(&_s.dev, imgid);
+  if(!_export(imgid, req, err)) return FALSE;
+  return TRUE;
+}
+
+// printing (print.c): an untagged `print` renders in the main loop, as
+// `export` does; the app's are tagged and run on the export thread
+static gboolean _cmd_print(JsonObject *req, JsonBuilder *b, char **err)
+{
+  if(json_object_has_member(req, "pages"))
+  {
+    // the open photo's latest edits go to the library first, as for one photo
+    if(_s.open && !_s.before) dt_dev_write_history_ext(&_s.dev, _s.imgid);
+    if(!print_sheet(req, NULL, NULL, NULL, NULL, b, err)) return FALSE;
+    return TRUE;
+  }
+  const dt_imgid_t imgid = json_object_get_int_member_with_default(req, "imgid", 0);
+  if(_s.open && _s.imgid == imgid && !_s.before) dt_dev_write_history_ext(&_s.dev, imgid);
+  if(!print_image(imgid, req, b, err)) return FALSE;
+  return TRUE;
+}
+
+static gboolean _cmd_print_profiles(JsonObject *req, JsonBuilder *b, char **err)
+{
+  json_builder_set_member_name(b, "profiles");
+  print_profiles(b);
+  return TRUE;
+}
+
+static gboolean _cmd_print_profile_add(JsonObject *req, JsonBuilder *b, char **err)
+{
+  if(!print_profile_add(json_object_get_string_member_with_default(req, "path", NULL), b, err)) return FALSE;
+  return TRUE;
+}
+
+static gboolean _cmd_printers(JsonObject *req, JsonBuilder *b, char **err)
+{
+  json_builder_set_member_name(b, "available");
+  json_builder_add_boolean_value(b, print_available());
+  json_builder_set_member_name(b, "printers");
+  print_printers(b);
+  return TRUE;
+}
+
+static gboolean _cmd_printer(JsonObject *req, JsonBuilder *b, char **err)
+{
+  if(!print_printer(json_object_get_string_member_with_default(req, "name", NULL), b, err)) return FALSE;
+  return TRUE;
+}
+
+static gboolean _cmd_softproof(JsonObject *req, JsonBuilder *b, char **err)
+{
+  gboolean changed = FALSE;
+  if(!print_softproof(json_object_get_string_member_with_default(req, "mode", "off"),
+                      json_object_get_string_member_with_default(req, "profile", NULL),
+                      json_object_get_int_member_with_default(req, "intent", DT_INTENT_PERCEPTUAL),
+                      &changed, err))
+    return FALSE;
+// colorout builds its proofing transform when committed, and the mode
+// is in neither its params nor their hash (colorout.c, commit_params),
+// so every pipe commits it again and drops what it kept from colorout
+// on, as darktable's soft proof button does (darkroom.c)
+  char *ignored = NULL;
+  const dt_iop_module_t *cout = changed && _s.open ? _module("colorout", &ignored) : NULL;
+  g_free(ignored);
+  if(cout)
+  {
+    _invalidate_from(cout->iop_order, "softproof ");
+    _changed(DT_DEV_PIPE_SYNCH);
+  }
+  json_builder_set_member_name(b, "changed");
+  json_builder_add_boolean_value(b, changed);
+  return TRUE;
+}
+
+// the photos a background export (tagged `export`s of this `job`) is to
+// render, each as its edit is now
+static gboolean _cmd_export_hold(JsonObject *req, JsonBuilder *b, char **err)
+{
+  if(_s.open && !_s.before) dt_dev_write_history_ext(&_s.dev, _s.imgid);
+  _hold(json_object_get_int_member_with_default(req, "job", 0),
+        json_object_has_member(req, "imgids") ? json_object_get_array_member(req, "imgids") : NULL,
+        _s.open ? _s.imgid : NO_IMGID);
+  return TRUE;
+}
+
+static gboolean _cmd_fonts(JsonObject *req, JsonBuilder *b, char **err)
+{
+  _fonts(b);
+  return TRUE;
+}
+
+static gboolean _cmd_spektra_stocks(JsonObject *req, JsonBuilder *b, char **err)
+{
+  _spektra_stocks(b);
+  return TRUE;
+}
+
+static gboolean _cmd_spektra_fetch(JsonObject *req, JsonBuilder *b, char **err)
+{
+  if(!_spektra_fetch(req, b, err)) return FALSE;
+  return TRUE;
+}
+
+static gboolean _cmd_copy(JsonObject *req, JsonBuilder *b, char **err)
+{
+  if(!_copy(json_object_get_int_member_with_default(req, "imgid", 0), b, err)) return FALSE;
+  return TRUE;
+}
+
+static gboolean _cmd_remove_copy(JsonObject *req, JsonBuilder *b, char **err)
+{
+  if(!_remove_copy(json_object_get_int_member_with_default(req, "imgid", 0), b, err)) return FALSE;
+  return TRUE;
+}
+
+static gboolean _cmd_forget(JsonObject *req, JsonBuilder *b, char **err)
+{
+  if(!_forget(json_object_get_int_member_with_default(req, "imgid", 0), err)) return FALSE;
+  return TRUE;
+}
+
+static gboolean _cmd_sidecars(JsonObject *req, JsonBuilder *b, char **err)
+{
+  if(!_sidecars(json_object_get_int_member_with_default(req, "imgid", 0), b, err)) return FALSE;
+  return TRUE;
+}
+
+static gboolean _cmd_version(JsonObject *req, JsonBuilder *b, char **err)
+{
+// darktable's own, which picks the AI models' release
+  json_builder_set_member_name(b, "version");
+  json_builder_add_string_value(b, darktable_package_version);
+// whether Merge to HDR can align brackets: darktable built with OpenCV
+  json_builder_set_member_name(b, "hdr_align");
+  json_builder_add_boolean_value(b, hdr_merge_can_align());
+// whether Panorama Merge can stitch: the engine built with OpenCV's
+// stitching module (CMakeLists.txt)
+  json_builder_set_member_name(b, "pano");
+#ifdef HAVE_PANO
+  json_builder_add_boolean_value(b, TRUE);
+#else
+  json_builder_add_boolean_value(b, FALSE);
+#endif
+  return TRUE;
+}
+
+static gboolean _cmd_hdr_merge(JsonObject *req, JsonBuilder *b, char **err)
+{
+  if(!_hdr_merge(req, b, NULL, err)) return FALSE;
+  return TRUE;
+}
+
+#ifdef HAVE_PANO
+static gboolean _cmd_pano_merge(JsonObject *req, JsonBuilder *b, char **err)
+{
+  if(!_pano_merge(req, b, NULL, err)) return FALSE;
+  return TRUE;
+}
+#endif
+
+static gboolean _cmd_unpack(JsonObject *req, JsonBuilder *b, char **err)
+{
+  if(!_unpack(json_object_get_string_member_with_default(req, "archive", NULL),
+              json_object_get_string_member_with_default(req, "dir", NULL), err)) return FALSE;
+  return TRUE;
+}
+
+// the styles outlive this process (data.db), and _style_items() keeps the
+// one it has by a name: a look imported under that name must replace it
+static gboolean _cmd_style_forget(JsonObject *req, JsonBuilder *b, char **err)
+{
+  const char *name = json_object_get_string_member_with_default(req, "name", NULL);
+  if(!name) return FALSE;
+  dt_styles_delete_by_name_adv(name, FALSE, FALSE);
+  return TRUE;
+}
+
+static gboolean _cmd_paste_batch(JsonObject *req, JsonBuilder *b, char **err)
+{
+  if(!_paste_batch(req, b, err)) return FALSE;
+  return TRUE;
+}
+
+static gboolean _cmd_set(JsonObject *req, JsonBuilder *b, char **err)
+{
+  const char *op = json_object_get_string_member_with_default(req, "op", NULL);
+  const char *field = json_object_get_string_member_with_default(req, "field", NULL);
+  JsonNode *value = json_object_get_member(req, "value");
+  const gboolean has_enabled = json_object_has_member(req, "enabled");
+  const gboolean enabled = has_enabled && json_object_get_boolean_member(req, "enabled");
+  JsonObject *params = json_object_has_member(req, "params")
+    ? json_object_get_object_member(req, "params") : NULL;
+  const char *after = json_object_get_string_member_with_default(req, "after", NULL);
+  const char *before = json_object_get_string_member_with_default(req, "before", NULL);
+  const char *instance = json_object_get_string_member_with_default(req, "instance", NULL);
+  const char *mask = json_object_get_string_member_with_default(req, "mask", NULL);
+  const gboolean invert = json_object_get_boolean_member_with_default(req, "invert", FALSE);
+  const double opacity = json_object_get_double_member_with_default(req, "opacity", -1.0);
+  JsonObject *refine = json_object_has_member(req, "refine")
+    ? json_object_get_object_member(req, "refine") : NULL;
+  if(!op || !_set(op, field, value, params, has_enabled, enabled, after, before, instance, mask, invert, opacity,
+                  refine, err))
+    return FALSE;
+  return TRUE;
+}
+
+static gboolean _cmd_color_profiles(JsonObject *req, JsonBuilder *b, char **err)
+{
+  if(!_color_profiles(b, err)) return FALSE;
+  return TRUE;
+}
+
+static gboolean _cmd_lenses(JsonObject *req, JsonBuilder *b, char **err)
+{
+  if(!_lens_menu(b, err)) return FALSE;
+  return TRUE;
+}
+
+static gboolean _cmd_module_state(JsonObject *req, JsonBuilder *b, char **err)
+{
+  if(!_module_state(json_object_get_string_member_with_default(req, "op", NULL),
+                    json_object_get_int_member_with_default(req, "priority", 0),
+                    json_object_has_member(req, "enabled"),
+                    json_object_get_boolean_member_with_default(req, "enabled", FALSE),
+                    json_object_get_boolean_member_with_default(req, "reset", FALSE),
+                    json_object_has_member(req, "restore")
+                      ? json_object_get_object_member(req, "restore") : NULL,
+                    b, err))
+    return FALSE;
+  return TRUE;
+}
+
+static gboolean _cmd_get(JsonObject *req, JsonBuilder *b, char **err)
+{
+  JsonObject *ops = json_object_has_member(req, "modules")
+    ? json_object_get_object_member(req, "modules") : NULL;
+  if(!ops || !_get(ops, b, err)) return FALSE;
+  return TRUE;
+}
+
+static gboolean _cmd_render(JsonObject *req, JsonBuilder *b, char **err)
+{
+// "draft": a slider drag's frame, on the drag pipe so the main pipe's
+// cache keeps the full frame's earlier modules for the release. "base":
+// the idle whole-image render, on the base pipe and a GPU if one is free
+  dt_engine_follower_t *f = json_object_get_boolean_member_with_default(req, "draft", FALSE) ? &_s.drag
+    : json_object_get_boolean_member_with_default(req, "base", FALSE) ? &_s.base : NULL;
+  if(f && !_follower_ready(f, err)) return FALSE;
+  dt_dev_pixelpipe_t *pipe = f ? &f->pipe : &_s.pipe;
+// a base's id, which `cancel_base` names; without one it runs to the end
+  const gint64 base_id = f == &_s.base ? json_object_get_int_member_with_default(req, "id", 0) : 0;
+  if(base_id && !_base_start(base_id))
+  {
+    *err = g_strdup("canceled");
+    return FALSE;
+  }
+// the export pipe's device priority, which allows the GPU; the full
+// pipes' allows it only with the app's GPU edits (engine.rs, gpu_edits)
+  const int devid = f == &_s.base && dt_opencl_running()
+    ? dt_opencl_lock_device(DT_DEV_PIXELPIPE_EXPORT) : DT_DEVICE_NONE;
+// "skip": ops left out of this one frame, every instance, so a slider
+// drag need not wait on grain or diffuse. a disabled piece carries
+// DT_INVALID_HASH (imageop.c, dt_iop_commit_params), which keeps these
+// frames off the full frames' cachelines. history is not touched
+  JsonArray *skip = json_object_has_member(req, "skip")
+    ? json_object_get_array_member(req, "skip") : NULL;
+  typedef struct { dt_dev_pixelpipe_iop_t *piece; dt_hash_t hash; } skipped_t;
+  GArray *skipped = g_array_new(FALSE, FALSE, sizeof(skipped_t));
+  for(GList *n = skip ? pipe->nodes : NULL; n; n = g_list_next(n))
+  {
+    dt_dev_pixelpipe_iop_t *piece = n->data;
+    if(!piece->enabled) continue;
+    for(guint k = 0; k < json_array_get_length(skip); k++)
+      if(!g_strcmp0(piece->module->op, json_array_get_string_element(skip, k)))
+      {
+        const skipped_t s = { piece, piece->hash };
+        g_array_append_val(skipped, s);
+        piece->enabled = FALSE;
+        piece->hash = DT_INVALID_HASH;
+        break;
+      }
+  }
+// "have": the client's frames, by hash; one of them is named, not sent
+  JsonArray *have = json_object_has_member(req, "have")
+    ? json_object_get_array_member(req, "have") : NULL;
+  int w = 0, h = 0, ox = 0, oy = 0;
+  dt_hash_t kept = DT_INVALID_HASH;
+  const char *ppm = json_object_get_string_member_with_default(req, "out", NULL);
+  const char *rgba = json_object_get_string_member_with_default(req, "rgba", NULL);
+  preview_output_t output = { .path = rgba };
+// PPM and non-byte consumers retain their ordinary owned back buffer.
+  preview_output_t *sink = rgba && !ppm ? &output : NULL;
+  const int cl_errors = darktable.opencl->error_count;
+  const gboolean ok = _render(pipe, devid, json_object_get_int_member_with_default(req, "width", 2048),
+                              json_object_get_int_member_with_default(req, "height", 2048),
+                              json_object_get_double_member_with_default(req, "scale", 0.0),
+                              json_object_get_int_member_with_default(req, "x", 0),
+                              json_object_get_int_member_with_default(req, "y", 0),
+                              have, &w, &h, &ox, &oy, &kept, sink, err);
+  if(base_id && _base_end() && !ok)
+  {
+    // a stop on the GPU leaves the previous module's cacheline holding a
+    // hash but no pixels: its data was on the device only, and the early
+    // shutdown test releases it without invalidating the line
+    // (pixelpipe_hb.c, _pipe_has_shutdown in _dev_pixelpipe_process_rec).
+    // the darkroom rebuilds its pipes after such a stop; this one is kept.
+    // a CPU's lines are written whole, so they stay
+    if(devid > DT_DEVICE_CPU) dt_dev_pixelpipe_cache_flush(pipe);
+    g_free(*err);
+    *err = g_strdup("canceled");
+  }
+  for(guint k = 0; k < skipped->len; k++)
+  {
+    const skipped_t *s = &g_array_index(skipped, skipped_t, k);
+    s->piece->enabled = TRUE;
+    s->piece->hash = s->hash;
+  }
+  g_array_free(skipped, TRUE);
+  if(devid > DT_DEVICE_CPU) dt_opencl_unlock_device(devid);
+  if(!ok) return FALSE;
+// the image's size at 100%, after every geometry change, so a client
+// can place a zoomed window
+// a pipe that failed on its device and was rerun on the CPU
+// (pixelpipe_hb.c, dt_dev_pixelpipe_process); the GPU check reads it
+  _add_int(b, "cl_errors", darktable.opencl->error_count - cl_errors);
+  json_builder_set_member_name(b, "full_width");
+  json_builder_add_int_value(b, pipe->processed_width);
+  json_builder_set_member_name(b, "full_height");
+  json_builder_add_int_value(b, pipe->processed_height);
+  json_builder_set_member_name(b, "x");
+  json_builder_add_int_value(b, ox);
+  json_builder_set_member_name(b, "y");
+  json_builder_add_int_value(b, oy);
+  const double process_ms = _ms_since(_req_t0);
+  if(kept != DT_INVALID_HASH)
+  {
+    // a frame of no size, with the hash of the one the client holds
+    json_builder_set_member_name(b, "width");
+    json_builder_add_int_value(b, 0);
+    json_builder_set_member_name(b, "height");
+    json_builder_add_int_value(b, 0);
+    gchar *hash = g_strdup_printf("%016" PRIx64, kept);
+    _add_string(b, "hash", hash);
+    g_free(hash);
+    json_builder_set_member_name(b, "kept");
+    json_builder_add_boolean_value(b, TRUE);
+    json_builder_set_member_name(b, "process_ms");
+    json_builder_add_double_value(b, process_ms);
+  }
+  else
+  {
+    if(ppm && !_write_ppm(ppm, pipe->backbuf, w, h))
+    {
+      *err = g_strdup_printf("could not write '%s'", ppm);
+      return FALSE;
+    }
+    const gint64 t1 = g_get_monotonic_time();
+    double output_ms[4] = {0};
+    if(sink) memcpy(output_ms, output.timings, sizeof(output_ms));
+    if(rgba && !sink && !_write_rgba(rgba, pipe->backbuf, w, h, output_ms))
+    {
+      *err = g_strdup_printf("could not write '%s'", rgba);
+      return FALSE;
+    }
+    json_builder_set_member_name(b, "width");
+    json_builder_add_int_value(b, w);
+    json_builder_set_member_name(b, "height");
+    json_builder_add_int_value(b, h);
+    // the frame's hash, the same for one rendered again with nothing
+    // changed: a client can tell that frame from a new one
+    gchar *hash = g_strdup_printf("%016" PRIx64, _frame_hash(pipe->backbuf_hash));
+    _add_string(b, "hash", hash);
+    g_free(hash);
+    json_builder_set_member_name(b, "process_ms");
+    json_builder_add_double_value(b, process_ms);
+    json_builder_set_member_name(b, "write_ms");
+    json_builder_add_double_value(b, _ms_since(t1));
+    if(sink)
+    {
+      // This output work is already included in process_ms, not write_ms.
+      json_builder_set_member_name(b, "process_output_ms");
+      json_builder_add_double_value(b, output.elapsed_ms);
+    }
+    if(rgba)
+    {
+      const char *keys[] = { "allocate_ms", "convert_ms", "file_ms", "free_ms" };
+      json_builder_set_member_name(b, "output_ms");
+      json_builder_begin_object(b);
+      for(size_t k = 0; k < G_N_ELEMENTS(keys); k++)
+      {
+        json_builder_set_member_name(b, keys[k]);
+        json_builder_add_double_value(b, output_ms[k]);
+      }
+      json_builder_end_object(b);
+    }
+  }
+  _settle(pipe);
+  return TRUE;
+}
+
+static gboolean _cmd_mask(JsonObject *req, JsonBuilder *b, char **err)
+{
+  const char *name = json_object_get_string_member_with_default(req, "name", NULL);
+  JsonArray *shapes = json_object_has_member(req, "shapes")
+    ? json_object_get_array_member(req, "shapes") : NULL;
+  if(!name || !_mask(name, shapes, err)) return FALSE;
+  return TRUE;
+}
+
+static gboolean _cmd_combine(JsonObject *req, JsonBuilder *b, char **err)
+{
+  const char *name = json_object_get_string_member_with_default(req, "name", NULL);
+  JsonArray *members = json_object_has_member(req, "members")
+    ? json_object_get_array_member(req, "members") : NULL;
+  JsonNode *rn = json_object_get_member(req, "ranges");
+  JsonArray *ranges = rn && JSON_NODE_HOLDS_ARRAY(rn) ? json_node_get_array(rn) : NULL;
+  if(!name || !_combine(name, members, ranges, err)) return FALSE;
+  return TRUE;
+}
+
+static gboolean _cmd_spots(JsonObject *req, JsonBuilder *b, char **err)
+{
+// with `spots`, they replace the image's; the reply is them as kept
+  if(json_object_has_member(req, "spots")
+     && !_spots_set(json_object_get_array_member(req, "spots"), err))
+    return FALSE;
+  if(!_spots_json(b, err)) return FALSE;
+  return TRUE;
+}
+
+static gboolean _cmd_spots_enable(JsonObject *req, JsonBuilder *b, char **err)
+{
+  if(!_spots_enable(json_object_get_boolean_member_with_default(req, "on", TRUE), err)) return FALSE;
+  return TRUE;
+}
+
+static gboolean _cmd_spot_source(JsonObject *req, JsonBuilder *b, char **err)
+{
+  JsonObject *spot = json_object_has_member(req, "spot") ? json_object_get_object_member(req, "spot") : NULL;
+  if(!spot)
+  {
+    *err = g_strdup("no spot given");
+    return FALSE;
+  }
+  if(!_spot_source(spot, b, err)) return FALSE;
+  return TRUE;
+}
+
+static gboolean _cmd_masks(JsonObject *req, JsonBuilder *b, char **err)
+{
+  JsonObject *fields = json_object_has_member(req, "fields")
+    ? json_object_get_object_member(req, "fields") : NULL;
+  if(!_masks(fields, b, err)) return FALSE;
+  return TRUE;
+}
+
+static gboolean _cmd_sample(JsonObject *req, JsonBuilder *b, char **err)
+{
+  if(!_sample(json_object_get_double_member_with_default(req, "x", 0.5),
+              json_object_get_double_member_with_default(req, "y", 0.5),
+              json_object_has_member(req, "box") && !json_object_get_null_member(req, "box")
+                ? json_object_get_array_member(req, "box") : NULL,
+              !g_strcmp0(json_object_get_string_member_with_default(req, "stage", NULL), "negadoctor")
+                ? _STAGE_NEGADOCTOR : _STAGE_ANCHOR,
+              b, err))
+    return FALSE;
+  return TRUE;
+}
+
+static gboolean _cmd_tone_key(JsonObject *req, JsonBuilder *b, char **err)
+{
+  if(!_tone_key(b, err)) return FALSE;
+  return TRUE;
+}
+
+static gboolean _cmd_agx_auto(JsonObject *req, JsonBuilder *b, char **err)
+{
+  if(!_agx_auto(b, err)) return FALSE;
+  return TRUE;
+}
+
+static gboolean _cmd_upright(JsonObject *req, JsonBuilder *b, char **err)
+{
+  JsonArray *guides = json_object_has_member(req, "guides")
+    ? json_object_get_array_member(req, "guides") : NULL;
+  if(!_upright(json_object_get_string_member_with_default(req, "mode", "auto"), guides,
+               json_object_get_double_member_with_default(req, "aspect", 1.0), b, err))
+    return FALSE;
+  return TRUE;
+}
+
+static gboolean _cmd_points(JsonObject *req, JsonBuilder *b, char **err)
+{
+  _points(json_object_has_member(req, "points") ? json_object_get_array_member(req, "points") : NULL,
+          !g_strcmp0(json_object_get_string_member_with_default(req, "to", "shown"), "shown"), b);
+  return TRUE;
+}
+
+static gboolean _cmd_ai_object(JsonObject *req, JsonBuilder *b, char **err)
+{
+#ifdef HAVE_AI
+  if(!_ai_select(req, b, err)) return FALSE;
+#else
+  *err = g_strdup("this engine was built without AI (USE_AI=OFF)");
+  return FALSE;
+#endif
+  return TRUE;
+}
+
+static gboolean _cmd_ai_denoise(JsonObject *req, JsonBuilder *b, char **err)
+{
+#ifdef HAVE_AI
+  if(!_ai_denoise(json_object_get_double_member_with_default(req, "strength", 1.0),
+                  json_object_get_int_member_with_default(req, "tag", 0), b, err))
+    return FALSE;
+#else
+  *err = g_strdup("this engine was built without AI (USE_AI=OFF)");
+  return FALSE;
+#endif
+  return TRUE;
+}
+
+static gboolean _cmd_ai_denoise_preview(JsonObject *req, JsonBuilder *b, char **err)
+{
+#ifdef HAVE_AI
+  if(!_ai_denoise_preview(json_object_get_double_member_with_default(req, "u", 0.5),
+                          json_object_get_double_member_with_default(req, "v", 0.5),
+                          json_object_get_int_member_with_default(req, "size", 512),
+                          json_object_get_string_member_with_default(req, "out", NULL), b, err))
+    return FALSE;
+#else
+  *err = g_strdup("this engine was built without AI (USE_AI=OFF)");
+  return FALSE;
+#endif
+  return TRUE;
+}
+
+static gboolean _cmd_ai_depth(JsonObject *req, JsonBuilder *b, char **err)
+{
+#ifdef HAVE_AI
+  if(!_ai_select(req, b, err)) return FALSE;
+#else
+  *err = g_strdup("this engine was built without AI (USE_AI=OFF)");
+  return FALSE;
+#endif
+  return TRUE;
+}
+
+static gboolean _cmd_ai_mask(JsonObject *req, JsonBuilder *b, char **err)
+{
+#ifdef HAVE_AI
+  if(!_ai_select(req, b, err)) return FALSE;
+#else
+  *err = g_strdup("this engine was built without AI (USE_AI=OFF)");
+  return FALSE;
+#endif
+  return TRUE;
+}
+
+static gboolean _cmd_range_map(JsonObject *req, JsonBuilder *b, char **err)
+{
+  JsonArray *ranges = json_object_has_member(req, "ranges")
+    ? json_object_get_array_member(req, "ranges") : NULL;
+  const char *dest = json_object_get_string_member_with_default(req, "out", NULL);
+  const int w = json_object_get_int_member_with_default(req, "width", 320);
+  const int h = json_object_get_int_member_with_default(req, "height", 213);
+  if(!dest || !_range_map(ranges, w, h, dest, err)) return FALSE;
+  json_builder_set_member_name(b, "width");
+  json_builder_add_int_value(b, w);
+  json_builder_set_member_name(b, "height");
+  json_builder_add_int_value(b, h);
+  return TRUE;
+}
+
+static gboolean _cmd_zones(JsonObject *req, JsonBuilder *b, char **err)
+{
+  const char *dest = json_object_get_string_member_with_default(req, "out", NULL);
+  const int w = json_object_get_int_member_with_default(req, "width", 320);
+  const int h = json_object_get_int_member_with_default(req, "height", 213);
+  const float tw = CLAMP(json_object_get_double_member_with_default(req, "transition", 0.5), 0.05, 1.0);
+  const char *st = json_object_get_string_member_with_default(req, "stage", "before");
+  const _stage_t stage = !g_strcmp0(st, "after") ? _STAGE_TONEMAPPER
+    : !g_strcmp0(st, "unplaced") ? _STAGE_UNPLACED : _STAGE_ANCHOR;
+  if(!dest || w < 1 || h < 1 || !_zones(w, h, tw, stage, dest, b, err)) return FALSE;
+  json_builder_set_member_name(b, "width");
+  json_builder_add_int_value(b, w);
+  json_builder_set_member_name(b, "height");
+  json_builder_add_int_value(b, h);
+  return TRUE;
+}
+
+static gboolean _cmd_mask_map(JsonObject *req, JsonBuilder *b, char **err)
+{
+  const char *name = json_object_get_string_member_with_default(req, "name", NULL);
+  const char *op = json_object_get_string_member_with_default(req, "op", NULL);
+  const char *dest = json_object_get_string_member_with_default(req, "out", NULL);
+  int w = json_object_get_int_member_with_default(req, "width", 320);
+  int h = json_object_get_int_member_with_default(req, "height", 213);
+// a view, as `render` takes one: the map is of that window
+  const double scale = json_object_get_double_member_with_default(req, "scale", 0.0);
+  const int x = json_object_get_int_member_with_default(req, "x", 0);
+  const int y = json_object_get_int_member_with_default(req, "y", 0);
+  if((!name && !op) || !dest || !_mask_map(name, op, &w, &h, scale, x, y, dest, err)) return FALSE;
+  json_builder_set_member_name(b, "width");
+  json_builder_add_int_value(b, w);
+  json_builder_set_member_name(b, "height");
+  json_builder_add_int_value(b, h);
+  return TRUE;
+}
+
+static gboolean _cmd_mask_rename(JsonObject *req, JsonBuilder *b, char **err)
+{
+  const char *name = json_object_get_string_member_with_default(req, "name", NULL);
+  const char *to = json_object_get_string_member_with_default(req, "to", NULL);
+  if(!name || !_mask_rename(name, to, err)) return FALSE;
+  return TRUE;
+}
+
+static gboolean _cmd_mask_delete(JsonObject *req, JsonBuilder *b, char **err)
+{
+  const char *name = json_object_get_string_member_with_default(req, "name", NULL);
+  if(!name || !_mask_delete(name, err)) return FALSE;
+  return TRUE;
+}
+
+static gboolean _cmd_look(JsonObject *req, JsonBuilder *b, char **err)
+{
+  const char *path = json_object_get_string_member_with_default(req, "path", NULL);
+  if(!_look(path, err)) return FALSE;
+  json_builder_set_member_name(b, "look");
+  const char *name = _look_name();
+  if(name) json_builder_add_string_value(b, name); else json_builder_add_null_value(b);
+  return TRUE;
+}
+
+static gboolean _cmd_agx_presets(JsonObject *req, JsonBuilder *b, char **err)
+{
+  if(!_agx_presets(req, b, err)) return FALSE;
+  return TRUE;
+}
+
+static gboolean _cmd_look_amount(JsonObject *req, JsonBuilder *b, char **err)
+{
+  _look_amount(json_object_get_double_member_with_default(req, "amount", 100.0));
+  return TRUE;
+}
+
+static gboolean _cmd_preview(JsonObject *req, JsonBuilder *b, char **err)
+{
+  int w = 0, h = 0;
+  const char *rgba = json_object_get_string_member_with_default(req, "rgba", NULL);
+  if(!rgba || !_preview(req, &w, &h, err)) return FALSE;
+  if(!_write_rgba(rgba, _s.ppipe.backbuf, w, h, NULL))
+  {
+    *err = g_strdup_printf("could not write '%s'", rgba);
+    return FALSE;
+  }
+  _settle(&_s.ppipe);
+  json_builder_set_member_name(b, "width");
+  json_builder_add_int_value(b, w);
+  json_builder_set_member_name(b, "height");
+  json_builder_add_int_value(b, h);
+  return TRUE;
+}
+
+static gboolean _cmd_save(JsonObject *req, JsonBuilder *b, char **err)
+{
+  if(!_save(err)) return FALSE;
+  json_builder_set_member_name(b, "edited");
+  json_builder_add_boolean_value(b, _s.open && dt_image_altered(_s.imgid));
+  return TRUE;
+}
+
+// the user's first change to a new photo: what is unsaved of the
+// defaults goes into the baseline first, and later saves leave it be
+static gboolean _cmd_baseline_end(JsonObject *req, JsonBuilder *b, char **err)
+{
+  if(_s.open && _s.baseline && _s.unsaved && !_s.before && !_save(err)) return FALSE;
+  _s.baseline = FALSE;
+  return TRUE;
+}
+
+static gboolean _cmd_before(JsonObject *req, JsonBuilder *b, char **err)
+{
+  const gboolean on = json_object_get_boolean_member_with_default(req, "on", FALSE);
+// the client sends this ahead of the Before view's settings, so the
+// edit is still here for export to find in the library (_export)
+  if(on && !_s.before && _s.open && _s.unsaved) dt_dev_write_history_ext(&_s.dev, _s.imgid);
+  _s.before = on;
+  return TRUE;
+}
+
+static gboolean _cmd_close(JsonObject *req, JsonBuilder *b, char **err)
+{
+  _close_session();
+  return TRUE;
+}
+
+static gboolean _cmd_quit(JsonObject *req, JsonBuilder *b, char **err)
+{
+  _save_pending();
+  _close_session();
+  return TRUE;
+}
+
+// the commands the stdin reader and the export pool answer themselves
+// (_read_requests), listed so the table names every command. one that comes
+// here anyway is as unknown as before
+static gboolean _cmd_reader_only(JsonObject *req, JsonBuilder *b, char **err)
+{
+  *err = g_strdup_printf("unknown cmd '%s'", json_object_get_string_member(req, "cmd"));
+  return FALSE;
+}
+
+static const eng_cmd_t _commands[] =
+{
+  { "open", _cmd_open, 0 },
+  { "history", _cmd_history, 0 },
+  { "folder", _cmd_folder, 0 },
+  { "import", _cmd_import, 0 },
+  { "thumb", _cmd_thumb, 0 },
+  { "prefetch", _cmd_prefetch, 0 },
+  { "meta", _cmd_meta, 0 },
+  { "keywords", _cmd_keywords, 0 },
+  { "ai_accel", _cmd_ai_accel, 0 },
+  { "opencl", _cmd_opencl, 0 },
+  { "parity", _cmd_parity, 0 },
+  { "keywords_set", _cmd_keywords_set, 0 },
+  { "capture_times", _cmd_capture_times, 0 },
+  { "meta_set", _cmd_meta_set, 0 },
+  { "export", _cmd_export, 0 },
+  { "print", _cmd_print, 0 },
+  { "print_profiles", _cmd_print_profiles, 0 },
+  { "print_profile_add", _cmd_print_profile_add, 0 },
+  { "printers", _cmd_printers, 0 },
+  { "printer", _cmd_printer, 0 },
+  { "softproof", _cmd_softproof, 0 },
+  { "export_hold", _cmd_export_hold, 0 },
+  { "fonts", _cmd_fonts, 0 },
+  { "spektra_stocks", _cmd_spektra_stocks, 0 },
+  { "spektra_fetch", _cmd_spektra_fetch, 0 },
+  { "copy", _cmd_copy, 0 },
+  { "remove_copy", _cmd_remove_copy, 0 },
+  { "forget", _cmd_forget, 0 },
+  { "sidecars", _cmd_sidecars, 0 },
+  { "version", _cmd_version, 0 },
+  { "hdr_merge", _cmd_hdr_merge, 0 },
+#ifdef HAVE_PANO
+  { "pano_merge", _cmd_pano_merge, 0 },
+  { "pano_preview", _cmd_pano_merge, 0 },
+#endif
+  { "unpack", _cmd_unpack, 0 },
+  { "style_forget", _cmd_style_forget, 0 },
+  { "paste_batch", _cmd_paste_batch, 0 },
+  { "set", _cmd_set, _CMD_NEEDS_OPEN | _CMD_EDITS },
+  { "color_profiles", _cmd_color_profiles, _CMD_NEEDS_OPEN },
+  { "lenses", _cmd_lenses, _CMD_NEEDS_OPEN },
+  { "module_state", _cmd_module_state, _CMD_NEEDS_OPEN },
+  { "get", _cmd_get, _CMD_NEEDS_OPEN },
+  { "render", _cmd_render, _CMD_NEEDS_OPEN },
+  { "mask", _cmd_mask, _CMD_NEEDS_OPEN | _CMD_EDITS },
+  { "combine", _cmd_combine, _CMD_NEEDS_OPEN | _CMD_EDITS },
+  { "spots", _cmd_spots, _CMD_NEEDS_OPEN | _CMD_EDITS },
+  { "spots_enable", _cmd_spots_enable, _CMD_NEEDS_OPEN | _CMD_EDITS },
+  { "spot_source", _cmd_spot_source, _CMD_NEEDS_OPEN },
+  { "masks", _cmd_masks, _CMD_NEEDS_OPEN },
+  { "sample", _cmd_sample, _CMD_NEEDS_OPEN },
+  { "tone_key", _cmd_tone_key, _CMD_NEEDS_OPEN },
+  { "agx_auto", _cmd_agx_auto, _CMD_NEEDS_OPEN },
+  { "upright", _cmd_upright, _CMD_NEEDS_OPEN },
+  { "points", _cmd_points, _CMD_NEEDS_OPEN },
+  { "ai_object", _cmd_ai_object, _CMD_NEEDS_OPEN },
+  { "ai_denoise", _cmd_ai_denoise, _CMD_NEEDS_OPEN },
+  { "ai_denoise_preview", _cmd_ai_denoise_preview, _CMD_NEEDS_OPEN },
+  { "ai_depth", _cmd_ai_depth, _CMD_NEEDS_OPEN },
+  { "ai_mask", _cmd_ai_mask, _CMD_NEEDS_OPEN },
+  { "range_map", _cmd_range_map, _CMD_NEEDS_OPEN },
+  { "zones", _cmd_zones, _CMD_NEEDS_OPEN },
+  { "mask_map", _cmd_mask_map, _CMD_NEEDS_OPEN },
+  { "mask_rename", _cmd_mask_rename, _CMD_NEEDS_OPEN | _CMD_EDITS },
+  { "mask_delete", _cmd_mask_delete, _CMD_NEEDS_OPEN | _CMD_EDITS },
+  { "look", _cmd_look, _CMD_NEEDS_OPEN | _CMD_EDITS },
+  { "agx_presets", _cmd_agx_presets, _CMD_NEEDS_OPEN },
+  { "look_amount", _cmd_look_amount, _CMD_NEEDS_OPEN | _CMD_EDITS },
+  { "preview", _cmd_preview, _CMD_NEEDS_OPEN },
+  { "save", _cmd_save, _CMD_NEEDS_OPEN },
+  { "baseline_end", _cmd_baseline_end, _CMD_NEEDS_OPEN },
+  { "before", _cmd_before, _CMD_NEEDS_OPEN },
+  { "close", _cmd_close, _CMD_NEEDS_OPEN },
+  { "quit", _cmd_quit, 0 },
+  { "cancel_base", _cmd_reader_only, _CMD_NEEDS_OPEN },
+  { "export_release", _cmd_reader_only, _CMD_NEEDS_OPEN },
+  { "merge_cancel", _cmd_reader_only, _CMD_NEEDS_OPEN },
+};
+
 static void _handle(JsonObject *req, FILE *out)
 {
   const char *cmd = json_object_has_member(req, "cmd")
     ? json_object_get_string_member(req, "cmd") : NULL;
   char *err = NULL;
   const gint64 t0 = g_get_monotonic_time();
+  _req_t0 = t0;
 
   JsonBuilder *b = json_builder_new();
   json_builder_begin_object(b);
 
-  if(!g_strcmp0(cmd, "open"))
-  {
-    const char *path = json_object_get_string_member_with_default(req, "path", NULL);
-    // the full pipe's larger cache keeps demosaic output across edits, which
-    // the preview pipe's budget does not
-    const char *kind = json_object_get_string_member_with_default(req, "pipe", "full");
-    const dt_imgid_t version = json_object_get_int_member_with_default(req, "imgid", NO_IMGID);
-    if(!path || !_open_image(path, version, kind, &err)) goto fail;
-    json_builder_set_member_name(b, "imgid");
-    json_builder_add_int_value(b, _s.imgid);
-    json_builder_set_member_name(b, "width");
-    json_builder_add_int_value(b, _s.pipe.processed_width);
-    json_builder_set_member_name(b, "height");
-    json_builder_add_int_value(b, _s.pipe.processed_height);
-    // the geometry modules ahead of flip (ashift, lens) work on the sensor
-    // frame after rawprepare's crop, in the camera's own orientation
-    json_builder_set_member_name(b, "sensor_width");
-    json_builder_add_int_value(b, _s.dev.image_storage.p_width);
-    json_builder_set_member_name(b, "sensor_height");
-    json_builder_add_int_value(b, _s.dev.image_storage.p_height);
-    json_builder_set_member_name(b, "orientation");
-    json_builder_add_int_value(b, _s.dev.image_storage.orientation);
-    // a raw gets the client's raw-only defaults, as Lightroom's do
-    json_builder_set_member_name(b, "raw");
-    json_builder_add_boolean_value(b, dt_image_is_raw(&_s.dev.image_storage));
-    json_builder_set_member_name(b, "look");
-    const char *look = _look_name();
-    if(look) json_builder_add_string_value(b, look); else json_builder_add_null_value(b);
-    json_builder_set_member_name(b, "look_amount");
-    json_builder_add_double_value(b, _look_amount_value());
-    // whether its history holds anything yet, here or in darktable
-    json_builder_set_member_name(b, "edited");
-    json_builder_add_boolean_value(b, dt_image_altered(_s.imgid));
-    // no history at all before this open: the client's new-photo defaults
-    // apply. a photo stamped with them reads unedited, so "edited" cannot say
-    json_builder_set_member_name(b, "fresh");
-    json_builder_add_boolean_value(b, _s.fresh);
-  }
-  else if(!g_strcmp0(cmd, "history"))
-  {
-    // the open image's darktable history, oldest first, as darktable's
-    // history module lists it: the module, its instance label, on or off
-    if(!_s.open) { err = g_strdup("no image open"); goto fail; }
-    json_builder_set_member_name(b, "items");
-    json_builder_begin_array(b);
-    // with "saved", the history as the last save stored it, compressed; the
-    // develop's own keeps every change of the session (_save())
-    if(json_object_get_boolean_member_with_default(req, "saved", FALSE))
-      _saved_history(b);
-    else
+  const eng_cmd_t *entry = NULL;
+  for(size_t k = 0; k < G_N_ELEMENTS(_commands); k++)
+    if(!g_strcmp0(cmd, _commands[k].name))
     {
-      int k = 0;
-      for(GList *l = _s.dev.history; l && k < _s.dev.history_end; l = g_list_next(l), k++)
-      {
-        const dt_dev_history_item_t *h = l->data;
-        _history_item(b, h->op_name, h->module->name(), h->multi_name, h->multi_name_hand_edited,
-                      h->enabled, h->multi_priority, h->module);
-      }
+      entry = &_commands[k];
+      break;
     }
-    json_builder_end_array(b);
-  }
-  else if(!g_strcmp0(cmd, "folder"))
-  {
-    const char *dir = json_object_get_string_member_with_default(req, "path", NULL);
-    const gboolean recursive = json_object_get_boolean_member_with_default(req, "recursive", FALSE);
-    if(!dir || !_folder(dir, recursive, b, &err)) goto fail;
-  }
-  else if(!g_strcmp0(cmd, "import"))
-    _import_files(req, b, FALSE);
-  else if(!g_strcmp0(cmd, "thumb"))
-  {
-    const char *dest = json_object_get_string_member_with_default(req, "out", NULL);
-    if(!dest || !_thumb(json_object_get_int_member_with_default(req, "imgid", 0),
-                        json_object_get_int_member_with_default(req, "size", 256),
-                        json_object_get_boolean_member_with_default(req, "proof", FALSE), dest, b, &err))
-      goto fail;
-  }
-  else if(!g_strcmp0(cmd, "prefetch"))
-  {
-    // the reply does not wait for the decode. `imgids` in the order to
-    // decode them, or one `imgid`
-    JsonArray *ids = json_object_has_member(req, "imgids") ? json_object_get_array_member(req, "imgids") : NULL;
-    const guint n = ids ? MIN(json_array_get_length(ids), 16) : 1;
-    dt_imgid_t list[16];
-    for(guint k = 0; k < n; k++)
-      list[k] = ids ? json_array_get_int_element(ids, k) : json_object_get_int_member_with_default(req, "imgid", 0);
-    _prefetch(list, n);
-  }
-  else if(!g_strcmp0(cmd, "meta"))
-  {
-    json_builder_set_member_name(b, "image");
-    _image_json(b, json_object_get_int_member_with_default(req, "imgid", 0), TRUE);
-  }
-  else if(!g_strcmp0(cmd, "keywords"))
-    _all_keywords(b);
-  else if(!g_strcmp0(cmd, "ai_accel"))
-  {
-#ifdef HAVE_AI
-    _ai_accel(b);
-#else
-    json_builder_set_member_name(b, "providers");
-    json_builder_begin_array(b);
-    json_builder_end_array(b);
-#endif
-  }
-  else if(!g_strcmp0(cmd, "opencl"))
-    _opencl(b);
-  else if(!g_strcmp0(cmd, "parity"))
-  {
-    if(!_parity(req, b, &err)) goto fail;
-  }
-  else if(!g_strcmp0(cmd, "keywords_set"))
-  {
-    if(!_keywords_set(json_object_get_int_member_with_default(req, "imgid", 0), req, b, &err)) goto fail;
-  }
-  else if(!g_strcmp0(cmd, "capture_times"))
-  {
-    if(!_capture_times(req, b, &err)) goto fail;
-  }
-  else if(!g_strcmp0(cmd, "meta_set"))
-  {
-    if(!_meta_set(json_object_get_int_member_with_default(req, "imgid", 0), req, &err)) goto fail;
-  }
-  else if(!g_strcmp0(cmd, "export"))
-  {
-    const dt_imgid_t imgid = json_object_get_int_member_with_default(req, "imgid", 0);
-    // the open image's latest edits may not be in the library yet, and
-    // export reads its history from there; the frame's size needs its crop.
-    // in the Before view they went in as it came on ("before" below)
-    if(_s.open && _s.imgid == imgid && !_s.before) dt_dev_write_history_ext(&_s.dev, imgid);
-    if(!_export(imgid, req, &err)) goto fail;
-  }
-  // printing (print.c): an untagged `print` renders in the main loop, as
-  // `export` does; the app's are tagged and run on the export thread
-  else if(!g_strcmp0(cmd, "print") && json_object_has_member(req, "pages"))
-  {
-    // the open photo's latest edits go to the library first, as for one photo
-    if(_s.open && !_s.before) dt_dev_write_history_ext(&_s.dev, _s.imgid);
-    if(!print_sheet(req, NULL, NULL, NULL, NULL, b, &err)) goto fail;
-  }
-  else if(!g_strcmp0(cmd, "print"))
-  {
-    const dt_imgid_t imgid = json_object_get_int_member_with_default(req, "imgid", 0);
-    if(_s.open && _s.imgid == imgid && !_s.before) dt_dev_write_history_ext(&_s.dev, imgid);
-    if(!print_image(imgid, req, b, &err)) goto fail;
-  }
-  else if(!g_strcmp0(cmd, "print_profiles"))
-  {
-    json_builder_set_member_name(b, "profiles");
-    print_profiles(b);
-  }
-  else if(!g_strcmp0(cmd, "print_profile_add"))
-  {
-    if(!print_profile_add(json_object_get_string_member_with_default(req, "path", NULL), b, &err)) goto fail;
-  }
-  else if(!g_strcmp0(cmd, "printers"))
-  {
-    json_builder_set_member_name(b, "available");
-    json_builder_add_boolean_value(b, print_available());
-    json_builder_set_member_name(b, "printers");
-    print_printers(b);
-  }
-  else if(!g_strcmp0(cmd, "printer"))
-  {
-    if(!print_printer(json_object_get_string_member_with_default(req, "name", NULL), b, &err)) goto fail;
-  }
-  else if(!g_strcmp0(cmd, "softproof"))
-  {
-    gboolean changed = FALSE;
-    if(!print_softproof(json_object_get_string_member_with_default(req, "mode", "off"),
-                        json_object_get_string_member_with_default(req, "profile", NULL),
-                        json_object_get_int_member_with_default(req, "intent", DT_INTENT_PERCEPTUAL),
-                        &changed, &err))
-      goto fail;
-    // colorout builds its proofing transform when committed, and the mode
-    // is in neither its params nor their hash (colorout.c, commit_params),
-    // so every pipe commits it again and drops what it kept from colorout
-    // on, as darktable's soft proof button does (darkroom.c)
-    char *ignored = NULL;
-    const dt_iop_module_t *cout = changed && _s.open ? _module("colorout", &ignored) : NULL;
-    g_free(ignored);
-    if(cout)
-    {
-      _invalidate_from(cout->iop_order, "softproof ");
-      _changed(DT_DEV_PIPE_SYNCH);
-    }
-    json_builder_set_member_name(b, "changed");
-    json_builder_add_boolean_value(b, changed);
-  }
-  // the photos a background export (tagged `export`s of this `job`) is to
-  // render, each as its edit is now
-  else if(!g_strcmp0(cmd, "export_hold"))
-  {
-    if(_s.open && !_s.before) dt_dev_write_history_ext(&_s.dev, _s.imgid);
-    _hold(json_object_get_int_member_with_default(req, "job", 0),
-          json_object_has_member(req, "imgids") ? json_object_get_array_member(req, "imgids") : NULL,
-          _s.open ? _s.imgid : NO_IMGID);
-  }
-  else if(!g_strcmp0(cmd, "fonts"))
-  {
-    _fonts(b);
-  }
-  else if(!g_strcmp0(cmd, "spektra_stocks"))
-    _spektra_stocks(b);
-  else if(!g_strcmp0(cmd, "spektra_fetch"))
-  {
-    if(!_spektra_fetch(req, b, &err)) goto fail;
-  }
-  else if(!g_strcmp0(cmd, "copy"))
-  {
-    if(!_copy(json_object_get_int_member_with_default(req, "imgid", 0), b, &err)) goto fail;
-  }
-  else if(!g_strcmp0(cmd, "remove_copy"))
-  {
-    if(!_remove_copy(json_object_get_int_member_with_default(req, "imgid", 0), b, &err)) goto fail;
-  }
-  else if(!g_strcmp0(cmd, "forget"))
-  {
-    if(!_forget(json_object_get_int_member_with_default(req, "imgid", 0), &err)) goto fail;
-  }
-  else if(!g_strcmp0(cmd, "sidecars"))
-  {
-    if(!_sidecars(json_object_get_int_member_with_default(req, "imgid", 0), b, &err)) goto fail;
-  }
-  else if(!g_strcmp0(cmd, "version"))
-  {
-    // darktable's own, which picks the AI models' release
-    json_builder_set_member_name(b, "version");
-    json_builder_add_string_value(b, darktable_package_version);
-    // whether Merge to HDR can align brackets: darktable built with OpenCV
-    json_builder_set_member_name(b, "hdr_align");
-    json_builder_add_boolean_value(b, hdr_merge_can_align());
-    // whether Panorama Merge can stitch: the engine built with OpenCV's
-    // stitching module (CMakeLists.txt)
-    json_builder_set_member_name(b, "pano");
-#ifdef HAVE_PANO
-    json_builder_add_boolean_value(b, TRUE);
-#else
-    json_builder_add_boolean_value(b, FALSE);
-#endif
-  }
-  else if(!g_strcmp0(cmd, "hdr_merge"))
-  {
-    if(!_hdr_merge(req, b, NULL, &err)) goto fail;
-  }
-#ifdef HAVE_PANO
-  else if(!g_strcmp0(cmd, "pano_merge") || !g_strcmp0(cmd, "pano_preview"))
-  {
-    if(!_pano_merge(req, b, NULL, &err)) goto fail;
-  }
-#endif
-  else if(!g_strcmp0(cmd, "unpack"))
-  {
-    if(!_unpack(json_object_get_string_member_with_default(req, "archive", NULL),
-                json_object_get_string_member_with_default(req, "dir", NULL), &err)) goto fail;
-  }
-  // the styles outlive this process (data.db), and _style_items() keeps the
-  // one it has by a name: a look imported under that name must replace it
-  else if(!g_strcmp0(cmd, "style_forget"))
-  {
-    const char *name = json_object_get_string_member_with_default(req, "name", NULL);
-    if(!name) goto fail;
-    dt_styles_delete_by_name_adv(name, FALSE, FALSE);
-  }
-  else if(!g_strcmp0(cmd, "paste_batch"))
-  {
-    if(!_paste_batch(req, b, &err)) goto fail;
-  }
-  else if(!_s.open && g_strcmp0(cmd, "quit"))
+
+  // a request the table does not know, and any that needs an open photo,
+  // is refused first while none is open (quit is the one that never is)
+  if((!entry || (entry->flags & _CMD_NEEDS_OPEN)) && !_s.open && g_strcmp0(cmd, "quit"))
   {
     err = g_strdup("no image open");
     goto fail;
   }
-  else if(!g_strcmp0(cmd, "set"))
-  {
-    const char *op = json_object_get_string_member_with_default(req, "op", NULL);
-    const char *field = json_object_get_string_member_with_default(req, "field", NULL);
-    JsonNode *value = json_object_get_member(req, "value");
-    const gboolean has_enabled = json_object_has_member(req, "enabled");
-    const gboolean enabled = has_enabled && json_object_get_boolean_member(req, "enabled");
-    JsonObject *params = json_object_has_member(req, "params")
-      ? json_object_get_object_member(req, "params") : NULL;
-    const char *after = json_object_get_string_member_with_default(req, "after", NULL);
-    const char *before = json_object_get_string_member_with_default(req, "before", NULL);
-    const char *instance = json_object_get_string_member_with_default(req, "instance", NULL);
-    const char *mask = json_object_get_string_member_with_default(req, "mask", NULL);
-    const gboolean invert = json_object_get_boolean_member_with_default(req, "invert", FALSE);
-    const double opacity = json_object_get_double_member_with_default(req, "opacity", -1.0);
-    JsonObject *refine = json_object_has_member(req, "refine")
-      ? json_object_get_object_member(req, "refine") : NULL;
-    if(!op || !_set(op, field, value, params, has_enabled, enabled, after, before, instance, mask, invert, opacity,
-                    refine, &err))
-      goto fail;
-  }
-  else if(!g_strcmp0(cmd, "color_profiles"))
-  {
-    if(!_color_profiles(b, &err)) goto fail;
-  }
-  else if(!g_strcmp0(cmd, "lenses"))
-  {
-    if(!_lens_menu(b, &err)) goto fail;
-  }
-  else if(!g_strcmp0(cmd, "module_state"))
-  {
-    if(!_module_state(json_object_get_string_member_with_default(req, "op", NULL),
-                      json_object_get_int_member_with_default(req, "priority", 0),
-                      json_object_has_member(req, "enabled"),
-                      json_object_get_boolean_member_with_default(req, "enabled", FALSE),
-                      json_object_get_boolean_member_with_default(req, "reset", FALSE),
-                      json_object_has_member(req, "restore")
-                        ? json_object_get_object_member(req, "restore") : NULL,
-                      b, &err))
-      goto fail;
-  }
-  else if(!g_strcmp0(cmd, "get"))
-  {
-    JsonObject *ops = json_object_has_member(req, "modules")
-      ? json_object_get_object_member(req, "modules") : NULL;
-    if(!ops || !_get(ops, b, &err)) goto fail;
-  }
-  else if(!g_strcmp0(cmd, "render"))
-  {
-    // "draft": a slider drag's frame, on the drag pipe so the main pipe's
-    // cache keeps the full frame's earlier modules for the release. "base":
-    // the idle whole-image render, on the base pipe and a GPU if one is free
-    dt_engine_follower_t *f = json_object_get_boolean_member_with_default(req, "draft", FALSE) ? &_s.drag
-      : json_object_get_boolean_member_with_default(req, "base", FALSE) ? &_s.base : NULL;
-    if(f && !_follower_ready(f, &err)) goto fail;
-    dt_dev_pixelpipe_t *pipe = f ? &f->pipe : &_s.pipe;
-    // a base's id, which `cancel_base` names; without one it runs to the end
-    const gint64 base_id = f == &_s.base ? json_object_get_int_member_with_default(req, "id", 0) : 0;
-    if(base_id && !_base_start(base_id))
-    {
-      err = g_strdup("canceled");
-      goto fail;
-    }
-    // the export pipe's device priority, which allows the GPU; the full
-    // pipes' allows it only with the app's GPU edits (engine.rs, gpu_edits)
-    const int devid = f == &_s.base && dt_opencl_running()
-      ? dt_opencl_lock_device(DT_DEV_PIXELPIPE_EXPORT) : DT_DEVICE_NONE;
-    // "skip": ops left out of this one frame, every instance, so a slider
-    // drag need not wait on grain or diffuse. a disabled piece carries
-    // DT_INVALID_HASH (imageop.c, dt_iop_commit_params), which keeps these
-    // frames off the full frames' cachelines. history is not touched
-    JsonArray *skip = json_object_has_member(req, "skip")
-      ? json_object_get_array_member(req, "skip") : NULL;
-    typedef struct { dt_dev_pixelpipe_iop_t *piece; dt_hash_t hash; } skipped_t;
-    GArray *skipped = g_array_new(FALSE, FALSE, sizeof(skipped_t));
-    for(GList *n = skip ? pipe->nodes : NULL; n; n = g_list_next(n))
-    {
-      dt_dev_pixelpipe_iop_t *piece = n->data;
-      if(!piece->enabled) continue;
-      for(guint k = 0; k < json_array_get_length(skip); k++)
-        if(!g_strcmp0(piece->module->op, json_array_get_string_element(skip, k)))
-        {
-          const skipped_t s = { piece, piece->hash };
-          g_array_append_val(skipped, s);
-          piece->enabled = FALSE;
-          piece->hash = DT_INVALID_HASH;
-          break;
-        }
-    }
-    // "have": the client's frames, by hash; one of them is named, not sent
-    JsonArray *have = json_object_has_member(req, "have")
-      ? json_object_get_array_member(req, "have") : NULL;
-    int w = 0, h = 0, ox = 0, oy = 0;
-    dt_hash_t kept = DT_INVALID_HASH;
-    const char *ppm = json_object_get_string_member_with_default(req, "out", NULL);
-    const char *rgba = json_object_get_string_member_with_default(req, "rgba", NULL);
-    preview_output_t output = { .path = rgba };
-    // PPM and non-byte consumers retain their ordinary owned back buffer.
-    preview_output_t *sink = rgba && !ppm ? &output : NULL;
-    const int cl_errors = darktable.opencl->error_count;
-    const gboolean ok = _render(pipe, devid, json_object_get_int_member_with_default(req, "width", 2048),
-                                json_object_get_int_member_with_default(req, "height", 2048),
-                                json_object_get_double_member_with_default(req, "scale", 0.0),
-                                json_object_get_int_member_with_default(req, "x", 0),
-                                json_object_get_int_member_with_default(req, "y", 0),
-                                have, &w, &h, &ox, &oy, &kept, sink, &err);
-    if(base_id && _base_end() && !ok)
-    {
-      // a stop on the GPU leaves the previous module's cacheline holding a
-      // hash but no pixels: its data was on the device only, and the early
-      // shutdown test releases it without invalidating the line
-      // (pixelpipe_hb.c, _pipe_has_shutdown in _dev_pixelpipe_process_rec).
-      // the darkroom rebuilds its pipes after such a stop; this one is kept.
-      // a CPU's lines are written whole, so they stay
-      if(devid > DT_DEVICE_CPU) dt_dev_pixelpipe_cache_flush(pipe);
-      g_free(err);
-      err = g_strdup("canceled");
-    }
-    for(guint k = 0; k < skipped->len; k++)
-    {
-      const skipped_t *s = &g_array_index(skipped, skipped_t, k);
-      s->piece->enabled = TRUE;
-      s->piece->hash = s->hash;
-    }
-    g_array_free(skipped, TRUE);
-    if(devid > DT_DEVICE_CPU) dt_opencl_unlock_device(devid);
-    if(!ok) goto fail;
-    // the image's size at 100%, after every geometry change, so a client
-    // can place a zoomed window
-    // a pipe that failed on its device and was rerun on the CPU
-    // (pixelpipe_hb.c, dt_dev_pixelpipe_process); the GPU check reads it
-    _add_int(b, "cl_errors", darktable.opencl->error_count - cl_errors);
-    json_builder_set_member_name(b, "full_width");
-    json_builder_add_int_value(b, pipe->processed_width);
-    json_builder_set_member_name(b, "full_height");
-    json_builder_add_int_value(b, pipe->processed_height);
-    json_builder_set_member_name(b, "x");
-    json_builder_add_int_value(b, ox);
-    json_builder_set_member_name(b, "y");
-    json_builder_add_int_value(b, oy);
-    const double process_ms = _ms_since(t0);
-    if(kept != DT_INVALID_HASH)
-    {
-      // a frame of no size, with the hash of the one the client holds
-      json_builder_set_member_name(b, "width");
-      json_builder_add_int_value(b, 0);
-      json_builder_set_member_name(b, "height");
-      json_builder_add_int_value(b, 0);
-      gchar *hash = g_strdup_printf("%016" PRIx64, kept);
-      _add_string(b, "hash", hash);
-      g_free(hash);
-      json_builder_set_member_name(b, "kept");
-      json_builder_add_boolean_value(b, TRUE);
-      json_builder_set_member_name(b, "process_ms");
-      json_builder_add_double_value(b, process_ms);
-    }
-    else
-    {
-      if(ppm && !_write_ppm(ppm, pipe->backbuf, w, h))
-      {
-        err = g_strdup_printf("could not write '%s'", ppm);
-        goto fail;
-      }
-      const gint64 t1 = g_get_monotonic_time();
-      double output_ms[4] = {0};
-      if(sink) memcpy(output_ms, output.timings, sizeof(output_ms));
-      if(rgba && !sink && !_write_rgba(rgba, pipe->backbuf, w, h, output_ms))
-      {
-        err = g_strdup_printf("could not write '%s'", rgba);
-        goto fail;
-      }
-      json_builder_set_member_name(b, "width");
-      json_builder_add_int_value(b, w);
-      json_builder_set_member_name(b, "height");
-      json_builder_add_int_value(b, h);
-      // the frame's hash, the same for one rendered again with nothing
-      // changed: a client can tell that frame from a new one
-      gchar *hash = g_strdup_printf("%016" PRIx64, _frame_hash(pipe->backbuf_hash));
-      _add_string(b, "hash", hash);
-      g_free(hash);
-      json_builder_set_member_name(b, "process_ms");
-      json_builder_add_double_value(b, process_ms);
-      json_builder_set_member_name(b, "write_ms");
-      json_builder_add_double_value(b, _ms_since(t1));
-      if(sink)
-      {
-        // This output work is already included in process_ms, not write_ms.
-        json_builder_set_member_name(b, "process_output_ms");
-        json_builder_add_double_value(b, output.elapsed_ms);
-      }
-      if(rgba)
-      {
-        const char *keys[] = { "allocate_ms", "convert_ms", "file_ms", "free_ms" };
-        json_builder_set_member_name(b, "output_ms");
-        json_builder_begin_object(b);
-        for(size_t k = 0; k < G_N_ELEMENTS(keys); k++)
-        {
-          json_builder_set_member_name(b, keys[k]);
-          json_builder_add_double_value(b, output_ms[k]);
-        }
-        json_builder_end_object(b);
-      }
-    }
-    _settle(pipe);
-  }
-  else if(!g_strcmp0(cmd, "mask"))
-  {
-    const char *name = json_object_get_string_member_with_default(req, "name", NULL);
-    JsonArray *shapes = json_object_has_member(req, "shapes")
-      ? json_object_get_array_member(req, "shapes") : NULL;
-    if(!name || !_mask(name, shapes, &err)) goto fail;
-  }
-  else if(!g_strcmp0(cmd, "combine"))
-  {
-    const char *name = json_object_get_string_member_with_default(req, "name", NULL);
-    JsonArray *members = json_object_has_member(req, "members")
-      ? json_object_get_array_member(req, "members") : NULL;
-    JsonNode *rn = json_object_get_member(req, "ranges");
-    JsonArray *ranges = rn && JSON_NODE_HOLDS_ARRAY(rn) ? json_node_get_array(rn) : NULL;
-    if(!name || !_combine(name, members, ranges, &err)) goto fail;
-  }
-  else if(!g_strcmp0(cmd, "spots"))
-  {
-    // with `spots`, they replace the image's; the reply is them as kept
-    if(json_object_has_member(req, "spots")
-       && !_spots_set(json_object_get_array_member(req, "spots"), &err))
-      goto fail;
-    if(!_spots_json(b, &err)) goto fail;
-  }
-  else if(!g_strcmp0(cmd, "spots_enable"))
-  {
-    if(!_spots_enable(json_object_get_boolean_member_with_default(req, "on", TRUE), &err)) goto fail;
-  }
-  else if(!g_strcmp0(cmd, "spot_source"))
-  {
-    JsonObject *spot = json_object_has_member(req, "spot") ? json_object_get_object_member(req, "spot") : NULL;
-    if(!spot)
-    {
-      err = g_strdup("no spot given");
-      goto fail;
-    }
-    if(!_spot_source(spot, b, &err)) goto fail;
-  }
-  else if(!g_strcmp0(cmd, "masks"))
-  {
-    JsonObject *fields = json_object_has_member(req, "fields")
-      ? json_object_get_object_member(req, "fields") : NULL;
-    if(!_masks(fields, b, &err)) goto fail;
-  }
-  else if(!g_strcmp0(cmd, "sample"))
-  {
-    if(!_sample(json_object_get_double_member_with_default(req, "x", 0.5),
-                json_object_get_double_member_with_default(req, "y", 0.5),
-                json_object_has_member(req, "box") && !json_object_get_null_member(req, "box")
-                  ? json_object_get_array_member(req, "box") : NULL,
-                !g_strcmp0(json_object_get_string_member_with_default(req, "stage", NULL), "negadoctor")
-                  ? _STAGE_NEGADOCTOR : _STAGE_ANCHOR,
-                b, &err))
-      goto fail;
-  }
-  else if(!g_strcmp0(cmd, "tone_key"))
-  {
-    if(!_tone_key(b, &err)) goto fail;
-  }
-  else if(!g_strcmp0(cmd, "agx_auto"))
-  {
-    if(!_agx_auto(b, &err)) goto fail;
-  }
-  else if(!g_strcmp0(cmd, "upright"))
-  {
-    JsonArray *guides = json_object_has_member(req, "guides")
-      ? json_object_get_array_member(req, "guides") : NULL;
-    if(!_upright(json_object_get_string_member_with_default(req, "mode", "auto"), guides,
-                 json_object_get_double_member_with_default(req, "aspect", 1.0), b, &err))
-      goto fail;
-  }
-  else if(!g_strcmp0(cmd, "points"))
-  {
-    _points(json_object_has_member(req, "points") ? json_object_get_array_member(req, "points") : NULL,
-            !g_strcmp0(json_object_get_string_member_with_default(req, "to", "shown"), "shown"), b);
-  }
-  else if(!g_strcmp0(cmd, "ai_object"))
-  {
-#ifdef HAVE_AI
-    if(!_ai_select(req, b, &err)) goto fail;
-#else
-    err = g_strdup("this engine was built without AI (USE_AI=OFF)");
-    goto fail;
-#endif
-  }
-  else if(!g_strcmp0(cmd, "ai_denoise"))
-  {
-#ifdef HAVE_AI
-    if(!_ai_denoise(json_object_get_double_member_with_default(req, "strength", 1.0),
-                    json_object_get_int_member_with_default(req, "tag", 0), b, &err))
-      goto fail;
-#else
-    err = g_strdup("this engine was built without AI (USE_AI=OFF)");
-    goto fail;
-#endif
-  }
-  else if(!g_strcmp0(cmd, "ai_denoise_preview"))
-  {
-#ifdef HAVE_AI
-    if(!_ai_denoise_preview(json_object_get_double_member_with_default(req, "u", 0.5),
-                            json_object_get_double_member_with_default(req, "v", 0.5),
-                            json_object_get_int_member_with_default(req, "size", 512),
-                            json_object_get_string_member_with_default(req, "out", NULL), b, &err))
-      goto fail;
-#else
-    err = g_strdup("this engine was built without AI (USE_AI=OFF)");
-    goto fail;
-#endif
-  }
-  else if(!g_strcmp0(cmd, "ai_depth"))
-  {
-#ifdef HAVE_AI
-    if(!_ai_select(req, b, &err)) goto fail;
-#else
-    err = g_strdup("this engine was built without AI (USE_AI=OFF)");
-    goto fail;
-#endif
-  }
-  else if(!g_strcmp0(cmd, "ai_mask"))
-  {
-#ifdef HAVE_AI
-    if(!_ai_select(req, b, &err)) goto fail;
-#else
-    err = g_strdup("this engine was built without AI (USE_AI=OFF)");
-    goto fail;
-#endif
-  }
-  else if(!g_strcmp0(cmd, "range_map"))
-  {
-    JsonArray *ranges = json_object_has_member(req, "ranges")
-      ? json_object_get_array_member(req, "ranges") : NULL;
-    const char *dest = json_object_get_string_member_with_default(req, "out", NULL);
-    const int w = json_object_get_int_member_with_default(req, "width", 320);
-    const int h = json_object_get_int_member_with_default(req, "height", 213);
-    if(!dest || !_range_map(ranges, w, h, dest, &err)) goto fail;
-    json_builder_set_member_name(b, "width");
-    json_builder_add_int_value(b, w);
-    json_builder_set_member_name(b, "height");
-    json_builder_add_int_value(b, h);
-  }
-  else if(!g_strcmp0(cmd, "zones"))
-  {
-    const char *dest = json_object_get_string_member_with_default(req, "out", NULL);
-    const int w = json_object_get_int_member_with_default(req, "width", 320);
-    const int h = json_object_get_int_member_with_default(req, "height", 213);
-    const float tw = CLAMP(json_object_get_double_member_with_default(req, "transition", 0.5), 0.05, 1.0);
-    const char *st = json_object_get_string_member_with_default(req, "stage", "before");
-    const _stage_t stage = !g_strcmp0(st, "after") ? _STAGE_TONEMAPPER
-      : !g_strcmp0(st, "unplaced") ? _STAGE_UNPLACED : _STAGE_ANCHOR;
-    if(!dest || w < 1 || h < 1 || !_zones(w, h, tw, stage, dest, b, &err)) goto fail;
-    json_builder_set_member_name(b, "width");
-    json_builder_add_int_value(b, w);
-    json_builder_set_member_name(b, "height");
-    json_builder_add_int_value(b, h);
-  }
-  else if(!g_strcmp0(cmd, "mask_map"))
-  {
-    const char *name = json_object_get_string_member_with_default(req, "name", NULL);
-    const char *op = json_object_get_string_member_with_default(req, "op", NULL);
-    const char *dest = json_object_get_string_member_with_default(req, "out", NULL);
-    int w = json_object_get_int_member_with_default(req, "width", 320);
-    int h = json_object_get_int_member_with_default(req, "height", 213);
-    // a view, as `render` takes one: the map is of that window
-    const double scale = json_object_get_double_member_with_default(req, "scale", 0.0);
-    const int x = json_object_get_int_member_with_default(req, "x", 0);
-    const int y = json_object_get_int_member_with_default(req, "y", 0);
-    if((!name && !op) || !dest || !_mask_map(name, op, &w, &h, scale, x, y, dest, &err)) goto fail;
-    json_builder_set_member_name(b, "width");
-    json_builder_add_int_value(b, w);
-    json_builder_set_member_name(b, "height");
-    json_builder_add_int_value(b, h);
-  }
-  else if(!g_strcmp0(cmd, "mask_rename"))
-  {
-    const char *name = json_object_get_string_member_with_default(req, "name", NULL);
-    const char *to = json_object_get_string_member_with_default(req, "to", NULL);
-    if(!name || !_mask_rename(name, to, &err)) goto fail;
-  }
-  else if(!g_strcmp0(cmd, "mask_delete"))
-  {
-    const char *name = json_object_get_string_member_with_default(req, "name", NULL);
-    if(!name || !_mask_delete(name, &err)) goto fail;
-  }
-  else if(!g_strcmp0(cmd, "look"))
-  {
-    const char *path = json_object_get_string_member_with_default(req, "path", NULL);
-    if(!_look(path, &err)) goto fail;
-    json_builder_set_member_name(b, "look");
-    const char *name = _look_name();
-    if(name) json_builder_add_string_value(b, name); else json_builder_add_null_value(b);
-  }
-  else if(!g_strcmp0(cmd, "agx_presets"))
-  {
-    if(!_agx_presets(req, b, &err)) goto fail;
-  }
-  else if(!g_strcmp0(cmd, "look_amount"))
-    _look_amount(json_object_get_double_member_with_default(req, "amount", 100.0));
-  else if(!g_strcmp0(cmd, "preview"))
-  {
-    int w = 0, h = 0;
-    const char *rgba = json_object_get_string_member_with_default(req, "rgba", NULL);
-    if(!rgba || !_preview(req, &w, &h, &err)) goto fail;
-    if(!_write_rgba(rgba, _s.ppipe.backbuf, w, h, NULL))
-    {
-      err = g_strdup_printf("could not write '%s'", rgba);
-      goto fail;
-    }
-    _settle(&_s.ppipe);
-    json_builder_set_member_name(b, "width");
-    json_builder_add_int_value(b, w);
-    json_builder_set_member_name(b, "height");
-    json_builder_add_int_value(b, h);
-  }
-  else if(!g_strcmp0(cmd, "save"))
-  {
-    if(!_save(&err)) goto fail;
-    json_builder_set_member_name(b, "edited");
-    json_builder_add_boolean_value(b, _s.open && dt_image_altered(_s.imgid));
-  }
-  // the user's first change to a new photo: what is unsaved of the
-  // defaults goes into the baseline first, and later saves leave it be
-  else if(!g_strcmp0(cmd, "baseline_end"))
-  {
-    if(_s.open && _s.baseline && _s.unsaved && !_s.before && !_save(&err)) goto fail;
-    _s.baseline = FALSE;
-  }
-  else if(!g_strcmp0(cmd, "before"))
-  {
-    const gboolean on = json_object_get_boolean_member_with_default(req, "on", FALSE);
-    // the client sends this ahead of the Before view's settings, so the
-    // edit is still here for export to find in the library (_export)
-    if(on && !_s.before && _s.open && _s.unsaved) dt_dev_write_history_ext(&_s.dev, _s.imgid);
-    _s.before = on;
-  }
-  else if(!g_strcmp0(cmd, "close"))
-    _close_session();
-  else if(!g_strcmp0(cmd, "quit"))
-  {
-    _save_pending();
-    _close_session();
-  }
-  else
+  if(!entry)
   {
     err = g_strdup_printf("unknown cmd '%s'", cmd ? cmd : "(none)");
     goto fail;
   }
+  if(!entry->fn(req, b, &err)) goto fail;
 
-  if(_s.open && _edits(cmd)) _s.unsaved = TRUE;
+  if(_s.open && (entry->flags & _CMD_EDITS)) _s.unsaved = TRUE;
   json_builder_set_member_name(b, "ok");
   json_builder_add_boolean_value(b, TRUE);
   json_builder_set_member_name(b, "ms");
