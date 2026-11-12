@@ -259,6 +259,8 @@ pub(crate) async fn render(
     }
     #[cfg(not(any(windows, target_os = "linux")))]
     let _ = (shared, token);
+    #[cfg(windows)]
+    let _ = token;
     #[cfg(not(windows))]
     let _ = webview;
     Ok(bindings::Frame(Response::new(out)))

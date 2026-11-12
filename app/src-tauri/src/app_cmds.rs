@@ -5,7 +5,7 @@ use crate::engine::Timing;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 use crate::typed_app::{Level, Licenses, ParityReply, Toggle};
 use tauri::{AppHandle, Manager, State};
@@ -204,11 +204,11 @@ fn report_machine_id(dir: Option<&Path>) -> Option<String> {
 
 // the web view's EGL override is kept out of the image engine
 #[cfg(target_os = "linux")]
-pub(crate) static WEBVIEW_EGL_OVERRIDE: AtomicBool = AtomicBool::new(false);
+pub(crate) static WEBVIEW_EGL_OVERRIDE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) fn webview_renderer() -> Option<renderer::Status> {
+pub(crate) fn webview_renderer() -> Option<crate::typed_app::WebviewRenderer> {
     #[cfg(target_os = "linux")]
     return renderer::status();
     #[cfg(not(target_os = "linux"))]

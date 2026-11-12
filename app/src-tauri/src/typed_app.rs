@@ -159,3 +159,17 @@ pub struct PageValues {
     pub extra: Vec<String>,
     pub prefs: Value,
 }
+
+// what Preferences shows of the web view's renderer: the mode running and
+// the one the next start takes, the vendor in use and which others exist.
+// defined here, not in the Linux-only renderer.rs, because the command's
+// signature needs it on every platform (it answers null elsewhere)
+#[derive(Serialize, Type)]
+pub struct WebviewRenderer {
+    pub running: String,
+    pub next: String,
+    pub active: String,
+    pub external: bool,
+    pub mesa: bool,
+    pub nvidia: bool,
+}

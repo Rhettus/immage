@@ -4,8 +4,7 @@
 // EGL must be selected before GTK starts, so this preference is read straight
 // from settings.json (settings::read_key), not through the page. the marker distinguishes our inherited override on relaunch
 // from a vendor explicitly chosen by the user in their environment
-use serde::Serialize;
-use specta::Type;
+use crate::typed_app::WebviewRenderer;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::{atomic::Ordering, OnceLock};
@@ -81,22 +80,9 @@ pub fn init(identifier: &str) -> Result<(), String> {
     START.set(Started { runtime, mode, active, external }).map_err(|_| "renderer initialized twice".to_string())
 }
 
-// what Preferences shows of the web view's renderer: the mode running and the
-// one the next start takes, the vendor in use and which others exist
-#[derive(Serialize, Type)]
-#[serde(rename = "WebviewRenderer")]
-pub struct Status {
-    pub running: String,
-    pub next: String,
-    pub active: String,
-    pub external: bool,
-    pub mesa: bool,
-    pub nvidia: bool,
-}
-
-pub fn status() -> Option<Status> {
+pub fn status() -> Option<WebviewRenderer> {
     let s = START.get()?;
-    Some(Status {
+    Some(WebviewRenderer {
         running: s.mode.clone(),
         next: load(&s.runtime),
         active: s.active.to_string(),

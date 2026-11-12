@@ -47,7 +47,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{Emitter, Manager};
 #[cfg(target_os = "linux")]
 use crate::session_cmds::shm_frame;
 use crate::library_cmds::launch_path;
@@ -113,7 +113,7 @@ fn repo_root() -> PathBuf {
 // resources, or in a dev build the checkout's. none, and frames come
 // through Tauri's reply
 #[cfg(target_os = "linux")]
-fn webext_dir(app: &AppHandle) -> Option<PathBuf> {
+fn webext_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
     let dir = if cfg!(debug_assertions) {
         repo_root().join("app/src-tauri/resources/webext")
     } else {
