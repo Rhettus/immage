@@ -60,8 +60,8 @@ Bug fixes
 - Photos with file names of 241 to 251 bytes can save their edits again.
 - Moving a photo to the Trash also takes its version sidecars when its name
   contains [, *, ? or a backslash.
-- Asking for details of a photo no longer in the library no longer stalls the
-  engine.
+- Asking for details of a photo no longer in the library, or previewing its
+  export, no longer stalls the engine.
 - Importing a damaged or non-image file no longer crashes the engine.
 - Adobe RGB, Display P3 and ProPhoto exports to JPEG, TIFF and WebP embed their
   color profile.

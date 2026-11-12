@@ -34,8 +34,9 @@ Two parts, no GUI:
 A violation (crash, no reply within --timeout, a reply that is not JSON) is
 a KNOWN BUG line when its key is in KNOWN below, which does not fail the run
 (it fails under --strict); any other violation fails. Requests
-naming a nonexistent imgid are checked explicitly (KNOWN BUG `bad-imgid-*`
-below) and kept out of the fuzzer, whose tagged requests get a real id.
+naming a nonexistent imgid are checked explicitly (bad_imgid_cases, tagged
+and in the main loop) and kept out of the fuzzer, whose tagged requests get a
+real id.
 
 This pairs with an AddressSanitizer build (cmake -DCMAKE_C_FLAGS=-fsanitize=address
 and the same flag for the linker, pointing --engine at it): the checks here
@@ -255,10 +256,23 @@ def bad_imgid_cases(args, work, report):
     times = ('capture_times', False, {'cmd': 'capture_times', 'imgids': [bogus], 'offset': 1})
     export = ('export (tagged)', True, {'cmd': 'export', 'job': 7, 'imgid': bogus, 'out': str(out / 'bogus.jpg'),
                                          'format': 'jpeg'})
+    # untagged, the main loop renders these itself: darktable's image cache
+    # once left a missing id locked and the load waited on it for ever
+    export_main = ('export', False, {'cmd': 'export', 'imgid': bogus, 'out': str(out / 'bogus-main.jpg'),
+                                     'format': 'jpeg'})
+    transient = ('export (transient)', False, {'cmd': 'export', 'imgid': bogus, 'out': 'immage-bogus', 'format': 'jpeg',
+                                               'transient': True, 'quality': 85})
+    page, box = {'width': 6.0, 'height': 4.0}, {'x': 0.5, 'y': 0.5, 'width': 5.0, 'height': 3.0}
+    print_one = ('print', False, {'cmd': 'print', 'imgid': bogus, 'pdf': str(out / 'bogus.pdf'), 'page': page,
+                                  'area': box})
+    print_sheet = ('print (sheet)', False, {'cmd': 'print', 'pages': [[{'imgid': bogus, 'box': box}]],
+                                            'pdf': str(out / 'bogus-sheet.pdf'), 'page': page})
     sequences = {
         'thumb': [thumb(False)], 'thumb-tagged': [thumb(True)], 'meta': [meta, meta], 'capture_times': [times],
         'export-tagged': [export], 'meta-thumb-meta': [meta, thumb(False), meta],
         'thumb-tagged-meta': [thumb(True), meta], 'thumb-twice': [thumb(False), thumb(False)],
+        'export': [export_main, meta], 'export-transient': [transient, meta], 'print': [print_one, meta],
+        'print-sheet': [print_sheet, meta],
     }
     for name, steps in sequences.items():
         engine_session.require_memory('restarting')

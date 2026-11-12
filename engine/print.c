@@ -824,6 +824,13 @@ gboolean print_image(const dt_imgid_t imgid, JsonObject *req, JsonBuilder *b, ch
 {
   _job_t job;
   if(!_job_setup(req, &job, err)) return FALSE;
+  // an id with no library row would wait for ever in darktable's image
+  // cache, as in export_export
+  if(!dt_is_valid_imgid(imgid) || !dt_image_exists(imgid))
+  {
+    *err = g_strdup("no such image");
+    return FALSE;
+  }
   const char *pdf_path = job.pdf_path;
   const char *printer = job.printer;
   const char *profile = job.profile;
@@ -1191,7 +1198,7 @@ gboolean print_sheet(JsonObject *req, print_take_f take, print_release_f release
       const int bw = _px(_number(box, "width"), dpi), bh = _px(_number(box, "height"), dpi);
       if(bw < 1 || bh < 1) continue;
       const dt_imgid_t snap = take ? take(ctx, imgid) : imgid;
-      if(!dt_is_valid_imgid(snap))
+      if(!dt_is_valid_imgid(snap) || !dt_image_exists(snap))
       {
         *err = g_strdup("the print was not asked for this photo");
         ok = FALSE;

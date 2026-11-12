@@ -1389,6 +1389,14 @@ gboolean export_export(const dt_imgid_t imgid, JsonObject *req, char **err)
     *err = g_strdup("export needs an image and an output file");
     return FALSE;
   }
+  // darktable's image cache gives an id with no library row an entry it
+  // never unlocks (dt_image_cache_read_release skips an invalid id), and
+  // loading the image then waits on that lock for ever
+  if(!dt_image_exists(imgid))
+  {
+    *err = g_strdup("no such image");
+    return FALSE;
+  }
   // a transient preview goes to shared memory, not to `out`
   if(json_object_get_boolean_member_with_default(req, "transient", FALSE))
     return _export_write(imgid, req, out, out, err);
