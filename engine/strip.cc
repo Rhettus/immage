@@ -269,7 +269,7 @@ static void _jxl_xmp(std::string &payload, const strip_t what, bool &changed, bo
   bool erased = false;
   for(auto i = xmp.begin(); i != xmp.end();)
     if(_xmp_out(*i, what) || ((what & STRIP_HISTORY) && i->groupName() == "darktable")
-       || ((what & STRIP_LOCATION) && g_str_has_prefix(i->tagName().c_str(), "GPS")
+       || ((what & STRIP_LOCATION) && i->tagName().rfind("GPS", 0) == 0
            && i->groupName() == "exif"))
     {
       i = xmp.erase(i);
