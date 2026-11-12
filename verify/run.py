@@ -8,7 +8,12 @@
 # the engine benchmark's main scenarios timed against the last such run.
 #   python3 -I verify/run.py                 about 5 minutes
 #   python3 -I verify/run.py --skip-perf     the checks alone
-#   python3 -I verify/run.py --accept        and keep this build's edit as the reference
+#   python3 -I verify/run.py --accept        and keep this build's edit as the reference,
+#                                            and re-record the memory baseline
+#   python3 -I verify/run.py --extended      and the stress run (CPU heavy, 2 minutes)
+#   python3 -I verify/run.py --skip-engine-scripts   leave out the headless engine scripts
+# between the harness and the timing: the headless engine scripts (export-output,
+# paths, hostile-inputs --count 5, memory, export-metadata, sidecar-safety)
 # exits 1 when anything failed; the report is in verify/results/<run>/
 import argparse
 import datetime
@@ -36,6 +41,18 @@ RAW_EXT = {".cr2", ".cr3", ".nef", ".arw", ".raf", ".orf", ".rw2", ".pef", ".srw
 PERF_SCENARIOS = "sliders,roi,masks"
 FAIL_OVER = 25
 FLOOR_MS = 5
+
+# the headless engine scripts: (name, extra args). a nonzero exit fails; memory.py
+# exits 2 off Linux, and prints "no baseline" before a first record: both skip
+ENGINE_SCRIPTS = [
+    ("export-output", []),
+    ("paths", []),
+    ("hostile-inputs", ["--count", "5"]),
+    ("memory", None),  # --compare, or --record with --accept
+    ("export-metadata", []),
+    ("sidecar-safety", []),
+]
+EXTENDED_SCRIPTS = [("stress", [])]
 
 
 def git(*a):
@@ -113,7 +130,43 @@ def perf(args, photos, folder):
     return ("fail" if c.returncode else "pass"), c.stdout
 
 
-def report(folder, args, photos, checks, perf_result, minutes):
+def engine_scripts(args, folder, scripts=None, here=HERE):
+    """run the headless engine scripts, each logged to <folder>/engine-<name>.log:
+    a list of dicts (name, status pass|fail|skip, seconds, log, detail)"""
+    if scripts is None:
+        scripts = [(n, a if a is not None else ["--record" if args.accept else "--compare"])
+                   for n, a in ENGINE_SCRIPTS + (EXTENDED_SCRIPTS if args.extended else [])]
+    out = []
+    for name, extra in scripts:
+        log = os.path.join(folder, f"engine-{name}.log")
+        script = os.path.join(here, f"{name}.py")
+        t = time.time()
+        with open(log, "w") as f:
+            r = subprocess.run([sys.executable, "-I", script, "--engine", os.path.abspath(args.engine), *extra],
+                               cwd=REPO, stdout=f, stderr=subprocess.STDOUT)
+        seconds = time.time() - t
+        with open(log, errors="replace") as f:
+            text = f.read()
+        lines = [x for x in text.strip().splitlines() if x.strip()]
+        last = lines[-1][:160] if lines else ""
+        if r.returncode == 2 and "GiB and swap" in text:
+            # engine_session.require_memory: not run, so not a pass
+            status, detail = "fail", "blocked by the memory check: " + last
+        elif "no baseline" in text:
+            status, detail = "skip", "no baseline: run with --accept to record one"
+        elif r.returncode == 0:
+            status, detail = "pass", ""
+        elif name == "memory" and r.returncode == 2:
+            status, detail = "skip", "not on Linux"
+        else:
+            status, detail = "fail", last
+        out.append({"name": name, "status": status, "seconds": seconds, "log": os.path.relpath(log, folder),
+                    "detail": detail})
+        print(f"engine script {name}: {status} ({seconds:.0f} s){' ' + detail if detail else ''}", flush=True)
+    return out
+
+
+def report(folder, args, photos, checks, perf_result, minutes, scripts=None):
     summary = checks["summary"] if checks else []
     failed = [s for s in summary if s["status"] == "fail"]
     passed = [s for s in summary if s["status"] == "pass"]
@@ -138,6 +191,11 @@ def report(folder, args, photos, checks, perf_result, minutes):
                 seen.add((s["detail"], s["check"]))
                 lines.append(f"| {s['check']} | {s['id']} | {s['detail']} |")
             lines.append("")
+    if scripts:
+        lines += ["## Engine scripts", "", "| script | status | seconds | log |", "|---|---|---|---|"]
+        lines += [f"| {x['name']} | {x['status']}{': ' + x['detail'].replace('|', '/') if x['status'] != 'pass' and x['detail'] else ''} "
+                  f"| {x['seconds']:.0f} | {x['log']} |" for x in scripts]
+        lines.append("")
     if perf_result:
         status, text = perf_result
         lines += [f"## Timing: {status}", "",
@@ -156,11 +214,14 @@ def main():
     ap.add_argument("--checks", default=",".join(CHECKS), help=f"some of {','.join(CHECKS)}")
     ap.add_argument("--controls", default="", help="only these controls, by id, comma separated")
     ap.add_argument("--skip-perf", action="store_true", help="leave out the timing check")
+    ap.add_argument("--skip-engine-scripts", action="store_true", help="leave out the headless engine scripts")
+    ap.add_argument("--extended", action="store_true", help="also run verify/stress.py (CPU heavy, about 2 minutes)")
     ap.add_argument("--cpu", action="store_true",
                     help="the checks with edits on the CPU, as Preferences' Edit on the GPU off (default: the GPU)")
     ap.add_argument("--repeat", type=int, default=5, help="the benchmark's samples per step (default 5)")
     ap.add_argument("--accept", action="store_true",
-                    help="keep this build's saved edit and frame as the reference later builds must match")
+                    help="keep this build's saved edit and frame as the reference later builds must match, "
+                    "and re-record verify/memory-baseline.json")
     args = ap.parse_args()
     args.checks = [c for c in args.checks.split(",") if c]
     args.controls = [c for c in args.controls.split(",") if c]
@@ -175,13 +236,17 @@ def main():
     shutil.rmtree(WORK, ignore_errors=True)
     os.makedirs(WORK)
     checks = harness(args, photos, os.path.join(folder, "report.json")) if args.checks else None
+    scripts = [] if args.skip_engine_scripts else engine_scripts(args, folder)
     perf_result = None if args.skip_perf else perf(args, photos, folder)
-    failed = report(folder, args, photos, checks, perf_result, (time.time() - t0) / 60)
+    failed = report(folder, args, photos, checks, perf_result, (time.time() - t0) / 60, scripts)
 
     print(f"\nreport: {os.path.relpath(os.path.join(folder, 'report.md'), REPO)}")
-    bad = len(failed) + (perf_result is not None and perf_result[0] == "fail")
+    bad_scripts = [x for x in scripts if x["status"] == "fail"]
+    bad = len(failed) + len(bad_scripts) + (perf_result is not None and perf_result[0] == "fail")
     for s in failed:
         print(f"  FAIL {s['check']} {s['id']}: {s['detail'][:160]}")
+    for x in bad_scripts:
+        print(f"  FAIL engine script {x['name']}: {x['detail']} ({x['log']})")
     if perf_result and perf_result[0] == "fail":
         print("  FAIL timing: see the report")
     print("passed" if not bad else f"{bad} failed")
