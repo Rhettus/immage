@@ -329,6 +329,8 @@ gboolean session_open_image(const char *path, const dt_imgid_t version, const ch
 dt_iop_module_t *session_module(const char *op, char **err);
 void *session_field_in(dt_iop_module_t *mod, void *base, const char *path,
                        dt_introspection_field_t **f, char **err);
+gboolean session_write_field_in(dt_iop_module_t *mod, void *base, const char *name,
+                               const double num, char **err);
 gboolean session_write_field(dt_iop_module_t *mod, const char *name, const double num,
                              char **err);
 gboolean session_read_field(dt_iop_module_t *mod, const char *name,

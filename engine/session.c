@@ -478,8 +478,8 @@ void *session_field_in(dt_iop_module_t *mod, void *base, const char *path,
   return p;
 }
 
-static gboolean _write_field_in(dt_iop_module_t *mod, void *base, const char *name,
-                                const double num, char **err)
+gboolean session_write_field_in(dt_iop_module_t *mod, void *base, const char *name,
+                               const double num, char **err)
 {
   dt_introspection_field_t *f = NULL;
   void *p = session_field_in(mod, base, name, &f, err);
@@ -650,7 +650,7 @@ gboolean session_write_field(dt_iop_module_t *mod, const char *name, const doubl
     return _write_profile(mod, !strcmp(name, "working_profile"), num, err);
   if(!g_strcmp0(name, BLEND_DETAILS)) return _write_details(mod, num, err);
   if(!g_strcmp0(name, LENS_PICK) && !g_strcmp0(mod->op, "lens")) return _write_lens_pick(mod, num, err);
-  return _write_field_in(mod, mod->params, name, num, err);
+  return session_write_field_in(mod, mod->params, name, num, err);
 }
 
 // read from the live params, or from the defaults the image was given
@@ -1435,7 +1435,7 @@ static gboolean _preview_render(JsonObject *req, int *ow, int *oh, char **err)
     JsonObject *fields = json_object_has_member(e, "params") ? json_object_get_object_member(e, "params") : NULL;
     GList *names = fields ? json_object_get_members(fields) : NULL;
     for(GList *n = names; ok && n; n = g_list_next(n))
-      ok = _write_field_in(m, params, n->data, json_object_get_double_member(fields, n->data), err);
+      ok = session_write_field_in(m, params, n->data, json_object_get_double_member(fields, n->data), err);
     g_list_free(names);
     if(ok)
       session_preview_commit(m, params, m->blend_params,

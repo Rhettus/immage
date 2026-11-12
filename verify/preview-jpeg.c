@@ -3,9 +3,15 @@
 // Reuse the engine's compilation flags; dead-section linking retains only the
 // callback under test, its byte writer and the libjpeg/GLib helpers.
 #undef NDEBUG
-#define main unused_engine_main
-#include "../engine/main.c"
-#undef main
+#include "../engine/session.c"
+#include "../engine/transient_output.h"
+#include "../engine/preview_jpeg.h"
+// main.c owns transient_output.h's state in the engine; here this file does
+gboolean engine_transient_write(const char *path, const void *first, size_t a,
+                                const void *second, size_t b)
+{
+  return transient_write(path, first, a, second, b);
+}
 #include <assert.h>
 darktable_t darktable = { .num_openmp_threads = 2 };
 static int test_subsample;
@@ -65,7 +71,7 @@ int main(void)
   {
     int width = pass ? 17 : 31, height = pass ? 11 : 19;
     double timings[4];
-    assert(_write_rgba(path, input, width, height, timings));
+    assert(session_write_rgba(path, input, width, height, timings));
     char *bytes = NULL; gsize length = 0;
     assert(g_file_get_contents(path, &bytes, &length, NULL));
     assert(length == (size_t)width * height * 4);
