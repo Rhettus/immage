@@ -227,6 +227,60 @@ static void _frame_border_out(const int w, const int h, const int l, const int t
   *oh = CLAMP(basis_w ? oo : bo, 1, 3 * max_dim);
 }
 
+// whether one framing instance can add l, t, r, b around w x h: its size
+// stops at half the basis (borders.c params), so a side grows at most to
+// twice the longer one, and modify_roi_out() clamps either side to three
+// times it
+static gboolean _frame_step_fits(const int w, const int h, const int l, const int t, const int r, const int b)
+{
+  float aspect, size;
+  _frame_border_plan(w, h, l, t, r, b, &aspect, &size);
+  const int max_dim = MAX(w, h);
+  return size <= 0.5f && aspect <= 3.0f && aspect >= 1.0f / 3.0f
+    && w + l + r <= 3 * max_dim && h + t + b <= 3 * max_dim;
+}
+
+#define _FRAME_MAX_STEPS 16
+
+// l, t, r, b around w x h as the framing instances that make them: one when
+// it fits, else each taking the largest equal share of what is left that
+// fits, so a small photo can sit on a canvas many times its size. fills
+// `steps` (4 per instance) and returns how many; `*ow`, `*oh` get the size
+// the last one makes
+static int _frame_steps(const int w, const int h, const int l, const int t, const int r, const int b,
+                        int steps[4 * _FRAME_MAX_STEPS], int *ow, int *oh)
+{
+  int cw = w, ch = h, n = 0;
+  int left[4] = { l, t, r, b };
+  while(n < _FRAME_MAX_STEPS && (left[0] || left[1] || left[2] || left[3]))
+  {
+    int *s = steps + 4 * n;
+    if(n == _FRAME_MAX_STEPS - 1 || _frame_step_fits(cw, ch, left[0], left[1], left[2], left[3]))
+      memcpy(s, left, sizeof(left));
+    else
+    {
+      // the share that fits, found by halving: fitting shrinks with it
+      double lo = 0.0, hi = 1.0;
+      for(int i = 0; i < 24; i++)
+      {
+        const double f = (lo + hi) / 2.0;
+        if(_frame_step_fits(cw, ch, (int)(left[0] * f), (int)(left[1] * f), (int)(left[2] * f), (int)(left[3] * f)))
+          lo = f;
+        else
+          hi = f;
+      }
+      for(int k = 0; k < 4; k++) s[k] = (int)(left[k] * lo);
+      if(!s[0] && !s[1] && !s[2] && !s[3]) memcpy(s, left, sizeof(left));
+    }
+    for(int k = 0; k < 4; k++) left[k] -= s[k];
+    _frame_border_out(cw, ch, s[0], s[1], s[2], s[3], &cw, &ch);
+    n++;
+  }
+  *ow = cw;
+  *oh = ch;
+  return n;
+}
+
 static gboolean _frame_border(dt_iop_module_t *mod, const int w, const int h,
                               const int l, const int t, const int r, const int b,
                               const double rgb[3], char **err)
@@ -449,6 +503,77 @@ static void _style_plugin(GString *xml, dt_iop_module_t *mod, const int num, con
   g_free(blend);
 }
 
+// darktable puts a style's instances of one module in the pipe in an order
+// of its own: dt_styles_get_item_list() hands the items over last num
+// first, dt_ioppr_update_for_style_items() adds order entries for the new
+// instances after the module's last one, and each new instance
+// (dt_dev_module_duplicate_ext) takes the next multi_priority and an entry
+// placed before the first of the highest instance
+// (dt_ioppr_insert_module_instance). an instance sits at the first entry of
+// its priority (dt_ioppr_get_iop_order_link). replayed on the image's own
+// framing instances, `rank[slot]` is where the style's slot-th of n
+// framing items lands in the pipe, 0 first
+static void _frame_style_order(const dt_develop_t *dev, const int n, int *rank)
+{
+  int count = 0, count_enabled = 0, maxp = 0;
+  for(const GList *m = dev->iop; m; m = g_list_next(m))
+  {
+    const dt_iop_module_t *mod = m->data;
+    if(strcmp(mod->op, "borders")) continue;
+    count++;
+    if(mod->enabled) count_enabled++;
+    maxp = MAX(maxp, mod->multi_priority);
+  }
+  GArray *order = g_array_new(FALSE, FALSE, sizeof(int));
+  for(const GList *l = dev->iop_order_list; l; l = g_list_next(l))
+  {
+    const dt_iop_order_entry_t *e = l->data;
+    if(!strcmp(e->operation, "borders")) g_array_append_val(order, e->instance);
+  }
+  // in append mode a disabled instance counts as replaced, the rest are added
+  if(order->len)
+    for(int i = 0; i < n - (count - count_enabled); i++)
+    {
+      const int v = maxp + 1 + i;
+      g_array_append_val(order, v);
+    }
+  int *prio = g_new(int, n);
+  int pmax = maxp;
+  for(int slot = n - 1; slot >= 0; slot--)
+  {
+    prio[slot] = ++pmax;
+    guint at = order->len;
+    int top = -1;
+    for(guint i = 0; i < order->len; i++)
+      if(g_array_index(order, int, i) > top)
+      {
+        top = g_array_index(order, int, i);
+        at = i;
+      }
+    g_array_insert_val(order, at, prio[slot]);
+  }
+  int *pos = g_new(int, n);
+  for(int slot = 0; slot < n; slot++)
+  {
+    pos[slot] = order->len;
+    for(guint i = 0; i < order->len; i++)
+      if(g_array_index(order, int, i) == prio[slot])
+      {
+        pos[slot] = i;
+        break;
+      }
+  }
+  for(int slot = 0; slot < n; slot++)
+  {
+    rank[slot] = 0;
+    for(int o = 0; o < n; o++)
+      if(pos[o] < pos[slot]) rank[slot]++;
+  }
+  g_free(pos);
+  g_free(prio);
+  g_array_free(order, TRUE);
+}
+
 // the frame as a style; `frame` is
 // { borders: [{top, left, right, bottom, unit, color}], inner: [...],
 // texts: [...], canvas: {width, height, color, flip} }, an
@@ -540,10 +665,11 @@ static gboolean _frame_style(const dt_imgid_t imgid, JsonObject *frame, JsonObje
     // the framed photo as the modules make it, which can differ from
     // fw x fh by their rounding
     int ew = w, eh = h;
+    int steps[4 * _FRAME_MAX_STEPS];
     for(guint k = 0; k < nitems; k++)
     {
       const int *s = sides + 4 * k;
-      _frame_border_out(ew, eh, s[0], s[1], s[2], s[3], &ew, &eh);
+      _frame_steps(ew, eh, s[0], s[1], s[2], s[3], steps, &ew, &eh);
     }
     // the canvas in full-size pixels. a photo smaller than the canvas is
     // not scaled up: it sits in it at its own size
@@ -568,7 +694,7 @@ static gboolean _frame_style(const dt_imgid_t imgid, JsonObject *frame, JsonObje
       s[1] = (ch2 - eh) / 2;
       s[3] = ch2 - eh - s[1];
       int pw, ph;
-      _frame_border_out(ew, eh, s[0], s[1], s[2], s[3], &pw, &ph);
+      _frame_steps(ew, eh, s[0], s[1], s[2], s[3], steps, &pw, &ph);
       const double sc = fmin(fmin(fit / pw, 1.0), fmin(fit / ph, 1.0));
       if((int)floor(sc * pw) == tw && (int)floor(sc * ph) == th) break;
       if(n == 48)
@@ -597,6 +723,8 @@ static gboolean _frame_style(const dt_imgid_t imgid, JsonObject *frame, JsonObje
                          "</info><style>", style);
   gboolean ok = TRUE;
   int num = 0, cw = w, chh = h, px0 = 0, py0 = 0;
+  // each instance's params, in pipe order
+  GPtrArray *made = g_ptr_array_new_with_free_func(g_free);
   for(guint k = 0; ok && k < nborders; k++)
   {
     const int *s = sides + 4 * k;
@@ -614,14 +742,37 @@ static gboolean _frame_style(const dt_imgid_t imgid, JsonObject *frame, JsonObje
     else
       _frame_rgb(json_object_get_string_member_with_default(json_array_get_object_element(items, k),
                                                             "color", "#ffffff"), rgb);
-    ok = _frame_border(borders, cw, chh, s[0], s[1], s[2], s[3], rgb, err);
-    if(ok) _style_plugin(xml, borders, num, num);
-    num++;
-    px0 += s[0];
-    py0 += s[1];
-    // the size the module makes, which the next instance is planned on
-    _frame_border_out(cw, chh, s[0], s[1], s[2], s[3], &cw, &chh);
+    // a border too wide for one instance is made by several
+    int steps[4 * _FRAME_MAX_STEPS], ow, oh;
+    const int nsteps = _frame_steps(cw, chh, s[0], s[1], s[2], s[3], steps, &ow, &oh);
+    for(int j = 0; ok && j < nsteps; j++)
+    {
+      const int *st = steps + 4 * j;
+      ok = _frame_border(borders, cw, chh, st[0], st[1], st[2], st[3], rgb, err);
+      if(!ok) break;
+      void *params = g_malloc(borders->params_size);
+      memcpy(params, borders->params, borders->params_size);
+      g_ptr_array_add(made, params);
+      px0 += st[0];
+      py0 += st[1];
+      // the size the module makes, which the next instance is planned on
+      _frame_border_out(cw, chh, st[0], st[1], st[2], st[3], &cw, &chh);
+    }
   }
+  if(ok && made->len)
+  {
+    // each in the style's slot that darktable runs at its place
+    int *rank = g_new(int, made->len);
+    _frame_style_order(&dev, made->len, rank);
+    for(guint slot = 0; slot < made->len; slot++)
+    {
+      memcpy(borders->params, g_ptr_array_index(made, rank[slot]), borders->params_size);
+      _style_plugin(xml, borders, slot, slot);
+    }
+    num = made->len;
+    g_free(rank);
+  }
+  g_ptr_array_free(made, TRUE);
 
   gchar *svg_path = NULL;
   if(ok && (ntexts || ninner))

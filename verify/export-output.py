@@ -318,22 +318,34 @@ class Run:
             for cw, ch in ((1638, 2048), (500, 500)):
                 cases.append((label, imgid, w, h, cw, ch, False, [border(12)]))
         bad = 0
-        small_bugs = []
         for label, imgid, w, h, cw, ch, flip, borders in cases:
             frame = white | {'borders': borders, 'canvas': {'width': cw, 'height': ch, 'color': '#00ff00', 'flip': flip}}
             out = self.export(imgid, 'png', f'canvas-{label}-{cw}x{ch}', long_edge=max(cw, ch), frame=frame, bpp=8)
             got = facts(out)
             want = (ch, cw) if flip and (w > h) != (cw > ch) else (cw, ch)
-            # the framing module adds at most half the photo's long side to each side, so a canvas
-            # more than three times the photo's long side cannot be filled (a small photo on a big canvas)
-            small = max(want) > 3 * max(w, h)
-            check = (lambda ok, *a: ok or small_bugs.append(f'{a[0]}: {a[1]}') or True) if small else self.r.check
-            if not check(got is not None and got[:2] == want,
+            # a canvas many times the photo (a small photo is not scaled up) takes several framing instances
+            if not self.r.check(got is not None and got[:2] == want,
                                 f'canvas {cw}x{ch}{" flip" if flip else ""}{" +border" if borders else ""} on {label} {w}x{h}',
                                 f'asked {want[0]}x{want[1]}, file is {got}'):
                 bad += 1
-        self.r.known_bug(not small_bugs, 'a canvas more than 3x the photo is filled',
-                         f'{len(small_bugs)} of the cases came out smaller, ' + '; '.join(small_bugs) if small_bugs else '')
+        # three borders and a canvas are four framing instances, which darktable reorders
+        # unless the style is written for it: each band has its color, outermost the canvas
+        label, imgid, w, h = shapes[0]
+        bands = [border(10) | {'color': '#ff0000'}, border(20) | {'color': '#0000ff'}, border(30) | {'color': '#ffff00'}]
+        frame = white | {'borders': bands, 'canvas': {'width': 1000, 'height': 1000, 'color': '#00ff00', 'flip': False}}
+        out = self.export(imgid, 'png', 'canvas-bands', long_edge=1000, frame=frame, bpp=8)
+        got = facts(out)
+        # the photo with its bands, centered at full size: the canvas is larger than all of it
+        inner_w = w + 2 * (10 + 20 + 30)
+        x0 = (1000 - inner_w) // 2
+        y = 500
+        probe = {'canvas': x0 - 5, 'yellow': x0 + 15, 'blue': x0 + 40, 'red': x0 + 55}
+        seen = {k: run('magick', f'{out}[0]', '-format', f'%[pixel:p{{{x},{y}}}]', 'info:').stdout.strip()
+                for k, x in probe.items()}
+        named = {'canvas': ('srgb(0,255,0)', 'lime'), 'yellow': ('srgb(255,255,0)', 'yellow'),
+                 'blue': ('srgb(0,0,255)', 'blue'), 'red': ('srgb(255,0,0)', 'red')}
+        self.r.check(got is not None and got[:2] == (1000, 1000) and all(seen[k] in named[k] for k in probe),
+                     'three borders and a canvas keep their order and size', f'file is {got}, colors {seen}')
         # the canvas color shows where the photo does not reach
         frame = white | {'canvas': {'width': 600, 'height': 600, 'color': '#00ff00', 'flip': False}}
         label, imgid, w, h = shapes[0]

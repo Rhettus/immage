@@ -126,6 +126,11 @@ Bug fixes
 - An export that fails partway, such as on a full disk, no longer leaves a
   cut-off file behind, and no longer destroys the file it was replacing. The
   new file is written beside it and takes its place only once complete.
+- Exports with several frame borders, or with borders and a fixed canvas,
+  now come out at the asked size with each border in its place. With three
+  or more, counting the canvas as one, borders could land in the wrong order
+  or go missing, and the file came out the wrong size. A small photo on a fixed canvas many times its
+  size now fills the canvas exactly instead of coming out smaller.
 
 ## 0.44.1
 
