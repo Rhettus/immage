@@ -52,7 +52,7 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'preferences-matrix':dialogs.preferencesMatrix,'slider-wheel':dialogs.sliderWheel,'export-options':dialogs.exportOptions,
   filters:dialogs.filters,presets:dialogs.presets,shortcuts:dialogs.shortcuts,
   'histogram-endpoints':regressions.histogramEndpoints,'preview-alignment':regressions.previewAlignment,
-  'loupe-grid':regressions.loupeGrid,'mask-loupe':regressions.maskLoupe,'grain-hover':regressions.grainHover,'detail-without-loupe':regressions.detailWithoutLoupe,'camera-body':regressions.cameraBody,
+  'loupe-grid':regressions.loupeGrid,'mask-loupe':regressions.maskLoupe,'grain-hover':regressions.grainHover,'detail-without-loupe':regressions.detailWithoutLoupe,'detail-fit-drag':regressions.detailFitDrag,'camera-body':regressions.cameraBody,
   'rejected-deletion':regressions.rejectedDeletion,'folder-race':regressions.folderRace,panorama,'immich-workflow':immichWorkflow,
   'overlay-opacity':overlayOpacity,'shift-range':shiftRange,'lens-profile':lensProfile,'lens-pick':lensPick,
   'site-shots':siteShots,

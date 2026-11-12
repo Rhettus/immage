@@ -93,6 +93,26 @@ export class AppDriver {
     ];
     await this.command('POST', '/actions', { actions: [{ type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' }, actions }] });
   }
+  // a drag left held at `to`, for reading the frames shown mid-drag;
+  // release() lets go. both act only through this session's pointer source
+  async hold(from, to) {
+    await this.guard();
+    this.log({ action: 'hold', from, to });
+    const actions = [
+      { type: 'pointerMove', duration: 120, origin: 'viewport', x: Math.round(from.x), y: Math.round(from.y) },
+      { type: 'pointerDown', button: 0 },
+      ...Array.from({ length: 8 }, (_, i) => ({ type: 'pointerMove', duration: 80, origin: 'viewport',
+        x: Math.round(from.x + (to.x - from.x) * (i + 1) / 8), y: Math.round(from.y + (to.y - from.y) * (i + 1) / 8) })),
+    ];
+    await this.command('POST', '/actions', { actions: [{ type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' }, actions }] });
+  }
+  async release() {
+    this.log({ action: 'release' });
+    try {
+      await this.command('POST', '/actions', { actions: [{ type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' },
+        actions: [{ type: 'pointerUp', button: 0 }] }] });
+    } finally { await this.command('DELETE', '/actions'); }
+  }
   async screenshot(path) {
     await this.guard();
     const png = await this.command('GET', '/screenshot');

@@ -3678,7 +3678,14 @@ export default function App() {
       };
       s.thumbSize = baseSize;
       s.previewMode = loadPreview;
-      s.exactView = () => viewAt(fullDraftK(), true);
+      // at fit, the settled frame's own size: detail modules are scale
+      // dependent, and a viewer-sized draft looks softer than the 3072-pixel
+      // frame that replaces it
+      s.exactView = () => {
+        const a = anim.current;
+        const zoom = a.raf && a.end ? a.zoom : zoomRef.current;
+        return zoom === "fit" || !full.current ? settledFit() : viewAt(fullDraftK(), true);
+      };
       s.detailView = () => {
         if (gridRef.current || !loupeEnabledRef.current || beforeRef.current || baModeRef.current !== "off" || !full.current) return null;
         const f = full.current;

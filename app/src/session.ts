@@ -1039,7 +1039,7 @@ export class Session {
     if (ops.length) this.detailOps = [...new Set(ops.map((op) => op.split("#")[0]))].sort().join();
     const detail = this.detailView();
     const eligible = !!this.activeDetailControl && this.detailOps.split(",").every((op) =>
-      ["diffuse", "sharpen", "contrastntexture", "denoiseprofile", "bilat", "grain"].includes(op));
+      ["diffuse", "sharpen", "contrastntexture", "denoiseprofile", "bilat", "grain", "hazeremoval"].includes(op));
     if (detail && eligible) {
       // full-size probes block newer inputs before the loupe can appear
       perf.event("preview.decision", { reason:"detail-loupe" });

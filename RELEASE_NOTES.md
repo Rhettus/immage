@@ -48,6 +48,9 @@ Performance
 
 Bug fixes
 
+- Dragging a Detail, noise reduction or grain slider at Fit no longer softens
+  the photo until release. Sharpening and Dehaze drags, a mask's Sharpening,
+  Noise and Dehaze included, now keep full detail at any zoom.
 - The side panel no longer stays scrolled past its end when its content
   shrinks.
 - A failed save no longer damages the sidecar; a notice says why it failed.
