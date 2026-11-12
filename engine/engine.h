@@ -250,8 +250,15 @@ void session_follower_cleanup(dt_engine_follower_t *f);
 void session_close_session(void);
 extern GMutex session_hold_lock;
 extern GHashTable *session_holds;
+void session_hold(const gint64 job, JsonArray *imgids, const dt_imgid_t open_imgid);
 dt_imgid_t session_hold_take(const gint64 job, const dt_imgid_t imgid);
 void session_hold_release(const gint64 job);
+void session_history_item(JsonBuilder *b, const char *op, const char *name, const char *multi_name,
+                          const gboolean hand_edited, const gboolean enabled,
+                          const int priority, const dt_iop_module_t *mod);
+void session_saved_history(JsonBuilder *b);
+gboolean session_open_image(const char *path, const dt_imgid_t version, const char *pipe_kind,
+                            char **err);
 dt_iop_module_t *session_module(const char *op, char **err);
 void *session_field_in(dt_iop_module_t *mod, void *base, const char *path,
                        dt_introspection_field_t **f, char **err);
@@ -259,16 +266,35 @@ gboolean session_write_field(dt_iop_module_t *mod, const char *name, const doubl
                              char **err);
 gboolean session_read_field(dt_iop_module_t *mod, const char *name,
                             const gboolean from_defaults, double *num, char **err);
+gboolean session_set(const char *op, const char *field, JsonNode *value,
+                     JsonObject *params, const gboolean has_enabled,
+                     const gboolean enabled, const char *after, const char *before,
+                     const char *instance, const char *mask, const gboolean invert,
+                     const double opacity, JsonObject *refine, char **err);
+gboolean session_module_state(const char *op, const int priority, const gboolean has_enabled,
+                              const gboolean enabled, const gboolean reset, JsonObject *restore,
+                              JsonBuilder *b, char **err);
+dt_hash_t session_frame_hash(const dt_hash_t pipe_hash);
+void session_settle(dt_dev_pixelpipe_t *pipe);
 gboolean session_render(dt_dev_pixelpipe_t *pipe, const int devid, const int bw, const int bh,
                         const double req_scale, const int x, const int y, JsonArray *have,
                         int *ow, int *oh, int *ox_out, int *oy_out, dt_hash_t *kept, preview_output_t *output, char **err);
+gboolean session_write_ppm(const char *path, const uint8_t *in, const int w, const int h);
+gboolean session_write_rgba(const char *path, const uint8_t *in, const int w, const int h, double *timings);
 dt_iop_module_t *session_find_named(const char *op, const char *name);
+gboolean session_get(JsonObject *ops, JsonBuilder *b, char **err);
+gboolean session_lens_menu(JsonBuilder *b, char **err);
+gboolean session_color_profiles(JsonBuilder *b, char **err);
 dt_dev_pixelpipe_iop_t *session_piece(dt_dev_pixelpipe_t *pipe, const dt_iop_module_t *m);
 gboolean session_ppipe_ready(char **err);
 gboolean session_follower_ready(dt_engine_follower_t *f, char **err);
 void session_preview_commit(dt_iop_module_t *m, void *params, dt_develop_blend_params_t *blend,
                             const gboolean enabled);
+gboolean session_preview(JsonObject *req, int *ow, int *oh, char **err);
 gboolean session_save(char **err);
+extern GHashTable *session_paste_batches;
+gboolean session_paste_batch(JsonObject *req, JsonBuilder *b, char **err);
+void session_save_pending(void);
 
 // masks.c
 const char *masks_mask_name(const char *full);
