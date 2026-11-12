@@ -106,7 +106,8 @@ pub struct Refine {
 // a module's edit: its parameters by field name, sent to `set`. `instance`
 // names a mask's own instance of the module, and `mask` gives it that mask
 // (with `invert`, `opacity` 0-100 and `refine`); `after` and `before` place a
-// new instance
+// new instance; `priority`, as `instances` lists it, names an existing one
+// (not with `instance`)
 #[derive(Serialize, Deserialize, Type)]
 pub struct ModuleEdit {
     pub op: String,
@@ -118,6 +119,8 @@ pub struct ModuleEdit {
     pub before: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instance: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub priority: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mask: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -138,6 +141,9 @@ impl ModuleEdit {
             if let Some(v) = value {
                 req[key] = json!(v);
             }
+        }
+        if let Some(p) = self.priority {
+            req["priority"] = json!(p);
         }
         if let (false, Some(mask)) = (module_only, &self.mask) {
             req["mask"] = json!(mask);

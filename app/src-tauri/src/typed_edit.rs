@@ -279,3 +279,88 @@ pub struct FilmFetch {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub started: Option<bool>,
 }
+
+// `module_schema`'s reply: what darktable's introspection says of a module
+// (see session_module_schema in engine/session.c)
+#[derive(Serialize, Deserialize, Type)]
+pub struct ModuleSchema {
+    pub op: String,
+    pub name: String,
+    pub version: i64,
+    pub params_size: i64,
+    pub groups: Vec<String>,
+    pub flags: SchemaFlags,
+    pub fields: Vec<SchemaField>,
+}
+
+#[derive(Serialize, Deserialize, Type)]
+pub struct SchemaFlags {
+    pub one_instance: bool,
+    pub deprecated: bool,
+    pub hidden: bool,
+    pub supports_blending: bool,
+    pub no_masks: bool,
+    pub no_history: bool,
+    pub no_switch: bool,
+}
+
+// a leaf of a module's params, by the path `set` and `get` take. a scalar has
+// `min`, `max` (none: unbounded) and `default`, an enum its `values`; an
+// array (`type` "array", or "string" for characters) gives its `dims` and
+// `element` type, and for structs the `members` of one element by relative path
+#[derive(Serialize, Deserialize, Type)]
+pub struct SchemaField {
+    pub path: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub min: Option<Number>,
+    #[serde(default)]
+    pub max: Option<Number>,
+    #[serde(default)]
+    pub default: Option<Number>,
+    #[serde(default)]
+    pub enum_type: Option<String>,
+    #[serde(default)]
+    pub values: Option<Vec<SchemaEnumValue>>,
+    #[serde(default)]
+    pub dims: Option<Vec<i64>>,
+    #[serde(default)]
+    pub element: Option<String>,
+    #[serde(default)]
+    pub defaults: Option<Vec<Option<Number>>>,
+    #[serde(default)]
+    pub members: Option<Vec<SchemaField>>,
+}
+
+#[derive(Serialize, Deserialize, Type)]
+pub struct SchemaEnumValue {
+    pub name: String,
+    pub value: i64,
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
+// `instances`' reply, which the page gets as the list
+#[derive(Deserialize)]
+pub struct InstancesReply {
+    pub instances: Vec<Instance>,
+}
+
+// one instance of a module in the open photo's pipe, in pipe order.
+// `priority` addresses it in `set_params` and `get_params` ("op@N"); `owner`
+// is the Immage tool that manages it ("mask", "shared" or "look"), none for
+// the user's own
+#[derive(Serialize, Deserialize, Type)]
+pub struct Instance {
+    pub op: String,
+    pub priority: i64,
+    pub name: String,
+    pub hand_edited: bool,
+    pub enabled: bool,
+    pub default_enabled: bool,
+    pub iop_order: i64,
+    pub owner: Option<String>,
+}

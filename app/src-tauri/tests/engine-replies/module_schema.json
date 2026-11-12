@@ -1,0 +1,149 @@
+[
+ {
+  "label": "3 open / module_schema exposure",
+  "reply": {
+   "fields": [
+    {
+     "default": 0.0,
+     "description": "",
+     "enum_type": "dt_iop_exposure_mode_t",
+     "path": "mode",
+     "type": "enum",
+     "values": [
+      {
+       "description": "manual",
+       "name": "EXPOSURE_MODE_MANUAL",
+       "value": 0
+      },
+      {
+       "description": "automatic",
+       "name": "EXPOSURE_MODE_DEFLICKER",
+       "value": 1
+      }
+     ]
+    },
+    {
+     "default": 0.0,
+     "description": "black level correction",
+     "max": 1.0,
+     "min": -1.0,
+     "path": "black",
+     "type": "float"
+    },
+    {
+     "default": 0.0,
+     "description": "",
+     "max": 18.0,
+     "min": -18.0,
+     "path": "exposure",
+     "type": "float"
+    }
+   ],
+   "flags": {
+    "deprecated": false,
+    "hidden": false,
+    "no_history": false,
+    "no_masks": false,
+    "no_switch": false,
+    "one_instance": false,
+    "supports_blending": true
+   },
+   "groups": [
+    "basic",
+    "technical"
+   ],
+   "ms": 0.0,
+   "name": "exposure",
+   "ok": true,
+   "op": "exposure",
+   "params_size": 28,
+   "version": 7
+  }
+ },
+ {
+  "label": "3 open / module_schema tonecurve",
+  "reply": {
+   "fields": [
+    {
+     "description": "",
+     "dims": [
+      3,
+      20
+     ],
+     "element": "struct",
+     "members": [
+      {
+       "default": null,
+       "description": "",
+       "max": null,
+       "min": null,
+       "path": "x",
+       "type": "float"
+      },
+      {
+       "default": null,
+       "description": "",
+       "max": null,
+       "min": null,
+       "path": "y",
+       "type": "float"
+      }
+     ],
+     "path": "tonecurve",
+     "type": "array"
+    },
+    {
+     "defaults": [
+      2.0,
+      3.0,
+      3.0
+     ],
+     "description": "",
+     "dims": [
+      3
+     ],
+     "element": "int",
+     "max": null,
+     "min": null,
+     "path": "tonecurve_nodes",
+     "type": "array"
+    },
+    {
+     "defaults": [
+      2.0,
+      2.0,
+      2.0
+     ],
+     "description": "",
+     "dims": [
+      3
+     ],
+     "element": "int",
+     "max": null,
+     "min": null,
+     "path": "tonecurve_type",
+     "type": "array"
+    }
+   ],
+   "flags": {
+    "deprecated": false,
+    "hidden": false,
+    "no_history": false,
+    "no_masks": false,
+    "no_switch": false,
+    "one_instance": false,
+    "supports_blending": true
+   },
+   "groups": [
+    "tone",
+    "grading"
+   ],
+   "ms": 0.0,
+   "name": "tone curve",
+   "ok": true,
+   "op": "tonecurve",
+   "params_size": 520,
+   "version": 5
+  }
+ }
+]

@@ -128,6 +128,8 @@ pub fn commands() -> Commands<tauri::Wry> {
         crate::edit_cmds::spektra_stocks,
         crate::edit_cmds::spektra_fetch,
         crate::edit_cmds::lenses,
+        crate::edit_cmds::module_schema,
+        crate::edit_cmds::instances,
         // Preferences, performance reports and the app itself
         crate::app_cmds::darktable_resources,
         crate::app_cmds::darktable_resources_set,
@@ -410,6 +412,8 @@ mod tests {
         ("upright", reads::<UprightReply>),
         ("fonts", reads::<FontsReply>),
         ("lenses", reads::<LensMenu>),
+        ("module_schema", reads::<ModuleSchema>),
+        ("instances", reads::<InstancesReply>),
         ("ai_accel", reads::<AiAccelReply>),
         ("look", reads::<LookReply>),
         ("agx_presets", reads::<AgxPresetsReply>),

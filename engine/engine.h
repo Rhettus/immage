@@ -342,7 +342,7 @@ gboolean session_set(const char *op, const char *field, JsonNode *value,
                      JsonObject *params, const gboolean has_enabled,
                      const gboolean enabled, const char *after, const char *before,
                      const char *instance, const char *mask, const gboolean invert,
-                     const double opacity, JsonObject *refine, char **err);
+                     const double opacity, JsonObject *refine, const int priority, char **err);
 gboolean session_module_state(const char *op, const int priority, const gboolean has_enabled,
                               const gboolean enabled, const gboolean reset, JsonObject *restore,
                               JsonBuilder *b, char **err);
@@ -355,6 +355,8 @@ gboolean session_write_ppm(const char *path, const uint8_t *in, const int w, con
 gboolean session_write_rgba(const char *path, const uint8_t *in, const int w, const int h, double *timings);
 dt_iop_module_t *session_find_named(const char *op, const char *name);
 gboolean session_get(JsonObject *ops, JsonBuilder *b, char **err);
+gboolean session_module_schema(const char *op, JsonBuilder *b, char **err);
+void session_instances(JsonBuilder *b);
 gboolean session_lens_menu(JsonBuilder *b, char **err);
 gboolean session_color_profiles(JsonBuilder *b, char **err);
 dt_dev_pixelpipe_iop_t *session_piece(dt_dev_pixelpipe_t *pipe, const dt_iop_module_t *m);
@@ -371,6 +373,7 @@ void session_save_pending(void);
 // masks.c
 const char *masks_mask_name(const char *full);
 dt_masks_form_t *masks_instance_group(const dt_iop_module_t *m);
+const char *masks_instance_owner(const dt_iop_module_t *m);
 dt_iop_module_t *masks_named_instance(const char *op, const char *name, const gboolean anchored,
                                       char **err);
 void masks_invalidate_from(const int order, const char *why);

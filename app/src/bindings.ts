@@ -111,6 +111,8 @@ export const commands = {
 	spektraStocks: () => __TAURI_INVOKE<FilmStocks>("spektra_stocks"),
 	spektraFetch: (action: string) => __TAURI_INVOKE<FilmFetch>("spektra_fetch", { action }),
 	lenses: () => __TAURI_INVOKE<LensMenu>("lenses"),
+	moduleSchema: (op: string) => __TAURI_INVOKE<ModuleSchema>("module_schema", { op }),
+	instances: () => __TAURI_INVOKE<Instance[]>("instances"),
 	darktableResources: () => __TAURI_INVOKE<ResourceLevels>("darktable_resources"),
 	darktableResourcesSet: (level: string) => __TAURI_INVOKE<null>("darktable_resources_set", { level }),
 	memoryBudget: () => __TAURI_INVOKE<MemoryBudget>("memory_budget"),
@@ -453,6 +455,17 @@ export type HistoryItem = {
 	masked?: boolean | null,
 };
 
+export type Instance = {
+	op: string,
+	priority: number,
+	name: string,
+	hand_edited: boolean,
+	enabled: boolean,
+	default_enabled: boolean,
+	iop_order: number,
+	owner: string | null,
+};
+
 export type Lens = {
 	name: string,
 	maker: string,
@@ -598,6 +611,7 @@ export type ModuleEdit = {
 	after?: string | null,
 	before?: string | null,
 	instance?: string | null,
+	priority?: number | null,
 	mask?: string | null,
 	invert?: boolean | null,
 	opacity?: number | null,
@@ -609,6 +623,16 @@ export type ModuleInfo = {
 	default_enabled: boolean,
 	params: { [key in string]: number },
 	defaults: { [key in string]: number },
+};
+
+export type ModuleSchema = {
+	op: string,
+	name: string,
+	version: number,
+	params_size: number,
+	groups: string[],
+	flags: SchemaFlags,
+	fields: SchemaField[],
 };
 
 export type ModuleState = {
@@ -883,6 +907,37 @@ export type SampleReply = {
 
 export type SaveReply = {
 	edited: boolean,
+};
+
+export type SchemaEnumValue = {
+	name: string,
+	value: number,
+	description?: string | null,
+};
+
+export type SchemaField = {
+	path: string,
+	type: string,
+	description?: string | null,
+	min?: number | null,
+	max?: number | null,
+	default?: number | null,
+	enum_type?: string | null,
+	values?: SchemaEnumValue[] | null,
+	dims?: number[] | null,
+	element?: string | null,
+	defaults?: (number | null)[] | null,
+	members?: SchemaField[] | null,
+};
+
+export type SchemaFlags = {
+	one_instance: boolean,
+	deprecated: boolean,
+	hidden: boolean,
+	supports_blending: boolean,
+	no_masks: boolean,
+	no_history: boolean,
+	no_switch: boolean,
 };
 
 export type SearchArgs = {

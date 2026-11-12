@@ -56,8 +56,8 @@ COMMANDS = sorted('''
 agx_auto agx_presets ai_accel ai_denoise ai_denoise_preview ai_depth ai_mask
 ai_object baseline_end before cancel_base capture_times close color_profiles
 combine copy data_backup export export_hold export_release folder fonts forget get
-hdr_merge history import keywords keywords_set lenses look look_amount mask
-mask_delete mask_map mask_rename masks merge_cancel meta meta_set module_state
+hdr_merge history import instances keywords keywords_set lenses look look_amount mask
+mask_delete mask_map mask_rename masks merge_cancel meta meta_set module_schema module_state
 open opencl pano_merge pano_preview parity paste_batch points prefetch preview
 print print_profile_add print_profiles printer printers quit range_map
 remove_copy render sample save set sidecars softproof spektra_fetch
@@ -214,6 +214,17 @@ def photo_edits(img):
         R('module_state', op='exposure', enabled=False, label='module_state off'),
         R('module_state', op='exposure', enabled=True, label='module_state on'),
         R('module_state', op='nosuchmodule', label='module_state unknown'),
+        R('module_schema', label='module_schema none'),
+        R('module_schema', op='nosuchmodule', label='module_schema unknown'),
+        R('module_schema', op='exposure', label='module_schema exposure'),
+        R('module_schema', op='tonecurve', label='module_schema tonecurve'),
+        R('instances'),
+        R('set', op='exposure', priority=7, enabled=True, params={'exposure': 0.5},
+          label='set exposure priority unknown'),
+        R('set', op='exposure', priority=1, instance='x', params={'exposure': 0.5},
+          label='set exposure priority and instance'),
+        R('get', modules={'exposure@7': ['exposure']}, label='get exposure priority unknown'),
+        R('get', modules={'exposure@0': ['exposure']}, label='get exposure priority 0'),
         R('color_profiles'), R('lenses'),
         R('render', '{out}/r.ppm', width=64, height=48, out='{out}/r.ppm', label='render ppm'),
         R('render', '{out}/r.rgba', width=64, height=48, rgba='{out}/r.rgba', label='render rgba'),

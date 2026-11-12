@@ -764,17 +764,33 @@ static gboolean _place(dt_iop_module_t *mod, const char *after, const char *befo
   return TRUE;
 }
 
+// the instance of `op` with multi_priority `priority`; 0 is the first
+static dt_iop_module_t *_module_at(const char *op, const int priority, char **err)
+{
+  if(!priority) return session_module(op, err);
+  dt_iop_module_t *mod = op && priority > 0 ? dt_iop_get_module_by_op_priority(_s.dev.iop, op, priority) : NULL;
+  if(!mod) *err = g_strdup_printf("module '%s' has no instance at priority %d", op ? op : "(none)", priority);
+  return mod;
+}
+
 gboolean session_set(const char *op, const char *field, JsonNode *value,
                      JsonObject *params, const gboolean has_enabled,
                      const gboolean enabled, const char *after, const char *before,
                      const char *instance, const char *mask, const gboolean invert,
-                     const double opacity, JsonObject *refine, char **err)
+                     const double opacity, JsonObject *refine, const int priority, char **err)
 {
   const int gen = _s.iop_gen;
+  // `priority`, an instance's multi_priority as `instances` lists it, is the
+  // other way to name one that exists; 0 is the first instance, as before
+  if(instance && priority)
+  {
+    *err = g_strdup("give an instance name or a priority, not both");
+    return FALSE;
+  }
   // an instance placed by `after` or `before` is not also put after the
   // mask anchor, which would leave it behind modules it must precede
   dt_iop_module_t *mod = instance ? masks_named_instance(op, instance, !after && !before, err)
-                                  : session_module(op, err);
+                                  : _module_at(op, priority, err);
   if(!mod) return FALSE;
   // kept to tell a request that changes nothing (masks_named_instance() bumps
   // iop_gen for a new instance, which always gets its history item)
@@ -1154,7 +1170,9 @@ dt_iop_module_t *session_find_named(const char *op, const char *name)
 }
 
 // a key "op#name" reads the instance so named; one not made yet reads as
-// the first instance's defaults, switched off
+// the first instance's defaults, switched off. a key "op@N" reads the
+// instance whose multi_priority is N (as `instances` lists it, and as `set`
+// takes `priority`), an error when there is none; "op" is the first one
 gboolean session_get(JsonObject *ops, JsonBuilder *b, char **err)
 {
   json_builder_set_member_name(b, "modules");
@@ -1162,13 +1180,15 @@ gboolean session_get(JsonObject *ops, JsonBuilder *b, char **err)
   GList *names = json_object_get_members(ops);
   for(GList *n = names; n; n = g_list_next(n))
   {
-    const char *key = n->data, *hash = strchr(key, '#');
-    gchar *op = hash ? g_strndup(key, hash - key) : g_strdup(key);
-    dt_iop_module_t *named = hash ? session_find_named(op, hash + 1) : NULL;
-    dt_iop_module_t *mod = named ? named : session_module(op, err);
+    const char *key = n->data, *mark = strpbrk(key, "#@");
+    const gboolean by_name = mark && *mark == '#';
+    gchar *op = mark ? g_strndup(key, mark - key) : g_strdup(key);
+    dt_iop_module_t *named = by_name ? session_find_named(op, mark + 1) : NULL;
+    dt_iop_module_t *mod = named ? named
+      : mark && !by_name ? _module_at(op, atoi(mark + 1), err) : session_module(op, err);
     g_free(op);
     if(!mod) { g_list_free(names); return FALSE; }
-    const gboolean missing = hash && !named;
+    const gboolean missing = by_name && !named;
     json_builder_set_member_name(b, n->data);
     json_builder_begin_object(b);
     json_builder_set_member_name(b, "enabled");
@@ -1194,6 +1214,268 @@ gboolean session_get(JsonObject *ops, JsonBuilder *b, char **err)
   }
   g_list_free(names);
   json_builder_end_object(b);
+  return TRUE;
+}
+
+// `instances`: the open photo's modules in pipe order, one entry per
+// instance. `priority` is its multi_priority, which `set` and `get` address
+// it by; `name` is the user's label for it ("" when it has none); `owner`
+// names the Immage tool that manages it (a mask's own, a shared or a look's
+// instance, masks_instance_owner()), null for the user's own, so a client
+// can leave the others to their tools
+void session_instances(JsonBuilder *b)
+{
+  json_builder_set_member_name(b, "instances");
+  json_builder_begin_array(b);
+  for(GList *l = _s.dev.iop; l; l = g_list_next(l))
+  {
+    const dt_iop_module_t *m = l->data;
+    json_builder_begin_object(b);
+    engine_add_string(b, "op", m->op);
+    engine_add_int(b, "priority", m->multi_priority);
+    engine_add_string(b, "name", m->multi_name_hand_edited ? m->multi_name : "");
+    engine_add_bool(b, "hand_edited", m->multi_name_hand_edited);
+    engine_add_bool(b, "enabled", m->enabled);
+    engine_add_bool(b, "default_enabled", m->default_enabled);
+    engine_add_int(b, "iop_order", m->iop_order);
+    const char *owner = masks_instance_owner(m);
+    json_builder_set_member_name(b, "owner");
+    if(owner) json_builder_add_string_value(b, owner); else json_builder_add_null_value(b);
+    json_builder_end_object(b);
+  }
+  json_builder_end_array(b);
+}
+
+static const char *_type_name(const dt_introspection_type_t t)
+{
+  switch(t)
+  {
+    case DT_INTROSPECTION_TYPE_FLOAT:        return "float";
+    case DT_INTROSPECTION_TYPE_DOUBLE:       return "double";
+    case DT_INTROSPECTION_TYPE_FLOATCOMPLEX: return "complex";
+    case DT_INTROSPECTION_TYPE_CHAR:         return "char";
+    case DT_INTROSPECTION_TYPE_INT8:         return "int8";
+    case DT_INTROSPECTION_TYPE_UINT8:        return "uint8";
+    case DT_INTROSPECTION_TYPE_SHORT:        return "short";
+    case DT_INTROSPECTION_TYPE_USHORT:       return "ushort";
+    case DT_INTROSPECTION_TYPE_INT:          return "int";
+    case DT_INTROSPECTION_TYPE_UINT:         return "uint";
+    case DT_INTROSPECTION_TYPE_LONG:         return "long";
+    case DT_INTROSPECTION_TYPE_ULONG:        return "ulong";
+    case DT_INTROSPECTION_TYPE_BOOL:         return "bool";
+    case DT_INTROSPECTION_TYPE_ARRAY:        return "array";
+    case DT_INTROSPECTION_TYPE_ENUM:         return "enum";
+    case DT_INTROSPECTION_TYPE_STRUCT:       return "struct";
+    case DT_INTROSPECTION_TYPE_UNION:        return "union";
+    default:                                 return "opaque";
+  }
+}
+
+// a bound as a number, null for the type's own limit, which a field without
+// a declared range gets
+static void _add_bound(JsonBuilder *b, const char *name, const double v)
+{
+  json_builder_set_member_name(b, name);
+  if(fabs(v) >= 2147483647.0) json_builder_add_null_value(b);
+  else json_builder_add_double_value(b, v);
+}
+
+// min and max of a scalar field
+static void _add_range(JsonBuilder *b, const dt_introspection_field_t *f)
+{
+  double lo = 0.0, hi = 0.0;
+  switch(f->header.type)
+  {
+    case DT_INTROSPECTION_TYPE_FLOAT:  lo = f->Float.Min;  hi = f->Float.Max;  break;
+    case DT_INTROSPECTION_TYPE_DOUBLE: lo = f->Double.Min; hi = f->Double.Max; break;
+    case DT_INTROSPECTION_TYPE_CHAR:   lo = f->Char.Min;   hi = f->Char.Max;   break;
+    case DT_INTROSPECTION_TYPE_INT8:   lo = f->Int8.Min;   hi = f->Int8.Max;   break;
+    case DT_INTROSPECTION_TYPE_UINT8:  lo = f->UInt8.Min;  hi = f->UInt8.Max;  break;
+    case DT_INTROSPECTION_TYPE_SHORT:  lo = f->Short.Min;  hi = f->Short.Max;  break;
+    case DT_INTROSPECTION_TYPE_USHORT: lo = f->UShort.Min; hi = f->UShort.Max; break;
+    case DT_INTROSPECTION_TYPE_INT:    lo = f->Int.Min;    hi = f->Int.Max;    break;
+    case DT_INTROSPECTION_TYPE_UINT:   lo = f->UInt.Min;   hi = f->UInt.Max;   break;
+    case DT_INTROSPECTION_TYPE_LONG:   lo = f->Long.Min;   hi = f->Long.Max;   break;
+    case DT_INTROSPECTION_TYPE_ULONG:  lo = f->ULong.Min;  hi = f->ULong.Max;  break;
+    default: return;
+  }
+  _add_bound(b, "min", lo);
+  _add_bound(b, "max", hi);
+}
+
+static gboolean _is_number(const dt_introspection_type_t t)
+{
+  return t == DT_INTROSPECTION_TYPE_FLOAT || t == DT_INTROSPECTION_TYPE_DOUBLE
+         || t == DT_INTROSPECTION_TYPE_CHAR || t == DT_INTROSPECTION_TYPE_INT8
+         || t == DT_INTROSPECTION_TYPE_UINT8 || t == DT_INTROSPECTION_TYPE_SHORT
+         || t == DT_INTROSPECTION_TYPE_USHORT || t == DT_INTROSPECTION_TYPE_INT
+         || t == DT_INTROSPECTION_TYPE_UINT || t == DT_INTROSPECTION_TYPE_LONG
+         || t == DT_INTROSPECTION_TYPE_ULONG || t == DT_INTROSPECTION_TYPE_BOOL
+         || t == DT_INTROSPECTION_TYPE_ENUM;
+}
+
+// the fields under `f`, as one object per leaf, in the order of the struct.
+// `prefix` is the path so far: the leaf "exposure" of exposure's params, or
+// "tonecurve_nodes[0]" and so on for a client that walks an array. an array
+// is one entry that gives `dims` (nested arrays outermost first) and its
+// `element`, never one entry per element; an array of structs also lists
+// `members` with paths relative to an element ("x" of "curve[1][3].x"). a
+// number array of up to 64 elements has its defaults. numbers read by
+// session_read_field() (what `get` returns); a char array is a "string"
+static void _schema_fields(JsonBuilder *b, dt_iop_module_t *mod, const dt_introspection_field_t *f,
+                           const char *prefix)
+{
+  if(f->header.type == DT_INTROSPECTION_TYPE_STRUCT)
+  {
+    for(size_t i = 0; i < f->Struct.entries; i++)
+    {
+      const dt_introspection_field_t *c = f->Struct.fields[i];
+      gchar *path = *prefix ? g_strdup_printf("%s.%s", prefix, c->header.field_name)
+                            : g_strdup(c->header.field_name);
+      _schema_fields(b, mod, c, path);
+      g_free(path);
+    }
+    return;
+  }
+
+  json_builder_begin_object(b);
+  engine_add_string(b, "path", prefix);
+  const dt_introspection_type_t t = f->header.type;
+  if(t == DT_INTROSPECTION_TYPE_ARRAY)
+  {
+    const dt_introspection_field_t *e = f;
+    json_builder_set_member_name(b, "dims");
+    json_builder_begin_array(b);
+    size_t total = 1;
+    while(e->header.type == DT_INTROSPECTION_TYPE_ARRAY)
+    {
+      json_builder_add_int_value(b, e->Array.count);
+      total *= e->Array.count;
+      e = e->Array.field;
+    }
+    json_builder_end_array(b);
+    const gboolean text = f->Array.type == DT_INTROSPECTION_TYPE_CHAR;
+    engine_add_string(b, "type", text ? "string" : "array");
+    engine_add_string(b, "element", _type_name(e->header.type));
+    if(f->header.description) engine_add_string(b, "description", f->header.description);
+    if(_is_number(e->header.type) && !text)
+    {
+      _add_range(b, e);
+      if(e->header.type == DT_INTROSPECTION_TYPE_ENUM) engine_add_string(b, "enum_type", e->header.type_name);
+      if(f->Array.field == e && total <= 64)
+      {
+        json_builder_set_member_name(b, "defaults");
+        json_builder_begin_array(b);
+        for(size_t i = 0; i < total; i++)
+        {
+          gchar *path = g_strdup_printf("%s[%zu]", prefix, i);
+          char *err = NULL;
+          double num = 0.0;
+          if(session_read_field(mod, path, TRUE, &num, &err)) json_builder_add_double_value(b, num);
+          else json_builder_add_null_value(b);
+          g_free(err);
+          g_free(path);
+        }
+        json_builder_end_array(b);
+      }
+    }
+    if(e->header.type == DT_INTROSPECTION_TYPE_STRUCT)
+    {
+      json_builder_set_member_name(b, "members");
+      json_builder_begin_array(b);
+      _schema_fields(b, mod, e, "");
+      json_builder_end_array(b);
+    }
+    json_builder_end_object(b);
+    return;
+  }
+
+  engine_add_string(b, "type", _type_name(t));
+  if(f->header.description) engine_add_string(b, "description", f->header.description);
+  if(_is_number(t))
+  {
+    _add_range(b, f);
+    char *err = NULL;
+    double num = 0.0;
+    json_builder_set_member_name(b, "default");
+    if(*prefix && session_read_field(mod, prefix, TRUE, &num, &err)) json_builder_add_double_value(b, num);
+    else json_builder_add_null_value(b);
+    g_free(err);
+  }
+  if(t == DT_INTROSPECTION_TYPE_ENUM)
+  {
+    engine_add_string(b, "enum_type", f->header.type_name);
+    json_builder_set_member_name(b, "values");
+    json_builder_begin_array(b);
+    for(size_t i = 0; i < f->Enum.entries; i++)
+    {
+      const dt_introspection_type_enum_tuple_t *v = &f->Enum.values[i];
+      json_builder_begin_object(b);
+      engine_add_string(b, "name", v->name);
+      engine_add_int(b, "value", v->value);
+      if(v->description) engine_add_string(b, "description", v->description);
+      json_builder_end_object(b);
+    }
+    json_builder_end_array(b);
+  }
+  json_builder_end_object(b);
+}
+
+static const struct { int bit; const char *name; } _GROUPS[] =
+{
+  { IOP_GROUP_BASIC, "basic" }, { IOP_GROUP_TONE, "tone" }, { IOP_GROUP_COLOR, "color" },
+  { IOP_GROUP_CORRECT, "correct" }, { IOP_GROUP_EFFECT, "effect" },
+  { IOP_GROUP_TECHNICAL, "technical" }, { IOP_GROUP_GRADING, "grading" },
+  { IOP_GROUP_EFFECTS, "effects" },
+};
+
+// `module_schema {op}`: what darktable's introspection says of a module, so
+// a client can draw its parameters without a map of its own. it needs an
+// open photo, and the module in its pipe (any instance: the layout is the
+// module's, the `default` values are that instance's default_params, which
+// for a few modules depend on the photo, as denoise's noise profile does); a
+// module with no introspection (liquify) replies `fields: []`. `fields` are
+// the params' leaves in struct order, each with the `path` `set` and `get`
+// take: `type` (float, int, uint, bool, enum, string, array, ...), `min` and
+// `max` (null: unbounded), `default`, `description` (darktable's $DESCRIPTION
+// comment) and, for an enum, its `values` ({ name, value, description }).
+// see _schema_fields() for arrays. `version` is the params' version,
+// `groups` the default module groups (darktable's names), `flags` the
+// module's
+gboolean session_module_schema(const char *op, JsonBuilder *b, char **err)
+{
+  dt_iop_module_t *mod = op ? dt_iop_get_module_by_op_priority(_s.dev.iop, op, -1) : NULL;
+  if(!mod)
+  {
+    *err = g_strdup_printf("module '%s' not in the pipe", op ? op : "(none)");
+    return FALSE;
+  }
+  const int flags = mod->flags();
+  engine_add_string(b, "op", mod->op);
+  engine_add_string(b, "name", dt_iop_get_localized_name(mod->op));
+  engine_add_int(b, "version", mod->version());
+  engine_add_int(b, "params_size", mod->params_size);
+  json_builder_set_member_name(b, "groups");
+  json_builder_begin_array(b);
+  const int groups = mod->default_group();
+  for(guint i = 0; i < G_N_ELEMENTS(_GROUPS); i++)
+    if(groups & _GROUPS[i].bit) json_builder_add_string_value(b, _GROUPS[i].name);
+  json_builder_end_array(b);
+  json_builder_set_member_name(b, "flags");
+  json_builder_begin_object(b);
+  engine_add_bool(b, "one_instance", flags & IOP_FLAGS_ONE_INSTANCE);
+  engine_add_bool(b, "deprecated", flags & IOP_FLAGS_DEPRECATED);
+  engine_add_bool(b, "hidden", flags & IOP_FLAGS_HIDDEN);
+  engine_add_bool(b, "supports_blending", flags & IOP_FLAGS_SUPPORTS_BLENDING);
+  engine_add_bool(b, "no_masks", flags & IOP_FLAGS_NO_MASKS);
+  engine_add_bool(b, "no_history", flags & IOP_FLAGS_NO_HISTORY_STACK);
+  engine_add_bool(b, "no_switch", mod->hide_enable_button);
+  json_builder_end_object(b);
+  json_builder_set_member_name(b, "fields");
+  json_builder_begin_array(b);
+  const dt_introspection_t *intro = mod->so->have_introspection ? mod->get_introspection() : NULL;
+  if(intro && intro->field) _schema_fields(b, mod, intro->field, "");
+  json_builder_end_array(b);
   return TRUE;
 }
 

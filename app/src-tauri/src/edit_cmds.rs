@@ -3,7 +3,7 @@
 
 use serde_json::{json, Number, Value};
 use std::path::Path;
-use crate::typed_edit::{AgxPresetsReply, AgxProfile, CombineMember, FilmFetch, FilmStocks, LensMenu, LookReply, MapView, MaskInfo, MasksReply, NewSpot, Spot, SpotSource, SpotsReply, UprightReply};
+use crate::typed_edit::{AgxPresetsReply, AgxProfile, CombineMember, FilmFetch, FilmStocks, Instance, InstancesReply, LensMenu, ModuleSchema, LookReply, MapView, MaskInfo, MasksReply, NewSpot, Spot, SpotSource, SpotsReply, UprightReply};
 use crate::typed_export::LookInfo;
 use tauri::{ipc::Response, AppHandle, State};
 use crate::AppState;
@@ -48,6 +48,25 @@ pub(crate) async fn masks(state: State<'_, AppState>, fields: std::collections::
 pub(crate) async fn lenses(state: State<'_, AppState>) -> Result<LensMenu, String> {
     let reply = state.engine("lenses").request(json!({ "cmd": "lenses" }))?;
     serde_json::from_value(reply).map_err(|e| format!("lenses: unexpected reply: {e}"))
+}
+
+// darktable's introspection of a module in the open photo's pipe: its
+// parameters' paths, types, ranges, defaults and enum values, flags and
+// groups (the engine's session_module_schema)
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn module_schema(state: State<'_, AppState>, op: String) -> Result<ModuleSchema, String> {
+    let reply = state.engine("module_schema").request(json!({ "cmd": "module_schema", "op": op }))?;
+    serde_json::from_value(reply).map_err(|e| format!("module_schema: unexpected reply: {e}"))
+}
+
+// the open photo's instances of every module, in pipe order, each with the
+// `priority` that addresses it and the Immage tool that owns it, if any
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn instances(state: State<'_, AppState>) -> Result<Vec<Instance>, String> {
+    let reply = state.engine("instances").request(json!({ "cmd": "instances" }))?;
+    serde_json::from_value::<InstancesReply>(reply).map(|r| r.instances).map_err(|e| format!("instances: unexpected reply: {e}"))
 }
 
 // Upright's fit of rotate and perspective: { rotation, lensshift_v,

@@ -141,6 +141,16 @@ dt_masks_form_t *masks_instance_group(const dt_iop_module_t *m)
   return NULL;
 }
 
+// which Immage tool owns instance `m`, so a client that lists instances can
+// leave it to that tool: "mask" for a mask's own instance, "shared" for one
+// several masks share, "look" for a look's, NULL for a user's
+const char *masks_instance_owner(const dt_iop_module_t *m)
+{
+  if(looks_is_look(m)) return "look";
+  if(m->multi_name_hand_edited && g_str_has_prefix(m->multi_name, _SHARED_PREFIX)) return "shared";
+  return masks_instance_group(m) ? "mask" : NULL;
+}
+
 // whether mask `root` holds anything to fold: an empty one is its marker
 static gboolean _has_members(const dt_masks_form_t *root)
 {

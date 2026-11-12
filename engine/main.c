@@ -681,8 +681,9 @@ static gboolean _cmd_set(JsonObject *req, JsonBuilder *b, char **err)
   const double opacity = json_object_get_double_member_with_default(req, "opacity", -1.0);
   JsonObject *refine = json_object_has_member(req, "refine")
     ? json_object_get_object_member(req, "refine") : NULL;
+  const int priority = json_object_get_int_member_with_default(req, "priority", 0);
   if(!op || !session_set(op, field, value, params, has_enabled, enabled, after, before, instance, mask, invert, opacity,
-                  refine, err))
+                  refine, priority, err))
     return FALSE;
   return TRUE;
 }
@@ -718,6 +719,17 @@ static gboolean _cmd_get(JsonObject *req, JsonBuilder *b, char **err)
   JsonObject *ops = json_object_has_member(req, "modules")
     ? json_object_get_object_member(req, "modules") : NULL;
   if(!ops || !session_get(ops, b, err)) return FALSE;
+  return TRUE;
+}
+
+static gboolean _cmd_module_schema(JsonObject *req, JsonBuilder *b, char **err)
+{
+  return session_module_schema(json_object_get_string_member_with_default(req, "op", NULL), b, err);
+}
+
+static gboolean _cmd_instances(JsonObject *req, JsonBuilder *b, char **err)
+{
+  session_instances(b);
   return TRUE;
 }
 
@@ -1241,6 +1253,8 @@ static const eng_cmd_t _commands[] =
   { "lenses", _cmd_lenses, _CMD_NEEDS_OPEN },
   { "module_state", _cmd_module_state, _CMD_NEEDS_OPEN },
   { "get", _cmd_get, _CMD_NEEDS_OPEN },
+  { "module_schema", _cmd_module_schema, _CMD_NEEDS_OPEN },
+  { "instances", _cmd_instances, _CMD_NEEDS_OPEN },
   { "render", _cmd_render, _CMD_NEEDS_OPEN },
   { "mask", _cmd_mask, _CMD_NEEDS_OPEN | _CMD_EDITS },
   { "combine", _cmd_combine, _CMD_NEEDS_OPEN | _CMD_EDITS },

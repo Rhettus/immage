@@ -17,5 +17,24 @@
    "ms": 0.0,
    "ok": true
   }
+ },
+ {
+  "label": "3 open / get exposure priority 0",
+  "reply": {
+   "modules": {
+    "exposure@0": {
+     "default_enabled": false,
+     "defaults": {
+      "exposure": 0.0
+     },
+     "enabled": true,
+     "params": {
+      "exposure": 0.5
+     }
+    }
+   },
+   "ms": 0.0,
+   "ok": true
+  }
  }
 ]
