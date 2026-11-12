@@ -438,7 +438,7 @@ MALFORMED = [
     (b'{"cmd":"cancel_base","id":"x"}\n', 'cancel_base with a string id'),
     (b'{"cmd":"cancel_base"}\n', 'cancel_base alone'),
     (b'{"cmd":"merge_cancel","job":[]}\n', 'merge_cancel with an array job'),
-    (b'{"cmd":"tag","tag":1}\n', 'tag in a string'),
+    (b'{"cmd":"no_such_command","tag":1}\n', 'tagged unknown command'),
     (b'{"cmd":"import","tag":3,"files":"x"}\n', 'tagged import, files a string'),
     (b'{"cmd":"import","tag":4,"files":[1,null,{},[]]}\n', 'tagged import, odd files'),
     (b'{"cmd":"import","files":[1,null,{},[],true]}\n', 'import, odd files'),

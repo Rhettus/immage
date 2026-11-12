@@ -49,7 +49,7 @@ const engineList = engineCommands(read('engine/main.c'));
 const engine = new Set(engineList);
 
 // not engine commands: the benchmark edit server's own protocol, and the
-// unknown name request-ids.py sends on purpose
+// unknown name request-ids.py and hostile-inputs.py send on purpose
 const notEngine = new Set(['benchmarking/lib/edits.mjs']);
 const deliberate = new Set(['no_such_command']);
 const sources = [
