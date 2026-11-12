@@ -327,13 +327,13 @@ class Run:
             # the framing module adds at most half the photo's long side to each side, so a canvas
             # more than three times the photo's long side cannot be filled (a small photo on a big canvas)
             small = max(want) > 3 * max(w, h)
-            check = (lambda ok, *a: ok or small_bugs.append(a[0]) or True) if small else self.r.check
+            check = (lambda ok, *a: ok or small_bugs.append(f'{a[0]}: {a[1]}') or True) if small else self.r.check
             if not check(got is not None and got[:2] == want,
                                 f'canvas {cw}x{ch}{" flip" if flip else ""}{" +border" if borders else ""} on {label} {w}x{h}',
                                 f'asked {want[0]}x{want[1]}, file is {got}'):
                 bad += 1
         self.r.known_bug(not small_bugs, 'a canvas more than 3x the photo is filled',
-                         f'{len(small_bugs)} of the cases came out smaller, e.g. ' + small_bugs[0] if small_bugs else '')
+                         f'{len(small_bugs)} of the cases came out smaller, ' + '; '.join(small_bugs) if small_bugs else '')
         # the canvas color shows where the photo does not reach
         frame = white | {'canvas': {'width': 600, 'height': 600, 'color': '#00ff00', 'flip': False}}
         label, imgid, w, h = shapes[0]
@@ -470,8 +470,22 @@ class Run:
         finally:
             resource.prlimit(pid, resource.RLIMIT_FSIZE, (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
         self.r.check(not reply.get('ok') and reply.get('error'), 'a full disk fails the export with a reason', str(reply))
-        self.r.known_bug(not out.exists(), 'a failed export leaves no partial file',
-                         f'{out.name} is left at {out.stat().st_size if out.exists() else 0} bytes')
+        self.r.check(not out.exists(), 'a failed export leaves no partial file',
+                     f'{out.name} is left at {out.stat().st_size if out.exists() else 0} bytes')
+        self.r.check(not any(out.parent.glob('.immage-*')) if out.parent.exists() else True,
+                     'a failed export leaves no temporary file', str(sorted(p.name for p in out.parent.iterdir())))
+        # Overwrite onto a file that is there: a failed export keeps it as it was
+        kept = out.parent / 'kept.tif'
+        kept.parent.mkdir(parents=True, exist_ok=True)
+        kept.write_bytes(b'the original file')
+        resource.prlimit(pid, resource.RLIMIT_FSIZE, (2 << 20, resource.RLIM_INFINITY))
+        try:
+            reply = self.engine_ask({'cmd': 'export', 'imgid': id_a, 'out': str(kept), 'format': 'tiff', 'bpp': 16,
+                                     'color_space': 'srgb'})
+        finally:
+            resource.prlimit(pid, resource.RLIMIT_FSIZE, (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
+        self.r.check(not reply.get('ok') and kept.read_bytes() == b'the original file',
+                     'a failed export over a file leaves that file as it was', f'{reply} {kept.stat().st_size} bytes')
         again = self.export(id_a, 'tiff', 'after-full', long_edge=100, bpp=8)
         self.r.check(facts(again) is not None, 'the next export works')
         print('ok   full disk')

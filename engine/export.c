@@ -973,15 +973,11 @@ static gboolean _positive_copy(JsonObject *req)
     || json_object_get_boolean_member_with_default(req, "negative_copy", FALSE);
 }
 
-gboolean export_export(const dt_imgid_t imgid, JsonObject *req, char **err)
+// writes the export to `out`, naming `shown` in its errors
+static gboolean _export_write(const dt_imgid_t imgid, JsonObject *req, const char *out, const char *shown,
+                              char **err)
 {
-  const char *out = json_object_get_string_member_with_default(req, "out", NULL);
   const char *format = json_object_get_string_member_with_default(req, "format", "jpeg");
-  if(!out || !dt_is_valid_imgid(imgid))
-  {
-    *err = g_strdup("export needs an image and an output file");
-    return FALSE;
-  }
   const gboolean transient = json_object_get_boolean_member_with_default(req, "transient", FALSE);
   if(transient && (g_strcmp0(format, "jpeg")
       || g_strcmp0(json_object_get_string_member_with_default(req, "color_space", "srgb"), "srgb")
@@ -1197,10 +1193,10 @@ gboolean export_export(const dt_imgid_t imgid, JsonObject *req, char **err)
   if(framed) _frame_done(frame_id, frame_svg);
   fmt->free_params(fmt, fdata);
 #ifdef HAVE_AI
-  if(failed) *err = _up.err && upscale > 1 ? g_strdup(_up.err) : g_strdup_printf("could not write '%s'", out);
+  if(failed) *err = _up.err && upscale > 1 ? g_strdup(_up.err) : g_strdup_printf("could not write '%s'", shown);
   if(upscale > 1) eng_unlock(&_up_lock, ENG_LOCK_UP);
 #else
-  if(failed) *err = g_strdup_printf("could not write '%s'", out);
+  if(failed) *err = g_strdup_printf("could not write '%s'", shown);
 #endif
   if(failed) return FALSE;
   // a file that keeps what was asked to be left out is not delivered
@@ -1232,6 +1228,46 @@ gboolean export_export(const dt_imgid_t imgid, JsonObject *req, char **err)
     return FALSE;
   }
   return TRUE;
+}
+
+gboolean export_export(const dt_imgid_t imgid, JsonObject *req, char **err)
+{
+  const char *out = json_object_get_string_member_with_default(req, "out", NULL);
+  if(!out || !dt_is_valid_imgid(imgid))
+  {
+    *err = g_strdup("export needs an image and an output file");
+    return FALSE;
+  }
+  // a transient preview goes to shared memory, not to `out`
+  if(json_object_get_boolean_member_with_default(req, "transient", FALSE))
+    return _export_write(imgid, req, out, out, err);
+  // darktable's writers open the file and write it in place: a failed write
+  // (a full disk) leaves part of it under the export's name, and with
+  // Overwrite the original is gone by then. so the export is written beside
+  // it and renamed over it once whole. the name is short, as the export's
+  // own may be near NAME_MAX, and fixed per export, so a copy a killed
+  // engine left is reused rather than piled up (as _write_xmp_whole does)
+  gchar *dir = g_path_get_dirname(out);
+  gchar *tmpname = g_strdup_printf(".immage-%08x.part", g_str_hash(out));
+  gchar *part = g_build_filename(dir, tmpname, NULL);
+  g_free(tmpname);
+  g_free(dir);
+  g_unlink(part);
+  GStatBuf st;
+  const gboolean existed = g_stat(out, &st) == 0;
+  gboolean ok = _export_write(imgid, req, part, out, err);
+  if(ok)
+  {
+    if(existed) g_chmod(part, st.st_mode & 07777);
+    if(g_rename(part, out) != 0)
+    {
+      *err = g_strdup_printf("could not replace '%s': %s", out, g_strerror(errno));
+      ok = FALSE;
+    }
+  }
+  if(!ok) g_unlink(part);
+  g_free(part);
+  return ok;
 }
 
 // a tagged `export` runs here rather than in the main loop, so the photo is

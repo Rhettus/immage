@@ -44,7 +44,9 @@ For a folder:
   default.
 - **If a file exists**: **Ask me**, **Add a number**, **Replace it** or
   **Skip it**. **Ask me** offers **Use Unique Name**, **Overwrite**, **Skip**
-  or **Cancel**, and can apply your answer to every clash.
+  or **Cancel**, and can apply your answer to every clash. An existing file
+  is replaced only once the new one is complete, so an export that fails,
+  such as on a full disk, leaves it as it was.
 - **Show in Finder when done**.
 
 For Immich, choose an album, or **New album…**. A photo Immich already has

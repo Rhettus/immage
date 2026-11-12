@@ -123,6 +123,9 @@ Bug fixes
 - Adobe RGB, Display P3 and ProPhoto exports to JPEG, TIFF and WebP now embed
   their color profile, so other apps show the right colors. They were saved
   without one and looked wrong where the app assumed sRGB.
+- An export that fails partway, such as on a full disk, no longer leaves a
+  cut-off file behind, and no longer destroys the file it was replacing. The
+  new file is written beside it and takes its place only once complete.
 
 ## 0.44.1
 
