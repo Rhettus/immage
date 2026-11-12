@@ -1355,6 +1355,28 @@ export default function App() {
     shownKey.current = panelKey;
     el.scrollTop = panelScroll.current.get(panelKey) ?? 0;
   }, [panelKey]);
+  // WebKitGTK keeps the panel's scroll offset when its content shrinks (a
+  // fold or Advanced closed) without clamping it: the top of the panel then
+  // sits out of reach, with no scrollbar to bring it back. Clamp whenever a
+  // panel changes size
+  useEffect(() => {
+    const el = panelsRef.current;
+    if (!el) return;
+    const clamp = () => {
+      const max = Math.max(0, el.scrollHeight - el.clientHeight);
+      if (el.scrollTop > max) el.scrollTop = max;
+    };
+    const ro = new ResizeObserver(clamp);
+    const watch = () => {
+      ro.disconnect();
+      ro.observe(el);
+      for (const c of el.children) ro.observe(c);
+    };
+    watch();
+    const mo = new MutationObserver(watch);
+    mo.observe(el, { childList: true });
+    return () => { ro.disconnect(); mo.disconnect(); };
+  }, []);
   // the key handler is installed once; it reaches the latest of this
   const pickToolRef = useRef<(t: MaskTool) => void>(() => {});
   const masksModeRef = useRef(false);

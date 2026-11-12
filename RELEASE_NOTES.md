@@ -85,6 +85,9 @@ Performance
 
 Bug fixes
 
+- The side panel no longer stays scrolled past its end when its content
+  shrinks, such as after hiding a mask's advanced settings, which left the top
+  of the panel out of reach.
 - A save that fails no longer damages the photo's sidecar. A full disk could
   leave it cut short while the save reported success, and a crash during a
   save could leave it empty, losing the edit. The old sidecar now stays whole

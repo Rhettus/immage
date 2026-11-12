@@ -75,7 +75,10 @@ export async function moduleOutput(t,definition){
  if(!control&&option.op==='atrous'){
   if(scope==='global')await panel(t,'basic');
   const point=await reveal(t,'.equalizer-graph circle[role=slider]');await t.driver.point(point.x,point.y);const before=await settledPhoto(t);await t.driver.keys('\uE013');
-  await settledPhoto(t,p=>p.hash!==before.hash);await t.evidence('module-graph-effect');return;
+  const after=await settledPhoto(t,p=>p.hash!==before.hash);await t.evidence('module-graph-effect');
+  // the mask goes, as on the slider path: one left behind changes later cases' baselines
+  if(scope==='masks'){await click(t,'.mask-list li.on .mask-del');await settledReset(t,before,after,'mask-delete');}
+  return;
  }
  if(!control)throw new Blocked(`${scope}/${choice.id}/${option.name}: no enabled control; needs matching RAW/treatment/section prerequisite`);
  const s=await reveal(t,control),before=await settledPhoto(t);
