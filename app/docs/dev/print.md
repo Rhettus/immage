@@ -17,7 +17,7 @@ change to darktable's source.
 | App.tsx | `RightMode` `"print"`, the rail button after Export, ⌘P, S (`toggleProofRef`), the `proof` state, `changeProof()` and the `Soft Proof:` badge over the photo; the effects that read printers and profiles when the panel opens and the chosen printer's papers; the page in the viewer (`printPage`, `sheet`, `printViewRef`); `printNow()`. |
 | [print.ts](../../src/print.ts), Cells | `cellsLayout()` (grid, pages), `sheetPages()` and `sheetRequest()`: a page is a list of cells, each a photo box and an optional label rectangle in millimeters; the engine knows nothing of columns, so another generator (user-drawn cells) can follow. |
 | `Session.redraw()` | After the engine's view changes with no edit: drops the frames kept by view and the zoom copy (`changed()`), and renders. |
-| main.rs | `print_profiles`, `print_profile_add`, `softproof`, `printers`, `printer_info`, and `print_sheet` and `print_photo` (`export_hold`, a tagged `print` on the export thread, `export_release`, as `export_images` does). |
+| print_cmds.rs | `print_profiles`, `print_profile_add`, `softproof`, `printers`, `printer_info`, and `print_sheet` and `print_photo` (`export_hold`, a tagged `print` on the export thread, `export_release`, as `export_images` does). |
 | [engine/print.c](../../../engine/print.c) | Profiles, the soft proof, printers and the print job. |
 | main.c | The commands (`print`, `print_profiles`, `print_profile_add`, `printers`, `printer`, `softproof`); a tagged `print` goes to the export pool (`_export_run`) and renders the job's snapshot (`_hold_take`). |
 
@@ -166,7 +166,7 @@ Letter at 300 dpi in 16 bits, and four times that at 600 dpi).
 Windows' `dt_win_print_file` writes one fixed page, so each page is a job.
 
 The request holds `pages: [[{ imgid, box, label? }]]`, `label_points` and
-the job's fields. `print_sheet` in main.rs holds all the imgids
+the job's fields. `print_sheet` in print_cmds.rs holds all the imgids
 (`export_hold`), sends one tagged `print` to the export thread, which gives
 `print_sheet` take and release callbacks (`_sheet_take` is `_hold_take`, and
 `_sheet_release` removes the snapshot) so each photo is copied as its page
@@ -174,7 +174,7 @@ reaches it; an untagged `print` with `pages` renders the photos as they are.
 The frontend job id is the hold id. A third callback, `print_step_f`
 (`_sheet_step`, which is `_merge_report`), is called before the first photo
 and after each is placed; its `merge-progress` lines (the `merge` helper in
-main.rs, `runMerge` in background.ts) drive the activity line, and a
+export_cmds.rs, `runMerge` in background.ts) drive the activity line, and a
 `merge_cancel` makes the next step return FALSE, which ends the print with
 "stopped". App.tsx leaves the grid when Cells is chosen (`cellsChosen`).
 

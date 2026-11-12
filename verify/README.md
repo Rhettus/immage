@@ -213,7 +213,7 @@ already caught the bug, that is enough; otherwise add one to `fixes` in
 that fixed it in a comment, as the masks check's "mask added mid-send"
 does. A bug that only shows when requests overlap can change the edit as
 a request goes to the engine, through `sent.hook` in `shim.mjs`. The shim
-also refuses a command `main.rs` doesn't register, as the app would.
+also refuses a command bindings.rs doesn't register, as the app would.
 
 A decision about how Immage behaves gets a check in `decisions`, citing
 where it is written down. Changing the decision changes its check in the

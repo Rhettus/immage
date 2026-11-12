@@ -107,7 +107,7 @@ Stop expanding equivalent diagnostic matrices once they no longer inform adoptio
 3. Rebuild: `cmake --build build`, a fresh configure if CMake asks. Then
    `(cd app && npm run build)` and `(cd app/src-tauri && cargo build && cargo test)`.
    Run `python3 -I scripts/pin_models.py --write` to update the AI model table
-   in `main.rs` for the new darktable version, then check the diff for new
+   in `ai_cmds.rs` for the new darktable version, then check the diff for new
    model ids and changed hashes.
 4. Repair what broke (below), and run the checks under [Verify](#verify).
 5. Commit the bump on its own, with the repairs in their own commits

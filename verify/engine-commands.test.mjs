@@ -38,7 +38,7 @@ export function engineCommands(src) {
 function sentCommands(file, src) {
   if (file.endsWith('.rs')) src = src.replace(/^mod tests \{[\s\S]*$/m, ''); // tests send placeholders
   const names = [...src.matchAll(/["']?\bcmd["']?\s*:\s*["']([a-z_0-9]+)["']/g)].map((m) => m[1]);
-  if (file.endsWith('main.rs')) {
+  if (file.endsWith('.rs')) {
     for (const m of src.matchAll(/let cmd = if \w+ \{ "([a-z_0-9]+)" \} else \{ "([a-z_0-9]+)" \}/g)) names.push(m[1], m[2]);
     for (const m of src.matchAll(/\["cmd"\]\s*=\s*json!\("([a-z_0-9]+)"\)/g)) names.push(m[1]);
   }
