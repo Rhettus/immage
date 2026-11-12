@@ -1,0 +1,4 @@
+{"version":3,"presets":[
+  {"id":"3f1c0a52-0000-4000-8000-000000000021","name":"Warm film","group":"Film","values":{"exposure":0.25,"blacks":-30,"hsl_sat_orange":-80,"hsl_lum_orange":60,"bw_mix":40,"bw_mode":0,"vibrance":12}},
+  {"id":"3f1c0a52-0000-4000-8000-000000000022","name":"Imported default","group":"Import","rawOnly":true,"values":{"lens_profile":1,"lens_ca":1}}
+]}

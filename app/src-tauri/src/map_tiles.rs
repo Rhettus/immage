@@ -49,7 +49,7 @@ impl Drop for Download {
 #[tauri::command]
 #[specta::specta]
 pub async fn map_tile(app: tauri::AppHandle, z: u32, x: u32, y: u32) -> Result<crate::bindings::Frame, String> {
-    if z > 19 || x >= (1 << z) || y >= (1 << z) {
+    if !valid_tile(z, x, y) {
         return Err("invalid map tile".into());
     }
     let cache = app.path().app_cache_dir().map_err(|e| e.to_string())?.join("map-tiles");
@@ -61,6 +61,11 @@ pub async fn map_tile(app: tauri::AppHandle, z: u32, x: u32, y: u32) -> Result<c
             response.bytes().map_err(|e| e.to_string()).map(|b| b.to_vec())
         }).map(|b| crate::bindings::Frame(tauri::ipc::Response::new(b)))
     }).await.map_err(|e| e.to_string())?
+}
+
+// OSM serves zoom 0 to 19, and 2^z tiles across and down
+fn valid_tile(z: u32, x: u32, y: u32) -> bool {
+    z <= 19 && x < (1 << z) && y < (1 << z)
 }
 
 type Downloader<'a> = &'a dyn Fn(u32, u32, u32) -> Result<Vec<u8>, String>;
@@ -176,6 +181,42 @@ mod tests {
         assert_eq!(result, Err("offline".to_string()));
         assert!(!cache.join("4-3-3.png").exists());
         assert!(!cache.join("4-3-3.png.part").exists());
+        let _ = std::fs::remove_dir_all(&cache);
+    }
+
+    #[test]
+    fn tile_coordinates_are_bounded() {
+        assert!(valid_tile(0, 0, 0));
+        assert!(valid_tile(19, (1 << 19) - 1, (1 << 19) - 1));
+        assert!(!valid_tile(20, 0, 0));
+        assert!(!valid_tile(0, 1, 0) && !valid_tile(0, 0, 1));
+        assert!(!valid_tile(3, 8, 0) && !valid_tile(3, 0, 8));
+        assert!(valid_tile(3, 7, 7));
+        // a huge zoom must not overflow the shift
+        assert!(!valid_tile(u32::MAX, 0, 0));
+    }
+
+    fn aged(path: &std::path::Path, days: u64) {
+        let when = std::time::SystemTime::now() - Duration::from_secs(days * 86400);
+        std::fs::File::options().write(true).open(path).unwrap().set_modified(when).unwrap();
+    }
+
+    #[test]
+    fn cache_is_fresh_for_seven_days_then_refetched() {
+        let _s = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let cache = dir("age");
+        tile(&cache, 2, 0, 0, &|_, _, _| Ok(vec![1])).unwrap();
+        let file = cache.join("2-0-0.png");
+        // 6 days old: still served from disk
+        aged(&file, 6);
+        assert_eq!(tile(&cache, 2, 0, 0, &|_, _, _| Err("must not download".into())).unwrap(), vec![1]);
+        // 8 days old: downloaded again and replaced
+        aged(&file, 8);
+        assert_eq!(tile(&cache, 2, 0, 0, &|_, _, _| Ok(vec![2])).unwrap(), vec![2]);
+        assert_eq!(std::fs::read(&file).unwrap(), vec![2]);
+        // stale and offline: the error, not an old tile past its time
+        aged(&file, 8);
+        assert_eq!(tile(&cache, 2, 0, 0, &|_, _, _| Err("offline".into())), Err("offline".to_string()));
         let _ = std::fs::remove_dir_all(&cache);
     }
 }

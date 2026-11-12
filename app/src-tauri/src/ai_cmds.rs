@@ -575,6 +575,118 @@ mod tests {
         index.assert();
     }
 
+    // a pinned release of one model "m" whose archive is `body`, with `size` as pinned
+    fn pinned_for(body: &[u8], size: u64, dir: &Path) -> [ModelRelease; 1] {
+        let sha = sha_of(body, dir);
+        let models: &'static [ModelPin] = Box::leak(Box::new([
+            ModelPin { id: "m", sha256: Box::leak(sha.into_boxed_str()), size }]));
+        [ModelRelease { darktable: "5.7.0", tag: "t1", models }]
+    }
+
+    fn left_over(dir: &Path) -> bool {
+        dir.join("_dl/m.dtmodel").exists() || dir.join("_dl/m.dtmodel.part").exists() || dir.join("m").exists()
+    }
+
+    #[test]
+    fn interrupted_download_installs_nothing() {
+        let dir = scratch("dl-interrupted");
+        let pins = pinned_for(b"xxxx", 4, &dir);
+        let mut server = mockito::Server::new();
+        // the connection drops mid-body, on every try
+        let archive = server.mock("GET", "/t1/m.dtmodel").with_chunked_body(|w| {
+            w.write_all(b"xx")?;
+            w.flush()?;
+            Err(std::io::Error::new(std::io::ErrorKind::ConnectionReset, "dropped"))
+        }).expect(3).create();
+        let url = server.url();
+        let site = model_site(&url, &pins);
+        let unpack = |_: &Path, _: &Path| -> Result<(), String> { panic!("unpacked a partial archive") };
+        let done = std::cell::Cell::new(false);
+        let progress = |v: Value| if v["stage"] == "ready" { done.set(true) };
+        let err = install_model(&progress, &unpack, &site, &dir, "m", "5.7.0+1~gtest").unwrap_err();
+        let left = left_over(&dir);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(err.contains("could not download"), "{err}");
+        assert!(!left && !done.get());
+        archive.assert();
+    }
+
+    #[test]
+    fn short_but_cleanly_ended_body_fails_the_checksum() {
+        // a server that stops early but ends cleanly: only the checksum can tell
+        let dir = scratch("dl-short");
+        let pins = pinned_for(b"xxxx", 4, &dir);
+        let mut server = mockito::Server::new();
+        let _archive = server.mock("GET", "/t1/m.dtmodel").with_body("xx").create();
+        let url = server.url();
+        let site = model_site(&url, &pins);
+        let unpack = |_: &Path, _: &Path| -> Result<(), String> { panic!("unpacked a partial archive") };
+        let err = install_model(&|_| {}, &unpack, &site, &dir, "m", "5.7.0+1~gtest").unwrap_err();
+        let left = left_over(&dir);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(err.contains("update of Immage"), "{err}");
+        assert!(!left);
+    }
+
+    #[test]
+    fn oversized_pinned_download_is_refused() {
+        let dir = scratch("dl-big");
+        let pins = pinned_for(b"xxxx", 4, &dir);
+        let mut server = mockito::Server::new();
+        let archive = server.mock("GET", "/t1/m.dtmodel").with_body("xxxxxxxx").expect(1).create();
+        let url = server.url();
+        let site = model_site(&url, &pins);
+        let unpack = |_: &Path, _: &Path| -> Result<(), String> { panic!("unpacked an oversized archive") };
+        let err = install_model(&|_| {}, &unpack, &site, &dir, "m", "5.7.0+1~gtest").unwrap_err();
+        let left = left_over(&dir);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(err.contains("larger than expected"), "{err}");
+        assert!(!left);
+        archive.assert();
+    }
+
+    #[test]
+    fn published_checksum_mismatch_installs_nothing() {
+        let dir = scratch("pub-mismatch");
+        let sha = sha_of(b"xxx", &dir);
+        let pins = [ModelRelease { darktable: "5.7.0", tag: "t1", models: &[] }];
+        let mut server = mockito::Server::new();
+        let _index = server.mock("GET", "/releases-index.json")
+            .with_body(r#"{"compatible_releases":{"5.8.0":"t2"}}"#).create();
+        let _versions = server.mock("GET", "/t2/versions.json")
+            .with_body(format!(r#"{{"models":{{"m":{{"sha256":"sha256:{sha}","size":3}}}}}}"#)).create();
+        let _archive = server.mock("GET", "/t2/m.dtmodel").with_body("yyy").create();
+        let url = server.url();
+        let site = model_site(&url, &pins);
+        let unpack = |_: &Path, _: &Path| -> Result<(), String> { panic!("unpacked a corrupt archive") };
+        let err = install_model(&|_| {}, &unpack, &site, &dir, "m", "5.8.0+1").unwrap_err();
+        let left = left_over(&dir);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(err, "the downloaded model 'm' failed its checksum");
+        assert!(!left);
+    }
+
+    #[test]
+    fn failed_unpack_leaves_no_archive_or_model() {
+        let dir = scratch("unpack-fails");
+        let pins = pinned_for(b"xxx", 3, &dir);
+        let mut server = mockito::Server::new();
+        let _archive = server.mock("GET", "/t1/m.dtmodel").with_body("xxx").create();
+        let url = server.url();
+        let site = model_site(&url, &pins);
+        let unpack = |_: &Path, _: &Path| -> Result<(), String> { Err("bad archive".into()) };
+        let err = install_model(&|_| {}, &unpack, &site, &dir, "m", "5.7.0+1~gtest").unwrap_err();
+        assert_eq!(err, "bad archive");
+        assert!(!left_over(&dir));
+        // an unpack that reports success but leaves no config.json is not an install
+        let unpack = |_: &Path, _: &Path| -> Result<(), String> { Ok(()) };
+        let err = install_model(&|_| {}, &unpack, &site, &dir, "m", "5.7.0+1~gtest").unwrap_err();
+        let left = left_over(&dir);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(err, "could not unpack the model 'm'");
+        assert!(!left);
+    }
+
     #[test]
     fn fetch_stops_past_the_limit() {
         let dir = scratch("fetch-limit");

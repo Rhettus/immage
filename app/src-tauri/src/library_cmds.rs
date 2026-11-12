@@ -676,4 +676,22 @@ mod tests {
         let _ = std::fs::remove_dir_all(&runtime);
         assert_eq!(got, Some(json!([{ "path": "/photos/x.jpg", "rating": 3 }])));
     }
+
+    // the files a deletion names can already be gone, or be named twice (an
+    // original and its copy share a sidecar); neither is an error, and
+    // nothing is left to send to the Trash. only missing paths and folders
+    // are used here, so no test moves a real file to the user's Trash
+    #[test]
+    fn trashing_missing_files_is_not_an_error() {
+        let dir = std::env::temp_dir().join(format!("immage-trash-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let gone = dir.join("a.jpg.xmp");
+        let items = vec![gone.clone(), gone, dir.join("b.arw"), dir.clone()];
+        let result = tauri::async_runtime::block_on(trash_existing(items));
+        // a folder is never trashed by this path
+        assert!(dir.is_dir());
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(result, Ok(()));
+        assert_eq!(tauri::async_runtime::block_on(trash_existing(vec![])), Ok(()));
+    }
 }
