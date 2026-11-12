@@ -161,19 +161,65 @@ typedef struct dt_engine_session_t
   gboolean fresh, baseline;
 } dt_engine_session_t;
 
+typedef struct preview_output_t {
+  const char *path;
+  double timings[4];
+  double elapsed_ms;
+  gboolean completed;
+} preview_output_t;
+
+#ifdef HAVE_AI
+// GPU execution providers, the only ones the upscale model runs on: on the
+// CPU, ONNX Runtime expands RealPLKSR's large kernels into intermediate
+// buffers of over 8 GB for a single 512-pixel tile, where Core ML stays
+// under 2 GB (4x under 4). OpenVINO is left out, as it may be the CPU.
+// each with darktable's name for it in its settings: kept here rather than
+// read from dt_ai_providers, data that a Windows DLL does not hand to an
+// executable, which then links darktable's AI library a second time
+static const struct { dt_ai_provider_t p; const char *id; } _gpu_providers[] = {
+  { DT_AI_PROVIDER_COREML, "CoreML" }, { DT_AI_PROVIDER_DIRECTML, "DirectML" },
+  { DT_AI_PROVIDER_CUDA, "CUDA" }, { DT_AI_PROVIDER_MIGRAPHX, "MIGraphX" },
+};
+#endif
+
 extern dt_engine_session_t _s;
 
 // main.c
+double engine_ms_since(const gint64 t0);
 void engine_add_string(JsonBuilder *b, const char *name, const char *value);
+void engine_add_int(JsonBuilder *b, const char *name, const gint64 value);
+void engine_add_bool(JsonBuilder *b, const char *name, const gboolean value);
 
 // session.c
 void session_changed(const dt_dev_pixelpipe_change_t flags);
+void session_follower_cleanup(dt_engine_follower_t *f);
 dt_iop_module_t *session_module(const char *op, char **err);
 void *session_field_in(dt_iop_module_t *mod, void *base, const char *path,
                        dt_introspection_field_t **f, char **err);
+gboolean session_render(dt_dev_pixelpipe_t *pipe, const int devid, const int bw, const int bh,
+                        const double req_scale, const int x, const int y, JsonArray *have,
+                        int *ow, int *oh, int *ox_out, int *oy_out, dt_hash_t *kept, preview_output_t *output, char **err);
+gboolean session_follower_ready(dt_engine_follower_t *f, char **err);
 
 // masks.c
 void masks_invalidate_from(const int order, const char *why);
+
+// device.c
+#ifdef HAVE_AI
+#ifdef __linux__
+gboolean device_ort_exports(const dt_ai_provider_t p);
+
+#endif
+gboolean device_gpu_usable(const dt_ai_provider_t p);
+
+#endif
+void device_opencl(JsonBuilder *b);
+
+#ifdef HAVE_AI
+void device_ai_accel(JsonBuilder *b);
+
+#endif
+gboolean device_parity(JsonObject *req, JsonBuilder *b, char **err);
 
 // looks.c
 gboolean looks_is_look(const dt_iop_module_t *m);
