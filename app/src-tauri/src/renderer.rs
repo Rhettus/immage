@@ -4,7 +4,8 @@
 // EGL must be selected before GTK starts, so this preference is read straight
 // from settings.json (settings::read_key), not through the page. the marker distinguishes our inherited override on relaunch
 // from a vendor explicitly chosen by the user in their environment
-use serde_json::{json, Value};
+use serde::Serialize;
+use specta::Type;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::{atomic::Ordering, OnceLock};
@@ -80,11 +81,29 @@ pub fn init(identifier: &str) -> Result<(), String> {
     START.set(Started { runtime, mode, active, external }).map_err(|_| "renderer initialized twice".to_string())
 }
 
-pub fn status() -> Value {
-    let Some(s) = START.get() else { return Value::Null; };
-    json!({ "running": s.mode, "next": load(&s.runtime), "active": s.active,
-        "external": s.external, "mesa": vendor(Path::new("/"), "mesa").is_some(),
-        "nvidia": Path::new("/proc/driver/nvidia").exists() && vendor(Path::new("/"), "nvidia").is_some() })
+// what Preferences shows of the web view's renderer: the mode running and the
+// one the next start takes, the vendor in use and which others exist
+#[derive(Serialize, Type)]
+#[serde(rename = "WebviewRenderer")]
+pub struct Status {
+    pub running: String,
+    pub next: String,
+    pub active: String,
+    pub external: bool,
+    pub mesa: bool,
+    pub nvidia: bool,
+}
+
+pub fn status() -> Option<Status> {
+    let s = START.get()?;
+    Some(Status {
+        running: s.mode.clone(),
+        next: load(&s.runtime),
+        active: s.active.to_string(),
+        external: s.external,
+        mesa: vendor(Path::new("/"), "mesa").is_some(),
+        nvidia: Path::new("/proc/driver/nvidia").exists() && vendor(Path::new("/"), "nvidia").is_some(),
+    })
 }
 
 pub fn set(settings: &crate::settings::Settings, mode: &str) -> Result<(), String> {

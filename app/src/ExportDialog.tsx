@@ -5,7 +5,6 @@
 // the left, Lightroom's sections in the middle, a preview of the result on
 // the right. settings are remembered
 import { useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
@@ -25,12 +24,11 @@ import {
   BUILTINS, DEFAULTS, PERSONAL_KEYS, bitDepths, depthOf, exportOptionsFor, frameFor, hasQuality, readShared, sharedFile, loadPresets, loadSettings,
   newId, presetEdited, presetOf, savePresets, saveSettings, type BitDepth, type ExportPreset, type Settings,
 } from "./exportSettings";
-import { commands, type ExportReply, type Value } from "./commands";
+import { commands, type Album, type ExportReply, type Value } from "./commands";
 
 export const FILE_MANAGER = navigator.userAgent.includes("Windows") ? "Explorer"
   : navigator.userAgent.includes("Mac") ? "Finder" : "File Manager";
 
-type Album = { id: string; name: string; count: number };
 
 // Lightroom's Super Resolution, as darktable's upscale model on a GPU
 // provider; on the CPU the model needs more memory than a computer has
@@ -283,14 +281,14 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
   useEffect(() => {
     if (!toImmich) return;
     setImmichError(null);
-    invoke<Album[]>("immich_albums").then(setAlbums).catch((e) => setImmichError(String(e)));
-    invoke<string[]>("immich_export_check").then(setMissing).catch(() => setMissing([]));
+    commands.immichAlbums().then(setAlbums).catch((e) => setImmichError(String(e)));
+    commands.immichExportCheck().then(setMissing).catch(() => setMissing([]));
   }, [toImmich]);
   const createAlbum = async () => {
     const name = newAlbum?.trim();
     if (!name) return;
     try {
-      const a = await invoke<Album>("immich_create_album", { name });
+      const a = await commands.immichCreateAlbum(name);
       setAlbums((old) => [...(old ?? []), a].sort((x, y) => x.name.localeCompare(y.name)));
       set("album", a.id);
       setNewAlbum(null);
@@ -334,7 +332,7 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
   useEffect(() => {
     if (!shownImage) return;
     const imgid = shownImage.imgid;
-    invoke<{ image: { metadata: Meta } }>("meta", { imgid })
+    commands.meta(imgid)
       .then((r) => setPreviewMeta({ imgid, meta: r.image.metadata }))
       .catch(() => setPreviewMeta({ imgid, meta: EMPTY_META }));
   }, [shownImage?.imgid]);

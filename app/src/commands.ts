@@ -6,8 +6,8 @@
 // with `IMMAGE_WRITE_BINDINGS=1 cargo test bindings` in app/src-tauri, which
 // plain `cargo test` also checks), so a renamed argument or a changed reply
 // fails the type check here. calls reject with the command's error string, as
-// `invoke` does. commands not yet in the Rust builder are still `invoke`d by
-// name where they are used, and move here as they are typed.
+// `invoke` does. the page calls no command by name: verify/typed-commands.test.mjs
+// fails when a file other than bindings.ts imports `invoke`.
 //
 // binary replies (mapTile, later frames) come back as an ArrayBuffer
 export { commands } from "./bindings";

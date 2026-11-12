@@ -9,7 +9,7 @@
 //! is saved is always what the scrubber produced.
 
 use crate::scrub::{known_from_system, Known, Scrubber};
-use serde::Deserialize;
+use crate::typed_app::{BundleFile, BundleView, PageValues};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
 use std::io::Write;
@@ -17,16 +17,6 @@ use std::path::Path;
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
-
-/// What the page knows that the app cannot guess.
-#[derive(Deserialize, Default)]
-#[serde(default)]
-pub struct PageValues {
-    folders: Vec<String>,
-    photos: Vec<String>,
-    extra: Vec<String>,
-    prefs: Value,
-}
 
 pub struct File {
     pub name: String,
@@ -83,12 +73,12 @@ pub fn collect(known: Known, page_prefs: &Value, engine_log: &str, system: &Valu
 }
 
 impl Bundle {
-    fn view(&self) -> Value {
+    fn view(&self) -> BundleView {
         let counts: BTreeMap<String, usize> = self.scrubber.counts();
-        json!({
-            "files": self.files.iter().map(|f| json!({ "name": f.name, "lines": f.lines })).collect::<Vec<_>>(),
-            "counts": counts,
-        })
+        BundleView {
+            files: self.files.iter().map(|f| BundleFile { name: f.name.clone(), lines: f.lines.clone() }).collect(),
+            counts: counts.into_iter().map(|(k, n)| (k, n as u64)).collect(),
+        }
     }
 
     fn set_file(&mut self, name: &str, text: &str) {
@@ -157,12 +147,13 @@ fn engine_facts(app: &AppHandle) -> (Value, Option<Value>) {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn support_bundle_preview(
     app: AppHandle,
     state: State<'_, crate::AppState>,
     bundle: State<'_, BundleState>,
     page: PageValues,
-) -> Result<Value, String> {
+) -> Result<BundleView, String> {
     let dir = app.path().app_data_dir().ok();
     let runtime = state.runtime.clone();
     let app_version = app.package_info().version.to_string();
@@ -185,11 +176,12 @@ pub async fn support_bundle_preview(
 
 /// A GUI benchmark report the user picks from the reports folder, added to the bundle.
 #[tauri::command]
+#[specta::specta]
 pub async fn support_bundle_add_benchmark(
     app: AppHandle,
     state: State<'_, crate::AppState>,
     bundle: State<'_, BundleState>,
-) -> Result<Option<Value>, String> {
+) -> Result<Option<BundleView>, String> {
     if bundle.0.lock().unwrap().is_none() {
         return Err("the bundle was not started".into());
     }
@@ -217,6 +209,7 @@ pub async fn support_bundle_add_benchmark(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn support_bundle_save(
     app: AppHandle,
     bundle: State<'_, BundleState>,
@@ -237,6 +230,7 @@ pub async fn support_bundle_save(
 
 /// Drops the held text when the dialog is cancelled.
 #[tauri::command]
+#[specta::specta]
 pub fn support_bundle_discard(bundle: State<'_, BundleState>) {
     *bundle.0.lock().unwrap() = None;
 }
@@ -267,7 +261,7 @@ mod tests {
         let prefs = json!({ "immage.recent": "[\"/home/rhett/Pictures/Iceland 2026\"]" });
         let system = json!({ "os": "Linux", "note": "/home/rhett/.config" });
         let b = collect(known, &prefs, &log, &system);
-        let all = b.view().to_string().to_lowercase();
+        let all = serde_json::to_string(&b.view()).unwrap().to_lowercase();
         for secret in ["rhett", "iceland", "dsc01234", "rhetts-box"] {
             assert!(!all.contains(secret), "{secret} survived: {all}");
         }

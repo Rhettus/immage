@@ -111,6 +111,63 @@ export const commands = {
 	spektraStocks: () => __TAURI_INVOKE<FilmStocks>("spektra_stocks"),
 	spektraFetch: (action: string) => __TAURI_INVOKE<FilmFetch>("spektra_fetch", { action }),
 	lenses: () => __TAURI_INVOKE<LensMenu>("lenses"),
+	darktableResources: () => __TAURI_INVOKE<ResourceLevels>("darktable_resources"),
+	darktableResourcesSet: (level: string) => __TAURI_INVOKE<null>("darktable_resources_set", { level }),
+	memoryBudget: () => __TAURI_INVOKE<MemoryBudget>("memory_budget"),
+	gpuEdits: () => __TAURI_INVOKE<GpuEditState>("gpu_edits"),
+	gpuEditsSet: (on: boolean) => __TAURI_INVOKE<null>("gpu_edits_set", { on }),
+	webviewRenderer: () => __TAURI_INVOKE<WebviewRenderer | null>("webview_renderer"),
+	webviewRendererSet: (mode: string) => __TAURI_INVOKE<null>("webview_renderer_set", { mode }),
+	licenses: () => __TAURI_INVOKE<Licenses>("licenses"),
+	engineQuit: () => __TAURI_INVOKE<null>("engine_quit"),
+	engineRestart: () => __TAURI_INVOKE<void>("engine_restart"),
+	menuSet: (menus: NativeMenu[]) => __TAURI_INVOKE<null>("menu_set", { menus }),
+	cspViolation: (directive: string, blocked: string, source: string, line: number, sample: string) => __TAURI_INVOKE<void>("csp_violation", { directive, blocked, source, line, sample }),
+	previewFullscreen: (on: boolean) => __TAURI_INVOKE<null>("preview_fullscreen", { on }),
+	perfSet: (on: boolean) => __TAURI_INVOKE<null>("perf_set", { on }),
+	perfTraceStart: () => __TAURI_INVOKE<null>("perf_trace_start"),
+	perfTraceStop: () => __TAURI_INVOKE<null>("perf_trace_stop"),
+	perfModules: (request: number | null) => __TAURI_INVOKE<Timing[]>("perf_modules", { request }),
+	perfReportWrite: (name: string, report: Value) => __TAURI_INVOKE<string>("perf_report_write", { name, report }),
+	perfMachine: () => __TAURI_INVOKE<Value>("perf_machine"),
+	perfPing: () => __TAURI_INVOKE<null>("perf_ping"),
+	gpuCheckParity: (size: number | null, diff: string | null, selfCheck: boolean | null) => __TAURI_INVOKE<ParityReply>("gpu_check_parity", { size, diff, selfCheck }),
+	perfResourcesStart: () => __TAURI_INVOKE<null>("perf_resources_start"),
+	perfResourcesStop: () => __TAURI_INVOKE<Value>("perf_resources_stop"),
+	immichAlbums: () => __TAURI_INVOKE<Album[]>("immich_albums"),
+	immichCreateAlbum: (name: string) => __TAURI_INVOKE<Album>("immich_create_album", { name }),
+	immichExportCheck: () => __TAURI_INVOKE<string[]>("immich_export_check"),
+	immichBrowseCheck: () => __TAURI_INVOKE<string[]>("immich_browse_check"),
+	immichSearch: (args: SearchArgs, map: PathMap | null) => __TAURI_INVOKE<SearchPage>("immich_search", { args, map }),
+	immichLibraries: () => __TAURI_INVOKE<Named[]>("immich_libraries"),
+	immichSuggestions: (kind: string, within: { [key in string]: Value } | null) => __TAURI_INVOKE<string[]>("immich_suggestions", { kind, within }),
+	immichPeople: () => __TAURI_INVOKE<Named[]>("immich_people"),
+	immichTags: () => __TAURI_INVOKE<Named[]>("immich_tags"),
+	immichThumb: (id: string) => __TAURI_INVOKE<ArrayBuffer>("immich_thumb", { id }),
+	immichResolve: (id: string, name: string, path: string, map: PathMap | null) => __TAURI_INVOKE<Resolved>("immich_resolve", { id, name, path, map }),
+	pluginFindApps: (patterns: string[]) => __TAURI_INVOKE<string[]>("plugin_find_apps", { patterns }),
+	pluginConfig: (legacy: PluginConfig[] | null) => __TAURI_INVOKE<PluginConfig[]>("plugin_config", { legacy }),
+	pluginConfigSave: (list: PluginConfig[]) => __TAURI_INVOKE<PluginConfig[]>("plugin_config_save", { list }),
+	pluginSetApp: (id: string, path: string) => __TAURI_INVOKE<PluginConfig[]>("plugin_set_app", { id, path }),
+	pluginChooseApp: (id: string) => __TAURI_INVOKE<PluginConfig[] | null>("plugin_choose_app", { id }),
+	pluginLaunch: (id: string, files: string[]) => __TAURI_INVOKE<null>("plugin_launch", { id, files }),
+	pluginWatch: (watch: PluginWatch) => __TAURI_INVOKE<null>("plugin_watch", { watch }),
+	pluginCancel: (token: number) => __TAURI_INVOKE<void>("plugin_cancel", { token }),
+	pluginJob: (job: PluginJob) => __TAURI_INVOKE<null>("plugin_job", { job }),
+	pluginReturns: () => __TAURI_INVOKE<PluginReturn[]>("plugin_returns"),
+	pluginReturnApplied: (result: string) => __TAURI_INVOKE<null>("plugin_return_applied", { result }),
+	backupComponents: () => __TAURI_INVOKE<BackupComponent[]>("backup_components"),
+	backupPickSave: () => __TAURI_INVOKE<string | null>("backup_pick_save"),
+	backupPickOpen: () => __TAURI_INVOKE<string | null>("backup_pick_open"),
+	backupCreate: (path: string, components: string[]) => __TAURI_INVOKE<null>("backup_create", { path, components }),
+	backupInspect: (path: string) => __TAURI_INVOKE<BackupSummary>("backup_inspect", { path }),
+	backupRestore: (path: string, components: string[]) => __TAURI_INVOKE<BackupRestored>("backup_restore", { path, components }),
+	supportBundlePreview: (page: PageValues) => __TAURI_INVOKE<BundleView>("support_bundle_preview", { page }),
+	/**  A GUI benchmark report the user picks from the reports folder, added to the bundle. */
+	supportBundleAddBenchmark: () => __TAURI_INVOKE<BundleView | null>("support_bundle_add_benchmark"),
+	supportBundleSave: (removed: { [key in string]: number[] }) => __TAURI_INVOKE<string | null>("support_bundle_save", { removed }),
+	/**  Drops the held text when the dialog is cancelled. */
+	supportBundleDiscard: () => __TAURI_INVOKE<void>("support_bundle_discard"),
 };
 
 /* Types */
@@ -147,9 +204,77 @@ export type AgxProfile = {
 	deleted?: boolean | null,
 };
 
+export type Album = {
+	id: string,
+	name: string,
+	count: number,
+};
+
+export type Asset = {
+	id: string,
+	name: string,
+	path: string,
+	localPath: string | null,
+	date: string | null,
+	rating: number,
+	favorite: boolean,
+	width: number,
+	height: number,
+	exif: AssetExif,
+};
+
+export type AssetExif = {
+	make: string | null,
+	model: string | null,
+	lens: string | null,
+	iso: number | null,
+	aperture: number | null,
+	exposure: string | null,
+	focal: number | null,
+	datetime: string | null,
+};
+
+export type BackupComponent = {
+	id: string,
+	label: string,
+	available: boolean,
+	bytes: number,
+	files: number,
+};
+
+export type BackupHeld = {
+	id: string,
+	label: string,
+	bytes: number,
+	files: number,
+};
+
+export type BackupRestored = {
+	components: string[],
+	engineRestarted: boolean,
+	savedTo: string,
+};
+
+export type BackupSummary = {
+	version: string,
+	created: string,
+	newer: boolean,
+	components: BackupHeld[],
+};
+
 export type BuildInfo = {
 	app: string,
 	commit: string | null,
+};
+
+export type BundleFile = {
+	name: string,
+	lines: string[],
+};
+
+export type BundleView = {
+	files: BundleFile[],
+	counts: { [key in string]: number },
 };
 
 export type CaptureTimeEntry = {
@@ -307,6 +432,11 @@ export type GetReply = {
 	modules: { [key in string]: ModuleInfo },
 };
 
+export type GpuEditState = {
+	running: boolean,
+	next: boolean,
+};
+
 export type HdrReply = {
 	path: string,
 	image: LibraryImage,
@@ -352,6 +482,13 @@ export type LibraryImage = {
 	copy: boolean,
 };
 
+export type Licenses = {
+	gpl: string | null,
+	libraries: string | null,
+	librariesPath: string | null,
+	notices: string | null,
+};
+
 export type Limits = {
 	thumbs: number,
 	immichThumbs: number,
@@ -389,6 +526,14 @@ export type MaskInfo = {
 export type MaskInstance = {
 	enabled: boolean,
 	params: { [key in string]: number },
+};
+
+export type MemoryBudget = {
+	totalMb: number,
+	level: string,
+	budgetMb: number,
+	frameCacheMb: number,
+	thumbMemoryMb: number,
 };
 
 export type MetaExif = {
@@ -477,6 +622,20 @@ export type ModuleStateReply = {
 	now: ModuleState,
 };
 
+export type Named = {
+	id: string,
+	name: string,
+};
+
+export type NativeItem = { type: "item"; id: string; label: string; accel?: string | null } | { type: "separator" } | { type: "submenu"; label: string; items: NativeItem[] } | { type: "predefined"; role: NativeRole };
+
+export type NativeMenu = {
+	label: string,
+	items: NativeItem[],
+};
+
+export type NativeRole = "about" | "services" | "hide" | "hideOthers" | "showAll" | "quit" | "closeWindow" | "cut" | "copy" | "paste" | "minimize" | "zoom" | "fullscreen";
+
 export type NewSpot = { type: "circle"; x: number; y: number; r: number; mode: SpotMode; feather: number; opacity: number } | { type: "brush"; points: ([number, number])[]; size: number; mode: SpotMode; feather: number; opacity: number };
 
 export type OpenReply = {
@@ -489,6 +648,13 @@ export type OpenReply = {
 	edited: boolean,
 	raw: boolean,
 	fresh: boolean,
+};
+
+export type PageValues = {
+	folders?: string[],
+	photos?: string[],
+	extra?: string[],
+	prefs?: Value,
 };
 
 export type PanoPreview = {
@@ -510,6 +676,36 @@ export type PanoReply = {
 	frames: number,
 };
 
+export type ParityDe = {
+	mean: number,
+	p99: number,
+	max: number,
+	over2: number,
+};
+
+export type ParityPass = {
+	ms: number,
+	devid: number,
+	device: string | null,
+	cl_errors: number,
+};
+
+export type ParityReply = {
+	width: number,
+	height: number,
+	de: ParityDe,
+	rgb: { [key in string]: ParityRgb },
+	cpu: ParityPass,
+	gpu: ParityPass,
+	diff: string | null,
+	modules?: { [key in string]: Timing[] },
+};
+
+export type ParityRgb = {
+	mean: number,
+	max: number,
+};
+
 export type PasteBatchReply = {
 	token?: number | null,
 	updates?: PasteUpdate[] | null,
@@ -519,6 +715,11 @@ export type PasteUpdate = {
 	imgid: number,
 	edited: boolean,
 	error: string | null,
+};
+
+export type PathMap = {
+	immich?: string,
+	local?: string,
 };
 
 export type PickerStats = {
@@ -532,6 +733,48 @@ export type Place = {
 	latitude: number,
 	longitude: number,
 	bounds?: [number, number, number, number] | null,
+};
+
+export type PluginConfig = {
+	id?: string,
+	kind?: string,
+	name?: string,
+	app?: string,
+	send?: string,
+	outputDir?: string,
+	onReturn?: { [key in string]: boolean },
+	look?: string | null,
+};
+
+export type PluginJob = {
+	token: number,
+	plugin: string,
+	mode: string,
+	files: PluginStackFile[],
+	look: string | null,
+};
+
+export type PluginReturn = {
+	original: string,
+	result: string,
+	plugin: string,
+	applied?: boolean,
+};
+
+export type PluginStackFile = {
+	path: string,
+	origin_path?: string | null,
+};
+
+export type PluginWatch = {
+	token: number,
+	plugin: string,
+	sources: string[],
+	exts: string[],
+	match: string,
+	subfolders: string[],
+	outputDir: string | null,
+	ignore?: string[],
 };
 
 export type PresetsDoc = PresetsFile | Value[];
@@ -616,6 +859,16 @@ export type RenderRequest = {
 	diagnosticRequest?: number | null,
 };
 
+export type Resolved = {
+	path: string,
+	downloaded: boolean,
+};
+
+export type ResourceLevels = {
+	running: string,
+	next: string,
+};
+
 export type Restore = string | ModuleState;
 
 export type SampleReply = {
@@ -630,6 +883,32 @@ export type SampleReply = {
 
 export type SaveReply = {
 	edited: boolean,
+};
+
+export type SearchArgs = {
+	mode?: string,
+	text?: string,
+	library?: string,
+	takenFrom?: string | null,
+	takenTo?: string | null,
+	minRating?: number | null,
+	favorites?: boolean,
+	rawOnly?: boolean,
+	make?: string | null,
+	model?: string | null,
+	lens?: string | null,
+	country?: string | null,
+	city?: string | null,
+	personIds?: string[],
+	tagIds?: string[],
+	albumIds?: string[],
+	next?: string | null,
+	size?: number | null,
+};
+
+export type SearchPage = {
+	items: Asset[],
+	next: string | null,
 };
 
 export type SharedImport = {
@@ -653,6 +932,16 @@ export type SubFolder = {
 	has_children: boolean,
 };
 
+export type Timing = {
+	label: string,
+	kind: string,
+	ms: number,
+	cpu_ms: number,
+	pipe: string,
+	gpu: boolean,
+	tiled: boolean,
+};
+
 export type ToneKeyReply = {
 	ev: number,
 };
@@ -673,4 +962,13 @@ export type Volume = {
 	host: string | null,
 	network: boolean,
 	online: boolean,
+};
+
+export type WebviewRenderer = {
+	running: string,
+	next: string,
+	active: string,
+	external: boolean,
+	mesa: boolean,
+	nvidia: boolean,
 };

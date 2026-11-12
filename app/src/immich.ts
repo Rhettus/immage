@@ -5,7 +5,7 @@
 // turns its assets into filmstrip entries, and builds links into Immich's
 // web app. the key stays in the backend; the page only sees the URL
 import { timeTunerWork } from "./tunerWorkload";
-import { invoke } from "@tauri-apps/api/core";
+import { commands, type Asset } from "./commands";
 import { api } from "@immporter/api";
 import type { Exif, ImageEntry } from "./library";
 import { settings } from "./settings";
@@ -70,12 +70,6 @@ export async function immichUrl(): Promise<string | null> {
   } catch { return null; }
 }
 
-type Asset = {
-  id: string; name: string; path: string; localPath: string | null; date: string | null; rating: number;
-  favorite: boolean; width: number; height: number;
-  exif: { make: string | null; model: string | null; lens: string | null; iso: number | null; aperture: number | null;
-          exposure: string | null; focal: number | null; datetime: string | null };
-};
 export type Page = { entries: ImageEntry[]; next: string | null };
 
 // "1/250" or "0.5" as seconds
@@ -113,7 +107,7 @@ export async function search(s: ImmichSearch, next: string | null): Promise<Page
     make: s.make || null, model: s.model || null, lens: s.lens || null, country: s.country || null,
     city: s.city || null, next, size: 250,
   };
-  const r = await invoke<{ items: Asset[]; next: string | null }>("immich_search", { args, map: await pathMap() });
+  const r = await commands.immichSearch(args, await pathMap());
   return { entries: r.items.map(entry), next: r.next };
 }
 
@@ -123,7 +117,7 @@ export const isRemote = (i: ImageEntry) => i.imgid < 0;
 export async function fetchImmichThumb(imgid: number): Promise<ImageBitmap> {
   const id = assets.get(imgid);
   if (!id) throw new Error("not an Immich result");
-  const buf = await invoke<ArrayBuffer>("immich_thumb", { id });
+  const buf = await commands.immichThumb(id);
   // WebKit decodes a Blob by its type, not its bytes: named from the
   // signature (Immich sends WebP, or JPEG when set to)
   const b = new Uint8Array(buf, 0, Math.min(12, buf.byteLength));
@@ -136,7 +130,7 @@ export async function fetchImmichThumb(imgid: number): Promise<ImageBitmap> {
 export async function resolve(i: ImageEntry): Promise<{ path: string; downloaded: boolean }> {
   return timeTunerWork("Immich original resolve", async () => {
     const r = i.remote!;
-    return invoke("immich_resolve", { id: r.assetId, name: i.filename, path: r.originalPath, map: await pathMap() });
+    return commands.immichResolve(r.assetId, i.filename, r.originalPath, await pathMap());
   });
 }
 

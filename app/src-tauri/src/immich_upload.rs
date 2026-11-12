@@ -11,6 +11,8 @@ use std::time::Duration;
 use reqwest::blocking::{multipart, Client};
 use serde_json::{json, Value};
 
+use crate::typed_app::Album;
+
 // what an export needs of the key, beyond the importer's asset.read
 pub const EXPORT_PERMISSIONS: &[&str] = &["asset.upload", "album.read", "album.create", "albumAsset.create"];
 // what the Library panel's search needs: the results, their thumbnails, and
@@ -95,21 +97,25 @@ impl Immich {
     }
 
     // [{ id, name, count }], by name
-    pub fn albums(&self) -> Result<Value, String> {
+    pub fn albums(&self) -> Result<Vec<Album>, String> {
         let list: Value = status(self.http.get(self.url("/albums")).send().map_err(|e| e.to_string())?)?
             .json().map_err(|e| e.to_string())?;
-        let mut albums: Vec<Value> = list.as_array().cloned().unwrap_or_default().iter()
-            .map(|a| json!({ "id": a["id"], "name": a["albumName"], "count": a["assetCount"] }))
+        let mut albums: Vec<Album> = list.as_array().cloned().unwrap_or_default().iter()
+            .map(|a| Album {
+                id: a["id"].as_str().unwrap_or("").into(),
+                name: a["albumName"].as_str().unwrap_or("").into(),
+                count: a["assetCount"].as_u64().unwrap_or(0),
+            })
             .collect();
-        albums.sort_by_key(|a| a["name"].as_str().unwrap_or("").to_lowercase());
-        Ok(json!(albums))
+        albums.sort_by_key(|a| a.name.to_lowercase());
+        Ok(albums)
     }
 
-    pub fn create_album(&self, name: &str) -> Result<Value, String> {
+    pub fn create_album(&self, name: &str) -> Result<Album, String> {
         let a: Value = status(self.http.post(self.url("/albums")).json(&json!({ "albumName": name }))
             .send().map_err(|e| e.to_string())?)?
             .json().map_err(|e| e.to_string())?;
-        Ok(json!({ "id": a["id"], "name": a["albumName"], "count": 0 }))
+        Ok(Album { id: a["id"].as_str().unwrap_or("").into(), name: a["albumName"].as_str().unwrap_or("").into(), count: 0 })
     }
 
     // one file; its asset id, and whether Immich already had it (it then
@@ -231,8 +237,8 @@ mod tests {
         let c = client(&server.url());
         assert_eq!(c.missing_permissions().unwrap(), vec!["album.create", "albumAsset.create"]);
         let albums = c.albums().unwrap();
-        assert_eq!(albums[0]["name"], "Beach");
-        assert_eq!(c.create_album("New").unwrap()["id"], "n");
+        assert_eq!(albums[0].name, "Beach");
+        assert_eq!(c.create_album("New").unwrap().id, "n");
         // inside the build tree, not the system's temp folder
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("target").join("immich-upload-test");
         std::fs::create_dir_all(&dir).unwrap();

@@ -2,7 +2,7 @@
 // Copyright (C) 2026 the Immage authors
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { commands, type BundleView as Bundle, type Value } from "./commands";
 import { immichUrl } from "./immich";
 import { settings } from "./settings";
 
@@ -36,9 +36,6 @@ export async function supportValues(known: { folders: (string | null | undefined
   return { folders: [...folders], photos: known.photos.slice(0, 5000), extra, prefs };
 }
 
-type BundleFile = { name: string; lines: string[] };
-type Bundle = { files: BundleFile[]; counts: Record<string, number> };
-
 const KINDS: Record<string, string> = {
   home: "home folder", user: "user name", host: "computer name", folder: "folder", photo: "photo name", extra: "server",
   email: "email address", url: "web address", path: "path", serial: "serial number",
@@ -60,7 +57,7 @@ export function SupportBundleDialog({ values, onClose }: { values: SupportValues
 
   useEffect(() => {
     let live = true;
-    invoke<Bundle>("support_bundle_preview", { page: values })
+    commands.supportBundlePreview({ ...values, prefs: values.prefs as Value })
       .then((b) => { if (live) setBundle(b); })
       .catch((e) => { if (live) setError(String(e)); })
       .finally(() => { if (live) setBusy(false); });
@@ -71,7 +68,7 @@ export function SupportBundleDialog({ values, onClose }: { values: SupportValues
 
   const close = () => {
     if (busy) return;
-    if (!saved) void invoke("support_bundle_discard").catch(() => {});
+    if (!saved) void commands.supportBundleDiscard().catch(() => {});
     onClose();
   };
   // on the window, not the backdrop: opened from the menu, focus is not in
@@ -108,7 +105,7 @@ export function SupportBundleDialog({ values, onClose }: { values: SupportValues
   const addBenchmark = async () => {
     setBusy(true); setError("");
     try {
-      const b = await invoke<Bundle | null>("support_bundle_add_benchmark");
+      const b = await commands.supportBundleAddBenchmark();
       if (b) { setBundle(b); switchTab(b.files.findIndex((f) => f.name === "benchmark.json")); }
     } catch (e) { setError(String(e)); }
     finally { setBusy(false); }
@@ -118,7 +115,7 @@ export function SupportBundleDialog({ values, onClose }: { values: SupportValues
     try {
       const out: Record<string, number[]> = {};
       for (const [name, set] of Object.entries(removed)) if (set.size) out[name] = [...set];
-      const path = await invoke<string | null>("support_bundle_save", { removed: out });
+      const path = await commands.supportBundleSave(out);
       if (path) setSaved(path);
     } catch (e) { setError(String(e)); }
     finally { setBusy(false); }

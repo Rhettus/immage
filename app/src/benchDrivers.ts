@@ -3,9 +3,8 @@
 // change path. App() passes what they touch in a BenchContext: refs are the
 // ref objects themselves, so every read during a run sees the live value.
 import type { MutableRefObject } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { choiceShows, controlById, type Control } from "./manifest";
-import { perf, percentiles, pingOnce, roundTrips, STAGES, webviewInfo, observeWebview } from "./perf";
+import { perf, writeReport, percentiles, pingOnce, roundTrips, STAGES, webviewInfo, observeWebview } from "./perf";
 import { frameTransport } from "./sharedFrames";
 import { draftScale } from "./pixelRatio";
 import { loadPreview } from "./Preferences";
@@ -88,7 +87,7 @@ export const runGuiBenchmark = async (ctx: BenchContext): Promise<TunerRun> => {
     const phases: { atUnixMs: number; atMs: number; label: string }[] = [];
     const phase = (label: string) => { perf.label = label; phases.push({ atUnixMs: Date.now(), atMs: performance.now(), label }); };
     try {
-      await invoke("perf_resources_start").then(() => { resourceRecording = true; })
+      await commands.perfResourcesStart().then(() => { resourceRecording = true; })
         .catch((error) => { resources = { error: String(error) }; });
       stopWebview = observeWebview(typeof webview.frameRateHz === "number" ? webview.frameRateHz : null);
       phase("settling");
@@ -159,7 +158,7 @@ export const runGuiBenchmark = async (ctx: BenchContext): Promise<TunerRun> => {
     } finally {
       webviewTiming = stopWebview?.() ?? null;
       if (resourceRecording) {
-        resources = await invoke<Record<string, unknown>>("perf_resources_stop")
+        resources = await commands.perfResourcesStop().then((r) => r as Record<string, unknown>)
           .catch((error) => ({ error: String(error) }));
       }
       pinging = false;
@@ -186,7 +185,7 @@ export const runGuiBenchmark = async (ctx: BenchContext): Promise<TunerRun> => {
     const report = {
       immage: "gui-benchmark", version: 9, at: at.toISOString(),
       app: await commands.about().catch(() => null),
-      machine: await invoke<Record<string, unknown>>("perf_machine").catch(() => null),
+      machine: await commands.perfMachine().catch(() => null),
       frontend: perf.frontendReport(), diagnostics: perf.diagnosticReport(),
       webview, webviewTiming, resources: { ...resources, phases },
       photo: (currentRef.current?.path ?? "").split(/[\\/]/).pop(),
@@ -195,7 +194,7 @@ export const runGuiBenchmark = async (ctx: BenchContext): Promise<TunerRun> => {
       invokeMs: { idle: roundTrips(idlePings), drag: roundTrips(dragPings.filter(Number.isFinite)) }, summary, samples,
     };
     const stamp = at.toISOString().replace(/[:.]/g, "-").slice(0, 19);
-    const path = await invoke<string>("perf_report_write", { name: `gui-${stamp}`, report });
+    const path = await writeReport(`gui-${stamp}`, report);
     return { path, samples, phases, context, valid: !webviewTiming?.backgrounded && w === context.width && h === context.height && (window.devicePixelRatio || 1) === context.dpr };
   } finally {
     if (session.current === s) {
@@ -236,11 +235,11 @@ export const runGpuCheck = async (ctx: BenchContext): Promise<{ path: string; pa
   };
   const at = new Date();
   const stamp = at.toISOString().replace(/[:.]/g, "-").slice(0, 19);
-  const opencl = () => invoke<Record<string, unknown>>("perf_machine").then((m) => m.opencl as Record<string, unknown> | null)
+  const opencl = () => commands.perfMachine().then((m) => (m as Record<string, unknown>).opencl as Record<string, unknown> | null)
     .catch(() => null);
   const parity = async (name: string) => {
     try {
-      return { parity: await invoke<Parity>("gpu_check_parity", { size: 1024, diff: `gpu-${stamp}-${name}` }) };
+      return { parity: await commands.gpuCheckParity(1024, `gpu-${stamp}-${name}`, null) };
     } catch (e) { return { error: String(e) }; }
   };
   const restore = async () => {
@@ -251,7 +250,7 @@ export const runGpuCheck = async (ctx: BenchContext): Promise<{ path: string; pa
     setZoom("fit");
     await settle();
     const before = await opencl();
-    const machine = await invoke<Record<string, unknown>>("perf_machine").catch(() => null);
+    const machine = await commands.perfMachine().catch(() => null);
     const cases: Record<string, unknown>[] = [];
     if (before?.running) {
       for (const c of GPU_CASES) {
@@ -312,7 +311,7 @@ export const runGpuCheck = async (ctx: BenchContext): Promise<{ path: string; pa
       passed: run.filter((c) => c.pass).length, total: run.length,
       ...(before?.running ? {} : { error: "no OpenCL device: darktable found none, or OpenCL is off" }),
     };
-    const path = await invoke<string>("perf_report_write", { name: `gpu-${stamp}`, report });
+    const path = await writeReport(`gpu-${stamp}`, report);
     return { path, passed: report.passed, total: report.total };
   } finally {
     if (session.current === s) await restore().catch(() => {});

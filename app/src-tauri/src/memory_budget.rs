@@ -11,7 +11,7 @@ use tauri::{AppHandle, Emitter, State};
 
 use crate::{engine, AppState};
 
-#[derive(Serialize, Debug, PartialEq, Eq)]
+#[derive(Serialize, Debug, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct MemoryBudget {
     pub total_mb: u64,
@@ -45,6 +45,7 @@ pub fn compute(total_mb: u64, level: &str) -> MemoryBudget {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn memory_budget(state: State<'_, AppState>) -> MemoryBudget {
     use sysinfo::{MemoryRefreshKind, RefreshKind, System};
     let sys = System::new_with_specifics(RefreshKind::nothing().with_memory(MemoryRefreshKind::nothing().with_ram()));

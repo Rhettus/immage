@@ -5,14 +5,11 @@
 // the user chooses (backup.rs). Restore replaces the chosen parts with the
 // backup's and keeps a copy of what it replaced.
 import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { commands, type BackupComponent as Component, type BackupSummary as Summary } from "./commands";
 import { settings } from "./settings";
 
 export type BackupMode = "create" | "restore";
 
-type Component = { id: string; label: string; available: boolean; bytes: number; files: number };
-type Summary = { version: string; created: string; newer: boolean; components: Omit<Component, "available">[] };
-type Restored = { components: string[]; engineRestarted: boolean; savedTo: string };
 
 const size = (n: number) => n < 1024 ? `${n} B` : n < 1 << 20 ? `${(n / 1024).toFixed(0)} KB` : `${(n / (1 << 20)).toFixed(1)} MB`;
 const detail = (c: { bytes: number; files: number; id: string }) =>
@@ -31,7 +28,7 @@ export function BackupDialog({ mode, onClose }: { mode: BackupMode; onClose: () 
 
   useEffect(() => {
     if (mode !== "create") return;
-    invoke<Component[]>("backup_components")
+    commands.backupComponents()
       .then((all) => pick(all.filter((c) => c.available)))
       .catch((e) => setError(String(e)))
       .finally(() => setBusy(false));
@@ -42,11 +39,11 @@ export function BackupDialog({ mode, onClose }: { mode: BackupMode; onClose: () 
   const create = async () => {
     setBusy(true); setError("");
     try {
-      const to = await invoke<string | null>("backup_pick_save");
+      const to = await commands.backupPickSave();
       if (!to) return;
       // the backup holds what the page has, not what it has yet to send
       await settings.flush();
-      await invoke("backup_create", { path: to, components: items!.filter((c) => chosen.has(c.id)).map((c) => c.id) });
+      await commands.backupCreate(to, items!.filter((c) => chosen.has(c.id)).map((c) => c.id));
       setDone(`Saved to ${to}`);
     } catch (e) { setError(String(e)); }
     finally { setBusy(false); }
@@ -55,9 +52,9 @@ export function BackupDialog({ mode, onClose }: { mode: BackupMode; onClose: () 
   const choose = async () => {
     setBusy(true); setError("");
     try {
-      const from = await invoke<string | null>("backup_pick_open");
+      const from = await commands.backupPickOpen();
       if (!from) return;
-      const s = await invoke<Summary>("backup_inspect", { path: from });
+      const s = await commands.backupInspect(from);
       setPath(from); setSummary(s); pick(s.components);
     } catch (e) { setError(String(e)); }
     finally { setBusy(false); }
@@ -66,7 +63,7 @@ export function BackupDialog({ mode, onClose }: { mode: BackupMode; onClose: () 
   const restore = async () => {
     setBusy(true); setError("");
     try {
-      const out = await invoke<Restored>("backup_restore", { path, components: items!.filter((c) => chosen.has(c.id)).map((c) => c.id) });
+      const out = await commands.backupRestore(path, items!.filter((c) => chosen.has(c.id)).map((c) => c.id));
       // the page's own copy must not be written over what was restored
       settings.discard();
       setDone(`Restored. A copy of what was replaced is in ${out.savedTo}`);

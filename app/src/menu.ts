@@ -6,6 +6,8 @@
 // from MENUS. shortcuts are in the Mac notation of Shortcuts.tsx; keys()
 // renders them per platform
 
+import type { NativeItem, NativeMenu } from "./commands";
+
 export type ActionId =
   | "import" | "add-folder" | "export" | "print" | "quit"
   | "undo" | "redo" | "cut" | "copy" | "paste" | "select-all"
@@ -176,12 +178,7 @@ export function nativeAccel(shortcut: string): string | undefined {
   return [...parts, m[2]].join("+");
 }
 
-export type NativeItem =
-  | { type: "item"; id: string; label: string; accel?: string }
-  | { type: "separator" }
-  | { type: "submenu"; label: string; items: NativeItem[] }
-  | { type: "predefined"; role: Role };
-export type NativeMenu = { label: string; items: NativeItem[] };
+export type { NativeItem, NativeMenu };
 
 const native = (m: MenuItem): NativeItem => {
   switch (m.kind) {

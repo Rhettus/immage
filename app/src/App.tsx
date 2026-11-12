@@ -15,7 +15,6 @@ import { pasteTargets, replaceMasks, restorePaste, runPaste, type PasteUpdate } 
 import { CaptureTimeDialog } from "./CaptureTimeDialog";
 import { captureMillis, type CaptureTimeEntry, type CaptureTimeUpdate } from "./captureTime";
 import { Fragment, Profiler, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ask, open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -1616,11 +1615,11 @@ export default function App() {
       void w.isFullscreen().then((full) => {
         if (full || !previewRef.current) return;
         madeFullscreen.current = true;
-        void invoke("preview_fullscreen", { on: true });
+        void commands.previewFullscreen(true);
       });
     } else if (madeFullscreen.current) {
       madeFullscreen.current = false;
-      void invoke("preview_fullscreen", { on: false });
+      void commands.previewFullscreen(false);
     }
   };
   const cropRef = useRef({ rect: FULL, aspect: "original", portrait: false, choices: [] as Aspect[] });
@@ -3107,7 +3106,7 @@ export default function App() {
   }, []);
   useEffect(() => {
     if (!IS_MAC) return;
-    void invoke("menu_set", { menus: nativeSpec(MENUS) }).catch(() => {});
+    void commands.menuSet(nativeSpec(MENUS)).catch(() => {});
     const off = listen<string>("menu", (e) => runMenuAction(e.payload as ActionId));
     return () => { void off.then((f) => f()); };
   }, [runMenuAction]);
@@ -3491,25 +3490,25 @@ export default function App() {
       if (kind.handoff === "macrostudio") {
         // a TIFF names its photo, so the stack is named and placed from it
         const tiffs = send !== originals;
-        await invoke("plugin_job", { job: {
+        await commands.pluginJob({
           token, plugin: cfg.id, mode: tiffs ? "rendered" : "original-raw",
           files: send.map((path, i) => ({ path, origin_path: tiffs ? originals[i] : null })),
           look: cfg.look || null,
-        } });
+        });
         setWaiting((w) => [...w, { token, name: cfg.name, back: 0, total: 1, opened: false }]);
         setStatus(`sent ${send.length} photos to ${cfg.name}`);
         return;
       }
-      await invoke("plugin_watch", { watch: {
+      await commands.pluginWatch({
         token, plugin: cfg.id, sources: originals, exts: kind.returns.exts, match: kind.returns.match,
         subfolders: kind.returns.subfolders, outputDir: cfg.outputDir || null, ignore: send.filter((p) => !originals.includes(p)),
-      } });
+      });
       setWaiting((w) => [...w, { token, name: cfg.name, back: 0,
                                  total: kind.returns.match === "any" ? 1 : originals.length, opened: false }]);
       try {
-        await invoke("plugin_launch", { id: cfg.id, files: send });
+        await commands.pluginLaunch(cfg.id, send);
       } catch (e) {
-        void invoke("plugin_cancel", { token });
+        void commands.pluginCancel(token);
         throw e;
       }
       setStatus(`sent ${send.length === 1 ? baseName(send[0]) : `${send.length} photos`} to ${cfg.name}`);
@@ -3800,7 +3799,7 @@ export default function App() {
       }
       if (back && plugin) {
         back.applied = true;
-        void invoke("plugin_return_applied", { result: path });
+        void commands.pluginReturnApplied(path);
         if (plugin.labels.length) {
           const name = kindOf(back.plugin.split(":")[0])?.label ?? "plugin";
           base.push({ op: "plugin", name, label: `${name}: ${plugin.labels.join(", ")} off`, enabled: true });
@@ -3816,7 +3815,7 @@ export default function App() {
       // opens, as an undo step
       if (back && denoised && session.current === s) {
         back.applied = true;
-        void invoke("plugin_return_applied", { result: path });
+        void commands.pluginReturnApplied(path);
         changeMany([["nr_luminance", 0], ["nr_color", 0]], "AI Denoise: noise reduction off");
       }
       return true;
@@ -5546,7 +5545,7 @@ export default function App() {
     try {
       // the photo may be closed already, its last save made on leaving it
       const known = keywordsRef.current?.imgid === imgid ? keywordsRef.current.list
-        : (await invoke<{ image: { keywords: string[] } }>("meta", { imgid })).image.keywords;
+        : (await commands.meta(imgid)).image.keywords;
       const add = edited ? wanted.filter((k) => !known.includes(k)) : [];
       const remove = edited ? [] : wanted.filter((k) => known.includes(k));
       if (!add.length && !remove.length) return;
@@ -5570,7 +5569,7 @@ export default function App() {
       let text = metaTextRef.current?.imgid === imgid ? metaTextRef.current.text : null;
       let datetime = imagesRef.current.find((i) => i.imgid === imgid)?.exif?.datetime;
       if (!text) {
-        const r = await invoke<{ image: { metadata: TextFields; exif?: { datetime?: string } } }>("meta", { imgid });
+        const r = await commands.meta(imgid);
         text = r.image.metadata;
         datetime ??= r.image.exif?.datetime;
       }
@@ -6015,7 +6014,7 @@ export default function App() {
                  onPointerUp={(e) => e.stopPropagation()}>
               <span>The engine is not answering.</span>
               <button onClick={hideEngineNotice}>Wait</button>
-              <button onClick={() => { hideEngineNotice(); void invoke("engine_restart").catch((e) => setStatusRaw(`error: ${e}`)); }}>Restart</button>
+              <button onClick={() => { hideEngineNotice(); void commands.engineRestart().catch((e) => setStatusRaw(`error: ${e}`)); }}>Restart</button>
             </div>
           )}
           {saveError && (
@@ -6034,7 +6033,7 @@ export default function App() {
               <div className="activity waiting" onPointerDown={(e) => e.stopPropagation()}
                    onPointerUp={(e) => e.stopPropagation()}>
                 <span>Waiting for {w.name}{w.total > 1 ? ` · ${w.back} of ${w.total} back` : ""}…</span>
-                <button onClick={() => void invoke("plugin_cancel", { token: w.token })}>Stop waiting</button>
+                <button onClick={() => void commands.pluginCancel(w.token)}>Stop waiting</button>
               </div>
             );
             return reading ? <ActivityBar what="Reading photos" done={reading.done} total={reading.total} />
@@ -6637,20 +6636,20 @@ export default function App() {
                          onTune={current ? () => { setPrefsOpen(false); setTunerOpen(true); } : null}
                          onRelaunch={async () => {
                            await session.current?.close();
-                           await invoke("engine_quit");
+                           await commands.engineQuit();
                            await relaunch();
                          }}
                          onClose={() => { session.current?.refreshModuleChoices(); setPrefsOpen(false); }} />
     )}
     {tunerOpen && <PerformanceTuner run={runGuiBenchmark} photo={current?.path} raw={session.current?.raw} previewArea={viewport()}
       onOverlay={setPerfHud}
-      onRelaunch={async () => { await session.current?.close(); await invoke("engine_quit"); await relaunch(); }}
+      onRelaunch={async () => { await session.current?.close(); await commands.engineQuit(); await relaunch(); }}
       onClose={() => { setTunerOpen(false); setPrefsOpen("performance"); }} />}
     <UpdateBanner prepare={async () => {
       // the edit saved now, then the engine stopped, before the installer
       // replaces its files
       await session.current?.close();
-      await invoke("engine_quit");
+      await commands.engineQuit();
     }} />
     {newPreset && (
       <NewPresetDialog values={values} groups={[...new Set(presets.map((p) => p.group))].sort()}

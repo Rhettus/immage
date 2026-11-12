@@ -9,7 +9,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type ImmichSettings, type ImmichTestResult } from "@immporter/api";
 import { EMPTY, insecureRemote, serverChanged, suggestPrefix } from "@immporter/immich-form";
-import { invoke } from "@tauri-apps/api/core";
+import { commands } from "./commands";
 import { open } from "@tauri-apps/plugin-dialog";
 import { importerPathMap, storedPathMap, storePathMap, type PathMap } from "./immich";
 import { PrefCard, PrefRow, PrefSwitch } from "./PrefsUI";
@@ -129,8 +129,8 @@ export function ImmichPrefs() {
       const t = await api.testImmich(form, keyToSend);
       setTest(t);
       if (t.ok) {
-        const [ex, br] = await Promise.all([invoke<string[]>("immich_export_check").catch(() => null),
-                                            invoke<string[]>("immich_browse_check").catch(() => null)]);
+        const [ex, br] = await Promise.all([commands.immichExportCheck().catch(() => null),
+                                            commands.immichBrowseCheck().catch(() => null)]);
         setExportMissing(ex);
         setBrowseMissing(br);
       }

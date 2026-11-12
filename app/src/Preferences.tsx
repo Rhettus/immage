@@ -5,7 +5,6 @@ import { useAgxProfiles } from "./agxProfiles";
 // the app's preferences, behind the rail's gear (⌘,): settings that belong
 // to the app rather than to any photo, a tab per subject
 import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { currentMemoryBudget, refreshMemoryBudget } from "./memoryBudget";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { keys } from "./keys";
@@ -30,7 +29,7 @@ import { checkForUpdate, lastChecked, loadAutoCheck, storeAutoCheck, useUpdate, 
 
 import { loadNewPhotosProfile, storeNewPhotosProfile } from "./profileDefault";
 import { settings } from "./settings";
-import { commands, type AccelProvider } from "./commands";
+import { commands, type AccelProvider, type GpuEditState, type Licenses, type ResourceLevels, type WebviewRenderer } from "./commands";
 export { loadNewPhotosProfile } from "./profileDefault";
 
 // EV a new raw's exposure gets on an instance of its own (manifest.ts,
@@ -327,8 +326,6 @@ export function storeReadAhead(v: ReadAhead) {
 // start (engine.rs, resource_level)
 type Resources = "small" | "default" | "large";
 type RendererMode = "auto" | "mesa" | "nvidia";
-type WebviewRenderer = { running: RendererMode; next: RendererMode; active: string;
-  external: boolean; mesa: boolean; nvidia: boolean };
 
 // a RAW+JPEG pair as one photo in the filmstrip, rated, rejected and
 // deleted together; off, each file stands alone
@@ -438,8 +435,6 @@ function updateHint(state: UpdateState, app?: string): string {
     }
   }
 }
-type Licenses = { gpl: string | null; libraries: string | null; librariesPath: string | null; notices: string | null };
-
 // a license text over Preferences, taking Escape before Preferences does
 function LicenseText({ title, text, onClose }: { title: string; text: string; onClose: () => void }) {
   useEffect(() => {
@@ -557,33 +552,33 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
     setReadAhead(next);
     storeReadAhead(next);
   };
-  const [resources, setResources] = useState<{ running: Resources; next: Resources } | null>(null);
-  useEffect(() => { invoke<{ running: Resources; next: Resources }>("darktable_resources").then(setResources).catch(() => {}); }, []);
+  const [resources, setResources] = useState<ResourceLevels | null>(null);
+  useEffect(() => { commands.darktableResources().then(setResources).catch(() => {}); }, []);
   const [budget, setBudget] = useState(currentMemoryBudget);
   useEffect(() => { void refreshMemoryBudget().then(setBudget); }, []);
   const gb = (mb: number) => mb >= 1024 ? `${Math.round(mb / 102.4) / 10} GB` : `${mb} MB`;
   const chooseResources = (level: Resources) => {
     if (!resources) return;
-    invoke("darktable_resources_set", { level })
+    commands.darktableResourcesSet(level)
       .then(() => { setResources({ ...resources, next: level }); return refreshMemoryBudget(); })
       .then((b) => setBudget(b)).catch(() => {});
   };
-  const [gpuEdits, setGpuEdits] = useState<{ running: boolean; next: boolean } | null>(null);
-  useEffect(() => { invoke<{ running: boolean; next: boolean }>("gpu_edits").then(setGpuEdits).catch(() => {}); }, []);
+  const [gpuEdits, setGpuEdits] = useState<GpuEditState | null>(null);
+  useEffect(() => { commands.gpuEdits().then(setGpuEdits).catch(() => {}); }, []);
   const chooseGpuEdits = (on: boolean) => {
     if (!gpuEdits) return;
-    invoke("gpu_edits_set", { on }).then(() => setGpuEdits({ ...gpuEdits, next: on })).catch(() => {});
+    commands.gpuEditsSet(on).then(() => setGpuEdits({ ...gpuEdits, next: on })).catch(() => {});
   };
   const [renderer, setRenderer] = useState<WebviewRenderer | null>(null);
   const [rendererError, setRendererError] = useState("");
   const [rendererSaving, setRendererSaving] = useState(false);
-  useEffect(() => { invoke<WebviewRenderer | null>("webview_renderer").then(setRenderer).catch(() => {}); }, []);
+  useEffect(() => { commands.webviewRenderer().then(setRenderer).catch(() => {}); }, []);
   const chooseRenderer = async (mode: RendererMode) => {
     if (!renderer) return;
     setRendererSaving(true);
     setRendererError("");
     try {
-      await invoke("webview_renderer_set", { mode });
+      await commands.webviewRendererSet(mode);
       setRenderer({ ...renderer, next: mode });
     } catch (e) { setRendererError(String(e)); }
     finally { setRendererSaving(false); }
@@ -599,7 +594,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   const [autoUpdate, setAutoUpdate] = useState(loadAutoCheck);
   useEffect(() => { commands.about().then(setAbout).catch(() => {}); }, []);
   const [licenses, setLicenses] = useState<Licenses | null>(null);
-  useEffect(() => { invoke<Licenses>("licenses").then(setLicenses).catch(() => {}); }, []);
+  useEffect(() => { commands.licenses().then(setLicenses).catch(() => {}); }, []);
   const [viewing, setViewing] = useState<{ title: string; text: string } | null>(null);
   const [backup, setBackup] = useState<BackupMode | null>(null);
   useEffect(() => {

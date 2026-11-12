@@ -78,7 +78,8 @@ fn file_source(runtime: &Path, id: &str) -> Option<PathBuf> {
     }
 }
 
-#[derive(Serialize, Debug, PartialEq)]
+#[derive(Serialize, Debug, PartialEq, specta::Type)]
+#[serde(rename = "BackupComponent")]
 pub struct ComponentInfo {
     pub id: String,
     pub label: String,
@@ -302,7 +303,8 @@ pub fn create(
 
 // ---- read ----
 
-#[derive(Serialize, Debug, PartialEq)]
+#[derive(Serialize, Debug, PartialEq, specta::Type)]
+#[serde(rename = "BackupHeld")]
 pub struct Held {
     pub id: String,
     pub label: String,
@@ -310,7 +312,8 @@ pub struct Held {
     pub files: usize,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, specta::Type)]
+#[serde(rename = "BackupSummary")]
 pub struct Summary {
     pub version: String,
     pub created: String,
@@ -585,7 +588,8 @@ fn replace(runtime: &Path, settings: &Settings, id: &str, staging: &Path) -> Res
     }
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, specta::Type)]
+#[serde(rename = "BackupRestored")]
 #[serde(rename_all = "camelCase")]
 pub struct Restored {
     pub components: Vec<String>,
@@ -688,6 +692,7 @@ fn restore_with(
 // ---- commands ----
 
 #[tauri::command]
+#[specta::specta]
 pub async fn backup_components(app: AppHandle) -> Result<Vec<ComponentInfo>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<crate::AppState>();
@@ -699,18 +704,21 @@ pub async fn backup_components(app: AppHandle) -> Result<Vec<ComponentInfo>, Str
 
 // the save and open dialogs are Rust's (the page has no dialog:allow-save)
 #[tauri::command]
+#[specta::specta]
 pub async fn backup_pick_save(app: AppHandle) -> Result<Option<String>, String> {
     let name = format!("Immage Backup {}.zip", chrono::Local::now().format("%Y-%m-%d"));
     Ok(crate::pick_save(&app, "Immage backup", &["zip"], &name).await?.map(|p| p.to_string_lossy().into_owned()))
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn backup_pick_open(app: AppHandle) -> Result<Option<String>, String> {
     let picked = crate::pick_files(&app, "Immage backup", &["zip"], false).await?;
     Ok(picked.into_iter().next().map(|p| p.to_string_lossy().into_owned()))
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn backup_create(app: AppHandle, path: String, components: Vec<String>) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<crate::AppState>();
@@ -729,6 +737,7 @@ pub async fn backup_create(app: AppHandle, path: String, components: Vec<String>
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn backup_inspect(path: String) -> Result<Summary, String> {
     tauri::async_runtime::spawn_blocking(move || inspect(Path::new(&path), env!("CARGO_PKG_VERSION")))
         .await
@@ -736,6 +745,7 @@ pub async fn backup_inspect(path: String) -> Result<Summary, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn backup_restore(app: AppHandle, path: String, components: Vec<String>) -> Result<Restored, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state: State<'_, crate::AppState> = app.state();

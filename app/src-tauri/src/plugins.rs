@@ -198,7 +198,7 @@ impl Plugins {
 }
 
 // a plugin as Preferences shows it (plugins.ts, PluginConfig)
-#[derive(Serialize, Deserialize, Clone, Default, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug, PartialEq, specta::Type)]
 #[serde(rename_all = "camelCase", default)]
 pub struct PluginConfig {
     pub id: String,
@@ -213,7 +213,8 @@ pub struct PluginConfig {
     pub look: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, specta::Type)]
+#[serde(rename = "PluginReturn")]
 pub struct Return {
     pub original: String,
     pub result: String,
@@ -285,6 +286,7 @@ fn app_folders() -> Vec<PathBuf> {
 // the installed applications a plugin kind can use, newest version first
 // (the highest name: "DxO PureRAW 5" before "DxO PureRAW 4")
 #[tauri::command]
+#[specta::specta]
 pub fn plugin_find_apps(state: State<'_, Plugins>, patterns: Vec<String>) -> Vec<String> {
     let mut out = Vec::new();
     for base in app_folders() {
@@ -303,16 +305,19 @@ pub fn plugin_find_apps(state: State<'_, Plugins>, patterns: Vec<String>) -> Vec
 // the page's plugins, from plugins.json. `legacy` is what it kept in
 // localStorage before Rust owned them: used only for the first run
 #[tauri::command]
+#[specta::specta]
 pub fn plugin_config(state: State<'_, Plugins>, legacy: Option<Vec<PluginConfig>>) -> Result<Vec<PluginConfig>, String> {
     state.config(legacy)
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn plugin_config_save(state: State<'_, Plugins>, list: Vec<PluginConfig>) -> Result<Vec<PluginConfig>, String> {
     state.config_save(list)
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn plugin_set_app(state: State<'_, Plugins>, id: String, path: String) -> Result<Vec<PluginConfig>, String> {
     state.set_app(&id, &path)
 }
@@ -320,6 +325,7 @@ pub fn plugin_set_app(state: State<'_, Plugins>, id: String, path: String) -> Re
 // the file dialog is opened here, so what is stored is what the user picked
 // and not a path the page names. none when it is cancelled
 #[tauri::command]
+#[specta::specta]
 pub async fn plugin_choose_app(app: AppHandle, state: State<'_, Plugins>, id: String)
     -> Result<Option<Vec<PluginConfig>>, String> {
     state.ready_id(&id)?;
@@ -364,6 +370,7 @@ fn photo_file(path: &str) -> Result<(), String> {
 // the application started with the files, or given them when it runs
 // already: on macOS through `open -a`, as a drop on its Dock icon is
 #[tauri::command]
+#[specta::specta]
 pub async fn plugin_launch(state: State<'_, Plugins>, id: String, files: Vec<String>) -> Result<(), String> {
     let app_path = state.ready(&id)?.app;
     for f in &files {
@@ -387,7 +394,8 @@ pub async fn plugin_launch(state: State<'_, Plugins>, id: String, files: Vec<Str
     .map_err(|e| format!("could not start {name}: {e}"))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, specta::Type)]
+#[serde(rename = "PluginWatch")]
 pub struct Watch {
     token: u64,
     plugin: String,
@@ -469,6 +477,7 @@ fn scan(dirs: &[PathBuf], exts: &[String], ignore: &HashSet<PathBuf>) -> HashMap
 // still for a poll, and "plugin-watch-end" says why the wait ended
 // (done, cancelled or timeout)
 #[tauri::command]
+#[specta::specta]
 pub fn plugin_watch(app: AppHandle, state: State<'_, Plugins>, watch: Watch) -> Result<(), String> {
     state.ready(&watch.plugin)?;
     state.start_watch(watch.token)?;
@@ -551,12 +560,14 @@ pub fn plugin_watch(app: AppHandle, state: State<'_, Plugins>, watch: Watch) -> 
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn plugin_cancel(state: State<'_, Plugins>, token: u64) {
     state.live.lock().unwrap().remove(&token);
 }
 
 // every result taken back, with its original and plugin
 #[tauri::command]
+#[specta::specta]
 pub fn plugin_returns(state: State<'_, Plugins>) -> Vec<Return> {
     let _io = state.io.lock().unwrap();
     state.load()
@@ -564,6 +575,7 @@ pub fn plugin_returns(state: State<'_, Plugins>) -> Vec<Return> {
 
 // a result's first open has had its plugin's settings
 #[tauri::command]
+#[specta::specta]
 pub fn plugin_return_applied(state: State<'_, Plugins>, result: String) -> Result<(), String> {
     let _io = state.io.lock().unwrap();
     let mut returns = state.load();
@@ -593,7 +605,8 @@ const MS_STALL: Duration = Duration::from_secs(300);
 // a job left in the ledger this long is given up
 const MS_KEEP_SECS: u64 = 30 * 86400;
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, specta::Type)]
+#[serde(rename = "PluginStackFile")]
 pub struct StackFile {
     path: String,
     // the photo a TIFF sent was written from, which names and places the result
@@ -601,7 +614,8 @@ pub struct StackFile {
     origin_path: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, specta::Type)]
+#[serde(rename = "PluginJob")]
 pub struct Job {
     token: u64,
     plugin: String,
@@ -773,6 +787,7 @@ impl Plugins {
 // startup, stalled, protocol, stopped or error, the last two with the app's
 // message)
 #[tauri::command]
+#[specta::specta]
 pub fn plugin_job(app: AppHandle, state: State<'_, Plugins>, job: Job) -> Result<(), String> {
     if job.mode != "original-raw" && job.mode != "rendered" {
         return Err(format!("unknown mode {}", job.mode));

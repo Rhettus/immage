@@ -6,6 +6,8 @@
 // compared (engine main.c, _parity). darktable's integration tests accept
 // dE < 2 between the two
 
+import type { ParityReply } from "./commands";
+
 // `to` sets a value; `by` moves a slider by that share of its range
 export type CaseStep = { id: string; to?: number; by?: number };
 export type GpuCase = { id: string; label: string; op: string; steps: CaseStep[] };
@@ -66,13 +68,7 @@ export function resolveCase(c: GpuCase, values: Record<string, number>, range: (
   return { entries };
 }
 
-export type ParityDe = { mean: number; p99: number; max: number; over2: number };
-export type ParityPass = { ms: number; devid: number; device?: string; cl_errors: number };
-export type ModuleTiming = { label: string; kind: string; ms: number; gpu: boolean; tiled: boolean };
-export type Parity = {
-  width: number; height: number; de: ParityDe; rgb: Record<string, { mean: number; max: number }>;
-  cpu: ParityPass; gpu: ParityPass; diff?: string; modules?: Record<string, ModuleTiming[]>;
-};
+export type Parity = ParityReply;
 
 // the modules darktable ran on the CPU in the GPU pass: no OpenCL code, a
 // kernel that did not build, or a device out of memory

@@ -4,7 +4,7 @@
 // the darktable-engine child process: one JSON request per line on its stdin,
 // one JSON reply per line on its stdout
 use crate::settings::Settings;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::fs::File;
@@ -432,11 +432,14 @@ impl BaseCancel {
 
 // one line of darktable's -d perf timings: a module processed, a colorspace
 // conversion ahead of one, or other work (the raw loaded, a buffer set up)
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize, specta::Type)]
 pub struct Timing {
     pub label: String,
-    pub kind: &'static str, // "module", "colorspace", "other" or "pass"
+    pub kind: String, // "module", "colorspace", "other" or "pass"
+    // an f64 would export as `number | null`; these are always finite
+    #[specta(type = serde_json::Number)]
     pub ms: f64,
+    #[specta(type = serde_json::Number)]
     pub cpu_ms: f64,
     pub pipe: String,
     pub gpu: bool,
@@ -530,7 +533,7 @@ fn parse_timing(line: &str) -> Option<Timing> {
     } else {
         (tail.to_string(), "other", String::new())
     };
-    Some(Timing { label, kind, ms, cpu_ms, pipe, gpu: tail.contains(" on GPU"), tiled: tail.contains("with tiling") })
+    Some(Timing { label, kind: kind.into(), ms, cpu_ms, pipe, gpu: tail.contains(" on GPU"), tiled: tail.contains("with tiling") })
 }
 
 // the engine's stderr, to its log: darktable's timings are kept apart, each
@@ -562,7 +565,7 @@ fn read_stderr(stderr: ChildStderr, mut log: File, perf: Arc<Perf>) {
             // the GPU check's passes (main.c, _parity_pass): the module
             // timings after each marker are that pass's
             perf.log.lock().unwrap().current.push(Timing {
-                label: pass.to_string(), kind: "pass", ms: 0.0, cpu_ms: 0.0,
+                label: pass.to_string(), kind: "pass".into(), ms: 0.0, cpu_ms: 0.0,
                 pipe: String::new(), gpu: false, tiled: false,
             });
             continue;
@@ -1404,10 +1407,10 @@ mod tests {
     #[test]
     fn timings() {
         let m = parse_timing("     1.6279 [dev_pixelpipe] took 0.004 secs (0.018 CPU) [full] processed `rawprepare' on CPU").unwrap();
-        assert_eq!((m.label.as_str(), m.kind, m.pipe.as_str(), m.gpu), ("rawprepare", "module", "full", false));
+        assert_eq!((m.label.as_str(), m.kind.as_str(), m.pipe.as_str(), m.gpu), ("rawprepare", "module", "full", false));
         assert!((m.ms - 4.0).abs() < 1e-9 && (m.cpu_ms - 18.0).abs() < 1e-9);
         let c = parse_timing("     1.7357 [dt_ioppr_transform_image_colorspace] IOP_CS_LAB-->IOP_CS_RGB took 0.005 secs (0.008 CPU) [channelmixerrgb]").unwrap();
-        assert_eq!((c.label.as_str(), c.kind), ("colorspace for channelmixerrgb", "colorspace"));
+        assert_eq!((c.label.as_str(), c.kind.as_str()), ("colorspace for channelmixerrgb", "colorspace"));
         let g = parse_timing("     2.0 [dev_pixelpipe] took 0.010 secs (0.001 CPU) [full] processed `diffuse' on GPU with tiling, blended on GPU").unwrap();
         assert!(g.gpu && g.tiled);
         assert!(parse_timing("[engine] > {\"cmd\": \"render\"}").is_none());

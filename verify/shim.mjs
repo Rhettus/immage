@@ -17,13 +17,12 @@ import { fileURLToPath } from "node:url";
 // hash, the edits' f32 timing and padding
 export const FRAME_HEAD = 64;
 
-// the commands the Rust layer registers (main.rs, generate_handler!, and the
-// typed ones in bindings.rs, collect_commands!): one it lacks fails in the
-// app, as mask_rename did before 0.10.1
+// the commands the Rust layer registers (bindings.rs, collect_commands!): one
+// it lacks fails in the app, as mask_rename did before 0.10.1
 const registered = (file, macro) => readFileSync(new URL(`../app/src-tauri/src/${file}`, import.meta.url), "utf8")
   .match(new RegExp(`${macro}!\\[([^\\]]*)\\]`))[1].replace(/\/\/[^\n]*/g, "")
   .split(",").map((s) => s.trim().split("::").pop()).filter(Boolean);
-const HANDLERS = new Set([...registered("main.rs", "generate_handler"), ...registered("bindings.rs", "collect_commands")]);
+const HANDLERS = new Set(registered("bindings.rs", "collect_commands"));
 
 // a built app carries ONNX Runtime in darktable's plugin folder
 // (bundle_engine.py), where the engine looks for it (backend_onnx.c,
@@ -373,7 +372,7 @@ export const screen = { scale: null };
 export const getCurrentWindow = () => ({ onMoved: async () => () => {}, onScaleChanged: async () => () => {} });
 
 export async function invoke(cmd, args = {}) {
-  if (!HANDLERS.has(cmd)) throw new Error(`the app registers no command ${cmd} (main.rs, generate_handler!)`);
+  if (!HANDLERS.has(cmd)) throw new Error(`the app registers no command ${cmd} (bindings.rs, collect_commands!)`);
   const f = COMMANDS[cmd];
   if (!f) throw new Error(`verify/shim.mjs has no ${cmd}`);
   const reply = f(args);

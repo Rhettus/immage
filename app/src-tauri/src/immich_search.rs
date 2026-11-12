@@ -8,9 +8,11 @@
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
+use specta::Type;
 use serde_json::{json, Map, Value};
 
 use crate::immich_upload::{status, Immich};
+use crate::typed_app::{Asset, AssetExif, Named, SearchPage};
 
 // what darktable opens as raw; Immich has no raw flag, so these go to the
 // server as file name endings, upper and lower case
@@ -22,7 +24,7 @@ pub const RAW_EXTENSIONS: &[&str] = &[
 
 // where Immich's paths are on this computer: an external library seen by
 // the server as /mnt/photos may be /Volumes/photos here
-#[derive(Deserialize, Clone, Default)]
+#[derive(Deserialize, Clone, Default, Type)]
 pub struct PathMap {
     #[serde(default)]
     pub immich: String,
@@ -30,7 +32,7 @@ pub struct PathMap {
     pub local: String,
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Default, Type)]
 #[serde(rename_all = "camelCase", default)]
 pub struct SearchArgs {
     // "smart" asks Immich's machine learning; "filename" matches the file
@@ -177,26 +179,44 @@ pub fn safe_id(id: &str) -> Result<&str, String> {
     }
 }
 
+// a text field as the page shows it: Immich sends some numbers as text and
+// some text as numbers, and either is kept
+fn text(v: &Value) -> Option<String> {
+    match v {
+        Value::String(s) => Some(s.clone()),
+        Value::Number(n) => Some(n.to_string()),
+        _ => None,
+    }
+}
+
+fn number(v: &Value) -> Option<serde_json::Number> {
+    v.as_number().cloned()
+}
+
+fn named(id: &Value, name: &Value) -> Named {
+    Named { id: id.as_str().unwrap_or("").into(), name: name.as_str().unwrap_or("").into() }
+}
+
 // what a filmstrip cell and the metadata panel need of an asset
-fn asset(a: &Value, map: &PathMap) -> Value {
+fn asset(a: &Value, map: &PathMap) -> Asset {
     let x = &a["exifInfo"];
     let path = a["originalPath"].as_str().unwrap_or("");
-    json!({
-        "id": a["id"],
-        "name": a["originalFileName"],
-        "path": path,
-        "localPath": local_path(path, map),
-        "date": a["localDateTime"],
-        "rating": x["rating"].as_i64().unwrap_or(0).max(0),
-        "favorite": a["isFavorite"].as_bool().unwrap_or(false),
-        "width": x["exifImageWidth"].as_i64().or(a["width"].as_i64()).unwrap_or(0),
-        "height": x["exifImageHeight"].as_i64().or(a["height"].as_i64()).unwrap_or(0),
-        "exif": {
-            "make": x["make"], "model": x["model"], "lens": x["lensModel"], "iso": x["iso"],
-            "aperture": x["fNumber"], "exposure": x["exposureTime"], "focal": x["focalLength"],
-            "datetime": x["dateTimeOriginal"],
+    Asset {
+        id: a["id"].as_str().unwrap_or("").into(),
+        name: a["originalFileName"].as_str().unwrap_or("").into(),
+        path: path.into(),
+        local_path: local_path(path, map).map(|p| p.to_string_lossy().into_owned()),
+        date: text(&a["localDateTime"]),
+        rating: x["rating"].as_i64().unwrap_or(0).max(0),
+        favorite: a["isFavorite"].as_bool().unwrap_or(false),
+        width: x["exifImageWidth"].as_i64().or(a["width"].as_i64()).unwrap_or(0),
+        height: x["exifImageHeight"].as_i64().or(a["height"].as_i64()).unwrap_or(0),
+        exif: AssetExif {
+            make: text(&x["make"]), model: text(&x["model"]), lens: text(&x["lensModel"]), iso: number(&x["iso"]),
+            aperture: number(&x["fNumber"]), exposure: text(&x["exposureTime"]), focal: number(&x["focalLength"]),
+            datetime: text(&x["dateTimeOriginal"]),
         },
-    })
+    }
 }
 
 impl Immich {
@@ -211,7 +231,7 @@ impl Immich {
 
     // one page: { items, next } with next to pass back for the page after,
     // null at the end
-    pub fn search(&self, a: &SearchArgs, map: &PathMap) -> Result<Value, String> {
+    pub fn search(&self, a: &SearchArgs, map: &PathMap) -> Result<SearchPage, String> {
         let size = a.size.unwrap_or(250).clamp(1, 1000);
         let mut body = json!({ "filter": filter(a), "size": size, "withExif": true });
         let path = if a.smart() {
@@ -231,34 +251,34 @@ impl Immich {
         let r: Value = status(self.http.post(self.url(path)).json(&body).send().map_err(|e| e.to_string())?)?
             .json().map_err(|e| e.to_string())?;
         let assets = &r["assets"];
-        let items: Vec<Value> = assets["items"].as_array().map(|v| v.iter().map(|x| asset(x, map)).collect())
+        let items: Vec<Asset> = assets["items"].as_array().map(|v| v.iter().map(|x| asset(x, map)).collect())
             .unwrap_or_default();
         let next = if a.smart() { &assets["nextPage"] } else { &assets["nextCursor"] };
         let next = match next {
-            Value::String(s) if !s.is_empty() => json!(s),
-            Value::Number(n) => json!(n.to_string()),
-            _ => Value::Null,
+            Value::String(s) if !s.is_empty() => Some(s.clone()),
+            Value::Number(n) => Some(n.to_string()),
+            _ => None,
         };
-        Ok(json!({ "items": items, "next": next }))
+        Ok(SearchPage { items, next })
     }
 
     // [{ id, name }] of the external libraries; reading them takes the
     // admin's library.read, so a key without it gets none, not an error
-    pub fn libraries(&self) -> Result<Value, String> {
+    pub fn libraries(&self) -> Result<Vec<Named>, String> {
         let r = self.http.get(self.url("/libraries")).send().map_err(|e| e.to_string())?;
         if r.status() == reqwest::StatusCode::FORBIDDEN || r.status() == reqwest::StatusCode::UNAUTHORIZED {
-            return Ok(json!([]));
+            return Ok(Vec::new());
         }
         let list: Value = status(r)?.json().map_err(|e| e.to_string())?;
-        let mut libs: Vec<Value> = list.as_array().cloned().unwrap_or_default().iter()
-            .map(|l| json!({ "id": l["id"], "name": l["name"] })).collect();
-        libs.sort_by_key(|l| l["name"].as_str().unwrap_or("").to_lowercase());
-        Ok(json!(libs))
+        let mut libs: Vec<Named> = list.as_array().cloned().unwrap_or_default().iter()
+            .map(|l| named(&l["id"], &l["name"])).collect();
+        libs.sort_by_key(|l| l.name.to_lowercase());
+        Ok(libs)
     }
 
     // the values Immich knows for a field: country, state, city, camera-make,
     // camera-model or camera-lens-model, narrowed by the others given
-    pub fn suggestions(&self, kind: &str, within: &Map<String, Value>) -> Result<Value, String> {
+    pub fn suggestions(&self, kind: &str, within: &Map<String, Value>) -> Result<Vec<String>, String> {
         let mut q: Vec<(String, String)> = vec![("type".into(), kind.into())];
         for (k, v) in within {
             if let Some(s) = v.as_str().filter(|s| !s.is_empty()) {
@@ -269,11 +289,11 @@ impl Immich {
         let mut v: Vec<String> = list.as_array().cloned().unwrap_or_default().iter()
             .filter_map(|s| s.as_str().map(String::from)).filter(|s| !s.is_empty()).collect();
         v.sort_by_key(|s| s.to_lowercase());
-        Ok(json!(v))
+        Ok(v)
     }
 
-    // [{ id, name }] of the named people, by name
-    pub fn people(&self) -> Result<Value, String> {
+    // the named people, by name
+    pub fn people(&self) -> Result<Vec<Named>, String> {
         let mut out = Vec::new();
         for page in 1..=20 {
             let page = page.to_string();
@@ -281,23 +301,26 @@ impl Immich {
                 .json().map_err(|e| e.to_string())?;
             out.extend(r["people"].as_array().cloned().unwrap_or_default().iter()
                 .filter(|p| p["name"].as_str().is_some_and(|n| !n.is_empty()))
-                .map(|p| json!({ "id": p["id"], "name": p["name"] })));
+                .map(|p| named(&p["id"], &p["name"])));
             if r["hasNextPage"] != json!(true) {
                 break;
             }
         }
-        out.sort_by_key(|p| p["name"].as_str().unwrap_or("").to_lowercase());
-        Ok(json!(out))
+        out.sort_by_key(|p| p.name.to_lowercase());
+        Ok(out)
     }
 
-    // [{ id, name }] with a tag's full path as its name, by name
-    pub fn tags(&self) -> Result<Value, String> {
+    // a tag's full path as its name, by name
+    pub fn tags(&self) -> Result<Vec<Named>, String> {
         let list: Value = status(self.http.get(self.url("/tags")).send().map_err(|e| e.to_string())?)?
             .json().map_err(|e| e.to_string())?;
-        let mut v: Vec<Value> = list.as_array().cloned().unwrap_or_default().iter()
-            .map(|t| json!({ "id": t["id"], "name": t["value"].as_str().or(t["name"].as_str()) })).collect();
-        v.sort_by_key(|t| t["name"].as_str().unwrap_or("").to_lowercase());
-        Ok(json!(v))
+        let mut v: Vec<Named> = list.as_array().cloned().unwrap_or_default().iter()
+            .map(|t| Named {
+                id: t["id"].as_str().unwrap_or("").into(),
+                name: t["value"].as_str().or(t["name"].as_str()).unwrap_or("").into(),
+            }).collect();
+        v.sort_by_key(|t| t.name.to_lowercase());
+        Ok(v)
     }
 
     // Immich's small thumbnail, from the server; main.rs keeps it in the cache
@@ -420,6 +443,7 @@ mod tests {
             .with_body(r#"{"albums":{},"assets":{"items":[],"nextPage":null}}"#).create();
         let c = client(&server.url());
         let r = c.search(&SearchArgs { next: Some("c1".into()), ..Default::default() }, &PathMap::default()).unwrap();
+        let r = serde_json::to_value(&r).unwrap();
         assert_eq!(r["next"], "c2");
         let a = &r["items"][0];
         assert_eq!((a["id"].as_str(), a["name"].as_str(), a["rating"].as_i64()), (Some("a1"), Some("A.RAF"), Some(4)));
@@ -427,7 +451,7 @@ mod tests {
         assert_eq!(a["localPath"], Value::Null);
         let r = c.search(&SearchArgs { mode: "smart".into(), text: "beach".into(), next: Some("2".into()),
                                        ..Default::default() }, &PathMap::default()).unwrap();
-        assert_eq!(r["next"], Value::Null);
+        assert_eq!(r.next, None);
     }
 
     #[test]
@@ -435,7 +459,7 @@ mod tests {
         let mut server = mockito::Server::new();
         let _l = server.mock("GET", "/api/libraries").with_status(403).with_body(r#"{"message":"Missing permission"}"#)
             .create();
-        assert_eq!(client(&server.url()).libraries().unwrap(), json!([]));
+        assert!(client(&server.url()).libraries().unwrap().is_empty());
     }
 
     #[test]

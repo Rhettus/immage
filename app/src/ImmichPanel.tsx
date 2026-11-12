@@ -7,11 +7,9 @@
 // the toolbar's Filters popup narrows the search by what Immich offers
 // (FilterPopup.tsx), and the stars by rating
 import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { commands, type Named } from "./commands";
 import { Chevron, Collapse } from "./Collapse";
 import type { ImmichSearch } from "./immich";
-
-type Named = { id: string; name: string };
 
 export function ImmichPanel({ open, onToggle, active, searching, form, onChange, onSearch, onMenu }: {
   open: boolean; onToggle: (alt: boolean) => void;
@@ -30,13 +28,13 @@ export function ImmichPanel({ open, onToggle, active, searching, form, onChange,
   const [lacks, setLacks] = useState<string[]>([]);
   // asked again after each search, so a key fixed in Immich meanwhile clears it
   useEffect(() => {
-    if (open && !searching) invoke<string[]>("immich_browse_check").then(setLacks).catch(() => {});
+    if (open && !searching) commands.immichBrowseCheck().then(setLacks).catch(() => {});
   }, [open, searching]);
 
   // the server's libraries, once the card is open
   useEffect(() => {
     if (!open) return;
-    invoke<Named[]>("immich_libraries").then(setLibraries).catch((e) => setError(String(e)));
+    commands.immichLibraries().then(setLibraries).catch((e) => setError(String(e)));
   }, [open]);
 
   const run = () => {

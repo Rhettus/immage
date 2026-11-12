@@ -9,7 +9,7 @@
 // of its photos
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { invoke } from "@tauri-apps/api/core";
+import { commands, type Named } from "./commands";
 import { bodyLabel, EXPOSURE, facetsWithin, NO_FILTER, popupCount, type ExposureKey, type Facets, type Filter } from "./filter";
 import type { ImageEntry } from "./library";
 import { immichFilterCount, NO_SEARCH, type ImmichSearch } from "./immich";
@@ -335,7 +335,6 @@ function FolderCategories({ filter: f, images, onFilter, onSearch }: {
   );
 }
 
-type Named = { id: string; name: string };
 type Kind = "camera-make" | "camera-model" | "camera-lens-model" | "country" | "city";
 
 // the server's values for a field, each narrowed by the fields before it
@@ -343,7 +342,7 @@ function useSuggestions(kind: Kind, within: Record<string, string>) {
   const [values, setValues] = useState<string[] | undefined>();
   const key = JSON.stringify(within);
   useEffect(() => {
-    invoke<string[]>("immich_suggestions", { kind, within }).then(setValues).catch(() => {});
+    commands.immichSuggestions(kind, within).then(setValues).catch(() => {});
   }, [kind, key]);
   return values;
 }
@@ -402,9 +401,9 @@ function ImmichCategories({ form, update, onSearch }: ImmichFilters & { onSearch
   const [albums, setAlbums] = useState<Named[]>([]);
   // a key without the permission for one just leaves it empty
   useEffect(() => {
-    invoke<Named[]>("immich_people").then(setPeople).catch(() => {});
-    invoke<Named[]>("immich_tags").then(setTags).catch(() => {});
-    invoke<Named[]>("immich_albums").then(setAlbums).catch(() => {});
+    commands.immichPeople().then(setPeople).catch(() => {});
+    commands.immichTags().then(setTags).catch(() => {});
+    commands.immichAlbums().then(setAlbums).catch(() => {});
   }, []);
   const names = (all: Named[]) => (id: string) => all.find((x) => x.id === id)?.name ?? "…";
   const cats: Category<ImmichSearch>[] = [

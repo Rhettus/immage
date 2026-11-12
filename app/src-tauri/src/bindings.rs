@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
-// the typed command protocol: the commands listed in `commands()` have their
-// signatures and reply types exported to app/src/bindings.ts, which the page
-// calls through app/src/commands.ts. every other command still goes through
-// tauri::generate_handler! in main.rs (`handler` routes between the two), and
-// moves in here as it gets typed
+// the typed command protocol: every command the page calls is listed in
+// `commands()`, and its signature and reply type are exported to
+// app/src/bindings.ts, which the page calls through app/src/commands.ts. a new
+// command takes #[specta::specta] after #[tauri::command] and a line here;
+// the tests below fail when one is missing
 //
 // regenerate the file after changing a typed command or reply type:
 //   IMMAGE_WRITE_BINDINGS=1 cargo test --locked bindings
@@ -13,7 +13,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
 use specta::Type;
-use std::collections::HashSet;
 use tauri::ipc::{Invoke, InvokeResponseBody, IpcResponse};
 use tauri_specta::{collect_commands, Commands};
 
@@ -129,10 +128,73 @@ pub fn commands() -> Commands<tauri::Wry> {
         crate::spektra_stocks,
         crate::spektra_fetch,
         crate::lenses,
+        // Preferences, performance reports and the app itself
+        crate::darktable_resources,
+        crate::darktable_resources_set,
+        crate::memory_budget::memory_budget,
+        crate::gpu_edits,
+        crate::gpu_edits_set,
+        crate::webview_renderer,
+        crate::webview_renderer_set,
+        crate::licenses,
+        crate::engine_quit,
+        crate::engine_restart,
+        crate::menu_set,
+        crate::csp_violation,
+        crate::preview_fullscreen,
+        crate::perf_set,
+        crate::perf_trace_start,
+        crate::perf_trace_stop,
+        crate::perf_modules,
+        crate::perf_report_write,
+        crate::perf_machine,
+        crate::perf_ping,
+        crate::gpu_check_parity,
+        crate::resources::perf_resources_start,
+        crate::resources::perf_resources_stop,
+        // Immich
+        crate::immich_albums,
+        crate::immich_create_album,
+        crate::immich_export_check,
+        crate::immich_browse_check,
+        crate::immich_search,
+        crate::immich_libraries,
+        crate::immich_suggestions,
+        crate::immich_people,
+        crate::immich_tags,
+        crate::immich_thumb,
+        crate::immich_resolve,
+        // Edit In plugins, backups and the support bundle
+        crate::plugins::plugin_find_apps,
+        crate::plugins::plugin_config,
+        crate::plugins::plugin_config_save,
+        crate::plugins::plugin_set_app,
+        crate::plugins::plugin_choose_app,
+        crate::plugins::plugin_launch,
+        crate::plugins::plugin_watch,
+        crate::plugins::plugin_cancel,
+        crate::plugins::plugin_job,
+        crate::plugins::plugin_returns,
+        crate::plugins::plugin_return_applied,
+        crate::backup::backup_components,
+        crate::backup::backup_pick_save,
+        crate::backup::backup_pick_open,
+        crate::backup::backup_create,
+        crate::backup::backup_inspect,
+        crate::backup::backup_restore,
+        crate::support_bundle::support_bundle_preview,
+        crate::support_bundle::support_bundle_add_benchmark,
+        crate::support_bundle::support_bundle_save,
+        crate::support_bundle::support_bundle_discard,
     ]
 }
 
-// only the bindings export needs the builder: the app routes through `handler`
+// the app's invoke handler, which serves the commands above
+pub fn handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
+    let commands = commands().0;
+    move |invoke| commands(invoke)
+}
+
 #[cfg(test)]
 pub fn builder() -> tauri_specta::Builder<tauri::Wry> {
     tauri_specta::Builder::<tauri::Wry>::new()
@@ -141,27 +203,6 @@ pub fn builder() -> tauri_specta::Builder<tauri::Wry> {
         .dangerously_cast_bigints_to_number()
         // one type per reply, not a Serialize and a Deserialize variant
         .disable_serde_phases()
-}
-
-// one invoke handler for the typed commands and the rest: tauri allows a
-// single handler, and an Invoke can be given to only one of them
-pub fn handler(
-    rest: impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync + 'static,
-) -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
-    let commands = commands();
-    let typed: HashSet<String> = (commands.1)(&mut specta::Types::default())
-        .functions
-        .iter()
-        .map(|f| f.name().to_string())
-        .collect();
-    let typed_handler = commands.0.clone();
-    move |invoke| {
-        if typed.contains(invoke.message.command()) {
-            typed_handler(invoke)
-        } else {
-            rest(invoke)
-        }
-    }
 }
 
 // a binary reply (a frame, a map tile): tauri sends the bytes raw and the

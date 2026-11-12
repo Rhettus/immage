@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 import { useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { commands } from "./commands";
-import { perf, observeWebview } from "./perf";
+import { perf, observeWebview, writeReport } from "./perf";
 import { loadPreview, loadBalancedPreviewSize, loadDraftSmallest, loadDraftTarget } from "./Preferences";
 import { measureTuner, searchTuner, trimmedMedian, tunerChanges, type TunerSettings, type TunerRun, type TunerMeasurement, type TunerContext, type TunerTrial } from "./previewTuning";
 import { tunerOptions, type TunerOption } from "./tunerOptions";
@@ -104,7 +103,7 @@ export function PerformanceTuner({ run, onClose, onRelaunch, onOverlay, photo, r
       if (capture.current) {
         capture.current.stop(); stopTunerWork(); perf.recording = null;
         capture.current.stopMeasurement();
-        void invoke("perf_resources_stop").catch(() => {});
+        void commands.perfResourcesStop().catch(() => {});
         capture.current = null;
       }
     };
@@ -151,13 +150,13 @@ export function PerformanceTuner({ run, onClose, onRelaunch, onOverlay, photo, r
     let started = false;
     try {
       const all = await reload(false);
-      await invoke("perf_resources_start"); started = true;
+      await commands.perfResourcesStart(); started = true;
       const stopMeasurement = await perf.startMeasurement();
       perf.recording = []; startTunerWork();
       capture.current = {start:performance.now(),settings:Object.fromEntries(all.map((o) => [o.id,o.current])),stopMeasurement,stop:observeWebview(null)};
       setRecording(true);
     } catch (e) {
-      if (started) await invoke("perf_resources_stop").catch(() => {});
+      if (started) await commands.perfResourcesStop().catch(() => {});
       lock.current = false; setError(String(e));
     } finally { setBusy(false); }
   };
@@ -169,12 +168,12 @@ export function PerformanceTuner({ run, onClose, onRelaunch, onOverlay, photo, r
     perf.recording = null;
     c.stopMeasurement();
     try {
-      const resources = await invoke("perf_resources_stop");
+      const resources = await commands.perfResourcesStop();
       const currentOptions = await tunerOptions(onOverlay);
       if (currentOptions.some((o) => c.settings[o.id] !== o.current)) throw new Error("Settings changed during recording. Repeat the workload without changing preferences.");
       const cacheUsage = await commands.cacheUsage().catch(() => null);
       const at = new Date();
-      const reportPath = await invoke<string>("perf_report_write", {name:`tuner-${at.toISOString().replace(/[:.]/g,"-")}`,report:{immage:"performance-tuner-workload",version:1,at:at.toISOString(),workload:"navigation",settings:c.settings,seconds:(performance.now()-c.start)/1000,samples,frames,webviewTiming,resources,cacheUsage}});
+      const reportPath = await writeReport(`tuner-${at.toISOString().replace(/[:.]/g,"-")}`,{immage:"performance-tuner-workload",version:1,at:at.toISOString(),workload:"navigation",settings:c.settings,seconds:(performance.now()-c.start)/1000,samples,frames,webviewTiming,resources,cacheUsage});
       setWork((old) => [...old,{settings:c.settings,samples,path:reportPath}]);
       if (navSamples(samples).length) setNavigationPending(false);
       else setError("No completed photo opens were captured. Repeat the recording and finish opening photos before stopping.");

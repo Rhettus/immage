@@ -27,6 +27,7 @@ mod scrub;
 mod support_bundle;
 mod backup;
 mod bindings;
+mod typed_app;
 mod typed_edit;
 mod typed_export;
 mod typed_library;
@@ -41,6 +42,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use typed_app::{Album, Level, Licenses, Named, ParityReply, Resolved, SearchPage, Toggle};
 use typed_edit::{AccelProvider, AgxPresetsReply, AgxProfile, AiAccelReply, CombineMember, DepthMap, FilmFetch, FilmStocks, FontFamily, FontsReply, LensMenu, LookReply, MapView, MaskInfo, MasksReply, NewSpot, Spot, SpotSource, SpotsReply, UprightReply};
 use typed_export::{ExportFailure, ExportItem, ExportOptions, ExportReply, ExistingFile, GeneratedReply, HdrReply, LookInfo, PanoPreview, PanoReply, PresetsDoc, PresetsFile, PrintProfile, PrintProfilesReply, PrintReply, PrinterInfoReply, PrintersReply, SharedImport};
 use typed_library::{CaptureTimeEntry, CaptureTimesReply, CopyReply, FilesReply, FolderReply, KeywordsReply, LibraryImage, SubFolder, ThumbReply};
@@ -1231,6 +1233,7 @@ async fn cancel_base(state: State<'_, AppState>) -> Result<(), String> {
 
 // the performance overlay: on, renders collect darktable's per-module timings
 #[tauri::command]
+#[specta::specta]
 async fn perf_set(state: State<'_, AppState>, on: bool) -> Result<(), String> {
     state.perf_on.store(on, Ordering::Relaxed);
     Ok(())
@@ -1240,6 +1243,7 @@ async fn perf_set(state: State<'_, AppState>, on: bool) -> Result<(), String> {
 // one line in webview.log in the runtime folder. the page dedupes and caps
 // what it sends; the file is also capped here, so a page cannot fill the disk
 #[tauri::command]
+#[specta::specta]
 fn csp_violation(state: State<'_, AppState>, directive: String, blocked: String, source: String, line: u32, sample: String) {
     use std::io::Write;
     let path = state.runtime.join("webview.log");
@@ -1254,6 +1258,7 @@ fn csp_violation(state: State<'_, AppState>, directive: String, blocked: String,
 }
 
 #[tauri::command]
+#[specta::specta]
 async fn perf_trace_start(state: State<'_, AppState>) -> Result<(), String> {
     state.perf_by_request.lock().unwrap().clear();
     state.perf_modules_dropped.store(0, Ordering::Relaxed);
@@ -1262,6 +1267,7 @@ async fn perf_trace_start(state: State<'_, AppState>) -> Result<(), String> {
     Ok(())
 }
 #[tauri::command]
+#[specta::specta]
 async fn perf_trace_stop(state: State<'_, AppState>) -> Result<(), String> {
     state.engine.stop();
     state.engine("perf_trace_stop").cache_trace(false)?;
@@ -1270,6 +1276,7 @@ async fn perf_trace_stop(state: State<'_, AppState>) -> Result<(), String> {
 
 // the last render's per-module timings, while the overlay is on
 #[tauri::command]
+#[specta::specta]
 async fn perf_modules(state: State<'_, AppState>, request: Option<u64>) -> Result<Vec<Timing>, String> {
     if let Some(id) = request {
         return state.perf_by_request.lock().unwrap().remove(&id).ok_or_else(|| "module timings for request unavailable".to_string());
@@ -1281,8 +1288,9 @@ async fn perf_modules(state: State<'_, AppState>, request: Option<u64>) -> Resul
 // (main.c, _parity), with each pass's module timings. a case that differs
 // writes its amplified difference as <diff>.png in the reports folder
 #[tauri::command]
+#[specta::specta]
 async fn gpu_check_parity(state: State<'_, AppState>, size: Option<u32>, diff: Option<String>,
-                          self_check: Option<bool>) -> Result<Value, String> {
+                          self_check: Option<bool>) -> Result<ParityReply, String> {
     let mut req = json!({ "cmd": "parity", "size": size.unwrap_or(1024), "self": self_check.unwrap_or(false) });
     if let Some(name) = diff {
         if name.is_empty() || name.contains(['/', '\\']) || name.starts_with('.') {
@@ -1294,34 +1302,36 @@ async fn gpu_check_parity(state: State<'_, AppState>, size: Option<u32>, diff: O
     let mut engine = state.engine("gpu_check_parity");
     // the marks around it keep earlier requests' timings out of its own
     engine.perf_mark();
-    let mut reply = engine.request(req)?;
+    let reply = engine.request(req)?;
     let timings = engine.perf_mark();
-    let mut passes = serde_json::Map::new();
+    let mut passes: std::collections::BTreeMap<String, Vec<Timing>> = Default::default();
     let mut pass = String::new();
     for t in timings {
         if t.kind == "pass" {
             pass = t.label.clone();
-            passes.insert(pass.clone(), json!([]));
-        } else if let Some(Value::Array(list)) = passes.get_mut(&pass) {
+            passes.insert(pass.clone(), Vec::new());
+        } else if let Some(list) = passes.get_mut(&pass) {
             // the check pipe is a full pipe; a thumbnail or preview drawn
             // meanwhile on another thread is not part of its pass
-            if t.pipe.is_empty() || t.pipe == "full" { list.push(json!(t)); }
+            if t.pipe.is_empty() || t.pipe == "full" { list.push(t); }
         }
     }
-    reply["modules"] = Value::Object(passes);
-    if let Some(o) = reply.as_object_mut() { o.remove("ok"); }
-    Ok(reply)
+    let mut parity: ParityReply = serde_json::from_value(reply).map_err(|e| format!("unexpected parity reply: {e}"))?;
+    parity.modules = passes;
+    Ok(parity)
 }
 
 // does nothing: the GUI benchmark times a call's round trip on its own,
 // the cost every engine call pays on top of its work
 #[tauri::command]
+#[specta::specta]
 async fn perf_ping() -> Result<(), String> {
     Ok(())
 }
 
 // a GUI benchmark's report, as <name>.json in the reports folder; its path back
 #[tauri::command]
+#[specta::specta]
 async fn perf_report_write(state: State<'_, AppState>, name: String, mut report: Value) -> Result<String, String> {
     if name.is_empty() || name.contains(['/', '\\']) || name.starts_with('.') {
         return Err("bad report name".into());
@@ -1407,14 +1417,16 @@ fn report_machine_id(dir: Option<&Path>) -> Option<String> {
 static WEBVIEW_EGL_OVERRIDE: AtomicBool = AtomicBool::new(false);
 
 #[tauri::command]
-fn webview_renderer() -> Value {
+#[specta::specta]
+fn webview_renderer() -> Option<renderer::Status> {
     #[cfg(target_os = "linux")]
     return renderer::status();
     #[cfg(not(target_os = "linux"))]
-    json!(null)
+    None
 }
 
 #[tauri::command]
+#[specta::specta]
 fn webview_renderer_set(settings: State<'_, settings::Settings>, mode: String) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     return renderer::set(&settings, &mode);
@@ -1470,6 +1482,7 @@ fn machine_block(dir: Option<&Path>, opencl: Option<Value>) -> Value {
 // the machine a GUI benchmark ran on: a stable id to group reports by, and
 // what it is
 #[tauri::command]
+#[specta::specta]
 async fn perf_machine(app: AppHandle, state: State<'_, AppState>) -> Result<Value, String> {
     let opencl = state.engine("perf_machine").request(json!({ "cmd": "opencl" })).ok()
         .map(|mut r| { if let Some(o) = r.as_object_mut() { o.remove("ok"); } r });
@@ -2118,11 +2131,13 @@ async fn prefetch(state: State<'_, AppState>, imgids: Vec<i64>) -> Result<(), St
 // Preferences' darktable memory: the level the engine runs at, and the one
 // its next start takes
 #[tauri::command]
-fn darktable_resources(state: State<'_, AppState>) -> Value {
-    json!({ "running": *state.resource_level.lock().unwrap(), "next": engine::resource_level(&state.runtime) })
+#[specta::specta]
+fn darktable_resources(state: State<'_, AppState>) -> Level {
+    Level { running: state.resource_level.lock().unwrap().clone(), next: engine::resource_level(&state.runtime) }
 }
 
 #[tauri::command]
+#[specta::specta]
 fn darktable_resources_set(settings: State<'_, settings::Settings>, level: String) -> Result<(), String> {
     engine::set_resource_level(&settings, &level)
 }
@@ -2130,11 +2145,13 @@ fn darktable_resources_set(settings: State<'_, settings::Settings>, level: Strin
 // Preferences' GPU edits: whether the engine runs with them, and whether
 // its next start will
 #[tauri::command]
-fn gpu_edits(state: State<'_, AppState>) -> Value {
-    json!({ "running": state.gpu_edits.load(Ordering::Relaxed), "next": engine::gpu_edits(&state.runtime) })
+#[specta::specta]
+fn gpu_edits(state: State<'_, AppState>) -> Toggle {
+    Toggle { running: state.gpu_edits.load(Ordering::Relaxed), next: engine::gpu_edits(&state.runtime) }
 }
 
 #[tauri::command]
+#[specta::specta]
 fn gpu_edits_set(settings: State<'_, settings::Settings>, on: bool) -> Result<(), String> {
     engine::set_gpu_edits(&settings, on)
 }
@@ -2404,17 +2421,20 @@ async fn immich_call<T: Send + 'static>(
 
 // the albums to export to, by name
 #[tauri::command]
-async fn immich_albums(app: AppHandle) -> Result<Value, String> {
+#[specta::specta]
+async fn immich_albums(app: AppHandle) -> Result<Vec<Album>, String> {
     immich_call(&app, |c| c.albums()).await
 }
 
 #[tauri::command]
-async fn immich_create_album(app: AppHandle, name: String) -> Result<Value, String> {
+#[specta::specta]
+async fn immich_create_album(app: AppHandle, name: String) -> Result<Album, String> {
     immich_call(&app, move |c| c.create_album(name.trim())).await
 }
 
 // the permissions an export needs that the key lacks
 #[tauri::command]
+#[specta::specta]
 async fn immich_export_check(app: AppHandle) -> Result<Vec<String>, String> {
     immich_call(&app, |c| c.missing_permissions()).await
 }
@@ -2422,62 +2442,70 @@ async fn immich_export_check(app: AppHandle) -> Result<Vec<String>, String> {
 // the Library panel's Immich card (immich_search.rs)
 // the permissions its search, thumbnails and downloads need that the key lacks
 #[tauri::command]
+#[specta::specta]
 async fn immich_browse_check(app: AppHandle) -> Result<Vec<String>, String> {
     immich_call(&app, |c| c.lacks(immich_upload::BROWSE_PERMISSIONS)).await
 }
 
 #[tauri::command]
+#[specta::specta]
 async fn immich_search(app: AppHandle, args: immich_search::SearchArgs, map: Option<immich_search::PathMap>)
-    -> Result<Value, String> {
+    -> Result<SearchPage, String> {
     immich_call(&app, move |c| c.search(&args, &map.unwrap_or_default())).await
 }
 
 #[tauri::command]
-async fn immich_libraries(app: AppHandle) -> Result<Value, String> {
+#[specta::specta]
+async fn immich_libraries(app: AppHandle) -> Result<Vec<Named>, String> {
     immich_call(&app, |c| c.libraries()).await
 }
 
 #[tauri::command]
-async fn immich_suggestions(app: AppHandle, kind: String, within: Option<Map<String, Value>>) -> Result<Value, String> {
+#[specta::specta]
+async fn immich_suggestions(app: AppHandle, kind: String, within: Option<Map<String, Value>>) -> Result<Vec<String>, String> {
     immich_call(&app, move |c| c.suggestions(&kind, &within.unwrap_or_default())).await
 }
 
 #[tauri::command]
-async fn immich_people(app: AppHandle) -> Result<Value, String> {
+#[specta::specta]
+async fn immich_people(app: AppHandle) -> Result<Vec<Named>, String> {
     immich_call(&app, |c| c.people()).await
 }
 
 #[tauri::command]
-async fn immich_tags(app: AppHandle) -> Result<Value, String> {
+#[specta::specta]
+async fn immich_tags(app: AppHandle) -> Result<Vec<Named>, String> {
     immich_call(&app, |c| c.tags()).await
 }
 
 // Immich's thumbnail as its encoded image (WebP or JPEG); asking again
 // does not go to the server while the cache keeps it
 #[tauri::command]
-async fn immich_thumb(app: AppHandle, caches: State<'_, Caches>, id: String) -> Result<Response, String> {
+#[specta::specta]
+async fn immich_thumb(app: AppHandle, caches: State<'_, Caches>, id: String) -> Result<bindings::Frame, String> {
     immich_search::safe_id(&id)?;
     let cache = caches.immich_thumbs.clone();
     let name = id.clone();
     let hit = tauri::async_runtime::spawn_blocking(move || cache.read(&name)).await.map_err(|e| e.to_string())?;
     if let Some(b) = hit {
-        return Ok(Response::new(b));
+        return Ok(bindings::Frame(Response::new(b)));
     }
     let cache = caches.immich_thumbs.clone();
     immich_call(&app, move |c| {
         let bytes = c.thumb(&id)?;
         let _ = cache.write(&id, &bytes);
         Ok(bytes)
-    }).await.map(Response::new)
+    }).await.map(|b| bindings::Frame(Response::new(b)))
 }
 
 // a file to open for an Immich asset: the external library's own file when
 // this computer has it, else the original downloaded into the cache
 #[tauri::command]
+#[specta::specta]
 async fn immich_resolve(app: AppHandle, id: String, name: String, path: String,
-                        map: Option<immich_search::PathMap>) -> Result<Value, String> {
+                        map: Option<immich_search::PathMap>) -> Result<Resolved, String> {
     if let Some(p) = immich_search::local_path(&path, &map.unwrap_or_default()) {
-        return Ok(json!({ "path": p, "downloaded": false }));
+        return Ok(Resolved { path: p.to_string_lossy().into_owned(), downloaded: false });
     }
     let cache = app.state::<Caches>().immich_originals.clone();
     let p = immich_call(&app, move |c| {
@@ -2485,7 +2513,7 @@ async fn immich_resolve(app: AppHandle, id: String, name: String, path: String,
         if fresh { cache.added(&id) } else { cache.touch(&id) }
         Ok(p)
     }).await?;
-    Ok(json!({ "path": p, "downloaded": true }))
+    Ok(Resolved { path: p.to_string_lossy().into_owned(), downloaded: true })
 }
 
 // the reply says whether the photo now reads as edited (darktable's history hash)
@@ -3141,7 +3169,8 @@ async fn about(app: AppHandle, state: State<'_, AppState>) -> Result<bindings::A
 // compiled into the app (scripts/notices.mjs). each is null when missing,
 // as in a development build that has not bundled the engine
 #[tauri::command]
-fn licenses(app: AppHandle) -> Result<Value, String> {
+#[specta::specta]
+fn licenses(app: AppHandle) -> Result<Licenses, String> {
     let (gpl, libs, notices) = if cfg!(debug_assertions) {
         let res = repo_root().join("app/src-tauri/resources");
         (repo_root().join("LICENSE"), res.join("darktable/share/licenses"), res.join("notices.txt"))
@@ -3150,17 +3179,18 @@ fn licenses(app: AppHandle) -> Result<Value, String> {
         (res.join("LICENSE"), res.join("darktable/share/licenses"), res.join("notices.txt"))
     };
     let index = libs.join("INDEX.txt");
-    Ok(json!({
-        "gpl": std::fs::read_to_string(&gpl).ok(),
-        "libraries": std::fs::read_to_string(&index).ok(),
-        "librariesPath": index.exists().then(|| index.to_string_lossy().into_owned()),
-        "notices": std::fs::read_to_string(&notices).ok(),
-    }))
+    Ok(Licenses {
+        gpl: std::fs::read_to_string(&gpl).ok(),
+        libraries: std::fs::read_to_string(&index).ok(),
+        libraries_path: index.exists().then(|| index.to_string_lossy().into_owned()),
+        notices: std::fs::read_to_string(&notices).ok(),
+    })
 }
 
 // before an update is installed: the installer replaces the engine's files,
 // which Windows will not do while they are in use
 #[tauri::command]
+#[specta::specta]
 async fn engine_quit(state: State<'_, AppState>) -> Result<(), String> {
     state.engine("engine_quit").quit();
     Ok(())
@@ -3170,6 +3200,7 @@ async fn engine_quit(state: State<'_, AppState>) -> Result<(), String> {
 // the engine lock, which its request holds. the request fails with the exit
 // error and the supervisor starts another (engine-state down, then ready)
 #[tauri::command]
+#[specta::specta]
 fn engine_restart(state: State<'_, AppState>) {
     state.engine_link.restart();
 }
@@ -3219,22 +3250,22 @@ fn launch_file(launch: State<'_, Launch>) -> Option<String> {
 // the menu spec lives in app/src/menu.ts so the drawn Windows/Linux menu and
 // this native one list the same items; Windows and Linux draw it in the title
 // bar strip, as a native row there would take extra height
-#[derive(Deserialize)]
+#[derive(Deserialize, specta::Type)]
 struct NativeMenu {
     label: String,
     items: Vec<NativeItem>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, specta::Type)]
 #[serde(tag = "type", rename_all = "lowercase")]
 enum NativeItem {
-    Item { id: String, label: String, accel: Option<String> },
+    Item { id: String, label: String, #[serde(default)] accel: Option<String> },
     Separator,
     Submenu { label: String, items: Vec<NativeItem> },
     Predefined { role: NativeRole },
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 enum NativeRole {
     About, Services, Hide, HideOthers, ShowAll, Quit, CloseWindow,
@@ -3293,6 +3324,7 @@ fn build_menu(app: &AppHandle, menus: &[NativeMenu]) -> tauri::Result<tauri::men
 
 // async so it runs off the main thread: the menu API hops to it and waits
 #[tauri::command]
+#[specta::specta]
 async fn menu_set(app: AppHandle, menus: Vec<NativeMenu>) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
@@ -3462,15 +3494,7 @@ fn main() {
             app.manage(Caches::new(&app.path().app_cache_dir()?));
             Ok(())
         })
-        .invoke_handler(bindings::handler(tauri::generate_handler![
-            darktable_resources, darktable_resources_set, memory_budget::memory_budget, gpu_edits, gpu_edits_set, webview_renderer, webview_renderer_set,
-            immich_albums, immich_create_album,
-            immich_export_check, immich_search, immich_browse_check, immich_libraries, immich_suggestions, immich_people, immich_tags,
-            immich_thumb, immich_resolve, preview_fullscreen, licenses, engine_quit, engine_restart,
-            menu_set, csp_violation, perf_set, perf_trace_start, perf_trace_stop, perf_modules, perf_report_write, perf_machine, perf_ping, support_bundle::support_bundle_preview, support_bundle::support_bundle_add_benchmark, support_bundle::support_bundle_save, support_bundle::support_bundle_discard, backup::backup_components, backup::backup_pick_save, backup::backup_pick_open, backup::backup_create, backup::backup_inspect, backup::backup_restore, gpu_check_parity, resources::perf_resources_start, resources::perf_resources_stop,
-            plugins::plugin_find_apps, plugins::plugin_config, plugins::plugin_config_save, plugins::plugin_set_app, plugins::plugin_choose_app, plugins::plugin_launch, plugins::plugin_watch, plugins::plugin_cancel, plugins::plugin_job,
-            plugins::plugin_returns, plugins::plugin_return_applied
-        ]))
+        .invoke_handler(bindings::handler())
         .build(context)
         .expect("error while running Immage");
     app.run(|_app, _event| {
@@ -3492,6 +3516,7 @@ fn main() {
 // so the switch is made on the main thread, where it runs at once, and the
 // web view takes the keyboard back in a block queued after tao's
 #[tauri::command]
+#[specta::specta]
 fn preview_fullscreen(app: AppHandle, on: bool) -> Result<(), String> {
     let handle = app.clone();
     app.run_on_main_thread(move || {
