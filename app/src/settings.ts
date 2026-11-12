@@ -2,7 +2,7 @@
 // Copyright (C) 2026 the Immage authors
 
 // Synchronous settings with localStorage's shape, kept in a file by the Rust
-// layer (settings_all, settings_set in main.rs). The file survives the WebView's
+// layer (settings_all, settings_set in settings.rs). The file survives the WebView's
 // storage being cleared or moved, and is shared by every window.
 //
 // The whole map is read once; entries await `ready` before loading anything that
@@ -10,7 +10,7 @@
 // No top-level await here: pixelWorker's bundle reaches this module through
 // perf.ts, and worker bundles cannot hold one. In a worker invoke is missing,
 // so the map stays empty, as localStorage was missing there before.
-import { invoke } from "@tauri-apps/api/core";
+import { commands } from "./commands";
 
 // keys Rust owns: it writes them, the page only reads
 const NATIVE_PREFIX = "native.";
@@ -47,7 +47,7 @@ function send(): Promise<void> {
     const batch = pending;
     pending = new Map();
     try {
-      await invoke("settings_set", { changes: Object.fromEntries(batch) });
+      await commands.settingsSet(Object.fromEntries(batch));
     } catch (e) {
       // keep the changes for the next flush, unless a newer write replaced them
       for (const [k, v] of batch) if (!pending.has(k)) pending.set(k, v);
@@ -65,7 +65,7 @@ function flush(): Promise<void> {
 async function init() {
   let loaded = false;
   try {
-    const all = await invoke<Record<string, string>>("settings_all");
+    const all = await commands.settingsAll();
     for (const [k, v] of Object.entries(all ?? {})) map.set(k, String(v));
     loaded = true;
     backed = true;

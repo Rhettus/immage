@@ -14,6 +14,7 @@ import { GPU_CASES, resolveCase, verdict, cpuInGpuPass, tiledInGpuPass, type Par
 import type { TunerRun } from "./previewTuning";
 import type { Session } from "./session";
 import type { Zoom } from "./zoom";
+import { commands } from "./commands";
 
 export type BenchContext = {
   session: MutableRefObject<Session | null>;
@@ -184,7 +185,7 @@ export const runGuiBenchmark = async (ctx: BenchContext): Promise<TunerRun> => {
     const at = new Date();
     const report = {
       immage: "gui-benchmark", version: 9, at: at.toISOString(),
-      app: await invoke<{ app: string; commit: string | null; darktable: string }>("about").catch(() => null),
+      app: await commands.about().catch(() => null),
       machine: await invoke<Record<string, unknown>>("perf_machine").catch(() => null),
       frontend: perf.frontendReport(), diagnostics: perf.diagnosticReport(),
       webview, webviewTiming, resources: { ...resources, phases },
@@ -304,7 +305,7 @@ export const runGpuCheck = async (ctx: BenchContext): Promise<{ path: string; pa
     const run = cases.filter((c) => !c.skipped);
     const report = {
       immage: "gpu-check", version: 1, at: at.toISOString(),
-      app: await invoke<{ app: string; commit: string | null; darktable: string }>("about").catch(() => null),
+      app: await commands.about().catch(() => null),
       machine, configuration: (await tunerOptions(setPerfHud)).map(({ id, current, running }) => ({ id, value: current, ...(running === undefined ? {} : { running }) })),
       photo: (currentRef.current?.path ?? "").split(/[\\/]/).pop(), size: 1024,
       opencl: { before, after }, cases, cancel,

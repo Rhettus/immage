@@ -6,6 +6,7 @@ import { Session, instanceKey, mapOpOf } from "./session";
 import { CONVERSIONS } from "./manifest";
 import { withModel } from "./aiModel";
 import { NO_REFINE, type ObjectShape, type Backdrop, type Mask } from "./masks";
+import { commands } from "./commands";
 
 export type PasteTarget = { imgid: number; path: string };
 export type PasteUpdate = { imgid: number; edited: boolean; error: string | null };
@@ -134,7 +135,7 @@ export async function runPaste(targets: PasteTarget[], clip: Clip,
       await s.close();
       if (failure) throw Error(failure);
       // close() only writes when changed. Reading the metadata covers no-op pastes too.
-      const r = await invoke<{ image: { edited: boolean } }>("meta", { imgid: s.imgid });
+      const r = await commands.meta(s.imgid);
       saved({ imgid: s.imgid, edited: r.image.edited, error: null });
     }
     await invoke("paste_batch", { action: "commit", token });

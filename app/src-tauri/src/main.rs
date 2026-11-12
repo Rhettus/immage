@@ -26,6 +26,7 @@ mod volumes;
 mod scrub;
 mod support_bundle;
 mod backup;
+mod bindings;
 
 use cache::Caches;
 use engine::{BaseCancel, Engine, Tagged, Timing};
@@ -262,6 +263,7 @@ async fn upright(state: State<'_, AppState>, mode: String, guides: Option<Value>
 // points (x, y pairs, 0-1) between the shown image and the input image
 // before any distortion; `to` is "shown" or "input"
 #[tauri::command]
+#[specta::specta]
 async fn points(state: State<'_, AppState>, points: Value, to: String) -> Result<Value, String> {
     let reply = state.engine("points").request(json!({ "cmd": "points", "points": points, "to": to }))?;
     Ok(reply["points"].clone())
@@ -1728,6 +1730,7 @@ async fn path_exists(path: String) -> bool {
 
 // a path dropped on the window: "dir", "file", or none when it is gone
 #[tauri::command]
+#[specta::specta]
 fn path_kind(path: String) -> Option<&'static str> {
     let p = std::fs::canonicalize(&path).ok()?;
     if p.is_dir() { Some("dir") } else if p.is_file() { Some("file") } else { None }
@@ -2094,8 +2097,10 @@ async fn cache_clear(caches: State<'_, Caches>, which: String) -> Result<(), Str
 }
 
 #[tauri::command]
-async fn meta(state: State<'_, AppState>, imgid: i64) -> Result<Value, String> {
-    state.engine("meta").request(json!({ "cmd": "meta", "imgid": imgid }))
+#[specta::specta]
+async fn meta(state: State<'_, AppState>, imgid: i64) -> Result<bindings::MetaReply, String> {
+    let reply = state.engine("meta").request(json!({ "cmd": "meta", "imgid": imgid }))?;
+    serde_json::from_value(reply).map_err(|e| format!("meta: unexpected reply: {e}"))
 }
 
 // the photos likely opened next, their raws decoded ahead in this order on
@@ -2152,6 +2157,7 @@ async fn keywords_set(state: State<'_, AppState>, imgid: i64, add: Vec<String>, 
 
 // rating, rejected, labels and text fields; only the ones given are set
 #[tauri::command]
+#[specta::specta]
 async fn meta_set(state: State<'_, AppState>, imgid: i64, fields: Map<String, Value>) -> Result<(), String> {
     let mut req = json!({ "cmd": "meta_set", "imgid": imgid });
     for (k, v) in fields {
@@ -3112,16 +3118,22 @@ fn build_label() -> Option<String> {
 // Immage's version and commit, for the splash: answered at once, without
 // waiting for the engine as `about` does
 #[tauri::command]
-fn build(app: AppHandle) -> Value {
-    json!({ "app": app.package_info().version.to_string(), "commit": build_label() })
+#[specta::specta]
+fn build(app: AppHandle) -> bindings::BuildInfo {
+    bindings::BuildInfo { app: app.package_info().version.to_string(), commit: build_label() }
 }
 
 // Immage's version and commit and the darktable its engine was built
 // from, for Preferences and the GPU check's report
 #[tauri::command]
-async fn about(app: AppHandle, state: State<'_, AppState>) -> Result<Value, String> {
+#[specta::specta]
+async fn about(app: AppHandle, state: State<'_, AppState>) -> Result<bindings::AboutInfo, String> {
     let reply = state.engine("about").request(json!({ "cmd": "version" }))?;
-    Ok(json!({ "app": app.package_info().version.to_string(), "commit": build_label(), "darktable": reply["version"] }))
+    Ok(bindings::AboutInfo {
+        app: app.package_info().version.to_string(),
+        commit: build_label(),
+        darktable: reply["version"].as_str().unwrap_or_default().to_string(),
+    })
 }
 
 // the license texts the GPL requires to travel with the app, for
@@ -3451,17 +3463,17 @@ fn main() {
             app.manage(Caches::new(&app.path().app_cache_dir()?));
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![
-            map_tiles::map_tile, map_search::map_search, map_search::map_search_key_status, map_search::map_search_key_save, map_search::map_search_key_remove, open_folder, open_image, get_params, set_params, render, cancel_base, save, baseline_end, before_view, thumb, thumb_cached, thumb_known, cache_limits, cache_usage, cache_clear, meta, meta_set, capture_times, prefetch, darktable_resources, darktable_resources_set, memory_budget::memory_budget, gpu_edits, gpu_edits_set, settings::settings_all, settings::settings_set, webview_renderer, webview_renderer_set,
+        .invoke_handler(bindings::handler(tauri::generate_handler![
+            map_search::map_search, map_search::map_search_key_status, map_search::map_search_key_save, map_search::map_search_key_remove, open_folder, open_image, get_params, set_params, render, cancel_base, save, baseline_end, before_view, thumb, thumb_cached, thumb_known, cache_limits, cache_usage, cache_clear, capture_times, prefetch, darktable_resources, darktable_resources_set, memory_budget::memory_budget, gpu_edits, gpu_edits_set, webview_renderer, webview_renderer_set,
             export_images, export_cancel, export_existing, export_preview, fonts, print_profiles, print_profile_add, softproof, printers, printer_info, print_photo, print_sheet, export_presets_load, export_presets_save, export_presets_export, export_presets_import, presets_load, presets_save, agx_presets, agx_presets_pick, agx_profiles_load, agx_profiles_save, looks_list, shared_import, look_export, look_delete, look_apply, look_amount, preview, paste_batch,
-            mask_shapes, combine, masks, mask_delete, mask_rename, history, module_state, sample, tone_key, lenses, color_profiles, agx_auto, upright, points, range_map, zones, mask_map, ai_object,
+            mask_shapes, combine, masks, mask_delete, mask_rename, history, module_state, sample, tone_key, lenses, color_profiles, agx_auto, upright, range_map, zones, mask_map, ai_object,
             ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, positive_export, spektra_stocks, spektra_fetch, list_subfolders, folder_volumes, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
             immich_export_check, immich_search, immich_browse_check, immich_libraries, immich_suggestions, immich_people, immich_tags,
-            immich_thumb, immich_resolve, launch_file, path_exists, path_kind, display_scale, trash_files, create_virtual_copy, remove_virtual_copy, hdr_merge, hdr_can_align, pano_merge, pano_preview, pano_can_merge, merge_cancel, preview_fullscreen, build, about, licenses, engine_quit, engine_restart, keywords, keywords_set, ai_accel,
+            immich_thumb, immich_resolve, launch_file, path_exists, display_scale, trash_files, create_virtual_copy, remove_virtual_copy, hdr_merge, hdr_can_align, pano_merge, pano_preview, pano_can_merge, merge_cancel, preview_fullscreen, licenses, engine_quit, engine_restart, keywords, keywords_set, ai_accel,
             menu_set, csp_violation, perf_set, perf_trace_start, perf_trace_stop, perf_modules, perf_report_write, perf_machine, perf_ping, support_bundle::support_bundle_preview, support_bundle::support_bundle_add_benchmark, support_bundle::support_bundle_save, support_bundle::support_bundle_discard, backup::backup_components, backup::backup_pick_save, backup::backup_pick_open, backup::backup_create, backup::backup_inspect, backup::backup_restore, gpu_check_parity, resources::perf_resources_start, resources::perf_resources_stop,
             plugins::plugin_find_apps, plugins::plugin_config, plugins::plugin_config_save, plugins::plugin_set_app, plugins::plugin_choose_app, plugins::plugin_launch, plugins::plugin_watch, plugins::plugin_cancel, plugins::plugin_job,
             plugins::plugin_returns, plugins::plugin_return_applied
-        ])
+        ]))
         .build(context)
         .expect("error while running Immage");
     app.run(|_app, _event| {

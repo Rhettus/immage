@@ -8,6 +8,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { ImageEntry } from "./library";
+import { commands } from "./commands";
 
 type Location = NonNullable<ImageEntry["location"]>;
 type Place = { label: string; latitude: number; longitude: number; bounds?: [number, number, number, number] };
@@ -57,7 +58,7 @@ export function LocationEditor({ image, onSaved }: {
     setSaved(null);
     setDraft("");
     setError("");
-    invoke<{ image: ImageEntry }>("meta", { imgid: image.imgid }).then(({ image: entry }) => {
+    commands.meta(image.imgid).then(({ image: entry }) => {
       if (stale) return;
       const location = entry.location ?? null;
       setSaved(location);
@@ -110,7 +111,7 @@ export function LocationEditor({ image, onSaved }: {
       createTile(coords: L.Coords, done: L.DoneCallback) {
         const tile = document.createElement("img");
         tile.alt = "";
-        invoke<ArrayBuffer>("map_tile", { z: coords.z, x: coords.x, y: coords.y }).then((bytes) => {
+        commands.mapTile(coords.z, coords.x, coords.y).then((bytes) => {
           if (!active) return;
           const url = URL.createObjectURL(new Blob([bytes], { type: "image/png" }));
           tile.onload = () => { URL.revokeObjectURL(url); done(undefined, tile); };
@@ -163,7 +164,7 @@ export function LocationEditor({ image, onSaved }: {
   const save = async (location: Location | null) => {
     setBusy(true); setError("");
     try {
-      await invoke("meta_set", { imgid: image.imgid, fields: { location } });
+      await commands.metaSet(image.imgid, { location });
       setSaved(location); setDraft(location ? `${location.latitude}, ${location.longitude}` : "");
       onSaved(location);
     } catch (e) { setError(String(e)); }

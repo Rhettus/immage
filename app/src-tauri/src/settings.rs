@@ -162,6 +162,7 @@ impl Settings {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn settings_all(settings: State<'_, Settings>) -> Map {
     settings.all()
 }
@@ -170,6 +171,7 @@ pub fn settings_all(settings: State<'_, Settings>) -> Map {
 // refused here because only Rust's own setters may change them (they are
 // validated there and read before the page exists)
 #[tauri::command]
+#[specta::specta]
 pub async fn settings_set(settings: State<'_, Settings>, changes: HashMap<String, Option<String>>) -> Result<(), String> {
     if let Some(key) = changes.keys().find(|k| k.starts_with(NATIVE)) {
         return Err(format!("settings: {key} is set by the app, not the page"));

@@ -25,6 +25,7 @@ import {
   BUILTINS, DEFAULTS, PERSONAL_KEYS, bitDepths, depthOf, exportOptionsFor, frameFor, hasQuality, readShared, sharedFile, loadPresets, loadSettings,
   newId, presetEdited, presetOf, savePresets, saveSettings, type BitDepth, type ExportPreset, type Settings,
 } from "./exportSettings";
+import { commands } from "./commands";
 
 export const FILE_MANAGER = navigator.userAgent.includes("Windows") ? "Explorer"
   : navigator.userAgent.includes("Mac") ? "Finder" : "File Manager";
@@ -413,7 +414,7 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
       // each image's metadata, when its name or its frame's text needs it
       const needMeta = s.naming === "template" || s.texts.length > 0;
       const metas = await Promise.all(items.map(async (i) => !needMeta ? EMPTY_META
-        : invoke<{ image: { metadata: Meta } }>("meta", { imgid: i.imgid }).then((r) => r.image.metadata)));
+        : commands.meta(i.imgid).then((r) => r.image.metadata)));
       const stems = items.map((i, k) => stemFor(i, metas[k], k + 1, items.length));
       // files already there, or named twice in this export: what to do
       // with each, asked one at a time unless applied to all the rest

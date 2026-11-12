@@ -13,6 +13,8 @@ registerHooks({
     if (spec === '@tauri-apps/api/core') {
       return { url: 'data:text/javascript,export const invoke=(...a)=>globalThis.__invoke(...a)', shortCircuit: true };
     }
+    // settings.ts imports ./commands without an extension, as the bundler allows
+    if (/^\.\/(commands|bindings)$/.test(spec)) return next(`${spec}.ts`, ctx);
     return next(spec, ctx);
   },
   load(url, ctx, next) {

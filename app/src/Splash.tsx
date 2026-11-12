@@ -10,12 +10,12 @@
 import { ready, settings } from "./settings";
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { invoke } from "@tauri-apps/api/core";
 import { Window, getCurrentWindow } from "@tauri-apps/api/window";
 import "@fontsource/poppins/500.css";
 import "./styles.css";
 import splashUrl from "./splash.jpg";
 import { logCspViolations } from "./cspLog";
+import { commands } from "./commands";
 
 logCspViolations();
 
@@ -77,12 +77,12 @@ function Splash() {
     return () => removeEventListener("resize", note);
   }, []);
 
-  useEffect(() => { invoke<Build>("build").then(setBuild).catch(() => {}); }, []);
+  useEffect(() => { commands.build().then(setBuild).catch(() => {}); }, []);
 
   useEffect(() => {
     const shown = Date.now();
     const tick = setInterval(() => setElapsed(Date.now() - shown), 100);
-    invoke<Build & { darktable: string }>("about")
+    commands.about()
       .then((a) => {
         clearInterval(tick);
         try { settings.set(STARTUP_KEY, String(Date.now() - shown)); } catch { /* not kept */ }

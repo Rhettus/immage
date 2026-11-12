@@ -128,6 +128,7 @@ import { HistogramView, SCOPE_MODES, loadScope } from "./HistogramView";
 import { Navigator } from "./Navigator";
 import { PanelView, UPRIGHT_ICONS, UPRIGHT_TITLES, WBTools, isMono, presetValues, sampleSpot } from "./PanelView";
 import { Choice, OptionPreview, Slider, Toggle } from "./Controls";
+import { commands, type Value } from "./commands";
 
 const MAX_PREVIEW = 2560;
 const OTHER_MENUS = forPlatform(MENUS, false);
@@ -2550,7 +2551,7 @@ export default function App() {
     try {
       await s.settled();
       if (session.current !== s) return;
-      const p = await invoke<number[]>("points", { points: shown, to: "input" });
+      const p = await commands.points(shown, "input") as number[];
       const next = guidesOf(s.values);
       const guide = p.slice(0, 4) as Guide;
       if (index === null) {
@@ -2583,7 +2584,7 @@ export default function App() {
     let live = true;
     void (async () => {
       await s.settled();
-      const p = await invoke<number[]>("points", { points: g.flat(), to: "shown" });
+      const p = await commands.points(g.flat(), "shown") as number[];
       if (live && session.current === s) setGuidesShown(g.map((_, k) => p.slice(4 * k, 4 * k + 4) as Guide));
     })().catch(() => {});
     return () => { live = false; };
@@ -2637,7 +2638,7 @@ export default function App() {
     let anchor: WB | null = null;
     if (!at) {
       // "Auto", "AUTO1", "Auto (white priority)": the camera judged the light
-      const m = await invoke<{ image: { exif?: { white_balance?: string } } }>("meta", { imgid: s.imgid })
+      const m = await commands.meta(s.imgid)
         .catch(() => null);
       if (session.current !== s) return;
       if (/^auto/i.test(m?.image.exif?.white_balance ?? "")) anchor = { temp: s.neutral.temp, tint: s.neutral.tint };
@@ -2942,7 +2943,7 @@ export default function App() {
       await openFile(r.path);
       const s = session.current;
       if (!s || currentRef.current?.path !== r.path || currentRef.current.imgid !== s.imgid) return;
-      const m = await invoke<{ image: ImageEntry }>("meta", { imgid: s.imgid }).then((x) => x.image).catch(() => null);
+      const m = await commands.meta(s.imgid).then((x) => x.image).catch(() => null);
       const opened: Partial<ImageEntry> = m ? { rating: m.rating, rejected: m.rejected, labels: m.labels, edited: m.edited,
                                                width: m.width, height: m.height, exif: m.exif } : {};
       updateImages(imagesRef.current.map((x) => (x.imgid === i.imgid
@@ -3062,7 +3063,7 @@ export default function App() {
   // as one handed over does. the import screen is left alone
   const [dropping, setDropping] = useState(false);
   const dropped = async (paths: string[]) => {
-    const kinds = await Promise.all(paths.map((path) => invoke<string | null>("path_kind", { path })));
+    const kinds = await Promise.all(paths.map((path) => commands.pathKind(path)));
     const dirs = paths.filter((_, i) => kinds[i] === "dir");
     if (dirs.length) {
       for (const d of dirs) addPathToLibrary(d);
@@ -3350,7 +3351,7 @@ export default function App() {
   const setMeta = async (imgid: number, fields: Partial<ImageEntry> & Record<string, unknown>) => {
     patchImage(imgid, fields);
     try {
-      await invoke("meta_set", { imgid, fields });
+      await commands.metaSet(imgid, fields as { [key in string]: Value });
     } catch (e) {
       setStatus(`error: ${e}`);
     }
@@ -3646,7 +3647,7 @@ export default function App() {
       setCurrent(opened);
       currentRef.current = opened;
       const entry = imagesRef.current.find((i) => isOpen(i, opened))
-        ?? (await invoke<{ image: ImageEntry }>("meta", { imgid: s.imgid })).image;
+        ?? (await commands.meta(s.imgid)).image;
       setOpenCell(entry);
       saveLibrary({ image: path, version: imagesRef.current.find((i) => i.imgid === s.imgid)?.version ?? 0 });
       s.onThumb = (f) => {
@@ -5517,7 +5518,7 @@ export default function App() {
     setKeywords(null);
     if (currentId === undefined) return;
     let stale = false;
-    invoke<{ image: { metadata: TextFields; keywords: string[] } }>("meta", { imgid: currentId })
+    commands.meta(currentId)
       .then((r) => {
         if (stale) return;
         setMetaText(r.image.metadata);
@@ -5531,7 +5532,7 @@ export default function App() {
   // that adds its keywords to the originals
   const reloadKeywords = () => {
     if (currentId !== undefined)
-      invoke<{ image: { keywords: string[] } }>("meta", { imgid: currentId })
+      commands.meta(currentId)
         .then((r) => setKeywords(r.image.keywords)).catch(() => {});
     invoke<string[]>("keywords").then(setKnownKeywords).catch(() => {});
   };
@@ -5586,7 +5587,7 @@ export default function App() {
       for (const k of ["rights", "creator"] as const)
         if (wanted[k].trim() && !text[k].trim()) fields[k] = wanted[k].trim().replace(/\{year\}/g, year);
       if (!Object.keys(fields).length) return;
-      await invoke("meta_set", { imgid, fields });
+      await commands.metaSet(imgid, fields);
       if (session.current?.imgid === imgid) setMetaText((t) => (t ? { ...t, ...fields } : t));
     } catch (e) {
       setStatus(`error: ${e}`);

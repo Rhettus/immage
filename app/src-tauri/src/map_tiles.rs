@@ -47,7 +47,8 @@ impl Drop for Download {
 // OSM requires an identifying user agent and at least seven days of caching
 // when the client does not interpret the server's cache headers.
 #[tauri::command]
-pub async fn map_tile(app: tauri::AppHandle, z: u32, x: u32, y: u32) -> Result<tauri::ipc::Response, String> {
+#[specta::specta]
+pub async fn map_tile(app: tauri::AppHandle, z: u32, x: u32, y: u32) -> Result<crate::bindings::Frame, String> {
     if z > 19 || x >= (1 << z) || y >= (1 << z) {
         return Err("invalid map tile".into());
     }
@@ -58,7 +59,7 @@ pub async fn map_tile(app: tauri::AppHandle, z: u32, x: u32, y: u32) -> Result<t
             let response = client.get(format!("https://tile.openstreetmap.org/{z}/{x}/{y}.png"))
                 .send().and_then(|r| r.error_for_status()).map_err(|e| e.to_string())?;
             response.bytes().map_err(|e| e.to_string()).map(|b| b.to_vec())
-        }).map(tauri::ipc::Response::new)
+        }).map(|b| crate::bindings::Frame(tauri::ipc::Response::new(b)))
     }).await.map_err(|e| e.to_string())?
 }
 

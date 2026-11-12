@@ -30,6 +30,7 @@ import { checkForUpdate, lastChecked, loadAutoCheck, storeAutoCheck, useUpdate, 
 
 import { loadNewPhotosProfile, storeNewPhotosProfile } from "./profileDefault";
 import { settings } from "./settings";
+import { commands } from "./commands";
 export { loadNewPhotosProfile } from "./profileDefault";
 
 // EV a new raw's exposure gets on an instance of its own (manifest.ts,
@@ -596,7 +597,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   const [about, setAbout] = useState<{ app: string; commit: string | null; darktable: string } | null>(null);
   const update = useUpdate();
   const [autoUpdate, setAutoUpdate] = useState(loadAutoCheck);
-  useEffect(() => { invoke<{ app: string; commit: string | null; darktable: string }>("about").then(setAbout).catch(() => {}); }, []);
+  useEffect(() => { commands.about().then(setAbout).catch(() => {}); }, []);
   const [licenses, setLicenses] = useState<Licenses | null>(null);
   useEffect(() => { invoke<Licenses>("licenses").then(setLicenses).catch(() => {}); }, []);
   const [viewing, setViewing] = useState<{ title: string; text: string } | null>(null);
