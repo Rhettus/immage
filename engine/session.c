@@ -380,6 +380,7 @@ gboolean session_open_image(const char *path, const dt_imgid_t version, const ch
 
   dt_dev_init(&_s.dev, FALSE);
   dt_dev_load_image(&_s.dev, imgid);
+  masks_repair_brushes();
   // load_image reads the history but does not replay it into module params
   dt_dev_pop_history_items_ext(&_s.dev, _s.dev.history_end);
 

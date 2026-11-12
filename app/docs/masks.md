@@ -113,7 +113,8 @@ is over the panels, so the adjustment can be seen.
 ## The brush
 
 **Size** (0.5-40% of the photo), **Feather** (0-100), **Density** (1-100)
-and **Erase (hold ⌥)**.
+and **Erase (hold ⌥)**. Drag to paint a stroke, or click once to paint a
+single dab, such as over an eye.
 
 | Key | Action |
 | --- | --- |

@@ -334,6 +334,35 @@ dt_iop_module_t *masks_named_instance(const char *op, const char *name, const gb
   return m;
 }
 
+// darktable's brush renders a stroke of one point over the whole image: its
+// own brush tool never stores one, but adds a second point beside a single
+// click (masks/brush.c, guipoints_count == 1), 0.01 preview pixels away. a
+// one-point brush `f` gets that second point, about as far in input units
+static void _brush_second_point(dt_masks_form_t *f)
+{
+  if(!f || !(f->type & DT_MASKS_BRUSH) || g_list_length(f->points) != 1) return;
+  dt_masks_point_brush_t *b = malloc(sizeof(dt_masks_point_brush_t));
+  memcpy(b, f->points->data, sizeof(dt_masks_point_brush_t));
+  const float d[2] = { 1e-5f, -1e-5f };
+  for(int k = 0; k < 2; k++)
+  {
+    b->corner[k] += d[k];
+    b->ctrl1[k] += d[k];
+    b->ctrl2[k] += d[k];
+  }
+  f->points = g_list_append(f->points, b);
+}
+
+void masks_repair_brushes(void)
+{
+  for(GList *l = _s.dev.forms; l; l = g_list_next(l)) _brush_second_point(l->data);
+  for(GList *h = _s.dev.history; h; h = g_list_next(h))
+  {
+    const dt_dev_history_item_t *item = h->data;
+    for(GList *l = item->forms; l; l = g_list_next(l)) _brush_second_point(l->data);
+  }
+}
+
 // a point of the shown image (0-1 across its width and height) as darktable
 // stores shape points: in the input image, before any distortion, 0-1
 static void _to_input(const float x, const float y, float *ix, float *iy)
@@ -446,6 +475,7 @@ static dt_masks_form_t *_shape(JsonObject *o, char **err)
       b->state = DT_MASKS_POINT_STATE_NORMAL;
       f->points = g_list_append(f->points, b);
     }
+    _brush_second_point(f);
     return f;
   }
   *err = g_strdup_printf("unknown shape '%s'", type);

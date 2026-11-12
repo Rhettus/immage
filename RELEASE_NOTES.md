@@ -66,6 +66,8 @@ Bug fixes
   file it was replacing.
 - Frames with three or more borders, counting a fixed canvas, keep their order
   and size, and a small photo fills a large canvas exactly.
+- A brush mask painted with a single click adjusts only that spot, not the
+  whole photo, including masks saved by earlier versions.
 
 ## 0.44.1
 

@@ -375,6 +375,8 @@ dt_iop_module_t *masks_named_instance(const char *op, const char *name, const gb
                                       char **err);
 void masks_invalidate_from(const int order, const char *why);
 gboolean masks_mask(const char *name, JsonArray *shapes, char **err);
+// one-point brush strokes, which an older Immage saved, get a second point
+void masks_repair_brushes(void);
 gboolean masks_combine(const char *name, JsonArray *members, JsonArray *ranges, char **err);
 void masks_add_num(JsonBuilder *b, const char *name, const double v);
 gboolean masks_spots_set(JsonArray *spots, char **err);
