@@ -168,6 +168,15 @@ typedef struct preview_output_t {
   gboolean completed;
 } preview_output_t;
 
+// a `thumb` with a `tag` runs here rather than in the main loop, so a
+// folder's thumbnails come in while the photo is edited and rendered.
+// darktable's lighttable builds them from its job threads the same way:
+// the mipmap cache and the library (SQLITE_CONFIG_SERIALIZED, database.c)
+// take callers on many threads. two threads, so a render keeps most of the
+// cores. the reply carries the tag, and can come between another request
+// and its reply
+#define _THUMB_THREADS 2
+
 #ifdef HAVE_AI
 // GPU execution providers, the only ones the upscale model runs on: on the
 // CPU, ONNX Runtime expands RealPLKSR's large kernels into intermediate
@@ -216,12 +225,15 @@ void engine_background_priority(void);
 double engine_ms_since(const gint64 t0);
 void engine_reply(FILE *out, JsonBuilder *b);
 void engine_add_string(JsonBuilder *b, const char *name, const char *value);
+void engine_add_double(JsonBuilder *b, const char *name, const double value);
 void engine_add_int(JsonBuilder *b, const char *name, const gint64 value);
 void engine_add_bool(JsonBuilder *b, const char *name, const gboolean value);
+gboolean engine_memory_pressure(void);
 
 // session.c
 void session_changed(const dt_dev_pixelpipe_change_t flags);
 void session_follower_cleanup(dt_engine_follower_t *f);
+void session_close_session(void);
 extern GMutex session_hold_lock;
 extern GHashTable *session_holds;
 dt_imgid_t session_hold_take(const gint64 job, const dt_imgid_t imgid);
@@ -246,11 +258,39 @@ void masks_to_working(const _working_t *w, float *pts, const size_t n);
 void masks_blend_values(const _working_t *w, const float *rgb_in, float *Y, dt_aligned_pixel_t JzCzhz);
 
 // library.c
+void library_prefetch(const dt_imgid_t *imgids, const guint n);
+void library_prefetch_wait(void);
+extern gchar *library_sidecar_error;
 gboolean library_write_sidecar(const dt_imgid_t imgid);
 dt_imgid_t library_import(const char *path);
+gboolean library_is_snapshot(const dt_imgid_t imgid);
 dt_imgid_t library_snapshot(const dt_imgid_t imgid);
 void library_snapshot_remove(const dt_imgid_t snap);
+extern const char *library_meta_keys[6][2];
+void library_all_keywords(JsonBuilder *b);
+gboolean library_keywords_set(const dt_imgid_t imgid, JsonObject *req, JsonBuilder *b, char **err);
 void library_image_json(JsonBuilder *b, const dt_imgid_t imgid, const gboolean full);
+GList *library_image_versions(const dt_imgid_t imgid);
+gboolean library_copy(const dt_imgid_t src, JsonBuilder *b, char **err);
+gboolean library_remove_copy(const dt_imgid_t imgid, JsonBuilder *b, char **err);
+gboolean library_forget(const dt_imgid_t imgid, char **err);
+gboolean library_sidecars(const dt_imgid_t imgid, JsonBuilder *b, char **err);
+gboolean library_unpack(const char *archive, const char *dir, char **err);
+gboolean library_folder(const char *dir, const gboolean recursive, JsonBuilder *b, char **err);
+extern gint64 library_import_latest;
+void library_import_files(JsonObject *req, JsonBuilder *b, const gboolean background);
+extern GThreadPool *library_import_pool;
+void library_import_run(gpointer data, gpointer user_data);
+gboolean library_import_queue(JsonParser *parser);
+void library_import_wait(void);
+gboolean library_thumb(const dt_imgid_t imgid, const int size, const gboolean proof, const char *out,
+                       JsonBuilder *b, char **err);
+extern GThreadPool *library_thumb_pool;
+void library_thumb_run(gpointer data, gpointer user_data);
+gboolean library_thumb_queue(JsonParser *parser);
+void library_thumb_wait(void);
+gboolean library_meta_set(const dt_imgid_t imgid, JsonObject *req, char **err);
+gboolean library_capture_times(JsonObject *req, JsonBuilder *b, char **err);
 
 // export.c
 void export_merge_cancel(const gint64 job);
