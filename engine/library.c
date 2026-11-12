@@ -117,7 +117,14 @@ static gboolean _sidecar_failed(const char *filename, const char *what, const in
 static gboolean _write_xmp_whole(const dt_imgid_t imgid, const char *filename, const gboolean location_changed)
 {
   // one fixed name, so a copy left by a killed engine is reused, not piled up
-  gchar *tmp = g_strconcat(filename, ".immage-tmp", NULL);
+  // in the sidecar's folder, for the rename, but not named after it: a photo
+  // whose name is near NAME_MAX has no room for a longer suffix. a hash of
+  // the sidecar's name keeps it fixed and short
+  gchar *dir = g_path_get_dirname(filename);
+  gchar *tmpname = g_strdup_printf(".immage-%08x.tmp", g_str_hash(filename));
+  gchar *tmp = g_build_filename(dir, tmpname, NULL);
+  g_free(tmpname);
+  g_free(dir);
   gchar *old = NULL, *now = NULL;
   gsize old_len = 0, now_len = 0;
   GError *error = NULL;

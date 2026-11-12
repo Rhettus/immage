@@ -53,7 +53,7 @@ static int seen;
 static FILE *hold(FILE *f, const char *p, const char *m)
 {
   const char *arm = getenv("HOLD_ARM");
-  if(!f || !arm || m[0] != 'w' || !strstr(p, ".xmp")) return f;
+  if(!f || !arm || m[0] != 'w' || !(strstr(p, ".xmp") || strstr(p, "/.immage-"))) return f;
   FILE *a = (fopen)(arm, "r");
   if(!a) { seen = 0; return f; }
   int nth = 0;
@@ -101,7 +101,6 @@ class Run:
         self.photo.parent.mkdir()
         self.photo.write_bytes(background.tiff(320, 240))
         self.xmp = self.photo.with_name(self.photo.name + '.xmp')
-        self.tmp = self.xmp.with_name(self.xmp.name + '.immage-tmp')
         self.arm = work / 'hold-arm'
         # SIGXFSZ ignored, so a write past the size limit fails with EFBIG
         # rather than killing the engine; subprocess would restore it
@@ -163,8 +162,9 @@ class Run:
             self.fail(case, f'the save after it failed too: {reply}')
         elif self.xmp.read_bytes() == before:
             self.fail(case, 'the save after it did not write the edit')
-        if self.tmp.exists():
-            self.fail(case, f'{self.tmp.name} was left behind')
+        left = sorted(p.name for p in self.photo.parent.glob('.immage-*.tmp'))
+        if left:
+            self.fail(case, f'{left} was left behind')
         if FOREIGN not in subprocess.run(['exiv2', '-px', '-q', str(self.xmp)],
                                          capture_output=True, text=True).stdout:
             self.fail(case, f'{FOREIGN}, a key darktable does not know, was lost')

@@ -109,6 +109,9 @@ Bug fixes
   memory with each edit. Since 0.41.0 every change kept another full-size copy
   of the photo in memory, adding hundreds of MB per edit until the computer ran
   short.
+- A photo whose file name is close to the 255-byte limit (241 to 251 bytes)
+  can save its edits again. Saving made a temporary file with a longer name
+  than the folder allows, so the save failed.
 
 ## 0.44.1
 
