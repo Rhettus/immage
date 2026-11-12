@@ -34,6 +34,7 @@ import { menus, menusGuards } from './specs/menus.mjs';
 import * as release0450 from './specs/release-0450.mjs';
 import { hostileText } from './specs/hostile-text.mjs';
 import { settingsStore } from './specs/settings-store.mjs';
+import { editingMode } from './specs/editing-mode.mjs';
 
 const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRange, 'batch-paste': batchPaste, startup, splash, exposure, 'slider-input': sliderInput, 'slider-click': sliderClick, history, rail, sliders, 'module-options': moduleOptions, 'module-switch': moduleSwitch,
   'panel-scroll': panelScroll,
@@ -73,6 +74,7 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'heal-show-spots': release0450.healShowSpots,
   'jpeg-preset': release0450.jpegPreset,
   'brush-dot': release0450.brushDot,
+  'editing-mode': editingMode,
 };
 for(const [name,definition] of Object.entries(cases)) if(definition.kind)
   implementations[name] = t => ({range:rangeContract,choice:choiceContract,module:moduleOutput}[definition.kind])(t,definition);

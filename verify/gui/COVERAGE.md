@@ -13,10 +13,11 @@ This imports pure manifest/math code using Node >= 22.18, without launching an a
 
 | Case | Checks | Verification status |
 |---|---|---|
+| editing-mode | Editing mode Simple/Advanced in Preferences: no Technical group or search in Simple; search above the same groups with Technical last in Advanced; photo pixels and history unchanged; setting stored; Simple layout returns | Passed 2026-11-12T23-32-04.094Z_159afeb_bb7dd929 |
 | settings-store | settings.json upgrade from localStorage and loose files (marker in both stores, localStorage kept), Preferences showing migrated values, UI change written to settings.json and kept across relaunch, reset by moving settings.json away | Live-validated, run 2026-11-12T07-14-54.365Z_3fc4903_91c5644c |
 | hostile-text | Markup in the photo name, Title, Caption, Creator, Copyright, Make, Model and keywords shown as text in the grid, Metadata panel and keyword chips: no element or script made from it, `window.__pwned` undefined; run with `--fixture hostile` | Live-validated on Linux 2026-11-10 |
 | location-map | Photo-area expansion, wheel zoom, Escape collapse, dialog stacking, unchanged location draft | Passed Linux ARM64 system WebKitGTK, run 2026-11-09T23-59-45.887Z_ab0c885_6005ea2f. Provider/keyring integration unverified |
-| preferences-help | Short descriptions, hover and keyboard help, tooltip bounds, ARIA and dismissal | Written; awaiting approved GUI run |
+| preferences-help | Short descriptions, hover and keyboard help, tooltip bounds, ARIA and dismissal | Passed 2026-11-12T23-32-04.094Z_159afeb_bb7dd929 |
 | workspace-layout | General Workspace row order, conditional Scroll amount, right-aligned theme swatches, separate import actions and hit targets across built-in themes | Passed Linux ARM64 system WebKitGTK, isolated floating/maximized workspace, run 2026-11-09T21-37-52.837Z_e47ad0c_edc54e26; native import chooser remains manual |
 | color-range | Hue, Hue Range, Minimum Chroma and Smoothness: pointer/keyboard/numeric edits, overlay pixels and restoration, Escape, undo/redo, saved values and render after restart | Passed Linux ARM64 system WebKitGTK, maximized isolated floating workspace, run 2026-11-09T05-02-48.236Z_761252a_11ce1c3e |
 | startup, exposure | Real fixture, final photo, drag lighter/darker, exact reset | Previously passed on Linux system WebKit |
@@ -24,7 +25,7 @@ This imports pure manifest/math code using Node >= 22.18, without launching an a
 | gui-benchmark-screen | Same benchmark with fractional draft on | Passed on Linux ARM64 VM, Wayland 125%, DPR 2, draftScale 0.625 |
 | gui-benchmark-whole | Same benchmark with fractional draft off | Passed on Linux ARM64 VM, Wayland 125%, DPR 2, draftScale 1 |
 | slider-input | Arrow keys, focus retention, double-click numeric editing, Enter, reset/photo | Passed on Linux system WebKit, Wayland, DPR 2 |
-| shift-range | Five random plain-click then Shift-click ranges in the grid with random delays; selection must be exactly the run | Written; awaiting approved GUI run |
+| shift-range | Five random plain-click then Shift-click ranges in the grid with random delays; selection must be exactly the run | Passed 2026-11-12T23-32-04.094Z_159afeb_bb7dd929 |
 | agx-presets | Profile loader, database filtering, checkbox/Add state, cancel, rendered import, duplicates, profile switching, user-only deletion preserving pixels, restart persistence | Passed on Linux ARM64, system WebKitGTK 2.54.2, maximized, 2026-11-08T23-06-46.100Z_3890fc3_2fe8198f. Default-replacement extension passed in 2026-11-08T23-16-29.185Z_3c1857f_6d3f975a. Native file chooser remains manual |
 | batch-paste | Two selected JPEGs, Kodak look/amount, one batch undo/redo, both sidecars, reopening and unselected image | Written; awaiting approved GUI run |
 | space-pan | Zoomed to 2:1, hold Space and drag in Heal and Masks (brush armed): the view pans, no spot healed, no mask painted (bc893e8); not Crop, which always shows the whole photo | Passed on Linux ARM64, system WebKitGTK, maximized 1596x840, 2026-11-13T08-12-29.565Z_e017746_147838b3 (full clean matrix, release-0.45.0 build f1e564f). Grab cursor not observable mid-hold |
