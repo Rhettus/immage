@@ -23,97 +23,7 @@
 // on stdout. the catalog is in memory; the image's XMP sidecar is the only
 // persistent store
 
-#include "common/color_picker.h"
-#include "common/colorlabels.h"
-#include "common/darktable.h"
-#include "common/database.h"
-#include "common/datetime.h"
-#include "common/debug.h"
-#include "common/dtdata.h"
-#include "common/file_location.h"
-#include "common/film.h"
-#include "common/history.h"
-#include "common/image.h"
-#include "common/image_cache.h"
-#include "common/introspection.h"
-#include "common/iop_order.h"
-#include "common/metadata.h"
-#include "common/mipmap_cache.h"
-#include "common/ratings.h"
-#include <libxml/parser.h>
-#include <sqlite3.h>
-#include "common/styles.h"
-#include "common/spektra_fetch.h"
-#include "common/spektra_sim.h"
-#include "common/tags.h"
-#include "control/conf.h"
-#include "common/exif.h"
-#include "develop/blend.h"
-#include "develop/develop.h"
-#include "develop/imageop.h"
-#include "develop/masks.h"
-#include "develop/pixelpipe_cache.h"
-#include "hdrmerge.h"
-#include "dng.h"
-#ifdef HAVE_PANO
-#include "pano.h"
-#endif
-#include "lenses.h"
-#include "print.h"
-#include "strip.h"
-#include "upright.h"
-#ifdef HAVE_AI
-#include "ai/backend.h"
-#include "common/ai_models.h"
-#include "common/ai/segmentation.h"
-#include "common/ai/restore.h"
-#include "common/ai/restore_common.h"
-#include "common/ai/restore_rgb.h"
-#include "common/ai/restore_raw_bayer.h"
-#include "common/ai/restore_raw_linear.h"
-#include "common/ras2vect.h"
-#include "imageio/imageio_dng.h"
-#include "imageio/imageio_jpeg.h"
-#endif
-#include "common/iop_profile.h"
-#include "develop/pixelpipe.h"
-#include "imageio/imageio_common.h"
-#include "imageio/imageio_module.h"
-#include "views/view.h"
-
-#include <glib.h>
-#include <glib/gstdio.h>
-#ifndef _WIN32
-#include <execinfo.h>
-#endif
-#if defined(__GLIBC__)
-#include <malloc.h>
-#elif defined(__APPLE__)
-#include <dispatch/dispatch.h>
-#include <malloc/malloc.h>
-#elif defined(_WIN32)
-#include <malloc.h>
-#include <windows.h>
-#endif
-#ifndef _WIN32
-#include <signal.h>
-#endif
-#if defined(__linux__)
-#include <sys/resource.h>
-#elif defined(__APPLE__)
-#include <pthread/qos.h>
-#endif
-#include <archive.h>
-#include <archive_entry.h>
-#include <json-glib/json-glib.h>
-#include <pango/pangocairo.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <inttypes.h>
-#include <limits.h>
-#include <stdio.h>
-#include <string.h>
-#include <unistd.h>
+#include "engine.h"
 
 #ifdef _WIN32
 // darktable links its programs with -municode: this supplies the wmain()
@@ -121,53 +31,7 @@
 #include "win/main_wrapper.h"
 #endif
 
-// a pipe on the session's develop that is brought to the edit before each
-// frame it renders, made on first use
-typedef struct dt_engine_follower_t
-{
-  dt_dev_pixelpipe_t pipe;
-  gboolean ok;
-  int gen;
-  // the main pipe's changes since this pipe's last frame
-  dt_dev_pixelpipe_change_t pending;
-} dt_engine_follower_t;
-
-typedef struct dt_engine_session_t
-{
-  gboolean open;
-  dt_imgid_t imgid;
-  dt_develop_t dev;
-  dt_dev_pixelpipe_t pipe;
-  dt_mipmap_buffer_t buf;
-  // a second, small pipe on the same develop for previews (`preview`), so
-  // trying a setting never touches the edit or the main pipe's cache
-  dt_dev_pixelpipe_t ppipe;
-  gboolean ppipe_ok;
-  // a slider drag's smaller frames (`render` with "draft"): in the main
-  // pipe they filled its 64 cachelines, and after some 30 of them the
-  // release reran from the raw
-  dt_engine_follower_t drag;
-  // the client's idle whole-image render (`render` with "base"), on the GPU
-  // when there is one: 2-3x the CPU's speed for a whole pipe. the main and
-  // drag pipes keep to the CPU, where the pipe cache serves their edits
-  dt_engine_follower_t base;
-  // the GPU check's pipe (`parity`): its cache is flushed between its CPU
-  // and GPU renders, which would otherwise cost the other pipes their lines
-  dt_engine_follower_t check;
-  // bumped whenever an instance is added, so each pipe rebuilds its nodes
-  int iop_gen, ppipe_gen;
-  // edits made since the last save, which quitting saves
-  gboolean unsaved;
-  // the client is showing its Before view, whose settings the engine holds
-  // meanwhile: they are not the edit, and quitting must not save them
-  gboolean before;
-  // the photo had no history when opened; until the client's `baseline_end`,
-  // saves record what it applies to a new photo as darktable's automatic
-  // baseline (history_auto_hash), so those defaults do not mark it altered
-  gboolean fresh, baseline;
-} dt_engine_session_t;
-
-static dt_engine_session_t _s = { 0 };
+dt_engine_session_t _s = { 0 };
 
 // the base render a `cancel_base` can stop, by its client id, and the
 // latest id canceled: a cancel can come in before its base has started.
@@ -316,7 +180,7 @@ static void _follow(dt_engine_follower_t *f, const dt_dev_pixelpipe_change_t fla
   f->pending = f->pending ? f->pending | flags | DT_DEV_PIPE_SYNCH : flags;
 }
 
-static void _changed(const dt_dev_pixelpipe_change_t flags)
+void session_changed(const dt_dev_pixelpipe_change_t flags)
 {
   _s.pipe.changed |= flags;
   dt_dev_pixelpipe_change(&_s.pipe, &_s.dev);
@@ -1594,7 +1458,7 @@ static gboolean _set(const char *op, const char *field, JsonNode *value,
   if(mod->enabled) _s.dev.history_last_module = mod;
 
   // a new order means new pipe nodes; otherwise only the top item changed
-  _changed(moved ? DT_DEV_PIPE_REMOVE : DT_DEV_PIPE_TOP_CHANGED);
+  session_changed(moved ? DT_DEV_PIPE_REMOVE : DT_DEV_PIPE_TOP_CHANGED);
   return TRUE;
 }
 
@@ -1684,7 +1548,7 @@ static gboolean _module_state(const char *op, const int priority, const gboolean
   if(!same)
   {
     dt_dev_add_history_item_ext(&_s.dev, mod, mod->enabled, TRUE);
-    _changed(DT_DEV_PIPE_TOP_CHANGED);
+    session_changed(DT_DEV_PIPE_TOP_CHANGED);
   }
   json_builder_set_member_name(b, "now");
   _module_state_json(b, mod);
@@ -1931,11 +1795,6 @@ static gboolean _get(JsonObject *ops, JsonBuilder *b, char **err)
   return TRUE;
 }
 
-// the lenses the open photo's Lens Corrections can use, `auto` being the one
-// darktable matched from the EXIF and `pick` the one chosen in its place
-// (lens_pick): { auto, pick, lenses: [{ name, maker, hash }] } in name order,
-// the chosen one included even when it does not fit the camera
-static void _add_string(JsonBuilder *b, const char *name, const char *value);
 typedef struct { JsonBuilder *b; GHashTable *seen; } _lens_menu_t;
 
 static void _lens_menu_add(const char *maker, const char *model, void *user)
@@ -1944,8 +1803,8 @@ static void _lens_menu_add(const char *maker, const char *model, void *user)
   if(!model || !*model || g_hash_table_contains(m->seen, model)) return;
   g_hash_table_add(m->seen, g_strdup(model));
   json_builder_begin_object(m->b);
-  _add_string(m->b, "name", model);
-  _add_string(m->b, "maker", maker);
+  engine_add_string(m->b, "name", model);
+  engine_add_string(m->b, "maker", maker);
   json_builder_set_member_name(m->b, "hash");
   json_builder_add_int_value(m->b, lenses_hash(model));
   json_builder_end_object(m->b);
@@ -1964,7 +1823,7 @@ static gboolean _lens_menu(JsonBuilder *b, char **err)
   char matched[128];
   g_strlcpy(matched, auto_lens, sizeof matched);
   lenses_match(img->exif_maker, img->exif_model, auto_lens, matched, sizeof matched);
-  _add_string(b, "auto", matched);
+  engine_add_string(b, "auto", matched);
   double pick = 0.0;
   if(!_read_field(mod, LENS_PICK, FALSE, &pick, err)) return FALSE;
   json_builder_set_member_name(b, "pick");
@@ -2039,7 +1898,7 @@ static const char *_meta_keys[][2] = {
   { "notes", "Xmp.darktable.notes" },
 };
 
-static void _add_string(JsonBuilder *b, const char *name, const char *value)
+void engine_add_string(JsonBuilder *b, const char *name, const char *value)
 {
   json_builder_set_member_name(b, name);
   json_builder_add_string_value(b, value ? value : "");
@@ -2128,8 +1987,8 @@ static void _image_json(JsonBuilder *b, const dt_imgid_t imgid, const gboolean f
   char path[PATH_MAX] = { 0 };
   gboolean from_cache = FALSE;
   dt_image_full_path(imgid, path, sizeof(path), &from_cache);
-  _add_string(b, "path", path);
-  _add_string(b, "filename", img->filename);
+  engine_add_string(b, "path", path);
+  engine_add_string(b, "filename", img->filename);
   // the reject flag sits beside the stars in the same field (image.h)
   json_builder_set_member_name(b, "rating");
   json_builder_add_int_value(b, img->flags & DT_IMAGE_REJECTED ? 0 : (img->flags & 0x7));
@@ -2150,11 +2009,11 @@ static void _image_json(JsonBuilder *b, const dt_imgid_t imgid, const gboolean f
   else json_builder_add_null_value(b);
   json_builder_set_member_name(b, "exif");
   json_builder_begin_object(b);
-  _add_string(b, "maker", img->camera_maker);
-  _add_string(b, "model", img->camera_model);
-  _add_string(b, "lens", img->exif_lens);
+  engine_add_string(b, "maker", img->camera_maker);
+  engine_add_string(b, "model", img->camera_model);
+  engine_add_string(b, "lens", img->exif_lens);
   gchar *body_serial = camera_body_serial(path);
-  _add_string(b, "body_serial", body_serial);
+  engine_add_string(b, "body_serial", body_serial);
   g_free(body_serial);
   _add_double(b, "exposure", img->exif_exposure);
   _add_double(b, "aperture", img->exif_aperture);
@@ -2164,10 +2023,10 @@ static void _image_json(JsonBuilder *b, const dt_imgid_t imgid, const gboolean f
   _add_double(b, "focus_distance", img->exif_focus_distance);
   // 0 when the camera did not record it
   _add_double(b, "crop_factor", img->exif_crop);
-  _add_string(b, "white_balance", img->exif_whitebalance);
-  _add_string(b, "flash", img->exif_flash);
-  _add_string(b, "exposure_program", img->exif_exposure_program);
-  _add_string(b, "metering_mode", img->exif_metering_mode);
+  engine_add_string(b, "white_balance", img->exif_whitebalance);
+  engine_add_string(b, "flash", img->exif_flash);
+  engine_add_string(b, "exposure_program", img->exif_exposure_program);
+  engine_add_string(b, "metering_mode", img->exif_metering_mode);
   // the file's own pixel size, before any crop
   json_builder_set_member_name(b, "file_width");
   json_builder_add_int_value(b, img->width);
@@ -2175,7 +2034,7 @@ static void _image_json(JsonBuilder *b, const dt_imgid_t imgid, const gboolean f
   json_builder_add_int_value(b, img->height);
   char datetime[DT_DATETIME_LENGTH] = { 0 };
   dt_datetime_img_to_exif(datetime, sizeof(datetime), img);
-  _add_string(b, "datetime", datetime);
+  engine_add_string(b, "datetime", datetime);
   // a photo with no capture time (a camera whose clock was never set
   // writes zeros) is placed by its file's modified time instead
   GStatBuf st;
@@ -2183,7 +2042,7 @@ static void _image_json(JsonBuilder *b, const dt_imgid_t imgid, const gboolean f
   {
     GDateTime *mtime = g_date_time_new_from_unix_local(st.st_mtime);
     gchar *file_datetime = mtime ? g_date_time_format(mtime, "%Y:%m:%d %H:%M:%S") : NULL;
-    _add_string(b, "file_datetime", file_datetime ? file_datetime : "");
+    engine_add_string(b, "file_datetime", file_datetime ? file_datetime : "");
     g_free(file_datetime);
     if(mtime) g_date_time_unref(mtime);
   }
@@ -2221,7 +2080,7 @@ static void _image_json(JsonBuilder *b, const dt_imgid_t imgid, const gboolean f
     for(size_t k = 0; k < G_N_ELEMENTS(_meta_keys); k++)
     {
       GList *res = dt_metadata_get(imgid, _meta_keys[k][1], NULL);
-      _add_string(b, _meta_keys[k][0], res ? (const char *)res->data : "");
+      engine_add_string(b, _meta_keys[k][0], res ? (const char *)res->data : "");
       g_list_free_full(res, g_free);
     }
     json_builder_end_object(b);
@@ -2974,9 +2833,9 @@ static gboolean _capture_times(JsonObject *req, JsonBuilder *b, char **err)
     json_builder_begin_object(b);
     json_builder_set_member_name(b, "imgid");
     json_builder_add_int_value(b, imgid);
-    _add_string(b, "before", before);
-    _add_string(b, "after", failed ? before : after);
-    if(failed) _add_string(b, "error", "could not write the XMP sidecar");
+    engine_add_string(b, "before", before);
+    engine_add_string(b, "after", failed ? before : after);
+    if(failed) engine_add_string(b, "error", "could not write the XMP sidecar");
     json_builder_end_object(b);
   }
   json_builder_end_array(b);
@@ -3007,10 +2866,10 @@ static const struct { const char *name; dt_colorspaces_color_profile_type_t type
 // a background export (_export_run) and the main loop's exports read the
 // format's quality from darktable's settings
 static GMutex _format_conf_lock;
+#ifdef HAVE_AI
 // darktable's AI provider setting, which loading a model reads
 // (backend_common.c): the upscale model and the main loop's AI masks and
 // denoise each set it before they load
-#ifdef HAVE_AI
 static GMutex _ai_load_lock;
 #endif
 
@@ -3618,7 +3477,7 @@ static void _fonts(JsonBuilder *b)
     const char *name = pango_font_family_get_name(families[k]);
     if(!name || name[0] == '.') continue; // macOS' hidden system faces
     json_builder_begin_object(b);
-    _add_string(b, "name", name);
+    engine_add_string(b, "name", name);
     json_builder_set_member_name(b, "faces");
     json_builder_begin_array(b);
     PangoFontFace **faces = NULL;
@@ -3629,7 +3488,7 @@ static void _fonts(JsonBuilder *b)
       if(pango_font_face_is_synthesized(faces[f])) continue;
       PangoFontDescription *d = pango_font_face_describe(faces[f]);
       json_builder_begin_object(b);
-      _add_string(b, "name", pango_font_face_get_face_name(faces[f]));
+      engine_add_string(b, "name", pango_font_face_get_face_name(faces[f]));
       json_builder_set_member_name(b, "weight");
       json_builder_add_int_value(b, pango_font_description_get_weight(d));
       json_builder_set_member_name(b, "italic");
@@ -3645,13 +3504,13 @@ static void _fonts(JsonBuilder *b)
   g_free(families);
 }
 
+#ifdef HAVE_AI
 // ------------------------------------------------------- AI upscaling
 // Lightroom's Super Resolution at export, as darktable's neural restore
 // does it (src/libs/neural_restore.c): the pipeline renders in linear
 // Rec.2020 floats into a stand-in format, the upscale model runs over that
 // in tiles, and the result goes, converted to the export's color space,
 // through the real format's own writer with EXIF for the new size
-#ifdef HAVE_AI
 #define _UPSCALE_MODEL "upscale-realplksr"
 // the --models folder (defined with the AI masks' code below)
 static const char *_models_dir;
@@ -3771,11 +3630,11 @@ static void _opencl(JsonBuilder *b)
   {
     const dt_opencl_device_t *dev = &cl->dev[k];
     json_builder_begin_object(b);
-    _add_string(b, "name", dev->fullname);
-    _add_string(b, "platform", dev->platform);
-    _add_string(b, "version", dev->device_version);
-    _add_string(b, "cname", dev->cname);
-    _add_string(b, "options", dev->options);
+    engine_add_string(b, "name", dev->fullname);
+    engine_add_string(b, "platform", dev->platform);
+    engine_add_string(b, "version", dev->device_version);
+    engine_add_string(b, "cname", dev->cname);
+    engine_add_string(b, "options", dev->options);
     _add_bool(b, "disabled", dev->disabled);
     _add_bool(b, "unified_memory", dev->unified_memory);
     _add_bool(b, "tunehead", dev->tunehead);
@@ -3825,8 +3684,8 @@ static void _ai_accel(JsonBuilder *b)
       continue;
     }
     json_builder_begin_object(b);
-    _add_string(b, "id", _gpu_providers[k].id);
-    _add_string(b, "name", dt_ai_provider_to_string(p));
+    engine_add_string(b, "id", _gpu_providers[k].id);
+    engine_add_string(b, "name", dt_ai_provider_to_string(p));
     json_builder_set_member_name(b, "devices");
     json_builder_begin_array(b);
     for(GList *d = devices; d; d = g_list_next(d))
@@ -3836,7 +3695,7 @@ static void _ai_accel(JsonBuilder *b)
       json_builder_begin_object(b);
       json_builder_set_member_name(b, "id");
       json_builder_add_int_value(b, dev->id);
-      _add_string(b, "name", dev->name);
+      engine_add_string(b, "name", dev->name);
       json_builder_end_object(b);
     }
     json_builder_end_array(b);
@@ -4302,7 +4161,7 @@ static gboolean _hdr_merge(JsonObject *req, JsonBuilder *b, FILE *out, char **er
     g_free(path);
     return FALSE;
   }
-  _add_string(b, "path", path);
+  engine_add_string(b, "path", path);
   g_free(path);
   json_builder_set_member_name(b, "image");
   _image_json(b, newid, FALSE);
@@ -4573,7 +4432,7 @@ static gboolean _pano_merge(JsonObject *req, JsonBuilder *b, FILE *out, char **e
   if(rendered)
   {
     ok = _positive_import(pathname, b, err);
-    if(ok) _add_string(b, "original", original);
+    if(ok) engine_add_string(b, "original", original);
     g_free(original);
     if(!ok) return FALSE;
   }
@@ -4586,8 +4445,8 @@ static gboolean _pano_merge(JsonObject *req, JsonBuilder *b, FILE *out, char **e
       *err = g_strdup_printf("cannot import %s", pathname);
       return FALSE;
     }
-    _add_string(b, "path", pathname);
-    _add_string(b, "original", original);
+    engine_add_string(b, "path", pathname);
+    engine_add_string(b, "original", original);
     g_free(original);
     json_builder_set_member_name(b, "image");
     _image_json(b, newid, FALSE);
@@ -5072,7 +4931,7 @@ static dt_iop_module_t *_named_instance(const char *op, const char *name, const 
       dt_ioppr_move_iop_after(&_s.dev, m, last);
   }
   _s.iop_gen++;
-  _changed(DT_DEV_PIPE_REMOVE);
+  session_changed(DT_DEV_PIPE_REMOVE);
   return m;
 }
 
@@ -5251,13 +5110,13 @@ static uint8_t *_shown_rgb(const int size, const gboolean color, int *w, int *h,
 // a share of the image's shorter side (path.c)
 #define _OBJECT_FEATHER 0.003
 
+#ifdef HAVE_AI
 // --------------------------------------------------------------- AI masks
 // Lightroom's Select Objects: darktable's segmentation (SAM) on the image as
 // edited, prompted with clicks or a box, vectorized into path shapes the way
 // darktable's object mask does it (masks/object.c). the paths go to the
 // client, which sends them back as an "object" component of a mask, so the
 // model runs only on a click
-#ifdef HAVE_AI
 static const char *_models_dir = NULL;
 static dt_ai_environment_t *_ai_env = NULL;
 static dt_seg_context_t *_seg = NULL;
@@ -6531,8 +6390,8 @@ static gboolean _denoise_do(_denoise_job_t *job, JsonBuilder *b, char **err)
     *err = g_strdup("could not write the DNG's XMP sidecar");
     return FALSE;
   }
-  _add_string(b, "path", job->out);
-  _add_string(b, "original", job->path);
+  engine_add_string(b, "path", job->out);
+  engine_add_string(b, "original", job->path);
   json_builder_set_member_name(b, "image");
   _image_json(b, newid, FALSE);
   json_builder_set_member_name(b, "seconds");
@@ -6643,7 +6502,7 @@ static gboolean _ai_denoise(const float strength, const gint64 tag, JsonBuilder 
     *err = g_strdup("the engine is stopping");
     return FALSE;
   }
-  _add_string(b, "path", name);
+  engine_add_string(b, "path", name);
   g_free(name);
   return TRUE;
 }
@@ -6903,7 +6762,7 @@ static gboolean _instance_inverted(const dt_iop_module_t *m)
 }
 
 // the dt_dev_pixelpipe_cache_invalidate_later of every pipe the engine runs
-static void _invalidate_from(const int order, const char *why)
+void masks_invalidate_from(const int order, const char *why)
 {
   dt_dev_pixelpipe_cache_invalidate_later(&_s.pipe, order, why);
   if(_s.ppipe_ok) dt_dev_pixelpipe_cache_invalidate_later(&_s.ppipe, order, why);
@@ -7077,12 +6936,12 @@ static gboolean _mask(const char *name, JsonArray *shapes, char **err)
     // a piece's cache hash takes its mask's shapes from darktable.develop
     // (imageop.c, dt_iop_commit_params), which is not this engine's
     // develop, so a reshaped mask would be served the old render
-    _invalidate_from(m->iop_order, "mask ");
+    masks_invalidate_from(m->iop_order, "mask ");
   }
   g_ptr_array_free(users, TRUE);
   g_array_free(inverts, TRUE);
   _combined_member_changed(grp, FALSE);
-  _changed(DT_DEV_PIPE_SYNCH);
+  session_changed(DT_DEV_PIPE_SYNCH);
   return ok;
 }
 
@@ -7153,7 +7012,7 @@ static void _combined_refresh(dt_masks_form_t *grp, const gboolean record, GHash
   }
   g_ptr_array_free(users, TRUE);
   g_array_free(write, TRUE);
-  if(order != INT_MAX) _invalidate_from(order, "combine ");
+  if(order != INT_MAX) masks_invalidate_from(order, "combine ");
 }
 
 // mask `root` reshaped, or with `removed` deleted: the combined masks
@@ -7229,7 +7088,7 @@ static gboolean _combine(const char *name, JsonArray *members, JsonArray *ranges
   _combined_sync(grp);
   _set_ranges_group(grp, ranges);
   _combined_refresh(grp, TRUE, old);
-  _changed(DT_DEV_PIPE_SYNCH);
+  session_changed(DT_DEV_PIPE_SYNCH);
   return TRUE;
 }
 
@@ -7535,7 +7394,7 @@ static gboolean _spots_set(JsonArray *spots, char **err)
   if(_s.ppipe_ok) dt_dev_pixelpipe_cache_invalidate_later(&_s.ppipe, m->iop_order, "spots ");
   if(_s.drag.ok) dt_dev_pixelpipe_cache_invalidate_later(&_s.drag.pipe, m->iop_order, "spots ");
   if(_s.base.ok) dt_dev_pixelpipe_cache_invalidate_later(&_s.base.pipe, m->iop_order, "spots ");
-  _changed(DT_DEV_PIPE_SYNCH);
+  session_changed(DT_DEV_PIPE_SYNCH);
   return TRUE;
 }
 
@@ -7629,7 +7488,7 @@ static gboolean _spots_enable(const gboolean on, char **err)
   if(m->enabled == want) return TRUE;
   m->enabled = want;
   dt_dev_add_history_item_ext(&_s.dev, m, m->enabled, TRUE);
-  _changed(DT_DEV_PIPE_TOP_CHANGED);
+  session_changed(DT_DEV_PIPE_TOP_CHANGED);
   return TRUE;
 }
 
@@ -8160,7 +8019,7 @@ static gboolean _mask_delete(const char *name, char **err)
   for(guint i = 0; i < users->len; i++)
     dt_dev_add_masks_history_item_ext(&_s.dev, g_ptr_array_index(users, i), FALSE, TRUE);
   g_ptr_array_free(users, TRUE);
-  _changed(DT_DEV_PIPE_SYNCH);
+  session_changed(DT_DEV_PIPE_SYNCH);
   return TRUE;
 }
 
@@ -9631,7 +9490,7 @@ static dt_iop_module_t *_look_instance(const char *op, const gboolean create)
   m->multi_name_hand_edited = TRUE;
   m->enabled = FALSE;
   _s.iop_gen++;
-  _changed(DT_DEV_PIPE_REMOVE);
+  session_changed(DT_DEV_PIPE_REMOVE);
   return m;
 }
 
@@ -9873,7 +9732,7 @@ static void _look_amount(const double amount)
     m->blend_params->opacity = CLAMP(amount, 0.0, 100.0);
     dt_dev_add_history_item_ext(&_s.dev, m, TRUE, TRUE);
   }
-  _changed(DT_DEV_PIPE_SYNCH);
+  session_changed(DT_DEV_PIPE_SYNCH);
 }
 
 // apply the style in `path` as the look, or with NULL, switch the look off
@@ -9913,7 +9772,7 @@ static gboolean _look(const char *path, char **err)
   g_list_free(used);
   g_list_free_full(items, dt_style_item_free);
   g_free(label);
-  _changed(DT_DEV_PIPE_SYNCH);
+  session_changed(DT_DEV_PIPE_SYNCH);
   return ok;
 }
 
@@ -10191,7 +10050,7 @@ static gboolean _preview(JsonObject *req, int *ow, int *oh, char **err)
     _s.dev.iop_order_list = saved_order;
     dt_ioppr_resync_modules_order(&_s.dev);
     _s.iop_gen++;
-    _changed(DT_DEV_PIPE_REMOVE);
+    session_changed(DT_DEV_PIPE_REMOVE);
   }
   else
   {
@@ -10515,7 +10374,7 @@ static void _parity_pass_json(JsonBuilder *b, const char *name, const parity_pas
   json_builder_add_double_value(b, p->ms);
   _add_int(b, "devid", p->devid);
 #ifdef HAVE_OPENCL
-  if(p->devid > DT_DEVICE_CPU) _add_string(b, "device", darktable.opencl->dev[p->devid].fullname);
+  if(p->devid > DT_DEVICE_CPU) engine_add_string(b, "device", darktable.opencl->dev[p->devid].fullname);
 #endif
   _add_int(b, "cl_errors", p->cl_errors);
   json_builder_end_object(b);
@@ -10616,7 +10475,7 @@ static gboolean _parity(JsonObject *req, JsonBuilder *b, char **err)
     if(diff && p99 >= 200)
     {
       _parity_diff_png(diff, &cpu, &gpu);
-      _add_string(b, "diff", diff);
+      engine_add_string(b, "diff", diff);
     }
   }
   g_free(cpu.pixels);
@@ -10626,216 +10485,6 @@ static gboolean _parity(JsonObject *req, JsonBuilder *b, char **err)
   // again (_follower_ready)
   _follower_cleanup(&_s.check);
   return ok;
-}
-
-// ------------------------------------------------------- film simulation
-
-// spektrafilm's identity for a stock (spektrafilm.c, _name_hash()): params
-// name the film and the paper by this hash of the stock's name, so the
-// panel's lists must hash exactly as the module does
-static uint32_t _sf_name_hash(const char *s)
-{
-  const dt_hash_t h = dt_hash(DT_INITHASH, s, strlen(s));
-  const uint32_t h32 = (uint32_t)(h ^ (h >> 32));
-  return h32 ? h32 : 1;
-}
-
-// the module's display names, trimmed as its combobox has them
-// (spektrafilm.c, _shorten_name())
-static void _sf_shorten(char *s)
-{
-  static const char *const filler[] = { " Professional", " Negative Film", " Reversal Film" };
-  for(size_t f = 0; f < G_N_ELEMENTS(filler); f++)
-  {
-    char *at = strstr(s, filler[f]);
-    if(!at) continue;
-    const size_t flen = strlen(filler[f]);
-    memmove(at, at + flen, strlen(at + flen) + 1);
-  }
-}
-
-// natural order, numbers by value, as the module sorts its lists
-// (spektrafilm.c, _nat_cmp())
-static int _sf_nat_cmp(const char *a, const char *b)
-{
-  for(;;)
-  {
-    if(*a == 0) return *b == 0 ? 0 : -1;
-    if(*b == 0) return 1;
-    const int da = (unsigned)*a - '0' < 10u, db = (unsigned)*b - '0' < 10u;
-    if(da && db)
-    {
-      unsigned long va = 0, vb = 0;
-      while((unsigned)*a - '0' < 10u) { va = va * 10 + (*a - '0'); a++; }
-      while((unsigned)*b - '0' < 10u) { vb = vb * 10 + (*b - '0'); b++; }
-      if(va != vb) return va < vb ? -1 : 1;
-    }
-    else if(da != db)
-      return da ? -1 : 1;
-    else
-    {
-      const int ca = g_ascii_tolower(*a), cb = g_ascii_tolower(*b);
-      if(ca != cb) return ca < cb ? -1 : 1;
-      a++;
-      b++;
-    }
-  }
-}
-
-typedef struct _sf_stock_t
-{
-  char stock[128], name[128], target_print[128];
-  gboolean printing, positive, bw;
-  double dev_times[SF_MAX_DEV_TIMES];
-  int n_dev;
-  uint32_t hash;
-} _sf_stock_t;
-
-static gint _sf_stock_cmp(gconstpointer a, gconstpointer b)
-{
-  return _sf_nat_cmp(((const _sf_stock_t *)a)->name, ((const _sf_stock_t *)b)->name);
-}
-
-// a download that finished since the last look: the module loads the new
-// pack at its next process(), but the pipes' caches still hold renders
-// made without it, under the same hashes
-static guint _sf_gen_seen = 0;
-static void _sf_follow_pack(void)
-{
-  const guint gen = sf_fetch_generation();
-  if(gen == _sf_gen_seen) return;
-  _sf_gen_seen = gen;
-  if(!_s.open) return;
-  const dt_iop_module_t *m = dt_iop_get_module_by_op_priority(_s.dev.iop, "spektrafilm", 0);
-  if(!m) return;
-  _invalidate_from(m->iop_order, "spektrafilm pack ");
-  _changed(DT_DEV_PIPE_SYNCH);
-}
-
-// the installed spektrafilm data pack, the one a new edit renders with, and
-// its films and papers, read as the module reads them (spektrafilm.c,
-// _scan_profiles()): { pack: { dir, lut_id, lut_hash, hand_installed } or
-// null, stocks: [{ hash, stock, name, printing, positive, bw,
-// target_print, dev_times }] in the module's order }
-static void _spektra_stocks(JsonBuilder *b)
-{
-  _sf_follow_pack();
-  char dir[1024];
-  gboolean exact = FALSE;
-  const gboolean found = sf_fetch_resolve_pack_dir(0, dir, sizeof dir, &exact);
-  json_builder_set_member_name(b, "pack");
-  GList *list = NULL;
-  if(!found)
-    json_builder_add_null_value(b);
-  else
-  {
-    json_builder_begin_object(b);
-    _add_string(b, "dir", dir);
-    GPtrArray *packs = sf_fetch_list_packs();
-    for(guint k = 0; k < packs->len; k++)
-    {
-      const sf_fetch_pack_t *fp = g_ptr_array_index(packs, k);
-      if(g_strcmp0(fp->dir, dir)) continue;
-      _add_string(b, "lut_id", fp->lut_id);
-      json_builder_set_member_name(b, "lut_hash");
-      json_builder_add_int_value(b, fp->lut_hash);
-      json_builder_set_member_name(b, "hand_installed");
-      json_builder_add_boolean_value(b, fp->hand_installed);
-      break;
-    }
-    g_ptr_array_unref(packs);
-    json_builder_end_object(b);
-
-    gchar *profdir = g_build_filename(dir, "profiles", NULL);
-    GDir *gd = g_dir_open(profdir, 0, NULL);
-    const char *fn;
-    while(gd && (fn = g_dir_read_name(gd)))
-    {
-      if(!g_str_has_suffix(fn, ".json")) continue;
-      gchar *path = g_build_filename(profdir, fn, NULL);
-      char *perr = NULL;
-      sf_profile_t *prof = sf_profile_load(path, 0.5f, &perr);
-      g_free(path);
-      if(!prof)
-      {
-        free(perr);
-        continue;
-      }
-      _sf_stock_t *e = g_malloc0(sizeof(_sf_stock_t));
-      g_strlcpy(e->stock, sf_profile_stock(prof) ? sf_profile_stock(prof) : fn, sizeof e->stock);
-      char *dot = strstr(e->stock, ".json");
-      if(dot) *dot = 0;
-      g_strlcpy(e->name, sf_profile_name(prof) ? sf_profile_name(prof) : e->stock, sizeof e->name);
-      _sf_shorten(e->name);
-      e->printing = !g_strcmp0(sf_profile_stage(prof), "printing");
-      e->positive = !g_strcmp0(sf_profile_type(prof), "positive");
-      e->bw = !g_strcmp0(sf_profile_channel_model(prof), "bw");
-      if(sf_profile_target_print(prof)) g_strlcpy(e->target_print, sf_profile_target_print(prof), sizeof e->target_print);
-      e->n_dev = sf_profile_dev_times(prof, e->dev_times, SF_MAX_DEV_TIMES);
-      e->hash = _sf_name_hash(e->stock);
-      sf_profile_free(prof);
-      list = g_list_prepend(list, e);
-    }
-    if(gd) g_dir_close(gd);
-    g_free(profdir);
-    list = g_list_sort(list, _sf_stock_cmp);
-  }
-  json_builder_set_member_name(b, "stocks");
-  json_builder_begin_array(b);
-  for(GList *l = list; l; l = g_list_next(l))
-  {
-    const _sf_stock_t *e = l->data;
-    json_builder_begin_object(b);
-    json_builder_set_member_name(b, "hash");
-    json_builder_add_int_value(b, e->hash);
-    _add_string(b, "stock", e->stock);
-    _add_string(b, "name", e->name);
-    json_builder_set_member_name(b, "printing");
-    json_builder_add_boolean_value(b, e->printing);
-    json_builder_set_member_name(b, "positive");
-    json_builder_add_boolean_value(b, e->positive);
-    json_builder_set_member_name(b, "bw");
-    json_builder_add_boolean_value(b, e->bw);
-    _add_string(b, "target_print", e->target_print);
-    json_builder_set_member_name(b, "dev_times");
-    json_builder_begin_array(b);
-    for(int k = 0; k < e->n_dev; k++) json_builder_add_double_value(b, e->dev_times[k]);
-    json_builder_end_array(b);
-    json_builder_end_object(b);
-  }
-  json_builder_end_array(b);
-  g_list_free_full(list, g_free);
-}
-
-// the data pack's download, on spektra_fetch.c's own thread: `action`
-// "start" (the repository's default pack), "cancel" or "status". replies
-// { state: idle, running, done or failed, message, progress (0..1, or -1
-// when unknown), started (for start) }. none of them waits for the network
-static gboolean _spektra_fetch(JsonObject *req, JsonBuilder *b, char **err)
-{
-  const char *action = json_object_get_string_member_with_default(req, "action", "status");
-  if(!g_strcmp0(action, "start"))
-  {
-    json_builder_set_member_name(b, "started");
-    json_builder_add_boolean_value(b, sf_fetch_start(0u, 0u));
-  }
-  else if(!g_strcmp0(action, "cancel"))
-    sf_fetch_cancel();
-  else if(g_strcmp0(action, "status"))
-  {
-    *err = g_strdup_printf("unknown spektra_fetch action '%s'", action);
-    return FALSE;
-  }
-  char msg[256] = { 0 };
-  double progress = -1.0;
-  const sf_fetch_state_t state = sf_fetch_status(msg, sizeof msg, &progress);
-  static const char *names[] = { "idle", "running", "done", "failed" };
-  _add_string(b, "state", state <= SF_FETCH_FAILED ? names[state] : "idle");
-  _add_string(b, "message", msg);
-  json_builder_set_member_name(b, "progress");
-  json_builder_add_double_value(b, progress);
-  if(state == SF_FETCH_DONE) _sf_follow_pack();
-  return TRUE;
 }
 
 // the commands, by name. _CMD_NEEDS_OPEN ones answer "no image open" before
@@ -11086,8 +10735,8 @@ static gboolean _cmd_softproof(JsonObject *req, JsonBuilder *b, char **err)
   g_free(ignored);
   if(cout)
   {
-    _invalidate_from(cout->iop_order, "softproof ");
-    _changed(DT_DEV_PIPE_SYNCH);
+    masks_invalidate_from(cout->iop_order, "softproof ");
+    session_changed(DT_DEV_PIPE_SYNCH);
   }
   json_builder_set_member_name(b, "changed");
   json_builder_add_boolean_value(b, changed);
@@ -11113,13 +10762,13 @@ static gboolean _cmd_fonts(JsonObject *req, JsonBuilder *b, char **err)
 
 static gboolean _cmd_spektra_stocks(JsonObject *req, JsonBuilder *b, char **err)
 {
-  _spektra_stocks(b);
+  film_spektra_stocks(b);
   return TRUE;
 }
 
 static gboolean _cmd_spektra_fetch(JsonObject *req, JsonBuilder *b, char **err)
 {
-  if(!_spektra_fetch(req, b, err)) return FALSE;
+  if(!film_spektra_fetch(req, b, err)) return FALSE;
   return TRUE;
 }
 
@@ -11362,7 +11011,7 @@ static gboolean _cmd_render(JsonObject *req, JsonBuilder *b, char **err)
     json_builder_set_member_name(b, "height");
     json_builder_add_int_value(b, 0);
     gchar *hash = g_strdup_printf("%016" PRIx64, kept);
-    _add_string(b, "hash", hash);
+    engine_add_string(b, "hash", hash);
     g_free(hash);
     json_builder_set_member_name(b, "kept");
     json_builder_add_boolean_value(b, TRUE);
@@ -11391,7 +11040,7 @@ static gboolean _cmd_render(JsonObject *req, JsonBuilder *b, char **err)
     // the frame's hash, the same for one rendered again with nothing
     // changed: a client can tell that frame from a new one
     gchar *hash = g_strdup_printf("%016" PRIx64, _frame_hash(pipe->backbuf_hash));
-    _add_string(b, "hash", hash);
+    engine_add_string(b, "hash", hash);
     g_free(hash);
     json_builder_set_member_name(b, "process_ms");
     json_builder_add_double_value(b, process_ms);
