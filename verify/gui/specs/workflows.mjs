@@ -111,8 +111,14 @@ export async function wheels(t) {
     if(mode==='Sliders') { assert.equal(count,0); await t.evidence('grading-sliders'); continue; }
     assert(count>0);
     for(let i=1;i<=count;i++) {
-      // Wheel cells may be nested in rows: use a stable title as observation.
-      const point=await t.driver.observe((s,i)=>{ const e=document.querySelectorAll(`${s} .wheel`)[i-1],r=e.getBoundingClientRect(); return {x:r.x+r.width/2,y:r.y+r.height/2,width:r.width}; },p,i);
+      // Wheel cells may be nested in rows: address the i-th wheel by an
+      // nth-child path from the panel, so reveal can scroll it into view
+      // (the Shadows and Highlights wheels sit below the fold in a short window).
+      const path=await t.driver.observe((s,i)=>{ const root=document.querySelector(s); let e=document.querySelectorAll(`${s} .wheel`)[i-1]; const parts=[];
+        for(;e&&e!==root;e=e.parentElement) parts.unshift(`:nth-child(${[...e.parentElement.children].indexOf(e)+1})`);
+        return `${s} > ${parts.join(' > ')}`; },p,i);
+      const c=await reveal(t,path);
+      const point={x:c.x,y:c.y,width:c.bounds.width};
       const before=await settledPhoto(t);
       await t.driver.drag(point,{x:point.x+point.width*.2,y:point.y-point.width*.1});
       const edited=await settledPhoto(t,q=>q.hash!==before.hash); await t.evidence(`${mode}-${i}`);
