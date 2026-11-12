@@ -27,16 +27,16 @@ tooltips, clicks and disabled buttons as well.
 | [main.rs](../../src-tauri/src/main.rs) | `main()`: on Linux selects the web view's EGL before GTK starts (`renderer::init`), migrates the old app name, registers the dialog, opener, updater, process, window state (the main window's size, position and maximized state) and immporter plugins. On Linux `setup()` builds the windows itself, with the frames web extension's folder (`webext_dir`). `setup()` picks the engine: `build/bin/darktable-engine` with runtime state in `build/app-runtime` for a dev build, the bundled `resources/darktable` with the app data folder for a release, or `DT_ENGINE_BIN`. Holds `AppState` and nearly every command. A `supervise` thread waits for a dead engine connection (`Link::wait_dead`), emits `engine-state` `down{epoch}`, clears export cancels, checks `RestartBudget` (skipped for a manual restart), respawns under the engine lock as `engine_respawn`, re-applies the resource level and Edit on the GPU, and emits `ready{epoch}`; a refused budget or a failed respawn emits `failed` and stops. `engine_restart` (no engine lock) asks for a manual restart, and `AppState.engine(op)` records the operation name that sets each request's soft deadline. |
 | [renderer.rs](../../src-tauri/src/renderer.rs) | Linux window renderer: Automatic leaves EGL vendor selection to the system on every GPU; explicit Mesa or NVIDIA selects that EGL vendor. Stored as `webview-renderer` in the runtime directory so startup can read it before GTK. An inherited marker allows Relaunch to change the selection, while a user-supplied EGL environment override takes priority. Only the web view receives the override; benchmark display metadata records the running and next selections. |
 | [engine.rs](../../src-tauri/src/engine.rs) | The engine child. Spawns it (`--core --configdir --cachedir -d perf`, darktable's resource level from Preferences (`resource_level`), OpenCL on with export's pipe type allowed the GPU, which the base borrows, and the full pipes (edits and drags) too with Preferences' Edit on the GPU (`gpu_edits`, on by default); on Linux, ROCm's platform on and its kernels built as OpenCL C 2.0 when no RustiCL is installed, `rocm_only`), retrying while an old one holds darktable's database lock: each start sends a `version` request and goes on as soon as it is answered (after `dt_init`), or after 400 ms if the engine is still alive (`started`). `request()` writes one JSON line with a request number (`rid`, never reused) and reads replies until the one echoing it, dropping a late reply to an earlier request; an engine that never echoes `rid` (an old build) is read in order. `rid` is not `id`, which `render` uses for a base's number. Thumbnails and background exports (`Tagged`) are tagged and sent without the engine's mutex, and AI Denoise's DNG and the AI selections' outlines come as a tagged answer after the main loop's own (`expect`, `on_engine_thread` in main.rs); a stdout thread (`read_stdout`) hands each tagged reply to its caller, a merge's progress lines to what follows them (`request_with_progress`, as `merge-progress`), and the rest to `request()`. A stderr thread writes the log and keeps darktable's `-d perf` timings apart for the performance overlay. `Engine` holds the current connection, a `Conn` (stdin, the waiting reply channel, progress, the child, a `dead` flag) numbered by an `epoch`, inside a shared `Link` (the current conn, a condvar, the tagged-reply and base-cancel tables, `quitting`, the manual restart flag, events). `Tagged` and `BaseCancel` hold the `Link`, so they follow a respawn. `respawn()` starts a new child with the same arguments, and `read_stdout` marks its conn dead when stdout closes. `request()` waits with `recv_timeout` against `soft_deadline(op, req)`; past it, it emits one `slow{op,seconds}` event, and the reply still arrives as `ready` with the same epoch. `RestartBudget(3, 60 s)` limits crash loops. |
-| [engine/main.c](../../../engine/main.c) | `main()`: keeps the real stdout for replies, starts darktable with an in-memory library (`dt_init`), sets its confs, then loops: read a line, `_handle()` it, reply. |
+| [engine/main.c](../../../engine/main.c) | `main()`: keeps the real stdout for replies, starts darktable with an in-memory library (`dt_init`), sets its confs, then starts `_read_requests`, which reads a line and hands it to `_handle()` through the `_commands[]` table, and replies. The other engine files are listed under Engine below. |
 
 The boundary is strict. The front end never touches files or darktable
 directly. It calls `invoke(...)` commands, and every command that needs the
 engine goes through the one `Mutex<Engine>` in `AppState`, so engine work is
 serialized, one request at a time. Thumbnails, folder imports and
 exports are the exceptions: the engine builds thumbnails on two threads
-of its own (`_thumb_run`), and reads folders (`_import_run`), exports
-(`_export_run`), runs AI Denoise (`_denoise_run`) and the AI selections'
-models (`_ai_run`) on one each, beside
+of its own (`library_thumb_run`), and reads folders (`library_import_run`), exports
+(`export_run`), runs AI Denoise (`ai_denoise_run`) and the AI selections'
+models (`ai_run`) on one each, beside
 whatever the mutex's holder is doing. Most commands are async and wait for
 the mutex on the async runtime's worker that runs them, so `main()` gives
 Tauri a tokio runtime of its own (`tauri::async_runtime::set`) with
@@ -153,7 +153,7 @@ and one undo after Done.
 | [engineState.ts](../../src/engineState.ts) | The page's engine-restart state, pure and tested by [engine-state.test.mjs](../../../verify/engine-state.test.mjs) (`node --test`). `step` takes each `engine-state` event (`down`, `ready`, `slow`, `failed`) to the notice shown; `wait` clears a `slow` notice; `reopenPlan` and `reopening` choose what to restore after a restart, and a photo whose reopening is cut short by another stop within `REOPEN_GUARD_MS` (30 s) is not reopened; `isEngineExit` and `engineText` turn the raw "engine exited" error into "the engine restarted". |
 | [pixelRatio.ts](../../src/pixelRatio.ts) | Linux on Wayland at a fractional scale: `draftScale()`, how much smaller drag drafts are (`draftK` and `fullDraftK` in App.tsx; the latter also sizes `exactView`, the detail sliders' whole-view draft), the screen's scale from `display_scale` over `devicePixelRatio`, as GTK 3 draws the window at the next whole scale; Preferences' "Drag drafts at the screen's scale"; `settledScale()` does the same for the settled Fit frame (`viewAt(1)` in App.tsx), behind "Fit frames at the screen's scale" (on by default). |
 | [sharedFrames.ts](../../src/sharedFrames.ts) | Windows: `renderFrame` asks `render` to post the frame in a WebView2 shared buffer tagged with an id, then matches the `sharedbufferreceived` event to the reply, copies the frame out and releases the buffer. Linux: it asks `render` to write the frame to `/dev/shm` and reads it with the web extension's `immageFrame()`. On the Mac, on WebView2 runtimes before 1.0.1661, on Linux without the extension, or with Preferences' "Shared-memory frames" off, the frame comes in `render`'s reply. |
-| [HistoryPanel.tsx](../../src/HistoryPanel.tsx) | darktable's history plus this session's undo steps; a row's switch, delete or reset (`historyChange` in App.tsx, `Session.setModuleState`, the engine's `_module_state`). |
+| [HistoryPanel.tsx](../../src/HistoryPanel.tsx) | darktable's history plus this session's undo steps; a row's switch, delete or reset (`historyChange` in App.tsx, `Session.setModuleState`, the engine's `session_module_state`). |
 | [CopySettings.tsx](../../src/CopySettings.tsx) | Copy/Paste Settings: which groups, and the clip. |
 | [batchPaste.ts](../../src/batchPaste.ts) | Exact selection targets; shared single/batch clip application; sequential background Sessions, native snapshot commit and rollback. |
 
@@ -285,16 +285,50 @@ emits its own (`import-done`, `volumes-changed`, ...).
 
 ## Engine
 
-[`engine/main.c`](../../../engine/main.c) is one file. The engine
+The engine is a set of C files in [`engine/`](../../../engine), one per
+feature area, with `main.c` serving the requests:
+
+| File | Prefix | Holds |
+|---|---|---|
+| [engine/main.c](../../../engine/main.c) | `engine_` | `main()`, the `_commands[]` table, `_handle`, `_read_requests`, replies, the foreground and background yield, the crash handler, memory pressure and trim. |
+| [engine/session.c](../../../engine/session.c) | `session_` | Open and close, the pipes and their followers, holds, history snapshots, `session_set` and `session_get`, render, `session_frame_hash`, preview, save, paste. |
+| [engine/library.c](../../../engine/library.c) | `library_` | Folder, import, thumbnails, prefetch, metadata, keywords, capture times, copies and versions, sidecars. |
+| [engine/export.c](../../../engine/export.c) | `export_` | The frame style, fonts, export, positives, upscale, the HDR and Panorama Merge glue, the export pool. |
+| [engine/masks.c](../../../engine/masks.c) | `masks_` | Masks, shapes, combined masks, spots, ranges, zones, sampling, the working space, Upright. |
+| [engine/ai.c](../../../engine/ai.c) | `ai_` | AI masks, objects, depth and denoise; built only with `HAVE_AI`. |
+| [engine/device.c](../../../engine/device.c) | `device_` | OpenCL, AI acceleration, the ONNX Runtime exports, the GPU check's parity run. |
+| [engine/looks.c](../../../engine/looks.c) | `looks_` | Looks and the AgX presets. |
+| [engine/film.c](../../../engine/film.c) | `film_` | Film Simulation: spektrafilm's stocks and pack fetch. |
+| [engine/engine.h](../../../engine/engine.h) | | The shared internal header: the session types, `_s`, and the prototypes and externs the files share. It documents the lock order, and debug builds check it. |
+
+A function used by another file carries its file's prefix, as print.c's
+`print_*` do; one used by its own file stays `static` with a leading
+underscore, so a `_name` in the text below lives in the file of its section.
+Printing, Upright, HDR Merge, Panorama Merge, the DNG writer, the metadata
+stripper and the lens database keep their own files (below).
+
+A request flows through `_read_requests` (the stdin reader thread), which
+routes the tagged pool commands and `cancel_base` and `merge_cancel` itself and
+queues the rest; `_handle` times it, finds its entry in `_commands[]` (an
+`eng_cmd_t`: name, `_cmd_<name>` handler and flags), answers "no image open"
+for an entry flagged `_CMD_NEEDS_OPEN` when none is, marks the photo unsaved
+for one flagged `_CMD_EDITS`, and answers an unknown command with an error.
+`_cmd_<name>` parses the request and calls the feature code in its file.
+[verify/engine-protocol.py](../../../verify/engine-protocol.py) records and
+compares every command's reply, and
+[verify/engine-commands.test.mjs](../../../verify/engine-commands.test.mjs)
+checks that each command the app sends is in the table.
+
+The engine
 holds one session, `_s` (`dt_engine_session_t`): the open image, its develop
 (`dt_develop_t`, the module list and history) and four pipes over it.
 
 | Pipe | Built by | Input | Used for |
 |---|---|---|---|
-| `pipe` | `_open_image` | the full raw (`DT_MIPMAP_FULL`) | every frame (`render`); `full_width` / `full_height`. `render`'s `skip` leaves ops out of one frame (drag drafts skip grain and diffuse) |
-| `ppipe` | `_ppipe_ready` | the full raw | `preview`, AI input, sampling, mask maps |
-| `drag` | `_follower_ready` | the full raw | `render` with `draft`: a drag's frames, kept off the main pipe's cache so the release finds its earlier modules there |
-| `base` | `_follower_ready` | the full raw | `render` with `base`: the idle whole-image render, on the GPU when there is one. `cancel_base` stops it (`_cancel_base`, from the stdin reader thread `_read_requests`) |
+| `pipe` | `session_open_image` | the full raw (`DT_MIPMAP_FULL`) | every frame (`render`); `full_width` / `full_height`. `render`'s `skip` leaves ops out of one frame (drag drafts skip grain and diffuse) |
+| `ppipe` | `session_ppipe_ready` | the full raw | `preview`, AI input, sampling, mask maps |
+| `drag` | `session_follower_ready` | the full raw | `render` with `draft`: a drag's frames, kept off the main pipe's cache so the release finds its earlier modules there |
+| `base` | `session_follower_ready` | the full raw | `render` with `base`: the idle whole-image render, on the GPU when there is one. `cancel_base` stops it (`_cancel_base`, from the stdin reader thread `_read_requests`) |
 
 The preview pipe exists so trying a setting never touches the edit or the
 main pipe's cache.
@@ -302,25 +336,25 @@ main pipe's cache.
 Printing and soft proofing are in [engine/print.c](../../../engine/print.c):
 printer profiles added to darktable's output list at run time, colorout's
 soft proof mode (`softproof`, with every pipe recommitted from colorout and
-the proof mixed into `_frame_hash`), CUPS or Windows printers, and a print
+the proof mixed into `session_frame_hash`), CUPS or Windows printers, and a print
 job (`print`, tagged on the export thread) that renders through an in-memory
 format, converts with the printer profile and writes a PDF for CUPS or a
 file, or spools on Windows. A sheet of photos in cells (`print` with `pages`,
 `print_sheet`) is composed a page at a time into one buffer, filenames
 included, and goes out the same way. See [print.md](print.md).
 
-Film Simulation's engine side is a section of main.c. spektrafilm builds its
-film and paper lists only in its GUI, so `_spektra_stocks` reads the pack's
+Film Simulation's engine side is [engine/film.c](../../../engine/film.c). spektrafilm builds its
+film and paper lists only in its GUI, so `film_spektra_stocks` reads the pack's
 `profiles/*.json` headers itself with `sf_profile_load()`, from the pack
 `sf_fetch_resolve_pack_dir(0, ...)` resolves for a new edit, and copies the
 module's `_name_hash`, `_shorten_name` and `_nat_cmp` so names, order and
-hashes match its combobox. `_spektra_fetch` wraps darktable's own fetcher
+hashes match its combobox. `film_spektra_fetch` wraps darktable's own fetcher
 (`sf_fetch_start(0, 0)`, `sf_fetch_status`, `sf_fetch_cancel`), which runs on
 its own thread and posts nothing back without a GUI. The module notices a new
 pack by `sf_fetch_generation()` and reloads at its next `process()`, but the
 pipes' caches still hold the passthrough it rendered without one under the same
 hashes, so `_sf_follow_pack` invalidates every pipe from spektrafilm's
-`iop_order` when the generation moves. `_held_for_mode` keeps the disabled
+`iop_order` when the generation moves. `_held_for_mode` (session.c) keeps the disabled
 entries of the modules a conversion holds off (negadoctor's list, or
 spektrafilm's tone mappers) through `_prune_off`.
 
@@ -345,8 +379,8 @@ structure detection and fit of darktable's rotate and perspective
 GUI-free parts are copied unchanged, with the outlier removal and fit
 rewritten to take the lines rather than `gui_data`. Its header names the
 ashift.c revision it was copied from. Compare the two when taking a new
-darktable release. `upright` in main.c reads the image as it enters
-rotate and perspective from the preview pipe (`_working_at`,
+darktable release. `upright` (`_cmd_upright` in main.c, `masks_upright` in masks.c) reads the image as it enters
+rotate and perspective from the preview pipe (`_working_at` in masks.c,
 `_STAGE_ASHIFT`). `points` maps points between the shown image and the
 input, for Guided's guides. The crop tool's Auto (`runAutoStraighten` in
 App.tsx) asks `upright` for the `level` fit and writes only `tf_rotate`,
@@ -361,8 +395,8 @@ runs only as a lighttable job on its selection
 with only its messages changed, and calls darktable's own alignment
 (`src/common/hdr_alignment.cc`, with OpenCV); its header names the
 revision it was copied from. Compare the two
-when taking a new darktable release. `_hdr_merge` in main.c imports the
-DNG; a tagged one runs on the export thread (`_export_run`), as it reads
+when taking a new darktable release. `export_hdr_merge` in export.c imports the
+DNG; a tagged one runs on the export thread (`export_run`), as it reads
 each bracket through an export pipe.
 The float writer receives no EXIF; `hdr_merge` then merges it through
 `rendered_metadata` so the generated DNG tags and CFA pattern survive, and
@@ -372,7 +406,7 @@ An EXIF-write failure removes the temporary output instead of importing it.
 The RAW regression in `verify/panorama.test.mjs` checks HDR as well as panorama
 thumbnails, rendering and reopening after engine restart.
 
-AI Denoise's `_denoise_write` likewise calls the CFA or linear DNG writer
+AI Denoise's `_denoise_write` in ai.c likewise calls the CFA or linear DNG writer
 without EXIF, then uses `rendered_metadata` and `denoised_metadata` in
 `strip.cc`. The latter reads existing metadata before stamping the source
 camera orientation and adding the `Xmp.darktable.neural_restore` marker,
@@ -383,7 +417,7 @@ Either metadata failure deletes the output.
 darktable doesn't have: OpenCV's stitching pipeline (`cv::detail`, as
 its `stitching_detailed.cpp` sample runs it), kept linear, with the
 blend log-encoded into the 15 bits OpenCV's blender takes. `_pano_frame`
-in main.c renders each raw through an export pipe with only the modules
+in export.c renders each raw through an export pipe with only the modules
 before `colorin` (`_pano_keep`) and its white balance divided out, so
 the panorama stays in the camera's color;
 [`engine/dng.c`](../../../engine/dng.c) writes it as a 16-bit float
@@ -398,11 +432,11 @@ the generated DNG tags, causing RAW-camera decoders to be selected instead.
 Metadata-write failures remove the incomplete output. Run
 `IMMAGE_TEST_RAW=/path/to/photo.ORF node --test verify/panorama.test.mjs`
 to check RAW-merge tags, thumbnails, rendering and reopening after engine restart.
-`_pano_merge` imports it; a tagged one
+`export_pano_merge` imports it; a tagged one
 runs on the export thread. Both are built only when OpenCV's stitching
 module is found (`HAVE_PANO`, `engine/CMakeLists.txt`).
 
-`pano_preview` uses the same `_pano_merge` input validation and `_pano_frame`
+`pano_preview` uses the same `export_pano_merge` input validation and `_pano_frame`
 lens-corrected export pipe, with every input rendered into linear Rec.2020
 at a maximum long edge of 1280 pixels. `pano_preview` in pano.cc shares
 `_stitch` with the full merge: feature matching, camera estimation, Auto
@@ -440,12 +474,12 @@ Whether a photo is edited is darktable's own test, `dt_image_altered()`:
 the history hash against its basic and automatic baselines, which the
 sidecar carries. `open` replies `fresh` when the photo had no history
 before loading; the client then applies its new-photo defaults, and every
-`_save` stamps them as the automatic baseline (`history_auto_hash`) until
+`session_save` stamps them as the automatic baseline (`history_auto_hash`) until
 `baseline_end`, which `Session.endBaseline()` sends ahead of the user's
 first recorded change. So the defaults never mark a photo edited, in
 Immage or in darktable.
 
-`_open` copies the image cache's colorspace into the session after
+`session_open_image` copies the image cache's colorspace into the session after
 `synch_all`. Colorin marks a photo with an sRGB or Adobe RGB input profile
 as `USER_RGB`, in the cache only; darktable's import thumbnails do that
 before the darkroom loads a photo, the engine's import does not. Without
@@ -453,23 +487,23 @@ the copy, a JPEG's first session scaled its input without gamma correction
 and rendered unlike every later session, so a batch paste's undo could not
 match it (`verify/batch-paste.test.mjs`, "a fresh photo renders the same").
 
-| Section | Main functions |
+| Section (file) | Main functions |
 |---|---|
-| Session, open, close | `_open_image`, `_close_session`, `_import`, `_compress_history` |
-| Set and get params | `_set` (fields by introspection, `instance`, `mask`, `after`/`before` moves), `_get`, `_write_field`, `_named_instance` |
-| Render | `_render` (and the `render` command's `skip`; with `have`, a frame of no size naming the client's frame of the hash it would get), `_write_rgba`, `_ppipe_ready`, `_preview` |
-| Library | `_folder`, `_import_files` (a tagged `import` on the import thread, `_import_run`), `_thumb` (a tagged `thumb` on the thumbnail threads, `_thumb_run`, routed there by `_read_requests`), `_prefetch` (raws decoded ahead, a few at once, on a thread pool of its own), `_image_json`, `_meta_set`, `_keywords_set`, `_copy`, `_remove_copy`, `_sidecars`, `_forget` (a deleted file's rows, so a new file at its path imports fresh) |
-| HDR Merge | `_hdr_merge` (hdrmerge.c's `hdr_merge`, on the export thread when tagged) |
-| Panorama Merge (`HAVE_PANO`) | `_pano_merge`, `_pano_frame` (pano.cc's `pano_stitch`, dng.c's `dng_write_linear_half`, on the export thread when tagged) |
-| Export | `_export` (darktable's export with flags, then `strip_metadata` in [strip.cc](../../../engine/strip.cc), with exiv2, for what the flags do not reach: serial numbers, camera info, the source's own text fields and keywords); `_frame_style` (borders and a watermark SVG as a temporary style; a fixed canvas as one last border, sized so the file comes out exactly W x H); the AI upscale proxy format (`_upscale_ctx`) |
-| Masks | `_mask` (shapes into a darktable flexi mask group, prefixed `immage: `, with its ranges as parametric elements in a product group, prefixed `immage ranges: `; `_flatten` reads any flexi tree back to shapes), `_masks` (with `merged_in`), `_mask_delete`, `_mask_rename`, `_attach_mask`. The [mask anchor](masks.md#where-the-instances-run), `colorbalancergb`, is where every mask's instances run, so a range sampled at its output holds for all of them. `_combine`: a flexi sum of the masks' groups, each at its opacity (prefixed `immage combined: `), with the members' ranges, driving a shared instance, which `_attach_mask` attaches only to a combined mask; `_combined_member_changed` keeps it current when a member is reshaped or deleted. `_prune_off` keeps a mask's own switched-off instances (`_holds_mask_settings`). `_named_instance` places a mask's own instance after the shared ones of its module |
-| AI (`HAVE_AI`) | `_ai_object` (SAM), `_ai_mask` (sky, subject, ...), `_ai_depth` (with a tag, the main loop renders the model's input unless its last result holds, `_ai_job`, and answers; the model runs on the AI thread, `_ai_run`, which answers again with the tag); outlines are traced at `_TRACE_SIZE` against the photo rendered at it (`_guide`, which the models' inputs are made from), moved onto its edges first by `_snap_edges`, a guided filter kept to where the model is unsure (`_trace_json`), `_ai_denoise` (darktable's raw denoise into a DNG, repeating `src/libs/neural_restore.c`'s job on its public calls; with a tag, the main loop snapshots the edit and answers, and the denoise runs on its own thread, `_denoise_run`, answering again with the tag), `_ai_denoise_preview` (its 1:1 before and after, as the lib's raw preview makes them); on Linux, `_ort_exports` keeps darktable from probing a GPU provider the bundled ONNX Runtime lacks, and `main()` sets the provider to CPU when it has none |
-| Spots | `_spots_set`, `_spots_json`, `_spot_source` (the retouch module) |
-| Ranges and zones | `_sample` (at the mask anchor, or with `stage` "negadoctor" at negadoctor's input), `_range_map`, `_zones`, `_mask_map`, `_tone_key`, `_agx_auto` |
-| Looks | `_look`, `_look_amount` (a darktable style, its instances scaled) |
-| Save | `_save` (history to the database, compressed, history hash and `darktable\|changed`, XMP sidecar written). Every engine sidecar write goes through `_write_xmp_whole`: darktable's `dt_exif_xmp_write` empties the file and leaves its writes unchecked, so it writes into a copy (`<name>.xmp.immage-tmp`, seeded with the old sidecar so unknown keys survive), checks the packet's end, fsyncs, and renames it over the old one. The error names the file and the reason (`_sidecar_error`). `verify/sidecar-safety.py` tests this |
+| Session, open, close (session.c) | `session_open_image`, `session_close_session`, `library_import`, `_compress_history` |
+| Set and get params (session.c, masks.c) | `session_set` (fields by introspection, `instance`, `mask`, `after`/`before` moves), `session_get`, `session_write_field`, `masks_named_instance` |
+| Render (session.c) | `session_render` (and the `render` command's `skip`; with `have`, a frame of no size naming the client's frame of the hash it would get), `session_write_rgba`, `session_ppipe_ready`, `session_preview` |
+| Library (library.c) | `library_folder`, `library_import_files` (a tagged `import` on the import thread, `library_import_run`), `library_thumb` (a tagged `thumb` on the thumbnail threads, `library_thumb_run`, routed there by `_read_requests`), `library_prefetch` (raws decoded ahead, a few at once, on a thread pool of its own), `library_image_json`, `library_meta_set`, `library_keywords_set`, `library_copy`, `library_remove_copy`, `library_sidecars`, `library_forget` (a deleted file's rows, so a new file at its path imports fresh) |
+| HDR Merge (export.c) | `export_hdr_merge` (hdrmerge.c's `hdr_merge`, on the export thread when tagged) |
+| Panorama Merge (`HAVE_PANO`, export.c) | `export_pano_merge`, `_pano_frame` (pano.cc's `pano_stitch`, dng.c's `dng_write_linear_half`, on the export thread when tagged) |
+| Export (export.c) | `export_export` (darktable's export with flags, then `strip_metadata` in [strip.cc](../../../engine/strip.cc), with exiv2, for what the flags do not reach: serial numbers, camera info, the source's own text fields and keywords); `_frame_style` (borders and a watermark SVG as a temporary style; a fixed canvas as one last border, sized so the file comes out exactly W x H); the AI upscale proxy format (`_upscale_ctx`) |
+| Masks (masks.c) | `masks_mask` (shapes into a darktable flexi mask group, prefixed `immage: `, with its ranges as parametric elements in a product group, prefixed `immage ranges: `; `_flatten` reads any flexi tree back to shapes), `masks_masks` (with `merged_in`), `masks_mask_delete`, `masks_mask_rename`, `masks_attach_mask`. The [mask anchor](masks.md#where-the-instances-run), `colorbalancergb`, is where every mask's instances run, so a range sampled at its output holds for all of them. `masks_combine`: a flexi sum of the masks' groups, each at its opacity (prefixed `immage combined: `), with the members' ranges, driving a shared instance, which `masks_attach_mask` attaches only to a combined mask; `_combined_member_changed` keeps it current when a member is reshaped or deleted. `_prune_off` keeps a mask's own switched-off instances (`_holds_mask_settings`). `masks_named_instance` places a mask's own instance after the shared ones of its module |
+| AI (`HAVE_AI`, ai.c, device.c) | `_ai_object` (SAM), `_ai_mask` (sky, subject, ...), `_ai_depth` (with a tag, the main loop renders the model's input unless its last result holds, `_ai_job`, and answers; the model runs on the AI thread, `ai_run`, which answers again with the tag); outlines are traced at `_TRACE_SIZE` against the photo rendered at it (`_guide`, which the models' inputs are made from), moved onto its edges first by `_snap_edges`, a guided filter kept to where the model is unsure (`_trace_json`), `ai_denoise` (darktable's raw denoise into a DNG, repeating `src/libs/neural_restore.c`'s job on its public calls; with a tag, the main loop snapshots the edit and answers, and the denoise runs on its own thread, `ai_denoise_run`, answering again with the tag), `ai_denoise_preview` (its 1:1 before and after, as the lib's raw preview makes them); on Linux, `device_ort_exports` keeps darktable from probing a GPU provider the bundled ONNX Runtime lacks, and `main()` sets the provider to CPU when it has none |
+| Spots (masks.c) | `masks_spots_set`, `masks_spots_json`, `masks_spot_source` (the retouch module) |
+| Ranges and zones (masks.c) | `masks_sample` (at the mask anchor, or with `stage` "negadoctor" at negadoctor's input), `masks_range_map`, `masks_zones`, `masks_mask_map`, `masks_tone_key`, `masks_agx_auto` |
+| Looks (looks.c) | `looks_look`, `looks_look_amount` (a darktable style, its instances scaled) |
+| Save (session.c, library.c) | `session_save` (history to the database, compressed, history hash and `darktable\|changed`, XMP sidecar written). Every engine sidecar write goes through `_write_xmp_whole`: darktable's `dt_exif_xmp_write` empties the file and leaves its writes unchecked, so it writes into a copy (`<name>.xmp.immage-tmp`, seeded with the old sidecar so unknown keys survive), checks the packet's end, fsyncs, and renames it over the old one. The error names the file and the reason (`library_sidecar_error`). `verify/sidecar-safety.py` tests this |
 
-The commands `_handle()` serves:
+The commands in the `_commands[]` table, each a `_cmd_<name>` handler in main.c that calls the feature code in its file:
 
 | Group | Commands |
 |---|---|
@@ -478,7 +512,7 @@ The commands `_handle()` serves:
 | Edit | `set`, `get`, `render`, `preview`, `look`, `look_amount` |
 | Masks and spots | `mask`, `combine`, `masks`, `mask_rename`, `mask_delete`, `mask_map`, `range_map`, `sample`, `spots`, `spots_enable`, `spot_source` |
 | Tone | `tone_key`, `agx_auto`, `zones` |
-| Lens Corrections | `lenses` (`_lens_menu`: the matched lens and the camera's Lensfun lenses, from [lenses.cc](../../../engine/lenses.cc), which loads its own lfDatabase the way lens.cc's `init_global()` does); the virtual field `lens_pick` of the `lens` module (`_write_lens_pick`, `_read_field`): 0 is the EXIF match (default params), else `lenses_hash()` of the chosen lens, written as the params' `lens` name and `target_geom`, with `method` set to Lensfun (a raw with embedded correction defaults to the embedded method, which ignores the database); 0 restores the default params' three. Shown by [LensPicker.tsx](../../src/LensPicker.tsx) (`matchLenses` filters by words), which refetches when the photo or the pick changes |
+| Lens Corrections | `lenses` (`session_lens_menu` in session.c: the matched lens and the camera's Lensfun lenses, from [lenses.cc](../../../engine/lenses.cc), which loads its own lfDatabase the way lens.cc's `init_global()` does); the virtual field `lens_pick` of the `lens` module (`_write_lens_pick` and `session_read_field` in session.c): 0 is the EXIF match (default params), else `lenses_hash()` of the chosen lens, written as the params' `lens` name and `target_geom`, with `method` set to Lensfun (a raw with embedded correction defaults to the embedded method, which ignores the database); 0 restores the default params' three. Shown by [LensPicker.tsx](../../src/LensPicker.tsx) (`matchLenses` filters by words), which refetches when the photo or the pick changes |
 | AI | `ai_object`, `ai_mask`, `ai_depth`, `ai_denoise`, `ai_denoise_preview` |
 
 It relies on these parts of darktable (paths inside `darktable/`):
@@ -507,7 +541,7 @@ darktable is, and it has AI features when darktable is configured with
 | File | Responsibility |
 |---|---|
 | `src/CMakeLists.txt` | `add_subdirectory(${IMMAGE_ROOT}/engine)`, from [patches/darktable-engine.patch](../../../patches/darktable-engine.patch). |
-| `src/develop/pixelpipe_hb.c` | `important_input` also holds without a GUI, for the module the engine's `_set` names in `history_last_module`, so a GPU drag's frames start from the cached input of the dragged module rather than the raw. darktable only does this for the focused module of its GUI. |
+| `src/develop/pixelpipe_hb.c` | `important_input` also holds without a GUI, for the module the engine's `session_set` names in `history_last_module`, so a GPU drag's frames start from the cached input of the dragged module rather than the raw. darktable only does this for the focused module of its GUI. |
 | `src/common/exif.cc`, `src/imageio/imageio_tiff.c` | Photos are read, not memory-mapped: exiv2 parses a file read whole (`_open_read`), and libtiff opens with `"rbm"`. A mapped file on a network share that drops, as when the computer sleeps, kills the engine with SIGBUS; a read only fails. verify's [trapmap.c](../../../verify/trapmap.c) checks it. |
 
 ## How an operation moves through the app
@@ -520,7 +554,7 @@ darktable is, and it has AI features when darktable is configured with
 2. **Move a slider.**
    1. `Slider` calls `change()`, which records an undo step, updates `values` and calls `Session.set`.
    2. During pointer/wheel interaction, `Session` waits until the next display frame before dispatching; discrete keyboard/undo edits dispatch immediately. Release cancels the queued callback and requests the latest exact frame, including when no draft has been shown. A frame whose view changed while it rendered (a draft finishing after release) is discarded and sets `needRender`, so the pump renders the current view: a click on a track, let go while its draft was in flight, left the edit unrendered until the next input. `pump()` sends `render` for `currentView()` with each dirty module's edit (`edits`), which Rust sends to the engine as `set`s ahead of the render: one call from the page however many modules moved, as a call cost 20 ms or more on Linux while the page drew. Moves made meanwhile only mark modules dirty, so the next round sends the latest values once.
-   3. In the engine, `_set` writes the fields and adds a history item, then `_render` calls `dt_dev_pixelpipe_process`. Only modules from the changed one onwards run; the rest come from the pipe cache.
+   3. In the engine, `session_set` writes the fields and adds a history item, then `session_render` calls `dt_dev_pixelpipe_process`. Only modules from the changed one onwards run; the rest come from the pipe cache.
    4. The frame is written to `frame.rgba`, read back by Rust and returned with its header (on Windows and Linux, in shared memory beside it).
    5. `drawFrame` puts it on the canvas and computes the histogram. See [the sequence diagram](diagrams/slider-sequence.svg).
 3. **Drag and release.**
@@ -531,7 +565,7 @@ darktable is, and it has AI features when darktable is configured with
 4. **Masks.**
    1. A shape goes into the session's mask list, and `pump()` sends `mask_shapes` (the engine's `mask`: a darktable mask group).
    2. A local slider sets its `localMaps` module on an instance named for the mask (`set_params` with `instance` and `mask`), placed after the anchor.
-   3. For a `merge` module, `planMerge` decides which masks share. Their own instances are sent switched off, holding their settings, and the shared ones follow: `combine` for each combined mask's members, then `set_params` on its instance (`immage local: <op> <k>`). Only what changed since the last plan is sent. A photo's first mask edit sends every mask again, which turns a photo from before sharing into one that shares; opening it or the Before view does not (`Session.edited`). During a drag, the mask being edited is lifted out of the combined masks onto its own instances (`Session.lifted`), and it joins again before the frame at release. Its own instances run after the shared ones (`_named_instance`), so a drag frame reruns only them and what follows, while the other masks' combined mask stays in darktable's drawn mask cache.
+   3. For a `merge` module, `planMerge` decides which masks share. Their own instances are sent switched off, holding their settings, and the shared ones follow: `combine` for each combined mask's members, then `set_params` on its instance (`immage local: <op> <k>`). Only what changed since the last plan is sent. A photo's first mask edit sends every mask again, which turns a photo from before sharing into one that shares; opening it or the Before view does not (`Session.edited`). During a drag, the mask being edited is lifted out of the combined masks onto its own instances (`Session.lifted`), and it joins again before the frame at release. Its own instances run after the shared ones (`masks_named_instance`), so a drag frame reruns only them and what follows, while the other masks' combined mask stays in darktable's drawn mask cache.
    4. AI masks first ensure the model (`ai_model_ensure`, event `ai-model`), then `ai_mask` / `ai_object` return paths that become shapes. The model runs on the engine's AI thread, so editing goes on meanwhile; an outline that comes back after the photo was left is dropped (`runAi`). A model the engine cannot load is deleted and downloaded again once (`withModel`, `ai_model_reinstall`).
 5. **Save.**
    1. 600 ms after the last edit, `Session.scheduleSave` sends `save`. The engine writes history to the database, compresses it and writes the XMP sidecar beside the photo.
@@ -539,12 +573,12 @@ darktable is, and it has AI features when darktable is configured with
 6. **Export.**
    1. `ExportDialog` asks what it needs, then `runExport` ([background.ts](../../src/background.ts)) calls `export_images` and the dialog closes.
    2. Rust sends `export_hold`: the engine takes a snapshot of the open photo's edit (a darktable duplicate at a version from `_SNAPSHOT_VERSION` up, which listings leave out), and of each other photo as it is opened (`_hold_open`) or reached. Each photo is exported as it was edited when the export was asked for.
-   3. Each photo is a tagged `export` on the engine's export thread (`_export_run`), outside the engine mutex, so editing goes on. The frame and captions become a temporary darktable style (borders plus a watermark SVG), and AI upscale wraps the chosen format. `export_release` then drops what is left of the job's snapshots.
+   3. Each photo is a tagged `export` on the engine's export thread (`export_run`), outside the engine mutex, so editing goes on. The frame and captions become a temporary darktable style (borders plus a watermark SVG), and AI upscale wraps the chosen format. `export_release` then drops what is left of the job's snapshots.
    4. For Immich, Rust uploads each file and adds it to the album. Progress comes as `export-progress`, shown on the activity line with a Stop (`export_cancel`) and then a summary.
 7. **Import a folder.**
    1. `openFolder` calls `open_folder`. For a folder read before, Rust first sends the folder's snapshot (`known`): its photos as the last whole read found them, from the runtime folder, so the filmstrip fills before the folder is even listed. Each known photo shows its last thumbnail (`thumb_known`, by its path alone, without looking at the file, which on a network share is a round trip each) and its rating, labels and capture time, through the filters, in the order the read will end with (`withKnown`), and opens on a click.
-   2. Rust walks the folder, skipping packages and sidecars, from the listing alone (`listing.rs`, no look at each file), keeping each file's size and time (`cache::Listed`), and sends engine `import` in batches sized to take about 150 ms, reported as `folder-progress` at most once a second (`Progress`): each event redraws the filmstrip, a cell for every file. The batches are tagged and read on the engine's import thread (`_import_run`), so editing goes on meanwhile. Known photos no longer listed go; a photo read takes its known cell's place, and its thumbnail is then checked against the file's size and time as listed (`thumb_cached`), else rendered again. A thumbnail rendered takes the file as it is then (`cache::refresh`), so an edit saved here is not checked against the listing's sidecar.
-   3. A newer folder request cancels the older one through `folder_token`. A whole read writes the folder's snapshot. Each batch carries the token as `job` and a `budget` of twice `IMPORT_TARGET`; the engine's `_import_files` stops before its next file once the request reader has queued another read's batch (`_import_latest`, the newest job rather than the highest, as the client's tokens restart on reload) or the budget has passed after at least one file, and replies with `done`, the files it went through. Rust sends the rest in the next batch. Without this, a network share's batches left queued on the single import thread, each holding `_import_lock` per file, held up the next folder's import and `open` (whose `_import` takes the same lock) for minutes on wifi. `[engine] import` in `engine.log` is logged as a batch is queued, `[engine] imported k of n in t ms` as it finishes. Foreground first: the import and thumbnail threads call `_background_yield()` before each file or thumbnail and wait while the main loop is inside `_handle`, has requests queued, or finished one under 300 ms ago (`_foreground`, `_fg_busy`, `_fg_last`), for at most 2 s so a batch still progresses and stays inside Rust's 30 s timeout. A zoom or edit render therefore does not compete with a folder read for CPU or `_import_lock`. Exports, merges and prints yield the same way before each photo (`_export_run`, `_sheet_take`, each HDR bracket in `_merge_step`, each panorama frame), prefetch before each decode, and AI Denoise once before its model starts (darktable's `dt_restore_raw_*` take no per-tile hook). Those threads also call `_background_priority()` once: nice 10 on Linux, `QOS_CLASS_UTILITY` on macOS, `THREAD_PRIORITY_BELOW_NORMAL` on Windows. Their pools are exclusive, since GLib shares non-exclusive pools' threads and Linux cannot raise a thread's nice back; imports, thumbnails and `_ai_run` (AI selections the user waits on) keep normal priority. On Linux libgomp builds each thread's OpenMP team from that thread, so an export's workers inherit nice 10 (seen in `/proc/<pid>/task/*/stat` during an export); macOS libomp shares workers and Windows threads do not inherit priority, so there only the background thread itself is lowered (unmeasured). `python3 verify/background-priority.py --load export` measured, in the Linux VM (8 vCPU, CPU only, 4 raw exports): busy zoom render median 587 -> 375 ms, edit 310 -> 152 ms; the export under foreground work 1.37x -> 2.02x its time alone; output pixels identical. Verify with `python3 verify/background-priority.py` (headless, no GUI): it times 100% zoom renders of an edited photo idle and while 120 files import and thumbnail, and fails if the median slows more than 1.5x; before the change it measured 1.59x, after 1.04x. Under back-to-back renders the background work waits its 2 s cap per file, so it finishes slowly until the user pauses. Verify headlessly by queuing a large batch with one `job`, then a small one with another: the first replies with `done` below its file count, and a 1 ms `budget` imports one file per batch. The budget and job checks only run between files, so a read that blocks inside one file (a half-dead SMB share held one for 129 s, with `_import_lock` held) is cut short differently: `_import_files` first has `_file_answers()` read the file's first bytes and its `.xmp`'s on a throwaway thread, waited on for `probe_ms` (default 5 s, `_PROBE_TIMEOUT_US`) before `_import` takes the lock. A file that does not answer is left out of `images` and listed in the reply's `unanswered`, and its folder is skipped at once for 30 s (`_quarantine`); the abandoned thread ends when the mount answers or fails. Rust drops to batches of one after an `unanswered` and returns the list from `open_folder`; skipped files come back when the folder is read again. `python3 verify/import-stall.py` (headless, POSIX) uses a FIFO sidecar as the stall and checks the skip, the quarantine, that `open` is not blocked and that other folders import.
+   2. Rust walks the folder, skipping packages and sidecars, from the listing alone (`listing.rs`, no look at each file), keeping each file's size and time (`cache::Listed`), and sends engine `import` in batches sized to take about 150 ms, reported as `folder-progress` at most once a second (`Progress`): each event redraws the filmstrip, a cell for every file. The batches are tagged and read on the engine's import thread (`library_import_run`), so editing goes on meanwhile. Known photos no longer listed go; a photo read takes its known cell's place, and its thumbnail is then checked against the file's size and time as listed (`thumb_cached`), else rendered again. A thumbnail rendered takes the file as it is then (`cache::refresh`), so an edit saved here is not checked against the listing's sidecar.
+   3. A newer folder request cancels the older one through `folder_token`. A whole read writes the folder's snapshot. Each batch carries the token as `job` and a `budget` of twice `IMPORT_TARGET`; the engine's `library_import_files` stops before its next file once the request reader has queued another read's batch (`library_import_latest`, the newest job rather than the highest, as the client's tokens restart on reload) or the budget has passed after at least one file, and replies with `done`, the files it went through. Rust sends the rest in the next batch. Without this, a network share's batches left queued on the single import thread, each holding `_import_lock` per file, held up the next folder's import and `open` (whose `library_import` takes the same lock) for minutes on wifi. `[engine] import` in `engine.log` is logged as a batch is queued, `[engine] imported k of n in t ms` as it finishes. Foreground first: the import and thumbnail threads call `_background_yield()` before each file or thumbnail and wait while the main loop is inside `_handle`, has requests queued, or finished one under 300 ms ago (`_foreground`, `_fg_busy`, `_fg_last`), for at most 2 s so a batch still progresses and stays inside Rust's 30 s timeout. A zoom or edit render therefore does not compete with a folder read for CPU or `_import_lock`. Exports, merges and prints yield the same way before each photo (`export_run`, `_sheet_take`, each HDR bracket in `_merge_step`, each panorama frame), prefetch before each decode, and AI Denoise once before its model starts (darktable's `dt_restore_raw_*` take no per-tile hook). Those threads also call `_background_priority()` once: nice 10 on Linux, `QOS_CLASS_UTILITY` on macOS, `THREAD_PRIORITY_BELOW_NORMAL` on Windows. Their pools are exclusive, since GLib shares non-exclusive pools' threads and Linux cannot raise a thread's nice back; imports, thumbnails and `ai_run` (AI selections the user waits on) keep normal priority. On Linux libgomp builds each thread's OpenMP team from that thread, so an export's workers inherit nice 10 (seen in `/proc/<pid>/task/*/stat` during an export); macOS libomp shares workers and Windows threads do not inherit priority, so there only the background thread itself is lowered (unmeasured). `python3 verify/background-priority.py --load export` measured, in the Linux VM (8 vCPU, CPU only, 4 raw exports): busy zoom render median 587 -> 375 ms, edit 310 -> 152 ms; the export under foreground work 1.37x -> 2.02x its time alone; output pixels identical. Verify with `python3 verify/background-priority.py` (headless, no GUI): it times 100% zoom renders of an edited photo idle and while 120 files import and thumbnail, and fails if the median slows more than 1.5x; before the change it measured 1.59x, after 1.04x. Under back-to-back renders the background work waits its 2 s cap per file, so it finishes slowly until the user pauses. Verify headlessly by queuing a large batch with one `job`, then a small one with another: the first replies with `done` below its file count, and a 1 ms `budget` imports one file per batch. The budget and job checks only run between files, so a read that blocks inside one file (a half-dead SMB share held one for 129 s, with `_import_lock` held) is cut short differently: `library_import_files` first has `_file_answers()` read the file's first bytes and its `.xmp`'s on a throwaway thread, waited on for `probe_ms` (default 5 s, `_PROBE_TIMEOUT_US`) before `library_import` takes the lock. A file that does not answer is left out of `images` and listed in the reply's `unanswered`, and its folder is skipped at once for 30 s (`_quarantine`); the abandoned thread ends when the mount answers or fails. Rust drops to batches of one after an `unanswered` and returns the list from `open_folder`; skipped files come back when the folder is read again. `python3 verify/import-stall.py` (headless, POSIX) uses a FIFO sidecar as the stall and checks the skip, the quarantine, that `open` is not blocked and that other folders import.
    4. Thumbnails follow from `ThumbLoader` (engine `thumb`) while the editor is idle.
 8. **Edit In.**
    1. `editIn` calls `plugin_watch` and `plugin_launch` with the plugin's id; Rust looks the program up in `plugins.json` and refuses files that are not regular photo files. No command takes a program path from the page.
@@ -597,6 +631,8 @@ darktable is, and it has AI features when darktable is configured with
 | `scripts/check_web_sinks.sh` | CI `checks` job and locally: fails on `innerHTML`, `dangerouslySetInnerHTML`, `eval(`, `new Function` and `document.write` in `app/src` and `immporter/src`. |
 | [verify/](../../../verify/README.md) | The release checks: the app's `Session` run under Node against the engine (`harness.mjs`, with `shim.mjs` for Tauri's invoke), every slider and mask slider measured, an edit saved and opened again, old edits rendered, a check per bug fixed and per decision about Immage's behavior, and the benchmark's main timings against the last run. |
 | [verify/print.py](../../../verify/print.py), [verify/print.test.mjs](../../../verify/print.test.mjs) | Print and soft proof: printer profiles, the proof's and gamut warning's pixels and frame hashes, PDF output and refused requests against the engine; the page layout and `Session.redraw()` after a proof through the app's code ([print.md](print.md)). |
+| [verify/engine-protocol.py](../../../verify/engine-protocol.py) | The engine's protocol, headless: sends every command in four states (no photo, photo open, unsaved, closed) and records the replies to a file (`--record FILE`) or compares them with one (`--compare FILE`), so a change to the engine's structure shows as a changed reply. |
+| [verify/engine-commands.test.mjs](../../../verify/engine-commands.test.mjs) | `node --test`, no engine needed (it is in CI): every command the Rust layer, the release checks and the benchmarks send is in the engine's `_commands[]` table. |
 | [benchmarking/](../../../benchmarking/README.md) | The engine benchmark (driven with the app's own manifest), the GUI benchmark's reports, the dashboard. |
 | `build/spike/*.py` | Untracked, local scripts that drive the engine headless, one per feature (masks, zones, frames, spots, AI). Useful patterns, not a suite. |
 | `darktable/src/tests/integration/` | darktable's pixel tests; run them when a change reaches the pixelpipe or `src/iop/`. |
@@ -743,7 +779,7 @@ checks TypeScript and the front-end bundle.
 [CaptureTimeDialog.tsx](../../src/CaptureTimeDialog.tsx) builds before/after
 entries for a shared offset, skipping invalid recorded times. App.tsx retains
 the last batch for confirmed restoration. Rust `capture_times` forwards to
-engine `_capture_times`, which checks expected times before writing sidecars.
+engine `library_capture_times`, which checks expected times before writing sidecars.
 [LocationEditor.tsx](../../src/LocationEditor.tsx) saves GPS through `meta_set`;
 [map_tiles.rs](../../src-tauri/src/map_tiles.rs) supplies the optional map tiles from a seven-day disk cache, with one shared HTTP client, a lock per tile (so a tile asked for twice is fetched once) and at most two downloads at a time.
 
@@ -790,9 +826,9 @@ preferences. Existing saved edits are untouched. Auto may request a small
 measurement preview; ordinary target edits do not render full previews.
 
 The Rust `paste_batch` command serializes each engine request. Engine
-`_paste_batch` supports `begin`, `commit`, `undo`, `redo`, `abort`, `release`.
+`session_paste_batch` supports `begin`, `commit`, `undo`, `redo`, `abort`, `release`.
 Begin validates all ids/paths/duplicates before taking private native history
-snapshots with `_snapshot`. Commit records the completed state. Restore copies
+snapshots with `library_snapshot`. Commit records the completed state. Restore copies
 full history, module order and mask data, restores baseline/current hashes and
 the edited tag, invalidates mipmaps and explicitly writes XMP. Sidecar failures
 are returned per image; failed recovery keeps the token so Undo can retry.
@@ -936,7 +972,7 @@ session; loupe updates add processing but do not independently reopen the file.
 
 ### Camera body filtering
 
-`engine/main.c::_image_json` sends `exif.body_serial` for folder and metadata
+`engine/library.c::library_image_json` sends `exif.body_serial` for folder and metadata
 replies. `engine/strip.cc::camera_body_serial` reads the original with Exiv2,
 under darktable's Exiv2 mutex: standard `Exif.Photo.BodySerialNumber`, then
 DNG `Exif.Image.CameraSerialNumber`, then Exiv2's camera serial easy accessor
