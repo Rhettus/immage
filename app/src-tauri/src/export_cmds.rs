@@ -13,7 +13,7 @@ use crate::AppState;
 use crate::plugins;
 use crate::engine;
 use crate::immich_upload;
-use crate::import_look;
+use crate::edit_cmds::import_look;
 use crate::bindings;
 use crate::frame_output;
 
