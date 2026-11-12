@@ -77,13 +77,15 @@ class Check(unittest.TestCase):
         # pin a copy of ai_cmds.rs to MODELS under tag t1, never the real file
         self.ai_rs = self.dir / "ai_cmds.rs"
         self.ai_rs.write_text(AI_RS.read_text())
-        self.run_script(self.MODELS, "t1", "--write")
+        # the version given, as CI checks out no darktable submodule to read it from
+        r = self.run_script(self.MODELS, "t1", "--write", "--darktable", "5.7.0")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
-    def run_script(self, models, tag, mode):
+    def run_script(self, models, tag, *args):
         versions = self.dir / "versions.json"
         versions.write_text(json.dumps({"models": models}))
         return subprocess.run(
-            [sys.executable, "-I", str(SCRIPT), mode, "--ai-rs", str(self.ai_rs),
+            [sys.executable, "-I", str(SCRIPT), *args, "--ai-rs", str(self.ai_rs),
              "--tag", tag, "--versions", str(versions)],
             capture_output=True, text=True)
 
