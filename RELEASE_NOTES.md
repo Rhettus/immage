@@ -7,130 +7,65 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
-- GUI benchmark reports no longer record the computer's name. They identify
-  the computer by an anonymous id instead, so a report can be shared without
-  naming it.
-- Help > Create Support Bundle… (also offered when the engine stops) saves a
-  .zip with the engine log, versions, machine details and the preferences you
-  set, for a bug report. User and computer names, folders, photo names, emails and
-  credentialed addresses are replaced first, you can review the text and leave
-  out any line, and nothing is uploaded.
-- Preferences has one Memory setting instead of three: it sizes the render
-  caches, the views already shown and the thumbnails from the computer's
-  memory, so a 32 GB computer keeps more and an 8 GB one less, without setting
-  each by hand.
-- If the editing engine stops or crashes, Immage starts it again by itself
-  and reopens the folder or search you were viewing, with its filter, and the
-  photo you had open as of its last save. Edits from the last second or so
-  before the crash may be lost, and exports that were running can be run
-  again.
-- When the engine takes much longer than usual to answer, Immage offers Wait
-  or Restart, so a stuck engine can be restarted without closing Immage.
-- The saved Immich API key is used only with the server it was saved for.
-  Changing the server URL or the self-signed certificate setting asks for the
-  key again, and Immich requests no longer follow redirects, so a redirected
-  server address must be entered as its final address.
-- The importer reads only from cards, drives and folders you chose, and
-  writes only into destinations you chose. Of the destinations you used
-  before, only the current one is kept; choose the others again once.
-- Preferences › Modules lists tools in the order of their sliders in the
-  panels and in a mask, under both Global and Masks.
-- Advanced settings are hidden behind a sliders icon in each panel's title,
-  off by default, instead of separate Advanced folds under Clarity, Texture,
-  Whites and Zone System. Each panel remembers whether it shows them. Film
-  Simulation and Negative show theirs as a step instead: Darkroom and Fine
-  Color.
-- Whites has a Highlight Brilliance setting under AgX, among Basic's advanced
-  settings, for how much Whites brightens the brightest tones. Lowering it
-  lets bright scenes such as snow get brighter before they clip.
-- Film Simulation and Negative are numbered steps: one is open at a time and
-  the others fold to a line of their settings. Film Simulation's Stock and
-  Paper steps show a small preview of your photo with each film and paper, so
-  you can compare them before choosing; hold the pointer over one to preview
-  it over the whole photo.
-- Negative's steps after the film border stay locked until you pick the border,
-  so the conversion is set up first. Export to Library and Turn Off Conversion
-  are in the last step.
-- Film Simulation opens straight into its numbered steps. Its first step
-  downloads the film data, or converts the photo once the data is there, and
-  a "Start from a preset" menu can convert it with a preset instead.
-- AI models for masks, AI Denoise and upscaling are installed only if they
-  match the exact files this version of Immage expects. A model
-  changed on the download server is refused, with a message that an update
-  of Immage is needed.
-- Export to JPEG XL, with quality (100 for lossless) and 8 to 16 bit depth.
-- Masks: the … menu can duplicate a mask, or duplicate and invert it,
-  without its adjustments, and Reset Mask Adjustments clears a mask's
-  adjustments while keeping its shapes and settings.
-- Immage's settings, including preferences, library folders, panel layout,
-  export and print settings, themes and the tour, are kept in one settings.json
-  file in the app data folder. The file survives a reset of the web view's
-  storage. Settings from earlier versions carry over on first start.
-- Preferences > General > Backup saves your settings, presets, looks, Edit In
-  plugins and keywords to one .zip, where you choose which parts to include,
-  and restores the parts you choose from a backup. Restoring replaces the
-  current parts, after keeping a copy of them; photos are not included, so
-  back those up with your photos.
+- Help > Create Support Bundle… saves a .zip for bug reports, with personal
+  details replaced and every line reviewable. Nothing is uploaded.
+- GUI benchmark reports identify the computer by an anonymous id, not its name.
+- One Memory setting in Preferences replaces three, sized from the computer's
+  memory.
+- If the engine crashes, Immage restarts it and reopens your folder, filter
+  and photo as last saved.
+- A slow engine offers Wait or Restart, without closing Immage.
+- The Immich API key is used only with its own server. Enter a redirected
+  server by its final address.
+- The importer reads and writes only the cards, drives and folders you chose.
+  Earlier destinations other than the current one need choosing again once.
+- Preferences › Modules lists tools in panel order.
+- Advanced settings sit behind a sliders icon in each panel's title, remembered
+  per panel.
+- Whites has a Highlight Brilliance setting under AgX, so bright scenes such
+  as snow can brighten further before clipping.
+- Film Simulation and Negative are numbered steps. Film and paper tiles show a
+  preview of your photo, and Negative's later steps wait for the film border.
+- Film Simulation opens straight into its steps, with a "Start from a preset"
+  menu.
+- AI models install only if they match the files this version expects.
+- Export to JPEG XL, lossless at quality 100, in 8 to 16 bit.
+- Masks: duplicate a mask, or duplicate and invert it, without its
+  adjustments, and Reset Mask Adjustments.
+- Settings are kept in one settings.json file, carried over from earlier
+  versions.
+- Preferences > General > Backup saves and restores settings, presets, looks,
+  plugins and keywords as one .zip.
 
 Performance
 
-- Exports, merges, prints, AI Denoise and the read-ahead of nearby raws give
-  way to your editing: they pause briefly between photos while you work and
-  run at a lower priority, so the photo responds faster. With an export
-  running on Linux, renders while editing took about half as long as before;
-  the export itself takes longer while you edit, and runs at full speed when
-  you stop.
-- Immage opens a little sooner: it no longer waits a fixed moment for the
-  editing engine to start.
-- The location map downloads two tiles at a time instead of one, reuses its
-  connection to the map server, and shows tiles it already has without
-  waiting for downloads.
-- Editing uses less memory: Immage gives back what a full-size view or a
-  GPU check needed as soon as it is done, and a pause no longer clears the
-  work it keeps for the next edit, so the first edit after a pause is as
-  quick as the rest. Reading ahead pauses during exports and when the
-  computer is short of memory, and then Immage also lets go of views
-  already shown and of thumbnails scrolled out of sight.
+- Exports, merges, prints, AI Denoise and read-ahead give way while you edit,
+  so renders take about half as long during an export.
+- Immage opens a little sooner.
+- The location map loads tiles faster and shows cached ones at once.
+- Editing uses less memory, and the first edit after a pause is as quick as
+  the rest.
 
 Bug fixes
 
 - The side panel no longer stays scrolled past its end when its content
-  shrinks, such as after hiding a mask's advanced settings, which left the top
-  of the panel out of reach.
-- A save that fails no longer damages the photo's sidecar. A full disk could
-  leave it cut short while the save reported success, and a crash during a
-  save could leave it empty, losing the edit. The old sidecar now stays whole
-  until the new one is complete. A failed save shows a notice over the photo,
-  naming the sidecar and the reason, such as a read-only folder or a full
-  disk, until a save works.
-- Hovering a film or paper tile previews it at the size the photo is shown
-  at, so grain and detail look as they will once chosen, instead of soft.
-- Editing a very large photo, such as 50 megapixels, no longer uses more
-  memory with each edit. Since 0.41.0 every change kept another full-size copy
-  of the photo in memory, adding hundreds of MB per edit until the computer ran
-  short.
-- A photo whose file name is close to the 255-byte limit (241 to 251 bytes)
-  can save its edits again. Saving made a temporary file with a longer name
-  than the folder allows, so the save failed.
-- Moving a photo to the Trash now also takes its duplicate-version sidecars
-  when the file name contains [, *, ? or a backslash. They were left behind,
-  and a later photo with the same name could pick them up as its own edits.
-- Asking for the details of a photo that is no longer in the library no
-  longer leaves the editing engine stuck, which then restarted by itself
-  and reopened the photo you had.
-- Importing a damaged or non-image file, such as random bytes named .NEF or
-  .png, no longer crashes the editing engine.
-- Adobe RGB, Display P3 and ProPhoto exports to JPEG, TIFF and WebP now embed
-  their color profile, so other apps show the right colors. They were saved
-  without one and looked wrong where the app assumed sRGB.
-- An export that fails partway, such as on a full disk, no longer leaves a
-  cut-off file behind, and no longer destroys the file it was replacing. The
-  new file is written beside it and takes its place only once complete.
-- Exports with several frame borders, or with borders and a fixed canvas,
-  now come out at the asked size with each border in its place. With three
-  or more, counting the canvas as one, borders could land in the wrong order
-  or go missing, and the file came out the wrong size. A small photo on a fixed canvas many times its
-  size now fills the canvas exactly instead of coming out smaller.
+  shrinks.
+- A failed save no longer damages the sidecar; a notice says why it failed.
+- Film and paper hover previews are sharp at the photo's shown size.
+- Very large photos, such as 50 MP, no longer use more memory with each edit
+  (since 0.41.0).
+- Photos with file names of 241 to 251 bytes can save their edits again.
+- Moving a photo to the Trash also takes its version sidecars when its name
+  contains [, *, ? or a backslash.
+- Asking for details of a photo no longer in the library no longer stalls the
+  engine.
+- Importing a damaged or non-image file no longer crashes the engine.
+- Adobe RGB, Display P3 and ProPhoto exports to JPEG, TIFF and WebP embed their
+  color profile.
+- A failed export, such as on a full disk, leaves no partial file and keeps the
+  file it was replacing.
+- Frames with three or more borders, counting a fixed canvas, keep their order
+  and size, and a small photo fills a large canvas exactly.
 
 ## 0.44.1
 
