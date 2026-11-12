@@ -7,35 +7,35 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
-- Help > Create Support Bundle… saves a .zip for bug reports, with personal
-  details replaced and every line reviewable. Nothing is uploaded.
-- GUI benchmark reports identify the computer by an anonymous id, not its name.
-- One Memory setting in Preferences replaces three, sized from the computer's
-  memory.
+- Film Simulation and Negative are numbered steps. Film and paper tiles show a
+  preview of your photo, and Negative's later steps wait for the film border.
+- Film Simulation opens straight into its steps, with a "Start from a preset"
+  menu.
+- Export to JPEG XL, lossless at quality 100, in 8 to 16 bit.
 - If the engine crashes, Immage restarts it and reopens your folder, filter
   and photo as last saved.
+- Advanced settings sit behind a sliders icon in each panel's title, remembered
+  per panel.
+- Masks: duplicate a mask, or duplicate and invert it, without its
+  adjustments, and Reset Mask Adjustments.
+- Whites has a Highlight Brilliance setting under AgX, so bright scenes such
+  as snow can brighten further before clipping.
+- Preferences > General > Backup saves and restores settings, presets, looks,
+  plugins and keywords as one .zip.
 - A slow engine offers Wait or Restart, without closing Immage.
+- One Memory setting in Preferences replaces three, sized from the computer's
+  memory.
+- Help > Create Support Bundle… saves a .zip for bug reports, with personal
+  details replaced and every line reviewable. Nothing is uploaded.
+- Settings are kept in one settings.json file, carried over from earlier
+  versions.
+- AI models install only if they match the files this version expects.
 - The Immich API key is used only with its own server. Enter a redirected
   server by its final address.
 - The importer reads and writes only the cards, drives and folders you chose.
   Earlier destinations other than the current one need choosing again once.
 - Preferences › Modules lists tools in panel order.
-- Advanced settings sit behind a sliders icon in each panel's title, remembered
-  per panel.
-- Whites has a Highlight Brilliance setting under AgX, so bright scenes such
-  as snow can brighten further before clipping.
-- Film Simulation and Negative are numbered steps. Film and paper tiles show a
-  preview of your photo, and Negative's later steps wait for the film border.
-- Film Simulation opens straight into its steps, with a "Start from a preset"
-  menu.
-- AI models install only if they match the files this version expects.
-- Export to JPEG XL, lossless at quality 100, in 8 to 16 bit.
-- Masks: duplicate a mask, or duplicate and invert it, without its
-  adjustments, and Reset Mask Adjustments.
-- Settings are kept in one settings.json file, carried over from earlier
-  versions.
-- Preferences > General > Backup saves and restores settings, presets, looks,
-  plugins and keywords as one .zip.
+- GUI benchmark reports identify the computer by an anonymous id, not its name.
 
 Performance
 
