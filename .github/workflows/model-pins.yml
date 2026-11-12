@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the Immage authors
+
+name: AI model pins
+
+# darktable's model repository can republish a release tag (the nightly ones
+# are), after which the hashes pinned in ai_cmds.rs refuse the new files.
+# Depends on the network and not on a commit, so it runs daily, not per build.
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: compare the pinned models with darktable's repository
+        run: python3 -I scripts/pin_models.py --check

@@ -109,6 +109,12 @@ Stop expanding equivalent diagnostic matrices once they no longer inform adoptio
    Run `python3 -I scripts/pin_models.py --write` to update the AI model table
    in `ai_cmds.rs` for the new darktable version, then check the diff for new
    model ids and changed hashes.
+   The daily "AI model pins" workflow (`.github/workflows/model-pins.yml`, or
+   `python3 -I scripts/pin_models.py --check`) fails when darktable's model
+   repository serves other models or hashes than this table, for instance
+   after a republished nightly tag; until an app update carries the new table,
+   first installs of AI features fail. Check the new models, run
+   `--write`, and release.
 4. Repair what broke (below), and run the checks under [Verify](#verify).
 5. Commit the bump on its own, with the repairs in their own commits
    before it, so every commit builds:

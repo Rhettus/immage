@@ -64,5 +64,57 @@ class PinModels(unittest.TestCase):
             self.assertRegex(sha, r"[0-9a-f]{64}", mid)
 
 
+class Check(unittest.TestCase):
+    MODELS = {
+        "alpha": {"sha256": f"sha256:{SHA_A}", "size": 10},
+        "zeta": {"sha256": f"sha256:{SHA_B}", "size": 20},
+    }
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="immage-pin-test-")
+        self.addCleanup(self.temp.cleanup)
+        self.dir = Path(self.temp.name)
+        # pin a copy of ai_cmds.rs to MODELS under tag t1, never the real file
+        self.ai_rs = self.dir / "ai_cmds.rs"
+        self.ai_rs.write_text(AI_RS.read_text())
+        self.run_script(self.MODELS, "t1", "--write")
+
+    def run_script(self, models, tag, mode):
+        versions = self.dir / "versions.json"
+        versions.write_text(json.dumps({"models": models}))
+        return subprocess.run(
+            [sys.executable, "-I", str(SCRIPT), mode, "--ai-rs", str(self.ai_rs),
+             "--tag", tag, "--versions", str(versions)],
+            capture_output=True, text=True)
+
+    def check(self, models, tag="t1"):
+        return self.run_script(models, tag, "--check")
+
+    def test_match(self):
+        r = self.check(self.MODELS)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("model pins match t1", r.stdout)
+
+    def test_changed_sha(self):
+        models = {**self.MODELS, "zeta": {"sha256": f"sha256:{SHA_A}", "size": 20}}
+        r = self.check(models)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("zeta", r.stdout)
+        self.assertNotIn("alpha", r.stdout)
+        self.assertIn("pin_models.py --write", r.stdout)
+
+    def test_added_and_removed(self):
+        models = {"alpha": self.MODELS["alpha"], "newbie": {"sha256": f"sha256:{SHA_A}", "size": 1}}
+        r = self.check(models)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("added: newbie", r.stdout)
+        self.assertIn("removed: zeta", r.stdout)
+
+    def test_changed_tag(self):
+        r = self.check(self.MODELS, "t2")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("t1 -> t2", r.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
