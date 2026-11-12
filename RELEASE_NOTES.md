@@ -96,6 +96,10 @@ Bug fixes
   disk, until a save works.
 - Hovering a film or paper tile previews it at the size the photo is shown
   at, so grain and detail look as they will once chosen, instead of soft.
+- Editing a very large photo, such as 50 megapixels, no longer uses more
+  memory with each edit. Since 0.41.0 every change kept another full-size copy
+  of the photo in memory, adding hundreds of MB per edit until the computer ran
+  short.
 
 ## 0.44.1
 

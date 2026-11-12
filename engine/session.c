@@ -954,8 +954,36 @@ static gboolean _preview_output_sink(void *user, const uint8_t *pixels, int w, i
 // megapixel frame against a limit of a few hundred MB. called once the frame
 // is out of the backbuf and any device is released. the newest line, which
 // is the backbuf, is never evicted (pixelpipe_cache.c, _get_oldest_cacheline)
+//
+// the base and check pipes keep only their two newest important lines (the
+// ones a repeat render can reuse): checkmem evicts only lines aged past 1,
+// and important ones stay negative, so a 50 megapixel base pipe piled up one
+// ~800 MB line per edit. an important line's age is `used` counting up from
+// -entries, so the two most negative are the newest; older ones are demoted
+// to 2 for checkmem to take
 void session_settle(dt_dev_pixelpipe_t *pipe)
 {
+  if(pipe == &_s.base.pipe || pipe == &_s.check.pipe)
+  {
+    dt_dev_pixelpipe_cache_t *cache = &pipe->cache;
+    int keep[2] = { -1, -1 };
+    for(int k = DT_PIPECACHE_MIN; k < cache->entries; k++)
+    {
+      if(cache->used[k] >= 0) continue;
+      if(keep[0] < 0 || cache->used[k] < cache->used[keep[0]])
+      {
+        if(keep[1] >= 0) cache->used[keep[1]] = 2;
+        keep[1] = keep[0];
+        keep[0] = k;
+      }
+      else if(keep[1] < 0 || cache->used[k] < cache->used[keep[1]])
+      {
+        if(keep[1] >= 0) cache->used[keep[1]] = 2;
+        keep[1] = k;
+      }
+      else cache->used[k] = 2;
+    }
+  }
   dt_dev_pixelpipe_cache_checkmem(pipe, FALSE);
 }
 
