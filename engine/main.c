@@ -418,6 +418,12 @@ static gboolean _cmd_keywords(JsonObject *req, JsonBuilder *b, char **err)
   return TRUE;
 }
 
+static gboolean _cmd_data_backup(JsonObject *req, JsonBuilder *b, char **err)
+{
+  if(!library_data_backup(req, err)) return FALSE;
+  return TRUE;
+}
+
 static gboolean _cmd_ai_accel(JsonObject *req, JsonBuilder *b, char **err)
 {
 #ifdef HAVE_AI
@@ -1191,6 +1197,7 @@ static const eng_cmd_t _commands[] =
   { "prefetch", _cmd_prefetch, 0 },
   { "meta", _cmd_meta, 0 },
   { "keywords", _cmd_keywords, 0 },
+  { "data_backup", _cmd_data_backup, 0 },
   { "ai_accel", _cmd_ai_accel, 0 },
   { "opencl", _cmd_opencl, 0 },
   { "parity", _cmd_parity, 0 },

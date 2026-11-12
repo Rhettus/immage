@@ -26,8 +26,9 @@ Development builds use `build/app-runtime/settings.json` in the checkout.
 The file holds your preferences, library folders and the last photo in each,
 panel layout and sizes, export and print settings, themes, the tour and splash
 state, and the performance HUD. It is kept apart from the web view's own
-storage, so it survives a reset of that storage, and you can copy it to keep a
-backup.
+storage, so it survives a reset of that storage. To keep it with your presets,
+looks and keywords, use **Backup** under General (see [Backup](#backup)), or
+copy the file while Immage is closed.
 
 On the first start of this version, Immage copies settings from the web view's
 storage into `settings.json`. That storage is left as it was, so an older
@@ -141,6 +142,49 @@ starts with default settings. To start with defaults on purpose, see
 **Startup**
 
 - **Quick start guide**: the short tour when Immage opens.
+
+### Backup
+
+**Backup** in Preferences > General has two buttons. Both work on one .zip
+file that you choose.
+
+**Back Up…** saves the parts you choose, each listed with its size. Only the
+parts that exist are offered:
+
+- **Preferences & library**: all of your settings, the same as in
+  `settings.json`.
+- **Edit presets** and **Export presets**: your Develop and export presets.
+- **Looks**: the looks in your looks folder, counted with their size.
+- **Edit In plugins**: your plugin list.
+- **Keywords & darktable data**: the keywords and darktable's library data.
+
+The file is named **Immage Backup YYYY-MM-DD.zip** by default. Photos and their
+XMP sidecars are never included: they are your files, so back them up with your
+photos. API keys for Immich and map search stay in the system keychain and are
+not in a backup, so enter them again on another computer.
+
+**Restore…** opens a backup. It shows the date and the version of Immage that
+made it, and lists only the parts the backup holds. Choose the parts to
+restore:
+
+- The chosen parts **replace** the current ones; parts you do not choose are
+  left alone.
+- Before anything is replaced, Immage keeps copies of the current files in
+  `backups/pre-restore-<date-time>/` in the app data folder (the same folder as
+  `settings.json`). The three newest copies are kept, so you can undo a restore
+  by putting the files back with Immage closed.
+- A backup made by a newer Immage shows a warning. A backup in a format this
+  version cannot read is refused with a message to update Immage.
+- A backup that is damaged or holds unexpected files is refused, and nothing
+  is changed.
+- After a restore the window reloads. Restoring **Keywords & darktable data**
+  also restarts the photo engine. Restored darktable memory and GPU settings
+  take effect when the engine next starts.
+- **Edit In plugins**: the programs the plugins open are not restored, so a
+  backup cannot choose a program for Immage to run. A plugin that is already
+  set up on this computer keeps its program. Any other plugin in the backup is
+  listed without one, so choose its program again under Plugins (see
+  [Edit In](edit-in.md)).
 
 ## Performance
 

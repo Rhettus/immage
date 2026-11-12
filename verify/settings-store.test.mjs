@@ -141,3 +141,23 @@ test('a failed send is retried on the next flush', async () => {
   await settings.flush();
   assert.deepEqual(sets(calls).at(-1).args, { changes: { k: 'v' } });
 });
+
+test('discard drops unsent changes and stops further sends', async () => {
+  const { settings, calls, stored } = await load({ file: { a: '1', 'immage.settings-migrated': '1' } });
+  settings.set('b', '2');
+  settings.discard();
+  settings.set('c', '3');
+  settings.remove('a');
+  await settings.flush();
+  await new Promise(r => setTimeout(r, 400));
+  assert.equal(sets(calls).length, 0);
+  assert.deepEqual(stored, { a: '1', 'immage.settings-migrated': '1' });
+});
+
+test('a flush before discard still sends', async () => {
+  const { settings, calls } = await load({ file: { 'immage.settings-migrated': '1' } });
+  settings.set('b', '2');
+  await settings.flush();
+  settings.discard();
+  assert.equal(sets(calls).length, 1);
+});

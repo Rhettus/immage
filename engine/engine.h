@@ -413,6 +413,7 @@ dt_imgid_t library_snapshot(const dt_imgid_t imgid);
 void library_snapshot_remove(const dt_imgid_t snap);
 extern const char *library_meta_keys[6][2];
 void library_all_keywords(JsonBuilder *b);
+gboolean library_data_backup(JsonObject *req, char **err);
 gboolean library_keywords_set(const dt_imgid_t imgid, JsonObject *req, JsonBuilder *b, char **err);
 void library_image_json(JsonBuilder *b, const dt_imgid_t imgid, const gboolean full);
 GList *library_image_versions(const dt_imgid_t imgid);

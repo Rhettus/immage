@@ -28,7 +28,7 @@ const LOOSE: [(&str, &str); 3] = [
     (RENDERER, "webview-renderer"),
 ];
 
-type Map = BTreeMap<String, String>;
+pub type Map = BTreeMap<String, String>;
 
 pub struct Settings {
     runtime: PathBuf,
@@ -39,7 +39,7 @@ fn now() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
-fn parse(text: &str) -> Option<Map> {
+pub fn parse(text: &str) -> Option<Map> {
     // a null or number would deserialize into a string map on some parsers;
     // insist on an object of strings so a damaged file is not half-trusted
     Map::deserialize(&mut serde_json::Deserializer::from_str(text)).ok()
@@ -125,6 +125,15 @@ impl Settings {
     #[cfg(test)]
     pub fn get(&self, key: &str) -> Option<String> {
         self.map.lock().unwrap().get(key).cloned()
+    }
+
+    // Restore's replacement of the whole map, native keys included, written
+    // before the memory changes so a failed write leaves both as they were
+    pub fn replace_all(&self, next: Map) -> Result<(), String> {
+        let mut map = self.map.lock().unwrap();
+        write(&self.runtime, &next)?;
+        *map = next;
+        Ok(())
     }
 
     // applies the batch (None removes), then writes once. the lock is held

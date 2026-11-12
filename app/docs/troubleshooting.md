@@ -92,7 +92,9 @@ out of the app data folder (see
 [Where settings are kept](preferences.md#where-settings-are-kept)), then start
 Immage again. Keep the moved file if you may want those settings back: put it
 back, with Immage closed, to restore them. Your photos and their edits are not
-affected.
+affected. To keep your settings first, use Preferences > General > **Backup**;
+a restore keeps copies of what it replaces in the `backups` folder of the app
+data folder, so you can undo it.
 
 ## Crashes
 

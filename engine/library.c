@@ -396,6 +396,34 @@ static void _keywords_json(JsonBuilder *b, const dt_imgid_t imgid)
   dt_tag_free_result(&tags);
 }
 
+// a consistent copy of data.db for Backup, made while the engine has it open.
+// copying the file would miss what is still in its write-ahead log; VACUUM INTO
+// writes one whole file and refuses to overwrite one that exists
+gboolean library_data_backup(JsonObject *req, char **err)
+{
+  const char *path = json_object_get_string_member_with_default(req, "path", "");
+  if(!*path)
+  {
+    *err = g_strdup("no path supplied");
+    return FALSE;
+  }
+  sqlite3_stmt *stmt;
+  if(sqlite3_prepare_v2(dt_database_get(darktable.db), "VACUUM data INTO ?1", -1, &stmt, NULL) != SQLITE_OK)
+  {
+    *err = g_strdup_printf("could not copy the darktable data: %s", sqlite3_errmsg(dt_database_get(darktable.db)));
+    return FALSE;
+  }
+  sqlite3_bind_text(stmt, 1, path, -1, SQLITE_TRANSIENT);
+  const int rc = sqlite3_step(stmt);
+  sqlite3_finalize(stmt);
+  if(rc != SQLITE_DONE)
+  {
+    *err = g_strdup_printf("could not copy the darktable data: %s", sqlite3_errmsg(dt_database_get(darktable.db)));
+    return FALSE;
+  }
+  return TRUE;
+}
+
 // every keyword ever used, which darktable keeps in its data.db beside the
 // library, so it outlives this process's in-memory one
 void library_all_keywords(JsonBuilder *b)

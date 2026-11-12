@@ -20,6 +20,7 @@ import { KeywordChips, KeywordInput, parseKeyword } from "./Keywording";
 import { PluginPrefs } from "./PluginPrefs";
 import type { PluginConfig } from "./plugins";
 import { PrefCard, PrefRow, PrefSwitch } from "./PrefsUI";
+import { BackupDialog, type BackupMode } from "./BackupDialog";
 import { DEFAULT_PRESET_ID, type Preset } from "./Presets";
 import { setTourSeen, tourSeen } from "./Tour";
 import { OVERLAY_COLORS, OVERLAY_OPACITY, type Rgb } from "./masks";
@@ -599,6 +600,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   const [licenses, setLicenses] = useState<Licenses | null>(null);
   useEffect(() => { invoke<Licenses>("licenses").then(setLicenses).catch(() => {}); }, []);
   const [viewing, setViewing] = useState<{ title: string; text: string } | null>(null);
+  const [backup, setBackup] = useState<BackupMode | null>(null);
   useEffect(() => {
     // a dialog opened over this one takes its own Escape
     const esc = (e: KeyboardEvent) => {
@@ -807,6 +809,13 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
               <PrefCard title="Startup">
                 <PrefRow label="Quick start guide" hint="a short tour of Immage when it opens">
                   <PrefSwitch checked={showTour} onChange={(on) => { setShowTour(on); setTourSeen(!on); }} />
+                </PrefRow>
+              </PrefCard>
+              <PrefCard title="Backup">
+                <PrefRow label="Backup" summary="Save or restore settings, presets, looks and keywords."
+                         hint="one .zip holding the parts you choose: preferences and library, edit and export presets, looks, Edit In plugins and keywords; restoring replaces the chosen parts and keeps a copy of what it replaced">
+                  <button className="btn small" onClick={() => setBackup("create")}>Back Up…</button>
+                  <button className="btn small" onClick={() => setBackup("restore")}>Restore…</button>
                 </PrefRow>
               </PrefCard>
               </>
@@ -1077,6 +1086,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
           </div>
         </div>
       </div>
+      {backup && <BackupDialog mode={backup} onClose={() => setBackup(null)} />}
       {viewing && <LicenseText title={viewing.title} text={viewing.text} onClose={() => setViewing(null)} />}
     </div>
   );

@@ -245,6 +245,7 @@ identity before drawing, so replacement frames cancel obsolete work.
 |---|---|
 | [settings.ts](../../src/settings.ts) | The synchronous settings store every module uses in place of `localStorage` (`get`, `set`, `remove`, `keys`), over an in-memory copy. Changes go to Rust (`settings_set`) in batches about 250 ms apart, flushed before relaunch and Quit. Copies the web view's `localStorage` in once, marked `immage.settings-migrated`. `ready` resolves when loaded; there is no top-level await, because the pixel worker bundle reaches this module through perf.ts. |
 | [Preferences.tsx](../../src/Preferences.tsx), [PrefsUI.tsx](../../src/PrefsUI.tsx) | The Preferences dialog and its `load*`/`store*` pairs; `PrefCard`, `PrefRow`, `PrefSwitch`; `ABOUT_LINKS` (homepage, Discord, GitHub icons under the sidebar version). |
+| [BackupDialog.tsx](../../src/BackupDialog.tsx) | Preferences > General > Backup: the Back Up and Restore dialog (opened from the Backup row in Preferences.tsx). Lists the parts the backup holds, with sizes; `settings.flush()` before a backup, and after a restore `settings.discard()` so nothing this page holds is written over the restored files, then a reload. |
 | [SelectMenu.tsx](../../src/SelectMenu.tsx) | Mounted once in `main.tsx`. Intercepts `mousedown` on any single-choice `<select>`, shows its options in a `.context-menu.select-menu` (inside the enclosing `.filter-pop`, `.icon-picker`, `.modal` or `.context-menu`, so outside-click handlers don't close it), and writes the choice back to the `<select>` and fires `change`. Handlers and `data-*` test hooks are unchanged. Space and Alt-arrow open it; arrows, Home/End, Enter and Escape drive it. |
 | [histogram.ts](../../src/histogram.ts) | Histogram and scope kernels (worker with main-thread fallback), clipping overlay. |
 | [probe.ts](../../src/probe.ts) | The color under the pointer, for the Tone Curve, HSL and B&W cards. |
@@ -266,6 +267,7 @@ identity before drawing, so replacement frames cancel obsolete work.
 | [scale.rs](../../src-tauri/src/scale.rs) | Linux on Wayland: the screen's real scale, its output's mode over its xdg-output logical size on a Wayland connection of its own, for `display_scale`. |
 | [plugins.rs](../../src-tauri/src/plugins.rs) | Edit In: owns the plugin configuration (`plugins.json`; `config`, `config_save`, `set_app`, `ready`), finds apps, launches by plugin id with files checked by `photo_file`, polls their output folders, remembers each result (`plugin-returns.json`). Macro Studio's protocol (`plugin_job`): a job manifest in `plugin-jobs/<id>/`, its receipt read until every stack is saved or closed, and a ledger (`plugin-jobs/pending.json`) drained at start and on each `open_folder` (`drain_jobs`), for stacks saved later. |
 | [settings.rs](../../src-tauri/src/settings.rs) | The settings store: `settings.json` in the runtime folder, written atomically; `settings_all` and `settings_set` for the page; `native.*` keys (`native.darktable-resources`, `native.gpu-edits`, `native.webview-renderer`) written only here. On first start it moves the old `darktable-resources`, `gpu-edits` and `webview-renderer` files into those keys and deletes them. `read_key` lets renderer::init read `native.webview-renderer` before Tauri starts. A damaged file is moved aside as `settings.json.corrupt-<time>` and defaults are used. |
+| [backup.rs](../../src-tauri/src/backup.rs) | Backup and Restore (`COMPONENTS` lists the six parts and their zip folders; `create`, `inspect`, `restore`). The `backup_*` commands; the save and open dialogs open here. See [Backup and restore](#backup-and-restore). |
 | [Cargo.toml](../../src-tauri/Cargo.toml), [tauri.conf.json](../../src-tauri/tauri.conf.json), [capabilities/](../../src-tauri/capabilities) | Dependencies (each with its reason); windows, bundle resources (`resources/darktable`, `looks`, `sample`); window permissions. |
 
 Commands by what they reach:
@@ -279,6 +281,7 @@ Commands by what they reach:
 | AI models (download, then the engine's `version`) | `ai_model_ensure`, `ai_model_reinstall` |
 | Immich (HTTP) | `immich_albums`, `immich_create_album`, `immich_export_check`, `immich_browse_check`, `immich_search`, `immich_libraries`, `immich_suggestions`, `immich_people`, `immich_tags`, `immich_thumb`, `immich_resolve` |
 | Plugins | `plugin_find_apps` (also the allow-list for `plugin_set_app`), `plugin_config` (read, and the one-time migration of the old `immage.plugins` list, which the page reads through the settings store, itself copied once from localStorage), `plugin_config_save` (never takes a program path), `plugin_set_app`, `plugin_choose_app` (the dialog opens from Rust), `plugin_launch(id, files)`, `plugin_watch`, `plugin_job`, `plugin_cancel`, `plugin_returns`, `plugin_return_applied` |
+| Backup (zip files; the dialogs open in Rust) | `backup_components`, `backup_pick_save`, `backup_pick_open`, `backup_create`, `backup_inspect`, `backup_restore`; create asks the engine for `data_backup` |
 | Performance | `perf_set`, `perf_modules`, `perf_report_write`, `perf_ping` |
 | The window | `preview_fullscreen`, `display_scale` |
 | The build | `build`: the version and commit, answered without the engine. `build.rs` sets `IMMAGE_BUILD_COMMIT` and `IMMAGE_BUILD_DIRTY` from Git; `build_label` in main.rs shortens the commit to ten digits with `-dirty`, as `about` and `build` return it, and `perf_report_write` stores the full commit and the dirty flag as every report's `build`. Built outside Git, all are absent. |
@@ -287,6 +290,47 @@ Events from Rust: `folder-progress`, `export-progress`, `ai-model`,
 `launch-file`, `plugin-returned`, `plugin-watch-end`, and `engine-state`
 (`down`, `ready`, `slow`, `failed`; see `supervise` in main.rs). The immporter plugin
 emits its own (`import-done`, `volumes-changed`, ...).
+
+### Backup and restore
+
+[backup.rs](../../src-tauri/src/backup.rs) writes and reads one .zip. Its
+`manifest.json` has `format` (1), `app`, `version`, `created` and `components`
+(each with its `files` and `bytes`). Every file sits under its component's
+folder: `settings/settings.json`, `presets/presets.json`,
+`export_presets/export-presets.json`, `looks/<name>`, `plugins/plugins.json`
+and `darktable/data.db`. The archive is written as `<name>.part` and renamed
+when complete. API keys are never in it.
+
+Reading checks every entry before anything else: a name must be
+`manifest.json` or a known component's file (no absolute paths, `..`,
+backslashes, subfolders, duplicates or symbolic links); the entry count is
+capped at 20,000, the unpacked total at 4 GiB, and an entry over 64 MiB may not
+expand more than 200 times. A `format` above 1 is refused as a newer Immage's
+backup. Each chosen component is then parsed: settings must be a map of
+strings, the presets files must be JSON, `plugins.json` must match
+`PluginConfig`, and `data.db` must begin with the SQLite header. `looks` files
+are copied without parsing. Everything is staged in `backups/staging-<pid>/`
+and validated there before anything is replaced; any failure leaves the app as
+it was.
+
+Restore then keeps a copy of each chosen component's current files in
+`backups/pre-restore-<stamp>/<id>/` (a `-n` suffix if the name exists), and
+keeps only the three newest such folders. Components are replaced data.db
+first. If darktable is chosen, the whole replacement runs inside
+`Engine::stop_for_restart` (engine.rs): the engine is quit and reaped while the
+engine lock is held, the files are swapped, `-wal` and `-shm` beside data.db are
+removed, and the lock is released so the supervisor starts a new engine. Only
+then is `settings.json` replaced, through `Settings::replace_all`, which writes
+the file before swapping the map (native keys included). Plugins are the one
+component rewritten before it is put in place: each plugin keeps the program from
+the current `plugins.json` with the same id, and any other gets an empty
+program. A program path is never taken from a zip.
+
+Create asks the engine for `data_backup`, which runs `VACUUM data INTO` the
+given path (`library_data_backup` in library.c). That makes a consistent copy
+while the engine holds data.db open, where copying the file could miss what is
+in its write-ahead log. The copy goes to `backups/snapshot-<pid>/` and is
+removed afterwards.
 
 ## Engine
 
@@ -514,6 +558,7 @@ The commands in the `_commands[]` table, each a `_cmd_<name>` handler in main.c 
 |---|---|
 | Session | `open`, `history`, `module_state`, `save`, `baseline_end`, `before`, `close`, `quit`, `version`, `unpack`, `ai_accel`, `opencl`, `parity`, `fonts`, `spektra_stocks`, `spektra_fetch` |
 | Library (no photo needed) | `folder`, `import`, `thumb`, `prefetch`, `meta`, `meta_set`, `capture_times`, `keywords`, `keywords_set`, `copy`, `remove_copy`, `sidecars`, `forget`, `export`, `export_hold`, `export_release`, `hdr_merge`, `pano_merge` |
+| Backup | `data_backup` (`library_data_backup` in library.c): `VACUUM data INTO` a new file, with darktable's data.db attached as schema `data` |
 | Edit | `set`, `get`, `render`, `preview`, `look`, `look_amount` |
 | Masks and spots | `mask`, `combine`, `masks`, `mask_rename`, `mask_delete`, `mask_map`, `range_map`, `sample`, `spots`, `spots_enable`, `spot_source` |
 | Tone | `tone_key`, `agx_auto`, `zones` |
@@ -613,6 +658,7 @@ darktable is, and it has AI features when darktable is configured with
 | Export presets | `export-presets.json` in the runtime folder; shared files from Import…/Export… | permanent |
 | Edit In plugins and their applications | `plugins.json` in the runtime folder, written only by Rust; an old `immage.plugins` list in the settings store is handed over once, when the file does not exist, then removed | permanent |
 | Edit In results | `plugin-returns.json` in the runtime folder | permanent |
+| Backups in progress and restore copies | `backups/` in the runtime folder: `pre-restore-<time>/` copies of what a restore replaced (the three newest kept), plus staging and snapshot folders while a backup or restore runs | the pre-restore copies until removed by hand or by the next three restores; the rest only during the operation |
 | Macro Studio jobs | `plugin-jobs/` in the runtime folder: each job's manifest and receipt, and `pending.json` | until every stack is saved or closed, or 30 days |
 | Engine config, cache, log | `config/`, `cache/`, `engine.log` in the runtime folder (`build/app-runtime` in dev, the app data folder in a release) | permanent; the log restarts past 5 MB |
 | Frames, thumbnails, previews, maps | `frame.rgba`, `thumb-<tag>.rgba`, `preview.rgba`, `range.bin` in `/dev/shm/immage-engine-XXXXXX` on Linux (the runtime folder if it can't be made; shared-memory objects on the Mac and Windows) | overwritten per request; a thumbnail's deleted once read; the folder goes when the app quits, and one a killed app left (no lock held on its `owner.lock`) at the next start |

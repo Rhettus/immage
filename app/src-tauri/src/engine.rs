@@ -910,6 +910,24 @@ impl Engine {
     }
 }
 
+impl Engine {
+    // stops the engine so a file it holds open can be replaced, and leaves the
+    // supervisor to start another once the caller lets go of the engine lock
+    // (it waits for that lock before it respawns). unlike quit() this is a
+    // restart: the link keeps running, and it is not counted as a crash
+    pub fn stop_for_restart(&mut self) {
+        if !matches!(self.conn.child.lock().unwrap().try_wait(), Ok(None)) { return; }
+        self.link.manual.store(true, Ordering::SeqCst);
+        let stdin = self.conn.stdin.clone();
+        std::thread::spawn(move || {
+            if let Ok(mut stdin) = stdin.lock() {
+                let _ = writeln!(stdin, "{}", json!({ "cmd": "quit" })).and_then(|_| stdin.flush());
+            }
+        });
+        reap(&self.conn.child, QUIT_WAIT);
+    }
+}
+
 const QUIT_WAIT: Duration = Duration::from_secs(5);
 
 // EOF alone cannot stop an engine stuck in an import or driver call. Linux

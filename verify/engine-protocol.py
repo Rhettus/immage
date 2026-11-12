@@ -49,7 +49,7 @@ ROOT = background.ROOT
 COMMANDS = sorted('''
 agx_auto agx_presets ai_accel ai_denoise ai_denoise_preview ai_depth ai_mask
 ai_object baseline_end before cancel_base capture_times close color_profiles
-combine copy export export_hold export_release folder fonts forget get
+combine copy data_backup export export_hold export_release folder fonts forget get
 hdr_merge history import keywords keywords_set lenses look look_amount mask
 mask_delete mask_map mask_rename masks merge_cancel meta meta_set module_state
 open opencl pano_merge pano_preview parity paste_batch points prefetch preview
@@ -114,6 +114,8 @@ def anywhere(img):
     the heavy ones. `img` is a photo id that exists or not."""
     return [
         R('version'), R('opencl'), R('ai_accel'), R('fonts'), R('keywords'),
+        R('data_backup', label='data_backup no path'),
+        R('data_backup', path='{tmp}/no-such-folder/data.db', label='data_backup unwritable'),
         R('spektra_stocks'),
         R('spektra_fetch', label='spektra_fetch status'),
         R('spektra_fetch', action='cancel', label='spektra_fetch cancel'),

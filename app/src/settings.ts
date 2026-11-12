@@ -26,13 +26,15 @@ let warned = false;
 // false outside Tauri or when settings_all failed: writes then stay in memory,
 // since a send could never succeed and its retry timer would never stop
 let backed = false;
+// set by discard(): a restore replaced the file, and nothing this page holds may be written over it
+let discarded = false;
 
 function browserStorage(): Storage | null {
   try { return typeof localStorage === "undefined" ? null : localStorage; } catch { return null; }
 }
 
 function queue(key: string, value: string | null) {
-  if (!backed) return;
+  if (!backed || discarded) return;
   pending.set(key, value);
   timer ??= setTimeout(() => { void flush(); }, DELAY_MS);
 }
@@ -41,7 +43,7 @@ function send(): Promise<void> {
   // one request at a time, in order, so an older batch never lands after a newer one
   sending = sending.then(async () => {
     if (timer !== undefined) { clearTimeout(timer); timer = undefined; }
-    if (pending.size === 0) return;
+    if (discarded || pending.size === 0) return;
     const batch = pending;
     pending = new Map();
     try {
@@ -108,6 +110,15 @@ if (typeof window !== "undefined" && typeof window.addEventListener === "functio
   window.addEventListener("beforeunload", () => { void flush(); });
 }
 
+// Drops the unsent changes and stops sending any more until the page reloads.
+// A restore calls it before replacing settings.json, then reloads, so the
+// page's own copy cannot be written back over the restored file.
+function discard() {
+  discarded = true;
+  pending = new Map();
+  if (timer !== undefined) { clearTimeout(timer); timer = undefined; }
+}
+
 export const settings = {
   get(key: string): string | null { return map.get(key) ?? null; },
   set(key: string, value: string) {
@@ -124,6 +135,7 @@ export const settings = {
   },
   keys(): string[] { return [...map.keys()]; },
   flush,
+  discard,
   ready,
 };
 

@@ -25,6 +25,7 @@ mod renderer;
 mod volumes;
 mod scrub;
 mod support_bundle;
+mod backup;
 
 use cache::Caches;
 use engine::{BaseCancel, Engine, Tagged, Timing};
@@ -3457,7 +3458,7 @@ fn main() {
             ai_model_ensure, ai_model_reinstall, ai_mask, ai_depth, ai_denoise, ai_denoise_preview, positive_export, spektra_stocks, spektra_fetch, list_subfolders, folder_volumes, spots, spots_enable, spot_source, sample_folder, immich_albums, immich_create_album,
             immich_export_check, immich_search, immich_browse_check, immich_libraries, immich_suggestions, immich_people, immich_tags,
             immich_thumb, immich_resolve, launch_file, path_exists, path_kind, display_scale, trash_files, create_virtual_copy, remove_virtual_copy, hdr_merge, hdr_can_align, pano_merge, pano_preview, pano_can_merge, merge_cancel, preview_fullscreen, build, about, licenses, engine_quit, engine_restart, keywords, keywords_set, ai_accel,
-            menu_set, csp_violation, perf_set, perf_trace_start, perf_trace_stop, perf_modules, perf_report_write, perf_machine, perf_ping, support_bundle::support_bundle_preview, support_bundle::support_bundle_add_benchmark, support_bundle::support_bundle_save, support_bundle::support_bundle_discard, gpu_check_parity, resources::perf_resources_start, resources::perf_resources_stop,
+            menu_set, csp_violation, perf_set, perf_trace_start, perf_trace_stop, perf_modules, perf_report_write, perf_machine, perf_ping, support_bundle::support_bundle_preview, support_bundle::support_bundle_add_benchmark, support_bundle::support_bundle_save, support_bundle::support_bundle_discard, backup::backup_components, backup::backup_pick_save, backup::backup_pick_open, backup::backup_create, backup::backup_inspect, backup::backup_restore, gpu_check_parity, resources::perf_resources_start, resources::perf_resources_stop,
             plugins::plugin_find_apps, plugins::plugin_config, plugins::plugin_config_save, plugins::plugin_set_app, plugins::plugin_choose_app, plugins::plugin_launch, plugins::plugin_watch, plugins::plugin_cancel, plugins::plugin_job,
             plugins::plugin_returns, plugins::plugin_return_applied
         ])

@@ -26,6 +26,8 @@ and Linux. **All builds are alpha; bugs are expected.**
 - Apply presets and film looks, compare edits, and copy settings across photos.
 - Choose the Dark, Darktable Grey or Light interface theme, or import a custom
   color theme.
+- Back up your settings, presets, looks, Edit In plugins and keywords to one
+  file, and restore the parts you choose from it.
 - Add optional Geoapify place-name search to the location map; map tiles and
   manual pin placement work without a search key.
 - Browse folders directly, import from a card with the built-in Immporter,
