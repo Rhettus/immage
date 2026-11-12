@@ -723,6 +723,48 @@ gboolean library_forget(const dt_imgid_t imgid, char **err)
 
 // every sidecar of the file `imgid` belongs to, all versions' and any left
 // over, as darktable deletes with the file (control_jobs.c, _delete_job_run())
+// the photo's xmp sidecars: file.ext.xmp and file_NN.ext.xmp. darktable's
+// dt_image_find_duplicates() builds a glob() pattern from the file name, so
+// a name with [ * ? or a backslash matches wrongly or not at all; the folder
+// is listed and the names compared as they are
+static GList *_find_xmp_sidecars(const char *image_path)
+{
+  GList *list = NULL;
+  gchar *dir = g_path_get_dirname(image_path);
+  gchar *base = g_path_get_basename(image_path);
+  const char *dot = strrchr(base, '.');
+  const size_t stem_len = dot ? (size_t)(dot - base) : strlen(base);
+  gchar *tail = g_strconcat(dot ? dot : "", ".xmp", NULL);
+  const size_t tail_len = strlen(tail);
+  GDir *d = g_dir_open(dir, 0, NULL);
+  const char *name;
+  while(d && (name = g_dir_read_name(d)))
+  {
+    const size_t len = strlen(name);
+    if(len < stem_len + tail_len || strncmp(name, base, stem_len) || strcmp(name + len - tail_len, tail))
+      continue;
+    const char *v = name + stem_len;
+    const char *vend = name + len - tail_len;
+    if(v != vend)
+    {
+      // a version: "_" and at least two digits
+      if(*v != '_' || vend - v < 3) continue;
+      gboolean digits = TRUE;
+      for(const char *c = v + 1; c < vend; c++)
+        if(!g_ascii_isdigit(*c)) digits = FALSE;
+      if(!digits) continue;
+    }
+    gchar *file = g_build_filename(dir, name, NULL);
+    if(dt_util_test_image_file(file)) list = g_list_prepend(list, file);
+    else g_free(file);
+  }
+  if(d) g_dir_close(d);
+  g_free(tail);
+  g_free(base);
+  g_free(dir);
+  return g_list_sort(list, (GCompareFunc)g_strcmp0);
+}
+
 gboolean library_sidecars(const dt_imgid_t imgid, JsonBuilder *b, char **err)
 {
   char path[PATH_MAX] = { 0 };
@@ -735,7 +777,7 @@ gboolean library_sidecars(const dt_imgid_t imgid, JsonBuilder *b, char **err)
   dt_image_full_path(imgid, path, sizeof(path), &from_cache);
   json_builder_set_member_name(b, "files");
   json_builder_begin_array(b);
-  GList *files = g_list_concat(dt_image_find_duplicates(path), dt_dtdata_find_all(path));
+  GList *files = g_list_concat(_find_xmp_sidecars(path), dt_dtdata_find_all(path));
   for(GList *l = files; l; l = g_list_next(l)) json_builder_add_string_value(b, l->data);
   g_list_free_full(files, g_free);
   json_builder_end_array(b);

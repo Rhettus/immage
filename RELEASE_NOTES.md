@@ -112,6 +112,9 @@ Bug fixes
 - A photo whose file name is close to the 255-byte limit (241 to 251 bytes)
   can save its edits again. Saving made a temporary file with a longer name
   than the folder allows, so the save failed.
+- Moving a photo to the Trash now also takes its duplicate-version sidecars
+  when the file name contains [, *, ? or a backslash. They were left behind,
+  and a later photo with the same name could pick them up as its own edits.
 
 ## 0.44.1
 
