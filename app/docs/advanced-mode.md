@@ -194,6 +194,15 @@ The B&W group has these darktable modules:
   filter graph, which sets the filter's color and size, is not on the card
   yet.
 
+## Color Grading modules
+
+The Color Grading group has these darktable modules:
+
+- **Color balance rgb**: the same instance as the Basic group's card, with
+  **4 ways** first, since Simple's Color Grading wheels set its shadows lift,
+  highlights gain, power and global offset. A change on one card shows on the
+  other.
+
 ## Instances
 
 A module can have several instances, each with its own settings. Open the
