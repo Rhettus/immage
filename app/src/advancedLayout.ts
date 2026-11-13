@@ -368,6 +368,18 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "grey_fulcrum", label: "Contrast gray fulcrum", tab: "Masks", section: "Threshold", soft: [0.1, 0.5], digits: 2, unit: "%" },
     ],
   },
+  {
+    // tonecurve.c gui_init and gui_changed (preserve colors shows only for
+    // RGB, linked channels). left out: the curve graph (tonecurve,
+    // tonecurve_nodes, tonecurve_type), which needs a curve editor; the
+    // interpolation method, which sets all three curves' type at once; the
+    // scale for graph slider and the pickers
+    op: "tonecurve", group: "tonecurve", title: "Tone curve",
+    fields: [
+      { path: "tonecurve_autoscale_ab", label: "Color space" },
+      { path: "preserve_colors", label: "Preserve colors", showIf: (p) => p.tonecurve_autoscale_ab === 3 },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);

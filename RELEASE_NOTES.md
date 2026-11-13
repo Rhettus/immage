@@ -12,10 +12,10 @@ Improvements
   with their own settings, on/off and reset, and an instance menu to add,
   duplicate, rename, reorder and delete instances, all with undo. Switching
   does not change your photo.
-- Advanced cards so far, all in Basic: exposure, white balance, color
-  calibration, highlight reconstruction, the tone mapper, contrast & texture,
-  local contrast, haze removal, diffuse or sharpen and color balance rgb; other
-  modules follow in later versions.
+- Advanced cards so far: in Basic, exposure, white balance, color calibration,
+  highlight reconstruction, the tone mapper, contrast & texture, local contrast,
+  haze removal, diffuse or sharpen and color balance rgb; in Tone Curve, tone
+  curve. Other modules follow in later versions.
 - The tone mapper card shows AgX, sigmoid, filmic rgb or base curve, whichever
   is on, with a switch to change to another as one undo step.
 - Module cards have a darktable presets menu beside the reset button. It applies

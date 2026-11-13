@@ -118,6 +118,14 @@ Besides exposure, the Basic group has these darktable modules:
   fulcrums and the **White fulcrum**. The luminance range graph, mask previews,
   color pickers and mask preview settings are not on the card yet.
 
+## Tone Curve modules
+
+The Tone Curve group has these darktable modules:
+
+- **Tone curve**: **Color space**, and **Preserve colors** for RGB, linked
+  channels. The curve itself and its interpolation method need a curve editor
+  and are not on the card yet; Simple's Tone Curve edits the same module.
+
 ## Instances
 
 A module can have several instances, each with its own settings. Open the
