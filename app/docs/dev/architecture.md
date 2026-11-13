@@ -781,6 +781,20 @@ calls the engine's `instance` command with an action: `new`, `duplicate`,
 off and hides it from `instances`; the save drops its history entries. The
 first instance cannot be deleted.
 
+`AdvancedGroup` loads every instance whose op has a layout for the group
+(`layoutFor` in [advancedLayout.ts](../../src/advancedLayout.ts)) and shows a
+card when it is on, `in_history` (the engine's `instances` reply, history up
+to its end) or in `Session.cardsShown` (changed or added this session); cards
+sort by `layoutRank`, the `LAYOUTS` order, stably over pipe order.
+[AddModuleMenu.tsx](../../src/AddModuleMenu.tsx) lists the group's layouts;
+`Session.addModule` switches priority 0 on. `switchable` is darktable's
+`!hide_enable_button`: false greys the entry and the card's switch. Layout
+fields may name an array element (`red[0]`, resolved by `schemaField` in
+ModuleCard.tsx), a notebook `tab` and a `section` heading; a `%` slider over a
+hard range within 10 shows the value times 100, as
+`dt_bauhaus_slider_set_format` does. The card menus share placement and
+dismissal through `useCardMenu` in [cardMenu.ts](../../src/cardMenu.ts).
+
 [PresetMenu.tsx](../../src/PresetMenu.tsx) is the card's darktable presets
 menu. It loads the engine's `presets` list when opened (darktable's order,
 shipped presets then the user's, a check on the active one) and applies a pick

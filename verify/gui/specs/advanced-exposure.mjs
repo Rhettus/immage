@@ -32,6 +32,20 @@ const card = t => t.driver.observe((sel, slider) => {
 
 const undoRedo = (t, which) => click(t, `button.tool[title^="${which} ("]`);
 
+// waits for a module's card in a group, adding it from + Add module when the
+// group settles without it; true when it had to be added
+export async function addCard(t, group, op, sel) {
+  const where = await until(() => t.driver.observe((g, s) =>
+    document.querySelector(s) ? 'card' : document.querySelector(`[data-panel-id="${g}"] .add-module-button`) ? 'add' : false,
+  group, sel), `${op} card or Add module in ${group}`);
+  if (where === 'card') return false;
+  await click(t, `[data-panel-id="${group}"] .add-module-button`);
+  await until(() => t.driver.observe(o => !!document.querySelector(`.context-menu [data-add-module="${o}"]`), op), 'Add module menu');
+  await click(t, `.context-menu [data-add-module="${op}"]`);
+  await until(() => t.driver.observe(s => !!document.querySelector(s), sel), `${op} card after Add module`);
+  return true;
+}
+
 export async function advancedExposure(t) {
   await settledPhoto(t);
   await openTool(t, 'adjust');
@@ -42,8 +56,11 @@ export async function advancedExposure(t) {
     await openTool(t, 'adjust');
     const baseline = await settledPhoto(t);
 
-    // 1. the Basic group holds an Exposure card, whatever its switch says
+    // 1. the Basic group holds an Exposure card, whatever its switch says;
+    // a photo that leaves exposure off and untouched has none until Add module
     await panel(t, 'basic');
+    const added = await addCard(t, 'basic', 'exposure', CARD);
+    t.measure({ name: 'add-module', used: added });
     const initial = await until(async () => { const c = await card(t); return c?.title ? c : false; }, 'Exposure card in the Basic group');
     assert.equal(initial.title, 'Exposure', 'the card is titled Exposure');
     assert(initial.reset, 'the card has a reset button');

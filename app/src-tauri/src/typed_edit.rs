@@ -368,6 +368,11 @@ pub struct Instance {
     pub label: String,
     pub enabled: bool,
     pub default_enabled: bool,
+    // false when darktable hides the module's switch: it cannot apply to
+    // this photo, or must stay on
+    pub switchable: bool,
+    // the photo's history (to its end) changes this instance
+    pub in_history: bool,
     pub iop_order: i64,
     pub owner: Option<String>,
 }

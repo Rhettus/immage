@@ -1457,6 +1457,16 @@ void session_instances(JsonBuilder *b)
     g_free(label);
     engine_add_bool(b, "enabled", m->enabled);
     engine_add_bool(b, "default_enabled", m->default_enabled);
+    // darktable hides the switch of a module that cannot apply to this
+    // photo (raw-only modules on a JPEG, white balance on a monochrome)
+    engine_add_bool(b, "switchable", !m->hide_enable_button);
+    // the history, up to its end, has an entry for it: Advanced shows a
+    // card for a module the user once changed, switched off or not
+    gboolean in_history = FALSE;
+    int n = 0;
+    for(const GList *h = _s.dev.history; h && n < _s.dev.history_end && !in_history; h = g_list_next(h), n++)
+      in_history = ((const dt_dev_history_item_t *)h->data)->module == m;
+    engine_add_bool(b, "in_history", in_history);
     engine_add_int(b, "iop_order", m->iop_order);
     const char *owner = masks_instance_owner(m);
     json_builder_set_member_name(b, "owner");

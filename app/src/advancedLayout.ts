@@ -7,13 +7,20 @@
 // units and when a field shows. This is that part, written by hand from each
 // module's gui_init and gui_changed, one entry per module.
 export type LayoutField = {
-  path: string;
+  path: string;    // a schema path, or "name[i]" for one element of an array
   label: string;
+  tab?: string;      // darktable's notebook page the field is on
+  section?: string;  // a section heading darktable shows above the field
   // the slider's range as darktable first shows it; typing a value or an
   // edit made elsewhere can go past it, up to the schema's min and max
   soft?: [number, number];
   unit?: string;
   digits?: number;
+  // darktable's slider shows value * factor + offset (a 0..1 param as %)
+  factor?: number;
+  offset?: number;
+  // the enum values darktable's combobox offers, when it leaves some out
+  options?: number[];
   // darktable shows the field only for some settings of the others
   showIf?: (params: Record<string, number>) => boolean;
 };
@@ -42,3 +49,10 @@ export const LAYOUTS: ModuleLayout[] = [
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);
+
+// a group's cards sit in LAYOUTS order (Simple's sections), not pipe order
+export const layoutRank = (op: string, group: string) => LAYOUTS.findIndex((l) => l.op === op && l.group === group);
+export const groupLayouts = (group: string) => LAYOUTS.filter((l) => l.group === group);
+
+// the schema field a layout path reads: "red[2]" is an element of array "red"
+export const fieldPath = (path: string) => path.replace(/\[\d+\]$/, "");

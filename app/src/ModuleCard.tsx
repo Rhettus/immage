@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 import { RotateCcw } from "lucide-react";
-import { useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { InstanceMenu, type InstanceChoice } from "./InstanceMenu";
 import { PresetMenu } from "./PresetMenu";
 import { Chevron, Collapse } from "./Collapse";
@@ -9,24 +9,40 @@ import { Choice, Slider, Toggle } from "./Controls";
 import type { AdvancedState } from "./session";
 import type { DtPreset, Instance, ModuleSchema, SchemaField } from "./commands";
 import type { Control } from "./manifest";
-import { type LayoutField, type ModuleLayout } from "./advancedLayout";
+import { fieldPath, type LayoutField, type ModuleLayout } from "./advancedLayout";
 
 // the card's fields as the controls the rest of the app draws
 const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
+// the schema entry of a layout path: an array element ("red[2]") takes its
+// array's type, range and that element's default
+export function schemaField(fields: Map<string, SchemaField>, path: string): SchemaField | undefined {
+  const direct = fields.get(path);
+  if (direct) return direct;
+  const a = fields.get(fieldPath(path)), k = Number(/\[(\d+)\]$/.exec(path)?.[1]);
+  if (!a || a.type !== "array" || !a.element || Number.isNaN(k)) return undefined;
+  return { ...a, path, type: a.element, default: a.defaults?.[k] ?? null, dims: null, defaults: null };
+}
+
 export function fieldControl(f: SchemaField, l: LayoutField, value: number): Control {
-  const digits = l.digits ?? (f.type === "int" ? 0 : 2);
+  // as dt_bauhaus_slider_set_format: a "%" slider over a small range shows
+  // the value times 100, two digits fewer. `digits` is the shown precision
+  const percent = l.unit === "%" && Math.abs(f.max ?? Infinity) <= 10;
+  const factor = l.factor ?? (percent ? 100 : 1), offset = l.offset ?? 0;
+  const digits = l.digits ?? (f.type === "int" || percent ? 0 : 2);
   const hard: [number, number] = [f.min ?? -Infinity, f.max ?? Infinity];
   const soft = l.soft ?? [Math.max(hard[0], -1e6), Math.min(hard[1], 1e6)];
   // a value past the soft range stays reachable and shown, not clamped
   const min = Math.max(hard[0], Math.min(soft[0], value));
   const max = Math.min(hard[1], Math.max(soft[1], value));
   const unit = l.unit ? (l.unit === "%" ? "%" : ` ${l.unit}`) : "";
-  const base = { id: `adv:${f.path}`, label: l.label, min, max, step: 10 ** -digits,
-                 format: (v: number) => `${v.toFixed(digits)}${unit}`, note: f.description || undefined };
+  // digits count on the shown value, so the step is in shown units too
+  const base = { id: `adv:${l.path}`, label: l.label, min, max, step: 10 ** -digits / Math.abs(factor),
+                 format: (v: number) => `${(v * factor + offset).toFixed(digits)}${unit}`, note: f.description || undefined };
   if (f.type === "bool") return { ...base, kind: "toggle", min: 0, max: 1, step: 1 };
   if (f.type === "enum") {
-    const options = (f.values ?? []).map((e): [string, number] => [sentence(e.description || e.name), e.value]);
+    const options = (f.values ?? []).filter((e) => !l.options || l.options.includes(e.value))
+      .map((e): [string, number] => [sentence(e.description || e.name), e.value]);
     return { ...base, kind: "choice", min: 0, max: Math.max(...options.map(([, v]) => v)), step: 1,
              options, inline: options.length > 3, menu: options.length > 3 };
   }
@@ -51,6 +67,14 @@ export function ModuleCard({ instance, layout, schema, state, siblings, index, f
   const ended = useRef(false);
   const open = fold ?? edited;
   const fields = new Map(schema.fields.map((f) => [f.path, f]));
+  // darktable's notebook pages, in its order; the first is shown at first
+  const tabs = [...new Set(layout.fields.flatMap((l) => l.tab ? [l.tab] : []))];
+  const [tab, setTab] = useState(tabs[0]);
+  // a module darktable will not let you switch: off, it cannot apply here
+  const fixed = instance.switchable === false;
+  // a card just added is brought into view and flashes once
+  const card = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (fresh) card.current?.scrollIntoView({ block: "nearest", behavior: "smooth" }); }, [fresh]);
   const name = instance.label ? `${layout.title} ${instance.label}` : layout.title;
   const done = (el: HTMLInputElement, keep: boolean) => {
     if (ended.current) return;
@@ -60,9 +84,9 @@ export function ModuleCard({ instance, layout, schema, state, siblings, index, f
     if (keep && v !== (instance.hand_edited ? instance.name : "")) onInstance("rename", v);
   };
   return (
-    <div className={`module-card${state.enabled ? "" : " off"}`} data-module={`${instance.op}#${instance.priority}`}>
+    <div ref={card} className={`module-card${state.enabled ? "" : " off"}${fresh ? " fresh" : ""}`} data-module={`${instance.op}#${instance.priority}`}>
       <div className="module-card-head" onClick={() => setFold(!open)}>
-        <input type="checkbox" className="switch" checked={state.enabled} aria-label={`${name} on or off`}
+        <input type="checkbox" className="switch" checked={state.enabled} aria-label={`${name} on or off`} disabled={fixed}
                onClick={(e) => e.stopPropagation()} onChange={(e) => onEnabled(e.target.checked)} />
         {renaming
           ? <input className="field module-card-rename" autoFocus defaultValue={instance.hand_edited ? instance.name : ""}
@@ -89,18 +113,35 @@ export function ModuleCard({ instance, layout, schema, state, siblings, index, f
       </div>
       <Collapse open={open}>
         <div className="module-card-body">
-          {layout.fields.map((l) => {
-            const f = fields.get(l.path);
-            if (!f || (l.showIf && !l.showIf(state.params))) return null;
-            const value = state.params[l.path] ?? state.defaults[l.path] ?? 0;
-            const neutral = state.defaults[l.path] ?? 0;
-            const control = fieldControl(f, l, value);
-            const props = { control, value, neutral, values: state.params, disabled: false };
-            const set = (coalesce: boolean) => (v: number) => onField(l.path, v, coalesce);
-            return control.kind === "toggle" ? <Toggle key={l.path} {...props} onChange={set(false)} />
-              : control.kind === "choice" ? <Choice key={l.path} {...props} onChange={set(false)} />
-              : <Slider key={l.path} {...props} onChange={set(true)} />;
-          })}
+          {tabs.length > 1 && (
+            <div className="segmented small module-card-tabs" role="tablist">
+              {tabs.map((t) => <button key={t} role="tab" aria-selected={t === tab} className={t === tab ? "active" : ""}
+                                       onClick={() => setTab(t)}>{t}</button>)}
+            </div>
+          )}
+          {(() => {
+            // a section heading shows once, above the first of its fields shown
+            let heading: string | undefined;
+            return layout.fields.map((l) => {
+              const f = schemaField(fields, l.path);
+              if (!f || (l.tab && l.tab !== tab) || (l.showIf && !l.showIf(state.params))) return null;
+              const value = state.params[l.path] ?? state.defaults[l.path] ?? 0;
+              const neutral = state.defaults[l.path] ?? 0;
+              const control = fieldControl(f, l, value);
+              const props = { control, value, neutral, values: state.params, disabled: fixed && !state.enabled };
+              const set = (coalesce: boolean) => (v: number) => onField(l.path, v, coalesce);
+              const title = l.section && l.section !== heading ? l.section : undefined;
+              heading = l.section;
+              return (
+                <Fragment key={l.path}>
+                  {title && <div className="module-card-section">{title}</div>}
+                  {control.kind === "toggle" ? <Toggle {...props} onChange={set(false)} />
+                    : control.kind === "choice" ? <Choice {...props} onChange={set(false)} />
+                    : <Slider {...props} onChange={set(true)} />}
+                </Fragment>
+              );
+            });
+          })()}
         </div>
       </Collapse>
     </div>

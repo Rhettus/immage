@@ -2608,3 +2608,11 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .module-card-tag { font-size: 10px; padding: 1px 5px; border-radius: 4px; background: var(--hover); color: var(--text-2); }
 .module-card-rename { flex: 1; min-width: 0; padding: 1px 6px; }
 .module-card-body { padding: 0 14px 6px; }
+.add-module { display: block; border-top: 1px solid var(--border, rgba(128, 128, 128, 0.25)); padding: 6px 14px; }
+.add-module-button { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; background: none; border: none; border-radius: 4px; color: var(--text-2); cursor: pointer; }
+.add-module-button:hover, .add-module-button.on { background: var(--hover); color: var(--text); }
+.module-card.fresh { animation: module-card-fresh 1.2s ease-out; }
+@keyframes module-card-fresh { from { background: var(--hover); } to { background: transparent; } }
+.module-card-tabs { flex-wrap: wrap; margin: 2px 0 8px; }
+.module-card-section { margin: 10px 0 4px; font-size: 11px; color: var(--text-2); text-transform: lowercase; }
+.module-card-section::first-letter { text-transform: uppercase; }

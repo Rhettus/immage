@@ -107,6 +107,16 @@ test('Advanced mode modules (exposure)', { skip: skip || false }, async (t) => {
     for (const [k, v] of Object.entries(EDIT)) assert.ok(Math.abs(m.params[k] - v) < 1e-6, `${k} ${m.params[k]} != ${v}`);
   });
 
+  await t.test('instances: in_history after an edit, switchable false where darktable hides the switch', async () => {
+    const { instances } = await e.call({ cmd: 'instances' });
+    const by = (op) => instances.find((i) => i.op === op && i.priority === 0);
+    assert.equal(by('exposure').in_history, true, 'the edited exposure is not in the history');
+    assert.equal(by('bilat').in_history, false, 'an untouched module is in the history');
+    // demosaic cannot apply to a JPEG: Add module greys it out
+    assert.equal(by('demosaic').switchable, false);
+    assert.equal(by('bilat').switchable, true);
+  });
+
   await t.test('save, close, reopen: the sidecar gives the same values', async () => {
     await e.call({ cmd: 'save' });
     assert.ok(existsSync(photo + '.xmp'), 'no sidecar written next to the copy');

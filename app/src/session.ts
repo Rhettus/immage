@@ -1013,8 +1013,21 @@ export class Session {
     }
   }
 
+  // cards that stay shown for this photo though their module is off and not
+  // in the history yet: added from Add module, or changed in this session
+  cardsShown = new Set<string>();
+
+  // Add module: the module's first instance, switched on, as darktable's
+  // module groups do when you enable one
+  addModule(op: string) {
+    this.cardsShown.add(`${op}#0`);
+    this.lastAdded = `${op}#0`;
+    this.setAdvanced(op, 0, {}, true);
+  }
+
   private setAdvanced(op: string, priority: number, params: Params, enabled: boolean, coalesce = false) {
     const key = `${op}#${priority}`;
+    this.cardsShown.add(key);
     const card = this.advanced.get(key);
     if (card) this.advanced.set(key, { ...card, enabled, params: { ...card.params, ...params } });
     const queued = this.advancedDirty.get(key);

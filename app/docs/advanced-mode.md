@@ -16,7 +16,22 @@ In Advanced, the **Adjustments** panel looks like this:
 
 ## Module cards
 
-The Basic group shows darktable's **exposure** module as a card. The card has:
+Each group shows a card for every darktable module this photo uses: the ones
+that are on, and the ones its edit has changed, even if they are now off.
+Cards keep a fixed order in each group, the order of Simple's sections, and a
+module's instances sit together.
+
+Below the cards, **+ Add module** lists the group's modules. Choosing one
+switches it on, opens its card and brings it into view, as one undo step. A
+module already on the photo has a check mark; use its card's **...** menu to
+add another instance. A module darktable cannot apply to this photo, such as
+a raw-only module on a JPEG, is greyed out. Its card, where one shows, has its
+switch greyed out too.
+
+Where darktable splits a module's settings over pages, the card shows them as
+tabs, and darktable's section headings appear above their settings.
+
+The Basic group has darktable's **exposure** module. Its card has:
 
 - An on/off switch and the module's name. If the module has a name of its own,
   such as a second exposure instance, the name follows it.
@@ -73,8 +88,8 @@ their settings, names and order. A deleted instance is gone from the photo's
 saved edit the next time it is saved. Extra instances look in Immage just as
 they do in darktable, and open there.
 
-Modules that Immage's masks and looks manage do not get cards. The other groups
-show "No darktable modules yet" for now.
+Modules that Immage's masks and looks manage do not get cards. Groups whose
+modules are not available yet show "No darktable modules yet".
 
 Masks, Heal, Zones, Film Simulation, Negative, Crop and Presets work as they do
 in Simple. Your edits are kept, and Simple shows them again when you switch

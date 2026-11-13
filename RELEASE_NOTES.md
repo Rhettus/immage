@@ -16,6 +16,10 @@ Improvements
 - Module cards have a darktable presets menu beside the reset button. It applies
   one of darktable's built-in or your own presets to that instance, as one undo
   step.
+- Each Advanced group shows cards only for the modules the photo uses, in a
+  fixed order, with Add module below them to switch on another of the group's
+  modules. Cards show darktable's notebook pages as tabs and its section
+  headings.
 - The sliders icon on panels is now called More controls, and appears only in
   Simple.
 

@@ -6,10 +6,11 @@ import { commands, type ModuleSchema } from "./commands";
 import { ModuleCard } from "./ModuleCard";
 import type { InstanceChoice } from "./InstanceMenu";
 import type { Session } from "./session";
-import { layoutFor } from "./advancedLayout";
+import { groupLayouts, layoutFor, layoutRank } from "./advancedLayout";
+import { AddModuleMenu } from "./AddModuleMenu";
 
-// Advanced mode's Adjustments: the same fold-out groups as Simple, each to
-// hold darktable's modules as cards. None are there yet.
+// Advanced mode's Adjustments: the same fold-out groups as Simple, each
+// holding darktable's modules as cards
 export const TECHNICAL_ID = "technical";
 
 // the module search above the groups; inert until there are modules to find
@@ -57,7 +58,10 @@ export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0
     return () => { live = false; };
   }, [session, id]);
   void revision;
-  const cards = session && loaded?.session === session
+  // a card for each instance the photo uses: on, in its history, or added or
+  // changed here. the rest wait in Add module. cards follow the group's
+  // curated order, a module's instances together in pipe order
+  const all = session && loaded?.session === session
     ? session.instances.flatMap((i) => {
       const layout = i.owner === null ? layoutFor(i.op, id) : undefined;
       const schema = loaded.schemas.get(i.op);
@@ -65,6 +69,15 @@ export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0
       return layout && schema && state ? [{ i, layout, schema, state }] : [];
     })
     : [];
+  const shown = (c: typeof all[number]) =>
+    c.state.enabled || c.i.in_history || session!.cardsShown.has(`${c.i.op}#${c.i.priority}`);
+  const cards = all.filter(shown).sort((a, b) => layoutRank(a.i.op, id) - layoutRank(b.i.op, id));
+  const choices = groupLayouts(id).flatMap((l) => {
+    const first = all.find((c) => c.i.op === l.op && c.i.priority === 0);
+    if (!first) return [];
+    return [{ op: l.op, title: l.title, shown: cards.some((c) => c.i.op === l.op),
+              applicable: first.i.switchable !== false }];
+  });
   return (
     <div className="panel adjust" data-panel-id={id}>
       <div className={`panel-title${open ? " open" : ""}`} onClick={(e) => onToggle(e.altKey)}>
@@ -73,7 +86,7 @@ export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0
       </div>
       <Collapse open={open}>
         <div className="panel-body">
-          {cards.length === 0 && <div className="advanced-empty">No darktable modules yet</div>}
+          {cards.length === 0 && choices.length === 0 && <div className="advanced-empty">No darktable modules yet</div>}
           {cards.map(({ i, layout, schema, state }) => {
             const key = `${i.op}#${i.priority}`;
             const sib = cards.filter((c) => c.i.op === i.op).map((c) => c.i);
@@ -98,6 +111,12 @@ export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0
                 onReset={() => { record?.([`adv:${key}:reset`], layout.title); session!.resetAdvanced(i.op, i.priority); }} />
             );
           })}
+          {choices.length > 0 && (
+            <AddModuleMenu group={title} choices={choices} onAdd={(op) => {
+              record?.([`adv:${op}#0:add:${performance.now()}`], `Add module: ${layoutFor(op, id)!.title}`);
+              session!.addModule(op);
+            }} />
+          )}
         </div>
       </Collapse>
     </div>
