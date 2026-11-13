@@ -329,6 +329,9 @@ The Effects group has these darktable modules:
   reference** for its advanced options), **X offset** and **Y offset**. The
   card cannot yet choose the marker, its text, font or color, or its
   alignment, so it places darktable's default marker in the center.
+- **Composite**: **Opacity**, then under **Placement** the same settings
+  as Watermark. The card cannot yet choose the photo to place, so it has
+  no visible effect yet.
 
 ## Instances
 

@@ -1183,6 +1183,25 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "yoffset", label: "Y offset", section: "Placement", digits: 3 },
     ],
   },
+  {
+    // overlay.c gui_init and gui_changed: a source-photo drop area, then opacity, a
+    // "placement" section (rotate, scale, scale on, 3x3 alignment grid, offsets); the two
+    // advanced scale combos only show for scale_base "advanced options" (gui_changed)
+    // rotate displays negated (factor -1); scale has a soft max of 100
+    // omitted: imgid and filename (set by dropping a photo on the thumbnail area), alignment
+    // (int param edited by a 3x3 toggle grid, needs a custom editor), compositing (no widget)
+    op: "overlay", group: "effects", title: "Composite",
+    fields: [
+      { path: "opacity", label: "Opacity", unit: "%" },
+      { path: "rotate", label: "Rotation", section: "Placement", factor: -1, unit: "°" },
+      { path: "scale", label: "Scale", section: "Placement", soft: [1, 100], unit: "%" },
+      { path: "scale_base", label: "Scale on", section: "Placement" },
+      { path: "scale_img", label: "Scale marker to", section: "Placement", showIf: (p) => p.scale_base === 4 },
+      { path: "scale_svg", label: "Scale marker reference", section: "Placement", showIf: (p) => p.scale_base === 4 },
+      { path: "xoffset", label: "X offset", section: "Placement", digits: 3 },
+      { path: "yoffset", label: "Y offset", section: "Placement", digits: 3 },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);
