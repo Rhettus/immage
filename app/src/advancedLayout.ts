@@ -142,6 +142,23 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "noise_bias", label: "Noise bias", section: "Filter settings", soft: [0, 0.2], digits: 4 },
     ],
   },
+  {
+    // bilat.c gui_init and gui_changed: coarseness and contrast show for the
+    // bilateral grid, highlights and shadows (the same sigma_s and sigma_r,
+    // hard max 2 in gui_init, so a soft max here) and midtone range for the
+    // local laplacian. gui_init also gives coarseness and contrast their own
+    // hard min and default, which the card cannot express (soft min only)
+    op: "bilat", group: "basic", title: "Local contrast",
+    fields: [
+      { path: "mode", label: "Mode" },
+      { path: "detail", label: "Detail", unit: "%", offset: 100 },
+      { path: "sigma_s", label: "Coarseness", soft: [3, 100], digits: 0, showIf: (p) => p.mode !== 1 },
+      { path: "sigma_r", label: "Contrast", soft: [1, 100], digits: 0, showIf: (p) => p.mode !== 1 },
+      { path: "sigma_r", label: "Highlights", soft: [0, 2], unit: "%", factor: 100, showIf: (p) => p.mode === 1 },
+      { path: "sigma_s", label: "Shadows", soft: [0, 2], unit: "%", factor: 100, showIf: (p) => p.mode === 1 },
+      { path: "midtone", label: "Midtone range", digits: 3, showIf: (p) => p.mode === 1 },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);

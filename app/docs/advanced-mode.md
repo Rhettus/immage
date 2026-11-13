@@ -82,6 +82,10 @@ Besides exposure, the Basic group has these darktable modules:
   **Shadows**, then **Coarse**, **Medium** and **Fine details** under Local
   contrast and **Halo control** and **Noise bias** under Filter settings. The
   detail mask preview buttons are not on the card yet.
+- **Local contrast**: **Mode** (bilateral grid or local laplacian filter) and
+  **Detail**, then **Coarseness** and **Contrast** for the bilateral grid, or
+  **Highlights**, **Shadows** and **Midtone range** for the local laplacian
+  filter.
 
 ## Instances
 
