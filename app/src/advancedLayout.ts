@@ -392,6 +392,17 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "preserve_colors", label: "Preserve colors", showIf: (p) => p.curve_autoscale === 0 },
     ],
   },
+  {
+    // rgblevels.c gui_init and _rgblevels_show_hide_controls (preserve colors
+    // shows only for linked channels). left out: levels, the black, gray and
+    // white handles, which need the levels widget; the pickers, auto levels
+    // and select region
+    op: "rgblevels", group: "tonecurve", title: "RGB levels",
+    fields: [
+      { path: "autoscale", label: "Mode" },
+      { path: "preserve_colors", label: "Preserve colors", showIf: (p) => p.autoscale === 0 },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);
