@@ -1253,6 +1253,26 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "hue", label: "Hue", factor: 360, unit: "°", showIf: (p) => p.precedence === 2 },
     ],
   },
+  {
+    // colorin.c gui_init: the input profile and working profile comboboxes
+    // (both built by hand from the profile lists, no params-bound widget), then
+    // gamut clipping via dt_bauhaus_combobox_from_params("normalize")
+    // input_profile and working_profile are Immage's virtual fields standing for
+    // type plus filename and type_work plus filename_work (not in the schema)
+    // omitted: type, filename, type_work, filename_work (replaced by the two
+    // virtual fields above); intent and blue_mapping are not widgets in
+    // gui_init (intent has no widget in colorin, blue_mapping is only applied
+    // in processing), so they are not shown
+    // image-dependent (not modeled): the input profile list holds the profiles
+    // of this image (embedded, matrices, DNG look, ...) plus the built-in and
+    // file profiles
+    op: "colorin", group: "technical", title: "Input color profile",
+    fields: [
+      { path: "input_profile", label: "Input profile", profiles: "input" },
+      { path: "working_profile", label: "Working profile", profiles: "working" },
+      { path: "normalize", label: "Gamut clipping" },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);

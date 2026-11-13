@@ -344,6 +344,9 @@ The Technical group, only in Advanced, has these darktable modules:
   hides unless a preference shows them.
 - **Color reconstruction**: **Threshold**, **Spatial extent**, **Range
   extent** and **Precedence**, and **Hue** when the precedence is hue.
+- **Input color profile**: **Input profile** and **Working profile**, each
+  a list of the profiles this photo can use, and **Gamut clipping**. The
+  Negative panel's profile menus set the same module.
 
 ## Instances
 
