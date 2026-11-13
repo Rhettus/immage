@@ -401,15 +401,18 @@ The Effects group has these darktable modules:
   photo.
 - **Framing**: **Basis**, **Border size**, **Aspect ratio**,
   **Orientation**, **Horizontal offset** and **Vertical offset**, then the
-  frame line's **Frame line size** and **Frame line offset**. The card does
-  not yet have darktable's aspect and position presets or the border and
-  frame line colors, which stay white and black. **Aspect ratio** sets a
-  custom ratio; by default the framed photo keeps its own.
-- **Watermark**: **Opacity**, then under **Placement** **Rotation**,
+  frame line's **Frame line size** and **Frame line offset**, then **Border
+  color** and **Frame line color**, each a color button that opens the color
+  chooser. The frame line settings are grayed out, with the reason as a
+  tooltip, until the border is wide enough and the photo sits inside it, as in
+  darktable. The card does not yet have darktable's aspect and position
+  presets or the pickers that take a color from the photo. **Aspect ratio**
+  sets a custom ratio; by default the framed photo keeps its own.
+- **Watermark**: **Color** (a color button, used by the marker's color
+  tag), **Opacity**, then under **Placement** **Rotation**,
   **Scale**, **Scale on** (with **Scale marker to** and **Scale marker
   reference** for its advanced options), **X offset** and **Y offset**. The
-  card cannot yet choose the marker, its text, font or color, or its
-  alignment, so it places darktable's default marker in the center.
+  card cannot yet choose the marker, its text or font, or its alignment, so it places darktable's default marker in the center.
 - **Composite**: **Opacity**, then under **Placement** the same settings
   as Watermark. The card cannot yet choose the photo to place, so it has
   no visible effect yet.

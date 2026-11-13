@@ -1114,7 +1114,7 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .folder.add { margin-top: 4px; color: var(--text-2); background: transparent; border: 1px dashed var(--ui-border-3a3a3a, #3a3a3a); }
 .modal-body .swatch { width: 20px; height: 20px; margin: 0; border: 2px solid var(--ui-border-444444, #444); }
 .modal-body .swatch.on { border-color: var(--accent); }
-.modal-body .color-pick { width: 34px; height: 24px; padding: 0; background: none; border: none; cursor: pointer; }
+.modal-body .color-pick, .module-card-body .color-pick { width: 34px; height: 24px; padding: 0; background: none; border: none; cursor: pointer; }
 
 /* named choices and preset buttons inside panels */
 .segmented.choice { margin: 2px 0 6px; }
@@ -2639,3 +2639,4 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .module-prefs-tools { display: flex; gap: 8px; margin: 0 0 12px; }
 .module-prefs-tools .field { flex: 1; min-width: 0; }
 .module-prefs-bulk { display: flex; gap: 8px; justify-content: flex-end; }
+.module-card-body .color-pick:disabled { opacity: 0.4; cursor: default; }

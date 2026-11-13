@@ -25,7 +25,9 @@ Improvements
   saturation curve cards have Simple's graphs, the lens correction card has
   Simple's lens picker, and the white balance card has darktable's settings
   list (as shot, camera reference and your camera's presets, with a finetune
-  slider) and its temperature and tint sliders. When a photo's white balance
+  slider) and its temperature and tint sliders. The framing and watermark
+  cards have color buttons for the border, frame line and watermark colors.
+  When a photo's white balance
   comes from the white balance module with color calibration off, Simple's
   White Balance section and the white balance card say so.
 - Advanced cards so far: in Basic, exposure, white balance, color calibration,

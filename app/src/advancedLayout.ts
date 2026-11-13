@@ -36,9 +36,29 @@ export type LayoutField = {
   // fields (wb.c), the menu filled with this photo's camera presets and the
   // slider ranged by the preset in use (ModuleCard)
   wb?: "setting" | "tune";
+  // a color button over a 3-float array param (`path` is the array, its
+  // elements `path[0..2]`): borders.c and watermark.c give darktable's
+  // GtkColorButton the RGBA straight as the floats, 0..1 with no conversion
+  rgb?: boolean;
+  // darktable greys the widget (sensitive off) while this gives a reason; the
+  // reason is its tooltip
+  grey?: (params: Record<string, number>) => string | null;
   // darktable shows the field only for some settings of the others
   showIf?: (params: Record<string, number>) => boolean;
 };
+
+// the element paths a field reads and writes
+export const rgbPaths = (path: string) => [0, 1, 2].map((k) => `${path}[${k}]`);
+export const layoutPaths = (l: LayoutField) => l.rgb ? rgbPaths(l.path) : [l.path];
+
+// borders.c gui_changed: the frame line is greyed out unless there is a border
+// and the image sits strictly inside it
+const frameReason = (p: Record<string, number>) =>
+  p.size <= 0 ? "increase border size to enable the frame line"
+  : p.pos_h <= 0 ? "increase horizontal offset to enable the frame line"
+  : p.pos_h >= 1 ? "decrease horizontal offset to enable the frame line"
+  : p.pos_v <= 0 ? "increase vertical offset to enable the frame line"
+  : p.pos_v >= 1 ? "decrease vertical offset to enable the frame line" : null;
 
 export type ModuleLayout = {
   op: string;
@@ -1223,9 +1243,9 @@ export const LAYOUTS: ModuleLayout[] = [
     // combobox back to the matching preset, or to "custom...", when the slider is edited;
     // the aspect_text, pos_h_text and pos_v_text char arrays have no widget of their own;
     // the frame line widgets are greyed out (not hidden) unless size > 0 and 0 < pos_h < 1
-    // and 0 < pos_v < 1, so there is no showIf
-    // omitted: color[3] and frame_color[3] (color buttons with image pickers; need a color
-    // picker), max_border_size (no widget)
+    // and 0 < pos_v < 1 (frameReason), so there is no showIf
+    // the color buttons are rgb fields. omitted: the image picker beside each (needs the
+    // color picker), max_border_size (no widget)
     op: "borders", group: "effects", title: "Framing",
     fields: [
       { path: "basis", label: "Basis" },
@@ -1234,8 +1254,10 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "aspect_orient", label: "Orientation" },
       { path: "pos_h", label: "Horizontal offset" },
       { path: "pos_v", label: "Vertical offset" },
-      { path: "frame_size", label: "Frame line size", unit: "%", digits: 4 },
-      { path: "frame_offset", label: "Frame line offset", unit: "%", digits: 4 },
+      { path: "frame_size", label: "Frame line size", unit: "%", digits: 4, grey: frameReason },
+      { path: "frame_offset", label: "Frame line offset", unit: "%", digits: 4, grey: frameReason },
+      { path: "color", label: "Border color", rgb: true },
+      { path: "frame_color", label: "Frame line color", rgb: true, grey: frameReason },
     ],
   },
   {
@@ -1243,11 +1265,13 @@ export const LAYOUTS: ModuleLayout[] = [
     // "placement" section (rotate, scale, scale on, 3x3 alignment grid, offsets); the two
     // advanced scale combos only show for scale_base "advanced options" (gui_changed)
     // rotate displays negated (factor -1); scale has a soft max of 100
+    // the color button is an rgb field, without the image picker beside it (needs the color
+    // picker)
     // omitted: filename (marker file chooser with a refresh button), text (entry), font
-    // (font button), color[3] (color button and picker), alignment (int param edited by a 3x3
-    // toggle grid, needs a custom editor)
+    // (font button), alignment (int param edited by a 3x3 toggle grid, needs a custom editor)
     op: "watermark", group: "effects", title: "Watermark",
     fields: [
+      { path: "color", label: "Color", rgb: true },
       { path: "opacity", label: "Opacity", unit: "%" },
       { path: "rotate", label: "Rotation", section: "Placement", factor: -1, unit: "°" },
       { path: "scale", label: "Scale", section: "Placement", soft: [1, 100], unit: "%" },

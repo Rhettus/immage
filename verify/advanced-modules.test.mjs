@@ -486,7 +486,7 @@ test('Advanced mode darktable presets (exposure)', { skip: skip || false }, asyn
 // moves off its default, reads back, survives save and reopen, and the
 // photo with all of them renders as darktable-cli renders the same XMP
 test('Advanced card layouts match darktable', { skip: skip || false }, async (t) => {
-  const { LAYOUTS, INTERPOLATIONS, fieldPath, editOf } = await import('../app/src/advancedLayout.ts');
+  const { LAYOUTS, INTERPOLATIONS, fieldPath, editOf, rgbPaths } = await import('../app/src/advancedLayout.ts');
   const { MAX_NODES } = await import('../app/src/tonecurve.ts');
   const work = mkdtempSync(join(tmpdir(), 'immage-advlay-'));
   mkdirSync(join(work, 'photos'));
@@ -564,6 +564,12 @@ test('Advanced card layouts match darktable', { skip: skip || false }, async (t)
         const f = resolve(lf.path);
         assert.ok(f, `${l.op}: no field ${lf.path}; schema has ${[...by.keys()]}`);
         assert.ok(lf.label, `${lf.path}: no label`);
+        // a color button is a float array of three, drawn as one control
+        if (lf.rgb) {
+          assert.ok(f.type === 'array' && f.element === 'float' && f.dims[0] === 3, `${lf.path}: rgb on ${f.type}`);
+          for (const p of rgbPaths(lf.path)) assert.ok(resolve(p), `${p} not in the schema`);
+          continue;
+        }
         // a hand-filled combobox over an int, or names for an enum's values
         if (lf.choices && f.type === 'enum') assert.ok(lf.choices.every(([n, v]) => n && f.values.some((x) => x.value === v)),
           `${lf.path}: choices not in the enum`);
@@ -590,9 +596,9 @@ test('Advanced card layouts match darktable', { skip: skip || false }, async (t)
       for (const b of l.turns ?? []) assert.ok(b.label && ['ccw', 'cw', 'h', 'v'].includes(b.how), `${l.op}: turn ${JSON.stringify(b)}`);
       // the module's first float slider shown at its defaults, a quarter of
       // the way into its soft range
-      const paths = l.fields.map((lf) => lf.path);
+      const paths = l.fields.flatMap((lf) => lf.rgb ? rgbPaths(lf.path) : [lf.path]);
       const cur = (await e.call({ cmd: 'get', modules: { [`${l.op}@0`]: paths } })).modules[`${l.op}@0`];
-      const lf = l.fields.find((x) => !x.profiles && resolve(x.path)?.type === 'float' && (!x.showIf || x.showIf(cur.defaults)));
+      const lf = l.fields.find((x) => !x.profiles && !x.rgb && resolve(x.path)?.type === 'float' && (!x.showIf || x.showIf(cur.defaults)));
       if (!lf) return;
       const f = resolve(lf.path);
       const [lo, hi] = lf.soft ?? [f.min, f.max];
@@ -723,6 +729,45 @@ test('Advanced lens card picks a lens for its own instance', { skip: skip || fal
   assert.equal((await read(0)).params.lens_pick, 0, 'the first instance is unaffected');
   await e.call({ cmd: 'set', op: 'lens', priority: second, params: { lens_pick: 0 }, enabled: true });
   assert.equal((await read(second)).params.lens_pick, 0, 'Auto again');
+});
+
+// the framing and watermark color buttons write the three elements of an
+// array param (a layout field with `rgb`); a border takes the color it is given
+test('Advanced framing color writes its three elements', { skip: skip || false }, async (t) => {
+  const { LAYOUTS, rgbPaths } = await import('../app/src/advancedLayout.ts');
+  const rgbFields = LAYOUTS.flatMap((l) => l.fields.filter((f) => f.rgb).map((f) => [l.op, f.path]));
+  assert.deepEqual(rgbFields, [['borders', 'color'], ['borders', 'frame_color'], ['watermark', 'color']]);
+  assert.deepEqual(rgbPaths('color'), ['color[0]', 'color[1]', 'color[2]']);
+  const work = mkdtempSync(join(tmpdir(), 'immage-advcolor-'));
+  mkdirSync(join(work, 'photos'));
+  const photo = join(work, 'photos', 'stairs.jpg');
+  copyFileSync(SAMPLE, photo);
+  const e = new Engine(work);
+  t.after(() => { e.stop(); rmSync(work, { recursive: true, force: true }); });
+  await e.call({ cmd: 'open', path: photo });
+  const corner = async (tag) => {
+    const out = join(work, `${tag}.ppm`);
+    await e.call({ cmd: 'render', width: 96, height: 64, out });
+    const buf = readFileSync(out);
+    // P6, size, maxval, then the pixels: the top left one is in the border
+    const header = /^P6\s+(\d+)\s+(\d+)\s+255\s/.exec(buf.subarray(0, 40).toString('latin1'));
+    assert.ok(header, 'a P6 frame');
+    return [...buf.subarray(header[0].length, header[0].length + 3)];
+  };
+  const paths = rgbPaths('color');
+  const set = (params) => e.call({ cmd: 'set', op: 'borders', priority: 0, params, enabled: true });
+  await set({ size: 0.2, ...Object.fromEntries(paths.map((p, k) => [p, [1, 0, 0][k]])) });
+  const red = await corner('red');
+  await set(Object.fromEntries(paths.map((p, k) => [p, [0, 0, 1][k]])));
+  const blue = await corner('blue');
+  assert.ok(red[0] > 200 && red[1] < 40 && red[2] < 40, `red border ${red}`);
+  assert.ok(blue[2] > 200 && blue[0] < 40 && blue[1] < 40, `blue border ${blue}`);
+  const got = (await e.call({ cmd: 'get', modules: { 'borders@0': paths } })).modules['borders@0'].params;
+  assert.deepEqual(paths.map((p) => got[p]), [0, 0, 1], 'the elements read back');
+  const fp = rgbPaths('frame_color');
+  await set(Object.fromEntries(fp.map((p, k) => [p, [0.5, 0.25, 1][k]])));
+  const fc = (await e.call({ cmd: 'get', modules: { 'borders@0': fp } })).modules['borders@0'].params;
+  assert.deepEqual(fp.map((p) => fc[p]), [0.5, 0.25, 1], 'the frame line color reads back');
 });
 
 // white balance's temperature and tint are the engine's own fields (wb.c,

@@ -11,7 +11,7 @@ import { colorProfiles, wbPresets, type AdvancedState, type ColorProfiles } from
 import type { DtPreset, Instance, ModuleSchema, SchemaField, WbPreset } from "./commands";
 import type { Control, Turn } from "./manifest";
 import { FlipIcon, RotateIcon } from "./icons";
-import { fieldPath, type LayoutField, type ModuleLayout } from "./advancedLayout";
+import { fieldPath, rgbPaths, type LayoutField, type ModuleLayout } from "./advancedLayout";
 import { ColorWheel } from "./ColorWheel";
 import { ModuleCurves } from "./ModuleCurves";
 import { ModuleGraph } from "./ModuleGraph";
@@ -29,6 +29,11 @@ const ENGINE_FIELDS: Record<string, SchemaField> = {
   wb_setting: { path: "wb_setting", type: "int", min: 0, max: 255 },
   wb_tune: { path: "wb_tune", type: "int", min: -100, max: 100 },
 };
+
+// a GtkColorButton's RGBA is the three floats as they are (borders.c
+// _colorpick_color_set), the button's 8-bit hex being value * 255 rounded
+const toHex = (v: number[]) => "#" + v.map((x) => Math.round(Math.min(1, Math.max(0, x)) * 255).toString(16).padStart(2, "0")).join("");
+const fromHex = (h: string) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
 
 // the schema entry of a layout path: an array element ("red[2]") takes its
 // array's type, range and that element's default
@@ -234,12 +239,26 @@ export function ModuleCard({ hidden, instance, layout, schema, state, siblings, 
             // a section heading shows once, above the first of its fields shown
             let heading: string | undefined;
             return layout.fields.map((l) => {
+              if (l.rgb) {
+                if (!fields.has(l.path) || (l.tab && l.tab !== tab) || (l.showIf && !l.showIf(state.params))) return null;
+                const paths = rgbPaths(l.path);
+                const rgb = paths.map((p) => state.params[p] ?? state.defaults[p] ?? 0);
+                const why = l.grey?.(state.params) ?? undefined;
+                return (
+                  <div key={l.path} className="choice-row" data-control-id={`adv:${l.path}`} title={why}>
+                    <span>{l.label}</span>
+                    <input type="color" className="color-pick" value={toHex(rgb)} disabled={(fixed && !state.enabled) || !!why}
+                           onChange={(e) => onFields(Object.fromEntries(paths.map((p, k) => [p, fromHex(e.target.value)[k]])), false, l.path)} />
+                  </div>
+                );
+              }
               const value = state.params[l.path] ?? state.defaults[l.path] ?? 0;
               const [f, shownAs] = (l.profiles ? profileField(l, value) : l.wb ? wbField(l, value) : null) ?? [l.wb ? undefined : schemaField(fields, l.path), l];
               if (!f || (l.tab && l.tab !== tab) || (l.showIf && !l.showIf(state.params))) return null;
               const neutral = state.defaults[l.path] ?? 0;
-              const control = fieldControl(f, shownAs, value);
-              const props = { control, value, neutral, values: state.params, disabled: fixed && !state.enabled };
+              const why = l.grey?.(state.params) ?? undefined;
+              const control = { ...fieldControl(f, shownAs, value), ...(why ? { note: why } : {}) };
+              const props = { control, value, neutral, values: state.params, disabled: (fixed && !state.enabled) || !!why };
               const set = (coalesce: boolean) => (v: number) => onField(l.path, v, coalesce);
               const title = l.section && l.section !== heading ? l.section : undefined;
               heading = l.section;

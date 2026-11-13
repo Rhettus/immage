@@ -7,7 +7,7 @@ import { ModuleCard } from "./ModuleCard";
 import type { InstanceChoice } from "./InstanceMenu";
 import type { Session } from "./session";
 import type { Turn } from "./manifest";
-import { LAYOUTS, editOf, groupLayouts, layoutFor, layoutRank, shows } from "./advancedLayout";
+import { LAYOUTS, editOf, groupLayouts, layoutPaths, layoutFor, layoutRank, shows } from "./advancedLayout";
 import { searchModules, type SearchHit } from "./advancedSearch";
 import { panels } from "./manifest";
 import { useDismiss } from "./MasksPanel";
@@ -106,7 +106,7 @@ const cardFields = (layout: NonNullable<ReturnType<typeof layoutFor>>) => {
   const c = layout.curves;
   const curve = c ? c.channels.flatMap((_, ch) => [c.count(ch), c.type(ch),
     ...Array.from({ length: MAX_NODES }, (__, k) => [c.node(ch, k, "x"), c.node(ch, k, "y")]).flat()]) : [];
-  return [...layout.fields.map((f) => f.path), ...(layout.lensPick ? ["lens_pick"] : []), ...curve,
+  return [...layout.fields.flatMap(layoutPaths), ...(layout.lensPick ? ["lens_pick"] : []), ...curve,
     ...(layout.graph ? GRAPHS[layout.graph].fields : [])];
 };
 
