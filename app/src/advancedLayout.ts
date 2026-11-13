@@ -518,6 +518,15 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "noise_protection", label: "Noise protection", section: "Guided filter", unit: "%", digits: 2 },
     ],
   },
+  {
+    // velvia.c gui_init: two sliders, nothing hidden. strength has no
+    // description in introspection; darktable labels it from its field name
+    op: "velvia", group: "hsl", title: "Velvia",
+    fields: [
+      { path: "strength", label: "Strength", unit: "%" },
+      { path: "bias", label: "Mid-tones bias" },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);

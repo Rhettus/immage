@@ -155,6 +155,7 @@ The HSL / Color group has these darktable modules:
 - **Saturation curve**: **Saturation formula** and, under Guided filter, its
   switch, radius, edge feathering and noise protection. The saturation and
   brilliance curves are not on the card yet.
+- **Velvia**: **Strength** and **Mid-tones bias**.
 
 ## Instances
 
