@@ -187,6 +187,9 @@ The B&W group has these darktable modules:
   **Gray** first. Add module turns on Simple's Black & White with color
   calibration, as one undo step. Switching Black & White or its module in
   Simple sets this instance's settings again.
+- **Color equalizer**: the same instance as the HSL / Color group's card,
+  with **Brightness** first, since Simple's B&W Mix sliders set its
+  brightness. A change on one card shows on the other.
 - **Monochrome**: **Highlights**, how much to keep the highlights. The color
   filter graph, which sets the filter's color and size, is not on the card
   yet.
