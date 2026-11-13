@@ -433,14 +433,14 @@ test('Advanced mode darktable presets (exposure)', { skip: skip || false }, asyn
 // moves off its default, reads back, survives save and reopen, and the
 // photo with all of them renders as darktable-cli renders the same XMP
 test('Advanced card layouts match darktable', { skip: skip || false }, async (t) => {
-  const { LAYOUTS, fieldPath } = await import('../app/src/advancedLayout.ts');
+  const { LAYOUTS, fieldPath, editOf } = await import('../app/src/advancedLayout.ts');
   const work = mkdtempSync(join(tmpdir(), 'immage-advlay-'));
   mkdirSync(join(work, 'photos'));
   const photo = join(work, 'photos', 'stairs.jpg');
   copyFileSync(SAMPLE, photo);
   const e = new Engine(work);
   t.after(() => { e.stop(); if (process.env.KEEP) console.log(work); else rmSync(work, { recursive: true, force: true }); });
-  const { imgid } = await e.call({ cmd: 'open', path: photo });
+  const { imgid, sensor_width: width, sensor_height: height } = await e.call({ cmd: 'open', path: photo });
 
   const edits = [];
   for (const l of LAYOUTS) {
@@ -493,9 +493,10 @@ test('Advanced card layouts match darktable', { skip: skip || false }, async (t)
       const [lo, hi] = lf.soft ?? [f.min, f.max];
       let v = cur.defaults[lf.path] + (hi - lo) / 4;
       if (v > hi) v = cur.defaults[lf.path] - (hi - lo) / 4;
-      // as the card sends it, with what its edits also set
-      const also = l.touch && !l.touch.except?.includes(lf.path) ? Object.fromEntries(l.touch.set) : {};
-      await e.call({ cmd: 'set', op: l.op, priority: 0, params: { ...also, [lf.path]: v }, enabled: true });
+      // as the card sends it, with what its edits also set and recompute
+      const sent = editOf(l, lf.path, v, cur.params, { width, height });
+      for (const [p, x] of Object.entries(sent)) assert.ok(resolve(p) && Number.isFinite(x), `${l.op}: an edit sends ${p} = ${x}`);
+      await e.call({ cmd: 'set', op: l.op, priority: 0, params: sent, enabled: true });
       const back = (await e.call({ cmd: 'get', modules: { [`${l.op}@0`]: [lf.path] } })).modules[`${l.op}@0`];
       assert.ok(back.enabled, `${l.op} not on after a set`);
       assert.ok(Math.abs(back.params[lf.path] - v) < 1e-4, `${lf.path}: ${back.params[lf.path]} != ${v}`);

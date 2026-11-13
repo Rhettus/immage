@@ -6,6 +6,8 @@
 // them out: the order, which fields are hidden, the soft slider ranges, the
 // units and when a field shows. This is that part, written by hand from each
 // module's gui_init and gui_changed, one entry per module.
+import { autoCrop } from "./transform";
+
 export type LayoutField = {
   path: string;    // a schema path, or "name[i]" for one element of an array
   label: string;
@@ -41,7 +43,19 @@ export type ModuleLayout = {
   // does, except an edit of one of `except` (lens: darktable renders its
   // defaults until has_been_set is on, which the method alone leaves off)
   touch?: { set: [string, number][]; except?: string[] };
+  // fields every edit recomputes from the module's params after it, as the
+  // module's gui_changed does (ashift's crop box); `size` is the sensor's
+  derive?: (params: Record<string, number>, size: { width: number; height: number }) => Record<string, number>;
 };
+
+// what an edit of `path` to `v` sends: the field, what the card's edits
+// also set and what they recompute (`params`, the instance's before it)
+export function editOf(l: ModuleLayout, path: string, v: number, params: Record<string, number>,
+                       size: { width: number; height: number }): Record<string, number> {
+  const also = l.touch && !l.touch.except?.includes(path) ? Object.fromEntries(l.touch.set) : {};
+  const edit = { ...also, [path]: v };
+  return { ...edit, ...l.derive?.({ ...params, ...edit }, size) };
+}
 
 // diffuse or sharpen's settings, shared by its Basic and Detail cards.
 // diffuse.c gui_init, whose sections are the ones below; no gui_changed

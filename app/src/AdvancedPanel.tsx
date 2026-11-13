@@ -6,7 +6,7 @@ import { commands, type ModuleSchema } from "./commands";
 import { ModuleCard } from "./ModuleCard";
 import type { InstanceChoice } from "./InstanceMenu";
 import type { Session } from "./session";
-import { groupLayouts, layoutFor, layoutRank, shows } from "./advancedLayout";
+import { editOf, groupLayouts, layoutFor, layoutRank, shows } from "./advancedLayout";
 import { AddModuleMenu } from "./AddModuleMenu";
 
 // Advanced mode's Adjustments: the same fold-out groups as Simple, each
@@ -137,7 +137,8 @@ export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0
                   } } : undefined;
                 })()}
                 siblings={sib.length} index={index} fresh={session!.lastAdded === key} onInstance={onInstance}
-                onField={(path, v, coalesce) => { record?.([`adv:${key}:${path}`], layout.title); session!.setField(i.op, i.priority, path, v, coalesce, layout.touch && !layout.touch.except?.includes(path) ? Object.fromEntries(layout.touch.set) : {}); }}
+                onField={(path, v, coalesce) => { record?.([`adv:${key}:${path}`], layout.title); const c = session!.context;
+                  session!.setFields(i.op, i.priority, editOf(layout, path, v, state.params, { width: c.sensorWidth, height: c.sensorHeight }), coalesce); }}
                 onEnabled={(on) => { record?.([`adv:${key}:enabled`], layout.title); session!.setAdvancedEnabled(i.op, i.priority, on); }}
                 loadPresets={() => session!.loadPresets(i.op, i.priority)}
                 onPreset={(name) => { record?.([`adv:${key}:preset:${performance.now()}`], `Preset: ${layout.title}`); session!.applyPreset(i.op, i.priority, name); }}
