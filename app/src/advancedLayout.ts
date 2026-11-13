@@ -1078,6 +1078,16 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "strength", label: "Strength", unit: "%" },
     ],
   },
+  {
+    // soften.c gui_init
+    op: "soften", group: "effects", title: "Soften",
+    fields: [
+      { path: "size", label: "Size", unit: "%" },
+      { path: "saturation", label: "Saturation", unit: "%" },
+      { path: "brightness", label: "Brightness", unit: "EV" },
+      { path: "amount", label: "Mix", unit: "%" },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);

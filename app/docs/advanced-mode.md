@@ -305,6 +305,7 @@ The Effects group has these darktable modules:
 - **Grain**: **Coarseness** (as an ISO value), **Strength** and **Mid-tones
   bias**. Simple's Grain sets the same module.
 - **Bloom**: **Size**, **Threshold** and **Strength**.
+- **Soften**: **Size**, **Saturation**, **Brightness** and **Mix**.
 
 ## Instances
 
