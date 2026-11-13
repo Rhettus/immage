@@ -7,7 +7,7 @@ import { PresetMenu } from "./PresetMenu";
 import { FamilySwitch, type FamilyOption } from "./FamilySwitch";
 import { Chevron, Collapse } from "./Collapse";
 import { Choice, Slider, Toggle } from "./Controls";
-import type { AdvancedState } from "./session";
+import { colorProfiles, type AdvancedState, type ColorProfiles } from "./session";
 import type { DtPreset, Instance, ModuleSchema, SchemaField } from "./commands";
 import type { Control, Turn } from "./manifest";
 import { FlipIcon, RotateIcon } from "./icons";
@@ -75,6 +75,22 @@ export function ModuleCard({ instance, layout, schema, state, siblings, index, f
   const ended = useRef(false);
   const open = fold ?? edited;
   const fields = new Map(schema.fields.map((f) => [f.path, f]));
+  // the profile menus' choices, read again when a profile changes (an added
+  // file shows up); the current one stays listed when it is not among them
+  const roles = layout.fields.flatMap((l) => l.profiles ? [l.profiles] : []);
+  const [profiles, setProfiles] = useState<ColorProfiles | null>(null);
+  const shown = roles.map((r) => state.params[`${r}_profile`]).join();
+  useEffect(() => {
+    if (!roles.length) return;
+    let live = true;
+    colorProfiles().then((p) => { if (live) setProfiles(p); }).catch(() => {});
+    return () => { live = false; };
+  }, [shown]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const profileField = (l: LayoutField, value: number): [SchemaField, LayoutField] => {
+    const list = profiles?.[l.profiles!] ?? [];
+    const choices = list.some(([, v]) => v === value) ? list : [...list, ["Current profile", value] as [string, number]];
+    return [{ path: l.path, type: "int" }, { ...l, choices }];
+  };
   // darktable's notebook pages, in its order; the first is shown at first
   const tabs = [...new Set(layout.fields.flatMap((l) => l.tab ? [l.tab] : []))];
   const [tab, setTab] = useState(tabs[0]);
@@ -143,11 +159,11 @@ export function ModuleCard({ instance, layout, schema, state, siblings, index, f
             // a section heading shows once, above the first of its fields shown
             let heading: string | undefined;
             return layout.fields.map((l) => {
-              const f = schemaField(fields, l.path);
-              if (!f || (l.tab && l.tab !== tab) || (l.showIf && !l.showIf(state.params))) return null;
               const value = state.params[l.path] ?? state.defaults[l.path] ?? 0;
+              const [f, shownAs] = l.profiles ? profileField(l, value) : [schemaField(fields, l.path), l];
+              if (!f || (l.tab && l.tab !== tab) || (l.showIf && !l.showIf(state.params))) return null;
               const neutral = state.defaults[l.path] ?? 0;
-              const control = fieldControl(f, l, value);
+              const control = fieldControl(f, shownAs, value);
               const props = { control, value, neutral, values: state.params, disabled: fixed && !state.enabled };
               const set = (coalesce: boolean) => (v: number) => onField(l.path, v, coalesce);
               const title = l.section && l.section !== heading ? l.section : undefined;

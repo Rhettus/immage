@@ -25,8 +25,13 @@ export type LayoutField = {
   // the enum values darktable's combobox offers, when it leaves some out
   options?: number[];
   // an int field darktable shows as a combobox filled by hand
-  // (dt_bauhaus_combobox_add), with these names and values
+  // (dt_bauhaus_combobox_add), with these names and values; on an enum,
+  // the names of the values offered, which darktable gives the menu itself
   choices?: [string, number][];
+  // input color profile's profile menus: the engine's own field over the
+  // module's type and file name (session.c), with the profiles this photo
+  // can use as its choices
+  profiles?: "input" | "working";
   // darktable shows the field only for some settings of the others
   showIf?: (params: Record<string, number>) => boolean;
 };
@@ -45,8 +50,10 @@ export type ModuleLayout = {
   // defaults until has_been_set is on, which the method alone leaves off)
   touch?: { set: [string, number][]; except?: string[] };
   // fields every edit recomputes from the module's params after it, as the
-  // module's gui_changed does (ashift's crop box); `size` is the sensor's
-  derive?: (params: Record<string, number>, size: { width: number; height: number }) => Record<string, number>;
+  // module's gui_changed does (ashift's crop box); `size` is the sensor's,
+  // `before` the params before the edit (darktable's `previous`)
+  derive?: (params: Record<string, number>, size: { width: number; height: number },
+            before: Record<string, number>) => Record<string, number>;
   // buttons above the fields that turn the photo as the toolbar does, so the
   // crop and mask shapes turn with it (flip's darktable buttons)
   turns?: { label: string; how: Turn }[];
@@ -58,7 +65,7 @@ export function editOf(l: ModuleLayout, path: string, v: number, params: Record<
                        size: { width: number; height: number }): Record<string, number> {
   const also = l.touch && !l.touch.except?.includes(path) ? Object.fromEntries(l.touch.set) : {};
   const edit = { ...also, [path]: v };
-  return { ...edit, ...l.derive?.({ ...params, ...edit }, size) };
+  return { ...edit, ...l.derive?.({ ...params, ...edit }, size, params) };
 }
 
 // diffuse or sharpen's settings, shared by its Basic and Detail cards.

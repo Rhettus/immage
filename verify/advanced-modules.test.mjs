@@ -474,10 +474,22 @@ test('Advanced card layouts match darktable', { skip: skip || false }, async (t)
       for (const lf of l.fields) {
         assert.ok(!seen.has(lf.path) || lf.showIf, `${lf.path} listed twice without a showIf`);
         seen.add(lf.path);
+        // a profile menu is the engine's own field, and its choices the
+        // profiles the photo can use, the current one among them
+        if (lf.profiles) {
+          assert.ok(lf.label && ['input', 'working'].includes(lf.profiles), `${lf.path}: profiles ${lf.profiles}`);
+          const list = (await e.call({ cmd: 'color_profiles' }))[lf.profiles];
+          const now = (await e.call({ cmd: 'get', modules: { [`${l.op}@0`]: [lf.path] } })).modules[`${l.op}@0`].params[lf.path];
+          assert.ok(list.length && list.some(([, v]) => v === now), `${lf.path}: ${now} not among ${JSON.stringify(list)}`);
+          continue;
+        }
         const f = resolve(lf.path);
         assert.ok(f, `${l.op}: no field ${lf.path}; schema has ${[...by.keys()]}`);
         assert.ok(lf.label, `${lf.path}: no label`);
-        if (lf.choices) assert.ok(f.type === 'int' && lf.choices.every(([n, v]) => n && Number.isInteger(v)
+        // a hand-filled combobox over an int, or names for an enum's values
+        if (lf.choices && f.type === 'enum') assert.ok(lf.choices.every(([n, v]) => n && f.values.some((x) => x.value === v)),
+          `${lf.path}: choices not in the enum`);
+        else if (lf.choices) assert.ok(f.type === 'int' && lf.choices.every(([n, v]) => n && Number.isInteger(v)
           && (typeof f.min !== 'number' || v >= f.min) && (typeof f.max !== 'number' || v <= f.max)), `${lf.path}: choices on ${f.type}`);
         if (lf.options) {
           assert.equal(f.type, 'enum', `${lf.path}: options on a ${f.type}`);
@@ -502,7 +514,7 @@ test('Advanced card layouts match darktable', { skip: skip || false }, async (t)
       // the way into its soft range
       const paths = l.fields.map((lf) => lf.path);
       const cur = (await e.call({ cmd: 'get', modules: { [`${l.op}@0`]: paths } })).modules[`${l.op}@0`];
-      const lf = l.fields.find((x) => resolve(x.path).type === 'float' && (!x.showIf || x.showIf(cur.defaults)));
+      const lf = l.fields.find((x) => !x.profiles && resolve(x.path).type === 'float' && (!x.showIf || x.showIf(cur.defaults)));
       if (!lf) return;
       const f = resolve(lf.path);
       const [lo, hi] = lf.soft ?? [f.min, f.max];
