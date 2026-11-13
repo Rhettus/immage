@@ -653,6 +653,15 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "equalization", label: "Histogram equalization", unit: "%" },
     ],
   },
+  {
+    // monochrome.c gui_init: the highlights slider under the filter graph.
+    // left out: a, b and size, the virtual color filter's place and size,
+    // which the graph sets by dragging and scrolling
+    op: "monochrome", group: "bw", title: "Monochrome",
+    fields: [
+      { path: "highlights", label: "Highlights" },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);

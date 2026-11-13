@@ -178,6 +178,14 @@ The HSL / Color group has these darktable modules:
   **Histogram equalization**. Capturing the source and target colors is not
   on the card yet. darktable allows one instance.
 
+## B&W modules
+
+The B&W group has these darktable modules:
+
+- **Monochrome**: **Highlights**, how much to keep the highlights. The color
+  filter graph, which sets the filter's color and size, is not on the card
+  yet.
+
 ## Instances
 
 A module can have several instances, each with its own settings. Open the
