@@ -312,6 +312,9 @@ The Effects group has these darktable modules:
   blur has no more settings. The card has no preview of the blur's shape.
 - **Lowlight vision**: **Blue shift**. The card does not yet have
   darktable's curve of how much each brightness level is affected.
+- **Graduated density**: **Density**, **Hardness**, **Rotation**, **Hue** and
+  **Saturation**. The card cannot yet move the filter's line on the photo,
+  so the line stays through the center.
 
 ## Instances
 

@@ -1115,6 +1115,21 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "blueness", label: "Blue shift", unit: "%" },
     ],
   },
+  {
+    // graduatednd.c gui_init; gui_changed only redraws the line/saturation gradient
+    // rotation is negated (factor -1) and hue shows 0..1 as degrees (factor 360)
+    // not params (omitted): the on-canvas line (drag to define position and rotation),
+    // the hue slider's color picker button
+    // offset has no widget (set only by dragging the line on the canvas)
+    op: "graduatednd", group: "effects", title: "Graduated density",
+    fields: [
+      { path: "density", label: "Density", unit: "EV" },
+      { path: "hardness", label: "Hardness", unit: "%" },
+      { path: "rotation", label: "Rotation", factor: -1, unit: "°" },
+      { path: "hue", label: "Hue", factor: 360, unit: "°" },
+      { path: "saturation", label: "Saturation", unit: "%" },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);
