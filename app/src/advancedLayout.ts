@@ -57,6 +57,10 @@ export type ModuleLayout = {
   // buttons above the fields that turn the photo as the toolbar does, so the
   // crop and mask shapes turn with it (flip's darktable buttons)
   turns?: { label: string; how: Turn }[];
+  // a color wheel above a section's hue and chroma fields, edited as both
+  // (Immage's own, tier B: darktable shows only the sliders). the wheel's
+  // edge is the chroma slider's soft end
+  wheels?: { section: string; hue: string; chroma: string }[];
 };
 
 // what an edit of `path` to `v` sends: the field, what the card's edits
@@ -202,6 +206,11 @@ const COLORBALANCERGB: LayoutField[] = [
   { path: "white_fulcrum", label: "White fulcrum", tab: "Masks", section: "Threshold", soft: [-2, 2], unit: "EV" },
   { path: "grey_fulcrum", label: "Contrast gray fulcrum", tab: "Masks", section: "Threshold", soft: [0.1, 0.5], digits: 2, unit: "%" },
 ];
+
+const CB_WHEELS = ["global", "shadows", "highlights", "midtones"].map((r) => {
+  const f = COLORBALANCERGB.find((x) => x.path === `${r}_H`)!;
+  return { section: f.section!, hue: `${r}_H`, chroma: `${r}_C` };
+});
 
 export const LAYOUTS: ModuleLayout[] = [
   {
@@ -450,7 +459,7 @@ export const LAYOUTS: ModuleLayout[] = [
     // luminance range graph, the mask preview and hue picker buttons, and the
     // mask preview settings (checker colors and size, kept in darktablerc)
     op: "colorbalancergb", group: "basic", title: "Color balance rgb",
-    fields: COLORBALANCERGB,
+    fields: COLORBALANCERGB, wheels: CB_WHEELS,
   },
   {
     // tonecurve.c gui_init and gui_changed (preserve colors shows only for
@@ -733,6 +742,7 @@ export const LAYOUTS: ModuleLayout[] = [
     // its 4 ways page, so that page comes first
     op: "colorbalancergb", group: "colorgrading", title: "Color balance rgb",
     fields: [...COLORBALANCERGB.filter((f) => f.tab === "4 ways"), ...COLORBALANCERGB.filter((f) => f.tab !== "4 ways")],
+    wheels: CB_WHEELS,
   },
   {
     // colorbalance.c gui_init, set_visible_widgets and _configure_slider_blocks

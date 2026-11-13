@@ -229,6 +229,10 @@ export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0
                 siblings={sib.length} index={index} fresh={session!.lastAdded === key} focus={focused?.key === key ? focused.nonce : undefined} onInstance={onInstance} onTurn={onTurn}
                 onField={(path, v, coalesce) => { record?.([`adv:${key}:${path}`], layout.title); const c = session!.context;
                   session!.setFields(i.op, i.priority, editOf(layout, path, v, state.params, { width: c.sensorWidth, height: c.sensorHeight }), coalesce); }}
+                onFields={(edit, coalesce, id) => { record?.([`adv:${key}:${id}`], layout.title); const c = session!.context;
+                  const size = { width: c.sensorWidth, height: c.sensorHeight };
+                  const all = Object.entries(edit).reduce((acc, [path, v]) => ({ ...acc, ...editOf(layout, path, v, { ...state.params, ...acc }, size) }), {});
+                  session!.setFields(i.op, i.priority, all, coalesce); }}
                 onEnabled={(on) => { record?.([`adv:${key}:enabled`], layout.title); session!.setAdvancedEnabled(i.op, i.priority, on); }}
                 loadPresets={() => session!.loadPresets(i.op, i.priority)}
                 onPreset={(name) => { record?.([`adv:${key}:preset:${performance.now()}`], `Preset: ${layout.title}`); session!.applyPreset(i.op, i.priority, name); }}

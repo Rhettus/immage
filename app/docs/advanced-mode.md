@@ -162,7 +162,10 @@ Besides exposure, the Basic group has these darktable modules:
   vibrance** and **Contrast**, then linear chroma, perceptual saturation and
   perceptual brilliance grading, each with a global slider and shadows,
   mid-tones and highlights. 4 ways has luminance, hue and chroma for the global
-  offset, shadows lift, highlights gain and power. Masks has the **Saturation
+  offset, shadows lift, highlights gain and power, each with a color wheel
+  above its sliders. Drag the wheel to set the hue and chroma together;
+  double-click it to set chroma to 0. The wheel's edge is the end of the
+  chroma slider, and a larger chroma typed in shows at the edge. Masks has the **Saturation
   formula**, the shadows and highlights fall-off, the mask and contrast gray
   fulcrums and the **White fulcrum**. The luminance range graph, mask previews,
   color pickers and mask preview settings are not on the card yet.

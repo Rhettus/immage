@@ -495,6 +495,14 @@ test('Advanced card layouts match darktable', { skip: skip || false }, async (t)
   t.after(() => { e.stop(); if (process.env.KEEP) console.log(work); else rmSync(work, { recursive: true, force: true }); });
   const { imgid, sensor_width: width, sensor_height: height } = await e.call({ cmd: 'open', path: photo });
 
+  // a card's wheel edits a hue and a chroma field of the section it heads
+  for (const l of LAYOUTS) for (const w of l.wheels ?? []) {
+    const f = (p) => l.fields.find((x) => x.path === p);
+    assert.ok(f(w.hue) && f(w.chroma), `${l.op} wheel ${w.hue}/${w.chroma} not among its fields`);
+    assert.equal(f(w.hue).section, w.section); assert.equal(f(w.chroma).section, w.section);
+    assert.ok(f(w.chroma).soft?.[1] > 0, `${l.op} ${w.chroma} has no soft end for the wheel's edge`);
+  }
+
   const edits = [];
   for (const l of LAYOUTS) {
     await t.test(`${l.op} (${l.group}) layout`, async () => {

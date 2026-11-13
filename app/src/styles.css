@@ -2603,6 +2603,8 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .advanced-edits:hover { color: var(--text); background: var(--hover); }
 .advanced-edits b { color: var(--text); font-weight: 600; }
 .advanced-edits .advanced-dot { position: static; flex: none; }
+/* a module card's color wheel (ModuleLayout.wheels), above its sliders */
+.module-card-wheel { display: flex; justify-content: center; margin: 4px 0 8px; }
 .advanced-empty { margin: 4px 16px 8px; color: var(--muted, #8a8a8a); font-size: var(--fs-small); }
 
 /* Advanced mode's module cards: a header row (switch, name, reset) over the

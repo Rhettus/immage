@@ -12,6 +12,7 @@ import type { DtPreset, Instance, ModuleSchema, SchemaField } from "./commands";
 import type { Control, Turn } from "./manifest";
 import { FlipIcon, RotateIcon } from "./icons";
 import { fieldPath, type LayoutField, type ModuleLayout } from "./advancedLayout";
+import { ColorWheel } from "./ColorWheel";
 
 // the card's fields as the controls the rest of the app draws
 const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -57,7 +58,7 @@ export function fieldControl(f: SchemaField, l: LayoutField, value: number): Con
 // `siblings` is how many instances of the module the group shows, `index`
 // this one's place among them (pipe order); `fresh`, a card just added;
 // `focus`, a number that changes each time the module search picks the card
-export function ModuleCard({ hidden, instance, layout, schema, state, siblings, index, fresh, focus, family, onField, onEnabled, onReset, onInstance, loadPresets, onPreset, onTurn }: {
+export function ModuleCard({ hidden, instance, layout, schema, state, siblings, index, fresh, focus, family, onField, onFields, onEnabled, onReset, onInstance, loadPresets, onPreset, onTurn }: {
   instance: Instance; layout: ModuleLayout; schema: ModuleSchema; state: AdvancedState;
   // hidden in Preferences > Modules, yet shown as the photo uses it
   hidden?: boolean;
@@ -65,6 +66,8 @@ export function ModuleCard({ hidden, instance, layout, schema, state, siblings, 
   // the modules this card can switch to, when it is a shared card
   family?: { label: string; options: FamilyOption[]; onPick: (op: string) => void };
   onField: (path: string, value: number, coalesce: boolean) => void;
+  // several fields as one edit (a wheel's hue and chroma)
+  onFields: (edit: Record<string, number>, coalesce: boolean, id: string) => void;
   onEnabled: (on: boolean) => void; onReset: () => void;
   onInstance: (c: InstanceChoice, name?: string) => void;
   loadPresets: () => Promise<DtPreset[]>; onPreset: (name: string) => void;
@@ -183,9 +186,20 @@ export function ModuleCard({ hidden, instance, layout, schema, state, siblings, 
               const set = (coalesce: boolean) => (v: number) => onField(l.path, v, coalesce);
               const title = l.section && l.section !== heading ? l.section : undefined;
               heading = l.section;
+              const wheel = title ? layout.wheels?.find((w) => w.section === title) : undefined;
               return (
                 <Fragment key={l.path}>
                   {title && <div className="module-card-section">{title}</div>}
+                  {wheel && fields.has(wheel.hue) && fields.has(wheel.chroma) && (() => {
+                    const top = layout.fields.find((x) => x.path === wheel.chroma)?.soft?.[1] ?? fields.get(wheel.chroma)!.max ?? 1;
+                    const hue = state.params[wheel.hue] ?? 0, chroma = state.params[wheel.chroma] ?? 0;
+                    return (
+                      <div className="module-card-wheel" data-wheel={wheel.hue}>
+                        <ColorWheel hue={hue} sat={Math.min(100, Math.max(0, chroma / top * 100))} size="140px" disabled={fixed && !state.enabled}
+                                    onChange={(h, sat) => onFields({ [wheel.hue]: h, [wheel.chroma]: sat / 100 * top }, true, wheel.hue)} />
+                      </div>
+                    );
+                  })()}
                   {control.kind === "toggle" ? <Toggle {...props} onChange={set(false)} />
                     : control.kind === "choice" ? <Choice {...props} onChange={set(false)} />
                     : <Slider {...props} onChange={set(true)} />}
