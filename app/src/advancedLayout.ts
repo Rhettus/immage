@@ -1021,6 +1021,13 @@ export const LAYOUTS: ModuleLayout[] = [
     ],
     fields: [],
   },
+  {
+    // scalepixels.c gui_init, its one slider
+    op: "scalepixels", group: "transform", title: "Scale pixels",
+    fields: [
+      { path: "pixel_aspect_ratio", label: "Pixel aspect ratio" },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);

@@ -287,6 +287,8 @@ The Transform group has these darktable modules:
   flip horizontally or vertically. They turn the photo as the toolbar's
   buttons do, with the crop and masks. Reset puts back the orientation the
   camera recorded.
+- **Scale pixels**: **Pixel aspect ratio**, for photos from cameras or
+  scanners whose pixels are not square.
 
 ## Instances
 
