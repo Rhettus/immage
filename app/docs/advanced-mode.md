@@ -332,6 +332,7 @@ The Effects group has these darktable modules:
 - **Composite**: **Opacity**, then under **Placement** the same settings
   as Watermark. The card cannot yet choose the photo to place, so it has
   no visible effect yet.
+- **Dither or posterize**: **Method**, and **Damping** for random dither.
 
 ## Instances
 

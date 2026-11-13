@@ -1202,6 +1202,16 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "yoffset", label: "Y offset", section: "Placement", digits: 3 },
     ],
   },
+  {
+    // dither.c gui_init and gui_changed: damping is added first, then the method combobox;
+    // damping is only visible for the random method (value 0)
+    // omitted: palette, random.radius, random.range[4] (their widgets are under #if 0)
+    op: "dither", group: "effects", title: "Dither or posterize",
+    fields: [
+      { path: "random.damping", label: "Damping", unit: "dB", digits: 3, showIf: (p) => p.dither_type === 0 },
+      { path: "dither_type", label: "Method" },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);
