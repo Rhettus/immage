@@ -191,6 +191,48 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "threshold", label: "Luminance masking threshold", section: "Diffusion spatiality", unit: "%" },
     ],
   },
+  {
+    // colorbalancergb.c gui_init (a notebook of master, 4 ways and masks
+    // pages); gui_changed only repaints slider backgrounds. left out: the
+    // luminance range graph, the mask preview and hue picker buttons, and the
+    // mask preview settings (checker colors and size, kept in darktablerc)
+    op: "colorbalancergb", group: "basic", title: "Color balance rgb",
+    fields: [
+      { path: "hue_angle", label: "Hue shift", tab: "Master", unit: "°" },
+      { path: "vibrance", label: "Global vibrance", tab: "Master", soft: [-0.5, 0.5], digits: 2, unit: "%" },
+      { path: "contrast", label: "Contrast", tab: "Master", soft: [-0.5, 0.5], digits: 2, unit: "%" },
+      { path: "chroma_global", label: "Global chroma", tab: "Master", section: "Linear chroma grading", soft: [-0.5, 0.5], digits: 2, unit: "%" },
+      { path: "chroma_shadows", label: "Shadows", tab: "Master", section: "Linear chroma grading", digits: 2, unit: "%" },
+      { path: "chroma_midtones", label: "Mid-tones", tab: "Master", section: "Linear chroma grading", digits: 2, unit: "%" },
+      { path: "chroma_highlights", label: "Highlights", tab: "Master", section: "Linear chroma grading", digits: 2, unit: "%" },
+      { path: "saturation_global", label: "Global saturation", tab: "Master", section: "Perceptual saturation grading", digits: 2, unit: "%" },
+      { path: "saturation_shadows", label: "Shadows", tab: "Master", section: "Perceptual saturation grading", digits: 2, unit: "%" },
+      { path: "saturation_midtones", label: "Mid-tones", tab: "Master", section: "Perceptual saturation grading", digits: 2, unit: "%" },
+      { path: "saturation_highlights", label: "Highlights", tab: "Master", section: "Perceptual saturation grading", digits: 2, unit: "%" },
+      { path: "brilliance_global", label: "Global brilliance", tab: "Master", section: "Perceptual brilliance grading", digits: 2, unit: "%" },
+      { path: "brilliance_shadows", label: "Shadows", tab: "Master", section: "Perceptual brilliance grading", digits: 2, unit: "%" },
+      { path: "brilliance_midtones", label: "Mid-tones", tab: "Master", section: "Perceptual brilliance grading", digits: 2, unit: "%" },
+      { path: "brilliance_highlights", label: "Highlights", tab: "Master", section: "Perceptual brilliance grading", digits: 2, unit: "%" },
+      { path: "global_Y", label: "Luminance", tab: "4 ways", section: "Global offset", soft: [-0.05, 0.05], digits: 2, unit: "%" },
+      { path: "global_H", label: "Hue", tab: "4 ways", section: "Global offset", unit: "°" },
+      { path: "global_C", label: "Chroma", tab: "4 ways", section: "Global offset", soft: [0, 0.01], digits: 2, unit: "%" },
+      { path: "shadows_Y", label: "Luminance", tab: "4 ways", section: "Shadows lift", soft: [-1, 1], digits: 2, unit: "%" },
+      { path: "shadows_H", label: "Hue", tab: "4 ways", section: "Shadows lift", unit: "°" },
+      { path: "shadows_C", label: "Chroma", tab: "4 ways", section: "Shadows lift", soft: [0, 0.5], digits: 2, unit: "%" },
+      { path: "highlights_Y", label: "Luminance", tab: "4 ways", section: "Highlights gain", soft: [-0.5, 0.5], digits: 2, unit: "%" },
+      { path: "highlights_H", label: "Hue", tab: "4 ways", section: "Highlights gain", unit: "°" },
+      { path: "highlights_C", label: "Chroma", tab: "4 ways", section: "Highlights gain", soft: [0, 0.2], digits: 2, unit: "%" },
+      { path: "midtones_Y", label: "Luminance", tab: "4 ways", section: "Power", soft: [-0.25, 0.25], digits: 2, unit: "%" },
+      { path: "midtones_H", label: "Hue", tab: "4 ways", section: "Power", unit: "°" },
+      { path: "midtones_C", label: "Chroma", tab: "4 ways", section: "Power", soft: [0, 0.1], digits: 2, unit: "%" },
+      { path: "saturation_formula", label: "Saturation formula", tab: "Masks" },
+      { path: "shadows_weight", label: "Shadows fall-off", tab: "Masks", section: "Luminance ranges", digits: 2, unit: "%" },
+      { path: "mask_grey_fulcrum", label: "Mask middle-gray fulcrum", tab: "Masks", section: "Luminance ranges", digits: 2, unit: "%" },
+      { path: "highlights_weight", label: "Highlights fall-off", tab: "Masks", section: "Luminance ranges", digits: 2, unit: "%" },
+      { path: "white_fulcrum", label: "White fulcrum", tab: "Masks", section: "Threshold", soft: [-2, 2], unit: "EV" },
+      { path: "grey_fulcrum", label: "Contrast gray fulcrum", tab: "Masks", section: "Threshold", soft: [0.1, 0.5], digits: 2, unit: "%" },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);

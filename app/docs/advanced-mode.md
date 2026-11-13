@@ -92,6 +92,14 @@ Besides exposure, the Basic group has these darktable modules:
   the four orders of anisotropy; under Edge management, **Sharpness**, **Edge
   sensitivity** and **Edge threshold**; and under Diffusion spatiality, the
   **Luminance masking threshold**.
+- **Color balance rgb**: three tabs. Master has **Hue shift**, **Global
+  vibrance** and **Contrast**, then linear chroma, perceptual saturation and
+  perceptual brilliance grading, each with a global slider and shadows,
+  mid-tones and highlights. 4 ways has luminance, hue and chroma for the global
+  offset, shadows lift, highlights gain and power. Masks has the **Saturation
+  formula**, the shadows and highlights fall-off, the mask and contrast gray
+  fulcrums and the **White fulcrum**. The luminance range graph, mask previews,
+  color pickers and mask preview settings are not on the card yet.
 
 ## Instances
 
