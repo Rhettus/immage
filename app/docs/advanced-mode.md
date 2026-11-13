@@ -71,9 +71,9 @@ Besides exposure, the Basic group has these darktable modules:
   input channels into each output channel; **Colorfulness**, **Brightness** and
   **Gray** set the input weights of each, all with **Normalize channels**. Not
   yet on the card: the hue and chroma of a custom illuminant, the color
-  picker, area color mapping and color checker calibration. Simple's
-  calibration and Black & White's calibration use their own instances; only
-  the first shows here.
+  picker, area color mapping and color checker calibration. Simple's Black &
+  White conversion uses an instance of its own, which shows in the B&W group
+  rather than here.
 - **Highlight reconstruction**: **Method** and **Clipping threshold**, then
   the settings of the method chosen: segmentation's combine, candidating and
   rebuild (with strength and noise level), or guided laplacians' noise level,
@@ -182,6 +182,11 @@ The HSL / Color group has these darktable modules:
 
 The B&W group has these darktable modules:
 
+- **Color calibration**: the instance Simple's Black & White conversion uses
+  when its module is color calibration, with the same tabs as in Basic, but
+  **Gray** first. Add module turns on Simple's Black & White with color
+  calibration, as one undo step. Switching Black & White or its module in
+  Simple sets this instance's settings again.
 - **Monochrome**: **Highlights**, how much to keep the highlights. The color
   filter graph, which sets the filter's color and size, is not on the card
   yet.

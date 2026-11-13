@@ -1137,23 +1137,31 @@ export class Session {
       return;
     }
     this.instances = r.instances;
-    // a new card reads the fields its module's other cards read
-    for (const i of r.instances) {
-      const k = `${i.op}#${i.priority}`;
-      if (this.advanced.has(k)) continue;
-      const fields = [...this.advancedFields].find(([f]) => f.startsWith(`${i.op}#`))?.[1];
-      if (fields && i.owner === null) await this.loadAdvanced(i.op, i.priority, fields);
-    }
+    await this.loadNewCards();
     if (a.action === "new" || a.action === "duplicate") this.lastAdded = `${a.op}#${r.priority}`;
   }
   // the instance the menu added last, whose card opens when it first shows
   lastAdded: string | null = null;
 
   // after a Simple slider sent its module: cards on that module read back
-  private staleAdvanced(op: string) {
-    const real = op.split("#")[0];
-    for (const [key, card] of this.advanced) if (card.op === real) this.advancedStale.add(key);
+  // a new instance's card reads the fields its module's other cards read
+  private async loadNewCards() {
+    for (const i of this.instances) {
+      const k = `${i.op}#${i.priority}`;
+      if (this.advanced.has(k)) continue;
+      const fields = [...this.advancedFields].find(([f]) => f.startsWith(`${i.op}#`))?.[1];
+      if (fields && i.owner === null) await this.loadAdvanced(i.op, i.priority, fields);
+    }
   }
+
+  private staleAdvanced(op: string) {
+    const [real, name] = op.split("#");
+    for (const [key, card] of this.advanced) if (card.op === real) this.advancedStale.add(key);
+    // a named instance the edit makes: its card needs the list read again
+    if (name && this.instancesLoad && !this.instances.some((i) => i.op === real && i.hand_edited && i.name === name))
+      this.instancesStale = true;
+  }
+  private instancesStale = false;
 
   // whether darktable set the module in a way its sliders cannot show
   isForeign(op: string) {
@@ -1539,7 +1547,7 @@ export class Session {
              || this.fitView || this.wantLook !== undefined
              || this.masksPending || this.wantLookAmount !== undefined || this.spotsPending
              || this.reshapeDue || this.baselineEnd || this.modulePending.length || this.resetModulesPending
-             || this.advancedDirty.size || this.advancedStale.size || this.instancePending.length) {
+             || this.advancedDirty.size || this.advancedStale.size || this.instancesStale || this.instancePending.length) {
         if (this.editFrame !== null) break;
         // before the change that ended it; a save it makes is the one due
         if (this.baselineEnd) {
@@ -1697,7 +1705,13 @@ export class Session {
           this.needRender = true;
           continue;
         }
-        if (this.advancedStale.size && !this.dirty.size && !this.advancedDirty.size) {
+        if ((this.advancedStale.size || this.instancesStale) && !this.dirty.size && !this.advancedDirty.size) {
+          if (this.instancesStale) {
+            this.instancesStale = false;
+            this.instancesLoad = null;
+            await this.loadInstances();
+            await this.loadNewCards();
+          }
           const keys = [...this.advancedStale];
           this.advancedStale.clear();
           for (const key of keys) {

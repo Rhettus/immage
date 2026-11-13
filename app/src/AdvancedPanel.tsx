@@ -6,7 +6,7 @@ import { commands, type ModuleSchema } from "./commands";
 import { ModuleCard } from "./ModuleCard";
 import type { InstanceChoice } from "./InstanceMenu";
 import type { Session } from "./session";
-import { groupLayouts, layoutFor, layoutRank } from "./advancedLayout";
+import { groupLayouts, layoutFor, layoutRank, shows } from "./advancedLayout";
 import { AddModuleMenu } from "./AddModuleMenu";
 
 // Advanced mode's Adjustments: the same fold-out groups as Simple, each
@@ -43,9 +43,11 @@ const familyOf = (op: string) => FAMILIES.find((f) => f.ops.includes(op));
 // one group: its title row folds like Simple's (Focus mode and Alt-click
 // are the caller's onToggle), with no More controls icon. with a photo open
 // it holds the cards of the instances its modules have, in pipe order
-export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0, record }: {
+export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0, record, onSimple }: {
   id: string; title: string; open: boolean; onToggle: (solo: boolean) => void;
   session?: Session | null; revision?: number; record?: AdvancedEdit;
+  // Simple's values set as one undo step, for a card of a Simple instance
+  onSimple?: (entries: [string, number][], label: string) => void;
 }) {
   const [loaded, setLoaded] = useState<{ session: Session; schemas: Map<string, ModuleSchema> } | null>(null);
   // the cards this group could show, and the data they need, once per photo
@@ -56,10 +58,11 @@ export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0
       const insts = await session.loadInstances();
       const found = new Map<string, ModuleSchema>();
       for (const i of insts) {
-        if (i.owner !== null || !layoutFor(i.op, id)) continue;
-        const schema = await schemaOf(i.op);
-        found.set(i.op, schema);
-        await session.loadAdvanced(i.op, i.priority, layoutFor(i.op, id)!.fields.map((f) => f.path));
+        const layout = i.owner === null ? layoutFor(i.op, id) : undefined;
+        if (!layout) continue;
+        // the schema even with no instance to show: Add module needs it
+        found.set(i.op, await schemaOf(i.op));
+        if (shows(layout, i)) await session.loadAdvanced(i.op, i.priority, layout.fields.map((f) => f.path));
       }
       if (live) setLoaded({ session, schemas: found });
     })().catch(() => {});
@@ -72,6 +75,7 @@ export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0
   const all = session && loaded?.session === session
     ? session.instances.flatMap((i) => {
       const layout = i.owner === null ? layoutFor(i.op, id) : undefined;
+      if (!layout || !shows(layout, i)) return [];
       const schema = loaded.schemas.get(i.op);
       const state = session.advanced.get(`${i.op}#${i.priority}`);
       return layout && schema && state ? [{ i, layout, schema, state }] : [];
@@ -90,13 +94,15 @@ export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0
     return l && first ? [{ op, title: l.title, applicable: first.i.switchable !== false }] : [];
   });
   const choices = groupLayouts(id).flatMap((l) => {
-    const first = all.find((c) => c.i.op === l.op && c.i.priority === 0);
-    if (!first) return [];
+    // a named card's instance may not exist yet: the module's first says
+    // whether darktable can apply it
+    const first = session?.instances.find((i) => i.op === l.op && i.priority === 0);
+    if (!first || !loaded || loaded.session !== session || !loaded.schemas.has(l.op) || (l.instance && !onSimple)) return [];
     // a family member counts as shown while its family's card is: the
     // card's switch is how to reach it
     const f = familyOf(l.op);
     return [{ op: l.op, title: l.title, shown: cards.some((c) => c.i.op === l.op || (!!f && f.ops.includes(c.i.op) && c.state.enabled)),
-              applicable: first.i.switchable !== false }];
+              applicable: first.switchable !== false }];
   });
   return (
     <div className="panel adjust" data-panel-id={id}>
@@ -140,7 +146,9 @@ export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0
           })}
           {choices.length > 0 && (
             <AddModuleMenu group={title} choices={choices} onAdd={(op) => {
-              record?.([`adv:${op}#0:add:${performance.now()}`], `Add module: ${layoutFor(op, id)!.title}`);
+              const l = layoutFor(op, id)!;
+              if (l.instance) { onSimple!(l.instance.add, `Add module: ${l.title}`); return; }
+              record?.([`adv:${op}#0:add:${performance.now()}`], `Add module: ${l.title}`);
               session!.addModule(op);
             }} />
           )}

@@ -102,7 +102,7 @@ export type PanelProps = {
   sessionRevision: number;
   panel: Panel; open: boolean; onToggle: (solo: boolean) => void; values: Record<string, number>;
   session: Session | null; disabled: boolean; onChange: (c: Control, v: number) => void;
-  onChangeMany: (entries: [string, number][]) => void; histograms: Snapshot<Histogram | null>;
+  onChangeMany: (entries: [string, number][], label?: string) => void; histograms: Snapshot<Histogram | null>;
   onAuto?: () => void;
   detailLoupe?: React.ReactNode;
   presenceLoupe?: React.ReactNode;
@@ -136,7 +136,8 @@ export function PanelView(props: PanelProps) {
   const auto = useLiveEvent(() => props.onAuto?.());
   const option = useLiveEvent((preview: OptionPreview | null) => props.onOptionPreview?.(preview));
   if (advancedMode) return <AdvancedGroup id={props.panel.id} title={props.panel.advancedTitle ?? props.panel.title} open={props.open} onToggle={onToggle}
-                                       session={props.session} revision={props.sessionRevision} record={props.onAdvancedEdit} />;
+                                       session={props.session} revision={props.sessionRevision} record={props.onAdvancedEdit}
+                                       onSimple={onChangeMany} />;
   return <PanelWidget {...props} values={values} onToggle={onToggle} onChange={onChange}
     onChangeMany={onChangeMany} onPreview={onPreview} onAuto={props.onAuto ? auto : undefined}
     onOptionPreview={props.onOptionPreview ? option : undefined} />;

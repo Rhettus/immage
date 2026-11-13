@@ -255,6 +255,27 @@ test('instances marks a look\'s instances with owner "look"', { skip: skip || fa
   t.diagnostic(`${names[0]}: ${owned.map((i) => i.op).join(', ')}; ${off.filter((i) => i.owner === 'look').length} left after removing`);
 });
 
+// Simple's B&W makes color calibration's instance "bw"; the B&W group's card
+// finds it by that hand-edited name, and Basic's leaves it out
+test('Simple\'s named instance "bw" is listed by its name', { skip: skip || false }, async (t) => {
+  const work = mkdtempSync(join(tmpdir(), 'immage-advbw-'));
+  mkdirSync(join(work, 'photos'));
+  const photo = join(work, 'photos', 'stairs.jpg');
+  copyFileSync(SAMPLE, photo);
+  const e = new Engine(work);
+  t.after(() => { e.stop(); rmSync(work, { recursive: true, force: true }); });
+  await e.call({ cmd: 'open', path: photo });
+  await e.call({ cmd: 'set', op: 'channelmixerrgb', instance: 'bw', after: 'colorequal', enabled: true,
+                 params: { 'grey[0]': 0, 'grey[1]': 1, 'grey[2]': 0 } });
+  const cal = (await e.call({ cmd: 'instances' })).instances.filter((i) => i.op === 'channelmixerrgb');
+  const bw = cal.filter((i) => i.hand_edited && i.name === 'bw');
+  assert.equal(bw.length, 1, `channelmixerrgb instances: ${JSON.stringify(cal)}`);
+  assert.equal(bw[0].owner, null, 'the bw instance is the user\'s, not a tool\'s');
+  assert.ok(bw[0].priority > 0 && bw[0].enabled, `bw instance ${JSON.stringify(bw[0])}`);
+  const got = (await e.call({ cmd: 'get', modules: { [`channelmixerrgb@${bw[0].priority}`]: ['grey[1]'] } })).modules;
+  assert.equal(got[`channelmixerrgb@${bw[0].priority}`].params['grey[1]'], 1);
+});
+
 // Advanced mode phase 4: the instance menu's actions on exposure. A second
 // and third instance, a rename, a move, a delete undone and one kept; then
 // save, reopen and render parity with darktable-cli over the sidecar

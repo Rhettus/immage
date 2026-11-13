@@ -33,7 +33,47 @@ export type ModuleLayout = {
   group: string;   // the panel (manifest.ts) whose Advanced group holds the card
   title: string;
   fields: LayoutField[];
+  // the card is for Immage's instance so named (Simple's B&W "bw"), which
+  // the module's other cards leave out; Add module sets these Simple values,
+  // which make it
+  instance?: { name: string; add: [string, number][] };
 };
+
+// color calibration's settings, shared by its Basic and B&W cards
+const CALIBRATION: LayoutField[] = [
+  { path: "adaptation", label: "Adaptation", tab: "CAT" },
+  { path: "illuminant", label: "Illuminant", tab: "CAT", options: [0, 1, 2, 3, 4, 5, 6, 7, 10], showIf: (p) => p.adaptation !== 4 },
+  { path: "illum_fluo", label: "F source", tab: "CAT", showIf: (p) => p.adaptation !== 4 && p.illuminant === 4 },
+  { path: "illum_led", label: "LED source", tab: "CAT", showIf: (p) => p.adaptation !== 4 && p.illuminant === 5 },
+  { path: "temperature", label: "Temperature", tab: "CAT", soft: [3000, 7000], unit: "K", digits: 0, showIf: (p) => p.adaptation !== 4 && (p.illuminant === 2 || p.illuminant === 6) },
+  { path: "gamut", label: "Gamut compression", tab: "CAT", soft: [0, 4] },
+  { path: "clip", label: "Clip negative RGB from gamut", tab: "CAT" },
+  { path: "red[0]", label: "Input R", tab: "R", digits: 3 },
+  { path: "red[1]", label: "Input G", tab: "R", digits: 3 },
+  { path: "red[2]", label: "Input B", tab: "R", digits: 3 },
+  { path: "normalize_R", label: "Normalize channels", tab: "R" },
+  { path: "green[0]", label: "Input R", tab: "G", digits: 3 },
+  { path: "green[1]", label: "Input G", tab: "G", digits: 3 },
+  { path: "green[2]", label: "Input B", tab: "G", digits: 3 },
+  { path: "normalize_G", label: "Normalize channels", tab: "G" },
+  { path: "blue[0]", label: "Input R", tab: "B", digits: 3 },
+  { path: "blue[1]", label: "Input G", tab: "B", digits: 3 },
+  { path: "blue[2]", label: "Input B", tab: "B", digits: 3 },
+  { path: "normalize_B", label: "Normalize channels", tab: "B" },
+  { path: "saturation[0]", label: "Input R", tab: "Colorfulness", digits: 3, soft: [-1, 1] },
+  { path: "saturation[1]", label: "Input G", tab: "Colorfulness", digits: 3, soft: [-1, 1] },
+  { path: "saturation[2]", label: "Input B", tab: "Colorfulness", digits: 3, soft: [-1, 1] },
+  { path: "normalize_sat", label: "Normalize channels", tab: "Colorfulness" },
+  { path: "version", label: "Saturation algorithm", tab: "Colorfulness" },
+  { path: "lightness[0]", label: "Input R", tab: "Brightness", digits: 3, soft: [-1, 1] },
+  { path: "lightness[1]", label: "Input G", tab: "Brightness", digits: 3, soft: [-1, 1] },
+  { path: "lightness[2]", label: "Input B", tab: "Brightness", digits: 3, soft: [-1, 1] },
+  { path: "normalize_light", label: "Normalize channels", tab: "Brightness" },
+  { path: "grey[0]", label: "Input R", tab: "Gray", digits: 3, soft: [0, 1] },
+  { path: "grey[1]", label: "Input G", tab: "Gray", digits: 3, soft: [0, 1] },
+  { path: "grey[2]", label: "Input B", tab: "Gray", digits: 3, soft: [0, 1] },
+  { path: "normalize_grey", label: "Normalize channels", tab: "Gray" },
+];
 
 export const LAYOUTS: ModuleLayout[] = [
   {
@@ -62,40 +102,7 @@ export const LAYOUTS: ModuleLayout[] = [
     // checker sections; an "as shot in camera" illuminant greys adaptation
     // out, which depends on the photo
     op: "channelmixerrgb", group: "basic", title: "Color calibration",
-    fields: [
-      { path: "adaptation", label: "Adaptation", tab: "CAT" },
-      { path: "illuminant", label: "Illuminant", tab: "CAT", options: [0, 1, 2, 3, 4, 5, 6, 7, 10], showIf: (p) => p.adaptation !== 4 },
-      { path: "illum_fluo", label: "F source", tab: "CAT", showIf: (p) => p.adaptation !== 4 && p.illuminant === 4 },
-      { path: "illum_led", label: "LED source", tab: "CAT", showIf: (p) => p.adaptation !== 4 && p.illuminant === 5 },
-      { path: "temperature", label: "Temperature", tab: "CAT", soft: [3000, 7000], unit: "K", digits: 0, showIf: (p) => p.adaptation !== 4 && (p.illuminant === 2 || p.illuminant === 6) },
-      { path: "gamut", label: "Gamut compression", tab: "CAT", soft: [0, 4] },
-      { path: "clip", label: "Clip negative RGB from gamut", tab: "CAT" },
-      { path: "red[0]", label: "Input R", tab: "R", digits: 3 },
-      { path: "red[1]", label: "Input G", tab: "R", digits: 3 },
-      { path: "red[2]", label: "Input B", tab: "R", digits: 3 },
-      { path: "normalize_R", label: "Normalize channels", tab: "R" },
-      { path: "green[0]", label: "Input R", tab: "G", digits: 3 },
-      { path: "green[1]", label: "Input G", tab: "G", digits: 3 },
-      { path: "green[2]", label: "Input B", tab: "G", digits: 3 },
-      { path: "normalize_G", label: "Normalize channels", tab: "G" },
-      { path: "blue[0]", label: "Input R", tab: "B", digits: 3 },
-      { path: "blue[1]", label: "Input G", tab: "B", digits: 3 },
-      { path: "blue[2]", label: "Input B", tab: "B", digits: 3 },
-      { path: "normalize_B", label: "Normalize channels", tab: "B" },
-      { path: "saturation[0]", label: "Input R", tab: "Colorfulness", digits: 3, soft: [-1, 1] },
-      { path: "saturation[1]", label: "Input G", tab: "Colorfulness", digits: 3, soft: [-1, 1] },
-      { path: "saturation[2]", label: "Input B", tab: "Colorfulness", digits: 3, soft: [-1, 1] },
-      { path: "normalize_sat", label: "Normalize channels", tab: "Colorfulness" },
-      { path: "version", label: "Saturation algorithm", tab: "Colorfulness" },
-      { path: "lightness[0]", label: "Input R", tab: "Brightness", digits: 3, soft: [-1, 1] },
-      { path: "lightness[1]", label: "Input G", tab: "Brightness", digits: 3, soft: [-1, 1] },
-      { path: "lightness[2]", label: "Input B", tab: "Brightness", digits: 3, soft: [-1, 1] },
-      { path: "normalize_light", label: "Normalize channels", tab: "Brightness" },
-      { path: "grey[0]", label: "Input R", tab: "Gray", digits: 3, soft: [0, 1] },
-      { path: "grey[1]", label: "Input G", tab: "Gray", digits: 3, soft: [0, 1] },
-      { path: "grey[2]", label: "Input B", tab: "Gray", digits: 3, soft: [0, 1] },
-      { path: "normalize_grey", label: "Normalize channels", tab: "Gray" },
-    ],
+    fields: CALIBRATION,
   },
   {
     // exposure.c gui_init (the mode combobox over a manual and a deflicker
@@ -654,6 +661,13 @@ export const LAYOUTS: ModuleLayout[] = [
     ],
   },
   {
+    // Simple's B&W conversion with color calibration: its own instance, a
+    // gray mix, so darktable's Gray page comes first
+    op: "channelmixerrgb", group: "bw", title: "Color calibration",
+    instance: { name: "bw", add: [["bw_mode", 1], ["mod_bw", 0]] },
+    fields: [...CALIBRATION.filter((f) => f.tab === "Gray"), ...CALIBRATION.filter((f) => f.tab !== "Gray")],
+  },
+  {
     // monochrome.c gui_init: the highlights slider under the filter graph.
     // left out: a, b and size, the virtual color filter's place and size,
     // which the graph sets by dragging and scrolling
@@ -665,6 +679,13 @@ export const LAYOUTS: ModuleLayout[] = [
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);
+
+// whether a group's card for `op` shows instance `i`: a named card only its
+// instance, the others every instance no named card claims
+export function shows(l: ModuleLayout, i: { op: string; name: string; hand_edited: boolean }) {
+  const named = (n: string) => i.hand_edited && i.name === n;
+  return l.instance ? named(l.instance.name) : !LAYOUTS.some((o) => o.op === i.op && o.instance && named(o.instance.name));
+}
 
 // a group's cards sit in LAYOUTS order (Simple's sections), not pipe order
 export const layoutRank = (op: string, group: string) => LAYOUTS.findIndex((l) => l.op === op && l.group === group);
