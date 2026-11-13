@@ -836,6 +836,15 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "use_new_vst", label: "Upgrade profiled transform", showIf: (p) => p.use_new_vst === 0 },
     ],
   },
+  {
+    // highpass.c gui_init. both sliders are "%" over 0-100, so darktable
+    // shows them unscaled
+    op: "highpass", group: "detail", title: "Highpass",
+    fields: [
+      { path: "sharpness", label: "Sharpness", unit: "%" },
+      { path: "contrast", label: "Contrast boost", unit: "%" },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);

@@ -238,6 +238,7 @@ The Detail group has these darktable modules:
   Profiled Denoise sets the wavelet curves, which are not on the card yet, nor
   is the profile choice: the card uses the profile darktable finds for the
   camera and ISO.
+- **Highpass**: **Sharpness** and **Contrast boost**.
 
 ## Instances
 

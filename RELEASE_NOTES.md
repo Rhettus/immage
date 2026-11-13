@@ -22,8 +22,8 @@ Improvements
   lut 3d and color mapping; in B&W, color calibration (the instance Simple's
   Black & White uses), color equalizer and monochrome; in Color Grading, color
   balance rgb, color balance, split-toning and colorize; in Detail, demosaic,
-  sharpen, diffuse or sharpen (Simple's Sharpening instance) and denoise
-  (profiled). Other modules follow in later versions.
+  sharpen, diffuse or sharpen (Simple's Sharpening instance), denoise (profiled)
+  and highpass. Other modules follow in later versions.
 - The tone mapper card shows AgX, sigmoid, filmic rgb or base curve, whichever
   is on, with a switch to change to another as one undo step.
 - Module cards have a darktable presets menu beside the reset button. It applies
