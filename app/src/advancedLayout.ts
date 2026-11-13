@@ -552,6 +552,32 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "strength", label: "Mix", unit: "%" },
     ],
   },
+  {
+    // colorharmonizer.c gui_init and _update_visibility: rule, node count
+    // (custom rule only), the four pull sliders, then the collapsible
+    // "saturation" section. a saturation slider shows for each harmony node:
+    // the node count of the rule (get_harmony_nodes with the color_harmony.h
+    // sector table: monochromatic 1, analogous 3, analogous complementary 4,
+    // complementary 2, split complementary 3, dyad 2, triad 3, tetrad 4,
+    // square 4) or num_custom_nodes for custom. left out: anchor_hue and
+    // custom_hue[0..3] (darktable shows them as degrees on an RYB wheel via
+    // _ucs_to_ryb_fast, a nonlinear conversion from the stored UCS hue, so
+    // they need a custom hue editor), the node swatches, the auto detect and
+    // vectorscope sync buttons, and the anchor hue and custom hue pickers
+    op: "colorharmonizer", group: "hsl", title: "Color harmonizer",
+    fields: [
+      { path: "rule", label: "Harmony rule" },
+      { path: "num_custom_nodes", label: "Nodes", digits: 0, showIf: (p) => p.rule === 9 },
+      { path: "pull_strength", label: "Pull strength" },
+      { path: "pull_width", label: "Pull width", digits: 2 },
+      { path: "neutral_protection", label: "Neutral color protection", digits: 2 },
+      { path: "smoothing", label: "Smoothing", digits: 2 },
+      { path: "node_saturation[0]", label: "Hue 1", section: "Saturation", unit: "%", factor: 100, digits: 0, showIf: (p) => (p.rule === 9 ? Math.min(4, Math.max(2, p.num_custom_nodes)) : [1, 3, 4, 2, 3, 2, 3, 4, 4][p.rule]) > 0 },
+      { path: "node_saturation[1]", label: "Hue 2", section: "Saturation", unit: "%", factor: 100, digits: 0, showIf: (p) => (p.rule === 9 ? Math.min(4, Math.max(2, p.num_custom_nodes)) : [1, 3, 4, 2, 3, 2, 3, 4, 4][p.rule]) > 1 },
+      { path: "node_saturation[2]", label: "Hue 3", section: "Saturation", unit: "%", factor: 100, digits: 0, showIf: (p) => (p.rule === 9 ? Math.min(4, Math.max(2, p.num_custom_nodes)) : [1, 3, 4, 2, 3, 2, 3, 4, 4][p.rule]) > 2 },
+      { path: "node_saturation[3]", label: "Hue 4", section: "Saturation", unit: "%", factor: 100, digits: 0, showIf: (p) => (p.rule === 9 ? Math.min(4, Math.max(2, p.num_custom_nodes)) : [1, 3, 4, 2, 3, 2, 3, 4, 4][p.rule]) > 3 },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);

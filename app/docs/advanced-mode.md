@@ -159,6 +159,10 @@ The HSL / Color group has these darktable modules:
 - **Color contrast**: **Green-magenta contrast** and **Blue-yellow contrast**.
 - **Color zones**: **Select by**, **Process mode** and **Mix**. Its curves
   are not on the card yet.
+- **Color harmonizer**: **Harmony rule** (and **Nodes** for a custom rule),
+  **Pull strength**, **Pull width**, **Neutral color protection** and
+  **Smoothing**, then a saturation slider for each of the rule's hues. The
+  anchor and custom hues and the swatches are not on the card yet.
 
 ## Instances
 
