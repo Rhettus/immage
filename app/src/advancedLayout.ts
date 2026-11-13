@@ -112,6 +112,9 @@ export type ModuleLayout = {
   // handles over levels[c][0..2], R/G/B tabs for independent channels (autoscale 1),
   // drawn after the field `after`
   levels?: { after: string };
+  // the patch grid editor (ModulePatches) for colorchecker: the source and
+  // target Lab arrays and num_patches, edited by patch
+  patches?: true;
   // the wavelet curve editor (ModuleBands) over x[c][k] and y[c][k] for
   // `channels` channels of `count` bands, drawn before the field `before`.
   // `tabs` lists the channels to edit now, `show` whether the editor is on at all
@@ -763,16 +766,15 @@ export const LAYOUTS: ModuleLayout[] = [
     ],
   },
   {
-    // colorchecker.c gui_init: a patch grid and a patch combobox (not params),
-    // then lightness, green-magenta offset, blue-yellow offset and saturation
-    // sliders plus a relative/absolute target combobox, all callbacks that
-    // edit the target_L, target_a and target_b element of the selected patch
-    // (and num_patches' patch list). a static layout cannot address "the
-    // selected patch", so every widget is left out; this needs a custom
-    // editor (the patch grid with source_* and target_* arrays, 24 or 49
-    // patches). the params source_L/a/b, target_L/a/b and num_patches have
-    // no widget of their own
+    // colorchecker.c gui_init: the patch grid, a patch combobox, lightness,
+    // green-magenta, blue-yellow and saturation sliders for the selected
+    // patch's target and a relative/absolute target combobox; ModulePatches
+    // draws them over source_L/a/b, target_L/a/b and num_patches (a click
+    // selects, a double-click resets and a right-click deletes a patch).
+    // left out: the color picker that picks the patch for a color in the
+    // photo, and shift+click to replace a patch with the picked color
     op: "colorchecker", group: "hsl", title: "Color look up table",
+    patches: true,
     fields: [],
   },
   {

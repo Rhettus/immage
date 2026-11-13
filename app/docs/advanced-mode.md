@@ -253,8 +253,17 @@ The HSL / Color group has these darktable modules:
 - **Color correction**: **Saturation**. Its color grid is not on the card
   yet.
 - **Color look up table**: on/off, reset and darktable's presets (such as
-  its film emulations). The patch grid and patch sliders are not on the card
-  yet.
+  its film emulations), and the patch grid. The grid shows the module's
+  patches (24 in a 6 by 4 grid, more in 7 by 7) in the colors they match
+  in the photo; a patch whose target differs has an outline, and hovering
+  one shows its Lab values. Click a patch to select it (it gets a frame),
+  double-click to put its target back, and right-click to delete it, which
+  moves the later patches up as one undo step. Below the grid, **Patch**
+  chooses the selected patch, **Lightness**, **Green-magenta offset**,
+  **Blue-yellow offset** and **Saturation** change its target color, and
+  **Target color** switches those sliders between offsets from the patch's
+  own color (Relative) and absolute Lab values (Absolute). Picking a patch
+  by clicking a color in the photo is not available.
 - **LUT 3D**: **LUT file** (a folder button and a menu), **Application
   color space** and **Interpolation**. The button opens a file dialog in the
   **3D LUT folder** of Preferences > Modules > Advanced modules (your home

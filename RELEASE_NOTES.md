@@ -30,7 +30,9 @@ Improvements
   cards have color buttons for the border, frame line and watermark colors,
   the profiled denoise and raw denoise cards have darktable's wavelet
   curves with channel tabs, the LUT 3D card chooses its LUT file in a new
-  3D LUT folder preference, and the watermark card chooses its marker.
+  3D LUT folder preference, the watermark card chooses its marker, and the
+  color look up table card has darktable's patch grid with its patch and
+  target color sliders.
   When a photo's white balance comes from the white balance module with color
   calibration off, Simple's White Balance section and the white balance card
   say so.

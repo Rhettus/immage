@@ -542,6 +542,15 @@ test('Advanced card layouts match darktable', { skip: skip || false }, async (t)
         return { ...f, type: f.element, default: f.defaults?.[k] };
       };
       const seen = new Set();
+      // the patch grid's arrays and count
+      if (l.patches) {
+        assert.equal(l.op, 'colorchecker');
+        for (const n of ['source', 'target']) for (const c of ['L', 'a', 'b']) {
+          const f = resolve(`${n}_${c}[48]`);
+          assert.ok(f && f.type === 'float', `${n}_${c}[48] is not a float element`);
+        }
+        assert.equal(resolve('num_patches')?.type, 'int', 'num_patches is an int');
+      }
       for (const lf of l.fields) {
         assert.ok(!seen.has(lf.path) || lf.showIf, `${lf.path} listed twice without a showIf`);
         seen.add(lf.path);
@@ -899,6 +908,116 @@ test('Advanced wavelet curves of the denoise cards', { skip: skip || false }, as
     await set('rawdenoise', Object.fromEntries(ypaths(0, 5).map((p) => [p, 1])));
     assert.ok(!low.equals(await render('rd-high')), 'the raw denoise curve changes the frame');
   }
+});
+
+// the patch grid of the color look up table card (ModulePatches): darktable's
+// rules (colorchecker.c), its Lab to sRGB, and the module's arrays round trip
+test('Advanced color look up table patches', { skip: skip || false }, async (t) => {
+  const cc = await import('../app/src/colorchecker.ts');
+  const { LAYOUTS } = await import('../app/src/advancedLayout.ts');
+  const l = LAYOUTS.find((x) => x.op === 'colorchecker');
+  assert.equal(l.patches, true);
+
+  // the grid: 6 x 4 up to 24 patches, else 7 x 7, and the patch under a point
+  assert.deepEqual([cc.gridOf(24), cc.gridOf(25)], [{ cx: 6, cy: 4 }, { cx: 7, cy: 7 }]);
+  assert.equal(cc.patchAt(0.99, 0.99, 24), 23);
+  assert.equal(cc.patchAt(0.5, 0.3, 24), 3 + 6 * 1);
+  assert.equal(cc.patchAt(0.99, 0.5, 30), 6 + 7 * 3);
+  // Lab to sRGB: white, black and a mid gray (D50 white is sRGB white)
+  const [wr, wg, wb] = cc.labToSrgb(100, 0, 0);
+  for (const v of [wr, wg, wb]) assert.ok(Math.abs(v - 1) < 2e-3, `white ${[wr, wg, wb]}`);
+  assert.deepEqual(cc.labToSrgb(0, 0, 0).map((v) => Math.round(v * 1000)), [0, 0, 0]);
+  const g = cc.labToSrgb(53.585, 0, 0);
+  for (const v of g) assert.ok(Math.abs(v - 0.502) < 3e-3, `gray ${g}`);   // L 53.585 is sRGB 128
+  assert.ok(cc.labToSrgb(50, 60, 0)[0] > cc.labToSrgb(50, 60, 0)[1], 'positive a is magenta-red');
+
+  // slider rules, on a patch with source (50, 20, -10) and target (60, 30, -20)
+  const store = { 'source_L[0]': 50, 'source_a[0]': 20, 'source_b[0]': -10, 'target_L[0]': 60, 'target_a[0]': 30, 'target_b[0]': -20, num_patches: 3 };
+  const P = (k) => store[k] ?? 0;
+  const near = (a, b, m) => assert.ok(Math.abs(a - b) < 1e-4, `${m}: ${a} != ${b}`);
+  const rel = cc.sliderValues(P, 0, false), abs = cc.sliderValues(P, 0, true);
+  near(rel.L, 10, 'rel L'); near(rel.a, 10, 'rel a'); near(rel.b, -10, 'rel b');
+  near(rel.C, Math.hypot(30, 20) - Math.hypot(20, 10), 'rel C');
+  near(abs.L, 60, 'abs L'); near(abs.C, Math.hypot(30, 20), 'abs C');
+  near(cc.editChannel(P, 0, 'L', 5, false)['target_L[0]'], 55, 'rel L edit');
+  near(cc.editChannel(P, 0, 'L', 150, true)['target_L[0]'], 150, 'abs L edit');
+  near(cc.editChannel(P, 0, 'a', 500, false)['target_a[0]'], 128, 'a clamps at 128');
+  near(cc.editChannel(P, 0, 'b', -500, true)['target_b[0]'], -128, 'b clamps at -128');
+  const sat = cc.editSaturation(P, 0, 0, true);   // absolute 0 -> chroma 0.01
+  near(Math.hypot(sat['target_a[0]'], sat['target_b[0]']), 0.01, 'saturation floor');
+  const sat2 = cc.editSaturation(P, 0, 10, false);   // relative: Cin + 10
+  near(Math.hypot(sat2['target_a[0]'], sat2['target_b[0]']), Math.hypot(20, 10) + 10, 'relative saturation');
+  near(sat2['target_a[0]'] / sat2['target_b[0]'], 30 / -20, 'saturation keeps the hue');
+  assert.deepEqual(cc.resetPatch(P, 0), { 'target_L[0]': 50, 'target_a[0]': 20, 'target_b[0]': -10 });
+  assert.equal(cc.altered(P, 0), true);
+  assert.equal(cc.altered((k) => (k.includes('target') ? P(k.replace('target', 'source')) : P(k)), 0), false);
+  assert.equal(cc.highlightGray((k) => (k === 'source_L[1]' ? 81 : 80), 1), 0, 'black over light patches');
+  assert.equal(cc.highlightGray(() => 80, 1), 1);
+  // delete: later patches move up, the count drops, one edit
+  const s2 = { num_patches: 3 };
+  for (let k = 0; k < 3; k++) for (const n of ['source', 'target']) for (const c of ['L', 'a', 'b']) s2[`${n}_${c}[${k}]`] = k * 10 + (n === 'source' ? 1 : 2);
+  const del = cc.deletePatch((k) => s2[k] ?? 0, 0);
+  assert.equal(del.num_patches, 2);
+  assert.equal(del['source_L[0]'], 11); assert.equal(del['target_b[1]'], 22);
+  assert.ok(!('source_L[2]' in del), 'the last element is left as it was');
+  assert.equal(cc.patchPaths().length, 1 + 6 * 49);
+
+  // the engine: the arrays and the count round trip, and a target changes the frame
+  const work = mkdtempSync(join(tmpdir(), 'immage-advpatches-'));
+  mkdirSync(join(work, 'photos'));
+  const source = process.env.IMMAGE_RAW || SAMPLE;
+  const photo = join(work, 'photos', `cc${source.slice(source.lastIndexOf('.'))}`);
+  copyFileSync(source, photo);
+  const e = new Engine(work);
+  t.after(() => { e.stop(); rmSync(work, { recursive: true, force: true }); });
+  await e.call({ cmd: 'open', path: photo });
+  const s = await e.call({ cmd: 'module_schema', op: 'colorchecker' });
+  const by = Object.fromEntries(s.fields.map((f) => [f.path, f]));
+  for (const f of ['source_L', 'source_a', 'source_b', 'target_L', 'target_a', 'target_b']) {
+    assert.ok(by[f].type === 'array' && by[f].dims[0] === 49 && by[f].element === 'float', `${f} is 49 floats`);
+  }
+  assert.equal(by.num_patches.type, 'int');
+  const paths = cc.patchPaths();
+  const get = async () => (await e.call({ cmd: 'get', modules: { 'colorchecker@0': paths } })).modules['colorchecker@0'];
+  const first = await get();
+  assert.equal(first.defaults.num_patches, 24);
+  near(first.defaults['source_L[0]'], 37.99, 'dark skin L'); near(first.defaults['target_b[23]'], -0.97, 'black b');
+  assert.equal(first.defaults['source_L[24]'], 0, 'unused patches are zero');
+  const render = async (tag) => {
+    const out = join(work, `${tag}.ppm`);
+    await e.call({ cmd: 'render', width: 96, height: 64, out });
+    return readFileSync(out);
+  };
+  await e.call({ cmd: 'set', op: 'colorchecker', priority: 0, params: { num_patches: 24 }, enabled: true });
+  const base = await render('cc-base');
+  // one edit of several arrays at once: lighten and push patch 18 (white) and 3 (foliage)
+  await e.call({ cmd: 'set', op: 'colorchecker', priority: 0, enabled: true, params: { 'target_L[3]': 80, 'target_a[3]': 60, 'target_b[3]': 70, 'target_L[18]': 70 } });
+  const back = (await get()).params;
+  near(back['target_L[3]'], 80, 'L'); near(back['target_a[3]'], 60, 'a'); near(back['target_b[3]'], 70, 'b'); near(back['target_L[18]'], 70, 'white');
+  near(back['target_L[4]'], first.defaults['target_L[4]'], 'the other patches are untouched');
+  assert.ok(!base.equals(await render('cc-edited')), 'a patch target changes the frame');
+  // the delete edit: the count and the shifted patches write together
+  const store3 = Object.fromEntries(paths.map((p) => [p, back[p]]));
+  const edit = cc.deletePatch((k) => store3[k] ?? 0, 3);
+  await e.call({ cmd: 'set', op: 'colorchecker', priority: 0, enabled: true, params: edit });
+  const after = (await get()).params;
+  assert.equal(after.num_patches, 23);
+  near(after['source_L[3]'], first.defaults['source_L[4]'], 'patch 4 moved up');
+  near(after['target_a[3]'], first.defaults['target_a[4]'], 'its target moved too');
+  // double-click reset: the target goes back to the source
+  await e.call({ cmd: 'set', op: 'colorchecker', priority: 0, enabled: true, params: cc.resetPatch((k) => after[k] ?? 0, 17) });
+  const reset = (await get()).params;
+  near(reset['target_L[17]'], reset['source_L[17]'], 'reset');
+  // a darktable preset of this module (its 7x7 looks) writes up to 49 patches, which the arrays read back
+  const listed = (await e.call({ cmd: 'presets', op: 'colorchecker', priority: 0 })).presets.filter((p) => p.applicable);
+  const look = listed.find((p) => /Velvia/.test(p.name));
+  assert.ok(look, `the module has the Fuji looks: ${listed.map((p) => p.name)}`);
+  await e.call({ cmd: 'module_state', op: 'colorchecker', priority: 0, preset: look.name });
+  const pre = (await get()).params;
+  assert.ok(pre.num_patches >= 1 && pre.num_patches <= 49, `preset count ${pre.num_patches}`);
+  assert.ok(Array.from({ length: pre.num_patches }, (_, k) => cc.altered((q) => pre[q] ?? 0, k)).some(Boolean), 'the preset moves some patch target');
+  assert.ok(!base.equals(await render('cc-preset')), `preset "${look.name}" changes the frame`);
+  t.diagnostic(`preset ${look.name}: ${pre.num_patches} patches`);
 });
 
 // the framing and watermark color buttons write the three elements of an

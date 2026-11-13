@@ -2661,3 +2661,6 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .module-prefs-tools .field { flex: 1; min-width: 0; }
 .module-prefs-bulk { display: flex; gap: 8px; justify-content: flex-end; }
 .module-card-body .color-pick:disabled { opacity: 0.4; cursor: default; }
+/* the patch grid of the color look up table card (ModulePatches) */
+.module-card-curve .patches-area { display: block; width: 100%; max-width: 260px; margin: 6px auto; cursor: pointer; user-select: none; }
+.patches-area.disabled { opacity: 0.4; cursor: default; }

@@ -15,6 +15,7 @@ import { fieldPath, rgbPaths, type LayoutField, type ModuleLayout } from "./adva
 import { ColorWheel } from "./ColorWheel";
 import { ModuleCurves } from "./ModuleCurves";
 import { ModuleLevels } from "./ModuleLevels";
+import { ModulePatches } from "./ModulePatches";
 import { ModuleBands } from "./ModuleBands";
 import { ModuleGraph } from "./ModuleGraph";
 import { ModuleFile } from "./ModuleFile";
@@ -231,6 +232,9 @@ export function ModuleCard({ hidden, instance, layout, schema, state, siblings, 
           )}
           {layout.graph && graphFields(layout.graph).every((f) => fields.has(f)) && (
             <ModuleGraph kind={layout.graph} state={state} disabled={fixed && !state.enabled} onFields={onFields} />
+          )}
+          {layout.patches && fields.has("target_L") && fields.has("num_patches") && (
+            <ModulePatches state={state} disabled={fixed && !state.enabled} onFields={onFields} />
           )}
           {layout.lensPick && state.params.method === 1 && (
             <div data-control-id="adv:lens_pick">
