@@ -62,7 +62,8 @@ export async function advancedExposure(t) {
     const added = await addCard(t, 'basic', 'exposure', CARD);
     t.measure({ name: 'add-module', used: added });
     const initial = await until(async () => { const c = await card(t); return c?.title ? c : false; }, 'Exposure card in the Basic group');
-    assert.equal(initial.title, 'Exposure', 'the card is titled Exposure');
+    // darktable's label follows the name: a matching preset's ("scene-referred default")
+    assert.match(initial.title, /^Exposure\b/, 'the card is titled Exposure');
     assert(initial.reset, 'the card has a reset button');
     t.measure({ name: 'initial-card', on: initial.on, open: initial.open, value: initial.value });
     await t.evidence('card-initial');
