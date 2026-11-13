@@ -9,7 +9,8 @@ import { Chevron, Collapse } from "./Collapse";
 import { Choice, Slider, Toggle } from "./Controls";
 import type { AdvancedState } from "./session";
 import type { DtPreset, Instance, ModuleSchema, SchemaField } from "./commands";
-import type { Control } from "./manifest";
+import type { Control, Turn } from "./manifest";
+import { FlipIcon, RotateIcon } from "./icons";
 import { fieldPath, type LayoutField, type ModuleLayout } from "./advancedLayout";
 
 // the card's fields as the controls the rest of the app draws
@@ -55,7 +56,7 @@ export function fieldControl(f: SchemaField, l: LayoutField, value: number): Con
 
 // `siblings` is how many instances of the module the group shows, `index`
 // this one's place among them (pipe order); `fresh`, a card just added
-export function ModuleCard({ instance, layout, schema, state, siblings, index, fresh, family, onField, onEnabled, onReset, onInstance, loadPresets, onPreset }: {
+export function ModuleCard({ instance, layout, schema, state, siblings, index, fresh, family, onField, onEnabled, onReset, onInstance, loadPresets, onPreset, onTurn }: {
   instance: Instance; layout: ModuleLayout; schema: ModuleSchema; state: AdvancedState;
   siblings: number; index: number; fresh?: boolean;
   // the modules this card can switch to, when it is a shared card
@@ -64,6 +65,7 @@ export function ModuleCard({ instance, layout, schema, state, siblings, index, f
   onEnabled: (on: boolean) => void; onReset: () => void;
   onInstance: (c: InstanceChoice, name?: string) => void;
   loadPresets: () => Promise<DtPreset[]>; onPreset: (name: string) => void;
+  onTurn?: (how: Turn) => void;
 }) {
   const edited = instance.hand_edited || state.enabled !== instance.default_enabled;
   // folded unless edited or just added; the user's own fold wins after that
@@ -122,6 +124,15 @@ export function ModuleCard({ instance, layout, schema, state, siblings, index, f
       </div>
       <Collapse open={open}>
         <div className="module-card-body">
+          {layout.turns && onTurn && (
+            <div className="crop-turn module-card-turns">
+              {layout.turns.map(({ label, how }) => (
+                <button key={how} className="tool" title={label} aria-label={label} onClick={() => onTurn(how)}>
+                  {how === "h" || how === "v" ? <FlipIcon vertical={how === "v"} /> : <RotateIcon right={how === "cw"} />}
+                </button>
+              ))}
+            </div>
+          )}
           {tabs.length > 1 && (
             <div className="segmented small module-card-tabs" role="tablist">
               {tabs.map((t) => <button key={t} role="tab" aria-selected={t === tab} className={t === tab ? "active" : ""}

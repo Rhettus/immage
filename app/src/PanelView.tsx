@@ -4,7 +4,7 @@
 import { AdvancedGroup, type AdvancedEdit } from "./AdvancedPanel";
 import type { EditMode } from "./Preferences";
 import { AdvancedToggle, advancedEdited, useAdvanced } from "./advanced";
-import { BANDS, type Control, type ControlPreset, type CurveChannel, MODULE_CHOICES, type ModuleChoice, NEG_GREYED, type Panel, SF_GREYED, type Section, type Values, choiceCovers, choiceOn, choiceShows, controlById, isModuleSetting, mapOf, mapsWith, parametricOf, pointValues, pointsOf, preferredChoice } from "./manifest";
+import { BANDS, type Control, type ControlPreset, type CurveChannel, MODULE_CHOICES, type ModuleChoice, NEG_GREYED, type Panel, SF_GREYED, type Section, type Turn, type Values, choiceCovers, choiceOn, choiceShows, controlById, isModuleSetting, mapOf, mapsWith, parametricOf, pointValues, pointsOf, preferredChoice } from "./manifest";
 import { Chevron, Collapse } from "./Collapse";
 import { Choice, CurveGraph, OptionPreview, Slider, Toggle, markOnCurve } from "./Controls";
 import { CircleOff, Grid2x2, MoveHorizontal, MoveVertical, PenLine, Sparkles, WandSparkles } from "lucide-react";
@@ -114,6 +114,7 @@ export type PanelProps = {
   onPreview: (values: Values | null) => void;   // a swatch under the pointer
   onOptionPreview?: (preview: OptionPreview | null) => void;   // a slider ⌥-dragged
   onAdvancedEdit?: AdvancedEdit;   // records an Advanced card edit for undo
+  onTurn?: (how: Turn) => void;   // the toolbar's rotate and flip, for Advanced's orientation card
 };
 
 // Event bridges retain the latest committed handlers without making every panel
@@ -135,9 +136,10 @@ export function PanelView(props: PanelProps) {
   const onPreview = useLiveEvent(props.onPreview);
   const auto = useLiveEvent(() => props.onAuto?.());
   const option = useLiveEvent((preview: OptionPreview | null) => props.onOptionPreview?.(preview));
+  const onTurn = useLiveEvent((how: Turn) => props.onTurn?.(how));
   if (advancedMode) return <AdvancedGroup id={props.panel.id} title={props.panel.advancedTitle ?? props.panel.title} open={props.open} onToggle={onToggle}
                                        session={props.session} revision={props.sessionRevision} record={props.onAdvancedEdit}
-                                       onSimple={onChangeMany} />;
+                                       onSimple={onChangeMany} onTurn={onTurn} />;
   return <PanelWidget {...props} values={values} onToggle={onToggle} onChange={onChange}
     onChangeMany={onChangeMany} onPreview={onPreview} onAuto={props.onAuto ? auto : undefined}
     onOptionPreview={props.onOptionPreview ? option : undefined} />;

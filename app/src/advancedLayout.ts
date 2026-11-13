@@ -7,6 +7,7 @@
 // units and when a field shows. This is that part, written by hand from each
 // module's gui_init and gui_changed, one entry per module.
 import { autoCrop } from "./transform";
+import type { Turn } from "./manifest";
 
 export type LayoutField = {
   path: string;    // a schema path, or "name[i]" for one element of an array
@@ -46,6 +47,9 @@ export type ModuleLayout = {
   // fields every edit recomputes from the module's params after it, as the
   // module's gui_changed does (ashift's crop box); `size` is the sensor's
   derive?: (params: Record<string, number>, size: { width: number; height: number }) => Record<string, number>;
+  // buttons above the fields that turn the photo as the toolbar does, so the
+  // crop and mask shapes turn with it (flip's darktable buttons)
+  turns?: { label: string; how: Turn }[];
 };
 
 // what an edit of `path` to `v` sends: the field, what the card's edits

@@ -6,6 +6,7 @@ import { commands, type ModuleSchema } from "./commands";
 import { ModuleCard } from "./ModuleCard";
 import type { InstanceChoice } from "./InstanceMenu";
 import type { Session } from "./session";
+import type { Turn } from "./manifest";
 import { editOf, groupLayouts, layoutFor, layoutRank, shows } from "./advancedLayout";
 import { AddModuleMenu } from "./AddModuleMenu";
 
@@ -43,11 +44,13 @@ const familyOf = (op: string) => FAMILIES.find((f) => f.ops.includes(op));
 // one group: its title row folds like Simple's (Focus mode and Alt-click
 // are the caller's onToggle), with no More controls icon. with a photo open
 // it holds the cards of the instances its modules have, in pipe order
-export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0, record, onSimple }: {
+export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0, record, onSimple, onTurn }: {
   id: string; title: string; open: boolean; onToggle: (solo: boolean) => void;
   session?: Session | null; revision?: number; record?: AdvancedEdit;
   // Simple's values set as one undo step, for a card of a Simple instance
   onSimple?: (entries: [string, number][], label: string) => void;
+  // the toolbar's turn of the photo, for a card's turn buttons
+  onTurn?: (how: Turn) => void;
 }) {
   const [loaded, setLoaded] = useState<{ session: Session; schemas: Map<string, ModuleSchema> } | null>(null);
   // the cards this group could show, and the data they need, once per photo
@@ -136,7 +139,7 @@ export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0
                     session!.switchModule(i.op, i.priority, to);
                   } } : undefined;
                 })()}
-                siblings={sib.length} index={index} fresh={session!.lastAdded === key} onInstance={onInstance}
+                siblings={sib.length} index={index} fresh={session!.lastAdded === key} onInstance={onInstance} onTurn={onTurn}
                 onField={(path, v, coalesce) => { record?.([`adv:${key}:${path}`], layout.title); const c = session!.context;
                   session!.setFields(i.op, i.priority, editOf(layout, path, v, state.params, { width: c.sensorWidth, height: c.sensorHeight }), coalesce); }}
                 onEnabled={(on) => { record?.([`adv:${key}:enabled`], layout.title); session!.setAdvancedEnabled(i.op, i.priority, on); }}

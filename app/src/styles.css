@@ -2616,3 +2616,4 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .module-card-tabs { flex-wrap: wrap; margin: 2px 0 8px; }
 .module-card-section { margin: 10px 0 4px; font-size: 11px; color: var(--text-2); text-transform: lowercase; }
 .module-card-section::first-letter { text-transform: uppercase; }
+.module-card-turns { margin: 4px 0 8px; }

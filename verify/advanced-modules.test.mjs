@@ -483,6 +483,7 @@ test('Advanced card layouts match darktable', { skip: skip || false }, async (t)
         assert.ok(f && Number.isFinite(v), `${l.op}: touch sets ${path}, not in the schema`);
       }
       for (const path of l.touch?.except ?? []) assert.ok(seen.has(path), `${l.op}: touch except ${path} not on the card`);
+      for (const b of l.turns ?? []) assert.ok(b.label && ['ccw', 'cw', 'h', 'v'].includes(b.how), `${l.op}: turn ${JSON.stringify(b)}`);
       // the module's first float slider shown at its defaults, a quarter of
       // the way into its soft range
       const paths = l.fields.map((lf) => lf.path);
