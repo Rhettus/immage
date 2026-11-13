@@ -131,6 +131,13 @@ The Tone Curve group has these darktable modules:
 - **RGB levels**: **Mode** and, for linked channels, **Preserve colors**.
   The black, gray and white levels, their pickers and auto levels are not on
   the card yet.
+- **Tone equalizer**: tabs **Simple** (the nine bands, -8 EV to +0 EV),
+  **Advanced** (mask exposure and contrast compensation) and **Masking** (the
+  luminance estimator, preserve details and, with a filter chosen, its
+  diffusion, smoothing diameter, edge refinement and quantization). Its curve
+  graph, curve smoothing, mask display and auto-adjust buttons are not on the
+  card yet. Basic's Highlights and Shadows with tone equalizer chosen edits the
+  same module.
 
 ## Instances
 

@@ -15,7 +15,8 @@ Improvements
 - Advanced cards so far: in Basic, exposure, white balance, color calibration,
   highlight reconstruction, the tone mapper, contrast & texture, local contrast,
   haze removal, diffuse or sharpen and color balance rgb; in Tone Curve, tone
-  curve, rgb curve and rgb levels. Other modules follow in later versions.
+  curve, rgb curve, rgb levels and tone equalizer. Other modules follow in later
+  versions.
 - The tone mapper card shows AgX, sigmoid, filmic rgb or base curve, whichever
   is on, with a switch to change to another as one undo step.
 - Module cards have a darktable presets menu beside the reset button. It applies

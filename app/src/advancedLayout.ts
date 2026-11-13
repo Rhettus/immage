@@ -403,6 +403,37 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "preserve_colors", label: "Preserve colors", showIf: (p) => p.autoscale === 0 },
     ],
   },
+  {
+    // toneequal.c gui_init (the simple, advanced and masking pages) and
+    // show_guiding_controls (the guided filter settings hide for no filter,
+    // and mask contrast compensation shows only for the guided filter and
+    // EIGF). left out: the advanced page's curve graph, which needs a curve
+    // editor; curve smoothing (a slider computed from smoothing, not the
+    // param itself); the mask display toggle and the two auto-adjust buttons
+    op: "toneequal", group: "tonecurve", title: "Tone equalizer",
+    fields: [
+      // dt_bauhaus_widget_set_label names the simple page's bands by their EV
+      { path: "noise", label: "-8 EV", tab: "Simple", unit: "EV" },
+      { path: "ultra_deep_blacks", label: "-7 EV", tab: "Simple", unit: "EV" },
+      { path: "deep_blacks", label: "-6 EV", tab: "Simple", unit: "EV" },
+      { path: "blacks", label: "-5 EV", tab: "Simple", unit: "EV" },
+      { path: "shadows", label: "-4 EV", tab: "Simple", unit: "EV" },
+      { path: "midtones", label: "-3 EV", tab: "Simple", unit: "EV" },
+      { path: "highlights", label: "-2 EV", tab: "Simple", unit: "EV" },
+      { path: "whites", label: "-1 EV", tab: "Simple", unit: "EV" },
+      { path: "speculars", label: "+0 EV", tab: "Simple", unit: "EV" },
+      { path: "exposure_boost", label: "Mask exposure compensation", tab: "Advanced", soft: [-4, 4], unit: "EV" },
+      { path: "contrast_boost", label: "Mask contrast compensation", tab: "Advanced", soft: [-2, 2], unit: "EV",
+        showIf: (p) => p.details === 2 || p.details === 4 },
+      // DT_TONEEQ_LAST (7) closes the enum and is no estimator
+      { path: "method", label: "Luminance estimator", tab: "Masking", options: [0, 1, 2, 3, 4, 5, 6] },
+      { path: "details", label: "Preserve details", tab: "Masking" },
+      { path: "iterations", label: "Filter diffusion", tab: "Masking", soft: [1, 5], showIf: (p) => p.details !== 0 },
+      { path: "blending", label: "Smoothing diameter", tab: "Masking", soft: [1, 45], unit: "%", showIf: (p) => p.details !== 0 },
+      { path: "feathering", label: "Edges refinement/feathering", tab: "Masking", soft: [0.1, 50], showIf: (p) => p.details !== 0 },
+      { path: "quantization", label: "Mask quantization", tab: "Masking", unit: "EV", showIf: (p) => p.details !== 0 },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);
