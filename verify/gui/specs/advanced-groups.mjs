@@ -155,6 +155,23 @@ export async function advancedGroups(t) {
     // 8. Color Grading: colorize (saturation 50% by default) changes the photo
     await addAndCheck(t, 'colorgrading', 'colorize', 'Colorize',
       { controls: ['hue', 'saturation', 'lightness', 'source_lightness_mix'], tabs: [] }, true);
+
+    // 9. Detail: Add diffuse or sharpen makes Simple's Sharpening instance,
+    // which only the Detail card shows; Basic's card keeps the first
+    const ds = await addAndCheck(t, 'detail', 'diffuse', 'Diffuse or sharpen',
+      { controls: ['iterations', 'radius', 'regularization'], tabs: [] }, false);
+    assert(ds.card.on, 'the Sharpening instance is on after Add module');
+    const iter = ds.card.controls.find(x => x.id === 'iterations');
+    t.measure({ name: 'diffuse-sharpen', iterations: iter.value });
+    assert.equal(iter.value, 3, `Add module makes darktable's "sharpness | normal" 3 iterations: ${iter.value}`);
+    const detailDs = await t.driver.observe(() => document.querySelectorAll('[data-panel-id="detail"] [data-module^="diffuse#"]').length);
+    assert.equal(detailDs, 1, `Detail shows ${detailDs} diffuse or sharpen cards`);
+    // 10. Detail: denoise (profiled) sliders, the wavelet mode's
+    await addAndCheck(t, 'detail', 'denoiseprofile', 'Denoise',
+      { controls: ['mode', 'strength', 'wavelet_color_mode'], tabs: [] }, false);
+    // 11. Detail: lowpass (radius 10 by default) blurs the photo when added
+    await addAndCheck(t, 'detail', 'lowpass', 'Lowpass',
+      { controls: ['radius', 'lowpass_algo', 'saturation'], tabs: [] }, true);
     await t.evidence('groups-done');
   } finally {
     try {
