@@ -165,6 +165,8 @@ The HSL / Color group has these darktable modules:
   anchor and custom hues and the swatches are not on the card yet.
 - **RGB primaries**: hue (in degrees) and purity of red, green and blue,
   then **Tint hue** and **Tint purity**.
+- **Color correction**: **Saturation**. Its color grid is not on the card
+  yet.
 
 ## Instances
 

@@ -597,6 +597,17 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "achromatic_tint_purity", label: "Tint purity", soft: [0, 0.2], factor: 100, unit: "%", digits: 1 },
     ],
   },
+  {
+    // colorcorrection.c gui_init: the a/b grid, then one saturation slider.
+    // left out: hia, hib, loa and lob, which darktable only edits by dragging
+    // the highlight and shadow handles on the grid (they need a custom grid
+    // editor); the slider has no description, darktable labels it from the
+    // field name
+    op: "colorcorrection", group: "hsl", title: "Color correction",
+    fields: [
+      { path: "saturation", label: "Saturation" },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);
