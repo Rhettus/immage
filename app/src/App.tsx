@@ -1695,7 +1695,7 @@ export default function App() {
   const center = useRef({ x: 0.5, y: 0.5 });
   const viewZ = useRef(0); // 0 until the first frame
   const full = useRef<{ w: number; h: number } | null>(null);
-  const drag = useRef<{ x: number; y: number; cx: number; cy: number; moved: boolean } | null>(null);
+  const drag = useRef<{ x: number; y: number; cx: number; cy: number; moved: boolean; space?: boolean } | null>(null);
   // Lightroom's Straighten tool: a line drawn along what should be level
   // (or plumb), with ⇧ held or the crop tool's ruler armed; on release the
   // image turns by the line's angle off the nearest axis
@@ -1719,6 +1719,41 @@ export default function App() {
   }, []);
   const straighteningRef = useRef(false);
   straighteningRef.current = straightening;
+  // Space held over a photo pans it in any mode, overlays included
+  const [spaceHeld, setSpaceHeld] = useState(false);
+  const spaceHeldRef = useRef(false);
+  const [spaceDragging, setSpaceDragging] = useState(false);
+  useEffect(() => {
+    const set = (v: boolean) => { spaceHeldRef.current = v; setSpaceHeld(v); };
+    const on = (e: KeyboardEvent) => {
+      if (e.code !== "Space" && e.key !== " ") return;
+      if (e.ctrlKey || e.metaKey || e.altKey || !current) return;
+      // text being typed keeps Space. a control that owns Space (button,
+      // switch, menu) keeps it too, unless the pointer is on the photo: a
+      // tool button clicked a moment ago keeps focus, and must not be
+      // pressed again by a Space meant to pan
+      const t = e.target as HTMLElement | null;
+      const typing = t?.isContentEditable || t?.tagName === "TEXTAREA"
+        || (t?.tagName === "INPUT" && !["range", "checkbox", "radio", "button"].includes((t as HTMLInputElement).type));
+      if (typing) return;
+      const overPhoto = !!viewer.current?.matches(":hover");
+      if (!overPhoto && (fieldKeeps(t, " ") || t?.closest("button, a, select, [role=button], [role=option], [role=menuitem], [role=switch], [role=checkbox], [role=slider], [role=listbox], [role=combobox]"))) return;
+      e.preventDefault();
+      if (overPhoto && t !== document.body) t?.blur?.();
+      if (!e.repeat) set(true);
+    };
+    const off = (e: KeyboardEvent) => { if (e.code === "Space" || e.key === " ") set(false); };
+    const blur = () => set(false);
+    window.addEventListener("keydown", on);
+    window.addEventListener("keyup", off);
+    window.addEventListener("blur", blur);
+    return () => {
+      window.removeEventListener("keydown", on);
+      window.removeEventListener("keyup", off);
+      window.removeEventListener("blur", blur);
+      set(false);
+    };
+  }, [current]);
   const baseCanvas = useRef<HTMLCanvasElement>(null);
   // the whole image at the zoom's scale (Session.onCopy), between the base
   // and the sharp frame: what a pan or a zoom brings into view is sharp
@@ -4914,6 +4949,17 @@ export default function App() {
     }
     return true;
   };
+  // Space held on a zoomed photo: pan, before any overlay or tool sees the press
+  const onSpacePanDown = (e: React.PointerEvent<HTMLElement>) => {
+    if (!spaceHeldRef.current || !current || zoomRef.current === "fit" || !viewZ.current || e.button !== 0) return false;
+    if ((e.target as Element).closest(".cand-pane")) return false;
+    e.stopPropagation();
+    e.preventDefault();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    drag.current = { x: e.clientX, y: e.clientY, cx: center.current.x, cy: center.current.y, moved: false, space: true };
+    setSpaceDragging(true);
+    return true;
+  };
   const onPointerDown = (e: React.PointerEvent<HTMLElement>) => {
     if (lineRef.current) return;
     if (!current || croppingRef.current || !viewZ.current) return;
@@ -4951,12 +4997,15 @@ export default function App() {
     const d = drag.current;
     drag.current = null;
     setHolding(false);
+    setSpaceDragging(false);
     if (!d || !full.current) return;
     if (d.moved) {
       updatePlacement();
       session.current?.requestRender();
       return;
     }
+    // a Space press that did not move is not a click
+    if (d.space) return;
     // holding the photo shows the before in the overlay view, so a click
     // there does not zoom
     if (baModeRef.current === "overlay") return;
@@ -5774,8 +5823,8 @@ export default function App() {
       <Splitter axis="x" value={layout.leftWidth} min={220} max={560} hidden={!docked.left}
                 onChange={(v) => setLayout((l) => ({ ...l, leftWidth: v }))} />
       <section className="center">
-        <main data-tour="viewer" className={`viewer zoom-${zoom === "fit" ? "fit" : "in"}${picking || loupePicking ? " picking" : ""}${aiBusy ? " busy" : ""}${straightening || line || (shiftHeld && current && !grid && (cropping || (!masksMode && !healMode)) && !preview) ? " straightening" : ""}${canvasColor !== "dark" ? ` canvas-${canvasColor}` : ""}${baMode === "overlay" ? " hold-view" : ""}${optPreview?.kind === "gray" ? " gray-view" : ""}${sheet ? " print-view" : ""}`} ref={viewer}
-              onPointerDownCapture={(e) => { if (!onLoupePickDown(e)) onStraightenDown(e); }}
+        <main data-tour="viewer" className={`viewer zoom-${zoom === "fit" ? "fit" : "in"}${picking || loupePicking ? " picking" : ""}${aiBusy ? " busy" : ""}${spaceHeld && current && zoom !== "fit" ? (spaceDragging ? " space-pan space-dragging" : " space-pan") : ""}${straightening || line || (shiftHeld && current && !grid && (cropping || (!masksMode && !healMode)) && !preview) ? " straightening" : ""}${canvasColor !== "dark" ? ` canvas-${canvasColor}` : ""}${baMode === "overlay" ? " hold-view" : ""}${optPreview?.kind === "gray" ? " gray-view" : ""}${sheet ? " print-view" : ""}`} ref={viewer}
+              onPointerDownCapture={(e) => { if (onSpacePanDown(e)) return; if (!onLoupePickDown(e)) onStraightenDown(e); }}
               onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
               onPointerLeave={leaveProbe}>
           {sheet && (

@@ -180,6 +180,7 @@ Where masks overlap, their adjustments add up. **Contrast**,
 | [ ] | Brush size |
 | O | Show or hide the overlay |
 | Esc | Put the tool down |
+| Space-drag | Pan a zoomed-in photo, without painting or moving a mask |
 
 Clarity and Texture use **contrast & texture** by default, or local contrast
 and diffuse or sharpen, chosen independently in

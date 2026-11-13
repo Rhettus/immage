@@ -52,6 +52,7 @@ out. **Threshold** sets how much shows.
 | Q | Heal and clone |
 | [ ] | Brush size |
 | Scroll | Brush size; ⇧-scroll its feather |
+| Space-drag | Pan a zoomed-in photo, without moving a spot |
 | A | Visualize spots |
 | Delete | Remove the selected spot |
 | Esc | Deselect the spot |

@@ -998,6 +998,9 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .crop-angle { display: flex; align-items: center; gap: 6px; }
 .crop-angle .slider { flex: 1; min-width: 0; }
 .viewer.straightening, .viewer.straightening * { cursor: crosshair; }
+/* Space held on a zoomed photo pans over any tool */
+.viewer.space-pan, .viewer.space-pan * { cursor: grab !important; }
+.viewer.space-pan.space-dragging, .viewer.space-pan.space-dragging * { cursor: grabbing !important; }
 .straighten-line { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 5; pointer-events: none; }
 /* the Transform panel: Upright's buttons, and its grid and guides on the photo */
 .upright-tools { display: flex; flex-direction: column; gap: 6px; margin: 2px 0 8px; }
