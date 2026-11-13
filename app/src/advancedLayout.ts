@@ -1140,6 +1140,29 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "noise", label: "Noise level" },
     ],
   },
+  {
+    // borders.c gui_init and gui_changed
+    // the aspect, horizontal position and vertical position comboboxes are presets (not
+    // params): picking one writes aspect / pos_h / pos_v and moves the slider below it
+    // (_aspect_changed, _position_h_changed, _position_v_changed); gui_changed moves the
+    // combobox back to the matching preset, or to "custom...", when the slider is edited;
+    // the aspect_text, pos_h_text and pos_v_text char arrays have no widget of their own;
+    // the frame line widgets are greyed out (not hidden) unless size > 0 and 0 < pos_h < 1
+    // and 0 < pos_v < 1, so there is no showIf
+    // omitted: color[3] and frame_color[3] (color buttons with image pickers; need a color
+    // picker), max_border_size (no widget)
+    op: "borders", group: "effects", title: "Framing",
+    fields: [
+      { path: "basis", label: "Basis" },
+      { path: "size", label: "Border size", unit: "%", digits: 4 },
+      { path: "aspect", label: "Aspect ratio" },
+      { path: "aspect_orient", label: "Orientation" },
+      { path: "pos_h", label: "Horizontal offset" },
+      { path: "pos_v", label: "Vertical offset" },
+      { path: "frame_size", label: "Frame line size", unit: "%", digits: 4 },
+      { path: "frame_offset", label: "Frame line offset", unit: "%", digits: 4 },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);

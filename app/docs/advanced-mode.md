@@ -318,6 +318,12 @@ The Effects group has these darktable modules:
 - **Censorize**: **Input blur radius**, **Pixelization radius**, **Output
   blur radius** and **Noise level**. Use it with a mask to hide part of a
   photo.
+- **Framing**: **Basis**, **Border size**, **Aspect ratio**,
+  **Orientation**, **Horizontal offset** and **Vertical offset**, then the
+  frame line's **Frame line size** and **Frame line offset**. The card does
+  not yet have darktable's aspect and position presets or the border and
+  frame line colors, which stay white and black. **Aspect ratio** sets a
+  custom ratio; by default the framed photo keeps its own.
 
 ## Instances
 
