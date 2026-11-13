@@ -27,7 +27,7 @@ const cardSel = id => `${GROUP} [data-module="${id}"]`;
 
 // opens a card's instance menu and returns whether the item is disabled
 async function openMenu(t, id) {
-  await click(t, `${cardSel(id)} .module-card-menu`);
+  await click(t, `${cardSel(id)} .instance-menu .module-card-menu`);
   await until(() => t.driver.observe(() => !!document.querySelector('.context-menu [data-instance-action]')), 'instance menu');
 }
 const itemDisabled = (t, a) => t.driver.observe(sel => document.querySelector(sel)?.disabled ?? null, MENU_ITEM(a));
