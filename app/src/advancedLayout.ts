@@ -1106,6 +1106,15 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "offset", label: "Offset", showIf: (p) => p.type === 1 },
     ],
   },
+  {
+    // lowlight.c gui_init: a custom curve graph, then the blueness slider
+    // omitted: transition_x[6] and transition_y[6] (the graph's curve nodes; needs a custom
+    // curve editor)
+    op: "lowlight", group: "effects", title: "Lowlight vision",
+    fields: [
+      { path: "blueness", label: "Blue shift", unit: "%" },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);

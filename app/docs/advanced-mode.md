@@ -310,6 +310,8 @@ The Effects group has these darktable modules:
   **Diaphragm blades**, **Concavity**, **Linearity** and **Rotation**; a
   motion blur adds **Direction**, **Curvature** and **Offset**; a gaussian
   blur has no more settings. The card has no preview of the blur's shape.
+- **Lowlight vision**: **Blue shift**. The card does not yet have
+  darktable's curve of how much each brightness level is affected.
 
 ## Instances
 
