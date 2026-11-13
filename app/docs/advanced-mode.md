@@ -72,6 +72,12 @@ Besides exposure, the Basic group has these darktable modules:
   picker, area color mapping and color checker calibration. Simple's
   calibration and Black & White's calibration use their own instances; only
   the first shows here.
+- **Highlight reconstruction**: **Method** and **Clipping threshold**, then
+  the settings of the method chosen: segmentation's combine, candidating and
+  rebuild (with strength and noise level), or guided laplacians' noise level,
+  iterations, flat color and diameter. The card lists every method; darktable
+  offers only those that suit the photo's sensor and switches to inpaint
+  opposed if one does not. darktable allows one instance.
 
 ## Instances
 

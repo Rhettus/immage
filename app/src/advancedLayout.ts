@@ -107,6 +107,25 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "black", label: "Black level correction", soft: [-0.1, 0.1], digits: 4 },
     ],
   },
+  {
+    // highlights.c gui_init (widget order) and gui_changed (visibility).
+    // darktable builds the method list per sensor (a JPEG gets clip only,
+    // guided laplacians needs a Bayer sensor) and falls back to inpaint
+    // opposed for a method the sensor cannot use; the card lists them all
+    op: "highlights", group: "basic", title: "Highlight reconstruction",
+    fields: [
+      { path: "mode", label: "Method" },
+      { path: "clip", label: "Clipping threshold", digits: 3 },
+      { path: "combine", label: "Combine", digits: 0, showIf: (p) => p.mode === 4 },
+      { path: "candidating", label: "Candidating", unit: "%", factor: 100, digits: 0, showIf: (p) => p.mode === 4 },
+      { path: "recovery", label: "Rebuild", showIf: (p) => p.mode === 4 },
+      { path: "strength", label: "Strength", unit: "%", factor: 100, digits: 0, showIf: (p) => p.mode === 4 && p.recovery !== 0 },
+      { path: "noise_level", label: "Noise level", showIf: (p) => p.mode === 3 || (p.mode === 4 && p.recovery !== 0) },
+      { path: "iterations", label: "Iterations", showIf: (p) => p.mode === 3 },
+      { path: "solid_color", label: "Inpaint a flat color", unit: "%", factor: 100, digits: 0, showIf: (p) => p.mode === 3 },
+      { path: "scales", label: "Diameter of reconstruction", showIf: (p) => p.mode === 3 },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);
