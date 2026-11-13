@@ -883,6 +883,18 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "mix", label: "Mix" },
     ],
   },
+  {
+    // lowpass.c gui_init: five widgets, no visibility rules. left out: order
+    // and unbound, which have no widget
+    op: "lowpass", group: "detail", title: "Lowpass",
+    fields: [
+      { path: "radius", label: "Radius" },
+      { path: "lowpass_algo", label: "Soften with" },
+      { path: "contrast", label: "Contrast" },
+      { path: "brightness", label: "Brightness" },
+      { path: "saturation", label: "Saturation" },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);

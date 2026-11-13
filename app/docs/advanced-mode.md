@@ -246,6 +246,8 @@ The Detail group has these darktable modules:
 - **Contrast equalizer**: **Mix**. Its curves are not on the card yet; Simple's
   Contrast draws them for the first instance when Preferences set it to
   contrast equalizer.
+- **Lowpass**: **Radius**, **Soften with**, **Contrast**, **Brightness** and
+  **Saturation**.
 
 ## Instances
 
