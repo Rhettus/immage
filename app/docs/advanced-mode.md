@@ -87,6 +87,11 @@ Besides exposure, the Basic group has these darktable modules:
   **Highlights**, **Shadows** and **Midtone range** for the local laplacian
   filter.
 - **Haze removal**: **Strength** and **Distance**.
+- **Diffuse or sharpen**: under Properties, **Iterations**, **Central radius**
+  and **Radius span**; under Speed, the four orders of speed; under Direction,
+  the four orders of anisotropy; under Edge management, **Sharpness**, **Edge
+  sensitivity** and **Edge threshold**; and under Diffusion spatiality, the
+  **Luminance masking threshold**.
 
 ## Instances
 
