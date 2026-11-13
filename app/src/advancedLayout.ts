@@ -34,6 +34,22 @@ export type ModuleLayout = {
 
 export const LAYOUTS: ModuleLayout[] = [
   {
+    // temperature.c gui_init: its "channel coefficients" section (red, green,
+    // blue, various at 3 digits). left out for now: the settings combobox,
+    // whose entries (as shot, camera reference, the camera's presets) are
+    // built per photo rather than from an enum, and the temperature and tint
+    // sliders, which darktable computes from the coefficients
+    op: "temperature", group: "basic", title: "White balance",
+    fields: [
+      { path: "red", label: "Red", section: "Channel coefficients", digits: 3 },
+      { path: "green", label: "Green", section: "Channel coefficients", digits: 3 },
+      { path: "blue", label: "Blue", section: "Channel coefficients", digits: 3 },
+      // the fourth channel of a 4-color sensor (darktable labels it emerald
+      // there); other sensors leave it at 0 and darktable hides it
+      { path: "various", label: "Emerald", section: "Channel coefficients", digits: 3, showIf: (p) => p.various > 0 },
+    ],
+  },
+  {
     // exposure.c gui_init (the mode combobox over a manual and a deflicker
     // page, then black level); the mode stack is gui_changed's showIf
     op: "exposure", group: "basic", title: "Exposure",

@@ -54,6 +54,16 @@ edit, with one undo step per slider drag, and they are saved with the photo.
 Simple's Exposure and Blacks sliders change the same module, so a change made
 on one side shows on the other.
 
+## Basic modules
+
+Besides exposure, the Basic group has these darktable modules:
+
+- **White balance**: the channel coefficients, **Red**, **Green** and
+  **Blue**, and **Emerald** on cameras with a fourth color channel. The card
+  does not yet have darktable's settings list (as shot, camera reference and
+  the camera's presets) or its temperature and tint sliders; Simple's White
+  Balance sliders change the same module. darktable allows one instance.
+
 ## Instances
 
 A module can have several instances, each with its own settings. Open the

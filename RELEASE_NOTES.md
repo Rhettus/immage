@@ -8,11 +8,11 @@ what Immage's update banner shows under Release Notes.
 Improvements
 
 - Preferences > General has an Editing mode. Advanced shows Adjustments' groups
-  with a Technical group and a module search. It now shows darktable's exposure
-  module as a card in Basic, with its own settings, on/off and reset, and an
-  instance menu to add, duplicate, rename, reorder and delete instances, all
-  with undo; other modules follow in later versions. Switching does not change
-  your photo.
+  with a Technical group and a module search. Basic shows darktable modules
+  as cards (exposure and white balance), with their own settings, on/off and
+  reset, and an instance menu to add, duplicate, rename, reorder and delete
+  instances, all with undo; other modules follow in later versions. Switching
+  does not change your photo.
 - Module cards have a darktable presets menu beside the reset button. It applies
   one of darktable's built-in or your own presets to that instance, as one undo
   step.

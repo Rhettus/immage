@@ -63,6 +63,30 @@ class Engine {
   stop() { try { this.child.stdin.end(); } catch {} setTimeout(() => this.child.kill(), 3000).unref(); }
 }
 
+// the engine's export of the open photo against darktable-cli rendering the
+// same saved XMP. threshold 0.5/255 mean: both run the same history at the
+// same size (hq on, as the engine exports), so they are expected identical
+// but for rounding; a lost edit is tens of levels (hq off resamples
+// differently: 4.5 levels, so it is not used)
+async function cliParity(t2, e, work, photo, imgid, tag = 'p') {
+  if (!existsSync(CLI)) return t2.skip(`darktable-cli not built (${CLI})`);
+  if (spawnSync('compare', ['-version']).status !== 0) return t2.skip('ImageMagick compare not installed');
+  const outA = join(work, `${tag}-engine.png`), outB = join(work, `${tag}-cli.png`);
+  await e.call({ cmd: 'export', imgid, out: outA, format: 'png', bpp: 8, color_space: 'srgb', long_edge: 600 });
+  const r = spawnSync(CLI, [photo, photo + '.xmp', outB, '--width', '600', '--height', '600', '--hq', 'true',
+    '--core', '--configdir', join(work, `${tag}-cli-config`), '--cachedir', join(work, `${tag}-cli-cache`), '--library', ':memory:',
+    '--conf', 'opencl=false', '--conf', 'plugins/lighttable/export/force_lcms2=false'],
+  { env: { ...process.env, XDG_DATA_HOME: join(work, `${tag}-cli-data`) }, encoding: 'utf8', timeout: 300000 });
+  assert.ok(existsSync(outB), `darktable-cli wrote nothing (status ${r.status}): ${(r.stderr || '').slice(-500)}`);
+  // compare prints "<absolute> (<normalized 0..1>)" on stderr; 8-bit steps are 1/255 = 0.0039
+  const c = spawnSync('compare', ['-metric', 'MAE', outA, outB, 'null:'], { encoding: 'utf8' });
+  const m = /\(([0-9.e+-]+)\)/.exec(c.stderr);
+  assert.ok(m, `compare gave: ${c.stderr}`);
+  const mean = +m[1];
+  assert.ok(mean < 0.5 / 255, `mean absolute difference ${mean} (${(mean * 255).toFixed(3)} levels of 255)`);
+  t2.diagnostic(`mean abs diff ${(mean * 255).toFixed(4)} / 255`);
+}
+
 const FIELDS = ['mode', 'black', 'exposure', 'compensate_exposure_bias', 'deflicker_percentile', 'deflicker_target_level'];
 const EDIT = { exposure: 1.0, black: 0.01, compensate_exposure_bias: 0 };
 
@@ -128,27 +152,8 @@ test('Advanced mode modules (exposure)', { skip: skip || false }, async (t) => {
   });
 
   await t.test('engine export equals darktable-cli with the saved XMP', async (t2) => {
-    if (!existsSync(CLI)) return t2.skip(`darktable-cli not built (${CLI})`);
-    if (spawnSync('compare', ['-version']).status !== 0) return t2.skip('ImageMagick compare not installed');
-    const outA = join(work, 'engine.png'), outB = join(work, 'cli.png');
     const id = (await e.call({ cmd: 'open', path: photo })).imgid ?? imgid;
-    await e.call({ cmd: 'export', imgid: id, out: outA, format: 'png', bpp: 8, color_space: 'srgb', long_edge: 600 });
-    const cfg = join(work, 'cli-config');
-    const r = spawnSync(CLI, [photo, photo + '.xmp', outB, '--width', '600', '--height', '600', '--hq', 'true',
-      '--core', '--configdir', cfg, '--cachedir', join(work, 'cli-cache'), '--library', ':memory:',
-      '--conf', 'opencl=false', '--conf', 'plugins/lighttable/export/force_lcms2=false'],
-    { env: { ...process.env, XDG_DATA_HOME: join(work, 'cli-data') }, encoding: 'utf8', timeout: 180000 });
-    assert.ok(existsSync(outB), `darktable-cli wrote nothing (status ${r.status}): ${(r.stderr || '').slice(-500)}`);
-    // compare prints "<absolute> (<normalized 0..1>)" on stderr; 8-bit steps are 1/255 = 0.0039
-    const c = spawnSync('compare', ['-metric', 'MAE', outA, outB, 'null:'], { encoding: 'utf8' });
-    const m = /\(([0-9.e+-]+)\)/.exec(c.stderr);
-    assert.ok(m, `compare gave: ${c.stderr}`);
-    const mean = +m[1];
-    // threshold 0.5/255 mean: both paths run the same history at the same size (hq on, as the engine
-    // exports), so the result is expected identical; allow rounding only. a missing +1 EV edit or a
-    // lost black offset would be tens of levels (hq off resamples differently: 4.5 levels, so it is not used)
-    assert.ok(mean < 0.5 / 255, `mean absolute difference ${mean} (${(mean * 255).toFixed(3)} levels of 255)`);
-    t2.diagnostic(`mean abs diff ${(mean * 255).toFixed(4)} / 255`);
+    await cliParity(t2, e, work, photo, id);
   });
 
   await t.test('module_state reset on exposure@0 returns the defaults', async () => {
@@ -399,4 +404,85 @@ test('Advanced mode darktable presets (exposure)', { skip: skip || false }, asyn
   await e.call({ cmd: 'open', path: photo });
   assert.equal((await read('exposure')).params.mode, 1, 'the preset did not survive reopening');
   assert.equal((await read(`exposure@${p1}`)).params.mode, 1);
+});
+
+// every card layout (app/src/advancedLayout.ts) against darktable's schema:
+// each path names a field (or an element inside an array), enum options
+// exist, soft ranges sit within the hard ones. Then one slider per module
+// moves off its default, reads back, survives save and reopen, and the
+// photo with all of them renders as darktable-cli renders the same XMP
+test('Advanced card layouts match darktable', { skip: skip || false }, async (t) => {
+  const { LAYOUTS, fieldPath } = await import('../app/src/advancedLayout.ts');
+  const work = mkdtempSync(join(tmpdir(), 'immage-advlay-'));
+  mkdirSync(join(work, 'photos'));
+  const photo = join(work, 'photos', 'stairs.jpg');
+  copyFileSync(SAMPLE, photo);
+  const e = new Engine(work);
+  t.after(() => { e.stop(); if (process.env.KEEP) console.log(work); else rmSync(work, { recursive: true, force: true }); });
+  const { imgid } = await e.call({ cmd: 'open', path: photo });
+
+  const edits = [];
+  for (const l of LAYOUTS) {
+    await t.test(`${l.op} (${l.group}) layout`, async () => {
+      const s = await e.call({ cmd: 'module_schema', op: l.op });
+      const by = new Map(s.fields.map((f) => [f.path, f]));
+      const resolve = (path) => {
+        const f = by.get(path) ?? by.get(fieldPath(path));
+        if (!f) return null;
+        if (f.path === path) return f;
+        const k = +/\[(\d+)\]$/.exec(path)[1];
+        assert.equal(f.type, 'array', `${path}: ${f.path} is not an array`);
+        assert.ok(k < f.dims[0], `${path}: index past ${f.dims[0]}`);
+        return { ...f, type: f.element, default: f.defaults?.[k] };
+      };
+      const seen = new Set();
+      for (const lf of l.fields) {
+        assert.ok(!seen.has(lf.path) || lf.showIf, `${lf.path} listed twice without a showIf`);
+        seen.add(lf.path);
+        const f = resolve(lf.path);
+        assert.ok(f, `${l.op}: no field ${lf.path}; schema has ${[...by.keys()]}`);
+        assert.ok(lf.label, `${lf.path}: no label`);
+        if (lf.options) {
+          assert.equal(f.type, 'enum', `${lf.path}: options on a ${f.type}`);
+          for (const v of lf.options) assert.ok(f.values.some((x) => x.value === v), `${lf.path}: option ${v} not in the enum`);
+        }
+        if (lf.soft) {
+          assert.ok(lf.soft[0] < lf.soft[1], `${lf.path}: soft ${lf.soft}`);
+          if (typeof f.min === 'number') assert.ok(lf.soft[0] >= f.min - 1e-6, `${lf.path}: soft ${lf.soft} under min ${f.min}`);
+          if (typeof f.max === 'number') assert.ok(lf.soft[1] <= f.max + 1e-6, `${lf.path}: soft ${lf.soft} over max ${f.max}`);
+        }
+        assert.ok(['float', 'int', 'enum', 'bool', 'uint', 'short', 'ushort', 'char', 'uchar'].includes(f.type),
+          `${lf.path}: a card cannot draw type ${f.type}`);
+      }
+      // the module's first float slider shown at its defaults, a quarter of
+      // the way into its soft range
+      const paths = l.fields.map((lf) => lf.path);
+      const cur = (await e.call({ cmd: 'get', modules: { [`${l.op}@0`]: paths } })).modules[`${l.op}@0`];
+      const lf = l.fields.find((x) => resolve(x.path).type === 'float' && (!x.showIf || x.showIf(cur.defaults)));
+      if (!lf) return;
+      const f = resolve(lf.path);
+      const [lo, hi] = lf.soft ?? [f.min, f.max];
+      let v = cur.defaults[lf.path] + (hi - lo) / 4;
+      if (v > hi) v = cur.defaults[lf.path] - (hi - lo) / 4;
+      await e.call({ cmd: 'set', op: l.op, priority: 0, params: { [lf.path]: v }, enabled: true });
+      const back = (await e.call({ cmd: 'get', modules: { [`${l.op}@0`]: [lf.path] } })).modules[`${l.op}@0`];
+      assert.ok(back.enabled, `${l.op} not on after a set`);
+      assert.ok(Math.abs(back.params[lf.path] - v) < 1e-4, `${lf.path}: ${back.params[lf.path]} != ${v}`);
+      edits.push({ op: l.op, path: lf.path, v });
+    });
+  }
+
+  await t.test('save and reopen keep every edit', async () => {
+    await e.call({ cmd: 'save' });
+    await e.call({ cmd: 'close' });
+    await e.call({ cmd: 'open', path: photo });
+    for (const { op, path, v } of edits) {
+      const m = (await e.call({ cmd: 'get', modules: { [`${op}@0`]: [path] } })).modules[`${op}@0`];
+      assert.ok(m.enabled && Math.abs(m.params[path] - v) < 1e-4, `${op}.${path} after reopen: ${JSON.stringify(m)}`);
+    }
+  });
+
+  await t.test('the edited photo renders as darktable-cli', async (t2) => {
+    await cliParity(t2, e, work, photo, imgid, 'layouts');
+  });
 });
