@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from 'node:assert/strict';
-import { until } from './webdriver.mjs';
+import { until, pause } from './webdriver.mjs';
 
 // Read only. No scrollIntoView: scrolling must go through real wheel input.
 // With text, the first match whose own text (a menu item's shortcut,
@@ -96,7 +96,16 @@ export async function tabTo(t, selector, max = 200) {
   throw Error(`Tab did not reach ${selector}`);
 }
 export async function click(t, selector) {
-  const c = await reveal(t, selector);
+  let c = await reveal(t, selector);
+  // a wheel scroll can still be gliding when the control is first seen in view:
+  // aim only once its position has stopped moving, or the click lands on
+  // whatever slides under that point
+  for (let i = 0; i < 6; i++) {
+    await pause(250);
+    const again = await t.driver.observe(inspect, selector);
+    if (!again || (again.x === c.x && again.y === c.y)) break;
+    c = await reveal(t, selector);
+  }
   assert(!c.disabled, `${selector} must be enabled`);
   await t.driver.point(c.x, c.y);
   return c;

@@ -172,6 +172,10 @@ export async function sliders(t) {
     const open = await t.driver.observe(selector => document.querySelector(selector)?.classList.contains('open'), title);
     if (!open) await click(t, title);
     await until(() => t.driver.observe(selector => !!document.querySelector(`${selector} > .collapse.open`), panel), `${id} expanded`);
+    // the section animates open: wait for its height to stop changing, or the next
+    // title is measured mid-animation and the click lands on the graph that slides under it
+    let last = -1;
+    await until(async () => { const h = await t.driver.observe(selector => document.querySelector(selector)?.getBoundingClientRect().height, panel); const same = h === last; last = h; return same; }, `${id} settled`);
     const controls = await t.driver.observe(selector => [...document.querySelectorAll(`${selector} [data-control-id] input[type=range]`)].map(e => e.closest('[data-control-id]').dataset.controlId), panel);
     for (const control of controls) {
       const selector = `${panel} ${rangeSelector(control)}`;
