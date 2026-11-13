@@ -225,6 +225,9 @@ The Detail group has these darktable modules:
   **Capture sharpen**, the switch Simple's Capture Sharpening sets, with its
   controls under it while it is on. darktable lists only your camera's
   methods and changes one for another sensor type to its nearest.
+- **Sharpen**: **Radius**, **Amount** and **Threshold**. Simple's Sharpening
+  with sharpen uses the first instance, so a change on one shows on the
+  other.
 
 ## Instances
 

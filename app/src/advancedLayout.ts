@@ -789,6 +789,16 @@ export const LAYOUTS: ModuleLayout[] = [
         showIf: (p) => CAPTURE(p) && p.cs_boost !== 0 },
     ],
   },
+  {
+    // sharpen.c gui_init: three sliders, no visibility rules. Simple's
+    // Sharpening with sharpen drives the first instance
+    op: "sharpen", group: "detail", title: "Sharpen",
+    fields: [
+      { path: "radius", label: "Radius", soft: [0, 8], digits: 3 },
+      { path: "amount", label: "Amount", digits: 3 },
+      { path: "threshold", label: "Threshold", digits: 3 },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);
