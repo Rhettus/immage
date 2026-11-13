@@ -512,6 +512,12 @@ gboolean session_write_field_in(dt_iop_module_t *mod, void *base, const char *na
     case DT_INTROSPECTION_TYPE_ENUM:   *(int *)p = (int)num; break;
     case DT_INTROSPECTION_TYPE_UINT:   *(unsigned int *)p = (unsigned int)num; break;
     case DT_INTROSPECTION_TYPE_BOOL:   *(gboolean *)p = num != 0.0; break;
+    // the small ints clamp to their type, as a cast past it would wrap
+    // (rawprepare's black levels and white point are uint16)
+    case DT_INTROSPECTION_TYPE_SHORT:  *(short *)p = (short)CLAMP(num, G_MINSHORT, G_MAXSHORT); break;
+    case DT_INTROSPECTION_TYPE_USHORT: *(unsigned short *)p = (unsigned short)CLAMP(num, 0, G_MAXUSHORT); break;
+    case DT_INTROSPECTION_TYPE_INT8:   *(int8_t *)p = (int8_t)CLAMP(num, G_MININT8, G_MAXINT8); break;
+    case DT_INTROSPECTION_TYPE_UINT8:  *(uint8_t *)p = (uint8_t)CLAMP(num, 0, G_MAXUINT8); break;
     default:
       *err = g_strdup_printf("'%s.%s' is not a settable scalar", mod->op, name);
       return FALSE;
@@ -706,6 +712,10 @@ gboolean session_read_field(dt_iop_module_t *mod, const char *name,
     case DT_INTROSPECTION_TYPE_ENUM:   *num = *(const int *)p; break;
     case DT_INTROSPECTION_TYPE_UINT:   *num = *(const unsigned int *)p; break;
     case DT_INTROSPECTION_TYPE_BOOL:   *num = *(const gboolean *)p ? 1.0 : 0.0; break;
+    case DT_INTROSPECTION_TYPE_SHORT:  *num = *(const short *)p; break;
+    case DT_INTROSPECTION_TYPE_USHORT: *num = *(const unsigned short *)p; break;
+    case DT_INTROSPECTION_TYPE_INT8:   *num = *(const int8_t *)p; break;
+    case DT_INTROSPECTION_TYPE_UINT8:  *num = *(const uint8_t *)p; break;
     default:
       *err = g_strdup_printf("'%s.%s' is not a readable scalar", mod->op, name);
       return FALSE;
