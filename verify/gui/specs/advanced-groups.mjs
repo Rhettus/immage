@@ -116,6 +116,32 @@ export async function advancedGroups(t) {
     const hue = pr.card.controls.find(x => x.id === 'red_hue');
     t.measure({ name: 'primaries-hue', shown: hue.shown });
     assert.match(hue.shown, /°$/, `red hue shows degrees: ${hue.shown}`);
+
+    // 5. B&W: listed though the photo is in color. Add module's color
+    // calibration turns on Simple's Black & White, so the card is that
+    // instance, Gray page first, and the photo loses its color; undo returns it
+    const bwSel = '[data-panel-id="bw"] [data-module^="channelmixerrgb#"]';
+    await panel(t, 'bw');
+    const title = await t.driver.observe(() => document.querySelector('[data-panel-id="bw"] .panel-title span')?.textContent.trim());
+    assert.equal(title, 'B&W', 'the B&W group shows, titled B&W');
+    const color = await settledPhoto(t);
+    const cal = await addAndCheck(t, 'bw', 'channelmixerrgb', 'Color calibration',
+      { controls: ['grey[0]', 'grey[1]', 'grey[2]', 'normalize_grey'] }, false);
+    assert.equal(cal.card.tabs[0]?.name, 'Gray', `Gray page first: ${JSON.stringify(cal.card.tabs)}`);
+    assert(cal.card.on, 'the B&W calibration is on after Add module');
+    const gray = await settledPhoto(t, p => meanError(p, color) > .5);
+    t.measure({ name: 'bw-calibration', meanAbsoluteError: meanError(gray, color) });
+    await t.evidence('bw-calibration');
+    // only the B&W group shows that instance; Basic keeps the photo's first
+    const basicCal = await t.driver.observe(() => document.querySelectorAll('[data-panel-id="basic"] [data-module^="channelmixerrgb#"]').length);
+    assert(basicCal <= 1, `Basic shows ${basicCal} color calibration cards`);
+    await undoRedo(t, 'undo');
+    const colorBack = await settledPhoto(t, p => meanError(p, color) < 1);
+    t.measure({ name: 'bw-undo', meanAbsoluteError: meanError(colorBack, color) });
+    assert(meanError(colorBack, color) < 1, `undo of B&W: photo mean pixel error ${meanError(colorBack, color)} exceeds 1/255`);
+
+    // 6. B&W: monochrome's one slider
+    await addAndCheck(t, 'bw', 'monochrome', 'Monochrome', { controls: ['highlights'], tabs: [] }, true);
     await t.evidence('groups-done');
   } finally {
     try {
