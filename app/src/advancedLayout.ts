@@ -499,6 +499,25 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "param_size", label: "Effect radius", section: "Options", unit: "px", digits: 1, showIf: (p) => !!p.use_filter },
     ],
   },
+  {
+    // satcurvergb.c gui_init and gui_changed: the formula combobox, then the
+    // collapsible "guided filter" section. gui_changed only greys the section
+    // out (not hidden): it needs the darktable UCS formula, and its sliders
+    // also need use_guided_filter. left out: channel (the saturation and
+    // brilliance curves, which need a custom curve editor with node add, drag
+    // and remove, two pages), gf_protect_from and gf_protect_to (darktable
+    // shows them as the computed "protect near-neutrals" center and
+    // "protection transition width" sliders, not params), and the picker and
+    // mask display buttons
+    op: "satcurvergb", group: "hsl", title: "Saturation curve",
+    fields: [
+      { path: "formula", label: "Saturation formula" },
+      { path: "use_guided_filter", label: "Use guided filter", section: "Guided filter" },
+      { path: "gf_radius", label: "Filter radius", section: "Guided filter", unit: "px", digits: 1 },
+      { path: "gf_feathering", label: "Edge feathering", section: "Guided filter", digits: 1 },
+      { path: "noise_protection", label: "Noise protection", section: "Guided filter", unit: "%", digits: 2 },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);

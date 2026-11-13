@@ -152,6 +152,9 @@ The HSL / Color group has these darktable modules:
   **White level**, **Hue curve** and **Use guided filter** with its radius,
   threshold and contrast settings. The node graph and its pickers are not on
   the card yet; Simple's HSL / Color edits the same module.
+- **Saturation curve**: **Saturation formula** and, under Guided filter, its
+  switch, radius, edge feathering and noise protection. The saturation and
+  brilliance curves are not on the card yet.
 
 ## Instances
 
