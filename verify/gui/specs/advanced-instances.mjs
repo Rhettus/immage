@@ -27,6 +27,15 @@ const cardSel = id => `${GROUP} [data-module="${id}"]`;
 
 // opens a card's instance menu and returns whether the item is disabled
 async function openMenu(t, id) {
+  // a card just added scrolls into view, and a scroll closes the menu: wait
+  // until the card stops moving
+  let was = null;
+  await until(async () => {
+    const top = await t.driver.observe(s => document.querySelector(s)?.getBoundingClientRect().top ?? null, cardSel(id));
+    const still = top !== null && top === was;
+    was = top;
+    return still;
+  }, `${id} card settled`);
   await click(t, `${cardSel(id)} .instance-menu .module-card-menu`);
   await until(() => t.driver.observe(() => !!document.querySelector('.context-menu [data-instance-action]')), 'instance menu');
 }
