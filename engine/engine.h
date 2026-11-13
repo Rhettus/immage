@@ -351,6 +351,15 @@ gboolean session_read_field(dt_iop_module_t *mod, const char *name,
 gboolean wb_read(dt_iop_module_t *mod, const char *name, const gboolean from_defaults, double *num,
                  char **err);
 gboolean wb_write(dt_iop_module_t *mod, const char *name, const double num, char **err);
+// the settings combobox ("wb_setting") and finetune slider ("wb_tune"), and
+// the camera presets that fill the menu
+#define WB_SETTING "wb_setting"
+#define WB_TUNE "wb_tune"
+gboolean wb_setting_read(dt_iop_module_t *mod, const char *name, const gboolean from_defaults,
+                         double *num, char **err);
+gboolean wb_setting_write(dt_iop_module_t *mod, const char *name, const double num, char **err);
+void wb_mark_user(dt_iop_module_t *mod);
+gboolean wb_presets(JsonBuilder *b, char **err);
 gboolean session_set(const char *op, const char *field, JsonNode *value,
                      JsonObject *params, const gboolean has_enabled,
                      const gboolean enabled, const char *after, const char *before,

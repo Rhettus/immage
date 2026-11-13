@@ -31,6 +31,7 @@ export type { ColorProfiles, HistoryItem, ModuleState } from "./commands";
 // the typed commands, traced under their Rust names as `invoke` traces the rest
 const traced = <T>(command: string, call: () => Promise<T>) => perf.traced<T>(command, call);
 
+export const wbPresets = () => traced("wb_presets", () => commands.wbPresets());
 export const colorProfiles = () => traced("color_profiles", () => commands.colorProfiles());
 
 type ModuleRequest = { enabled?: boolean; reset?: boolean; restore?: ModuleState | "opened"; preset?: string };

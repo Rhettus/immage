@@ -554,8 +554,8 @@ test('Advanced card layouts match darktable', { skip: skip || false }, async (t)
           assert.ok(list.length && list.some(([, v]) => v === now), `${lf.path}: ${now} not among ${JSON.stringify(list)}`);
           continue;
         }
-        // white balance's temperature and tint are the engine's own, not in the schema
-        if (l.op === 'temperature' && ['temp_k', 'tint'].includes(lf.path)) {
+        // white balance's temperature, tint, settings and finetune are the engine's own, not in the schema
+        if (l.op === 'temperature' && ['temp_k', 'tint', 'wb_setting', 'wb_tune'].includes(lf.path)) {
           assert.ok(lf.label, `${lf.path}: no label`);
           const now = (await e.call({ cmd: 'get', modules: { 'temperature@0': [lf.path] } })).modules['temperature@0'].params[lf.path];
           assert.ok(Number.isFinite(now), `${lf.path}: reads ${now}`);
@@ -760,5 +760,69 @@ for (const [what, source] of wbPhotos) {
 
     await write({ red: b.red * 1.3 });
     assert.notEqual((await read()).temp_k, b.temp_k, 'a coefficient edit moves the temperature');
+
+    // the settings menu (temperature.c's presets combobox): wb_setting is its
+    // index, wb_tune the finetune; a coefficient edit is "user modified"
+    const get = async (...f) => (await e.call({ cmd: 'get', modules: { 'temperature@0': f } })).modules['temperature@0'].params;
+    const { presets } = await e.call({ cmd: 'wb_presets' });
+    assert.equal((await get('wb_setting')).wb_setting, 2, 'the red edit is user modified');
+    assert.equal((await get('wb_tune')).wb_tune, 0);
+    await assert.rejects(write({ wb_tune: 1 }), /not a camera preset/);
+    await assert.rejects(write({ wb_setting: 5 }), /unknown white balance setting/);
+    await assert.rejects(write({ wb_setting: 1 }), /unknown white balance setting/);
+    if (what === 'the sample JPEG') {
+      assert.deepEqual(presets, [], 'a JPEG has no camera presets');
+      await write({ wb_setting: 3 });
+      // sRGB has no separate reference, so the as shot match wins as in gui_update
+      assert.equal((await get('wb_setting')).wb_setting, 0, 'as shot and camera reference are the same');
+      return;
+    }
+    const same = (x, y) => ['red', 'green', 'blue'].every((c) => Math.abs(x[c] - y[c]) < 1e-5);
+    const coeffs = ['red', 'green', 'blue', 'wb_setting'];
+    await write({ wb_setting: 0 });
+    const shot = await get(...coeffs);
+    assert.equal(shot.wb_setting, 0, 'as shot');
+    await write({ wb_setting: 3 });
+    const ref = await get(...coeffs);
+    assert.equal(ref.wb_setting, 3, 'camera reference');
+    assert.ok(!same(ref, shot), 'camera reference differs from as shot');
+    await write({ wb_setting: 4 });
+    const late = await get(...coeffs);
+    assert.equal(late.wb_setting, 4, 'as shot to reference');
+    assert.ok(same(late, shot), 'as shot to reference starts from the as shot coefficients');
+    await write({ wb_setting: 0 });
+    await write({ red: shot.red * 1.2 });
+    assert.equal((await get('wb_setting')).wb_setting, 2, 'an edit is user modified');
+    await write({ wb_setting: 2 });
+    assert.equal((await get('wb_setting')).wb_setting, 2, 'user modified keeps the coefficients');
+
+    if (!presets.length) return;
+    assert.ok(presets.every((p, k) => p.value === 6 + k && p.name), 'preset values follow the section header');
+    const top = presets[0];
+    await write({ wb_setting: top.value });
+    const p0 = await get(...coeffs);
+    assert.equal(p0.wb_setting, top.value, `${top.name} reads back`);
+    const ranged = presets.find((p) => p.tune_min < p.tune_max);
+    if (!ranged) return;
+    assert.ok(ranged.tune_min <= 0 && ranged.tune_max >= 0);
+    await write({ wb_setting: ranged.value });
+    const base = await get(...coeffs, 'wb_tune');
+    assert.equal(base.wb_setting, ranged.value);
+    assert.equal(base.wb_tune, 0);
+    // every tuning, exact variants and any interpolated across gaps, reads back
+    const seen = new Set();
+    for (let tune = ranged.tune_min; tune <= ranged.tune_max; tune++) {
+      await write({ wb_tune: tune });
+      const g = await get(...coeffs, 'wb_tune');
+      assert.equal(g.wb_setting, ranged.value, `${ranged.name} stays chosen at ${tune}`);
+      assert.equal(g.wb_tune, tune, `finetune ${tune} reads back`);
+      seen.add(`${g.red.toFixed(5)} ${g.blue.toFixed(5)}`);
+    }
+    assert.ok(seen.size > 1, 'finetuning changes the coefficients');
+    await write({ wb_tune: ranged.tune_max + 50 });
+    assert.equal((await get('wb_tune')).wb_tune, ranged.tune_max, 'finetune clamps to the preset range');
+    await write({ wb_tune: 0 });
+    const back = await get(...coeffs);
+    assert.ok(same(back, base), 'finetune 0 is the preset again');
   });
 }

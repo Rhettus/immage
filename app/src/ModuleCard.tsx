@@ -7,8 +7,8 @@ import { PresetMenu } from "./PresetMenu";
 import { FamilySwitch, type FamilyOption } from "./FamilySwitch";
 import { Chevron, Collapse } from "./Collapse";
 import { Choice, Slider, Toggle } from "./Controls";
-import { colorProfiles, type AdvancedState, type ColorProfiles } from "./session";
-import type { DtPreset, Instance, ModuleSchema, SchemaField } from "./commands";
+import { colorProfiles, wbPresets, type AdvancedState, type ColorProfiles } from "./session";
+import type { DtPreset, Instance, ModuleSchema, SchemaField, WbPreset } from "./commands";
 import type { Control, Turn } from "./manifest";
 import { FlipIcon, RotateIcon } from "./icons";
 import { fieldPath, type LayoutField, type ModuleLayout } from "./advancedLayout";
@@ -26,6 +26,8 @@ const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const ENGINE_FIELDS: Record<string, SchemaField> = {
   temp_k: { path: "temp_k", type: "float", min: 1901, max: 25000 },
   tint: { path: "tint", type: "float", min: 0.135, max: 2.326 },
+  wb_setting: { path: "wb_setting", type: "int", min: 0, max: 255 },
+  wb_tune: { path: "wb_tune", type: "int", min: -100, max: 100 },
 };
 
 // the schema entry of a layout path: an array element ("red[2]") takes its
@@ -109,6 +111,29 @@ export function ModuleCard({ hidden, instance, layout, schema, state, siblings, 
   const profileField = (l: LayoutField, value: number): [SchemaField, LayoutField] => {
     const list = profiles?.[l.profiles!] ?? [];
     const choices = list.some(([, v]) => v === value) ? list : [...list, ["Current profile", value] as [string, number]];
+    return [{ path: l.path, type: "int" }, { ...l, choices }];
+  };
+  // white balance's camera presets, once per photo (wb_presets: empty for a
+  // photo without any); the card reads the setting and finetune from them
+  const hasWb = layout.fields.some((l) => l.wb);
+  const [wbList, setWbList] = useState<WbPreset[]>([]);
+  useEffect(() => {
+    if (!hasWb) return;
+    let live = true;
+    setWbList([]);
+    wbPresets().then((r) => { if (live) setWbList(r.presets); }).catch(() => {});
+    return () => { live = false; };
+  }, [photo]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const wbCurrent = wbList.find((p) => p.value === state.params.wb_setting);
+  const wbField = (l: LayoutField, value: number): [SchemaField, LayoutField] | null => {
+    if (l.wb === "tune") {
+      if (!wbCurrent || wbCurrent.tune_min >= wbCurrent.tune_max) return null;
+      return [{ path: l.path, type: "int", min: wbCurrent.tune_min, max: wbCurrent.tune_max }, { ...l, soft: [wbCurrent.tune_min, wbCurrent.tune_max] }];
+    }
+    // temperature.c's own order; from image area (index 1) is not offered
+    const std: [string, number][] = [["As shot", 0], ["User modified", 2], ["Camera reference", 3], ["As shot to reference", 4]];
+    const list = [...std, ...wbList.map((p): [string, number] => [p.name, p.value])];
+    const choices = list.some(([, v]) => v === value) ? list : [...list, ["Current setting", value] as [string, number]];
     return [{ path: l.path, type: "int" }, { ...l, choices }];
   };
   // darktable's notebook pages, in its order; the first is shown at first
@@ -204,7 +229,7 @@ export function ModuleCard({ hidden, instance, layout, schema, state, siblings, 
             let heading: string | undefined;
             return layout.fields.map((l) => {
               const value = state.params[l.path] ?? state.defaults[l.path] ?? 0;
-              const [f, shownAs] = l.profiles ? profileField(l, value) : [schemaField(fields, l.path), l];
+              const [f, shownAs] = (l.profiles ? profileField(l, value) : l.wb ? wbField(l, value) : null) ?? [l.wb ? undefined : schemaField(fields, l.path), l];
               if (!f || (l.tab && l.tab !== tab) || (l.showIf && !l.showIf(state.params))) return null;
               const neutral = state.defaults[l.path] ?? 0;
               const control = fieldControl(f, shownAs, value);

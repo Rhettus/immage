@@ -111,6 +111,7 @@ export const commands = {
 	spektraStocks: () => __TAURI_INVOKE<FilmStocks>("spektra_stocks"),
 	spektraFetch: (action: string) => __TAURI_INVOKE<FilmFetch>("spektra_fetch", { action }),
 	lenses: () => __TAURI_INVOKE<LensMenu>("lenses"),
+	wbPresets: () => __TAURI_INVOKE<WbPresets>("wb_presets"),
 	moduleSchema: (op: string) => __TAURI_INVOKE<ModuleSchema>("module_schema", { op }),
 	instances: () => __TAURI_INVOKE<Instance[]>("instances"),
 	presets: (op: string, priority: number) => __TAURI_INVOKE<PresetsReply>("presets", { op, priority }),
@@ -1043,6 +1044,18 @@ export type Volume = {
 	host: string | null,
 	network: boolean,
 	online: boolean,
+};
+
+export type WbPreset = {
+	name: string,
+	value: number,
+	tune_min: number,
+	tune_max: number,
+	tune_default: number,
+};
+
+export type WbPresets = {
+	presets: WbPreset[],
 };
 
 export type WebviewRenderer = {

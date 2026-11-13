@@ -678,7 +678,14 @@ gboolean session_write_field(dt_iop_module_t *mod, const char *name, const doubl
   if(!g_strcmp0(name, LENS_PICK) && !g_strcmp0(mod->op, "lens")) return _write_lens_pick(mod, num, err);
   if((!g_strcmp0(name, WB_TEMP) || !g_strcmp0(name, WB_TINT)) && !g_strcmp0(mod->op, "temperature"))
     return wb_write(mod, name, num, err);
-  return session_write_field_in(mod, mod->params, name, num, err);
+  if((!g_strcmp0(name, WB_SETTING) || !g_strcmp0(name, WB_TUNE)) && !g_strcmp0(mod->op, "temperature"))
+    return wb_setting_write(mod, name, num, err);
+  const gboolean ok = session_write_field_in(mod, mod->params, name, num, err);
+  // temperature.c: gui_changed, a direct edit of a coefficient is user modified
+  if(ok && !g_strcmp0(mod->op, "temperature")
+     && (!strcmp(name, "red") || !strcmp(name, "green") || !strcmp(name, "blue") || !strcmp(name, "various")))
+    wb_mark_user(mod);
+  return ok;
 }
 
 // read from the live params, or from the defaults the image was given
@@ -696,6 +703,8 @@ gboolean session_read_field(dt_iop_module_t *mod, const char *name,
   }
   if((!g_strcmp0(name, WB_TEMP) || !g_strcmp0(name, WB_TINT)) && !g_strcmp0(mod->op, "temperature"))
     return wb_read(mod, name, from_defaults, num, err);
+  if((!g_strcmp0(name, WB_SETTING) || !g_strcmp0(name, WB_TUNE)) && !g_strcmp0(mod->op, "temperature"))
+    return wb_setting_read(mod, name, from_defaults, num, err);
   if(!g_strcmp0(name, LENS_PICK) && !g_strcmp0(mod->op, "lens"))
   {
     dt_introspection_field_t *lf = NULL;

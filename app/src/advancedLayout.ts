@@ -32,6 +32,10 @@ export type LayoutField = {
   // module's type and file name (session.c), with the profiles this photo
   // can use as its choices
   profiles?: "input" | "working";
+  // white balance's Settings menu and Finetune slider: the engine's own
+  // fields (wb.c), the menu filled with this photo's camera presets and the
+  // slider ranged by the preset in use (ModuleCard)
+  wb?: "setting" | "tune";
   // darktable shows the field only for some settings of the others
   showIf?: (params: Record<string, number>) => boolean;
 };
@@ -248,12 +252,15 @@ export const LAYOUTS: ModuleLayout[] = [
     // (red, green, blue, various at 3 digits). temp_k and tint are the
     // engine's own fields (wb.c), computed from the coefficients as darktable
     // does; an edit of either sets the coefficients and the card reads them
-    // again; a raw with no color matrix reads 0 and hides them. left out
-    // for now: the settings combobox, whose entries (as shot,
-    // camera reference, the camera's presets) are built per photo rather
-    // than from an enum
+    // again; a raw with no color matrix reads 0 and hides them. the settings
+    // combobox and finetune slider are engine fields too (wb.c): the menu is
+    // as shot, user modified, camera reference, as shot to reference and this
+    // photo's camera presets (from image area needs the color picker and is
+    // left out); finetune shows for a camera preset that has a range
     op: "temperature", group: "basic", title: "White balance",
     fields: [
+      { path: "wb_setting", label: "Settings", wb: "setting" },
+      { path: "wb_tune", label: "Finetune", wb: "tune" },
       { path: "temp_k", label: "Temperature", section: "Scene illuminant temp", digits: 0, unit: "K", showIf: (p) => p.temp_k > 0 },
       { path: "tint", label: "Tint", section: "Scene illuminant temp", digits: 3, showIf: (p) => p.temp_k > 0 },
       { path: "red", label: "Red", section: "Channel coefficients", digits: 3 },

@@ -24,6 +24,7 @@
 // Keep it identical to temperature.c, quirks included.
 
 #include "engine.h"
+#include "common/wb_presets.h"
 
 // for the Kelvin conversions, as temperature.c:43; the tables are static
 #include "external/cie_colorimetric_tables.c"
@@ -255,5 +256,268 @@ gboolean wb_write(dt_iop_module_t *mod, const char *name, const double num, char
   const int n = (mod->dev->image_storage.flags & DT_IMAGE_4BAYER) ? 4 : 3;
   for(int k = 0; k < n; k++) p->coeff[k] = (float)mul[k];
   p->preset = WB_PRESET_USER;
+  return TRUE;
+}
+
+// the settings combobox and finetune slider, from temperature.c's
+// _generate_preset_combo, gui_update and _preset_tune_callback. the headless
+// engine has no gui_data, so the combobox is rebuilt from the preset store
+// (dt_wb_presets_init runs in dt_init) each time. a setting is the combobox
+// index: 0 as shot, 2 user modified, 3 camera reference, 4 as shot to
+// reference, and 6 + k for the k-th camera preset (index 5 is the section
+// header, index 1 "from image area" needs the color picker and is not offered)
+#define WB_AS_SHOT 0
+#define WB_D65 3
+#define WB_D65_LATE 4
+#define WB_NUM_STD 5
+#define WB_FIRST_CAMERA (WB_NUM_STD + 1)
+#define WB_MAX_PRESETS 50
+
+typedef struct
+{
+  int first;  // preset_num: the first (lowest tuning) store entry
+  int min_ft_pos, no_ft_pos, max_ft_pos;
+} _preset_t;
+
+static gboolean _same_camera(const dt_image_t *img, const dt_wb_data *w)
+{
+  return !strcmp(w->make, img->camera_maker) && !strcmp(w->model, img->camera_model);
+}
+
+// temperature.c: _generate_preset_combo, without the widget
+static int _camera_presets(const dt_image_t *img, _preset_t out[WB_MAX_PRESETS])
+{
+  int found = 0;
+  const int count = dt_wb_presets_count();
+  const char *wb_name = NULL;
+  if(dt_image_is_ldr(img)) return 0;
+  for(int i = 0; i < count; i++)
+  {
+    if(found >= WB_MAX_PRESETS) break;
+    const dt_wb_data *wbp = dt_wb_preset(i);
+    if(!_same_camera(img, wbp)) continue;
+    if(wb_name && !strcmp(wb_name, wbp->name)) continue;
+    wb_name = wbp->name;
+    _preset_t *pr = &out[found++];
+    pr->first = pr->no_ft_pos = pr->max_ft_pos = pr->min_ft_pos = i;
+    if(wbp->tuning != 0)
+    {
+      // wb_presets is ordered, so the minimum tuning comes first; the bound
+      // check is ours, darktable's loop trusts the store to end on a new name
+      int ft_pos = i;
+      int last_ft = wbp->tuning;
+      pr->min_ft_pos = ft_pos++;
+      while(ft_pos < count && !strcmp(wb_name, dt_wb_preset(ft_pos)->name))
+      {
+        if(dt_wb_preset(ft_pos)->tuning == 0) pr->no_ft_pos = ft_pos;
+        if(dt_wb_preset(ft_pos)->tuning > last_ft)
+        {
+          pr->max_ft_pos = ft_pos;
+          last_ft = dt_wb_preset(ft_pos)->tuning;
+        }
+        ft_pos++;
+      }
+    }
+  }
+  return found;
+}
+
+static gboolean _equal(const _wb_params_t *p, const double *d)
+{
+  return dt_dev_equal_chroma(p->coeff, d);
+}
+
+// temperature.c: _temp_params_from_array, which copies all four, even where
+// the fourth is meaningless
+static void _from_array(_wb_params_t *p, const double a[4])
+{
+  for(int c = 0; c < 4; c++) p->coeff[c] = (float)a[c];
+}
+
+// the coefficients of preset pr at a tuning, as _preset_tune_callback: an exact
+// variant, else interpolated between the variants around it; with neither,
+// FALSE and darktable leaves the coefficients as they are
+static gboolean _apply_tuning(const dt_image_t *img, const _preset_t *pr, const int tune, double ch[4])
+{
+  const int count = dt_wb_presets_count();
+  const char *name = dt_wb_preset(pr->no_ft_pos)->name;
+  for(int i = pr->min_ft_pos; i < pr->max_ft_pos + 1 && i < count; i++)
+  {
+    const dt_wb_data *w = dt_wb_preset(i);
+    if(!_same_camera(img, w) || strcmp(w->name, name)) break;
+    if(w->tuning == tune)
+    {
+      memcpy(ch, w->channels, 4 * sizeof(double));
+      return TRUE;
+    }
+  }
+  for(int i = pr->min_ft_pos + 1; i < pr->max_ft_pos + 1 && i < count; i++)
+  {
+    const dt_wb_data *lo = dt_wb_preset(i - 1), *hi = dt_wb_preset(i);
+    if(!_same_camera(img, hi) || strcmp(hi->name, name)) break;
+    if(lo->tuning < tune && hi->tuning > tune)
+    {
+      dt_wb_data out = { .tuning = tune };
+      dt_wb_preset_interpolate(lo, hi, &out);
+      memcpy(ch, out.channels, 4 * sizeof(double));
+      return TRUE;
+    }
+  }
+  return FALSE;
+}
+
+// temperature.c: gui_update's matching of the coefficients to an entry; it
+// only reads (darktable also stores the preset it settles on, which the next
+// edit would overwrite anyway)
+static int _match(const dt_image_t *img, const dt_dev_chroma_t *chr, const _wb_params_t *p,
+                  const _preset_t *pr, const int n, int *tuning)
+{
+  *tuning = 0;
+  if(_equal(p, chr->as_shot) && p->preset == WB_D65_LATE) return WB_D65_LATE;
+  if(_equal(p, chr->as_shot)) return WB_AS_SHOT;
+  if(_equal(p, chr->D65coeffs)) return WB_D65;
+  const int count = dt_wb_presets_count();
+  for(int j = 0; j < n; j++)
+  {
+    for(int i = pr[j].first; i < count; i++)
+    {
+      const dt_wb_data *w = dt_wb_preset(i);
+      if(!_same_camera(img, w) || strcmp(w->name, dt_wb_preset(pr[j].first)->name)) break;
+      if(dt_dev_equal_chroma(p->coeff, w->channels))
+      {
+        *tuning = w->tuning;
+        return WB_FIRST_CAMERA + j;
+      }
+    }
+  }
+  // not an exact variant: maybe interpolated across a gap in the tunings,
+  // which gives no way to know the tuning but to try each one
+  for(int j = 0; j < n; j++)
+  {
+    for(int i = pr[j].first + 1; i < count; i++)
+    {
+      const dt_wb_data *lo = dt_wb_preset(i - 1), *hi = dt_wb_preset(i);
+      if(!_same_camera(img, hi) || strcmp(hi->name, dt_wb_preset(pr[j].first)->name)) break;
+      for(int tune = lo->tuning + 1; tune < hi->tuning; tune++)
+      {
+        dt_wb_data out = { .tuning = tune };
+        dt_wb_preset_interpolate(lo, hi, &out);
+        if(dt_dev_equal_chroma(p->coeff, out.channels))
+        {
+          *tuning = tune;
+          return WB_FIRST_CAMERA + j;
+        }
+      }
+    }
+  }
+  return WB_PRESET_USER;
+}
+
+gboolean wb_setting_read(dt_iop_module_t *mod, const char *name, const gboolean from_defaults,
+                         double *num, char **err)
+{
+  dt_introspection_field_t *f = NULL;
+  const _wb_params_t *p = session_field_in(mod, from_defaults ? mod->default_params : mod->params,
+                                           "red", &f, err);
+  if(!p) return FALSE;
+  const dt_image_t *img = &mod->dev->image_storage;
+  _preset_t pr[WB_MAX_PRESETS];
+  const int n = _camera_presets(img, pr);
+  int tune;
+  const int setting = _match(img, &mod->dev->chroma, p, pr, n, &tune);
+  *num = !strcmp(name, WB_SETTING) ? setting : tune;
+  return TRUE;
+}
+
+// temperature.c: _preset_tune_callback. setting 2 keeps the coefficients, as
+// darktable's user branch rewrites them from its own copy of the same values
+gboolean wb_setting_write(dt_iop_module_t *mod, const char *name, const double num, char **err)
+{
+  dt_introspection_field_t *f = NULL;
+  _wb_params_t *p = session_field_in(mod, mod->params, "red", &f, err);
+  if(!p) return FALSE;
+  const dt_image_t *img = &mod->dev->image_storage;
+  const dt_dev_chroma_t *chr = &mod->dev->chroma;
+  _preset_t pr[WB_MAX_PRESETS];
+  const int n = _camera_presets(img, pr);
+  const int value = (int)lround(num);
+
+  if(!strcmp(name, WB_TUNE))
+  {
+    int tune;
+    const int setting = _match(img, chr, p, pr, n, &tune);
+    if(setting < WB_FIRST_CAMERA)
+    {
+      *err = g_strdup("white balance is not a camera preset");
+      return FALSE;
+    }
+    const _preset_t *cur = &pr[setting - WB_FIRST_CAMERA];
+    const int lo = dt_wb_preset(cur->min_ft_pos)->tuning, hi = dt_wb_preset(cur->max_ft_pos)->tuning;
+    double ch[4];
+    if(_apply_tuning(img, cur, CLAMP(value, lo, hi), ch)) _from_array(p, ch);
+    p->preset = setting;
+    return TRUE;
+  }
+
+  switch(value)
+  {
+    case WB_AS_SHOT:
+    case WB_D65_LATE:
+      _from_array(p, chr->as_shot);
+      break;
+    case WB_D65:
+      _from_array(p, chr->D65coeffs);
+      break;
+    case WB_PRESET_USER:
+      break;
+    default:
+      if(value >= WB_FIRST_CAMERA && value - WB_FIRST_CAMERA < n)
+      {
+        double ch[4];
+        if(_apply_tuning(img, &pr[value - WB_FIRST_CAMERA], 0, ch)) _from_array(p, ch);
+        break;
+      }
+      *err = g_strdup("unknown white balance setting");
+      return FALSE;
+  }
+  p->preset = value;
+  return TRUE;
+}
+
+// a direct edit of a coefficient is "user modified", temperature.c: gui_changed
+void wb_mark_user(dt_iop_module_t *mod)
+{
+  dt_introspection_field_t *f = NULL;
+  char *err = NULL;
+  _wb_params_t *p = session_field_in(mod, mod->params, "red", &f, &err);
+  g_free(err);
+  if(p) p->preset = WB_PRESET_USER;
+}
+
+// the camera presets of the open photo, for the settings menu
+gboolean wb_presets(JsonBuilder *b, char **err)
+{
+  dt_iop_module_t *mod = session_module("temperature", err);
+  if(!mod) return FALSE;
+  _preset_t pr[WB_MAX_PRESETS];
+  const int n = _camera_presets(&mod->dev->image_storage, pr);
+  json_builder_set_member_name(b, "presets");
+  json_builder_begin_array(b);
+  for(int k = 0; k < n; k++)
+  {
+    json_builder_begin_object(b);
+    json_builder_set_member_name(b, "name");
+    json_builder_add_string_value(b, dt_wb_preset(pr[k].first)->name);
+    json_builder_set_member_name(b, "value");
+    json_builder_add_int_value(b, WB_FIRST_CAMERA + k);
+    json_builder_set_member_name(b, "tune_min");
+    json_builder_add_int_value(b, dt_wb_preset(pr[k].min_ft_pos)->tuning);
+    json_builder_set_member_name(b, "tune_max");
+    json_builder_add_int_value(b, dt_wb_preset(pr[k].max_ft_pos)->tuning);
+    json_builder_set_member_name(b, "tune_default");
+    json_builder_add_int_value(b, dt_wb_preset(pr[k].no_ft_pos)->tuning);
+    json_builder_end_object(b);
+  }
+  json_builder_end_array(b);
   return TRUE;
 }

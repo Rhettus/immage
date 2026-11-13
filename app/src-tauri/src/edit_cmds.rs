@@ -3,7 +3,7 @@
 
 use serde_json::{json, Number, Value};
 use std::path::Path;
-use crate::typed_edit::{AgxPresetsReply, AgxProfile, CombineMember, FilmFetch, FilmStocks, Instance, InstanceReply, InstancesReply, LensMenu, ModuleSchema, LookReply, MapView, MaskInfo, MasksReply, NewSpot, PresetsReply, Spot, SpotSource, SpotsReply, UprightReply};
+use crate::typed_edit::{AgxPresetsReply, AgxProfile, CombineMember, FilmFetch, FilmStocks, Instance, InstanceReply, InstancesReply, LensMenu, ModuleSchema, WbPresets, LookReply, MapView, MaskInfo, MasksReply, NewSpot, PresetsReply, Spot, SpotSource, SpotsReply, UprightReply};
 use crate::typed_export::LookInfo;
 use tauri::{ipc::Response, AppHandle, State};
 use crate::AppState;
@@ -39,6 +39,15 @@ pub(crate) async fn combine(state: State<'_, AppState>, name: String, members: V
 pub(crate) async fn masks(state: State<'_, AppState>, fields: std::collections::BTreeMap<String, Vec<String>>) -> Result<Vec<MaskInfo>, String> {
     let reply = state.engine("masks").request(json!({ "cmd": "masks", "fields": fields }))?;
     serde_json::from_value::<MasksReply>(reply).map(|r| r.masks).map_err(|e| format!("masks: unexpected reply: {e}"))
+}
+
+// the camera white balance presets of the open photo for the Settings menu
+// (the engine's wb_presets), empty for a photo without any
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn wb_presets(state: State<'_, AppState>) -> Result<WbPresets, String> {
+    let reply = state.engine("wb_presets").request(json!({ "cmd": "wb_presets" }))?;
+    serde_json::from_value(reply).map_err(|e| format!("wb_presets: unexpected reply: {e}"))
 }
 
 // the Lensfun lenses Lens Corrections can use for the open photo, and the

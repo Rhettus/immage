@@ -199,6 +199,21 @@ pub struct LensMenu {
     pub lenses: Vec<Lens>,
 }
 
+// a camera white balance preset: its menu value, and the finetune range
+#[derive(Serialize, Deserialize, Type)]
+pub struct WbPreset {
+    pub name: String,
+    pub value: i64,
+    pub tune_min: i64,
+    pub tune_max: i64,
+    pub tune_default: i64,
+}
+
+#[derive(Serialize, Deserialize, Type)]
+pub struct WbPresets {
+    pub presets: Vec<WbPreset>,
+}
+
 // `look`'s reply: the look in use, by name
 #[derive(Deserialize)]
 pub struct LookReply {

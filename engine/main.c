@@ -694,6 +694,11 @@ static gboolean _cmd_color_profiles(JsonObject *req, JsonBuilder *b, char **err)
   return TRUE;
 }
 
+static gboolean _cmd_wb_presets(JsonObject *req, JsonBuilder *b, char **err)
+{
+  return wb_presets(b, err);
+}
+
 static gboolean _cmd_lenses(JsonObject *req, JsonBuilder *b, char **err)
 {
   if(!session_lens_menu(b, err)) return FALSE;
@@ -1267,6 +1272,7 @@ static const eng_cmd_t _commands[] =
   { "paste_batch", _cmd_paste_batch, 0 },
   { "set", _cmd_set, _CMD_NEEDS_OPEN | _CMD_EDITS },
   { "color_profiles", _cmd_color_profiles, _CMD_NEEDS_OPEN },
+  { "wb_presets", _cmd_wb_presets, _CMD_NEEDS_OPEN },
   { "lenses", _cmd_lenses, _CMD_NEEDS_OPEN },
   { "module_state", _cmd_module_state, _CMD_NEEDS_OPEN },
   { "presets", _cmd_presets, _CMD_NEEDS_OPEN },

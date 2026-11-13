@@ -23,8 +23,9 @@ Improvements
   the tone curve and rgb curve cards have a point curve editor with channel
   tabs and darktable's interpolation methods. The contrast equalizer and
   saturation curve cards have Simple's graphs, the lens correction card has
-  Simple's lens picker, and the white balance card has darktable's temperature
-  and tint sliders.
+  Simple's lens picker, and the white balance card has darktable's settings
+  list (as shot, camera reference and your camera's presets, with a finetune
+  slider) and its temperature and tint sliders.
 - Advanced cards so far: in Basic, exposure, white balance, color calibration,
   highlight reconstruction, the tone mapper, contrast & texture, local contrast,
   haze removal, diffuse or sharpen and color balance rgb; in Tone Curve, tone
