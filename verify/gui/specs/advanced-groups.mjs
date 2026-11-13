@@ -183,6 +183,33 @@ export async function advancedGroups(t) {
     const vignetted = await settledPhoto(t, p => meanError(p, unvignetted) > .5);
     t.measure({ name: 'lens-vignette', meanAbsoluteError: meanError(vignetted, unvignetted) });
     await t.evidence('lens-vignette');
+    // 13. Transform: a typed rotation turns the photo, and the card refits
+    // the crop with it, as Simple's Rotate does: no black corners
+    const rp = await addAndCheck(t, 'transform', 'ashift', 'Rotate and perspective',
+      { controls: ['rotation', 'lensshift_v', 'lensshift_h', 'aspect'], tabs: [] }, false);
+    const level = await settledPhoto(t);
+    await type(t, rp.sel, 'rotation', '5');
+    await until(async () => { const c = await card(t, rp.sel); const s = c.controls.find(x => x.id === 'rotation'); return Math.abs(s.value - 5) < .01 && c; }, 'rotation typed as 5');
+    const rotated = await settledPhoto(t, p => meanError(p, level) > .5);
+    const corner = (p, x, y) => Math.max(...p.rgba.slice((y * 64 + x) * 4, (y * 64 + x) * 4 + 3));
+    const corners = [[0, 0], [63, 0], [0, 63], [63, 63]].map(([x, y]) => corner(rotated, x, y));
+    t.measure({ name: 'ashift-rotation', meanAbsoluteError: meanError(rotated, level), corners });
+    await t.evidence('ashift-rotation');
+    assert(corners.every(c => c > 8), `black corners after a rotation: ${corners}`);
+    // 14. Transform: the orientation card's buttons turn the photo as the
+    // toolbar does; a quarter turn swaps the frame's sides, undo turns back
+    const fsel = '[data-panel-id="transform"] [data-module^="flip#"]';
+    const fc = await until(() => card(t, fsel), 'orientation card');
+    if (!fc.open) await click(t, `${fsel} .module-card-head`);
+    await until(() => t.driver.observe(s => !!document.querySelector(s), `${fsel} .module-card-turns button`), 'turn buttons shown');
+    const wide = p => p.width > p.height;
+    const unturned = await settledPhoto(t);
+    await click(t, `${fsel} button[title="Rotate 90 degrees CW"]`);
+    const turned = await settledPhoto(t, p => wide(p) !== wide(unturned));
+    t.measure({ name: 'orientation-turn', before: [unturned.width, unturned.height], after: [turned.width, turned.height] });
+    await t.evidence('orientation-turn');
+    await undoRedo(t, 'undo');
+    await settledPhoto(t, p => wide(p) === wide(unturned));
     await t.evidence('groups-done');
   } finally {
     try {
