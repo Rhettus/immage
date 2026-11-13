@@ -1040,6 +1040,25 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "color", label: "Color", options: [0, 1, 2, 3, 4] },
     ],
   },
+  {
+    // vignette.c gui_init (four sliders, a "position / form" section, then center, shape,
+    // automatic ratio, ratio and dithering); gui_changed/gui_update only grey out the
+    // ratio slider while autoratio is on (insensitive, not hidden), so there is no showIf
+    // omitted: unbound (no widget)
+    op: "vignette", group: "effects", title: "Vignetting",
+    fields: [
+      { path: "scale", label: "Fall-off start", unit: "%" },
+      { path: "falloff_scale", label: "Fall-off radius", unit: "%" },
+      { path: "brightness", label: "Brightness", digits: 3 },
+      { path: "saturation", label: "Saturation", digits: 3 },
+      { path: "center.x", label: "Horizontal center", section: "Position / form", digits: 3 },
+      { path: "center.y", label: "Vertical center", section: "Position / form", digits: 3 },
+      { path: "shape", label: "Shape", section: "Position / form" },
+      { path: "autoratio", label: "Automatic ratio", section: "Position / form" },
+      { path: "whratio", label: "Width/height ratio", section: "Position / form", digits: 3 },
+      { path: "dithering", label: "Dithering", section: "Position / form" },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);

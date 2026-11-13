@@ -293,6 +293,16 @@ The Transform group has these darktable modules:
   **Percent left**, **Percent right**, **Percent top** and **Percent
   bottom** of its width or height, and its **Color**.
 
+## Effects modules
+
+The Effects group has these darktable modules:
+
+- **Vignetting**: **Fall-off start**, **Fall-off radius**, **Brightness**
+  and **Saturation**, then under **Position / form** the **Horizontal
+  center** and **Vertical center**, **Shape**, **Automatic ratio**,
+  **Width/height ratio** and **Dithering**. Simple's Post-Crop Vignetting
+  sets the same module, so its sliders move these.
+
 ## Instances
 
 A module can have several instances, each with its own settings. Open the
