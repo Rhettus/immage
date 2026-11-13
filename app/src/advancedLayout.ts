@@ -60,6 +60,11 @@ const DIFFUSE: LayoutField[] = [
   { path: "threshold", label: "Luminance masking threshold", section: "Diffusion spatiality", unit: "%" },
 ];
 
+// demosaic's passthrough methods have no smoothing, green matching or
+// capture sharpening; capture's controls show while it is on
+const PASSING = (p: Record<string, number>) => [3, 4, 1027, 1029].includes(p.demosaicing_method);
+const CAPTURE = (p: Record<string, number>) => p.cs_enabled === 1 && !PASSING(p);
+
 // color calibration's settings, shared by its Basic and B&W cards
 const CALIBRATION: LayoutField[] = [
   { path: "adaptation", label: "Adaptation", tab: "CAT" },
@@ -753,6 +758,35 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "saturation", label: "Saturation", unit: "%" },
       { path: "lightness", label: "Lightness", unit: "%" },
       { path: "source_lightness_mix", label: "Source mix", unit: "%" },
+    ],
+  },
+  {
+    // demosaic.c gui_init and gui_changed. darktable shows one of four method
+    // comboboxes over the one demosaicing_method param, by the photo's sensor
+    // (bayer, bayer4, X-Trans, monochrome), so the card lists every method.
+    // sensor rules that read the image are left out: bayer4 hides color
+    // smoothing and capture sharpen, and darktable rewrites a method from the
+    // other sensor type. 3, 4, 1027 and 1029 are the passthrough methods,
+    // 1024 the X-Trans and 2048 the dual flag. left out: moire_thrs and
+    // moire_mix, which have no widget, and the mask view and auto radius
+    // buttons beside the sliders
+    op: "demosaic", group: "detail", title: "Demosaic",
+    fields: [
+      { path: "demosaicing_method", label: "Method" },
+      { path: "dual_thrs", label: "Dual threshold", digits: 2, showIf: (p) => (p.demosaicing_method & 2048) !== 0 },
+      { path: "median_thrs", label: "Edge threshold", digits: 3, showIf: (p) => p.demosaicing_method === 0 },
+      { path: "lmmse_refine", label: "LMMSE refine", showIf: (p) => p.demosaicing_method === 6 },
+      { path: "color_smoothing", label: "Color smoothing",
+        showIf: (p) => !PASSING(p) && (p.demosaicing_method & 2048) === 0 && p.demosaicing_method !== 7 },
+      { path: "green_eq", label: "Match greens",
+        showIf: (p) => !PASSING(p) && (p.demosaicing_method & 1024) === 0 && p.demosaicing_method !== 7 },
+      { path: "cs_enabled", label: "Capture sharpen", showIf: (p) => !PASSING(p) },
+      { path: "cs_iter", label: "Iterations", section: "Capture sharpen controls", showIf: (p) => CAPTURE(p) },
+      { path: "cs_radius", label: "Radius", section: "Capture sharpen controls", unit: "px", digits: 2, showIf: (p) => CAPTURE(p) },
+      { path: "cs_thrs", label: "Contrast sensitivity", section: "Capture sharpen controls", showIf: (p) => CAPTURE(p) },
+      { path: "cs_boost", label: "Corner boost", section: "Capture sharpen controls", unit: "px", digits: 2, showIf: (p) => CAPTURE(p) },
+      { path: "cs_center", label: "Sharp center", section: "Capture sharpen controls", unit: "%", digits: 0,
+        showIf: (p) => CAPTURE(p) && p.cs_boost !== 0 },
     ],
   },
 ];

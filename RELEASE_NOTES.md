@@ -21,8 +21,8 @@ Improvements
   zones, color harmonizer, rgb primaries, color correction, color look up table,
   lut 3d and color mapping; in B&W, color calibration (the instance Simple's
   Black & White uses), color equalizer and monochrome; in Color Grading, color
-  balance rgb, color balance, split-toning and colorize. Other modules follow
-  in later versions.
+  balance rgb, color balance, split-toning and colorize; in Detail, demosaic.
+  Other modules follow in later versions.
 - The tone mapper card shows AgX, sigmoid, filmic rgb or base curve, whichever
   is on, with a switch to change to another as one undo step.
 - Module cards have a darktable presets menu beside the reset button. It applies

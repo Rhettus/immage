@@ -215,6 +215,17 @@ The Color Grading group has these darktable modules:
 - **Colorize**: **Hue**, **Saturation**, **Lightness** and **Source mix**,
   how much of the photo's own lightness to keep.
 
+## Detail modules
+
+The Detail group has these darktable modules:
+
+- **Demosaic**: the **Method**, with every method darktable has for any
+  sensor, then the settings the method uses (**Dual threshold**, **Edge
+  threshold**, **LMMSE refine**, **Color smoothing**, **Match greens**), and
+  **Capture sharpen**, the switch Simple's Capture Sharpening sets, with its
+  controls under it while it is on. darktable lists only your camera's
+  methods and changes one for another sensor type to its nearest.
+
 ## Instances
 
 A module can have several instances, each with its own settings. Open the
