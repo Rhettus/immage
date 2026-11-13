@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
-import { AdvancedGroup, type AdvancedEdit } from "./AdvancedPanel";
+import { AdvancedGroup, type AdvancedEdit, type AdvancedPick } from "./AdvancedPanel";
 import type { EditMode } from "./Preferences";
 import { AdvancedToggle, advancedEdited, useAdvanced } from "./advanced";
 import { BANDS, type Control, type ControlPreset, type CurveChannel, MODULE_CHOICES, type ModuleChoice, NEG_GREYED, type Panel, SF_GREYED, type Section, type Turn, type Values, choiceCovers, choiceOn, choiceShows, controlById, isModuleSetting, mapOf, mapsWith, parametricOf, pointValues, pointsOf, preferredChoice } from "./manifest";
@@ -100,6 +100,8 @@ export const noHistogram = () => null;
 export type PanelProps = {
   editMode?: EditMode;   // Advanced shows darktable modules in place of the sliders
   sessionRevision: number;
+  // the module search's pick for this group, and its acknowledgement
+  pick?: AdvancedPick | null; onPicked?: (nonce: number) => void;
   panel: Panel; open: boolean; onToggle: (solo: boolean) => void; values: Record<string, number>;
   session: Session | null; disabled: boolean; onChange: (c: Control, v: number) => void;
   onChangeMany: (entries: [string, number][], label?: string) => void; histograms: Snapshot<Histogram | null>;
@@ -139,7 +141,7 @@ export function PanelView(props: PanelProps) {
   const onTurn = useLiveEvent((how: Turn) => props.onTurn?.(how));
   if (advancedMode) return <AdvancedGroup id={props.panel.id} title={props.panel.advancedTitle ?? props.panel.title} open={props.open} onToggle={onToggle}
                                        session={props.session} revision={props.sessionRevision} record={props.onAdvancedEdit}
-                                       onSimple={onChangeMany} onTurn={onTurn} />;
+                                       onSimple={onChangeMany} onTurn={onTurn} pick={props.pick} onPicked={props.onPicked} />;
   return <PanelWidget {...props} values={values} onToggle={onToggle} onChange={onChange}
     onChangeMany={onChangeMany} onPreview={onPreview} onAuto={props.onAuto ? auto : undefined}
     onOptionPreview={props.onOptionPreview ? option : undefined} />;

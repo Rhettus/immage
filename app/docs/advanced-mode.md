@@ -7,7 +7,7 @@ edits.
 
 In Advanced, the **Adjustments** panel looks like this:
 
-- A **Search modules** box at the top. It does not find anything yet.
+- A **Search modules** box at the top, described below.
 - The same groups as Simple (Basic, Tone Curve, HSL / Color, B&W, Color
   Grading, Detail, Lens, Transform and Effects), in the same order. They fold
   open and shut as in Simple, follow Focus mode, and Alt-click opens one alone.
@@ -15,6 +15,24 @@ In Advanced, the **Adjustments** panel looks like this:
   where Simple shows one or the other.
 - A **Technical** group at the end, which exists only in Advanced.
 - No **More controls** sliders icon; that icon is only in Simple.
+
+## Search modules
+
+Type two or more characters to list the modules whose name matches, then
+those with a setting whose name matches (for example `lowpass`, or `radius`
+for the modules with a radius). Each row shows the module, its group and, for
+a setting, the matching setting. A module appears once, with the first setting
+that matched, and the list stops at about a dozen rows.
+
+Use the arrow keys and **Enter**, or click a row. Escape clears the box, and a
+click elsewhere closes the list. The group opens as a click on its title would
+(Focus mode closes the others). If the module's card is shown, it opens, flashes
+and scrolls into view. If not, the module is added as **Add module** would add
+it, at its place in the group. For the tone mappers, which share one card, the
+card switches to the one you picked.
+
+A module darktable cannot apply to this photo is greyed out and cannot be
+picked, as in Add module. With no photo open, every row is greyed out.
 
 ## Module cards
 

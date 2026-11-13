@@ -55,10 +55,11 @@ export function fieldControl(f: SchemaField, l: LayoutField, value: number): Con
 }
 
 // `siblings` is how many instances of the module the group shows, `index`
-// this one's place among them (pipe order); `fresh`, a card just added
-export function ModuleCard({ instance, layout, schema, state, siblings, index, fresh, family, onField, onEnabled, onReset, onInstance, loadPresets, onPreset, onTurn }: {
+// this one's place among them (pipe order); `fresh`, a card just added;
+// `focus`, a number that changes each time the module search picks the card
+export function ModuleCard({ instance, layout, schema, state, siblings, index, fresh, focus, family, onField, onEnabled, onReset, onInstance, loadPresets, onPreset, onTurn }: {
   instance: Instance; layout: ModuleLayout; schema: ModuleSchema; state: AdvancedState;
-  siblings: number; index: number; fresh?: boolean;
+  siblings: number; index: number; fresh?: boolean; focus?: number;
   // the modules this card can switch to, when it is a shared card
   family?: { label: string; options: FamilyOption[]; onPick: (op: string) => void };
   onField: (path: string, value: number, coalesce: boolean) => void;
@@ -99,6 +100,17 @@ export function ModuleCard({ instance, layout, schema, state, siblings, index, f
   // a card just added is brought into view and flashes once
   const card = useRef<HTMLDivElement>(null);
   useEffect(() => { if (fresh) card.current?.scrollIntoView({ block: "nearest", behavior: "smooth" }); }, [fresh]);
+  // the module search's pick: open, flash and bring into view. the group may
+  // still be easing open, so the scroll waits for it
+  const [flash, setFlash] = useState(false);
+  useEffect(() => {
+    if (focus === undefined) return;
+    setFold(true);
+    setFlash(true);
+    const scroll = window.setTimeout(() => card.current?.scrollIntoView({ block: "nearest", behavior: "smooth" }), 260);
+    const off = window.setTimeout(() => setFlash(false), 1300);
+    return () => { window.clearTimeout(scroll); window.clearTimeout(off); };
+  }, [focus]);
   const name = instance.label ? `${layout.title} ${instance.label}` : layout.title;
   const done = (el: HTMLInputElement, keep: boolean) => {
     if (ended.current) return;
@@ -108,7 +120,7 @@ export function ModuleCard({ instance, layout, schema, state, siblings, index, f
     if (keep && v !== (instance.hand_edited ? instance.name : "")) onInstance("rename", v);
   };
   return (
-    <div ref={card} className={`module-card${state.enabled ? "" : " off"}${fresh ? " fresh" : ""}`} data-module={`${instance.op}#${instance.priority}`}>
+    <div ref={card} className={`module-card${state.enabled ? "" : " off"}${fresh || flash ? " fresh" : ""}`} data-module={`${instance.op}#${instance.priority}`}>
       <div className="module-card-head" onClick={() => setFold(!open)}>
         <input type="checkbox" className="switch" checked={state.enabled} aria-label={`${name} on or off`} disabled={fixed}
                onClick={(e) => e.stopPropagation()} onChange={(e) => onEnabled(e.target.checked)} />

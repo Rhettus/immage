@@ -6,7 +6,7 @@ import { profileSelection, AGX_USER_FIRST } from "./manifest";
 
 
 
-import { AdvancedSearch, AdvancedGroup, TECHNICAL_ID } from "./AdvancedPanel";
+import { AdvancedSearch, AdvancedGroup, TECHNICAL_ID, type AdvancedPick } from "./AdvancedPanel";
 import { AdvancedToggle, advancedEdited, useAdvanced } from "./advanced";
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
@@ -4840,6 +4840,15 @@ export default function App() {
   // all of the right panel's panels (or preset groups) shut, or all open
   const [presetGroupsOpen, setPresetGroupsOpen] = useState(true);
   const [presetFold, setPresetFold] = useState<{ open: boolean; n: number }>({ open: true, n: 0 });
+  // the module search's pick: its group opens as a click on its title would
+  // (Focus mode closes the others), then the group acts on the pick
+  const [pick, setPick] = useState<AdvancedPick | null>(null);
+  const pickCount = useRef(0);
+  const searchPick = (h: { op: string; group: string }) => {
+    setOpenPanels((old) => focusMode ? new Set([h.group]) : new Set(old).add(h.group));
+    setPick({ op: h.op, group: h.group, nonce: ++pickCount.current });
+  };
+  const searchPicked = (nonce: number) => setPick((p) => p?.nonce === nonce ? null : p);
   const anyOpen = rightMode === "presets" ? presetGroupsOpen : openPanels.size > 0;
   const toggleAllPanels = () => {
     if (rightMode === "presets") setPresetFold((f) => ({ open: !presetGroupsOpen, n: f.n + 1 }));
@@ -6533,9 +6542,12 @@ export default function App() {
               </section>
             </div>
           )}
-          {rightMode === "adjust" && !cropping && editMode === "advanced" && <AdvancedSearch />}
+          {rightMode === "adjust" && !cropping && editMode === "advanced" && (
+            <AdvancedSearch photo={!!current} onPick={searchPick}
+                            applicable={(op) => { const i = session.current?.instances.find((x) => x.op === op && x.priority === 0); return !!i && i.switchable !== false; }} />
+          )}
           {rightMode === "adjust" && !cropping && panels.filter((p) => !p.hidden && (!p.showIf || editMode === "advanced" || p.showIf(values))).map((p) => (
-            <Profiler key={p.id} id={`panel.${p.id}`} onRender={perf.reactCommit}><PanelView editMode={editMode} sessionRevision={historyRev} onAdvancedEdit={record} onTurn={(how) => void turn(how)} panel={p} open={openPanels.has(p.id)} onToggle={(solo) => togglePanel(p.id, solo)}
+            <Profiler key={p.id} id={`panel.${p.id}`} onRender={perf.reactCommit}><PanelView editMode={editMode} sessionRevision={historyRev} pick={pick?.group === p.id ? pick : null} onPicked={searchPicked} onAdvancedEdit={record} onTurn={(how) => void turn(how)} panel={p} open={openPanels.has(p.id)} onToggle={(solo) => togglePanel(p.id, solo)}
                        values={values} session={session.current} disabled={!current} onChange={change}
                        detailLoupe={p.id === "detail" ? renderLoupe("detail") : undefined}
                        presenceLoupe={p.id === "basic" ? renderLoupe("presence") : undefined}
@@ -6612,7 +6624,7 @@ export default function App() {
                        } : undefined} /></Profiler>
           ))}
           {rightMode === "adjust" && !cropping && editMode === "advanced" && (
-            <AdvancedGroup id={TECHNICAL_ID} title="Technical" session={session.current} revision={historyRev} record={record} open={openPanels.has(TECHNICAL_ID)} onToggle={(solo) => togglePanel(TECHNICAL_ID, solo)} />
+            <AdvancedGroup id={TECHNICAL_ID} title="Technical" session={session.current} revision={historyRev} record={record} pick={pick?.group === TECHNICAL_ID ? pick : null} onPicked={searchPicked} open={openPanels.has(TECHNICAL_ID)} onToggle={(solo) => togglePanel(TECHNICAL_ID, solo)} />
           )}
         </div>
         {!cropping && current && rightMode === "film" && values.sf_on === 1 && (

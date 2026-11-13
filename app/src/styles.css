@@ -2590,7 +2590,10 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 }
 
 /* Advanced mode: the module search and a group with no modules yet */
-.advanced-search { padding: 8px 14px; }
+.advanced-search { position: relative; padding: 8px 14px; }
+.advanced-search-results { position: absolute; left: 14px; right: 14px; top: calc(100% - 4px); z-index: 20; max-height: 50vh; overflow-y: auto; }
+.context-menu.advanced-search-results button.active:not(:disabled) { background: var(--inset); }
+.context-menu.advanced-search-results button .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .advanced-search .field { width: 100%; box-sizing: border-box; }
 .advanced-empty { margin: 4px 16px 8px; color: var(--muted, #8a8a8a); font-size: var(--fs-small); }
 

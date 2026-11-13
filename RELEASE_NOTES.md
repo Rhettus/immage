@@ -9,8 +9,9 @@ Improvements
 
 - Preferences > General has an Editing mode. Advanced shows Adjustments' groups
   (HSL / Color and B&W both, for color and black and white photos alike) with
-  a Technical group and a module search, and darktable's modules as cards
-  with their own settings, on/off and reset, and an instance menu to add,
+  a Technical group and a module search that finds modules and settings and
+  adds or opens their card, and darktable's modules as cards with their own
+  settings, on/off and reset, and an instance menu to add,
   duplicate, rename, reorder and delete instances, all with undo. Switching
   does not change your photo.
 - Advanced cards so far: in Basic, exposure, white balance, color calibration,

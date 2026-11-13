@@ -1,27 +1,78 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Chevron, Collapse } from "./Collapse";
 import { commands, type ModuleSchema } from "./commands";
 import { ModuleCard } from "./ModuleCard";
 import type { InstanceChoice } from "./InstanceMenu";
 import type { Session } from "./session";
 import type { Turn } from "./manifest";
-import { editOf, groupLayouts, layoutFor, layoutRank, shows } from "./advancedLayout";
+import { LAYOUTS, editOf, groupLayouts, layoutFor, layoutRank, shows } from "./advancedLayout";
+import { searchModules, type SearchHit } from "./advancedSearch";
+import { panels } from "./manifest";
+import { useDismiss } from "./MasksPanel";
 import { AddModuleMenu } from "./AddModuleMenu";
 
 // Advanced mode's Adjustments: the same fold-out groups as Simple, each
 // holding darktable's modules as cards
 export const TECHNICAL_ID = "technical";
 
-// the module search above the groups; inert until there are modules to find
-export function AdvancedSearch() {
+// the module search above the groups: a drop-down of the modules (by title)
+// and settings (by label) it finds in every group. `applicable` says whether
+// darktable can apply a module to this photo; a module it cannot, or any with
+// no photo open, is greyed out
+export function AdvancedSearch({ photo, applicable, onPick }: {
+  photo: boolean; applicable: (op: string) => boolean; onPick: (hit: SearchHit) => void;
+}) {
+  const [text, setText] = useState("");
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const box = useRef<HTMLDivElement>(null);
+  const groups = useMemo(() => [...panels.filter((p) => !p.hidden).map((p) => ({ id: p.id, title: p.advancedTitle ?? p.title })),
+                                { id: TECHNICAL_ID, title: "Technical" }], []);
+  const hits = useMemo(() => searchModules(LAYOUTS, groups, text), [groups, text]);
+  const ok = (h: SearchHit) => photo && applicable(h.op);
+  const close = () => { setText(""); setOpen(false); };
+  useDismiss(open, () => setOpen(false), box);
+  const pick = (h: SearchHit) => { if (!ok(h)) return; close(); onPick(h); };
+  const move = (by: 1 | -1) => {
+    for (let k = 1; k <= hits.length; k++) {
+      const i = (active + by * k + hits.length * k) % hits.length;
+      if (ok(hits[i])) { setActive(i); return; }
+    }
+  };
   return (
-    <div className="advanced-search">
-      <input type="search" className="field" placeholder="Search modules" aria-label="Search modules" spellCheck={false} />
+    <div className="advanced-search" ref={box}>
+      <input type="search" className="field" placeholder="Search modules" aria-label="Search modules" spellCheck={false}
+             value={text} role="combobox" aria-expanded={open && hits.length > 0} aria-controls="advanced-search-results"
+             onChange={(e) => { setText(e.target.value); setActive(0); setOpen(true); }}
+             onFocus={() => setOpen(true)}
+             onKeyDown={(e) => {
+               if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); setOpen(true); move(e.key === "ArrowDown" ? 1 : -1); }
+               else if (e.key === "Enter" && open && hits[active]) { e.preventDefault(); pick(hits[active]); }
+               else if (e.key === "Escape") { e.stopPropagation(); close(); }
+             }} />
+      {open && hits.length > 0 && (
+        <div id="advanced-search-results" className="context-menu module-menu advanced-search-results" role="listbox">
+          {hits.map((h, i) => (
+            <button key={`${h.group}:${h.op}:${h.title}`} type="button" role="option" aria-selected={i === active}
+                    className={i === active ? "active" : ""} data-search-hit={h.op} disabled={!ok(h)}
+                    title={!photo ? "Open a photo to add modules" : ok(h) ? undefined : "darktable cannot apply this module to this photo"}
+                    onMouseEnter={() => { if (ok(h)) setActive(i); }}
+                    onClick={() => pick(h)}>
+              <span className="name">{h.title}{h.setting && <span className="tag"> · {h.setting}</span>}</span>
+              <span className="tag">{h.groupTitle}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
+
+// the search's pick of a module in a group: `nonce` tells one pick from the
+// next, so the group acts on each once
+export type AdvancedPick = { op: string; group: string; nonce: number };
 
 // darktable's introspection does not change between photos
 const schemas = new Map<string, Promise<ModuleSchema>>();
@@ -44,13 +95,15 @@ const familyOf = (op: string) => FAMILIES.find((f) => f.ops.includes(op));
 // one group: its title row folds like Simple's (Focus mode and Alt-click
 // are the caller's onToggle), with no More controls icon. with a photo open
 // it holds the cards of the instances its modules have, in pipe order
-export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0, record, onSimple, onTurn }: {
+export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0, record, onSimple, onTurn, pick, onPicked }: {
   id: string; title: string; open: boolean; onToggle: (solo: boolean) => void;
   session?: Session | null; revision?: number; record?: AdvancedEdit;
   // Simple's values set as one undo step, for a card of a Simple instance
   onSimple?: (entries: [string, number][], label: string) => void;
   // the toolbar's turn of the photo, for a card's turn buttons
   onTurn?: (how: Turn) => void;
+  // the module search's pick, acted on once the group's modules have loaded
+  pick?: AdvancedPick | null; onPicked?: (nonce: number) => void;
 }) {
   const [loaded, setLoaded] = useState<{ session: Session; schemas: Map<string, ModuleSchema> } | null>(null);
   // the cards this group could show, and the data they need, once per photo
@@ -96,6 +149,17 @@ export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0
     const l = layoutFor(op, id), first = all.find((c) => c.i.op === op && c.i.priority === 0);
     return l && first ? [{ op, title: l.title, applicable: first.i.switchable !== false }] : [];
   });
+  const switchTo = (c: typeof all[number], f: { label: string }, to: string) => {
+    record?.([`adv:${c.i.op}#${c.i.priority}:switch:${performance.now()}`], `Switch ${f.label}: ${layoutFor(to, id)!.title}`);
+    session!.switchModule(c.i.op, c.i.priority, to);
+  };
+  // Add module's action, for its menu and the search
+  const add = (op: string) => {
+    const l = layoutFor(op, id)!;
+    if (l.instance) { onSimple!(l.instance.add, `Add module: ${l.title}`); return; }
+    record?.([`adv:${op}#0:add:${performance.now()}`], `Add module: ${l.title}`);
+    session!.addModule(op);
+  };
   const choices = groupLayouts(id).flatMap((l) => {
     // a named card's instance may not exist yet: the module's first says
     // whether darktable can apply it
@@ -107,6 +171,26 @@ export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0
     return [{ op: l.op, title: l.title, shown: cards.some((c) => c.i.op === l.op || (!!f && f.ops.includes(c.i.op) && c.state.enabled)),
               applicable: first.switchable !== false }];
   });
+  // the module search's pick: the card shown is focused, a tone mapper's
+  // shared card switches to it, and a module not shown is added
+  const [focused, setFocused] = useState<{ key: string; nonce: number } | null>(null);
+  useEffect(() => {
+    if (!pick || !session || loaded?.session !== session) return;
+    const l = layoutFor(pick.op, id);
+    const choice = choices.find((c) => c.op === pick.op);
+    const f = familyOf(pick.op);
+    const own = cards.find((c) => c.i.op === pick.op);
+    const other = f && cards.find((c) => f.ops.includes(c.i.op));
+    if (own) setFocused({ key: `${own.i.op}#${own.i.priority}`, nonce: pick.nonce });
+    else if (l && f && other) { switchTo(other, f, pick.op); setFocused({ key: `${pick.op}#0`, nonce: pick.nonce }); }
+    else if (l && choice?.applicable && !choice.shown) { add(pick.op); setFocused({ key: `${pick.op}#0`, nonce: pick.nonce }); }
+    onPicked?.(pick.nonce);
+  }, [pick?.nonce, loaded, session]);   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!focused) return;
+    const t = window.setTimeout(() => setFocused(null), 2000);
+    return () => window.clearTimeout(t);
+  }, [focused]);
   return (
     <div className="panel adjust" data-panel-id={id}>
       <div className={`panel-title${open ? " open" : ""}`} onClick={(e) => onToggle(e.altKey)}>
@@ -134,12 +218,9 @@ export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0
               <ModuleCard key={key} instance={i} layout={layout} schema={schema} state={state}
                 family={(() => {
                   const f = familyOf(i.op);
-                  return f && familyOptions(f).length > 1 ? { label: f.label, options: familyOptions(f), onPick: (to: string) => {
-                    record?.([`adv:${key}:switch:${performance.now()}`], `Switch ${f.label}: ${layoutFor(to, id)!.title}`);
-                    session!.switchModule(i.op, i.priority, to);
-                  } } : undefined;
+                  return f && familyOptions(f).length > 1 ? { label: f.label, options: familyOptions(f), onPick: (to: string) => switchTo(cards.find((c) => c.i === i)!, f, to) } : undefined;
                 })()}
-                siblings={sib.length} index={index} fresh={session!.lastAdded === key} onInstance={onInstance} onTurn={onTurn}
+                siblings={sib.length} index={index} fresh={session!.lastAdded === key} focus={focused?.key === key ? focused.nonce : undefined} onInstance={onInstance} onTurn={onTurn}
                 onField={(path, v, coalesce) => { record?.([`adv:${key}:${path}`], layout.title); const c = session!.context;
                   session!.setFields(i.op, i.priority, editOf(layout, path, v, state.params, { width: c.sensorWidth, height: c.sensorHeight }), coalesce); }}
                 onEnabled={(on) => { record?.([`adv:${key}:enabled`], layout.title); session!.setAdvancedEnabled(i.op, i.priority, on); }}
@@ -149,12 +230,7 @@ export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0
             );
           })}
           {choices.length > 0 && (
-            <AddModuleMenu group={title} choices={choices} onAdd={(op) => {
-              const l = layoutFor(op, id)!;
-              if (l.instance) { onSimple!(l.instance.add, `Add module: ${l.title}`); return; }
-              record?.([`adv:${op}#0:add:${performance.now()}`], `Add module: ${l.title}`);
-              session!.addModule(op);
-            }} />
+            <AddModuleMenu group={title} choices={choices} onAdd={add} />
           )}
         </div>
       </Collapse>
