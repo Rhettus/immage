@@ -578,6 +578,25 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "node_saturation[3]", label: "Hue 4", section: "Saturation", unit: "%", factor: 100, digits: 0, showIf: (p) => (p.rule === 9 ? Math.min(4, Math.max(2, p.num_custom_nodes)) : [1, 3, 4, 2, 3, 2, 3, 4, 4][p.rule]) > 3 },
     ],
   },
+  {
+    // primaries.c gui_init (_setup_hue_slider and _setup_purity_slider): hue
+    // and purity per primary, then the achromatic tint. hues are stored in
+    // radians and shown in degrees (RAD_2_DEG, 57.29578), their soft range is
+    // +-20 degrees; purity is shown as an offset percentage (1.0 reads 0%).
+    // gui_changed only repaints slider backgrounds. every param has a widget,
+    // no custom editor needed
+    op: "primaries", group: "hsl", title: "RGB primaries",
+    fields: [
+      { path: "red_hue", label: "Red hue", soft: [-0.349066, 0.349066], factor: 57.29578, unit: "°", digits: 1 },
+      { path: "red_purity", label: "Red purity", soft: [0.5, 1.5], factor: 100, offset: -100, unit: "%", digits: 1 },
+      { path: "green_hue", label: "Green hue", soft: [-0.349066, 0.349066], factor: 57.29578, unit: "°", digits: 1 },
+      { path: "green_purity", label: "Green purity", soft: [0.5, 1.5], factor: 100, offset: -100, unit: "%", digits: 1 },
+      { path: "blue_hue", label: "Blue hue", soft: [-0.349066, 0.349066], factor: 57.29578, unit: "°", digits: 1 },
+      { path: "blue_purity", label: "Blue purity", soft: [0.5, 1.5], factor: 100, offset: -100, unit: "%", digits: 1 },
+      { path: "achromatic_tint_hue", label: "Tint hue", factor: 57.29578, unit: "°", digits: 1 },
+      { path: "achromatic_tint_purity", label: "Tint purity", soft: [0, 0.2], factor: 100, unit: "%", digits: 1 },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);

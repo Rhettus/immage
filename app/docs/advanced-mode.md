@@ -163,6 +163,8 @@ The HSL / Color group has these darktable modules:
   **Pull strength**, **Pull width**, **Neutral color protection** and
   **Smoothing**, then a saturation slider for each of the rule's hues. The
   anchor and custom hues and the swatches are not on the card yet.
+- **RGB primaries**: hue (in degrees) and purity of red, green and blue,
+  then **Tint hue** and **Tint purity**.
 
 ## Instances
 
