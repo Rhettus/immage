@@ -11,7 +11,19 @@ import { spawn, spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { registerHooks } from 'node:module';
 import { fileURLToPath } from 'node:url';
+
+// the app's own imports leave out the .ts the bundler adds
+registerHooks({
+  resolve(spec, ctx, next) {
+    if (spec.startsWith('./') && ctx.parentURL?.endsWith('.ts')) {
+      const url = new URL(spec + '.ts', ctx.parentURL);
+      if (existsSync(url)) return next(url.href, ctx);
+    }
+    return next(spec, ctx);
+  },
+});
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const ENGINE = process.env.IMMAGE_ENGINE || join(ROOT, 'build/bin/darktable-engine');
