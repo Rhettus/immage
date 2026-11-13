@@ -209,6 +209,9 @@ The Color Grading group has these darktable modules:
   highlights. darktable's hue and saturation sliders for each range, which it
   shows instead of red, green and blue by default, and the auto optimizers
   are not on the card yet.
+- **Split-toning**: a hue and saturation for the shadows and for the
+  highlights, then **Balance** and **Compress**. darktable's color buttons
+  beside each are not on the card yet.
 
 ## Instances
 

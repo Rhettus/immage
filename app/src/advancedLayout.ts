@@ -726,6 +726,20 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "gain[3]", label: "Blue", section: "Highlights: gain / slope", soft: [0.5, 1.5], offset: -1, digits: 5 },
     ],
   },
+  {
+    // splittoning.c gui_init and gui_init_section: shadows and highlights,
+    // each a hue in degrees and a saturation, then the properties section.
+    // left out: the color buttons and pickers beside each section
+    op: "splittoning", group: "colorgrading", title: "Split-toning",
+    fields: [
+      { path: "shadow_hue", label: "Hue", section: "Shadows", factor: 360, unit: "°" },
+      { path: "shadow_saturation", label: "Saturation", section: "Shadows" },
+      { path: "highlight_hue", label: "Hue", section: "Highlights", factor: 360, unit: "°" },
+      { path: "highlight_saturation", label: "Saturation", section: "Highlights" },
+      { path: "balance", label: "Balance", section: "Properties", factor: -100, offset: 100, digits: 4 },
+      { path: "compress", label: "Compress", section: "Properties", unit: "%" },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);
