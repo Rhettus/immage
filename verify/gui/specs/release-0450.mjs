@@ -29,6 +29,17 @@ const cropRect = () => {
 const view = async t => ({ nav: await t.driver.observe(navRect), hash: (await t.driver.observe(read.photo))?.hash });
 const same = (a, b) => a.nav ? JSON.stringify(a.nav) === JSON.stringify(b.nav) : a.hash === b.hash;
 
+// the visible middle of an overlay that may be larger than the viewer (a zoomed
+// photo): `reveal` wants the whole element on screen, which a 2:1 view never is
+async function overlay(t, selector) {
+  return until(async () => {
+    const c = await t.driver.observe(inspect, selector);
+    if (!c) throw Error(`Control is not mounted: ${selector}`);
+    const { left, right, top, bottom } = c.clip;
+    return c.hit && right - left > 100 && bottom - top > 100 && { x: (left + right) / 2, y: (top + bottom) / 2, bounds: { width: right - left, height: bottom - top } };
+  }, `visible overlay ${selector}`, 15000);
+}
+
 async function zoomIn(t) {
   await openTool(t, 'adjust');
   if (await t.driver.observe(() => !!document.querySelector('.nav-zooms'))) await textButton(t, '.nav-zooms', '2:1');
@@ -56,7 +67,7 @@ export async function spacePanTools(t) {
   // Heal: a drag would paint a spot
   await openTool(t, 'heal');
   const spots = await t.driver.observe(spotCount);
-  const canvas = await reveal(t, 'svg.spot-svg');
+  const canvas = await overlay(t, 'svg.spot-svg');
   await spacePan(t, 'heal', { x: canvas.x, y: canvas.y }, { x: -160, y: -100 }, async () => {
     assert.equal(await t.driver.observe(spotCount), spots, 'Space-drag healed no spot');
     assert(!await t.driver.observe(() => !!document.querySelector('.spot-sel')), 'no spot selected by a Space-drag');
@@ -66,7 +77,7 @@ export async function spacePanTools(t) {
   await openTool(t, 'masks');
   const masks = await t.driver.observe(maskCount);
   await click(t, '.create-mask'); await textButton(t, '.shape-menu-list', 'Brush');
-  const svg = await reveal(t, 'svg.mask-svg');
+  const svg = await overlay(t, 'svg.mask-svg');
   await spacePan(t, 'masks', { x: svg.x, y: svg.y }, { x: 160, y: 100 }, async () => {
     assert.equal(await t.driver.observe(maskCount), masks, 'Space-drag painted no mask');
   });
@@ -102,7 +113,7 @@ export async function healShowSpots(t) {
   await openTool(t, 'heal');
   await showMode(t, 'Always');
   if (await t.driver.observe(spotCount)) { await click(t, '.heal-actions button:nth-child(2)'); await until(async () => !await t.driver.observe(spotCount), 'spots cleared'); }
-  const canvas = await reveal(t, 'svg.spot-svg');
+  const canvas = await overlay(t, 'svg.spot-svg');
   const left = { x: canvas.x - canvas.bounds.width * .2, y: canvas.y }, right = { x: canvas.x + canvas.bounds.width * .2, y: canvas.y };
 
   // the brush's circles and a center dot stand in for the pointer: no crosshair
@@ -235,7 +246,7 @@ export async function brushDot(t) {
   };
   const baseline = await away();
   await click(t, '.create-mask'); await textButton(t, '.shape-menu-list', 'Brush');
-  const svg = await reveal(t, 'svg.mask-svg');
+  const svg = await overlay(t, 'svg.mask-svg');
   const at = { x: svg.x - svg.bounds.width * .2, y: svg.y };
   const box = await t.driver.observe(() => { const r = document.querySelector('canvas.layer.sharp').getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; });
   const cx = (at.x - box.x) / box.width * 64, cy = (at.y - box.y) / box.height * 64;
