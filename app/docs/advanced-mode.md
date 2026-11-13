@@ -283,6 +283,10 @@ The Transform group has these darktable modules:
   each edit crops to the largest rectangle of the photo's own shape, with no
   black corners; the card has no shear, lens model or automatic cropping
   settings. Upright's line detection stays in the Transform panel.
+- **Orientation**: darktable's four buttons, rotate 90° left or right and
+  flip horizontally or vertically. They turn the photo as the toolbar's
+  buttons do, with the crop and masks. Reset puts back the orientation the
+  camera recorded.
 
 ## Instances
 

@@ -1008,6 +1008,19 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "aspect", label: "Aspect adjust", section: "Manual perspective" },
     ],
   },
+  {
+    // flip.c gui_init: a reset label and four buttons, which set the
+    // orientation; it is not a slider. the buttons run the toolbar's turn,
+    // whose crop and mask shapes turn too
+    op: "flip", group: "transform", title: "Orientation",
+    turns: [
+      { label: "Rotate 90 degrees CCW", how: "ccw" },
+      { label: "Rotate 90 degrees CW", how: "cw" },
+      { label: "Flip horizontally", how: "h" },
+      { label: "Flip vertically", how: "v" },
+    ],
+    fields: [],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);

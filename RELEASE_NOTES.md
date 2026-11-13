@@ -26,7 +26,7 @@ Improvements
   (profiled), highpass, astrophoto denoise, raw denoise, surface blur, contrast
   equalizer and lowpass; in Lens Corrections, lens correction, chromatic
   aberrations, raw chromatic aberrations and hot pixels; in Transform, rotate
-  and perspective. Other modules follow in later versions.
+  and perspective and orientation. Other modules follow in later versions.
 - The tone mapper card shows AgX, sigmoid, filmic rgb or base curve, whichever
   is on, with a switch to change to another as one undo step.
 - Module cards have a darktable presets menu beside the reset button. It applies
