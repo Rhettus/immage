@@ -210,6 +210,13 @@ export async function advancedGroups(t) {
     await t.evidence('orientation-turn');
     await undoRedo(t, 'undo');
     await settledPhoto(t, p => wide(p) === wide(unturned));
+    // 15. Effects: bloom (strength 25% by default) changes the photo when
+    // added; blurs shows the lens blur's sliders for its default type
+    await addAndCheck(t, 'effects', 'bloom', 'Bloom',
+      { controls: ['size', 'threshold', 'strength'], tabs: [] }, true);
+    const bl = await addAndCheck(t, 'effects', 'blurs', 'Blurs',
+      { controls: ['radius', 'type', 'blades', 'concavity', 'linearity', 'rotation'], tabs: [] }, false);
+    assert(!bl.card.controls.some(x => x.id === 'angle'), 'a lens blur card shows the motion blur direction');
     await t.evidence('groups-done');
   } finally {
     try {
