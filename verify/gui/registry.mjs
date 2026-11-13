@@ -41,6 +41,7 @@ import { advancedPresets } from './specs/advanced-presets.mjs';
 import { advancedTonemapper } from './specs/advanced-tonemapper.mjs';
 import { advancedGroups } from './specs/advanced-groups.mjs';
 import { advancedSearch } from './specs/advanced-search.mjs';
+import { advancedHidden } from './specs/advanced-hidden.mjs';
 
 const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRange, 'batch-paste': batchPaste, startup, splash, exposure, 'slider-input': sliderInput, 'slider-click': sliderClick, history, rail, sliders, 'module-options': moduleOptions, 'module-switch': moduleSwitch,
   'panel-scroll': panelScroll,
@@ -87,6 +88,7 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'advanced-tonemapper': advancedTonemapper,
   'advanced-groups': advancedGroups,
   'advanced-search': advancedSearch,
+  'advanced-hidden': advancedHidden,
 };
 for(const [name,definition] of Object.entries(cases)) if(definition.kind)
   implementations[name] = t => ({range:rangeContract,choice:choiceContract,module:moduleOutput}[definition.kind])(t,definition);
