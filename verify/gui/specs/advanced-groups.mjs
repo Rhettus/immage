@@ -142,6 +142,19 @@ export async function advancedGroups(t) {
 
     // 6. B&W: monochrome's one slider
     await addAndCheck(t, 'bw', 'monochrome', 'Monochrome', { controls: ['highlights'], tabs: [] }, true);
+
+    // 7. Color Grading: color balance rgb is Basic's instance, 4 ways first;
+    // color balance shows a factor and red, green and blue per range
+    const cb = await addAndCheck(t, 'colorgrading', 'colorbalancergb', 'Color balance rgb',
+      { controls: ['shadows_Y', 'highlights_H', 'midtones_C'], tabs: ['4 ways', 'Master', 'Masks'] }, false);
+    assert(cb.card.tabs[0].on, `4 ways selected: ${JSON.stringify(cb.card.tabs)}`);
+    const basicCb = await t.driver.observe(() => document.querySelectorAll('[data-panel-id="basic"] [data-module^="colorbalancergb#"]').length);
+    t.measure({ name: 'colorbalancergb-basic-cards', count: basicCb });
+    await addAndCheck(t, 'colorgrading', 'colorbalance', 'Color balance',
+      { controls: ['mode', 'saturation', 'lift[0]', 'lift[1]', 'gain[3]'], tabs: [] }, false);
+    // 8. Color Grading: colorize (saturation 50% by default) changes the photo
+    await addAndCheck(t, 'colorgrading', 'colorize', 'Colorize',
+      { controls: ['hue', 'saturation', 'lightness', 'source_lightness_mix'], tabs: [] }, true);
     await t.evidence('groups-done');
   } finally {
     try {
