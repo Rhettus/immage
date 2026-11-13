@@ -221,6 +221,15 @@ const COMMANDS = {
   mask_shapes: ({ name, shapes }) => request({ cmd: "mask", name, shapes }),
   mask_rename: ({ name, to }) => request({ cmd: "mask_rename", name, to }),
   mask_delete: ({ name }) => request({ cmd: "mask_delete", name }),
+  instances: async () => (await request({ cmd: "instances" })).instances,
+  instance: async ({ action, op, priority, name, other, after }) => {
+    const req = { cmd: "instance", action, op, priority };
+    if (name != null) req.name = name;
+    if (other != null) req.other = other;
+    if (after != null) req.after = after;
+    const { ok, ms, ...r } = await request(req);
+    return r;
+  },
   combine: ({ name, members, ranges }) => request({ cmd: "combine", name, members, ranges: ranges ?? null }),
   set_params: ({ edit: { op, params, enabled, after, before, instance, mask, invert, opacity, refine } }) => {
     const req = { cmd: "set", op, params, enabled };
