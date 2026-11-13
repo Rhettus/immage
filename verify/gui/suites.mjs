@@ -149,6 +149,8 @@ export const cases = {
     limitation: 'Only the Exposure card is driven. Frame change is checked for the new instance only. Restores the starting mode in a finally.' },
   'advanced-presets': { liveValidated: true, verification: 'Linux system WebKitGTK; empty workspace 9 floating/maximized, original workspace 4 restored. Run 2026-11-13T00-42-50.896Z_60cdd29_d0973065 (raw fixture).', scope: 'Advanced editing mode: the Exposure card presets menu lists darktable presets without the _builtin_ prefix; applying magic lantern defaults switches the card to its deflicker page and turns it on; the preset is checked when the menu reopens; undo returns the manual page and redo applies it again; no error notice appears',
     limitation: 'Only the Exposure card is driven. Restores the starting mode in a finally.' },
+  'advanced-tonemapper': { liveValidated: false, scope: 'Advanced editing mode: the Basic group shows one tone mapper card (agx, sigmoid, filmic rgb or base curve); its switch menu lists the family with the current one checked; picking another turns the old one off and the new one on, changes the photo, and undo and redo move between them as one step',
+    limitation: 'Not yet run live. Adds an AgX card when the photo has no tone mapper on. Restores the starting mode in a finally.' },
   ...generated,
 };
 export const suites = {

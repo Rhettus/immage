@@ -78,6 +78,23 @@ Besides exposure, the Basic group has these darktable modules:
   iterations, flat color and diameter. The card lists every method; darktable
   offers only those that suit the photo's sensor and switches to inpaint
   opposed if one does not. darktable allows one instance.
+- **Tone mapper**: one card for darktable's four tone mappers, **AgX**,
+  **Sigmoid**, **Filmic rgb** and **Base curve**, showing the one that is on.
+  The switch button (two arrows) beside the card's name lists them; choosing
+  another switches the current one off and the chosen one on, as one undo
+  step. The old one keeps its settings, so switching back restores them. With
+  none on, the card shows each tone mapper the photo has used. Add module lists
+  them too, checked while the card shows one. Simple's tone mapper follows a
+  switch made here.
+  - AgX: tabs **Settings** (input exposure range, basic and advanced curve
+    settings, look) and **Primaries** (before and after tone mapping). Its curve
+    graph and pickers are not on the card yet.
+  - Sigmoid: contrast, skew, color processing and preserve hue, then the
+    **Primaries** and **Display luminance** sections.
+  - Filmic rgb: tabs **Scene**, **Reconstruct**, **Look**, **Display** and
+    **Options**. Its curve graph and pickers are not on the card yet.
+  - Base curve: **Preserve colors** and exposure **Fusion**. The curve itself
+    needs a curve editor and is not on the card yet.
 - **Contrast & texture**: **Base detail level**, **Highlights** and
   **Shadows**, then **Coarse**, **Medium** and **Fine details** under Local
   contrast and **Halo control** and **Noise bias** under Filter settings. The

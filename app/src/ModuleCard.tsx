@@ -4,6 +4,7 @@ import { RotateCcw } from "lucide-react";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { InstanceMenu, type InstanceChoice } from "./InstanceMenu";
 import { PresetMenu } from "./PresetMenu";
+import { FamilySwitch, type FamilyOption } from "./FamilySwitch";
 import { Chevron, Collapse } from "./Collapse";
 import { Choice, Slider, Toggle } from "./Controls";
 import type { AdvancedState } from "./session";
@@ -35,11 +36,14 @@ export function fieldControl(f: SchemaField, l: LayoutField, value: number): Con
   // a value past the soft range stays reachable and shown, not clamped
   const min = Math.max(hard[0], Math.min(soft[0], value));
   const max = Math.min(hard[1], Math.max(soft[1], value));
-  const unit = l.unit ? (l.unit === "%" ? "%" : ` ${l.unit}`) : "";
+  // darktable's formats put "%" and "°" right after the number
+  const unit = l.unit ? (l.unit === "%" || l.unit === "°" ? l.unit : ` ${l.unit}`) : "";
   // digits count on the shown value, so the step is in shown units too
   const base = { id: `adv:${l.path}`, label: l.label, min, max, step: 10 ** -digits / Math.abs(factor),
                  format: (v: number) => `${(v * factor + offset).toFixed(digits)}${unit}`, note: f.description || undefined };
   if (f.type === "bool") return { ...base, kind: "toggle", min: 0, max: 1, step: 1 };
+  if (l.choices) return { ...base, kind: "choice", min: 0, max: Math.max(...l.choices.map(([, v]) => v)), step: 1,
+                          options: l.choices, inline: l.choices.length > 3, menu: l.choices.length > 3 };
   if (f.type === "enum") {
     const options = (f.values ?? []).filter((e) => !l.options || l.options.includes(e.value))
       .map((e): [string, number] => [sentence(e.description || e.name), e.value]);
@@ -51,9 +55,11 @@ export function fieldControl(f: SchemaField, l: LayoutField, value: number): Con
 
 // `siblings` is how many instances of the module the group shows, `index`
 // this one's place among them (pipe order); `fresh`, a card just added
-export function ModuleCard({ instance, layout, schema, state, siblings, index, fresh, onField, onEnabled, onReset, onInstance, loadPresets, onPreset }: {
+export function ModuleCard({ instance, layout, schema, state, siblings, index, fresh, family, onField, onEnabled, onReset, onInstance, loadPresets, onPreset }: {
   instance: Instance; layout: ModuleLayout; schema: ModuleSchema; state: AdvancedState;
   siblings: number; index: number; fresh?: boolean;
+  // the modules this card can switch to, when it is a shared card
+  family?: { label: string; options: FamilyOption[]; onPick: (op: string) => void };
   onField: (path: string, value: number, coalesce: boolean) => void;
   onEnabled: (on: boolean) => void; onReset: () => void;
   onInstance: (c: InstanceChoice, name?: string) => void;
@@ -100,6 +106,9 @@ export function ModuleCard({ instance, layout, schema, state, siblings, index, f
                    }}
                    onBlur={(e) => done(e.currentTarget, true)} />
           : <span className="module-card-title">{name}</span>}
+        {family && <span onClick={(e) => e.stopPropagation()}>
+          <FamilySwitch label={family.label} current={instance.op} options={family.options} onPick={family.onPick} />
+        </span>}
         {siblings > 1 && instance.priority === 0 && <span className="module-card-tag" title="Simple's sliders show this instance">Simple</span>}
         <PresetMenu name={name} load={loadPresets} onPick={(n) => { setFold(true); onPreset(n); }} />
         <button className="module-card-reset" title="Reset to darktable's defaults" aria-label={`Reset ${name}`}

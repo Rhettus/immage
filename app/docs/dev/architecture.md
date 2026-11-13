@@ -793,7 +793,12 @@ fields may name an array element (`red[0]`, resolved by `schemaField` in
 ModuleCard.tsx), a notebook `tab` and a `section` heading; a `%` slider over a
 hard range within 10 shows the value times 100, as
 `dt_bauhaus_slider_set_format` does. The card menus share placement and
-dismissal through `useCardMenu` in [cardMenu.ts](../../src/cardMenu.ts).
+dismissal through `useCardMenu` in [cardMenu.ts](../../src/cardMenu.ts). `FAMILIES` in
+AdvancedPanel.tsx groups modules that share a card (the tone mappers): an off
+member hides while another is on, and [FamilySwitch.tsx](../../src/FamilySwitch.tsx)
+calls `Session.switchModule`, the old instance off and the other module's
+priority 0 on. A layout's `choices` names an int field's hand-filled combobox
+(`dt_bauhaus_combobox_add`).
 
 [PresetMenu.tsx](../../src/PresetMenu.tsx) is the card's darktable presets
 menu. It loads the engine's `presets` list when opened (darktable's order,

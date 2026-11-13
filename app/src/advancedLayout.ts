@@ -21,6 +21,9 @@ export type LayoutField = {
   offset?: number;
   // the enum values darktable's combobox offers, when it leaves some out
   options?: number[];
+  // an int field darktable shows as a combobox filled by hand
+  // (dt_bauhaus_combobox_add), with these names and values
+  choices?: [string, number][];
   // darktable shows the field only for some settings of the others
   showIf?: (params: Record<string, number>) => boolean;
 };
@@ -124,6 +127,138 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "iterations", label: "Iterations", showIf: (p) => p.mode === 3 },
       { path: "solid_color", label: "Inpaint a flat color", unit: "%", factor: 100, digits: 0, showIf: (p) => p.mode === 3 },
       { path: "scales", label: "Diameter of reconstruction", showIf: (p) => p.mode === 3 },
+    ],
+  },
+  {
+    // agx.c gui_init, _add_exposure_box, _create_basic_curve_controls_box, _create_advanced_box,
+    // _add_look_box, _create_primaries_page, _update_redraw_dynamic_gui; default preferences, so
+    // no Curve tab. left out: the curve graph, all pickers and the read exposure, reset primaries
+    // and set from above buttons (not params). pivot x shows offset + x * range in EV from the
+    // white and black params (_update_pivot_slider_settings), so only its hard range is static
+    op: "agx", group: "basic", title: "AgX",
+    fields: [
+      { path: "range_white_relative_ev", label: "White relative exposure", tab: "Settings", section: "Input exposure range", soft: [1, 10], unit: "EV", digits: 2 },
+      { path: "range_black_relative_ev", label: "Black relative exposure", tab: "Settings", section: "Input exposure range", soft: [-20, -1], unit: "EV", digits: 2 },
+      { path: "dynamic_range_scaling", label: "Dynamic range scaling", tab: "Settings", section: "Input exposure range", soft: [-0.5, 0.5], unit: "%", digits: 2 },
+      { path: "curve_pivot_x", label: "Pivot relative exposure", tab: "Settings", section: "Basic curve parameters", unit: "EV", digits: 2 },
+      { path: "curve_pivot_y_linear_output", label: "Pivot target output", tab: "Settings", section: "Basic curve parameters", unit: "%", digits: 2 },
+      { path: "curve_contrast_around_pivot", label: "Contrast", tab: "Settings", section: "Basic curve parameters", soft: [0.1, 5] },
+      { path: "curve_shoulder_power", label: "Shoulder power", tab: "Settings", section: "Basic curve parameters", soft: [1, 5] },
+      { path: "curve_toe_power", label: "Toe power", tab: "Settings", section: "Basic curve parameters", soft: [1, 5] },
+      { path: "curve_linear_ratio_above_pivot", label: "Shoulder start", tab: "Settings", section: "Advanced curve parameters", unit: "%", digits: 2 },
+      { path: "curve_target_display_white_ratio", label: "Target white", tab: "Settings", section: "Advanced curve parameters", soft: [0.5, 1], unit: "%", digits: 2 },
+      { path: "target_white_from_output", label: "Follow output peak", tab: "Settings", section: "Advanced curve parameters", showIf: (p) => !p.target_white_from_output },
+      { path: "hdr_purity", label: "HDR purity", tab: "Settings", section: "Advanced curve parameters", unit: "%", digits: 0, showIf: (p) => !!p.target_white_from_output },
+      { path: "curve_linear_ratio_below_pivot", label: "Toe start", tab: "Settings", section: "Advanced curve parameters", unit: "%", digits: 2 },
+      { path: "curve_target_display_black_ratio", label: "Target black", tab: "Settings", section: "Advanced curve parameters", soft: [0, 0.025], unit: "%", digits: 2 },
+      { path: "auto_gamma", label: "Keep the pivot on the diagonal", tab: "Settings", section: "Advanced curve parameters" },
+      { path: "curve_gamma", label: "Curve y gamma", tab: "Settings", section: "Advanced curve parameters", soft: [1, 5], showIf: (p) => !p.auto_gamma },
+      { path: "look_slope", label: "Slope", tab: "Settings", section: "Look", soft: [0, 2] },
+      { path: "look_lift", label: "Lift", tab: "Settings", section: "Look", soft: [-0.5, 0.5], digits: 2 },
+      { path: "look_brightness", label: "Brightness", tab: "Settings", section: "Look", soft: [0, 2] },
+      { path: "look_saturation", label: "Saturation", tab: "Settings", section: "Look", soft: [0, 2], unit: "%", digits: 2 },
+      { path: "look_original_hue_mix_ratio", label: "Preserve hue", tab: "Settings", section: "Look", unit: "%", digits: 2 },
+      { path: "base_primaries", label: "Base primaries", tab: "Primaries" },
+      { path: "disable_primaries_adjustments", label: "Disable adjustments", tab: "Primaries" },
+      // the two sections below and everything in them hide with disable_primaries_adjustments
+      { path: "red_inset", label: "Red attenuation", tab: "Primaries", section: "Before tone mapping", unit: "%", digits: 2, showIf: (p) => !p.disable_primaries_adjustments },
+      { path: "red_rotation", label: "Red rotation", tab: "Primaries", section: "Before tone mapping", factor: 57.29578, unit: "°", digits: 1, showIf: (p) => !p.disable_primaries_adjustments },
+      { path: "green_inset", label: "Green attenuation", tab: "Primaries", section: "Before tone mapping", unit: "%", digits: 2, showIf: (p) => !p.disable_primaries_adjustments },
+      { path: "green_rotation", label: "Green rotation", tab: "Primaries", section: "Before tone mapping", factor: 57.29578, unit: "°", digits: 1, showIf: (p) => !p.disable_primaries_adjustments },
+      { path: "blue_inset", label: "Blue attenuation", tab: "Primaries", section: "Before tone mapping", unit: "%", digits: 2, showIf: (p) => !p.disable_primaries_adjustments },
+      { path: "blue_rotation", label: "Blue rotation", tab: "Primaries", section: "Before tone mapping", factor: 57.29578, unit: "°", digits: 1, showIf: (p) => !p.disable_primaries_adjustments },
+      { path: "completely_reverse_primaries", label: "Reverse all", tab: "Primaries", section: "After tone mapping", showIf: (p) => !p.disable_primaries_adjustments },
+      { path: "master_outset_ratio", label: "Master purity boost", tab: "Primaries", section: "After tone mapping", unit: "%", digits: 2, showIf: (p) => !p.disable_primaries_adjustments && !p.completely_reverse_primaries },
+      { path: "master_unrotation_ratio", label: "Master rotation reversal", tab: "Primaries", section: "After tone mapping", unit: "%", digits: 2, showIf: (p) => !p.disable_primaries_adjustments && !p.completely_reverse_primaries },
+      { path: "red_outset", label: "Red purity boost", tab: "Primaries", section: "After tone mapping", unit: "%", digits: 2, showIf: (p) => !p.disable_primaries_adjustments && !p.completely_reverse_primaries },
+      { path: "red_unrotation", label: "Red reverse rotation", tab: "Primaries", section: "After tone mapping", factor: 57.29578, unit: "°", digits: 1, showIf: (p) => !p.disable_primaries_adjustments && !p.completely_reverse_primaries },
+      { path: "green_outset", label: "Green purity boost", tab: "Primaries", section: "After tone mapping", unit: "%", digits: 2, showIf: (p) => !p.disable_primaries_adjustments && !p.completely_reverse_primaries },
+      { path: "green_unrotation", label: "Green reverse rotation", tab: "Primaries", section: "After tone mapping", factor: 57.29578, unit: "°", digits: 1, showIf: (p) => !p.disable_primaries_adjustments && !p.completely_reverse_primaries },
+      { path: "blue_outset", label: "Blue purity boost", tab: "Primaries", section: "After tone mapping", unit: "%", digits: 2, showIf: (p) => !p.disable_primaries_adjustments && !p.completely_reverse_primaries },
+      { path: "blue_unrotation", label: "Blue reverse rotation", tab: "Primaries", section: "After tone mapping", factor: 57.29578, unit: "°", digits: 1, showIf: (p) => !p.disable_primaries_adjustments && !p.completely_reverse_primaries },
+    ],
+  },
+  {
+    // sigmoid.c gui_init (look, color processing, collapsible primaries then display luminance
+    // sections) and gui_changed (visibility); nothing is left out: every param has a widget
+    // and no custom editor is needed. the percent sliders with hard max <= 10 get factor 100
+    // from dt_bauhaus_slider_set_format, so it is not repeated
+    op: "sigmoid", group: "basic", title: "Sigmoid",
+    fields: [
+      { path: "middle_grey_contrast", label: "Contrast", soft: [0.7, 3], digits: 3 },
+      { path: "contrast_skewness", label: "Skew" },
+      { path: "color_processing", label: "Color processing" },
+      { path: "hue_preservation", label: "Preserve hue", unit: "%", showIf: (p) => p.color_processing === 0 },
+      { path: "base_primaries", label: "Base primaries", section: "Primaries", showIf: (p) => p.color_processing === 0 },
+      { path: "red_inset", label: "Red attenuation", section: "Primaries", soft: [0, 0.5], unit: "%", digits: 1, showIf: (p) => p.color_processing === 0 },
+      { path: "red_rotation", label: "Red rotation", section: "Primaries", factor: 57.29578, unit: "°", digits: 1, showIf: (p) => p.color_processing === 0 },
+      { path: "green_inset", label: "Green attenuation", section: "Primaries", soft: [0, 0.5], unit: "%", digits: 1, showIf: (p) => p.color_processing === 0 },
+      { path: "green_rotation", label: "Green rotation", section: "Primaries", factor: 57.29578, unit: "°", digits: 1, showIf: (p) => p.color_processing === 0 },
+      { path: "blue_inset", label: "Blue attenuation", section: "Primaries", soft: [0, 0.5], unit: "%", digits: 1, showIf: (p) => p.color_processing === 0 },
+      { path: "blue_rotation", label: "Blue rotation", section: "Primaries", factor: 57.29578, unit: "°", digits: 1, showIf: (p) => p.color_processing === 0 },
+      { path: "purity", label: "Recover purity", section: "Primaries", unit: "%", digits: 0, showIf: (p) => p.color_processing === 0 },
+      { path: "display_black_target", label: "Target black", section: "Display luminance", soft: [0, 1], unit: "%", digits: 4 },
+      { path: "display_white_target", label: "Target white", section: "Display luminance", soft: [50, 100], unit: "%" },
+      { path: "white_target_from_output", label: "Follow output peak", section: "Display luminance", showIf: (p) => !p.white_target_from_output },
+    ],
+    // per channel hides hue_preservation and the whole primaries section; follow output peak
+    // shows only for edits that predate HDR output (it is off there)
+  },
+  {
+    // filmicrgb.c gui_init (graph over a notebook of five pages) and gui_changed (hardness,
+    // custom gray, color science rules); "%" sliders get no factor because their hard max is
+    // above 10. left out: the curve graph, the auto tune levels picker, the three scene
+    // pickers, the display reconstruction mask button; compensate_icc_black and spline_version
+    // have no widget; no custom editor needed. reconstruction sliders are only greyed, not hidden
+    op: "filmicrgb", group: "basic", title: "Filmic rgb",
+    fields: [
+      { path: "grey_point_source", label: "Middle gray luminance", tab: "Scene", soft: [0.1, 36], unit: "%", showIf: (p) => p.custom_grey === 1 },
+      { path: "white_point_source", label: "White relative exposure", tab: "Scene", soft: [2, 8], unit: "EV" },
+      { path: "black_point_source", label: "Black relative exposure", tab: "Scene", soft: [-14, -3], unit: "EV" },
+      { path: "security_factor", label: "Dynamic range scaling", tab: "Scene", soft: [-50, 50], unit: "%" },
+      { path: "enable_highlight_reconstruction", label: "Enable highlight reconstruction", tab: "Reconstruct", section: "Highlights clipping" },
+      { path: "reconstruct_threshold", label: "Threshold", tab: "Reconstruct", section: "Highlights clipping", unit: "EV" },
+      { path: "reconstruct_feather", label: "Transition", tab: "Reconstruct", section: "Highlights clipping", unit: "EV" },
+      { path: "reconstruct_structure_vs_texture", label: "Structure ↔ texture", tab: "Reconstruct", section: "Balance", unit: "%" },
+      { path: "reconstruct_bloom_vs_details", label: "Bloom ↔ reconstruct", tab: "Reconstruct", section: "Balance", unit: "%" },
+      { path: "reconstruct_grey_vs_color", label: "Gray ↔ colorful details", tab: "Reconstruct", section: "Balance", unit: "%" },
+      { path: "contrast", label: "Contrast", tab: "Look", soft: [0.5, 3], digits: 3 },
+      { path: "output_power", label: "Hardness", tab: "Look", showIf: (p) => p.auto_hardness === 0 },
+      { path: "latitude", label: "Linear region", tab: "Look", soft: [0.1, 90], unit: "%" },
+      { path: "balance", label: "Shadows ↔ highlights balance", tab: "Look", unit: "%" },
+      // label follows version (gui_changed): 0 and 3 extreme luminance saturation, 1 and 2
+      // mid-tones saturation, 4 highlights saturation mix; the default version is 4
+      { path: "saturation", label: "Highlights saturation mix", tab: "Look", soft: [-50, 50], unit: "%" },
+      { path: "black_point_target", label: "Target black luminance", tab: "Display", digits: 4, unit: "%" },
+      { path: "grey_point_target", label: "Target middle gray", tab: "Display", digits: 4, unit: "%", showIf: (p) => p.custom_grey === 1 },
+      { path: "white_point_target", label: "Target white luminance", tab: "Display", soft: [0, 100], digits: 4, unit: "%" },
+      { path: "version", label: "Color science", tab: "Options" },
+      // hidden when color science is v7 (4); the legacy euclidean norm (4) is removed from the list
+      { path: "preserve_color", label: "Preserve chrominance", tab: "Options", options: [0, 1, 2, 3, 5], showIf: (p) => p.version !== 4 },
+      { path: "highlights", label: "Contrast in highlights", tab: "Options" },
+      { path: "shadows", label: "Contrast in shadows", tab: "Options" },
+      { path: "custom_grey", label: "Use custom middle-gray values", tab: "Options" },
+      { path: "auto_hardness", label: "Auto adjust hardness", tab: "Options" },
+      { path: "high_quality_reconstruction", label: "Iterations of high-quality reconstruction", tab: "Options" },
+      { path: "noise_level", label: "Add noise in highlights", tab: "Options" },
+      { path: "noise_distribution", label: "Type of noise", tab: "Options" },
+    ],
+    // moving threshold or transition turns reconstruction on, and security factor, gray source
+    // and auto hardness rewrite other sliders (white, black, hardness) in gui_changed; none of
+    // that is a showIf rule
+  },
+  {
+    // basecurve.c gui_init, gui_changed and gui_update (the two fusion sliders show only
+    // while fusion is not none). left out: basecurve, basecurve_nodes and basecurve_type
+    // (the curve graph, which needs a curve editor with node add, drag, remove and curve type)
+    // and the scale for graph slider (a graph view setting, not a param)
+    op: "basecurve", group: "basic", title: "Base curve",
+    fields: [
+      { path: "preserve_colors", label: "Preserve colors" },
+      { path: "exposure_fusion", label: "Fusion", choices: [["None", 0], ["Two exposures", 1], ["Three exposures", 2]] },
+      { path: "exposure_stops", label: "Exposure shift", digits: 3, showIf: (p) => p.exposure_fusion !== 0 },
+      // the slider's double-click default is set to 0 in gui_init though the param default is 1
+      { path: "exposure_bias", label: "Exposure bias", digits: 3, showIf: (p) => p.exposure_fusion !== 0 },
     ],
   },
   {

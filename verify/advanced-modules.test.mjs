@@ -442,6 +442,8 @@ test('Advanced card layouts match darktable', { skip: skip || false }, async (t)
         const f = resolve(lf.path);
         assert.ok(f, `${l.op}: no field ${lf.path}; schema has ${[...by.keys()]}`);
         assert.ok(lf.label, `${lf.path}: no label`);
+        if (lf.choices) assert.ok(f.type === 'int' && lf.choices.every(([n, v]) => n && Number.isInteger(v)
+          && (typeof f.min !== 'number' || v >= f.min) && (typeof f.max !== 'number' || v <= f.max)), `${lf.path}: choices on ${f.type}`);
         if (lf.options) {
           assert.equal(f.type, 'enum', `${lf.path}: options on a ${f.type}`);
           for (const v of lf.options) assert.ok(f.values.some((x) => x.value === v), `${lf.path}: option ${v} not in the enum`);

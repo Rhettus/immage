@@ -1025,6 +1025,15 @@ export class Session {
     this.setAdvanced(op, 0, {}, true);
   }
 
+  // a shared card's module switch (the tone mappers): this instance off,
+  // the other module's first instance on; the old one keeps its settings
+  switchModule(op: string, priority: number, to: string) {
+    this.cardsShown.add(`${to}#0`);
+    this.lastAdded = `${to}#0`;
+    this.setAdvanced(op, priority, {}, false);
+    this.setAdvanced(to, 0, {}, true);
+  }
+
   private setAdvanced(op: string, priority: number, params: Params, enabled: boolean, coalesce = false) {
     const key = `${op}#${priority}`;
     this.cardsShown.add(key);

@@ -32,6 +32,14 @@ const schemaOf = (op: string) => {
 
 export type AdvancedEdit = (ids: string[], label?: string) => void;
 
+// modules that do one job and share a card: the photo shows the one that is
+// on (or, with none on, the ones it has used), and the card's switch moves
+// to another
+const FAMILIES: { label: string; ops: string[] }[] = [
+  { label: "tone mapper", ops: ["agx", "sigmoid", "filmicrgb", "basecurve"] },
+];
+const familyOf = (op: string) => FAMILIES.find((f) => f.ops.includes(op));
+
 // one group: its title row folds like Simple's (Focus mode and Alt-click
 // are the caller's onToggle), with no More controls icon. with a photo open
 // it holds the cards of the instances its modules have, in pipe order
@@ -71,11 +79,23 @@ export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0
     : [];
   const shown = (c: typeof all[number]) =>
     c.state.enabled || c.i.in_history || session!.cardsShown.has(`${c.i.op}#${c.i.priority}`);
-  const cards = all.filter(shown).sort((a, b) => layoutRank(a.i.op, id) - layoutRank(b.i.op, id));
+  // a family member that is off gives way to one that is on
+  const familyOn = (f: { ops: string[] }) => all.some((c) => f.ops.includes(c.i.op) && c.state.enabled);
+  const cards = all.filter((c) => {
+    const f = familyOf(c.i.op);
+    return shown(c) && (!f || c.state.enabled || !familyOn(f));
+  }).sort((a, b) => layoutRank(a.i.op, id) - layoutRank(b.i.op, id));
+  const familyOptions = (f: { ops: string[] }) => f.ops.flatMap((op) => {
+    const l = layoutFor(op, id), first = all.find((c) => c.i.op === op && c.i.priority === 0);
+    return l && first ? [{ op, title: l.title, applicable: first.i.switchable !== false }] : [];
+  });
   const choices = groupLayouts(id).flatMap((l) => {
     const first = all.find((c) => c.i.op === l.op && c.i.priority === 0);
     if (!first) return [];
-    return [{ op: l.op, title: l.title, shown: cards.some((c) => c.i.op === l.op),
+    // a family member counts as shown while its family's card is: the
+    // card's switch is how to reach it
+    const f = familyOf(l.op);
+    return [{ op: l.op, title: l.title, shown: cards.some((c) => c.i.op === l.op || (!!f && f.ops.includes(c.i.op) && c.state.enabled)),
               applicable: first.i.switchable !== false }];
   });
   return (
@@ -103,6 +123,13 @@ export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0
             };
             return (
               <ModuleCard key={key} instance={i} layout={layout} schema={schema} state={state}
+                family={(() => {
+                  const f = familyOf(i.op);
+                  return f && familyOptions(f).length > 1 ? { label: f.label, options: familyOptions(f), onPick: (to: string) => {
+                    record?.([`adv:${key}:switch:${performance.now()}`], `Switch ${f.label}: ${layoutFor(to, id)!.title}`);
+                    session!.switchModule(i.op, i.priority, to);
+                  } } : undefined;
+                })()}
                 siblings={sib.length} index={index} fresh={session!.lastAdded === key} onInstance={onInstance}
                 onField={(path, v, coalesce) => { record?.([`adv:${key}:${path}`], layout.title); session!.setField(i.op, i.priority, path, v, coalesce); }}
                 onEnabled={(on) => { record?.([`adv:${key}:enabled`], layout.title); session!.setAdvancedEnabled(i.op, i.priority, on); }}
