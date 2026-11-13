@@ -138,6 +138,10 @@ The Tone Curve group has these darktable modules:
   graph, curve smoothing, mask display and auto-adjust buttons are not on the
   card yet. Basic's Highlights and Shadows with tone equalizer chosen edits the
   same module.
+- **Shadows and highlights**: **Shadows**, **Highlights**, **White point
+  adjustment**, **Soften with**, **Radius**, **Compress** and the shadows and
+  highlights color adjustments. Basic's Highlights and Shadows with shadows
+  and highlights chosen edits the same module.
 
 ## Instances
 

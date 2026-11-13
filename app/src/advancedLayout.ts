@@ -434,6 +434,22 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "quantization", label: "Mask quantization", tab: "Masking", unit: "EV", showIf: (p) => p.details !== 0 },
     ],
   },
+  {
+    // shadhi.c gui_init; nothing hides a field. left out: flags (the
+    // unbounded and filter bits, no widget), order, reserved2 and
+    // low_approximation (no widget either)
+    op: "shadhi", group: "tonecurve", title: "Shadows and highlights",
+    fields: [
+      { path: "shadows", label: "Shadows" },
+      { path: "highlights", label: "Highlights" },
+      { path: "whitepoint", label: "White point adjustment" },
+      { path: "shadhi_algo", label: "Soften with" },
+      { path: "radius", label: "Radius" },
+      { path: "compress", label: "Compress", unit: "%" },
+      { path: "shadows_ccorrect", label: "Shadows color adjustment", unit: "%" },
+      { path: "highlights_ccorrect", label: "Highlights color adjustment", unit: "%" },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);
