@@ -334,6 +334,15 @@ The Effects group has these darktable modules:
   no visible effect yet.
 - **Dither or posterize**: **Method**, and **Damping** for random dither.
 
+## Technical modules
+
+The Technical group, only in Advanced, has these darktable modules:
+
+- **Raw black/white point**: **Black level 0** to **Black level 3**,
+  **White point** and **Flat field correction**, for raw photos only. The
+  card does not have darktable's raw crop margins, which darktable also
+  hides unless a preference shows them.
+
 ## Instances
 
 A module can have several instances, each with its own settings. Open the

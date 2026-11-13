@@ -1219,6 +1219,24 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "dither_type", label: "Method" },
     ],
   },
+  {
+    // rawprepare.c gui_init: four black levels (labels from
+    // dt_bauhaus_widget_set_label), the white point, flat field correction
+    // image-dependent, not on the card: a monochrome sensor shows only black
+    // level 0 and an sRaw hides black level 3 (gui_update); flat field shows
+    // only when the photo has gain maps; a non-raw photo shows a note instead
+    // left out: the crop margins, which gui_init adds only with the preference
+    // plugins/darkroom/rawprepare/allow_editing_crop (off by default)
+    op: "rawprepare", group: "technical", title: "Raw black/white point",
+    fields: [
+      { path: "raw_black_level_separate[0]", label: "Black level 0", soft: [0, 16384] },
+      { path: "raw_black_level_separate[1]", label: "Black level 1", soft: [0, 16384] },
+      { path: "raw_black_level_separate[2]", label: "Black level 2", soft: [0, 16384] },
+      { path: "raw_black_level_separate[3]", label: "Black level 3", soft: [0, 16384] },
+      { path: "raw_white_point", label: "White point", soft: [0, 16384] },
+      { path: "flat_field", label: "Flat field correction" },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);
