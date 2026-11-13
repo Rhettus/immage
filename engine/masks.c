@@ -519,8 +519,9 @@ static gboolean _object_paths(dt_masks_form_t *grp, JsonArray *paths, const char
     gp->formid = f->formid;
     gp->parentid = grp->formid;
     gp->state = DT_MASKS_STATE_SHOW | DT_MASKS_STATE_USE;
-    // a hole takes away from the object; a subtracted object's outline
-    // takes away from the mask
+    // a hole takes away from the object, an added object's outline adds to
+    // the mask; a subtracted object with holes is built in a group of its own
+    // (_object_component), where its outline adds to the object
     if(!*bottom)
       gp->state |= (hole != subtract) ? DT_MASKS_STATE_DIFFERENCE : DT_MASKS_STATE_UNION;
     if(off) gp->state |= DT_MASKS_STATE_DISABLE;
@@ -530,6 +531,46 @@ static gboolean _object_paths(dt_masks_form_t *grp, JsonArray *paths, const char
     any = TRUE;
   }
   return any;
+}
+
+// whether any of `paths` is a hole
+static gboolean _has_hole(JsonArray *paths)
+{
+  for(guint i = 0; paths && i < json_array_get_length(paths); i++)
+    if(json_object_get_boolean_member_with_default(json_array_get_object_element(paths, i), "hole", FALSE))
+      return TRUE;
+  return FALSE;
+}
+
+// `paths` of component k as _object_paths() appends them, except that a
+// subtracted object with holes goes in a classic group of its own, outlines
+// adding and holes taking away, which takes away from `grp` as one member.
+// darktable folds a group's members in order, so flat, with the object's
+// outline taking away and its holes adding back, the holes would add the
+// subject outright, even outside what is under them (an AI Background
+// subtracted from a brush stroke would add the whole subject back). the
+// group has no marker, so dt_masks_group_mark_classic_runs folds it with the
+// rest. one kept `off` stays flat: darktable passes over it either way
+static gboolean _object_component(dt_masks_form_t *grp, JsonArray *paths, const char *name, const guint k,
+                                  const char *tag, const char *mark, const float feather,
+                                  const gboolean subtract, const gboolean off, gboolean *bottom)
+{
+  if(!subtract || off || !_has_hole(paths))
+    return _object_paths(grp, paths, name, k, tag, mark, feather, subtract, off, bottom);
+  dt_masks_form_t *obj = dt_masks_create(DT_MASKS_GROUP);
+  _s.dev.forms = g_list_append(_s.dev.forms, obj);
+  gboolean inner = TRUE;
+  const gboolean any = _object_paths(obj, paths, name, k, tag, mark, feather, FALSE, FALSE, &inner);
+  if(!any)
+  {
+    _s.dev.forms = g_list_remove(_s.dev.forms, obj);
+    dt_masks_free_form(obj);
+    return FALSE;
+  }
+  _member(grp, obj->formid,
+          DT_MASKS_STATE_SHOW | DT_MASKS_STATE_USE | (*bottom ? 0 : DT_MASKS_STATE_DIFFERENCE), 1.0f);
+  *bottom = FALSE;
+  return TRUE;
 }
 
 static void _set_channel(dt_develop_blend_params_t *bp, const int ch, const float lim[4], const gboolean invert);
@@ -620,11 +661,11 @@ static gboolean _object_shapes(dt_masks_form_t *grp, JsonObject *o, const char *
     const gboolean have_plain = plain && json_array_get_length(plain);
     _object_paths(grp, edge, name, k, tag, "~", feather, subtract, !use, &bottom);
     _backdrop_shape(grp, range, name, k, off, !use);
-    any = _object_paths(grp, paths, name, k, tag, "", feather, subtract, !use && have_plain, &bottom);
-    if(have_plain) any |= _object_paths(grp, plain, name, k, tag, "^", feather, subtract, use, &bottom);
+    any = _object_component(grp, paths, name, k, tag, "", feather, subtract, !use && have_plain, &bottom);
+    if(have_plain) any |= _object_component(grp, plain, name, k, tag, "^", feather, subtract, use, &bottom);
   }
   else
-    any = _object_paths(grp, paths, name, k, tag, "", feather, subtract, FALSE, &bottom);
+    any = _object_component(grp, paths, name, k, tag, "", feather, subtract, FALSE, &bottom);
   if(!any) *err = g_strdup("an object component needs paths");
   return any;
 }

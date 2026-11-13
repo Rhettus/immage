@@ -62,6 +62,8 @@ Bug fixes
   shrinks.
 - A failed save no longer damages the sidecar; a notice says why it failed.
 - Film and paper hover previews are sharp at the photo's shown size.
+- Subtracting an AI selection with holes, such as Background, from a mask no
+  longer applies the adjustment to the selected subject outside the mask.
 - Very large photos, such as 50 MP, no longer use more memory with each edit
   (since 0.41.0).
 - Photos with file names of 241 to 251 bytes can save their edits again.
