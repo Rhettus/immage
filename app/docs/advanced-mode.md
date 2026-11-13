@@ -174,12 +174,20 @@ Besides exposure, the Basic group has these darktable modules:
 
 The Tone Curve group has these darktable modules:
 
-- **Tone curve**: **Color space**, and **Preserve colors** for RGB, linked
-  channels. The curve itself and its interpolation method need a curve editor
-  and are not on the card yet; Simple's Tone Curve edits the same module.
-- **RGB curve**: **Mode** (linked or independent channels), **Compensate
-  middle gray**, and **Preserve colors** for linked channels. The curves are
-  not on the card yet; Simple's R, G and B curves edit the same module.
+- **Tone curve**: a point curve with **L**, **a** and **b** tabs, an
+  **Interpolation method** (cubic, centripetal or monotonic spline, set for all
+  three curves at once), **Color space**, and **Preserve colors** for RGB,
+  linked channels. Click the graph to add a point, drag to move one,
+  double-click a point or drag it off the graph to remove it. The **a** and
+  **b** curves can be changed only when **Color space** is Lab, independent
+  channels; in the linked modes they are shown but darktable leaves them alone.
+  The graph draws the curve as darktable applies it. Simple's Tone Curve edits
+  the same module.
+- **RGB curve**: **Mode** (linked or independent channels), a point curve with
+  the same editing and **Interpolation method**, **Compensate middle gray**,
+  and **Preserve colors** for linked channels. Linked channels have the one
+  curve; **R**, **G** and **B** tabs appear in independent mode. Simple's R, G
+  and B curves edit the same module.
 - **RGB levels**: **Mode** and, for linked channels, **Preserve colors**.
   The black, gray and white levels, their pickers and auto levels are not on
   the card yet.

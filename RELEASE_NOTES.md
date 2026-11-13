@@ -19,7 +19,9 @@ Improvements
   In Simple, a group with Advanced edits its sliders cannot show says how many
   there are, with a link to Editing mode. Copy Settings' new Advanced modules
   group copies those edits, which Paste and Previous apply to other photos.
-  Color balance rgb's card has a color wheel for each of its four ranges.
+  Color balance rgb's card has a color wheel for each of its four ranges, and
+  the tone curve and rgb curve cards have a point curve editor with channel
+  tabs and darktable's interpolation methods.
 - Advanced cards so far: in Basic, exposure, white balance, color calibration,
   highlight reconstruction, the tone mapper, contrast & texture, local contrast,
   haze removal, diffuse or sharpen and color balance rgb; in Tone Curve, tone

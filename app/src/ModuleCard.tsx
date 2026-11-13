@@ -13,6 +13,7 @@ import type { Control, Turn } from "./manifest";
 import { FlipIcon, RotateIcon } from "./icons";
 import { fieldPath, type LayoutField, type ModuleLayout } from "./advancedLayout";
 import { ColorWheel } from "./ColorWheel";
+import { ModuleCurves } from "./ModuleCurves";
 
 // the card's fields as the controls the rest of the app draws
 const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -172,6 +173,9 @@ export function ModuleCard({ hidden, instance, layout, schema, state, siblings, 
               {tabs.map((t) => <button key={t} role="tab" aria-selected={t === tab} className={t === tab ? "active" : ""}
                                        onClick={() => setTab(t)}>{t}</button>)}
             </div>
+          )}
+          {layout.curves && [layout.curves.count(0), layout.curves.node(0, 0, "x")].every((p) => fields.has(p.replace(/\[.*$/, ""))) && (
+            <ModuleCurves op={layout.op} curves={layout.curves} state={state} disabled={fixed && !state.enabled} onFields={onFields} />
           )}
           {(() => {
             // a section heading shows once, above the first of its fields shown

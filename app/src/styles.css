@@ -2605,6 +2605,9 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .advanced-edits .advanced-dot { position: static; flex: none; }
 /* a module card's color wheel (ModuleLayout.wheels), above its sliders */
 .module-card-wheel { display: flex; justify-content: center; margin: 4px 0 8px; }
+/* a module card's point curve (ModuleLayout.curves), above its fields */
+.module-card-curve { margin: 4px 0 8px; }
+.module-card-curve .point-curve { display: block; width: 100%; max-width: 260px; margin: 6px auto; }
 .advanced-empty { margin: 4px 16px 8px; color: var(--muted, #8a8a8a); font-size: var(--fs-small); }
 
 /* Advanced mode's module cards: a header row (switch, name, reset) over the

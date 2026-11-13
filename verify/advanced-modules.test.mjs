@@ -486,7 +486,8 @@ test('Advanced mode darktable presets (exposure)', { skip: skip || false }, asyn
 // moves off its default, reads back, survives save and reopen, and the
 // photo with all of them renders as darktable-cli renders the same XMP
 test('Advanced card layouts match darktable', { skip: skip || false }, async (t) => {
-  const { LAYOUTS, fieldPath, editOf } = await import('../app/src/advancedLayout.ts');
+  const { LAYOUTS, INTERPOLATIONS, fieldPath, editOf } = await import('../app/src/advancedLayout.ts');
+  const { MAX_NODES } = await import('../app/src/tonecurve.ts');
   const work = mkdtempSync(join(tmpdir(), 'immage-advlay-'));
   mkdirSync(join(work, 'photos'));
   const photo = join(work, 'photos', 'stairs.jpg');
@@ -502,6 +503,20 @@ test('Advanced card layouts match darktable', { skip: skip || false }, async (t)
     assert.equal(f(w.hue).section, w.section); assert.equal(f(w.chroma).section, w.section);
     assert.ok(f(w.chroma).soft?.[1] > 0, `${l.op} ${w.chroma} has no soft end for the wheel's edge`);
   }
+
+  // a card's point curve names real node, count and type fields for every
+  // channel, and the interpolation menu matches darktable's curve types
+  for (const l of LAYOUTS) if (l.curves) await t.test(`${l.op} curve fields`, async () => {
+    const s = await e.call({ cmd: 'module_schema', op: l.op });
+    const by = new Map(s.fields.map((f) => [f.path, f]));
+    const base = (p) => by.get(p.replace(/\[.*$/, ''));
+    l.curves.channels.forEach((_, ch) => {
+      for (const p of [l.curves.count(ch), l.curves.type(ch), l.curves.node(ch, 19, 'x'), l.curves.node(ch, 19, 'y')])
+        assert.ok(base(p), `${l.op}: ${p} not in the schema`);
+    });
+    assert.equal(base(l.curves.node(0, 0, 'x')).dims[1], MAX_NODES);
+  });
+  assert.deepEqual(INTERPOLATIONS.map(([, v]) => v), [0, 1, 2]);
 
   const edits = [];
   for (const l of LAYOUTS) {
@@ -591,4 +606,38 @@ test('Advanced card layouts match darktable', { skip: skip || false }, async (t)
   await t.test('the edited photo renders as darktable-cli', async (t2) => {
     await cliParity(t2, e, work, photo, imgid, 'layouts');
   });
+});
+
+// the point curve editor on the rgb curve card: its edit (ModuleCurves) is
+// a node count and every node's x and y, written as one set
+test('Advanced rgb curve editor writes its nodes', { skip: skip || false }, async (t) => {
+  const { LAYOUTS } = await import('../app/src/advancedLayout.ts');
+  const c = LAYOUTS.find((l) => l.op === 'rgbcurve').curves;
+  const work = mkdtempSync(join(tmpdir(), 'immage-advcurve-'));
+  mkdirSync(join(work, 'photos'));
+  const photo = join(work, 'photos', 'stairs.jpg');
+  copyFileSync(SAMPLE, photo);
+  const e = new Engine(work);
+  t.after(() => { e.stop(); rmSync(work, { recursive: true, force: true }); });
+  const { imgid } = await e.call({ cmd: 'open', path: photo });
+  const shot = async (name) => {
+    const out = join(work, name);
+    await e.call({ cmd: 'export', imgid, out, format: 'png', bpp: 8, color_space: 'srgb', long_edge: 300 }, 600000);
+    return readFileSync(out);
+  };
+  const pts = [[0, 0], [0.25, 0.15], [0.75, 0.85], [1, 1]];
+  const edit = { [c.count(0)]: pts.length };
+  pts.forEach(([x, y], k) => { edit[c.node(0, k, 'x')] = x; edit[c.node(0, k, 'y')] = y; });
+  const keys = Object.keys(edit);
+  const before = await shot('before.png');
+  await e.call({ cmd: 'set', op: 'rgbcurve', priority: 0, params: edit, enabled: true });
+  const got = (await e.call({ cmd: 'get', modules: { 'rgbcurve@0': keys } })).modules['rgbcurve@0'];
+  for (const k of keys) assert.ok(Math.abs(got.params[k] - edit[k]) < 1e-6, `${k}: ${got.params[k]} != ${edit[k]}`);
+  assert.equal(got.enabled, true);
+  // the interpolation menu writes every channel's type
+  const types = Object.fromEntries(c.channels.map((_, i) => [c.type(i), 1]));
+  await e.call({ cmd: 'set', op: 'rgbcurve', priority: 0, params: types });
+  const t2 = (await e.call({ cmd: 'get', modules: { 'rgbcurve@0': Object.keys(types) } })).modules['rgbcurve@0'];
+  for (const k of Object.keys(types)) assert.equal(t2.params[k], 1, k);
+  assert.ok(!before.equals(await shot('after.png')), 'the S curve did not change the render');
 });

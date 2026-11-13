@@ -61,7 +61,28 @@ export type ModuleLayout = {
   // (Immage's own, tier B: darktable shows only the sliders). the wheel's
   // edge is the chroma slider's soft end
   wheels?: { section: string; hue: string; chroma: string }[];
+  // a point curve above the fields (tonecurve and rgbcurve; Immage's own
+  // editor, ModuleCurves), one per channel, with the interpolation method
+  // darktable's combobox sets on every channel at once. `count` and `node`
+  // name a channel's node count and node x or y field, `type` its
+  // interpolation field. `tabs` says whether the channel tabs show,
+  // `editable` whether a channel's curve can be changed (darktable leaves
+  // tonecurve's a and b curves alone while they are linked); `colored`
+  // tints each channel's curve
+  curves?: {
+    channels: string[];
+    count: (ch: number) => string;
+    node: (ch: number, k: number, axis: "x" | "y") => string;
+    type: (ch: number) => string;
+    tabs: (params: Record<string, number>) => boolean;
+    editable: (params: Record<string, number>, ch: number) => boolean;
+    colored?: boolean;
+  };
 };
+
+// dt_bauhaus_combobox_new_interpolation (develop/imageop_gui.c), by the
+// curve type each writes (curve_tools.h)
+export const INTERPOLATIONS: [string, number][] = [["Cubic spline", 0], ["Centripetal spline", 1], ["Monotonic spline", 2]];
 
 // what an edit of `path` to `v` sends: the field, what the card's edits
 // also set and what they recompute (`params`, the instance's before it)
@@ -463,27 +484,43 @@ export const LAYOUTS: ModuleLayout[] = [
   },
   {
     // tonecurve.c gui_init and gui_changed (preserve colors shows only for
-    // RGB, linked channels). left out: the curve graph (tonecurve,
-    // tonecurve_nodes, tonecurve_type), which needs a curve editor; the
-    // interpolation method, which sets all three curves' type at once; the
-    // scale for graph slider and the pickers
+    // RGB, linked channels); the curve is ModuleCurves, whose a and b tabs
+    // edit only in the manual Lab mode (tonecurve.c, where autoscale_ab
+    // leaves those curves alone). left out: the scale for graph slider and
+    // the pickers
     op: "tonecurve", group: "tonecurve", title: "Tone curve",
     fields: [
       { path: "tonecurve_autoscale_ab", label: "Color space" },
       { path: "preserve_colors", label: "Preserve colors", showIf: (p) => p.tonecurve_autoscale_ab === 3 },
     ],
+    curves: {
+      channels: ["L", "a", "b"],
+      count: (ch) => `tonecurve_nodes[${ch}]`,
+      node: (ch, k, axis) => `tonecurve[${ch}][${k}].${axis}`,
+      type: (ch) => `tonecurve_type[${ch}]`,
+      tabs: () => true,
+      editable: (p, ch) => ch === 0 || p.tonecurve_autoscale_ab === 0,
+    },
   },
   {
     // rgbcurve.c gui_init and _rgbcurve_show_hide_controls (preserve colors
-    // shows only for linked channels). left out: the curve graph (curve_nodes,
-    // curve_num_nodes, curve_type), which needs a curve editor; the
-    // interpolation method, which sets all three curves' type at once; the pickers
+    // shows only for linked channels); the curve is ModuleCurves, with the
+    // R, G and B tabs only in the independent mode. left out: the pickers
     op: "rgbcurve", group: "tonecurve", title: "RGB curve",
     fields: [
       { path: "curve_autoscale", label: "Mode" },
       { path: "compensate_middle_grey", label: "Compensate middle gray" },
       { path: "preserve_colors", label: "Preserve colors", showIf: (p) => p.curve_autoscale === 0 },
     ],
+    curves: {
+      channels: ["R", "G", "B"],
+      count: (ch) => `curve_num_nodes[${ch}]`,
+      node: (ch, k, axis) => `curve_nodes[${ch}][${k}].${axis}`,
+      type: (ch) => `curve_type[${ch}]`,
+      tabs: (p) => p.curve_autoscale === 1,
+      editable: () => true,
+      colored: true,
+    },
   },
   {
     // rgblevels.c gui_init and _rgblevels_show_hide_controls (preserve colors
