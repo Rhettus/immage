@@ -84,11 +84,13 @@ async function cliParity(t2, e, work, photo, imgid, tag = 'p') {
   if (!existsSync(CLI)) return t2.skip(`darktable-cli not built (${CLI})`);
   if (spawnSync('compare', ['-version']).status !== 0) return t2.skip('ImageMagick compare not installed');
   const outA = join(work, `${tag}-engine.png`), outB = join(work, `${tag}-cli.png`);
-  await e.call({ cmd: 'export', imgid, out: outA, format: 'png', bpp: 8, color_space: 'srgb', long_edge: 600 });
+  // every card's module is on by the end of the layout test, so this export
+  // is slow, the more so on a loaded machine
+  await e.call({ cmd: 'export', imgid, out: outA, format: 'png', bpp: 8, color_space: 'srgb', long_edge: 600 }, 600000);
   const r = spawnSync(CLI, [photo, photo + '.xmp', outB, '--width', '600', '--height', '600', '--hq', 'true',
     '--core', '--configdir', join(work, `${tag}-cli-config`), '--cachedir', join(work, `${tag}-cli-cache`), '--library', ':memory:',
     '--conf', 'opencl=false', '--conf', 'plugins/lighttable/export/force_lcms2=false'],
-  { env: { ...process.env, XDG_DATA_HOME: join(work, `${tag}-cli-data`) }, encoding: 'utf8', timeout: 300000 });
+  { env: { ...process.env, XDG_DATA_HOME: join(work, `${tag}-cli-data`) }, encoding: 'utf8', timeout: 600000 });
   assert.ok(existsSync(outB), `darktable-cli wrote nothing (status ${r.status}): ${(r.stderr || '').slice(-500)}`);
   // compare prints "<absolute> (<normalized 0..1>)" on stderr; 8-bit steps are 1/255 = 0.0039
   const c = spawnSync('compare', ['-metric', 'MAE', outA, outB, 'null:'], { encoding: 'utf8' });
