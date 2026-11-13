@@ -807,6 +807,35 @@ export const LAYOUTS: ModuleLayout[] = [
     instance: { name: "sharpen", add: [["mod_sharpening", 1], ["sharp_amount", 3]] },
     fields: DIFFUSE,
   },
+  {
+    // denoiseprofile.c gui_init, gui_changed and gui_update: the toggles and
+    // mode, the non-local means box, the wavelets box, then the sliders under
+    // them. mode 2 (compute variance) is offered only with darktable's
+    // show_compute_variance_mode preference, off by default; compensate
+    // highlight preservation shows only for photos whose ISO shifts
+    // highlight preservation (_get_iso_highlight_preservation_shift).
+    // left out: the profile combobox (a and b, from the noise profile
+    // database for the camera and ISO), the variance labels, and the wavelet
+    // curves (x and y, behind RGB and Y0U0V0 tabs), which need a curve editor
+    op: "denoiseprofile", group: "detail", title: "Denoise (profiled)",
+    fields: [
+      { path: "compensate_hilite_pres", label: "Compensate highlight preservation" },
+      { path: "wb_adaptive_anscombe", label: "Whitebalance-adaptive transform" },
+      { path: "mode", label: "Mode", options: [0, 3, 1, 4] },
+      { path: "radius", label: "Patch size", soft: [0, 8], digits: 0, showIf: (p) => p.mode === 0 },
+      { path: "nbhood", label: "Search radius", digits: 0, showIf: (p) => p.mode === 0 },
+      { path: "scattering", label: "Scattering", soft: [0, 1], showIf: (p) => p.mode === 0 },
+      { path: "central_pixel_weight", label: "Central pixel weight", soft: [0, 1], showIf: (p) => p.mode === 0 || p.mode === 3 },
+      { path: "wavelet_color_mode", label: "Color mode", showIf: (p) => (p.mode === 1 || p.mode === 4) && p.use_new_vst === 1 },
+      { path: "overshooting", label: "Adjust autoset parameters", soft: [0.001, 4], showIf: (p) => p.mode === 3 || p.mode === 4 },
+      { path: "strength", label: "Strength", soft: [0.001, 4], digits: 3 },
+      { path: "shadows", label: "Preserve shadows", showIf: (p) => p.use_new_vst === 1 && p.mode !== 3 && p.mode !== 4 },
+      { path: "bias", label: "Bias correction", soft: [-10, 10], showIf: (p) => p.use_new_vst === 1 && p.mode !== 3 && p.mode !== 4 },
+      // old edits' upgrades, shown only while off
+      { path: "fix_anscombe_and_nlmeans_norm", label: "Fix various bugs in algorithm", showIf: (p) => p.fix_anscombe_and_nlmeans_norm === 0 },
+      { path: "use_new_vst", label: "Upgrade profiled transform", showIf: (p) => p.use_new_vst === 0 },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);

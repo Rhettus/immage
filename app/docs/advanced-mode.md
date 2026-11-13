@@ -233,6 +233,11 @@ The Detail group has these darktable modules:
   set to diffuse or sharpen, with the same settings as the Basic group's
   card, which shows the other instances. **Add module** makes it the way
   Simple does, at darktable's "sharpness | normal" preset.
+- **Denoise (profiled)**: the **Mode** (non-local means or wavelets, each
+  also auto), then the settings the mode uses and **Strength**. Simple's
+  Profiled Denoise sets the wavelet curves, which are not on the card yet, nor
+  is the profile choice: the card uses the profile darktable finds for the
+  camera and ISO.
 
 ## Instances
 
