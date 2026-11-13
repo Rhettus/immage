@@ -315,6 +315,9 @@ The Effects group has these darktable modules:
 - **Graduated density**: **Density**, **Hardness**, **Rotation**, **Hue** and
   **Saturation**. The card cannot yet move the filter's line on the photo,
   so the line stays through the center.
+- **Censorize**: **Input blur radius**, **Pixelization radius**, **Output
+  blur radius** and **Noise level**. Use it with a mask to hide part of a
+  photo.
 
 ## Instances
 

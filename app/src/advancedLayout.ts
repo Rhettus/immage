@@ -1130,6 +1130,16 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "saturation", label: "Saturation", unit: "%" },
     ],
   },
+  {
+    // censorize.c gui_init: four plain sliders, no units or digits set
+    op: "censorize", group: "effects", title: "Censorize",
+    fields: [
+      { path: "radius_1", label: "Input blur radius" },
+      { path: "pixelate", label: "Pixelization radius" },
+      { path: "radius_2", label: "Output blur radius" },
+      { path: "noise", label: "Noise level" },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);

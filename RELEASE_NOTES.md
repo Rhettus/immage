@@ -27,8 +27,8 @@ Improvements
   equalizer and lowpass; in Lens Corrections, lens correction, chromatic
   aberrations, raw chromatic aberrations and hot pixels; in Transform, rotate
   and perspective, orientation, scale pixels and enlarge canvas; in Effects,
-  vignetting, grain, bloom, soften, blurs, lowlight vision and graduated
-  density. Other modules follow in later versions.
+  vignetting, grain, bloom, soften, blurs, lowlight vision, graduated density
+  and censorize. Other modules follow in later versions.
 - The tone mapper card shows AgX, sigmoid, filmic rgb or base curve, whichever
   is on, with a switch to change to another as one undo step.
 - Module cards have a darktable presets menu beside the reset button. It applies
