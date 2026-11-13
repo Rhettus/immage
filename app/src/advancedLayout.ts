@@ -536,6 +536,22 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "b_steepness", label: "Blue-yellow contrast" },
     ],
   },
+  {
+    // colorzones.c gui_init: the three from_params widgets under the graph
+    // (select by, process mode, mix); gui_changed hides nothing. left out:
+    // curve, curve_num_nodes and curve_type (the three channel curves, which
+    // need a custom curve editor with the lightness, chroma and hue pages,
+    // node add, drag and remove, and the interpolation combobox that edits
+    // curve_type of the shown channel), splines_version (no widget), and the
+    // channel notebook, pickers, edit by area and display selection (not
+    // params). enum value 3 of channel has no description and is not offered
+    op: "colorzones", group: "hsl", title: "Color zones",
+    fields: [
+      { path: "channel", label: "Select by", options: [0, 1, 2] },
+      { path: "mode", label: "Process mode" },
+      { path: "strength", label: "Mix", unit: "%" },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);

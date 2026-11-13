@@ -157,6 +157,8 @@ The HSL / Color group has these darktable modules:
   brilliance curves are not on the card yet.
 - **Velvia**: **Strength** and **Mid-tones bias**.
 - **Color contrast**: **Green-magenta contrast** and **Blue-yellow contrast**.
+- **Color zones**: **Select by**, **Process mode** and **Mix**. Its curves
+  are not on the card yet.
 
 ## Instances
 
