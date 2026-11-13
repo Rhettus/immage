@@ -272,6 +272,18 @@ The Lens Corrections group has these darktable modules:
   **Mark fixed pixels**, for raw photos. Simple's Hot Pixels sets the same
   module, with its sliders on a 0 to 100 scale.
 
+## Transform modules
+
+The Transform group has these darktable modules:
+
+- **Rotate and perspective**: **Rotation**, then under **Manual
+  perspective** the vertical and horizontal **Lens shift** and **Aspect
+  adjust**. Simple's Transform panel sets the same module, so its Upright,
+  Vertical, Horizontal, Rotate and Aspect move these sliders. As in Simple,
+  each edit crops to the largest rectangle of the photo's own shape, with no
+  black corners; the card has no shear, lens model or automatic cropping
+  settings. Upright's line detection stays in the Transform panel.
+
 ## Instances
 
 A module can have several instances, each with its own settings. Open the

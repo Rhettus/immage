@@ -984,6 +984,30 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "markfixed", label: "Mark fixed pixels" },
     ],
   },
+  {
+    // ashift.c gui_init and gui_changed: rotation and the crop mode, then the
+    // manual perspective section, whose lens model, focal length and crop
+    // factor show for the specific model only. gui_changed refits the crop
+    // box (do_crop) on every edit; derive does that with Simple's autoCrop,
+    // which fits the photo's own aspect (darktable's "original format") and
+    // knows no shear or lens model, so the card leaves out the automatic
+    // cropping menu, shear and the lens model and sets Simple's: the
+    // specific model at 28 mm, crop factor 1 and no lens dependence renders
+    // as generic does and applies the aspect adjust. darktable names the
+    // lens shifts the other way round for a photo turned a quarter, a rule
+    // that reads the image. left out too: lens dependence (hidden in
+    // darktable), the structure and fit buttons (Simple's Upright) and the
+    // crop box and drawn lines. Simple's Transform panel drives the module
+    op: "ashift", group: "transform", title: "Rotate and perspective",
+    touch: { set: [["mode", 1], ["f_length", 28], ["crop_factor", 1], ["orthocorr", 0]] },
+    derive: (p, size) => autoCrop(p.rotation, p.lensshift_v, p.lensshift_h, size.width, size.height, p.aspect),
+    fields: [
+      { path: "rotation", label: "Rotation", soft: [-10, 10], factor: -1, unit: "°" },
+      { path: "lensshift_v", label: "Lens shift (vertical)", section: "Manual perspective", soft: [-1, 1], digits: 3 },
+      { path: "lensshift_h", label: "Lens shift (horizontal)", section: "Manual perspective", soft: [-1, 1], digits: 3 },
+      { path: "aspect", label: "Aspect adjust", section: "Manual perspective" },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);
