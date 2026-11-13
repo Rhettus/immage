@@ -52,6 +52,21 @@ async function pick(t, sel, id, label) {
   else await click(t, `${sel} [data-control-id="${id}"] button:nth-of-type(${c.options.indexOf(o) + 1})`);
 }
 
+// types a value into a card's slider through its numeric editor
+async function type(t, sel, id, text) {
+  const slider = `${sel} [data-control-id="adv:${id}"]`;
+  const v = await reveal(t, `${slider} .value`);
+  await t.driver.point(v.x, v.y, 2);
+  await until(() => t.driver.observe(s => !!document.querySelector(`${s} .value-edit`), slider), `${id} numeric editor`);
+  await t.driver.keys(...text, '\uE007'); // Enter
+}
+// a card field's readout as a number, and its slider position
+const readout = (t, sel, id) => t.driver.observe((s, i) => {
+  const e = document.querySelector(`${s} [data-control-id="adv:${i}"]`);
+  const x = e?.querySelector('.value')?.textContent.replace(/[^0-9.\-]/g, '');
+  return e && x ? { shown: parseFloat(x), slider: e.querySelector('input[type=range]') ? +e.querySelector('input[type=range]').value : null } : null;
+}, sel, id);
+
 export async function advancedEditors(t) {
   await settledPhoto(t);
   await openTool(t, 'adjust');
@@ -144,6 +159,35 @@ export async function advancedEditors(t) {
     await t.evidence('lens-picker');
     await pick(t, lc.sel, 'adv:method', /manual|none|off|disabled/i);
     await until(() => t.driver.observe(s => !document.querySelector(s), picker), 'lens picker gone with another method');
+
+    // 6. White balance: the scene illuminant temperature and tint read above
+    // 0, typing a temperature moves the coefficients and the photo, green
+    // stays 1, and undo returns both
+    const wb = await openCard(t, 'basic', 'temperature');
+    const isOn = () => t.driver.observe(s => document.querySelector(`${s} input.switch`).checked, wb.sel);
+    if (!await isOn()) await click(t, `${wb.sel} input.switch`);
+    await until(isOn, 'white balance on');
+    const rd = id => until(async () => { const r = await readout(t, wb.sel, id); return r && r.shown > 0 && r; }, `${id} readout above 0`);
+    const temp0 = await rd('temp_k');
+    const tint0 = await rd('tint');
+    const red0 = await rd('red'), blue0 = await rd('blue');
+    const wbBase = await settledPhoto(t);
+    const target = temp0.shown > 5000 ? 3500 : 7500;
+    t.measure({ name: 'wb-before', temp: temp0.shown, tint: tint0.shown, red: red0.shown, blue: blue0.shown, target });
+    await t.evidence('wb-before');
+    await type(t, wb.sel, 'temp_k', String(target));
+    const wbEdit = await settledPhoto(t, p => meanError(p, wbBase) > .5);
+    const temp1 = await until(async () => { const r = await readout(t, wb.sel, 'temp_k'); return r && Math.abs(r.shown - target) <= 3 && r; }, `temperature reads ${target} K`);
+    const red1 = await readout(t, wb.sel, 'red'), blue1 = await readout(t, wb.sel, 'blue'), green1 = await readout(t, wb.sel, 'green');
+    t.measure({ name: 'wb-typed', temp: temp1.shown, red: red1.shown, blue: blue1.shown, green: green1.shown, meanAbsoluteError: meanError(wbEdit, wbBase) });
+    await t.evidence('wb-typed');
+    assert(meanError(wbEdit, wbBase) > .5, `typing a temperature changed the photo: ${meanError(wbEdit, wbBase)}`);
+    assert(red1.shown !== red0.shown || blue1.shown !== blue0.shown, `a coefficient moved: red ${red0.shown} to ${red1.shown}, blue ${blue0.shown} to ${blue1.shown}`);
+    assert(Math.abs(green1.shown - 1) < .0005, `green reads 1: ${green1.shown}`);
+    await undoRedo(t, 'undo');
+    const wbBack = await settledPhoto(t, p => meanError(p, wbBase) < 1);
+    assert(meanError(wbBack, wbBase) < 1, `undo of the temperature: photo mean pixel error ${meanError(wbBack, wbBase)} exceeds 1/255`);
+    await until(async () => { const r = await readout(t, wb.sel, 'temp_k'); return r && Math.abs(r.shown - temp0.shown) <= 3; }, `temperature reads ${temp0.shown} K after undo`);
     await t.evidence('editors-done');
   } finally {
     try {
