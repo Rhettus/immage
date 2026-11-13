@@ -1059,6 +1059,16 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "dithering", label: "Dithering", section: "Position / form" },
     ],
   },
+  {
+    // grain.c gui_init; the slider shows scale * GRAIN_SCALE_FACTOR (213.2) as ISO, 0 digits
+    // omitted: channel (the enum has no widget in gui_init, it keeps its default)
+    op: "grain", group: "effects", title: "Grain",
+    fields: [
+      { path: "scale", label: "Coarseness", factor: 213.2, unit: "ISO", digits: 0 },
+      { path: "strength", label: "Strength", unit: "%" },
+      { path: "midtones_bias", label: "Mid-tones bias", unit: "%" },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);

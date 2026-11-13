@@ -302,6 +302,8 @@ The Effects group has these darktable modules:
   center** and **Vertical center**, **Shape**, **Automatic ratio**,
   **Width/height ratio** and **Dithering**. Simple's Post-Crop Vignetting
   sets the same module, so its sliders move these.
+- **Grain**: **Coarseness** (as an ISO value), **Strength** and **Mid-tones
+  bias**. Simple's Grain sets the same module.
 
 ## Instances
 
