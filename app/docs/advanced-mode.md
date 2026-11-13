@@ -263,6 +263,9 @@ The Lens Corrections group has these darktable modules:
   Remove Chromatic Aberration sets **Corrections**; the card has no camera or
   lens menus. darktable offers embedded metadata only for a
   photo that has it.
+- **Chromatic aberrations**: **Guide**, **Radius** and **Strength**, then
+  **Correction mode** and **Very large chromatic aberration**. Simple's
+  Defringe uses the first instance.
 
 ## Instances
 

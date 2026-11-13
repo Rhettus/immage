@@ -933,6 +933,18 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "v_steepness", label: "Steepness", section: "Manual vignette correction", unit: "%", digits: 1 },
     ],
   },
+  {
+    // cacorrectrgb.c gui_init: no visibility rules. Simple's Defringe drives
+    // the first instance
+    op: "cacorrectrgb", group: "lens", title: "Chromatic aberrations",
+    fields: [
+      { path: "guide_channel", label: "Guide" },
+      { path: "radius", label: "Radius" },
+      { path: "strength", label: "Strength" },
+      { path: "mode", label: "Correction mode", section: "Advanced parameters" },
+      { path: "refine_manifolds", label: "Very large chromatic aberration", section: "Advanced parameters" },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);
