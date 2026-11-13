@@ -316,14 +316,22 @@ The Detail group has these darktable modules:
   card, which shows the other instances. **Add module** makes it the way
   Simple does, at darktable's "sharpness | normal" preset.
 - **Denoise (profiled)**: the **Mode** (non-local means or wavelets, each
-  also auto), then the settings the mode uses and **Strength**. Simple's
-  Profiled Denoise sets the wavelet curves, which are not on the card yet, nor
-  is the profile choice: the card uses the profile darktable finds for the
-  camera and ISO.
+  also auto), then the settings the mode uses and **Strength**. In the
+  wavelets modes a curve graph sets how strongly each band of detail is
+  denoised, from coarse on the left to fine on the right: **all**, **R**,
+  **G** and **B** tabs, or **luma** and **chroma** tabs when **Color mode** is
+  Y0U0V0. Drag over the graph to pull the curve toward the pointer (the
+  highlighted area and circle show what moves), scroll to change how wide a
+  pull is, Alt-scroll to switch tab, and double-click to put the channel's
+  curve back. Simple's Profiled Denoise sets the same curves. The graph shows
+  no histogram. The profile choice is not on the card: it uses the profile
+  darktable finds for the camera and ISO.
 - **Highpass**: **Sharpness** and **Contrast boost**.
 - **Astrophoto denoise**: **Patch size**, **Strength**, **Luma** and
   **Chroma**.
-- **Raw denoise**: **Noise threshold**. Its curves are not on the card yet.
+- **Raw denoise**: the same wavelet curve graph (**all**, **R**, **G** and
+  **B** tabs, five bands) above **Noise threshold**, dragged, scrolled and
+  reset the same way.
 - **Surface blur**: **Radius**, then **Red**, **Green** and **Blue**.
 - **Contrast equalizer**: a graph with a menu for its curves (**Luminance**,
   **Chroma**, **Edges**, **Luminance noise** and **Chroma noise**), each of six

@@ -60,6 +60,10 @@ const frameReason = (p: Record<string, number>) =>
   : p.pos_v <= 0 ? "increase vertical offset to enable the frame line"
   : p.pos_v >= 1 ? "decrease vertical offset to enable the frame line" : null;
 
+// one channel tab of the wavelet curve editor: its label, the channel it
+// edits and the color of its curve
+export type BandTab = { label: string; title?: string; ch: number; color: string };
+
 export type ModuleLayout = {
   op: string;
   group: string;   // the panel (manifest.ts) whose Advanced group holds the card
@@ -105,6 +109,11 @@ export type ModuleLayout = {
   // handles over levels[c][0..2], R/G/B tabs for independent channels (autoscale 1),
   // drawn after the field `after`
   levels?: { after: string };
+  // the wavelet curve editor (ModuleBands) over x[c][k] and y[c][k] for
+  // `channels` channels of `count` bands, drawn before the field `before`.
+  // `tabs` lists the channels to edit now, `show` whether the editor is on at all
+  bands?: { before: string; channels: number; count: number; show: (p: Record<string, number>) => boolean;
+            tabs: (p: Record<string, number>) => BandTab[] };
   curves?: {
     channels: string[];
     count: (ch: number) => string;
@@ -935,10 +944,20 @@ export const LAYOUTS: ModuleLayout[] = [
     // show_compute_variance_mode preference, off by default; compensate
     // highlight preservation shows only for photos whose ISO shifts
     // highlight preservation (_get_iso_highlight_preservation_shift).
+    // the wavelet curves (x and y) follow the wavelets modes (denoiseprofile.c
+    // gui_changed): tabs all, R, G and B, or luma and chroma (Y0, U0V0) for
+    // the Y0U0V0 color mode, which only the new transform offers.
     // left out: the profile combobox (a and b, from the noise profile
-    // database for the camera and ISO), the variance labels, and the wavelet
-    // curves (x and y, behind RGB and Y0U0V0 tabs), which need a curve editor
+    // database for the camera and ISO) and the variance labels
     op: "denoiseprofile", group: "detail", title: "Denoise (profiled)",
+    bands: {
+      before: "overshooting", channels: 6, count: 7,
+      show: (p) => p.mode === 1 || p.mode === 4,
+      tabs: (p) => p.wavelet_color_mode === 1 && p.use_new_vst === 1
+        ? [{ label: "luma", title: "Y0", ch: 4, color: "rgb(179,179,179)" }, { label: "chroma", title: "U0V0", ch: 5, color: "rgb(204,102,0)" }]
+        : [{ label: "all", ch: 0, color: "rgb(179,179,179)" }, { label: "R", ch: 1, color: "rgb(179,26,26)" },
+           { label: "G", ch: 2, color: "rgb(26,179,26)" }, { label: "B", ch: 3, color: "rgb(26,26,179)" }],
+    },
     fields: [
       { path: "compensate_hilite_pres", label: "Compensate highlight preservation" },
       { path: "wb_adaptive_anscombe", label: "Whitebalance-adaptive transform" },
@@ -978,9 +997,14 @@ export const LAYOUTS: ModuleLayout[] = [
     ],
   },
   {
-    // rawdenoise.c gui_init. left out: the wavelet curves (x and y, behind
-    // the all, R, G and B tabs), which need a curve editor
+    // rawdenoise.c gui_init: the wavelet curves (x and y) behind the all, R,
+    // G and B tabs, then the threshold
     op: "rawdenoise", group: "detail", title: "Raw denoise",
+    bands: {
+      before: "threshold", channels: 4, count: 5, show: () => true,
+      tabs: () => [{ label: "all", ch: 0, color: "rgb(179,179,179)" }, { label: "R", ch: 1, color: "rgb(179,26,26)" },
+                   { label: "G", ch: 2, color: "rgb(26,179,26)" }, { label: "B", ch: 3, color: "rgb(26,26,179)" }],
+    },
     fields: [
       { path: "threshold", label: "Noise threshold", soft: [0, 0.1], digits: 3 },
     ],

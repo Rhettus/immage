@@ -15,6 +15,7 @@ import { fieldPath, rgbPaths, type LayoutField, type ModuleLayout } from "./adva
 import { ColorWheel } from "./ColorWheel";
 import { ModuleCurves } from "./ModuleCurves";
 import { ModuleLevels } from "./ModuleLevels";
+import { ModuleBands } from "./ModuleBands";
 import { ModuleGraph } from "./ModuleGraph";
 import { graphFields } from "./graphMaps";
 import { LensPicker } from "./LensPicker";
@@ -255,7 +256,10 @@ export function ModuleCard({ hidden, instance, layout, schema, state, siblings, 
               }
               const value = state.params[l.path] ?? state.defaults[l.path] ?? 0;
               const [f, shownAs] = (l.profiles ? profileField(l, value) : l.wb ? wbField(l, value) : null) ?? [l.wb ? undefined : schemaField(fields, l.path), l];
-              if (!f || (l.tab && l.tab !== tab) || (l.showIf && !l.showIf(state.params))) return null;
+              // the wavelet curves sit before their field, which may itself be hidden
+              const bands = layout.bands?.before === l.path && fields.has("x") && fields.has("y") && layout.bands.show(state.params)
+                ? <ModuleBands key={`${l.path}-bands`} op={layout.op} bands={layout.bands} state={state} disabled={fixed && !state.enabled} onFields={onFields} /> : null;
+              if (!f || (l.tab && l.tab !== tab) || (l.showIf && !l.showIf(state.params))) return bands;
               const neutral = state.defaults[l.path] ?? 0;
               const why = l.grey?.(state.params) ?? undefined;
               const control = { ...fieldControl(f, shownAs, value), ...(why ? { note: why } : {}) };
@@ -266,6 +270,7 @@ export function ModuleCard({ hidden, instance, layout, schema, state, siblings, 
               const wheel = title ? layout.wheels?.find((w) => w.section === title) : undefined;
               return (
                 <Fragment key={l.path}>
+                  {bands}
                   {title && <div className="module-card-section">{title}</div>}
                   {wheel && fields.has(wheel.hue) && fields.has(wheel.chroma) && (() => {
                     const top = layout.fields.find((x) => x.path === wheel.chroma)?.soft?.[1] ?? fields.get(wheel.chroma)!.max ?? 1;

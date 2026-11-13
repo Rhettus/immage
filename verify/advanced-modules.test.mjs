@@ -792,6 +792,106 @@ test('Advanced RGB levels handles and fields', { skip: skip || false }, async (t
   assert.ok(!after.equals(await render('green')), 'a channel of its own changes the frame');
 });
 
+// the wavelet curve editor of the denoise cards (ModuleBands): darktable's
+// pull, grab offset, wheel and curve (denoiseprofile.c and rawdenoise.c), and
+// its x[c][k] and y[c][k] elements written to the engine
+test('Advanced wavelet curves of the denoise cards', { skip: skip || false }, async (t) => {
+  const { bandCurve, pull, pullRange, grabOffset, startRadius, wheelRadius, RES } = await import('../app/src/bands.ts');
+  const { LAYOUTS } = await import('../app/src/advancedLayout.ts');
+  const near = (a, b, m = '') => assert.ok(Math.abs(a - b) < 1e-5, `${m} ${a} != ${b}`);
+  const xs7 = Array.from({ length: 7 }, (_, k) => k / 6), flat = xs7.map(() => 0.5);
+  // a flat curve stays flat, through the wrapped end nodes too
+  for (const x of [0, 0.3, 0.77, 1]) near(bandCurve(xs7, flat)(x), 0.5, 'flat curve');
+  // the curve passes through its bands
+  const ys = [0.1, 0.9, 0.3, 0.6, 0.2, 0.8, 0.5];
+  xs7.forEach((x, k) => near(bandCurve(xs7, ys)(x), ys[k], `band ${k}`));
+  // the pull: a band under the pointer goes to its y, far ones stay
+  const pulled = pull(xs7, flat, 0.5, 1, startRadius(7));
+  near(pulled[3], 1, 'under the pointer');
+  assert.ok(pulled[0] === 0.5 && pulled[6] === 0.5 || Math.abs(pulled[0] - 0.5) < 1e-6, 'far bands stay');
+  near(pull(xs7, flat, 0.5, 1, 1)[0], 0.5 + 0.5 * Math.exp(-0.25), 'radius 1 reaches the edge');
+  // the grab offset keeps the curve under the pointer: pointer 0.1 below the curve
+  near(grabOffset(xs7, flat, 0.5, 0.4), 0.1, 'grab offset');
+  const [lo, hi] = pullRange(xs7, flat, 0.5, startRadius(7));
+  assert.equal(lo.length, RES);
+  assert.ok(lo[31] < 0.05 && hi[31] > 0.95, 'the range spans the pull to 0 and to 1 under the pointer');   // (the spline overshoots a little beside it)
+  // the wheel: 10% a notch, between 0.2 / bands and 1
+  near(startRadius(7), 1 / 14);
+  near(wheelRadius(0.1, 1, 7), 0.09);
+  near(wheelRadius(0.1, -1, 7), 0.11);
+  near(wheelRadius(0.1, 1000, 7), 0.2 / 7);
+  near(wheelRadius(0.9, -5, 7), 1);
+
+  const pf = LAYOUTS.find((l) => l.op === 'denoiseprofile'), rd = LAYOUTS.find((l) => l.op === 'rawdenoise');
+  assert.equal(pf.bands.before, 'overshooting');
+  assert.equal(rd.bands.before, 'threshold');
+  assert.ok(pf.fields.some((f) => f.path === pf.bands.before) && rd.fields.some((f) => f.path === rd.bands.before));
+  const labels = (l, p) => l.bands.tabs(p).map((x) => `${x.label}:${x.ch}`).join();
+  assert.equal(labels(pf, { wavelet_color_mode: 0, use_new_vst: 1 }), 'all:0,R:1,G:2,B:3');
+  assert.equal(labels(pf, { wavelet_color_mode: 1, use_new_vst: 1 }), 'luma:4,chroma:5');
+  assert.equal(labels(pf, { wavelet_color_mode: 1, use_new_vst: 0 }), 'all:0,R:1,G:2,B:3', 'Y0U0V0 needs the new transform');
+  assert.deepEqual([0, 1, 2, 3, 4].map((m) => pf.bands.show({ mode: m })), [false, true, false, false, true]);
+  assert.equal(labels(rd, {}), 'all:0,R:1,G:2,B:3');
+
+  const work = mkdtempSync(join(tmpdir(), 'immage-advbands-'));
+  mkdirSync(join(work, 'photos'));
+  // the noise profiles need a camera: the renders below use IMMAGE_RAW when it is set,
+  // else only the params round trip
+  const source = process.env.IMMAGE_RAW || SAMPLE;
+  const photo = join(work, 'photos', `wave${source.slice(source.lastIndexOf('.'))}`);
+  copyFileSync(source, photo);
+  const e = new Engine(work);
+  t.after(() => { e.stop(); rmSync(work, { recursive: true, force: true }); });
+  await e.call({ cmd: 'open', path: photo });
+  const render = async (tag) => {
+    const out = join(work, `${tag}.ppm`);
+    await e.call({ cmd: 'render', width: 96, height: 64, out });
+    return readFileSync(out);
+  };
+  for (const l of [pf, rd]) {
+    const { channels, count } = l.bands;
+    const s = await e.call({ cmd: 'module_schema', op: l.op });
+    for (const n of ['x', 'y']) {
+      const f = s.fields.find((x) => x.path === n);
+      assert.ok(f && f.type === 'array' && f.dims[0] === channels && f.dims[1] === count, `${l.op}: ${n} is ${channels} channels of ${count}`);
+    }
+  }
+
+  // denoise (profiled), wavelets: the luma curve of the Y0U0V0 mode
+  const ypaths = (c, n) => Array.from({ length: n }, (_, k) => `y[${c}][${k}]`);
+  const get = async (op, paths) => (await e.call({ cmd: 'get', modules: { [`${op}@0`]: paths } })).modules[`${op}@0`];
+  const set = (op, params) => e.call({ cmd: 'set', op, priority: 0, params, enabled: true });
+  const first = await get('denoiseprofile', [...ypaths(4, 7), ...ypaths(0, 7), 'x[0][3]']);
+  assert.deepEqual(ypaths(4, 7).map((p) => first.defaults[p]), Array(7).fill(0.5), 'Y0 defaults to 0.5 (only the chroma only preset zeroes it)');
+  assert.deepEqual(ypaths(0, 7).map((p) => first.defaults[p]), Array(7).fill(0.5), 'all defaults to 0.5');
+  near(first.defaults['x[0][3]'], 0.5, 'band x');
+  await set('denoiseprofile', { mode: 1, wavelet_color_mode: 1, use_new_vst: 1, strength: 2 });
+  const frames = !!process.env.IMMAGE_RAW;
+  const flatFrame = frames ? await render('pf-flat') : null;
+  await set('denoiseprofile', Object.fromEntries(ypaths(4, 7).map((p) => [p, 1])));
+  if (frames) assert.ok(!flatFrame.equals(await render('pf-strong')), 'raising the luma curve changes the frame');
+  const back = await get('denoiseprofile', ypaths(4, 7));
+  assert.deepEqual(ypaths(4, 7).map((p) => back.params[p]), Array(7).fill(1), 'y reads back');
+  // reset to the defaults: x and y of the channel
+  await set('denoiseprofile', Object.fromEntries(ypaths(4, 7).map((p, k) => [p, first.defaults[p]])));
+  if (frames) assert.ok(flatFrame.equals(await render('pf-reset')), 'resetting the channel restores the frame');
+
+  // raw denoise: its elements round trip, and on a raw photo its curve changes the frame
+  const rawFirst = await get('rawdenoise', [...ypaths(0, 5), 'x[3][4]']);
+  assert.deepEqual(ypaths(0, 5).map((p) => rawFirst.defaults[p]), Array(5).fill(0.5));
+  near(rawFirst.defaults['x[3][4]'], 1, 'last band x');
+  await set('rawdenoise', { 'y[2][1]': 0.8, 'y[2][4]': 0.1 });
+  const rawBack = await get('rawdenoise', [...ypaths(2, 5), ...ypaths(1, 5)]);
+  near(rawBack.params['y[2][1]'], 0.8); near(rawBack.params['y[2][4]'], 0.1);
+  near(rawBack.params['y[1][1]'], 0.5, 'the other channels are untouched');
+  if (frames) {
+    await set('rawdenoise', { threshold: 0.05, ...Object.fromEntries(ypaths(0, 5).map((p) => [p, 0])) });
+    const low = await render('rd-low');
+    await set('rawdenoise', Object.fromEntries(ypaths(0, 5).map((p) => [p, 1])));
+    assert.ok(!low.equals(await render('rd-high')), 'the raw denoise curve changes the frame');
+  }
+});
+
 // the framing and watermark color buttons write the three elements of an
 // array param (a layout field with `rgb`); a border takes the color it is given
 test('Advanced framing color writes its three elements', { skip: skip || false }, async (t) => {
