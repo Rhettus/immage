@@ -1069,6 +1069,15 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "midtones_bias", label: "Mid-tones bias", unit: "%" },
     ],
   },
+  {
+    // bloom.c gui_init
+    op: "bloom", group: "effects", title: "Bloom",
+    fields: [
+      { path: "size", label: "Size", unit: "%" },
+      { path: "threshold", label: "Threshold", unit: "%" },
+      { path: "strength", label: "Strength", unit: "%" },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);

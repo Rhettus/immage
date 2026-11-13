@@ -304,6 +304,7 @@ The Effects group has these darktable modules:
   sets the same module, so its sliders move these.
 - **Grain**: **Coarseness** (as an ISO value), **Strength** and **Mid-tones
   bias**. Simple's Grain sets the same module.
+- **Bloom**: **Size**, **Threshold** and **Strength**.
 
 ## Instances
 
