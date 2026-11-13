@@ -63,6 +63,15 @@ Besides exposure, the Basic group has these darktable modules:
   does not yet have darktable's settings list (as shot, camera reference and
   the camera's presets) or its temperature and tint sliders; Simple's White
   Balance sliders change the same module. darktable allows one instance.
+- **Color calibration**: tabs as in darktable. **CAT** has the adaptation,
+  the illuminant (with its fluorescent or LED source, or a temperature for
+  daylight and Planckian) and gamut compression; **R**, **G** and **B** mix the
+  input channels into each output channel; **Colorfulness**, **Brightness** and
+  **Gray** set the input weights of each, all with **Normalize channels**. Not
+  yet on the card: the hue and chroma of a custom illuminant, the color
+  picker, area color mapping and color checker calibration. Simple's
+  calibration and Black & White's calibration use their own instances; only
+  the first shows here.
 
 ## Instances
 

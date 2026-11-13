@@ -50,6 +50,51 @@ export const LAYOUTS: ModuleLayout[] = [
     ],
   },
   {
+    // channelmixerrgb.c gui_init (its notebook pages, NOTEBOOK_PAGE with no
+    // swap, so input R/G/B are elements 0/1/2) and _update_illuminants for
+    // what the CAT page shows. the auto-detect illuminants (8, 9) need
+    // AI_ACTIVATED, which channelmixerrgb.c leaves undefined. left out: the
+    // hue and chroma sliders of the custom illuminant (darktable converts
+    // them to x and y), the CCT label, picker, area color mapping and color
+    // checker sections; an "as shot in camera" illuminant greys adaptation
+    // out, which depends on the photo
+    op: "channelmixerrgb", group: "basic", title: "Color calibration",
+    fields: [
+      { path: "adaptation", label: "Adaptation", tab: "CAT" },
+      { path: "illuminant", label: "Illuminant", tab: "CAT", options: [0, 1, 2, 3, 4, 5, 6, 7, 10], showIf: (p) => p.adaptation !== 4 },
+      { path: "illum_fluo", label: "F source", tab: "CAT", showIf: (p) => p.adaptation !== 4 && p.illuminant === 4 },
+      { path: "illum_led", label: "LED source", tab: "CAT", showIf: (p) => p.adaptation !== 4 && p.illuminant === 5 },
+      { path: "temperature", label: "Temperature", tab: "CAT", soft: [3000, 7000], unit: "K", digits: 0, showIf: (p) => p.adaptation !== 4 && (p.illuminant === 2 || p.illuminant === 6) },
+      { path: "gamut", label: "Gamut compression", tab: "CAT", soft: [0, 4] },
+      { path: "clip", label: "Clip negative RGB from gamut", tab: "CAT" },
+      { path: "red[0]", label: "Input R", tab: "R", digits: 3 },
+      { path: "red[1]", label: "Input G", tab: "R", digits: 3 },
+      { path: "red[2]", label: "Input B", tab: "R", digits: 3 },
+      { path: "normalize_R", label: "Normalize channels", tab: "R" },
+      { path: "green[0]", label: "Input R", tab: "G", digits: 3 },
+      { path: "green[1]", label: "Input G", tab: "G", digits: 3 },
+      { path: "green[2]", label: "Input B", tab: "G", digits: 3 },
+      { path: "normalize_G", label: "Normalize channels", tab: "G" },
+      { path: "blue[0]", label: "Input R", tab: "B", digits: 3 },
+      { path: "blue[1]", label: "Input G", tab: "B", digits: 3 },
+      { path: "blue[2]", label: "Input B", tab: "B", digits: 3 },
+      { path: "normalize_B", label: "Normalize channels", tab: "B" },
+      { path: "saturation[0]", label: "Input R", tab: "Colorfulness", digits: 3, soft: [-1, 1] },
+      { path: "saturation[1]", label: "Input G", tab: "Colorfulness", digits: 3, soft: [-1, 1] },
+      { path: "saturation[2]", label: "Input B", tab: "Colorfulness", digits: 3, soft: [-1, 1] },
+      { path: "normalize_sat", label: "Normalize channels", tab: "Colorfulness" },
+      { path: "version", label: "Saturation algorithm", tab: "Colorfulness" },
+      { path: "lightness[0]", label: "Input R", tab: "Brightness", digits: 3, soft: [-1, 1] },
+      { path: "lightness[1]", label: "Input G", tab: "Brightness", digits: 3, soft: [-1, 1] },
+      { path: "lightness[2]", label: "Input B", tab: "Brightness", digits: 3, soft: [-1, 1] },
+      { path: "normalize_light", label: "Normalize channels", tab: "Brightness" },
+      { path: "grey[0]", label: "Input R", tab: "Gray", digits: 3, soft: [0, 1] },
+      { path: "grey[1]", label: "Input G", tab: "Gray", digits: 3, soft: [0, 1] },
+      { path: "grey[2]", label: "Input B", tab: "Gray", digits: 3, soft: [0, 1] },
+      { path: "normalize_grey", label: "Normalize channels", tab: "Gray" },
+    ],
+  },
+  {
     // exposure.c gui_init (the mode combobox over a manual and a deflicker
     // page, then black level); the mode stack is gui_changed's showIf
     op: "exposure", group: "basic", title: "Exposure",
