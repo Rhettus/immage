@@ -8,7 +8,8 @@ what Immage's update banner shows under Release Notes.
 Improvements
 
 - Preferences > General has an Editing mode. Advanced shows Adjustments' groups
-  with a Technical group and a module search, and darktable's modules as cards
+  (HSL / Color and B&W both, for color and black and white photos alike) with
+  a Technical group and a module search, and darktable's modules as cards
   with their own settings, on/off and reset, and an instance menu to add,
   duplicate, rename, reorder and delete instances, all with undo. Switching
   does not change your photo.

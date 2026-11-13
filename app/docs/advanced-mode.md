@@ -8,9 +8,11 @@ edits.
 In Advanced, the **Adjustments** panel looks like this:
 
 - A **Search modules** box at the top. It does not find anything yet.
-- The same groups as Simple (Basic, Tone Curve, Color (HSL), B&W, Color
+- The same groups as Simple (Basic, Tone Curve, HSL / Color, B&W, Color
   Grading, Detail, Lens, Transform and Effects), in the same order. They fold
   open and shut as in Simple, follow Focus mode, and Alt-click opens one alone.
+  HSL / Color and B&W both show whether or not the photo is black and white,
+  where Simple shows one or the other.
 - A **Technical** group at the end, which exists only in Advanced.
 - No **More controls** sliders icon; that icon is only in Simple.
 

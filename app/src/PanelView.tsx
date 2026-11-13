@@ -135,7 +135,7 @@ export function PanelView(props: PanelProps) {
   const onPreview = useLiveEvent(props.onPreview);
   const auto = useLiveEvent(() => props.onAuto?.());
   const option = useLiveEvent((preview: OptionPreview | null) => props.onOptionPreview?.(preview));
-  if (advancedMode) return <AdvancedGroup id={props.panel.id} title={props.panel.title} open={props.open} onToggle={onToggle}
+  if (advancedMode) return <AdvancedGroup id={props.panel.id} title={props.panel.advancedTitle ?? props.panel.title} open={props.open} onToggle={onToggle}
                                        session={props.session} revision={props.sessionRevision} record={props.onAdvancedEdit} />;
   return <PanelWidget {...props} values={values} onToggle={onToggle} onChange={onChange}
     onChangeMany={onChangeMany} onPreview={onPreview} onAuto={props.onAuto ? auto : undefined}

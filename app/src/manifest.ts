@@ -132,8 +132,11 @@ export type Panel = {
   sections: Section[];
   tabs?: boolean;          // sections are shown one at a time
   hidden?: boolean;        // edited by a tool rather than listed (crop)
-  // shown only for these values (the B&W Mix stands in for HSL in black and white)
+  // shown only for these values (the B&W Mix stands in for HSL in black and
+  // white); Advanced shows every group whatever the photo's values
   showIf?: (v: Values) => boolean;
+  // the group's title in Advanced, where it holds modules rather than one mix
+  advancedTitle?: string;
   // buttons that set several controls at once, such as the B&W filters
   // a preset with a swatch shows as a colored circle, its label as a tooltip
   presets?: ControlPreset[];
@@ -1675,7 +1678,7 @@ export const panels: Panel[] = [
     sections: HSL_TABS.map((t) => ({ title: t, controls: hslControls("hsl", t) })),
   },
   {
-    id: "bw", title: "B&W Mix", showIf: (v) => v.bw_mode === 1,
+    id: "bw", title: "B&W Mix", advancedTitle: "B&W", showIf: (v) => v.bw_mode === 1,
     presets: BW_FILTERS.map(([label, swatch, mix]) => ({
       label, swatch, values: Object.fromEntries(BANDS.map(([b], k) => [`bw_${b}`, mix[k]])),
     })),
