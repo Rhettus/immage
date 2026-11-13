@@ -243,6 +243,9 @@ The Detail group has these darktable modules:
   **Chroma**.
 - **Raw denoise**: **Noise threshold**. Its curves are not on the card yet.
 - **Surface blur**: **Radius**, then **Red**, **Green** and **Blue**.
+- **Contrast equalizer**: **Mix**. Its curves are not on the card yet; Simple's
+  Contrast draws them for the first instance when Preferences set it to
+  contrast equalizer.
 
 ## Instances
 

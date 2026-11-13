@@ -874,6 +874,15 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "blue", label: "Blue", soft: [0.0001, 0.1], digits: 4 },
     ],
   },
+  {
+    // atrous.c gui_init: a luma, chroma and edges notebook over the curve
+    // graph, then mix. left out: the curves (x and y), which need
+    // ContrastEqualizer's graph, and octaves, which has no widget
+    op: "atrous", group: "detail", title: "Contrast equalizer",
+    fields: [
+      { path: "mix", label: "Mix" },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);
