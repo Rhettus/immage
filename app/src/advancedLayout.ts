@@ -1273,6 +1273,22 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "normalize", label: "Gamut clipping" },
     ],
   },
+  {
+    // colorout.c gui_init: the export profile combobox, filled from the
+    // profiles colorspaces.c gives an out_pos (dt_colorspaces_init), with
+    // their names; linear XYZ and Lab only with the preference
+    // allow_lab_output, so not here
+    // left out: profiles from files (type DT_COLORSPACE_FILE plus filename);
+    // output intent, which gui_init hides unless the preference
+    // plugins/lighttable/export/force_lcms2 is on
+    op: "colorout", group: "technical", title: "Output color profile",
+    fields: [
+      { path: "type", label: "Export profile", choices: [
+        ["sRGB (web-safe)", 1], ["Adobe RGB (compatible)", 2], ["Linear Rec709 RGB", 3], ["Rec709 RGB", 20],
+        ["Linear Rec2020 RGB", 4], ["PQ Rec2020 RGB", 22], ["HLG Rec2020 RGB", 23], ["PQ P3 RGB", 24],
+        ["HLG P3 RGB", 25], ["Display P3 RGB", 26], ["Linear ProPhoto RGB", 21], ["BRG (for testing)", 15]] },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);

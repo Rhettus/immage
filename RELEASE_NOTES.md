@@ -29,8 +29,8 @@ Improvements
   and perspective, orientation, scale pixels and enlarge canvas; in Effects,
   vignetting, grain, bloom, soften, blurs, lowlight vision, graduated density,
   censorize, framing, watermark, composite and dither or posterize; in
-  Technical, raw black/white point, color reconstruction and input color
-  profile. Other modules follow in later versions.
+  Technical, raw black/white point, color reconstruction, input color profile
+  and output color profile. Other modules follow in later versions.
 - The tone mapper card shows AgX, sigmoid, filmic rgb or base curve, whichever
   is on, with a switch to change to another as one undo step.
 - Module cards have a darktable presets menu beside the reset button. It applies

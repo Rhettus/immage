@@ -347,6 +347,9 @@ The Technical group, only in Advanced, has these darktable modules:
 - **Input color profile**: **Input profile** and **Working profile**, each
   a list of the profiles this photo can use, and **Gamut clipping**. The
   Negative panel's profile menus set the same module.
+- **Output color profile**: **Export profile**, from darktable's built-in
+  profiles. Export always uses its own **Color space**, so this setting
+  only matters when the photo's edits are opened in darktable.
 
 ## Instances
 
