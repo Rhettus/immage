@@ -945,6 +945,15 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "refine_manifolds", label: "Very large chromatic aberration", section: "Advanced parameters" },
     ],
   },
+  {
+    // cacorrect.c gui_init. darktable shows the two only for bayer raws,
+    // a rule that reads the image and is left out
+    op: "cacorrect", group: "lens", title: "Raw chromatic aberrations",
+    fields: [
+      { path: "iterations", label: "Iterations" },
+      { path: "avoidshift", label: "Avoid colorshift" },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);

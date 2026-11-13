@@ -266,6 +266,8 @@ The Lens Corrections group has these darktable modules:
 - **Chromatic aberrations**: **Guide**, **Radius** and **Strength**, then
   **Correction mode** and **Very large chromatic aberration**. Simple's
   Defringe uses the first instance.
+- **Raw chromatic aberrations**: **Iterations** and **Avoid colorshift**.
+  It works only on raw photos from cameras with a Bayer sensor.
 
 ## Instances
 
