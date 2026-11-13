@@ -39,6 +39,27 @@ export type ModuleLayout = {
   instance?: { name: string; add: [string, number][] };
 };
 
+// diffuse or sharpen's settings, shared by its Basic and Detail cards.
+// diffuse.c gui_init, whose sections are the ones below; no gui_changed
+// rule hides a field. all 15 parameters are on the card
+const DIFFUSE: LayoutField[] = [
+  { path: "iterations", label: "Iterations", section: "Properties", soft: [1, 128] },
+  { path: "radius_center", label: "Central radius", section: "Properties", soft: [0, 512], unit: "px" },
+  { path: "radius", label: "Radius span", section: "Properties", soft: [1, 512], unit: "px" },
+  { path: "first", label: "1st order speed", section: "Speed (sharpen/diffuse)", digits: 2, unit: "%" },
+  { path: "second", label: "2nd order speed", section: "Speed (sharpen/diffuse)", digits: 2, unit: "%" },
+  { path: "third", label: "3rd order speed", section: "Speed (sharpen/diffuse)", digits: 2, unit: "%" },
+  { path: "fourth", label: "4th order speed", section: "Speed (sharpen/diffuse)", digits: 2, unit: "%" },
+  { path: "anisotropy_first", label: "1st order anisotropy", section: "Direction", digits: 2, unit: "%" },
+  { path: "anisotropy_second", label: "2nd order anisotropy", section: "Direction", digits: 2, unit: "%" },
+  { path: "anisotropy_third", label: "3rd order anisotropy", section: "Direction", digits: 2, unit: "%" },
+  { path: "anisotropy_fourth", label: "4th order anisotropy", section: "Direction", digits: 2, unit: "%" },
+  { path: "sharpness", label: "Sharpness", section: "Edge management", soft: [-0.25, 0.25], digits: 1, unit: "%" },
+  { path: "regularization", label: "Edge sensitivity", section: "Edge management" },
+  { path: "variance_threshold", label: "Edge threshold", section: "Edge management" },
+  { path: "threshold", label: "Luminance masking threshold", section: "Diffusion spatiality", unit: "%" },
+];
+
 // color calibration's settings, shared by its Basic and B&W cards
 const CALIBRATION: LayoutField[] = [
   { path: "adaptation", label: "Adaptation", tab: "CAT" },
@@ -385,26 +406,9 @@ export const LAYOUTS: ModuleLayout[] = [
     ],
   },
   {
-    // diffuse.c gui_init, whose sections are the ones below; no gui_changed
-    // rule hides a field. all 15 parameters are on the card
+    // Simple's Texture drives its first instance
     op: "diffuse", group: "basic", title: "Diffuse or sharpen",
-    fields: [
-      { path: "iterations", label: "Iterations", section: "Properties", soft: [1, 128] },
-      { path: "radius_center", label: "Central radius", section: "Properties", soft: [0, 512], unit: "px" },
-      { path: "radius", label: "Radius span", section: "Properties", soft: [1, 512], unit: "px" },
-      { path: "first", label: "1st order speed", section: "Speed (sharpen/diffuse)", digits: 2, unit: "%" },
-      { path: "second", label: "2nd order speed", section: "Speed (sharpen/diffuse)", digits: 2, unit: "%" },
-      { path: "third", label: "3rd order speed", section: "Speed (sharpen/diffuse)", digits: 2, unit: "%" },
-      { path: "fourth", label: "4th order speed", section: "Speed (sharpen/diffuse)", digits: 2, unit: "%" },
-      { path: "anisotropy_first", label: "1st order anisotropy", section: "Direction", digits: 2, unit: "%" },
-      { path: "anisotropy_second", label: "2nd order anisotropy", section: "Direction", digits: 2, unit: "%" },
-      { path: "anisotropy_third", label: "3rd order anisotropy", section: "Direction", digits: 2, unit: "%" },
-      { path: "anisotropy_fourth", label: "4th order anisotropy", section: "Direction", digits: 2, unit: "%" },
-      { path: "sharpness", label: "Sharpness", section: "Edge management", soft: [-0.25, 0.25], digits: 1, unit: "%" },
-      { path: "regularization", label: "Edge sensitivity", section: "Edge management" },
-      { path: "variance_threshold", label: "Edge threshold", section: "Edge management" },
-      { path: "threshold", label: "Luminance masking threshold", section: "Diffusion spatiality", unit: "%" },
-    ],
+    fields: DIFFUSE,
   },
   {
     // colorbalancergb.c gui_init (a notebook of master, 4 ways and masks
