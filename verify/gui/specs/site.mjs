@@ -301,13 +301,16 @@ export async function siteShots(t) {
   await attempt(t, 'colorgrading', async () => {
     const p = await panel(t, 'colorgrading');
     await textButton(t, `${p} .tabs`, '3-Way');
-    await reveal(t, `${p} .wheel-cell:last-child .wheel`);
-    const wheels = await t.driver.observe(s => Object.fromEntries([...document.querySelectorAll(`${s} .wheel-cell`)]
-      .map(c => { const r = c.querySelector('.wheel').getBoundingClientRect();
-        return [c.querySelector('.wheel-title')?.textContent.trim(), { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width }]; })), p);
-    const { Shadows: sh, Highlights: hi } = wheels;
-    if (!sh || !hi) throw Error(`wheels not found: ${Object.keys(wheels).join(', ')}`);
+    // Shadows and Highlights share the second row (Midtones is alone in the
+    // first, so `.wheel-cell:last-child` would match it); on a short window
+    // scroll to each before dragging it, so its center is on screen
+    const wheel = async n => {
+      const r = (await reveal(t, `${p} .wheel-row:not(.single) .wheel-cell:nth-child(${n}) .wheel`)).bounds;
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width };
+    };
+    const sh = await wheel(1);
     await t.driver.drag(sh, { x: sh.x - sh.w * .09, y: sh.y + sh.w * .04 });
+    const hi = await wheel(2);
     await t.driver.drag(hi, { x: hi.x + hi.w * .08, y: hi.y - hi.w * .06 });
     await shot(t, 'color-grading');
   });
