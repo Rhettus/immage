@@ -1314,14 +1314,43 @@ static gboolean _is_number(const dt_introspection_type_t t)
          || t == DT_INTROSPECTION_TYPE_ENUM;
 }
 
+// the default of each number member of struct `f` at `path`, as members of
+// the open object keyed by the member path relative to the struct; members
+// that are arrays or strings are left out, as they are in `defaults` of a
+// number array above 64 elements
+static void _struct_defaults(JsonBuilder *b, dt_iop_module_t *mod, const dt_introspection_field_t *f,
+                             const char *path)
+{
+  for(size_t i = 0; i < f->Struct.entries; i++)
+  {
+    const dt_introspection_field_t *c = f->Struct.fields[i];
+    gchar *sub = g_strdup_printf("%s.%s", path, c->header.field_name);
+    if(c->header.type == DT_INTROSPECTION_TYPE_STRUCT)
+      _struct_defaults(b, mod, c, sub);
+    else if(_is_number(c->header.type))
+    {
+      char *err = NULL;
+      double num = 0.0;
+      // keyed relative to the element, the same paths `members` lists
+      json_builder_set_member_name(b, sub + strlen(path) + 1);
+      if(session_read_field(mod, sub, TRUE, &num, &err)) json_builder_add_double_value(b, num);
+      else json_builder_add_null_value(b);
+      g_free(err);
+    }
+    g_free(sub);
+  }
+}
+
 // the fields under `f`, as one object per leaf, in the order of the struct.
 // `prefix` is the path so far: the leaf "exposure" of exposure's params, or
 // "tonecurve_nodes[0]" and so on for a client that walks an array. an array
 // is one entry that gives `dims` (nested arrays outermost first) and its
 // `element`, never one entry per element; an array of structs also lists
 // `members` with paths relative to an element ("x" of "curve[1][3].x"). a
-// number array of up to 64 elements has its defaults. numbers read by
-// session_read_field() (what `get` returns); a char array is a "string"
+// number array of up to 64 elements has its defaults, read by
+// session_read_field() (what `get` returns), and an array of up to 64 structs
+// has `member_defaults` as one object per element, in row-major order, keyed by the
+// number members' relative paths; a char array is a "string"
 static void _schema_fields(JsonBuilder *b, dt_iop_module_t *mod, const dt_introspection_field_t *f,
                            const char *prefix)
 {
@@ -1381,6 +1410,30 @@ static void _schema_fields(JsonBuilder *b, dt_iop_module_t *mod, const dt_intros
     }
     if(e->header.type == DT_INTROSPECTION_TYPE_STRUCT)
     {
+      if(total <= 64)
+      {
+        json_builder_set_member_name(b, "member_defaults");
+        json_builder_begin_array(b);
+        for(size_t i = 0; i < total; i++)
+        {
+          // row-major index list, so "curve[1][3]" as session_read_field() takes it
+          gchar *path = g_strdup(prefix);
+          size_t rest = total;
+          for(const dt_introspection_field_t *d = f; d->header.type == DT_INTROSPECTION_TYPE_ARRAY;
+              d = d->Array.field)
+          {
+            rest /= d->Array.count;
+            gchar *next = g_strdup_printf("%s[%zu]", path, (i / rest) % d->Array.count);
+            g_free(path);
+            path = next;
+          }
+          json_builder_begin_object(b);
+          _struct_defaults(b, mod, e, path);
+          json_builder_end_object(b);
+          g_free(path);
+        }
+        json_builder_end_array(b);
+      }
       json_builder_set_member_name(b, "members");
       json_builder_begin_array(b);
       _schema_fields(b, mod, e, "");

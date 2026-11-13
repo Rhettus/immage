@@ -927,6 +927,7 @@ export type SchemaField = {
 	dims?: number[] | null,
 	element?: string | null,
 	defaults?: (number | null)[] | null,
+	member_defaults?: ({ [key in string]: number | null })[] | null,
 	members?: SchemaField[] | null,
 };
 

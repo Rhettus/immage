@@ -8,7 +8,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -150,4 +150,92 @@ test('Advanced mode modules (exposure)', { skip: skip || false }, async (t) => {
     assert.notEqual(r.was.params, r.now.params, 'reset changed nothing');
     assert.equal(m.params.exposure, 0);
   });
+});
+
+// every module Advanced mode can show as a card (the plan's inventory: the
+// introspected, non-deprecated, visible modules not on a tool of their own).
+// liquify is listed apart: it has no introspected params, so its card is a
+// placeholder and its schema is `fields: []` by design. `colorreconstruct`
+// is the op name of the inventory's colorreconstruction.c
+const CARD_OPS = `temperature channelmixerrgb exposure highlights agx sigmoid filmicrgb basecurve
+  contrastntexture bilat hazeremoval diffuse colorbalancergb tonecurve rgbcurve rgblevels toneequal shadhi
+  colorequal satcurvergb velvia colorcontrast colorzones colorharmonizer primaries colorcorrection
+  colorchecker lut3d colormapping monochrome colorbalance splittoning colorize demosaic sharpen highpass
+  denoiseprofile nlmeans rawdenoise bilateral atrous lowpass lens cacorrectrgb cacorrect hotpixels ashift
+  flip scalepixels enlargecanvas vignette grain bloom soften blurs lowlight graduatednd censorize borders
+  watermark overlay dither rawprepare colorreconstruct colorin colorout profile_gamma rasterfile`.split(/\s+/);
+
+// darktable's own declarations that break the min <= default <= max rule, so a
+// card must not clamp them: borders' aspect declares $MIN 1 $MAX 3 but
+// defaults to -1 (DT_IOP_BORDERS_ASPECT_CONSTANT_VALUE, "constant")
+const UPSTREAM_DEFAULT_OUTSIDE = new Set(['borders:aspect']);
+
+test('Advanced mode schema sweep over the card modules', { skip: skip || false }, async (t) => {
+  const work = mkdtempSync(join(tmpdir(), 'immage-advsweep-'));
+  mkdirSync(join(work, 'photos'));
+  const photo = join(work, 'photos', 'stairs.jpg');
+  copyFileSync(SAMPLE, photo);
+  const e = new Engine(work);
+  t.after(() => { e.stop(); rmSync(work, { recursive: true, force: true }); });
+  await e.call({ cmd: 'open', path: photo });
+
+  const failures = [];
+  const problems = (s, op) => {
+    const bad = [];
+    if (s.op !== op) bad.push(`op ${s.op}`);
+    if (!(s.version > 0)) bad.push(`version ${s.version}`);
+    if (!s.fields?.length) bad.push('no fields');
+    if (s.flags?.deprecated) bad.push('deprecated');
+    for (const f of s.fields ?? []) {
+      if (f.type === 'enum' && !f.values?.length) bad.push(`${f.path}: enum without values`);
+      if (f.type === 'float' || f.type === 'int') {
+        // a null bound is the type's own limit and cannot be compared
+        const { min, max, default: d } = f;
+        if (typeof d !== 'number') bad.push(`${f.path}: default ${d}`);
+        else if (UPSTREAM_DEFAULT_OUTSIDE.has(`${op}:${f.path}`)) { /* see above */ }
+        else if ((typeof min === 'number' && d < min - 1e-6) || (typeof max === 'number' && d > max + 1e-6)) {
+          bad.push(`${f.path}: default ${d} outside [${min}, ${max}]`);
+        }
+        if (typeof min === 'number' && typeof max === 'number' && min > max) bad.push(`${f.path}: min ${min} > max ${max}`);
+      }
+    }
+    return bad;
+  };
+  for (const op of CARD_OPS) {
+    let s;
+    try { s = await e.call({ cmd: 'module_schema', op }); } catch (err) { failures.push(`${op}: ${err.message}`); continue; }
+    const bad = problems(s, op);
+    if (bad.length) failures.push(`${op}: ${bad.join('; ')}`);
+  }
+  t.diagnostic(`${CARD_OPS.length} ops swept, ${failures.length} failing`);
+  assert.deepEqual(failures, []);
+});
+
+test('instances marks a look\'s instances with owner "look"', { skip: skip || false }, async (t) => {
+  const style = join(ROOT, 'darktable/data/styles');
+  const names = existsSync(style) ? readdirSync(style).filter((n) => n.endsWith('.dtstyle')) : [];
+  if (!names.length) return t.skip('no .dtstyle file in darktable/data/styles');
+  const work = mkdtempSync(join(tmpdir(), 'immage-advlook-'));
+  mkdirSync(join(work, 'photos'));
+  const photo = join(work, 'photos', 'stairs.jpg');
+  copyFileSync(SAMPLE, photo);
+  const e = new Engine(work);
+  t.after(() => { e.stop(); rmSync(work, { recursive: true, force: true }); });
+  await e.call({ cmd: 'open', path: photo });
+  const before = (await e.call({ cmd: 'instances' })).instances;
+  assert.ok(before.every((i) => i.owner === null), 'an instance has an owner before any look');
+  const look = join(style, names[0]);
+  await e.call({ cmd: 'look', path: look });
+  const after = (await e.call({ cmd: 'instances' })).instances;
+  const owned = after.filter((i) => i.owner === 'look');
+  assert.ok(owned.length > 0, `no instance owned by the look: ${JSON.stringify(after.filter((i) => i.name))}`);
+  for (const i of owned) assert.ok(/^look: /.test(i.name), `owner look on '${i.name}'`);
+  // the user's own instances stay theirs, whatever the look added beside them
+  for (const i of before) {
+    const now = after.find((a) => a.op === i.op && a.priority === i.priority && a.name === i.name);
+    assert.ok(now && now.owner === null, `${i.op}@${i.priority} lost its null owner`);
+  }
+  await e.call({ cmd: 'look' });
+  const off = (await e.call({ cmd: 'instances' })).instances;
+  t.diagnostic(`${names[0]}: ${owned.map((i) => i.op).join(', ')}; ${off.filter((i) => i.owner === 'look').length} left after removing`);
 });

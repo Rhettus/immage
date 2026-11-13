@@ -331,6 +331,10 @@ pub struct SchemaField {
     pub element: Option<String>,
     #[serde(default)]
     pub defaults: Option<Vec<Option<Number>>>,
+    // arrays of up to 64 structs: one object per element, row-major, of the
+    // number members' defaults keyed by their relative paths
+    #[serde(default)]
+    pub member_defaults: Option<Vec<std::collections::BTreeMap<String, Option<Number>>>>,
     #[serde(default)]
     pub members: Option<Vec<SchemaField>>,
 }
