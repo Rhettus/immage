@@ -12,6 +12,8 @@ import { searchModules, type SearchHit } from "./advancedSearch";
 import { panels } from "./manifest";
 import { useDismiss } from "./MasksPanel";
 import { AddModuleMenu } from "./AddModuleMenu";
+import { GRAPHS } from "./graphMaps";
+import { MAX_NODES } from "./tonecurve";
 import { isHidden, loadHiddenModules, visibleLayouts } from "./hiddenModules";
 
 // Advanced mode's Adjustments: the same fold-out groups as Simple, each
@@ -98,6 +100,16 @@ const familyOf = (op: string) => FAMILIES.find((f) => f.ops.includes(op));
 // one group: its title row folds like Simple's (Focus mode and Alt-click
 // are the caller's onToggle), with no More controls icon. with a photo open
 // it holds the cards of the instances its modules have, in pipe order
+// every field a card reads: its controls, and the curve or graph it draws.
+// those must be in the card's snapshot, or an undo cannot put them back
+const cardFields = (layout: NonNullable<ReturnType<typeof layoutFor>>) => {
+  const c = layout.curves;
+  const curve = c ? c.channels.flatMap((_, ch) => [c.count(ch), c.type(ch),
+    ...Array.from({ length: MAX_NODES }, (__, k) => [c.node(ch, k, "x"), c.node(ch, k, "y")]).flat()]) : [];
+  return [...layout.fields.map((f) => f.path), ...(layout.lensPick ? ["lens_pick"] : []), ...curve,
+    ...(layout.graph ? GRAPHS[layout.graph].fields : [])];
+};
+
 export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0, record, onSimple, onTurn, pick, onPicked }: {
   id: string; title: string; open: boolean; onToggle: (solo: boolean) => void;
   session?: Session | null; revision?: number; record?: AdvancedEdit;
@@ -121,7 +133,7 @@ export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0
         if (!layout) continue;
         // the schema even with no instance to show: Add module needs it
         found.set(i.op, await schemaOf(i.op));
-        if (shows(layout, i)) await session.loadAdvanced(i.op, i.priority, [...layout.fields.map((f) => f.path), ...(layout.lensPick ? ["lens_pick"] : [])]);
+        if (shows(layout, i)) await session.loadAdvanced(i.op, i.priority, cardFields(layout));
       }
       if (live) setLoaded({ session, schemas: found });
     })().catch(() => {});
