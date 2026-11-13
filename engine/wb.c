@@ -140,7 +140,8 @@ static void _XYZ_to_temperature(const cmsCIEXYZ XYZ, float *TempK, float *tint)
 }
 
 // temperature.c: _prepare_matrices, which logs and carries on when a raw has
-// no matrix; here that is an error, as the fields would read nonsense
+// no matrix; here reading gives 0 (the card hides the sliders) and writing
+// is an error, as the fields would be nonsense
 static gboolean _prepare_matrices(const dt_image_t *img, _matrices_t *m)
 {
   static const double RGB_to_XYZ[3][4] = { { 0.4124564, 0.3575761, 0.1804375, 0 },
@@ -209,7 +210,15 @@ gboolean wb_read(dt_iop_module_t *mod, const char *name, const gboolean from_def
 {
   _wb_params_t *p;
   _matrices_t m;
-  if(!_setup(mod, from_defaults ? mod->default_params : mod->params, &p, &m, err)) return FALSE;
+  dt_introspection_field_t *f = NULL;
+  p = session_field_in(mod, from_defaults ? mod->default_params : mod->params, "red", &f, err);
+  if(!p) return FALSE;
+  // an error here would fail the card's whole read, not just these two fields
+  if(!_prepare_matrices(&mod->dev->image_storage, &m))
+  {
+    *num = 0.0;
+    return TRUE;
+  }
   float temp, tint;
   _mul2temp(&m, p, &temp, &tint);
   *num = !strcmp(name, WB_TEMP) ? temp : tint;

@@ -248,13 +248,14 @@ export const LAYOUTS: ModuleLayout[] = [
     // (red, green, blue, various at 3 digits). temp_k and tint are the
     // engine's own fields (wb.c), computed from the coefficients as darktable
     // does; an edit of either sets the coefficients and the card reads them
-    // again. left out for now: the settings combobox, whose entries (as shot,
+    // again; a raw with no color matrix reads 0 and hides them. left out
+    // for now: the settings combobox, whose entries (as shot,
     // camera reference, the camera's presets) are built per photo rather
     // than from an enum
     op: "temperature", group: "basic", title: "White balance",
     fields: [
-      { path: "temp_k", label: "Temperature", section: "Scene illuminant temp", digits: 0, unit: "K" },
-      { path: "tint", label: "Tint", section: "Scene illuminant temp", digits: 3 },
+      { path: "temp_k", label: "Temperature", section: "Scene illuminant temp", digits: 0, unit: "K", showIf: (p) => p.temp_k > 0 },
+      { path: "tint", label: "Tint", section: "Scene illuminant temp", digits: 3, showIf: (p) => p.temp_k > 0 },
       { path: "red", label: "Red", section: "Channel coefficients", digits: 3 },
       { path: "green", label: "Green", section: "Channel coefficients", digits: 3 },
       { path: "blue", label: "Blue", section: "Channel coefficients", digits: 3 },
