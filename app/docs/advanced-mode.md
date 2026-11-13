@@ -350,6 +350,11 @@ The Technical group, only in Advanced, has these darktable modules:
 - **Output color profile**: **Export profile**, from darktable's built-in
   profiles. Export always uses its own **Color space**, so this setting
   only matters when the photo's edits are opened in darktable.
+- **Unbreak input profile**: **Mode**. Logarithmic shows **Middle gray
+  luma**, **Black relative exposure**, **Dynamic range** and, under
+  **Optimize automatically**, **Safety factor**, which scales both ranges
+  as you change it; gamma shows **Linear** and **Gamma**. The card does
+  not have darktable's auto tune button or its pickers.
 
 ## Instances
 

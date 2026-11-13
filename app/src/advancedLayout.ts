@@ -1289,6 +1289,36 @@ export const LAYOUTS: ModuleLayout[] = [
         ["HLG P3 RGB", 25], ["Display P3 RGB", 26], ["Linear ProPhoto RGB", 21], ["BRG (for testing)", 15]] },
     ],
   },
+  {
+    // profile_gamma.c gui_init, gui_changed: the mode combobox over a stack,
+    // "gamma" (linear, gamma) or "log" (grey point, black relative exposure,
+    // dynamic range, then the optimize automatically section)
+    // the stack page is chosen by mode (gui_changed)
+    // omitted: the "auto tune levels" button and the color pickers attached to
+    // grey_point, shadows_range and dynamic_range (not params); changing
+    // security_factor also rescales dynamic_range and shadows_range in
+    // gui_changed, which derive below does
+    // the label of security_factor and the three log sliders come from the
+    // schema descriptions (middle gray luma, black relative exposure, dynamic
+    // range, safety factor); linear and gamma have empty descriptions
+    // derive: gui_changed scales both ranges by a safety factor edit
+    op: "profile_gamma", group: "technical", title: "Unbreak input profile",
+    fields: [
+      { path: "mode", label: "Mode" },
+      { path: "linear", label: "Linear", digits: 4, showIf: (p) => p.mode === 1 },
+      { path: "gamma", label: "Gamma", digits: 4, showIf: (p) => p.mode === 1 },
+      { path: "grey_point", label: "Middle gray luma", unit: "%", showIf: (p) => p.mode === 0 },
+      { path: "shadows_range", label: "Black relative exposure", soft: [-16, 0], unit: "EV", showIf: (p) => p.mode === 0 },
+      { path: "dynamic_range", label: "Dynamic range", soft: [0.5, 16], unit: "EV", showIf: (p) => p.mode === 0 },
+      { path: "security_factor", label: "Safety factor", section: "Optimize automatically", unit: "%", showIf: (p) => p.mode === 0 },
+    ],
+    derive: (p, _size, before): Record<string, number> => {
+      if (p.security_factor === before.security_factor) return {};
+      const ratio = (p.security_factor - before.security_factor) / (before.security_factor + 100);
+      const lo = p.shadows_range * (1 + ratio), hi = (p.dynamic_range + p.shadows_range) * (1 + ratio);
+      return { dynamic_range: hi - lo, shadows_range: lo };
+    },
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);
