@@ -899,6 +899,40 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "saturation", label: "Saturation" },
     ],
   },
+  {
+    // lens.cc gui_init and gui_changed: the method picks one of three pages
+    // (Lensfun, embedded metadata, only the manual vignette), the vignette
+    // section is under all three. darktable lists embedded metadata only
+    // for a photo that has it, and hides the TCA override for monochrome
+    // and the fine-tuning of what a DNG lacks; those rules read the image
+    // and are left out. left out too: the camera and lens pickers and the
+    // focal length, aperture and distance menus (Simple's Lens Corrections
+    // picks the lens), and "use latest algorithm", which is not a param.
+    // Simple drives the first instance. gui_changed sets has_been_set on
+    // every edit but the method's: until it is on, darktable renders the
+    // defaults
+    op: "lens", group: "lens", title: "Lens correction",
+    touch: { set: [["has_been_set", 1]], except: ["method"] },
+    fields: [
+      { path: "method", label: "Correction method" },
+      { path: "modify_flags", label: "Corrections", showIf: (p) => p.method !== 2 },
+      { path: "target_geom", label: "Target geometry", options: [1, 2, 3, 4, 5, 6, 7, 8], showIf: (p) => p.method === 1 },
+      { path: "scale", label: "Scale", digits: 3, showIf: (p) => p.method === 1 },
+      { path: "inverse", label: "Mode", showIf: (p) => p.method === 1 },
+      { path: "tca_override", label: "TCA override", showIf: (p) => p.method === 1 },
+      { path: "tca_r", label: "TCA red", digits: 5, showIf: (p) => p.method === 1 && p.tca_override === 1 },
+      { path: "tca_b", label: "TCA blue", digits: 5, showIf: (p) => p.method === 1 && p.tca_override === 1 },
+      { path: "cor_dist_ft", label: "Distortion", section: "Fine-tuning", digits: 3, showIf: (p) => p.method === 0 },
+      { path: "cor_vig_ft", label: "Vignetting", section: "Fine-tuning", digits: 3, showIf: (p) => p.method === 0 },
+      // version 2 of the metadata algorithm, md_version 1
+      { path: "cor_ca_r_ft", label: "TCA red", section: "Fine-tuning", digits: 3, showIf: (p) => p.method === 0 && p.md_version >= 1 },
+      { path: "cor_ca_b_ft", label: "TCA blue", section: "Fine-tuning", digits: 3, showIf: (p) => p.method === 0 && p.md_version >= 1 },
+      { path: "scale_md", label: "Image scale", section: "Fine-tuning", digits: 4, showIf: (p) => p.method === 0 },
+      { path: "v_strength", label: "Strength", section: "Manual vignette correction", unit: "%", digits: 1 },
+      { path: "v_radius", label: "Radius", section: "Manual vignette correction", unit: "%", digits: 1 },
+      { path: "v_steepness", label: "Steepness", section: "Manual vignette correction", unit: "%", digits: 1 },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);

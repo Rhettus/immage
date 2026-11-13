@@ -24,7 +24,8 @@ Improvements
   balance rgb, color balance, split-toning and colorize; in Detail, demosaic,
   sharpen, diffuse or sharpen (Simple's Sharpening instance), denoise
   (profiled), highpass, astrophoto denoise, raw denoise, surface blur, contrast
-  equalizer and lowpass. Other modules follow in later versions.
+  equalizer and lowpass; in Lens Corrections, lens correction. Other modules
+  follow in later versions.
 - The tone mapper card shows AgX, sigmoid, filmic rgb or base curve, whichever
   is on, with a switch to change to another as one undo step.
 - Module cards have a darktable presets menu beside the reset button. It applies

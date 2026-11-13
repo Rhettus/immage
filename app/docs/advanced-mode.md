@@ -249,6 +249,21 @@ The Detail group has these darktable modules:
 - **Lowpass**: **Radius**, **Soften with**, **Contrast**, **Brightness** and
   **Saturation**.
 
+## Lens modules
+
+The Lens Corrections group has these darktable modules:
+
+- **Lens correction**: the **Correction method** (darktable's Lensfun
+  database, the corrections the camera or raw converter wrote into the file,
+  or only a manual vignette), **Corrections**, then the method's own
+  settings: for Lensfun, **Target geometry**, **Scale**, **Mode** and the
+  **TCA override**; for embedded metadata, its **Fine-tuning**. **Manual
+  vignette correction** works under every method. The lens itself is chosen
+  in Simple's Lens Corrections, which uses the first instance and whose
+  Remove Chromatic Aberration sets **Corrections**; the card has no camera or
+  lens menus. darktable offers embedded metadata only for a
+  photo that has it.
+
 ## Instances
 
 A module can have several instances, each with its own settings. Open the
