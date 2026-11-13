@@ -477,6 +477,12 @@ test('Advanced card layouts match darktable', { skip: skip || false }, async (t)
         assert.ok(['float', 'int', 'enum', 'bool', 'uint', 'short', 'ushort', 'char', 'uchar'].includes(f.type),
           `${lf.path}: a card cannot draw type ${f.type}`);
       }
+      // fields a card edit also sets (layout.touch) are the module's own
+      for (const [path, v] of l.touch?.set ?? []) {
+        const f = resolve(path);
+        assert.ok(f && Number.isFinite(v), `${l.op}: touch sets ${path}, not in the schema`);
+      }
+      for (const path of l.touch?.except ?? []) assert.ok(seen.has(path), `${l.op}: touch except ${path} not on the card`);
       // the module's first float slider shown at its defaults, a quarter of
       // the way into its soft range
       const paths = l.fields.map((lf) => lf.path);
@@ -487,7 +493,9 @@ test('Advanced card layouts match darktable', { skip: skip || false }, async (t)
       const [lo, hi] = lf.soft ?? [f.min, f.max];
       let v = cur.defaults[lf.path] + (hi - lo) / 4;
       if (v > hi) v = cur.defaults[lf.path] - (hi - lo) / 4;
-      await e.call({ cmd: 'set', op: l.op, priority: 0, params: { [lf.path]: v }, enabled: true });
+      // as the card sends it, with what its edits also set
+      const also = l.touch && !l.touch.except?.includes(lf.path) ? Object.fromEntries(l.touch.set) : {};
+      await e.call({ cmd: 'set', op: l.op, priority: 0, params: { ...also, [lf.path]: v }, enabled: true });
       const back = (await e.call({ cmd: 'get', modules: { [`${l.op}@0`]: [lf.path] } })).modules[`${l.op}@0`];
       assert.ok(back.enabled, `${l.op} not on after a set`);
       assert.ok(Math.abs(back.params[lf.path] - v) < 1e-4, `${lf.path}: ${back.params[lf.path]} != ${v}`);
