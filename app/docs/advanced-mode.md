@@ -324,6 +324,11 @@ The Effects group has these darktable modules:
   not yet have darktable's aspect and position presets or the border and
   frame line colors, which stay white and black. **Aspect ratio** sets a
   custom ratio; by default the framed photo keeps its own.
+- **Watermark**: **Opacity**, then under **Placement** **Rotation**,
+  **Scale**, **Scale on** (with **Scale marker to** and **Scale marker
+  reference** for its advanced options), **X offset** and **Y offset**. The
+  card cannot yet choose the marker, its text, font or color, or its
+  alignment, so it places darktable's default marker in the center.
 
 ## Instances
 

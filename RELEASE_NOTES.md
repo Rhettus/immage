@@ -28,7 +28,7 @@ Improvements
   aberrations, raw chromatic aberrations and hot pixels; in Transform, rotate
   and perspective, orientation, scale pixels and enlarge canvas; in Effects,
   vignetting, grain, bloom, soften, blurs, lowlight vision, graduated density,
-  censorize and framing. Other modules follow in later versions.
+  censorize, framing and watermark. Other modules follow in later versions.
 - The tone mapper card shows AgX, sigmoid, filmic rgb or base curve, whichever
   is on, with a switch to change to another as one undo step.
 - Module cards have a darktable presets menu beside the reset button. It applies
