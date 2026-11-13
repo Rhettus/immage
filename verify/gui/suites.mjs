@@ -147,6 +147,8 @@ export const cases = {
     limitation: 'Only the Exposure card is driven. Reset is compared with darktable\'s defaults, not with the photo as opened. Restores the starting mode in a finally.' },
   'advanced-instances': { liveValidated: true, verification: 'Linux system WebKitGTK; empty workspace 9 floating/maximized, original workspace 4 restored. Run 2026-11-13T00-21-37.650Z_e92bab3_20b4d419 (raw fixture).', scope: 'Advanced editing mode: the Exposure card menu makes a new instance (second card, open, the first tagged Simple); its slider changes the frame; Rename gives it a label; Duplicate adds a third card, which Move up in the pipe places second; Delete is disabled on the first instance and removes the later one; undo restores the deleted card and redo removes it; no error notice appears',
     limitation: 'Only the Exposure card is driven. Frame change is checked for the new instance only. Restores the starting mode in a finally.' },
+  'advanced-presets': { liveValidated: true, verification: 'Linux system WebKitGTK; empty workspace 9 floating/maximized, original workspace 4 restored. Run 2026-11-13T00-42-50.896Z_60cdd29_d0973065 (raw fixture).', scope: 'Advanced editing mode: the Exposure card presets menu lists darktable presets without the _builtin_ prefix; applying magic lantern defaults switches the card to its deflicker page and turns it on; the preset is checked when the menu reopens; undo returns the manual page and redo applies it again; no error notice appears',
+    limitation: 'Only the Exposure card is driven. Restores the starting mode in a finally.' },
   ...generated,
 };
 export const suites = {

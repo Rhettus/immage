@@ -3,7 +3,7 @@
 
 use serde_json::{json, Number, Value};
 use std::path::Path;
-use crate::typed_edit::{AgxPresetsReply, AgxProfile, CombineMember, FilmFetch, FilmStocks, Instance, InstanceReply, InstancesReply, LensMenu, ModuleSchema, LookReply, MapView, MaskInfo, MasksReply, NewSpot, Spot, SpotSource, SpotsReply, UprightReply};
+use crate::typed_edit::{AgxPresetsReply, AgxProfile, CombineMember, FilmFetch, FilmStocks, Instance, InstanceReply, InstancesReply, LensMenu, ModuleSchema, LookReply, MapView, MaskInfo, MasksReply, NewSpot, PresetsReply, Spot, SpotSource, SpotsReply, UprightReply};
 use crate::typed_export::LookInfo;
 use tauri::{ipc::Response, AppHandle, State};
 use crate::AppState;
@@ -83,6 +83,15 @@ pub(crate) async fn instance(state: State<'_, AppState>, action: String, op: Str
     if let Some(a) = after { req["after"] = json!(a); }
     let reply = state.engine("instance").request(req)?;
     serde_json::from_value(reply).map_err(|e| format!("instance: unexpected reply: {e}"))
+}
+
+// the presets darktable's own menu lists for an instance of a module in the
+// open photo (the engine's session_presets); `module_state` applies one
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn presets(state: State<'_, AppState>, op: String, priority: i64) -> Result<PresetsReply, String> {
+    let reply = state.engine("presets").request(json!({ "cmd": "presets", "op": op, "priority": priority }))?;
+    serde_json::from_value(reply).map_err(|e| format!("presets: unexpected reply: {e}"))
 }
 
 // Upright's fit of rotate and perspective: { rotation, lensshift_v,

@@ -42,6 +42,7 @@ pub(crate) async fn module_state(
     enabled: Option<bool>,
     reset: Option<bool>,
     restore: Option<Restore>,
+    preset: Option<String>,
 ) -> Result<ModuleStateReply, String> {
     let mut req = json!({ "cmd": "module_state", "op": op, "priority": priority, "reset": reset.unwrap_or(false) });
     if let Some(e) = enabled {
@@ -49,6 +50,9 @@ pub(crate) async fn module_state(
     }
     if let Some(r) = restore {
         req["restore"] = json!(r);
+    }
+    if let Some(p) = preset {
+        req["preset"] = json!(p);
     }
     let reply = state.engine("module_state").request(req)?;
     serde_json::from_value(reply).map_err(|e| format!("module_state: unexpected reply: {e}"))

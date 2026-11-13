@@ -39,6 +39,7 @@
 #include "common/iop_order.h"
 #include "common/metadata.h"
 #include "common/mipmap_cache.h"
+#include "common/presets.h"
 #include "common/ratings.h"
 #include <libxml/parser.h>
 #include <sqlite3.h>
@@ -349,7 +350,8 @@ gboolean session_set(const char *op, const char *field, JsonNode *value,
                      const double opacity, JsonObject *refine, const int priority, char **err);
 gboolean session_module_state(const char *op, const int priority, const gboolean has_enabled,
                               const gboolean enabled, const gboolean reset, JsonObject *restore,
-                              JsonBuilder *b, char **err);
+                              const char *preset, JsonBuilder *b, char **err);
+gboolean session_presets(const char *op, const int priority, JsonBuilder *b, char **err);
 dt_hash_t session_frame_hash(const dt_hash_t pipe_hash);
 void session_settle(dt_dev_pixelpipe_t *pipe);
 gboolean session_render(dt_dev_pixelpipe_t *pipe, const int devid, const int bw, const int bh,

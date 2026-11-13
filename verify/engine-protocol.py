@@ -59,7 +59,7 @@ combine copy data_backup export export_hold export_release folder fonts forget g
 hdr_merge history import instance instances keywords keywords_set lenses look look_amount mask
 mask_delete mask_map mask_rename masks merge_cancel meta meta_set module_schema module_state
 open opencl pano_merge pano_preview parity paste_batch points prefetch preview
-print print_profile_add print_profiles printer printers quit range_map
+presets print print_profile_add print_profiles printer printers quit range_map
 remove_copy render sample save set sidecars softproof spektra_fetch
 spektra_stocks spot_source spots spots_enable style_forget thumb tone_key
 unpack upright version zones
@@ -219,6 +219,10 @@ def photo_edits(img):
         R('module_schema', op='exposure', label='module_schema exposure'),
         R('module_schema', op='tonecurve', label='module_schema tonecurve'),
         R('instances'),
+        R('presets', op='exposure', priority=0, label='presets exposure'),
+        R('presets', op='nosuchmodule', priority=0, label='presets unknown'),
+        R('module_state', op='exposure', priority=0, preset='no such preset', label='module_state preset unknown'),
+        R('module_state', op='exposure', priority=0, preset='_builtin_magic lantern defaults', reset=True, label='module_state preset and reset'),
         R('instance', label='instance none'),
         R('instance', action='new', op='exposure', priority=0, label='instance new'),
         R('instance', action='rename', op='exposure', priority=1, name='second', label='instance rename'),
@@ -313,6 +317,7 @@ def photo_edits(img):
         R('before', on=True, label='before on'), R('before', on=False, label='before off'),
         R('baseline_end'),
         R('save'),
+        R('module_state', op='exposure', priority=0, preset='_builtin_magic lantern defaults', label='module_state preset'),
     ]
 
 

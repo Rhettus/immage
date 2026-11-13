@@ -130,6 +130,7 @@ pub fn commands() -> Commands<tauri::Wry> {
         crate::edit_cmds::lenses,
         crate::edit_cmds::module_schema,
         crate::edit_cmds::instances,
+        crate::edit_cmds::presets,
         crate::edit_cmds::instance,
         // Preferences, performance reports and the app itself
         crate::app_cmds::darktable_resources,
@@ -415,6 +416,7 @@ mod tests {
         ("lenses", reads::<LensMenu>),
         ("module_schema", reads::<ModuleSchema>),
         ("instances", reads::<InstancesReply>),
+        ("presets", reads::<PresetsReply>),
         ("instance", reads::<InstanceReply>),
         ("ai_accel", reads::<AiAccelReply>),
         ("look", reads::<LookReply>),

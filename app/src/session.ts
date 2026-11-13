@@ -32,7 +32,7 @@ const traced = <T>(command: string, call: () => Promise<T>) => perf.traced<T>(co
 
 export const colorProfiles = () => traced("color_profiles", () => commands.colorProfiles());
 
-type ModuleRequest = { enabled?: boolean; reset?: boolean; restore?: ModuleState | "opened" };
+type ModuleRequest = { enabled?: boolean; reset?: boolean; restore?: ModuleState | "opened"; preset?: string };
 
 // the instance a history item is for, and the ModuleMap op its sliders use:
 // Immage's own named instances carry their name, as manifest's "op#name"
@@ -1031,6 +1031,18 @@ export class Session {
     this.setModuleState({ op, priority }, { reset: true, enabled: true });
   }
 
+  // darktable's presets of a card's instance, in darktable's menu order
+  loadPresets(op: string, priority: number) {
+    return traced("presets", () => commands.presets(op, priority)).then((r) => r.presets);
+  }
+
+  // apply a preset by its raw darktable name: module_state, so undo restores
+  // the instance as it was. the engine refuses it on an instance with a drawn
+  // mask or one a mask, look or shared tool owns; that reaches onError
+  applyPreset(op: string, priority: number, name: string) {
+    this.setModuleState({ op, priority }, { preset: name });
+  }
+
   // the card instance menu's actions (the engine's `instance`), sent in order
   // ahead of module states and card fields, so that an undo has made or
   // deleted the instances before it restores their settings
@@ -1537,7 +1549,7 @@ export class Session {
             seen.add(key);
             const legacy = ["filmicrgb", "filmic", "basecurve"].includes(h.op);
             const r = await this.pumpTyped("module_state", () =>
-              commands.moduleState(h.op, priority, legacy ? false : null, true, null));
+              commands.moduleState(h.op, priority, legacy ? false : null, true, null, null));
             this.touched.add(key);
             if (!this.modulesOpened.has(key)) this.modulesOpened.set(key, r.was);
             this.moduleStates.set(key, r.now);
@@ -1620,10 +1632,16 @@ export class Session {
           const restore = req.restore === "opened" ? this.modulesOpened.get(key) : req.restore;
           if (req.restore === "opened" && !restore) continue;
           const r = await this.pumpTyped("module_state", () =>
-            commands.moduleState(op, priority, req.enabled ?? null, req.reset ?? null, restore ?? null));
+            commands.moduleState(op, priority, req.enabled ?? null, req.reset ?? null, restore ?? null, req.preset ?? null));
           this.changed();
           if (!this.modulesOpened.has(key)) this.modulesOpened.set(key, r.was);
           this.moduleStates.set(key, r.now);
+          // darktable relabels an instance from its preset, and an undo
+          // restores the label with it
+          if (req.preset !== undefined || restore) {
+            this.instancesLoad = null;
+            await this.loadInstances();
+          }
           // an instance first set from an Advanced card is not in the
           // history read at open; its first instance is what Simple maps
           const item = this.history.find((h) => instanceKey(h) === key);

@@ -15,7 +15,7 @@ export const commands = {
 	mapTile: (z: number, x: number, y: number) => __TAURI_INVOKE<ArrayBuffer>("map_tile", { z, x, y }),
 	openImage: (path: string, imgid: number | null) => __TAURI_INVOKE<OpenReply>("open_image", { path, imgid }),
 	history: (saved: boolean | null) => __TAURI_INVOKE<HistoryItem[]>("history", { saved }),
-	moduleState: (op: string, priority: number, enabled: boolean | null, reset: boolean | null, restore: Restore | null) => __TAURI_INVOKE<ModuleStateReply>("module_state", { op, priority, enabled, reset, restore }),
+	moduleState: (op: string, priority: number, enabled: boolean | null, reset: boolean | null, restore: Restore | null, preset: string | null) => __TAURI_INVOKE<ModuleStateReply>("module_state", { op, priority, enabled, reset, restore, preset }),
 	getParams: (modules: { [key in string]: string[] }) => __TAURI_INVOKE<GetReply>("get_params", { modules }),
 	setParams: (edit: ModuleEdit) => __TAURI_INVOKE<null>("set_params", { edit }),
 	sample: (x: number, y: number, area: number[] | null, stage: string | null) => __TAURI_INVOKE<SampleReply>("sample", { x, y, area, stage }),
@@ -113,6 +113,7 @@ export const commands = {
 	lenses: () => __TAURI_INVOKE<LensMenu>("lenses"),
 	moduleSchema: (op: string) => __TAURI_INVOKE<ModuleSchema>("module_schema", { op }),
 	instances: () => __TAURI_INVOKE<Instance[]>("instances"),
+	presets: (op: string, priority: number) => __TAURI_INVOKE<PresetsReply>("presets", { op, priority }),
 	instance: (action: string, op: string, priority: number, name: string | null, other: number | null, after: boolean | null) => __TAURI_INVOKE<InstanceReply>("instance", { action, op, priority, name, other, after }),
 	darktableResources: () => __TAURI_INVOKE<ResourceLevels>("darktable_resources"),
 	darktableResourcesSet: (level: string) => __TAURI_INVOKE<null>("darktable_resources_set", { level }),
@@ -318,6 +319,14 @@ export type DepthMap = {
 	width: number,
 	height: number,
 	data: number[],
+};
+
+export type DtPreset = {
+	name: string,
+	description: string,
+	builtin: boolean,
+	applicable: boolean,
+	active: boolean,
 };
 
 export type ExistingFile = {
@@ -813,6 +822,10 @@ export type PresetsDoc = PresetsFile | Value[];
 export type PresetsFile = {
 	version: number,
 	presets: Value[],
+};
+
+export type PresetsReply = {
+	presets: DtPreset[],
 };
 
 export type PrintProfile = {

@@ -3,10 +3,11 @@
 import { RotateCcw } from "lucide-react";
 import { useRef, useState } from "react";
 import { InstanceMenu, type InstanceChoice } from "./InstanceMenu";
+import { PresetMenu } from "./PresetMenu";
 import { Chevron, Collapse } from "./Collapse";
 import { Choice, Slider, Toggle } from "./Controls";
 import type { AdvancedState } from "./session";
-import type { Instance, ModuleSchema, SchemaField } from "./commands";
+import type { DtPreset, Instance, ModuleSchema, SchemaField } from "./commands";
 import type { Control } from "./manifest";
 import { type LayoutField, type ModuleLayout } from "./advancedLayout";
 
@@ -34,12 +35,13 @@ export function fieldControl(f: SchemaField, l: LayoutField, value: number): Con
 
 // `siblings` is how many instances of the module the group shows, `index`
 // this one's place among them (pipe order); `fresh`, a card just added
-export function ModuleCard({ instance, layout, schema, state, siblings, index, fresh, onField, onEnabled, onReset, onInstance }: {
+export function ModuleCard({ instance, layout, schema, state, siblings, index, fresh, onField, onEnabled, onReset, onInstance, loadPresets, onPreset }: {
   instance: Instance; layout: ModuleLayout; schema: ModuleSchema; state: AdvancedState;
   siblings: number; index: number; fresh?: boolean;
   onField: (path: string, value: number, coalesce: boolean) => void;
   onEnabled: (on: boolean) => void; onReset: () => void;
   onInstance: (c: InstanceChoice, name?: string) => void;
+  loadPresets: () => Promise<DtPreset[]>; onPreset: (name: string) => void;
 }) {
   const edited = instance.hand_edited || state.enabled !== instance.default_enabled;
   // folded unless edited or just added; the user's own fold wins after that
@@ -75,6 +77,7 @@ export function ModuleCard({ instance, layout, schema, state, siblings, index, f
                    onBlur={(e) => done(e.currentTarget, true)} />
           : <span className="module-card-title">{name}</span>}
         {siblings > 1 && instance.priority === 0 && <span className="module-card-tag" title="Simple's sliders show this instance">Simple</span>}
+        <PresetMenu name={name} load={loadPresets} onPick={(n) => { setFold(true); onPreset(n); }} />
         <button className="module-card-reset" title="Reset to darktable's defaults" aria-label={`Reset ${name}`}
                 onClick={(e) => { e.stopPropagation(); onReset(); }}>
           <RotateCcw size={14} strokeWidth={1.8} />

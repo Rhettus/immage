@@ -93,6 +93,8 @@ export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0
                 siblings={sib.length} index={index} fresh={session!.lastAdded === key} onInstance={onInstance}
                 onField={(path, v, coalesce) => { record?.([`adv:${key}:${path}`], layout.title); session!.setField(i.op, i.priority, path, v, coalesce); }}
                 onEnabled={(on) => { record?.([`adv:${key}:enabled`], layout.title); session!.setAdvancedEnabled(i.op, i.priority, on); }}
+                loadPresets={() => session!.loadPresets(i.op, i.priority)}
+                onPreset={(name) => { record?.([`adv:${key}:preset:${performance.now()}`], `Preset: ${layout.title}`); session!.applyPreset(i.op, i.priority, name); }}
                 onReset={() => { record?.([`adv:${key}:reset`], layout.title); session!.resetAdvanced(i.op, i.priority); }} />
             );
           })}

@@ -20,6 +20,8 @@ The Basic group shows darktable's **exposure** module as a card. The card has:
 
 - An on/off switch and the module's name. If the module has a name of its own,
   such as a second exposure instance, the name follows it.
+- A **darktable presets** button (three lines) beside the reset button; see
+  [darktable presets](#darktable-presets).
 - An instances menu (**...**) beside the reset button; see
   [Instances](#instances).
 - A reset button that returns the module to darktable's defaults for this
@@ -77,3 +79,29 @@ show "No darktable modules yet" for now.
 Masks, Heal, Zones, Film Simulation, Negative, Crop and Presets work as they do
 in Simple. Your edits are kept, and Simple shows them again when you switch
 back.
+
+## darktable presets
+
+The **darktable presets** button on a card opens a menu headed **darktable
+presets**. It lists darktable's presets for that module: built-in presets
+first, then your own presets from Immage's darktable library, with a line
+between the two, in darktable's order. A preset in a submenu shows as
+"a › b".
+
+- A check mark marks the preset that matches the instance now.
+- Presets that do not apply to this photo, such as one for another version of
+  the module or for another camera, lens or file format, are greyed out.
+- An empty list shows **No presets**.
+
+Choosing a preset replaces the instance's settings and blend settings with the
+preset's, switches the module on or off as the preset says, and opens the card.
+It is one undo step, named "Preset: <module>". darktable may rename the
+instance after the preset, unless you renamed it yourself.
+
+A preset cannot be applied to an instance that has a drawn mask, and a preset
+that carries a mask cannot be applied at all. Immage shows an error in both
+cases.
+
+Not yet available: importing .dtpreset or .dtstyle files, saving the current
+settings as a preset, and reading presets from a separate darktable
+installation.

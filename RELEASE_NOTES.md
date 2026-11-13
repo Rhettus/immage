@@ -13,6 +13,9 @@ Improvements
   instance menu to add, duplicate, rename, reorder and delete instances, all
   with undo; other modules follow in later versions. Switching does not change
   your photo.
+- Module cards have a darktable presets menu beside the reset button. It applies
+  one of darktable's built-in or your own presets to that instance, as one undo
+  step.
 - The sliders icon on panels is now called More controls, and appears only in
   Simple.
 

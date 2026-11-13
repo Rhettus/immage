@@ -379,3 +379,21 @@ pub struct InstanceReply {
     pub priority: i64,
     pub instances: Vec<Instance>,
 }
+
+// `presets`' reply: darktable's preset menu for one instance, in its order.
+// `name` keeps the "|" levels of its submenus; `builtin` is darktable's own
+// (write-protected), `applicable` false for a preset of another module
+// version, `active` when the instance's settings match it
+#[derive(Serialize, Deserialize, Type)]
+pub struct PresetsReply {
+    pub presets: Vec<DtPreset>,
+}
+
+#[derive(Serialize, Deserialize, Type)]
+pub struct DtPreset {
+    pub name: String,
+    pub description: String,
+    pub builtin: bool,
+    pub applicable: bool,
+    pub active: bool,
+}

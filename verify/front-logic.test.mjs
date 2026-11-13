@@ -31,6 +31,7 @@ const P = await import('../app/src/paths.ts');
 const F = await import('../app/src/filter.ts');
 const L = await import('../app/src/library.ts');
 const K = await import('../app/src/keys.ts');
+const PN = await import('../app/src/presetName.ts');
 
 const exif = (o = {}) => ({ maker: 'Canon', model: 'EOS R5', lens: 'RF 50mm F1.8', exposure: 1 / 250, aperture: 2.79,
   iso: 400.4, focal_length: 50, exposure_bias: 0, focus_distance: 0, datetime: '2024:03:05 14:07:09', ...o });
@@ -311,4 +312,11 @@ test('facetsWithin narrows by the rest of the filter, not the list shown', () =>
   const flt = f({ cameras: ['Canon A'] });
   assert.deepEqual(F.facetsWithin(imgs, flt, {}).lenses, [['L1', 1]]);
   assert.deepEqual(F.facetsWithin(imgs, flt, { cameras: [] }).lenses, [['L1', 1], ['L2', 1]]);
+});
+
+test('presetLabel shows darktable preset names for the menu', () => {
+  assert.equal(PN.presetLabel('_builtin_magic lantern defaults'), 'magic lantern defaults');
+  assert.equal(PN.presetLabel('_builtin_film|neutral'), 'film › neutral');
+  assert.equal(PN.presetLabel('my look | warm'), 'my look › warm');
+  assert.equal(PN.presetLabel('plain'), 'plain');
 });

@@ -327,3 +327,66 @@ test('Advanced mode instances (exposure)', { skip: skip || false }, async (t) =>
     assert.ok(+m[1] < 0.5 / 255, `mean absolute difference ${(+m[1] * 255).toFixed(3)} levels of 255`);
   });
 });
+
+// phase 5: darktable's module presets on an exposure instance, headless
+test('Advanced mode darktable presets (exposure)', { skip: skip || false }, async (t) => {
+  const work = mkdtempSync(join(tmpdir(), 'immage-advpre-'));
+  const photo = join(work, 'photos', 'stairs.jpg');
+  mkdirSync(join(work, 'photos'));
+  copyFileSync(SAMPLE, photo);
+  const e = new Engine(work);
+  t.after(() => { e.stop(); if (process.env.KEEP) console.log(work); else rmSync(work, { recursive: true, force: true }); });
+  const read = async (key) => (await e.call({ cmd: 'get', modules: { [key]: FIELDS } })).modules[key];
+  const ML = '_builtin_magic lantern defaults';   // darktable keeps the untranslated prefix on shipped names
+  const state = (r) => JSON.stringify(r);
+  await e.call({ cmd: 'open', path: photo });
+
+  const listed = (await e.call({ cmd: 'presets', op: 'exposure', priority: 0 })).presets;
+  const ml = listed.find((p) => p.name === ML);
+  assert.ok(ml, `presets: ${JSON.stringify(listed)}`);
+  assert.equal(ml.builtin, true);
+  assert.equal(ml.applicable, true);
+  assert.equal(typeof ml.description, 'string');
+  assert.equal(listed.filter((p) => p.active).length, 0, 'no preset should match an untouched instance');
+  await assert.rejects(e.call({ cmd: 'presets', op: 'exposure', priority: 9 }), /no instance/);
+
+  // an edit, so the undo has something to bring back
+  await e.call({ cmd: 'set', op: 'exposure', params: { exposure: 0.7, black: 0.02 }, enabled: true });
+  const before = await read('exposure');
+  assert.equal(before.params.mode, 0);
+
+  const applied = await e.call({ cmd: 'module_state', op: 'exposure', priority: 0, preset: ML });
+  const after = await read('exposure');
+  assert.equal(after.params.mode, 1, 'magic lantern defaults is the deflicker mode');
+  assert.notEqual(applied.was.params, applied.now.params);
+  assert.equal(after.enabled, true);
+  assert.equal((await e.call({ cmd: 'presets', op: 'exposure', priority: 0 })).presets.find((p) => p.name === ML).active, true,
+    'the applied preset is the active one');
+  assert.ok((await e.call({ cmd: 'history' })).items.some((h) => h.op === 'exposure'), 'no history item');
+
+  // undo: restore the state the reply gave, params and blend byte for byte
+  const undone = await e.call({ cmd: 'module_state', op: 'exposure', priority: 0, restore: applied.was });
+  assert.equal(state(undone.now), state(applied.was), 'restore did not bring the state back');
+  assert.deepEqual(await read('exposure'), before);
+
+  // an unknown name, and a preset with another switch, change nothing
+  const quiet = (await e.call({ cmd: 'module_state', op: 'exposure', priority: 0 })).now;
+  await assert.rejects(e.call({ cmd: 'module_state', op: 'exposure', priority: 0, preset: 'no such preset' }), /no preset/);
+  await assert.rejects(e.call({ cmd: 'module_state', op: 'exposure', priority: 0, preset: ML, reset: true }), /cannot be combined/);
+  assert.equal(state((await e.call({ cmd: 'module_state', op: 'exposure', priority: 0 })).now), state(quiet));
+
+  // a label the user typed survives a preset on a second instance
+  const p1 = (await e.call({ cmd: 'instance', action: 'new', op: 'exposure', priority: 0 })).priority;
+  await e.call({ cmd: 'instance', action: 'rename', op: 'exposure', priority: p1, name: 'mine' });
+  await e.call({ cmd: 'module_state', op: 'exposure', priority: p1, preset: ML });
+  const named = (await e.call({ cmd: 'instances' })).instances.find((i) => i.op === 'exposure' && i.priority === p1);
+  assert.equal(named.name, 'mine');
+  assert.equal(named.hand_edited, true);
+  // the preset's params survive a save and reopen
+  await e.call({ cmd: 'module_state', op: 'exposure', priority: 0, preset: ML });
+  await e.call({ cmd: 'save' });
+  await e.call({ cmd: 'close' });
+  await e.call({ cmd: 'open', path: photo });
+  assert.equal((await read('exposure')).params.mode, 1, 'the preset did not survive reopening');
+  assert.equal((await read(`exposure@${p1}`)).params.mode, 1);
+});

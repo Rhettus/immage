@@ -906,15 +906,190 @@ static gboolean _unbase64_into(const char *text, void *dst, const size_t size)
   return fits;
 }
 
+// darktable's module preset menu for one instance (gui/presets.c, _iop_query,
+// _iop_bind, _iop_is_disabled, _iop_is_active), as `presets` in `b`: the
+// rows for this photo's camera, lens and exposure, built-in ones last unless
+// `modules/default_presets_first`, and the built-ins left out when
+// `plugins/darkroom/hide_default_presets` is set. a name keeps its "|" levels
+gboolean session_presets(const char *op, const int priority, JsonBuilder *b, char **err)
+{
+  dt_iop_module_t *mod = _module_at(op, priority, err);
+  if(!mod) return FALSE;
+  const dt_image_t *image = &_s.dev.image_storage;
+  const gboolean default_first = dt_conf_get_bool("modules/default_presets_first");
+  const gboolean hide_default = dt_conf_get_bool("plugins/darkroom/hide_default_presets");
+  char *format_filter = dt_presets_get_filter(image);
+  // clang-format off
+  gchar *query = g_strdup_printf
+    ("SELECT name, op_params, writeprotect, description, blendop_params, "
+     "  op_version, enabled"
+     " FROM data.presets"
+     " WHERE operation=?1"
+     "   AND (filter=0"
+     "          OR"
+     "       (((?2 LIKE model AND ?3 LIKE maker) OR (?4 LIKE model AND ?5 LIKE maker))"
+     "        AND ?6 LIKE lens"
+     "        AND ?7 BETWEEN iso_min AND iso_max"
+     "        AND ?8 BETWEEN exposure_min AND exposure_max"
+     "        AND ?9 BETWEEN aperture_min AND aperture_max"
+     "        AND ?10 BETWEEN focal_length_min AND focal_length_max"
+     "        AND (%s)))"
+     " ORDER BY writeprotect %s, LOWER(name), rowid",
+     format_filter, default_first ? "DESC" : "ASC");
+  // clang-format on
+  g_free(format_filter);
+  sqlite3_stmt *stmt;
+  DT_DEBUG_SQLITE3_PREPARE_V2(dt_database_get(darktable.db), query, -1, &stmt, NULL);
+  g_free(query);
+  DT_DEBUG_SQLITE3_BIND_TEXT(stmt, 1, mod->op, -1, SQLITE_TRANSIENT);
+  DT_DEBUG_SQLITE3_BIND_TEXT(stmt, 2, image->exif_model, -1, SQLITE_TRANSIENT);
+  DT_DEBUG_SQLITE3_BIND_TEXT(stmt, 3, image->exif_maker, -1, SQLITE_TRANSIENT);
+  DT_DEBUG_SQLITE3_BIND_TEXT(stmt, 4, image->camera_alias, -1, SQLITE_TRANSIENT);
+  DT_DEBUG_SQLITE3_BIND_TEXT(stmt, 5, image->camera_maker, -1, SQLITE_TRANSIENT);
+  DT_DEBUG_SQLITE3_BIND_TEXT(stmt, 6, image->exif_lens, -1, SQLITE_TRANSIENT);
+  DT_DEBUG_SQLITE3_BIND_DOUBLE(stmt, 7, image->exif_iso);
+  DT_DEBUG_SQLITE3_BIND_DOUBLE(stmt, 8, image->exif_exposure);
+  DT_DEBUG_SQLITE3_BIND_DOUBLE(stmt, 9, image->exif_aperture);
+  DT_DEBUG_SQLITE3_BIND_DOUBLE(stmt, 10, image->exif_focal_length);
+
+  json_builder_set_member_name(b, "presets");
+  json_builder_begin_array(b);
+  while(sqlite3_step(stmt) == SQLITE_ROW)
+  {
+    const gboolean builtin = sqlite3_column_int(stmt, 2) != 0;
+    if(hide_default && builtin) continue;
+    const void *op_params = sqlite3_column_blob(stmt, 1);
+    const int op_params_size = sqlite3_column_bytes(stmt, 1);
+    const void *blend = sqlite3_column_blob(stmt, 4);
+    const int blend_size = sqlite3_column_bytes(stmt, 4);
+    const int enabled = sqlite3_column_int(stmt, 6);
+    // darktable's own match: a preset with no params is the defaults
+    const gboolean active = mod->enabled && enabled
+      && (op_params_size == 0 ? !memcmp(mod->params, mod->default_params, mod->params_size)
+                              : !memcmp(mod->params, op_params, MIN(op_params_size, mod->params_size)))
+      && dt_presets_module_blend_match(mod, blend, blend_size);
+    const char *name = (const char *)sqlite3_column_text(stmt, 0);
+    const char *description = (const char *)sqlite3_column_text(stmt, 3);
+    json_builder_begin_object(b);
+    json_builder_set_member_name(b, "name");
+    json_builder_add_string_value(b, name ? name : "");
+    json_builder_set_member_name(b, "description");
+    json_builder_add_string_value(b, description ? description : "");
+    json_builder_set_member_name(b, "builtin");
+    json_builder_add_boolean_value(b, builtin);
+    json_builder_set_member_name(b, "applicable");
+    json_builder_add_boolean_value(b, sqlite3_column_int(stmt, 5) == mod->version());
+    json_builder_set_member_name(b, "active");
+    json_builder_add_boolean_value(b, active);
+    json_builder_end_object(b);
+  }
+  sqlite3_finalize(stmt);
+  json_builder_end_array(b);
+  return TRUE;
+}
+
+// dt_gui_presets_apply_preset (gui/presets.c) on the session's instance: the
+// preset's params (the defaults when its size does not fit), switch, blend
+// params and label. darktable's version also raises GUI signals, stores the
+// "last preset" and adds its history item through darktable.develop, which
+// is not this engine's develop; the caller records the history item
+static gboolean _apply_preset(dt_iop_module_t *mod, const char *name, char **err)
+{
+  if(masks_instance_owner(mod))
+  {
+    *err = g_strdup_printf("instance %d of '%s' belongs to %s", mod->multi_priority, mod->op,
+                           masks_instance_owner(mod));
+    return FALSE;
+  }
+  // a preset replaces the blend params, which would orphan the drawn mask
+  if(mod->blend_params && dt_is_valid_maskid(mod->blend_params->mask_id))
+  {
+    *err = g_strdup("a preset cannot replace a drawn mask here");
+    return FALSE;
+  }
+  sqlite3_stmt *stmt;
+  // clang-format off
+  DT_DEBUG_SQLITE3_PREPARE_V2(
+    dt_database_get(darktable.db),
+    "SELECT op_params, enabled, blendop_params, blendop_version, multi_name, multi_name_hand_edited"
+    " FROM data.presets"
+    " WHERE operation = ?1 AND op_version = ?2 AND name = ?3",
+    -1, &stmt, NULL);
+  // clang-format on
+  DT_DEBUG_SQLITE3_BIND_TEXT(stmt, 1, mod->op, -1, SQLITE_TRANSIENT);
+  DT_DEBUG_SQLITE3_BIND_INT(stmt, 2, mod->version());
+  DT_DEBUG_SQLITE3_BIND_TEXT(stmt, 3, name, -1, SQLITE_TRANSIENT);
+  if(sqlite3_step(stmt) != SQLITE_ROW)
+  {
+    sqlite3_finalize(stmt);
+    *err = g_strdup_printf("module '%s' has no preset '%s' for its version", mod->op, name);
+    return FALSE;
+  }
+  const void *op_params = sqlite3_column_blob(stmt, 0);
+  const int op_length = sqlite3_column_bytes(stmt, 0);
+  const int enabled = sqlite3_column_int(stmt, 1);
+  const void *bl_params = sqlite3_column_blob(stmt, 2);
+  const int bl_length = sqlite3_column_bytes(stmt, 2);
+  const int bl_version = sqlite3_column_int(stmt, 3);
+  const char *multi_name = (const char *)sqlite3_column_text(stmt, 4);
+  const int multi_hand = sqlite3_column_int(stmt, 5);
+
+  // read with the mask ignored: a drawn mask's forms would be added to
+  // module->dev (this engine's), and then refused below, leaving them behind
+  dt_develop_blend_params_t bp;
+  gboolean use_default_blend = FALSE;
+#ifdef IMMAGE_STYLE_BLEND_READER
+  const dt_develop_blend_params_t locked = *mod->blend_params;
+  use_default_blend = dt_develop_blend_params_read(mod, bl_params, bl_length, bl_version, &bp, -1, TRUE, NULL);
+#else
+  if(bl_params && bl_version == dt_develop_blend_version() && bl_length == sizeof(dt_develop_blend_params_t))
+    memcpy(&bp, bl_params, sizeof(bp));
+  else
+    use_default_blend = !bl_params
+      || dt_develop_blend_legacy_params(mod, bl_params, bl_version, &bp, dt_develop_blend_version(), bl_length);
+#endif
+  if(!use_default_blend && ((bp.mask_mode & (DEVELOP_MASK_MASK | DEVELOP_MASK_RASTER))
+                            || dt_is_valid_maskid(bp.mask_id)))
+  {
+    sqlite3_finalize(stmt);
+    *err = g_strdup_printf("preset '%s' has a mask, which cannot be applied here yet", name);
+    return FALSE;
+  }
+
+  if(op_params && op_length == mod->params_size) memcpy(mod->params, op_params, op_length);
+  else memcpy(mod->params, mod->default_params, mod->params_size);
+  mod->enabled = enabled;
+  if(use_default_blend) dt_iop_commit_blend_params(mod, mod->default_blendop_params, NULL);
+  else
+  {
+#ifdef IMMAGE_STYLE_BLEND_READER
+    dt_develop_blend_keep_locked_mask(mod, &bp, &locked);
+#endif
+    dt_iop_commit_blend_params(mod, &bp, NULL);
+  }
+  // darktable's dt_iop_update_multi_name(), without its GUI header and its
+  // own history item: a hand-edited name stays, unless auto naming is off
+  if(!mod->multi_name_hand_edited && dt_conf_get_bool("darkroom/ui/auto_module_name_update"))
+  {
+    char *label = g_strstrip(g_strdup(multi_name && *multi_name ? multi_name : name));
+    g_strlcpy(mod->multi_name, label, sizeof(mod->multi_name));
+    mod->multi_name_hand_edited = multi_hand;
+    g_free(label);
+  }
+  sqlite3_finalize(stmt);
+  return TRUE;
+}
+
 // the History panel's switch and delete for one instance of the history,
 // found by op and multi_priority: `enabled` switches it, `reset` puts it
 // back to its defaults, on or off as darktable starts it, and `restore`
 // to a state an earlier reply gave (undo). modules without a switch and
-// masked modules permit reset/restore, but not an independent switch. replies the state
-// before and after
+// masked modules permit reset/restore, but not an independent switch. `preset`
+// applies a darktable preset by name (_apply_preset); it excludes the other three.
+// replies the state before and after
 gboolean session_module_state(const char *op, const int priority, const gboolean has_enabled,
                               const gboolean enabled, const gboolean reset, JsonObject *restore,
-                              JsonBuilder *b, char **err)
+                              const char *preset, JsonBuilder *b, char **err)
 {
   dt_iop_module_t *mod = op ? dt_iop_get_module_by_op_priority(_s.dev.iop, op, priority) : NULL;
   if(!mod)
@@ -922,7 +1097,12 @@ gboolean session_module_state(const char *op, const int priority, const gboolean
     *err = g_strdup_printf("module '%s' %d not in the pipe", op ? op : "(none)", priority);
     return FALSE;
   }
-  if(!reset && !restore
+  if(preset && (reset || restore || has_enabled))
+  {
+    *err = g_strdup("a preset cannot be combined with reset, restore or enabled");
+    return FALSE;
+  }
+  if(!reset && !restore && !preset
      && (mod->hide_enable_button || (mod->blend_params && mod->blend_params->mask_id > 0)))
   {
     *err = g_strdup_printf("module '%s' cannot be switched here", op);
@@ -935,7 +1115,18 @@ gboolean session_module_state(const char *op, const int priority, const gboolean
   dt_develop_blend_params_t was_blend = { 0 };
   if(mod->blend_params) memcpy(&was_blend, mod->blend_params, sizeof(was_blend));
   const gboolean was_enabled = mod->enabled;
-  if(restore)
+  char was_name[sizeof(mod->multi_name)];
+  g_strlcpy(was_name, mod->multi_name, sizeof(was_name));
+  const gboolean was_hand = mod->multi_name_hand_edited;
+  if(preset)
+  {
+    if(!_apply_preset(mod, preset, err))
+    {
+      g_free(was);
+      return FALSE;
+    }
+  }
+  else if(restore)
   {
     if(!_unbase64_into(json_object_get_string_member_with_default(restore, "params", NULL),
                        mod->params, mod->params_size))
@@ -956,6 +1147,7 @@ gboolean session_module_state(const char *op, const int priority, const gboolean
   }
   else if(has_enabled) mod->enabled = enabled;
   const gboolean same = mod->enabled == was_enabled && !memcmp(was, mod->params, mod->params_size)
+    && !strcmp(was_name, mod->multi_name) && was_hand == mod->multi_name_hand_edited
     && (!mod->blend_params || !memcmp(&was_blend, mod->blend_params, sizeof(was_blend)));
   g_free(was);
   if(!same)

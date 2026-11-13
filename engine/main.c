@@ -709,9 +709,16 @@ static gboolean _cmd_module_state(JsonObject *req, JsonBuilder *b, char **err)
                     json_object_get_boolean_member_with_default(req, "reset", FALSE),
                     json_object_has_member(req, "restore")
                       ? json_object_get_object_member(req, "restore") : NULL,
+                    json_object_get_string_member_with_default(req, "preset", NULL),
                     b, err))
     return FALSE;
   return TRUE;
+}
+
+static gboolean _cmd_presets(JsonObject *req, JsonBuilder *b, char **err)
+{
+  return session_presets(json_object_get_string_member_with_default(req, "op", NULL),
+                         json_object_get_int_member_with_default(req, "priority", 0), b, err);
 }
 
 static gboolean _cmd_get(JsonObject *req, JsonBuilder *b, char **err)
@@ -1262,6 +1269,7 @@ static const eng_cmd_t _commands[] =
   { "color_profiles", _cmd_color_profiles, _CMD_NEEDS_OPEN },
   { "lenses", _cmd_lenses, _CMD_NEEDS_OPEN },
   { "module_state", _cmd_module_state, _CMD_NEEDS_OPEN },
+  { "presets", _cmd_presets, _CMD_NEEDS_OPEN },
   { "get", _cmd_get, _CMD_NEEDS_OPEN },
   { "module_schema", _cmd_module_schema, _CMD_NEEDS_OPEN },
   { "instances", _cmd_instances, _CMD_NEEDS_OPEN },
