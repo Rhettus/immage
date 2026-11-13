@@ -527,6 +527,15 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "bias", label: "Mid-tones bias" },
     ],
   },
+  {
+    // colorcontrast.c gui_init: the two steepness sliders. left out: a_offset,
+    // b_offset and unbound, which have no widget
+    op: "colorcontrast", group: "hsl", title: "Color contrast",
+    fields: [
+      { path: "a_steepness", label: "Green-magenta contrast" },
+      { path: "b_steepness", label: "Blue-yellow contrast" },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);

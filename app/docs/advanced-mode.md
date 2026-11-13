@@ -156,6 +156,7 @@ The HSL / Color group has these darktable modules:
   switch, radius, edge feathering and noise protection. The saturation and
   brilliance curves are not on the card yet.
 - **Velvia**: **Strength** and **Mid-tones bias**.
+- **Color contrast**: **Green-magenta contrast** and **Blue-yellow contrast**.
 
 ## Instances
 
