@@ -61,3 +61,18 @@ test('modified selection clicks stay inside the original app and release modifie
   assert.equal(state.input.length,1);
   await assert.rejects(driver.modifiedPoint('x',10,10),/Unsupported/);
 });
+
+test('Space-drag holds Space through the drag and stays inside the original app', async () => {
+  const { driver, state } = fixture();
+  await driver.spaceDrag({ x: 10, y: 10 }, { x: 60, y: 40 });
+  assert.equal(state.releases, 1);
+  const seq = state.input.at(-1);
+  const keyboard = seq.actions.find(a => a.type === 'key').actions, pointer = seq.actions.find(a => a.type === 'pointer').actions;
+  assert.equal(keyboard[0].value, '\uE00D');
+  assert.equal(keyboard.findIndex(a => a.type === 'keyDown'), 0);
+  assert(keyboard.findIndex(a => a.type === 'keyUp') > pointer.findIndex(a => a.type === 'pointerUp'), 'Space is held through the release');
+  assert.equal(keyboard.length, pointer.length + 1, 'key and pointer ticks line up');
+  state.url = 'https://example.com'; const before = state.input.length;
+  await assert.rejects(driver.spaceDrag({ x: 1, y: 1 }, { x: 5, y: 5 }), /App-only boundary/);
+  assert.equal(state.input.length, before);
+});

@@ -31,6 +31,7 @@ import { engineRestart } from './specs/engine-restart.mjs';
 import { saveFailure } from './specs/save-failure.mjs';
 import { supportBundle } from './specs/support-bundle.mjs';
 import { menus, menusGuards } from './specs/menus.mjs';
+import * as release0450 from './specs/release-0450.mjs';
 import { hostileText } from './specs/hostile-text.mjs';
 import { settingsStore } from './specs/settings-store.mjs';
 
@@ -68,6 +69,10 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'menus-guards': menusGuards,
   'hostile-text': hostileText,
   'settings-store': settingsStore,
+  'space-pan': release0450.spacePanTools,
+  'heal-show-spots': release0450.healShowSpots,
+  'jpeg-preset': release0450.jpegPreset,
+  'brush-dot': release0450.brushDot,
 };
 for(const [name,definition] of Object.entries(cases)) if(definition.kind)
   implementations[name] = t => ({range:rangeContract,choice:choiceContract,module:moduleOutput}[definition.kind])(t,definition);
