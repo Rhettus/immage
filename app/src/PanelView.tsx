@@ -307,6 +307,9 @@ export const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle,
                 {s.presets && <PresetRow presets={s.presets} disabled={disabled} onApply={onChangeMany}
                                            onPreview={onPreview} />}
                 {s.title === "White Balance" && wbTools}
+                {s.title === "White Balance" && session?.wbInModule && (
+                  <div className="note">white balance comes from the white balance module, with color calibration off; Temp and Tint turn color calibration on, which adapts it again</div>
+                )}
                 {s.title === "Tone" && toneTools}
                 {s.title === "AI Denoise" && denoiseTools}
                 {s.title === "Straighten" && straightenTools}

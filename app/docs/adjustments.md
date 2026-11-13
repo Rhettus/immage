@@ -85,6 +85,14 @@ for **B&W Mix**.
 
 - **Temp**: 2000-25000 K. **Tint**: -150 to +150. Both start **As Shot**,
   and double-click goes back to it.
+- A note under the section, "white balance comes from the white balance
+  module, with color calibration off", means the photo's white balance is set
+  by the white balance module (as in Advanced mode, or an edit from darktable
+  with a setting such as As shot or a camera preset) and not by color
+  calibration. Temp and Tint turn color calibration on, which adapts the colors
+  again on top of it. For darktable's usual setup, choose Camera reference or
+  As shot to reference in the Advanced white balance card, or turn color
+  calibration on.
 - The eyedropper (W) picks a neutral spot: click something that should be
   gray. It refuses a clipped or black spot. Esc cancels.
 - The **WB** menu has **As Shot**, **Auto**, **Daylight**, **Cloudy**,

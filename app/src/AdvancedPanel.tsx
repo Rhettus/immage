@@ -238,7 +238,7 @@ export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0
                   const f = familyOf(i.op);
                   return f && familyOptions(f, i.op).length > 1 ? { label: f.label, options: familyOptions(f, i.op), onPick: (to: string) => switchTo(cards.find((c) => c.i === i)!, f, to) } : undefined;
                 })()}
-                photo={session} siblings={sib.length} index={index} fresh={session!.lastAdded === key} focus={focused?.key === key ? focused.nonce : undefined} onInstance={onInstance} onTurn={onTurn}
+                photo={session} wbInModule={session?.wbInModule} siblings={sib.length} index={index} fresh={session!.lastAdded === key} focus={focused?.key === key ? focused.nonce : undefined} onInstance={onInstance} onTurn={onTurn}
                 onField={(path, v, coalesce) => { record?.([`adv:${key}:${path}`], layout.title); const c = session!.context;
                   session!.setFields(i.op, i.priority, editOf(layout, path, v, state.params, { width: c.sensorWidth, height: c.sensorHeight }), coalesce); }}
                 onFields={(edit, coalesce, id) => { record?.([`adv:${key}:${id}`], layout.title); const c = session!.context;

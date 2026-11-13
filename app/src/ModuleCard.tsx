@@ -72,13 +72,16 @@ export function fieldControl(f: SchemaField, l: LayoutField, value: number): Con
 // `siblings` is how many instances of the module the group shows, `index`
 // this one's place among them (pipe order); `fresh`, a card just added;
 // `focus`, a number that changes each time the module search picks the card
-export function ModuleCard({ hidden, instance, layout, schema, state, siblings, index, fresh, focus, family, photo, onField, onFields, onEnabled, onReset, onInstance, loadPresets, onPreset, onTurn }: {
+export function ModuleCard({ hidden, instance, layout, schema, state, siblings, index, fresh, focus, family, photo, wbInModule, onField, onFields, onEnabled, onReset, onInstance, loadPresets, onPreset, onTurn }: {
   instance: Instance; layout: ModuleLayout; schema: ModuleSchema; state: AdvancedState;
   // hidden in Preferences > Modules, yet shown as the photo uses it
   hidden?: boolean;
   siblings: number; index: number; fresh?: boolean; focus?: number;
   // the open photo, which the lens picker lists lenses for
   photo?: object | null;
+  // the white balance note: the photo's white balance is set by this module
+  // with color calibration off (Session.wbInModule)
+  wbInModule?: boolean;
   // the modules this card can switch to, when it is a shared card
   family?: { label: string; options: FamilyOption[]; onPick: (op: string) => void };
   onField: (path: string, value: number, coalesce: boolean) => void;
@@ -197,6 +200,9 @@ export function ModuleCard({ hidden, instance, layout, schema, state, siblings, 
       </div>
       <Collapse open={open}>
         <div className="module-card-body">
+          {layout.op === "temperature" && wbInModule && (
+            <div className="note" style={{ marginLeft: 0, marginRight: 0 }}>color calibration is off, so this module sets the white balance</div>
+          )}
           {layout.turns && onTurn && (
             <div className="crop-turn module-card-turns">
               {layout.turns.map(({ label, how }) => (

@@ -119,8 +119,14 @@ Besides exposure, the Basic group has these darktable modules:
   shows the entry that matches the current coefficients. darktable's From image
   area entry, which needs its color picker, is not offered, and a photo without
   presets for its camera (a JPEG, for one) lists only the first four entries.
-  Simple's White Balance sliders set color calibration, not this module. darktable allows one
-  instance.
+  Simple's White Balance sliders set color calibration, not this module.
+  When this module is on with a setting other than Camera reference or As shot
+  to reference and color calibration is off, the card says "color calibration
+  is off, so this module sets the white balance", and Simple's White Balance
+  section carries a note to the same effect. Choosing Camera reference or As
+  shot to reference here, or turning color calibration on, is darktable's usual
+  setup (Temp and Tint in Simple turn color calibration on). darktable allows
+  one instance.
 - **Color calibration**: tabs as in darktable. **CAT** has the adaptation,
   the illuminant (with its fluorescent or LED source, or a temperature for
   daylight and Planckian) and gamut compression; **R**, **G** and **B** mix the

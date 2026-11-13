@@ -796,6 +796,24 @@ for (const [what, source] of wbPhotos) {
     await write({ wb_setting: 2 });
     assert.equal((await get('wb_setting')).wb_setting, 2, 'user modified keeps the coefficients');
 
+    // the "white balance in the module" note (Session.wbInModule): temperature
+    // on, a setting other than camera reference and as shot to reference, and
+    // color calibration off
+    const inModule = async () => {
+      const r = (await e.call({ cmd: 'get', modules: { temperature: ['wb_setting'], channelmixerrgb: ['illuminant'] } })).modules;
+      return !!r.temperature.enabled && ![3, 4].includes(r.temperature.params.wb_setting) && !r.channelmixerrgb.enabled;
+    };
+    await write({ wb_setting: 4 });
+    assert.equal(await inModule(), false, 'as shot to reference is not the note');
+    await write({ wb_setting: 0 });
+    assert.equal(await inModule(), false, 'color calibration on is not the note');
+    await e.call({ cmd: 'set', op: 'channelmixerrgb', priority: 0, params: {}, enabled: false });
+    assert.equal(await inModule(), true, 'as shot with color calibration off is the note');
+    await write({ wb_setting: 3 });
+    assert.equal(await inModule(), false, 'camera reference is not the note');
+    await write({ wb_setting: 0 });
+    await e.call({ cmd: 'set', op: 'channelmixerrgb', priority: 0, params: {}, enabled: true });
+
     if (!presets.length) return;
     assert.ok(presets.every((p, k) => p.value === 6 + k && p.name), 'preset values follow the section header');
     const top = presets[0];

@@ -262,6 +262,27 @@ export class Session {
   private reshape = false;
   onShapes: (() => void) | null = null;
 
+  // the photo's white balance is set in the white balance module with color
+  // calibration off: temperature on, its setting neither camera reference nor
+  // as shot to reference (wb.c's wb_setting 3 and 4), channelmixerrgb off.
+  // the panels note it; refreshWb keeps it current (see changed)
+  wbInModule = false;
+  private wbTimer: ReturnType<typeof setTimeout> | undefined;
+  async refreshWb() {
+    clearTimeout(this.wbTimer);
+    // a batch's background session shows no panels
+    if (this.dead || this.background) return;
+    let now = false;
+    try {
+      const r = await traced("get_params", () => commands.getParams({ temperature: ["wb_setting"], channelmixerrgb: ["illuminant"] }));
+      const t = r.modules.temperature, c = r.modules.channelmixerrgb;
+      now = !!t?.enabled && ![3, 4].includes(t.params.wb_setting) && !c?.enabled;
+    } catch { return; }
+    if (now === this.wbInModule || this.dead) return;
+    this.wbInModule = now;
+    this.onModules?.();
+  }
+
   constructor(
     private size: () => View,
     private onFrame: (f: Frame) => void,
@@ -318,6 +339,7 @@ export class Session {
     await s.loadMasks();
     s.chooseModules();
     s.spots = await traced("spots", () => commands.spots(null));
+    await s.refreshWb();
     s.requestRender();
     return s;
   }
@@ -1461,6 +1483,11 @@ export class Session {
   // what the engine renders changed: no frame shown is known to show it.
   // the copy is put aside, for the engine to name if the image comes back
   private changed() {
+    // every path that edits the photo ends here (Simple and card edits, module
+    // switches, undo and redo, History jumps, paste), so the white balance note
+    // is checked once the edits pause; a pump in flight is long over by then
+    clearTimeout(this.wbTimer);
+    if (!this.background) this.wbTimer = setTimeout(() => void this.refreshWb(), 300);
     this.current.clear();
     if (this.copy) {
       this.putAside = this.copy;
