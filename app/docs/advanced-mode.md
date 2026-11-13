@@ -170,6 +170,8 @@ The HSL / Color group has these darktable modules:
 - **Color look up table**: on/off, reset and darktable's presets (such as
   its film emulations). The patch grid and patch sliders are not on the card
   yet.
+- **LUT 3D**: **Application color space** and **Interpolation**. Choosing
+  the LUT file is not on the card yet.
 
 ## Instances
 

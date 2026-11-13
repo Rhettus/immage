@@ -621,6 +621,22 @@ export const LAYOUTS: ModuleLayout[] = [
     op: "colorchecker", group: "hsl", title: "Color look up table",
     fields: [],
   },
+  {
+    // lut3d.c gui_init: file chooser button and file combobox, then (with
+    // gmic) a LUT name entry and list, then the color space and interpolation
+    // comboboxes. darktable hides the color space combobox when the module
+    // sits outside the colorin to colorout stretch of the pipe (_show_hide_
+    // colorspace, which depends on the module order, not on params), so it is
+    // listed unconditionally. left out: filepath and lutname (strings set by
+    // the file picker and the LUT list, which need a custom file chooser; the
+    // LUT folder comes from preferences), nb_keypoints and c_clut (the
+    // compressed LUT data, no widget)
+    op: "lut3d", group: "hsl", title: "LUT 3D",
+    fields: [
+      { path: "colorspace", label: "Application color space" },
+      { path: "interpolation", label: "Interpolation" },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);
