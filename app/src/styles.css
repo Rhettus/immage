@@ -2609,6 +2609,13 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .module-card-curve { margin: 4px 0 8px; }
 .module-card-graph .contrast-equalizer { margin: 4px 0 8px; }
 .module-card-curve .point-curve { display: block; width: 100%; max-width: 260px; margin: 6px auto; }
+/* the levels widget: a wide, short area with a handle on each of black, gray and white */
+.module-card-curve .levels-area { display: block; width: 100%; max-width: 260px; aspect-ratio: auto; margin: 6px auto; cursor: ew-resize; touch-action: none; user-select: none; }
+.levels-area.disabled { opacity: 0.4; cursor: default; }
+.levels-area .levels-bg { fill: var(--panel, #181818); }
+.levels-area .levels-line { stroke: #b3b3b3; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.levels-area .levels-on .levels-line { stroke: #fff; }
+.levels-area .levels-handle { stroke: #b3b3b3; stroke-width: 1; vector-effect: non-scaling-stroke; }
 .advanced-empty { margin: 4px 16px 8px; color: var(--muted, #8a8a8a); font-size: var(--fs-small); }
 
 /* Advanced mode's module cards: a header row (switch, name, reset) over the

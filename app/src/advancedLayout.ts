@@ -101,6 +101,10 @@ export type ModuleLayout = {
   // `editable` whether a channel's curve can be changed (darktable leaves
   // tonecurve's a and b curves alone while they are linked); `colored`
   // tints each channel's curve
+  // the levels widget (ModuleLevels) for rgblevels: black, gray and white
+  // handles over levels[c][0..2], R/G/B tabs for independent channels (autoscale 1),
+  // drawn after the field `after`
+  levels?: { after: string };
   curves?: {
     channels: string[];
     count: (ch: number) => string;
@@ -565,10 +569,11 @@ export const LAYOUTS: ModuleLayout[] = [
   },
   {
     // rgblevels.c gui_init and _rgblevels_show_hide_controls (preserve colors
-    // shows only for linked channels). left out: levels, the black, gray and
-    // white handles, which need the levels widget; the pickers, auto levels
-    // and select region
+    // shows only for linked channels); the levels widget (black, gray and white
+    // handles, R, G and B tabs for independent channels) follows the mode.
+    // left out: the pickers, auto levels and select region
     op: "rgblevels", group: "tonecurve", title: "RGB levels",
+    levels: { after: "autoscale" },
     fields: [
       { path: "autoscale", label: "Mode" },
       { path: "preserve_colors", label: "Preserve colors", showIf: (p) => p.autoscale === 0 },

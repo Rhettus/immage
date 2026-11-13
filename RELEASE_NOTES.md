@@ -21,15 +21,16 @@ Improvements
   group copies those edits, which Paste and Previous apply to other photos.
   Color balance rgb's card has a color wheel for each of its four ranges, and
   the tone curve and rgb curve cards have a point curve editor with channel
-  tabs and darktable's interpolation methods. The contrast equalizer and
+  tabs and darktable's interpolation methods, and the rgb levels card has its
+  black, gray and white handles. The contrast equalizer and
   saturation curve cards have Simple's graphs, the lens correction card has
   Simple's lens picker, and the white balance card has darktable's settings
   list (as shot, camera reference and your camera's presets, with a finetune
   slider) and its temperature and tint sliders. The framing and watermark
   cards have color buttons for the border, frame line and watermark colors.
-  When a photo's white balance
-  comes from the white balance module with color calibration off, Simple's
-  White Balance section and the white balance card say so.
+  When a photo's white balance comes from the white balance module with color
+  calibration off, Simple's White Balance section and the white balance card
+  say so.
 - Advanced cards so far: in Basic, exposure, white balance, color calibration,
   highlight reconstruction, the tone mapper, contrast & texture, local contrast,
   haze removal, diffuse or sharpen and color balance rgb; in Tone Curve, tone

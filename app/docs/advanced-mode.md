@@ -204,9 +204,15 @@ The Tone Curve group has these darktable modules:
   and **Preserve colors** for linked channels. Linked channels have the one
   curve; **R**, **G** and **B** tabs appear in independent mode. Simple's R, G
   and B curves edit the same module.
-- **RGB levels**: **Mode** and, for linked channels, **Preserve colors**.
-  The black, gray and white levels, their pickers and auto levels are not on
-  the card yet.
+- **RGB levels**: **Mode**, a levels graph and, for linked channels,
+  **Preserve colors**. The graph has a black, a gray and a white handle, as in
+  darktable: drag the one nearest the pointer, or scroll over the graph to
+  nudge it (Shift for bigger steps, Ctrl for finer ones). Moving black or
+  white carries gray along, they stay a small distance apart, and gray stays
+  between them. Double-click puts the channel's handles back. In independent
+  mode **R**, **G** and **B** tabs pick the channel. The graph shows no
+  histogram. The pickers, auto levels and select region are not on the card
+  yet.
 - **Tone equalizer**: tabs **Simple** (the nine bands, -8 EV to +0 EV),
   **Advanced** (mask exposure and contrast compensation) and **Masking** (the
   luminance estimator, preserve details and, with a filter chosen, its

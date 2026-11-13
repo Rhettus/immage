@@ -564,6 +564,11 @@ test('Advanced card layouts match darktable', { skip: skip || false }, async (t)
         const f = resolve(lf.path);
         assert.ok(f, `${l.op}: no field ${lf.path}; schema has ${[...by.keys()]}`);
         assert.ok(lf.label, `${lf.path}: no label`);
+        // the levels widget's 3 x 3 floats
+        if (lf.path === 'autoscale' && l.levels) {
+          const lv = resolve('levels');
+          assert.ok(lv && lv.type === 'array' && lv.dims[0] === 3 && lv.dims[1] === 3, 'levels is 3 channels of 3');
+        }
         // a color button is a float array of three, drawn as one control
         if (lf.rgb) {
           assert.ok(f.type === 'array' && f.element === 'float' && f.dims[0] === 3, `${lf.path}: rgb on ${f.type}`);
@@ -729,6 +734,62 @@ test('Advanced lens card picks a lens for its own instance', { skip: skip || fal
   assert.equal((await read(0)).params.lens_pick, 0, 'the first instance is unaffected');
   await e.call({ cmd: 'set', op: 'lens', priority: second, params: { lens_pick: 0 }, enabled: true });
   assert.equal((await read(second)).params.lens_pick, 0, 'Auto again');
+});
+
+// the levels widget of the RGB levels card (ModuleLevels): darktable's handle
+// rules (rgblevels.c _rgblevels_move_handle), and its levels[c][k] elements
+// written to the engine
+test('Advanced RGB levels handles and fields', { skip: skip || false }, async (t) => {
+  const { moveHandle, nearestHandle, grayShare, wheelPosition } = await import('../app/src/levels.ts');
+  const { LAYOUTS } = await import('../app/src/advancedLayout.ts');
+  const near = (a, b) => assert.ok(a.every((v, i) => Math.abs(v - b[i]) < 1e-6), `${a} != ${b}`);
+  // black and white carry gray along at its share, and stay 0.05 apart
+  near(moveHandle([0, 0.5, 1], 0, 0.2, 0.5), [0.2, 0.6, 1]);
+  near(moveHandle([0, 0.5, 1], 2, 0.8, 0.5), [0, 0.4, 0.8]);
+  near(moveHandle([0, 0.5, 1], 0, 0.99, 0.5), [0.9, 0.95, 1]);   // black stops short of white by the gap over gray's share
+  near(moveHandle([0, 0.5, 1], 2, 0.01, 0.5), [0, 0.05, 0.1]);
+  // gray moves alone, inside 0.05 of black and white
+  near(moveHandle([0.1, 0.5, 0.9], 1, 0.95, 0.5), [0.1, 0.85, 0.9]);
+  near(moveHandle([0.1, 0.5, 0.9], 1, 0, 0.5), [0.1, 0.15, 0.9]);
+  assert.equal(moveHandle([0, 0.5, 1], 3, 0.2, 0.5)[0], 0, 'no such handle');
+  assert.equal(nearestHandle([0, 0.5, 1], 0.2), 0);
+  assert.equal(nearestHandle([0, 0.5, 1], 0.4), 1);
+  assert.equal(nearestHandle([0.5, 0.5, 0.5], 0.5), 0, 'the first of equals');
+  assert.ok(Math.abs(grayShare([0.2, 0.5, 0.8]) - 0.5) < 1e-9);
+  assert.ok(Math.abs(wheelPosition(0.5, 1) - 0.498) < 1e-9);
+  assert.ok(Math.abs(wheelPosition(0.5, -1, 10) - 0.52) < 1e-9);
+  const l = LAYOUTS.find((x) => x.op === 'rgblevels');
+  assert.equal(l.levels.after, 'autoscale');
+  assert.ok(l.fields.some((f) => f.path === l.levels.after));
+
+  const work = mkdtempSync(join(tmpdir(), 'immage-advlevels-'));
+  mkdirSync(join(work, 'photos'));
+  const photo = join(work, 'photos', 'stairs.jpg');
+  copyFileSync(SAMPLE, photo);
+  const e = new Engine(work);
+  t.after(() => { e.stop(); rmSync(work, { recursive: true, force: true }); });
+  await e.call({ cmd: 'open', path: photo });
+  const render = async (tag) => {
+    const out = join(work, `${tag}.ppm`);
+    await e.call({ cmd: 'render', width: 96, height: 64, out });
+    return readFileSync(out);
+  };
+  const paths = [0, 1, 2].flatMap((c) => [0, 1, 2].map((k) => `levels[${c}][${k}]`));
+  const set = (params) => e.call({ cmd: 'set', op: 'rgblevels', priority: 0, params, enabled: true });
+  const get = async () => (await e.call({ cmd: 'get', modules: { 'rgblevels@0': paths } })).modules['rgblevels@0'];
+  const first = await get();
+  assert.deepEqual([0, 1, 2].map((k) => first.defaults[`levels[0][${k}]`]), [0, 0.5, 1], 'defaults');
+  await set({});
+  const before = await render('before');
+  await set({ 'levels[0][0]': 0.2, 'levels[0][1]': 0.45, 'levels[0][2]': 0.8 });
+  const after = await render('after');
+  assert.ok(!before.equals(after), 'moving the handles changes the frame');
+  const g = await get();
+  assert.deepEqual([0, 1, 2].map((k) => Math.round(g.params[`levels[0][${k}]`] * 1000) / 1000), [0.2, 0.45, 0.8], 'levels read back');
+  assert.equal(g.params['levels[1][0]'], 0, 'the other channels are untouched');
+  // independent channels: G alone
+  await set({ autoscale: 1, 'levels[1][1]': 0.3 });
+  assert.ok(!after.equals(await render('green')), 'a channel of its own changes the frame');
 });
 
 // the framing and watermark color buttons write the three elements of an

@@ -14,6 +14,7 @@ import { FlipIcon, RotateIcon } from "./icons";
 import { fieldPath, rgbPaths, type LayoutField, type ModuleLayout } from "./advancedLayout";
 import { ColorWheel } from "./ColorWheel";
 import { ModuleCurves } from "./ModuleCurves";
+import { ModuleLevels } from "./ModuleLevels";
 import { ModuleGraph } from "./ModuleGraph";
 import { graphFields } from "./graphMaps";
 import { LensPicker } from "./LensPicker";
@@ -279,6 +280,9 @@ export function ModuleCard({ hidden, instance, layout, schema, state, siblings, 
                   {control.kind === "toggle" ? <Toggle {...props} onChange={set(false)} />
                     : control.kind === "choice" ? <Choice {...props} onChange={set(false)} />
                     : <Slider {...props} onChange={set(true)} />}
+                  {layout.levels?.after === l.path && fields.has("levels") && (
+                    <ModuleLevels op={layout.op} state={state} disabled={fixed && !state.enabled} onFields={onFields} />
+                  )}
                 </Fragment>
               );
             });

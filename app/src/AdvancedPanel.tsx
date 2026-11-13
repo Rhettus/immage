@@ -106,7 +106,8 @@ const cardFields = (layout: NonNullable<ReturnType<typeof layoutFor>>) => {
   const c = layout.curves;
   const curve = c ? c.channels.flatMap((_, ch) => [c.count(ch), c.type(ch),
     ...Array.from({ length: MAX_NODES }, (__, k) => [c.node(ch, k, "x"), c.node(ch, k, "y")]).flat()]) : [];
-  return [...layout.fields.flatMap(layoutPaths), ...(layout.lensPick ? ["lens_pick"] : []), ...curve,
+  const levels = layout.levels ? [0, 1, 2].flatMap((c) => [0, 1, 2].map((k) => `levels[${c}][${k}]`)) : [];
+  return [...layout.fields.flatMap(layoutPaths), ...levels, ...(layout.lensPick ? ["lens_pick"] : []), ...curve,
     ...(layout.graph ? GRAPHS[layout.graph].fields : [])];
 };
 
