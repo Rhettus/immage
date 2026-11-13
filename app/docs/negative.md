@@ -44,10 +44,37 @@ detail, effects, masks, crop) works as on any photo.
 The warning has a "Don't warn me again" box; Preferences › General ›
 Warn before converting a negative turns it back on.
 
+## The steps
+
+The Negative panel is a list of numbered steps. One step is open at a time,
+and the others fold to a line that shows their current values. Click a
+folded step to open it. The open step has **Back** and **Next**, and
+**Done** on the last one, which folds them all. A step you have been through
+shows a check mark. Immage remembers the open step, so the panel opens where
+you left it.
+
+The steps are:
+
+1. **Profiles**: Input Profile and Working Profile, described below.
+2. **Border & Photo Area**: Film Type, **Pick Film Border** and **Pick Photo
+   Area**. Picking the film border converts the photo.
+3. **Film Base**: White Point and Black Point.
+4. **Color**: Neutral Shadows, Neutral Highlights and **Reset Color**. It is
+   listed only for color film.
+5. **Tone**: Exposure, Contrast, Blacks and Highlight Roll-off.
+6. **Fine Color**: Border Color, Shadow Tint and White Balance, locked until
+   the photo is converted. Its summary ends with "changed" when any of these
+   has been edited.
+7. **Export Positive**: **Export to Library**, its DNG and TIFF buttons, and
+   **Turn Off Conversion**.
+
+Steps 3 to 7 are locked until the film border is picked in step 2, and their
+summaries say so. Profiles and Border & Photo Area are always open.
+
 ## Color management
 
-Choose **Input Profile** and **Working Profile** at the top of Negative before
-picking the film border. These are darktable's input color profile settings;
+Choose **Input Profile** and **Working Profile** in the Profiles step, the
+first step of Negative, before picking the film border. These are darktable's input color profile settings;
 they affect the whole photo, including when conversion is off.
 
 - **Input Profile** describes the RGB supplied by your camera or scanner.
@@ -109,15 +136,15 @@ install the same named files on the destination computer.
 
 ## Converting a negative
 
-1. **Film Type.** Choose Color or Black & White. Black & White also sets
-   Basic's Treatment to Black & White.
-2. **Pick Film Border.** Click it, then drag a box over the unexposed
-   film border, clear of any pre-exposed edge or printed numbers. This
-   converts the photo. Its border color shows in the swatch beside the
-   button.
-3. **Pick Photo Area.** Drag a box over the picture inside the border,
-   clear of dust. White Point, Black Point, Blacks and Exposure are set
-   from it. Until you pick one, the conversion reads the whole frame
+1. **Film Type**, in the Border & Photo Area step. Choose Color or Black &
+   White. Black & White also sets Basic's Treatment to Black & White.
+2. **Pick Film Border**, in the same step. Click it, then drag a box over
+   the unexposed film border, clear of any pre-exposed edge or printed
+   numbers. This converts the photo. Its border color shows in the swatch
+   beside the button.
+3. **Pick Photo Area**, in the same step. Drag a box over the picture inside
+   the border, clear of dust. White Point, Black Point, Blacks and Exposure
+   are set from it. Until you pick one, the conversion reads the whole frame
    bar a thin edge.
 
 While an eyedropper waits for a box, the photo shows uncropped, so the
@@ -142,11 +169,10 @@ its manual and tutorials.
 | Highlight Roll-off | where the brightest tones start to compress: lower is gentler | |
 
 Set Neutral Shadows before Neutral Highlights: the shadows' correction
-moves the highlights too. Reset Color sets both back. Advanced holds the
-Border Color, Shadow Tint and White Balance as red, green and blue
-sliders.
+moves the highlights too. Reset Color sets both back. The Fine Color step holds
+Border Color, Shadow Tint and White Balance as red, green and blue sliders.
 
-Turn Off Conversion, at the foot of the panel, takes the photo back to the
+Turn Off Conversion, in the Export Positive step, takes the photo back to the
 negative, with Basic's tools as they were. Undo does the same.
 
 A photo is either a converted negative or a
@@ -163,7 +189,7 @@ differently may need its own picks.
 
 ## Export a positive to the library
 
-**Export to Library**, at the foot of the panel, writes a separate positive
+**Export to Library**, in the Export Positive step, writes a separate positive
 beside the original, with the conversion and current edits baked in. It
 opens with normal editing tools available, so you can continue editing
 without the negative workflow's restrictions. The original keeps its

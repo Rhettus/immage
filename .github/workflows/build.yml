@@ -57,6 +57,10 @@ jobs:
           fetch-depth: 0
       - name: release asset checks
         run: python3 -I scripts/test_release_assets.py
+      - name: model pin checks
+        run: python3 -I scripts/test_pin_models.py
+      - name: upstream copy checks
+        run: python3 -I scripts/test_check_upstream_copies.py
       - name: gitleaks
         run: |
           v=8.30.1
@@ -85,13 +89,49 @@ jobs:
         working-directory: app
       - run: npx tsc --noEmit
         working-directory: app
-      - name: performance tuner and portable module checks
-        run: node --test verify/performance-tuner.test.mjs verify/detail-preview.test.mjs verify/fit-preview.test.mjs
+      - name: no HTML or code injection sinks
+        run: sh scripts/check_web_sinks.sh
+      # the other verify/*.test.mjs need a built engine; list new engine-free ones here
+      - name: front-end checks that need no engine
+        run: |
+          node --test \
+            verify/agx-profiles.test.mjs \
+            verify/ai-mask-paste.test.mjs \
+            verify/chord-actions.test.mjs \
+            verify/color-range.test.mjs \
+            verify/contrast-equalizer.test.mjs \
+            verify/crop-corner.test.mjs \
+            verify/crop-transition.test.mjs \
+            verify/detail-preview.test.mjs \
+            verify/engine-commands.test.mjs \
+            verify/engine-state.test.mjs \
+            verify/export-format.test.mjs \
+            verify/fit-preview.test.mjs \
+            verify/front-logic.test.mjs \
+            verify/gpu-check.test.mjs \
+            verify/menus.test.mjs \
+            verify/module-others.test.mjs \
+            verify/perf-diagnostics.test.mjs \
+            verify/performance-tuner.test.mjs \
+            verify/perf-tracing.test.mjs \
+            verify/pixel-worker.test.mjs \
+            verify/preview-handoff.test.mjs \
+            verify/saturation-curve.test.mjs \
+            verify/settings-store.test.mjs \
+            verify/theme.test.mjs \
+            verify/typed-commands.test.mjs \
+            verify/ui-updates.test.mjs \
+            verify/upgrade-paths.test.mjs
       - run: npm audit --omit=dev --audit-level=high
         working-directory: app
+      # rust-cache saves nothing after an exact hit, so an entry saved before
+      # `cargo test` joined this job (clippy's output only) was restored and
+      # kept forever, and the tests compiled from cold every run (~9 min).
+      # change this key when the job's cargo steps change
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: app/src-tauri
+          key: clippy-test
       - name: cargo clippy
         working-directory: app/src-tauri
         # tauri's build script checks that the bundled resources exist; the
@@ -100,6 +140,9 @@ jobs:
           mkdir -p resources/darktable resources/webext
           touch resources/notices.txt
           cargo clippy --locked -- -D warnings
+      - name: cargo test
+        working-directory: app/src-tauri
+        run: cargo test --locked
       # fails on a RustSec vulnerability in Cargo.lock; unmaintained and
       # unsound crates (all from tauri and gtk-rs) are only reported
       - name: cargo audit

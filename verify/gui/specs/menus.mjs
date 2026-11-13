@@ -243,9 +243,14 @@ export async function menus(t) {
 
   // Create Virtual Copy adds a filmstrip entry. Last, since it changes the library.
   // The copy lives in the run's own fixture folder; no case here deletes it.
+  // Earlier cases in the same run can leave several photos selected and a
+  // filter set: one copy is then made per selected photo, and some may be
+  // hidden. The status line confirms the copy either way.
   const before = await thumbs(t);
+  const status = () => t.driver.observe(() => document.querySelector('.status')?.textContent ?? '');
   await pick(t, 'Photo', 'virtual-copy');
-  await until(async () => await thumbs(t) === before + 1, 'Photo > Create Virtual Copy adds a filmstrip entry');
+  await until(async () => /made virtual copy/.test(await status()), 'Photo > Create Virtual Copy reports the copy');
+  assert(await thumbs(t) >= before, 'Photo > Create Virtual Copy removes no filmstrip entry');
   await t.evidence('virtual-copy-from-menu');
   t.measure({ name: 'virtual-copy', thumbsBefore: before, thumbsAfter: await thumbs(t) });
 }

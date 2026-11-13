@@ -271,6 +271,23 @@ button { font: inherit; color: inherit; }
   font-weight: 600;
   cursor: pointer;
 }
+/* a panel's Advanced switch, in the module switch's muted color, brighter
+   when hovered or on */
+.advanced-toggle {
+  position: relative; display: grid; place-items: center; flex: none; width: 20px; height: 20px; padding: 0;
+  margin: 0 4px 0 auto; border: none; border-radius: 4px; background: none; color: var(--text-3); cursor: pointer;
+}
+.advanced-toggle svg { width: 13px; height: 13px; }
+/* only the icon's color changes: no box on hover, focus or when on */
+.advanced-toggle:hover, .advanced-toggle:focus, .advanced-toggle.on { background: none; outline: none; box-shadow: none; }
+.advanced-toggle:hover, .advanced-toggle:focus-visible, .advanced-toggle.on { color: var(--text); }
+.advanced-dot { position: absolute; top: 0; right: 0; }
+/* the one "edited where you cannot see it" dot: a hidden advanced setting,
+   another module's edits, an option with adjustments */
+.advanced-dot, .module-switch-btn.others::after, .module-menu .adjusted-dot {
+  width: 5px; height: 5px; border-radius: 50%; background: #5fd068; box-shadow: 0 0 0 1.5px var(--panel, #1c1c1e);
+}
+.panel-head .advanced-toggle { margin: 0; }
 /* the photo under the pointer, as the open Tone Curve, HSL or B&W Mix card reads it */
 .probe-chip {
   display: flex; align-items: center; gap: 6px;
@@ -427,11 +444,12 @@ section h3 { margin: 7px 0 5px; font-size: var(--fs-body); font-weight: 600; col
   display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; padding: 0;
   border: none; border-radius: 4px; background: none; color: var(--text-3); cursor: pointer;
 }
-.module-switch-btn:hover, .module-switch-btn:focus-visible, .module-switch-btn.on { color: var(--text); background: var(--hover); }
+/* as the Advanced switch: only the icon's color changes */
+.module-switch-btn:hover, .module-switch-btn:focus, .module-switch-btn.on { background: none; outline: none; box-shadow: none; }
+.module-switch-btn:hover, .module-switch-btn:focus-visible, .module-switch-btn.on { color: var(--text); }
 .module-switch-btn { position: relative; }
 .module-switch-btn.others::after {
-  content: ""; position: absolute; top: -2px; right: -2px; width: 8px; height: 8px; border-radius: 50%; background: #5fd068;
-  box-shadow: 0 0 0 1.5px var(--panel, #1c1c1e);
+  content: ""; position: absolute; top: -1px; right: -1px;
 }
 .module-switch-btn:disabled { cursor: default; opacity: .5; }
 .equalizer-heading .name { display: inline-flex; align-items: center; gap: 5px; }
@@ -439,7 +457,7 @@ section h3 { margin: 7px 0 5px; font-size: var(--fs-body); font-weight: 600; col
   min-width: min(200px, calc(100vw - 16px)); max-width: calc(100vw - 16px);
   max-height: calc(100vh - 16px); overflow: auto; box-sizing: border-box; z-index: 1000;
 }
-.module-menu .adjusted-dot { width: 7px; height: 7px; margin-left: auto; border-radius: 50%; background: #5fd068; flex: none; }
+.module-menu .adjusted-dot { margin-left: auto; flex: none; }
 .module-menu .menu-label { padding: 4px 10px 6px; font-size: var(--fs-caption); text-transform: uppercase; letter-spacing: .06em; }
 .context-menu.module-menu button { display: flex; align-items: center; gap: 6px; width: 100%; }
 .context-menu.module-menu button .check { width: 12px; color: var(--text-2); font-size: var(--fs-small); }
@@ -980,6 +998,9 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .crop-angle { display: flex; align-items: center; gap: 6px; }
 .crop-angle .slider { flex: 1; min-width: 0; }
 .viewer.straightening, .viewer.straightening * { cursor: crosshair; }
+/* Space held on a zoomed photo pans over any tool */
+.viewer.space-pan, .viewer.space-pan * { cursor: grab !important; }
+.viewer.space-pan.space-dragging, .viewer.space-pan.space-dragging * { cursor: grabbing !important; }
 .straighten-line { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 5; pointer-events: none; }
 /* the Transform panel: Upright's buttons, and its grid and guides on the photo */
 .upright-tools { display: flex; flex-direction: column; gap: 6px; margin: 2px 0 8px; }
@@ -1697,6 +1718,7 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 }
 .tile-menu button:hover { background: var(--hover); }
 .tile-menu button.danger { color: #ff6b6b; }
+.tile-menu button:disabled { opacity: 0.4; cursor: default; background: none; }
 /* the masks panel's adjustments card, named for the mask it acts through */
 .masks-panel .adj-title { cursor: default; }
 .masks-panel .adj-title > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1744,6 +1766,10 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 /* Heal and Clone */
 .spot-edges { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .spot-edges[width="0"] { display: none; }
+/* the brush's circles and center dot stand in for the pointer; pins and
+   outlines bring back their own */
+.mask-svg.drawing.spot-svg { cursor: none; }
+.mask-svg .brush-cursor .dot { fill: var(--accent, #fff); stroke: var(--panel, #181818); stroke-width: 1; }
 .spot-svg .spot-pin {
   fill: var(--accent, #fff); stroke: var(--panel, #181818); stroke-width: 1.5; vector-effect: non-scaling-stroke; cursor: pointer;
 }
@@ -1756,6 +1782,8 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .spot-svg .spot-link { stroke: var(--accent, #fff); stroke-width: 1; stroke-dasharray: 2 3; vector-effect: non-scaling-stroke; pointer-events: none; }
 .heal-mode { display: flex; gap: 6px; margin-bottom: 8px; }
 .heal-mode .btn { flex: 1; }
+.heal-show { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 10px; }
+.heal-show > span { color: var(--text-2); }
 .heal-actions { display: flex; gap: 6px; margin-top: 6px; }
 .note-plain.warn { color: #f5b041; }
 
@@ -2222,8 +2250,6 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .zone-hint { color: var(--text-3); }
 .zone-image { color: var(--text-3); margin-top: 2px; }
 .zone-probe { color: var(--accent); }
-.zone-advanced { margin: 2px 0 4px; padding: 2px 0; border: 0; background: none; color: var(--text-2); font-size: var(--fs-small); cursor: pointer; }
-.zone-advanced:hover { color: var(--text); }
 .zone-adv { padding: 2px 0 4px; }
 .zone-adv-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 4px 0; font-size: var(--fs-small); color: var(--text-2); }
 .zone-adv-row .presets { padding: 0; }
@@ -2357,8 +2383,6 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .location-attribution button { color: inherit; font: inherit; padding: 0; background: none; border: 0; text-decoration: underline; cursor: pointer; }
 .location-error { color: #f3a184; }
 
-.detail-advanced { display: flex; align-items: center; justify-content: space-between; width: 100%; border: 0; background: none; color: var(--text-2); padding: 6px 0; font: inherit; cursor: pointer; }
-.detail-advanced:hover { color: var(--text); }
 
 .contrast-equalizer { margin: 10px 0 14px; }
 .equalizer-heading, .equalizer-scale { display: flex; justify-content: space-between; align-items: center; }
@@ -2506,3 +2530,61 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .pref-help { flex: none; width: 16px; height: 16px; padding: 0; border: 1px solid var(--text-3); border-radius: 50%; background: transparent; color: var(--text-3); font: inherit; font-size: 11px; line-height: 14px; cursor: help; }
 .pref-help:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .pref-help-tip { position: fixed; z-index: 10000; width: max-content; max-width: min(320px, calc(100vw - 16px)); max-height: calc(100vh - 16px); overflow: auto; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); box-shadow: 0 4px 16px #0006; font-size: var(--fs-small); line-height: 1.5; overflow-wrap: anywhere; }
+
+/* guided steps (GuidedSteps.tsx) and the film stock and paper tiles */
+.film-format { padding: 0 14px; }
+.steps { padding: 4px 6px 6px; display: flex; flex-direction: column; gap: 2px; }
+.step { border-radius: 10px; }
+.step.open { background: var(--panel); box-shadow: inset 0 0 0 1px var(--track); }
+.step-head { display: flex; align-items: center; gap: 9px; padding: 7px 8px; width: 100%; cursor: pointer;
+             background: none; border: 0; border-radius: 10px; text-align: left; color: inherit; font: inherit; }
+.step:not(.open):not(.locked):not(.skipped) .step-head:hover { background: var(--hover); }
+.step .num { flex: none; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center;
+             font-size: var(--fs-micro); font-weight: 700; background: var(--inset); color: var(--text-2);
+             font-variant-numeric: tabular-nums; }
+.step.open .num { background: var(--accent); color: var(--on-accent, #111); }
+.step.done:not(.open) .num { background: #2c3a2e; color: #5fd068; }
+.step-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.step-title { font-weight: 600; font-size: var(--fs-body); }
+.step-sum { color: var(--text-2); font-size: var(--fs-small); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.step.open .step-sum { display: none; }
+.step-chev { flex: none; display: grid; color: var(--text-3); }
+.step-chev .chevron { width: 16px; height: 16px; }
+.step.open .step-chev { color: var(--text); }
+.step.locked, .step.skipped { opacity: 0.5; }
+.step.locked .step-head, .step.skipped .step-head { cursor: default; }
+.step.locked .step-sum { color: var(--text-3); display: flex; align-items: center; gap: 4px; }
+.step.locked .step-sum svg { flex: none; }
+.step-body { padding: 2px 10px 10px 37px; }
+.step-body .tile-grid { margin-right: -4px; }
+.step-nav { display: flex; justify-content: space-between; gap: 8px; margin-top: 10px; padding-top: 8px;
+            border-top: 1px solid var(--track); }
+.tile-group { color: var(--text-3); font-size: var(--fs-caption); font-weight: 600; letter-spacing: 0.06em;
+              text-transform: uppercase; margin: 10px 0 6px; }
+.tile-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 7px; }
+.step .tile { background: none; border: 0; padding: 0; text-align: left; color: inherit; font: inherit; }
+.step .tile-img.empty { min-height: 0; }
+.step .tile:disabled { opacity: 0.45; cursor: default; }
+.step .tile:focus-visible { outline: 2px solid var(--focus, #7aa7ff); outline-offset: 2px; }
+.step-body .positive-foot { padding: 0; border-top: 0; }
+
+/* Create Support Bundle: the scrubbed text, one row per line, only the visible rows drawn */
+.modal.support-bundle { width: min(860px, calc(100vw - 32px)); }
+.sb-tabs { display: flex; gap: 4px; margin: 8px 0 6px; flex-wrap: wrap; }
+.sb-tab {
+  padding: 3px 10px; background: none; border: 1px solid var(--inset, #262626); border-radius: 6px;
+  color: var(--text-2); font: inherit; font-size: var(--fs-small); cursor: pointer;
+}
+.sb-tab.on { background: var(--hover); color: var(--text); }
+.sb-lines {
+  overflow: auto; background: var(--inset, #1a1a1a); border-radius: 6px; margin-bottom: 8px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: var(--fs-small);
+  -webkit-user-select: text; user-select: text;
+}
+.sb-line { position: absolute; left: 0; right: 0; padding: 0 8px; line-height: 18px; white-space: pre; overflow: hidden; text-overflow: ellipsis; cursor: pointer; color: var(--text-2); }
+.sb-line:hover { background: var(--hover); }
+.sb-line.gone { text-decoration: line-through; opacity: 0.45; }
+.status .status-action, .activity .status-action {
+  margin-left: 8px; padding: 1px 8px; background: var(--hover, #2a2a2a); border: none; border-radius: 5px;
+  color: var(--text); font: inherit; cursor: pointer; pointer-events: auto;
+}

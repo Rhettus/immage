@@ -159,14 +159,28 @@ test('new photos establish defaults before snapshot, preserving unticked preset 
   const { preparePastePhoto }=await import('../app/src/pasteDefaults.ts');
   const path=join(dir,'fresh.jpg');copyFileSync(images[0].path,path);
   const fresh={path,imgid:(await requestTagged({cmd:'import',files:[path]})).images[0].imgid};
-  const defaults={profile:0,compensation:0,auto:false,preset:{values:{vibrance:17}}};
+  const defaults={profile:0,compensation:0,auto:false,preset:{values:{vibrance:17,lens_profile:1,lens_ca:1,hp_enable:1},nonRaw:true}};
   const result=await runPaste([fresh,images[1]],{values:{exposure:1}},()=>{},()=>{},s=>preparePastePhoto(s,defaults));
   assert.equal(result.error,null);
-  const pasted=await open(fresh);assert.equal(pasted.values.vibrance,17);assert.equal(pasted.values.exposure,1);await pasted.close();
+  const pasted=await open(fresh);assert.equal(pasted.values.vibrance,17);assert.equal(pasted.values.exposure,1);
+  assert.notEqual(pasted.values.lens_profile,1,'a JPEG keeps the camera\'s lens corrections');
+  assert.notEqual(pasted.values.hp_enable,1,'a JPEG gets no raw-only settings');await pasted.close();
   assert((await restorePaste(result.token,'undo')).every(i=>!i.error));
   const undone=await open(fresh);assert.equal(undone.values.vibrance,17);assert.equal(undone.values.exposure,0);await undone.close();
   assert((await restorePaste(result.token,'redo')).every(i=>!i.error));
   const other=await open(images[1]);assert.equal(other.values.vibrance,5,'existing photo keeps its own edit');await other.close();
+  await batch('release',result.token);
+}));
+
+test('a new JPEG gets the new-photos preset only when Also apply to JPEGs is on', {timeout:120000}, async () => fixture(async ({dir,images}) => {
+  const { preparePastePhoto }=await import('../app/src/pasteDefaults.ts');
+  const path=join(dir,'plain.jpg');copyFileSync(images[0].path,path);
+  const fresh={path,imgid:(await requestTagged({cmd:'import',files:[path]})).images[0].imgid};
+  const defaults={profile:0,compensation:0,auto:false,preset:{values:{vibrance:17,lens_profile:1}}};
+  const result=await runPaste([fresh],{values:{exposure:1}},()=>{},()=>{},s=>preparePastePhoto(s,defaults));
+  assert.equal(result.error,null);
+  const pasted=await open(fresh);assert.equal(pasted.values.exposure,1);
+  assert.notEqual(pasted.values.vibrance,17,'the preset is for raws');assert.notEqual(pasted.values.lens_profile,1);await pasted.close();
   await batch('release',result.token);
 }));
 

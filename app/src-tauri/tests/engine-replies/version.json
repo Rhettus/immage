@@ -1,0 +1,12 @@
+[
+ {
+  "label": "1 empty / version",
+  "reply": {
+   "hdr_align": true,
+   "ms": 0.0,
+   "ok": true,
+   "pano": true,
+   "version": "<version>"
+  }
+ }
+]

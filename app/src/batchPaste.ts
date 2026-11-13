@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
-import { invoke } from "@tauri-apps/api/core";
 import type { Clip } from "./CopySettings";
 import { Session, instanceKey, mapOpOf } from "./session";
 import { CONVERSIONS } from "./manifest";
 import { withModel } from "./aiModel";
 import { NO_REFINE, type ObjectShape, type Backdrop, type Mask } from "./masks";
+import { commands, type PasteUpdate } from "./commands";
 
 export type PasteTarget = { imgid: number; path: string };
-export type PasteUpdate = { imgid: number; edited: boolean; error: string | null };
+export type { PasteUpdate } from "./commands";
 
 // Deliberately do not expand RAW/JPEG partners: a paste changes exactly the
 // selected versions. Remote results without a local engine id are skipped.
@@ -48,7 +48,7 @@ export function applyClip(s: Session, c: Clip, reapplyLook = false) {
     const done = new Set<string>();
     for (const h of s.history) {
       const key = instanceKey(h), op = mapOpOf(h);
-      if (done.has(key) || h.priority === undefined || h.masked) continue;
+      if (done.has(key) || h.priority == null || h.masked) continue;
       if (!converts.some((v) => v.unmapped.has(h.op) || (v.off.has(op) && s.isForeign(op)))) continue;
       done.add(key);
       if (s.moduleStates.get(key)?.enabled ?? h.enabled) s.setModuleState(h, { enabled: false });
@@ -76,13 +76,13 @@ export async function recalculateAiMasks(c: Clip): Promise<Clip> {
     const recipe = shape.ai;
     const kind = shape.depth ? "depth" : recipe!.kind;
     const model = kind === "depth" ? "mask-depth-da2-small" : kind === "object" ? "mask-object-sam21-small"
-      : kind === "subject" ? "mask-subject-birefnet-lite" : "mask-scene-segformer-b2";
+      : kind === "subject" || kind === "background" ? "mask-subject-birefnet-lite" : "mask-scene-segformer-b2";
     try {
-      const args = kind === "depth" ? { kind, range: shape.depth } : kind === "object"
-        ? { points: recipe!.points ?? [], box: recipe!.box ?? null, inset: recipe!.inset, backdrop: recipe!.backdrop }
-        : { kind, inset: recipe!.inset, backdrop: recipe!.backdrop };
-      const reply = await withModel(model, () => invoke<ObjectShape["paths"] | { paths: ObjectShape["paths"]; backdrop: Backdrop | null }>(
-        kind === "object" ? "ai_object" : "ai_mask", args));
+      const select = () => kind === "depth" ? commands.aiMask(kind, shape.depth!, null, null)
+        : kind === "object"
+          ? commands.aiObject(recipe!.points ?? [], recipe!.box ?? null, recipe!.inset, recipe!.backdrop)
+          : commands.aiMask(kind, null, recipe!.inset, recipe!.backdrop);
+      const reply = await withModel(model, select) as ObjectShape["paths"] | { paths: ObjectShape["paths"]; backdrop: Backdrop | null };
       const paths = Array.isArray(reply) ? reply : reply.paths;
       if (!paths.length) throw Error("nothing found");
       const { backdrop: oldBackdrop, ...rest } = shape;
@@ -94,8 +94,8 @@ export async function recalculateAiMasks(c: Clip): Promise<Clip> {
 }
 
 export async function restorePaste(token: number, action: "undo" | "redo" | "abort") {
-  const r = await invoke<{ updates: PasteUpdate[] }>("paste_batch", { action, token });
-  return r.updates;
+  const r = await commands.pasteBatch(action, token, null);
+  return r.updates ?? [];
 }
 
 // The caller must quiesce the viewer session, block editing/navigation, and
@@ -115,7 +115,8 @@ export async function runPaste(targets: PasteTarget[], clip: Clip,
       finally { await s.close(); }
     }
   }
-  const { token } = await invoke<{ token: number }>("paste_batch", { action: "begin", imgids: targets.map(i => i.imgid) });
+  const { token } = await commands.pasteBatch("begin", null, targets.map(i => i.imgid));
+  if (token == null) throw Error("the engine gave no paste token");
   try {
     for (const [n, target] of targets.entries()) {
       progress(n, targets.length);
@@ -134,10 +135,10 @@ export async function runPaste(targets: PasteTarget[], clip: Clip,
       await s.close();
       if (failure) throw Error(failure);
       // close() only writes when changed. Reading the metadata covers no-op pastes too.
-      const r = await invoke<{ image: { edited: boolean } }>("meta", { imgid: s.imgid });
+      const r = await commands.meta(s.imgid);
       saved({ imgid: s.imgid, edited: r.image.edited, error: null });
     }
-    await invoke("paste_batch", { action: "commit", token });
+    await commands.pasteBatch("commit", token, null);
     progress(targets.length, targets.length);
     return { token, error: null as string | null, recovery: false };
   } catch (e) {
@@ -146,7 +147,7 @@ export async function runPaste(targets: PasteTarget[], clip: Clip,
       updates.forEach(saved);
       const failures = updates.filter(i => i.error);
       if (failures.length) return { token, error: `${e}; recovery failed for ${failures.length} photo(s). Undo retries recovery.`, recovery: true };
-      await invoke("paste_batch", { action: "release", token });
+      await commands.pasteBatch("release", token, null);
       return { token: null, error: `${e}; batch rolled back`, recovery: false };
     } catch (recovery) {
       return { token, error: `${e}; recovery failed: ${recovery}. Undo retries recovery.`, recovery: true };

@@ -2,11 +2,12 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 const inventory=JSON.parse(readFileSync(new URL('../inventory.json',import.meta.url),'utf8'));
-import {locateControl} from './ranges.mjs';
+import {locateControl,restoreAdvanced} from './ranges.mjs';
 import { click,reveal,inspect,tabTo, openTool } from '../support/controls.mjs';
 import { choose,textButton,Blocked,panel,expandSections,openMaskGroup } from '../support/scenario.mjs';
 import { until } from '../support/webdriver.mjs';
 import { settledPhoto, settledReset } from './smoke.mjs';
+import { readSetting, waitSetting } from '../support/settings.mjs';
 
 // sets a module choice in Preferences > Modules and returns the value it had
 export async function chooseModule(t,scope,label,value){
@@ -45,9 +46,12 @@ export async function moduleOutput(t,definition){
  await chooseModule(t,scope,choice.label,option.value);
  if(scope==='global')await openTool(t,'adjust');
  if(scope==='masks'){
-  await openTool(t,'masks');await click(t,'.create-mask');await textButton(t,'.shape-menu-list','Radial Gradient');
+  await openTool(t,'masks');const clean=await settledPhoto(t);t.measure({name:'mask-clean',photoHash:clean.hash});await click(t,'.create-mask');await textButton(t,'.shape-menu-list','Radial Gradient');
   const svg=await reveal(t,'svg.mask-svg');await t.driver.drag({x:svg.x-svg.bounds.width*.12,y:svg.y-svg.bounds.height*.12},{x:svg.x+svg.bounds.width*.12,y:svg.y+svg.bounds.height*.12});
   await until(()=>t.driver.observe(()=>!!document.querySelector('.mask-list li.on')),'radial mask created');
+  // a new mask with neutral adjustments leaves the photo as it was; these and
+  // mask-before-edit say which step changed it when mask-delete misses
+  const created=await settledPhoto(t);t.measure({name:'mask-created',photoHash:created.hash});
  }
  if(option.op==='satcurvergb')return satcurveOutput(t,scope);
  // Black & White's modules have no sliders of their own: B&W treatment shows them
@@ -67,7 +71,7 @@ export async function moduleOutput(t,definition){
   }else{
     const control=inventory.localControls.find(c=>c.id===id);
     // a graph's points are no sliders: skip them for the graph branch below
-    if(control)try{await locateControl(t,{scope:'local',panel:'masks',control});}catch(e){if(!(e instanceof Blocked))throw e;}
+    if(control)try{await locateControl(t,{scope:'local',panel:'masks',control});}catch(e){if(!(e instanceof Blocked))throw e;}finally{await restoreAdvanced(t);}
   }
   const s=`[data-control-id=${JSON.stringify(id)}] input[type=range]`;
   if(await t.driver.observe(s=>{const e=document.querySelector(s);return e&&!e.disabled;},s)){control=s;break;}
@@ -75,10 +79,14 @@ export async function moduleOutput(t,definition){
  if(!control&&option.op==='atrous'){
   if(scope==='global')await panel(t,'basic');
   const point=await reveal(t,'.equalizer-graph circle[role=slider]');await t.driver.point(point.x,point.y);const before=await settledPhoto(t);await t.driver.keys('\uE013');
-  await settledPhoto(t,p=>p.hash!==before.hash);await t.evidence('module-graph-effect');return;
+  const after=await settledPhoto(t,p=>p.hash!==before.hash);await t.evidence('module-graph-effect');
+  // the mask goes, as on the slider path: one left behind changes later cases' baselines
+  if(scope==='masks'){await click(t,'.mask-list li.on .mask-del');await settledReset(t,before,after,'mask-delete');}
+  return;
  }
  if(!control)throw new Blocked(`${scope}/${choice.id}/${option.name}: no enabled control; needs matching RAW/treatment/section prerequisite`);
  const s=await reveal(t,control),before=await settledPhoto(t);
+ if(scope==='masks')t.measure({name:'mask-before-edit',photoHash:before.hash});
  const start=Number(s.value),target=Math.min(s.max,start+(s.max-s.min)*.15);
  const at=value=>({x:s.bounds.x+8+(s.bounds.width-16)*(value-s.min)/(s.max-s.min),y:s.y});
  await t.driver.drag(at(start),at(target));
@@ -115,7 +123,7 @@ export async function moduleSwitch(t){
  const first=await reveal(t,icon('contrast'));
  assert(first.visible&&first.hit,'Contrast module icon is visible and clickable');
  assert(await t.driver.observe(()=>document.querySelectorAll('[data-control-id="exposure"] [data-module-switch]').length===0),'Exposure has a single module and no icon');
- // Clarity and Texture keep Medium and Fine above their Advanced fold: their switch sits on that top slider
+ // Clarity and Texture keep Medium and Fine always shown, the rest behind the panel's Advanced toggle: their switch sits on that top slider
  for(const id of ['clarity','texture']){
   const host=await t.driver.observe(i=>document.querySelector(`[data-module-switch="${i}"]`)?.closest('[data-control-id]')?.dataset.controlId,id);
   assert(/^detail_(clarity|texture)_gain_medium$/.test(host)||host===id,`${id} switch is on its top slider, not under Advanced (found ${host})`);
@@ -145,12 +153,13 @@ export async function moduleSwitch(t){
  // the switch stays reachable when the new module hides the slider: it moves to the equalizer's or curve's heading
  await reveal(t,icon('contrast'));
  // Set as default stores the Preferences choice, in Custom
- const store=await t.driver.observe(()=>({mode:localStorage.getItem('immage.modules.mode'),choices:localStorage.getItem('immage.modules.choices')}));
+ const store={mode:await readSetting(t,'immage.modules.mode'),choices:await readSetting(t,'immage.modules.choices')};
  let failure;
  try{
   await click(t,icon('contrast'));
   await click(t,'.module-menu [data-module-default]');
-  const saved=await t.driver.observe(()=>({mode:localStorage.getItem('immage.modules.mode'),choices:JSON.parse(localStorage.getItem('immage.modules.choices')||'{}')}));
+  await waitSetting(t,'immage.modules.choices',v=>{try{return JSON.parse(v||'{}').contrast===other;}catch{return false;}},'module default saved to settings.json');
+  const saved={mode:await waitSetting(t,'immage.modules.mode',v=>v==='custom','Custom mode saved to settings.json'),choices:JSON.parse(await readSetting(t,'immage.modules.choices')||'{}')};
   assert.equal(saved.mode,'custom','Set as default switches Preferences to Custom');
   assert.equal(saved.choices.contrast,other,'Set as default stores the module');
   await click(t,'button[data-tour="prefs"]');await textButton(t,'.prefs-tabs','Modules');
@@ -160,7 +169,7 @@ export async function moduleSwitch(t){
  }catch(e){failure=e;}
  // put Preferences' storage and the photo's module back, then report the first failure
  // Restore effective defaults through the same real Preferences controls.
- // Read-only observations must never write localStorage to reset the app.
+ // Read-only observations must never write the settings to reset the app.
  await chooseModule(t,'global','Contrast',JSON.parse(store.choices||'{}').contrast??before.mod_contrast);
  if(store.mode!=='custom'){
   await click(t,'button[data-tour="prefs"]');await textButton(t,'.prefs-tabs','Modules');

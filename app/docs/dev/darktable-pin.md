@@ -106,6 +106,15 @@ Stop expanding equivalent diagnostic matrices once they no longer inform adoptio
    `git -C darktable diff > patches/darktable-engine.patch`.
 3. Rebuild: `cmake --build build`, a fresh configure if CMake asks. Then
    `(cd app && npm run build)` and `(cd app/src-tauri && cargo build && cargo test)`.
+   Run `python3 -I scripts/pin_models.py --write` to update the AI model table
+   in `ai_cmds.rs` for the new darktable version, then check the diff for new
+   model ids and changed hashes.
+   The daily "AI model pins" workflow (`.github/workflows/model-pins.yml`, or
+   `python3 -I scripts/pin_models.py --check`) fails when darktable's model
+   repository serves other models or hashes than this table, for instance
+   after a republished nightly tag; until an app update carries the new table,
+   first installs of AI features fail. Check the new models, run
+   `--write`, and release.
 4. Repair what broke (below), and run the checks under [Verify](#verify).
 5. Commit the bump on its own, with the repairs in their own commits
    before it, so every commit builds:
@@ -120,11 +129,29 @@ To undo, check out the old commit in `darktable/` and commit that.
 | --- | --- | --- |
 | `engine/main.c` no longer compiles: a darktable function was renamed, changed its arguments or vanished | `git -C darktable log -S<symbol> <old>..<new> -- src` finds the commit that changed it | Read how upstream's own callers changed in that commit. darktable-cli (`src/cli/main.c`) and, from 5.8 on, `src/mcp/` use the same develop, pixelpipe and export calls the engine does, and the engine was cloned from `src/mcp`. |
 | AI calls (`dt_ai_*`, `dt_seg_*`, `dt_restore_*`, `dt_imageio_dng_*`) changed | `src/ai/`, `src/common/ai/` | Follow the new signatures; check `src/iop/` and `src/libs/` callers. The engine's `_ai_denoise` repeats `src/libs/neural_restore.c`'s raw denoise job, so diff that file between releases and carry its fixes over. |
-| `engine/upright.c` no longer compiles, or Upright fits differently | `src/iop/ashift.c`, `ashift_lsd.c`, `ashift_nmsimplex.c` | upright.c copies ashift.c's line detection and fit at the revision its header names, and includes the other two files. Diff ashift.c from that revision and carry the changes over. |
+| `engine/upright.c` no longer compiles, or Upright fits differently | `src/iop/ashift.c`, `ashift_lsd.c`, `ashift_nmsimplex.c` | upright.c copies ashift.c's line detection and fit at the revision its header names, and includes the other two files. Diff ashift.c from that revision and carry the changes over (`scripts/check_upstream_copies.py` lists it). |
 | Windows link error about darktable's AI data | the engine used a *variable* from the AI backend | The engine may call only *functions* from darktable's AI backend, never use its data: the static `darktable_ai` library pulls in `dt_conf_*` (fixed once, in 0.9.8). |
 | A `USE_AI=OFF` engine build fails | code outside `#ifdef HAVE_AI` | Wrap it; darktable's AGENTS.md wants both builds to work. |
 
 Commit each repair separately, with its reason in the message.
+
+### Copied code
+
+`engine/upright.c` and `engine/hdrmerge.c` copy darktable code at a revision
+their headers name. At each pin move run
+
+```sh
+python3 -I scripts/check_upstream_copies.py --pin NEW
+```
+
+(without `--pin` it checks the submodule's current commit). It prints OK or
+CHANGED for each copy, with the upstream diff stat and the command that shows
+the full diff, and exits 1 on any change or an unknown revision (fetch more
+history). The script compares whole upstream files, so read the diff: carry
+over changes to the copied functions (the header lists them) and leave the
+rest, then update the revision in the file's header comment; that is the only bookkeeping, as the script
+reads it from there. A new copy needs a header line in the same form and an
+entry in the script's `COPIES` table.
 
 ## Things that build but go wrong
 

@@ -239,6 +239,8 @@ const WHITES_STOPS = 0.6;
 // Whites moves twice as far: the shoulder alone reshapes the top end but
 // leaves where AgX clips, and more dims the midtones at -100
 const WHITES_BRILLIANCE = 0.002;
+// Highlight Brilliance: the share of that brilliance Whites adds, in percent
+const WHITES_BRILLIANCE_MAX = 200;
 
 // Contrast on the tone mapper: AgX's contrast, or sigmoid's, ±100 doubling
 // or halving it from the photo's default
@@ -554,6 +556,10 @@ export const preferredChoice = (c: ModuleChoice) => (c.options.find((o) => o.pre
 // the controls whose module a choice decides
 export const choiceCovers = (c: ModuleChoice) =>
   c.covers ?? c.options.flatMap((o) => [...o.controls, ...o.localControls]);
+// the same, less the curve editors (contrast equalizer, saturation curve)
+// that stand in for a slider: what places a choice among the sliders
+const EDITOR_IDS = new Set([...EQ_IDS, ...SATCURVE_IDS]);
+const sliderCovers = (c: ModuleChoice) => choiceCovers(c).filter((id) => !EDITOR_IDS.has(id));
 const optionOf = new Map(MODULE_CHOICES.flatMap((c) => c.options.flatMap((o) =>
   [...o.controls, ...o.localControls].map((id) => [id, { choice: c, option: o }] as const))));
 // whether a slider is one of the photo's modules' (or belongs to no choice)
@@ -1180,11 +1186,6 @@ export const modules: ModuleMap[] = [
     },
     enabled: (v) => v.tm_mode === 1,
   },
-  // Whites' brilliance on AgX, ahead of the tone mappers' Whites so that
-  // theirs is the value read: an edit from before it opens as it was
-  { ...linear("colorbalancergb", false, [{ id: "whites", field: "brilliance_highlights",
-                                             scale: WHITES_BRILLIANCE, base: 0 }]),
-    active: (v) => v.tm_mode === 1 },
   // the tone mapper: AgX, which new photos get, or sigmoid, which photos
   // started earlier or in darktable may have; one on and the other off.
   // Whites moves the top end under both: sigmoid's white
@@ -1208,6 +1209,23 @@ export const modules: ModuleMap[] = [
                               whites: 100 * Math.log2(p.curve_shoulder_power / agxBase("curve_shoulder_power", v, d)) }),
     write: (v, d) => ({ curve_shoulder_power: agxBase("curve_shoulder_power", v, d) * 2 ** (v.whites / 100) }),
     enabled: (v) => v.tm_mode === 1,
+  },
+  // Whites' brilliance on AgX, Highlight Brilliance percent of it, after
+  // the tone mappers so that Whites is theirs (echoed here) and the share
+  // reads against it. an edit from before the share reads as the share it
+  // rendered with, 0% when it had no brilliance
+  {
+    op: "colorbalancergb", keepOn: false,
+    controls: ["whites", "whites_brilliance"],
+    fields: ["brilliance_highlights"],
+    read: (p, _d, _c, v) => {
+      const whites = v?.whites ?? 0;
+      const share = v?.tm_mode === 1 && Math.abs(whites) > 1e-6
+        ? (100 * p.brilliance_highlights) / (whites * WHITES_BRILLIANCE) : 100;
+      return { whites, whites_brilliance: Math.min(Math.max(share, 0), WHITES_BRILLIANCE_MAX) };
+    },
+    write: (v) => ({ brilliance_highlights: (v.whites * WHITES_BRILLIANCE * (v.whites_brilliance ?? 100)) / 100 }),
+    active: (v) => v.tm_mode === 1,
   },
   // Contrast, Blacks and Saturation on the tone mapper, the modules the AgX
   // workflow sets them with; sigmoid has no saturation
@@ -1603,6 +1621,10 @@ export const panels: Panel[] = [
           lr("highlights", "Highlights"),
           lr("shadows", "Shadows"),
           lr("whites", "Whites"),
+          // under Whites: Advanced, on AgX
+          { id: "whites_brilliance", label: "Highlight Brilliance", min: 0, max: WHITES_BRILLIANCE_MAX, step: 1,
+            neutral: 100, format: (v) => `${Math.round(v)}%`,
+            note: "darktable: color balance rgb — brilliance highlights, the share Whites adds on AgX" },
           lr("blacks", "Blacks"),
         ],
       },
@@ -2008,10 +2030,15 @@ export const moduleTools = (): { panel: string; tools: ModuleTool[] }[] => {
       choices.forEach((c) => listed.add(c));
       const covered = new Set(choices.flatMap(choiceCovers));
       // sigmoid runs only on photos started under it; new ones get AgX
-      const modules = [...new Set(ids.filter((id) => !covered.has(id))
+      const plain = ids.filter((id) => !covered.has(id))
+        .filter((id) => mapsWith(id).some((m) => !m.choice && m.op !== "sigmoid"));
+      const modules = [...new Set(plain
         .flatMap((id) => mapsWith(id).filter((m) => !m.choice && m.op !== "sigmoid").map((m) => moduleName(m.op))))];
-      return [...(modules.length ? [{ title: s.title, modules }] : []),
-              ...choices.map((c) => ({ title: c.label, modules: [], choice: c }))];
+      // in the order of the section's sliders: each tool at its first one
+      const first = (cover: string[]) => Math.min(...cover.map((id) => ids.indexOf(id)).filter((i) => i >= 0));
+      return [...(modules.length ? [{ at: first(plain), tool: { title: s.title, modules } }] : []),
+              ...choices.map((c) => ({ at: first(sliderCovers(c)), tool: { title: c.label, modules: [], choice: c } }))]
+        .sort((a, b) => a.at - b.at).map(({ tool }) => tool);
     }),
   })).filter((p) => p.tools.length);
   const masks = MODULE_CHOICES.filter((c) => !listed.has(c));
@@ -2206,4 +2233,9 @@ export const MASK_MODULE_CHOICES: ModuleChoice[] = MODULE_CHOICES.flatMap((c) =>
   const options = c.options.filter((o) => localMaps.some((m) =>
     m.choice?.control === c.control && m.choice.value === o.value));
   return options.length ? [{ ...c, options }] : [];
-});
+}).map((c) => {
+  // listed in the order of the mask's sliders: a choice sits at its first
+  const ids = new Set(sliderCovers(c).flatMap((id) => [id, `l_${id}`]));
+  const at = LOCAL_CONTROLS.findIndex((l) => ids.has(l.id));
+  return { c, at: at < 0 ? Infinity : at };
+}).sort((a, b) => a.at - b.at).map(({ c }) => c);

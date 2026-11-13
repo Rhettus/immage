@@ -3,9 +3,10 @@
 
 // the open folder's images as the engine's in-memory library reports them,
 // and their thumbnails
-import { invoke } from "@tauri-apps/api/core";
+import { commands } from "./commands";
 import { listen } from "@tauri-apps/api/event";
 import { fetchImmichThumb } from "./immich";
+import { settings } from "./settings";
 
 export type Exif = {
   maker: string; model: string; lens: string;
@@ -70,7 +71,7 @@ export async function openFolder(path: string, recursive = false, skip: string[]
   });
   try {
     if (token !== folderToken) throw "superseded";
-    const reply = await invoke<{ images: ImageEntry[] }>("open_folder", { path, recursive, skip, token });
+    const reply = await commands.openFolder(path, recursive, skip, token);
     if (token !== folderToken) throw "superseded";
     return reply.images;
   } catch (e) {
@@ -143,10 +144,10 @@ export function pairPartners(images: ImageEntry[]): Map<number, ImageEntry[]> {
 
 const SUBFOLDERS_KEY = "immage.includeSubfolders";
 export function loadIncludeSubfolders(): boolean {
-  try { return localStorage.getItem(SUBFOLDERS_KEY) === "1"; } catch { return false; }
+  try { return settings.get(SUBFOLDERS_KEY) === "1"; } catch { return false; }
 }
 export function storeIncludeSubfolders(on: boolean) {
-  try { localStorage.setItem(SUBFOLDERS_KEY, on ? "1" : "0"); } catch { /* not kept */ }
+  try { settings.set(SUBFOLDERS_KEY, on ? "1" : "0"); } catch { /* not kept */ }
 }
 
 const THUMB_SIZE = 240; // device pixels; the engine picks the next cached size up
@@ -155,7 +156,7 @@ const THUMB_SIZE = 240; // device pixels; the engine picks the next cached size 
 // cached size next up from this one. given its entry, the thumbnail is also
 // kept on disk for fetchCachedThumb()
 export async function fetchThumb(imgid: number, size: number, entry?: ImageEntry, proof = false): Promise<ImageBitmap> {
-  const buf = await invoke<ArrayBuffer>("thumb", { imgid, size, path: entry?.path ?? null, version: entry?.version ?? 0, proof });
+  const buf = await commands.thumb(imgid, size, entry?.path ?? null, entry?.version ?? 0, proof);
   const head = new DataView(buf, 0, 8);
   const w = head.getUint32(0, true), h = head.getUint32(4, true);
   return createImageBitmap(new ImageData(new Uint8ClampedArray(buf, 8), w, h));
@@ -164,7 +165,7 @@ export async function fetchThumb(imgid: number, size: number, entry?: ImageEntry
 // the thumbnail kept on disk for the file as it is now (its sidecar too),
 // without the engine; null when there is none
 async function fetchCachedThumb(entry: ImageEntry, size: number): Promise<ImageBitmap | null> {
-  const buf = await invoke<ArrayBuffer>("thumb_cached", { path: entry.path, version: entry.version ?? 0, size });
+  const buf = await commands.thumbCached(entry.path, entry.version ?? 0, size);
   return buf.byteLength ? createImageBitmap(new Blob([buf], { type: "image/jpeg" })) : null;
 }
 
@@ -173,14 +174,14 @@ async function fetchCachedThumb(entry: ImageEntry, size: number): Promise<ImageB
 // as it was, so it stands in until fetchCachedThumb() or the engine says
 async function fetchKnownThumb(key: string, size: number): Promise<ImageBitmap | null> {
   const at = key.indexOf(":");
-  const buf = await invoke<ArrayBuffer>("thumb_known", { path: key.slice(at + 1), version: Number(key.slice(0, at)), size });
+  const buf = await commands.thumbKnown(key.slice(at + 1), Number(key.slice(0, at)), size);
   return buf.byteLength ? createImageBitmap(new Blob([buf], { type: "image/jpeg" })) : null;
 }
 
 // fetches thumbnails: those kept on disk first, several at a time, then
 // the rest from the engine, ENGINE_THUMBS at a time. the engine builds them
 // on threads of its own (main.c, _thumb_run), so they come in while a photo
-// is edited, and no render waits behind one. past `limit` bytes (Preferences' Thumbnail memory), those off screen
+// is edited, and no render waits behind one. past `limit` bytes (the memory budget), those off screen
 // longest are let go, and come back from disk when scrolled to.
 // a known image's thumbnail goes by its knownKey() until the image has an
 // imgid, then stands in for it until checked (fetchKnownThumb)
@@ -360,11 +361,16 @@ export class ThumbLoader {
     this.trim();
   }
 
+  // the computer is short of memory: every bitmap off screen goes, whatever
+  // the limit; those on screen stay. they come back from disk when scrolled to
+  release() {
+    this.trim(0);
+  }
+
   // over the limit, down to 90% of it, so a folder being read does not
   // sort the cache for every thumbnail; never one on screen
-  private trim() {
-    const limit = this.limit();
-    if (this.bytes <= limit) return;
+  private trim(limit = this.limit()) {
+    if (this.bytes <= limit && limit > 0) return;
     const gone = [...this.cache.keys()].filter((id) => !this.visible.has(id))
       .sort((a, b) => (this.seen.get(a) ?? 0) - (this.seen.get(b) ?? 0));
     for (const id of gone) {

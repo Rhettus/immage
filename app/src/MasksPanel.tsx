@@ -1,6 +1,7 @@
 import { ContrastEqualizer } from "./ContrastEqualizer";
 import { SaturationCurve } from "./SaturationCurve";
-import { detailRows } from "./DetailControls";
+import { detailRows, isAdvancedControl } from "./DetailControls";
+import { AdvancedToggle, advancedEdited, useAdvanced } from "./advanced";
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
@@ -11,7 +12,7 @@ import { BANDS, choiceShows, detailControlIds, HSL_TABS, localControlById, MASK_
          type ModuleChoice, type Values } from "./manifest";
 import { ModuleSwitch } from "./ModuleSwitch";
 import { GradingWheels, type WheelMode } from "./ColorWheel";
-import { isRange, maskThumb, NO_REFINE, shapeLabel, type BlendifChannel, type Mask, type ParametricRange,
+import { isRange, maskThumb, NO_REFINE, neutralLocal, shapeLabel, type BlendifChannel, type Mask, type ParametricRange,
          type Range, type RangeMap, type Refine, type Shape } from "./masks";
 import { DROPPER, ParametricEditor, type Picked } from "./ParametricEditor";
 import { useEffect, useRef, useState } from "react";
@@ -119,7 +120,7 @@ export const TOOL_ICONS: Record<MaskTool, React.ReactNode> = {
 
 export function MasksPanel({ masks, selected, shape, tool, target, brush, overlay, disabled, raw, image, thumbMaps,
                              renderSlider, onTool, onSelect, onShape, onShapeMode, onShapeDelete,
-                             onInvert, onOpacity, onRefine, onHidden, onDuplicate, onDelete, onRename, onPeek,
+                             onInvert, onOpacity, onRefine, onHidden, onDuplicate, onResetAdjustments, onDelete, onRename, onPeek,
                              onBrush, onOverlay, onLocal, onRange, onDepth, onFeather, onAi, aiBusy, focusMode,
                              picked, pickShow, pickSet, onParametric, onPickShow, onPickSet, onPickTab, fresh, mono, photo,
                              onHslShown, presenceLoupe }: {
@@ -141,7 +142,8 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
   onOpacity: (opacity: number) => void;
   onRefine: (patch: Partial<Refine>) => void;
   onHidden: (name: string, hidden: boolean) => void;
-  onDuplicate: (name: string, invert: boolean) => void;
+  onDuplicate: (name: string, invert: boolean, adjustments: boolean) => void;
+  onResetAdjustments: (name: string) => void;
   onDelete: (name: string) => void;
   onRename: (name: string, to: string) => void;
   onPeek: (name: string | null) => void;   // the pointer resting on a mask's name, or gone
@@ -263,6 +265,7 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
   }, [tool]);
   const [hslTab, setHslTab] = useState(0);
   const [wheels, setWheels] = useState<WheelMode>("3way");
+  const [advanced, toggleAdvanced] = useAdvanced("masks");
   // the color bands the photo under the pointer falls in light their
   // sliders, as in the main HSL card
   const hslShown = !!m && !mono && open.has("HSL");
@@ -317,6 +320,8 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
       if (first) switchHosts.set(first, ch);
     }
   }
+  const advancedIds = m ? (mono ? MONO_GROUPS : LOCAL_GROUPS).flatMap(([, ids]) => ids)
+    .filter((id) => isAdvancedControl(id) && choiceShows(id, { ...photo, ...m.values })) : [];
   const groupBody = (title: string, ids: string[]) => {
     if (title === "HSL") {
       const key = (["hue", "sat", "lum"] as const)[hslTab];
@@ -340,7 +345,7 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
           </div>
         ))}
       </>;
-    return detailRows(ids.map((id) => localControlById.get(id)!), (c) => slider(c.id));
+    return detailRows(ids.map((id) => localControlById.get(id)!), (c) => slider(c.id), advanced);
   };
   const menu = (t: ToolTarget) => (
     <ShapeMenu target={t} tool={target === t ? tool : null} disabled={disabled} aiBusy={aiBusy}
@@ -376,7 +381,8 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
                     <MaskName name={x.name} editing={renaming === x.name}
                               onEditing={(on) => setRenaming(on ? x.name : null)}
                               onRename={(to) => onRename(x.name, to)} />
-                    <MaskMenu onDuplicate={(inv) => onDuplicate(x.name, inv)} onRename={() => setRenaming(x.name)}
+                    <MaskMenu onDuplicate={(inv, adj) => onDuplicate(x.name, inv, adj)} onRename={() => setRenaming(x.name)}
+                              onReset={() => onResetAdjustments(x.name)} adjusted={maskHasAdjustments(x)}
                               onDelete={() => onDelete(x.name)} />
                     <button className="mask-del" title="delete this mask"
                             onClick={(e) => { e.stopPropagation(); onDelete(x.name); }}>×</button>
@@ -544,6 +550,11 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
         <div className="panel adjust">
           <div className="panel-title adj-title">
             <span>Adjustments <span className="of">· {m.name.replace(/^mask/, "Mask")}</span></span>
+            {advancedIds.length > 0 && (
+              <AdvancedToggle on={advanced} onToggle={toggleAdvanced}
+                edited={advancedEdited(advancedIds, m.values,
+                  Object.fromEntries(advancedIds.map((id) => [id, localControlById.get(id)?.neutral ?? 0])))} />
+            )}
           </div>
           {(mono ? MONO_GROUPS : LOCAL_GROUPS).map(([title, ids]) => (
             <section key={title}>
@@ -584,23 +595,35 @@ const eyeIcon = (open: boolean) => svg(<>
   <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" />
   {!open && <path d="m3 3 18 18" />}</>);
 
+// whether any of the mask's adjustments is off neutral; its tool choices
+// are not adjustments
+const maskHasAdjustments = (m: Mask) => {
+  const neutral = neutralLocal();
+  const choices = new Set(MASK_MODULE_CHOICES.map((c) => c.control));
+  return Object.entries(neutral).some(([id, v]) => !choices.has(id) && (m.values[id] ?? v) !== v);
+};
+
 // a mask row's "…": what else can be done with it
-function MaskMenu({ onDuplicate, onRename, onDelete }: {
-  onDuplicate: (invert: boolean) => void; onRename: () => void; onDelete: () => void;
+function MaskMenu({ onDuplicate, onRename, onReset, adjusted, onDelete }: {
+  onDuplicate: (invert: boolean, adjustments: boolean) => void; onRename: () => void; onReset: () => void;
+  adjusted: boolean; onDelete: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLSpanElement>(null);
   useDismiss(open, () => setOpen(false), box);
-  const item = (label: string, act: () => void, cls = "") => (
-    <button className={cls} onClick={(e) => { e.stopPropagation(); setOpen(false); act(); }}>{label}</button>
+  const item = (label: string, act: () => void, cls = "", disabled = false) => (
+    <button className={cls} disabled={disabled} onClick={(e) => { e.stopPropagation(); setOpen(false); act(); }}>{label}</button>
   );
   return (
     <span className="mask-more" ref={box} onClick={(e) => e.stopPropagation()}>
       <button className={`more-btn${open ? " on" : ""}`} title="more" onClick={() => setOpen(!open)}>…</button>
       {open && (
         <div className="tile-menu mask-more-list">
-          {item("Duplicate Mask", () => onDuplicate(false))}
-          {item("Duplicate and Invert Mask", () => onDuplicate(true))}
+          {item("Duplicate Mask", () => onDuplicate(false, true))}
+          {item("Duplicate Mask Only", () => onDuplicate(false, false))}
+          {item("Duplicate and Invert Mask", () => onDuplicate(true, true))}
+          {item("Duplicate and Invert Mask Only", () => onDuplicate(true, false))}
+          {item("Reset Mask Adjustments", onReset, "", !adjusted)}
           {item("Rename Mask", onRename)}
           {item("Delete Mask", onDelete, "danger")}
         </div>
@@ -665,7 +688,7 @@ function ShapeMenu({ target, tool, disabled, aiBusy, onTool, onAi }: {
           <span className="tool-kind">AI</span>
           {ai("subject", "Subject", AI_ICONS.subject)}
           {ai("sky", "Sky", AI_ICONS.sky)}
-          {target === "new" && ai("background", "Background", AI_ICONS.background)}
+          {ai("background", "Background", AI_ICONS.background)}
           {ai("people", "People", AI_ICONS.people)}
           <button className={`ai${landscape ? " on" : ""}`} disabled={aiBusy} onClick={() => setLandscape(!landscape)}>
             {AI_ICONS.landscape}<span>Landscape</span><span className="more">{landscape ? "▾" : "▸"}</span></button>

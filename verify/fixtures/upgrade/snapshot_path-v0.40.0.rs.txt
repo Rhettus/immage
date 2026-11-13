@@ -1,0 +1,13 @@
+fn snapshot_path(runtime: &Path, dir: &str, recursive: bool, skip: &[String]) -> PathBuf {
+    use sha2::{Digest, Sha256};
+    let mut skip = skip.to_vec();
+    skip.sort();
+    let mut h = Sha256::new();
+    h.update(format!("{dir}\0{recursive}\0{}", skip.join("\0")));
+    let name: String = h.finalize().iter().map(|b| format!("{b:02x}")).collect();
+    runtime.join("folders").join(format!("{name}.json"))
+}
+fn read_snapshot(path: &Path) -> Option<Value> {
+    let list: Value = serde_json::from_slice(&std::fs::read(path).ok()?).ok()?;
+    list.is_array().then_some(list)
+}

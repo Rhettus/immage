@@ -5,6 +5,7 @@
 // own adjustment sliders. shapes live in the shown image's units (0-1
 // across its width and height; radii and brush sizes as fractions of its
 // width), which the engine turns into darktable's drawn masks
+import type { Refine } from "./commands";
 import { LOCAL_CONTROLS, type Values } from "./manifest";
 
 type Mode = { mode?: "add" | "subtract" };
@@ -90,8 +91,8 @@ export function rangeChannels(r: LuminanceRange | ColorRange): ParametricRange["
 }
 
 // darktable's mask refinements, as its blend parameters hold them: feather
-// and blur radii in pixels, detail and contrast -1-1
-export type Refine = { feather: number; blur: number; detail: number; contrast: number };
+// and blur radii in pixels, detail and contrast -1-1 (the Rust layer's type)
+export type { Refine };
 export const NO_REFINE: Refine = { feather: 0, blur: 0, detail: 0, contrast: 0 };
 export const isRefined = (m: Mask) => !!m.refine && Object.values(m.refine).some((v) => v !== 0);
 // a mask whose first drawn shape takes its backdrop (main.c, _object_shapes):

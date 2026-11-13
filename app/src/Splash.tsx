@@ -7,13 +7,17 @@
 // tell builds apart before the engine is up. the main window starts hidden
 // (tauri.conf.json); `about` answers only once the engine does (main.rs,
 // about), so its reply is the sign to show the main window and close this one
+import { ready, settings } from "./settings";
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { invoke } from "@tauri-apps/api/core";
 import { Window, getCurrentWindow } from "@tauri-apps/api/window";
 import "@fontsource/poppins/500.css";
 import "./styles.css";
 import splashUrl from "./splash.jpg";
+import { logCspViolations } from "./cspLog";
+import { commands } from "./commands";
+
+logCspViolations();
 
 const MIN_SHOWN_MS = 1200;
 // darktable reports nothing from inside dt_init, where the wait is, so the
@@ -27,7 +31,7 @@ const SLOW_HINT_MS = 8000;
 
 // the last start's duration, 0 for none
 function lastMs() {
-  try { return Number(localStorage.getItem(STARTUP_KEY)) || 0; } catch { return 0; }
+  try { return Number(settings.get(STARTUP_KEY)) || 0; } catch { return 0; }
 }
 
 // eases towards the end without reaching it: about 90% at the expected
@@ -66,22 +70,22 @@ function Splash() {
     let w = 0, h = 0;
     const note = () => {
       w = Math.max(w, innerWidth); h = Math.max(h, innerHeight);
-      try { localStorage.setItem(SPLASH_SIZE_KEY, `${w}x${h}`); } catch { /* not kept */ }
+      try { settings.set(SPLASH_SIZE_KEY, `${w}x${h}`); } catch { /* not kept */ }
     };
     note();
     addEventListener("resize", note);
     return () => removeEventListener("resize", note);
   }, []);
 
-  useEffect(() => { invoke<Build>("build").then(setBuild).catch(() => {}); }, []);
+  useEffect(() => { commands.build().then(setBuild).catch(() => {}); }, []);
 
   useEffect(() => {
     const shown = Date.now();
     const tick = setInterval(() => setElapsed(Date.now() - shown), 100);
-    invoke<Build & { darktable: string }>("about")
+    commands.about()
       .then((a) => {
         clearInterval(tick);
-        try { localStorage.setItem(STARTUP_KEY, String(Date.now() - shown)); } catch { /* not kept */ }
+        try { settings.set(STARTUP_KEY, String(Date.now() - shown)); } catch { /* not kept */ }
         setAbout(a);
         setTimeout(finish, Math.max(0, MIN_SHOWN_MS - (Date.now() - shown)));
       })
@@ -123,6 +127,7 @@ function Splash() {
   );
 }
 
+await ready;
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <Splash />

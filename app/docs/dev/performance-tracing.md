@@ -51,8 +51,9 @@ flowchart TD
 
 Run the existing GUI benchmark in Preferences → Performance → Measuring. Report
 schema 9 includes diagnostics by default, independently of the overlay. For an
-overhead comparison, set `localStorage.setItem("immage.perfDiagnostics", "0")` in
-the webview developer console before a run; set it to `"1"` to restore diagnostics.
+overhead comparison, quit Immage and set `"immage.perfDiagnostics": "0"` in
+`settings.json` (see [settings.rs](../../src-tauri/src/settings.rs)) before a
+run; set it to `"1"` to restore diagnostics.
 This leaves legacy timing, resource and frontend-work metrics enabled. Alternate
 multiple on/off runs with fixed photo, edits, viewport, display and preferences.
 Unit tests do not establish profiler overhead on a user's hardware.

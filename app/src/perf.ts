@@ -5,19 +5,23 @@
 // moving to its pixels on screen, stage by stage, and the GUI benchmark's
 // recordings. while the overlay is off every hook returns at once
 import { PerfDiagnostics } from "./perfDiagnostics";
-import { invoke } from "@tauri-apps/api/core";
+import { settings } from "./settings";
+import { commands, type Timing, type Value } from "./commands";
 
 const KEY = "immage.perfHud";
 export function loadPerfHud(): boolean {
-  try { return localStorage.getItem(KEY) === "1"; } catch { return false; }
+  try { return settings.get(KEY) === "1"; } catch { return false; }
 }
 export function storePerfHud(on: boolean) {
-  try { localStorage.setItem(KEY, on ? "1" : "0"); } catch { /* not kept */ }
+  try { settings.set(KEY, on ? "1" : "0"); } catch { /* not kept */ }
 }
 
+// a report for perf_report_write: it goes to a file as JSON, which drops the
+// members that are undefined
+export const writeReport = (name: string, report: object) => commands.perfReportWrite(name, report as Value);
+
 // darktable's -d perf line for one module (engine.rs, Timing)
-export type Timing = { label: string; kind: "module" | "colorspace" | "other"; ms: number; cpu_ms: number;
-                       pipe: string; gpu: boolean; tiled: boolean };
+export type { Timing };
 
 // in the order they happen
 export const STAGES = [
@@ -119,10 +123,11 @@ class Perf {
     if (this.tracing) this.diagnostics.finish(performance.now(), id, outcome, data);
   }
   request(data: Record<string, unknown>) { return this.begin("render", data); }
-  command<T>(command: string, args?: Parameters<typeof invoke>[1], details?: Record<string, unknown>): Promise<T> {
-    if (!this.tracing) return invoke<T>(command, args);
+  // a command (commands.ts), traced under its Rust name
+  traced<T>(command: string, call: () => Promise<T>, details?: Record<string, unknown>): Promise<T> {
+    if (!this.tracing) return call();
     const id = this.begin("command", { command, ...details });
-    return invoke<T>(command, args).then(result => {
+    return call().then(result => {
       this.finish(id); return result;
     }, error => {
       this.finish(id, "failed"); throw error;
@@ -199,7 +204,7 @@ class Perf {
   enable(on: boolean) {
     this.enabled = on;
     storePerfHud(on);
-    void invoke("perf_set", { on: on || this.measuring }).catch(() => {});
+    void commands.perfSet(on || this.measuring).catch(() => {});
     window.cancelAnimationFrame(this.raf);
     this.raf = 0;
     if (on || this.measuring) this.watchFrames();
@@ -209,7 +214,7 @@ class Perf {
   // collect timings without changing the user's overlay preference
   async startMeasurement(diagnostics?: boolean): Promise<() => void> {
     if (this.measuring) throw new Error("another performance measurement is running");
-    try { this.diagnosticsEnabled = diagnostics ?? (localStorage.getItem("immage.perfDiagnostics") !== "0"); }
+    try { this.diagnosticsEnabled = diagnostics ?? (settings.get("immage.perfDiagnostics") !== "0"); }
     catch { this.diagnosticsEnabled = diagnostics ?? true; }
     this.measurement++;
     this.measuring = true;
@@ -219,12 +224,12 @@ class Perf {
     this.inputAt = this.latestInputAt = null; this.edits = 0;
     try {
       await this.shutdown;
-      await invoke("perf_set", { on: true });
-      await invoke(this.diagnosticsEnabled ? "perf_trace_start" : "perf_trace_stop");
+      await commands.perfSet(true);
+      await (this.diagnosticsEnabled ? commands.perfTraceStart() : commands.perfTraceStop());
     }
     catch (error) {
       this.measuring = false;
-      void invoke("perf_set", { on:this.enabled }).catch(() => {});
+      void commands.perfSet(this.enabled).catch(() => {});
       throw error;
     }
     if (!this.enabled) this.watchFrames();
@@ -232,7 +237,7 @@ class Perf {
       this.measuring = false;
       this.inputAt = this.latestInputAt = null; this.edits = 0;
       this.firstInputId = this.latestInputId = undefined;
-      this.shutdown = invoke("perf_trace_stop").catch(() => {}).then(() => invoke("perf_set", { on: this.enabled })).catch(() => {});
+      this.shutdown = commands.perfTraceStop().catch(() => {}).then(() => commands.perfSet(this.enabled)).catch(() => {});
       if (!this.enabled) { window.cancelAnimationFrame(this.raf); this.raf = 0; }
     };
   }
@@ -262,7 +267,7 @@ class Perf {
 
   // tell Rust at startup
   init() {
-    void invoke("perf_set", { on: this.enabled }).catch(() => {});
+    void commands.perfSet(this.enabled).catch(() => {});
     if (this.enabled) this.watchFrames();
   }
 
@@ -317,7 +322,7 @@ class Perf {
       // set in Rust before the frame came back, so already this frame's; the
       // sample made at paint shares the array
       trace.moduleTimings = { status:"pending" };
-      void invoke<Timing[]>("perf_modules", { request:t.diagnostic?.requestId }).then((m) => {
+      void commands.perfModules(t.diagnostic?.requestId ?? null).then((m) => {
         trace.modules.push(...m); this.foldModules(m); trace.moduleTimings!.status="complete";
       }).catch(() => { trace.moduleTimings!.status="unavailable"; });
     }
@@ -420,7 +425,7 @@ export function roundTrips(ms: number[]): RoundTrips {
 }
 export async function pingOnce(): Promise<number> {
   const t = performance.now();
-  await invoke("perf_ping");
+  await commands.perfPing();
   return performance.now() - t;
 }
 

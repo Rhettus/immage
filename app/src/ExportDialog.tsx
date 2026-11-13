@@ -5,11 +5,11 @@
 // the left, Lightroom's sections in the middle, a preview of the result on
 // the right. settings are remembered
 import { useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { open, save } from "@tauri-apps/plugin-dialog";
+import { open } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import type { ImageEntry } from "./library";
+import { settings } from "./settings";
 import { loadAccel, loadFocusMode } from "./Preferences";
 import { Chevron, Collapse } from "./Collapse";
 import { Aperture, Archive, BookOpen, Briefcase, Camera, CloudUpload, FileDown, Frame, Globe, Heart, Image, Mail,
@@ -19,15 +19,16 @@ import { ColorPick, FrameEditor } from "./ExportFrame";
 import { KeywordChips, KeywordInput, parseKeyword } from "./Keywording";
 import { expand, TOKENS, EMPTY_META, type Meta } from "./exportTokens";
 import { runExport } from "./background";
+import { engineText } from "./engineState";
 import {
-  BUILTINS, DEFAULTS, PERSONAL_KEYS, frameFor, readShared, sharedFile, loadPresets, loadSettings, newId, presetEdited, presetOf, savePresets, saveSettings,
-  type ExportPreset, type Settings,
+  BUILTINS, DEFAULTS, PERSONAL_KEYS, bitDepths, depthOf, exportOptionsFor, frameFor, hasQuality, readShared, sharedFile, loadPresets, loadSettings,
+  newId, presetEdited, presetOf, savePresets, saveSettings, type BitDepth, type ExportPreset, type Settings,
 } from "./exportSettings";
+import { commands, type Album, type ExportReply, type Value } from "./commands";
 
 export const FILE_MANAGER = navigator.userAgent.includes("Windows") ? "Explorer"
   : navigator.userAgent.includes("Mac") ? "Finder" : "File Manager";
 
-type Album = { id: string; name: string; count: number };
 
 // Lightroom's Super Resolution, as darktable's upscale model on a GPU
 // provider; on the CPU the model needs more memory than a computer has
@@ -45,8 +46,6 @@ const PREVIEWS_KEPT = 8;
 type Choice = "unique" | "overwrite" | "skip" | "cancel";
 type Ask = { name: string; dir: string; inBatch: boolean; left: number; all: boolean };
 
-type Result = { written: string[]; skipped: string[]; failed: { file: string; error: string }[]; dir?: string;
-                uploaded?: number; duplicates?: number; cancelled: boolean };
 
 // which sections are open, remembered
 type SectionId = "destination" | "name" | "format" | "frame" | "keywords" | "metadata";
@@ -62,7 +61,7 @@ const FILE_TOKEN_NAMES: Record<string, string> = {
 };
 const loadOpen = (): Record<SectionId, boolean> => {
   try {
-    const raw = JSON.parse(localStorage.getItem("immage.export.open") ?? "{}");
+    const raw = JSON.parse(settings.get("immage.export.open") ?? "{}");
     // Metadata was Privacy before 0.37.0
     if ("privacy" in raw && !("metadata" in raw)) raw.metadata = raw.privacy;
     return Object.fromEntries((Object.keys(OPEN_DEFAULT) as SectionId[])
@@ -173,13 +172,13 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
     const n = solo
       ? Object.fromEntries(Object.keys(o).map((k) => [k, k === id && !o[id]])) as Record<SectionId, boolean>
       : { ...o, [id]: !o[id] };
-    try { localStorage.setItem("immage.export.open", JSON.stringify(n)); } catch { /* not kept */ }
+    try { settings.set("immage.export.open", JSON.stringify(n)); } catch { /* not kept */ }
     return n;
   });
 
   // ---------------------------------------------------------- presets
   const [presets, setPresets] = useState<ExportPreset[]>([]);
-  const [presetId, setPresetId] = useState<string | null>(() => localStorage.getItem("immage.export.preset"));
+  const [presetId, setPresetId] = useState<string | null>(() => settings.get("immage.export.preset"));
   const [naming, setNaming] = useState<{ id: string | null; name: string } | null>(null);
   // the preset whose icon is being chosen; a click elsewhere closes it
   const [iconFor, setIconFor] = useState<string | null>(null);
@@ -199,18 +198,18 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
   };
   // the preset groups folded shut, kept between uses
   const [closedGroups, setClosedGroups] = useState<Set<string>>(() => {
-    try { return new Set(JSON.parse(localStorage.getItem(GROUPS_KEY) ?? "[]")); } catch { return new Set(); }
+    try { return new Set(JSON.parse(settings.get(GROUPS_KEY) ?? "[]")); } catch { return new Set(); }
   });
   const toggleGroup = (id: string) => setClosedGroups((old) => {
     const next = new Set(old);
     if (!next.delete(id)) next.add(id);
-    try { localStorage.setItem(GROUPS_KEY, JSON.stringify([...next])); } catch { /* not kept */ }
+    try { settings.set(GROUPS_KEY, JSON.stringify([...next])); } catch { /* not kept */ }
     return next;
   });
   useEffect(() => { void loadPresets().then(setPresets); }, []);
   const choosePreset = (id: string | null) => {
     setPresetId(id);
-    try { id ? localStorage.setItem("immage.export.preset", id) : localStorage.removeItem("immage.export.preset"); }
+    try { id ? settings.set("immage.export.preset", id) : settings.remove("immage.export.preset"); }
     catch { /* not kept */ }
   };
   const storePresets = (list: ExportPreset[]) => { setPresets(list); void savePresets(list).catch((e) => setError(String(e))); };
@@ -230,15 +229,14 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
   // sharing: the chosen preset to a file, or a file's presets into My Presets
   const exportPreset = async () => {
     if (!chosen) return;
-    const path = await save({ defaultPath: `${chosen.name.replace(/[/\\:*?"<>|]+/g, "_")}.json`,
-                              filters: [{ name: "Immage export preset", extensions: ["json"] }] });
-    if (path) await invoke("preset_file_write", { path, contents: sharedFile(chosen) }).catch((e) => setError(String(e)));
+    await commands.exportPresetsExport(sharedFile(chosen), chosen.name.replace(/[/\\:*?"<>|]+/g, "_"),
+                                       "Immage export preset").catch((e) => setError(String(e)));
   };
   const importPresets = async () => {
-    const path = await open({ multiple: false, filters: [{ name: "Immage export preset", extensions: ["json"] }] });
-    if (typeof path !== "string") return;
     try {
-      const added = readShared(await invoke("preset_file_read", { path }),
+      const file = await commands.exportPresetsImport("Immage export preset");
+      if (file === null) return;
+      const added = readShared(file,
                                [...BUILTINS, ...presets].map((p) => p.name));
       if (!added.length) throw new Error("this file has no presets in it");
       storePresets([...presets, ...added]);
@@ -283,14 +281,14 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
   useEffect(() => {
     if (!toImmich) return;
     setImmichError(null);
-    invoke<Album[]>("immich_albums").then(setAlbums).catch((e) => setImmichError(String(e)));
-    invoke<string[]>("immich_export_check").then(setMissing).catch(() => setMissing([]));
+    commands.immichAlbums().then(setAlbums).catch((e) => setImmichError(String(e)));
+    commands.immichExportCheck().then(setMissing).catch(() => setMissing([]));
   }, [toImmich]);
   const createAlbum = async () => {
     const name = newAlbum?.trim();
     if (!name) return;
     try {
-      const a = await invoke<Album>("immich_create_album", { name });
+      const a = await commands.immichCreateAlbum(name);
       setAlbums((old) => [...(old ?? []), a].sort((x, y) => x.name.localeCompare(y.name)));
       set("album", a.id);
       setNewAlbum(null);
@@ -301,7 +299,7 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
 
   // every keyword ever used, for the Keywords section's suggestions
   const [knownKeywords, setKnownKeywords] = useState<string[]>([]);
-  useEffect(() => { invoke<string[]>("keywords").then(setKnownKeywords).catch(() => {}); }, []);
+  useEffect(() => { commands.keywords().then(setKnownKeywords).catch(() => {}); }, []);
   const addKeywords = (names: string[]) => {
     const fresh = names.map(parseKeyword).filter((k) => k && !s.keywords.includes(k));
     if (fresh.length) set("keywords", [...s.keywords, ...new Set(fresh)]);
@@ -334,7 +332,7 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
   useEffect(() => {
     if (!shownImage) return;
     const imgid = shownImage.imgid;
-    invoke<{ image: { metadata: Meta } }>("meta", { imgid })
+    commands.meta(imgid)
       .then((r) => setPreviewMeta({ imgid, meta: r.image.metadata }))
       .catch(() => setPreviewMeta({ imgid, meta: EMPTY_META }));
   }, [shownImage?.imgid]);
@@ -363,11 +361,10 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
     }
     const t = window.setTimeout(async () => {
       try {
-        const bytes = await invoke<ArrayBuffer>("export_preview", {
-          item: { imgid: shownImage.imgid, stem: "preview", frame: previewFrame },
-          options: { dir: "", format: "jpeg", colorSpace: "srgb", conflict: "overwrite", longEdge },
-          cap: PREVIEW_EDGE,
-        });
+        const bytes = await commands.exportPreview(
+          { imgid: shownImage.imgid, stem: "preview", frame: previewFrame as Value },
+          { dir: "", format: "jpeg", colorSpace: "srgb", conflict: "overwrite", longEdge },
+          PREVIEW_EDGE);
         if (seq !== previewSeq.current) return;
         const url = URL.createObjectURL(new Blob([bytes], { type: "image/jpeg" }));
         const cache = previewCache.current;
@@ -406,22 +403,20 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
           setNote(p.stage === "downloading" ? `downloading the upscale model (${p.mb ?? "?"} MB), first use only…`
                 : p.stage === "installing" ? "installing the upscale model…" : null);
         });
-        try { await invoke("ai_model_ensure", { id: UPSCALE_MODEL }); } finally { stop(); }
+        try { await commands.aiModelEnsure(UPSCALE_MODEL); } finally { stop(); }
         setNote(null);
       }
       // each image's metadata, when its name or its frame's text needs it
       const needMeta = s.naming === "template" || s.texts.length > 0;
       const metas = await Promise.all(items.map(async (i) => !needMeta ? EMPTY_META
-        : invoke<{ image: { metadata: Meta } }>("meta", { imgid: i.imgid }).then((r) => r.image.metadata)));
+        : commands.meta(i.imgid).then((r) => r.image.metadata)));
       const stems = items.map((i, k) => stemFor(i, metas[k], k + 1, items.length));
       // files already there, or named twice in this export: what to do
       // with each, asked one at a time unless applied to all the rest
       const conflicts: (Choice | null)[] = items.map(() => null);
       if (!toImmich && s.conflict === "ask") {
-        const files = await invoke<{ path: string; exists: boolean }[]>("export_existing", {
-          items: items.map((i, k) => ({ imgid: i.imgid, stem: stems[k] })),
-          dir: s.dir, subfolder: s.useSubfolder ? s.subfolder : null, format: s.format,
-        });
+        const files = await commands.exportExisting(items.map((i, k) => ({ imgid: i.imgid, stem: stems[k] })),
+          s.dir, s.useSubfolder ? s.subfolder : null, s.format);
         // macOS and Windows file names ignore case
         const seen = new Set<string>();
         const clash = files.map((f) => {
@@ -448,10 +443,10 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
       }
       const album = albums?.find((a) => a.id === s.album)?.name ?? "the album";
       const total = items.length;
-      const summarize = (r: Result) => {
-        const failed = r.failed.length ? `, ${r.failed.length} failed: ${r.failed[0].error}` : "";
+      const summarize = (r: ExportReply) => {
+        const failed = r.failed.length ? `, ${r.failed.length} failed: ${engineText(r.failed[0].error)}` : "";
         const stopped = r.cancelled ? "stopped: " : "";
-        const text = r.uploaded !== undefined
+        const text = r.uploaded != null
           ? `Upload ${stopped}${r.uploaded} of ${total} to ${album}`
             + (r.duplicates ? `, ${r.duplicates} already in Immich (added to the album)` : "") + failed
           : `Export ${stopped}${r.written.length} of ${total} to ${r.dir}`
@@ -460,16 +455,15 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
       };
       const what = upscale ? `Upscaling ${upscale}× and exporting` : toImmich ? "Uploading" : "Exporting";
       const reveal = s.reveal && !toImmich, keywordsChanged = s.keywordsOnOriginal && s.keywords.length > 0;
-      void runExport<Result>(what, total, {
-        items: items.map((i, k) => ({ imgid: i.imgid, stem: stems[k], created: i.exif.datetime || null,
+      void runExport(what, total, (job) => commands.exportImages(job,
+        items.map((i, k) => ({ imgid: i.imgid, stem: stems[k], created: i.exif.datetime || null,
                                       conflict: conflicts[k] ?? (s.conflict === "ask" ? "unique" : null),
-                                      frame: frameFor(s, i, metas[k]) })),
-        options: {
+                                      frame: frameFor(s, i, metas[k]) as Value })),
+        {
           dir: s.dir,
           subfolder: s.useSubfolder ? s.subfolder : null,
           format: s.format,
-          quality: s.format === "jpeg" || s.format === "webp" ? s.quality : null,
-          bpp: s.format === "tiff" || s.format === "png" ? s.bpp : null,
+          ...exportOptionsFor(s),
           colorSpace: s.colorSpace,
           longEdge,
           upscale: upscale || null,
@@ -485,8 +479,7 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
           history: s.includeHistory,
           keywords: s.keywords,
           keywordsOnOriginal: s.keywordsOnOriginal,
-        },
-      }, summarize).then((r) => {
+        }), summarize).then((r) => {
         if (!r) return;
         if (keywordsChanged) onKeywordsChanged?.();
         if (reveal && r.written.length) void revealItemInDir(r.written).catch(() => {});
@@ -503,7 +496,7 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
     && (s.naming !== "custom" || !!s.customName.trim()) && (s.naming !== "template" || !!s.template.trim());
 
   const conflictNames = { ask: "Ask me", unique: "Add a number", overwrite: "Replace it", skip: "Skip it" };
-  const formatNames = { jpeg: "JPEG", tiff: "TIFF", png: "PNG", webp: "WebP" };
+  const formatNames = { jpeg: "JPEG", tiff: "TIFF", png: "PNG", webp: "WebP", jxl: "JPEG XL" };
   const spaceNames = { srgb: "sRGB", adobergb: "Adobe RGB (1998)", displayp3: "Display P3", prophoto: "ProPhoto RGB" };
 
   const presetRow = (p: ExportPreset) => {
@@ -709,7 +702,7 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
             </Section>
 
             <Section title="Format & Size" open={openSections.format} onToggle={(alt) => toggle("format", alt)}
-                     summary={`${formatNames[s.format]}${s.format === "jpeg" || s.format === "webp" ? ` ${s.quality}` : ""}, `
+                     summary={`${formatNames[s.format]}${hasQuality(s.format) ? ` ${s.quality}` : ""}, `
                        + `${upscale ? `AI ${upscale}×` : canvas ? `canvas ${s.canvasW} × ${s.canvasH}` : s.resize ? `${s.longEdge} px` : "original size"}`}>
               <div className="row">
                 <span className="k">Format</span>
@@ -717,20 +710,20 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
                   {Object.entries(formatNames).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                 </select>
               </div>
-              {(s.format === "jpeg" || s.format === "webp") && (
+              {hasQuality(s.format) && (
                 <div className="row">
                   <span className="k">Quality</span>
                   <input type="range" min={10} max={100} value={s.quality}
                          onChange={(e) => set("quality", Number(e.target.value))} />
                   <span className="num">{s.quality}</span>
+                  {s.format === "jxl" && s.quality === 100 && <span className="note-plain">Lossless</span>}
                 </div>
               )}
-              {(s.format === "tiff" || s.format === "png") && (
+              {bitDepths(s.format).length > 0 && (
                 <div className="row">
                   <span className="k">Bit depth</span>
-                  <select data-export-field="bpp" value={s.bpp} onChange={(e) => set("bpp", Number(e.target.value) as 8 | 16)}>
-                    <option value={8}>8 bit</option>
-                    <option value={16}>16 bit</option>
+                  <select data-export-field="bpp" value={depthOf(s.format, s.bpp)} onChange={(e) => set("bpp", Number(e.target.value) as BitDepth)}>
+                    {bitDepths(s.format).map((b) => <option key={b} value={b}>{b} bit</option>)}
                   </select>
                 </div>
               )}

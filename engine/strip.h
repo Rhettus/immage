@@ -30,12 +30,25 @@ typedef enum strip_t
   STRIP_CAMERA = 1 << 1,      // the camera, lens and exposure settings, makernotes included
   STRIP_DESCRIPTION = 1 << 2, // the source's own title, description, artist and copyright
   STRIP_KEYWORDS = 1 << 3,    // the source's own keywords
+  STRIP_HISTORY = 1 << 4,     // darktable's edit history in XMP; strip_jxl() only
+  STRIP_LOCATION = 1 << 5,    // GPS in EXIF and XMP; strip_jxl() only
 } strip_t;
 
 // takes out of an exported file what darktable's export flags cannot
 // (src/common/metadata_export.h). the date taken and the orientation
 // stay. NULL when done, else a message to g_free()
 char *strip_metadata(const char *path, strip_t what);
+
+// the same for a JPEG XL, whose metadata boxes exiv2 cannot rewrite; also
+// takes out the history and location the bits above name. Fails if a box is
+// compressed. NULL when done, else a message to g_free()
+char *strip_jxl(const char *path, strip_t what);
+
+// puts an ICC profile into an exported JPEG, TIFF or WebP that has none:
+// darktable's format writers embed it, then its EXIF writer reopens the file
+// without reading its metadata and rewrites it without the profile
+// (exif.cc, dt_exif_write_blob). NULL when done, else a message to g_free()
+char *embed_profile(const char *path, const void *icc, size_t size);
 
 // Merge export EXIF while preserving the rendered file's layout and color tags.
 gboolean rendered_metadata(const char *path, const void *blob, int size, gboolean dng);

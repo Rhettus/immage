@@ -512,6 +512,17 @@
               "status": "pending"
             },
             {
+              "id": "whites_brilliance",
+              "label": "Highlight Brilliance",
+              "kind": "slider",
+              "rawOnly": false,
+              "min": 0,
+              "max": 200,
+              "step": 1,
+              "nonlinear": false,
+              "status": "pending"
+            },
+            {
               "id": "blacks",
               "label": "Blacks",
               "kind": "slider",
@@ -8848,6 +8859,92 @@
       ]
     },
     {
+      "id": "texture",
+      "label": "Texture",
+      "control": "mod_texture",
+      "options": [
+        {
+          "value": 0,
+          "name": "diffuse or sharpen",
+          "op": "diffuse",
+          "controls": [
+            "texture"
+          ],
+          "localControls": [
+            "l_texture"
+          ]
+        },
+        {
+          "value": 1,
+          "name": "contrast & texture",
+          "op": "contrastntexture#texture",
+          "controls": [
+            "detail_texture_gain_coarse",
+            "detail_texture_gain_medium",
+            "detail_texture_gain_fine",
+            "detail_texture_detail_level",
+            "detail_texture_halo_control",
+            "detail_texture_noise_bias",
+            "detail_texture_gain_shadows",
+            "detail_texture_gain_highlights"
+          ],
+          "localControls": [
+            "l_detail_texture_gain_coarse",
+            "l_detail_texture_gain_medium",
+            "l_detail_texture_gain_fine",
+            "l_detail_texture_detail_level",
+            "l_detail_texture_halo_control",
+            "l_detail_texture_noise_bias",
+            "l_detail_texture_gain_shadows",
+            "l_detail_texture_gain_highlights"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "clarity",
+      "label": "Clarity",
+      "control": "mod_clarity",
+      "options": [
+        {
+          "value": 0,
+          "name": "local contrast",
+          "op": "bilat",
+          "controls": [
+            "clarity"
+          ],
+          "localControls": [
+            "l_clarity"
+          ]
+        },
+        {
+          "value": 1,
+          "name": "contrast & texture",
+          "op": "contrastntexture",
+          "controls": [
+            "detail_clarity_gain_coarse",
+            "detail_clarity_gain_medium",
+            "detail_clarity_gain_fine",
+            "detail_clarity_detail_level",
+            "detail_clarity_halo_control",
+            "detail_clarity_noise_bias",
+            "detail_clarity_gain_shadows",
+            "detail_clarity_gain_highlights"
+          ],
+          "localControls": [
+            "l_detail_clarity_gain_coarse",
+            "l_detail_clarity_gain_medium",
+            "l_detail_clarity_gain_fine",
+            "l_detail_clarity_detail_level",
+            "l_detail_clarity_halo_control",
+            "l_detail_clarity_noise_bias",
+            "l_detail_clarity_gain_shadows",
+            "l_detail_clarity_gain_highlights"
+          ]
+        }
+      ]
+    },
+    {
       "id": "saturation",
       "label": "Saturation",
       "control": "mod_saturation",
@@ -9033,92 +9130,6 @@
             "sb_p19y"
           ],
           "localControls": []
-        }
-      ]
-    },
-    {
-      "id": "clarity",
-      "label": "Clarity",
-      "control": "mod_clarity",
-      "options": [
-        {
-          "value": 0,
-          "name": "local contrast",
-          "op": "bilat",
-          "controls": [
-            "clarity"
-          ],
-          "localControls": [
-            "l_clarity"
-          ]
-        },
-        {
-          "value": 1,
-          "name": "contrast & texture",
-          "op": "contrastntexture",
-          "controls": [
-            "detail_clarity_gain_coarse",
-            "detail_clarity_gain_medium",
-            "detail_clarity_gain_fine",
-            "detail_clarity_detail_level",
-            "detail_clarity_halo_control",
-            "detail_clarity_noise_bias",
-            "detail_clarity_gain_shadows",
-            "detail_clarity_gain_highlights"
-          ],
-          "localControls": [
-            "l_detail_clarity_gain_coarse",
-            "l_detail_clarity_gain_medium",
-            "l_detail_clarity_gain_fine",
-            "l_detail_clarity_detail_level",
-            "l_detail_clarity_halo_control",
-            "l_detail_clarity_noise_bias",
-            "l_detail_clarity_gain_shadows",
-            "l_detail_clarity_gain_highlights"
-          ]
-        }
-      ]
-    },
-    {
-      "id": "texture",
-      "label": "Texture",
-      "control": "mod_texture",
-      "options": [
-        {
-          "value": 0,
-          "name": "diffuse or sharpen",
-          "op": "diffuse",
-          "controls": [
-            "texture"
-          ],
-          "localControls": [
-            "l_texture"
-          ]
-        },
-        {
-          "value": 1,
-          "name": "contrast & texture",
-          "op": "contrastntexture#texture",
-          "controls": [
-            "detail_texture_gain_coarse",
-            "detail_texture_gain_medium",
-            "detail_texture_gain_fine",
-            "detail_texture_detail_level",
-            "detail_texture_halo_control",
-            "detail_texture_noise_bias",
-            "detail_texture_gain_shadows",
-            "detail_texture_gain_highlights"
-          ],
-          "localControls": [
-            "l_detail_texture_gain_coarse",
-            "l_detail_texture_gain_medium",
-            "l_detail_texture_gain_fine",
-            "l_detail_texture_detail_level",
-            "l_detail_texture_halo_control",
-            "l_detail_texture_noise_bias",
-            "l_detail_texture_gain_shadows",
-            "l_detail_texture_gain_highlights"
-          ]
         }
       ]
     },

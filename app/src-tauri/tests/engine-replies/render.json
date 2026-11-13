@@ -1,0 +1,43 @@
+[
+ {
+  "label": "3 open / render ppm",
+  "reply": {
+   "cl_errors": 0,
+   "full_height": 48,
+   "full_width": 64,
+   "hash": "0000000000000001",
+   "height": 48,
+   "ms": 0.0,
+   "ok": true,
+   "process_ms": 0.0,
+   "width": 64,
+   "write_ms": 0.0,
+   "x": 0,
+   "y": 0
+  }
+ },
+ {
+  "label": "3 open / render rgba",
+  "reply": {
+   "cl_errors": 0,
+   "full_height": 48,
+   "full_width": 64,
+   "hash": "0000000000000001",
+   "height": 48,
+   "ms": 0.0,
+   "ok": true,
+   "output_ms": {
+    "allocate_ms": 0.0,
+    "convert_ms": 0.0,
+    "file_ms": 0.0,
+    "free_ms": 0.0
+   },
+   "process_ms": 0.0,
+   "process_output_ms": 0.0,
+   "width": 64,
+   "write_ms": 0.0,
+   "x": 0,
+   "y": 0
+  }
+ }
+]

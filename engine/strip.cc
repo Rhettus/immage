@@ -23,6 +23,8 @@
 // standard tags, the DNG tags, XMP and the makernotes all reach the file,
 // and so do a title or keywords another program wrote into the EXIF
 
+#include <cstring>
+#include <stdexcept>
 #include <string>
 #include <map>
 #include <glib/gstdio.h>
@@ -200,6 +202,196 @@ char *strip_metadata(const char *path, const strip_t what)
   catch(const std::exception &e)
   {
     return g_strdup_printf("could not remove metadata from '%s': %s", path, e.what());
+  }
+}
+
+// JPEG XL: exiv2 reads its ISO BMFF container but cannot write it, and
+// darktable's encoder puts the EXIF and the photo's whole sidecar XMP (edit
+// history, location, text) into plain boxes whatever the export's flags say
+// (src/imageio/format/jxl.c). so the boxes are edited here and the file
+// rewritten around them
+
+static uint32_t _be32(const unsigned char *p)
+{
+  return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3];
+}
+
+static void _put32(std::string &out, const uint32_t v)
+{
+  const char b[4] = { (char)(v >> 24), (char)(v >> 16), (char)(v >> 8), (char)v };
+  out.append(b, 4);
+}
+
+static void _put_box(std::string &out, const char *type, const std::string &payload)
+{
+  _put32(out, (uint32_t)(payload.size() + 8));
+  out.append(type, 4);
+  out += payload;
+}
+
+// the Exif box: a 4 byte offset, then the TIFF data. exiv2 throws when it
+// cannot be read, so the file is not delivered with what could not be checked
+static void _jxl_exif(std::string &payload, const strip_t what, bool &changed, bool &keep)
+{
+  keep = true;
+  if(payload.size() < 4) return;
+  const Exiv2::byte *data = (const Exiv2::byte *)payload.data() + 4;
+  const size_t size = payload.size() - 4;
+  Exiv2::ExifData exif;
+  const Exiv2::ByteOrder order = Exiv2::ExifParser::decode(exif, data, size);
+  bool erased = false;
+  for(auto i = exif.begin(); i != exif.end();)
+    if(_exif_out(*i, what) || ((what & STRIP_LOCATION) && i->groupName() == "GPSInfo"))
+    {
+      i = exif.erase(i);
+      erased = true;
+    }
+    else
+      ++i;
+  if(!erased) return;
+  changed = true;
+  if(exif.empty())
+  {
+    keep = false;
+    return;
+  }
+  Exiv2::Blob blob;
+  Exiv2::ExifParser::encode(blob, data, size, order, exif);
+  payload.assign(4, '\0');
+  payload.append((const char *)blob.data(), blob.size());
+}
+
+static void _jxl_xmp(std::string &payload, const strip_t what, bool &changed, bool &keep)
+{
+  keep = true;
+  Exiv2::XmpData xmp;
+  if(Exiv2::XmpParser::decode(xmp, payload)) throw Exiv2::Error(Exiv2::ErrorCode::kerFailedToReadImageData);
+  bool erased = false;
+  for(auto i = xmp.begin(); i != xmp.end();)
+    if(_xmp_out(*i, what) || ((what & STRIP_HISTORY) && i->groupName() == "darktable")
+       || ((what & STRIP_LOCATION) && i->tagName().rfind("GPS", 0) == 0
+           && i->groupName() == "exif"))
+    {
+      i = xmp.erase(i);
+      erased = true;
+    }
+    else
+      ++i;
+  if(!erased) return;
+  changed = true;
+  if(xmp.empty())
+  {
+    keep = false;
+    return;
+  }
+  std::string packet;
+  if(Exiv2::XmpParser::encode(packet, xmp)) throw Exiv2::Error(Exiv2::ErrorCode::kerImageWriteFailed);
+  payload = packet;
+}
+
+char *strip_jxl(const char *path, const strip_t what)
+{
+  if(!what) return NULL;
+  try
+  {
+    gchar *raw = NULL;
+    gsize length = 0;
+    GError *error = NULL;
+    if(!g_file_get_contents(path, &raw, &length, &error))
+    {
+      char *message = g_strdup_printf("could not read '%s': %s", path, error->message);
+      g_error_free(error);
+      return message;
+    }
+    const std::string file(raw, length);
+    g_free(raw);
+    const unsigned char *bytes = (const unsigned char *)file.data();
+    static const unsigned char signature[12] = { 0, 0, 0, 12, 'J', 'X', 'L', ' ', 0x0D, 0x0A, 0x87, 0x0A };
+    // a bare codestream has no boxes, so no metadata
+    if(length < 12 || memcmp(bytes, signature, 12)) return NULL;
+
+    std::string out;
+    out.reserve(length);
+    bool changed = false;
+    _lock lock;
+    for(size_t pos = 0; pos < length;)
+    {
+      if(length - pos < 8) throw std::runtime_error("truncated box header");
+      uint64_t size = _be32(bytes + pos);
+      const char *type = file.data() + pos + 4;
+      size_t head = 8;
+      if(size == 1)
+      {
+        if(length - pos < 16) throw std::runtime_error("truncated box header");
+        size = (uint64_t)_be32(bytes + pos + 8) << 32 | _be32(bytes + pos + 12);
+        head = 16;
+      }
+      else if(size == 0)
+        size = length - pos;
+      if(size < head || size > length - pos) throw std::runtime_error("box runs past the end of the file");
+      std::string payload = file.substr(pos + head, size - head);
+      const bool exif = !memcmp(type, "Exif", 4), xml = !memcmp(type, "xml ", 4);
+      // compressed boxes cannot be read here; the file would keep them
+      if(!memcmp(type, "brob", 4) && payload.size() >= 4
+         && (!memcmp(payload.data(), "Exif", 4) || !memcmp(payload.data(), "xml ", 4)))
+        throw std::runtime_error("compressed metadata box");
+      bool keep = true, edited = false;
+      if(exif) _jxl_exif(payload, what, edited, keep);
+      else if(xml) _jxl_xmp(payload, what, edited, keep);
+      changed |= edited;
+      if(keep && edited) _put_box(out, exif ? "Exif" : "xml ", payload);
+      else if(keep) out.append(file, pos, size);
+      pos += size;
+    }
+    if(!changed) return NULL;
+
+    gchar *part = g_strdup_printf("%s.part", path);
+    gboolean ok = g_file_set_contents(part, out.data(), out.size(), &error);
+    if(!ok)
+    {
+      char *message = g_strdup_printf("could not remove metadata from '%s': %s", path, error->message);
+      g_error_free(error);
+      g_free(part);
+      return message;
+    }
+    // g_rename replaces an existing file on Windows too
+    if(g_rename(part, path))
+    {
+      g_unlink(part);
+      g_free(part);
+      return g_strdup_printf("could not replace '%s'", path);
+    }
+    g_free(part);
+    return NULL;
+  }
+  catch(const std::exception &e)
+  {
+    return g_strdup_printf("could not remove metadata from '%s': %s", path, e.what());
+  }
+}
+
+char *embed_profile(const char *path, const void *icc, const size_t size)
+{
+  if(!icc || !size) return NULL;
+  try
+  {
+    _lock lock;
+#if defined(_WIN32) && defined(EXV_UNICODE_PATH)
+    gunichar2 *wide = g_utf8_to_utf16(path, -1, NULL, NULL, NULL);
+    auto image = Exiv2::ImageFactory::open(std::wstring((const wchar_t *)wide));
+    g_free(wide);
+#else
+    auto image = Exiv2::ImageFactory::open(path);
+#endif
+    image->readMetadata();
+    if(image->iccProfileDefined()) return NULL;
+    image->setIccProfile(Exiv2::DataBuf(static_cast<const Exiv2::byte *>(icc), size));
+    image->writeMetadata();
+    return NULL;
+  }
+  catch(const std::exception &e)
+  {
+    return g_strdup_printf("could not embed the color profile in '%s': %s", path, e.what());
   }
 }
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from 'node:assert/strict';
 import { inspect, click, reveal, rangeSelector, openTool } from '../support/controls.mjs';
-import { Blocked, panel, expandSections, textButton, choose } from '../support/scenario.mjs';
+import { Blocked, panel, expandSections, textButton, choose, openStep } from '../support/scenario.mjs';
 import { until } from '../support/webdriver.mjs';
 import { settledPhoto, settledReset } from './smoke.mjs';
 
@@ -54,19 +54,40 @@ export async function locateControl(t, definition) {
   if (id === 'hsl') await textButton(t, `${p} .tabs`, section);
   if (id === 'colorgrading') await textButton(t, `${p} .tabs`, 'Sliders');
   const selector = `${p} [data-control-id=${JSON.stringify(control.id)}]`;
-  // Clarity's and Texture's coarse bands sit under their own Advanced fold
-  const detail = /^(l_)?detail_(clarity|texture)_/.exec(control.id)?.[0];
-  if (detail && !await t.driver.observe(s => !!document.querySelector(s), selector)) {
-    const fold = `${p} button.detail-advanced[data-detail-id^=${JSON.stringify(detail)}]`;
-    // no fold: the module that has these controls is not chosen
-    if (await t.driver.observe(s => document.querySelector(s)?.getAttribute('aria-expanded') === 'false', fold)) {
-      await click(t, fold);
-      await until(() => t.driver.observe(s => !!document.querySelector(s), selector), `${detail} Advanced open`).catch(() => {});
+  // advanced controls (Clarity's and Texture's coarse bands, Whites' Highlight
+  // Brilliance, Negative and Film's) are not mounted until the panel's
+  // Advanced toggle is on; the toggle is remembered, so restoreAdvanced puts it back
+  // Negative's controls sit in steps (GuidedSteps.tsx), one open at a time:
+  // open the unlocked steps in turn until the control mounts
+  if ((id === 'negative' || id === 'film') && !await t.driver.observe(s => !!document.querySelector(s), selector)) {
+    const ids = await t.driver.observe(c => [...document.querySelectorAll(`.${c} .step:not(.locked)`)].map(e => e.dataset.step), id);
+    for (const step of ids) {
+      await openStep(t, p, step);
+      if (await t.driver.observe(s => !!document.querySelector(s), selector)) break;
+    }
+  }
+  if (!await t.driver.observe(s => !!document.querySelector(s), selector)) {
+    const toggle = definition.scope === 'local' ? '.masks-panel .panel-title.adj-title [data-advanced-toggle]'
+      : `${p} > .panel-title [data-advanced-toggle]`;
+    // no toggle: the module or treatment that has this control is not chosen
+    if (await t.driver.observe(s => document.querySelector(s)?.getAttribute('aria-pressed') === 'false', toggle)) {
+      (t.advancedOn ??= []).push(toggle);
+      await click(t, toggle);
+      await until(() => t.driver.observe(s => !!document.querySelector(s), selector), `${control.id} Advanced on`).catch(() => {});
     }
   }
   if (!await t.driver.observe(s => !!document.querySelector(s), selector))
     throw new Blocked(`${control.id} needs its module, treatment or graph branch; run the matching module/graph case`);
   return selector;
+}
+// turn back off the Advanced toggles a case switched on
+export async function restoreAdvanced(t) {
+  const on = t.advancedOn ?? []; t.advancedOn = [];
+  for (const toggle of on.reverse())
+    if (await t.driver.observe(s => document.querySelector(s)?.getAttribute('aria-pressed') === 'true', toggle)) {
+      await click(t, toggle);
+      await until(() => t.driver.observe(s => document.querySelector(s)?.getAttribute('aria-pressed') === 'false', toggle), 'Advanced off');
+    }
 }
 // a control owned by one option of a module choice (contrast equalizer,
 // contrast & texture, diffuse or sharpen) shows only while that module is
@@ -88,6 +109,10 @@ async function withTemporaryMask(t, run) {
   try {
     const selected = await t.driver.observe(() => document.querySelector('.mask-list li.on .name')?.textContent);
     if (selected === name) {
+      // the row's × shows only on hover, and an advanced control opened in
+      // run() can scroll the row out of view: bring it back and hover it
+      const row = await reveal(t, '.mask-list li.on .name');
+      await t.driver.point(row.x, row.y, 2);
       await click(t, '.mask-list li.on .mask-del');
       await until(() => t.driver.observe((n) => document.querySelectorAll('.mask-list li').length === n, previousCount),
                   'temporary mask removed');
@@ -109,9 +134,10 @@ async function withModule(t, definition, run) {
   try { return await scoped(); }
   finally { await chooseModule(t, scope, m.label, previous); }
 }
-export const rangeContract = (t, definition) => withModule(t, definition, () =>
-  /^ce_\d_\d$/.test(definition.control.id) ? equalizerBand(t, definition) : rangeBody(t, definition));
-export const choiceContract = (t, definition) => withModule(t, definition, () => choiceBody(t, definition));
+const withAdvanced = async (t, run) => { try { return await run(); } finally { await restoreAdvanced(t); } };
+export const rangeContract = (t, definition) => withModule(t, definition, () => withAdvanced(t, () =>
+  /^ce_\d_\d$/.test(definition.control.id) ? equalizerBand(t, definition) : rangeBody(t, definition)));
+export const choiceContract = (t, definition) => withModule(t, definition, () => withAdvanced(t, () => choiceBody(t, definition)));
 const prerequisiteFor = id => {
   if (/^vig_(midpoint|roundness|feather)$/.test(id)) return 'vig_amount';
   if (id === 'grain_size') return 'grain_amount';
@@ -125,6 +151,7 @@ const prerequisiteFor = id => {
   if (/^(l_)?usm_(radius|threshold)$/.test(id)) return `${id.startsWith('l_')?'l_':''}usm_amount`;
   if (/^(l_)?nr_detail$/.test(id)) return `${id.startsWith('l_')?'l_':''}nr_luminance`;
   if (id === 'defringe_radius') return 'defringe_amount';
+  if (id === 'whites_brilliance') return 'whites';
   if (/^(hp_strength|hp_threshold)$/.test(id)) return 'hp_enable';
   if (id === 'lens_ca') return 'lens_profile';
   return null;
@@ -211,7 +238,9 @@ async function rangeBody(t, definition) {
     await t.driver.drag(at(+s.value), at(endpoint));
     const changed = await until(async () => {
       const c = await t.driver.observe(inspect, selector);
-      return Math.abs(+c.value - endpoint) <= (s.step || .001) && c;
+      // a pointer lands within a pixel or two of the track end: on a 360 degree
+      // range that is a couple of steps, so allow one percent of the range
+      return Math.abs(+c.value - endpoint) <= Math.max(s.step || .001, (s.max - s.min) * .01) && c;
     }, `pointer range ${name}`);
     const photo = await settledPhoto(t);
     renderedChanged ||= photo.hash !== baseline.hash;

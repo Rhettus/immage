@@ -47,7 +47,9 @@ and app, dismisses the tour through
 its Skip button, and uses the app's supported file argument to open the copy.
 XDG data/config/cache/state variables isolate the release app's storage and its
 webview profile. A successful run also checks that `engine.log` was created in
-that profile and verifies the original fixture's checksum. Use release binaries;
+that profile and verifies the original fixture's checksum. Any content security
+policy violation the app logged to that profile's `webview.log` fails the run,
+whatever its other outcome (`cspViolations` in the report). Use release binaries;
 debug builds use shared development runtime paths and are blocked. Initially
 only this checkout’s `app/src-tauri/target/release/immage` is accepted.
 
@@ -349,7 +351,7 @@ node verify/gui/run.mjs --config verify/gui/local.json --case negative --fixture
 ```
 
 The default `configured` fixture copies the configured photo. Synthetic choices
-are `landscape`, `portrait`, `endpoints`, `negative`, `camera-a`, `camera-b`, and
+are `landscape`, `portrait`, `endpoints`, `negative`, `camera-a`, `camera-b`, `hostile` (markup in the file name and metadata, for `hostile-text`), and
 `camera-missing`; the runner generates TIFFs inside its own results directory
 using Python 3's standard library. These do not replace RAW, overlapping panorama,
 slow-folder or isolated service fixtures. Missing prerequisites block the case.
@@ -408,6 +410,8 @@ production executable before a future approved run using the new observations.
 ## Batch settings paste
 
 `--case batch-paste` and `--case shift-range` (both in `--suite regressions`) require a JPEG fixture.
+`--case jpeg-preset` also needs a JPEG fixture; the runner copies it to `preset-jpeg-1.jpg` and `preset-jpeg-2.jpg`.
+`--case space-pan` needs a photo larger than the viewer at 2:1.
 Before launch the runner makes three more copies in its own fixture directory:
 two targets and one unselected control. The case applies Kodak Gold 200 at 35%,
 copies Tone and Look through Copy Settings, selects two targets with a guarded
@@ -546,3 +550,25 @@ Through Preferences, the test makes an imported preset the new-raw default,
 checks that deletion requires an explicit surviving replacement, verifies that
 cancel leaves the old default intact, and verifies the chosen replacement after
 restart. Deleting the last user preset explicitly selects AgX Default.
+
+## Running the whole registry
+
+A full clean run is many launches, not one. Cases that leave app state behind
+need their own launch or an ordering rule; a case that fails only after
+another case in the same launch is an ordering effect, so rerun it alone:
+
+- `menus` makes a virtual copy and leaves it open, so run it last or alone
+  (`color-range` restarts the app on the original file and then finds no mask).
+- `panel-scroll` needs a launch of its own (it asserts Presets opens at its
+  top the first time); `native-reset` must not follow `module-options`, which
+  leaves another Contrast backend selected.
+- `splash` asserts the window keeps its 640x427 size, which a maximized test
+  window on a tiling desktop does not; run it on a floating window.
+- Fixture groups: the default JPEG; `--fixture portrait|negative|endpoints|camera-a|hostile`
+  for `crop-portrait`, `negative`/`color-profiles`/`negative-profile-memory`,
+  `histogram-endpoints`, `camera-body` and `hostile-text`; a raw as the config's
+  `fixture` for `control-detail-*`, `control-lens-hp_enable`, `crop-auto-straighten`,
+  `lens-pick` and `lens-profile`; the hot-pixel DNG for `control-lens-hp_strength`
+  and `control-lens-hp_threshold`.
+- Each launch writes about 8 MB per case; clear `fixtures/` and `profile/cache`
+  of finished runs when disk is short.

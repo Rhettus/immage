@@ -1,0 +1,21 @@
+[
+ {
+  "label": "3 open / points none",
+  "reply": {
+   "ms": 0.0,
+   "ok": true,
+   "points": []
+  }
+ },
+ {
+  "label": "3 open / points shown",
+  "reply": {
+   "ms": 0.0,
+   "ok": true,
+   "points": [
+    0.0,
+    0.0
+   ]
+  }
+ }
+]

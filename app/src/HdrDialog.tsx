@@ -5,11 +5,12 @@
 // the brackets, before darktable's HDR merge writes the DNG (App.tsx,
 // runHdrMerge). alignment needs an engine built with OpenCV (hdr_can_align)
 import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { commands } from "./commands";
+import { settings } from "./settings";
 
 const ALIGN_KEY = "immage.hdrAlign";
 function loadAlign(): boolean {
-  try { return localStorage.getItem(ALIGN_KEY) !== "false"; } catch { return true; }
+  try { return settings.get(ALIGN_KEY) !== "false"; } catch { return true; }
 }
 
 export function HdrDialog({ count, onRun, onClose }: {
@@ -20,9 +21,9 @@ export function HdrDialog({ count, onRun, onClose }: {
   const [align, setAlign] = useState(loadAlign);
   // null until the engine answers
   const [canAlign, setCanAlign] = useState<boolean | null>(null);
-  useEffect(() => { invoke<boolean>("hdr_can_align").then(setCanAlign).catch(() => setCanAlign(false)); }, []);
+  useEffect(() => { commands.hdrCanAlign().then(setCanAlign).catch(() => setCanAlign(false)); }, []);
   const run = () => {
-    try { localStorage.setItem(ALIGN_KEY, String(align)); } catch { /* not kept */ }
+    try { settings.set(ALIGN_KEY, String(align)); } catch { /* not kept */ }
     onClose();
     onRun(align && !!canAlign);
   };

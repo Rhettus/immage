@@ -50,7 +50,7 @@ registerHooks({
 });
 
 // what the WebView would have: the timers Session and activity.ts use,
-// localStorage, which holds Preferences › Modules, and ImageData, which a
+// localStorage, which settings.ts copies from once, and ImageData, which a
 // mask's overlay comes in
 const store = new Map();
 globalThis.window = globalThis;
@@ -68,6 +68,10 @@ globalThis.ImageData = class {
 
 const args = JSON.parse(process.argv[2]);
 const { startEngine, stopEngine, request, requestTagged, invoke, sent, models, screen, enginePid, FRAME_HEAD } = await import(SHIM);
+// Preferences › Modules live in the settings store (settings.json in the app),
+// not localStorage; outside Tauri its writes stay in memory
+const { settings } = await import("../app/src/settings.ts");
+await settings.ready;
 const { Session, framePlace } = await import("../app/src/session.ts");
 const { withModel } = await import("../app/src/aiModel.ts");
 const m = await import("../app/src/manifest.ts");
@@ -868,7 +872,7 @@ async function fixes(photo) {
     let shown = 0;
     o.s.onThumb = () => shown++;
     sent.hook = (cmd, a) => {
-      if (cmd !== "render" || !a.base) return;
+      if (cmd !== "render" || !a.request.base) return;
       sent.hook = null;
       o.s.set("exposure", 1);
     };
@@ -1199,7 +1203,7 @@ async function decisions(photo) {
   await decide("a move's edits go with its render", async () => {
     const o = await open(fresh(photo));
     const calls = [];
-    sent.hook = (cmd, a) => { calls.push({ cmd, ops: (a.edits ?? []).map((e) => e.op) }); };
+    sent.hook = (cmd, a) => { calls.push({ cmd, ops: (a.request?.edits ?? []).map((e) => e.op) }); };
     let f;
     try {
       f = await o.after(() => o.s.setMany([["exposure", 0.5], ["vibrance", 30]]));
@@ -1786,7 +1790,7 @@ async function decisions(photo) {
     const { images } = await request({ cmd: "import", files: [cold, ...ahead] });
     const pixels = async (path) => {
       await request({ cmd: "open", path, imgid: -1 });
-      const px = new Uint8Array((await invoke("render", { width: 512, height: 512 })).slice(FRAME_HEAD));
+      const px = new Uint8Array((await invoke("render", { request: { width: 512, height: 512 } })).slice(FRAME_HEAD));
       await request({ cmd: "close" });
       return px;
     };
@@ -1851,15 +1855,15 @@ async function decisions(photo) {
     const c = m.MODULE_CHOICES.find((x) => x.id === "tone_regions");
     const other = c.options.find((x) => x.value !== m.preferredChoice(c)).value;
     const path = fresh(photo);
-    localStorage.setItem("immage.modules.mode", "custom");
-    localStorage.setItem("immage.modules.choices", JSON.stringify({ [c.id]: other }));
+    settings.set("immage.modules.mode", "custom");
+    settings.set("immage.modules.choices", JSON.stringify({ [c.id]: other }));
     try {
       const o = await open(path);
       await o.after(() => { o.s.endBaseline(); o.s.set("highlights", -40); });
       await o.s.close();
     } finally {
-      localStorage.removeItem("immage.modules.mode");
-      localStorage.removeItem("immage.modules.choices");
+      settings.remove("immage.modules.mode");
+      settings.remove("immage.modules.choices");
     }
     const o = await open(path);
     const { [c.control]: tool, highlights } = o.s.values;
@@ -2358,11 +2362,11 @@ async function choices(photo) {
     for (const opt of c.options) {
       if (opt.value === m.preferredChoice(c)) continue;
       const tag = `${c.id}=${opt.label ?? opt.value}`;
-      localStorage.setItem("immage.modules.mode", "custom");
-      localStorage.setItem("immage.modules.choices", JSON.stringify({ [c.id]: opt.value }));
+      settings.set("immage.modules.mode", "custom");
+      settings.set("immage.modules.choices", JSON.stringify({ [c.id]: opt.value }));
       // a new mask takes Preferences › Modules › Masks' choice, not the photo's
       const forMasks = m.MASK_MODULE_CHOICES.some((x) => x.id === c.id && x.options.some((y) => y.value === opt.value));
-      if (forMasks) localStorage.setItem("immage.modules.choices.masks", JSON.stringify({ [c.id]: opt.value }));
+      if (forMasks) settings.set("immage.modules.choices.masks", JSON.stringify({ [c.id]: opt.value }));
       try {
         const o = await maskOpen(photo);
         if (o.s.values[c.control] !== opt.value) {
@@ -2396,9 +2400,9 @@ async function choices(photo) {
       } catch (e) {
         record({ check: "choices", photo: name, id: tag, status: "fail", detail: String(e) });
       } finally {
-        localStorage.removeItem("immage.modules.mode");
-        localStorage.removeItem("immage.modules.choices");
-        localStorage.removeItem("immage.modules.choices.masks");
+        settings.remove("immage.modules.mode");
+        settings.remove("immage.modules.choices");
+        settings.remove("immage.modules.choices.masks");
       }
     }
   }
@@ -2609,9 +2613,9 @@ async function toneRange() {
     const globals = preferred ? args.checks.includes("sliders") : args.checks.includes("choices");
     const locals = preferred ? args.checks.includes("masks") : args.checks.includes("choices");
     if (!globals && !locals) continue;
-    localStorage.setItem("immage.modules.mode", "custom");
-    localStorage.setItem("immage.modules.choices", JSON.stringify({ [c.id]: opt.value }));
-    localStorage.setItem("immage.modules.choices.masks", JSON.stringify({ [c.id]: opt.value }));
+    settings.set("immage.modules.mode", "custom");
+    settings.set("immage.modules.choices", JSON.stringify({ [c.id]: opt.value }));
+    settings.set("immage.modules.choices.masks", JSON.stringify({ [c.id]: opt.value }));
     try {
       const o = await maskOpen(photo);
       if (globals) for (const id of ["highlights", "shadows"]) {
@@ -2625,9 +2629,9 @@ async function toneRange() {
     } catch (e) {
       record({ check: localCheck, photo: name, id: tag, status: "fail", detail: String(e) });
     } finally {
-      localStorage.removeItem("immage.modules.mode");
-      localStorage.removeItem("immage.modules.choices");
-      localStorage.removeItem("immage.modules.choices.masks");
+      settings.remove("immage.modules.mode");
+      settings.remove("immage.modules.choices");
+      settings.remove("immage.modules.choices.masks");
     }
   }
 }

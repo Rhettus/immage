@@ -6,6 +6,7 @@
 // and edges. the rectangle is in fractions of the uncropped frame, which
 // are crop's own left/top/right/bottom
 import { useRef } from "react";
+import { settings } from "./settings";
 
 export type CropRect = { l: number; t: number; r: number; b: number };
 export const FULL: CropRect = { l: 0, t: 0, r: 1, b: 1 };
@@ -47,7 +48,7 @@ const CUSTOM_KEY = "immage.cropCustoms";
 const CUSTOM_KEEP = 5;
 export function loadCustomAspects(): Aspect[] {
   try {
-    const list = JSON.parse(localStorage.getItem(CUSTOM_KEY) ?? "[]");
+    const list = JSON.parse(settings.get(CUSTOM_KEY) ?? "[]");
     return Array.isArray(list)
       ? list.filter((a) => typeof a?.id === "string" && typeof a?.label === "string" && Array.isArray(a?.ratio))
       : [];
@@ -57,7 +58,7 @@ export function loadCustomAspects(): Aspect[] {
 }
 export function rememberCustomAspect(a: Aspect, list: Aspect[]): Aspect[] {
   const next = [a, ...list.filter((x) => x.id !== a.id)].slice(0, CUSTOM_KEEP);
-  try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(next)); } catch { /* not kept */ }
+  try { settings.set(CUSTOM_KEY, JSON.stringify(next)); } catch { /* not kept */ }
   return next;
 }
 

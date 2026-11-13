@@ -27,7 +27,8 @@ Click **Create New Mask** and choose:
 - **AI** tools find the area for you. The first time you use one, its
   model downloads ("first use only"), which takes a moment. **Select
   Object**: click the object, or drag a box around it. **Background** is
-  the subject's outline, inverted.
+  everything but the subject: a new Background mask is the subject's
+  outline, inverted.
 - **Brush**: paint; hold ⌥ to erase.
 - **Linear Gradient**: drag across the photo where the change should
   happen.
@@ -65,7 +66,8 @@ Select a mask, then use **+** to add to it or **−** to subtract from it,
 with any of the same tools. Under **+**, the ranges are listed under
 **Intersect**: they narrow the mask to a color, brightness or depth within
 it. For example, add a Sky mask, then intersect a Luminance Range to keep
-only its bright clouds.
+only its bright clouds. **Background** works here too: subtract it from a
+Radial Gradient to keep the change on the subject alone.
 
 Each part of the mask is listed under it, with a **+** / **−** switch and
 **×** to delete it.
@@ -83,8 +85,13 @@ is over the panels, so the adjustment can be seen.
 - The eye shows or hides the mask's adjustments.
 - Hover over a name for a moment to see that mask in red.
 - Double-click a name to rename it.
-- The **…** menu has **Duplicate Mask**, **Duplicate and Invert Mask**,
-  **Rename Mask** and **Delete Mask**.
+- The **…** menu has **Duplicate Mask**, **Duplicate Mask Only**,
+  **Duplicate and Invert Mask**, **Duplicate and Invert Mask Only**,
+  **Reset Mask Adjustments**, **Rename Mask** and **Delete Mask**.
+  The **Only** copies keep the mask's shapes, Invert, Opacity and Refine
+  but start with no adjustments. **Reset Mask Adjustments** returns every
+  adjustment of the mask to neutral and keeps the mask itself; it is
+  unavailable while the mask has no adjustments.
 - O, or the eye in the panel's title, shows or hides the red overlay.
   While you add to or subtract from a mask, its overlay shows even with
   the toggle off; O hides it until you put the tool down, and moving one
@@ -108,7 +115,8 @@ is over the panels, so the adjustment can be seen.
 ## The brush
 
 **Size** (0.5-40% of the photo), **Feather** (0-100), **Density** (1-100)
-and **Erase (hold ⌥)**.
+and **Erase (hold ⌥)**. Drag to paint a stroke, or click once to paint a
+single dab, such as over an eye.
 
 | Key | Action |
 | --- | --- |
@@ -172,11 +180,13 @@ Where masks overlap, their adjustments add up. **Contrast**,
 | [ ] | Brush size |
 | O | Show or hide the overlay |
 | Esc | Put the tool down |
+| Space-drag | Pan a zoomed-in photo, without painting or moving a mask |
 
 Clarity and Texture use **contrast & texture** by default, or local contrast
 and diffuse or sharpen, chosen independently in
 [Preferences › Modules](preferences.md#modules). Medium and Fine details stay
-visible; **Advanced** reveals the remaining native controls. Contrast equalizer
+visible; the sliders icon in the panel's title row shows the remaining native
+controls. Contrast equalizer
 can also replace mask Contrast: select **Custom**, then **Masks › Contrast ›
 contrast equalizer**. The mask's Tone group shows the same five-channel,
 six-band graph described in [Adjustments](adjustments.md#contrast-equalizer),
@@ -191,6 +201,11 @@ Saturation.
 Object selections use the same model folder as the other AI tools. A model
 downloaded during the current session is available immediately; restarting the
 app is unnecessary. Existing valid models are reused.
+
+Each download is checked against the exact model file this version of Immage
+expects. If the file on the download server has changed, the model is not
+installed and the message says an update of Immage is needed; updating Immage
+fixes it.
 
 ## Reporting an AI model loading error on Linux
 

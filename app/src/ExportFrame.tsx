@@ -5,22 +5,20 @@
 // photo), keylines (thin lines on its edge) and captions, each a list
 // drawn in order
 import { useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { commands, type FontFamily as Family } from "./commands";
 import { Chevron } from "./Collapse";
 import {
   newBorder, newInner, newText, type BorderItem, type InnerItem, type Settings, type Sides, type TextItem,
 } from "./exportSettings";
 import { TEXT_TOKENS } from "./exportTokens";
 
-type Face = { name: string; weight: number; italic: boolean };
-type Family = { name: string; faces: Face[] };
 
 // the installed fonts, read once from the engine, which draws the text
 let fontList: Promise<Family[]> | null = null;
 function useFonts(): Family[] | null {
   const [fonts, setFonts] = useState<Family[] | null>(null);
   useEffect(() => {
-    fontList ??= invoke<Family[]>("fonts").catch(() => { fontList = null; return []; });
+    fontList ??= commands.fonts().catch(() => { fontList = null; return []; });
     void fontList.then(setFonts);
   }, []);
   return fonts;

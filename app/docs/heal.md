@@ -12,6 +12,9 @@ Open it with **Heal** on the rail, or Q.
 
 ## Removing a spot
 
+The pointer is the brush: its outer circle is the patch's size, the inner
+circle where its feather starts, and the dot its center.
+
 - **Click** a spot to cover it with a round patch.
 - **Drag** along a line, such as a wire, to paint over it.
 
@@ -40,6 +43,18 @@ for the next one.
 **Delete spot** removes the selected spot; **Clear all** removes every
 spot.
 
+## Show Spots
+
+**Show spots** chooses which spots appear on the photo:
+
+- **Always**: every spot, each as a pin you can click to select.
+- **Selected**: only the selected spot and its source.
+- **Never**: no spots, to judge the retouch, such as on skin.
+
+H hides the spots, and pressing it again brings back your earlier choice.
+A hidden spot can't be clicked, so clicking there heals a new spot. The
+choice is remembered.
+
 ## Visualize Spots
 
 A, or **Visualize spots**, shows the photo as an edge map where dust stands
@@ -52,6 +67,8 @@ out. **Threshold** sets how much shows.
 | Q | Heal and clone |
 | [ ] | Brush size |
 | Scroll | Brush size; ⇧-scroll its feather |
+| Space-drag | Pan a zoomed-in photo, without moving a spot |
 | A | Visualize spots |
+| H | Hide the spots, or show them again |
 | Delete | Remove the selected spot |
 | Esc | Deselect the spot |

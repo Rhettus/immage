@@ -43,6 +43,7 @@ A focused menu keeps its arrow keys, Space and Enter for choosing.
 | ⌘= ⌘- | Zoom in or out: fit, fill, 1:1, 2:1, 3:1, 4:1 |
 | Click | Zoom to 100% there, or back to fit |
 | Scroll | Zoom around the pointer (a brush in hand: its size) |
+| Space-drag | Pan a zoomed-in photo, in any tool |
 | \ | Before |
 | Y | Next before / after view: side by side, split left / right, split top / bottom, hold for before |
 | C | Compare with another photo (← → step it, Esc leaves) |
@@ -100,6 +101,7 @@ In full screen preview, Z, ⌘= ⌘-, Y, X, I, L, \, 0-9 and ← → still work.
 | ⌥-drag | Brush away |
 | O | Show or hide the overlay |
 | Esc | Put the tool down |
+| Space-drag | Pan a zoomed-in photo, without painting or moving a mask |
 
 The mask keys work from anywhere: they open Masks with that tool.
 
@@ -120,5 +122,6 @@ The mask keys work from anywhere: they open Masks with that tool.
 | [ ] | Brush size |
 | Scroll | Brush size; ⇧ its feather |
 | A | Visualize spots |
+| H | Hide the spots, or show them again |
 | Delete | Remove the selected spot |
 | Esc | Deselect the spot |

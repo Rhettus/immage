@@ -1,6 +1,6 @@
 [package]
 name = "immage"
-version = "0.44.1"
+version = "0.45.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
 
@@ -34,9 +34,22 @@ trash = "5"
 # the versions the importer uses (already in the tree)
 image = { version = "0.25.10", default-features = false, features = ["jpeg"] }
 sysinfo = "0.39.6"
+# the support bundle scrubber (scrub.rs); already in the tree via other crates
+regex = "1"
+# Tauri's async runtime, built with more workers than cores (async_workers
+# in main.rs); the version Tauri itself uses (already in the tree)
+tokio = { version = "1", features = ["rt-multi-thread"] }
 serde = { version = "1", features = ["derive"] }
+# typed commands: tauri-specta generates src/bindings.ts from the Rust
+# signatures (bindings.rs). release candidates, so pinned exactly
+tauri-specta = { version = "=2.0.0-rc.28", features = ["derive", "typescript"] }
+specta = { version = "=2.0.0-rc.28", features = ["derive", "function", "serde_json"] }
+specta-typescript = "=0.0.15"
 serde_json = "1"
 uuid = { version = "1", features = ["v4"] }
+zip = { version = "9.5.1", default-features = false, features = ["deflate-flate2"] }
+# the zip crate leaves flate2's backend to the caller; the pure-Rust one, already in the tree
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 
 # the main dispatch queue, to act after tao's own work there (preview_fullscreen;
 # already in the tree, via tao)

@@ -1,0 +1,20 @@
+[
+ {
+  "label": "3 open / open",
+  "reply": {
+   "edited": false,
+   "fresh": true,
+   "height": 48,
+   "imgid": 1,
+   "look": null,
+   "look_amount": 100.0,
+   "ms": 0.0,
+   "ok": true,
+   "orientation": 0,
+   "raw": false,
+   "sensor_height": 48,
+   "sensor_width": 64,
+   "width": 64
+  }
+ }
+]

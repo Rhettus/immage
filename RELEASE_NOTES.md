@@ -3,6 +3,87 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
+## 0.45.0
+
+Improvements
+
+- Film Simulation and Negative are numbered steps. Film and paper tiles show a
+  preview of your photo, and Negative's later steps wait for the film border.
+- Film Simulation opens straight into its steps, with a "Start from a preset"
+  menu.
+- Export to JPEG XL, lossless at quality 100, in 8 to 16 bit.
+- If the engine crashes, Immage restarts it and reopens your folder, filter
+  and photo as last saved.
+- Advanced settings sit behind a sliders icon in each panel's title, remembered
+  per panel.
+- Masks: duplicate a mask, or duplicate and invert it, without its
+  adjustments, and Reset Mask Adjustments.
+- Masks: AI Background can be added to or subtracted from a mask, not only
+  start a new one.
+- Whites has a Highlight Brilliance setting under AgX, so bright scenes such
+  as snow can brighten further before clipping.
+- Preferences > General > Backup saves and restores settings, presets, looks,
+  plugins and keywords as one .zip.
+- A slow engine offers Wait or Restart, without closing Immage.
+- One Memory setting in Preferences replaces three, sized from the computer's
+  memory.
+- Help > Create Support Bundle… saves a .zip for bug reports, with personal
+  details replaced and every line reviewable. Nothing is uploaded.
+- Settings are kept in one settings.json file, carried over from earlier
+  versions.
+- AI models install only if they match the files this version expects.
+- The Immich API key is used only with its own server. Enter a redirected
+  server by its final address.
+- The importer reads and writes only the cards, drives and folders you chose.
+  Earlier destinations other than the current one need choosing again once.
+- Preferences › Modules lists tools in panel order.
+- GUI benchmark reports identify the computer by an anonymous id, not its name.
+- Hold Space and drag to pan a zoomed-in photo in any tool, including Heal and
+  Masks.
+- Heal's pointer is the brush circles with a small center dot, without a
+  crosshair over the spot. Show spots (Always, Selected, Never) and H hide
+  earlier spots while you retouch.
+
+Performance
+
+- Exports, merges, prints, AI Denoise and read-ahead give way while you edit,
+  so renders take about half as long during an export.
+- Immage opens a little sooner.
+- The location map loads tiles faster and shows cached ones at once.
+- Editing uses less memory, and the first edit after a pause is as quick as
+  the rest.
+
+Bug fixes
+
+- Dragging a Detail, noise reduction or grain slider at Fit no longer softens
+  the photo until release. Sharpening and Dehaze drags, a mask's Sharpening,
+  Noise and Dehaze included, now keep full detail at any zoom.
+- The side panel no longer stays scrolled past its end when its content
+  shrinks.
+- A failed save no longer damages the sidecar; a notice says why it failed.
+- Film and paper hover previews are sharp at the photo's shown size.
+- Subtracting an AI selection with holes, such as Background, from a mask no
+  longer applies the adjustment to the selected subject outside the mask.
+- Very large photos, such as 50 MP, no longer use more memory with each edit
+  (since 0.41.0).
+- Photos with file names of 241 to 251 bytes can save their edits again.
+- Moving a photo to the Trash also takes its version sidecars when its name
+  contains [, *, ? or a backslash.
+- Asking for details of a photo no longer in the library, or previewing its
+  export, no longer stalls the engine.
+- Importing a damaged or non-image file no longer crashes the engine.
+- Adobe RGB, Display P3 and ProPhoto exports to JPEG, TIFF and WebP embed their
+  color profile.
+- A failed export, such as on a full disk, leaves no partial file and keeps the
+  file it was replacing.
+- Frames with three or more borders, counting a fixed canvas, keep their order
+  and size, and a small photo fills a large canvas exactly.
+- A brush mask painted with a single click adjusts only that spot, not the
+  whole photo, including masks saved by earlier versions.
+- The preset for new photos applies to raws only, so JPEGs no longer get Lens
+  Corrections on top of the camera's own. Preferences > Presets > Also apply
+  to JPEGs gives them the preset too, without lens or raw-only settings.
+
 ## 0.44.1
 
 Improvements

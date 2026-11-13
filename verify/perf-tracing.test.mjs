@@ -23,6 +23,7 @@ globalThis.window = {
   cancelAnimationFrame(id) { callbacks.delete(id); },
 };
 const { perf } = await import('../app/src/perf.ts');
+const { commands: typed } = await import('../app/src/commands.ts');
 function flush() { const batch=[...callbacks.values()];callbacks.clear();for(const fn of batch)fn(performance.now()); }
 
 test('coalesced native frame retains input identities and dispatch phase through drawing', async t => {
@@ -61,7 +62,7 @@ test('diagnostics can be disabled while existing benchmark timings remain enable
   try {
     perf.input('exposure');
     assert.equal(perf.request({kind:'edit'}),undefined);
-    await perf.command('save');
+    await perf.traced('save', () => typed.save());
     assert.equal(perf.cycle().edits,1);
     assert.equal(perf.diagnosticReport().enabled,false);
     assert.deepEqual(perf.diagnosticReport().events,[]);

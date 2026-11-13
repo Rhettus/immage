@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from 'node:assert/strict';
-import { until } from './webdriver.mjs';
+import { until, pause } from './webdriver.mjs';
 
 // Read only. No scrollIntoView: scrolling must go through real wheel input.
 // With text, the first match whose own text (a menu item's shortcut,
@@ -52,8 +52,10 @@ export async function reveal(t, selector, text) {
     if (!c) throw Error(`Control is not mounted: ${selector}${text == null ? '' : ` "${text}"`}`);
     if (c.visible && c.hit) return c;
     // a handle on a graph's edge overhangs it sideways and no scrolling can
-    // help: its center taking the hit while vertically inside is enough
-    if (c.hit && !c.scrollX && c.bounds.y >= c.clip.top && c.bounds.y + c.bounds.height <= c.clip.bottom
+    // help: its center taking the hit while vertically inside is enough.
+    // a pixel of slack: a crop handle at the photo's top edge can sit a
+    // fraction of a pixel above the canvas at some window sizes
+    if (c.hit && !c.scrollX && c.bounds.y >= c.clip.top - 1 && c.bounds.y + c.bounds.height <= c.clip.bottom + 1
         && c.x >= c.clip.left && c.x <= c.clip.right) return c;
     if (stuck >= 4 && !tabbed && text == null && await t.driver.observe(s => document.querySelector(s)?.tabIndex >= 0
         // in the main window Tab hides the panels; only a dialog keeps it
@@ -94,7 +96,16 @@ export async function tabTo(t, selector, max = 200) {
   throw Error(`Tab did not reach ${selector}`);
 }
 export async function click(t, selector) {
-  const c = await reveal(t, selector);
+  let c = await reveal(t, selector);
+  // a wheel scroll can still be gliding when the control is first seen in view:
+  // aim only once its position has stopped moving, or the click lands on
+  // whatever slides under that point
+  for (let i = 0; i < 6; i++) {
+    await pause(250);
+    const again = await t.driver.observe(inspect, selector);
+    if (!again || (again.x === c.x && again.y === c.y)) break;
+    c = await reveal(t, selector);
+  }
   assert(!c.disabled, `${selector} must be enabled`);
   await t.driver.point(c.x, c.y);
   return c;

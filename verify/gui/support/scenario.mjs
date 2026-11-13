@@ -16,8 +16,15 @@ export async function textButton(t, scope, text) {
 // `appears`: an option that opens something (Enter Custom…) rather than
 // staying selected; wait for that element instead of the value
 export async function choose(t, selector, value, appears) {
-  const c = await reveal(t, selector);
+  let c = await reveal(t, selector);
   if (c.disabled) throw new Blocked(`Disabled prerequisite ${selector}`);
+  // a list can be refilled after an earlier choice (the Negative panel reloads
+  // its profiles from the engine on each change): wait for the option first
+  const ready = o => o?.options?.some(x => x.value === String(value) && !x.disabled);
+  if (!ready(c)) {
+    await until(async () => ready(await t.driver.observe(inspect, selector)), `${selector} lists ${value}`, 5000).catch(() => {});
+    c = await reveal(t, selector);
+  }
   const index = c.options?.findIndex(o => o.value === String(value));
   assert(index >= 0 && !c.options[index].disabled, `${selector} has enabled option ${value}`);
   // GTK's popup can step over a disabled option (a separator) differently
@@ -50,15 +57,33 @@ export async function panel(t, id) {
   if (!await t.driver.observe(s => document.querySelector(`${s} > .panel-title`)?.classList.contains('open'), selector))
     await click(t, `${selector} > .panel-title`);
   await until(() => t.driver.observe(s => !!document.querySelector(`${s} > .collapse.open`), selector), `${id} open`);
+  // the open class comes before the layout settles: panels slide open and
+  // (in focus mode) others slide shut over 0.22 s (.collapse in styles.css).
+  // a control measured mid-slide is clicked where it no longer is
+  await until(() => t.driver.observe(() => !document.getAnimations().some(a =>
+    a.playState === 'running' && a.effect?.target?.closest?.('.collapse'))), `${id} settled`);
   return selector;
+}
+// open a guided step (GuidedSteps.tsx) of a panel by its id, through a real
+// click on its heading, unless it is already open; a locked step cannot open
+export async function openStep(t, scope, id) {
+  const step = `${scope} .step[data-step=${JSON.stringify(id)}]`;
+  const isOpen = () => t.driver.observe(s => document.querySelector(s)?.classList.contains('open'), step);
+  // a step shutting above slides the headings below it (.collapse): a click
+  // measured mid-slide lands on another step's heading, so let it settle
+  // and click again while this one is still shut
+  for (let attempt = 0; attempt < 3 && !await isOpen(); attempt++) {
+    await until(() => t.driver.observe(() => !document.getAnimations().some(a =>
+      a.playState === 'running' && a.effect?.target?.closest?.('.collapse'))), `${id} steps settled`);
+    await click(t, `${step} > .step-head`);
+    try { await until(isOpen, `${id} step open`, 3000); } catch (e) { if (attempt === 2) throw e; }
+  }
 }
 export async function expandSections(t, selector) {
   for (let pass = 0; pass < 100; pass++) {
     const target = await t.driver.observe(s => {
       for (const e of document.querySelectorAll(`${s} section[data-section-id] > h3.fold`))
         if (e.querySelector('.chevron:not(.open)')) return `${s} section[data-section-id=${JSON.stringify(e.parentElement.dataset.sectionId)}] > h3.fold`;
-      for (const e of document.querySelectorAll(`${s} button.detail-advanced[aria-expanded="false"]`))
-        return `${s} button[data-detail-id=${JSON.stringify(e.dataset.detailId)}]`;
       return null;
     }, selector);
     if (!target) return settledHeight(t, selector);

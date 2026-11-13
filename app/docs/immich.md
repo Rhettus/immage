@@ -61,6 +61,14 @@ Immich and test again.
 
 Settings save as you type.
 
+The API key belongs to the server it was saved for. If you change the
+**Server URL** to a different server, enter that server's key too: saving the
+new address without a key is refused with a message. Changing **Self-signed
+certificate** also asks for the key again. Immage does not follow redirects,
+so if your server redirects (for example from `http` to `https`), enter the
+final address; otherwise Immage tells you the server redirected the request.
+Existing setups keep working without entering the key again.
+
 ![Preferences, Immich tab, after a successful test](images/immich-prefs.png)
 <!-- screenshot: Preferences > Immich, Server card filled in, Test result showing the version and key -->
 
@@ -147,6 +155,9 @@ the album without a second copy. See [Export](export.md).
 | --- | --- |
 | **could not connect: …** | Check the server address and that the server is up. For a self-signed certificate, turn on **Self-signed certificate**. |
 | **the key lacks asset.read** | Edit the key in Immich and add the permission. |
+| **Enter the API key for this server. The saved key belongs to a different server.** | You changed the server address: enter the API key for the new server. |
+| **Enter the API key again to change the certificate setting** | Enter the API key, then change **Self-signed certificate**. |
+| **The server redirected the request. Use its final URL** | Enter the address the server redirects to, for example `https://` instead of `http://`. |
 | **the API key lacks …: thumbnails need asset.view, downloading originals needs asset.download** | Add those permissions to the key. |
 | **the API key lacks …: give it those in Immich, or exporting may fail** | Add the export permissions (`asset.upload`, `album.read`, `album.create`, `albumAsset.create`). |
 | **no photos in Immich match the search** | Loosen the search, or set the library menu to **All photos**. |

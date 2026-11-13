@@ -11,6 +11,7 @@
 import { useState } from "react";
 import { controlById, panels } from "./manifest";
 import type { HistoryItem } from "./session";
+import { settings } from "./settings";
 
 const HIDE_OFF_KEY = "immage.history.hideOff";
 
@@ -81,10 +82,10 @@ export function HistoryPanel({ base, steps, at, onGo, onCompress, disabled, open
   // switched-off modules out of the list; they keep their numbers, so the
   // gaps show where they were
   const [hideOff, setHideOff] = useState(() => {
-    try { return localStorage.getItem(HIDE_OFF_KEY) === "1"; } catch { return false; }
+    try { return settings.get(HIDE_OFF_KEY) === "1"; } catch { return false; }
   });
   const toggleHideOff = () => setHideOff((h) => {
-    try { localStorage.setItem(HIDE_OFF_KEY, h ? "0" : "1"); } catch { /* not kept */ }
+    try { settings.set(HIDE_OFF_KEY, h ? "0" : "1"); } catch { /* not kept */ }
     return !h;
   });
   const anyOff = base.some((h) => !h.enabled);

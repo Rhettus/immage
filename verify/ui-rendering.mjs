@@ -7,9 +7,10 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 const require = createRequire(new URL('../app/package.json', import.meta.url));
 const { rolldown } = await import(require.resolve('rolldown'));
-const app = readFileSync(new URL('../app/src/App.tsx', import.meta.url), 'utf8');
-const slider = app.slice(app.indexOf('function Slider({'), app.indexOf('// a few named values as a segmented control'));
-const panel = app.slice(app.indexOf('function useLiveEvent'), app.indexOf('const PanelWidget = memo('));
+const controls = readFileSync(new URL('../app/src/Controls.tsx', import.meta.url), 'utf8');
+const panelView = readFileSync(new URL('../app/src/PanelView.tsx', import.meta.url), 'utf8');
+const slider = controls.slice(controls.indexOf('function Slider({'), controls.indexOf('// a few named values as a segmented control')).replace(/^export /gm, '');
+const panel = panelView.slice(panelView.indexOf('function useLiveEvent'), panelView.indexOf('export const PanelWidget = memo(')).replace(/^export /gm, '');
 const source = `
 import {memo,useRef,useState,useEffect,useLayoutEffect,useCallback,useSyncExternalStore} from ${JSON.stringify(require.resolve('react'))};
 import {createRoot} from ${JSON.stringify(require.resolve('react-dom/client'))};

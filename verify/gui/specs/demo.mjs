@@ -65,7 +65,7 @@ export async function demo(t) {
   const out = process.env.DEMO_OUT ?? resolve(dirname(fileURLToPath(import.meta.url)), '../../results/gui/demo');
   const rec = new Recorder(t.driver, out);
   await settledPhoto(t);
-  await hideInfo(t);
+  await hideInfo(t.driver);
   if (await pathFree(t.driver)) throw Error('a path is visible; the clip would show it');
 
   const segment = async (name, caption, fn, { quiet } = {}) => {
@@ -179,10 +179,10 @@ export async function demo(t) {
     await segment('film', 'Film simulation', async () => {
       await tool(t, 'film');
       await until(() => t.driver.observe(() => !!document.querySelector('.panel.film button, .panel.film select')), 'film panel');
-      await textButton(t, '.panel.film', 'Turn On Film Simulation');
+      await textButton(t, '.panel.film', 'Convert to Film');
       await settledPhoto(t, () => true);
       await pause(1200);
-      await choose(t, '.panel.film .choice-row:first-child select', 'film|portrait');
+      await choose(t, '.panel.film [data-action="film-preset"]', 'film|portrait');
       await settledPhoto(t); await pause(900);
     });
 

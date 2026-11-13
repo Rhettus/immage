@@ -4,6 +4,7 @@ import { click,reveal,inspect,openTool } from '../support/controls.mjs';
 import { panel,textButton,Blocked,openMaskGroup } from '../support/scenario.mjs';
 import { until,pause } from '../support/webdriver.mjs';
 import { settledPhoto } from './smoke.mjs';
+import * as read from '../support/observations.mjs';
 
 export async function histogramEndpoints(t){
  if(t.fixture.name!=='endpoints')throw new Blocked('Requires --fixture endpoints');
@@ -82,6 +83,37 @@ export async function detailWithoutLoupe(t){
  const after=await settledPhoto(t,p=>p.hash!==before.hash);
  assert.equal(after.width,before.width);assert.equal(after.height,before.height);assert(!await t.driver.observe(()=>!!document.querySelector('.detail-loupe')));
  t.measure({name:'f023c4f',width:after.width,height:after.height});await t.evidence('detail-final-no-loupe');
+}
+// a detail slider held mid-drag at Fit shows a frame the settled Fit frame's
+// size, not a viewer-sized draft that looks softer until release
+async function heldDetailFrame(t,id){
+ const settled=await settledPhoto(t),s=await reveal(t,`[data-control-id="${id}"] input[type=range]`);
+ let held;
+ try{
+  await t.driver.hold({x:s.x,y:s.y},{x:s.x+s.bounds.width*.15,y:s.y});
+  held=await until(async()=>{const p=await t.driver.observe(read.photo);return p?.quality==='draft'&&p.hash!==settled.hash?p:false;},`${id} draft frame while held`,30000);
+  await t.evidence(`held-${id}`);
+ }finally{await t.driver.release();}
+ const after=await settledPhoto(t,p=>p.hash!==settled.hash);
+ t.measure({name:'detail-fit-drag',control:id,held:{width:held.width,height:held.height},settled:{width:after.width,height:after.height}});
+ assert.equal(held.width,after.width,`${id}: held draft width matches the settled Fit frame`);
+ assert.equal(held.height,after.height,`${id}: held draft height matches the settled Fit frame`);
+}
+export async function detailFitDrag(t){
+ await click(t,'button[data-tour="prefs"]');await textButton(t,'.prefs-tabs','Performance');await click(t,'[data-pref-fold="performance-advanced"]');
+ const toggle='[data-pref-label="Detail loupe"] input[type=checkbox]';if((await reveal(t,toggle)).checked)await click(t,toggle);
+ await textButton(t,'.prefs-foot','Done');
+ await openTool(t,'adjust');await panel(t,'basic');
+ for(const id of ['detail_texture_gain_fine','dehaze'])await heldDetailFrame(t,id);
+ await openTool(t,'masks');await click(t,'.create-mask');await textButton(t,'.shape-menu-list','Brush');
+ const svg=await reveal(t,'svg.mask-svg');
+ await t.driver.drag({x:svg.x-svg.bounds.width*.1,y:svg.y},{x:svg.x+svg.bounds.width*.1,y:svg.y});
+ await until(()=>t.driver.observe(()=>document.querySelectorAll('.mask-list > li').length>0),'brush mask created');
+ await openMaskGroup(t,'Detail');
+ // a mask's Sharpening is l_usm on sharpen (the default) or l_sharpness on diffuse or sharpen
+ const id=await t.driver.observe(()=>['l_usm','l_sharpness'].find(id=>document.querySelector(`[data-control-id="${id}"] input[type=range]`)));
+ assert(id,'a mask sharpening control must be mounted');
+ await heldDetailFrame(t,id);
 }
 export async function cameraBody(t){
  if(!['camera-a','camera-b','camera-missing'].includes(t.fixture.name))throw new Blocked('Requires --fixture camera-a (synthetic camera family)');

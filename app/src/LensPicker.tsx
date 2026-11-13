@@ -3,10 +3,8 @@
 // the choice is the control `lens_pick`, 0 for Auto and else the lens's hash.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { invoke } from "@tauri-apps/api/core";
+import { commands, type Lens, type LensMenu as Menu } from "./commands";
 
-type Lens = { name: string; maker: string; hash: number };
-type Menu = { auto: string; pick: number; lenses: Lens[] };
 
 // every word of the query, in any order, in the lens's maker and model:
 // "12-32" finds the Panasonic 12-32mm, "pana 12-32" narrows it to Panasonic
@@ -36,7 +34,7 @@ export function LensPicker({ value, disabled, photo, onChange }: {
   // (undo, a pasted edit) can name a lens it does not hold
   useEffect(() => {
     let live = true;
-    invoke<Menu>("lenses").then((m) => { if (live) setMenu(m); }).catch(() => { if (live) setMenu(null); });
+    commands.lenses().then((m) => { if (live) setMenu(m); }).catch(() => { if (live) setMenu(null); });
     return () => { live = false; };
   }, [photo, value]);
 

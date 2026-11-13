@@ -11,7 +11,17 @@ cmake --build build                      # the engine under test
 python3 -I verify/run.py                 # about 10 minutes; exits 1 on a failure
 python3 -I verify/run.py --accept        # after publishing a release: its edit becomes the reference
 python3 -I verify/run.py --cpu           # the checks with edits on the CPU
+python3 -I verify/run.py --extended      # and the stress run (CPU heavy)
+python3 -I verify/run.py --skip-engine-scripts   # leave out the headless engine scripts
 ```
+
+Between the harness and the timing check, `run.py` runs the headless engine
+scripts below: `export-output.py`, `paths.py`, `hostile-inputs.py --count 5`,
+`memory.py --compare`, `export-metadata.py` and `sidecar-safety.py`, each with
+the same `--engine`, its output in `engine-<name>.log` beside the report and
+a row in the report's Engine scripts table. `--extended` adds `stress.py`.
+`--accept` also re-records `verify/memory-baseline.json` (`memory.py --record`).
+`memory.py` is skipped off Linux and when there is no baseline yet.
 
 The report goes to `verify/results/<date>_<sha>/report.md`, with every
 measurement in `report.json`. Both, and `verify/references/`, are your
@@ -27,6 +37,22 @@ python3 -I verify/database-locks.py --build build
 It checks live-owner exclusion, recovery after killing its own owner process,
 lock cleanup and clean restart. It does not test simultaneous first startup.
 
+The engine protocol check (headless, no GUI, stdlib only) sends every engine
+command, with small safe arguments, to an engine with temporary state in four
+states (empty library, two photos, a photo open, after `close`), plus an
+unknown or missing command, bad JSON, tagged pool requests and the reader's
+cancels. It normalizes the replies (timings, temporary paths, the build's
+version, file times, frame hashes numbered by first use) and records or
+compares them as JSON, to prove a refactor of `engine/main.c` changes no reply.
+It also fails when the commands in `main.c` differ from the script's list.
+Heavy commands (AI, HDR and panorama merges) run only their argument-error
+path, and exported JPEG, TIFF and PDF files are compared by size only:
+
+```bash
+python3 -I verify/engine-protocol.py --record /tmp/golden.json   # on the known-good engine
+python3 -I verify/engine-protocol.py --compare /tmp/golden.json  # exits 1 on any difference
+```
+
 The import stall check (POSIX, headless, no GUI) makes a sidecar that blocks
 reads like a half-dead network share and checks the import skips the file and
 its folder, reports them as `unanswered`, and leaves `open` and other folders
@@ -35,6 +61,121 @@ unblocked:
 ```bash
 python3 -I verify/import-stall.py
 ```
+
+The export metadata check (headless, no GUI, needs the `exiv2` command) gives a
+TIFF every field the export dialog's Metadata section decides (GPS, serial
+numbers and owner, camera and exposure, title, description, creator, rights,
+keywords and an edit history), exports it with each of the 64 combinations of
+those options, and reads each file back. A field must be there exactly when it
+was asked for, and the capture date always:
+
+```bash
+python3 -I verify/export-metadata.py
+```
+
+The sidecar safety check (headless, no GUI, needs exiv2 and a C compiler)
+fails a save in each way it can fail: a read-only folder and sidecar, a full
+disk while the copy is made and while darktable writes it, and the engine
+killed while each of those files is half written. The old sidecar must stay
+byte for byte as it was, the error must name it, and the next save must work.
+The full disk and kill cases run on Linux only:
+
+```bash
+python3 -I verify/sidecar-safety.py
+```
+
+The export output check (headless, no GUI, needs ImageMagick; exiv2 and
+`jxlinfo` add checks) exports generated photos and the sample photo in every
+format and bit depth the Export dialog offers and reads the files back: size,
+bit depth, embedded color profile and the effect of quality; the long edge on
+landscape, portrait, EXIF-rotated and extreme shapes; the fixed canvas, which
+must be exactly the asked width by height, with borders and flip; an export
+asked for with `export_hold` renders the edit of that moment, for the open photo
+and for one opened afterwards, not later edits; and a stopped batch, a failed
+export, a full disk and an export onto an existing file leave no stray or
+partial files. The name-clash choice and cancel are decided in the Rust layer
+(`export_target`, `export_images`), so a headless run cannot reach them. Real
+bugs it finds print as `KNOWN BUG` and do not fail the run; `--strict` fails on
+them:
+
+```bash
+python3 -I verify/export-output.py [--strict]
+```
+
+The paths check (headless, no GUI, needs ImageMagick) puts a photo in folders
+and under file names that tend to break things: accents in composed and
+decomposed form, Japanese, Arabic, emoji, spaces, both kinds of quote, shell,
+glob, URL and backslash characters, a leading dash, names of 200 to 255 bytes,
+paths of about 1500, 3000 and 4000 bytes, and a symlinked folder and photo.
+Each case runs import, open, edit and save (the sidecar must appear next to
+that photo and nothing else may change), a restart on a new library (the edit
+must come back from the sidecar), export and thumbnail, and the Trash list
+(`sidecars`), which must hold that photo's sidecars and versions and nothing of
+its neighbors or look-alikes. `--only TEXT` runs the cases whose label contains
+TEXT; `--strict` fails on `KNOWN BUG` findings:
+
+```bash
+python3 -I verify/paths.py [--only TEXT] [--strict]
+```
+
+The hostile-inputs check (headless, no GUI) makes a corpus at run time (a
+truncated raw, zero-byte files, a JPEG renamed `.ARW`, random bytes and text
+under image extensions, and photos beside garbage, cut-off, newer-darktable,
+unknown-module, bad-parameter and huge-mask XMP sidecars) and imports, thumbnails,
+opens, renders and saves each; then fuzzes every command in the `_commands[]`
+table of `engine/main.c` (`--count` requests each, fixed `--seed`: missing and
+wrong-typed fields, odd numbers and strings) and sends malformed lines. Every
+request must be answered and the engine must stay up. Crashes and hangs it
+finds print as `KNOWN BUG` (listed in `KNOWN` in the script) and do not fail
+the run; a new one fails it; `--strict` fails on all. It pairs with an
+AddressSanitizer engine build (`--engine`), which is not built here:
+
+```bash
+python3 -I verify/hostile-inputs.py [--count 20] [--seed 1] [--only corpus|fuzz] [--cmd open ...] [--strict]
+```
+
+The memory check (headless, Linux, no GUI) measures the engine's peak RSS
+(VmHWM) and idle RSS for a generated 48 MP photo, RSS over 24 edits (each with a
+full, a draft and a base render, long enough for the render caches to level off) and over opening 50 photos in a row. It always
+fails when RSS grows steadily (over 40 MB per edit or 8 MB per opened photo; the
+0.45.0 leak was about 190 MB per edit) and compares the rest with
+`verify/memory-baseline.json`, one machine's numbers (`--record` writes it):
+
+```bash
+python3 -I verify/memory.py [--record] [--edits 24] [--opens 50] [--size 8000x6000]
+```
+
+The stress check (headless, no GUI, CPU heavy) runs for `--duration` seconds
+(120): photos open, render, edit and close while tagged thumbnails, imports and
+exports run on other threads. Every request must be answered within `--timeout`,
+every thumbnail and exported JPEG must be whole, and the engine must be
+responsive at the end. Run it against an engine built with the lock-order
+checks (`ENG_LOCK_DEBUG`, see `engine/engine.h`) or ThreadSanitizer for the races
+it can provoke:
+
+```bash
+python3 -I verify/stress.py [--duration 120] [--timeout 120] [--engine PATH]
+```
+
+The three share `verify/engine_session.py` (memory gate, an engine driver with
+timeouts and the PASS / FAIL / KNOWN BUG report). Run them one at a time, under
+`flock` when another agent or run may use the engine.
+
+The background-priority check (headless, no GUI) times foreground renders while
+the engine imports, exports, prefetches or denoises. `--load all` is stage 0 of
+the background-priority plan: for each load it times a 100% zoom render and a
+slider edit at fit size idle and under the load, times the load alone and under
+renders, flags busy/idle above 1.2x, and tallies from the engine's `-d perf`
+lines whether the foreground modules ran on the GPU or the CPU. Run it on bare
+metal; timing in a VM is indicative only:
+
+```bash
+python3 -I verify/background-priority.py --load all --opencl --raw PHOTO.ARW \
+  --models ~/.local/share/app.immage/models --report background-priority.json
+```
+
+Without `--load` it is the original import check. Prefetch has no completion
+reply, so its decode time is read from the engine's CPU use (Linux and macOS).
 
 The focused batch-paste regression check drives production Session and settings
 code through the real engine, with isolated photos and sidecars:
@@ -159,7 +300,7 @@ already caught the bug, that is enough; otherwise add one to `fixes` in
 that fixed it in a comment, as the masks check's "mask added mid-send"
 does. A bug that only shows when requests overlap can change the edit as
 a request goes to the engine, through `sent.hook` in `shim.mjs`. The shim
-also refuses a command `main.rs` doesn't register, as the app would.
+also refuses a command bindings.rs doesn't register, as the app would.
 
 A decision about how Immage behaves gets a check in `decisions`, citing
 where it is written down. Changing the decision changes its check in the
@@ -737,3 +878,25 @@ comparison is refused; with `--opencl` on a machine with one, it compares
 the CPU and the GPU and requires ΔE p99 < 2.
 `node --test verify/gpu-check.test.mjs` checks the app's cases against the
 real manifest controls and the pass verdicts. Neither launches the app.
+
+## Unpack containment
+
+`python3 -I verify/unpack-containment.py [--engine path]` runs the real engine
+without a GUI and sends `unpack` crafted zips (`.dtmodel` is a zip): `../`
+and absolute entries, a symlink followed by a file through it, a symlink
+overwritten by a file, and a benign control. It fails if anything outside the
+target folder is created or changed; tar archives must be refused.
+
+Engine-free unit tests: `node --test verify/front-logic.test.mjs` covers the
+export file name and caption tokens (`exportTokens.ts`), `paths.ts`, the
+filmstrip filter and facets, RAW+JPEG pairing and `withKnown` ordering, and
+`fieldKeeps`.
+
+Upgrade paths: `node --test verify/upgrade-paths.test.mjs` and
+`cargo test --locked --test upgrade_paths` (in `app/src-tauri`) load files older
+versions wrote (`verify/fixtures/upgrade/`: `presets.json` as a bare list, v2
+and v3, `export-presets.json` from v0.31, a v0.40.0 folder snapshot and a
+thumbnail cache laid out as v0.40.0 named it) and fail if the current code
+resets, drops or no longer finds anything. The snapshot functions cannot be
+called from a Rust integration test, so their text is compared with v0.40.0's
+(`snapshot_path-v0.40.0.rs.txt`); change that fixture only with a migration.

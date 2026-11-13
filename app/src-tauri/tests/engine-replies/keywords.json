@@ -1,0 +1,20 @@
+[
+ {
+  "label": "1 empty / keywords",
+  "reply": {
+   "keywords": [],
+   "ms": 0.0,
+   "ok": true
+  }
+ },
+ {
+  "label": "3 open / keywords",
+  "reply": {
+   "keywords": [
+    "one"
+   ],
+   "ms": 0.0,
+   "ok": true
+  }
+ }
+]

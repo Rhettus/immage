@@ -21,7 +21,7 @@
 // GUI: they read the module's gui_data, and the image they work on is kept
 // only by a GUI preview pipe. darktable's source is left as it is, so the
 // GUI-free parts are copied here unchanged from src/iop/ashift.c at
-// 69498129cd (constants, line types, _homography, line_detect and its
+// 879067695e (constants, line types, _homography, line_detect and its
 // enhancements, ransac, model_fitness), with LSD and the simplex included
 // as ashift.c includes them. _remove_outliers and nmsfit are rewritten
 // below to take the lines instead of gui_data. compare these with

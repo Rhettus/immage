@@ -5,9 +5,10 @@
 // named sets of settings in a list. a preset stores only the settings it
 // was saved with and is read over the defaults, so settings added later
 // need no migration: an older preset simply lacks them
-import { invoke } from "@tauri-apps/api/core";
+import { commands, type Value } from "./commands";
 import type { ImageEntry } from "./library";
 import { expandText, type Meta } from "./exportTokens";
+import { settings as store } from "./settings";
 
 // one LRMogrify outer border: widths in % of the photo's short or long
 // edge, or pixels of the exported file; items stack from the inside out
@@ -40,6 +41,11 @@ export type TextItem = {
   beforeBorders: boolean;
 };
 
+export type ExportFormat = "jpeg" | "tiff" | "png" | "webp" | "jxl";
+export type BitDepth = 8 | 10 | 12 | 16;
+export const EXPORT_FORMATS: readonly ExportFormat[] = ["jpeg", "tiff", "png", "webp", "jxl"];
+const BIT_DEPTHS: readonly BitDepth[] = [8, 10, 12, 16];
+
 export type Settings = {
   dir: string;
   useSubfolder: boolean;
@@ -47,9 +53,9 @@ export type Settings = {
   naming: "original" | "custom" | "template";
   customName: string;
   template: string;
-  format: "jpeg" | "tiff" | "png" | "webp";
+  format: ExportFormat;
   quality: number;
-  bpp: 8 | 16;
+  bpp: BitDepth;
   colorSpace: "srgb" | "adobergb" | "displayp3" | "prophoto";
   resize: boolean;
   longEdge: number;
@@ -132,23 +138,48 @@ function migrate(raw: Record<string, unknown>): Partial<Settings> {
   return out as Partial<Settings>;
 }
 
+// the formats that take a quality (JPEG XL's 100 is lossless)
+export const hasQuality = (format: ExportFormat) => format === "jpeg" || format === "webp" || format === "jxl";
+
+// the bit depths a format offers; none for JPEG and WebP
+export const bitDepths = (format: ExportFormat): readonly BitDepth[] =>
+  format === "jxl" ? BIT_DEPTHS : format === "tiff" || format === "png" ? [8, 16] : [];
+
+// the bit depth an export of this format is written at: TIFF and PNG take
+// only 8 or 16, so a 10 or 12 chosen for JPEG XL writes 16
+export const depthOf = (format: ExportFormat, bpp: number): BitDepth =>
+  format === "jxl" ? (BIT_DEPTHS.includes(bpp as BitDepth) ? bpp as BitDepth : 8)
+    : bitDepths(format).length ? (bpp === 8 ? 8 : 16) : 8;
+
+// the quality and bit depth an export request sends for these settings
+export const exportOptionsFor = (s: Pick<Settings, "format" | "quality" | "bpp">) => ({
+  quality: hasQuality(s.format) ? s.quality : null,
+  bpp: bitDepths(s.format).length ? depthOf(s.format, s.bpp) : null,
+});
+
+// a saved value that no longer means anything falls back to the default
+const sane = (s: Settings): Settings => ({
+  ...s,
+  format: EXPORT_FORMATS.includes(s.format) ? s.format : DEFAULTS.format,
+  bpp: BIT_DEPTHS.includes(s.bpp) ? s.bpp : DEFAULTS.bpp,
+});
+
 export const loadSettings = (): Settings => {
   try {
-    const raw = JSON.parse(localStorage.getItem("immage.export") ?? "{}");
-    const s = { ...DEFAULTS, ...migrate(raw) };
+    const raw = JSON.parse(store.get("immage.export") ?? "{}");
+    const s = sane({ ...DEFAULTS, ...migrate(raw) });
     if (!raw.askMigrated) saveSettings(s);
     return s;
   } catch { return DEFAULTS; }
 };
 export const saveSettings = (s: Settings) => {
-  try { localStorage.setItem("immage.export", JSON.stringify({ ...s, askMigrated: true })); } catch { /* not kept */ }
+  try { store.set("immage.export", JSON.stringify({ ...s, askMigrated: true })); } catch { /* not kept */ }
 };
 
 // ------------------------------------------------------------- presets
 // `icon` names the one the user chose for it (ExportDialog's PRESET_ICONS);
 // without it, the dialog picks one from what the preset does
 export type ExportPreset = { id: string; name: string; builtin?: boolean; icon?: string; settings: Partial<Settings> };
-type PresetsFile = { version: 1; presets: ExportPreset[] };
 
 // what a preset holds: everything but which photos are exported
 export const PRESET_KEYS = (Object.keys(DEFAULTS) as (keyof Settings)[]).filter((k) => k !== "scope");
@@ -191,12 +222,12 @@ export const BUILTINS: ExportPreset[] = [
 
 export async function loadPresets(): Promise<ExportPreset[]> {
   try {
-    const f = await invoke<PresetsFile | null>("export_presets_load");
-    return Array.isArray(f?.presets) ? f.presets : [];
+    const f = await commands.exportPresetsLoad();
+    return Array.isArray(f?.presets) ? f.presets as unknown as ExportPreset[] : [];
   } catch { return []; }
 }
 export const savePresets = (presets: ExportPreset[]) =>
-  invoke("export_presets_save", { presets: { version: 1, presets } satisfies PresetsFile });
+  commands.exportPresetsSave({ version: 1, presets: presets as unknown as Value[] });
 
 export const presetOf = (s: Settings): Partial<Settings> =>
   Object.fromEntries(PRESET_KEYS.map((k) => [k, s[k]])) as Partial<Settings>;

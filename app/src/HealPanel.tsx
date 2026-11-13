@@ -2,19 +2,20 @@
 // Copyright (C) 2026 the Immage authors
 
 // Lightroom's Remove panel, Heal and Clone: the brush for new spots, the
-// selected spot's own settings, and Visualize Spots
+// selected spot's own settings, which spots show, and Visualize Spots
 import type { Control } from "./manifest";
-import type { SpotTool } from "./SpotOverlay";
+import type { ShowSpots, SpotTool } from "./SpotOverlay";
 import type { Spot } from "./spots";
 
-export function HealPanel({ tool, spots, selected, visualize, disabled, renderSlider,
-                            onTool, onSpot, onDelete, onClear, onVisualize }: {
-  tool: SpotTool; spots: Spot[]; selected: number | null; visualize: number | null; disabled: boolean;
+export function HealPanel({ tool, spots, selected, show, visualize, disabled, renderSlider,
+                            onTool, onSpot, onDelete, onClear, onShow, onVisualize }: {
+  tool: SpotTool; spots: Spot[]; selected: number | null; show: ShowSpots; visualize: number | null; disabled: boolean;
   renderSlider: (c: Control, value: number, onChange: (v: number) => void) => React.ReactNode;
   onTool: (t: SpotTool) => void;
   onSpot: (patch: Partial<Spot>) => void;  // the selected spot changed
   onDelete: () => void;
   onClear: () => void;
+  onShow: (v: ShowSpots) => void;
   onVisualize: (v: number | null) => void;
 }) {
   const sel = selected !== null ? spots[selected] : undefined;
@@ -61,6 +62,17 @@ export function HealPanel({ tool, spots, selected, visualize, disabled, renderSl
         </div>
       </section>
       <section>
+        <div className="heal-show">
+          <span title="H hides the spots or shows them again">Show spots (H)</span>
+          <div className="seg heal-mode">
+            {(["always", "selected", "never"] as const).map((v) => (
+              <button key={v} className={`btn small${show === v ? " on" : ""}`} disabled={disabled}
+                      title={v === "always" ? "show every spot" : v === "selected" ? "show only the selected spot"
+                                                                                   : "hide every spot"}
+                      onClick={() => onShow(v)}>{v === "always" ? "Always" : v === "selected" ? "Selected" : "Never"}</button>
+            ))}
+          </div>
+        </div>
         <label className="toggle">
           <span>Visualize spots (A)</span>
           <input type="checkbox" className="switch" checked={visualize !== null} disabled={disabled}

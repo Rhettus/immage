@@ -6,9 +6,10 @@
 // writes comes back to be edited, as with Lightroom's plug-ins. a kind says
 // what an application takes and gives back; a plugin is one the user set up
 // in Preferences, with its application and choices
-import { invoke } from "@tauri-apps/api/core";
+import { commands, type PluginConfig as StoredPlugin, type PluginReturn } from "./commands";
 import type { Values } from "./manifest";
 import { fileKind, type ImageEntry } from "./library";
+import { settings } from "./settings";
 
 export type PluginKind = {
   id: string;
@@ -84,27 +85,43 @@ export const KINDS: PluginKind[] = [
 
 export const kindOf = (id: string) => KINDS.find((k) => k.id === id);
 
-export type PluginConfig = {
-  id: string;
-  kind: string;
-  name: string;
-  app: string;                         // the application's path; "" until chosen
+// the generated type marks every field optional, as plugins.rs reads a
+// missing one as empty; it always sends them all, and `send` and `look` take
+// the values the page offers
+export type PluginConfig = Required<Omit<StoredPlugin, "send" | "look">> & {
   send: "original" | "tiff";
-  outputDir: string;                   // looked in too, besides the kind's folders; "" for none
-  onReturn: Record<string, boolean>;
   look?: "" | "natural" | "enhanced";  // Macro Studio's Look; "" for its own default
 };
+const whole = (list: StoredPlugin[]) => list as PluginConfig[];
 
-const PLUGINS_KEY = "immage.plugins";
-export function loadPlugins(): PluginConfig[] {
+// the plugins live in plugins.json, which only Rust writes (plugins.rs). the
+// page keeps edits to names and choices; the application of each is set by
+// chooseApp and setApp alone, so a path the page names is never launched
+const LEGACY_KEY = "immage.plugins";
+function legacyPlugins(): PluginConfig[] | null {
   try {
-    const v = JSON.parse(localStorage.getItem(PLUGINS_KEY) ?? "[]");
-    return Array.isArray(v) ? v.filter((p) => p && kindOf(p.kind)) : [];
+    const v = JSON.parse(settings.get(LEGACY_KEY) ?? "null");
+    return Array.isArray(v) ? v.filter((p) => p && kindOf(p.kind)) : null;
+  } catch { return null; }
+}
+// the first start after plugins moved to Rust hands over what localStorage
+// held; Rust takes it only when it has no plugins.json yet, and it is
+// dropped here once that is answered
+export async function loadPlugins(): Promise<PluginConfig[]> {
+  try {
+    const list = whole(await commands.pluginConfig(legacyPlugins())).filter((p) => kindOf(p.kind));
+    try { settings.remove(LEGACY_KEY); } catch { /* not kept */ }
+    return list;
   } catch { return []; }
 }
-export function storePlugins(list: PluginConfig[]) {
-  try { localStorage.setItem(PLUGINS_KEY, JSON.stringify(list)); } catch { /* not kept */ }
-}
+export const storePlugins = (list: PluginConfig[]) =>
+  commands.pluginConfigSave(list).then(whole).catch(() => null);
+// an application plugin_find_apps returned, or the one the user picks in the
+// dialog Rust opens (null if cancelled); the plugins as stored after
+export const setPluginApp = (id: string, path: string) =>
+  commands.pluginSetApp(id, path).then(whole).catch(() => null);
+export const choosePluginApp = (id: string) =>
+  commands.pluginChooseApp(id).then((l) => l && whole(l)).catch(() => null);
 
 export function newPlugin(kind: PluginKind, app: string): PluginConfig {
   return {
@@ -115,7 +132,7 @@ export function newPlugin(kind: PluginKind, app: string): PluginConfig {
 }
 
 export const findApps = (kind: PluginKind) =>
-  invoke<string[]>("plugin_find_apps", { patterns: navigator.userAgent.includes("Windows") ? kind.appHints.win : kind.appHints.mac })
+  commands.pluginFindApps(navigator.userAgent.includes("Windows") ? kind.appHints.win : kind.appHints.mac)
     .catch(() => [] as string[]);
 
 // an application's name from its path: "DxO PureRAW 4"
@@ -151,5 +168,5 @@ export function returnValues(kindId: string, cfg: PluginConfig | undefined): { v
 }
 
 // a file taken back, with its original (plugins.rs, Return)
-export type PluginReturn = { original: string; result: string; plugin: string; applied: boolean };
-export const loadReturns = () => invoke<PluginReturn[]>("plugin_returns").catch(() => [] as PluginReturn[]);
+export type { PluginReturn };
+export const loadReturns = () => commands.pluginReturns().catch(() => [] as PluginReturn[]);

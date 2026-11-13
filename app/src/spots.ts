@@ -5,10 +5,11 @@
 // shown-image units, as masks are: 0-1 across the width and height, sizes
 // as fractions of the width. (sx, sy) is where the center, or a stroke's
 // first point, copies from
-type Common = { mode: "heal" | "clone"; sx: number; sy: number; feather: number; opacity: number };
-export type CircleSpot = { type: "circle"; x: number; y: number; r: number } & Common;
-export type BrushSpot = { type: "brush"; points: [number, number][]; size: number } & Common;
-export type Spot = CircleSpot | BrushSpot;
+// the types come from the Rust layer's (spots, spot_source)
+import type { NewSpot as NewSpotShape, Spot } from "./commands";
+export type { Spot };
+export type CircleSpot = Extract<Spot, { type: "circle" }>;
+export type BrushSpot = Extract<Spot, { type: "brush" }>;
 
 // the spot's anchor (the circle's center, the stroke's first point)
 export const anchorOf = (s: Spot): [number, number] => (s.type === "circle" ? [s.x, s.y] : s.points[0]);
@@ -30,4 +31,4 @@ export function sourceOf(s: Spot): Spot {
 export const radiusOf = (s: Spot) => (s.type === "circle" ? s.r : s.size / 2);
 
 // a spot before its source is found
-export type NewSpot = Omit<CircleSpot, "sx" | "sy"> | Omit<BrushSpot, "sx" | "sy">;
+export type NewSpot = NewSpotShape;

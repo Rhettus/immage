@@ -7,7 +7,7 @@ find_package(PkgConfig REQUIRED)
 find_package(JPEG REQUIRED)
 pkg_check_modules(JSON_GLIB REQUIRED json-glib-1.0)
 
-add_executable(darktable-engine main.c upright.c hdrmerge.c print.c strip.cc dng.c lenses.cc)
+add_executable(darktable-engine main.c session.c masks.c library.c export.c ai.c device.c looks.c film.c upright.c hdrmerge.c print.c strip.cc dng.c lenses.cc)
 
 # Keep the compatibility repair buildable before moving the darktable pin.
 file(STRINGS "${CMAKE_SOURCE_DIR}/src/develop/blend.h" IMMAGE_STYLE_BLEND_READER

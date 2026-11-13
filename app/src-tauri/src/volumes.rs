@@ -11,7 +11,7 @@ use std::path::Path;
 use std::sync::{mpsc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
-#[derive(Serialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Clone, Debug, PartialEq, specta::Type)]
 pub struct Volume {
     pub path: String,
     // where the drive is mounted: the folders of one drive share it

@@ -121,6 +121,8 @@ export const GLOBAL = {
   highlights: { expect: { lumHi: 1 } },
   shadows: { expect: { lumLo: 1 } },
   whites: { expect: { lumHi: 1 } },
+  // the share of brilliance Whites adds on AgX: none without Whites
+  whites_brilliance: { with: { tm_mode: 1, whites: 60 }, values: [0, 200], expect: { lumHi: 1 } },
   blacks: { expect: { lumLo: 1 } },
   texture: { detail: true },
   vibrance: { expect: { chroma: 1 } },

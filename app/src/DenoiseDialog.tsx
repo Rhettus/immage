@@ -8,12 +8,13 @@
 // once (ai_denoise_preview), and Amount mixes the two here, at once. the
 // small photo beside it moves the piece, as the Navigator moves the view
 import { useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { commands } from "./commands";
+import { settings } from "./settings";
 
 const AMOUNT_KEY = "immage.denoiseAmount";
 function loadAmount(): number {
   try {
-    const v = Number(localStorage.getItem(AMOUNT_KEY));
+    const v = Number(settings.get(AMOUNT_KEY));
     return Number.isFinite(v) && v > 0 && v <= 100 ? v : 100;
   } catch { return 100; }
 }
@@ -63,7 +64,7 @@ export function DenoiseDialog({ thumb, center, prepare, onRun, onClose }: {
       ready.current ??= prepare();
       await ready.current;
       const size = Math.round(BOX * (window.devicePixelRatio || 1));
-      const buf = await invoke<ArrayBuffer>("ai_denoise_preview", { u, v, size });
+      const buf = await commands.aiDenoisePreview(u, v, size);
       if (n !== seq.current) return;
       const head = new DataView(buf, 0, 16);
       const width = head.getUint32(0, true), height = head.getUint32(4, true);
@@ -119,7 +120,7 @@ export function DenoiseDialog({ thumb, center, prepare, onRun, onClose }: {
   }, [piece, amount, holding]);
 
   const run = () => {
-    try { localStorage.setItem(AMOUNT_KEY, String(amount)); } catch { /* not kept */ }
+    try { settings.set(AMOUNT_KEY, String(amount)); } catch { /* not kept */ }
     onRun(amount);
     onClose();
   };

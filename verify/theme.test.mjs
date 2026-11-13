@@ -25,12 +25,8 @@ registerHooks({
 
 const dispatched = [];
 globalThis.window = { dispatchEvent: event => { dispatched.push(event.type); return true; } };
-const values = new Map();
-let failStorage = false;
-globalThis.localStorage = {
-  getItem: key => values.get(key) ?? null,
-  setItem: (key, value) => { if (failStorage) throw Error('storage unavailable'); values.set(key, String(value)); },
-};
+const { settings, ready } = await import('../app/src/settings.ts');
+await ready;
 const { BUILTIN_THEMES, THEME_MAX_BYTES, THEME_TOKENS, parseTheme, validateTheme,
   loadThemes, themeEntries, selectedTheme, selectTheme, importTheme, removeTheme } = await import('../app/src/themes.ts');
 const KEY = 'immage.themes.v1';
@@ -72,7 +68,7 @@ test('documented example and JSON schema stay aligned with the importer', () => 
 });
 
 test('imports persist, duplicate names remain valid, removal falls back and publishes changes', () => {
-  values.delete(KEY);
+  settings.remove(KEY);
   loadThemes();
   const beforeEvents = dispatched.length;
   try {
@@ -80,7 +76,7 @@ test('imports persist, duplicate names remain valid, removal falls back and publ
     const second = importTheme(json(valid));
     assert.deepEqual(themeEntries().slice(-2).map(t => t.name), ['Dark (2)', 'Dark (3)']);
     assert.equal(selectedTheme().id, second);
-    assert.equal(JSON.parse(values.get(KEY)).custom.length, 2);
+    assert.equal(JSON.parse(settings.get(KEY)).custom.length, 2);
     assert.equal(dispatched.length - beforeEvents, 2, 'each import publishes a change');
     removeTheme(second);
     assert.equal(selectedTheme().id, 'dark');
@@ -92,7 +88,7 @@ test('imports persist, duplicate names remain valid, removal falls back and publ
 });
 
 test('long duplicate names remain within schema and survive reload', () => {
-  values.delete(KEY);
+  settings.remove(KEY);
   loadThemes();
   const palette = { ...valid, name: 'n'.repeat(80) };
   importTheme(json(palette));
@@ -106,17 +102,20 @@ test('long duplicate names remain within schema and survive reload', () => {
 });
 
 test('failed persistence leaves selection and imported themes unchanged; corrupt saved data falls back', () => {
-  values.delete(KEY);
+  settings.remove(KEY);
   loadThemes();
   const original = themeEntries().map(t => t.id);
-  failStorage = true;
-  assert.throws(() => importTheme(json(valid)), /storage unavailable/);
-  assert.throws(() => selectTheme('light'), /storage unavailable/);
-  assert.throws(() => removeTheme('dark'), /Only imported/);
-  assert.deepEqual(themeEntries().map(t => t.id), original);
-  assert.equal(selectedTheme().id, 'dark');
-  failStorage = false;
-  values.set(KEY, JSON.stringify({ selected: 'custom-gone', custom: [
+  // the store's set() no longer throws on its own, so make it fail as the old storage did
+  const realSet = settings.set;
+  settings.set = () => { throw Error('storage unavailable'); };
+  try {
+    assert.throws(() => importTheme(json(valid)), /storage unavailable/);
+    assert.throws(() => selectTheme('light'), /storage unavailable/);
+    assert.throws(() => removeTheme('dark'), /Only imported/);
+    assert.deepEqual(themeEntries().map(t => t.id), original);
+    assert.equal(selectedTheme().id, 'dark');
+  } finally { settings.set = realSet; }
+  settings.set(KEY, JSON.stringify({ selected: 'custom-gone', custom: [
     { ...valid, id: 'custom-duplicate' }, { ...valid, id: 'custom-duplicate' },
     { ...valid, id: 'builtin-as-custom' }, { ...valid, id: 'custom-invalid', extra: true },
   ] }));

@@ -8,18 +8,21 @@
 // below does the same
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 // main.rs's FRAME_HEAD: six u32 of geometry, six f32 of timings, the u64
 // hash, the edits' f32 timing and padding
 export const FRAME_HEAD = 64;
 
-// the commands the Rust layer registers (main.rs, generate_handler!): one
+// the commands the Rust layer registers (bindings.rs, collect_commands!): one
 // it lacks fails in the app, as mask_rename did before 0.10.1
-const HANDLERS = new Set(readFileSync(new URL("../app/src-tauri/src/main.rs", import.meta.url), "utf8")
-  .match(/generate_handler!\[([^\]]*)\]/)[1].split(",").map((s) => s.trim().split("::").pop()).filter(Boolean));
+const registered = (file, macro) => readFileSync(new URL(`../app/src-tauri/src/${file}`, import.meta.url), "utf8")
+  .match(new RegExp(`${macro}!\\[([^\\]]*)\\]`))[1].replace(/\/\/[^\n]*/g, "")
+  .split(",").map((s) => s.trim().split("::").pop()).filter(Boolean);
+const HANDLERS = new Set(registered("bindings.rs", "collect_commands"));
 
 // a built app carries ONNX Runtime in darktable's plugin folder
 // (bundle_engine.py), where the engine looks for it (backend_onnx.c,
@@ -189,6 +192,13 @@ function sized(width, height) {
 
 // print_photo's export jobs, apart from the tests' own numbers
 let printJobs = 0;
+// the save dialog's answer in main.rs (pick_pdf): the suggested name, in a directory of its own
+let pdfDir = null;
+const pdfChoice = (name) => {
+  if (!name) return null;
+  pdfDir ??= mkdtempSync(join(tmpdir(), "immage-pdf-"));
+  return join(pdfDir, name);
+};
 const COMMANDS = {
   display_scale: () => (screen.scale === "error" ? Promise.reject(new Error("not on a screen yet")) : screen.scale),
   meta: ({ imgid }) => request({ cmd: "meta", imgid }),
@@ -212,7 +222,7 @@ const COMMANDS = {
   mask_rename: ({ name, to }) => request({ cmd: "mask_rename", name, to }),
   mask_delete: ({ name }) => request({ cmd: "mask_delete", name }),
   combine: ({ name, members, ranges }) => request({ cmd: "combine", name, members, ranges: ranges ?? null }),
-  set_params: ({ op, params, enabled, after, before, instance, mask, invert, opacity, refine }) => {
+  set_params: ({ edit: { op, params, enabled, after, before, instance, mask, invert, opacity, refine } }) => {
     const req = { cmd: "set", op, params, enabled };
     if (after != null) req.after = after;
     if (before != null) req.before = before;
@@ -226,7 +236,7 @@ const COMMANDS = {
     return request(req);
   },
   // a move's module edits go first, as set_params would send them
-  render: async ({ width, height, scale, x, y, skip, draft, have, edits }) => {
+  render: async ({ request: { width, height, scale, x, y, skip, draft, have, edits } }) => {
     for (const e of edits ?? []) {
       const set = { cmd: "set" };
       for (const k of ["op", "params", "enabled", "after", "before", "instance"]) if (e[k] != null) set[k] = e[k];
@@ -302,22 +312,26 @@ const COMMANDS = {
     (await request({ cmd: "softproof", mode, profile: profile ?? "", intent: intent ?? 0 })).changed,
   printers: async () => { const { ok, ms, ...r } = await request({ cmd: "printers" }); return r; },
   printer_info: async ({ name }) => { const { ok, ms, ...r } = await request({ cmd: "printer", name }); return r; },
-  print_photo: async ({ imgid, request: req }) => {
+  print_photo: async ({ imgid, request: req, pdfName }) => {
+    const pdf = pdfChoice(pdfName);
+    if (pdf) req = { ...req, pdf };
     const job = 900000 + ++printJobs;
     await request({ cmd: "export_hold", job, imgids: [imgid] });
     try {
       const { ok, ms, tag, ...r } = await requestTagged({ ...req, cmd: "print", job, imgid });
-      return r;
+      return pdf ? { ...r, pdf } : r;
     } finally {
       await requestTagged({ cmd: "export_release", job });
     }
   },
-  print_sheet: async ({ imgids, request: req }) => {
+  print_sheet: async ({ imgids, request: req, pdfName }) => {
+    const pdf = pdfChoice(pdfName);
+    if (pdf) req = { ...req, pdf };
     const job = 900000 + ++printJobs;
     await request({ cmd: "export_hold", job, imgids });
     try {
       const { ok, ms, tag, ...r } = await requestTagged({ ...req, cmd: "print", job });
-      return r;
+      return pdf ? { ...r, pdf } : r;
     } finally {
       await requestTagged({ cmd: "export_release", job });
     }
@@ -358,7 +372,7 @@ export const screen = { scale: null };
 export const getCurrentWindow = () => ({ onMoved: async () => () => {}, onScaleChanged: async () => () => {} });
 
 export async function invoke(cmd, args = {}) {
-  if (!HANDLERS.has(cmd)) throw new Error(`the app registers no command ${cmd} (main.rs, generate_handler!)`);
+  if (!HANDLERS.has(cmd)) throw new Error(`the app registers no command ${cmd} (bindings.rs, collect_commands!)`);
   const f = COMMANDS[cmd];
   if (!f) throw new Error(`verify/shim.mjs has no ${cmd}`);
   const reply = f(args);

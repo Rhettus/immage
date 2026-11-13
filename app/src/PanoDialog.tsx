@@ -6,7 +6,8 @@
 // OpenCV (App.tsx, runPanoMerge). stitching needs an engine built with
 // OpenCV's stitching module (pano_can_merge)
 import { useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { commands, type PanoPreview as Preview } from "./commands";
+import { settings } from "./settings";
 
 export type Projection = "auto" | "spherical" | "cylindrical" | "perspective";
 
@@ -17,15 +18,6 @@ const PROJECTIONS: { id: Projection; label: string; title: string }[] = [
   { id: "perspective", label: "Perspective", title: "For architecture. Keeps straight lines straight; best below about 100°." },
 ];
 
-type Preview = {
-  rgba: string;
-  width: number;
-  height: number;
-  crop: [number, number, number, number];
-  projection: Exclude<Projection, "auto">;
-  used: number;
-};
-
 // Separate from background job IDs, including across page reloads.
 let nextPreviewJob = Date.now() * 1000;
 // Serialize across dialog mounts: cancellation finishes before new work starts.
@@ -35,12 +27,12 @@ const PROJECTION_KEY = "immage.panoProjection";
 const CROP_KEY = "immage.panoCrop";
 function loadProjection(): Projection {
   try {
-    const v = localStorage.getItem(PROJECTION_KEY);
+    const v = settings.get(PROJECTION_KEY);
     return PROJECTIONS.some((p) => p.id === v) ? v as Projection : "auto";
   } catch { return "auto"; }
 }
 function loadCrop(): boolean {
-  try { return localStorage.getItem(CROP_KEY) !== "false"; } catch { return true; }
+  try { return settings.get(CROP_KEY) !== "false"; } catch { return true; }
 }
 
 export function PanoDialog({ photos, onRun, onClose }: {
@@ -78,9 +70,7 @@ export function PanoDialog({ photos, onRun, onClose }: {
         if(!active) return;
         started = true;
         try {
-          const result = await invoke<Preview>("pano_preview", {
-            job, imgids: selection.split(",").map(Number), projection,
-          });
+          const result = await commands.panoPreview(job, selection.split(",").map(Number), projection);
           if(active) {
             cache.current.set(key, result);
             setPreview(result);
@@ -96,7 +86,7 @@ export function PanoDialog({ photos, onRun, onClose }: {
     return () => {
       active = false;
       window.clearTimeout(timer);
-      if(started) void invoke("merge_cancel", { job }).catch(() => {});
+      if(started) void commands.mergeCancel(job).catch(() => {});
     };
   }, [can, selection, projection, retry]);
 
@@ -110,11 +100,11 @@ export function PanoDialog({ photos, onRun, onClose }: {
     c.height = h;
     c.getContext("2d")?.putImageData(new ImageData(pixels, preview.width, preview.height), -x, -y);
   }, [preview, crop]);
-  useEffect(() => { invoke<boolean>("pano_can_merge").then(setCan).catch(() => setCan(false)); }, []);
+  useEffect(() => { commands.panoCanMerge().then(setCan).catch(() => setCan(false)); }, []);
   const run = () => {
     try {
-      localStorage.setItem(PROJECTION_KEY, projection);
-      localStorage.setItem(CROP_KEY, String(crop));
+      settings.set(PROJECTION_KEY, projection);
+      settings.set(CROP_KEY, String(crop));
     } catch { /* not kept */ }
     onClose();
     onRun(projection, crop);

@@ -1,0 +1,41 @@
+[
+ {
+  "label": "3 open / history",
+  "reply": {
+   "items": [
+    {
+     "default_enabled": true,
+     "enabled": true,
+     "fixed": true,
+     "label": null,
+     "masked": false,
+     "name": "input color profile",
+     "op": "colorin",
+     "priority": 0
+    },
+    {
+     "default_enabled": true,
+     "enabled": true,
+     "fixed": true,
+     "label": null,
+     "masked": false,
+     "name": "output color profile",
+     "op": "colorout",
+     "priority": 0
+    },
+    {
+     "default_enabled": true,
+     "enabled": true,
+     "fixed": true,
+     "label": null,
+     "masked": false,
+     "name": "display encoding",
+     "op": "gamma",
+     "priority": 0
+    }
+   ],
+   "ms": 0.0,
+   "ok": true
+  }
+ }
+]

@@ -73,6 +73,9 @@ Click a card's title to fold or unfold it. See [Library](library.md) and
 - The zoom slider in the toolbar below the filmstrip zooms from a quarter
   of fit to 400%. Double-click it for fit or 100%.
 - Drag the photo to pan.
+- Hold Space and drag to pan a zoomed-in photo in any tool, without changing
+  spots or masks. Space does nothing at fit, so it does nothing in Crop, which
+  always shows the whole photo.
 - Once a photo has opened, and again each time you stop editing, Immage
   renders it at 100% in the background, so the first zoom in shows it at
   once. Zoomed in, it renders the fitted view the same way, ready for
@@ -174,6 +177,8 @@ system:
 
 **Help > User Guide** opens this guide on the
 [Immage website](https://immage.photo/guide/) in your browser.
+**Help > Create Support Bundle…** saves a scrubbed .zip of diagnostics for a
+bug report; see [Troubleshooting](troubleshooting.md#support-bundle).
 
 On Windows and Linux, click a menu to open it. While one is open, moving the
 pointer over another menu opens that one. The arrow keys move through the

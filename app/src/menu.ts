@@ -6,6 +6,8 @@
 // from MENUS. shortcuts are in the Mac notation of Shortcuts.tsx; keys()
 // renders them per platform
 
+import type { NativeItem, NativeMenu } from "./commands";
+
 export type ActionId =
   | "import" | "add-folder" | "export" | "print" | "quit"
   | "undo" | "redo" | "cut" | "copy" | "paste" | "select-all"
@@ -16,7 +18,7 @@ export type ActionId =
   | "label-red" | "label-yellow" | "label-green" | "label-blue" | "reject"
   | "zoom-in" | "zoom-out" | "zoom-toggle" | "fullscreen-preview" | "grid" | "before-after" | "compare"
   | "hide-panels" | "clipping" | "next-scope" | "info-overlay" | "canvas" | "soft-proof" | "perf-overlay"
-  | "shortcuts" | "user-guide" | "about";
+  | "shortcuts" | "user-guide" | "support-bundle" | "about";
 
 export type Platform = "mac" | "other";
 export type Role = "about" | "services" | "hide" | "hideOthers" | "showAll" | "quit" | "closeWindow" | "cut" | "copy" | "paste" | "minimize" | "zoom" | "fullscreen";
@@ -38,7 +40,7 @@ export const ACTION_IDS: readonly ActionId[] = [
   "label-red", "label-yellow", "label-green", "label-blue", "reject",
   "zoom-in", "zoom-out", "zoom-toggle", "fullscreen-preview", "grid", "before-after", "compare",
   "hide-panels", "clipping", "next-scope", "info-overlay", "canvas", "soft-proof", "perf-overlay",
-  "shortcuts", "user-guide", "about",
+  "shortcuts", "user-guide", "support-bundle", "about",
 ];
 
 const item = (id: ActionId, label: string, shortcut?: string, platform?: Platform): MenuItem =>
@@ -129,6 +131,7 @@ export const MENUS: Menu[] = [
     label: "Help", items: [
       item("shortcuts", "Keyboard Shortcuts", "⌘/"),
       item("user-guide", "User Guide"),
+      item("support-bundle", "Create Support Bundle…"),
       sep("other"), item("about", "About Immage", undefined, "other"),
     ],
   },
@@ -175,12 +178,7 @@ export function nativeAccel(shortcut: string): string | undefined {
   return [...parts, m[2]].join("+");
 }
 
-export type NativeItem =
-  | { type: "item"; id: string; label: string; accel?: string }
-  | { type: "separator" }
-  | { type: "submenu"; label: string; items: NativeItem[] }
-  | { type: "predefined"; role: Role };
-export type NativeMenu = { label: string; items: NativeItem[] };
+export type { NativeItem, NativeMenu };
 
 const native = (m: MenuItem): NativeItem => {
   switch (m.kind) {

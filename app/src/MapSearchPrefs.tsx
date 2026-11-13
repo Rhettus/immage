@@ -2,7 +2,7 @@
 // Copyright (C) 2026 the Immage authors
 
 import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { commands } from "./commands";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { PrefCard, PrefRow } from "./PrefsUI";
 
@@ -14,7 +14,7 @@ export function MapSearchPrefs() {
 
   async function refresh() {
     try {
-      setHasKey(await invoke<boolean>("map_search_key_status"));
+      setHasKey(await commands.mapSearchKeyStatus());
       setError("");
     } catch (e) {
       setHasKey(null);
@@ -29,7 +29,7 @@ export function MapSearchPrefs() {
     setBusy(true);
     setError("");
     try {
-      await invoke("map_search_key_save", { key: key.trim() });
+      await commands.mapSearchKeySave(key.trim());
       setKey("");
       await refresh();
     } catch (e) {
@@ -41,7 +41,7 @@ export function MapSearchPrefs() {
     setBusy(true);
     setError("");
     try {
-      await invoke("map_search_key_remove");
+      await commands.mapSearchKeyRemove();
       setKey("");
       await refresh();
     } catch (e) {

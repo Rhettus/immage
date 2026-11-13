@@ -5,15 +5,15 @@
 // model whose unpack was cut short keeps its config.json, so it passes
 // ai_model_ensure and never loads; the engine's "cannot load the '<id>'
 // model" then downloads it again, once, and the command runs again
-import { invoke } from "@tauri-apps/api/core";
+import { commands } from "./commands";
 
 export async function withModel<T>(id: string, run: () => Promise<T>): Promise<T> {
-  await invoke("ai_model_ensure", { id });
+  await commands.aiModelEnsure(id);
   try {
     return await run();
   } catch (e) {
     if (!String(e).includes(`cannot load the '${id}' model`)) throw e;
-    await invoke("ai_model_reinstall", { id });
+    await commands.aiModelReinstall(id);
     return run();
   }
 }

@@ -1,0 +1,5 @@
+[
+ {"path":"/photos/2024/IMG_0001.CR3","filename":"IMG_0001.CR3","rating":4,"rejected":false,"labels":2,"edited":true,"width":8192,"height":5464,"exif":{"maker":"Canon","model":"EOS R5","lens":"RF 50mm F1.8","exposure":0.004,"aperture":2.8,"iso":400,"focal_length":50,"exposure_bias":0,"focus_distance":0,"datetime":"2024:03:05 14:07:09"}},
+ {"path":"/photos/2024/IMG_0001.JPG","filename":"IMG_0001.JPG","rating":0,"rejected":false,"labels":0,"edited":false,"width":6000,"height":4000,"exif":{"maker":"Canon","model":"EOS R5","lens":"RF 50mm F1.8","exposure":0.004,"aperture":2.8,"iso":400,"focal_length":50,"exposure_bias":0,"focus_distance":0,"datetime":"2024:03:05 14:07:09"}},
+ {"path":"/photos/2024/scan.TIF","filename":"scan.TIF","rating":1,"rejected":true,"labels":0,"edited":false,"width":3000,"height":2000,"exif":{"maker":"","model":"","lens":"n/a","exposure":0,"aperture":0,"iso":0,"focal_length":0,"exposure_bias":0,"focus_distance":0,"datetime":"","file_datetime":"2023:11:11 09:00:00"}}
+]

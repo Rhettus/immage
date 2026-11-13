@@ -22,6 +22,7 @@ fn unix_ms() -> u128 {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn perf_resources_start() -> Result<(), String> {
     let mut recording = RECORDING.lock().map_err(|e| e.to_string())?;
     if std::env::var("IMMAGE_BENCH_RESOURCES").as_deref() == Ok("0") {
@@ -37,6 +38,7 @@ pub fn perf_resources_start() -> Result<(), String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn perf_resources_stop() -> Result<Value, String> {
     let recording = RECORDING.lock().map_err(|e| e.to_string())?.take()
         .ok_or("no resource recording running")?;

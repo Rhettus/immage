@@ -10,6 +10,36 @@ Preferences. Warnings, current values and restart notices stay visible.
 ![Preferences, General tab](images/preferences-general.png)
 <!-- screenshot: Preferences > General -->
 
+## Where settings are kept
+
+Everything you set in Immage is saved in one file, `settings.json`, in the app
+data folder:
+
+| Platform | Location |
+| --- | --- |
+| Linux | `~/.local/share/app.immage/settings.json` (or `$XDG_DATA_HOME/app.immage/settings.json` when `XDG_DATA_HOME` is set) |
+| macOS | `~/Library/Application Support/app.immage/settings.json` |
+| Windows | `%APPDATA%\app.immage\settings.json` |
+
+Development builds use `build/app-runtime/settings.json` in the checkout.
+
+The file holds your preferences, library folders and the last photo in each,
+panel layout and sizes, export and print settings, themes, the tour and splash
+state, and the performance HUD. It is kept apart from the web view's own
+storage, so it survives a reset of that storage. To keep it with your presets,
+looks and keywords, use **Backup** under General (see [Backup](#backup)), or
+copy the file while Immage is closed.
+
+On the first start of this version, Immage copies settings from the web view's
+storage into `settings.json`. That storage is left as it was, so an older
+version of Immage still finds its own settings.
+
+Edit `settings.json` only with Immage closed. Immage writes its settings while
+it runs and overwrites any change made to the file during that time. If the
+file is damaged, Immage moves it aside as `settings.json.corrupt-<time>` and
+starts with default settings. To start with defaults on purpose, see
+[Troubleshooting](troubleshooting.md#resetting-settings).
+
 ## General
 
 **Workspace**
@@ -112,6 +142,49 @@ Preferences. Warnings, current values and restart notices stay visible.
 **Startup**
 
 - **Quick start guide**: the short tour when Immage opens.
+
+### Backup
+
+**Backup** in Preferences > General has two buttons. Both work on one .zip
+file that you choose.
+
+**Back Up…** saves the parts you choose, each listed with its size. Only the
+parts that exist are offered:
+
+- **Preferences & library**: all of your settings, the same as in
+  `settings.json`.
+- **Edit presets** and **Export presets**: your Develop and export presets.
+- **Looks**: the looks in your looks folder, counted with their size.
+- **Edit In plugins**: your plugin list.
+- **Keywords & darktable data**: the keywords and darktable's library data.
+
+The file is named **Immage Backup YYYY-MM-DD.zip** by default. Photos and their
+XMP sidecars are never included: they are your files, so back them up with your
+photos. API keys for Immich and map search stay in the system keychain and are
+not in a backup, so enter them again on another computer.
+
+**Restore…** opens a backup. It shows the date and the version of Immage that
+made it, and lists only the parts the backup holds. Choose the parts to
+restore:
+
+- The chosen parts **replace** the current ones; parts you do not choose are
+  left alone.
+- Before anything is replaced, Immage keeps copies of the current files in
+  `backups/pre-restore-<date-time>/` in the app data folder (the same folder as
+  `settings.json`). The three newest copies are kept, so you can undo a restore
+  by putting the files back with Immage closed.
+- A backup made by a newer Immage shows a warning. A backup in a format this
+  version cannot read is refused with a message to update Immage.
+- A backup that is damaged or holds unexpected files is refused, and nothing
+  is changed.
+- After a restore the window reloads. Restoring **Keywords & darktable data**
+  also restarts the photo engine. Restored darktable memory and GPU settings
+  take effect when the engine next starts.
+- **Edit In plugins**: the programs the plugins open are not restored, so a
+  backup cannot choose a program for Immage to run. A plugin that is already
+  set up on this computer keeps its program. Any other plugin in the backup is
+  listed without one, so choose its program again under Plugins (see
+  [Edit In](edit-in.md)).
 
 ## Performance
 
@@ -266,8 +339,8 @@ performance; results still vary by system.
     Presence, in Adjustments and in a mask's Presence group. Both show the
     same area. Use the point picker, then click the photo to choose it;
     Escape cancels. Turning it off stops loupe rendering.
-  - **Shared-memory frames**, **Drag drafts at the screen's scale**, **Frame
-    cache**, **Thumbnail memory** and **Read ahead**, described below.
+  - **Shared-memory frames**, **Drag drafts at the screen's scale** and
+    **Read ahead**, described below.
 - **Shared-memory frames** (Windows and Linux): hands each frame to the
   window in memory both share, rather than copying it. On by default; turn
   it off only to compare the two in the GUI benchmark.
@@ -290,27 +363,32 @@ scale**; zoomed-in frames still use the full webview resolution.
 
 **Memory**
 
-- **darktable memory**: how much of this computer's memory darktable may
-  take for its pipes and caches. **Small** keeps to about an eighth, for
+- **Memory**: how much memory Immage's caches use in total, from this
+  computer's memory: the render caches, the views of the photo already
+  shown (so zooming back out or going back to a view seen before shows it
+  at once, without a render) and the library's thumbnails (past their share,
+  those scrolled out of sight longest are let go and read from the disk
+  cache again). **Small** is about an eighth of the computer's memory, for
   working beside other large programs, though more of each edit is then
-  worked out again; **Default** about half; **Large** about two thirds,
-  for when Immage is the only large program running. It applies once
-  Immage starts again: **Relaunch** saves the photo and restarts. Whatever
-  the level, after 20 seconds without an edit, and sooner when the computer
-  runs short of memory, darktable gives most of its cache memory back; the
-  next edit takes about as long as one made without the pause.
-- **Frame cache**: memory for the views of the photo already shown, so
-  zooming back out or going back to a view seen before shows it at once,
-  without a render. A view at 100% is about 30 MB on a 4K screen and 45 MB
-  on a 5K one. 512 MB on a 4K screen or larger, 256 MB on a smaller one.
-- **Thumbnail memory**: for the library's thumbnails. Past it, those
-  scrolled out of sight longest are let go and read from the disk cache
-  again when you scroll back. A thumbnail takes about 1 MB, so the
-  default, 1 GB, holds some 900.
+  worked out again; **Default** about half; **Large** about two thirds, for
+  when Immage is the only large program running. A 32 GB computer
+  therefore keeps more than an 8 GB one. Under the buttons the setting
+  shows the sizes it gives views and thumbnails. Views and thumbnails
+  follow a change at once; the render caches apply once Immage starts
+  again: **Relaunch** saves the photo and restarts. Whatever the level,
+  each render cache shrinks back to its limit as soon as a frame is done,
+  and they are emptied only when the computer runs short of memory; a
+  pause does not empty them, so the next edit takes about as
+  long as one made without the pause. When the computer runs short of
+  memory Immage also lets go of views already shown and of thumbnails
+  scrolled out of sight (the photo on screen and the visible thumbnails
+  stay); they are rendered or read again if you go back to them.
 - **Read ahead**: how many photos have their raws decoded while you edit,
   in the direction you last stepped, so the arrow keys open them without
   waiting for the decode. Up to three are decoded at once. Each holds its
   raw in memory, about 50 MB for a 24-megapixel photo. One by default.
+  Reading ahead pauses while an export runs and while the computer is
+  short of memory.
 - **Read ahead both ways**: as many photos behind the open one too, for
   stepping back. Off by default.
 
@@ -397,8 +475,15 @@ photo's starting point: they don't mark it as edited.
   Off by default; the amount starts at +1.
 - **Apply Auto** (Auto Tone): runs Basic's **Auto** once a raw has
   rendered. Off by default.
-- **Apply preset**: **Default** gives a raw lens corrections; JPEGs get
-  nothing. Or **None**, or any preset.
+- **Apply preset**: the starting edits for new raw photos. **Default** gives
+  them lens corrections. Or **None**, or any preset. JPEGs, TIFFs and other
+  non-raw photos get nothing, unless **Also apply to JPEGs** is on.
+- **Also apply to JPEGs**: gives new non-raw photos the preset too, without
+  its Lens Corrections, which the camera has done already, or settings that
+  need a raw, such as Capture Sharpening and Remove Hot Pixels. You can still
+  turn those on by hand. The built-in **Default** preset stays raw-only. Off
+  by default. Both settings also apply when you paste settings onto photos
+  not yet edited.
 - **Save current settings…**: makes a preset from the open photo, with only
   the settings you tick.
 - **Keywords for edited photos**: keywords a photo gets once you edit it,
@@ -424,23 +509,25 @@ shows dropdowns so you can pick one per tool,
 under separate collapsible **Global** and **Masks** sections. For example,
 use AgX for global Contrast and contrast equalizer for masks. With **Focus mode**
 on, opening one section closes the other; Alt-click keeps both open. With it off,
-sections open independently, and Alt-click opens one on its own. Global offers:
+sections open independently, and Alt-click opens one on its own. Tools are
+listed by panel, in the order of their sliders. Global offers:
 
+- **Black & White**: color calibration, or the color equalizer
 - **Contrast**: AgX (or sigmoid on a photo started under it), color balance
   rgb, or contrast equalizer, which replaces the slider with a curve editor
-- **Blacks**: AgX (or sigmoid), or exposure
-- **Saturation**: AgX (or sigmoid), color balance rgb, or saturation curve,
-  which replaces the slider with saturation and brilliance curves
-- **Clarity**: contrast & texture, or local contrast
-- **Texture**: contrast & texture, or diffuse or sharpen
 - **Highlights and Shadows**: the tone equalizer, or shadows and
   highlights
-- **Black & White**: color calibration, or the color equalizer
+- **Blacks**: AgX (or sigmoid), or exposure
+- **Texture**: contrast & texture, or diffuse or sharpen
+- **Clarity**: contrast & texture, or local contrast
+- **Saturation**: AgX (or sigmoid), color balance rgb, or saturation curve,
+  which replaces the slider with saturation and brilliance curves
 - **Sharpening**: sharpen, or diffuse or sharpen
 
-**Masks** independently offers Contrast (color balance rgb or contrast equalizer),
-Highlights and Shadows, Saturation (color balance rgb or saturation curve),
-Clarity, Texture and Sharpening. Modules without
+**Masks** independently offers, in the order of a mask's sliders, Contrast
+(color balance rgb or contrast equalizer), Highlights and Shadows, Texture,
+Clarity, Saturation (color balance rgb or saturation curve) and Sharpening.
+Modules without
 alternatives are also listed. The same choice is available from the icon
 beside each tool's name in the panels; its **Set as default** writes the
 choice here (see [darktable modules](darktable.md)). Existing mask adjustments keep their modules;

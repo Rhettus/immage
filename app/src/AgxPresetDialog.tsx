@@ -2,7 +2,6 @@
 // Copyright (C) 2026 the Immage authors
 
 import { useEffect, useRef, useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
 import { PROFILE_GROUPS } from "./manifest";
 import { loadNewPhotosProfile } from "./profileDefault";
 import { addAgxProfiles, deleteAgxProfiles, findAgxPresets, DELETE_AGX_PRESET_EVENT, LOAD_AGX_PRESET_EVENT, useAgxProfiles, userProfiles,
@@ -41,22 +40,18 @@ function AgxPresetDialog({ mode, ready, onPick, onClose }: { mode: "load" | "del
     [name, options.filter(([, value]) => !deleting.includes(value))] as [string, [string, number][]]);
   const replacementValid = replacement !== null && replacements.some(([, opts]) => opts.some(([, v]) => v === replacement));
 
-  const search = async (file?: string) => {
+  const search = async (pick = false) => {
     setBusy(true); setError("");
     try {
-      const list = await findAgxPresets(file);
+      const list = await findAgxPresets(pick);
+      if (!list) return;
       setFound(list);
       setChosen(new Set(list.map((_, i) => i)));
-      if (!list.length) setError(file ? "No AgX preset in this file." : "No AgX presets of your own in darktable's presets.");
+      if (!list.length) setError(pick ? "No AgX preset in this file." : "No AgX presets of your own in darktable's presets.");
     } catch (e) { setError(String(e)); setFound(null); }
     finally { setBusy(false); }
   };
-  const choose = async () => {
-    try {
-      const file = await open({ multiple: false, filters: [{ name: "darktable preset or style", extensions: ["dtpreset", "dtstyle"] }] });
-      if (typeof file === "string") await search(file);
-    } catch (e) { setError(String(e)); }
-  };
+  const choose = () => search(true);
   const apply = async () => {
     if (!chosen.size) return;
     setBusy(true);

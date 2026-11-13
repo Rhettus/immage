@@ -49,7 +49,8 @@ export async function overlayOpacity(t) {
   await textButton(t, '.prefs-tabs', 'General');
   const slider = await reveal(t, `${ROW} input[type=range]`);
   assert(/55%/.test(await t.driver.observe(s => document.querySelector(s).textContent, ROW)), 'hint shows 55%');
-  const reset = `${ROW} button`;
+  // not the row's "?" help button (.pref-help): Reset sits in the control
+  const reset = `${ROW} .pref-control button`;
   assert((await reveal(t, reset)).disabled, 'Reset disabled at the default');
 
   await t.driver.point(slider.x, slider.y);

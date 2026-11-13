@@ -5,7 +5,7 @@ import { useAgxProfiles } from "./agxProfiles";
 // the app's preferences, behind the rail's gear (⌘,): settings that belong
 // to the app rather than to any photo, a tab per subject
 import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { currentMemoryBudget, refreshMemoryBudget } from "./memoryBudget";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { keys } from "./keys";
 import { AGX_PROFILE_DEFAULT, PROFILE_GROUPS, PROFILE_OPTIONS } from "./manifest";
@@ -19,6 +19,7 @@ import { KeywordChips, KeywordInput, parseKeyword } from "./Keywording";
 import { PluginPrefs } from "./PluginPrefs";
 import type { PluginConfig } from "./plugins";
 import { PrefCard, PrefRow, PrefSwitch } from "./PrefsUI";
+import { BackupDialog, type BackupMode } from "./BackupDialog";
 import { DEFAULT_PRESET_ID, type Preset } from "./Presets";
 import { setTourSeen, tourSeen } from "./Tour";
 import { OVERLAY_COLORS, OVERLAY_OPACITY, type Rgb } from "./masks";
@@ -27,6 +28,8 @@ import { loadScreenScale, screenScale, storeScreenScale, loadSettledScale, store
 import { checkForUpdate, lastChecked, loadAutoCheck, storeAutoCheck, useUpdate, type UpdateState } from "./updates";
 
 import { loadNewPhotosProfile, storeNewPhotosProfile } from "./profileDefault";
+import { settings } from "./settings";
+import { commands, type AccelProvider, type GpuEditState, type Licenses, type ResourceLevels, type WebviewRenderer } from "./commands";
 export { loadNewPhotosProfile } from "./profileDefault";
 
 // EV a new raw's exposure gets on an instance of its own (manifest.ts,
@@ -37,12 +40,12 @@ const EXP_COMP_EV_KEY = "immage.exposureCompNewEv";
 export const EXP_COMP_LIMIT = 3;
 function loadExposureCompEv(): number {
   try {
-    const v = Number(localStorage.getItem(EXP_COMP_EV_KEY) ?? 1);
+    const v = Number(settings.get(EXP_COMP_EV_KEY) ?? 1);
     return Number.isFinite(v) ? Math.max(-EXP_COMP_LIMIT, Math.min(EXP_COMP_LIMIT, v)) : 1;
   } catch { return 1; }
 }
 function loadExposureCompOn(): boolean {
-  try { return localStorage.getItem(EXP_COMP_KEY) === "1"; } catch { return false; }
+  try { return settings.get(EXP_COMP_KEY) === "1"; } catch { return false; }
 }
 // the EV a new raw gets, 0 when off
 export function loadExposureCompNew(): number {
@@ -50,28 +53,36 @@ export function loadExposureCompNew(): number {
 }
 function storeExposureComp(on: boolean, ev: number) {
   try {
-    localStorage.setItem(EXP_COMP_KEY, on ? "1" : "0");
-    localStorage.setItem(EXP_COMP_EV_KEY, String(ev));
+    settings.set(EXP_COMP_KEY, on ? "1" : "0");
+    settings.set(EXP_COMP_EV_KEY, String(ev));
   } catch { /* not kept */ }
 }
 
 // Basic's Auto on a new raw, as Lightroom's "apply auto tone"; off unless set
 const AUTO_TONE_KEY = "immage.autoToneNew";
 export function loadAutoToneNew(): boolean {
-  try { return localStorage.getItem(AUTO_TONE_KEY) === "1"; } catch { return false; }
+  try { return settings.get(AUTO_TONE_KEY) === "1"; } catch { return false; }
+}
+// the new-photos preset on JPEGs and other non-raw photos too; off by default
+const PRESET_NON_RAW_KEY = "immage.newPhotosNonRaw";
+export function loadNewPhotosNonRaw(): boolean {
+  try { return settings.get(PRESET_NON_RAW_KEY) === "1"; } catch { return false; }
+}
+function storeNewPhotosNonRaw(on: boolean) {
+  try { settings.set(PRESET_NON_RAW_KEY, on ? "1" : "0"); } catch { /* not kept */ }
 }
 function storeAutoToneNew(on: boolean) {
-  try { localStorage.setItem(AUTO_TONE_KEY, on ? "1" : "0"); } catch { /* not kept */ }
+  try { settings.set(AUTO_TONE_KEY, on ? "1" : "0"); } catch { /* not kept */ }
 }
 
 // the warning on opening the Negative panel, which says what converting
 // turns off; its own "don't warn me again" box sets the same thing
 const NEG_WARN_KEY = "immage.negWarn";
 export function loadNegWarn(): boolean {
-  try { return localStorage.getItem(NEG_WARN_KEY) !== "0"; } catch { return true; }
+  try { return settings.get(NEG_WARN_KEY) !== "0"; } catch { return true; }
 }
 export function storeNegWarn(on: boolean) {
-  try { localStorage.setItem(NEG_WARN_KEY, on ? "1" : "0"); } catch { /* not kept */ }
+  try { settings.set(NEG_WARN_KEY, on ? "1" : "0"); } catch { /* not kept */ }
 }
 
 // the Input and Working Profiles last chosen in the Negative panel, each on
@@ -80,7 +91,7 @@ export type NegProfiles = { input?: number; working?: number };
 const NEG_PROFILES_KEY = "immage.negProfiles";
 export function loadNegProfiles(): NegProfiles {
   try {
-    const v = JSON.parse(localStorage.getItem(NEG_PROFILES_KEY) ?? "{}");
+    const v = JSON.parse(settings.get(NEG_PROFILES_KEY) ?? "{}");
     const out: NegProfiles = {};
     for (const role of ["input", "working"] as const)
       if (Number.isFinite(v?.[role])) out[role] = v[role];
@@ -88,7 +99,7 @@ export function loadNegProfiles(): NegProfiles {
   } catch { return {}; }
 }
 export function storeNegProfile(role: "input" | "working", id: number) {
-  try { localStorage.setItem(NEG_PROFILES_KEY, JSON.stringify({ ...loadNegProfiles(), [role]: id })); }
+  try { settings.set(NEG_PROFILES_KEY, JSON.stringify({ ...loadNegProfiles(), [role]: id })); }
   catch { /* not kept */ }
 }
 
@@ -98,11 +109,11 @@ export function storeNegProfile(role: "input" | "working", id: number) {
 export type NegativeExportFormat = "dng" | "tiff";
 const NEG_EXPORT_KEY = "immage.negativeExportFormat";
 export function loadNegativeExportFormat(): NegativeExportFormat {
-  try { return localStorage.getItem(NEG_EXPORT_KEY) === "tiff" ? "tiff" : "dng"; }
+  try { return settings.get(NEG_EXPORT_KEY) === "tiff" ? "tiff" : "dng"; }
   catch { return "dng"; }
 }
 export function storeNegativeExportFormat(format: NegativeExportFormat) {
-  try { localStorage.setItem(NEG_EXPORT_KEY, format); } catch { /* not kept */ }
+  try { settings.set(NEG_EXPORT_KEY, format); } catch { /* not kept */ }
 }
 
 // keywords a photo gets once Immage saves it as edited, and loses when it is
@@ -111,12 +122,12 @@ export function storeNegativeExportFormat(format: NegativeExportFormat) {
 const EDITED_KEYWORDS_KEY = "immage.editedKeywords";
 export function loadEditedKeywords(): string[] {
   try {
-    const v = JSON.parse(localStorage.getItem(EDITED_KEYWORDS_KEY) ?? "[]");
+    const v = JSON.parse(settings.get(EDITED_KEYWORDS_KEY) ?? "[]");
     return Array.isArray(v) ? v.filter((k) => typeof k === "string" && k) : [];
   } catch { return []; }
 }
 function storeEditedKeywords(v: string[]) {
-  try { localStorage.setItem(EDITED_KEYWORDS_KEY, JSON.stringify(v)); } catch { /* not kept */ }
+  try { settings.set(EDITED_KEYWORDS_KEY, JSON.stringify(v)); } catch { /* not kept */ }
 }
 
 // the copyright and creator a photo gets once Immage saves it as edited,
@@ -125,13 +136,13 @@ const EDITED_META_KEY = "immage.editedMeta";
 export type EditedMeta = { rights: string; creator: string };
 export function loadEditedMeta(): EditedMeta {
   try {
-    const v = JSON.parse(localStorage.getItem(EDITED_META_KEY) ?? "null");
+    const v = JSON.parse(settings.get(EDITED_META_KEY) ?? "null");
     return { rights: typeof v?.rights === "string" ? v.rights : "",
              creator: typeof v?.creator === "string" ? v.creator : "" };
   } catch { return { rights: "", creator: "" }; }
 }
 function storeEditedMeta(v: EditedMeta) {
-  try { localStorage.setItem(EDITED_META_KEY, JSON.stringify(v)); } catch { /* not kept */ }
+  try { settings.set(EDITED_META_KEY, JSON.stringify(v)); } catch { /* not kept */ }
 }
 
 // the workspace: the viewer's canvas, and Lightroom's solo mode, where
@@ -141,31 +152,31 @@ export type Canvas = "dark" | "gray" | "white";
 export const CANVASES: readonly Canvas[] = ["dark", "gray", "white"];
 const OPEN_GENERATED_KEY = "immage.openGenerated";
 export function loadOpenGenerated(): boolean {
-  try { return localStorage.getItem(OPEN_GENERATED_KEY) !== "0"; } catch { return true; }
+  try { return settings.get(OPEN_GENERATED_KEY) !== "0"; } catch { return true; }
 }
 export function storeOpenGenerated(on: boolean) {
-  try { localStorage.setItem(OPEN_GENERATED_KEY, on ? "1" : "0"); } catch { /* not kept */ }
+  try { settings.set(OPEN_GENERATED_KEY, on ? "1" : "0"); } catch { /* not kept */ }
 }
 const LOUPE_KEY = "immage.loupe";
 export function loadLoupe(): boolean {
   try {
-    const v = localStorage.getItem(LOUPE_KEY);
+    const v = settings.get(LOUPE_KEY);
     return v === null ? PROFILES[loadPreview()].loupe : v === "1";
   } catch { return false; }
 }
 export function storeLoupe(on: boolean) {
-  try { localStorage.setItem(LOUPE_KEY, on ? "1" : "0"); } catch { /* not kept */ }
+  try { settings.set(LOUPE_KEY, on ? "1" : "0"); } catch { /* not kept */ }
 }
 const CANVAS_KEY = "immage.canvas";
 const FOCUS_MODE_KEY = "immage.focusMode";
 export function loadCanvas(): Canvas {
   try {
-    const v = localStorage.getItem(CANVAS_KEY);
+    const v = settings.get(CANVAS_KEY);
     return CANVASES.find((c) => c === v) ?? "dark";
   } catch { return "dark"; }
 }
 export function storeCanvas(v: Canvas) {
-  try { localStorage.setItem(CANVAS_KEY, v); } catch { /* not kept */ }
+  try { settings.set(CANVAS_KEY, v); } catch { /* not kept */ }
 }
 // the masks' overlay on the photo: one of OVERLAY_COLORS or the custom
 // color, which is kept while a preset is chosen; darktable's yellow unless set
@@ -173,14 +184,14 @@ export type OverlayColor = { pick: keyof typeof OVERLAY_COLORS | "custom"; custo
 const OVERLAY_COLOR_KEY = "immage.overlayColor";
 export function loadOverlayColor(): OverlayColor {
   try {
-    const v = JSON.parse(localStorage.getItem(OVERLAY_COLOR_KEY) ?? "null");
+    const v = JSON.parse(settings.get(OVERLAY_COLOR_KEY) ?? "null");
     return { pick: v?.pick === "red" || v?.pick === "custom" ? v.pick : "yellow",
              custom: /^#[0-9a-f]{6}$/i.test(v?.custom) ? v.custom : "#33ccff",
              opacity: Number.isFinite(v?.opacity) ? Math.min(100, Math.max(10, Math.round(v.opacity))) : OVERLAY_OPACITY };
   } catch { return { pick: "yellow", custom: "#33ccff", opacity: OVERLAY_OPACITY }; }
 }
 export function storeOverlayColor(v: OverlayColor) {
-  try { localStorage.setItem(OVERLAY_COLOR_KEY, JSON.stringify(v)); } catch { /* not kept */ }
+  try { settings.set(OVERLAY_COLOR_KEY, JSON.stringify(v)); } catch { /* not kept */ }
 }
 export function maskOverlayRgb(v: OverlayColor): Rgb {
   if (v.pick !== "custom") { const [r, g, b] = OVERLAY_COLORS[v.pick]; return [r, g, b, v.opacity]; }
@@ -196,13 +207,13 @@ export type GuideColor = { pick: keyof typeof GUIDE_COLORS | "custom"; custom: s
 const GUIDE_COLOR_KEY = "immage.guideColor";
 export function loadGuideColor(): GuideColor {
   try {
-    const v = JSON.parse(localStorage.getItem(GUIDE_COLOR_KEY) ?? "null");
+    const v = JSON.parse(settings.get(GUIDE_COLOR_KEY) ?? "null");
     return { pick: v?.pick in GUIDE_COLORS || v?.pick === "custom" ? v.pick : "white",
              custom: /^#[0-9a-f]{6}$/i.test(v?.custom) ? v.custom : "#33ccff" };
   } catch { return { pick: "white", custom: "#33ccff" }; }
 }
 export function storeGuideColor(v: GuideColor) {
-  try { localStorage.setItem(GUIDE_COLOR_KEY, JSON.stringify(v)); } catch { /* not kept */ }
+  try { settings.set(GUIDE_COLOR_KEY, JSON.stringify(v)); } catch { /* not kept */ }
 }
 export function guideRgb(v: GuideColor): Rgb {
   if (v.pick !== "custom") return GUIDE_COLORS[v.pick];
@@ -213,22 +224,22 @@ export function guideRgb(v: GuideColor): Rgb {
 // scrolls past it, as in Lightroom, and an edit cannot change by accident
 const SLIDER_SCROLL_KEY = "immage.sliderScroll";
 export function loadSliderScroll(): boolean {
-  try { return localStorage.getItem(SLIDER_SCROLL_KEY) === "1"; } catch { return false; }
+  try { return settings.get(SLIDER_SCROLL_KEY) === "1"; } catch { return false; }
 }
 function storeSliderScroll(on: boolean) {
-  try { localStorage.setItem(SLIDER_SCROLL_KEY, on ? "1" : "0"); } catch { /* not kept */ }
+  try { settings.set(SLIDER_SCROLL_KEY, on ? "1" : "0"); } catch { /* not kept */ }
 }
 // how far a wheel click moves a slider, as a share of its range; 1% unless set
 const SLIDER_SCROLL_STEP_KEY = "immage.sliderScrollStep";
 const SCROLL_STEPS = [0.0025, 0.005, 0.01, 0.02, 0.04];
 export function loadSliderScrollStep(): number {
   try {
-    const v = Number(localStorage.getItem(SLIDER_SCROLL_STEP_KEY));
+    const v = Number(settings.get(SLIDER_SCROLL_STEP_KEY));
     return SCROLL_STEPS.includes(v) ? v : 0.01;
   } catch { return 0.01; }
 }
 function storeSliderScrollStep(v: number) {
-  try { localStorage.setItem(SLIDER_SCROLL_STEP_KEY, String(v)); } catch { /* not kept */ }
+  try { settings.set(SLIDER_SCROLL_STEP_KEY, String(v)); } catch { /* not kept */ }
 }
 
 // how much the photo gives up while it is being edited, for speed. a profile
@@ -244,13 +255,13 @@ const PREVIEW_KEY = "immage.preview";
 const DRAG_DRAFTS_KEY = "immage.dragDrafts";
 export function loadPreview(): Preview {
   try {
-    const v = localStorage.getItem(PREVIEW_KEY);
+    const v = settings.get(PREVIEW_KEY);
     if (v === "quality" || v === "balanced" || v === "performance") return v;
-    return localStorage.getItem(DRAG_DRAFTS_KEY) === "0" ? "quality" : "balanced";
+    return settings.get(DRAG_DRAFTS_KEY) === "0" ? "quality" : "balanced";
   } catch { return "balanced"; }
 }
 export function storePreview(v: Preview) {
-  try { localStorage.setItem(PREVIEW_KEY, v); } catch { /* not kept */ }
+  try { settings.set(PREVIEW_KEY, v); } catch { /* not kept */ }
 }
 
 // what choosing a profile sets (draft time is the same for all three). a
@@ -265,13 +276,13 @@ export const PROFILES: Record<Preview, { size: number; smallest: number; target:
 export const BALANCED_PREVIEW_SIZES: readonly number[] = [0.5, 0.75, 1];
 const BALANCED_SIZE_KEY = "immage.balancedPreviewSize";
 export function loadBalancedPreviewSize(): number {
-  try { const size = Number(localStorage.getItem(BALANCED_SIZE_KEY));
-    return BALANCED_PREVIEW_SIZES.includes(size) && localStorage.getItem(BALANCED_SIZE_KEY) !== null
+  try { const size = Number(settings.get(BALANCED_SIZE_KEY));
+    return BALANCED_PREVIEW_SIZES.includes(size) && settings.get(BALANCED_SIZE_KEY) !== null
       ? size : PROFILES[loadPreview()].size; }
   catch { return PROFILES.balanced.size; }
 }
 export function storeBalancedPreviewSize(v: number) {
-  try { localStorage.setItem(BALANCED_SIZE_KEY, String(v)); } catch { /* not kept */ }
+  try { settings.set(BALANCED_SIZE_KEY, String(v)); } catch { /* not kept */ }
 }
 
 // how long darktable may take on a drag's draft before the next is smaller,
@@ -283,57 +294,22 @@ const DRAFT_TARGET_KEY = "immage.draftTarget";
 const DRAFT_SMALLEST_KEY = "immage.draftSmallest";
 export function loadDraftTarget(): number {
   try {
-    const v = Number(localStorage.getItem(DRAFT_TARGET_KEY));
+    const v = Number(settings.get(DRAFT_TARGET_KEY));
     return (DRAFT_TARGETS as readonly number[]).includes(v) ? v : 60;
   } catch { return 60; }
 }
 export function storeDraftTarget(v: number) {
-  try { localStorage.setItem(DRAFT_TARGET_KEY, String(v)); } catch { /* not kept */ }
+  try { settings.set(DRAFT_TARGET_KEY, String(v)); } catch { /* not kept */ }
 }
 export function loadDraftSmallest(): number {
   try {
-    const v = Number(localStorage.getItem(DRAFT_SMALLEST_KEY));
-    return (DRAFT_SMALLEST as readonly number[]).includes(v) && localStorage.getItem(DRAFT_SMALLEST_KEY) !== null
+    const v = Number(settings.get(DRAFT_SMALLEST_KEY));
+    return (DRAFT_SMALLEST as readonly number[]).includes(v) && settings.get(DRAFT_SMALLEST_KEY) !== null
       ? v : PROFILES[loadPreview()].smallest;
   } catch { return PROFILES.balanced.smallest; }
 }
 export function storeDraftSmallest(v: number) {
-  try { localStorage.setItem(DRAFT_SMALLEST_KEY, String(v)); } catch { /* not kept */ }
-}
-
-// memory for the full frames the viewer keeps (Session.frames), so zooming
-// back out or returning to a view seen before needs no render. a 100% frame
-// is the viewer's size: some 30 MB on a 4K screen, 45 on a 5K, against 10
-// on a 2K, so the smallest fits only a few on a large screen
-export const FRAME_CACHE_MB = [256, 512, 1024, 2048] as const;
-const FRAME_CACHE_KEY = "immage.frameCache";
-function defaultFrameCacheMb(): number {
-  const dpr = window.devicePixelRatio || 1;
-  return screen.width * dpr * screen.height * dpr >= 3840 * 2160 ? 512 : 256;
-}
-export function loadFrameCacheMb(): number {
-  try {
-    const v = Number(localStorage.getItem(FRAME_CACHE_KEY));
-    return (FRAME_CACHE_MB as readonly number[]).includes(v) ? v : defaultFrameCacheMb();
-  } catch { return defaultFrameCacheMb(); }
-}
-export function storeFrameCacheMb(v: number) {
-  try { localStorage.setItem(FRAME_CACHE_KEY, String(v)); } catch { /* not kept */ }
-}
-
-// memory for the library's thumbnails (library.ts, ThumbLoader); past it,
-// those off screen longest go, and come back from the disk cache. one is
-// about 600 x 450, 1 MB, so 1 GB holds some 900
-export const THUMB_MEMORY_MB = [256, 512, 1024, 2048, 4096] as const;
-const THUMB_MEMORY_KEY = "immage.thumbMemory";
-export function loadThumbMemoryMb(): number {
-  try {
-    const v = Number(localStorage.getItem(THUMB_MEMORY_KEY));
-    return (THUMB_MEMORY_MB as readonly number[]).includes(v) ? v : 1024;
-  } catch { return 1024; }
-}
-function storeThumbMemoryMb(v: number) {
-  try { localStorage.setItem(THUMB_MEMORY_KEY, String(v)); } catch { /* not kept */ }
+  try { settings.set(DRAFT_SMALLEST_KEY, String(v)); } catch { /* not kept */ }
 }
 
 // how many photos have their raws decoded ahead (App.tsx, prefetchNext):
@@ -345,30 +321,28 @@ const READ_AHEAD_KEY = "immage.readAhead";
 export type ReadAhead = { count: number; both: boolean };
 export function loadReadAhead(): ReadAhead {
   try {
-    const v = JSON.parse(localStorage.getItem(READ_AHEAD_KEY) ?? "null");
+    const v = JSON.parse(settings.get(READ_AHEAD_KEY) ?? "null");
     const count = Number(v?.count ?? 1);
     return { count: Number.isInteger(count) && count >= 0 && count <= READ_AHEAD_MAX ? count : 1, both: !!v?.both };
   } catch { return { count: 1, both: false }; }
 }
 export function storeReadAhead(v: ReadAhead) {
-  try { localStorage.setItem(READ_AHEAD_KEY, JSON.stringify(v)); } catch { /* not kept */ }
+  try { settings.set(READ_AHEAD_KEY, JSON.stringify(v)); } catch { /* not kept */ }
 }
 
 // darktable's resource level, kept by the Rust side for the engine's next
 // start (engine.rs, resource_level)
 type Resources = "small" | "default" | "large";
 type RendererMode = "auto" | "mesa" | "nvidia";
-type WebviewRenderer = { running: RendererMode; next: RendererMode; active: string;
-  external: boolean; mesa: boolean; nvidia: boolean };
 
 // a RAW+JPEG pair as one photo in the filmstrip, rated, rejected and
 // deleted together; off, each file stands alone
 const STACK_PAIRS_KEY = "immage.stackPairs";
 export function loadStackPairs(): boolean {
-  try { return localStorage.getItem(STACK_PAIRS_KEY) === "1"; } catch { return false; }
+  try { return settings.get(STACK_PAIRS_KEY) === "1"; } catch { return false; }
 }
 export function storeStackPairs(on: boolean) {
-  try { localStorage.setItem(STACK_PAIRS_KEY, on ? "1" : "0"); } catch { /* not kept */ }
+  try { settings.set(STACK_PAIRS_KEY, on ? "1" : "0"); } catch { /* not kept */ }
 }
 
 // Lightroom's Auto Hide & Show for the side panels, and which are pinned
@@ -377,43 +351,43 @@ const AUTO_HIDE_KEY = "immage.autoHide";
 const PINS_KEY = "immage.pins";
 export type Pins = { left: boolean; right: boolean; strip: boolean };
 export function loadAutoHide(): boolean {
-  try { return localStorage.getItem(AUTO_HIDE_KEY) === "1"; } catch { return false; }
+  try { return settings.get(AUTO_HIDE_KEY) === "1"; } catch { return false; }
 }
 export function storeAutoHide(on: boolean) {
-  try { localStorage.setItem(AUTO_HIDE_KEY, on ? "1" : "0"); } catch { /* not kept */ }
+  try { settings.set(AUTO_HIDE_KEY, on ? "1" : "0"); } catch { /* not kept */ }
 }
 export function loadPins(): Pins {
   try {
-    const v = JSON.parse(localStorage.getItem(PINS_KEY) ?? "null");
+    const v = JSON.parse(settings.get(PINS_KEY) ?? "null");
     return { left: !!v?.left, right: !!v?.right, strip: !!v?.strip };
   } catch { return { left: false, right: false, strip: false }; }
 }
 export function storePins(p: Pins) {
-  try { localStorage.setItem(PINS_KEY, JSON.stringify(p)); } catch { /* not kept */ }
+  try { settings.set(PINS_KEY, JSON.stringify(p)); } catch { /* not kept */ }
 }
 
 // on unless turned off
 export function loadFocusMode(): boolean {
-  try { return localStorage.getItem(FOCUS_MODE_KEY) !== "0"; } catch { return true; }
+  try { return settings.get(FOCUS_MODE_KEY) !== "0"; } catch { return true; }
 }
 export function storeFocusMode(on: boolean) {
-  try { localStorage.setItem(FOCUS_MODE_KEY, on ? "1" : "0"); } catch { /* not kept */ }
+  try { settings.set(FOCUS_MODE_KEY, on ? "1" : "0"); } catch { /* not kept */ }
 }
 
 // AI acceleration: the GPU provider and device AI upscaling runs on, as
 // darktable's own setting; the engine lists what this computer has
-export type AccelProvider = { id: string; name: string; devices: { id: number; name: string }[] };
+export type { AccelProvider } from "./commands";
 export type AccelChoice = { provider: string; device: number };
 const ACCEL_KEY = "immage.aiAccel";
 export function loadAccel(): AccelChoice {
   try {
-    const v = JSON.parse(localStorage.getItem(ACCEL_KEY) ?? "null");
+    const v = JSON.parse(settings.get(ACCEL_KEY) ?? "null");
     if (v && typeof v.provider === "string") return { provider: v.provider, device: Number(v.device ?? -1) };
   } catch { /* the default */ }
   return { provider: "auto", device: -1 };
 }
 export function storeAccel(v: AccelChoice) {
-  try { localStorage.setItem(ACCEL_KEY, JSON.stringify(v)); } catch { /* not kept */ }
+  try { settings.set(ACCEL_KEY, JSON.stringify(v)); } catch { /* not kept */ }
 }
 
 export type PrefsTab = "photos" | "modules" | "immich" | "plugins" | "general" | "performance" | "about";
@@ -469,8 +443,6 @@ function updateHint(state: UpdateState, app?: string): string {
     }
   }
 }
-type Licenses = { gpl: string | null; libraries: string | null; librariesPath: string | null; notices: string | null };
-
 // a license text over Preferences, taking Escape before Preferences does
 function LicenseText({ title, text, onClose }: { title: string; text: string; onClose: () => void }) {
   useEffect(() => {
@@ -530,6 +502,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   const [showTour, setShowTour] = useState(() => !tourSeen());
   const [profile, setProfile] = useState(loadNewPhotosProfile);
   const [autoToneNew, setAutoToneNew] = useState(loadAutoToneNew);
+  const [presetNonRaw, setPresetNonRaw] = useState(loadNewPhotosNonRaw);
   const [negWarn, setNegWarn] = useState(loadNegWarn);
   const [negativeExportFormat, setNegativeExportFormat] = useState(loadNegativeExportFormat);
   const [expCompOn, setExpCompOn] = useState(loadExposureCompOn);
@@ -558,7 +531,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   };
   // every keyword ever used, for the suggestions
   const [knownKeywords, setKnownKeywords] = useState<string[]>([]);
-  useEffect(() => { invoke<string[]>("keywords").then(setKnownKeywords).catch(() => {}); }, []);
+  useEffect(() => { commands.keywords().then(setKnownKeywords).catch(() => {}); }, []);
   const [sliderScroll, setSliderScroll] = useState(loadSliderScroll);
   const [scrollStep, setScrollStep] = useState(loadSliderScrollStep);
   const [preview, setPreview] = useState(loadPreview);
@@ -568,8 +541,6 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   const [settledAtScreen, setSettledAtScreen] = useState(loadSettledScale);
   const [draftTarget, setDraftTarget] = useState(loadDraftTarget);
   const [draftSmallest, setDraftSmallest] = useState(loadDraftSmallest);
-  const [frameCache, setFrameCache] = useState(loadFrameCacheMb);
-  const [thumbMemory, setThumbMemory] = useState(loadThumbMemoryMb);
   const [readAhead, setReadAhead] = useState(loadReadAhead);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   // choosing a profile sets what it stands for, which Advanced can then change
@@ -590,28 +561,33 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
     setReadAhead(next);
     storeReadAhead(next);
   };
-  const [resources, setResources] = useState<{ running: Resources; next: Resources } | null>(null);
-  useEffect(() => { invoke<{ running: Resources; next: Resources }>("darktable_resources").then(setResources).catch(() => {}); }, []);
+  const [resources, setResources] = useState<ResourceLevels | null>(null);
+  useEffect(() => { commands.darktableResources().then(setResources).catch(() => {}); }, []);
+  const [budget, setBudget] = useState(currentMemoryBudget);
+  useEffect(() => { void refreshMemoryBudget().then(setBudget); }, []);
+  const gb = (mb: number) => mb >= 1024 ? `${Math.round(mb / 102.4) / 10} GB` : `${mb} MB`;
   const chooseResources = (level: Resources) => {
     if (!resources) return;
-    invoke("darktable_resources_set", { level }).then(() => setResources({ ...resources, next: level })).catch(() => {});
+    commands.darktableResourcesSet(level)
+      .then(() => { setResources({ ...resources, next: level }); return refreshMemoryBudget(); })
+      .then((b) => setBudget(b)).catch(() => {});
   };
-  const [gpuEdits, setGpuEdits] = useState<{ running: boolean; next: boolean } | null>(null);
-  useEffect(() => { invoke<{ running: boolean; next: boolean }>("gpu_edits").then(setGpuEdits).catch(() => {}); }, []);
+  const [gpuEdits, setGpuEdits] = useState<GpuEditState | null>(null);
+  useEffect(() => { commands.gpuEdits().then(setGpuEdits).catch(() => {}); }, []);
   const chooseGpuEdits = (on: boolean) => {
     if (!gpuEdits) return;
-    invoke("gpu_edits_set", { on }).then(() => setGpuEdits({ ...gpuEdits, next: on })).catch(() => {});
+    commands.gpuEditsSet(on).then(() => setGpuEdits({ ...gpuEdits, next: on })).catch(() => {});
   };
   const [renderer, setRenderer] = useState<WebviewRenderer | null>(null);
   const [rendererError, setRendererError] = useState("");
   const [rendererSaving, setRendererSaving] = useState(false);
-  useEffect(() => { invoke<WebviewRenderer | null>("webview_renderer").then(setRenderer).catch(() => {}); }, []);
+  useEffect(() => { commands.webviewRenderer().then(setRenderer).catch(() => {}); }, []);
   const chooseRenderer = async (mode: RendererMode) => {
     if (!renderer) return;
     setRendererSaving(true);
     setRendererError("");
     try {
-      await invoke("webview_renderer_set", { mode });
+      await commands.webviewRendererSet(mode);
       setRenderer({ ...renderer, next: mode });
     } catch (e) { setRendererError(String(e)); }
     finally { setRendererSaving(false); }
@@ -625,10 +601,11 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   const [about, setAbout] = useState<{ app: string; commit: string | null; darktable: string } | null>(null);
   const update = useUpdate();
   const [autoUpdate, setAutoUpdate] = useState(loadAutoCheck);
-  useEffect(() => { invoke<{ app: string; commit: string | null; darktable: string }>("about").then(setAbout).catch(() => {}); }, []);
+  useEffect(() => { commands.about().then(setAbout).catch(() => {}); }, []);
   const [licenses, setLicenses] = useState<Licenses | null>(null);
-  useEffect(() => { invoke<Licenses>("licenses").then(setLicenses).catch(() => {}); }, []);
+  useEffect(() => { commands.licenses().then(setLicenses).catch(() => {}); }, []);
   const [viewing, setViewing] = useState<{ title: string; text: string } | null>(null);
+  const [backup, setBackup] = useState<BackupMode | null>(null);
   useEffect(() => {
     // a dialog opened over this one takes its own Escape
     const esc = (e: KeyboardEvent) => {
@@ -700,7 +677,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                 </PrefCard>
                 <PrefCard title="Preset">
                   <PrefRow label="Apply preset" summary="Starting edits for new photos."
-                           hint="Default gives a raw lens corrections; JPEGs get nothing">
+                           hint="applied to new raw photos; Default gives them lens corrections">
                     <select className="field" value={newPhotos ?? ""} onChange={(e) => onNewPhotos(e.target.value || null)}>
                       <option value="">None</option>
                       {[...presets].sort((a, b) => Number(b.id === DEFAULT_PRESET_ID) - Number(a.id === DEFAULT_PRESET_ID)
@@ -708,6 +685,11 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                         <option key={p.id} value={p.id}>{p.name}</option>
                       ))}
                     </select>
+                  </PrefRow>
+                  <PrefRow label="Also apply to JPEGs" summary="Apply the preset to new non-raw photos too."
+                           hint="JPEGs, TIFFs and other non-raw photos get the preset without Lens Corrections, which the camera did already, or settings that need a raw">
+                    <PrefSwitch checked={presetNonRaw} disabled={!newPhotos}
+                                onChange={(on) => { setPresetNonRaw(on); storeNewPhotosNonRaw(on); }} />
                   </PrefRow>
                   <PrefRow label="New preset" summary="Save selected settings from this photo." hint="from the open photo, with only the settings you tick">
                     <button className="btn small" disabled={!onSaveCurrent} onClick={() => onSaveCurrent?.()}
@@ -839,6 +821,13 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                   <PrefSwitch checked={showTour} onChange={(on) => { setShowTour(on); setTourSeen(!on); }} />
                 </PrefRow>
               </PrefCard>
+              <PrefCard title="Backup">
+                <PrefRow label="Backup" summary="Save or restore settings, presets, looks and keywords."
+                         hint="one .zip holding the parts you choose: preferences and library, edit and export presets, looks, Edit In plugins and keywords; restoring replaces the chosen parts and keeps a copy of what it replaced">
+                  <button className="btn small" onClick={() => setBackup("create")}>Back Up…</button>
+                  <button className="btn small" onClick={() => setBackup("restore")}>Restore…</button>
+                </PrefRow>
+              </PrefCard>
               </>
             )}
             {tab === "performance" && (
@@ -966,28 +955,6 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                     <PrefSwitch checked={settledAtScreen} onChange={(on) => { setSettledAtScreen(on); storeSettledScale(on); }} />
                   </PrefRow>
                 )}
-                <PrefRow label="Frame cache" summary="Memory for recently viewed frames."
-                         hint="memory for the frames the viewer keeps, so zooming back out or returning to a view seen before shows it without a render. a 100% frame is about 30 MB on a 4K screen and 45 MB on a 5K one">
-                  <div className="segmented small">
-                    {FRAME_CACHE_MB.map((mb) => (
-                      <button key={mb} className={frameCache === mb ? "active" : ""}
-                              onClick={() => { setFrameCache(mb); storeFrameCacheMb(mb); }}>
-                        {mb >= 1024 ? `${mb / 1024} GB` : `${mb} MB`}
-                      </button>
-                    ))}
-                  </div>
-                </PrefRow>
-                <PrefRow label="Thumbnail memory" summary="Memory for library thumbnails."
-                         hint="for the library's thumbnails; past it, those scrolled out of sight longest are let go, and read from the disk cache again when scrolled back. a thumbnail takes about 1 MB">
-                  <div className="segmented small">
-                    {THUMB_MEMORY_MB.map((mb) => (
-                      <button key={mb} className={thumbMemory === mb ? "active" : ""}
-                              onClick={() => { setThumbMemory(mb); storeThumbMemoryMb(mb); }}>
-                        {mb >= 1024 ? `${mb / 1024} GB` : `${mb} MB`}
-                      </button>
-                    ))}
-                  </div>
-                </PrefRow>
                 <PrefRow label="Read ahead" summary="Decode nearby RAW photos in advance."
                          hint="photos whose raws are decoded while you edit, in the direction you last stepped, so the arrow keys open them without the decode (some 300 ms for a compressed raw). each holds its raw in memory, about 50 MB for 24 megapixels">
                   <div className="segmented small">
@@ -1006,13 +973,12 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                 </Collapse>
               </PrefCard>
               <PrefCard title="Memory">
-                <PrefRow label="darktable memory" summary={`${{ small: "About ⅛ of system memory.", default: "About ½ of system memory.", large: "About ⅔ of system memory." }[resources?.next ?? "default"]}${resources && resources.next !== resources.running ? " Relaunch to apply." : ""}`}
-                         hint={`${{
-                           small: "darktable keeps to about an eighth of this computer's memory, for working beside other large programs; more of each edit is worked out again",
-                           default: "darktable may take about half of this computer's memory for its pipes and caches",
-                           large: "about two thirds, for when Immage is the only large program running",
-                         }[resources?.next ?? "default"]}${resources && resources.next !== resources.running
-                           ? ". applies once Immage starts again" : ""}`}>
+                <PrefRow label="Memory" summary={`${{ small: "About ⅛ of system memory.", default: "About ½ of system memory.", large: "About ⅔ of system memory." }[resources?.next ?? "default"]}${budget ? ` About ${gb(budget.frameCacheMb)} for views, ${gb(budget.thumbMemoryMb)} for thumbnails.` : ""}${resources && resources.next !== resources.running ? " Relaunch to apply." : ""}`}
+                         hint={`how much memory Immage's caches use in total: the render caches, the views of the photo already shown and the library's thumbnails. ${{
+                           small: "Small keeps to about an eighth of this computer's memory, for working beside other large programs; more of each edit is worked out again",
+                           default: "Default uses about half of this computer's memory",
+                           large: "Large uses about two thirds, for when Immage is the only large program running",
+                         }[resources?.next ?? "default"]}. the render part applies once Immage starts again; views and thumbnails follow at once`}>
                   <div className="segmented small">
                     {([["Small", "small"], ["Default", "default"], ["Large", "large"]] as const).map(([label, v]) => (
                       <button key={v} className={resources?.next === v ? "active" : ""} disabled={!resources}
@@ -1130,6 +1096,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
           </div>
         </div>
       </div>
+      {backup && <BackupDialog mode={backup} onClose={() => setBackup(null)} />}
       {viewing && <LicenseText title={viewing.title} text={viewing.text} onClose={() => setViewing(null)} />}
     </div>
   );

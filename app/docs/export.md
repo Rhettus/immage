@@ -44,7 +44,9 @@ For a folder:
   default.
 - **If a file exists**: **Ask me**, **Add a number**, **Replace it** or
   **Skip it**. **Ask me** offers **Use Unique Name**, **Overwrite**, **Skip**
-  or **Cancel**, and can apply your answer to every clash.
+  or **Cancel**, and can apply your answer to every clash. An existing file
+  is replaced only once the new one is complete, so an export that fails,
+  such as on a full disk, leaves it as it was.
 - **Show in Finder when done**.
 
 For Immich, choose an album, or **New album…**. A photo Immich already has
@@ -73,13 +75,14 @@ be called.
 
 ## Format & Size
 
-- **Format**: **JPEG**, **TIFF**, **PNG** or **WebP**.
-- **Quality**: 10-100 (JPEG and WebP).
-- **Bit depth**: 8 or 16 bit (TIFF and PNG).
+- **Format**: **JPEG**, **TIFF**, **PNG**, **WebP** or **JPEG XL**.
+- **Quality**: 10-100 (JPEG, WebP and JPEG XL). For JPEG XL, 100 is lossless.
+- **Bit depth**: 8 or 16 bit (TIFF and PNG), or 8, 10, 12 or 16 bit (JPEG XL).
 - **Size**: **Original size**, **Fit long edge to…** a number of pixels,
   **Fixed canvas…**, or **AI upscale 2×** / **4×**.
 - **Color space**: **sRGB**, **Adobe RGB (1998)**, **Display P3** or
-  **ProPhoto RGB**.
+  **ProPhoto RGB**. A file in any space other than sRGB carries its color
+  profile, so other apps show its colors correctly.
 
 **Fixed canvas** makes every file exactly the width and height you give,
 filled with the canvas color. Each photo, with any frame from Frame &
@@ -151,7 +154,8 @@ several selected, the dialog opens on Selected.
 
 Click **Export**. The dialog closes and the export goes on while you
 edit: the bottom left of the photo shows how far it has got, and **Stop**
-ends it after the photo it is on. Each photo is exported as it was when
+ends it after the photo it is on. Your editing comes first, so the export
+slows down while you work on a photo and picks up again when you stop. Each photo is exported as it was when
 you clicked Export, even if you edit it meanwhile. When the export is
 done, the same place says what happened. That goes away by itself if
 nothing went wrong; otherwise **OK** dismisses it.

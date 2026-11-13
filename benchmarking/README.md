@@ -69,7 +69,7 @@ The search is bounded, and reports when none of the tested setups meets the
 targets. Results apply to this photo, edit, display and window size.
 
 The options table also allows measured comparisons of cached detail previews,
-transport, screen scale, frame cache, GPU edits, darktable memory and available
+transport, screen scale, GPU edits, memory level and available
 window renderers. Changes requiring a relaunch save the tuning session and
 resume verification after the photo reopens. Read ahead and the Immich
 originals cache use **Record navigation workload** before and after a change:
@@ -243,7 +243,7 @@ tone mapper's input, so Auto fails on them in the app too; they are skipped.
 
 ## The result format
 
-`results/<date>_<git sha>_<host>/run.json`:
+`results/<date>_<git sha>_<machine id>/run.json`:
 
 ```text
 env      machine, OS, git sha/branch/dirty, build type, view sizes, repeat, scenarios,
@@ -270,10 +270,12 @@ carries a per-step summary. From 0.25.0 a report's `transport` says how
 frames reached the page: `invoke` (in `render`'s reply) or `shared` (a
 WebView2 shared buffer, Windows only). With `shared`, ipc also covers
 posting the frame and the page's copy out of the buffer. From 0.32.0 a
-report's `machine` names the computer it ran on: host, OS, CPU, cores,
+report's `machine` describes the computer it ran on: OS, CPU, cores,
 memory, and `id`, a hash of the system's own machine id (macOS
 IOPlatformUUID, Windows MachineGuid, Linux /etc/machine-id). Engine runs
-carry the same hash as `env.machine_id`. The dashboard's GUI tab can
+carry the same hash as `env.machine_id`. The host name is never recorded; where the
+system gives no id, a random one is made once per install and reused. Older reports
+with a `host` field still load; it is ignored. The dashboard's GUI tab can
 pick one machine's reports. Each system has its own machine id, so a
 computer that boots Windows and two Linux distributions shows as three
 machines.

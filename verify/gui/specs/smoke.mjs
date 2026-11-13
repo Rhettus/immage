@@ -5,15 +5,20 @@ import { until } from '../support/webdriver.mjs';
 import * as read from '../support/observations.mjs';
 import { Blocked, panel } from '../support/scenario.mjs';
 import { reveal, rangeSelector } from '../support/controls.mjs';
+import { waitSetting } from '../support/settings.mjs';
 
 // A tiling window manager that tiles the splash instead of floating it
 // stretches it over the workspace. The session starts after the splash has
-// closed, so the splash keeps the largest size it was given in localStorage.
+// closed, so the splash keeps the largest size it was given in settings.json.
 export const SPLASH = { width: 640, height: 427 };
-const splashSize = t => t.driver.observe(() => {
-  const m = /^(\d+)x(\d+)$/.exec(localStorage.getItem('immage.splashSize') ?? '');
+// settings.json is written a moment after the splash records its size, so wait
+// for it; null when it never appears
+const splashSize = async t => {
+  let text = null;
+  try { text = await waitSetting(t, 'immage.splashSize', v => v !== null, 'splash size saved to settings.json', 10000); } catch { /* not recorded */ }
+  const m = /^(\d+)x(\d+)$/.exec(text ?? '');
   return m && { width: +m[1], height: +m[2] };
-});
+};
 
 let launchSplash;
 export async function startup(t) {
@@ -78,7 +83,8 @@ export async function settledReset(t, baseline, _edited, label = 'reset') {
   try { reset = await settledPhoto(t, p => meanError(p, baseline) < 1); }
   catch { reset = await settledPhoto(t); }
   const error = meanError(reset, baseline);
-  t.measure({ name: label, photoHash: reset.hash, baselineHash: baseline.hash, meanAbsoluteError: error });
+  t.measure({ name: label, photoHash: reset.hash, baselineHash: baseline.hash, meanAbsoluteError: error,
+    photo: summary(reset), baseline: summary(baseline) });
   assert(error < 1, `${label}: photo mean pixel error ${error} exceeds 1/255`);
   return reset;
 }

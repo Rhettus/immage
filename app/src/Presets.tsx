@@ -7,10 +7,11 @@
 // beside them, looks: darktable styles (film emulations) the engine puts on
 // extra module instances, one look at a time. both can be shared as files
 import { useEffect, useMemo, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { FileDown, Plus, Save, Share, Trash } from "lucide-react";
 import { blacksFromLinear, controlById, panels, type Values } from "./manifest";
+import { commands, type Value } from "./commands";
 import type { Frame } from "./session";
+import { settings } from "./settings";
 
 // rawOnly: applied to raw files only, as Lightroom's import defaults are
 export type Preset = { id: string; name: string; group: string; values: Values; builtin?: boolean;
@@ -23,7 +24,6 @@ export type Look = { name: string; group: string; path: string; user?: boolean }
 // presets to version n + 1, keeping what each one does to a photo. version
 // 1 was the bare list
 const PRESETS_VERSION = 3;
-type PresetsFile = { version: number; presets: Preset[] };
 const mapValues = (presets: Preset[], f: (v: Values) => Values) =>
   presets.map((p) => ({ ...p, values: f(p.values) }));
 const MIGRATIONS: Record<number, (presets: Preset[]) => Preset[]> = {
@@ -43,15 +43,15 @@ const MIGRATIONS: Record<number, (presets: Preset[]) => Preset[]> = {
 };
 
 export async function loadPresets(): Promise<Preset[]> {
-  const raw = await invoke<PresetsFile | Preset[]>("presets_load");
-  let { version, presets } = Array.isArray(raw) ? { version: 1, presets: raw } : raw;
+  const raw = await commands.presetsLoad();
+  let { version, presets } = (Array.isArray(raw) ? { version: 1, presets: raw } : raw) as { version: number; presets: Preset[] };
   if (version > PRESETS_VERSION) throw new Error("presets.json is from a newer Immage");
   for (; version < PRESETS_VERSION; version++) presets = MIGRATIONS[version](presets);
   return presets;
 }
 export const savePresets = (presets: Preset[]) =>
-  invoke("presets_save", { presets: { version: PRESETS_VERSION, presets } satisfies PresetsFile });
-export const loadLooks = () => invoke<Look[]>("looks_list");
+  commands.presetsSave({ version: PRESETS_VERSION, presets: presets as unknown as Value[] });
+export const loadLooks = (): Promise<Look[]> => commands.looksList() as Promise<Look[]>;
 
 // presets as a file to give someone, as the Export dialog's are
 // (exportSettings.ts): its version says which scale the values are on
@@ -95,12 +95,12 @@ const NEW_PHOTOS_KEY = "immage.newPhotosPreset";
 // new photos get Default until Preferences says otherwise; "" is None
 export function loadNewPhotosPreset(): string | null {
   try {
-    const v = localStorage.getItem(NEW_PHOTOS_KEY);
+    const v = settings.get(NEW_PHOTOS_KEY);
     return v === null ? DEFAULT_PRESET_ID : v || null;
   } catch { return DEFAULT_PRESET_ID; }
 }
 export function storeNewPhotosPreset(id: string | null) {
-  try { localStorage.setItem(NEW_PHOTOS_KEY, id ?? ""); } catch { /* not kept */ }
+  try { settings.set(NEW_PHOTOS_KEY, id ?? ""); } catch { /* not kept */ }
 }
 
 // a few to start from, always there and not deletable
@@ -173,7 +173,7 @@ export class PreviewCache {
   }
 }
 
-function Tile({ bitmap }: { bitmap: ImageBitmap | undefined }) {
+export function Tile({ bitmap }: { bitmap: ImageBitmap | undefined }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const c = ref.current;
@@ -188,7 +188,7 @@ function Tile({ bitmap }: { bitmap: ImageBitmap | undefined }) {
 const SHUT_KEY = "immage.presets.shut";
 const loadShut = (groups: string[]) => {
   try {
-    const kept = localStorage.getItem(SHUT_KEY);
+    const kept = settings.get(SHUT_KEY);
     if (kept) return new Set<string>(JSON.parse(kept));
   } catch { /* first run */ }
   return new Set(groups);
@@ -279,7 +279,7 @@ export function PresetsPanel({ presets, looks, look, disabled, preview, onWant, 
     if (!fold.n) return;
     const next = new Set(fold.open ? [] : groups.map((g) => g.title));
     setShut(next);
-    try { localStorage.setItem(SHUT_KEY, JSON.stringify([...next])); } catch { /* not kept */ }
+    try { settings.set(SHUT_KEY, JSON.stringify([...next])); } catch { /* not kept */ }
   }, [fold.n]);
   useEffect(() => { onAnyOpen(groups.some((g) => !shut.has(g.title))); }, [shut, groups]);
   // the tile last clicked, which the tools above act on, as the Export
@@ -311,7 +311,7 @@ export function PresetsPanel({ presets, looks, look, disabled, preview, onWant, 
       n = new Set(s);
       if (n.has(g)) n.delete(g); else n.add(g);
     }
-    try { localStorage.setItem(SHUT_KEY, JSON.stringify([...n])); } catch { /* not kept */ }
+    try { settings.set(SHUT_KEY, JSON.stringify([...n])); } catch { /* not kept */ }
     return n;
   });
 

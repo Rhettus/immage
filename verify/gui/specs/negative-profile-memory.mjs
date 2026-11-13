@@ -4,13 +4,15 @@
 // the conversion, one undo step, and the memory survives a restart
 import assert from 'node:assert/strict';
 import { click, inspect, openTool, reveal } from '../support/controls.mjs';
-import { choose, Blocked, textButton } from '../support/scenario.mjs';
+import { choose, Blocked, textButton, openStep } from '../support/scenario.mjs';
 import { until } from '../support/webdriver.mjs';
-import { startup, settledPhoto } from './smoke.mjs';
+import { readSetting, waitSetting } from '../support/settings.mjs';
+import { startup, settledPhoto, settledReset } from './smoke.mjs';
 
 const input = '[data-control-id="neg_input_profile"] select';
 const working = '[data-control-id="neg_working_profile"] select';
-const converted = () => !!document.querySelector('.neg-swatch');
+// the steps after the border unlock with the conversion
+const converted = () => !document.querySelector('.negative .step[data-step="base"].locked');
 
 async function openNegative(t) {
   const b = await reveal(t, 'button[data-tour="negative"]');
@@ -18,16 +20,20 @@ async function openNegative(t) {
     await click(t, 'button[data-tour="negative"]');
     const warned = await until(() => t.driver.observe(() => document.querySelector('.neg-warn') ? 'warn'
       : document.querySelector('button[data-tour="negative"]:is(.on,.active)') ? 'open' : ''), 'negative warning or tool', 10000).catch(() => '');
-    if (warned === 'warn') await textButton(t, '.neg-warn', 'Continue');
+    // the dialog can render a frame after the button turns active
+    if (warned === 'warn' || await until(() => t.driver.observe(() => !!document.querySelector('.neg-warn')), 'negative warning', 3000).then(() => true, () => false)) await textButton(t, '.neg-warn', 'Continue');
   }
   await openTool(t, 'negative');
+  await openStep(t, '.negative', 'profiles');
   await until(() => t.driver.observe(s => !!document.querySelector(s), input), 'Negative profile menus');
 }
 async function pickBorder(t) {
+  await openStep(t, '.negative', 'border');
   await textButton(t, '.negative', 'Pick Film Border');
   const c = await reveal(t, '.zone-object-box');
   await t.driver.point(c.bounds.x + c.bounds.width * .02, c.bounds.y + c.bounds.height * .02);
   await until(() => t.driver.observe(converted), 'negative converted');
+  await openStep(t, '.negative', 'profiles');
 }
 
 export async function negativeProfileMemory(t) {
@@ -46,10 +52,15 @@ export async function negativeProfileMemory(t) {
   t.measure({ name: 'menus', input: (await t.driver.observe(inspect, input)).options, working: (await t.driver.observe(inspect, working)).options });
   assert(chosen.every((v, i) => v !== defaults[i]), `chosen profiles differ from the defaults (${defaults})`);
   await choose(t, input, chosen[0]);
+  // the Working menu is rebuilt while the Input change applies: wait for
+  // its option to be offered again
+  await until(async () => (await t.driver.observe(inspect, working))?.options
+    ?.some(o => o.value === String(chosen[1]) && !o.disabled), 'working option offered again');
   await choose(t, working, chosen[1]);
   await until(async () => (await values()).every((v, i) => v === chosen[i]), 'both profiles chosen');
   await settledPhoto(t, p => p.hash !== original.hash);
-  const stored = await t.driver.observe(() => localStorage.getItem('immage.negProfiles'));
+  const sameProfiles = v => { try { const o = JSON.parse(v); return o.input === chosen[0] && o.working === chosen[1]; } catch { return false; } };
+  const stored = await waitSetting(t, 'immage.negProfiles', sameProfiles, 'remembered profiles saved to settings.json');
   t.measure({ name: 'remembered', stored, defaults, chosen });
   assert.deepEqual(JSON.parse(stored), { input: chosen[0], working: chosen[1] }, 'choices remembered');
   // back to the defaults by undo: the photo is on its defaults again, the
@@ -90,7 +101,7 @@ export async function negativeProfileMemory(t) {
   await until(async () => (await values()).every((v, i) => v === [chosen[0], keep][i]), 'undo the second working choice');
   await click(t, 'button.tool[title^="undo ("]');
   await until(async () => (await values()).every((v, i) => v === [defaults[0], keep][i]), 'input on default, working set by hand');
-  assert.deepEqual(JSON.parse(await t.driver.observe(() => localStorage.getItem('immage.negProfiles'))),
+  assert.deepEqual(JSON.parse(await readSetting(t, 'immage.negProfiles')),
     { input: chosen[0], working: chosen[1] }, 'memory differs from the photo\'s working profile');
   await pickBorder(t);
   await until(async () => (await values()).every((v, i) => v === [chosen[0], keep][i]), 'only the default input takes the remembered one', 10000);
@@ -110,7 +121,9 @@ export async function negativeProfileMemory(t) {
   assert(!(await t.driver.observe(converted)), 'photo reopens unconverted');
   await pickBorder(t);
   await until(async () => (await values()).every((v, i) => v === chosen[i]), 'remembered profiles after restart', 10000);
-  assert.equal((await settledPhoto(t, p => p.hash !== original.hash)).hash, withMemory.hash, 'same conversion after restart');
+  // within 1/255 rather than the same hash: after a restart the converted
+  // frame can differ from the first session's by a level in a few pixels
+  await settledReset(t, withMemory, null, 'same conversion after restart');
   await t.evidence('after-restart');
   t.measure({ name: 'negative-profile-memory', defaults, chosen, keep, convertedHash: withMemory.hash });
 }

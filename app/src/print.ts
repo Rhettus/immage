@@ -7,7 +7,8 @@
 // layout puts one photo on each page, fitted inside the margins or at a size
 // of its own, at one of nine places; the Cells layout puts many on a page in a
 // grid of cells (a contact sheet by default)
-import { invoke } from "@tauri-apps/api/core";
+import { commands, type Printer as PrinterEntry, type PrintProfile } from "./commands";
+import { settings } from "./settings";
 
 export type Unit = "mm" | "in";
 export type Orientation = "auto" | "portrait" | "landscape";
@@ -19,8 +20,8 @@ export type Margins = { top: number; bottom: number; left: number; right: number
 // a paper, portrait, in millimeters; `name` is what the printer calls it
 export type Paper = { name: string; label: string; width: number; height: number };
 export type Medium = { name: string; label: string };
-export type Profile = { name: string; file: string };
-export type Printer = { name: string; description: string; default: boolean };
+export type Profile = PrintProfile;
+export type Printer = PrinterEntry;
 export type PrinterInfo = {
   resolution: number; margins: Margins; defaultPaper: string; papers: Paper[]; media: Medium[];
 };
@@ -90,7 +91,7 @@ export function defaultPrintSettings(): PrintSettings {
 export function loadPrintSettings(): PrintSettings {
   const d = defaultPrintSettings();
   try {
-    const saved = JSON.parse(localStorage.getItem(KEY) ?? "null");
+    const saved = JSON.parse(settings.get(KEY) ?? "null");
     if (!saved || typeof saved !== "object") return d;
     const size = saved.cellSize && saved.cellSize.width > 0 && saved.cellSize.height > 0 ? saved.cellSize : null;
     return { ...d, ...saved, cellSize: size, margins: { ...d.margins, ...(saved.margins ?? {}) } };
@@ -99,11 +100,11 @@ export function loadPrintSettings(): PrintSettings {
 
 // whether the panel has been used: a first visit picks the default printer
 export function hasPrintSettings(): boolean {
-  try { return localStorage.getItem(KEY) !== null; } catch { return false; }
+  try { return settings.get(KEY) !== null; } catch { return false; }
 }
 
 export function storePrintSettings(s: PrintSettings) {
-  try { localStorage.setItem(KEY, JSON.stringify(s)); } catch { /* not kept */ }
+  try { settings.set(KEY, JSON.stringify(s)); } catch { /* not kept */ }
 }
 
 // a length for the panel, in its unit
@@ -255,7 +256,7 @@ export const sourcePpi = (pixelWidth: number, printedWidthMm: number) =>
 
 // what the engine is sent (print_image in engine/print.c)
 export function printRequest(s: PrintSettings, paper: Paper, l: Layout, title: string, medium: string,
-                             pdf: string | null) {
+                             pdf: boolean) {
   return {
     page: l.page,
     area: l.image,
@@ -264,8 +265,9 @@ export function printRequest(s: PrintSettings, paper: Paper, l: Layout, title: s
     intent: s.intent,
     bpc: s.bpc,
     title,
-    ...(pdf !== null
-      ? { pdf, dpi: s.dpi }
+    // the PDF's path is not sent: Rust asks for it (print_photo, print_sheet)
+    ...(pdf
+      ? { dpi: s.dpi }
       : { printer: s.printer, paper: { name: paper.name, common_name: paper.label, width: paper.width,
                                        height: paper.height }, medium }),
   };
@@ -274,7 +276,7 @@ export function printRequest(s: PrintSettings, paper: Paper, l: Layout, title: s
 // what the engine is sent for the Cells layout (print_sheet in engine/print.c):
 // the pages' boxes and labels in millimeters, from the page's top left
 export function sheetRequest(s: PrintSettings, paper: Paper, l: CellsLayout, photos: SheetPhoto[], title: string,
-                             medium: string, pdf: string | null) {
+                             medium: string, pdf: boolean) {
   return {
     page: l.page,
     profile: s.profile,
@@ -287,19 +289,16 @@ export function sheetRequest(s: PrintSettings, paper: Paper, l: CellsLayout, pho
       // a photo with a name sits at the bottom of its box, so the name is right under it
       ...(slot.label ? { valign: "bottom", label: { ...slot.label, text: photo.name } } : {}),
     }))),
-    ...(pdf !== null
-      ? { pdf, dpi: s.dpi }
+    // the PDF's path is not sent: Rust asks for it (print_photo, print_sheet)
+    ...(pdf
+      ? { dpi: s.dpi }
       : { printer: s.printer, paper: { name: paper.name, common_name: paper.label, width: paper.width,
                                        height: paper.height }, medium }),
   };
 }
 
-type RawInfo = { resolution: number; margins: Margins; default_paper: string;
-                 papers: { name: string; common_name: string; width: number; height: number }[];
-                 media: { name: string; common_name: string }[] };
-
 export async function printerInfo(name: string): Promise<PrinterInfo> {
-  const r = await invoke<RawInfo>("printer_info", { name });
+  const r = await commands.printerInfo(name);
   return {
     resolution: r.resolution, margins: r.margins, defaultPaper: r.default_paper,
     papers: r.papers.map((p) => ({ name: p.name, label: p.common_name || p.name, width: p.width, height: p.height })),
@@ -312,5 +311,5 @@ export type Proof = { mode: ProofMode; profile: string; intent: Intent };
 export const NO_PROOF: Proof = { mode: "off", profile: "", intent: 0 };
 
 export async function applyProof(p: Proof): Promise<boolean> {
-  return invoke<boolean>("softproof", { mode: p.profile ? p.mode : "off", profile: p.profile, intent: p.intent });
+  return commands.softproof(p.profile ? p.mode : "off", p.profile, p.intent);
 }

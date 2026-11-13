@@ -1,0 +1,31 @@
+[
+ {
+  "label": "2 library / paste_batch begin",
+  "reply": {
+   "ms": 0.0,
+   "ok": true,
+   "token": 1
+  }
+ },
+ {
+  "label": "2 library / paste_batch commit",
+  "reply": {
+   "ms": 0.0,
+   "ok": true
+  }
+ },
+ {
+  "label": "2 library / paste_batch undo",
+  "reply": {
+   "ms": 0.0,
+   "ok": true,
+   "updates": [
+    {
+     "edited": false,
+     "error": null,
+     "imgid": 1
+    }
+   ]
+  }
+ }
+]

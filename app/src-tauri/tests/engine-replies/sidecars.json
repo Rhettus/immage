@@ -1,0 +1,13 @@
+[
+ {
+  "label": "2 library / sidecars after copy",
+  "reply": {
+   "files": [
+    "/tmp/immage-fixture/photos/a.tif.xmp",
+    "/tmp/immage-fixture/photos/a_01.tif.xmp"
+   ],
+   "ms": 0.0,
+   "ok": true
+  }
+ }
+]

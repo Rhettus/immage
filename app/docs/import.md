@@ -45,7 +45,10 @@ Immich set up, ones already on the server are marked **In Immich**.
 
 ## 3. Choose where they go
 
-- **Destination**: your library's top folder.
+- **Destination**: your library's top folder. Choose **Browse…** in the list to
+  pick it; the list keeps the last 16 destinations you chose.
+  The importer reads only from cards, drives and folders you chose, and
+  writes only into a destination you chose.
 - The folder template sorts photos into dated folders. The default makes
   `2026/October`. Tokens include `{YYYY}`, `{MMMM}`, `{MM}`, `{DD}`,
   `{camera}` and `{original}`; a `/` makes a subfolder.
@@ -82,4 +85,5 @@ problem never stops an import.
   the standalone Immporter app if you have that too.
   Updating Immage preserves this import history; you do not need to import
   your photos again after an update.
-- Its Immich settings are the same ones as in **Preferences › Immich**.
+- Its Immich settings are the same ones as in **Preferences › Immich**, so
+  the same rules for the API key apply (see [Immich](immich.md)).

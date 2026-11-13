@@ -7,13 +7,12 @@
 // with folders on more than one drive, each drive is a heading over its
 // folders, so a 2026 on the Mac and a 2026 on a NAS are told apart
 import { useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { commands, type SubFolder, type Volume } from "./commands";
 import { NameEdit } from "./MasksPanel";
 import { baseName } from "./paths";
 
-type SubFolder = { name: string; path: string; has_children: boolean };
 // the drive a folder is on (folder_volumes, volumes.rs)
-export type Volume = { path: string; mount: string; name: string; host: string | null; network: boolean; online: boolean };
+export type { Volume };
 
 // points right, and turns down when what it opens opens
 const chevron = (
@@ -49,7 +48,7 @@ export function FolderTree({ roots, volumes, hostNames, folded, current, photo, 
     // Publish each folder as it arrives: a slow or unavailable drive must
     // not hold back the children of another folder the user just expanded.
     for (const p of expanded) {
-      void invoke<SubFolder[]>("list_subfolders", { path: p }).then((list) => {
+      void commands.listSubfolders(p).then((list) => {
         if (stale) return;
         setChildren((old) => {
           const next = new Map(old);

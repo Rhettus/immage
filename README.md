@@ -26,6 +26,8 @@ and Linux. **All builds are alpha; bugs are expected.**
 - Apply presets and film looks, compare edits, and copy settings across photos.
 - Choose the Dark, Darktable Grey or Light interface theme, or import a custom
   color theme.
+- Back up your settings, presets, looks, Edit In plugins and keywords to one
+  file, and restore the parts you choose from it.
 - Add optional Geoapify place-name search to the location map; map tiles and
   manual pin placement work without a search key.
 - Browse folders directly, import from a card with the built-in Immporter,
@@ -56,6 +58,9 @@ Choose your platform on the [Releases page](https://github.com/Rhettus/immage/re
 | Windows | Windows 10 or 11, x64; Windows on ARM through x64 emulation | `-setup.exe` installer |
 | Linux | x86-64 or ARM64, glibc 2.35 or newer (Ubuntu 22.04 and later, including Linux Mint 22.x) | AppImage |
 
+Immage needs at least 8 GB of memory; 16 GB and a GPU with OpenCL are
+recommended. See [System requirements](app/docs/getting-started.md#system-requirements).
+
 The Windows installer offers **Just for me** (under
 `%LOCALAPPDATA%\Programs\Immage`, without administrator permissions) or
 **Everyone on this computer** (under Program Files, requesting permission after
@@ -71,7 +76,7 @@ For Linux launch options, see [Linux setup and troubleshooting](app/docs/prefere
 
 - [User guide](app/docs/README.md): getting started, editing tools and settings.
 - [darktable compatibility and module reference](app/docs/darktable.md).
-- [Troubleshooting and reporting issues](app/docs/troubleshooting.md): diagnostics and the bug report form.
+- [Troubleshooting and reporting issues](app/docs/troubleshooting.md): diagnostics, the support bundle and the bug report form.
 - [Developer docs](app/docs/dev/README.md): building, architecture and contributing to the code.
 - [Credits and licenses](app/docs/credits.md): projects, AI models and map attribution.
 

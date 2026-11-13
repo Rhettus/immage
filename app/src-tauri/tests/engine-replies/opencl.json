@@ -1,0 +1,14 @@
+[
+ {
+  "label": "1 empty / opencl",
+  "reply": {
+   "devices": [],
+   "error_count": 0,
+   "inited": false,
+   "ms": 0.0,
+   "ok": true,
+   "running": false,
+   "stopped": false
+  }
+ }
+]

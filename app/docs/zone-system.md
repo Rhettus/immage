@@ -254,9 +254,9 @@ which always keeps tones in order.
 - Use **Local** for targeted work: texture within one band, one zone in one
   part of the photo, or a change too narrow for placement.
 
-## Advanced
+## Advanced settings
 
-Click **Advanced** at the bottom of the panel for:
+Click the sliders icon in the panel's title row to show:
 
 - **Overlay color**: blue, red, green, yellow or magenta. Choose whichever
   stands out best against the photo.

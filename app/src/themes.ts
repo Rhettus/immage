@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { useSyncExternalStore } from "react";
 import { parseTheme, THEME_TOKENS, validateTheme, type Theme } from './themeValidation';
+import { settings } from "./settings";
 export { parseTheme, THEME_MAX_BYTES, THEME_TOKENS, validateTheme } from './themeValidation';
 export type { Theme } from './themeValidation';
 
@@ -29,7 +30,7 @@ function publish() { applyTheme(); revision++; listeners.forEach(l => l()); if (
 export function loadThemes() {
   custom = []; selected = 'dark';
   try {
-    const saved = JSON.parse(localStorage.getItem(KEY) ?? 'null');
+    const saved = JSON.parse(settings.get(KEY) ?? 'null');
     if (saved && Array.isArray(saved.custom)) for (const entry of saved.custom) {
       try { const { id, ...palette } = entry; if (typeof id !== 'string' || !id.startsWith('custom-') || custom.some(t => t.id === id)) continue; custom.push({ ...validateTheme(palette), id }); } catch { /* skip invalid saved palette */ }
     }
@@ -37,7 +38,7 @@ export function loadThemes() {
   } catch { /* dark fallback */ }
   publish();
 }
-function commit(next: ThemeEntry[], id: string) { localStorage.setItem(KEY, JSON.stringify({ custom: next, selected: id })); custom = next; selected = id; publish(); }
+function commit(next: ThemeEntry[], id: string) { settings.set(KEY, JSON.stringify({ custom: next, selected: id })); custom = next; selected = id; publish(); }
 export function selectTheme(id: string) { if (!themeEntries().some(t => t.id === id)) throw Error('Unknown theme'); commit(custom, id); }
 export function importTheme(text: string) {
   const theme = parseTheme(text), base = theme.name; let n = 2;

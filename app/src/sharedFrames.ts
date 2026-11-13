@@ -9,8 +9,9 @@
 // (main.rs, shared_frame); on Linux render wrote it to /dev/shm, and the
 // window's web extension reads it in (main.rs, shm_frame; webext/frames.c)
 import { perf } from "./perf";
-import { invoke } from "@tauri-apps/api/core";
+import { commands, type RenderRequest } from "./commands";
 import { normalizeRenderArgs } from "./renderDimensions";
+import { settings } from "./settings";
 
 type SharedBufferEvent = { getBuffer(): ArrayBuffer; additionalData: { frame?: number } | null };
 type WebView2 = {
@@ -33,10 +34,10 @@ export const sharedFramesAvailable = (!!webview && typeof webview.releaseBuffer 
 
 const KEY = "immage.sharedFrames";
 export function loadSharedFrames(): boolean {
-  try { return localStorage.getItem(KEY) !== "0"; } catch { return true; }
+  try { return settings.get(KEY) !== "0"; } catch { return true; }
 }
 export function storeSharedFrames(on: boolean) {
-  try { localStorage.setItem(KEY, on ? "1" : "0"); } catch { /* not kept */ }
+  try { settings.set(KEY, on ? "1" : "0"); } catch { /* not kept */ }
   failed = false;
 }
 
@@ -72,14 +73,14 @@ webview?.addEventListener("sharedbufferreceived", (e) => {
 
 // render's reply, with the frame put back behind the header when it came by
 // shared memory
-export async function renderFrame(args: Record<string, unknown>): Promise<ArrayBuffer> {
+export async function renderFrame(args: RenderRequest): Promise<ArrayBuffer> {
   // Only the fit view has a preview-size cap. Zoomed viewport requests can be
   // larger, so this boundary enforces u32 dimensions without changing them.
   args = normalizeRenderArgs(args, 0xFFFF_FFFF);
-  const event = (name: string, data?: Record<string, unknown>) => perf.event(name, { requestId:args.diagnosticRequest, ...data });
-  const call = async (request: Record<string, unknown>) => {
+  const event = (name: string, data?: Record<string, unknown>) => perf.event(name, { requestId:args.diagnosticRequest ?? undefined, ...data });
+  const call = async (request: RenderRequest) => {
     const started = performance.now();
-    const reply = await invoke<ArrayBuffer>("render", request);
+    const reply = await commands.render(request);
     const h = new DataView(reply);
     event("transport.reply", {
       elapsedMs: performance.now() - started, bytes: reply.byteLength,

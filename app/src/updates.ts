@@ -8,7 +8,8 @@
 // About both show it
 import { useSyncExternalStore } from "react";
 import { check, type Update } from "@tauri-apps/plugin-updater";
-import { relaunch } from "@tauri-apps/plugin-process";
+import { relaunch as processRelaunch } from "@tauri-apps/plugin-process";
+import { settings } from "./settings";
 
 export type UpdateState =
   | { kind: "idle" }
@@ -32,14 +33,14 @@ const SKIP_KEY = "immage.updates.skip";
 
 // on unless turned off; it asks GitHub
 export function loadAutoCheck(): boolean {
-  try { return localStorage.getItem(AUTO_KEY) !== "0"; } catch { return true; }
+  try { return settings.get(AUTO_KEY) !== "0"; } catch { return true; }
 }
 export function storeAutoCheck(on: boolean) {
-  try { localStorage.setItem(AUTO_KEY, on ? "1" : "0"); } catch { /* not kept */ }
+  try { settings.set(AUTO_KEY, on ? "1" : "0"); } catch { /* not kept */ }
 }
 // when a check last reached GitHub, in ms since 1970, or null
 export function lastChecked(): number | null {
-  try { return Number(localStorage.getItem(LAST_KEY)) || null; } catch { return null; }
+  try { return Number(settings.get(LAST_KEY)) || null; } catch { return null; }
 }
 
 let state: UpdateState = { kind: "idle" };
@@ -68,10 +69,10 @@ export async function checkForUpdate(asked: boolean) {
   set({ kind: "checking" });
   try {
     const update = await check({ timeout: 20000 });
-    try { localStorage.setItem(LAST_KEY, String(Date.now())); } catch { /* not kept */ }
+    try { settings.set(LAST_KEY, String(Date.now())); } catch { /* not kept */ }
     if (old && old !== update) void old.close().catch(() => {});
     let skipped: string | null = null;
-    try { skipped = localStorage.getItem(SKIP_KEY); } catch { /* none */ }
+    try { skipped = settings.get(SKIP_KEY); } catch { /* none */ }
     if (!update) {
       set({ kind: "current" });
     } else if (!asked && update.version === skipped) {
@@ -102,7 +103,7 @@ export function later() {
 
 export function skipVersion() {
   if (!("update" in state) || !state.update) return;
-  try { localStorage.setItem(SKIP_KEY, state.update.version); } catch { /* not kept */ }
+  try { settings.set(SKIP_KEY, state.update.version); } catch { /* not kept */ }
   later();
 }
 
@@ -143,4 +144,9 @@ export async function installUpdate(prepare: () => Promise<void>) {
   }
 }
 
-export { relaunch };
+// settings are sent to Rust in batches; a relaunch must not drop the last one
+// (the Performance Tuner saves its pending result just before relaunching)
+export async function relaunch() {
+  await settings.flush();
+  await processRelaunch();
+}

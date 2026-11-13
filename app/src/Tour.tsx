@@ -9,6 +9,7 @@
 // and points an arrow at each member from its own note
 import { useEffect, useLayoutEffect, useState } from "react";
 import { keys } from "./keys";
+import { settings } from "./settings";
 
 type Callout = { target: string; title: string; body: string };
 type Step = { target?: string; title: string; body: string; callouts?: Callout[] };
@@ -251,7 +252,7 @@ function SketchArrow({ from, to, seed }: { from: { x: number; y: number }; to: {
 }
 
 const TOUR_KEY = "immage.tour.done";
-export const tourSeen = () => { try { return localStorage.getItem(TOUR_KEY) === "1"; } catch { return false; } };
+export const tourSeen = () => { try { return settings.get(TOUR_KEY) === "1"; } catch { return false; } };
 export const setTourSeen = (seen: boolean) => {
-  try { if (seen) localStorage.setItem(TOUR_KEY, "1"); else localStorage.removeItem(TOUR_KEY); } catch { /* as it was */ }
+  try { if (seen) settings.set(TOUR_KEY, "1"); else settings.remove(TOUR_KEY); } catch { /* as it was */ }
 };

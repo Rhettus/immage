@@ -110,6 +110,12 @@ for **B&W Mix**.
   +100. Whites moves the top of the tone mapper's curve, and under AgX
   also brightens or darkens the brightest tones ahead of it; Blacks moves
   the black point, and works the same at any Exposure.
+- **Highlight Brilliance** (AgX only, among Basic's advanced settings),
+  0% to 200%, sets how much of that brightening Whites adds; 100% is the
+  usual amount.
+  Lower it when bright areas such as snow or clouds clip as you raise
+  Exposure or Whites: at 0% Whites only reshapes the top of the curve, so
+  you can brighten further before anything reaches pure white.
 
 **Presence**
 
@@ -122,9 +128,13 @@ Clarity and Texture run on **contrast & texture** by default, where each
 shows **Medium details** and **Fine details** (-1 to 5) instead of a single
 slider; choose local contrast or diffuse or sharpen in Preferences › Modules
 for the slider.
-**Advanced** reveals Coarse details (-1 to 5), Base detail level (1–15), Halo
-control (-10 to 10), Noise bias (0–1), Shadows and Highlights (-5 to 5).
-Clarity and Texture use separate instances, including on masks.
+Each panel with advanced settings has a sliders icon in its title row. It is
+off by default and blends into the title; click it to show the panel's
+advanced settings inline, and click again to hide them. Each panel remembers
+its setting. A dot on the icon means a hidden setting has been changed.
+For Clarity and Texture these are Coarse details (-1 to 5), Base detail level
+(1–15), Halo control (-10 to 10), Noise bias (0–1), and Shadows and Highlights
+(-5 to 5). Clarity and Texture use separate instances, including on masks.
 
 ## Contrast equalizer
 
@@ -231,11 +241,13 @@ to 0.
 ## Detail
 
 Enable **Detail loupe** in Preferences › General › Workspace for compact
-100% previews above Detail and Presence (a mask's Presence group shows
-one too). Their point pickers select the same
-area. Detail and grain drags preview that area directly; with the loupe off,
-they keep the visible image at full preview resolution. Release updates the
-full visible view. Tone and contrast controls retain whole-image previews.
+100% previews above Detail and Presence (a mask's Presence group shows one
+too). Their point pickers select the same area. Detail, noise reduction,
+sharpening, Dehaze and grain drags, a mask's included, preview that area
+directly. With the loupe off they keep the visible image at full preview
+resolution; at Fit that is the settled preview's resolution, so a drag shows
+the detail you get on release. Release updates the full visible view. Tone and
+contrast controls retain whole-image previews.
 
 **Sharpening** (darktable's sharpen, or diffuse or sharpen)
 
@@ -267,7 +279,8 @@ part, which takes a moment.
 Immage writes a new DNG beside the raw, named `<name>_raw-denoise.dng`.
 This takes up to a minute, and the model downloads on first use. It runs
 in the background: you go on editing, this photo or another, while the
-bottom left of the photo shows it under way. When it's done, **Open**
+bottom left of the photo shows it under way. Your editing comes first, so
+it takes longer while you work. When it's done, **Open**
 there opens the DNG. The DNG starts with the raw's edit as it was when
 you clicked Denoise, and the first time it opens, Profiled Denoise's
 Luminance and Color go to 0, since the AI took the noise out. It is a

@@ -23,7 +23,8 @@ const span = (a: number, b: number): ZoneRange => [Math.min(a, b), Math.max(a, b
 const inRange = (k: number, r: ZoneRange | null) => !!r && k >= r[0] && k <= r[1];
 
 export function ZoneSystem({ data, unplaced, stale, error, disabled, pinned, onPin, onHover, transition, cover,
-                             reach, overlay, onOverlay, onReset, children }: {
+                             reach, overlay, onOverlay, onReset, advanced, children }: {
+  advanced: boolean;           // the Advanced toggle in the panel title
   cover: Float32Array | null;  // the part of the photo the pinned zones are narrowed to
   reach: number | null;        // the placement's transition, zones, while Placement is open
   data: ZoneData | null;
@@ -43,7 +44,6 @@ export function ZoneSystem({ data, unplaced, stale, error, disabled, pinned, onP
   const [hover, setHover] = useState<number | null>(null);
   // a drag across the bars: the zone it started from
   const dragFrom = useRef<number | null>(null);
-  const [advanced, setAdvanced] = useState(false);
   // the zone of the photo under the pointer, as a whole zone: zone k holds
   // k-0.5 to k+0.5, and below 0 or above X has no column of its own
   const probeZone = useProbe(true)?.zone ?? null;
@@ -183,9 +183,6 @@ export function ZoneSystem({ data, unplaced, stale, error, disabled, pinned, onP
 
       {children}
 
-      <button className="zone-advanced" onClick={() => setAdvanced(!advanced)} aria-expanded={advanced}>
-        {advanced ? "▾" : "▸"} Advanced
-      </button>
       {advanced && (
         <div className="zone-adv">
           <div className="zone-adv-row">

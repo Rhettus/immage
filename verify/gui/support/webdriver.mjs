@@ -93,6 +93,44 @@ export class AppDriver {
     ];
     await this.command('POST', '/actions', { actions: [{ type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' }, actions }] });
   }
+  // a drag left held at `to`, for reading the frames shown mid-drag;
+  // release() lets go. both act only through this session's pointer source
+  async hold(from, to) {
+    await this.guard();
+    this.log({ action: 'hold', from, to });
+    const actions = [
+      { type: 'pointerMove', duration: 120, origin: 'viewport', x: Math.round(from.x), y: Math.round(from.y) },
+      { type: 'pointerDown', button: 0 },
+      ...Array.from({ length: 8 }, (_, i) => ({ type: 'pointerMove', duration: 80, origin: 'viewport',
+        x: Math.round(from.x + (to.x - from.x) * (i + 1) / 8), y: Math.round(from.y + (to.y - from.y) * (i + 1) / 8) })),
+    ];
+    await this.command('POST', '/actions', { actions: [{ type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' }, actions }] });
+  }
+  // a drag with Space held, for panning a zoomed photo in any tool. the
+  // pointer is on the viewer before the key goes down (the app pans only
+  // with the pointer over the photo), and Space is let go after the pointer
+  async spaceDrag(from, to) {
+    await this.guard();
+    this.log({ action: 'space-drag', from, to });
+    const at = (p, duration) => ({ type: 'pointerMove', duration, origin: 'viewport', x: Math.round(p.x), y: Math.round(p.y) });
+    const pointer = actions => ({ type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' }, actions });
+    try {
+      await this.command('POST', '/actions', { actions: [pointer([at(from, 120)])] });
+      const moves = Array.from({ length: 8 }, (_, i) => at({ x: from.x + (to.x - from.x) * (i + 1) / 8, y: from.y + (to.y - from.y) * (i + 1) / 8 }, 80));
+      await this.command('POST', '/actions', { actions: [
+        { type: 'key', id: 'keyboard', actions: [{ type: 'keyDown', value: '\uE00D' },
+          ...Array.from({ length: 10 }, () => ({ type: 'pause', duration: 0 })), { type: 'keyUp', value: '\uE00D' }] },
+        pointer([at(from, 0), { type: 'pointerDown', button: 0 }, ...moves, { type: 'pointerUp', button: 0 }]),
+      ] });
+    } finally { await this.command('DELETE', '/actions'); }
+  }
+  async release() {
+    this.log({ action: 'release' });
+    try {
+      await this.command('POST', '/actions', { actions: [{ type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' },
+        actions: [{ type: 'pointerUp', button: 0 }] }] });
+    } finally { await this.command('DELETE', '/actions'); }
+  }
   async screenshot(path) {
     await this.guard();
     const png = await this.command('GET', '/screenshot');

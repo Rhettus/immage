@@ -1,0 +1,28 @@
+[
+ {
+  "label": "3 open / lenses",
+  "reply": {
+   "auto": "",
+   "lenses": [
+    {
+     "hash": 16424574,
+     "maker": "AEE",
+     "name": "AEE SD19 & compatibles"
+    },
+    {
+     "hash": 2862429,
+     "maker": "Apple",
+     "name": "iPhone XS back camera 4.25mm f/1.8 & compatibles"
+    },
+    {
+     "hash": 14491775,
+     "maker": "Apple",
+     "name": "iPhone XS back camera 6mm f/2.4 & compatibles"
+    }
+   ],
+   "ms": 0.0,
+   "ok": true,
+   "pick": 0
+  }
+ }
+]

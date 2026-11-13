@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
-export type CaptureTimeEntry = { imgid: number; before: string; after: string };
-export type CaptureTimeUpdate = CaptureTimeEntry & { error?: string };
+export type { CaptureTimeEntry, CaptureTimeUpdate } from "./commands";
 
 // camera clocks are wall times; UTC arithmetic avoids the computer's DST rules
 export function captureMillis(value: string): number {

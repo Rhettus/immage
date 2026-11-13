@@ -22,12 +22,6 @@ registerHooks({
   },
 });
 let saved = [], failSave = false;
-const settings = new Map();
-let failStorage = false;
-globalThis.localStorage = {
-  getItem: key => settings.get(key) ?? null,
-  setItem: (key, value) => { if (failStorage) throw Error('settings unavailable'); settings.set(key, String(value)); },
-};
 globalThis.agxInvoke = async (cmd, args) => {
   if (cmd === 'agx_profiles_load') return structuredClone(saved);
   if (cmd === 'agx_profiles_save') {
@@ -37,6 +31,8 @@ globalThis.agxInvoke = async (cmd, args) => {
   }
   throw Error(cmd);
 };
+const { settings, ready } = await import('../app/src/settings.ts');
+await ready;
 const M = await import('../app/src/manifest.ts');
 const P = await import('../app/src/agxProfiles.ts');
 const params = Object.fromEntries(M.AGX_FIELDS.map(f => [f, 0]));
@@ -124,9 +120,11 @@ test('deleting the new-raw default requires an explicit surviving replacement', 
   failSave = false;
   assert.equal(defaults.loadNewPhotosProfile(), 103, 'failed deletion restores previous default');
   assert(P.userProfiles().some(p => p.value === 103));
-  failStorage = true;
-  await assert.rejects(P.deleteAgxProfiles([103], other), /settings unavailable/);
-  failStorage = false;
+  // the store's set() no longer throws on its own, so make it fail as the old storage did
+  const realSet = settings.set;
+  settings.set = () => { throw Error('settings unavailable'); };
+  try { await assert.rejects(P.deleteAgxProfiles([103], other), /settings unavailable/); }
+  finally { settings.set = realSet; }
   assert(P.userProfiles().some(p => p.value === 103), 'cannot delete if replacement cannot be saved');
   await P.deleteAgxProfiles([103], other);
   assert.equal(defaults.loadNewPhotosProfile(), other);

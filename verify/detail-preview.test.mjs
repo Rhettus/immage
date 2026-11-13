@@ -8,7 +8,7 @@ import { isDetailControl } from '../app/src/detailPreview.ts';
 const pixels=(...values)=>new Uint8ClampedArray(values);
 
 test('detail eligibility excludes Exposure and other tone controls',()=>{
-  for(const id of ['texture','clarity','dehaze','sharp_amount','detail_texture_gain_fine','l_detail_clarity_halo_control'])assert.equal(isDetailControl(id),true,id);
+  for(const id of ['texture','clarity','dehaze','sharp_amount','detail_texture_gain_fine','l_detail_clarity_halo_control','l_sharpness','l_usm','usm_amount','usm_threshold','l_noise','l_dehaze','nr_luminance','grain_size'])assert.equal(isDetailControl(id),true,id);
   for(const id of ['contrast','l_contrast','exposure','highlights','shadows','temp','saturation','l_exposure'])assert.equal(isDetailControl(id),false,id);
 });
 

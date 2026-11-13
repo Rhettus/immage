@@ -1,0 +1,11 @@
+[
+ {
+  "label": "1 empty / spektra_stocks",
+  "reply": {
+   "ms": 0.0,
+   "ok": true,
+   "pack": null,
+   "stocks": []
+  }
+ }
+]

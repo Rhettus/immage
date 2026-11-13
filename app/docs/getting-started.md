@@ -27,6 +27,22 @@ Most keyboard shortcuts are the familiar ones: G for grid, R for crop, W for the
 white balance picker, \ for before, Y for before / after, X to reject,
 0-5 to rate. The full list is in [Keyboard shortcuts](shortcuts.md).
 
+## System requirements
+
+| | Minimum | Recommended |
+| --- | --- | --- |
+| System | macOS 15 on Apple silicon; Windows 10 or 11 (x64); Linux with glibc 2.35 or newer (Ubuntu 22.04 and later) | the same |
+| Memory | 8 GB | 16 GB; 32 GB for photos over 40 megapixels, panoramas and HDR merges |
+| Processor | 4 cores | 8 cores or more |
+| Graphics | any | a GPU with OpenCL that passes the [GPU check](preferences.md#performance); Apple silicon has one built in |
+| Screen | 1280 x 800 | 1920 x 1080 or larger |
+| Storage | 2 GB free for Immage and its caches | an SSD, with room for the AI models and the Immich cache if you use them |
+
+With 8 GB, photos up to about 24 megapixels edit smoothly once other large
+programs are closed; set **Memory** to **Small** in
+[Preferences](preferences.md#performance) if the computer starts to run short.
+Larger photos need more memory while a full-size view or export renders.
+
 ## First launch
 
 A small splash shows while the editing engine starts. It shows Immage's
@@ -74,6 +90,13 @@ same file and renders the photo the same way when its module and mask
 versions are compatible. Immage uses a development version of darktable;
 try copies first if you also use stable darktable. See
 [darktable compatibility](darktable.md#compatibility).
+
+Immage writes the new sidecar beside the old one and puts it in place only
+once it is complete, so a full disk or a crash during a save leaves the
+previous edit's sidecar whole. Saving needs a folder you can create files
+in. If a save fails, a notice over the photo says edits are not being saved,
+names the sidecar and says why, such as a read-only folder or a full disk. It
+stays until a save works, which the next edit tries again.
 
 Immage never changes the photo file itself.
 

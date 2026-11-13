@@ -6,9 +6,8 @@
 import { useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { PrefCard, PrefRow, PrefSwitch } from "./PrefsUI";
-import { appName, findApps, KINDS, kindOf, newPlugin, type PluginConfig, type PluginKind } from "./plugins";
-
-const WINDOWS = navigator.userAgent.includes("Windows");
+import { appName, choosePluginApp, findApps, KINDS, kindOf, newPlugin, setPluginApp, storePlugins,
+         type PluginConfig, type PluginKind } from "./plugins";
 
 export function PluginPrefs({ plugins, onPlugins }: {
   plugins: PluginConfig[];
@@ -19,13 +18,17 @@ export function PluginPrefs({ plugins, onPlugins }: {
     onPlugins(plugins.map((p) => (p.id === id ? { ...p, ...patch } : p)));
   const add = async (kind: PluginKind) => {
     setAdding(false);
+    const plugin = newPlugin(kind, "");
+    onPlugins([...plugins, plugin]);
+    // the plugin has to be stored before its application can be set
     const [app] = await findApps(kind);
-    onPlugins([...plugins, newPlugin(kind, app ?? "")]);
+    const saved = await storePlugins([...plugins, plugin]);
+    const set = saved && app ? await setPluginApp(plugin.id, app) : null;
+    if (set) onPlugins(set);
   };
   const chooseApp = async (id: string) => {
-    const app = await open(WINDOWS ? { filters: [{ name: "Applications", extensions: ["exe"] }] }
-      : { defaultPath: "/Applications", filters: [{ name: "Applications", extensions: ["app"] }] });
-    if (typeof app === "string") update(id, { app });
+    const set = await choosePluginApp(id);
+    if (set) onPlugins(set);
   };
   const chooseDir = async (id: string) => {
     const dir = await open({ directory: true });

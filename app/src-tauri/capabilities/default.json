@@ -1,14 +1,15 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "the main window: core APIs, dragging the window by its title strip, the folder picker, the importer, and checking for, installing and relaunching into an update",
+  "description": "the main window: core APIs, dragging the window by its title strip, the folder picker (no save dialog: Rust opens those), the importer, and checking for, installing and relaunching into an update",
   "windows": [
     "main"
   ],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
-    "dialog:default",
+    "dialog:allow-message",
+    "dialog:allow-open",
     "opener:default",
     "opener:allow-reveal-item-in-dir",
     "immporter:default",

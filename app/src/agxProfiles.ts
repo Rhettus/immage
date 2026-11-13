@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
-import { invoke } from "@tauri-apps/api/core";
+import { commands, type FoundPreset } from "./commands";
 import { useSyncExternalStore } from "react";
 import { loadNewPhotosProfile, storeNewPhotosProfile } from "./profileDefault";
 import { AGX_FIELDS, AGX_USER_FIRST, PROFILE_OPTIONS, setUserProfiles, type UserProfile } from "./manifest";
@@ -39,7 +39,7 @@ const complete = (p: unknown): p is UserProfile => {
 
 export async function loadAgxProfiles(): Promise<void> {
   try {
-    const saved = await invoke<unknown[]>("agx_profiles_load");
+    const saved: unknown[] = await commands.agxProfilesLoad();
     if (!Array.isArray(saved) || !saved.every(complete) || new Set(saved.map((p) => p.value)).size !== saved.length)
       throw new Error("Invalid saved AgX presets");
     profiles = saved;
@@ -50,16 +50,18 @@ export async function loadAgxProfiles(): Promise<void> {
 
 const store = (next: UserProfile[]) => {
   if (loadError) throw new Error(`Cannot save AgX presets: ${loadError}`);
-  return invoke("agx_profiles_save", { profiles: next });
+  return commands.agxProfilesSave(next);
 };
 
-export type FoundPreset = { name: string; params: Record<string, number> };
+export type { FoundPreset } from "./commands";
 
-// the AgX presets in a darktable preset or style file, or with no file in the
-// user's darktable data.db; the engine converts them to this version and needs
-// a photo open
-export async function findAgxPresets(file?: string): Promise<FoundPreset[]> {
-  const r = await invoke<{ presets: FoundPreset[] }>("agx_presets", { file: file ?? null, db: null, fields: AGX_FIELDS });
+// the AgX presets in a darktable preset or style file the user picks (the
+// dialog opens in Rust), or with `pick` false in the user's darktable
+// data.db; the engine converts them to this version and needs a photo open.
+// null when the dialog is cancelled
+export async function findAgxPresets(pick = false): Promise<FoundPreset[] | null> {
+  const r = await (pick ? commands.agxPresetsPick(AGX_FIELDS) : commands.agxPresets(AGX_FIELDS));
+  if (!r) return null;
   return r.presets.filter((p) => AGX_FIELDS.every((f) => Number.isFinite(p.params?.[f])));
 }
 

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from 'node:assert/strict';
 import { click, reveal, inspect, openTool } from '../support/controls.mjs';
-import { panel, expandSections, textButton, choose, Blocked, openMaskGroup } from '../support/scenario.mjs';
-import { until } from '../support/webdriver.mjs';
+import { panel, expandSections, textButton, choose, Blocked, openMaskGroup, openStep } from '../support/scenario.mjs';
+import { until, pause } from '../support/webdriver.mjs';
 import { settledPhoto, settledReset } from './smoke.mjs';
 
 async function preferences(t, tab) {
@@ -111,8 +111,14 @@ export async function wheels(t) {
     if(mode==='Sliders') { assert.equal(count,0); await t.evidence('grading-sliders'); continue; }
     assert(count>0);
     for(let i=1;i<=count;i++) {
-      // Wheel cells may be nested in rows: use a stable title as observation.
-      const point=await t.driver.observe((s,i)=>{ const e=document.querySelectorAll(`${s} .wheel`)[i-1],r=e.getBoundingClientRect(); return {x:r.x+r.width/2,y:r.y+r.height/2,width:r.width}; },p,i);
+      // Wheel cells may be nested in rows: address the i-th wheel by an
+      // nth-child path from the panel, so reveal can scroll it into view
+      // (the Shadows and Highlights wheels sit below the fold in a short window).
+      const path=await t.driver.observe((s,i)=>{ const root=document.querySelector(s); let e=document.querySelectorAll(`${s} .wheel`)[i-1]; const parts=[];
+        for(;e&&e!==root;e=e.parentElement) parts.unshift(`:nth-child(${[...e.parentElement.children].indexOf(e)+1})`);
+        return `${s} > ${parts.join(' > ')}`; },p,i);
+      const c=await reveal(t,path);
+      const point={x:c.x,y:c.y,width:c.bounds.width};
       const before=await settledPhoto(t);
       await t.driver.drag(point,{x:point.x+point.width*.2,y:point.y-point.width*.1});
       const edited=await settledPhoto(t,q=>q.hash!==before.hash); await t.evidence(`${mode}-${i}`);
@@ -224,14 +230,48 @@ export async function heal(t) {
     await until(()=>t.driver.observe(()=>!document.querySelector('.spot-sel')),'spot deleted');
   }
 }
+// the steps of the Negative panel (GuidedSteps.tsx): the ones after the
+// border are locked until it is picked, then open; Next and Back walk them
+const stepState = t => t.driver.observe(() => Object.fromEntries([...document.querySelectorAll('.negative .step')]
+  .map(e => [e.dataset.step, { open: e.classList.contains('open'), locked: e.classList.contains('locked') }])));
 export async function negative(t) {
   if(t.fixture.name!=='negative') throw new Blocked('Use --fixture negative for conversion tests');
   const baseline=await settledPhoto(t);
+  // before the border: only Profiles and Border can open
+  const b=await reveal(t,'button[data-tour="negative"]');
+  if(!b.active){
+    await click(t,'button[data-tour="negative"]');
+    const warned=await until(()=>t.driver.observe(()=>document.querySelector('.neg-warn')?'warn':document.querySelector('button[data-tour="negative"]:is(.on,.active)')?'open':''),'negative warning or tool',10000).catch(()=>'');
+    // the dialog can render a frame after the button turns active
+    if(warned==='warn'||await until(()=>t.driver.observe(()=>!!document.querySelector('.neg-warn')),'negative warning',3000).then(()=>true,()=>false)) await textButton(t,'.neg-warn','Continue');
+  }
+  await openTool(t,'negative');
+  await until(()=>t.driver.observe(()=>!!document.querySelector('.negative .step')),'negative steps');
+  let steps=await stepState(t);
+  for(const id of ['base','color','tone','export']) assert(steps[id]?.locked,`${id} locked before the border is picked`);
+  assert(await t.driver.observe(()=>document.querySelector('.negative .step[data-step="base"] .step-sum').textContent.includes('pick the film border first')),'lock note shown');
+  await click(t,'.negative .step[data-step="base"] > .step-head');
+  steps=await stepState(t);
+  assert(!steps.base.open,'a locked step does not open');
   await prepareNegative(t);
   await settledPhoto(t,p=>p.hash!==baseline.hash); await t.evidence('converted');
+  steps=await stepState(t);
+  for(const id of ['base','color','tone','export']) assert(!steps[id].locked,`${id} unlocked after the border`);
+  // a folded step opens by its heading, Next and Back walk the steps
+  await openStep(t,'.negative','profiles');
+  await textButton(t,'.negative .step.open','Next');
+  await until(async()=>(await stepState(t)).border.open,'Next opens Border & Photo Area');
+  await textButton(t,'.negative .step.open','Next');
+  await until(async()=>(await stepState(t)).base.open,'Next opens Film Base');
+  await textButton(t,'.negative .step.open','Back');
+  await until(async()=>(await stepState(t)).border.open,'Back returns to Border & Photo Area');
+  await openStep(t,'.negative','export');
   await textButton(t,'.positive-foot','Turn Off Conversion'); await settledPhoto(t,p=>p.hash===baseline.hash);
+  steps=await stepState(t);
+  assert(steps.base.locked,'steps lock again once the conversion is off');
 }
-// the Film Simulation panel: on, a preset, a film, then off again to the
+// the Film Simulation panel: on, a preset, a stock and a paper by their
+// preview tiles, the steps, then off again to the
 // photo as it was. needs the data pack already installed: the case does not
 // download it
 // spektrafilm's stock hash, as spektrafilm.ts stockHash() has it
@@ -246,18 +286,42 @@ export async function film(t) {
   await until(()=>t.driver.observe(()=>!!document.querySelector('.panel.film button, .panel.film select')),'film panel');
   if(await t.driver.observe(()=>[...document.querySelectorAll('.panel.film button')].some(b=>/Download Film Data|Try Again/.test(b.textContent))))
     throw new Blocked('Install the spektrafilm data pack first (Film Simulation, Download Film Data)');
-  await textButton(t,'.panel.film','Turn On Film Simulation');
+  await textButton(t,'.panel.film','Convert to Film');
   const on=await settledPhoto(t,p=>p.hash!==baseline.hash); await t.evidence('simulated');
-  // Film and Paper are menus of stock names, not sliders of their hashes
-  const film='.panel.film [data-control-id="sf_film_hash"] select';
-  await until(()=>t.driver.observe(s=>{const e=document.querySelector(s);
-    return !!e && e.selectedIndex>=0 && !/^\d+$/.test(e.options[e.selectedIndex].text);},film),'Film menu naming the stock');
-  assert(await t.driver.observe(()=>!!document.querySelector('.panel.film [data-control-id="sf_paper_hash"] select')),'Paper is a menu');
+  const open=()=>t.driver.observe(()=>document.querySelector('.panel.film .step.open')?.dataset.step);
+  const tiles=step=>`.panel.film .step[data-step="${step}"] .tile`;
+  // the stock step is open first, with a tile selected
+  await openStep(t,'.panel.film','stock');
+  await until(()=>t.driver.observe(s=>!!document.querySelector(s),`${tiles('stock')}.on`),'a film tile selected');
   // the preset sets the film too
-  await choose(t,'.panel.film .choice-row:first-child select','film|portrait');
+  await choose(t,'.panel.film [data-action="film-preset"]','film|portrait');
   await until(()=>t.driver.observe(s=>!!document.querySelector(s),
-    `${film} option[value="${stockHash('kodak_portra_400')}"]:checked`),'film|portrait chooses Kodak Portra 400');
+    `${tiles('stock')}.on[data-tile="film:${stockHash('kodak_portra_400')}"]`),'film|portrait selects the Kodak Portra 400 tile');
   await settledPhoto(t,p=>p.hash!==on.hash); await t.evidence('preset');
+  // another film, by its tile
+  const other=await t.driver.observe(s=>document.querySelector(`${s}:not(.on)`)?.dataset.tile,tiles('stock'));
+  assert(other,'another film tile');
+  await click(t,`${tiles('stock')}[data-tile=${JSON.stringify(other)}]`);
+  await until(()=>t.driver.observe((s,k)=>!!document.querySelector(`${s}.on[data-tile=${JSON.stringify(k)}]`),tiles('stock'),other),'film tile chosen');
+  await settledPhoto(t); await t.evidence('film-tile');
+  // Next opens Paper (a negative film prints): a paper tile, then scanning
+  await textButton(t,'.panel.film .step.open','Next');
+  await until(async()=>await open()==='paper','Next opens Paper');
+  const paper=await t.driver.observe(s=>[...document.querySelectorAll(`${s}:not(.on)`)].map(e=>e.dataset.tile).find(k=>!/:(0|-1)$/.test(k)),tiles('paper'));
+  assert(paper,'a paper tile');
+  await click(t,`${tiles('paper')}[data-tile=${JSON.stringify(paper)}]`);
+  await until(()=>t.driver.observe((s,k)=>!!document.querySelector(`${s}.on[data-tile=${JSON.stringify(k)}]`),tiles('paper'),paper),'paper tile chosen');
+  await settledPhoto(t); await t.evidence('paper-tile');
+  const hasColor=()=>t.driver.observe(()=>!!document.querySelector('.panel.film .step[data-step="color"]'));
+  assert(await hasColor(),'Color step listed while printing');
+  await click(t,`${tiles('paper')}[data-tile$=":-1"]`);
+  await until(async()=>!await hasColor(),'Color step hidden when scanning');
+  // Back returns to Stock, a folded step opens by its heading
+  await textButton(t,'.panel.film .step.open','Back');
+  await until(async()=>await open()==='stock','Back returns to Stock');
+  await pause(600); // the Stock step finishes folding, so Grain's heading stops moving
+  await openStep(t,'.panel.film','grain');
+  assert.equal(await open(),'grain','a folded step opens by its heading');
   await textButton(t,'.positive-foot','Turn Off Film Simulation'); await settledPhoto(t,p=>p.hash===baseline.hash);
 }
 export async function zones(t) {
@@ -280,9 +344,11 @@ export async function prepareNegative(t) {
   if(!b.active){
     await click(t,'button[data-tour="negative"]');
     const warned=await until(()=>t.driver.observe(()=>document.querySelector('.neg-warn')?'warn':document.querySelector('button[data-tour="negative"]:is(.on,.active)')?'open':''),'negative warning or tool',10000).catch(()=>'');
-    if(warned==='warn') await textButton(t,'.neg-warn','Continue');
+    // the dialog can render a frame after the button turns active
+    if(warned==='warn'||await until(()=>t.driver.observe(()=>!!document.querySelector('.neg-warn')),'negative warning',3000).then(()=>true,()=>false)) await textButton(t,'.neg-warn','Continue');
   }
   await openTool(t,'negative');
+  await openStep(t,'.negative','border');
   await textButton(t,'.negative','Pick Film Border');
   const c=await reveal(t,'.zone-object-box'); await t.driver.point(c.bounds.x+c.bounds.width*.02,c.bounds.y+c.bounds.height*.02);
   await until(()=>t.driver.observe(()=>!!document.querySelector('.neg-swatch')),'negative converted');

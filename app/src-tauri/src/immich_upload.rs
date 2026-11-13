@@ -11,6 +11,8 @@ use std::time::Duration;
 use reqwest::blocking::{multipart, Client};
 use serde_json::{json, Value};
 
+use crate::typed_app::Album;
+
 // what an export needs of the key, beyond the importer's asset.read
 pub const EXPORT_PERMISSIONS: &[&str] = &["asset.upload", "album.read", "album.create", "albumAsset.create"];
 // what the Library panel's search needs: the results, their thumbnails, and
@@ -63,6 +65,8 @@ impl Immich {
         headers.insert("x-api-key", key);
         let http = Client::builder()
             .default_headers(headers)
+            // a redirect would carry the key to wherever it points
+            .redirect(reqwest::redirect::Policy::none())
             .danger_accept_invalid_certs(c.accept_invalid_certs)
             // an upload of a large TIFF over a slow link takes a while
             .timeout(Duration::from_secs(300))
@@ -93,21 +97,25 @@ impl Immich {
     }
 
     // [{ id, name, count }], by name
-    pub fn albums(&self) -> Result<Value, String> {
+    pub fn albums(&self) -> Result<Vec<Album>, String> {
         let list: Value = status(self.http.get(self.url("/albums")).send().map_err(|e| e.to_string())?)?
             .json().map_err(|e| e.to_string())?;
-        let mut albums: Vec<Value> = list.as_array().cloned().unwrap_or_default().iter()
-            .map(|a| json!({ "id": a["id"], "name": a["albumName"], "count": a["assetCount"] }))
+        let mut albums: Vec<Album> = list.as_array().cloned().unwrap_or_default().iter()
+            .map(|a| Album {
+                id: a["id"].as_str().unwrap_or("").into(),
+                name: a["albumName"].as_str().unwrap_or("").into(),
+                count: a["assetCount"].as_u64().unwrap_or(0),
+            })
             .collect();
-        albums.sort_by_key(|a| a["name"].as_str().unwrap_or("").to_lowercase());
-        Ok(json!(albums))
+        albums.sort_by_key(|a| a.name.to_lowercase());
+        Ok(albums)
     }
 
-    pub fn create_album(&self, name: &str) -> Result<Value, String> {
+    pub fn create_album(&self, name: &str) -> Result<Album, String> {
         let a: Value = status(self.http.post(self.url("/albums")).json(&json!({ "albumName": name }))
             .send().map_err(|e| e.to_string())?)?
             .json().map_err(|e| e.to_string())?;
-        Ok(json!({ "id": a["id"], "name": a["albumName"], "count": 0 }))
+        Ok(Album { id: a["id"].as_str().unwrap_or("").into(), name: a["albumName"].as_str().unwrap_or("").into(), count: 0 })
     }
 
     // one file; its asset id, and whether Immich already had it (it then
@@ -182,6 +190,7 @@ pub fn iso_time(exif: Option<&str>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     fn client(url: &str) -> Immich {
         Immich::new(&tauri_plugin_immporter::ImmichConnection {
@@ -229,8 +238,8 @@ mod tests {
         let c = client(&server.url());
         assert_eq!(c.missing_permissions().unwrap(), vec!["album.create", "albumAsset.create"]);
         let albums = c.albums().unwrap();
-        assert_eq!(albums[0]["name"], "Beach");
-        assert_eq!(c.create_album("New").unwrap()["id"], "n");
+        assert_eq!(albums[0].name, "Beach");
+        assert_eq!(c.create_album("New").unwrap().id, "n");
         // inside the build tree, not the system's temp folder
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("target").join("immich-upload-test");
         std::fs::create_dir_all(&dir).unwrap();
@@ -239,5 +248,142 @@ mod tests {
         assert_eq!(c.upload(&file, "2026-10-08T14:03:22").unwrap(), ("x1".to_string(), true));
         let _ = std::fs::remove_dir_all(&dir);
         c.add_to_album("n", &["x1".into()]).unwrap();
+    }
+
+    // a file of a test's own, inside the build tree like the one above
+    fn scratch_file(tag: &str, name: &str) -> (PathBuf, PathBuf) {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("target").join(format!("immich-upload-{tag}"));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join(name);
+        std::fs::write(&file, b"jpeg").unwrap();
+        (dir, file)
+    }
+
+    #[test]
+    fn upload_retries_once_without_device_fields() {
+        let mut server = mockito::Server::new();
+        let with = server.mock("POST", "/api/assets")
+            .match_body(mockito::Matcher::Regex("name=\"deviceId\"".into()))
+            .with_status(400).with_body(r#"{"message":"property deviceId should not exist"}"#).expect(1).create();
+        let without = server.mock("POST", "/api/assets")
+            .match_body(mockito::Matcher::Regex("name=\"assetData\"".into()))
+            .with_body(r#"{"id":"x9","status":"created"}"#).expect(1).create();
+        let (dir, file) = scratch_file("retry", "a.jpg");
+        let got = client(&server.url()).upload(&file, "2026-10-08T14:03:22+00:00");
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(got.unwrap(), ("x9".to_string(), false));
+        with.assert();
+        without.assert();
+    }
+
+    #[test]
+    fn upload_errors_are_not_retried_unless_about_the_device() {
+        let mut server = mockito::Server::new();
+        let bad = server.mock("POST", "/api/assets")
+            .with_status(400).with_body(r#"{"message":"fileCreatedAt must be a Date"}"#).expect(1).create();
+        let (dir, file) = scratch_file("noretry", "a.jpg");
+        let err = client(&server.url()).upload(&file, "x").unwrap_err();
+        bad.assert();
+        assert_eq!(err, "Immich: 400 Bad Request fileCreatedAt must be a Date");
+        // a server fault is reported with its status, and not tried again either
+        let mut server = mockito::Server::new();
+        let down = server.mock("POST", "/api/assets").with_status(503).with_body("busy").expect(1).create();
+        let err = client(&server.url()).upload(&file, "x").unwrap_err();
+        down.assert();
+        assert!(err.starts_with("Immich: 503"), "{err}");
+        // a reply without an id is an error, not an empty asset
+        let mut server = mockito::Server::new();
+        let _noid = server.mock("POST", "/api/assets").with_body(r#"{"status":"created"}"#).create();
+        let err = client(&server.url()).upload(&file, "x").unwrap_err();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(err, "Immich: the upload gave no asset id");
+    }
+
+    #[test]
+    fn upload_of_a_missing_file_never_reaches_the_server() {
+        let mut server = mockito::Server::new();
+        let any = server.mock("POST", "/api/assets").expect(0).create();
+        assert!(client(&server.url()).upload(Path::new("/no/such/dir/a.jpg"), "x").is_err());
+        any.assert();
+    }
+
+    #[test]
+    fn redirects_are_not_followed_so_the_key_stays_put() {
+        let mut server = mockito::Server::new();
+        let moved = server.mock("GET", "/api/albums").with_status(302)
+            .with_header("location", "/elsewhere").create();
+        let elsewhere = server.mock("GET", "/elsewhere").expect(0).create();
+        let err = client(&server.url()).albums().err().unwrap();
+        assert!(err.starts_with("Immich: 302"), "{err}");
+        moved.assert();
+        elsewhere.assert();
+    }
+
+    // an export uploads one file at a time and keeps going when one fails;
+    // the album then gets only the assets that arrived
+    #[test]
+    fn a_failed_upload_in_a_batch_leaves_the_others_for_the_album() {
+        let mut server = mockito::Server::new();
+        let _one = server.mock("POST", "/api/assets")
+            .match_body(mockito::Matcher::Regex("filename=\"one.jpg\"".into()))
+            .with_body(r#"{"id":"id1","status":"created"}"#).create();
+        let _two = server.mock("POST", "/api/assets")
+            .match_body(mockito::Matcher::Regex("filename=\"two.jpg\"".into()))
+            .with_status(500).with_body(r#"{"message":"disk full"}"#).create();
+        let _three = server.mock("POST", "/api/assets")
+            .match_body(mockito::Matcher::Regex("filename=\"three.jpg\"".into()))
+            .with_body(r#"{"id":"id3","status":"duplicate"}"#).create();
+        let add = server.mock("PUT", "/api/albums/al/assets")
+            .match_body(mockito::Matcher::Json(json!({ "ids": ["id1", "id3"] })))
+            .with_body(r#"[{"id":"id1","success":true},{"id":"id3","success":true}]"#).expect(1).create();
+        let c = client(&server.url());
+        let (dir, one) = scratch_file("batch", "one.jpg");
+        let two = dir.join("two.jpg");
+        let three = dir.join("three.jpg");
+        std::fs::write(&two, b"jpeg").unwrap();
+        std::fs::write(&three, b"jpeg").unwrap();
+        let results: Vec<_> = [&one, &two, &three].iter().map(|f| c.upload(f, "x")).collect();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(results[0], Ok(("id1".to_string(), false)));
+        assert!(results[1].as_ref().unwrap_err().contains("500") && results[1].as_ref().unwrap_err().contains("disk full"));
+        assert_eq!(results[2], Ok(("id3".to_string(), true)));
+        let ids: Vec<String> = results.into_iter().filter_map(Result::ok).map(|(id, _)| id).collect();
+        c.add_to_album("al", &ids).unwrap();
+        add.assert();
+    }
+
+    #[test]
+    fn album_add_with_nothing_uploaded_sends_nothing() {
+        let mut server = mockito::Server::new();
+        let any = server.mock("PUT", mockito::Matcher::Any).expect(0).create();
+        client(&server.url()).add_to_album("al", &[]).unwrap();
+        any.assert();
+    }
+
+    #[test]
+    fn album_add_reports_each_asset_it_refused() {
+        let mut server = mockito::Server::new();
+        let _add = server.mock("PUT", "/api/albums/al/assets").with_body(
+            r#"[{"id":"a","success":true},{"id":"b","success":false,"error":"duplicate"},
+                {"id":"c","success":false,"error":"no_permission"},{"id":"d","success":false}]"#).create();
+        let err = client(&server.url()).add_to_album("al", &["a".into(), "b".into(), "c".into(), "d".into()]).unwrap_err();
+        assert_eq!(err, "not added to the album: c: no_permission, d: failed");
+        // the whole request refused
+        let mut server = mockito::Server::new();
+        let _gone = server.mock("PUT", "/api/albums/al/assets").with_status(404)
+            .with_body(r#"{"message":"Album not found"}"#).create();
+        let err = client(&server.url()).add_to_album("al", &["a".into()]).unwrap_err();
+        assert_eq!(err, "Immich: 404 Not Found Album not found");
+    }
+
+    #[test]
+    fn a_key_with_all_permissions_lacks_none() {
+        let mut server = mockito::Server::new();
+        let _me = server.mock("GET", "/api/api-keys/me").with_body(r#"{"permissions":["all"]}"#).create();
+        assert!(client(&server.url()).missing_permissions().unwrap().is_empty());
+        let mut server = mockito::Server::new();
+        let _me = server.mock("GET", "/api/api-keys/me").with_status(401).with_body(r#"{"message":"Invalid API key"}"#).create();
+        assert!(client(&server.url()).missing_permissions().unwrap_err().contains("401"));
     }
 }
