@@ -151,6 +151,8 @@ export const cases = {
     limitation: 'Only the Exposure card is driven. Restores the starting mode in a finally.' },
   'advanced-tonemapper': { liveValidated: true, verification: 'Linux system WebKitGTK; empty workspace 9 floating, original workspace 4 restored. Run 2026-11-13T01-22-42.430Z_5630e3e_257eb8d6 (raw fixture; AgX to sigmoid, mean error 1.5/255, undo exact).', scope: 'Advanced editing mode: the Basic group shows one tone mapper card (agx, sigmoid, filmic rgb or base curve); its switch menu lists the family with the current one checked; picking another turns the old one off and the new one on, changes the photo, and undo and redo move between them as one step',
     limitation: 'Switches between AgX and sigmoid only. Adds an AgX card when the photo has no tone mapper on. Restores the starting mode in a finally.' },
+  'advanced-groups': { liveValidated: false, verification: 'Not run yet.', scope: 'Advanced editing mode, Tone Curve and Color groups: Add module (or the existing card) gives an open tone equalizer card with Simple, Advanced and Masking tabs; typing +1 on its -4 EV band brightens the frame and the Masking tab swaps the controls; undo returns the frame; shadows and highlights shows its eight controls; adding velvia changes the frame and undo returns it; rgb primaries shows its red hue in degrees',
+    limitation: 'One edit per group; cards a photo already has are checked but not added. Restores the starting mode in a finally.' },
   ...generated,
 };
 export const suites = {
