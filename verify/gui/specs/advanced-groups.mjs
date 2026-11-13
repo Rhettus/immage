@@ -172,6 +172,17 @@ export async function advancedGroups(t) {
     // 11. Detail: lowpass (radius 10 by default) blurs the photo when added
     await addAndCheck(t, 'detail', 'lowpass', 'Lowpass',
       { controls: ['radius', 'lowpass_algo', 'saturation'], tabs: [] }, true);
+    // 12. Lens Corrections: darktable renders the lens module's defaults
+    // until an edit sets has_been_set, which the card sends with each edit:
+    // typing a manual vignette strength changes the photo
+    const lc = await addAndCheck(t, 'lens', 'lens', 'Lens correction',
+      { controls: ['method', 'modify_flags', 'v_strength', 'v_radius', 'v_steepness'], tabs: [] }, false);
+    const unvignetted = await settledPhoto(t);
+    await type(t, lc.sel, 'v_strength', '0.8');
+    await until(async () => { const c = await card(t, lc.sel); const s = c.controls.find(x => x.id === 'v_strength'); return Math.abs(s.value - .8) < .01 && c; }, 'vignette strength typed as 0.8');
+    const vignetted = await settledPhoto(t, p => meanError(p, unvignetted) > .5);
+    t.measure({ name: 'lens-vignette', meanAbsoluteError: meanError(vignetted, unvignetted) });
+    await t.evidence('lens-vignette');
     await t.evidence('groups-done');
   } finally {
     try {
