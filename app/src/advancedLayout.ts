@@ -954,6 +954,18 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "avoidshift", label: "Avoid colorshift" },
     ],
   },
+  {
+    // hotpixels.c gui_init, for raws only (a rule that reads the image).
+    // left out: the count of pixels fixed beside the mark toggle. Simple's
+    // Hot Pixels drives it, with the sliders times 100
+    op: "hotpixels", group: "lens", title: "Hot pixels",
+    fields: [
+      { path: "threshold", label: "Threshold", digits: 4 },
+      { path: "strength", label: "Strength", digits: 4 },
+      { path: "permissive", label: "Detect by 3 neighbors" },
+      { path: "markfixed", label: "Mark fixed pixels" },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);

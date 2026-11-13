@@ -268,6 +268,9 @@ The Lens Corrections group has these darktable modules:
   Defringe uses the first instance.
 - **Raw chromatic aberrations**: **Iterations** and **Avoid colorshift**.
   It works only on raw photos from cameras with a Bayer sensor.
+- **Hot pixels**: **Threshold**, **Strength**, **Detect by 3 neighbors** and
+  **Mark fixed pixels**, for raw photos. Simple's Hot Pixels sets the same
+  module, with its sliders on a 0 to 100 scale.
 
 ## Instances
 
