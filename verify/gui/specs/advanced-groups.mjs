@@ -210,10 +210,16 @@ export async function advancedGroups(t) {
     await t.evidence('orientation-turn');
     await undoRedo(t, 'undo');
     await settledPhoto(t, p => wide(p) === wide(unturned));
-    // 15. Effects: bloom (strength 25% by default) changes the photo when
-    // added; blurs shows the lens blur's sliders for its default type
-    await addAndCheck(t, 'effects', 'bloom', 'Bloom',
-      { controls: ['size', 'threshold', 'strength'], tabs: [] }, true);
+    // 15. Effects: bloom's default threshold (90) leaves a photo without
+    // bright areas unchanged, so a typed threshold of 40 must change it;
+    // blurs shows the lens blur's sliders for its default type
+    const bm = await addAndCheck(t, 'effects', 'bloom', 'Bloom',
+      { controls: ['size', 'threshold', 'strength'], tabs: [] }, false);
+    const unbloomed = await settledPhoto(t);
+    await type(t, bm.sel, 'threshold', '40');
+    await until(async () => { const c = await card(t, bm.sel); const s = c.controls.find(x => x.id === 'threshold'); return Math.abs(s.value - 40) < .01 && c; }, 'bloom threshold typed as 40');
+    const bloomed = await settledPhoto(t, p => meanError(p, unbloomed) > .5);
+    t.measure({ name: 'bloom-threshold', meanAbsoluteError: meanError(bloomed, unbloomed) });
     const bl = await addAndCheck(t, 'effects', 'blurs', 'Blurs',
       { controls: ['radius', 'type', 'blades', 'concavity', 'linearity', 'rotation'], tabs: [] }, false);
     assert(!bl.card.controls.some(x => x.id === 'angle'), 'a lens blur card shows the motion blur direction');
