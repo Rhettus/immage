@@ -74,7 +74,8 @@ Click a card's title to fold or unfold it. See [Library](library.md) and
   of fit to 400%. Double-click it for fit or 100%.
 - Drag the photo to pan.
 - Hold Space and drag to pan a zoomed-in photo in any tool, without changing
-  spots, masks or the crop. Space does nothing at fit.
+  spots or masks. Space does nothing at fit, so it does nothing in Crop, which
+  always shows the whole photo.
 - Once a photo has opened, and again each time you stop editing, Immage
   renders it at 100% in the background, so the first zoom in shows it at
   once. Zoomed in, it renders the fitted view the same way, ready for

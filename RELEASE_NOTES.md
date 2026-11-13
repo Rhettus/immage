@@ -38,8 +38,8 @@ Improvements
   Earlier destinations other than the current one need choosing again once.
 - Preferences › Modules lists tools in panel order.
 - GUI benchmark reports identify the computer by an anonymous id, not its name.
-- Hold Space and drag to pan a zoomed-in photo in any tool, including Heal,
-  Masks and Crop.
+- Hold Space and drag to pan a zoomed-in photo in any tool, including Heal and
+  Masks.
 - Heal's pointer is the brush circles with a small center dot, without a
   crosshair over the spot. Show spots (Always, Selected, Never) and H hide
   earlier spots while you retouch.

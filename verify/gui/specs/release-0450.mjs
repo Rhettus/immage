@@ -22,10 +22,6 @@ const spotCount = () => {
   return m ? +m[1] : 0;
 };
 const maskCount = () => document.querySelectorAll('.mask-list > li').length;
-const cropRect = () => {
-  const r = document.querySelector('.crop-rect')?.getBoundingClientRect();
-  return r && { width: r.width, height: r.height };
-};
 const view = async t => ({ nav: await t.driver.observe(navRect), hash: (await t.driver.observe(read.photo))?.hash });
 const same = (a, b) => a.nav ? JSON.stringify(a.nav) === JSON.stringify(b.nav) : a.hash === b.hash;
 
@@ -81,21 +77,7 @@ export async function spacePanTools(t) {
   await spacePan(t, 'masks', { x: svg.x, y: svg.y }, { x: 160, y: 100 }, async () => {
     assert.equal(await t.driver.observe(maskCount), masks, 'Space-drag painted no mask');
   });
-
-  // Crop: a drag inside the guide would move it
-  await click(t, 'button[data-tour="crop"]');
-  await until(() => t.driver.observe(cropRect), 'crop overlay');
-  if (!await t.driver.observe(() => document.querySelector('main.viewer')?.classList.contains('zoom-in'))) {
-    // the crop tool shows the whole photo: there is no zoomed view to pan
-    t.measure({ name: 'space-pan-crop', skipped: 'the crop tool fits the photo' });
-  } else {
-    const guide = await t.driver.observe(cropRect), rect = await reveal(t, '.crop-rect');
-    await spacePan(t, 'crop', { x: rect.x, y: rect.y }, { x: -120, y: 80 }, async () => {
-      const now = await t.driver.observe(cropRect);
-      assert(Math.abs(now.width - guide.width) <= 2 && Math.abs(now.height - guide.height) <= 2, 'Space-drag left the crop guide alone');
-    });
-  }
-  await textButton(t, '.crop-buttons', 'Cancel');
+  // not Crop: it always shows the whole photo, so there is nothing to pan
 }
 
 // ---- Heal: dot cursor and Show spots -------------------------------------

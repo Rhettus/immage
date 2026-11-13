@@ -86,7 +86,6 @@ In full screen preview, Z, ⌘= ⌘-, Y, X, I, L, \, 0-9 and ← → still work.
 | ⇧-drag | Straighten: along what should be level or upright |
 | ⌘[ | Rotate left |
 | ⌘] | Rotate right |
-| Space-drag | Pan a zoomed-in photo, without moving the crop |
 
 ## Masks
 
