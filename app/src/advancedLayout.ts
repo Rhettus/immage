@@ -856,6 +856,14 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "chroma", label: "Chroma", unit: "%", digits: 0 },
     ],
   },
+  {
+    // rawdenoise.c gui_init. left out: the wavelet curves (x and y, behind
+    // the all, R, G and B tabs), which need a curve editor
+    op: "rawdenoise", group: "detail", title: "Raw denoise",
+    fields: [
+      { path: "threshold", label: "Noise threshold", soft: [0, 0.1], digits: 3 },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);

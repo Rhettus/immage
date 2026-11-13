@@ -241,6 +241,7 @@ The Detail group has these darktable modules:
 - **Highpass**: **Sharpness** and **Contrast boost**.
 - **Astrophoto denoise**: **Patch size**, **Strength**, **Luma** and
   **Chroma**.
+- **Raw denoise**: **Noise threshold**. Its curves are not on the card yet.
 
 ## Instances
 
