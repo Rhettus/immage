@@ -29,6 +29,7 @@ import { checkForUpdate, lastChecked, loadAutoCheck, storeAutoCheck, useUpdate, 
 
 import { loadNewPhotosProfile, storeNewPhotosProfile } from "./profileDefault";
 import { settings } from "./settings";
+export { loadHiddenModules, storeHiddenModules } from "./hiddenModules";
 import { commands, type AccelProvider, type GpuEditState, type Licenses, type ResourceLevels, type WebviewRenderer } from "./commands";
 export { loadNewPhotosProfile } from "./profileDefault";
 

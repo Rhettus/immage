@@ -540,6 +540,12 @@ beside each tool's name in the panels; its **Set as default** writes the
 choice here (see [darktable modules](darktable.md)). Existing mask adjustments keep their modules;
 unused tools and new masks take these choices.
 
+A third **Advanced modules** section chooses which darktable modules Advanced
+editing mode offers in Add module, the module search and the tone mapper switch,
+with a switch per module, a filter, Show all and Hide all per group, and
+**Essentials only**. A photo that uses a hidden module still shows its card. See
+[Advanced mode](advanced-mode.md#hiding-modules).
+
 Clarity and Texture use **contrast & texture** by default, in place of a
 single slider: the module's Coarse, Medium and Fine details, Base detail
 level, Halo control, Noise bias, Shadows and Highlights sliders, using

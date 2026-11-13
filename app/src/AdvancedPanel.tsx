@@ -12,6 +12,7 @@ import { searchModules, type SearchHit } from "./advancedSearch";
 import { panels } from "./manifest";
 import { useDismiss } from "./MasksPanel";
 import { AddModuleMenu } from "./AddModuleMenu";
+import { isHidden, loadHiddenModules, visibleLayouts } from "./hiddenModules";
 
 // Advanced mode's Adjustments: the same fold-out groups as Simple, each
 // holding darktable's modules as cards
@@ -30,7 +31,9 @@ export function AdvancedSearch({ photo, applicable, onPick }: {
   const box = useRef<HTMLDivElement>(null);
   const groups = useMemo(() => [...panels.filter((p) => !p.hidden).map((p) => ({ id: p.id, title: p.advancedTitle ?? p.title })),
                                 { id: TECHNICAL_ID, title: "Technical" }], []);
-  const hits = useMemo(() => searchModules(LAYOUTS, groups, text), [groups, text]);
+  // read on each render: closing Preferences re-renders the panel
+  const hidden = loadHiddenModules();
+  const hits = useMemo(() => searchModules(visibleLayouts(LAYOUTS, hidden), groups, text), [groups, text, hidden]);
   const ok = (h: SearchHit) => photo && applicable(h.op);
   const close = () => { setText(""); setOpen(false); };
   useDismiss(open, () => setOpen(false), box);
@@ -145,7 +148,10 @@ export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0
     const f = familyOf(c.i.op);
     return shown(c) && (!f || c.state.enabled || !familyOn(f));
   }).sort((a, b) => layoutRank(a.i.op, id) - layoutRank(b.i.op, id));
-  const familyOptions = (f: { ops: string[] }) => f.ops.flatMap((op) => {
+  // hidden modules leave the tone mapper switch, but not the one the card is on
+  const hiddenSet = loadHiddenModules();
+  const familyOptions = (f: { ops: string[] }, current: string) => f.ops.flatMap((op) => {
+    if (op !== current && isHidden(hiddenSet, id, op)) return [];
     const l = layoutFor(op, id), first = all.find((c) => c.i.op === op && c.i.priority === 0);
     return l && first ? [{ op, title: l.title, applicable: first.i.switchable !== false }] : [];
   });
@@ -160,7 +166,7 @@ export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0
     record?.([`adv:${op}#0:add:${performance.now()}`], `Add module: ${l.title}`);
     session!.addModule(op);
   };
-  const choices = groupLayouts(id).flatMap((l) => {
+  const choices = visibleLayouts(groupLayouts(id), hiddenSet).flatMap((l) => {
     // a named card's instance may not exist yet: the module's first says
     // whether darktable can apply it
     const first = session?.instances.find((i) => i.op === l.op && i.priority === 0);
@@ -215,10 +221,10 @@ export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0
               else s.instanceAction({ action: c, op: i.op, priority: i.priority, name });
             };
             return (
-              <ModuleCard key={key} instance={i} layout={layout} schema={schema} state={state}
+              <ModuleCard key={key} hidden={isHidden(hiddenSet, id, i.op)} instance={i} layout={layout} schema={schema} state={state}
                 family={(() => {
                   const f = familyOf(i.op);
-                  return f && familyOptions(f).length > 1 ? { label: f.label, options: familyOptions(f), onPick: (to: string) => switchTo(cards.find((c) => c.i === i)!, f, to) } : undefined;
+                  return f && familyOptions(f, i.op).length > 1 ? { label: f.label, options: familyOptions(f, i.op), onPick: (to: string) => switchTo(cards.find((c) => c.i === i)!, f, to) } : undefined;
                 })()}
                 siblings={sib.length} index={index} fresh={session!.lastAdded === key} focus={focused?.key === key ? focused.nonce : undefined} onInstance={onInstance} onTurn={onTurn}
                 onField={(path, v, coalesce) => { record?.([`adv:${key}:${path}`], layout.title); const c = session!.context;

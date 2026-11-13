@@ -113,7 +113,7 @@ edits in another module (hosts chosen in `PanelView` and `MasksPanel`); its
 Set as default writes the Preferences choice.
 
 Module options: [moduleChoice.ts](../../src/moduleChoice.ts) resolves saved
-choices and preferences; [ModulePrefs.tsx](../../src/ModulePrefs.tsx) displays
+choices and preferences; [hiddenModules.ts](../../src/hiddenModules.ts) stores Advanced mode's hidden modules (`group:op` keys, `immage.hiddenModules`), read live by AdvancedPanel.tsx and edited in ModulePrefs' Advanced modules card; [ModulePrefs.tsx](../../src/ModulePrefs.tsx) displays
 `MODULE_CHOICES` and `MASK_MODULE_CHOICES` from the manifest under Global and
 Masks. It receives `focusMode` from PreferencesDialog and uses the panels'
 normal/Alt-click folding behavior. Closing Preferences reapplies choices to

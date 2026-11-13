@@ -9,9 +9,15 @@ import { useState } from "react";
 import { MASK_MODULE_CHOICES, moduleTools, type ModuleChoice } from "./manifest";
 import { loadModuleChoice, loadModuleMode, storeModuleChoice, storeModuleMode, type ModuleMode } from "./moduleChoice";
 import { Chevron, Collapse } from "./Collapse";
-import { PrefCard, PrefRow } from "./PrefsUI";
+import { PrefCard, PrefRow, PrefSwitch } from "./PrefsUI";
+import { LAYOUTS, groupLayouts } from "./advancedLayout";
+import { essentialsHidden, hiddenKey, loadHiddenModules, storeHiddenModules } from "./hiddenModules";
+import { panels } from "./manifest";
 
 const TOOLS = moduleTools().filter((group) => group.panel !== "Masks");
+// Advanced mode's groups, as Adjustments shows them
+const ADVANCED_GROUPS = [...panels.filter((p) => !p.hidden).map((p) => ({ id: p.id, title: p.advancedTitle ?? p.title })),
+                         { id: "technical", title: "Technical" }];
 
 export function ModulePrefs({ focusMode }: { focusMode: boolean }) {
   const [open, setOpen] = useState(() => new Set(focusMode ? ["global"] : ["global", "masks"]));
@@ -24,6 +30,16 @@ export function ModulePrefs({ focusMode }: { focusMode: boolean }) {
   });
   const globalOpen = open.has("global");
   const masksOpen = open.has("masks");
+  const advancedOpen = open.has("advanced");
+  const [hidden, setHidden] = useState(() => new Set(loadHiddenModules()));
+  const [find, setFind] = useState("");
+  const setHiddenKeys = (keys: Iterable<string>) => { const next = new Set(keys); setHidden(next); storeHiddenModules(next); };
+  const setGroup = (group: string, hide: boolean) => {
+    const next = new Set(hidden);
+    for (const l of groupLayouts(group)) { const k = hiddenKey(group, l.op); if (hide) next.add(k); else next.delete(k); }
+    setHiddenKeys(next);
+  };
+  const needle = find.trim().toLowerCase();
   const [mode, setMode] = useState(loadModuleMode);
   // bumped on a pick, so the menus read their stored values again
   const [, setPicked] = useState(0);
@@ -99,6 +115,44 @@ export function ModulePrefs({ focusMode }: { focusMode: boolean }) {
             <PrefRow label="Dehaze"><span className="pref-value">haze removal</span></PrefRow>
             <PrefRow label="Noise"><span className="pref-value">denoise (profiled)</span></PrefRow>
           </PrefCard>
+        </div>
+      </Collapse>
+      <button className="module-prefs-fold" aria-expanded={advancedOpen} aria-controls="module-prefs-advanced"
+              onClick={(e) => toggle("advanced", e.altKey)}>
+        Advanced modules <Chevron open={advancedOpen} />
+      </button>
+      <Collapse open={advancedOpen}>
+        <div id="module-prefs-advanced">
+          <p className="prefs-lead">
+            In Advanced mode, hidden modules leave Add module, the module search and the tone mapper switch. A photo
+            that uses a hidden module still shows its card, marked hidden, so every edit stays reachable.
+          </p>
+          <div className="module-prefs-tools">
+            <input type="search" className="field" placeholder="Filter modules" aria-label="Filter modules" spellCheck={false}
+                   value={find} onChange={(e) => setFind(e.target.value)} />
+            <button className="btn small" onClick={() => setHiddenKeys(essentialsHidden(LAYOUTS))}
+                    title="Hide every module without a Simple equivalent">Essentials only</button>
+          </div>
+          {ADVANCED_GROUPS.map(({ id, title }) => {
+            const rows = groupLayouts(id).filter((l) => !needle || l.title.toLowerCase().includes(needle));
+            if (!rows.length) return null;
+            return (
+              <PrefCard key={id} title={title}>
+                <PrefRow label="Modules" summary={`${rows.filter((l) => !hidden.has(hiddenKey(id, l.op))).length} of ${rows.length} shown`}>
+                  <div className="module-prefs-bulk">
+                    <button className="btn small" onClick={() => setGroup(id, false)}>Show all</button>
+                    <button className="btn small" onClick={() => setGroup(id, true)}>Hide all</button>
+                  </div>
+                </PrefRow>
+                {rows.map((l) => (
+                  <PrefRow key={l.op} label={l.title}>
+                    <PrefSwitch checked={!hidden.has(hiddenKey(id, l.op))}
+                                onChange={(on) => { const next = new Set(hidden); if (on) next.delete(hiddenKey(id, l.op)); else next.add(hiddenKey(id, l.op)); setHiddenKeys(next); }} />
+                  </PrefRow>
+                ))}
+              </PrefCard>
+            );
+          })}
         </div>
       </Collapse>
     </>

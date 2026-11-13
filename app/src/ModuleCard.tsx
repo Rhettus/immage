@@ -57,8 +57,10 @@ export function fieldControl(f: SchemaField, l: LayoutField, value: number): Con
 // `siblings` is how many instances of the module the group shows, `index`
 // this one's place among them (pipe order); `fresh`, a card just added;
 // `focus`, a number that changes each time the module search picks the card
-export function ModuleCard({ instance, layout, schema, state, siblings, index, fresh, focus, family, onField, onEnabled, onReset, onInstance, loadPresets, onPreset, onTurn }: {
+export function ModuleCard({ hidden, instance, layout, schema, state, siblings, index, fresh, focus, family, onField, onEnabled, onReset, onInstance, loadPresets, onPreset, onTurn }: {
   instance: Instance; layout: ModuleLayout; schema: ModuleSchema; state: AdvancedState;
+  // hidden in Preferences > Modules, yet shown as the photo uses it
+  hidden?: boolean;
   siblings: number; index: number; fresh?: boolean; focus?: number;
   // the modules this card can switch to, when it is a shared card
   family?: { label: string; options: FamilyOption[]; onPick: (op: string) => void };
@@ -139,6 +141,7 @@ export function ModuleCard({ instance, layout, schema, state, siblings, index, f
         {family && <span onClick={(e) => e.stopPropagation()}>
           <FamilySwitch label={family.label} current={instance.op} options={family.options} onPick={family.onPick} />
         </span>}
+        {hidden && <span className="module-card-tag" title="Hidden in Preferences > Modules; this photo uses it, so its card stays">hidden</span>}
         {siblings > 1 && instance.priority === 0 && <span className="module-card-tag" title="Simple's sliders show this instance">Simple</span>}
         <PresetMenu name={name} load={loadPresets} onPick={(n) => { setFold(true); onPreset(n); }} />
         <button className="module-card-reset" title="Reset to darktable's defaults" aria-label={`Reset ${name}`}

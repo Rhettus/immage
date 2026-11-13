@@ -34,6 +34,24 @@ card switches to the one you picked.
 A module darktable cannot apply to this photo is greyed out and cannot be
 picked, as in Add module. With no photo open, every row is greyed out.
 
+## Hiding modules
+
+**Preferences > Modules > Advanced modules** lists every Advanced module by
+group, each with a switch. Turn one off to hide it: it leaves Add module, the
+module search and the tone mapper switch, so the lists you use hold only what you
+want. A filter box narrows the list by name, **Show all** and **Hide all** act on
+one group, and **Essentials only** hides every module without a Simple equivalent
+(it keeps white balance, color calibration, exposure, the tone mappers, contrast
+and texture tools, color balance rgb, the curves, denoise, lens correction, rotate
+and perspective, vignetting, grain and the color profiles). A module that appears
+in two groups, such as color balance rgb in Basic and Color Grading, hides in
+each group on its own.
+
+Hiding never takes away an edit. A photo that uses a hidden module (it is on,
+in its history, or was added) still shows its card, with a small **hidden** tag
+beside the name, and the card works as any other. Changes apply as soon as you
+close Preferences.
+
 ## Module cards
 
 Each group shows a card for every darktable module this photo uses: the ones

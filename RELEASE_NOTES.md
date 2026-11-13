@@ -13,7 +13,9 @@ Improvements
   adds or opens their card, and darktable's modules as cards with their own
   settings, on/off and reset, and an instance menu to add,
   duplicate, rename, reorder and delete instances, all with undo. Switching
-  does not change your photo.
+  does not change your photo. Preferences > Modules > Advanced modules hides
+  modules from Add module, the search and the tone mapper switch (or keeps
+  only the essentials); a photo that uses a hidden module still shows its card.
 - Advanced cards so far: in Basic, exposure, white balance, color calibration,
   highlight reconstruction, the tone mapper, contrast & texture, local contrast,
   haze removal, diffuse or sharpen and color balance rgb; in Tone Curve, tone
