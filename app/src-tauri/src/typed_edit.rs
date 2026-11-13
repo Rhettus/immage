@@ -368,6 +368,8 @@ pub struct Instance {
     pub label: String,
     pub enabled: bool,
     pub default_enabled: bool,
+    // its settings or switch differ from darktable's defaults for this photo
+    pub changed: bool,
     // false when darktable hides the module's switch: it cannot apply to
     // this photo, or must stay on
     pub switchable: bool,

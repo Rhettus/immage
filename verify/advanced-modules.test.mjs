@@ -290,6 +290,41 @@ test('Simple\'s named instance "bw" is listed by its name', { skip: skip || fals
   assert.equal(got[`channelmixerrgb@${bw[0].priority}`].params['grey[1]'], 1);
 });
 
+// Simple's "N advanced edits" badge (advancedEdits.ts): nothing at open,
+// where darktable's auto-applied modules are at their defaults; then a
+// second exposure and velvia count in their groups, while Simple's own
+// instances (exposure 0, B&W's "bw") never do. IMMAGE_RAW adds a raw photo
+// for the at-open check, whose auto-applied modules differ from a JPEG's
+test('Simple counts the Advanced edits its sliders cannot show', { skip: skip || false }, async (t) => {
+  const { advancedEdits } = await import('../app/src/advancedEdits.ts');
+  const work = mkdtempSync(join(tmpdir(), 'immage-advcount-'));
+  mkdirSync(join(work, 'photos'));
+  const photos = [join(work, 'photos', 'stairs.jpg')];
+  copyFileSync(SAMPLE, photos[0]);
+  const raw = process.env.IMMAGE_RAW;
+  if (raw) { photos.push(join(work, 'photos', 'raw' + raw.slice(raw.lastIndexOf('.')))); copyFileSync(raw, photos[1]); }
+  const e = new Engine(work);
+  t.after(() => { e.stop(); rmSync(work, { recursive: true, force: true }); });
+  const counts = async () => Object.fromEntries(advancedEdits((await e.call({ cmd: 'instances' })).instances));
+  for (const photo of photos.slice(1)) {
+    await e.call({ cmd: 'open', path: photo });
+    assert.deepEqual(await counts(), {}, `${photo} at open`);
+    await e.call({ cmd: 'close' });
+  }
+  await e.call({ cmd: 'open', path: photos[0] });
+  assert.deepEqual(await counts(), {}, 'at open');
+  await e.call({ cmd: 'set', op: 'exposure', priority: 0, params: { exposure: 0.5 }, enabled: true });
+  await e.call({ cmd: 'set', op: 'channelmixerrgb', instance: 'bw', after: 'colorequal', enabled: true,
+                 params: { 'grey[0]': 0, 'grey[1]': 1, 'grey[2]': 0 } });
+  assert.deepEqual(await counts(), {}, 'Simple\'s own instances');
+  const p1 = (await e.call({ cmd: 'instance', action: 'new', op: 'exposure', priority: 0 })).priority;
+  await e.call({ cmd: 'set', op: 'exposure', priority: p1, params: { exposure: -0.25 } });
+  await e.call({ cmd: 'set', op: 'velvia', priority: 0, params: { strength: 40 }, enabled: true });
+  assert.deepEqual(await counts(), { basic: 1, hsl: 1 });
+  await e.call({ cmd: 'set', op: 'velvia', priority: 0, enabled: false });
+  assert.deepEqual(await counts(), { basic: 1 }, 'a module switched off');
+});
+
 // Advanced mode phase 4: the instance menu's actions on exposure. A second
 // and third instance, a rename, a move, a delete undone and one kept; then
 // save, reopen and render parity with darktable-cli over the sidecar

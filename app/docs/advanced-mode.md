@@ -5,6 +5,13 @@ Advanced mode is for working with darktable's own modules. Turn it on in
 back to **Simple** the same way. Switching does not change the photo or its
 edits.
 
+Edits made in Advanced that Simple's sliders cannot show, such as a second
+instance of a module or a module Simple has no sliders for, keep rendering in
+Simple. At the end of each Adjustments group that holds such edits, Simple shows
+**N advanced edits here keep rendering**. Click it to open Editing mode in
+Preferences. Modules that darktable turns on by itself and that you have not
+changed are not counted.
+
 In Advanced, the **Adjustments** panel looks like this:
 
 - A **Search modules** box at the top, described below.

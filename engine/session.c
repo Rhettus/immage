@@ -1467,6 +1467,10 @@ void session_instances(JsonBuilder *b)
     g_free(label);
     engine_add_bool(b, "enabled", m->enabled);
     engine_add_bool(b, "default_enabled", m->default_enabled);
+    // its settings or switch differ from darktable's defaults for this
+    // photo: an auto-applied module left alone is not an edit
+    engine_add_bool(b, "changed", m->enabled != m->default_enabled
+                    || (m->params_size && memcmp(m->params, m->default_params, m->params_size)));
     // darktable hides the switch of a module that cannot apply to this
     // photo (raw-only modules on a JPEG, white balance on a monochrome)
     engine_add_bool(b, "switchable", !m->hide_enable_button);

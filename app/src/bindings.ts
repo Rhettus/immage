@@ -473,6 +473,7 @@ export type Instance = {
 	label: string,
 	enabled: boolean,
 	default_enabled: boolean,
+	changed: boolean,
 	switchable: boolean,
 	in_history: boolean,
 	iop_order: number,

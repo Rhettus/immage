@@ -116,6 +116,9 @@ export type PanelProps = {
   onPreview: (values: Values | null) => void;   // a swatch under the pointer
   onOptionPreview?: (preview: OptionPreview | null) => void;   // a slider ⌥-dragged
   onAdvancedEdit?: AdvancedEdit;   // records an Advanced card edit for undo
+  // Simple: how many Advanced edits in this group no slider shows, and the
+  // badge's link to the Editing mode preference
+  advancedEdits?: number; onAdvancedEdits?: () => void;
   onTurn?: (how: Turn) => void;   // the toolbar's rotate and flip, for Advanced's orientation card
 };
 
@@ -148,7 +151,8 @@ export function PanelView(props: PanelProps) {
 }
 
 export const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle, values, session, disabled, onChange, onChangeMany, histograms,
-                     onAuto, wbTools, toneTools, denoiseTools, straightenTools, transformTools, detailLoupe, presenceLoupe, onPreview, onOptionPreview }: PanelProps) {
+                     onAuto, wbTools, toneTools, denoiseTools, straightenTools, transformTools, detailLoupe, presenceLoupe, onPreview, onOptionPreview,
+                     advancedEdits = 0, onAdvancedEdits }: PanelProps) {
   const histogram = useSyncExternalStore(p.graph === "tonecurve" ? histograms.subscribe : noHistogramSubscription, p.graph === "tonecurve" ? histograms.get : noHistogram);
   const pointMode = p.graph === "tonecurve" && values.tc_mode === 1;
   // which curve the point editor shows: the master, or one channel
@@ -354,6 +358,12 @@ export const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle,
               </section>
             );
           })}
+          {advancedEdits > 0 && (
+            <button type="button" className="advanced-edits" data-advanced-edits={advancedEdits} onClick={onAdvancedEdits}
+                    title="Edits made in Advanced mode that these sliders cannot show">
+              <span className="advanced-dot" /><span><b>{advancedEdits} advanced edit{advancedEdits === 1 ? "" : "s"}</b> here keep rendering. Editing mode…</span>
+            </button>
+          )}
         </div>
       </Collapse>
     </div>

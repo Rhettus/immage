@@ -4,6 +4,7 @@
   "reply": {
    "instances": [
     {
+     "changed": false,
      "default_enabled": false,
      "enabled": false,
      "hand_edited": false,
@@ -17,6 +18,7 @@
      "switchable": false
     },
     {
+     "changed": false,
      "default_enabled": false,
      "enabled": false,
      "hand_edited": false,
@@ -30,6 +32,7 @@
      "switchable": true
     },
     {
+     "changed": false,
      "default_enabled": false,
      "enabled": false,
      "hand_edited": false,

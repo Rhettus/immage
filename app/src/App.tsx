@@ -7,6 +7,7 @@ import { profileSelection, AGX_USER_FIRST } from "./manifest";
 
 
 import { AdvancedSearch, AdvancedGroup, TECHNICAL_ID, type AdvancedPick } from "./AdvancedPanel";
+import { advancedEdits } from "./advancedEdits";
 import { AdvancedToggle, advancedEdited, useAdvanced } from "./advanced";
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
@@ -3075,6 +3076,7 @@ export default function App() {
   // the importer's Immich buttons open Preferences there; stable, as the
   // importer keeps it
   const openImmichPrefs = useCallback(() => setPrefsOpen("immich"), []);
+  const openEditingMode = useCallback(() => setPrefsOpen("general"), []);
   // an import landed: its destination joins the library (or the listed
   // folder holding it opens down to it), so the new folders show
   const importDone = (r: ImportResult) => {
@@ -3919,6 +3921,18 @@ export default function App() {
   // the History panel follows the stack, which is kept outside React
   const [historyRev, setHistoryRev] = useState(0);
   const [historyBase, setHistoryBase] = useState<HistoryItem[]>([]);
+  // Simple: per group, the Advanced edits its sliders cannot show, read
+  // again after each history change (a photo opened, undo, a paste)
+  const [advancedEditCounts, setAdvancedEditCounts] = useState<Map<string, number>>(new Map());
+  useEffect(() => {
+    const s = session.current;
+    if (editMode !== "simple" || !s) { setAdvancedEditCounts(new Map()); return; }
+    let live = true;
+    void s.settled().then(() => commands.instances())
+      .then((list) => { if (live && session.current === s) setAdvancedEditCounts(advancedEdits(list)); })
+      .catch(() => { /* the photo closed meanwhile */ });
+    return () => { live = false; };
+  }, [editMode, historyRev]);
   const record = (ids: string[], label?: string) => {
     const s = session.current;
     if (!s || holdRecord.current) return;
@@ -6547,7 +6561,7 @@ export default function App() {
                             applicable={(op) => { const i = session.current?.instances.find((x) => x.op === op && x.priority === 0); return !!i && i.switchable !== false; }} />
           )}
           {rightMode === "adjust" && !cropping && panels.filter((p) => !p.hidden && (!p.showIf || editMode === "advanced" || p.showIf(values))).map((p) => (
-            <Profiler key={p.id} id={`panel.${p.id}`} onRender={perf.reactCommit}><PanelView editMode={editMode} sessionRevision={historyRev} pick={pick?.group === p.id ? pick : null} onPicked={searchPicked} onAdvancedEdit={record} onTurn={(how) => void turn(how)} panel={p} open={openPanels.has(p.id)} onToggle={(solo) => togglePanel(p.id, solo)}
+            <Profiler key={p.id} id={`panel.${p.id}`} onRender={perf.reactCommit}><PanelView editMode={editMode} sessionRevision={historyRev} advancedEdits={advancedEditCounts.get(p.id) ?? 0} onAdvancedEdits={openEditingMode} pick={pick?.group === p.id ? pick : null} onPicked={searchPicked} onAdvancedEdit={record} onTurn={(how) => void turn(how)} panel={p} open={openPanels.has(p.id)} onToggle={(solo) => togglePanel(p.id, solo)}
                        values={values} session={session.current} disabled={!current} onChange={change}
                        detailLoupe={p.id === "detail" ? renderLoupe("detail") : undefined}
                        presenceLoupe={p.id === "basic" ? renderLoupe("presence") : undefined}

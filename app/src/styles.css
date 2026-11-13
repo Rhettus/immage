@@ -2595,6 +2595,14 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .context-menu.advanced-search-results button.active:not(:disabled) { background: var(--inset); }
 .context-menu.advanced-search-results button .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .advanced-search .field { width: 100%; box-sizing: border-box; }
+/* Simple's link to Advanced edits its sliders cannot show (advancedEdits.ts) */
+.advanced-edits {
+  display: flex; align-items: center; gap: 8px; width: calc(100% - 28px); margin: 6px 14px 10px; padding: 8px 12px;
+  border: 1px dashed var(--track); border-radius: var(--radius-ctl); background: none; color: var(--text-2); font-size: var(--fs-small); text-align: left; cursor: pointer;
+}
+.advanced-edits:hover { color: var(--text); background: var(--hover); }
+.advanced-edits b { color: var(--text); font-weight: 600; }
+.advanced-edits .advanced-dot { position: static; flex: none; }
 .advanced-empty { margin: 4px 16px 8px; color: var(--muted, #8a8a8a); font-size: var(--fs-small); }
 
 /* Advanced mode's module cards: a header row (switch, name, reset) over the
