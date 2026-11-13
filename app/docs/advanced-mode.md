@@ -110,7 +110,8 @@ Besides exposure, the Basic group has these darktable modules:
   and **Radius span**; under Speed, the four orders of speed; under Direction,
   the four orders of anisotropy; under Edge management, **Sharpness**, **Edge
   sensitivity** and **Edge threshold**; and under Diffusion spatiality, the
-  **Luminance masking threshold**.
+  **Luminance masking threshold**. Simple's Texture uses the first instance; the
+  instance Simple's Sharpening uses is on the Detail group's card instead.
 - **Color balance rgb**: three tabs. Master has **Hue shift**, **Global
   vibrance** and **Contrast**, then linear chroma, perceptual saturation and
   perceptual brilliance grading, each with a global slider and shadows,
@@ -228,6 +229,10 @@ The Detail group has these darktable modules:
 - **Sharpen**: **Radius**, **Amount** and **Threshold**. Simple's Sharpening
   with sharpen uses the first instance, so a change on one shows on the
   other.
+- **Diffuse or sharpen**: the instance Simple's Sharpening uses when it is
+  set to diffuse or sharpen, with the same settings as the Basic group's
+  card, which shows the other instances. **Add module** makes it the way
+  Simple does, at darktable's "sharpness | normal" preset.
 
 ## Instances
 

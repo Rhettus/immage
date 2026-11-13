@@ -799,6 +799,14 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "threshold", label: "Threshold", digits: 3 },
     ],
   },
+  {
+    // Simple's Sharpening with diffuse or sharpen: its own instance, from
+    // darktable's "sharpness | normal" preset; Add module makes it at that
+    // preset's 3 iterations
+    op: "diffuse", group: "detail", title: "Diffuse or sharpen",
+    instance: { name: "sharpen", add: [["mod_sharpening", 1], ["sharp_amount", 3]] },
+    fields: DIFFUSE,
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);
