@@ -335,6 +335,7 @@ void session_saved_history(JsonBuilder *b);
 gboolean session_open_image(const char *path, const dt_imgid_t version, const char *pipe_kind,
                             char **err);
 dt_iop_module_t *session_module(const char *op, char **err);
+dt_iop_module_t *session_module_at(const char *op, const int priority, char **err);
 void *session_field_in(dt_iop_module_t *mod, void *base, const char *path,
                        dt_introspection_field_t **f, char **err);
 gboolean session_write_field_in(dt_iop_module_t *mod, void *base, const char *name,
@@ -360,6 +361,19 @@ gboolean wb_setting_read(dt_iop_module_t *mod, const char *name, const gboolean 
 gboolean wb_setting_write(dt_iop_module_t *mod, const char *name, const double num, char **err);
 void wb_mark_user(dt_iop_module_t *mod);
 gboolean wb_presets(JsonBuilder *b, char **err);
+// files.c: the file-name params no number can hold, edited as the hash of the
+// name like the lens module's "lens_pick": lut3d's "lut_file" (filepath, a
+// file in the LUT folder) and watermark's "wm_marker" (filename, a marker in
+// the watermarks folders). 0 is none; a write finds the file by its hash
+#define FILES_LUT "lut_file"
+#define FILES_MARKER "wm_marker"
+gboolean files_is_field(const dt_iop_module_t *mod, const char *name);
+gboolean files_read(dt_iop_module_t *mod, const char *name, const gboolean from_defaults, double *num,
+                    char **err);
+gboolean files_write(dt_iop_module_t *mod, const char *name, const double num, char **err);
+void files_set_lut_folder(const char *folder);
+gboolean files_lut(JsonObject *req, JsonBuilder *b, char **err);
+gboolean files_watermarks(JsonBuilder *b, char **err);
 gboolean session_set(const char *op, const char *field, JsonNode *value,
                      JsonObject *params, const gboolean has_enabled,
                      const gboolean enabled, const char *after, const char *before,

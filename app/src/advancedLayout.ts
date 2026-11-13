@@ -36,6 +36,9 @@ export type LayoutField = {
   // fields (wb.c), the menu filled with this photo's camera presets and the
   // slider ranged by the preset in use (ModuleCard)
   wb?: "setting" | "tune";
+  // a file chooser (ModuleFile) over the engine's own field `path`, the
+  // hash of the name the module stores: LUT 3D's file and Watermark's marker
+  file?: "lut" | "marker";
   // a color button over a 3-float array param (`path` is the array, its
   // elements `path[0..2]`): borders.c and watermark.c give darktable's
   // GtkColorButton the RGBA straight as the floats, 0..1 with no conversion
@@ -778,12 +781,14 @@ export const LAYOUTS: ModuleLayout[] = [
     // comboboxes. darktable hides the color space combobox when the module
     // sits outside the colorin to colorout stretch of the pipe (_show_hide_
     // colorspace, which depends on the module order, not on params), so it is
-    // listed unconditionally. left out: filepath and lutname (strings set by
-    // the file picker and the LUT list, which need a custom file chooser; the
-    // LUT folder comes from preferences), nb_keypoints and c_clut (the
+    // listed unconditionally. the file chooser is the engine's field `lut_file`
+    // over filepath (files.c), in the folder of Preferences > Modules.
+    // left out: lutname and the LUT name entry and list (gmic's compressed
+    // LUTs; the engine is built without gmic), nb_keypoints and c_clut (the
     // compressed LUT data, no widget)
     op: "lut3d", group: "hsl", title: "LUT 3D",
     fields: [
+      { path: "lut_file", label: "LUT file", file: "lut" },
       { path: "colorspace", label: "Application color space" },
       { path: "interpolation", label: "Interpolation" },
     ],
@@ -1296,10 +1301,13 @@ export const LAYOUTS: ModuleLayout[] = [
     // rotate displays negated (factor -1); scale has a soft max of 100
     // the color button is an rgb field, without the image picker beside it (needs the color
     // picker)
-    // omitted: filename (marker file chooser with a refresh button), text (entry), font
-    // (font button), alignment (int param edited by a 3x3 toggle grid, needs a custom editor)
+    // the marker menu and its refresh button are the engine's field `wm_marker` over
+    // filename (files.c)
+    // omitted: text (entry), font (font button), alignment (int param edited by a 3x3
+    // toggle grid, needs a custom editor)
     op: "watermark", group: "effects", title: "Watermark",
     fields: [
+      { path: "wm_marker", label: "Marker", file: "marker" },
       { path: "color", label: "Color", rgb: true },
       { path: "opacity", label: "Opacity", unit: "%" },
       { path: "rotate", label: "Rotation", section: "Placement", factor: -1, unit: "°" },

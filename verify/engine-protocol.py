@@ -56,12 +56,12 @@ COMMANDS = sorted('''
 agx_auto agx_presets ai_accel ai_denoise ai_denoise_preview ai_depth ai_mask
 ai_object baseline_end before cancel_base capture_times close color_profiles
 combine copy data_backup export export_hold export_release folder fonts forget get
-hdr_merge history import instance instances keywords keywords_set lenses look look_amount mask
+hdr_merge history import instance instances keywords keywords_set lenses look lut_files lut_folder look_amount mask
 mask_delete mask_map mask_rename masks merge_cancel meta meta_set module_schema module_state
 open opencl pano_merge pano_preview parity paste_batch points prefetch preview
 presets print print_profile_add print_profiles printer printers quit range_map
 remove_copy render sample save set sidecars softproof spektra_fetch
-spektra_stocks spot_source spots spots_enable style_forget thumb tone_key wb_presets
+spektra_stocks spot_source spots spots_enable style_forget thumb tone_key watermarks wb_presets
 unpack upright version zones
 '''.split())
 
@@ -237,7 +237,7 @@ def photo_edits(img):
           label='set exposure priority and instance'),
         R('get', modules={'exposure@7': ['exposure']}, label='get exposure priority unknown'),
         R('get', modules={'exposure@0': ['exposure']}, label='get exposure priority 0'),
-        R('color_profiles'), R('lenses'), R('wb_presets'),
+        R('color_profiles'), R('lenses'), R('wb_presets'), R('lut_files', folder='{tmp}/luts'), R('lut_folder', folder=''), R('watermarks'),
         R('render', '{out}/r.ppm', width=64, height=48, out='{out}/r.ppm', label='render ppm'),
         R('render', '{out}/r.rgba', width=64, height=48, rgba='{out}/r.rgba', label='render rgba'),
         R('render', '{out}/r.ppm', width=32, height=24, scale=1.0, x=8, y=8, out='{out}/r.ppm',
@@ -470,7 +470,8 @@ class Run:
         if isinstance(value, dict):
             return {k: self.norm(v, k) for k, v in value.items() if not TIMING.search(k)}
         if isinstance(value, list):
-            return [self.norm(v) for v in value]
+            # watermarks' folders, which are the build's and the user's
+            return ['<DIR>'] * len(value) if key == 'dirs' else [self.norm(v) for v in value]
         if key == 'hash' and isinstance(value, str):
             # a frame's hash differs from run to run; which frames share one does not
             return self.hashes.setdefault(value, f'<HASH-{len(self.hashes) + 1}>')
@@ -483,6 +484,8 @@ class Run:
         if isinstance(value, dict):
             return {k: self.fixture(v, k) for k, v in value.items() if k not in ('rid', 'tag')}
         if isinstance(value, list):
+            if key == 'dirs':
+                return ['<DATADIR>/watermarks', '<CONFIGDIR>/watermarks']
             return [self.fixture(v) for v in value[:FIXTURE_ITEMS]]
         if key == 'hash' and isinstance(value, str):
             n = self.hashes.setdefault(value, f'<HASH-{len(self.hashes) + 1}>')

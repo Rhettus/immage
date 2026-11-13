@@ -112,6 +112,10 @@ export const commands = {
 	spektraFetch: (action: string) => __TAURI_INVOKE<FilmFetch>("spektra_fetch", { action }),
 	lenses: () => __TAURI_INVOKE<LensMenu>("lenses"),
 	wbPresets: () => __TAURI_INVOKE<WbPresets>("wb_presets"),
+	lutFiles: (priority: number, pick: boolean) => __TAURI_INVOKE<LutFiles | null>("lut_files", { priority, pick }),
+	lutFolder: (folder: string) => __TAURI_INVOKE<null>("lut_folder", { folder }),
+	pickFolder: (start: string) => __TAURI_INVOKE<string | null>("pick_folder", { start }),
+	watermarks: () => __TAURI_INVOKE<Watermarks>("watermarks"),
 	moduleSchema: (op: string) => __TAURI_INVOKE<ModuleSchema>("module_schema", { op }),
 	instances: () => __TAURI_INVOKE<Instance[]>("instances"),
 	presets: (op: string, priority: number) => __TAURI_INVOKE<PresetsReply>("presets", { op, priority }),
@@ -303,6 +307,12 @@ export type ChannelStats = {
 	min: number,
 	mean: number,
 	max: number,
+};
+
+export type ChosenFile = {
+	path: string,
+	label?: string | null,
+	hash: number | null,
 };
 
 export type ColorProfiles = {
@@ -540,6 +550,14 @@ export type LookInfo = {
 	group: string,
 	path: string,
 	user?: boolean | null,
+};
+
+export type LutFiles = {
+	folder: string,
+	current: string,
+	current_hash: number | null,
+	exists: boolean,
+	files: ChosenFile[],
 };
 
 export type MapView = {
@@ -1044,6 +1062,11 @@ export type Volume = {
 	host: string | null,
 	network: boolean,
 	online: boolean,
+};
+
+export type Watermarks = {
+	markers: ChosenFile[],
+	dirs: string[],
 };
 
 export type WbPreset = {

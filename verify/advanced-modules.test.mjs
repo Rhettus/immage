@@ -8,7 +8,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { registerHooks } from 'node:module';
@@ -561,6 +561,15 @@ test('Advanced card layouts match darktable', { skip: skip || false }, async (t)
           assert.ok(Number.isFinite(now), `${lf.path}: reads ${now}`);
           continue;
         }
+        // a file chooser is the engine's own field over a name param, read as a hash
+        if (lf.file) {
+          assert.ok(lf.label && ['lut', 'marker'].includes(lf.file), `${lf.path}: file ${lf.file}`);
+          assert.ok(['lut3d', 'watermark'].includes(l.op), `${l.op}: a file chooser on a module with none`);
+          const now = (await e.call({ cmd: 'get', modules: { [`${l.op}@0`]: [lf.path] } })).modules[`${l.op}@0`].params[lf.path];
+          assert.ok(Number.isFinite(now), `${lf.path}: reads ${now}`);
+          assert.equal(resolve(lf.file === 'lut' ? 'filepath' : 'filename')?.type, 'string', `${lf.path}: its name param is not a char array`);
+          continue;
+        }
         const f = resolve(lf.path);
         assert.ok(f, `${l.op}: no field ${lf.path}; schema has ${[...by.keys()]}`);
         assert.ok(lf.label, `${lf.path}: no label`);
@@ -929,6 +938,103 @@ test('Advanced framing color writes its three elements', { skip: skip || false }
   await set(Object.fromEntries(fp.map((p, k) => [p, [0.5, 0.25, 1][k]])));
   const fc = (await e.call({ cmd: 'get', modules: { 'borders@0': fp } })).modules['borders@0'].params;
   assert.deepEqual(fp.map((p) => fc[p]), [0.5, 0.25, 1], 'the frame line color reads back');
+});
+
+// the file choosers of the LUT 3D and Watermark cards (engine/files.c): the
+// name params filepath and filename edited as the hash of the name, the lists
+// the engine gives, and what they do to a render
+test('Advanced LUT 3D and watermark file choosers', { skip: skip || false }, async (t) => {
+  const work = mkdtempSync(join(tmpdir(), 'immage-advfiles-'));
+  mkdirSync(join(work, 'photos'));
+  const photo = join(work, 'photos', 'stairs.jpg');
+  copyFileSync(SAMPLE, photo);
+  const e = new Engine(work);
+  t.after(() => { e.stop(); rmSync(work, { recursive: true, force: true }); });
+  await e.call({ cmd: 'open', path: photo });
+  const frame = async (tag) => {
+    const out = join(work, `${tag}.ppm`);
+    await e.call({ cmd: 'render', width: 96, height: 64, out });
+    return readFileSync(out);
+  };
+  const mean = (a, b) => { let d = 0; for (let i = 20; i < a.length; i++) d += Math.abs(a[i] - b[i]); return d / (a.length - 20); };
+  const read = async (op, path) => (await e.call({ cmd: 'get', modules: { [`${op}@0`]: [path] } })).modules[`${op}@0`];
+
+  // LUT 3D: a cube that inverts the colors, in a sub folder of the LUT folder
+  const luts = join(work, 'luts');
+  mkdirSync(join(luts, 'film'), { recursive: true });
+  const cube = ['LUT_3D_SIZE 2'];
+  for (let b = 0; b < 2; b++) for (let g = 0; g < 2; g++) for (let r = 0; r < 2; r++) cube.push(`${1 - r} ${1 - g} ${1 - b}`);
+  writeFileSync(join(luts, 'film', 'invert.cube'), cube.join('\n') + '\n');
+  writeFileSync(join(luts, 'film', 'readme.txt'), 'not a LUT');
+  writeFileSync(join(luts, 'film', 'a-second.CUBE'), cube.join('\n') + '\n');
+  writeFileSync(join(work, 'outside.cube'), cube.join('\n') + '\n');
+  const none = await e.call({ cmd: 'lut_files', folder: luts });
+  assert.equal(none.folder, luts);
+  assert.deepEqual([none.current, none.current_hash, none.exists, none.files], ['', 0, false, []], 'no file chosen lists nothing');
+  assert.equal((await read('lut3d', 'lut_file')).params.lut_file, 0);
+  const before = await frame('plain');
+  // the file dialog's pick: only a LUT inside the folder, named relative to it
+  await assert.rejects(e.call({ cmd: 'lut_files', pick: join(work, 'outside.cube') }), /outside LUT root folder/);
+  await assert.rejects(e.call({ cmd: 'lut_files', pick: join(luts, 'film', '..', '..', 'outside.cube') }), /outside LUT root folder/);
+  await assert.rejects(e.call({ cmd: 'lut_files', pick: join(luts, 'film', 'readme.txt') }), /not a LUT file/);
+  const picked = await e.call({ cmd: 'lut_files', pick: join(luts, 'film', 'invert.cube') });
+  assert.equal(picked.current, 'film/invert.cube');
+  assert.deepEqual(picked.files.map((f) => f.path), ['film/a-second.CUBE', 'film/invert.cube'], 'the picked file\'s folder, by name, supported types only');
+  await e.call({ cmd: 'set', op: 'lut3d', priority: 0, params: { lut_file: picked.current_hash }, enabled: true });
+  assert.equal((await read('lut3d', 'lut_file')).params.lut_file, picked.current_hash, 'the choice reads back');
+  const listed = await e.call({ cmd: 'lut_files' });
+  assert.deepEqual([listed.current, listed.exists, listed.files.length], ['film/invert.cube', true, 2]);
+  const inverted = await frame('inverted');
+  assert.ok(mean(before, inverted) > 40, `the LUT changes the render by ${mean(before, inverted)}`);
+  const mid = (a) => a[20 + 3 * (32 * 96 + 48)];
+  assert.ok(Math.abs(mid(before) + mid(inverted) - 255) < 60, `inverted: ${mid(before)} -> ${mid(inverted)}`);
+  // the other file of the list, then a hash that is no file in the folder
+  await e.call({ cmd: 'set', op: 'lut3d', priority: 0, params: { lut_file: listed.files[0].hash }, enabled: true });
+  assert.equal((await e.call({ cmd: 'lut_files' })).current, 'film/a-second.CUBE');
+  await assert.rejects(e.call({ cmd: 'set', op: 'lut3d', priority: 0, params: { lut_file: 12345 } }), /not found/);
+  assert.equal((await e.call({ cmd: 'lut_files' })).current, 'film/a-second.CUBE', 'a refused write changes nothing');
+  // a file that goes missing is still the current one
+  rmSync(join(luts, 'film', 'a-second.CUBE'));
+  const gone = await e.call({ cmd: 'lut_files' });
+  assert.deepEqual([gone.current, gone.exists], ['film/a-second.CUBE', false]);
+  await e.call({ cmd: 'set', op: 'lut3d', priority: 0, params: { lut_file: 0 }, enabled: true });
+  assert.equal((await read('lut3d', 'lut_file')).params.lut_file, 0, 'none again');
+  await e.call({ cmd: 'set', op: 'lut3d', priority: 0, params: { lut_file: picked.current_hash }, enabled: true });
+
+  // Watermark: the markers of darktable's data folder, then the user's
+  const user = join(work, 'config', 'watermarks');
+  mkdirSync(user, { recursive: true });
+  const shipped = await e.call({ cmd: 'watermarks' });
+  assert.ok(shipped.markers.length >= 2, 'darktable ships markers');
+  const first = shipped.markers.find((m) => m.path.endsWith('.svg'));
+  copyFileSync(join(shipped.dirs[0], first.path), join(user, 'zz-mine.svg'));
+  writeFileSync(join(user, 'notes.txt'), 'not a marker');
+  const listing = await e.call({ cmd: 'watermarks' });
+  assert.equal(listing.markers.length, shipped.markers.length + 1, 'a refresh finds the new marker');
+  assert.equal(listing.markers.at(-1).path, 'zz-mine.svg', 'the user\'s markers come after the data folder\'s');
+  assert.equal(listing.markers.at(-1).label, 'zz-mine (svg)');
+  assert.ok(listing.markers.every((m) => /\.(svg|png)$/i.test(m.path)));
+  assert.equal((await read('watermark', 'wm_marker')).defaults.wm_marker, listing.markers.find((m) => m.path === 'darktable.svg').hash, 'darktable.svg by default');
+  const other = listing.markers.find((m) => m.path === 'fixed-size-text.svg') ?? listing.markers.find((m) => m.path !== 'darktable.svg');
+  await e.call({ cmd: 'set', op: 'watermark', priority: 0, params: { wm_marker: listing.markers[0].hash }, enabled: true });
+  const a = await frame('mark-a');
+  await e.call({ cmd: 'set', op: 'watermark', priority: 0, params: { wm_marker: other.hash }, enabled: true });
+  assert.equal((await read('watermark', 'wm_marker')).params.wm_marker, other.hash);
+  const b = await frame('mark-b');
+  assert.ok(mean(inverted, a) > 0.5, 'a marker draws on the photo');
+  assert.ok(mean(a, b) > 0.05, `another marker draws another picture (${mean(a, b)})`);
+  await assert.rejects(e.call({ cmd: 'set', op: 'watermark', priority: 0, params: { wm_marker: 1 } }), /not found/);
+
+  // the names are stored with the photo
+  await e.call({ cmd: 'save' });
+  await e.call({ cmd: 'close' });
+  await e.call({ cmd: 'open', path: photo });
+  assert.equal((await read('watermark', 'wm_marker')).params.wm_marker, other.hash, 'the marker after reopen');
+  assert.equal((await read('lut3d', 'lut_file')).params.lut_file, picked.current_hash, 'the LUT after reopen');
+  const reopened = await e.call({ cmd: 'lut_files', folder: luts });
+  assert.equal(reopened.current, 'film/invert.cube');
+  // reading the field is the name's hash for both instances' defaults too
+  assert.equal((await read('lut3d', 'lut_file')).defaults.lut_file, 0);
 });
 
 // white balance's temperature and tint are the engine's own fields (wb.c,

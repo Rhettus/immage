@@ -2652,6 +2652,9 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .module-card-section { margin: 10px 0 4px; font-size: 11px; color: var(--text-2); text-transform: lowercase; }
 .module-card-section::first-letter { text-transform: uppercase; }
 .module-card-turns { margin: 4px 0 8px; }
+.module-file { flex-wrap: wrap; }
+.module-file select { flex: 1; min-width: 0; }
+.module-file-note { flex-basis: 100%; margin: 0; }
 
 /* Preferences > Modules > Advanced modules (ModulePrefs.tsx) */
 .module-prefs-tools { display: flex; gap: 8px; margin: 0 0 12px; }

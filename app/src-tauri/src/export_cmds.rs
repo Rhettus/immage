@@ -410,6 +410,33 @@ pub(crate) async fn pick_files(app: &AppHandle, title: &str, exts: &[&str], mult
     .map_err(|e| e.to_string())
 }
 
+// one file, the dialog opening in `dir`; none when it is cancelled
+pub(crate) async fn pick_file_in(app: &AppHandle, title: &str, exts: &[&str], dir: &Path) -> Result<Option<PathBuf>, String> {
+    let handle = app.clone();
+    let (title, dir) = (title.to_string(), dir.to_path_buf());
+    let exts = exts.iter().map(|e| e.to_string()).collect::<Vec<_>>();
+    tauri::async_runtime::spawn_blocking(move || {
+        let exts: Vec<&str> = exts.iter().map(String::as_str).collect();
+        handle.dialog().file().add_filter(title, &exts).set_directory(dir)
+            .blocking_pick_file().and_then(|f| f.into_path().ok())
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+// a folder, the dialog opening in `start` when it is one; none when cancelled
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn pick_folder(app: AppHandle, start: String) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut dialog = app.dialog().file();
+        if Path::new(&start).is_dir() { dialog = dialog.set_directory(&start); }
+        dialog.blocking_pick_folder().and_then(|f| f.into_path().ok()).map(|p| p.to_string_lossy().into_owned())
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
 pub(crate) async fn pick_save(app: &AppHandle, title: &str, exts: &[&str], name: &str) -> Result<Option<PathBuf>, String> {
     let handle = app.clone();
     let (title, name) = (title.to_string(), safe_file_name(name));

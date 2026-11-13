@@ -17,6 +17,7 @@ import { ModuleCurves } from "./ModuleCurves";
 import { ModuleLevels } from "./ModuleLevels";
 import { ModuleBands } from "./ModuleBands";
 import { ModuleGraph } from "./ModuleGraph";
+import { ModuleFile } from "./ModuleFile";
 import { graphFields } from "./graphMaps";
 import { LensPicker } from "./LensPicker";
 
@@ -241,6 +242,12 @@ export function ModuleCard({ hidden, instance, layout, schema, state, siblings, 
             // a section heading shows once, above the first of its fields shown
             let heading: string | undefined;
             return layout.fields.map((l) => {
+              if (l.file) {
+                if (l.tab && l.tab !== tab) return null;
+                return <ModuleFile key={l.path} kind={l.file} label={l.label} priority={instance.priority} photo={photo ?? null}
+                                   value={state.params[l.path] ?? state.defaults[l.path] ?? 0} disabled={fixed && !state.enabled}
+                                   onChange={(hash) => onFields({ [l.path]: hash }, false, l.path)} />;
+              }
               if (l.rgb) {
                 if (!fields.has(l.path) || (l.tab && l.tab !== tab) || (l.showIf && !l.showIf(state.params))) return null;
                 const paths = rgbPaths(l.path);

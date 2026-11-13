@@ -699,6 +699,22 @@ static gboolean _cmd_wb_presets(JsonObject *req, JsonBuilder *b, char **err)
   return wb_presets(b, err);
 }
 
+static gboolean _cmd_lut_files(JsonObject *req, JsonBuilder *b, char **err)
+{
+  return files_lut(req, b, err);
+}
+
+static gboolean _cmd_lut_folder(JsonObject *req, JsonBuilder *b, char **err)
+{
+  files_set_lut_folder(json_object_get_string_member_with_default(req, "folder", ""));
+  return TRUE;
+}
+
+static gboolean _cmd_watermarks(JsonObject *req, JsonBuilder *b, char **err)
+{
+  return files_watermarks(b, err);
+}
+
 static gboolean _cmd_lenses(JsonObject *req, JsonBuilder *b, char **err)
 {
   if(!session_lens_menu(b, err)) return FALSE;
@@ -1273,6 +1289,9 @@ static const eng_cmd_t _commands[] =
   { "set", _cmd_set, _CMD_NEEDS_OPEN | _CMD_EDITS },
   { "color_profiles", _cmd_color_profiles, _CMD_NEEDS_OPEN },
   { "wb_presets", _cmd_wb_presets, _CMD_NEEDS_OPEN },
+  { "lut_files", _cmd_lut_files, _CMD_NEEDS_OPEN },
+  { "lut_folder", _cmd_lut_folder, 0 },
+  { "watermarks", _cmd_watermarks, 0 },
   { "lenses", _cmd_lenses, _CMD_NEEDS_OPEN },
   { "module_state", _cmd_module_state, _CMD_NEEDS_OPEN },
   { "presets", _cmd_presets, _CMD_NEEDS_OPEN },

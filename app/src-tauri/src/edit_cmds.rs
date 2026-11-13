@@ -3,7 +3,7 @@
 
 use serde_json::{json, Number, Value};
 use std::path::Path;
-use crate::typed_edit::{AgxPresetsReply, AgxProfile, CombineMember, FilmFetch, FilmStocks, Instance, InstanceReply, InstancesReply, LensMenu, ModuleSchema, WbPresets, LookReply, MapView, MaskInfo, MasksReply, NewSpot, PresetsReply, Spot, SpotSource, SpotsReply, UprightReply};
+use crate::typed_edit::{AgxPresetsReply, AgxProfile, CombineMember, FilmFetch, FilmStocks, Instance, InstanceReply, InstancesReply, LensMenu, ModuleSchema, WbPresets, LutFiles, Watermarks, LookReply, MapView, MaskInfo, MasksReply, NewSpot, PresetsReply, Spot, SpotSource, SpotsReply, UprightReply};
 use crate::typed_export::LookInfo;
 use tauri::{ipc::Response, AppHandle, State};
 use crate::AppState;
@@ -48,6 +48,47 @@ pub(crate) async fn masks(state: State<'_, AppState>, fields: std::collections::
 pub(crate) async fn wb_presets(state: State<'_, AppState>) -> Result<WbPresets, String> {
     let reply = state.engine("wb_presets").request(json!({ "cmd": "wb_presets" }))?;
     serde_json::from_value(reply).map_err(|e| format!("wb_presets: unexpected reply: {e}"))
+}
+
+// the LUT 3D card's files: the 3D LUT folder of Preferences goes to the engine
+// first, which lists the files beside the instance's own. With `pick` it opens
+// a file dialog in that folder and answers for the file chosen (the engine
+// refuses one outside the folder), or null when the dialog is cancelled
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn lut_files(app: AppHandle, state: State<'_, AppState>, settings: State<'_, crate::settings::Settings>,
+                              priority: i64, pick: bool) -> Result<Option<LutFiles>, String> {
+    let folder = settings.get(crate::settings::LUT_FOLDER).unwrap_or_default();
+    let mut req = json!({ "cmd": "lut_files", "priority": priority, "folder": folder.trim() });
+    if pick {
+        // the folder the engine now has, which is the home folder when the
+        // preference is empty
+        let start = if folder.trim().is_empty() { std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_default() } else { folder.trim().to_string() };
+        let Some(file) = crate::export_cmds::pick_file_in(&app, "select LUT file", &["png", "cube", "3dl"], Path::new(&start)).await? else {
+            return Ok(None);
+        };
+        req["pick"] = json!(file.to_string_lossy());
+    }
+    let reply = state.engine("lut_files").request(req)?;
+    serde_json::from_value(reply).map(Some).map_err(|e| format!("lut_files: unexpected reply: {e}"))
+}
+
+// Preferences' 3D LUT folder, handed to the engine at once so a photo that
+// uses a LUT renders from it (an empty one is darktable's default, the home
+// folder)
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn lut_folder(state: State<'_, AppState>, folder: String) -> Result<(), String> {
+    state.engine("lut_folder").request(json!({ "cmd": "lut_folder", "folder": folder.trim() })).map(|_| ())
+}
+
+// the markers the Watermark card offers (the engine's `watermarks`), which a
+// refresh reads again
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn watermarks(state: State<'_, AppState>) -> Result<Watermarks, String> {
+    let reply = state.engine("watermarks").request(json!({ "cmd": "watermarks" }))?;
+    serde_json::from_value(reply).map_err(|e| format!("watermarks: unexpected reply: {e}"))
 }
 
 // the Lensfun lenses Lens Corrections can use for the open photo, and the

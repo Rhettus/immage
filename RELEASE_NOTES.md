@@ -28,8 +28,9 @@ Improvements
   list (as shot, camera reference and your camera's presets, with a finetune
   slider) and its temperature and tint sliders. The framing and watermark
   cards have color buttons for the border, frame line and watermark colors,
-  and the profiled denoise and raw denoise cards have darktable's wavelet
-  curves with channel tabs.
+  the profiled denoise and raw denoise cards have darktable's wavelet
+  curves with channel tabs, the LUT 3D card chooses its LUT file in a new
+  3D LUT folder preference, and the watermark card chooses its marker.
   When a photo's white balance comes from the white balance module with color
   calibration off, Simple's White Balance section and the white balance card
   say so.

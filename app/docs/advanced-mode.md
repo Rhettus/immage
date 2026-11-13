@@ -255,8 +255,16 @@ The HSL / Color group has these darktable modules:
 - **Color look up table**: on/off, reset and darktable's presets (such as
   its film emulations). The patch grid and patch sliders are not on the card
   yet.
-- **LUT 3D**: **Application color space** and **Interpolation**. Choosing
-  the LUT file is not on the card yet.
+- **LUT 3D**: **LUT file** (a folder button and a menu), **Application
+  color space** and **Interpolation**. The button opens a file dialog in the
+  **3D LUT folder** of Preferences > Modules > Advanced modules (your home
+  folder until you choose one) and takes a png (hald CLUT), cube or 3dl file;
+  a file outside that folder is refused. The photo keeps the file's path
+  relative to the folder, not the LUT itself, so a LUT that is moved or
+  deleted shows as `INVALID >>` with its path and the photo renders without
+  it. The menu lists the LUT files in the chosen file's folder; it is empty
+  until a file is chosen. darktable's compressed gmic LUTs (gmz) and their
+  name list are not offered.
 - **Color mapping**: **Number of clusters**, **Color dominance** and
   **Histogram equalization**. Capturing the source and target colors is not
   on the card yet. darktable allows one instance.
@@ -422,11 +430,16 @@ The Effects group has these darktable modules:
   darktable. The card does not yet have darktable's aspect and position
   presets or the pickers that take a color from the photo. **Aspect ratio**
   sets a custom ratio; by default the framed photo keeps its own.
-- **Watermark**: **Color** (a color button, used by the marker's color
-  tag), **Opacity**, then under **Placement** **Rotation**,
-  **Scale**, **Scale on** (with **Scale marker to** and **Scale marker
-  reference** for its advanced options), **X offset** and **Y offset**. The
-  card cannot yet choose the marker, its text or font, or its alignment, so it places darktable's default marker in the center.
+- **Watermark**: **Marker** (a menu and a refresh button), **Color** (a
+  color button, used by the marker's color tag), **Opacity**, then under
+  **Placement** **Rotation**, **Scale**, **Scale on** (with **Scale marker
+  to** and **Scale marker reference** for its advanced options), **X offset**
+  and **Y offset**. The menu lists the SVG and png files in darktable's
+  watermarks folder and in the watermarks folder of Immage's settings (its
+  tooltip names both); the refresh button reads them again after you add
+  one. The photo keeps the marker's file name. The card cannot yet edit the
+  marker's text or font, or its alignment, so the marker sits in the
+  center.
 - **Composite**: **Opacity**, then under **Placement** the same settings
   as Watermark. The card cannot yet choose the photo to place, so it has
   no visible effect yet.

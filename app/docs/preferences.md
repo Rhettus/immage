@@ -546,6 +546,11 @@ with a switch per module, a filter, Show all and Hide all per group, and
 **Essentials only**. A photo that uses a hidden module still shows its card. See
 [Advanced mode](advanced-mode.md#hiding-modules).
 
+The Advanced modules section also has the **3D LUT folder**: where the LUT 3D
+card's file button opens and the only place it takes files from. A photo
+keeps the LUT's path relative to this folder. Empty uses your home folder,
+as darktable does.
+
 Clarity and Texture use **contrast & texture** by default, in place of a
 single slider: the module's Coarse, Medium and Fine details, Base detail
 level, Halo control, Noise bias, Shadows and Highlights sliders, using

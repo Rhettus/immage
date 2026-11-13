@@ -387,6 +387,12 @@ pub fn resource_level(runtime: &Path) -> String {
         .unwrap_or_else(|| "default".into())
 }
 
+// Preferences' 3D LUT folder; none when not set, which leaves darktable's
+// default, the home folder
+pub fn lut_folder(runtime: &Path) -> Option<String> {
+    crate::settings::read_key(runtime, crate::settings::LUT_FOLDER).map(|s| s.trim().to_string())
+}
+
 pub fn set_resource_level(settings: &Settings, level: &str) -> Result<(), String> {
     if !RESOURCE_LEVELS.contains(&level) {
         return Err(format!("no resource level '{level}'"));
@@ -683,6 +689,10 @@ impl Engine {
             // _opencl_apply_scheduling_profile)
             .args(["--conf", "opencl_scheduling_profile=default"])
             .args(["--conf", &format!("resourcelevel={}", resource_level(runtime))])
+            // lut3d's process reads the LUT folder from darktable's config, so
+            // a photo that uses a LUT renders after a restart too; lut_files
+            // sets it again as Preferences changes it
+            .args(lut_folder(runtime).filter(|f| !f.is_empty()).map(|f| ["--conf".to_string(), format!("plugins/darkroom/lut3d/def_path={f}")]).into_iter().flatten())
             // per-module timings, for Preferences' performance overlay; they
             // only print, and stay out of the log
             .args(["-d", "perf"])

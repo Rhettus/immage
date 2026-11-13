@@ -214,6 +214,37 @@ pub struct WbPresets {
     pub presets: Vec<WbPreset>,
 }
 
+// a file a card's chooser lists: its path or name as the module stores it,
+// the label shown for it (a marker's "name (ext)"; none for a LUT) and the
+// hash the engine's `lut_file` and `wm_marker` fields take
+#[derive(Serialize, Deserialize, Type)]
+pub struct ChosenFile {
+    pub path: String,
+    #[serde(default)]
+    pub label: Option<String>,
+    pub hash: f64,
+}
+
+// `lut_files`: the LUT folder (empty when not set), the instance's file (or
+// the one just picked) with its hash and whether it exists, and the files in
+// its folder
+#[derive(Serialize, Deserialize, Type)]
+pub struct LutFiles {
+    pub folder: String,
+    pub current: String,
+    pub current_hash: f64,
+    pub exists: bool,
+    pub files: Vec<ChosenFile>,
+}
+
+// `watermarks`: the markers of the data folder and the user's, and those two
+// folders
+#[derive(Serialize, Deserialize, Type)]
+pub struct Watermarks {
+    pub markers: Vec<ChosenFile>,
+    pub dirs: Vec<String>,
+}
+
 // `look`'s reply: the look in use, by name
 #[derive(Deserialize)]
 pub struct LookReply {

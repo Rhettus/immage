@@ -13,6 +13,8 @@ import { PrefCard, PrefRow, PrefSwitch } from "./PrefsUI";
 import { LAYOUTS, groupLayouts } from "./advancedLayout";
 import { essentialsHidden, hiddenKey, loadHiddenModules, storeHiddenModules } from "./hiddenModules";
 import { panels } from "./manifest";
+import { loadLutFolder, storeLutFolder } from "./lutFolder";
+import { commands } from "./commands";
 
 const TOOLS = moduleTools().filter((group) => group.panel !== "Masks");
 // Advanced mode's groups, as Adjustments shows them
@@ -40,6 +42,9 @@ export function ModulePrefs({ focusMode }: { focusMode: boolean }) {
     setHiddenKeys(next);
   };
   const needle = find.trim().toLowerCase();
+  const [lutFolder, setLutFolder] = useState(loadLutFolder);
+  const chooseLutFolder = (v: string) => { setLutFolder(v); storeLutFolder(v); };
+  const browseLutFolder = () => { commands.pickFolder(lutFolder).then((f) => { if (f) chooseLutFolder(f); }).catch(() => {}); };
   const [mode, setMode] = useState(loadModuleMode);
   // bumped on a pick, so the menus read their stored values again
   const [, setPicked] = useState(0);
@@ -127,6 +132,16 @@ export function ModulePrefs({ focusMode }: { focusMode: boolean }) {
             In Advanced mode, hidden modules leave Add module, the module search and the tone mapper switch. A photo
             that uses a hidden module still shows its card, marked hidden, so every edit stays reachable.
           </p>
+          <PrefCard title="3D LUT folder">
+            <PrefRow label="LUT folder" summary="Where the LUT 3D module finds its files."
+                     hint="the LUT 3D card's file button opens here and refuses files outside it; a photo keeps the file's path relative to this folder. Empty uses your home folder, as darktable does">
+              <div className="module-prefs-tools">
+                <input className="field" placeholder="Home folder" aria-label="3D LUT folder" spellCheck={false}
+                       value={lutFolder} onChange={(e) => chooseLutFolder(e.target.value)} />
+                <button className="btn small" onClick={browseLutFolder}>Choose…</button>
+              </div>
+            </PrefRow>
+          </PrefCard>
           <div className="module-prefs-tools">
             <input type="search" className="field" placeholder="Filter modules" aria-label="Filter modules" spellCheck={false}
                    value={find} onChange={(e) => setFind(e.target.value)} />

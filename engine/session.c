@@ -676,6 +676,7 @@ gboolean session_write_field(dt_iop_module_t *mod, const char *name, const doubl
     return _write_profile(mod, !strcmp(name, "working_profile"), num, err);
   if(!g_strcmp0(name, BLEND_DETAILS)) return _write_details(mod, num, err);
   if(!g_strcmp0(name, LENS_PICK) && !g_strcmp0(mod->op, "lens")) return _write_lens_pick(mod, num, err);
+  if(files_is_field(mod, name)) return files_write(mod, name, num, err);
   if((!g_strcmp0(name, WB_TEMP) || !g_strcmp0(name, WB_TINT)) && !g_strcmp0(mod->op, "temperature"))
     return wb_write(mod, name, num, err);
   if((!g_strcmp0(name, WB_SETTING) || !g_strcmp0(name, WB_TUNE)) && !g_strcmp0(mod->op, "temperature"))
@@ -705,6 +706,7 @@ gboolean session_read_field(dt_iop_module_t *mod, const char *name,
     return wb_read(mod, name, from_defaults, num, err);
   if((!g_strcmp0(name, WB_SETTING) || !g_strcmp0(name, WB_TUNE)) && !g_strcmp0(mod->op, "temperature"))
     return wb_setting_read(mod, name, from_defaults, num, err);
+  if(files_is_field(mod, name)) return files_read(mod, name, from_defaults, num, err);
   if(!g_strcmp0(name, LENS_PICK) && !g_strcmp0(mod->op, "lens"))
   {
     dt_introspection_field_t *lf = NULL;
@@ -807,7 +809,7 @@ static gboolean _place(dt_iop_module_t *mod, const char *after, const char *befo
 }
 
 // the instance of `op` with multi_priority `priority`; 0 is the first
-static dt_iop_module_t *_module_at(const char *op, const int priority, char **err)
+dt_iop_module_t *session_module_at(const char *op, const int priority, char **err)
 {
   if(!priority) return session_module(op, err);
   dt_iop_module_t *mod = op && priority > 0 ? dt_iop_get_module_by_op_priority(_s.dev.iop, op, priority) : NULL;
@@ -832,7 +834,7 @@ gboolean session_set(const char *op, const char *field, JsonNode *value,
   // an instance placed by `after` or `before` is not also put after the
   // mask anchor, which would leave it behind modules it must precede
   dt_iop_module_t *mod = instance ? masks_named_instance(op, instance, !after && !before, err)
-                                  : _module_at(op, priority, err);
+                                  : session_module_at(op, priority, err);
   if(!mod) return FALSE;
   // kept to tell a request that changes nothing (masks_named_instance() bumps
   // iop_gen for a new instance, which always gets its history item)
@@ -936,7 +938,7 @@ static gboolean _unbase64_into(const char *text, void *dst, const size_t size)
 // `plugins/darkroom/hide_default_presets` is set. a name keeps its "|" levels
 gboolean session_presets(const char *op, const int priority, JsonBuilder *b, char **err)
 {
-  dt_iop_module_t *mod = _module_at(op, priority, err);
+  dt_iop_module_t *mod = session_module_at(op, priority, err);
   if(!mod) return FALSE;
   const dt_image_t *image = &_s.dev.image_storage;
   const gboolean default_first = dt_conf_get_bool("modules/default_presets_first");
@@ -1419,7 +1421,7 @@ gboolean session_get(JsonObject *ops, JsonBuilder *b, char **err)
     gchar *op = mark ? g_strndup(key, mark - key) : g_strdup(key);
     dt_iop_module_t *named = by_name ? session_find_named(op, mark + 1) : NULL;
     dt_iop_module_t *mod = named ? named
-      : mark && !by_name ? _module_at(op, atoi(mark + 1), err) : session_module(op, err);
+      : mark && !by_name ? session_module_at(op, atoi(mark + 1), err) : session_module(op, err);
     g_free(op);
     if(!mod) { g_list_free(names); return FALSE; }
     const gboolean missing = by_name && !named;
@@ -1539,7 +1541,7 @@ gboolean session_instance(const char *action, const char *op, const int priority
     return FALSE;
   }
   const gboolean restore = !g_strcmp0(action, "restore");
-  dt_iop_module_t *mod = _module_at(op, priority, err);
+  dt_iop_module_t *mod = session_module_at(op, priority, err);
   if(!mod) return FALSE;
   GList *gone = g_list_find(_s.deleted, mod);
   if((gone != NULL) != restore)
@@ -1611,7 +1613,7 @@ gboolean session_instance(const char *action, const char *op, const int priority
   }
   else if(!g_strcmp0(action, "move"))
   {
-    dt_iop_module_t *to = _module_at(op, other, err);
+    dt_iop_module_t *to = session_module_at(op, other, err);
     if(!to) return FALSE;
     if(to == mod || g_list_find(_s.deleted, to))
     {

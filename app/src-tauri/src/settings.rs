@@ -19,6 +19,9 @@ const NATIVE: &str = "native.";
 pub const RESOURCES: &str = "native.darktable-resources";
 pub const GPU_EDITS: &str = "native.gpu-edits";
 pub const RENDERER: &str = "native.webview-renderer";
+// Preferences > Modules > 3D LUT folder, written by the page; the engine takes
+// it as darktable's plugins/darkroom/lut3d/def_path
+pub const LUT_FOLDER: &str = "immage.lutFolder";
 
 // each native key began as a one-value file of this name in the runtime
 // directory
@@ -122,7 +125,6 @@ impl Settings {
         self.map.lock().unwrap().clone()
     }
 
-    #[cfg(test)]
     pub fn get(&self, key: &str) -> Option<String> {
         self.map.lock().unwrap().get(key).cloned()
     }
