@@ -1237,6 +1237,22 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "flat_field", label: "Flat field correction" },
     ],
   },
+  {
+    // colorreconstruction.c gui_init and gui_changed/gui_update (hue is shown
+    // only for the hue precedence); labels are the schema descriptions where
+    // set (spatial extent, range extent), else the param name
+    // image-dependent (not modeled): for monochrome images the card shows only
+    // "not applicable" and hides the enable button
+    // hue is drawn as a rainbow slider shown in degrees (factor 360)
+    op: "colorreconstruct", group: "technical", title: "Color reconstruction",
+    fields: [
+      { path: "threshold", label: "Threshold" },
+      { path: "spatial", label: "Spatial extent" },
+      { path: "range", label: "Range extent" },
+      { path: "precedence", label: "Precedence" },
+      { path: "hue", label: "Hue", factor: 360, unit: "°", showIf: (p) => p.precedence === 2 },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);

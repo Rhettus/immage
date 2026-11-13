@@ -342,6 +342,8 @@ The Technical group, only in Advanced, has these darktable modules:
   **White point** and **Flat field correction**, for raw photos only. The
   card does not have darktable's raw crop margins, which darktable also
   hides unless a preference shows them.
+- **Color reconstruction**: **Threshold**, **Spatial extent**, **Range
+  extent** and **Precedence**, and **Hue** when the precedence is hue.
 
 ## Instances
 
