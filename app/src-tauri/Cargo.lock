@@ -2131,7 +2131,7 @@ dependencies = [
 
 [[package]]
 name = "immage"
-version = "0.44.1"
+version = "0.45.0"
 dependencies = [
  "chrono",
  "dispatch2",
