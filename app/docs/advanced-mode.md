@@ -78,6 +78,10 @@ Besides exposure, the Basic group has these darktable modules:
   iterations, flat color and diameter. The card lists every method; darktable
   offers only those that suit the photo's sensor and switches to inpaint
   opposed if one does not. darktable allows one instance.
+- **Contrast & texture**: **Base detail level**, **Highlights** and
+  **Shadows**, then **Coarse**, **Medium** and **Fine details** under Local
+  contrast and **Halo control** and **Noise bias** under Filter settings. The
+  detail mask preview buttons are not on the card yet.
 
 ## Instances
 

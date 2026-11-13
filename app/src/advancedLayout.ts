@@ -126,6 +126,22 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "scales", label: "Diameter of reconstruction", showIf: (p) => p.mode === 3 },
     ],
   },
+  {
+    // contrastntexture.c gui_init; no gui_changed rule hides a field. left
+    // out: the mask preview buttons on detail level and the three gain
+    // sliders, which toggle a display mode rather than set a parameter
+    op: "contrastntexture", group: "basic", title: "Contrast & texture",
+    fields: [
+      { path: "detail_level", label: "Base detail level", soft: [1, 10] },
+      { path: "gain_highlights", label: "Highlights", soft: [-2, 2] },
+      { path: "gain_shadows", label: "Shadows", soft: [-2, 2] },
+      { path: "gain_coarse", label: "Coarse details", section: "Local contrast", soft: [-1, 1.5], unit: "%" },
+      { path: "gain_medium", label: "Medium details", section: "Local contrast", soft: [-1, 1.5], unit: "%" },
+      { path: "gain_fine", label: "Fine details", section: "Local contrast", soft: [-1, 1.5], unit: "%" },
+      { path: "halo_control", label: "Halo control", section: "Filter settings", soft: [-5, 5], unit: "%" },
+      { path: "noise_bias", label: "Noise bias", section: "Filter settings", soft: [0, 0.2], digits: 4 },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);
