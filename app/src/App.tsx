@@ -87,7 +87,7 @@ import { DEFAULT_TRANSITION, loadZoneOverlay, offsetsOf, overlayRgb, paintRange,
          placeTable, nextObjectKind, partLabel,
          rangeCenter, samePart, saveZoneOverlay, ZONE_PARTS, zoneAt, zoneMaskName, zoneOfMask, zonePartOf, zoneShape,
          type ZoneData, type ZoneOverlay, type ZonePart, type ZoneRange } from "./zones";
-import { SpotOverlay, type SpotTool } from "./SpotOverlay";
+import { SpotOverlay, type ShowSpots, type SpotTool } from "./SpotOverlay";
 import type { NewSpot, Spot } from "./spots";
 import { aiRefine, type Backdrop, flipMode, isRange, isRefined, maskAt, readsBackdrop, maskKindName, nextMaskName, NO_REFINE, overlayShown, overlayStep, rangeChannels,
          type BlendifChannel, type ChannelRange, type Mask, type ObjectShape, type OverlayToggle, type ParametricRange, type Range,
@@ -549,6 +549,17 @@ export default function App() {
   const [spotSel, setSpotSel] = useState<number | null>(null);
   const [spotTool, setSpotTool] = useState<SpotTool>({ mode: "heal", size: 0.03, feather: 0.5, opacity: 1 });
   const [visualize, setVisualize] = useState<number | null>(null);
+  // Show Spots, remembered; H hides the spots and brings back the choice before
+  const [showSpots, setShowSpotsState] = useState<ShowSpots>(() => {
+    const v = settings.get("immage.healShowSpots");
+    return v === "selected" || v === "never" ? v : "always";
+  });
+  const shownSpotsRef = useRef<ShowSpots>(showSpots === "never" ? "always" : showSpots);
+  const setShowSpots = (v: ShowSpots) => {
+    if (v !== "never") shownSpotsRef.current = v;
+    setShowSpotsState(v);
+    settings.set("immage.healShowSpots", v);
+  };
   // bumped when the whole-image base is redrawn, for Visualize Spots
   const [baseTick, setBaseTick] = useState(0);
   const syncSpots = () => setSpots(session.current?.spots ?? []);
@@ -1386,7 +1397,8 @@ export default function App() {
   const zonesModeRef = useRef(false);
   zonesModeRef.current = rightMode === "zones" && !cropping;
   // the Heal panel's keys: Escape deselects, Delete removes the spot, [ and ]
-  // size the brush, A toggles Visualize Spots; true when the key was used
+  // size the brush, A toggles Visualize Spots, H hides or shows the spots;
+  // true when the key was used
   const healModeRef = useRef(false);
   healModeRef.current = healMode && !cropping;
   const healKeyRef = useRef<(e: KeyboardEvent) => boolean>(() => false);
@@ -1394,6 +1406,10 @@ export default function App() {
     if (e.key === "Escape" && spotSel !== null) { setSpotSel(null); return true; }
     if ((e.key === "Delete" || e.key === "Backspace") && spotSel !== null) { deleteSpot(); return true; }
     if (e.key === "a" || e.key === "A") { setVisualize((v) => (v === null ? 50 : null)); return true; }
+    if ((e.key === "h" || e.key === "H") && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+      setShowSpots(showSpots === "never" ? shownSpotsRef.current : "never");
+      return true;
+    }
     if (e.key === "[" || e.key === "]") {
       const f = e.key === "]" ? 1.15 : 1 / 1.15;
       setSpotTool((t) => ({ ...t, size: Math.min(0.2, Math.max(0.002, t.size * f)) }));
@@ -5957,7 +5973,7 @@ export default function App() {
             {healMode && current && !cropping && !preview && full.current && (
               <div className="mask-box" ref={maskBox}>
                 <SpotOverlay boxRef={maskBox} image={full.current} region={shownRegion} spots={spots} selected={spotSel} tool={spotTool}
-                             visualize={visualize} base={baseCanvas} baseTick={baseTick} overlayColor={maskOverlayRgb(overlayColor)}
+                             show={showSpots} visualize={visualize} base={baseCanvas} baseTick={baseTick} overlayColor={maskOverlayRgb(overlayColor)}
                              onSelect={setSpotSel} onCreate={(sp) => void createSpot(sp)}
                              onChange={(next) => editSpots(next, "spot:drag")} />
               </div>
@@ -6271,7 +6287,7 @@ export default function App() {
                         }} />
           )}
           {healMode && !cropping && (
-            <HealPanel tool={spotTool} spots={spots} selected={spotSel} visualize={visualize} disabled={!current}
+            <HealPanel tool={spotTool} spots={spots} selected={spotSel} show={showSpots} visualize={visualize} disabled={!current}
                        renderSlider={(c, v, onChange) => (
                          <Slider key={c.id} control={c} value={v} neutral={c.neutral ?? 0} disabled={!current}
                                  values={values} onChange={onChange} />
@@ -6284,7 +6300,7 @@ export default function App() {
                        }}
                        onDelete={deleteSpot}
                        onClear={() => { editSpots([], "spot:clear"); setSpotSel(null); }}
-                       onVisualize={setVisualize} />
+                       onShow={setShowSpots} onVisualize={setVisualize} />
           )}
           {rightMode === "zones" && !cropping && (
             <div className="panel">

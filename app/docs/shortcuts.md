@@ -123,5 +123,6 @@ The mask keys work from anywhere: they open Masks with that tool.
 | [ ] | Brush size |
 | Scroll | Brush size; ⇧ its feather |
 | A | Visualize spots |
+| H | Hide the spots, or show them again |
 | Delete | Remove the selected spot |
 | Esc | Deselect the spot |

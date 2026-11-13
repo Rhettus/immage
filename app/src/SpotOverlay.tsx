@@ -3,17 +3,22 @@
 
 // the Heal tool on the image, as Lightroom's: a click heals a round spot,
 // a drag paints a stroke, and the selected spot shows where it copies from,
-// both ends draggable. the others show as pins. with Visualize Spots, the
+// both ends draggable. the others show as pins, unless Show Spots hides
+// them. the pointer is the brush's circles and a center dot, with no
+// crosshair to cover the spot. with Visualize Spots, the
 // image is replaced by its edges, where dust and specks stand out
 import { useEffect, useRef, useState } from "react";
 import { overlayPixels, type Region, type Rgb } from "./masks";
 import { anchorOf, moveSpot, radiusOf, sourceOf, type NewSpot, type Spot } from "./spots";
 
 export type SpotTool = { mode: "heal" | "clone"; size: number; feather: number; opacity: number };
+// which spots the overlay shows: all, only the selected one, or none. a
+// hidden spot can't be clicked, so a click there heals a new one
+export type ShowSpots = "always" | "selected" | "never";
 
 const PIN = 6;  // a pin's radius, in CSS pixels
 
-export function SpotOverlay({ boxRef, image, region, spots, selected, tool, visualize, base, baseTick,
+export function SpotOverlay({ boxRef, image, region, spots, selected, tool, show, visualize, base, baseTick,
                               overlayColor, onSelect, onCreate, onChange }: {
   boxRef: React.RefObject<HTMLDivElement | null>;
   image: { w: number; h: number };       // the shown image at 100%, for its aspect
@@ -21,6 +26,7 @@ export function SpotOverlay({ boxRef, image, region, spots, selected, tool, visu
   spots: Spot[];
   selected: number | null;
   tool: SpotTool;
+  show: ShowSpots;
   visualize: number | null;              // Visualize Spots' threshold, 0-100, or off
   base: React.RefObject<HTMLCanvasElement | null>;  // the whole image as shown
   baseTick: number;                      // bumped when the base is redrawn
@@ -132,7 +138,7 @@ export function SpotOverlay({ boxRef, image, region, spots, selected, tool, visu
   const outline = (s: Spot, cls: string) => s.type === "circle"
     ? <circle className={cls} cx={s.x * W} cy={s.y * H} r={s.r * W} />
     : null;
-  const sel = selected !== null ? spots[selected] : undefined;
+  const sel = show !== "never" && selected !== null ? spots[selected] : undefined;
 
   return (
     <>
@@ -153,7 +159,7 @@ export function SpotOverlay({ boxRef, image, region, spots, selected, tool, visu
                drag.current = { kind: "target", start: p, k: selected!, spot: sel, points: [] };
                return;
              }
-             const hit = spots.findIndex((s) => {
+             const hit = show !== "always" ? -1 : spots.findIndex((s) => {
                const [x, y] = anchorOf(s);
                return Math.hypot((p[0] - x) * W, (p[1] - y) * H) <= PIN * 1.5 * unit;
              });
@@ -198,7 +204,7 @@ export function SpotOverlay({ boxRef, image, region, spots, selected, tool, visu
            }}
            onPointerLeave={() => setCursor(null)}>
         <rect className="mask-catch" x={0} y={0} width={W} height={H} />
-        {spots.map((s, k) => {
+        {show === "always" && spots.map((s, k) => {
           const [x, y] = anchorOf(s);
           return k === selected ? null
             : <circle key={k} className="spot-pin" cx={x * W} cy={y * H} r={PIN * unit} />;
@@ -212,13 +218,14 @@ export function SpotOverlay({ boxRef, image, region, spots, selected, tool, visu
             <circle className="spot-pin on" cx={anchorOf(sel)[0] * W} cy={anchorOf(sel)[1] * H} r={PIN * unit} />
           </g>
         )}
-        {/* the brush's edge, and the inner circle where its feather starts */}
+        {/* the brush's edge, the inner circle where its feather starts, and its center */}
         {cursor && !drag.current && (
           <g className="brush-cursor">
             <circle cx={cursor[0] * W} cy={cursor[1] * H} r={(tool.size / 2) * W} />
             {tool.feather > 0.02 && (
               <circle className="inner" cx={cursor[0] * W} cy={cursor[1] * H} r={(tool.size / 2) * W * (1 - tool.feather)} />
             )}
+            <circle className="dot" cx={cursor[0] * W} cy={cursor[1] * H} r={1.5 * unit} />
           </g>
         )}
       </svg>

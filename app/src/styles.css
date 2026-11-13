@@ -1766,6 +1766,10 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 /* Heal and Clone */
 .spot-edges { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .spot-edges[width="0"] { display: none; }
+/* the brush's circles and center dot stand in for the pointer; pins and
+   outlines bring back their own */
+.mask-svg.drawing.spot-svg { cursor: none; }
+.mask-svg .brush-cursor .dot { fill: var(--accent, #fff); stroke: var(--panel, #181818); stroke-width: 1; }
 .spot-svg .spot-pin {
   fill: var(--accent, #fff); stroke: var(--panel, #181818); stroke-width: 1.5; vector-effect: non-scaling-stroke; cursor: pointer;
 }
@@ -1778,6 +1782,8 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .spot-svg .spot-link { stroke: var(--accent, #fff); stroke-width: 1; stroke-dasharray: 2 3; vector-effect: non-scaling-stroke; pointer-events: none; }
 .heal-mode { display: flex; gap: 6px; margin-bottom: 8px; }
 .heal-mode .btn { flex: 1; }
+.heal-show { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 10px; }
+.heal-show > span { color: var(--text-2); }
 .heal-actions { display: flex; gap: 6px; margin-top: 6px; }
 .note-plain.warn { color: #f5b041; }
 

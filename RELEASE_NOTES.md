@@ -40,6 +40,9 @@ Improvements
 - GUI benchmark reports identify the computer by an anonymous id, not its name.
 - Hold Space and drag to pan a zoomed-in photo in any tool, including Heal,
   Masks and Crop.
+- Heal's pointer is the brush circles with a small center dot, without a
+  crosshair over the spot. Show spots (Always, Selected, Never) and H hide
+  earlier spots while you retouch.
 
 Performance
 
