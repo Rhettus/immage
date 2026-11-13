@@ -167,6 +167,9 @@ The HSL / Color group has these darktable modules:
   then **Tint hue** and **Tint purity**.
 - **Color correction**: **Saturation**. Its color grid is not on the card
   yet.
+- **Color look up table**: on/off, reset and darktable's presets (such as
+  its film emulations). The patch grid and patch sliders are not on the card
+  yet.
 
 ## Instances
 

@@ -608,6 +608,19 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "saturation", label: "Saturation" },
     ],
   },
+  {
+    // colorchecker.c gui_init: a patch grid and a patch combobox (not params),
+    // then lightness, green-magenta offset, blue-yellow offset and saturation
+    // sliders plus a relative/absolute target combobox, all callbacks that
+    // edit the target_L, target_a and target_b element of the selected patch
+    // (and num_patches' patch list). a static layout cannot address "the
+    // selected patch", so every widget is left out; this needs a custom
+    // editor (the patch grid with source_* and target_* arrays, 24 or 49
+    // patches). the params source_L/a/b, target_L/a/b and num_patches have
+    // no widget of their own
+    op: "colorchecker", group: "hsl", title: "Color look up table",
+    fields: [],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);
