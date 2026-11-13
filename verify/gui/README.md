@@ -550,3 +550,25 @@ Through Preferences, the test makes an imported preset the new-raw default,
 checks that deletion requires an explicit surviving replacement, verifies that
 cancel leaves the old default intact, and verifies the chosen replacement after
 restart. Deleting the last user preset explicitly selects AgX Default.
+
+## Running the whole registry
+
+A full clean run is many launches, not one. Cases that leave app state behind
+need their own launch or an ordering rule; a case that fails only after
+another case in the same launch is an ordering effect, so rerun it alone:
+
+- `menus` makes a virtual copy and leaves it open, so run it last or alone
+  (`color-range` restarts the app on the original file and then finds no mask).
+- `panel-scroll` needs a launch of its own (it asserts Presets opens at its
+  top the first time); `native-reset` must not follow `module-options`, which
+  leaves another Contrast backend selected.
+- `splash` asserts the window keeps its 640x427 size, which a maximized test
+  window on a tiling desktop does not; run it on a floating window.
+- Fixture groups: the default JPEG; `--fixture portrait|negative|endpoints|camera-a|hostile`
+  for `crop-portrait`, `negative`/`color-profiles`/`negative-profile-memory`,
+  `histogram-endpoints`, `camera-body` and `hostile-text`; a raw as the config's
+  `fixture` for `control-detail-*`, `control-lens-hp_enable`, `crop-auto-straighten`,
+  `lens-pick` and `lens-profile`; the hot-pixel DNG for `control-lens-hp_strength`
+  and `control-lens-hp_threshold`.
+- Each launch writes about 8 MB per case; clear `fixtures/` and `profile/cache`
+  of finished runs when disk is short.

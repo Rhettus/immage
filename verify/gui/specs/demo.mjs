@@ -65,7 +65,7 @@ export async function demo(t) {
   const out = process.env.DEMO_OUT ?? resolve(dirname(fileURLToPath(import.meta.url)), '../../results/gui/demo');
   const rec = new Recorder(t.driver, out);
   await settledPhoto(t);
-  await hideInfo(t);
+  await hideInfo(t.driver);
   if (await pathFree(t.driver)) throw Error('a path is visible; the clip would show it');
 
   const segment = async (name, caption, fn, { quiet } = {}) => {
