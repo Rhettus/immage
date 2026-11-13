@@ -450,6 +450,55 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "highlights_ccorrect", label: "Highlights color adjustment", unit: "%" },
     ],
   },
+  {
+    // colorequal.c gui_init, _init_sliders and gui_changed: node placement
+    // under the graph, then the collapsible "control sliders" (a notebook of
+    // hue, saturation and brightness pages, one slider per hue node) and the
+    // collapsible "options". the percent sliders have a hard max <= 10, so
+    // set_format gives them factor 100 (not repeated); _init_sliders offsets
+    // saturation and brightness by -100 so 1.0 reads 0%. the four guided
+    // filter sliders hide with use_filter (gui_changed). smoothing_hue shows
+    // only on the graph's hue page (g->channel, a gui state not a param), so
+    // it is listed unconditionally. left out: the hue/saturation/brightness
+    // graph itself (needs a custom editor, drawn with a node-dragging curve
+    // per page), the node placement and white level pickers and the two mask
+    // preview quad buttons (not params)
+    op: "colorequal", group: "hsl", title: "Color equalizer",
+    fields: [
+      { path: "hue_shift", label: "Node placement", unit: "°", digits: 0 },
+      { path: "hue_red", label: "Red", tab: "Hue", section: "Control sliders", unit: "°", digits: 2 },
+      { path: "hue_orange", label: "Orange", tab: "Hue", section: "Control sliders", unit: "°", digits: 2 },
+      { path: "hue_yellow", label: "Yellow", tab: "Hue", section: "Control sliders", unit: "°", digits: 2 },
+      { path: "hue_green", label: "Green", tab: "Hue", section: "Control sliders", unit: "°", digits: 2 },
+      { path: "hue_cyan", label: "Cyan", tab: "Hue", section: "Control sliders", unit: "°", digits: 2 },
+      { path: "hue_blue", label: "Blue", tab: "Hue", section: "Control sliders", unit: "°", digits: 2 },
+      { path: "hue_lavender", label: "Lavender", tab: "Hue", section: "Control sliders", unit: "°", digits: 2 },
+      { path: "hue_magenta", label: "Magenta", tab: "Hue", section: "Control sliders", unit: "°", digits: 2 },
+      { path: "sat_red", label: "Red", tab: "Saturation", section: "Control sliders", unit: "%", offset: -100, digits: 2 },
+      { path: "sat_orange", label: "Orange", tab: "Saturation", section: "Control sliders", unit: "%", offset: -100, digits: 2 },
+      { path: "sat_yellow", label: "Yellow", tab: "Saturation", section: "Control sliders", unit: "%", offset: -100, digits: 2 },
+      { path: "sat_green", label: "Green", tab: "Saturation", section: "Control sliders", unit: "%", offset: -100, digits: 2 },
+      { path: "sat_cyan", label: "Cyan", tab: "Saturation", section: "Control sliders", unit: "%", offset: -100, digits: 2 },
+      { path: "sat_blue", label: "Blue", tab: "Saturation", section: "Control sliders", unit: "%", offset: -100, digits: 2 },
+      { path: "sat_lavender", label: "Lavender", tab: "Saturation", section: "Control sliders", unit: "%", offset: -100, digits: 2 },
+      { path: "sat_magenta", label: "Magenta", tab: "Saturation", section: "Control sliders", unit: "%", offset: -100, digits: 2 },
+      { path: "bright_red", label: "Red", tab: "Brightness", section: "Control sliders", unit: "%", offset: -100, digits: 2 },
+      { path: "bright_orange", label: "Orange", tab: "Brightness", section: "Control sliders", unit: "%", offset: -100, digits: 2 },
+      { path: "bright_yellow", label: "Yellow", tab: "Brightness", section: "Control sliders", unit: "%", offset: -100, digits: 2 },
+      { path: "bright_green", label: "Green", tab: "Brightness", section: "Control sliders", unit: "%", offset: -100, digits: 2 },
+      { path: "bright_cyan", label: "Cyan", tab: "Brightness", section: "Control sliders", unit: "%", offset: -100, digits: 2 },
+      { path: "bright_blue", label: "Blue", tab: "Brightness", section: "Control sliders", unit: "%", offset: -100, digits: 2 },
+      { path: "bright_lavender", label: "Lavender", tab: "Brightness", section: "Control sliders", unit: "%", offset: -100, digits: 2 },
+      { path: "bright_magenta", label: "Magenta", tab: "Brightness", section: "Control sliders", unit: "%", offset: -100, digits: 2 },
+      { path: "white_level", label: "White level", section: "Options", soft: [-2, 2], unit: "EV" },
+      { path: "smoothing_hue", label: "Hue curve", section: "Options" },
+      { path: "use_filter", label: "Use guided filter", section: "Options" },
+      { path: "chroma_size", label: "Hue analysis radius", section: "Options", unit: "px", digits: 1, showIf: (p) => !!p.use_filter },
+      { path: "threshold", label: "Saturation threshold", section: "Options", unit: "%", digits: 3, showIf: (p) => !!p.use_filter },
+      { path: "contrast", label: "Contrast", section: "Options", digits: 3, showIf: (p) => !!p.use_filter },
+      { path: "param_size", label: "Effect radius", section: "Options", unit: "px", digits: 1, showIf: (p) => !!p.use_filter },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);

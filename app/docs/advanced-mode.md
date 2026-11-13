@@ -143,6 +143,16 @@ The Tone Curve group has these darktable modules:
   highlights color adjustments. Basic's Highlights and Shadows with shadows
   and highlights chosen edits the same module.
 
+## HSL / Color modules
+
+The HSL / Color group has these darktable modules:
+
+- **Color equalizer**: **Node placement**, tabs **Hue**, **Saturation** and
+  **Brightness** with a slider per hue (red to magenta), then the options:
+  **White level**, **Hue curve** and **Use guided filter** with its radius,
+  threshold and contrast settings. The node graph and its pickers are not on
+  the card yet; Simple's HSL / Color edits the same module.
+
 ## Instances
 
 A module can have several instances, each with its own settings. Open the
