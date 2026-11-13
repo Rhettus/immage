@@ -262,8 +262,8 @@ mod tests {
         let system = json!({ "os": "Linux", "note": "/home/rhett/.config" });
         let b = collect(known, &prefs, &log, &system);
         let all = serde_json::to_string(&b.view()).unwrap().to_lowercase();
-        for secret in ["rhett", "iceland", "dsc01234", "rhetts-box"] {
-            assert!(!all.contains(secret), "{secret} survived: {all}");
+        for planted in ["rhett", "iceland", "dsc01234", "rhetts-box"] {
+            assert!(!all.contains(planted), "{planted} survived: {all}");
         }
         assert!(all.contains("2026-11-11t10:00:02z darktable 5.5.0 ready"));
         assert_eq!(b.files.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(), ["system.json", "preferences.json", "engine.log"]);
