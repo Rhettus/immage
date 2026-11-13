@@ -16,6 +16,7 @@ import { AddModuleMenu } from "./AddModuleMenu";
 import { GRAPHS } from "./graphMaps";
 import { MAX_NODES } from "./tonecurve";
 import { isHidden, loadHiddenModules, visibleLayouts } from "./hiddenModules";
+import type { ImageEntry } from "./library";
 
 // Advanced mode's Adjustments: the same fold-out groups as Simple, each
 // holding darktable's modules as cards
@@ -114,7 +115,7 @@ const cardFields = (layout: NonNullable<ReturnType<typeof layoutFor>>) => {
     ...(layout.graph ? GRAPHS[layout.graph].fields : [])];
 };
 
-export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0, record, onSimple, onTurn, pick, onPicked }: {
+export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0, record, onSimple, onTurn, pick, onPicked, photos }: {
   id: string; title: string; open: boolean; onToggle: (solo: boolean) => void;
   session?: Session | null; revision?: number; record?: AdvancedEdit;
   // Simple's values set as one undo step, for a card of a Simple instance
@@ -123,6 +124,8 @@ export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0
   onTurn?: (how: Turn) => void;
   // the module search's pick, acted on once the group's modules have loaded
   pick?: AdvancedPick | null; onPicked?: (nonce: number) => void;
+  // the photos of the folder being browsed, for Composite's photo
+  photos?: ImageEntry[];
 }) {
   const [loaded, setLoaded] = useState<{ session: Session; schemas: Map<string, ModuleSchema> } | null>(null);
   // the cards this group could show, and the data they need, once per photo
@@ -242,7 +245,7 @@ export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0
                   const f = familyOf(i.op);
                   return f && familyOptions(f, i.op).length > 1 ? { label: f.label, options: familyOptions(f, i.op), onPick: (to: string) => switchTo(cards.find((c) => c.i === i)!, f, to) } : undefined;
                 })()}
-                photo={session} wbInModule={session?.wbInModule} siblings={sib.length} index={index} fresh={session!.lastAdded === key} focus={focused?.key === key ? focused.nonce : undefined} onInstance={onInstance} onTurn={onTurn}
+                photo={session} photos={photos} onSettled={() => void session!.reloadAdvanced(i.op, i.priority)} wbInModule={session?.wbInModule} siblings={sib.length} index={index} fresh={session!.lastAdded === key} focus={focused?.key === key ? focused.nonce : undefined} onInstance={onInstance} onTurn={onTurn}
                 onField={(path, v, coalesce) => { record?.([`adv:${key}:${path}`], layout.title); const c = session!.context;
                   session!.setFields(i.op, i.priority, editOf(layout, path, v, state.params, { width: c.sensorWidth, height: c.sensorHeight }), coalesce); }}
                 onFields={(edit, coalesce, id) => { record?.([`adv:${key}:${id}`], layout.title); const c = session!.context;

@@ -30,6 +30,7 @@
 #include "engine.h"
 #include "common/file_location.h"
 #include "common/grealpath.h"
+#include "common/overlay.h"
 #include <dirent.h>
 
 #define LUT_DEF_PATH "plugins/darkroom/lut3d/def_path"
@@ -344,4 +345,74 @@ gboolean files_watermarks(JsonBuilder *b, char **err)
   g_free(dirs[0]);
   g_free(dirs[1]);
   return TRUE;
+}
+
+// overlay.c: the photo a Composite card puts over this one. darktable sets it
+// by dropping a thumbnail on the card (_on_drag_data_received): the dropped
+// imgid is refused when that photo's own overlays, directly or through other
+// photos, include this one (dt_overlay_used_by); otherwise the old record is
+// removed, the new one recorded (dt_overlay_record, the library's overlay
+// table that the check reads), and the module's `imgid` and `filename` (the
+// photo's full path, zero-filled so the params hash the same) are set. A
+// card's `imgid` write is that drop; 0 clears it as gui_reset does. The
+// photo being open is no bar: overlay.c renders it without this module
+gboolean files_overlay_write(dt_iop_module_t *mod, const double num, char **err)
+{
+  dt_introspection_field_t *f = NULL, *g = NULL;
+  int *imgid = session_field_in(mod, mod->params, "imgid", &f, err);
+  char *name = imgid ? session_field_in(mod, mod->params, "filename", &g, err) : NULL;
+  if(!imgid || !name) return FALSE;
+  const dt_imgid_t target = mod->dev->image_storage.id;
+  const dt_imgid_t chosen = (dt_imgid_t)num;
+  if(num != (double)chosen || chosen < 0)
+  {
+    *err = g_strdup("not a photo id");
+    return FALSE;
+  }
+  if(dt_is_valid_imgid(chosen))
+  {
+    if(!dt_image_exists(chosen))
+    {
+      *err = g_strdup_printf("image %d does not exist", chosen);
+      return FALSE;
+    }
+    if(dt_overlay_used_by(chosen, target))
+    {
+      *err = g_strdup_printf("cannot use image %d as an overlay as it is using the current image as an "
+                             "overlay, directly or indirectly", chosen);
+      return FALSE;
+    }
+  }
+  if(dt_is_valid_imgid(*imgid)) dt_overlay_remove(target, *imgid);
+  memset(name, 0, g->Array.count);
+  if(dt_is_valid_imgid(chosen))
+  {
+    dt_overlay_record(target, chosen);
+    dt_image_full_path(chosen, name, g->Array.count, NULL);
+  }
+  *imgid = dt_is_valid_imgid(chosen) ? chosen : NO_IMGID;
+  return TRUE;
+}
+
+// the library's overlay table for `imgid` as its saved history has it, which
+// the cycle check above reads: darktable's dt_overlay_add_from_history() after
+// a paste. Not called itself: it tests the op_params pointer for a valid id
+// rather than the id (common/overlay.c, dt_is_valid_imgid(overlay_id)), so a
+// card with no photo records image 0 and dt_tag_attach() crashes on it
+void files_overlay_sync(const dt_imgid_t imgid)
+{
+  const dt_iop_module_so_t *overlay = dt_iop_get_module_so("overlay");
+  if(!overlay) return;
+  dt_overlays_remove(imgid);
+  sqlite3_stmt *stmt;
+  DT_DEBUG_SQLITE3_PREPARE_V2(dt_database_get(darktable.db),
+                              "SELECT op_params FROM main.history WHERE imgid = ?1 AND operation = 'overlay'",
+                              -1, &stmt, NULL);
+  DT_DEBUG_SQLITE3_BIND_INT(stmt, 1, imgid);
+  while(sqlite3_step(stmt) == SQLITE_ROW)
+  {
+    const dt_imgid_t *other = overlay->get_p(sqlite3_column_blob(stmt, 0), "imgid");
+    if(other && dt_is_valid_imgid(*other)) dt_overlay_record(imgid, *other);
+  }
+  sqlite3_finalize(stmt);
 }

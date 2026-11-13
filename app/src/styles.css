@@ -2664,3 +2664,23 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 /* the patch grid of the color look up table card (ModulePatches) */
 .module-card-curve .patches-area { display: block; width: 100%; max-width: 260px; margin: 6px auto; cursor: pointer; user-select: none; }
 .patches-area.disabled { opacity: 0.4; cursor: default; }
+/* the alignment grid and the photo choice of the Composite and Watermark cards (ModuleAlign, ModulePhoto) */
+.align-grid { display: grid; grid-template-columns: repeat(3, auto); gap: 3px; }
+.align-cell { display: flex; padding: 3px; background: var(--inset); border: 1px solid transparent; border-radius: 4px; color: var(--text-2); cursor: pointer; }
+.align-cell:disabled { opacity: 0.4; cursor: default; }
+.align-cell .align-frame { fill: none; stroke: currentColor; stroke-width: 1; opacity: 0.5; }
+.align-cell .align-dot { fill: none; }
+.align-cell.active { color: var(--text); border-color: var(--accent, currentColor); }
+.align-cell.active .align-dot { fill: currentColor; }
+.module-photo .photo-row { display: flex; gap: 10px; align-items: center; margin: 4px 0 6px; }
+.photo-thumb { background: var(--inset); border-radius: 4px; flex: none; }
+.photo-thumb.empty, .photo-thumb.missing { display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--text-2); }
+.photo-side { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.photo-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
+.photo-buttons { display: flex; gap: 6px; }
+.photo-picker { width: min(640px, calc(100vw - 32px)); }
+.photo-picker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; padding-bottom: 8px; }
+.photo-pick { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 4px; background: none; border: 1px solid transparent; border-radius: 6px; color: var(--text-2); font: inherit; font-size: 11px; cursor: pointer; }
+.photo-pick:hover { background: var(--inset); }
+.photo-pick.active { border-color: var(--accent, currentColor); }
+.photo-pick span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

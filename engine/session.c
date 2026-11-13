@@ -677,6 +677,7 @@ gboolean session_write_field(dt_iop_module_t *mod, const char *name, const doubl
   if(!g_strcmp0(name, BLEND_DETAILS)) return _write_details(mod, num, err);
   if(!g_strcmp0(name, LENS_PICK) && !g_strcmp0(mod->op, "lens")) return _write_lens_pick(mod, num, err);
   if(files_is_field(mod, name)) return files_write(mod, name, num, err);
+  if(!g_strcmp0(name, "imgid") && !g_strcmp0(mod->op, "overlay")) return files_overlay_write(mod, num, err);
   if((!g_strcmp0(name, WB_TEMP) || !g_strcmp0(name, WB_TINT)) && !g_strcmp0(mod->op, "temperature"))
     return wb_write(mod, name, num, err);
   if((!g_strcmp0(name, WB_SETTING) || !g_strcmp0(name, WB_TUNE)) && !g_strcmp0(mod->op, "temperature"))
@@ -2338,6 +2339,8 @@ gboolean session_save(char **err)
   // the database only: this session's own history stays in memory, as
   // reloading it calls into the GUI (dt_dev_reload_history_items())
   _compress_history(_s.imgid);
+  // the overlay table the Composite card's cycle check reads follows the saved edit
+  files_overlay_sync(_s.imgid);
   // whether the photo is altered is darktable's history hash, which the
   // sidecar carries (exif.cc), so darktable's lighttable agrees with the
   // client. hashed after the compress, which renumbers the history

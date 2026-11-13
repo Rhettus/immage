@@ -582,6 +582,18 @@ test('Advanced card layouts match darktable', { skip: skip || false }, async (t)
         const f = resolve(lf.path);
         assert.ok(f, `${l.op}: no field ${lf.path}; schema has ${[...by.keys()]}`);
         assert.ok(lf.label, `${lf.path}: no label`);
+        // the alignment grid is the int `alignment`, 0..8, default the middle
+        if (lf.align) {
+          assert.ok(['overlay', 'watermark'].includes(l.op) && lf.path === 'alignment', `${l.op}: ${lf.path} is no alignment`);
+          assert.equal(f.type, 'int');
+          assert.equal(f.default, 4);
+        }
+        // Composite's photo is the int `imgid` with the engine's write, and a filename beside it
+        if (lf.photo) {
+          assert.ok(l.op === 'overlay' && lf.path === 'imgid', `${l.op}: ${lf.path} is no photo`);
+          assert.equal(f.type, 'int');
+          assert.equal(resolve('filename')?.type, 'string', 'the photo\'s path param is not a char array');
+        }
         // the levels widget's 3 x 3 floats
         if (lf.path === 'autoscale' && l.levels) {
           const lv = resolve('levels');
@@ -1154,6 +1166,140 @@ test('Advanced LUT 3D and watermark file choosers', { skip: skip || false }, asy
   assert.equal(reopened.current, 'film/invert.cube');
   // reading the field is the name's hash for both instances' defaults too
   assert.equal((await read('lut3d', 'lut_file')).defaults.lut_file, 0);
+});
+
+// the alignment grid of Composite and Watermark (alignment.ts), over the int
+// `alignment` both modules read the same way
+test('Advanced alignment grid maps its cells to darktable\'s index', async () => {
+  const { alignmentCell, alignmentIndex, alignmentName, ALIGNMENTS } = await import('../app/src/alignment.ts');
+  assert.equal(ALIGNMENTS, 9);
+  // overlay.c and watermark.c: 0-2 top, 3-5 middle, 6-8 bottom; 0/3/6 left, 1/4/7 center, 2/5/8 right
+  const names = ['top left', 'top center', 'top right', 'middle left', 'center', 'middle right', 'bottom left', 'bottom center', 'bottom right'];
+  for (let i = 0; i < 9; i++) {
+    const c = alignmentCell(i);
+    assert.deepEqual(c, { row: Math.floor(i / 3), col: i % 3 });
+    assert.equal(alignmentIndex(c), i);
+    assert.equal(alignmentName(i), names[i]);
+  }
+  for (const bad of [-1, 9, 1.5, NaN]) assert.equal(alignmentCell(bad), null, `${bad} sits in no cell`);
+  assert.equal(alignmentName(9), 'none');
+});
+
+// the alignment edit of both modules reaches the render, and Composite takes
+// another photo of the library (engine/files.c): refused when that photo
+// composites this one, stored with the edit
+test('Advanced alignment and composite photo (engine)', { skip: skip || false }, async (t) => {
+  const work = mkdtempSync(join(tmpdir(), 'immage-advcomp-'));
+  mkdirSync(join(work, 'photos'));
+  const a = join(work, 'photos', 'a.jpg'), b = join(work, 'photos', 'b.jpg');
+  copyFileSync(SAMPLE, a);
+  copyFileSync(SAMPLE, b);
+  const e = new Engine(work);
+  t.after(() => { e.stop(); rmSync(work, { recursive: true, force: true }); });
+  const frame = async (tag) => {
+    const out = join(work, `${tag}.ppm`);
+    await e.call({ cmd: 'render', width: 96, height: 64, out });
+    return readFileSync(out);
+  };
+  const mean = (x, y) => { let d = 0; for (let i = 20; i < x.length; i++) d += Math.abs(x[i] - y[i]); return d / (x.length - 20); };
+  const read = async (op, ...paths) => (await e.call({ cmd: 'get', modules: { [`${op}@0`]: paths } })).modules[`${op}@0`];
+  const set = (op, params) => e.call({ cmd: 'set', op, priority: 0, params, enabled: true });
+  // the frame's size and a pixel's first channel, past the PPM header (three lines)
+  const head = (f) => { let h = 0; for (let n = 0; n < 3; h++) if (f[h] === 10) n++; const [w, ht] = f.subarray(0, h).toString().split('\n')[1].split(' ').map(Number); return { h, w, ht }; };
+  const px = (f, x, y) => { const { h, w } = head(f); return f[h + 3 * (y * w + x)]; };
+
+  // photo B, darker than A, in the library
+  const { imgid: idB } = await e.call({ cmd: 'open', path: b });
+  await set('exposure', { exposure: -3 });
+  await e.call({ cmd: 'save' });
+  await e.call({ cmd: 'close' });
+  const { imgid: idA } = await e.call({ cmd: 'open', path: a });
+  assert.notEqual(idA, idB);
+  const plain = await frame('plain');
+
+  await t.test('Composite: no photo by default, and the module draws nothing', async () => {
+    const m = await read('overlay', 'imgid', 'alignment');
+    assert.deepEqual([m.params.imgid, m.params.alignment, m.defaults.alignment], [0, 4, 4]);
+    await set('overlay', { scale: 30 });
+    assert.ok(mean(plain, await frame('empty')) < 0.01, 'no photo, no composite');
+  });
+
+  await t.test('Composite: a chosen photo shows, at the aligned cell', async () => {
+    await set('overlay', { imgid: idB, scale: 30, alignment: 0 });
+    assert.equal((await read('overlay', 'imgid')).params.imgid, idB, 'the choice reads back');
+    const topLeft = await frame('tl');
+    assert.ok(mean(plain, topLeft) > 1, `the photo changes the render by ${mean(plain, topLeft)}`);
+    await set('overlay', { alignment: 8 });
+    const bottomRight = await frame('br');
+    assert.ok(mean(topLeft, bottomRight) > 1, 'another cell, another place');
+    await set('overlay', { alignment: 4 });
+    const middle = await frame('mid');
+    assert.ok(mean(topLeft, middle) > 1 && mean(bottomRight, middle) > 1);
+    assert.equal((await read('overlay', 'alignment')).params.alignment, 4);
+    // where the composite lies: 30% of the frame, in the corner of its alignment
+    const corner = (x, y) => (f) => { let d = 0, n = 0; for (let j = 0; j < 12; j++) for (let i = 0; i < 20; i++, n++) d += Math.abs(px(f, x + i, y + j) - px(plain, x + i, y + j)); return d / n; };
+    const { w: fw, ht: fh } = head(plain);
+    const topLeftCorner = corner(2, 2), bottomRightCorner = corner(fw - 22, fh - 14);
+    assert.ok(topLeftCorner(topLeft) > 5 && bottomRightCorner(topLeft) < 1, `alignment 0 puts the photo top left: ${topLeftCorner(topLeft)} ${bottomRightCorner(topLeft)}`);
+    assert.ok(bottomRightCorner(bottomRight) > 5 && topLeftCorner(bottomRight) < 1, 'alignment 8 puts it bottom right');
+    assert.ok(topLeftCorner(middle) < 1 && bottomRightCorner(middle) < 1, 'alignment 4 centers it');
+  });
+
+  await t.test('Composite: a photo that is not in the library is refused, the choice kept', async () => {
+    await assert.rejects(set('overlay', { imgid: 99999 }), /does not exist/);
+    assert.equal((await read('overlay', 'imgid')).params.imgid, idB);
+    await assert.rejects(set('overlay', { imgid: -2 }), /not a photo id/);
+  });
+
+  await t.test('Composite: a photo that composites this one is refused', async () => {
+    // A takes no photo, B takes A and is saved: then A may not take B
+    await set('overlay', { imgid: 0 });
+    assert.equal((await read('overlay', 'imgid')).params.imgid, 0, 'cleared');
+    await e.call({ cmd: 'save' });
+    await e.call({ cmd: 'close' });
+    await e.call({ cmd: 'open', path: b });
+    await set('overlay', { imgid: idA, scale: 30 });
+    await e.call({ cmd: 'save' });
+    await e.call({ cmd: 'close' });
+    await e.call({ cmd: 'open', path: a });
+    await assert.rejects(set('overlay', { imgid: idB }), /using the current image as an overlay, directly or indirectly/);
+    assert.equal((await read('overlay', 'imgid')).params.imgid, 0, 'a refusal changes nothing');
+    // a photo is no cycle for itself: darktable renders it without the module (overlay.c _get_disabled_modules)
+    await set('overlay', { imgid: idA, scale: 30 });
+    assert.equal((await read('overlay', 'imgid')).params.imgid, idA);
+    await set('overlay', { imgid: 0 });
+  });
+
+  await t.test('Composite: the photo stays with the saved edit', async () => {
+    // B no longer composites A, so A may take B again
+    await e.call({ cmd: 'save' });
+    await e.call({ cmd: 'close' });
+    await e.call({ cmd: 'open', path: b });
+    await set('overlay', { imgid: 0 });
+    await e.call({ cmd: 'save' });
+    await e.call({ cmd: 'close' });
+    await e.call({ cmd: 'open', path: a });
+    await set('overlay', { imgid: idB, scale: 30, alignment: 6 });
+    const before = await frame('before');
+    await e.call({ cmd: 'save' });
+    await e.call({ cmd: 'close' });
+    await e.call({ cmd: 'open', path: a });
+    const m = await read('overlay', 'imgid', 'alignment');
+    assert.deepEqual([m.params.imgid, m.params.alignment], [idB, 6]);
+    assert.ok(mean(before, await frame('after')) < 0.01, 'the reopened photo renders the same');
+  });
+
+  await t.test('Watermark: the alignment moves the marker', async () => {
+    await set('overlay', { imgid: 0 });
+    const base = await frame('base');
+    await set('watermark', { alignment: 0, scale: 20 });
+    const tl = await frame('wtl');
+    assert.ok(mean(base, tl) > 0.05, 'the marker draws');
+    await set('watermark', { alignment: 8 });
+    const br = await frame('wbr');
+    assert.ok(mean(tl, br) > 0.05, 'another cell, another place');
+    assert.equal((await read('watermark', 'alignment')).params.alignment, 8);
+  });
 });
 
 // white balance's temperature and tint are the engine's own fields (wb.c,

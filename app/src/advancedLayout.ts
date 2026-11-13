@@ -39,6 +39,12 @@ export type LayoutField = {
   // a file chooser (ModuleFile) over the engine's own field `path`, the
   // hash of the name the module stores: LUT 3D's file and Watermark's marker
   file?: "lut" | "marker";
+  // the 3x3 alignment grid (ModuleAlign) over the int `alignment`, as
+  // watermark.c and overlay.c draw it
+  align?: true;
+  // Composite's photo (ModulePhoto) over the int `imgid`: the engine's write
+  // of it also sets the module's filename and checks for a cycle (files.c)
+  photo?: true;
   // a color button over a 3-float array param (`path` is the array, its
   // elements `path[0..2]`): borders.c and watermark.c give darktable's
   // GtkColorButton the RGBA straight as the floats, 0..1 with no conversion
@@ -1305,8 +1311,8 @@ export const LAYOUTS: ModuleLayout[] = [
     // picker)
     // the marker menu and its refresh button are the engine's field `wm_marker` over
     // filename (files.c)
-    // omitted: text (entry), font (font button), alignment (int param edited by a 3x3
-    // toggle grid, needs a custom editor)
+    // the alignment grid (ModuleAlign) sits after the scale combos, before the offsets
+    // omitted: text (entry) and font (font button)
     op: "watermark", group: "effects", title: "Watermark",
     fields: [
       { path: "wm_marker", label: "Marker", file: "marker" },
@@ -1317,6 +1323,7 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "scale_base", label: "Scale on", section: "Placement" },
       { path: "scale_img", label: "Scale marker to", section: "Placement", showIf: (p) => p.scale_base === 4 },
       { path: "scale_svg", label: "Scale marker reference", section: "Placement", showIf: (p) => p.scale_base === 4 },
+      { path: "alignment", label: "Alignment", section: "Placement", align: true },
       { path: "xoffset", label: "X offset", section: "Placement", digits: 3 },
       { path: "yoffset", label: "Y offset", section: "Placement", digits: 3 },
     ],
@@ -1326,16 +1333,24 @@ export const LAYOUTS: ModuleLayout[] = [
     // "placement" section (rotate, scale, scale on, 3x3 alignment grid, offsets); the two
     // advanced scale combos only show for scale_base "advanced options" (gui_changed)
     // rotate displays negated (factor -1); scale has a soft max of 100
-    // omitted: imgid and filename (set by dropping a photo on the thumbnail area), alignment
-    // (int param edited by a 3x3 toggle grid, needs a custom editor), compositing (no widget)
+    // the photo is darktable's drop area: a thumbnail of the chosen photo that takes a
+    // thumbnail dragged from the lighttable. Immage has no lighttable beside the editor, so
+    // the card shows the thumbnail and name with Choose photo (a picker of the folder's
+    // photos) and Clear buttons (ModulePhoto); the engine's write of `imgid` is the drop
+    // (files.c: refuses a photo that composites this one, records it, stores its path in
+    // filename). Left out: dragging, the drop highlight and the tooltip for a photo missing
+    // from the library (the card names it "Photo N"); the alignment grid is ModuleAlign
+    // omitted: filename (the engine sets it with imgid) and compositing (no widget)
     op: "overlay", group: "effects", title: "Composite",
     fields: [
+      { path: "imgid", label: "Photo", photo: true },
       { path: "opacity", label: "Opacity", unit: "%" },
       { path: "rotate", label: "Rotation", section: "Placement", factor: -1, unit: "°" },
       { path: "scale", label: "Scale", section: "Placement", soft: [1, 100], unit: "%" },
       { path: "scale_base", label: "Scale on", section: "Placement" },
       { path: "scale_img", label: "Scale marker to", section: "Placement", showIf: (p) => p.scale_base === 4 },
       { path: "scale_svg", label: "Scale marker reference", section: "Placement", showIf: (p) => p.scale_base === 4 },
+      { path: "alignment", label: "Alignment", section: "Placement", align: true },
       { path: "xoffset", label: "X offset", section: "Placement", digits: 3 },
       { path: "yoffset", label: "Y offset", section: "Placement", digits: 3 },
     ],

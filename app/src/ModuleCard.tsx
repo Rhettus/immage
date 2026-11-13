@@ -19,6 +19,9 @@ import { ModulePatches } from "./ModulePatches";
 import { ModuleBands } from "./ModuleBands";
 import { ModuleGraph } from "./ModuleGraph";
 import { ModuleFile } from "./ModuleFile";
+import { ModuleAlign } from "./ModuleAlign";
+import { ModulePhoto } from "./ModulePhoto";
+import type { ImageEntry } from "./library";
 import { graphFields } from "./graphMaps";
 import { LensPicker } from "./LensPicker";
 
@@ -81,13 +84,17 @@ export function fieldControl(f: SchemaField, l: LayoutField, value: number): Con
 // `siblings` is how many instances of the module the group shows, `index`
 // this one's place among them (pipe order); `fresh`, a card just added;
 // `focus`, a number that changes each time the module search picks the card
-export function ModuleCard({ hidden, instance, layout, schema, state, siblings, index, fresh, focus, family, photo, wbInModule, onField, onFields, onEnabled, onReset, onInstance, loadPresets, onPreset, onTurn }: {
+export function ModuleCard({ hidden, instance, layout, schema, state, siblings, index, fresh, focus, family, photo, photos, onSettled, wbInModule, onField, onFields, onEnabled, onReset, onInstance, loadPresets, onPreset, onTurn }: {
   instance: Instance; layout: ModuleLayout; schema: ModuleSchema; state: AdvancedState;
   // hidden in Preferences > Modules, yet shown as the photo uses it
   hidden?: boolean;
   siblings: number; index: number; fresh?: boolean; focus?: number;
   // the open photo, which the lens picker lists lenses for
   photo?: object | null;
+  // the photos of the folder being browsed, which Composite's photo is chosen from,
+  // and a call to read the card's state back from the engine once its edits have
+  // settled (the engine refuses a photo that composites this one)
+  photos?: ImageEntry[]; onSettled?: () => void;
   // the white balance note: the photo's white balance is set by this module
   // with color calibration off (Session.wbInModule)
   wbInModule?: boolean;
@@ -251,6 +258,17 @@ export function ModuleCard({ hidden, instance, layout, schema, state, siblings, 
                 return <ModuleFile key={l.path} kind={l.file} label={l.label} priority={instance.priority} photo={photo ?? null}
                                    value={state.params[l.path] ?? state.defaults[l.path] ?? 0} disabled={fixed && !state.enabled}
                                    onChange={(hash) => onFields({ [l.path]: hash }, false, l.path)} />;
+              }
+              if (l.align) {
+                if (!fields.has(l.path) || (l.tab && l.tab !== tab)) return null;
+                return <ModuleAlign key={l.path} label={l.label} value={state.params[l.path] ?? state.defaults[l.path] ?? 0}
+                                    disabled={fixed && !state.enabled} onChange={(index) => onField(l.path, index, false)} />;
+              }
+              if (l.photo) {
+                if (!fields.has(l.path) || (l.tab && l.tab !== tab)) return null;
+                return <ModulePhoto key={l.path} label={l.label} value={state.params[l.path] ?? state.defaults[l.path] ?? 0}
+                                    disabled={fixed && !state.enabled} photos={photos ?? []}
+                                    onChange={(imgid) => { onField(l.path, imgid, false); onSettled?.(); }} />;
               }
               if (l.rgb) {
                 if (!fields.has(l.path) || (l.tab && l.tab !== tab) || (l.showIf && !l.showIf(state.params))) return null;

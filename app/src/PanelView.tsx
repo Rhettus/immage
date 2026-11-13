@@ -27,6 +27,7 @@ import { memo, useCallback, useLayoutEffect, useRef, useState, useSyncExternalSt
 import { open } from "@tauri-apps/plugin-dialog";
 import { panelValues } from "./panelValues";
 import { settings } from "./settings";
+import type { ImageEntry } from "./library";
 
 // a preset's values but the photo's modules: the tone mapper, which presets
 // made when it was a slider may hold
@@ -102,6 +103,8 @@ export type PanelProps = {
   sessionRevision: number;
   // the module search's pick for this group, and its acknowledgement
   pick?: AdvancedPick | null; onPicked?: (nonce: number) => void;
+  // the photos of the folder being browsed, for Composite's photo (Advanced mode)
+  photos?: ImageEntry[];
   panel: Panel; open: boolean; onToggle: (solo: boolean) => void; values: Record<string, number>;
   session: Session | null; disabled: boolean; onChange: (c: Control, v: number) => void;
   onChangeMany: (entries: [string, number][], label?: string) => void; histograms: Snapshot<Histogram | null>;
@@ -144,7 +147,7 @@ export function PanelView(props: PanelProps) {
   const onTurn = useLiveEvent((how: Turn) => props.onTurn?.(how));
   if (advancedMode) return <AdvancedGroup id={props.panel.id} title={props.panel.advancedTitle ?? props.panel.title} open={props.open} onToggle={onToggle}
                                        session={props.session} revision={props.sessionRevision} record={props.onAdvancedEdit}
-                                       onSimple={onChangeMany} onTurn={onTurn} pick={props.pick} onPicked={props.onPicked} />;
+                                       onSimple={onChangeMany} onTurn={onTurn} pick={props.pick} onPicked={props.onPicked} photos={props.photos} />;
   return <PanelWidget {...props} values={values} onToggle={onToggle} onChange={onChange}
     onChangeMany={onChangeMany} onPreview={onPreview} onAuto={props.onAuto ? auto : undefined}
     onOptionPreview={props.onOptionPreview ? option : undefined} />;

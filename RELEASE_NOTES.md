@@ -32,7 +32,9 @@ Improvements
   curves with channel tabs, the LUT 3D card chooses its LUT file in a new
   3D LUT folder preference, the watermark card chooses its marker, and the
   color look up table card has darktable's patch grid with its patch and
-  target color sliders.
+  target color sliders. The composite card chooses the photo to place from the
+  folder you are browsing, and it and the watermark card have darktable's
+  3x3 alignment grid.
   When a photo's white balance comes from the white balance module with color
   calibration off, Simple's White Balance section and the white balance card
   say so.

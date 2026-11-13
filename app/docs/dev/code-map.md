@@ -119,6 +119,7 @@ Masks. It receives `focusMode` from PreferencesDialog and uses the panels'
 normal/Alt-click folding behavior. Closing Preferences reapplies choices to
 unused global and mask tools in the current session.
 [ModuleFile.tsx](../../src/ModuleFile.tsx) draws those two choosers (`file` marker in advancedLayout.ts; the 3D LUT folder is [lutFolder.ts](../../src/lutFolder.ts), read by settings.rs `LUT_FOLDER` for the engine start).
+[ModuleAlign.tsx](../../src/ModuleAlign.tsx) is the 3x3 alignment grid of Composite and Watermark (`align` marker, index mapping in [alignment.ts](../../src/alignment.ts)); [ModulePhoto.tsx](../../src/ModulePhoto.tsx) is Composite's photo choice (`photo` marker on `imgid`: a picker over the folder's photos, passed to the card as `photos`; the engine's `files_overlay_write` in [files.c](../../../engine/files.c) is the write, `Session.reloadAdvanced` reads the card back after a refusal).
 [ContrastEqualizer.tsx](../../src/ContrastEqualizer.tsx) edits global or per-mask
 `atrous` curves (`EQ_IDS`, `equalizerMap` in manifest.ts); mask choices live
 in each `Mask.values`, separate from `Session.values`.

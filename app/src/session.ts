@@ -1015,6 +1015,17 @@ export class Session {
     return this.advanced.get(key);
   }
 
+  // a card read again from the engine once the edits sent have settled: an
+  // edit the engine refuses (Composite's photo that composites this one) leaves
+  // the card's state as the engine has it
+  async reloadAdvanced(op: string, priority: number) {
+    try {
+      await this.settled();
+      const fields = this.advancedFields.get(`${op}#${priority}`);
+      if (fields) { await this.loadAdvanced(op, priority, fields); this.onModules?.(); }
+    } catch { /* the error was reported when the edit failed */ }
+  }
+
   // darktable fields of an instance, as one card edit sets them (editOf in
   // advancedLayout.ts); an edit switches the module on, as in darktable
   setFields(op: string, priority: number, params: Params, coalesce = false) {

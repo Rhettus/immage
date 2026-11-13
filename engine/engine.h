@@ -374,6 +374,9 @@ gboolean files_write(dt_iop_module_t *mod, const char *name, const double num, c
 void files_set_lut_folder(const char *folder);
 gboolean files_lut(JsonObject *req, JsonBuilder *b, char **err);
 gboolean files_watermarks(JsonBuilder *b, char **err);
+// Composite's photo: a write of overlay's `imgid` (see files.c)
+gboolean files_overlay_write(dt_iop_module_t *mod, const double num, char **err);
+void files_overlay_sync(const dt_imgid_t imgid);
 gboolean session_set(const char *op, const char *field, JsonNode *value,
                      JsonObject *params, const gboolean has_enabled,
                      const gboolean enabled, const char *after, const char *before,

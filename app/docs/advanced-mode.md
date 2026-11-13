@@ -442,16 +442,31 @@ The Effects group has these darktable modules:
 - **Watermark**: **Marker** (a menu and a refresh button), **Color** (a
   color button, used by the marker's color tag), **Opacity**, then under
   **Placement** **Rotation**, **Scale**, **Scale on** (with **Scale marker
-  to** and **Scale marker reference** for its advanced options), **X offset**
-  and **Y offset**. The menu lists the SVG and png files in darktable's
-  watermarks folder and in the watermarks folder of Immage's settings (its
-  tooltip names both); the refresh button reads them again after you add
-  one. The photo keeps the marker's file name. The card cannot yet edit the
-  marker's text or font, or its alignment, so the marker sits in the
-  center.
-- **Composite**: **Opacity**, then under **Placement** the same settings
-  as Watermark. The card cannot yet choose the photo to place, so it has
-  no visible effect yet.
+  to** and **Scale marker reference** for its advanced options),
+  **Alignment**, **X offset** and **Y offset**. The menu lists the SVG and
+  png files in darktable's watermarks folder and in the watermarks folder of
+  Immage's settings (its tooltip names both); the refresh button reads them
+  again after you add one. The photo keeps the marker's file name.
+  **Alignment** is a grid of nine buttons: the marker sits in the corner,
+  edge or center of the photo you pick, and the offsets move it from there
+  (the middle button is the default). The card cannot yet edit the marker's
+  text or font.
+- **Composite**: **Photo** shows a thumbnail and the file name of the photo
+  placed over this one, or "No photo chosen". **Choose photo** opens a list
+  of the photos in the folder you are browsing, with thumbnails; click one
+  to place it, as darktable does by dragging a thumbnail onto the card.
+  **Clear** takes the photo off again. The photo is shown as it is edited
+  now, in the position and scale the other settings give it: **Opacity**,
+  then under **Placement** **Rotation**, **Scale**, **Scale on** (with
+  **Scale marker to** and **Scale marker reference**), **Alignment** (the
+  same grid of nine buttons as Watermark), **X offset** and **Y offset**.
+  A photo that itself composites this one, directly or through others, is
+  refused with a message and the card keeps its photo, as in darktable.
+  Placing a photo on itself is allowed; the copy is drawn without the
+  Composite module. The photo is looked up in your library, so it needs
+  to stay there; if it is gone the card shows "Photo" and its number
+  without a thumbnail. The card has no switch to render the composite at
+  lower precision, which darktable keeps for old edits.
 - **Dither or posterize**: **Method**, and **Damping** for random dither.
 
 ## Technical modules
