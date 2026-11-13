@@ -65,6 +65,10 @@ export type ModuleLayout = {
   // module's manifest map: the contrast equalizer's bands or the
   // saturation and brilliance curves
   graph?: "equalizer" | "satcurve";
+  // Simple's lens picker above the fields (LensPicker), for the Lensfun
+  // method. `lens_pick` is the engine's own field, read and written per
+  // instance like a param, so the card loads it with its other fields
+  lensPick?: boolean;
   // a point curve above the fields (tonecurve and rgbcurve; Immage's own
   // editor, ModuleCurves), one per channel, with the interpolation method
   // darktable's combobox sets on every channel at once. `count` and `node`
@@ -981,13 +985,13 @@ export const LAYOUTS: ModuleLayout[] = [
     // section is under all three. darktable lists embedded metadata only
     // for a photo that has it, and hides the TCA override for monochrome
     // and the fine-tuning of what a DNG lacks; those rules read the image
-    // and are left out. left out too: the camera and lens pickers and the
-    // focal length, aperture and distance menus (Simple's Lens Corrections
-    // picks the lens), and "use latest algorithm", which is not a param.
+    // and are left out. left out too: the camera picker and the focal
+    // length, aperture and distance menus, and "use latest algorithm", which
+    // is not a param. the lens picker is Simple's (lensPick).
     // Simple drives the first instance. gui_changed sets has_been_set on
     // every edit but the method's: until it is on, darktable renders the
     // defaults
-    op: "lens", group: "lens", title: "Lens correction",
+    op: "lens", group: "lens", title: "Lens correction", lensPick: true,
     touch: { set: [["has_been_set", 1]], except: ["method"] },
     fields: [
       { path: "method", label: "Correction method" },

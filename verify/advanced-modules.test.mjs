@@ -690,3 +690,30 @@ test('Advanced graph cards write through the manifest maps', { skip: skip || fal
   }
   assert.ok(!before.equals(await shot('sat.png')), 'the saturation curve did not change the render');
 });
+
+// the lens card's picker writes lens_pick to its own instance: Simple's
+// field, read and written per instance by the engine. the sample JPEG may
+// name no camera the Lensfun database lists lenses for; the test then skips
+test('Advanced lens card picks a lens for its own instance', { skip: skip || false }, async (t) => {
+  const work = mkdtempSync(join(tmpdir(), 'immage-advlens-'));
+  mkdirSync(join(work, 'photos'));
+  const photo = join(work, 'photos', 'stairs.jpg');
+  copyFileSync(SAMPLE, photo);
+  const e = new Engine(work);
+  t.after(() => { e.stop(); rmSync(work, { recursive: true, force: true }); });
+  await e.call({ cmd: 'open', path: photo });
+  const menu = await e.call({ cmd: 'lenses' });
+  if (!menu.lenses.length) { t.skip('no Lensfun lenses for this photo'); return; }
+  const second = (await e.call({ cmd: 'instance', action: 'new', op: 'lens', priority: 0 })).priority;
+  const want = menu.lenses[0].hash;
+  const read = async (p) => (await e.call({ cmd: 'get', modules: { [`lens@${p}`]: ['lens_pick', 'method', 'has_been_set'] } })).modules[`lens@${p}`];
+  assert.equal((await read(second)).params.lens_pick, 0);
+  await e.call({ cmd: 'set', op: 'lens', priority: second, params: { lens_pick: want, has_been_set: 1 }, enabled: true });
+  const g = await read(second);
+  assert.equal(g.params.lens_pick, want, 'the second instance holds the pick');
+  assert.equal(g.params.method, 1, 'a pick is Lensfun');
+  assert.equal(g.params.has_been_set, 1);
+  assert.equal((await read(0)).params.lens_pick, 0, 'the first instance is unaffected');
+  await e.call({ cmd: 'set', op: 'lens', priority: second, params: { lens_pick: 0 }, enabled: true });
+  assert.equal((await read(second)).params.lens_pick, 0, 'Auto again');
+});

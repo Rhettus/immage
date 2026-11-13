@@ -1738,6 +1738,8 @@ export class Session {
             await this.pumpTyped("set_params", () => commands.setParams({ op, priority, params, enabled }));
             // Simple's sliders on the same instance read it again
             if (priority === 0 && boundFields()[op]) await this.reread(op);
+            // a lens pick also sets the lens method and geometry, which the card reads back
+            if ("lens_pick" in params) this.advancedStale.add(key);
           }
           this.changed();
           this.onModules?.();

@@ -321,10 +321,12 @@ The Lens Corrections group has these darktable modules:
   or only a manual vignette), **Corrections**, then the method's own
   settings: for Lensfun, **Target geometry**, **Scale**, **Mode** and the
   **TCA override**; for embedded metadata, its **Fine-tuning**. **Manual
-  vignette correction** works under every method. The lens itself is chosen
-  in Simple's Lens Corrections, which uses the first instance and whose
-  Remove Chromatic Aberration sets **Corrections**; the card has no camera or
-  lens menus. darktable offers embedded metadata only for a
+  vignette correction** works under every method. With the Lensfun method the
+  card has Simple's **Lens** picker (Auto, the lens matched from the file, or
+  a search of Lensfun's lenses), which sets that instance's lens. Simple's
+  Lens Corrections uses the first instance and its Remove Chromatic
+  Aberration sets **Corrections**; the card has no camera, focal length,
+  aperture or distance menus. darktable offers embedded metadata only for a
   photo that has it.
 - **Chromatic aberrations**: **Guide**, **Radius** and **Strength**, then
   **Correction mode** and **Very large chromatic aberration**. Simple's

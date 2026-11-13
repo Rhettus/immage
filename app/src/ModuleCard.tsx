@@ -16,6 +16,7 @@ import { ColorWheel } from "./ColorWheel";
 import { ModuleCurves } from "./ModuleCurves";
 import { ModuleGraph } from "./ModuleGraph";
 import { graphFields } from "./graphMaps";
+import { LensPicker } from "./LensPicker";
 
 // the card's fields as the controls the rest of the app draws
 const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -61,11 +62,13 @@ export function fieldControl(f: SchemaField, l: LayoutField, value: number): Con
 // `siblings` is how many instances of the module the group shows, `index`
 // this one's place among them (pipe order); `fresh`, a card just added;
 // `focus`, a number that changes each time the module search picks the card
-export function ModuleCard({ hidden, instance, layout, schema, state, siblings, index, fresh, focus, family, onField, onFields, onEnabled, onReset, onInstance, loadPresets, onPreset, onTurn }: {
+export function ModuleCard({ hidden, instance, layout, schema, state, siblings, index, fresh, focus, family, photo, onField, onFields, onEnabled, onReset, onInstance, loadPresets, onPreset, onTurn }: {
   instance: Instance; layout: ModuleLayout; schema: ModuleSchema; state: AdvancedState;
   // hidden in Preferences > Modules, yet shown as the photo uses it
   hidden?: boolean;
   siblings: number; index: number; fresh?: boolean; focus?: number;
+  // the open photo, which the lens picker lists lenses for
+  photo?: object | null;
   // the modules this card can switch to, when it is a shared card
   family?: { label: string; options: FamilyOption[]; onPick: (op: string) => void };
   onField: (path: string, value: number, coalesce: boolean) => void;
@@ -181,6 +184,12 @@ export function ModuleCard({ hidden, instance, layout, schema, state, siblings, 
           )}
           {layout.graph && graphFields(layout.graph).every((f) => fields.has(f)) && (
             <ModuleGraph kind={layout.graph} state={state} disabled={fixed && !state.enabled} onFields={onFields} />
+          )}
+          {layout.lensPick && state.params.method === 1 && (
+            <div data-control-id="adv:lens_pick">
+              <LensPicker value={state.params.lens_pick ?? 0} photo={photo ?? null} disabled={fixed && !state.enabled}
+                          onChange={(hash) => onFields({ lens_pick: hash, has_been_set: 1 }, false, "lens-pick")} />
+            </div>
           )}
           {(() => {
             // a section heading shows once, above the first of its fields shown
