@@ -289,6 +289,9 @@ The Transform group has these darktable modules:
   camera recorded.
 - **Scale pixels**: **Pixel aspect ratio**, for photos from cameras or
   scanners whose pixels are not square.
+- **Enlarge canvas**: a border of plain color around the photo, as
+  **Percent left**, **Percent right**, **Percent top** and **Percent
+  bottom** of its width or height, and its **Color**.
 
 ## Instances
 

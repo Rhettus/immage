@@ -1028,6 +1028,18 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "pixel_aspect_ratio", label: "Pixel aspect ratio" },
     ],
   },
+  {
+    // enlargecanvas.c gui_init; "%" over a 0-100 range keeps the value as
+    // it is. the color enum's count has no description and is not offered
+    op: "enlargecanvas", group: "transform", title: "Enlarge canvas",
+    fields: [
+      { path: "percent_left", label: "Percent left", unit: "%" },
+      { path: "percent_right", label: "Percent right", unit: "%" },
+      { path: "percent_top", label: "Percent top", unit: "%" },
+      { path: "percent_bottom", label: "Percent bottom", unit: "%" },
+      { path: "color", label: "Color", options: [0, 1, 2, 3, 4] },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);
