@@ -217,6 +217,29 @@ export async function advancedGroups(t) {
     const bl = await addAndCheck(t, 'effects', 'blurs', 'Blurs',
       { controls: ['radius', 'type', 'blades', 'concavity', 'linearity', 'rotation'], tabs: [] }, false);
     assert(!bl.card.controls.some(x => x.id === 'angle'), 'a lens blur card shows the motion blur direction');
+    // 16. Technical: the photo's input color profile card lists the
+    // profiles it can use, the current one chosen; color reconstruction's
+    // hue waits for the hue precedence
+    const isel = await panel(t, 'technical') + ' [data-module^="colorin#"]';
+    const ic = await until(() => card(t, isel), 'input color profile card');
+    if (!ic.open) await click(t, `${isel} .module-card-head`);
+    const menus = await until(() => t.driver.observe(s => {
+      const pick = id => {
+        const e = document.querySelector(`${s} [data-control-id="adv:${id}"]`);
+        const sel = e?.querySelector('select');
+        return sel ? { value: sel.value, options: [...sel.options].map(o => o.textContent.trim()) }
+          : e && { options: [...e.querySelectorAll('button')].map(b => b.textContent.trim()) };
+      };
+      const r = { input: pick('input_profile'), working: pick('working_profile'), clipping: pick('normalize') };
+      return r.input && r.working && r.clipping && r;
+    }, isel), 'input color profile menus');
+    t.measure({ name: 'colorin-profiles', ...menus });
+    await t.evidence('colorin-card');
+    assert(menus.input.options.length > 1 && menus.working.options.length > 1, `profile menus: ${JSON.stringify(menus)}`);
+    assert(!menus.input.options.includes('Current profile'), `the photo's input profile is not among its profiles: ${JSON.stringify(menus.input)}`);
+    const cr = await addAndCheck(t, 'technical', 'colorreconstruct', 'Color reconstruction',
+      { controls: ['threshold', 'spatial', 'range', 'precedence'], tabs: [] }, false);
+    assert(!cr.card.controls.some(x => x.id === 'hue'), 'color reconstruction shows hue without the hue precedence');
     await t.evidence('groups-done');
   } finally {
     try {
