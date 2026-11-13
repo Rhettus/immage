@@ -159,6 +159,16 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "midtone", label: "Midtone range", digits: 3, showIf: (p) => p.mode === 1 },
     ],
   },
+  {
+    // hazeremoval.c gui_init: strength, then distance. left out: the
+    // compatibility mode and adaptive flags, which darktable never shows and
+    // gui_changed resets whenever one of these sliders moves
+    op: "hazeremoval", group: "basic", title: "Haze removal",
+    fields: [
+      { path: "strength", label: "Strength" },
+      { path: "distance", label: "Distance", digits: 3 },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);

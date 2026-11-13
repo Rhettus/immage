@@ -13,8 +13,8 @@ Improvements
   duplicate, rename, reorder and delete instances, all with undo. Switching
   does not change your photo.
 - Advanced cards so far, all in Basic: exposure, white balance, color
-  calibration, highlight reconstruction, contrast & texture and local contrast;
-  other modules follow in later versions.
+  calibration, highlight reconstruction, contrast & texture, local contrast and
+  haze removal; other modules follow in later versions.
 - Module cards have a darktable presets menu beside the reset button. It applies
   one of darktable's built-in or your own presets to that instance, as one undo
   step.

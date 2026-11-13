@@ -86,6 +86,7 @@ Besides exposure, the Basic group has these darktable modules:
   **Detail**, then **Coarseness** and **Contrast** for the bilateral grid, or
   **Highlights**, **Shadows** and **Midtone range** for the local laplacian
   filter.
+- **Haze removal**: **Strength** and **Distance**.
 
 ## Instances
 
