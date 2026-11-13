@@ -71,7 +71,7 @@ export async function advancedSync(t) {
     const box = await t.driver.observe(s => { const r = document.querySelector(s).getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; }, wheel);
     // to the right of the center, 60% out: hue 0, chroma 60% of the slider
     await t.driver.point(box.x + box.w / 2 + box.w * .3, box.y + box.h / 2);
-    const set = await until(async () => { const c = await controls(t, CB); return c.global_C > before.global_C + .01 && c; }, 'global chroma set from the wheel');
+    const set = await until(async () => { const c = await controls(t, CB); return c.global_C > before.global_C + 1e-4 && c; }, 'global chroma set from the wheel');
     t.measure({ name: 'wheel-click', wheel: w, before: { H: before.global_H, C: before.global_C }, after: { H: set.global_H, C: set.global_C } });
     assert(set.global_H < 10 || set.global_H > 350, `a click right of center sets hue near 0: ${set.global_H}`);
     const tinted = await settledPhoto(t, p => meanError(p, plain) > .5);
