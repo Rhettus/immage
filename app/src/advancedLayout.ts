@@ -864,6 +864,16 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "threshold", label: "Noise threshold", soft: [0, 0.1], digits: 3 },
     ],
   },
+  {
+    // bilateral.cc gui_init: four sliders, no visibility rules
+    op: "bilateral", group: "detail", title: "Surface blur",
+    fields: [
+      { path: "radius", label: "Radius", soft: [1, 30] },
+      { path: "red", label: "Red", soft: [0.0001, 0.1], digits: 4 },
+      { path: "green", label: "Green", soft: [0.0001, 0.1], digits: 4 },
+      { path: "blue", label: "Blue", soft: [0.0001, 0.1], digits: 4 },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);

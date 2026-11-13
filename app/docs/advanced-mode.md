@@ -242,6 +242,7 @@ The Detail group has these darktable modules:
 - **Astrophoto denoise**: **Patch size**, **Strength**, **Luma** and
   **Chroma**.
 - **Raw denoise**: **Noise threshold**. Its curves are not on the card yet.
+- **Surface blur**: **Radius**, then **Red**, **Green** and **Blue**.
 
 ## Instances
 
