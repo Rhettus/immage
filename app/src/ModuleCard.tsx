@@ -14,6 +14,8 @@ import { FlipIcon, RotateIcon } from "./icons";
 import { fieldPath, type LayoutField, type ModuleLayout } from "./advancedLayout";
 import { ColorWheel } from "./ColorWheel";
 import { ModuleCurves } from "./ModuleCurves";
+import { ModuleGraph } from "./ModuleGraph";
+import { graphFields } from "./graphMaps";
 
 // the card's fields as the controls the rest of the app draws
 const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -176,6 +178,9 @@ export function ModuleCard({ hidden, instance, layout, schema, state, siblings, 
           )}
           {layout.curves && [layout.curves.count(0), layout.curves.node(0, 0, "x")].every((p) => fields.has(p.replace(/\[.*$/, ""))) && (
             <ModuleCurves op={layout.op} curves={layout.curves} state={state} disabled={fixed && !state.enabled} onFields={onFields} />
+          )}
+          {layout.graph && graphFields(layout.graph).every((f) => fields.has(f)) && (
+            <ModuleGraph kind={layout.graph} state={state} disabled={fixed && !state.enabled} onFields={onFields} />
           )}
           {(() => {
             // a section heading shows once, above the first of its fields shown

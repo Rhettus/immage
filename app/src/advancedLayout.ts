@@ -61,6 +61,10 @@ export type ModuleLayout = {
   // (Immage's own, tier B: darktable shows only the sliders). the wheel's
   // edge is the chroma slider's soft end
   wheels?: { section: string; hue: string; chroma: string }[];
+  // Simple's graph for the module (ModuleGraph), written through the
+  // module's manifest map: the contrast equalizer's bands or the
+  // saturation and brilliance curves
+  graph?: "equalizer" | "satcurve";
   // a point curve above the fields (tonecurve and rgbcurve; Immage's own
   // editor, ModuleCurves), one per channel, with the interpolation method
   // darktable's combobox sets on every channel at once. `count` and `node`
@@ -600,13 +604,12 @@ export const LAYOUTS: ModuleLayout[] = [
     // satcurvergb.c gui_init and gui_changed: the formula combobox, then the
     // collapsible "guided filter" section. gui_changed only greys the section
     // out (not hidden): it needs the darktable UCS formula, and its sliders
-    // also need use_guided_filter. left out: channel (the saturation and
-    // brilliance curves, which need a custom curve editor with node add, drag
-    // and remove, two pages), gf_protect_from and gf_protect_to (darktable
-    // shows them as the computed "protect near-neutrals" center and
-    // "protection transition width" sliders, not params), and the picker and
-    // mask display buttons
-    op: "satcurvergb", group: "hsl", title: "Saturation curve",
+    // also need use_guided_filter. the saturation and brilliance curves are
+    // ModuleGraph (Simple's SaturationCurve). left out: gf_protect_from and
+    // gf_protect_to (darktable shows them as the computed "protect
+    // near-neutrals" center and "protection transition width" sliders, not
+    // params), and the picker and mask display buttons
+    op: "satcurvergb", group: "hsl", title: "Saturation curve", graph: "satcurve",
     fields: [
       { path: "formula", label: "Saturation formula" },
       { path: "use_guided_filter", label: "Use guided filter", section: "Guided filter" },
@@ -952,9 +955,10 @@ export const LAYOUTS: ModuleLayout[] = [
   },
   {
     // atrous.c gui_init: a luma, chroma and edges notebook over the curve
-    // graph, then mix. left out: the curves (x and y), which need
-    // ContrastEqualizer's graph, and octaves, which has no widget
-    op: "atrous", group: "detail", title: "Contrast equalizer",
+    // graph, then mix. the graph is ModuleGraph (Simple's ContrastEqualizer,
+    // which edits the band heights y; the node positions x stay as they
+    // are). left out: octaves, which has no widget
+    op: "atrous", group: "detail", title: "Contrast equalizer", graph: "equalizer",
     fields: [
       { path: "mix", label: "Mix" },
     ],

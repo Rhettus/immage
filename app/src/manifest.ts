@@ -383,7 +383,7 @@ const equalizerControls: Control[] = EQ_IDS.map((id, i) => ({
   id, label: "Contrast equalizer", min: 0, max: 1, step: 0.001,
   neutral: Math.floor(i / 6) < 3 ? 0.5 : 0, format: plain(3),
 }));
-const equalizerMap: ModuleMap = {
+export const equalizerMap: ModuleMap = {
   op: "atrous", keepOn: false,
   controls: EQ_IDS,
   enabled: (v) => EQ_IDS.some((id, i) => Math.abs((v[id] ?? (i < 18 ? 0.5 : 0)) - (i < 18 ? 0.5 : 0)) > 1e-6),
@@ -444,7 +444,7 @@ const satcurveControls: Control[] = SATCURVE_IDS.map((id) => id.endsWith("pn")
   ? { id, label: "Saturation curve", min: 2, max: MAX_NODES, step: 1, neutral: 2, format: plain(0) }
   : { id, label: "Saturation curve", min: 0, max: 1, step: 0.0001, neutral: SATCURVE_NEUTRAL[id], format: plain(4) });
 const satField = (ch: number, k: number, a: "x" | "y") => `channel[${ch}].curve[${k}].${a}`;
-const satcurveMap: ModuleMap = {
+export const satcurveMap: ModuleMap = {
   op: "satcurvergb", keepOn: false,
   controls: SATCURVE_IDS,
   fields: [0, 1].flatMap((ch) => [`channel[${ch}].curve_num_nodes`,

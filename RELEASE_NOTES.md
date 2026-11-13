@@ -21,7 +21,8 @@ Improvements
   group copies those edits, which Paste and Previous apply to other photos.
   Color balance rgb's card has a color wheel for each of its four ranges, and
   the tone curve and rgb curve cards have a point curve editor with channel
-  tabs and darktable's interpolation methods.
+  tabs and darktable's interpolation methods. The contrast equalizer and
+  saturation curve cards have Simple's graphs.
 - Advanced cards so far: in Basic, exposure, white balance, color calibration,
   highlight reconstruction, the tone mapper, contrast & texture, local contrast,
   haze removal, diffuse or sharpen and color balance rgb; in Tone Curve, tone

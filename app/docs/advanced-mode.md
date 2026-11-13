@@ -212,9 +212,12 @@ The HSL / Color group has these darktable modules:
   **White level**, **Hue curve** and **Use guided filter** with its radius,
   threshold and contrast settings. The node graph and its pickers are not on
   the card yet; Simple's HSL / Color edits the same module.
-- **Saturation curve**: **Saturation formula** and, under Guided filter, its
-  switch, radius, edge feathering and noise protection. The saturation and
-  brilliance curves are not on the card yet.
+- **Saturation curve**: a graph of the **Saturation** and **Brilliance**
+  curves (pick one from the menu; click to add a point, drag to move one,
+  double-click a point or drag it off the graph to remove it), then
+  **Saturation formula** and, under Guided filter, its switch, radius, edge
+  feathering and noise protection. Simple's Saturation curve edits the same
+  module.
 - **Velvia**: **Strength** and **Mid-tones bias**.
 - **Color contrast**: **Green-magenta contrast** and **Blue-yellow contrast**.
 - **Color zones**: **Select by**, **Process mode** and **Mix**. Its curves
@@ -300,9 +303,12 @@ The Detail group has these darktable modules:
   **Chroma**.
 - **Raw denoise**: **Noise threshold**. Its curves are not on the card yet.
 - **Surface blur**: **Radius**, then **Red**, **Green** and **Blue**.
-- **Contrast equalizer**: **Mix**. Its curves are not on the card yet; Simple's
-  Contrast draws them for the first instance when Preferences set it to
-  contrast equalizer.
+- **Contrast equalizer**: a graph with a menu for its curves (**Luminance**,
+  **Chroma**, **Edges**, **Luminance noise** and **Chroma noise**), each of six
+  bands from coarse to fine; drag a point up or down, or use the arrow keys on
+  a focused one. Then **Mix**. The bands sit at fixed positions, as in
+  Simple's Contrast, which edits the same module for the first instance when
+  Preferences set it to contrast equalizer.
 - **Lowpass**: **Radius**, **Soften with**, **Contrast**, **Brightness** and
   **Saturation**.
 

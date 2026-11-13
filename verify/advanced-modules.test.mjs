@@ -518,6 +518,15 @@ test('Advanced card layouts match darktable', { skip: skip || false }, async (t)
   });
   assert.deepEqual(INTERPOLATIONS.map(([, v]) => v), [0, 1, 2]);
 
+  // a card's graph writes only fields the schema has (Simple's maps)
+  for (const l of LAYOUTS) if (l.graph) await t.test(`${l.op} graph fields`, async () => {
+    const { GRAPHS, graphFields } = await import('../app/src/graphMaps.ts');
+    assert.equal(GRAPHS[l.graph].op, l.op);
+    const s = await e.call({ cmd: 'module_schema', op: l.op });
+    const names = new Set(s.fields.map((f) => f.path));
+    for (const f of graphFields(l.graph)) assert.ok(names.has(f), `${l.op}: ${f} not in the schema`);
+  });
+
   const edits = [];
   for (const l of LAYOUTS) {
     await t.test(`${l.op} (${l.group}) layout`, async () => {
@@ -640,4 +649,44 @@ test('Advanced rgb curve editor writes its nodes', { skip: skip || false }, asyn
   const t2 = (await e.call({ cmd: 'get', modules: { 'rgbcurve@0': Object.keys(types) } })).modules['rgbcurve@0'];
   for (const k of Object.keys(types)) assert.equal(t2.params[k], 1, k);
   assert.ok(!before.equals(await shot('after.png')), 'the S curve did not change the render');
+});
+
+// the contrast equalizer and saturation curve cards (ModuleGraph) write
+// through Simple's maps: band heights, and a node count with every slot
+test('Advanced graph cards write through the manifest maps', { skip: skip || false }, async (t) => {
+  const { equalizerMap, satcurveMap } = await import('../app/src/manifest.ts');
+  const ctx = { sensorWidth: 1, sensorHeight: 1, orientation: 0, camera: 0 };
+  const work = mkdtempSync(join(tmpdir(), 'immage-advgraph-'));
+  mkdirSync(join(work, 'photos'));
+  const photo = join(work, 'photos', 'stairs.jpg');
+  copyFileSync(SAMPLE, photo);
+  const e = new Engine(work);
+  t.after(() => { e.stop(); rmSync(work, { recursive: true, force: true }); });
+  const { imgid } = await e.call({ cmd: 'open', path: photo });
+  const shot = async (name) => {
+    const out = join(work, name);
+    await e.call({ cmd: 'export', imgid, out, format: 'png', bpp: 8, color_space: 'srgb', long_edge: 300 }, 600000);
+    return readFileSync(out);
+  };
+  const before = await shot('before.png');
+  // one luminance band raised
+  const eq = equalizerMap.write({ ce_0_2: 0.9 }, {}, ctx);
+  const eqKeys = Object.keys(eq);
+  await e.call({ cmd: 'set', op: 'atrous', priority: 0, params: eq, enabled: true });
+  const g1 = (await e.call({ cmd: 'get', modules: { 'atrous@0': eqKeys } })).modules['atrous@0'];
+  for (const k of eqKeys) assert.ok(Math.abs(g1.params[k] - eq[k]) < 1e-6, `${k}: ${g1.params[k]} != ${eq[k]}`);
+  assert.ok(!before.equals(await shot('eq.png')), 'the raised band did not change the render');
+  // a three point saturation curve
+  const sat = satcurveMap.write({ sc_pn: 3, sc_p0x: 0, sc_p0y: 0.5, sc_p1x: 0.4, sc_p1y: 0.8, sc_p2x: 1, sc_p2y: 0.5,
+                                 sb_pn: 2, sb_p0x: 0, sb_p0y: 0.5, sb_p1x: 1, sb_p1y: 0.5 }, {}, ctx);
+  const satKeys = Object.keys(sat);
+  await e.call({ cmd: 'set', op: 'satcurvergb', priority: 0, params: sat, enabled: true });
+  const g2 = (await e.call({ cmd: 'get', modules: { 'satcurvergb@0': satKeys } })).modules['satcurvergb@0'];
+  assert.equal(g2.params['channel[0].curve_num_nodes'], 3);
+  for (const k of satKeys) assert.ok(Math.abs(g2.params[k] - sat[k]) < 1e-6, `${k}: ${g2.params[k]} != ${sat[k]}`);
+  for (let k = 3; k < 20; k++) {
+    assert.equal(g2.params[`channel[0].curve[${k}].x`], 0, `slot ${k} x`);
+    assert.equal(g2.params[`channel[0].curve[${k}].y`], 0, `slot ${k} y`);
+  }
+  assert.ok(!before.equals(await shot('sat.png')), 'the saturation curve did not change the render');
 });

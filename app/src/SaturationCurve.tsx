@@ -7,14 +7,15 @@ import { useState } from "react";
 import { PointCurve } from "./PointCurve";
 import { SAT_CHANNELS, SATCURVE_NEUTRAL, satPointsOf, satPointValues, type SatChannel, type Values } from "./manifest";
 
-export function SaturationCurve({ values, disabled, onChange, module }: {
+export function SaturationCurve({ values, disabled, onChange, module, heading = true }: {
   values: Values; disabled: boolean; onChange: (entries: [string, number][]) => void;
+  heading?: boolean;          // false on an Advanced card, whose header has the name and reset
   module?: React.ReactNode;   // the ModuleSwitch beside the name
 }) {
   const [channel, setChannel] = useState<SatChannel>(0);
   return <div className="contrast-equalizer saturation-curve">
-    <div className="equalizer-heading"><span className="name">{"Saturation curve"}{module}</span><button disabled={disabled}
-      onClick={() => onChange(Object.entries(SATCURVE_NEUTRAL))}>Reset</button></div>
+    {heading && <div className="equalizer-heading"><span className="name">{"Saturation curve"}{module}</span><button disabled={disabled}
+      onClick={() => onChange(Object.entries(SATCURVE_NEUTRAL))}>Reset</button></div>}
     <select aria-label="Saturation curve channel" disabled={disabled} value={channel}
             onChange={(e) => setChannel(+e.target.value as SatChannel)}>
       {SAT_CHANNELS.map((label, c) => <option key={c} value={c}>{label}</option>)}
