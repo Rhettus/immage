@@ -59,7 +59,7 @@ async function type(t, sel, id, text) {
   const v = await reveal(t, `${slider} .value`);
   await t.driver.point(v.x, v.y, 2);
   await until(() => t.driver.observe(s => !!document.querySelector(`${s} .value-edit`), slider), `${id} numeric editor`);
-  await t.driver.keys(text, '');
+  await t.driver.keys(text, '\uE007') // Enter;
 }
 
 export async function advancedGroups(t) {
