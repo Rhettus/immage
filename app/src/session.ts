@@ -991,10 +991,10 @@ export class Session {
     return this.advanced.get(key);
   }
 
-  // one darktable field of an instance; moving it switches the module on,
-  // as in darktable
-  setField(op: string, priority: number, path: string, v: number, coalesce = false) {
-    this.setAdvanced(op, priority, { [path]: v }, true, coalesce);
+  // one darktable field of an instance, with any others the edit also sets
+  // (`also`); moving it switches the module on, as in darktable
+  setField(op: string, priority: number, path: string, v: number, coalesce = false, also: Params = {}) {
+    this.setAdvanced(op, priority, { ...also, [path]: v }, true, coalesce);
   }
 
   setAdvancedEnabled(op: string, priority: number, on: boolean) {

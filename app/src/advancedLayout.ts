@@ -37,6 +37,10 @@ export type ModuleLayout = {
   // the module's other cards leave out; Add module sets these Simple values,
   // which make it
   instance?: { name: string; add: [string, number][] };
+  // fields every edit on the card also sets, as the module's gui_changed
+  // does, except an edit of one of `except` (lens: darktable renders its
+  // defaults until has_been_set is on, which the method alone leaves off)
+  touch?: { set: [string, number][]; except?: string[] };
 };
 
 // diffuse or sharpen's settings, shared by its Basic and Detail cards.
