@@ -34,7 +34,8 @@ Improvements
   color look up table card has darktable's patch grid with its patch and
   target color sliders. The composite card chooses the photo to place from the
   folder you are browsing, and it and the watermark card have darktable's
-  3x3 alignment grid.
+  3x3 alignment grid. The color mapping card has darktable's source and target
+  cluster previews with acquire as source and acquire as target.
   When a photo's white balance comes from the white balance module with color
   calibration off, Simple's White Balance section and the white balance card
   say so.

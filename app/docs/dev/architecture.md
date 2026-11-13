@@ -264,7 +264,7 @@ identity before drawing, so replacement frames cancel obsolete work.
 | [export_cmds.rs](../../src-tauri/src/export_cmds.rs) | Export (naming conflicts, `export_images` and `export_cancel`), HDR and Panorama merges, `positive_export`, `export_preview`, `shared_import`, the export and look presets files, and the file pickers (`pick_files`, `pick_save`) with `path_inside`. |
 | [immich_cmds.rs](../../src-tauri/src/immich_cmds.rs) | The `immich_*` commands: albums, the browse and export checks, search, libraries, suggestions, people, tags, thumbnails and path resolving, over `immich_call`. |
 | [print_cmds.rs](../../src-tauri/src/print_cmds.rs) | Print profiles, `softproof`, printers, `print_photo` and `print_sheet`, `fonts` and the PDF picker. |
-| [edit_cmds.rs](../../src-tauri/src/edit_cmds.rs) | Masks, ranges, zones, spots, `upright`, `lenses`, looks (`looks_list`, `look_*`, `import_look`), AgX presets and profiles, and the film simulation stocks. |
+| [edit_cmds.rs](../../src-tauri/src/edit_cmds.rs) | Masks, ranges, zones, spots, `upright`, `lenses`, `colormapping_acquire`, looks (`looks_list`, `look_*`, `import_look`), AgX presets and profiles, and the film simulation stocks. |
 | [ai_cmds.rs](../../src-tauri/src/ai_cmds.rs) | The AI selections and depth, `ai_denoise` and its preview, `ai_accel`, and AI model download (`install_model`, `install_extra`, through reqwest; darktable's archives checked against the sha256 pinned per darktable version in `MODEL_RELEASES`, written by `scripts/pin_models.py`, or against the release's published versions.json for an unpinned version, then unpacked by the engine's `unpack`; downloads are cut off past the expected size, and extra models are fetched from a fixed Hugging Face commit). |
 | [app_cmds.rs](../../src-tauri/src/app_cmds.rs) | Preferences' darktable resources, GPU edits and window renderer, the performance overlay and reports (`perf_*`, `machine_block`), the GPU check (`gpu_check_parity`), `build`, `about`, `licenses`, `engine_quit`, `engine_restart` with the `supervise` thread, the macOS native menu (`menu_set`), Full Screen Preview and the CSP violation log. |
 | [engine.rs](../../src-tauri/src/engine.rs) | The engine child and its protocol (above); `perf_mark` and the `-d perf` parser. |
@@ -445,6 +445,19 @@ App.tsx) asks `upright` for the `level` fit and writes only `tf_rotate`,
 converted by `rotateOf` in manifest.ts as `transformMap.read` does, so
 `tf_upright` and the `tf_base_*` fit stay untouched; it is disabled while
 Upright is on.
+
+Color mapping's acquire buttons (Advanced card, `clusters` marker) are `colormapping_acquire {which, n}`
+(`_cmd_colormapping_acquire`, `cmap_acquire` in [cmapping.c](../../../engine/cmapping.c)). darktable acquires only in
+its GUI: `process()` copies the preview pipe's Lab input into `gui_data`, and `process_clusters()` on the preview
+pipe's finish runs `capture_histogram`, `invert_histogram` and `kmeans` and writes the params. The engine has no
+GUI data, so the command reads the module's input with `masks_working_colormapping` (`_working_at`,
+`_STAGE_COLORMAPPING`: the last enabled piece before colormapping, 768 px on its long side, converted to Lab),
+runs the same three functions (copied, with darktable's `dt_points_get` random start) and replies the clusters and
+a content hash. It writes no params. The card then sets the engine field `cm_source` or `cm_target` to that hash,
+an ordinary `set_params` edit: `cmap_write` restores the arrays and HAS_SOURCE or HAS_TARGET from the sets the
+engine has seen (`_seen`, kept per session), 0 clears them as `gui_changed` does, and `cmap_read` hashes the params'
+arrays. Undo and the card's snapshot therefore carry two numbers rather than 4000 floats. `source_mean[k][j]` and
+the other float2 elements are opaque to introspection, so `cmap_read` and `cmap_write` own those paths too.
 
 [`engine/hdrmerge.c`](../../../engine/hdrmerge.c) is HDR Merge:
 darktable's HDR merge of raw brackets into a float DNG, which darktable

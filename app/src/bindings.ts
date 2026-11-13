@@ -113,6 +113,7 @@ export const commands = {
 	lenses: () => __TAURI_INVOKE<LensMenu>("lenses"),
 	wbPresets: () => __TAURI_INVOKE<WbPresets>("wb_presets"),
 	lutFiles: (priority: number, pick: boolean) => __TAURI_INVOKE<LutFiles | null>("lut_files", { priority, pick }),
+	colormappingAcquire: (which: string, n: number) => __TAURI_INVOKE<ColormappingClusters>("colormapping_acquire", { which, n }),
 	lutFolder: (folder: string) => __TAURI_INVOKE<null>("lut_folder", { folder }),
 	pickFolder: (start: string) => __TAURI_INVOKE<string | null>("pick_folder", { start }),
 	watermarks: () => __TAURI_INVOKE<Watermarks>("watermarks"),
@@ -318,6 +319,14 @@ export type ChosenFile = {
 export type ColorProfiles = {
 	input: ([string, number])[],
 	working: ([string, number])[],
+};
+
+export type ColormappingClusters = {
+	hash: number,
+	n: number,
+	mean: number[],
+	var: number[],
+	weight: number[],
 };
 
 export type CombineMember = {

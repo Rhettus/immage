@@ -138,6 +138,17 @@ pub struct UprightReply {
     pub fit: Option<String>,
 }
 
+// `colormapping_acquire`: the clusters found. mean and var are a, b pairs
+// for the five slots, weight one per slot (the first n are used)
+#[derive(Serialize, Deserialize, Type)]
+pub struct ColormappingClusters {
+    pub hash: Number,
+    pub n: i64,
+    pub mean: Vec<Number>,
+    pub var: Vec<Number>,
+    pub weight: Vec<Number>,
+}
+
 // `depth`'s map: `data` 0 (nearest) to 255 by rows
 #[derive(Serialize, Deserialize, Type)]
 pub struct DepthMap {

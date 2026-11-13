@@ -1779,6 +1779,8 @@ export class Session {
             if (priority === 0 && boundFields()[op]) await this.reread(op);
             // a lens pick also sets the lens method and geometry, which the card reads back
             if ("lens_pick" in params) this.advancedStale.add(key);
+            // an acquire or a cleared count changes the cluster arrays the previews draw
+            if ("cm_source" in params || "cm_target" in params) this.advancedStale.add(key);
             // white balance's temperature and tint set the coefficients, and
             // an edit of the coefficients moves them
             if (op === "temperature") this.advancedStale.add(key);

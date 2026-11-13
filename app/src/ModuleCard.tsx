@@ -16,6 +16,7 @@ import { ColorWheel } from "./ColorWheel";
 import { ModuleCurves } from "./ModuleCurves";
 import { ModuleLevels } from "./ModuleLevels";
 import { ModulePatches } from "./ModulePatches";
+import { ModuleClusters } from "./ModuleClusters";
 import { ModuleBands } from "./ModuleBands";
 import { ModuleGraph } from "./ModuleGraph";
 import { ModuleFile } from "./ModuleFile";
@@ -84,7 +85,7 @@ export function fieldControl(f: SchemaField, l: LayoutField, value: number): Con
 // `siblings` is how many instances of the module the group shows, `index`
 // this one's place among them (pipe order); `fresh`, a card just added;
 // `focus`, a number that changes each time the module search picks the card
-export function ModuleCard({ hidden, instance, layout, schema, state, siblings, index, fresh, focus, family, photo, photos, onSettled, wbInModule, onField, onFields, onEnabled, onReset, onInstance, loadPresets, onPreset, onTurn }: {
+export function ModuleCard({ hidden, instance, layout, schema, state, siblings, index, fresh, focus, family, photo, photos, onSettled, settle, wbInModule, onField, onFields, onEnabled, onReset, onInstance, loadPresets, onPreset, onTurn }: {
   instance: Instance; layout: ModuleLayout; schema: ModuleSchema; state: AdvancedState;
   // hidden in Preferences > Modules, yet shown as the photo uses it
   hidden?: boolean;
@@ -95,6 +96,8 @@ export function ModuleCard({ hidden, instance, layout, schema, state, siblings, 
   // and a call to read the card's state back from the engine once its edits have
   // settled (the engine refuses a photo that composites this one)
   photos?: ImageEntry[]; onSettled?: () => void;
+  // a wait for the edits sent so far to reach the engine, before Color mapping's acquire reads the cluster count
+  settle?: () => Promise<void>;
   // the white balance note: the photo's white balance is set by this module
   // with color calibration off (Session.wbInModule)
   wbInModule?: boolean;
@@ -243,6 +246,9 @@ export function ModuleCard({ hidden, instance, layout, schema, state, siblings, 
           {layout.patches && fields.has("target_L") && fields.has("num_patches") && (
             <ModulePatches state={state} disabled={fixed && !state.enabled} onFields={onFields} />
           )}
+          {layout.clusters && fields.has("source_mean") && fields.has("target_mean") && (
+            <ModuleClusters state={state} disabled={fixed && !state.enabled} settle={settle ?? (() => Promise.resolve())} onFields={onFields} />
+          )}
           {layout.lensPick && state.params.method === 1 && (
             <div data-control-id="adv:lens_pick">
               <LensPicker value={state.params.lens_pick ?? 0} photo={photo ?? null} disabled={fixed && !state.enabled}
@@ -293,7 +299,9 @@ export function ModuleCard({ hidden, instance, layout, schema, state, siblings, 
               const why = l.grey?.(state.params) ?? undefined;
               const control = { ...fieldControl(f, shownAs, value), ...(why ? { note: why } : {}) };
               const props = { control, value, neutral, values: state.params, disabled: (fixed && !state.enabled) || !!why };
-              const set = (coalesce: boolean) => (v: number) => onField(l.path, v, coalesce);
+              const set = (coalesce: boolean) => (v: number) => l.clears
+                ? onFields({ [l.path]: v, ...Object.fromEntries(l.clears.map((c) => [c, 0])) }, coalesce, l.path)
+                : onField(l.path, v, coalesce);
               const title = l.section && l.section !== heading ? l.section : undefined;
               heading = l.section;
               const wheel = title ? layout.wheels?.find((w) => w.section === title) : undefined;

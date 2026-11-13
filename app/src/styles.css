@@ -2652,6 +2652,9 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .module-card-section { margin: 10px 0 4px; font-size: 11px; color: var(--text-2); text-transform: lowercase; }
 .module-card-section::first-letter { text-transform: uppercase; }
 .module-card-turns { margin: 4px 0 8px; }
+.module-card-clusters .clusters-area { display: block; width: 100%; }
+.module-card-clusters .clusters-buttons { display: flex; gap: 5px; margin: 6px 0; }
+.module-card-clusters .clusters-buttons .btn { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .module-file { flex-wrap: wrap; }
 .module-file select { flex: 1; min-width: 0; }
 .module-file-note { flex-basis: 100%; margin: 0; }

@@ -274,9 +274,24 @@ The HSL / Color group has these darktable modules:
   it. The menu lists the LUT files in the chosen file's folder; it is empty
   until a file is chosen. darktable's compressed gmic LUTs (gmz) and their
   name list are not offered.
-- **Color mapping**: **Number of clusters**, **Color dominance** and
-  **Histogram equalization**. Capturing the source and target colors is not
-  on the card yet. darktable allows one instance.
+- **Color mapping**: transfers the color palette and tonal spread of one photo
+  to another. Two previews show the **source clusters** and **target
+  clusters**, each cluster a 3 x 3 patch of its average color and the spread
+  around it. **acquire as source** analyzes the open photo as it looks at this
+  module's input (after the edits before it, at preview size) and stores its
+  clusters as the source; **acquire as target** does the same for the target.
+  Each is one undo step and turns the module on. The mapping only applies once
+  both are acquired. **Number of clusters** (1 to 5) is used when acquiring, and
+  changing it discards the acquired source and target. **Color dominance** and
+  **Histogram equalization** set how clusters are matched and how far the
+  tones follow the source. The clusters start at random places, so acquiring
+  again can give a slightly different result, and a cluster that starts with no
+  pixels nearest to it stays empty (its swatches show gray): press the button
+  again, or use fewer clusters. To use the source of one photo on another,
+  acquire it there, then paste this module's settings with **Advanced
+  modules** ticked in Copy Settings, and acquire the target on the second
+  photo. Immage does not keep an acquired source for the next photo you open,
+  as darktable does within one session. darktable allows one instance.
 
 ## B&W modules
 

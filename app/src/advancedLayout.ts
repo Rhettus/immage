@@ -45,6 +45,10 @@ export type LayoutField = {
   // Composite's photo (ModulePhoto) over the int `imgid`: the engine's write
   // of it also sets the module's filename and checks for a cycle (files.c)
   photo?: true;
+  // changing this field also writes these engine fields to 0 in the same
+  // edit (color mapping's number of clusters, which discards the acquired
+  // clusters as colormapping.c's gui_changed does)
+  clears?: string[];
   // a color button over a 3-float array param (`path` is the array, its
   // elements `path[0..2]`): borders.c and watermark.c give darktable's
   // GtkColorButton the RGBA straight as the floats, 0..1 with no conversion
@@ -121,6 +125,9 @@ export type ModuleLayout = {
   // the patch grid editor (ModulePatches) for colorchecker: the source and
   // target Lab arrays and num_patches, edited by patch
   patches?: true;
+  // color mapping's source and target cluster previews and acquire buttons
+  // (ModuleClusters), over the engine's fields cm_source and cm_target
+  clusters?: true;
   // the wavelet curve editor (ModuleBands) over x[c][k] and y[c][k] for
   // `channels` channels of `count` bands, drawn before the field `before`.
   // `tabs` lists the channels to edit now, `show` whether the editor is on at all
@@ -805,14 +812,19 @@ export const LAYOUTS: ModuleLayout[] = [
     // colormapping.c gui_init: source and target cluster previews and the
     // acquire buttons, then three sliders; gui_changed hides nothing (it only
     // clears the stored clusters when the cluster count moves, so changing
-    // "number of clusters" discards an acquired source and target). left out:
-    // flag, source_* and target_* (the acquired histograms, means, variances
-    // and weights, which need a custom editor showing the two cluster previews
-    // and the acquire as source and acquire as target buttons, which analyze
-    // the image on screen)
+    // "number of clusters" discards an acquired source and target, `clears`).
+    // the previews and buttons are ModuleClusters over the engine's fields
+    // cm_source and cm_target (engine/cmapping.c), which carry flag and the
+    // histograms, weights and deviations behind the previews. darktable
+    // analyzes the preview pipe's copy of the module's input; the engine
+    // analyzes its own preview-sized image of it. left out: the source that
+    // darktable keeps for the next photo opened in the same session (the
+    // module's flowback, held in the GUI and in /tmp/dt_colormapping_loaded and
+    // applied to the defaults by reload_defaults); Copy Settings moves it
     op: "colormapping", group: "hsl", title: "Color mapping",
+    clusters: true,
     fields: [
-      { path: "n", label: "Number of clusters", digits: 0 },
+      { path: "n", label: "Number of clusters", digits: 0, clears: ["cm_source", "cm_target"] },
       { path: "dominance", label: "Color dominance", unit: "%" },
       { path: "equalization", label: "Histogram equalization", unit: "%" },
     ],

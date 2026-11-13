@@ -3,7 +3,7 @@
 
 use serde_json::{json, Number, Value};
 use std::path::Path;
-use crate::typed_edit::{AgxPresetsReply, AgxProfile, CombineMember, FilmFetch, FilmStocks, Instance, InstanceReply, InstancesReply, LensMenu, ModuleSchema, WbPresets, LutFiles, Watermarks, LookReply, MapView, MaskInfo, MasksReply, NewSpot, PresetsReply, Spot, SpotSource, SpotsReply, UprightReply};
+use crate::typed_edit::{AgxPresetsReply, AgxProfile, CombineMember, FilmFetch, FilmStocks, Instance, InstanceReply, InstancesReply, LensMenu, ModuleSchema, WbPresets, LutFiles, Watermarks, ColormappingClusters, LookReply, MapView, MaskInfo, MasksReply, NewSpot, PresetsReply, Spot, SpotSource, SpotsReply, UprightReply};
 use crate::typed_export::LookInfo;
 use tauri::{ipc::Response, AppHandle, State};
 use crate::AppState;
@@ -157,6 +157,19 @@ pub(crate) async fn upright(state: State<'_, AppState>, mode: String, guides: Op
     }
     let reply = state.engine("upright").request(req)?;
     serde_json::from_value(reply).map_err(|e| format!("upright: unexpected reply: {e}"))
+}
+
+// the Color mapping card's acquire as source or target (the engine's
+// colormapping_acquire): the clusters of the module's input at n (1-5)
+// clusters. `hash` is the number the card then writes to cm_source or
+// cm_target; the means, deviations and weights are for its previews
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn colormapping_acquire(state: State<'_, AppState>, which: String, n: Number)
+    -> Result<ColormappingClusters, String> {
+    let reply = state.engine("colormapping_acquire")
+        .request(json!({ "cmd": "colormapping_acquire", "which": which, "n": n }))?;
+    serde_json::from_value(reply).map_err(|e| format!("colormapping_acquire: unexpected reply: {e}"))
 }
 
 // how much range components select over a width x height grid of the shown

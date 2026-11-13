@@ -704,6 +704,11 @@ static gboolean _cmd_lut_files(JsonObject *req, JsonBuilder *b, char **err)
   return files_lut(req, b, err);
 }
 
+static gboolean _cmd_colormapping_acquire(JsonObject *req, JsonBuilder *b, char **err)
+{
+  return cmap_acquire(req, b, err);
+}
+
 static gboolean _cmd_lut_folder(JsonObject *req, JsonBuilder *b, char **err)
 {
   files_set_lut_folder(json_object_get_string_member_with_default(req, "folder", ""));
@@ -1290,6 +1295,7 @@ static const eng_cmd_t _commands[] =
   { "color_profiles", _cmd_color_profiles, _CMD_NEEDS_OPEN },
   { "wb_presets", _cmd_wb_presets, _CMD_NEEDS_OPEN },
   { "lut_files", _cmd_lut_files, _CMD_NEEDS_OPEN },
+  { "colormapping_acquire", _cmd_colormapping_acquire, _CMD_NEEDS_OPEN },
   { "lut_folder", _cmd_lut_folder, 0 },
   { "watermarks", _cmd_watermarks, 0 },
   { "lenses", _cmd_lenses, _CMD_NEEDS_OPEN },

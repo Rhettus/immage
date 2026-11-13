@@ -8,6 +8,7 @@ import type { InstanceChoice } from "./InstanceMenu";
 import type { Session } from "./session";
 import type { Turn } from "./manifest";
 import { patchPaths } from "./colorchecker";
+import { clusterPaths } from "./colormapping";
 import { LAYOUTS, editOf, groupLayouts, layoutPaths, layoutFor, layoutRank, shows } from "./advancedLayout";
 import { searchModules, type SearchHit } from "./advancedSearch";
 import { panels } from "./manifest";
@@ -111,7 +112,7 @@ const cardFields = (layout: NonNullable<ReturnType<typeof layoutFor>>) => {
   const levels = layout.levels ? [0, 1, 2].flatMap((c) => [0, 1, 2].map((k) => `levels[${c}][${k}]`)) : [];
   const b = layout.bands;
   const bands = b ? Array.from({ length: b.channels }, (_, c) => Array.from({ length: b.count }, (__, k) => [`x[${c}][${k}]`, `y[${c}][${k}]`]).flat()).flat() : [];
-  return [...layout.fields.flatMap(layoutPaths), ...levels, ...bands, ...(layout.patches ? patchPaths() : []), ...(layout.lensPick ? ["lens_pick"] : []), ...curve,
+  return [...layout.fields.flatMap(layoutPaths), ...levels, ...bands, ...(layout.patches ? patchPaths() : []), ...(layout.clusters ? clusterPaths() : []), ...(layout.lensPick ? ["lens_pick"] : []), ...curve,
     ...(layout.graph ? GRAPHS[layout.graph].fields : [])];
 };
 
@@ -245,7 +246,7 @@ export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0
                   const f = familyOf(i.op);
                   return f && familyOptions(f, i.op).length > 1 ? { label: f.label, options: familyOptions(f, i.op), onPick: (to: string) => switchTo(cards.find((c) => c.i === i)!, f, to) } : undefined;
                 })()}
-                photo={session} photos={photos} onSettled={() => void session!.reloadAdvanced(i.op, i.priority)} wbInModule={session?.wbInModule} siblings={sib.length} index={index} fresh={session!.lastAdded === key} focus={focused?.key === key ? focused.nonce : undefined} onInstance={onInstance} onTurn={onTurn}
+                photo={session} photos={photos} onSettled={() => void session!.reloadAdvanced(i.op, i.priority)} settle={() => session!.settled()} wbInModule={session?.wbInModule} siblings={sib.length} index={index} fresh={session!.lastAdded === key} focus={focused?.key === key ? focused.nonce : undefined} onInstance={onInstance} onTurn={onTurn}
                 onField={(path, v, coalesce) => { record?.([`adv:${key}:${path}`], layout.title); const c = session!.context;
                   session!.setFields(i.op, i.priority, editOf(layout, path, v, state.params, { width: c.sensorWidth, height: c.sensorHeight }), coalesce); }}
                 onFields={(edit, coalesce, id) => { record?.([`adv:${key}:${id}`], layout.title); const c = session!.context;

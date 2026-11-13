@@ -2139,6 +2139,11 @@ static dt_dev_pixelpipe_iop_t *_stage_piece(const _stage_t stage, const dt_iop_m
     {
       if(pc->module->iop_order >= negadoctor->iop_order) break;
     }
+    else if(stage == _STAGE_COLORMAPPING)
+    {
+      // the anchor is the module itself: its input, not its output
+      if(pc->module->iop_order >= anchor->iop_order) break;
+    }
     else if(pc->module->iop_order > anchor->iop_order)
       break;
     if(pc->enabled) piece = pc;
@@ -2165,6 +2170,7 @@ static gboolean _working_at(_working_t *w, const _stage_t stage, char **err)
     ? dt_iop_get_module_by_op_priority(_s.dev.iop, "negadoctor", 0) : NULL;
   if(stage == _STAGE_ASHIFT) anchor = ashift;
   if(stage == _STAGE_NEGADOCTOR) anchor = negadoctor;
+  if(stage == _STAGE_COLORMAPPING) anchor = dt_iop_get_module_by_op_priority(_s.dev.iop, "colormapping", 0);
   if(!anchor || !session_ppipe_ready(err))
   {
     if(!*err) *err = g_strdup("no anchor module to sample at");
@@ -2241,6 +2247,40 @@ static gboolean _working_at(_working_t *w, const _stage_t stage, char **err)
   // read that way. the conversion is kept until the next one
   static float *converted = NULL;
   static dt_iop_buffer_dsc_t converted_dsc;
+  if(stage == _STAGE_COLORMAPPING)
+  {
+    // colormapping.c works on Lab (default_colorspace), which the pipe
+    // converts its input to; read it as that
+    if(dsc->cst == IOP_CS_RGB)
+    {
+      if(converted) dt_free_align(converted);
+      converted = dt_alloc_align_float((size_t)4 * roi.width * roi.height);
+      if(!converted)
+      {
+        *err = g_strdup("out of memory for the working-space image");
+        return FALSE;
+      }
+      dt_iop_colorspace_type_t cst = IOP_CS_RGB;
+      dt_ioppr_transform_image_colorspace(piece->module, data, converted, roi.width, roi.height, IOP_CS_RGB,
+                                          IOP_CS_LAB, &cst, dt_ioppr_get_pipe_work_profile_info(&_s.ppipe));
+      converted_dsc = *dsc;
+      converted_dsc.cst = IOP_CS_LAB;
+      data = converted;
+      dsc = &converted_dsc;
+    }
+    if(dsc->cst != IOP_CS_LAB)
+    {
+      *err = g_strdup("the image is not in Lab at color mapping's input");
+      return FALSE;
+    }
+    w->data = data;
+    w->roi = roi;
+    w->pw = pw;
+    w->ph = ph;
+    w->piece = piece;
+    w->dsc = dsc;
+    return TRUE;
+  }
   if(stage != _STAGE_ASHIFT && dsc->cst == IOP_CS_LAB)
   {
     if(converted) dt_free_align(converted);
@@ -2283,6 +2323,12 @@ static gboolean _working_at(_working_t *w, const _stage_t stage, char **err)
 gboolean masks_working(_working_t *w, char **err)
 {
   return _working_at(w, _STAGE_ANCHOR, err);
+}
+
+// color mapping's input, in Lab: what its acquire buttons analyze
+gboolean masks_working_colormapping(_working_t *w, char **err)
+{
+  return _working_at(w, _STAGE_COLORMAPPING, err);
 }
 
 // points of the shown image (pairs, 0-1) as pixels of the working buffer

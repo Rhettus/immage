@@ -223,7 +223,8 @@ typedef struct _working_t
 // output); the tone mapper's input, with every mask instance's adjustment
 // in it; the Zone System placement's input, which it has not placed yet;
 // rotate and perspective's input, larger, for Upright's line detection; or
-// negadoctor's input, the negative as its pickers read it
+// negadoctor's input, the negative as its pickers read it; or color
+// mapping's input, in Lab, which its acquire buttons analyze
 typedef enum _stage_t
 {
   _STAGE_ANCHOR,
@@ -231,6 +232,7 @@ typedef enum _stage_t
   _STAGE_UNPLACED,
   _STAGE_ASHIFT,
   _STAGE_NEGADOCTOR,
+  _STAGE_COLORMAPPING,
 } _stage_t;
 
 // lock order. every engine mutex has a rank; a thread takes locks in
@@ -374,6 +376,16 @@ gboolean files_write(dt_iop_module_t *mod, const char *name, const double num, c
 void files_set_lut_folder(const char *folder);
 gboolean files_lut(JsonObject *req, JsonBuilder *b, char **err);
 gboolean files_watermarks(JsonBuilder *b, char **err);
+// cmapping.c: color mapping's acquired clusters, edited as the number the
+// engine gives them: `cm_source` and `cm_target` (0 is none), and the acquire
+// itself, which analyzes the module's input and replies that number
+#define CMAP_SOURCE "cm_source"
+#define CMAP_TARGET "cm_target"
+gboolean cmap_is_field(const dt_iop_module_t *mod, const char *name);
+gboolean cmap_read(dt_iop_module_t *mod, const char *name, const gboolean from_defaults, double *num,
+                   char **err);
+gboolean cmap_write(dt_iop_module_t *mod, const char *name, const double num, char **err);
+gboolean cmap_acquire(JsonObject *req, JsonBuilder *b, char **err);
 // Composite's photo: a write of overlay's `imgid` (see files.c)
 gboolean files_overlay_write(dt_iop_module_t *mod, const double num, char **err);
 void files_overlay_sync(const dt_imgid_t imgid);
@@ -432,6 +444,7 @@ gboolean masks_masks(JsonObject *fields, JsonBuilder *b, char **err);
 gboolean masks_mask_delete(const char *name, char **err);
 gboolean masks_mask_rename(const char *name, const char *to, char **err);
 gboolean masks_working(_working_t *w, char **err);
+gboolean masks_working_colormapping(_working_t *w, char **err);
 void masks_to_working(const _working_t *w, float *pts, const size_t n);
 void masks_blend_values(const _working_t *w, const float *rgb_in, float *Y, dt_aligned_pixel_t JzCzhz);
 gboolean masks_sample(const float x, const float y, JsonArray *box, const _stage_t stage, JsonBuilder *b,

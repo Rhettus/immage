@@ -55,7 +55,7 @@ ROOT = background.ROOT
 COMMANDS = sorted('''
 agx_auto agx_presets ai_accel ai_denoise ai_denoise_preview ai_depth ai_mask
 ai_object baseline_end before cancel_base capture_times close color_profiles
-combine copy data_backup export export_hold export_release folder fonts forget get
+colormapping_acquire combine copy data_backup export export_hold export_release folder fonts forget get
 hdr_merge history import instance instances keywords keywords_set lenses look lut_files lut_folder look_amount mask
 mask_delete mask_map mask_rename masks merge_cancel meta meta_set module_schema module_state
 open opencl pano_merge pano_preview parity paste_batch points prefetch preview
@@ -284,6 +284,10 @@ def photo_edits(img):
           label='spot_source circle'),
         R('sample', label='sample default'),
         R('sample', x=0.25, y=0.75, box=[0.2, 0.2, 0.4, 0.4], label='sample box'),
+        R('colormapping_acquire', which='source', n=3, label='colormapping_acquire source'),
+        R('colormapping_acquire', which='target', n=5, label='colormapping_acquire target'),
+        R('colormapping_acquire', which='bogus', n=3, label='colormapping_acquire unknown side'),
+        R('colormapping_acquire', which='source', n=9, label='colormapping_acquire too many clusters'),
         R('tone_key'), R('agx_auto', label='agx_auto without agx'),
         R('set', op='agx', enabled=True, params={}, label='set agx'), R('agx_auto'),
         R('upright', label='upright default'),

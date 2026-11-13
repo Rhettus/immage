@@ -551,7 +551,22 @@ test('Advanced card layouts match darktable', { skip: skip || false }, async (t)
         }
         assert.equal(resolve('num_patches')?.type, 'int', 'num_patches is an int');
       }
+      // color mapping's cluster previews: the mean and deviation arrays the
+      // swatches read, and the engine's fields that carry the acquired set
+      if (l.clusters) {
+        assert.equal(l.op, 'colormapping');
+        for (const n of ['source', 'target']) for (const k of ['mean', 'var']) {
+          // float2 elements are opaque to introspection: the schema lists the array, the engine reads the pairs
+          const f = by.get(`${n}_${k}`);
+          assert.ok(f && f.type === 'array' && f.dims[0] === 5, `${n}_${k} is not an array of 5`);
+          const got = (await e.call({ cmd: 'get', modules: { 'colormapping@0': [`${n}_${k}[4][1]`] } })).modules['colormapping@0'];
+          assert.equal(got.params[`${n}_${k}[4][1]`], 0);
+        }
+        const now = (await e.call({ cmd: 'get', modules: { 'colormapping@0': ['cm_source', 'cm_target'] } })).modules['colormapping@0'];
+        assert.deepEqual([now.params.cm_source, now.params.cm_target], [0, 0], 'no clusters acquired yet');
+      }
       for (const lf of l.fields) {
+        for (const c of lf.clears ?? []) assert.ok(['cm_source', 'cm_target'].includes(c), `${lf.path} clears ${c}`);
         assert.ok(!seen.has(lf.path) || lf.showIf, `${lf.path} listed twice without a showIf`);
         seen.add(lf.path);
         // a profile menu is the engine's own field, and its choices the
@@ -1421,3 +1436,169 @@ for (const [what, source] of wbPhotos) {
     assert.ok(same(back, base), 'finetune 0 is the preset again');
   });
 }
+
+// Color mapping's source and target capture: the swatches' pure rules, and the
+// engine's acquire (cmapping.c, a port of colormapping.c's process_clusters)
+// on two photos, the source of one carried to the other as Copy Settings
+// carries it (the module's whole state)
+test('Advanced color mapping clusters', { skip: skip || false }, async (t) => {
+  const cm = await import('../app/src/colormapping.ts');
+  const { LAYOUTS } = await import('../app/src/advancedLayout.ts');
+  const layout = LAYOUTS.find((l) => l.op === 'colormapping');
+  assert.equal(layout.clusters, true);
+  assert.deepEqual(layout.fields.find((f) => f.path === 'n').clears, ['cm_source', 'cm_target']);
+  assert.deepEqual(cm.clearsOnClusters, { cm_source: 0, cm_target: 0 });
+  // the paths a card snapshots: the two fields, and 5 clusters of a, b for mean and var on both sides
+  assert.equal(cm.clusterPaths().length, 2 + 2 * 2 * 5 * 2);
+  assert.ok(cm.clusterPaths().includes('target_var[4][1]'));
+
+  // cluster_preview_draw: nine swatches a cluster, side by side, rows by b and columns by a
+  const store = { 'source_mean[0][0]': 20, 'source_mean[0][1]': -10, 'source_var[0][0]': 5, 'source_var[0][1]': 8 };
+  const p = (k) => store[k] ?? 0;
+  assert.equal(cm.clusterSwatches(p, 'source', 0).length, 0);
+  assert.equal(cm.clusterSwatches(p, 'source', 3).length, 27);
+  assert.equal(cm.clusterSwatches(p, 'source', 9).length, 45, 'the count is kept to 5');
+  const one = cm.clusterSwatches(p, 'source', 1);
+  assert.equal(one[0].x, 5); assert.equal(one[0].y, 5);
+  assert.ok(Math.abs(one[0].w - (290 / 3 - 0.5)) < 1e-9 && Math.abs(one[0].h - (90 / 3 - 0.5)) < 1e-9);
+  const col = (sw) => sw.color.match(/\d+/g).map(Number);
+  assert.ok(col(one[5])[0] > col(one[3])[0], 'a rises to the right, toward red');
+  assert.ok(col(one[7])[2] < col(one[1])[2], 'b rises downward, toward yellow, so blue falls');
+  const two = cm.clusterSwatches(p, 'source', 2);
+  assert.ok(Math.abs(two[9].x - (5 + (290 - 2) / 2 + 2)) < 1e-9, 'the second cluster starts after the first and a separator');
+  const mid = col(cm.clusterSwatches(() => 0, 'target', 1)[4]);
+  assert.ok(Math.abs(mid[0] - mid[1]) < 3 && Math.abs(mid[1] - mid[2]) < 3, 'no chroma is gray');
+
+  // the engine, on photo B (a dark photo) and photo A
+  const work = mkdtempSync(join(tmpdir(), 'immage-advcmap-'));
+  mkdirSync(join(work, 'photos'));
+  const ext = (process.env.IMMAGE_RAW || SAMPLE).slice((process.env.IMMAGE_RAW || SAMPLE).lastIndexOf('.'));
+  const a = join(work, 'photos', `a${ext}`), b = join(work, 'photos', `b${ext}`);
+  copyFileSync(process.env.IMMAGE_RAW || SAMPLE, a);
+  copyFileSync(process.env.IMMAGE_RAW || SAMPLE, b);
+  const e = new Engine(work);
+  t.after(() => { e.stop(); rmSync(work, { recursive: true, force: true }); });
+  const frame = async (tag) => {
+    const out = join(work, `${tag}.ppm`);
+    await e.call({ cmd: 'render', width: 96, height: 64, out });
+    return readFileSync(out);
+  };
+  const diff = (x, y) => { let d = 0; for (let i = 20; i < x.length; i++) d += Math.abs(x[i] - y[i]); return d / (x.length - 20); };
+  const FIELDS = ['cm_source', 'cm_target', 'flag', 'n', ...cm.clusterPaths().slice(2)];
+  const get = async (...more) => (await e.call({ cmd: 'get', modules: { 'colormapping@0': [...FIELDS, ...more] } })).modules['colormapping@0'];
+  const set = (params, enabled = true) => e.call({ cmd: 'set', op: 'colormapping', priority: 0, params, enabled });
+  const acquire = (which, n) => e.call({ cmd: 'colormapping_acquire', which, n });
+  // darktable's k-means starts its clusters at random places, and one that starts
+  // where no pixel is nearest stays empty (its weight is 0), so a run can end
+  // with fewer clusters than asked for; the card is pressed again then. same here
+  const split = async (which, n) => {
+    for (let k = 0; k < 8; k++) { const r = await acquire(which, n); if (r.weight.filter((w) => w > 0).length >= 2) return r; }
+    assert.fail(`${which}: 8 acquires, none with two clusters`);
+  };
+
+  // photo B, darkened
+  await e.call({ cmd: 'open', path: b });
+  await e.call({ cmd: 'set', op: 'exposure', priority: 0, params: { exposure: -2.5 }, enabled: true });
+  const none = await get('source_ihist[0]');
+  assert.equal(none.params.flag, 0);
+  assert.equal(none.defaults.n, 3);
+
+  await assert.rejects(acquire('bogus', 3), /source.*target/);
+  await assert.rejects(acquire('source', 0), /1 to 5/);
+  await assert.rejects(acquire('source', 6), /1 to 5/);
+  // an acquire changes nothing by itself: the card writes its number
+  assert.equal((await get()).params.cm_source, 0);
+
+  // n = 1: one cluster takes the whole image, whatever its random start
+  const one1 = await acquire('source', 1), one2 = await acquire('source', 1);
+  assert.equal(one1.n, 1);
+  assert.ok(Math.abs(one1.weight[0] - 1) < 1e-6 && one1.weight.slice(1).every((w) => w === 0), 'one cluster holds every pixel');
+  assert.ok(Math.abs(one1.mean[0] - one2.mean[0]) < 1e-3 && Math.abs(one1.mean[1] - one2.mean[1]) < 1e-3, 'the same mean twice');
+  assert.ok(one1.var[0] > 0 && one1.var[1] > 0, 'a photo has a spread of color');
+
+  const src = await split('source', 3);
+  assert.equal(src.n, 3);
+  assert.ok(src.hash > 0 && Number.isInteger(src.hash) && src.hash < 2 ** 48);
+  const wsum = src.weight.reduce((x, y) => x + y, 0);
+  assert.ok(wsum > 0.99 && wsum < 1.0001, `weights sum ${wsum}`);
+  const wts = src.weight.slice(0, 3);
+  assert.deepEqual(wts, [...wts].sort((x, y) => x - y), 'clusters are in ascending weight');
+  assert.ok(src.var.every((v) => v >= 0), 'deviations');
+  assert.ok(src.weight.slice(3).every((w) => w === 0) && src.mean.slice(6).every((v) => v === 0), 'slots past n stay empty');
+
+  // the card writes the number: the arrays and HAS_SOURCE
+  await set({ cm_source: src.hash });
+  const got = await get('source_ihist[0]', 'source_ihist[2047]', 'source_weight[2]', 'source_weight[4]');
+  assert.equal(got.params.flag, 1, 'HAS_SOURCE');
+  assert.equal(got.params.cm_source, src.hash);
+  assert.equal(got.params.cm_target, 0);
+  const near = (x, y, m) => assert.ok(Math.abs(x - y) < 1e-5, `${m}: ${x} != ${y}`);
+  for (let k = 0; k < 5; k++) for (let j = 0; j < 2; j++) {
+    near(got.params[`source_mean[${k}][${j}]`], src.mean[2 * k + j], `mean ${k} ${j}`);
+    near(got.params[`source_var[${k}][${j}]`], src.var[2 * k + j], `var ${k} ${j}`);
+  }
+  near(got.params['source_weight[2]'], src.weight[2], 'weight');
+  // invert_histogram: the inverted accumulated L histogram runs from 0 up to near 100
+  const ih = (await e.call({ cmd: 'get', modules: { 'colormapping@0': Array.from({ length: 2048 }, (_, k) => `source_ihist[${k}]`) } })).modules['colormapping@0'].params;
+  let prev = -1;
+  for (let k = 0; k < 2048; k++) { const v = ih[`source_ihist[${k}]`]; assert.ok(v >= prev - 1e-4 && v >= 0 && v <= 100, `ihist[${k}] = ${v}`); prev = v; }
+  assert.ok(ih['source_ihist[0]'] === 0 && ih['source_ihist[2047]'] > 5, 'ihist spans the lightness range');
+
+  // the source goes to photo A as Copy Settings carries it, the module's whole state
+  const state = (await e.call({ cmd: 'module_state', op: 'colormapping', priority: 0 })).now;
+  await e.call({ cmd: 'save' });
+  await e.call({ cmd: 'close' });
+  await e.call({ cmd: 'open', path: a });
+  const bare = await frame('a-bare');
+  await e.call({ cmd: 'module_state', op: 'colormapping', priority: 0, restore: state });
+  const carried = await get();
+  assert.equal(carried.params.flag, 1);
+  assert.equal(carried.params.cm_source, src.hash, 'the source came along');
+  // a source alone maps nothing: it needs the target
+  assert.ok(diff(bare, await frame('a-source')) < 0.01, 'a source alone changes nothing');
+
+  // acquire as target on this photo
+  const tgt = await split('target', 3);
+  assert.notEqual(tgt.hash, src.hash, 'a target and a source never share a number');
+  await set({ cm_target: tgt.hash });
+  const both = await get('target_hist[2047]', 'target_hist[0]');
+  assert.equal(both.params.flag, 3, 'HAS_SOURCE and HAS_TARGET');
+  assert.ok(both.params['target_hist[2047]'] === 2047 && both.params['target_hist[0]'] >= 0, 'the target histogram is accumulated to its top');
+  assert.ok(diff(bare, await frame('a-both')) > 1, 'a dark source and a light target change the frame');
+  await set({ dominance: 0, equalization: 100 });
+  assert.ok(diff(bare, await frame('a-eq')) > 1, 'still changed with other settings');
+
+  // the number of clusters moving clears both, as gui_changed does (the card's edit)
+  await set({ n: 4, ...cm.clearsOnClusters });
+  const cleared = await get('source_ihist[2047]');
+  assert.equal(cleared.params.flag, 0);
+  assert.deepEqual([cleared.params.cm_source, cleared.params.cm_target], [0, 0]);
+  assert.ok(Object.entries(cleared.params).every(([k, v]) => !/^(source|target)_(mean|var|weight|ihist|hist)/.test(k) || v === 0), 'every array is empty');
+  assert.ok(diff(bare, await frame('a-cleared')) < 0.01, 'nothing maps once cleared');
+  assert.equal(cleared.params.n, 4);
+
+  // an undo writes the numbers back; one the engine never saw is refused and changes nothing
+  await set({ n: 3, cm_source: src.hash, cm_target: tgt.hash });
+  const back = await get();
+  assert.equal(back.params.flag, 3);
+  for (const k of ['source_mean[1][0]', 'source_var[2][1]', 'target_mean[2][0]', 'target_var[0][1]']) assert.ok(back.params[k] !== undefined);
+  near(back.params['source_mean[2][1]'], src.mean[5], 'restored source mean');
+  near(back.params['target_mean[2][1]'], tgt.mean[5], 'restored target mean');
+  await assert.rejects(set({ cm_target: 12345 }), /no clusters of that number/);
+  assert.equal((await get()).params.cm_target, tgt.hash, 'a refused write changes nothing');
+  await set({ cm_source: 0 });
+  assert.equal((await get()).params.flag, 2, 'only HAS_TARGET after dropping the source');
+  await set({ cm_source: src.hash });
+
+  // save and reopen keep both sets
+  const framed = await frame('a-saved');
+  await e.call({ cmd: 'save' });
+  await e.call({ cmd: 'close' });
+  await e.call({ cmd: 'open', path: a });
+  const reopened = await get();
+  assert.equal(reopened.params.flag, 3);
+  assert.equal(reopened.params.cm_source, src.hash);
+  assert.equal(reopened.params.cm_target, tgt.hash);
+  near(reopened.params['target_weight[1]'] ?? 0, reopened.params['target_weight[1]'] ?? 0, 'weights read');
+  assert.ok(diff(framed, await frame('a-reopened')) < 0.01, 'the same frame after reopen');
+});
