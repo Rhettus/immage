@@ -688,7 +688,7 @@ function ShapeMenu({ target, tool, disabled, aiBusy, onTool, onAi }: {
           <span className="tool-kind">AI</span>
           {ai("subject", "Subject", AI_ICONS.subject)}
           {ai("sky", "Sky", AI_ICONS.sky)}
-          {target === "new" && ai("background", "Background", AI_ICONS.background)}
+          {ai("background", "Background", AI_ICONS.background)}
           {ai("people", "People", AI_ICONS.people)}
           <button className={`ai${landscape ? " on" : ""}`} disabled={aiBusy} onClick={() => setLandscape(!landscape)}>
             {AI_ICONS.landscape}<span>Landscape</span><span className="more">{landscape ? "▾" : "▸"}</span></button>

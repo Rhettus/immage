@@ -27,7 +27,8 @@ Click **Create New Mask** and choose:
 - **AI** tools find the area for you. The first time you use one, its
   model downloads ("first use only"), which takes a moment. **Select
   Object**: click the object, or drag a box around it. **Background** is
-  the subject's outline, inverted.
+  everything but the subject: a new Background mask is the subject's
+  outline, inverted.
 - **Brush**: paint; hold ⌥ to erase.
 - **Linear Gradient**: drag across the photo where the change should
   happen.
@@ -65,7 +66,8 @@ Select a mask, then use **+** to add to it or **−** to subtract from it,
 with any of the same tools. Under **+**, the ranges are listed under
 **Intersect**: they narrow the mask to a color, brightness or depth within
 it. For example, add a Sky mask, then intersect a Luminance Range to keep
-only its bright clouds.
+only its bright clouds. **Background** works here too: subtract it from a
+Radial Gradient to keep the change on the subject alone.
 
 Each part of the mask is listed under it, with a **+** / **−** switch and
 **×** to delete it.

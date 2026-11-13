@@ -76,7 +76,7 @@ export async function recalculateAiMasks(c: Clip): Promise<Clip> {
     const recipe = shape.ai;
     const kind = shape.depth ? "depth" : recipe!.kind;
     const model = kind === "depth" ? "mask-depth-da2-small" : kind === "object" ? "mask-object-sam21-small"
-      : kind === "subject" ? "mask-subject-birefnet-lite" : "mask-scene-segformer-b2";
+      : kind === "subject" || kind === "background" ? "mask-subject-birefnet-lite" : "mask-scene-segformer-b2";
     try {
       const select = () => kind === "depth" ? commands.aiMask(kind, shape.depth!, null, null)
         : kind === "object"

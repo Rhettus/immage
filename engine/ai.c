@@ -497,16 +497,20 @@ static const _mask_model_t _mask_models[] = {
 
 // what the client asks for: a model, and for a scene model the ADE20K
 // classes that make it up (their numbers from the model's id2label; -1
-// ends the list), grouped as Lightroom's Landscape choices are
+// ends the list), grouped as Lightroom's Landscape choices are. `invert`
+// takes everything else: Background, added to or taken from a mask, where
+// a new mask's is the subject's outline inverted
 typedef struct _mask_kind_t
 {
   const char *kind;
   int model;
   int pick[16];
+  gboolean invert;
 } _mask_kind_t;
 
 static const _mask_kind_t _mask_kinds[] = {
   { "subject", 0, { -1 } },
+  { "background", 0, { -1 }, TRUE },
   { "sky", 1, { 2, -1 } },
   { "people", 1, { 12, -1 } },
   // water, sea, river, lake, waterfall, fountain, swimming pool
@@ -683,6 +687,8 @@ static gboolean _ai_mask(const _ai_job_t *job, JsonBuilder *b, char **err)
   const _mask_model_t *mm = &_mask_models[mk->model];
   const int w = job->gw, h = job->gh;
   float *p = _mask_kind_probability(mk, w, h);
+  if(mk->invert)
+    for(size_t q = 0; q < (size_t)w * h; q++) p[q] = 1.0f - p[q];
   if(mm->depth)
   {
     // in the band or not, as a ramp steep enough to trace sharply, and

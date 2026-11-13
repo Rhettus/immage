@@ -18,6 +18,8 @@ Improvements
   per panel.
 - Masks: duplicate a mask, or duplicate and invert it, without its
   adjustments, and Reset Mask Adjustments.
+- Masks: AI Background can be added to or subtracted from a mask, not only
+  start a new one.
 - Whites has a Highlight Brilliance setting under AgX, so bright scenes such
   as snow can brighten further before clipping.
 - Preferences > General > Backup saves and restores settings, presets, looks,

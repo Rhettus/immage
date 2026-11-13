@@ -1046,8 +1046,9 @@ export default function App() {
       (paths) => aiShown(createShape({ type: "object", paths, ai: { kind: "object", ...structuredClone(prompt), inset: toolTarget !== "subtract", backdrop: startsMask(toolTarget) }, ...(backdrop && { backdrop }) })));
   };
   // the one-click selections: Subject, Background, which is the subject's
-  // outline in a new mask, inverted, and People and the parts of a
-  // landscape, which all come from the one scene model
+  // outline in a new mask, inverted, and everything but the subject added
+  // to or taken from one (the engine's "background" kind), and People and
+  // the parts of a landscape, which all come from the one scene model
   const scene = (what: string) => ({ model: "mask-scene-segformer-b2", working: `finding ${what}…` });
   const AI_KINDS: Record<AiKind, { model: string; kind: string; working: string; label: string }> = {
     subject: { model: "mask-subject-birefnet-lite", kind: "subject", working: "finding the subject…", label: "Subject" },
@@ -1065,15 +1066,18 @@ export default function App() {
   // Subject and People only: the Landscape kinds are the background
   const selectAi = (k: AiKind, target: ToolTarget) => {
     const a = AI_KINDS[k];
+    const inverted = k === "background" && target === "new";
+    const kind = k === "background" && !inverted ? "background" : a.kind;
+    const inset = !inverted && target !== "subtract";
     let backdrop: Backdrop | undefined;
     return runAi(a.model, a.working,
-      () => outline((bd) => commands.aiMask(a.kind, null, k !== "background" && target !== "subtract", bd),
+      () => outline((bd) => commands.aiMask(kind, null, inset, bd),
                     (k === "subject" || k === "people") && startsMask(target), (b) => { backdrop = b; }),
       (paths) => {
         const had = new Set(session.current?.masks.map((m) => m.name));
-        const name = createShape({ type: "object", paths, ai: { kind: a.kind, inset: k !== "background" && target !== "subtract", backdrop: (k === "subject" || k === "people") && startsMask(target) }, ...(backdrop && { backdrop }) },
-                                 k === "background" ? "new" : target, a.label);
-        if (k === "background" && name) session.current?.setInvert(name, true);
+        const name = createShape({ type: "object", paths, ai: { kind, inset, backdrop: (k === "subject" || k === "people") && startsMask(target) }, ...(backdrop && { backdrop }) },
+                                 target, a.label);
+        if (inverted && name) session.current?.setInvert(name, true);
         const refine = aiRefine(k);
         if (name && !had.has(name) && refine) session.current?.setRefine(name, refine);
         syncMasks();
