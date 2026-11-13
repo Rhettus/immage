@@ -637,6 +637,22 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "interpolation", label: "Interpolation" },
     ],
   },
+  {
+    // colormapping.c gui_init: source and target cluster previews and the
+    // acquire buttons, then three sliders; gui_changed hides nothing (it only
+    // clears the stored clusters when the cluster count moves, so changing
+    // "number of clusters" discards an acquired source and target). left out:
+    // flag, source_* and target_* (the acquired histograms, means, variances
+    // and weights, which need a custom editor showing the two cluster previews
+    // and the acquire as source and acquire as target buttons, which analyze
+    // the image on screen)
+    op: "colormapping", group: "hsl", title: "Color mapping",
+    fields: [
+      { path: "n", label: "Number of clusters", digits: 0 },
+      { path: "dominance", label: "Color dominance", unit: "%" },
+      { path: "equalization", label: "Histogram equalization", unit: "%" },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);

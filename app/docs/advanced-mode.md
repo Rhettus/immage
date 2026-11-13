@@ -172,6 +172,9 @@ The HSL / Color group has these darktable modules:
   yet.
 - **LUT 3D**: **Application color space** and **Interpolation**. Choosing
   the LUT file is not on the card yet.
+- **Color mapping**: **Number of clusters**, **Color dominance** and
+  **Histogram equalization**. Capturing the source and target colors is not
+  on the card yet. darktable allows one instance.
 
 ## Instances
 
