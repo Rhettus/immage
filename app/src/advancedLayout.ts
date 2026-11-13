@@ -740,6 +740,17 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "compress", label: "Compress", section: "Properties", unit: "%" },
     ],
   },
+  {
+    // colorize.c gui_init: four sliders, nothing hidden. left out: the hue
+    // picker and version, which darktable keeps internally
+    op: "colorize", group: "colorgrading", title: "Colorize",
+    fields: [
+      { path: "hue", label: "Hue", factor: 360, unit: "°" },
+      { path: "saturation", label: "Saturation", unit: "%" },
+      { path: "lightness", label: "Lightness", unit: "%" },
+      { path: "source_lightness_mix", label: "Source mix", unit: "%" },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);

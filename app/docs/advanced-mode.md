@@ -212,6 +212,8 @@ The Color Grading group has these darktable modules:
 - **Split-toning**: a hue and saturation for the shadows and for the
   highlights, then **Balance** and **Compress**. darktable's color buttons
   beside each are not on the card yet.
+- **Colorize**: **Hue**, **Saturation**, **Lightness** and **Source mix**,
+  how much of the photo's own lightness to keep.
 
 ## Instances
 
