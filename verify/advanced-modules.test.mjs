@@ -239,3 +239,91 @@ test('instances marks a look\'s instances with owner "look"', { skip: skip || fa
   const off = (await e.call({ cmd: 'instances' })).instances;
   t.diagnostic(`${names[0]}: ${owned.map((i) => i.op).join(', ')}; ${off.filter((i) => i.owner === 'look').length} left after removing`);
 });
+
+// Advanced mode phase 4: the instance menu's actions on exposure. A second
+// and third instance, a rename, a move, a delete undone and one kept; then
+// save, reopen and render parity with darktable-cli over the sidecar
+test('Advanced mode instances (exposure)', { skip: skip || false }, async (t) => {
+  const work = mkdtempSync(join(tmpdir(), 'immage-advinst-'));
+  mkdirSync(join(work, 'photos'));
+  const photo = join(work, 'photos', 'stairs.jpg');
+  copyFileSync(SAMPLE, photo);
+  const e = new Engine(work);
+  t.after(() => { e.stop(); if (process.env.KEEP) console.log(work); else rmSync(work, { recursive: true, force: true }); });
+  await e.call({ cmd: 'open', path: photo });
+  const exp = (list) => list.filter((i) => i.op === 'exposure');
+  const order = (list) => exp(list).map((i) => i.priority);
+  const read = async (p) => (await e.call({ cmd: 'get', modules: { [`exposure@${p}`]: FIELDS } })).modules[`exposure@${p}`];
+
+  await e.call({ cmd: 'set', op: 'exposure', priority: 0, params: { exposure: 0.5 }, enabled: true });
+  const added = await e.call({ cmd: 'instance', action: 'new', op: 'exposure', priority: 0 });
+  const p1 = added.priority;
+  assert.ok(p1 > 0, `new instance priority ${p1}`);
+  assert.deepEqual(order(added.instances), [0, p1], 'new instance not right after the first');
+  const fresh = await read(p1);
+  assert.equal(fresh.enabled, true, 'a new instance comes on');
+  assert.ok(Math.abs(fresh.params.exposure - fresh.defaults.exposure) < 1e-6, 'new instance not at the defaults');
+  // darktable's own label: a matching preset's name (an auto-applied one on
+  // this JPEG), else the instance's number; never the raw '_builtin_' key
+  const lab = exp(added.instances)[1].label;
+  assert.ok(lab && !lab.startsWith('_builtin_'), `label '${lab}'`);
+
+  await e.call({ cmd: 'set', op: 'exposure', priority: p1, params: { exposure: -0.25 } });
+  const dup = await e.call({ cmd: 'instance', action: 'duplicate', op: 'exposure', priority: p1 });
+  const p2 = dup.priority;
+  assert.deepEqual(order(dup.instances), [0, p1, p2]);
+  assert.ok(Math.abs((await read(p2)).params.exposure + 0.25) < 1e-6, 'duplicate lost the settings');
+
+  const named = await e.call({ cmd: 'instance', action: 'rename', op: 'exposure', priority: p2, name: '  lift  ' });
+  const i2 = exp(named.instances).find((i) => i.priority === p2);
+  assert.equal(i2.name, 'lift'); assert.equal(i2.label, 'lift'); assert.equal(i2.hand_edited, true);
+  await assert.rejects(e.call({ cmd: 'instance', action: 'rename', op: 'exposure', priority: p2, name: 'look: x' }),
+    /keeps for masks and looks/, 'a look name was accepted');
+
+  const moved = await e.call({ cmd: 'instance', action: 'move', op: 'exposure', priority: p2, other: p1, after: false });
+  assert.deepEqual(order(moved.instances), [0, p2, p1], 'move before did not reorder');
+  const back = await e.call({ cmd: 'instance', action: 'move', op: 'exposure', priority: p2, other: p1, after: true });
+  assert.deepEqual(order(back.instances), [0, p1, p2], 'move after did not reorder');
+
+  await assert.rejects(e.call({ cmd: 'instance', action: 'delete', op: 'exposure', priority: 0 }), /not deleted/);
+  const del = await e.call({ cmd: 'instance', action: 'delete', op: 'exposure', priority: p1 });
+  assert.deepEqual(order(del.instances), [0, p2], 'deleted instance still listed');
+  assert.equal((await read(p1)).enabled, false, 'deleted instance still on');
+  const undone = await e.call({ cmd: 'instance', action: 'restore', op: 'exposure', priority: p1 });
+  assert.deepEqual(order(undone.instances), [0, p1, p2], 'restore did not bring it back in place');
+  await e.call({ cmd: 'set', op: 'exposure', priority: p1, params: {}, enabled: true });
+  // the one kept deleted: its entries must not reach the sidecar
+  const p3 = (await e.call({ cmd: 'instance', action: 'new', op: 'exposure', priority: p2 })).priority;
+  await e.call({ cmd: 'set', op: 'exposure', priority: p3, params: { exposure: 2 } });
+  await e.call({ cmd: 'instance', action: 'delete', op: 'exposure', priority: p3 });
+
+  await e.call({ cmd: 'save' });
+  const xmp = readFileSync(photo + '.xmp', 'utf8');
+  const prios = [...xmp.matchAll(/darktable:operation="exposure"[^>]*?darktable:multi_priority="(\d+)"/g)].map((m) => +m[1]);
+  t.diagnostic(`sidecar exposure priorities: ${prios.join(', ')}`);
+  assert.ok(!prios.includes(p3), 'the deleted instance reached the sidecar');
+  await e.call({ cmd: 'close' });
+  await e.call({ cmd: 'open', path: photo });
+  const reopened = (await e.call({ cmd: 'instances' })).instances;
+  assert.equal(exp(reopened).length, 3, `reopened with ${JSON.stringify(exp(reopened))}`);
+  const r2 = exp(reopened).find((i) => i.name === 'lift');
+  assert.ok(r2, 'the name did not survive reopening');
+  assert.ok(Math.abs((await read(r2.priority)).params.exposure + 0.25) < 1e-6, 'renamed instance lost its value');
+
+  await t.test('engine export equals darktable-cli with two extra instances', async (t2) => {
+    if (!existsSync(CLI)) return t2.skip(`darktable-cli not built (${CLI})`);
+    if (spawnSync('compare', ['-version']).status !== 0) return t2.skip('ImageMagick compare not installed');
+    const outA = join(work, 'engine.png'), outB = join(work, 'cli.png');
+    const id = (await e.call({ cmd: 'open', path: photo })).imgid;
+    await e.call({ cmd: 'export', imgid: id, out: outA, format: 'png', bpp: 8, color_space: 'srgb', long_edge: 600 });
+    spawnSync(CLI, [photo, photo + '.xmp', outB, '--width', '600', '--height', '600', '--hq', 'true',
+      '--core', '--configdir', join(work, 'cli-config'), '--cachedir', join(work, 'cli-cache'), '--library', ':memory:',
+      '--conf', 'opencl=false', '--conf', 'plugins/lighttable/export/force_lcms2=false'],
+    { env: { ...process.env, XDG_DATA_HOME: join(work, 'cli-data') }, encoding: 'utf8', timeout: 180000 });
+    assert.ok(existsSync(outB), 'darktable-cli wrote nothing');
+    const c = spawnSync('compare', ['-metric', 'MAE', outA, outB, 'null:'], { encoding: 'utf8' });
+    const m = /\(([0-9.e+-]+)\)/.exec(c.stderr);
+    assert.ok(m, `compare gave: ${c.stderr}`);
+    assert.ok(+m[1] < 0.5 / 255, `mean absolute difference ${(+m[1] * 255).toFixed(3)} levels of 255`);
+  });
+});

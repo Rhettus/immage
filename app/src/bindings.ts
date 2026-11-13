@@ -113,6 +113,7 @@ export const commands = {
 	lenses: () => __TAURI_INVOKE<LensMenu>("lenses"),
 	moduleSchema: (op: string) => __TAURI_INVOKE<ModuleSchema>("module_schema", { op }),
 	instances: () => __TAURI_INVOKE<Instance[]>("instances"),
+	instance: (action: string, op: string, priority: number, name: string | null, other: number | null, after: boolean | null) => __TAURI_INVOKE<InstanceReply>("instance", { action, op, priority, name, other, after }),
 	darktableResources: () => __TAURI_INVOKE<ResourceLevels>("darktable_resources"),
 	darktableResourcesSet: (level: string) => __TAURI_INVOKE<null>("darktable_resources_set", { level }),
 	memoryBudget: () => __TAURI_INVOKE<MemoryBudget>("memory_budget"),
@@ -460,10 +461,16 @@ export type Instance = {
 	priority: number,
 	name: string,
 	hand_edited: boolean,
+	label: string,
 	enabled: boolean,
 	default_enabled: boolean,
 	iop_order: number,
 	owner: string | null,
+};
+
+export type InstanceReply = {
+	priority: number,
+	instances: Instance[],
 };
 
 export type Lens = {

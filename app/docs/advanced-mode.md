@@ -20,6 +20,8 @@ The Basic group shows darktable's **exposure** module as a card. The card has:
 
 - An on/off switch and the module's name. If the module has a name of its own,
   such as a second exposure instance, the name follows it.
+- An instances menu (**...**) beside the reset button; see
+  [Instances](#instances).
 - A reset button that returns the module to darktable's defaults for this
   photo and leaves it on. These defaults can differ from how a new photo
   opens, since Immage's new-photo settings are not darktable's.
@@ -34,6 +36,40 @@ Moving a setting switches the module on. Card changes are undone like any other
 edit, with one undo step per slider drag, and they are saved with the photo.
 Simple's Exposure and Blacks sliders change the same module, so a change made
 on one side shows on the other.
+
+## Instances
+
+A module can have several instances, each with its own settings. Open the
+**...** menu beside a card's reset button to:
+
+- **New instance**: add another instance right after this one, at darktable's
+  defaults and switched on. Its card opens.
+- **Duplicate**: the same, with this instance's settings.
+- **Rename...**: edit the name in the card's title. Enter or clicking away keeps
+  it, Escape cancels, and an empty name goes back to darktable's own label.
+  Names that Immage uses for masks and looks cannot be used.
+- **Move up in the pipe** and **Move down in the pipe**: swap this instance
+  with its neighbour among the module's instances. They are greyed out at the
+  ends.
+- **Delete**: remove the instance.
+
+Modules that darktable allows only once grey out New instance, Duplicate and
+Rename. Duplicating an instance that has a drawn darktable mask is refused with
+a message for now.
+
+An instance without a name shows darktable's own label after the module name:
+the name of a matching preset, such as "scene-referred default", or the
+instance number. A module's cards sit together, in pipe order: the top card is
+earlier in the pipe, so it is applied first.
+
+The first instance is the one Simple's sliders change. You can switch it off
+but not delete it, and while a module has more than one instance its card shows
+a small **Simple** tag.
+
+Every action is one undo step, and Undo and Redo bring instances back with
+their settings, names and order. A deleted instance is gone from the photo's
+saved edit the next time it is saved. Extra instances look in Immage just as
+they do in darktable, and open there.
 
 Modules that Immage's masks and looks manage do not get cards. The other groups
 show "No darktable modules yet" for now.

@@ -41,7 +41,7 @@ import { FrameUpdates, Snapshot } from "./uiUpdates";
 import { PixelCadence, PixelWorker } from "./pixelWorker";
 import { CanvasFrames, FrameGeneration, layerStyle, placeCanvas, resizeCanvas } from "./canvasLayers";
 import { KEY_ZOOMS, ZOOMS, type Placement, type Zoom } from "./zoom";
-import { Session, colorProfiles, framePlace, instanceKey, mapOpOf, type AdvancedState, type Frame, type HistoryItem, type ModuleState, type View } from "./session";
+import { Session, colorProfiles, framePlace, instanceKey, mapOpOf, type AdvancedState, type Frame, type InstanceEntry, type HistoryItem, type ModuleState, type View } from "./session";
 import { AUTO_TONE_IDS, autoExposure, autoTone, type SceneKey } from "./autoTone";
 
 import { type ClipShow, type Histogram, type ScopeSettings } from "./histogram";
@@ -3899,12 +3899,14 @@ export default function App() {
                 lookAmount: number; label: string;
                 // the History panel's switched instances, and those deleted
                 modules: Map<string, ModuleState>; deleted: Set<string>; batch?: { token: number; recovery: boolean };
-                // Advanced cards' instances, as their fields stood
-                advanced: Map<string, AdvancedState> };
+                // Advanced cards' instances, as their fields stood, and the
+                // user's instances (null before Advanced mode listed them)
+                advanced: Map<string, AdvancedState>; instances: InstanceEntry[] | null };
   const snapshot = (s: Session, label = ""): Snap => ({
     values: { ...s.values }, masks: structuredClone(s.masks), spots: structuredClone(s.spots),
     look: { name: s.look, path: s.lookPath }, lookAmount: s.lookAmount, label,
     modules: new Map(s.moduleStates), deleted: new Set(s.deleted), advanced: new Map(s.advanced),
+    instances: s.instanceLayout(),
   });
   const undo = useRef<{ past: Snap[]; future: Snap[]; key: string; at: number }>(
     { past: [], future: [], key: "", at: 0 });
@@ -3950,6 +3952,9 @@ export default function App() {
     if (target.lookAmount !== s.lookAmount) s.setLookAmount(target.lookAmount);
     setLookAmount(target.lookAmount);
     setMasksTo(target.masks);
+    // the instances themselves, which the pump makes or deletes before it
+    // sends any state for them
+    s.restoreInstances(target.instances);
     // after the values, which Session.pump sends first. an instance whose
     // reply is still to come is restored whatever it holds
     for (const key of s.touched) {

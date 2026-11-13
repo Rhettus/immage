@@ -2602,4 +2602,9 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .module-card.off .module-card-title { color: var(--text-3); }
 .module-card-reset { display: flex; padding: 2px; background: none; border: none; border-radius: 4px; color: var(--text-2); cursor: pointer; }
 .module-card-reset:hover { background: var(--hover); color: var(--text); }
+.module-card-menu { display: flex; padding: 2px; background: none; border: none; border-radius: 4px; color: var(--text-2); cursor: pointer; }
+.module-card-menu:hover, .module-card-menu.on { background: var(--hover); color: var(--text); }
+.instance-menu { display: flex; }
+.module-card-tag { font-size: 10px; padding: 1px 5px; border-radius: 4px; background: var(--hover); color: var(--text-2); }
+.module-card-rename { flex: 1; min-width: 0; padding: 1px 6px; }
 .module-card-body { padding: 0 14px 6px; }

@@ -17,10 +17,15 @@ import { perf, type Trace } from "./perf";
 import { FRAME_HEAD, renderFrame } from "./sharedFrames";
 import { isDetailControl } from "./detailPreview";
 import type { Preview } from "./Preferences";
-import { commands, type GetReply, type HistoryItem, type Instance, type ModuleState, type Value } from "./commands";
+import { commands, type GetReply, type HistoryItem, type Instance, type InstanceReply, type ModuleState, type Value } from "./commands";
 
 // one Advanced card's instance: its darktable fields as the client has them
 export type AdvancedState = { op: string; priority: number; enabled: boolean; params: Params; defaults: Params };
+// a card instance menu action (engine session_instance()); `other` and
+// `after` place a move, `name` is a rename's ("" for darktable's own)
+export type InstanceAction = { action: "new" | "duplicate" | "rename" | "move" | "delete" | "restore";
+                               op: string; priority: number; name?: string; other?: number; after?: boolean };
+export type InstanceEntry = { op: string; priority: number; name: string };
 export type { ColorProfiles, HistoryItem, ModuleState } from "./commands";
 // the typed commands, traced under their Rust names as `invoke` traces the rest
 const traced = <T>(command: string, call: () => Promise<T>) => perf.traced<T>(command, call);
@@ -1026,6 +1031,90 @@ export class Session {
     this.setModuleState({ op, priority }, { reset: true, enabled: true });
   }
 
+  // the card instance menu's actions (the engine's `instance`), sent in order
+  // ahead of module states and card fields, so that an undo has made or
+  // deleted the instances before it restores their settings
+  private instancePending: InstanceAction[] = [];
+  // instances deleted this session: the engine keeps them, switched off, so
+  // undo brings one back with its priority (engine session_instance())
+  // (by key, with the name it had)
+  private instancesDeleted = new Map<string, string>();
+
+  instanceAction(a: InstanceAction) {
+    const key = `${a.op}#${a.priority}`;
+    if (a.action === "delete") {
+      const i = this.instances.find((x) => `${x.op}#${x.priority}` === key);
+      this.instancesDeleted.set(key, i?.hand_edited ? i.name : "");
+      const card = this.advanced.get(key);
+      if (card) this.advanced.set(key, { ...card, enabled: false });
+      // a card edit still queued would switch it back on after the delete
+      this.advancedDirty.delete(key);
+    }
+    if (a.action === "restore") this.instancesDeleted.delete(key);
+    this.instancePending.push(a);
+    this.needRender = true;
+    this.submitEdits(false);
+  }
+
+  // the user's own instances as undo keeps them: pipe order, and their names
+  instanceLayout(): InstanceEntry[] | null {
+    if (!this.instancesLoad) return null;
+    return this.instances.filter((i) => i.owner === null)
+      .map((i) => ({ op: i.op, priority: i.priority, name: i.hand_edited ? i.name : "" }));
+  }
+
+  // undo: make, delete, rename and reorder instances to match `target`.
+  // a key the engine never made cannot come back; one made since is deleted
+  restoreInstances(target: InstanceEntry[] | null) {
+    const now = this.instanceLayout();
+    if (!target || !now) return;
+    const key = (i: { op: string; priority: number }) => `${i.op}#${i.priority}`;
+    const want = new Map(target.map((i) => [key(i), i]));
+    const have = new Map(now.map((i) => [key(i), i]));
+    // the names first read, before a delete records them
+    const renamed = target.filter((i) => {
+      const name = have.get(key(i))?.name ?? this.instancesDeleted.get(key(i));
+      return name !== undefined && name !== i.name;
+    });
+    for (const i of now) if (!want.has(key(i)) && i.priority > 0) this.instanceAction({ action: "delete", op: i.op, priority: i.priority });
+    for (const i of target) if (!have.has(key(i)) && this.instancesDeleted.has(key(i))) this.instanceAction({ action: "restore", op: i.op, priority: i.priority });
+    for (const i of renamed) this.instanceAction({ action: "rename", op: i.op, priority: i.priority, name: i.name });
+    // each module's instances in the target's order, one after another
+    const ops = new Set(target.map((i) => i.op));
+    for (const op of ops) {
+      const t = target.filter((i) => i.op === op).map((i) => i.priority);
+      const n = now.filter((i) => i.op === op && want.has(key(i))).map((i) => i.priority);
+      if (t.length < 2 || (t.length === n.length && t.every((p, k) => p === n[k]))) continue;
+      for (let k = 1; k < t.length; k++) this.instanceAction({ action: "move", op, priority: t[k], other: t[k - 1], after: true });
+    }
+  }
+
+  private async sendInstance(a: InstanceAction) {
+    let r: InstanceReply;
+    try {
+      r = await this.pumpTyped("instance", () =>
+        commands.instance(a.action, a.op, a.priority, a.name ?? null, a.other ?? null, a.after ?? null));
+    } catch (e) {
+      // a refused action (an instance with a drawn mask to duplicate) leaves
+      // the photo as it was; the menu's state follows the engine's list again
+      if (a.action === "delete") this.instancesDeleted.delete(`${a.op}#${a.priority}`);
+      this.instances = (await commands.instances().catch(() => this.instances));
+      this.onError(String(e));
+      return;
+    }
+    this.instances = r.instances;
+    // a new card reads the fields its module's other cards read
+    for (const i of r.instances) {
+      const k = `${i.op}#${i.priority}`;
+      if (this.advanced.has(k)) continue;
+      const fields = [...this.advancedFields].find(([f]) => f.startsWith(`${i.op}#`))?.[1];
+      if (fields && i.owner === null) await this.loadAdvanced(i.op, i.priority, fields);
+    }
+    if (a.action === "new" || a.action === "duplicate") this.lastAdded = `${a.op}#${r.priority}`;
+  }
+  // the instance the menu added last, whose card opens when it first shows
+  lastAdded: string | null = null;
+
   // after a Simple slider sent its module: cards on that module read back
   private staleAdvanced(op: string) {
     const real = op.split("#")[0];
@@ -1416,7 +1505,7 @@ export class Session {
              || this.fitView || this.wantLook !== undefined
              || this.masksPending || this.wantLookAmount !== undefined || this.spotsPending
              || this.reshapeDue || this.baselineEnd || this.modulePending.length || this.resetModulesPending
-             || this.advancedDirty.size || this.advancedStale.size) {
+             || this.advancedDirty.size || this.advancedStale.size || this.instancePending.length) {
         if (this.editFrame !== null) break;
         // before the change that ended it; a save it makes is the one due
         if (this.baselineEnd) {
@@ -1511,6 +1600,15 @@ export class Session {
           this.wantLook = undefined;
           await this.pumpTyped("look_apply", () => commands.lookApply(path));
           this.changed();
+          if (!this.before) { this.unsaved = true; this.scheduleSave(); }
+          this.needRender = true;
+          continue;
+        }
+        // instances made, deleted or moved before any state for them is sent
+        if (this.instancePending.length && !this.dirty.size) {
+          await this.sendInstance(this.instancePending.shift()!);
+          this.changed();
+          this.onModules?.();
           if (!this.before) { this.unsaved = true; this.scheduleSave(); }
           this.needRender = true;
           continue;

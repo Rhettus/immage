@@ -64,6 +64,8 @@ void session_close_session(void)
   _s.before = FALSE;
   _s.fresh = FALSE;
   _s.baseline = FALSE;
+  g_list_free(_s.deleted);
+  _s.deleted = NULL;
 }
 
 // the photos each background export is to render, by job: imgid to its
@@ -257,6 +259,23 @@ static gboolean _prune_off(const dt_imgid_t imgid)
     g_array_free(drop, TRUE);
   }
   g_hash_table_destroy(done);
+  // the instances Advanced mode deleted go whole, whatever darktable starts
+  // on: an instance past the first is made only by its own entries
+  for(GList *l = _s.deleted; l; l = g_list_next(l))
+  {
+    const dt_iop_module_t *m = l->data;
+    sqlite3_stmt *stmt;
+    DT_DEBUG_SQLITE3_PREPARE_V2(dt_database_get(darktable.db),
+                                "DELETE FROM main.history"
+                                " WHERE imgid = ?1 AND operation = ?2 AND multi_priority = ?3",
+                                -1, &stmt, NULL);
+    DT_DEBUG_SQLITE3_BIND_INT(stmt, 1, imgid);
+    DT_DEBUG_SQLITE3_BIND_TEXT(stmt, 2, m->op, -1, SQLITE_TRANSIENT);
+    DT_DEBUG_SQLITE3_BIND_INT(stmt, 3, m->multi_priority);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    pruned += sqlite3_changes(dt_database_get(darktable.db));
+  }
   // with the last mask deleted, the entry deleting it carries no shapes,
   // and compress would keep the last one that did
   if(!_s.dev.forms)
@@ -1230,11 +1249,20 @@ void session_instances(JsonBuilder *b)
   for(GList *l = _s.dev.iop; l; l = g_list_next(l))
   {
     const dt_iop_module_t *m = l->data;
+    if(g_list_find(_s.deleted, m)) continue;
     json_builder_begin_object(b);
     engine_add_string(b, "op", m->op);
     engine_add_int(b, "priority", m->multi_priority);
     engine_add_string(b, "name", m->multi_name_hand_edited ? m->multi_name : "");
     engine_add_bool(b, "hand_edited", m->multi_name_hand_edited);
+    // what darktable's module header shows after the module's name: the
+    // user's label, else darktable's own (a matching preset's, or a later
+    // instance's number), translated as session_history_item() does
+    const gboolean labeled = m->multi_name[0] && g_strcmp0(m->multi_name, "0");
+    gchar *label = !labeled ? g_strdup("") : m->multi_name_hand_edited ? g_strdup(m->multi_name)
+                   : dt_util_localize_segmented_name(m->multi_name, FALSE);
+    engine_add_string(b, "label", label);
+    g_free(label);
     engine_add_bool(b, "enabled", m->enabled);
     engine_add_bool(b, "default_enabled", m->default_enabled);
     engine_add_int(b, "iop_order", m->iop_order);
@@ -1244,6 +1272,166 @@ void session_instances(JsonBuilder *b)
     json_builder_end_object(b);
   }
   json_builder_end_array(b);
+}
+
+// a history item for `m` as it stands, and the pipes told: `structure` when
+// the instance list or order changed, which every pipe rebuilds its nodes for
+static void _instance_changed(dt_iop_module_t *m, const gboolean structure)
+{
+  dt_dev_add_history_item_ext(&_s.dev, m, m->enabled, TRUE);
+  if(structure) _s.iop_gen++;
+  session_changed(structure ? DT_DEV_PIPE_REMOVE : DT_DEV_PIPE_TOP_CHANGED);
+}
+
+// `instance`: Advanced mode's instance menu, darktable's multi-instance
+// actions (imageop.c, _gui_copy_callback and its neighbours) without its GUI.
+//   "new": a new instance after instance `priority`, at the defaults, on
+//   "duplicate": the same with that instance's settings
+//   "rename": `name` as its label; "" goes back to darktable's number
+//   "move": next to the instance at priority `other` of the same module,
+//     after it when `after`, else before
+//   "delete": switched off and gone from `instances`; the next save drops
+//     its entries. the first instance is the one Simple's tools drive and
+//     darktable renumbers when it goes, so it is switched off instead
+//   "restore": a deleted instance back (undo), as it was when deleted
+// an Immage tool's own instance (masks_instance_owner()) is left to it.
+// the reply has the instance's `priority` and the new `instances` list
+gboolean session_instance(const char *action, const char *op, const int priority, const char *name,
+                          const int other, const gboolean after, JsonBuilder *b, char **err)
+{
+  if(!action || !op)
+  {
+    *err = g_strdup("instance needs an action and an op");
+    return FALSE;
+  }
+  const gboolean restore = !g_strcmp0(action, "restore");
+  dt_iop_module_t *mod = _module_at(op, priority, err);
+  if(!mod) return FALSE;
+  GList *gone = g_list_find(_s.deleted, mod);
+  if((gone != NULL) != restore)
+  {
+    *err = g_strdup_printf("instance %d of '%s' is %s", priority, op, gone ? "deleted" : "not deleted");
+    return FALSE;
+  }
+  if(masks_instance_owner(mod))
+  {
+    *err = g_strdup_printf("instance %d of '%s' belongs to %s", priority, op, masks_instance_owner(mod));
+    return FALSE;
+  }
+  dt_iop_module_t *result = mod;
+  const gboolean copy = !g_strcmp0(action, "duplicate");
+  if(copy || !g_strcmp0(action, "new"))
+  {
+    if(mod->flags() & IOP_FLAGS_ONE_INSTANCE)
+    {
+      *err = g_strdup_printf("'%s' allows one instance", op);
+      return FALSE;
+    }
+    // darktable shares a drawn mask's shapes with the copy through its GUI's
+    // develop (masks.c, dt_masks_iop_use_same_as), which is not the engine's
+    if(copy && mod->blend_params && dt_is_valid_maskid(mod->blend_params->mask_id))
+    {
+      *err = g_strdup("an instance with a drawn mask cannot be duplicated here yet");
+      return FALSE;
+    }
+    dt_iop_module_t *m = dt_dev_module_duplicate_ext(&_s.dev, mod, TRUE);
+    if(!m)
+    {
+      *err = g_strdup_printf("cannot add an instance of '%s'", op);
+      return FALSE;
+    }
+    // as dt_iop_gui_duplicate(): the image's defaults (denoise's noise
+    // profile) come from reload_defaults, which duplicating does not run
+    dt_iop_reload_defaults(m);
+    memcpy(m->params, copy ? mod->params : m->default_params, m->params_size);
+    if(m->blend_params)
+      memcpy(m->blend_params, copy ? mod->blend_params : m->default_blendop_params,
+             sizeof(dt_develop_blend_params_t));
+    m->enabled = TRUE;
+    _instance_changed(m, TRUE);
+    result = m;
+  }
+  else if(!g_strcmp0(action, "rename"))
+  {
+    gchar *label = g_strstrip(g_strdup(name ? name : ""));
+    char was[sizeof(mod->multi_name)];
+    g_strlcpy(was, mod->multi_name, sizeof(was));
+    const gboolean was_hand = mod->multi_name_hand_edited;
+    // an empty name is darktable's own again (develop.c, the history item's
+    // automatic name): the instance's number, none for the first
+    if(*label) g_strlcpy(mod->multi_name, label, sizeof(mod->multi_name));
+    else if(mod->multi_priority > 0) g_snprintf(mod->multi_name, sizeof(mod->multi_name), "%d", mod->multi_priority);
+    else mod->multi_name[0] = '\0';
+    mod->multi_name_hand_edited = *label != '\0';
+    g_free(label);
+    // a name Immage's masks or looks use would hand the instance to them
+    if(masks_instance_owner(mod))
+    {
+      g_strlcpy(mod->multi_name, was, sizeof(mod->multi_name));
+      mod->multi_name_hand_edited = was_hand;
+      *err = g_strdup("that name is one Immage keeps for masks and looks");
+      return FALSE;
+    }
+    if(g_strcmp0(was, mod->multi_name) || was_hand != mod->multi_name_hand_edited)
+      _instance_changed(mod, FALSE);
+  }
+  else if(!g_strcmp0(action, "move"))
+  {
+    dt_iop_module_t *to = _module_at(op, other, err);
+    if(!to) return FALSE;
+    if(to == mod || g_list_find(_s.deleted, to))
+    {
+      *err = g_strdup_printf("cannot move instance %d of '%s' next to instance %d", priority, op, other);
+      return FALSE;
+    }
+    const gboolean there = after ? mod->iop_order > to->iop_order : mod->iop_order < to->iop_order;
+    // already next to it on that side when no other instance of `op` is
+    // between: dt_ioppr_move_iop_after() refuses a module it already follows
+    gboolean between = FALSE;
+    for(GList *l = _s.dev.iop; there && l; l = g_list_next(l))
+    {
+      const dt_iop_module_t *s = l->data;
+      if(s == mod || s == to || g_strcmp0(s->op, op)) continue;
+      const int lo = MIN(mod->iop_order, to->iop_order), hi = MAX(mod->iop_order, to->iop_order);
+      if(s->iop_order > lo && s->iop_order < hi) between = TRUE;
+    }
+    if(!there || between)
+    {
+      const gboolean can = after ? dt_ioppr_check_can_move_after_iop(_s.dev.iop, mod, to)
+                                 : dt_ioppr_check_can_move_before_iop(_s.dev.iop, mod, to);
+      if(!can || !(after ? dt_ioppr_move_iop_after(&_s.dev, mod, to) : dt_ioppr_move_iop_before(&_s.dev, mod, to)))
+      {
+        *err = g_strdup_printf("cannot move instance %d of '%s' %s instance %d", priority, op,
+                               after ? "after" : "before", other);
+        return FALSE;
+      }
+      _instance_changed(mod, TRUE);
+    }
+  }
+  else if(!g_strcmp0(action, "delete"))
+  {
+    if(priority == 0)
+    {
+      *err = g_strdup_printf("the first instance of '%s' can be switched off, not deleted", op);
+      return FALSE;
+    }
+    mod->enabled = FALSE;
+    _s.deleted = g_list_prepend(_s.deleted, mod);
+    _instance_changed(mod, FALSE);
+  }
+  else if(restore)
+  {
+    // its settings are back with the client's own `set`, as undo sends them
+    _s.deleted = g_list_delete_link(_s.deleted, gone);
+  }
+  else
+  {
+    *err = g_strdup_printf("unknown instance action '%s'", action);
+    return FALSE;
+  }
+  engine_add_int(b, "priority", result->multi_priority);
+  session_instances(b);
+  return TRUE;
 }
 
 static const char *_type_name(const dt_introspection_type_t t)

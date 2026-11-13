@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 import { RotateCcw } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { InstanceMenu, type InstanceChoice } from "./InstanceMenu";
 import { Chevron, Collapse } from "./Collapse";
 import { Choice, Slider, Toggle } from "./Controls";
 import type { AdvancedState } from "./session";
@@ -31,27 +32,56 @@ export function fieldControl(f: SchemaField, l: LayoutField, value: number): Con
   return { ...base, kind: "slider" };
 }
 
-export function ModuleCard({ instance, layout, schema, state, onField, onEnabled, onReset }: {
+// `siblings` is how many instances of the module the group shows, `index`
+// this one's place among them (pipe order); `fresh`, a card just added
+export function ModuleCard({ instance, layout, schema, state, siblings, index, fresh, onField, onEnabled, onReset, onInstance }: {
   instance: Instance; layout: ModuleLayout; schema: ModuleSchema; state: AdvancedState;
+  siblings: number; index: number; fresh?: boolean;
   onField: (path: string, value: number, coalesce: boolean) => void;
   onEnabled: (on: boolean) => void; onReset: () => void;
+  onInstance: (c: InstanceChoice, name?: string) => void;
 }) {
   const edited = instance.hand_edited || state.enabled !== instance.default_enabled;
-  // folded unless edited; the user's own fold wins after that
-  const [fold, setFold] = useState<boolean | null>(null);
+  // folded unless edited or just added; the user's own fold wins after that
+  const [fold, setFold] = useState<boolean | null>(fresh ? true : null);
+  const [renaming, setRenaming] = useState(false);
+  // Enter or Escape ends the rename once; the blur that follows does not
+  const ended = useRef(false);
   const open = fold ?? edited;
   const fields = new Map(schema.fields.map((f) => [f.path, f]));
-  const name = instance.name ? `${layout.title} ${instance.name}` : layout.title;
+  const name = instance.label ? `${layout.title} ${instance.label}` : layout.title;
+  const done = (el: HTMLInputElement, keep: boolean) => {
+    if (ended.current) return;
+    ended.current = true;
+    setRenaming(false);
+    const v = el.value.trim();
+    if (keep && v !== (instance.hand_edited ? instance.name : "")) onInstance("rename", v);
+  };
   return (
     <div className={`module-card${state.enabled ? "" : " off"}`} data-module={`${instance.op}#${instance.priority}`}>
       <div className="module-card-head" onClick={() => setFold(!open)}>
         <input type="checkbox" className="switch" checked={state.enabled} aria-label={`${name} on or off`}
                onClick={(e) => e.stopPropagation()} onChange={(e) => onEnabled(e.target.checked)} />
-        <span className="module-card-title">{name}</span>
+        {renaming
+          ? <input className="field module-card-rename" autoFocus defaultValue={instance.hand_edited ? instance.name : ""}
+                   placeholder={instance.label || layout.title} aria-label={`Name for ${name}`} maxLength={127}
+                   spellCheck={false} onClick={(e) => e.stopPropagation()}
+                   onFocus={(e) => e.currentTarget.select()}
+                   onKeyDown={(e) => {
+                     e.stopPropagation();
+                     if (e.key === "Enter") done(e.currentTarget, true);
+                     if (e.key === "Escape") done(e.currentTarget, false);
+                   }}
+                   onBlur={(e) => done(e.currentTarget, true)} />
+          : <span className="module-card-title">{name}</span>}
+        {siblings > 1 && instance.priority === 0 && <span className="module-card-tag" title="Simple's sliders show this instance">Simple</span>}
         <button className="module-card-reset" title="Reset to darktable's defaults" aria-label={`Reset ${name}`}
                 onClick={(e) => { e.stopPropagation(); onReset(); }}>
           <RotateCcw size={14} strokeWidth={1.8} />
         </button>
+        <InstanceMenu name={name} oneInstance={!!schema.flags.one_instance} first={instance.priority === 0}
+                      canUp={index > 0} canDown={index < siblings - 1}
+                      onPick={(c) => { if (c === "rename") { ended.current = false; setRenaming(true); } else onInstance(c); }} />
         <Chevron open={open} />
       </div>
       <Collapse open={open}>

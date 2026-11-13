@@ -56,7 +56,7 @@ COMMANDS = sorted('''
 agx_auto agx_presets ai_accel ai_denoise ai_denoise_preview ai_depth ai_mask
 ai_object baseline_end before cancel_base capture_times close color_profiles
 combine copy data_backup export export_hold export_release folder fonts forget get
-hdr_merge history import instances keywords keywords_set lenses look look_amount mask
+hdr_merge history import instance instances keywords keywords_set lenses look look_amount mask
 mask_delete mask_map mask_rename masks merge_cancel meta meta_set module_schema module_state
 open opencl pano_merge pano_preview parity paste_batch points prefetch preview
 print print_profile_add print_profiles printer printers quit range_map
@@ -219,6 +219,14 @@ def photo_edits(img):
         R('module_schema', op='exposure', label='module_schema exposure'),
         R('module_schema', op='tonecurve', label='module_schema tonecurve'),
         R('instances'),
+        R('instance', label='instance none'),
+        R('instance', action='new', op='exposure', priority=0, label='instance new'),
+        R('instance', action='rename', op='exposure', priority=1, name='second', label='instance rename'),
+        R('instance', action='move', op='exposure', priority=1, other=0, after=False, label='instance move'),
+        R('instance', action='delete', op='exposure', priority=0, label='instance delete first'),
+        R('instance', action='delete', op='exposure', priority=1, label='instance delete'),
+        R('instance', action='restore', op='exposure', priority=1, label='instance restore'),
+        R('instance', action='nosuch', op='exposure', priority=0, label='instance unknown action'),
         R('set', op='exposure', priority=7, enabled=True, params={'exposure': 0.5},
           label='set exposure priority unknown'),
         R('set', op='exposure', priority=1, instance='x', params={'exposure': 0.5},

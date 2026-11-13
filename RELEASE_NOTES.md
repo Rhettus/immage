@@ -9,8 +9,10 @@ Improvements
 
 - Preferences > General has an Editing mode. Advanced shows Adjustments' groups
   with a Technical group and a module search. It now shows darktable's exposure
-  module as a card in Basic, with its own settings, on/off and reset; other
-  modules follow in later versions. Switching does not change your photo.
+  module as a card in Basic, with its own settings, on/off and reset, and an
+  instance menu to add, duplicate, rename, reorder and delete instances, all
+  with undo; other modules follow in later versions. Switching does not change
+  your photo.
 - The sliders icon on panels is now called More controls, and appears only in
   Simple.
 

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Chevron, Collapse } from "./Collapse";
 import { commands, type ModuleSchema } from "./commands";
 import { ModuleCard } from "./ModuleCard";
+import type { InstanceChoice } from "./InstanceMenu";
 import type { Session } from "./session";
 import { layoutFor } from "./advancedLayout";
 
@@ -75,8 +76,21 @@ export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0
           {cards.length === 0 && <div className="advanced-empty">No darktable modules yet</div>}
           {cards.map(({ i, layout, schema, state }) => {
             const key = `${i.op}#${i.priority}`;
+            const sib = cards.filter((c) => c.i.op === i.op).map((c) => c.i);
+            const index = sib.indexOf(i);
+            const onInstance = (c: InstanceChoice, name?: string) => {
+              const s = session!;
+              const steps: Record<InstanceChoice, string> = { new: "New instance", duplicate: "Duplicate instance",
+                rename: "Rename instance", up: "Move instance", down: "Move instance", delete: "Delete instance" };
+              // each action its own step, however quickly the next follows
+              record?.([`adv:${key}:${c}:${performance.now()}`], `${steps[c]}: ${layout.title}`);
+              if (c === "up") s.instanceAction({ action: "move", op: i.op, priority: i.priority, other: sib[index - 1].priority, after: false });
+              else if (c === "down") s.instanceAction({ action: "move", op: i.op, priority: i.priority, other: sib[index + 1].priority, after: true });
+              else s.instanceAction({ action: c, op: i.op, priority: i.priority, name });
+            };
             return (
               <ModuleCard key={key} instance={i} layout={layout} schema={schema} state={state}
+                siblings={sib.length} index={index} fresh={session!.lastAdded === key} onInstance={onInstance}
                 onField={(path, v, coalesce) => { record?.([`adv:${key}:${path}`], layout.title); session!.setField(i.op, i.priority, path, v, coalesce); }}
                 onEnabled={(on) => { record?.([`adv:${key}:enabled`], layout.title); session!.setAdvancedEnabled(i.op, i.priority, on); }}
                 onReset={() => { record?.([`adv:${key}:reset`], layout.title); session!.resetAdvanced(i.op, i.priority); }} />

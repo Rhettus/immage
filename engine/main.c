@@ -733,6 +733,16 @@ static gboolean _cmd_instances(JsonObject *req, JsonBuilder *b, char **err)
   return TRUE;
 }
 
+static gboolean _cmd_instance(JsonObject *req, JsonBuilder *b, char **err)
+{
+  return session_instance(json_object_get_string_member_with_default(req, "action", NULL),
+                          json_object_get_string_member_with_default(req, "op", NULL),
+                          json_object_get_int_member_with_default(req, "priority", 0),
+                          json_object_get_string_member_with_default(req, "name", NULL),
+                          json_object_get_int_member_with_default(req, "other", 0),
+                          json_object_get_boolean_member_with_default(req, "after", FALSE), b, err);
+}
+
 static gboolean _cmd_render(JsonObject *req, JsonBuilder *b, char **err)
 {
 // "draft": a slider drag's frame, on the drag pipe so the main pipe's
@@ -1255,6 +1265,7 @@ static const eng_cmd_t _commands[] =
   { "get", _cmd_get, _CMD_NEEDS_OPEN },
   { "module_schema", _cmd_module_schema, _CMD_NEEDS_OPEN },
   { "instances", _cmd_instances, _CMD_NEEDS_OPEN },
+  { "instance", _cmd_instance, _CMD_NEEDS_OPEN | _CMD_EDITS },
   { "render", _cmd_render, _CMD_NEEDS_OPEN },
   { "mask", _cmd_mask, _CMD_NEEDS_OPEN | _CMD_EDITS },
   { "combine", _cmd_combine, _CMD_NEEDS_OPEN | _CMD_EDITS },

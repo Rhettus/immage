@@ -3,7 +3,7 @@
 
 use serde_json::{json, Number, Value};
 use std::path::Path;
-use crate::typed_edit::{AgxPresetsReply, AgxProfile, CombineMember, FilmFetch, FilmStocks, Instance, InstancesReply, LensMenu, ModuleSchema, LookReply, MapView, MaskInfo, MasksReply, NewSpot, Spot, SpotSource, SpotsReply, UprightReply};
+use crate::typed_edit::{AgxPresetsReply, AgxProfile, CombineMember, FilmFetch, FilmStocks, Instance, InstanceReply, InstancesReply, LensMenu, ModuleSchema, LookReply, MapView, MaskInfo, MasksReply, NewSpot, Spot, SpotSource, SpotsReply, UprightReply};
 use crate::typed_export::LookInfo;
 use tauri::{ipc::Response, AppHandle, State};
 use crate::AppState;
@@ -67,6 +67,22 @@ pub(crate) async fn module_schema(state: State<'_, AppState>, op: String) -> Res
 pub(crate) async fn instances(state: State<'_, AppState>) -> Result<Vec<Instance>, String> {
     let reply = state.engine("instances").request(json!({ "cmd": "instances" }))?;
     serde_json::from_value::<InstancesReply>(reply).map(|r| r.instances).map_err(|e| format!("instances: unexpected reply: {e}"))
+}
+
+// Advanced mode's instance menu on instance `priority` of `op`: "new",
+// "duplicate", "rename" (`name`), "move" (next to instance `other`, after it
+// when `after`), "delete" and "restore" (undo of a delete)
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn instance(state: State<'_, AppState>, action: String, op: String, priority: i64,
+                             name: Option<String>, other: Option<i64>, after: Option<bool>)
+    -> Result<InstanceReply, String> {
+    let mut req = json!({ "cmd": "instance", "action": action, "op": op, "priority": priority });
+    if let Some(n) = name { req["name"] = json!(n); }
+    if let Some(o) = other { req["other"] = json!(o); }
+    if let Some(a) = after { req["after"] = json!(a); }
+    let reply = state.engine("instance").request(req)?;
+    serde_json::from_value(reply).map_err(|e| format!("instance: unexpected reply: {e}"))
 }
 
 // Upright's fit of rotate and perspective: { rotation, lensshift_v,

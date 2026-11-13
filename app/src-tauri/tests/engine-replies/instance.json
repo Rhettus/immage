@@ -1,0 +1,45 @@
+[
+ {
+  "label": "3 open / instance new",
+  "reply": {
+   "instances": [
+    {
+     "default_enabled": false,
+     "enabled": false,
+     "hand_edited": false,
+     "iop_order": 100,
+     "label": "",
+     "name": "",
+     "op": "rawprepare",
+     "owner": null,
+     "priority": 0
+    },
+    {
+     "default_enabled": false,
+     "enabled": false,
+     "hand_edited": false,
+     "iop_order": 200,
+     "label": "",
+     "name": "",
+     "op": "invert",
+     "owner": null,
+     "priority": 0
+    },
+    {
+     "default_enabled": false,
+     "enabled": false,
+     "hand_edited": false,
+     "iop_order": 300,
+     "label": "",
+     "name": "",
+     "op": "temperature",
+     "owner": null,
+     "priority": 0
+    }
+   ],
+   "ms": 0.0,
+   "ok": true,
+   "priority": 1
+  }
+ }
+]

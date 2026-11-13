@@ -363,8 +363,19 @@ pub struct Instance {
     pub priority: i64,
     pub name: String,
     pub hand_edited: bool,
+    // what darktable's header shows after the module's name: `name`, else
+    // darktable's own label (a matching preset's, or the instance's number)
+    pub label: String,
     pub enabled: bool,
     pub default_enabled: bool,
     pub iop_order: i64,
     pub owner: Option<String>,
+}
+
+// `instance`'s reply: the instance acted on (a new one's priority), and the
+// instance list after the action
+#[derive(Serialize, Deserialize, Type)]
+pub struct InstanceReply {
+    pub priority: i64,
+    pub instances: Vec<Instance>,
 }

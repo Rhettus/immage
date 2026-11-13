@@ -159,6 +159,10 @@ typedef struct dt_engine_session_t
   // saves record what it applies to a new photo as darktable's automatic
   // baseline (history_auto_hash), so those defaults do not mark it altered
   gboolean fresh, baseline;
+  // instances Advanced mode deleted (`instance` "delete"): switched off and
+  // left out of `instances` until undone, their entries dropped at each save.
+  // kept, not freed, so undo brings one back at the same priority
+  GList *deleted;
 } dt_engine_session_t;
 
 typedef struct preview_output_t {
@@ -357,6 +361,8 @@ dt_iop_module_t *session_find_named(const char *op, const char *name);
 gboolean session_get(JsonObject *ops, JsonBuilder *b, char **err);
 gboolean session_module_schema(const char *op, JsonBuilder *b, char **err);
 void session_instances(JsonBuilder *b);
+gboolean session_instance(const char *action, const char *op, const int priority, const char *name,
+                          const int other, const gboolean after, JsonBuilder *b, char **err);
 gboolean session_lens_menu(JsonBuilder *b, char **err);
 gboolean session_color_profiles(JsonBuilder *b, char **err);
 dt_dev_pixelpipe_iop_t *session_piece(dt_dev_pixelpipe_t *pipe, const dt_iop_module_t *m);

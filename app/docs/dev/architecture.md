@@ -775,6 +775,12 @@ sliders, and a Simple edit rereads the cards on that module. Reset uses
 `module_state`, and undo snapshots `advanced` and restores it after module
 states. Headless check: `node --test verify/advanced-modules.test.mjs`.
 
+[InstanceMenu.tsx](../../src/InstanceMenu.tsx) is the card's instance menu. It
+calls the engine's `instance` command with an action: `new`, `duplicate`,
+`rename`, `move`, `delete` or `restore` (undo). `delete` switches the instance
+off and hides it from `instances`; the save drops its history entries. The
+first instance cannot be deleted.
+
 [ModuleSwitch.tsx](../../src/ModuleSwitch.tsx) is the icon and fixed-position
 menu beside a tool's name, for a `MODULE_CHOICES` entry with two or more
 options. `PanelView` (PanelView.tsx) finds each choice's host with `switchHosts`:
