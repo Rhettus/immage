@@ -845,6 +845,17 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "contrast", label: "Contrast boost", unit: "%" },
     ],
   },
+  {
+    // nlmeans.c gui_init: four sliders, no visibility rules. strength's max
+    // is 100000, so its "%" shows it unscaled
+    op: "nlmeans", group: "detail", title: "Astrophoto denoise",
+    fields: [
+      { path: "radius", label: "Patch size", soft: [0, 4], digits: 0 },
+      { path: "strength", label: "Strength", soft: [0, 100], unit: "%", digits: 0 },
+      { path: "luma", label: "Luma", unit: "%", digits: 0 },
+      { path: "chroma", label: "Chroma", unit: "%", digits: 0 },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);

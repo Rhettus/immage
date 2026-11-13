@@ -239,6 +239,8 @@ The Detail group has these darktable modules:
   is the profile choice: the card uses the profile darktable finds for the
   camera and ISO.
 - **Highpass**: **Sharpness** and **Contrast boost**.
+- **Astrophoto denoise**: **Patch size**, **Strength**, **Luma** and
+  **Chroma**.
 
 ## Instances
 
