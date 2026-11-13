@@ -129,6 +129,7 @@ export async function runPaste(targets: PasteTarget[], clip: Clip,
         if (failure) throw Error(failure);
         const calculated = await recalculateAiMasks(c).catch(e => { throw Error(`${target.path}: ${e}`); });
         if (calculated.masks) replaceMasks(s, calculated.masks);
+        if (c.advanced) await s.pasteAdvanced(c.advanced);
       }
       finally { await s.settled(); }
       if (failure) throw Error(failure);

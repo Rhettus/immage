@@ -12,6 +12,9 @@ Simple. At the end of each Adjustments group that holds such edits, Simple shows
 Preferences. Modules that darktable turns on by itself and that you have not
 changed are not counted.
 
+To copy these edits to other photos, tick **Advanced modules** in Copy
+Settings (see [History and sync](history-and-sync.md)).
+
 In Advanced, the **Adjustments** panel looks like this:
 
 - A **Search modules** box at the top, described below.

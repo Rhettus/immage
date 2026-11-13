@@ -16,6 +16,7 @@ import { begin, end, progress } from "./activity";
 import { perf, type Trace } from "./perf";
 import { FRAME_HEAD, renderFrame } from "./sharedFrames";
 import { isDetailControl } from "./detailPreview";
+import { advancedCopies, pasteTarget, type AdvancedCopy } from "./advancedEdits";
 import type { Preview } from "./Preferences";
 import { commands, type GetReply, type HistoryItem, type Instance, type InstanceReply, type ModuleState, type Value } from "./commands";
 
@@ -1162,6 +1163,45 @@ export class Session {
       this.instancesStale = true;
   }
   private instancesStale = false;
+
+  // Copy Settings' Advanced modules: the whole state of each instance the
+  // user changed that Simple's sliders do not show (advancedCopies)
+  async copyAdvanced(): Promise<AdvancedCopy[]> {
+    await this.settled();
+    const out: AdvancedCopy[] = [];
+    for (const i of advancedCopies(await commands.instances())) {
+      const r = await traced("module_state", () => commands.moduleState(i.op, i.priority, null, null, null, null));
+      out.push({ op: i.op, priority: i.priority, name: i.hand_edited ? i.name : "", state: r.now });
+    }
+    return out;
+  }
+
+  // paste them: each restores the instance darktable's paste would pick
+  // (pasteTarget), else a new one after the module's last, named as the copy
+  async pasteAdvanced(copies: AdvancedCopy[]) {
+    if (!copies.length) return;
+    await this.settled();
+    let list = await commands.instances();
+    const used = new Set<string>();
+    for (const c of copies) {
+      let priority = pasteTarget(list, c, used)?.priority;
+      if (priority === undefined) {
+        const last = list.filter((i) => i.op === c.op).at(-1);
+        if (!last) continue;   // not a module of this photo's pipe
+        const r = await commands.instance("new", c.op, last.priority, null, null, null);
+        priority = r.priority;
+        list = r.instances;
+        if (c.name) list = (await commands.instance("rename", c.op, priority, c.name, null, null)).instances;
+        this.unsaved = true;
+      }
+      used.add(`${c.op}#${priority}`);
+      this.cardsShown.add(`${c.op}#${priority}`);
+      this.setModuleState({ op: c.op, priority }, { restore: c.state });
+    }
+    this.instances = list;
+    this.instancesLoad = null;
+    await this.settled();
+  }
 
   // whether darktable set the module in a way its sliders cannot show
   isForeign(op: string) {

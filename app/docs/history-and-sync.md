@@ -78,7 +78,7 @@ The buttons at the bottom of the right panel:
 **Tone**, **Presence**, **Tone Curve**, **HSL / Color**, **B&W Mix**, **Color
 Grading**, **Sharpening**, **Profiled Denoise**, **Lens
 Corrections**, **Transform**, **Post-Crop Vignetting**, **Grain**,
-**Crop**, **Look** and **Masks**. **Crop** and **Masks**
+**Crop**, **Look**, **Masks** and **Advanced modules**. **Crop** and **Masks**
 start unticked. Your choice is remembered.
 
 Only the groups ticked in Copy Settings change; other edits stay as they
@@ -89,6 +89,16 @@ file must remain available. **Masks**, when ticked, replaces the target's
 masks, recalculating AI selections for each destination (see
 [Copying AI masks](masks.md#copying-ai-masks-between-photos)); **Crop** and
 **Negative** also need to be explicitly ticked.
+
+**Advanced modules** copies the module instances you changed in
+[Advanced mode](advanced-mode.md) that Simple's sliders cannot show, such as a
+second exposure instance or a module Simple has no sliders for. Each one comes
+with all of its settings and its on/off state. On each target, it replaces the
+instance with the same name, or else an unnamed instance with the same number.
+Otherwise it is added as a new instance, so pasting twice does not add the
+same instances again. As in darktable, modules tied to one camera or photo,
+such as white balance, raw black and white points and orientation, are not
+copied. Neither is an instance with a drawn mask.
 
 Virtual copies are independent targets. Paste does not automatically include
 an unselected RAW/JPEG partner. Remote results that have not been opened into

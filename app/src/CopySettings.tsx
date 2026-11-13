@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { NEG_CHOICES, panels, SF_CHOICES, type Values } from "./manifest";
 import type { Mask } from "./masks";
 import { settings } from "./settings";
+import type { AdvancedCopy } from "./advancedEdits";
 
 export type CopyGroup = { id: string; label: string; ids: string[] };
 
@@ -28,6 +29,8 @@ export const COPY_GROUPS: CopyGroup[] = [
   // the film simulation, with the modules its tools move to
   { id: "film", label: "Film Simulation", ids: [...controlsOf("film"), ...Object.keys(SF_CHOICES)] },
   { id: "look", label: "Look", ids: [] },
+  // Advanced mode's instances Simple's sliders do not show (advancedCopies)
+  { id: "advanced", label: "Advanced modules", ids: [] },
   { id: "masks", label: "Masks", ids: [] },
 ];
 // left out unless asked for, as in Lightroom: they belong to one framing.
@@ -39,6 +42,7 @@ export type Clip = {
   values: Values;
   look?: { name: string | null; path: string | null; amount: number };
   masks?: Mask[];
+  advanced?: AdvancedCopy[];
 };
 
 const KEY = "immage.copy.groups";
@@ -54,12 +58,14 @@ const saveCopyGroups = (on: Set<string>) => {
 };
 
 // the chosen parts of an edit
-export const makeClip = (on: Set<string>, values: Values, look: Clip["look"], masks: Mask[]): Clip => {
+export const makeClip = (on: Set<string>, values: Values, look: Clip["look"], masks: Mask[],
+                         advanced?: AdvancedCopy[]): Clip => {
   const clip: Clip = { values: {} };
   for (const g of COPY_GROUPS)
     if (on.has(g.id)) for (const id of g.ids) if (id in values) clip.values[id] = values[id];
   if (on.has("look")) clip.look = look;
   if (on.has("masks")) clip.masks = structuredClone(masks);
+  if (on.has("advanced") && advanced) clip.advanced = structuredClone(advanced);
   return clip;
 };
 

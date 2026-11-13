@@ -1096,7 +1096,7 @@ static gboolean _apply_preset(dt_iop_module_t *mod, const char *name, char **err
 // to a state an earlier reply gave (undo). modules without a switch and
 // masked modules permit reset/restore, but not an independent switch. `preset`
 // applies a darktable preset by name (_apply_preset); it excludes the other three.
-// replies the state before and after
+// none of them reads the state (Copy Settings). replies the state before and after
 gboolean session_module_state(const char *op, const int priority, const gboolean has_enabled,
                               const gboolean enabled, const gboolean reset, JsonObject *restore,
                               const char *preset, JsonBuilder *b, char **err)
@@ -1112,7 +1112,7 @@ gboolean session_module_state(const char *op, const int priority, const gboolean
     *err = g_strdup("a preset cannot be combined with reset, restore or enabled");
     return FALSE;
   }
-  if(!reset && !restore && !preset
+  if(has_enabled && !reset && !restore && !preset
      && (mod->hide_enable_button || (mod->blend_params && mod->blend_params->mask_id > 0)))
   {
     *err = g_strdup_printf("module '%s' cannot be switched here", op);
@@ -1471,6 +1471,11 @@ void session_instances(JsonBuilder *b)
     // photo: an auto-applied module left alone is not an edit
     engine_add_bool(b, "changed", m->enabled != m->default_enabled
                     || (m->params_size && memcmp(m->params, m->default_params, m->params_size)));
+    // darktable's copy of history leaves it out (dt_history_module_skip_copy:
+    // per-camera, hidden or deprecated modules), so Copy Settings does too
+    engine_add_bool(b, "copyable", !dt_history_module_skip_copy(m->flags()));
+    // a drawn mask's shapes belong to this photo
+    engine_add_bool(b, "masked", m->blend_params && m->blend_params->mask_id > 0);
     // darktable hides the switch of a module that cannot apply to this
     // photo (raw-only modules on a JPEG, white balance on a monochrome)
     engine_add_bool(b, "switchable", !m->hide_enable_button);

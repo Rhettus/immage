@@ -4,7 +4,7 @@
 // Simple's badge for Advanced edits: instances on and changed from
 // darktable's defaults that no Simple slider shows (a second instance, a
 // module Simple has no map for), counted per Adjustments group
-import type { Instance } from "./commands";
+import type { Instance, ModuleState } from "./commands";
 import { LAYOUTS, shows } from "./advancedLayout";
 import { mapsFor } from "./manifest";
 
@@ -25,4 +25,23 @@ export function advancedEdits(list: Inst[]): Map<string, number> {
     if (l) n.set(l.group, (n.get(l.group) ?? 0) + 1);
   }
   return n;
+}
+
+// Copy Settings' Advanced modules: the same instances, on or off, except
+// those darktable's own copy leaves out (per-camera, hidden, deprecated:
+// `copyable`) and those with a drawn mask, whose shapes are this photo's
+export const advancedCopies = (list: Instance[]) =>
+  list.filter((i) => i.owner === null && i.changed && i.copyable && !i.masked && !simpleShows(i));
+
+// one copied instance: its whole state, as module_state replies it
+export type AdvancedCopy = { op: string; priority: number; name: string; state: ModuleState };
+
+// the instance of the target's `list` a copy pastes onto, as darktable's
+// paste picks it (history.c, _merge_target): one with the same name, else an
+// unnamed one with the same priority; none means a new instance. a tool's
+// instance, a masked one or one already pasted onto is never picked
+export function pasteTarget(list: Instance[], c: AdvancedCopy, used: Set<string>) {
+  const free = list.filter((i) => i.op === c.op && i.owner === null && !i.masked && !used.has(`${i.op}#${i.priority}`));
+  return (c.name ? free.find((i) => i.hand_edited && i.name === c.name) : undefined)
+    ?? free.find((i) => !i.hand_edited && i.priority === c.priority);
 }

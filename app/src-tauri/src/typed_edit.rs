@@ -370,6 +370,10 @@ pub struct Instance {
     pub default_enabled: bool,
     // its settings or switch differ from darktable's defaults for this photo
     pub changed: bool,
+    // darktable's copy of history takes it (not per-camera, hidden or deprecated)
+    pub copyable: bool,
+    // it has a drawn mask, whose shapes belong to this photo
+    pub masked: bool,
     // false when darktable hides the module's switch: it cannot apply to
     // this photo, or must stay on
     pub switchable: bool,

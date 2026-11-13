@@ -17,7 +17,8 @@ Improvements
   modules from Add module, the search and the tone mapper switch (or keeps
   only the essentials); a photo that uses a hidden module still shows its card.
   In Simple, a group with Advanced edits its sliders cannot show says how many
-  there are, with a link to Editing mode.
+  there are, with a link to Editing mode. Copy Settings' new Advanced modules
+  group copies those edits, which Paste and Previous apply to other photos.
 - Advanced cards so far: in Basic, exposure, white balance, color calibration,
   highlight reconstruction, the tone mapper, contrast & texture, local contrast,
   haze removal, diffuse or sharpen and color balance rgb; in Tone Curve, tone

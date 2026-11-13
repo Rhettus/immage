@@ -474,6 +474,8 @@ export type Instance = {
 	enabled: boolean,
 	default_enabled: boolean,
 	changed: boolean,
+	copyable: boolean,
+	masked: boolean,
 	switchable: boolean,
 	in_history: boolean,
 	iop_order: number,

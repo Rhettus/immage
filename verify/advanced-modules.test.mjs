@@ -313,6 +313,10 @@ test('Simple counts the Advanced edits its sliders cannot show', { skip: skip ||
   }
   await e.call({ cmd: 'open', path: photos[0] });
   assert.deepEqual(await counts(), {}, 'at open');
+  // darktable's copy of history leaves out per-camera modules
+  const flags = Object.fromEntries((await e.call({ cmd: 'instances' })).instances.filter((i) => i.priority === 0)
+    .map((i) => [i.op, i.copyable]));
+  assert.equal(flags.temperature, false); assert.equal(flags.flip, false); assert.equal(flags.exposure, true);
   await e.call({ cmd: 'set', op: 'exposure', priority: 0, params: { exposure: 0.5 }, enabled: true });
   await e.call({ cmd: 'set', op: 'channelmixerrgb', instance: 'bw', after: 'colorequal', enabled: true,
                  params: { 'grey[0]': 0, 'grey[1]': 1, 'grey[2]': 0 } });

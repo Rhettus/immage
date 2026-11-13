@@ -3652,8 +3652,11 @@ export default function App() {
     try {
       if (session.current) {
         const o = session.current;
+        // Advanced modules only when Copy Settings ticks them: one more
+        // engine read on the way to the next photo
+        const advanced = loadCopyGroups().has("advanced") ? await o.copyAdvanced().catch(() => undefined) : undefined;
         previous.current = { values: { ...o.values }, look: { name: o.look, path: o.lookPath, amount: o.lookAmount },
-                             masks: structuredClone(o.masks) };
+                             masks: structuredClone(o.masks), advanced };
         await o.close();
       }
       setLoupeShown(false);
@@ -4014,10 +4017,14 @@ export default function App() {
     syncMasks();
     if (!target.some((t) => t.name === maskSel)) setMaskSel(target[0]?.name ?? null);
   };
-  const copySettings = (on: Set<string>) => {
+  const copySettings = async (on: Set<string>) => {
     const s = session.current;
     if (!s) return;
-    clip.current = makeClip(on, s.values, { name: s.look, path: s.lookPath, amount: s.lookAmount }, s.masks);
+    let advanced;
+    try { advanced = on.has("advanced") ? await s.copyAdvanced() : undefined; }
+    catch (e) { setStatus(`copy: ${e}`); return; }
+    if (session.current !== s) return;
+    clip.current = makeClip(on, s.values, { name: s.look, path: s.lookPath, amount: s.lookAmount }, s.masks, advanced);
     setHasClip(true);
     setStatus("settings copied");
   };
@@ -4080,7 +4087,7 @@ export default function App() {
   // has ticked
   const pastePrevious = () => {
     const p = previous.current;
-    if (p) void pasteSettings(makeClip(loadCopyGroups(), p.values, p.look, p.masks ?? []));
+    if (p) void pasteSettings(makeClip(loadCopyGroups(), p.values, p.look, p.masks ?? [], p.advanced));
   };
   // `steps` at once, as a click in the History panel: only the state
   // arrived at is sent
