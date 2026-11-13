@@ -21,11 +21,19 @@ import { LensPicker } from "./LensPicker";
 // the card's fields as the controls the rest of the app draws
 const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
+// the engine's own fields, which no introspection schema lists: white
+// balance's temperature and tint, in temperature.c's limits (wb.c)
+const ENGINE_FIELDS: Record<string, SchemaField> = {
+  temp_k: { path: "temp_k", type: "float", min: 1901, max: 25000 },
+  tint: { path: "tint", type: "float", min: 0.135, max: 2.326 },
+};
+
 // the schema entry of a layout path: an array element ("red[2]") takes its
 // array's type, range and that element's default
 export function schemaField(fields: Map<string, SchemaField>, path: string): SchemaField | undefined {
   const direct = fields.get(path);
   if (direct) return direct;
+  if (path in ENGINE_FIELDS) return ENGINE_FIELDS[path];
   const a = fields.get(fieldPath(path)), k = Number(/\[(\d+)\]$/.exec(path)?.[1]);
   if (!a || a.type !== "array" || !a.element || Number.isNaN(k)) return undefined;
   return { ...a, path, type: a.element, default: a.defaults?.[k] ?? null, dims: null, defaults: null };

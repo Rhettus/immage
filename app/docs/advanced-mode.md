@@ -106,10 +106,13 @@ on one side shows on the other.
 
 Besides exposure, the Basic group has these darktable modules:
 
-- **White balance**: the channel coefficients, **Red**, **Green** and
-  **Blue**, and **Emerald** on cameras with a fourth color channel. The card
-  does not yet have darktable's settings list (as shot, camera reference and
-  the camera's presets) or its temperature and tint sliders; Simple's White
+- **White balance**: darktable's **Temperature** and **Tint** sliders, and
+  the channel coefficients, **Red**, **Green** and **Blue**, and **Emerald** on
+  cameras with a fourth color channel. Temperature and tint are computed from
+  the coefficients and your camera's color matrix as darktable does, and
+  setting either one sets the coefficients (a photo whose camera has no color
+  matrix cannot show them). The card does not yet have darktable's settings
+  list (as shot, camera reference and the camera's presets); Simple's White
   Balance sliders change the same module. darktable allows one instance.
 - **Color calibration**: tabs as in darktable. **CAT** has the adaptation,
   the illuminant (with its fluorescent or LED source, or a temperature for

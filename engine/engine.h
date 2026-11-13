@@ -343,6 +343,14 @@ gboolean session_write_field(dt_iop_module_t *mod, const char *name, const doubl
                              char **err);
 gboolean session_read_field(dt_iop_module_t *mod, const char *name,
                             const gboolean from_defaults, double *num, char **err);
+
+// wb.c: the temperature module's "temp_k" and "tint" fields, engine-own
+// like the lens module's "lens_pick"
+#define WB_TEMP "temp_k"
+#define WB_TINT "tint"
+gboolean wb_read(dt_iop_module_t *mod, const char *name, const gboolean from_defaults, double *num,
+                 char **err);
+gboolean wb_write(dt_iop_module_t *mod, const char *name, const double num, char **err);
 gboolean session_set(const char *op, const char *field, JsonNode *value,
                      JsonObject *params, const gboolean has_enabled,
                      const gboolean enabled, const char *after, const char *before,

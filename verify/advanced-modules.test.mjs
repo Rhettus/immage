@@ -554,6 +554,13 @@ test('Advanced card layouts match darktable', { skip: skip || false }, async (t)
           assert.ok(list.length && list.some(([, v]) => v === now), `${lf.path}: ${now} not among ${JSON.stringify(list)}`);
           continue;
         }
+        // white balance's temperature and tint are the engine's own, not in the schema
+        if (l.op === 'temperature' && ['temp_k', 'tint'].includes(lf.path)) {
+          assert.ok(lf.label, `${lf.path}: no label`);
+          const now = (await e.call({ cmd: 'get', modules: { 'temperature@0': [lf.path] } })).modules['temperature@0'].params[lf.path];
+          assert.ok(Number.isFinite(now), `${lf.path}: reads ${now}`);
+          continue;
+        }
         const f = resolve(lf.path);
         assert.ok(f, `${l.op}: no field ${lf.path}; schema has ${[...by.keys()]}`);
         assert.ok(lf.label, `${lf.path}: no label`);
@@ -585,7 +592,7 @@ test('Advanced card layouts match darktable', { skip: skip || false }, async (t)
       // the way into its soft range
       const paths = l.fields.map((lf) => lf.path);
       const cur = (await e.call({ cmd: 'get', modules: { [`${l.op}@0`]: paths } })).modules[`${l.op}@0`];
-      const lf = l.fields.find((x) => !x.profiles && resolve(x.path).type === 'float' && (!x.showIf || x.showIf(cur.defaults)));
+      const lf = l.fields.find((x) => !x.profiles && resolve(x.path)?.type === 'float' && (!x.showIf || x.showIf(cur.defaults)));
       if (!lf) return;
       const f = resolve(lf.path);
       const [lo, hi] = lf.soft ?? [f.min, f.max];
@@ -717,3 +724,41 @@ test('Advanced lens card picks a lens for its own instance', { skip: skip || fal
   await e.call({ cmd: 'set', op: 'lens', priority: second, params: { lens_pick: 0 }, enabled: true });
   assert.equal((await read(second)).params.lens_pick, 0, 'Auto again');
 });
+
+// white balance's temperature and tint are the engine's own fields (wb.c,
+// ported from temperature.c): computed from red, green and blue, and written
+// back to them. the sample JPEG uses darktable's sRGB matrices, a raw its own
+const wbPhotos = [['the sample JPEG', SAMPLE]];
+if (process.env.IMMAGE_RAW) wbPhotos.push(['IMMAGE_RAW', process.env.IMMAGE_RAW]);
+for (const [what, source] of wbPhotos) {
+  test(`Advanced white balance temperature and tint (${what})`, { skip: skip || false }, async (t) => {
+    const work = mkdtempSync(join(tmpdir(), 'immage-advwb-'));
+    mkdirSync(join(work, 'photos'));
+    const photo = join(work, 'photos', `wb${source.slice(source.lastIndexOf('.'))}`);
+    copyFileSync(source, photo);
+    const e = new Engine(work);
+    t.after(() => { e.stop(); rmSync(work, { recursive: true, force: true }); });
+    await e.call({ cmd: 'open', path: photo });
+    const read = async () => (await e.call({ cmd: 'get', modules: { 'temperature@0': ['temp_k', 'tint', 'red', 'green', 'blue'] } })).modules['temperature@0'].params;
+    const write = (params) => e.call({ cmd: 'set', op: 'temperature', priority: 0, params, enabled: true });
+    const first = await read();
+    assert.ok(first.temp_k >= 1901 && first.temp_k <= 25000, `temp_k ${first.temp_k}`);
+    assert.ok(first.tint >= 0.135 && first.tint <= 2.326, `tint ${first.tint}`);
+
+    await write({ temp_k: 4500 });
+    const a = await read();
+    assert.ok(a.red !== first.red || a.blue !== first.blue, 'red and blue change');
+    assert.ok(a.red !== a.blue);
+    assert.equal(a.green, 1, 'green is the reference');
+    assert.ok(Math.abs(a.temp_k - 4500) <= 2, `temp_k reads back ${a.temp_k}`);
+    assert.ok(Math.abs(a.tint - first.tint) <= 0.002, `tint stays ${first.tint} -> ${a.tint}`);
+
+    await write({ tint: 1.1 });
+    const b = await read();
+    assert.ok(Math.abs(b.tint - 1.1) <= 0.002, `tint reads back ${b.tint}`);
+    assert.ok(Math.abs(b.temp_k - a.temp_k) <= 2, `temp_k stays ${a.temp_k} -> ${b.temp_k}`);
+
+    await write({ red: b.red * 1.3 });
+    assert.notEqual((await read()).temp_k, b.temp_k, 'a coefficient edit moves the temperature');
+  });
+}

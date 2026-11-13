@@ -243,13 +243,18 @@ const CB_WHEELS = ["global", "shadows", "highlights", "midtones"].map((r) => {
 
 export const LAYOUTS: ModuleLayout[] = [
   {
-    // temperature.c gui_init: its "channel coefficients" section (red, green,
-    // blue, various at 3 digits). left out for now: the settings combobox,
-    // whose entries (as shot, camera reference, the camera's presets) are
-    // built per photo rather than from an enum, and the temperature and tint
-    // sliders, which darktable computes from the coefficients
+    // temperature.c gui_init: its "scene illuminant temp" section (the
+    // temperature and tint sliders) and its "channel coefficients" section
+    // (red, green, blue, various at 3 digits). temp_k and tint are the
+    // engine's own fields (wb.c), computed from the coefficients as darktable
+    // does; an edit of either sets the coefficients and the card reads them
+    // again. left out for now: the settings combobox, whose entries (as shot,
+    // camera reference, the camera's presets) are built per photo rather
+    // than from an enum
     op: "temperature", group: "basic", title: "White balance",
     fields: [
+      { path: "temp_k", label: "Temperature", section: "Scene illuminant temp", digits: 0, unit: "K" },
+      { path: "tint", label: "Tint", section: "Scene illuminant temp", digits: 3 },
       { path: "red", label: "Red", section: "Channel coefficients", digits: 3 },
       { path: "green", label: "Green", section: "Channel coefficients", digits: 3 },
       { path: "blue", label: "Blue", section: "Channel coefficients", digits: 3 },

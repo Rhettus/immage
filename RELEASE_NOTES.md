@@ -22,8 +22,9 @@ Improvements
   Color balance rgb's card has a color wheel for each of its four ranges, and
   the tone curve and rgb curve cards have a point curve editor with channel
   tabs and darktable's interpolation methods. The contrast equalizer and
-  saturation curve cards have Simple's graphs, and the lens correction card
-  has Simple's lens picker.
+  saturation curve cards have Simple's graphs, the lens correction card has
+  Simple's lens picker, and the white balance card has darktable's temperature
+  and tint sliders.
 - Advanced cards so far: in Basic, exposure, white balance, color calibration,
   highlight reconstruction, the tone mapper, contrast & texture, local contrast,
   haze removal, diffuse or sharpen and color balance rgb; in Tone Curve, tone

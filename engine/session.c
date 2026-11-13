@@ -676,6 +676,8 @@ gboolean session_write_field(dt_iop_module_t *mod, const char *name, const doubl
     return _write_profile(mod, !strcmp(name, "working_profile"), num, err);
   if(!g_strcmp0(name, BLEND_DETAILS)) return _write_details(mod, num, err);
   if(!g_strcmp0(name, LENS_PICK) && !g_strcmp0(mod->op, "lens")) return _write_lens_pick(mod, num, err);
+  if((!g_strcmp0(name, WB_TEMP) || !g_strcmp0(name, WB_TINT)) && !g_strcmp0(mod->op, "temperature"))
+    return wb_write(mod, name, num, err);
   return session_write_field_in(mod, mod->params, name, num, err);
 }
 
@@ -692,6 +694,8 @@ gboolean session_read_field(dt_iop_module_t *mod, const char *name,
     *num = bp ? bp->details : 0.0;
     return TRUE;
   }
+  if((!g_strcmp0(name, WB_TEMP) || !g_strcmp0(name, WB_TINT)) && !g_strcmp0(mod->op, "temperature"))
+    return wb_read(mod, name, from_defaults, num, err);
   if(!g_strcmp0(name, LENS_PICK) && !g_strcmp0(mod->op, "lens"))
   {
     dt_introspection_field_t *lf = NULL;
