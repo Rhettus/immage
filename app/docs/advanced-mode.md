@@ -202,6 +202,13 @@ The Color Grading group has these darktable modules:
   **4 ways** first, since Simple's Color Grading wheels set its shadows lift,
   highlights gain, power and global offset. A change on one card shows on the
   other.
+- **Color balance**: the **Mode** (lift, gamma, gain or slope, offset, power
+  in ProPhoto RGB, or lift, gamma, gain in sRGB), then **Master**, with input
+  and output saturation, the contrast fulcrum and contrast (not in the sRGB
+  mode), and a factor with red, green and blue for shadows, mid-tones and
+  highlights. darktable's hue and saturation sliders for each range, which it
+  shows instead of red, green and blue by default, and the auto optimizers
+  are not on the card yet.
 
 ## Instances
 

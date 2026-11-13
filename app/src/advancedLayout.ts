@@ -696,6 +696,36 @@ export const LAYOUTS: ModuleLayout[] = [
     op: "colorbalancergb", group: "colorgrading", title: "Color balance rgb",
     fields: [...COLORBALANCERGB.filter((f) => f.tab === "4 ways"), ...COLORBALANCERGB.filter((f) => f.tab !== "4 ways")],
   },
+  {
+    // colorbalance.c gui_init, set_visible_widgets and _configure_slider_blocks
+    // (the list layout's section headings); the master section hides in the
+    // legacy sRGB mode. index 0 of lift, gamma and gain is the factor, 1-3
+    // red, green and blue (CHANNEL_*). left out: the color control sliders
+    // combobox, a darktablerc preference (HSL by default, which hides the RGB
+    // sliders here), the hue and saturation sliders it shows instead, which
+    // darktable computes from the RGB factors, the block layout preference,
+    // the auto optimizers (slope, offset, power only) and the pickers
+    op: "colorbalance", group: "colorgrading", title: "Color balance",
+    fields: [
+      { path: "mode", label: "Mode" },
+      { path: "saturation", label: "Input saturation", section: "Master", soft: [0.5, 1.5], digits: 2, unit: "%", showIf: (p) => p.mode !== 2 },
+      { path: "saturation_out", label: "Output saturation", section: "Master", soft: [0.5, 1.5], digits: 2, unit: "%", showIf: (p) => p.mode !== 2 },
+      { path: "grey", label: "Contrast fulcrum", section: "Master", unit: "%", showIf: (p) => p.mode !== 2 },
+      { path: "contrast", label: "Contrast", section: "Master", soft: [0.5, 1.5], factor: -100, offset: 100, digits: 2, unit: "%", showIf: (p) => p.mode !== 2 },
+      { path: "lift[0]", label: "Factor", section: "Shadows: lift / offset", soft: [0.95, 1.05], factor: 100, offset: -100, digits: 2, unit: "%" },
+      { path: "lift[1]", label: "Red", section: "Shadows: lift / offset", soft: [0.95, 1.05], offset: -1, digits: 5 },
+      { path: "lift[2]", label: "Green", section: "Shadows: lift / offset", soft: [0.95, 1.05], offset: -1, digits: 5 },
+      { path: "lift[3]", label: "Blue", section: "Shadows: lift / offset", soft: [0.95, 1.05], offset: -1, digits: 5 },
+      { path: "gamma[0]", label: "Factor", section: "Mid-tones: gamma / power", soft: [0.5, 1.5], factor: 100, offset: -100, digits: 2, unit: "%" },
+      { path: "gamma[1]", label: "Red", section: "Mid-tones: gamma / power", soft: [0.5, 1.5], offset: -1, digits: 5 },
+      { path: "gamma[2]", label: "Green", section: "Mid-tones: gamma / power", soft: [0.5, 1.5], offset: -1, digits: 5 },
+      { path: "gamma[3]", label: "Blue", section: "Mid-tones: gamma / power", soft: [0.5, 1.5], offset: -1, digits: 5 },
+      { path: "gain[0]", label: "Factor", section: "Highlights: gain / slope", soft: [0.5, 1.5], factor: 100, offset: -100, digits: 2, unit: "%" },
+      { path: "gain[1]", label: "Red", section: "Highlights: gain / slope", soft: [0.5, 1.5], offset: -1, digits: 5 },
+      { path: "gain[2]", label: "Green", section: "Highlights: gain / slope", soft: [0.5, 1.5], offset: -1, digits: 5 },
+      { path: "gain[3]", label: "Blue", section: "Highlights: gain / slope", soft: [0.5, 1.5], offset: -1, digits: 5 },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);
