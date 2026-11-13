@@ -1088,6 +1088,24 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "amount", label: "Mix", unit: "%" },
     ],
   },
+  {
+    // blurs.c gui_init and gui_changed (the type combobox picks which sliders show; the
+    // kernel preview drawing area above the sliders is not a param and is omitted)
+    // radius has a soft max of 64 because run time grows with its square (gui_init comment)
+    // rotation and angle display radians as degrees (RAD_2_DEG; angle is negated)
+    op: "blurs", group: "effects", title: "Blurs",
+    fields: [
+      { path: "radius", label: "Blur radius", soft: [4, 64], unit: "px" },
+      { path: "type", label: "Blur type" },
+      { path: "blades", label: "Diaphragm blades", showIf: (p) => p.type === 0 },
+      { path: "concavity", label: "Concavity", showIf: (p) => p.type === 0 },
+      { path: "linearity", label: "Linearity", showIf: (p) => p.type === 0 },
+      { path: "rotation", label: "Rotation", factor: 180 / Math.PI, unit: "°", showIf: (p) => p.type === 0 },
+      { path: "angle", label: "Direction", factor: -180 / Math.PI, unit: "°", showIf: (p) => p.type === 1 },
+      { path: "curvature", label: "Curvature", showIf: (p) => p.type === 1 },
+      { path: "offset", label: "Offset", showIf: (p) => p.type === 1 },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);

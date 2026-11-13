@@ -306,6 +306,10 @@ The Effects group has these darktable modules:
   bias**. Simple's Grain sets the same module.
 - **Bloom**: **Size**, **Threshold** and **Strength**.
 - **Soften**: **Size**, **Saturation**, **Brightness** and **Mix**.
+- **Blurs**: **Blur radius** and **Blur type**. A lens blur adds
+  **Diaphragm blades**, **Concavity**, **Linearity** and **Rotation**; a
+  motion blur adds **Direction**, **Curvature** and **Offset**; a gaussian
+  blur has no more settings. The card has no preview of the blur's shape.
 
 ## Instances
 
