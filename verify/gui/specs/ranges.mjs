@@ -238,7 +238,9 @@ async function rangeBody(t, definition) {
     await t.driver.drag(at(+s.value), at(endpoint));
     const changed = await until(async () => {
       const c = await t.driver.observe(inspect, selector);
-      return Math.abs(+c.value - endpoint) <= (s.step || .001) && c;
+      // a pointer lands within a pixel or two of the track end: on a 360 degree
+      // range that is a couple of steps, so allow one percent of the range
+      return Math.abs(+c.value - endpoint) <= Math.max(s.step || .001, (s.max - s.min) * .01) && c;
     }, `pointer range ${name}`);
     const photo = await settledPhoto(t);
     renderedChanged ||= photo.hash !== baseline.hash;
