@@ -125,6 +125,9 @@ The Tone Curve group has these darktable modules:
 - **Tone curve**: **Color space**, and **Preserve colors** for RGB, linked
   channels. The curve itself and its interpolation method need a curve editor
   and are not on the card yet; Simple's Tone Curve edits the same module.
+- **RGB curve**: **Mode** (linked or independent channels), **Compensate
+  middle gray**, and **Preserve colors** for linked channels. The curves are
+  not on the card yet; Simple's R, G and B curves edit the same module.
 
 ## Instances
 

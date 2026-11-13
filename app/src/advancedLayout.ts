@@ -380,6 +380,18 @@ export const LAYOUTS: ModuleLayout[] = [
       { path: "preserve_colors", label: "Preserve colors", showIf: (p) => p.tonecurve_autoscale_ab === 3 },
     ],
   },
+  {
+    // rgbcurve.c gui_init and _rgbcurve_show_hide_controls (preserve colors
+    // shows only for linked channels). left out: the curve graph (curve_nodes,
+    // curve_num_nodes, curve_type), which needs a curve editor; the
+    // interpolation method, which sets all three curves' type at once; the pickers
+    op: "rgbcurve", group: "tonecurve", title: "RGB curve",
+    fields: [
+      { path: "curve_autoscale", label: "Mode" },
+      { path: "compensate_middle_grey", label: "Compensate middle gray" },
+      { path: "preserve_colors", label: "Preserve colors", showIf: (p) => p.curve_autoscale === 0 },
+    ],
+  },
 ];
 
 export const layoutFor = (op: string, group: string) => LAYOUTS.find((l) => l.op === op && l.group === group);
