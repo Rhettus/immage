@@ -99,7 +99,7 @@ export async function advancedInstances(t) {
     assert.equal(await itemDisabled(t, 'delete'), true, 'Delete is disabled on the first instance');
     await t.driver.keys('\uE00C'); // Escape dismisses the menu
     await until(() => t.driver.observe(() => !document.querySelector('.context-menu')), 'menu dismissed')
-      .catch(async () => { await click(t, `${cardSel(first)} .module-card-menu`); });
+      .catch(async () => { await click(t, `${cardSel(first)} .instance-menu .module-card-menu`); });
     await pick(t, third, 'delete');
     const afterDelete = await until(async () => { const c = await cards(t); return c.length === 2 && !ids(c).includes(third) && c; }, 'deleted card gone');
     t.measure({ name: 'delete', order: ids(afterDelete) });
