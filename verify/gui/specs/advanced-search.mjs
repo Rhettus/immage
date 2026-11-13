@@ -52,7 +52,7 @@ export async function advancedSearch(t) {
     await openTool(t, 'adjust');
     // typing "lowpass" lists the module; picking it opens Detail and shows its card
     await click(t, '.advanced-search input');
-    await t.driver.keys('lowpass');
+    await t.driver.keys(...'lowpass');
     await until(() => t.driver.observe(() => !!document.querySelector('[data-search-hit="lowpass"]:not(:disabled)')), 'lowpass search hit');
     await click(t, '[data-search-hit="lowpass"]');
     const title = await until(() => t.driver.observe(() =>
