@@ -22,6 +22,9 @@ pub struct OpenReply {
     pub look_amount: Number,
     pub edited: bool,
     pub raw: bool,
+    // "bayer", "xtrans", "bayer4" or "mono" for a raw, else none: which
+    // demosaic methods apply
+    pub sensor: Option<String>,
     // a photo with no history yet, whose defaults are its baseline
     pub fresh: bool,
 }

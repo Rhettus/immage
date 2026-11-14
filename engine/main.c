@@ -328,6 +328,16 @@ static gboolean _cmd_open(JsonObject *req, JsonBuilder *b, char **err)
 // a raw gets the client's raw-only defaults, as Lightroom's do
   json_builder_set_member_name(b, "raw");
   json_builder_add_boolean_value(b, dt_image_is_raw(&_s.dev.image_storage));
+// the sensor picks the demosaic methods that apply, as demosaic.c's
+// reload_defaults and commit_params tell them apart
+  json_builder_set_member_name(b, "sensor");
+  {
+    const dt_image_t *img = &_s.dev.image_storage;
+    if(!dt_image_is_raw(img)) json_builder_add_null_value(b);
+    else json_builder_add_string_value(b, dt_image_is_monochrome(img) ? "mono"
+                                          : img->buf_dsc.filters == 9u ? "xtrans"
+                                          : img->flags & DT_IMAGE_4BAYER ? "bayer4" : "bayer");
+  }
   json_builder_set_member_name(b, "look");
   const char *look = looks_look_name();
   if(look) json_builder_add_string_value(b, look); else json_builder_add_null_value(b);

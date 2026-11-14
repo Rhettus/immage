@@ -313,6 +313,23 @@ Raw-only sliders are grayed out on a JPEG.
 
 ## Lens Corrections
 
+**Demosaic** (raws only) picks how darktable rebuilds full color from the
+sensor's single-color pixels. **Method** lists the methods for the photo's
+sensor, with darktable's default for it first, which a new photo starts on:
+
+- Fujifilm X-Trans: **Markesteijn 1-pass** (default), **Markesteijn 3-pass**
+  (finer detail and fewer color artifacts, slower to render), **Frequency
+  domain chroma** and **VNG**.
+- Other color raws (Bayer): **RCD** (default), **AMaZE**, **LMMSE** (for
+  high-ISO photos), **PPG** and **VNG4**.
+
+Raws with a single method (monochrome sensors, four-color Bayer) show only
+it. A method chosen in Advanced mode that Simple does not list (the dual
+methods, passthrough) shows by name until you pick another. The method
+follows the photo's edits, so undo, copy and paste, presets and Reset
+include it; pasted onto a photo with the other kind of sensor, it becomes
+that photo's default.
+
 **Defringe** removes color fringes using darktable's chromatic aberrations:
 **Amount** sets strength and **Radius** sets its reach. Amount 0 switches it
 off. This is separate from Remove Chromatic Aberration. A mask's Defringe

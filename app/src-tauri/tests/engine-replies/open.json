@@ -12,6 +12,7 @@
    "ok": true,
    "orientation": 0,
    "raw": false,
+   "sensor": null,
    "sensor_height": 48,
    "sensor_width": 64,
    "width": 64

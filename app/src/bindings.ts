@@ -720,6 +720,7 @@ export type OpenReply = {
 	look_amount: number,
 	edited: boolean,
 	raw: boolean,
+	sensor: string | null,
 	fresh: boolean,
 };
 

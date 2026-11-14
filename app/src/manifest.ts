@@ -32,7 +32,9 @@ export type Params = Record<string, number>;
 // the sensor frame before flip; orientation is darktable's
 // dt_image_orientation_t bits (flip y 1, flip x 2, swap xy 4); camera is
 // the one the camera recorded, which flip's -1 stands for
-export type ImageContext = { sensorWidth: number; sensorHeight: number; orientation: number; camera: number };
+// sensor: the engine's "bayer", "xtrans", "bayer4" or "mono" for a raw
+export type ImageContext = { sensorWidth: number; sensorHeight: number; orientation: number; camera: number;
+                             sensor?: string | null };
 
 const swapsAxes = (ctx: ImageContext) => (ctx.orientation & 4) !== 0;
 // an odd number of reflections mirrors the image, which reverses a rotation
@@ -47,6 +49,8 @@ export type Control = {
   kind?: "slider" | "toggle" | "choice";
   // a choice's options, shown as a segmented control: [label, value]
   options?: [string, number][];
+  // in place of `options`, the open photo's own (Demosaic's, by its sensor)
+  optionsFor?: (ctx: ImageContext, value: number) => [string, number][];
   // a choice's options as their buttons show them, when shorter
   optionLabels?: Record<number, string>;
   optionIcons?: Record<number, LucideIcon>;
@@ -1441,11 +1445,17 @@ export const modules: ModuleMap[] = [
     // for its ISO and resolution by demosaic's reload_defaults(). a radius
     // of 0 would ask darktable to measure one, but only while the photo is
     // unedited (demosaic.c's autotune), so it is left at 0.5
+    // the method too: a method of the other sensor type (a paste, a preset)
+    // is written as the photo's default, which darktable would otherwise
+    // put in its place in commit_params without saying so
     op: "demosaic", keepOn: true,
-    controls: ["capture"],
-    fields: ["cs_enabled"],
-    read: (p) => ({ capture: p.cs_enabled ? 1 : 0 }),
-    write: (v) => ({ cs_enabled: v.capture }),
+    controls: ["capture", "demosaic_method"],
+    fields: ["cs_enabled", "demosaicing_method"],
+    read: (p) => ({ capture: p.cs_enabled ? 1 : 0, demosaic_method: p.demosaicing_method }),
+    write: (v, defaults, ctx) => ({
+      cs_enabled: v.capture,
+      demosaicing_method: methodFits(v.demosaic_method, ctx) ? v.demosaic_method : defaults.demosaicing_method,
+    }),
   },
   {
     // in darktable's default Y0U0V0 mode each wavelet band's threshold is
@@ -1589,6 +1599,34 @@ export const forcedChoice = (v: Values, control: string): number | undefined =>
   conversionsOn(v).find((c) => control in c.choices)?.choices[control];
 
 // --------------------------------------------------------------- the panels
+
+// Lens Corrections' Demosaic: darktable's methods for the photo's sensor
+// (demosaic.c), its default first as reload_defaults() picks it. dual,
+// passthrough and debug methods are Advanced's; a photo holding one shows it
+// by name until another is chosen
+const XTRANS_METHODS: [string, number][] = [
+  ["Markesteijn 1-pass", 1025], ["Markesteijn 3-pass", 1026], ["Frequency domain chroma", 1028], ["VNG", 1024],
+];
+const BAYER_METHODS: [string, number][] = [
+  ["RCD", 5], ["AMaZE", 1], ["LMMSE", 6], ["PPG", 0], ["VNG4", 2],
+];
+const OTHER_METHODS: [string, number][] = [
+  ["RCD (dual)", 2053], ["AMaZE (dual)", 2049], ["Markesteijn 3-pass (dual)", 3074],
+  ["Passthrough (monochrome)", 3], ["Photosite color (debug)", 4], ["Passthrough (monochrome)", 1027],
+  ["Photosite color (debug)", 1029], ["Monochrome", 7],
+];
+const methodName = (v: number) =>
+  [...XTRANS_METHODS, ...BAYER_METHODS, ...OTHER_METHODS].find(([, m]) => m === v)?.[0];
+const demosaicLabel = (v: number) => methodName(v) ?? String(v);
+// bayer4 and monochrome raws have one method, which darktable sets itself
+const methodFits = (v: number, ctx: ImageContext) =>
+  ctx.sensor === "xtrans" ? (v & 1024) !== 0 : ctx.sensor === "bayer" ? (v & 1024) === 0 : true;
+function demosaicOptions(ctx: ImageContext, value: number): [string, number][] {
+  if (!ctx.sensor) return [["Not a raw", value]];
+  const list = ctx.sensor === "xtrans" ? XTRANS_METHODS : ctx.sensor === "bayer" ? BAYER_METHODS : [];
+  return list.some(([, m]) => m === value) ? list
+    : [...list, [`${methodName(value) ?? "Custom"}${list.length ? " (Advanced)" : ""}`, value]];
+}
 
 export const panels: Panel[] = [
   {
@@ -1752,6 +1790,14 @@ export const panels: Panel[] = [
   {
     id: "lens", title: "Lens Corrections",
     sections: [
+      {
+        title: "Demosaic",
+        controls: [
+          { id: "demosaic_method", label: "Method", kind: "choice", menu: true, rawOnly: true,
+            options: [], optionsFor: demosaicOptions, min: 0, max: 4095, step: 1, format: demosaicLabel,
+            note: "how the raw's colors are filled in; the first is darktable's default for this sensor" },
+        ],
+      },
       {
         title: "Profile",
         controls: [

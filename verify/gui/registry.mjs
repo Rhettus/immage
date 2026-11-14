@@ -25,7 +25,7 @@ import { zoomReady, fitDetail } from './specs/zoom.mjs';
 import { demo } from './specs/demo.mjs';
 import { overlayOpacity } from './specs/overlay.mjs';
 import { shiftRange } from './specs/shift-range.mjs';
-import { lensProfile, lensPick } from './specs/lens.mjs';
+import { lensProfile, lensPick, demosaicMethod } from './specs/lens.mjs';
 import { themes, workspaceLayout } from './specs/themes.mjs';
 import { engineRestart } from './specs/engine-restart.mjs';
 import { saveFailure } from './specs/save-failure.mjs';
@@ -69,7 +69,7 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'histogram-endpoints':regressions.histogramEndpoints,'preview-alignment':regressions.previewAlignment,
   'loupe-grid':regressions.loupeGrid,'mask-loupe':regressions.maskLoupe,'grain-hover':regressions.grainHover,'detail-without-loupe':regressions.detailWithoutLoupe,'detail-fit-drag':regressions.detailFitDrag,'camera-body':regressions.cameraBody,
   'rejected-deletion':regressions.rejectedDeletion,'folder-race':regressions.folderRace,panorama,'immich-workflow':immichWorkflow,
-  'overlay-opacity':overlayOpacity,'shift-range':shiftRange,'lens-profile':lensProfile,'lens-pick':lensPick,
+  'overlay-opacity':overlayOpacity,'shift-range':shiftRange,'lens-profile':lensProfile,'lens-pick':lensPick,'demosaic':demosaicMethod,
   'site-shots':siteShots,
   demo,
   themes,

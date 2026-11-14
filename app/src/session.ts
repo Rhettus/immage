@@ -311,6 +311,7 @@ export class Session {
       sensorHeight: opened.sensor_height,
       orientation: flip?.enabled && flip.params.orientation >= 0 ? flip.params.orientation : opened.orientation,
       camera: opened.orientation,
+      sensor: opened.sensor,
     };
     // a conversion (a negative, a film simulation) keeps its modules off
     // with their settings, for when it is turned back: their sliders are

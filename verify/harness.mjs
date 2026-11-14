@@ -174,7 +174,8 @@ const controls = () => {
 const active = (s, id) => m.mapsWith(id).some((map) => m.choiceOn(map, s.values));
 const activeLocal = (s, id) => m.localMaps.some((map) => map.controls.includes(id) && m.choiceOn(map, s.values));
 
-const optionsOf = (c) => (c.optionGroups ? c.optionGroups.flatMap(([, o]) => o) : c.options ?? []).map(([, v]) => v);
+const optionsOf = (c, s) => (c.optionsFor ? c.optionsFor(s.context, s.values[c.id])
+  : c.optionGroups ? c.optionGroups.flatMap(([, o]) => o) : c.options ?? []).map(([, v]) => v);
 
 // one control's trials: set what it needs, try each value, put it all back
 async function trialGlobal(o, photo, c, spec, check) {
@@ -185,7 +186,7 @@ async function trialGlobal(o, photo, c, spec, check) {
   try {
   const ref = spec.with ? await o.after(() => s.setMany(Object.entries(spec.with))) : start;
   const current = s.values[id];
-  const values = c.kind === "choice" ? optionsOf(c).filter((v) => v !== current)
+  const values = c.kind === "choice" ? optionsOf(c, s).filter((v) => v !== current)
     : c.kind === "toggle" ? [current ? 0 : 1] : trialValues(c, spec, current);
   const trials = [];
   let failed = null;

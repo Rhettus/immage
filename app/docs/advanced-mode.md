@@ -339,7 +339,9 @@ The Detail group has these darktable modules:
   threshold**, **LMMSE refine**, **Color smoothing**, **Match greens**), and
   **Capture sharpen**, the switch Simple's Capture Sharpening sets, with its
   controls under it while it is on. darktable lists only your camera's
-  methods and changes one for another sensor type to its nearest.
+  methods and changes one for another sensor type to its nearest. Simple's
+  Lens Corrections > Demosaic sets the same Method, from your sensor's
+  methods.
 - **Sharpen**: **Radius**, **Amount** and **Threshold**. Simple's Sharpening
   with sharpen uses the first instance, so a change on one shows on the
   other.

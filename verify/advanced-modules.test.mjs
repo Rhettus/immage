@@ -1602,3 +1602,39 @@ test('Advanced color mapping clusters', { skip: skip || false }, async (t) => {
   near(reopened.params['target_weight[1]'] ?? 0, reopened.params['target_weight[1]'] ?? 0, 'weights read');
   assert.ok(diff(framed, await frame('a-reopened')) < 0.01, 'the same frame after reopen');
 });
+
+// Lens Corrections' Demosaic (manifest.ts demosaicOptions): the engine names
+// the open raw's sensor and darktable's default method for it, and the
+// methods Simple lists render differently. corpus photos, so it skips
+// without them: an X-Trans RAF and a Bayer raw
+const CORPUS = join(ROOT, 'benchmarking/corpus');
+const corpusRaw = (exts) => (existsSync(CORPUS) ? readdirSync(CORPUS) : [])
+  .filter((f) => exts.includes(f.split('.').pop().toLowerCase())).sort()[0];
+for (const [sensor, exts, def, other] of [['xtrans', ['raf'], 1025, 1026], ['bayer', ['arw', 'cr2', 'nef'], 5, 1]]) {
+  const name = corpusRaw(exts);
+  test(`demosaic method on a ${sensor} raw`, { skip: skip || (!name && `no ${exts.join('/')} in benchmarking/corpus`) || false,
+                                               timeout: 600000 }, async (t) => {
+    const work = mkdtempSync(join(tmpdir(), 'immage-demosaic-'));
+    mkdirSync(join(work, 'photos'));
+    const photo = join(work, 'photos', name);
+    copyFileSync(join(CORPUS, name), photo);
+    const e = new Engine(work);
+    t.after(() => { e.stop(); rmSync(work, { recursive: true, force: true }); });
+    const opened = await e.call({ cmd: 'open', path: photo }, 300000);
+    assert.equal(opened.raw, true);
+    assert.equal(opened.sensor, sensor);
+    const get = async () => (await e.call({ cmd: 'get', modules: { demosaic: ['demosaicing_method'] } })).modules.demosaic;
+    const at = await get();
+    assert.equal(at.defaults.demosaicing_method, def, 'darktable\'s default for the sensor');
+    assert.equal(at.params.demosaicing_method, def);
+    const render = async (m) => {
+      await e.call({ cmd: 'set', op: 'demosaic', params: { demosaicing_method: m }, enabled: true });
+      assert.equal((await get()).params.demosaicing_method, m);
+      const out = join(work, `r${m}.ppm`);
+      await e.call({ cmd: 'render', width: 256, height: 256, scale: 1.0, x: 1500, y: 1500, out }, 300000);
+      return readFileSync(out);
+    };
+    const a = await render(def), b = await render(other);
+    assert.ok(!a.equals(b), `methods ${def} and ${other} render the same 100% crop`);
+  });
+}

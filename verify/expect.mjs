@@ -164,6 +164,8 @@ export const GLOBAL = {
   nr_color: { detail: true },
   nr_detail: { with: { nr_luminance: 60 }, detail: true, raw: true },
 
+  // each other method of the photo's sensor (optionsFor) changes the edges
+  demosaic_method: { detail: true, raw: true },
   lens_profile: { toggle: true, anyPhoto: true },
   lens_ca: { with: { lens_profile: 1 }, toggle: true, anyPhoto: true, detail: true },
   // hot pixels are too few for a mean to show: at Strength 100 the corpus's

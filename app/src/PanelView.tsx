@@ -219,10 +219,12 @@ export const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle,
     const sw = switchFor(id);
     return sw ? { moduleChoice: sw.choice, moduleValue: sw.value, moduleAdjusted: sw.adjusted, onModule: sw.onPick } : {};
   };
+  const withOptions = (c: Control) => c.optionsFor && session
+    ? { ...c, options: c.optionsFor(session.context, values[c.id] ?? session.neutral[c.id] ?? 0) } : c;
   const controlProps = (c: Control) => ({
     control: negative(c) ? { ...c, note: values.neg_on === 1
       ? "set in Negative: a converted negative turns this module off"
-      : "set in Film Simulation: a film simulation turns the tone mapper off" } : c,
+      : "set in Film Simulation: a film simulation turns the tone mapper off" } : withOptions(c),
     value: values[c.id] ?? c.neutral ?? 0,
     neutral: session?.neutral[c.id] ?? c.neutral ?? 0,
     disabled: disabled || negative(c) || !mapOf.has(c.id) || (!!c.rawOnly && !session?.raw), onChange: (v: number) => onChange(c, v),

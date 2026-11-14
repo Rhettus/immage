@@ -2603,6 +2603,23 @@
       "tabs": false,
       "sections": [
         {
+          "title": "Demosaic",
+          "controls": [
+            {
+              "id": "demosaic_method",
+              "label": "Method",
+              "kind": "choice",
+              "rawOnly": true,
+              "min": 0,
+              "max": 4095,
+              "step": 1,
+              "nonlinear": false,
+              "options": [],
+              "status": "pending"
+            }
+          ]
+        },
+        {
           "title": "Profile",
           "controls": [
             {
