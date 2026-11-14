@@ -70,6 +70,11 @@ Improvements
 - The sliders icon on panels is now called More controls, and appears only in
   Simple.
 
+Bug fixes
+
+- Linux: pinching on a touchpad zooms the photo around the pointer, as on
+  the Mac, instead of zooming the whole window.
+
 ## 0.45.0
 
 Improvements

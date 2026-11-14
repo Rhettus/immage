@@ -22,6 +22,8 @@ mod settings;
 mod scale;
 #[cfg(target_os = "linux")]
 mod renderer;
+#[cfg(target_os = "linux")]
+mod pinch;
 mod volumes;
 mod scrub;
 mod support_bundle;
@@ -210,7 +212,7 @@ fn main() {
                     if let Some(dir) = &dir {
                         window = window.extensions_path(dir);
                     }
-                    window.build()?;
+                    pinch::install(&window.build()?);
                 }
                 shm_frame::sweep();
             }

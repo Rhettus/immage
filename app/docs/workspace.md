@@ -61,8 +61,9 @@ Click a card's title to fold or unfold it. See [Library](library.md) and
 **Zoom**
 
 - Click the photo to zoom to 100% at that point; click again to fit.
-- Scroll, or pinch, to zoom around the pointer, from fit up to 400%. The
-  zoom pauses at 100% on the way.
+- Scroll, or pinch on a touchpad, to zoom the photo around the pointer, from
+  fit up to 400%. The zoom pauses at 100% on the way. Pinching zooms only
+  the photo, never the rest of the window.
 - Z switches between fit and 100%.
 - Quality and Balanced process settled Fit views at up to 3072 pixels on the
   long edge to preserve fine detail when displayed smaller. Performance uses

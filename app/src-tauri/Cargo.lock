@@ -2136,6 +2136,7 @@ dependencies = [
  "chrono",
  "dispatch2",
  "flate2",
+ "gtk",
  "image",
  "keyring",
  "libc",

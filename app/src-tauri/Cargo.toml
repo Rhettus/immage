@@ -69,6 +69,9 @@ libc = "0.2"
 [target.'cfg(target_os = "linux")'.dependencies]
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["client", "unstable"] }
+# the webview's GTK events, for the touchpad pinch (pinch.rs); the version
+# tauri uses (already in the tree)
+gtk = "0.18"
 
 # WebView2's shared buffers, for frames (main.rs, shared_frame); the versions
 # wry uses (already in the tree, via tauri)
