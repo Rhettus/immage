@@ -7,6 +7,9 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Clarity's and Texture's detail sliders, globally and on masks, sit in a
+  shaded box headed by the name, without the repeated prefix on each
+  slider, so each set stands apart from the sliders around it.
 - Preferences > Performance > Memory has a Thumbnail threads setting: how
   many library thumbnails are built at once, from 1 to 8 (2 by default).
   Fewer can be quicker from a network drive.

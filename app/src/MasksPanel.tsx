@@ -278,9 +278,9 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
     const k = b ? BANDS.findIndex(([x]) => x === b[1]) : -1;
     return k < 0 ? 0 : weights![k];
   };
-  const slider = (id: string) => {
-    const c = localControlById.get(id)!;
-    const ch = switchHosts.get(id);
+  const slider = (id: string) => sliderAs(localControlById.get(id)!);
+  const sliderAs = (c: Control) => {
+    const ch = switchHosts.get(c.id);
     return renderSlider(c, m!.values[c.id] ?? 0, (v) => local(c.id, v), glowOf(c.id),
                         ch && { choice: ch, value: m!.values[ch.control] ?? preferredChoice(ch), onPick: (v) => local(ch.control, v) });
   };
@@ -345,7 +345,7 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
           </div>
         ))}
       </>;
-    return detailRows(ids.map((id) => localControlById.get(id)!), (c) => slider(c.id), advanced);
+    return detailRows(ids.map((id) => localControlById.get(id)!), sliderAs, advanced);
   };
   const menu = (t: ToolTarget) => (
     <ShapeMenu target={t} tool={target === t ? tool : null} disabled={disabled} aiBusy={aiBusy}

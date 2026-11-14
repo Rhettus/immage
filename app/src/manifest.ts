@@ -56,6 +56,7 @@ export type Control = {
   optionIcons?: Record<number, LucideIcon>;
   // the control sits beside its label on one row (Treatment)
   inline?: boolean;
+  wide?: boolean;     // the track under the label even when the label is short, like its neighbors
   // a choice too long for a row of pills, as a drop-down
   menu?: boolean;
   // the drop-down's options under headings, in place of `options`

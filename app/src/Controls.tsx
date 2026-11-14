@@ -141,8 +141,8 @@ export const SliderWidget = memo(function SliderWidget({ control: c, value, neut
     show(e.altKey);
   };
   // a plain track shares its label's row; a colored one keeps the full
-  // width under it, as does a label too long for the row
-  const compact = !track && c.label.length <= 11;
+  // width under it, as does a label too long for the row or a wide one
+  const compact = !track && !c.wide && c.label.length <= 11;
   return (
     <div ref={box} data-control-id={c.id} className={`slider${compact ? " compact" : ""}${disabled ? " disabled" : ""}`
                               + `${glow > 0.1 ? " probed" : ""}${value === neutral ? " at-neutral" : ""}`}

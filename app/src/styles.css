@@ -333,6 +333,9 @@ section h3 { margin: 7px 0 5px; font-size: var(--fs-body); font-weight: 600; col
   display: flex; align-items: center; gap: 6px; margin: 0 0 4px;
   color: var(--text-2); font-size: var(--fs-caption); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
 }
+/* Texture and Clarity with their detail sliders; the tuning ones a step apart */
+/* padding: a margin would collapse into the row spacing above */
+.adjust .detail-tuning { padding-top: 8px; }
 .adjust .subcard-head .tag, .adjust h3.fold .tag {
   display: inline-flex; align-items: center; gap: 3px; padding: 1px 6px;
   border: 1px solid var(--focus, #555); border-radius: 999px; color: var(--text); font-size: var(--fs-micro);

@@ -154,6 +154,9 @@ Contrast) and the crop are kept.
 For Clarity and Texture these are Coarse details (-1 to 5), Base detail level
 (1–15), Halo control (-10 to 10), Noise bias (0–1), and Shadows and Highlights
 (-5 to 5). Clarity and Texture use separate instances, including on masks.
+Each set of detail sliders sits in a shaded box headed Clarity or Texture,
+with the sliders named without that prefix; Base detail level and the
+settings after it are set a little apart from the three detail bands.
 
 ## Contrast equalizer
 
