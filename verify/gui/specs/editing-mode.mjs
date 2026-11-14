@@ -66,7 +66,10 @@ export async function editingMode(t) {
     const advanced = await until(async () => { const l = await layout(t); return l.search && l; }, 'Advanced search box');
     assert(advanced.searchFirst, 'the search box is above the groups');
     assert.equal(advanced.ids.at(-1), 'technical', 'Technical is the last group');
-    assert.deepEqual(advanced.ids.slice(0, -1), simple.ids, 'the groups keep their Simple order');
+    // Advanced shows B&W for every photo (2a1a44e); Simple only in black and white
+    assert.deepEqual(advanced.ids.slice(0, -1).filter(id => id === 'bw' ? simple.ids.includes('bw') : true), simple.ids,
+      'the groups keep their Simple order');
+    assert(advanced.ids.includes('bw'), 'Advanced shows the B&W group for every photo');
     assert(advanced.placeholders > 0 || advanced.ids.length > 1, 'Advanced groups are drawn');
     assert.equal(advanced.history, simple.history, 'Advanced added no history entry');
     const photoAdvanced = await settledPhoto(t);
