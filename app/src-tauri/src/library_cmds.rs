@@ -398,6 +398,49 @@ pub(crate) async fn list_subfolders(path: String) -> Vec<SubFolder> {
     .unwrap_or_default()
 }
 
+// the folder tree's New Folder: one folder named `name` inside `parent`,
+// never an existing one or one elsewhere, its path returned
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn create_folder(parent: String, name: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let name = name.trim();
+        if let Some(why) = folder_name_problem(name) {
+            return Err(why);
+        }
+        let parent = Path::new(&parent);
+        if !volumes::answering(parent) {
+            return Err(format!("{} is not connected", parent.display()));
+        }
+        let dir = parent.join(name);
+        match std::fs::create_dir(&dir) {
+            Ok(()) => Ok(dir.to_string_lossy().into_owned()),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Err(format!("\"{name}\" already exists there")),
+            Err(e) => Err(format!("could not create \"{name}\": {e}")),
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// a name that is one folder: not a path, not hidden from the tree, and
+// within what every system takes
+fn folder_name_problem(name: &str) -> Option<String> {
+    if name.is_empty() {
+        return Some("a folder needs a name".into());
+    }
+    if name == "." || name == ".." || name.contains(['/', '\\', '\0']) {
+        return Some(format!("\"{name}\" is not a folder name"));
+    }
+    if name.starts_with('.') {
+        return Some("a name starting with \".\" makes a hidden folder".into());
+    }
+    if cfg!(windows) && (name.contains(['<', '>', ':', '"', '|', '?', '*']) || name.ends_with(['.', ' '])) {
+        return Some(format!("\"{name}\" is not a folder name on Windows"));
+    }
+    None
+}
+
 // the drive each library folder is on, for the folder tree's headings. off
 // the main thread: a share whose server is gone can hold statfs a while
 #[tauri::command]
@@ -630,6 +673,22 @@ pub(crate) fn launch_file(launch: State<'_, Launch>) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn create_folder_makes_one_new_folder() {
+        let base = std::env::temp_dir().join(format!("immage-newfolder-{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap();
+        let parent = base.to_string_lossy().into_owned();
+        let made = tauri::async_runtime::block_on(create_folder(parent.clone(), " Picks ".into())).unwrap();
+        assert_eq!(Path::new(&made), base.join("Picks"));
+        assert!(base.join("Picks").is_dir());
+        // never over an existing folder, and never a path or a hidden folder
+        for bad in ["Picks", "", "..", "a/b", ".hidden"] {
+            assert!(tauri::async_runtime::block_on(create_folder(parent.clone(), bad.into())).is_err(), "{bad:?}");
+        }
+        assert!(!base.join("a").exists());
+        std::fs::remove_dir_all(&base).unwrap();
+    }
 
     #[test]
     fn folder_progress_once_a_second() {

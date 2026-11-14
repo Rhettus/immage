@@ -6045,6 +6045,7 @@ export default function App() {
                             saveLibrary({ foldedVolumes: [...next] });
                           }}
                           onOpen={(d) => { void showFolder(d); setGrid(true); }} onRemove={removeFolder}
+                          onError={setStatus}
                           onRenameHost={(host, name) => {
                             const next = { ...hostNames, [host]: name };
                             if (!name) delete next[host];

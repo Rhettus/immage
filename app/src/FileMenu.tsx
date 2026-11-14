@@ -24,6 +24,27 @@ export const panoFrames = (list: ImageEntry[]) => {
   return list.filter((i) => !isRemote(i) && !seen.has(i.path) && !!seen.add(i.path));
 };
 
+// a right-click menu's ref: any click outside it, a scroll, Escape or the
+// window losing focus closes it
+export function useMenuClose(onClose: () => void) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const away = (e: Event) => { if (!ref.current?.contains(e.target as Node)) onClose(); };
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("pointerdown", away, true);
+    window.addEventListener("wheel", onClose, true);
+    window.addEventListener("keydown", key);
+    window.addEventListener("blur", onClose);
+    return () => {
+      window.removeEventListener("pointerdown", away, true);
+      window.removeEventListener("wheel", onClose, true);
+      window.removeEventListener("keydown", key);
+      window.removeEventListener("blur", onClose);
+    };
+  }, [onClose]);
+  return ref;
+}
+
 // a photo's right-click menu: Edit In, Show in Finder, as Lightroom's, and
 // Delete, for rejected photos only; for Immich results, the photo or the
 // whole search in Immich's web app. any click elsewhere, a scroll or Escape
@@ -48,21 +69,7 @@ export function FileMenu({ captureCount, onCaptureTime, canUndoCapture, onUndoCa
   onCopy: () => void; onRemoveCopies: () => void; onMergeHdr: () => void; onMergePano: () => void;
   onDelete: () => void; onClose: () => void;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const away = (e: Event) => { if (!ref.current?.contains(e.target as Node)) onClose(); };
-    const key = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("pointerdown", away, true);
-    window.addEventListener("wheel", onClose, true);
-    window.addEventListener("keydown", key);
-    window.addEventListener("blur", onClose);
-    return () => {
-      window.removeEventListener("pointerdown", away, true);
-      window.removeEventListener("wheel", onClose, true);
-      window.removeEventListener("keydown", key);
-      window.removeEventListener("blur", onClose);
-    };
-  }, [onClose]);
+  const ref = useMenuClose(onClose);
   const go = (url: string) => { onClose(); void openUrl(url); };
   // kept inside the window
   const left = Math.min(x, window.innerWidth - 230), top = Math.min(y, window.innerHeight - 180);

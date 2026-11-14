@@ -52,6 +52,7 @@ import { panelPeek } from './specs/panel-peek.mjs';
 import { eyeOrder } from './specs/eye-order.mjs';
 import { gridZoom } from './specs/grid-zoom.mjs';
 import { movePhotos, moveCopy } from './specs/move-photos.mjs';
+import { folderMenu } from './specs/folder-menu.mjs';
 import { detailGroup } from './specs/detail-group.mjs';
 
 const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRange, 'batch-paste': batchPaste, startup, splash, exposure, 'slider-input': sliderInput, 'slider-click': sliderClick, history, rail, sliders, 'module-options': moduleOptions, 'module-switch': moduleSwitch,
@@ -61,6 +62,7 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'grid-zoom': gridZoom,
   'move-photos': movePhotos,
   'move-copy': moveCopy,
+  'folder-menu': folderMenu,
   'detail-group': detailGroup,
   'agx-presets': agxPresets,
   'color-profiles': colorProfiles,

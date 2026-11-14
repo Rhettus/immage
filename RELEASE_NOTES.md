@@ -15,6 +15,8 @@ Improvements
   sidecars. Each file is checksummed after copying, and an original is
   removed only once its copy matches. Closed folders open while you hold a
   photo over them.
+- Right-click a folder in the Folders panel for New Folder…, to make a
+  subfolder in it, Show in Finder, and Remove from List.
 - Grid view's thumbnails resize smoothly between a smallest and a largest
   size: in the grid, the zoom slider at the bottom sets their size, a pinch
   on a trackpad or a scroll with ⌘ held zooms them with the photo under the

@@ -32,6 +32,7 @@ export const commands = {
 	historyDiscard: (imgid: number) => __TAURI_INVOKE<SaveReply>("history_discard", { imgid }),
 	openFolder: (path: string, recursive: boolean | null, skip: string[] | null, token: number) => __TAURI_INVOKE<FolderReply>("open_folder", { path, recursive, skip, token }),
 	listSubfolders: (path: string) => __TAURI_INVOKE<SubFolder[]>("list_subfolders", { path }),
+	createFolder: (parent: string, name: string) => __TAURI_INVOKE<string>("create_folder", { parent, name }),
 	folderVolumes: (paths: string[]) => __TAURI_INVOKE<Volume[]>("folder_volumes", { paths }),
 	thumb: (imgid: number, size: number, path: string | null, version: number | null, proof: boolean | null) => __TAURI_INVOKE<ArrayBuffer>("thumb", { imgid, size, path, version, proof }),
 	thumbThreads: (threads: number) => __TAURI_INVOKE<null>("thumb_threads", { threads }),

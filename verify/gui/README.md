@@ -441,6 +441,16 @@ confirmation (identical and clashing photos), uses Keep both for all, and
 checks the numbered copy. Everything stays inside the run's fixture folder.
 The confirmation is drawn by the app, so no native dialog is involved.
 
+## Folder menu
+
+`--case folder-menu` works with any fixture and needs no layout. It
+right-clicks the fixture's row in Folders and checks the three items. It
+creates `Picks` in the run's fixture folder and `Picks/Inner` inside it,
+checks both on disk, has a second `Picks` refused, and removes `Inner` from
+the list while it stays on disk. Show in the file manager is checked as
+offered only: clicking it would open another application. The case
+right-clicks, so run it after any drag case or in a launch of its own.
+
 ## Scaling benchmark collection
 
 The generic case has approved Linux ARM64 VM passes at DPR 1 and 2, and both

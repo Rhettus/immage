@@ -18,6 +18,12 @@ Open the **Folders** card in the **Library** panel.
   same.
 - Click a folder in the tree to open it. The arrow beside it shows its
   subfolders.
+- Right-click a folder for **New Folder…**, **Show in Finder** (Explorer
+  on Windows, the file manager on Linux) and **Remove from List**.
+  **New Folder…** opens the folder and adds a row at the top of its
+  subfolders with the name selected: type a name and press Enter, or press
+  Esc to cancel. The folder is made on disk, and an existing name is
+  refused. You can then drag photos onto it.
 - Hover a folder and click **×** to take it off the list, whether it is
   one you added or a subfolder inside one. A subfolder taken off the list
   is left out of **Include subfolders** too. Its files stay where they

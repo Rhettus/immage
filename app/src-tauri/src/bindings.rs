@@ -48,6 +48,7 @@ pub fn commands() -> Commands<tauri::Wry> {
         // the library
         crate::library_cmds::open_folder,
         crate::library_cmds::list_subfolders,
+        crate::library_cmds::create_folder,
         crate::library_cmds::folder_volumes,
         crate::library_cmds::thumb,
         crate::library_cmds::thumb_threads,
