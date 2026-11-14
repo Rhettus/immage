@@ -310,7 +310,10 @@ export default function App() {
     // leaving the crop tool for the mode it was opened over is not a second click
     const wasCropping = croppingRef.current;
     if (wasCropping) leaveCrop(true);
-    if (layout.right && rightMode === mode && !wasCropping) { toggleSide("right"); return; }
+    // in the grid, a tool other than Print leaves it for the open photo
+    const leaving = gridRef.current && mode !== "print";
+    if (leaving) setGrid(false);
+    if (layout.right && rightMode === mode && !wasCropping && !leaving) { toggleSide("right"); return; }
     setRightMode(mode);
     if (!layout.right) toggleSide("right");
   };
@@ -495,6 +498,9 @@ export default function App() {
   }, [touring]);
   // what the right-hand panel shows: the adjustments, or the presets
   const [rightMode, setRightMode] = useState<RightMode>("adjust");
+  // the grid hides the right-hand panel: its tools work on the open photo,
+  // which the grid covers. Print stays, as the grid picks its sheet's photos
+  const rightOpen = layout.right && (!grid || rightMode === "print");
   const [zonesAdvanced, toggleZonesAdvanced] = useAdvanced("zones");
   // masks: the session's, mirrored for rendering, the one being edited, and
   // the drawing tool
@@ -1444,7 +1450,7 @@ export default function App() {
     return true;
   };
   const showHealRef = useRef(() => {});
-  showHealRef.current = () => { if (rightMode !== "heal" || !layout.right) showRight("heal"); };
+  showHealRef.current = () => { if (rightMode !== "heal" || !rightOpen) showRight("heal"); };
   pickToolRef.current = pickMaskTool;
   const selMask = masks.find((m) => m.name === maskSel) ?? null;
   // a mask whose name the pointer rests on in the Masks panel: its overlay
@@ -4232,7 +4238,7 @@ export default function App() {
     return () => { if (!croppingRef.current) s.bypass("crop", false); };
   }, [negWhole, cropping, current]);   // eslint-disable-line react-hooks/exhaustive-deps
   const openNegative = () => {
-    const shown = layout.right && rightMode === "negative" && !croppingRef.current;
+    const shown = rightOpen && rightMode === "negative" && !croppingRef.current;
     if (!shown && session.current && session.current.values.neg_on !== 1 && loadNegWarn()) {
       setNegNoWarn(false);
       setNegWarning(true);
@@ -5719,11 +5725,11 @@ export default function App() {
   // which side panels float (auto-hide) and which take their space
   const floating: Pins = {
     left: autoHide && !touring && !preview && layout.left && !pins.left,
-    right: autoHide && !touring && !preview && layout.right && !pins.right,
+    right: autoHide && !touring && !preview && rightOpen && !pins.right,
     strip: autoHide && !touring && !preview && layout.strip && !pins.strip && !grid,
   };
   floatingRef.current = floating;
-  const docked = { left: layout.left && !floating.left, right: layout.right && !floating.right };
+  const docked = { left: layout.left && !floating.left, right: rightOpen && !floating.right };
 
   // the selection follows the open photo when it moves outside it (the
   // arrow keys), and keeps to the photos still listed
@@ -6239,7 +6245,7 @@ export default function App() {
 
       <Splitter axis="x" value={layout.rightWidth} min={280} max={620} invert hidden={!docked.right}
                 onChange={(v) => setLayout((l) => ({ ...l, rightWidth: v }))} />
-      <div className={`slot right-slot${layout.right ? "" : " closed"}${floating.right ? " floating" : ""}`
+      <div className={`slot right-slot${rightOpen ? "" : " closed"}${floating.right ? " floating" : ""}`
                       + `${floating.right && revealed.right ? " revealed" : ""}`}>
       <aside className="right" ref={rightAside} style={{ width: layout.rightWidth }}>
         <div className="panel-head"><h1>{cropping ? "Crop" : RIGHT_TITLES[rightMode]}</h1>
@@ -6684,28 +6690,28 @@ export default function App() {
         <div className="rail-group" data-tour="edit">
         {/* the tools work on the open photo, not its cell: one opened before
             its folder listed it, or from elsewhere, has none */}
-        <button className={`tool${layout.right && !cropping && rightMode === "adjust" ? " on" : ""}`} title="adjustments"
+        <button className={`tool${rightOpen && !cropping && rightMode === "adjust" ? " on" : ""}`} title="adjustments"
                 data-tour="adjust" onClick={() => showRight("adjust")}>
           <SlidersIcon /></button>
         <button className={`tool${cropping ? " on" : ""}`} title="crop (R)" data-tour="crop" disabled={!current}
                 onClick={() => (cropping ? leaveCrop(true) : enterCrop())}><CropIcon /></button>
-        <button className={`tool${layout.right && !cropping && masksMode ? " on" : ""}`} title="masks" data-tour="masks"
+        <button className={`tool${rightOpen && !cropping && masksMode ? " on" : ""}`} title="masks" data-tour="masks"
                 disabled={!current} onClick={() => showRight("masks")}><LayersIcon /></button>
-        <button className={`tool${layout.right && !cropping && healMode ? " on" : ""}`} title="heal and clone (Q)"
+        <button className={`tool${rightOpen && !cropping && healMode ? " on" : ""}`} title="heal and clone (Q)"
                 data-tour="heal"
                 disabled={!current} onClick={() => showRight("heal")}><HealIcon /></button>
-        <button className={`tool${layout.right && !cropping && rightMode === "zones" ? " on" : ""}`} title="zone system"
+        <button className={`tool${rightOpen && !cropping && rightMode === "zones" ? " on" : ""}`} title="zone system"
                 data-tour="zones" disabled={!current} onClick={() => showRight("zones")}><ZonesIcon /></button>
-        <button className={`tool${layout.right && !cropping && rightMode === "film" ? " on" : ""}`}
+        <button className={`tool${rightOpen && !cropping && rightMode === "film" ? " on" : ""}`}
                 title="film simulation" data-tour="film" disabled={!current} onClick={() => showRight("film")}><FilmSimIcon /></button>
-        <button className={`tool${layout.right && !cropping && rightMode === "negative" ? " on" : ""}`}
+        <button className={`tool${rightOpen && !cropping && rightMode === "negative" ? " on" : ""}`}
                 title="film negative" data-tour="negative" disabled={!current} onClick={openNegative}><FilmIcon /></button>
-        <button className={`tool${layout.right && !cropping && rightMode === "presets" ? " on" : ""}`} title="presets" data-tour="presets"
+        <button className={`tool${rightOpen && !cropping && rightMode === "presets" ? " on" : ""}`} title="presets" data-tour="presets"
                 onClick={() => showRight("presets")}><PresetsIcon /></button>
         </div>
         <div className="rail-sep" />
         <button className="tool" title={keys("export (⇧⌘E)")} data-tour="export" onClick={() => setExporting(true)}><ExportIcon /></button>
-        <button className={`tool${layout.right && !cropping && rightMode === "print" ? " on" : ""}`} title={keys("print (⌘P)")}
+        <button className={`tool${rightOpen && !cropping && rightMode === "print" ? " on" : ""}`} title={keys("print (⌘P)")}
                 data-tour="print" onClick={() => showRight("print")}><PrintIcon /></button>
         <div className="rail-fill" />
         <button className="tool" title="quick start guide" onClick={() => setTouring(true)}><HelpIcon /></button>

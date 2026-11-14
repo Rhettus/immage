@@ -75,6 +75,10 @@ Improvements
 - Lens Corrections has a Demosaic method for raws, listing the methods for
   the photo's sensor with darktable's default first, such as Markesteijn
   3-pass for Fujifilm X-Trans photos or AMaZE and LMMSE for other raws.
+- Grid view hides the right-hand panel, whose tools work on the open photo
+  the grid covers; Print stays, for picking a sheet's photos. Choosing a tool
+  in the rail leaves the grid. The Grid button now looks pressed only while
+  the grid shows.
 
 Bug fixes
 

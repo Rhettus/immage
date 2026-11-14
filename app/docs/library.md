@@ -81,7 +81,12 @@ an edit until you reset them.
 Press G, or **Grid** in the toolbar under the filmstrip, for **Grid** view:
 the whole folder at once.
 Double-click a photo to open it and go back to the filmstrip. G or Esc also
-goes back.
+goes back. The **Grid** button is highlighted while the grid shows.
+
+The grid hides the right-hand panel, as its tools work on the open photo,
+which the grid covers. Choosing a tool in the rail on the right, such as
+Adjustments or Masks, leaves the grid for the open photo. Print stays beside
+the grid, so you can pick the photos for a sheet.
 
 Drag the top edge of the filmstrip to make it taller or shorter.
 
