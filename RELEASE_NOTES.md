@@ -29,73 +29,17 @@ Improvements
 - Clarity's and Texture's detail sliders, globally and on masks, sit in a
   shaded box headed by the name, without the repeated prefix on each
   slider, so each set stands apart from the sliders around it.
-- In Advanced mode each module's card sits in its own shaded box with a
-  gap before the next, so it is clear where one module ends and the next
-  begins.
 - Preferences > Performance > Memory has a Thumbnail threads setting: how
   many library thumbnails are built at once, from 1 to 8 (2 by default).
   Fewer can be quicker from a network drive.
-- Preferences > General has an Editing mode, also switched by the Advanced
-  mode button at the top of Adjustments. Advanced shows Adjustments' groups
-  (HSL / Color and B&W both, for color and black and white photos alike) with
-  a Technical group and a module search that finds modules and settings and
-  adds or opens their card, and darktable's modules as cards with their own
-  settings, on/off and reset, and an instance menu to add,
-  duplicate, rename, reorder and delete instances, all with undo. Switching
-  does not change your photo. Preferences > Modules > Advanced modules hides
-  modules from Add module, the search and the tone mapper switch (or keeps
-  only the essentials); a photo that uses a hidden module still shows its card.
-  In Simple, a group with Advanced edits its sliders cannot show says how many
-  there are, with a link to Editing mode. Copy Settings' new Advanced modules
-  group copies those edits, which Paste and Previous apply to other photos.
-  Color balance rgb's card has a color wheel for each of its four ranges, and
-  the tone curve and rgb curve cards have a point curve editor with channel
-  tabs and darktable's interpolation methods, and the rgb levels card has its
-  black, gray and white handles. The contrast equalizer and
-  saturation curve cards have Simple's graphs, the lens correction card has
-  Simple's lens picker, and the white balance card has darktable's settings
-  list (as shot, camera reference and your camera's presets, with a finetune
-  slider) and its temperature and tint sliders. The framing and watermark
-  cards have color buttons for the border, frame line and watermark colors,
-  the profiled denoise and raw denoise cards have darktable's wavelet
-  curves with channel tabs, the LUT 3D card chooses its LUT file in a new
-  3D LUT folder preference, the watermark card chooses its marker, and the
-  color look up table card has darktable's patch grid with its patch and
-  target color sliders. The composite card chooses the photo to place from the
-  folder you are browsing, and it and the watermark card have darktable's
-  3x3 alignment grid. The color mapping card has darktable's source and target
-  cluster previews with acquire as source and acquire as target.
-  When a photo's white balance comes from the white balance module with color
-  calibration off, Simple's White Balance section and the white balance card
-  say so.
-- Advanced cards so far: in Basic, exposure, white balance, color calibration,
-  highlight reconstruction, the tone mapper, contrast & texture, local contrast,
-  haze removal, diffuse or sharpen and color balance rgb; in Tone Curve, tone
-  curve, rgb curve, rgb levels, tone equalizer and shadows and highlights; in
-  HSL / Color, color equalizer, saturation curve, velvia, color contrast, color
-  zones, color harmonizer, rgb primaries, color correction, color look up table,
-  lut 3d and color mapping; in B&W, color calibration (the instance Simple's
-  Black & White uses), color equalizer and monochrome; in Color Grading, color
-  balance rgb, color balance, split-toning and colorize; in Detail, demosaic,
-  sharpen, diffuse or sharpen (Simple's Sharpening instance), denoise
-  (profiled), highpass, astrophoto denoise, raw denoise, surface blur, contrast
-  equalizer and lowpass; in Lens Corrections, lens correction, chromatic
-  aberrations, raw chromatic aberrations and hot pixels; in Transform, rotate
-  and perspective, orientation, scale pixels and enlarge canvas; in Effects,
-  vignetting, grain, bloom, soften, blurs, lowlight vision, graduated density,
-  censorize, framing, watermark, composite and dither or posterize; in
-  Technical, raw black/white point, color reconstruction, input color profile,
-  output color profile and unbreak input profile. Other modules follow in later
-  versions.
-- The tone mapper card shows AgX, sigmoid, filmic rgb or base curve, whichever
-  is on, with a switch to change to another as one undo step.
-- Module cards have a darktable presets menu beside the reset button. It applies
-  one of darktable's built-in or your own presets to that instance, as one undo
-  step.
-- Each Advanced group shows cards only for the modules the photo uses, in a
-  fixed order, with Add module below them to switch on another of the group's
-  modules. Cards show darktable's notebook pages as tabs and its section
-  headings.
+- Advanced mode offers a module-based editing panel, more like darktable,
+  with its available modules except deprecated ones. Each module has its own
+  card with settings, presets, on/off and reset, plus controls to add,
+  duplicate, rename, reorder or delete instances, with undo. Search for
+  modules and settings, add modules by group, and hide those you do not need
+  in Preferences. Switch between Simple and Advanced without changing your
+  photo; Simple shows a badge for edits its sliders cannot display. Copy
+  Settings, Paste and Previous carry Advanced edits between photos.
 - The sliders icon on panels is now called More controls, and appears only in
   Simple.
 - Heal shows the area it will heal from the moment you press, not only once
