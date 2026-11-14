@@ -41,10 +41,18 @@ const center = (selector) => {
 };
 const folderState = () => ({
   active: document.querySelector('.folders .folder-row.active')?.dataset.folderPath ?? null,
-  target: document.querySelector('.folders .folder-row.drop-target')?.dataset.folderPath ?? null,
+  target: document.querySelector('.folders .folder-row.drop-into')?.dataset.folderPath ?? null,
   ghost: !!document.querySelector('.photo-drag'),
   dialog: !!document.querySelector('.modal.move-photos'),
 });
+// the highlighted row stays a row of the Folders panel: no overlay over the window
+const targetBox = () => {
+  const r = document.querySelector('.folders .folder-row.drop-into');
+  const panel = document.querySelector('.folders');
+  if (!r || !panel) return null;
+  const a = r.getBoundingClientRect(), b = panel.getBoundingClientRect();
+  return { position: getComputedStyle(r).position, inside: a.left >= b.left - 1 && a.right <= b.right + 1 && a.height < 80 };
+};
 const dialogText = () => document.querySelector('.modal.move-photos')?.textContent ?? null;
 
 async function foldersCard(t) {
@@ -138,6 +146,10 @@ export async function movePhotos(t) {
   const at = await rowAt(t, dest);
   await t.driver.hold(await grip(t, a), at);
   try {
+    const box = await until(() => t.driver.observe(targetBox), 'dest highlighted under the drag', 5000);
+    t.measure({ name: 'drop-highlight', ...box });
+    await t.evidence('drop-highlight');
+    assert(box.position !== 'fixed' && box.inside, `the highlight stays on the dest row (${JSON.stringify(box)})`);
     await until(() => t.driver.observe(s => !!document.querySelector(s), row(inner)), 'dest opens under the drag', 5000);
   } catch (e) { await t.driver.release(); throw e; }
   const to = await t.driver.observe(center, row(inner));

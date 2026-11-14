@@ -45,17 +45,18 @@ export function FolderTree({ roots, volumes, hostNames, folded, current, photo, 
   const [children, setChildren] = useState<Map<string, SubFolder[]>>(new Map());
   // a photo dragged over a folder (photoDrag.ts): the folder takes the drop,
   // and one that is shut opens after a moment's rest on it, so its
-  // subfolders can take it instead
+  // subfolders can take it instead. the photos' own folder opens too: it
+  // refuses the drop, but its subfolders take it
   const drag = usePhotoDrag();
   const opens = useRef(new Map<string, boolean>());
   const toggle = useRef(onToggle);
   toggle.current = onToggle;
-  const over = drag?.over ?? null;
+  const rest = drag?.rest ?? null;
   useEffect(() => {
-    if (!over || expanded.has(over) || !opens.current.get(over)) return;
-    const t = window.setTimeout(() => toggle.current(over), 500);
+    if (!rest || expanded.has(rest) || !opens.current.get(rest)) return;
+    const t = window.setTimeout(() => toggle.current(rest), 500);
     return () => window.clearTimeout(t);
-  }, [over, expanded]);
+  }, [rest, expanded]);
   // the open folders' subfolders, read when a folder opens or on refresh
   useEffect(() => {
     let stale = false;
@@ -94,7 +95,7 @@ export function FolderTree({ roots, volumes, hostNames, folded, current, photo, 
     return (
       <li key={path}>
         <div className={`folder-row${path === current ? " active" : ""}${holdsPhoto ? " has-photo" : ""}${offline ? " offline" : ""}`
-                        + `${target ? ` drop-target${drag.copy ? " copy" : ""}` : ""}`}
+                        + `${target ? ` drop-into${drag.copy ? " copy" : ""}` : ""}`}
              data-folder-path={path} data-folder-refuse={refuse ? "1" : undefined}
              title={offline ? `${path}\nnot connected` : path}
              ref={path === photo ? reveal : undefined}

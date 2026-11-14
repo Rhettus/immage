@@ -1098,8 +1098,10 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 /* the open photo's folder, when the filmstrip shows another (a parent, with
    its subfolders) */
 .folders .folder-row.has-photo { background: color-mix(in srgb, var(--inset) 50%, transparent); }
-/* a folder under dragged photos (photoDrag.ts), which takes the drop */
-.folders .folder-row.drop-target { background: var(--hover); box-shadow: inset 0 0 0 1.5px var(--accent); }
+/* a folder under dragged photos (photoDrag.ts), which takes the drop. not
+   .drop-target: that is the window's file drop overlay, a fixed full-window
+   panel, and a row with it covered the window in grey */
+.folders .folder-row.drop-into { background: var(--hover); box-shadow: inset 0 0 0 1.5px var(--accent); }
 body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user-select: none !important; }
 /* the dragged photos beside the pointer: the thumbnail and their count,
    with a + while ⌥/Alt copies */

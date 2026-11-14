@@ -11,6 +11,7 @@ import { useEffect, useState } from "react";
 export type PhotoDrag = {
   count: number;
   over: string | null;      // the folder under the pointer, when it takes the drop
+  rest: string | null;      // the folder under the pointer, taking the drop or not
   copy: boolean;
   from: string[];           // the dragged photos' folders
 };
@@ -50,8 +51,10 @@ export function pressPhoto(e: React.PointerEvent<HTMLElement>, start: DragStart)
   const x0 = e.clientX, y0 = e.clientY;
   let ghost: HTMLDivElement | null = null;
   let copy = e.altKey;
+  const rowAt = (x: number, y: number) =>
+    document.elementFromPoint(x, y)?.closest<HTMLElement>("[data-folder-path]") ?? null;
   const target = (x: number, y: number) => {
-    const row = document.elementFromPoint(x, y)?.closest<HTMLElement>("[data-folder-path]");
+    const row = rowAt(x, y);
     return row && !row.dataset.folderRefuse ? row.dataset.folderPath! : null;
   };
   const begin = () => {
@@ -74,7 +77,7 @@ export function pressPhoto(e: React.PointerEvent<HTMLElement>, start: DragStart)
     ghost.appendChild(badge);
     document.body.appendChild(ghost);
     document.body.classList.add("dragging-photos");
-    set({ count, over: null, copy, from: start.from() });
+    set({ count, over: null, rest: null, copy, from: start.from() });
     return true;
   };
   const place = (ev: PointerEvent) => {
@@ -82,7 +85,8 @@ export function pressPhoto(e: React.PointerEvent<HTMLElement>, start: DragStart)
     ghost!.style.transform = `translate(${ev.clientX + 12}px, ${ev.clientY + 12}px)`;
     ghost!.classList.toggle("copy", copy);
     const over = target(ev.clientX, ev.clientY);
-    if (drag && (drag.over !== over || drag.copy !== copy)) set({ ...drag, over, copy });
+    const rest = rowAt(ev.clientX, ev.clientY)?.dataset.folderPath ?? null;
+    if (drag && (drag.over !== over || drag.rest !== rest || drag.copy !== copy)) set({ ...drag, over, rest, copy });
   };
   const end = () => {
     window.removeEventListener("pointermove", move, true);

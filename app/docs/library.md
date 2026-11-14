@@ -61,9 +61,9 @@ Drag a thumbnail from the grid or the filmstrip onto a folder in the
 a NAS. When the photo is part of a selection, the whole selection goes,
 and a RAW+JPEG pair goes together. The folder under the pointer is
 outlined. Rest on a closed folder for a moment and it opens, so you can
-drop into one of its subfolders. Press Esc to stop dragging. The photos'
-own folder, and a folder on a share that isn't connected, don't take a
-drop.
+drop into one of its subfolders; this works on the photos' own folder too.
+Press Esc to stop dragging. The photos' own folder, and a folder on a share
+that isn't connected, don't take a drop.
 
 Hold ⌥ (Alt) as you drop to copy instead, keeping the originals where they
 are. You can also choose this in the confirmation.
