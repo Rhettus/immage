@@ -444,3 +444,37 @@ python3 -I benchmarking/orf-partial-reads.py /photos/2025 --recursive --runs 1
 python3 -I benchmarking/orf-partial-reads.py /photos/2025 --recursive --runs 6 \
   --report /tmp/orf-partial-reads.json
 ```
+
+### ORF prefix reads with probe concurrency
+
+`orf-prefix-concurrency.py` keeps ORF prefix metadata reads enabled and compares
+`IMMAGE_IMPORT_READ_AHEAD` limits 1, 2, 3 and 4. Each measurement starts a fresh
+headless engine with an isolated library, config and cache. The benchmark checks
+normalized import metadata parity, prefix-read diagnostics for every ORF, and
+that the engine applied the requested probe cap. It stops if probe diagnostics
+show timeouts or saturation. Results include logical metadata source bytes,
+photos per second and elapsed import time. The read-ahead setting overlaps only
+the bounded 4 KB photo and XMP probes; metadata imports remain serialized.
+Original photos and sidecars are read only, and no GUI is started. Source-byte
+totals exclude preview extraction, import probes and operating-system traffic.
+The file-system and storage caches may warm across runs.
+
+Run all four limits once as a warmup, then use four rounds for a balanced
+comparison. A Williams square balances each limit's run position and the limit
+that immediately precedes it.
+
+```bash
+python3 -I benchmarking/orf-prefix-concurrency.py /photos/2025 --recursive --runs 1
+python3 -I benchmarking/orf-prefix-concurrency.py /photos/2025 --recursive --runs 4 \
+  --report /tmp/orf-prefix-concurrency.json
+```
+
+To run this on the Mac after the existing ORF prefix branch, fetch and switch to
+the combined benchmark branch, then rebuild the engine. Both branches carry the
+same darktable patch, so there is no need to reverse or reapply it:
+
+```bash
+git fetch
+git switch experiment/orf-prefix-concurrency-0.46.0
+cmake --build build --target darktable-engine -j2
+```

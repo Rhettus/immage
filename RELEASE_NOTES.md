@@ -71,6 +71,9 @@ Improvements
 
 Performance
 
+- Experimental NAS comparison combines ORF prefix reads with bounded
+  file-access probes at limits 1, 2, 3 and 4. Metadata imports and database
+  updates remain serialized; the default probe limit stays 1.
 - Experimental ORF metadata reads try a small file prefix before reading the
   whole photo, reducing transfers when its metadata is near the beginning.
   Embedded previews remain available, with full-file fallback when needed.

@@ -70,7 +70,8 @@ file. Embedded previews can be read separately from their original locations.
 Opening a photo for editing still needs its image data.
 
 This experiment reduces metadata read volume; it does not make imports run
-concurrently. It is separate from the NAS probe read-ahead experiment.
+concurrently. The `experiment/orf-prefix-concurrency-0.46.0` branch also includes
+the NAS probe read-ahead experiment described below.
 Panasonic RW2 is not included in this change.
 
 For a headless comparison, launch the experimental engine with
@@ -87,6 +88,27 @@ and saves labeled A/B measurements. Use `--recursive` for a year folder with
 month subfolders. Run a warm-up pair first, then an even number of measured
 pairs on the same folder. Cache state affects elapsed time; source byte counts
 show how much the metadata reader requests in either case.
+
+### Experimental prefix and probe concurrency comparison
+
+The combined branch keeps ORF prefix reads enabled and compares
+`IMMAGE_IMPORT_READ_AHEAD=1`, `2`, `3`, and `4`. This limits concurrent small
+file-access probes (the first 4 KB of each photo and its XMP sidecar), not
+concurrent metadata imports. Metadata reads and database updates remain
+serialized. With the variable unset, the limit remains 1; there is no new
+Preferences setting. The engine accepts experimental limits up to 8.
+
+The cap includes reads still blocked after a timeout or cancellation. If all
+slots remain blocked, subsequent files can be reported unanswered until slots
+recover. Cancellation stops scheduling additional probes. This remains an
+experiment for a responsive NAS, rather than a release default.
+
+The [combined benchmark](../../benchmarking/README.md) runs isolated headless
+engines, verifies the requested limits and matching imported entries, and
+reports elapsed time, photos per second and metadata source bytes. Use the same
+month for each limit, warm it first, then measure four rounds to balance order.
+`IMMAGE_IMPORT_DIAGNOSTICS=1` records the cap, observed active probes, timeouts,
+probe waiting and serialized import time in the engine log.
 
 ## Moving and copying photos
 

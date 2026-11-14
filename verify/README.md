@@ -1,5 +1,11 @@
 # Release checks
 
+For the opt-in NAS probe experiment, run
+`python3 -I verify/import-read-ahead.py`. It checks import/XMP parity at limits
+1 and 4, cancellation, blocked-read caps, saturation and recovery using isolated
+temporary photos and FIFO sidecars. `verify/import-stall.py` also checks the
+legacy path and can be repeated with `IMMAGE_IMPORT_READ_AHEAD=3`.
+
 What to run before tagging a release ([releasing.md](../app/docs/dev/releasing.md)):
 every slider of every panel, and of a mask, moved through the app's own
 code and the engine, with the photo it renders measured; a saved edit
