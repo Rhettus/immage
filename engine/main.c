@@ -1642,8 +1642,13 @@ int main(int argc, char **argv)
   int i = 1, thumb_threads = _THUMB_THREADS;
   while(i < argc && g_strcmp0(argv[i], "--core"))
   {
+    // read the count before CLAMP: the macro evaluates its argument more
+    // than once, and argv[++i] inside it skipped past --core
     if(!g_strcmp0(argv[i], "--thumb-threads") && i + 1 < argc)
-      thumb_threads = CLAMP(atoi(argv[++i]), 1, _THUMB_THREADS_MAX);
+    {
+      const int n = atoi(argv[++i]);
+      thumb_threads = CLAMP(n, 1, _THUMB_THREADS_MAX);
+    }
 #ifdef HAVE_AI
     // where the AI models are; given, AI features are on
     if(!g_strcmp0(argv[i], "--models") && i + 1 < argc) ai_models_dir = argv[++i];
