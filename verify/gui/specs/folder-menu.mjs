@@ -17,8 +17,12 @@ const menu = '.context-menu';
 const isDir = (p) => stat(p).then((s) => s.isDirectory(), () => false);
 const present = (t, selector) => t.driver.observe((s) => !!document.querySelector(s), selector);
 
-const menuItems = () => [...document.querySelectorAll('.context-menu button')]
-  .map((b) => ({ text: b.textContent.trim(), disabled: b.disabled }));
+// observed in the page, so self-contained: null until the menu shows
+const menuItems = () => {
+  const list = [...document.querySelectorAll('.context-menu button')]
+    .map((b) => ({ text: b.textContent.trim(), disabled: b.disabled }));
+  return list.length ? list : null;
+};
 const nameField = () => {
   const e = document.querySelector('.folders .name-edit');
   if (!e) return null;
@@ -35,7 +39,7 @@ async function foldersCard(t) {
 async function openMenu(t, path) {
   const r = await reveal(t, row(path));
   await t.driver.rightClick(r.x, r.y);
-  return until(() => t.driver.observe((s) => document.querySelector(s) ? menuItems() : null, menu), `the menu of ${path}`);
+  return until(() => t.driver.observe(menuItems), `the menu of ${path}`);
 }
 
 // New Folder… on `parent`, then `name` typed over the selected default and Enter
