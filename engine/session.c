@@ -2541,6 +2541,25 @@ gboolean session_paste_batch(JsonObject *req, JsonBuilder *b, char **err)
   return TRUE;
 }
 
+// the History panel's start over, darktable's reset of the history module
+// (libs/history.c, gui_reset): the photo's whole history goes, and the
+// auto-applied presets with it, so it opens again as a new photo. the
+// client closes it first and takes a paste_batch snapshot for undo
+gboolean session_history_discard(const dt_imgid_t imgid, JsonBuilder *b, char **err)
+{
+  if(!dt_is_valid_imgid(imgid) || library_is_snapshot(imgid))
+  { *err = g_strdup_printf("photo %d cannot be reset", imgid); return FALSE; }
+  if(_s.open && _s.imgid == imgid) { *err = g_strdup("close the photo first"); return FALSE; }
+  _hold_open(imgid);
+  dt_history_delete_on_image_ext(imgid, FALSE, TRUE);
+  dt_tag_detach_by_string("darktable|changed", imgid, FALSE, FALSE);
+  const gboolean failed = library_write_sidecar(imgid);
+  dt_mipmap_cache_remove(imgid);
+  if(failed) { *err = g_strdup("could not write the XMP sidecar"); return FALSE; }
+  engine_add_bool(b, "edited", dt_image_altered(imgid));
+  return TRUE;
+}
+
 // on the way out, the edits the client's own save has not reached yet
 void session_save_pending(void)
 {

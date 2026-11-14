@@ -44,6 +44,7 @@ pub fn commands() -> Commands<tauri::Wry> {
         crate::session_cmds::before_view,
         crate::session_cmds::preview,
         crate::session_cmds::paste_batch,
+        crate::session_cmds::history_discard,
         // the library
         crate::library_cmds::open_folder,
         crate::library_cmds::list_subfolders,
@@ -405,6 +406,7 @@ mod tests {
         ("agx_auto", reads::<AgxAutoReply>),
         ("save", reads::<SaveReply>),
         ("paste_batch", reads::<PasteBatchReply>),
+        ("history_discard", reads::<SaveReply>),
         ("render", reads::<RenderReply>),
         ("preview", reads::<PreviewReply>),
         ("import", reads::<FolderReply>),

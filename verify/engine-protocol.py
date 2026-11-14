@@ -56,7 +56,7 @@ COMMANDS = sorted('''
 agx_auto agx_presets ai_accel ai_denoise ai_denoise_preview ai_depth ai_mask
 ai_object baseline_end before cancel_base capture_times close color_profiles
 colormapping_acquire combine copy data_backup export export_hold export_release folder fonts forget get
-hdr_merge history import instance instances keywords keywords_set lenses look lut_files lut_folder look_amount mask
+hdr_merge history history_discard import instance instances keywords keywords_set lenses look lut_files lut_folder look_amount mask
 mask_delete mask_map mask_rename masks merge_cancel meta meta_set module_schema module_state
 open opencl pano_merge pano_preview parity paste_batch points prefetch preview
 presets print print_profile_add print_profiles printer printers quit range_map
@@ -151,6 +151,7 @@ def anywhere(img):
         R('softproof', mode='off', label='softproof off'),
         R('style_forget', label='style_forget none'),
         R('style_forget', name='immage-no-such-look', label='style_forget unknown'),
+        R('history_discard', label='history_discard none'),
         R('paste_batch', label='paste_batch none'),
         R('paste_batch', action='begin', token=1, label='paste_batch begin empty'),
         R('paste_batch', action='begin', token=1, imgids=[0], label='paste_batch begin missing'),
@@ -625,6 +626,7 @@ class Run:
         last = '<last-token>'
         self.state('2 library', [
             R('paste_batch', action='begin', token=0, imgids=[1], label='paste_batch begin'),
+            R('history_discard', imgid=1, label='history_discard'),
             R('paste_batch', action='commit', token=last, label='paste_batch commit'),
             R('paste_batch', action='undo', token=last, label='paste_batch undo'),
             R('paste_batch', action='redo', token=last, label='paste_batch redo'),
@@ -635,7 +637,8 @@ class Run:
                                                          label='open preview pipe'),
                               R('open', label='open no path'),
                               R('open', path='{tmp}/no-such.tif', label='open missing')])
-        self.state('3 open', [R('open', path=str(a), label='open again')])
+        self.state('3 open', [R('open', path=str(a), label='open again'),
+                              R('history_discard', imgid=1, label='history_discard open')])
         self.state('3 open', anywhere(1) + photo_files(1) + photo_edits(1) + tagged(1)
                    + malformed())
         # closed again

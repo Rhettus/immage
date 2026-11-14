@@ -29,6 +29,7 @@ export const commands = {
 	beforeView: (on: boolean) => __TAURI_INVOKE<null>("before_view", { on }),
 	preview: (size: number, edits: ModuleEdit[], withLook: boolean, look: string | null) => __TAURI_INVOKE<ArrayBuffer>("preview", { size, edits, withLook, look }),
 	pasteBatch: (action: string, token: number | null, imgids: number[] | null) => __TAURI_INVOKE<PasteBatchReply>("paste_batch", { action, token, imgids }),
+	historyDiscard: (imgid: number) => __TAURI_INVOKE<SaveReply>("history_discard", { imgid }),
 	openFolder: (path: string, recursive: boolean | null, skip: string[] | null, token: number) => __TAURI_INVOKE<FolderReply>("open_folder", { path, recursive, skip, token }),
 	listSubfolders: (path: string) => __TAURI_INVOKE<SubFolder[]>("list_subfolders", { path }),
 	folderVolumes: (paths: string[]) => __TAURI_INVOKE<Volume[]>("folder_volumes", { paths }),

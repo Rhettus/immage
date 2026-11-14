@@ -4061,6 +4061,12 @@ export default function App() {
     pasteUndoSession.current = session.current;
     session.current = null;
   };
+  // what Preferences gives a new photo, for a photo set up without the viewer
+  const newPhotoDefaults = () => {
+    const preset = [...BUILTIN_PRESETS, ...presetsRef.current].find(p => p.id === newPhotosRef.current);
+    return { profile: loadNewPhotosProfile(), compensation: loadExposureCompNew(), auto: loadAutoToneNew(),
+      preset: preset ? { values: presetValues(preset), rawOnly: preset.rawOnly, nonRaw: loadNewPhotosNonRaw() } : null };
+  };
   const pasteSettings = async (previousClip?: Clip) => {
     const c = previousClip ?? clip.current, active = currentRef.current;
     if (!c || !active || !session.current || croppingRef.current || pastingRef.current || aiBusy) return;
@@ -4068,9 +4074,7 @@ export default function App() {
     const { targets, skipped } = pasteTargets(imagesRef.current, previousClip ? new Set<number>() : selectionRef.current, entry, isRemote);
     if (!targets.length) { setStatus("paste: no local photos selected"); return; }
     const frozen = structuredClone(c);
-    const preset = [...BUILTIN_PRESETS, ...presetsRef.current].find(p => p.id === newPhotosRef.current);
-    const defaults = { profile: loadNewPhotosProfile(), compensation: loadExposureCompNew(), auto: loadAutoToneNew(),
-      preset: preset ? { values: presetValues(preset), rawOnly: preset.rawOnly, nonRaw: loadNewPhotosNonRaw() } : null };
+    const defaults = newPhotoDefaults();
     const before = snapshot(session.current, `Paste settings on ${targets.length} photo${targets.length === 1 ? "" : "s"}`);
     pastingRef.current = true;
     setPasting("Preparing paste…");
@@ -4106,6 +4110,56 @@ export default function App() {
     const p = previous.current;
     if (p) void pasteSettings(makeClip(loadCopyGroups(), p.values, p.look, p.masks ?? [], p.advanced));
   };
+  // darktable's reset of its history module: the photo's whole history goes
+  // and it starts again as a new photo, with Preferences' defaults. one undo
+  // step, kept as a paste's is: a snapshot of the photo before and after
+  const startOver = async () => {
+    const active = currentRef.current;
+    if (!active || !session.current || croppingRef.current || pastingRef.current || aiBusy) return;
+    const entry = imagesRef.current.find(i => isOpen(i, active)) ?? openCell;
+    const [target] = pasteTargets(imagesRef.current, new Set<number>(), entry, isRemote).targets;
+    if (!target) { setStatus("discard history: not for a remote photo"); return; }
+    const defaults = newPhotoDefaults();
+    const before = snapshot(session.current, "Discard history");
+    pastingRef.current = true;
+    setPasting("Discarding history…");
+    let message = "";
+    try {
+      await pauseForPaste();
+      const { token } = await commands.pasteBatch("begin", null, [target.imgid]);
+      if (token == null) throw Error("the engine gave no snapshot token");
+      try {
+        const r = await commands.historyDiscard(target.imgid);
+        pasteSaved({ imgid: target.imgid, edited: r.edited, error: null });
+        const s = await Session.open(target.path, target.imgid, () => ({ width: 1, height: 1 }), () => {}, () => {}, true);
+        try { await preparePastePhoto(s, defaults); }
+        finally { await s.close(); }
+        await commands.pasteBatch("commit", token, null);
+      } catch (e) {
+        const updates = await restorePaste(token, "abort").catch(() => []);
+        updates.forEach(pasteSaved);
+        await commands.pasteBatch("release", token, null).catch(() => {});
+        throw e;
+      }
+      const r = await commands.meta(target.imgid);
+      pasteSaved({ imgid: target.imgid, edited: r.image.edited, error: null });
+      discardPastes(undo.current.future);
+      undo.current.future = [];
+      undo.current.key = "";
+      before.batch = { token, recovery: false };
+      undo.current.past.push(before);
+      if (undo.current.past.length > 200) discardPastes(undo.current.past.splice(0, 1));
+      message = keys("history discarded: ⌘Z undoes it");
+    } catch (e) { message = `discard history: ${e}`; }
+    finally {
+      if (!session.current && !await openFile(active.path, active.imgid, true))
+        message += "; could not reopen the photo";
+      pastingRef.current = false;
+      setPasting(null);
+      setHistoryRev(n => n + 1);
+      setStatus(message);
+    }
+  };
   // `steps` at once, as a click in the History panel: only the state
   // arrived at is sent
   const stepHistory = async (back: boolean, steps = 1) => {
@@ -4119,15 +4173,15 @@ export default function App() {
       const target = from[from.length - 1];
       // a paste is undone by reopening the photo, which would end the crop
       if (target.batch && croppingRef.current) {
-        setStatus(`finish cropping to ${back ? "undo" : "redo"} the paste`);
+        setStatus(`finish cropping to ${back ? "undo" : "redo"} ${target.label}`);
         break;
       }
       const at = snapshot(s, target.label);
       if (target.batch) {
         const active = currentRef.current!;
         pastingRef.current = true;
-        setPasting(back ? "Undoing paste…" : "Redoing paste…");
-        let message = back ? "paste undone" : "paste redone";
+        setPasting(`${back ? "Undoing" : "Redoing"} ${target.label}…`);
+        let message = `${back ? "undo" : "redo"}: ${target.label}`;
         let ok = false;
         try {
           await pauseForPaste();
@@ -4186,6 +4240,18 @@ export default function App() {
     } catch (e) {
       setStatus(`error: ${e}`);
     }
+  };
+
+  // darktable's truncate (ctrl+click compress): the steps above the current
+  // one go, and those below can still be undone
+  const truncateHistory = () => {
+    const u = undo.current;
+    if (!u.future.length) return;
+    discardPastes(u.future);
+    u.future = [];
+    u.key = "";
+    setHistoryRev((n) => n + 1);
+    setStatus("steps above dropped");
   };
 
   // the History panel's actions on a row of the opened stack. a module with
@@ -4790,12 +4856,14 @@ export default function App() {
   const toggleCompareRef = useRef(() => {});
   const pasteSettingsRef = useRef(() => {});
   const pastePreviousRef = useRef(() => {});
+  const startOverRef = useRef(() => {});
   setBaModeRef.current = setBaMode;
   cycleBaModeRef.current = cycleBaMode;
   setCompareRef.current = setCompare;
   toggleCompareRef.current = toggleCompare;
   pasteSettingsRef.current = () => pasteSettings();
   pastePreviousRef.current = () => pastePrevious();
+  startOverRef.current = () => void startOver();
 
   const changeMany = (entries: [string, number][], label?: string) => {
     const s = session.current;
@@ -5341,6 +5409,7 @@ export default function App() {
       "copy-settings": () => { if (session.current) setCopying(true); },
       "paste-settings": () => { pasteSettingsRef.current(); },
       "paste-previous": () => { pastePreviousRef.current(); },
+      "start-over": () => { startOverRef.current(); },
       "shortcuts": () => { setShortcutsOpen(true); },
       "virtual-copy": () => {
         const sel = selectionRef.current, all = imagesRef.current;
@@ -5886,13 +5955,14 @@ export default function App() {
                              })}
                       actionOf={historyAction} onChange={historyChange}
                       steps={[...undo.current.past, ...[...undo.current.future].reverse()].map((x) => x.label)}
-                      at={undo.current.past.length} disabled={!current || cropping}
+                      at={undo.current.past.length} disabled={!current || cropping || !!pasting}
                       open={leftOpen.has("history")} onToggle={(alt) => toggleLeft("history", alt)}
                       onGo={(n) => {
                         const d = n - undo.current.past.length;
                         if (d) stepHistory(d < 0, Math.abs(d));
                       }}
-                      onCompress={() => void compressHistory()} />
+                      onCompress={() => void compressHistory()} onTruncate={truncateHistory}
+                      onStartOver={() => void startOver()} />
       </aside>
       </div>
 

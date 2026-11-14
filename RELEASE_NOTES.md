@@ -84,6 +84,13 @@ Improvements
   the grid shows.
 - Grid thumbnails can be resized: Preferences > General > Library > Grid
   thumbnail size, or ⌘= and ⌘- while the grid shows.
+- History has a start over button, also Photo > Discard History, which
+  throws away the photo's whole history, including modules added in
+  darktable, so it begins again as a new photo with your New Photos
+  defaults. It works on virtual copies too, and ⌘Z brings the history back.
+- Ctrl+click (⌘-click on a Mac) the History card's compress button to drop
+  only the steps above the one you went back to. The steps below can still
+  be undone.
 
 Bug fixes
 

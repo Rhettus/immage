@@ -416,6 +416,16 @@ pub(crate) async fn save(state: State<'_, AppState>) -> Result<SaveReply, String
     serde_json::from_value(reply).map_err(|e| format!("save: unexpected reply: {e}"))
 }
 
+// the History panel's start over: the photo's whole darktable history goes,
+// so it opens as a new photo. it must not be open; the caller snapshots it
+// first (paste_batch) so the step can be undone
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn history_discard(state: State<'_, AppState>, imgid: i64) -> Result<SaveReply, String> {
+    let reply = state.engine("history_discard").request(json!({ "cmd": "history_discard", "imgid": imgid }))?;
+    serde_json::from_value(reply).map_err(|e| format!("history_discard: unexpected reply: {e}"))
+}
+
 // Native history snapshots owned by the frontend's batch undo entries.
 #[tauri::command]
 #[specta::specta]

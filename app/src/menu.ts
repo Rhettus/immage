@@ -12,7 +12,7 @@ export type ActionId =
   | "import" | "add-folder" | "export" | "print" | "quit"
   | "undo" | "redo" | "cut" | "copy" | "paste" | "select-all"
   | "copy-settings" | "paste-settings" | "paste-previous" | "preferences"
-  | "virtual-copy" | "rotate-left" | "rotate-right" | "hdr-merge" | "pano-merge"
+  | "virtual-copy" | "start-over" | "rotate-left" | "rotate-right" | "hdr-merge" | "pano-merge"
   | "crop" | "heal" | "wb-picker"
   | "rate-0" | "rate-1" | "rate-2" | "rate-3" | "rate-4" | "rate-5"
   | "label-red" | "label-yellow" | "label-green" | "label-blue" | "reject"
@@ -34,7 +34,7 @@ export const ACTION_IDS: readonly ActionId[] = [
   "import", "add-folder", "export", "print", "quit",
   "undo", "redo", "cut", "copy", "paste", "select-all",
   "copy-settings", "paste-settings", "paste-previous", "preferences",
-  "virtual-copy", "rotate-left", "rotate-right", "hdr-merge", "pano-merge",
+  "virtual-copy", "start-over", "rotate-left", "rotate-right", "hdr-merge", "pano-merge",
   "crop", "heal", "wb-picker",
   "rate-0", "rate-1", "rate-2", "rate-3", "rate-4", "rate-5",
   "label-red", "label-yellow", "label-green", "label-blue", "reject",
@@ -84,6 +84,7 @@ export const MENUS: Menu[] = [
   {
     label: "Photo", items: [
       item("virtual-copy", "Create Virtual Copy", "⌘'"),
+      item("start-over", "Discard History"),
       item("rotate-left", "Rotate Left", "⌘["),
       item("rotate-right", "Rotate Right", "⌘]"), sep(),
       item("hdr-merge", "HDR Merge…", "⌃H"),

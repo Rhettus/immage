@@ -424,6 +424,7 @@ gboolean session_preview(JsonObject *req, int *ow, int *oh, char **err);
 gboolean session_save(char **err);
 extern GHashTable *session_paste_batches;
 gboolean session_paste_batch(JsonObject *req, JsonBuilder *b, char **err);
+gboolean session_history_discard(const dt_imgid_t imgid, JsonBuilder *b, char **err);
 void session_save_pending(void);
 
 // masks.c

@@ -674,6 +674,11 @@ static gboolean _cmd_paste_batch(JsonObject *req, JsonBuilder *b, char **err)
   return TRUE;
 }
 
+static gboolean _cmd_history_discard(JsonObject *req, JsonBuilder *b, char **err)
+{
+  return session_history_discard(json_object_get_int_member_with_default(req, "imgid", 0), b, err);
+}
+
 static gboolean _cmd_set(JsonObject *req, JsonBuilder *b, char **err)
 {
   const char *op = json_object_get_string_member_with_default(req, "op", NULL);
@@ -1315,6 +1320,7 @@ static const eng_cmd_t _commands[] =
   { "unpack", _cmd_unpack, 0 },
   { "style_forget", _cmd_style_forget, 0 },
   { "paste_batch", _cmd_paste_batch, 0 },
+  { "history_discard", _cmd_history_discard, 0 },
   { "set", _cmd_set, _CMD_NEEDS_OPEN | _CMD_EDITS },
   { "color_profiles", _cmd_color_profiles, _CMD_NEEDS_OPEN },
   { "wb_presets", _cmd_wb_presets, _CMD_NEEDS_OPEN },

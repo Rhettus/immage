@@ -49,6 +49,26 @@ dropped, and the steps before cannot be undone any more. Immage saves the
 history compressed in any case, so the photo's sidecar stays small whether
 you press it or not.
 
+Ctrl+click the compress button (⌘-click on a Mac) to drop only the steps
+above the current one, as darktable's truncate does: click the step to go
+back to, then ctrl+click compress. The steps above it are gone, so redo
+cannot bring them back, and the steps below can still be undone.
+
+Immage saves a photo's history compressed, so once a photo is closed its
+steps are gone. To go back further than this session, start over.
+
+### Start over
+
+The start over button, first in the History card's title, is darktable's
+reset of the history: it throws away the photo's whole history and starts
+again as a new photo. The photo gets your **New Photos** defaults again
+(the tone mapper, profile, preset and Auto from Preferences). **Photo ›
+Discard History** does the same. Unlike **Reset all**, it also removes the
+profile, tone mapper and exposure compensation the photo had, its
+orientation, and modules added in darktable. It works the same on a
+virtual copy, so you can try a different approach on a copy. It is one
+step: ⌘Z brings the whole history back, and ⇧⌘Z discards it again.
+
 ![The History card: four slider moves above the steps the photo opened with](images/history.png)
 <!-- screenshot: Library panel, History card open, several steps above the opening stack -->
 
@@ -60,6 +80,9 @@ New Photos preset gave it (a raw's lens corrections, with the Default
 preset), and turns Capture Sharpening off. Each tool goes back to the
 module **Preferences › Modules** picks, even one the photo used a
 different module for. It is one step, so ⌘Z brings everything back.
+Reset all keeps the profile, tone mapper, exposure compensation,
+orientation, and modules added in darktable. To remove those too, use
+[Start over](#start-over) in the History card.
 
 ## Copying settings to other photos
 

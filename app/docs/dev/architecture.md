@@ -260,7 +260,7 @@ identity before drawing, so replacement frames cancel obsolete work.
 | File | Responsibility |
 |---|---|
 | [main.rs](../../src-tauri/src/main.rs) | `AppState` (the engine, scratch file paths, looks and models folders, the folder-read token, perf state) and its `engine(op)` helper, `main()` and its setup. Every command lives in one of the `*_cmds.rs` files below, which `bindings.rs` lists in `collect_commands!`. |
-| [session_cmds.rs](../../src-tauri/src/session_cmds.rs) | The open photo: `open_image`, `history`, `module_state`, `get_params`, `set_params`, `sample`, `tone_key`, `color_profiles`, `agx_auto`, `points`, `render` and its frame reply (`shm_frame` on Linux, `shared_frame` on Windows), `cancel_base`, `save`, `paste_batch`, `baseline_end`, `before_view` and `preview`. |
+| [session_cmds.rs](../../src-tauri/src/session_cmds.rs) | The open photo: `open_image`, `history`, `module_state`, `get_params`, `set_params`, `sample`, `tone_key`, `color_profiles`, `agx_auto`, `points`, `render` and its frame reply (`shm_frame` on Linux, `shared_frame` on Windows), `cancel_base`, `save`, `paste_batch`, `history_discard`, `baseline_end`, `before_view` and `preview`. |
 | [library_cmds.rs](../../src-tauri/src/library_cmds.rs) | Folders and their import (`open_folder`, snapshots, the folder-read token), `list_subfolders`, `folder_volumes`, thumbnails and their caches, `meta` and `meta_set`, keywords, `capture_times`, trash and virtual copies, `path_exists`, `path_kind`, `sample_folder` and launch-file handling (`Launch`, `launch_path`). |
 | [export_cmds.rs](../../src-tauri/src/export_cmds.rs) | Export (naming conflicts, `export_images` and `export_cancel`), HDR and Panorama merges, `positive_export`, `export_preview`, `shared_import`, the export and look presets files, and the file pickers (`pick_files`, `pick_save`) with `path_inside`. |
 | [immich_cmds.rs](../../src-tauri/src/immich_cmds.rs) | The `immich_*` commands: albums, the browse and export checks, search, libraries, suggestions, people, tags, thumbnails and path resolving, over `immich_call`. |
@@ -958,6 +958,16 @@ are returned per image; failed recovery keeps the token so Undo can retry.
 Stale undo/redo is checked for the whole target list before any restore. Snapshot
 versions are excluded from library listings and released with their UI entries
 or at engine shutdown. These tokens do not survive an engine restart.
+
+The History card's start over (`startOver` in App.tsx) uses the same tokens
+on the open photo alone: `pauseForPaste`, `begin`, then the engine's
+`history_discard` (`session_history_discard`: darktable's
+`dt_history_delete_on_image_ext` with the auto-applied presets cleared, the
+edited tag off, the sidecar written; refused while the photo is open), then
+`preparePastePhoto` in a background Session for the new-photo defaults, and
+`commit`. Its undo entry carries the token, so `stepHistory` undoes and redoes
+it as a paste. Ctrl+click on compress (`truncateHistory`) only drops the
+client's redo steps; it needs no engine call.
 
 Verification: `node --test --test-isolation=none verify/batch-paste.test.mjs`
 runs production Session/mapping/batch code through `verify/shim.mjs` and the real

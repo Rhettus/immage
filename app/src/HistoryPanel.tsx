@@ -6,7 +6,9 @@
 // before), above it this session's undo steps, newest at the top. a click
 // goes to any step; those above the current one are what Redo brings back.
 // compressing folds the steps into the opened stack, as darktable's
-// "compress history stack". a row of the opened stack can be switched off
+// "compress history stack"; ctrl+click drops only the steps above the
+// current one (darktable's truncate). start over discards the photo's whole
+// history, as the reset of darktable's history module. a row of the opened stack can be switched off
 // or deleted, or reset if Immage has sliders for its module (actionOf)
 import { useState } from "react";
 import { controlById, panels } from "./manifest";
@@ -67,7 +69,8 @@ export function stepName(keys: string[]): string {
   return "Settings";
 }
 
-export function HistoryPanel({ base, steps, at, onGo, onCompress, disabled, open, onToggle, actionOf, onChange }: {
+export function HistoryPanel({ base, steps, at, onGo, onCompress, onTruncate, onStartOver, disabled, open, onToggle,
+                               actionOf, onChange }: {
   base: HistoryItem[];      // the stack the photo opened with, oldest first
   actionOf: (h: HistoryItem) => "toggle" | "reset" | null;
   onChange: (h: HistoryItem, how: "toggle" | "delete" | "reset") => void;
@@ -75,6 +78,8 @@ export function HistoryPanel({ base, steps, at, onGo, onCompress, disabled, open
   at: number;               // how many of them are applied
   onGo: (n: number) => void;
   onCompress: () => void;
+  onTruncate: () => void;   // drop the steps above the current one
+  onStartOver: () => void;  // discard the photo's whole history
   disabled: boolean;
   open: boolean;
   onToggle: (alt: boolean) => void;
@@ -101,9 +106,22 @@ export function HistoryPanel({ base, steps, at, onGo, onCompress, disabled, open
     <div className="panel history" data-tour="history">
       <div className={`panel-title${open ? " open" : ""}`} onClick={(e) => onToggle(e.altKey)}>
         <span>History</span>
+        <button className="compress" disabled={disabled}
+                onClick={(e) => { e.stopPropagation(); onStartOver(); }}
+                title="start over: discard the photo's whole history, as darktable's reset does, and begin again from a new photo's defaults. undo brings it back">
+          <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+               strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5" />
+          </svg>
+        </button>
         <button className="compress" disabled={disabled || !steps.length}
-                onClick={(e) => { e.stopPropagation(); onCompress(); }}
-                title="compress history: one step per module, as darktable keeps it. the steps since the photo opened can no longer be undone">
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (e.ctrlKey || e.metaKey) { if (at < steps.length) onTruncate(); }
+                  else onCompress();
+                }}
+                title={"compress history: one step per module, as darktable keeps it. the steps since the photo opened can no longer be undone."
+                  + " ctrl+click (⌘-click on a Mac) drops only the steps above the current one; those below can still be undone"}>
           <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
                strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 22v-6M12 8V2M4 12H2M10 12H8M16 12h-2M22 12h-2M15 19l-3-3-3 3M15 5l-3 3-3-3" />

@@ -1848,12 +1848,12 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .context-menu .has-sub:hover > .submenu { display: block; }
 .context-menu.flip .submenu { left: auto; right: 100%; }
 
-/* the Folders card's refresh and the History card's compress and eye, by their chevrons */
+/* the Folders card's refresh and the History card's start over, compress and eye, by their chevrons */
 .folders-panel .panel-title .refresh, .history .panel-title .eye, .history .panel-title .compress {
   margin-left: auto; margin-right: 6px; display: grid; place-items: center; width: 26px; height: 26px; padding: 0;
   border: none; border-radius: 6px; background: none; color: var(--text-2); cursor: pointer;
 }
-.history .panel-title .compress + .eye { margin-left: 0; }
+.history .panel-title .compress + .eye, .history .panel-title .compress + .compress { margin-left: 0; }
 .folders-panel .panel-title .refresh .icon, .history .panel-title .eye .icon,
 .history .panel-title .compress .icon { width: 16px; height: 16px; }
 .folders-panel .panel-title .refresh:hover, .history .panel-title .eye:hover,
