@@ -347,8 +347,8 @@ export function storeStackPairs(on: boolean) {
   try { settings.set(STACK_PAIRS_KEY, on ? "1" : "0"); } catch { /* not kept */ }
 }
 // the grid view's cell height in CSS pixels, anywhere from GRID_SIZE_MIN to
-// GRID_SIZE_MAX; ⌘+ and ⌘- ease it in the grid, a pinch or ⌘ wheel zooms it
-// freely. the thumbnails come from the mipmap that holds a 240 pixel square
+// GRID_SIZE_MAX, remembered; in the grid the toolbar's zoom slider sets it,
+// ⌘+ and ⌘- ease it and a pinch or ⌘ wheel zooms it freely. the thumbnails come from the mipmap that holds a 240 pixel square
 // (library.ts THUMB_SIZE), 450 pixels tall, so the largest size stays sharp at 1x
 const GRID_SIZE_KEY = "immage.gridSize";
 export const GRID_SIZE_MIN = 120;
@@ -492,7 +492,7 @@ function LicenseText({ title, text, onClose }: { title: string; text: string; on
 }
 
 export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurrent, focus, canvas, onCanvas, overlayColor, onOverlayColor, guideColor, onGuideColor,
-                                    openGenerated, onOpenGenerated, loupe, onLoupe, focusMode, onFocusMode, editMode, onEditMode, autoHide, onAutoHide, stackPairs, onStackPairs, gridSize, onGridSize,
+                                    openGenerated, onOpenGenerated, loupe, onLoupe, focusMode, onFocusMode, editMode, onEditMode, autoHide, onAutoHide, stackPairs, onStackPairs,
                                     accel, plugins, onPlugins, perfHud, onPerfHud, onBenchmark, onGpuCheck, onTune, onRelaunch, onClose }: {
   presets: Preset[];
   focus?: Tab;                           // a tab to open at
@@ -517,8 +517,6 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   onAutoHide: (on: boolean) => void;
   stackPairs: boolean;
   onStackPairs: (on: boolean) => void;
-  gridSize: number;                      // GRID_SIZE_MIN to GRID_SIZE_MAX
-  onGridSize: (v: number) => void;
   accel: AccelProvider[] | null;         // null until the engine has said
   plugins: PluginConfig[];
   onPlugins: (list: PluginConfig[]) => void;
@@ -859,12 +857,6 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                 <PrefRow label="Stack RAW+JPEG pairs as one photo" summary="Group matching files for browsing and actions."
                          hint="a raw and the JPEG, HEIF or OM System .ORI of the same name show as one, and a rating, reject or delete takes them all"
                   ><PrefSwitch checked={stackPairs} onChange={onStackPairs} />
-                </PrefRow>
-                <PrefRow label="Grid thumbnail size" summary={keys("Thumbnail size in grid view; ⌘= and ⌘- there.")}
-                         hint={keys("how large photos show in grid view (G); ⌘= and ⌘- change it while the grid shows")}>
-                  <input type="range" min={GRID_SIZE_MIN} max={GRID_SIZE_MAX} step={1} aria-label="Grid thumbnail size"
-                         value={Math.round(gridSize)}
-                         onChange={(e) => onGridSize(Number(e.target.value))} />
                 </PrefRow>
               </PrefCard>
               <PrefCard title="Startup">

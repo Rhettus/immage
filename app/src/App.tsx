@@ -71,7 +71,7 @@ import { UpdateBanner } from "./UpdateBanner";
 import { autoCheck, relaunch } from "./updates";
 
 import { loadFrameCacheMb, loadThumbMemoryMb, refreshMemoryBudget } from "./memoryBudget";
-import { loadOpenGenerated, storeOpenGenerated, loadLoupe, storeLoupe, loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadEditMode, storeEditMode, loadNewPhotosNonRaw, loadNewPhotosProfile, loadOverlayColor, loadGuideColor, guideRgb, loadPins, maskOverlayRgb, loadPreview, loadBalancedPreviewSize, loadDraftTarget, loadDraftSmallest, loadSliderScroll, loadStackPairs, loadGridSize, storeGridSize, clampGridSize, PreferencesDialog, storeOverlayColor, storeGuideColor, storeStackPairs, storeAutoHide, storeCanvas, CANVASES, storeFocusMode, storePins, type AccelProvider, type Canvas, loadNegWarn, loadNegProfiles, storeNegProfile, loadNegativeExportFormat, loadReadAhead, storeNegWarn, storeNegativeExportFormat, type Pins, type PrefsTab, type Preview, type EditMode } from "./Preferences";
+import { loadOpenGenerated, storeOpenGenerated, loadLoupe, storeLoupe, loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadEditMode, storeEditMode, loadNewPhotosNonRaw, loadNewPhotosProfile, loadOverlayColor, loadGuideColor, guideRgb, loadPins, maskOverlayRgb, loadPreview, loadBalancedPreviewSize, loadDraftTarget, loadDraftSmallest, loadSliderScroll, loadStackPairs, loadGridSize, storeGridSize, clampGridSize, GRID_SIZE_MIN, GRID_SIZE_MAX, GRID_SIZE_DEFAULT, PreferencesDialog, storeOverlayColor, storeGuideColor, storeStackPairs, storeAutoHide, storeCanvas, CANVASES, storeFocusMode, storePins, type AccelProvider, type Canvas, loadNegWarn, loadNegProfiles, storeNegProfile, loadNegativeExportFormat, loadReadAhead, storeNegWarn, storeNegativeExportFormat, type Pins, type PrefsTab, type Preview, type EditMode } from "./Preferences";
 import { kindOf, loadPlugins, loadReturns, returnValues, storePlugins, unfit, type PluginConfig,
          type PluginReturn } from "./plugins";
 import { FolderTree, type Volume } from "./FolderTree";
@@ -120,7 +120,7 @@ import { ImmichPanel } from "./ImmichPanel";
 import { immichUrl, isRemote, loadSearch, photoUrl, resolve, search as searchImmichPage, searchUrl, storeSearch, type ImmichSearch } from "./immich";
 import { needsRead, NO_FILTER, passes, type Filter } from "./filter";
 import { Layout, Library, PanelKey, loadLayout, loadLibrary, saveLayout, saveLibrary } from "./layoutPrefs";
-import { ResetAll, Splitter, Toolbar, ZoomBar } from "./Toolbar";
+import { GridZoomBar, ResetAll, Splitter, Toolbar, ZoomBar } from "./Toolbar";
 import { CellCanvas, Filmstrip, INFO_MODE_KEY, InfoOverlay, ThumbCanvas, ThumbProgress, copyName, loadInfoMode, pairedRaws } from "./Filmstrip";
 import { ActivityBar, JobActivity } from "./ActivityBar";
 import { FileMenu, TRASH, hdrBrackets, panoFrames } from "./FileMenu";
@@ -6352,10 +6352,18 @@ export default function App() {
                  }}
                  onFiltered={() => setGrid(true)}
                  grid={grid} onGrid={cells.length > 0 || pending.length > 0 || grid ? () => setGrid(!grid) : undefined}
-                 zoomBar={<ZoomBar disabled={!current || !!sheet} register={(f) => { zoomShow.current = f; }}
-                                   onZoom={(z) => setZoom(z)}
-                                   onToggle={() => setZoom(zoomRef.current === "fit" ? 1 : "fit")}
-                                   fit={() => fitScale()} />}
+                 // in the grid the zoom bar sizes the thumbnails; the photo's
+                 // stays mounted, hidden, so it still shows the photo's zoom after
+                 zoomBar={<>
+                   {grid && <GridZoomBar size={gridSize} min={GRID_SIZE_MIN} max={GRID_SIZE_MAX} standard={GRID_SIZE_DEFAULT}
+                                         onSize={chooseGridSize} />}
+                   <div style={grid ? { display: "none" } : { display: "contents" }}>
+                     <ZoomBar disabled={!current || !!sheet} register={(f) => { zoomShow.current = f; }}
+                              onZoom={(z) => setZoom(z)}
+                              onToggle={() => setZoom(zoomRef.current === "fit" ? 1 : "fit")}
+                              fit={() => fitScale()} />
+                   </div>
+                 </>}
                  onFilter={setFilter}
                  onLayout={toggleSide} />
       </section>
@@ -6881,7 +6889,6 @@ export default function App() {
                          accel={accel}
                          autoHide={autoHide} onAutoHide={(on) => { setAutoHide(on); storeAutoHide(on); }}
                          stackPairs={stackPairs} onStackPairs={(on) => { setStackPairs(on); storeStackPairs(on); }}
-                         gridSize={gridSize} onGridSize={chooseGridSize}
                          perfHud={perfHud} onPerfHud={(on) => { setPerfHud(on); perf.enable(on); }}
                          onBenchmark={current ? () => {
                            setPrefsOpen(false);

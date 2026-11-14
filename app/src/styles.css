@@ -1220,9 +1220,12 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .strip-slot.grid { position: absolute; left: 0; right: 0; top: 0; z-index: 25; grid-template-rows: 1fr; }
 .strip-slot.grid > div { height: 100%; }
 /* as many columns as fit at the chosen size (--grid-column, from Filmstrip),
-   widened to fill the row, so no strip of dead space is left at its end */
+   each exactly that wide and the rows centered: stretched to fill the row,
+   a landscape photo's width would only change when a column came or went,
+   so a smooth zoom looked like steps */
 .filmstrip.grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--grid-column, 230px), 1fr));
+  display: grid; grid-template-columns: repeat(auto-fill, var(--grid-column, 230px));
+  justify-content: center;
   flex: 1; height: auto; align-content: start; gap: 6px;
   margin: 0 8px; padding: 10px; overflow-x: hidden; overflow-y: auto; background: var(--ui-window-161616, #161616);
 }

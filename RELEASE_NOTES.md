@@ -7,10 +7,11 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
-- Grid view's thumbnails resize smoothly: pinch on a trackpad or scroll with
-  ⌘ held over the grid, and the photo under the pointer stays in place. ⌘=
-  and ⌘- ease to the next size, and Preferences > General > Library > Grid
-  thumbnail size can be set to any size in its range.
+- Grid view's thumbnails resize smoothly between a smallest and a largest
+  size: in the grid, the zoom slider at the bottom sets their size, a pinch
+  on a trackpad or a scroll with ⌘ held zooms them with the photo under the
+  pointer staying in place, and ⌘= and ⌘- ease larger or smaller. The size
+  is remembered.
 - Clarity's and Texture's detail sliders, globally and on masks, sit in a
   shaded box headed by the name, without the repeated prefix on each
   slider, so each set stands apart from the sliders around it.
@@ -89,8 +90,6 @@ Improvements
   the grid covers; Print stays, for picking a sheet's photos. Choosing a tool
   in the rail leaves the grid. The Grid button now looks pressed only while
   the grid shows.
-- Grid thumbnails can be resized: Preferences > General > Library > Grid
-  thumbnail size, or ⌘= and ⌘- while the grid shows.
 - History has a start over button, also Photo > Discard History, which
   throws away the photo's whole history, including modules added in
   darktable, so it begins again as a new photo with your New Photos

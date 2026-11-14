@@ -77,6 +77,22 @@ export function ZoomBar({ disabled, register, onZoom, onToggle, fit }: {
   );
 }
 
+// the zoom bar in grid view sets the thumbnails' size instead, from the
+// smallest at the left to the largest at the right, evenly in ratio; the
+// label is the size against the default, and a double-click goes back to it
+export function GridZoomBar({ size, min, max, standard, onSize }: {
+  size: number; min: number; max: number; standard: number; onSize: (v: number) => void;
+}) {
+  const pos = (1000 * Math.log(size / min)) / Math.log(max / min);
+  return (
+    <div className="tool-group zoom-bar" title="thumbnail size: double-click for the default size" onDoubleClick={() => onSize(standard)}>
+      <input type="range" min={0} max={1000} step={1} value={Math.round(pos)} aria-label="thumbnail size"
+             onChange={(e) => onSize(min * (max / min) ** (Number(e.target.value) / 1000))} />
+      <span className="zoom-label">{`${Math.round((size / standard) * 100)}%`}</span>
+    </div>
+  );
+}
+
 // the bar under the filmstrip: rate and reject the open image, filter the
 // folder, and show or hide the side panels and the filmstrip
 export function Toolbar({ filter: f, images, layout, zoomBar, viewTools, onFilter, onLayout, ref, pin, immich, grid, onGrid,
