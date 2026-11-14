@@ -125,6 +125,8 @@ pub(crate) async fn instances(state: State<'_, AppState>) -> Result<Vec<Instance
 // Advanced mode's instance menu on instance `priority` of `op`: "new",
 // "duplicate", "rename" (`name`), "move" (next to instance `other`, after it
 // when `after`), "delete" and "restore" (undo of a delete)
+// Tauri exposes these optional fields as flat command arguments.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn instance(state: State<'_, AppState>, action: String, op: String, priority: i64,
