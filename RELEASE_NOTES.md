@@ -69,6 +69,8 @@ Improvements
   headings.
 - The sliders icon on panels is now called More controls, and appears only in
   Simple.
+- Heal shows the area it will heal from the moment you press, not only once
+  a drag gets going, and hides it when you release.
 
 Bug fixes
 
