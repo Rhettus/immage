@@ -222,7 +222,7 @@ export function SpotOverlay({ boxRef, image, region, spots, selected, tool, show
           </g>
         )}
         {/* the brush's edge, the inner circle where its feather starts, and its center */}
-        {cursor && !drag.current && (
+        {cursor && (!drag.current || drag.current.kind === "new") && (
           <g className="brush-cursor">
             <circle cx={cursor[0] * W} cy={cursor[1] * H} r={(tool.size / 2) * W} />
             {tool.feather > 0.02 && (

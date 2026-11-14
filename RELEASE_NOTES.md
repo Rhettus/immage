@@ -44,6 +44,8 @@ Improvements
   Simple.
 - Heal shows the area it will heal from the moment you press, not only once
   a drag gets going, and hides it when you release.
+- While painting a heal stroke, the outer brush circle stays visible and
+  follows the pointer alongside the overlay.
 - Lens Corrections has a Demosaic method for raws, listing the methods for
   the photo's sensor with darktable's default first, such as Markesteijn
   3-pass for Fujifilm X-Trans photos or AMaZE and LMMSE for other raws.
