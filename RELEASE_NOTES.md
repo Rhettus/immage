@@ -7,6 +7,7 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- The quick start guide points out the Advanced mode button in Adjustments.
 - Y cycles through the side-by-side and split before / after views, then turns
   them off. The toolbar button still includes **Hold for before**; `\` still
   toggles the full Before view.

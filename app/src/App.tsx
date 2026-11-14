@@ -6476,6 +6476,7 @@ export default function App() {
             {rightMode === "adjust" && !cropping && (
               <button className={`tool edit-mode${editMode === "advanced" ? " on" : ""}`} aria-pressed={editMode === "advanced"}
                       onClick={() => chooseEditMode(editMode === "advanced" ? "simple" : "advanced")}
+                      data-tour="advanced-mode"
                       title={editMode === "advanced" ? "Advanced mode is on: click for Simple's sliders" : "switch to Advanced mode: darktable's modules"}>
                 <ModulesIcon /></button>
             )}

@@ -53,8 +53,9 @@ Immage also:
 
 - adds a **Sample Photos** folder with one photo in it, and opens that
   photo, so there is something to try the tools on
-- starts the **quick start guide**, a ten-step tour of the window. Press
-  → to step through it, or Esc to skip. Tick **Don't show on startup** to
+- starts the **quick start guide**, a twelve-step tour of the window. It
+  points out the stacked-cards button for [Advanced mode](advanced-mode.md).
+  Press → to step through it, or Esc to skip. Tick **Don't show on startup** to
   keep it from coming back; the **?** button at the bottom of the rail
   starts it again.
 

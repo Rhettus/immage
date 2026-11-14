@@ -47,6 +47,8 @@ const STEPS: Step[] = [
       { target: "presets", title: "Presets",
         body: "Live previews of presets and film looks; save your own." },
     ] },
+  { target: "advanced-mode", title: "Advanced modules",
+    body: "The stacked-cards button at the top of Adjustments switches to darktable's modules. Click it again to return to Simple; your photo and edits stay the same." },
   { target: "history", title: "History",
     body: keys("Every edit as a step, newest at the top. Click one to go back to it; ⌘Z and ⇧⌘Z step through them.") },
   { target: "export", title: "Export",
