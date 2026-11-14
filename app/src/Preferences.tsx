@@ -345,6 +345,22 @@ export function loadStackPairs(): boolean {
 export function storeStackPairs(on: boolean) {
   try { settings.set(STACK_PAIRS_KEY, on ? "1" : "0"); } catch { /* not kept */ }
 }
+// the grid view's cell height in CSS pixels, a step of GRID_SIZES; ⌘+ and
+// ⌘- step it in the grid. the thumbnails come from the mipmap that holds a
+// 240 pixel square (library.ts THUMB_SIZE), 450 pixels tall, so the largest
+// step stays sharp at 1x
+const GRID_SIZE_KEY = "immage.gridSize";
+export const GRID_SIZES = [120, 160, 200, 250, 320, 400];
+export const GRID_SIZE_DEFAULT = 200;
+export function loadGridSize(): number {
+  try {
+    const v = Number(settings.get(GRID_SIZE_KEY));
+    return GRID_SIZES.includes(v) ? v : GRID_SIZE_DEFAULT;
+  } catch { return GRID_SIZE_DEFAULT; }
+}
+export function storeGridSize(v: number) {
+  try { settings.set(GRID_SIZE_KEY, String(v)); } catch { /* not kept */ }
+}
 
 // Lightroom's Auto Hide & Show for the side panels, and which are pinned
 // open; both remembered
@@ -473,7 +489,7 @@ function LicenseText({ title, text, onClose }: { title: string; text: string; on
 }
 
 export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurrent, focus, canvas, onCanvas, overlayColor, onOverlayColor, guideColor, onGuideColor,
-                                    openGenerated, onOpenGenerated, loupe, onLoupe, focusMode, onFocusMode, editMode, onEditMode, autoHide, onAutoHide, stackPairs, onStackPairs,
+                                    openGenerated, onOpenGenerated, loupe, onLoupe, focusMode, onFocusMode, editMode, onEditMode, autoHide, onAutoHide, stackPairs, onStackPairs, gridSize, onGridSize,
                                     accel, plugins, onPlugins, perfHud, onPerfHud, onBenchmark, onGpuCheck, onTune, onRelaunch, onClose }: {
   presets: Preset[];
   focus?: Tab;                           // a tab to open at
@@ -498,6 +514,8 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   onAutoHide: (on: boolean) => void;
   stackPairs: boolean;
   onStackPairs: (on: boolean) => void;
+  gridSize: number;                      // a step of GRID_SIZES
+  onGridSize: (v: number) => void;
   accel: AccelProvider[] | null;         // null until the engine has said
   plugins: PluginConfig[];
   onPlugins: (list: PluginConfig[]) => void;
@@ -837,6 +855,12 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                 <PrefRow label="Stack RAW+JPEG pairs as one photo" summary="Group matching files for browsing and actions."
                          hint="a raw and the JPEG, HEIF or OM System .ORI of the same name show as one, and a rating, reject or delete takes them all"
                   ><PrefSwitch checked={stackPairs} onChange={onStackPairs} />
+                </PrefRow>
+                <PrefRow label="Grid thumbnail size" summary={keys("Thumbnail size in grid view; ⌘= and ⌘- there.")}
+                         hint={keys("how large photos show in grid view (G); ⌘= and ⌘- change it while the grid shows")}>
+                  <input type="range" min={0} max={GRID_SIZES.length - 1} step={1} aria-label="Grid thumbnail size"
+                         value={Math.max(0, GRID_SIZES.indexOf(gridSize))}
+                         onChange={(e) => onGridSize(GRID_SIZES[Number(e.target.value)])} />
                 </PrefRow>
               </PrefCard>
               <PrefCard title="Startup">

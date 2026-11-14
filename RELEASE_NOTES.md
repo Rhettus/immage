@@ -79,6 +79,8 @@ Improvements
   the grid covers; Print stays, for picking a sheet's photos. Choosing a tool
   in the rail leaves the grid. The Grid button now looks pressed only while
   the grid shows.
+- Grid thumbnails can be resized: Preferences > General > Library > Grid
+  thumbnail size, or ⌘= and ⌘- while the grid shows.
 
 Bug fixes
 

@@ -71,7 +71,7 @@ import { UpdateBanner } from "./UpdateBanner";
 import { autoCheck, relaunch } from "./updates";
 
 import { loadFrameCacheMb, loadThumbMemoryMb, refreshMemoryBudget } from "./memoryBudget";
-import { loadOpenGenerated, storeOpenGenerated, loadLoupe, storeLoupe, loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadEditMode, storeEditMode, loadNewPhotosNonRaw, loadNewPhotosProfile, loadOverlayColor, loadGuideColor, guideRgb, loadPins, maskOverlayRgb, loadPreview, loadBalancedPreviewSize, loadDraftTarget, loadDraftSmallest, loadSliderScroll, loadStackPairs, PreferencesDialog, storeOverlayColor, storeGuideColor, storeStackPairs, storeAutoHide, storeCanvas, CANVASES, storeFocusMode, storePins, type AccelProvider, type Canvas, loadNegWarn, loadNegProfiles, storeNegProfile, loadNegativeExportFormat, loadReadAhead, storeNegWarn, storeNegativeExportFormat, type Pins, type PrefsTab, type Preview, type EditMode } from "./Preferences";
+import { loadOpenGenerated, storeOpenGenerated, loadLoupe, storeLoupe, loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadEditMode, storeEditMode, loadNewPhotosNonRaw, loadNewPhotosProfile, loadOverlayColor, loadGuideColor, guideRgb, loadPins, maskOverlayRgb, loadPreview, loadBalancedPreviewSize, loadDraftTarget, loadDraftSmallest, loadSliderScroll, loadStackPairs, loadGridSize, storeGridSize, GRID_SIZES, PreferencesDialog, storeOverlayColor, storeGuideColor, storeStackPairs, storeAutoHide, storeCanvas, CANVASES, storeFocusMode, storePins, type AccelProvider, type Canvas, loadNegWarn, loadNegProfiles, storeNegProfile, loadNegativeExportFormat, loadReadAhead, storeNegWarn, storeNegativeExportFormat, type Pins, type PrefsTab, type Preview, type EditMode } from "./Preferences";
 import { kindOf, loadPlugins, loadReturns, returnValues, storePlugins, unfit, type PluginConfig,
          type PluginReturn } from "./plugins";
 import { FolderTree, type Volume } from "./FolderTree";
@@ -482,6 +482,15 @@ export default function App() {
   const [perfHud, setPerfHud] = useState(perf.enabled);
   useEffect(() => { perf.init(); }, []);
   const [stackPairs, setStackPairs] = useState(loadStackPairs);
+  // the grid view's cell height (Preferences > General > Library; ⌘+ ⌘- in the grid)
+  const [gridSize, setGridSize] = useState(loadGridSize);
+  const chooseGridSize = (v: number) => { setGridSize(v); storeGridSize(v); };
+  const stepGridSize = (by: number) => setGridSize((old) => {
+    const i = Math.max(0, GRID_SIZES.indexOf(old));
+    const v = GRID_SIZES[Math.min(GRID_SIZES.length - 1, Math.max(0, i + by))];
+    storeGridSize(v);
+    return v;
+  });
   // the import screen, over the editor until closed
   const [importOpen, setImportOpen] = useState(false);
   const importOpenRef = useRef(false);
@@ -5354,8 +5363,9 @@ export default function App() {
       "import": () => { setImportOpen(true); },
       "undo": () => { stepHistory(true); },
       "redo": () => { stepHistory(false); },
-      "zoom-in": () => { if (session.current && !croppingRef.current) stepZoom(1); },
-      "zoom-out": () => { if (session.current && !croppingRef.current) stepZoom(-1); },
+      // in the grid, the thumbnails' size rather than the photo hidden under it
+      "zoom-in": () => { if (gridRef.current) stepGridSize(1); else if (session.current && !croppingRef.current) stepZoom(1); },
+      "zoom-out": () => { if (gridRef.current) stepGridSize(-1); else if (session.current && !croppingRef.current) stepZoom(-1); },
       "rotate-left": () => { void turn("ccw"); },
       "rotate-right": () => { void turn("cw"); },
       "select-all": () => { setSelection(new Set(shownRef.current.map((i) => i.imgid))); },
@@ -6191,7 +6201,7 @@ export default function App() {
                               : images.length ? "no photos match the filters"
                               : folder ? `no photos in this folder${includeSub ? "" : " (Include subfolders shows its subfolders' photos)"}`
                               : "add a folder to start"} current={currentEntry?.imgid ?? null} loader={loader.current!} onMenu={showFileMenu}
-                       height={layout.stripHeight} grid={grid} selection={selection} onPick={pickPhoto}
+                       height={layout.stripHeight} grid={grid} gridSize={gridSize} selection={selection} onPick={pickPhoto}
                        candidate={compare}
                        onDouble={(i) => { setCompare(null); void openEntry(i); setGrid(false); }}
                        onOpenKnown={(k, double) => {
@@ -6764,6 +6774,7 @@ export default function App() {
                          accel={accel}
                          autoHide={autoHide} onAutoHide={(on) => { setAutoHide(on); storeAutoHide(on); }}
                          stackPairs={stackPairs} onStackPairs={(on) => { setStackPairs(on); storeStackPairs(on); }}
+                         gridSize={gridSize} onGridSize={chooseGridSize}
                          perfHud={perfHud} onPerfHud={(on) => { setPerfHud(on); perf.enable(on); }}
                          onBenchmark={current ? () => {
                            setPrefsOpen(false);

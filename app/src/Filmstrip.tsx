@@ -18,7 +18,7 @@ export const pairedRaws = (files: string[]) => new Set(files.filter((p) => isPri
 // the folder's images along the bottom, as Lightroom's filmstrip: a cell
 // each with the file's name and type above its thumbnail, and its reject
 // flag and stars below, shown on hover or once it has a rating
-export function Filmstrip({ images, partners, pending, empty, current, loader, height, grid, selection, candidate, onPick, onDouble,
+export function Filmstrip({ images, partners, pending, empty, current, loader, height, grid, gridSize = 200, selection, candidate, onPick, onDouble,
                      onOpenKnown, onMenu, onMeta, more, onBackMenu }: {
   // photos, and those known from the folder's last read (library.ts)
   images: (ImageEntry | Known)[]; current: number | null; loader: ThumbLoader; height: number;
@@ -26,6 +26,7 @@ export function Filmstrip({ images, partners, pending, empty, current, loader, h
   partners: Map<number, ImageEntry[]>;    // a stacked raw's JPEG or HEIF, by its imgid
   empty: string;                          // what an empty grid says
   grid: boolean;                          // spread over the editing area, in rows
+  gridSize?: number;                      // the grid's cell height, CSS pixels
   selection: Set<number>;
   candidate: number | null;               // the photo compared with the open one
   onPick: (i: ImageEntry, e: React.MouseEvent) => void;
@@ -89,7 +90,7 @@ export function Filmstrip({ images, partners, pending, empty, current, loader, h
   }, [images, loader, grid]);
   // a grid's cells are a fixed height, and share each row's width
   // (styles.css, .filmstrip.grid); the strip's follow its height
-  const cellSize = grid ? 200 : Math.round((height - 12) * 1.15);
+  const cellSize = grid ? gridSize : Math.round((height - 12) * 1.15);
   const cell = useMemo(() => (grid ? { height: cellSize } : { width: cellSize }), [grid, cellSize]);
   // the cells are memoized, and call through this, so a folder's next
   // batch or a new selection redraws only the cells that changed
@@ -103,7 +104,8 @@ export function Filmstrip({ images, partners, pending, empty, current, loader, h
       : null;
   }
   return (
-    <div className={`filmstrip${grid ? " grid" : ""}`} ref={strip} style={grid ? undefined : { height }}
+    <div className={`filmstrip${grid ? " grid" : ""}`} ref={strip}
+         style={grid ? { "--grid-column": `${Math.round(gridSize * 1.15)}px` } as React.CSSProperties : { height }}
          onContextMenu={onBackMenu}
          onWheel={(e) => { if (strip.current && !grid) strip.current.scrollLeft += e.deltaY + e.deltaX; }}>
       {images.map((i) => !("imgid" in i)
