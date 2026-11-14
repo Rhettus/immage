@@ -79,26 +79,27 @@ export async function folderMenu(t) {
   assert(!await isDir(join(root, 'New Folder')), 'Esc made no folder');
 
   // a new subfolder: made on disk and listed under its parent
-  const picks = join(root, 'Picks');
-  await newFolder(t, root, 'Picks');
+  // lowercase names: the WebDriver keystrokes arrive without Shift, so a capital would be typed small
+  const picks = join(root, 'picks');
+  await newFolder(t, root, 'picks');
   await until(() => present(t, row(picks)), 'Picks listed under the fixture folder');
   assert(await isDir(picks), 'Picks made on disk');
   await t.evidence('created');
 
   // the same name again is refused, with the reason in the status line
-  await newFolder(t, root, 'Picks');
+  await newFolder(t, root, 'picks');
   const status = await until(() => t.driver.observe(() => {
     const s = document.querySelector('.status')?.textContent ?? '';
     return s.includes('already exists') ? s : null;
   }), 'the refusal in the status line');
   t.measure({ name: 'refused', status });
   await t.evidence('refused');
-  assert.equal(await t.driver.observe(() => document.querySelectorAll('.folders [data-folder-path$="Picks"]').length), 1,
+  assert.equal(await t.driver.observe(() => document.querySelectorAll('.folders [data-folder-path$="picks"]').length), 1,
                'still one Picks row');
 
   // inside a subfolder with no subfolders of its own: it opens to show the new one
-  const inner = join(picks, 'Inner');
-  await newFolder(t, picks, 'Inner');
+  const inner = join(picks, 'inner');
+  await newFolder(t, picks, 'inner');
   await until(() => present(t, row(inner)), 'Inner listed under Picks');
   assert(await isDir(inner), 'Inner made on disk');
   assert(await t.driver.observe((s) => document.querySelector(s)?.classList.contains('open'), `${row(picks)} .twisty`),
