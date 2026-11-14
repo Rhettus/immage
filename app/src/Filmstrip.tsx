@@ -9,7 +9,7 @@ import { captureDate, known, shutter } from "./MetadataPanel";
 import { end } from "./activity";
 import { isRemote } from "./immich";
 import { settings } from "./settings";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 
 // the pair names (pairKey()) that have a raw among these files
@@ -18,7 +18,7 @@ export const pairedRaws = (files: string[]) => new Set(files.filter((p) => isPri
 // the folder's images along the bottom, as Lightroom's filmstrip: a cell
 // each with the file's name and type above its thumbnail, and its reject
 // flag and stars below, shown on hover or once it has a rating
-export function Filmstrip({ images, partners, pending, empty, current, loader, height, grid, gridSize = 200, selection, candidate, onPick, onDouble,
+export function Filmstrip({ images, partners, pending, empty, current, loader, height, grid, gridSize = 200, onGridZoom, selection, candidate, onPick, onDouble,
                      onOpenKnown, onMenu, onMeta, more, onBackMenu }: {
   // photos, and those known from the folder's last read (library.ts)
   images: (ImageEntry | Known)[]; current: number | null; loader: ThumbLoader; height: number;
@@ -27,6 +27,7 @@ export function Filmstrip({ images, partners, pending, empty, current, loader, h
   empty: string;                          // what an empty grid says
   grid: boolean;                          // spread over the editing area, in rows
   gridSize?: number;                      // the grid's cell height, CSS pixels
+  onGridZoom?: (factor: number) => void;  // a pinch or ⌘ wheel over the grid
   selection: Set<number>;
   candidate: number | null;               // the photo compared with the open one
   onPick: (i: ImageEntry, e: React.MouseEvent) => void;
@@ -63,6 +64,63 @@ export function Filmstrip({ images, partners, pending, empty, current, loader, h
     if (c.top < r.top) root.scrollTop -= r.top - c.top;
     else if (c.bottom > r.bottom) root.scrollTop += c.bottom - r.bottom;
   }, [current, grid]);
+  // a grid resized keeps one photo where it was: the one under the pointer
+  // for a pinch, otherwise the open photo when it shows, or the top left one.
+  // the column count changes as the size does, so without this the rows
+  // under the pointer would run off. a scroll the page makes itself (`set`)
+  // keeps the anchor; any other picks a new one, so it is there before the
+  // next resize
+  const anchor = useRef<{ el: Element; offset: number; set: number } | null>(null);
+  const takeAnchor = (x?: number, y?: number) => {
+    const root = strip.current;
+    if (!root) return;
+    const r = root.getBoundingClientRect();
+    const at = (px: number, py: number) => document.elementFromPoint(px, py)?.closest(".thumb");
+    let el: Element | null | undefined = x !== undefined && y !== undefined ? at(x, y) : null;
+    if (!el) {
+      const active = root.querySelector(".thumb.active");
+      const c = active?.getBoundingClientRect();
+      el = c && c.top >= r.top && c.bottom <= r.bottom ? active : at(r.left + 30, r.top + 30);
+    }
+    anchor.current = el && root.contains(el) ? { el, offset: el.getBoundingClientRect().top - r.top, set: -1 } : null;
+  };
+  const zoom = useRef(onGridZoom);
+  zoom.current = onGridZoom;
+  useEffect(() => {
+    const root = strip.current;
+    if (!root || !grid) return;
+    // about 4% per wheel notch, as the photo's zoom; capped, as macOS wheel
+    // acceleration can report several notches in one event. a plain wheel
+    // scrolls
+    const wheel = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || !zoom.current) return;
+      e.preventDefault();
+      const delta = Math.max(-50, Math.min(50, e.deltaY));
+      takeAnchor(e.clientX, e.clientY);
+      zoom.current(Math.exp(-delta * 0.006));
+    };
+    const scroll = () => {
+      const a = anchor.current;
+      if (!a || Math.abs(root.scrollTop - a.set) > 1) takeAnchor();
+    };
+    takeAnchor();
+    root.addEventListener("wheel", wheel, { passive: false });
+    root.addEventListener("scroll", scroll, { passive: true });
+    return () => {
+      root.removeEventListener("wheel", wheel);
+      root.removeEventListener("scroll", scroll);
+    };
+  }, [grid]);
+  useLayoutEffect(() => {
+    const root = strip.current;
+    if (!root || !grid) return;
+    if (!anchor.current || !anchor.current.el.isConnected) takeAnchor();
+    const a = anchor.current;
+    if (!a) return;
+    const top = a.el.getBoundingClientRect().top - root.getBoundingClientRect().top;
+    root.scrollTop += top - a.offset;
+    a.set = root.scrollTop;
+  }, [gridSize, grid]);
   // thumbnails scrolled into view jump the loader's queue
   useEffect(() => {
     const root = strip.current;
@@ -90,7 +148,7 @@ export function Filmstrip({ images, partners, pending, empty, current, loader, h
   }, [images, loader, grid]);
   // a grid's cells are a fixed height, and share each row's width
   // (styles.css, .filmstrip.grid); the strip's follow its height
-  const cellSize = grid ? gridSize : Math.round((height - 12) * 1.15);
+  const cellSize = grid ? Math.round(gridSize) : Math.round((height - 12) * 1.15);
   const cell = useMemo(() => (grid ? { height: cellSize } : { width: cellSize }), [grid, cellSize]);
   // the cells are memoized, and call through this, so a folder's next
   // batch or a new selection redraws only the cells that changed

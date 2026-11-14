@@ -146,8 +146,9 @@ starts with default settings. To start with defaults on purpose, see
 - **Stack RAW+JPEG pairs as one photo**: a raw and the JPEG, HEIF or OM
   System .ORI of the same name show as one, and a rating, reject or delete
   takes them all.
-- **Grid thumbnail size**: how large photos show in grid view, from small to
-  large. ⌘= and ⌘- change it while the grid shows.
+- **Grid thumbnail size**: how large photos show in grid view, anywhere from
+  small to large. ⌘= and ⌘-, a pinch or ⌘ and scroll change it while the grid
+  shows.
 
 **Startup**
 

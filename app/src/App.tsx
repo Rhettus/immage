@@ -71,7 +71,7 @@ import { UpdateBanner } from "./UpdateBanner";
 import { autoCheck, relaunch } from "./updates";
 
 import { loadFrameCacheMb, loadThumbMemoryMb, refreshMemoryBudget } from "./memoryBudget";
-import { loadOpenGenerated, storeOpenGenerated, loadLoupe, storeLoupe, loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadEditMode, storeEditMode, loadNewPhotosNonRaw, loadNewPhotosProfile, loadOverlayColor, loadGuideColor, guideRgb, loadPins, maskOverlayRgb, loadPreview, loadBalancedPreviewSize, loadDraftTarget, loadDraftSmallest, loadSliderScroll, loadStackPairs, loadGridSize, storeGridSize, GRID_SIZES, PreferencesDialog, storeOverlayColor, storeGuideColor, storeStackPairs, storeAutoHide, storeCanvas, CANVASES, storeFocusMode, storePins, type AccelProvider, type Canvas, loadNegWarn, loadNegProfiles, storeNegProfile, loadNegativeExportFormat, loadReadAhead, storeNegWarn, storeNegativeExportFormat, type Pins, type PrefsTab, type Preview, type EditMode } from "./Preferences";
+import { loadOpenGenerated, storeOpenGenerated, loadLoupe, storeLoupe, loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadEditMode, storeEditMode, loadNewPhotosNonRaw, loadNewPhotosProfile, loadOverlayColor, loadGuideColor, guideRgb, loadPins, maskOverlayRgb, loadPreview, loadBalancedPreviewSize, loadDraftTarget, loadDraftSmallest, loadSliderScroll, loadStackPairs, loadGridSize, storeGridSize, clampGridSize, PreferencesDialog, storeOverlayColor, storeGuideColor, storeStackPairs, storeAutoHide, storeCanvas, CANVASES, storeFocusMode, storePins, type AccelProvider, type Canvas, loadNegWarn, loadNegProfiles, storeNegProfile, loadNegativeExportFormat, loadReadAhead, storeNegWarn, storeNegativeExportFormat, type Pins, type PrefsTab, type Preview, type EditMode } from "./Preferences";
 import { kindOf, loadPlugins, loadReturns, returnValues, storePlugins, unfit, type PluginConfig,
          type PluginReturn } from "./plugins";
 import { FolderTree, type Volume } from "./FolderTree";
@@ -482,15 +482,44 @@ export default function App() {
   const [perfHud, setPerfHud] = useState(perf.enabled);
   useEffect(() => { perf.init(); }, []);
   const [stackPairs, setStackPairs] = useState(loadStackPairs);
-  // the grid view's cell height (Preferences > General > Library; ⌘+ ⌘- in the grid)
+  // the grid view's cell height (Preferences > General > Library; ⌘+ ⌘- and
+  // a pinch or ⌘ wheel in the grid), any size in its range. a key step eases
+  // there over 150 ms, as the photo's zoom does; a pinch follows the fingers.
+  // the setting is written once the size settles, not every frame
   const [gridSize, setGridSize] = useState(loadGridSize);
-  const chooseGridSize = (v: number) => { setGridSize(v); storeGridSize(v); };
-  const stepGridSize = (by: number) => setGridSize((old) => {
-    const i = Math.max(0, GRID_SIZES.indexOf(old));
-    const v = GRID_SIZES[Math.min(GRID_SIZES.length - 1, Math.max(0, i + by))];
-    storeGridSize(v);
-    return v;
-  });
+  const gridAnim = useRef({ raf: 0, target: gridSize, now: gridSize, store: 0 });
+  const settleGridSize = (v: number) => {
+    const a = gridAnim.current;
+    window.clearTimeout(a.store);
+    a.store = window.setTimeout(() => storeGridSize(Math.round(v)), 250);
+  };
+  const applyGridSize = (v: number) => {
+    const a = gridAnim.current;
+    if (a.raf) { cancelAnimationFrame(a.raf); a.raf = 0; }
+    a.target = a.now = clampGridSize(v);
+    setGridSize(a.now);
+    settleGridSize(a.now);
+  };
+  const chooseGridSize = (v: number) => applyGridSize(v);
+  const zoomGrid = (factor: number) => applyGridSize(gridAnim.current.now * factor);
+  const stepGridSize = (by: number) => {
+    const a = gridAnim.current;
+    const from = a.now;
+    const to = clampGridSize((a.raf ? a.target : a.now) * 1.25 ** by);
+    if (a.raf) cancelAnimationFrame(a.raf);
+    a.raf = 0;
+    a.target = to;
+    if (Math.abs(to - from) < 0.5) return;
+    const start = performance.now();
+    const frame = (t: number) => {
+      const k = Math.min(1, (t - start) / 150);
+      a.now = from + (to - from) * (1 - (1 - k) ** 3);
+      setGridSize(a.now);
+      a.raf = k < 1 ? requestAnimationFrame(frame) : 0;
+    };
+    a.raf = requestAnimationFrame(frame);
+    settleGridSize(to);
+  };
   // the import screen, over the editor until closed
   const [importOpen, setImportOpen] = useState(false);
   const importOpenRef = useRef(false);
@@ -6279,7 +6308,7 @@ export default function App() {
                               : images.length ? "no photos match the filters"
                               : folder ? `no photos in this folder${includeSub ? "" : " (Include subfolders shows its subfolders' photos)"}`
                               : "add a folder to start"} current={currentEntry?.imgid ?? null} loader={loader.current!} onMenu={showFileMenu}
-                       height={layout.stripHeight} grid={grid} gridSize={gridSize} selection={selection} onPick={pickPhoto}
+                       height={layout.stripHeight} grid={grid} gridSize={gridSize} onGridZoom={zoomGrid} selection={selection} onPick={pickPhoto}
                        candidate={compare}
                        onDouble={(i) => { setCompare(null); void openEntry(i); setGrid(false); }}
                        onOpenKnown={(k, double) => {

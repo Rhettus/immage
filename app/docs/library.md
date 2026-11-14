@@ -88,9 +88,11 @@ which the grid covers. Choosing a tool in the rail on the right, such as
 Adjustments or Masks, leaves the grid for the open photo. Print stays beside
 the grid, so you can pick the photos for a sheet.
 
-⌘= and ⌘- make the grid's thumbnails larger or smaller while the grid shows
-(in the editor they zoom the photo). Preferences > General > Library >
-**Grid thumbnail size** sets the same size.
+Pinch on a trackpad, or scroll with ⌘ held, over the grid to resize its
+thumbnails smoothly; the photo under the pointer stays where it is. ⌘= and ⌘-
+make them larger or smaller in an eased step while the grid shows (in the
+editor they zoom the photo). Preferences > General > Library > **Grid
+thumbnail size** sets the same size.
 
 Drag the top edge of the filmstrip to make it taller or shorter.
 

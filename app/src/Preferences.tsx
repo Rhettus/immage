@@ -346,17 +346,19 @@ export function loadStackPairs(): boolean {
 export function storeStackPairs(on: boolean) {
   try { settings.set(STACK_PAIRS_KEY, on ? "1" : "0"); } catch { /* not kept */ }
 }
-// the grid view's cell height in CSS pixels, a step of GRID_SIZES; ⌘+ and
-// ⌘- step it in the grid. the thumbnails come from the mipmap that holds a
-// 240 pixel square (library.ts THUMB_SIZE), 450 pixels tall, so the largest
-// step stays sharp at 1x
+// the grid view's cell height in CSS pixels, anywhere from GRID_SIZE_MIN to
+// GRID_SIZE_MAX; ⌘+ and ⌘- ease it in the grid, a pinch or ⌘ wheel zooms it
+// freely. the thumbnails come from the mipmap that holds a 240 pixel square
+// (library.ts THUMB_SIZE), 450 pixels tall, so the largest size stays sharp at 1x
 const GRID_SIZE_KEY = "immage.gridSize";
-export const GRID_SIZES = [120, 160, 200, 250, 320, 400];
+export const GRID_SIZE_MIN = 120;
+export const GRID_SIZE_MAX = 400;
 export const GRID_SIZE_DEFAULT = 200;
+export const clampGridSize = (v: number) => Math.min(GRID_SIZE_MAX, Math.max(GRID_SIZE_MIN, v));
 export function loadGridSize(): number {
   try {
     const v = Number(settings.get(GRID_SIZE_KEY));
-    return GRID_SIZES.includes(v) ? v : GRID_SIZE_DEFAULT;
+    return Number.isFinite(v) && v > 0 ? clampGridSize(v) : GRID_SIZE_DEFAULT;
   } catch { return GRID_SIZE_DEFAULT; }
 }
 export function storeGridSize(v: number) {
@@ -515,7 +517,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   onAutoHide: (on: boolean) => void;
   stackPairs: boolean;
   onStackPairs: (on: boolean) => void;
-  gridSize: number;                      // a step of GRID_SIZES
+  gridSize: number;                      // GRID_SIZE_MIN to GRID_SIZE_MAX
   onGridSize: (v: number) => void;
   accel: AccelProvider[] | null;         // null until the engine has said
   plugins: PluginConfig[];
@@ -860,9 +862,9 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                 </PrefRow>
                 <PrefRow label="Grid thumbnail size" summary={keys("Thumbnail size in grid view; ⌘= and ⌘- there.")}
                          hint={keys("how large photos show in grid view (G); ⌘= and ⌘- change it while the grid shows")}>
-                  <input type="range" min={0} max={GRID_SIZES.length - 1} step={1} aria-label="Grid thumbnail size"
-                         value={Math.max(0, GRID_SIZES.indexOf(gridSize))}
-                         onChange={(e) => onGridSize(GRID_SIZES[Number(e.target.value)])} />
+                  <input type="range" min={GRID_SIZE_MIN} max={GRID_SIZE_MAX} step={1} aria-label="Grid thumbnail size"
+                         value={Math.round(gridSize)}
+                         onChange={(e) => onGridSize(Number(e.target.value))} />
                 </PrefRow>
               </PrefCard>
               <PrefCard title="Startup">

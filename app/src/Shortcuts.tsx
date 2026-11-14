@@ -59,6 +59,8 @@ const GROUPS: Group[] = [
       ["⌘-click", "In the filmstrip: add a photo to the selection, or take it out"],
       ["⇧-click", "In the filmstrip: select the run from the open photo"],
       ["G", "Grid view of the folder (G or Esc goes back)"],
+      ["⌘= ⌘-", "In grid view: larger or smaller thumbnails"],
+      ["Pinch, ⌘-scroll", "In grid view: resize the thumbnails smoothly"],
     ],
   },
   {

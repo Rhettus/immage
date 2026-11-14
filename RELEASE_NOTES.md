@@ -7,6 +7,10 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Grid view's thumbnails resize smoothly: pinch on a trackpad or scroll with
+  ⌘ held over the grid, and the photo under the pointer stays in place. ⌘=
+  and ⌘- ease to the next size, and Preferences > General > Library > Grid
+  thumbnail size can be set to any size in its range.
 - Clarity's and Texture's detail sliders, globally and on masks, sit in a
   shaded box headed by the name, without the repeated prefix on each
   slider, so each set stands apart from the sliders around it.
