@@ -76,6 +76,8 @@ Bug fixes
 
 - Linux: pinching on a touchpad zooms the photo around the pointer, as on
   the Mac, instead of zooming the whole window.
+- AI Denoise no longer fails with "No such file or directory" when you press
+  Run while its model is still downloading for the dialog's preview.
 
 ## 0.45.0
 

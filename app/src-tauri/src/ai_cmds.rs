@@ -259,7 +259,7 @@ type Unpack<'a> = &'a dyn Fn(&Path, &Path) -> Result<(), String>;
 fn install_model(progress: &dyn Fn(Value), unpack: Unpack, site: &ModelSite, dir: &Path, id: &str,
                  version: &str) -> Result<(), String> {
     let dl = dir.join("_dl");
-    std::fs::create_dir_all(&dl).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dl).map_err(|e| format!("{}: {e}", dl.display()))?;
     // "5.7.0+1252~g0967d3653e" is release 5.7.0's. a checkout without
     // darktable's release-* tags (a clone of a fork that does not carry
     // them) reports no darktable version, as on the Windows build; then
@@ -288,7 +288,7 @@ fn install_model(progress: &dyn Fn(Value), unpack: Unpack, site: &ModelSite, dir
             format!("the downloaded model '{id}' failed its checksum")
         });
     }
-    std::fs::rename(&part, &archive).map_err(|e| e.to_string())?;
+    std::fs::rename(&part, &archive).map_err(|e| format!("{}: {e}", part.display()))?;
     progress(json!({ "id": id, "stage": "installing" }));
     let unpacked = unpack(&archive, dir);
     let _ = std::fs::remove_file(&archive);
@@ -350,7 +350,7 @@ const EXTRA_MODELS: &[ExtraModel] = &[ExtraModel {
 
 fn install_extra(progress: &dyn Fn(Value), dir: &Path, m: &ExtraModel) -> Result<(), String> {
     let dest = dir.join(m.id);
-    std::fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dest).map_err(|e| format!("{}: {e}", dest.display()))?;
     progress(json!({ "id": m.id, "stage": "downloading", "mb": m.mb }));
     let part = dest.join("model.onnx.part");
     fetch(m.url, &part, Some(m.size))?;
@@ -358,11 +358,21 @@ fn install_extra(progress: &dyn Fn(Value), dir: &Path, m: &ExtraModel) -> Result
         let _ = std::fs::remove_file(&part);
         return Err(format!("the downloaded model '{}' failed its checksum", m.id));
     }
-    std::fs::rename(&part, dest.join("model.onnx")).map_err(|e| e.to_string())?;
+    std::fs::rename(&part, dest.join("model.onnx")).map_err(|e| format!("{}: {e}", part.display()))?;
     // written last: the registry finds the model only once it is whole
-    std::fs::write(dest.join("config.json"), m.config).map_err(|e| e.to_string())?;
+    std::fs::write(dest.join("config.json"), m.config).map_err(|e| format!("{}: {e}", dest.display()))?;
     progress(json!({ "id": m.id, "stage": "ready" }));
     Ok(())
+}
+
+// one install at a time: AI Denoise's dialog fetches its model for the
+// preview while Run asks for it again, and two installs of one model share
+// its .part file, so the second found it renamed away ("No such file or
+// directory"). the one waiting finds the model installed by the first
+static INSTALLING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn installed(dir: &Path, id: &str) -> bool {
+    dir.join(id).join("config.json").exists()
 }
 
 // make sure an AI model is installed, downloading it on first use
@@ -370,11 +380,15 @@ fn install_extra(progress: &dyn Fn(Value), dir: &Path, m: &ExtraModel) -> Result
 #[specta::specta]
 pub(crate) async fn ai_model_ensure(app: AppHandle, state: State<'_, AppState>, id: String) -> Result<(), String> {
     let dir = state.models_dir.clone();
-    if dir.join(&id).join("config.json").exists() {
+    if installed(&dir, &id) {
         return Ok(());
     }
     if let Some(m) = EXTRA_MODELS.iter().find(|m| m.id == id) {
         return tauri::async_runtime::spawn_blocking(move || {
+            let _one = INSTALLING.lock().unwrap_or_else(|e| e.into_inner());
+            if installed(&dir, m.id) {
+                return Ok(());
+            }
             install_extra(&|v| { let _ = app.emit("ai-model", v); }, &dir, m)
         })
             .await
@@ -383,6 +397,10 @@ pub(crate) async fn ai_model_ensure(app: AppHandle, state: State<'_, AppState>, 
     let reply = state.engine("ai_model_ensure").request(json!({ "cmd": "version" }))?;
     let version = reply["version"].as_str().unwrap_or("").to_string();
     tauri::async_runtime::spawn_blocking(move || {
+        let _one = INSTALLING.lock().unwrap_or_else(|e| e.into_inner());
+        if installed(&dir, &id) {
+            return Ok(());
+        }
         let unpack = |archive: &Path, into: &Path| {
             app.state::<AppState>().engine("ai_model_unpack")
                 .request(json!({ "cmd": "unpack", "archive": archive, "dir": into }))
