@@ -61,7 +61,7 @@ mask_delete mask_map mask_rename masks merge_cancel meta meta_set module_schema 
 open opencl pano_merge pano_preview parity paste_batch points prefetch preview
 presets print print_profile_add print_profiles printer printers quit range_map
 remove_copy render sample save set sidecars softproof spektra_fetch
-spektra_stocks spot_source spots spots_enable style_forget thumb tone_key watermarks wb_presets
+spektra_stocks spot_source spots spots_enable style_forget thumb thumb_threads tone_key watermarks wb_presets
 unpack upright version zones
 '''.split())
 
@@ -237,7 +237,7 @@ def photo_edits(img):
           label='set exposure priority and instance'),
         R('get', modules={'exposure@7': ['exposure']}, label='get exposure priority unknown'),
         R('get', modules={'exposure@0': ['exposure']}, label='get exposure priority 0'),
-        R('color_profiles'), R('lenses'), R('wb_presets'), R('lut_files', folder='{tmp}/luts'), R('lut_folder', folder=''), R('watermarks'),
+        R('color_profiles'), R('lenses'), R('wb_presets'), R('lut_files', folder='{tmp}/luts'), R('lut_folder', folder=''), R('thumb_threads', threads=2), R('watermarks'),
         R('render', '{out}/r.ppm', width=64, height=48, out='{out}/r.ppm', label='render ppm'),
         R('render', '{out}/r.rgba', width=64, height=48, rgba='{out}/r.rgba', label='render rgba'),
         R('render', '{out}/r.ppm', width=32, height=24, scale=1.0, x=8, y=8, out='{out}/r.ppm',

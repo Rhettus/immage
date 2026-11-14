@@ -29,6 +29,7 @@ import { checkForUpdate, lastChecked, loadAutoCheck, storeAutoCheck, useUpdate, 
 
 import { loadNewPhotosProfile, storeNewPhotosProfile } from "./profileDefault";
 import { settings } from "./settings";
+import { loadThumbThreads, storeThumbThreads, THUMB_THREADS } from "./library";
 export { loadHiddenModules, storeHiddenModules } from "./hiddenModules";
 import { commands, type AccelProvider, type GpuEditState, type Licenses, type ResourceLevels, type WebviewRenderer } from "./commands";
 export { loadNewPhotosProfile } from "./profileDefault";
@@ -573,6 +574,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   const [draftTarget, setDraftTarget] = useState(loadDraftTarget);
   const [draftSmallest, setDraftSmallest] = useState(loadDraftSmallest);
   const [readAhead, setReadAhead] = useState(loadReadAhead);
+  const [thumbThreads, setThumbThreads] = useState(loadThumbThreads);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   // choosing a profile sets what it stands for, which Advanced can then change
   const applyProfile = (p: Preview) => {
@@ -1035,6 +1037,15 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                   {resources && resources.next !== resources.running && (
                     <button className="btn small" style={{ marginLeft: 8 }} onClick={() => void onRelaunch()}>Relaunch</button>
                   )}
+                </PrefRow>
+                <PrefRow label="Thumbnail threads" summary="Thumbnails built at once. 2 by default."
+                         hint="how many library thumbnails are built at the same time. more fill a folder sooner on a fast disk, at the cost of cores an edit could use; fewer can be quicker from a network drive, which slows when asked for several files at once. takes effect at once">
+                  <div className="segmented small">
+                    {THUMB_THREADS.map((n) => (
+                      <button key={n} className={thumbThreads === n ? "active" : ""}
+                              onClick={() => { setThumbThreads(n); storeThumbThreads(n); }}>{String(n)}</button>
+                    ))}
+                  </div>
                 </PrefRow>
               </PrefCard>
               <CachePrefs />

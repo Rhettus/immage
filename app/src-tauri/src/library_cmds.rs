@@ -408,6 +408,19 @@ pub(crate) async fn folder_volumes(paths: Vec<String>) -> Vec<volumes::Volume> {
         .unwrap_or_default()
 }
 
+// Preferences' thumbnail threads: kept for the engine's next start and
+// handed to the running engine at once
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn thumb_threads(state: State<'_, AppState>, settings: State<'_, crate::settings::Settings>,
+                                  threads: u32) -> Result<(), String> {
+    if !(1..=crate::engine::THUMB_THREADS_MAX).contains(&threads) {
+        return Err(format!("thumbnail threads must be 1 to {}", crate::engine::THUMB_THREADS_MAX));
+    }
+    settings.set(crate::settings::THUMB_THREADS, &threads.to_string())?;
+    state.engine("thumb_threads").request(json!({ "cmd": "thumb_threads", "threads": threads })).map(|_| ())
+}
+
 // the lighttable thumbnail of an image: little-endian u32 width and height,
 // then RGBA. given the photo's file, it is also kept in the thumbnail cache.
 // the engine builds it on a thread of its own, beside any edit or render,

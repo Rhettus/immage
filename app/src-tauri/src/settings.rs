@@ -22,6 +22,9 @@ pub const RENDERER: &str = "native.webview-renderer";
 // Preferences > Modules > 3D LUT folder, written by the page; the engine takes
 // it as darktable's plugins/darkroom/lut3d/def_path
 pub const LUT_FOLDER: &str = "immage.lutFolder";
+// Preferences > Performance > Thumbnail threads, written by the page; the
+// engine starts with it (engine.rs, thumb_threads)
+pub const THUMB_THREADS: &str = "immage.thumbThreads";
 
 // each native key began as a one-value file of this name in the runtime
 // directory

@@ -1244,6 +1244,13 @@ void library_thumb_wait(void)
   if(pool) g_thread_pool_free(pool, TRUE, TRUE);
 }
 
+void library_thumb_threads(gint n)
+{
+  eng_lock(&_thumb_lock, ENG_LOCK_POOL);
+  if(library_thumb_pool) g_thread_pool_set_max_threads(library_thumb_pool, n, NULL);
+  eng_unlock(&_thumb_lock, ENG_LOCK_POOL);
+}
+
 // rating (0-5), rejected, labels (bit mask: red 1, yellow 2, green 4, blue
 // 8, purple 16) and the text fields; whatever the request names is set, and
 // the sidecar written

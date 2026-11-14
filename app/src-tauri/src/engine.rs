@@ -393,6 +393,16 @@ pub fn lut_folder(runtime: &Path) -> Option<String> {
     crate::settings::read_key(runtime, crate::settings::LUT_FOLDER).map(|s| s.trim().to_string())
 }
 
+// Preferences' thumbnail threads, 1 to THUMB_THREADS_MAX (main.c's
+// _THUMB_THREADS_MAX); two unless set. a network drive may want fewer
+pub const THUMB_THREADS_MAX: u32 = 8;
+pub fn thumb_threads(runtime: &Path) -> u32 {
+    crate::settings::read_key(runtime, crate::settings::THUMB_THREADS)
+        .and_then(|s| s.trim().parse::<u32>().ok())
+        .filter(|n| (1..=THUMB_THREADS_MAX).contains(n))
+        .unwrap_or(2)
+}
+
 pub fn set_resource_level(settings: &Settings, level: &str) -> Result<(), String> {
     if !RESOURCE_LEVELS.contains(&level) {
         return Err(format!("no resource level '{level}'"));
@@ -669,6 +679,8 @@ impl Engine {
         cmd
             .arg("--models")
             .arg(models)
+            .arg("--thumb-threads")
+            .arg(thumb_threads(runtime).to_string())
             .arg("--core")
             .arg("--configdir")
             .arg(runtime.join("config"))

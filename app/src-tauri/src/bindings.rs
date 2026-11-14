@@ -49,6 +49,7 @@ pub fn commands() -> Commands<tauri::Wry> {
         crate::library_cmds::list_subfolders,
         crate::library_cmds::folder_volumes,
         crate::library_cmds::thumb,
+        crate::library_cmds::thumb_threads,
         crate::library_cmds::thumb_cached,
         crate::library_cmds::thumb_known,
         crate::library_cmds::prefetch,

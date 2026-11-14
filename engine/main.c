@@ -725,6 +725,20 @@ static gboolean _cmd_lut_folder(JsonObject *req, JsonBuilder *b, char **err)
   return TRUE;
 }
 
+// Preferences' thumbnail threads, at once: a lower count lets the threads
+// under way finish their thumbnail first
+static gboolean _cmd_thumb_threads(JsonObject *req, JsonBuilder *b, char **err)
+{
+  const gint64 n = json_object_get_int_member_with_default(req, "threads", _THUMB_THREADS);
+  if(n < 1 || n > _THUMB_THREADS_MAX)
+  {
+    *err = g_strdup_printf("thumbnail threads must be 1 to %d", _THUMB_THREADS_MAX);
+    return FALSE;
+  }
+  library_thumb_threads((gint)n);
+  return TRUE;
+}
+
 static gboolean _cmd_watermarks(JsonObject *req, JsonBuilder *b, char **err)
 {
   return files_watermarks(b, err);
@@ -1307,6 +1321,7 @@ static const eng_cmd_t _commands[] =
   { "lut_files", _cmd_lut_files, _CMD_NEEDS_OPEN },
   { "colormapping_acquire", _cmd_colormapping_acquire, _CMD_NEEDS_OPEN },
   { "lut_folder", _cmd_lut_folder, 0 },
+  { "thumb_threads", _cmd_thumb_threads, 0 },
   { "watermarks", _cmd_watermarks, 0 },
   { "lenses", _cmd_lenses, _CMD_NEEDS_OPEN },
   { "module_state", _cmd_module_state, _CMD_NEEDS_OPEN },
@@ -1618,9 +1633,11 @@ int main(int argc, char **argv)
   g_ptr_array_add(m, (gpointer)"darktable-engine");
   g_ptr_array_add(m, (gpointer)"--library");
   g_ptr_array_add(m, (gpointer)":memory:");
-  int i = 1;
+  int i = 1, thumb_threads = _THUMB_THREADS;
   while(i < argc && g_strcmp0(argv[i], "--core"))
   {
+    if(!g_strcmp0(argv[i], "--thumb-threads") && i + 1 < argc)
+      thumb_threads = CLAMP(atoi(argv[++i]), 1, _THUMB_THREADS_MAX);
 #ifdef HAVE_AI
     // where the AI models are; given, AI features are on
     if(!g_strcmp0(argv[i], "--models") && i + 1 < argc) ai_models_dir = argv[++i];
@@ -1685,7 +1702,7 @@ int main(int argc, char **argv)
     g_free(setting);
   }
 
-  library_thumb_pool = g_thread_pool_new(library_thumb_run, out, _THUMB_THREADS, FALSE, NULL);
+  library_thumb_pool = g_thread_pool_new(library_thumb_run, out, thumb_threads, FALSE, NULL);
   export_pool = g_thread_pool_new(export_run, out, 1, TRUE, NULL);
   library_import_pool = g_thread_pool_new(library_import_run, out, 1, FALSE, NULL);
 #ifdef HAVE_AI

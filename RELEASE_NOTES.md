@@ -7,6 +7,9 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Preferences > Performance > Memory has a Thumbnail threads setting: how
+  many library thumbnails are built at once, from 1 to 8 (2 by default).
+  Fewer can be quicker from a network drive.
 - Preferences > General has an Editing mode, also switched by the Advanced
   mode button at the top of Adjustments. Advanced shows Adjustments' groups
   (HSL / Color and B&W both, for color and black and white photos alike) with

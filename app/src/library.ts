@@ -178,14 +178,32 @@ async function fetchKnownThumb(key: string, size: number): Promise<ImageBitmap |
   return buf.byteLength ? createImageBitmap(new Blob([buf], { type: "image/jpeg" })) : null;
 }
 
+// the engine's thumbnail threads (main.c, _THUMB_THREADS), set in
+// Preferences > Performance: two unless set, as a render keeps most of the
+// cores; a network drive may do better with fewer reads at once.
+// thumb_threads keeps it for the engine's next start too
+export const THUMB_THREADS = [1, 2, 3, 4, 6, 8];
+export const THUMB_THREADS_DEFAULT = 2;
+const THUMB_THREADS_KEY = "immage.thumbThreads";
+export function loadThumbThreads(): number {
+  try {
+    const v = Number(settings.get(THUMB_THREADS_KEY));
+    return THUMB_THREADS.includes(v) ? v : THUMB_THREADS_DEFAULT;
+  } catch { return THUMB_THREADS_DEFAULT; }
+}
+export function storeThumbThreads(v: number) {
+  try { settings.set(THUMB_THREADS_KEY, String(v)); } catch { /* not kept */ }
+  commands.thumbThreads(v).catch(() => {});
+}
+
 // fetches thumbnails: those kept on disk first, several at a time, then
-// the rest from the engine, ENGINE_THUMBS at a time. the engine builds them
+// the rest from the engine, as many at a time as it has threads
+// (loadThumbThreads). the engine builds them
 // on threads of its own (main.c, _thumb_run), so they come in while a photo
 // is edited, and no render waits behind one. past `limit` bytes (the memory budget), those off screen
 // longest are let go, and come back from disk when scrolled to.
 // a known image's thumbnail goes by its knownKey() until the image has an
 // imgid, then stands in for it until checked (fetchKnownThumb)
-const ENGINE_THUMBS = 2; // the engine's thumbnail threads, main.c's _THUMB_THREADS
 
 type Id = number | string;
 
@@ -424,7 +442,7 @@ export class ThumbLoader {
           if (any) this.progressed();
           continue;
         }
-        if (this.inFlight >= ENGINE_THUMBS) {
+        if (this.inFlight >= loadThumbThreads()) {
           await new Promise<void>((r) => { this.wake = r; });
           continue;
         }

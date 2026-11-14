@@ -177,10 +177,12 @@ typedef struct preview_output_t {
 // folder's thumbnails come in while the photo is edited and rendered.
 // darktable's lighttable builds them from its job threads the same way:
 // the mipmap cache and the library (SQLITE_CONFIG_SERIALIZED, database.c)
-// take callers on many threads. two threads, so a render keeps most of the
-// cores. the reply carries the tag, and can come between another request
-// and its reply
+// take callers on many threads. two threads unless Preferences says
+// otherwise (--thumb-threads, the thumb_threads command), so a render keeps
+// most of the cores. the reply carries the tag, and can come between
+// another request and its reply
 #define _THUMB_THREADS 2
+#define _THUMB_THREADS_MAX 8
 
 #ifdef HAVE_AI
 // GPU execution providers, the only ones the upscale model runs on: on the
@@ -495,6 +497,7 @@ extern GThreadPool *library_thumb_pool;
 void library_thumb_run(gpointer data, gpointer user_data);
 gboolean library_thumb_queue(JsonParser *parser);
 void library_thumb_wait(void);
+void library_thumb_threads(gint n);
 gboolean library_meta_set(const dt_imgid_t imgid, JsonObject *req, char **err);
 gboolean library_capture_times(JsonObject *req, JsonBuilder *b, char **err);
 

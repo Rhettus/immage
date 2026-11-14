@@ -33,6 +33,7 @@ export const commands = {
 	listSubfolders: (path: string) => __TAURI_INVOKE<SubFolder[]>("list_subfolders", { path }),
 	folderVolumes: (paths: string[]) => __TAURI_INVOKE<Volume[]>("folder_volumes", { paths }),
 	thumb: (imgid: number, size: number, path: string | null, version: number | null, proof: boolean | null) => __TAURI_INVOKE<ArrayBuffer>("thumb", { imgid, size, path, version, proof }),
+	thumbThreads: (threads: number) => __TAURI_INVOKE<null>("thumb_threads", { threads }),
 	thumbCached: (path: string, version: number, size: number) => __TAURI_INVOKE<ArrayBuffer>("thumb_cached", { path, version, size }),
 	thumbKnown: (path: string, version: number, size: number) => __TAURI_INVOKE<ArrayBuffer>("thumb_known", { path, version, size }),
 	prefetch: (imgids: number[]) => __TAURI_INVOKE<null>("prefetch", { imgids }),

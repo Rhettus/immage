@@ -401,6 +401,11 @@ scale**; zoomed-in frames still use the full webview resolution.
   short of memory.
 - **Read ahead both ways**: as many photos behind the open one too, for
   stepping back. Off by default.
+- **Thumbnail threads**: how many library thumbnails are built at the same
+  time, from 1 to 8. Two by default, which leaves most of the computer's
+  cores to the photo being edited. More fill a folder sooner from a fast
+  disk; fewer can be quicker from a network drive (NAS), which slows down
+  when several files are read at once. A change takes effect at once.
 
 **Cache**
 
