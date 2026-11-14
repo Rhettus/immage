@@ -60,6 +60,34 @@ folder and the last photo are remembered when you quit.
 ![The Folders card with one folder added and Include subfolders off](images/library-folders.png)
 <!-- screenshot: Library panel, Folders card open, Include subfolders off, one folder added -->
 
+### Experimental ORF metadata reads
+
+On the `experiment/orf-partial-reads-0.46.0` branch, Olympus and OM System ORF
+photos join the existing partial metadata reader. While **Reading photos**
+runs, the reader tries the first 64 KB, then larger prefixes up to 16 MB if
+needed. If it cannot establish complete metadata, it falls back to the whole
+file. Embedded previews can be read separately from their original locations.
+Opening a photo for editing still needs its image data.
+
+This experiment reduces metadata read volume; it does not make imports run
+concurrently. It is separate from the NAS probe read-ahead experiment.
+Panasonic RW2 is not included in this change.
+
+For a headless comparison, launch the experimental engine with
+`IMMAGE_METADATA_PREFIX=0` to disable prefix reads (baseline A), or leave that
+variable unset for partial reads (B). Set `IMMAGE_METADATA_IO_DIAGNOSTICS=1`
+to record per-file read counts and bytes in `engine.log`. These count bytes
+returned by the metadata reader's source reads, including repeated reads;
+they are not measurements of network traffic or storage cache misses. The
+switches do not change Preferences or write to the original photo.
+
+The headless [ORF comparison runner](../../benchmarking/README.md#orf-partial-metadata-reads)
+uses those settings automatically, checks that imported photo entries match,
+and saves labeled A/B measurements. Use `--recursive` for a year folder with
+month subfolders. Run a warm-up pair first, then an even number of measured
+pairs on the same folder. Cache state affects elapsed time; source byte counts
+show how much the metadata reader requests in either case.
+
 ## Moving and copying photos
 
 Drag a thumbnail from the grid or the filmstrip onto a folder in the

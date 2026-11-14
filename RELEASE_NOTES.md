@@ -69,6 +69,12 @@ Improvements
   again. The sliders stay where they are, and other panels' edits and masks
   stay on.
 
+Performance
+
+- Experimental ORF metadata reads try a small file prefix before reading the
+  whole photo, reducing transfers when its metadata is near the beginning.
+  Embedded previews remain available, with full-file fallback when needed.
+
 Bug fixes
 
 - Rejecting, rating and labeling photos while a folder loads now keeps those

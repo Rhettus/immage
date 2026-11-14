@@ -11,6 +11,7 @@ are your machine's own and stay out of git: a fresh clone starts with none.
 | SUMMARY.md | the latest numbers, and the change since the last run over the same photos (generated, gitignored) |
 | [dashboard/index.html](dashboard/index.html) | interactive dashboard; open the file in a browser, no network needed |
 | `bench.py` | the engine benchmark |
+| `orf-partial-reads.py` | headless full-read versus prefix metadata benchmark for Olympus ORF folders |
 | `report.py` | rewrites SUMMARY.md and `dashboard/data.js` from every recorded run |
 | `compare.py` | two runs side by side, as markdown |
 | `lib/edits.mjs` | Immage's control-to-module mapping (`app/src/manifest.ts`), for the benchmark |
@@ -421,3 +422,25 @@ cropped and restored frames. Corpus files remain ignored; the tracked generator
 makes the fixtures reproducible. Use these alongside camera portrait RAWs,
 which are still needed for sensor orientation and GPU validation. The default
 release check selects RAWs; run this focused check separately for these TIFFs.
+
+### ORF partial metadata reads
+
+`orf-partial-reads.py` compares full-file metadata reads with the prefix reader
+on Olympus `.ORF` photos. Each sample starts a fresh headless engine with an
+isolated temporary library, config and cache. It verifies that every requested
+photo imports and normalized image entries match, then records source bytes
+read per photo, photos per second and elapsed import time. Runs alternate
+baseline and prefix order. It reads originals without writing photos or
+sidecars and does not start the GUI. The engine build must include
+`IMMAGE_METADATA_IO` diagnostics. Source-byte totals cover metadata reader
+calls only; preview extraction, import probes and operating-system traffic are
+outside those counters. The warmup heats the file cache, so elapsed time is
+cache-sensitive even though the reader's byte counters remain useful.
+
+Run one warmup pair, then the measured run on a year/month tree:
+
+```bash
+python3 -I benchmarking/orf-partial-reads.py /photos/2025 --recursive --runs 1
+python3 -I benchmarking/orf-partial-reads.py /photos/2025 --recursive --runs 6 \
+  --report /tmp/orf-partial-reads.json
+```

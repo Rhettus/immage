@@ -14,6 +14,10 @@ and Linux. **All builds are alpha; bugs are expected.**
 [User guide](app/docs/README.md) ·
 [Release notes](RELEASE_NOTES.md)
 
+The `experiment/orf-partial-reads-0.46.0` branch tests
+[partial ORF metadata reads](app/docs/library.md#experimental-orf-metadata-reads)
+to reduce file transfers while loading folders on network storage.
+
 <a href="app/docs/images/workspace.png"><img src="app/docs/images/workspace.png" width="960" alt="Immage editing a photo"></a>
 
 ## What you can do

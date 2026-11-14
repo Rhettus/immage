@@ -6,6 +6,7 @@
 #include "common/image.h"
 #include "imageio/imageio_common.h"
 extern "C" {
+#include "common/film.h"
 #include "imageio/imageio_dng.h"
 }
 #include "imageio/imageio_jpeg.h"
@@ -36,21 +37,28 @@ static std::vector<uint8_t> jpeg(const int width, const int height)
   return out;
 }
 
-static void put16(std::vector<uint8_t> &data, size_t at, uint16_t value)
+static void put16(std::vector<uint8_t> &data, size_t at, uint16_t value, bool big = false)
 {
-  data[at] = value; data[at + 1] = value >> 8;
+  data[at] = big ? value >> 8 : value; data[at + 1] = big ? value : value >> 8;
 }
 
-static void put32(std::vector<uint8_t> &data, size_t at, uint32_t value)
+static void put32(std::vector<uint8_t> &data, size_t at, uint32_t value, bool big = false)
 {
-  put16(data, at, value); put16(data, at + 2, value >> 16);
+  if(big) { put16(data, at, value >> 16, true); put16(data, at + 2, value, true); }
+  else { put16(data, at, value); put16(data, at + 2, value >> 16); }
 }
 
 static void entry(std::vector<uint8_t> &data, size_t at, uint16_t tag, uint16_t type,
-                  uint32_t count, uint32_t value)
+                  uint32_t count, uint32_t value, bool big = false)
 {
-  put16(data, at, tag); put16(data, at + 2, type);
-  put32(data, at + 4, count); put32(data, at + 8, value);
+  put16(data, at, tag, big); put16(data, at + 2, type, big);
+  put32(data, at + 4, count, big);
+  if(type == 3 && count == 1)
+  {
+    put16(data, at + 8, value, big);
+    data[at + 10] = data[at + 11] = 0;
+  }
+  else put32(data, at + 8, value, big);
 }
 
 static void write(const std::string &path, const std::vector<uint8_t> &data)
@@ -60,32 +68,44 @@ static void write(const std::string &path, const std::vector<uint8_t> &data)
   require(bool(out), "could not write fixture");
 }
 
-static void fixture(const std::string &path, bool late)
+static void fixture(const std::string &path, bool late, bool orf = false, bool big = false,
+                    bool subifd = false)
 {
   const auto large = jpeg(1600, 1000), small = jpeg(400, 300);
   const size_t maker = late ? 20 * 1024 * 1024 : 1024;
   std::vector<uint8_t> data(24 * 1024 * 1024);
-  data[0] = data[1] = 'I'; put16(data, 2, 42); put32(data, 4, 8);
-  put16(data, 8, 8);
-  entry(data, 10, 256, 4, 1, 1600);
-  entry(data, 22, 257, 4, 1, 1000);
-  entry(data, 34, 259, 3, 1, 6);
-  entry(data, 46, 271, 2, 8, maker);
-  entry(data, 58, 274, 3, 1, 6);
-  entry(data, 70, 513, 4, 1, 2 * 1024 * 1024);
-  entry(data, 82, 514, 4, 1, large.size());
-  entry(data, 94, 306, 2, 20, 1100);
-  put32(data, 106, 512);
-  put16(data, 512, 5);
-  entry(data, 514, 256, 4, 1, 400);
-  entry(data, 526, 257, 4, 1, 300);
-  entry(data, 538, 259, 3, 1, 6);
-  entry(data, 550, 513, 4, 1, 128 * 1024);
-  entry(data, 562, 514, 4, 1, small.size());
+  if(big) { data[0] = 'M'; data[1] = 'M'; }
+  else { data[0] = 'I'; data[1] = 'I'; }
+  put16(data, 2, 42, big); put32(data, 4, 8, big);
+  put16(data, 8, 8, big);
+  entry(data, 10, 256, 4, 1, 1600, big);
+  entry(data, 22, 257, 4, 1, 1000, big);
+  entry(data, 34, 259, 3, 1, 6, big);
+  entry(data, 46, 271, 2, 8, maker, big);
+  entry(data, 58, 274, 3, 1, 6, big);
+  entry(data, 70, 513, 4, 1, 2 * 1024 * 1024, big);
+  entry(data, 82, 514, 4, 1, large.size(), big);
+  entry(data, 94, 306, 2, 20, 1100, big);
+  put32(data, 106, 512, big);
+  put16(data, 512, 5, big);
+  entry(data, 514, 256, 4, 1, 400, big);
+  entry(data, 526, 257, 4, 1, 300, big);
+  entry(data, 538, 259, 3, 1, 6, big);
+  entry(data, 550, 513, 4, 1, 128 * 1024, big);
+  entry(data, 562, 514, 4, 1, small.size(), big);
   memcpy(data.data() + maker, "Fixture", 8);
   memcpy(data.data() + 1100, "2026:01:02 03:04:05", 20);
   memcpy(data.data() + 2 * 1024 * 1024, large.data(), large.size());
   memcpy(data.data() + 128 * 1024, small.data(), small.size());
+  if(orf)
+  {
+    // Olympus ORF uses IIRO / IIRS (or their MMOR / MMSR byte-order forms),
+    // followed by the ordinary TIFF IFD offset at byte four.
+    data[2] = big ? (subifd ? 'S' : 'O') : 'R';
+    data[3] = big ? 'R' : (subifd ? 'S' : 'O');
+    if(big) { data[0] = 'M'; data[1] = 'M'; }
+    else { data[0] = 'I'; data[1] = 'I'; }
+  }
   write(path, data);
 }
 
@@ -99,13 +119,50 @@ static uint64_t read_chars()
   return 0;
 }
 
-static void check(const std::string &path, bool synthetic)
+static dt_imgid_t import_for_metadata_read(const std::string &path)
 {
+  gchar *directory = g_path_get_dirname(path.c_str());
+  dt_film_t film;
+  dt_film_init(&film);
+  const dt_filmid_t film_id = dt_film_new(&film, directory);
+  dt_film_cleanup(&film);
+  g_free(directory);
+  require(dt_is_valid_filmid(film_id), "could not create isolated test film");
+  const dt_imgid_t imgid = dt_image_import(film_id, path.c_str(), TRUE, FALSE);
+  require(dt_is_valid_imgid(imgid), "could not import photo into isolated test library");
+  return imgid;
+}
+
+static void check(const std::string &path, bool synthetic, bool expect_prefix_savings = false)
+{
+  const dt_imgid_t imgid = import_for_metadata_read(path);
+  dt_image_t full_read;
+  dt_image_init(&full_read);
+  full_read.id = imgid;
+  g_setenv("IMMAGE_METADATA_PREFIX", "0", TRUE);
+  uint64_t start = read_chars();
+  require(!dt_exif_read(&full_read, path.c_str()), "baseline metadata read failed");
+  const uint64_t metadata_bytes = read_chars() - start;
+  g_unsetenv("IMMAGE_METADATA_PREFIX");
   dt_image_t image;
   dt_image_init(&image);
-  uint64_t start = read_chars();
-  require(!dt_exif_read(&image, path.c_str()), "metadata read failed");
-  const uint64_t metadata_bytes = read_chars() - start;
+  image.id = imgid;
+  start = read_chars();
+  require(!dt_exif_read(&image, path.c_str()), "prefix metadata read failed");
+  const uint64_t prefix_bytes = read_chars() - start;
+  if(expect_prefix_savings && metadata_bytes && prefix_bytes)
+    require(prefix_bytes * 2 < metadata_bytes, "prefix did not reduce synthetic source reads");
+  require(image.width == full_read.width && image.height == full_read.height
+          && image.orientation == full_read.orientation
+          && !strcmp(image.exif_maker, full_read.exif_maker)
+          && !strcmp(image.exif_model, full_read.exif_model)
+          && !strcmp(image.exif_lens, full_read.exif_lens)
+          && image.exif_iso == full_read.exif_iso
+          && image.exif_exposure == full_read.exif_exposure
+          && image.exif_aperture == full_read.exif_aperture
+          && image.exif_focal_length == full_read.exif_focal_length
+          && image.exif_datetime_taken == full_read.exif_datetime_taken,
+          "prefix metadata differs from full-read baseline");
   if(synthetic)
   {
     require(!strcmp(image.exif_maker, "Fixture"), "metadata prefix lost late maker");
@@ -145,7 +202,8 @@ static void check(const std::string &path, bool synthetic)
     }
     dt_free_align(pixels);
   }
-  std::cout << path << ": metadata and preview match; metadata read chars=" << metadata_bytes
+  std::cout << path << ": metadata and preview match; full metadata read chars=" << metadata_bytes
+            << ", prefix metadata read chars=" << prefix_bytes
             << ", preview read chars=" << preview_bytes << std::endl;
 }
 
@@ -216,8 +274,9 @@ int main(int argc, char **argv)
   const std::string config = dir + "/config", cache = dir + "/cache";
   char *args[] = { argv[0], (char *)"--library", (char *)":memory:", (char *)"--configdir",
                    (char *)config.c_str(), (char *)"--cachedir", (char *)cache.c_str(),
+                   (char *)"--conf", (char *)"write_sidecar_files=never",
                    (char *)"--conf", (char *)"opencl=false" };
-  if(dt_init(9, args, FALSE, TRUE, nullptr)) return 3;
+  if(dt_init(11, args, FALSE, TRUE, nullptr)) return 3;
   int result = 0;
   try
   {
@@ -225,8 +284,19 @@ int main(int argc, char **argv)
     {
       const auto path = dir + (late ? "/late.tif" : "/bounded.tif");
       fixture(path, late);
-      check(path, true);
+      check(path, true, !late);
     }
+    for(const bool big : {false, true})
+      for(const bool subifd : {false, true})
+        for(const bool late : {false, true})
+        {
+          const std::string sig = subifd ? (big ? "MMSR" : "IIRS")
+                                         : (big ? "MMOR" : "IIRO");
+          const auto path = dir + "/orf-" + (big ? "big-" : "little-") + sig
+                            + (late ? "-late.orf" : "-early.orf");
+          fixture(path, late, true, big, subifd);
+          check(path, true, !late);
+        }
     const auto dng = dir + "/orientation.dng";
     dng_fixture(dng);
     check_dng_orientation(dng);
