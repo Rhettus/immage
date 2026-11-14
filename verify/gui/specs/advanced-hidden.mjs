@@ -27,7 +27,7 @@ async function openModules(t) {
   await t.driver.point(tab.x, tab.y);
   await until(() => t.driver.observe(f => !!document.querySelector(f), FOLD), 'Advanced modules fold');
   if (await t.driver.observe(f => document.querySelector(f).getAttribute('aria-expanded') !== 'true', FOLD)) await click(t, FOLD);
-  await until(() => t.driver.observe(() => !!document.querySelector('#module-prefs-advanced .module-prefs-tools')), 'Advanced modules open');
+  await until(() => t.driver.observe(() => !!document.querySelector('#module-prefs-advanced .module-prefs-tools input[type=search]')), 'Advanced modules open');
 }
 async function closePrefs(t) {
   await click(t, '.prefs-foot button');
@@ -37,7 +37,7 @@ async function closePrefs(t) {
 async function filter(t, text) {
   await click(t, '#module-prefs-advanced .module-prefs-tools input[type=search]');
   await t.driver.keys(...text);
-  await until(() => t.driver.observe(x => document.querySelector('#module-prefs-advanced .module-prefs-tools input').value === x, text), `filter holds ${text}`);
+  await until(() => t.driver.observe(x => document.querySelector('#module-prefs-advanced .module-prefs-tools input[type=search]').value === x, text), `filter holds ${text}`);
 }
 const rowSwitch = label => `#module-prefs-advanced [data-pref-label=${JSON.stringify(label)}] input.switch`;
 const rowOn = (t, label) => until(() => t.driver.observe(s => document.querySelector(s)?.checked ?? null, rowSwitch(label)).then(v => v === null ? false : { v }), `${label} row`).then(b => b.v);
@@ -109,7 +109,7 @@ export async function advancedHidden(t) {
 
     // 3. Essentials only: bloom goes, exposure (essential) stays, the tag on Exposure clears
     await openModules(t);
-    await textButton(t, '#module-prefs-advanced .module-prefs-tools', 'Essentials only');
+    await textButton(t, '#module-prefs-advanced .module-prefs-tools:has(input[type=search])', 'Essentials only');
     await closePrefs(t);
     const essential = await hiddenNow(t, l => l.includes('effects:bloom') && !l.includes('basic:exposure'), 'Essentials only stored');
     t.measure({ name: 'essentials-hidden-count', count: essential.length });

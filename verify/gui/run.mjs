@@ -176,6 +176,15 @@ try {
     if (!/\.jpe?g$/i.test(copiedFixture)) throw Error('advanced-sync requires a JPEG fixture');
     await copyFile(copiedFixture, join(fixtures, 'advanced-target.jpg'));
   }
+  // the Advanced file cards: a second photo for Composite's picker, and a LUT
+  // folder whose first file the photo's sidecar already uses (made by a
+  // separate headless engine in this run's own folders, before the app starts)
+  if (selectedCases.includes('advanced-file-cards')) {
+    if (!/\.jpe?g$/i.test(copiedFixture)) throw Error('advanced-file-cards requires a JPEG fixture');
+    await copyFile(copiedFixture, join(fixtures, 'advanced-second.jpg'));
+    const { prepareLutFixture } = await import('./support/lut-fixture.mjs');
+    report.lutFixture = await prepareLutFixture({ engine, work: join(out, 'lut-prep'), folder: join(fixtures, 'luts'), photo: copiedFixture });
+  }
   if (selectedCases.includes('jpeg-preset')) {
     if (!/\.jpe?g$/i.test(copiedFixture)) throw Error('jpeg-preset requires a JPEG fixture');
     for (const name of ['preset-jpeg-1.jpg', 'preset-jpeg-2.jpg']) await copyFile(copiedFixture, join(fixtures, name));
@@ -383,6 +392,8 @@ try {
       runtimeRead: async function (file) { try { return await readFile(this.runtimeFile(file), 'utf8'); } catch (e) { if (e.code === 'ENOENT') return null; throw e; } },
       // move one such file into this case's evidence folder (the profile is on the same filesystem)
       runtimeAside: async function (file, to) { const dest = join(caseDir, to); await rename(this.runtimeFile(file), dest); journal.event('runtime-file-moved', { case: name, file, to: dest }); return dest; },
+      // this run's own copied fixture folder and darktable config folder, for cases that add files to them
+      fixtureDir: fixtures, configDir: join(profile, 'data', 'app.immage', 'config'),
       fixtureFiles:()=>readdir(fixtures), engineLog:()=>readFile(join(profile,'data','app.immage','engine.log'),'utf8'),
       benchmarkReport: async filename => {
         // Read only the known report folder inside this run's isolated profile.

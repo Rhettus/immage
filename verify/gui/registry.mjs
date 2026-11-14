@@ -44,6 +44,10 @@ import { advancedSearch } from './specs/advanced-search.mjs';
 import { advancedHidden } from './specs/advanced-hidden.mjs';
 import { advancedSync } from './specs/advanced-sync.mjs';
 import { advancedEditors } from './specs/advanced-editors.mjs';
+import { advancedColorCards } from './specs/advanced-color-cards.mjs';
+import { advancedCurveCards } from './specs/advanced-curve-cards.mjs';
+import { advancedRawCards } from './specs/advanced-raw-cards.mjs';
+import { advancedFileCards } from './specs/advanced-file-cards.mjs';
 
 const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRange, 'batch-paste': batchPaste, startup, splash, exposure, 'slider-input': sliderInput, 'slider-click': sliderClick, history, rail, sliders, 'module-options': moduleOptions, 'module-switch': moduleSwitch,
   'panel-scroll': panelScroll,
@@ -93,6 +97,10 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'advanced-hidden': advancedHidden,
   'advanced-sync': advancedSync,
   'advanced-editors': advancedEditors,
+  'advanced-color-cards': advancedColorCards,
+  'advanced-curve-cards': advancedCurveCards,
+  'advanced-raw-cards': advancedRawCards,
+  'advanced-file-cards': advancedFileCards,
 };
 for(const [name,definition] of Object.entries(cases)) if(definition.kind)
   implementations[name] = t => ({range:rangeContract,choice:choiceContract,module:moduleOutput}[definition.kind])(t,definition);

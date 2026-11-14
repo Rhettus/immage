@@ -11,6 +11,7 @@
 import { FolderOpen, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { commands, type ChosenFile, type LutFiles } from "./commands";
+import { onLutFolder } from "./lutFolder";
 
 export function ModuleFile({ kind, label, priority, value, disabled, photo, onChange }: {
   kind: "lut" | "marker"; label: string; priority: number; value: number; disabled: boolean;
@@ -20,13 +21,16 @@ export function ModuleFile({ kind, label, priority, value, disabled, photo, onCh
   const [lut, setLut] = useState<LutFiles | null>(null);
   const [markers, setMarkers] = useState<{ list: ChosenFile[]; dirs: string[] } | null>(null);
   const [problem, setProblem] = useState("");
+  // a new LUT folder in Preferences lists another set of files
+  const [folder, setFolder] = useState(0);
+  useEffect(() => onLutFolder(() => setFolder((n) => n + 1)), []);
   // read again when the choice changes: a new file shows its own folder
   useEffect(() => {
     let live = true;
     if (kind === "lut") commands.lutFiles(priority, false).then((r) => { if (live) setLut(r); }).catch(() => { if (live) setLut(null); });
     else commands.watermarks().then((r) => { if (live) setMarkers({ list: r.markers, dirs: r.dirs }); }).catch(() => { if (live) setMarkers(null); });
     return () => { live = false; };
-  }, [kind, priority, photo, value]);
+  }, [kind, priority, photo, value, folder]);
 
   const fail = (e: unknown) => setProblem(String(e).replace(/^Error: /, ""));
   const browse = () => {

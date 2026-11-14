@@ -166,9 +166,10 @@ export async function advancedGroups(t) {
     assert.equal(iter.value, 3, `Add module makes darktable's "sharpness | normal" 3 iterations: ${iter.value}`);
     const detailDs = await t.driver.observe(() => document.querySelectorAll('[data-panel-id="detail"] [data-module^="diffuse#"]').length);
     assert.equal(detailDs, 1, `Detail shows ${detailDs} diffuse or sharpen cards`);
-    // 10. Detail: denoise (profiled) sliders, the wavelet mode's
+    // 10. Detail: denoise (profiled) sliders, the wavelet mode's, and its
+    // wavelet curve's luma and chroma tabs
     await addAndCheck(t, 'detail', 'denoiseprofile', 'Denoise',
-      { controls: ['mode', 'strength', 'wavelet_color_mode'], tabs: [] }, false);
+      { controls: ['mode', 'strength', 'wavelet_color_mode'], tabs: ['luma', 'chroma'] }, false);
     // 11. Detail: lowpass (radius 10 by default) blurs the photo when added
     await addAndCheck(t, 'detail', 'lowpass', 'Lowpass',
       { controls: ['radius', 'lowpass_algo', 'saturation'], tabs: [] }, true);

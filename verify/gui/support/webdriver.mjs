@@ -61,6 +61,18 @@ export class AppDriver {
     }
     await this.command('POST', '/actions', { actions: [{ type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' }, actions }] });
   }
+  // a right-button click, for controls that act on a context press. WebKitWebDriver
+  // leaves later left-button drags without their press after one (observed with the
+  // color look up table patch grid; a drag then moves the pointer only), so a case
+  // that right-clicks runs after the cases that drag, or in a launch of its own
+  async rightClick(x, y) {
+    await this.guard();
+    this.log({ action: 'right-click', x, y });
+    await this.command('POST', '/actions', { actions: [{ type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' }, actions: [
+      { type: 'pointerMove', duration: 120, origin: 'viewport', x: Math.round(x), y: Math.round(y) },
+      { type: 'pointerDown', button: 2 }, { type: 'pointerUp', button: 2 }] }] });
+    await this.command('DELETE', '/actions');
+  }
   async move(x, y) {
     await this.guard();
     this.log({ action: 'move', x, y });

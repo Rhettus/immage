@@ -15,9 +15,17 @@ export function loadLutFolder(): string {
   try { return settings.get(KEY) ?? ""; } catch { return ""; }
 }
 
+// the LUT 3D card lists its folder's files, so it reads them again when the
+// folder changes (a card left open while Preferences changed the folder)
+const listeners = new Set<() => void>();
+export function onLutFolder(f: () => void): () => void {
+  listeners.add(f);
+  return () => { listeners.delete(f); };
+}
+
 // kept, and handed to the engine at once so photos that use a LUT render from it
 export function storeLutFolder(folder: string) {
   const f = folder.trim();
   try { if (f) settings.set(KEY, f); else settings.remove(KEY); } catch { /* not kept */ }
-  commands.lutFolder(f).catch(() => {});
+  commands.lutFolder(f).catch(() => {}).then(() => listeners.forEach((l) => l()));
 }

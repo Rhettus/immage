@@ -59,7 +59,10 @@ pub(crate) async fn wb_presets(state: State<'_, AppState>) -> Result<WbPresets, 
 pub(crate) async fn lut_files(app: AppHandle, state: State<'_, AppState>, settings: State<'_, crate::settings::Settings>,
                               priority: i64, pick: bool) -> Result<Option<LutFiles>, String> {
     let folder = settings.get(crate::settings::LUT_FOLDER).unwrap_or_default();
-    let mut req = json!({ "cmd": "lut_files", "priority": priority, "folder": folder.trim() });
+    // the engine already has the folder (Preferences hands it over with lut_folder, and the
+    // engine starts with it): the settings file lags a typed path by its batch delay, so
+    // sending it here would put a stale folder back
+    let mut req = json!({ "cmd": "lut_files", "priority": priority });
     if pick {
         // the folder the engine now has, which is the home folder when the
         // preference is empty
