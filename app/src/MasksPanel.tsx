@@ -2,6 +2,9 @@ import { ContrastEqualizer } from "./ContrastEqualizer";
 import { SaturationCurve } from "./SaturationCurve";
 import { detailRows, isAdvancedControl } from "./DetailControls";
 import { AdvancedToggle, advancedEdited, useAdvanced } from "./advanced";
+import { AdvancedMaskCards, type AdvancedEdit } from "./AdvancedPanel";
+import type { Session } from "./session";
+import type { ImageEntry } from "./library";
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
@@ -123,7 +126,7 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
                              onInvert, onOpacity, onRefine, onHidden, onDuplicate, onResetAdjustments, onDelete, onRename, onPeek,
                              onBrush, onOverlay, onLocal, onRange, onDepth, onFeather, onAi, aiBusy, focusMode,
                              picked, pickShow, pickSet, onParametric, onPickShow, onPickSet, onPickTab, fresh, mono, photo,
-                             onHslShown, presenceLoupe }: {
+                             onHslShown, presenceLoupe, advancedMode = false, session, sessionRevision = 0, onAdvancedEdit, onAdvancedEdits, photos }: {
   masks: Mask[]; selected: string | null; shape: number;
   tool: MaskTool | null; target: ToolTarget; brush: BrushSettings; overlay: boolean; disabled: boolean;
   raw: boolean;                              // detail refinement needs a raw
@@ -166,6 +169,12 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
   fresh: { name: string; n: number } | null;   // the mask just created: its Tone opens
   presenceLoupe?: React.ReactNode;          // the detail loupe, atop Presence as in the main panel
   onHslShown: (shown: boolean) => void;      // the HSL group is open, so the photo under the pointer is wanted
+  advancedMode?: boolean;
+  session?: Session | null;
+  sessionRevision?: number;
+  onAdvancedEdit?: AdvancedEdit;
+  onAdvancedEdits?: () => void;
+  photos?: ImageEntry[];
 }) {
   // a mask's overlay shows once the pointer has rested on its name a
   // moment, so sweeping across the list does not flash each one; leaving
@@ -292,6 +301,7 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
     const cur = m!.values[ch.control] ?? preferredChoice(ch);
     const off = (id: string) => Math.abs((m!.values[id] ?? 0) - (localControlById.get(id)?.neutral ?? 0)) > 1e-6;
     const out = new Set(ch.options.filter((o) => o.localControls.some(off)).map((o) => o.value));
+    for (const o of ch.options) if (m!.extra?.includes(o.op)) out.add(o.value);
     // the equalizer or curve hides the shared mask slider without applying it
     const own = new Set(ch.options.flatMap((o) => o.localControls));
     if ([...switchSet(ch)].some((id) => !own.has(id) && off(id))) {
@@ -550,13 +560,21 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
         <div className="panel adjust">
           <div className="panel-title adj-title">
             <span>Adjustments <span className="of">· {m.name.replace(/^mask/, "Mask")}</span></span>
-            {advancedIds.length > 0 && (
+            {!advancedMode && advancedIds.length > 0 && (
               <AdvancedToggle on={advanced} onToggle={toggleAdvanced}
                 edited={advancedEdited(advancedIds, m.values,
                   Object.fromEntries(advancedIds.map((id) => [id, localControlById.get(id)?.neutral ?? 0])))} />
             )}
+            {!advancedMode && !!m.extra?.length && (
+              <button type="button" className="advanced-edits" data-advanced-edits={m.extra.length} onClick={onAdvancedEdits}
+                      title="Edits made in Advanced mode that these sliders cannot show">
+                <span className="advanced-dot" /><span><b>{m.extra.length} advanced {m.extra.length === 1 ? "edit" : "edits"}</b> · Editing mode…</span>
+              </button>
+            )}
           </div>
-          {(mono ? MONO_GROUPS : LOCAL_GROUPS).map(([title, ids]) => (
+          {advancedMode
+            ? <section><AdvancedMaskCards mask={m.name} session={session} revision={sessionRevision} record={onAdvancedEdit} photos={photos} /></section>
+            : (mono ? MONO_GROUPS : LOCAL_GROUPS).map(([title, ids]) => (
             <section key={title}>
               <h3 data-mask-group={title} className="fold" onClick={(e) => toggle(title, e.altKey)}>
                 {title}
@@ -600,7 +618,7 @@ const eyeIcon = (open: boolean) => svg(<>
 const maskHasAdjustments = (m: Mask) => {
   const neutral = neutralLocal();
   const choices = new Set(MASK_MODULE_CHOICES.map((c) => c.control));
-  return Object.entries(neutral).some(([id, v]) => !choices.has(id) && (m.values[id] ?? v) !== v);
+  return !!m.extra?.length || Object.entries(neutral).some(([id, v]) => !choices.has(id) && (m.values[id] ?? v) !== v);
 };
 
 // a mask row's "…": what else can be done with it

@@ -18,6 +18,11 @@ darktable's; its source changes only by
 [patches/darktable-engine.patch](../../../patches/darktable-engine.patch).
 
 This is the short version, loaded into every agent session.
+
+Advanced mask cards use `AdvancedMaskCards` in `AdvancedPanel.tsx`, the
+`MASK_MODULES` allowlist in `manifest.ts`, and Session's mask-module methods.
+Mask instances carry their mask name in the engine's `instances` reply;
+`Mask.extra` keeps operations with unmapped parameters out of `planMerge`.
 [architecture.md](architecture.md) has the detail: each file's job in
 full, the engine's pipes and commands, how each operation moves through
 the app, where data lives, and the frame formats. Diagrams are in

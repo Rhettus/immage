@@ -7,6 +7,10 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- In Advanced mode, each mask has its own module cards and Add module menu.
+  Edit darktable's settings inside the mask, reset a module or remove it from
+  the mask, with undo. Simple keeps its familiar local sliders and shows a
+  badge for advanced edits those sliders cannot display.
 - Drag photos onto a folder in the Folders panel to move them there, for
   example from your computer to a NAS, or hold ⌥ (Alt) to copy them. Immich
   results can be dragged too, and are always copied. A confirmation shows

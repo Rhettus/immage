@@ -86,6 +86,15 @@ are keys named `immage.*` in the settings store
 ([settings.ts](../../src/settings.ts)), which is kept in `settings.json` by
 Rust (see Where data lives).
 
+In Advanced mode, `AdvancedMaskCards` in `AdvancedPanel.tsx` renders the
+selected mask's instances in processing order. `MASK_MODULES` in `manifest.ts`
+limits Add module to supported local adjustments. The engine's `masks` reply
+includes unmapped-edit flags and complete parameter snapshots; `Mask.extra`
+keeps those operations out of `planMerge`, and the snapshots preserve their
+settings through duplication, Copy Settings and undo. Mask shapes and blend
+attachments are rebuilt for the destination rather than copying source mask
+identifiers.
+
 ### Shell
 
 | File | Responsibility |

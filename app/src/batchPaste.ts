@@ -32,6 +32,8 @@ export function replaceMasks(s: Session, target: Mask[]) {
     if (!same(c?.refine ?? NO_REFINE, t.refine ?? NO_REFINE)) s.setRefine(t.name, t.refine ?? NO_REFINE);
     for (const id of new Set([...Object.keys(c?.values ?? {}), ...Object.keys(t.values)]))
       if ((c?.values[id] ?? 0) !== (t.values[id] ?? 0)) s.setLocal(t.name, id, t.values[id] ?? 0);
+    s.setMaskModuleFlags(t.name, t.disabledModules ?? [], t.enabledModules ?? []);
+    if (t.moduleStates) s.setMaskStates(t.name, t.moduleStates, t.moduleEdits);
   }
 }
 

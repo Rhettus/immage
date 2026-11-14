@@ -8,10 +8,11 @@ import { createPortal } from "react-dom";
 import { MoreHorizontal } from "lucide-react";
 import { menuKeys, useCardMenu } from "./cardMenu";
 
-export type InstanceChoice = "new" | "duplicate" | "rename" | "up" | "down" | "delete";
+export type InstanceChoice = "new" | "duplicate" | "rename" | "up" | "down" | "delete" | "remove" | "reset";
 
-export function InstanceMenu({ name, oneInstance, first, canUp, canDown, onPick }: {
+export function InstanceMenu({ name, oneInstance, first, canUp, canDown, maskOwned = false, onPick }: {
   name: string; oneInstance: boolean; first: boolean; canUp: boolean; canDown: boolean;
+  maskOwned?: boolean;
   onPick: (c: InstanceChoice) => void;
 }) {
   const { at, close, toggle, box, menu } = useCardMenu();
@@ -33,14 +34,19 @@ export function InstanceMenu({ name, oneInstance, first, canUp, canDown, onPick 
         <div ref={menu} className="context-menu module-menu" role="menu" style={{ position: "fixed", left: at.x, top: at.y }}
              onKeyDown={menuKeys}>
           <div className="menu-label">{name}</div>
-          {item("new", "New instance", one)}
-          {item("duplicate", "Duplicate", one)}
-          {item("rename", "Rename…", one)}
-          <div className="menu-sep" />
-          {item("up", "Move up in the pipe", canUp ? undefined : "already the first of this module's instances")}
-          {item("down", "Move down in the pipe", canDown ? undefined : "already the last of this module's instances")}
-          <div className="menu-sep" />
-          {item("delete", "Delete", first ? "the first instance, which Simple's sliders show, can be switched off but not deleted" : undefined)}
+          {maskOwned ? <>
+            {item("reset", "Reset")}
+            {item("remove", "Remove from mask")}
+          </> : <>
+            {item("new", "New instance", one)}
+            {item("duplicate", "Duplicate", one)}
+            {item("rename", "Rename…", one)}
+            <div className="menu-sep" />
+            {item("up", "Move up in the pipe", canUp ? undefined : "already the first of this module's instances")}
+            {item("down", "Move down in the pipe", canDown ? undefined : "already the last of this module's instances")}
+            <div className="menu-sep" />
+            {item("delete", "Delete", first ? "the first instance, which Simple's sliders show, can be switched off but not deleted" : undefined)}
+          </>}
         </div>, document.body)}
     </span>
   );

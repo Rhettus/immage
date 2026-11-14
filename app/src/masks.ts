@@ -5,8 +5,8 @@
 // own adjustment sliders. shapes live in the shown image's units (0-1
 // across its width and height; radii and brush sizes as fractions of its
 // width), which the engine turns into darktable's drawn masks
-import type { Refine } from "./commands";
-import { LOCAL_CONTROLS, type Values } from "./manifest";
+import type { ModuleState, Refine } from "./commands";
+import { LOCAL_CONTROLS, type Params, type Values } from "./manifest";
 
 type Mode = { mode?: "add" | "subtract" };
 export type Ellipse = { type: "ellipse"; x: number; y: number; rx: number; ry: number; angle: number;
@@ -116,7 +116,10 @@ export const aiRefine = (kind: string): Refine | null =>
 // opacity 0-100, how strongly the adjustments apply; missing is 100.
 // a hidden mask keeps its settings with its adjustments off
 export type Mask = { name: string; shapes: Shape[]; invert: boolean; opacity?: number; hidden?: boolean;
-                     refine?: Refine; values: Values };
+                     refine?: Refine; values: Values; extra?: string[]; disabledModules?: string[];
+                     enabledModules?: string[]; moduleStates?: Record<string, ModuleState>;
+                     // Local field writes newer than the native snapshots, also carried by undo.
+                     moduleEdits?: Record<string, Params> };
 
 export const neutralLocal = (): Values => Object.fromEntries(LOCAL_CONTROLS.map((c) => [c.id, c.neutral ?? 0]));
 

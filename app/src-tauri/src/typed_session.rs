@@ -121,6 +121,8 @@ pub struct ModuleEdit {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub before: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anchored: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instance: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub priority: Option<i64>,
@@ -144,6 +146,9 @@ impl ModuleEdit {
             if let Some(v) = value {
                 req[key] = json!(v);
             }
+        }
+        if let Some(anchored) = self.anchored {
+            req["anchored"] = json!(anchored);
         }
         if let Some(p) = self.priority {
             req["priority"] = json!(p);

@@ -6,7 +6,7 @@
 // presets, typed in bindings.rs. a reply type here is what the engine's JSON
 // is read into; tests/engine-replies holds real replies that bindings.rs's
 // tests read into them
-use crate::typed_session::Refine;
+use crate::typed_session::{ModuleState, Refine};
 use serde::{Deserialize, Serialize};
 use serde_json::{Number, Value};
 use specta::Type;
@@ -35,6 +35,9 @@ pub struct MaskInfo {
 #[derive(Serialize, Deserialize, Type)]
 pub struct MaskInstance {
     pub enabled: bool,
+    #[serde(default)]
+    pub extra: bool,
+    pub state: ModuleState,
     pub params: BTreeMap<String, Number>,
 }
 
@@ -438,6 +441,8 @@ pub struct Instance {
     pub in_history: bool,
     pub iop_order: i64,
     pub owner: Option<String>,
+    #[serde(default)]
+    pub mask: Option<String>,
 }
 
 // `instance`'s reply: the instance acted on (a new one's priority), and the

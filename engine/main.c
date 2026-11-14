@@ -692,12 +692,13 @@ static gboolean _cmd_set(JsonObject *req, JsonBuilder *b, char **err)
   const char *before = json_object_get_string_member_with_default(req, "before", NULL);
   const char *instance = json_object_get_string_member_with_default(req, "instance", NULL);
   const char *mask = json_object_get_string_member_with_default(req, "mask", NULL);
+  const gboolean anchored = json_object_get_boolean_member_with_default(req, "anchored", TRUE);
   const gboolean invert = json_object_get_boolean_member_with_default(req, "invert", FALSE);
   const double opacity = json_object_get_double_member_with_default(req, "opacity", -1.0);
   JsonObject *refine = json_object_has_member(req, "refine")
     ? json_object_get_object_member(req, "refine") : NULL;
   const int priority = json_object_get_int_member_with_default(req, "priority", 0);
-  if(!op || !session_set(op, field, value, params, has_enabled, enabled, after, before, instance, mask, invert, opacity,
+  if(!op || !session_set(op, field, value, params, has_enabled, enabled, after, before, instance, mask, anchored, invert, opacity,
                   refine, priority, err))
     return FALSE;
   return TRUE;
@@ -801,6 +802,7 @@ static gboolean _cmd_instance(JsonObject *req, JsonBuilder *b, char **err)
                           json_object_get_string_member_with_default(req, "op", NULL),
                           json_object_get_int_member_with_default(req, "priority", 0),
                           json_object_get_string_member_with_default(req, "name", NULL),
+                          json_object_get_string_member_with_default(req, "mask", NULL),
                           json_object_get_int_member_with_default(req, "other", 0),
                           json_object_get_boolean_member_with_default(req, "after", FALSE), b, err);
 }

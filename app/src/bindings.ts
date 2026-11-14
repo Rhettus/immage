@@ -126,7 +126,7 @@ export const commands = {
 	moduleSchema: (op: string) => __TAURI_INVOKE<ModuleSchema>("module_schema", { op }),
 	instances: () => __TAURI_INVOKE<Instance[]>("instances"),
 	presets: (op: string, priority: number) => __TAURI_INVOKE<PresetsReply>("presets", { op, priority }),
-	instance: (action: string, op: string, priority: number, name: string | null, other: number | null, after: boolean | null) => __TAURI_INVOKE<InstanceReply>("instance", { action, op, priority, name, other, after }),
+	instance: (action: string, op: string, priority: number, name: string | null, other: number | null, after: boolean | null, mask: string | null) => __TAURI_INVOKE<InstanceReply>("instance", { action, op, priority, name, other, after, mask }),
 	darktableResources: () => __TAURI_INVOKE<ResourceLevels>("darktable_resources"),
 	darktableResourcesSet: (level: string) => __TAURI_INVOKE<null>("darktable_resources_set", { level }),
 	memoryBudget: () => __TAURI_INVOKE<MemoryBudget>("memory_budget"),
@@ -506,6 +506,7 @@ export type Instance = {
 	in_history: boolean,
 	iop_order: number,
 	owner: string | null,
+	mask?: string | null,
 };
 
 export type InstanceReply = {
@@ -593,6 +594,8 @@ export type MaskInfo = {
 
 export type MaskInstance = {
 	enabled: boolean,
+	extra?: boolean,
+	state: ModuleState,
 	params: { [key in string]: number },
 };
 
@@ -665,6 +668,7 @@ export type ModuleEdit = {
 	enabled: boolean,
 	after?: string | null,
 	before?: string | null,
+	anchored?: boolean | null,
 	instance?: string | null,
 	priority?: number | null,
 	mask?: string | null,

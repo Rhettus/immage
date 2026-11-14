@@ -113,6 +113,8 @@ jobs:
             verify/gpu-check.test.mjs \
             verify/grid-size.test.mjs \
             verify/menus.test.mjs \
+            verify/mask-module-flags.test.mjs \
+            verify/mask-modules.test.mjs \
             verify/module-others.test.mjs \
             verify/perf-diagnostics.test.mjs \
             verify/performance-tuner.test.mjs \

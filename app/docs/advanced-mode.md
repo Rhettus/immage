@@ -545,12 +545,16 @@ their settings, names and order. A deleted instance is gone from the photo's
 saved edit the next time it is saved. Extra instances look in Immage just as
 they do in darktable, and open there.
 
-Modules that Immage's masks and looks manage do not get cards. Groups whose
-modules are not available yet show "No darktable modules yet".
+Mask-owned modules appear on their mask in the **Masks** panel, rather than in
+global Adjustments. Select a mask to edit its cards or choose **Add module**.
+Its cards offer Reset and Remove from mask, with one instance per module and
+no darktable presets menu. See [Advanced masking](masks.md#advanced-mode).
+Modules managed by looks do not get cards. Groups whose modules are not
+available yet show "No darktable modules yet".
 
-Masks, Heal, Zones, Film Simulation, Negative, Crop and Presets work as they do
-in Simple. Your edits are kept, and Simple shows them again when you switch
-back.
+Heal, Zones, Film Simulation, Negative, Crop and Presets work as they do in
+Simple. Switching modes preserves all edits, including a mask's module
+settings; Simple shows a badge for mask edits its local sliders cannot show.
 
 ## darktable presets
 

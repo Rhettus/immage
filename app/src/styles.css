@@ -1760,6 +1760,8 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 .masks-panel .adj-title { cursor: default; }
 .masks-panel .adj-title > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .masks-panel .adj-title .of { color: var(--text-2); font-weight: 500; }
+.masks-panel .adj-title .advanced-edits { width: auto; margin: 0 0 0 auto; padding: 3px 7px; border-style: solid; font-size: var(--fs-micro); white-space: nowrap; }
+.masks-panel .mask-advanced-cards { margin: 0 -4px; }
 /* Create New Mask, and the selected mask's Add and Subtract, each opening its menu */
 .shape-menu { position: relative; display: inline-flex; }
 .create-mask {

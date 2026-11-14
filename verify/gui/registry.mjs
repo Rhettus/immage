@@ -37,6 +37,7 @@ import { settingsStore } from './specs/settings-store.mjs';
 import { editingMode } from './specs/editing-mode.mjs';
 import { advancedExposure } from './specs/advanced-exposure.mjs';
 import { advancedInstances } from './specs/advanced-instances.mjs';
+import { advancedMaskCards } from './specs/advanced-mask-cards.mjs';
 import { advancedPresets } from './specs/advanced-presets.mjs';
 import { advancedTonemapper } from './specs/advanced-tonemapper.mjs';
 import { advancedGroups } from './specs/advanced-groups.mjs';
@@ -103,6 +104,7 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'editing-mode': editingMode,
   'advanced-exposure': advancedExposure,
   'advanced-instances': advancedInstances,
+  'advanced-mask-cards': advancedMaskCards,
   'advanced-presets': advancedPresets,
   'advanced-tonemapper': advancedTonemapper,
   'advanced-groups': advancedGroups,

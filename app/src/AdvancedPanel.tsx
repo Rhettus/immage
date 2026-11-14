@@ -11,7 +11,7 @@ import { patchPaths } from "./colorchecker";
 import { clusterPaths } from "./colormapping";
 import { LAYOUTS, editOf, groupLayouts, layoutPaths, layoutFor, layoutRank, shows } from "./advancedLayout";
 import { searchModules, type SearchHit } from "./advancedSearch";
-import { panels } from "./manifest";
+import { MASK_MODULES, localMaps, panels } from "./manifest";
 import { useDismiss } from "./MasksPanel";
 import { AddModuleMenu } from "./AddModuleMenu";
 import { GRAPHS } from "./graphMaps";
@@ -233,7 +233,9 @@ export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0
             const onInstance = (c: InstanceChoice, name?: string) => {
               const s = session!;
               const steps: Record<InstanceChoice, string> = { new: "New instance", duplicate: "Duplicate instance",
-                rename: "Rename instance", up: "Move instance", down: "Move instance", delete: "Delete instance" };
+                rename: "Rename instance", up: "Move instance", down: "Move instance", delete: "Delete instance",
+                remove: "Remove from mask", reset: "Reset module" };
+              if (c === "remove" || c === "reset") return;
               // each action its own step, however quickly the next follows
               record?.([`adv:${key}:${c}:${performance.now()}`], `${steps[c]}: ${layout.title}`);
               if (c === "up") s.instanceAction({ action: "move", op: i.op, priority: i.priority, other: sib[index - 1].priority, after: false });
@@ -266,4 +268,99 @@ export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0
       </Collapse>
     </div>
   );
+}
+
+// A mask owns its own module instances. They use the same full cards as the
+// global Advanced panels, with add/remove actions scoped to the selected mask.
+export function AdvancedMaskCards({ mask, session, revision = 0, record, photos }: {
+  mask: string; session?: Session | null; revision?: number; record?: AdvancedEdit; photos?: ImageEntry[];
+}) {
+  const signature = session?.instances.filter((i) => i.owner === "mask" && i.mask === mask)
+    .map((i) => `${i.op}#${i.priority}`).join(",") ?? "";
+  const [loaded, setLoaded] = useState<{ session: Session; mask: string; signature: string; schemas: Map<string, ModuleSchema> } | null>(null);
+  void revision;
+  useEffect(() => {
+    if (!session) return;
+    let live = true;
+    void (async () => {
+      await session.loadInstances();
+      const owned = session.instances.filter((i) => i.owner === "mask" && i.mask === mask);
+      const found = new Map<string, ModuleSchema>();
+      for (const i of owned) {
+        const layout = LAYOUTS.find((l) => l.op === i.op && !l.instance) ?? LAYOUTS.find((l) => l.op === i.op);
+        if (!layout) continue;
+        const schema = await schemaOf(i.op);
+        found.set(i.op, schema);
+        await session.loadAdvanced(i.op, i.priority, cardFields(layout));
+      }
+      if (live) setLoaded({ session, mask, signature: session.instances.filter((i) => i.owner === "mask" && i.mask === mask)
+        .map((i) => `${i.op}#${i.priority}`).join(","), schemas: found });
+    })().catch(() => {});
+    return () => { live = false; };
+  }, [session, mask, signature]);
+
+  const ready = !!session && loaded?.session === session && loaded.mask === mask && loaded.signature === signature;
+  const instances = session && ready
+    ? session.instances.filter((i) => i.owner === "mask" && i.mask === mask)
+        .flatMap((i) => {
+          const layout = LAYOUTS.find((l) => l.op === i.op && !l.instance) ?? LAYOUTS.find((l) => l.op === i.op);
+          const schema = loaded.schemas.get(i.op);
+          const state = session.advanced.get(`${i.op}#${i.priority}`);
+          return layout && schema && state ? [{ i, layout, schema, state }] : [];
+        }).sort((a, b) => a.i.iop_order - b.i.iop_order)
+    : [];
+  const present = new Set(instances.map(({ i }) => i.op));
+  const hidden = loadHiddenModules();
+  const choices = MASK_MODULES.flatMap(({ op }) => {
+    if (present.has(op)) return [];
+    const layout = LAYOUTS.find((l) => l.op === op && !l.instance) ?? LAYOUTS.find((l) => l.op === op);
+    if (layout && isHidden(hidden, layout.group, op)) return [];
+    const first = session?.instances.find((i) => i.op === op && i.owner === null);
+    return layout ? [{ op, title: layout.title, shown: false, applicable: !!first && first.switchable !== false }] : [];
+  });
+  const add = (op: string) => {
+    const layout = LAYOUTS.find((l) => l.op === op && !l.instance) ?? LAYOUTS.find((l) => l.op === op);
+    if (!session || !layout) return;
+    record?.([`mask:${mask}:${op}:add:${performance.now()}`], `Add ${layout.title} to mask`);
+    const module = MASK_MODULES.find((m) => m.op === op);
+    if (module) session.addMaskModule(mask, op);
+  };
+  return <div className="mask-advanced-cards" data-mask-advanced={mask}>
+    {instances.map(({ i, layout, schema, state }, index) => {
+      const s = session!;
+      const key = `${i.op}#${i.priority}`;
+      const siblings = instances.filter((c) => c.i.op === i.op).map((c) => c.i);
+      const siblingIndex = siblings.indexOf(i);
+      return <ModuleCard key={`${mask}:${key}`} maskOwned simple={localMaps.some((m) => m.op === i.op)}
+        instance={i} layout={layout} schema={schema} state={state} siblings={siblings.length} index={siblingIndex}
+        photo={s} photos={photos} onSettled={() => void s.reloadAdvanced(i.op, i.priority)} settle={() => s.settled()}
+        wbInModule={s.wbInModule}
+        onField={(path, value, coalesce) => {
+          record?.([`mask:${mask}:${key}:${path}`], layout.title);
+          const c = s.context;
+          s.setFields(i.op, i.priority, editOf(layout, path, value, state.params, { width: c.sensorWidth, height: c.sensorHeight }), coalesce);
+        }}
+        onFields={(edit, coalesce, editId) => {
+          record?.([`mask:${mask}:${key}:${editId}`], layout.title);
+          const c = s.context, size = { width: c.sensorWidth, height: c.sensorHeight };
+          const all = Object.entries(edit).reduce((acc, [path, value]) => ({ ...acc, ...editOf(layout, path, value, { ...state.params, ...acc }, size) }), {} as Record<string, number>);
+          s.setFields(i.op, i.priority, all, coalesce);
+        }}
+        onEnabled={(on) => { record?.([`mask:${mask}:${key}:enabled`], layout.title); s.setAdvancedEnabled(i.op, i.priority, on); }}
+        onReset={() => { record?.([`mask:${mask}:${key}:reset`], `Reset ${layout.title}`); s.resetAdvanced(i.op, i.priority); }}
+        onInstance={(action) => {
+          if (action === "reset") { record?.([`mask:${mask}:${key}:reset-menu`], `Reset ${layout.title}`); s.resetAdvanced(i.op, i.priority); }
+          else if (action === "remove") {
+            record?.([`mask:${mask}:${key}:remove`], `Remove ${layout.title} from mask`);
+            s.removeMaskModule(mask, i.op, i.priority);
+          }
+        }}
+        loadPresets={() => s.loadPresets(i.op, i.priority)} onPreset={() => {}}
+      />;
+    })}
+    {session && ready && choices.length > 0 && <AddModuleMenu group={`mask ${mask}`} choices={choices} onAdd={add} />}
+    {!session && <div className="advanced-empty">Open a photo to edit mask modules</div>}
+    {session && !ready && <div className="advanced-empty">Loading mask modules…</div>}
+    {instances.length === 0 && session && ready && choices.length === 0 && <div className="advanced-empty">No modules available for this mask</div>}
+  </div>;
 }

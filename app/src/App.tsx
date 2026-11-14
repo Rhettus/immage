@@ -3784,6 +3784,7 @@ export default function App() {
         // Advanced modules only when Copy Settings ticks them: one more
         // engine read on the way to the next photo
         const advanced = loadCopyGroups().has("advanced") ? await o.copyAdvanced().catch(() => undefined) : undefined;
+        if (o.masks.length) await o.refreshMaskStates();
         previous.current = { values: { ...o.values }, look: { name: o.look, path: o.lookPath, amount: o.lookAmount },
                              masks: structuredClone(o.masks), advanced };
         await o.close();
@@ -4150,7 +4151,10 @@ export default function App() {
     const s = session.current;
     if (!s) return;
     let advanced;
-    try { advanced = on.has("advanced") ? await s.copyAdvanced() : undefined; }
+    try {
+      advanced = on.has("advanced") ? await s.copyAdvanced() : undefined;
+      if (on.has("masks") && s.masks.length) await s.refreshMaskStates();
+    }
     catch (e) { setStatus(`copy: ${e}`); return; }
     if (session.current !== s) return;
     clip.current = makeClip(on, s.values, { name: s.look, path: s.lookPath, amount: s.lookAmount }, s.masks, advanced);
@@ -6484,6 +6488,8 @@ export default function App() {
              onScroll={(e) => panelScroll.current.set(shownKey.current, e.currentTarget.scrollTop)}>
           {masksMode && !cropping && (
             <MasksPanel masks={masks} selected={maskSel} shape={shapeSel} tool={maskTool} target={toolTarget}
+                        advancedMode={editMode === "advanced"} session={session.current} sessionRevision={historyRev}
+                        onAdvancedEdit={record} onAdvancedEdits={openEditingMode} photos={shown}
                         brush={brush} overlay={maskShown} disabled={!current} mono={values.bw_mode === 1} photo={values}
                         renderSlider={(c, v, onChange, glow, module) => (
                           <div key={c.id}

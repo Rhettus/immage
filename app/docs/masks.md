@@ -136,7 +136,7 @@ Polarities** flips every channel. Double-click a channel to reset it.
 
 ## Adjusting inside a mask
 
-The selected mask's sliders sit below its settings, in six groups:
+In Simple mode, the selected mask's sliders sit below its settings, in six groups:
 
 - **White Balance**: **Temp**, **Tint**
 - **Tone**: **Exposure** (±4), **Contrast**, **Highlights**, **Shadows**,
@@ -167,6 +167,44 @@ Where masks overlap, their adjustments add up. **Contrast**,
 **Saturation**, **Whites**, **Color Grading**, **HSL**, **Texture**,
 **Noise** and **Defringe** add up only to the end of their own slider, so two masks at +80 Contrast give
 +100 where they meet.
+
+## Advanced mode
+
+In [Advanced mode](advanced-mode.md), the selected mask has an **Adjustments**
+list of darktable module cards in place of the local sliders. The mask's
+shapes, invert, opacity, refinements and visibility controls remain above it.
+The cards edit that mask's instances, independently of the photo's global
+adjustments, and appear in processing order.
+
+Choose **Add module** below the cards to add another adjustment. The menu offers
+modules that support local blending; modules already on this mask are left
+out. Raw processing, geometry, tone mappers, color profiles and modules owned
+by other tools are excluded. There is one instance of each module per mask.
+
+The available modules include:
+
+| Kind | Modules |
+| --- | --- |
+| Tone and detail | Exposure, contrast & texture, local contrast, tone curve, rgb curve, rgb levels, tone equalizer, shadows and highlights, contrast equalizer, diffuse or sharpen, sharpen, highpass and lowpass |
+| Color | Color calibration, color balance rgb, color balance, color equalizer, saturation curve, color zones, color harmonizer, color contrast, color correction, color look up table, LUT 3D, rgb primaries, colorize, split-toning, velvia and monochrome |
+| Correction | Denoise (profiled), astrophoto denoise, surface blur, chromatic aberrations and haze removal |
+| Effects | Bloom, blurs, censorize, graduated density, grain, lowlight vision, soften, vignetting, watermark, composite and dither or posterize |
+
+Cards have the same settings as their global counterparts. Their instance menu
+offers **Reset** and **Remove from mask**; darktable presets and global instance
+management are unavailable here. Adding, removing and editing a module work
+with Undo and Redo. Hiding a mask or viewing Before temporarily switches off
+its adjustments while retaining their settings.
+
+Switching back to Simple keeps every edit rendering. Where a local slider
+exists, it edits the same settings as the card. An **N advanced edits** badge
+identifies settings Simple cannot display. Copying or duplicating a mask with
+its adjustments includes those edits too.
+
+Modules that need an earlier processing stage, including noise reduction and
+haze removal, keep their normal position in darktable's pipeline. Other
+eligible modules use the mask's adjustment position; modules later in the
+pipeline keep their later position.
 
 ## Keys
 

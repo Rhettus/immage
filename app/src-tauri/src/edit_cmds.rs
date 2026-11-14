@@ -128,12 +128,13 @@ pub(crate) async fn instances(state: State<'_, AppState>) -> Result<Vec<Instance
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn instance(state: State<'_, AppState>, action: String, op: String, priority: i64,
-                             name: Option<String>, other: Option<i64>, after: Option<bool>)
+                             name: Option<String>, other: Option<i64>, after: Option<bool>, mask: Option<String>)
     -> Result<InstanceReply, String> {
     let mut req = json!({ "cmd": "instance", "action": action, "op": op, "priority": priority });
     if let Some(n) = name { req["name"] = json!(n); }
     if let Some(o) = other { req["other"] = json!(o); }
     if let Some(a) = after { req["after"] = json!(a); }
+    if let Some(m) = mask { req["mask"] = json!(m); }
     let reply = state.engine("instance").request(req)?;
     serde_json::from_value(reply).map_err(|e| format!("instance: unexpected reply: {e}"))
 }

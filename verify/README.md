@@ -71,6 +71,19 @@ over (`history_discard`) on a closed photo, with its undo and redo:
 python3 -I verify/engine-0460.py
 ```
 
+Advanced mask checks use copied photos and isolated engine state, without a
+GUI. The engine check covers ownership, local versus unmapped parameters,
+module removal and restoration, XMP reopening and darktable-cli export parity.
+The Session check also exercises card edits, hide and Before, duplication,
+Copy Settings and undo through the app's model:
+
+```bash
+python3 -I verify/advanced-masks-engine.py
+node verify/advanced-mask-session.test.mjs
+node verify/mask-modules.test.mjs
+node verify/mask-module-flags.test.mjs
+```
+
 The export metadata check (headless, no GUI, needs the `exiv2` command) gives a
 TIFF every field the export dialog's Metadata section decides (GPS, serial
 numbers and owner, camera and exposure, title, description, creator, rights,

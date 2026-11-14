@@ -193,8 +193,8 @@ view is on.
 
 ## Where the instances run
 
-The **mask anchor** is the one place in the pipe where masks' instances
-run, with the two exceptions below: just after the photo's own **color
+The **mask anchor** is the usual place in the pipe where masks' instances
+run: just after the photo's own **color
 balance rgb** (`_MASK_ANCHOR` in main.c). In darktable's v5.0 module order
 that is the last scene-referred color module before the tone mapper.
 `_named_instance` moves each new mask instance there, and a color or
@@ -220,9 +220,31 @@ Two modules stay where darktable normally runs them, ahead of the anchor:
 Modules that already run after the anchor, such as local contrast, stay
 where they are.
 
-The order is fixed. Immage has no way to move a module, so the question of
-what a mask's instances do when a global module moves never comes up in
-Immage. In darktable the user can move them like any instance.
+Advanced masking uses `MASK_MODULES` in `manifest.ts` to allow only blendable
+modules suitable for local adjustments. Its `anchor` flag is sent as `anchored`
+when creating the named instance. Early-stage modules can retain their natural
+position; modules already later than the anchor stay later. Mask cards follow
+the engine's processing order and cannot be reordered independently. In
+darktable the user can move them like any instance.
+
+## Advanced mask instances
+
+The `instances` reply identifies a mask-owned instance with `owner: "mask"`
+and its mask name in `mask`. Global Adjustments excludes these instances;
+the selected mask's Advanced cards address them by operation and priority.
+Delete and restore require the matching mask name. Other global instance
+actions and presets remain unavailable on mask-owned instances.
+
+The `masks` reply includes owned modules beyond those requested in
+`localFields()`. Its `extra` flag identifies parameters outside the local
+map that differ from defaults, or a module with no local map. Its `state`
+contains the complete parameter blob and enabled flag, with `blend: null`;
+restoring it preserves the destination's mask identifiers. `Mask.moduleStates`
+retains these snapshots for duplication, copying and undo. The frontend keeps
+explicit module on/off choices separately from temporary hiding and the
+physical disabling of instances used by sharing. Editing a card refreshes the local
+slider values; editing a local slider invalidates the corresponding card.
+Hide and Before update every owned instance, including advanced-only modules.
 
 ## Sharing instances between masks
 
@@ -263,6 +285,10 @@ shared instances):
   that scales the shared instance's strength down to that member's own
 - each mask keeps its own instance too, switched off, holding its settings
   so they can be read back
+
+An operation listed in a mask's `extra` state never shares an instance:
+`planMerge` leaves that mask's own instance active so its complete parameters
+render. Other operations on the same mask can still share.
 
 Only masks whose settings point the same way can share an instance, since
 it has one set of params. Masks are grouped either by that direction, or one

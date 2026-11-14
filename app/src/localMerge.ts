@@ -103,6 +103,11 @@ export function planMerge(masks: Mask[], values: Values, before: boolean, ctx: I
       }
     };
     for (const m of masks) {
+      // An Advanced edit adds fields the Simple map cannot preserve. Keep
+      // this mask's instance in the pipe so those fields remain effective.
+      if (m.extra?.includes(map.op)) continue;
+      if (m.disabledModules?.includes(map.op)) continue;
+      if (m.enabledModules?.includes(map.op) && !map.controls.some((id) => m.values[id] !== (localControlById.get(id)?.neutral ?? 0))) continue;
       if (!canMerge(m)) continue;
       if (!merged.has(m.name)) merged.set(m.name, new Set());
       merged.get(m.name)!.add(map.op);

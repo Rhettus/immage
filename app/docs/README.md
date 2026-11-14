@@ -56,7 +56,7 @@ is also on the [Immage website](https://immage.photo/guide/).
 - [Adjustments](adjustments.md): Basic, Tone Curve, HSL / Color, B&W Mix,
   Color Grading, Detail, Lens Corrections, Transform and Effects
 - [Advanced mode](advanced-mode.md): the Editing mode preference and darktable's
-  modules in Adjustments
+  modules in Adjustments and inside masks
 - [Crop](crop.md): crop, straighten, rotate and flip
 - [Masks](masks.md): AI selections, brushes, gradients and ranges, and the
   adjustments inside them

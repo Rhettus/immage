@@ -2277,6 +2277,23 @@ export const localMapOf = new Map(localMaps.flatMap((m) => m.controls.map((id) =
 // the fields to read back from each mask's instances
 export const localFields = () => Object.fromEntries(localMaps.map((m) => [m.op, m.fields]));
 
+// Blendable modules which are safe to add under a mask. `anchor` is false
+// for modules that darktable runs before the mask carrier; those stay at
+// their native pipe position when the engine creates the named instance.
+// Keep this curated: geometry, raw stage, tone mapping, color profiles and
+// tools with Immage-owned data do not belong on mask cards.
+export const MASK_MODULES: { op: string; anchor: boolean }[] = [
+  ...["bilat", "bloom", "blurs", "censorize", "channelmixerrgb", "colorbalance", "colorbalancergb",
+      "colorchecker", "colorcontrast", "colorcorrection", "colorequal", "colorharmonizer", "colorize",
+      "colorzones", "contrastntexture", "diffuse", "dither", "exposure", "graduatednd",
+      "grain", "highpass", "lowlight", "lowpass", "lut3d", "monochrome", "overlay", "primaries",
+      "rgbcurve", "rgblevels", "satcurvergb", "shadhi", "soften", "splittoning", "tonecurve", "toneequal",
+      "velvia", "vignette",
+      "watermark"].map((op) => ({ op, anchor: true })),
+  ...["atrous", "bilateral", "cacorrectrgb", "denoiseprofile", "hazeremoval",
+      "nlmeans", "sharpen"].map((op) => ({ op, anchor: false })),
+];
+
 // Only modules that support local adjustments are offered for masks.
 export const MASK_MODULE_CHOICES: ModuleChoice[] = MODULE_CHOICES.flatMap((c) => {
   // their color balance rgb option is the mask's shared instance

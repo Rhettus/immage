@@ -394,7 +394,7 @@ void files_overlay_sync(const dt_imgid_t imgid);
 gboolean session_set(const char *op, const char *field, JsonNode *value,
                      JsonObject *params, const gboolean has_enabled,
                      const gboolean enabled, const char *after, const char *before,
-                     const char *instance, const char *mask, const gboolean invert,
+                     const char *instance, const char *mask, const gboolean anchored, const gboolean invert,
                      const double opacity, JsonObject *refine, const int priority, char **err);
 gboolean session_module_state(const char *op, const int priority, const gboolean has_enabled,
                               const gboolean enabled, const gboolean reset, JsonObject *restore,
@@ -411,7 +411,9 @@ dt_iop_module_t *session_find_named(const char *op, const char *name);
 gboolean session_get(JsonObject *ops, JsonBuilder *b, char **err);
 gboolean session_module_schema(const char *op, JsonBuilder *b, char **err);
 void session_instances(JsonBuilder *b);
+void session_module_state_json(JsonBuilder *b, const dt_iop_module_t *mod, const gboolean include_blend);
 gboolean session_instance(const char *action, const char *op, const int priority, const char *name,
+                          const char *mask,
                           const int other, const gboolean after, JsonBuilder *b, char **err);
 gboolean session_lens_menu(JsonBuilder *b, char **err);
 gboolean session_color_profiles(JsonBuilder *b, char **err);

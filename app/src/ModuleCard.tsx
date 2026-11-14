@@ -85,10 +85,14 @@ export function fieldControl(f: SchemaField, l: LayoutField, value: number): Con
 // `siblings` is how many instances of the module the group shows, `index`
 // this one's place among them (pipe order); `fresh`, a card just added;
 // `focus`, a number that changes each time the module search picks the card
-export function ModuleCard({ hidden, instance, layout, schema, state, siblings, index, fresh, focus, family, photo, photos, onSettled, settle, wbInModule, onField, onFields, onEnabled, onReset, onInstance, loadPresets, onPreset, onTurn }: {
+export function ModuleCard({ hidden, maskOwned = false, simple = false, instance, layout, schema, state, siblings, index, fresh, focus, family, photo, photos, onSettled, settle, wbInModule, onField, onFields, onEnabled, onReset, onInstance, loadPresets, onPreset, onTurn }: {
   instance: Instance; layout: ModuleLayout; schema: ModuleSchema; state: AdvancedState;
   // hidden in Preferences > Modules, yet shown as the photo uses it
   hidden?: boolean;
+  // mask cards have a smaller action menu and no darktable preset menu
+  maskOwned?: boolean;
+  // a Simple mask adjustment also writes this module instance
+  simple?: boolean;
   siblings: number; index: number; fresh?: boolean; focus?: number;
   // the open photo, which the lens picker lists lenses for
   photo?: object | null;
@@ -206,14 +210,15 @@ export function ModuleCard({ hidden, instance, layout, schema, state, siblings, 
           <FamilySwitch label={family.label} current={instance.op} options={family.options} onPick={family.onPick} />
         </span>}
         {hidden && <span className="module-card-tag" title="Hidden in Preferences > Modules; this photo uses it, so its card stays">hidden</span>}
-        {siblings > 1 && instance.priority === 0 && <span className="module-card-tag" title="Simple's sliders show this instance">Simple</span>}
-        <PresetMenu name={name} load={loadPresets} onPick={(n) => { setFold(true); onPreset(n); }} />
+        {(simple || (siblings > 1 && instance.priority === 0)) && <span className="module-card-tag" title="Simple's sliders also edit this module">Simple</span>}
+        {!maskOwned && <PresetMenu name={name} load={loadPresets} onPick={(n) => { setFold(true); onPreset(n); }} />}
         <button className="module-card-reset" title="Reset to darktable's defaults" aria-label={`Reset ${name}`}
                 onClick={(e) => { e.stopPropagation(); onReset(); }}>
           <RotateCcw size={14} strokeWidth={1.8} />
         </button>
         <InstanceMenu name={name} oneInstance={!!schema.flags.one_instance} first={instance.priority === 0}
                       canUp={index > 0} canDown={index < siblings - 1}
+                      maskOwned={maskOwned}
                       onPick={(c) => { if (c === "rename") { ended.current = false; setRenaming(true); } else onInstance(c); }} />
         <Chevron open={open} />
       </div>

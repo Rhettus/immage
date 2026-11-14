@@ -823,7 +823,7 @@ dt_iop_module_t *session_module_at(const char *op, const int priority, char **er
 gboolean session_set(const char *op, const char *field, JsonNode *value,
                      JsonObject *params, const gboolean has_enabled,
                      const gboolean enabled, const char *after, const char *before,
-                     const char *instance, const char *mask, const gboolean invert,
+                     const char *instance, const char *mask, const gboolean anchored, const gboolean invert,
                      const double opacity, JsonObject *refine, const int priority, char **err)
 {
   const int gen = _s.iop_gen;
@@ -836,7 +836,7 @@ gboolean session_set(const char *op, const char *field, JsonNode *value,
   }
   // an instance placed by `after` or `before` is not also put after the
   // mask anchor, which would leave it behind modules it must precede
-  dt_iop_module_t *mod = instance ? masks_named_instance(op, instance, !after && !before, err)
+  dt_iop_module_t *mod = instance ? masks_named_instance(op, instance, anchored && !after && !before, err)
                                   : session_module_at(op, priority, err);
   if(!mod) return FALSE;
   // kept to tell a request that changes nothing (masks_named_instance() bumps
@@ -905,7 +905,7 @@ gboolean session_set(const char *op, const char *field, JsonNode *value,
 
 // an instance's whole state, params and blend params in base64, as
 // `module_state` replies it and takes it back for undo
-static void _module_state_json(JsonBuilder *b, const dt_iop_module_t *mod)
+void session_module_state_json(JsonBuilder *b, const dt_iop_module_t *mod, const gboolean include_blend)
 {
   json_builder_begin_object(b);
   json_builder_set_member_name(b, "enabled");
@@ -914,7 +914,7 @@ static void _module_state_json(JsonBuilder *b, const dt_iop_module_t *mod)
   json_builder_set_member_name(b, "params");
   json_builder_add_string_value(b, params);
   g_free(params);
-  gchar *blend = mod->blend_params
+  gchar *blend = include_blend && mod->blend_params
     ? g_base64_encode((const guchar *)mod->blend_params, sizeof(dt_develop_blend_params_t)) : NULL;
   json_builder_set_member_name(b, "blend");
   if(blend) json_builder_add_string_value(b, blend); else json_builder_add_null_value(b);
@@ -922,7 +922,7 @@ static void _module_state_json(JsonBuilder *b, const dt_iop_module_t *mod)
   json_builder_end_object(b);
 }
 
-// a blob of _module_state_json() back into `dst`, if it is the right size
+// a blob of session_module_state_json() back into `dst`, if it is the right size
 static gboolean _unbase64_into(const char *text, void *dst, const size_t size)
 {
   if(!text) return FALSE;
@@ -1137,7 +1137,7 @@ gboolean session_module_state(const char *op, const int priority, const gboolean
     return FALSE;
   }
   json_builder_set_member_name(b, "was");
-  _module_state_json(b, mod);
+  session_module_state_json(b, mod, TRUE);
   void *was = g_malloc(mod->params_size);
   memcpy(was, mod->params, mod->params_size);
   dt_develop_blend_params_t was_blend = { 0 };
@@ -1184,7 +1184,7 @@ gboolean session_module_state(const char *op, const int priority, const gboolean
     session_changed(DT_DEV_PIPE_TOP_CHANGED);
   }
   json_builder_set_member_name(b, "now");
-  _module_state_json(b, mod);
+  session_module_state_json(b, mod, TRUE);
   return TRUE;
 }
 
@@ -1508,6 +1508,10 @@ void session_instances(JsonBuilder *b)
     const char *owner = masks_instance_owner(m);
     json_builder_set_member_name(b, "owner");
     if(owner) json_builder_add_string_value(b, owner); else json_builder_add_null_value(b);
+    json_builder_set_member_name(b, "mask");
+    dt_masks_form_t *group = !g_strcmp0(owner, "mask") ? masks_instance_group(m) : NULL;
+    const char *mask_name = group ? masks_mask_name(group->name) : NULL;
+    if(mask_name) json_builder_add_string_value(b, mask_name); else json_builder_add_null_value(b);
     json_builder_end_object(b);
   }
   json_builder_end_array(b);
@@ -1536,6 +1540,7 @@ static void _instance_changed(dt_iop_module_t *m, const gboolean structure)
 // an Immage tool's own instance (masks_instance_owner()) is left to it.
 // the reply has the instance's `priority` and the new `instances` list
 gboolean session_instance(const char *action, const char *op, const int priority, const char *name,
+                          const char *mask,
                           const int other, const gboolean after, JsonBuilder *b, char **err)
 {
   if(!action || !op)
@@ -1552,9 +1557,19 @@ gboolean session_instance(const char *action, const char *op, const int priority
     *err = g_strdup_printf("instance %d of '%s' is %s", priority, op, gone ? "deleted" : "not deleted");
     return FALSE;
   }
-  if(masks_instance_owner(mod))
+  const char *owner = masks_instance_owner(mod);
+  dt_masks_form_t *mask_group = !g_strcmp0(owner, "mask") ? masks_instance_group(mod) : NULL;
+  const char *instance_mask = mask_group ? masks_mask_name(mask_group->name) : NULL;
+  const gboolean scoped_mask_action = (!g_strcmp0(action, "delete") || restore) && mask && instance_mask
+    && !g_strcmp0(mask, instance_mask);
+  if(owner && !scoped_mask_action)
   {
     *err = g_strdup_printf("instance %d of '%s' belongs to %s", priority, op, masks_instance_owner(mod));
+    return FALSE;
+  }
+  if(mask && !scoped_mask_action)
+  {
+    *err = g_strdup("mask does not own this instance");
     return FALSE;
   }
   dt_iop_module_t *result = mod;

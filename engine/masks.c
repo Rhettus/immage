@@ -294,7 +294,23 @@ dt_iop_module_t *masks_named_instance(const char *op, const char *name, const gb
   for(GList *l = _s.dev.iop; l; l = g_list_next(l))
   {
     dt_iop_module_t *m = l->data;
-    if(!g_strcmp0(m->op, op) && m->multi_name_hand_edited && !g_strcmp0(m->multi_name, name)) return m;
+    if(!g_strcmp0(m->op, op) && m->multi_name_hand_edited && !g_strcmp0(m->multi_name, name))
+    {
+      // Removing a mask card marks the instance for deletion on save. If the
+      // user adds that module again before saving, reuse the held module but
+      // clear its tombstone and start from image defaults; otherwise it stays
+      // absent from `instances` and its old parameters silently return.
+      GList *gone = g_list_find(_s.deleted, m);
+      if(gone && !g_strcmp0(masks_instance_owner(m), "mask"))
+      {
+        _s.deleted = g_list_delete_link(_s.deleted, gone);
+        memcpy(m->params, m->default_params, m->params_size);
+        if(m->blend_params)
+          memcpy(m->blend_params, m->default_blendop_params, sizeof(dt_develop_blend_params_t));
+        m->enabled = FALSE;
+      }
+      return m;
+    }
   }
   dt_iop_module_t *base = dt_iop_get_module_by_op_priority(_s.dev.iop, op, 0);
   dt_iop_module_t *m = base ? dt_dev_module_duplicate_ext(&_s.dev, base, TRUE) : NULL;
@@ -1826,6 +1842,67 @@ static void _channels_json(JsonBuilder *b, const GPtrArray *chans)
 // every client mask: its shapes, whether it is inverted, and for each
 // instance it drives, whether it is on and the asked-for fields
 // ({ op: [field, ...] } in `fields`; a tagged instance is "op#tag")
+static void _mask_introspected_bytes(const dt_introspection_field_t *f, gboolean *bytes, const size_t size,
+                                     const size_t adjustment)
+{
+  if(!f) return;
+  if(f->header.type == DT_INTROSPECTION_TYPE_STRUCT)
+  {
+    for(size_t i = 0; i < f->Struct.entries; i++)
+      _mask_introspected_bytes(f->Struct.fields[i], bytes, size, adjustment);
+    return;
+  }
+  if(f->header.type == DT_INTROSPECTION_TYPE_UNION)
+  {
+    for(size_t i = 0; i < f->Union.entries; i++)
+      _mask_introspected_bytes(f->Union.fields[i], bytes, size, adjustment);
+    return;
+  }
+  if(f->header.type == DT_INTROSPECTION_TYPE_ARRAY)
+  {
+    const dt_introspection_field_t *element = f->Array.field;
+    for(size_t i = 0; element && i < f->Array.count; i++)
+      _mask_introspected_bytes(element, bytes, size, adjustment + i * element->header.size);
+    return;
+  }
+  const size_t start = f->header.offset + adjustment;
+  if(start >= size) return;
+  const size_t end = MIN(size, start + f->header.size);
+  for(size_t i = start; i < end; i++) bytes[i] = TRUE;
+}
+
+static gboolean _mask_instance_extra(dt_iop_module_t *mod, JsonArray *want)
+{
+  // No local field list means there is no Simple representation for this op.
+  if(!want) return TRUE;
+  if(!mod->params_size || !memcmp(mod->params, mod->default_params, mod->params_size)) return FALSE;
+  const dt_introspection_t *intro = mod->so->have_introspection ? mod->get_introspection() : NULL;
+  if(!intro || !intro->field) return TRUE;
+  gboolean *covered = g_new0(gboolean, mod->params_size);
+  gboolean *introspected = g_new0(gboolean, mod->params_size);
+  _mask_introspected_bytes(intro->field, introspected, mod->params_size, 0);
+  for(guint i = 0; i < json_array_get_length(want); i++)
+  {
+    const char *path = json_array_get_string_element(want, i);
+    dt_introspection_field_t *f = NULL;
+    char *err = NULL;
+    void *p = session_field_in(mod, mod->default_params, path, &f, &err);
+    g_free(err);
+    if(!p || !f) continue;
+    const ptrdiff_t at = (uint8_t *)p - (uint8_t *)mod->default_params;
+    if(at < 0 || (size_t)at >= mod->params_size) continue;
+    const size_t end = MIN(mod->params_size, (size_t)at + f->header.size);
+    for(size_t j = (size_t)at; j < end; j++) covered[j] = TRUE;
+  }
+  gboolean extra = FALSE;
+  const uint8_t *params = mod->params, *defaults = mod->default_params;
+  for(size_t i = 0; i < mod->params_size; i++)
+    if(introspected[i] && !covered[i] && params[i] != defaults[i]) { extra = TRUE; break; }
+  g_free(covered);
+  g_free(introspected);
+  return extra;
+}
+
 gboolean masks_masks(JsonObject *fields, JsonBuilder *b, char **err)
 {
   json_builder_set_member_name(b, "masks");
@@ -1947,6 +2024,7 @@ gboolean masks_masks(JsonObject *fields, JsonBuilder *b, char **err)
     for(GList *m = _s.dev.iop; m; m = g_list_next(m))
     {
       dt_iop_module_t *mod = m->data;
+      if(g_list_find(_s.deleted, mod)) continue;
       const char *tag = _mask_instance_tag(mod, name);
       if(!tag) continue;
       // an instance that is on, else one that is off: a hidden mask has
@@ -1965,6 +2043,10 @@ gboolean masks_masks(JsonObject *fields, JsonBuilder *b, char **err)
       json_builder_begin_object(b);
       json_builder_set_member_name(b, "enabled");
       json_builder_add_boolean_value(b, mod->enabled);
+      json_builder_set_member_name(b, "extra");
+      json_builder_add_boolean_value(b, _mask_instance_extra(mod, want));
+      json_builder_set_member_name(b, "state");
+      session_module_state_json(b, mod, FALSE);
       json_builder_set_member_name(b, "params");
       json_builder_begin_object(b);
       for(guint i = 0; want && i < json_array_get_length(want); i++)
