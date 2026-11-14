@@ -421,6 +421,26 @@ sidecars, then reopens the second target and the unselected photo. Inspection
 is read-only and limited to the app and this run's fixture sidecars. No system
 clipboard or native dialog is used. This case is written, not live-validated.
 
+## Moving photos by drag
+
+`--case move-photos,move-copy` works with any fixture. Before launch the runner
+lays out the run's own fixture folder: `move-a`, `move-b` and `move-c` as copies
+of the fixture, `dest/inner/` to drop into, and `clash/` with an identical
+`move-c` and a `move-b` that has one byte more. `move-photos` covers the
+following:
+
+- spring-opening a shut folder under the drag
+- Esc during a drag
+- a refused drop on the photos' own folder
+- Cancel in the confirmation
+- a move into `dest/inner`, after which it checks the moved file's SHA-256,
+  the rated sidecar, and that no part files remain
+
+`move-copy` drops two selected photos with Alt held. It checks the copy
+confirmation (identical and clashing photos), uses Keep both for all, and
+checks the numbered copy. Everything stays inside the run's fixture folder.
+The confirmation is drawn by the app, so no native dialog is involved.
+
 ## Scaling benchmark collection
 
 The generic case has approved Linux ARM64 VM passes at DPR 1 and 2, and both

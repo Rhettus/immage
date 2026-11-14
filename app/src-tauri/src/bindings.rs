@@ -74,6 +74,9 @@ pub fn commands() -> Commands<tauri::Wry> {
         // the editing, export and print commands
         crate::export_cmds::export_images,
         crate::export_cmds::export_cancel,
+        crate::move_cmds::move_plan,
+        crate::move_cmds::move_files,
+        crate::move_cmds::move_cancel,
         crate::export_cmds::export_existing,
         crate::export_cmds::export_preview,
         crate::export_cmds::export_presets_load,

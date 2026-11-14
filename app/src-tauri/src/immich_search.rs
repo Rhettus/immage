@@ -353,6 +353,37 @@ impl Immich {
         std::fs::rename(&part, &file).map_err(|e| e.to_string())?;
         Ok((file, true))
     }
+
+    // what a move needs of an asset before downloading it (move_cmds.rs):
+    // its file name, size, and the SHA-1 of its content (base64) when the
+    // server has one. an external library's asset may carry a checksum of
+    // its path rather than its content, so only uploaded assets give one
+    pub fn original_info(&self, id: &str) -> Result<OriginalInfo, String> {
+        let r = status(self.http.get(self.url(&format!("/assets/{}", safe_id(id)?))).send()
+            .map_err(|e| e.to_string())?)?;
+        let a: Value = r.json().map_err(|e| format!("Immich: unexpected reply: {e}"))?;
+        let name = a["originalFileName"].as_str().map(|n| Path::new(n).file_name()
+            .map(|f| f.to_string_lossy().into_owned()).unwrap_or_default()).filter(|n| !n.is_empty())
+            .unwrap_or_else(|| id.to_string());
+        let uploaded = a["libraryId"].is_null();
+        Ok(OriginalInfo {
+            name,
+            size: a["exifInfo"]["fileSizeInByte"].as_u64(),
+            checksum: a["checksum"].as_str().filter(|_| uploaded).map(str::to_string),
+        })
+    }
+
+    // the original's bytes, to stream into a file of the caller's
+    pub fn original_stream(&self, id: &str) -> Result<reqwest::blocking::Response, String> {
+        status(self.http.get(self.url(&format!("/assets/{}/original", safe_id(id)?))).send()
+            .map_err(|e| e.to_string())?)
+    }
+}
+
+pub struct OriginalInfo {
+    pub name: String,
+    pub size: Option<u64>,
+    pub checksum: Option<String>,
 }
 
 #[cfg(test)]

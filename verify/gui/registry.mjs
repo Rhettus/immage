@@ -49,11 +49,14 @@ import { advancedCurveCards } from './specs/advanced-curve-cards.mjs';
 import { advancedRawCards } from './specs/advanced-raw-cards.mjs';
 import { advancedFileCards } from './specs/advanced-file-cards.mjs';
 import { panelPeek } from './specs/panel-peek.mjs';
+import { movePhotos, moveCopy } from './specs/move-photos.mjs';
 import { detailGroup } from './specs/detail-group.mjs';
 
 const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRange, 'batch-paste': batchPaste, startup, splash, exposure, 'slider-input': sliderInput, 'slider-click': sliderClick, history, rail, sliders, 'module-options': moduleOptions, 'module-switch': moduleSwitch,
   'panel-scroll': panelScroll,
   'panel-peek': panelPeek,
+  'move-photos': movePhotos,
+  'move-copy': moveCopy,
   'detail-group': detailGroup,
   'agx-presets': agxPresets,
   'color-profiles': colorProfiles,

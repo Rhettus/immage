@@ -32,6 +32,8 @@ and Linux. **All builds are alpha; bugs are expected.**
   manual pin placement work without a search key.
 - Browse folders directly, import from a card with the built-in Immporter,
   and optionally search and export to an [Immich](app/docs/immich.md) library.
+- Drag photos onto a folder to move or copy them, for example to a NAS, with
+  their sidecars and a checksum check of every copied file.
 - Export to a folder or an Immich album, with borders and file-name templates.
 - Print a photo, or a contact sheet of many with their file names, or save a
   PDF, with your printer's ICC profile, and [soft proof](app/docs/print.md) the

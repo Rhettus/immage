@@ -15,6 +15,8 @@ import { AdvancedToggle, advancedEdited, useAdvanced } from "./advanced";
 import { newPhotoPresetValues, preparePastePhoto } from "./pasteDefaults";
 import { pasteTargets, replaceMasks, restorePaste, runPaste, type PasteUpdate } from "./batchPaste";
 import { CaptureTimeDialog } from "./CaptureTimeDialog";
+import { MoveDialog } from "./MoveDialog";
+import { pressPhoto } from "./photoDrag";
 import { captureMillis, type CaptureTimeEntry, type CaptureTimeUpdate } from "./captureTime";
 import { Fragment, Profiler, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
@@ -54,7 +56,7 @@ import { VignetteOverlay } from "./VignetteOverlay";
 import { GuideOverlay } from "./GuideOverlay";
 import { autoMix } from "./bwauto";
 import { begin, end, track, useWorking } from "./activity";
-import { runInBackground, runMerge, useJobs } from "./background";
+import { runInBackground, runMerge, runMove, useJobs } from "./background";
 import { withModel } from "./aiModel";
 import { invert, pixelAt, setProbe, type RGB } from "./probe";
 import { anchored, neutralize, whitePatch, type WB } from "./wb";
@@ -117,7 +119,7 @@ import type { TunerRun } from "./previewTuning";
 import { PerfHud } from "./PerfHud";
 import { KeywordingPanel } from "./Keywording";
 import { ImmichPanel } from "./ImmichPanel";
-import { immichUrl, isRemote, loadSearch, photoUrl, resolve, search as searchImmichPage, searchUrl, storeSearch, type ImmichSearch } from "./immich";
+import { immichUrl, isRemote, loadSearch, pathMap, photoUrl, resolve, search as searchImmichPage, searchUrl, storeSearch, type ImmichSearch } from "./immich";
 import { needsRead, NO_FILTER, passes, type Filter } from "./filter";
 import { Layout, Library, PanelKey, loadLayout, loadLibrary, saveLayout, saveLibrary } from "./layoutPrefs";
 import { GridZoomBar, ResetAll, Splitter, Toolbar, ZoomBar } from "./Toolbar";
@@ -129,7 +131,7 @@ import { HistogramView, SCOPE_MODES, loadScope } from "./HistogramView";
 import { Navigator } from "./Navigator";
 import { PanelView, UPRIGHT_ICONS, UPRIGHT_TITLES, WBTools, isMono, presetValues, sampleSpot } from "./PanelView";
 import { Choice, OptionPreview, Slider, Toggle } from "./Controls";
-import { commands, type PrintReply, type Value } from "./commands";
+import { commands, type MovePlan, type MoveRequest, type MoveSummary, type PrintReply, type Value } from "./commands";
 
 const MAX_PREVIEW = 2560;
 const OTHER_MENUS = forPlatform(MENUS, false);
@@ -469,6 +471,15 @@ export default function App() {
       : hit ? [hit] : []);
     setFileMenu({ x: e.clientX, y: e.clientY, imgid, targets });
   };
+  // the photos a thumbnail drags, as its menu takes them: the selection it
+  // is in, or itself, with its stacked partners
+  const dragSet = (i: ImageEntry) => {
+    const sel = selectionRef.current;
+    return withPartners(sel.size > 1 && sel.has(i.imgid) ? imagesRef.current.filter((p) => sel.has(p.imgid)) : [i]);
+  };
+  // photos dropped on a folder, waiting for the confirmation (MoveDialog)
+  const [moveDialog, setMoveDialog] = useState<{ list: ImageEntry[]; req: MoveRequest; copy: boolean;
+                                                 plan: MovePlan | null; error: string | null } | null>(null);
   const [canvasColor, setCanvasColor] = useState<Canvas>(loadCanvas);
   const [focusMode, setFocusMode] = useState(loadFocusMode);
   const [editMode, setEditMode] = useState(loadEditMode);
@@ -3460,6 +3471,83 @@ export default function App() {
   // Hide confirmed deletions immediately while the Trash job runs. The
   // open photo moves on to the next one first, so the engine is not left
   // writing a sidecar beside a file in the Trash
+  // the open photo, about to go from its folder: the next one that stays
+  // opens instead, or none
+  const leavePhoto = async (gone: (i: ImageEntry) => boolean) => {
+    const shownNow = shownRef.current, at = shownNow.findIndex((i) => isOpen(i));
+    const next = [...shownNow.slice(at + 1), ...shownNow.slice(0, Math.max(0, at)).reverse()]
+      .find((i) => !gone(i));
+    if (next) {
+      if (!await openFile(next.path, next.imgid)) throw new Error("could not leave the open photo");
+    } else await closePhoto();
+  };
+  // photos dropped on a folder of the Folders panel (photoDrag.ts): asks
+  // what moving them there would do, for the confirmation
+  const askMove = async (list: ImageEntry[], dest: string, copy: boolean) => {
+    if (!list.length || moveDialog) return;
+    const req: MoveRequest = {
+      sources: list.map((i) => (isRemote(i) && i.remote
+        ? { imgid: null, asset: i.remote.assetId, assetPath: i.remote.originalPath }
+        : { imgid: i.imgid, asset: null, assetPath: null })),
+      dest, map: list.some(isRemote) ? await pathMap() : null,
+    };
+    setMoveDialog({ list, req, copy, plan: null, error: null });
+    try {
+      const plan = await commands.movePlan(req);
+      setMoveDialog((d) => (d?.req === req ? { ...d, plan } : d));
+    } catch (e) {
+      setMoveDialog((d) => (d?.req === req ? { ...d, error: String(e) } : d));
+    }
+  };
+  // the confirmed move or copy, as a background job. a move hides the
+  // photos at once, leaving the open one first so the engine writes no
+  // sidecar beside a file that is going; the folder is read again for any
+  // that stayed
+  const confirmMove = async (copy: boolean, keepBoth: string[]) => {
+    const d = moveDialog;
+    setMoveDialog(null);
+    if (!d?.plan) return;
+    const { list, req, plan } = d;
+    const dest = req.dest, name = baseName(dest) || dest;
+    const files = new Set(list.filter((i) => !isRemote(i)).map((i) => i.path));
+    const gone = (i: ImageEntry) => !isRemote(i) && files.has(i.path);
+    const dir = folderRef.current;
+    const moving = !copy && files.size > 0;
+    if (moving) {
+      const cur = imagesRef.current.find((i) => isOpen(i));
+      pendingDeletes.current.add(gone);
+      updateImages(imagesRef.current);
+      try {
+        if (cur && gone(cur)) await leavePhoto(gone);
+      } catch (e) {
+        pendingDeletes.current.delete(gone);
+        if (dir && folderRef.current === dir && !immichRef.current) await showFolder(dir, true);
+        setStatus(`move: ${e}`);
+        return;
+      }
+    }
+    const units = plan.units.filter((u) => u.clash !== "here").length;
+    const summarize = (r: MoveSummary) => {
+      const n = r.done.length;
+      const parts = [`${moving ? "Moved" : "Copied"} ${n === 1 ? r.done[0] : `${n} photos`} to ${name}`];
+      if (r.skipped.length) parts.push(`${r.skipped.length} skipped`);
+      if (r.cancelled) parts.push("stopped");
+      if (r.failed.length) parts.push(`${r.failed.length} failed (${r.failed[0].name}: ${r.failed[0].error})`);
+      if (r.warnings.length) parts.push(r.warnings[0]);
+      return { text: parts.join(", "), ok: !r.failed.length && !r.warnings.length,
+               action: { label: "Show", run: () => { void showFolder(dest); setGrid(true); } } };
+    };
+    const r = await runMove(moving ? `Moving to ${name}` : `Copying to ${name}`, units,
+                            (job) => commands.moveFiles(job, req, !moving, keepBoth), summarize,
+                            moving ? "Move failed" : "Copy failed");
+    pendingDeletes.current.delete(gone);
+    // what the filmstrip shows again: photos that stayed, or the new ones
+    const now = folderRef.current;
+    if (!now || immichRef.current) return;
+    const stayed = moving && now === dir && (!r || r.removed.length < list.filter((i) => !isRemote(i)).length);
+    const arrived = now === dest || (includeSubRef.current && within(dest, now));
+    if (stayed || arrived) await showFolder(now, true);
+  };
   const deleteRejected = async (list: ImageEntry[]) => {
     if (!list.length) return;
     const n = list.length, photos = n === 1 ? `"${list[0].filename}"` : `${n} rejected photos`;
@@ -3476,14 +3564,7 @@ export default function App() {
     pendingDeletes.current.add(gone);
     updateImages(imagesRef.current);
     try {
-      if (cur && gone(cur)) {
-        const shownNow = shownRef.current, at = shownNow.findIndex((i) => isOpen(i));
-        const next = [...shownNow.slice(at + 1), ...shownNow.slice(0, Math.max(0, at)).reverse()]
-          .find((i) => !gone(i));
-        if (next) {
-          if (!await openFile(next.path, next.imgid)) throw new Error("could not leave the open photo");
-        } else await closePhoto();
-      }
+      if (cur && gone(cur)) await leavePhoto(gone);
       await commands.trashFiles(list.map((i) => i.imgid));
       setStatus(`moved ${n === 1 ? list[0].filename : `${n} photos`} to the ${TRASH}`);
     } catch (e) {
@@ -6309,6 +6390,11 @@ export default function App() {
                               : folder ? `no photos in this folder${includeSub ? "" : " (Include subfolders shows its subfolders' photos)"}`
                               : "add a folder to start"} current={currentEntry?.imgid ?? null} loader={loader.current!} onMenu={showFileMenu}
                        height={layout.stripHeight} grid={grid} gridSize={gridSize} onGridZoom={zoomGrid} selection={selection} onPick={pickPhoto}
+                       onPress={(i, e) => pressPhoto(e, {
+                         count: () => dragSet(i).length,
+                         from: () => [...new Set(dragSet(i).filter((p) => !isRemote(p)).map((p) => parentDir(p.path)))],
+                         drop: (to, copy) => void askMove(dragSet(i), to, copy),
+                       })}
                        candidate={compare}
                        onDouble={(i) => { setCompare(null); void openEntry(i); setGrid(false); }}
                        onOpenKnown={(k, double) => {
@@ -6846,6 +6932,8 @@ export default function App() {
     </div>
     {shortcutsOpen && <ShortcutsDialog onClose={() => setShortcutsOpen(false)} />}
     {supportBundle && <SupportBundleDialog values={supportBundle} onClose={() => setSupportBundle(null)} />}
+    {moveDialog && <MoveDialog plan={moveDialog.plan} error={moveDialog.error} copy={moveDialog.copy}
+                               onConfirm={(copy, keep) => void confirmMove(copy, keep)} onClose={() => setMoveDialog(null)} />}
     {captureDialog && <CaptureTimeDialog {...captureDialog} onApply={applyCaptureTimes} onClose={() => setCaptureDialog(null)} />}
     {fileMenu && (() => {
       const hit = images.find((i) => i.imgid === fileMenu.imgid);

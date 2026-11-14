@@ -57,6 +57,9 @@ export const commands = {
 	mapSearchKeyRemove: () => __TAURI_INVOKE<null>("map_search_key_remove"),
 	exportImages: (job: number, items: ExportItem[], options: ExportOptions) => __TAURI_INVOKE<ExportReply>("export_images", { job, items, options }),
 	exportCancel: (job: number) => __TAURI_INVOKE<void>("export_cancel", { job }),
+	movePlan: (req: MoveRequest) => __TAURI_INVOKE<MovePlan>("move_plan", { req }),
+	moveFiles: (job: number, req: MoveRequest, copy: boolean, keepBoth: string[]) => __TAURI_INVOKE<MoveSummary>("move_files", { job, req, copy, keepBoth }),
+	moveCancel: (job: number) => __TAURI_INVOKE<void>("move_cancel", { job }),
 	exportExisting: (items: ExportItem[], dir: string, subfolder: string | null, format: string) => __TAURI_INVOKE<ExistingFile[]>("export_existing", { items, dir, subfolder, format }),
 	exportPreview: (item: ExportItem, options: ExportOptions, cap: number) => __TAURI_INVOKE<ArrayBuffer>("export_preview", { item, options, cap }),
 	exportPresetsLoad: () => __TAURI_INVOKE<PresetsFile | null>("export_presets_load"),
@@ -697,6 +700,42 @@ export type ModuleStateReply = {
 	now: ModuleState,
 };
 
+export type MoveFailure = {
+	name: string,
+	error: string,
+};
+
+export type MovePlan = {
+	dest: string,
+	units: PlanUnit[],
+	bytes: number,
+	free: number | null,
+	sameDrive: boolean,
+	network: boolean,
+};
+
+export type MoveRequest = {
+	sources: MoveSource[],
+	dest: string,
+	map?: PathMap | null,
+};
+
+export type MoveSource = {
+	imgid?: number | null,
+	asset?: string | null,
+	assetPath?: string | null,
+};
+
+export type MoveSummary = {
+	dest: string,
+	done: string[],
+	removed: number[],
+	skipped: string[],
+	failed: MoveFailure[],
+	warnings: string[],
+	cancelled: boolean,
+};
+
 export type Named = {
 	id: string,
 	name: string,
@@ -809,6 +848,18 @@ export type Place = {
 	latitude: number,
 	longitude: number,
 	bounds?: [number, number, number, number] | null,
+};
+
+export type PlanUnit = {
+	key: string,
+	name: string,
+	imgids: number[],
+	versions: number,
+	files: number,
+	bytes: number,
+	clash: string,
+	download: boolean,
+	keepSource: boolean,
 };
 
 export type PluginConfig = {

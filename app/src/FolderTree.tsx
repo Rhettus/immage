@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from "react";
 import { commands, type SubFolder, type Volume } from "./commands";
 import { NameEdit } from "./MasksPanel";
 import { baseName } from "./paths";
+import { usePhotoDrag } from "./photoDrag";
 
 // the drive a folder is on (folder_volumes, volumes.rs)
 export type { Volume };
@@ -42,6 +43,19 @@ export function FolderTree({ roots, volumes, hostNames, folded, current, photo, 
 }) {
   const [editingHost, setEditingHost] = useState<string | null>(null);
   const [children, setChildren] = useState<Map<string, SubFolder[]>>(new Map());
+  // a photo dragged over a folder (photoDrag.ts): the folder takes the drop,
+  // and one that is shut opens after a moment's rest on it, so its
+  // subfolders can take it instead
+  const drag = usePhotoDrag();
+  const opens = useRef(new Map<string, boolean>());
+  const toggle = useRef(onToggle);
+  toggle.current = onToggle;
+  const over = drag?.over ?? null;
+  useEffect(() => {
+    if (!over || expanded.has(over) || !opens.current.get(over)) return;
+    const t = window.setTimeout(() => toggle.current(over), 500);
+    return () => window.clearTimeout(t);
+  }, [over, expanded]);
   // the open folders' subfolders, read when a folder opens or on refresh
   useEffect(() => {
     let stale = false;
@@ -73,9 +87,15 @@ export function FolderTree({ roots, volumes, hostNames, folded, current, photo, 
     const open = expanded.has(path);
     const kids = open ? children.get(path)?.filter((k) => !hidden.has(k.path)) : undefined;
     const holdsPhoto = path === photo && path !== current;
+    opens.current.set(path, hasChildren && !offline);
+    // the photos' own folder, or a drive not answering, takes no drop
+    const refuse = offline || (drag !== null && drag.from.length === 1 && drag.from[0] === path);
+    const target = drag !== null && drag.over === path;
     return (
       <li key={path}>
-        <div className={`folder-row${path === current ? " active" : ""}${holdsPhoto ? " has-photo" : ""}${offline ? " offline" : ""}`}
+        <div className={`folder-row${path === current ? " active" : ""}${holdsPhoto ? " has-photo" : ""}${offline ? " offline" : ""}`
+                        + `${target ? ` drop-target${drag.copy ? " copy" : ""}` : ""}`}
+             data-folder-path={path} data-folder-refuse={refuse ? "1" : undefined}
              title={offline ? `${path}\nnot connected` : path}
              ref={path === photo ? reveal : undefined}
              style={{ paddingLeft: 8 + depth * 14 }} onClick={() => onOpen(path)}>

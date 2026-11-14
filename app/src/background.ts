@@ -19,7 +19,7 @@ export type Job = {
   done: number;
   total: number;           // 0 for work with no count, as a denoise
   stage: string | null;    // past the count, as a panorama's "blending"
-  cancel: "export" | "merge" | null;   // the kind of command that stops it, if any
+  cancel: "export" | "merge" | "move" | null;   // the kind of command that stops it, if any
   stopping: boolean;
   summary: string | null;  // set once it is over
   failed: boolean;
@@ -110,17 +110,46 @@ export async function runMerge<R>(what: string, total: number, run: (job: number
   return track(id, () => run(id), summarize, failed);
 }
 
+let moving: Promise<unknown> | null = null;
+
+// a size as the activity line shows it
+export const bytesText = (n: number) => {
+  const units = ["bytes", "KB", "MB", "GB", "TB"];
+  let u = 0;
+  while (n >= 1000 && u < units.length - 1) { n /= 1000; u++; }
+  return u ? `${n.toFixed(n < 10 ? 1 : 0)} ${units[u]}` : `${n} bytes`;
+};
+
+// runs `run`, which starts move_files under the job number it is given,
+// as job `what` of `total` photos: the bar follows the bytes copied
+// (move_cmds.rs, "move-progress")
+export async function runMove<R>(what: string, total: number, run: (job: number) => Promise<R>,
+                                 summarize: (r: R) => Outcome | null, failed: string): Promise<R | null> {
+  moving ??= listen<{ job: number; done: number; total: number; bytes: number; bytesTotal: number }>("move-progress",
+    (e) => {
+      const { job, done, total, bytes, bytesTotal } = e.payload;
+      const size = bytesTotal ? ` · ${bytesText(bytes)} of ${bytesText(bytesTotal)}` : "";
+      update(job, { done: bytesTotal ? bytes : done, total: bytesTotal || total,
+                    stage: `${Math.min(done + 1, total).toLocaleString()} of ${total.toLocaleString()}${size}` });
+    });
+  await moving;
+  const id = start(what, total, "move");
+  return track(id, () => run(id), summarize, failed);
+}
+
 // `run` as job `what`, which cannot be stopped; `failed` heads its error
 export function runInBackground<R>(what: string, run: () => Promise<R>, summarize: (r: R) => Outcome,
                                    failed: string): Promise<R | null> {
   return track(start(what, 0, null), run, summarize, failed);
 }
 
-// stops an export before its next image, a merge before its next photo
+// stops an export before its next image, a merge before its next photo, a
+// move at once (the photo being copied stays where it was)
 export function stopJob(job: Job) {
   if (!job.cancel) return;
   update(job.id, { stopping: true });
-  void (job.cancel === "export" ? commands.exportCancel(job.id) : commands.mergeCancel(job.id));
+  void (job.cancel === "export" ? commands.exportCancel(job.id)
+    : job.cancel === "move" ? commands.moveCancel(job.id) : commands.mergeCancel(job.id));
 }
 
 export function dismissJob(id: number) {

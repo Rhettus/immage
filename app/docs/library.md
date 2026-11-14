@@ -54,6 +54,55 @@ folder and the last photo are remembered when you quit.
 ![The Folders card with one folder added and Include subfolders off](images/library-folders.png)
 <!-- screenshot: Library panel, Folders card open, Include subfolders off, one folder added -->
 
+## Moving and copying photos
+
+Drag a thumbnail from the grid or the filmstrip onto a folder in the
+**Folders** card to move the photo there, for example from your computer to
+a NAS. When the photo is part of a selection, the whole selection goes,
+and a RAW+JPEG pair goes together. The folder under the pointer is
+outlined. Rest on a closed folder for a moment and it opens, so you can
+drop into one of its subfolders. Press Esc to stop dragging. The photos'
+own folder, and a folder on a share that isn't connected, don't take a
+drop.
+
+Hold ⌥ (Alt) as you drop to copy instead, keeping the originals where they
+are. You can also choose this in the confirmation.
+
+Nothing happens until you confirm. The confirmation shows the following:
+
+- **The photos.** How many photos go, how much they add up to, and the
+  folder they go to.
+- **Virtual copies.** A photo with virtual copies takes every version with
+  it, since they share its file.
+- **Photos already there.** A photo already in the folder with identical
+  content (checked by checksum) isn't copied again. A move just removes
+  the original.
+- **Same name, other content.** These photos are listed, each with
+  **Skip** or **Keep both**. Keep both gives the incoming photo and its
+  sidecars a number (IMG_1000.CR3 arrives as IMG_1000_1.CR3). **Skip all**
+  and **Keep both for all** set the whole list.
+- **Free space.** A warning appears, and the button is off, when the drive
+  doesn't have room.
+
+Each photo goes with its XMP sidecars, every version's, and its mask
+sidecars, so its edits, ratings, labels and keywords arrive with it.
+
+- **To another drive.** Each file is copied and flushed to the drive. It
+  is then read back and checked against the original's checksum before it
+  takes its name. A move removes the original only once every file of
+  that photo has been verified. A photo whose copy fails or doesn't match
+  stays where it was, with nothing left behind in the destination.
+- **On the same drive.** A move renames the files, which is instant.
+
+The work runs in the background, under the photo, with a progress bar and
+**Stop**. Stopping abandons the photo being copied (its original stays) and
+the ones after it. Photos that are moved disappear from the folder at once.
+If any stay behind, the folder is read again to show them. When it's done,
+**Show** opens the destination folder.
+
+A share that stops answering for 30 seconds ends the job. The photo it was
+on stays where it was.
+
 ## The filmstrip and the grid
 
 The filmstrip under the photo shows the open folder, in the order the

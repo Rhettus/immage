@@ -28,6 +28,9 @@ keyring = { version = "3", features = ["apple-native", "windows-native", "sync-s
 chrono = "0.4"
 # model download checksums (already in the tree, via tauri)
 sha2 = "0.10"
+# Immich's checksum of an original, to verify a download into a folder
+# (move_cmds.rs; already in the tree)
+sha1 = "0.11"
 # deleted photos go to the system's Trash / Recycle Bin
 trash = "5"
 # the thumbnail cache (cache.rs): JPEG encoding, and the disk's free space;

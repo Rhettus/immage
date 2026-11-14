@@ -7,6 +7,14 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Drag photos onto a folder in the Folders panel to move them there, for
+  example from your computer to a NAS, or hold ⌥ (Alt) to copy them. Immich
+  results can be dragged too, and are always copied. A confirmation shows
+  what goes where, which photos are already there, and asks whether to skip
+  or keep both of any with the same name. Each photo goes with all its
+  sidecars. Each file is checksummed after copying, and an original is
+  removed only once its copy matches. Closed folders open while you hold a
+  photo over them.
 - Grid view's thumbnails resize smoothly between a smallest and a largest
   size: in the grid, the zoom slider at the bottom sets their size, a pinch
   on a trackpad or a scroll with ⌘ held zooms them with the photo under the

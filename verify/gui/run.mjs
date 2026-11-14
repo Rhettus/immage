@@ -193,6 +193,12 @@ try {
     if (!/\.jpe?g$/i.test(copiedFixture)) throw Error('shift-range requires a JPEG fixture');
     for (let i = 1; i <= 8; i++) await copyFile(copiedFixture, join(fixtures, `shift-${i}.jpg`));
   }
+  // moving photos by drag: copies beside the fixture, and folders to drop on
+  if (selectedCases.includes('move-photos') || selectedCases.includes('move-copy')) {
+    const { moveFixtures } = await import('./specs/move-photos.mjs');
+    report.moveFixtures = { ext: await moveFixtures(fixtures, copiedFixture),
+      files: ['move-a', 'move-b', 'move-c', 'dest/inner/', 'clash/move-b (other content)', 'clash/move-c (identical)'] };
+  }
   // the guide's Library grid shot needs a folder of photos: copies of the fixture
   if (selectedCases.includes('site-shots') && process.env.SITE_SHOTS?.split(',').map(s => s.trim()).includes('library-grid')) {
     const stem = basename(copiedFixture).replace(/\.[^.]+$/, ''), ext = basename(copiedFixture).slice(stem.length);

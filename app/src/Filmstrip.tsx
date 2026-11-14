@@ -19,7 +19,7 @@ export const pairedRaws = (files: string[]) => new Set(files.filter((p) => isPri
 // each with the file's name and type above its thumbnail, and its reject
 // flag and stars below, shown on hover or once it has a rating
 export function Filmstrip({ images, partners, pending, empty, current, loader, height, grid, gridSize = 200, onGridZoom, selection, candidate, onPick, onDouble,
-                     onOpenKnown, onMenu, onMeta, more, onBackMenu }: {
+                     onOpenKnown, onMenu, onMeta, onPress, more, onBackMenu }: {
   // photos, and those known from the folder's last read (library.ts)
   images: (ImageEntry | Known)[]; current: number | null; loader: ThumbLoader; height: number;
   pending: string[];                      // files not yet read, shown as empty cells
@@ -35,6 +35,7 @@ export function Filmstrip({ images, partners, pending, empty, current, loader, h
   onOpenKnown: (k: Known, double: boolean) => void;
   onMenu: (e: React.MouseEvent, imgid: number) => void;
   onMeta: (i: ImageEntry, fields: Partial<ImageEntry>) => void;
+  onPress?: (i: ImageEntry, e: React.PointerEvent<HTMLElement>) => void; // may become a drag (photoDrag.ts)
   more?: () => void;                      // there are more results: called as the end scrolls into view
   onBackMenu: (e: React.MouseEvent) => void; // right-click beside the photos
 }) {
@@ -152,8 +153,8 @@ export function Filmstrip({ images, partners, pending, empty, current, loader, h
   const cell = useMemo(() => (grid ? { height: cellSize } : { width: cellSize }), [grid, cellSize]);
   // the cells are memoized, and call through this, so a folder's next
   // batch or a new selection redraws only the cells that changed
-  const on = useRef({ onPick, onDouble, onMenu, onMeta });
-  on.current = { onPick, onDouble, onMenu, onMeta };
+  const on = useRef({ onPick, onDouble, onMenu, onMeta, onPress });
+  on.current = { onPick, onDouble, onMenu, onMeta, onPress };
   const openKnown = useRef(onOpenKnown);
   openKnown.current = onOpenKnown;
   // an empty grid still covers the photo, and says why it is empty
@@ -184,7 +185,7 @@ export function Filmstrip({ images, partners, pending, empty, current, loader, h
 // `dogEar` turns the bottom left corner over, as Lightroom marks a virtual
 // copy: drawn on the thumbnail, which the cell fits, so it sits on the
 // photo's own corner whatever its shape
-export type CellHandlers = Pick<Parameters<typeof Filmstrip>[0], "onPick" | "onDouble" | "onMenu" | "onMeta">;
+export type CellHandlers = Pick<Parameters<typeof Filmstrip>[0], "onPick" | "onDouble" | "onMenu" | "onMeta" | "onPress">;
 
 // one photo's filmstrip cell
 export const FilmCell = memo(function FilmCell({ entry: i, loader, cell, on, types, active, selected, candidate, doubleOpens }: {
@@ -197,6 +198,7 @@ export const FilmCell = memo(function FilmCell({ entry: i, loader, cell, on, typ
                     + `${candidate ? " candidate" : ""}`}
          style={cell}
          title={i.filename} data-imgid={i.imgid} onClick={(e) => on.current!.onPick(i, e)}
+         onPointerDown={(e) => { if (!(e.target as Element).closest(".thumb-foot")) on.current!.onPress?.(i, e); }}
          onDoubleClick={() => { if (doubleOpens) on.current!.onDouble(i); }}
          onContextMenu={(e) => { e.stopPropagation(); on.current!.onMenu(e, i.imgid); }}>
       <div className="thumb-head">

@@ -136,6 +136,37 @@ export class AppDriver {
       ] });
     } finally { await this.command('DELETE', '/actions'); }
   }
+  // after hold(): goes on to `to` with the button still down, and lets go there
+  async dropAt(to, from) {
+    await this.guard();
+    this.log({ action: 'drop-at', to });
+    const start = from ?? to;
+    try {
+      await this.command('POST', '/actions', { actions: [{ type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' }, actions: [
+        ...Array.from({ length: 6 }, (_, i) => ({ type: 'pointerMove', duration: 80, origin: 'viewport',
+          x: Math.round(start.x + (to.x - start.x) * (i + 1) / 6), y: Math.round(start.y + (to.y - start.y) * (i + 1) / 6) })),
+        { type: 'pointerUp', button: 0 }] }] });
+    } finally { await this.command('DELETE', '/actions'); }
+  }
+  // a drag with a modifier held from before the press until after the release
+  // (Alt: drop photos as a copy)
+  async modifiedDrag(modifier, from, to) {
+    if (!['', '', '', ''].includes(modifier)) throw Error('Unsupported drag modifier');
+    await this.guard();
+    this.log({ action: 'modified-drag', modifier, from, to });
+    const moves = Array.from({ length: 8 }, (_, i) => ({ type: 'pointerMove', duration: 80, origin: 'viewport',
+      x: Math.round(from.x + (to.x - from.x) * (i + 1) / 8), y: Math.round(from.y + (to.y - from.y) * (i + 1) / 8) }));
+    const pointer = [{ type: 'pointerMove', duration: 120, origin: 'viewport', x: Math.round(from.x), y: Math.round(from.y) },
+      { type: 'pointerDown', button: 0 }, ...moves, { type: 'pointerUp', button: 0 }];
+    try {
+      await this.command('POST', '/actions', { actions: [
+        // one key tick per pointer tick, the key let go a tick after the release
+        { type: 'key', id: 'keyboard', actions: [{ type: 'keyDown', value: modifier },
+          ...pointer.slice(1).map(() => ({ type: 'pause', duration: 0 })), { type: 'keyUp', value: modifier }] },
+        { type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' }, actions: pointer },
+      ] });
+    } finally { await this.command('DELETE', '/actions'); }
+  }
   async release() {
     this.log({ action: 'release' });
     try {

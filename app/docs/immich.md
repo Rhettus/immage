@@ -143,6 +143,20 @@ The action is disabled when the result has no available local file;
 downloading an original does not provide access to its server folder.
 Browsing follows your **Include Photos from Subfolders** setting.
 
+## Copying results into a folder
+
+Drag a result onto a folder in the **Folders** card to copy it there (see
+[Moving and copying photos](library.md#moving-and-copying-photos)). Results
+are always copied, never moved, and Immich keeps its photos.
+
+- **On this computer.** A result whose file is in the folder set under
+  **Opening photos** is copied from that file, with its XMP sidecar.
+- **Not on this computer.** Otherwise the original is downloaded into the
+  folder. For a photo uploaded to Immich, the download is checked against
+  Immich's own checksum. A photo in an external library is checked by
+  reading it back, since Immich's checksum for those may not be of the
+  file's content.
+
 ## Exporting to an album
 
 In the Export dialog, set **Save to** to **Immich album**, then choose an

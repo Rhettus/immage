@@ -37,6 +37,7 @@ mod typed_session;
 mod session_cmds;
 mod library_cmds;
 mod export_cmds;
+mod move_cmds;
 mod immich_cmds;
 mod print_cmds;
 mod edit_cmds;
@@ -67,6 +68,8 @@ struct AppState {
     tagged: Tagged,
     // export_images' running jobs, which export_cancel stops
     export_cancels: Mutex<HashMap<u64, Arc<AtomicBool>>>,
+    // move_files' running jobs, which move_cancel stops
+    move_cancels: Mutex<HashMap<u64, Arc<AtomicBool>>>,
     presets_path: PathBuf,
     preview_path: PathBuf,
     range_path: PathBuf,
@@ -251,6 +254,7 @@ fn main() {
                 base_cancel: engine.base_cancel(),
                 tagged: engine.tagged(),
                 export_cancels: Mutex::new(HashMap::new()),
+                move_cancels: Mutex::new(HashMap::new()),
                 engine: perf_trace::TracedMutex::new(engine),
                 frame_path: frame_output.path("frame.rgba"),
                 denoise_path: frame_output.path("denoise-preview.f32"),
