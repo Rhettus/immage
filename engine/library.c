@@ -1207,7 +1207,7 @@ static guint _metadata_workers(void)
     {
       char *end = NULL;
       const guint64 parsed = g_ascii_strtoull(value, &end, 10);
-      if(end && !*end && parsed >= 1 && parsed <= 4) workers = (guint)parsed;
+      if(end && !*end && parsed >= 1 && parsed <= 8) workers = (guint)parsed;
     }
     const char *timeout = g_getenv("IMMAGE_IMPORT_METADATA_TIMEOUT_MS");
     if(timeout && *timeout)

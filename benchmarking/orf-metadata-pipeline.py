@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Measure the experimental ORF metadata worker pipeline at limits 1 through 4.
+"""Measure the experimental ORF metadata worker pipeline at limits 1 through 8.
 
     python3 -I benchmarking/orf-metadata-pipeline.py PHOTO_FOLDER --runs 4
 
@@ -10,6 +10,7 @@ stay serialized; the worker limit controls prepared metadata results in flight.
 """
 import argparse
 import importlib.util
+from itertools import permutations
 import json
 import os
 from pathlib import Path
@@ -30,8 +31,8 @@ _spec = importlib.util.spec_from_file_location(
 orf = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(orf)
 
-LIMITS = (1, 2, 3, 4)
-ORDERS = ((1, 2, 4, 3), (2, 3, 1, 4), (3, 4, 2, 1), (4, 1, 3, 2))
+DEFAULT_LIMITS = (1, 2, 3, 4)
+DEFAULT_ORDERS = ((1, 2, 4, 3), (2, 3, 1, 4), (3, 4, 2, 1), (4, 1, 3, 2))
 ENV_KEYS = ('IMMAGE_METADATA_PREFIX', 'IMMAGE_METADATA_IO_DIAGNOSTICS',
             'IMMAGE_IMPORT_READ_AHEAD', 'IMMAGE_IMPORT_METADATA_WORKERS',
             'IMMAGE_IMPORT_METADATA_TIMEOUT_MS', 'IMMAGE_IMPORT_DIAGNOSTICS')
@@ -158,7 +159,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('folder', type=Path)
     parser.add_argument('--recursive', action='store_true', help='search subfolders for .ORF files')
-    parser.add_argument('--runs', type=int, default=4, help='balanced Williams rounds (default: 4)')
+    parser.add_argument('--runs', type=int, default=4,
+                        help='measurement rounds (default: 4; use 6 for three worker limits)')
+    parser.add_argument('--workers', type=int, nargs='+', choices=range(1, 9),
+                        help='distinct worker limits to measure (default: 1 2 3 4)')
     parser.add_argument('--engine', type=Path, default=ROOT / 'build/bin/darktable-engine')
     parser.add_argument('--report', type=Path, help='write measurements and summaries as JSON')
     args = parser.parse_args()
@@ -169,15 +173,24 @@ def main():
         parser.error(f'engine not found: {binary}')
     if args.runs < 1:
         parser.error('--runs must be at least 1')
+    limits = tuple(args.workers) if args.workers else DEFAULT_LIMITS
+    if len(set(limits)) != len(limits):
+        parser.error('--workers values must be distinct')
+    if limits == DEFAULT_LIMITS:
+        orders = DEFAULT_ORDERS
+    elif len(limits) >= 2:
+        orders = tuple(permutations(limits))
+    else:
+        orders = (limits,)
     photos = orf.photo_paths(folder, args.recursive)
     if not photos:
         parser.error('no .ORF photos found')
 
     reference = None
-    samples = {workers: [] for workers in LIMITS}
+    samples = {workers: [] for workers in limits}
     records = []
     for round_no in range(args.runs):
-        for workers in ORDERS[round_no % len(ORDERS)]:
+        for workers in orders[round_no % len(orders)]:
             result = measure(binary, photos, workers, round_no + 1)
             if reference is None:
                 reference = result['images']
@@ -195,7 +208,7 @@ def main():
     print(f'\nMedian results for {len(photos)} ORF photos (prefix enabled; '
           'bounded metadata workers; parsing/catalog writes serialized)')
     print('Normalized imported metadata matches across all samples.')
-    for workers in LIMITS:
+    for workers in limits:
         group = samples[workers]
         summary[str(workers)] = {key: statistics.median(row[key] for row in group)
                                  for key in ('source_read_bytes', 'bytes_per_photo',
@@ -209,7 +222,7 @@ def main():
     if args.report:
         report = {'folder': str(folder), 'recursive': args.recursive,
                   'photos': [str(photo) for photo in photos], 'runs': args.runs,
-                  'workers': list(LIMITS), 'records': records,
+                  'workers': list(limits), 'records': records,
                   'median': summary,
                   'scope': 'ORF metadata preparation workers; prefix enabled; Exiv2 parsing and catalog imports serialized',
                   'cache_caveat': 'Operating-system and storage caches can warm across runs.',

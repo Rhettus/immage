@@ -56,7 +56,7 @@ def parity(binary, root):
                      b'xmp:Rating="3"/></rdf:RDF></x:xmpmeta>')
     sidecar.write_bytes(sidecar_bytes)
     reference = None
-    for workers in (0, 1, 2, 3, 4):
+    for workers in (0, 1, 2, 3, 4, 6, 8):
         work = root / f'parity-{workers}'
         work.mkdir()
         engine = launch(binary, work, workers)
@@ -161,7 +161,7 @@ def main():
         parity(args.engine, root)
         abandoned_workers(args.engine, root)
         blocked_shutdown(args.engine, root)
-    print('passed; parity 0–4 workers, cancellation/timeout/cap/recovery/shutdown; no GUI launched')
+    print('passed; parity 0,1,2,3,4,6,8 workers, cancellation/timeout/cap/recovery/shutdown; no GUI launched')
 
 
 if __name__ == '__main__':

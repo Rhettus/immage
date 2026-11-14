@@ -17,7 +17,7 @@ and Linux. **All builds are alpha; bugs are expected.**
 The `experiment/orf-metadata-pipeline-0.46.0` branch combines
 [partial ORF metadata reads](app/docs/library.md#experimental-orf-metadata-reads)
 with a bounded metadata preparation queue for headless NAS comparisons at
-1, 2, 3, and 4 workers. Applying metadata and database updates stay serialized.
+1–8 workers, including a 4, 6, and 8 worker comparison. Applying metadata and database updates stay serialized.
 
 <a href="app/docs/images/workspace.png"><img src="app/docs/images/workspace.png" width="960" alt="Immage editing a photo"></a>
 

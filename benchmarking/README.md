@@ -492,8 +492,17 @@ python3 -I benchmarking/orf-metadata-pipeline.py /photos/2025 --recursive --runs
   --report /tmp/orf-metadata-pipeline.json
 ```
 
-Use one run to warm the storage cache, then four balanced Williams rounds for
-1, 2, 3 and 4 workers. Every sample enables
+If the folder is not already warm, use one run to warm the storage cache, then
+four balanced Williams rounds for 1, 2, 3 and 4 workers. To test higher counts
+on an already warm folder, use six rounds to balance all orders:
+
+```bash
+python3 -I benchmarking/orf-metadata-pipeline.py /photos/2025 --recursive \
+  --workers 4 6 8 --runs 6 --report /tmp/orf-metadata-pipeline-4-6-8.json
+```
+
+The engine accepts 1–8 workers; the default benchmark selection stays 1–4.
+Every sample enables
 metadata prefix reads, fixes import read-ahead at 1, and applies a 30 second
 metadata task timeout. The benchmark requires per-photo metadata IO and
 consumed-prefetch diagnostics plus engine pipeline counts. It stops if any

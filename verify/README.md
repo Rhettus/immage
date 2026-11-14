@@ -1,7 +1,7 @@
 # Release checks
 
 `python3 -I verify/metadata-pipeline.py` checks the experimental ORF metadata
-pipeline headlessly: import/XMP parity with the pipeline off and with 1–4
+pipeline headlessly: import/XMP parity with the pipeline off and with 1–4, 6 and 8
 workers, mixed-format serial fallback, cancellation, abandoned-worker caps and
 recovery. It uses temporary photos and FIFO sidecars. The separate
 `benchmarking/orf-metadata-pipeline.py` compares real ORFs on the original

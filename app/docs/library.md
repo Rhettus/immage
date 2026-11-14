@@ -113,7 +113,7 @@ probe waiting and serialized import time in the engine log.
 ### Experimental metadata preparation pipeline
 
 The `experiment/orf-metadata-pipeline-0.46.0` branch adds a separate headless
-test of `IMMAGE_IMPORT_METADATA_WORKERS=1`, `2`, `3`, and `4`. Workers read ORF
+test of `IMMAGE_IMPORT_METADATA_WORKERS=1` through `8`. Workers read ORF
 prefixes and prepare owned metadata results. The importer consumes results in
 the original file order and applies metadata, sidecars, tags and database
 updates serially. The existing Exiv2 parser lock remains: prefix reads can
@@ -132,7 +132,8 @@ This is an experimental engine option,
 not a Preferences setting or a change to thumbnail worker counts.
 
 The [metadata pipeline benchmark](../../benchmarking/README.md) enables prefix
-reads, fixes small-probe concurrency at 1, and compares 1–4 metadata workers.
+reads, fixes small-probe concurrency at 1, and defaults to 1–4 metadata workers.
+Use `--workers 4 6 8 --runs 6` to compare higher counts in balanced order.
 It checks that prepared results were used and that imported entries match.
 Run it after the probe-only comparison to measure these two approaches
 separately. It reads original photos and sidecars without modifying them.
