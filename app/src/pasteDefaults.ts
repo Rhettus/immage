@@ -2,7 +2,7 @@
 // Copyright (C) 2026 the Immage authors
 import { commands } from "./commands";
 import type { Session } from "./session";
-import { controlById, profileSelection, type Values } from "./manifest";
+import { agxRuns, controlById, profileSelection, type Values } from "./manifest";
 import { AUTO_TONE_IDS, autoExposure, autoTone } from "./autoTone";
 import { DEFAULT_TRANSITION, parseZones } from "./zones";
 
@@ -44,7 +44,7 @@ export async function preparePastePhoto(s: Session, defaults: PasteDefaults) {
     const { exposure, ...key } = autoExposure(s.values.exposure, zones);
     s.setMany([["exposure", exposure]]);
     await s.settled();
-    if (s.values.tm_mode === 1) {
+    if (agxRuns(s.values)) {
       const range = await commands.agxAuto();
       s.setMany([["agx_black", range.black_ev], ["agx_white", range.white_ev]]);
       await s.settled();

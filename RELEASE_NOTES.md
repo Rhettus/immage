@@ -101,6 +101,9 @@ Improvements
 
 Bug fixes
 
+- Basic's Auto works on a photo with Film Simulation or a converted
+  negative, which turn the AgX tone mapper off; it no longer stops with
+  "auto tune needs the AgX tone mapper".
 - Linux: pinching on a touchpad zooms the photo around the pointer, as on
   the Mac, instead of zooming the whole window.
 - AI Denoise no longer fails with "No such file or directory" when you press

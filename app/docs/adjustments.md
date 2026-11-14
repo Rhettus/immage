@@ -112,7 +112,8 @@ for **B&W Mix**.
   against clear sky, keeps its blacks too, rather than its sky being
   darkened. A flat photo gets only a moderate Contrast boost, since
   Whites and Blacks already widen its tones. Under AgX it also sets AgX's
-  range.
+  range, except with Film Simulation or a converted negative, which turn
+  AgX off.
 - **Exposure**: -5 to +5 stops.
 - **Contrast**, **Highlights**, **Shadows**, **Whites**, **Blacks**: -100 to
   +100. Whites moves the top of the tone mapper's curve, and under AgX

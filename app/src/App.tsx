@@ -2,7 +2,7 @@
 import { AgxPresetLoader } from "./AgxPresetDialog";
 import { settings } from "./settings";
 import { useAgxProfiles } from "./agxProfiles";
-import { profileSelection, AGX_USER_FIRST } from "./manifest";
+import { profileSelection, AGX_USER_FIRST, agxRuns } from "./manifest";
 
 
 
@@ -2492,7 +2492,7 @@ export default function App() {
       const { exposure, ...key } = autoExposure(s.values.exposure, z);
       if (exposure !== s.values.exposure) quietly(() => changeMany([["exposure", exposure]]));
       let range: [string, number][] = [];
-      if (s.values.tm_mode === 1) {
+      if (agxRuns(s.values)) {
         await s.settled();
         if (gone()) return;
         const r = await commands.agxAuto();

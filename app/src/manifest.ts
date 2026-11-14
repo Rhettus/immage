@@ -1595,6 +1595,9 @@ export const CONVERSIONS: Conversion[] = [
     greyed: SF_GREYED },
 ];
 export const conversionsOn = (v: Values) => CONVERSIONS.filter((c) => v[c.flag] === 1);
+// AgX renders: the tone mapper is AgX and no film simulation or negative
+// has turned it off, as they do (SF_OFF, NEG_OFF)
+export const agxRuns = (v: Values) => v.tm_mode === 1 && !conversionsOn(v).some((c) => c.off.has("agx"));
 // the module a conversion that is on runs a tool on, whatever the photo holds
 export const forcedChoice = (v: Values, control: string): number | undefined =>
   conversionsOn(v).find((c) => control in c.choices)?.choices[control];
