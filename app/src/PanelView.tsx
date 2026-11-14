@@ -7,7 +7,7 @@ import { AdvancedToggle, advancedEdited, useAdvanced } from "./advanced";
 import { BANDS, type Control, type ControlPreset, type CurveChannel, MODULE_CHOICES, type ModuleChoice, NEG_GREYED, type Panel, SF_GREYED, type Section, type Turn, type Values, choiceCovers, choiceOn, choiceShows, controlById, isModuleSetting, mapOf, mapsWith, parametricOf, pointValues, pointsOf, preferredChoice } from "./manifest";
 import { Chevron, Collapse } from "./Collapse";
 import { Choice, CurveGraph, OptionPreview, Slider, Toggle, markOnCurve } from "./Controls";
-import { CircleOff, Grid2x2, MoveHorizontal, MoveVertical, PenLine, Sparkles, WandSparkles } from "lucide-react";
+import { CircleOff, Eye, EyeOff, Grid2x2, MoveHorizontal, MoveVertical, PenLine, Sparkles, WandSparkles } from "lucide-react";
 import { ContrastEqualizer } from "./ContrastEqualizer";
 import { type Frame, Session } from "./session";
 import { GradingWheels, type WheelMode } from "./ColorWheel";
@@ -23,9 +23,9 @@ import { type WB, WB_PRESETS } from "./wb";
 import { bandWeights, useProbe } from "./probe";
 import { channelCurve, curve, isIdentity, curve as paramCurve } from "./tonecurve";
 import { detailRows, isAdvancedControl } from "./DetailControls";
-import { memo, useCallback, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { panelValues } from "./panelValues";
+import { panelValues, peekIds } from "./panelValues";
 import { settings } from "./settings";
 import type { ImageEntry } from "./library";
 
@@ -123,7 +123,51 @@ export type PanelProps = {
   // badge's link to the Editing mode preference
   advancedEdits?: number; onAdvancedEdits?: () => void;
   onTurn?: (how: Turn) => void;   // the toolbar's rotate and flip, for Advanced's orientation card
+  onPeek?: (ids: string[] | null) => void;   // the eye held: these controls shown at their defaults
 };
+
+// the panel's eye: held, the photo shows the panel's controls at their
+// defaults, the sliders staying where they are; let go, the edit is back
+function PeekButton({ ids, disabled, onPeek }: { ids: string[]; disabled: boolean; onPeek: (ids: string[] | null) => void }) {
+  const [held, setHeld] = useState(false);
+  const heldRef = useRef(false);
+  const set = (on: boolean) => {
+    if (heldRef.current === on) return;
+    heldRef.current = on;
+    setHeld(on);
+    onPeek(on ? ids : null);
+  };
+  const live = useLiveEvent(set);
+  useEffect(() => () => live(false), [live]);
+  useEffect(() => { if (disabled) live(false); }, [disabled, live]);
+  return (
+    <button type="button" className={`advanced-toggle panel-peek${held ? " on" : ""}`} data-panel-peek aria-pressed={held}
+            disabled={disabled} title="hold to see the photo without this panel's adjustments"
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => {
+              if (e.button !== 0) return;
+              e.stopPropagation();
+              e.currentTarget.setPointerCapture(e.pointerId);
+              set(true);
+            }}
+            onPointerUp={() => set(false)} onPointerCancel={() => set(false)} onLostPointerCapture={() => set(false)}
+            onKeyDown={(e) => {
+              if (e.key !== " " && e.key !== "Enter") return;
+              e.preventDefault();
+              e.stopPropagation();
+              if (!e.repeat) set(true);
+            }}
+            onKeyUp={(e) => {
+              if (e.key !== " " && e.key !== "Enter") return;
+              e.preventDefault();
+              e.stopPropagation();
+              set(false);
+            }}
+            onBlur={() => set(false)}>
+      {held ? <EyeOff size={14} strokeWidth={2} /> : <Eye size={14} strokeWidth={2} />}
+    </button>
+  );
+}
 
 // Event bridges retain the latest committed handlers without making every panel
 // and slider render just because the App created another closure.
@@ -145,17 +189,18 @@ export function PanelView(props: PanelProps) {
   const auto = useLiveEvent(() => props.onAuto?.());
   const option = useLiveEvent((preview: OptionPreview | null) => props.onOptionPreview?.(preview));
   const onTurn = useLiveEvent((how: Turn) => props.onTurn?.(how));
+  const onPeek = useLiveEvent((ids: string[] | null) => props.onPeek?.(ids));
   if (advancedMode) return <AdvancedGroup id={props.panel.id} title={props.panel.advancedTitle ?? props.panel.title} open={props.open} onToggle={onToggle}
                                        session={props.session} revision={props.sessionRevision} record={props.onAdvancedEdit}
                                        onSimple={onChangeMany} onTurn={onTurn} pick={props.pick} onPicked={props.onPicked} photos={props.photos} />;
   return <PanelWidget {...props} values={values} onToggle={onToggle} onChange={onChange}
     onChangeMany={onChangeMany} onPreview={onPreview} onAuto={props.onAuto ? auto : undefined}
-    onOptionPreview={props.onOptionPreview ? option : undefined} />;
+    onOptionPreview={props.onOptionPreview ? option : undefined} onPeek={props.onPeek ? onPeek : undefined} />;
 }
 
 export const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle, values, session, disabled, onChange, onChangeMany, histograms,
                      onAuto, wbTools, toneTools, denoiseTools, straightenTools, transformTools, detailLoupe, presenceLoupe, onPreview, onOptionPreview,
-                     advancedEdits = 0, onAdvancedEdits }: PanelProps) {
+                     advancedEdits = 0, onAdvancedEdits, onPeek }: PanelProps) {
   const histogram = useSyncExternalStore(p.graph === "tonecurve" ? histograms.subscribe : noHistogramSubscription, p.graph === "tonecurve" ? histograms.get : noHistogram);
   const pointMode = p.graph === "tonecurve" && values.tc_mode === 1;
   // which curve the point editor shows: the master, or one channel
@@ -253,6 +298,10 @@ export const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle,
             {bandSrc && <i style={{ background: `rgb(${bandSrc.map(Math.round).join(",")})` }} />}
             {!bandSrc ? "…" : weights ? BANDS[weights.indexOf(Math.max(...weights))][1] : "neutral"}
           </span>
+        )}
+        {onPeek && (
+          <PeekButton ids={peekIds(p)} onPeek={onPeek}
+                      disabled={disabled || !advancedEdited(peekIds(p), values, session?.neutral ?? {})} />
         )}
         {advancedIds.length > 0 && (
           <AdvancedToggle on={advanced} onToggle={toggleAdvanced}

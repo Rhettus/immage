@@ -163,6 +163,15 @@ export class Session {
   // Lightroom's Before view: every control at the image's own default,
   // except those `keep` names (the crop), rendered but never saved
   private before: ((id: string) => boolean) | null = null;
+  // a panel's eye held: these controls render at their defaults, as in the
+  // Before view, while the sliders keep their values. masks, spots and the
+  // look stay on
+  private peeked: ReadonlySet<string> | null = null;
+  // what is on screen is not the edit (the Before view or a peek): nothing
+  // of it is saved or kept as the edit's frames
+  private get viewing() {
+    return !!this.before || !!this.peeked;
+  }
   // the look (a darktable style on extra module instances), by name, and
   // the file it came from when known; the Before view takes it off
   look: string | null = null;
@@ -925,12 +934,25 @@ export class Session {
     void this.pump();
   }
 
-  // the values the engine is sent: in the Before view, the neutral ones
+  // a panel at its defaults while its eye is held, or back as edited (null)
+  peek(ids: ReadonlySet<string> | null) {
+    if (!ids?.size) ids = null;
+    const was = this.peeked;
+    if (!was && !ids) return;
+    this.peeked = ids;
+    for (const id of [...(was ?? []), ...(ids ?? [])])
+      for (const m of mapsWith(id)) this.dirty.add(m.op);
+    this.needRender = true;
+    void this.pump();
+  }
+
+  // the values the engine is sent: in the Before view and for a peeked
+  // panel, the neutral ones
   private sent(): Values {
-    const keep = this.before;
-    if (!keep) return this.values;
+    const keep = this.before, peeked = this.peeked;
+    if (!keep && !peeked) return this.values;
     return Object.fromEntries(Object.keys(this.values).map((id) =>
-      [id, keep(id) ? this.values[id] : this.neutral[id]]));
+      [id, (keep && !keep(id)) || peeked?.has(id) ? this.neutral[id] : this.values[id]]));
   }
 
   // edits not yet rendered
@@ -1524,7 +1546,7 @@ export class Session {
   private static COPY_PIXELS = 64e6;
 
   requestCopy(scale: number, full: { w: number; h: number }) {
-    if (this.before || this.copy?.view.scale === scale || this.copyScale === scale) return;
+    if (this.viewing || this.copy?.view.scale === scale || this.copyScale === scale) return;
     if (Math.floor(full.w * scale) * Math.floor(full.h * scale) > Session.COPY_PIXELS) return;
     this.copyScale = scale;
     // the engine trims the box to the image at that scale
@@ -1538,7 +1560,7 @@ export class Session {
   // instant. the main pipe keeps its cache of the window shown
   private fitView: View | null = null;
   requestFit(view: View) {
-    if (this.before || this.current.has(this.frameKey(view, false))) return;
+    if (this.viewing || this.current.has(this.frameKey(view, false))) return;
     this.fitView = view;
     void this.pump();
   }
@@ -1605,7 +1627,7 @@ export class Session {
       // rendered again once editing pauses (App.tsx, scheduleBase)
       if (this.base && !this.base.stale && this.editPending) {
         const v = this.size();
-        if (!this.imagePending && !this.before && !v.draft && v.scale === this.base.copy) {
+        if (!this.imagePending && !this.viewing && !v.draft && v.scale === this.base.copy) {
           this.copyWait ??= begin();
           return;
         }
@@ -1632,7 +1654,7 @@ export class Session {
         // before the change that ended it; a save it makes is the one due
         if (this.baselineEnd) {
           this.baselineEnd = false;
-          if (this.unsaved && !this.before) {
+          if (this.unsaved && !this.viewing) {
             window.clearTimeout(this.saveTimer);
             this.unsaved = false;
           }
@@ -1641,7 +1663,7 @@ export class Session {
         }
         // the engine saves on quitting, but never the Before view's settings:
         // it hears of the view before they go
-        if (this.before && !this.engineBefore) {
+        if (this.viewing && !this.engineBefore) {
           await this.pumpTyped("before_view", () => commands.beforeView(true));
           this.engineBefore = true;
           this.changed();
@@ -1846,10 +1868,10 @@ export class Session {
         if (!this.dirty.size && !this.needRender && this.fitView) {
           const view = this.fitView, key = this.frameKey(view, false);
           this.fitView = null;
-          if (this.before || this.current.has(key)) continue;
+          if (this.viewing || this.current.has(key)) continue;
           end(job);
           await this.idleRender(view, true, (f) => {
-            if (!this.before && !this.current.has(key)) this.keepFrame(key, f);
+            if (!this.viewing && !this.current.has(key)) this.keepFrame(key, f);
           }, this.heldFor(key));
           job = begin();
           continue;
@@ -1862,7 +1884,7 @@ export class Session {
           end(job);
           const aside = this.putAside?.view.scale === scale ? [this.putAside] : [];
           await this.idleRender({ ...this.copySize, scale, x: 0, y: 0 }, true, (f) => {
-            if (this.before) return;
+            if (this.viewing) return;
             this.putAside = null;
             this.copy = f;
             this.onCopy?.(f);
@@ -1884,8 +1906,8 @@ export class Session {
           return this.moduleEdit(op);
         });
         if (ops.length) this.changed();
-        // the Before view is only for looking: nothing of it reaches the sidecar
-        if (ops.length && !this.before) { this.unsaved = true; this.scheduleSave(); }
+        // the Before view and a peek are only for looking: nothing of it reaches the sidecar
+        if (ops.length && !this.viewing) { this.unsaved = true; this.scheduleSave(); }
         this.needRender = false;
         // Batch edits use the same module maps and mask transport, without
         // rendering previews for photos that are not on screen.
@@ -1931,7 +1953,7 @@ export class Session {
         progress(job);
       }
       // and that it is over only once the edit is back in it
-      if (!this.before && this.engineBefore) {
+      if (!this.viewing && this.engineBefore) {
         await this.pumpTyped("before_view", () => commands.beforeView(false));
         this.engineBefore = false;
         this.changed();
@@ -1950,7 +1972,7 @@ export class Session {
     window.clearTimeout(this.saveTimer);
     this.saveTimer = window.setTimeout(() => {
       // the engine holds the Before view's settings; save once it is gone
-      if (this.before) { this.scheduleSave(); return; }
+      if (this.viewing) { this.scheduleSave(); return; }
       this.unsaved = false;
       traced("save", () => commands.save()).then((r) => this.onSaved?.(r.edited))
         .catch((e) => this.onSaveError ? this.onSaveError(String(e)) : this.onError(String(e)));
@@ -1961,6 +1983,7 @@ export class Session {
   // what is stored, and that history read back to stand for the opened one
   async compressHistory() {
     if (this.before) this.showBefore(null);
+    this.peek(null);
     await this.settled();
     window.clearTimeout(this.saveTimer);
     this.unsaved = false;
@@ -1989,6 +2012,7 @@ export class Session {
     this.requestRender();
     window.clearTimeout(this.saveTimer);
     if (this.before) this.showBefore(null);
+    this.peek(null);
     await this.settled();
     if (!this.unsaved) return;
     this.unsaved = false;

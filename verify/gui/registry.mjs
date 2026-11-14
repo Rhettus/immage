@@ -48,9 +48,11 @@ import { advancedColorCards } from './specs/advanced-color-cards.mjs';
 import { advancedCurveCards } from './specs/advanced-curve-cards.mjs';
 import { advancedRawCards } from './specs/advanced-raw-cards.mjs';
 import { advancedFileCards } from './specs/advanced-file-cards.mjs';
+import { panelPeek } from './specs/panel-peek.mjs';
 
 const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRange, 'batch-paste': batchPaste, startup, splash, exposure, 'slider-input': sliderInput, 'slider-click': sliderClick, history, rail, sliders, 'module-options': moduleOptions, 'module-switch': moduleSwitch,
   'panel-scroll': panelScroll,
+  'panel-peek': panelPeek,
   'agx-presets': agxPresets,
   'color-profiles': colorProfiles,
   'mask-fold': maskFold,

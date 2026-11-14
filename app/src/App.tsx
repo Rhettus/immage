@@ -1893,6 +1893,8 @@ export default function App() {
       // a <select>'s native menu takes the pointer on macOS: its pointerup
       // never reaches the page, so a drag begun there would never end
       if ((e.target as Element).closest?.("select")) return;
+      // a panel's eye held is a look, not a drag: its frames are final ones
+      if ((e.target as Element).closest?.("[data-panel-peek]")) return;
       if (e.button === 0 && (e.target as Element).closest?.(DRAG_AREAS)) dragging.current = true;
     };
     const wheel = (e: WheelEvent) => {
@@ -4849,6 +4851,12 @@ export default function App() {
     session.current.showBefore(on ? keptBefore : null);
   };
   const leaveBefore = () => setBefore(false);
+  // a panel's eye held (PanelView, PeekButton): its controls at their defaults
+  const peekPanel = useCallback((ids: string[] | null) => {
+    if (!session.current) return;
+    baseStale.current = true;
+    session.current.peek(ids && new Set(ids));
+  }, []);
   // the key handler is installed once; it reaches the latest of this
   const setBaModeRef = useRef<(mode: BaMode) => void>(() => {});
   const cycleBaModeRef = useRef(() => {});
@@ -6662,7 +6670,7 @@ export default function App() {
                             applicable={(op) => { const i = session.current?.instances.find((x) => x.op === op && x.priority === 0); return !!i && i.switchable !== false; }} />
           )}
           {rightMode === "adjust" && !cropping && panels.filter((p) => !p.hidden && (!p.showIf || editMode === "advanced" || p.showIf(values))).map((p) => (
-            <Profiler key={p.id} id={`panel.${p.id}`} onRender={perf.reactCommit}><PanelView editMode={editMode} sessionRevision={historyRev} advancedEdits={advancedEditCounts.get(p.id) ?? 0} onAdvancedEdits={openEditingMode} pick={pick?.group === p.id ? pick : null} onPicked={searchPicked} photos={shown} onAdvancedEdit={record} onTurn={(how) => void turn(how)} panel={p} open={openPanels.has(p.id)} onToggle={(solo) => togglePanel(p.id, solo)}
+            <Profiler key={p.id} id={`panel.${p.id}`} onRender={perf.reactCommit}><PanelView editMode={editMode} sessionRevision={historyRev} onPeek={peekPanel} advancedEdits={advancedEditCounts.get(p.id) ?? 0} onAdvancedEdits={openEditingMode} pick={pick?.group === p.id ? pick : null} onPicked={searchPicked} photos={shown} onAdvancedEdit={record} onTurn={(how) => void turn(how)} panel={p} open={openPanels.has(p.id)} onToggle={(solo) => togglePanel(p.id, solo)}
                        values={values} session={session.current} disabled={!current} onChange={change}
                        detailLoupe={p.id === "detail" ? renderLoupe("detail") : undefined}
                        presenceLoupe={p.id === "basic" ? renderLoupe("presence") : undefined}

@@ -102,6 +102,9 @@ the exposure and lens, and nothing.
 "Before" means the photo at its starting point, still with its crop and
 orientation.
 
+To see one panel's effect alone, press and hold the eye icon in that panel's
+title row (see [Adjustments](adjustments.md)).
+
 ![Split left / right before and after view of an edited photo](images/before-after-split.png)
 <!-- screenshot: Split left / right on an edited landscape, divider in the middle -->
 

@@ -288,6 +288,9 @@ button { font: inherit; color: inherit; }
   width: 5px; height: 5px; border-radius: 50%; background: #5fd068; box-shadow: 0 0 0 1.5px var(--panel, #1c1c1e);
 }
 .panel-head .advanced-toggle { margin: 0; }
+/* the eye sits first on the right; the Advanced switch follows it */
+.panel-peek + .advanced-toggle { margin-left: 0; }
+.panel-peek:disabled { opacity: 0.35; cursor: default; }
 /* the photo under the pointer, as the open Tone Curve, HSL or B&W Mix card reads it */
 .probe-chip {
   display: flex; align-items: center; gap: 6px;

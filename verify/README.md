@@ -189,6 +189,15 @@ undo/redo, virtual copies, mask/crop preservation, restart persistence, stale
 undo and sidecar failure recovery. The separate visible-app `batch-paste` case
 is registered in `verify/gui/`; it requires an approved GUI run.
 
+The panel eye check (headless, real engine) holds a panel's eye through
+Session: the render matches that panel's controls set to their defaults, the
+other panels' edits stay, the slider values and the sidecar are unchanged, and
+letting go renders the edit again exactly:
+
+```bash
+node --test --test-isolation=none verify/panel-peek.test.mjs
+```
+
 The Negative panel's color-profile check uses installed profile menus and verifies
 the values through Session, Copy Settings, Reset and reopening the photo from its
 sidecar:

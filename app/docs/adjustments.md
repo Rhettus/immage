@@ -141,6 +141,16 @@ title row. It is off by default and blends into the title; click it to show the
 panel's extra settings inline, and click again to hide them. Each panel
 remembers its setting. A dot on the icon means a hidden setting has been
 changed. The icon is only in Simple [editing mode](advanced-mode.md).
+
+To see what one panel does, press and hold the eye icon in its title row:
+the photo shows that panel's controls at their defaults, and letting go
+brings your adjustments back. The sliders stay where they are, and nothing
+changes in the photo's edit. Other panels, masks, healing and the look stay
+on. With the icon focused, holding Space or Enter does the same. The eye is
+dimmed while the panel has no adjustments, and it is only in Simple editing
+mode. Tone Curve's eye includes the point curve, Effects' the vignette's
+center, and Transform's Upright. Module choices (such as which module runs
+Contrast) and the crop are kept.
 For Clarity and Texture these are Coarse details (-1 to 5), Base detail level
 (1–15), Halo control (-10 to 10), Noise bias (0–1), and Shadows and Highlights
 (-5 to 5). Clarity and Texture use separate instances, including on masks.

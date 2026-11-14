@@ -91,6 +91,10 @@ Improvements
 - Ctrl+click (⌘-click on a Mac) the History card's compress button to drop
   only the steps above the one you went back to. The steps below can still
   be undone.
+- Each Adjustments panel has an eye icon in its title row: press and hold it
+  to see the photo without that panel's adjustments, and let go to see them
+  again. The sliders stay where they are, and other panels' edits and masks
+  stay on.
 
 Bug fixes
 
