@@ -94,10 +94,10 @@ the exposure and lens, and nothing.
 
 - \ shows the photo as it was before your edits, with a **Before** badge.
   Press it again to come back.
-- Y, or the before / after button in the toolbar, steps through
-  **Side by side**, **Split left / right**, **Split top / bottom** and
-  **Hold for before**, then off. In the split views, drag the divider.
-  With **Hold for before**, press and hold on the photo.
+- Y steps through **Side by side**, **Split left / right** and
+  **Split top / bottom**, then off. The toolbar button also includes
+  **Hold for before**; press and hold on the photo in that view. In the split
+  views, drag the divider.
 
 "Before" means the photo at its starting point, still with its crop and
 orientation.

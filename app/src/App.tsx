@@ -4840,7 +4840,13 @@ export default function App() {
     // a fresh before; the views sharing the edit's size keep the one shown
     if (was === "off") { beforeMeta.current = null; captureBefore(); }
   };
-  const cycleBaMode = () => setBaMode(BA_MODES[(BA_MODES.indexOf(baModeRef.current) + 1) % BA_MODES.length]);
+  // Y cycles the comparison layouts; the toolbar button also includes the
+  // hold-for-before mode. The backslash shortcut remains the direct Before toggle.
+  const cycleBaMode = () => {
+    const modes: BaMode[] = ["off", "side", "vsplit", "hsplit"];
+    setBaMode(modes[(modes.indexOf(baModeRef.current) + 1) % modes.length]);
+  };
+  const cycleBaButtonMode = () => setBaMode(BA_MODES[(BA_MODES.indexOf(baModeRef.current) + 1) % BA_MODES.length]);
 
   // A/B compare (C), as Lightroom's Compare view: the open photo, live and
   // editable, on the left half; a candidate from the filmstrip on the right,
@@ -6423,8 +6429,8 @@ export default function App() {
                      <UndoIcon redo /></button>
                    <span className="sep" />
                    <button className={`tool view${baMode !== "off" || before ? " on" : ""}`} disabled={!current || cropping}
-                           title={`before / after: ${baMode === "off" ? "off" : BA_NAMES[baMode].toLowerCase()}, click for the next view (Y)   full before: \\`}
-                           onClick={cycleBaMode}><BeforeAfterIcon /></button>
+                           title={`before / after: ${baMode === "off" ? "off" : BA_NAMES[baMode].toLowerCase()}; Y cycles layouts, click cycles layouts and hold for before   full before: \\`}
+                           onClick={cycleBaButtonMode}><BeforeAfterIcon /></button>
                    <button className={`tool view${compare !== null ? " on" : ""}`} disabled={!current || cropping}
                            title="compare with another photo (C): click one in the filmstrip, or step with ← →"
                            onClick={toggleCompare}><CompareIcon /></button>

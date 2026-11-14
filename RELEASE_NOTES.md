@@ -7,6 +7,9 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Y cycles through the side-by-side and split before / after views, then turns
+  them off. The toolbar button still includes **Hold for before**; `\` still
+  toggles the full Before view.
 - In Advanced mode, each mask has its own module cards and Add module menu.
   Edit darktable's settings inside the mask, reset a module or remove it from
   the mask, with undo. Simple keeps its familiar local sliders and shows a

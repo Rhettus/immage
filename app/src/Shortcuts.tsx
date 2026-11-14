@@ -42,7 +42,7 @@ const GROUPS: Group[] = [
       ["Click", "Zoom to 100% there, or back to fit"],
       ["Scroll", "Zoom around the pointer (a brush in hand: its size)"],
       ["\\", "Before"],
-      ["Y", "Next before / after view: side by side, split left / right, split top / bottom, hold for before"],
+      ["Y", "Next before / after view: side by side, split left / right, split top / bottom"],
       ["C", "Compare with another photo (← → step it, Esc leaves)"],
       ["J", "Show or hide shadow and highlight clipping"],
       ["H", "Next scope: histogram, waveform, RGB parade, vectorscope, waveform + vectorscope (⇧H back)"],

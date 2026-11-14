@@ -45,7 +45,7 @@ A focused menu keeps its arrow keys, Space and Enter for choosing.
 | Scroll | Zoom around the pointer (a brush in hand: its size) |
 | Space-drag | Pan a zoomed-in photo, in any tool |
 | \ | Before |
-| Y | Next before / after view: side by side, split left / right, split top / bottom, hold for before |
+| Y | Next before / after view: side by side, split left / right, split top / bottom |
 | C | Compare with another photo (← → step it, Esc leaves) |
 | J | Show or hide shadow and highlight clipping |
 | H | Next scope: histogram, waveform, RGB parade, vectorscope, waveform + vectorscope (⇧H back) |
