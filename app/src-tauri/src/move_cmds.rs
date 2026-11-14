@@ -589,6 +589,7 @@ type Opener<'a> = &'a dyn Fn(&str) -> Result<Box<dyn Read>, String>;
 // one photo and its sidecars into `dest` under `rel`, then, for a move,
 // the sources removed. returns whether the photo's own file is gone from
 // where it was, and any warning
+#[allow(clippy::too_many_arguments)]
 fn transfer_unit(u: &Unit, dest: &Path, rel: &[PathBuf], there: &[bool], copy: bool, rename: bool, ctx: &Ctx,
                  open: Opener) -> Result<(bool, Option<String>), String> {
     let mut placed = Placed::default();
@@ -715,7 +716,7 @@ pub(crate) async fn move_files(app: AppHandle, state: State<'_, AppState>, job: 
                     let client: std::cell::OnceCell<Result<immich_upload::Immich, String>> = std::cell::OnceCell::new();
                     let open = |id: &str| -> Result<Box<dyn Read>, String> {
                         let c = client.get_or_init(|| match &conn {
-                            Some(c) => immich_upload::Immich::new(&**c),
+                            Some(c) => immich_upload::Immich::new(c),
                             None => Err("Immich is not set up".into()),
                         });
                         let c = c.as_ref().map_err(|e| e.clone())?;
