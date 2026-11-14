@@ -2668,8 +2668,14 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 
 /* Advanced mode's module cards: a header row (switch, name, reset) over the
    module's own controls */
-.module-card { border-top: 1px solid var(--border, rgba(128, 128, 128, 0.25)); }
-.module-card-head { display: flex; align-items: center; gap: 8px; padding: 6px 14px; cursor: pointer; }
+/* each card in its own box, like a panel's grouped sliders (.subcard), so
+   one module's controls do not run into the next */
+.module-card {
+  margin: 0 10px 6px; background: var(--inset); border-radius: var(--radius-ctl);
+  /* the track and buttons' own grays would vanish on the box's */
+  --track: #3a3a3a; --inset: #303030;
+}
+.module-card-head { display: flex; align-items: center; gap: 8px; padding: 6px 10px; cursor: pointer; }
 .module-card-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .module-card.off .module-card-title { color: var(--text-3); }
 .module-card-reset { display: flex; padding: 2px; background: none; border: none; border-radius: 4px; color: var(--text-2); cursor: pointer; }
@@ -2679,12 +2685,12 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 .instance-menu, .preset-menu { display: flex; }
 .module-card-tag { font-size: 10px; padding: 1px 5px; border-radius: 4px; background: var(--hover); color: var(--text-2); }
 .module-card-rename { flex: 1; min-width: 0; padding: 1px 6px; }
-.module-card-body { padding: 0 14px 6px; }
-.add-module { display: block; border-top: 1px solid var(--border, rgba(128, 128, 128, 0.25)); padding: 6px 14px; }
+.module-card-body { padding: 0 10px 6px; }
+.add-module { display: block; padding: 0 10px; }
 .add-module-button { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; background: none; border: none; border-radius: 4px; color: var(--text-2); cursor: pointer; }
 .add-module-button:hover, .add-module-button.on { background: var(--hover); color: var(--text); }
 .module-card.fresh { animation: module-card-fresh 1.2s ease-out; }
-@keyframes module-card-fresh { from { background: var(--hover); } to { background: transparent; } }
+@keyframes module-card-fresh { from { background: var(--hover); } to { background: var(--inset); } }
 .module-card-tabs { flex-wrap: wrap; margin: 2px 0 8px; }
 .module-card-section { margin: 10px 0 4px; font-size: 11px; color: var(--text-2); text-transform: lowercase; }
 .module-card-section::first-letter { text-transform: uppercase; }

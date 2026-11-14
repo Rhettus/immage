@@ -68,7 +68,8 @@ close Preferences.
 
 Each group shows a card for every darktable module this photo uses: the ones
 that are on, and the ones its edit has changed, even if they are now off.
-Cards keep a fixed order in each group, the order of Simple's sections, and a
+Each card sits in its own shaded box, a little apart from the next, so you
+can see where one module's controls end. Cards keep a fixed order in each group, the order of Simple's sections, and a
 module's instances sit together.
 
 Below the cards, **+ Add module** lists the group's modules. Choosing one
